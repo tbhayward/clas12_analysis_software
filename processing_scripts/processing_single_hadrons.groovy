@@ -4,27 +4,19 @@
  * SIDIS hadron 
  */
 
-// // set up import of quality-assurance data base
-// def shell = System.getenv("SHELL")
-// def sourceCommand
-// if (shell.contains("csh")) {
-//     sourceCommand = "cd clasqaDB; source env.csh; cd .."
-// } else {
-//     sourceCommand = "cd clasqaDB; source env.sh; cd .."
-// }
-// println(sourceCommand);
-// Process process = sourceCommand.execute()
-// process.waitFor()
+def command = "ls -la"
+def process = Runtime.getRuntime().exec(command)
+def reader = new BufferedReader(new InputStreamReader(process.getInputStream()))
+def output = new StringBuffer()
 
-String command = "ls -l"
-Process process = command.execute()
-process.waitFor()
+String line
+while ((line = reader.readLine()) != null) {
+    output.append(line)
+    output.append('\n')
+}
 
-// Print the output of the command
-println process.in.text
+println output.toString()
 
-// Print any error messages from the command
-println process.err.text
 
 // dilks CLAS12 QA analysis
 import clasqa.QADB
@@ -42,7 +34,7 @@ import analyzers.*;
 // filetype for gathering files in directory
 import groovy.io.FileType;
 
-// public class processing_single_hadrons {
+public class processing_single_hadrons {
 
 	public static void main(String[] args) {
 
@@ -267,4 +259,4 @@ import groovy.io.FileType;
 		println("Elapsed time: ${elapsedTime} ms");
 
 	}
-// }
+}
