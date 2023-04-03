@@ -4,19 +4,6 @@
  * SIDIS hadron 
  */
 
-// import CLAS12 physics classes
-import org.jlab.io.hipo.*;
-import org.jlab.io.base.DataEvent;
-import org.jlab.clas.physics.*;
-import org.jlab.clas12.physics.*;
-
-// import from hayward_coatjava_extensions
-import extended_kinematic_fitters.*; 
-import analyzers.*;
-
-// filetype for gathering files in directory
-import groovy.io.FileType;
-
 // set up import of quality-assurance data base
 def shell = System.getenv("SHELL")
 def sourceCommand
@@ -25,8 +12,25 @@ if (shell.contains("csh")) {
 } else {
     sourceCommand = "cd clasqaDB; source env.sh; cd .."
 }
+
+// Execute the source command
+sourceCommand.execute().waitFor()
+
+// import CLAS12 physics classes
+import org.jlab.io.hipo.*
+import org.jlab.io.base.DataEvent;
+import org.jlab.clas.physics.*;
+import org.jlab.clas12.physics.*;
+
 // dilks CLAS QA analysis
 import clasqa.QADB
+
+// import coatjava_extensions for analysis
+import extended_kinematic_fitters.*; 
+import analyzers.*;
+
+// filetype for gathering files in directory
+import groovy.io.FileType;
 
 public class processing_single_hadrons {
 
