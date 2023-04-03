@@ -16,6 +16,16 @@ println(sourceCommand);
 Process process = sourceCommand.execute()
 process.waitFor()
 
+String command = "ls -l"
+Process process = command.execute()
+process.waitFor()
+
+// Print the output of the command
+println process.in.text
+
+// Print any error messages from the command
+println process.err.text
+
 // dilks CLAS12 QA analysis
 import clasqa.QADB
 
