@@ -32,7 +32,7 @@ import analyzers.*;
 // filetype for gathering files in directory
 import groovy.io.FileType;
 
-public class processing_single_hadrons {
+// public class processing_single_hadrons {
 
 	public static void main(String[] args) {
 
@@ -257,4 +257,4 @@ public class processing_single_hadrons {
 		println("Elapsed time: ${elapsedTime} ms");
 
 	}
-}
+// }
