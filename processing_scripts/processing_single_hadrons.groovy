@@ -13,8 +13,8 @@ if (shell.contains("csh")) {
     sourceCommand = "cd clasqaDB; source env.sh; cd .."
 }
 println(sourceCommand);
-// Execute the source command
-sourceCommand.execute().waitFor()
+Process process = sourceCommand.execute()
+process.waitFor()
 
 // dilks CLAS12 QA analysis
 import clasqa.QADB
