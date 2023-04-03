@@ -1,5 +1,6 @@
 #!/bin/sh
 
+pwd;
 cd clasqaDB/;
 source env.csh;
 cd ..;
