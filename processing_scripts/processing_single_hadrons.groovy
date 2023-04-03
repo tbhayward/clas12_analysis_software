@@ -29,6 +29,7 @@ public static void main(String[] args) {
 	// Start time
 	long startTime = System.currentTimeMillis();
 
+	String shellName = executeShellCommand("echo \$0").trim()
 	def envVar = shellName == "csh" ? "env.csh" : "env.sh"
 	executeShellCommand("cd clasqaDB/; source ${envVar}; cd ..")
 
