@@ -1,4 +1,6 @@
-#include <TROOT.h>
+#include <iostream>
+#include <iomanip>
+#include <fstream>
 #include <algorithm>
 
 std::vector<double> xBins = {0.05, 0.12, 0.20, 0.28, 0.36, 0.44, 0.60};
