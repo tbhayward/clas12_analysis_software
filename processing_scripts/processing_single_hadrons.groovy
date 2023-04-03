@@ -4,17 +4,17 @@
  * SIDIS hadron 
  */
 
-// set up import of quality-assurance data base
-def shell = System.getenv("SHELL")
-def sourceCommand
-if (shell.contains("csh")) {
-    sourceCommand = "cd clasqaDB; source env.csh; cd .."
-} else {
-    sourceCommand = "cd clasqaDB; source env.sh; cd .."
-}
-println(sourceCommand);
-Process process = sourceCommand.execute()
-process.waitFor()
+// // set up import of quality-assurance data base
+// def shell = System.getenv("SHELL")
+// def sourceCommand
+// if (shell.contains("csh")) {
+//     sourceCommand = "cd clasqaDB; source env.csh; cd .."
+// } else {
+//     sourceCommand = "cd clasqaDB; source env.sh; cd .."
+// }
+// println(sourceCommand);
+// Process process = sourceCommand.execute()
+// process.waitFor()
 
 String command = "ls -l"
 Process process = command.execute()
