@@ -98,7 +98,8 @@ public static void main(String[] args) {
 	EventFilter filter = new EventFilter("11:"+p1_Str+":X+:X-:Xn"); 
 	
 	// setup QA database
-	QADB qa = new QADB();
+	// QADB qa = new QADB();
+	def qa = qadbClass.newInstance()
 
 	// create a StringBuilder for accumulating lines
 	StringBuilder batchLines = new StringBuilder();
