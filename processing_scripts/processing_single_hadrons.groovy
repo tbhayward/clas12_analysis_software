@@ -17,22 +17,22 @@ import analyzers.*;
 // filetype for gathering files in directory
 import groovy.io.FileType;
 
-// set up import of quality-assurance data base
-def shell = System.getenv("SHELL")
-def sourceCommand
-if (shell.contains("csh")) {
-    sourceCommand = "cd clasqaDB; source env.csh; cd .."
-} else {
-    sourceCommand = "cd clasqaDB; source env.sh; cd .."
-}
-// dilks CLAS QA analysis
-import clasqa.QADB
-
 
 def main(String[] args) {
 
 	// Start time
 	long startTime = System.currentTimeMillis();
+
+	// set up import of quality-assurance data base
+	def shell = System.getenv("SHELL")
+	def sourceCommand
+	if (shell.contains("csh")) {
+	    sourceCommand = "cd clasqaDB; source env.csh; cd .."
+	} else {
+	    sourceCommand = "cd clasqaDB; source env.sh; cd .."
+	}
+	// dilks CLAS QA analysis
+	import clasqa.QADB
 
 	// ~~~~~~~~~~~~~~~~ set up input paramaeters ~~~~~~~~~~~~~~~~ //
 
