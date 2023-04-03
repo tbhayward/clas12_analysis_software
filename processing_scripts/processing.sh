@@ -7,6 +7,7 @@ if expr "$SHELL" : ".*csh" > /dev/null; then
     source env.csh
     cd ..
     coatjava/bin/run-groovy "$1" "$2" "$3" "$4"
+    echo "$1 $2 $3 $4"
 else
     # Run sh commands
     # Assuming you have an env.sh file for sh shell
