@@ -17,9 +17,6 @@ import analyzers.*;
 // filetype for gathering files in directory
 import groovy.io.FileType;
 
-// dilks CLAS QA analysis
-import clasqa.QADB
-
 def executeShellCommand(String command) {
     ProcessBuilder processBuilder = new ProcessBuilder(command.split(" "))
     processBuilder.redirectErrorStream(true)
@@ -38,6 +35,8 @@ public static void main(String[] args) {
 	} else {
 	    executeShellCommand("source clasqaDB/env.sh")
 	}
+	// dilks CLAS QA analysis
+	import clasqa.QADB
 
 
 	// ~~~~~~~~~~~~~~~~ set up input paramaeters ~~~~~~~~~~~~~~~~ //
