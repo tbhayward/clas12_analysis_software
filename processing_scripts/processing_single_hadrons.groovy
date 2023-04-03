@@ -32,7 +32,7 @@ public static void main(String[] args) {
 	// Start time
 	long startTime = System.currentTimeMillis();
 
-	String shellName = executeShellCommand("echo $0").trim()
+	String shellName = executeShellCommand("echo \$0").trim()
 	if (shellName.contains("csh") || shellName.contains("tcsh")) {
 	    executeShellCommand("source clasqaDB/env.csh")
 	} else {
