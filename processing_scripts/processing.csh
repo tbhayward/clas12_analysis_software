@@ -5,7 +5,7 @@ if ( $#argv < 1 ) then
     set arg1 = "processing_scripts/processing_single_hadrons.groovy"
     echo "Warning: First argument not provided. Using default: $arg2, which processes semi-inclusive single hadron events."
 else
-    set arg2 = "$2"
+    set arg1 = "$1"
 endif
 
 # Set the second argument to default to the RGA Fall2018 inbending nSidis skim if not provided
