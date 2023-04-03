@@ -17,6 +17,9 @@ import analyzers.*;
 // filetype for gathering files in directory
 import groovy.io.FileType;
 
+// dilks CLAS QA analysis
+import clasqa.QADB
+
 def executeShellCommand(String command) {
     ProcessBuilder processBuilder = new ProcessBuilder(command.split(" "))
     processBuilder.redirectErrorStream(true)
@@ -28,19 +31,6 @@ public static void main(String[] args) {
 
 	// Start time
 	long startTime = System.currentTimeMillis();
-
-	String shellName = executeShellCommand("echo \$0").trim()
-	def envVar = shellName == "csh" ? "env.csh" : "env.sh"
-	executeShellCommand("cd clasqaDB/; source ${envVar}; cd ..")
-
-	// Load QADB class dynamically
-	File qadbFile = new File("clasqaDB/clasqa/QADB.class")
-	URLClassLoader loader = new URLClassLoader([qadbFile.getParentFile().toURI().toURL()] as URL[])
-	Class<?> qadbClass = loader.loadClass("clasqa.QADB")
-
-	// // dilks CLAS QA analysis
-	// import clasqa.QADB
-
 
 	// ~~~~~~~~~~~~~~~~ set up input paramaeters ~~~~~~~~~~~~~~~~ //
 
@@ -99,8 +89,7 @@ public static void main(String[] args) {
 	EventFilter filter = new EventFilter("11:"+p1_Str+":X+:X-:Xn"); 
 	
 	// setup QA database
-	// QADB qa = new QADB();
-	def qa = qadbClass.newInstance()
+	QADB qa = new QADB();
 
 	// create a StringBuilder for accumulating lines
 	StringBuilder batchLines = new StringBuilder();
