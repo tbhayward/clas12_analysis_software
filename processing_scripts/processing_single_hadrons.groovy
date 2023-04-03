@@ -4,20 +4,6 @@
  * SIDIS hadron 
  */
 
-def command = "ls -la"
-def process = Runtime.getRuntime().exec(command)
-def reader = new BufferedReader(new InputStreamReader(process.getInputStream()))
-def output = new StringBuffer()
-
-String line
-while ((line = reader.readLine()) != null) {
-    output.append(line)
-    output.append('\n')
-}
-
-println output.toString()
-
-
 // dilks CLAS12 QA analysis
 import clasqa.QADB
 
