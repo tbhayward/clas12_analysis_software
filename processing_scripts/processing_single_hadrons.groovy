@@ -20,10 +20,25 @@ import groovy.io.FileType;
 // dilks CLAS QA analysis
 import clasqa.QADB
 
+def executeShellCommand(String command) {
+    ProcessBuilder processBuilder = new ProcessBuilder(command.split(" "))
+    processBuilder.redirectErrorStream(true)
+    Process process = processBuilder.start()
+    process.inputStream.text
+}
+
 public static void main(String[] args) {
 
 	// Start time
 	long startTime = System.currentTimeMillis();
+
+	String shellName = executeShellCommand("echo $0").trim()
+	if (shellName.contains("csh") || shellName.contains("tcsh")) {
+	    executeShellCommand("source clasqaDB/env.csh")
+	} else {
+	    executeShellCommand("source clasqaDB/env.sh")
+	}
+
 
 	// ~~~~~~~~~~~~~~~~ set up input paramaeters ~~~~~~~~~~~~~~~~ //
 
