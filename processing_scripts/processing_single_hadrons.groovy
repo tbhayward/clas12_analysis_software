@@ -14,9 +14,6 @@ import org.jlab.clas12.physics.*;
 import extended_kinematic_fitters.*; 
 import analyzers.*;
 
-// dilks CLAS QA analysis
-import clasqa.QADB
-
 // filetype for gathering files in directory
 import groovy.io.FileType;
 
@@ -27,6 +24,17 @@ public class processing_single_hadrons {
 
 		// Start time
 		long startTime = System.currentTimeMillis();
+
+		// set up import of quality-assurance data base
+		def shell = System.getenv("SHELL");
+		def sourceCommand
+		if (shell.contains("csh")) {
+		    sourceCommand = "cd clasqaDB; source env.csh; cd .."
+		} else {
+		    sourceCommand = "cd clasqaDB; source env.sh; cd .."
+		}
+		// dilks CLAS QA analysis
+		import clasqa.QADB
 
 
 		// ~~~~~~~~~~~~~~~~ set up input paramaeters ~~~~~~~~~~~~~~~~ //
