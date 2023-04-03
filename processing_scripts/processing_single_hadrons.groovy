@@ -29,14 +29,16 @@ public static void main(String[] args) {
 	// Start time
 	long startTime = System.currentTimeMillis();
 
-	String shellName = executeShellCommand("echo \$0").trim()
-	if (shellName.contains("csh") || shellName.contains("tcsh")) {
-	    executeShellCommand("source clasqaDB/env.csh")
-	} else {
-	    executeShellCommand("source clasqaDB/env.sh")
-	}
-	// dilks CLAS QA analysis
-	import clasqa.QADB
+	def envVar = shellName == "csh" ? "env.csh" : "env.sh"
+	executeShellCommand("cd clasqaDB/; source ${envVar}; cd ..")
+
+	// Load QADB class dynamically
+	File qadbFile = new File("clasqaDB/clasqa/QADB.class")
+	URLClassLoader loader = new URLClassLoader([qadbFile.getParentFile().toURI().toURL()] as URL[])
+	Class<?> qadbClass = loader.loadClass("clasqa.QADB")
+
+	// // dilks CLAS QA analysis
+	// import clasqa.QADB
 
 
 	// ~~~~~~~~~~~~~~~~ set up input paramaeters ~~~~~~~~~~~~~~~~ //
