@@ -4,6 +4,21 @@
  * SIDIS hadron 
  */
 
+// set up import of quality-assurance data base
+def shell = System.getenv("SHELL")
+def sourceCommand
+if (shell.contains("csh")) {
+    sourceCommand = "cd clasqaDB; source env.csh; cd .."
+} else {
+    sourceCommand = "cd clasqaDB; source env.sh; cd .."
+}
+
+// Execute the source command
+sourceCommand.execute().waitFor()
+
+// dilks CLAS12 QA analysis
+import clasqa.QADB
+
 // import CLAS12 physics classes
 import org.jlab.io.hipo.*
 import org.jlab.io.base.DataEvent;
@@ -20,19 +35,6 @@ import groovy.io.FileType;
 public class processing_single_hadrons {
 
 	public static void main(String[] args) {
-
-		// set up import of quality-assurance data base
-		def shell = System.getenv("SHELL")
-		def sourceCommand
-		if (shell.contains("csh")) {
-		    sourceCommand = "cd clasqaDB; source env.csh; cd .."
-		} else {
-		    sourceCommand = "cd clasqaDB; source env.sh; cd .."
-		}
-		// Execute the source command
-		sourceCommand.execute().waitFor()
-		// dilks CLAS QA analysis
-		import clasqa.QADB;
 
 		// Start time
 		long startTime = System.currentTimeMillis();
