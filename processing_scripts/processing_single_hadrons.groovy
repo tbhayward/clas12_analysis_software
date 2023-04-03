@@ -20,23 +20,9 @@ import groovy.io.FileType;
 // dilks CLAS QA analysis
 import clasqa.QADB
 
-public class processing_single_hadrons {
+// public class processing_single_hadrons {
 
 	public static void main(String[] args) {
-
-		def command = "ls -la"
-		def process = Runtime.getRuntime().exec(command)
-		def reader = new BufferedReader(new InputStreamReader(process.getInputStream()))
-		def output = new StringBuffer()
-
-		String line
-		while ((line = reader.readLine()) != null) {
-		    output.append(line)
-		    output.append('\n')
-		}
-
-		println output.toString()
-
 
 		// Start time
 		long startTime = System.currentTimeMillis();
@@ -259,4 +245,4 @@ public class processing_single_hadrons {
 		println("Elapsed time: ${elapsedTime} ms");
 
 	}
-}
+// }
