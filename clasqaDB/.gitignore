@@ -1,0 +1,12 @@
+.*.sw*
+.sw*
+*.exe
+*.class
+srcC/qaTree.merged.json
+.nfs*
+*.tex
+*.sqlite
+tmp/*
+srcC/lib/*
+*.pcm
+*Dict.cxx

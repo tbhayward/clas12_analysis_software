@@ -1,0 +1,53 @@
+#!/bin/sh
+
+. `dirname $0`/env.sh 
+
+export CLAS12DIR=`dirname $0`/..
+ 
+#--------------------------------------------------------------
+# Adding supporting COAT jar files
+for i in `ls -a $CLAS12DIR/lib/clas/*.jar`
+do  
+#echo "$i"
+if [ -z "${JYPATH}" ] ; then
+JYPATH="$i"
+else
+JYPATH=${JYPATH}:"$i"
+fi
+done 
+#--------------------------------------------------------------
+# Adding supporting plugins directory
+for i in `ls -a $CLAS12DIR/lib/services/*.jar`
+do
+if [ -z "${JYPATH}" ] ; then
+JYPATH="$i"
+else
+JYPATH=${JYPATH}:"$i"
+fi
+done
+#--------------------------------------------------------------
+# Adding supporting plugins directory
+#--------------------------------------------------------------
+# Done loading plugins
+#--------------------------------------------------------------
+# Adding supporting plugins directory 
+for i in `ls -a $CLAS12DIR/lib/utils/*.jar`
+do
+if [ -z "${JYPATH}" ] ; then
+JYPATH="$i"
+else
+JYPATH=${JYPATH}:"$i"
+fi
+done
+#-------------------------------------------------------------
+JYPATH=${JYPATH}:${CLAS12DIR}/lib/packages
+echo " "
+echo " "
+echo "*****************************************"
+echo "*    Running COAT-JAVA Groovy Scripts   *"
+echo "*    Version : 3a  Release : 2016       *" 
+echo "*****************************************"
+echo " "
+echo " "
+export JAVA_OPTS="-Dsun.java2d.pmoffscreen=false -Xms1024m -Xmx2048m"
+groovy -cp "$JYPATH" $*
