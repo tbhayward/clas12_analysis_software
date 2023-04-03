@@ -29,7 +29,7 @@ if (shell.contains("csh")) {
 import clasqa.QADB
 
 
-public class processing {
+public class processing_single_hadrons {
 
 	public static void main(String[] args) {
 
