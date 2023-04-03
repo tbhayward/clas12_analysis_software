@@ -29,7 +29,7 @@ if (shell.contains("csh")) {
 import clasqa.QADB
 
 
-// public class processing_single_hadrons {
+public class processing {
 
 	public static void main(String[] args) {
 
@@ -254,4 +254,4 @@ import clasqa.QADB
 		println("Elapsed time: ${elapsedTime} ms");
 
 	}
-// }
+}
