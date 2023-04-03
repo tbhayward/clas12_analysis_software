@@ -12,7 +12,7 @@ if (shell.contains("csh")) {
 } else {
     sourceCommand = "cd clasqaDB; source env.sh; cd .."
 }
-
+println(sourceCommand);
 // Execute the source command
 sourceCommand.execute().waitFor()
 
