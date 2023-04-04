@@ -51,7 +51,7 @@ float getPol(int runnum) {
 }
 
 struct eventData {
-  short status, runnum, evnum, helicity;
+  int status, runnum, evnum, helicity;
   float e_p, e_theta, e_phi, vz_e;
   float p2_p, p2_theta, p2_phi, vz_p2;
   float p1_p, p1_theta, p1_phi, vz_p1;
