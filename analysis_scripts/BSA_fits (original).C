@@ -28,24 +28,34 @@ std::vector<std::string> binNames = {"x", "zeta", "PT1", "PT2", "PTPT", "zeta00"
 
 // function to get the polarization value
 float getPol(int runnum) {
-  float pol; 
-    if (runnum == 11 ) { pol = 0.86; } // MC
-    else if (runnum >= 5032 && runnum < 5333) { pol = 0.8592; } 
-    else if (runnum >= 5333 && runnum <= 5666) { pol = 0.8922; }
-    else if (runnum >= 6616 && runnum <= 6783) { pol = 0.8453; }
-    else if (runnum >= 6142 && runnum <= 6149) { pol = 0.81132; }
-    else if (runnum >= 6150 && runnum <= 6188) { pol = 0.82137; }
-    else if (runnum >= 6189 && runnum <= 6260) { pol = 0.83598; }
-    else if (runnum >= 6261 && runnum <= 6339) { pol = 0.80770; }
-    else if (runnum >= 6340 && runnum <= 6342) { pol = 0.85536; }
-    else if (runnum >= 6344 && runnum <= 6399) { pol = 0.87038; }
-    else if (runnum >= 6420 && runnum <= 6476) { pol = 0.88214; }
-    else if (runnum >= 6479 && runnum <= 6532) { pol = 0.86580; }
-    else if (runnum >= 6533 && runnum <= 6603) { pol = 0.87887; }
-    else if (runnum >= 11013 && runnum <= 11309) { pol = 0.84983; }
-    else if (runnum >= 11323 && runnum <= 11334) { pol = 0.87135; }
-    else if (runnum >= 11335 && runnum <= 11387) { pol = 0.85048; }
-    else if (runnum >= 11389 && runnum <= 11571) { pol = 0.84262; }
+  using Range = std::pair<int, int>;
+  static std::map<Range, float> pol_map = {
+    {{5032, 5333}, 0.8592}, // {run range}, Moeller measurement
+    {{5333, 5666}, 0.8922},
+    {{6616, 6783}, 0.8453},
+    {{6142, 6149}, 0.81132},
+    {{6150, 6188}, 0.82137},
+    {{6189, 6260}, 0.83598},
+    {{6261, 6339}, 0.80770},
+    {{6340, 6342}, 0.85536},
+    {{6344, 6399}, 0.87038},
+    {{6420, 6476}, 0.88214},
+    {{6479, 6532}, 0.86580},
+    {{6533, 6603}, 0.87887},
+    {{11013, 11309}, 0.84983},
+    {{11323, 11334}, 0.87135},
+    {{11335, 11387}, 0.85048},
+    {{11389, 11571}, 0.84262}
+  };
+  float pol = 0.86;
+  // Use std::lower_bound for binary search
+  auto it = std::lower_bound(pol_map.begin(), pol_map.end(), runnum, 
+    [](const auto& entry, const int& runnum) {
+    return entry.first.second <= runnum;
+  });
+  if (it != pol_map.end() && runnum >= it->first.first && runnum < it->first.second) {
+    pol = it->second;
+  }
   return pol;
 }
 
