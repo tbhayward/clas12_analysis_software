@@ -221,7 +221,7 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
   mlmFitsScaledBStream << prefix << "MLMFitsScaledB = {";
 
   for (size_t i = 0; i < numBins; ++i) {
-    cout << endl << "Beginning MLM fit for " << binNames[currentFits]
+    cout << "Beginning MLM fit for " << binNames[currentFits]
       << " bin " << i << ". ";
     currentBin = i;
 
@@ -361,7 +361,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
   size_t numBins = allBins[currentFits].size() - 1;
 
   for (size_t i = 0; i < numBins; ++i) {
-      cout << endl << "Beginning chi2 fit for " << binNames[currentFits]
+      cout << "Beginning chi2 fit for " << binNames[currentFits]
         << " bin " << i << ". ";
       char histName[32];
       snprintf(histName, sizeof(histName), "hist_%zu", i);
@@ -434,9 +434,9 @@ void BSA_fits(const char* data_file, const char* output_file) {
   // for (size_t i = 0; i < 1; ++i) {
     performChi2Fits(data_file, output_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    // performMLMFits(data_file, output_file, binNames[i]);
-    // cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
-    cout << endl << endl << endl;
+    performMLMFits(data_file, output_file, binNames[i]);
+    cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
+    cout << endl;
     currentFits++;
   }
 }
