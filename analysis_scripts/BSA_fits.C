@@ -4,6 +4,8 @@
 #include <sstream>
 #include <TH1D.h>
 #include <algorithm>
+#include <memory>
+
 
 std::vector<double> xBins = {0.05, 0.12, 0.20, 0.28, 0.36, 0.44, 0.60};
 std::vector<double> zetaBins = {0.30, 0.400, 0.475, 0.550, 0.625, 0.70, 0.80};
@@ -51,18 +53,18 @@ float getPol(int runnum) {
 
 
 struct eventData {
-  int status, runnum, evnum, helicity;
-  double e_p, e_theta, e_phi, vz_e;
-  double p2_p, p2_theta, p2_phi, vz_p2;
-  double p1_p, p1_theta, p1_phi, vz_p1;
-  double Q2, W, x, y, z2, z1;
-  double Mx, Mx2, Mx1;
-  double zeta, Mh;
-  double PT2, PT1, PTPT;
-  double xF2, xF1, eta2, eta1, Delta_eta;
-  double phi2, phi1, Delta_phi;
-  double pol;
-  double b2b_factor;
+  short status, runnum, evnum, helicity;
+  float e_p, e_theta, e_phi, vz_e;
+  float p2_p, p2_theta, p2_phi, vz_p2;
+  float p1_p, p1_theta, p1_phi, vz_p1;
+  float Q2, W, x, y, z2, z1;
+  float Mx, Mx2, Mx1;
+  float zeta, Mh;
+  float PT2, PT1, PTPT;
+  float xF2, xF1, eta2, eta1, Delta_eta;
+  float phi2, phi1, Delta_phi;
+  float pol;
+  float b2b_factor;
 };
 
 std::vector<eventData> gData;
