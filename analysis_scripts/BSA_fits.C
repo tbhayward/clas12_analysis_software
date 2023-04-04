@@ -395,12 +395,15 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
       double scaled_B = B / meanb2b;
       double scaled_B_error = B_error / meanb2b;
 
-      chi2FitsAStream << "{" << meanVariable << ", " << A << ", " << A_error << "}";
-      chi2FitsAScaledStream << "{" << meanVariable << ", " << scaled_A << ", " << 
-        scaled_A_error << "}";
-      chi2FitsBStream << "{" << meanVariable << ", " << B << ", " << B_error << "}";
-      chi2FitsBScaledStream << "{" << meanVariable << ", " << scaled_B << ", " << 
-        scaled_B_error << "}";
+      chi2FitsAStream << "{" << std::fixed << std::setprecision(4) << meanVariable << 
+        ", " << A << ", " << A_error << "}";
+      chi2FitsAScaledStream << "{" << std::fixed << std::setprecision(4) << meanVariable << 
+        ", " << scaled_A << ", " << scaled_A_error << "}";
+      chi2FitsBStream << "{" << std::fixed << std::setprecision(4) << meanVariable << 
+        ", " << B << ", " << B_error << "}";
+      chi2FitsBScaledStream << "{" << std::fixed << std::setprecision(4) << meanVariable << 
+        ", " << scaled_B << ", " << scaled_B_error << "}";
+
 
       if (i < numBins - 1) {
           chi2FitsAStream << ", ";
