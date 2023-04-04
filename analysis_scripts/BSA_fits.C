@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <memory>
 
-
 std::vector<double> xBins = {0.05, 0.12, 0.20, 0.28, 0.36, 0.44, 0.60};
 std::vector<double> zetaBins = {0.30, 0.400, 0.475, 0.550, 0.625, 0.70, 0.80};
 std::vector<double> PT1Bins = {0, 0.18, 0.36, 0.54, 0.72, 0.90, 1.30};
@@ -51,7 +50,6 @@ float getPol(int runnum) {
   return pol;
 }
 
-
 struct eventData {
   short status, runnum, evnum, helicity;
   float e_p, e_theta, e_phi, vz_e;
@@ -67,7 +65,7 @@ struct eventData {
   float b2b_factor;
 };
 
-std::vector<eventData>* gData;
+std::vector<eventData> gData;
 size_t currentBin = 0;
 
 eventData parseLine(const std::string& line) {
@@ -95,13 +93,13 @@ eventData parseLine(const std::string& line) {
   return data;
 }
 
-std::vector<eventData>* readData(const std::string& filename) {
+std::vector<eventData> readData(const std::string& filename) {
   std::ifstream infile(filename);
   std::string line;
-  std::vector<eventData>* data = new std::vector<eventData>;
+  std::vector<eventData> data;
 
   while (std::getline(infile, line)) {
-    data->push_back(parseLine(line));
+    data.push_back(parseLine(line));
   }
 
   return data;
@@ -182,7 +180,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     double sum_N = 0;
     double sum_P = 0;
 
-    for (const eventData &event : *gData) {
+    for (const eventData &event : gData) {
         double currentVariable = getEventProperty(event, currentFits);
         if (applyKinematicCuts(event, currentFits) && 
           currentVariable >= allBins[currentFits][currentBin] && 
@@ -201,8 +199,8 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     f = N * log(N) - sum_P - sum_N;
 }
 
-void performMLMFits(const char *filename, const char* output_file, const std::string& prefix) {
-  std::vector<eventData>* gData = readData(filename);
+void performMLMFits(std::vector<eventData> gData, const char* output_file, 
+  const std::string& prefix) {
 
   size_t numBins = allBins[currentFits].size() - 1;
 
@@ -239,7 +237,7 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     double sumVariable = 0;
     double sumb2b = 0;
     double numEvents = 0;
-    for (const eventData &event : *gData) {
+    for (const eventData &event : gData) {
       double currentVariable = getEventProperty(event, currentFits);
         if (applyKinematicCuts(event, currentFits) && currentVariable >= 
           allBins[currentFits][i] && currentVariable < allBins[currentFits][i + 1]) {
@@ -283,7 +281,6 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
   outputFile << mlmFitsBStream.str() << std::endl;
   outputFile << mlmFitsScaledBStream.str() << std::endl << std::endl;
 
-  delete gData;
   outputFile.close();
 }
 
@@ -346,8 +343,8 @@ double funcToFit(double* x, double* par) {
   return A * sin(Delta_phi) + B * sin(2 * Delta_phi);
 }
 
-void performChi2Fits(const char *filename, const char* output_file, const std::string& prefix) {
-  std::vector<eventData>* gData = readData(filename);
+void performChi2Fits(std::vector<eventData> gData, const char* output_file, 
+  const std::string& prefix) {
 
   TF1* fitFunction = new TF1("fitFunction", funcToFit, 0, 2 * TMath::Pi(), 2);
 
@@ -369,13 +366,13 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
       char histName[32];
       snprintf(histName, sizeof(histName), "hist_%zu", i);
 
-      TH1D* hist = createHistogramForBin(*gData, histName, i, allBins[currentFits]);
+      TH1D* hist = createHistogramForBin(gData, histName, i, allBins[currentFits]);
       hist->Fit(fitFunction, "Q");
 
       double sumVariable = 0;
       double sumb2b = 0;
       double numEvents = 0;
-      for (const eventData& event : *gData) {
+      for (const eventData& event : gData) {
         double currentVariable = getEventProperty(event, currentFits);
         if (applyKinematicCuts(event, currentFits) && currentVariable >= allBins[currentFits][i] && 
           currentVariable < allBins[currentFits][i + 1]) {
@@ -427,7 +424,6 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
     outputFile << chi2FitsBStream.str() << std::endl;
     outputFile << chi2FitsBScaledStream.str() << std::endl;
 
-    delete gData;
     outputFile.close();
   }
 
@@ -437,11 +433,13 @@ void BSA_fits(const char* data_file, const char* output_file) {
   std::ofstream ofs(output_file, std::ios::trunc);
   ofs.close();
 
+  std::vector<eventData> gData = readData(data_file);
+
   for (size_t i = 0; i < allBins.size(); ++i) {
   // for (size_t i = 0; i < 1; ++i) {
-    performChi2Fits(data_file, output_file, binNames[i]);
+    performChi2Fits(gData, output_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    // performMLMFits(data_file, output_file, binNames[i]);
+    // performMLMFits(gData, output_file, binNames[i]);
     // cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl;
     currentFits++;
