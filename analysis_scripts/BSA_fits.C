@@ -4,6 +4,7 @@
 #include <sstream>
 #include <TH1D.h>
 #include <algorithm>
+gROOT->SetBatch(kTRUE);
 
 std::vector<double> xBins = {0.05, 0.12, 0.20, 0.28, 0.36, 0.44, 0.60};
 std::vector<double> zetaBins = {0.30, 0.400, 0.475, 0.550, 0.625, 0.70, 0.80};
@@ -22,9 +23,9 @@ std::vector<double> xF2Bins = {-0.82, -0.60, -0.38, -0.16, 0.06, 0.28, 0.50};
 
 std::vector<std::vector<double>> allBins = {xBins, zetaBins, PT1Bins, PT2Bins, PTPTBins,
   zeta00Bins, zeta20Bins, zeta32Bins, Q200Bins, Q220Bins, Q232Bins, z1Bins, xF1Bins, xF2Bins};
-size_t currentFits = 0;
 std::vector<std::string> binNames = {"x", "zeta", "PT1", "PT2", "PTPT", "zeta00", "zeta20", 
   "zeta32", "Q200", "Q220", "Q232", "z1", "xF1", "xF2"};
+size_t currentFits = 0;
 
 // function to get the polarization value
 float getPol(int runnum) {
@@ -221,7 +222,7 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
   mlmFitsScaledBStream << prefix << "MLMFitsScaledB = {";
 
   for (size_t i = 0; i < numBins; ++i) {
-    cout << "Beginning MLM fit for " << binNames[currentFits]
+    cout << endl << "Beginning MLM fit for " << binNames[currentFits]
       << " bin " << i << ". ";
     currentBin = i;
 
@@ -381,7 +382,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
             numEvents += 1;
         }
       }
-      cout << numEvents << endl;
+      cout << numEvents << " events found in this bin." << endl;
       double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
       double meanb2b = numEvents > 0 ? sumb2b / numEvents : 0.0;
 
@@ -434,8 +435,8 @@ void BSA_fits(const char* data_file, const char* output_file) {
   // for (size_t i = 0; i < 1; ++i) {
     performChi2Fits(data_file, output_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    performMLMFits(data_file, output_file, binNames[i]);
-    cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
+    // performMLMFits(data_file, output_file, binNames[i]);
+    // cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl;
     currentFits++;
   }
