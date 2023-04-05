@@ -42,7 +42,7 @@ done
 #-------------------------------------------------------------
 # Adding custom JAR file
 pwd
-CUSTOM_JAR_PATH="../processing_classes/dist/processing_classes.jar"
+CUSTOM_JAR_PATH="../../processing_classes/dist/processing_classes.jar"
 JYPATH=${JYPATH}:"$CUSTOM_JAR_PATH"
 echo "$JYPATH"
 #-------------------------------------------------------------
