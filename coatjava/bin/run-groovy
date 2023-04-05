@@ -3,7 +3,7 @@
 . `dirname $0`/env.sh 
 
 export CLAS12DIR=`dirname $0`/..
- 
+
 #--------------------------------------------------------------
 # Adding supporting COAT jar files
 for i in `ls -a $CLAS12DIR/lib/clas/*.jar`
@@ -40,6 +40,10 @@ JYPATH=${JYPATH}:"$i"
 fi
 done
 #-------------------------------------------------------------
+# Adding custom JAR file
+CUSTOM_JAR_PATH="../processing_classes/dist/processing_classes.jar"
+JYPATH=${JYPATH}:"$CUSTOM_JAR_PATH"
+#-------------------------------------------------------------
 JYPATH=${JYPATH}:${CLAS12DIR}/lib/packages
 echo " "
 echo " "
@@ -49,5 +53,7 @@ echo "*    Version : 3a  Release : 2016       *"
 echo "*****************************************"
 echo " "
 echo " "
+echo "Including custom path to /processing_classes/dist/processing_classes.jar, developed by Timothy B. Hayward" 
+echo " " 
 export JAVA_OPTS="-Dsun.java2d.pmoffscreen=false -Xms1024m -Xmx2048m"
 groovy -cp "$JYPATH" $*
