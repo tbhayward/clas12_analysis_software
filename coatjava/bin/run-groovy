@@ -41,20 +41,18 @@ fi
 done
 #-------------------------------------------------------------
 # Adding custom JAR file
-CUSTOM_JAR_PATH="../processing_classes/dist/processing_classes.jar"
+CUSTOM_JAR_PATH="/processing_classes/dist/processing_classes.jar"
 JYPATH=${JYPATH}:"$CUSTOM_JAR_PATH"
 echo "$JYPATH"
 #-------------------------------------------------------------
 JYPATH=${JYPATH}:${CLAS12DIR}/lib/packages
-echo " "
 echo " "
 echo "*****************************************"
 echo "*    Running COAT-JAVA Groovy Scripts   *"
 echo "*    Version : 3a  Release : 2016       *" 
 echo "*****************************************"
 echo " "
-echo " "
-echo "Including custom path to /processing_classes/dist/processing_classes.jar, developed by Timothy B. Hayward" 
+echo "Including custom path to /processing_classes/dist/processing_classes.jar" 
 echo " " 
 export JAVA_OPTS="-Dsun.java2d.pmoffscreen=false -Xms1024m -Xmx2048m"
 groovy -cp "$JYPATH" $*
