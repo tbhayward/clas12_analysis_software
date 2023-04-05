@@ -41,7 +41,8 @@ fi
 done
 #-------------------------------------------------------------
 # Adding custom JAR file
-CUSTOM_JAR_PATH="/processing_classes/dist/processing_classes.jar"
+pwd
+CUSTOM_JAR_PATH="../processing_classes/dist/processing_classes.jar"
 JYPATH=${JYPATH}:"$CUSTOM_JAR_PATH"
 echo "$JYPATH"
 #-------------------------------------------------------------
