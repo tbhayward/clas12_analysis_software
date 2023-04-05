@@ -1,5 +1,8 @@
 #!/bin/sh
 
+rm coatjava/lib/services/processing_classes.jar;
+cp /processing_classes/dist/processing_classes.jar coatjava/lib/services/;
+
 . `dirname $0`/env.sh 
 
 export CLAS12DIR=`dirname $0`/..
@@ -39,12 +42,6 @@ else
 JYPATH=${JYPATH}:"$i"
 fi
 done
-#-------------------------------------------------------------
-# Adding custom JAR file
-pwd
-CUSTOM_JAR_PATH="../../processing_classes/dist/processing_classes.jar"
-JYPATH=${JYPATH}:"$CUSTOM_JAR_PATH"
-echo "$JYPATH"
 #-------------------------------------------------------------
 JYPATH=${JYPATH}:${CLAS12DIR}/lib/packages
 echo " "
