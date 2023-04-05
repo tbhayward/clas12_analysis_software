@@ -286,7 +286,7 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
 
 
 TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* histName,
-  int binIndex, const std::vector<float>& bins) {
+  int binIndex) {
 
   double varMin = allBins[currentFits][binIndex];
   double varMax = allBins[currentFits][binIndex + 1];
@@ -366,7 +366,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
       char histName[32];
       snprintf(histName, sizeof(histName), "hist_%zu", i);
 
-      TH1D* hist = createHistogramForBin(gData, histName, i, allBins[currentFits]);
+      TH1D* hist = createHistogramForBin(gData, histName, i);
       hist->Fit(fitFunction, "Q");
 
       double sumVariable = 0;
