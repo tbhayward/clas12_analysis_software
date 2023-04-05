@@ -286,7 +286,7 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
 
 
 TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* histName,
-  int binIndex, const std::vector<double>& bins) {
+  int binIndex, const std::vector<float>& bins) {
 
   double varMin = allBins[currentFits][binIndex];
   double varMax = allBins[currentFits][binIndex + 1];
