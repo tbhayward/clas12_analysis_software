@@ -28,11 +28,11 @@ public class Inclusive {
     
     protected double Q2, W, gamma, nu, x, y, Mx, Mx2;
   
-    
     protected double e_px, e_py, e_pz, e_p, e_e, e_theta, e_phi, vz_e; // electron kinematics
     
     
     public static boolean channel_test(Inclusive variables) {
+        System.out.println("test\n");
 //        if (variables.helicity==0){ 
 //            System.out.println("You're returning false because helicity = 0. Is this data or MC?");
 //            return false; }
