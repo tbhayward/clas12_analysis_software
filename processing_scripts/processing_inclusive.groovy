@@ -71,7 +71,7 @@ public static void main(String[] args) {
 	// GenericKinematicFitter fitter = new proton_energy_loss_corrections_fitter(10.6041); 
 	
 	// set filter for final states
-	EventFilter filter = new EventFilter("11:"+p1_Str+":X+:X-:Xn"); 
+	EventFilter filter = new EventFilter("11:X+:X-:Xn"); 
 	
 	// setup QA database
 	QADB qa = new QADB();
