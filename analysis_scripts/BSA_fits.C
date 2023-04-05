@@ -109,8 +109,8 @@ double getEventProperty(const eventData& event, int currentFits) {
   switch (currentFits) {
     case 0: return event.x;
     case 1: return event.zeta;
-    case 2: return event.PT1;
-    case 3: return event.PT2;
+    case 2: return event.PT2;
+    case 3: return event.PT1;
     case 4: return event.PTPT;
     case 5: return event.zeta;
     case 6: return event.zeta;
