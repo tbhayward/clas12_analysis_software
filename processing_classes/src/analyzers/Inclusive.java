@@ -32,7 +32,7 @@ public class Inclusive {
     
     
     public static boolean channel_test(Inclusive variables) {
-        System.out.println("test\n");
+        System.out.println("test 2\n");
 //        if (variables.helicity==0){ 
 //            System.out.println("You're returning false because helicity = 0. Is this data or MC?");
 //            return false; }
