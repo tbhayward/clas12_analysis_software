@@ -16,7 +16,5 @@ else
     set arg2 = "$2"
 endif
 
-cd clasqaDB/
-source env.csh
-cd ..
-coatjava/bin/run-groovy "$arg1" "$arg2" "$3" "$4" "$5" "$6"
+cd clasqaDB/; source env.csh; cd ..;
+coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4" "$5" "$6"
