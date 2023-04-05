@@ -90,7 +90,6 @@ public static void main(String[] args) {
 	int num_events = 0;
 	int max_lines = 1000;
 	int lineCount = 0;
-	// for (int current_file; current_file<n_files; current_file++) {
 	for (current_file in 0..<n_files) {
 		// limit to a certain number of files defined by n_files
 		println("\n Opening file "+Integer.toString(current_file+1)
@@ -145,12 +144,12 @@ public static void main(String[] args) {
 		                // DIS variables
 		                Q2 = variables.Q2(); // exchanged virtual photon energy
 		                W = variables.W(); // hadronic mass
+		                x = variables.x(); // Bjorken-x
 		                y = variables.y(); // E_scat/E_beam
 		                Mx = variables.Mx(); // missing mass
 		                Mx2 = variables.Mx2(); // missing mass square
 
 		                // SIDIS variables
-		                x = variables.x(); // Bjorken-x
 		                z = variables.z(); // fractional hadron energy wrt virtual photon
 		                xF = variables.xF(); // Feynman-x
 		                pT = variables.pT(); // transverse momentum of hadron

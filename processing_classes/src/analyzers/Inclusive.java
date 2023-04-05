@@ -27,16 +27,7 @@ public class Inclusive {
     protected int num_elec, num_particles;
     
     protected double Q2, W, gamma, nu, x, y, Mx;
-    
-    // depolarization vectors defining the polarization lost during the transfer from beam to 
-    // the virtual photon. 
-    // in ALU BSAs the twist 2 terms are modified by C/A and the twist 3 terms by W/A
-    // B and V come in AUL
-    protected double Depolarization_A;
-    protected double Depolarization_B;
-    protected double Depolarization_C;
-    protected double Depolarization_V;
-    protected double Depolarization_W;
+  
     
     protected double e_px, e_py, e_pz, e_p, e_e, e_theta, e_phi, vz_e; // electron kinematics
     
@@ -59,7 +50,6 @@ public class Inclusive {
         // load banks
         HipoDataBank eventBank = (HipoDataBank) event.getBank("REC::Event");
         HipoDataBank configBank = (HipoDataBank) event.getBank("RUN::config");
-        HipoDataBank rec_Bank = (HipoDataBank) event.getBank("REC::Particle"); // load particle bank
         
         helicity = eventBank.getByte("helicity", 0);
 //        helicity = eventBank.getByte("helicityRaw", 0);
@@ -113,15 +103,7 @@ public class Inclusive {
 	W  = Math.pow(Math.pow(particle_mass(2212),2)+2*particle_mass(2212)*nu - Q2, 0.5);
 	y = nu/lv_beam.e();
         gamma = 2*particle_mass(2212)*x/Math.pow(Q2, 0.5);
-        
-        // Depolarization variables
-        Depolarization_A = 1/(1+gamma*gamma)*(1-y+y*y/2+y*y*gamma*gamma/4);
-        Depolarization_B = 1/(1+gamma*gamma)*(1-y-y*y*gamma*gamma/4);
-        Depolarization_C = (y/Math.pow(1+gamma*gamma, 0.5))*(1-y/2);
-        Depolarization_V = (2-y)/(1+gamma*gamma)*Math.pow(1-y-y*y*gamma*gamma/4,0.5);
-        Depolarization_W = y/(Math.pow(1+gamma*gamma, 0.5))*Math.pow(1-y-y*y*gamma*gamma/4,0.5);
-    
-        
+                
         vz_e = scattered_electron.vz();
         
         
@@ -167,21 +149,6 @@ public class Inclusive {
     public double y() { return Double.valueOf(Math.round(y*100000))/100000; }// returns y
     
     public double Mx() { return Double.valueOf(Math.round(Mx*100000))/100000; }// returns Mx(ep1p2)
-    
-    public double Depolarization_A() { return Double.valueOf(Math.round(Depolarization_A*100000))/100000; }
-    // returns Depolarization_A
-    
-    public double Depolarization_B() { return Double.valueOf(Math.round(Depolarization_B*100000))/100000; }
-    // returns Depolarization_B
-    
-    public double Depolarization_C() { return Double.valueOf(Math.round(Depolarization_C*100000))/100000; }
-    // returns Depolarization_C
-    
-    public double Depolarization_V() { return Double.valueOf(Math.round(Depolarization_V*100000))/100000; }
-    // returns Depolarization_V
-    
-    public double Depolarization_W() { return Double.valueOf(Math.round(Depolarization_W*100000))/100000; }
-    // returns Depolarization_W
     
     public double e_px() { return Double.valueOf(Math.round(e_px*100000))/100000; }// returns electron lab frame px
     
