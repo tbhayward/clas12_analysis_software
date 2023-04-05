@@ -5,22 +5,22 @@
 #include <TH1D.h>
 #include <algorithm>
 
-std::vector<double> xBins = {0.05, 0.12, 0.20, 0.28, 0.36, 0.44, 0.60};
-std::vector<double> zetaBins = {0.30, 0.400, 0.475, 0.550, 0.625, 0.70, 0.80};
-std::vector<double> PT1Bins = {0, 0.18, 0.36, 0.54, 0.72, 0.90, 1.30};
-std::vector<double> PT2Bins = {0, 0.18, 0.36, 0.54, 0.72, 0.90, 1.30};
-std::vector<double> PTPTBins = {0, 0.09, 0.18, 0.27, 0.36, 0.45, 0.6};
-std::vector<double> zeta00Bins = {0.40, 0.49, 0.58, 0.67, 0.80};
-std::vector<double> zeta20Bins = {0.40, 0.49, 0.58, 0.67, 0.80};
-std::vector<double> zeta32Bins = {0.30, 0.37, 0.44, 0.51, 0.60};
-std::vector<double> Q200Bins = {1.00, 1.50, 2.00, 2.50, 3.00};
-std::vector<double> Q220Bins = {1.00, 2.00, 3.00, 4.00, 5.00};
-std::vector<double> Q232Bins = {2.00, 3.50, 5.00, 6.50, 8.00};
-std::vector<double> z1Bins = {0.10, 0.20, 0.28, 0.36, 0.44, 0.52, 0.7};
-std::vector<double> xF1Bins = {-0.10, 0.00, 0.08, 0.16, 0.26, 0.36, 0.50};
-std::vector<double> xF2Bins = {-0.82, -0.60, -0.38, -0.16, 0.06, 0.28, 0.50};
+std::vector<float> xBins = {0.05, 0.12, 0.20, 0.28, 0.36, 0.44, 0.60};
+std::vector<float> zetaBins = {0.30, 0.400, 0.475, 0.550, 0.625, 0.70, 0.80};
+std::vector<float> PT1Bins = {0, 0.18, 0.36, 0.54, 0.72, 0.90, 1.30};
+std::vector<float> PT2Bins = {0, 0.18, 0.36, 0.54, 0.72, 0.90, 1.30};
+std::vector<float> PTPTBins = {0, 0.09, 0.18, 0.27, 0.36, 0.45, 0.6};
+std::vector<float> zeta00Bins = {0.40, 0.49, 0.58, 0.67, 0.80};
+std::vector<float> zeta20Bins = {0.40, 0.49, 0.58, 0.67, 0.80};
+std::vector<float> zeta32Bins = {0.30, 0.37, 0.44, 0.51, 0.60};
+std::vector<float> Q200Bins = {1.00, 1.50, 2.00, 2.50, 3.00};
+std::vector<float> Q220Bins = {1.00, 2.00, 3.00, 4.00, 5.00};
+std::vector<float> Q232Bins = {2.00, 3.50, 5.00, 6.50, 8.00};
+std::vector<float> z1Bins = {0.10, 0.20, 0.28, 0.36, 0.44, 0.52, 0.7};
+std::vector<float> xF1Bins = {-0.10, 0.00, 0.08, 0.16, 0.26, 0.36, 0.50};
+std::vector<float> xF2Bins = {-0.82, -0.60, -0.38, -0.16, 0.06, 0.28, 0.50};
 
-std::vector<std::vector<double>> allBins = {xBins, zetaBins, PT1Bins, PT2Bins, PTPTBins,
+std::vector<std::vector<float>> allBins = {xBins, zetaBins, PT1Bins, PT2Bins, PTPTBins,
   zeta00Bins, zeta20Bins, zeta32Bins, Q200Bins, Q220Bins, Q232Bins, z1Bins, xF1Bins, xF2Bins};
 size_t currentFits = 0;
 std::vector<std::string> binNames = {"x", "zeta", "PT1", "PT2", "PTPT", "zeta00", "zeta20", 
@@ -52,17 +52,17 @@ float getPol(int runnum) {
 
 struct eventData {
   int status, runnum, evnum, helicity;
-  double e_p, e_theta, e_phi, vz_e;
-  double p2_p, p2_theta, p2_phi, vz_p2;
-  double p1_p, p1_theta, p1_phi, vz_p1;
-  double Q2, W, x, y, z2, z1;
-  double Mx, Mx2, Mx1;
-  double zeta, Mh;
-  double PT2, PT1, PTPT;
-  double xF2, xF1, eta2, eta1, Delta_eta;
-  double phi2, phi1, Delta_phi;
-  double pol;
-  double b2b_factor;
+  float e_p, e_theta, e_phi, vz_e;
+  float p2_p, p2_theta, p2_phi, vz_p2;
+  float p1_p, p1_theta, p1_phi, vz_p1;
+  float Q2, W, x, y, z2, z1;
+  float Mx, Mx2, Mx1;
+  float zeta, Mh;
+  float PT2, PT1, PTPT;
+  float xF2, xF1, eta2, eta1, Delta_eta;
+  float phi2, phi1, Delta_phi;
+  float pol;
+  float b2b_factor;
 };
 
 std::vector<eventData> gData;
