@@ -26,7 +26,7 @@ public class Inclusive {
     
     protected int num_elec, num_particles;
     
-    protected double Q2, W, gamma, nu, x, y, Mx;
+    protected double Q2, W, gamma, nu, x, y, Mx, Mx2;
   
     
     protected double e_px, e_py, e_pz, e_p, e_e, e_theta, e_phi, vz_e; // electron kinematics
@@ -109,7 +109,8 @@ public class Inclusive {
         
         // missing mass calculations
         LorentzVector lv_Mx = new LorentzVector(lv_q); lv_Mx.add(lv_target);  
-        Mx = lv_Mx.mass();     
+        Mx = lv_Mx.mass();  
+        Mx2 = lv_Mx.mass2(); // missing mass squared
     }
     
     
@@ -131,38 +132,23 @@ public class Inclusive {
     }
     
     public int get_runnum() { return runnum; }; // returns run number for polarizations and energy
-    
     public int num_elec() { return num_elec; } // returns number of electrons
-    
     public double test() { return test; } // returns test var
-
     public double Q2() { return Double.valueOf(Math.round(Q2*100000))/100000; } // returns Q2
-    
     public double W() { return Double.valueOf(Math.round(W*100000))/100000; }// returns W
-    
     public double gamma() { return Double.valueOf(Math.round(gamma*100000))/100000; } // returns gamma
-    
     public double nu() { return Double.valueOf(Math.round(nu*100000))/100000; }// returns nu
-    
     public double x() { return Double.valueOf(Math.round(x*100000))/100000; }// returns x
-    
     public double y() { return Double.valueOf(Math.round(y*100000))/100000; }// returns y
-    
     public double Mx() { return Double.valueOf(Math.round(Mx*100000))/100000; }// returns Mx(ep1p2)
-    
+    public double Mx2() { return ((int) (Mx2 * 100000)) / 100000.0; }
     public double e_px() { return Double.valueOf(Math.round(e_px*100000))/100000; }// returns electron lab frame px
-    
     public double e_py() { return Double.valueOf(Math.round(e_py*100000))/100000; }// returns electron lab frame py
-    
     public double e_pz() { return Double.valueOf(Math.round(e_pz*100000))/100000; }// returns electron lab frame pz
-    
     public double e_p() { return Double.valueOf(Math.round(e_p*100000))/100000; }// returns electron lab frame p
-    
     public double e_e() { return Double.valueOf(Math.round(e_e*100000))/100000; }// returns electron lab frame energy
-    
     public double e_theta() { return Double.valueOf(Math.round(e_theta*100000))/100000; } // returns electron lab 
     // frame polar angle
-    
     public double e_phi() { return Double.valueOf(Math.round(e_phi*100000))/100000; } // returns electron lab 
     // frame polar angle
   
