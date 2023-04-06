@@ -216,8 +216,8 @@ TH1D* createHistogramForBin(const std::vector<eventData>& proton_data, const std
     }
   }
   double deuterium_meanPol = deuterium_sumPol / deuterium_numEvents;
-  proton_histPos->Scale(1/(rga_charge*proton_meanPol));
-  proton_histNeg->Scale(1/(rga_charge*proton_meanPol));
+  deuterium_histPos->Scale(1/(rgb_charge*deuterium_meanPol));
+  deuterium_histNeg->Scale(1/(rgb_charge*deuterium_meanPol));
 
   int numBins = proton_histPos->GetNbinsX();
   TH1F *histPos = (TH1F *)deuterium_histPos->Clone("histPos");
