@@ -229,7 +229,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& proton_data, const std
 
   TCanvas *canvas = new TCanvas("canvas","My Histogram",800,600);
   deuterium_histPos->SetLineColor(kRed);
-  deuterium_histNeg->Draw(); // draw the histogram on the canvas
+  deuterium_histPos->Draw(); // draw the histogram on the canvas
   proton_histNeg->SetLineColor(kBlue);
   proton_histNeg->Draw("same"); // draw the histogram on the canvas
   canvas->Update(); // update the canvas to show the histogram
