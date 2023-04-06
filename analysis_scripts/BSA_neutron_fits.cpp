@@ -304,10 +304,10 @@ void performChi2Fits(const char *proton_filename, const char *deuterium_filename
       double B = fitFunction->GetParameter(1);
       double B_error = fitFunction->GetParError(1);
 
-      double scaled_A = A / meanb2b;
-      double scaled_A_error = A_error / meanb2b;
-      double scaled_B = B / meanb2b;
-      double scaled_B_error = B_error / meanb2b;
+      double scaled_A = A / deuterium_meanb2b;
+      double scaled_A_error = A_error / deuterium_meanb2b;
+      double scaled_B = B / deuterium_meanb2b;
+      double scaled_B_error = B_error / deuterium_meanb2b;
 
       chi2FitsAStream << "{" << deuterium_meanVariable << ", " << A << ", " << A_error << "}";
       chi2FitsAScaledStream << "{" << deuterium_meanVariable << ", " << scaled_A << ", " << 
