@@ -27,8 +27,8 @@ size_t currentFits = 0;
 std::vector<std::string> binNames = {"x", "zeta", "PT1", "PT2", "PTPT", "zeta00", "zeta20", 
   "zeta32", "Q200", "Q220", "Q232", "z1", "xF1", "xF2"};
 
-const float rga_charge = 114.8932;
-const float rgb_charge = 107.6458;
+const float rga_charge = 46.512769750708856; // 114.8932;
+const float rgb_charge = 66.7769672846809; // 107.6458;
 
 // function to get the polarization value
 float getPol(int runnum) {
@@ -233,6 +233,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& proton_data, const std
   proton_histNeg->SetLineColor(kBlue);
   proton_histNeg->Draw("same"); // draw the histogram on the canvas
   canvas->Update(); // update the canvas to show the histogram
+  canvas->SaveAs("/u/home/thayward/output.png");
 
   for (int iBin = 1; iBin <= numBins; ++iBin) {
     double Np = histPos->GetBinContent(iBin);
