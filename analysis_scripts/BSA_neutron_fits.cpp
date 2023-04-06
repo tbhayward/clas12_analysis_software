@@ -218,7 +218,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& proton_data, const std
   proton_histPos->Scale(1/(rga_charge*proton_meanPol));
   proton_histNeg->Scale(1/(rga_charge*proton_meanPol));
 
-  int numBins = histPos->GetNbinsX();
+  int numBins = proton_histPos->GetNbinsX();
   TH1F *histPos = (TH1F *)deuterium_histPos->Clone("histPos");
   histPos->Add(proton_histPos, -1.0);
   TH1F *histNeg = (TH1F *)deuterium_histNeg->Clone("histNeg");
@@ -346,8 +346,8 @@ void BSA_neutron_fits(const char* proton_data_file, const char* deuterium_data_f
   std::ofstream ofs(output_file, std::ios::trunc);
   ofs.close();
 
-  for (size_t i = 0; i < allBins.size(); ++i) {
-  // for (size_t i = 0; i < 1; ++i) {
+  // for (size_t i = 0; i < allBins.size(); ++i) {
+  for (size_t i = 0; i < 1; ++i) {
     performChi2Fits(proton_data_file, deuterium_data_file, output_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
     cout << endl << endl << endl;
