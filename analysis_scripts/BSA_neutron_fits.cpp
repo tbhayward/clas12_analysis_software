@@ -290,9 +290,9 @@ void performChi2Fits(const char *proton_filename, const char *deuterium_filename
         double currentVariable = getEventProperty(event, currentFits);
         if (applyKinematicCuts(event, currentFits) && currentVariable >= allBins[currentFits][i] && 
           currentVariable < allBins[currentFits][i + 1]) {
-            sumVariable += currentVariable;
-            sumb2b += event.b2b_factor;
-            numEvents += 1;
+            deuterium_sumVariable += currentVariable;
+            deuterium_sumb2b += event.b2b_factor;
+            deuterium_numEvents += 1;
         }
       }
       double deuterium_meanVariable = deuterium_numEvents > 0 ? deuterium_sumVariable / deuterium_numEvents : 0.0;
@@ -347,7 +347,7 @@ void BSA_neutron_fits(const char* proton_data_file, const char* deuterium_data_f
 
   for (size_t i = 0; i < allBins.size(); ++i) {
   // for (size_t i = 0; i < 1; ++i) {
-    performChi2Fits(data_file, output_file, binNames[i]);
+    performChi2Fits(proton_data_file, deuterium_data_file, output_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
     cout << endl << endl << endl;
     currentFits++;
