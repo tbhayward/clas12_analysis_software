@@ -228,7 +228,10 @@ TH1D* createHistogramForBin(const std::vector<eventData>& proton_data, const std
     numBins, 0, 2 * TMath::Pi());
 
   TCanvas *canvas = new TCanvas("canvas","My Histogram",800,600);
+  proton_histPos->SetLineColor(kRed);
   proton_histPos->Draw(); // draw the histogram on the canvas
+  proton_histNeg->SetLineColor(kBlue);
+  proton_histNeg->Draw("same"); // draw the histogram on the canvas
   canvas->Update(); // update the canvas to show the histogram
 
   for (int iBin = 1; iBin <= numBins; ++iBin) {
@@ -244,12 +247,12 @@ TH1D* createHistogramForBin(const std::vector<eventData>& proton_data, const std
   }
   histAsymmetry->Scale(rgb_charge);
 
-  delete proton_histPos;
-  delete proton_histNeg;
-  delete deuterium_histPos;
-  delete deuterium_histNeg;
-  delete histPos;
-  delete histNeg;
+  // delete proton_histPos;
+  // delete proton_histNeg;
+  // delete deuterium_histPos;
+  // delete deuterium_histNeg;
+  // delete histPos;
+  // delete histNeg;
 
   return histAsymmetry;
 }
