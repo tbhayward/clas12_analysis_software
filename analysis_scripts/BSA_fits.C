@@ -86,7 +86,7 @@ eventData parseLine(const std::string& line) {
     // Calculate b2b_factor
     const float M = 0.938272088; // proton mass
     float gamma = (2 * M * data.x) / sqrt(data.Q2);
-    float epsilon = (1-event.y-(0.25)*gamma*gamma*event.y*event.y)/(1-y+(0.50)*event.y*event.y+(0.25)*gamma*gamma*event.y*event.y);
+    float epsilon = (1-event.y-(0.25)*gamma*gamma*event.y*event.y)/(1-event.y+(0.50)*event.y*event.y+(0.25)*gamma*gamma*event.y*event.y);
     float depolarization_factor = sqrt(1-epsilon*epsilon);
     data.b2b_factor = (depolarization_factor*data.PTPT)/(M*M);
 
