@@ -391,7 +391,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
       double B = fitFunction->GetParameter(1);
       double B_error = fitFunction->GetParError(1);
 
-      cout << numEvents << " " << meanPTPT; << meanb2b << endl;
+      cout << numEvents << " " << meanPTPT << " " << meanb2b << endl;
       double scaled_A = A / meanb2b;
       double scaled_A_error = A_error / meanb2b;
       double scaled_B = B / meanb2b;
