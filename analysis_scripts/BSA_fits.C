@@ -86,7 +86,7 @@ eventData parseLine(const std::string& line) {
     // Calculate b2b_factor
     const float M = 0.938272088; // proton mass
     float gamma = (2 * M * data.x) / sqrt(data.Q2);
-    float epsilon = (1 - data.y - 0.25 * gamma * sqrt(1 - data.y)) / (1 - data.y);
+    float epsilon = (1-event.y-(0.25)*gamma*gamma*event.y*event.y)/(1-y+(0.50)*y*y+(0.25)*gamma*gamma*event.y*event.y)
     float depolarization_factor = sqrt(1-epsilon*epsilon);
     data.b2b_factor = (depolarization_factor*data.PTPT)/(M*M);
 
@@ -383,7 +383,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
             numEvents += 1;
             sumPTPT += event.PTPT;
             float gamma = (2 * 0.938272088 * event.x) / sqrt(event.Q2);
-            float epsilon = (1 - event.y - 0.25 * gamma * sqrt(1 - event.y)) / (1 - event.y);
+            float epsilon = (1-event.y-(0.25)*gamma*gamma*event.y*event.y)/(1-y+(0.50)*y*y+(0.25)*gamma*gamma*event.y*event.y);
             float depolarization_factor = sqrt(1-epsilon*epsilon);
             sumDepolarization_factor += depolarization_factor;
         }
@@ -394,7 +394,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
       double meanPTPT = numEvents > 0 ? sumPTPT / numEvents : 0.0;
       double meanDepolarization_factor = numEvents > 0 ? sumDepolarization_factor / numEvents : 0.0;
 
-      cout << numEvents << " " << meanPTPT << " " << " " << meanDepolarization_factor << " " << meanb2b << endl;
+      cout << numEvents << " " << meanPTPT << " " << meanDepolarization_factor << " " << meanb2b << endl;
 
       double A = fitFunction->GetParameter(0);
       double A_error = fitFunction->GetParError(0);
