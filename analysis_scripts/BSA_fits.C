@@ -284,7 +284,6 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
   outputFile.close();
 }
 
-
 TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* histName,
   int binIndex) {
 
@@ -372,6 +371,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
       double sumVariable = 0;
       double sumb2b = 0;
       double numEvents = 0;
+      double sumPTPT = 0;
       for (const eventData& event : gData) {
         double currentVariable = getEventProperty(event, currentFits);
         if (applyKinematicCuts(event, currentFits) && currentVariable >= allBins[currentFits][i] && 
@@ -379,17 +379,19 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
             sumVariable += currentVariable;
             sumb2b += event.b2b_factor;
             numEvents += 1;
+            sumPTPT = event.PTPT;
         }
-      }
-      cout << numEvents << endl;
+      
       double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
       double meanb2b = numEvents > 0 ? sumb2b / numEvents : 0.0;
+      double meanPTPT = numEvents > 0 ? sumPTPT / numEvents : 0.0;
 
       double A = fitFunction->GetParameter(0);
       double A_error = fitFunction->GetParError(0);
       double B = fitFunction->GetParameter(1);
       double B_error = fitFunction->GetParError(1);
 
+      cout << numEvents << " " << meanPTPT; << meanb2b << endl;
       double scaled_A = A / meanb2b;
       double scaled_A_error = A_error / meanb2b;
       double scaled_B = B / meanb2b;
@@ -430,8 +432,8 @@ void BSA_fits(const char* data_file, const char* output_file) {
   std::ofstream ofs(output_file, std::ios::trunc);
   ofs.close();
 
-  for (size_t i = 0; i < allBins.size(); ++i) {
-  // for (size_t i = 0; i < 1; ++i) {
+  // for (size_t i = 0; i < allBins.size(); ++i) {
+  for (size_t i = 0; i < 1; ++i) {
     performChi2Fits(data_file, output_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
     // performMLMFits(data_file, output_file, binNames[i]);
