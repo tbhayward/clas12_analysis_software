@@ -382,7 +382,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
             sumb2b += event.b2b_factor;
             numEvents += 1;
             sumPTPT += event.PTPT;
-            float gamma = (2 * M * event.x) / sqrt(event.Q2);
+            float gamma = (2 * 0.938272088 * event.x) / sqrt(event.Q2);
             float epsilon = (1 - event.y - 0.25 * gamma * sqrt(1 - event.y)) / (1 - event.y);
             float depolarization_factor = sqrt(1-epsilon*epsilon);
             sumDepolarization_factor += depolarization_factor;
