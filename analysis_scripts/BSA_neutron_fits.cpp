@@ -68,7 +68,8 @@ struct eventData {
   float b2b_factor;
 };
 
-std::vector<eventData> gData;
+std::vector<eventData> proton_gData;
+std::vector<eventData> deuterium_gData;
 size_t currentBin = 0;
 
 eventData parseLine(const std::string& line) {
