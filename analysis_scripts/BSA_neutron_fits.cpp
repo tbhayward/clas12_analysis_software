@@ -5,7 +5,8 @@
 #include <TH1D.h>
 #include <algorithm>
 
-std::vector<float> xBins = {0.05, 0.12, 0.20, 0.28, 0.36, 0.44, 0.60};
+// std::vector<float> xBins = {0.05, 0.12, 0.20, 0.28, 0.36, 0.44, 0.60};
+std::vector<float> xBins = {0.05, 0.60};
 std::vector<float> zetaBins = {0.30, 0.400, 0.475, 0.550, 0.625, 0.70, 0.80};
 std::vector<float> PT1Bins = {0, 0.18, 0.36, 0.54, 0.72, 0.90, 1.30};
 std::vector<float> PT2Bins = {0, 0.18, 0.36, 0.54, 0.72, 0.90, 1.30};
@@ -237,6 +238,19 @@ TH1D* createHistogramForBin(const std::vector<eventData>& proton_data, const std
     histAsymmetry->SetBinError(iBin, error);
   }
   histAsymmetry->Scale(rgb_charge);
+
+  TCanvas *rga_histPos_canvas = new TCanvas("canvas","rga hist pos",800,600);
+  TCanvas *rga_histNeg_canvas = new TCanvas("canvas","rga hist neg",800,600);
+  TCanvas *rgb_histPos_canvas = new TCanvas("canvas","rgb hist pos",800,600);
+  TCanvas *rgb_histNeg_canvas = new TCanvas("canvas","rgb hist neg",800,600);
+  TCanvas *histPos_canvas = new TCanvas("canvas","hist pos",800,600);
+  TCanvas *histNeg_canvas = new TCanvas("canvas","hist neg",800,600);
+  rga_histPos_canvas->cd(); proton_histPos->Draw(); // draw the histogram on the canvas
+  rga_histNeg_canvas->cd(); proton_histNeg->Draw(); // draw the histogram on the canvas
+  rgb_histPos_canvas->cd(); deuterium_histPos->Draw(); // draw the histogram on the canvas
+  rgb_histNeg_canvas->cd(); deuterium_histPos->Draw(); // draw the histogram on the canvas
+  histPos_canvas->cd(); histPos->Draw(); // draw the histogram on the canvas
+  histNeg_canvas->cd(); histNeg->Draw(); // draw the histogram on the canvas
 
   delete proton_histPos;
   delete proton_histNeg;
