@@ -226,6 +226,11 @@ TH1D* createHistogramForBin(const std::vector<eventData>& proton_data, const std
   histNeg->Add(proton_histNeg, -1.0);
   TH1D* histAsymmetry = new TH1D(Form("%s_asymmetry", histName), "", 
     numBins, 0, 2 * TMath::Pi());
+
+  TCanvas *canvas = new TCanvas("canvas","My Histogram",800,600);
+  proton_histPos->Draw(); // draw the histogram on the canvas
+  canvas->Update(); // update the canvas to show the histogram
+
   for (int iBin = 1; iBin <= numBins; ++iBin) {
     double Np = histPos->GetBinContent(iBin);
     double Nm = histNeg->GetBinContent(iBin);
@@ -238,19 +243,6 @@ TH1D* createHistogramForBin(const std::vector<eventData>& proton_data, const std
     histAsymmetry->SetBinError(iBin, error);
   }
   histAsymmetry->Scale(rgb_charge);
-
-  TCanvas *rga_histPos_canvas = new TCanvas("canvas","rga hist pos",800,600);
-  TCanvas *rga_histNeg_canvas = new TCanvas("canvas","rga hist neg",800,600);
-  TCanvas *rgb_histPos_canvas = new TCanvas("canvas","rgb hist pos",800,600);
-  TCanvas *rgb_histNeg_canvas = new TCanvas("canvas","rgb hist neg",800,600);
-  TCanvas *histPos_canvas = new TCanvas("canvas","hist pos",800,600);
-  TCanvas *histNeg_canvas = new TCanvas("canvas","hist neg",800,600);
-  rga_histPos_canvas->cd(); proton_histPos->Draw(); // draw the histogram on the canvas
-  rga_histNeg_canvas->cd(); proton_histNeg->Draw(); // draw the histogram on the canvas
-  rgb_histPos_canvas->cd(); deuterium_histPos->Draw(); // draw the histogram on the canvas
-  rgb_histNeg_canvas->cd(); deuterium_histPos->Draw(); // draw the histogram on the canvas
-  histPos_canvas->cd(); histPos->Draw(); // draw the histogram on the canvas
-  histNeg_canvas->cd(); histNeg->Draw(); // draw the histogram on the canvas
 
   delete proton_histPos;
   delete proton_histNeg;
