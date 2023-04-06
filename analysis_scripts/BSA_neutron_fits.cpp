@@ -26,6 +26,9 @@ size_t currentFits = 0;
 std::vector<std::string> binNames = {"x", "zeta", "PT1", "PT2", "PTPT", "zeta00", "zeta20", 
   "zeta32", "Q200", "Q220", "Q232", "z1", "xF1", "xF2"};
 
+const float rga_charge = 114.8932;
+const float rgb_charge = 107.6458;
+
 // function to get the polarization value
 float getPol(int runnum) {
   float pol; 
@@ -166,170 +169,78 @@ bool applyKinematicCuts(const eventData& data, int currentFits) {
     return (currentFits == 13) ? (data.status <= 1e2 || data.status == 1e5) : true; // xF2
 }
 
-// Negative log-likelihood function
-void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag) {
-    // npar: number of parameters
-    // gin: an array of derivatives (if needed)
-    // f: the value of the function
-    // par: an array of the parameter values
-    // iflag: a flag (see TMinuit documentation for details)
-
-    double A = par[0];
-    double B = par[1];
-
-    double N = 0;
-    double sum_N = 0;
-    double sum_P = 0;
-
-    for (const eventData &event : gData) {
-        double currentVariable = getEventProperty(event, currentFits);
-        if (applyKinematicCuts(event, currentFits) && 
-          currentVariable >= allBins[currentFits][currentBin] && 
-          currentVariable < allBins[currentFits][currentBin + 1]) {
-          N += 1;
-          double Delta_phi = event.Delta_phi;
-          double pol = event.pol;
-          if (event.helicity > 0) {
-            sum_P += log(1 + pol * (A * sin(Delta_phi) + B * sin(2 * Delta_phi)));
-          } else if (event.helicity < 0) {
-            sum_N += log(1 - pol * (A * sin(Delta_phi) + B * sin(2 * Delta_phi)));
-          }
-        }
-    }
-
-    f = N * log(N) - sum_P - sum_N;
-}
-
-void performMLMFits(const char *filename, const char* output_file, const std::string& prefix) {
-  gData = readData(filename);
-
-  size_t numBins = allBins[currentFits].size() - 1;
-
-  double arglist[10]; arglist[0] = 1; 
-  int ierflg = 0;
-  TMinuit minuit(2); // 2 is the number of parameters (A and B)
-  minuit.SetPrintLevel(-1);
-  minuit.SetFCN(negLogLikelihood);
-
-  std::ostringstream mlmFitsAStream;
-  std::ostringstream mlmFitsAScaledStream;
-  std::ostringstream mlmFitsBStream;
-  std::ostringstream mlmFitsScaledBStream;
-
-  mlmFitsAStream << prefix << "MLMFitsA = {";
-  mlmFitsAScaledStream << prefix << "MLMFitsScaledA = {";
-  mlmFitsBStream << prefix << "MLMFitsB = {";
-  mlmFitsScaledBStream << prefix << "MLMFitsScaledB = {";
-
-  for (size_t i = 0; i < numBins; ++i) {
-    cout << endl << "Beginning MLM fit for " << binNames[currentFits]
-      << " bin " << i << ". ";
-    currentBin = i;
-
-    // Define the parameters
-    minuit.DefineParameter(0, "A", -0.02, 0.1, -1, 1);
-    minuit.DefineParameter(1, "B", 0.00, 0.1, -1, 1);
-
-    // Minimize the function
-    minuit.Migrad();
-    // minuit.mnexcm("MINOS",arglist,1,ierflg); // running MINOS and HESSE recommended
-    // minuit.mnexcm("HESSE",arglist,0,ierflg);
-
-    double sumVariable = 0;
-    double sumb2b = 0;
-    double numEvents = 0;
-    for (const eventData &event : gData) {
-      double currentVariable = getEventProperty(event, currentFits);
-        if (applyKinematicCuts(event, currentFits) && currentVariable >= 
-          allBins[currentFits][i] && currentVariable < allBins[currentFits][i + 1]) {
-            sumVariable += currentVariable;
-            sumb2b += event.b2b_factor;
-            numEvents += 1;
-        }
-    }
-    double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
-    double meanb2b = numEvents > 0 ? sumb2b / numEvents : 0.0;
-
-    double A, A_error, B, B_error;
-    minuit.GetParameter(0, A, A_error);
-    minuit.GetParameter(1, B, B_error);
-
-    double scaled_A = A / meanb2b;
-    double scaled_A_error = A_error / meanb2b;
-    double scaled_B = B / meanb2b;
-    double scaled_B_error = B_error / meanb2b;
-
-    mlmFitsAStream << "{" << meanVariable << ", " << A << ", " << A_error << "}";
-    mlmFitsAScaledStream << "{" << meanVariable << ", " << scaled_A << ", " << 
-      scaled_A_error << "}";
-
-    mlmFitsBStream << "{" << meanVariable << ", " << B << ", " << B_error << "}";
-    mlmFitsScaledBStream << "{" << meanVariable << ", " << scaled_B << ", " << 
-      scaled_B_error << "}";
-
-    if (i < numBins - 1) {
-        mlmFitsAStream << ", "; mlmFitsAScaledStream << ", ";
-        mlmFitsBStream << ", "; mlmFitsScaledBStream << ", ";
-    }
-  }
-
-  mlmFitsAStream << "};"; mlmFitsAScaledStream << "};";
-  mlmFitsBStream << "};"; mlmFitsScaledBStream << "};";
-
-  std::ofstream outputFile(output_file, std::ios_base::app);
-  outputFile << mlmFitsAStream.str() << std::endl;
-  outputFile << mlmFitsAScaledStream.str() << std::endl;
-  outputFile << mlmFitsBStream.str() << std::endl;
-  outputFile << mlmFitsScaledBStream.str() << std::endl << std::endl;
-
-  outputFile.close();
-}
-
-
-TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* histName,
-  int binIndex) {
+TH1D* createHistogramForBin(const std::vector<eventData>& proton_data, const std::vector<eventData>& deuterium_data, 
+  const char* histName, int binIndex) {
 
   double varMin = allBins[currentFits][binIndex];
   double varMax = allBins[currentFits][binIndex + 1];
 
-  TH1D* histPos = new TH1D(Form("%s_pos", histName), "", 24, 0, 2 * TMath::Pi());
-  TH1D* histNeg = new TH1D(Form("%s_neg", histName), "", 24, 0, 2 * TMath::Pi());
-
-  double sumPol = 0;
-  int numEvents = 0;
-
-  for (const eventData& event : data) {
+  TH1D* proton_histPos = new TH1D(Form("%s_pos", histName), "", 24, 0, 2 * TMath::Pi());
+  TH1D* proton_histNeg = new TH1D(Form("%s_neg", histName), "", 24, 0, 2 * TMath::Pi());
+  double proton_sumPol = 0;
+  int proton_numEvents = 0;
+  for (const eventData& event : proton_data) {
     double currentVariable = getEventProperty(event, currentFits);
     if (applyKinematicCuts(event, currentFits) && currentVariable >= varMin && 
       currentVariable < varMax) {
       if (event.helicity > 0) {
-        histPos->Fill(event.Delta_phi);
+        proton_histPos->Fill(event.Delta_phi);
       } else {
-        histNeg->Fill(event.Delta_phi);
+        proton_histNeg->Fill(event.Delta_phi);
       }
-      sumPol += event.pol;
-      numEvents++;
+      proton_sumPol += event.pol;
+      proton_numEvents++;
     }
   }
+  double proton_meanPol = proton_sumPol / proton_numEvents;
+  proton_histPos->Scale(1/(rga_charge*proton_meanPol));
+  proton_histNeg->Scale(1/(rga_charge*proton_meanPol));
 
-  double meanPol = sumPol / numEvents;
+  TH1D* deuterium_histPos = new TH1D(Form("%s_pos", histName), "", 24, 0, 2 * TMath::Pi());
+  TH1D* deuterium_histNeg = new TH1D(Form("%s_neg", histName), "", 24, 0, 2 * TMath::Pi());
+  double deuterium_sumPol = 0;
+  int deuterium_numEvents = 0;
+  for (const eventData& event : deuterium_data) {
+    double currentVariable = getEventProperty(event, currentFits);
+    if (applyKinematicCuts(event, currentFits) && currentVariable >= varMin && 
+      currentVariable < varMax) {
+      if (event.helicity > 0) {
+        deuterium_histPos->Fill(event.Delta_phi);
+      } else {
+        deuterium_histNeg->Fill(event.Delta_phi);
+      }
+      deuterium_sumPol += event.pol;
+      deuterium_numEvents++;
+    }
+  }
+  double deuterium_meanPol = deuterium_sumPol / deuterium_numEvents;
+  proton_histPos->Scale(1/(rga_charge*proton_meanPol));
+  proton_histNeg->Scale(1/(rga_charge*proton_meanPol));
 
   int numBins = histPos->GetNbinsX();
+  TH1F *histPos = (TH1F *)deuterium_histPos->Clone("histPos");
+  histPos->Add(proton_histPos, -1.0);
+  TH1F *histNeg = (TH1F *)deuterium_histNeg->Clone("histNeg");
+  histNeg->Add(proton_histNeg, -1.0);
   TH1D* histAsymmetry = new TH1D(Form("%s_asymmetry", histName), "", 
     numBins, 0, 2 * TMath::Pi());
-
   for (int iBin = 1; iBin <= numBins; ++iBin) {
     double Np = histPos->GetBinContent(iBin);
     double Nm = histNeg->GetBinContent(iBin);
 
-    double asymmetry = (1 / meanPol) * (Np - Nm) / (Np + Nm);
+    double asymmetry =  (Np - Nm) / (Np + Nm);
 
-    double error = (2 / meanPol) * std::sqrt(Np * Nm / TMath::Power(Np + Nm, 3));
+    double error =  std::sqrt(Np * Nm / TMath::Power(Np + Nm, 3));
 
     histAsymmetry->SetBinContent(iBin, asymmetry);
     histAsymmetry->SetBinError(iBin, error);
   }
+  histAsymmetry->Scale(rgb_charge);
 
+  delete proton_histPos;
+  delete proton_histNeg;
+  delete deuterium_histPos;
+  delete deuterium_histNeg;
   delete histPos;
   delete histNeg;
 
@@ -344,8 +255,10 @@ double funcToFit(double* x, double* par) {
   return A * sin(Delta_phi) + B * sin(2 * Delta_phi);
 }
 
-void performChi2Fits(const char *filename, const char* output_file, const std::string& prefix) {
-  gData = readData(filename);
+void performChi2Fits(const char *proton_filename, const char *deuterium_filename,
+  const char* output_file, const std::string& prefix) {
+  proton_gData = readData(proton_filename);
+  deuterium_gData = readData(deuterium_filename);
 
   TF1* fitFunction = new TF1("fitFunction", funcToFit, 0, 2 * TMath::Pi(), 2);
 
@@ -367,13 +280,13 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
       char histName[32];
       snprintf(histName, sizeof(histName), "hist_%zu", i);
 
-      TH1D* hist = createHistogramForBin(gData, histName, i);
+      TH1D* hist = createHistogramForBin(gData_proton, gData_deuterium, histName, i);
       hist->Fit(fitFunction, "Q");
 
-      double sumVariable = 0;
-      double sumb2b = 0;
-      double numEvents = 0;
-      for (const eventData& event : gData) {
+      double deuterium_sumVariable = 0;
+      double deuterium_sumb2b = 0;
+      double deuterium_numEvents = 0;
+      for (const eventData& event : deuterium_gData) {
         double currentVariable = getEventProperty(event, currentFits);
         if (applyKinematicCuts(event, currentFits) && currentVariable >= allBins[currentFits][i] && 
           currentVariable < allBins[currentFits][i + 1]) {
@@ -382,9 +295,8 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
             numEvents += 1;
         }
       }
-      
-      double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
-      double meanb2b = numEvents > 0 ? sumb2b / numEvents : 0.0;
+      double deuterium_meanVariable = deuterium_numEvents > 0 ? deuterium_sumVariable / deuterium_numEvents : 0.0;
+      double deuterium_meanb2b = deuterium_numEvents > 0 ? sumb2b / numEvents : 0.0;
       cout << numEvents << endl;
 
       double A = fitFunction->GetParameter(0);
@@ -397,11 +309,11 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
       double scaled_B = B / meanb2b;
       double scaled_B_error = B_error / meanb2b;
 
-      chi2FitsAStream << "{" << meanVariable << ", " << A << ", " << A_error << "}";
-      chi2FitsAScaledStream << "{" << meanVariable << ", " << scaled_A << ", " << 
+      chi2FitsAStream << "{" << deuterium_meanVariable << ", " << A << ", " << A_error << "}";
+      chi2FitsAScaledStream << "{" << deuterium_meanVariable << ", " << scaled_A << ", " << 
         scaled_A_error << "}";
-      chi2FitsBStream << "{" << meanVariable << ", " << B << ", " << B_error << "}";
-      chi2FitsBScaledStream << "{" << meanVariable << ", " << scaled_B << ", " << 
+      chi2FitsBStream << "{" << deuterium_meanVariable << ", " << B << ", " << B_error << "}";
+      chi2FitsBScaledStream << "{" << deuterium_meanVariable << ", " << scaled_B << ", " << 
         scaled_B_error << "}";
 
       if (i < numBins - 1) {
@@ -426,7 +338,8 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
     outputFile.close();
   }
 
-void BSA_fits(const char* data_file, const char* output_file) {
+void BSA_neutron_fits(const char* proton_data_file, const char* deuterium_data_file,
+  const char* output_file) {
 
   // Clear the contents of the output_file
   std::ofstream ofs(output_file, std::ios::trunc);
@@ -436,8 +349,6 @@ void BSA_fits(const char* data_file, const char* output_file) {
   // for (size_t i = 0; i < 1; ++i) {
     performChi2Fits(data_file, output_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    // performMLMFits(data_file, output_file, binNames[i]);
-    // cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl << endl;
     currentFits++;
   }
