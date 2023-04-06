@@ -296,8 +296,8 @@ void performChi2Fits(const char *proton_filename, const char *deuterium_filename
         }
       }
       double deuterium_meanVariable = deuterium_numEvents > 0 ? deuterium_sumVariable / deuterium_numEvents : 0.0;
-      double deuterium_meanb2b = deuterium_numEvents > 0 ? sumb2b / numEvents : 0.0;
-      cout << numEvents << endl;
+      double deuterium_meanb2b = deuterium_numEvents > 0 ? deuterium_sumb2b / deuterium_numEvents : 0.0;
+      cout << deuterium_numEvents << endl;
 
       double A = fitFunction->GetParameter(0);
       double A_error = fitFunction->GetParError(0);
