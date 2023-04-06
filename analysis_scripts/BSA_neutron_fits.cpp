@@ -281,7 +281,7 @@ void performChi2Fits(const char *proton_filename, const char *deuterium_filename
       char histName[32];
       snprintf(histName, sizeof(histName), "hist_%zu", i);
 
-      TH1D* hist = createHistogramForBin(gData_proton, gData_deuterium, histName, i);
+      TH1D* hist = createHistogramForBin(proton_gData, deuterium_gData, histName, i);
       hist->Fit(fitFunction, "Q");
 
       double deuterium_sumVariable = 0;
