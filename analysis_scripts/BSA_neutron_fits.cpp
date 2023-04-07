@@ -395,8 +395,8 @@ void plotDistribution(const char *proton_filename, const char *deuterium_filenam
   deuterium_hist->Draw("SAME");
 
   TLegend *leg = new TLegend(0.7, 0.7, 0.9, 0.9);
-  leg->AddEntry(hp, "Proton", "l");
-  leg->AddEntry(hd, "Deuterium", "l");
+  leg->AddEntry(proton_hist, "Proton", "l");
+  leg->AddEntry(deuterium_hist, "Deuterium", "l");
   leg->Draw();
 
   // Remove statbox
