@@ -384,7 +384,7 @@ void plotDistribution(const char *proton_filename, const char *deuterium_filenam
   // Set the y-axis range based on the maximum value
   proton_hist->SetAxisRange(0, max_value * 1.1, "Y");
 
-  TCanvas *canvas = new TCanvas("canvas", "Mx1 Distribution", 800, 600);
+  TCanvas *c = new TCanvas("canvas", "Mx1 Distribution", 800, 600);
   proton_hist->Draw();
   deuterium_hist->Draw("SAME");
 
