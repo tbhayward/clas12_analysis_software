@@ -384,6 +384,13 @@ void plotDistribution(const char *proton_filename, const char *deuterium_filenam
   leg->AddEntry(hd, "Deuterium", "l");
   leg->Draw();
 
+  // Remove statbox
+  gStyle->SetOptStat(0);
+
+  // Make sure the entire scale of data is visible
+  canvas->Modified();
+  canvas->Update();
+
   c->SaveAs("/u/home/thayward/Mx1.png");
   delete c;
   delete hp;
