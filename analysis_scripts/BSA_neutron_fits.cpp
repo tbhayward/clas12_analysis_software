@@ -370,14 +370,23 @@ void plotDistribution(const char *proton_filename, const char *deuterium_filenam
   TH1D *hp = new TH1D("hp", "Mx1 distribution;Mx1;Counts", 200, 0, 3);
   TH1D *hd = new TH1D("hd", "Mx1 distribution;Mx1;Counts", 200, 0, 3);
 
-  for (const auto& event : proton_gData) hp->Fill(event.Mx1);
-  for (const auto& event : deuterium_gData) hd->Fill(event.Mx1);
+  for (const auto& event : proton_gData) hp->Fill(event.Mx2);
+  for (const auto& event : deuterium_gData) hd->Fill(event.Mx2);
 
-  TCanvas *c = new TCanvas("c", "Mx1 distribution", 800, 600);
-  hp->SetLineColor(kRed);
-  hp->Draw();
-  hd->SetLineColor(kBlue);
-  hd->Draw("SAME");
+  proton_hist->SetLineColor(kRed);
+  deuterium_hist->SetLineColor(kBlue);
+
+  // Find the maximum value in both histograms
+  double max_proton = proton_hist->GetMaximum();
+  double max_deuterium = deuterium_hist->GetMaximum();
+  double max_value = std::max(max_proton, max_deuterium);
+
+  // Set the y-axis range based on the maximum value
+  proton_hist->SetAxisRange(0, max_value * 1.1, "Y");
+
+  TCanvas *canvas = new TCanvas("canvas", "Mx1 Distribution", 800, 600);
+  proton_hist->Draw();
+  deuterium_hist->Draw("SAME");
 
   TLegend *leg = new TLegend(0.7, 0.7, 0.9, 0.9);
   leg->AddEntry(hp, "Proton", "l");
@@ -386,10 +395,6 @@ void plotDistribution(const char *proton_filename, const char *deuterium_filenam
 
   // Remove statbox
   gStyle->SetOptStat(0);
-
-  // Make sure the entire scale of data is visible
-  c->Modified();
-  c->Update();
 
   c->SaveAs("/u/home/thayward/Mx1.png");
   delete c;
