@@ -225,13 +225,13 @@ TH1D* createHistogramForBin(const std::vector<eventData>& proton_data, const std
   TH1D* histNeg = new TH1D(Form("%s_asymmetry", histName), "", 
     numBins, 0, 2 * TMath::Pi());
   for (int iBin = 1; iBin <= numBins; ++iBin) {
-    histPos->SetBinContent(iBin, deuterium_histPos->GetBinContent(iBin)-
-      proton_histPos->GetBinContent(iBin));
-    histPos->SetBinError(iBin, sqrt(deuterium_histPos->GetBinContent(iBin)+
+    histPos->SetBinContent(iBin, rgb_charge*(deuterium_histPos->GetBinContent(iBin)-
       proton_histPos->GetBinContent(iBin)));
-    histNeg->SetBinContent(iBin, deuterium_histNeg->GetBinContent(iBin)-
-      proton_histNeg->GetBinContent(iBin));
-    histNeg->SetBinError(iBin, sqrt(deuterium_histNeg->GetBinContent(iBin)+
+    histPos->SetBinError(iBin, rgb_charge*sqrt(deuterium_histPos->GetBinContent(iBin)+
+      proton_histPos->GetBinContent(iBin)));
+    histNeg->SetBinContent(iBin, rgb_charge*(deuterium_histNeg->GetBinContent(iBin)-
+      proton_histNeg->GetBinContent(iBin)));
+    histNeg->SetBinError(iBin, rgb_charge*sqrt(deuterium_histNeg->GetBinContent(iBin)+
       proton_histNeg->GetBinContent(iBin)));
   }
 
