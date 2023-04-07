@@ -364,6 +364,32 @@ void performChi2Fits(const char *proton_filename, const char *deuterium_filename
     outputFile.close();
   }
 
+void plotDistribution(const char *proton_filename, const char *deuterium_filename) {
+  proton_gData = readData(proton_filename);
+  deuterium_gData = readData(deuterium_filename);
+  TH1D *hp = new TH1D("hp", "Mx1 distribution;Mx1;Counts", 200, 0, 3);
+  TH1D *hd = new TH1D("hd", "Mx1 distribution;Mx1;Counts", 200, 0, 3);
+
+  for (const auto& event : protonData) hp->Fill(event.Mx1);
+  for (const auto& event : deuteriumData) hd->Fill(event.Mx1);
+
+  TCanvas *c = new TCanvas("c", "Mx1 distribution", 800, 600);
+  hp->SetLineColor(kRed);
+  hp->Draw();
+  hd->SetLineColor(kBlue);
+  hd->Draw("SAME");
+
+  TLegend *leg = new TLegend(0.7, 0.7, 0.9, 0.9);
+  leg->AddEntry(hp, "Proton", "l");
+  leg->AddEntry(hd, "Deuterium", "l");
+  leg->Draw();
+
+  c->SaveAs("/u/home/thayward/Mx1.png");
+  delete c;
+  delete hp;
+  delete hd;
+}
+
 void BSA_neutron_fits(const char* proton_data_file, const char* deuterium_data_file,
   const char* output_file) {
 
@@ -373,7 +399,8 @@ void BSA_neutron_fits(const char* proton_data_file, const char* deuterium_data_f
 
   // for (size_t i = 0; i < allBins.size(); ++i) {
   for (size_t i = 0; i < 1; ++i) {
-    performChi2Fits(proton_data_file, deuterium_data_file, output_file, binNames[i]);
+    plotDistribution(proton_data_file,deuterium_data_file);
+    // performChi2Fits(proton_data_file, deuterium_data_file, output_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
     cout << endl << endl << endl;
     currentFits++;
