@@ -370,8 +370,8 @@ void plotDistribution(const char *proton_filename, const char *deuterium_filenam
   TH1D *hp = new TH1D("hp", "Mx1 distribution;Mx1;Counts", 200, 0, 3);
   TH1D *hd = new TH1D("hd", "Mx1 distribution;Mx1;Counts", 200, 0, 3);
 
-  for (const auto& event : protonData) hp->Fill(event.Mx1);
-  for (const auto& event : deuteriumData) hd->Fill(event.Mx1);
+  for (const auto& event : proton_gData) hp->Fill(event.Mx1);
+  for (const auto& event : deuterium_gData) hd->Fill(event.Mx1);
 
   TCanvas *c = new TCanvas("c", "Mx1 distribution", 800, 600);
   hp->SetLineColor(kRed);
