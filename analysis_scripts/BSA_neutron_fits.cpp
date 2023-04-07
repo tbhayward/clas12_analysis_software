@@ -368,8 +368,8 @@ void plotDistribution(const char *proton_filename, const char *deuterium_filenam
   proton_gData = readData(proton_filename);
   deuterium_gData = readData(deuterium_filename);
 
-  TH1D *proton_hist = new TH1D("proton_hist", "Mx1 Distribution;Mx1;Counts", 100, 0, 2);
-  TH1D *deuterium_hist = new TH1D("deuterium_hist", "Mx1 Distribution;Mx1;Counts", 100, 0, 2);
+  TH1D *proton_hist = new TH1D("proton_hist", "Mx1 Distribution;Mx1;Counts", 100, 0, 4);
+  TH1D *deuterium_hist = new TH1D("deuterium_hist", "Mx1 Distribution;Mx1;Counts", 100, 0, 4);
 
   for (const auto &event : proton_gData) {
     proton_hist->Fill(event.Mx2);
