@@ -241,10 +241,10 @@ TH1D* createHistogramForBin(const std::vector<eventData>& proton_data, const std
     histAsymmetry->SetBinError(iBin, error);
   }
   TCanvas *canvas = new TCanvas("canvas","My Histogram",800,600);
-  histAsymmetry->SetLineColor(kRed);
-  histAsymmetry->Draw(); // draw the histogram on the canvas
-  // histNeg->SetLineColor(kBlue);
-  // histNeg->Draw("same"); // draw the histogram on the canvas
+  histPos->SetLineColor(kRed);
+  histPos->Draw(); // draw the histogram on the canvas
+  histNeg->SetLineColor(kBlue);
+  histNeg->Draw("same"); // draw the histogram on the canvas
   canvas->Update(); // update the canvas to show the histogram
   canvas->SaveAs("/u/home/thayward/output.png");
 
