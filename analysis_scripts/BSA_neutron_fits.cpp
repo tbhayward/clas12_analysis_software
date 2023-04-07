@@ -220,12 +220,27 @@ TH1D* createHistogramForBin(const std::vector<eventData>& proton_data, const std
   deuterium_histNeg->Scale(1/(rgb_charge*deuterium_meanPol));
 
   int numBins = proton_histPos->GetNbinsX();
-  TH1F *histPos = (TH1F *)deuterium_histPos->Clone("histPos");
-  histPos->Add(proton_histPos, -1.0);
-  histPos->Scale(rgb_charge);
-  TH1F *histNeg = (TH1F *)deuterium_histNeg->Clone("histNeg");
-  histNeg->Add(proton_histNeg, -1.0);
-  histNeg->Scale(rgb_charge);
+  TH1D* histPos = new TH1D(Form("histPos", "histPos"), "", 
+    numBins, 0, 2 * TMath::Pi());
+  TH1D* histNeg = new TH1D(Form("histNeg", "histNeg"), "", 
+    numBins, 0, 2 * TMath::Pi());
+  for (int iBin = 1; iBin <= numBins; ++iBin) {
+    histPos->SetBinContent(iBin, deuterium_histPos->GetBinContent(iBin)-
+      proton_histPos->GetBinContent(iBin));
+    histPos->SetBinError(iBin, sqrt(deuterium_histPos->GetBinContent(iBin)+
+      proton_histPos->GetBinContent(iBin)));
+    histNeg->SetBinContent(iBin, deuterium_histNeg->GetBinContent(iBin)-
+      proton_histNeg->GetBinContent(iBin));
+    histNeg->SetBinError(iBin, sqrt(deuterium_histNeg->GetBinContent(iBin)+
+      proton_histNeg->GetBinContent(iBin)));
+  }
+
+  // TH1F *histPos = (TH1F *)deuterium_histPos->Clone("histPos");
+  // histPos->Add(proton_histPos, -1.0);
+  // histPos->Scale(rgb_charge);
+  // TH1F *histNeg = (TH1F *)deuterium_histNeg->Clone("histNeg");
+  // histNeg->Add(proton_histNeg, -1.0);
+  // histNeg->Scale(rgb_charge);
   TH1D* histAsymmetry = new TH1D(Form("%s_asymmetry", histName), "", 
     numBins, 0, 2 * TMath::Pi());
 
@@ -241,10 +256,10 @@ TH1D* createHistogramForBin(const std::vector<eventData>& proton_data, const std
     histAsymmetry->SetBinError(iBin, error);
   }
   TCanvas *canvas = new TCanvas("canvas","My Histogram",800,600);
-  deuterium_histPos->SetLineColor(kRed);
-  deuterium_histPos->Draw(); // draw the histogram on the canvas
-  proton_histPos->SetLineColor(kBlue);
-  proton_histPos->Draw("same"); // draw the histogram on the canvas
+  histPos->SetLineColor(kRed);
+  histPos->Draw(); // draw the histogram on the canvas
+  histNeg->SetLineColor(kBlue);
+  histNeg->Draw("same"); // draw the histogram on the canvas
   canvas->Update(); // update the canvas to show the histogram
   canvas->SaveAs("/u/home/thayward/output.png");
 
