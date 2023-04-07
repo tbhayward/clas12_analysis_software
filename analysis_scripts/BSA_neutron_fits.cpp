@@ -177,8 +177,8 @@ TH1D* createHistogramForBin(const std::vector<eventData>& proton_data, const std
   double varMin = allBins[currentFits][binIndex];
   double varMax = allBins[currentFits][binIndex + 1];
 
-  TH1D* proton_histPos = new TH1D(Form("%s_pos", histName), "", 24, 0, 2 * TMath::Pi());
-  TH1D* proton_histNeg = new TH1D(Form("%s_neg", histName), "", 24, 0, 2 * TMath::Pi());
+  TH1D* proton_histPos = new TH1D(Form("%s_pos", histName), "", 12, 0, 2 * TMath::Pi());
+  TH1D* proton_histNeg = new TH1D(Form("%s_neg", histName), "", 12, 0, 2 * TMath::Pi());
   double proton_sumPol = 0;
   int proton_numEvents = 0;
   for (const eventData& event : proton_data) {
