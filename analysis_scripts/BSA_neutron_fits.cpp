@@ -374,12 +374,12 @@ void plotDistribution(const char *proton_filename, const char *deuterium_filenam
   for (const auto &event : proton_gData) {
     proton_hist->Fill(event.Mx2);
   }
-  proton_hist->Scale(1/rga_charge);
+  // proton_hist->Scale(1/rga_charge);
 
   for (const auto &event : deuterium_gData) {
     deuterium_hist->Fill(event.Mx2);
   }
-  deuterium_hist->Scale(1/rgb_charge);
+  // deuterium_hist->Scale(1/rgb_charge);
 
   proton_hist->SetLineColor(kRed);
   deuterium_hist->SetLineColor(kBlue);
