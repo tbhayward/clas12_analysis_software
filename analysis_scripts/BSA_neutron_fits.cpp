@@ -5,8 +5,8 @@
 #include <TH1D.h>
 #include <algorithm>
 
-// std::vector<float> xBins = {0.05, 0.12, 0.20, 0.28, 0.36, 0.44, 0.60};
-std::vector<float> xBins = {0.05, 0.60};
+std::vector<float> xBins = {0.05, 0.12, 0.20, 0.28, 0.36, 0.44, 0.60};
+// std::vector<float> xBins = {0.05, 0.60};
 std::vector<float> zetaBins = {0.30, 0.400, 0.475, 0.550, 0.625, 0.70, 0.80};
 std::vector<float> PT1Bins = {0, 0.18, 0.36, 0.54, 0.72, 0.90, 1.30};
 std::vector<float> PT2Bins = {0, 0.18, 0.36, 0.54, 0.72, 0.90, 1.30};
@@ -249,12 +249,12 @@ TH1D* createHistogramForBin(const std::vector<eventData>& proton_data, const std
     histAsymmetry->SetBinError(iBin, error);
   }
 
-  // delete proton_histPos;
-  // delete proton_histNeg;
-  // delete deuterium_histPos;
-  // delete deuterium_histNeg;
-  // delete histPos;
-  // delete histNeg;
+  delete proton_histPos;
+  delete proton_histNeg;
+  delete deuterium_histPos;
+  delete deuterium_histNeg;
+  delete histPos;
+  delete histNeg;
 
   return histAsymmetry;
 }
