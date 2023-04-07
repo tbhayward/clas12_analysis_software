@@ -388,8 +388,8 @@ void plotDistribution(const char *proton_filename, const char *deuterium_filenam
   gStyle->SetOptStat(0);
 
   // Make sure the entire scale of data is visible
-  canvas->Modified();
-  canvas->Update();
+  c->Modified();
+  c->Update();
 
   c->SaveAs("/u/home/thayward/Mx1.png");
   delete c;
