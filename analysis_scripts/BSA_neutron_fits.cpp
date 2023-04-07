@@ -198,8 +198,8 @@ TH1D* createHistogramForBin(const std::vector<eventData>& proton_data, const std
   proton_histPos->Scale(1/(rga_charge*proton_meanPol));
   proton_histNeg->Scale(1/(rga_charge*proton_meanPol));
 
-  TH1D* deuterium_histPos = new TH1D(Form("%s_pos", histName), "", 24, 0, 2 * TMath::Pi());
-  TH1D* deuterium_histNeg = new TH1D(Form("%s_neg", histName), "", 24, 0, 2 * TMath::Pi());
+  TH1D* deuterium_histPos = new TH1D(Form("%s_pos", histName), "", 12, 0, 2 * TMath::Pi());
+  TH1D* deuterium_histNeg = new TH1D(Form("%s_neg", histName), "", 12, 0, 2 * TMath::Pi());
   double deuterium_sumPol = 0;
   int deuterium_numEvents = 0;
   for (const eventData& event : deuterium_data) {
