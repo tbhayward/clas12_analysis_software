@@ -368,8 +368,8 @@ void plotDistribution(const char *proton_filename, const char *deuterium_filenam
   proton_gData = readData(proton_filename);
   deuterium_gData = readData(deuterium_filename);
 
-  TH1D *proton_hist = new TH1D("proton_hist", "Mx1 Distribution;Mx1;Counts", 300, 0, 4);
-  TH1D *deuterium_hist = new TH1D("deuterium_hist", "Mx1 Distribution;Mx1;Counts", 300, 0, 4);
+  TH1D *proton_hist = new TH1D("proton_hist", "Mx1 Distribution;Mx1;Counts", 250, 0, 4);
+  TH1D *deuterium_hist = new TH1D("deuterium_hist", "Mx1 Distribution;Mx1;Counts", 250, 0, 4);
 
   for (const auto &event : proton_gData) {
     proton_hist->Fill(event.Mx2);
@@ -393,6 +393,11 @@ void plotDistribution(const char *proton_filename, const char *deuterium_filenam
   TCanvas *canvas = new TCanvas("canvas", "Mx1 Distribution", 800, 600);
   proton_hist->Draw();
   deuterium_hist->Draw("SAME");
+
+  TLegend *leg = new TLegend(0.7, 0.7, 0.9, 0.9);
+  leg->AddEntry(hp, "Proton", "l");
+  leg->AddEntry(hd, "Deuterium", "l");
+  leg->Draw();
 
   // Remove statbox
   gStyle->SetOptStat(0);
