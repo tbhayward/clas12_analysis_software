@@ -222,16 +222,18 @@ TH1D* createHistogramForBin(const std::vector<eventData>& proton_data, const std
   int numBins = proton_histPos->GetNbinsX();
   TH1F *histPos = (TH1F *)deuterium_histPos->Clone("histPos");
   histPos->Add(proton_histPos, -1.0);
+  histPos->Scale(rgb_charge);
   TH1F *histNeg = (TH1F *)deuterium_histNeg->Clone("histNeg");
   histNeg->Add(proton_histNeg, -1.0);
+  histNeg->Scale(rgb_charge);
   TH1D* histAsymmetry = new TH1D(Form("%s_asymmetry", histName), "", 
     numBins, 0, 2 * TMath::Pi());
 
   TCanvas *canvas = new TCanvas("canvas","My Histogram",800,600);
   histPos->SetLineColor(kRed);
   histPos->Draw(); // draw the histogram on the canvas
-  // proton_histPos->SetLineColor(kBlue);
-  // proton_histPos->Draw("same"); // draw the histogram on the canvas
+  histNeg->SetLineColor(kBlue);
+  histNeg->Draw("same"); // draw the histogram on the canvas
   canvas->Update(); // update the canvas to show the histogram
   canvas->SaveAs("/u/home/thayward/output.png");
 
@@ -246,7 +248,6 @@ TH1D* createHistogramForBin(const std::vector<eventData>& proton_data, const std
     histAsymmetry->SetBinContent(iBin, asymmetry);
     histAsymmetry->SetBinError(iBin, error);
   }
-  histAsymmetry->Scale(rgb_charge);
 
   // delete proton_histPos;
   // delete proton_histNeg;
