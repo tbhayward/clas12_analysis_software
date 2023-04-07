@@ -367,11 +367,19 @@ void performChi2Fits(const char *proton_filename, const char *deuterium_filename
 void plotDistribution(const char *proton_filename, const char *deuterium_filename) {
   proton_gData = readData(proton_filename);
   deuterium_gData = readData(deuterium_filename);
-  TH1D *hp = new TH1D("hp", "Mx1 distribution;Mx1;Counts", 200, 0, 3);
-  TH1D *hd = new TH1D("hd", "Mx1 distribution;Mx1;Counts", 200, 0, 3);
+  auto proton_data = readData(proton_data_file);
+  auto deuterium_data = readData(deuterium_data_file);
 
-  for (const auto& event : proton_gData) hp->Fill(event.Mx2);
-  for (const auto& event : deuterium_gData) hd->Fill(event.Mx2);
+  TH1D *proton_hist = new TH1D("proton_hist", "Mx1 Distribution;Mx1;Counts", 100, 0, 2);
+  TH1D *deuterium_hist = new TH1D("deuterium_hist", "Mx1 Distribution;Mx1;Counts", 100, 0, 2);
+
+  for (const auto &event : proton_data) {
+    proton_hist->Fill(event.Mx1);
+  }
+
+  for (const auto &event : deuterium_data) {
+    deuterium_hist->Fill(event.Mx1);
+  }
 
   proton_hist->SetLineColor(kRed);
   deuterium_hist->SetLineColor(kBlue);
@@ -384,22 +392,18 @@ void plotDistribution(const char *proton_filename, const char *deuterium_filenam
   // Set the y-axis range based on the maximum value
   proton_hist->SetAxisRange(0, max_value * 1.1, "Y");
 
-  TCanvas *c = new TCanvas("canvas", "Mx1 Distribution", 800, 600);
+  TCanvas *canvas = new TCanvas("canvas", "Mx1 Distribution", 800, 600);
   proton_hist->Draw();
   deuterium_hist->Draw("SAME");
-
-  TLegend *leg = new TLegend(0.7, 0.7, 0.9, 0.9);
-  leg->AddEntry(hp, "Proton", "l");
-  leg->AddEntry(hd, "Deuterium", "l");
-  leg->Draw();
 
   // Remove statbox
   gStyle->SetOptStat(0);
 
-  c->SaveAs("/u/home/thayward/Mx1.png");
-  delete c;
-  delete hp;
-  delete hd;
+  // Make sure the entire scale of data is visible
+  canvas->Modified();
+  canvas->Update();
+
+  canvas->SaveAs("/u/home/thayward/Mx1.png");
 }
 
 void BSA_neutron_fits(const char* proton_data_file, const char* deuterium_data_file,
