@@ -75,7 +75,7 @@ public static void main(String[] args) {
 	int helicity;
 	double e_p, e_theta, e_phi, p1_phi, p1_p, p1_theta, p2_phi, p2_p, p2_theta; 
 	double vz_e, vz_p1, vz_p2;
-	double Q2, W, y, Mx, Mx1, Mx2, 
+	double Q2, W, y, Mx, Mx1, Mx2; 
 	double x, z, xF, pT, eta, eta_gN, zeta;
 	double z1, z2, xF1, xF2, Mh, pT1, pT2, pTpT, eta1, eta2, Delta_eta, eta1_gN, eta2_gN;
 	double phi1, phi2, Delta_phi, phih, phiR, theta;
