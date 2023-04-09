@@ -150,12 +150,12 @@ public static void main(String[] args) {
 			                e_p = variables.e_p(); // lab frame momentum
 			                e_theta = variables.e_theta(); // lab polar angle
 			                e_phi = variables.e_phi(); // lab azimuthal angle
-			                p1_phi = variables.p_phi(); // lab azimuthal angle
-			                p1_p = variables.p_p(); // lab momentum
-			                p1_theta = variables.p_theta(); // lab polar angle
-			                p2_phi = variables.p_phi(); // lab azimuthal angle
-			                p2_p = variables.p_p(); // lab momentum
-			                p2_theta = variables.p_theta(); // lab polar angle
+			                p1_phi = variables.p1_phi(); // lab azimuthal angle
+			                p1_p = variables.p1_p(); // lab momentum
+			                p1_theta = variables.p1_theta(); // lab polar angle
+			                p2_phi = variables.p2_phi(); // lab azimuthal angle
+			                p2_p = variables.p2_p(); // lab momentum
+			                p2_theta = variables.p2_theta(); // lab polar angle
 
 			                // vertices
 			                vz_e = variables.vz_e();
