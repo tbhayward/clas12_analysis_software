@@ -1,17 +1,18 @@
-# analysis codes for CLAS12 SIDIS analyses
-* Tmothy B. Hayward
+# CLAS12 analysis framework developed by Timothy B. Hayward
 * repository for various analysis codes (EventBuilder, fitters, etc.) used for analyzing CLAS12 data at Jefferson Lab. Primarily SIDIS focused. Modern iteration of [my previous analysis software](https://github.com/tbhayward/clas_analysis_code)
 * README last updated April 9, 2023
 
 ### Table of Contents
 1. [QA Information](#info)
-
+2. [Processing CLAS12 data](#processing)
+3. [Relevant Files](#files)
 
 <a name="info"></a>
 # QA Information
-Processing scripts make use of the [clasqa database](https://github.com/JeffersonLab/clasqaDB) developed by C. Dilks for the collaboration. By default the "OKForAsymmetry" criteria is enforced. Other options are described in the clasqaDB repository, including a list of "Golden Runs".
+Processing scripts make use of the [clasqa database](https://github.com/JeffersonLab/clasqaDB) developed by C. Dilks for the collaboration. By default the "OKForAsymmetry" criteria is enforced. Other options are described in the clasqaDB repository, including a list of "Golden Runs". qadb is sourced automatically when processing scripts are run without the need for user input.
 
-##Processing CLAS12 data
+<a name="processing"></a>
+# Processing CLAS12 data
 Users can process CLAS12 data with the "processing_scripts/processing.csh" shell script and providing the required input arguments. 
 
 ```processing_scripts/processing.csh [processing script] [arg2] [arg3] [arg4] ...```
@@ -20,7 +21,8 @@ where [processing script] corresponds to one of the groovy processing scripts al
 
 --------
 
-## included files:  
+<a name="files"></a>
+# Relevant Files
 I. **/processing_classes/src/extended_kinematic_fitters/analysis_fitter.java**  
 &nbsp;&nbsp;&nbsp;This is the class for the kinematic fitter I use to build events (takes the detector responses to assign particle ID to tracks and adds them to the event). The idea is to take the CLAS12 EventBuilder as a basis and enhance the PID on top of that. Loops through all particles in REC::Particle bank and sees if they pass the enhanced particle PID cuts (e.g. tightened sampling fraction, fiducial cuts, chi2pid cuts for hadron identification etc.) Start reading around line 700,  
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"public PhysicsEvent getPhysicsEvent(DataEvent event) {"
