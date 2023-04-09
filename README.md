@@ -8,7 +8,10 @@ Processing scripts make use of the [clasqa database](https://github.com/Jefferso
 
 ##Processing CLAS12 data
 Users can process CLAS12 data with the "processing_scripts/processing.csh" shell script and providing the required input arguments. 
+
 ```processing_scripts/processing.csh [processing script] [arg2] [arg3] [arg4] ...```
+
+where [processing script] corresponds to one of the groovy processing scripts also included in the processing_scripts directory (e.g. the inclusive script to process e'X events, the single hadron script to process e'hX events, etc.) and [arg2], [arg3], [arg4], ... are the necessary arguments to execute those scripts (defined below). 
 
 --------
 
