@@ -17,7 +17,7 @@ Users can process CLAS12 data with the "processing_scripts/processing.csh" shell
 
 ```processing_scripts/processing.csh [processing script] [arg2] [arg3] [arg4] ...```
 
-where [processing script] corresponds to one of the groovy processing scripts also included in the processing_scripts directory (e.g. the inclusive script to process e'X events, the single hadron script to process e'hX events, etc.) and [arg2], [arg3], [arg4], ... are the necessary arguments to execute those scripts (defined below). 
+where [processing script] corresponds to one of the groovy processing scripts also included in the processing_scripts directory (e.g. the inclusive script to process e'X events, the single hadron script to process e'hX events, etc.) and [arg2], [arg3], [arg4], ... are the necessary arguments to execute those scripts (defined below). Generally the first argument provides a directory with hipo (CLAS12) data files you wish to analyze, the next arguments give the [PDG PID](https://pdg.lbl.gov/2007/reviews/montecarlorpp.pdf) numbers for the analyzed particles (e.g. pi+ = 211), the next argument gives an output filename and the final argument defines how many files to analyze. Only the processing_script argument is strictly necessary and the shell script will run with assumptions about the rest of your arguments (and provide appropriate warnings), however, it is highly recommended that you provide all arguments. 
 
 --------
 
