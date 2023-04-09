@@ -1,9 +1,13 @@
 # analysis codes for CLAS12 SIDIS analyses
-* Tmothy B. Hayward, README last updated April 9, 2023
+* Tmothy B. Hayward
 
-repository for various analysis codes (EventBuilder, fitters, etc.) used for analyzing CLAS12 data at Jefferson Lab. Primarily SIDIS focused. Modern iteration of [my previous analysis software](https://github.com/tbhayward/clas_analysis_code)
+### Table of Contents
+1. [QA Information](#info)
 
-##QA Information
+repository for various analysis codes (EventBuilder, fitters, etc.) used for analyzing CLAS12 data at Jefferson Lab. Primarily SIDIS focused. Modern iteration of [my previous analysis software](https://github.com/tbhayward/clas_analysis_code), README last updated April 9, 2023
+
+<a name="info"></a>
+# QA Information
 Processing scripts make use of the [clasqa database](https://github.com/JeffersonLab/clasqaDB) developed by C. Dilks for the collaboration. By default the "OKForAsymmetry" criteria is enforced. Other options are described in the clasqaDB repository, including a list of "Golden Runs".
 
 ##Processing CLAS12 data
