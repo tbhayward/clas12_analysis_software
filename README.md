@@ -5,7 +5,8 @@
 ### Table of Contents
 1. [QA Information](#info)
 2. [Processing CLAS12 data](#processing)
-3. [Relevant Files](#files)
+3. [Analyzing CLAS12 data](#analyzing)
+4. [Relevant Files](#files)
 
 <a name="info"></a>
 # QA Information
@@ -33,6 +34,11 @@ The output of the processing scripts will be text data files that place the rele
 3. Processing the semi-inclusive k+ pi- sample 
 
 ```processing_scripts/processing.csh processing_scripts/processing_dihadronss.groovy /cache/clas12/rg-a/production/recon/fall2018/torus-1/pass1/v1/dst/train/nSidis/ 321 -211 /scratch/thayward/dihadrons.txt```
+
+<a name="analyzing"></a>
+# Analyzing CLAS12 data
+
+Section under development. See [BSA fits](https://github.com/tbhayward/clas12_analysis_software/blob/main/analysis_scripts/BSA_fits.C) for a current iteration of my ROOT script to perform chi2 and maximum-likelihood fits for the ongoing CLAS12 SIDIS back-to-back dihadron analysis. Will update with further scripts and options soon.
 
 --------
 
