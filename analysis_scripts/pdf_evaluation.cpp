@@ -24,8 +24,9 @@ int main() {
 
         double u_n = pdf->xfxQ(-1, meanXRGB[i], std::sqrt(meanQ2RGB[i]));
         double d_n = pdf->xfxQ(-2, meanXRGB[i], std::sqrt(meanQ2RGB[i]));
-        double Rud = 0.5 * (u_p + u_n) / (u_p + d_p + u_n + d_n);
-        double Rdd = 0.5 * (d_p + d_n) / (u_p + d_p + u_n + d_n);
+        double Rud = 0.5 * (u_p + u_n) / (u_p + d_p + 0.5 * (u_n + d_n));
+        double Rdd = 0.5 * (d_p + d_n) / (u_p + d_p + 0.5 * (u_n + d_n));
+
 
         Rup_values.push_back(Rup);
         Rdp_values.push_back(Rdp);
