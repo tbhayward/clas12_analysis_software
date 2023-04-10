@@ -43,7 +43,7 @@ int main() {
                 std::cout << ", ";
             }
         }
-        std::cout << "}" << std::endl;
+        std::cout << "};" << std::endl;
     };
 
     print_vector(R_u_p_values, "R_u_p");
