@@ -17,24 +17,19 @@ int main(int argc, char* argv[]) {
     double u_p = pdf->xfxQ(2, x, std::sqrt(Q2));
     double d_p = pdf->xfxQ(1, x, std::sqrt(Q2));
 
-    // Neutron PDFs (using isospin symmetry)
-    double u_n = d_p;
-    double d_n = u_p;
+    double R_u_p = u_p / (u_p + d_p);
+    double R_d_p = d_p / (u_p + d_p);
 
-    // Deuteron PDFs (using isospin symmetry)
-    double u_d = 0.5 * (u_p + d_n);
-    double d_d = 0.5 * (d_p + u_n);
+    double u_n = pdf->xfxQ(2, x, std::sqrt(Q2), 1);
+    double d_n = pdf->xfxQ(1, x, std::sqrt(Q2), 1);
+    double R_u_d = 0.5 * (u_p + u_n) / (u_p + d_p + u_n + d_n);
+    double R_d_d = 0.5 * (d_p + d_n) / (u_p + d_p + u_n + d_n);
 
-    // PDF ratios
-    double F_pu = u_p / (u_p + d_p);
-    double F_pd = d_p / (u_p + d_p);
-    double F_du = u_d / (u_d + d_d);
-    double F_dd = d_d / (u_d + d_d);
 
-    std::cout << "F_pu: " << F_pu << std::endl;
-    std::cout << "F_pd: " << F_pd << std::endl;
-    std::cout << "F_du: " << F_du << std::endl;
-    std::cout << "F_dd: " << F_dd << std::endl;
+    std::cout << "R_u_p: " << R_u_p << std::endl;
+    std::cout << "R_d_p: " << R_d_p << std::endl;
+    std::cout << "R_u_d: " << R_u_d << std::endl;
+    std::cout << "R_d_d: " << R_d_d << std::endl;
 
     delete pdf;
     return 0;
