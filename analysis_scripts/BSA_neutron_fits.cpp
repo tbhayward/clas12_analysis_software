@@ -382,7 +382,7 @@ void plotDistribution(const char *proton_filename, const char *deuterium_filenam
   deuterium_hist->Scale(1/rgb_charge);
 
   proton_hist->SetLineColor(kRed);
-  deuterium_hist->SetLineColor(kBlue);
+  deuterium_hist->SetLineColor(kBlue); // blue
 
   // Find the maximum value in both histograms
   double max_proton = proton_hist->GetMaximum();
