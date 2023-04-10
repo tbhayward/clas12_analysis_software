@@ -19,18 +19,18 @@ int main() {
         double u_p = pdf->xfxQ(2, meanXRGA[i], std::sqrt(meanQ2RGA[i]));
         double d_p = pdf->xfxQ(1, meanXRGA[i], std::sqrt(meanQ2RGA[i]));
 
-        double R_u_p = u_p / (u_p + d_p);
-        double R_d_p = d_p / (u_p + d_p);
+        double Rup = u_p / (u_p + d_p);
+        double Rdp = d_p / (u_p + d_p);
 
         double u_n = pdf->xfxQ(-1, meanXRGB[i], std::sqrt(meanQ2RGB[i]));
         double d_n = pdf->xfxQ(-2, meanXRGB[i], std::sqrt(meanQ2RGB[i]));
-        double R_u_d = 0.5 * (u_p + u_n) / (u_p + d_p + u_n + d_n);
-        double R_d_d = 0.5 * (d_p + d_n) / (u_p + d_p + u_n + d_n);
+        double Rud = 0.5 * (u_p + u_n) / (u_p + d_p + u_n + d_n);
+        double Rdd = 0.5 * (d_p + d_n) / (u_p + d_p + u_n + d_n);
 
-        R_u_p_values.push_back(R_u_p);
-        R_d_p_values.push_back(R_d_p);
-        R_u_d_values.push_back(R_u_d);
-        R_d_d_values.push_back(R_d_d);
+        Rup_values.push_back(R_u_p);
+        Rdp_values.push_back(R_d_p);
+        Rud_values.push_back(R_u_d);
+        Rdd_values.push_back(R_d_d);
     }
 
     delete pdf;
