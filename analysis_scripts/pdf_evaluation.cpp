@@ -12,7 +12,7 @@ int main() {
 
     LHAPDF::PDF* pdf = LHAPDF::mkPDF("NNPDF31_nnlo_as_0118", 0);
 
-    std::vector<double> R_u_p_values, R_d_p_values, R_u_d_values, R_d_d_values;
+    std::vector<double> Rup_values, Rdp_values, Rud_values, Rdd_values;
 
     for (size_t i = 0; i < meanXRGA.size(); i++) {
 
