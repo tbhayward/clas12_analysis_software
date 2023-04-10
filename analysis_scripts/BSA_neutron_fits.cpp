@@ -4,7 +4,6 @@
 #include <sstream>
 #include <TH1D.h>
 #include <algorithm>
-#include <LHAPDF/LHAPDF.h>
 
 // std::vector<float> xBins = {0.05, 0.12, 0.20, 0.28, 0.36, 0.44, 0.60};
 std::vector<float> xBins = {0.05, 0.60};
@@ -427,33 +426,7 @@ void BSA_neutron_fits(const char* proton_data_file, const char* deuterium_data_f
 
   // for (size_t i = 0; i < allBins.size(); ++i) {
   for (size_t i = 0; i < 1; ++i) {
-
-    LHAPDF::PDF* pdf = LHAPDF::mkPDF("NNPDF31_nnlo_as_0118", 0);
-    double x = 0.1;  // Example value of x
-    double Q2 = 10.0;  // Example value of Q^2 (in GeV^2)
-    double Q = sqrt(Q2);
-
-    // Proton PDFs
-    double u_p = pdf->xfxQ(2, x, Q);  // u quark in proton (ID 2 for up quark)
-    double d_p = pdf->xfxQ(1, x, Q);  // d quark in proton (ID 1 for down quark)
-
-    // Deuteron PDFs (using isospin symmetry)
-    double u_d = 0.5 * (u_p + d_p);
-    double d_d = 0.5 * (u_p + d_p);
-
-    // PDF ratios
-    double F_pu = u_p / (u_p + d_p);
-    double F_pd = d_p / (u_p + d_p);
-    double F_du = u_d / (u_d + d_d);
-    double F_dd = d_d / (u_d + d_d);
-
-    std::cout << "F_pu: " << F_pu << std::endl;
-    std::cout << "F_pd: " << F_pd << std::endl;
-    std::cout << "F_du: " << F_du << std::endl;
-    std::cout << "F_dd: " << F_dd << std::endl;
-    delete pdf;
-
-    // plotDistribution(proton_data_file,deuterium_data_file);
+    plotDistribution(proton_data_file,deuterium_data_file);
     // performChi2Fits(proton_data_file, deuterium_data_file, output_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
     cout << endl << endl << endl;
