@@ -4,19 +4,18 @@
 #include <LHAPDF/LHAPDF.h>
 
 int main() {
-    std::vector<double> meanX = {0.294096, 0.282596, 0.260506, 0.238092, 0.215682, 0.192768};
-    std::vector<double> meanQ2 = {2.99703, 2.88093, 2.72367, 2.54051, 2.37417, 2.22758};
+    // ppip
+    std::vector<double> meanXRGA = {0.294096, 0.282596, 0.260506, 0.238092, 0.215682, 0.192768};
+    std::vector<double> meanQ2RGA = {2.99703, 2.88093, 2.72367, 2.54051, 2.37417, 2.22758};
 
     LHAPDF::PDF* pdf = LHAPDF::mkPDF("NNPDF31_nnlo_as_0118", 0);
 
     std::vector<double> R_u_p_values, R_d_p_values, R_u_d_values, R_d_d_values;
 
     for (size_t i = 0; i < meanX.size(); i++) {
-        double x = meanX[i];
-        double Q2 = meanQ2[i];
 
-        double u_p = pdf->xfxQ(2, x, std::sqrt(Q2));
-        double d_p = pdf->xfxQ(1, x, std::sqrt(Q2));
+        double u_p = pdf->xfxQ(2, meanXRGA[i], std::sqrt(meanQ2RGA[i]));
+        double d_p = pdf->xfxQ(1, meanXRGA[i], std::sqrt(meanQ2RGA[i]));
 
         double R_u_p = u_p / (u_p + d_p);
         double R_d_p = d_p / (u_p + d_p);
