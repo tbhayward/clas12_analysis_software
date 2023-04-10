@@ -17,9 +17,13 @@ int main(int argc, char* argv[]) {
     double u_p = pdf->xfxQ(2, x, std::sqrt(Q2));
     double d_p = pdf->xfxQ(1, x, std::sqrt(Q2));
 
+    // Neutron PDFs (using isospin symmetry)
+    double u_n = d_p;
+    double d_n = u_p;
+
     // Deuteron PDFs (using isospin symmetry)
-    double u_d = 0.5 * (u_p + d_p);
-    double d_d = 0.5 * (u_p + d_p);
+    double u_d = 0.5 * (u_p + d_n);
+    double d_d = 0.5 * (d_p + u_n);
 
     // PDF ratios
     double F_pu = u_p / (u_p + d_p);
