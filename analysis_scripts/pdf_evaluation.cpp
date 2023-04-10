@@ -27,10 +27,10 @@ int main() {
         double Rud = 0.5 * (u_p + u_n) / (u_p + d_p + u_n + d_n);
         double Rdd = 0.5 * (d_p + d_n) / (u_p + d_p + u_n + d_n);
 
-        Rup_values.push_back(R_u_p);
-        Rdp_values.push_back(R_d_p);
-        Rud_values.push_back(R_u_d);
-        Rdd_values.push_back(R_d_d);
+        Rup_values.push_back(Rup);
+        Rdp_values.push_back(Rdp);
+        Rud_values.push_back(Rud);
+        Rdd_values.push_back(Rdd);
     }
 
     delete pdf;
