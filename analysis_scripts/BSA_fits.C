@@ -373,8 +373,6 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
       double sumVariable = 0;
       double sumb2b = 0;
       double numEvents = 0;
-      double sumPTPT = 0;
-      double sumDepolarization_factor = 0;
       for (const eventData& event : gData) {
         double currentVariable = getEventProperty(event, currentFits);
         if (applyKinematicCuts(event, currentFits) && currentVariable >= allBins[currentFits][i] && 
@@ -444,5 +442,14 @@ void BSA_fits(const char* data_file, const char* output_file) {
     currentFits++;
   }
 }
+
+// accumulated charge
+// RGA Fall 18: 68.38041061700115 mC
+// RGA Spring 19: 46.512769750708856 mC
+// RGA Total: 114.8932 mC
+// RGB Spring 19: 66.7769672846809 mC
+// RGB Fall 19: 12.363048867122998 mC
+// RGB Spring 20: 28.505789583113557 mC
+// RGB Total: 107.6458 mC
 
 

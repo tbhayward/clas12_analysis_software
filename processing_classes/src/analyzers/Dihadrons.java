@@ -31,7 +31,7 @@ public class Dihadrons {
     // in proton+pi+ the proton is p1, in k+pi- the kaon is p1.
     protected double Q2, W, gamma, nu, x, y, z, z1, z2;
     protected double Mx, Mx1, Mx2, Mx3; // Mx is the Mx(ep1p2), Mx1 is Mx(ep1), Mx2 is Mx(ep2), Mx3 is Mx(e)
-    protected double Mh, pT, pT1, pT2, xF, xF1, xF2, zeta;
+    protected double Mh, pT, pT1, pT2, xF, xF1, xF2, zeta, zeta1, zeta2;
     protected double eta, eta1, eta2, eta_gN, eta1_gN, eta2_gN;
     // eta is the rapidity, preferred by theorists in the Breit frame (e.g. eta1 is in Breit) 
     // eta_gN is the rapidity in the gamma*-nucleon COM frame
@@ -65,8 +65,8 @@ public class Dihadrons {
     
     protected float e_nphe, p1_nphe, p2_nphe; // number of photoelectrons in cherenkov counter
     protected float e_chi2pid, p1_chi2pid, p2_chi2pid; // chi2pid of the CLAS12 EventBuilder
-    // defined as the sampling fraction for electron candidates and the distance away from the mean beta(p) value from
-    // the TOF for hadron candidates
+    // defined as the sampling fraction for electron candidates and the distance away from the 
+    // mean beta(p) value from the TOF for hadron candidates
     
     protected int p1_RICH_pid;
     protected double p1_beta, p1_RQ_prob, p1_el_prob, p1_pi_prob, p1_k_prob, p1_pr_prob;
@@ -236,30 +236,7 @@ public class Dihadrons {
         p2_phi = p2.phi();
         if (p2_phi < 0) { p2_phi = 2*Math.PI + p2_phi; }
         p_px = lv_p.px(); p_py = lv_p.py(); p_pz = lv_p.pz(); p_p = lv_p.p(); p_e = lv_p.e();
-        
-//        for (int current_Part = 0; current_Part < rec_Bank.rows(); current_Part++) {
-//            float px = rec_Bank.getFloat("px", current_Part);
-//            float py = rec_Bank.getFloat("py", current_Part);
-//            float pz = rec_Bank.getFloat("pz", current_Part);
-//            double p = Math.sqrt(Math.pow(px,2)+Math.pow(py,2)+Math.pow(pz,2));
-//            double theta = Math.acos(pz/p);
-//            double phi = Math.toDegrees(Math.atan2(px,py));
-//            phi = phi - 90; if (phi < 0) { phi = 360 + phi; } phi = 360 - phi;
-//            phi = Math.toRadians(phi);
-//            if ( Math.abs((180/Math.PI)*(theta-p1_theta))<2 &&
-//                    Math.abs((180/Math.PI)*(phi-p1_phi))<6) {
-//                p2_chi2pid = rec_Bank.getFloat("chi2pid", current_Part);
-//            }
-//            if ( Math.abs((180/Math.PI)*(theta-p2_theta))<2 &&
-//                    Math.abs((180/Math.PI)*(phi-p2_phi))<6) {
-//                p1_chi2pid = rec_Bank.getFloat("chi2pid", current_Part);
-//            }
-//            if ( Math.abs((180/Math.PI)*(theta-e_theta))<2 &&
-//                    Math.abs((180/Math.PI)*(phi-e_phi))<6) {
-//                e_chi2pid = rec_Bank.getFloat("chi2pid", current_Part);
-//            }
-//        }
-        
+
         z = lv_p.e()/lv_q.e();
         z1 = lv_p1.e()/lv_q.e();
 	z2 = lv_p2.e()/lv_q.e();
@@ -349,8 +326,9 @@ public class Dihadrons {
         xF1 = 2*(lv_p1_gN.vect().dot(lv_q_gN.vect())) /(lv_q_gN.vect().mag()*W);
         xF2 = 2*(lv_p2_gN.vect().dot(lv_q_gN.vect())) /(lv_q_gN.vect().mag()*W);
         
-        zeta = lv_p1_gN.e()/lv_target_gN.e(); // only really applicable when p1 is a proton
-//        System.out.println(lv_p1_gN.e()/lv_target_gN.e()+" "+lv_p1_gN.p()/lv_target_gN.p());
+        zeta = lv_p_gN.e()/lv_target_gN.e(); 
+        zeta1 = lv_p1_gN.e()/lv_target_gN.e(); 
+        zeta2 = lv_p2_gN.e()/lv_target_gN.e(); 
         
         p_gN_pz = lv_p_gN.vect().dot(lv_q_gN.vect())/lv_q_gN.vect().mag();
         p1_gN_pz = lv_p1_gN.vect().dot(lv_q_gN.vect())/lv_q_gN.vect().mag();
@@ -513,6 +491,10 @@ public class Dihadrons {
     public double xF2() { return Double.valueOf(Math.round(xF2*100000))/100000; }// returns xF2
     
     public double zeta() { return Double.valueOf(Math.round(zeta*100000))/100000; }// returns zeta
+    
+    public double zeta1() { return Double.valueOf(Math.round(zeta1*100000))/100000; }// returns zeta1
+    
+    public double zeta2() { return Double.valueOf(Math.round(zeta2*100000))/100000; }// returns zeta2
     
     public double p1_Breit_pz() { return Double.valueOf(Math.round(p1_Breit_pz*100000))/100000; } 
     // returns p1 pz in Breit
