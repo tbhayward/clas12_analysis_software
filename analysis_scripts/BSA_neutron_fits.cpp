@@ -413,8 +413,8 @@ void plotDistribution(const char *proton_filename, const char *deuterium_filenam
   TCanvas *canvas2 = new TCanvas("canvas2", "Mx1 Diff Distribution", 800, 600);
   histDiff->Draw();
 
-  canvas->SaveAs("/u/home/thayward/Mx1.png");
-  canvas2->SaveAs("/u/home/thayward/Mx1Diff.png");
+  canvas->SaveAs("/u/home/thayward/figures/Mx1.png");
+  canvas2->SaveAs("/u/home/thayward/figures/Mx1Diff.png");
 }
 
 void BSA_neutron_fits(const char* proton_data_file, const char* deuterium_data_file,
