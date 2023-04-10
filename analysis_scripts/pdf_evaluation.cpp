@@ -46,10 +46,10 @@ int main() {
         std::cout << "};" << std::endl;
     };
 
-    print_vector(R_u_p_values, "R_u_p");
-    print_vector(R_d_p_values, "R_d_p");
-    print_vector(R_u_d_values, "R_u_d");
-    print_vector(R_d_d_values, "R_d_d");
+    print_vector(Rup_values, "Rup");
+    print_vector(Rdp_values, "Rdp");
+    print_vector(Rud_values, "Rud");
+    print_vector(Rdd_values, "Rdd");
 
     return 0;
 }
