@@ -3,7 +3,7 @@
 #include <LHAPDF/LHAPDF.h>
 
 int main(int argc, char* argv[]) {
-    std::cout << endl << endl;
+    std::cout << std::endl << std::endl;
     if (argc != 3) {
         std::cerr << "Usage: " << argv[0] << " x Q2" << std::endl;
         return 1;
@@ -20,7 +20,7 @@ int main(int argc, char* argv[]) {
 
     std::cout << "u_p: " << u_p << std::endl;
     std::cout << "d_p: " << d_p << std::endl;
-    std::cout << endl << endl;
+    std::cout << std::endl << std::endl;
 
     delete pdf;
     return 0;
