@@ -11,16 +11,22 @@ int main(int argc, char* argv[]) {
 
     double x = std::stod(argv[1]);
     double Q2 = std::stod(argv[2]);
-    double Q = std::sqrt(Q2);
 
     LHAPDF::PDF* pdf = LHAPDF::mkPDF("NNPDF31_nnlo_as_0118", 0);
 
-    double u_p = pdf->xfxQ(2, x, Q);
-    double d_p = pdf->xfxQ(1, x, Q);
+    double u_p = pdf->xfxQ(2, x, std::sqrt(Q2));
+    double d_p = pdf->xfxQ(1, x, std::sqrt(Q2));
 
-    std::cout << "u_p: " << u_p << std::endl;
-    std::cout << "d_p: " << d_p << std::endl;
-    std::cout << std::endl << std::endl;
+    // PDF ratios
+    double F_pu = u_p / (u_p + d_p);
+    double F_pd = d_p / (u_p + d_p);
+    double F_du = u_d / (u_d + d_d);
+    double F_dd = d_d / (u_d + d_d);
+
+    std::cout << "F_pu: " << F_pu << std::endl;
+    std::cout << "F_pd: " << F_pd << std::endl;
+    std::cout << "F_du: " << F_du << std::endl;
+    std::cout << "F_dd: " << F_dd << std::endl;
 
     delete pdf;
     return 0;
