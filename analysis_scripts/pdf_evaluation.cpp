@@ -2,9 +2,14 @@
 #include <cmath>
 #include <LHAPDF/LHAPDF.h>
 
-int main() {
-    double x = 0.1;
-    double Q2 = 10.0;
+int main(int argc, char* argv[]) {
+    if (argc != 3) {
+        std::cerr << "Usage: " << argv[0] << " x Q2" << std::endl;
+        return 1;
+    }
+
+    double x = std::stod(argv[1]);
+    double Q2 = std::stod(argv[2]);
     double Q = std::sqrt(Q2);
 
     LHAPDF::PDF* pdf = LHAPDF::mkPDF("NNPDF31_nnlo_as_0118", 0);
