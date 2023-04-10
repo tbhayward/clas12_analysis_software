@@ -14,7 +14,7 @@ int main() {
 
     std::vector<double> R_u_p_values, R_d_p_values, R_u_d_values, R_d_d_values;
 
-    for (size_t i = 0; i < meanX.size(); i++) {
+    for (size_t i = 0; i < meanXRGA.size(); i++) {
 
         double u_p = pdf->xfxQ(2, meanXRGA[i], std::sqrt(meanQ2RGA[i]));
         double d_p = pdf->xfxQ(1, meanXRGA[i], std::sqrt(meanQ2RGA[i]));
