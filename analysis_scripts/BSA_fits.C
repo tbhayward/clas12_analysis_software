@@ -357,7 +357,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
             numEvents += 1;
         }
       }
-      cout << "Found " << numEvents " events." << endl;
+      cout << "Found " << numEvents << " events." << endl;
       
       double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
       double meanb2b = numEvents > 0 ? sumb2b / numEvents : 0.0;
