@@ -23,7 +23,7 @@ void load_bins_from_csv(const std::string& filename) {
     if (line.empty() || line[0] == '#') { continue; } // Ignore comment lines
 
     if (!reached_bins) {
-      if (line == "--") { // If we reach delimiter, set flag to true and continue to next line
+      if (line == "---") { // If we reach delimiter, set flag to true and continue to next line
         reached_bins = true;
         continue;
       }
@@ -265,7 +265,8 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     }
   }
 
-  mlmFitsAStream << "};"; mlmFitsAScaledStream << "};"; mlmFitsBStream << "};"; mlmFitsScaledBStream << "};";
+  mlmFitsAStream << "};"; mlmFitsAScaledStream << "};"; 
+  mlmFitsBStream << "};"; mlmFitsScaledBStream << "};";
 
   std::ofstream outputFile(output_file, std::ios_base::app);
   outputFile << mlmFitsAStream.str() << std::endl;
@@ -342,8 +343,10 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
   std::ostringstream chi2FitsBStream;
   std::ostringstream chi2FitsBScaledStream;
 
-  chi2FitsAStream << prefix << "chi2FitsA = {"; chi2FitsAScaledStream << prefix << "chi2FitsScaledA = {";
-  chi2FitsBStream << prefix << "chi2FitsB = {"; chi2FitsBScaledStream << prefix << "chi2FitsScaledB = {";
+  chi2FitsAStream << prefix << "chi2FitsA = {"; 
+  chi2FitsAScaledStream << prefix << "chi2FitsScaledA = {";
+  chi2FitsBStream << prefix << "chi2FitsB = {"; 
+  chi2FitsBScaledStream << prefix << "chi2FitsScaledB = {";
 
   size_t numBins = allBins[currentFits].size() - 1;
 
@@ -395,7 +398,8 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
       delete hist;
     }
 
-    chi2FitsAStream << "};"; chi2FitsAScaledStream << "};"; chi2FitsBStream << "};"; chi2FitsBScaledStream << "};";
+    chi2FitsAStream << "};"; chi2FitsAScaledStream << "};"; 
+    chi2FitsBStream << "};"; chi2FitsBScaledStream << "};";
 
     std::ofstream outputFile(output_file, std::ios_base::app);
     outputFile << chi2FitsAStream.str() << std::endl;
