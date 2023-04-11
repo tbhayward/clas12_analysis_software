@@ -53,7 +53,7 @@ float getPol(int runnum) {
 struct eventData {
   int status, runnum, evnum, helicity;
   float e_p, e_theta, e_phi, vz_e, p2_p, p2_theta, p2_phi, vz_p2, p1_p, p1_theta, p1_phi, vz_p1;
-  float Q2, W, x, y, z2, z1, Mx, Mx2, Mx1, zeta, Mh, PT2, PT1, PTPT, xF2, xF1, 
+  float Q2, W, x, y, z2, z1, Mx, Mx2, Mx1, zeta, Mh, PT2, PT1, PTPT, xF2, xF1; 
   float eta2, eta1, Delta_eta, phi2, phi1, Delta_phi, pol, b2b_factor;
 };
 
