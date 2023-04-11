@@ -59,11 +59,12 @@ Columns: &nbsp;&nbsp;&nbsp; 1:runnum, 2:evnum, 3:helicity, 4:e_p, 5:e_theta, 6:e
 IIc. **/processing_classes/src/analyzers/Dihadrons.java**
   Extension (technically written first) of the single hadron case to two hadrons, ep -> e' h1 h2 X, includes additional variables for each hadron, e.g. z1, z2, PT1, PT2, etc.
   
+Columns: &nbsp;&nbsp;&nbsp; 1:runnum, 2:evnum, 3:helicity, 4:e_p, 5:e_theta, 6:p1_p, 7:p1_theta, 8:p2_p, 9:p2_theta, 10:Q2, 11:W, 12:Mx, 13:Mx1, 14:Mx2, 15:x, 16:y, 17:z, 18:z1, 19:z2, 20:Mh, 21:xF, 22:xF1, 23:xF2, 24:pT, 25:pT1, 26:pT2, 27:pTpT 28:zeta, 29:eta, 30:eta1, 31:eta2, 32:Delta_eta, 33:eta1_gN, 34:eta2_gN, 35:phi1, 36:phi2, 37:Delta_phi, 38:phih, 39:phiR, 40:theta, 41:DepA, 42:DepB, 43:DepC, 44:DepV, 45:DepW, 46: vz_e, 47: vz_p1, 48: vz_p2.
+  
 IId. **/processing_classes/src/analyzers/Trihadron.java**
   Extension of the single hadron case to three hadrons, ep -> e' h1 h2 h3 X, includes additional variables for each hadron, e.g. z1, z2, z3, PT1, PT2, PT3 etc. as well as all permutations of hadron combinations, i.e. Mh12, Mh13, Mh23
 
 &nbsp;&nbsp;&nbsp;The above physics classes start with a "channel_test" function that allows for cuts on Q2, W, xF, y, Mx, etc. By default Q2 > 1, W > 2, y < 0.8* are enabled and the others are commented out. If you are sure of the cuts you desire, more can be turned on to significantly increase processing speed. *I'd recommend double checking these.
-
 
 III. **/processing_classes/dist/processing_classes.jar**
 &nbsp;&nbsp;&nbsp;The distribution version of all my classes if you want to include the package in your own build.
