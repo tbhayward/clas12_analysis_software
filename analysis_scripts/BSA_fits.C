@@ -9,50 +9,50 @@
 #include <map>
 size_t currentFits = 0;
 
-// std::vector<float> xBins = {0.05, 0.12, 0.20, 0.28, 0.36, 0.44, 0.60};
-// std::vector<float> zetaBins = {0.30, 0.400, 0.475, 0.550, 0.625, 0.70, 0.80};
-// std::vector<float> PT1Bins = {0, 0.18, 0.36, 0.54, 0.72, 0.90, 1.30};
-// std::vector<float> PT2Bins = {0, 0.18, 0.36, 0.54, 0.72, 0.90, 1.30};
-// std::vector<float> PTPTBins = {0, 0.09, 0.18, 0.27, 0.36, 0.45, 0.6};
-// std::vector<float> zeta00Bins = {0.40, 0.49, 0.58, 0.67, 0.80};
-// std::vector<float> zeta20Bins = {0.40, 0.49, 0.58, 0.67, 0.80};
-// std::vector<float> zeta32Bins = {0.30, 0.37, 0.44, 0.51, 0.60};
-// std::vector<float> Q200Bins = {1.00, 1.50, 2.00, 2.50, 3.00};
-// std::vector<float> Q220Bins = {1.00, 2.00, 3.00, 4.00, 5.00};
-// std::vector<float> Q232Bins = {2.00, 3.50, 5.00, 6.50, 8.00};
-// std::vector<float> z1Bins = {0.10, 0.20, 0.28, 0.36, 0.44, 0.52, 0.7};
-// std::vector<float> xF1Bins = {-0.10, 0.00, 0.08, 0.16, 0.26, 0.36, 0.50};
-// std::vector<float> xF2Bins = {-0.82, -0.60, -0.38, -0.16, 0.06, 0.28, 0.50};
+std::vector<float> xBins = {0.05, 0.12, 0.20, 0.28, 0.36, 0.44, 0.60};
+std::vector<float> zetaBins = {0.30, 0.400, 0.475, 0.550, 0.625, 0.70, 0.80};
+std::vector<float> PT1Bins = {0, 0.18, 0.36, 0.54, 0.72, 0.90, 1.30};
+std::vector<float> PT2Bins = {0, 0.18, 0.36, 0.54, 0.72, 0.90, 1.30};
+std::vector<float> PTPTBins = {0, 0.09, 0.18, 0.27, 0.36, 0.45, 0.6};
+std::vector<float> zeta00Bins = {0.40, 0.49, 0.58, 0.67, 0.80};
+std::vector<float> zeta20Bins = {0.40, 0.49, 0.58, 0.67, 0.80};
+std::vector<float> zeta32Bins = {0.30, 0.37, 0.44, 0.51, 0.60};
+std::vector<float> Q200Bins = {1.00, 1.50, 2.00, 2.50, 3.00};
+std::vector<float> Q220Bins = {1.00, 2.00, 3.00, 4.00, 5.00};
+std::vector<float> Q232Bins = {2.00, 3.50, 5.00, 6.50, 8.00};
+std::vector<float> z1Bins = {0.10, 0.20, 0.28, 0.36, 0.44, 0.52, 0.7};
+std::vector<float> xF1Bins = {-0.10, 0.00, 0.08, 0.16, 0.26, 0.36, 0.50};
+std::vector<float> xF2Bins = {-0.82, -0.60, -0.38, -0.16, 0.06, 0.28, 0.50};
 
-// std::vector<std::vector<float>> allBins = {xBins, zetaBins, PT1Bins, PT2Bins, PTPTBins,
-//   zeta00Bins, zeta20Bins, zeta32Bins, Q200Bins, Q220Bins, Q232Bins, z1Bins, xF1Bins, xF2Bins};
-// std::vector<std::string> binNames = {"x", "zeta", "PT1", "PT2", "PTPT", "zeta00", "zeta20", 
-//   "zeta32", "Q200", "Q220", "Q232", "z1", "xF1", "xF2"};
+std::vector<std::vector<float>> allBins = {xBins, zetaBins, PT1Bins, PT2Bins, PTPTBins,
+  zeta00Bins, zeta20Bins, zeta32Bins, Q200Bins, Q220Bins, Q232Bins, z1Bins, xF1Bins, xF2Bins};
+std::vector<std::string> binNames = {"x", "zeta", "PT1", "PT2", "PTPT", "zeta00", "zeta20", 
+  "zeta32", "Q200", "Q220", "Q232", "z1", "xF1", "xF2"};
 
-std::map<std::string, std::vector<float>> bins_map;
-std::vector<std::vector<float>> allBins;
-std::vector<std::string> binNames;
+// std::map<std::string, std::vector<float>> bins_map;
+// std::vector<std::vector<float>> allBins;
+// std::vector<std::string> binNames;
 
-void load_bins_from_csv(const std::string& filename) {
-  std::ifstream file(filename);
-  std::string line;
+// void load_bins_from_csv(const std::string& filename) {
+//   std::ifstream file(filename);
+//   std::string line;
   
-  while (std::getline(file, line)) {
-    std::stringstream ss(line);
-    std::string bin_name;
-    std::getline(ss, bin_name, ',');
+//   while (std::getline(file, line)) {
+//     std::stringstream ss(line);
+//     std::string bin_name;
+//     std::getline(ss, bin_name, ',');
     
-    binNames.push_back(bin_name);
+//     binNames.push_back(bin_name);
     
-    std::vector<float> bin_values;
-    std::string value;
-    while (std::getline(ss, value, ',')) {
-      bin_values.push_back(std::stof(value));
-    }
-    bins_map[bin_name] = bin_values;
-    allBins.push_back(bin_values);
-  }
-}
+//     std::vector<float> bin_values;
+//     std::string value;
+//     while (std::getline(ss, value, ',')) {
+//       bin_values.push_back(std::stof(value));
+//     }
+//     bins_map[bin_name] = bin_values;
+//     allBins.push_back(bin_values);
+//   }
+// }
 
 
 // function to get the polarization value
@@ -421,8 +421,8 @@ void BSA_fits(const char* data_file, const char* output_file) {
   std::ofstream ofs(output_file, std::ios::trunc);
   ofs.close();
 
-  // load bins from external csv file
-  load_bins_from_csv("bins.csv");
+  // // load bins from external csv file
+  // load_bins_from_csv("bins.csv");
 
   for (size_t i = 0; i < allBins.size(); ++i) {
   // for (size_t i = 0; i < 1; ++i) {
