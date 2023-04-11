@@ -237,7 +237,7 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
         if (applyKinematicCuts(event, currentFits) && currentVariable >= 
           allBins[currentFits][i] && currentVariable < allBins[currentFits][i + 1]) {
             sumVariable += currentVariable;
-            sumb2b += event.data["b2b_factor"];
+            sumb2b += event.data.at("b2b_factor");
             numEvents += 1;
         }
     }
@@ -364,7 +364,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
         if (applyKinematicCuts(event, currentFits) && currentVariable >= allBins[currentFits][i] && 
           currentVariable < allBins[currentFits][i + 1]) {
             sumVariable += currentVariable;
-            sumb2b += event.data["b2b_factor"];
+            sumb2b += event.data.at("b2b_factor");
             numEvents += 1;
         }
       }
