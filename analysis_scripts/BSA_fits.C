@@ -16,27 +16,39 @@ std::vector<std::string> binNames;
 void load_bins_from_csv(const std::string& filename) {
   std::ifstream file(filename);
   std::string line;
+  bool reached_bins = false; // Flag to check if we have reached the bin declarations
+  std::vector<std::string> variable_names;
 
   while (std::getline(file, line)) {
     if (line.empty() || line[0] == '#') { continue; } // Ignore comment lines
 
-    std::stringstream ss(line);
-    std::string bin_name, property;
-    std::getline(ss, bin_name, ',');
-    std::getline(ss, property, ',');
-    binNames.push_back(bin_name);
+    if (!reached_bins) {
+      if (line == "--") { // If we reach delimiter, set flag to true and continue to next line
+        reached_bins = true;
+        continue;
+      }
+      std::stringstream ss_var(line);
+      std::string var_name;
+      while (std::getline(ss_var, var_name, ',')) {
+        variable_names.push_back(var_name);
+      }
+    } else {
+      std::stringstream ss(line);
+      std::string bin_name, property;
+      std::getline(ss, bin_name, ',');
+      std::getline(ss, property, ',');
+      binNames.push_back(bin_name);
 
-    std::vector<float> bin_values;
-    std::string value;
-    while (std::getline(ss, value, ',')) {
-      bin_values.push_back(std::stof(value));
+      std::vector<float> bin_values;
+      std::string value;
+      while (std::getline(ss, value, ',')) {
+        bin_values.push_back(std::stof(value));
+      }
+      bins_map[bin_name] = bin_values;
+      allBins.push_back(bin_values);
     }
-    bins_map[bin_name] = bin_values;
-    allBins.push_back(bin_values);
   }
 }
-
-
 
 // function to get the polarization value
 float getPol(int runnum) {
@@ -62,42 +74,44 @@ float getPol(int runnum) {
 }
 
 struct eventData {
-  int status, runnum, evnum, helicity;
-  float e_p, e_theta, e_phi, vz_e, p2_p, p2_theta, p2_phi, vz_p2, p1_p, p1_theta, p1_phi, vz_p1;
-  float Q2, W, x, y, z2, z1, Mx, Mx2, Mx1, zeta, Mh, PT2, PT1, PTPT, xF2, xF1; 
-  float eta2, eta1, Delta_eta, phi2, phi1, Delta_phi, pol, b2b_factor;
+  std::map<std::string, float> data;
 };
 
 std::vector<eventData> gData;
 size_t currentBin = 0;
 
-eventData parseLine(const std::string& line) {
+eventData parseLine(const std::string& line, const std::vector<std::string>& variable_names) {
   std::istringstream iss(line);
   eventData data;
-  iss >> data.status >> data.runnum >> data.evnum >> data.helicity >> data.e_p >> data.e_theta >> 
-    data.e_phi >> data.vz_e >> data.p2_p >> data.p2_theta >> data.p2_phi >> data.vz_p2 >> 
-    data.p1_p >> data.p1_theta >> data.p1_phi >> data.vz_p1 >> data.Q2 >> data.W >> data.x >> 
-    data.y >> data.z2 >> data.z1 >> data.Mx >> data.Mx2 >> data.Mx1 >> data.zeta >> data.Mh >> 
-    data.PT2 >> data.PT1 >> data.PTPT >> data.xF2 >> data.xF1 >> data.eta2 >> data.eta1 >> 
-    data.Delta_eta >> data.phi2 >> data.phi1 >> data.Delta_phi;
-    data.pol = getPol(data.runnum);
-    // Calculate b2b_factor
-    const float M = 0.938272088; // proton mass
-    float gamma = (2 * M * data.x) / sqrt(data.Q2);
-    float epsilon = (1-data.y-(0.25)*gamma*gamma*data.y*data.y)/
-      (1-data.y+(0.50)*data.y*data.y+(0.25)*gamma*gamma*data.y*data.y);
-    float depolarization_factor = sqrt(1-epsilon*epsilon);
-    data.b2b_factor = (depolarization_factor*data.PTPT)/(M*M);
+  float value;
+
+  for (const auto& var_name : variable_names) {
+    iss >> value;
+    data.data[var_name] = value;
+  }
+
+  int runnum = static_cast<int>(data.data["runnum"]);
+  data.data["pol"] = getPol(runnum);
+
+  // Calculate b2b_factor
+  const float M = 0.938272088; // proton mass
+  float gamma = (2 * M * data.data["x"]) / sqrt(data.data["Q2"]);
+  float epsilon = (1 - data.data["y"] - (0.25) * gamma * gamma * data.data["y"] * data.data["y"]) /
+    (1 - data.data["y"] + (0.50) * data.data["y"] * data.data["y"] + (0.25) * gamma * gamma * 
+    data.data["y"] * data.data["y"]);
+  float depolarization_factor = sqrt(1 - epsilon * epsilon);
+  data.data["b2b_factor"] = (depolarization_factor * data.data["PTPT"]) / (M * M);
 
   return data;
 }
 
-std::vector<eventData> readData(const std::string& filename) {
+std::vector<eventData> readData(const std::string& filename, 
+  const std::vector<std::string>& variable_names) {
   std::ifstream infile(filename);
   std::string line;
   std::vector<eventData> data;
   while (std::getline(infile, line)) {
-    data.push_back(parseLine(line));
+    data.push_back(parseLine(line, variable_names));
   }
   return data;
 }
@@ -105,17 +119,8 @@ std::vector<eventData> readData(const std::string& filename) {
 double getEventProperty(const eventData& event, int currentFits) {
   std::string property = binNames[currentFits];
 
-  if (property == "x") return event.x;
-  if (property == "zeta") return event.zeta;
-  if (property == "PT1") return event.PT1;
-  if (property == "PT2") return event.PT2;
-  if (property == "PTPT") return event.PTPT;
-  if (property == "Q2") return event.Q2;
-  if (property == "z2") return event.z2;
-  if (property == "xF1") return event.xF1;
-  if (property == "xF2") return event.xF2;
-
-  return 0.0;
+  // Access the property value using the map's indexing
+  return event.data.at(property);
 }
 
 
