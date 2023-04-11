@@ -431,6 +431,8 @@ void BSA_fits(const char* data_file, const char* output_file) {
   }
   std::cout << std::endl;
 
+  cout<< "Found " << variable_names.size() << " variables: " << endl;
+
   cout << endl << endl;
   // for (size_t i = 0; i < allBins.size(); ++i) {
   for (size_t i = 0; i < 1; ++i) {
