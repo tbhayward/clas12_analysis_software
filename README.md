@@ -53,6 +53,7 @@ IIa. **/processing_classes/src/analyzers/Inclusive.java**
   
 IIb. **/processing_classes/src/analyzers/Hadron.java**  
 &nbsp;&nbsp;&nbsp;This is the class used to calculate relevant kinematic variables (Q2, W, Mx, xF, PT, phi_trento, etc.)  for ep -> e'hX events (single hadron SIDIS). 
+&nbsp;&nbsp;&nbsp; 1:runnum, 2:evnum, 3:helicity, 4:e_p, 5:e_theta, 6:e_phi, 7:vz_e, 8:p_p, 9:p_theta, 10:p_phi, 11:vz_p, 12:Q2, 13:W, 14:Mx, 15: Mx2, 16:x, 17:y, 18:z, 19:xF, 20:pT, 21:zeta, 22:eta, 23:phi (trento), 24:DepA, 25:DepB, 26:DepC, 27:DepV, 28:DepW
 
 IIc. **/processing_classes/src/analyzers/Dihadrons.java**
   Extension (technically written first) of the single hadron case to two hadrons, ep -> e' h1 h2 X, includes additional variables for each hadron, e.g. z1, z2, PT1, PT2, etc.
