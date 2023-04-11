@@ -425,7 +425,7 @@ void BSA_fits(const char* data_file, const char* output_file) {
 
   cout<< "Found " << allBins.size() << " sets of bins: " << endl;
   for (const std::string &name : binNames) {
-      cout << name;
+      cout << name << ", ";
   }
 
   cout << endl << endl;
