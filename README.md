@@ -51,6 +51,8 @@ I. **/processing_classes/src/extended_kinematic_fitters/analysis_fitter.java**
 IIa. **/processing_classes/src/analyzers/Inclusive.java**  
 &nbsp;&nbsp;&nbsp;This is the class used to calculate relevant kinematic variables (Q2, W, Mx, xF, PT, phi_trento, etc.)  for ep -> e'X events (inclusive DIS). 
   
+Columns: &nbsp;&nbsp;&nbsp; 1:runnum, 2:evnum, 3:helicity, 4:e_p, 5:e_theta, 6:e_phi, 7:vz_e, 8:Q2, 9:W, 10:Mx, 11: Mx2, 13:x, 14:y
+  
 IIb. **/processing_classes/src/analyzers/Hadron.java**  
 &nbsp;&nbsp;&nbsp;This is the class used to calculate relevant kinematic variables (Q2, W, Mx, xF, PT, phi_trento, etc.)  for ep -> e'hX events (single hadron SIDIS). 
 
