@@ -49,20 +49,11 @@ float getPol(int runnum) {
   return pol;
 }
 
-
 struct eventData {
   int status, runnum, evnum, helicity;
-  float e_p, e_theta, e_phi, vz_e;
-  float p2_p, p2_theta, p2_phi, vz_p2;
-  float p1_p, p1_theta, p1_phi, vz_p1;
-  float Q2, W, x, y, z2, z1;
-  float Mx, Mx2, Mx1;
-  float zeta, Mh;
-  float PT2, PT1, PTPT;
-  float xF2, xF1, eta2, eta1, Delta_eta;
-  float phi2, phi1, Delta_phi;
-  float pol;
-  float b2b_factor;
+  float e_p, e_theta, e_phi, vz_e, p2_p, p2_theta, p2_phi, vz_p2, p1_p, p1_theta, p1_phi, vz_p1;
+  float Q2, W, x, y, z2, z1, Mx, Mx2, Mx1, zeta, Mh, PT2, PT1, PTPT, xF2, xF1, 
+  float eta2, eta1, Delta_eta, phi2, phi1, Delta_phi, pol, b2b_factor;
 };
 
 std::vector<eventData> gData;
@@ -71,18 +62,13 @@ size_t currentBin = 0;
 eventData parseLine(const std::string& line) {
   std::istringstream iss(line);
   eventData data;
-  iss >> data.status >> data.runnum >> data.evnum >> data.helicity
-    >> data.e_p >> data.e_theta >> data.e_phi >> data.vz_e
-    >> data.p2_p >> data.p2_theta >> data.p2_phi >> data.vz_p2
-    >> data.p1_p >> data.p1_theta >> data.p1_phi >> data.vz_p1
-    >> data.Q2 >> data.W >> data.x >> data.y >> data.z2 >> data.z1
-    >> data.Mx >> data.Mx2 >> data.Mx1
-    >> data.zeta >> data.Mh
-    >> data.PT2 >> data.PT1 >> data.PTPT
-    >> data.xF2 >> data.xF1 >> data.eta2 >> data.eta1 >> data.Delta_eta
-    >> data.phi2 >> data.phi1 >> data.Delta_phi;
+  iss >> data.status >> data.runnum >> data.evnum >> data.helicity >> data.e_p >> data.e_theta >> 
+    data.e_phi >> data.vz_e >> data.p2_p >> data.p2_theta >> data.p2_phi >> data.vz_p2 >> 
+    data.p1_p >> data.p1_theta >> data.p1_phi >> data.vz_p1 >> data.Q2 >> data.W >> data.x >> 
+    data.y >> data.z2 >> data.z1 >> data.Mx >> data.Mx2 >> data.Mx1 >> data.zeta >> data.Mh >> 
+    data.PT2 >> data.PT1 >> data.PTPT >> data.xF2 >> data.xF1 >> data.eta2 >> data.eta1 >> 
+    data.Delta_eta >> data.phi2 >> data.phi1 >> data.Delta_phi;
     data.pol = getPol(data.runnum);
-
     // Calculate b2b_factor
     const float M = 0.938272088; // proton mass
     float gamma = (2 * M * data.x) / sqrt(data.Q2);
@@ -98,11 +84,9 @@ std::vector<eventData> readData(const std::string& filename) {
   std::ifstream infile(filename);
   std::string line;
   std::vector<eventData> data;
-
   while (std::getline(infile, line)) {
     data.push_back(parseLine(line));
   }
-
   return data;
 }
 
@@ -125,7 +109,6 @@ double getEventProperty(const eventData& event, int currentFits) {
     default: return 0.0;
   }
 }
-
 
 // Apply kinematic cuts to the data
 bool applyKinematicCuts(const eventData& data, int currentFits) {
@@ -174,12 +157,8 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     // par: an array of the parameter values
     // iflag: a flag (see TMinuit documentation for details)
 
-    double A = par[0];
-    double B = par[1];
-
-    double N = 0;
-    double sum_N = 0;
-    double sum_P = 0;
+    double A = par[0]; double B = par[1];
+    double N = 0; double sum_N = 0; double sum_P = 0;
 
     for (const eventData &event : gData) {
         double currentVariable = getEventProperty(event, currentFits);
@@ -196,7 +175,6 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           }
         }
     }
-
     f = N * log(N) - sum_P - sum_N;
 }
 
@@ -211,15 +189,11 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
   minuit.SetPrintLevel(-1);
   minuit.SetFCN(negLogLikelihood);
 
-  std::ostringstream mlmFitsAStream;
-  std::ostringstream mlmFitsAScaledStream;
-  std::ostringstream mlmFitsBStream;
-  std::ostringstream mlmFitsScaledBStream;
+  std::ostringstream mlmFitsAStream; std::ostringstream mlmFitsAScaledStream;
+  std::ostringstream mlmFitsBStream; std::ostringstream mlmFitsScaledBStream;
 
-  mlmFitsAStream << prefix << "MLMFitsA = {";
-  mlmFitsAScaledStream << prefix << "MLMFitsScaledA = {";
-  mlmFitsBStream << prefix << "MLMFitsB = {";
-  mlmFitsScaledBStream << prefix << "MLMFitsScaledB = {";
+  mlmFitsAStream << prefix << "MLMFitsA = {"; mlmFitsAScaledStream << prefix << "MLMFitsScaledA = {";
+  mlmFitsBStream << prefix << "MLMFitsB = {"; mlmFitsScaledBStream << prefix << "MLMFitsScaledB = {";
 
   for (size_t i = 0; i < numBins; ++i) {
     cout << endl << "Beginning MLM fit for " << binNames[currentFits]
@@ -254,10 +228,8 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     minuit.GetParameter(0, A, A_error);
     minuit.GetParameter(1, B, B_error);
 
-    double scaled_A = A / meanb2b;
-    double scaled_A_error = A_error / meanb2b;
-    double scaled_B = B / meanb2b;
-    double scaled_B_error = B_error / meanb2b;
+    double scaled_A = A / meanb2b; double scaled_A_error = A_error / meanb2b;
+    double scaled_B = B / meanb2b; double scaled_B_error = B_error / meanb2b;
 
     mlmFitsAStream << "{" << meanVariable << ", " << A << ", " << A_error << "}";
     mlmFitsAScaledStream << "{" << meanVariable << ", " << scaled_A << ", " << 
@@ -273,8 +245,7 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     }
   }
 
-  mlmFitsAStream << "};"; mlmFitsAScaledStream << "};";
-  mlmFitsBStream << "};"; mlmFitsScaledBStream << "};";
+  mlmFitsAStream << "};"; mlmFitsAScaledStream << "};"; mlmFitsBStream << "};"; mlmFitsScaledBStream << "};";
 
   std::ofstream outputFile(output_file, std::ios_base::app);
   outputFile << mlmFitsAStream.str() << std::endl;
@@ -321,9 +292,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   for (int iBin = 1; iBin <= numBins; ++iBin) {
     double Np = histPos->GetBinContent(iBin);
     double Nm = histNeg->GetBinContent(iBin);
-
     double asymmetry = (1 / meanPol) * (Np - Nm) / (Np + Nm);
-
     double error = (2 / meanPol) * std::sqrt(Np * Nm / TMath::Power(Np + Nm, 3));
 
     histAsymmetry->SetBinContent(iBin, asymmetry);
@@ -332,7 +301,6 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
 
   delete histPos;
   delete histNeg;
-
   return histAsymmetry;
 }
 
@@ -354,10 +322,8 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
   std::ostringstream chi2FitsBStream;
   std::ostringstream chi2FitsBScaledStream;
 
-  chi2FitsAStream << prefix << "chi2FitsA = {";
-  chi2FitsAScaledStream << prefix << "chi2FitsScaledA = {";
-  chi2FitsBStream << prefix << "chi2FitsB = {";
-  chi2FitsBScaledStream << prefix << "chi2FitsScaledB = {";
+  chi2FitsAStream << prefix << "chi2FitsA = {"; chi2FitsAScaledStream << prefix << "chi2FitsScaledA = {";
+  chi2FitsBStream << prefix << "chi2FitsB = {"; chi2FitsBScaledStream << prefix << "chi2FitsScaledB = {";
 
   size_t numBins = allBins[currentFits].size() - 1;
 
@@ -387,15 +353,11 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
       double meanb2b = numEvents > 0 ? sumb2b / numEvents : 0.0;
       cout << numEvents << endl;
 
-      double A = fitFunction->GetParameter(0);
-      double A_error = fitFunction->GetParError(0);
-      double B = fitFunction->GetParameter(1);
-      double B_error = fitFunction->GetParError(1);
+      double A = fitFunction->GetParameter(0); double A_error = fitFunction->GetParError(0);
+      double B = fitFunction->GetParameter(1); double B_error = fitFunction->GetParError(1);
 
-      double scaled_A = A / meanb2b;
-      double scaled_A_error = A_error / meanb2b;
-      double scaled_B = B / meanb2b;
-      double scaled_B_error = B_error / meanb2b;
+      double scaled_A = A / meanb2b; double scaled_A_error = A_error / meanb2b;
+      double scaled_B = B / meanb2b; double scaled_B_error = B_error / meanb2b;
 
       chi2FitsAStream << "{" << meanVariable << ", " << A << ", " << A_error << "}";
       chi2FitsAScaledStream << "{" << meanVariable << ", " << scaled_A << ", " << 
@@ -410,12 +372,10 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
           chi2FitsBStream << ", ";
           chi2FitsBScaledStream << ", ";
       }
-
       delete hist;
     }
 
-    chi2FitsAStream << "};"; chi2FitsAScaledStream << "};";
-    chi2FitsBStream << "};"; chi2FitsBScaledStream << "};";
+    chi2FitsAStream << "};"; chi2FitsAScaledStream << "};"; chi2FitsBStream << "};"; chi2FitsBScaledStream << "};";
 
     std::ofstream outputFile(output_file, std::ios_base::app);
     outputFile << chi2FitsAStream.str() << std::endl;
@@ -438,18 +398,7 @@ void BSA_fits(const char* data_file, const char* output_file) {
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
     performMLMFits(data_file, output_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
-    cout << endl << endl << endl;
+    cout << endl << endl;
     currentFits++;
   }
 }
-
-// accumulated charge
-// RGA Fall 18: 68.38041061700115 mC
-// RGA Spring 19: 46.512769750708856 mC
-// RGA Total: 114.8932 mC
-// RGB Spring 19: 66.7769672846809 mC
-// RGB Fall 19: 12.363048867122998 mC
-// RGB Spring 20: 28.505789583113557 mC
-// RGB Total: 107.6458 mC
-
-
