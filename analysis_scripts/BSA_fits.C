@@ -293,6 +293,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   int numEvents = 0;
 
   for (const eventData& event : data) {
+    cout << event.data.at("Delta_phi") << endl;
     double currentVariable = getEventProperty(event, currentFits);
     if (applyKinematicCuts(event, currentFits) && currentVariable >= varMin && 
       currentVariable < varMax) {
@@ -420,11 +421,11 @@ void BSA_fits(const char* data_file, const char* output_file) {
 
   // load bins from external csv file
   load_bins_from_csv("bins.csv");
-  cout<<"-- Loaded information from bins.csv. Found "<<allBins.size()<<" sets of bins."<<endl;
+  cout<<endl<<"-- Loaded information from bins.csv. Found "<<allBins.size()<<" sets of bins."<<endl;
 
-  for (size_t i = 0; i < allBins.size(); ++i) {
-    cout << "Beginning kinematic fits." << endl;
-  // for (size_t i = 0; i < 1; ++i) {
+  // for (size_t i = 0; i < allBins.size(); ++i) {
+  for (size_t i = 0; i < 1; ++i) {
+    cout << "-- Beginning kinematic fits." << endl;
     performChi2Fits(data_file, output_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
     performMLMFits(data_file, output_file, binNames[i]);
