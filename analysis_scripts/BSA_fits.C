@@ -418,6 +418,7 @@ void BSA_fits(const char* data_file, const char* output_file) {
 
   // load bins from external csv file
   load_bins_from_csv("bins.csv");
+  cout << "loaded information from bins.csv" << endl;
 
   for (size_t i = 0; i < allBins.size(); ++i) {
   // for (size_t i = 0; i < 1; ++i) {
