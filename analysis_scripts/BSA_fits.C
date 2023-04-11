@@ -424,9 +424,12 @@ void BSA_fits(const char* data_file, const char* output_file) {
   cout<< endl <<"-- Loaded information from bins.csv. " << endl;
 
   cout<< "Found " << allBins.size() << " sets of bins: " << endl;
-  for (const std::string &name : binNames) {
-      cout << name << ", ";
+  for (size_t i = 0; i < binNames.size(); ++i) {
+    cout << binNames[i];
+    if (i == binNames.size() - 1) { cout << "."; } 
+    else { cout << ", "; }
   }
+  std::cout << std::endl;
 
   cout << endl << endl;
   // for (size_t i = 0; i < allBins.size(); ++i) {
