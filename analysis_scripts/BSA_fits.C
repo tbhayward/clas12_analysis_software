@@ -12,13 +12,13 @@ size_t currentFits = 0;
 std::map<std::string, std::vector<float>> bins_map;
 std::vector<std::vector<float>> allBins;
 std::vector<std::string> binNames;
+std::vector<std::string> variable_names;
 
 void load_bins_from_csv(const std::string& filename) {
   std::ifstream file(filename);
   std::string line;
   bool reached_bins = false; // Flag to check if we have reached the bin declarations
-  std::vector<std::string> variable_names;
-
+  
   while (std::getline(file, line)) {
     if (line.empty() || line[0] == '#') { continue; } // Ignore comment lines
 
