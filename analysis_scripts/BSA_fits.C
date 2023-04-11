@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include <map>
+size_t currentFits = 0;
 
 // std::vector<float> xBins = {0.05, 0.12, 0.20, 0.28, 0.36, 0.44, 0.60};
 // std::vector<float> zetaBins = {0.30, 0.400, 0.475, 0.550, 0.625, 0.70, 0.80};
@@ -25,7 +26,6 @@
 
 // std::vector<std::vector<float>> allBins = {xBins, zetaBins, PT1Bins, PT2Bins, PTPTBins,
 //   zeta00Bins, zeta20Bins, zeta32Bins, Q200Bins, Q220Bins, Q232Bins, z1Bins, xF1Bins, xF2Bins};
-// size_t currentFits = 0;
 // std::vector<std::string> binNames = {"x", "zeta", "PT1", "PT2", "PTPT", "zeta00", "zeta20", 
 //   "zeta32", "Q200", "Q220", "Q232", "z1", "xF1", "xF2"};
 
