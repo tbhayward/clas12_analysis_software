@@ -151,17 +151,23 @@ bool applyKinematicCuts(const eventData& data, int currentFits) {
     //         return false;
     //     }
     // }
-    return (currentFits <= 4) ? (data.data["status"] <= 1e2) : true; // x, zeta, PT1, PT2, PTPT
-    return (currentFits == 5) ? (data.data["status"] == 1e0) : true; // 1st zeta-x bin
-    return (currentFits == 6) ? (data.data["status"] == 1e1) : true; // 2nd zeta-x bin
-    return (currentFits == 7) ? (data.data["status"] == 1e2) : true; // 3rd zeta-x bin
-    return (currentFits == 8) ? (data.data["status"] == 1e0) : true; // 1st Q2-x bin
-    return (currentFits == 9) ? (data.data["status"] == 1e1) : true; // 2nd Q2-x bin
-    return (currentFits == 10) ? (data.data["status"] == 1e2) : true; // 3rd Q2-x bin
-    return (currentFits == 11) ? (data.data["status"] <= 1e2 || data.status == 1e3) : true; // z1
-    return (currentFits == 12) ? (data.data["status"] <= 1e2 || data.status == 1e4) : true; // xF1
-    return (currentFits == 13) ? (data.data["status"] <= 1e2 || data.status == 1e5) : true; // xF2
-}
+     if (currentFits <= 4) { return data.data.at("status") <= 1e2;
+    } else if (currentFits == 5) { return data.data.at("status") == 1e0;
+    } else if (currentFits == 6) { return data.data.at("status") == 1e1;
+    } else if (currentFits == 7) { return data.data.at("status") == 1e2;
+    } else if (currentFits == 8) { return data.data.at("status") == 1e0;
+    } else if (currentFits == 9) { return data.data.at("status") == 1e1;
+    } else if (currentFits == 10) { return data.data.at("status") == 1e2;
+    } else if (currentFits == 11) { return data.data.at("status") <= 1e2 || 
+      data.data.at("status") == 1e3;
+    } else if (currentFits == 12) { return data.data.at("status") <= 1e2 || 
+      data.data.at("status") == 1e4;
+    } else if (currentFits == 13) { return data.data.at("status") <= 1e2 || 
+      data.data.at("status") == 1e5;
+    } else { return true;
+    }
+  }
+
 
 // Negative log-likelihood function
 void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag) {
@@ -180,11 +186,11 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           currentVariable >= allBins[currentFits][currentBin] && 
           currentVariable < allBins[currentFits][currentBin + 1]) {
           N += 1;
-          double Delta_phi = event.data["Delta_phi"];
+          double Delta_phi = event.data.at("Delta_phi");
           double pol = event.data["pol"];
-          if (event.data["helicity"] > 0) {
+          if (event.data.at("helicity") > 0) {
             sum_P += log(1 + pol * (A * sin(Delta_phi) + B * sin(2 * Delta_phi)));
-          } else if (event.data["helicity"] < 0) {
+          } else if (event.data.at("helicity") < 0) {
             sum_N += log(1 - pol * (A * sin(Delta_phi) + B * sin(2 * Delta_phi)));
           }
         }
@@ -287,10 +293,10 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
     double currentVariable = getEventProperty(event, currentFits);
     if (applyKinematicCuts(event, currentFits) && currentVariable >= varMin && 
       currentVariable < varMax) {
-      if (event.data["helicity"] > 0) {
-        histPos->Fill(event.data["Delta_phi"]);
+      if (event.data.at("helicity") > 0) {
+        histPos->Fill(event.data.at("Delta_phi"));
       } else {
-        histNeg->Fill(event.data["Delta_phi"]);
+        histNeg->Fill(event.data.at("Delta_phi"));
       }
       sumPol += event.data["pol"];
       numEvents++;
