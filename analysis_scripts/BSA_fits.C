@@ -423,7 +423,7 @@ void BSA_fits(const char* data_file, const char* output_file) {
   load_bins_from_csv("bins.csv");
   cout<< endl <<"-- Loaded information from bins.csv. " << endl;
 
-  cout<< "Found " << variable_names.size() << " variables: " << endl;
+  // cout<< "Found " << variable_names.size() << " variables: " << endl;
   for (const std::string &name : variable_names) {
       cout << variable_names;
   }
