@@ -187,7 +187,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           currentVariable < allBins[currentFits][currentBin + 1]) {
           N += 1;
           double Delta_phi = event.data.at("Delta_phi");
-          double pol = event.data["pol"];
+          double pol = event.data.at("pol");
           if (event.data.at("helicity") > 0) {
             sum_P += log(1 + pol * (A * sin(Delta_phi) + B * sin(2 * Delta_phi)));
           } else if (event.data.at("helicity") < 0) {
@@ -298,7 +298,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
       } else {
         histNeg->Fill(event.data.at("Delta_phi"));
       }
-      sumPol += event.data["pol"];
+      sumPol += event.data.at("pol");
       numEvents++;
     }
   }
