@@ -16,14 +16,16 @@ std::vector<std::string> binNames;
 void load_bins_from_csv(const std::string& filename) {
   std::ifstream file(filename);
   std::string line;
-  
+
   while (std::getline(file, line)) {
+    if (line.empty() || line[0] == '#') { continue; } // Ignore comment lines
+
     std::stringstream ss(line);
-    std::string bin_name;
+    std::string bin_name, property;
     std::getline(ss, bin_name, ',');
-    
+    std::getline(ss, property, ',');
     binNames.push_back(bin_name);
-    
+
     std::vector<float> bin_values;
     std::string value;
     while (std::getline(ss, value, ',')) {
@@ -33,6 +35,7 @@ void load_bins_from_csv(const std::string& filename) {
     allBins.push_back(bin_values);
   }
 }
+
 
 
 // function to get the polarization value
@@ -100,24 +103,21 @@ std::vector<eventData> readData(const std::string& filename) {
 }
 
 double getEventProperty(const eventData& event, int currentFits) {
-  switch (currentFits) {
-    case 0: return event.x;
-    case 1: return event.zeta;
-    case 2: return event.PT2;
-    case 3: return event.PT1;
-    case 4: return event.PTPT;
-    case 5: return event.zeta;
-    case 6: return event.zeta;
-    case 7: return event.zeta;
-    case 8: return event.Q2;
-    case 9: return event.Q2;
-    case 10: return event.Q2;
-    case 11: return event.z2;
-    case 12: return event.xF2;
-    case 13: return event.xF1;
-    default: return 0.0;
-  }
+  std::string property = binNames[currentFits];
+
+  if (property == "x") return event.x;
+  if (property == "zeta") return event.zeta;
+  if (property == "PT1") return event.PT1;
+  if (property == "PT2") return event.PT2;
+  if (property == "PTPT") return event.PTPT;
+  if (property == "Q2") return event.Q2;
+  if (property == "z2") return event.z2;
+  if (property == "xF1") return event.xF1;
+  if (property == "xF2") return event.xF2;
+
+  return 0.0;
 }
+
 
 // Apply kinematic cuts to the data
 bool applyKinematicCuts(const eventData& data, int currentFits) {
