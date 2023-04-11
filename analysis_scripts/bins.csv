@@ -5,7 +5,7 @@ status, runnum, evnum, helicity;
 float e_p, e_theta, e_phi, vz_e, p2_p, p2_theta, p2_phi, vz_p2, p1_p, p1_theta, p1_phi, vz_p1;
 float Q2, W, x, y, z2, z1, Mx, Mx2, Mx1, zeta, Mh, PT2, PT1, PTPT, xF2, xF1; 
 float eta2, eta1, Delta_eta, phi2, phi1, Delta_phi,
----
+-
 x,x,0.05,0.12,0.20,0.28,0.36,0.44,0.60
 zeta,zeta,0.30,0.400,0.475,0.550,0.625,0.70,0.80
 PT1,PT1,0,0.18,0.36,0.54,0.72,0.90,1.30
