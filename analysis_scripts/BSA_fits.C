@@ -439,4 +439,5 @@ void BSA_fits(const char* data_file, const char* output_file) {
     cout << endl << endl;
     currentFits++;
   }
+  cout << endl << endl;
 }
