@@ -421,12 +421,18 @@ void BSA_fits(const char* data_file, const char* output_file) {
 
   // load bins from external csv file
   load_bins_from_csv("bins.csv");
-  cout<< endl <<"-- Loaded information from bins.csv.";
-  cout<< "Found " << allBins.size() << " sets of bins." << endl;
+  cout<< endl <<"-- Loaded information from bins.csv. " << endl;
+
+  cout<< "Found " << variable_names.size() << " variables: " << endl;
+  for (const std::string &name : variable_names) {
+      cout << variable_names;
+  }
+  cout<< "Found " << allBins.size() << " sets of bins: " << endl;
   for (const std::string &name : binNames) {
-      std::cout << name << std::endl;
+      cout << name;
   }
 
+  cout << endl << endl;
   // for (size_t i = 0; i < allBins.size(); ++i) {
   for (size_t i = 0; i < 1; ++i) {
     cout << "-- Beginning kinematic fits." << endl;
