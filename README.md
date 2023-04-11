@@ -1,6 +1,6 @@
 # CLAS12 analysis framework developed by Timothy B. Hayward
 * repository for various analysis codes (EventBuilder, fitters, etc.) used for analyzing CLAS12 data at Jefferson Lab. Primarily SIDIS focused. Modern iteration of [my previous analysis software](https://github.com/tbhayward/clas_analysis_code).
-* README last updated April 9, 2023
+* README last updated April 10, 2023
 
 ### Table of Contents
 1. [QA Information](#info)
