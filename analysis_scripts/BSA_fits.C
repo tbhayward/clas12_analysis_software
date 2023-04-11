@@ -4,6 +4,7 @@
 #include <sstream>
 #include <TH1D.h>
 #include <algorithm>
+import json
 
 std::vector<float> xBins = {0.05, 0.12, 0.20, 0.28, 0.36, 0.44, 0.60};
 std::vector<float> zetaBins = {0.30, 0.400, 0.475, 0.550, 0.625, 0.70, 0.80};
