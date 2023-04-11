@@ -217,7 +217,7 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
   mlmFitsBStream << prefix << "MLMFitsB = {"; mlmFitsScaledBStream << prefix << "MLMFitsScaledB = {";
 
   for (size_t i = 0; i < numBins; ++i) {
-    cout << endl << "Beginning MLM fit for " << binNames[currentFits]
+    cout << "Beginning MLM fit for " << binNames[currentFits]
       << " bin " << i << ". ";
     currentBin = i;
 
@@ -242,6 +242,7 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
             numEvents += 1;
         }
     }
+    cout << "Found " << numEvents << " events." << endl;
     double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
     double meanb2b = numEvents > 0 ? sumb2b / numEvents : 0.0;
 
@@ -419,10 +420,10 @@ void BSA_fits(const char* data_file, const char* output_file) {
 
   // load bins from external csv file
   load_bins_from_csv("bins.csv");
-  cout << "-- Loaded information from bins.csv" << endl;
-  cout << allBins.size() << endl;
+  cout<<"-- Loaded information from bins.csv. Found "<<allBins.size()<<" sets of bins."<<endl;
 
   for (size_t i = 0; i < allBins.size(); ++i) {
+    cout << "Beginning kinematic fits." << endl;
   // for (size_t i = 0; i < 1; ++i) {
     performChi2Fits(data_file, output_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
