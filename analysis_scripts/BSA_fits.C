@@ -291,7 +291,6 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   int numEvents = 0;
 
   for (const eventData& event : data) {
-    cout << "Hey we made it this far" << endl;
     // cout << event.data.at("evnum") << endl;
     double currentVariable = getEventProperty(event, currentFits);
     cout << currentVariable << endl;
