@@ -293,7 +293,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   double sumPol = 0;
   int numEvents = 0;
 
-  for (const eventData& event : data) {
+  for (const eventData& event : gData) {
     cout << "Hey we made it this far" << endl;
     cout << event.data.at("Delta_phi") << endl;
     double currentVariable = getEventProperty(event, currentFits);
