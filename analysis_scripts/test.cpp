@@ -76,6 +76,13 @@ std::vector<eventData> gData;
 size_t currentBin = 0;
 
 eventData parseLine(const std::string& line, const std::vector<std::string>& variable_names) {
+  std::cout << "Line: " << line << std::endl;
+  std::cout << "Variable names: ";
+  for (const auto& var_name : variable_names) {
+    std::cout << var_name << " ";
+  }
+  std::cout << std::endl;
+
   std::istringstream iss(line);
   eventData data;
 
@@ -87,7 +94,7 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
     data.data[var_name] = value;
   }
 
-  cout << data.data["status"] << " " << data.data["runnum"] << " " << data.data["evnum"] << endl; 
+  // cout << data.data["status"] << " " << data.data["runnum"] << " " << data.data["evnum"] << endl; 
 
   data.data["pol"] = 0.86;
   // Calculate b2b_factor
