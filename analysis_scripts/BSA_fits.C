@@ -88,7 +88,6 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
   float value;
   for (const auto& var_name : variable_names) {
     iss >> value;
-    cout << var_name << " " << value << endl;
     data.data[var_name] = value;
   }
 
