@@ -262,7 +262,6 @@ void test(const char* data_file, const char* output_file) {
   }
   cout << endl;
 
-gSystem->Sleep(5000);
 
   // cout << endl << endl;
   // for (size_t i = 0; i < allBins.size(); ++i) {
