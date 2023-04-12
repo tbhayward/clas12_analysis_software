@@ -362,10 +362,10 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
       char histName[32];
       snprintf(histName, sizeof(histName), "hist_%zu", i);
 
+      cout << "Hey we made it this far" << endl;
       TH1D* hist = createHistogramForBin(gData, histName, i);
       hist->Fit(fitFunction, "Q");
 
-      cout << "Hey we made it this far" << endl;
       double sumVariable = 0;
       double sumb2b = 0;
       double numEvents = 0;
