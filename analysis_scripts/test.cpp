@@ -76,15 +76,15 @@ std::vector<eventData> gData;
 size_t currentBin = 0;
 
 eventData parseLine(const std::string& line, const std::vector<std::string>& variable_names) {
-  // std::cout << "Line: " << line << std::endl;
-  // std::cout << "Variable names: ";
-  // for (const auto& var_name : variable_names) {
-  //   std::cout << var_name << " ";
-  // }
-  // std::cout << std::endl;
-
   std::istringstream iss(line);
   eventData data;
+
+  std::cout << "Variable names in parseLine: ";
+  for (const auto& var_name : variable_names) {
+    std::cout << var_name << ", ";
+  }
+  std::cout << std::endl;
+
 
   float value;
   std::string value_str;
