@@ -38,6 +38,7 @@ void load_bins_from_csv(const std::string& filename) {
       std::string bin_name, property;
       std::getline(ss, bin_name, ',');
       std::getline(ss, property, ',');
+      cout << property << endl;
       binNames.push_back(bin_name);
 
       std::vector<float> bin_values;
