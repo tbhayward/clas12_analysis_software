@@ -283,7 +283,6 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
 TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* histName,
   int binIndex) {
 
-  cout << "Hey we made it this far" << endl;
   double varMin = allBins[currentFits][binIndex];
   double varMax = allBins[currentFits][binIndex + 1];
 
@@ -292,7 +291,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
 
   double sumPol = 0;
   int numEvents = 0;
-
+  cout << "Hey we made it this far" << endl;
   for (const eventData& event : data) {
     cout << event.data.at("Delta_phi") << endl;
     double currentVariable = getEventProperty(event, currentFits);
