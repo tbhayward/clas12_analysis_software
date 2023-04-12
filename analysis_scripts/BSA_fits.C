@@ -283,6 +283,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
 
   double varMin = allBins[currentFits][binIndex];
   double varMax = allBins[currentFits][binIndex + 1];
+  cout << varMin << " " << varMax << endl;
 
   TH1D* histPos = new TH1D(Form("%s_pos", histName), "", 24, 0, 2 * TMath::Pi());
   TH1D* histNeg = new TH1D(Form("%s_neg", histName), "", 24, 0, 2 * TMath::Pi());
