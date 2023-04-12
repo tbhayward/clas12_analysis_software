@@ -102,7 +102,7 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
     value = std::stof(value_str);
     data.data[var_name] = value;
 
-    std::cout << "Var: " << var_name << ", Value_str: " << value_str << ", Value: " << value << std::endl;
+    // std::cout << "Var: " << var_name << ", Value_str: " << value_str << ", Value: " << value << std::endl;
     var_name_index++;
   }
 
