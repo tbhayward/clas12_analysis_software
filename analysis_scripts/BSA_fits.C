@@ -94,7 +94,7 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
 
   int runnum = static_cast<int>(data.data["runnum"]);
   data.data["pol"] = getPol(runnum);
-
+  cout << "check in parseline" << endl;
   // Calculate b2b_factor
   const float M = 0.938272088; // proton mass
   float gamma = (2 * M * data.data["x"]) / sqrt(data.data["Q2"]);
@@ -124,7 +124,6 @@ double getEventProperty(const eventData& event, int currentFits) {
   // Access the property value using the map's indexing
   return event.data.at(property);
 }
-
 
 // Apply kinematic cuts to the data
 bool applyKinematicCuts(const eventData& data, int currentFits) {
@@ -293,7 +292,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   double sumPol = 0;
   int numEvents = 0;
 
-  for (const eventData& event : gData) {
+  for (const eventData& event : data) {
     cout << "Hey we made it this far" << endl;
     cout << event.data.at("Delta_phi") << endl;
     double currentVariable = getEventProperty(event, currentFits);
