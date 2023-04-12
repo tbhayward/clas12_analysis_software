@@ -101,6 +101,12 @@ double getEventProperty(const eventData& event, int currentFits) {
   return event.data.at(property);
 }
 
+// Apply kinematic cuts to the data
+bool applyKinematicCuts(const eventData& data, int currentFits) {
+  //  if (currentFits <= 4) { return data.data.at("status") <= 1e2; }
+  return true;
+}
+
 TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* histName,
   int binIndex) {
 
