@@ -79,11 +79,11 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
   std::istringstream iss(line);
   eventData data;
 
-  std::cout << "Variable names in parseLine: ";
-  for (const auto& var_name : variable_names) {
-    std::cout << var_name << endl;
-  }
-  std::cout << std::endl;
+  // std::cout << "Variable names in parseLine: ";
+  // for (const auto& var_name : variable_names) {
+  //   std::cout << var_name << endl;
+  // }
+  // std::cout << std::endl;
 
 
   float value;
