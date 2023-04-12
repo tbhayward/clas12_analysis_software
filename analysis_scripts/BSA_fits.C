@@ -8,6 +8,7 @@
 #include <vector>
 #include <map>
 size_t currentFits = 0;
+int n = 1;
 
 std::map<std::string, std::vector<float>> bins_map;
 std::vector<std::vector<float>> allBins;
@@ -85,7 +86,6 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
   eventData data;
   float value;
 
-  int n = 1;
   for (const auto& var_name : variable_names) {
     iss >> value;
     cout << n << " " << var_name << " " << value << endl;
