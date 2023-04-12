@@ -260,7 +260,7 @@ void test(const char* data_file, const char* output_file) {
       cout << ", ";
     }
   }
-  // std::cout << std::endl;
+  cout << endl;
 
 gSystem->Sleep(5000);
 
