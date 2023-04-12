@@ -76,12 +76,12 @@ std::vector<eventData> gData;
 size_t currentBin = 0;
 
 eventData parseLine(const std::string& line, const std::vector<std::string>& variable_names) {
-  std::cout << "Line: " << line << std::endl;
-  std::cout << "Variable names: ";
-  for (const auto& var_name : variable_names) {
-    std::cout << var_name << " ";
-  }
-  std::cout << std::endl;
+  // std::cout << "Line: " << line << std::endl;
+  // std::cout << "Variable names: ";
+  // for (const auto& var_name : variable_names) {
+  //   std::cout << var_name << " ";
+  // }
+  // std::cout << std::endl;
 
   std::istringstream iss(line);
   eventData data;
@@ -92,9 +92,12 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
     std::getline(iss, value_str, ','); // Use comma as the delimiter
     value = std::stof(value_str);
     data.data[var_name] = value;
+
+    std::cout << "Var: " << var_name << ", Value_str: " << value_str << ", Value: " << value << std::endl;
   }
 
-  // cout << data.data["status"] << " " << data.data["runnum"] << " " << data.data["evnum"] << endl; 
+  // Print the final values of status, runnum, and evnum
+  cout << data.data["status"] << " " << data.data["runnum"] << " " << data.data["evnum"] << endl;
 
   data.data["pol"] = 0.86;
   // Calculate b2b_factor
