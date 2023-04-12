@@ -245,7 +245,7 @@ void test(const char* data_file, const char* output_file) {
   cout<< "Found " << variable_names.size() << " variables: " << endl;
   for (size_t i = 0; i < variable_names.size(); ++i) {
     cout << i << ": " << variable_names[i];
-    if (i == variable_names.size() - 1) { cout << "." << endl; }
+    if (i == variable_names.size() - 1) { cout << "HELLO" << endl; }
     else { cout << ", " << endl; }
   }
   std::cout << std::endl;
