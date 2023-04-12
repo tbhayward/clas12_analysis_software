@@ -430,7 +430,7 @@ void BSA_fits(const char* data_file, const char* output_file) {
   cout<< "Found " << allBins[currentFits].size() << " bin indices: " << endl;
   for (size_t i = 0; i < allBins[currentFits].size(); ++i) {
     cout << allBins[currentFits][i];
-    if (i == binNames.size() - 1) { cout << "."; } 
+    if (i == allBins[currentFits].size() - 1) { cout << "."; } 
     else { cout << ", "; }
   }
   std::cout << std::endl;
