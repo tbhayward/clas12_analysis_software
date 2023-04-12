@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <TSystem.h>
 size_t currentFits = 0;
 int n = 1;
 
@@ -261,7 +262,7 @@ void test(const char* data_file, const char* output_file) {
   }
   // std::cout << std::endl;
 
-
+gSystem->Sleep(5000);
 
   // cout << endl << endl;
   // for (size_t i = 0; i < allBins.size(); ++i) {
