@@ -50,7 +50,6 @@ void load_bins_from_csv(const std::string& filename) {
   }
 }
 
-
 // function to get the polarization value
 float getPol(int runnum) {
   float pol; 
@@ -88,6 +87,7 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
 
   for (const auto& var_name : variable_names) {
     iss >> value;
+    cout << value << endl;
     data.data[var_name] = value;
   }
 
