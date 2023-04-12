@@ -4,54 +4,27 @@
 #include <sstream>
 #include <TH1D.h>
 #include <algorithm>
-#include <string>
-#include <vector>
-#include <map>
+
+std::vector<float> xBins = {0.05, 0.12, 0.20, 0.28, 0.36, 0.44, 0.60};
+std::vector<float> zetaBins = {0.30, 0.400, 0.475, 0.550, 0.625, 0.70, 0.80};
+std::vector<float> PT1Bins = {0, 0.18, 0.36, 0.54, 0.72, 0.90, 1.30};
+std::vector<float> PT2Bins = {0, 0.18, 0.36, 0.54, 0.72, 0.90, 1.30};
+std::vector<float> PTPTBins = {0, 0.09, 0.18, 0.27, 0.36, 0.45, 0.6};
+std::vector<float> zeta00Bins = {0.40, 0.49, 0.58, 0.67, 0.80};
+std::vector<float> zeta20Bins = {0.40, 0.49, 0.58, 0.67, 0.80};
+std::vector<float> zeta32Bins = {0.30, 0.37, 0.44, 0.51, 0.60};
+std::vector<float> Q200Bins = {1.00, 1.50, 2.00, 2.50, 3.00};
+std::vector<float> Q220Bins = {1.00, 2.00, 3.00, 4.00, 5.00};
+std::vector<float> Q232Bins = {2.00, 3.50, 5.00, 6.50, 8.00};
+std::vector<float> z1Bins = {0.10, 0.20, 0.28, 0.36, 0.44, 0.52, 0.7};
+std::vector<float> xF1Bins = {-0.10, 0.00, 0.08, 0.16, 0.26, 0.36, 0.50};
+std::vector<float> xF2Bins = {-0.82, -0.60, -0.38, -0.16, 0.06, 0.28, 0.50};
+
+std::vector<std::vector<float>> allBins = {xBins, zetaBins, PT1Bins, PT2Bins, PTPTBins,
+  zeta00Bins, zeta20Bins, zeta32Bins, Q200Bins, Q220Bins, Q232Bins, z1Bins, xF1Bins, xF2Bins};
 size_t currentFits = 0;
-int n = 1;
-
-std::map<std::string, std::vector<float>> bins_map;
-std::vector<std::vector<float>> allBins;
-std::vector<std::string> binNames;
-std::vector<std::string> propertyNames;
-std::vector<std::string> variable_names;
-
-void load_bins_from_csv(const std::string& filename) {
-  std::ifstream file(filename);
-  std::string line;
-  bool reached_bins = false; // Flag to check if we have reached the bin declarations
-  
-  while (std::getline(file, line)) {
-    if (line.empty() || line[0] == '#') { continue; } // Ignore comment lines
-
-    if (!reached_bins) {
-      if (line.find("-") != std::string::npos) { // set flag to true and continue to next line
-        reached_bins = true;
-        continue;
-      }
-      std::stringstream ss_var(line);
-      std::string var_name;
-      while (std::getline(ss_var, var_name, ',')) {
-        variable_names.push_back(var_name);
-      }
-    } else {
-      std::stringstream ss(line);
-      std::string bin_name, property;
-      std::getline(ss, bin_name, ',');
-      binNames.push_back(bin_name);
-      std::getline(ss, property, ',');
-      propertyNames.push_back(property);
-
-      std::vector<float> bin_values;
-      std::string value;
-      while (std::getline(ss, value, ',')) {
-        bin_values.push_back(std::stof(value));
-      }
-      bins_map[bin_name] = bin_values;
-      allBins.push_back(bin_values);
-    }
-  }
-}
+std::vector<std::string> binNames = {"x", "zeta", "PT1", "PT2", "PTPT", "zeta00", "zeta20", 
+  "zeta32", "Q200", "Q220", "Q232", "z1", "xF1", "xF2"};
 
 // function to get the polarization value
 float getPol(int runnum) {
@@ -76,53 +49,83 @@ float getPol(int runnum) {
   return pol;
 }
 
+
 struct eventData {
-  std::map<std::string, float> data;
+  int status, runnum, evnum, helicity;
+  float e_p, e_theta, e_phi, vz_e;
+  float p2_p, p2_theta, p2_phi, vz_p2;
+  float p1_p, p1_theta, p1_phi, vz_p1;
+  float Q2, W, x, y, z2, z1;
+  float Mx, Mx2, Mx1;
+  float zeta, Mh;
+  float PT2, PT1, PTPT;
+  float xF2, xF1, eta2, eta1, Delta_eta;
+  float phi2, phi1, Delta_phi;
+  float pol;
+  float b2b_factor;
 };
 
 std::vector<eventData> gData;
 size_t currentBin = 0;
 
-eventData parseLine(const std::string& line, const std::vector<std::string>& variable_names) {
+eventData parseLine(const std::string& line) {
   std::istringstream iss(line);
   eventData data;
-  
-  float value;
-  for (const auto& var_name : variable_names) {
-    iss >> value;
-    data.data[var_name] = value;
-  }
+  iss >> data.status >> data.runnum >> data.evnum >> data.helicity
+    >> data.e_p >> data.e_theta >> data.e_phi >> data.vz_e
+    >> data.p2_p >> data.p2_theta >> data.p2_phi >> data.vz_p2
+    >> data.p1_p >> data.p1_theta >> data.p1_phi >> data.vz_p1
+    >> data.Q2 >> data.W >> data.x >> data.y >> data.z2 >> data.z1
+    >> data.Mx >> data.Mx2 >> data.Mx1
+    >> data.zeta >> data.Mh
+    >> data.PT2 >> data.PT1 >> data.PTPT
+    >> data.xF2 >> data.xF1 >> data.eta2 >> data.eta1 >> data.Delta_eta
+    >> data.phi2 >> data.phi1 >> data.Delta_phi;
+    data.pol = getPol(data.runnum);
 
-  data.data["pol"] = getPol(data.data["runnum"]);
-  // Calculate b2b_factor
-  const float M = 0.938272088; // proton mass
-  float gamma = (2 * M * data.data["x"]) / sqrt(data.data["Q2"]);
-  float epsilon = (1 - data.data["y"] - (0.25) * gamma * gamma * data.data["y"] * data.data["y"]) /
-    (1 - data.data["y"] + (0.50) * data.data["y"] * data.data["y"] + (0.25) * gamma * gamma * 
-    data.data["y"] * data.data["y"]);
-  float depolarization_factor = sqrt(1 - epsilon * epsilon);
-  data.data["b2b_factor"] = (depolarization_factor * data.data["PTPT"]) / (M * M);
+    // Calculate b2b_factor
+    const float M = 0.938272088; // proton mass
+    float gamma = (2 * M * data.x) / sqrt(data.Q2);
+    float epsilon = (1-data.y-(0.25)*gamma*gamma*data.y*data.y)/
+      (1-data.y+(0.50)*data.y*data.y+(0.25)*gamma*gamma*data.y*data.y);
+    float depolarization_factor = sqrt(1-epsilon*epsilon);
+    data.b2b_factor = (depolarization_factor*data.PTPT)/(M*M);
 
   return data;
 }
 
-std::vector<eventData> readData(const std::string& filename, 
-  const std::vector<std::string>& variable_names) {
+std::vector<eventData> readData(const std::string& filename) {
   std::ifstream infile(filename);
   std::string line;
   std::vector<eventData> data;
+
   while (std::getline(infile, line)) {
-    data.push_back(parseLine(line, variable_names));
+    data.push_back(parseLine(line));
   }
+
   return data;
 }
 
 double getEventProperty(const eventData& event, int currentFits) {
-  std::string property = propertyNames[currentFits];
-  cout << property << " " << event.data.at(property) << endl;
-  // Access the property value using the map's indexing
-  return event.data.at(property);
+  switch (currentFits) {
+    case 0: return event.x;
+    case 1: return event.zeta;
+    case 2: return event.PT2;
+    case 3: return event.PT1;
+    case 4: return event.PTPT;
+    case 5: return event.zeta;
+    case 6: return event.zeta;
+    case 7: return event.zeta;
+    case 8: return event.Q2;
+    case 9: return event.Q2;
+    case 10: return event.Q2;
+    case 11: return event.z2;
+    case 12: return event.xF2;
+    case 13: return event.xF1;
+    default: return 0.0;
+  }
 }
+
 
 // Apply kinematic cuts to the data
 bool applyKinematicCuts(const eventData& data, int currentFits) {
@@ -151,24 +154,17 @@ bool applyKinematicCuts(const eventData& data, int currentFits) {
     //         return false;
     //     }
     // }
-    //  if (currentFits <= 4) { return data.data.at("status") <= 1e2;
-    // } else if (currentFits == 5) { return data.data.at("status") == 1e0;
-    // } else if (currentFits == 6) { return data.data.at("status") == 1e1;
-    // } else if (currentFits == 7) { return data.data.at("status") == 1e2;
-    // } else if (currentFits == 8) { return data.data.at("status") == 1e0;
-    // } else if (currentFits == 9) { return data.data.at("status") == 1e1;
-    // } else if (currentFits == 10) { return data.data.at("status") == 1e2;
-    // } else if (currentFits == 11) { return data.data.at("status") <= 1e2 || 
-    //   data.data.at("status") == 1e3;
-    // } else if (currentFits == 12) { return data.data.at("status") <= 1e2 || 
-    //   data.data.at("status") == 1e4;
-    // } else if (currentFits == 13) { return data.data.at("status") <= 1e2 || 
-    //   data.data.at("status") == 1e5;
-    // } else { return true;
-    // }
-    return true;
-  }
-
+    return (currentFits <= 4) ? (data.status <= 1e2) : true; // x, zeta, PT1, PT2, PTPT
+    return (currentFits == 5) ? (data.status == 1e0) : true; // 1st zeta-x bin
+    return (currentFits == 6) ? (data.status == 1e1) : true; // 2nd zeta-x bin
+    return (currentFits == 7) ? (data.status == 1e2) : true; // 3rd zeta-x bin
+    return (currentFits == 8) ? (data.status == 1e0) : true; // 1st Q2-x bin
+    return (currentFits == 9) ? (data.status == 1e1) : true; // 2nd Q2-x bin
+    return (currentFits == 10) ? (data.status == 1e2) : true; // 3rd Q2-x bin
+    return (currentFits == 11) ? (data.status <= 1e2 || data.status == 1e3) : true; // z1
+    return (currentFits == 12) ? (data.status <= 1e2 || data.status == 1e4) : true; // xF1
+    return (currentFits == 13) ? (data.status <= 1e2 || data.status == 1e5) : true; // xF2
+}
 
 // Negative log-likelihood function
 void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag) {
@@ -178,8 +174,12 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     // par: an array of the parameter values
     // iflag: a flag (see TMinuit documentation for details)
 
-    double A = par[0]; double B = par[1];
-    double N = 0; double sum_N = 0; double sum_P = 0;
+    double A = par[0];
+    double B = par[1];
+
+    double N = 0;
+    double sum_N = 0;
+    double sum_P = 0;
 
     for (const eventData &event : gData) {
         double currentVariable = getEventProperty(event, currentFits);
@@ -187,20 +187,21 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           currentVariable >= allBins[currentFits][currentBin] && 
           currentVariable < allBins[currentFits][currentBin + 1]) {
           N += 1;
-          double Delta_phi = event.data.at("Delta_phi");
-          double pol = event.data.at("pol");
-          if (event.data.at("helicity") > 0) {
+          double Delta_phi = event.Delta_phi;
+          double pol = event.pol;
+          if (event.helicity > 0) {
             sum_P += log(1 + pol * (A * sin(Delta_phi) + B * sin(2 * Delta_phi)));
-          } else if (event.data.at("helicity") < 0) {
+          } else if (event.helicity < 0) {
             sum_N += log(1 - pol * (A * sin(Delta_phi) + B * sin(2 * Delta_phi)));
           }
         }
     }
+
     f = N * log(N) - sum_P - sum_N;
 }
 
 void performMLMFits(const char *filename, const char* output_file, const std::string& prefix) {
-  gData = readData(filename, variable_names);
+  gData = readData(filename);
 
   size_t numBins = allBins[currentFits].size() - 1;
 
@@ -210,14 +211,18 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
   minuit.SetPrintLevel(-1);
   minuit.SetFCN(negLogLikelihood);
 
-  std::ostringstream mlmFitsAStream; std::ostringstream mlmFitsAScaledStream;
-  std::ostringstream mlmFitsBStream; std::ostringstream mlmFitsScaledBStream;
+  std::ostringstream mlmFitsAStream;
+  std::ostringstream mlmFitsAScaledStream;
+  std::ostringstream mlmFitsBStream;
+  std::ostringstream mlmFitsScaledBStream;
 
-  mlmFitsAStream << prefix << "MLMFitsA = {"; mlmFitsAScaledStream << prefix << "MLMFitsScaledA = {";
-  mlmFitsBStream << prefix << "MLMFitsB = {"; mlmFitsScaledBStream << prefix << "MLMFitsScaledB = {";
+  mlmFitsAStream << prefix << "MLMFitsA = {";
+  mlmFitsAScaledStream << prefix << "MLMFitsScaledA = {";
+  mlmFitsBStream << prefix << "MLMFitsB = {";
+  mlmFitsScaledBStream << prefix << "MLMFitsScaledB = {";
 
   for (size_t i = 0; i < numBins; ++i) {
-    cout << "Beginning MLM fit for " << binNames[currentFits]
+    cout << endl << "Beginning MLM fit for " << binNames[currentFits]
       << " bin " << i << ". ";
     currentBin = i;
 
@@ -238,11 +243,10 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
         if (applyKinematicCuts(event, currentFits) && currentVariable >= 
           allBins[currentFits][i] && currentVariable < allBins[currentFits][i + 1]) {
             sumVariable += currentVariable;
-            sumb2b += event.data.at("b2b_factor");
+            sumb2b += event.b2b_factor;
             numEvents += 1;
         }
     }
-    cout << "Found " << numEvents << " events." << endl;
     double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
     double meanb2b = numEvents > 0 ? sumb2b / numEvents : 0.0;
 
@@ -250,8 +254,10 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     minuit.GetParameter(0, A, A_error);
     minuit.GetParameter(1, B, B_error);
 
-    double scaled_A = A / meanb2b; double scaled_A_error = A_error / meanb2b;
-    double scaled_B = B / meanb2b; double scaled_B_error = B_error / meanb2b;
+    double scaled_A = A / meanb2b;
+    double scaled_A_error = A_error / meanb2b;
+    double scaled_B = B / meanb2b;
+    double scaled_B_error = B_error / meanb2b;
 
     mlmFitsAStream << "{" << meanVariable << ", " << A << ", " << A_error << "}";
     mlmFitsAScaledStream << "{" << meanVariable << ", " << scaled_A << ", " << 
@@ -267,7 +273,7 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     }
   }
 
-  mlmFitsAStream << "};"; mlmFitsAScaledStream << "};"; 
+  mlmFitsAStream << "};"; mlmFitsAScaledStream << "};";
   mlmFitsBStream << "};"; mlmFitsScaledBStream << "};";
 
   std::ofstream outputFile(output_file, std::ios_base::app);
@@ -278,6 +284,7 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
 
   outputFile.close();
 }
+
 
 TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* histName,
   int binIndex) {
@@ -292,16 +299,15 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   int numEvents = 0;
 
   for (const eventData& event : data) {
-    cout << event.data.at("evnum") << endl;
     double currentVariable = getEventProperty(event, currentFits);
     if (applyKinematicCuts(event, currentFits) && currentVariable >= varMin && 
       currentVariable < varMax) {
-      if (event.data.at("helicity") > 0) {
-        histPos->Fill(event.data.at("Delta_phi"));
+      if (event.helicity > 0) {
+        histPos->Fill(event.Delta_phi);
       } else {
-        histNeg->Fill(event.data.at("Delta_phi"));
+        histNeg->Fill(event.Delta_phi);
       }
-      sumPol += event.data.at("pol");
+      sumPol += event.pol;
       numEvents++;
     }
   }
@@ -315,7 +321,9 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   for (int iBin = 1; iBin <= numBins; ++iBin) {
     double Np = histPos->GetBinContent(iBin);
     double Nm = histNeg->GetBinContent(iBin);
+
     double asymmetry = (1 / meanPol) * (Np - Nm) / (Np + Nm);
+
     double error = (2 / meanPol) * std::sqrt(Np * Nm / TMath::Power(Np + Nm, 3));
 
     histAsymmetry->SetBinContent(iBin, asymmetry);
@@ -324,6 +332,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
 
   delete histPos;
   delete histNeg;
+
   return histAsymmetry;
 }
 
@@ -336,7 +345,7 @@ double funcToFit(double* x, double* par) {
 }
 
 void performChi2Fits(const char *filename, const char* output_file, const std::string& prefix) {
-  gData = readData(filename, variable_names);
+  gData = readData(filename);
 
   TF1* fitFunction = new TF1("fitFunction", funcToFit, 0, 2 * TMath::Pi(), 2);
 
@@ -345,15 +354,15 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
   std::ostringstream chi2FitsBStream;
   std::ostringstream chi2FitsBScaledStream;
 
-  chi2FitsAStream << prefix << "chi2FitsA = {"; 
+  chi2FitsAStream << prefix << "chi2FitsA = {";
   chi2FitsAScaledStream << prefix << "chi2FitsScaledA = {";
-  chi2FitsBStream << prefix << "chi2FitsB = {"; 
+  chi2FitsBStream << prefix << "chi2FitsB = {";
   chi2FitsBScaledStream << prefix << "chi2FitsScaledB = {";
 
   size_t numBins = allBins[currentFits].size() - 1;
 
   for (size_t i = 0; i < numBins; ++i) {
-      cout << "Beginning chi2 fit for " << binNames[currentFits]
+      cout << endl << "Beginning chi2 fit for " << binNames[currentFits]
         << " bin " << i << ". ";
       char histName[32];
       snprintf(histName, sizeof(histName), "hist_%zu", i);
@@ -369,20 +378,24 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
         if (applyKinematicCuts(event, currentFits) && currentVariable >= allBins[currentFits][i] && 
           currentVariable < allBins[currentFits][i + 1]) {
             sumVariable += currentVariable;
-            sumb2b += event.data.at("b2b_factor");
+            sumb2b += event.b2b_factor;
             numEvents += 1;
         }
       }
-      cout << "Found " << numEvents << " events." << endl;
       
       double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
       double meanb2b = numEvents > 0 ? sumb2b / numEvents : 0.0;
+      cout << numEvents << endl;
 
-      double A = fitFunction->GetParameter(0); double A_error = fitFunction->GetParError(0);
-      double B = fitFunction->GetParameter(1); double B_error = fitFunction->GetParError(1);
+      double A = fitFunction->GetParameter(0);
+      double A_error = fitFunction->GetParError(0);
+      double B = fitFunction->GetParameter(1);
+      double B_error = fitFunction->GetParError(1);
 
-      double scaled_A = A / meanb2b; double scaled_A_error = A_error / meanb2b;
-      double scaled_B = B / meanb2b; double scaled_B_error = B_error / meanb2b;
+      double scaled_A = A / meanb2b;
+      double scaled_A_error = A_error / meanb2b;
+      double scaled_B = B / meanb2b;
+      double scaled_B_error = B_error / meanb2b;
 
       chi2FitsAStream << "{" << meanVariable << ", " << A << ", " << A_error << "}";
       chi2FitsAScaledStream << "{" << meanVariable << ", " << scaled_A << ", " << 
@@ -397,10 +410,11 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
           chi2FitsBStream << ", ";
           chi2FitsBScaledStream << ", ";
       }
+
       delete hist;
     }
 
-    chi2FitsAStream << "};"; chi2FitsAScaledStream << "};"; 
+    chi2FitsAStream << "};"; chi2FitsAScaledStream << "};";
     chi2FitsBStream << "};"; chi2FitsBScaledStream << "};";
 
     std::ofstream outputFile(output_file, std::ios_base::app);
@@ -418,44 +432,13 @@ void BSA_fits(const char* data_file, const char* output_file) {
   std::ofstream ofs(output_file, std::ios::trunc);
   ofs.close();
 
-  // load bins from external csv file
-  load_bins_from_csv("bins.csv");
-  cout<< endl <<"-- Loaded information from bins.csv. " << endl;
-
-  cout<< "Found " << allBins.size() << " sets of bins: " << endl;
-  for (size_t i = 0; i < binNames.size(); ++i) {
-    cout << binNames[i];
-    if (i == binNames.size() - 1) { cout << "."; } 
-    else { cout << ", "; }
-  }
-  std::cout << std::endl;
-
-  cout<< "Found " << allBins[currentFits].size() << " bin indices: " << endl;
-  for (size_t i = 0; i < allBins[currentFits].size(); ++i) {
-    cout << allBins[currentFits][i];
-    if (i == allBins[currentFits].size() - 1) { cout << "."; } 
-    else { cout << ", "; }
-  }
-  std::cout << std::endl;
-
-  cout<< "Found " << variable_names.size() << " variables: " << endl;
-  for (size_t i = 0; i < variable_names.size(); ++i) {
-    cout << variable_names[i];
-    if (i == variable_names.size() - 1) { cout << "."; } 
-    else { cout << ", "; }
-  }
-  std::cout << std::endl;
-
-  cout << endl << endl;
-  // for (size_t i = 0; i < allBins.size(); ++i) {
-  for (size_t i = 0; i < 1; ++i) {
-    cout << "-- Beginning kinematic fits." << endl;
+  for (size_t i = 0; i < allBins.size(); ++i) {
+  // for (size_t i = 0; i < 1; ++i) {
     performChi2Fits(data_file, output_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    // performMLMFits(data_file, output_file, binNames[i]);
-    // cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
-    cout << endl << endl;
+    performMLMFits(data_file, output_file, binNames[i]);
+    cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
+    cout << endl << endl << endl;
     currentFits++;
   }
-  cout << endl << endl;
 }

@@ -20,7 +20,7 @@ void load_bins_from_csv(const std::string& filename) {
   std::ifstream file(filename);
   std::string line;
   bool reached_bins = false; // Flag to check if we have reached the bin declarations
-  
+
   while (std::getline(file, line)) {
     if (line.empty() || line[0] == '#') { continue; } // Ignore comment lines
 
@@ -63,7 +63,7 @@ size_t currentBin = 0;
 eventData parseLine(const std::string& line, const std::vector<std::string>& variable_names) {
   std::istringstream iss(line);
   eventData data;
-  
+
   float value;
   std::string value_str;
   for (const auto& var_name : variable_names) {
@@ -79,7 +79,7 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
   const float M = 0.938272088; // proton mass
   float gamma = (2 * M * data.data["x"]) / sqrt(data.data["Q2"]);
   float epsilon = (1 - data.data["y"] - (0.25) * gamma * gamma * data.data["y"] * data.data["y"]) /
-    (1 - data.data["y"] + (0.50) * data.data["y"] * data.data["y"] + (0.25) * gamma * gamma * 
+    (1 - data.data["y"] + (0.50) * data.data["y"] * data.data["y"] + (0.25) * gamma * gamma *
     data.data["y"] * data.data["y"]);
   float depolarization_factor = sqrt(1 - epsilon * epsilon);
   data.data["b2b_factor"] = (depolarization_factor * data.data["PTPT"]) / (M * M);
@@ -87,7 +87,7 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
   return data;
 }
 
-std::vector<eventData> readData(const std::string& filename, 
+std::vector<eventData> readData(const std::string& filename,
   const std::vector<std::string>& variable_names) {
   std::ifstream infile(filename);
   std::string line;
@@ -125,7 +125,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
 
   for (const eventData& event : data) {
     double currentVariable = getEventProperty(event, currentFits);
-    if (applyKinematicCuts(event, currentFits) && currentVariable >= varMin && 
+    if (applyKinematicCuts(event, currentFits) && currentVariable >= varMin &&
       currentVariable < varMax) {
       if (event.data.at("helicity") > 0) {
         histPos->Fill(event.data.at("Delta_phi"));
@@ -140,7 +140,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   double meanPol = sumPol / numEvents;
 
   int numBins = histPos->GetNbinsX();
-  TH1D* histAsymmetry = new TH1D(Form("%s_asymmetry", histName), "", 
+  TH1D* histAsymmetry = new TH1D(Form("%s_asymmetry", histName), "",
     numBins, 0, 2 * TMath::Pi());
 
   for (int iBin = 1; iBin <= numBins; ++iBin) {
@@ -187,7 +187,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
       double numEvents = 0;
       for (const eventData& event : gData) {
         double currentVariable = getEventProperty(event, currentFits);
-        if (applyKinematicCuts(event, currentFits) && currentVariable >= allBins[currentFits][i] && 
+        if (applyKinematicCuts(event, currentFits) && currentVariable >= allBins[currentFits][i] &&
           currentVariable < allBins[currentFits][i + 1]) {
             sumVariable += currentVariable;
             sumb2b += event.data.at("b2b_factor");
@@ -211,7 +211,7 @@ void test(const char* data_file, const char* output_file) {
   cout<< "Found " << allBins.size() << " sets of bins: " << endl;
   for (size_t i = 0; i < binNames.size(); ++i) {
     cout << binNames[i];
-    if (i == binNames.size() - 1) { cout << "."; } 
+    if (i == binNames.size() - 1) { cout << "."; }
     else { cout << ", "; }
   }
   std::cout << std::endl;
@@ -219,7 +219,7 @@ void test(const char* data_file, const char* output_file) {
   cout<< "Found " << allBins[currentFits].size() << " bin indices: " << endl;
   for (size_t i = 0; i < allBins[currentFits].size(); ++i) {
     cout << allBins[currentFits][i];
-    if (i == allBins[currentFits].size() - 1) { cout << "."; } 
+    if (i == allBins[currentFits].size() - 1) { cout << "."; }
     else { cout << ", "; }
   }
   std::cout << std::endl;
@@ -227,7 +227,7 @@ void test(const char* data_file, const char* output_file) {
   cout<< "Found " << variable_names.size() << " variables: " << endl;
   for (size_t i = 0; i < variable_names.size(); ++i) {
     cout << variable_names[i];
-    if (i == variable_names.size() - 1) { cout << "."; } 
+    if (i == variable_names.size() - 1) { cout << "."; }
     else { cout << ", "; }
   }
   std::cout << std::endl;
@@ -244,4 +244,3 @@ void test(const char* data_file, const char* output_file) {
     currentFits++;
   }
   cout << endl << endl;
-}
