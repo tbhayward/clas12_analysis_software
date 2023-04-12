@@ -68,8 +68,6 @@ void load_bins_from_csv(const std::string& filename) {
   }
 }
 
-
-
 struct eventData {
   std::map<std::string, float> data;
 };
