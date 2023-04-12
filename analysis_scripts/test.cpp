@@ -11,12 +11,11 @@
 size_t currentFits = 0;
 int n = 1;
 
-std::vector<std::string> variable_names;
 std::map<std::string, std::vector<float>> bins_map;
 std::vector<std::vector<float>> allBins;
 std::vector<std::string> binNames;
-std::vector<int> variable_indices;
 std::vector<std::string> propertyNames;
+std::vector<std::string> variable_names;
 
 string trim_newline(const string &str) {
   if (!str.empty() && str.back() == '\n') {
