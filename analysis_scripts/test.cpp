@@ -70,7 +70,7 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
     data.data[var_name] = value;
   }
 
-  cout << data.data["y"];
+  cout << data.data["y"] << " hello I'm here " << endl;
 
   data.data["pol"] = 0.86;
   // Calculate b2b_factor
