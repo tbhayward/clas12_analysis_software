@@ -150,21 +150,22 @@ bool applyKinematicCuts(const eventData& data, int currentFits) {
     //         return false;
     //     }
     // }
-     if (currentFits <= 4) { return data.data.at("status") <= 1e2;
-    } else if (currentFits == 5) { return data.data.at("status") == 1e0;
-    } else if (currentFits == 6) { return data.data.at("status") == 1e1;
-    } else if (currentFits == 7) { return data.data.at("status") == 1e2;
-    } else if (currentFits == 8) { return data.data.at("status") == 1e0;
-    } else if (currentFits == 9) { return data.data.at("status") == 1e1;
-    } else if (currentFits == 10) { return data.data.at("status") == 1e2;
-    } else if (currentFits == 11) { return data.data.at("status") <= 1e2 || 
-      data.data.at("status") == 1e3;
-    } else if (currentFits == 12) { return data.data.at("status") <= 1e2 || 
-      data.data.at("status") == 1e4;
-    } else if (currentFits == 13) { return data.data.at("status") <= 1e2 || 
-      data.data.at("status") == 1e5;
-    } else { return true;
-    }
+    //  if (currentFits <= 4) { return data.data.at("status") <= 1e2;
+    // } else if (currentFits == 5) { return data.data.at("status") == 1e0;
+    // } else if (currentFits == 6) { return data.data.at("status") == 1e1;
+    // } else if (currentFits == 7) { return data.data.at("status") == 1e2;
+    // } else if (currentFits == 8) { return data.data.at("status") == 1e0;
+    // } else if (currentFits == 9) { return data.data.at("status") == 1e1;
+    // } else if (currentFits == 10) { return data.data.at("status") == 1e2;
+    // } else if (currentFits == 11) { return data.data.at("status") <= 1e2 || 
+    //   data.data.at("status") == 1e3;
+    // } else if (currentFits == 12) { return data.data.at("status") <= 1e2 || 
+    //   data.data.at("status") == 1e4;
+    // } else if (currentFits == 13) { return data.data.at("status") <= 1e2 || 
+    //   data.data.at("status") == 1e5;
+    // } else { return true;
+    // }
+    return true;
   }
 
 
