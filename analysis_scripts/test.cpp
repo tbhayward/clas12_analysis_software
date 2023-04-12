@@ -94,6 +94,7 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
       std::getline(iss, value_str, ' '); // Use space as the delimiter
     } else {
       std::getline(iss, value_str); // Read the remaining value without specifying a delimiter
+      cout << value_str << endl;
     }
     // Check if the value_str is a newline character
     if (!value_str.empty() && value_str.back() == '\n') {
