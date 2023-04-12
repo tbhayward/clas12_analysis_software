@@ -97,12 +97,13 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
   // }
   size_t var_name_index = 0;
   for (const auto& var_name : variable_names) {
+    cout var_name << endl;
     if (!(iss >> value)) {
       break;
     }
     data.data[var_name] = value;
 
-    std::cout << "Var: " << var_name << ", Value: " << value << std::endl;
+    // std::cout << "Var: " << var_name << ", Value: " << value << std::endl;
     var_name_index++;
   }
 
