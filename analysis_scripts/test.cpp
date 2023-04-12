@@ -10,11 +10,12 @@
 size_t currentFits = 0;
 int n = 1;
 
+std::vector<std::string> variable_names;
 std::map<std::string, std::vector<float>> bins_map;
 std::vector<std::vector<float>> allBins;
 std::vector<std::string> binNames;
 std::vector<int> variable_indices;
-std::vector<std::string> variable_names;
+std::vector<std::string> propertyNames;
 
 void load_bins_from_csv(const std::string& filename) {
   std::ifstream file(filename);
