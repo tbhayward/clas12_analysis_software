@@ -428,7 +428,7 @@ void BSA_fits(const char* data_file, const char* output_file) {
   std::cout << std::endl;
 
   cout<< "Found " << allBins[currentFits].size() << " bin indices: " << endl;
-  for (size_t i = 0; i < binNames.size(); ++i) {
+  for (size_t i = 0; i < allBins[currentFits].size(); ++i) {
     cout << allBins[currentFits][i];
     if (i == binNames.size() - 1) { cout << "."; } 
     else { cout << ", "; }
