@@ -119,6 +119,7 @@ std::vector<eventData> readData(const std::string& filename,
 
 double getEventProperty(const eventData& event, int currentFits) {
   std::string property = propertyNames[currentFits];
+  cout << property << endl;
   // Access the property value using the map's indexing
   return event.data.at(property);
 }
