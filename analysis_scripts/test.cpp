@@ -81,7 +81,7 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
 
   std::cout << "Variable names in parseLine: ";
   for (const auto& var_name : variable_names) {
-    std::cout << var_name << ", ";
+    std::cout << var_name << endl;
   }
   std::cout << std::endl;
 
