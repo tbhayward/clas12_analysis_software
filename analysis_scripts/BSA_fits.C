@@ -115,19 +115,7 @@ std::vector<eventData> readData(const std::string& filename,
   std::string line;
   std::vector<eventData> data;
   while (std::getline(infile, line)) {
-    // Check if the line is empty or contains only whitespaces
-    bool empty = true;
-    for (char c : line) {
-      if (!std::isspace(c)) {
-        empty = false;
-        break;
-      }
-    }
-
-    // If the line is not empty, parse it and add the resulting eventData object to the vector
-    if (!empty) {
-      data.push_back(parseLine(line, variable_names));
-    }
+    data.push_back(parseLine(line, variable_names));
   }
   return data;
 }
@@ -377,6 +365,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
       TH1D* hist = createHistogramForBin(gData, histName, i);
       hist->Fit(fitFunction, "Q");
 
+      cout << "Hey we made it this far" << endl;
       double sumVariable = 0;
       double sumb2b = 0;
       double numEvents = 0;
