@@ -92,8 +92,8 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
     data.data[var_name] = value;
   }
 
-  int runnum = static_cast<int>(data.data["runnum"]);
-  data.data["pol"] = getPol(runnum);
+  // int runnum = static_cast<int>(data.data["runnum"]);
+  data.data["pol"] = getPol(data.data["runnum"]);
   // Calculate b2b_factor
   const float M = 0.938272088; // proton mass
   float gamma = (2 * M * data.data["x"]) / sqrt(data.data["Q2"]);
