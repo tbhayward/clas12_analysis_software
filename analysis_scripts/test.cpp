@@ -254,9 +254,9 @@ void test(const char* data_file, const char* output_file) {
   for (size_t i = 0; i < variable_names.size(); ++i) {
     cout << i << ": " << variable_names[i];
     if (i == variable_names.size() - 1) {
-      cout << "." << endl;
+      cout << ". ";
     } else {
-      cout << ", " << endl;
+      cout << ", ";
     }
   }
   std::cout << std::endl;
