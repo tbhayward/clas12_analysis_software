@@ -260,7 +260,7 @@ void test(const char* data_file, const char* output_file) {
       cout << ", ";
     }
   }
-  cout << endl;
+  cout << endl << endl << endl;
 
 
   // cout << endl << endl;
