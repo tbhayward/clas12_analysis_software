@@ -69,8 +69,10 @@ void load_bins_from_csv(const std::string& filename) {
     // Add this code to remove newline and carriage return characters from variable names
     for (size_t i = 0; i < variable_names.size(); ++i) {
       // Remove newline and carriage return characters
-      variable_names[i].erase(std::remove(variable_names[i].begin(), variable_names[i].end(), '\n'), variable_names[i].end());
-      variable_names[i].erase(std::remove(variable_names[i].begin(), variable_names[i].end(), '\r'), variable_names[i].end());
+      variable_names[i].erase(std::remove(variable_names[i].begin(), 
+        variable_names[i].end(), '\n'), variable_names[i].end());
+      variable_names[i].erase(std::remove(variable_names[i].begin(), 
+        variable_names[i].end(), '\r'), variable_names[i].end());
     }
   }
 }
@@ -110,7 +112,7 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
     }
     data.data[var_name] = value;
 
-    // std::cout << "Var: " << var_name << ", Value: " << value << std::endl;
+    std::cout << "Var: " << var_name << ", Value: " << value << std::endl;
     var_name_index++;
   }
 
