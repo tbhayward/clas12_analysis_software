@@ -97,7 +97,7 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
   }
 
   // Print the final values of status, runnum, and evnum
-  cout << data.data["status"] << " " << data.data["runnum"] << " " << data.data["evnum"] << endl;
+  cout << data.data["status"] << " " << data.data["runnum"] << " " << data.data["Delta_phi"] << endl;
 
   data.data["pol"] = 0.86;
   // Calculate b2b_factor
