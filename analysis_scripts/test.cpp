@@ -34,6 +34,9 @@ void load_bins_from_csv(const std::string& filename) {
     if (line.empty() || line[0] == '#') { continue; } // Ignore comment lines
 
     if (!reached_bins) {
+      if (line.empty() || line[0] == '#') { continue; } // Ignore comment lines
+
+    if (!reached_bins) {
       if (line.find("-") != std::string::npos) { // set flag to true and continue to next line
         reached_bins = true;
         continue;
@@ -41,20 +44,14 @@ void load_bins_from_csv(const std::string& filename) {
       std::stringstream ss_var(line);
       std::string var_name;
       while (std::getline(ss_var, var_name, ',')) {
-        variable_names.push_back(trim_newline(var_name));
+        variable_names.push_back(var_name);
       }
     } else {
       std::stringstream ss(line);
       std::string bin_name, property;
       std::getline(ss, bin_name, ',');
-      binNames.push_back(trim_newline(bin_name));
-
-      // Retrieve the index of the variable to be used for this bin
-      std::string index_str;
-      std::getline(ss, index_str, ',');
-      int variable_index = std::stoi(index_str);
-
-      property = variable_names[variable_index];
+      binNames.push_back(bin_name);
+      std::getline(ss, property, ',');
       propertyNames.push_back(property);
 
       std::vector<float> bin_values;
