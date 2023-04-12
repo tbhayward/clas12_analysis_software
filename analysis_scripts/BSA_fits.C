@@ -118,7 +118,7 @@ std::vector<eventData> readData(const std::string& filename,
 }
 
 double getEventProperty(const eventData& event, int currentFits) {
-  std::string property = binNames[currentFits];
+  std::string property = propertyNames[currentFits];
   // Access the property value using the map's indexing
   return event.data.at(property);
 }
@@ -292,7 +292,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
 
   for (const eventData& event : data) {
     // cout << event.data.at("evnum") << endl;
-    double currentVariable = propertyNames[currentFits];//getEventProperty(event, currentFits);
+    double currentVariable = getEventProperty(event, currentFits);
     if (applyKinematicCuts(event, currentFits) && currentVariable >= varMin && 
       currentVariable < varMax) {
       if (event.data.at("helicity") > 0) {
