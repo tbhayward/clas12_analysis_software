@@ -126,8 +126,8 @@ std::vector<eventData> readData(const std::string& filename,
 
 double getEventProperty(const eventData& event, int currentFits) {
   std::string property = propertyNames[currentFits];
-  int variable_index = variable_indices[currentFits]; // Use the variable index from the bin
   cout << endl << "We're here" << endl;
+  int variable_index = variable_indices[currentFits]; // Use the variable index from the bin
   std::string variable_name = variable_names[variable_index]; // Get the var name using the index
   return event.data.at(variable_name); // Access the property value using the map's indexing
 }
