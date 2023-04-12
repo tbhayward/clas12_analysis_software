@@ -115,7 +115,19 @@ std::vector<eventData> readData(const std::string& filename,
   std::string line;
   std::vector<eventData> data;
   while (std::getline(infile, line)) {
-    data.push_back(parseLine(line, variable_names));
+    // Check if the line is empty or contains only whitespaces
+    bool empty = true;
+    for (char c : line) {
+      if (!std::isspace(c)) {
+        empty = false;
+        break;
+      }
+    }
+
+    // If the line is not empty, parse it and add the resulting eventData object to the vector
+    if (!empty) {
+      data.push_back(parseLine(line, variable_names));
+    }
   }
   return data;
 }
