@@ -86,13 +86,10 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
   eventData data;
   float value;
 
-  cout << n << endl;
   for (const auto& var_name : variable_names) {
     iss >> value;
-    cout << " " << var_name << " " << value << endl;
     data.data[var_name] = value;
   }
-  n++;
 
   int runnum = static_cast<int>(data.data["runnum"]);
   data.data["pol"] = getPol(runnum);
@@ -286,6 +283,7 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
 TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* histName,
   int binIndex) {
 
+  cout << "Hey we made it this far" << endl;
   double varMin = allBins[currentFits][binIndex];
   double varMax = allBins[currentFits][binIndex + 1];
 
@@ -363,7 +361,6 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
       snprintf(histName, sizeof(histName), "hist_%zu", i);
 
       TH1D* hist = createHistogramForBin(gData, histName, i);
-      cout << "Hey we made it this far" << endl;
       hist->Fit(fitFunction, "Q");
 
       double sumVariable = 0;
