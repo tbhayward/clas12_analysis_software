@@ -34,9 +34,6 @@ void load_bins_from_csv(const std::string& filename) {
     if (line.empty() || line[0] == '#') { continue; } // Ignore comment lines
 
     if (!reached_bins) {
-      if (line.empty() || line[0] == '#') { continue; } // Ignore comment lines
-
-    if (!reached_bins) {
       if (line.find("-") != std::string::npos) { // set flag to true and continue to next line
         reached_bins = true;
         continue;
