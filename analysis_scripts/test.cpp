@@ -52,9 +52,9 @@ void load_bins_from_csv(const std::string& filename) {
       // Retrieve the index of the variable to be used for this bin
       std::string index_str;
       std::getline(ss, index_str, ',');
-      int variable_indices = std::stoi(index_str);
+      int variable_index = std::stoi(index_str);
 
-      property = variable_names[variable_indices];
+      property = variable_names[variable_index];
       propertyNames.push_back(property);
 
       std::vector<float> bin_values;
@@ -127,8 +127,8 @@ std::vector<eventData> readData(const std::string& filename,
 double getEventProperty(const eventData& event, int currentFits) {
   std::string property = propertyNames[currentFits];
   cout << currentFits << endl;
-  int variable_indices = variable_indices[currentFits]; // Use the variable index from the bin
-  std::string variable_name = variable_names[variable_indices]; // Get the var name using the index
+  int variable_index = variable_indices[currentFits]; // Use the variable index from the bin
+  std::string variable_name = variable_names[variable_index]; // Get the var name using the index
   return event.data.at(variable_name); // Access the property value using the map's indexing
 }
 
