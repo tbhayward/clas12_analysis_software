@@ -13,7 +13,7 @@ int n = 1;
 std::map<std::string, std::vector<float>> bins_map;
 std::vector<std::vector<float>> allBins;
 std::vector<std::string> binNames;
-std::vector<std::string> propertyNames;
+std::vector<int> variable_indices;
 std::vector<std::string> variable_names;
 
 void load_bins_from_csv(const std::string& filename) {
@@ -39,7 +39,13 @@ void load_bins_from_csv(const std::string& filename) {
       std::string bin_name, property;
       std::getline(ss, bin_name, ',');
       binNames.push_back(bin_name);
-      std::getline(ss, property, ',');
+
+      // Retrieve the index of the variable to be used for this bin
+      std::string index_str;
+      std::getline(ss, index_str, ',');
+      int variable_index = std::stoi(index_str);
+
+      property = variable_names[variable_index];
       propertyNames.push_back(property);
 
       std::vector<float> bin_values;
@@ -52,6 +58,7 @@ void load_bins_from_csv(const std::string& filename) {
     }
   }
 }
+
 
 struct eventData {
   std::map<std::string, float> data;
@@ -100,9 +107,9 @@ std::vector<eventData> readData(const std::string& filename,
 
 double getEventProperty(const eventData& event, int currentFits) {
   std::string property = propertyNames[currentFits];
-  // cout << property << " " << event.data.at(property) << endl;
-  // Access the property value using the map's indexing
-  return event.data.at(property);
+  int variable_index = variable_indices[currentFits]; // Use the variable index from the bin
+  std::string variable_name = variable_names[variable_index]; // Get the var name using the index
+  return event.data.at(variable_name); // Access the property value using the map's indexing
 }
 
 // Apply kinematic cuts to the data
