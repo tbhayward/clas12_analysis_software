@@ -143,13 +143,6 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   for (const eventData& event : data) {
 
     cout << "Contents of data:" << endl;
-    for (const eventData& event : data) {
-        std::cout << "EVENT RIGHT HERE NOTICE ME: ";
-        for (const auto& kv : event.data) {
-            std::cout << kv.first << ": " << kv.second << ", ";
-        }
-        std::cout << std::endl;
-    }
 
     double currentVariable = getEventProperty(event, currentFits);
     if (applyKinematicCuts(event, currentFits) && currentVariable >= varMin &&
@@ -243,7 +236,7 @@ void test(const char* data_file, const char* output_file) {
   }
   std::cout << std::endl;
 
-  cout<< "Found " << allBins[currentFits].size() << " bin indices: " << endl;
+  cout<< "Found " << allBins[currentFits].size() << " bin indices for: " << endl;
   for (size_t i = 0; i < allBins[currentFits].size(); ++i) {
     cout << allBins[currentFits][i];
     if (i == allBins[currentFits].size() - 1) { cout << "."; }
