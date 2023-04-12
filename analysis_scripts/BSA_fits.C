@@ -86,12 +86,13 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
   eventData data;
   float value;
 
+  cout << n << endl;
   for (const auto& var_name : variable_names) {
     iss >> value;
-    cout << n << " " << var_name << " " << value << endl;
-    n++;
+    cout << " " << var_name << " " << value << endl;
     data.data[var_name] = value;
   }
+  n++;
 
   int runnum = static_cast<int>(data.data["runnum"]);
   data.data["pol"] = getPol(runnum);
