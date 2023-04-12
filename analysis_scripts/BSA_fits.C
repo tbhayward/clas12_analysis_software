@@ -292,7 +292,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   int numEvents = 0;
 
   for (const eventData& event : data) {
-    // cout << event.data.at("evnum") << endl;
+    cout << event.data.at("evnum") << endl;
     double currentVariable = getEventProperty(event, currentFits);
     if (applyKinematicCuts(event, currentFits) && currentVariable >= varMin && 
       currentVariable < varMax) {
