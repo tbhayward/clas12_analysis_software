@@ -276,7 +276,6 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
   outputFile.close();
 }
 
-
 TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* histName,
   int binIndex) {
 
@@ -423,6 +422,14 @@ void BSA_fits(const char* data_file, const char* output_file) {
   cout<< "Found " << allBins.size() << " sets of bins: " << endl;
   for (size_t i = 0; i < binNames.size(); ++i) {
     cout << binNames[i];
+    if (i == binNames.size() - 1) { cout << "."; } 
+    else { cout << ", "; }
+  }
+  std::cout << std::endl;
+
+  cout<< "Found " << allBins.size() << " sets of bins: " << endl;
+  for (size_t i = 0; i < binNames.size(); ++i) {
+    cout << allBins[currentFits][i];
     if (i == binNames.size() - 1) { cout << "."; } 
     else { cout << ", "; }
   }
