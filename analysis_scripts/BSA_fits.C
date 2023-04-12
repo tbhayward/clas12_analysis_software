@@ -291,8 +291,9 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
 
   double sumPol = 0;
   int numEvents = 0;
-  cout << "Hey we made it this far" << endl;
+
   for (const eventData& event : data) {
+    cout << "Hey we made it this far" << endl;
     cout << event.data.at("Delta_phi") << endl;
     double currentVariable = getEventProperty(event, currentFits);
     if (applyKinematicCuts(event, currentFits) && currentVariable >= varMin && 
