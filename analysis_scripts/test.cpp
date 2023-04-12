@@ -244,3 +244,4 @@ void test(const char* data_file, const char* output_file) {
     currentFits++;
   }
   cout << endl << endl;
+}
