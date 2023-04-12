@@ -70,6 +70,8 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
     data.data[var_name] = value;
   }
 
+  cout << data.data["y"];
+
   data.data["pol"] = 0.86;
   // Calculate b2b_factor
   const float M = 0.938272088; // proton mass
