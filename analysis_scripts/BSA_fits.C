@@ -207,11 +207,11 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           currentVariable >= allBins[currentFits][currentBin] && 
           currentVariable < allBins[currentFits][currentBin + 1]) {
           N += 1;
-          double Delta_phi = event.Delta_phi;
-          double pol = event.pol;
-          if (event.helicity > 0) {
+          double Delta_phi = data.data["Delta_phi"];
+          double pol = data.data["pol"];
+          if (data.data["helicity"] > 0) {
             sum_P += log(1 + pol * (A * sin(Delta_phi) + B * sin(2 * Delta_phi)));
-          } else if (event.helicity < 0) {
+          } else if (data.data["helicity"] < 0) {
             sum_N += log(1 - pol * (A * sin(Delta_phi) + B * sin(2 * Delta_phi)));
           }
         }
@@ -263,7 +263,7 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
         if (applyKinematicCuts(event, currentFits) && currentVariable >= 
           allBins[currentFits][i] && currentVariable < allBins[currentFits][i + 1]) {
             sumVariable += currentVariable;
-            sumb2b += event.b2b_factor;
+            sumb2b += data.data["b2b_factor"];
             numEvents += 1;
         }
     }
