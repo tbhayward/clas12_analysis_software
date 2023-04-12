@@ -87,7 +87,7 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
     std::getline(iss, value_str, ','); // Use comma as the delimiter
     value = std::stof(value_str);
     data.data[var_name] = value;
-    << cout << value_str << endl;
+    cout << value_str << endl;
   }
 
   cout << data.data["y"] << " hello I'm here " << endl;
