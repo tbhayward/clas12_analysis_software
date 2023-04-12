@@ -90,20 +90,6 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
 
   float value;
   std::string value_str;
-  // size_t var_name_index = 0;
-  // for (const auto& var_name : variable_names) {
-  //   if (var_name_index == variable_names.size() - 1) {
-  //     std::getline(iss, value_str); // Read the remaining value without specifying a delimiter
-  //   } else {
-  //     std::getline(iss, value_str, ' '); // Use space as the delimiter
-  //   }
-  //   value_str.erase(std::remove(value_str.begin(), value_str.end(), '\n'), value_str.end());
-  //   value = std::stof(value_str);
-  //   data.data[var_name] = value;
-
-  //   std::cout << "Var: " << var_name << ", Value_str: " << value_str << ", Value: " << value << std::endl;
-  //   var_name_index++;
-  // }
   size_t var_name_index = 0;
   for (const auto& var_name : variable_names) {
     if (!(iss >> value)) {
@@ -111,14 +97,8 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
     }
     data.data[var_name] = value;
 
-    std::cout << "Var: " << var_name << ", Value: " << value << std::endl;
     var_name_index++;
   }
-
-
-
-  // Print the final values of status, runnum, and evnum
-  cout << data.data["status"] << " " << data.data["runnum"] << " " << data.data["Delta_phi"] << endl;
 
   data.data["pol"] = 0.86;
   // Calculate b2b_factor
@@ -170,7 +150,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   int numEvents = 0;
 
   for (const eventData& event : data) {
-
+    cout << "We're here" << endl;
     double currentVariable = getEventProperty(event, currentFits);
     if (applyKinematicCuts(event, currentFits) && currentVariable >= varMin &&
       currentVariable < varMax) {
