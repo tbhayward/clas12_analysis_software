@@ -88,6 +88,7 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
 
   float value;
   std::string value_str;
+  size_t var_name_index = 0;
   for (const auto& var_name : variable_names) {
     if (var_name_index < variable_names.size() - 1) {
       std::getline(iss, value_str, ' '); // Use space as the delimiter
@@ -102,6 +103,7 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
     data.data[var_name] = value;
 
     std::cout << "Var: " << var_name << ", Value_str: " << value_str << ", Value: " << value << std::endl;
+    var_name_index++;
   }
 
   // Print the final values of status, runnum, and evnum
