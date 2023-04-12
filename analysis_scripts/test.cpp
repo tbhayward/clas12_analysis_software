@@ -40,7 +40,7 @@ void load_bins_from_csv(const std::string& filename) {
       }
       std::stringstream ss_var(line);
       std::string var_name;
-      while (std::getline(ss_var, var_name, ', ')) {
+      while (std::getline(ss_var, var_name, ',')) {
         variable_names.push_back(trim_newline(var_name));
       }
     } else {
