@@ -87,7 +87,7 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
       std::getline(iss, value_str, ' '); // Use space as the delimiter
     } else {
       std::getline(iss, value_str); // Read the remaining value without specifying a delimiter
-      cout << value_str << endl;
+      value_str.erase(std::remove(value_str.begin(), value_str.end(), '\n'), value_str.end());
     }
     value = std::stof(value_str);
     data.data[var_name] = value;
