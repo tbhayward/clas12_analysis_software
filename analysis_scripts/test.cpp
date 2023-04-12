@@ -259,11 +259,11 @@ void test(const char* data_file, const char* output_file) {
       cout << ", ";
     }
   }
-  std::cout << std::endl;
+  // std::cout << std::endl;
 
 
 
-  cout << endl << endl;
+  // cout << endl << endl;
   // for (size_t i = 0; i < allBins.size(); ++i) {
   for (size_t i = 0; i < 1; ++i) {
     cout << "-- Beginning kinematic fits." << endl;
