@@ -84,18 +84,12 @@ size_t currentBin = 0;
 eventData parseLine(const std::string& line, const std::vector<std::string>& variable_names) {
   std::istringstream iss(line);
   eventData data;
+  
   float value;
-
   for (const auto& var_name : variable_names) {
     iss >> value;
+    cout << var_name << " " << value << endl;
     data.data[var_name] = value;
-  }
-
-  // Debug print statement to ensure "Delta_phi" is present
-  if (data.data.find("helicity") != data.data.end()) {
-      std::cout << "Delta_phi found: " << data.data["Delta_phi"] << std::endl;
-  } else {
-      std::cout << "Delta_phi not found" << std::endl;
   }
 
   int runnum = static_cast<int>(data.data["runnum"]);
