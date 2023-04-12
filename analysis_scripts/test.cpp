@@ -133,7 +133,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
 
   for (const eventData& event : data) {
 
-    std::cout << "Contents of data:" << std::endl;
+    cout << "Contents of data:" << endl;
     // for (const eventData& event : data) {
     //     std::cout << "EVENT RIGHT HERE NOTICE ME: ";
     //     for (const auto& kv : event.data) {
@@ -243,6 +243,7 @@ void test(const char* data_file, const char* output_file) {
   std::cout << std::endl;
 
   cout<< "Found " << variable_names.size() << " variables: " << endl;
+  cout << variable_names.size() << endl;
   for (size_t i = 0; i < variable_names.size(); ++i) {
     cout << variable_names[i];
     if (i == variable_names.size() - 1) { cout << "."; }
