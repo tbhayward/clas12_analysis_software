@@ -132,10 +132,8 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   int numEvents = 0;
 
   for (const eventData& event : data) {
-    if (event.data.count("Delta_phi") == 0) {
-      std::cerr << "Delta_phi not found in event.data" << std::endl;
-      continue;
-    }
+    print("Contents of event:")
+    print(event)
 
     double currentVariable = getEventProperty(event, currentFits);
     if (applyKinematicCuts(event, currentFits) && currentVariable >= varMin &&
