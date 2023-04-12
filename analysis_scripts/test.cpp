@@ -17,6 +17,35 @@ std::vector<std::string> binNames;
 std::vector<int> variable_indices;
 std::vector<std::string> propertyNames;
 
+string trim_newline(const string &str) {
+  if (!str.empty() && str.back() == '\n') {
+    return str.substr(0, str.size() - 1);
+  }
+  return str;
+}
+
+#include <fstream>
+#include <iostream>
+#include <sstream>
+#include <string>
+#include <vector>
+#include <map>
+
+using namespace std;
+
+vector<string> variable_names;
+vector<string> binNames;
+vector<string> propertyNames;
+map<string, vector<float>> bins_map;
+vector<vector<float>> allBins;
+
+string trim_newline(const string &str) {
+  if (!str.empty() && str.back() == '\n') {
+    return str.substr(0, str.size() - 1);
+  }
+  return str;
+}
+
 void load_bins_from_csv(const std::string& filename) {
   std::ifstream file(filename);
   std::string line;
@@ -33,13 +62,13 @@ void load_bins_from_csv(const std::string& filename) {
       std::stringstream ss_var(line);
       std::string var_name;
       while (std::getline(ss_var, var_name, ',')) {
-        variable_names.push_back(var_name);
+        variable_names.push_back(trim_newline(var_name));
       }
     } else {
       std::stringstream ss(line);
       std::string bin_name, property;
       std::getline(ss, bin_name, ',');
-      binNames.push_back(bin_name);
+      binNames.push_back(trim_newline(bin_name));
 
       // Retrieve the index of the variable to be used for this bin
       std::string index_str;
@@ -59,6 +88,7 @@ void load_bins_from_csv(const std::string& filename) {
     }
   }
 }
+
 
 
 struct eventData {
