@@ -13,6 +13,7 @@ int n = 1;
 std::map<std::string, std::vector<float>> bins_map;
 std::vector<std::vector<float>> allBins;
 std::vector<std::string> binNames;
+std::vector<std::string> propertyNames;
 std::vector<std::string> variable_names;
 
 void load_bins_from_csv(const std::string& filename) {
@@ -37,9 +38,9 @@ void load_bins_from_csv(const std::string& filename) {
       std::stringstream ss(line);
       std::string bin_name, property;
       std::getline(ss, bin_name, ',');
-      std::getline(ss, property, ',');
-      cout << property << endl;
       binNames.push_back(bin_name);
+      std::getline(ss, property, ',');
+      propertyNames.push_back(property);
 
       std::vector<float> bin_values;
       std::string value;
