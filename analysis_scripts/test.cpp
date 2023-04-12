@@ -195,7 +195,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
   }
 }
 
-void BSA_fits(const char* data_file, const char* output_file) {
+void test(const char* data_file, const char* output_file) {
 
   // Clear the contents of the output_file
   std::ofstream ofs(output_file, std::ios::trunc);
