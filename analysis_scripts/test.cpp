@@ -192,8 +192,6 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
         }
       }
       cout << "Found " << numEvents << " events." << endl;
-
-    outputFile.close();
   }
 
 void BSA_fits(const char* data_file, const char* output_file) {
