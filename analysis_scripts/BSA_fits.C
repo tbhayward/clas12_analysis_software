@@ -91,6 +91,13 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
     data.data[var_name] = value;
   }
 
+  // Debug print statement to ensure "Delta_phi" is present
+  if (data.data.find("Delta_phi") != data.data.end()) {
+      std::cout << "Delta_phi found: " << data.data["Delta_phi"] << std::endl;
+  } else {
+      std::cout << "Delta_phi not found" << std::endl;
+  }
+
   int runnum = static_cast<int>(data.data["runnum"]);
   data.data["pol"] = getPol(runnum);
 
