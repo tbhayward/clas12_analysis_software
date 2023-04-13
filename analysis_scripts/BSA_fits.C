@@ -209,9 +209,9 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           N += 1;
           double Delta_phi = event.data["Delta_phi"];
           double pol = event.data["pol"];
-          if (data.data["helicity"] > 0) {
+          if (event.data["helicity"] > 0) {
             sum_P += log(1 + pol * (A * sin(Delta_phi) + B * sin(2 * Delta_phi)));
-          } else if (data.data["helicity"] < 0) {
+          } else if (event.data["helicity"] < 0) {
             sum_N += log(1 - pol * (A * sin(Delta_phi) + B * sin(2 * Delta_phi)));
           }
         }
