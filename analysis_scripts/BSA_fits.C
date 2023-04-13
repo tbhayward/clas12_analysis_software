@@ -580,10 +580,9 @@ void BSA_fits(const char* data_file, const char* output_file) {
   }
   cout << endl << endl << endl;
 
-
   // cout << endl << endl;
-  // for (size_t i = 0; i < allBins.size(); ++i) {
-  for (size_t i = 0; i < 1; ++i) {
+  for (size_t i = 0; i < allBins.size(); ++i) {
+  // for (size_t i = 0; i < 1; ++i) {
     cout << "-- Beginning kinematic fits." << endl;
     performChi2Fits(data_file, output_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
