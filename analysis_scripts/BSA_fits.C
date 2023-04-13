@@ -195,19 +195,19 @@ bool applyKinematicCuts(const eventData& data, int currentFits) {
     //         return false;
     //     }
     // }
-    return (currentFits <= 4) ? (event.data["status"] <= 1e2) : true; // x, zeta, PT1, PT2, PTPT
-    return (currentFits == 5) ? (event.data["status"] == 1e0) : true; // 1st zeta-x bin
-    return (currentFits == 6) ? (event.data["status"] == 1e1) : true; // 2nd zeta-x bin
-    return (currentFits == 7) ? (event.data["status"] == 1e2) : true; // 3rd zeta-x bin
-    return (currentFits == 8) ? (event.data["status"] == 1e0) : true; // 1st Q2-x bin
-    return (currentFits == 9) ? (event.data["status"] == 1e1) : true; // 2nd Q2-x bin
-    return (currentFits == 10) ? (event.data["status"] == 1e2) : true; // 3rd Q2-x bin
-    return (currentFits == 11) ? (event.data["status"] <= 1e2 || 
-      event.data["status"] == 1e3) : true; // z1
+    return (currentFits <= 4) ? (data.data["status"] <= 1e2) : true; // x, zeta, PT1, PT2, PTPT
+    return (currentFits == 5) ? (data.data["status"] == 1e0) : true; // 1st zeta-x bin
+    return (currentFits == 6) ? (data.data["status"] == 1e1) : true; // 2nd zeta-x bin
+    return (currentFits == 7) ? (data.data["status"] == 1e2) : true; // 3rd zeta-x bin
+    return (currentFits == 8) ? (data.data["status"] == 1e0) : true; // 1st Q2-x bin
+    return (currentFits == 9) ? (data.data["status"] == 1e1) : true; // 2nd Q2-x bin
+    return (currentFits == 10) ? (data.data["status"] == 1e2) : true; // 3rd Q2-x bin
+    return (currentFits == 11) ? (data.data["status"] <= 1e2 || 
+      data.data["status"] == 1e3) : true; // z1
     return (currentFits == 12) ? (event.data["status"] <= 1e2 || 
-      event.data["status"] == 1e4) : true; // xF1
+      data.data["status"] == 1e4) : true; // xF1
     return (currentFits == 13) ? (event.data["status"] <= 1e2 || 
-      event.data["status"] == 1e5) : true; // xF2
+      data.data["status"] == 1e5) : true; // xF2
 }
 
 // Negative log-likelihood function
