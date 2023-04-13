@@ -373,19 +373,22 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
   outputFile.close();
 }
 
-
 TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* histName,
   int binIndex) {
 
+  // Determine the variable range for the specified bin
   double varMin = allBins[currentFits][binIndex];
   double varMax = allBins[currentFits][binIndex + 1];
 
+  // Create positive and negative helicity histograms
   TH1D* histPos = new TH1D(Form("%s_pos", histName), "", 24, 0, 2 * TMath::Pi());
   TH1D* histNeg = new TH1D(Form("%s_neg", histName), "", 24, 0, 2 * TMath::Pi());
 
+  // Variables to calculate the mean polarization
   double sumPol = 0;
   int numEvents = 0;
 
+  // Fill the positive and negative helicity histograms
   for (const eventData& event : data) {
     double currentVariable = getEventProperty(event, currentFits);
     if (applyKinematicCuts(event, currentFits) && currentVariable >= varMin && 
@@ -395,72 +398,95 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
       } else {
         histNeg->Fill(event.data.at("Delta_phi"));
       }
+      // Accumulate polarization and event count for mean polarization calculation
       sumPol += event.data.at("pol");
       numEvents++;
     }
   }
 
+  // Calculate the mean polarization
   double meanPol = sumPol / numEvents;
 
+  // Create the asymmetry histogram
   int numBins = histPos->GetNbinsX();
   TH1D* histAsymmetry = new TH1D(Form("%s_asymmetry", histName), "", 
     numBins, 0, 2 * TMath::Pi());
 
+  // Calculate the asymmetry and its error for each bin, and fill the asymmetry histogram
   for (int iBin = 1; iBin <= numBins; ++iBin) {
     double Np = histPos->GetBinContent(iBin);
     double Nm = histNeg->GetBinContent(iBin);
 
+    // Calculate the asymmetry and error for the current bin
     double asymmetry = (1 / meanPol) * (Np - Nm) / (Np + Nm);
-
     double error = (2 / meanPol) * std::sqrt(Np * Nm / TMath::Power(Np + Nm, 3));
 
+    // Fill the asymmetry histogram with the calculated values
     histAsymmetry->SetBinContent(iBin, asymmetry);
     histAsymmetry->SetBinError(iBin, error);
   }
 
+  // Delete the temporary positive and negative helicity histograms
   delete histPos;
   delete histNeg;
 
+  // Return the final asymmetry histogram
   return histAsymmetry;
 }
 
-// Function to fit
+// Function to fit the asymmetry histogram
 double funcToFit(double* x, double* par) {
+  // Retrieve the parameters A and B
   double A = par[0];
   double B = par[1];
+  
+  // Retrieve the Delta_phi variable from the input x array
   double Delta_phi = x[0];
+
+  // Calculate and return the value of the function for the given Delta_phi and parameters A, B
   return A * sin(Delta_phi) + B * sin(2 * Delta_phi);
 }
 
 void performChi2Fits(const char *filename, const char* output_file, const std::string& prefix) {
+  // Read data from the input file and store it in the global variable gData
   gData = readData(filename, variable_names);
 
+  // Create a new TF1 object called fitFunction representing the function to fit
   TF1* fitFunction = new TF1("fitFunction", funcToFit, 0, 2 * TMath::Pi(), 2);
 
+  // Initialize string streams to store the results for each bin
   std::ostringstream chi2FitsAStream;
   std::ostringstream chi2FitsAScaledStream;
   std::ostringstream chi2FitsBStream;
   std::ostringstream chi2FitsBScaledStream;
 
+  // Add prefix to each string stream
   chi2FitsAStream << prefix << "chi2FitsA = {";
   chi2FitsAScaledStream << prefix << "chi2FitsScaledA = {";
   chi2FitsBStream << prefix << "chi2FitsB = {";
   chi2FitsBScaledStream << prefix << "chi2FitsScaledB = {";
 
+  // Determine the number of bins
   size_t numBins = allBins[currentFits].size() - 1;
 
+  // Loop over each bin
   for (size_t i = 0; i < numBins; ++i) {
     cout << "Beginning chi2 fit for " << binNames[currentFits]
       << " bin " << i << ". ";
     char histName[32];
     snprintf(histName, sizeof(histName), "hist_%zu", i);
 
+    // Create a histogram for the current bin
     TH1D* hist = createHistogramForBin(gData, histName, i);
+    // Fit the histogram using the fitFunction
     hist->Fit(fitFunction, "Q");
 
+    // Initialize variables to store the sums and event counts
     double sumVariable = 0;
     double sumb2b = 0;
     double numEvents = 0;
+
+    // Loop over all events and calculate the sums and event counts
     for (const eventData& event : gData) {
       double currentVariable = getEventProperty(event, currentFits);
       if (applyKinematicCuts(event, currentFits) && currentVariable >= allBins[currentFits][i] && 
@@ -472,14 +498,17 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
     }
     cout << "Found " << numEvents << " events in this bin." << endl;
 
+    // Calculate the mean values for the variable and b2b factor
     double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
     double meanb2b = numEvents > 0 ? sumb2b / numEvents : 0.0;
 
+    // Get the fitted parameters and their errors
     double A = fitFunction->GetParameter(0);
     double A_error = fitFunction->GetParError(0);
     double B = fitFunction->GetParameter(1);
     double B_error = fitFunction->GetParError(1);
 
+    // Calculate the scaled parameters and their errors
     double scaled_A = A / meanb2b;
     double scaled_A_error = A_error / meanb2b;
     double scaled_B = B / meanb2b;
