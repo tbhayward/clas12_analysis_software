@@ -245,7 +245,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
 }
 
 void performMLMFits(const char *filename, const char* output_file, const std::string& prefix) {
-  gData = readData(filename);
+  gData = readData(filename, variable_names);
 
   size_t numBins = allBins[currentFits].size() - 1;
 
@@ -389,7 +389,7 @@ double funcToFit(double* x, double* par) {
 }
 
 void performChi2Fits(const char *filename, const char* output_file, const std::string& prefix) {
-  gData = readData(filename);
+  gData = readData(filename, variable_names);
 
   TF1* fitFunction = new TF1("fitFunction", funcToFit, 0, 2 * TMath::Pi(), 2);
 
@@ -521,6 +521,3 @@ void BSA_fits(const char* data_file, const char* output_file) {
   }
   cout << endl << endl;
 }
-
-
-
