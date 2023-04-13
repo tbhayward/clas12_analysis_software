@@ -204,9 +204,9 @@ bool applyKinematicCuts(const eventData& data, int currentFits) {
     return (currentFits == 10) ? (data.data.at("status") == 1e2) : true; // 3rd Q2-x bin
     return (currentFits == 11) ? (data.data.at("status") <= 1e2 || 
       data.data.at("status") == 1e3) : true; // z1
-    return (currentFits == 12) ? (event.data.at("status") <= 1e2 || 
+    return (currentFits == 12) ? (data.data.at("status") <= 1e2 || 
       data.data.at("status") == 1e4) : true; // xF1
-    return (currentFits == 13) ? (event.data.at("status") <= 1e2 || 
+    return (currentFits == 13) ? (data.data.at("status") <= 1e2 || 
       data.data.at("status") == 1e5) : true; // xF2
 }
 
