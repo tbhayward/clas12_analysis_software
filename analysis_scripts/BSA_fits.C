@@ -424,6 +424,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
             sumVariable += currentVariable;
             sumb2b += event.data.at("b2b_factor");
             numEvents += 1;
+            cout << numEvents << endl;
         }
       }
       
