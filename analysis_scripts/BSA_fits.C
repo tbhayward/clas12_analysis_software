@@ -351,7 +351,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
       } else {
         histNeg->Fill(event.data.at("Delta_phi"));
       }
-      sumPol += event.data["pol"];
+      sumPol += event.data.at("pol");
       numEvents++;
     }
   }
