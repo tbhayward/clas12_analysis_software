@@ -199,7 +199,6 @@ std::vector<eventData> readData(const std::string& filename,
   return data;
 }
 
-
 double getEventProperty(const eventData& event, int currentFits) {
   std::string property = propertyNames[currentFits];
   // Access the property value using the map's indexing
@@ -232,7 +231,6 @@ bool applyKinematicCuts(const eventData& data, int currentFits) {
     return true;
 }
 
-
 // Negative log-likelihood function
 void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag) {
     // npar: number of parameters
@@ -241,21 +239,34 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     // par: an array of the parameter values
     // iflag: a flag (see TMinuit documentation for details)
 
+    // Extract parameters A and B from the input parameter array
     double A = par[0];
     double B = par[1];
 
+    // Initialize variables for counting events (N), positive helicity sum (sum_P), 
+    // and negative helicity sum (sum_N)
     double N = 0;
     double sum_N = 0;
     double sum_P = 0;
 
+    // Iterate through the global event data (gData)
     for (const eventData &event : gData) {
+        // Get the value of the current variable of interest for the event
         double currentVariable = getEventProperty(event, currentFits);
+
+        // Apply kinematic cuts and check if the current variable is within the specified bin range
         if (applyKinematicCuts(event, currentFits) && 
           currentVariable >= allBins[currentFits][currentBin] && 
           currentVariable < allBins[currentFits][currentBin + 1]) {
+
+          // Increment the event count
           N += 1;
+
+          // Extract Delta_phi and polarization (pol) from the event data
           double Delta_phi = event.data.at("Delta_phi");
           double pol = event.data.at("pol");
+
+          // Check if the helicity is positive or negative and update the corresponding sum
           if (event.data.at("helicity") > 0) {
             sum_P += log(1 + pol * (A * sin(Delta_phi) + B * sin(2 * Delta_phi)));
           } else if (event.data.at("helicity") < 0) {
@@ -264,44 +275,51 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
         }
     }
 
+    // Calculate the negative log-likelihood value and store it in the output variable f
     f = N * log(N) - sum_P - sum_N;
 }
 
+
 void performMLMFits(const char *filename, const char* output_file, const std::string& prefix) {
+  // Read the event data from the input file and store it in the global variable gData
   gData = readData(filename, variable_names);
 
+  // Determine the number of bins
   size_t numBins = allBins[currentFits].size() - 1;
 
-  double arglist[10]; arglist[0] = 1; 
+  // Initialize TMinuit with 2 parameters (A and B)
+  double arglist[10]; arglist[0] = 1;
   int ierflg = 0;
-  TMinuit minuit(2); // 2 is the number of parameters (A and B)
+  TMinuit minuit(2);
   minuit.SetPrintLevel(-1);
   minuit.SetFCN(negLogLikelihood);
 
+  // Declare string streams for storing the MLM fit results
   std::ostringstream mlmFitsAStream;
   std::ostringstream mlmFitsAScaledStream;
   std::ostringstream mlmFitsBStream;
   std::ostringstream mlmFitsScaledBStream;
 
+  // Initialize the string streams with the output variable names
   mlmFitsAStream << prefix << "MLMFitsA = {";
   mlmFitsAScaledStream << prefix << "MLMFitsScaledA = {";
   mlmFitsBStream << prefix << "MLMFitsB = {";
   mlmFitsScaledBStream << prefix << "MLMFitsScaledB = {";
 
+  // Iterate through each bin
   for (size_t i = 0; i < numBins; ++i) {
     cout << endl << "Beginning MLM fit for " << binNames[currentFits]
       << " bin " << i << ". ";
     currentBin = i;
 
-    // Define the parameters
+    // Define the parameters A and B with initial values and limits
     minuit.DefineParameter(0, "A", -0.02, 0.1, -1, 1);
     minuit.DefineParameter(1, "B", 0.00, 0.1, -1, 1);
 
-    // Minimize the function
+    // Minimize the negative log-likelihood function
     minuit.Migrad();
-    // minuit.mnexcm("MINOS",arglist,1,ierflg); // running MINOS and HESSE recommended
-    // minuit.mnexcm("HESSE",arglist,0,ierflg);
 
+    // Calculate the mean values of the current variable and the back-to-back factor (b2b_factor)
     double sumVariable = 0;
     double sumb2b = 0;
     double numEvents = 0;
@@ -317,15 +335,18 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
     double meanb2b = numEvents > 0 ? sumb2b / numEvents : 0.0;
 
+    // Extract the fitted parameter values and errors
     double A, A_error, B, B_error;
     minuit.GetParameter(0, A, A_error);
     minuit.GetParameter(1, B, B_error);
 
+    // Calculate the scaled parameter values and errors
     double scaled_A = A / meanb2b;
     double scaled_A_error = A_error / meanb2b;
     double scaled_B = B / meanb2b;
-    double scaled_B_error = B_error / meanb2b;
+    double scaled_B_error = B_error
 
+    // output to text file
     mlmFitsAStream << "{" << meanVariable << ", " << A << ", " << A_error << "}";
     mlmFitsAScaledStream << "{" << meanVariable << ", " << scaled_A << ", " << 
       scaled_A_error << "}";
