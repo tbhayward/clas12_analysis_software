@@ -377,7 +377,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
   size_t numBins = allBins[currentFits].size() - 1;
 
   for (size_t i = 0; i < numBins; ++i) {
-    cout << endl << "Beginning chi2 fit for " << binNames[currentFits]
+    cout << "Beginning chi2 fit for " << binNames[currentFits]
       << " bin " << i << ". ";
     char histName[32];
     snprintf(histName, sizeof(histName), "hist_%zu", i);
@@ -397,10 +397,10 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
           numEvents += 1;
       }
     }
-    
+    cout << "Found " << numEvents << " events in this bin." << endl;
+
     double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
     double meanb2b = numEvents > 0 ? sumb2b / numEvents : 0.0;
-    cout << numEvents << endl;
 
     double A = fitFunction->GetParameter(0);
     double A_error = fitFunction->GetParError(0);
