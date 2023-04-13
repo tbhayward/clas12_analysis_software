@@ -18,7 +18,7 @@ std::vector<std::string> binNames;
 std::vector<std::string> propertyNames;
 std::vector<std::string> variable_names;
 
-string trim_newline(const string &str) {
+std::string trim_newline(std::string_view str) {
   if (!str.empty() && str.back() == '\n') {
     return str.substr(0, str.size() - 1);
   }
@@ -41,7 +41,7 @@ void load_bins_from_csv(const std::string& filename) {
       std::stringstream ss_var(line);
       std::string var_name;
       while (std::getline(ss_var, var_name, ',')) {
-        variable_names.push_back(var_name);
+        variable_names.emplace_back(var_name);
       }
     } else {
       std::stringstream ss(line);
@@ -49,12 +49,12 @@ void load_bins_from_csv(const std::string& filename) {
       std::getline(ss, bin_name, ',');
       binNames.push_back(bin_name);
       std::getline(ss, property, ',');
-      propertyNames.push_back(property);
+      propertyNames.emplace_back(property);
 
       std::vector<float> bin_values;
       std::string value;
       while (std::getline(ss, value, ',')) {
-        bin_values.push_back(std::stof(value));
+        bin_values.emplace_back(std::stof(value));
       }
       bins_map[bin_name] = bin_values;
       allBins.push_back(bin_values);
@@ -143,7 +143,7 @@ std::vector<eventData> readData(const std::string& filename,
   std::string line;
   std::vector<eventData> data;
   while (std::getline(infile, line)) {
-    data.push_back(parseLine(line, variable_names));
+    data.emplace_back(parseLine(line, variable_names));
   }
   return data;
 }
