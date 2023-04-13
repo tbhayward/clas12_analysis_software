@@ -59,15 +59,14 @@ void load_bins_from_csv(const std::string& filename) {
       bins_map[bin_name] = bin_values;
       allBins.push_back(bin_values);
     }
-
-    // Add this code to remove newline and carriage return characters from variable names
-    for (size_t i = 0; i < variable_names.size(); ++i) {
-      // Remove newline and carriage return characters
-      variable_names[i].erase(std::remove(variable_names[i].begin(), 
-        variable_names[i].end(), '\n'), variable_names[i].end());
-      variable_names[i].erase(std::remove(variable_names[i].begin(), 
-        variable_names[i].end(), '\r'), variable_names[i].end());
-    }
+  }
+  // Add this code to remove newline and carriage return characters from variable names
+  for (size_t i = 0; i < variable_names.size(); ++i) {
+    // Remove newline and carriage return characters
+    variable_names[i].erase(std::remove(variable_names[i].begin(), 
+      variable_names[i].end(), '\n'), variable_names[i].end());
+    variable_names[i].erase(std::remove(variable_names[i].begin(), 
+      variable_names[i].end(), '\r'), variable_names[i].end());
   }
 }
 
@@ -368,70 +367,69 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
   size_t numBins = allBins[currentFits].size() - 1;
 
   for (size_t i = 0; i < numBins; ++i) {
-      cout << endl << "Beginning chi2 fit for " << binNames[currentFits]
-        << " bin " << i << ". ";
-      char histName[32];
-      snprintf(histName, sizeof(histName), "hist_%zu", i);
+    cout << endl << "Beginning chi2 fit for " << binNames[currentFits]
+      << " bin " << i << ". ";
+    char histName[32];
+    snprintf(histName, sizeof(histName), "hist_%zu", i);
 
-      TH1D* hist = createHistogramForBin(gData, histName, i);
-      hist->Fit(fitFunction, "Q");
+    TH1D* hist = createHistogramForBin(gData, histName, i);
+    hist->Fit(fitFunction, "Q");
 
-      double sumVariable = 0;
-      double sumb2b = 0;
-      double numEvents = 0;
-      for (const eventData& event : gData) {
-        double currentVariable = getEventProperty(event, currentFits);
-        if (applyKinematicCuts(event, currentFits) && currentVariable >= allBins[currentFits][i] && 
-          currentVariable < allBins[currentFits][i + 1]) {
-            sumVariable += currentVariable;
-            sumb2b += event.data.at("b2b_factor");
-            numEvents += 1;
-            cout << numEvents << endl;
-        }
+    double sumVariable = 0;
+    double sumb2b = 0;
+    double numEvents = 0;
+    for (const eventData& event : gData) {
+      double currentVariable = getEventProperty(event, currentFits);
+      if (applyKinematicCuts(event, currentFits) && currentVariable >= allBins[currentFits][i] && 
+        currentVariable < allBins[currentFits][i + 1]) {
+          sumVariable += currentVariable;
+          sumb2b += event.data.at("b2b_factor");
+          numEvents += 1;
       }
-      
-      double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
-      double meanb2b = numEvents > 0 ? sumb2b / numEvents : 0.0;
-      cout << numEvents << endl;
+    }
+    
+    double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
+    double meanb2b = numEvents > 0 ? sumb2b / numEvents : 0.0;
+    cout << numEvents << endl;
 
-      double A = fitFunction->GetParameter(0);
-      double A_error = fitFunction->GetParError(0);
-      double B = fitFunction->GetParameter(1);
-      double B_error = fitFunction->GetParError(1);
+    double A = fitFunction->GetParameter(0);
+    double A_error = fitFunction->GetParError(0);
+    double B = fitFunction->GetParameter(1);
+    double B_error = fitFunction->GetParError(1);
 
-      double scaled_A = A / meanb2b;
-      double scaled_A_error = A_error / meanb2b;
-      double scaled_B = B / meanb2b;
-      double scaled_B_error = B_error / meanb2b;
+    double scaled_A = A / meanb2b;
+    double scaled_A_error = A_error / meanb2b;
+    double scaled_B = B / meanb2b;
+    double scaled_B_error = B_error / meanb2b;
 
-      chi2FitsAStream << "{" << meanVariable << ", " << A << ", " << A_error << "}";
-      chi2FitsAScaledStream << "{" << meanVariable << ", " << scaled_A << ", " << 
-        scaled_A_error << "}";
-      chi2FitsBStream << "{" << meanVariable << ", " << B << ", " << B_error << "}";
-      chi2FitsBScaledStream << "{" << meanVariable << ", " << scaled_B << ", " << 
-        scaled_B_error << "}";
+    chi2FitsAStream << "{" << meanVariable << ", " << A << ", " << A_error << "}";
+    chi2FitsAScaledStream << "{" << meanVariable << ", " << scaled_A << ", " << 
+      scaled_A_error << "}";
+    chi2FitsBStream << "{" << meanVariable << ", " << B << ", " << B_error << "}";
+    chi2FitsBScaledStream << "{" << meanVariable << ", " << scaled_B << ", " << 
+      scaled_B_error << "}";
 
-      if (i < numBins - 1) {
-          chi2FitsAStream << ", ";
-          chi2FitsAScaledStream << ", ";
-          chi2FitsBStream << ", ";
-          chi2FitsBScaledStream << ", ";
-      }
-
-      delete hist;
+    if (i < numBins - 1) {
+        chi2FitsAStream << ", ";
+        chi2FitsAScaledStream << ", ";
+        chi2FitsBStream << ", ";
+        chi2FitsBScaledStream << ", ";
     }
 
-    chi2FitsAStream << "};"; chi2FitsAScaledStream << "};";
-    chi2FitsBStream << "};"; chi2FitsBScaledStream << "};";
-
-    std::ofstream outputFile(output_file, std::ios_base::app);
-    outputFile << chi2FitsAStream.str() << std::endl;
-    outputFile << chi2FitsAScaledStream.str() << std::endl;
-    outputFile << chi2FitsBStream.str() << std::endl;
-    outputFile << chi2FitsBScaledStream.str() << std::endl;
-
-    outputFile.close();
+    delete hist;
   }
+
+  chi2FitsAStream << "};"; chi2FitsAScaledStream << "};";
+  chi2FitsBStream << "};"; chi2FitsBScaledStream << "};";
+
+  std::ofstream outputFile(output_file, std::ios_base::app);
+  outputFile << chi2FitsAStream.str() << std::endl;
+  outputFile << chi2FitsAScaledStream.str() << std::endl;
+  outputFile << chi2FitsBStream.str() << std::endl;
+  outputFile << chi2FitsBScaledStream.str() << std::endl;
+
+  outputFile.close();
+}
 
 void BSA_fits(const char* data_file, const char* output_file) {
 
