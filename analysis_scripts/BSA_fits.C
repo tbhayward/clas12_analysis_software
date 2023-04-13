@@ -9,7 +9,6 @@
 #include <map>
 #include <TSystem.h>
 size_t currentFits = 0;
-size_t currentBin = 0;
 int n = 1;
 
 std::map<std::string, std::vector<float>> bins_map;
@@ -98,12 +97,8 @@ struct eventData {
   std::unordered_map<std::string, float> data;
 };
 
-struct eventDataArrays {
-  std::unordered_map<std::string, std::vector<float>> data;
-};
-eventDataArrays gData;
-
-
+std::vector<eventData> gData;
+size_t currentBin = 0;
 
 eventData parseLine(const std::string& line, const std::vector<std::string>& variable_names) {
   std::istringstream iss(line);
