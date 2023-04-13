@@ -4,6 +4,18 @@
 #include <sstream>
 #include <TH1D.h>
 #include <algorithm>
+#include <string>
+#include <vector>
+#include <map>
+#include <TSystem.h>
+size_t currentFits = 0;
+int n = 1;
+
+std::map<std::string, std::vector<float>> bins_map;
+std::vector<std::vector<float>> allBins;
+std::vector<std::string> binNames;
+std::vector<std::string> propertyNames;
+std::vector<std::string> variable_names;
 
 std::vector<float> xBins = {0.05, 0.12, 0.20, 0.28, 0.36, 0.44, 0.60};
 std::vector<float> zetaBins = {0.30, 0.400, 0.475, 0.550, 0.625, 0.70, 0.80};
@@ -25,6 +37,59 @@ std::vector<std::vector<float>> allBins = {xBins, zetaBins, PT1Bins, PT2Bins, PT
 size_t currentFits = 0;
 std::vector<std::string> binNames = {"x", "zeta", "PT1", "PT2", "PTPT", "zeta00", "zeta20", 
   "zeta32", "Q200", "Q220", "Q232", "z1", "xF1", "xF2"};
+
+string trim_newline(const string &str) {
+  if (!str.empty() && str.back() == '\n') {
+    return str.substr(0, str.size() - 1);
+  }
+  return str;
+}
+
+void load_bins_from_csv(const std::string& filename) {
+  std::ifstream file(filename);
+  std::string line;
+  bool reached_bins = false; // Flag to check if we have reached the bin declarations
+
+  while (std::getline(file, line)) {
+    if (line.empty() || line[0] == '#') { continue; } // Ignore comment lines
+
+    if (!reached_bins) {
+      if (line.find("-") != std::string::npos) { // set flag to true and continue to next line
+        reached_bins = true;
+        continue;
+      }
+      std::stringstream ss_var(line);
+      std::string var_name;
+      while (std::getline(ss_var, var_name, ',')) {
+        variable_names.push_back(var_name);
+      }
+    } else {
+      std::stringstream ss(line);
+      std::string bin_name, property;
+      std::getline(ss, bin_name, ',');
+      binNames.push_back(bin_name);
+      std::getline(ss, property, ',');
+      propertyNames.push_back(property);
+
+      std::vector<float> bin_values;
+      std::string value;
+      while (std::getline(ss, value, ',')) {
+        bin_values.push_back(std::stof(value));
+      }
+      bins_map[bin_name] = bin_values;
+      allBins.push_back(bin_values);
+    }
+
+    // Add this code to remove newline and carriage return characters from variable names
+    for (size_t i = 0; i < variable_names.size(); ++i) {
+      // Remove newline and carriage return characters
+      variable_names[i].erase(std::remove(variable_names[i].begin(), 
+        variable_names[i].end(), '\n'), variable_names[i].end());
+      variable_names[i].erase(std::remove(variable_names[i].begin(), 
+        variable_names[i].end(), '\r'), variable_names[i].end());
+    }
+  }
+}
 
 // function to get the polarization value
 float getPol(int runnum) {
@@ -443,13 +508,5 @@ void BSA_fits(const char* data_file, const char* output_file) {
   }
 }
 
-// accumulated charge
-// RGA Fall 18: 68.38041061700115 mC
-// RGA Spring 19: 46.512769750708856 mC
-// RGA Total: 114.8932 mC
-// RGB Spring 19: 66.7769672846809 mC
-// RGB Fall 19: 12.363048867122998 mC
-// RGB Spring 20: 28.505789583113557 mC
-// RGB Total: 107.6458 mC
 
 
