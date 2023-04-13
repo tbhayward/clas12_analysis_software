@@ -99,7 +99,7 @@ void load_bins_from_csv(const std::string& filename) {
 // function to get the polarization value
 float getPol(int runnum) {
   float pol; 
-    if (runnum == 11 ) { pol = 0.86; } // MC
+    if (runnum == 11 ) { pol = 0.86; } // runnum == 11 indicates Monte Carlo in CLAS12
     else if (runnum >= 5032 && runnum < 5333) { pol = 0.8592; } 
     else if (runnum >= 5333 && runnum <= 5666) { pol = 0.8922; }
     else if (runnum >= 6616 && runnum <= 6783) { pol = 0.8453; }
@@ -126,24 +126,34 @@ struct eventData {
 std::vector<eventData> gData;
 
 eventData parseLine(const std::string& line, const std::vector<std::string>& variable_names) {
+  // Create a stringstream from the input line
   std::istringstream iss(line);
+
+  // Initialize an eventData object to store the parsed data
   eventData data;
 
+  // Declare value for storing the extracted float and an index for variable names
   float value;
   std::string value_str;
   size_t var_name_index = 0;
+
+  // Iterate through the provided variable names
   for (const auto& var_name : variable_names) {
+    // Attempt to extract a float value from the stringstream
     if (!(iss >> value)) {
       break;
     }
-    // data.data[var_name] = value;
+    // Insert the extracted value into the data map with the corresponding variable name
     data.data.emplace(var_name, value);
 
+    // Increment the variable name index
     var_name_index++;
   }
 
+  // Calculate the polarization value and store it in the data map
   data.data["pol"] = getPol(data.data["runnum"]);
-  // Calculate b2b_factor
+
+  // Calculate the back-to-back factor and store it in the data map
   const float M = 0.938272088; // proton mass
   float gamma = (2 * M * data.data["x"]) / sqrt(data.data["Q2"]);
   float epsilon = (1 - data.data["y"] - (0.25) * gamma * gamma * data.data["y"] * data.data["y"]) /
@@ -152,27 +162,43 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
   float depolarization_factor = sqrt(1 - epsilon * epsilon);
   data.data["b2b_factor"] = (depolarization_factor * data.data["PTPT"]) / (M * M);
 
+  // Return the populated eventData object
   return data;
 }
 
 std::vector<eventData> readData(const std::string& filename,
   const std::vector<std::string>& variable_names) {
+  // Open the input file using the provided filename
   std::ifstream infile(filename);
 
   // Count the number of lines in the file
   size_t numberOfLines = std::count(std::istreambuf_iterator<char>(infile),
     std::istreambuf_iterator<char>(), '\n');
+
   // Reset the file stream to the beginning
   infile.clear();
   infile.seekg(0, std::ios::beg);
 
+  // Declare a string to store each line and a vector to store the parsed eventData objects
   std::string line;
   std::vector<eventData> data;
+
+  // Read the input file line by line
   while (std::getline(infile, line)) {
-    data.push_back(parseLine(line, variable_names));
+    // Parse the line using the parseLine function and the provided variable names
+    eventData parsedData = parseLine(line, variable_names);
+
+    // Add the parsed eventData object to the data vector
+    data.push_back(parsedData);
   }
+
+  // Close the input file
+  infile.close();
+
+  // Return the vector of eventData objects
   return data;
 }
+
 
 double getEventProperty(const eventData& event, int currentFits) {
   std::string property = propertyNames[currentFits];
