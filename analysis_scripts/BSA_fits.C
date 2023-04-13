@@ -231,11 +231,11 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           currentVariable >= allBins[currentFits][currentBin] && 
           currentVariable < allBins[currentFits][currentBin + 1]) {
           N += 1;
-          double Delta_phi = event.data["Delta_phi"];
-          double pol = event.data["pol"];
-          if (event.data["helicity"] > 0) {
+          double Delta_phi = event.data.at("Delta_phi");
+          double pol = event.data.at("pol");
+          if (event.data.at("helicity") > 0) {
             sum_P += log(1 + pol * (A * sin(Delta_phi) + B * sin(2 * Delta_phi)));
-          } else if (event.data["helicity"] < 0) {
+          } else if (event.data.at("helicity") < 0) {
             sum_N += log(1 - pol * (A * sin(Delta_phi) + B * sin(2 * Delta_phi)));
           }
         }
@@ -287,7 +287,7 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
         if (applyKinematicCuts(event, currentFits) && currentVariable >= 
           allBins[currentFits][i] && currentVariable < allBins[currentFits][i + 1]) {
             sumVariable += currentVariable;
-            sumb2b += event.data["b2b_factor"];
+            sumb2b += event.data.at("b2b_factor");
             numEvents += 1;
         }
     }
@@ -346,10 +346,10 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
     double currentVariable = getEventProperty(event, currentFits);
     if (applyKinematicCuts(event, currentFits) && currentVariable >= varMin && 
       currentVariable < varMax) {
-      if (event.data["helicity"] > 0) {
-        histPos->Fill(event.data["Delta_phi"]);
+      if (event.data.at("helicity") > 0) {
+        histPos->Fill(event.data.at("Delta_phi"));
       } else {
-        histNeg->Fill(event.data["Delta_phi"]);
+        histNeg->Fill(event.data.at("Delta_phi"));
       }
       sumPol += event.data["pol"];
       numEvents++;
@@ -422,7 +422,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
         if (applyKinematicCuts(event, currentFits) && currentVariable >= allBins[currentFits][i] && 
           currentVariable < allBins[currentFits][i + 1]) {
             sumVariable += currentVariable;
-            sumb2b += event.data["b2b_factor"];
+            sumb2b += event.data.at("b2b_factor");
             numEvents += 1;
         }
       }
