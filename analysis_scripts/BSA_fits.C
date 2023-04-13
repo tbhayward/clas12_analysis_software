@@ -112,7 +112,8 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
     if (!(iss >> value)) {
       break;
     }
-    data.data.emplace(var_name, value); = value;
+    // data.data[var_name] = value;
+    data.data.emplace(var_name, value);
 
     var_name_index++;
   }
