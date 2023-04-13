@@ -344,7 +344,7 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     double scaled_A = A / meanb2b;
     double scaled_A_error = A_error / meanb2b;
     double scaled_B = B / meanb2b;
-    double scaled_B_error = B_error
+    double scaled_B_error = B_error;
 
     // output to text file
     mlmFitsAStream << "{" << meanVariable << ", " << A << ", " << A_error << "}";
