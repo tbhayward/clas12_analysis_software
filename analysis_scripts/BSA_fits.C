@@ -138,14 +138,6 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
 std::vector<eventData> readData(const std::string& filename,
   const std::vector<std::string>& variable_names) {
   std::ifstream infile(filename);
-
-  // Count the number of lines in the file
-  size_t numberOfLines = std::count(std::istreambuf_iterator<char>(infile),
-    std::istreambuf_iterator<char>(), '\n');
-  // Reset the file stream to the beginning
-  infile.clear();
-  infile.seekg(0, std::ios::beg);
-  
   std::string line;
   std::vector<eventData> data;
   while (std::getline(infile, line)) {
