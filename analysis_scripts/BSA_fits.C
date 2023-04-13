@@ -9,6 +9,7 @@
 #include <map>
 #include <TSystem.h>
 size_t currentFits = 0;
+size_t currentBin = 0;
 int n = 1;
 
 std::map<std::string, std::vector<float>> bins_map;
@@ -98,7 +99,6 @@ struct eventData {
 };
 
 std::vector<eventData> gData;
-size_t currentBin = 0;
 
 eventData parseLine(const std::string& line, const std::vector<std::string>& variable_names) {
   std::istringstream iss(line);
@@ -133,6 +133,14 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
 std::vector<eventData> readData(const std::string& filename,
   const std::vector<std::string>& variable_names) {
   std::ifstream infile(filename);
+
+  // Count the number of lines in the file
+  size_t numberOfLines = std::count(std::istreambuf_iterator<char>(infile),
+    std::istreambuf_iterator<char>(), '\n');
+  // Reset the file stream to the beginning
+  infile.clear();
+  infile.seekg(0, std::ios::beg);
+
   std::string line;
   std::vector<eventData> data;
   while (std::getline(infile, line)) {
