@@ -93,10 +93,6 @@ float getPol(int runnum) {
   return pol;
 }
 
-// struct eventData {
-//   std::map<std::string, float> data;
-// };
-
 struct eventData {
   std::unordered_map<std::string, float> data;
 };
@@ -116,7 +112,7 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
     if (!(iss >> value)) {
       break;
     }
-    data.data[var_name] = value;
+    data.data.emplace(var_name, value); = value;
 
     var_name_index++;
   }
