@@ -129,16 +129,16 @@ public static void main(String[] args) {
 		        for (int current_p1 = 0; current_p1 < num_photons; current_p1++) { 
 		        	for (int current_p2 = 0; current_p2 < num_photons; current_p2++) { 
 		        		if (current_p1 == current_p2) {continue; }
-		        		Particle e = recEvent.getParticle([11,0]);
+		        		Particle e = rec_Bank.getParticle([11,0]);
 		        		LorentzVector lv_e = new LorentzVector();
 				        lv_e.setPxPyPzM(e.px(), e.py(), e.pz(), e.mass());
-		        		Particle p1 = recEvent.getParticle([22,current_p1]);
+		        		Particle p1 = rec_Bank.getParticle([22,current_p1]);
 		        		LorentzVector lv_p1 = new LorentzVector();
 				        lv_p1.setPxPyPzM(p1.px(), p1.py(), p1.pz(), p1.mass());
-		        		Particle p2 = recEvent.getParticle([22,current_p2]);
+		        		Particle p2 = rec_Bank.getParticle([22,current_p2]);
 				        LorentzVector lv_p2 = new LorentzVector();
 				        lv_p2.setPxPyPzM(p2.px(), p2.py(), p2.pz(), p2.mass());
-				        Particle p12 = recEvent.getParticle([22,current_p1]+[22,current_p2]);
+				        Particle p12 = rec_Bank.getParticle([22,current_p1]+[22,current_p2]);
 				        LorentzVector lv_p12 = new LorentzVector();
 				        lv_p12.setPxPyPzM(p12.px(), p12.py(), p12.pz(), p12.mass());
 
