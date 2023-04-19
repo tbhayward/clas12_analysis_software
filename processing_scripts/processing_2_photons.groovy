@@ -128,7 +128,7 @@ public static void main(String[] args) {
 		        // cycle over all photons
 		        for (int current_p1 = 0; current_p1 < num_photons; current_p1++) { 
 		        	for (int current_p2 = 0; current_p2 < num_photons; current_p2++) { 
-		        		if (current_p1 == current_p2 && p1_int == p2_int) {continue; }
+		        		if (current_p1 == current_p2) {continue; }
 		        		Particle e = recEvent.getParticle([11,0]);
 		        		LorentzVector lv_e = new LorentzVector();
 				        lv_e.setPxPyPzM(e.px(), e.py(), e.pz(), e.mass());
