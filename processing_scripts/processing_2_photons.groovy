@@ -129,23 +129,38 @@ public static void main(String[] args) {
 		        for (int current_p1 = 0; current_p1 < num_photons; current_p1++) { 
 		        	for (int current_p2 = 0; current_p2 < num_photons; current_p2++) { 
 		        		if (current_p1 == current_p2 && p1_int == p2_int) {continue; }
+		        		Particle e = recEvent.getParticle([11,0]);
+		        		LorentzVector lv_e = new LorentzVector();
+				        lv_e.setPxPyPzM(e.px(), e.py(), e.pz(), e.mass());
 		        		Particle p1 = recEvent.getParticle([22,current_p1]);
+		        		LorentzVector lv_p1 = new LorentzVector();
+				        lv_p1.setPxPyPzM(p1.px(), p1.py(), p1.pz(), p1.mass());
 		        		Particle p2 = recEvent.getParticle([22,current_p2]);
+				        LorentzVector lv_p2 = new LorentzVector();
+				        lv_p2.setPxPyPzM(p2.px(), p2.py(), p2.pz(), p2.mass());
+				        Particle p12 = recEvent.getParticle([22,current_p1]+[22,current_p2]);
+				        LorentzVector lv_p12 = new LorentzVector();
+				        lv_p12.setPxPyPzM(p12.px(), p12.py(), p12.pz(), p12.mass());
+
+				        double open_angle_1 = 180/Math.PI*Math.acos(lv_e.vect().dot(lv_p1.vect())/
+            				(lv_e.vect().mag()*lv_p1.vect().mag()));
+						double open_angle_2 = 180/Math.PI*Math.acos(lv_e.vect().dot(lv_p2.vect())/
+            				(lv_e.vect().mag()*lv_p2.vect().mag()));
 
 		                // Use a StringBuilder to append all data in a single call
 		                StringBuilder line = new StringBuilder();
-		                line.append(gamma_p_1).append(" ")
-		                	.append(gamma_p_2).append(" ")
-		                	.append(beta_1).append(" ")
-		                	.append(beta_2).append(" ")
-		                	.append(lv_1).append(" ")
-		                	.append(lv_2).append(" ")
-		                	.append(lw_1).append(" ")
-		                	.append(lw_2).append(" ")
+		                line.append(lv_p1.p()).append(" ")
+		                	.append(lv_p2.p()).append(" ")
+		                	.append(0).append(" ")
+		                	.append(0).append(" ")
+		                	.append(0).append(" ")
+		                	.append(0).append(" ")
+		                	.append(0).append(" ")
+		                	.append(0).append(" ")
 		                	.append(opening_angle_1).append(" ")
 		                	.append(opening_angle_2).append(" ")
-		                	.append(gamma_gamma_mass).append(" ")
-		                	.append(gamma_gamma_p).append("\n");
+		                	.append(lv_p12.mass()).append(" ")
+		                	.append(lv_p12.p()).append("\n");
 
 		                // Append the line to the batchLines StringBuilder
 		                batchLines.append(line.toString());
