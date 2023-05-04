@@ -663,11 +663,11 @@ public class analysis_fitter extends GenericKinematicFitter {
             && p > 2.0 // higher cut ultimately enforced when we cut on y < 0.8 or y < 0.75
                 // this is just to speed up processing
             && forward_detector_cut(particle_Index, rec_Bank)
-//            && calorimeter_energy_cut(particle_Index, cal_Bank) 
-//            && calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
-//            && calorimeter_diagonal_cut(particle_Index, p, cal_Bank)
-//            && electron_z_vertex_cut(vz)
-//            && pcal_fiducial_cut(particle_Index, rec_Bank, cal_Bank)
+            && calorimeter_energy_cut(particle_Index, cal_Bank) 
+            && calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
+            && calorimeter_diagonal_cut(particle_Index, p, cal_Bank)
+            && electron_z_vertex_cut(vz)
+            && pcal_fiducial_cut(particle_Index, rec_Bank, cal_Bank)
            // && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
 //            && nphe_cut(particle_Index, cc_Bank) // legacy cut used in the analysis note to check the effect
                 ;
@@ -683,10 +683,10 @@ public class analysis_fitter extends GenericKinematicFitter {
         
         return true
 //            && p > 1.20
-//            && p < 5.00 // this wasn't used in the dihadron publication but was used in the submitted single pion
+            && p < 5.00 // this wasn't used in the dihadron publication but was used in the submitted single pion
             && forward_detector_cut(particle_Index, rec_Bank)
-//            && pion_z_vertex_cut(vz, trigger_electron_vz)
-//            && pion_chi2pid_cut(particle_Index, rec_Bank)
+            && pion_z_vertex_cut(vz, trigger_electron_vz)
+            && pion_chi2pid_cut(particle_Index, rec_Bank)
 //            && hadron_chi2pid_cut(particle_Index, rec_Bank)
 //            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
               ;
@@ -702,10 +702,10 @@ public class analysis_fitter extends GenericKinematicFitter {
         
         return true
 //            && p > 1.20
-//            && p < 3.25 
+            && p < 3.25 
             && forward_detector_cut(particle_Index, rec_Bank)
-//            && pion_z_vertex_cut(vz, trigger_electron_vz)
-//            && hadron_chi2pid_cut(particle_Index, rec_Bank)
+            && pion_z_vertex_cut(vz, trigger_electron_vz)
+            && hadron_chi2pid_cut(particle_Index, rec_Bank)
 //            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
               ;
     }
