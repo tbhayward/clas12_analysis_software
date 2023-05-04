@@ -701,12 +701,12 @@ public class analysis_fitter extends GenericKinematicFitter {
         double p = Math.sqrt(Math.pow(px,2)+Math.pow(py,2)+Math.pow(pz,2));
         
         return true
-            && p > 1.20
-            && p < 3.25 
+//            && p > 1.20
+//            && p < 3.25 
             && forward_detector_cut(particle_Index, rec_Bank)
-            && pion_z_vertex_cut(vz, trigger_electron_vz)
-            && hadron_chi2pid_cut(particle_Index, rec_Bank)
-            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
+//            && pion_z_vertex_cut(vz, trigger_electron_vz)
+//            && hadron_chi2pid_cut(particle_Index, rec_Bank)
+//            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
               ;
     }
     
