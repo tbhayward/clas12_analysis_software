@@ -70,7 +70,7 @@ public class Hadron {
 //        else if (variables.p_p()<1.25) { return false; } 
 //        else if (variables.Mx()<1.5) { return false; } 
         else if (variables.x() < 0.30 || variables.x() > 0.36) { return false; }
-        else if (variables.Q2() < 2.4 || variables.Q2() > 9.0) { return false; }
+        else if (variables.Q2() < 2.0 || variables.Q2() > 19.0) { return false; }
         else if (variables.z() < 0.2 || variables.z() > 0.7) { return false; }
         else if (variables.pT() < 0.2 || variables.pT() > 1.0) { return false; }
 	return true;
