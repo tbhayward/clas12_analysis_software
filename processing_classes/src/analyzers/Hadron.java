@@ -60,19 +60,9 @@ public class Hadron {
     protected double chi2pid, beta, RQ_prob, el_prob, pi_prob, k_prob, pr_prob;
     
     public static boolean channel_test(Hadron variables) {
-//        if (variables.helicity==0){ 
-//            System.out.println("You're returning false because helicity = 0. Is this data or MC?");
-//            return false; }
         if (variables.Q2()<1) { return false; } 
         if (variables.W()<2) { return false; } 
-//        if (variables.xF()<0.0) { return false; } 
-        else if (variables.y()>0.75) { return false; } 
-//        else if (variables.p_p()<1.25) { return false; } 
-//        else if (variables.Mx()<1.5) { return false; } 
-        else if (variables.x() < 0.30 || variables.x() > 0.36) { return false; }
-        else if (variables.Q2() < 2.0 || variables.Q2() > 19.0) { return false; }
-        else if (variables.z() < 0.2 || variables.z() > 0.7) { return false; }
-        else if (variables.pT() < 0.2 || variables.pT() > 1.0) { return false; }
+        else if (variables.y()>0.80) { return false; } 
 	return true;
     }
     

@@ -78,24 +78,9 @@ public class Dihadrons {
     protected double gN_angle_p1_p2, gN_angle_p1_X, gN_angle_p2_X;
     
     public static boolean channel_test(Dihadrons variables) {
-//        if (variables.helicity==0){ return false; }
         if (variables.Q2()<1) { return false; } 
         else if (variables.W()<2) { return false; } 
-        else if (variables.y()>0.80) { return false; } 
-//        else if (variables.Mx()<0.95) { return false; } 
-//        else if (variables.Mx1()<1.35) { return false; } 
-//        else if (variables.Mx1()<1.80) { return false; } 
-//        else if (variables.xF1()>0.0) { return false; } 
-//        else if (variables.xF2()<0.0) { return false; } 
-//        else if (variables.Mh()<1.35) { return false; } 
-//        else if (variables.z2()<0.2) { return false; } 
-//        else if (variables.vz_e() < -12 || variables.vz_e() > 6) { return false; }
-//        else if (variables.vz_p1() < -12 || variables.vz_p1() > 6) { return false; }
-//        else if (variables.vz_p2() < -12 || variables.vz_p2() > 6) { return false; }
-//        else if (variables.vz_e() < -10 || variables.vz_e() > 2.5) { return false; }
-//        else if (variables.vz_p1() < -8 || variables.vz_p1() > 3) { return false; }
-//        else if (variables.vz_p2() < -8 || variables.vz_p2() > 3) { return false; }
-//
+        else if (variables.y()>0.80) { return false; }  
 	return true;
     }
     
