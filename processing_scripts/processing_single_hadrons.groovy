@@ -109,7 +109,7 @@ public static void main(String[] args) {
 	int lineCount = 0;
 	for (current_file in start_file..<stop_file) {
 		// limit to a certain number of files defined by n_files
-		println("\n Opening file "+Integer.toString(current_file+1-n_files)
+		println("\n Opening file "+Integer.toString(current_file+1-start_file)
 			+" out of "+n_files+".\n"); 
 		
 		HipoDataSource reader = new HipoDataSource();
