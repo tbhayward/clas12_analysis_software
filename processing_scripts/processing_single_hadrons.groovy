@@ -52,16 +52,32 @@ public static void main(String[] args) {
 	file.delete();
 	BufferedWriter writer = new BufferedWriter(new FileWriter(file));
 
-	// Set the number of files to process based on the provided 4th argument
-	// use the size of the hipo_list if no argument provided
-	int n_files = args.length < 4 || Integer.parseInt(args[3]) > hipo_list.size()
-	    ? hipo_list.size() : Integer.parseInt(args[3]);
-	if (args.length < 4 || Integer.parseInt(args[3]) > hipo_list.size()) {
-	    // Print warnings and information if the number of files is not specified or too large
-	    println("WARNING: Number of files not specified or number too large.")
-	    println("Setting # of files to be equal to number of files in the directory.");
-	    println("There are $hipo_list.size files.");
+	int start_file
+	if ((args.length < 4 || (Integer.parseInt(args[3])<0))) {
+		// if start file is not specified then it starts at the first file
+		start_file = 0;
+	} else {
+		start_file = Integer.parseInt(args[3])-1;
 	}
+
+	int stop_file
+	if ((args.length < 5 || (Integer.parseInt(args[4])<0))) {
+		// if end file is not specified then it stops at the last file
+		stop_file = list.size();
+	} else {
+		stop_file = Integer.parseInt(args[4])-1;
+	}
+
+	// // Set the number of files to process based on the provided 4th argument
+	// // use the size of the hipo_list if no argument provided
+	// int n_files = args.length < 4 || Integer.parseInt(args[3]) > hipo_list.size()
+	//     ? hipo_list.size() : Integer.parseInt(args[3]);
+	// if (args.length < 4 || Integer.parseInt(args[3]) > hipo_list.size()) {
+	//     // Print warnings and information if the number of files is not specified or too large
+	//     println("WARNING: Number of files not specified or number too large.")
+	//     println("Setting # of files to be equal to number of files in the directory.");
+	//     println("There are $hipo_list.size files.");
+	// }
 
 	// ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
 
@@ -90,7 +106,7 @@ public static void main(String[] args) {
 	int num_events = 0;
 	int max_lines = 1000;
 	int lineCount = 0;
-	for (current_file in 0..<n_files) {
+	for (current_file in start_file..<stop_file) {
 		// limit to a certain number of files defined by n_files
 		println("\n Opening file "+Integer.toString(current_file+1)
 			+" out of "+n_files+".\n"); 
