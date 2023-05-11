@@ -63,7 +63,7 @@ public static void main(String[] args) {
 	int stop_file
 	if ((args.length < 5 || (Integer.parseInt(args[4])<0))) {
 		// if end file is not specified then it stops at the last file
-		stop_file = list.size();
+		stop_file = hipo_list.size();
 	} else {
 		stop_file = Integer.parseInt(args[4])-1;
 	}
