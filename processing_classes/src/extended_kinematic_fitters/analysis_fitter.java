@@ -13,7 +13,6 @@ import org.jlab.io.hipo.HipoDataBank;
 
 import org.jlab.clas.physics.*;
 
-//import org.apache.commons.math3.*;
 
 public class analysis_fitter extends GenericKinematicFitter {
 
