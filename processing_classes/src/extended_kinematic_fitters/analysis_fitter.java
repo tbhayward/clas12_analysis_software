@@ -667,8 +667,8 @@ public class analysis_fitter extends GenericKinematicFitter {
             && calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
             && calorimeter_diagonal_cut(particle_Index, p, cal_Bank)
             && electron_z_vertex_cut(vz)
-            && pcal_fiducial_cut(particle_Index, rec_Bank, cal_Bank)
-            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
+//            && pcal_fiducial_cut(particle_Index, rec_Bank, cal_Bank)
+//            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
 //            && nphe_cut(particle_Index, cc_Bank) // legacy cut used in the analysis note to check the effect
                 ;
     }
@@ -688,7 +688,7 @@ public class analysis_fitter extends GenericKinematicFitter {
             && pion_z_vertex_cut(vz, trigger_electron_vz)
             && pion_chi2pid_cut(particle_Index, rec_Bank)
 //            && hadron_chi2pid_cut(particle_Index, rec_Bank)
-            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
+//            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
               ;
     }
     
