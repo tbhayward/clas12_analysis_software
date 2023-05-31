@@ -134,7 +134,8 @@ public static void main(String[] args) {
 		    // do not use the qa if the run is from RGC (until QA is produced!)
 		    boolean process_event = filter.isValid(research_Event) && 
 		    	(runnum == 11 || runnum >= 11571 || qa.OkForAsymmetry(runnum, evnum));
-		    println(filter.isValid(research_Event) + " " + process_event);
+		    println(filter.isValid(research_Event));
+		    println(process_event);
 		    if (process_event) {
 
 		        // get # of particles w/ pid1
