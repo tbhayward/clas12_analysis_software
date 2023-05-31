@@ -16,5 +16,8 @@ else
     set arg2 = "$2"
 endif
 
+module load java_1.8
+use groovy
+setenv PATH /apps/groovy/PRO/bin/:${PATH}
 cd clasqaDB/; source env.csh; cd ..;
 coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4" "$5" "$6"
