@@ -136,6 +136,7 @@ public static void main(String[] args) {
 		    // 	(runnum == 11 || runnum >= 11571 || qa.OkForAsymmetry(runnum, evnum));
 		    boolean process_event = filter.isValid(research_Event) && 
 		    	(runnum == 11 || runnum >= 11571);
+		    println(process_event);
 		    if (process_event) {
 
 		        // get # of particles w/ pid1
@@ -148,7 +149,7 @@ public static void main(String[] args) {
 		            // this is my class for defining all relevant kinematic variables
 		            if (variables.channel_test(variables)) {
 		                helicity = variables.get_helicity(); // helicity of event
-		                println("test");
+
 		                // lab kinematics
 		                e_p = variables.e_p(); // lab frame momentum
 		                e_theta = variables.e_theta(); // lab polar angle
