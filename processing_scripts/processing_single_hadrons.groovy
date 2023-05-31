@@ -141,11 +141,10 @@ public static void main(String[] args) {
 
 		        // cycle over all hadrons
 		        for (int current_p1 = 0; current_p1 < num_p1; current_p1++) { 
-
+		        	println("test");
 		            Hadron variables = new Hadron(event, research_Event,
 		                    p1_int, current_p1);
 		            // this is my class for defining all relevant kinematic variables
-		            println("test");
 		            if (variables.channel_test(variables)) {
 		                helicity = variables.get_helicity(); // helicity of event
 
