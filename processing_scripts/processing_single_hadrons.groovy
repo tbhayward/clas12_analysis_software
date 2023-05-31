@@ -135,7 +135,7 @@ public static void main(String[] args) {
 		    boolean process_event = filter.isValid(research_Event) && 
 		    	(runnum == 11 || runnum >= 11571 || qa.OkForAsymmetry(runnum, evnum));
 		    println(filter.isValid(research_Event));
-		    println(process_event);
+		    println(qa.OkForAsymmetry(runnum, evnum));
 		    println();
 		    if (process_event) {
 
