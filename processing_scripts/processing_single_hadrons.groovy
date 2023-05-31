@@ -132,8 +132,10 @@ public static void main(String[] args) {
 
 		    // do not use the qa if it is MC (runnum = 11) 
 		    // do not use the qa if the run is from RGC (until QA is produced!)
+		    // boolean process_event = filter.isValid(research_Event) && 
+		    // 	(runnum == 11 || runnum >= 11571 || qa.OkForAsymmetry(runnum, evnum));
 		    boolean process_event = filter.isValid(research_Event) && 
-		    	(runnum == 11 || runnum >= 11571 || qa.OkForAsymmetry(runnum, evnum));
+		    	(runnum == 11 || runnum >= 11571);
 		    if (process_event) {
 
 		        // get # of particles w/ pid1
@@ -141,13 +143,12 @@ public static void main(String[] args) {
 
 		        // cycle over all hadrons
 		        for (int current_p1 = 0; current_p1 < num_p1; current_p1++) { 
-		        	println("test");
 		            Hadron variables = new Hadron(event, research_Event,
 		                    p1_int, current_p1);
 		            // this is my class for defining all relevant kinematic variables
 		            if (variables.channel_test(variables)) {
 		                helicity = variables.get_helicity(); // helicity of event
-
+		                println("test");
 		                // lab kinematics
 		                e_p = variables.e_p(); // lab frame momentum
 		                e_theta = variables.e_theta(); // lab polar angle
