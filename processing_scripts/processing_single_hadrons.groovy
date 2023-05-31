@@ -127,10 +127,10 @@ public static void main(String[] args) {
 		    // collect info for QA
 		    int runnum = event.getBank("RUN::config").getInt('run', 0);
 		    int evnum = event.getBank("RUN::config").getInt('event', 0);
-		    println("test");
 
 		    PhysicsEvent research_Event = fitter.getPhysicsEvent(event);
 
+		    println("test");
 		    // do not use the qa if it is MC (runnum = 11) 
 		    // do not use the qa if the run is from RGC (until QA is produced!)
 		    boolean process_event = filter.isValid(research_Event) && 
