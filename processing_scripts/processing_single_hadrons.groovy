@@ -121,12 +121,13 @@ public static void main(String[] args) {
 		    if (num_events % 100000 == 0) { // not necessary, just updates output
 		        print("processed: " + num_events + " events. ");
 		    }
-		    println("test");
+
 		    // get run and event numbers
 		    event = reader.getNextEvent();
 		    // collect info for QA
 		    int runnum = event.getBank("RUN::config").getInt('run', 0);
 		    int evnum = event.getBank("RUN::config").getInt('event', 0);
+		    println("test");
 
 		    PhysicsEvent research_Event = fitter.getPhysicsEvent(event);
 
