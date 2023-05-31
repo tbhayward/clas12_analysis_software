@@ -135,7 +135,6 @@ public static void main(String[] args) {
 		    // boolean process_event = filter.isValid(research_Event) && 
 		    // 	(runnum == 11 || runnum >= 11571 || qa.OkForAsymmetry(runnum, evnum));
 		    boolean process_event = filter.isValid(research_Event);
-		    println(process_event);
 		    if (process_event) {
 
 		        // get # of particles w/ pid1
