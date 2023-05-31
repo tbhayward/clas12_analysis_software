@@ -145,9 +145,8 @@ public static void main(String[] args) {
 		            Hadron variables = new Hadron(event, research_Event,
 		                    p1_int, current_p1);
 		            // this is my class for defining all relevant kinematic variables
-
+		            println("test");
 		            if (variables.channel_test(variables)) {
-		            	println("test");
 		                helicity = variables.get_helicity(); // helicity of event
 
 		                // lab kinematics
