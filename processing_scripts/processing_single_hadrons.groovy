@@ -134,7 +134,6 @@ public static void main(String[] args) {
 		    // do not use the qa if the run is from RGC (until QA is produced!)
 		    boolean process_event = filter.isValid(research_Event) && 
 		    	(runnum == 11 || runnum >= 11571 || qa.OkForAsymmetry(runnum, evnum));
-		    	println("test");
 		    if (process_event) {
 
 		        // get # of particles w/ pid1
@@ -148,6 +147,7 @@ public static void main(String[] args) {
 		            // this is my class for defining all relevant kinematic variables
 
 		            if (variables.channel_test(variables)) {
+		            	println("test");
 		                helicity = variables.get_helicity(); // helicity of event
 
 		                // lab kinematics
