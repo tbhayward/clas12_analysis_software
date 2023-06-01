@@ -222,7 +222,6 @@ public static void main(String[] args) {
 
 		                // If the line count reaches 1000, write to the file and reset
 		                if (lineCount >= max_lines) {
-		                	println(max_lines);
 		                    file.append(batchLines.toString());
 		                    batchLines.setLength(0);
 		                    lineCount = 0;
