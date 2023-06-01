@@ -219,7 +219,7 @@ public static void main(String[] args) {
 		                // Append the line to the batchLines StringBuilder
 		                batchLines.append(line.toString());
 		                lineCount++; // Increment the line count
-		                println("hello world");
+		                println(line);
 
 		                // If the line count reaches 1000, write to the file and reset
 		                if (lineCount >= max_lines) {
