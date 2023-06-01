@@ -134,9 +134,9 @@ public static void main(String[] args) {
 		    // do not use the qa if the run is from RGC (until QA is produced!)
 		    // boolean process_event = filter.isValid(research_Event) && 
 		    // 	(runnum == 11 || runnum >= 11571 || qa.OkForAsymmetry(runnum, evnum));
-		    println("hello world");
 		    boolean process_event = filter.isValid(research_Event);
 		    if (process_event) {
+		    	println("hello world");
 
 		        // get # of particles w/ pid1
 		        int num_p1 = research_Event.countByPid(p1_Str.toInteger()); 
