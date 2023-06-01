@@ -146,7 +146,6 @@ public static void main(String[] args) {
 		                    p1_int, current_p1);
 		            // this is my class for defining all relevant kinematic variables
 		            if (variables.channel_test(variables)) {
-		            	println("hello world");
 		                helicity = variables.get_helicity(); // helicity of event
 
 		                // lab kinematics
@@ -220,6 +219,7 @@ public static void main(String[] args) {
 		                // Append the line to the batchLines StringBuilder
 		                batchLines.append(line.toString());
 		                lineCount++; // Increment the line count
+		                println("hello world");
 
 		                // If the line count reaches 1000, write to the file and reset
 		                if (lineCount >= max_lines) {
