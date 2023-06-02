@@ -16,7 +16,7 @@ else
     set arg2 = "$2"
 endif
 
-module load java_1.8
+source /site/12gev_phys/softenv.csh 2.4
 use groovy
 setenv PATH /apps/groovy/PRO/bin/:${PATH}
 cd clasqaDB/; source env.csh; cd ..;
