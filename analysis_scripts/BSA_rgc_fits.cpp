@@ -598,7 +598,7 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
 
   // load run infrom from external csv file
   load_run_info_from_csv("run_info_rgc.csv");
-  cout<< endl <<"-- Loaded information from run_info_rgc.csv" << endl << endl << endl;
+  cout<< endl << endl <<"-- Loaded information from run_info_rgc.csv" << endl;
 
   cout << "Found " << run_info_list.size() << " runs." << endl;
   float total_charge_pos_pos = 0;
