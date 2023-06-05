@@ -216,10 +216,10 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
   for (const auto& run_info : run_info_list) {
     if (run_info.runnum == runnum) {
       data.data["target_pol"] = run_info.target_polarization;
+      cout << data.data["target_pol"] << endl;
       break;
     }
   }
-  cout << data.data["target_pol"] << endl;
 
   // Return the populated eventData object
   return data;
