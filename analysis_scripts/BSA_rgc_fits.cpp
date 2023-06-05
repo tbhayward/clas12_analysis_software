@@ -216,7 +216,6 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
   for (const auto& run_info : run_info_list) {
     if (run_info.runnum == runnum) {
       data.data["target_pol"] = run_info.target_polarization;
-      cout << data.data["target_pol"] << endl;
       break;
     }
   }
@@ -269,7 +268,7 @@ double getEventProperty(const eventData& event, int currentFits) {
 bool applyKinematicCuts(const eventData& data, int currentFits) {
 
     return data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
-      data.data.at("y")<0.8 && data.data.at("xF")<0;
+      data.data.at("y")<0.8 && data.data.at("xF")<0 && data.data.at("target_pol") =! 0;
 }
 
 // Negative log-likelihood function
@@ -595,13 +594,15 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
       cout << ", ";
     }
   }
-  cout << endl << endl << endl;
+  cout << endl;
 
   // load run infrom from external csv file
   load_run_info_from_csv("run_info_rgc.csv");
-  cout<< endl <<"-- Loaded information from run_info_rgc.csv" << endl;
+  cout<< endl <<"-- Loaded information from run_info_rgc.csv" << endl << endl << endl;
 
-  // cout << endl << endl;
+  cout << "Found " << run_info_list.size() << " runs." << endl;
+
+  cout << endl << endl;
   for (size_t i = 0; i < allBins.size(); ++i) {
   // for (size_t i = 0; i < 1; ++i) {
     cout << "-- Beginning kinematic fits." << endl;
