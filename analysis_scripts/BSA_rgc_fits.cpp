@@ -299,7 +299,6 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
         }
     }
     double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
-    double meanb2b = numEvents > 0 ? sumb2b / numEvents : 0.0;
 
     // Extract the fitted parameter values and errors
     double A, A_error, B, B_error;
