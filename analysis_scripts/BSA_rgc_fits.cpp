@@ -499,7 +499,7 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
   ofs.close();
 
   // load bins from external csv file
-  load_bins_from_csv("bins.csv");
+  load_bins_from_csv("bins_single_hadron.csv");
   cout<< endl <<"-- Loaded information from bins.csv. " << endl;
 
   cout<< "Found " << allBins.size() << " sets of bins: " << endl;
