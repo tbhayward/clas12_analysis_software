@@ -95,6 +95,64 @@ void load_bins_from_csv(const std::string& filename) {
   }
 }
 
+struct RunInfo {
+  int runnum;
+  float total_charge;
+  float positive_charge;
+  float negative_charge;
+  float target_polarization;
+};
+
+// Declare a vector to store the run information
+std::vector<RunInfo> run_info_list;
+
+void load_run_info_from_csv(const std::string& filename) {
+  // Open the input file with the given filename
+  std::ifstream file(filename);
+
+  // Declare a string to store each line read from the file
+  std::string line;
+
+  // Loop through each line in the file until there are no more lines left to read
+  while (std::getline(file, line)) {
+    // If the line is empty or starts with a '#' (comment), skip to the next line
+    if (line.empty() || line[0] == '#') { continue; }
+
+    // Use a stringstream to split the line by commas
+    std::stringstream ss(line);
+
+    // Declare a struct to store the run information
+    RunInfo run_info;
+
+    // Declare a string to store each piece of information read from the stringstream
+    std::string info;
+
+    // Read the run number from the stringstream and convert it to an integer
+    std::getline(ss, info, ',');
+    run_info.runnum = std::stoi(info);
+
+    // Read the total charge from the stringstream and convert it to a float
+    std::getline(ss, info, ',');
+    run_info.total_charge = std::stof(info);
+
+    // Read the positive charge from the stringstream and convert it to a float
+    std::getline(ss, info, ',');
+    run_info.positive_charge = std::stof(info);
+
+    // Read the negative charge from the stringstream and convert it to a float
+    std::getline(ss, info, ',');
+    run_info.negative_charge = std::stof(info);
+
+    // Read the target polarization from the stringstream and convert it to a float
+    std::getline(ss, info, ',');
+    run_info.target_polarization = std::stof(info);
+
+    // Add the struct to the run_info_list vector
+    run_info_list.push_back(run_info);
+  }
+}
+
+
 
 // function to get the polarization value
 float getPol(int runnum) {
@@ -153,9 +211,20 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
   // Calculate the polarization value and store it in the data map
   data.data["pol"] = getPol(data.data["runnum"]);
 
+  // Get the target polarization value from the run_info_list and store it in the data map
+  int runnum = static_cast<int>(data.data["runnum"]);
+  for (const auto& run_info : run_info_list) {
+    if (run_info.runnum == runnum) {
+      data.data["target_pol"] = run_info.target_polarization;
+      break;
+    }
+  }
+  cout << data.data["target_pol"] << endl;
+
   // Return the populated eventData object
   return data;
 }
+
 
 std::vector<eventData> readData(const std::string& filename,
   const std::vector<std::string>& variable_names) {
