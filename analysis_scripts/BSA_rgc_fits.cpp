@@ -608,16 +608,16 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
   for (const auto& run_info : run_info_list) {
       if (run_info.target_polarization > 0) {
           total_charge_pos_pos += run_info.positive_charge;
-          total_charge_pos_pos += run_info.negative_charge;
+          total_charge_pos_neg += run_info.negative_charge;
       } else if (run_info.target_polarization < 0) {
           total_charge_neg_pos += run_info.positive_charge;
           total_charge_neg_neg += run_info.negative_charge;
       }
   }
-  cout << "Total pos-pos charge: " << total_charge_pos_pos << ". ";
-  cout << "Total pos-neg charge: " << total_charge_pos_neg << ". ";
-  cout << "Total neg-pos charge: " << total_charge_neg_pos << ". ";
-  cout << "Total neg-neg charge: " << total_charge_neg_neg << ". " << endl;
+  cout << "Total pos-pos charge: " << total_charge_pos_pos << " (nc). ";
+  cout << "Total pos-neg charge: " << total_charge_pos_neg << " (nc). ";
+  cout << "Total neg-pos charge: " << total_charge_neg_pos << " (nc). ";
+  cout << "Total neg-neg charge: " << total_charge_neg_neg << " (nc). " << endl;
 
   cout << endl << endl;
   for (size_t i = 0; i < allBins.size(); ++i) {
