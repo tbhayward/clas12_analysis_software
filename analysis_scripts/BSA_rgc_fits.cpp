@@ -443,6 +443,8 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   TH1D* histAsymmetry = new TH1D(Form("%s_asymmetry", histName), "", 
     numBins, 0, 2 * TMath::Pi());
 
+  cout << " beginning loop" << endl;
+
   // Calculate the asymmetry and its error for each bin, and fill the asymmetry histogram
   for (int iBin = 1; iBin <= numBins; ++iBin) {
     double Npp = histPosPos->GetBinContent(iBin);
