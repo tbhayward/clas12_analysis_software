@@ -521,7 +521,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
     delete hist;
   }
 
-  chi2FitsAStream << "};"; chi2FitsAScaledStream << "};";
+  chi2FitsAStream << "};"; 
 
   std::ofstream outputFile(output_file, std::ios_base::app);
   outputFile << chi2FitsAStream.str() << std::endl;
