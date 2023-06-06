@@ -453,13 +453,13 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
     // Calculate the asymmetry and error for the current bin
     double asymmetry = (1 / meanPol) * (meanTargetNegPol*(Npp-Nmp) + meanTargetPosPol*(Npm-Nmm)) / 
       (meanTargetNegPol*(Npp+Nmp) + meanTargetPosPol*(Npm+Nmm));
-    double error = (2/meanPol)*std::sqrt( ( ( Nmp*Npp*(Nmp+Npp)*std::power(meanTargetNegPol,4) ) + 
-      (2*Nmp*(Nmm+Npm)*Npp*std::power(meanTargetNegPol,3)*meanTargetPosPol) + 
+    double error = (2/meanPol)*std::sqrt( ( ( Nmp*Npp*(Nmp+Npp)*std::pow(meanTargetNegPol,4) ) + 
+      (2*Nmp*(Nmm+Npm)*Npp*std::pow(meanTargetNegPol,3)*meanTargetPosPol) + 
       (Nmp*Npm*(Nmp+Npm)+Nmm*Npp*(Nmm+Npp)*
-        std::power(meanTargetNegPol,2)*std::power(meanTargetPosPol,2)) + 
-      (2*Nmm+Npm*(Nmp+Npp)*meanTargetNegPol*std::power(meanTargetPosPol,3)) + 
-      (Nmm*Npm*(Nmm+Npm)*std::power(meanTargetPosPol,4)) ) / 
-      std::power(( (Nmp+Npp)*meanTargetNegPol + 
+        std::pow(meanTargetNegPol,2)*std::pow(meanTargetPosPol,2)) + 
+      (2*Nmm+Npm*(Nmp+Npp)*meanTargetNegPol*std::pow(meanTargetPosPol,3)) + 
+      (Nmm*Npm*(Nmm+Npm)*std::pow(meanTargetPosPol,4)) ) / 
+      std::pow(( (Nmp+Npp)*meanTargetNegPol + 
       ( (Nmm+Npm)*meanTargetPosPol) ) ,4))
 
     // Fill the asymmetry histogram with the calculated values
