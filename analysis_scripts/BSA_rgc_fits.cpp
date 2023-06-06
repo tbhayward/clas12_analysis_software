@@ -17,6 +17,8 @@ std::vector<std::vector<float>> allBins;
 std::vector<std::string> binNames;
 std::vector<std::string> propertyNames;
 std::vector<std::string> variable_names;
+float total_charge_pos_pos, total_charge_pos_neg, total_charge_neg_pos, total_charge_neg_neg;
+float total_charge_carbon;
 
 string trim_newline(const string &str) {
   if (!str.empty() && str.back() == '\n') {
@@ -151,8 +153,6 @@ void load_run_info_from_csv(const std::string& filename) {
     run_info_list.push_back(run_info);
   }
 }
-
-
 
 // function to get the polarization value
 float getPol(int runnum) {
@@ -318,7 +318,6 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     f = N * log(N) - sum_P - sum_N;
 }
 
-
 void performMLMFits(const char *filename, const char* output_file, const std::string& prefix) {
   // Read the event data from the input file and store it in the global variable gData
   gData = readData(filename, variable_names);
@@ -392,11 +391,15 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   double varMax = allBins[currentFits][binIndex + 1];
 
   // Create positive and negative helicity histograms
-  TH1D* histPos = new TH1D(Form("%s_pos", histName), "", 24, 0, 2 * TMath::Pi());
-  TH1D* histNeg = new TH1D(Form("%s_neg", histName), "", 24, 0, 2 * TMath::Pi());
+  TH1D* histPosPos = new TH1D(Form("%s_pospos", histName), "", 24, 0, 2 * TMath::Pi());
+  TH1D* histPosNeg = new TH1D(Form("%s_posneg", histName), "", 24, 0, 2 * TMath::Pi());
+  TH1D* histNegPos = new TH1D(Form("%s_negpos", histName), "", 24, 0, 2 * TMath::Pi());
+  TH1D* histNegNeg = new TH1D(Form("%s_negneg", histName), "", 24, 0, 2 * TMath::Pi());
 
   // Variables to calculate the mean polarization
-  double sumPol = 0;
+  double sumPol = 0; // sum of the beam polarization
+  double sumTargetPosPol = 0; // sum of the target positive polarization
+  double sumTargetNegPol = 0; // sum of the target negative polarization
   int numEvents = 0;
 
   // Fill the positive and negative helicity histograms
@@ -404,33 +407,60 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
     double currentVariable = getEventProperty(event, currentFits);
     if (applyKinematicCuts(event, currentFits) && currentVariable >= varMin && 
       currentVariable < varMax) {
-      if (event.data.at("helicity") > 0) {
-        histPos->Fill(event.data.at("phi"));
-      } else {
-        histNeg->Fill(event.data.at("phi"));
+      if (event.data.at("helicity") > 0 && event.data.at("target_polarization") > 0) {
+        histPosPos->Fill(event.data.at("phi"));
+      } else if (event.data.at("helicity") > 0 && event.data.at("target_polarization") < 0) {
+        histPosNeg->Fill(event.data.at("phi"));
+      } else if (event.data.at("helicity") < 0 && event.data.at("target_polarization") > 0) {
+        histNegPos->Fill(event.data.at("phi"));
+      } else if (event.data.at("helicity") < 0 && event.data.at("target_polarization") < 0) {
+        histNegNeg->Fill(event.data.at("phi"));
       }
       // Accumulate polarization and event count for mean polarization calculation
       sumPol += event.data.at("pol");
+      if (event.data.at("target_polarization") > 0) {
+        sumTargetPosPol+=event.data.at("target_polarization");
+      } else if (event.data.at("target_polarization") < 0) {
+        sumTargetNegPol+=event.data.at("target_polarization");
+      }
       numEvents++;
     }
   }
+  // scale the histograms by the accumulated faraday cup charge
+  histPosPos->Scale(1.0 / total_charge_pos_pos);
+  histPosNeg->Scale(1.0 / total_charge_pos_neg);
+  histNegPos->Scale(1.0 / total_charge_neg_pos);
+  histNegNeg->Scale(1.0 / total_charge_neg_neg);
+
 
   // Calculate the mean polarization
   double meanPol = sumPol / numEvents;
+  double meanTargetPosPol = sumTargetPosPol / numEvents;
+  double meanTargetNegPol = sumTargetPosNeg / numEvents;
 
   // Create the asymmetry histogram
-  int numBins = histPos->GetNbinsX();
+  int numBins = histPosPos->GetNbinsX();
   TH1D* histAsymmetry = new TH1D(Form("%s_asymmetry", histName), "", 
     numBins, 0, 2 * TMath::Pi());
 
   // Calculate the asymmetry and its error for each bin, and fill the asymmetry histogram
   for (int iBin = 1; iBin <= numBins; ++iBin) {
-    double Np = histPos->GetBinContent(iBin);
-    double Nm = histNeg->GetBinContent(iBin);
+    double Npp = histPosPos->GetBinContent(iBin);
+    double Npm = histPosNeg->GetBinContent(iBin);
+    double Nmp = histNegPos->GetBinContent(iBin);
+    double Nmm = histNegNeg->GetBinContent(iBin);
 
     // Calculate the asymmetry and error for the current bin
-    double asymmetry = (1 / meanPol) * (Np - Nm) / (Np + Nm);
-    double error = (2 / meanPol) * std::sqrt(Np * Nm / TMath::Power(Np + Nm, 3));
+    double asymmetry = (1 / meanPol) * (meanTargetNegPol*(Npp-Nmp) + meanTargetPosPol*(Npm-Nmm)) / 
+      (meanTargetNegPol*(Npp+Nmp) + meanTargetPosPol*(Npm+Nmm));
+    double error = (2/meanPol)*std::sqrt( ( ( Nmp*Npp*(Nmp+Npp)*std::power(meanTargetNegPol,4) ) + 
+      (2*Nmp*(Nmm+Npm)*Npp*std::power(meanTargetNegPol,3)*meanTargetPosPol) + 
+      (Nmp*Npm*(Nmp+Npm)+Nmm*Npp*(Nmm+Npp)*
+        std::power(meanTargetNegPol,2)*std::power(meanTargetPosPol,2)) + 
+      (2*Nmm+Npm*(Nmp+Npp)*meanTargetNegPol*std::power(meanTargetPosPol,3)) + 
+      (Nmm*Npm*(Nmm+Npm)*std::power(meanTargetPosPol,4)) ) / 
+      std::power(( (Nmp+Npp)*meanTargetNegPol + 
+      ( (Nmm+Npm)*meanTargetPosPol) ) ,4))
 
     // Fill the asymmetry histogram with the calculated values
     histAsymmetry->SetBinContent(iBin, asymmetry);
@@ -438,8 +468,10 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   }
 
   // Delete the temporary positive and negative helicity histograms
-  delete histPos;
-  delete histNeg;
+  delete histPosPos;
+  delete histPosNeg;
+  delete histNegPos;
+  delete histNegNeg;
 
   // Return the final asymmetry histogram
   return histAsymmetry;
@@ -566,11 +598,11 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
   cout<< endl << endl <<"-- Loaded information from run_info_rgc.csv" << endl;
 
   cout << "Found " << run_info_list.size() << " runs." << endl;
-  float total_charge_pos_pos = 0;
-  float total_charge_pos_neg = 0;
-  float total_charge_neg_pos = 0;
-  float total_charge_neg_neg = 0;
-  float total_charge_carbon = 0;
+  total_charge_pos_pos = 0;
+  total_charge_pos_neg = 0;
+  total_charge_neg_pos = 0;
+  total_charge_neg_neg = 0;
+  total_charge_carbon = 0;
   for (const auto& run_info : run_info_list) {
       if (run_info.target_polarization > 0) {
         total_charge_pos_pos += run_info.positive_charge;
