@@ -335,13 +335,9 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
 
   // Declare string streams for storing the MLM fit results
   std::ostringstream mlmFitsAStream;
-  std::ostringstream mlmFitsAScaledStream;
-  std::ostringstream mlmFitsBStream;
-  std::ostringstream mlmFitsScaledBStream;
 
   // Initialize the string streams with the output variable names
-  mlmFitsAStream << prefix << "MLMFitsA = {";
-  mlmFitsAScaledStream << prefix << "MLMFitsScaledA = {";
+  mlmFitsAStream << prefix << "MLMFits_ALU_sinphi = {";
 
   // Iterate through each bin
   for (size_t i = 0; i < numBins; ++i) {
@@ -350,7 +346,7 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     currentBin = i;
 
     // Define the parameters A and B with initial values and limits
-    minuit.DefineParameter(0, "A", -0.02, 0.1, -1, 1);
+    minuit.DefineParameter(0, "ALU_sinphi", -0.02, 0.1, -1, 1);
 
     // Minimize the negative log-likelihood function
     minuit.Migrad();
@@ -369,12 +365,11 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
 
     // Extract the fitted parameter values and errors
-    double A, A_error, B, B_error;
-    minuit.GetParameter(0, A, A_error);
-    minuit.GetParameter(1, B, B_error);
+    double ALU_sinphi, ALU_sinphi_error;
+    minuit.GetParameter(0, ALU_sinphi, ALU_sinphi_error);
 
     // output to text file
-    mlmFitsAStream << "{" << meanVariable << ", " << A << ", " << A_error << "}";
+    mlmFitsAStream << "{" << meanVariable << ", " << ALU_sinphi << ", " << ALU_sinphi_error << "}";
 
     if (i < numBins - 1) {
         mlmFitsAStream << ", "; 
@@ -452,14 +447,14 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
 
 // Function to fit the asymmetry histogram
 double funcToFit(double* x, double* par) {
-  // Retrieve the parameters A and B
-  double A = par[0];
+  // Retrieve the parameters A
+  double ALU_sinphi = par[0];
   
   // Retrieve the phi variable from the input x array
   double phi = x[0];
 
   // Calculate and return the value of the function for the given phi and parameters A
-  return A * sin(phi);
+  return ALU_sinphi*sin(phi);
 }
 
 void performChi2Fits(const char *filename, const char* output_file, const std::string& prefix) {
@@ -473,7 +468,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
   std::ostringstream chi2FitsAStream;
 
   // Add prefix to each string stream
-  chi2FitsAStream << prefix << "chi2FitsA = {";
+  chi2FitsAStream << prefix << "chi2Fits_ALU_sinphi = {";
 
   // Determine the number of bins
   size_t numBins = allBins[currentFits].size() - 1;
@@ -509,10 +504,10 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
     double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
 
     // Get the fitted parameters and their errors
-    double A = fitFunction->GetParameter(0);
-    double A_error = fitFunction->GetParError(0);
+    double ALU_sinphi = fitFunction->GetParameter(0);
+    double ALU_sinphi_error = fitFunction->GetParError(0);
 
-    chi2FitsAStream << "{" << meanVariable << ", " << A << ", " << A_error << "}";
+    chi2FitsAStream << "{" << meanVariable << ", " << ALU_sinphi << ", " << ALU_sinphi_error << "}";
 
     if (i < numBins - 1) {
         chi2FitsAStream << ", ";
