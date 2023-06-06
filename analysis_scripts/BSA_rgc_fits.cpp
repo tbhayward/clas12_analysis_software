@@ -454,13 +454,12 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
 double funcToFit(double* x, double* par) {
   // Retrieve the parameters A and B
   double A = par[0];
-  double B = par[1];
   
-  // Retrieve the Delta_phi variable from the input x array
-  double Delta_phi = x[0];
+  // Retrieve the phi variable from the input x array
+  double phi = x[0];
 
-  // Calculate and return the value of the function for the given Delta_phi and parameters A, B
-  return A * sin(Delta_phi) + B * sin(2 * Delta_phi);
+  // Calculate and return the value of the function for the given phi and parameters A
+  return A * sin(phi);
 }
 
 void performChi2Fits(const char *filename, const char* output_file, const std::string& prefix) {
@@ -472,15 +471,9 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
 
   // Initialize string streams to store the results for each bin
   std::ostringstream chi2FitsAStream;
-  std::ostringstream chi2FitsAScaledStream;
-  std::ostringstream chi2FitsBStream;
-  std::ostringstream chi2FitsBScaledStream;
 
   // Add prefix to each string stream
   chi2FitsAStream << prefix << "chi2FitsA = {";
-  chi2FitsAScaledStream << prefix << "chi2FitsScaledA = {";
-  chi2FitsBStream << prefix << "chi2FitsB = {";
-  chi2FitsBScaledStream << prefix << "chi2FitsScaledB = {";
 
   // Determine the number of bins
   size_t numBins = allBins[currentFits].size() - 1;
@@ -499,7 +492,6 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
 
     // Initialize variables to store the sums and event counts
     double sumVariable = 0;
-    double sumb2b = 0;
     double numEvents = 0;
 
     // Loop over all events and calculate the sums and event counts
@@ -508,7 +500,6 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
       if (applyKinematicCuts(event, currentFits) && currentVariable >= allBins[currentFits][i] && 
         currentVariable < allBins[currentFits][i + 1]) {
           sumVariable += currentVariable;
-          sumb2b += event.data.at("b2b_factor");
           numEvents += 1;
       }
     }
@@ -516,45 +507,24 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
 
     // Calculate the mean values for the variable and b2b factor
     double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
-    double meanb2b = numEvents > 0 ? sumb2b / numEvents : 0.0;
 
     // Get the fitted parameters and their errors
     double A = fitFunction->GetParameter(0);
     double A_error = fitFunction->GetParError(0);
-    double B = fitFunction->GetParameter(1);
-    double B_error = fitFunction->GetParError(1);
-
-    // Calculate the scaled parameters and their errors
-    double scaled_A = A / meanb2b;
-    double scaled_A_error = A_error / meanb2b;
-    double scaled_B = B / meanb2b;
-    double scaled_B_error = B_error / meanb2b;
 
     chi2FitsAStream << "{" << meanVariable << ", " << A << ", " << A_error << "}";
-    chi2FitsAScaledStream << "{" << meanVariable << ", " << scaled_A << ", " << 
-      scaled_A_error << "}";
-    chi2FitsBStream << "{" << meanVariable << ", " << B << ", " << B_error << "}";
-    chi2FitsBScaledStream << "{" << meanVariable << ", " << scaled_B << ", " << 
-      scaled_B_error << "}";
 
     if (i < numBins - 1) {
         chi2FitsAStream << ", ";
-        chi2FitsAScaledStream << ", ";
-        chi2FitsBStream << ", ";
-        chi2FitsBScaledStream << ", ";
     }
 
     delete hist;
   }
 
   chi2FitsAStream << "};"; chi2FitsAScaledStream << "};";
-  chi2FitsBStream << "};"; chi2FitsBScaledStream << "};";
 
   std::ofstream outputFile(output_file, std::ios_base::app);
   outputFile << chi2FitsAStream.str() << std::endl;
-  outputFile << chi2FitsAScaledStream.str() << std::endl;
-  outputFile << chi2FitsBStream.str() << std::endl;
-  outputFile << chi2FitsBScaledStream.str() << std::endl;
 
   outputFile.close();
 }
@@ -621,14 +591,14 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
   cout << "Total pos-neg charge: " << total_charge_pos_neg << " (nc). ";
   cout << "Total neg-pos charge: " << total_charge_neg_pos << " (nc). ";
   cout << "Total neg-neg charge: " << total_charge_neg_neg << " (nc). ";
-  cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << endl;
+  cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << " (nc)." << endl;
 
   cout << endl << endl;
   for (size_t i = 0; i < allBins.size(); ++i) {
   // for (size_t i = 0; i < 1; ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    // performChi2Fits(data_file, output_file, binNames[i]);
-    // cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
+    performChi2Fits(data_file, output_file, binNames[i]);
+    cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
     performMLMFits(data_file, output_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
