@@ -436,7 +436,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   // Calculate the mean polarization
   double meanPol = sumPol / numEvents;
   double meanTargetPosPol = sumTargetPosPol / numEvents;
-  double meanTargetNegPol = sumTargetPosNeg / numEvents;
+  double meanTargetNegPol = sumTargetNegPol / numEvents;
 
   // Create the asymmetry histogram
   int numBins = histPosPos->GetNbinsX();
@@ -460,7 +460,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
       (2*Nmm+Npm*(Nmp+Npp)*meanTargetNegPol*std::pow(meanTargetPosPol,3)) + 
       (Nmm*Npm*(Nmm+Npm)*std::pow(meanTargetPosPol,4)) ) / 
       std::pow(( (Nmp+Npp)*meanTargetNegPol + 
-      ( (Nmm+Npm)*meanTargetPosPol) ) ,4))
+      ( (Nmm+Npm)*meanTargetPosPol) ) ,4));
 
     // Fill the asymmetry histogram with the calculated values
     histAsymmetry->SetBinContent(iBin, asymmetry);
