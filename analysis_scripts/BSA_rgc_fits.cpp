@@ -402,12 +402,12 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   double sumTargetNegPol = 0; // sum of the target negative polarization
   int numEvents = 0;
 
-  cout << endl << "hello world" << endl;
   // Fill the positive and negative helicity histograms
   for (const eventData& event : data) {
     double currentVariable = getEventProperty(event, currentFits);
     if (applyKinematicCuts(event, currentFits) && currentVariable >= varMin && 
       currentVariable < varMax) {
+      cout << endl << "hello world" << endl;
       if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
         histPosPos->Fill(event.data.at("phi"));
       } else if (event.data.at("helicity") > 0 && event.data.at("target_pol") < 0) {
