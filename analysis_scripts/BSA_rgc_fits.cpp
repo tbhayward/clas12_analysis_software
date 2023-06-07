@@ -445,22 +445,39 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
 
   // Calculate the asymmetry and its error for each bin, and fill the asymmetry histogram
   for (int iBin = 1; iBin <= numBins; ++iBin) {
-    double Npp = histPosPos->GetBinContent(iBin);
-    double Npm = histPosNeg->GetBinContent(iBin);
-    double Nmp = histNegPos->GetBinContent(iBin);
-    double Nmm = histNegNeg->GetBinContent(iBin);
+    float Npp = histPosPos->GetBinContent(iBin);
+    float Npm = histPosNeg->GetBinContent(iBin);
+    float Nmp = histNegPos->GetBinContent(iBin);
+    float Nmm = histNegNeg->GetBinContent(iBin);
 
     // Calculate the asymmetry and error for the current bin
-    double asymmetry = (1 / meanPol) * (meanTargetNegPol*(Npp-Nmp) + meanTargetPosPol*(Npm-Nmm)) / 
-      (meanTargetNegPol*(Npp+Nmp) + meanTargetPosPol*(Npm+Nmm));
-    double error = (2/meanPol)*std::sqrt( ( ( Nmp*Npp*(Nmp+Npp)*std::pow(meanTargetNegPol,4) ) + 
-      (2*Nmp*(Nmm+Npm)*Npp*std::pow(meanTargetNegPol,3)*meanTargetPosPol) + 
-      (Nmp*Npm*(Nmp+Npm)+Nmm*Npp*(Nmm+Npp)*
-        std::pow(meanTargetNegPol,2)*std::pow(meanTargetPosPol,2)) + 
-      (2*Nmm+Npm*(Nmp+Npp)*meanTargetNegPol*std::pow(meanTargetPosPol,3)) + 
-      (Nmm*Npm*(Nmm+Npm)*std::pow(meanTargetPosPol,4)) ) / 
-      std::pow(( (Nmp+Npp)*meanTargetNegPol + 
-      ( (Nmm+Npm)*meanTargetPosPol) ) ,4));
+    // double asymmetry = (1 / meanPol) * (meanTargetNegPol*(Npp-Nmp) + meanTargetPosPol*(Npm-Nmm)) / 
+    //   (meanTargetNegPol*(Npp+Nmp) + meanTargetPosPol*(Npm+Nmm));
+    // double error = (2/meanPol)*std::sqrt( ( ( Nmp*Npp*(Nmp+Npp)*std::pow(meanTargetNegPol,4) ) + 
+    //   (2*Nmp*(Nmm+Npm)*Npp*std::pow(meanTargetNegPol,3)*meanTargetPosPol) + 
+    //   (Nmp*Npm*(Nmp+Npm)+Nmm*Npp*(Nmm+Npp)*
+    //     std::pow(meanTargetNegPol,2)*std::pow(meanTargetPosPol,2)) + 
+    //   (2*Nmm+Npm*(Nmp+Npp)*meanTargetNegPol*std::pow(meanTargetPosPol,3)) + 
+    //   (Nmm*Npm*(Nmm+Npm)*std::pow(meanTargetPosPol,4)) ) / 
+    //   std::pow(( (Nmp+Npp)*meanTargetNegPol + 
+    //   ( (Nmm+Npm)*meanTargetPosPol) ) ,4));
+
+    float cpp = total_charge_pos_pos;
+    float cpm = total_charge_pos_neg;
+    float cmp = total_charge_neg_pos;
+    float cmm = total_charge_neg_neg;
+    float Ptp = meanTargetPosPol;
+    float Ptm = meanTargetNegPol;
+    // Calculate the asymmetry and error for the current bin
+    float asymmetry = (1 / meanPol) * (Ptm*(Npp-Nmp)+Ptp*(Npm-Nmm)) / 
+      (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
+    float error = (2 / meanPol) * std::sqrt(
+        ((cmm*cpm*cpp*Nmp*std::pow(Ptm,2)*std::pow(Npp*Ptm+Npm*Ptp,2))+
+        (cmp*cpm*cpp*Nmm*std::pow(Ptp,2)*std::pow(Npp*Ptm+Npm*Ptp,2))+
+        (cmm*cmp*std::pow(Nmp*Ptm+Nmm*Ptp,2)*(cpm*Npp*std::pow(Ptm,2)+cpp*Npm*std::pow(Ptp,2))))/
+        (cmm*cmp*cpm*cpp*std::pow((Nmp+Npp)*Ptm+(Nmm+Npm)*Ptp,4))
+      );
+
 
     // Fill the asymmetry histogram with the calculated values
     histAsymmetry->SetBinContent(iBin, asymmetry);
