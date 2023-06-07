@@ -407,7 +407,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
     double currentVariable = getEventProperty(event, currentFits);
     if (applyKinematicCuts(event, currentFits) && currentVariable >= varMin && 
       currentVariable < varMax) {
-      cout << endl << "hello world" << endl;
+      // cout << endl << "hello world" << endl;
       if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
         histPosPos->Fill(event.data.at("phi"));
       } else if (event.data.at("helicity") > 0 && event.data.at("target_pol") < 0) {
