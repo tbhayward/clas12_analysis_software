@@ -402,6 +402,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   double sumTargetNegPol = 0; // sum of the target negative polarization
   int numEvents = 0;
 
+  cout << endl << "hello world" << endl;
   // Fill the positive and negative helicity histograms
   for (const eventData& event : data) {
     double currentVariable = getEventProperty(event, currentFits);
@@ -426,7 +427,6 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
       numEvents++;
     }
   }
-  cout << endl << "hello world" << endl;
   // scale the histograms by the accumulated faraday cup charge
   histPosPos->Scale(1.0 / total_charge_pos_pos);
   histPosNeg->Scale(1.0 / total_charge_pos_neg);
