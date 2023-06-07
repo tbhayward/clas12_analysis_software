@@ -407,7 +407,6 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
     double currentVariable = getEventProperty(event, currentFits);
     if (applyKinematicCuts(event, currentFits) && currentVariable >= varMin && 
       currentVariable < varMax) {
-      // cout << endl << "hello world" << endl;
       if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
         histPosPos->Fill(event.data.at("phi"));
       } else if (event.data.at("helicity") > 0 && event.data.at("target_pol") < 0) {
@@ -627,8 +626,8 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
     cout << "-- Beginning kinematic fits." << endl;
     performChi2Fits(data_file, output_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    performMLMFits(data_file, output_file, binNames[i]);
-    cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
+    // performMLMFits(data_file, output_file, binNames[i]);
+    // cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
     currentFits++;
   }
