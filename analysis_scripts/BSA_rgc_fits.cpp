@@ -386,8 +386,6 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
 TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* histName,
   int binIndex) {
 
-  cout << "hello world" << endl;
-
   // Determine the variable range for the specified bin
   double varMin = allBins[currentFits][binIndex];
   double varMax = allBins[currentFits][binIndex + 1];
@@ -428,6 +426,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
       numEvents++;
     }
   }
+  cout << endl << "hello world" << endl;
   // scale the histograms by the accumulated faraday cup charge
   histPosPos->Scale(1.0 / total_charge_pos_pos);
   histPosNeg->Scale(1.0 / total_charge_pos_neg);
