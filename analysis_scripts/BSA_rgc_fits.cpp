@@ -408,21 +408,21 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
     double currentVariable = getEventProperty(event, currentFits);
     if (applyKinematicCuts(event, currentFits) && currentVariable >= varMin && 
       currentVariable < varMax) {
-      if (event.data.at("helicity") > 0 && event.data.at("target_polarization") > 0) {
+      if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
         histPosPos->Fill(event.data.at("phi"));
-      } else if (event.data.at("helicity") > 0 && event.data.at("target_polarization") < 0) {
+      } else if (event.data.at("helicity") > 0 && event.data.at("target_pol") < 0) {
         histPosNeg->Fill(event.data.at("phi"));
-      } else if (event.data.at("helicity") < 0 && event.data.at("target_polarization") > 0) {
+      } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") > 0) {
         histNegPos->Fill(event.data.at("phi"));
-      } else if (event.data.at("helicity") < 0 && event.data.at("target_polarization") < 0) {
+      } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") < 0) {
         histNegNeg->Fill(event.data.at("phi"));
       }
       // Accumulate polarization and event count for mean polarization calculation
       sumPol += event.data.at("pol");
-      if (event.data.at("target_polarization") > 0) {
-        sumTargetPosPol+=event.data.at("target_polarization");
-      } else if (event.data.at("target_polarization") < 0) {
-        sumTargetNegPol+=event.data.at("target_polarization");
+      if (event.data.at("target_pol") > 0) {
+        sumTargetPosPol+=event.data.at("target_pol");
+      } else if (event.data.at("target_pol") < 0) {
+        sumTargetNegPol+=event.data.at("target_pol");
       }
       numEvents++;
     }
