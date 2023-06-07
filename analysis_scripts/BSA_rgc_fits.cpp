@@ -478,7 +478,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
         (cmm*cmp*cpm*cpp*std::pow((Nmp+Npp)*Ptm+(Nmm+Npm)*Ptp,4))
       );
 
-
+    cout << asymmetry << " " << error << endl;
     // Fill the asymmetry histogram with the calculated values
     histAsymmetry->SetBinContent(iBin, asymmetry);
     histAsymmetry->SetBinError(iBin, error);
