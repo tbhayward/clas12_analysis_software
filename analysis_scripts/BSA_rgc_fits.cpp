@@ -476,7 +476,6 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
     // Calculate the asymmetry and error for the current bin
     float asymmetry = (1 / meanPol) * (Ptm*(Npp-Nmp)+Ptp*(Npm-Nmm)) / 
       (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
-    // cout << (Ptm*(Npp-Nmp)+Ptp*(Npm-Nmm)) << endl;
     float error = (2 / meanPol) * std::sqrt(
         ((cmm*cpm*cpp*Nmp*std::pow(Ptm,2)*std::pow(Npp*Ptm+Npm*Ptp,2))+
         (cmp*cpm*cpp*Nmm*std::pow(Ptp,2)*std::pow(Npp*Ptm+Npm*Ptp,2))+
@@ -629,9 +628,9 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
   for (const auto& run_info : run_info_list) {
       if (run_info.target_polarization > 0) {
         total_charge_pos_pos += run_info.positive_charge;
-        total_charge_pos_neg += run_info.negative_charge;
+        total_charge_neg_pos += run_info.negative_charge;
       } else if (run_info.target_polarization < 0) {
-        total_charge_neg_pos += run_info.positive_charge;
+        total_charge_pos_neg += run_info.positive_charge;
         total_charge_neg_neg += run_info.negative_charge;
       } else if (run_info.target_polarization == 0) {
         total_charge_carbon += run_info.total_charge;
