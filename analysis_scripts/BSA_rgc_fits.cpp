@@ -17,8 +17,8 @@ std::vector<std::vector<float>> allBins;
 std::vector<std::string> binNames;
 std::vector<std::string> propertyNames;
 std::vector<std::string> variable_names;
-float total_charge_pos_pos, total_charge_pos_neg, total_charge_neg_pos, total_charge_neg_neg;
 float total_charge_carbon;
+float cpp, cpm, cmp, cmm;
 
 string trim_newline(const string &str) {
   if (!str.empty() && str.back() == '\n') {
@@ -431,16 +431,17 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
     }
   }
   // scale the histograms by the accumulated faraday cup charge
-  histPosPos->Scale(1.0 / total_charge_pos_pos);
-  histPosNeg->Scale(1.0 / total_charge_pos_neg);
-  histNegPos->Scale(1.0 / total_charge_neg_pos);
-  histNegNeg->Scale(1.0 / total_charge_neg_neg);
-
+  histPosPos->Scale(1.0 / cpp);
+  histPosNeg->Scale(1.0 / cpm);
+  histNegPos->Scale(1.0 / cmp);
+  histNegNeg->Scale(1.0 / cmm);
 
   // Calculate the mean polarization
-  double meanPol = sumPol / numEvents;
-  double meanTargetPosPol = sumTargetPosPol / numEventsPosTarget;
-  double meanTargetNegPol = sumTargetNegPol / numEventsNegTarget;
+  double meanPol = sumPol / numEvents; // mean beam polarization for data 
+  double Ptp = sumTargetPosPol / numEventsPosTarget;// mean positive target polarization for data
+  double Ptm = - sumTargetNegPol / numEventsNegTarget;// mean negative target polarization for data
+  // the negative sign here is correct; RGC lists the polarizations with signs to tell which is 
+  // which but the polarization really should just be "percent of polarized nucleii"
 
   // Create the asymmetry histogram
   int numBins = histPosPos->GetNbinsX();
@@ -455,25 +456,6 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
     float Nmm = histNegNeg->GetBinContent(iBin);
 
     // Calculate the asymmetry and error for the current bin
-    // double asymmetry = (1 / meanPol) * (meanTargetNegPol*(Npp-Nmp) + meanTargetPosPol*(Npm-Nmm)) / 
-    //   (meanTargetNegPol*(Npp+Nmp) + meanTargetPosPol*(Npm+Nmm));
-    // double error = (2/meanPol)*std::sqrt( ( ( Nmp*Npp*(Nmp+Npp)*std::pow(meanTargetNegPol,4) ) + 
-    //   (2*Nmp*(Nmm+Npm)*Npp*std::pow(meanTargetNegPol,3)*meanTargetPosPol) + 
-    //   (Nmp*Npm*(Nmp+Npm)+Nmm*Npp*(Nmm+Npp)*
-    //     std::pow(meanTargetNegPol,2)*std::pow(meanTargetPosPol,2)) + 
-    //   (2*Nmm+Npm*(Nmp+Npp)*meanTargetNegPol*std::pow(meanTargetPosPol,3)) + 
-    //   (Nmm*Npm*(Nmm+Npm)*std::pow(meanTargetPosPol,4)) ) / 
-    //   std::pow(( (Nmp+Npp)*meanTargetNegPol + 
-    //   ( (Nmm+Npm)*meanTargetPosPol) ) ,4));
-
-    float cpp = total_charge_pos_pos;
-    float cpm = total_charge_pos_neg;
-    float cmp = total_charge_neg_pos;
-    float cmm = total_charge_neg_neg;
-    float Ptp = meanTargetPosPol;
-    float Ptm = -meanTargetNegPol;
-    // cout << cpp << " " << cpm << " " << cmp << " " << cmm << " " << Ptp << " " << Ptm << endl;
-    // Calculate the asymmetry and error for the current bin
     float asymmetry = (1 / meanPol) * (Ptm*(Npp-Nmp)+Ptp*(Npm-Nmm)) / 
       (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
     float error = (2 / meanPol) * std::sqrt(
@@ -483,7 +465,6 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
         (cmm*cmp*cpm*cpp*std::pow((Nmp+Npp)*Ptm+(Nmm+Npm)*Ptp,4))
       );
 
-    cout << asymmetry << " " << error << endl;
     // Fill the asymmetry histogram with the calculated values
     histAsymmetry->SetBinContent(iBin, asymmetry);
     histAsymmetry->SetBinError(iBin, error);
@@ -620,26 +601,26 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
   cout<< endl << endl <<"-- Loaded information from run_info_rgc.csv" << endl;
 
   cout << "Found " << run_info_list.size() << " runs." << endl;
-  total_charge_pos_pos = 0;
-  total_charge_pos_neg = 0;
-  total_charge_neg_pos = 0;
-  total_charge_neg_neg = 0;
-  total_charge_carbon = 0;
+  cpp = 0; // total accumulated charge of positive beam - positive target
+  cpm = 0; // total accumulated charge of positive beam - negative target
+  cmp = 0; // total accumulated charge of negative beam - positive target
+  cmm = 0; // total accumulated charge of negative beam - negative target
+  total_charge_carbon = 0; // total accumulated charge of carbon target
   for (const auto& run_info : run_info_list) {
       if (run_info.target_polarization > 0) {
-        total_charge_pos_pos += run_info.positive_charge;
-        total_charge_neg_pos += run_info.negative_charge;
+        cpp += run_info.positive_charge;
+        cmp += run_info.negative_charge;
       } else if (run_info.target_polarization < 0) {
-        total_charge_pos_neg += run_info.positive_charge;
-        total_charge_neg_neg += run_info.negative_charge;
+        cpm += run_info.positive_charge;
+        cmm += run_info.negative_charge;
       } else if (run_info.target_polarization == 0) {
         total_charge_carbon += run_info.total_charge;
       }
   }
-  cout << "Total pos-pos (beam-target) charge: " << total_charge_pos_pos << " (nc). ";
-  cout << "Total pos-neg charge: " << total_charge_pos_neg << " (nc). ";
-  cout << "Total neg-pos charge: " << total_charge_neg_pos << " (nc). ";
-  cout << "Total neg-neg charge: " << total_charge_neg_neg << " (nc). ";
+  cout << "Total pos-pos (beam-target) charge: " << cpp << " (nc). ";
+  cout << "Total pos-neg charge: " << cpm << " (nc). ";
+  cout << "Total neg-pos charge: " << cmp << " (nc). ";
+  cout << "Total neg-neg charge: " << cmm << " (nc). ";
   cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << " (nc)." << endl;
 
   cout << endl << endl;
@@ -648,8 +629,8 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
     cout << "-- Beginning kinematic fits." << endl;
     performChi2Fits(data_file, output_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    performMLMFits(data_file, output_file, binNames[i]);
-    cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
+    // performMLMFits(data_file, output_file, binNames[i]);
+    // cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
     currentFits++;
   }
