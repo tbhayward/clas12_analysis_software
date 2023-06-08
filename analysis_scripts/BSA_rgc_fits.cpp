@@ -285,8 +285,10 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     // Initialize variables for counting events (N), positive helicity sum (sum_P), 
     // and negative helicity sum (sum_N)
     double N = 0;
-    double sum_N = 0;
-    double sum_P = 0;
+    double sum_PP = 0; // positive beam -- positive target
+    double sum_PM = 0; // positive beam -- negative target
+    double sum_PP = 0; // positive beam -- positive target
+    double sum_PM = 0; // positive beam -- negative target
 
     // Iterate through the global event data (gData)
     for (const eventData &event : gData) {
@@ -306,16 +308,20 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           double pol = event.data.at("pol");
 
           // Check if the helicity is positive or negative and update the corresponding sum
-          if (event.data.at("helicity") > 0) {
-            sum_P += log(1 + pol * (A * sin(phi)) );
-          } else if (event.data.at("helicity") < 0) {
-            sum_N += log(1 - pol * (A * sin(phi)) );
+          if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
+            sum_PP += log(1 + pol * (A * sin(phi)) );
+          } else if (event.data.at("helicity") > 0 && event.data.at("target_pol") < 0 ) {
+            sum_PM += log(1 + pol * (A * sin(phi)) );
+          } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") > 0 ) {
+            sum_MP += log(1 - pol * (A * sin(phi)) );
+          } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") < 0 ) {
+            sum_MM += log(1 - pol * (A * sin(phi)) );
           }
         }
     }
 
     // Calculate the negative log-likelihood value and store it in the output variable f
-    f = N * log(N) - sum_P - sum_N;
+    f = N * log(N) - sum_PP - sum_PM - sum_MP - sum_MM;
 }
 
 void performMLMFits(const char *filename, const char* output_file, const std::string& prefix) {
@@ -542,7 +548,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
     double ALU_sinphi = fitFunction->GetParameter(0);
     double ALU_sinphi_error = fitFunction->GetParError(0);
 
-    chi2FitsAStream << "{" << meanVariable << ", " << ALU_sinphi << ", " << ALU_sinphi_error << "}";
+    chi2FitsAStream << "{" << meanVariable << ", " << ALU_sinphi << ", " << ALU_sinphi_error <<"}";
 
     if (i < numBins - 1) {
         chi2FitsAStream << ", ";
@@ -627,10 +633,10 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
   for (size_t i = 0; i < allBins.size(); ++i) {
   // for (size_t i = 0; i < 1; ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    performChi2Fits(data_file, output_file, binNames[i]);
-    cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    // performMLMFits(data_file, output_file, binNames[i]);
-    // cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
+    // performChi2Fits(data_file, output_file, binNames[i]);
+    // cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
+    performMLMFits(data_file, output_file, binNames[i]);
+    cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
     currentFits++;
   }
