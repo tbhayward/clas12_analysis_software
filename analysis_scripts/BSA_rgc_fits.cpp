@@ -401,6 +401,8 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   double sumTargetPosPol = 0; // sum of the target positive polarization
   double sumTargetNegPol = 0; // sum of the target negative polarization
   int numEvents = 0;
+  int numEventsPosTarget = 0;
+  int numEventsNegTarget = 0;
 
   // Fill the positive and negative helicity histograms
   for (const eventData& event : data) {
@@ -420,8 +422,10 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
       sumPol += event.data.at("pol");
       if (event.data.at("target_pol") > 0) {
         sumTargetPosPol+=event.data.at("target_pol");
+        numEventsPosTarget++;
       } else if (event.data.at("target_pol") < 0) {
         sumTargetNegPol+=event.data.at("target_pol");
+        numEventsNegTarget++;
       }
       numEvents++;
     }
@@ -435,8 +439,8 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
 
   // Calculate the mean polarization
   double meanPol = sumPol / numEvents;
-  double meanTargetPosPol = sumTargetPosPol / numEvents;
-  double meanTargetNegPol = sumTargetNegPol / numEvents;
+  double meanTargetPosPol = sumTargetPosPol / numEventsPosTarget;
+  double meanTargetNegPol = sumTargetNegPol / numEventsNegTarget;
 
   // Create the asymmetry histogram
   int numBins = histPosPos->GetNbinsX();
