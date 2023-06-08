@@ -476,7 +476,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
     // Calculate the asymmetry and error for the current bin
     float asymmetry = (1 / meanPol) * (Ptm*(Npp-Nmp)+Ptp*(Npm-Nmm)) / 
       (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
-    cout << (Ptm*(Npp-Nmp)+Ptp*(Npm-Nmm)) << endl;
+    cout << (Ptm*(Npp-Nmp)+Ptp*(Npm-Nmm)) << " " << (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm)) << endl;
     float error = (2 / meanPol) * std::sqrt(
         ((cmm*cpm*cpp*Nmp*std::pow(Ptm,2)*std::pow(Npp*Ptm+Npm*Ptp,2))+
         (cmp*cpm*cpp*Nmm*std::pow(Ptp,2)*std::pow(Npp*Ptm+Npm*Ptp,2))+
@@ -484,7 +484,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
         (cmm*cmp*cpm*cpp*std::pow((Nmp+Npp)*Ptm+(Nmm+Npm)*Ptp,4))
       );
 
-    cout << asymmetry << " " << error << endl;
+    // cout << asymmetry << " " << error << endl;
     // Fill the asymmetry histogram with the calculated values
     histAsymmetry->SetBinContent(iBin, asymmetry);
     histAsymmetry->SetBinError(iBin, error);
