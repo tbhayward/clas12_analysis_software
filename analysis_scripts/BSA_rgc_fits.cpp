@@ -287,8 +287,8 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     double N = 0;
     double sum_PP = 0; // positive beam -- positive target
     double sum_PM = 0; // positive beam -- negative target
-    double sum_PP = 0; // positive beam -- positive target
-    double sum_PM = 0; // positive beam -- negative target
+    double sum_MP = 0; // negative beam -- positive target
+    double sum_MM = 0; // negative beam -- negative target
 
     // Iterate through the global event data (gData)
     for (const eventData &event : gData) {
