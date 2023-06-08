@@ -467,7 +467,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
     float cmp = total_charge_neg_pos;
     float cmm = total_charge_neg_neg;
     float Ptp = meanTargetPosPol;
-    float Ptm = meanTargetNegPol;
+    float Ptm = -meanTargetNegPol;
     // Calculate the asymmetry and error for the current bin
     float asymmetry = (1 / meanPol) * (Ptm*(Npp-Nmp)+Ptp*(Npm-Nmm)) / 
       (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
