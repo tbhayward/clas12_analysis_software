@@ -649,7 +649,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
       case 2: // double-spin asymmetry
         // Get the fitted parameters and their errors
         double ALL = fitFunction->GetParameter(0);
-        double ALL = fitFunction->GetParError(0);
+        double ALL_error = fitFunction->GetParError(0);
         double ALL_cosphi = fitFunction->GetParameter(1);
         double ALL_cosphi_error = fitFunction->GetParError(1);
         chi2FitsAStream<<"{"<<meanVariable<<", "<< ALL << ", " << ALL_error <<"}";
