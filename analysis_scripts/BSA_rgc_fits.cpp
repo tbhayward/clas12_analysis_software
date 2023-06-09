@@ -394,6 +394,7 @@ float asymmetry_value_calculation(int Npp, int Npm, int Nmp, int Nmm, float mean
   float Ptm, int asymmetry_index) {
   float Df = 0.18; // dilution factor, placeholder from MC studies from proposal
   // return the asymmetry value 
+  cout << Npp << " " << Npm << " " << Nmp << " " << Nmm << " " << meanPol << " " << Ptp << " " << Ptm << endl;
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
       return (1 / meanPol) * (Ptm*(Npp-Nmp)+Ptp*(Npm-Nmm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
@@ -410,14 +411,30 @@ float asymmetry_value_calculation(int Npp, int Npm, int Nmp, int Nmm, float mean
 float asymmetry_error_calculation(int Npp, int Npm, int Nmp, int Nmm, float meanPol, float Ptp, 
   float Ptm, int asymmetry_index) {
   float Df = 0.18; // dilution factor, placeholder from MC studies from proposal
-  // return the asymmetry value 
+  // return the asymmetry error 
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
-      return (1 / meanPol) * (Ptm*(Npp-Nmp)+Ptp*(Npm-Nmm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
+      return (2 / meanPol) * std::sqrt(
+        ((cmm*cpm*cpp*Nmp*std::pow(Ptm,2)*std::pow(Npp*Ptm+Npm*Ptp,2))+
+        (cmp*cpm*cpp*Nmm*std::pow(Ptp,2)*std::pow(Npp*Ptm+Npm*Ptp,2))+
+        (cmm*cmp*std::pow(Nmp*Ptm+Nmm*Ptp,2)*(cpm*Npp*std::pow(Ptm,2)+cpp*Npm*std::pow(Ptp,2))))/
+        (cmm*cmp*cpm*cpp*std::pow((Nmp+Npp)*Ptm+(Nmm+Npm)*Ptp,4)));
     case 1: // target-spin asymmetry
-      return (1 / Df) * ((Npp+Nmp)-(Npm+Nmm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
+      return (1 / (Df*meanPol)) * std::sqrt(
+        (cmp*cpm*cpp*Nmm*std::pow((Nmp+Npp)*Ptm+(Nmp+2*Npm-Npp)*Ptp,2) + 
+        cmm*cmp*cpp*Npm*std::pow(Nmp*(Ptp-Ptm)+2*Nmm*Ptp+Npp*(Ptm+Ptp),2) +
+        cmm*cpm*(cmp*Npp*std::pow((-Nmm+2*Nmp+Npm)*Ptm+(Nmm+Npm)*Ptp,2) +
+        cpp*Nmp*std::pow((Nmm-Npm+2*Npp)*Ptm+(Nmm+Npm)*Ptp,2))) / 
+        (cmm*cmp*cpm*cpp*std::pow((Nmp+Npp)*Ptm+(Nmm+Npm)*Ptp,4))
+        );
     case 2: // double-spin asymmetry
-      return (1 / (Df*meanPol)) * ((Npp-Nmp)+(Nmm-Npm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
+      return (1 / (Df*meanPol)) * std::sqrt(
+        (cmp*cpm*cpp*Nmm*std::pow((Nmp+Npp)*Ptm+(Nmp+2*Npm-Npp)*Ptp,2) + 
+        cmm*cmp*cpp*Npm*std::pow(Nmp*(Ptp-Ptm)+2*Nmm*Ptp+Npp*(Ptm+Ptp),2) +
+        cmm*cpm*(cmp*Npp*std::pow((-Nmm+2*Nmp+Npm)*Ptm+(Nmm+Npm)*Ptp,2) +
+        cpp*Nmp*std::pow((Nmm-Npm+2*Npp)*Ptm+(Nmm+Npm)*Ptp,2))) / 
+        (cmm*cmp*cpm*cpp*std::pow((Nmp+Npp)*Ptm+(Nmm+Npm)*Ptp,4))
+        );
     default:
       cout << "Invalid asymmetry_index!" << endl;
       return 0;
@@ -504,8 +521,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
         ((cmm*cpm*cpp*Nmp*std::pow(Ptm,2)*std::pow(Npp*Ptm+Npm*Ptp,2))+
         (cmp*cpm*cpp*Nmm*std::pow(Ptp,2)*std::pow(Npp*Ptm+Npm*Ptp,2))+
         (cmm*cmp*std::pow(Nmp*Ptm+Nmm*Ptp,2)*(cpm*Npp*std::pow(Ptm,2)+cpp*Npm*std::pow(Ptp,2))))/
-        (cmm*cmp*cpm*cpp*std::pow((Nmp+Npp)*Ptm+(Nmm+Npm)*Ptp,4))
-      );
+        (cmm*cmp*cpm*cpp*std::pow((Nmp+Npp)*Ptm+(Nmm+Npm)*Ptp,4)));
 
     // Fill the asymmetry histogram with the calculated values
     histAsymmetry->SetBinContent(iBin, asymmetry);
