@@ -632,7 +632,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
         if (i < numBins - 1) {
             chi2FitsAStream << ", ";
         }
-        break
+        break;
       case 1: // target-spin asymmetry
         // Get the fitted parameters and their errors
         double AUL_sinphi = fitFunction->GetParameter(0);
@@ -640,12 +640,12 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
         double AUL_sin2phi = fitFunction->GetParameter(1);
         double AUL_sin2phi_error = fitFunction->GetParError(1);
         chi2FitsAStream<<"{"<<meanVariable<<", "<< AUL_sinphi << ", " << AUL_sinphi_error <<"}";
-        chi2FitsBStream<<"{"<<meanVariable<<", "<< ALU_sin2phi << ", " << ALU_sin2phi_error <<"}";
+        chi2FitsBStream<<"{"<<meanVariable<<", "<< AUL_sin2phi << ", " << AUL_sin2phi_error <<"}";
         if (i < numBins - 1) {
             chi2FitsAStream << ", ";
             chi2FitsBStream << ", ";
         }
-        break
+        break;
       case 2: // double-spin asymmetry
         // Get the fitted parameters and their errors
         double ALL = fitFunction->GetParameter(0);
@@ -658,7 +658,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
             chi2FitsAStream << ", ";
             chi2FitsBStream << ", ";
         }
-        break
+        break;
       }
 
     delete hist;
