@@ -423,7 +423,7 @@ float asymmetry_error_calculation(float Npp, float Npm, float Nmp, float Nmm, fl
       return (1 / (Df*meanPol)) * std::sqrt(
         (((cmp*cpm*cpp*Nmm*std::pow(Nmp+Npp,2)+cmm*cmp*cpp*Npm*std::pow(Nmp+Npp,2)+
         cmm*cpm*std::pow(Nmm+Npm,2)*(cpp*Nmp+cmp*Npp))*std::pow(Ptm+Ptp,2))) /
-        ()
+        (5)
         );
     case 2: // double-spin asymmetry
       return (1 / (Df*meanPol)) * std::sqrt(
