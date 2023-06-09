@@ -740,10 +740,9 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
     for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
-      switch (asymmetry) {
-        case 0: cout << "    chi2 BSA." << endl;
-        case 1: cout << "    chi2 TSA." << endl;
-        case 2: cout << "    chi2 DSA." << endl;
+      if (asymmetry == 0) { cout << "    chi2 BSA." << endl;
+      } else if (asymmetry == 1) { cout << "    chi2 TSA." << endl;
+      } else if (asymmetry == 2) { cout << "    chi2 DSA." << endl;
       }
       performChi2Fits(data_file, output_file, binNames[i], asymmetry);
     }
