@@ -624,7 +624,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
     double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
 
     switch (asymmetry_index) {
-      case 0: // beam-spin asymmetry
+      case 0: {// beam-spin asymmetry
         // Get the fitted parameters and their errors
         double ALU_sinphi = fitFunction->GetParameter(0);
         double ALU_sinphi_error = fitFunction->GetParError(0);
@@ -633,7 +633,8 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
             chi2FitsAStream << ", ";
         }
         break;
-      case 1: // target-spin asymmetry
+      }
+      case 1: {// target-spin asymmetry
         // Get the fitted parameters and their errors
         double AUL_sinphi = fitFunction->GetParameter(0);
         double AUL_sinphi_error = fitFunction->GetParError(0);
@@ -646,7 +647,8 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
             chi2FitsBStream << ", ";
         }
         break;
-      case 2: // double-spin asymmetry
+      }
+      case 2: {// double-spin asymmetry
         // Get the fitted parameters and their errors
         double ALL = fitFunction->GetParameter(0);
         double ALL_error = fitFunction->GetParError(0);
@@ -660,6 +662,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
         }
         break;
       }
+    }
 
     delete hist;
   }
@@ -740,9 +743,10 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
     for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
-      if (asymmetry == 0) { cout << "    chi2 BSA." << endl;
-      } else if (asymmetry == 1) { cout << "    chi2 TSA." << endl;
-      } else if (asymmetry == 2) { cout << "    chi2 DSA." << endl;
+      switch (asymmetry) {
+        case 0: cout << "    chi2 BSA." << endl; break;
+        case 1: cout << "    chi2 TSA." << endl; break;
+        case 2: cout << "    chi2 DSA." << endl; break;
       }
       performChi2Fits(data_file, output_file, binNames[i], asymmetry);
     }
