@@ -575,17 +575,17 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
       fitFunction = new TF1("fitFunction", BSA_funcToFit, 0, 2 * TMath::Pi(), 2);
-      chi2FitsAStream << prefix << "chi2Fits_ALU_sinphi = {";
+      chi2FitsAStream << prefix << "chi2FitsALUsinphi = {";
       break;
     case 1: // target-spin asymmetry
       fitFunction = new TF1("fitFunction", TSA_funcToFit, 0, 2 * TMath::Pi(), 2);
-      chi2FitsAStream << prefix << "chi2Fits_AUL_sinphi = {";
-      chi2FitsBStream << prefix << "chi2Fits_AUL_sin2phi = {";
+      chi2FitsAStream << prefix << "chi2FitsAULsinphi = {";
+      chi2FitsBStream << prefix << "chi2FitsAULsin2phi = {";
       break;
     case 2: // double-spin asymmetry
       fitFunction = new TF1("fitFunction", DSA_funcToFit, 0, 2 * TMath::Pi(), 2);
-      chi2FitsAStream << prefix << "chi2Fits_ALL = {";
-      chi2FitsBStream << prefix << "chi2Fits_ALL_cosphi = {";
+      chi2FitsAStream << prefix << "chi2FitsALL = {";
+      chi2FitsBStream << prefix << "chi2FitsALLcosphi = {";
       break;
     default:
       cout << "Invalid asymmetry_index! Using default function form of BSA." << endl;
