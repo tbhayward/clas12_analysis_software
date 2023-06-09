@@ -420,19 +420,17 @@ float asymmetry_error_calculation(float Npp, float Npm, float Nmp, float Nmm, fl
         (cmm*cmp*std::pow(Nmp*Ptm+Nmm*Ptp,2)*(cpm*Npp*std::pow(Ptm,2)+cpp*Npm*std::pow(Ptp,2))))/
         (cmm*cmp*cpm*cpp*std::pow((Nmp+Npp)*Ptm+(Nmm+Npm)*Ptp,4)));
     case 1: // target-spin asymmetry
-      return (1 / (Df*meanPol)) * std::sqrt(
+      return (1 / Df) * std::sqrt(
         (((cmp*cpm*cpp*Nmm*std::pow(Nmp+Npp,2)+cmm*cmp*cpp*Npm*std::pow(Nmp+Npp,2)+
         cmm*cpm*std::pow(Nmm+Npm,2)*(cpp*Nmp+cmp*Npp))*std::pow(Ptm+Ptp,2))) /
-        (5)
-        );
+        (cmm*cmp*cpm*cpp*std::pow((Nmp+Npp)*Ptm+(Nmm+Npm)*Ptp,4)));
     case 2: // double-spin asymmetry
       return (1 / (Df*meanPol)) * std::sqrt(
         (cmp*cpm*cpp*Nmm*std::pow((Nmp+Npp)*Ptm+(Nmp+2*Npm-Npp)*Ptp,2) + 
-        cmm*cmp*cpp*Npm*std::pow(Nmp*(Ptp-Ptm)+2*Nmm*Ptp+Npp*(Ptm+Ptp),2) +
+        cmm*cmp*cpp*Npm*std::pow(Nmp*(Ptm-Ptp)+2*Nmm*Ptp+Npp*(Ptm+Ptp),2) +
         cmm*cpm*(cmp*Npp*std::pow((-Nmm+2*Nmp+Npm)*Ptm+(Nmm+Npm)*Ptp,2) +
         cpp*Nmp*std::pow((Nmm-Npm+2*Npp)*Ptm+(Nmm+Npm)*Ptp,2))) / 
-        (cmm*cmp*cpm*cpp*std::pow((Nmp+Npp)*Ptm+(Nmm+Npm)*Ptp,4))
-        );
+        (cmm*cmp*cpm*cpp*std::pow((Nmp+Npp)*Ptm+(Nmm+Npm)*Ptp,4)));
     default:
       cout << "Invalid asymmetry_index!" << endl;
       return 0;
@@ -567,28 +565,31 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
   // Read data from the input file and store it in the global variable gData
   gData = readData(filename, variable_names);
 
+  // Initialize string streams to store the results for each bin
+  std::ostringstream chi2FitsAStream, chi2FitsBStream;
+
   // Create a new TF1 object called fitFunction representing the function to fit
+  // and create string stream prefix depending on current asymmetry we're fitting
   TF1* fitFunction;
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
       fitFunction = new TF1("fitFunction", BSA_funcToFit, 0, 2 * TMath::Pi(), 2);
+      chi2FitsAStream << prefix << "chi2Fits_ALU_sinphi = {";
       break;
     case 1: // target-spin asymmetry
       fitFunction = new TF1("fitFunction", TSA_funcToFit, 0, 2 * TMath::Pi(), 2);
+      chi2FitsAStream << prefix << "chi2Fits_AUL_sinphi = {";
+      chi2FitsBStream << prefix << "chi2Fits_AUL_sin2phi = {";
       break;
     case 2: // double-spin asymmetry
       fitFunction = new TF1("fitFunction", DSA_funcToFit, 0, 2 * TMath::Pi(), 2);
+      chi2FitsAStream << prefix << "chi2Fits_ALL = {";
+      chi2FitsBStream << prefix << "chi2Fits_ALL_cosphi = {";
       break;
     default:
       cout << "Invalid asymmetry_index! Using default function form of BSA." << endl;
       fitFunction = new TF1("fitFunction", BSA_funcToFit, 0, 2 * TMath::Pi(), 2);
   }
-
-  // Initialize string streams to store the results for each bin
-  std::ostringstream chi2FitsAStream;
-
-  // Add prefix to each string stream
-  chi2FitsAStream << prefix << "chi2Fits_ALU_sinphi = {";
 
   // Determine the number of bins
   size_t numBins = allBins[currentFits].size() - 1;
