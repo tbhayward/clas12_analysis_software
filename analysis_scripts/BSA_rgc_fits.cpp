@@ -390,19 +390,37 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
   outputFile.close();
 }
 
-float BSA_value_calculation(int Npp, int Npm, int Nmp, int Nmm, float meanPol, float Ptp, float Ptm,
-  int asymmetry_index) {
+float asymmetry_value_calculation(int Npp, int Npm, int Nmp, int Nmm, float meanPol, float Ptp, 
+  float Ptm, int asymmetry_index) {
   float Df = 0.18; // dilution factor, placeholder from MC studies from proposal
   // return the asymmetry value 
   switch (asymmetry_index) {
-    case 1: // beam-spin asymmetry
+    case 0: // beam-spin asymmetry
       return (1 / meanPol) * (Ptm*(Npp-Nmp)+Ptp*(Npm-Nmm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
-    case 2: // target-spin asymmetry
+    case 1: // target-spin asymmetry
       return (1 / Df) * ((Npp+Nmp)-(Npm+Nmm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
-    case 3: // double-spin asymmetry
+    case 2: // double-spin asymmetry
       return (1 / (Df*meanPol)) * ((Npp-Nmp)+(Nmm-Npm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
     default:
       cout << "Invalid asymmetry_index!" << endl;
+      return 0;
+  }
+}
+
+float asymmetry_error_calculation(int Npp, int Npm, int Nmp, int Nmm, float meanPol, float Ptp, 
+  float Ptm, int asymmetry_index) {
+  float Df = 0.18; // dilution factor, placeholder from MC studies from proposal
+  // return the asymmetry value 
+  switch (asymmetry_index) {
+    case 0: // beam-spin asymmetry
+      return (1 / meanPol) * (Ptm*(Npp-Nmp)+Ptp*(Npm-Nmm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
+    case 1: // target-spin asymmetry
+      return (1 / Df) * ((Npp+Nmp)-(Npm+Nmm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
+    case 2: // double-spin asymmetry
+      return (1 / (Df*meanPol)) * ((Npp-Nmp)+(Nmm-Npm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
+    default:
+      cout << "Invalid asymmetry_index!" << endl;
+      return 0;
   }
 }
 
@@ -544,13 +562,13 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
   // Create a new TF1 object called fitFunction representing the function to fit
   TF1* fitFunction;
   switch (asymmetry_index) {
-    case 1: // beam-spin asymmetry
+    case 0: // beam-spin asymmetry
       fitFunction = new TF1("fitFunction", BSA_funcToFit, 0, 2 * TMath::Pi(), 2);
       break;
-    case 2: // target-spin asymmetry
+    case 1: // target-spin asymmetry
       fitFunction = new TF1("fitFunction", TSA_funcToFit, 0, 2 * TMath::Pi(), 2);
       break;
-    case 3: // double-spin asymmetry
+    case 2: // double-spin asymmetry
       fitFunction = new TF1("fitFunction", DSA_funcToFit, 0, 2 * TMath::Pi(), 2);
       break;
     default:
