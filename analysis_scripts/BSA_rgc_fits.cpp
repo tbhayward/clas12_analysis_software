@@ -390,7 +390,7 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
 }
 
 TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* histName,
-  int binIndex) {
+  int binIndex, int asymmetry_index) {
 
   // Determine the variable range for the specified bin
   double varMin = allBins[currentFits][binIndex];
@@ -486,24 +486,59 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   return histAsymmetry;
 }
 
-// Function to fit the asymmetry histogram
-double funcToFit(double* x, double* par) {
+// Function to fit the beam-spin asymmetry histogram
+double BSA_funcToFit(double* x, double* par) {
   // Retrieve the parameters A
   double ALU_sinphi = par[0];
-  
   // Retrieve the phi variable from the input x array
   double phi = x[0];
-
-  // Calculate and return the value of the function for the given phi and parameters A
+  // Calculate and return the value of the function for the given phi and parameters 
   return ALU_sinphi*sin(phi);
 }
 
-void performChi2Fits(const char *filename, const char* output_file, const std::string& prefix) {
+// Function to fit the target-spin asymmetry histogram
+double TSA_funcToFit(double* x, double* par) {
+  // Retrieve the parameters A
+  double AUL_sinphi = par[0];
+  double AUL_sin2phi = par[1];
+  // Retrieve the phi variable from the input x array
+  double phi = x[0];
+  // Calculate and return the value of the function for the given phi and parameters 
+  return AUL_sinphi*sin(phi)+AUL_sin2phi*sin(2*phi);
+}
+
+// Function to fit the double-spin asymmetry histogram
+double DSA_funcToFit(double* x, double* par) {
+  // Retrieve the parameters A
+  double ALL = par[0];
+  double ALL_cosphi = par[1];
+  // Retrieve the phi variable from the input x array
+  double phi = x[0];
+  // Calculate and return the value of the function for the given phi and parameters 
+  return ALL+ALL_cosphi*cos(phi);
+}
+
+void performChi2Fits(const char *filename, const char* output_file, const std::string& prefix, 
+  int asymmetry_index) {
   // Read data from the input file and store it in the global variable gData
   gData = readData(filename, variable_names);
 
   // Create a new TF1 object called fitFunction representing the function to fit
-  TF1* fitFunction = new TF1("fitFunction", funcToFit, 0, 2 * TMath::Pi(), 2);
+  TF1* fitFunction;
+  switch (asymmetry_index) {
+    case 1: // beam-spin asymmetry
+      fitFunction = new TF1("fitFunction", BSA_funcToFit, 0, 2 * TMath::Pi(), 2);
+      break;
+    case 2: // target-spin asymmetry
+      fitFunction = new TF1("fitFunction", TSA_funcToFit, 0, 2 * TMath::Pi(), 2);
+      break;
+    case 3: // double-spin asymmetry
+      fitFunction = new TF1("fitFunction", DSA_funcToFit, 0, 2 * TMath::Pi(), 2);
+      break;
+    default:
+      cout << "Invalid asymmetry_index! Using default function form of BSA." << endl;
+      fitFunction = new TF1("fitFunction", funcToFit1, 0, 2 * TMath::Pi(), 2);
+  }
 
   // Initialize string streams to store the results for each bin
   std::ostringstream chi2FitsAStream;
@@ -522,7 +557,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
     snprintf(histName, sizeof(histName), "hist_%zu", i);
 
     // Create a histogram for the current bin
-    TH1D* hist = createHistogramForBin(gData, histName, i);
+    TH1D* hist = createHistogramForBin(gData, histName, i, asymmetry_index);
     // Fit the histogram using the fitFunction
     hist->Fit(fitFunction, "Q");
 
@@ -633,10 +668,10 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
   for (size_t i = 0; i < allBins.size(); ++i) {
   // for (size_t i = 0; i < 1; ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    // performChi2Fits(data_file, output_file, binNames[i]);
-    // cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    performMLMFits(data_file, output_file, binNames[i]);
-    cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
+    performChi2Fits(data_file, output_file, binNames[i], asymmetry_index);
+    cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
+    // performMLMFits(data_file, output_file, binNames[i]);
+    // cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
     currentFits++;
   }
