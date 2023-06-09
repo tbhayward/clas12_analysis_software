@@ -509,8 +509,10 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
     float Nmm = histNegNeg->GetBinContent(iBin);
 
     // Calculate the asymmetry and error for the current bin
-    float asymmetry = asymmetry_value_calculation(Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, 0);
-    float error = asymmetry_error_calculation(Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, 0);
+    float asymmetry = asymmetry_value_calculation(Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, 
+      asymmetry_index);
+    float error = asymmetry_error_calculation(Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, 
+      asymmetry_index);
 
     // Fill the asymmetry histogram with the calculated values
     histAsymmetry->SetBinContent(iBin, asymmetry);
@@ -743,7 +745,7 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
   cout << endl << endl;
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
+    for (int asymmetry = 2; asymmetry < 3; ++asymmetry){
       switch (asymmetry) {
         case 0: cout << "    chi2 BSA." << endl; break;
         case 1: cout << "    chi2 TSA." << endl; break;
