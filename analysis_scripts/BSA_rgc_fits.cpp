@@ -390,8 +390,8 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
   outputFile.close();
 }
 
-float asymmetry_value_calculation(int Npp, int Npm, int Nmp, int Nmm, float meanPol, float Ptp, 
-  float Ptm, int asymmetry_index) {
+float asymmetry_value_calculation(float Npp, float Npm, float Nmp, float Nmm, float meanPol, 
+  float Ptp, float Ptm, int asymmetry_index) {
   float Df = 0.18; // dilution factor, placeholder from MC studies from proposal
   // return the asymmetry value 
   cout << Npp << " " << Npm << " " << Nmp << " " << Nmm << " " << meanPol << " " << Ptp << " " << Ptm << endl;
@@ -408,8 +408,8 @@ float asymmetry_value_calculation(int Npp, int Npm, int Nmp, int Nmm, float mean
   }
 }
 
-float asymmetry_error_calculation(int Npp, int Npm, int Nmp, int Nmm, float meanPol, float Ptp, 
-  float Ptm, int asymmetry_index) {
+float asymmetry_error_calculation(float Npp, float Npm, float Nmp, float Nmm, float meanPol, 
+  float Ptp, float Ptm, int asymmetry_index) {
   float Df = 0.18; // dilution factor, placeholder from MC studies from proposal
   // return the asymmetry error 
   switch (asymmetry_index) {
@@ -421,11 +421,9 @@ float asymmetry_error_calculation(int Npp, int Npm, int Nmp, int Nmm, float mean
         (cmm*cmp*cpm*cpp*std::pow((Nmp+Npp)*Ptm+(Nmm+Npm)*Ptp,4)));
     case 1: // target-spin asymmetry
       return (1 / (Df*meanPol)) * std::sqrt(
-        (cmp*cpm*cpp*Nmm*std::pow((Nmp+Npp)*Ptm+(Nmp+2*Npm-Npp)*Ptp,2) + 
-        cmm*cmp*cpp*Npm*std::pow(Nmp*(Ptp-Ptm)+2*Nmm*Ptp+Npp*(Ptm+Ptp),2) +
-        cmm*cpm*(cmp*Npp*std::pow((-Nmm+2*Nmp+Npm)*Ptm+(Nmm+Npm)*Ptp,2) +
-        cpp*Nmp*std::pow((Nmm-Npm+2*Npp)*Ptm+(Nmm+Npm)*Ptp,2))) / 
-        (cmm*cmp*cpm*cpp*std::pow((Nmp+Npp)*Ptm+(Nmm+Npm)*Ptp,4))
+        (((cmp*cpm*cpp*Nmm*std::pow(Nmp+Npp,2)+cmm*cmp*cpp*Npm*std::pow(Nmp+Npp,2)+
+        cmm*cpm*std::pow(Nmm+Npm,2)*(cpp*Nmp+cmp*Npp))*std::pow(Ptm+Ptp,2))) /
+        ()
         );
     case 2: // double-spin asymmetry
       return (1 / (Df*meanPol)) * std::sqrt(
@@ -508,10 +506,10 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
 
   // Calculate the asymmetry and its error for each bin, and fill the asymmetry histogram
   for (int iBin = 1; iBin <= numBins; ++iBin) {
-    int Npp = histPosPos->GetBinContent(iBin);
-    int Npm = histPosNeg->GetBinContent(iBin);
-    int Nmp = histNegPos->GetBinContent(iBin);
-    int Nmm = histNegNeg->GetBinContent(iBin);
+    float Npp = histPosPos->GetBinContent(iBin);
+    float Npm = histPosNeg->GetBinContent(iBin);
+    float Nmp = histNegPos->GetBinContent(iBin);
+    float Nmm = histNegNeg->GetBinContent(iBin);
 
     // Calculate the asymmetry and error for the current bin
     // float asymmetry = (1 / meanPol) * (Ptm*(Npp-Nmp)+Ptp*(Npm-Nmm)) / 
