@@ -174,6 +174,7 @@ float getPol(int runnum) {
     else if (runnum >= 11323 && runnum <= 11334) { pol = 0.87135; }
     else if (runnum >= 11335 && runnum <= 11387) { pol = 0.85048; }
     else if (runnum >= 11389 && runnum <= 11571) { pol = 0.84262; }
+    else if (runnum >= 16000) { pol = 0.81; } // RGC
   return pol;
 }
 
@@ -389,6 +390,22 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
   outputFile.close();
 }
 
+float BSA_value_calculation(int Npp, int Npm, int Nmp, int Nmm, float meanPol, float Ptp, float Ptm,
+  int asymmetry_index) {
+  float Df = 0.18; // dilution factor, placeholder from MC studies from proposal
+  // return the asymmetry value 
+  switch (asymmetry_index) {
+    case 1: // beam-spin asymmetry
+      return (1 / meanPol) * (Ptm*(Npp-Nmp)+Ptp*(Npm-Nmm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
+    case 2: // target-spin asymmetry
+      return (1 / Df) * ((Npp+Nmp)-(Npm+Nmm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
+    case 3: // double-spin asymmetry
+      return (1 / (Df*meanPol)) * ((Npp-Nmp)+(Nmm-Npm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
+    default:
+      cout << "Invalid asymmetry_index!" << endl;
+  }
+}
+
 TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* histName,
   int binIndex, int asymmetry_index) {
 
@@ -443,9 +460,9 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   histNegNeg->Scale(1.0 / cmm);
 
   // Calculate the mean polarization
-  double meanPol = sumPol / numEvents; // mean beam polarization for data 
-  double Ptp = sumTargetPosPol / numEventsPosTarget;// mean positive target polarization for data
-  double Ptm = - sumTargetNegPol / numEventsNegTarget;// mean negative target polarization for data
+  float meanPol = sumPol / numEvents; // mean beam polarization for data 
+  float Ptp = sumTargetPosPol / numEventsPosTarget;// mean positive target polarization for data
+  float Ptm = - sumTargetNegPol / numEventsNegTarget;// mean negative target polarization for data
   // the negative sign here is correct; RGC lists the polarizations with signs to tell which is 
   // which but the polarization really should just be "percent of polarized nucleii"
 
@@ -462,8 +479,9 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
     float Nmm = histNegNeg->GetBinContent(iBin);
 
     // Calculate the asymmetry and error for the current bin
-    float asymmetry = (1 / meanPol) * (Ptm*(Npp-Nmp)+Ptp*(Npm-Nmm)) / 
-      (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
+    // float asymmetry = (1 / meanPol) * (Ptm*(Npp-Nmp)+Ptp*(Npm-Nmm)) / 
+    //   (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
+    float asymmetry = BSA_value_calculation(Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, 0)
     float error = (2 / meanPol) * std::sqrt(
         ((cmm*cpm*cpp*Nmp*std::pow(Ptm,2)*std::pow(Npp*Ptm+Npm*Ptp,2))+
         (cmp*cpm*cpp*Nmm*std::pow(Ptp,2)*std::pow(Npp*Ptm+Npm*Ptp,2))+
