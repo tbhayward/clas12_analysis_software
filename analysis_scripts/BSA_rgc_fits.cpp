@@ -537,7 +537,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
       break;
     default:
       cout << "Invalid asymmetry_index! Using default function form of BSA." << endl;
-      fitFunction = new TF1("fitFunction", funcToFit1, 0, 2 * TMath::Pi(), 2);
+      fitFunction = new TF1("fitFunction", BSA_funcToFit, 0, 2 * TMath::Pi(), 2);
   }
 
   // Initialize string streams to store the results for each bin
@@ -668,7 +668,7 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
   for (size_t i = 0; i < allBins.size(); ++i) {
   // for (size_t i = 0; i < 1; ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    performChi2Fits(data_file, output_file, binNames[i], asymmetry_index);
+    performChi2Fits(data_file, output_file, binNames[i], 0);
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
     // performMLMFits(data_file, output_file, binNames[i]);
     // cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
