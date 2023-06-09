@@ -394,7 +394,6 @@ float asymmetry_value_calculation(float Npp, float Npm, float Nmp, float Nmm, fl
   float Ptp, float Ptm, int asymmetry_index) {
   float Df = 0.18; // dilution factor, placeholder from MC studies from proposal
   // return the asymmetry value 
-  cout << Npp << " " << Npm << " " << Nmp << " " << Nmm << " " << meanPol << " " << Ptp << " " << Ptm << endl;
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
       return (1 / meanPol) * (Ptm*(Npp-Nmp)+Ptp*(Npm-Nmm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
@@ -624,15 +623,43 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
     // Calculate the mean values for the variable and b2b factor
     double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
 
-    // Get the fitted parameters and their errors
-    double ALU_sinphi = fitFunction->GetParameter(0);
-    double ALU_sinphi_error = fitFunction->GetParError(0);
-
-    chi2FitsAStream << "{" << meanVariable << ", " << ALU_sinphi << ", " << ALU_sinphi_error <<"}";
-
-    if (i < numBins - 1) {
-        chi2FitsAStream << ", ";
-    }
+    switch (asymmetry_index) {
+      case 0: // beam-spin asymmetry
+        // Get the fitted parameters and their errors
+        double ALU_sinphi = fitFunction->GetParameter(0);
+        double ALU_sinphi_error = fitFunction->GetParError(0);
+        chi2FitsAStream<<"{"<<meanVariable<<", "<< ALU_sinphi << ", " << ALU_sinphi_error <<"}";
+        if (i < numBins - 1) {
+            chi2FitsAStream << ", ";
+        }
+        break
+      case 1: // target-spin asymmetry
+        // Get the fitted parameters and their errors
+        double AUL_sinphi = fitFunction->GetParameter(0);
+        double AUL_sinphi_error = fitFunction->GetParError(0);
+        double AUL_sin2phi = fitFunction->GetParameter(1);
+        double AUL_sin2phi_error = fitFunction->GetParError(1);
+        chi2FitsAStream<<"{"<<meanVariable<<", "<< AUL_sinphi << ", " << AUL_sinphi_error <<"}";
+        chi2FitsBStream<<"{"<<meanVariable<<", "<< ALU_sin2phi << ", " << ALU_sin2phi_error <<"}";
+        if (i < numBins - 1) {
+            chi2FitsAStream << ", ";
+            chi2FitsBStream << ", ";
+        }
+        break
+      case 2: // double-spin asymmetry
+        // Get the fitted parameters and their errors
+        double ALL = fitFunction->GetParameter(0);
+        double ALL = fitFunction->GetParError(0);
+        double ALL_cosphi = fitFunction->GetParameter(1);
+        double ALL_cosphi_error = fitFunction->GetParError(1);
+        chi2FitsAStream<<"{"<<meanVariable<<", "<< ALL << ", " << ALL_error <<"}";
+        chi2FitsBStream<<"{"<<meanVariable<<", "<< ALL_cosphi << ", " << ALL_cosphi_error <<"}";
+        if (i < numBins - 1) {
+            chi2FitsAStream << ", ";
+            chi2FitsBStream << ", ";
+        }
+        break
+      }
 
     delete hist;
   }
@@ -711,9 +738,15 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
 
   cout << endl << endl;
   for (size_t i = 0; i < allBins.size(); ++i) {
-  // for (size_t i = 0; i < 1; ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    performChi2Fits(data_file, output_file, binNames[i], 0);
+    for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
+      switch (asymmetry) {
+        case 0: cout << "    chi2 BSA." << endl;
+        case 1: cout << "    chi2 TSA." << endl;
+        case 2: cout << "    chi2 DSA." << endl;
+      }
+      performChi2Fits(data_file, output_file, binNames[i], asymmetry);
+    }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
     // performMLMFits(data_file, output_file, binNames[i]);
     // cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
