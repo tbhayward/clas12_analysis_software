@@ -671,6 +671,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
 
   std::ofstream outputFile(output_file, std::ios_base::app);
   outputFile << chi2FitsAStream.str() << std::endl;
+  if (asymmetry_index>0) { outputFile << chi2FitsBStream.str() << std::endl; }
 
   outputFile.close();
 }
