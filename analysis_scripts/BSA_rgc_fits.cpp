@@ -321,14 +321,18 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
         }
     }
 
-    // determine min pos or neg beam helicity accumulated charge in order to scale down higher one
-    float maxBeamCharge = std::min({(cpp+cpm),(cmp+cmm)}); 
+    // determine min pos or neg beam helicity accumulated charge to scale down higher one
     float minBeamCharge = std::min({(cpp+cpm),(cmp+cmm)}); 
+    // determine min pos or neg target helicity accumulated charge to scale down higher one
+    float minTargetCharge = std::min({(cpp+cmp),(cpm+cmm)}); 
     cout << cpp << " " << cpm << " - " << cmp << " " << cmm << endl;
     cout << (minBeamCharge/(cpp+cpm)) << " " << (minBeamCharge/(cmp+cmm)) << endl;
     // Calculate the negative log-likelihood value and store it in the output variable f
-    f = N * log(N) - minBeamCharge/(cpp+cpm)*(sum_PP + sum_PM) - 
-      minBeamCharge/(cmp+cmm)*(sum_MP + sum_MM);
+    f = N * log(N) - 
+      minBeamCharge/(cpp+cpm)*sum_PP -
+      minBeamCharge/(cpp+cpm)*sum_PM - 
+      minBeamCharge/(cmp+cmm)*sum_MP - 
+      minBeamCharge/(cmp+cmm)*sum_MM;
 }
 
 void performMLMFits(const char *filename, const char* output_file, const std::string& prefix) {
