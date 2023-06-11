@@ -321,10 +321,11 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
         }
     }
 
-    float minBeamCharge = std::min({(cpp+cmp),(cpm+cmm)});
-    float maxBeamCharge = std::max({(cpp+cmp),(cpm+cmm)});
+    // determine min pos or neg beam helicity accumulated charge in order to scale down higher one
+    float maxBeamCharge = std::min({(cpp+cmp),(cpm+cmm)}); 
+    float minBeamCharge = std::min({(cpp+cmp),(cpm+cmm)}); 
     cout << cpp << " " << cmp << " - " << cpm << " " << cmm << endl;
-    cout << minBeamCharge << " " << maxBeamCharge << endl;
+    cout << (minBeamCharge/(cpp+cmp)) << " " << (minBeamCharge/(cpm+cmm)) << endl;
     // Calculate the negative log-likelihood value and store it in the output variable f
     f = N * log(N) - minBeamCharge/(cpp+cmp)*(sum_PP + sum_MP) - 
       minBeamCharge/(cpm+cmm)*(sum_PM + sum_MM);
