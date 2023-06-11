@@ -321,8 +321,9 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
         }
     }
 
+    float maxCharge = std::max({cpp, cpm, cmp, cmm});
     // Calculate the negative log-likelihood value and store it in the output variable f
-    f = N * log(N) - sum_PP - sum_PM - sum_MP - sum_MM;
+    f = N * log(N) - (1/maxCharge)*(cpp*sum_PP - cpm*sum_PM - cmp*sum_MP - cmm*sum_MM);
 }
 
 void performMLMFits(const char *filename, const char* output_file, const std::string& prefix) {
@@ -746,15 +747,15 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
   cout << endl << endl;
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
-      switch (asymmetry) {
-        case 0: cout << "    chi2 BSA." << endl; break;
-        case 1: cout << "    chi2 TSA." << endl; break;
-        case 2: cout << "    chi2 DSA." << endl; break;
-      }
-      performChi2Fits(data_file, output_file, binNames[i], asymmetry);
-    }
-    cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
+    // for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
+    //   switch (asymmetry) {
+    //     case 0: cout << "    chi2 BSA." << endl; break;
+    //     case 1: cout << "    chi2 TSA." << endl; break;
+    //     case 2: cout << "    chi2 DSA." << endl; break;
+    //   }
+    //   performChi2Fits(data_file, output_file, binNames[i], asymmetry);
+    // }
+    // cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
     performMLMFits(data_file, output_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
