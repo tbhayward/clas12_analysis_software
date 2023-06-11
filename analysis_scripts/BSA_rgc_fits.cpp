@@ -321,10 +321,12 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
         }
     }
 
-    float minCharge = std::min({cpp, cpm, cmp, cmm});
-    cout << (minCharge/cpp) << " " << (minCharge/cpm) << " " << (minCharge/cmp) << " " << (minCharge/cmm) << endl;
+    float minBeamCharge = std::min({(cpp+cmp),(cmp+cmm)});
+    float maxBeamCharge = std::max({(cpp+cmp),(cmp+cmm)});
+    cout << minBeamCharge << " " << maxBeamCharge << endl;
     // Calculate the negative log-likelihood value and store it in the output variable f
-    f = N * log(N) - (sum_PP + sum_MP) - (sum_PM + sum_MM);
+    f = N * log(N) - minBeamCharge/(cpp+cmp)*(sum_PP + sum_MP) - 
+      minBeamCharge/(cpm+cmm)*(sum_PM + sum_MM);
 }
 
 void performMLMFits(const char *filename, const char* output_file, const std::string& prefix) {
