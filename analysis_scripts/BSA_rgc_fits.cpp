@@ -323,6 +323,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
 
     float minBeamCharge = std::min({(cpp+cmp),(cmp+cmm)});
     float maxBeamCharge = std::max({(cpp+cmp),(cmp+cmm)});
+    cout << cpp << " " << cmp << " - " << cmp << " " << cmm << endl;
     cout << minBeamCharge << " " << maxBeamCharge << endl;
     // Calculate the negative log-likelihood value and store it in the output variable f
     f = N * log(N) - minBeamCharge/(cpp+cmp)*(sum_PP + sum_MP) - 
