@@ -341,6 +341,8 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
 
   double sumTargetPosPol = 0; // sum of the target positive polarization
   double sumTargetNegPol = 0; // sum of the target negative polarization
+  int numEventsPosTarget = 0;
+  int numEventsNegTarget = 0;
 
   // Determine the number of bins
   size_t numBins = allBins[currentFits].size() - 1;
