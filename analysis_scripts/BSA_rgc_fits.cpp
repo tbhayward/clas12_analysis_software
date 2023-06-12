@@ -281,7 +281,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     // iflag: a flag (see TMinuit documentation for details)
 
     // Extract parameters A and B from the input parameter array
-    double A = par[0];
+    double ALU_sinphi = par[0];
 
     // Initialize variables for counting events (N), positive helicity sum (sum_P), 
     // and negative helicity sum (sum_N)
@@ -310,13 +310,13 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
 
           // Check if the helicity is positive or negative and update the corresponding sum
           if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
-            sum_PP += log(1 + pol * (A * sin(phi)) );
+            sum_PP += log(1 + pol * (ALU_sinphi * sin(phi)) );
           } else if (event.data.at("helicity") > 0 && event.data.at("target_pol") < 0 ) {
-            sum_PM += log(1 + pol * (A * sin(phi)) );
+            sum_PM += log(1 + pol * (ALU_sinphi * sin(phi)) );
           } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") > 0 ) {
-            sum_MP += log(1 - pol * (A * sin(phi)) );
+            sum_MP += log(1 - pol * (ALU_sinphi * sin(phi)) );
           } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") < 0 ) {
-            sum_MM += log(1 - pol * (A * sin(phi)) );
+            sum_MM += log(1 - pol * (ALU_sinphi * sin(phi)) );
           }
         }
     }
