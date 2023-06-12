@@ -313,15 +313,6 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           double Pb = event.data.at("pol");
           double Pt = event.data.at("target_pol");
 
-          // Accumulate polarization and event count for mean polarization calculation
-          if (event.data.at("target_pol") > 0) {
-            sumTargetPosPol+=event.data.at("target_pol");
-            numEventsPosTarget++;
-          } else if (event.data.at("target_pol") < 0) {
-            sumTargetNegPol+=event.data.at("target_pol");
-            numEventsNegTarget++;
-          }
-
           // Check if the helicity is positive or negative and update the corresponding sum
           if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
             sum_PP += log(1 + Pb*(ALU_sinphi*sin(phi)) + // BSA
@@ -338,12 +329,6 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           }
         }
     }
-
-    // Calculate the mean polarization
-    float Ptp = sumTargetPosPol/numEventsPosTarget;// mean positive target polarization for data
-    float Ptm = - sumTargetNegPol/numEventsNegTarget;// mean negative target polarization for data
-    // the negative sign here is correct; RGC lists the polarizations with signs to tell which is 
-    // which but the polarization really should just be "percent of polarized nucleii"
 
     // determine min pos or neg beam helicity accumulated charge to scale down higher one
     float minBeamCharge = std::min({(cpp+cpm),(cmp+cmm)}); 
