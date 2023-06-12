@@ -394,8 +394,8 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
 
     // Define the parameters with initial values and limits
     minuit.DefineParameter(0, "ALU_sinphi", -0.02, 0.1, -1, 1);
-    minuit.DefineParameter(0, "AUL_sinphi", -0.02, 0.1, -1, 1);
-    minuit.DefineParameter(0, "AUL_sin2phi", -0.01, 0.1, -1, 1);
+    minuit.DefineParameter(1, "AUL_sinphi", -0.02, 0.1, -1, 1);
+    minuit.DefineParameter(2, "AUL_sin2phi", -0.01, 0.1, -1, 1);
 
     // Minimize the negative log-likelihood function
     minuit.Migrad();
