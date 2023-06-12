@@ -298,6 +298,8 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     double sum_MP = 0; // negative beam -- positive target
     double sum_MM = 0; // negative beam -- negative target
 
+    float Df = 0.18; // dilution factor, placeholder from MC studies from proposal
+
     // Iterate through the global event data (gData)
     for (const eventData &event : gData) {
         // Get the value of the current variable of interest for the event
@@ -328,16 +330,16 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           // Check if the helicity is positive or negative and update the corresponding sum
           if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
             sum_PP += log(1 + Pb*(ALU_sinphi*sin(phi)) + // BSA
-              Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) ); // TSA
+              Df*Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) ); // TSA
           } else if (event.data.at("helicity") > 0 && event.data.at("target_pol") < 0 ) {
             sum_PM += log(1 + Pb*(ALU_sinphi*sin(phi)) - // BSA
-              Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) ); // TSA
+              Df*Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) ); // TSA
           } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") > 0 ) {
             sum_MP += log(1 - Pb*(ALU_sinphi*sin(phi)) + // BSA
-              Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) ); // TSA
+              Df*Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) ); // TSA
           } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") < 0 ) {
             sum_MM += log(1 - Pb*(ALU_sinphi*sin(phi)) - // BSA
-              Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) ); // TSA
+              Df*Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) ); // TSA
           }
         }
     }
