@@ -310,13 +310,13 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
 
           // Check if the helicity is positive or negative and update the corresponding sum
           if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
-            sum_PP += log(1 + pol * (ALU_sinphi * sin(phi)) );
+            sum_PP += log(1 + pol*(ALU_sinphi * sin(phi)) );
           } else if (event.data.at("helicity") > 0 && event.data.at("target_pol") < 0 ) {
-            sum_PM += log(1 + pol * (ALU_sinphi * sin(phi)) );
+            sum_PM += log(1 + pol*(ALU_sinphi * sin(phi)) );
           } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") > 0 ) {
-            sum_MP += log(1 - pol * (ALU_sinphi * sin(phi)) );
+            sum_MP += log(1 - pol*(ALU_sinphi * sin(phi)) );
           } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") < 0 ) {
-            sum_MM += log(1 - pol * (ALU_sinphi * sin(phi)) );
+            sum_MM += log(1 - pol*(ALU_sinphi * sin(phi)) );
           }
         }
     }
@@ -339,21 +339,28 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
   // Read the event data from the input file and store it in the global variable gData
   gData = readData(filename, variable_names);
 
+  double sumTargetPosPol = 0; // sum of the target positive polarization
+  double sumTargetNegPol = 0; // sum of the target negative polarization
+
   // Determine the number of bins
   size_t numBins = allBins[currentFits].size() - 1;
 
-  // Initialize TMinuit with 2 parameters (A and B)
+  // Initialize TMinuit with 3 parameters 
   double arglist[10]; arglist[0] = 1;
   int ierflg = 0;
-  TMinuit minuit(2);
+  TMinuit minuit(3);
   minuit.SetPrintLevel(-1);
   minuit.SetFCN(negLogLikelihood);
 
   // Declare string streams for storing the MLM fit results
   std::ostringstream mlmFitsAStream;
+  std::ostringstream mlmFitsBStream;
+  std::ostringstream mlmFitsCStream;
 
   // Initialize the string streams with the output variable names
   mlmFitsAStream << prefix << "MLMFits_ALU_sinphi = {";
+  mlmFitsBStream << prefix << "MLMFits_AUL_sinphi = {";
+  mlmFitsCStream << prefix << "MLMFits_AUL_sin2phi = {";
 
   // Iterate through each bin
   for (size_t i = 0; i < numBins; ++i) {
@@ -361,8 +368,10 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
       << " bin " << i << ". ";
     currentBin = i;
 
-    // Define the parameters A and B with initial values and limits
+    // Define the parameters with initial values and limits
     minuit.DefineParameter(0, "ALU_sinphi", -0.02, 0.1, -1, 1);
+    minuit.DefineParameter(0, "AUL_sinphi", -0.02, 0.1, -1, 1);
+    minuit.DefineParameter(0, "AUL_sin2phi", -0.01, 0.1, -1, 1);
 
     // Minimize the negative log-likelihood function
     minuit.Migrad();
@@ -376,6 +385,14 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
           allBins[currentFits][i] && currentVariable < allBins[currentFits][i + 1]) {
             sumVariable += currentVariable;
             numEvents += 1;
+            // Accumulate polarization and event count for mean polarization calculation
+            if (event.data.at("target_pol") > 0) {
+              sumTargetPosPol+=event.data.at("target_pol");
+              numEventsPosTarget++;
+            } else if (event.data.at("target_pol") < 0) {
+              sumTargetNegPol+=event.data.at("target_pol");
+              numEventsNegTarget++;
+            }
         }
     }
     double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
@@ -383,19 +400,27 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     // Extract the fitted parameter values and errors
     double ALU_sinphi, ALU_sinphi_error;
     minuit.GetParameter(0, ALU_sinphi, ALU_sinphi_error);
+    double AUL_sinphi, AUL_sinphi_error;
+    minuit.GetParameter(1, AUL_sinphi, AUL_sinphi_error);
+    double AUL_sin2phi, AUL_sin2phi_error;
+    minuit.GetParameter(1, AUL_sin2phi, AUL_sin2phi_error);
 
     // output to text file
     mlmFitsAStream << "{" << meanVariable << ", " << ALU_sinphi << ", " << ALU_sinphi_error << "}";
+    mlmFitsBStream << "{" << meanVariable << ", " << AUL_sinphi << ", " << AUL_sinphi_error << "}";
+    mlmFitsCStream << "{" << meanVariable << ", " << AUL_sin2phi << ", " <<AUL_sin2phi_error << "}";
 
     if (i < numBins - 1) {
-        mlmFitsAStream << ", "; 
+        mlmFitsAStream << ", "; mlmFitsBStream << ", "; mlmFitsCStream << ", "; 
     }
   }
 
-  mlmFitsAStream << "};"; 
+  mlmFitsAStream << "};"; mlmFitsBStream << "};"; mlmFitsCStream << "};"; 
 
   std::ofstream outputFile(output_file, std::ios_base::app);
   outputFile << mlmFitsAStream.str() << std::endl;
+  outputFile << mlmFitsBStream.str() << std::endl;
+  outputFile << mlmFitsCStream.str() << std::endl;
 
   outputFile.close();
 }
