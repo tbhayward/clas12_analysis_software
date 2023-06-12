@@ -280,8 +280,15 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     // par: an array of the parameter values
     // iflag: a flag (see TMinuit documentation for details)
 
-    // Extract parameters A and B from the input parameter array
+    double sumTargetPosPol = 0; // sum of the target positive polarization
+    double sumTargetNegPol = 0; // sum of the target negative polarization
+    int numEventsPosTarget = 0;
+    int numEventsNegTarget = 0;
+
+    // Extract parameters from the input parameter array
     double ALU_sinphi = par[0];
+    double AUL_sinphi = par[1];
+    double AUL_sin2phi = par[2];
 
     // Initialize variables for counting events (N), positive helicity sum (sum_P), 
     // and negative helicity sum (sum_N)
@@ -306,20 +313,40 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
 
           // Extract Delta_phi and polarization (pol) from the event data
           double phi = event.data.at("phi");
-          double pol = event.data.at("pol");
+          double Pb = event.data.at("pol");
+          double Pt = event.data.at("target_pol");
+
+          // Accumulate polarization and event count for mean polarization calculation
+          if (event.data.at("target_pol") > 0) {
+            sumTargetPosPol+=event.data.at("target_pol");
+            numEventsPosTarget++;
+          } else if (event.data.at("target_pol") < 0) {
+            sumTargetNegPol+=event.data.at("target_pol");
+            numEventsNegTarget++;
+          }
 
           // Check if the helicity is positive or negative and update the corresponding sum
           if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
-            sum_PP += log(1 + pol*(ALU_sinphi * sin(phi)) );
+            sum_PP += log(1 + Pb*(ALU_sinphi*sin(phi)) + // BSA
+              Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) ); // TSA
           } else if (event.data.at("helicity") > 0 && event.data.at("target_pol") < 0 ) {
-            sum_PM += log(1 + pol*(ALU_sinphi * sin(phi)) );
+            sum_PM += log(1 + Pb*(ALU_sinphi*sin(phi)) - // BSA
+              Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) ); // TSA
           } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") > 0 ) {
-            sum_MP += log(1 - pol*(ALU_sinphi * sin(phi)) );
+            sum_MP += log(1 - Pb*(ALU_sinphi*sin(phi)) + // BSA
+              Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) ); // TSA
           } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") < 0 ) {
-            sum_MM += log(1 - pol*(ALU_sinphi * sin(phi)) );
+            sum_MM += log(1 - Pb*(ALU_sinphi*sin(phi)) - // BSA
+              Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) ); // TSA
           }
         }
     }
+
+    // Calculate the mean polarization
+    float Ptp = sumTargetPosPol/numEventsPosTarget;// mean positive target polarization for data
+    float Ptm = - sumTargetNegPol/numEventsNegTarget;// mean negative target polarization for data
+    // the negative sign here is correct; RGC lists the polarizations with signs to tell which is 
+    // which but the polarization really should just be "percent of polarized nucleii"
 
     // determine min pos or neg beam helicity accumulated charge to scale down higher one
     float minBeamCharge = std::min({(cpp+cpm),(cmp+cmm)}); 
@@ -338,11 +365,6 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
 void performMLMFits(const char *filename, const char* output_file, const std::string& prefix) {
   // Read the event data from the input file and store it in the global variable gData
   gData = readData(filename, variable_names);
-
-  double sumTargetPosPol = 0; // sum of the target positive polarization
-  double sumTargetNegPol = 0; // sum of the target negative polarization
-  int numEventsPosTarget = 0;
-  int numEventsNegTarget = 0;
 
   // Determine the number of bins
   size_t numBins = allBins[currentFits].size() - 1;
@@ -387,17 +409,10 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
           allBins[currentFits][i] && currentVariable < allBins[currentFits][i + 1]) {
             sumVariable += currentVariable;
             numEvents += 1;
-            // Accumulate polarization and event count for mean polarization calculation
-            if (event.data.at("target_pol") > 0) {
-              sumTargetPosPol+=event.data.at("target_pol");
-              numEventsPosTarget++;
-            } else if (event.data.at("target_pol") < 0) {
-              sumTargetNegPol+=event.data.at("target_pol");
-              numEventsNegTarget++;
-            }
         }
     }
     double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
+
 
     // Extract the fitted parameter values and errors
     double ALU_sinphi, ALU_sinphi_error;
