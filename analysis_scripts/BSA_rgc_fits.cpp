@@ -284,6 +284,8 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     double ALU_sinphi = par[0];
     double AUL_sinphi = par[1];
     double AUL_sin2phi = par[2];
+    double ALL = par[3];
+    double ALL_cosphi = par[4];
 
     // Initialize variables for counting events (N), positive helicity sum (sum_P), 
     // and negative helicity sum (sum_N)
@@ -311,21 +313,25 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           // Extract Delta_phi and polarization (pol) from the event data
           double phi = event.data.at("phi");
           double Pb = event.data.at("pol");
-          double Pt = event.data.at("target_pol");
+          double Pt = std::abs(event.data.at("target_pol"));
 
           // Check if the helicity is positive or negative and update the corresponding sum
           if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
-            sum_PP += log(1 + Pb*(ALU_sinphi*sin(phi)) + // BSA
-              Df*Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) ); // TSA
+            sum_PP += log(1 + Pb*(ALU_sinphi*sin(phi)) // BSA
+              + Df*Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) // TSA
+              + Df*Pb*Pt*(ALL + ALL_cosphi*cos(phi)) ); // DSA
           } else if (event.data.at("helicity") > 0 && event.data.at("target_pol") < 0 ) {
-            sum_PM += log(1 + Pb*(ALU_sinphi*sin(phi)) - // BSA
-              Df*Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) ); // TSA
+            sum_PM += log(1 + Pb*(ALU_sinphi*sin(phi)) // BSA
+              - Df*Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) // TSA
+              - Df*Pb*Pt*(ALL + ALL_cosphi*cos(phi)) ); // DSA
           } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") > 0 ) {
-            sum_MP += log(1 - Pb*(ALU_sinphi*sin(phi)) + // BSA
-              Df*Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) ); // TSA
+            sum_MP += log(1 - Pb*(ALU_sinphi*sin(phi)) // BSA
+              + Df*Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) // TSA
+              - Df*Pb*Pt*(ALL + ALL_cosphi*cos(phi)) ); // DSA
           } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") < 0 ) {
-            sum_MM += log(1 - Pb*(ALU_sinphi*sin(phi)) - // BSA
-              Df*Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) ); // TSA
+            sum_MM += log(1 - Pb*(ALU_sinphi*sin(phi)) // BSA
+              - Df*Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) // TSA
+              + Df*Pb*Pt*(ALL + ALL_cosphi*cos(phi)) ); // DSA
           }
         }
     }
@@ -357,19 +363,21 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
   // Initialize TMinuit with 3 parameters 
   double arglist[10]; arglist[0] = 1;
   int ierflg = 0;
-  TMinuit minuit(3);
+  TMinuit minuit(5);
   minuit.SetPrintLevel(-1);
   minuit.SetFCN(negLogLikelihood);
 
   // Declare string streams for storing the MLM fit results
   std::ostringstream mlmFitsAStream;
-  std::ostringstream mlmFitsBStream;
-  std::ostringstream mlmFitsCStream;
+  std::ostringstream mlmFitsBStream; std::ostringstream mlmFitsCStream;
+  std::ostringstream mlmFitsDStream; std::ostringstream mlmFitsEStream;
 
   // Initialize the string streams with the output variable names
   mlmFitsAStream << prefix << "MLMFits_ALU_sinphi = {";
   mlmFitsBStream << prefix << "MLMFits_AUL_sinphi = {";
   mlmFitsCStream << prefix << "MLMFits_AUL_sin2phi = {";
+  mlmFitsDStream << prefix << "MLMFits_ALL = {";
+  mlmFitsEStream << prefix << "MLMFits_ALL_cosphi = {";
 
   // Iterate through each bin
   for (size_t i = 0; i < numBins; ++i) {
@@ -378,9 +386,11 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     currentBin = i;
 
     // Define the parameters with initial values and limits
-    minuit.DefineParameter(0, "ALU_sinphi", -0.02, 0.1, -1, 1);
-    minuit.DefineParameter(1, "AUL_sinphi", -0.02, 0.1, -1, 1);
-    minuit.DefineParameter(2, "AUL_sin2phi", -0.01, 0.1, -1, 1);
+    minuit.DefineParameter(0, "ALU_sinphi", -0.02, 0.01, -1, 1);
+    minuit.DefineParameter(1, "AUL_sinphi", -0.02, 0.01, -1, 1);
+    minuit.DefineParameter(2, "AUL_sin2phi", -0.01, 0.01, -1, 1);
+    minuit.DefineParameter(3, "ALL", 0.3, 0.01, -1, 1);
+    minuit.DefineParameter(4, "ALL_cosphi", 0.01, 0.01, -1, 1);
 
     // Minimize the negative log-likelihood function
     minuit.Migrad();
@@ -406,14 +416,21 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     minuit.GetParameter(1, AUL_sinphi, AUL_sinphi_error);
     double AUL_sin2phi, AUL_sin2phi_error;
     minuit.GetParameter(2, AUL_sin2phi, AUL_sin2phi_error);
+    double ALL, ALL_error;
+    minuit.GetParameter(1, ALL, ALL_error);
+    double ALL_cosphi, ALL_cosphi_error;
+    minuit.GetParameter(2, ALL_cosphi, ALL_cosphi_error);
 
     // output to text file
     mlmFitsAStream << "{" << meanVariable << ", " << ALU_sinphi << ", " << ALU_sinphi_error << "}";
     mlmFitsBStream << "{" << meanVariable << ", " << AUL_sinphi << ", " << AUL_sinphi_error << "}";
-    mlmFitsCStream << "{" << meanVariable << ", " << AUL_sin2phi << ", " <<AUL_sin2phi_error << "}";
+    mlmFitsCStream << "{" << meanVariable << ", " << AUL_sin2phi << ", "<<AUL_sin2phi_error << "}";
+    mlmFitsDStream << "{" << meanVariable << ", " << ALL << ", " << ALL_error << "}";
+    mlmFitsEStream << "{" << meanVariable << ", " << ALL_cosphi << ", "<<ALL_cosphi_error << "}";
 
     if (i < numBins - 1) {
-        mlmFitsAStream << ", "; mlmFitsBStream << ", "; mlmFitsCStream << ", "; 
+        mlmFitsAStream << ", "; mlmFitsBStream << ", "; mlmFitsCStream << ", ";
+        mlmFitsDStream << ", "; mlmFitsEStream << ", "; 
     }
   }
 
@@ -423,6 +440,8 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
   outputFile << mlmFitsAStream.str() << std::endl;
   outputFile << mlmFitsBStream.str() << std::endl;
   outputFile << mlmFitsCStream.str() << std::endl;
+  outputFile << mlmFitsDStream.str() << std::endl;
+  outputFile << mlmFitsEStream.str() << std::endl;
 
   outputFile.close();
 }
