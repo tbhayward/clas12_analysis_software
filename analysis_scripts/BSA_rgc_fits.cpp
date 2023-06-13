@@ -549,8 +549,8 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
 
   // Calculate the asymmetry and its error for each bin, and fill the asymmetry histogram
   for (int iBin = 1; iBin <= numBins; ++iBin) {
-    cout << histPosPos->GetBinContent(iBin) << " " << cpp << endl;
     float Npp = histPosPos->GetBinContent(iBin)/cpp;
+    cout << histPosPos->GetBinContent(iBin) << " " << cpp << "  " << Npp << endl;
     float Npm = histPosNeg->GetBinContent(iBin)/cpm;
     float Nmp = histNegPos->GetBinContent(iBin)/cmp;
     float Nmm = histNegNeg->GetBinContent(iBin)/cmm;
