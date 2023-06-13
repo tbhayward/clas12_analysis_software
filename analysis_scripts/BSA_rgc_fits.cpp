@@ -268,8 +268,8 @@ double getEventProperty(const eventData& event, int currentFits) {
 // Apply kinematic cuts to the data
 bool applyKinematicCuts(const eventData& data, int currentFits) {
 
-    return data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
-      data.data.at("y")<0.8 && data.data.at("xF")<0 && data.data.at("target_pol") != 0;
+    return data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>0 &&
+      data.data.at("y")<0.8 && data.data.at("xF")<1 && data.data.at("target_pol") != 0;
 }
 
 // Negative log-likelihood function
@@ -537,12 +537,6 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
       numEvents++;
     }
   }
-  // scale the histograms by the accumulated faraday cup charge
-  // histPosPos->Scale(1.0 / cpp);
-  // histPosNeg->Scale(1.0 / cpm);
-  // histNegPos->Scale(1.0 / cmp);
-  // histNegNeg->Scale(1.0 / cmm);
-
   // Calculate the mean polarization
   float meanPol = sumPol / numEvents; // mean beam polarization for data 
   float Ptp = sumTargetPosPol / numEventsPosTarget;// mean positive target polarization for data
