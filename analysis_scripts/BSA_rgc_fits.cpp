@@ -450,8 +450,6 @@ float asymmetry_value_calculation(float Npp, float Npm, float Nmp, float Nmm, fl
     case 0: // beam-spin asymmetry
       return (1 / meanPol) * (Ptm*(Npp-Nmp)+Ptp*(Npm-Nmm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
     case 1: // target-spin asymmetry
-      cout << endl << Npp << " " << Npm << " " << Nmp << " " << Nmm << " " << Ptp << " " << Ptm << endl;
-      cout << (1 / Df) * ((Npp+Nmp)-(Npm+Nmm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm)) << endl << endl;
       return (1 / Df) * ((Npp+Nmp)-(Npm+Nmm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
     case 2: // double-spin asymmetry
       return (1 / (Df*meanPol)) * ((Npp-Nmp)+(Nmm-Npm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
@@ -551,6 +549,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
 
   // Calculate the asymmetry and its error for each bin, and fill the asymmetry histogram
   for (int iBin = 1; iBin <= numBins; ++iBin) {
+    cout << Npp << endl;
     float Npp = histPosPos->GetBinContent(iBin)/cpp;
     float Npm = histPosNeg->GetBinContent(iBin)/cpm;
     float Nmp = histNegPos->GetBinContent(iBin)/cmp;
