@@ -317,21 +317,21 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
 
           // Check if the helicities is positive or negative and update the corresponding sum
           if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
-            sum_PP += log(1 + Pb*(ALU_sinphi*sin(phi)) // BSA
+            sum_PP += log(1 + 0*Pb*(ALU_sinphi*sin(phi)) // BSA
               + Df*Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) // TSA
-              + Df*Pb*Pt*(ALL + ALL_cosphi*cos(phi)) ); // DSA
+              + 0*Df*Pb*Pt*(ALL + ALL_cosphi*cos(phi)) ); // DSA
           } else if (event.data.at("helicity") > 0 && event.data.at("target_pol") < 0 ) {
-            sum_PM += log(1 + Pb*(ALU_sinphi*sin(phi)) // BSA
+            sum_PM += log(1 + 0*Pb*(ALU_sinphi*sin(phi)) // BSA
               - Df*Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) // TSA
-              - Df*Pb*Pt*(ALL + ALL_cosphi*cos(phi)) ); // DSA
+              - 0*Df*Pb*Pt*(ALL + ALL_cosphi*cos(phi)) ); // DSA
           } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") > 0 ) {
-            sum_MP += log(1 - Pb*(ALU_sinphi*sin(phi)) // BSA
+            sum_MP += log(1 - 0*Pb*(ALU_sinphi*sin(phi)) // BSA
               + Df*Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) // TSA
-              - Df*Pb*Pt*(ALL + ALL_cosphi*cos(phi)) ); // DSA
+              - 0*Df*Pb*Pt*(ALL + ALL_cosphi*cos(phi)) ); // DSA
           } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") < 0 ) {
-            sum_MM += log(1 - Pb*(ALU_sinphi*sin(phi)) // BSA
+            sum_MM += log(1 - 0*Pb*(ALU_sinphi*sin(phi)) // BSA
               - Df*Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) // TSA
-              + Df*Pb*Pt*(ALL + ALL_cosphi*cos(phi)) ); // DSA
+              + 0*Df*Pb*Pt*(ALL + ALL_cosphi*cos(phi)) ); // DSA
           }
         }
     }
@@ -341,10 +341,6 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     // determine min pos or neg target helicity accumulated charge to scale down higher one
     float minTargetCharge = std::min({(cpp+cmp),(cpm+cmm)}); 
     
-    cout << minBeamCharge*minTargetCharge/((cpp+cpm)*(cpp+cmp));
-    cout << " " <<  minBeamCharge*minTargetCharge/((cpp+cpm)*(cmp+cmm));
-    cout << " " << minBeamCharge*minTargetCharge/((cmp+cmm)*(cpp+cmp));
-    cout << " " << minBeamCharge*minTargetCharge/((cmp+cmm)*(cmp+cmm)) << endl;
     // Calculate the negative log-likelihood value and store it in the output variable f
     f = N * log(N) - 
       minBeamCharge*minTargetCharge/((cpp+cpm)*(cpp+cmp))*sum_PP -
@@ -660,8 +656,11 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
 
     // Create a histogram for the current bin
     TH1D* hist = createHistogramForBin(gData, histName, i, asymmetry_index);
-    // Fit the histogram using the fitFunction
-    hist->Fit(fitFunction, "Q");
+    // Fit the histogram using the fitFunction and get the fit result
+    TFitResultPtr fitResult = hist->Fit(fitFunction, "Q");
+    // Get the reduced chi-squared
+    float chi2ndf = (fitResult->Chi2())/(fitResult->Ndf());
+    cout << chi2ndf << endl;
 
     // Initialize variables to store the sums and event counts
     double sumVariable = 0;
@@ -801,7 +800,7 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
   cout << endl << endl;
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
+    for (int asymmetry = 1; asymmetry < 2; ++asymmetry){
       switch (asymmetry) {
         case 0: cout << "    chi2 BSA." << endl; break;
         case 1: cout << "    chi2 TSA." << endl; break;
