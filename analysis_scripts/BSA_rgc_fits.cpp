@@ -315,7 +315,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           double Pb = event.data.at("pol");
           double Pt = std::abs(event.data.at("target_pol"));
 
-          // Check if the helicity is positive or negative and update the corresponding sum
+          // Check if the helicities is positive or negative and update the corresponding sum
           if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
             sum_PP += log(1 + Pb*(ALU_sinphi*sin(phi)) // BSA
               + Df*Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) // TSA
@@ -417,9 +417,9 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     double AUL_sin2phi, AUL_sin2phi_error;
     minuit.GetParameter(2, AUL_sin2phi, AUL_sin2phi_error);
     double ALL, ALL_error;
-    minuit.GetParameter(1, ALL, ALL_error);
+    minuit.GetParameter(3, ALL, ALL_error);
     double ALL_cosphi, ALL_cosphi_error;
-    minuit.GetParameter(2, ALL_cosphi, ALL_cosphi_error);
+    minuit.GetParameter(4, ALL_cosphi, ALL_cosphi_error);
 
     // output to text file
     mlmFitsAStream << "{" << meanVariable << ", " << ALU_sinphi << ", " << ALU_sinphi_error << "}";
