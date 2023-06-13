@@ -496,10 +496,10 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   double varMax = allBins[currentFits][binIndex + 1];
 
   // Create positive and negative helicity histograms
-  TH1D* histPosPos = new TH1D(Form("%s_pospos", histName), "", 24, 0, 2 * TMath::Pi());
-  TH1D* histPosNeg = new TH1D(Form("%s_posneg", histName), "", 24, 0, 2 * TMath::Pi());
-  TH1D* histNegPos = new TH1D(Form("%s_negpos", histName), "", 24, 0, 2 * TMath::Pi());
-  TH1D* histNegNeg = new TH1D(Form("%s_negneg", histName), "", 24, 0, 2 * TMath::Pi());
+  TH1D* histPosPos = new TH1D(Form("%s_pospos", histName), "", 12, 0, 2 * TMath::Pi());
+  TH1D* histPosNeg = new TH1D(Form("%s_posneg", histName), "", 12, 0, 2 * TMath::Pi());
+  TH1D* histNegPos = new TH1D(Form("%s_negpos", histName), "", 12, 0, 2 * TMath::Pi());
+  TH1D* histNegNeg = new TH1D(Form("%s_negneg", histName), "", 12, 0, 2 * TMath::Pi());
 
   // Variables to calculate the mean polarization
   double sumPol = 0; // sum of the beam polarization
@@ -536,10 +536,10 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
     }
   }
   // scale the histograms by the accumulated faraday cup charge
-  histPosPos->Scale(1.0 / cpp);
-  histPosNeg->Scale(1.0 / cpm);
-  histNegPos->Scale(1.0 / cmp);
-  histNegNeg->Scale(1.0 / cmm);
+  // histPosPos->Scale(1.0 / cpp);
+  // histPosNeg->Scale(1.0 / cpm);
+  // histNegPos->Scale(1.0 / cmp);
+  // histNegNeg->Scale(1.0 / cmm);
 
   // Calculate the mean polarization
   float meanPol = sumPol / numEvents; // mean beam polarization for data 
@@ -555,10 +555,10 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
 
   // Calculate the asymmetry and its error for each bin, and fill the asymmetry histogram
   for (int iBin = 1; iBin <= numBins; ++iBin) {
-    float Npp = histPosPos->GetBinContent(iBin);
-    float Npm = histPosNeg->GetBinContent(iBin);
-    float Nmp = histNegPos->GetBinContent(iBin);
-    float Nmm = histNegNeg->GetBinContent(iBin);
+    float Npp = histPosPos->GetBinContent(iBin)/cpp;
+    float Npm = histPosNeg->GetBinContent(iBin)/cpm;
+    float Nmp = histNegPos->GetBinContent(iBin)/cmp;
+    float Nmm = histNegNeg->GetBinContent(iBin)/cmm;
 
     // Calculate the asymmetry and error for the current bin
     float asymmetry = asymmetry_value_calculation(Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, 
