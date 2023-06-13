@@ -616,7 +616,7 @@ double DSA_funcToFit(double* x, double* par) {
 void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int asymmetryIndex, 
   const std::string& prefix) {
   // Define the label for the y-axis
-  std::string yAxisLabel;
+  std::string yAxisLabel, fileNameSuffix;
   switch (asymmetryIndex) {
       case 0:
           yAxisLabel = "A_{LU}"; fileNameSuffix = "ALU";
