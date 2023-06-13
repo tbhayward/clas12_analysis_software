@@ -446,7 +446,7 @@ float asymmetry_value_calculation(float Npp, float Npm, float Nmp, float Nmm, fl
 
 float asymmetry_error_calculation(float Npp, float Npm, float Nmp, float Nmm, float meanPol, 
   float Ptp, float Ptm, int asymmetry_index) {
-  float Df = 0.18; // dilution factor, placeholder from MC studies from proposal
+  float Df = 1; // dilution factor, placeholder from MC studies from proposal
   // return the asymmetry error 
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
@@ -647,7 +647,6 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
     // Initialize variables to store the sums and event counts
     double sumVariable = 0;
     double numEvents = 0;
-    cout << " WE MADE IT TO HERE" << endl;
     // Loop over all events and calculate the sums and event counts
     for (const eventData& event : gData) {
       double currentVariable = getEventProperty(event, currentFits);
@@ -783,15 +782,15 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
   cout << endl << endl;
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
-      switch (asymmetry) {
-        case 0: cout << "    chi2 BSA." << endl; break;
-        case 1: cout << "    chi2 TSA." << endl; break;
-        case 2: cout << "    chi2 DSA." << endl; break;
-      }
-      performChi2Fits(data_file, output_file, binNames[i], asymmetry);
-    }
-    cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
+    // for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
+    //   switch (asymmetry) {
+    //     case 0: cout << "    chi2 BSA." << endl; break;
+    //     case 1: cout << "    chi2 TSA." << endl; break;
+    //     case 2: cout << "    chi2 DSA." << endl; break;
+    //   }
+    //   performChi2Fits(data_file, output_file, binNames[i], asymmetry);
+    // }
+    // cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
     performMLMFits(data_file, output_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
