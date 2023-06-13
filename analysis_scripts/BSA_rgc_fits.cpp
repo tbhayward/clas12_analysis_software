@@ -618,30 +618,22 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   // Define the label for the y-axis
   std::string yAxisLabel, fileNameSuffix;
   switch (asymmetryIndex) {
-      case 0:
-          yAxisLabel = "A_{LU}"; fileNameSuffix = "ALU";
-          break;
-      case 1:
-          yAxisLabel = "A_{UL}"; fileNameSuffix = "AUL";
-          break;
-      case 2:
-          yAxisLabel = "A_{LL}"; fileNameSuffix = "ALL";
-          break;
-      default:
-          std::cerr << "Invalid asymmetry index!" << std::endl;
-          return;
+      case 0: yAxisLabel = "A_{LU}"; fileNameSuffix = "ALU"; break;
+      case 1: yAxisLabel = "A_{UL}"; fileNameSuffix = "AUL"; break;
+      case 2: yAxisLabel = "A_{LL}"; fileNameSuffix = "ALL"; break;
+      default: std::cerr << "Invalid asymmetry index!" << std::endl; return;
   }
 
   // Create a canvas to draw on
   TCanvas* canvas = new TCanvas("canvas", "", 800, 600);
 
-  // Adjust the canvas margins to ensure y-axis title is not cut off
-  canvas->SetLeftMargin(0.15);
+  // Adjust the canvas margins to ensure axis labels are not cut off
+  canvas->SetLeftMargin(0.12); canvas->SetBottomMargin(0.12);
 
   // Set the histogram's line and point color to black
   histogram->SetLineColor(kBlack);
   histogram->SetMarkerColor(kBlack);
-  histogram->SetMarkerStyle(20);  // Style 20 is a filled circle
+  histogram->SetMarkerStyle(kFullCircle);  
 
   // Set the fit function's line color to red
   fitFunction->SetLineColor(kRed);
@@ -663,8 +655,18 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   histogram->GetYaxis()->SetTitleSize(0.05);
 
   // Customize the stat box
-  gStyle->SetOptStat(1110);  // Option "1110" includes entries and chi-squared/ndf, 
-                             // but not mean or std dev
+  histogram->SetStats(0);  // Turn off automatic stats
+  TPaveStats *statBox = new TPaveStats(0.6, 0.8, 0.9, 0.9, "brNDC");
+  statBox->SetFillColor(0);
+  statBox->SetTextSize(0.035);
+  statBox->SetTextAlign(12);
+  statBox->SetTextColor(1);
+  TText *text = statBox->AddText(Form("Entries = %.0f", histogram->GetEntries()));
+  text->SetTextColor(1);
+  text = statBox->AddText(Form("Chi^2/Ndf = %.4f", fitFunction->GetChisquare() / 
+    fitFunction->GetNDF()));
+  text->SetTextColor(1);
+  statBox->Draw();
 
   // Create the filename for the PNG
   std::string filename = "output/" + prefix + "_" + std::to_string(binIndex) + "_" + 
