@@ -280,11 +280,6 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     // par: an array of the parameter values
     // iflag: a flag (see TMinuit documentation for details)
 
-    double sumTargetPosPol = 0; // sum of the target positive polarization
-    double sumTargetNegPol = 0; // sum of the target negative polarization
-    int numEventsPosTarget = 0;
-    int numEventsNegTarget = 0;
-
     // Extract parameters from the input parameter array
     double ALU_sinphi = par[0];
     double AUL_sinphi = par[1];
@@ -298,7 +293,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     double sum_MP = 0; // negative beam -- positive target
     double sum_MM = 0; // negative beam -- negative target
 
-    float Df = 0.18; // dilution factor, placeholder from MC studies from proposal
+    float Df = 1; // dilution factor, placeholder from MC studies from proposal
 
     // Iterate through the global event data (gData)
     for (const eventData &event : gData) {
@@ -318,15 +313,6 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           double Pb = event.data.at("pol");
           double Pt = event.data.at("target_pol");
 
-          // Accumulate polarization and event count for mean polarization calculation
-          if (event.data.at("target_pol") > 0) {
-            sumTargetPosPol+=event.data.at("target_pol");
-            numEventsPosTarget++;
-          } else if (event.data.at("target_pol") < 0) {
-            sumTargetNegPol+=event.data.at("target_pol");
-            numEventsNegTarget++;
-          }
-
           // Check if the helicity is positive or negative and update the corresponding sum
           if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
             sum_PP += log(1 + Pb*(ALU_sinphi*sin(phi)) + // BSA
@@ -343,12 +329,6 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           }
         }
     }
-
-    // Calculate the mean polarization
-    float Ptp = sumTargetPosPol/numEventsPosTarget;// mean positive target polarization for data
-    float Ptm = - sumTargetNegPol/numEventsNegTarget;// mean negative target polarization for data
-    // the negative sign here is correct; RGC lists the polarizations with signs to tell which is 
-    // which but the polarization really should just be "percent of polarized nucleii"
 
     // determine min pos or neg beam helicity accumulated charge to scale down higher one
     float minBeamCharge = std::min({(cpp+cpm),(cmp+cmm)}); 
@@ -449,7 +429,7 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
 
 float asymmetry_value_calculation(float Npp, float Npm, float Nmp, float Nmm, float meanPol, 
   float Ptp, float Ptm, int asymmetry_index) {
-  float Df = 0.18; // dilution factor, placeholder from MC studies from proposal
+  float Df = 1; // dilution factor, placeholder from MC studies from proposal
   // return the asymmetry value 
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
@@ -622,6 +602,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
   int asymmetry_index) {
   // Read data from the input file and store it in the global variable gData
   gData = readData(filename, variable_names);
+  cout << " WE MADE IT TO HERE" << endl;
 
   // Initialize string streams to store the results for each bin
   std::ostringstream chi2FitsAStream, chi2FitsBStream;
@@ -803,15 +784,15 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
   cout << endl << endl;
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    // for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
-    //   switch (asymmetry) {
-    //     case 0: cout << "    chi2 BSA." << endl; break;
-    //     case 1: cout << "    chi2 TSA." << endl; break;
-    //     case 2: cout << "    chi2 DSA." << endl; break;
-    //   }
-    //   performChi2Fits(data_file, output_file, binNames[i], asymmetry);
-    // }
-    // cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
+    for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
+      switch (asymmetry) {
+        case 0: cout << "    chi2 BSA." << endl; break;
+        case 1: cout << "    chi2 TSA." << endl; break;
+        case 2: cout << "    chi2 DSA." << endl; break;
+      }
+      performChi2Fits(data_file, output_file, binNames[i], asymmetry);
+    }
+    cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
     performMLMFits(data_file, output_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
