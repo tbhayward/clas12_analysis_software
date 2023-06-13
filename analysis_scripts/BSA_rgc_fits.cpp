@@ -635,6 +635,9 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   // Create a canvas to draw on
   TCanvas* canvas = new TCanvas("canvas", "", 800, 600);
 
+  // Adjust the canvas margins to ensure y-axis title is not cut off
+  canvas->SetLeftMargin(0.15);
+
   // Set the histogram's line and point color to black
   histogram->SetLineColor(kBlack);
   histogram->SetMarkerColor(kBlack);
@@ -644,7 +647,7 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   fitFunction->SetLineColor(kRed);
 
   // Draw the histogram using the E option to draw just the points with error bars
-  histogram->Draw("E");
+  histogram->Draw("E1");
 
   // Draw the fit function on top of the histogram
   fitFunction->Draw("same");
@@ -870,8 +873,8 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
       performChi2Fits(data_file, output_file, binNames[i], asymmetry);
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    performMLMFits(data_file, output_file, binNames[i]);
-    cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
+    // performMLMFits(data_file, output_file, binNames[i]);
+    // cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
     currentFits++;
   }
