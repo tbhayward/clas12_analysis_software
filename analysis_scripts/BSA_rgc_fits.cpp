@@ -613,49 +613,67 @@ double DSA_funcToFit(double* x, double* par) {
   return ALL+ALL_cosphi*cos(phi);
 }
 
-void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int asymmetryIndex) {
-    // Define the label for the y-axis
-    std::string yAxisLabel;
-    switch (asymmetryIndex) {
-        case 0:
-            yAxisLabel = "A_{LU}";
-            break;
-        case 1:
-            yAxisLabel = "A_{UL}";
-            break;
-        case 2:
-            yAxisLabel = "A_{LL}";
-            break;
-        default:
-            std::cerr << "Invalid asymmetry index!" << std::endl;
-            return;
-    }
+void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int asymmetryIndex, 
+  const std::string& prefix) {
+  // Define the label for the y-axis
+  std::string yAxisLabel;
+  switch (asymmetryIndex) {
+      case 0:
+          yAxisLabel = "A_{LU}";
+          break;
+      case 1:
+          yAxisLabel = "A_{UL}";
+          break;
+      case 2:
+          yAxisLabel = "A_{LL}";
+          break;
+      default:
+          std::cerr << "Invalid asymmetry index!" << std::endl;
+          return;
+  }
 
-    // Create a canvas to draw on
-    TCanvas* canvas = new TCanvas("canvas", "", 800, 600);
-    
-    // Set the histogram's line color to black
-    histogram->SetLineColor(kBlack);
-    
-    // Set the fit function's line color to red
-    fitFunction->SetLineColor(kRed);
-    
-    // Draw the histogram
-    histogram->Draw();
-    
-    // Draw the fit function on top of the histogram
-    fitFunction->Draw("same");
+  // Create a canvas to draw on
+  TCanvas* canvas = new TCanvas("canvas", "", 800, 600);
 
-    // Set the labels of the x and y axis
-    histogram->GetXaxis()->SetTitle("#phi");
-    histogram->GetYaxis()->SetTitle(yAxisLabel.c_str());
+  // Set the histogram's line and point color to black
+  histogram->SetLineColor(kBlack);
+  histogram->SetMarkerColor(kBlack);
+  histogram->SetMarkerStyle(20);  // Style 20 is a filled circle
 
-    // Save the canvas as a PNG
-    canvas->SaveAs("/u/home/thayward/test.png");
+  // Set the fit function's line color to red
+  fitFunction->SetLineColor(kRed);
 
-    // Clean up
-    delete canvas;
+  // Draw the histogram using the E option to draw just the points with error bars
+  histogram->Draw("E");
+
+  // Draw the fit function on top of the histogram
+  fitFunction->Draw("same");
+
+  // Set the labels of the x and y axis
+  histogram->GetXaxis()->SetTitle("#phi");
+  histogram->GetYaxis()->SetTitle(yAxisLabel.c_str());
+
+  // Center the labels and increase the font size
+  histogram->GetXaxis()->CenterTitle();
+  histogram->GetYaxis()->CenterTitle();
+  histogram->GetXaxis()->SetTitleSize(0.05);
+  histogram->GetYaxis()->SetTitleSize(0.05);
+
+  // Customize the stat box
+  gStyle->SetOptStat(1110);  // Option "1110" includes entries and chi-squared/ndf, 
+                             // but not mean or std dev
+
+  // Create the filename for the PNG
+  std::string filename = "output/" + prefix + "_" + std::to_string(binIndex) + "_" + 
+    yAxisLabel + ".png";
+
+  // Save the canvas as a PNG
+  canvas->SaveAs(filename.c_str());
+
+  // Clean up
+  delete canvas;
 }
+
 
 
 void performChi2Fits(const char *filename, const char* output_file, const std::string& prefix, 
