@@ -619,13 +619,13 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   std::string yAxisLabel;
   switch (asymmetryIndex) {
       case 0:
-          yAxisLabel = "A_{LU}";
+          yAxisLabel = "A_{LU}"; fileNameSuffix = "ALU";
           break;
       case 1:
-          yAxisLabel = "A_{UL}";
+          yAxisLabel = "A_{UL}"; fileNameSuffix = "AUL";
           break;
       case 2:
-          yAxisLabel = "A_{LL}";
+          yAxisLabel = "A_{LL}"; fileNameSuffix = "ALL";
           break;
       default:
           std::cerr << "Invalid asymmetry index!" << std::endl;
@@ -665,7 +665,7 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
 
   // Create the filename for the PNG
   std::string filename = "output/" + prefix + "_" + std::to_string(binIndex) + "_" + 
-    yAxisLabel + ".png";
+    fileNameSuffix + ".png";
 
   // Save the canvas as a PNG
   canvas->SaveAs(filename.c_str());
