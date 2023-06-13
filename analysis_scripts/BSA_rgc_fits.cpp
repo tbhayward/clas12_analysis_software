@@ -539,11 +539,11 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
       numEvents++;
     }
   }
-  // scale the histograms by the accumulated faraday cup charge
-  histPosPos->Scale(1.0 / cpp);
-  histPosNeg->Scale(1.0 / cpm);
-  histNegPos->Scale(1.0 / cmp);
-  histNegNeg->Scale(1.0 / cmm);
+  // // scale the histograms by the accumulated faraday cup charge
+  // histPosPos->Scale(1.0 / cpp);
+  // histPosNeg->Scale(1.0 / cpm);
+  // histNegPos->Scale(1.0 / cmp);
+  // histNegNeg->Scale(1.0 / cmm);
 
   // Calculate the mean polarization
   float meanPol = sumPol / numEvents; // mean beam polarization for data 
