@@ -295,7 +295,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     double sum_MP = 0; // negative beam -- positive target
     double sum_MM = 0; // negative beam -- negative target
 
-    float Df = 1; // dilution factor, placeholder from MC studies from proposal
+    float Df = 0.18; // dilution factor, placeholder from MC studies from proposal
 
     // Iterate through the global event data (gData)
     for (const eventData &event : gData) {
@@ -448,7 +448,7 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
 
 float asymmetry_value_calculation(float Npp, float Npm, float Nmp, float Nmm, float meanPol, 
   float Ptp, float Ptm, int asymmetry_index) {
-  float Df = 1; // dilution factor, placeholder from MC studies from proposal
+  float Df = 0.18; // dilution factor, placeholder from MC studies from proposal
   // return the asymmetry value 
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
@@ -465,7 +465,7 @@ float asymmetry_value_calculation(float Npp, float Npm, float Nmp, float Nmm, fl
 
 float asymmetry_error_calculation(float Npp, float Npm, float Nmp, float Nmm, float meanPol, 
   float Ptp, float Ptm, int asymmetry_index) {
-  float Df = 1; // dilution factor, placeholder from MC studies from proposal
+  float Df = 0.18; // dilution factor, placeholder from MC studies from proposal
   // return the asymmetry error 
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
