@@ -446,13 +446,17 @@ float asymmetry_value_calculation(float Npp, float Npm, float Nmp, float Nmm, fl
   float Ptp, float Ptm, int asymmetry_index) {
   float Df = 0.18; // dilution factor, placeholder from MC studies from proposal
   // return the asymmetry value 
+  float npp = Npp/cpp; // counts normalized to charge
+  float npm = Npm/cpm;
+  float nmp = Nmp/cmp;
+  float nmm = Nmm/cmm;
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
-      return (1 / meanPol) * (Ptm*(Npp-Nmp)+Ptp*(Npm-Nmm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
+      return (1 / meanPol) * (Ptm*(npp-nmp)+Ptp*(npm-nmm)) / (Ptm*(npp+nmp)+Ptp*(npm+nmm));
     case 1: // target-spin asymmetry
-      return (1 / Df) * ((Npp+Nmp)-(Npm+Nmm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
+      return (1 / Df) * ((npp+nmp)-(npm+nmm)) / (Ptm*(npp+nmp)+Ptp*(npm+nmm));
     case 2: // double-spin asymmetry
-      return (1 / (Df*meanPol)) * ((Npp-Nmp)+(Nmm-Npm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
+      return (1 / (Df*meanPol)) * ((npp-nmp)+(nmm-npm)) / (Ptm*(npp+nmp)+Ptp*(npm+nmm));
     default:
       cout << "Invalid asymmetry_index!" << endl;
       return 0;
