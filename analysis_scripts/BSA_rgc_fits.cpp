@@ -602,7 +602,6 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
   int asymmetry_index) {
   // Read data from the input file and store it in the global variable gData
   gData = readData(filename, variable_names);
-  cout << " WE MADE IT TO HERE" << endl;
 
   // Initialize string streams to store the results for each bin
   std::ostringstream chi2FitsAStream, chi2FitsBStream;
@@ -632,7 +631,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
 
   // Determine the number of bins
   size_t numBins = allBins[currentFits].size() - 1;
-
+  
   // Loop over each bin
   for (size_t i = 0; i < numBins; ++i) {
     cout << "Beginning chi2 fit for " << binNames[currentFits]
@@ -648,7 +647,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
     // Initialize variables to store the sums and event counts
     double sumVariable = 0;
     double numEvents = 0;
-
+    cout << " WE MADE IT TO HERE" << endl;
     // Loop over all events and calculate the sums and event counts
     for (const eventData& event : gData) {
       double currentVariable = getEventProperty(event, currentFits);
