@@ -657,7 +657,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
     // Create a histogram for the current bin
     TH1D* hist = createHistogramForBin(gData, histName, i, asymmetry_index);
     // Fit the histogram using the fitFunction and get the fit result
-    TFitResultPtr fitResult = hist->Fit(fitFunction, "Q");
+    TFitResultPtr fitResult = hist->Fit(fitFunction, "QS");
     // Get the reduced chi-squared
     double chi2 = fitResult->Chi2();
     double ndf = fitResult->Ndf();
