@@ -613,6 +613,51 @@ double DSA_funcToFit(double* x, double* par) {
   return ALL+ALL_cosphi*cos(phi);
 }
 
+void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int asymmetryIndex) {
+    // Define the label for the y-axis
+    std::string yAxisLabel;
+    switch (asymmetryIndex) {
+        case 0:
+            yAxisLabel = "A_{LU}";
+            break;
+        case 1:
+            yAxisLabel = "A_{UL}";
+            break;
+        case 2:
+            yAxisLabel = "A_{LL}";
+            break;
+        default:
+            std::cerr << "Invalid asymmetry index!" << std::endl;
+            return;
+    }
+
+    // Create a canvas to draw on
+    TCanvas* canvas = new TCanvas("canvas", "", 800, 600);
+    
+    // Set the histogram's line color to black
+    histogram->SetLineColor(kBlack);
+    
+    // Set the fit function's line color to red
+    fitFunction->SetLineColor(kRed);
+    
+    // Draw the histogram
+    histogram->Draw();
+    
+    // Draw the fit function on top of the histogram
+    fitFunction->Draw("same");
+
+    // Set the labels of the x and y axis
+    histogram->GetXaxis()->SetTitle("#phi");
+    histogram->GetYaxis()->SetTitle(yAxisLabel.c_str());
+
+    // Save the canvas as a PNG
+    canvas->SaveAs("/u/home/thayward/test.png");
+
+    // Clean up
+    delete canvas;
+}
+
+
 void performChi2Fits(const char *filename, const char* output_file, const std::string& prefix, 
   int asymmetry_index) {
   // Read data from the input file and store it in the global variable gData
@@ -662,6 +707,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
     double chi2 = fitResult->Chi2();
     double ndf = fitResult->Ndf();
     cout << chi2 << " " << ndf << endl;
+    plotHistogramAndFit(hist, fitFunction, i, asymmetry_index);
 
     // Initialize variables to store the sums and event counts
     double sumVariable = 0;
