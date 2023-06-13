@@ -446,17 +446,13 @@ float asymmetry_value_calculation(float Npp, float Npm, float Nmp, float Nmm, fl
   float Ptp, float Ptm, int asymmetry_index) {
   float Df = 0.18; // dilution factor, placeholder from MC studies from proposal
   // return the asymmetry value 
-  float npp = Npp/cpp; // counts normalized to charge
-  float npm = Npm/cpm;
-  float nmp = Nmp/cmp;
-  float nmm = Nmm/cmm;
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
-      return (1 / meanPol) * (Ptm*(npp-nmp)+Ptp*(npm-nmm)) / (Ptm*(npp+nmp)+Ptp*(npm+nmm));
+      return (1 / meanPol) * (Ptm*(Npp-Nmp)+Ptp*(Npm-Nmm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
     case 1: // target-spin asymmetry
-      return (1 / Df) * ((npp+nmp)-(npm+nmm)) / (Ptm*(npp+nmp)+Ptp*(npm+nmm));
+      return (1 / Df) * ((Npp+Nmp)-(Npm+Nmm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
     case 2: // double-spin asymmetry
-      return (1 / (Df*meanPol)) * ((npp-nmp)+(nmm-npm)) / (Ptm*(npp+nmp)+Ptp*(npm+nmm));
+      return (1 / (Df*meanPol)) * ((Npp-Nmp)+(Nmm-Npm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
     default:
       cout << "Invalid asymmetry_index!" << endl;
       return 0;
@@ -539,11 +535,11 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
       numEvents++;
     }
   }
-  // // scale the histograms by the accumulated faraday cup charge
-  // histPosPos->Scale(1.0 / cpp);
-  // histPosNeg->Scale(1.0 / cpm);
-  // histNegPos->Scale(1.0 / cmp);
-  // histNegNeg->Scale(1.0 / cmm);
+  // scale the histograms by the accumulated faraday cup charge
+  histPosPos->Scale(1.0 / cpp);
+  histPosNeg->Scale(1.0 / cpm);
+  histNegPos->Scale(1.0 / cmp);
+  histNegNeg->Scale(1.0 / cmm);
 
   // Calculate the mean polarization
   float meanPol = sumPol / numEvents; // mean beam polarization for data 
@@ -870,7 +866,7 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
   cout << endl << endl;
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    for (int asymmetry = 1; asymmetry < 2; ++asymmetry){
+    for (int asymmetry = 0; asymmetry < 2; ++asymmetry){
       switch (asymmetry) {
         case 0: cout << "    chi2 BSA." << endl; break;
         case 1: cout << "    chi2 TSA." << endl; break;
