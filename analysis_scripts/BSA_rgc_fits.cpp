@@ -659,8 +659,9 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
     // Fit the histogram using the fitFunction and get the fit result
     TFitResultPtr fitResult = hist->Fit(fitFunction, "Q");
     // Get the reduced chi-squared
-    float chi2ndf = (fitResult->Chi2())/(fitResult->Ndf());
-    cout << chi2ndf << endl;
+    double chi2 = fitResult->Chi2();
+    double ndf = fitResult->Ndf();
+    cout << chi2 << " " << ndf << endl;
 
     // Initialize variables to store the sums and event counts
     double sumVariable = 0;
