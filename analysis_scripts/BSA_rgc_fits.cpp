@@ -450,7 +450,7 @@ float asymmetry_value_calculation(float Npp, float Npm, float Nmp, float Nmm, fl
     case 0: // beam-spin asymmetry
       return (1 / meanPol) * (Ptm*(Npp-Nmp)+Ptp*(Npm-Nmm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
     case 1: // target-spin asymmetry
-      cout << endl << Npp << " " << Npm << " " << Nmp << " " << Nmm << endl;
+      cout << endl << Npp << " " << Npm << " " << Nmp << " " << Nmm << " " << Ptp << " " << Ptm << endl;
       return (1 / Df) * ((Npp+Nmp)-(Npm+Nmm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
     case 2: // double-spin asymmetry
       return (1 / (Df*meanPol)) * ((Npp-Nmp)+(Nmm-Npm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
