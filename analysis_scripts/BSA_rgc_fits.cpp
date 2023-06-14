@@ -671,7 +671,7 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   TPaveStats *statBox = new TPaveStats(0.2, 0.7, 0.4, 0.85, "brNDC");
   // changed coordinates for top left position
   statBox->SetFillColor(0);
-  statBox->SetTextSize(0.035);
+  statBox->SetTextSize(0.0225);
   statBox->SetTextAlign(12);
   statBox->SetTextColor(1);
   statBox->SetShadowColor(0); // remove shadow
