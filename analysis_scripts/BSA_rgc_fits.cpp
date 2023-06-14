@@ -630,8 +630,18 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   // Adjust the canvas margins to ensure axis labels are not cut off
   canvas->SetLeftMargin(0.16); canvas->SetBottomMargin(0.16);
 
-  // Create a TGraphErrors from the histogram
-  TGraphErrors *graph = new TGraphErrors(histogram);
+  // Create a TGraphErrors manually from the histogram
+  TGraphErrors *graph = new TGraphErrors();
+  
+  // Add points to the TGraphErrors
+  for (int i = 1; i <= histogram->GetNbinsX(); ++i) {
+    double x = histogram->GetBinCenter(i);
+    double y = histogram->GetBinContent(i);
+    double ex = 0;  // we don't want horizontal error bars
+    double ey = histogram->GetBinError(i);
+    graph->SetPoint(i - 1, x, y);
+    graph->SetPointError(i - 1, ex, ey);
+  }
   
   // Set the point color to black
   graph->SetMarkerColor(kBlack);
