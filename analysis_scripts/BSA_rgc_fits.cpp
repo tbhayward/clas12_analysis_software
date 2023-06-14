@@ -888,6 +888,7 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
         total_charge_carbon += run_info.total_charge;
       }
   }
+  cpp = 168789; cpm = 247970; cmp = 168354; cmm = 247007;
   cout << "Total pos-pos (beam-target) charge: " << cpp << " (nc). ";
   cout << "Total pos-neg charge: " << cpm << " (nc). ";
   cout << "Total neg-pos charge: " << cmp << " (nc). ";
