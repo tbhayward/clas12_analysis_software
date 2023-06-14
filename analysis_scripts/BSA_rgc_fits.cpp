@@ -630,33 +630,31 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   // Adjust the canvas margins to ensure axis labels are not cut off
   canvas->SetLeftMargin(0.16); canvas->SetBottomMargin(0.16);
 
-  // Set the histogram's line and point color to black
-  histogram->SetLineColor(kBlack);
-  histogram->SetMarkerColor(kBlack);
-  histogram->SetMarkerStyle(kFullCircle);  
+  // Create a TGraphErrors from the histogram
+  TGraphErrors *graph = new TGraphErrors(histogram);
+  
+  // Set the point color to black
+  graph->SetMarkerColor(kBlack);
+  graph->SetMarkerStyle(kFullCircle);
 
   // Set the fit function's line color to red
   fitFunction->SetLineColor(kRed);
 
-  for (int i = 1; i <= histogram->GetNbinsX(); ++i) {
-    histogram->SetBinError(i, 0.0); // remove horizontal errorbars
-  }
+  // Draw the graph using the AP option to draw axis and points
+  graph->Draw("AP");
 
-  // Draw the histogram using the E option to draw just the points with error bars
-  histogram->Draw("E1");
-
-  // Draw the fit function on top of the histogram
+  // Draw the fit function on top of the graph
   fitFunction->Draw("same");
 
   // Set the labels of the x and y axis
-  histogram->GetXaxis()->SetTitle("#phi");
-  histogram->GetYaxis()->SetTitle(yAxisLabel.c_str());
+  graph->GetXaxis()->SetTitle("#phi");
+  graph->GetYaxis()->SetTitle(yAxisLabel.c_str());
 
   // Center the labels and increase the font size
-  histogram->GetXaxis()->CenterTitle();
-  histogram->GetYaxis()->CenterTitle();
-  histogram->GetXaxis()->SetTitleSize(0.05);
-  histogram->GetYaxis()->SetTitleSize(0.05);
+  graph->GetXaxis()->CenterTitle();
+  graph->GetYaxis()->CenterTitle();
+  graph->GetXaxis()->SetTitleSize(0.05);
+  graph->GetYaxis()->SetTitleSize(0.05);
 
     // Turn off the default ROOT statistics box.
   // This is necessary because we are creating our own custom statistics box.
@@ -710,7 +708,7 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   canvas->SaveAs(filename.c_str());
 
   // Clean up
-  delete canvas;
+  delete canvas; delete graph;
 }
 
 
