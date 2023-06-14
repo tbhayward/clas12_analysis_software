@@ -668,7 +668,7 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
 
   // Create a new TPaveStats object which will serve as our custom statistics box.
   // Adjusted the box position and size to ensure it doesn't overlap with the axes labels
-  TPaveStats *statBox = new TPaveStats(0.15, 0.65, 0.45, 0.9, "brNDC");
+  TPaveStats *statBox = new TPaveStats(0.18, 0.73, 0.45, 0.9, "brNDC");
   // changed coordinates for top left position
   statBox->SetFillColor(0);
   statBox->SetTextSize(0.0225);
