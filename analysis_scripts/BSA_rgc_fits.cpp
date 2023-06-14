@@ -677,12 +677,12 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   
   // Iterate over each parameter in the fit function.
   for (int i = 0; i < fitFunction->GetNpar(); ++i) {
-    TText *text=statBox->AddText(Form("Param %d: %.4f \u00B1 %.4f",i,fitFunction->GetParameter(i), 
+    TText *text=statBox->AddText(Form("Param %d: %.3f +/- %.3f",i,fitFunction->GetParameter(i), 
       fitFunction->GetParError(i)));  // replaced "A" with unicode for plus-minus sign
     text->SetTextColor(1);
   }
 
-  TText *text = statBox->AddText(Form("Chi^2/Ndf = %.4f", fitFunction->GetChisquare() / 
+  TText *text = statBox->AddText(Form("#chi^2/Ndf = %.4f", fitFunction->GetChisquare() / 
     fitFunction->GetNDF()));
   text->SetTextColor(1);
   statBox->Draw();
