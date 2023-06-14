@@ -667,7 +667,8 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   graph->GetYaxis()->SetTitleSize(0.05);
 
   // Create a new TPaveStats object which will serve as our custom statistics box.
-  TPaveStats *statBox = new TPaveStats(0.1, 0.7, 0.4, 0.9, "brNDC"); 
+  // Adjusted the box position and size to ensure it doesn't overlap with the axes labels
+  TPaveStats *statBox = new TPaveStats(0.1, 0.6, 0.4, 0.85, "brNDC");
   // changed coordinates for top left position
   statBox->SetFillColor(0);
   statBox->SetTextSize(0.035);
@@ -687,13 +688,18 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   text->SetTextColor(1);
   statBox->Draw();
 
-  // Create the filename for the PNG
+    // Create the filename for the PNG
   std::string filename = "output/" + prefix + "_" + std::to_string(binIndex) + "_" + 
     fileNameSuffix + ".png";
+  
+  // Create a title string for the graph by removing the "output/" and ".png" portions 
+  // of the filename
+  std::string title = filename.substr(7, filename.size()-7-4);  
+  // start from the 7th index (after "output/") and take (filename.size()-7-4) characters
 
-  // Set the title to the filename (without .png)
-  // remove the last 4 characters (.png)
-  graph->SetTitle(filename.substr(0, filename.size()-4).c_str()); 
+  // Set the title to the title string
+  graph->SetTitle(title.c_str());
+
 
   // Save the canvas as a PNG
   canvas->SaveAs(filename.c_str());
