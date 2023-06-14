@@ -668,7 +668,7 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
 
   // Create a new TPaveStats object which will serve as our custom statistics box.
   // Adjusted the box position and size to ensure it doesn't overlap with the axes labels
-  TPaveStats *statBox = new TPaveStats(0.18, 0.73, 0.45, 0.9, "brNDC");
+  TPaveStats *statBox = new TPaveStats(0.16, 0.73, 0.45, 0.9, "brNDC");
   // changed coordinates for top left position
   statBox->SetFillColor(0);
   statBox->SetTextSize(0.0225);
@@ -897,7 +897,7 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
   cout << endl << endl;
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    for (int asymmetry = 1; asymmetry < 2; ++asymmetry){
+    for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
       switch (asymmetry) {
         case 0: cout << "    chi2 BSA." << endl; break;
         case 1: cout << "    chi2 TSA." << endl; break;
@@ -906,8 +906,8 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
       performChi2Fits(data_file, output_file, binNames[i], asymmetry);
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    // performMLMFits(data_file, output_file, binNames[i]);
-    // cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
+    performMLMFits(data_file, output_file, binNames[i]);
+    cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
     currentFits++;
   }
