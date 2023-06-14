@@ -666,60 +666,43 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   graph->GetXaxis()->SetTitleSize(0.05);
   graph->GetYaxis()->SetTitleSize(0.05);
 
-    // Turn off the default ROOT statistics box.
-  // This is necessary because we are creating our own custom statistics box.
-  histogram->SetStats(0); 
-
   // Create a new TPaveStats object which will serve as our custom statistics box.
-  // The arguments to the constructor specify the position and size of the box
-  // in the normalized coordinate system (NDC) where (0,0) is the bottom-left of the canvas 
-  // and (1,1) is the top-right of the canvas.
-  TPaveStats *statBox = new TPaveStats(0.6, 0.8, 0.9, 0.9, "brNDC");
-
-  // Set the fill color of the statistics box to transparent.
+  TPaveStats *statBox = new TPaveStats(0.1, 0.7, 0.4, 0.9, "brNDC"); 
+  // changed coordinates for top left position
   statBox->SetFillColor(0);
-
-  // Set the size of the text in the statistics box.
   statBox->SetTextSize(0.035);
-
-  // Set the alignment of the text in the statistics box.
-  // 12 means left-adjusted and vertically centered text.
   statBox->SetTextAlign(12);
-
-  // Set the color of the text in the statistics box.
   statBox->SetTextColor(1);
-
-  // Add the number of entries in the histogram to the statistics box.
-  TText *text = statBox->AddText(Form("Entries = %.0f", histogram->GetEntries()));
-  text->SetTextColor(1);
-
+  statBox->SetShadowColor(0); // remove shadow
+  
   // Iterate over each parameter in the fit function.
-  // For each parameter, retrieve its value & error and add this information to the statistics box.
   for (int i = 0; i < fitFunction->GetNpar(); ++i) {
-    text = statBox->AddText(Form("Param %d: %.4f ± %.4f", i, fitFunction->GetParameter(i), 
-      fitFunction->GetParError(i)));
+    TText *text=statBox->AddText(Form("Param %d: %.4f \u00B1 %.4f",i,fitFunction->GetParameter(i), 
+      fitFunction->GetParError(i)));  // replaced "A" with unicode for plus-minus sign
     text->SetTextColor(1);
   }
 
-  // Add the chi-square per degree of freedom of the fit to the statistics box.
-  text = statBox->AddText(Form("Chi^2/Ndf = %.4f", fitFunction->GetChisquare() / 
+  TText *text = statBox->AddText(Form("Chi^2/Ndf = %.4f", fitFunction->GetChisquare() / 
     fitFunction->GetNDF()));
   text->SetTextColor(1);
-
-  // Draw the custom statistics box on the canvas.
   statBox->Draw();
-
 
   // Create the filename for the PNG
   std::string filename = "output/" + prefix + "_" + std::to_string(binIndex) + "_" + 
     fileNameSuffix + ".png";
 
+  // Set the title to the filename (without .png)
+  // remove the last 4 characters (.png)
+  graph->SetTitle(filename.substr(0, filename.size()-4).c_str()); 
+
   // Save the canvas as a PNG
   canvas->SaveAs(filename.c_str());
 
   // Clean up
-  delete canvas; delete graph;
+  delete canvas;
+  delete graph;
 }
+
 
 
 
