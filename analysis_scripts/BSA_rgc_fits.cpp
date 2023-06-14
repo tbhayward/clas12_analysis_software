@@ -628,7 +628,7 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   TCanvas* canvas = new TCanvas("canvas", "", 800, 600);
 
   // Adjust the canvas margins to ensure axis labels are not cut off
-  canvas->SetLeftMargin(0.12); canvas->SetBottomMargin(0.12);
+  canvas->SetLeftMargin(0.16); canvas->SetBottomMargin(0.16);
 
   // Set the histogram's line and point color to black
   histogram->SetLineColor(kBlack);
@@ -637,6 +637,10 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
 
   // Set the fit function's line color to red
   fitFunction->SetLineColor(kRed);
+
+  for (int i = 1; i <= histogram->GetNbinsX(); ++i) {
+    histogram->SetBinError(i, 0.0); // remove horizontal errorbars
+  }
 
   // Draw the histogram using the E option to draw just the points with error bars
   histogram->Draw("E1");
@@ -654,19 +658,49 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   histogram->GetXaxis()->SetTitleSize(0.05);
   histogram->GetYaxis()->SetTitleSize(0.05);
 
-  // Customize the stat box
-  histogram->SetStats(0);  // Turn off automatic stats
+    // Turn off the default ROOT statistics box.
+  // This is necessary because we are creating our own custom statistics box.
+  histogram->SetStats(0); 
+
+  // Create a new TPaveStats object which will serve as our custom statistics box.
+  // The arguments to the constructor specify the position and size of the box
+  // in the normalized coordinate system (NDC) where (0,0) is the bottom-left of the canvas 
+  // and (1,1) is the top-right of the canvas.
   TPaveStats *statBox = new TPaveStats(0.6, 0.8, 0.9, 0.9, "brNDC");
+
+  // Set the fill color of the statistics box to transparent.
   statBox->SetFillColor(0);
+
+  // Set the size of the text in the statistics box.
   statBox->SetTextSize(0.035);
+
+  // Set the alignment of the text in the statistics box.
+  // 12 means left-adjusted and vertically centered text.
   statBox->SetTextAlign(12);
+
+  // Set the color of the text in the statistics box.
   statBox->SetTextColor(1);
+
+  // Add the number of entries in the histogram to the statistics box.
   TText *text = statBox->AddText(Form("Entries = %.0f", histogram->GetEntries()));
   text->SetTextColor(1);
+
+  // Iterate over each parameter in the fit function.
+  // For each parameter, retrieve its value & error and add this information to the statistics box.
+  for (int i = 0; i < fitFunction->GetNpar(); ++i) {
+    text = statBox->AddText(Form("Param %d: %.4f ± %.4f", i, fitFunction->GetParameter(i), 
+      fitFunction->GetParError(i)));
+    text->SetTextColor(1);
+  }
+
+  // Add the chi-square per degree of freedom of the fit to the statistics box.
   text = statBox->AddText(Form("Chi^2/Ndf = %.4f", fitFunction->GetChisquare() / 
     fitFunction->GetNDF()));
   text->SetTextColor(1);
+
+  // Draw the custom statistics box on the canvas.
   statBox->Draw();
+
 
   // Create the filename for the PNG
   std::string filename = "output/" + prefix + "_" + std::to_string(binIndex) + "_" + 
@@ -875,8 +909,8 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
       performChi2Fits(data_file, output_file, binNames[i], asymmetry);
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    // performMLMFits(data_file, output_file, binNames[i]);
-    // cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
+    performMLMFits(data_file, output_file, binNames[i]);
+    cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
     currentFits++;
   }
