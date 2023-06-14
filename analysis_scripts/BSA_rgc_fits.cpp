@@ -668,7 +668,7 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
 
   // Create a new TPaveStats object which will serve as our custom statistics box.
   // Adjusted the box position and size to ensure it doesn't overlap with the axes labels
-  TPaveStats *statBox = new TPaveStats(0.1, 0.6, 0.4, 0.85, "brNDC");
+  TPaveStats *statBox = new TPaveStats(0.2, 0.7, 0.4, 0.85, "brNDC");
   // changed coordinates for top left position
   statBox->SetFillColor(0);
   statBox->SetTextSize(0.035);
@@ -679,7 +679,7 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   // Iterate over each parameter in the fit function.
   for (int i = 0; i < fitFunction->GetNpar(); ++i) {
     TText *text=statBox->AddText(Form("Param %d: %.3f +/- %.3f",i,fitFunction->GetParameter(i), 
-      fitFunction->GetParError(i)));  // replaced "A" with unicode for plus-minus sign
+      fitFunction->GetParError(i))); 
     text->SetTextColor(1);
   }
 
