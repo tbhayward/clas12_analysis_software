@@ -317,21 +317,25 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
 
           // Check if the helicities is positive or negative and update the corresponding sum
           if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
-            sum_PP += log(1 + 0*Pb*(ALU_sinphi*sin(phi)) // BSA
+            sum_PP += log(1 
+              + Pb*(ALU_sinphi*sin(phi)) // BSA
               + Df*Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) // TSA
-              + 0*Df*Pb*Pt*(ALL + ALL_cosphi*cos(phi)) ); // DSA
+              + Df*Pb*Pt*(ALL + ALL_cosphi*cos(phi)) ); // DSA
           } else if (event.data.at("helicity") > 0 && event.data.at("target_pol") < 0 ) {
-            sum_PM += log(1 + 0*Pb*(ALU_sinphi*sin(phi)) // BSA
+            sum_PM += log(1 
+              + Pb*(ALU_sinphi*sin(phi)) // BSA
               - Df*Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) // TSA
-              - 0*Df*Pb*Pt*(ALL + ALL_cosphi*cos(phi)) ); // DSA
+              - Df*Pb*Pt*(ALL + ALL_cosphi*cos(phi)) ); // DSA
           } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") > 0 ) {
-            sum_MP += log(1 - 0*Pb*(ALU_sinphi*sin(phi)) // BSA
+            sum_MP += log(1 
+              - Pb*(ALU_sinphi*sin(phi)) // BSA
               + Df*Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) // TSA
-              - 0*Df*Pb*Pt*(ALL + ALL_cosphi*cos(phi)) ); // DSA
+              - Df*Pb*Pt*(ALL + ALL_cosphi*cos(phi)) ); // DSA
           } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") < 0 ) {
-            sum_MM += log(1 - 0*Pb*(ALU_sinphi*sin(phi)) // BSA
+            sum_MM += log(1 
+              - Pb*(ALU_sinphi*sin(phi)) // BSA
               - Df*Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) // TSA
-              + 0*Df*Pb*Pt*(ALL + ALL_cosphi*cos(phi)) ); // DSA
+              + Df*Pb*Pt*(ALL + ALL_cosphi*cos(phi)) ); // DSA
           }
         }
     }
@@ -341,6 +345,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     // determine min pos or neg target helicity accumulated charge to scale down higher one
     float minTargetCharge = std::min({(cpp+cmp),(cpm+cmm)}); 
     
+    cout << sum_PP << " " << sum_PM << " " << sum_MP << " " << sum_MM << endl;
     // Calculate the negative log-likelihood value and store it in the output variable f
     f = N * log(N) - 
       minBeamCharge*minTargetCharge/((cpp+cpm)*(cpp+cmp))*sum_PP -
@@ -445,6 +450,8 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
 float asymmetry_value_calculation(float Npp, float Npm, float Nmp, float Nmm, float meanPol, 
   float Ptp, float Ptm, int asymmetry_index) {
   float Df = 0.18; // dilution factor, placeholder from MC studies from proposal
+  // Ptp = 0.83; // temporary
+  // Ptm = 0.70; // temporary
   // return the asymmetry value 
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
@@ -462,6 +469,8 @@ float asymmetry_value_calculation(float Npp, float Npm, float Nmp, float Nmm, fl
 float asymmetry_error_calculation(float Npp, float Npm, float Nmp, float Nmm, float meanPol, 
   float Ptp, float Ptm, int asymmetry_index) {
   float Df = 0.18; // dilution factor, placeholder from MC studies from proposal
+  // Ptp = 0.83; // temporary
+  // Ptm = 0.70; // temporary
   // return the asymmetry error 
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
@@ -471,7 +480,6 @@ float asymmetry_error_calculation(float Npp, float Npm, float Nmp, float Nmm, fl
         (cmm*cmp*std::pow(Nmp*Ptm+Nmm*Ptp,2)*(cpm*Npp*std::pow(Ptm,2)+cpp*Npm*std::pow(Ptp,2))))/
         (cmm*cmp*cpm*cpp*std::pow((Nmp+Npp)*Ptm+(Nmm+Npm)*Ptp,4)));
     case 1: // target-spin asymmetry
-      cout << Npp << "-" << Npm << "-" << Nmp << "-" << Nmm << endl;
       return (1 / Df) * std::sqrt(
         (((cmp*cpm*cpp*Nmm*std::pow(Nmp+Npp,2)+cmm*cmp*cpp*Npm*std::pow(Nmp+Npp,2)+
         cmm*cpm*std::pow(Nmm+Npm,2)*(cpp*Nmp+cmp*Npp))*std::pow(Ptm+Ptp,2))) /
@@ -555,11 +563,6 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
     float Nmp = histNegPos->GetBinContent(iBin)/cmp;
     float Nmm = histNegNeg->GetBinContent(iBin)/cmm;
 
-    cout << histPosPos->GetBinContent(iBin) << " " << cpp << "  " << Npp << endl;
-    cout << histPosNeg->GetBinContent(iBin) << " " << cpm << "  " << Npm << endl;
-    cout << histNegPos->GetBinContent(iBin) << " " << cmp << "  " << Nmp << endl;
-    cout << histNegNeg->GetBinContent(iBin) << " " << cmm << "  " << Nmm << endl;
-
     // Calculate the asymmetry and error for the current bin
     float asymmetry = asymmetry_value_calculation(Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, 
       asymmetry_index);
@@ -583,23 +586,25 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
 
 // Function to fit the beam-spin asymmetry histogram
 double BSA_funcToFit(double* x, double* par) {
-  // Retrieve the parameters A
-  double ALU_sinphi = par[0];
+  // Retrieve the parameters 
+  double ALU_offset = par[0];
+  double ALU_sinphi = par[1];
   // Retrieve the phi variable from the input x array
   double phi = x[0];
   // Calculate and return the value of the function for the given phi and parameters 
-  return ALU_sinphi*sin(phi);
+  return ALU_offset + ALU_sinphi*sin(phi);
 }
 
 // Function to fit the target-spin asymmetry histogram
 double TSA_funcToFit(double* x, double* par) {
   // Retrieve the parameters A
-  double AUL_sinphi = par[0];
-  double AUL_sin2phi = par[1];
+  double AUL_offset = par[0];
+  double AUL_sinphi = par[1];
+  double AUL_sin2phi = par[2];
   // Retrieve the phi variable from the input x array
   double phi = x[0];
   // Calculate and return the value of the function for the given phi and parameters 
-  return AUL_sinphi*sin(phi)+AUL_sin2phi*sin(2*phi);
+  return AUL_offset + AUL_sinphi*sin(phi)+AUL_sin2phi*sin(2*phi);
 }
 
 // Function to fit the double-spin asymmetry histogram
@@ -650,15 +655,20 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   // Set the fit function's line color to red
   fitFunction->SetLineColor(kRed);
 
-  // Draw the graph using the AP option to draw axis and points
-  graph->Draw("AP");
-
-  // Draw the fit function on top of the graph
-  fitFunction->Draw("same");
-
   // Set the labels of the x and y axis
   graph->GetXaxis()->SetTitle("#phi");
   graph->GetYaxis()->SetTitle(yAxisLabel.c_str());
+
+  // Set the range of the x-axis to be from 0 to 2pi
+  graph->GetXaxis()->SetRangeUser(0, 2*TMath::Pi());
+
+  // Draw the graph using the AP option to draw axis and points
+  graph->Draw("AP");
+
+  // Set the range of the fit function to match the range of the x-axis
+  fitFunction->SetRange(0, 2*TMath::Pi());
+  // Draw the fit function on top of the graph
+  fitFunction->Draw("same");
 
   // Center the labels and increase the font size
   graph->GetXaxis()->CenterTitle();
@@ -678,12 +688,12 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   
   // Iterate over each parameter in the fit function.
   for (int i = 0; i < fitFunction->GetNpar(); ++i) {
-    TText *text=statBox->AddText(Form("Param %d: %.3f +/- %.3f",i,fitFunction->GetParameter(i), 
+    TText *text=statBox->AddText(Form("Param %d: %.4f +/- %.4f",i,fitFunction->GetParameter(i), 
       fitFunction->GetParError(i))); 
     text->SetTextColor(1);
   }
 
-  TText *text = statBox->AddText(Form("#chi^2/Ndf = %.4f", fitFunction->GetChisquare() / 
+  TText *text = statBox->AddText(Form("#chi^{2}/Ndf: %.4f", fitFunction->GetChisquare() / 
     fitFunction->GetNDF()));
   text->SetTextColor(1);
   statBox->Draw();
@@ -710,15 +720,13 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
 }
 
 
-
-
 void performChi2Fits(const char *filename, const char* output_file, const std::string& prefix, 
   int asymmetry_index) {
   // Read data from the input file and store it in the global variable gData
   gData = readData(filename, variable_names);
 
   // Initialize string streams to store the results for each bin
-  std::ostringstream chi2FitsAStream, chi2FitsBStream;
+  std::ostringstream chi2FitsAStream, chi2FitsBStream, chi2FitsCStream;
 
   // Create a new TF1 object called fitFunction representing the function to fit
   // and create string stream prefix depending on current asymmetry we're fitting
@@ -726,12 +734,14 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
       fitFunction = new TF1("fitFunction", BSA_funcToFit, 0, 2 * TMath::Pi(), 2);
-      chi2FitsAStream << prefix << "chi2FitsALUsinphi = {";
+      chi2FitsAStream << prefix << "chi2FitsALUoffset = {";
+      chi2FitsBStream << prefix << "chi2FitsALUsinphi = {";
       break;
     case 1: // target-spin asymmetry
-      fitFunction = new TF1("fitFunction", TSA_funcToFit, 0, 2 * TMath::Pi(), 2);
-      chi2FitsAStream << prefix << "chi2FitsAULsinphi = {";
-      chi2FitsBStream << prefix << "chi2FitsAULsin2phi = {";
+      fitFunction = new TF1("fitFunction", TSA_funcToFit, 0, 2 * TMath::Pi(), 3);
+      chi2FitsAStream << prefix << "chi2FitsAULoffset = {";
+      chi2FitsBStream << prefix << "chi2FitsAULsinphi = {";
+      chi2FitsCStream << prefix << "chi2FitsAULsin2phi = {";
       break;
     case 2: // double-spin asymmetry
       fitFunction = new TF1("fitFunction", DSA_funcToFit, 0, 2 * TMath::Pi(), 2);
@@ -779,25 +789,30 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
     switch (asymmetry_index) {
       case 0: {// beam-spin asymmetry
         // Get the fitted parameters and their errors
-        double ALU_sinphi = fitFunction->GetParameter(0);
-        double ALU_sinphi_error = fitFunction->GetParError(0);
-        chi2FitsAStream<<"{"<<meanVariable<<", "<< ALU_sinphi << ", " << ALU_sinphi_error <<"}";
+        double ALU_offset = fitFunction->GetParameter(0);
+        double ALU_offset_error = fitFunction->GetParError(0);
+        double ALU_sinphi = fitFunction->GetParameter(1);
+        double ALU_sinphi_error = fitFunction->GetParError(1);
+        chi2FitsAStream<<"{"<<meanVariable<<", "<< ALU_offset << ", " << ALU_offset_error <<"}";
+        chi2FitsBStream<<"{"<<meanVariable<<", "<< ALU_sinphi << ", " << ALU_sinphi_error <<"}";
         if (i < numBins - 1) {
-            chi2FitsAStream << ", ";
+            chi2FitsAStream << ", "; chi2FitsBStream << ", ";
         }
         break;
       }
       case 1: {// target-spin asymmetry
         // Get the fitted parameters and their errors
-        double AUL_sinphi = fitFunction->GetParameter(0);
-        double AUL_sinphi_error = fitFunction->GetParError(0);
-        double AUL_sin2phi = fitFunction->GetParameter(1);
-        double AUL_sin2phi_error = fitFunction->GetParError(1);
-        chi2FitsAStream<<"{"<<meanVariable<<", "<< AUL_sinphi << ", " << AUL_sinphi_error <<"}";
-        chi2FitsBStream<<"{"<<meanVariable<<", "<< AUL_sin2phi << ", " << AUL_sin2phi_error <<"}";
+        double AUL_offset = fitFunction->GetParameter(0);
+        double AUL_offset_error = fitFunction->GetParError(0);
+        double AUL_sinphi = fitFunction->GetParameter(1);
+        double AUL_sinphi_error = fitFunction->GetParError(1);
+        double AUL_sin2phi = fitFunction->GetParameter(2);
+        double AUL_sin2phi_error = fitFunction->GetParError(2);
+        chi2FitsAStream<<"{"<<meanVariable<<", "<< AUL_offset << ", " << AUL_offset_error <<"}";
+        chi2FitsBStream<<"{"<<meanVariable<<", "<< AUL_sinphi << ", " << AUL_sinphi_error <<"}";
+        chi2FitsCStream<<"{"<<meanVariable<<", "<< AUL_sin2phi << ", " << AUL_sin2phi_error <<"}";
         if (i < numBins - 1) {
-            chi2FitsAStream << ", ";
-            chi2FitsBStream << ", ";
+            chi2FitsAStream << ", "; chi2FitsBStream << ", "; chi2FitsCStream << ", ";
         }
         break;
       }
@@ -810,8 +825,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
         chi2FitsAStream<<"{"<<meanVariable<<", "<< ALL << ", " << ALL_error <<"}";
         chi2FitsBStream<<"{"<<meanVariable<<", "<< ALL_cosphi << ", " << ALL_cosphi_error <<"}";
         if (i < numBins - 1) {
-            chi2FitsAStream << ", ";
-            chi2FitsBStream << ", ";
+            chi2FitsAStream << ", "; chi2FitsBStream << ", ";
         }
         break;
       }
@@ -822,10 +836,12 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
 
   chi2FitsAStream << "};"; 
   chi2FitsBStream << "};"; 
+  chi2FitsCStream << "};"; 
 
   std::ofstream outputFile(output_file, std::ios_base::app);
   outputFile << chi2FitsAStream.str() << std::endl;
-  if (asymmetry_index>0) { outputFile << chi2FitsBStream.str() << std::endl; }
+  outputFile << chi2FitsBStream.str() << std::endl;
+  if (asymmetry_index==1) { outputFile << chi2FitsCStream.str() << std::endl; }
 
   outputFile.close();
 }
@@ -888,7 +904,7 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
         total_charge_carbon += run_info.total_charge;
       }
   }
-  cpp = 168789; cpm = 247970; cmp = 168354; cmm = 247007;
+  // cpp = 1.00*cpp; cpm = 0.998*cpm; cmp = 1.00*cmp; cmm = 0.998*cmm;
   cout << "Total pos-pos (beam-target) charge: " << cpp << " (nc). ";
   cout << "Total pos-neg charge: " << cpm << " (nc). ";
   cout << "Total neg-pos charge: " << cmp << " (nc). ";
