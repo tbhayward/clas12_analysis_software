@@ -356,7 +356,6 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
 
 void performMLMFits(const char *filename, const char* output_file, const std::string& prefix) {
   // Read the event data from the input file and store it in the global variable gData
-  gData = readData(filename, variable_names);
 
   // Determine the number of bins
   size_t numBins = allBins[currentFits].size() - 1;
@@ -722,8 +721,6 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
 
 void performChi2Fits(const char *filename, const char* output_file, const std::string& prefix, 
   int asymmetry_index) {
-  // Read data from the input file and store it in the global variable gData
-  gData = readData(filename, variable_names);
 
   // Initialize string streams to store the results for each bin
   std::ostringstream chi2FitsAStream, chi2FitsBStream, chi2FitsCStream;
@@ -911,10 +908,13 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
   cout << "Total neg-neg charge: " << cmm << " (nc). ";
   cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << " (nc)." << endl;
 
+  // Read data from the input file and store it in the global variable gData
+  gData = readData(data_file, variable_names);
+
   cout << endl << endl;
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
+    for (int asymmetry = 1; asymmetry < 3; ++asymmetry){
       switch (asymmetry) {
         case 0: cout << "    chi2 BSA." << endl; break;
         case 1: cout << "    chi2 TSA." << endl; break;
