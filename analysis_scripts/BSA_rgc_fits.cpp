@@ -413,6 +413,19 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     double ALL_cosphi, ALL_cosphi_error;
     minuit.GetParameter(4, ALL_cosphi, ALL_cosphi_error);
 
+    // Calculate the mean values of the current variable and the back-to-back factor (b2b_factor)
+    double sumVariable = 0;
+    double numEvents = 0;
+    for (const eventData &event : gData) {
+      double currentVariable = getEventProperty(event, currentFits);
+        if (applyKinematicCuts(event, currentFits) && currentVariable >= 
+          allBins[currentFits][i] && currentVariable < allBins[currentFits][i + 1]) {
+            sumVariable += currentVariable;
+            numEvents += 1;
+        }
+    }
+    double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
+
     // output to text file
     mlmFitsAStream << "{" << meanVariable << ", " << ALU_sinphi << ", " << ALU_sinphi_error << "}";
     mlmFitsBStream << "{" << meanVariable << ", " << AUL_sinphi << ", " << AUL_sinphi_error << "}";
