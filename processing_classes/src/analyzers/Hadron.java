@@ -65,11 +65,11 @@ public class Hadron {
 //            return false; }
         if (variables.Q2()<1) { return false; } 
         if (variables.W()<2) { return false; } 
-        if (variables.xF()<0.0) { return false; } 
+//        if (variables.xF()<0.0) { return false; } 
         else if (variables.y()>0.80) { return false; } 
-        else if (variables.z()<0.2 || variables.z() > 0.95) { return false; } 
+//        else if (variables.z()<0.2 || variables.z() > 0.95) { return false; } 
 //        else if (variables.p_p()<1.25) { return false; } 
-        else if (variables.Mx()<1.5) { return false; } 
+        else if (variables.Mx()<1.4) { return false; } 
 	return true;
     }
     

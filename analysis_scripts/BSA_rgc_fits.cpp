@@ -286,6 +286,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     double AUL_sin2phi = par[2];
     double ALL = par[3];
     double ALL_cosphi = par[4];
+    double A = par[5];
 
     // Initialize variables for counting events (N), positive helicity sum (sum_P), 
     // and negative helicity sum (sum_N)
@@ -311,31 +312,36 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           N += 1;
 
           // Extract Delta_phi and polarization (pol) from the event data
-          double phi = event.data.at("phi");
-          double Pb = event.data.at("pol");
-          double Pt = std::abs(event.data.at("target_pol"));
+          float phi = event.data.at("phi");
+          float Pb = event.data.at("pol");
+          float Pt = std::abs(event.data.at("target_pol"));
+          float DepA = event.data.at("DepA");
+          float DepB = event.data.at("DepB");
+          float DepC = event.data.at("DepC");
+          float DepV = event.data.at("DepV");
+          float DepW = event.data.at("DepW");
 
           // Check if the helicities is positive or negative and update the corresponding sum
           if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
             sum_PP += log(1 
-              + Pb*(ALU_sinphi*sin(phi)) // BSA
-              + Df*Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) // TSA
-              + Df*Pb*Pt*(ALL + ALL_cosphi*cos(phi)) ); // DSA
+              + Pb*((DepW/DepW)*ALU_sinphi*sin(phi)) // BSA
+              + Df*Pt*((DepV/DepW)*AUL_sinphi*sin(phi) + (DepB/DepW)*AUL_sin2phi*sin(2*phi)) // TSA
+              + Df*Pb*Pt*((DepC/DepW)*ALL + (DepW/DepW)*ALL_cosphi*cos(phi)) ); // DSA
           } else if (event.data.at("helicity") > 0 && event.data.at("target_pol") < 0 ) {
             sum_PM += log(1 
-              + Pb*(ALU_sinphi*sin(phi)) // BSA
-              - Df*Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) // TSA
-              - Df*Pb*Pt*(ALL + ALL_cosphi*cos(phi)) ); // DSA
+              + Pb*((DepW/DepW)*ALU_sinphi*sin(phi)) // BSA
+              - Df*Pt*((DepV/DepW)*AUL_sinphi*sin(phi) + (DepB/DepW)*AUL_sin2phi*sin(2*phi)) // TSA
+              - Df*Pb*Pt*((DepC/DepW)*ALL + (DepW/DepW)*ALL_cosphi*cos(phi)) ); // DSA
           } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") > 0 ) {
-            sum_MP += log(1 
-              - Pb*(ALU_sinphi*sin(phi)) // BSA
-              + Df*Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) // TSA
-              - Df*Pb*Pt*(ALL + ALL_cosphi*cos(phi)) ); // DSA
+            sum_MP += log(1
+              - Pb*((DepW/DepW)*ALU_sinphi*sin(phi)) // BSA
+              + Df*Pt*((DepV/DepW)*AUL_sinphi*sin(phi) + (DepB/DepW)*AUL_sin2phi*sin(2*phi)) // TSA
+              - Df*Pb*Pt*((DepC/DepW)*ALL + (DepW/DepW)*ALL_cosphi*cos(phi)) ); // DSA
           } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") < 0 ) {
             sum_MM += log(1 
-              - Pb*(ALU_sinphi*sin(phi)) // BSA
-              - Df*Pt*(AUL_sinphi*sin(phi) + AUL_sin2phi*sin(2*phi)) // TSA
-              + Df*Pb*Pt*(ALL + ALL_cosphi*cos(phi)) ); // DSA
+              - Pb*((DepW/DepW)*ALU_sinphi*sin(phi)) // BSA
+              - Df*Pt*((DepV/DepW)*AUL_sinphi*sin(phi) + (DepB/DepW)*AUL_sin2phi*sin(2*phi)) // TSA
+              + Df*Pb*Pt*((DepC/DepW)*ALL + (DepW/DepW)*ALL_cosphi*cos(phi)) ); // DSA
           }
         }
     }
@@ -368,16 +374,16 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
   minuit.SetFCN(negLogLikelihood);
 
   // Declare string streams for storing the MLM fit results
-  std::ostringstream mlmFitsAStream;
-  std::ostringstream mlmFitsBStream; std::ostringstream mlmFitsCStream;
-  std::ostringstream mlmFitsDStream; std::ostringstream mlmFitsEStream;
+  std::ostringstream mlmFitsAStream; std::ostringstream mlmFitsBStream; 
+  std::ostringstream mlmFitsCStream; std::ostringstream mlmFitsDStream; 
+  std::ostringstream mlmFitsEStream; 
 
   // Initialize the string streams with the output variable names
-  mlmFitsAStream << prefix << "MLMFits_ALU_sinphi = {";
-  mlmFitsBStream << prefix << "MLMFits_AUL_sinphi = {";
-  mlmFitsCStream << prefix << "MLMFits_AUL_sin2phi = {";
-  mlmFitsDStream << prefix << "MLMFits_ALL = {";
-  mlmFitsEStream << prefix << "MLMFits_ALL_cosphi = {";
+  mlmFitsAStream << prefix << "MLMFitsALUsinphi = {";
+  mlmFitsBStream << prefix << "MLMFitsAULsinphi = {";
+  mlmFitsCStream << prefix << "MLMFitsAULsin2phi = {";
+  mlmFitsDStream << prefix << "MLMFitsALL = {";
+  mlmFitsEStream << prefix << "MLMFitsALLcosphi = {";
 
   // Iterate through each bin
   for (size_t i = 0; i < numBins; ++i) {
@@ -386,28 +392,14 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     currentBin = i;
 
     // Define the parameters with initial values and limits
-    minuit.DefineParameter(0, "ALU_sinphi", -0.02, 0.01, -1, 1);
+    minuit.DefineParameter(0, "ALU_sinphi", -0.01, 0.01, -1, 1);
     minuit.DefineParameter(1, "AUL_sinphi", -0.02, 0.01, -1, 1);
     minuit.DefineParameter(2, "AUL_sin2phi", -0.01, 0.01, -1, 1);
-    minuit.DefineParameter(3, "ALL", 0.3, 0.01, -1, 1);
+    minuit.DefineParameter(3, "ALL", 0.25, 0.01, -1, 1);
     minuit.DefineParameter(4, "ALL_cosphi", 0.01, 0.01, -1, 1);
 
     // Minimize the negative log-likelihood function
     minuit.Migrad();
-
-    // Calculate the mean values of the current variable and the back-to-back factor (b2b_factor)
-    double sumVariable = 0;
-    double numEvents = 0;
-    for (const eventData &event : gData) {
-      double currentVariable = getEventProperty(event, currentFits);
-        if (applyKinematicCuts(event, currentFits) && currentVariable >= 
-          allBins[currentFits][i] && currentVariable < allBins[currentFits][i + 1]) {
-            sumVariable += currentVariable;
-            numEvents += 1;
-        }
-    }
-    double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
-
 
     // Extract the fitted parameter values and errors
     double ALU_sinphi, ALU_sinphi_error;
@@ -434,7 +426,8 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     }
   }
 
-  mlmFitsAStream << "};"; mlmFitsBStream << "};"; mlmFitsCStream << "};"; 
+  mlmFitsAStream << "};"; mlmFitsBStream << "};"; mlmFitsCStream << "};";
+  mlmFitsDStream << "};"; mlmFitsEStream << "};"; 
 
   std::ofstream outputFile(output_file, std::ios_base::app);
   outputFile << mlmFitsAStream.str() << std::endl;
@@ -449,8 +442,6 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
 float asymmetry_value_calculation(float Npp, float Npm, float Nmp, float Nmm, float meanPol, 
   float Ptp, float Ptm, int asymmetry_index) {
   float Df = 0.18; // dilution factor, placeholder from MC studies from proposal
-  // Ptp = 0.83; // temporary
-  // Ptm = 0.70; // temporary
   // return the asymmetry value 
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
@@ -468,8 +459,6 @@ float asymmetry_value_calculation(float Npp, float Npm, float Nmp, float Nmm, fl
 float asymmetry_error_calculation(float Npp, float Npm, float Nmp, float Nmm, float meanPol, 
   float Ptp, float Ptm, int asymmetry_index) {
   float Df = 0.18; // dilution factor, placeholder from MC studies from proposal
-  // Ptp = 0.83; // temporary
-  // Ptm = 0.70; // temporary
   // return the asymmetry error 
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
@@ -510,16 +499,16 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   TH1D* histNegNeg = new TH1D(Form("%s_negneg", histName), "", 12, 0, 2 * TMath::Pi());
 
   // Variables to calculate the mean polarization
-  double sumPol = 0; // sum of the beam polarization
-  double sumTargetPosPol = 0; // sum of the target positive polarization
-  double sumTargetNegPol = 0; // sum of the target negative polarization
+  float sumPol = 0; // sum of the beam polarization
+  float sumTargetPosPol = 0; // sum of the target positive polarization
+  float sumTargetNegPol = 0; // sum of the target negative polarization
   int numEvents = 0;
   int numEventsPosTarget = 0;
   int numEventsNegTarget = 0;
 
   // Fill the positive and negative helicity histograms
   for (const eventData& event : data) {
-    double currentVariable = getEventProperty(event, currentFits);
+    float currentVariable = getEventProperty(event, currentFits);
     if (applyKinematicCuts(event, currentFits) && currentVariable >= varMin && 
       currentVariable < varMax) {
       if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
@@ -531,6 +520,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
       } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") < 0) {
         histNegNeg->Fill(event.data.at("phi"));
       }
+
       // Accumulate polarization and event count for mean polarization calculation
       sumPol += event.data.at("pol");
       if (event.data.at("target_pol") > 0) {
@@ -769,27 +759,48 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
     // Initialize variables to store the sums and event counts
     double sumVariable = 0;
     double numEvents = 0;
+    // Variables to calculate the mean depolarization factor
+    float sumDepA = 0;
+    float sumDepB = 0;
+    float sumDepC = 0;
+    float sumDepV = 0;
+    float sumDepW = 0;
     // Loop over all events and calculate the sums and event counts
     for (const eventData& event : gData) {
       double currentVariable = getEventProperty(event, currentFits);
       if (applyKinematicCuts(event, currentFits) && currentVariable >= allBins[currentFits][i] && 
         currentVariable < allBins[currentFits][i + 1]) {
           sumVariable += currentVariable;
+
+          // sum the depolarization values
+          sumDepA += event.data.at("DepA");
+          sumDepB += event.data.at("DepB");
+          sumDepC += event.data.at("DepC");
+          sumDepV += event.data.at("DepV");
+          sumDepW += event.data.at("DepW");
+
           numEvents += 1;
       }
     }
     cout << "Found " << numEvents << " events in this bin." << endl;
 
-    // Calculate the mean values for the variable and b2b factor
-    double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
+    // Calculate the mean values for the variable and depolarization factors
+    float meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
+    float meanDepA = numEvents > 0 ? sumDepA / numEvents : 0.0;
+    float meanDepB = numEvents > 0 ? sumDepB / numEvents : 0.0;
+    float meanDepC = numEvents > 0 ? sumDepC / numEvents : 0.0;
+    float meanDepV = numEvents > 0 ? sumDepV / numEvents : 0.0;
+    float meanDepW = numEvents > 0 ? sumDepW / numEvents : 0.0;
 
     switch (asymmetry_index) {
       case 0: {// beam-spin asymmetry
         // Get the fitted parameters and their errors
-        double ALU_offset = fitFunction->GetParameter(0);
-        double ALU_offset_error = fitFunction->GetParError(0);
-        double ALU_sinphi = fitFunction->GetParameter(1);
-        double ALU_sinphi_error = fitFunction->GetParError(1);
+        float ALU_offset = fitFunction->GetParameter(0);
+        float ALU_offset_error = fitFunction->GetParError(0);
+        float ALU_sinphi = fitFunction->GetParameter(1); 
+        float ALU_sinphi_error = fitFunction->GetParError(1);
+        ALU_sinphi_error = (meanDepA/meanDepW)*ALU_sinphi;
+        ALU_sinphi_error = (meanDepA/meanDepW)*ALU_sinphi_error;
         chi2FitsAStream<<"{"<<meanVariable<<", "<< ALU_offset << ", " << ALU_offset_error <<"}";
         chi2FitsBStream<<"{"<<meanVariable<<", "<< ALU_sinphi << ", " << ALU_sinphi_error <<"}";
         if (i < numBins - 1) {
@@ -799,12 +810,16 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
       }
       case 1: {// target-spin asymmetry
         // Get the fitted parameters and their errors
-        double AUL_offset = fitFunction->GetParameter(0);
-        double AUL_offset_error = fitFunction->GetParError(0);
-        double AUL_sinphi = fitFunction->GetParameter(1);
-        double AUL_sinphi_error = fitFunction->GetParError(1);
-        double AUL_sin2phi = fitFunction->GetParameter(2);
-        double AUL_sin2phi_error = fitFunction->GetParError(2);
+        float AUL_offset = fitFunction->GetParameter(0);
+        float AUL_offset_error = fitFunction->GetParError(0);
+        float AUL_sinphi = fitFunction->GetParameter(1);
+        float AUL_sinphi_error = fitFunction->GetParError(1);
+        float AUL_sin2phi = fitFunction->GetParameter(2);
+        float AUL_sin2phi_error = fitFunction->GetParError(2);
+        AUL_sinphi_error = (meanDepA/meanDepV)*AUL_sinphi;
+        AUL_sinphi_error = (meanDepA/meanDepV)*AUL_sinphi_error;
+        AUL_sin2phi_error = (meanDepA/meanDepB)*AUL_sin2phi;
+        AUL_sin2phi_error = (meanDepA/meanDepB)*AUL_sin2phi_error;
         chi2FitsAStream<<"{"<<meanVariable<<", "<< AUL_offset << ", " << AUL_offset_error <<"}";
         chi2FitsBStream<<"{"<<meanVariable<<", "<< AUL_sinphi << ", " << AUL_sinphi_error <<"}";
         chi2FitsCStream<<"{"<<meanVariable<<", "<< AUL_sin2phi << ", " << AUL_sin2phi_error <<"}";
@@ -815,10 +830,14 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
       }
       case 2: {// double-spin asymmetry
         // Get the fitted parameters and their errors
-        double ALL = fitFunction->GetParameter(0);
-        double ALL_error = fitFunction->GetParError(0);
-        double ALL_cosphi = fitFunction->GetParameter(1);
-        double ALL_cosphi_error = fitFunction->GetParError(1);
+        float ALL = fitFunction->GetParameter(0);
+        float ALL_error = fitFunction->GetParError(0);
+        float ALL_cosphi = fitFunction->GetParameter(1);
+        float ALL_cosphi_error = fitFunction->GetParError(1);
+        ALL_error = (meanDepA/meanDepW)*ALL;
+        ALL_error = (meanDepA/meanDepW)*ALL_error;
+        ALL_cosphi_error = (meanDepA/meanDepW)*ALL_cosphi;
+        ALL_cosphi_error = (meanDepA/meanDepW)*ALL_cosphi_error;
         chi2FitsAStream<<"{"<<meanVariable<<", "<< ALL << ", " << ALL_error <<"}";
         chi2FitsBStream<<"{"<<meanVariable<<", "<< ALL_cosphi << ", " << ALL_cosphi_error <<"}";
         if (i < numBins - 1) {
@@ -901,7 +920,7 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
         total_charge_carbon += run_info.total_charge;
       }
   }
-  // cpp = 1.00*cpp; cpm = 0.998*cpm; cmp = 1.00*cmp; cmm = 0.998*cmm;
+  cpp = 1.00*cpp; cpm = 0.996*cpm; cmp = 1.00*cmp; cmm = 0.996*cmm;
   cout << "Total pos-pos (beam-target) charge: " << cpp << " (nc). ";
   cout << "Total pos-neg charge: " << cpm << " (nc). ";
   cout << "Total neg-pos charge: " << cmp << " (nc). ";

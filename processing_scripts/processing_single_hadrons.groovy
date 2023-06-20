@@ -132,6 +132,7 @@ public static void main(String[] args) {
 
 		            if (variables.channel_test(variables)) {
 		                helicity = variables.get_helicity(); // helicity of event
+		                if (runnum =! 11 && helicity == 0) { continue; }
 
 		                // lab kinematics
 		                e_p = variables.e_p(); // lab frame momentum
