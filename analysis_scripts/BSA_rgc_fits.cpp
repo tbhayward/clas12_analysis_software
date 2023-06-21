@@ -324,24 +324,24 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           // Check if the helicities is positive or negative and update the corresponding sum
           if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
             sum_PP += log(1 
-              + Pb*((DepW/DepW)*ALU_sinphi*sin(phi)) // BSA
-              + Df*Pt*((DepV/DepW)*AUL_sinphi*sin(phi) + (DepB/DepW)*AUL_sin2phi*sin(2*phi)) // TSA
-              + Df*Pb*Pt*((DepC/DepW)*ALL + (DepW/DepW)*ALL_cosphi*cos(phi)) ); // DSA
+              + Pb*((DepW/DepA)*ALU_sinphi*sin(phi)) // BSA
+              + Df*Pt*((DepV/DepA)*AUL_sinphi*sin(phi) + (DepB/DepA)*AUL_sin2phi*sin(2*phi)) // TSA
+              + Df*Pb*Pt*((DepC/DepA)*ALL + (DepW/DepA)*ALL_cosphi*cos(phi)) ); // DSA
           } else if (event.data.at("helicity") > 0 && event.data.at("target_pol") < 0 ) {
             sum_PM += log(1 
-              + Pb*((DepW/DepW)*ALU_sinphi*sin(phi)) // BSA
-              - Df*Pt*((DepV/DepW)*AUL_sinphi*sin(phi) + (DepB/DepW)*AUL_sin2phi*sin(2*phi)) // TSA
-              - Df*Pb*Pt*((DepC/DepW)*ALL + (DepW/DepW)*ALL_cosphi*cos(phi)) ); // DSA
+              + Pb*((DepW/DepA)*ALU_sinphi*sin(phi)) // BSA
+              - Df*Pt*((DepV/DepA)*AUL_sinphi*sin(phi) + (DepB/DepA)*AUL_sin2phi*sin(2*phi)) // TSA
+              - Df*Pb*Pt*((DepC/DepA)*ALL + (DepW/DepA)*ALL_cosphi*cos(phi)) ); // DSA
           } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") > 0 ) {
             sum_MP += log(1
-              - Pb*((DepW/DepW)*ALU_sinphi*sin(phi)) // BSA
-              + Df*Pt*((DepV/DepW)*AUL_sinphi*sin(phi) + (DepB/DepW)*AUL_sin2phi*sin(2*phi)) // TSA
-              - Df*Pb*Pt*((DepC/DepW)*ALL + (DepW/DepW)*ALL_cosphi*cos(phi)) ); // DSA
+              - Pb*((DepW/DepA)*ALU_sinphi*sin(phi)) // BSA
+              + Df*Pt*((DepV/DepA)*AUL_sinphi*sin(phi) + (DepB/DepA)*AUL_sin2phi*sin(2*phi)) // TSA
+              - Df*Pb*Pt*((DepC/DepA)*ALL + (DepW/DepA)*ALL_cosphi*cos(phi)) ); // DSA
           } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") < 0 ) {
             sum_MM += log(1 
-              - Pb*((DepW/DepW)*ALU_sinphi*sin(phi)) // BSA
-              - Df*Pt*((DepV/DepW)*AUL_sinphi*sin(phi) + (DepB/DepW)*AUL_sin2phi*sin(2*phi)) // TSA
-              + Df*Pb*Pt*((DepC/DepW)*ALL + (DepW/DepW)*ALL_cosphi*cos(phi)) ); // DSA
+              - Pb*((DepW/DepA)*ALU_sinphi*sin(phi)) // BSA
+              - Df*Pt*((DepV/DepA)*AUL_sinphi*sin(phi) + (DepB/DepA)*AUL_sin2phi*sin(2*phi)) // TSA
+              + Df*Pb*Pt*((DepC/DepA)*ALL + (DepW/DepA)*ALL_cosphi*cos(phi)) ); // DSA
           }
         }
     }
@@ -847,8 +847,8 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
         float ALL_error = fitFunction->GetParError(0);
         float ALL_cosphi = fitFunction->GetParameter(1);
         float ALL_cosphi_error = fitFunction->GetParError(1);
-        ALL_error = (meanDepA/meanDepW)*ALL;
-        ALL_error = (meanDepA/meanDepW)*ALL_error;
+        ALL_error = (meanDepA/meanDepC)*ALL;
+        ALL_error = (meanDepA/meanDepC)*ALL_error;
         ALL_cosphi_error = (meanDepA/meanDepW)*ALL_cosphi;
         ALL_cosphi_error = (meanDepA/meanDepW)*ALL_cosphi_error;
         chi2FitsAStream<<"{"<<meanVariable<<", "<< ALL << ", " << ALL_error <<"}";
