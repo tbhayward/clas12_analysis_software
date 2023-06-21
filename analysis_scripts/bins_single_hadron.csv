@@ -3,8 +3,8 @@
 # keep in mind this is definining bin *edges*, so you will have n-1 bins in total
 runnum,evnum,helicity,e_p,e_theta,e_phi,vz_e,p_p,p_theta,p_phi,vz_p,Q2,W,Mx,Mx2,x,y,z,xF,pT,zeta,eta,phi,DepA,DepB,DepC,DepV,DepW
 -
-x,x,0.05,0.12
-#pT,pT,0,0.18,0.36,0.54,0.72,1.30
+x,x,0.05,0.60
+pT,pT,0,0.18,0.36,0.54,0.72,1.30
 #x,x,0.05,0.12,0.20,0.28,0.36,0.44,0.60
 #zeta,zeta,0.30,0.400,0.475,0.550,0.625,0.70,0.80
 #PT1,PT1,0,0.18,0.36,0.54,0.72,0.90,1.30
