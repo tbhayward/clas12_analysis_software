@@ -268,8 +268,8 @@ double getEventProperty(const eventData& event, int currentFits) {
 // Apply kinematic cuts to the data
 bool applyKinematicCuts(const eventData& data, int currentFits) {
 
-    return data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>0 &&
-      data.data.at("y")<0.8 && data.data.at("xF")<1 && data.data.at("target_pol") != 0;
+    return data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
+      data.data.at("y")<0.75 && data.data.at("xF")<1 && data.data.at("target_pol") != 0;
 }
 
 // Negative log-likelihood function
