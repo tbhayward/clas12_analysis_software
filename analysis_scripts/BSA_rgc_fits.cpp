@@ -413,7 +413,7 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     double ALL_cosphi, ALL_cosphi_error;
     minuit.GetParameter(4, ALL_cosphi, ALL_cosphi_error);
 
-    // Calculate the mean values of the current variable and the back-to-back factor (b2b_factor)
+    // Calculate the mean values of the current variable 
     double sumVariable = 0;
     double numEvents = 0;
     for (const eventData &event : gData) {
@@ -424,7 +424,7 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
             numEvents += 1;
         }
     }
-    double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
+    float meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
 
     // output to text file
     mlmFitsAStream << "{" << meanVariable << ", " << ALU_sinphi << ", " << ALU_sinphi_error << "}";
@@ -812,7 +812,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
         float ALU_offset_error = fitFunction->GetParError(0);
         float ALU_sinphi = fitFunction->GetParameter(1); 
         float ALU_sinphi_error = fitFunction->GetParError(1);
-        ALU_sinphi_error = (meanDepA/meanDepW)*ALU_sinphi;
+        ALU_sinphi = (meanDepA/meanDepW)*ALU_sinphi;
         ALU_sinphi_error = (meanDepA/meanDepW)*ALU_sinphi_error;
         chi2FitsAStream<<"{"<<meanVariable<<", "<< ALU_offset << ", " << ALU_offset_error <<"}";
         chi2FitsBStream<<"{"<<meanVariable<<", "<< ALU_sinphi << ", " << ALU_sinphi_error <<"}";
@@ -829,9 +829,9 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
         float AUL_sinphi_error = fitFunction->GetParError(1);
         float AUL_sin2phi = fitFunction->GetParameter(2);
         float AUL_sin2phi_error = fitFunction->GetParError(2);
-        AUL_sinphi_error = (meanDepA/meanDepV)*AUL_sinphi;
+        AUL_sinphi = (meanDepA/meanDepV)*AUL_sinphi;
         AUL_sinphi_error = (meanDepA/meanDepV)*AUL_sinphi_error;
-        AUL_sin2phi_error = (meanDepA/meanDepB)*AUL_sin2phi;
+        AUL_sin2phi = (meanDepA/meanDepB)*AUL_sin2phi;
         AUL_sin2phi_error = (meanDepA/meanDepB)*AUL_sin2phi_error;
         chi2FitsAStream<<"{"<<meanVariable<<", "<< AUL_offset << ", " << AUL_offset_error <<"}";
         chi2FitsBStream<<"{"<<meanVariable<<", "<< AUL_sinphi << ", " << AUL_sinphi_error <<"}";
@@ -847,9 +847,9 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
         float ALL_error = fitFunction->GetParError(0);
         float ALL_cosphi = fitFunction->GetParameter(1);
         float ALL_cosphi_error = fitFunction->GetParError(1);
-        ALL_error = (meanDepA/meanDepC)*ALL;
+        ALL = (meanDepA/meanDepC)*ALL;
         ALL_error = (meanDepA/meanDepC)*ALL_error;
-        ALL_cosphi_error = (meanDepA/meanDepW)*ALL_cosphi;
+        ALL_cosphi = (meanDepA/meanDepW)*ALL_cosphi;
         ALL_cosphi_error = (meanDepA/meanDepW)*ALL_cosphi_error;
         chi2FitsAStream<<"{"<<meanVariable<<", "<< ALL << ", " << ALL_error <<"}";
         chi2FitsBStream<<"{"<<meanVariable<<", "<< ALL_cosphi << ", " << ALL_cosphi_error <<"}";
@@ -933,7 +933,7 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
         total_charge_carbon += run_info.total_charge;
       }
   }
-  cpp = 1.00*cpp; cpm = 0.996*cpm; cmp = 1.00*cmp; cmm = 0.996*cmm;
+  // cpp = 1.00*cpp; cpm = 0.996*cpm; cmp = 1.00*cmp; cmm = 0.996*cmm;
   cout << "Total pos-pos (beam-target) charge: " << cpp << " (nc). ";
   cout << "Total pos-neg charge: " << cpm << " (nc). ";
   cout << "Total neg-pos charge: " << cmp << " (nc). ";
