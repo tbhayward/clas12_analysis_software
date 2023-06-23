@@ -269,7 +269,7 @@ double getEventProperty(const eventData& event, int currentFits) {
 bool applyKinematicCuts(const eventData& data, int currentFits) {
 
   std::string property = propertyNames[currentFits];
-  if (propertyNames == "xF") {
+  if (property == "xF") {
     cout << "hey" << endl;
   }
 
