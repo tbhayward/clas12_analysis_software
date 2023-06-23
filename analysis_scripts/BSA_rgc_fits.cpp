@@ -366,7 +366,6 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           float DepW = event.data.at("DepW");
 
           float Df = dilution_factor(currentVariable, binNames[currentFits]); // dilution factor
-          cout << currentVariable << " " << Df << endl;
           // Check if the helicities is positive or negative and update the corresponding sum
           if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
             sum_PP += log(1 
