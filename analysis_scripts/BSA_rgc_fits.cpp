@@ -346,7 +346,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     // Iterate through the global event data (gData)
     for (const eventData &event : gData) {
         // Get the value of the current variable of interest for the event
-        float currentVariable = getEventProperty(event, prefix);
+        float currentVariable = getEventProperty(event, currentFits);
 
         // Apply kinematic cuts and check if the current variable is within the specified bin range
         if (applyKinematicCuts(event, currentFits) && 
