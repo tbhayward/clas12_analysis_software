@@ -273,16 +273,49 @@ bool applyKinematicCuts(const eventData& data, int currentFits) {
     return data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
       data.data.at("y")<0.75 && data.data.at("target_pol") != 0;
   }
-  if (property == "PTCFR" || "xCFR" || "zetaCFR") {
-    return data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
-      data.data.at("y")<0.75 && data.data.at("xF")>0 && data.data.at("target_pol") != 0;
-  }
   if (property == "PTTFR" || "xTFR" || "zetaTFR") {
     return data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
       data.data.at("y")<0.75 && data.data.at("xF")<0 && data.data.at("target_pol") != 0;
   }
+  if (property == "PTCFR" || "xCFR" || "zetaCFR") {
+    return data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
+      data.data.at("y")<0.75 && data.data.at("xF")>0 && data.data.at("target_pol") != 0;
+  }
 
-    
+  cout << "Did not find a matching bin name." << endl;
+  return false;  
+}
+
+float dilution_factor(float currentVariable, int currentFits) {
+  std::string property = propertyNames[currentFits];
+  if (property == "xF") {
+    return 0.186121-0.0263337*currentVariable-0.175587*std::pow(currentVariable,2)+
+      0.0522814*std::pow(currentVariable,3);
+  }
+  if (property == "xTFR") {
+    return 0.111702+0.0858432*currentVariable+0.880331*std::pow(currentVariable,2)-
+      0.990298*std::pow(currentVariable,3);
+  }
+  if (property == "PTTFR") {
+    return 0.184491-0.161007*currentVariable+0.298733*std::pow(currentVariable,2)-
+      0.187826*std::pow(currentVariable,3);
+  }
+  if (property == "zetaTFR") {
+    return 1.52544-7.07359*currentVariable+12.5954*std::pow(currentVariable,2)-
+      7.72548*std::pow(currentVariable,3);
+  }
+  if (property == "xCFR") {
+    return 0.089331+0.429008*currentVariable-0.617364*std::pow(currentVariable,2)+
+      0.7584*std::pow(currentVariable,3);
+  }
+  if (property == "PTCFR") {
+    return 0.151263+0.170759*currentVariable-0.439815*std::pow(currentVariable,2)+
+      0.278509*std::pow(currentVariable,3);
+  }
+  if (property == "zetaCFR") {
+    return 1.32783-6.22826*currentVariable+11.2985*std::pow(currentVariable,2)-
+      7.01171*std::pow(currentVariable,3);
+  }
 }
 
 // Negative log-likelihood function
@@ -309,12 +342,10 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     double sum_MP = 0; // negative beam -- positive target
     double sum_MM = 0; // negative beam -- negative target
 
-    float Df = 0.18; // dilution factor, placeholder from MC studies from proposal
-
     // Iterate through the global event data (gData)
     for (const eventData &event : gData) {
         // Get the value of the current variable of interest for the event
-        double currentVariable = getEventProperty(event, currentFits);
+        float currentVariable = getEventProperty(event, currentFits);
 
         // Apply kinematic cuts and check if the current variable is within the specified bin range
         if (applyKinematicCuts(event, currentFits) && 
@@ -333,6 +364,8 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           float DepC = event.data.at("DepC");
           float DepV = event.data.at("DepV");
           float DepW = event.data.at("DepW");
+
+          float Df = dilution_factor(currentVariable, currentFits); // dilution factor
 
           // Check if the helicities is positive or negative and update the corresponding sum
           if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
@@ -467,7 +500,7 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
 
 float asymmetry_value_calculation(float Npp, float Npm, float Nmp, float Nmm, float meanPol, 
   float Ptp, float Ptm, int asymmetry_index) {
-  float Df = 0.18; // dilution factor, placeholder from MC studies from proposal
+  float Df = dilution_factor(currentVariable, currentFits); // dilution factor
   // return the asymmetry value 
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
@@ -484,7 +517,7 @@ float asymmetry_value_calculation(float Npp, float Npm, float Nmp, float Nmm, fl
 
 float asymmetry_error_calculation(float Npp, float Npm, float Nmp, float Nmm, float meanPol, 
   float Ptp, float Ptm, int asymmetry_index) {
-  float Df = 0.18; // dilution factor, placeholder from MC studies from proposal
+  float Df = dilution_factor(currentVariable, currentFits); // dilution factor
   // return the asymmetry error 
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
@@ -968,8 +1001,8 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
       performChi2Fits(data_file, output_file, binNames[i], asymmetry);
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    performMLMFits(data_file, output_file, binNames[i]);
-    cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
+    // performMLMFits(data_file, output_file, binNames[i]);
+    // cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
     currentFits++;
   }
