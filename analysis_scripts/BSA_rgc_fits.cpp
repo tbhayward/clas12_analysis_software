@@ -407,7 +407,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
       minBeamCharge*minTargetCharge/((cmp+cmm)*(cmp+cmm))*sum_MM;
 }
 
-void performMLMFits(const char *filename, const char* output_file) {
+void performMLMFits(const char *filename, const char* output_file, const std::string& prefix) {
   // Read the event data from the input file and store it in the global variable gData
 
   // Determine the number of bins
