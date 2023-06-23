@@ -288,6 +288,7 @@ bool applyKinematicCuts(const eventData& data, int currentFits) {
 
 float dilution_factor(float currentVariable, int currentFits) {
   std::string property = propertyNames[currentFits];
+  cout << property << endl;
   if (property == "xF") {
     return 0.186121-0.0263337*currentVariable-0.175587*std::pow(currentVariable,2)+
       0.0522814*std::pow(currentVariable,3);
@@ -575,7 +576,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
     if (applyKinematicCuts(event, currentFits) && currentVariable >= varMin && 
       currentVariable < varMax) {
       sumVariable+=currentVariable;
-    
+
       if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
         histPosPos->Fill(event.data.at("phi"));
       } else if (event.data.at("helicity") > 0 && event.data.at("target_pol") < 0) {
