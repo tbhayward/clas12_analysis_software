@@ -270,11 +270,19 @@ bool applyKinematicCuts(const eventData& data, int currentFits) {
 
   std::string property = propertyNames[currentFits];
   if (property == "xF") {
-    cout << "hey" << endl;
+    return data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
+      data.data.at("y")<0.75 && data.data.at("target_pol") != 0;
   }
-
+  if (property == "PTCFR" || "xCFR" || "zetaCFR") {
+    return data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
+      data.data.at("y")<0.75 && data.data.at("xF")>0 && data.data.at("target_pol") != 0;
+  }
+  if (property == "PTTFR" || "xTFR" || "zetaTFR") {
     return data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
       data.data.at("y")<0.75 && data.data.at("xF")<0 && data.data.at("target_pol") != 0;
+  }
+
+    
 }
 
 // Negative log-likelihood function
