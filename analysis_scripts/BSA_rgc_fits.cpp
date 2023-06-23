@@ -407,7 +407,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
       minBeamCharge*minTargetCharge/((cmp+cmm)*(cmp+cmm))*sum_MM;
 }
 
-void performMLMFits(const char *filename, const char* output_file, const std::string& prefix) {
+void performMLMFits(const char *filename, const char* output_file) {
   // Read the event data from the input file and store it in the global variable gData
 
   // Determine the number of bins
@@ -499,8 +499,9 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
   outputFile.close();
 }
 
-float asymmetry_value_calculation(float currentVariable, float Npp, float Npm, float Nmp, 
-  float Nmm, float meanPol, float Ptp, float Ptm, int asymmetry_index) {
+float asymmetry_value_calculation(float currentVariable, const std::string& prefix, 
+  float Npp, float Npm, float Nmp, float Nmm, float meanPol, float Ptp, float Ptm, 
+  int asymmetry_index) {
   float Df = dilution_factor(currentVariable, prefix); // dilution factor
   cout << Df << " ~ ";
   // return the asymmetry value 
@@ -517,8 +518,9 @@ float asymmetry_value_calculation(float currentVariable, float Npp, float Npm, f
   }
 }
 
-float asymmetry_error_calculation(float currentVariable, float Npp, float Npm, float Nmp, 
-  float Nmm, float meanPol, float Ptp, float Ptm, int asymmetry_index) {
+float asymmetry_error_calculation(float currentVariable, const std::string& prefix, 
+  float Npp, float Npm, float Nmp, float Nmm, float meanPol, float Ptp, float Ptm, 
+  int asymmetry_index) {
   float Df = dilution_factor(currentVariable, prefix); // dilution factor
   // return the asymmetry error 
   switch (asymmetry_index) {
