@@ -262,12 +262,16 @@ std::vector<eventData> readData(const std::string& filename,
 double getEventProperty(const eventData& event, int currentFits) {
   std::string property = propertyNames[currentFits];
   // Access the property value using the map's indexing
-  cout << property << endl;
   return event.data.at(property);
 }
 
 // Apply kinematic cuts to the data
 bool applyKinematicCuts(const eventData& data, int currentFits) {
+
+  std::string property = propertyNames[currentFits];
+  if (propertyNames == "xF") {
+    cout << "hey" << endl;
+  }
 
     return data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
       data.data.at("y")<0.75 && data.data.at("xF")<0 && data.data.at("target_pol") != 0;
