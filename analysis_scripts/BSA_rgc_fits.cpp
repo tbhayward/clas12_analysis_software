@@ -316,6 +316,7 @@ float dilution_factor(float currentVariable, int currentFits) {
     return 1.32783-6.22826*currentVariable+11.2985*std::pow(currentVariable,2)-
       7.01171*std::pow(currentVariable,3);
   }
+  return 0.18;
 }
 
 // Negative log-likelihood function
@@ -498,9 +499,10 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
   outputFile.close();
 }
 
-float asymmetry_value_calculation(float Npp, float Npm, float Nmp, float Nmm, float meanPol, 
-  float Ptp, float Ptm, int asymmetry_index) {
+float asymmetry_value_calculation(float currentVariable, float Npp, float Npm, float Nmp, 
+  float Nmm, float meanPol, float Ptp, float Ptm, int asymmetry_index) {
   float Df = dilution_factor(currentVariable, currentFits); // dilution factor
+  cout << Df << " ~ ";
   // return the asymmetry value 
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
@@ -515,8 +517,8 @@ float asymmetry_value_calculation(float Npp, float Npm, float Nmp, float Nmm, fl
   }
 }
 
-float asymmetry_error_calculation(float Npp, float Npm, float Nmp, float Nmm, float meanPol, 
-  float Ptp, float Ptm, int asymmetry_index) {
+float asymmetry_error_calculation(float currentVariable, float Npp, float Npm, float Nmp, 
+  float Nmm, float meanPol, float Ptp, float Ptm, int asymmetry_index) {
   float Df = dilution_factor(currentVariable, currentFits); // dilution factor
   // return the asymmetry error 
   switch (asymmetry_index) {
@@ -557,11 +559,13 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   TH1D* histNegPos = new TH1D(Form("%s_negpos", histName), "", 12, 0, 2 * TMath::Pi());
   TH1D* histNegNeg = new TH1D(Form("%s_negneg", histName), "", 12, 0, 2 * TMath::Pi());
 
+  // Initialize variables to store the sums and event counts
+  double sumVariable = 0;
+  double numEvents = 0;
   // Variables to calculate the mean polarization
   float sumPol = 0; // sum of the beam polarization
   float sumTargetPosPol = 0; // sum of the target positive polarization
   float sumTargetNegPol = 0; // sum of the target negative polarization
-  int numEvents = 0;
   int numEventsPosTarget = 0;
   int numEventsNegTarget = 0;
 
@@ -593,6 +597,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
     }
   }
   // Calculate the mean polarization
+  float meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
   float meanPol = sumPol / numEvents; // mean beam polarization for data 
   float Ptp = sumTargetPosPol / numEventsPosTarget;// mean positive target polarization for data
   float Ptm = - sumTargetNegPol / numEventsNegTarget;// mean negative target polarization for data
@@ -612,10 +617,10 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
     float Nmm = histNegNeg->GetBinContent(iBin)/cmm;
 
     // Calculate the asymmetry and error for the current bin
-    float asymmetry = asymmetry_value_calculation(Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, 
-      asymmetry_index);
-    float error = asymmetry_error_calculation(Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, 
-      asymmetry_index);
+    float asymmetry = asymmetry_value_calculation(meanVariable, Npp, Npm, Nmp, Nmm, meanPol, 
+      Ptp, Ptm, asymmetry_index);
+    float error = asymmetry_error_calculation(meanVariable, Npp, Npm, Nmp, Nmm, meanPol, Ptp, 
+      Ptm, asymmetry_index);
 
     // Fill the asymmetry histogram with the calculated values
     histAsymmetry->SetBinContent(iBin, asymmetry);
