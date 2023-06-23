@@ -396,13 +396,14 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     // determine min pos or neg target helicity accumulated charge to scale down higher one
     float minTargetCharge = std::min({(cpp+cmp),(cpm+cmm)}); 
     
-    cout << sum_PP << " " << sum_PM << " " << sum_MP << " " << sum_MM << endl;
     // Calculate the negative log-likelihood value and store it in the output variable f
     f = N * log(N) - 
       minBeamCharge*minTargetCharge/((cpp+cpm)*(cpp+cmp))*sum_PP -
       minBeamCharge*minTargetCharge/((cpp+cpm)*(cmp+cmm))*sum_PM - 
       minBeamCharge*minTargetCharge/((cmp+cmm)*(cpp+cmp))*sum_MP - 
       minBeamCharge*minTargetCharge/((cmp+cmm)*(cmp+cmm))*sum_MM;
+
+      cout << f << " ";
 }
 
 void performMLMFits(const char *filename, const char* output_file, const std::string& prefix) {
@@ -444,7 +445,7 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     minuit.DefineParameter(4, "ALL_cosphi", 0.01, 0.01, -1, 1);
 
     // Minimize the negative log-likelihood function
-    minuit.Migrad();
+    minuit.Migrad(); cout << endl;
 
     // Extract the fitted parameter values and errors
     double ALU_sinphi, ALU_sinphi_error;
