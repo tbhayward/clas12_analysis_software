@@ -286,34 +286,32 @@ bool applyKinematicCuts(const eventData& data, int currentFits) {
   return false;  
 }
 
-float dilution_factor(float currentVariable, int currentFits) {
-  std::string property = propertyNames[currentFits];
-  cout << property << endl;
-  if (property == "xF") {
+float dilution_factor(float currentVariable, const std::string& prefix) {
+  if (prefix == "xF") {
     return 0.186121-0.0263337*currentVariable-0.175587*std::pow(currentVariable,2)+
       0.0522814*std::pow(currentVariable,3);
   }
-  if (property == "xTFR") {
+  if (prefix == "xTFR") {
     return 0.111702+0.0858432*currentVariable+0.880331*std::pow(currentVariable,2)-
       0.990298*std::pow(currentVariable,3);
   }
-  if (property == "PTTFR") {
+  if (prefix == "PTTFR") {
     return 0.184491-0.161007*currentVariable+0.298733*std::pow(currentVariable,2)-
       0.187826*std::pow(currentVariable,3);
   }
-  if (property == "zetaTFR") {
+  if (prefix == "zetaTFR") {
     return 1.52544-7.07359*currentVariable+12.5954*std::pow(currentVariable,2)-
       7.72548*std::pow(currentVariable,3);
   }
-  if (property == "xCFR") {
+  if (prefix == "xCFR") {
     return 0.089331+0.429008*currentVariable-0.617364*std::pow(currentVariable,2)+
       0.7584*std::pow(currentVariable,3);
   }
-  if (property == "PTCFR") {
+  if (prefix == "PTCFR") {
     return 0.151263+0.170759*currentVariable-0.439815*std::pow(currentVariable,2)+
       0.278509*std::pow(currentVariable,3);
   }
-  if (property == "zetaCFR") {
+  if (prefix == "zetaCFR") {
     return 1.32783-6.22826*currentVariable+11.2985*std::pow(currentVariable,2)-
       7.01171*std::pow(currentVariable,3);
   }
@@ -321,7 +319,8 @@ float dilution_factor(float currentVariable, int currentFits) {
 }
 
 // Negative log-likelihood function
-void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag) {
+void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag, 
+    const std::string& prefix) {
     // npar: number of parameters
     // gin: an array of derivatives (if needed)
     // f: the value of the function
@@ -347,7 +346,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     // Iterate through the global event data (gData)
     for (const eventData &event : gData) {
         // Get the value of the current variable of interest for the event
-        float currentVariable = getEventProperty(event, currentFits);
+        float currentVariable = getEventProperty(event, prefix);
 
         // Apply kinematic cuts and check if the current variable is within the specified bin range
         if (applyKinematicCuts(event, currentFits) && 
@@ -367,7 +366,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           float DepV = event.data.at("DepV");
           float DepW = event.data.at("DepW");
 
-          float Df = dilution_factor(currentVariable, currentFits); // dilution factor
+          float Df = dilution_factor(currentVariable, prefix); // dilution factor
 
           // Check if the helicities is positive or negative and update the corresponding sum
           if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
@@ -502,7 +501,7 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
 
 float asymmetry_value_calculation(float currentVariable, float Npp, float Npm, float Nmp, 
   float Nmm, float meanPol, float Ptp, float Ptm, int asymmetry_index) {
-  float Df = dilution_factor(currentVariable, currentFits); // dilution factor
+  float Df = dilution_factor(currentVariable, prefix); // dilution factor
   cout << Df << " ~ ";
   // return the asymmetry value 
   switch (asymmetry_index) {
@@ -520,7 +519,7 @@ float asymmetry_value_calculation(float currentVariable, float Npp, float Npm, f
 
 float asymmetry_error_calculation(float currentVariable, float Npp, float Npm, float Nmp, 
   float Nmm, float meanPol, float Ptp, float Ptm, int asymmetry_index) {
-  float Df = dilution_factor(currentVariable, currentFits); // dilution factor
+  float Df = dilution_factor(currentVariable, prefix); // dilution factor
   // return the asymmetry error 
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
@@ -548,7 +547,7 @@ float asymmetry_error_calculation(float currentVariable, float Npp, float Npm, f
 }
 
 TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* histName,
-  int binIndex, int asymmetry_index) {
+  int binIndex, const std::string& prefix, int asymmetry_index) {
 
   // Determine the variable range for the specified bin
   double varMin = allBins[currentFits][binIndex];
@@ -620,10 +619,10 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
     float Nmm = histNegNeg->GetBinContent(iBin)/cmm;
 
     // Calculate the asymmetry and error for the current bin
-    float asymmetry = asymmetry_value_calculation(meanVariable, Npp, Npm, Nmp, Nmm, meanPol, 
+    float asymmetry = asymmetry_value_calculation(meanVariable, prefix, Npp, Npm, Nmp, Nmm, 
+      meanPol, Ptp, Ptm, asymmetry_index);
+    float error = asymmetry_error_calculation(meanVariable, prefix, Npp, Npm, Nmp, Nmm, meanPol, 
       Ptp, Ptm, asymmetry_index);
-    float error = asymmetry_error_calculation(meanVariable, Npp, Npm, Nmp, Nmm, meanPol, Ptp, 
-      Ptm, asymmetry_index);
 
     // Fill the asymmetry histogram with the calculated values
     histAsymmetry->SetBinContent(iBin, asymmetry);
@@ -818,7 +817,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
     snprintf(histName, sizeof(histName), "hist_%zu", i);
 
     // Create a histogram for the current bin
-    TH1D* hist = createHistogramForBin(gData, histName, i, asymmetry_index);
+    TH1D* hist = createHistogramForBin(gData, histName, i, prefix, asymmetry_index);
     // Fit the histogram using the fitFunction and get the fit result
     hist->Fit(fitFunction, "QS");
     plotHistogramAndFit(hist, fitFunction, i, asymmetry_index, prefix);
