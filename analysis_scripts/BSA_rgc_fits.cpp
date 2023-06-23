@@ -365,7 +365,6 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           float DepV = event.data.at("DepV");
           float DepW = event.data.at("DepW");
 
-          const std::string& prefix = 
           float Df = dilution_factor(currentVariable, binNames[currentFits]); // dilution factor
 
           // Check if the helicities is positive or negative and update the corresponding sum
