@@ -403,7 +403,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
       minBeamCharge*minTargetCharge/((cmp+cmm)*(cpp+cmp))*sum_MP - 
       minBeamCharge*minTargetCharge/((cmp+cmm)*(cmp+cmm))*sum_MM;
 
-      cout << f << " ";
+      cout << f << " " << Df << " ";
 }
 
 void performMLMFits(const char *filename, const char* output_file, const std::string& prefix) {
