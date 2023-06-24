@@ -269,10 +269,6 @@ double getEventProperty(const eventData& event, int currentFits) {
 bool applyKinematicCuts(const eventData& data, int currentFits) {
 
   std::string property = binNames[currentFits];
-  cout << property << endl;
-  if (property == "PTCFR") {
-    cout << "hello" << endl;
-  }
   if (property == "xF") {
     return data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
       data.data.at("y")<0.75 && data.data.at("target_pol") != 0;
@@ -282,6 +278,7 @@ bool applyKinematicCuts(const eventData& data, int currentFits) {
       data.data.at("y")<0.75 && data.data.at("xF")<0 && data.data.at("target_pol") != 0;
   }
   if (property == "PTCFR" || "xCFR" || "zetaCFR") {
+    cout << "hello" << endl;
     cout << "CFR" << data.data.at("xF") << endl;
     return data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
       data.data.at("y")<0.75 && data.data.at("xF")>0 && data.data.at("target_pol") != 0;
