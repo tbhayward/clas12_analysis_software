@@ -269,6 +269,7 @@ double getEventProperty(const eventData& event, int currentFits) {
 bool applyKinematicCuts(const eventData& data, int currentFits) {
 
   std::string property = propertyNames[currentFits];
+  cout << property << endl;
   if (property == "xF") {
     return data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
       data.data.at("y")<0.75 && data.data.at("target_pol") != 0;
