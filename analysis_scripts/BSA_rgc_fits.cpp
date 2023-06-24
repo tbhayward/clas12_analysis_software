@@ -274,14 +274,10 @@ bool applyKinematicCuts(const eventData& data, int currentFits) {
       data.data.at("y")<0.75 && data.data.at("target_pol") != 0;
   }
   if (property == "PTTFR" || property ==  "xTFR" || property == "zetaTFR") {
-    cout << "hello" << " " << property << " " << endl;
-    cout << "TFR" << data.data.at("xF") << endl;
     return data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
       data.data.at("y")<0.75 && data.data.at("xF")<0 && data.data.at("target_pol") != 0;
   }
   if (property == "PTCFR" || property == "xCFR" || property == "zetaCFR") {
-    cout << "hello" << endl;
-    cout << "CFR" << data.data.at("xF") << endl;
     return data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
       data.data.at("y")<0.75 && data.data.at("xF")>0 && data.data.at("target_pol") != 0;
   }
