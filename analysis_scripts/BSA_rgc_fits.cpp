@@ -846,7 +846,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
           sumDepV += event.data.at("DepV");
           sumDepW += event.data.at("DepW");
 
-          cout << event.data.at("DepC") << " " << event.data.at("xF") << endl;
+          cout << (applyKinematicCuts(event, currentFits) << " " << event.data.at("DepC") << " " << event.data.at("xF") << endl;
 
           numEvents += 1;
       }
