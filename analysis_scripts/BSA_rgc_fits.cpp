@@ -268,7 +268,7 @@ double getEventProperty(const eventData& event, int currentFits) {
 // Apply kinematic cuts to the data
 bool applyKinematicCuts(const eventData& data, int currentFits) {
 
-  std::string property = propertyNames[currentFits];
+  std::string property = binNames[currentFits];
   cout << property << endl;
   if (property == "xF") {
     return data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
