@@ -428,7 +428,8 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
   // Declare string streams for storing the MLM fit results
   std::ostringstream mlmFitsAStream; std::ostringstream mlmFitsBStream; 
   std::ostringstream mlmFitsCStream; std::ostringstream mlmFitsDStream; 
-  std::ostringstream mlmFitsEStream; 
+  std::ostringstream mlmFitsEStream; std::ostringstream mlmFitsFStream;
+  std::ostringstream mlmFitsGStream; 
 
   // Initialize the string streams with the output variable names
   mlmFitsAStream << prefix << "MLMFitsALUsinphi = {";
