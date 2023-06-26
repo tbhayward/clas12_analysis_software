@@ -369,21 +369,25 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           // Check if the helicities is positive or negative and update the corresponding sum
           if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
             sum_PP += log(1 
+              + (DepV/DepA)*AUU_cosphi + (DepB/DepA)*AUU_cos2phi // UU 
               + Pb*((DepW/DepA)*ALU_sinphi*sin(phi)) // BSA
               + Df*Pt*((DepV/DepA)*AUL_sinphi*sin(phi) + (DepB/DepA)*AUL_sin2phi*sin(2*phi)) // TSA
               + Df*Pb*Pt*((DepC/DepA)*ALL + (DepW/DepA)*ALL_cosphi*cos(phi)) ); // DSA
           } else if (event.data.at("helicity") > 0 && event.data.at("target_pol") < 0 ) {
             sum_PM += log(1 
+              + (DepV/DepA)*AUU_cosphi + (DepB/DepA)*AUU_cos2phi // UU
               + Pb*((DepW/DepA)*ALU_sinphi*sin(phi)) // BSA
               - Df*Pt*((DepV/DepA)*AUL_sinphi*sin(phi) + (DepB/DepA)*AUL_sin2phi*sin(2*phi)) // TSA
               - Df*Pb*Pt*((DepC/DepA)*ALL + (DepW/DepA)*ALL_cosphi*cos(phi)) ); // DSA
           } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") > 0 ) {
             sum_MP += log(1
+              + (DepV/DepA)*AUU_cosphi + (DepB/DepA)*AUU_cos2phi // UU
               - Pb*((DepW/DepA)*ALU_sinphi*sin(phi)) // BSA
               + Df*Pt*((DepV/DepA)*AUL_sinphi*sin(phi) + (DepB/DepA)*AUL_sin2phi*sin(2*phi)) // TSA
               - Df*Pb*Pt*((DepC/DepA)*ALL + (DepW/DepA)*ALL_cosphi*cos(phi)) ); // DSA
           } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") < 0 ) {
             sum_MM += log(1 
+              + (DepV/DepA)*AUU_cosphi + (DepB/DepA)*AUU_cos2phi // UU
               - Pb*((DepW/DepA)*ALU_sinphi*sin(phi)) // BSA
               - Df*Pt*((DepV/DepA)*AUL_sinphi*sin(phi) + (DepB/DepA)*AUL_sin2phi*sin(2*phi)) // TSA
               + Df*Pb*Pt*((DepC/DepA)*ALL + (DepW/DepA)*ALL_cosphi*cos(phi)) ); // DSA
@@ -396,13 +400,16 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     // determine min pos or neg target helicity accumulated charge to scale down higher one
     float minTargetCharge = std::min({(cpp+cmp),(cpm+cmm)}); 
     
-    cout << N*log(N)-sum_PP-sum_PM-sum_MP-sum_MM << endl;
-    // Calculate the negative log-likelihood value and store it in the output variable f
-    f = N * log(N) - 
+    binNames[currentFits]
+
+    float nll = N * log(N) - 
       minBeamCharge*minTargetCharge/((cpp+cpm)*(cpp+cmp))*sum_PP -
       minBeamCharge*minTargetCharge/((cpp+cpm)*(cmp+cmm))*sum_PM - 
       minBeamCharge*minTargetCharge/((cmp+cmm)*(cpp+cmp))*sum_MP - 
       minBeamCharge*minTargetCharge/((cmp+cmm)*(cmp+cmm))*sum_MM;
+    cout << "On MLM fit " << binNames[currentFits] << ", " << nll << endl;
+    // Calculate the negative log-likelihood value and store it in the output variable f
+    f = nll;
 }
 
 void performMLMFits(const char *filename, const char* output_file, const std::string& prefix) {
@@ -414,7 +421,7 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
   // Initialize TMinuit with 3 parameters 
   double arglist[10]; arglist[0] = 1;
   int ierflg = 0;
-  TMinuit minuit(5);
+  TMinuit minuit(7);
   minuit.SetPrintLevel(-1);
   minuit.SetFCN(negLogLikelihood);
 
@@ -429,6 +436,8 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
   mlmFitsCStream << prefix << "MLMFitsAULsin2phi = {";
   mlmFitsDStream << prefix << "MLMFitsALL = {";
   mlmFitsEStream << prefix << "MLMFitsALLcosphi = {";
+  mlmFitsFStream << prefix << "MLMFitsAUUcosphi = {";
+  mlmFitsGStream << prefix << "MLMFitsAUUcos2phi = {";
 
   // Iterate through each bin
   for (size_t i = 0; i < numBins; ++i) {
@@ -442,6 +451,8 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     minuit.DefineParameter(2, "AUL_sin2phi", -0.01, 0.01, -1, 1);
     minuit.DefineParameter(3, "ALL", 0.25, 0.01, -1, 1);
     minuit.DefineParameter(4, "ALL_cosphi", 0.01, 0.01, -1, 1);
+    minuit.DefineParameter(5, "AUU_cosphi", 0.01, 0.01, -1, 1);
+    minuit.DefineParameter(6, "AUU_cos2phi", 0.01, 0.01, -1, 1);
 
     // Minimize the negative log-likelihood function
     minuit.Migrad(); cout << endl;
@@ -457,6 +468,10 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     minuit.GetParameter(3, ALL, ALL_error);
     double ALL_cosphi, ALL_cosphi_error;
     minuit.GetParameter(4, ALL_cosphi, ALL_cosphi_error);
+    double AUU_cosphi, AUU_cosphi_error;
+    minuit.GetParameter(4, AUU_cosphi, AUU_cosphi_error);
+    double AUU_cos2phi, AUU_cos2phi_error;
+    minuit.GetParameter(4, AUU_cos2phi, AUU_cos2phi_error);
 
     // Calculate the mean values of the current variable 
     double sumVariable = 0;
@@ -477,15 +492,19 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     mlmFitsCStream << "{" << meanVariable << ", " << AUL_sin2phi << ", "<<AUL_sin2phi_error << "}";
     mlmFitsDStream << "{" << meanVariable << ", " << ALL << ", " << ALL_error << "}";
     mlmFitsEStream << "{" << meanVariable << ", " << ALL_cosphi << ", "<<ALL_cosphi_error << "}";
+    mlmFitsFStream << "{" << meanVariable << ", " << AUU_cosphi << ", "<<AUU_cosphi_error << "}";
+    mlmFitsGStream << "{" << meanVariable << ", " << AUU_cos2phi << ", "<<AUU_cos2phi_error << "}";
 
     if (i < numBins - 1) {
         mlmFitsAStream << ", "; mlmFitsBStream << ", "; mlmFitsCStream << ", ";
-        mlmFitsDStream << ", "; mlmFitsEStream << ", "; 
+        mlmFitsDStream << ", "; mlmFitsEStream << ", "; mlmFitsFStream << ", "; 
+        mlmFitsGStream << ", ";
     }
   }
 
   mlmFitsAStream << "};"; mlmFitsBStream << "};"; mlmFitsCStream << "};";
-  mlmFitsDStream << "};"; mlmFitsEStream << "};"; 
+  mlmFitsDStream << "};"; mlmFitsEStream << "};"; mlmFitsFStream << "};"; 
+  mlmFitsGStream << "};"; 
 
   std::ofstream outputFile(output_file, std::ios_base::app);
   outputFile << mlmFitsAStream.str() << std::endl;
@@ -493,6 +512,8 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
   outputFile << mlmFitsCStream.str() << std::endl;
   outputFile << mlmFitsDStream.str() << std::endl;
   outputFile << mlmFitsEStream.str() << std::endl;
+  outputFile << mlmFitsFStream.str() << std::endl;
+  outputFile << mlmFitsGStream.str() << std::endl;
 
   outputFile.close();
 }
@@ -643,10 +664,12 @@ double BSA_funcToFit(double* x, double* par) {
   // Retrieve the parameters 
   double ALU_offset = par[0];
   double ALU_sinphi = par[1];
+  double AUU_cosphi = par[2];
+  double AUU_cos2phi = par[3];
   // Retrieve the phi variable from the input x array
   double phi = x[0];
   // Calculate and return the value of the function for the given phi and parameters 
-  return ALU_offset + ALU_sinphi*sin(phi);
+  return (ALU_offset + ALU_sinphi*sin(phi)) / (1 + AUU_cosphi(phi) + AUU_cos2phi(2*phi));
 }
 
 // Function to fit the target-spin asymmetry histogram
@@ -655,10 +678,13 @@ double TSA_funcToFit(double* x, double* par) {
   double AUL_offset = par[0];
   double AUL_sinphi = par[1];
   double AUL_sin2phi = par[2];
+  double AUU_cosphi = par[3];
+  double AUU_cos2phi = par[4];
   // Retrieve the phi variable from the input x array
   double phi = x[0];
   // Calculate and return the value of the function for the given phi and parameters 
-  return AUL_offset + AUL_sinphi*sin(phi)+AUL_sin2phi*sin(2*phi);
+  return (AUL_offset + AUL_sinphi*sin(phi)+AUL_sin2phi*sin(2*phi)) /
+    (1 + AUU_cosphi(phi) + AUU_cos2phi(2*phi));
 }
 
 // Function to fit the double-spin asymmetry histogram
@@ -666,10 +692,12 @@ double DSA_funcToFit(double* x, double* par) {
   // Retrieve the parameters A
   double ALL = par[0];
   double ALL_cosphi = par[1];
+  double AUU_cosphi = par[2];
+  double AUU_cos2phi = par[3];
   // Retrieve the phi variable from the input x array
   double phi = x[0];
   // Calculate and return the value of the function for the given phi and parameters 
-  return ALL+ALL_cosphi*cos(phi);
+  return (ALL+ALL_cosphi*cos(phi)) / (1 + AUU_cosphi(phi) + AUU_cos2phi(2*phi));
 }
 
 void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int asymmetryIndex, 
@@ -788,17 +816,23 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
       fitFunction = new TF1("fitFunction", BSA_funcToFit, 0, 2 * TMath::Pi(), 2);
       chi2FitsAStream << prefix << "chi2FitsALUoffset = {";
       chi2FitsBStream << prefix << "chi2FitsALUsinphi = {";
+      chi2FitsCStream << prefix << "chi2FitsAUUcosphi = {";
+      chi2FitsDStream << prefix << "chi2FitsAUUcos2phi = {";
       break;
     case 1: // target-spin asymmetry
       fitFunction = new TF1("fitFunction", TSA_funcToFit, 0, 2 * TMath::Pi(), 3);
       chi2FitsAStream << prefix << "chi2FitsAULoffset = {";
       chi2FitsBStream << prefix << "chi2FitsAULsinphi = {";
       chi2FitsCStream << prefix << "chi2FitsAULsin2phi = {";
+      chi2FitsDStream << prefix << "chi2FitsAUUcosphi = {";
+      chi2FitsEStream << prefix << "chi2FitsAUUcos2phi = {";
       break;
     case 2: // double-spin asymmetry
       fitFunction = new TF1("fitFunction", DSA_funcToFit, 0, 2 * TMath::Pi(), 2);
       chi2FitsAStream << prefix << "chi2FitsALL = {";
       chi2FitsBStream << prefix << "chi2FitsALLcosphi = {";
+      chi2FitsCStream << prefix << "chi2FitsAUUcosphi = {";
+      chi2FitsDStream << prefix << "chi2FitsAUUcos2phi = {";
       break;
     default:
       cout << "Invalid asymmetry_index! Using default function form of BSA." << endl;
@@ -864,12 +898,23 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
         float ALU_offset_error = fitFunction->GetParError(0);
         float ALU_sinphi = fitFunction->GetParameter(1); 
         float ALU_sinphi_error = fitFunction->GetParError(1);
+        float AUU_cosphi = fitFunction->GetParameter(2); 
+        float AUU_cosphi_error = fitFunction->GetParError(2);
+        float AUU_cos2phi = fitFunction->GetParameter(3); 
+        float AUU_cos2phi_error = fitFunction->GetParError(3);
         ALU_sinphi = (meanDepA/meanDepW)*ALU_sinphi;
         ALU_sinphi_error = (meanDepA/meanDepW)*ALU_sinphi_error;
+        AUU_cosphi = (meanDepA/meanDepV)*AUU_cosphi;
+        AUU_cosphi_error = (meanDepA/meanDepV)*AUU_cosphi_error;
+        AUU_cos2phi = (meanDepB/meanDepV)*AUU_cos2phi;
+        AUU_cos2phi_error = (meanDepB/meanDepV)*AUU_cos2phi_error;
         chi2FitsAStream<<"{"<<meanVariable<<", "<< ALU_offset << ", " << ALU_offset_error <<"}";
         chi2FitsBStream<<"{"<<meanVariable<<", "<< ALU_sinphi << ", " << ALU_sinphi_error <<"}";
+        chi2FitsCStream<<"{"<<meanVariable<<", "<< AUU_cosphi << ", " << AUU_cosphi_error <<"}";
+        chi2FitsDStream<<"{"<<meanVariable<<", "<< AUU_cos2phi << ", " << AUU_cos2phi_error <<"}";
         if (i < numBins - 1) {
-            chi2FitsAStream << ", "; chi2FitsBStream << ", ";
+            chi2FitsAStream << ", "; chi2FitsBStream << ", "; 
+            chi2FitsCStream << ", "; chi2FitsDStream << ", ";
         }
         break;
       }
@@ -881,15 +926,26 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
         float AUL_sinphi_error = fitFunction->GetParError(1);
         float AUL_sin2phi = fitFunction->GetParameter(2);
         float AUL_sin2phi_error = fitFunction->GetParError(2);
+        float AUU_cosphi = fitFunction->GetParameter(3); 
+        float AUU_cosphi_error = fitFunction->GetParError(3);
+        float AUU_cos2phi = fitFunction->GetParameter(4); 
+        float AUU_cos2phi_error = fitFunction->GetParError(4);
         AUL_sinphi = (meanDepA/meanDepV)*AUL_sinphi;
         AUL_sinphi_error = (meanDepA/meanDepV)*AUL_sinphi_error;
         AUL_sin2phi = (meanDepA/meanDepB)*AUL_sin2phi;
         AUL_sin2phi_error = (meanDepA/meanDepB)*AUL_sin2phi_error;
+        AUU_cosphi = (meanDepA/meanDepV)*AUU_cosphi;
+        AUU_cosphi_error = (meanDepA/meanDepV)*AUU_cosphi_error;
+        AUU_cos2phi = (meanDepB/meanDepV)*AUU_cos2phi;
+        AUU_cos2phi_error = (meanDepB/meanDepV)*AUU_cos2phi_error;
         chi2FitsAStream<<"{"<<meanVariable<<", "<< AUL_offset << ", " << AUL_offset_error <<"}";
         chi2FitsBStream<<"{"<<meanVariable<<", "<< AUL_sinphi << ", " << AUL_sinphi_error <<"}";
         chi2FitsCStream<<"{"<<meanVariable<<", "<< AUL_sin2phi << ", " << AUL_sin2phi_error <<"}";
+        chi2FitsDStream<<"{"<<meanVariable<<", "<< AUU_cosphi << ", " << AUU_cosphi_error <<"}";
+        chi2FitsEStream<<"{"<<meanVariable<<", "<< AUU_cos2phi << ", " << AUU_cos2phi_error <<"}";
         if (i < numBins - 1) {
             chi2FitsAStream << ", "; chi2FitsBStream << ", "; chi2FitsCStream << ", ";
+            chi2FitsDStream << ", "; chi2FitsEStream << ", ";
         }
         break;
       }
@@ -899,14 +955,25 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
         float ALL_error = fitFunction->GetParError(0);
         float ALL_cosphi = fitFunction->GetParameter(1);
         float ALL_cosphi_error = fitFunction->GetParError(1);
+        float AUU_cosphi = fitFunction->GetParameter(2); 
+        float AUU_cosphi_error = fitFunction->GetParError(2);
+        float AUU_cos2phi = fitFunction->GetParameter(3); 
+        float AUU_cos2phi_error = fitFunction->GetParError(3);
         ALL = (meanDepA/meanDepC)*ALL;
         ALL_error = (meanDepA/meanDepC)*ALL_error;
         ALL_cosphi = (meanDepA/meanDepW)*ALL_cosphi;
         ALL_cosphi_error = (meanDepA/meanDepW)*ALL_cosphi_error;
+        AUU_cosphi = (meanDepA/meanDepV)*AUU_cosphi;
+        AUU_cosphi_error = (meanDepA/meanDepV)*AUU_cosphi_error;
+        AUU_cos2phi = (meanDepB/meanDepV)*AUU_cos2phi;
+        AUU_cos2phi_error = (meanDepB/meanDepV)*AUU_cos2phi_error;
         chi2FitsAStream<<"{"<<meanVariable<<", "<< ALL << ", " << ALL_error <<"}";
         chi2FitsBStream<<"{"<<meanVariable<<", "<< ALL_cosphi << ", " << ALL_cosphi_error <<"}";
+        chi2FitsCStream<<"{"<<meanVariable<<", "<< AUU_cosphi << ", " << AUU_cosphi_error <<"}";
+        chi2FitsDStream<<"{"<<meanVariable<<", "<< AUU_cos2phi << ", " << AUU_cos2phi_error <<"}";
         if (i < numBins - 1) {
             chi2FitsAStream << ", "; chi2FitsBStream << ", ";
+            chi2FitsCStream << ", "; chi2FitsDStream << ", ";
         }
         break;
       }
@@ -915,14 +982,15 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
     delete hist;
   }
 
-  chi2FitsAStream << "};"; 
-  chi2FitsBStream << "};"; 
-  chi2FitsCStream << "};"; 
+  chi2FitsAStream << "};";  chi2FitsBStream << "};";  chi2FitsCStream << "};"; 
+  chi2FitsDStream << "};";  chi2FitsEStream << "};"; 
 
   std::ofstream outputFile(output_file, std::ios_base::app);
   outputFile << chi2FitsAStream.str() << std::endl;
   outputFile << chi2FitsBStream.str() << std::endl;
-  if (asymmetry_index==1) { outputFile << chi2FitsCStream.str() << std::endl; }
+  outputFile << chi2FitsCStream.str() << std::endl;
+  outputFile << chi2FitsDStream.str() << std::endl;
+  if (asymmetry_index==1) { outputFile << chi2FitsEStream.str() << std::endl; }
 
   outputFile.close();
 }
