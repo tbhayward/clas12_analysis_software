@@ -381,6 +381,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                     }  
                     else if (run_Bank.getFloat("torus", 0) <0 && rec_Bank.getInt("pid", particle_Index) == 11) { 
                         // inbending electrons 
+                        System.out.println("we made it to here");
                         double x_New = 10000;
                         double y_New = 10000;
                         switch (sector) {
