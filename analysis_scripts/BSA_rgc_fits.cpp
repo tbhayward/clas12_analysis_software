@@ -401,8 +401,6 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     float minBeamCharge = std::min({(cpp+cpm),(cmp+cmm)}); 
     // determine min pos or neg target helicity accumulated charge to scale down higher one
     float minTargetCharge = std::min({(cpp+cmp),(cpm+cmm)}); 
-    
-    binNames[currentFits]
 
     float nll = N * log(N) - 
       minBeamCharge*minTargetCharge/((cpp+cpm)*(cpp+cmp))*sum_PP -
