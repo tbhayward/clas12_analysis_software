@@ -333,6 +333,8 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     double ALL = par[3];
     double ALL_cosphi = par[4];
     double A = par[5];
+    double AUU_cosphi = par[6];
+    double AUU_cos2phi = par[7];
 
     // Initialize variables for counting events (N), positive helicity sum (sum_P), 
     // and negative helicity sum (sum_N)
