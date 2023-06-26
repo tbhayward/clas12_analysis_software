@@ -448,12 +448,12 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     currentBin = i;
 
     // Define the parameters with initial values and limits
-    minuit.DefineParameter(0, "ALU_sinphi", -0.01, 0.01, -1, 1);
-    minuit.DefineParameter(1, "AUL_sinphi", -0.02, 0.01, -1, 1);
-    minuit.DefineParameter(2, "AUL_sin2phi", -0.01, 0.01, -1, 1);
-    minuit.DefineParameter(3, "ALL", 0.25, 0.01, -1, 1);
+    minuit.DefineParameter(0, "ALU_sinphi", -0.015, 0.01, -1, 1);
+    minuit.DefineParameter(1, "AUL_sinphi", -0.020, 0.01, -1, 1);
+    minuit.DefineParameter(2, "AUL_sin2phi", -0.010, 0.01, -1, 1);
+    minuit.DefineParameter(3, "ALL", 0.40, 0.01, -1, 1);
     minuit.DefineParameter(4, "ALL_cosphi", 0.01, 0.01, -1, 1);
-    minuit.DefineParameter(5, "AUU_cosphi", 0.01, 0.01, -1, 1);
+    minuit.DefineParameter(5, "AUU_cosphi", 0.00, 0.01, -1, 1);
     minuit.DefineParameter(6, "AUU_cos2phi", 0.01, 0.01, -1, 1);
 
     // Minimize the negative log-likelihood function
@@ -1069,15 +1069,15 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
   cout << endl << endl;
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
-      switch (asymmetry) {
-        case 0: cout << "    chi2 BSA." << endl; break;
-        case 1: cout << "    chi2 TSA." << endl; break;
-        case 2: cout << "    chi2 DSA." << endl; break;
-      }
-      performChi2Fits(data_file, output_file, binNames[i], asymmetry);
-    }
-    cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
+    // for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
+    //   switch (asymmetry) {
+    //     case 0: cout << "    chi2 BSA." << endl; break;
+    //     case 1: cout << "    chi2 TSA." << endl; break;
+    //     case 2: cout << "    chi2 DSA." << endl; break;
+    //   }
+    //   performChi2Fits(data_file, output_file, binNames[i], asymmetry);
+    // }
+    // cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
     performMLMFits(data_file, output_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
