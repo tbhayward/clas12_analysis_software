@@ -81,7 +81,7 @@ public class Dihadrons {
 //        if (variables.helicity==0){ return false; }
         if (variables.Q2()<1) { return false; } 
         else if (variables.W()<2) { return false; } 
-        else if (variables.y()>0.80) { return false; } 
+        else if (variables.y()>0.75) { return false; } 
 //        else if (variables.Mx()<0.95) { return false; } 
 //        else if (variables.Mx1()<1.35) { return false; } 
 //        else if (variables.Mx1()<1.80) { return false; } 
