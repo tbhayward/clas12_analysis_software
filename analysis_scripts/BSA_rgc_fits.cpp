@@ -810,6 +810,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
 
   // Initialize string streams to store the results for each bin
   std::ostringstream chi2FitsAStream, chi2FitsBStream, chi2FitsCStream;
+  std::ostringstream chi2FitsDStream, chi2FitsEStream;
 
   // Create a new TF1 object called fitFunction representing the function to fit
   // and create string stream prefix depending on current asymmetry we're fitting
