@@ -301,6 +301,7 @@ public class analysis_fitter extends GenericKinematicFitter {
         for (int current_Row = 0; current_Row < traj_Bank.rows(); current_Row++) {
             if (!track_success) { continue; }
             // loop over all entries in the trajectory bank
+            System.out.println(traj_Bank.getInt("detector", current_Row));
             if (traj_Bank.getInt("detector", current_Row) != 6) { // detector = 6 is DC (avoid = 8 for pass 2 FMT)
                 track_success = false;
                 continue;
@@ -670,7 +671,7 @@ public class analysis_fitter extends GenericKinematicFitter {
             && calorimeter_diagonal_cut(particle_Index, p, cal_Bank)
             && electron_z_vertex_cut(vz)
             && pcal_fiducial_cut(particle_Index, rec_Bank, cal_Bank)
-//            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
+            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
 //            && nphe_cut(particle_Index, cc_Bank) // legacy cut used in the analysis note to check the effect
                 ;
     }
