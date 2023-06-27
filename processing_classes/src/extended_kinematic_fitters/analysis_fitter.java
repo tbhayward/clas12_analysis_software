@@ -387,7 +387,6 @@ public class analysis_fitter extends GenericKinematicFitter {
                             case 0:
                                 x_New = x;
                                 y_New = y;
-                                System.out.println("we made it to here");
                                 break;
                             case 1:
                                 x_New = x*Math.cos(-60*Math.PI/180) - y*Math.sin(-60*Math.PI/180);
@@ -412,7 +411,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                         }
                         double calc_min = minparams_in_elec[pid][sector][region][0]+minparams_in_elec[pid][sector][region][1]*x_New;
                         double calc_max = maxparams_in_elec[pid][sector][region][0]+maxparams_in_elec[pid][sector][region][1]*x_New;
-                        
+                        System.out.println(calc_min+" "+y_New+" "+calc_max);
                         track_success = y_New > calc_min && y_New < calc_max;
                     } 
                     else { // outbending electrons and hadrons
