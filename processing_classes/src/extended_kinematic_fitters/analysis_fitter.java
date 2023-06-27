@@ -301,6 +301,10 @@ public class analysis_fitter extends GenericKinematicFitter {
         for (int current_Row = 0; current_Row < traj_Bank.rows(); current_Row++) {
             if (!track_success) { continue; }
             // loop over all entries in the trajectory bank
+            if (traj_Bank.getInt("detector", current_Row) != 6) { // detector = 6 is DC (avoid = 8 for pass 2 FMT)
+                track_success = false;
+                continue;
+            }
             if (particle_Index == traj_Bank.getInt("pindex", current_Row)) {
                 // require that the particle examined corresponds to this track
                 int region = -1;
@@ -411,8 +415,6 @@ public class analysis_fitter extends GenericKinematicFitter {
                         }
                         double calc_min = minparams_in_elec[pid][sector][region][0]+minparams_in_elec[pid][sector][region][1]*x_New;
                         double calc_max = maxparams_in_elec[pid][sector][region][0]+maxparams_in_elec[pid][sector][region][1]*x_New;
-//                        System.out.println(calc_min+" "+y_New+" "+calc_max);
-//                        System.out.println(sector+" "+calc_min+" "+x+" "+x_New+" "+y+" "+y_New+" "+calc_max);
                         track_success = y_New > calc_min && y_New < calc_max;
                     } 
                     else { // outbending electrons and hadrons
@@ -688,7 +690,7 @@ public class analysis_fitter extends GenericKinematicFitter {
             && pion_z_vertex_cut(vz, trigger_electron_vz)
 //            && pion_chi2pid_cut(particle_Index, rec_Bank)
             && hadron_chi2pid_cut(particle_Index, rec_Bank)
-//            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
+            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
               ;
     }
     
@@ -723,7 +725,7 @@ public class analysis_fitter extends GenericKinematicFitter {
 //            && p > 0.4
             && proton_z_vertex_cut(vz, pion_vz)
 //            && forward_detector_cut(particle_Index, rec_Bank)
-//            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
+            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
             && hadron_chi2pid_cut(particle_Index, rec_Bank)
               ;
     }

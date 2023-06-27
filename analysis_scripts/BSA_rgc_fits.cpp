@@ -453,8 +453,8 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     minuit.DefineParameter(2, "AUL_sin2phi", -0.010, 0.01, -1, 1);
     minuit.DefineParameter(3, "ALL", 0.40, 0.01, -1, 1);
     minuit.DefineParameter(4, "ALL_cosphi", 0.01, 0.01, -1, 1);
-    minuit.DefineParameter(5, "AUU_cosphi", 0.00, 0.01, -1, 1);
-    minuit.DefineParameter(6, "AUU_cos2phi", 0.01, 0.01, -1, 1);
+    minuit.DefineParameter(5, "AUU_cosphi", -0.12, 0.01, -1, 1);
+    minuit.DefineParameter(6, "AUU_cos2phi", 0.08, 0.01, -1, 1);
 
     // Minimize the negative log-likelihood function
     minuit.Migrad(); cout << endl;
@@ -819,23 +819,23 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
       fitFunction = new TF1("fitFunction", BSA_funcToFit, 0, 2 * TMath::Pi(), 4);
       chi2FitsAStream << prefix << "chi2FitsALUoffset = {";
       chi2FitsBStream << prefix << "chi2FitsALUsinphi = {";
-      chi2FitsCStream << prefix << "chi2FitsAUUcosphi = {";
-      chi2FitsDStream << prefix << "chi2FitsAUUcos2phi = {";
+      chi2FitsCStream << prefix << "chi2FitsALUAUUcosphi = {";
+      chi2FitsDStream << prefix << "chi2FitsALUAUUcos2phi = {";
       break;
     case 1: // target-spin asymmetry
       fitFunction = new TF1("fitFunction", TSA_funcToFit, 0, 2 * TMath::Pi(), 5);
       chi2FitsAStream << prefix << "chi2FitsAULoffset = {";
       chi2FitsBStream << prefix << "chi2FitsAULsinphi = {";
       chi2FitsCStream << prefix << "chi2FitsAULsin2phi = {";
-      chi2FitsDStream << prefix << "chi2FitsAUUcosphi = {";
-      chi2FitsEStream << prefix << "chi2FitsAUUcos2phi = {";
+      chi2FitsDStream << prefix << "chi2FitsAULAUUcosphi = {";
+      chi2FitsEStream << prefix << "chi2FitsAULAUUcos2phi = {";
       break;
     case 2: // double-spin asymmetry
       fitFunction = new TF1("fitFunction", DSA_funcToFit, 0, 2 * TMath::Pi(), 4);
       chi2FitsAStream << prefix << "chi2FitsALL = {";
       chi2FitsBStream << prefix << "chi2FitsALLcosphi = {";
-      chi2FitsCStream << prefix << "chi2FitsAUUcosphi = {";
-      chi2FitsDStream << prefix << "chi2FitsAUUcos2phi = {";
+      chi2FitsCStream << prefix << "chi2FitsALLAUUcosphi = {";
+      chi2FitsDStream << prefix << "chi2FitsALLAUUcos2phi = {";
       break;
     default:
       cout << "Invalid asymmetry_index! Using default function form of BSA." << endl;
