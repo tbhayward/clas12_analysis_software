@@ -381,13 +381,13 @@ public class analysis_fitter extends GenericKinematicFitter {
                     }  
                     else if (run_Bank.getFloat("torus", 0) <0 && rec_Bank.getInt("pid", particle_Index) == 11) { 
                         // inbending electrons 
-                        System.out.println("we made it to here");
                         double x_New = 10000;
                         double y_New = 10000;
                         switch (sector) {
                             case 0:
                                 x_New = x;
                                 y_New = y;
+                                System.out.println("we made it to here");
                                 break;
                             case 1:
                                 x_New = x*Math.cos(-60*Math.PI/180) - y*Math.sin(-60*Math.PI/180);
