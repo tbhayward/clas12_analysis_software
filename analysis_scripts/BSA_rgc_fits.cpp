@@ -471,9 +471,9 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     double ALL_cosphi, ALL_cosphi_error;
     minuit.GetParameter(4, ALL_cosphi, ALL_cosphi_error);
     double AUU_cosphi, AUU_cosphi_error;
-    minuit.GetParameter(4, AUU_cosphi, AUU_cosphi_error);
+    minuit.GetParameter(5, AUU_cosphi, AUU_cosphi_error);
     double AUU_cos2phi, AUU_cos2phi_error;
-    minuit.GetParameter(4, AUU_cos2phi, AUU_cos2phi_error);
+    minuit.GetParameter(6, AUU_cos2phi, AUU_cos2phi_error);
 
     // Calculate the mean values of the current variable 
     double sumVariable = 0;
