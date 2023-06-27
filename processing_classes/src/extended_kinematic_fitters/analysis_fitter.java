@@ -301,9 +301,7 @@ public class analysis_fitter extends GenericKinematicFitter {
         for (int current_Row = 0; current_Row < traj_Bank.rows(); current_Row++) {
             if (!track_success) { continue; }
             // loop over all entries in the trajectory bank
-            System.out.println(traj_Bank.getInt("detector", current_Row));
             if (traj_Bank.getInt("detector", current_Row) != 6) { // detector = 6 is DC (avoid = 8 for pass 2 FMT)
-                track_success = false;
                 continue;
             }
             if (particle_Index == traj_Bank.getInt("pindex", current_Row)) {
