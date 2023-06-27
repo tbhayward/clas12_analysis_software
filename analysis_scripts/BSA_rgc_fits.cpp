@@ -408,7 +408,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
       minBeamCharge*minTargetCharge/((cpp+cpm)*(cmp+cmm))*sum_PM - 
       minBeamCharge*minTargetCharge/((cmp+cmm)*(cpp+cmp))*sum_MP - 
       minBeamCharge*minTargetCharge/((cmp+cmm)*(cmp+cmm))*sum_MM;
-    cout << "On MLM fit " << binNames[currentFits] << ", " << nll << endl;
+    cout << "On MLM fit " << binNames[currentFits] << " " << currentFits << ", " << nll << endl;
     // Calculate the negative log-likelihood value and store it in the output variable f
     f = nll;
 }
