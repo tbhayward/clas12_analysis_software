@@ -553,15 +553,16 @@ public class analysis_fitter extends GenericKinematicFitter {
        
             
             return ((cal_energy/p) > (mean-scale*std)) && ((cal_energy/p) < (mean+scale*std));
-        } 
+        } else {
+            System.out.println("we in there");
+            double mean = e_cal_sampl_mu_RGA[0][sector]+(e_cal_sampl_mu_RGA[1][sector]/1000)*
+                (p-e_cal_sampl_mu_RGA[2][sector])*(p-e_cal_sampl_mu_RGA[2][sector]);
         
-        double mean = e_cal_sampl_mu_RGA[0][sector]+(e_cal_sampl_mu_RGA[1][sector]/1000)*
-            (p-e_cal_sampl_mu_RGA[2][sector])*(p-e_cal_sampl_mu_RGA[2][sector]);
+            double std = e_cal_sampl_sigma_RGA[0][sector] + e_cal_sampl_sigma_RGA[1][sector] / 
+                (10 * (p-e_cal_sampl_sigma_RGA[2][sector]));
         
-        double std = e_cal_sampl_sigma_RGA[0][sector] + e_cal_sampl_sigma_RGA[1][sector] / 
-            (10 * (p-e_cal_sampl_sigma_RGA[2][sector]));
-        
-        return ((cal_energy/p) > (mean-scale*std)) && ((cal_energy/p) < (mean+scale*std));
+            return ((cal_energy/p) > (mean-scale*std)) && ((cal_energy/p) < (mean+scale*std));
+        }
     }
     
     public boolean calorimeter_diagonal_cut(int particle_Index, double p, HipoDataBank cal_Bank) {
