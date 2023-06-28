@@ -532,15 +532,15 @@ public class analysis_fitter extends GenericKinematicFitter {
             {-0.0695, 0.1553, 0.3300, 0.4330, 1.1032, -0.7996}};
             
             
-         // sampling fraction is cal_energy/p
-        if ((runnum == 11) || ((runnum>=5032 && runnum<=5666) || (runnum>=6616 && runnum<=6783) ||
-                (runnum >= 16290 && runnum <= 16353))) { // RGA
-            
-            double mean = e_cal_sampl_mu_RGA[0][sector]+(e_cal_sampl_mu_RGA[1][sector]/1000)*
-                (p-e_cal_sampl_mu_RGA[2][sector])*(p-e_cal_sampl_mu_RGA[2][sector]);
+        // sampling fraction is cal_energy/p
+        if( (runnum>=11323 && runnum<=11571) || (runnum>=11093 && runnum<=11300) ) { 
+        // RGB winter 2020 // (also using this for RGB fall 2019, but it should be updated! TODO)
         
-            double std = e_cal_sampl_sigma_RGA[0][sector] + e_cal_sampl_sigma_RGA[1][sector] / 
-                (10 * (p-e_cal_sampl_sigma_RGA[2][sector]));
+            double mean = e_cal_sampl_mu_RGBW20[0][sector]+(e_cal_sampl_mu_RGBW20[1][sector]/1000)*
+                (p-e_cal_sampl_mu_RGBW20[2][sector])*(p-e_cal_sampl_mu_RGBW20[2][sector]);
+        
+            double std = e_cal_sampl_sigmaRGBW20[0][sector] + e_cal_sampl_sigmaRGBW20[1][sector] / 
+                (10 * (p-e_cal_sampl_sigmaRGBW20[2][sector]));
         
             return ((cal_energy/p) > (mean-scale*std)) && ((cal_energy/p) < (mean+scale*std));
         } else if ( runnum>=6120 && runnum<=6604 ) { // RGB Sp19
@@ -553,18 +553,15 @@ public class analysis_fitter extends GenericKinematicFitter {
        
             
             return ((cal_energy/p) > (mean-scale*std)) && ((cal_energy/p) < (mean+scale*std));
-        } else if( (runnum>=11323 && runnum<=11571) || (runnum>=11093 && runnum<=11300) ) { 
-        // RGB winter 2020 // (also using this for RGB fall 2019, but it should be updated! TODO)
-        
-            double mean = e_cal_sampl_mu_RGBW20[0][sector]+(e_cal_sampl_mu_RGBW20[1][sector]/1000)*
-                (p-e_cal_sampl_mu_RGBW20[2][sector])*(p-e_cal_sampl_mu_RGBW20[2][sector]);
-        
-            double std = e_cal_sampl_sigmaRGBW20[0][sector] + e_cal_sampl_sigmaRGBW20[1][sector] / 
-                (10 * (p-e_cal_sampl_sigmaRGBW20[2][sector]));
-        
-            return ((cal_energy/p) > (mean-scale*std)) && ((cal_energy/p) < (mean+scale*std));
         } 
-        return true;
+        
+        double mean = e_cal_sampl_mu_RGA[0][sector]+(e_cal_sampl_mu_RGA[1][sector]/1000)*
+            (p-e_cal_sampl_mu_RGA[2][sector])*(p-e_cal_sampl_mu_RGA[2][sector]);
+        
+        double std = e_cal_sampl_sigma_RGA[0][sector] + e_cal_sampl_sigma_RGA[1][sector] / 
+            (10 * (p-e_cal_sampl_sigma_RGA[2][sector]));
+        
+        return ((cal_energy/p) > (mean-scale*std)) && ((cal_energy/p) < (mean+scale*std));
     }
     
     public boolean calorimeter_diagonal_cut(int particle_Index, double p, HipoDataBank cal_Bank) {
