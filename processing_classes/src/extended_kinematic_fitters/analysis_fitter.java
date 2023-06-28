@@ -554,7 +554,6 @@ public class analysis_fitter extends GenericKinematicFitter {
             
             return ((cal_energy/p) > (mean-scale*std)) && ((cal_energy/p) < (mean+scale*std));
         } else {
-            System.out.println("we in there");
             double mean = e_cal_sampl_mu_RGA[0][sector]+(e_cal_sampl_mu_RGA[1][sector]/1000)*
                 (p-e_cal_sampl_mu_RGA[2][sector])*(p-e_cal_sampl_mu_RGA[2][sector]);
         
