@@ -183,6 +183,7 @@ struct eventData {
 };
 
 std::vector<eventData> gData;
+std::vector<eventData> mcData;
 
 eventData parseLine(const std::string& line, const std::vector<std::string>& variable_names) {
   // Create a stringstream from the input line
@@ -214,10 +215,12 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
 
   // Get the target polarization value from the run_info_list and store it in the data map
   int runnum = static_cast<int>(data.data["runnum"]);
-  for (const auto& run_info : run_info_list) {
-    if (run_info.runnum == runnum) {
-      data.data["target_pol"] = run_info.target_polarization;
-      break;
+  if (data.data["runnum"] == 11) { data.data["target_pol"] = 0; } // MC
+  else { for (const auto& run_info : run_info_list) {
+      if (run_info.runnum == runnum) {
+        data.data["target_pol"] = run_info.target_polarization;
+        break;
+      }
     }
   }
 
@@ -266,25 +269,27 @@ double getEventProperty(const eventData& event, int currentFits) {
 }
 
 // Apply kinematic cuts to the data
-bool applyKinematicCuts(const eventData& data, int currentFits) {
+bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
 
+  bool goodEvent = 0;
   std::string property = binNames[currentFits];
   if (property == "xF") {
-    return data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
-      data.data.at("y")<0.75 && data.data.at("target_pol") != 0;
+    goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.75 &&
+      data.data.at("y")<0.75;
   }
   if (property == "PTTFR" || property ==  "xTFR" || property == "zetaTFR" || 
     property ==  "x") {
-    return data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
-      data.data.at("y")<0.75 && data.data.at("xF")<0 && data.data.at("target_pol") != 0;
+    goodEvent data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.75 &&
+      data.data.at("y")<0.75 && data.data.at("xF")<0;
   }
   if (property == "PTCFR" || property == "xCFR" || property == "zetaCFR") {
-    return data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
-      data.data.at("y")<0.75 && data.data.at("xF")>0 && data.data.at("target_pol") != 0;
-  }
+    goodEvent data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.75 &&
+      data.data.at("y")<0.75 && data.data.at("xF")>0;
+  } 
+  if (isMC) { return goodEvent; }
+  else {return goodEvent && data.data.at("target_pol") != 0; } // if data, skip Pt = 0 (carbon)
 
-  cout << "Did not find a matching bin name." << endl;
-  return false;  
+  return goodEvent;  
 }
 
 float dilution_factor(float currentVariable, const std::string& prefix) {
@@ -340,6 +345,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     // Initialize variables for counting events (N), positive helicity sum (sum_P), 
     // and negative helicity sum (sum_N)
     double N = 0;
+    double NUU = 0; // normalization integral
     double sum_PP = 0; // positive beam -- positive target
     double sum_PM = 0; // positive beam -- negative target
     double sum_MP = 0; // negative beam -- positive target
@@ -351,7 +357,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
         float currentVariable = getEventProperty(event, currentFits);
 
         // Apply kinematic cuts and check if the current variable is within the specified bin range
-        if (applyKinematicCuts(event, currentFits) && 
+        if (applyKinematicCuts(event, currentFits, 0) && 
           currentVariable >= allBins[currentFits][currentBin] && 
           currentVariable < allBins[currentFits][currentBin + 1]) {
 
@@ -372,29 +378,46 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           // Check if the helicities is positive or negative and update the corresponding sum
           if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
             sum_PP += log(1 
-              + (DepV/DepA)*AUU_cosphi + (DepB/DepA)*AUU_cos2phi // UU 
+              + (DepV/DepA)*AUU_cosphi*cos(phi) + (DepB/DepA)*AUU_cos2phi*cos(2*phi) // UU 
               + Pb*((DepW/DepA)*ALU_sinphi*sin(phi)) // BSA
               + Df*Pt*((DepV/DepA)*AUL_sinphi*sin(phi) + (DepB/DepA)*AUL_sin2phi*sin(2*phi)) // TSA
               + Df*Pb*Pt*((DepC/DepA)*ALL + (DepW/DepA)*ALL_cosphi*cos(phi)) ); // DSA
           } else if (event.data.at("helicity") > 0 && event.data.at("target_pol") < 0 ) {
             sum_PM += log(1 
-              + (DepV/DepA)*AUU_cosphi + (DepB/DepA)*AUU_cos2phi // UU
+              + (DepV/DepA)*AUU_cosphi*cos(phi) + (DepB/DepA)*AUU_cos2phi*cos(2*phi) // UU
               + Pb*((DepW/DepA)*ALU_sinphi*sin(phi)) // BSA
               - Df*Pt*((DepV/DepA)*AUL_sinphi*sin(phi) + (DepB/DepA)*AUL_sin2phi*sin(2*phi)) // TSA
               - Df*Pb*Pt*((DepC/DepA)*ALL + (DepW/DepA)*ALL_cosphi*cos(phi)) ); // DSA
           } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") > 0 ) {
             sum_MP += log(1
-              + (DepV/DepA)*AUU_cosphi + (DepB/DepA)*AUU_cos2phi // UU
+              + (DepV/DepA)*AUU_cosphi*cos(phi) + (DepB/DepA)*AUU_cos2phi*cos(2*phi) // UU
               - Pb*((DepW/DepA)*ALU_sinphi*sin(phi)) // BSA
               + Df*Pt*((DepV/DepA)*AUL_sinphi*sin(phi) + (DepB/DepA)*AUL_sin2phi*sin(2*phi)) // TSA
               - Df*Pb*Pt*((DepC/DepA)*ALL + (DepW/DepA)*ALL_cosphi*cos(phi)) ); // DSA
           } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") < 0 ) {
             sum_MM += log(1 
-              + (DepV/DepA)*AUU_cosphi + (DepB/DepA)*AUU_cos2phi // UU
+              + (DepV/DepA)*AUU_cosphi*cos(phi) + (DepB/DepA)*AUU_cos2phi*cos(2*phi) // UU
               - Pb*((DepW/DepA)*ALU_sinphi*sin(phi)) // BSA
               - Df*Pt*((DepV/DepA)*AUL_sinphi*sin(phi) + (DepB/DepA)*AUL_sin2phi*sin(2*phi)) // TSA
               + Df*Pb*Pt*((DepC/DepA)*ALL + (DepW/DepA)*ALL_cosphi*cos(phi)) ); // DSA
           }
+        }
+    }
+
+    // Iterate through the global event mc (mcData)
+    for (const eventData &event : mcData) {
+        // Get the value of the current variable of interest for the event
+        float currentVariable = getEventProperty(event, currentFits);
+
+        // Apply kinematic cuts and check if the current variable is within the specified bin range
+        if (applyKinematicCuts(event, currentFits, 1) && 
+          currentVariable >= allBins[currentFits][currentBin] && 
+          currentVariable < allBins[currentFits][currentBin + 1]) {
+
+          // Extract Delta_phi and polarization (pol) from the event data
+          float phi = event.data.at("phi");
+
+          NUU+=1 + (DepV/DepA)*AUU_cosphi*cos(phi) + (DepB/DepA)*AUU_cos2phi*cos(2*phi); // UU
         }
     }
 
@@ -403,7 +426,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     // determine min pos or neg target helicity accumulated charge to scale down higher one
     float minTargetCharge = std::min({(cpp+cmp),(cpm+cmm)}); 
 
-    float nll = N * log(N) - 
+    float nll = N * log(NUU) - 
       minBeamCharge*minTargetCharge/((cpp+cpm)*(cpp+cmp))*sum_PP -
       minBeamCharge*minTargetCharge/((cpp+cpm)*(cmp+cmm))*sum_PM - 
       minBeamCharge*minTargetCharge/((cmp+cmm)*(cpp+cmp))*sum_MP - 
@@ -480,7 +503,7 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     double numEvents = 0;
     for (const eventData &event : gData) {
       double currentVariable = getEventProperty(event, currentFits);
-        if (applyKinematicCuts(event, currentFits) && currentVariable >= 
+        if (applyKinematicCuts(event, currentFits, 0) && currentVariable >= 
           allBins[currentFits][i] && currentVariable < allBins[currentFits][i + 1]) {
             sumVariable += currentVariable;
             numEvents += 1;
@@ -594,7 +617,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   // Fill the positive and negative helicity histograms
   for (const eventData& event : data) {
     float currentVariable = getEventProperty(event, currentFits);
-    if (applyKinematicCuts(event, currentFits) && currentVariable >= varMin && 
+    if (applyKinematicCuts(event, currentFits, 0) && currentVariable >= varMin && 
       currentVariable < varMax) {
       sumVariable+=currentVariable;
 
@@ -870,7 +893,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
     // Loop over all events and calculate the sums and event counts
     for (const eventData& event : gData) {
       double currentVariable = getEventProperty(event, currentFits);
-      if (applyKinematicCuts(event, currentFits) && currentVariable >= allBins[currentFits][i] && 
+      if (applyKinematicCuts(event, currentFits, 0) && currentVariable>=allBins[currentFits][i] && 
         currentVariable < allBins[currentFits][i + 1]) {
           sumVariable += currentVariable;
 
@@ -998,7 +1021,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
   outputFile.close();
 }
 
-void BSA_rgc_fits(const char* data_file, const char* output_file) {
+void BSA_rgc_fits(const char* data_file, const char* mc_file, const char* output_file) {
 
   // Clear the contents of the output_file
   std::ofstream ofs(output_file, std::ios::trunc);
@@ -1065,6 +1088,8 @@ void BSA_rgc_fits(const char* data_file, const char* output_file) {
 
   // Read data from the input file and store it in the global variable gData
   gData = readData(data_file, variable_names);
+  // Read mc from the input file and store it in the global variable gData
+  gMC = readData(mc_file, variable_names);
 
   cout << endl << endl;
   for (size_t i = 0; i < allBins.size(); ++i) {
