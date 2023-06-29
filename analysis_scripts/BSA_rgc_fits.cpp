@@ -183,7 +183,7 @@ struct eventData {
 };
 
 std::vector<eventData> gData;
-std::vector<eventData> mcData;
+std::vector<eventData> gMC;
 
 eventData parseLine(const std::string& line, const std::vector<std::string>& variable_names) {
   // Create a stringstream from the input line
