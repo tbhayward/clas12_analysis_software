@@ -416,6 +416,11 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
 
           // Extract Delta_phi and polarization (pol) from the event data
           float phi = event.data.at("phi");
+          float DepA = event.data.at("DepA");
+          float DepB = event.data.at("DepB");
+          float DepC = event.data.at("DepC");
+          float DepV = event.data.at("DepV");
+          float DepW = event.data.at("DepW");
 
           NUU+=1 + (DepV/DepA)*AUU_cosphi*cos(phi) + (DepB/DepA)*AUU_cos2phi*cos(2*phi); // UU
         }
