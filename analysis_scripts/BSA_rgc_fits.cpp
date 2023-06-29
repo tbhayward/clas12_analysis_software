@@ -439,8 +439,8 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     cout << "On MLM fit " << binNames[currentFits] << " " << currentFits << ", " << nll << endl;
     cout << "AUU_cosphi = " << AUU_cosphi << ", AUU_cos2phi = " << AUU_cos2phi;
     cout << ", ALU_sinphi = " << ALU_sinphi;
-    cout << "AUL_sinphi = " << AUL_sinphi << ", AUL_sin2phi = " << AUL_sin2phi;
-    cout << "ALL = " << ALL << ", ALL_cosphi = " << ALL_cosphi << "." << endl;
+    cout << ", AUL_sinphi = " << AUL_sinphi << ", AUL_sin2phi = " << AUL_sin2phi;
+    cout << ", ALL = " << ALL << ", ALL_cosphi = " << ALL_cosphi << "." << endl;
     // Calculate the negative log-likelihood value and store it in the output variable f
     f = nll;
 }
