@@ -404,8 +404,8 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
         }
     }
 
-    // Iterate through the global event mc (mcData)
-    for (const eventData &event : mcData) {
+    // Iterate through the global event mc (gMC)
+    for (const eventData &event : gMC) {
         // Get the value of the current variable of interest for the event
         float currentVariable = getEventProperty(event, currentFits);
 
