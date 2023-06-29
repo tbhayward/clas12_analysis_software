@@ -437,6 +437,10 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
       minBeamCharge*minTargetCharge/((cmp+cmm)*(cpp+cmp))*sum_MP - 
       minBeamCharge*minTargetCharge/((cmp+cmm)*(cmp+cmm))*sum_MM;
     cout << "On MLM fit " << binNames[currentFits] << " " << currentFits << ", " << nll << endl;
+    cout << "AUU_cosphi = " << AUU_cosphi << ", AUU_cos2phi = " << AUU_cos2phi;
+    cout << ", ALU_sinphi = " << ALU_sinphi;
+    cout << "AUL_sinphi = " << AUL_sinphi << ", AUL_sin2phi = " << AUL_sin2phi;
+    cout << "ALL = " << ALL << ", ALL_cosphi = " << ALL_cosphi << "." << endl;
     // Calculate the negative log-likelihood value and store it in the output variable f
     f = nll;
 }
@@ -1084,7 +1088,7 @@ void BSA_rgc_fits(const char* data_file, const char* mc_file, const char* output
         total_charge_carbon += run_info.total_charge;
       }
   }
-  // cpp = 1.00*cpp; cpm = 0.996*cpm; cmp = 1.00*cmp; cmm = 0.996*cmm;
+
   cout << "Total pos-pos (beam-target) charge: " << cpp << " (nc). ";
   cout << "Total pos-neg charge: " << cpm << " (nc). ";
   cout << "Total neg-pos charge: " << cmp << " (nc). ";
