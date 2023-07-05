@@ -720,7 +720,7 @@ public class analysis_fitter extends GenericKinematicFitter {
         return true
 //            && p > 0.4
             && proton_z_vertex_cut(vz, pion_vz)
-//            && forward_detector_cut(particle_Index, rec_Bank)
+            && forward_detector_cut(particle_Index, rec_Bank)
             && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
             && hadron_chi2pid_cut(particle_Index, rec_Bank)
               ;
