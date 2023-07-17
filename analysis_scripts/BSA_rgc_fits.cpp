@@ -174,7 +174,7 @@ float getPol(int runnum) {
     else if (runnum >= 11323 && runnum <= 11334) { pol = 0.87135; }
     else if (runnum >= 11335 && runnum <= 11387) { pol = 0.85048; }
     else if (runnum >= 11389 && runnum <= 11571) { pol = 0.84262; }
-    else if (runnum >= 16000) { pol = 0.81; } // RGC
+    else if (runnum >= 16000) { pol = 0.83534; } // RGC
   return pol;
 }
 
