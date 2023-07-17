@@ -103,6 +103,7 @@ struct RunInfo {
   float positive_charge;
   float negative_charge;
   float target_polarization;
+  float target_polarization_uncertainty;
 };
 
 // Declare a vector to store the run information
@@ -149,6 +150,10 @@ void load_run_info_from_csv(const std::string& filename) {
     std::getline(ss, info, ',');
     run_info.target_polarization = std::stof(info);
 
+    // Read the target polarization from the stringstream and convert it to a float
+    std::getline(ss, info, ',');
+    run_info.target_polarization_uncertainty = std::stof(info);
+
     // Add the struct to the run_info_list vector
     run_info_list.push_back(run_info);
   }
@@ -174,7 +179,7 @@ float getPol(int runnum) {
     else if (runnum >= 11323 && runnum <= 11334) { pol = 0.87135; }
     else if (runnum >= 11335 && runnum <= 11387) { pol = 0.85048; }
     else if (runnum >= 11389 && runnum <= 11571) { pol = 0.84262; }
-    else if (runnum >= 16000) { pol = 0.83534; } // RGC
+    else if (runnum >= 16000) { pol = 0.83534; } // RGC +/- 0.01440
   return pol;
 }
 
