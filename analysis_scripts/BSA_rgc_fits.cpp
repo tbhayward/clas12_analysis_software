@@ -491,7 +491,7 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     minuit.DefineParameter(3, "ALL", 0.40, 0.01, -1, 1);
     minuit.DefineParameter(4, "ALL_cosphi", 0.01, 0.01, -1, 1);
     minuit.DefineParameter(5, "AUU_cosphi", -0.60, 0.001, -1, 1);
-    minuit.DefineParameter(6, "AUU_cos2phi", 0.08, 0.001, -1, 1);
+    minuit.DefineParameter(6, "AUU_cos2phi", 0.20, 0.001, -1, 1);
 
     // Minimize the negative log-likelihood function
     minuit.Migrad(); cout << endl;
