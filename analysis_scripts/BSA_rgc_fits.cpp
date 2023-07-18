@@ -343,9 +343,8 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     double AUL_sin2phi = par[2];
     double ALL = par[3];
     double ALL_cosphi = par[4];
-    double A = par[5];
-    double AUU_cosphi = par[6];
-    double AUU_cos2phi = par[7];
+    double AUU_cosphi = par[5];
+    double AUU_cos2phi = par[6];
 
     // Initialize variables for counting events (N), positive helicity sum (sum_P), 
     // and negative helicity sum (sum_N)
@@ -490,8 +489,8 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     minuit.DefineParameter(2, "AUL_sin2phi", -0.010, 0.01, -1, 1);
     minuit.DefineParameter(3, "ALL", 0.40, 0.01, -1, 1);
     minuit.DefineParameter(4, "ALL_cosphi", 0.01, 0.01, -1, 1);
-    minuit.DefineParameter(5, "AUU_cosphi", -0.60, 0.001, -1, 1);
-    minuit.DefineParameter(6, "AUU_cos2phi", 0.20, 0.001, -1, 1);
+    minuit.DefineParameter(5, "AUU_cosphi", -0.1, 0.01, -1, 1);
+    minuit.DefineParameter(6, "AUU_cos2phi", 0.10, 0.01, -1, 1);
 
     // Minimize the negative log-likelihood function
     minuit.Migrad(); cout << endl;
