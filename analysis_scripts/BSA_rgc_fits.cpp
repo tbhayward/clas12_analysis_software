@@ -380,7 +380,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           float DepW = event.data.at("DepW");
 
           float Df = dilution_factor(currentVariable, binNames[currentFits]); // dilution factor
-          // Check if the helicities is positive or negative and update the corresponding sum
+          // Check if the helicities are positive or negative and update the corresponding sum
           if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
             sum_PP += log(1 
               + (DepV/DepA)*AUU_cosphi*cos(phi) + (DepB/DepA)*AUU_cos2phi*cos(2*phi) // UU 
@@ -490,8 +490,8 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     minuit.DefineParameter(2, "AUL_sin2phi", -0.010, 0.01, -1, 1);
     minuit.DefineParameter(3, "ALL", 0.40, 0.01, -1, 1);
     minuit.DefineParameter(4, "ALL_cosphi", 0.01, 0.01, -1, 1);
-    minuit.DefineParameter(5, "AUU_cosphi", -0.12, 0.01, -1, 1);
-    minuit.DefineParameter(6, "AUU_cos2phi", 0.08, 0.01, -1, 1);
+    minuit.DefineParameter(5, "AUU_cosphi", -0.60, 0.001, -1, 1);
+    minuit.DefineParameter(6, "AUU_cos2phi", 0.08, 0.001, -1, 1);
 
     // Minimize the negative log-likelihood function
     minuit.Migrad(); cout << endl;
@@ -1108,15 +1108,15 @@ void BSA_rgc_fits(const char* data_file, const char* mc_file, const char* output
   cout << endl << endl;
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
-      switch (asymmetry) {
-        case 0: cout << "    chi2 BSA." << endl; break;
-        case 1: cout << "    chi2 TSA." << endl; break;
-        case 2: cout << "    chi2 DSA." << endl; break;
-      }
-      performChi2Fits(data_file, output_file, binNames[i], asymmetry);
-    }
-    cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
+    // for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
+    //   switch (asymmetry) {
+    //     case 0: cout << "    chi2 BSA." << endl; break;
+    //     case 1: cout << "    chi2 TSA." << endl; break;
+    //     case 2: cout << "    chi2 DSA." << endl; break;
+    //   }
+    //   performChi2Fits(data_file, output_file, binNames[i], asymmetry);
+    // }
+    // cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
     performMLMFits(data_file, output_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
