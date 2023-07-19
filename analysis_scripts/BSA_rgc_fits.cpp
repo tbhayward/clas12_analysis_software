@@ -437,9 +437,9 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
 
     float nll = N * log(NUU) - 
       minBeamCharge*minTargetCharge/((cpp+cpm)*(cpp+cmp))*sum_PP -
-      minBeamCharge*minTargetCharge/((cpp+cpm)*(cmp+cmm))*sum_PM - 
+      minBeamCharge*minTargetCharge/((cpp+cpm)*(cpm+cmm))*sum_PM - 
       minBeamCharge*minTargetCharge/((cmp+cmm)*(cpp+cmp))*sum_MP - 
-      minBeamCharge*minTargetCharge/((cmp+cmm)*(cmp+cmm))*sum_MM;
+      minBeamCharge*minTargetCharge/((cmp+cmm)*(cpm+cmm))*sum_MM;
     cout << "On MLM fit " << binNames[currentFits] << " " << currentFits << ", " << nll << endl;
     cout << "AUU_cosphi = " << AUU_cosphi << ", AUU_cos2phi = " << AUU_cos2phi;
     cout << ", ALU_sinphi = " << ALU_sinphi;
