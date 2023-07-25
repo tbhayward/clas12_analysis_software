@@ -279,16 +279,16 @@ bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
   bool goodEvent = 0;
   std::string property = binNames[currentFits];
   if (property == "xF") {
-    goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.75 &&
+    goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
       data.data.at("y")<0.75;
   }
   if (property == "PTTFR" || property ==  "xTFR" || property == "zetaTFR" || 
     property ==  "x") {
-    goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.75 &&
+    goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
       data.data.at("y")<0.75 && data.data.at("xF")<0;
   }
   if (property == "PTCFR" || property == "xCFR" || property == "zetaCFR") {
-    goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.75 &&
+    goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
       data.data.at("y")<0.75 && data.data.at("xF")>0;
   } 
   if (isMC) { return goodEvent; }
