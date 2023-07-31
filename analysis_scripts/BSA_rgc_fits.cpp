@@ -278,7 +278,6 @@ bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
 
   bool goodEvent = 0;
   std::string property = binNames[currentFits];
-  cout << "The property is named " << property << endl;
   if (property == "xF") {
     goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
       data.data.at("y")<0.75;
@@ -308,6 +307,7 @@ bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
 }
 
 float dilution_factor(float currentVariable, const std::string& prefix) {
+  cout << "The pefix is named " << prefix << endl;
   if (prefix == "xF") {
     return 0.186121-0.0263337*currentVariable-0.175587*std::pow(currentVariable,2)+
       0.0522814*std::pow(currentVariable,3);
