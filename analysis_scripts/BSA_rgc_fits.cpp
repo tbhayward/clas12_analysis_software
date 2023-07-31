@@ -282,6 +282,15 @@ bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
     goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
       data.data.at("y")<0.75;
   }
+  if (property == "Q2") {
+    goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
+      data.data.at("y")<0.75;
+  }
+  if (property == "Q2bin") {
+    goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
+      data.data.at("y")<0.75 && data.data.at("x")>0.1 && data.data.at("x")<0.2 &&
+      data.data.at("PT")>0.25 && data.data.at("PT")<0.35;
+  }
   if (property == "PTTFR" || property ==  "xTFR" || property == "zetaTFR" || 
     property ==  "x") {
     goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
@@ -301,6 +310,14 @@ float dilution_factor(float currentVariable, const std::string& prefix) {
   if (prefix == "xF") {
     return 0.186121-0.0263337*currentVariable-0.175587*std::pow(currentVariable,2)+
       0.0522814*std::pow(currentVariable,3);
+  }
+  if (prefix == "Q2") {
+    return 0.0540864+0.0385927*currentVariable-0.00628844*std::pow(currentVariable,2)+
+      0.000434893*std::pow(currentVariable,3);
+  }
+  if (prefix == "Q2bin") {
+    return 0.129683+0.0323742*currentVariable-0.0435072*std::pow(currentVariable,2)+
+      0.0116194*std::pow(currentVariable,3);
   }
   if (prefix == "xTFR") {
     return 0.111702+0.0858432*currentVariable+0.880331*std::pow(currentVariable,2)-
@@ -326,7 +343,7 @@ float dilution_factor(float currentVariable, const std::string& prefix) {
     return 1.32783-6.22826*currentVariable+11.2985*std::pow(currentVariable,2)-
       7.01171*std::pow(currentVariable,3);
   }
-  return 0.18;
+  return 0.14;
 }
 
 // Negative log-likelihood function
