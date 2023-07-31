@@ -282,21 +282,18 @@ bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
     goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
       data.data.at("y")<0.75;
   }
-  if (property == "Q2") {
-    goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
-      data.data.at("y")<0.75;
-  }
   if (property == "Q2bin") {
     goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
       data.data.at("y")<0.75 && data.data.at("x")>0.1 && data.data.at("x")<0.2 &&
       data.data.at("pT")>0.25 && data.data.at("pT")<0.35 && data.data.at("xF")<0;
   }
   if (property == "PTTFR" || property ==  "xTFR" || property == "zetaTFR" || 
-    property ==  "x") {
+    property == "Q2TFR" || property ==  "x") {
     goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
       data.data.at("y")<0.75 && data.data.at("xF")<0;
   }
-  if (property == "PTCFR" || property == "xCFR" || property == "zetaCFR") {
+  if (property == "PTCFR" || property == "xCFR" || property == "zetaCFR" ||
+    property == "Q2TFR") {
     goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
       data.data.at("y")<0.75 && data.data.at("xF")>0;
   } 
@@ -311,13 +308,13 @@ float dilution_factor(float currentVariable, const std::string& prefix) {
     return 0.186121-0.0263337*currentVariable-0.175587*std::pow(currentVariable,2)+
       0.0522814*std::pow(currentVariable,3);
   }
-  if (prefix == "Q2") {
-    return 0.0540864+0.0385927*currentVariable-0.00628844*std::pow(currentVariable,2)+
-      0.000434893*std::pow(currentVariable,3);
+  if (prefix == "Q2TFR") {
+    return 0.0884319+0.0414953*currentVariable-0.00584857*std::pow(currentVariable,2)+
+      0.000500127*std::pow(currentVariable,3);
   }
   if (prefix == "Q2bin") {
-    return 0.129683+0.0323742*currentVariable-0.0435072*std::pow(currentVariable,2)+
-      0.0116194*std::pow(currentVariable,3);
+    return -0.341032+0.762811*currentVariable-0.399944*std::pow(currentVariable,2)+
+      0.0686534*std::pow(currentVariable,3);
   }
   if (prefix == "xTFR") {
     return 0.111702+0.0858432*currentVariable+0.880331*std::pow(currentVariable,2)-
@@ -330,6 +327,10 @@ float dilution_factor(float currentVariable, const std::string& prefix) {
   if (prefix == "zetaTFR") {
     return 1.52544-7.07359*currentVariable+12.5954*std::pow(currentVariable,2)-
       7.72548*std::pow(currentVariable,3);
+  }
+  if (prefix == "Q2TFR") {
+    return 0.093586+0.0370678*currentVariable-0.00373394*std::pow(currentVariable,2)+
+      0.000215739*std::pow(currentVariable,3);
   }
   if (prefix == "xCFR") {
     return 0.089331+0.429008*currentVariable-0.617364*std::pow(currentVariable,2)+
