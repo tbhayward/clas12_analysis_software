@@ -278,6 +278,7 @@ bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
 
   bool goodEvent = 0;
   std::string property = binNames[currentFits];
+  cout << "The property is named " << property << endl;
   if (property == "xF") {
     goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
       data.data.at("y")<0.75;
