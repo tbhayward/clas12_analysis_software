@@ -289,7 +289,7 @@ bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
   if (property == "Q2bin") {
     goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
       data.data.at("y")<0.75 && data.data.at("x")>0.1 && data.data.at("x")<0.2 &&
-      data.data.at("PT")>0.25 && data.data.at("PT")<0.35;
+      data.data.at("pT")>0.25 && data.data.at("pT")<0.35;
   }
   if (property == "PTTFR" || property ==  "xTFR" || property == "zetaTFR" || 
     property ==  "x") {
