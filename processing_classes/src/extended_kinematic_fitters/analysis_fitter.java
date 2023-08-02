@@ -882,7 +882,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                 if (runnum > 16000) {
                     dp = 0.002*p*p*Math.exp(-p*p/16000); 
                 }
-                dp = 0;
+//                dp = 0;
                 double fe = (dp+p)/p;
                 
                 if (particle_test(particle_Index, rec_Bank) 
