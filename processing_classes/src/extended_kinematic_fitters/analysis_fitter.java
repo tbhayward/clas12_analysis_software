@@ -871,14 +871,24 @@ public class analysis_fitter extends GenericKinematicFitter {
                 float px = rec_Bank.getFloat("px", particle_Index);
                 float py = rec_Bank.getFloat("py", particle_Index);
                 float pz = rec_Bank.getFloat("pz", particle_Index);
+                double p = Math.sqrt(px*px+py*py+pz*pz);
                 float vx = rec_Bank.getFloat("vx",particle_Index);
                 float vy = rec_Bank.getFloat("vy",particle_Index);
                 float vz = rec_Bank.getFloat("vz",particle_Index);
+                
+                // Fermi motion compensation
+                int runnum = run_Bank.getInt("run",0);
+                double dp = 0; // scale size for fermi motion (or previously energy loss)
+                if (runnum > 16000) {
+                    dp = 0.002*p*p*Math.exp(-p*p/16000); 
+                }
+                double fe = (dp+p)/p;
+                
                 if (particle_test(particle_Index, rec_Bank) 
                     && proton_test(particle_Index, pid, vz, trigger_electron_vz, rec_Bank, cal_Bank, 
                     track_Bank, traj_Bank, run_Bank)) {
                    
-                   Particle part = new Particle(pid,px,py,pz,vx,vy,vz);
+                   Particle part = new Particle(pid,fe*px,fe*py,fe*pz,vx,vy,vz);
                    physEvent.addParticle(part);   
                }
             }
