@@ -873,14 +873,14 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
   TF1* fitFunction;
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
-      fitFunction = new TF1("fitFunction", BSA_funcToFit, 0, 2 * TMath::Pi(), 4);
+      fitFunction = new TF1("fitFunction", BSA_funcToFit, 0, 2 * TMath::Pi(), 2);
       chi2FitsAStream << prefix << "chi2FitsALUoffset = {";
       chi2FitsBStream << prefix << "chi2FitsALUsinphi = {";
       // chi2FitsCStream << prefix << "chi2FitsALUAUUcosphi = {";
       // chi2FitsDStream << prefix << "chi2FitsALUAUUcos2phi = {";
       break;
     case 1: // target-spin asymmetry
-      fitFunction = new TF1("fitFunction", TSA_funcToFit, 0, 2 * TMath::Pi(), 5);
+      fitFunction = new TF1("fitFunction", TSA_funcToFit, 0, 2 * TMath::Pi(), 3);
       chi2FitsAStream << prefix << "chi2FitsAULoffset = {";
       chi2FitsBStream << prefix << "chi2FitsAULsinphi = {";
       chi2FitsCStream << prefix << "chi2FitsAULsin2phi = {";
@@ -888,7 +888,7 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
       // chi2FitsEStream << prefix << "chi2FitsAULAUUcos2phi = {";
       break;
     case 2: // double-spin asymmetry
-      fitFunction = new TF1("fitFunction", DSA_funcToFit, 0, 2 * TMath::Pi(), 4);
+      fitFunction = new TF1("fitFunction", DSA_funcToFit, 0, 2 * TMath::Pi(), 2);
       chi2FitsAStream << prefix << "chi2FitsALL = {";
       chi2FitsBStream << prefix << "chi2FitsALLcosphi = {";
       // chi2FitsCStream << prefix << "chi2FitsALLAUUcosphi = {";
