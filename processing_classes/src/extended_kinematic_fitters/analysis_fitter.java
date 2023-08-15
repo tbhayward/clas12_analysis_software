@@ -13,6 +13,7 @@ import org.jlab.io.hipo.HipoDataBank;
 
 import org.jlab.clas.physics.*;
 
+import org.jlab.detector.scalers.DaqScalersSequence;
 
 public class analysis_fitter extends GenericKinematicFitter {
 
@@ -33,6 +34,14 @@ public class analysis_fitter extends GenericKinematicFitter {
         }
         return true;
     }
+    
+//    public boolean current_test(DataEvent event) {
+//        HipoDataBank run_Bank = (HipoDataBank) event.getBank("RUN::config");
+//        
+//        DaqScalersSequence chargeSeq = DaqScalersSequence.readSequence(inputList);
+//        // get beam current
+//        double current = chargeSeq.getInterval(timeStamp).getBeamCurrent();
+//    }
     
     public boolean forward_detector_cut(int particle_Index, HipoDataBank rec_Bank) {
         int status = rec_Bank.getInt("status", particle_Index);
@@ -882,7 +891,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                 if (runnum > 16000) {
                     dp = 0.002*p*p*Math.exp(-p*p/16000); 
                 }
-                dp = 0;
+//                dp = 0;
                 double fe = (dp+p)/p;
                 
                 if (particle_test(particle_Index, rec_Bank) 

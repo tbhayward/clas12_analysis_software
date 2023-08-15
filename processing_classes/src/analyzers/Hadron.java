@@ -16,7 +16,6 @@ import org.jlab.io.base.DataEvent;
 import org.jlab.io.hipo.HipoDataBank;
 import org.jlab.clas.physics.*;
 
-
 public class Hadron {
     
     protected byte helicity;
