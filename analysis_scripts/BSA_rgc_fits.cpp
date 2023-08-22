@@ -861,12 +861,15 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
 }
 
 
-void performChi2Fits(const char *filename, const char* output_file, const std::string& prefix, 
-  int asymmetry_index) {
+void performChi2Fits(const char *filename, const char* output_file, const char* kinematic_file,
+  const std::string& prefix, int asymmetry_index) {
 
   // Initialize string streams to store the results for each bin
   std::ostringstream chi2FitsAStream, chi2FitsBStream, chi2FitsCStream;
   // std::ostringstream chi2FitsDStream, chi2FitsEStream;
+
+  // Initialize string streams to store the mean variables for each bin
+  std::ostringstream mean_variables;
 
   // Create a new TF1 object called fitFunction representing the function to fit
   // and create string stream prefix depending on current asymmetry we're fitting
@@ -919,11 +922,12 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
     double sumVariable = 0;
     double numEvents = 0;
     // Variables to calculate the mean depolarization factor
-    float sumDepA = 0;
-    float sumDepB = 0;
-    float sumDepC = 0;
-    float sumDepV = 0;
-    float sumDepW = 0;
+    float sumDepA = 0; float sumDepB = 0; float sumDepC = 0; float sumDepV = 0; float sumDepW = 0;
+
+    // Variables to calculate the mean kinematics in each bin
+    float sumQ2 = 0; float sumW = 0; float sumx = 0; float sumz = 0; float sumzeta = 0;
+    float sumpT = 0; float sumxF = 0;
+
     // Loop over all events and calculate the sums and event counts
     for (const eventData& event : gData) {
       double currentVariable = getEventProperty(event, currentFits);
@@ -938,6 +942,15 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
           sumDepV += event.data.at("DepV");
           sumDepW += event.data.at("DepW");
 
+          // sum the kinematic variable values
+          sumQ2 += event.data.at("Q2");
+          sumW += event.data.at("W");
+          sumx += event.data.at("x");
+          sumz += event.data.at("z");
+          sumzeta += event.data.at("zeta");
+          sumpT += event.data.at("pT");
+          sumxF += event.data.at("xF");
+
           numEvents += 1;
       }
     }
@@ -950,6 +963,15 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
     float meanDepC = numEvents > 0 ? sumDepC / numEvents : 0.0;
     float meanDepV = numEvents > 0 ? sumDepV / numEvents : 0.0;
     float meanDepW = numEvents > 0 ? sumDepW / numEvents : 0.0;
+
+    // Calculate the mean values for the kinematic variables
+    float meanQ2 = numEvents > 0 ? sumQ2 / numEvents : 0.0;
+    float meanW = numEvents > 0 ? sumW / numEvents : 0.0;
+    float meanx = numEvents > 0 ? sumx / numEvents : 0.0;
+    float meanz = numEvents > 0 ? sumz / numEvents : 0.0;
+    float meanzeta = numEvents > 0 ? sumzeta / numEvents : 0.0;
+    float meanpT = numEvents > 0 ? sumpT / numEvents : 0.0;
+    float meanxF = numEvents > 0 ? sumxF / numEvents : 0.0;
 
     switch (asymmetry_index) {
       case 0: {// beam-spin asymmetry
@@ -1040,6 +1062,12 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
     }
 
     delete hist;
+
+    // outputs of mean kinematic variables
+    mean_variables << i << " & " << meanQ2 << " & " << meanW << " & " << meanx << " & ";
+    mean_variables << meanpT << " & " << meanz << " & " << meanzeta << " & " << meanxF << 
+    " \\\\ \\hline ";
+
   }
 
   chi2FitsAStream << "};";  chi2FitsBStream << "};";  chi2FitsCStream << "};"; 
@@ -1052,14 +1080,22 @@ void performChi2Fits(const char *filename, const char* output_file, const std::s
   // outputFile << chi2FitsCStream.str() << std::endl;
   // outputFile << chi2FitsDStream.str() << std::endl;
   // if (asymmetry_index==1) { outputFile << chi2FitsEStream.str() << std::endl; }
-
   outputFile.close();
+
+  std::ofstream kinematicFile(kinematic_file, std::ios_base::app);
+  kinematic_file << mean_variables << std::endl;
+  kinematic_file.close();
 }
 
-void BSA_rgc_fits(const char* data_file, const char* mc_file, const char* output_file) {
+void BSA_rgc_fits(const char* data_file, const char* mc_file, const char* output_file, 
+  const char* kinematic_file) {
 
   // Clear the contents of the output_file
   std::ofstream ofs(output_file, std::ios::trunc);
+  ofs.close();
+
+  // Clear the contents of the kinematic_file
+  std::ofstream ofs(kinematic_file, std::ios::trunc);
   ofs.close();
 
   // load bins from external csv file
