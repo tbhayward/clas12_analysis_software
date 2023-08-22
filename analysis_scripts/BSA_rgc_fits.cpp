@@ -1083,8 +1083,8 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
   outputFile.close();
 
   std::ofstream kinematicFile(kinematic_file, std::ios_base::app);
-  kinematic_file << mean_variables << std::endl;
-  kinematic_file.close();
+  kinematicFile << mean_variables << std::endl;
+  kinematicFile.close();
 }
 
 void BSA_rgc_fits(const char* data_file, const char* mc_file, const char* output_file, 
