@@ -83,8 +83,8 @@ public class Dihadrons {
         else if (variables.W()<2) { return false; } 
         else if (variables.y()>0.75) { return false; } 
         else if (Math.abs(variables.Mx()-0.95) > 0.1) { return false; }
-        else if (variables.Mx1()<1.50) { return false; } 
-        else if (variables.Mx2()<1.50) { return false; } 
+//        else if (variables.Mx1()<1.50) { return false; } 
+//        else if (variables.Mx2()<1.50) { return false; } 
 //        else if (variables.xF1()>0.0) { return false; } 
 //        else if (variables.xF2()<0.0) { return false; } 
         else if (Math.abs(variables.Mh()-0.75)>0.15) { return false; } 
