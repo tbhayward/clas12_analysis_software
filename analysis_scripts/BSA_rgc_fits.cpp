@@ -1068,8 +1068,6 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
     meanVariablesStream << meanpT << " & " << meanz << " & " << meanzeta << " & " << meanxF; 
     std::string(" \\\\ \\hline ");
 
-
-
   }
 
   chi2FitsAStream << "};";  chi2FitsBStream << "};";  chi2FitsCStream << "};"; 
@@ -1084,9 +1082,9 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
   // if (asymmetry_index==1) { outputFile << chi2FitsEStream.str() << std::endl; }
   outputFile.close();
 
-  // std::ofstream kinematicFile(kinematic_file, std::ios_base::app);
-  // kinematicFile << mean_variables << std::endl;
-  // kinematicFile.close();
+  std::ofstream kinematicFile(kinematic_file, std::ios_base::app);
+  kinematicFile << meanVariablesStream << std::endl;
+  kinematicFile.close();
 }
 
 void BSA_rgc_fits(const char* data_file, const char* mc_file, const char* output_file, 
