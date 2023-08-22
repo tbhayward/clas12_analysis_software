@@ -869,7 +869,7 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
   // std::ostringstream chi2FitsDStream, chi2FitsEStream;
 
   // Initialize string streams to store the mean variables for each bin
-  std::ostringstream mean_variables;
+  std::ostringstream meanVariablesStream;
 
   // Create a new TF1 object called fitFunction representing the function to fit
   // and create string stream prefix depending on current asymmetry we're fitting
@@ -1063,10 +1063,10 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
 
     delete hist;
 
-    // outputs of mean kinematic variables
-    mean_variables << i << " & " << meanQ2 << " & " << meanW << " & " << meanx << " & ";
-    mean_variables << meanpT << " & " << meanz << " & " << meanzeta << " & " << meanxF; 
-    // std::string(" \\\\ \\hline ");
+    // // outputs of mean kinematic variables
+    // meanVariablesStream << i << " & " << meanQ2 << " & " << meanW << " & " << meanx << " & ";
+    // meanVariablesStream << meanpT << " & " << meanz << " & " << meanzeta << " & " << meanxF; 
+    // // std::string(" \\\\ \\hline ");
 
 
 
@@ -1084,9 +1084,9 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
   // if (asymmetry_index==1) { outputFile << chi2FitsEStream.str() << std::endl; }
   outputFile.close();
 
-  std::ofstream kinematicFile(kinematic_file, std::ios_base::app);
-  kinematicFile << mean_variables << std::endl;
-  kinematicFile.close();
+  // std::ofstream kinematicFile(kinematic_file, std::ios_base::app);
+  // kinematicFile << mean_variables << std::endl;
+  // kinematicFile.close();
 }
 
 void BSA_rgc_fits(const char* data_file, const char* mc_file, const char* output_file, 
