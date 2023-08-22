@@ -1083,7 +1083,8 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
   outputFile.close();
 
   std::ofstream kinematicFile(kinematic_file, std::ios_base::app);
-  kinematicFile << meanVariablesStream << std::endl;
+  // Write the string stream content to the file
+  kinematicFile << meanVariablesStream.str() << std::endl; 
   kinematicFile.close();
 }
 
