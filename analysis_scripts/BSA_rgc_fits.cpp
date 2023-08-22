@@ -1065,8 +1065,9 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
 
     // outputs of mean kinematic variables
     mean_variables << i << " & " << meanQ2 << " & " << meanW << " & " << meanx << " & ";
-    mean_variables << meanpT << " & " << meanz << " & " << meanzeta << " & " << meanxF << 
-    std::string(" \\\\ \\hline ");
+    mean_variables << meanpT << " & " << meanz << " & " << meanzeta << " & " << meanxF; 
+    // std::string(" \\\\ \\hline ");
+
 
 
   }
