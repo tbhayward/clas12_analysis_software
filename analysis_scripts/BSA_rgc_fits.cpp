@@ -1095,8 +1095,8 @@ void BSA_rgc_fits(const char* data_file, const char* mc_file, const char* output
   ofs.close();
 
   // Clear the contents of the kinematic_file
-  std::ofstream ofs(kinematic_file, std::ios::trunc);
-  ofs.close();
+  std::ofstream ofs2(kinematic_file, std::ios::trunc);
+  ofs2.close();
 
   // load bins from external csv file
   load_bins_from_csv("bins_single_hadron.csv");
@@ -1171,7 +1171,7 @@ void BSA_rgc_fits(const char* data_file, const char* mc_file, const char* output
         case 1: cout << "    chi2 TSA." << endl; break;
         case 2: cout << "    chi2 DSA." << endl; break;
       }
-      performChi2Fits(data_file, output_file, binNames[i], asymmetry);
+      performChi2Fits(data_file, output_file, kinematic_file, binNames[i], asymmetry);
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
     // performMLMFits(data_file, output_file, binNames[i]);
