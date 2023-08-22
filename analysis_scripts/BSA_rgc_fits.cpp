@@ -1064,9 +1064,9 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
     delete hist;
 
     // // outputs of mean kinematic variables
-    // meanVariablesStream << i << " & " << meanQ2 << " & " << meanW << " & " << meanx << " & ";
-    // meanVariablesStream << meanpT << " & " << meanz << " & " << meanzeta << " & " << meanxF; 
-    // // std::string(" \\\\ \\hline ");
+    meanVariablesStream << i << " & " << meanQ2 << " & " << meanW << " & " << meanx << " & ";
+    meanVariablesStream << meanpT << " & " << meanz << " & " << meanzeta << " & " << meanxF; 
+    std::string(" \\\\ \\hline ");
 
 
 
