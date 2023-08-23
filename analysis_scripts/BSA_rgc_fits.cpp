@@ -876,7 +876,7 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
   meanVariablesStream << "\\begin{tabular}{|c|c|c|c|c|c|c|c|} \\hline" << std::endl;
   meanVariablesStream << "Bin & $<Q^2>$~(GeV$^2$) & $<W>$~(GeV) ";
   meanVariablesStream << "& $<x_B>$ & $<z>$ & $<\\\zeta>$ & $<P_T>$~(GeV) ";
-  meanVariablesStream << "& $<x_F>$ \\\\\\ \\\hline" << std::endl; 
+  meanVariablesStream << "& $<x_F>$ \\\\ \\hline" << std::endl; 
 
 
   // Create a new TF1 object called fitFunction representing the function to fit
@@ -1091,13 +1091,12 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
   // if (asymmetry_index==1) { outputFile << chi2FitsEStream.str() << std::endl; }
   outputFile.close();
 
-  meanVariablesStream << "\\hline\n";
   meanVariablesStream << "\\end{tabular}\n";
   meanVariablesStream << "\\caption{The mean kinematic variables in each of the bins ";
   meanVariablesStream << "for the extracted $" << prefix << "$ asymmetries.}\n";
   meanVariablesStream << "\\label{table:kinematics_" << prefix << "}\n";
   meanVariablesStream << "\\end{table}\n";
-  meanVariablesStream << endl << endl << endl << endl << endl;
+  meanVariablesStream << endl << endl << endl;
   std::ofstream kinematicFile(kinematic_file, std::ios_base::app);
   // Write the string stream content to the file
   kinematicFile << meanVariablesStream.str() << std::endl; 
