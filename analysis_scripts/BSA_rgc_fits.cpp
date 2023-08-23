@@ -873,9 +873,9 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
   std::ostringstream meanVariablesStream;
   meanVariablesStream << "\\begin{table}[h]" << std::endl;
   meanVariablesStream << "\\centering" << std::endl;
-  meanVariablesStream << "\\begin{tabular}{|c|c|c|c|c|c|c|c|} \\hline" << std::endl;
+  meanVariablesStream << "\\begin{tabular}{|c|c|c|c|c|c|c|c|c|} \\hline" << std::endl;
   meanVariablesStream << "Bin & $<Q^2>$~(GeV$^2$) & $<W>$~(GeV) ";
-  meanVariablesStream << "& $<x_B>$ & $<z>$ & $<\\\zeta>$ & $<P_T>$~(GeV) ";
+  meanVariablesStream << "& $<x_B>$ & $<y>$ & $<z>$ & $<\\\zeta>$ & $<P_T>$~(GeV) ";
   meanVariablesStream << "& $<x_F>$ \\\\ \\hline" << std::endl; 
 
 
@@ -954,6 +954,7 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
           sumQ2 += event.data.at("Q2");
           sumW += event.data.at("W");
           sumx += event.data.at("x");
+          sumy += event.data.at("y");
           sumz += event.data.at("z");
           sumzeta += event.data.at("zeta");
           sumpT += event.data.at("pT");
@@ -976,6 +977,7 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
     float meanQ2 = numEvents > 0 ? sumQ2 / numEvents : 0.0;
     float meanW = numEvents > 0 ? sumW / numEvents : 0.0;
     float meanx = numEvents > 0 ? sumx / numEvents : 0.0;
+    float meany = numEvents > 0 ? sumx / numEvents : 0.0;
     float meanz = numEvents > 0 ? sumz / numEvents : 0.0;
     float meanzeta = numEvents > 0 ? sumzeta / numEvents : 0.0;
     float meanpT = numEvents > 0 ? sumpT / numEvents : 0.0;
@@ -1074,6 +1076,7 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
     // outputs of mean kinematic variables
     meanVariablesStream << std::fixed << std::setprecision(3); // Set precision to 3 digits 
     meanVariablesStream << (i+1) << "~&~" << meanQ2 << "~&~" << meanW << "~&~" << meanx << "~&~";
+    meanVariablesStream << meany << "~&~";
     meanVariablesStream << meanz << "~&~" << meanzeta << "~&~" << meanpT << "~&~" << meanxF; 
     meanVariablesStream << std::string(" \\\\ \\hline ");
 
