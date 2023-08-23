@@ -977,7 +977,7 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
     float meanQ2 = numEvents > 0 ? sumQ2 / numEvents : 0.0;
     float meanW = numEvents > 0 ? sumW / numEvents : 0.0;
     float meanx = numEvents > 0 ? sumx / numEvents : 0.0;
-    float meany = numEvents > 0 ? sumx / numEvents : 0.0;
+    float meany = numEvents > 0 ? sumy / numEvents : 0.0;
     float meanz = numEvents > 0 ? sumz / numEvents : 0.0;
     float meanzeta = numEvents > 0 ? sumzeta / numEvents : 0.0;
     float meanpT = numEvents > 0 ? sumpT / numEvents : 0.0;
