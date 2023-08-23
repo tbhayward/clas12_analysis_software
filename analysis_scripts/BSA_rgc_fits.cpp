@@ -468,7 +468,8 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     f = nll;
 }
 
-void performMLMFits(const char *filename, const char* output_file, const std::string& prefix) {
+void performMLMFits(const char *filename, const char* output_file, const char* kinematic_file,
+  const std::string& prefix, int asymmetry_index) {
   // Read the event data from the input file and store it in the global variable gData
 
   // Determine the number of bins
@@ -1219,7 +1220,7 @@ void BSA_rgc_fits(const char* data_file, const char* mc_file, const char* output
     //   performChi2Fits(data_file, output_file, kinematic_file, binNames[i], asymmetry);
     // }
     // cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    performMLMFits(data_file, output_file, binNames[i]);
+    performMLMFits(data_file, output_file, kinematic_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
     currentFits++;
