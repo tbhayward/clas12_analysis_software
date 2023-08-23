@@ -82,9 +82,9 @@ public class Dihadrons {
         if (variables.Q2()<1) { return false; } 
         else if (variables.W()<2) { return false; } 
         else if (variables.y()>0.75) { return false; } 
-//        else if (variables.Mx() < 0.80 || variables.Mx() > 1.00) { return false; }
-//        else if (variables.Mx1()<1.50) { return false; } 
-//        else if (variables.Mx2()<1.50) { return false; } 
+        else if (variables.Mx() < 0.80 || variables.Mx() > 1.00) { return false; }
+        else if (variables.Mx1()<1.50) { return false; } 
+        else if (variables.Mx2()<1.50) { return false; } 
         else if (variables.Mh()<0.60 || variables.Mh() > 0.90) { return false; }
 //        else if (variables.xF1()>0.0) { return false; } 
 //        else if (variables.xF2()<0.0) { return false; } 
