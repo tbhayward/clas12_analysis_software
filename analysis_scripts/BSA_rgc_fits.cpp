@@ -569,6 +569,31 @@ void performMLMFits(const char *filename, const char* output_file, const char* k
         mlmFitsDStream << ", "; mlmFitsEStream << ", "; mlmFitsFStream << ", "; 
         mlmFitsGStream << ", ";
     }
+
+    // outputs of asymmetries for LaTeX tables
+    asymmetryStream << (i+1) << " & " << meanVariable << " & ";
+    // AUU cosphi
+    asymmetryStream << "$" << 100*AUU_cosphi << "_{" << 100*0.2*AUU_cosphi << "}^{";
+    asymmetryStream << 100*AUU_cosphi_error << "} &";
+    // AUU cos2phi
+    asymmetryStream << "$" << 100*AUU_cos2phi << "_{" << 100*0.2*AUU_cos2phi << "}^{";
+    asymmetryStream << 100*AUU_cos2phi_error << "} &";
+    // ALU sinphi
+    asymmetryStream << "$" << 100*ALU_sinphi << "_{" << 100*0.068*ALU_sinphi << "}^{";
+    asymmetryStream << 100*ALU_sinphi_error << "} &";
+    // AUL sinphi
+    asymmetryStream << "$" << 100*AUL_sinphi << "_{" << 100*0.119*AUL_sinphi << "}^{";
+    asymmetryStream << 100*AUL_sinphi_error << "} &";
+    // AUL sin2phi
+    asymmetryStream << "$" << 100*AUL_sin2phi << "_{" << 100*0.119*AUL_sin2phi << "}^{";
+    asymmetryStream << 100*AUL_sin2phi_error << "} &";
+    // ALL 
+    asymmetryStream << "$" << 100*ALL << "_{" << 100*0.123*ALL << "}^{";
+    asymmetryStream << 100*ALL_error << "} &";
+    // ALL cosphi
+    asymmetryStream << "$" << 100*ALL_cosphi << "_{" << 100*0.123*ALL_cosphi << "}^{";
+    asymmetryStream << 100*ALL_cosphi << "}";
+    asymmetryStream << std::string(" \\\\ \\hline ");
   }
 
   mlmFitsAStream << "};"; mlmFitsBStream << "};"; mlmFitsCStream << "};";
@@ -591,8 +616,9 @@ void performMLMFits(const char *filename, const char* output_file, const char* k
   asymmetryStream << "\\end{tabular}" << std::endl;
   asymmetryStream << "\\caption{The mean kinematic value and the final ";
   asymmetryStream << "extracted structure function ratios. Asymmetries are given as ";
-  asymmetryStream << "$100{A}_{\\pm\\Delta\\text{stat}}^{\\pm\\Delta\\text{sys}}$.}" << std::endl;
-  asymmetryStream << "\\label{table:kinematics_xF}" << std::endl;
+  asymmetryStream << "$100{A}_{\\pm100\\Delta\\text{stat}}^";
+  asymmetryStream << "{\\pm100\\Delta\\text{sys}}$.}" << std::endl;
+  asymmetryStream << "\\label{table:kinematics_" << prefix << "}" << std::endl;
   asymmetryStream << "\\end{table}" << std::endl;
   asymmetryStream << endl << endl << endl;
   std::ofstream kinematicFile(kinematic_file, std::ios_base::app);
