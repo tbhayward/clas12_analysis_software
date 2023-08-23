@@ -574,25 +574,25 @@ void performMLMFits(const char *filename, const char* output_file, const char* k
     asymmetryStream << (i+1) << " & " << meanVariable << " & ";
     // AUU cosphi
     asymmetryStream << "$" << 100*AUU_cosphi << "_{" << 100*0.2*AUU_cosphi << "}^{";
-    asymmetryStream << 100*AUU_cosphi_error << "} &";
+    asymmetryStream << 100*AUU_cosphi_error << "}$ &";
     // AUU cos2phi
     asymmetryStream << "$" << 100*AUU_cos2phi << "_{" << 100*0.2*AUU_cos2phi << "}^{";
-    asymmetryStream << 100*AUU_cos2phi_error << "} &";
+    asymmetryStream << 100*AUU_cos2phi_error << "}$ &";
     // ALU sinphi
     asymmetryStream << "$" << 100*ALU_sinphi << "_{" << 100*0.068*ALU_sinphi << "}^{";
-    asymmetryStream << 100*ALU_sinphi_error << "} &";
+    asymmetryStream << 100*ALU_sinphi_error << "}$ &";
     // AUL sinphi
     asymmetryStream << "$" << 100*AUL_sinphi << "_{" << 100*0.119*AUL_sinphi << "}^{";
-    asymmetryStream << 100*AUL_sinphi_error << "} &";
+    asymmetryStream << 100*AUL_sinphi_error << "}$ &";
     // AUL sin2phi
     asymmetryStream << "$" << 100*AUL_sin2phi << "_{" << 100*0.119*AUL_sin2phi << "}^{";
-    asymmetryStream << 100*AUL_sin2phi_error << "} &";
+    asymmetryStream << 100*AUL_sin2phi_error << "}$ &";
     // ALL 
     asymmetryStream << "$" << 100*ALL << "_{" << 100*0.123*ALL << "}^{";
-    asymmetryStream << 100*ALL_error << "} &";
+    asymmetryStream << 100*ALL_error << "}$ &";
     // ALL cosphi
     asymmetryStream << "$" << 100*ALL_cosphi << "_{" << 100*0.123*ALL_cosphi << "}^{";
-    asymmetryStream << 100*ALL_cosphi << "}";
+    asymmetryStream << 100*ALL_cosphi << "}$";
     asymmetryStream << std::string(" \\\\ \\hline ");
   }
 
@@ -927,7 +927,7 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
   meanVariablesStream << "\\centering" << std::endl;
   meanVariablesStream << "\\begin{tabular}{|c|c|c|c|c|c|c|c|c|} \\hline" << std::endl;
   meanVariablesStream << "Bin & $<Q^2>$~(GeV$^2$) & $<W>$~(GeV) ";
-  meanVariablesStream << "& $<x_B>$ & $<y>$ & $<z>$ & $<\\\zeta>$ & $<P_T>$~(GeV) ";
+  meanVariablesStream << "& $<x_B>$ & $<y>$ & $<z>$ & $<\\zeta>$ & $<P_T>$~(GeV) ";
   meanVariablesStream << "& $<x_F>$ \\\\ \\hline" << std::endl; 
 
 
