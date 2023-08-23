@@ -496,6 +496,17 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
   mlmFitsFStream << prefix << "MLMFitsAUUcosphi = {";
   mlmFitsGStream << prefix << "MLMFitsAUUcos2phi = {";
 
+  // Initialize string streams to store the mean variables for each bin and asymmetries
+  std::ostringstream asymmetryStream;
+  asymmetryStream << "\\begin{table}[h]" << std::endl;
+  asymmetryStream << "\\centering" << std::endl;
+  asymmetryStream << "\\begin{tabular}{|c|c|c|c|c|c|c|c|c|} \\hline" << std::endl;
+  asymmetryStream << "Bin & $<" << prefix << ">$ & $F_{UU}^{\\cos(\\phi)}/F_{UU}$ & ";
+  asymmetryStream << "$F_{UU}^{\\cos(2\\phi)}/F_{UU}$ ";
+  asymmetryStream << "& $F_{LU}^{\\sin(\\phi)}/F_{UU}$ & $F_{UL}^{\\sin(\\phi)}/F_{UU}$ & ";
+  asymmetryStream << "$F_{UL}^{\\sin(2\\phi)}/F_{UU}$ & $F_{LL}/F_{UU}$ &";
+  asymmetryStream << "$F_{ULL}^{\\cos(\\phi)}/F_{UU}$ \\\\ \\hline" << std::endl;
+
   // Iterate through each bin
   for (size_t i = 0; i < numBins; ++i) {
     cout << endl << "Beginning MLM fit for " << binNames[currentFits]
@@ -512,7 +523,7 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
     minuit.DefineParameter(6, "AUU_cos2phi", 0.10, 0.01, -1, 1);
 
     // Minimize the negative log-likelihood function
-    minuit.Migrad(); cout << endl;
+    // minuit.Migrad(); cout << endl;
 
     // Extract the fitted parameter values and errors
     double ALU_sinphi, ALU_sinphi_error;
@@ -573,6 +584,20 @@ void performMLMFits(const char *filename, const char* output_file, const std::st
   outputFile << mlmFitsGStream.str() << std::endl;
 
   outputFile.close();
+
+
+  // Finally, close the table
+  asymmetryStream << "\\end{tabular}" << std::endl;
+  asymmetryStream << "\\caption{The mean kinematic value and the final ";
+  asymmetryStream << "extracted structure function ratios. Asymmetries are given as ";
+  asymmetryStream << "$100{A}_{\\pm\\Delta\\text{stat}}^{\\pm\\Delta\\text{sys}}$.}" << std::endl;
+  asymmetryStream << "\\label{table:kinematics_xF}" << std::endl;
+  asymmetryStream << "\\end{table}" << std::endl;
+  asymmetryStream << endl << endl << endl;
+  std::ofstream kinematicFile(kinematic_file, std::ios_base::app);
+  // Write the string stream content to the file
+  kinematicFile << asymmetryStream.str() << std::endl; 
+  kinematicFile.close();
 }
 
 float asymmetry_value_calculation(float currentVariable, const std::string& prefix, 
@@ -1185,17 +1210,17 @@ void BSA_rgc_fits(const char* data_file, const char* mc_file, const char* output
   cout << endl << endl;
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    for (int asymmetry = 0; asymmetry < 1; ++asymmetry){
-      switch (asymmetry) {
-        case 0: cout << "    chi2 BSA." << endl; break;
-        case 1: cout << "    chi2 TSA." << endl; break;
-        case 2: cout << "    chi2 DSA." << endl; break;
-      }
-      performChi2Fits(data_file, output_file, kinematic_file, binNames[i], asymmetry);
-    }
-    cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    // performMLMFits(data_file, output_file, binNames[i]);
-    // cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
+    // for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
+    //   switch (asymmetry) {
+    //     case 0: cout << "    chi2 BSA." << endl; break;
+    //     case 1: cout << "    chi2 TSA." << endl; break;
+    //     case 2: cout << "    chi2 DSA." << endl; break;
+    //   }
+    //   performChi2Fits(data_file, output_file, kinematic_file, binNames[i], asymmetry);
+    // }
+    // cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
+    performMLMFits(data_file, output_file, binNames[i]);
+    cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
     currentFits++;
   }
