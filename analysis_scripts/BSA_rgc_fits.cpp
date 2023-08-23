@@ -469,7 +469,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
 }
 
 void performMLMFits(const char *filename, const char* output_file, const char* kinematic_file,
-  const std::string& prefix, int asymmetry_index) {
+  const std::string& prefix) {
   // Read the event data from the input file and store it in the global variable gData
 
   // Determine the number of bins
