@@ -8,6 +8,7 @@
 #include <vector>
 #include <map>
 #include <TSystem.h>
+#include <iomanip> // Include this header for std::fixed and std::setprecision
 size_t currentFits = 0;
 size_t currentBin = 0;
 int n = 1;
@@ -870,6 +871,13 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
 
   // Initialize string streams to store the mean variables for each bin
   std::ostringstream meanVariablesStream;
+  meanVariablesStream << "\\begin{table}[h]" << std::endl;
+  meanVariablesStream << "\\centering" << std::endl;
+  meanVariablesStream << "\\begin{tabular}{|c|c|c|c|c|c|c|c|} \\hline" << std::endl;
+  meanVariablesStream << "Bin & $<Q^2>$~(GeV$^2$) & $<W>$~(GeV) ";
+  meanVariablesStream << "& $<x_B>$ & $<z>$ & $<\\\zeta>$ & $<P_T>$~(GeV) ";
+  meanVariablesStream << "& $<x_F>$ \\\\\\ \\\hline" << std::endl; 
+
 
   // Create a new TF1 object called fitFunction representing the function to fit
   // and create string stream prefix depending on current asymmetry we're fitting
@@ -1063,9 +1071,10 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
 
     delete hist;
 
-    // // outputs of mean kinematic variables
-    meanVariablesStream << i << " & " << meanQ2 << " & " << meanW << " & " << meanx << " & ";
-    meanVariablesStream << meanpT << " & " << meanz << " & " << meanzeta << " & " << meanxF; 
+    // outputs of mean kinematic variables
+    meanVariablesStream << std::fixed << std::setprecision(3); // Set precision to 3 digits 
+    meanVariablesStream << (i+1) << "~&~" << meanQ2 << "~&~" << meanW << "~&~" << meanx << "~&~";
+    meanVariablesStream << meanpT << "~&~" << meanz << "~&~" << meanzeta << "~&~" << meanxF; 
     meanVariablesStream << std::string(" \\\\ \\hline ");
 
   }
@@ -1082,10 +1091,18 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
   // if (asymmetry_index==1) { outputFile << chi2FitsEStream.str() << std::endl; }
   outputFile.close();
 
+  meanVariablesStream << "\\hline\n";
+  meanVariablesStream << "\\end{tabular}\n";
+  meanVariablesStream << "\\caption{The mean kinematic variables in each of the bins ";
+  meanVariablesStream << "for the extracted $" << prefix << "$ asymmetries.}\n";
+  meanVariablesStream << "\\label{table:kinematics_" << prefix << "}\n";
+  meanVariablesStream << "\\end{table}\n";
+  meanVariablesStream << endl << endl << endl << endl << endl;
   std::ofstream kinematicFile(kinematic_file, std::ios_base::app);
   // Write the string stream content to the file
   kinematicFile << meanVariablesStream.str() << std::endl; 
   kinematicFile.close();
+
 }
 
 void BSA_rgc_fits(const char* data_file, const char* mc_file, const char* output_file, 
