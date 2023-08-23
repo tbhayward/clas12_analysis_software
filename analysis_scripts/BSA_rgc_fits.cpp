@@ -524,7 +524,7 @@ void performMLMFits(const char *filename, const char* output_file, const char* k
     minuit.DefineParameter(6, "AUU_cos2phi", 0.10, 0.01, -1, 1);
 
     // Minimize the negative log-likelihood function
-    // minuit.Migrad(); cout << endl;
+    minuit.Migrad(); cout << endl;
 
     // Extract the fitted parameter values and errors
     double ALU_sinphi, ALU_sinphi_error;
@@ -572,7 +572,7 @@ void performMLMFits(const char *filename, const char* output_file, const char* k
 
     // outputs of asymmetries for LaTeX tables
     // Set fixed-point notation and one digit past the decimal
-    asymmetryStream << std::fixed << std::setprecision(1); 
+    asymmetryStream << std::fixed << std::setprecision(2); 
     asymmetryStream << (i+1) << " & " << meanVariable << " & ";
     // AUU cosphi
     asymmetryStream << "$" << 100*AUU_cosphi << "_{" << 100*0.2*AUU_cosphi << "}^{";
@@ -1239,7 +1239,7 @@ void BSA_rgc_fits(const char* data_file, const char* mc_file, const char* output
   cout << endl << endl;
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    for (int asymmetry = 0; asymmetry < 1; ++asymmetry){
+    for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
       switch (asymmetry) {
         case 0: cout << "    chi2 BSA." << endl; break;
         case 1: cout << "    chi2 TSA." << endl; break;
