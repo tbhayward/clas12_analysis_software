@@ -1154,10 +1154,12 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
   meanVariablesStream << "\\label{table:kinematics_" << prefix << "}\n";
   meanVariablesStream << "\\end{table}\n";
   meanVariablesStream << endl << endl << endl;
-  std::ofstream kinematicFile(kinematic_file, std::ios_base::app);
-  // Write the string stream content to the file
-  kinematicFile << meanVariablesStream.str() << std::endl; 
-  kinematicFile.close();
+  if (asymmetry_index == 0) {
+    std::ofstream kinematicFile(kinematic_file, std::ios_base::app);
+    // Write the string stream content to the file
+    kinematicFile << meanVariablesStream.str() << std::endl; 
+    kinematicFile.close();
+  }
 
 }
 
