@@ -37,16 +37,47 @@ public static double theta_calculation (double x, double y, double z) {
 	return (double) (180/Math.PI)*Math.acos(z/r);
 }
 
-def helicity_assignment(double Q2, double x, double PT, double z, double zeta, double phi) {
+def helicity_assignment(double Q2, double x, double PT, double z, double zeta, double phi,
+	double A, double B, double C, double W, double V) {
 	double Pb = 0.83534;
 	double Pt = 0.76200;
 
 	// injected asymmetry values, can depend on parameters or not
+
+	// TEST 1
 	double ALUsinphi = 0; 
 	double AULsinphi = 0;
 	double AULsin2phi = 0;
 	double ALL = 0;
 	double ALLcosphi = 0;
+
+	// // TEST 2
+	// double ALUsinphi = -0.1; 
+	// double AULsinphi = -0.1;
+	// double AULsin2phi = 0.1;
+	// double ALL = 0;
+	// double ALLcosphi = 0;
+
+	// // TEST 3
+	// double ALUsinphi = -0.1; 
+	// double AULsinphi = 0;
+	// double AULsin2phi = 0;
+	// double ALL = 0.3;
+	// double ALLcosphi = 0.01;
+
+	// // TEST 4
+	// double ALUsinphi = 0; 
+	// double AULsinphi = -0.1;
+	// double AULsin2phi = 0;
+	// double ALL = 0.3;
+	// double ALLcosphi = 0;
+
+	// // TEST 5
+	// double ALUsinphi = -0.22; 
+	// double AULsinphi = -0.30;
+	// double AULsin2phi = 0.01;
+	// double ALL = Math.pow(x,0.72);
+	// double ALLcosphi = 0.05;
 
 	int hb, ht;
 	boolean weight_check = true;
@@ -54,9 +85,11 @@ def helicity_assignment(double Q2, double x, double PT, double z, double zeta, d
 	while(weight_check) {
 		hb = new Random().nextBoolean() ? 1 : -1; // beam helicity
 		ht = new Random().nextBoolean() ? 1 : -1; // target helicity
-		double weight = 1 + hb*Pb*ALUsinphi*Math.sin(phi) + ht*Pt*AULsinphi*Math.sin(phi) +
-			ht*Pt*AULsin2phi*Math.sin(2*phi) + hb*Pb*ht*Pt*ALL + 
-			hb*Pb*ht*Pt*ALLcosphi*Math.cos(phi);
+		double weight = 1 + hb*Pb*(W/A)*ALUsinphi*Math.sin(phi) + 
+			ht*Pt*(V/A)*AULsinphi*Math.sin(phi) +
+			ht*Pt*(B/A)*AULsin2phi*Math.sin(2*phi) + 
+			hb*Pb*ht*Pt*(C/A)*ALL + 
+			hb*Pb*ht*Pt*(W/A)*ALLcosphi*Math.cos(phi);
 		def randomValue = new Random().nextDouble() * 2;
 		if (weight > randomValue) { weight_check = false; }
 	}
@@ -180,7 +213,14 @@ public static void main(String[] args) {
 		        mc_z = mc_variables.z();
 		        mc_zeta = mc_variables.zeta();
 		        mc_phi = mc_variables.phi();
-		        int[] helicities = helicity_assignment(mc_Q2, mc_x, mc_pT, mc_z, mc_zeta, mc_phi);
+		        mc_Depolarization_A = mc_variables.Depolarization_A();
+                mc_Depolarization_B = mc_variables.Depolarization_B();
+                mc_Depolarization_C = mc_variables.Depolarization_C();
+                mc_Depolarization_V = mc_variables.Depolarization_V();
+		    	mc_Depolarization_W = mc_variables.Depolarization_W();
+		        int[] helicities = helicity_assignment(mc_Q2, mc_x, mc_pT, mc_z, mc_zeta, mc_phi,
+		        	mc_Depolarization_A, mc_Depolarization_B, mc_Depolarization_C,
+		        	mc_Depolarization_V, mc_Depolarization_W);
 		        double hb = helicities[0]; double ht = helicities[1];
 
 		        // cycle over all hadrons
