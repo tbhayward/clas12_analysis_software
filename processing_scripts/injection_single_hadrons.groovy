@@ -37,6 +37,33 @@ public static double theta_calculation (double x, double y, double z) {
 	return (double) (180/Math.PI)*Math.acos(z/r);
 }
 
+def helicities(double Q2, double x, double PT, double z, double zeta, double phi) {
+	double Pb = 0.83534;
+	double Pt = 0.76200;
+
+	// injected asymmetry values, can depend on parameters or not
+	double ALUsinphi = 0; 
+	double AULsinphi = 0;
+	double AULsin2phi = 0;
+	double ALL = 0;
+	double ALLcosphi = 0;
+
+	int hb, ht;
+	boolean weight_check = true;
+
+	while(weight_check) {
+		hb = new Random().nextBoolean() ? 1 : -1; // beam helicity
+		ht = new Random().nextBoolean() ? 1 : -1; // target helicity
+		double weight = 1 + hb*Pb*ALUsinphi*Math.sin(phi) + ht*Pt*AULsinphi*Math.sin(phi) +
+			ht*Pt*AULsin2phi*Math.sin(2*phi) + hb*Pb*ht*Pt*ALL + 
+			hb*Pb*ht*Pt*ALLcosphi*Math.cos(phi);
+		def randomValue = new Random().nextDouble() * 2;
+		if (weight > randomValue) { weight_check = false; }
+	}
+
+	return [hb, ht]; // beam and target helicities
+}
+
 public static void main(String[] args) {
 
 	// Start time
@@ -138,8 +165,13 @@ public static void main(String[] args) {
 
 		    if (process_event) {
 
+		    	HipoDataBank recBank = (HipoDataBank) event.getBank("REC::Event");
+				HipoDataBank lundBank = (HipoDataBank) event.getBank("MC::Lund");
+				HipoDataBank mcBank = (HipoDataBank) event.getBank("MC::Particle");
+
 		        // get # of particles w/ pid1
-		        int num_p1 = research_Event.countByPid(p1_Str.toInteger()); 
+		        int num_p1 = research_Event.countByPid(p1_Str.toInteger());
+		        int mc_num_p1 = mc_Event.countByPid(p1_Str.toInteger()); 
 
 		        // cycle over all hadrons
 		        for (int current_p1 = 0; current_p1 < num_p1; current_p1++) { 
