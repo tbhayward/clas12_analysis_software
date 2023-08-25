@@ -37,7 +37,7 @@ public static double theta_calculation (double x, double y, double z) {
 	return (double) (180/Math.PI)*Math.acos(z/r);
 }
 
-def helicities(double Q2, double x, double PT, double z, double zeta, double phi) {
+def helicity_assignment(double Q2, double x, double PT, double z, double zeta, double phi) {
 	double Pb = 0.83534;
 	double Pt = 0.76200;
 
@@ -173,16 +173,24 @@ public static void main(String[] args) {
 		        int num_p1 = research_Event.countByPid(p1_Str.toInteger());
 		        int mc_num_p1 = mc_Event.countByPid(p1_Str.toInteger()); 
 
+		        Hadron mc_variables = new Hadron(event, mc_Event, p1_int, 0);
+		        mc_Q2 = mc_variables.Q2();
+		        mc_x = mc_variables.x();
+		        mc_pT = mc_variables.pT();
+		        mc_z = mc_variables.z();
+		        mc_zeta = mc_variables.zeta();
+		        mc_phi = mc_variables.phi();
+		        int[] helicities = helicity_assignment(mc_Q2, mc_x, mc_pT, mc_z, mc_zeta, mc_phi);
+		        double hb = helicities[0]; double ht = helicities[0];
+
 		        // cycle over all hadrons
-		        for (int current_p1 = 0; current_p1 < num_p1; current_p1++) { 
+		        for (int current_p1 = 0; current_p1 < 1; current_p1++) { 
 
 		            Hadron variables = new Hadron(event, research_Event,
 		                    p1_int, current_p1);
 		            // this is my class for defining all relevant kinematic variables
 
 		            if (variables.channel_test(variables)) {
-		                helicity = variables.get_helicity(); // helicity of event
-		                // if (runnum =! 11 && helicity == 0) { continue; }
 
 		                // lab kinematics
 		                e_p = variables.e_p(); // lab frame momentum
@@ -225,7 +233,7 @@ public static void main(String[] args) {
 		                StringBuilder line = new StringBuilder();
 		                line.append(runnum).append(" ")
 		                	.append(evnum).append(" ")
-		                	.append(helicity).append(" ")
+		                	.append(hb).append(" ")
 		                	.append(e_p).append(" ")
 		                	.append(e_theta).append(" ")
 		                	.append(e_phi).append(" ")
@@ -244,7 +252,7 @@ public static void main(String[] args) {
 		                	.append(xF).append(" ")
 		                	.append(pT).append(" ")
 		                	.append(zeta).append(" ")
-		                	.append(eta).append(" ")
+		                	.append(ht).append(" ")
 		                	.append(phi).append(" ")
 		                	.append(Depolarization_A).append(" ")
 		                    .append(Depolarization_B).append(" ")
