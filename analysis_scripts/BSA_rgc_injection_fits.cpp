@@ -1045,8 +1045,12 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
         // float AUU_cosphi_error = fitFunction->GetParError(2);
         // float AUU_cos2phi = fitFunction->GetParameter(3); 
         // float AUU_cos2phi_error = fitFunction->GetParError(3);
-        ALU_sinphi = (meanDepA/meanDepW)*ALU_sinphi;
-        ALU_sinphi_error = (meanDepA/meanDepW)*ALU_sinphi_error;
+        // ALU_sinphi = (meanDepA/meanDepW)*ALU_sinphi;
+        // ALU_sinphi_error = (meanDepA/meanDepW)*ALU_sinphi_error;
+
+        ALU_sinphi = ALU_sinphi;
+        ALU_sinphi_error = ALU_sinphi_error;
+
         // AUU_cosphi = (meanDepA/meanDepV)*AUU_cosphi;
         // AUU_cosphi_error = (meanDepA/meanDepV)*AUU_cosphi_error;
         // AUU_cos2phi = (meanDepB/meanDepV)*AUU_cos2phi;

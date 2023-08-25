@@ -93,8 +93,8 @@ def helicity_assignment(double Q2, double x, double PT, double z, double zeta, d
 		// 	ht*Pt*Df*(V/A)*AULsinphi*Math.sin(phi) +
 		// 	ht*Pt*Df*(B/A)*AULsin2phi*Math.sin(2*phi) + 
 		// 	hb*Pb*ht*Pt*Df*(C/A)*ALL + 
-		// 	hb*Pb*ht*Pt*Df*(W/A)*ALLcosphi*Math.cos(phi);
-		double weight = 1 + hb*Pb*(W/A)*ALUsinphi*Math.sin(phi);
+		// 	hb*Pb*ht*Pt*Df*(W/A)*ALLcosphi*Math.cos(phi); 
+		double weight = 1 + hb*ALUsinphi*Math.sin(phi);
 		def randomValue = new Random().nextDouble() * 2;
 		if (weight > randomValue) { weight_check = false; }
 	}
