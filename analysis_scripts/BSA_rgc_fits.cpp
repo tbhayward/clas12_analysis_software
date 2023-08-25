@@ -575,25 +575,25 @@ void performMLMFits(const char *filename, const char* output_file, const char* k
     asymmetryStream << std::fixed << std::setprecision(2); 
     asymmetryStream << (i+1) << " & " << meanVariable << " & ";
     // AUU cosphi
-    asymmetryStream << "$" << 100*AUU_cosphi << "_{" << 100*0.2*AUU_cosphi << "}^{";
+    asymmetryStream << "$" << 100*AUU_cosphi << "_{" << TMath::Abs(100*0.3*AUU_cosphi) << "}^{";
     asymmetryStream << 100*AUU_cosphi_error << "}$ &";
     // AUU cos2phi
-    asymmetryStream << "$" << 100*AUU_cos2phi << "_{" << 100*0.2*AUU_cos2phi << "}^{";
+    asymmetryStream << "$" << 100*AUU_cos2phi << "_{" << TMath::Abs(100*0.3*AUU_cos2phi) << "}^{";
     asymmetryStream << 100*AUU_cos2phi_error << "}$ &";
     // ALU sinphi
-    asymmetryStream << "$" << 100*ALU_sinphi << "_{" << 100*0.068*ALU_sinphi << "}^{";
+    asymmetryStream << "$" << 100*ALU_sinphi << "_{" << TMath::Abs(100*0.068*ALU_sinphi) << "}^{";
     asymmetryStream << 100*ALU_sinphi_error << "}$ &";
     // AUL sinphi
-    asymmetryStream << "$" << 100*AUL_sinphi << "_{" << 100*0.119*AUL_sinphi << "}^{";
+    asymmetryStream << "$" << 100*AUL_sinphi << "_{" << TMath::Abs(100*0.119*AUL_sinphi) << "}^{";
     asymmetryStream << 100*AUL_sinphi_error << "}$ &";
     // AUL sin2phi
-    asymmetryStream << "$" << 100*AUL_sin2phi << "_{" << 100*0.119*AUL_sin2phi << "}^{";
+    asymmetryStream << "$" << 100*AUL_sin2phi << "_{" << TMath::Abs(100*0.119*AUL_sin2phi) << "}^{";
     asymmetryStream << 100*AUL_sin2phi_error << "}$ &";
     // ALL 
-    asymmetryStream << "$" << 100*ALL << "_{" << 100*0.123*ALL << "}^{";
+    asymmetryStream << "$" << 100*ALL << "_{" << TMath::Abs(100*0.123*ALL) << "}^{";
     asymmetryStream << 100*ALL_error << "}$ &";
     // ALL cosphi
-    asymmetryStream << "$" << 100*ALL_cosphi << "_{" << 100*0.123*ALL_cosphi << "}^{";
+    asymmetryStream << "$" << 100*ALL_cosphi << "_{" << TMath::Abs(100*0.123*ALL_cosphi) << "}^{";
     asymmetryStream << 100*ALL_cosphi << "}$";
     asymmetryStream << std::string(" \\\\ \\hline ");
   }
