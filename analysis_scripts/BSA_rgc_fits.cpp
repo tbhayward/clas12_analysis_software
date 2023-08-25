@@ -575,10 +575,10 @@ void performMLMFits(const char *filename, const char* output_file, const char* k
     asymmetryStream << std::fixed << std::setprecision(2); 
     asymmetryStream << (i+1) << " & " << meanVariable << " & ";
     // AUU cosphi
-    asymmetryStream << "$" << 100*AUU_cosphi << "_{" << TMath::Abs(100*0.3*AUU_cosphi) << "}^{";
+    asymmetryStream << "$" << 100*AUU_cosphi << "_{" << TMath::Abs(100*0.5*AUU_cosphi) << "}^{";
     asymmetryStream << 100*AUU_cosphi_error << "}$ &";
     // AUU cos2phi
-    asymmetryStream << "$" << 100*AUU_cos2phi << "_{" << TMath::Abs(100*0.3*AUU_cos2phi) << "}^{";
+    asymmetryStream << "$" << 100*AUU_cos2phi << "_{" << TMath::Abs(100*0.5*AUU_cos2phi) << "}^{";
     asymmetryStream << 100*AUU_cos2phi_error << "}$ &";
     // ALU sinphi
     asymmetryStream << "$" << 100*ALU_sinphi << "_{" << TMath::Abs(100*0.068*ALU_sinphi) << "}^{";
@@ -617,7 +617,8 @@ void performMLMFits(const char *filename, const char* output_file, const char* k
   // Finally, close the table
   asymmetryStream << "\\end{tabular}" << std::endl;
   asymmetryStream << "\\caption{The mean kinematic value and the final ";
-  asymmetryStream << "extracted structure function ratios. Asymmetries are given as ";
+  asymmetryStream << "extracted structure function ratios for " << prefix;
+  asymmetryStream << ". Asymmetries are given as ";
   asymmetryStream << "$100{A}_{\\pm100\\Delta\\text{stat}}^";
   asymmetryStream << "{\\pm100\\Delta\\text{sys}}$.}" << std::endl;
   asymmetryStream << "\\label{table:kinematics_" << prefix << "}" << std::endl;
