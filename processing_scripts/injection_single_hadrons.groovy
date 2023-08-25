@@ -52,12 +52,12 @@ def helicity_assignment(double Q2, double x, double PT, double z, double zeta, d
 	// double ALL = 0;
 	// double ALLcosphi = 0;
 
-	// // TEST 2
-	// double ALUsinphi = -0.1; 
-	// double AULsinphi = -0.1;
-	// double AULsin2phi = 0.1;
-	// double ALL = 0;
-	// double ALLcosphi = 0;
+	// TEST 2
+	double ALUsinphi = 0.05; 
+	double AULsinphi = 0.0;
+	double AULsin2phi = 0.0;
+	double ALL = 0;
+	double ALLcosphi = 0;
 
 	// // TEST 3
 	// double ALUsinphi = -0.1; 
@@ -73,12 +73,12 @@ def helicity_assignment(double Q2, double x, double PT, double z, double zeta, d
 	// double ALL = 0.3;
 	// double ALLcosphi = 0;
 
-	// TEST 5
-	double ALUsinphi = -0.22; 
-	double AULsinphi = -0.30;
-	double AULsin2phi = 0.01;
-	double ALL = Math.pow(x,0.72);
-	double ALLcosphi = 0.05;
+	// // TEST 5
+	// double ALUsinphi = -0.22; 
+	// double AULsinphi = -0.30;
+	// double AULsin2phi = 0.01;
+	// double ALL = Math.pow(x,0.72);
+	// double ALLcosphi = 0.05;
 
 	int hb, ht;
 	boolean weight_check = true;
