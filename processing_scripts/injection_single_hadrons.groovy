@@ -181,7 +181,7 @@ public static void main(String[] args) {
 		        mc_zeta = mc_variables.zeta();
 		        mc_phi = mc_variables.phi();
 		        int[] helicities = helicity_assignment(mc_Q2, mc_x, mc_pT, mc_z, mc_zeta, mc_phi);
-		        double hb = helicities[0]; double ht = helicities[0];
+		        double hb = helicities[0]; double ht = helicities[1];
 
 		        // cycle over all hadrons
 		        for (int current_p1 = 0; current_p1 < 1; current_p1++) { 
