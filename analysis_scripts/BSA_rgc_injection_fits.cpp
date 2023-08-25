@@ -163,7 +163,7 @@ void load_run_info_from_csv(const std::string& filename) {
 // function to get the polarization value
 float getPol(int runnum) {
   float pol = 0.86; 
-    if (runnum == 11 ) { pol = 0.86; } // runnum == 11 indicates Monte Carlo in CLAS12
+    if (runnum == 11 ) { pol = 0.83534; } // runnum == 11 indicates Monte Carlo in CLAS12
     else if (runnum >= 5032 && runnum < 5333) { pol = 0.8592; } 
     else if (runnum >= 5333 && runnum <= 5666) { pol = 0.8922; }
     else if (runnum >= 6616 && runnum <= 6783) { pol = 0.8453; }
@@ -220,15 +220,7 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
   data.data["pol"] = getPol(data.data["runnum"]);
 
   // Get the target polarization value from the run_info_list and store it in the data map
-  int runnum = static_cast<int>(data.data["runnum"]);
-  if (data.data["runnum"] == 11) { data.data["target_pol"] = 0; } // MC
-  else { for (const auto& run_info : run_info_list) {
-      if (run_info.runnum == runnum) {
-        data.data["target_pol"] = run_info.target_polarization;
-        break;
-      }
-    }
-  }
+  data.data["target_pol"] = data.data["eta"];
 
   // Return the populated eventData object
   return data;
