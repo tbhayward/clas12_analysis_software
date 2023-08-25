@@ -220,7 +220,7 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
   data.data["pol"] = getPol(data.data["runnum"]);
 
   // Get the target polarization value from the run_info_list and store it in the data map
-  data.data["target_pol"] = data.data["eta"];
+  data.data["target_pol"] = data.data["eta"]*0.76200;
 
   // Return the populated eventData object
   return data;
