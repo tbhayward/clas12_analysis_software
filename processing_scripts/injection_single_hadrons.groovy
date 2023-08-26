@@ -39,7 +39,7 @@ public static double theta_calculation (double x, double y, double z) {
 
 def helicity_assignment(double Q2, double x, double PT, double z, double zeta, double phi,
 	double A, double B, double C, double W, double V) {
-	// double Pb = 0.83534; // injected beam polarization
+	double Pb = 0.83534; // injected beam polarization
 	// double Pt = 0.76200; // injected target polarization
 	// double Df = 0.1158; // injected dilution factor
 	double Pb = 1; // injected beam polarization
