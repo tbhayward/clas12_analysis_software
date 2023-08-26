@@ -42,7 +42,7 @@ def helicity_assignment(double Q2, double x, double PT, double z, double zeta, d
 	double Pb = 0.83534; // injected beam polarization
 	// double Pt = 0.76200; // injected target polarization
 	// double Df = 0.1158; // injected dilution factor
-	double Pb = 1; // injected beam polarization
+	// double Pb = 1; // injected beam polarization
 	double Pt = 1; // injected target polarization
 	double Df = 1; // injected dilution factor
 
