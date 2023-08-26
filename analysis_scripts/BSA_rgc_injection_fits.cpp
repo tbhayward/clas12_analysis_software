@@ -221,8 +221,8 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
   data.data["pol"] = getPol(data.data["runnum"]);
 
   // Get the target polarization value from the run_info_list and store it in the data map
-  // data.data["target_pol"] = data.data["eta"]*0.76200;
-  data.data["target_pol"] = data.data["eta"];
+  data.data["target_pol"] = data.data["eta"]*0.76200;
+  // data.data["target_pol"] = data.data["eta"];
 
   // Return the populated eventData object
   return data;
@@ -391,8 +391,8 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           float DepV = event.data.at("DepV");
           float DepW = event.data.at("DepW");
 
-          // float Df = 0.1158; // dilution factor
-          float Df = 1; // dilution factor
+          float Df = 0.1158; // dilution factor
+          // float Df = 1; // dilution factor
           // Check if the helicities are positive or negative and update the corresponding sum
           if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
             sum_PP += log(1 
@@ -628,8 +628,8 @@ void performMLMFits(const char *filename, const char* output_file, const char* k
 float asymmetry_value_calculation(float currentVariable, const std::string& prefix, 
   float Npp, float Npm, float Nmp, float Nmm, float meanPol, float Ptp, float Ptm, 
   int asymmetry_index) {
-  // float Df = 0.1158; // dilution factor
-  float Df = 1; // dilution factor
+  float Df = 0.1158; // dilution factor
+  // float Df = 1; // dilution factor
   // return the asymmetry value 
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
@@ -647,7 +647,9 @@ float asymmetry_value_calculation(float currentVariable, const std::string& pref
 float asymmetry_error_calculation(float currentVariable, const std::string& prefix, 
   float Npp, float Npm, float Nmp, float Nmm, float meanPol, float Ptp, float Ptm, 
   int asymmetry_index) {
-  float Df = dilution_factor(currentVariable, prefix); // dilution factor
+  float Df = 0.1158; // dilution factor
+  // float Df = 1; // dilution factor
+  // float Df = dilution_factor(currentVariable, prefix); // dilution factor
   // return the asymmetry error 
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry

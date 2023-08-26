@@ -40,11 +40,11 @@ public static double theta_calculation (double x, double y, double z) {
 def helicity_assignment(double Q2, double x, double PT, double z, double zeta, double phi,
 	double A, double B, double C, double W, double V) {
 	double Pb = 0.83534; // injected beam polarization
-	// double Pt = 0.76200; // injected target polarization
-	// double Df = 0.1158; // injected dilution factor
+	double Pt = 0.76200; // injected target polarization
+	double Df = 0.1158; // injected dilution factor
 	// double Pb = 1; // injected beam polarization
-	double Pt = 1; // injected target polarization
-	double Df = 1; // injected dilution factor
+	// double Pt = 1; // injected target polarization
+	// double Df = 1; // injected dilution factor
 
 	// injected asymmetry values, can depend on parameters or not
 
@@ -94,7 +94,12 @@ def helicity_assignment(double Q2, double x, double PT, double z, double zeta, d
 		// 	ht*Pt*Df*(B/A)*AULsin2phi*Math.sin(2*phi) + 
 		// 	hb*Pb*ht*Pt*Df*(C/A)*ALL + 
 		// 	hb*Pb*ht*Pt*Df*(W/A)*ALLcosphi*Math.cos(phi); 
-		double weight = 1 + hb*Pb*(A/W)*ALUsinphi*Math.sin(phi);
+		double weight = 1 + hb*Pb*(A/W)*ALUsinphi*Math.sin(phi) + 
+			ht*Pt*Df*(A/V)*AULsinphi*Math.sin(phi) +
+			ht*Pt*Df*(A/B)*AULsin2phi*Math.sin(2*phi) + 
+			hb*Pb*ht*Pt*Df*(A/C)*ALL + 
+			hb*Pb*ht*Pt*Df*(A/W)*ALLcosphi*Math.cos(phi); 
+		// double weight = 1 + hb*Pb*(A/W)*ALUsinphi*Math.sin(phi);
 		def randomValue = new Random().nextDouble() * 2;
 		if (weight > randomValue) { weight_check = false; }
 	}
