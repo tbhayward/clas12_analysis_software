@@ -76,12 +76,19 @@ def helicity_assignment(double Q2, double x, double PT, double z, double zeta, d
 	// double ALL = 0.3;
 	// double ALLcosphi = 0;
 
-	// TEST 5
-	double ALUsinphi = -0.22; 
-	double AULsinphi = -0.30;
-	double AULsin2phi = 0.01;
-	double ALL = Math.pow(x,0.72);
-	double ALLcosphi = 0.05;
+	// // TEST 5
+	// double ALUsinphi = -0.22; 
+	// double AULsinphi = -0.30;
+	// double AULsin2phi = 0.01;
+	// double ALL = Math.pow(x,0.72);
+	// double ALLcosphi = 0.05;
+
+	// TEST 6
+	double ALUsinphi = 0.00; 
+	double AULsinphi = 0.00;
+	double AULsin2phi = 0.00;
+	double ALL = 0.10;
+	double ALLcosphi = 0.00;
 
 	int hb, ht;
 	boolean weight_check = true;
