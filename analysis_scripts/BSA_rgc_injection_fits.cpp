@@ -1114,7 +1114,6 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
         ALL_cosphi = (meanDepA/meanDepW)*ALL_cosphi;
         ALL_cosphi_error = (meanDepA/meanDepW)*ALL_cosphi_error;
 
-
         // AUU_cosphi = (meanDepA/meanDepV)*AUU_cosphi;
         // AUU_cosphi_error = (meanDepA/meanDepV)*AUU_cosphi_error;
         // AUU_cos2phi = (meanDepB/meanDepV)*AUU_cos2phi;
