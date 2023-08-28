@@ -48,19 +48,19 @@ def helicity_assignment(double Q2, double x, double PT, double z, double zeta, d
 
 	// injected asymmetry values, can depend on parameters or not
 
-	// TEST 1
-	double ALUsinphi = 0; 
-	double AULsinphi = 0;
-	double AULsin2phi = 0;
-	double ALL = 0;
-	double ALLcosphi = 0;
-
-	// // TEST 2
-	// double ALUsinphi = 0.05; 
-	// double AULsinphi = 0.0;
-	// double AULsin2phi = 0.0;
+	// // TEST 1
+	// double ALUsinphi = 0; 
+	// double AULsinphi = 0;
+	// double AULsin2phi = 0;
 	// double ALL = 0;
 	// double ALLcosphi = 0;
+
+	// TEST 2
+	double ALUsinphi = 0.05; 
+	double AULsinphi = 0.0;
+	double AULsin2phi = 0.0;
+	double ALL = 0;
+	double ALLcosphi = 0;
 
 	// // TEST 3
 	// double ALUsinphi = -0.1; 
