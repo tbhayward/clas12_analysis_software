@@ -56,7 +56,7 @@ def helicity_assignment(double Q2, double x, double PT, double z, double zeta, d
 	// double ALLcosphi = 0;
 
 	// TEST 2
-	double ALUsinphi = 0.05; 
+	double ALUsinphi = 0.01; 
 	double AULsinphi = 0.0;
 	double AULsin2phi = 0.0;
 	double ALL = 0;
