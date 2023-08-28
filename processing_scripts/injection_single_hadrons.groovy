@@ -39,35 +39,35 @@ public static double theta_calculation (double x, double y, double z) {
 
 def helicity_assignment(double Q2, double x, double PT, double z, double zeta, double phi,
 	double A, double B, double C, double W, double V) {
-	// double Pb = 0.83534; // injected beam polarization
-	// double Pt = 0.76200; // injected target polarization
-	// double Df = 0.1158; // injected dilution factor
-	double Pb = 1; // injected beam polarization
-	double Pt = 1; // injected target polarization
-	double Df = 1; // injected dilution factor
+	double Pb = 0.83534; // injected beam polarization
+	double Pt = 0.76200; // injected target polarization
+	double Df = 0.1158; // injected dilution factor
+	// double Pb = 1; // injected beam polarization
+	// double Pt = 1; // injected target polarization
+	// double Df = 1; // injected dilution factor
 
 	// injected asymmetry values, can depend on parameters or not
 
-	// // TEST 1
-	// double ALUsinphi = 0; 
-	// double AULsinphi = 0;
-	// double AULsin2phi = 0;
-	// double ALL = 0;
-	// double ALLcosphi = 0;
-
-	// TEST 2
-	double ALUsinphi = 0.01; 
-	double AULsinphi = 0.0;
-	double AULsin2phi = 0.0;
+	// TEST 1
+	double ALUsinphi = 0; 
+	double AULsinphi = 0;
+	double AULsin2phi = 0;
 	double ALL = 0;
 	double ALLcosphi = 0;
 
+	// // TEST 2
+	// double ALUsinphi = 0.01; 
+	// double AULsinphi = 0.0;
+	// double AULsin2phi = 0.0;
+	// double ALL = 0;
+	// double ALLcosphi = 0;
+
 	// // TEST 3
-	// double ALUsinphi = -0.1; 
-	// double AULsinphi = 0;
-	// double AULsin2phi = 0;
-	// double ALL = 0.3;
-	// double ALLcosphi = 0.01;
+	// double ALUsinphi = 0.00; 
+	// double AULsinphi = 0.01;
+	// double AULsin2phi = -0.01;
+	// double ALL = 0;
+	// double ALLcosphi = 0;
 
 	// // TEST 4
 	// double ALUsinphi = 0; 
@@ -83,12 +83,12 @@ def helicity_assignment(double Q2, double x, double PT, double z, double zeta, d
 	// double ALL = Math.pow(x,0.72);
 	// double ALLcosphi = 0.05;
 
-	// TEST 6
-	double ALUsinphi = 0.00; 
-	double AULsinphi = 0.00;
-	double AULsin2phi = 0.00;
-	double ALL = 0.10;
-	double ALLcosphi = 0.00;
+	// // TEST 6
+	// double ALUsinphi = 0.00; 
+	// double AULsinphi = 0.00;
+	// double AULsin2phi = 0.00;
+	// double ALL = 0.10;
+	// double ALLcosphi = 0.00;
 
 	int hb, ht;
 	boolean weight_check = true;
