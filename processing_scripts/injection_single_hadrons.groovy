@@ -97,11 +97,18 @@ def helicity_assignment(double Q2, double x, double PT, double z, double zeta, d
 	// double ALL = 0;
 	// double ALLcosphi = 0;
 
-	// TEST 8
+	// // TEST 8 but single injection
+	// double ALUsinphi = 0.00; 
+	// double AULsinphi = 0.00;
+	// double AULsin2phi = -0.10;
+	// double ALL = 0;
+	// double ALLcosphi = 0;
+
+	// TEST 9 but single injection
 	double ALUsinphi = 0.00; 
 	double AULsinphi = 0.00;
-	double AULsin2phi = -0.10;
-	double ALL = 0;
+	double AULsin2phi = 0.00;
+	double ALL = 0.30;
 	double ALLcosphi = 0;
 
 	int hb, ht;
@@ -120,7 +127,7 @@ def helicity_assignment(double Q2, double x, double PT, double z, double zeta, d
 		// 	ht*Pt*Df*(A/B)*AULsin2phi*Math.sin(2*phi) + 
 		// 	hb*Pb*ht*Pt*Df*(A/C)*ALL + 
 		// 	hb*Pb*ht*Pt*Df*(A/W)*ALLcosphi*Math.cos(phi);
-		double weight = 1 + ht*Pt*Df*(A/B)*AULsin2phi*Math.sin(2*phi);  
+		double weight = 1 + hb*Pb*ht*Pt*Df*(A/C)*ALL;  
 		def randomValue = new Random().nextDouble() * 2;
 		if (weight > randomValue) { weight_check = false; }
 	}
