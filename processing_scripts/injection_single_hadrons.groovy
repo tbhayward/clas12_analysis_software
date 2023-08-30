@@ -38,7 +38,7 @@ public static double theta_calculation (double x, double y, double z) {
 }
 
 def helicity_assignment(double Q2, double x, double PT, double z, double zeta, double phi,
-	double A, double B, double C, double W, double V) {
+	double A, double B, double C, double V, double W) {
 	double Pb = 0.83534; // injected beam polarization
 	double Pt = 0.76200; // injected target polarization
 	double Df = 0.1158; // injected dilution factor
@@ -48,12 +48,12 @@ def helicity_assignment(double Q2, double x, double PT, double z, double zeta, d
 
 	// injected asymmetry values, can depend on parameters or not
 
-	// // TEST 1
-	// double ALUsinphi = 0; 
-	// double AULsinphi = 0;
-	// double AULsin2phi = 0;
-	// double ALL = 0;
-	// double ALLcosphi = 0;
+	// TEST 1
+	double ALUsinphi = 0; 
+	double AULsinphi = 0;
+	double AULsin2phi = 0;
+	double ALL = 0;
+	double ALLcosphi = 0;
 
 	// // TEST 2
 	// double ALUsinphi = 0.01; 
@@ -104,12 +104,12 @@ def helicity_assignment(double Q2, double x, double PT, double z, double zeta, d
 	// double ALL = 0;
 	// double ALLcosphi = 0;
 
-	// TEST 9 but single injection
-	double ALUsinphi = 0.00; 
-	double AULsinphi = 0.00;
-	double AULsin2phi = 0.00;
-	double ALL = 0.30;
-	double ALLcosphi = 0;
+	// // TEST 9 but single injection
+	// double ALUsinphi = 0.00; 
+	// double AULsinphi = 0.00;
+	// double AULsin2phi = 0.00;
+	// double ALL = 0.30;
+	// double ALLcosphi = 0;
 
 	int hb, ht;
 	boolean weight_check = true;
@@ -117,17 +117,16 @@ def helicity_assignment(double Q2, double x, double PT, double z, double zeta, d
 	while(weight_check) {
 		hb = new Random().nextBoolean() ? 1 : -1; // beam helicity
 		ht = new Random().nextBoolean() ? 1 : -1; // target helicity
-		// double weight = 1 + hb*Pb*(W/A)*ALUsinphi*Math.sin(phi) + 
-		// 	ht*Pt*Df*(V/A)*AULsinphi*Math.sin(phi) +
-		// 	ht*Pt*Df*(B/A)*AULsin2phi*Math.sin(2*phi) + 
-		// 	hb*Pb*ht*Pt*Df*(C/A)*ALL + 
-		// 	hb*Pb*ht*Pt*Df*(W/A)*ALLcosphi*Math.cos(phi); 
+		double weight = 1 + hb*Pb*(W/A)*ALUsinphi*Math.sin(phi) + 
+			ht*Pt*Df*(V/A)*AULsinphi*Math.sin(phi) +
+			ht*Pt*Df*(B/A)*AULsin2phi*Math.sin(2*phi) + 
+			hb*Pb*ht*Pt*Df*(C/A)*ALL + 
+			hb*Pb*ht*Pt*Df*(W/A)*ALLcosphi*Math.cos(phi); 
 		// double weight = 1 + hb*Pb*(A/W)*ALUsinphi*Math.sin(phi) + 
 		// 	ht*Pt*Df*(A/V)*AULsinphi*Math.sin(phi) +
 		// 	ht*Pt*Df*(A/B)*AULsin2phi*Math.sin(2*phi) + 
 		// 	hb*Pb*ht*Pt*Df*(A/C)*ALL + 
 		// 	hb*Pb*ht*Pt*Df*(A/W)*ALLcosphi*Math.cos(phi);
-		double weight = 1 + hb*Pb*ht*Pt*Df*(A/C)*ALL;  
 		def randomValue = new Random().nextDouble() * 2;
 		if (weight > randomValue) { weight_check = false; }
 	}
