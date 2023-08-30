@@ -276,7 +276,7 @@ double getEventProperty(const eventData& event, int currentFits) {
 
 // Apply kinematic cuts to the data
 bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
-
+  cout << "HELLO WORLD CUTS" << endl;
   bool goodEvent = 0;
   std::string property = binNames[currentFits];
   // epX
@@ -301,7 +301,6 @@ bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
   } 
   // epiX
   if (property == "xFpip") { 
-    cout << "HELLO WORLD CUTS" << endl;
     goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
       data.data.at("y")<0.75;
   }
@@ -322,6 +321,7 @@ bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
 }
 
 float dilution_factor(float currentVariable, const std::string& prefix) {
+  cout << "HELLO WORLD DILUTION" << endl;
   // epX
   if (prefix == "xF") { 
     return 0.186121-0.0263337*currentVariable-0.175587*std::pow(currentVariable,2)+
@@ -329,7 +329,6 @@ float dilution_factor(float currentVariable, const std::string& prefix) {
   }
   // epi+X
   if (prefix == "xFpip") { 
-    cout << "HELLO WORLD DILUTION" << endl;
     return 0.122453+0.189509*currentVariable-0.133621*std::pow(currentVariable,2)-
       0.0401427*std::pow(currentVariable,3);
   }
