@@ -300,7 +300,8 @@ bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
       data.data.at("y")<0.75 && data.data.at("xF")>0;
   } 
   // epiX
-  if (property == "xFpip") {
+  if (property == "xFpip") { 
+    cout << "HELLO WORLD CUTS" << endl;
     goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
       data.data.at("y")<0.75;
   }
@@ -328,6 +329,7 @@ float dilution_factor(float currentVariable, const std::string& prefix) {
   }
   // epi+X
   if (prefix == "xFpip") { 
+    cout << "HELLO WORLD DILUTION" << endl;
     return 0.122453+0.189509*currentVariable-0.133621*std::pow(currentVariable,2)-
       0.0401427*std::pow(currentVariable,3);
   }
