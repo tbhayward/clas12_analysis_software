@@ -763,10 +763,10 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   int numEventsPosTarget = 0;
   int numEventsNegTarget = 0;
 
-  cout << "WE IN HERE BOYS" << endl;
   // Fill the positive and negative helicity histograms
   for (const eventData& event : data) {
     float currentVariable = getEventProperty(event, currentFits);
+    cout << "WE IN HERE BOYS" << endl;
     if (applyKinematicCuts(event, currentFits, 0) && currentVariable >= varMin && 
       currentVariable < varMax) {
       sumVariable+=currentVariable;
