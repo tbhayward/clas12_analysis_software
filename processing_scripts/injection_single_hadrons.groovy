@@ -59,19 +59,19 @@ def helicity_assignment(double Q2, double x, double PT, double z, double zeta, d
 	// double ALL = 0;
 	// double ALLcosphi = 0;
 
-	// TEST 3, mixed constant injection
-	double ALUsinphi = -0.05; 
-	double AULsinphi = -0.10;
-	double AULsin2phi = 0.05;
-	double ALL = 0.40;
-	double ALLcosphi = 0.10;
+	// // TEST 3, mixed constant injection
+	// double ALUsinphi = -0.05; 
+	// double AULsinphi = -0.10;
+	// double AULsin2phi = 0.05;
+	// double ALL = 0.40;
+	// double ALLcosphi = 0.10;
 
-	// // TEST 4, data-like xB injection
-	// double ALUsinphi = 0; 
-	// double AULsinphi = 0;
-	// double AULsin2phi = 0;
-	// double ALL = 0;
-	// double ALLcosphi = 0;
+	// TEST 4, data-like xB injection
+	double ALUsinphi = -0.021; 
+	double AULsinphi = -0.025;
+	double AULsin2phi = -0.014;
+	double ALL = -0.046+2.017*x-2.986*x*x+2.761*x*x*x;
+	double ALLcosphi = 0.0191;
 
 	// // TEST 5, data-like PT injection
 	// double ALUsinphi = 0; 
