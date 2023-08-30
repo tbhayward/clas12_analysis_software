@@ -37,8 +37,8 @@ public static double theta_calculation (double x, double y, double z) {
 	return (double) (180/Math.PI)*Math.acos(z/r);
 }
 
-def helicity_assignment(double Q2, double x, double PT, double z, double zeta, double phi,
-	double A, double B, double C, double V, double W) {
+def helicity_assignment(double Q2, double x, double PT, double z, double zeta, double xF, 
+	double phi, double A, double B, double C, double V, double W) {
 	double Pb = 0.83534; // injected beam polarization
 	double Pt = 0.76200; // injected target polarization
 	double Df = 0.1158; // injected dilution factor
@@ -73,19 +73,19 @@ def helicity_assignment(double Q2, double x, double PT, double z, double zeta, d
 	// double ALL = -0.046+2.017*x-2.986*x*x+2.761*x*x*x;
 	// double ALLcosphi = 0.0191;
 
-	// TEST 5, data-like PT injection
-	double ALUsinphi = 0.002-0.056*PT; 
-	double AULsinphi = 0.009-0.088*PT;
-	double AULsin2phi = -0.013;
-	double ALL = 0.296;
-	double ALLcosphi = 0.100-0.020*PT;
+	// // TEST 5, data-like PT injection
+	// double ALUsinphi = 0.002-0.056*PT; 
+	// double AULsinphi = 0.009-0.088*PT;
+	// double AULsin2phi = -0.013;
+	// double ALL = 0.296;
+	// double ALLcosphi = 0.100-0.020*PT;
 
-	// // TEST 6, data-like xF injection
-	// double ALUsinphi = 0; 
-	// double AULsinphi = 0;
-	// double AULsin2phi = 0;
-	// double ALL = 0;
-	// double ALLcosphi = 0;
+	// TEST 6, data-like xF injection
+	double ALUsinphi = -0.017+0.052*xF+0.103*xF*xF; 
+	double AULsinphi = -0.017+0.102*xF+0.204*xF*xF;
+	double AULsin2phi = -0.020-0.119*xF-0.248*xF*xF;
+	double ALL = 0.308+0.018*xF-0.250*xF*xF;
+	double ALLcosphi = 0.019+0.090*xF+0.109*xF*xF;
 
 	int hb, ht;
 	boolean weight_check = true;
@@ -220,14 +220,15 @@ public static void main(String[] args) {
 		        mc_pT = mc_variables.pT();
 		        mc_z = mc_variables.z();
 		        mc_zeta = mc_variables.zeta();
+		        mc_xF = mc_variables.xF();
 		        mc_phi = mc_variables.phi();
 		        mc_Depolarization_A = mc_variables.Depolarization_A();
                 mc_Depolarization_B = mc_variables.Depolarization_B();
                 mc_Depolarization_C = mc_variables.Depolarization_C();
                 mc_Depolarization_V = mc_variables.Depolarization_V();
 		    	mc_Depolarization_W = mc_variables.Depolarization_W();
-		        int[] helicities = helicity_assignment(mc_Q2, mc_x, mc_pT, mc_z, mc_zeta, mc_phi,
-		        	mc_Depolarization_A, mc_Depolarization_B, mc_Depolarization_C,
+		        int[] helicities = helicity_assignment(mc_Q2, mc_x, mc_pT, mc_z, mc_zeta, mc_xF,
+		        	mc_phi, mc_Depolarization_A, mc_Depolarization_B, mc_Depolarization_C,
 		        	mc_Depolarization_V, mc_Depolarization_W);
 		        double hb = helicities[0]; double ht = helicities[1];
 
