@@ -279,6 +279,7 @@ bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
 
   bool goodEvent = 0;
   std::string property = binNames[currentFits];
+  // epX
   if (property == "xF") {
     goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
       data.data.at("y")<0.75;
@@ -298,6 +299,21 @@ bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
     goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
       data.data.at("y")<0.75 && data.data.at("xF")>0;
   } 
+  // epiX
+  if (property == "xFpip") {
+    goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
+      data.data.at("y")<0.75;
+  }
+  if (property == "PTTFRpip" || property ==  "xTFRpip" || property == "zTFRpip" || 
+    property == "Q2TFRpip" || property ==  "xpip") {
+    goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
+      data.data.at("y")<0.75 && data.data.at("xF")<0;
+  }
+  if (property == "PTCFRpip" || property == "xCFRpip" || property == "zCFRpip" ||
+    property == "Q2TFRpip") {
+    goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
+      data.data.at("y")<0.75 && data.data.at("xF")>0;
+  } 
   if (isMC) { return goodEvent; }
   else {return goodEvent && data.data.at("target_pol") != 0; } // if data, skip Pt = 0 (carbon)
 
@@ -305,43 +321,88 @@ bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
 }
 
 float dilution_factor(float currentVariable, const std::string& prefix) {
-  if (prefix == "xF") {
+  // epX
+  if (prefix == "xF") { 
     return 0.186121-0.0263337*currentVariable-0.175587*std::pow(currentVariable,2)+
       0.0522814*std::pow(currentVariable,3);
   }
+  // epi+X
+  if (prefix == "xFpip") { 
+    return 0.122453+0.189509*currentVariable-0.133621*std::pow(currentVariable,2)-
+      0.0401427*std::pow(currentVariable,3);
+  }
+  // epX
   if (prefix == "Q2TFR") {
     return 0.0884319+0.0414953*currentVariable-0.00584857*std::pow(currentVariable,2)+
       0.000500127*std::pow(currentVariable,3);
   }
+  // epX
   if (prefix == "Q2bin") {
     return -0.341032+0.762811*currentVariable-0.399944*std::pow(currentVariable,2)+
       0.0686534*std::pow(currentVariable,3);
   }
+  // epX
   if (prefix == "xTFR") {
     return 0.111702+0.0858432*currentVariable+0.880331*std::pow(currentVariable,2)-
       0.990298*std::pow(currentVariable,3);
   }
+  // epi+X
+  if (prefix == "xTFRpip") {
+    return 0.117706-0.194421*currentVariable+0.977489*std::pow(currentVariable,2)-
+      0.926193*std::pow(currentVariable,3);
+  }
+  // epX
   if (prefix == "PTTFR") {
     return 0.184491-0.161007*currentVariable+0.298733*std::pow(currentVariable,2)-
       0.187826*std::pow(currentVariable,3);
   }
+  // epi+X
+  if (prefix == "PTTFRpip") {
+    return 0.176079-0.328598*currentVariable+0.475598*std::pow(currentVariable,2)-
+      0.167004*std::pow(currentVariable,3);
+  }
+  // epX
   if (prefix == "zetaTFR") {
     return 1.52544-7.07359*currentVariable+12.5954*std::pow(currentVariable,2)-
       7.72548*std::pow(currentVariable,3);
   }
+  // epi+X
+  if (prefix == "zTFRpip") {
+    return 0.0565765+0.882732*currentVariable-3.33409*std::pow(currentVariable,2)+
+      5.51154*std::pow(currentVariable,3);
+  }
+  // epX
   if (prefix == "Q2TFR") {
     return 0.093586+0.0370678*currentVariable-0.00373394*std::pow(currentVariable,2)+
       0.000215739*std::pow(currentVariable,3);
   }
+  // epX
   if (prefix == "xCFR") {
     return 0.089331+0.429008*currentVariable-0.617364*std::pow(currentVariable,2)+
       0.7584*std::pow(currentVariable,3);
   }
+  // epi+X
+  if (prefix == "xCFRpip") {
+    return 0.119971+0.416041*currentVariable-0.922544*std::pow(currentVariable,2)+
+      1.01908*std::pow(currentVariable,3);
+  }
+  // epX
   if (prefix == "PTCFR") {
     return 0.151263+0.170759*currentVariable-0.439815*std::pow(currentVariable,2)+
       0.278509*std::pow(currentVariable,3);
   }
+  // epi+X
+  if (prefix == "PTCFRpip") {
+    return 0.184542-0.0499585*currentVariable+0.163844*std::pow(currentVariable,2)+
+      0.157106*std::pow(currentVariable,3);
+  }
+  // epX
   if (prefix == "zetaCFR") {
+    return 1.32783-6.22826*currentVariable+11.2985*std::pow(currentVariable,2)-
+      7.01171*std::pow(currentVariable,3);
+  }
+  // epi+X
+  if (prefix == "zCFRpip") {
     return 1.32783-6.22826*currentVariable+11.2985*std::pow(currentVariable,2)-
       7.01171*std::pow(currentVariable,3);
   }
@@ -1251,8 +1312,8 @@ void BSA_rgc_fits(const char* data_file, const char* mc_file, const char* output
       performChi2Fits(data_file, output_file, kinematic_file, binNames[i], asymmetry);
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    performMLMFits(data_file, output_file, kinematic_file, binNames[i]);
-    cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
+    // performMLMFits(data_file, output_file, kinematic_file, binNames[i]);
+    // cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
     currentFits++;
   }
