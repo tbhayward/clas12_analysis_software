@@ -995,7 +995,6 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
   meanVariablesStream << "& $<x_B>$ & $<y>$ & $<z>$ & $<\\zeta>$ & $<P_T>$~(GeV) ";
   meanVariablesStream << "& $<x_F>$ \\\\ \\hline" << std::endl; 
 
-  cout << "WE IN HERE BOYS" << endl;
 
   // Create a new TF1 object called fitFunction representing the function to fit
   // and create string stream prefix depending on current asymmetry we're fitting
@@ -1042,6 +1041,7 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
     TH1D* hist = createHistogramForBin(gData, histName, i, prefix, asymmetry_index);
     // Fit the histogram using the fitFunction and get the fit result
     hist->Fit(fitFunction, "QS");
+    cout << "WE IN HERE BOYS" << endl;
     plotHistogramAndFit(hist, fitFunction, i, asymmetry_index, prefix);
 
     // Initialize variables to store the sums and event counts
