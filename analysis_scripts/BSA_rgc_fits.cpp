@@ -763,6 +763,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   int numEventsPosTarget = 0;
   int numEventsNegTarget = 0;
 
+  cout << "WE IN HERE BOYS" << endl;
   // Fill the positive and negative helicity histograms
   for (const eventData& event : data) {
     float currentVariable = getEventProperty(event, currentFits);
@@ -1041,7 +1042,6 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
     TH1D* hist = createHistogramForBin(gData, histName, i, prefix, asymmetry_index);
     // Fit the histogram using the fitFunction and get the fit result
     hist->Fit(fitFunction, "QS");
-    cout << "WE IN HERE BOYS" << endl;
     plotHistogramAndFit(hist, fitFunction, i, asymmetry_index, prefix);
 
     // Initialize variables to store the sums and event counts
