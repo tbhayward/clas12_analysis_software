@@ -1053,6 +1053,7 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
     float sumQ2 = 0; float sumW = 0; float sumx = 0; float sumy = 0;
     float sumz = 0; float sumzeta = 0; float sumpT = 0; float sumxF = 0;
 
+    cout << "WE IN HERE BOYS" << endl;
     // Loop over all events and calculate the sums and event counts
     for (const eventData& event : gData) {
       double currentVariable = getEventProperty(event, currentFits);
