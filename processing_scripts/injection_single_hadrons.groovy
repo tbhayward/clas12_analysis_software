@@ -42,73 +42,49 @@ def helicity_assignment(double Q2, double x, double PT, double z, double zeta, d
 	double Pb = 0.83534; // injected beam polarization
 	double Pt = 0.76200; // injected target polarization
 	double Df = 0.1158; // injected dilution factor
-	// double Pb = 1; // injected beam polarization
-	// double Pt = 1; // injected target polarization
-	// double Df = 1; // injected dilution factor
 
 	// injected asymmetry values, can depend on parameters or not
 
-	// // TEST 1
+	// TEST 1, null injection
+	double ALUsinphi = 0; 
+	double AULsinphi = 0;
+	double AULsin2phi = 0;
+	double ALL = 0;
+	double ALLcosphi = 0;
+
+	// // TEST 2, single constant BSA
 	// double ALUsinphi = 0; 
 	// double AULsinphi = 0;
 	// double AULsin2phi = 0;
 	// double ALL = 0;
 	// double ALLcosphi = 0;
 
-	// // TEST 2
-	// double ALUsinphi = 0.01; 
-	// double AULsinphi = 0.0;
-	// double AULsin2phi = 0.0;
-	// double ALL = 0;
-	// double ALLcosphi = 0;
-
-	// // TEST 3
-	// double ALUsinphi = 0.00; 
-	// double AULsinphi = 0.10;
-	// double AULsin2phi = -0.10;
-	// double ALL = 0;
-	// double ALLcosphi = 0;
-
-	// // TEST 4
-	// double ALUsinphi = -0.1; 
-	// double AULsinphi = -0.1;
+	// // TEST 3, mixed constant injection
+	// double ALUsinphi = 0; 
+	// double AULsinphi = 0;
 	// double AULsin2phi = 0;
-	// double ALL = 0.3;
-	// double ALLcosphi = 0;
-
-	// // TEST 5
-	// double ALUsinphi = -0.22; 
-	// double AULsinphi = -0.30;
-	// double AULsin2phi = 0.01;
-	// double ALL = Math.pow(x,0.72);
-	// double ALLcosphi = 0.05;
-
-	// TEST 6
-	double ALUsinphi = 0.00; 
-	double AULsinphi = 0.00;
-	double AULsin2phi = 0.00;
-	double ALL = 0.30;
-	double ALLcosphi = 0.00;
-
-	// // TEST 7
-	// double ALUsinphi = 0.00; 
-	// double AULsinphi = 0.00;
-	// double AULsin2phi = -0.10;
 	// double ALL = 0;
 	// double ALLcosphi = 0;
 
-	// // TEST 8 but single injection
-	// double ALUsinphi = 0.00; 
-	// double AULsinphi = 0.00;
-	// double AULsin2phi = -0.10;
+	// // TEST 4, data-like xB injection
+	// double ALUsinphi = 0; 
+	// double AULsinphi = 0;
+	// double AULsin2phi = 0;
 	// double ALL = 0;
 	// double ALLcosphi = 0;
 
-	// // TEST 9 but single injection
-	// double ALUsinphi = 0.00; 
-	// double AULsinphi = 0.00;
-	// double AULsin2phi = 0.00;
-	// double ALL = 0.30;
+	// // TEST 5, data-like PT injection
+	// double ALUsinphi = 0; 
+	// double AULsinphi = 0;
+	// double AULsin2phi = 0;
+	// double ALL = 0;
+	// double ALLcosphi = 0;
+
+	// // TEST 6, data-like xF injection
+	// double ALUsinphi = 0; 
+	// double AULsinphi = 0;
+	// double AULsin2phi = 0;
+	// double ALL = 0;
 	// double ALLcosphi = 0;
 
 	int hb, ht;
@@ -122,11 +98,6 @@ def helicity_assignment(double Q2, double x, double PT, double z, double zeta, d
 			ht*Pt*Df*(B/A)*AULsin2phi*Math.sin(2*phi) + 
 			hb*Pb*ht*Pt*Df*(C/A)*ALL + 
 			hb*Pb*ht*Pt*Df*(W/A)*ALLcosphi*Math.cos(phi); 
-		// double weight = 1 + hb*Pb*(A/W)*ALUsinphi*Math.sin(phi) + 
-		// 	ht*Pt*Df*(A/V)*AULsinphi*Math.sin(phi) +
-		// 	ht*Pt*Df*(A/B)*AULsin2phi*Math.sin(2*phi) + 
-		// 	hb*Pb*ht*Pt*Df*(A/C)*ALL + 
-		// 	hb*Pb*ht*Pt*Df*(A/W)*ALLcosphi*Math.cos(phi);
 		def randomValue = new Random().nextDouble() * 2;
 		if (weight > randomValue) { weight_check = false; }
 	}
