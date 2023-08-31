@@ -280,6 +280,9 @@ bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
 
   bool goodEvent = 0;
   std::string property = binNames[currentFits];
+  //
+  //
+  //
   // epX
   if (property == "xF") {
     goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
@@ -300,6 +303,9 @@ bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
     goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
       data.data.at("y")<0.75 && data.data.at("xF")>0;
   } 
+  //
+  //
+  //
   // epiX
   if (property == "xFpip") { 
     goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
@@ -314,6 +320,24 @@ bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
     property == "Q2TFRpip") {
     goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
       data.data.at("y")<0.75 && data.data.at("xF")>0;
+  }
+  //
+  //
+  //
+  // epiX
+  if (property == "xFpim") { 
+    goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
+      data.data.at("y")<0.75;
+  }
+  if (property == "PTTFRpim" || property ==  "xTFRpim" || property == "zTFRpim" || 
+    property == "Q2TFRpim" || property ==  "xpim") {
+    goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
+      data.data.at("y")<0.75 && data.data.at("xF")<0;
+  }
+  if (property == "PTCFRpim" || property == "xCFRpim" || property == "zCFRpim" ||
+    property == "Q2TFRpim") {
+    goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
+      data.data.at("y")<0.75 && data.data.at("xF")>0;
   } 
   if (isMC) { return goodEvent; }
   else {return goodEvent && data.data.at("target_pol") != 0; } // if data, skip Pt = 0 (carbon)
@@ -322,7 +346,7 @@ bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
 }
 
 float dilution_factor(float currentVariable, const std::string& prefix) {
-  
+
   // epX
   if (prefix == "xF") { 
     return 0.186121-0.0263337*currentVariable-0.175587*std::pow(currentVariable,2)+
@@ -332,6 +356,11 @@ float dilution_factor(float currentVariable, const std::string& prefix) {
   if (prefix == "xFpip") { 
     return 0.122453+0.189509*currentVariable-0.133621*std::pow(currentVariable,2)-
       0.0401427*std::pow(currentVariable,3);
+  }
+  // epi-X
+  if (prefix == "xFpim") { 
+    return 0.128348+0.195055*currentVariable-0.242617*std::pow(currentVariable,2)-
+      0.204807*std::pow(currentVariable,3);
   }
   // epX
   if (prefix == "Q2TFR") {
@@ -353,6 +382,11 @@ float dilution_factor(float currentVariable, const std::string& prefix) {
     return 0.117706-0.194421*currentVariable+0.977489*std::pow(currentVariable,2)-
       0.926193*std::pow(currentVariable,3);
   }
+  // epi-X
+  if (prefix == "xTFRpim") {
+    return 0.0787795-0.263136*currentVariable+1.378*std::pow(currentVariable,2)-
+      1.65335*std::pow(currentVariable,3);
+  }
   // epX
   if (prefix == "PTTFR") {
     return 0.184491-0.161007*currentVariable+0.298733*std::pow(currentVariable,2)-
@@ -363,6 +397,11 @@ float dilution_factor(float currentVariable, const std::string& prefix) {
     return 0.176079-0.328598*currentVariable+0.475598*std::pow(currentVariable,2)-
       0.167004*std::pow(currentVariable,3);
   }
+  // epi-X
+  if (prefix == "PTTFRpim") {
+    return 0.0275594+0.276354*currentVariable-0.471179*std::pow(currentVariable,2)-
+      0.21497*std::pow(currentVariable,3);
+  }
   // epX
   if (prefix == "zetaTFR") {
     return 1.52544-7.07359*currentVariable+12.5954*std::pow(currentVariable,2)-
@@ -372,6 +411,11 @@ float dilution_factor(float currentVariable, const std::string& prefix) {
   if (prefix == "zTFRpip") {
     return 0.0565765+0.882732*currentVariable-3.33409*std::pow(currentVariable,2)+
       5.51154*std::pow(currentVariable,3);
+  }
+  // epi-X
+  if (prefix == "zTFRpim") {
+    return -0.0253779+1.62183*currentVariable-6.76455*std::pow(currentVariable,2)+
+      8.56005*std::pow(currentVariable,3);
   }
   // epX
   if (prefix == "Q2TFR") {
@@ -388,6 +432,11 @@ float dilution_factor(float currentVariable, const std::string& prefix) {
     return 0.119971+0.416041*currentVariable-0.922544*std::pow(currentVariable,2)+
       1.01908*std::pow(currentVariable,3);
   }
+  // epi-X
+  if (prefix == "xCFRpim") {
+    return 0.121553-0.12187*currentVariable+0.923064*std::pow(currentVariable,2)-
+      0.949773*std::pow(currentVariable,3);
+  }
   // epX
   if (prefix == "PTCFR") {
     return 0.151263+0.170759*currentVariable-0.439815*std::pow(currentVariable,2)+
@@ -398,6 +447,11 @@ float dilution_factor(float currentVariable, const std::string& prefix) {
     return 0.184542-0.0499585*currentVariable+0.163844*std::pow(currentVariable,2)+
       0.157106*std::pow(currentVariable,3);
   }
+  // epi-X
+  if (prefix == "PTCFRpim") {
+    return 0.147254-0.134125*currentVariable+0.407317*std::pow(currentVariable,2)-
+      0.339619*std::pow(currentVariable,3);
+  }
   // epX
   if (prefix == "zetaCFR") {
     return 1.32783-6.22826*currentVariable+11.2985*std::pow(currentVariable,2)-
@@ -407,6 +461,11 @@ float dilution_factor(float currentVariable, const std::string& prefix) {
   if (prefix == "zCFRpip") {
     return 1.32783-6.22826*currentVariable+11.2985*std::pow(currentVariable,2)-
       7.01171*std::pow(currentVariable,3);
+  }
+  // epi-X
+  if (prefix == "zCFRpim") {
+    return 0.0997319+0.28069*currentVariable-0.547782*std::pow(currentVariable,2)+
+      0.244802*std::pow(currentVariable,3);
   }
   return 0.14;
 }
