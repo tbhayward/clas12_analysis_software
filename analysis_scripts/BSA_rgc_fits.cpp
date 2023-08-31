@@ -269,7 +269,7 @@ std::vector<eventData> readData(const std::string& filename,
 }
 
 double getEventProperty(const eventData& event, int currentFits) {
-  cout << "getEventProperty" << endl;
+
   std::string property = propertyNames[currentFits];
   // Access the property value using the map's indexing
   return event.data.at(property);
@@ -277,7 +277,7 @@ double getEventProperty(const eventData& event, int currentFits) {
 
 // Apply kinematic cuts to the data
 bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
-  cout << "HELLO WORLD CUTS" << endl;
+
   bool goodEvent = 0;
   std::string property = binNames[currentFits];
   // epX
@@ -322,7 +322,7 @@ bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
 }
 
 float dilution_factor(float currentVariable, const std::string& prefix) {
-  cout << "HELLO WORLD DILUTION" << endl;
+  
   // epX
   if (prefix == "xF") { 
     return 0.186121-0.0263337*currentVariable-0.175587*std::pow(currentVariable,2)+
@@ -766,7 +766,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
 
   // Fill the positive and negative helicity histograms
   for (const eventData& event : data) {
-    
+
     float currentVariable = getEventProperty(event, currentFits);
     if (applyKinematicCuts(event, currentFits, 0) && currentVariable >= varMin && 
       currentVariable < varMax) {
