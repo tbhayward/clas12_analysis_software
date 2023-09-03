@@ -906,7 +906,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
 }
 
 // Function to fit the beam-spin asymmetry histogram
-double BSA_funcToFit(double* x, double* par) {
+float BSA_funcToFit(double* x, double* par) {
   // Retrieve the parameters 
   float ALU_offset = par[0];
   float ALU_sinphi = par[1];
@@ -920,7 +920,7 @@ double BSA_funcToFit(double* x, double* par) {
 }
 
 // Function to fit the target-spin asymmetry histogram
-double TSA_funcToFit(double* x, double* par) {
+float TSA_funcToFit(double* x, double* par) {
   // Retrieve the parameters A
   float AUL_offset = par[0];
   float AUL_sinphi = par[1];
@@ -936,7 +936,7 @@ double TSA_funcToFit(double* x, double* par) {
 }
 
 // Function to fit the double-spin asymmetry histogram
-double DSA_funcToFit(double* x, double* par) {
+float DSA_funcToFit(double* x, double* par) {
   // Retrieve the parameters A
   float ALL = par[0];
   float ALL_cosphi = par[1];
