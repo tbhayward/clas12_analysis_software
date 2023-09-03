@@ -338,7 +338,7 @@ bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
   // epiX
   if (property == "xFpim") { 
     goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
-      data.data.at("y")<0.75;
+      data.data.at("y")<0.75 && data.data.at("p_p") > 1.20;
   }
   if (property == "PTTFRpim" || property ==  "xTFRpim" || property == "zTFRpim" || 
     property == "Q2TFRpim" || property ==  "xpim") {
@@ -348,7 +348,7 @@ bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
   if (property == "PTCFRpim" || property == "xCFRpim" || property == "zCFRpim" ||
     property == "Q2TFRpim") {
     goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
-      data.data.at("y")<0.75 && data.data.at("xF")>0;
+      data.data.at("y")<0.75 && data.data.at("xF")>0 && data.data.at("p_p") > 1.20;
   } 
   if (isMC) { return goodEvent; }
   else {return goodEvent && data.data.at("target_pol") != 0; } // if data, skip Pt = 0 (carbon)
@@ -1105,7 +1105,6 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
 
   // Loop over each bin
   for (size_t i = 0; i < numBins; ++i) {
-    cout << "we're here" << endl;
     cout << "Beginning chi2 fit for " << binNames[currentFits]
       << " bin " << i << ". ";
     char histName[32];
