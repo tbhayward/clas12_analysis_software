@@ -233,7 +233,7 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
   // Add in tmin and t
   float E = 10.55; // beam energy
   float me = 0.000511; // electron mass in GeV
-  float k = TMath::sqrt(E*E-me*me);
+  float k = sqrt(E*E-me*me);
   data.data["tmin"] = 2*me*(E-sqrt(me*me+data.data["e_p"]*data.data["e_p"]));
   data.data["t"] = -2*k*data.data["e_p"]*(cos(data.data["e_theta"]-1))-data.data["tmin"];
 
