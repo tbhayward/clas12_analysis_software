@@ -490,22 +490,22 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     // iflag: a flag (see TMinuit documentation for details)
 
     // Extract parameters from the input parameter array
-    float ALU_sinphi = par[0];
-    float AUL_sinphi = par[1];
-    float AUL_sin2phi = par[2];
-    float ALL = par[3];
-    float ALL_cosphi = par[4];
-    float AUU_cosphi = par[5];
-    float AUU_cos2phi = par[6];
+    double ALU_sinphi = par[0];
+    double AUL_sinphi = par[1];
+    double AUL_sin2phi = par[2];
+    double ALL = par[3];
+    double ALL_cosphi = par[4];
+    double AUU_cosphi = par[5];
+    double AUU_cos2phi = par[6];
 
     // Initialize variables for counting events (N), positive helicity sum (sum_P), 
     // and negative helicity sum (sum_N)
-    float N = 0;
-    float NUU = 0; // normalization integral
-    float sum_PP = 0; // positive beam -- positive target
-    float sum_PM = 0; // positive beam -- negative target
-    float sum_MP = 0; // negative beam -- positive target
-    float sum_MM = 0; // negative beam -- negative target
+    double N = 0;
+    double NUU = 0; // normalization integral
+    double sum_PP = 0; // positive beam -- positive target
+    double sum_PM = 0; // positive beam -- negative target
+    double sum_MP = 0; // negative beam -- positive target
+    double sum_MM = 0; // negative beam -- negative target
 
     // Iterate through the global event data (gData)
     for (const eventData &event : gData) {
@@ -660,24 +660,24 @@ void performMLMFits(const char *filename, const char* output_file, const char* k
     minuit.Migrad(); cout << endl;
 
     // Extract the fitted parameter values and errors
-    float ALU_sinphi, ALU_sinphi_error;
+    double ALU_sinphi, ALU_sinphi_error;
     minuit.GetParameter(0, ALU_sinphi, ALU_sinphi_error);
-    float AUL_sinphi, AUL_sinphi_error;
+    double AUL_sinphi, AUL_sinphi_error;
     minuit.GetParameter(1, AUL_sinphi, AUL_sinphi_error);
-    float AUL_sin2phi, AUL_sin2phi_error;
+    double AUL_sin2phi, AUL_sin2phi_error;
     minuit.GetParameter(2, AUL_sin2phi, AUL_sin2phi_error);
-    float ALL, ALL_error;
+    double ALL, ALL_error;
     minuit.GetParameter(3, ALL, ALL_error);
-    float ALL_cosphi, ALL_cosphi_error;
+    double ALL_cosphi, ALL_cosphi_error;
     minuit.GetParameter(4, ALL_cosphi, ALL_cosphi_error);
-    float AUU_cosphi, AUU_cosphi_error;
+    double AUU_cosphi, AUU_cosphi_error;
     minuit.GetParameter(5, AUU_cosphi, AUU_cosphi_error);
-    float AUU_cos2phi, AUU_cos2phi_error;
+    double AUU_cos2phi, AUU_cos2phi_error;
     minuit.GetParameter(6, AUU_cos2phi, AUU_cos2phi_error);
 
     // Calculate the mean values of the current variable 
-    float sumVariable = 0;
-    float numEvents = 0;
+    double sumVariable = 0;
+    double numEvents = 0;
     for (const eventData &event : gData) {
       float currentVariable = getEventProperty(event, currentFits);
         if (applyKinematicCuts(event, currentFits, 0) && currentVariable >= 
@@ -906,7 +906,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
 }
 
 // Function to fit the beam-spin asymmetry histogram
-float BSA_funcToFit(double* x, double* par) {
+double BSA_funcToFit(double* x, double* par) {
   // Retrieve the parameters 
   float ALU_offset = par[0];
   float ALU_sinphi = par[1];
@@ -920,7 +920,7 @@ float BSA_funcToFit(double* x, double* par) {
 }
 
 // Function to fit the target-spin asymmetry histogram
-float TSA_funcToFit(double* x, double* par) {
+double TSA_funcToFit(double* x, double* par) {
   // Retrieve the parameters A
   float AUL_offset = par[0];
   float AUL_sinphi = par[1];
@@ -936,7 +936,7 @@ float TSA_funcToFit(double* x, double* par) {
 }
 
 // Function to fit the double-spin asymmetry histogram
-float DSA_funcToFit(double* x, double* par) {
+double DSA_funcToFit(double* x, double* par) {
   // Retrieve the parameters A
   float ALL = par[0];
   float ALL_cosphi = par[1];
