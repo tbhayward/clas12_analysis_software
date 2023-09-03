@@ -232,8 +232,8 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
 
   // Add in tmin and t
   float E = 10.55; // beam energy
-  double Ep = data.data["e_p"]; // scattered electron momentum 
-  double theta = data.data["e_theta"]; // scattered electron angle 
+  float Ep = data.data["e_p"]; // scattered electron momentum 
+  float theta = data.data["e_theta"]; // scattered electron angle 
   float me = 0.000511; // electron mass in GeV
   float mp = 0.938272; // proton mass in GeV
   float k = sqrt(E*E-me*me);
@@ -279,7 +279,7 @@ std::vector<eventData> readData(const std::string& filename,
   return data;
 }
 
-double getEventProperty(const eventData& event, int currentFits) {
+float getEventProperty(const eventData& event, int currentFits) {
 
   std::string property = propertyNames[currentFits];
   // Access the property value using the map's indexing
@@ -679,7 +679,7 @@ void performMLMFits(const char *filename, const char* output_file, const char* k
     double sumVariable = 0;
     double numEvents = 0;
     for (const eventData &event : gData) {
-      double currentVariable = getEventProperty(event, currentFits);
+      float currentVariable = getEventProperty(event, currentFits);
         if (applyKinematicCuts(event, currentFits, 0) && currentVariable >= 
           allBins[currentFits][i] && currentVariable < allBins[currentFits][i + 1]) {
             sumVariable += currentVariable;
@@ -815,8 +815,8 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   int binIndex, const std::string& prefix, int asymmetry_index) {
 
   // Determine the variable range for the specified bin
-  double varMin = allBins[currentFits][binIndex];
-  double varMax = allBins[currentFits][binIndex + 1];
+  float varMin = allBins[currentFits][binIndex];
+  float varMax = allBins[currentFits][binIndex + 1];
 
   // Create positive and negative helicity histograms
   TH1D* histPosPos = new TH1D(Form("%s_pospos", histName), "", 12, 0, 2 * TMath::Pi());
@@ -825,8 +825,8 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   TH1D* histNegNeg = new TH1D(Form("%s_negneg", histName), "", 12, 0, 2 * TMath::Pi());
 
   // Initialize variables to store the sums and event counts
-  double sumVariable = 0;
-  double numEvents = 0;
+  float sumVariable = 0;
+  float numEvents = 0;
   // Variables to calculate the mean polarization
   float sumPol = 0; // sum of the beam polarization
   float sumTargetPosPol = 0; // sum of the target positive polarization
