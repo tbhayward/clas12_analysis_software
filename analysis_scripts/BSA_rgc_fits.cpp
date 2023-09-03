@@ -660,24 +660,24 @@ void performMLMFits(const char *filename, const char* output_file, const char* k
     minuit.Migrad(); cout << endl;
 
     // Extract the fitted parameter values and errors
-    double ALU_sinphi, ALU_sinphi_error;
+    float ALU_sinphi, ALU_sinphi_error;
     minuit.GetParameter(0, ALU_sinphi, ALU_sinphi_error);
-    double AUL_sinphi, AUL_sinphi_error;
+    float AUL_sinphi, AUL_sinphi_error;
     minuit.GetParameter(1, AUL_sinphi, AUL_sinphi_error);
-    double AUL_sin2phi, AUL_sin2phi_error;
+    float AUL_sin2phi, AUL_sin2phi_error;
     minuit.GetParameter(2, AUL_sin2phi, AUL_sin2phi_error);
-    double ALL, ALL_error;
+    float ALL, ALL_error;
     minuit.GetParameter(3, ALL, ALL_error);
-    double ALL_cosphi, ALL_cosphi_error;
+    float ALL_cosphi, ALL_cosphi_error;
     minuit.GetParameter(4, ALL_cosphi, ALL_cosphi_error);
-    double AUU_cosphi, AUU_cosphi_error;
+    float AUU_cosphi, AUU_cosphi_error;
     minuit.GetParameter(5, AUU_cosphi, AUU_cosphi_error);
-    double AUU_cos2phi, AUU_cos2phi_error;
+    float AUU_cos2phi, AUU_cos2phi_error;
     minuit.GetParameter(6, AUU_cos2phi, AUU_cos2phi_error);
 
     // Calculate the mean values of the current variable 
-    double sumVariable = 0;
-    double numEvents = 0;
+    float sumVariable = 0;
+    float numEvents = 0;
     for (const eventData &event : gData) {
       float currentVariable = getEventProperty(event, currentFits);
         if (applyKinematicCuts(event, currentFits, 0) && currentVariable >= 
