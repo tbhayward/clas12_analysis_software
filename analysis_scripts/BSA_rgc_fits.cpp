@@ -238,7 +238,7 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
   data.data["tmin"] = -pow((mp*data.data["x"]),2)/(1-data.data["x"]);
   data.data["t"] = pow(E-sqrt(pow(me,2)+pow(data.data["e_p"],2)),2)-
     pow(sqrt(pow(E,2)-pow(me,2)) -data.data["e_p"],2);
-  cout << t << " " << tmin << endl;
+  cout << data.data["t"] << " " << data.data["tmin"] << endl;
 
   // Return the populated eventData object
   return data;
