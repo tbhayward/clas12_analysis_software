@@ -337,7 +337,6 @@ bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
   //
   // epiX
   if (property == "xFpim") { 
-    cout << "we're here" << endl;
     goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
       data.data.at("y")<0.75;
   }
@@ -1106,6 +1105,7 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
 
   // Loop over each bin
   for (size_t i = 0; i < numBins; ++i) {
+    cout << "we're here" << endl;
     cout << "Beginning chi2 fit for " << binNames[currentFits]
       << " bin " << i << ". ";
     char histName[32];
