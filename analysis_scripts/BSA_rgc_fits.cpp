@@ -490,22 +490,22 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     // iflag: a flag (see TMinuit documentation for details)
 
     // Extract parameters from the input parameter array
-    double ALU_sinphi = par[0];
-    double AUL_sinphi = par[1];
-    double AUL_sin2phi = par[2];
-    double ALL = par[3];
-    double ALL_cosphi = par[4];
-    double AUU_cosphi = par[5];
-    double AUU_cos2phi = par[6];
+    float ALU_sinphi = par[0];
+    float AUL_sinphi = par[1];
+    float AUL_sin2phi = par[2];
+    float ALL = par[3];
+    float ALL_cosphi = par[4];
+    float AUU_cosphi = par[5];
+    float AUU_cos2phi = par[6];
 
     // Initialize variables for counting events (N), positive helicity sum (sum_P), 
     // and negative helicity sum (sum_N)
-    double N = 0;
-    double NUU = 0; // normalization integral
-    double sum_PP = 0; // positive beam -- positive target
-    double sum_PM = 0; // positive beam -- negative target
-    double sum_MP = 0; // negative beam -- positive target
-    double sum_MM = 0; // negative beam -- negative target
+    float N = 0;
+    float NUU = 0; // normalization integral
+    float sum_PP = 0; // positive beam -- positive target
+    float sum_PM = 0; // positive beam -- negative target
+    float sum_MP = 0; // negative beam -- positive target
+    float sum_MM = 0; // negative beam -- negative target
 
     // Iterate through the global event data (gData)
     for (const eventData &event : gData) {
@@ -908,12 +908,12 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
 // Function to fit the beam-spin asymmetry histogram
 double BSA_funcToFit(double* x, double* par) {
   // Retrieve the parameters 
-  double ALU_offset = par[0];
-  double ALU_sinphi = par[1];
+  float ALU_offset = par[0];
+  float ALU_sinphi = par[1];
   // double AUU_cosphi = par[2];
   // double AUU_cos2phi = par[3];
   // Retrieve the phi variable from the input x array
-  double phi = x[0];
+  float phi = x[0];
   // Calculate and return the value of the function for the given phi and parameters 
   return ALU_offset + ALU_sinphi*sin(phi);
   // return (ALU_offset + ALU_sinphi*sin(phi)) / (1 + AUU_cosphi*cos(phi) + AUU_cos2phi*cos(2*phi));
@@ -922,13 +922,13 @@ double BSA_funcToFit(double* x, double* par) {
 // Function to fit the target-spin asymmetry histogram
 double TSA_funcToFit(double* x, double* par) {
   // Retrieve the parameters A
-  double AUL_offset = par[0];
-  double AUL_sinphi = par[1];
-  double AUL_sin2phi = par[2];
+  float AUL_offset = par[0];
+  float AUL_sinphi = par[1];
+  float AUL_sin2phi = par[2];
   // double AUU_cosphi = par[3];
   // double AUU_cos2phi = par[4];
   // Retrieve the phi variable from the input x array
-  double phi = x[0];
+  float phi = x[0];
   // Calculate and return the value of the function for the given phi and parameters 
   return AUL_offset + AUL_sinphi*sin(phi)+AUL_sin2phi*sin(2*phi);
   // return (AUL_offset + AUL_sinphi*sin(phi)+AUL_sin2phi*sin(2*phi)) /
@@ -938,12 +938,12 @@ double TSA_funcToFit(double* x, double* par) {
 // Function to fit the double-spin asymmetry histogram
 double DSA_funcToFit(double* x, double* par) {
   // Retrieve the parameters A
-  double ALL = par[0];
-  double ALL_cosphi = par[1];
+  float ALL = par[0];
+  float ALL_cosphi = par[1];
   // double AUU_cosphi = par[2];
   // double AUU_cos2phi = par[3];
   // Retrieve the phi variable from the input x array
-  double phi = x[0];
+  float phi = x[0];
   // Calculate and return the value of the function for the given phi and parameters 
   return ALL+ALL_cosphi*cos(phi);
   // return (ALL+ALL_cosphi*cos(phi)) / (1 + AUU_cosphi*cos(phi) + AUU_cos2phi*cos(2*phi));
@@ -971,10 +971,10 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   
   // Add points to the TGraphErrors
   for (int i = 1; i <= histogram->GetNbinsX(); ++i) {
-    double x = histogram->GetBinCenter(i);
-    double y = histogram->GetBinContent(i);
-    double ex = 0;  // we don't want horizontal error bars
-    double ey = histogram->GetBinError(i);
+    float x = histogram->GetBinCenter(i);
+    float y = histogram->GetBinContent(i);
+    float ex = 0;  // we don't want horizontal error bars
+    float ey = histogram->GetBinError(i);
     graph->SetPoint(i - 1, x, y);
     graph->SetPointError(i - 1, ex, ey);
   }
@@ -1117,8 +1117,8 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
     plotHistogramAndFit(hist, fitFunction, i, asymmetry_index, prefix);
 
     // Initialize variables to store the sums and event counts
-    double sumVariable = 0;
-    double numEvents = 0;
+    float sumVariable = 0;
+    float numEvents = 0;
     // Variables to calculate the mean depolarization factor
     float sumDepA = 0; float sumDepB = 0; float sumDepC = 0; float sumDepV = 0; float sumDepW = 0;
 
@@ -1129,7 +1129,7 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
 
     // Loop over all events and calculate the sums and event counts
     for (const eventData& event : gData) {
-      double currentVariable = getEventProperty(event, currentFits);
+      float currentVariable = getEventProperty(event, currentFits);
       if (applyKinematicCuts(event, currentFits, 0) && currentVariable>=allBins[currentFits][i] && 
         currentVariable < allBins[currentFits][i + 1]) {
           sumVariable += currentVariable;
