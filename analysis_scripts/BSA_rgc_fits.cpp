@@ -232,11 +232,13 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
 
   // Add in tmin and t
   float E = 10.55; // beam energy
+  float mp = 0.938272; // proton mass in GeV
   float me = 0.000511; // electron mass in GeV
   float k = sqrt(E*E-me*me);
-  data.data["tmin"] = 2*me*(E-sqrt(me*me+data.data["e_p"]*data.data["e_p"]));
-  data.data["t"] = -2*k*data.data["e_p"]*(cos(data.data["e_theta"]-1))-data.data["tmin"];
-  cout << data.data["t"] << endl;
+  data.data["tmin"] = -pow((mp*data.data["x"]),2)/(1-data.data["x"]);
+  data.data["t"] = pow(E-sqrt(pow(me,2)+pow(data.data["e_p"],2)),2)-
+    pow(sqrt(pow(E,2)-pow(me,2)) -data.data["e_p"],2);
+  cout << t << " " << tmin << endl;
 
   // Return the populated eventData object
   return data;
