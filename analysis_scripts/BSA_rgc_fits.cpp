@@ -230,6 +230,13 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
     }
   }
 
+  // Add in tmin and t
+  float E = 10.55; // beam energy
+  float me = 0.000511; // electron mass in GeV
+  float k = TMath::sqrt(E*E-me*me);
+  data.data["tmin"] = 2*me*(E-TMath::sqrt(me*me+data.data["e_p"]*data.data["e_p"]));
+  data.data["t"] = -2*k*data.data["e_p"]*(cos(data.data["e_theta"]-1))-tmin;
+
   // Return the populated eventData object
   return data;
 }
@@ -706,16 +713,16 @@ void performMLMFits(const char *filename, const char* output_file, const char* k
     asymmetryStream << "$" << 100*ALU_sinphi << "_{" << TMath::Abs(100*0.068*ALU_sinphi) << "}^{";
     asymmetryStream << 100*ALU_sinphi_error << "}$ &";
     // AUL sinphi
-    asymmetryStream << "$" << 100*AUL_sinphi << "_{" << TMath::Abs(100*0.119*AUL_sinphi) << "}^{";
+    asymmetryStream << "$" << 100*AUL_sinphi << "_{" << TMath::Abs(100*0.092*AUL_sinphi) << "}^{";
     asymmetryStream << 100*AUL_sinphi_error << "}$ &";
     // AUL sin2phi
-    asymmetryStream << "$" << 100*AUL_sin2phi << "_{" << TMath::Abs(100*0.119*AUL_sin2phi) << "}^{";
+    asymmetryStream << "$" << 100*AUL_sin2phi << "_{" << TMath::Abs(100*0.092*AUL_sin2phi) << "}^{";
     asymmetryStream << 100*AUL_sin2phi_error << "}$ &";
     // ALL 
-    asymmetryStream << "$" << 100*ALL << "_{" << TMath::Abs(100*0.123*ALL) << "}^{";
+    asymmetryStream << "$" << 100*ALL << "_{" << TMath::Abs(100*0.097*ALL) << "}^{";
     asymmetryStream << 100*ALL_error << "}$ &";
     // ALL cosphi
-    asymmetryStream << "$" << 100*ALL_cosphi << "_{" << TMath::Abs(100*0.123*ALL_cosphi) << "}^{";
+    asymmetryStream << "$" << 100*ALL_cosphi << "_{" << TMath::Abs(100*0.097*ALL_cosphi) << "}^{";
     asymmetryStream << 100*ALL_cosphi << "}$";
     asymmetryStream << std::string(" \\\\ \\hline ");
   }
@@ -1051,10 +1058,10 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
   std::ostringstream meanVariablesStream;
   meanVariablesStream << "\\begin{table}[h]" << std::endl;
   meanVariablesStream << "\\centering" << std::endl;
-  meanVariablesStream << "\\begin{tabular}{|c|c|c|c|c|c|c|c|c|} \\hline" << std::endl;
+  meanVariablesStream << "\\begin{tabular}{|c|c|c|c|c|c|c|c|c|c|c|} \\hline" << std::endl;
   meanVariablesStream << "Bin & $<Q^2>$~(GeV$^2$) & $<W>$~(GeV) ";
   meanVariablesStream << "& $<x_B>$ & $<y>$ & $<z>$ & $<\\zeta>$ & $<P_T>$~(GeV) ";
-  meanVariablesStream << "& $<x_F>$ \\\\ \\hline" << std::endl; 
+  meanVariablesStream << "& $<x_F>$ & $<t>$ & $<t_{\\text{min}}>$\\\\ \\hline" << std::endl; 
 
 
   // Create a new TF1 object called fitFunction representing the function to fit
@@ -1137,6 +1144,8 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
           sumzeta += event.data.at("zeta");
           sumpT += event.data.at("pT");
           sumxF += event.data.at("xF");
+          sumt += event.data.at("t");
+          sumtmin += event.data.at("tmin");
 
           numEvents += 1;
       }
@@ -1160,6 +1169,8 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
     float meanzeta = numEvents > 0 ? sumzeta / numEvents : 0.0;
     float meanpT = numEvents > 0 ? sumpT / numEvents : 0.0;
     float meanxF = numEvents > 0 ? sumxF / numEvents : 0.0;
+    float meant = numEvents > 0 ? sumt / numEvents : 0.0;
+    float meantmin = numEvents > 0 ? sumtmin / numEvents : 0.0;
 
     switch (asymmetry_index) {
       case 0: {// beam-spin asymmetry
@@ -1254,8 +1265,8 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
     // outputs of mean kinematic variables
     meanVariablesStream << std::fixed << std::setprecision(3); // Set precision to 3 digits 
     meanVariablesStream << (i+1) << "~&~" << meanQ2 << "~&~" << meanW << "~&~" << meanx << "~&~";
-    meanVariablesStream << meany << "~&~";
-    meanVariablesStream << meanz << "~&~" << meanzeta << "~&~" << meanpT << "~&~" << meanxF; 
+    meanVariablesStream << meany << "~&~" << meanz << "~&~" << meanzeta << "~&~";
+    meanVariablesStream << meanpT << "~&~" << meanxF << "~&~" << meant << "~&~" << meantmin; 
     meanVariablesStream << std::string(" \\\\ \\hline ");
 
   }
