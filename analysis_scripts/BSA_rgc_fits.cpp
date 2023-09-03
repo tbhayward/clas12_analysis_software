@@ -1120,6 +1120,7 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
     // Variables to calculate the mean kinematics in each bin
     float sumQ2 = 0; float sumW = 0; float sumx = 0; float sumy = 0;
     float sumz = 0; float sumzeta = 0; float sumpT = 0; float sumxF = 0;
+    float sumt = 0; float sumtmin = 0;
 
     // Loop over all events and calculate the sums and event counts
     for (const eventData& event : gData) {
