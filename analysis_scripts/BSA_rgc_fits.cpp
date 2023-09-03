@@ -236,7 +236,7 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
   float k = sqrt(E*E-me*me);
   data.data["tmin"] = 2*me*(E-sqrt(me*me+data.data["e_p"]*data.data["e_p"]));
   data.data["t"] = -2*k*data.data["e_p"]*(cos(data.data["e_theta"]-1))-data.data["tmin"];
-  cout << (-2*k) << " " << (cos(data.data["e_theta"]-1)) << endl;
+  cout << data.data["t"] << endl;
 
   // Return the populated eventData object
   return data;
