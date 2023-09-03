@@ -337,6 +337,7 @@ bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
   //
   // epiX
   if (property == "xFpim") { 
+    cout << "we're here" << endl;
     goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
       data.data.at("y")<0.75;
   }
@@ -1065,7 +1066,8 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
   meanVariablesStream << "\\begin{tabular}{|c|c|c|c|c|c|c|c|c|c|c|} \\hline" << std::endl;
   meanVariablesStream << "Bin & $<Q^2>$~(GeV$^2$) & $<W>$~(GeV) ";
   meanVariablesStream << "& $<x_B>$ & $<y>$ & $<z>$ & $<\\zeta>$ & $<P_T>$~(GeV) ";
-  meanVariablesStream << "& $<x_F>$ & $<t>$ & $<t_{\\text{min}}>$\\\\ \\hline" << std::endl; 
+  meanVariablesStream << "& $<x_F>$ & $<t> (GeV)$ & ";
+  meanVariablesStream << "$<t_{\\text{min}}> (GeV)$\\\\ \\hline" << std::endl; 
 
 
   // Create a new TF1 object called fitFunction representing the function to fit
