@@ -232,8 +232,8 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
 
   // Add in tmin and t
   float E = 10.55; // beam energy
-  double Ep = data.data["e_p"] // Your scattered electron momentum here
-  double theta = data.data["e_theta"] // Your scattered electron angle here
+  double Ep = data.data["e_p"]; // scattered electron momentum 
+  double theta = data.data["e_theta"]; // scattered electron angle 
   float me = 0.000511; // electron mass in GeV
   float k = sqrt(E*E-me*me);
   data.data["tmin"] = -pow((mp*data.data["x"]),2)/(1-data.data["x"]);
