@@ -321,7 +321,7 @@ bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
   //
   //
   //
-  // epiX
+  // epi+X
   if (property == "xFpip") { 
     goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
       data.data.at("y")<0.75;
@@ -339,10 +339,10 @@ bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
   //
   //
   //
-  // epiX
+  // epi-X
   if (property == "xFpim") { 
     goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
-      data.data.at("y")<0.75 && data.data.at("p_p") > 1.20;
+      data.data.at("y")<0.75;
   }
   if (property == "PTTFRpim" || property ==  "xTFRpim" || property == "zTFRpim" || 
     property == "Q2TFRpim" || property ==  "xpim") {
@@ -352,7 +352,7 @@ bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
   if (property == "PTCFRpim" || property == "xCFRpim" || property == "zCFRpim" ||
     property == "Q2TFRpim") {
     goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
-      data.data.at("y")<0.75 && data.data.at("xF")>0 && data.data.at("p_p") > 1.20;
+      data.data.at("y")<0.75 && data.data.at("xF")>0;
   } 
   if (isMC) { return goodEvent; }
   else {return goodEvent && data.data.at("target_pol") != 0; } // if data, skip Pt = 0 (carbon)
@@ -1395,8 +1395,8 @@ void BSA_rgc_fits(const char* data_file, const char* mc_file, const char* output
       performChi2Fits(data_file, output_file, kinematic_file, binNames[i], asymmetry);
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    performMLMFits(data_file, output_file, kinematic_file, binNames[i]);
-    cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
+    // performMLMFits(data_file, output_file, kinematic_file, binNames[i]);
+    // cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
     currentFits++;
   }
