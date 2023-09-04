@@ -643,7 +643,7 @@ void performMLMFits(const char *filename, const char* output_file, const char* k
   asymmetryStream << "$F_{UU}^{\\cos(2\\phi)}/F_{UU}$ ";
   asymmetryStream << "& $F_{LU}^{\\sin(\\phi)}/F_{UU}$ & $F_{UL}^{\\sin(\\phi)}/F_{UU}$ & ";
   asymmetryStream << "$F_{UL}^{\\sin(2\\phi)}/F_{UU}$ & $F_{LL}/F_{UU}$ &";
-  asymmetryStream << "$F_{ULL}^{\\cos(\\phi)}/F_{UU}$ \\\\ \\hline" << std::endl;
+  asymmetryStream << "$F_{LL}^{\\cos(\\phi)}/F_{UU}$ \\\\ \\hline" << std::endl;
 
   // Iterate through each bin
   for (size_t i = 0; i < numBins; ++i) {
@@ -756,8 +756,8 @@ void performMLMFits(const char *filename, const char* output_file, const char* k
   asymmetryStream << "\\caption{The mean kinematic value and the final ";
   asymmetryStream << "extracted structure function ratios for " << prefix;
   asymmetryStream << ". Asymmetries are given as ";
-  asymmetryStream << "$100{A}_{\\pm100\\Delta\\text{stat}}^";
-  asymmetryStream << "{\\pm100\\Delta\\text{sys}}$.}" << std::endl;
+  asymmetryStream << "$100{A}_{\\pm100\\Delta\\text{sys}}^";
+  asymmetryStream << "{\\pm100\\Delta\\text{stat}}$.}" << std::endl;
   asymmetryStream << "\\label{table:kinematics_" << prefix << "}" << std::endl;
   asymmetryStream << "\\end{table}" << std::endl;
   asymmetryStream << endl << endl << endl;
