@@ -1067,10 +1067,10 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
   meanVariablesStream << "\\begin{table}[h]" << std::endl;
   meanVariablesStream << "\\centering" << std::endl;
   meanVariablesStream << "\\begin{tabular}{|c|c|c|c|c|c|c|c|c|c|c|} \\hline" << std::endl;
-  meanVariablesStream << "Bin & $<Q^2>$~(GeV$^2$) & $<W>$~(GeV) ";
-  meanVariablesStream << "& $<x_B>$ & $<y>$ & $<z>$ & $<\\zeta>$ & $<P_T>$~(GeV) ";
-  meanVariablesStream << "& $<x_F>$ & $<t> (GeV)$ & ";
-  meanVariablesStream << "$<t_{\\text{min}}> (GeV)$\\\\ \\hline" << std::endl; 
+  meanVariablesStream << "Bin & $<Q^2>$ & $<W>$ ";
+  meanVariablesStream << "& $<x_B>$ & $<y>$ & $<z>$ & $<\\zeta>$ & $<P_T>$ ";
+  meanVariablesStream << "& $<x_F>$ & $<t>$ & ";
+  meanVariablesStream << "$<t_{\\text{min}}>$\\\\ \\hline" << std::endl; 
 
 
   // Create a new TF1 object called fitFunction representing the function to fit
@@ -1297,7 +1297,7 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
   meanVariablesStream << "\\caption{The mean kinematic variables in each of the bins ";
   meanVariablesStream << "for the extracted $" << prefix << "$ asymmetries.}\n";
   meanVariablesStream << "\\label{table:kinematics_" << prefix << "}\n";
-  meanVariablesStream << "\\end{table}\n";
+  meanVariablesStream << "\\end{table}. Values given in GeV or GeV$^2$ where appropriate.\n";
   meanVariablesStream << endl << endl << endl;
   if (asymmetry_index == 0) {
     std::ofstream kinematicFile(kinematic_file, std::ios_base::app);
