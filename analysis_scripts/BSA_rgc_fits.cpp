@@ -231,15 +231,19 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
   }
 
   // Add in tmin and t
-  float E = 10.55; // beam energy
-  float Ep = data.data["e_p"]; // scattered electron momentum 
-  float theta = data.data["e_theta"]; // scattered electron angle 
   float me = 0.000511; // electron mass in GeV
   float mp = 0.938272; // proton mass in GeV
-  float k = sqrt(E*E-me*me);
+  // float E = 10.55; // beam energy
+  float E = mp;
+  // float Ep = data.data["e_p"]; // scattered electron momentum 
+  // float theta = data.data["e_theta"]; // scattered electron angle
+  float Ep = data.data["p_p"]; // scattered proton momentum 
+  float theta = data.data["p_theta"]; // scattered proton angle 
   data.data["tmin"] = -pow((mp*data.data["x"]),2)/(1-data.data["x"]);
-  data.data["t"] = 2*me*(E - Ep) - 2*sqrt(me*me + E*E)*sqrt(me*me + Ep*Ep) +
-          2*sqrt(me*me + E*E)*sqrt(me*me + Ep*Ep)*cos(theta);
+  // data.data["t"] = 2*me*(E - Ep) - 2*sqrt(me*me + E*E)*sqrt(me*me + Ep*Ep) +
+  //         2*sqrt(me*me + E*E)*sqrt(me*me + Ep*Ep)*cos(theta);
+  data.data["t"] = 2*mp*(E - Ep) - 2*sqrt(mp*mp + E*E)*sqrt(mp*mp + Ep*Ep) +
+          2*sqrt(mp*mp + E*E)*sqrt(mp*mp + Ep*Ep)*cos(theta);
 
   // Return the populated eventData object
   return data;
