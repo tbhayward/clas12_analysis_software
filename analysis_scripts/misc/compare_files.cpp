@@ -331,7 +331,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         aluGraph.GetYaxis()->SetTitle("F_{LU}^{sin#phi} / F_{UU}");
         aluGraph.GetXaxis()->SetTitle(formattedBranchName.c_str());
         aluGraph.SetMarkerStyle(20);  // Full circle as marker
-        aluGraph.SetMarkerSize(3.2);  // Marker size
+        aluGraph.SetMarkerSize(1.5);  // Marker size
 
 
         // Save the canvas
