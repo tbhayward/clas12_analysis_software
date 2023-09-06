@@ -270,7 +270,6 @@ void createHistograms(TTree* tree1, TTree* tree2,
         hist2.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
         hist2.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
 
-
         hist1.Draw(""); 
         hist2.Draw("same"); 
 
@@ -307,8 +306,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         ratioHist.SetMinimum(0.75);  // Set Y-range
         ratioHist.SetMaximum(2.25);  // Set Y-range
         ratioHist.GetXaxis()->SetTitle(formattedBranchName.c_str());
-        std::string yAxisTitle = Form("ratio", data_set_2_name.c_str(), 
-            data_set_1_name.c_str());
+        std::string yAxisTitle = "ratio";
         ratioHist.GetYaxis()->SetTitle(yAxisTitle.c_str());
         ratioHist.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
         ratioHist.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
