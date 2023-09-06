@@ -62,10 +62,10 @@ std::string formatBranchName(const std::string& original) {
         {"t", "t (GeV^{2})"},
         {"tmin", "t_{min} (GeV^{2})"},
         {"e_p", "e_{p} (GeV)"},
-        {"Mx", "M_{x} (GeV)"}
-        {"Mx2", "M_{x}^{2} (GeV)"}
-        {"p_p", "p_{p} (GeV)"}
-        {"xF", "x_{F} (GeV)"}
+        {"Mx", "M_{x} (GeV)"},
+        {"Mx2", "M_{x}^{2} (GeV)"},
+        {"p_p", "p_{p} (GeV)"},
+        {"xF", "x_{F} (GeV)"},
     };
   
     if (specialLabels.find(original) != specialLabels.end()) {
