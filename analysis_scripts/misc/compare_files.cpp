@@ -95,34 +95,68 @@ void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
     TObjArray* branches2 = tree2->GetListOfBranches();
 
     if (branches1->GetEntries() != branches2->GetEntries()) {
-        std::cout << "Number of branches mismatch. Exiting." << std::endl;
+        cout << "Number of branches mismatch. Exiting." << endl;
         return;
     }
 
     for (int i = 0; i < branches1->GetEntries(); ++i) {
         const char* branchName = branches1->At(i)->GetName();
-        std::string formattedBranchName = formatBranchName(branchName);
+        string formattedBranchName = formatBranchName(branchName);
         
-        HistConfig config = histConfigs[branchName];
-        
-        // Special handling for theta values to convert from radians to degrees
-        double factor = 1.0;
-        if (std::string(branchName) == "e_theta" || std::string(branchName) == "p_theta") {
-            factor = 180.0 / M_PI;
-        }
+        // Define your bin configurations here
+        int bins = 200; // default
+        double min = 0.0; // default
+        double max = 0.0; // default
+        // Define your bin configurations here
+        int bins = 200; // default
+        double min = 0.0; // default
+        double max = 0.0; // default
 
-        TH1F hist1(Form("%s_1", branchName), "", config.bins, config.min * factor, config.max * factor);
-        TH1F hist2(Form("%s_2", branchName), "", config.bins, config.min * factor, config.max * factor);
+        if (strcmp(branchName, "beam_pol") == 0) {
+            bins = 20;
+            min = 0.80;
+            max = 1.00;
+        } else if (strcmp(branchName, "e_p") == 0) {
+            bins = 200;
+            min = 2;
+            max = 9;
+        } else if (strcmp(branchName, "e_phi") == 0) {
+            bins = 200;
+            min = 0;
+            max = 2 * M_PI;
+        } else if (strcmp(branchName, "eta") == 0) {
+            bins = 200;
+            min = -1;
+            max = 3;
+        } 
 
-        std::string cutCondition = "";
-        if (std::strcmp(branchName, "Mx") != 0 && std::strcmp(branchName, "Mx2") != 0) {
+
+        TH1F hist1(Form("%s_1", branchName), "", bins, min, max);
+        TH1F hist2(Form("%s_2", branchName), "", bins, min, max);
+
+        string cutCondition = "";
+        if (strcmp(branchName, "Mx") != 0 && strcmp(branchName, "Mx2") != 0) {
             cutCondition = "Mx > 1.5";
         }
 
-        tree1->Draw(Form("%s * %f >> %s_1", branchName, factor, branchName), cutCondition.c_str());
-        tree2->Draw(Form("%s * %f >> %s_2", branchName, factor, branchName), cutCondition.c_str());
+        tree1->Draw(Form("%s>>%s_1", branchName, branchName), cutCondition.c_str());
+        tree2->Draw(Form("%s>>%s_2", branchName, branchName), cutCondition.c_str());
 
-        // ... (Your existing code for drawing, setting colors, and stats)
+        hist1.SetLineColor(kRed);
+        hist2.SetLineColor(kBlue);
+
+        hist1.Draw();
+        hist2.Draw("same");
+
+        hist1.SetStats(0);
+        hist2.SetStats(0);
+
+        hist1.GetXaxis()->SetTitle(formattedBranchName.c_str());
+        hist1.GetYaxis()->SetTitle("Counts");
+
+        double max_value = max(hist1.GetMaximum(), hist2.GetMaximum());
+        hist1.SetMaximum(max_value * 1.1);
+        hist2.SetMaximum(max_value * 1.1);
 
         TPaveText* stats = new TPaveText(0.65, 0.85, 0.85, 0.95, "NDC");
         stats->AddText(Form("pass-1: %d", int(hist1.GetEntries())));
@@ -130,9 +164,11 @@ void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
         stats->SetTextAlign(12);
         stats->Draw("same");
 
+        TCanvas canvas(Form("%s_Canvas", branchName), "Canvas", 800, 600);
         canvas.SaveAs(Form("%s/%s.png", outDir, branchName));
     }
 }
+
 
 
 
