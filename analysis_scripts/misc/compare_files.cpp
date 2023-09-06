@@ -24,22 +24,28 @@ struct HistConfig {
 
 std::map<std::string, HistConfig> histConfigs = {
     {"beam_pol", {20, 0.80, 1.00}},
-    {"e_p", {200, 2, 9}},
+    {"DepA", {200, 0, 1}},
+    {"DepB", {200, 0, 1}},
+    {"DepC", {200, 0, 1}},
+    {"DepV", {200, 0, 1}},
+    {"DepW", {200, 0, 1}},
+    {"e_p", {200, 2, 8}},
     {"e_phi", {200, 0, 2 * M_PI}},
     {"eta", {200, -1, 3}},
     {"e_theta", {200, 0, 40 * (M_PI / 180.0)}}, // Convert degree to radian
+    {"helicity", {2, -2, 2}},
     {"Mx", {200, -4, 3}},
     {"Mx2", {200, -10, 10}},
     {"phi", {200, 0, 2 * M_PI}},
     {"p_p", {200, 0, 6}},
     {"p_phi", {200, 0, 2 * M_PI}},
-    {"pT", {200, 0, 1.3}},
+    {"pT", {200, 0, 1.2}},
     {"p_theta", {200, 0, 90 * (M_PI / 180.0)}}, // Convert degree to radian
     {"Q2", {200, 0, 9}},
     {"t", {200, -10, 1}},
     {"tmin", {200, -0.5, 0}},
-    {"vze", {200, -15, 15}},
-    {"vzp", {200, -15, 15}},
+    {"vz_e", {200, -15, 15}},
+    {"vz_p", {200, -15, 15}},
     {"W", {200, 2, 4}},
     {"x", {200, 0, 1}},
     {"xF", {200, -1, 1}},
@@ -56,7 +62,10 @@ std::string formatBranchName(const std::string& original) {
         {"t", "t (GeV^{2})"},
         {"tmin", "t_{min} (GeV^{2})"},
         {"e_p", "e_{p} (GeV)"},
+        {"Mx", "M_{x} (GeV)"}
+        {"Mx2", "M_{x}^{2} (GeV)"}
         {"p_p", "p_{p} (GeV)"}
+        {"xF", "x_{F} (GeV)"}
     };
   
     if (specialLabels.find(original) != specialLabels.end()) {
@@ -79,11 +88,17 @@ std::string formatBranchName(const std::string& original) {
         formatted.replace(formatted.find("theta"), 5, "#theta");
     }
 
+    if (formatted.find("zeta") != std::string::npos) {
+        formatted.replace(formatted.find("zeta"), 5, "#zeta");
+    }
+
     if (formatted.find("phi") != std::string::npos) {
         formatted.replace(formatted.find("phi"), 3, "#phi");
     }
 
-    if (formatted.find("eta") != std::string::npos && formatted.find("theta") == std::string::npos) {
+    if (formatted.find("eta") != std::string::npos && 
+        formatted.find("theta") == std::string::npos && 
+        formatted.find("zeta") == std::string::npos) {
         formatted.replace(formatted.find("eta"), 3, "#eta");
     }
   
