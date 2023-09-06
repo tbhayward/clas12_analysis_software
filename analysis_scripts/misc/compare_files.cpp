@@ -12,17 +12,49 @@ using namespace std;
 // Created 9/6/23
 // Created to compare epi+X and epX nSidis distributions between pass-1 and preliminary pass-2 
 
+#include <TCanvas.h>
+#include <TFile.h>
+#include <TH1F.h>
+#include <TObjArray.h>
+#include <TPaveText.h>
+#include <TTree.h>
+#include <iostream>
+#include <algorithm> // for std::max
+#include <string>
+
+std::string formatBranchName(const std::string& original) {
+    std::string formatted = original;
+    size_t pos = 0;
+    while ((pos = formatted.find('_', pos)) != std::string::npos) {
+        formatted.replace(pos, 1, "_{");
+        size_t closing = formatted.find('_', pos + 2); // find next underscore
+        if (closing == std::string::npos) {
+            closing = formatted.length(); // if no more underscores, append at the end
+        }
+        formatted.insert(closing, "}");
+        pos = closing + 1;
+    }
+    // Replace specific names with Greek letters
+    formatted.replace(formatted.find("theta"), 5, "#theta");
+    formatted.replace(formatted.find("phi"), 3, "#phi");
+    formatted.replace(formatted.find("eta"), 3, "#eta");
+    // Add more replacements as needed
+    return formatted;
+}
+
 void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
     TObjArray* branches1 = tree1->GetListOfBranches();
     TObjArray* branches2 = tree2->GetListOfBranches();
 
     if (branches1->GetEntries() != branches2->GetEntries()) {
-        cout << "Number of branches mismatch. Exiting." << endl;
+        std::cout << "Number of branches mismatch. Exiting." << std::endl;
         return;
     }
 
     for (int i = 0; i < branches1->GetEntries(); ++i) {
         const char* branchName = branches1->At(i)->GetName();
+        std::string formattedBranchName = formatBranchName(branchName);
+        
         TCanvas canvas(branchName, "Canvas", 800, 600);
 
         TH1F hist1(Form("%s_1", branchName), "", 100, 0, 0); // Empty title
@@ -35,16 +67,16 @@ void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
         hist1.SetLineColor(kRed);
         hist2.SetLineColor(kBlue);
 
-        // Draw histograms
-        hist1.Draw();
-        hist2.Draw("same");
+        // Draw histograms as error bars
+        hist1.Draw("E");
+        hist2.Draw("Esame");
 
         // Hide default stats box
         hist1.SetStats(0);
         hist2.SetStats(0);
 
         // Set axis labels
-        hist1.GetXaxis()->SetTitle(branchName);
+        hist1.GetXaxis()->SetTitle(formattedBranchName.c_str());
         hist1.GetYaxis()->SetTitle("Counts");
 
         // Determine the max value between the two histograms
@@ -53,24 +85,28 @@ void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
         hist2.SetMaximum(max_value * 1.1); // Add some margin
 
         // Create and draw custom stats boxes
-        TPaveText* stats1 = new TPaveText(0.75, 0.85, 0.95, 0.95, "NDC");
-        stats1->AddText(Form("pass-1"));
+        TPaveText* stats1 = new TPaveText(0.75, 0.75, 0.95, 0.95, "NDC");
+        stats1->AddText("pass-1");
         stats1->AddText(Form("Counts: %d", int(hist1.GetEntries())));
         stats1->SetTextAlign(12); // Align text to the left
         stats1->SetTextColor(kRed);
+        stats1->SetBorderSize(1); // Add border
         stats1->Draw("same");
 
-        TPaveText* stats2 = new TPaveText(0.55, 0.85, 0.75, 0.95, "NDC");
-        stats2->AddText(Form("pass-2"));
+        TPaveText* stats2 = new TPaveText(0.55, 0.75, 0.75, 0.95, "NDC");
+        stats2->AddText("pass-2");
         stats2->AddText(Form("Counts: %d", int(hist2.GetEntries())));
         stats2->SetTextAlign(12); // Align text to the left
         stats2->SetTextColor(kBlue);
+        stats2->SetBorderSize(1); // Add border
         stats2->Draw("same");
 
         // Save the canvas to a file
         canvas.SaveAs(Form("%s/%s.png", outDir, branchName));
     }
 }
+
+
 
 
 void compare_files(std::string root_file1_path, std::string root_file2_path) {
