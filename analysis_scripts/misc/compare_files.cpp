@@ -226,6 +226,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         // Third Panel for ALU calculations and fitting
         canvas.cd();  // Switch back to the main canvas before creating a new pad
         TPad *pad3 = new TPad("pad3", "The pad with ALU", 0.66, 0.0, 1.0, 1.0, 21);
+        pad3->SetLeftMargin(0.15);
         pad3->SetFillColor(0);  // Set the fill color to white for pad3
         pad3->Draw();
         pad3->cd();  // Set current pad to pad3
@@ -250,6 +251,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
             tree1->GetEntry(entry);
             int dyn_bin = (branch_var - min_val) / ((max_val - min_val) / 6);
             int phi_bin = phi / (2 * TMath::Pi() / 12);
+            cout << phi << endl;
             if (helicity > 0) {
                 N_pos[phi_bin]++;
             } else {
