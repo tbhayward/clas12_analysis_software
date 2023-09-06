@@ -121,11 +121,10 @@ void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
         std::string formattedBranchName = formatBranchName(branchName);
         TCanvas canvas(branchName, "Canvas", 1600, 600);  // Width doubled for side-by-side panels
 
-        // First panel
-        canvas.cd(1);
-        TPad pad1("pad1", "The pad with the function",0.0,0.0,0.5,1.0,21); // create first pad
-        pad1.Draw();
-        pad1.cd();
+        TCanvas canvas(branchName, "Canvas", 1600, 600);
+        TPad *pad1 = new TPad("pad1", "The pad with the function",0.0,0.0,0.5,1.0,21);
+        pad1->Draw();
+        pad1->cd();  // Set current pad to pad1
 
         HistConfig config = histConfigs[branchName];
         TH1F hist1(Form("%s_1", branchName), "", config.bins, config.min, config.max);
@@ -173,11 +172,11 @@ void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
         stats->SetTextAlign(12);
         stats->Draw("same");
 
-        // Ratio panel
-        canvas.cd(2);
-        TPad pad2("pad2", "The pad with the ratio",0.5,0.0,1.0,1.0,21); // create second pad
-        pad2.Draw();
-        pad2.cd();
+        // pad with ratio
+        canvas.cd();  // Switch back to the main canvas before creating a new pad
+        TPad *pad2 = new TPad("pad2", "The pad with the ratio",0.5,0.0,1.0,1.0,21);
+        pad2->Draw();
+        pad2->cd();  // Set current pad to pad2
         
         TH1F ratioHist(Form("%s_ratio", branchName), "", config.bins, config.min, config.max);
         ratioHist.Divide(&hist2, &hist1);
