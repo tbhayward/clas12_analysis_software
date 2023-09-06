@@ -4,6 +4,7 @@
 #include <TH1F.h>
 #include <TKey.h>
 #include <TList.h>
+#include <TPaveText.h>  
 #include <iostream>
 
 using namespace std;
@@ -40,11 +41,11 @@ void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
         hist2.SetStats(0);
 
         auto stats1 = new TPaveText(0.75, 0.85, 0.95, 0.95, "NDC");
-        stats1->AddText(Form("Counts: %lld", hist1.GetEntries()));
+        stats1->AddText(Form("Counts: %f", hist1.GetEntries()));  
         stats1->Draw("same");
 
         auto stats2 = new TPaveText(0.55, 0.85, 0.75, 0.95, "NDC");
-        stats2->AddText(Form("Counts: %lld", hist2.GetEntries()));
+        stats2->AddText(Form("Counts: %f", hist2.GetEntries()));  
         stats2->Draw("same");
 
         canvas.SaveAs(Form("%s/%s.png", outDir, branchName));
