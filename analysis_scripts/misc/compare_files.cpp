@@ -388,7 +388,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         aluGraph2.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
 
         // Create the legend at x1, y1, x2, y2
-        TLegend *leg = new TLegend(0.7, 0.7, 0.9, 0.9);  // Adjust these values as needed
+        TLegend *leg = new TLegend(0.5, 0.7, 0.9, 0.9);  // Adjust these values as needed
 
         // Add entries
         leg->AddEntry(&aluGraph1, data_set_1_name.c_str(), "p");
