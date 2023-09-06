@@ -116,3 +116,25 @@ void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
         canvas.SaveAs(Form("%s/%s.png", outDir, branchName));
     }
 }
+
+void compare_files(std::string root_file1_path, std::string root_file2_path) {
+
+    TFile* file1 = new TFile(root_file1_path.c_str(), "READ");
+    TFile* file2 = new TFile(root_file2_path.c_str(), "READ");
+
+    if (!file1->IsOpen() || !file2->IsOpen()) {
+        cout << "Error opening ROOT files (is the location correct?). Exiting." << endl;
+    }
+
+    TTree* tree1 = (TTree*)file1->Get("PhysicsEvents");
+    TTree* tree2 = (TTree*)file2->Get("PhysicsEvents");
+
+    if (!tree1 || !tree2) {
+        cout << "Error getting trees from ROOT files." << endl;
+    }
+
+    createHistograms(tree1, tree2, "output");
+
+    file1->Close();
+    file2->Close();
+}
