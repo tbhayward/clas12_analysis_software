@@ -257,8 +257,9 @@ void createHistograms(TTree* tree1, TTree* tree2,
             } else if (helicity < 0) {
                 N_neg[dyn_bin][phi_bin]++;
             }
-            cout << "we made it to here" << endl;
         }
+
+        cout << "we made it to here" << endl;
 
         std::vector<double> ALU_values;
         std::vector<double> ALU_errors;
