@@ -54,7 +54,6 @@ std::pair<std::vector<double>, std::vector<double>> calculateAndPlotALU(
         int dyn_bin = int((branch_var - min_val) / ((max_val - min_val) / 6));
         int phi_bin = int(phi / (2 * TMath::Pi() / 12));
 
-        cout << dyn_bin << " " << phi_bin << endl;
         if(dyn_bin < 0 || dyn_bin >= 6) continue;  // Skip invalid indices
         if(phi_bin < 0 || phi_bin >= 12) continue;  // Skip invalid indices
 
@@ -209,6 +208,12 @@ void createHistograms(TTree* tree1, TTree* tree2,
 
     for (int i = 0; i < branches1->GetEntries(); ++i) {
         const char* branchName = branches1->At(i)->GetName();
+        if (std::strcmp(branchName, "runnum") == 0 || std::strcmp(branchName, "evnum") == 0 || 
+            std::strcmp(branchName, "phi") == 0 || std::strcmp(branchName, "beam_pol") == 0 || 
+            std::strcmp(branchName, "helicity") == 0) {
+            continue;
+        }
+
         if (std::strcmp(branchName, "runnum") == 0 || std::strcmp(branchName, "evnum") == 0 || 
             std::strcmp(branchName, "phi") == 0 || std::strcmp(branchName, "beam_pol") == 0 || 
             std::strcmp(branchName, "helicity") == 0) {
