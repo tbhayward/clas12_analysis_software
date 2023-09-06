@@ -16,6 +16,98 @@
 
 using namespace std;
 
+std::pair<std::vector<double>, std::vector<double>> calculateAndPlotALU(
+    TTree* tree1, const char* branchName, double min_val, double max_val) {
+
+    std::vector<double> ALU_values;
+    std::vector<double> ALU_errors;
+
+    // Create a 2D array to hold N+ and N- for each dynamic bin and phi bin
+    std::vector<std::vector<double>> N_pos(6, std::vector<double>(12, 0));  
+    // 6 dynamic bins, 12 phi bins
+    std::vector<std::vector<double>> N_neg(6, std::vector<double>(12, 0));
+
+    std::vector<double> sum_beam_pol(6, 0.0);
+    std::vector<int> count_beam_pol(6, 0);
+    std::vector<double> sum_W_over_A(6, 0.0);
+    std::vector<int> count_W_over_A(6, 0);
+
+
+    // Loop through the tree to fill N_pos and N_neg
+    int helicity;
+    double branch_var, phi, beam_pol, W, A;
+    tree1->SetBranchAddress(branchName, &branch_var);
+    tree1->SetBranchAddress("phi", &phi);
+    tree1->SetBranchAddress("helicity", &helicity);
+    tree1->SetBranchAddress("beam_pol", &beam_pol);
+    tree1->SetBranchAddress("DepW", &W);
+    tree1->SetBranchAddress("DepA", &A);
+
+    for (int entry = 0; entry < tree1->GetEntries(); ++entry) {
+        tree1->GetEntry(entry);
+
+        if(branch_var < min_val || branch_var > max_val) continue;  
+        // Skip entries out of range
+        if(phi < 0 || phi > 2 * TMath::Pi()) continue;  
+        // Skip entries out of range
+
+        int dyn_bin = int((branch_var - min_val) / ((max_val - min_val) / 6));
+        int phi_bin = int(phi / (2 * TMath::Pi() / 12));
+
+        if(dyn_bin < 0 || dyn_bin >= 6) continue;  // Skip invalid indices
+        if(phi_bin < 0 || phi_bin >= 12) continue;  // Skip invalid indices
+
+        if (helicity > 0) {
+            N_pos[dyn_bin][phi_bin]++;
+        } else if (helicity < 0) {
+            N_neg[dyn_bin][phi_bin]++;
+        }
+        if (helicity != 0) {  // assuming non-zero helicity implies valid polarization
+            sum_beam_pol[dyn_bin] += beam_pol;
+            count_beam_pol[dyn_bin]++;
+
+            double W_over_A = (A != 0) ? W / A : 0;
+            sum_W_over_A[dyn_bin] += W_over_A;
+            count_W_over_A[dyn_bin]++;
+        }
+
+    }
+
+    std::vector<double> ALU_values;
+    std::vector<double> ALU_errors;
+
+    for (int dyn_bin = 0; dyn_bin < 6; ++dyn_bin) {
+        TF1 fitFunc("fitFunc", "[0]*sin(x)", 0, 2 * TMath::Pi());
+        TGraphErrors fitGraph;
+        for (int phi_bin = 0; phi_bin < 12; ++phi_bin) {
+            double phi_val = phi_bin * (2 * TMath::Pi() / 12);
+            double mean_beam_pol = (count_beam_pol[dyn_bin] != 0) ? sum_beam_pol[dyn_bin] 
+                / count_beam_pol[dyn_bin] : 1.0;
+            double ALU = (1 / mean_beam_pol) * 
+                (N_pos[dyn_bin][phi_bin] - N_neg[dyn_bin][phi_bin]) / 
+                (N_pos[dyn_bin][phi_bin] + N_neg[dyn_bin][phi_bin]);
+            double ALU_error = (2 / mean_beam_pol) * 
+                TMath::Sqrt((N_pos[dyn_bin][phi_bin] * N_neg[dyn_bin][phi_bin]) / 
+                TMath::Power(N_pos[dyn_bin][phi_bin] + N_neg[dyn_bin][phi_bin], 3));
+
+            fitGraph.SetPoint(phi_bin, phi_val, ALU);
+            fitGraph.SetPointError(phi_bin, 0, ALU_error);
+        }
+        fitGraph.Fit(&fitFunc, "Q");
+        double A = fitFunc.GetParameter(0);
+        double A_error = fitFunc.GetParError(0);
+        double mean_W_over_A = (count_W_over_A[dyn_bin] != 0) ? 
+            sum_W_over_A[dyn_bin] / count_W_over_A[dyn_bin] : 1.0;
+        ALU_values.push_back(A / mean_W_over_A);
+        ALU_errors.push_back(A_error / mean_W_over_A);
+
+    }
+    
+    return std::make_pair(ALU_values, ALU_errors);
+}
+
+
+
 struct HistConfig {
     int bins;
     double min;
@@ -235,104 +327,38 @@ void createHistograms(TTree* tree1, TTree* tree2,
         double min_val = hist1.GetXaxis()->GetXmin();
         double max_val = hist1.GetXaxis()->GetXmax();
 
-        // Create a 2D array to hold N+ and N- for each dynamic bin and phi bin
-        std::vector<std::vector<double>> N_pos(6, std::vector<double>(12, 0));  
-        // 6 dynamic bins, 12 phi bins
-        std::vector<std::vector<double>> N_neg(6, std::vector<double>(12, 0));
+        std::pair<std::vector<double>, std::vector<double>> result1, result2;
 
-        std::vector<double> sum_beam_pol(6, 0.0);
-        std::vector<int> count_beam_pol(6, 0);
-        std::vector<double> sum_W_over_A(6, 0.0);
-        std::vector<int> count_W_over_A(6, 0);
+        result1 = calculateAndPlotALU(tree1, branchName, min_val, max_val);
+        result2 = calculateAndPlotALU(tree2, branchName, min_val, max_val);
 
+        TGraphErrors aluGraph1(6), aluGraph2(6);  // We have 6 dynamic bins for each
 
-        // Loop through the tree to fill N_pos and N_neg
-        int helicity;
-        double branch_var, phi, beam_pol, W, A;
-        tree1->SetBranchAddress(branchName, &branch_var);
-        tree1->SetBranchAddress("phi", &phi);
-        tree1->SetBranchAddress("helicity", &helicity);
-        tree1->SetBranchAddress("beam_pol", &beam_pol);
-        tree1->SetBranchAddress("DepW", &W);
-        tree1->SetBranchAddress("DepA", &A);
-
-        for (int entry = 0; entry < tree1->GetEntries(); ++entry) {
-            tree1->GetEntry(entry);
-
-            if(branch_var < min_val || branch_var > max_val) continue;  
-            // Skip entries out of range
-            if(phi < 0 || phi > 2 * TMath::Pi()) continue;  
-            // Skip entries out of range
-
-            int dyn_bin = int((branch_var - min_val) / ((max_val - min_val) / 6));
-            int phi_bin = int(phi / (2 * TMath::Pi() / 12));
-
-            if(dyn_bin < 0 || dyn_bin >= 6) continue;  // Skip invalid indices
-            if(phi_bin < 0 || phi_bin >= 12) continue;  // Skip invalid indices
-
-            if (helicity > 0) {
-                N_pos[dyn_bin][phi_bin]++;
-            } else if (helicity < 0) {
-                N_neg[dyn_bin][phi_bin]++;
-            }
-            if (helicity != 0) {  // assuming non-zero helicity implies valid polarization
-                sum_beam_pol[dyn_bin] += beam_pol;
-                count_beam_pol[dyn_bin]++;
-
-                double W_over_A = (A != 0) ? W / A : 0;
-                sum_W_over_A[dyn_bin] += W_over_A;
-                count_W_over_A[dyn_bin]++;
-            }
-
-        }
-
-
-        std::vector<double> ALU_values;
-        std::vector<double> ALU_errors;
-
+        // Populate aluGraph1 and aluGraph2 using result1 and result2
+        // (This part can be put into a loop or function for efficiency)
         for (int dyn_bin = 0; dyn_bin < 6; ++dyn_bin) {
-            TF1 fitFunc("fitFunc", "[0]*sin(x)", 0, 2 * TMath::Pi());
-            TGraphErrors fitGraph;
-            for (int phi_bin = 0; phi_bin < 12; ++phi_bin) {
-                double phi_val = phi_bin * (2 * TMath::Pi() / 12);
-                double mean_beam_pol = (count_beam_pol[dyn_bin] != 0) ? sum_beam_pol[dyn_bin] 
-                    / count_beam_pol[dyn_bin] : 1.0;
-                double ALU = (1 / mean_beam_pol) * 
-                    (N_pos[dyn_bin][phi_bin] - N_neg[dyn_bin][phi_bin]) / 
-                    (N_pos[dyn_bin][phi_bin] + N_neg[dyn_bin][phi_bin]);
-                double ALU_error = (2 / mean_beam_pol) * 
-                    TMath::Sqrt((N_pos[dyn_bin][phi_bin] * N_neg[dyn_bin][phi_bin]) / 
-                    TMath::Power(N_pos[dyn_bin][phi_bin] + N_neg[dyn_bin][phi_bin], 3));
-
-                fitGraph.SetPoint(phi_bin, phi_val, ALU);
-                fitGraph.SetPointError(phi_bin, 0, ALU_error);
-            }
-            fitGraph.Fit(&fitFunc, "Q");
-            double A = fitFunc.GetParameter(0);
-            double A_error = fitFunc.GetParError(0);
-            double mean_W_over_A = (count_W_over_A[dyn_bin] != 0) ? 
-                sum_W_over_A[dyn_bin] / count_W_over_A[dyn_bin] : 1.0;
-            ALU_values.push_back(A / mean_W_over_A);
-            ALU_errors.push_back(A_error / mean_W_over_A);
-
+            double bin_center = min_val + (dyn_bin + 0.5) * (max_val - min_val) / 6;
+            aluGraph1.SetPoint(dyn_bin, bin_center, result1.first[dyn_bin]);
+            aluGraph1.SetPointError(dyn_bin, 0, result1.second[dyn_bin]);
+            
+            aluGraph2.SetPoint(dyn_bin, bin_center, result2.first[dyn_bin]);
+            aluGraph2.SetPointError(dyn_bin, 0, result2.second[dyn_bin]);
         }
 
+        aluGraph1.SetLineColor(kRed);
+        aluGraph1.SetMarkerStyle(20);
+        aluGraph1.SetMarkerSize(1.1);
 
-        // Plotting ALU values
-        TGraphErrors aluGraph(6);  // We have 6 dynamic bins
-        for (int dyn_bin = 0; dyn_bin < 6; ++dyn_bin) {
-            double bin_center = min_val + (dyn_bin + 0.5) * (max_val - min_val) / 6;  
-            // Center of the dynamic bin
-            aluGraph.SetPoint(dyn_bin, bin_center, ALU_values[dyn_bin]);
-            aluGraph.SetPointError(dyn_bin, 0, ALU_errors[dyn_bin]);
-        }
-        aluGraph.Draw("AP");
-        aluGraph.GetYaxis()->SetRangeUser(-0.05, 0.05);
-        aluGraph.GetYaxis()->SetTitle("F_{LU}^{sin#phi} / F_{UU}");
-        aluGraph.GetXaxis()->SetTitle(formattedBranchName.c_str());
-        aluGraph.SetMarkerStyle(20);  // Full circle as marker
-        aluGraph.SetMarkerSize(1.5);  // Marker size
+        aluGraph2.SetLineColor(kBlue);
+        aluGraph2.SetMarkerStyle(21);
+        aluGraph2.SetMarkerSize(1.1);
 
+        aluGraph1.Draw("AP");
+        aluGraph1.GetYaxis()->SetRangeUser(-0.05, 0.05);
+        aluGraph1.GetYaxis()->SetTitle("F_{LU}^{sin#phi} / F_{UU}");
+        aluGraph1.GetXaxis()->SetTitle(formattedBranchName.c_str());
+
+        aluGraph2.Draw("Psame");
 
         // Save the canvas
         canvas.SaveAs(Form("%s/%s.png", outDir, branchName));
