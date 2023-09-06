@@ -59,7 +59,6 @@ void compare_files(std::string root_file1_path, std::string root_file2_path) {
 
     if (!file1->IsOpen() || !file2->IsOpen()) {
         cout << "Error opening ROOT files (is the location correct?). Exiting." << endl;
-        return 1;
     }
 
     TTree* tree1 = (TTree*)file1->Get("PhysicsEvents");
