@@ -289,14 +289,19 @@ void createHistograms(TTree* tree1, TTree* tree2,
         double x2 = 0.85; // right edge
         double y2 = 0.95; // top edge
 
-        TPaveText* stats = new TPaveText(x1, y1, x2, y2, "NDC");
-        stats->SetBorderSize(1);  // Draw a border
-        stats->SetFillColor(0);  // Transparent fill
-        stats->SetTextSize(0.04);  // Increase the text size
-        stats->AddText(Form("%s counts: %d", data_set_1_name.c_str(), int(hist1.GetEntries())));
-        stats->AddText(Form("%s counts: %d", data_set_2_name.c_str(), int(hist2.GetEntries())));
-        stats->SetTextAlign(12);
-        stats->Draw("same");
+        // Create the legend at x1, y1, x2, y2
+        TLegend *leg1 = new TLegend(x1, y1, x2, y2);  // Adjust these coordinates as needed
+        leg1->SetBorderSize(1);  // border size
+        leg1->SetFillColor(0);  // Transparent fill
+        leg1->SetTextSize(0.04);  // text size
+        // Add entries for each histogram
+        leg1->AddEntry(&hist1, Form("%s counts: %d", data_set_1_name.c_str(), 
+            int(hist1.GetEntries())), "l");
+        leg1->AddEntry(&hist2, Form("%s counts: %d", data_set_2_name.c_str(), 
+            int(hist2.GetEntries())), "l");
+        // Draw the legend
+        leg1->Draw("same");
+
 
         // pad with ratio
         canvas.cd();  // Switch back to the main canvas before creating a new pad
@@ -320,16 +325,20 @@ void createHistograms(TTree* tree1, TTree* tree2,
         ratioHist.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
         ratioHist.Draw("HIST");
 
-        // Ratio stats box
-        TPaveText* ratioStats = new TPaveText(0.65, 0.85, 0.85, 0.95, "NDC");
-        ratioHist.SetStats(0);
-        ratioStats->SetBorderSize(1);  // Draw a border
-        ratioStats->SetFillColor(0);  // Transparent fill
+        // Create the legend
+        TLegend *leg2 = new TLegend(0.65, 0.85, 0.85, 0.95);  // Adjust these values as needed
+        leg2->SetBorderSize(1);  // border size
+        leg2->SetFillColor(0);  // Transparent fill
+        leg2->SetTextSize(0.04);  // text size
+
+        // Add text as legend entries. No associated object, so the last parameter is "".
         double overallRatio = (hist2.GetEntries() != 0 && hist1.GetEntries() != 0) ? 
-            hist2.GetEntries() / hist1.GetEntries() : 0;
-        ratioStats->AddText(Form("Overall Ratio: %.2f", overallRatio));
-        ratioStats->SetTextAlign(12);
-        ratioStats->Draw("same");
+                    hist2.GetEntries() / hist1.GetEntries() : 0;
+        leg2->AddEntry((TObject*)0, Form("Overall Ratio: %.2f", overallRatio), "");
+
+        // Draw the legend
+        leg2->Draw("same");
+
 
         // Third Panel for ALU calculations and fitting
         canvas.cd();  // Switch back to the main canvas before creating a new pad
@@ -388,22 +397,18 @@ void createHistograms(TTree* tree1, TTree* tree2,
         aluGraph2.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
 
         // Create the legend at x1, y1, x2, y2
-        TLegend *leg = new TLegend(0.5, 0.7, 0.9, 0.9);  // Adjust these values as needed
-
+        TLegend *leg3 = new TLegend(0.6, 0.7, 0.9, 0.9);  // Adjust these values as needed
         // Add entries
-        leg->AddEntry(&aluGraph1, data_set_1_name.c_str(), "p");
-        leg->AddEntry(&aluGraph2, data_set_2_name.c_str(), "p");
-
+        leg3->AddEntry(&aluGraph1, data_set_1_name.c_str(), "p");
+        leg3->AddEntry(&aluGraph2, data_set_2_name.c_str(), "p");
         // Set the marker colors to match your graphs
         aluGraph1.SetMarkerColor(kRed);
         aluGraph2.SetMarkerColor(kBlue);
-
         // Customize the legend
-        leg->SetBorderSize(1);  // border size
-        leg->SetTextSize(0.04);  // text size
-
+        leg3->SetBorderSize(1);  // border size
+        leg3->SetTextSize(0.04);  // text size
         // Draw the legend
-        leg->Draw("same");
+        leg3->Draw("same");
 
 
         // Save the canvas
