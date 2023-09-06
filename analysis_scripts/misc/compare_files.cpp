@@ -287,6 +287,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         TPaveText* stats = new TPaveText(0.65, 0.85, 0.85, 0.95, "NDC");
         stats->SetBorderSize(1);  // Draw a border
         stats->SetFillColor(0);  // Transparent fill
+        stats->SetTextSize(0.04);  // Increase the text size
         stats->AddText(Form("%s counts: %d", data_set_1_name.c_str(), int(hist1.GetEntries())));
         stats->AddText(Form("%s counts: %d", data_set_2_name.c_str(), int(hist2.GetEntries())));
         stats->SetTextAlign(12);
@@ -306,7 +307,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         ratioHist.SetMinimum(0.75);  // Set Y-range
         ratioHist.SetMaximum(2.25);  // Set Y-range
         ratioHist.GetXaxis()->SetTitle(formattedBranchName.c_str());
-        std::string yAxisTitle = Form("%s/%s counts", data_set_2_name.c_str(), 
+        std::string yAxisTitle = Form("ratio", data_set_2_name.c_str(), 
             data_set_1_name.c_str());
         ratioHist.GetYaxis()->SetTitle(yAxisTitle.c_str());
         ratioHist.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
