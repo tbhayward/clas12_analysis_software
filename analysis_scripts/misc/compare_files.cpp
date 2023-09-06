@@ -249,16 +249,24 @@ void createHistograms(TTree* tree1, TTree* tree2,
         tree1->SetBranchAddress("beam_pol", &beam_pol);
 
         for (int entry = 0; entry < tree1->GetEntries(); ++entry) {
-            tree1->GetEntry(entry);
-            int dyn_bin = (branch_var - min_val) / ((max_val - min_val) / 6);
-            int phi_bin = phi / (2 * TMath::Pi() / 12);
-            cout << helicity << " " << branch_var << " " << dyn_bin << " " << phi_bin << endl;
-            if (helicity > 0) {
-                N_pos[dyn_bin][phi_bin]++;
-            } else if (helicity < 0) {
-                N_neg[dyn_bin][phi_bin]++;
-            }
+        tree1->GetEntry(entry);
+
+        if(branch_var < min_val || branch_var > max_val) continue;  // Skip entries out of range
+        if(phi < 0 || phi > 2 * TMath::Pi()) continue;  // Skip entries out of range
+
+        int dyn_bin = int((branch_var - min_val) / ((max_val - min_val) / 6));
+        int phi_bin = int(phi / (2 * TMath::Pi() / 12));
+
+        if(dyn_bin < 0 || dyn_bin >= 6) continue;  // Skip invalid indices
+        if(phi_bin < 0 || phi_bin >= 12) continue;  // Skip invalid indices
+
+        if (helicity > 0) {
+            N_pos[dyn_bin][phi_bin]++;
+        } else if (helicity < 0) {
+            N_neg[dyn_bin][phi_bin]++;
         }
+    }
+
 
         std::vector<double> ALU_values;
         std::vector<double> ALU_errors;
