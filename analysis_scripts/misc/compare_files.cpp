@@ -107,10 +107,6 @@ void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
         int bins = 200; // default
         double min = 0.0; // default
         double max = 0.0; // default
-        // Define your bin configurations here
-        int bins = 200; // default
-        double min = 0.0; // default
-        double max = 0.0; // default
 
         if (strcmp(branchName, "beam_pol") == 0) {
             bins = 20;
