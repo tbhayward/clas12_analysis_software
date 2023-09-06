@@ -34,13 +34,27 @@ std::string formatBranchName(const std::string& original) {
         formatted.insert(closing, "}");
         pos = closing + 1;
     }
-    // Replace specific names with Greek letters
-    formatted.replace(formatted.find("theta"), 5, "#theta");
-    formatted.replace(formatted.find("phi"), 3, "#phi");
-    formatted.replace(formatted.find("eta"), 3, "#eta");
+    
+    // Replace specific names with Greek letters, only if they exist
+    size_t theta_pos = formatted.find("theta");
+    if (theta_pos != std::string::npos) {
+        formatted.replace(theta_pos, 5, "#theta");
+    }
+
+    size_t phi_pos = formatted.find("phi");
+    if (phi_pos != std::string::npos) {
+        formatted.replace(phi_pos, 3, "#phi");
+    }
+
+    size_t eta_pos = formatted.find("eta");
+    if (eta_pos != std::string::npos) {
+        formatted.replace(eta_pos, 3, "#eta");
+    }
+
     // Add more replacements as needed
     return formatted;
 }
+
 
 void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
     TObjArray* branches1 = tree1->GetListOfBranches();
