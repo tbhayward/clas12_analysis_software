@@ -113,15 +113,12 @@ void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
             min = 0.80;
             max = 1.00;
         } else if (strcmp(branchName, "e_p") == 0) {
-            bins = 200;
             min = 2;
             max = 9;
         } else if (strcmp(branchName, "e_phi") == 0) {
-            bins = 200;
             min = 0;
             max = 2 * M_PI;
         } else if (strcmp(branchName, "eta") == 0) {
-            bins = 200;
             min = -1;
             max = 3;
         } 
@@ -150,7 +147,7 @@ void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
         hist1.GetXaxis()->SetTitle(formattedBranchName.c_str());
         hist1.GetYaxis()->SetTitle("Counts");
 
-        double max_value = max(hist1.GetMaximum(), hist2.GetMaximum());
+        double max_value = std::max(hist1.GetMaximum(), hist2.GetMaximum());
         hist1.SetMaximum(max_value * 1.1);
         hist2.SetMaximum(max_value * 1.1);
 
