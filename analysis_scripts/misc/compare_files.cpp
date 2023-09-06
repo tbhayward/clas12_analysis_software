@@ -33,6 +33,7 @@ std::map<std::string, HistConfig> histConfigs = {
     {"e_phi", {200, 0, 2 * M_PI}},
     {"eta", {200, -1, 3}},
     {"e_theta", {200, 0, 40 * (M_PI / 180.0)}}, // Convert degree to radian
+    {"evnnum", {200, 0, 0}},
     {"helicity", {2, -2, 2}},
     {"Mx", {200, -4, 3}},
     {"Mx2", {200, -10, 10}},
@@ -42,6 +43,7 @@ std::map<std::string, HistConfig> histConfigs = {
     {"pT", {200, 0, 1.2}},
     {"p_theta", {200, 0, 90 * (M_PI / 180.0)}}, // Convert degree to radian
     {"Q2", {200, 0, 9}},
+    {"runnum", {200, 0, 0}},
     {"t", {200, -10, 1}},
     {"tmin", {200, -0.5, 0}},
     {"vz_e", {200, -15, 15}},
