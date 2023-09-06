@@ -251,10 +251,10 @@ void createHistograms(TTree* tree1, TTree* tree2,
             tree1->GetEntry(entry);
             int dyn_bin = (branch_var - min_val) / ((max_val - min_val) / 6);
             int phi_bin = phi / (2 * TMath::Pi() / 12);
-            cout << phi << endl;
+            cout << helicity << endl;
             if (helicity > 0) {
                 N_pos[phi_bin]++;
-            } else {
+            } else if (helicity < 0) {
                 N_neg[phi_bin]++;
             }
         }
