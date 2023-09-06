@@ -202,8 +202,6 @@ int main(int argc, char *argv[]) {
         }
     } 
     else if (hadron_count == 1) {
-        double z, xF, pT, zeta, eta, phi, DepA, DepB, DepC, DepV, DepW;
-        double p_p, p_theta, p_phi, vz_p;
         while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             p_p >> p_theta >> p_phi >> vz_p >> Q2 >> W >> Mx >> Mx2 >> x >> y >> z >> xF >> 
             pT >> zeta >> eta >> phi >> DepA >> DepB >> DepC >> DepV >> DepW) {
@@ -215,12 +213,6 @@ int main(int argc, char *argv[]) {
         }
     } 
     else if (hadron_count == 2) {
-        // Additional variables for two hadrons
-        double p1_p, p1_theta, p1_phi, vz_p1, p2_p, p2_theta, p2_phi, vz_p2;
-        double z1, z2, Mh, xF1, xF2, pT1, pT2, pTpT, zeta1, zeta2;
-        double eta1, eta2, Delta_eta, eta1_gN, eta2_gN;
-        double phi1, phi2, Delta_phi, phih, phiR, theta;
-        double DepA, DepB, DepC, DepV, DepW;
         while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             p1_p >> p1_theta >> p1_phi >> vz_p1 >> p2_p >> p2_theta >> p2_phi >> vz_p2 >> 
             Q2 >> W >> Mx >> Mx2 >> x >> y >> z1 >> z2 >> Mh >> xF1 >> xF2 >> pT1 >> pT2 >> 
