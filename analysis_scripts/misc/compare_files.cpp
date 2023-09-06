@@ -41,7 +41,7 @@ std::map<std::string, HistConfig> histConfigs = {
     {"p_p", {200, 0, 6}},
     {"p_phi", {200, 0, 360}},
     {"pT", {200, 0, 1.2}},
-    {"p_theta", {200, 0, 90}}, // Convert degree to radian
+    {"p_theta", {200, 0, 60}}, // Convert degree to radian
     {"Q2", {200, 0, 9}},
     {"runnum", {200, 0, 0}},
     {"t", {200, -10, 1}},
@@ -107,7 +107,8 @@ std::string formatBranchName(const std::string& original) {
     return formatted;
 }
 
-void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
+void createHistograms(TTree* tree1, TTree* tree2, 
+    std::string data_set_1_name, std::string data_set_2_name, const char* outDir) {
     TObjArray* branches1 = tree1->GetListOfBranches();
     TObjArray* branches2 = tree2->GetListOfBranches();
 
@@ -120,6 +121,7 @@ void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
         const char* branchName = branches1->At(i)->GetName();
         std::string formattedBranchName = formatBranchName(branchName);
         TCanvas canvas(branchName, "Canvas", 1600, 600);  // Width doubled for side-by-side panels
+        canvas.SetLeftMargin(0.15);
         TPad *pad1 = new TPad("pad1", "The pad with the function",0.0,0.0,0.5,1.0,21);
         pad1->SetFillColor(0);  // Set the fill color to white for pad1
         pad1->Draw();
@@ -167,8 +169,8 @@ void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
         TPaveText* stats = new TPaveText(0.65, 0.85, 0.85, 0.95, "NDC");
         stats->SetBorderSize(1);  // Draw a border
         stats->SetFillColor(0);  // Transparent fill
-        stats->AddText(Form("pass-1 counts: %d", int(hist1.GetEntries())));
-        stats->AddText(Form("pass-2 counts: %d", int(hist2.GetEntries())));
+        stats->AddText(Form("%s counts: %d", data_set_1_name.c_str(), int(hist1.GetEntries())));
+        stats->AddText(Form("%s counts: %d", data_set_2_name.c_str(), int(hist2.GetEntries())));
         stats->SetTextAlign(12);
         stats->Draw("same");
 
@@ -183,9 +185,11 @@ void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
         ratioHist.Divide(&hist2, &hist1);
         ratioHist.SetLineColor(kBlack);
         ratioHist.SetMinimum(0.75);  // Set Y-range
-        ratioHist.SetMaximum(2.00);  // Set Y-range
+        ratioHist.SetMaximum(2.25);  // Set Y-range
         ratioHist.GetXaxis()->SetTitle(formattedBranchName.c_str());
-        ratioHist.GetYaxis()->SetTitle("pass-2/pass-1 counts");
+        std::string yAxisTitle = Form("%s/%s counts", data_set_2_name.c_str(), 
+            data_set_1_name.c_str());
+        ratioHist.GetYaxis()->SetTitle(yAxisTitle.c_str());
         ratioHist.Draw("HIST");
 
         // Ratio stats box
@@ -203,7 +207,8 @@ void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
     }
 }
 
-void compare_files(std::string root_file1_path, std::string root_file2_path) {
+void compare_files(std::string root_file1_path, std::string root_file2_path, 
+    std::string data_set_1_name, std::string data_set_2_name) {
     gStyle->SetCanvasColor(0);
 
     TFile* file1 = new TFile(root_file1_path.c_str(), "READ");
@@ -220,7 +225,7 @@ void compare_files(std::string root_file1_path, std::string root_file2_path) {
         cout << "Error getting trees from ROOT files." << endl;
     }
 
-    createHistograms(tree1, tree2, "output");
+    createHistograms(tree1, tree2, data_set_1_name, data_set_2_name, "output");
 
     file1->Close();
     file2->Close();
