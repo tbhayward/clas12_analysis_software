@@ -120,8 +120,6 @@ void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
         const char* branchName = branches1->At(i)->GetName();
         std::string formattedBranchName = formatBranchName(branchName);
         TCanvas canvas(branchName, "Canvas", 1600, 600);  // Width doubled for side-by-side panels
-
-        TCanvas canvas(branchName, "Canvas", 1600, 600);
         TPad *pad1 = new TPad("pad1", "The pad with the function",0.0,0.0,0.5,1.0,21);
         pad1->Draw();
         pad1->cd();  // Set current pad to pad1
