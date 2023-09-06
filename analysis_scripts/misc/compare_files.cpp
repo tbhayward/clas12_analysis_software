@@ -73,9 +73,6 @@ std::pair<std::vector<double>, std::vector<double>> calculateAndPlotALU(
 
     }
 
-    std::vector<double> ALU_values;
-    std::vector<double> ALU_errors;
-
     for (int dyn_bin = 0; dyn_bin < 6; ++dyn_bin) {
         TF1 fitFunc("fitFunc", "[0]*sin(x)", 0, 2 * TMath::Pi());
         TGraphErrors fitGraph;
