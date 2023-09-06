@@ -121,7 +121,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         const char* branchName = branches1->At(i)->GetName();
         std::string formattedBranchName = formatBranchName(branchName);
         TCanvas canvas(branchName, "Canvas", 1600, 600);  // Width doubled for side-by-side panels
-        canvas.SetLeftMargin(0.15);
+        canvas.SetLeftMargin(0.25);
         TPad *pad1 = new TPad("pad1", "The pad with the function",0.0,0.0,0.5,1.0,21);
         pad1->SetFillColor(0);  // Set the fill color to white for pad1
         pad1->Draw();
