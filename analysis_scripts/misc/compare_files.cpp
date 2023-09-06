@@ -253,8 +253,8 @@ void createHistograms(TTree* tree1, TTree* tree2,
         tree1->SetBranchAddress("phi", &phi);
         tree1->SetBranchAddress("helicity", &helicity);
         tree1->SetBranchAddress("beam_pol", &beam_pol);
-        tree1->SetBranchAddress("W", &W);
-        tree1->SetBranchAddress("A", &A);
+        tree1->SetBranchAddress("DepW", &W);
+        tree1->SetBranchAddress("DepA", &A);
 
         for (int entry = 0; entry < tree1->GetEntries(); ++entry) {
             tree1->GetEntry(entry);
