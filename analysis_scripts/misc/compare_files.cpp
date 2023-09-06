@@ -151,7 +151,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
 
         std::string formattedBranchName = formatBranchName(branchName);
         TCanvas canvas(branchName, "Canvas", 1600, 600);  // Width doubled for side-by-side panels
-        TPad *pad1 = new TPad("pad1", "The pad with the function",0.0,0.0,0.5,1.0,21);
+        TPad *pad1 = new TPad("pad1", "The pad with the function",0.0,0.0,0.33,1.0,21);
         pad1->SetLeftMargin(0.15);  // Adjust this value based on your specific needs
         pad1->SetFillColor(0);  // Set the fill color to white for pad1
         pad1->Draw();
@@ -196,7 +196,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
 
         // pad with ratio
         canvas.cd();  // Switch back to the main canvas before creating a new pad
-        TPad *pad2 = new TPad("pad2", "The pad with the ratio",0.5,0.0,1.0,1.0,21);
+        TPad *pad2 = new TPad("pad2", "The pad with the ratio",0.33,0.0,0.66,1.0,21);
         pad2->SetFillColor(0);  // Set the fill color to white for pad2
         pad2->Draw();
         pad2->cd();  // Set current pad to pad2
@@ -239,7 +239,8 @@ void createHistograms(TTree* tree1, TTree* tree2,
         std::vector<double> N_neg(12, 0);  // 12 phi bins
 
         // Loop through the tree to fill N_pos and N_neg
-        double branch_var, phi, helicity, beam_pol;
+        int helicity;
+        double branch_var, phi, beam_pol;
         tree1->SetBranchAddress(branchName, &branch_var);
         tree1->SetBranchAddress("phi", &phi);
         tree1->SetBranchAddress("helicity", &helicity);
