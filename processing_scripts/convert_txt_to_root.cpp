@@ -196,7 +196,7 @@ int main(int argc, char *argv[]) {
         while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             Q2 >> W >> Mx >> Mx2 >> x >> y) {
             beam_pol = getPol(runnum);
-            t = gett(p_p, p_theta); 
+            t = gett(e_p, e_theta); // for inclusive we calculate t with electron kinematics
             tmin = gettmin(x);  
             tree->Fill(); // Fill the tree with the read data
         }
@@ -208,7 +208,7 @@ int main(int argc, char *argv[]) {
             p_p >> p_theta >> p_phi >> vz_p >> Q2 >> W >> Mx >> Mx2 >> x >> y >> z >> xF >> 
             pT >> zeta >> eta >> phi >> DepA >> DepB >> DepC >> DepV >> DepW) {
             beam_pol = getPol(runnum);
-            t = gett(p_p, p_theta); 
+            t = gett(p_p, p_theta); // for SIDIS we calculate t with proton kinematics
             tmin = gettmin(x); 
             tree->Fill(); // Fill the tree with the read data
         }
@@ -227,7 +227,7 @@ int main(int argc, char *argv[]) {
             phi1 >> phi2 >> Delta_phi >> phih >> phiR >> theta >> 
             DepA >> DepB >> DepC >> DepV >> DepW) {
             beam_pol = getPol(runnum);
-            t = gett(p_p, p_theta); 
+            t = gett(p2_p, p2_theta); // for SIDIS we calculate t with proton kinematics
             tmin = gettmin(x); 
             tree->Fill(); // Fill the tree with the read data
         }
