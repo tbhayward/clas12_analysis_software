@@ -49,7 +49,8 @@ void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
 
         // Determine the max value between the two histograms
         double max_value = std::max(hist1.GetMaximum(), hist2.GetMaximum());
-        canvas.SetMaximum(max_value * 1.1); // Add some margin
+        hist1.SetMaximum(max_value * 1.1); // Add some margin
+        hist2.SetMaximum(max_value * 1.1); // Add some margin
 
         // Create and draw custom stats boxes
         TPaveText* stats1 = new TPaveText(0.75, 0.85, 0.95, 0.95, "NDC");
