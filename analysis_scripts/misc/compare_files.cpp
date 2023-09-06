@@ -285,7 +285,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
 
 
         // Create the legend
-        TLegend *leg1 = new TLegend(0.5, 0.7, 0.9, 0.9);  // Adjust these coordinates as needed
+        TLegend *leg1 = new TLegend(0.3, 0.7, 0.9, 0.9);  // Adjust these coordinates as needed
         leg1->SetBorderSize(1);  // border size
         leg1->SetFillColor(0);  // Transparent fill
         leg1->SetTextSize(0.04);  // text size
@@ -322,7 +322,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         ratioHist.SetStats(0);  // Disable the statistical box
 
         // Create the legend
-        TLegend *leg2 = new TLegend(0.5, 0.7, 0.9, 0.9);  // Adjust these values as needed
+        TLegend *leg2 = new TLegend(0.45, 0.7, 0.9, 0.9);  // Adjust these values as needed
         leg2->SetBorderSize(1);  // border size
         leg2->SetFillColor(0);  // Transparent fill
         leg2->SetTextSize(0.04);  // text size
