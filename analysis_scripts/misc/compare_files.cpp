@@ -67,7 +67,7 @@ std::string formatBranchName(const std::string& original) {
         {"Mx", "M_{x} (GeV)"},
         {"Mx2", "M_{x}^{2} (GeV)"},
         {"p_p", "p_{p} (GeV)"},
-        {"xF", "x_{F} (GeV)"},
+        {"xF", "x_{F}"},
     };
   
     if (specialLabels.find(original) != specialLabels.end()) {
@@ -119,8 +119,13 @@ void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
     for (int i = 0; i < branches1->GetEntries(); ++i) {
         const char* branchName = branches1->At(i)->GetName();
         std::string formattedBranchName = formatBranchName(branchName);
-        TCanvas canvas(branchName, "Canvas", 800, 600);
-        canvas.SetLeftMargin(0.15);  // Add more space on the left
+        TCanvas canvas(branchName, "Canvas", 1600, 600);  // Width doubled for side-by-side panels
+
+        // First panel
+        canvas.cd(1);
+        TPad pad1("pad1", "The pad with the function",0.0,0.0,0.5,1.0,21); // create first pad
+        pad1.Draw();
+        pad1.cd();
 
         HistConfig config = histConfigs[branchName];
         TH1F hist1(Form("%s_1", branchName), "", config.bins, config.min, config.max);
@@ -167,6 +172,31 @@ void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
         stats->AddText(Form("pass-2 counts: %d", int(hist2.GetEntries())));
         stats->SetTextAlign(12);
         stats->Draw("same");
+
+        // Ratio panel
+        canvas.cd(2);
+        TPad pad2("pad2", "The pad with the ratio",0.5,0.0,1.0,1.0,21); // create second pad
+        pad2.Draw();
+        pad2.cd();
+        
+        TH1F ratioHist(Form("%s_ratio", branchName), "", config.bins, config.min, config.max);
+        ratioHist.Divide(&hist2, &hist1);
+        ratioHist.SetLineColor(kBlack);
+        ratioHist.SetMinimum(0.75);  // Set Y-range
+        ratioHist.SetMaximum(1.50);  // Set Y-range
+        ratioHist.GetXaxis()->SetTitle(formattedBranchName.c_str());
+        ratioHist.GetYaxis()->SetTitle("pass-2/pass-1 counts");
+        ratioHist.Draw("HIST");
+
+        // Ratio stats box
+        TPaveText* ratioStats = new TPaveText(0.65, 0.85, 0.85, 0.95, "NDC");
+        ratioStats->SetBorderSize(1);  // Draw a border
+        ratioStats->SetFillColor(0);  // Transparent fill
+        double overallRatio = (hist2.GetEntries() != 0 && hist1.GetEntries() != 0) ? 
+            hist2.GetEntries() / hist1.GetEntries() : 0;
+        ratioStats->AddText(Form("Overall Ratio: %.2f", overallRatio));
+        ratioStats->SetTextAlign(12);
+        ratioStats->Draw("same");
 
         canvas.SaveAs(Form("%s/%s.png", outDir, branchName));
     }
