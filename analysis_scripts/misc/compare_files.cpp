@@ -236,7 +236,8 @@ void createHistograms(TTree* tree1, TTree* tree2,
         double max_val = hist1.GetXaxis()->GetXmax();
 
         // Create a 2D array to hold N+ and N- for each dynamic bin and phi bin
-        std::vector<std::vector<double>> N_pos(6, std::vector<double>(12, 0));  // 6 dynamic bins, 12 phi bins
+        std::vector<std::vector<double>> N_pos(6, std::vector<double>(12, 0));  
+        // 6 dynamic bins, 12 phi bins
         std::vector<std::vector<double>> N_neg(6, std::vector<double>(12, 0));
 
         // Loop through the tree to fill N_pos and N_neg
@@ -246,6 +247,8 @@ void createHistograms(TTree* tree1, TTree* tree2,
         tree1->SetBranchAddress("phi", &phi);
         tree1->SetBranchAddress("helicity", &helicity);
         tree1->SetBranchAddress("beam_pol", &beam_pol);
+
+        cout << "we made it to here" << endl;
 
         for (int entry = 0; entry < tree1->GetEntries(); ++entry) {
             tree1->GetEntry(entry);
