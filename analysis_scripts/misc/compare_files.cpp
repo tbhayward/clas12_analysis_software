@@ -67,7 +67,7 @@ void compare_files(std::string root_file1_path, std::string root_file2_path) {
 
     if (!tree1 || !tree2) {
         cout << "Error getting trees from ROOT files." << endl;
-        return 1;
+        return;
     }
 
     createHistograms(tree1, tree2, "output");
