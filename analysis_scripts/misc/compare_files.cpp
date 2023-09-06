@@ -119,7 +119,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
 
     for (int i = 0; i < branches1->GetEntries(); ++i) {
         const char* branchName = branches1->At(i)->GetName();
-        if (std::strcmp(branchName, "runnum") || std::strcmp(branchName, "evnum")) {
+        if (std::strcmp(branchName, "runnum") == 0 || std::strcmp(branchName, "evnum") == 0) {
             continue;
         }
         std::string formattedBranchName = formatBranchName(branchName);
