@@ -22,39 +22,59 @@ using namespace std;
 #include <algorithm> // for std::max
 #include <string>
 
+#include <TTree.h>
+#include <TCanvas.h>
+#include <TH1F.h>
+#include <TObjArray.h>
+#include <TPaveText.h>
+#include <TAxis.h>
+#include <iostream>
+#include <string>
+#include <map>
+#include <cstring>
+#include <algorithm>
+
 std::string formatBranchName(const std::string& original) {
+    std::map<std::string, std::string> specialLabels = {
+        {"Q2", "Q^{2} (GeV^{2})"},
+        {"W", "W (GeV)"},
+        {"pT", "P_{T} (GeV)"},
+        {"t", "t (GeV^{2})"},
+        {"tmin", "t_{min} (GeV^{2})"},
+        {"e_p", "e_{p} (GeV)"},
+        {"p_p", "p_{p} (GeV)"}
+    };
+  
+    if (specialLabels.find(original) != specialLabels.end()) {
+        return specialLabels[original];
+    }
+
     std::string formatted = original;
     size_t pos = 0;
     while ((pos = formatted.find('_', pos)) != std::string::npos) {
         formatted.replace(pos, 1, "_{");
-        size_t closing = formatted.find('_', pos + 2); // find next underscore
+        size_t closing = formatted.find('_', pos + 2);
         if (closing == std::string::npos) {
-            closing = formatted.length(); // if no more underscores, append at the end
+            closing = formatted.length();
         }
         formatted.insert(closing, "}");
         pos = closing + 1;
     }
-    
-    // Replace specific names with Greek letters, only if they exist
-    size_t theta_pos = formatted.find("theta");
-    if (theta_pos != std::string::npos) {
-        formatted.replace(theta_pos, 5, "#theta");
+
+    if (formatted.find("theta") != std::string::npos) {
+        formatted.replace(formatted.find("theta"), 5, "#theta");
     }
 
-    size_t phi_pos = formatted.find("phi");
-    if (phi_pos != std::string::npos) {
-        formatted.replace(phi_pos, 3, "#phi");
+    if (formatted.find("phi") != std::string::npos) {
+        formatted.replace(formatted.find("phi"), 3, "#phi");
     }
 
-    size_t eta_pos = formatted.find("eta");
-    if (eta_pos != std::string::npos) {
-        formatted.replace(eta_pos, 3, "#eta");
+    if (formatted.find("eta") != std::string::npos && formatted.find("theta") == std::string::npos) {
+        formatted.replace(formatted.find("eta"), 3, "#eta");
     }
-
-    // Add more replacements as needed
+  
     return formatted;
 }
-
 
 void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
     TObjArray* branches1 = tree1->GetListOfBranches();
@@ -68,58 +88,53 @@ void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
     for (int i = 0; i < branches1->GetEntries(); ++i) {
         const char* branchName = branches1->At(i)->GetName();
         std::string formattedBranchName = formatBranchName(branchName);
-        
         TCanvas canvas(branchName, "Canvas", 800, 600);
 
-        TH1F hist1(Form("%s_1", branchName), "", 100, 0, 0); // Empty title
-        TH1F hist2(Form("%s_2", branchName), "", 100, 0, 0); // Empty title
+        TH1F hist1(Form("%s_1", branchName), "", 200, 0, 0);
+        TH1F hist2(Form("%s_2", branchName), "", 200, 0, 0);
 
-        tree1->Draw(Form("%s>>%s_1", branchName, branchName));
-        tree2->Draw(Form("%s>>%s_2", branchName, branchName));
+        std::string cutCondition = "";
+        if (std::strcmp(branchName, "Mx") != 0 && std::strcmp(branchName, "Mx2") != 0) {
+            cutCondition = "Mx > 1.5";
+        }
 
-        // Set line colors
+        tree1->Draw(Form("%s>>%s_1", branchName, branchName), cutCondition.c_str());
+        tree2->Draw(Form("%s>>%s_2", branchName, branchName), cutCondition.c_str());
+
         hist1.SetLineColor(kRed);
         hist2.SetLineColor(kBlue);
 
-        // Draw histograms as error bars
-        hist1.Draw("E");
-        hist2.Draw("Esame");
+        hist1.Draw(""); 
+        hist2.Draw("same"); 
 
-        // Hide default stats box
         hist1.SetStats(0);
         hist2.SetStats(0);
 
-        // Set axis labels
         hist1.GetXaxis()->SetTitle(formattedBranchName.c_str());
         hist1.GetYaxis()->SetTitle("Counts");
 
-        // Determine the max value between the two histograms
         double max_value = std::max(hist1.GetMaximum(), hist2.GetMaximum());
-        hist1.SetMaximum(max_value * 1.1); // Add some margin
-        hist2.SetMaximum(max_value * 1.1); // Add some margin
+        hist1.SetMaximum(max_value * 1.1);
+        hist2.SetMaximum(max_value * 1.1);
 
-        // Create and draw custom stats boxes
-        TPaveText* stats1 = new TPaveText(0.75, 0.75, 0.95, 0.95, "NDC");
+        TPaveText* stats1 = new TPaveText(0.15, 0.85, 0.35, 0.95, "NDC");
+        TPaveText* stats2 = new TPaveText(0.65, 0.85, 0.85, 0.95, "NDC");
+
         stats1->AddText("pass-1");
         stats1->AddText(Form("Counts: %d", int(hist1.GetEntries())));
-        stats1->SetTextAlign(12); // Align text to the left
+        stats1->SetTextAlign(12);
         stats1->SetTextColor(kRed);
-        stats1->SetBorderSize(1); // Add border
         stats1->Draw("same");
 
-        TPaveText* stats2 = new TPaveText(0.55, 0.75, 0.75, 0.95, "NDC");
         stats2->AddText("pass-2");
         stats2->AddText(Form("Counts: %d", int(hist2.GetEntries())));
-        stats2->SetTextAlign(12); // Align text to the left
+        stats2->SetTextAlign(12);
         stats2->SetTextColor(kBlue);
-        stats2->SetBorderSize(1); // Add border
         stats2->Draw("same");
 
-        // Save the canvas to a file
         canvas.SaveAs(Form("%s/%s.png", outDir, branchName));
     }
 }
-
 
 
 
