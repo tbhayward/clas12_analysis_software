@@ -16,7 +16,7 @@ double gettmin(double x) {
 double gett(double p, double theta) {
     float mp = 0.938272; // proton mass in GeV
     float E = mp; // target proton energy (written as E to help checking calculation but at rest)
-    return = 2*mp*(E - p) - 2*sqrt(mp*mp + E*E)*sqrt(mp*mp + p*p) +
+    return 2*mp*(E - p) - 2*sqrt(mp*mp + E*E)*sqrt(mp*mp + p*p) +
           2*sqrt(mp*mp + E*E)*sqrt(mp*mp + p*p)*cos(theta);
 }
 
