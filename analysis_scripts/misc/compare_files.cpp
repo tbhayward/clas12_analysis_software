@@ -283,7 +283,13 @@ void createHistograms(TTree* tree1, TTree* tree2,
         hist1.SetMaximum(max_value * 1.1);
         hist2.SetMaximum(max_value * 1.1);
 
-        TPaveText* stats = new TPaveText(0.65, 0.85, 0.85, 0.95, "NDC");
+        // Adjust these values to fit your needs
+        double x1 = 0.55; // left edge
+        double y1 = 0.85; // bottom edge
+        double x2 = 0.85; // right edge
+        double y2 = 0.95; // top edge
+
+        TPaveText* stats = new TPaveText(x1, y1, x2, y2, "NDC");
         stats->SetBorderSize(1);  // Draw a border
         stats->SetFillColor(0);  // Transparent fill
         stats->SetTextSize(0.04);  // Increase the text size
@@ -380,6 +386,25 @@ void createHistograms(TTree* tree1, TTree* tree2,
         aluGraph2.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
         aluGraph2.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
         aluGraph2.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
+
+        // Create the legend at x1, y1, x2, y2
+        TLegend *leg = new TLegend(0.7, 0.7, 0.9, 0.9);  // Adjust these values as needed
+
+        // Add entries
+        leg->AddEntry(&aluGraph1, data_set_1_name.c_str(), "p");
+        leg->AddEntry(&aluGraph2, data_set_2_name.c_str(), "p");
+
+        // Set the marker colors to match your graphs
+        aluGraph1.SetMarkerColor(kRed);
+        aluGraph2.SetMarkerColor(kBlue);
+
+        // Customize the legend
+        leg->SetBorderSize(1);  // border size
+        leg->SetTextSize(0.04);  // text size
+
+        // Draw the legend
+        leg->Draw("same");
+
 
         // Save the canvas
         canvas.SaveAs(Form("%s/%s.png", outDir, branchName));
