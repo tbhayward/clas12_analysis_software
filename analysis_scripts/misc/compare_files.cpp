@@ -121,8 +121,10 @@ void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
         std::string formattedBranchName = formatBranchName(branchName);
         TCanvas canvas(branchName, "Canvas", 1600, 600);  // Width doubled for side-by-side panels
         TPad *pad1 = new TPad("pad1", "The pad with the function",0.0,0.0,0.5,1.0,21);
+        pad1->SetFillColor(0);  // Set the fill color to white for pad1
         pad1->Draw();
         pad1->cd();  // Set current pad to pad1
+
 
         HistConfig config = histConfigs[branchName];
         TH1F hist1(Form("%s_1", branchName), "", config.bins, config.min, config.max);
@@ -173,6 +175,7 @@ void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
         // pad with ratio
         canvas.cd();  // Switch back to the main canvas before creating a new pad
         TPad *pad2 = new TPad("pad2", "The pad with the ratio",0.5,0.0,1.0,1.0,21);
+        pad2->SetFillColor(0);  // Set the fill color to white for pad2
         pad2->Draw();
         pad2->cd();  // Set current pad to pad2
         
@@ -180,13 +183,14 @@ void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
         ratioHist.Divide(&hist2, &hist1);
         ratioHist.SetLineColor(kBlack);
         ratioHist.SetMinimum(0.75);  // Set Y-range
-        ratioHist.SetMaximum(1.50);  // Set Y-range
+        ratioHist.SetMaximum(2.00);  // Set Y-range
         ratioHist.GetXaxis()->SetTitle(formattedBranchName.c_str());
         ratioHist.GetYaxis()->SetTitle("pass-2/pass-1 counts");
         ratioHist.Draw("HIST");
 
         // Ratio stats box
         TPaveText* ratioStats = new TPaveText(0.65, 0.85, 0.85, 0.95, "NDC");
+        ratioHist.SetStats(0);
         ratioStats->SetBorderSize(1);  // Draw a border
         ratioStats->SetFillColor(0);  // Transparent fill
         double overallRatio = (hist2.GetEntries() != 0 && hist1.GetEntries() != 0) ? 
@@ -200,6 +204,7 @@ void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
 }
 
 void compare_files(std::string root_file1_path, std::string root_file2_path) {
+    gStyle->SetCanvasColor(0);
 
     TFile* file1 = new TFile(root_file1_path.c_str(), "READ");
     TFile* file2 = new TFile(root_file2_path.c_str(), "READ");
