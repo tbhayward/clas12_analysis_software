@@ -2,7 +2,6 @@
 # bin names given before the first comma, bin edges proceed after this point
 # keep in mind this is definining bin *edges*, so you will have n-1 bins in total
 runnum,evnum,helicity,e_p,e_theta,e_phi,vz_e,p_p,p_theta,p_phi,vz_p,Q2,W,Mx,Mx2,x,y,z,xF,pT,zeta,eta,phi,DepA,DepB,DepC,DepV,DepW
-#runnum,helicity,p_p,p_theta,Q2,W,Mx,x,y,z,xF,pT,zeta,phi,DepA,DepB,DepC,DepV,DepW
 -
 # epX
 #x,x,0.05,0.6,

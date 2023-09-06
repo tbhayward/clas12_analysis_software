@@ -6,6 +6,44 @@
 
 using namespace std;
 
+// function to get tmin 
+double gettmin(double x) {
+    float mp = 0.938272; // proton mass in GeV
+    return -pow((mp*x),2)/(1-x);
+}
+
+// function get t
+double gett(double p, double theta) {
+    float mp = 0.938272; // proton mass in GeV
+    float E = mp; // target proton energy (written as E to help checking calculation but at rest)
+    return = 2*mp*(E - p) - 2*sqrt(mp*mp + E*E)*sqrt(mp*mp + p*p) +
+          2*sqrt(mp*mp + E*E)*sqrt(mp*mp + p*p)*cos(theta);
+}
+
+// function to get the polarization value
+double getPol(int runnum) {
+  double pol = 0.86; 
+    if (runnum == 11 ) { pol = 0.86; } // runnum == 11 indicates Monte Carlo in CLAS12
+    else if (runnum >= 5032 && runnum < 5333) { pol = 0.8592; } 
+    else if (runnum >= 5333 && runnum <= 5666) { pol = 0.8922; }
+    else if (runnum >= 6616 && runnum <= 6783) { pol = 0.8453; }
+    else if (runnum >= 6142 && runnum <= 6149) { pol = 0.81132; }
+    else if (runnum >= 6150 && runnum <= 6188) { pol = 0.82137; }
+    else if (runnum >= 6189 && runnum <= 6260) { pol = 0.83598; }
+    else if (runnum >= 6261 && runnum <= 6339) { pol = 0.80770; }
+    else if (runnum >= 6340 && runnum <= 6342) { pol = 0.85536; }
+    else if (runnum >= 6344 && runnum <= 6399) { pol = 0.87038; }
+    else if (runnum >= 6420 && runnum <= 6476) { pol = 0.88214; }
+    else if (runnum >= 6479 && runnum <= 6532) { pol = 0.86580; }
+    else if (runnum >= 6533 && runnum <= 6603) { pol = 0.87887; }
+    else if (runnum >= 11013 && runnum <= 11309) { pol = 0.84983; }
+    else if (runnum >= 11323 && runnum <= 11334) { pol = 0.87135; }
+    else if (runnum >= 11335 && runnum <= 11387) { pol = 0.85048; }
+    else if (runnum >= 11389 && runnum <= 11571) { pol = 0.84262; }
+    else if (runnum >= 16000) { pol = 0.83534; } // RGC +/- 0.01440
+  return pol;
+}
+
 int main(int argc, char *argv[]) {
     // Check for correct number of command line arguments
     if (argc != 4) {
@@ -30,7 +68,7 @@ int main(int argc, char *argv[]) {
 
     // Declare common variables
     int runnum, evnum, helicity;
-    double e_p, e_theta, e_phi, vz_e, Q2, W, Mx, Mx2, x, y;
+    double beam_pol, e_p, e_theta, e_phi, vz_e, Q2, W, Mx, Mx2, x, y, t, tmin;
 
     // Case for zero hadrons (inclusive)
     if (hadron_count == 0) {
@@ -38,6 +76,7 @@ int main(int argc, char *argv[]) {
         tree->Branch("runnum", &runnum, "runnum/I");
         tree->Branch("evnum", &evnum, "evnum/I");
         tree->Branch("helicity", &helicity, "helicity/I");
+        tree->Branch("beam_pol", &beam_pol, "beam_pol/D");
         tree->Branch("e_p", &e_p, "e_p/D");
         tree->Branch("e_theta", &e_theta, "e_theta/D");
         tree->Branch("e_phi", &e_phi, "e_phi/D");
@@ -48,6 +87,8 @@ int main(int argc, char *argv[]) {
         tree->Branch("Mx2", &Mx2, "Mx2/D");
         tree->Branch("x", &x, "x/D");
         tree->Branch("y", &y, "y/D");
+        tree->Branch("t", &t, "t/D");
+        tree->Branch("tmin", &tmin, "tmin/D");
     }
 
     // Case for one hadron
@@ -58,6 +99,7 @@ int main(int argc, char *argv[]) {
         tree->Branch("runnum", &runnum, "runnum/I");
         tree->Branch("evnum", &evnum, "evnum/I");
         tree->Branch("helicity", &helicity, "helicity/I");
+        tree->Branch("beam_pol", &beam_pol, "beam_pol/D");
         tree->Branch("e_p", &e_p, "e_p/D");
         tree->Branch("e_theta", &e_theta, "e_theta/D");
         tree->Branch("e_phi", &e_phi, "e_phi/D");
@@ -72,6 +114,8 @@ int main(int argc, char *argv[]) {
         tree->Branch("Mx2", &Mx2, "Mx2/D");
         tree->Branch("x", &x, "x/D");
         tree->Branch("y", &y, "y/D");
+        tree->Branch("t", &t, "t/D");
+        tree->Branch("tmin", &tmin, "tmin/D");
         tree->Branch("z", &z, "z/D");
         tree->Branch("xF", &xF, "xF/D");
         tree->Branch("pT", &pT, "pT/D");
@@ -98,6 +142,7 @@ int main(int argc, char *argv[]) {
         tree->Branch("runnum", &runnum, "runnum/I");
         tree->Branch("evnum", &evnum, "evnum/I");
         tree->Branch("helicity", &helicity, "helicity/I");
+        tree->Branch("beam_pol", &beam_pol, "beam_pol/D");
         tree->Branch("e_p", &e_p, "e_p/D");
         tree->Branch("e_theta", &e_theta, "e_theta/D");
         tree->Branch("e_phi", &e_phi, "e_phi/D");
@@ -116,6 +161,8 @@ int main(int argc, char *argv[]) {
         tree->Branch("Mx2", &Mx2, "Mx2/D");
         tree->Branch("x", &x, "x/D");
         tree->Branch("y", &y, "y/D");
+        tree->Branch("t", &t, "t/D");
+        tree->Branch("tmin", &tmin, "tmin/D");
         tree->Branch("z1", &z1, "z1/D");
         tree->Branch("z2", &z2, "z2/D");
         tree->Branch("Mh", &Mh, "Mh/D");
@@ -148,6 +195,9 @@ int main(int argc, char *argv[]) {
     if (hadron_count == 0) {
         while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             Q2 >> W >> Mx >> Mx2 >> x >> y) {
+            beam_pol = getPol(runnum);
+            t = gett(p_p, p_theta); 
+            tmin = gettmin(x);  
             tree->Fill(); // Fill the tree with the read data
         }
     } 
@@ -157,6 +207,9 @@ int main(int argc, char *argv[]) {
         while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             p_p >> p_theta >> p_phi >> vz_p >> Q2 >> W >> Mx >> Mx2 >> x >> y >> z >> xF >> 
             pT >> zeta >> eta >> phi >> DepA >> DepB >> DepC >> DepV >> DepW) {
+            beam_pol = getPol(runnum);
+            t = gett(p_p, p_theta); 
+            tmin = gettmin(x); 
             tree->Fill(); // Fill the tree with the read data
         }
     } 
@@ -173,10 +226,12 @@ int main(int argc, char *argv[]) {
             pTpT >> zeta1 >> zeta2 >> eta1 >> eta2 >> Delta_eta >> eta1_gN >> eta2_gN >> 
             phi1 >> phi2 >> Delta_phi >> phih >> phiR >> theta >> 
             DepA >> DepB >> DepC >> DepV >> DepW) {
+            beam_pol = getPol(runnum);
+            t = gett(p_p, p_theta); 
+            tmin = gettmin(x); 
             tree->Fill(); // Fill the tree with the read data
         }
     }
-
 
     // Write the TTree to the ROOT file and close it
     tree->Write();
