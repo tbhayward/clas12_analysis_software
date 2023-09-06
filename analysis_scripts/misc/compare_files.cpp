@@ -125,6 +125,15 @@ void createHistograms(TTree* tree1, TTree* tree2,
             continue;
         }
 
+        HistConfig config = histConfigs[branchName];
+        TH1F hist1(Form("%s_1", branchName), "", config.bins, config.min, config.max);
+        TH1F hist2(Form("%s_2", branchName), "", config.bins, config.min, config.max);
+
+        std::string cutCondition = "";
+        if (std::strcmp(branchName, "Mx") != 0 && std::strcmp(branchName, "Mx2") != 0) {
+            cutCondition = "Mx > 1.5";
+        }
+
         // Draw a temporary histogram to get statistics
         TH1F tempHist(Form("temp_%s", branchName), "", 1000, config.min, config.max);  
         // 1000 bins for better statistics
@@ -147,16 +156,6 @@ void createHistograms(TTree* tree1, TTree* tree2,
         pad1->SetFillColor(0);  // Set the fill color to white for pad1
         pad1->Draw();
         pad1->cd();  // Set current pad to pad1
-
-
-        HistConfig config = histConfigs[branchName];
-        TH1F hist1(Form("%s_1", branchName), "", config.bins, config.min, config.max);
-        TH1F hist2(Form("%s_2", branchName), "", config.bins, config.min, config.max);
-
-        std::string cutCondition = "";
-        if (std::strcmp(branchName, "Mx") != 0 && std::strcmp(branchName, "Mx2") != 0) {
-            cutCondition = "Mx > 1.5";
-        }
 
         std::string drawCommand1 = Form("%s>>%s_1", branchName, branchName);
         std::string drawCommand2 = Form("%s>>%s_2", branchName, branchName);
