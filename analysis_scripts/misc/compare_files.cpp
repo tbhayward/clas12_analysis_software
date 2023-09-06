@@ -54,6 +54,7 @@ std::pair<std::vector<double>, std::vector<double>> calculateAndPlotALU(
         int dyn_bin = int((branch_var - min_val) / ((max_val - min_val) / 6));
         int phi_bin = int(phi / (2 * TMath::Pi() / 12));
 
+        cout << dyn_bin << " " << phi_bin << endl;
         if(dyn_bin < 0 || dyn_bin >= 6) continue;  // Skip invalid indices
         if(phi_bin < 0 || phi_bin >= 12) continue;  // Skip invalid indices
 
@@ -366,6 +367,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
             aluGraph2.SetPoint(dyn_bin, bin_center + offset, result2.first[dyn_bin]); // Add offset
             aluGraph2.SetPointError(dyn_bin, 0, result2.second[dyn_bin]);
         }
+        cout << "we made it here" << endl;
 
         aluGraph1.SetLineColor(kRed); aluGraph1.SetMarkerColor(kRed);
         aluGraph1.SetMarkerStyle(20);
