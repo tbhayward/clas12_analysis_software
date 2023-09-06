@@ -261,6 +261,15 @@ void createHistograms(TTree* tree1, TTree* tree2,
 
         hist1.SetLineColor(kRed);
         hist2.SetLineColor(kBlue);
+        hist1.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
+        hist1.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
+        hist1.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
+        hist1.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
+        hist2.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
+        hist2.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
+        hist2.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
+        hist2.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
+
 
         hist1.Draw(""); 
         hist2.Draw("same"); 
@@ -299,6 +308,10 @@ void createHistograms(TTree* tree1, TTree* tree2,
         std::string yAxisTitle = Form("%s/%s counts", data_set_2_name.c_str(), 
             data_set_1_name.c_str());
         ratioHist.GetYaxis()->SetTitle(yAxisTitle.c_str());
+        ratioHist.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
+        ratioHist.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
+        ratioHist.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
+        ratioHist.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
         ratioHist.Draw("HIST");
 
         // Ratio stats box
@@ -315,7 +328,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         // Third Panel for ALU calculations and fitting
         canvas.cd();  // Switch back to the main canvas before creating a new pad
         TPad *pad3 = new TPad("pad3", "The pad with ALU", 0.66, 0.0, 1.0, 1.0, 21);
-        pad3->SetLeftMargin(0.15);
+        pad3->SetLeftMargin(0.2); pad3->SetBottomMargin(0.2);
         pad3->SetFillColor(0);  // Set the fill color to white for pad3
         pad3->Draw();
         pad3->cd();  // Set current pad to pad3
@@ -331,7 +344,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
 
         TGraphErrors aluGraph1(6), aluGraph2(6);  // We have 6 dynamic bins for each
 
-        double offset = 0.05 * ((max_val - min_val) / 6);  // 5% of bin width
+        double offset = 0.075 * ((max_val - min_val) / 6);  // 7.5% of bin width
         // Populate aluGraph1 and aluGraph2 using result1 and result2
         // (This part can be put into a loop or function for efficiency)
         for (int dyn_bin = 0; dyn_bin < 6; ++dyn_bin) {
