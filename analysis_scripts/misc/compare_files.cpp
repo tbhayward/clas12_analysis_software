@@ -231,13 +231,9 @@ void createHistograms(TTree* tree1, TTree* tree2,
         pad3->Draw();
         pad3->cd();  // Set current pad to pad3
 
-        // Get min and max values for the branch
-        double min_val = hist1.GetXaxis()->GetXmin();
-        double max_val = hist1.GetXaxis()->GetXmax();
-
-        // Initialize vectors to hold N+ and N- for each dynamic bin
-        std::vector<double> N_pos(12, 0);  // 12 phi bins
-        std::vector<double> N_neg(12, 0);  // 12 phi bins
+        // Create a 2D array to hold N+ and N- for each dynamic bin and phi bin
+        std::vector<std::vector<double>> N_pos(6, std::vector<double>(12, 0));  // 6 dynamic bins, 12 phi bins
+        std::vector<std::vector<double>> N_neg(6, std::vector<double>(12, 0));
 
         // Loop through the tree to fill N_pos and N_neg
         int helicity;
@@ -246,40 +242,38 @@ void createHistograms(TTree* tree1, TTree* tree2,
         tree1->SetBranchAddress("phi", &phi);
         tree1->SetBranchAddress("helicity", &helicity);
         tree1->SetBranchAddress("beam_pol", &beam_pol);
-        
+
         for (int entry = 0; entry < tree1->GetEntries(); ++entry) {
             tree1->GetEntry(entry);
             int dyn_bin = (branch_var - min_val) / ((max_val - min_val) / 6);
             int phi_bin = phi / (2 * TMath::Pi() / 12);
-            cout << dyn_bin << " " << phi_bin << endl;
             if (helicity > 0) {
-                N_pos[phi_bin]++;
+                N_pos[dyn_bin][phi_bin]++;
             } else if (helicity < 0) {
-                N_neg[phi_bin]++;
+                N_neg[dyn_bin][phi_bin]++;
             }
         }
 
-        // Calculate ALU and its statistical uncertainty
         std::vector<double> ALU_values;
         std::vector<double> ALU_errors;
 
         for (int dyn_bin = 0; dyn_bin < 6; ++dyn_bin) {
-            // Fit to ALU = A * sin(phi)
             TF1 fitFunc("fitFunc", "[0]*sin(x)", 0, 2 * TMath::Pi());
             TGraphErrors fitGraph;
             for (int phi_bin = 0; phi_bin < 12; ++phi_bin) {
-                double phi = phi_bin * (2 * TMath::Pi() / 12);
-                double ALU = (1 / beam_pol) * (N_pos[phi_bin] - N_neg[phi_bin]) / (N_pos[phi_bin] + N_neg[phi_bin]);
-                double ALU_error = (2 / beam_pol) * TMath::Sqrt((N_pos[phi_bin] * N_neg[phi_bin]) / TMath::Power(N_pos[phi_bin] + N_neg[phi_bin], 3));
-                fitGraph.SetPoint(phi_bin, phi, ALU);
+                double phi_val = phi_bin * (2 * TMath::Pi() / 12);
+                double ALU = (1 / beam_pol) * (N_pos[dyn_bin][phi_bin] - N_neg[dyn_bin][phi_bin]) / (N_pos[dyn_bin][phi_bin] + N_neg[dyn_bin][phi_bin]);
+                double ALU_error = (2 / beam_pol) * TMath::Sqrt((N_pos[dyn_bin][phi_bin] * N_neg[dyn_bin][phi_bin]) / TMath::Power(N_pos[dyn_bin][phi_bin] + N_neg[dyn_bin][phi_bin], 3));
+                fitGraph.SetPoint(phi_bin, phi_val, ALU);
                 fitGraph.SetPointError(phi_bin, 0, ALU_error);
             }
-            fitGraph.Fit(&fitFunc, "Q");  // Quiet mode
+            fitGraph.Fit(&fitFunc, "Q");
             double A = fitFunc.GetParameter(0);
             double A_error = fitFunc.GetParError(0);
             ALU_values.push_back(A);
             ALU_errors.push_back(A_error);
         }
+
 
         // Plotting ALU values
         TGraphErrors aluGraph(6);  // We have 6 dynamic bins
