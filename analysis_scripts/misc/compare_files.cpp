@@ -52,14 +52,10 @@ void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
     }
 }
 
-int main(int argc, char *argv[]) {
-    if (argc != 3) {
-        cout << "Usage: " << argv[0] << " <root_file1> <root_file2>" << endl;
-        return 1;
-    }
+void compare_files(std::string root_file1_path, std::string root_file2_path) {
 
-    TFile* file1 = new TFile(argv[1], "READ");
-    TFile* file2 = new TFile(argv[2], "READ");
+    TFile* file1 = new TFile(root_file1_path.c_str(), "READ");
+    TFile* file2 = new TFile(root_file2_path.c_str(), "READ");
 
     if (!file1->IsOpen() || !file2->IsOpen()) {
         cout << "Error opening ROOT files (is the location correct?). Exiting." << endl;
@@ -78,6 +74,4 @@ int main(int argc, char *argv[]) {
 
     file1->Close();
     file2->Close();
-
-    return 0;
 }
