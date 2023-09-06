@@ -248,8 +248,6 @@ void createHistograms(TTree* tree1, TTree* tree2,
         tree1->SetBranchAddress("helicity", &helicity);
         tree1->SetBranchAddress("beam_pol", &beam_pol);
 
-        cout << "we made it to here" << endl;
-
         for (int entry = 0; entry < tree1->GetEntries(); ++entry) {
             tree1->GetEntry(entry);
             int dyn_bin = (branch_var - min_val) / ((max_val - min_val) / 6);
@@ -259,6 +257,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
             } else if (helicity < 0) {
                 N_neg[dyn_bin][phi_bin]++;
             }
+            cout << "we made it to here" << endl;
         }
 
         std::vector<double> ALU_values;
