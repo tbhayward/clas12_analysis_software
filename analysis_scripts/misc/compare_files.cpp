@@ -27,21 +27,21 @@ std::map<std::string, HistConfig> histConfigs = {
     {"DepA", {200, 0, 1}},
     {"DepB", {200, 0, 1}},
     {"DepC", {200, 0, 1}},
-    {"DepV", {200, 0, 1}},
+    {"DepV", {200, 0, 2}},
     {"DepW", {200, 0, 1}},
     {"e_p", {200, 2, 8}},
-    {"e_phi", {200, 0, 2 * M_PI}},
+    {"e_phi", {200, 0, 360}},
     {"eta", {200, -1, 3}},
-    {"e_theta", {200, 0, 40 * (M_PI / 180.0)}}, // Convert degree to radian
+    {"e_theta", {200, 0, 40}}, // Convert degree to radian
     {"evnum", {200, 0, 0}},
     {"helicity", {2, -2, 2}},
     {"Mx", {200, -4, 3}},
     {"Mx2", {200, -10, 10}},
     {"phi", {200, 0, 2 * M_PI}},
     {"p_p", {200, 0, 6}},
-    {"p_phi", {200, 0, 2 * M_PI}},
+    {"p_phi", {200, 0, 360}},
     {"pT", {200, 0, 1.2}},
-    {"p_theta", {200, 0, 90 * (M_PI / 180.0)}}, // Convert degree to radian
+    {"p_theta", {200, 0, 90}}, // Convert degree to radian
     {"Q2", {200, 0, 9}},
     {"runnum", {200, 0, 0}},
     {"t", {200, -10, 1}},
@@ -120,6 +120,7 @@ void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
         const char* branchName = branches1->At(i)->GetName();
         std::string formattedBranchName = formatBranchName(branchName);
         TCanvas canvas(branchName, "Canvas", 800, 600);
+        canvas.SetLeftMargin(0.15);  // Add more space on the left
 
         HistConfig config = histConfigs[branchName];
         TH1F hist1(Form("%s_1", branchName), "", config.bins, config.min, config.max);
@@ -166,16 +167,6 @@ void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
         stats->AddText(Form("pass-2 counts: %d", int(hist2.GetEntries())));
         stats->SetTextAlign(12);
         stats->Draw("same");
-
-        // Add individual colored text for counts
-        TLatex latex;
-        latex.SetTextSize(0.03);
-        latex.SetNDC();
-        latex.SetTextColor(kRed);
-        latex.DrawLatex(0.67, 0.92, Form("pass-1 counts: %d", int(hist1.GetEntries())));
-
-        latex.SetTextColor(kBlue);
-        latex.DrawLatex(0.67, 0.87, Form("pass-2 counts: %d", int(hist2.GetEntries())));
 
         canvas.SaveAs(Form("%s/%s.png", outDir, branchName));
     }
