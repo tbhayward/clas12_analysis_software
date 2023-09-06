@@ -331,6 +331,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
 
         TGraphErrors aluGraph1(6), aluGraph2(6);  // We have 6 dynamic bins for each
 
+        double offset = 0.05 * ((max_val - min_val) / 6);  // 5% of bin width
         // Populate aluGraph1 and aluGraph2 using result1 and result2
         // (This part can be put into a loop or function for efficiency)
         for (int dyn_bin = 0; dyn_bin < 6; ++dyn_bin) {
@@ -338,24 +339,34 @@ void createHistograms(TTree* tree1, TTree* tree2,
             aluGraph1.SetPoint(dyn_bin, bin_center, result1.first[dyn_bin]);
             aluGraph1.SetPointError(dyn_bin, 0, result1.second[dyn_bin]);
             
-            aluGraph2.SetPoint(dyn_bin, bin_center, result2.first[dyn_bin]);
+            aluGraph2.SetPoint(dyn_bin, bin_center + offset, result2.first[dyn_bin]); // Add offset
             aluGraph2.SetPointError(dyn_bin, 0, result2.second[dyn_bin]);
         }
 
-        aluGraph1.SetLineColor(kRed);
+        aluGraph1.SetLineColor(kRed); aluGraph1.SetMarkerColor(kRed);
         aluGraph1.SetMarkerStyle(20);
         aluGraph1.SetMarkerSize(1.1);
 
-        aluGraph2.SetLineColor(kBlue);
+        aluGraph2.SetLineColor(kBlue); aluGraph2.SetMarkerColor(kBlue);
         aluGraph2.SetMarkerStyle(21);
         aluGraph2.SetMarkerSize(1.1);
 
         aluGraph1.Draw("AP");
-        aluGraph1.GetYaxis()->SetRangeUser(-0.05, 0.05);
+        aluGraph1.GetYaxis()->SetRangeUser(-0.04, 0.04);
         aluGraph1.GetYaxis()->SetTitle("F_{LU}^{sin#phi} / F_{UU}");
         aluGraph1.GetXaxis()->SetTitle(formattedBranchName.c_str());
+        aluGraph1.SetTitle("");  // Remove title
+        aluGraph1.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
+        aluGraph1.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
+        aluGraph1.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
+        aluGraph1.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
 
         aluGraph2.Draw("Psame");
+        aluGraph2.SetTitle("");  // Remove title
+        aluGraph2.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
+        aluGraph2.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
+        aluGraph2.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
+        aluGraph2.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
 
         // Save the canvas
         canvas.SaveAs(Form("%s/%s.png", outDir, branchName));
