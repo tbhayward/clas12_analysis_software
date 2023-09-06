@@ -214,9 +214,21 @@ void createHistograms(TTree* tree1, TTree* tree2,
             continue;
         }
 
-        if (std::strcmp(branchName, "runnum") == 0 || std::strcmp(branchName, "evnum") == 0 || 
-            std::strcmp(branchName, "phi") == 0 || std::strcmp(branchName, "beam_pol") == 0 || 
-            std::strcmp(branchName, "helicity") == 0) {
+        if (std::strcmp(branchName, "e_p") == 0 || std::strcmp(branchName, "e_theta") == 0 || 
+            std::strcmp(branchName, "e_phi") == 0 || std::strcmp(branchName, "vz_e") == 0 || 
+            std::strcmp(branchName, "p_p") == 0) {
+            continue;
+        }
+
+        if (std::strcmp(branchName, "p_theta") == 0 || std::strcmp(branchName, "p_phi") == 0 || 
+            std::strcmp(branchName, "vz_p") == 0 || std::strcmp(branchName, "Q2") == 0 || 
+            std::strcmp(branchName, "W") == 0) {
+            continue;
+        }
+
+        if (std::strcmp(branchName, "Mx") == 0 || std::strcmp(branchName, "p_phi") == 0 || 
+            std::strcmp(branchName, "vz_p") == 0 || std::strcmp(branchName, "Q2") == 0 || 
+            std::strcmp(branchName, "W") == 0) {
             continue;
         }
 
@@ -261,6 +273,8 @@ void createHistograms(TTree* tree1, TTree* tree2,
             drawCommand1 = Form("%s * (180 / TMath::Pi())>>%s_1", branchName, branchName);
             drawCommand2 = Form("%s * (180 / TMath::Pi())>>%s_2", branchName, branchName);
         }
+
+        cout << "I'M HERE" << endl;
 
         tree1->Draw(drawCommand1.c_str(), cutCondition.c_str());
         tree2->Draw(drawCommand2.c_str(), cutCondition.c_str());
@@ -372,7 +386,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
             aluGraph2.SetPoint(dyn_bin, bin_center + offset, result2.first[dyn_bin]); // Add offset
             aluGraph2.SetPointError(dyn_bin, 0, result2.second[dyn_bin]);
         }
-        cout << "we made it here" << endl;
+        
 
         aluGraph1.SetLineColor(kRed); aluGraph1.SetMarkerColor(kRed);
         aluGraph1.SetMarkerStyle(20);
