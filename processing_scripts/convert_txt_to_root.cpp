@@ -8,14 +8,14 @@ using namespace std;
 
 // function to get tmin 
 double gettmin(double x) {
-    float mp = 0.938272; // proton mass in GeV
+    double mp = 0.938272; // proton mass in GeV
     return -pow((mp*x),2)/(1-x);
 }
 
 // function get t
 double gett(double p, double theta) {
-    float mp = 0.938272; // proton mass in GeV
-    float E = mp; // target proton energy (written as E to help checking calculation but at rest)
+    double mp = 0.938272; // proton mass in GeV
+    double E = mp; // target proton energy (written as E to help checking calculation but at rest)
     return 2*mp*(E - p) - 2*sqrt(mp*mp + E*E)*sqrt(mp*mp + p*p) +
           2*sqrt(mp*mp + E*E)*sqrt(mp*mp + p*p)*cos(theta);
 }
@@ -207,6 +207,11 @@ int main(int argc, char *argv[]) {
         while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             p_p >> p_theta >> p_phi >> vz_p >> Q2 >> W >> Mx >> Mx2 >> x >> y >> z >> xF >> 
             pT >> zeta >> eta >> phi >> DepA >> DepB >> DepC >> DepV >> DepW) {
+
+            // Debugging print statements
+            cout << "Read values: " << endl;
+            cout << "z: " << z << ", xF: " << xF << ", pT: " << pT << endl;
+
             beam_pol = getPol(runnum);
             t = gett(p_p, p_theta); // for SIDIS we calculate t with proton kinematics
             tmin = gettmin(x); 
