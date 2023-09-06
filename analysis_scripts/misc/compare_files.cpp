@@ -241,7 +241,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         std::string formattedBranchName = formatBranchName(branchName);
         TCanvas canvas(branchName, "Canvas", 1600, 600);  // Width doubled for side-by-side panels
         TPad *pad1 = new TPad("pad1", "The pad with the function",0.0,0.0,0.33,1.0,21);
-        pad1->SetLeftMargin(0.15);  // Adjust this value based on your specific needs
+        pad1->SetLeftMargin(0.2); pad1->SetBottomMargin(0.2);
         pad1->SetFillColor(0);  // Set the fill color to white for pad1
         pad1->Draw();
         pad1->cd();  // Set current pad to pad1
@@ -295,6 +295,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         // pad with ratio
         canvas.cd();  // Switch back to the main canvas before creating a new pad
         TPad *pad2 = new TPad("pad2", "The pad with the ratio",0.33,0.0,0.66,1.0,21);
+        pad2->SetLeftMargin(0.2); pad2->SetBottomMargin(0.2);
         pad2->SetFillColor(0);  // Set the fill color to white for pad2
         pad2->Draw();
         pad2->cd();  // Set current pad to pad2
@@ -344,7 +345,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
 
         TGraphErrors aluGraph1(6), aluGraph2(6);  // We have 6 dynamic bins for each
 
-        double offset = 0.075 * ((max_val - min_val) / 6);  // 7.5% of bin width
+        double offset = 0.1 * ((max_val - min_val) / 6);  // 10% of bin width
         // Populate aluGraph1 and aluGraph2 using result1 and result2
         // (This part can be put into a loop or function for efficiency)
         for (int dyn_bin = 0; dyn_bin < 6; ++dyn_bin) {
