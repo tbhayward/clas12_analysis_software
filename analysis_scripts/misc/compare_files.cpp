@@ -119,9 +119,27 @@ void createHistograms(TTree* tree1, TTree* tree2,
 
     for (int i = 0; i < branches1->GetEntries(); ++i) {
         const char* branchName = branches1->At(i)->GetName();
-        if (std::strcmp(branchName, "runnum") == 0 || std::strcmp(branchName, "evnum") == 0) {
+        if (std::strcmp(branchName, "runnum") == 0 || std::strcmp(branchName, "evnum") == 0 || 
+            std::strcmp(branchName, "phi") == 0 || std::strcmp(branchName, "beam_pol") == 0 || 
+            std::strcmp(branchName, "helicity") == 0) {
             continue;
         }
+
+        // Draw a temporary histogram to get statistics
+        TH1F tempHist(Form("temp_%s", branchName), "", 1000, config.min, config.max);  
+        // 1000 bins for better statistics
+        tree1->Draw(Form("%s>>temp_%s", branchName, branchName), cutCondition.c_str());
+
+        // Find the quantile edges
+        int nQuantiles = 6;
+        double quantiles[nQuantiles];
+        double sum = tempHist.GetEntries();
+        for (int i = 1; i <= nQuantiles; ++i) {
+            quantiles[i-1] = i * (sum / nQuantiles);
+        }
+        double edges[nQuantiles + 1];
+        tempHist.GetQuantiles(nQuantiles, edges, quantiles);
+
         std::string formattedBranchName = formatBranchName(branchName);
         TCanvas canvas(branchName, "Canvas", 1600, 600);  // Width doubled for side-by-side panels
         TPad *pad1 = new TPad("pad1", "The pad with the function",0.0,0.0,0.5,1.0,21);
@@ -206,6 +224,72 @@ void createHistograms(TTree* tree1, TTree* tree2,
         ratioStats->SetTextAlign(12);
         ratioStats->Draw("same");
 
+        // Third Panel for ALU calculations and fitting
+        canvas.cd();  // Switch back to the main canvas before creating a new pad
+        TPad *pad3 = new TPad("pad3", "The pad with ALU", 0.66, 0.0, 1.0, 1.0, 21);
+        pad3->SetFillColor(0);  // Set the fill color to white for pad3
+        pad3->Draw();
+        pad3->cd();  // Set current pad to pad3
+
+        // Get min and max values for the branch
+        double min_val = hist1.GetXaxis()->GetXmin();
+        double max_val = hist1.GetXaxis()->GetXmax();
+
+        // Initialize vectors to hold N+ and N- for each dynamic bin
+        std::vector<double> N_pos(12, 0);  // 12 phi bins
+        std::vector<double> N_neg(12, 0);  // 12 phi bins
+
+        // Loop through the tree to fill N_pos and N_neg
+        double branch_var, phi, helicity, beam_pol;
+        tree1->SetBranchAddress(branchName, &branch_var);
+        tree1->SetBranchAddress("phi", &phi);
+        tree1->SetBranchAddress("helicity", &helicity);
+        tree1->SetBranchAddress("beam_pol", &beam_pol);
+        
+        for (int entry = 0; entry < tree1->GetEntries(); ++entry) {
+            tree1->GetEntry(entry);
+            int dyn_bin = (branch_var - min_val) / ((max_val - min_val) / 6);
+            int phi_bin = phi / (2 * TMath::Pi() / 12);
+            if (helicity > 0) {
+                N_pos[phi_bin]++;
+            } else {
+                N_neg[phi_bin]++;
+            }
+        }
+
+        // Calculate ALU and its statistical uncertainty
+        std::vector<double> ALU_values;
+        std::vector<double> ALU_errors;
+
+        for (int dyn_bin = 0; dyn_bin < 6; ++dyn_bin) {
+            // Fit to ALU = A * sin(phi)
+            TF1 fitFunc("fitFunc", "[0]*sin(x)", 0, 2 * TMath::Pi());
+            TGraphErrors fitGraph;
+            for (int phi_bin = 0; phi_bin < 12; ++phi_bin) {
+                double phi = phi_bin * (2 * TMath::Pi() / 12);
+                double ALU = (1 / beam_pol) * (N_pos[phi_bin] - N_neg[phi_bin]) / (N_pos[phi_bin] + N_neg[phi_bin]);
+                double ALU_error = (2 / beam_pol) * TMath::Sqrt((N_pos[phi_bin] * N_neg[phi_bin]) / TMath::Power(N_pos[phi_bin] + N_neg[phi_bin], 3));
+                fitGraph.SetPoint(phi_bin, phi, ALU);
+                fitGraph.SetPointError(phi_bin, 0, ALU_error);
+            }
+            fitGraph.Fit(&fitFunc, "Q");  // Quiet mode
+            double A = fitFunc.GetParameter(0);
+            double A_error = fitFunc.GetParError(0);
+            ALU_values.push_back(A);
+            ALU_errors.push_back(A_error);
+        }
+
+        // Plotting ALU values
+        TGraphErrors aluGraph(6);  // We have 6 dynamic bins
+        for (int dyn_bin = 0; dyn_bin < 6; ++dyn_bin) {
+            double bin_center = min_val + (dyn_bin + 0.5) * (max_val - min_val) / 6;  // Center of the dynamic bin
+            aluGraph.SetPoint(dyn_bin, bin_center, ALU_values[dyn_bin]);
+            aluGraph.SetPointError(dyn_bin, 0, ALU_errors[dyn_bin]);
+        }
+        aluGraph.SetTitle("ALU values for each dynamic bin;Branch Variable;ALU");
+        aluGraph.Draw("AP");
+
+        // Save the canvas
         canvas.SaveAs(Form("%s/%s.png", outDir, branchName));
     }
 }
