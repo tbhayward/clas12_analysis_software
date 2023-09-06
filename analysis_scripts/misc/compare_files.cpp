@@ -33,7 +33,7 @@ std::map<std::string, HistConfig> histConfigs = {
     {"e_phi", {200, 0, 2 * M_PI}},
     {"eta", {200, -1, 3}},
     {"e_theta", {200, 0, 40 * (M_PI / 180.0)}}, // Convert degree to radian
-    {"evnnum", {200, 0, 0}},
+    {"evnum", {200, 0, 0}},
     {"helicity", {2, -2, 2}},
     {"Mx", {200, -4, 3}},
     {"Mx2", {200, -10, 10}},
@@ -130,8 +130,18 @@ void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
             cutCondition = "Mx > 1.5";
         }
 
-        tree1->Draw(Form("%s>>%s_1", branchName, branchName), cutCondition.c_str());
-        tree2->Draw(Form("%s>>%s_2", branchName, branchName), cutCondition.c_str());
+        std::string drawCommand1 = Form("%s>>%s_1", branchName, branchName);
+        std::string drawCommand2 = Form("%s>>%s_2", branchName, branchName);
+
+        // Convert to degrees if necessary
+        if (strcmp(branchName, "e_phi") == 0 || strcmp(branchName, "e_theta") == 0 ||
+            strcmp(branchName, "p_phi") == 0 || strcmp(branchName, "p_theta") == 0) {
+            drawCommand1 = Form("%s * (180 / TMath::Pi())>>%s_1", branchName, branchName);
+            drawCommand2 = Form("%s * (180 / TMath::Pi())>>%s_2", branchName, branchName);
+        }
+
+        tree1->Draw(drawCommand1.c_str(), cutCondition.c_str());
+        tree2->Draw(drawCommand2.c_str(), cutCondition.c_str());
 
         hist1.SetLineColor(kRed);
         hist2.SetLineColor(kBlue);
@@ -150,10 +160,22 @@ void createHistograms(TTree* tree1, TTree* tree2, const char* outDir) {
         hist2.SetMaximum(max_value * 1.1);
 
         TPaveText* stats = new TPaveText(0.65, 0.85, 0.85, 0.95, "NDC");
-        stats->AddText(Form("pass-1: %d", int(hist1.GetEntries())));
-        stats->AddText(Form("pass-2: %d", int(hist2.GetEntries())));
+        stats->SetBorderSize(1);  // Draw a border
+        stats->SetFillColor(0);  // Transparent fill
+        stats->AddText(Form("pass-1 counts: %d", int(hist1.GetEntries())));
+        stats->AddText(Form("pass-2 counts: %d", int(hist2.GetEntries())));
         stats->SetTextAlign(12);
         stats->Draw("same");
+
+        // Add individual colored text for counts
+        TLatex latex;
+        latex.SetTextSize(0.03);
+        latex.SetNDC();
+        latex.SetTextColor(kRed);
+        latex.DrawLatex(0.67, 0.92, Form("pass-1 counts: %d", int(hist1.GetEntries())));
+
+        latex.SetTextColor(kBlue);
+        latex.DrawLatex(0.67, 0.87, Form("pass-2 counts: %d", int(hist2.GetEntries())));
 
         canvas.SaveAs(Form("%s/%s.png", outDir, branchName));
     }
