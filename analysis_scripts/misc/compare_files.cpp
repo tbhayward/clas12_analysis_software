@@ -119,6 +119,9 @@ void createHistograms(TTree* tree1, TTree* tree2,
 
     for (int i = 0; i < branches1->GetEntries(); ++i) {
         const char* branchName = branches1->At(i)->GetName();
+        if ((std::strcmp(branchName, "runnum") || (std::strcmp(branchName, "evnum")) {
+            continue;
+        }
         std::string formattedBranchName = formatBranchName(branchName);
         TCanvas canvas(branchName, "Canvas", 1600, 600);  // Width doubled for side-by-side panels
         TPad *pad1 = new TPad("pad1", "The pad with the function",0.0,0.0,0.5,1.0,21);
