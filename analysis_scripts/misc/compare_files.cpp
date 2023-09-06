@@ -338,7 +338,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
 
         // Third Panel for ALU calculations and fitting
         canvas.cd();  // Switch back to the main canvas before creating a new pad
-        TPad *pad3 = new TPad("pad3", "The pad with ALU", 0.66, 0.0, 1.0, 1.0, 21);
+        TPad *pad3 = new TPad("pad3", "The pad with ALU", 0.7, 0.0, 1.0, 1.0, 21);
         pad3->SetLeftMargin(0.2); pad3->SetBottomMargin(0.2);
         pad3->SetFillColor(0);  // Set the fill color to white for pad3
         pad3->Draw();
@@ -393,7 +393,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         aluGraph2.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
 
         // Create the legend at x1, y1, x2, y2
-        TLegend *leg3 = new TLegend(0.6, 0.8, 0.9, 0.9);  // Adjust these values as needed
+        TLegend *leg3 = new TLegend(0.63, 0.8, 0.9, 0.9);  // Adjust these values as needed
         // Add entries
         leg3->AddEntry(&aluGraph1, data_set_1_name.c_str(), "p");
         leg3->AddEntry(&aluGraph2, data_set_2_name.c_str(), "p");
