@@ -74,6 +74,7 @@ std::pair<std::vector<double>, std::vector<double>> calculateAndPlotALU(
     }
 
     for (int dyn_bin = 0; dyn_bin < 6; ++dyn_bin) {
+        cout << "I'M HERE " << dyn_bin << endl;
         TF1 fitFunc("fitFunc", "[0]*sin(x)", 0, 2 * TMath::Pi());
         TGraphErrors fitGraph;
         for (int phi_bin = 0; phi_bin < 12; ++phi_bin) {
@@ -138,7 +139,7 @@ std::map<std::string, HistConfig> histConfigs = {
     {"vz_e", {200, -15, 15}},
     {"vz_p", {200, -15, 15}},
     {"W", {200, 2, 4}},
-    {"x", {200, 0, 1}},
+    {"x", {200, 0, 0.6}},
     {"xF", {200, -1, 1}},
     {"y", {200, 0, 1}},
     {"z", {200, 0, 1}},
@@ -214,23 +215,23 @@ void createHistograms(TTree* tree1, TTree* tree2,
             continue;
         }
 
-        if (std::strcmp(branchName, "e_p") == 0 || std::strcmp(branchName, "e_theta") == 0 || 
-            std::strcmp(branchName, "e_phi") == 0 || std::strcmp(branchName, "vz_e") == 0 || 
-            std::strcmp(branchName, "p_p") == 0) {
-            continue;
-        }
+        // if (std::strcmp(branchName, "e_p") == 0 || std::strcmp(branchName, "e_theta") == 0 || 
+        //     std::strcmp(branchName, "e_phi") == 0 || std::strcmp(branchName, "vz_e") == 0 || 
+        //     std::strcmp(branchName, "p_p") == 0) {
+        //     continue;
+        // }
 
-        if (std::strcmp(branchName, "p_theta") == 0 || std::strcmp(branchName, "p_phi") == 0 || 
-            std::strcmp(branchName, "vz_p") == 0 || std::strcmp(branchName, "Q2") == 0 || 
-            std::strcmp(branchName, "W") == 0) {
-            continue;
-        }
+        // if (std::strcmp(branchName, "p_theta") == 0 || std::strcmp(branchName, "p_phi") == 0 || 
+        //     std::strcmp(branchName, "vz_p") == 0 || std::strcmp(branchName, "Q2") == 0 || 
+        //     std::strcmp(branchName, "W") == 0) {
+        //     continue;
+        // }
 
-        if (std::strcmp(branchName, "Mx") == 0 || std::strcmp(branchName, "p_phi") == 0 || 
-            std::strcmp(branchName, "vz_p") == 0 || std::strcmp(branchName, "Q2") == 0 || 
-            std::strcmp(branchName, "W") == 0) {
-            continue;
-        }
+        // if (std::strcmp(branchName, "Mx") == 0 || std::strcmp(branchName, "p_phi") == 0 || 
+        //     std::strcmp(branchName, "vz_p") == 0 || std::strcmp(branchName, "Q2") == 0 || 
+        //     std::strcmp(branchName, "W") == 0) {
+        //     continue;
+        // }
 
         HistConfig config = histConfigs[branchName];
         TH1F hist1(Form("%s_1", branchName), "", config.bins, config.min, config.max);
@@ -273,8 +274,6 @@ void createHistograms(TTree* tree1, TTree* tree2,
             drawCommand1 = Form("%s * (180 / TMath::Pi())>>%s_1", branchName, branchName);
             drawCommand2 = Form("%s * (180 / TMath::Pi())>>%s_2", branchName, branchName);
         }
-
-        cout << "I'M HERE" << endl;
 
         tree1->Draw(drawCommand1.c_str(), cutCondition.c_str());
         tree2->Draw(drawCommand2.c_str(), cutCondition.c_str());
@@ -430,6 +429,18 @@ void createHistograms(TTree* tree1, TTree* tree2,
 
         // Save the canvas
         canvas.SaveAs(Form("%s/%s.png", outDir, branchName));
+
+        // Delete or remove from directory all dynamically created objects
+        hist1.SetDirectory(0);
+        hist2.SetDirectory(0);
+        ratioHist.SetDirectory(0);
+
+        delete pad1;
+        delete pad2;
+        delete pad3;
+        delete leg1;
+        delete leg2;
+        delete leg3;
     }
 }
 
