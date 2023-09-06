@@ -76,7 +76,6 @@ int main(int argc, char *argv[]) {
     double z1, z2, Mh, xF1, xF2, pT1, pT2, pTpT, zeta1, zeta2;
     double eta1, eta2, Delta_eta, eta1_gN, eta2_gN;
     double phi1, phi2, Delta_phi, phih, phiR, theta;
-    double DepA, DepB, DepC, DepV, DepW;
 
     // Case for zero hadrons (inclusive)
     if (hadron_count == 0) {
