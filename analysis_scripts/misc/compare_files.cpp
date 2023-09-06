@@ -283,14 +283,9 @@ void createHistograms(TTree* tree1, TTree* tree2,
         hist1.SetMaximum(max_value * 1.1);
         hist2.SetMaximum(max_value * 1.1);
 
-        // Adjust these values to fit your needs
-        double x1 = 0.55; // left edge
-        double y1 = 0.85; // bottom edge
-        double x2 = 0.85; // right edge
-        double y2 = 0.95; // top edge
 
-        // Create the legend at x1, y1, x2, y2
-        TLegend *leg1 = new TLegend(x1, y1, x2, y2);  // Adjust these coordinates as needed
+        // Create the legend
+        TLegend *leg1 = new TLegend(0.6, 0.7, 0.9, 0.9);  // Adjust these coordinates as needed
         leg1->SetBorderSize(1);  // border size
         leg1->SetFillColor(0);  // Transparent fill
         leg1->SetTextSize(0.04);  // text size
@@ -326,7 +321,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         ratioHist.Draw("HIST");
 
         // Create the legend
-        TLegend *leg2 = new TLegend(0.65, 0.85, 0.85, 0.95);  // Adjust these values as needed
+        TLegend *leg2 = new TLegend(0.6, 0.7, 0.9, 0.9);  // Adjust these values as needed
         leg2->SetBorderSize(1);  // border size
         leg2->SetFillColor(0);  // Transparent fill
         leg2->SetTextSize(0.04);  // text size
