@@ -231,6 +231,10 @@ void createHistograms(TTree* tree1, TTree* tree2,
         pad3->Draw();
         pad3->cd();  // Set current pad to pad3
 
+        // Get min and max values for the branch
+        double min_val = hist1.GetXaxis()->GetXmin();
+        double max_val = hist1.GetXaxis()->GetXmax();
+
         // Create a 2D array to hold N+ and N- for each dynamic bin and phi bin
         std::vector<std::vector<double>> N_pos(6, std::vector<double>(12, 0));  // 6 dynamic bins, 12 phi bins
         std::vector<std::vector<double>> N_neg(6, std::vector<double>(12, 0));
