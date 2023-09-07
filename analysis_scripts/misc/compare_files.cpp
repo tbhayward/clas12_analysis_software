@@ -220,6 +220,10 @@ void createHistograms(TTree* tree1, TTree* tree2,
             continue;
         }
 
+        HistConfig config = histConfigs[branchName];
+        TH1F hist1(Form("%s_1", branchName), "", config.bins, config.min, config.max);
+        TH1F hist2(Form("%s_2", branchName), "", config.bins, config.min, config.max);
+
         // Declare variables to hold tree data
         float branchValue, Mx;
         
