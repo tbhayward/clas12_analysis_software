@@ -265,7 +265,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
 
         tree1->Draw(drawCommand1.c_str(), cutCondition.c_str());
         tree2->Draw(drawCommand2.c_str(), cutCondition.c_str());
-
+        cout << "passed the draw command" << endl;
         hist1.SetLineColor(kRed);
         hist2.SetLineColor(kBlue);
         hist1.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
@@ -312,7 +312,6 @@ void createHistograms(TTree* tree1, TTree* tree2,
         pad2->SetFillColor(0);  // Set the fill color to white for pad2
         pad2->Draw();
         pad2->cd();  // Set current pad to pad2
-        cout << "created pad2" << endl;
         TH1F ratioHist(Form("%s_ratio", branchName), "", config.bins, config.min, config.max);
         ratioHist.Divide(&hist2, &hist1);
         ratioHist.SetLineColor(kBlack);
