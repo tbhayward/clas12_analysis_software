@@ -307,10 +307,10 @@ void createHistograms(TTree* tree1, TTree* tree2,
         }
 
         // Normalize the histogram
-        double scale1 = 1.0 / hist1->Integral();
-        hist1->Scale(scale1);
-        double scale2 = 1.0 / hist2->Integral();
-        hist2->Scale(scale2);
+        double scale1 = 1.0 / hist1.Integral();
+        hist1.Scale(scale1);
+        double scale2 = 1.0 / hist2.Integral();
+        hist2.Scale(scale2);
 
         hist1.SetLineColor(kRed);
         hist2.SetLineColor(kBlue);
