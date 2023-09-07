@@ -225,9 +225,9 @@ void createHistograms(TTree* tree1, TTree* tree2,
         TH1F hist2(Form("%s_2", branchName), "", config.bins, config.min, config.max);
 
         std::string cutCondition = "";
-        if (std::strcmp(branchName, "Mx") != 0 && std::strcmp(branchName, "Mx2") != 0) {
-            cutCondition = "Mx > 1.5";
-        } 
+        // if (std::strcmp(branchName, "Mx") != 0 && std::strcmp(branchName, "Mx2") != 0) {
+        //     cutCondition = "Mx > 1.5";
+        // } 
 
         cout << "passed the cut condition" << endl;
         // Draw a temporary histogram to get statistics
@@ -264,15 +264,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         }
 
         cout << "before, cutCondition = " << cutCondition.c_str() << endl;
-        if(tree1 == nullptr) {
-            cout << "tree1 is nullptr. Cannot proceed with Draw().";
-                return;
-        }
-        if(tree2 == nullptr) {
-            cout << "tree2 is nullptr. Cannot proceed with Draw().";
-            return;
-        }
-        cout << "made it passed nullptr check" << endl;
+    
         tree1->Draw(drawCommand1.c_str(), cutCondition.c_str());
         tree2->Draw(drawCommand2.c_str(), cutCondition.c_str());
         cout << "after cutCondition" << endl;
