@@ -207,20 +207,18 @@ void createHistograms(TTree* tree1, TTree* tree2,
         return;
     }
 
-    // For demonstration purposes, I'll loop only over a subset of branches
     // for (int i = 0; i < branches1->GetEntries(); ++i) {
     for (int i = 13; i < 17; ++i) {
+        cout << "we're starting stuff!" << endl;
         const char* branchName = branches1->At(i)->GetName();
         if (std::strcmp(branchName, "runnum") == 0 || std::strcmp(branchName, "evnum") == 0 || 
             std::strcmp(branchName, "phi") == 0 || std::strcmp(branchName, "beam_pol") == 0 || 
             std::strcmp(branchName, "helicity") == 0
-        ) {
+            // || std::strcmp(branchName, "Mx") == 0
+            // || std::strcmp(branchName, "Mx2") == 0
+            ) {
             continue;
         }
-
-        HistConfig config = histConfigs[branchName];
-        TH1F hist1(Form("%s_1", branchName), "", config.bins, config.min, config.max);
-        TH1F hist2(Form("%s_2", branchName), "", config.bins, config.min, config.max);
 
         // Declare variables to hold tree data
         float branchValue, Mx;
@@ -230,6 +228,30 @@ void createHistograms(TTree* tree1, TTree* tree2,
         tree1->SetBranchAddress("Mx", &Mx);
         tree2->SetBranchAddress(branchName, &branchValue);
         tree2->SetBranchAddress("Mx", &Mx);
+
+        // Draw a temporary histogram to get statistics
+        TH1F tempHist(Form("temp_%s", branchName), "", 1000, config.min, config.max);  
+        // 1000 bins for better statistics
+        tree1->Draw(Form("%s>>temp_%s", branchName, branchName), cutCondition.c_str());
+
+        // Find the quantile edges
+        int nQuantiles = 6;
+        double quantiles[nQuantiles];
+        double sum = tempHist.GetEntries();
+        for (int i = 1; i <= nQuantiles; ++i) {
+            quantiles[i-1] = i * (sum / nQuantiles);
+        }
+        double edges[nQuantiles + 1];
+        tempHist.GetQuantiles(nQuantiles, edges, quantiles);
+        cout << "passed the quantiles" << endl;
+        std::string formattedBranchName = formatBranchName(branchName);
+        TCanvas canvas(branchName, "Canvas", 1600, 600);  // Width doubled for side-by-side panels
+        TPad *pad1 = new TPad("pad1", "The pad with the function",0.0,0.0,0.33,1.0,21);
+        pad1->SetLeftMargin(0.2); pad1->SetBottomMargin(0.2);
+        pad1->SetFillColor(0);  // Set the fill color to white for pad1
+        pad1->Draw();
+        pad1->cd();  // Set current pad to pad1
+        cout << "created pad1" << endl;
 
         // Loop through tree1 and fill hist1
         for (Long64_t i = 0; i < tree1->GetEntries(); i++) {
