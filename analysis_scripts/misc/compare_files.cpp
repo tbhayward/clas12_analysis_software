@@ -244,7 +244,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         }
         double edges[nQuantiles + 1];
         tempHist.GetQuantiles(nQuantiles, edges, quantiles);
-        cout << "passed the cut quantiles" << endl;
+        cout << "passed the quantiles" << endl;
         std::string formattedBranchName = formatBranchName(branchName);
         TCanvas canvas(branchName, "Canvas", 1600, 600);  // Width doubled for side-by-side panels
         TPad *pad1 = new TPad("pad1", "The pad with the function",0.0,0.0,0.33,1.0,21);
@@ -252,7 +252,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         pad1->SetFillColor(0);  // Set the fill color to white for pad1
         pad1->Draw();
         pad1->cd();  // Set current pad to pad1
-
+        cout << "created pad1" << endl;
         std::string drawCommand1 = Form("%s>>%s_1", branchName, branchName);
         std::string drawCommand2 = Form("%s>>%s_2", branchName, branchName);
 
