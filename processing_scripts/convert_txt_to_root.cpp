@@ -267,10 +267,12 @@ int main(int argc, char *argv[]) {
 
             beam_pol = getPol(runnum);
             if (runnum < 16000) { target_pol = 0; }
-            else { for (const auto& run_info : run_info_list) {
-                if (run_info.runnum == runnum) {
-                    target_pol = run_info.target_polarization;
-                    break;
+            else { 
+                for (const auto& run_info : run_info_list) {
+                    if (run_info.runnum == runnum) {
+                        target_pol = run_info.target_polarization;
+                        break;
+                    }
                 }
             }
 
@@ -287,10 +289,12 @@ int main(int argc, char *argv[]) {
 
             beam_pol = getPol(runnum);
             if (runnum < 16000) { target_pol = 0; }
-            else { for (const auto& run_info : run_info_list) {
-                if (run_info.runnum == runnum) {
-                    target_pol = run_info.target_polarization;
-                    break;
+            else { 
+                for (const auto& run_info : run_info_list) {
+                    if (run_info.runnum == runnum) {
+                        target_pol = run_info.target_polarization;
+                        break;
+                    }
                 }
             }
 
@@ -310,10 +314,12 @@ int main(int argc, char *argv[]) {
 
             beam_pol = getPol(runnum);
             if (runnum < 16000) { target_pol = 0; }
-            else { for (const auto& run_info : run_info_list) {
-                if (run_info.runnum == runnum) {
-                    target_pol = run_info.target_polarization;
-                    break;
+            else { 
+                for (const auto& run_info : run_info_list) {
+                    if (run_info.runnum == runnum) {
+                        target_pol = run_info.target_polarization;
+                        break;
+                    }
                 }
             }
 
