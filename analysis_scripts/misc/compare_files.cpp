@@ -225,7 +225,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         TH1F hist2(Form("%s_2", branchName), "", config.bins, config.min, config.max);
 
         // Declare variables to hold tree data
-        float branchValue, Mx;
+        double branchValue, Mx;
         
         // Set branches
         tree1->SetBranchAddress(branchName, &branchValue);
@@ -260,7 +260,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         tempHist.GetQuantiles(nQuantiles, edges, quantiles);
         cout << "passed the quantiles" << endl;
 
-        
+
         std::string formattedBranchName = formatBranchName(branchName);
         TCanvas canvas(branchName, "Canvas", 1600, 600);  // Width doubled for side-by-side panels
         TPad *pad1 = new TPad("pad1", "The pad with the function",0.0,0.0,0.33,1.0,21);
