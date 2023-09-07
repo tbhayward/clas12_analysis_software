@@ -225,9 +225,11 @@ void createHistograms(TTree* tree1, TTree* tree2,
         TH1F hist2(Form("%s_2", branchName), "", config.bins, config.min, config.max);
 
         std::string cutCondition = "";
-        // if (std::strcmp(branchName, "Mx") != 0 && std::strcmp(branchName, "Mx2") != 0) {
-        //     cutCondition = "Mx > 1.5";
-        // } 
+        if (std::strcmp(branchName, "Mx") != 0 && std::strcmp(branchName, "Mx2") != 0) {
+            cutCondition = "Mx > 1.5";
+        } else {
+            cutCondition = "x > 0";
+        }
 
         cout << "passed the cut condition" << endl;
         // Draw a temporary histogram to get statistics
