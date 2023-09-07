@@ -32,7 +32,6 @@ std::pair<std::vector<double>, std::vector<double>> calculateAndPlotALU(
     std::vector<double> sum_W_over_A(6, 0.0);
     std::vector<int> count_W_over_A(6, 0);
 
-
     // Loop through the tree to fill N_pos and N_neg
     int helicity;
     double branch_var, phi, beam_pol, W, A;
@@ -441,6 +440,9 @@ void createHistograms(TTree* tree1, TTree* tree2,
         delete leg1;
         delete leg2;
         delete leg3;
+
+        // Add this line to delete the canvas object
+        delete &canvas;
     }
 }
 
@@ -464,6 +466,6 @@ void compare_files(std::string root_file1_path, std::string root_file2_path,
 
     createHistograms(tree1, tree2, data_set_1_name, data_set_2_name, "output");
 
-    file1->Close();
-    file2->Close();
+    file1->Close(); delete file1;
+    file2->Close(); delete file2;
 }
