@@ -46,7 +46,7 @@ std::pair<std::vector<double>, std::vector<double>> calculateAndPlotALU(
     for (int entry = 0; entry < tree1->GetEntries(); ++entry) {
         tree1->GetEntry(entry);
 
-        cout << branchVar << " " << min_val << " " << max_val << " " << phi << " ";
+        cout << branch_var << " " << min_val << " " << max_val << " " << phi << " ";
         if(branch_var < min_val || branch_var > max_val) continue;  
         // Skip entries out of range
         if(phi < 0 || phi > 2 * TMath::Pi()) continue;  
