@@ -1,5 +1,7 @@
 // Created 9/6/23
-// Created to compare epi+X and epX nSidis distributions between pass-1 and preliminary pass-2 
+// Created to compare epi+X and epX nSidis distributions between pass-2 inbending and 
+// inbending supplemental
+// helicity flipped for runs 4859 and 4984 
 
 #include <TTree.h>
 #include <TCanvas.h>
@@ -46,10 +48,12 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
     tree1->SetBranchAddress("DepW", &W);
     tree1->SetBranchAddress("DepA", &A);
 
+    if (runnum == 4859 || runnum == 4984) {
+        helicity=-1*helicity;
+    }
+
     for (int entry = 0; entry < tree1->GetEntries(); ++entry) {
         tree1->GetEntry(entry);
-
-        // if (runnum < 5000 && runnum != 4859) { continue; }
 
         if(branch_var < min_val || branch_var > max_val) continue;  
         // Skip entries out of range
@@ -306,6 +310,12 @@ void createHistograms(TTree* tree1, TTree* tree2,
             }
         }
 
+        // Normalize the histogram
+        double scale1 = 1.0 / hist1->Integral();
+        hist1->Scale(scale1);
+        double scale2 = 1.0 / hist2->Integral();
+        hist2->Scale(scale2);
+
         hist1.SetLineColor(kRed);
         hist2.SetLineColor(kBlue);
         hist1.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
@@ -475,7 +485,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
     }
 }
 
-void compare_files(std::string root_file1_path, std::string root_file2_path, 
+void compare_supplemental(std::string root_file1_path, std::string root_file2_path, 
     std::string data_set_1_name, std::string data_set_2_name) {
     gStyle->SetCanvasColor(0);
 
