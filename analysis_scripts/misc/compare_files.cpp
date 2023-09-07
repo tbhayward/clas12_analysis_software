@@ -272,7 +272,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
             cout << "tree2 is nullptr. Cannot proceed with Draw().";
             return;
         }
-
+        cout << "made it passed nullptr check" << endl;
         tree1->Draw(drawCommand1.c_str(), cutCondition.c_str());
         tree2->Draw(drawCommand2.c_str(), cutCondition.c_str());
         cout << "after cutCondition" << endl;
