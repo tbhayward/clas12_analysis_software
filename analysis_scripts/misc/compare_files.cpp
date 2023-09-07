@@ -268,6 +268,17 @@ void createHistograms(TTree* tree1, TTree* tree2,
         cout << "we're on " << branchName << " before, cutCondition = " << cutCondition.c_str() << endl;
         cout << "the draw command 1 is " << drawCommand1.c_str() << endl;
         cout << "the draw command 2 is " << drawCommand2.c_str() << endl;
+        if (!tree1->GetBranch("x") || !tree2->GetBranch("x")) {
+            cout << "Branch 'x' does not exist in one or both of the trees." << endl;
+            return;
+        }
+        cout << "passed getBranch x test" << endl;
+        if (!tree1->GetBranch("Mx") || !tree2->GetBranch("Mx")) {
+            cout << "Branch 'Mx' for cut condition does not exist in one or both of the trees." << endl;
+            return;
+        }
+        cout << "passed getBranch Mx test" << endl;
+
         tree1->Draw(drawCommand1.c_str(), cutCondition.c_str());
         tree2->Draw(drawCommand2.c_str(), cutCondition.c_str());
         cout << "after cutCondition" << endl;
