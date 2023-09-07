@@ -208,7 +208,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         return;
     }
 
-    for (int i = 14; i < branches1->GetEntries(); ++i) {
+    for (int i = 16; i < branches1->GetEntries(); ++i) {
 
         const char* branchName = branches1->At(i)->GetName();
         if (std::strcmp(branchName, "runnum") == 0 || std::strcmp(branchName, "evnum") == 0 || 
@@ -416,6 +416,8 @@ void createHistograms(TTree* tree1, TTree* tree2,
 
         // Save the canvas
         canvas.SaveAs(Form("%s/%s.png", outDir, branchName));
+
+        cout << "We're about to delete stuff!" << endl;
 
         // Delete or remove from directory all dynamically created objects
         hist1.SetDirectory(0);
