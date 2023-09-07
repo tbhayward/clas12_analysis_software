@@ -48,10 +48,6 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
     tree1->SetBranchAddress("DepW", &W);
     tree1->SetBranchAddress("DepA", &A);
 
-    if (runnum == 4859 || runnum == 4984) {
-        helicity=-1*helicity;
-    }
-
     for (int entry = 0; entry < tree1->GetEntries(); ++entry) {
         tree1->GetEntry(entry);
 
