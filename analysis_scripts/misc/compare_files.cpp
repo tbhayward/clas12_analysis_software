@@ -266,7 +266,8 @@ void createHistograms(TTree* tree1, TTree* tree2,
         }
 
         cout << "we're on " << branchName << " before, cutCondition = " << cutCondition.c_str() << endl;
-    
+        cout << "the draw command 1 is " << drawCommand1.c_str() << endl;
+        cout << "the draw command 2 is " << drawCommand2.c_str() << endl;
         tree1->Draw(drawCommand1.c_str(), cutCondition.c_str());
         tree2->Draw(drawCommand2.c_str(), cutCondition.c_str());
         cout << "after cutCondition" << endl;
