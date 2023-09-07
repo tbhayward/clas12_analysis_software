@@ -123,8 +123,8 @@ std::map<std::string, HistConfig> histConfigs = {
     {"e_theta", {200, 0, 40}}, // Convert degree to radian
     {"evnum", {200, 0, 0}},
     {"helicity", {2, -2, 2}},
-    {"Mx", {200, -4, 3}},
-    {"Mx2", {200, -10, 10}},
+    {"Mx", {200, 1.5, 3}},
+    {"Mx2", {200, 2.25, 10}},
     {"phi", {200, 0, 2 * M_PI}},
     {"p_p", {200, 0, 6}},
     {"p_phi", {200, 0, 360}},
@@ -206,6 +206,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
     }
 
     for (int i = 0; i < branches1->GetEntries(); ++i) {
+
         const char* branchName = branches1->At(i)->GetName();
         if (std::strcmp(branchName, "runnum") == 0 || std::strcmp(branchName, "evnum") == 0 || 
             std::strcmp(branchName, "phi") == 0 || std::strcmp(branchName, "beam_pol") == 0 || 
