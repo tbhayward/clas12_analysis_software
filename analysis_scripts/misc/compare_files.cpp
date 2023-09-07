@@ -229,6 +229,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
             cutCondition = "Mx > 1.5";
         }
 
+        cout << "passed the cut condition" << endl;
         // Draw a temporary histogram to get statistics
         TH1F tempHist(Form("temp_%s", branchName), "", 1000, config.min, config.max);  
         // 1000 bins for better statistics
