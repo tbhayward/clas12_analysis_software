@@ -228,7 +228,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         if (std::strcmp(branchName, "Mx") != 0 && std::strcmp(branchName, "Mx2") != 0) {
             cutCondition = "Mx > 1.5";
         } else {
-            cutCondition = "x > 0";
+            cutCondition = "z > 0";
         }
 
         cout << "passed the cut condition" << endl;
