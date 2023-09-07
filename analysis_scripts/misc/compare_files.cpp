@@ -207,16 +207,14 @@ void createHistograms(TTree* tree1, TTree* tree2,
         return;
     }
 
+    // For demonstration purposes, I'll loop only over a subset of branches
     // for (int i = 0; i < branches1->GetEntries(); ++i) {
     for (int i = 13; i < 17; ++i) {
-        cout << "we're starting stuff!" << endl;
         const char* branchName = branches1->At(i)->GetName();
         if (std::strcmp(branchName, "runnum") == 0 || std::strcmp(branchName, "evnum") == 0 || 
             std::strcmp(branchName, "phi") == 0 || std::strcmp(branchName, "beam_pol") == 0 || 
             std::strcmp(branchName, "helicity") == 0
-            // || std::strcmp(branchName, "Mx") == 0
-            // || std::strcmp(branchName, "Mx2") == 0
-            ) {
+        ) {
             continue;
         }
 
@@ -224,64 +222,40 @@ void createHistograms(TTree* tree1, TTree* tree2,
         TH1F hist1(Form("%s_1", branchName), "", config.bins, config.min, config.max);
         TH1F hist2(Form("%s_2", branchName), "", config.bins, config.min, config.max);
 
-        std::string cutCondition = "";
-        if (std::strcmp(branchName, "Mx") != 0 && std::strcmp(branchName, "Mx2") != 0) {
-            cutCondition = "Mx > 1.5";
-        } else {
-            cutCondition = "z > 0";
+        // Declare variables to hold tree data
+        float branchValue, Mx;
+        
+        // Set branches
+        tree1->SetBranchAddress(branchName, &branchValue);
+        tree1->SetBranchAddress("Mx", &Mx);
+        tree2->SetBranchAddress(branchName, &branchValue);
+        tree2->SetBranchAddress("Mx", &Mx);
+
+        // Loop through tree1 and fill hist1
+        for (Long64_t i = 0; i < tree1->GetEntries(); i++) {
+            tree1->GetEntry(i);
+            if (std::strcmp(branchName, "Mx") != 0 && std::strcmp(branchName, "Mx2") != 0) {
+                if (Mx > 1.5) {
+                    hist1.Fill(branchValue);
+                }
+            } else {
+                // handle the special case for Mx and Mx2
+                hist1.Fill(branchValue);
+            }
         }
 
-        cout << "passed the cut condition" << endl;
-        // Draw a temporary histogram to get statistics
-        TH1F tempHist(Form("temp_%s", branchName), "", 1000, config.min, config.max);  
-        // 1000 bins for better statistics
-        tree1->Draw(Form("%s>>temp_%s", branchName, branchName), cutCondition.c_str());
-
-        // Find the quantile edges
-        int nQuantiles = 6;
-        double quantiles[nQuantiles];
-        double sum = tempHist.GetEntries();
-        for (int i = 1; i <= nQuantiles; ++i) {
-            quantiles[i-1] = i * (sum / nQuantiles);
+        // Loop through tree2 and fill hist2
+        for (Long64_t i = 0; i < tree2->GetEntries(); i++) {
+            tree2->GetEntry(i);
+            if (std::strcmp(branchName, "Mx") != 0 && std::strcmp(branchName, "Mx2") != 0) {
+                if (Mx > 1.5) {
+                    hist2.Fill(branchValue);
+                }
+            } else {
+                // handle the special case for Mx and Mx2
+                hist2.Fill(branchValue);
+            }
         }
-        double edges[nQuantiles + 1];
-        tempHist.GetQuantiles(nQuantiles, edges, quantiles);
-        cout << "passed the quantiles" << endl;
-        std::string formattedBranchName = formatBranchName(branchName);
-        TCanvas canvas(branchName, "Canvas", 1600, 600);  // Width doubled for side-by-side panels
-        TPad *pad1 = new TPad("pad1", "The pad with the function",0.0,0.0,0.33,1.0,21);
-        pad1->SetLeftMargin(0.2); pad1->SetBottomMargin(0.2);
-        pad1->SetFillColor(0);  // Set the fill color to white for pad1
-        pad1->Draw();
-        pad1->cd();  // Set current pad to pad1
-        cout << "created pad1" << endl;
-        std::string drawCommand1 = Form("%s>>%s_1", branchName, branchName);
-        std::string drawCommand2 = Form("%s>>%s_2", branchName, branchName);
-
-        // Convert to degrees if necessary
-        if (strcmp(branchName, "e_phi") == 0 || strcmp(branchName, "e_theta") == 0 ||
-            strcmp(branchName, "p_phi") == 0 || strcmp(branchName, "p_theta") == 0) {
-            drawCommand1 = Form("%s * (180 / TMath::Pi())>>%s_1", branchName, branchName);
-            drawCommand2 = Form("%s * (180 / TMath::Pi())>>%s_2", branchName, branchName);
-        }
-
-        cout << "we're on " << branchName << " before, cutCondition = " << cutCondition.c_str() << endl;
-        cout << "the draw command 1 is " << drawCommand1.c_str() << endl;
-        cout << "the draw command 2 is " << drawCommand2.c_str() << endl;
-        if (!tree1->GetBranch("x") || !tree2->GetBranch("x")) {
-            cout << "Branch 'x' does not exist in one or both of the trees." << endl;
-            return;
-        }
-        cout << "passed getBranch x test" << endl;
-        if (!tree1->GetBranch("Mx") || !tree2->GetBranch("Mx")) {
-            cout << "Branch 'Mx' for cut condition does not exist in one or both of the trees." << endl;
-            return;
-        }
-        cout << "passed getBranch Mx test" << endl;
-        cutCondition = "";
-        tree1->Draw(drawCommand1.c_str(), cutCondition.c_str());
-        tree2->Draw(drawCommand2.c_str(), cutCondition.c_str());
-        cout << "after cutCondition" << endl;
 
         hist1.SetLineColor(kRed);
         hist2.SetLineColor(kBlue);
