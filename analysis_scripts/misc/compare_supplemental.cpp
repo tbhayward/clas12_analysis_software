@@ -1,4 +1,4 @@
-// Created 9/6/23
+// Created 9/7/23
 // Created to compare epi+X and epX nSidis distributions between pass-2 inbending and 
 // inbending supplemental
 // helicity flipped for runs 4859 and 4984 
@@ -338,7 +338,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
 
 
         // Create the legend
-        TLegend *leg1 = new TLegend(0.25, 0.8, 0.9, 0.9);  // Adjust these coordinates as needed
+        TLegend *leg1 = new TLegend(0.5, 0.8, 0.9, 0.9);  // Adjust these coordinates as needed
         leg1->SetBorderSize(1);  // border size
         leg1->SetFillColor(0);  // Transparent fill
         leg1->SetTextSize(0.04);  // text size
