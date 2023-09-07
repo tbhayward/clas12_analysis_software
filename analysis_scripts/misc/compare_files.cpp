@@ -421,9 +421,6 @@ void createHistograms(TTree* tree1, TTree* tree2,
         delete leg1;
         delete leg2;
         delete leg3;
-
-        // Add this line to delete the canvas object
-        delete &canvas;
     }
 }
 
