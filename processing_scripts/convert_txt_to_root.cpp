@@ -130,7 +130,7 @@ int main(int argc, char *argv[]) {
 
     // Declare common variables
     int runnum, evnum, helicity;
-    double beam_pol, target_pol; e_p, e_theta, e_phi, vz_e, Q2, W, Mx, Mx2, x, y, t, tmin;
+    double beam_pol, target_pol, e_p, e_theta, e_phi, vz_e, Q2, W, Mx, Mx2, x, y, t, tmin;
     double z, xF, pT, zeta, eta, phi, DepA, DepB, DepC, DepV, DepW;
     double p_p, p_theta, p_phi, vz_p;
     // Additional variables for two hadrons
