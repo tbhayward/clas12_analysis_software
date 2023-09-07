@@ -49,9 +49,11 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
     for (int entry = 0; entry < tree1->GetEntries(); ++entry) {
         tree1->GetEntry(entry);
 
-        if (runnum == 4859 || runnum == 4984) {
-            helicity=-1*helicity;
-        }
+
+        if (runnum != 4859) { continue; }
+        // if (runnum == 4859 || runnum == 4984) {
+        //     helicity=-1*helicity;
+        // }
 
         if(branch_var < min_val || branch_var > max_val) continue;  
         // Skip entries out of range
