@@ -16,10 +16,9 @@
 
 using namespace std;
 
-std::pair<std::vector<double>, std::vector<double>> calculateAndPlotALU(
+std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calculateAndPlotALU(
     TTree* tree1, const char* branchName, double min_val, double max_val) {
 
-    cout << "Entering calculateAndPlotALU ";
     std::vector<double> ALU_values;
     std::vector<double> ALU_errors;
 
@@ -32,6 +31,9 @@ std::pair<std::vector<double>, std::vector<double>> calculateAndPlotALU(
     std::vector<int> count_beam_pol(6, 0);
     std::vector<double> sum_W_over_A(6, 0.0);
     std::vector<int> count_W_over_A(6, 0);
+    // Declare additional vectors to hold the sum and count of each dynamic bin.
+    std::vector<double> sum_branch_var(6, 0.0);
+    std::vector<int> count_branch_var(6, 0);
 
     // Loop through the tree to fill N_pos and N_neg
     int helicity;
@@ -46,8 +48,6 @@ std::pair<std::vector<double>, std::vector<double>> calculateAndPlotALU(
     for (int entry = 0; entry < tree1->GetEntries(); ++entry) {
         tree1->GetEntry(entry);
 
-        // cout << branchName << " branch_var = " << branch_var << " min_val = " << min_val;
-        // cout << " max_val = " << max_val << " phi = " << phi << " " << endl;
         if(branch_var < min_val || branch_var > max_val) continue;  
         // Skip entries out of range
         if(phi < 0 || phi > 2 * TMath::Pi()) continue;  
@@ -71,6 +71,9 @@ std::pair<std::vector<double>, std::vector<double>> calculateAndPlotALU(
             double W_over_A = (A != 0) ? W / A : 0;
             sum_W_over_A[dyn_bin] += W_over_A;
             count_W_over_A[dyn_bin]++;
+
+            sum_branch_var[dyn_bin] += branch_var;
+            count_branch_var[dyn_bin]++;
         }
 
     }
@@ -99,10 +102,21 @@ std::pair<std::vector<double>, std::vector<double>> calculateAndPlotALU(
             sum_W_over_A[dyn_bin] / count_W_over_A[dyn_bin] : 1.0;
         ALU_values.push_back(A / mean_W_over_A);
         ALU_errors.push_back(A_error / mean_W_over_A);
-        cout << "Made it passed ALUs" << endl;
+    }
+
+    // Declare a new vector to hold the average bin values.
+    std::vector<double> average_bin_values(6, 0.0);
+    // Calculate the average bin values.
+    for (int i = 0; i < 6; ++i) {
+        if (count_branch_var[i] != 0) {
+            average_bin_values[i] = sum_branch_var[i] / count_branch_var[i];
+        } else {
+            average_bin_values[i] = 0.0;
+        }
     }
     
-    return std::make_pair(ALU_values, ALU_errors);
+    // Return all the calculated values and errors, including the average bin values.
+    return std::make_tuple(ALU_values, ALU_errors, average_bin_values);
 }
 
 
@@ -120,18 +134,18 @@ std::map<std::string, HistConfig> histConfigs = {
     {"DepV", {200, 0, 2}},
     {"DepW", {200, 0, 1}},
     {"e_p", {200, 2, 8}},
-    {"e_phi", {200, 0, 360}},
+    {"e_phi", {200, 0, 2 * TMath::Pi()}},
     {"eta", {200, -1, 3}},
-    {"e_theta", {200, 0, 40}}, // Convert degree to radian
+    {"e_theta", {200, 0, 2 * TMath::Pi() / 180 * 40}}, // Convert degree to radian
     {"evnum", {200, 0, 0}},
     {"helicity", {2, -2, 2}},
-    {"Mx", {200, -4, 3}},
+    {"Mx", {200, 0, 3}},
     {"Mx2", {200, -10, 10}},
-    {"phi", {200, 0, 2 * M_PI}},
+    {"phi", {200, 0, 2 * TMath::Pi()}},
     {"p_p", {200, 0, 6}},
-    {"p_phi", {200, 0, 360}},
+    {"p_phi", {200, 0, 2 * TMath::Pi()}},
     {"pT", {200, 0, 1.2}},
-    {"p_theta", {200, 0, 60}}, // Convert degree to radian
+    {"p_theta", {200, 0, 2 * TMath::Pi() / 180 * 60}}, // Convert degree to radian
     {"Q2", {200, 0, 9}},
     {"runnum", {200, 0, 0}},
     {"t", {200, -10, 1}},
@@ -141,7 +155,7 @@ std::map<std::string, HistConfig> histConfigs = {
     {"W", {200, 2, 4}},
     {"x", {200, 0, 0.6}},
     {"xF", {200, -1, 1}},
-    {"y", {200, 0, 1}},
+    {"y", {200, 0.3, 0.75}},
     {"z", {200, 0, 1}},
     {"zeta", {200, 0.3, 1}}
 };
@@ -208,14 +222,10 @@ void createHistograms(TTree* tree1, TTree* tree2,
     }
 
     for (int i = 0; i < branches1->GetEntries(); ++i) {
-        cout << "we're starting stuff!" << endl;
         const char* branchName = branches1->At(i)->GetName();
         if (std::strcmp(branchName, "runnum") == 0 || std::strcmp(branchName, "evnum") == 0 || 
             std::strcmp(branchName, "phi") == 0 || std::strcmp(branchName, "beam_pol") == 0 || 
-            std::strcmp(branchName, "helicity") == 0
-            // || std::strcmp(branchName, "Mx") == 0
-            // || std::strcmp(branchName, "Mx2") == 0
-            ) {
+            std::strcmp(branchName, "helicity") == 0 ) {
             continue;
         }
 
@@ -267,7 +277,6 @@ void createHistograms(TTree* tree1, TTree* tree2,
         pad1->SetFillColor(0);  // Set the fill color to white for pad1
         pad1->Draw();
         pad1->cd();  // Set current pad to pad1
-        cout << "created pad1" << endl;
 
         // Loop through tree1 and fill hist1
         for (Long64_t i = 0; i < tree1->GetEntries(); i++) {
@@ -383,7 +392,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         double min_val = hist1.GetXaxis()->GetXmin();
         double max_val = hist1.GetXaxis()->GetXmax();
 
-        std::pair<std::vector<double>, std::vector<double>> result1, result2;
+        std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> result1, result2;
 
         result1 = calculateAndPlotALU(tree1, branchName, min_val, max_val);
         result2 = calculateAndPlotALU(tree2, branchName, min_val, max_val);
@@ -394,14 +403,15 @@ void createHistograms(TTree* tree1, TTree* tree2,
         // Populate aluGraph1 and aluGraph2 using result1 and result2
         // (This part can be put into a loop or function for efficiency)
         for (int dyn_bin = 0; dyn_bin < 6; ++dyn_bin) {
-            double bin_center = min_val + (dyn_bin + 0.5) * (max_val - min_val) / 6;
-            aluGraph1.SetPoint(dyn_bin, bin_center, result1.first[dyn_bin]);
-            aluGraph1.SetPointError(dyn_bin, 0, result1.second[dyn_bin]);
+            // Use average_bin_values instead of bin_center
+            aluGraph1.SetPoint(dyn_bin, average_bin_values1[dyn_bin], 
+                std::get<0>(result1)[dyn_bin]);
+            aluGraph1.SetPointError(dyn_bin, 0, std::get<1>(result1)[dyn_bin]);
             
-            aluGraph2.SetPoint(dyn_bin, bin_center + offset, result2.first[dyn_bin]); // Add offset
-            aluGraph2.SetPointError(dyn_bin, 0, result2.second[dyn_bin]);
+            aluGraph2.SetPoint(dyn_bin, average_bin_values2[dyn_bin] + offset, 
+                std::get<0>(result2)[dyn_bin]);
+            aluGraph2.SetPointError(dyn_bin, 0, std::get<1>(result2)[dyn_bin]);
         }
-        
 
         aluGraph1.SetLineColor(kRed); aluGraph1.SetMarkerColor(kRed);
         aluGraph1.SetMarkerStyle(20);
@@ -412,7 +422,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         aluGraph2.SetMarkerSize(1.1);
 
         aluGraph1.Draw("AP");
-        aluGraph1.GetYaxis()->SetRangeUser(-0.04, 0.04);
+        aluGraph1.GetYaxis()->SetRangeUser(-0.05, 0.05);
         aluGraph1.GetYaxis()->SetTitle("F_{LU}^{sin#phi} / F_{UU}");
         aluGraph1.GetXaxis()->SetTitle(formattedBranchName.c_str());
         aluGraph1.SetTitle("");  // Remove title
@@ -442,11 +452,8 @@ void createHistograms(TTree* tree1, TTree* tree2,
         // Draw the legend
         leg3->Draw("same");
 
-
         // Save the canvas
         canvas.SaveAs(Form("%s/%s.png", outDir, branchName));
-
-        cout << "We're about to delete stuff!" << endl;
 
         // Delete or remove from directory all dynamically created objects
         hist1.SetDirectory(0);
