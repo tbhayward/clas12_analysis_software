@@ -46,8 +46,8 @@ std::pair<std::vector<double>, std::vector<double>> calculateAndPlotALU(
     for (int entry = 0; entry < tree1->GetEntries(); ++entry) {
         tree1->GetEntry(entry);
 
-        cout << branchName << " branch_var = " << branch_var << " min_val = " << min_val;
-        cout << " max_val = " << max_val << " phi = " << phi << " " << endl;
+        // cout << branchName << " branch_var = " << branch_var << " min_val = " << min_val;
+        // cout << " max_val = " << max_val << " phi = " << phi << " " << endl;
         if(branch_var < min_val || branch_var > max_val) continue;  
         // Skip entries out of range
         if(phi < 0 || phi > 2 * TMath::Pi()) continue;  
@@ -100,7 +100,7 @@ std::pair<std::vector<double>, std::vector<double>> calculateAndPlotALU(
             sum_W_over_A[dyn_bin] / count_W_over_A[dyn_bin] : 1.0;
         ALU_values.push_back(A / mean_W_over_A);
         ALU_errors.push_back(A_error / mean_W_over_A);
-
+        cout << "Made it passed ALUs" << endl;
     }
     
     return std::make_pair(ALU_values, ALU_errors);
@@ -209,7 +209,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
     }
 
     // for (int i = 0; i < branches1->GetEntries(); ++i) {
-    for (int i = 15; i < 16; ++i) {
+    for (int i = 14; i < 16; ++i) {
 
         const char* branchName = branches1->At(i)->GetName();
         if (std::strcmp(branchName, "runnum") == 0 || std::strcmp(branchName, "evnum") == 0 || 
