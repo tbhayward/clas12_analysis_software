@@ -264,6 +264,14 @@ void createHistograms(TTree* tree1, TTree* tree2,
         }
 
         cout << "before, cutCondition = " << cutCondition.c_str() << endl;
+        if(tree1 == nullptr) {
+            cout << "tree1 is nullptr. Cannot proceed with Draw()."    return;
+        }
+        if(tree2 == nullptr) {
+            cout << "tree2 is nullptr. Cannot proceed with Draw()."
+            return;
+        }
+        
         tree1->Draw(drawCommand1.c_str(), cutCondition.c_str());
         tree2->Draw(drawCommand2.c_str(), cutCondition.c_str());
         cout << "after cutCondition" << endl;
