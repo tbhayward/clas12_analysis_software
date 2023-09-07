@@ -397,6 +397,10 @@ void createHistograms(TTree* tree1, TTree* tree2,
         result1 = calculateAndPlotALU(tree1, branchName, min_val, max_val);
         result2 = calculateAndPlotALU(tree2, branchName, min_val, max_val);
 
+        // Extract the average_bin_values
+        std::vector<double> average_bin_values1 = std::get<2>(result1);
+        std::vector<double> average_bin_values2 = std::get<2>(result2);
+        
         TGraphErrors aluGraph1(6), aluGraph2(6);  // We have 6 dynamic bins for each
 
         double offset = 0.1 * ((max_val - min_val) / 6);  // 10% of bin width
