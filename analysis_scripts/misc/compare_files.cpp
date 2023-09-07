@@ -265,7 +265,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
             drawCommand2 = Form("%s * (180 / TMath::Pi())>>%s_2", branchName, branchName);
         }
 
-        cout << "before, cutCondition = " << cutCondition.c_str() << endl;
+        cout << "we're on " << branchName << " before, cutCondition = " << cutCondition.c_str() << endl;
     
         tree1->Draw(drawCommand1.c_str(), cutCondition.c_str());
         tree2->Draw(drawCommand2.c_str(), cutCondition.c_str());
