@@ -209,7 +209,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         const char* branchName = branches1->At(i)->GetName();
         if (std::strcmp(branchName, "runnum") == 0 || std::strcmp(branchName, "evnum") == 0 || 
             std::strcmp(branchName, "phi") == 0 || std::strcmp(branchName, "beam_pol") == 0 || 
-            std::strcmp(branchName, "helicity" == 0) || std::strcmp(branchName, "Mx2") == 0) {
+            std::strcmp(branchName, "helicity" == 0 || std::strcmp(branchName, "Mx2") == 0) {
             continue;
         }
 
