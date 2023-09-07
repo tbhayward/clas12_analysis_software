@@ -400,7 +400,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         // Extract the average_bin_values
         std::vector<double> average_bin_values1 = std::get<2>(result1);
         std::vector<double> average_bin_values2 = std::get<2>(result2);
-        
+
         TGraphErrors aluGraph1(6), aluGraph2(6);  // We have 6 dynamic bins for each
 
         double offset = 0.1 * ((max_val - min_val) / 6);  // 10% of bin width
@@ -426,7 +426,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         aluGraph2.SetMarkerSize(1.1);
 
         aluGraph1.Draw("AP");
-        aluGraph1.GetYaxis()->SetRangeUser(-0.05, 0.05);
+        aluGraph1.GetYaxis()->SetRangeUser(-0.1, 0.1);
         aluGraph1.GetYaxis()->SetTitle("F_{LU}^{sin#phi} / F_{UU}");
         aluGraph1.GetXaxis()->SetTitle(formattedBranchName.c_str());
         aluGraph1.SetTitle("");  // Remove title
