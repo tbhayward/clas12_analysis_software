@@ -46,8 +46,8 @@ std::pair<std::vector<double>, std::vector<double>> calculateAndPlotALU(
     for (int entry = 0; entry < tree1->GetEntries(); ++entry) {
         tree1->GetEntry(entry);
 
-        cout << "branch_var = " << branch_var << " min_val = " << min_val << " max_val = ";
-        cout << max_val << " phi = " << phi << " ";
+        cout << branchName << " branch_var = " << branch_var << " min_val = " << min_val;
+        cout << " max_val = " << max_val << " phi = " << phi << " " << endl;
         if(branch_var < min_val || branch_var > max_val) continue;  
         // Skip entries out of range
         if(phi < 0 || phi > 2 * TMath::Pi()) continue;  
@@ -59,6 +59,7 @@ std::pair<std::vector<double>, std::vector<double>> calculateAndPlotALU(
         if(dyn_bin < 0 || dyn_bin >= 6) continue;  // Skip invalid indices
         if(phi_bin < 0 || phi_bin >= 12) continue;  // Skip invalid indices
 
+        cout << "Made it passed skips" << endl;
         if (helicity > 0) {
             N_pos[dyn_bin][phi_bin]++;
         } else if (helicity < 0) {
@@ -106,7 +107,6 @@ std::pair<std::vector<double>, std::vector<double>> calculateAndPlotALU(
 }
 
 
-
 struct HistConfig {
     int bins;
     double min;
@@ -144,7 +144,7 @@ std::map<std::string, HistConfig> histConfigs = {
     {"xF", {200, -1, 1}},
     {"y", {200, 0, 1}},
     {"z", {200, 0, 1}},
-    {"zeta", {200, 0, 1}}
+    {"zeta", {200, 0.3, 1}}
 };
 
 std::string formatBranchName(const std::string& original) {
@@ -208,7 +208,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         return;
     }
 
-    for (int i = 10; i < branches1->GetEntries(); ++i) {
+    for (int i = 11; i < branches1->GetEntries(); ++i) {
 
         const char* branchName = branches1->At(i)->GetName();
         if (std::strcmp(branchName, "runnum") == 0 || std::strcmp(branchName, "evnum") == 0 || 
