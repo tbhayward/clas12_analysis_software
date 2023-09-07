@@ -460,7 +460,6 @@ void createHistograms(TTree* tree1, TTree* tree2,
         delete pad2;
         delete pad3;
         delete leg1;
-        delete leg2;
         delete leg3;
     }
 }
