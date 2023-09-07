@@ -6,6 +6,68 @@
 
 using namespace std;
 
+struct RunInfo {
+      int runnum;
+      float total_charge;
+      float positive_charge;
+      float negative_charge;
+      float target_polarization;
+      float target_polarization_uncertainty;
+};
+
+// Declare a vector to store the run information
+std::vector<RunInfo> run_info_list;
+
+void load_run_info_from_csv(const std::string& filename) {
+  // Open the input file with the given filename
+  std::ifstream file(filename);
+
+  // Declare a string to store each line read from the file
+  std::string line;
+
+  // Loop through each line in the file until there are no more lines left to read
+  while (std::getline(file, line)) {
+    // If the line is empty or starts with a '#' (comment), skip to the next line
+    if (line.empty() || line[0] == '#') { continue; }
+
+    // Use a stringstream to split the line by commas
+    std::stringstream ss(line);
+
+    // Declare a struct to store the run information
+    RunInfo run_info;
+
+    // Declare a string to store each piece of information read from the stringstream
+    std::string info;
+
+    // Read the run number from the stringstream and convert it to an integer
+    std::getline(ss, info, ',');
+    run_info.runnum = std::stoi(info);
+
+    // Read the total charge from the stringstream and convert it to a float
+    std::getline(ss, info, ',');
+    run_info.total_charge = std::stof(info);
+
+    // Read the positive charge from the stringstream and convert it to a float
+    std::getline(ss, info, ',');
+    run_info.positive_charge = std::stof(info);
+
+    // Read the negative charge from the stringstream and convert it to a float
+    std::getline(ss, info, ',');
+    run_info.negative_charge = std::stof(info);
+
+    // Read the target polarization from the stringstream and convert it to a float
+    std::getline(ss, info, ',');
+    run_info.target_polarization = std::stof(info);
+
+    // Read the target polarization from the stringstream and convert it to a float
+    std::getline(ss, info, ',');
+    run_info.target_polarization_uncertainty = std::stof(info);
+
+    // Add the struct to the run_info_list vector
+    run_info_list.push_back(run_info);
+  }
+}
+
 // function to get tmin 
 double gettmin(double x) {
     double mp = 0.938272; // proton mass in GeV
@@ -68,7 +130,7 @@ int main(int argc, char *argv[]) {
 
     // Declare common variables
     int runnum, evnum, helicity;
-    double beam_pol, e_p, e_theta, e_phi, vz_e, Q2, W, Mx, Mx2, x, y, t, tmin;
+    double beam_pol, target_pol; e_p, e_theta, e_phi, vz_e, Q2, W, Mx, Mx2, x, y, t, tmin;
     double z, xF, pT, zeta, eta, phi, DepA, DepB, DepC, DepV, DepW;
     double p_p, p_theta, p_phi, vz_p;
     // Additional variables for two hadrons
@@ -84,6 +146,7 @@ int main(int argc, char *argv[]) {
         tree->Branch("evnum", &evnum, "evnum/I");
         tree->Branch("helicity", &helicity, "helicity/I");
         tree->Branch("beam_pol", &beam_pol, "beam_pol/D");
+        tree->Branch("target_pol", &target_pol, "target_pol/D");
         tree->Branch("e_p", &e_p, "e_p/D");
         tree->Branch("e_theta", &e_theta, "e_theta/D");
         tree->Branch("e_phi", &e_phi, "e_phi/D");
@@ -105,6 +168,7 @@ int main(int argc, char *argv[]) {
         tree->Branch("evnum", &evnum, "evnum/I");
         tree->Branch("helicity", &helicity, "helicity/I");
         tree->Branch("beam_pol", &beam_pol, "beam_pol/D");
+        tree->Branch("target_pol", &target_pol, "target_pol/D");
         tree->Branch("e_p", &e_p, "e_p/D");
         tree->Branch("e_theta", &e_theta, "e_theta/D");
         tree->Branch("e_phi", &e_phi, "e_phi/D");
@@ -142,6 +206,7 @@ int main(int argc, char *argv[]) {
         tree->Branch("evnum", &evnum, "evnum/I");
         tree->Branch("helicity", &helicity, "helicity/I");
         tree->Branch("beam_pol", &beam_pol, "beam_pol/D");
+        tree->Branch("target_pol", &target_pol, "target_pol/D");
         tree->Branch("e_p", &e_p, "e_p/D");
         tree->Branch("e_theta", &e_theta, "e_theta/D");
         tree->Branch("e_phi", &e_phi, "e_phi/D");
@@ -190,13 +255,28 @@ int main(int argc, char *argv[]) {
         tree->Branch("DepW", &DepW, "DepW/D");
     }
 
+    // load run infrom from external csv file
+    string package_location = "/u/home/thayward/";
+    string csv_location="clas12_analysis_software/analysis_scripts/run_info_rgc.csv"
+    load_run_info_from_csv(package_location+csv_location);
+
     // Loop to read each line from the text file and fill the TTree based on hadron_count
     if (hadron_count == 0) {
         while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             Q2 >> W >> Mx >> Mx2 >> x >> y) {
+
             beam_pol = getPol(runnum);
+            if (runnum < 16000) { target_pol = 0; }
+            else { for (const auto& run_info : run_info_list) {
+                if (run_info.runnum == runnum) {
+                    target_pol = run_info.target_polarization;
+                    break;
+                }
+            }
+
             t = gett(e_p, e_theta); // for inclusive we calculate t with electron kinematics
             tmin = gettmin(x);  
+
             tree->Fill(); // Fill the tree with the read data
         }
     } 
@@ -206,8 +286,17 @@ int main(int argc, char *argv[]) {
             pT >> zeta >> eta >> phi >> DepA >> DepB >> DepC >> DepV >> DepW) {
 
             beam_pol = getPol(runnum);
+            if (runnum < 16000) { target_pol = 0; }
+            else { for (const auto& run_info : run_info_list) {
+                if (run_info.runnum == runnum) {
+                    target_pol = run_info.target_polarization;
+                    break;
+                }
+            }
+
             t = gett(p_p, p_theta); // for SIDIS we calculate t with proton kinematics
             tmin = gettmin(x); 
+
             tree->Fill(); // Fill the tree with the read data
         }
     } 
@@ -218,9 +307,19 @@ int main(int argc, char *argv[]) {
             pTpT >> zeta1 >> zeta2 >> eta1 >> eta2 >> Delta_eta >> eta1_gN >> eta2_gN >> 
             phi1 >> phi2 >> Delta_phi >> phih >> phiR >> theta >> 
             DepA >> DepB >> DepC >> DepV >> DepW) {
+
             beam_pol = getPol(runnum);
+            if (runnum < 16000) { target_pol = 0; }
+            else { for (const auto& run_info : run_info_list) {
+                if (run_info.runnum == runnum) {
+                    target_pol = run_info.target_polarization;
+                    break;
+                }
+            }
+
             t = gett(p2_p, p2_theta); // for SIDIS we calculate t with proton kinematics
             tmin = gettmin(x); 
+
             tree->Fill(); // Fill the tree with the read data
         }
     }
