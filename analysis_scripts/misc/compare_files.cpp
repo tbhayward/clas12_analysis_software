@@ -59,7 +59,6 @@ std::pair<std::vector<double>, std::vector<double>> calculateAndPlotALU(
         if(dyn_bin < 0 || dyn_bin >= 6) continue;  // Skip invalid indices
         if(phi_bin < 0 || phi_bin >= 12) continue;  // Skip invalid indices
 
-        cout << "Made it passed skips" << endl;
         if (helicity > 0) {
             N_pos[dyn_bin][phi_bin]++;
         } else if (helicity < 0) {
@@ -209,7 +208,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
     }
 
     // for (int i = 0; i < branches1->GetEntries(); ++i) {
-    for (int i = 14; i < 16; ++i) {
+    for (int i = 13; i < 17; ++i) {
 
         const char* branchName = branches1->At(i)->GetName();
         if (std::strcmp(branchName, "runnum") == 0 || std::strcmp(branchName, "evnum") == 0 || 
