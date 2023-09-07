@@ -330,7 +330,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         hist2.SetStats(0);
 
         hist1.GetXaxis()->SetTitle(formattedBranchName.c_str());
-        hist1.GetYaxis()->SetTitle("Counts");
+        hist1.GetYaxis()->SetTitle("Normalized counts");
 
         double max_value = std::max(hist1.GetMaximum(), hist2.GetMaximum());
         hist1.SetMaximum(max_value * 1.2);
