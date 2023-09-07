@@ -224,7 +224,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
     for (int i = 0; i < branches1->GetEntries(); ++i) {
         const char* branchName = branches1->At(i)->GetName();
         if (std::strcmp(branchName, "runnum") == 0 || std::strcmp(branchName, "evnum") == 0 || 
-            std::strcmp(branchName, "beam_pol") == 0 || 
+            std::strcmp(branchName, "phi") == 0 || std::strcmp(branchName, "beam_pol") == 0 || 
             std::strcmp(branchName, "helicity") == 0 ) {
             continue;
         }
@@ -267,7 +267,6 @@ void createHistograms(TTree* tree1, TTree* tree2,
         }
         double edges[nQuantiles + 1];
         tempHist.GetQuantiles(nQuantiles, edges, quantiles);
-        cout << "passed the quantiles" << endl;
 
 
         std::string formattedBranchName = formatBranchName(branchName);
@@ -379,8 +378,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         // Draw the legend
         leg2->Draw("same");
 
-        if (std::strcmp(branchName, "phi") != 0) {
-            
+
         // Third Panel for ALU calculations and fitting
         canvas.cd();  // Switch back to the main canvas before creating a new pad
         TPad *pad3 = new TPad("pad3", "The pad with ALU", 0.7, 0.0, 1.0, 1.0, 21);
@@ -456,7 +454,6 @@ void createHistograms(TTree* tree1, TTree* tree2,
         leg3->SetTextSize(0.04);  // text size
         // Draw the legend
         leg3->Draw("same");
-        }
 
         // Save the canvas
         canvas.SaveAs(Form("%s/%s.png", outDir, branchName));
@@ -468,9 +465,10 @@ void createHistograms(TTree* tree1, TTree* tree2,
 
         delete pad1;
         delete pad2;
+        delete pad3;
         delete leg1;
         delete leg2;
-        // if (std::strcmp(branchName, "phi") != 0) { delete pad3; delete leg3; }
+        delete leg3;
     }
 }
 
