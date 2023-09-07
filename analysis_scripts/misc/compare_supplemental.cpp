@@ -338,7 +338,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
 
 
         // Create the legend
-        TLegend *leg1 = new TLegend(0.5, 0.8, 0.9, 0.9);  // Adjust these coordinates as needed
+        TLegend *leg1 = new TLegend(0.6, 0.8, 0.9, 0.9);  // Adjust these coordinates as needed
         leg1->SetBorderSize(1);  // border size
         leg1->SetFillColor(0);  // Transparent fill
         leg1->SetTextSize(0.04);  // text size
@@ -482,7 +482,7 @@ void compare_supplemental(std::string root_file1_path, std::string root_file2_pa
         cout << "Error getting trees from ROOT files." << endl;
     }
 
-    createHistograms(tree1, tree2, data_set_1_name, data_set_2_name, "output");
+    createHistograms(tree1, tree2, data_set_1_name, data_set_2_name, "output_2");
 
     file1->Close(); delete file1;
     file2->Close(); delete file2;
