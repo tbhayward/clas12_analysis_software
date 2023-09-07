@@ -343,10 +343,8 @@ void createHistograms(TTree* tree1, TTree* tree2,
         leg1->SetFillColor(0);  // Transparent fill
         leg1->SetTextSize(0.04);  // text size
         // Add entries for each histogram
-        leg1->AddEntry(&hist1, Form("%s counts: %d", data_set_1_name.c_str(), 
-            int(hist1.GetEntries())), "l");
-        leg1->AddEntry(&hist2, Form("%s counts: %d", data_set_2_name.c_str(), 
-            int(hist2.GetEntries())), "l");
+        leg1->AddEntry(&hist1, Form("%s", data_set_1_name.c_str()), "l");
+        leg1->AddEntry(&hist2, Form("%s", data_set_2_name.c_str()), "l");
         // Draw the legend
         leg1->Draw("same");
 
@@ -372,20 +370,6 @@ void createHistograms(TTree* tree1, TTree* tree2,
         ratioHist.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
         ratioHist.Draw("HIST");
         ratioHist.SetStats(0);  // Disable the statistical box
-
-        // Create the legend
-        TLegend *leg2 = new TLegend(0.45, 0.8, 0.9, 0.9);  // Adjust these values as needed
-        leg2->SetBorderSize(1);  // border size
-        leg2->SetFillColor(0);  // Transparent fill
-        leg2->SetTextSize(0.04);  // text size
-
-        // Add text as legend entries. No associated object, so the last parameter is "".
-        double overallRatio = (hist2.GetEntries() != 0 && hist1.GetEntries() != 0) ? 
-                    hist2.GetEntries() / hist1.GetEntries() : 0;
-        leg2->AddEntry((TObject*)0, Form("Overall Ratio: %.2f", overallRatio), "");
-
-        // Draw the legend
-        leg2->Draw("same");
 
 
         // Third Panel for ALU calculations and fitting
