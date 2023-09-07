@@ -255,17 +255,18 @@ void createHistograms(TTree* tree1, TTree* tree2,
         cout << "created pad1" << endl;
         std::string drawCommand1 = Form("%s>>%s_1", branchName, branchName);
         std::string drawCommand2 = Form("%s>>%s_2", branchName, branchName);
-        cout << "passed the draw command" << endl;
+
         // Convert to degrees if necessary
         if (strcmp(branchName, "e_phi") == 0 || strcmp(branchName, "e_theta") == 0 ||
             strcmp(branchName, "p_phi") == 0 || strcmp(branchName, "p_theta") == 0) {
             drawCommand1 = Form("%s * (180 / TMath::Pi())>>%s_1", branchName, branchName);
             drawCommand2 = Form("%s * (180 / TMath::Pi())>>%s_2", branchName, branchName);
         }
-
+        cout << "passed the draw command" << endl;
+        
         tree1->Draw(drawCommand1.c_str(), cutCondition.c_str());
         tree2->Draw(drawCommand2.c_str(), cutCondition.c_str());
-        
+
         hist1.SetLineColor(kRed);
         hist2.SetLineColor(kBlue);
         hist1.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
