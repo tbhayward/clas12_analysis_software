@@ -233,10 +233,21 @@ void createHistograms(TTree* tree1, TTree* tree2,
         tree2->SetBranchAddress(branchName, &branchValue);
         tree2->SetBranchAddress("Mx", &Mx);
 
-        // Draw a temporary histogram to get statistics
-        TH1F tempHist(Form("temp_%s", branchName), "", 1000, config.min, config.max);  
-        // 1000 bins for better statistics
-        tree1->Draw(Form("%s>>temp_%s", branchName, branchName), cutCondition.c_str());
+        // Declare a temporary histogram to get statistics
+        TH1F tempHist(Form("temp_%s", branchName), "", 1000, config.min, config.max);
+
+        // Loop through tree1 and fill tempHist
+        for (Long64_t i = 0; i < tree1->GetEntries(); i++) {
+            tree1->GetEntry(i);
+            if (std::strcmp(branchName, "Mx") != 0 && std::strcmp(branchName, "Mx2") != 0) {
+                if (Mx > 1.5) {
+                    tempHist.Fill(branchValue);
+                }
+            } else {
+                // handle the special case for Mx and Mx2
+                tempHist.Fill(branchValue);
+            }
+        }
 
         // Find the quantile edges
         int nQuantiles = 6;
@@ -248,6 +259,8 @@ void createHistograms(TTree* tree1, TTree* tree2,
         double edges[nQuantiles + 1];
         tempHist.GetQuantiles(nQuantiles, edges, quantiles);
         cout << "passed the quantiles" << endl;
+
+        
         std::string formattedBranchName = formatBranchName(branchName);
         TCanvas canvas(branchName, "Canvas", 1600, 600);  // Width doubled for side-by-side panels
         TPad *pad1 = new TPad("pad1", "The pad with the function",0.0,0.0,0.33,1.0,21);
