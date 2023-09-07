@@ -19,6 +19,7 @@ using namespace std;
 std::pair<std::vector<double>, std::vector<double>> calculateAndPlotALU(
     TTree* tree1, const char* branchName, double min_val, double max_val) {
 
+    cout << "Entering calculateAndPlotALU ";
     std::vector<double> ALU_values;
     std::vector<double> ALU_errors;
 
@@ -45,6 +46,7 @@ std::pair<std::vector<double>, std::vector<double>> calculateAndPlotALU(
     for (int entry = 0; entry < tree1->GetEntries(); ++entry) {
         tree1->GetEntry(entry);
 
+        cout << branchVar << " " << min_val << " " << max_val << " " << phi << " ";
         if(branch_var < min_val || branch_var > max_val) continue;  
         // Skip entries out of range
         if(phi < 0 || phi > 2 * TMath::Pi()) continue;  
@@ -205,13 +207,15 @@ void createHistograms(TTree* tree1, TTree* tree2,
         return;
     }
 
-    for (int i = 0; i < branches1->GetEntries(); ++i) {
+    for (int i = 10; i < branches1->GetEntries(); ++i) {
 
         const char* branchName = branches1->At(i)->GetName();
         if (std::strcmp(branchName, "runnum") == 0 || std::strcmp(branchName, "evnum") == 0 || 
             std::strcmp(branchName, "phi") == 0 || std::strcmp(branchName, "beam_pol") == 0 || 
-            std::strcmp(branchName, "helicity") == 0 || std::strcmp(branchName, "Mx") == 0 ||
-            std::strcmp(branchName, "Mx2") == 0) {
+            std::strcmp(branchName, "helicity") == 0
+            // || std::strcmp(branchName, "Mx") == 0
+            // || std::strcmp(branchName, "Mx2") == 0
+            ) {
             continue;
         }
 
