@@ -12,6 +12,7 @@
 #include <TFile.h>
 #include <TTree.h>
 #include <TMath.h>
+#include <TF1.h> 
 using namespace std;
 
 
