@@ -611,6 +611,8 @@ void performChi2Fits(TTree* data, const char* output_file, const char* kinematic
 
   }
 
+
+  delete hist;
 }
 
 int main(int argc, char *argv[]) {
