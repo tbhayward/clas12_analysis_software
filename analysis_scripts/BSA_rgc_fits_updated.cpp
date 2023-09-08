@@ -231,8 +231,7 @@ bool applyKinematicCuts(TTree* data, int entry, int currentFits, bool isMC) {
   return goodEvent;  
 }
 
-// TH1D* createHistogramForBin
-int createHistogramForBin(TTree* data, const char* histName, int binIndex, 
+TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex, 
   const std::string& prefix, int asymmetry_index) {
 
   // Determine the variable range for the specified bin
