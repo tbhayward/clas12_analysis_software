@@ -263,6 +263,7 @@ int createHistogramForBin(TTree* data, const char* histName, int binIndex,
     if (applyKinematicCuts(data, entry, currentFits, 0) && currentVariable >= varMin && 
       currentVariable < varMax) {
       sumVariable+=currentVariable;
+    }
 
   }
 
