@@ -244,8 +244,10 @@ int main(int argc, char *argv[]) {
   TFile* data_file = new TFile(argv[1], "READ");
   TFile* mc_file = new TFile(argv[2], "READ");
   if (!data_file->IsOpen() || !mc_file->IsOpen()) {
-      cout << "Error opening ROOT files (is the location correct?). Exiting." << endl;
-      return 2;
+    cout << "Error opening ROOT files (is the location correct?). Exiting." << endl;
+    return 2;
+  } else {
+    cout << "ROOT files opened successfully." << endl;
   }
   cout << endl << endl;
 
@@ -253,7 +255,10 @@ int main(int argc, char *argv[]) {
   TTree* mc = (TTree*)mc_file->Get("PhysicsEvents");
 
   if (!data || !mc) {
-      cout << "Error getting trees from ROOT files." << endl;
+    cout << "Error getting trees from ROOT files." << endl;
+    return 3;
+  } else {
+    cout << "Trees successfully extracted from ROOT files." << endl;
   }
 
   for (size_t i = 0; i < allBins.size(); ++i) {
