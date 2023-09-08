@@ -17,6 +17,7 @@
 #include <TGraphErrors.h>
 #include <TPaveStats.h>
 #include <TText.h>
+#include <TApplication.h>
 using namespace std;
 
 
@@ -736,15 +737,18 @@ void performChi2Fits(TTree* data, const char* output_file, const char* kinematic
 
 }
 
-int main(int argc, char *argv[]) {
+// int main(int argc, char *argv[]) {
+void BSA_rgc_fits(const char* data_file, const char* mc_file, const char* output_file, 
+  const char* kinematic_file) {
+  TApplication theApp("App", nullptr, nullptr);
 
   // Check for correct number of command line arguments
-    if (argc != 5) {
-        cout << "Usage: " << argv[0];
-        cout << " <data_root_file> <mc_root_file> ";
-        cout << " <output_asymmetry_file> <output_kinematic_file>" << endl;
-        return 1;
-    }
+  if (argc != 5) {
+      cout << "Usage: " << argv[0];
+      cout << " <data_root_file> <mc_root_file> ";
+      cout << " <output_asymmetry_file> <output_kinematic_file>" << endl;
+      return 1;
+  }
 
   const char* output_file = argv[3];
   // Clear the contents of the output_file
