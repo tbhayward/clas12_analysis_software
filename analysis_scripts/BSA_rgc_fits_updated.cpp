@@ -438,8 +438,8 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   int helicity; data->SetBranchAddress("helicity", &helicity); // beam helicity 
   double beam_pol; data->SetBranchAddress("beam_pol", &beam_pol); // beam polarization
   double target_pol; data->SetBranchAddress("target_pol", &target_pol); // target polarization
-  double phi; data->SetBranchAddress("phi", &phi); // trento phi
-  double xF; data->SetBranchAddress("xF", &xF); // xF
+  double xF; data->SetBranchAddress("xF", &xF); // trento phi
+  double phi; data->SetBranchAddress("phi", &phi); // xF
 
 
   // for (int entry = 0; entry < data->GetEntries(); ++entry) {
