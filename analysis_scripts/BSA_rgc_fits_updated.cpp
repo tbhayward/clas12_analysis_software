@@ -182,6 +182,21 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   int numEventsPosTarget = 0;
   int numEventsNegTarget = 0;
 
+  // Delete the temporary positive and negative helicity histograms
+  delete histPosPos;
+  delete histPosNeg;
+  delete histNegPos;
+  delete histNegNeg;
+
+
+  // Create the asymmetry histogram
+  int numBins = histPosPos->GetNbinsX();
+  TH1D* histAsymmetry = new TH1D(Form("%s_asymmetry", histName), "", 
+    numBins, 0, 2 * TMath::Pi());
+  
+  // Return the final asymmetry histogram
+  return histAsymmetry;
+
 }
 
 // Function to fit the beam-spin asymmetry histogram
