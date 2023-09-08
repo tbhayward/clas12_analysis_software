@@ -240,13 +240,20 @@ int main(int argc, char *argv[]) {
   cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << " (nc)."<<endl;
 
   // Load data and mc root files
-  TFile* data = new TFile(argv[1], "READ");
-  TFile* mc = new TFile(argv[2], "READ");
-  if (!data->IsOpen() || !mc->IsOpen()) {
+  TFile* data_file = new TFile(argv[1], "READ");
+  TFile* mc_file = new TFile(argv[2], "READ");
+  if (!data_file->IsOpen() || !mc_file->IsOpen()) {
       cout << "Error opening ROOT files (is the location correct?). Exiting." << endl;
       return 2;
   }
   cout << endl << endl;
+
+  TTree* data = (TTree*)data_file->Get("PhysicsEvents");
+  TTree* mc = (TTree*)mc_file->Get("PhysicsEvents");
+
+  if (!data || !mc) {
+      cout << "Error getting trees from ROOT files." << endl;
+  }
 
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
