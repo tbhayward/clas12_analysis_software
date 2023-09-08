@@ -434,14 +434,14 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   int numEventsNegTarget = 0;
 
   double currentVariable = 63;
-  data->ResetBranchAddresses();
   data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable);
   
 
   int helicity; data->SetBranchAddress("helicity", &helicity); // beam helicity 
   double beam_pol; data->SetBranchAddress("beam_pol", &beam_pol); // beam polarization
   double target_pol; data->SetBranchAddress("target_pol", &target_pol); // target polarization
-  double xF; data->SetBranchAddress("xF", &xF); // xF
+  // double xF; data->SetBranchAddress("xF", &xF); // xF
+  double xF; data->SetBranchAddress(propertyNames[currentFits].c_str(), &xF); // xF
   double phi; data->SetBranchAddress("phi", &phi); // trento phi
 
   for (int entry = 0; entry < 10; ++entry) {  // Just read the first 10 entries for debugging
