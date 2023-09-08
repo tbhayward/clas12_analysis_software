@@ -644,9 +644,14 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   // Set the title to the title string
   graph->SetTitle(title.c_str());
   cout << "We're here " << filename.c_str() << endl;
+  if (!canvas) {
+    std::cerr << "Canvas is null!" << std::endl;
+    return;
+}
+
   // Save the canvas as a PNG
   canvas->SaveAs(filename.c_str());
-  cout << "We're also here!" << endl;
+
   // Clean up
   delete canvas;
   delete graph;
