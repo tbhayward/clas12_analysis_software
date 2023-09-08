@@ -646,7 +646,7 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   cout << "We're here " << filename.c_str() << endl;
 
   // Save the canvas as a PNG
-  // canvas->SaveAs(filename.c_str());
+  canvas->SaveAs(filename.c_str());
 
   // Clean up
   delete canvas;
