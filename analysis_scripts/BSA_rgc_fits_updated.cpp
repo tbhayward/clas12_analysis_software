@@ -238,8 +238,11 @@ int main(int argc, char *argv[]) {
   TFile* gMC = new TFile(argv[2], "READ");
 
   if (!gData->IsOpen() || !gMC->IsOpen()) {
-        cout << "Error opening ROOT files (is the location correct?). Exiting." << endl;
-        return 2;
-    }
+      cout << "Error opening ROOT files (is the location correct?). Exiting." << endl;
+      return 2;
+  }
 
+
+
+  return 0
 }
