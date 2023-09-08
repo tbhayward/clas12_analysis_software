@@ -608,6 +608,8 @@ void performChi2Fits(TTree* data, const char* output_file, const char* kinematic
 
     // Create a histogram for the current bin
     TH1D* hist = createHistogramForBin(data, histName, i, prefix, asymmetry_index);
+    // Fit the histogram using the fitFunction and get the fit result
+    hist->Fit(fitFunction, "QS");
 
 
 
