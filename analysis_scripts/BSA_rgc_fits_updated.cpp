@@ -160,6 +160,54 @@ void load_run_info_from_csv(const std::string& filename) {
 void performChi2Fits(TTree* data, const char* output_file, const char* kinematic_file,
   const std::string& prefix, int asymmetry_index) {
 
+  // Initialize string streams to store the results for each bin
+  std::ostringstream chi2FitsAStream, chi2FitsBStream, chi2FitsCStream;
+  // std::ostringstream chi2FitsDStream, chi2FitsEStream;
+
+  // Initialize string streams to store the mean variables for each bin
+  std::ostringstream meanVariablesStream;
+  meanVariablesStream << "\\begin{table}[h]" << endl;
+  meanVariablesStream << "\\centering" << endl;
+  meanVariablesStream << "\\begin{tabular}{|c|c|c|c|c|c|c|c|c|c|c|} \\hline" << endl;
+  meanVariablesStream << "Bin & $<Q^2>$ & $<W>$ ";
+  meanVariablesStream << "& $<x_B>$ & $<y>$ & $<z>$ & $<\\zeta>$ & $<P_T>$ ";
+  meanVariablesStream << "& $<x_F>$ & $<t>$ & ";
+  meanVariablesStream << "$<t_{\\text{min}}>$\\\\ \\hline" << endl; 
+
+  // Create a new TF1 object called fitFunction representing the function to fit
+  // and create string stream prefix depending on current asymmetry we're fitting
+  TF1* fitFunction;
+  switch (asymmetry_index) {
+    case 0: // beam-spin asymmetry
+      fitFunction = new TF1("fitFunction", BSA_funcToFit, 0, 2*TMath::Pi(), 2);
+      chi2FitsAStream << prefix << "chi2FitsALUoffset = {";
+      chi2FitsBStream << prefix << "chi2FitsALUsinphi = {";
+      // chi2FitsCStream << prefix << "chi2FitsALUAUUcosphi = {";
+      // chi2FitsDStream << prefix << "chi2FitsALUAUUcos2phi = {";
+      break;
+    case 1: // target-spin asymmetry
+      fitFunction = new TF1("fitFunction", TSA_funcToFit, 0, 2*TMath::Pi(), 3);
+      chi2FitsAStream << prefix << "chi2FitsAULoffset = {";
+      chi2FitsBStream << prefix << "chi2FitsAULsinphi = {";
+      chi2FitsCStream << prefix << "chi2FitsAULsin2phi = {";
+      // chi2FitsDStream << prefix << "chi2FitsAULAUUcosphi = {";
+      // chi2FitsEStream << prefix << "chi2FitsAULAUUcos2phi = {";
+      break;
+    case 2: // double-spin asymmetry
+      fitFunction = new TF1("fitFunction", DSA_funcToFit, 0, 2*TMath::Pi(), 2);
+      chi2FitsAStream << prefix << "chi2FitsALL = {";
+      chi2FitsBStream << prefix << "chi2FitsALLcosphi = {";
+      // chi2FitsCStream << prefix << "chi2FitsALLAUUcosphi = {";
+      // chi2FitsDStream << prefix << "chi2FitsALLAUUcos2phi = {";
+      break;
+    default:
+      cout << "Invalid asymmetry_index! Using default function form of BSA." << endl;
+      fitFunction = new TF1("fitFunction", BSA_funcToFit, 0, 2*TMath::Pi(), 2);
+  }
+
+  // Determine the number of bins
+  size_t numBins = allBins[currentFits].size() - 1;
+
 }
 
 int main(int argc, char *argv[]) {
@@ -250,7 +298,6 @@ int main(int argc, char *argv[]) {
     cout << "ROOT files opened successfully." << endl;
   }
   
-
   TTree* data = (TTree*)data_file->Get("PhysicsEvents");
   TTree* mc = (TTree*)mc_file->Get("PhysicsEvents");
 
