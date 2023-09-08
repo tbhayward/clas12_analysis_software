@@ -159,6 +159,76 @@ void load_run_info_from_csv(const std::string& filename) {
   }
 }
 
+// Apply kinematic cuts to the data
+bool applyKinematicCuts(TTree* data, int entry, int currentFits, bool isMC) {
+
+  bool goodEvent = 0;
+  std::string property = binNames[currentFits];
+  // //
+  // //
+  // //
+  // // epX
+  // if (property == "xF") {
+  //   goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
+  //     data.data.at("y")<0.75;
+  // }
+  // if (property == "Q2bin") {
+  //   goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
+  //     data.data.at("y")<0.75 && data.data.at("x")>0.2 && data.data.at("x")<0.3 &&
+  //     data.data.at("pT")>0.25 && data.data.at("pT")<0.35 && data.data.at("xF")<0;
+  // }
+  // if (property == "PTTFR" || property ==  "xTFR" || property == "zetaTFR" || 
+  //   property == "Q2TFR" || property ==  "x") {
+  //   goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
+  //     data.data.at("y")<0.75 && data.data.at("xF")<0;
+  // }
+  // if (property == "PTCFR" || property == "xCFR" || property == "zetaCFR" ||
+  //   property == "Q2TFR") {
+  //   goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
+  //     data.data.at("y")<0.75 && data.data.at("xF")>0;
+  // } 
+  // //
+  // //
+  // //
+  // // epi+X
+  // if (property == "xFpip") { 
+  //   goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
+  //     data.data.at("y")<0.75;
+  // }
+  // if (property == "PTTFRpip" || property ==  "xTFRpip" || property == "zTFRpip" || 
+  //   property == "Q2TFRpip" || property ==  "xpip") {
+  //   goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
+  //     data.data.at("y")<0.75 && data.data.at("xF")<0;
+  // }
+  // if (property == "PTCFRpip" || property == "xCFRpip" || property == "zCFRpip" ||
+  //   property == "Q2TFRpip") {
+  //   goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
+  //     data.data.at("y")<0.75 && data.data.at("xF")>0;
+  // }
+  // //
+  // //
+  // //
+  // // epi-X
+  // if (property == "xFpim") { 
+  //   goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
+  //     data.data.at("y")<0.75;
+  // }
+  // if (property == "PTTFRpim" || property ==  "xTFRpim" || property == "zTFRpim" || 
+  //   property == "Q2TFRpim" || property ==  "xpim") {
+  //   goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
+  //     data.data.at("y")<0.75 && data.data.at("xF")<0;
+  // }
+  // if (property == "PTCFRpim" || property == "xCFRpim" || property == "zCFRpim" ||
+  //   property == "Q2TFRpim") {
+  //   goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
+  //     data.data.at("y")<0.75 && data.data.at("xF")>0;
+  // } 
+  // if (isMC) { return goodEvent; }
+  // else {return goodEvent && data.data.at("target_pol") != 0; } // if data, skip Pt = 0 (carbon)
+
+  return goodEvent;  
+}
+
 // TH1D* createHistogramForBin
 int createHistogramForBin(TTree* data, const char* histName, int binIndex, 
   const std::string& prefix, int asymmetry_index) {
@@ -189,7 +259,10 @@ int createHistogramForBin(TTree* data, const char* histName, int binIndex,
   // for (int entry = 0; entry < data->GetEntries(); ++entry) {
   for (int entry = 0; entry < 10; ++entry) {
     data->GetEntry(entry);
-    cout << currentVariable << " ";
+    
+    if (applyKinematicCuts(data, entry, currentFits, 0) && currentVariable >= varMin && 
+      currentVariable < varMax) {
+      sumVariable+=currentVariable;
 
   }
 
