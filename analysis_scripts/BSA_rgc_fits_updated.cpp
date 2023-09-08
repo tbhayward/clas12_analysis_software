@@ -254,6 +254,15 @@ void performChi2Fits(TTree* data, const char* output_file, const char* kinematic
   // Determine the number of bins
   size_t numBins = allBins[currentFits].size() - 1;
 
+  // Loop over each bin
+  for (size_t i = 0; i < numBins; ++i) {
+    cout << "Beginning chi2 fit for " << binNames[currentFits]
+      << " bin " << i << ". ";
+    char histName[32];
+    snprintf(histName, sizeof(histName), "hist_%zu", i);
+
+  }
+
 }
 
 int main(int argc, char *argv[]) {
