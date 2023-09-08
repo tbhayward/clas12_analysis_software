@@ -737,9 +737,7 @@ void performChi2Fits(TTree* data, const char* output_file, const char* kinematic
 
 }
 
-// int main(int argc, char *argv[]) {
-void BSA_rgc_fits(const char* data_file, const char* mc_file, const char* output_file, 
-  const char* kinematic_file) {
+int main(int argc, char *argv[]) {
   TApplication theApp("App", nullptr, nullptr);
 
   // Check for correct number of command line arguments
