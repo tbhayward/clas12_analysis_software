@@ -432,7 +432,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   int numEventsPosTarget = 0;
   int numEventsNegTarget = 0;
 
-  double currentVariable;
+  double currentVariable = 63;
   // data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable);
   data->SetBranchAddress("xF", &currentVariable);
 
