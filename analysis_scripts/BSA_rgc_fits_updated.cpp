@@ -308,7 +308,8 @@ void performChi2Fits(TTree* data, const char* output_file, const char* kinematic
     snprintf(histName, sizeof(histName), "hist_%zu", i);
 
     // Create a histogram for the current bin
-    TH1D* hist = createHistogramForBin(data, histName, i, prefix, asymmetry_index);
+    // TH1D* hist = createHistogramForBin(data, histName, i, prefix, asymmetry_index);
+    int hist = createHistogramForBin(data, histName, i, prefix, asymmetry_index);
 
   }
 
