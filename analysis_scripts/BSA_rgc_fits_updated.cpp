@@ -184,7 +184,7 @@ int createHistogramForBin(TTree* data, const char* histName, int binIndex,
   int numEventsNegTarget = 0;
 
   float currentVariable;
-  data->SetBranchAddress(propertyNames[currentFits], &currentVariable);
+  data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable);
 
   // for (int entry = 0; entry < data->GetEntries(); ++entry) {
   for (int entry = 0; entry < 10; ++entry) {
