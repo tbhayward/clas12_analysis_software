@@ -433,8 +433,8 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   int numEventsNegTarget = 0;
 
   double currentVariable = 63;
-  // data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable);
-  data->SetBranchAddress("xF", &currentVariable);
+  data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable);
+  // data->SetBranchAddress("xF", &currentVariable);
 
   int helicity; data->SetBranchAddress("helicity", &helicity); // beam helicity 
   double beam_pol; data->SetBranchAddress("beam_pol", &beam_pol); // beam polarization
