@@ -441,8 +441,8 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   double phi; data->SetBranchAddress("phi", &phi); // trento phi
 
 
-  // for (int entry = 0; entry < data->GetEntries(); ++entry) {
-  for (int entry = 0; entry < 10000; ++entry) {
+  for (int entry = 0; entry < data->GetEntries(); ++entry) {
+  // for (int entry = 0; entry < 100000; ++entry) {
     data->GetEntry(entry);
     
     if (applyKinematicCuts(data, entry, currentFits, 0) && currentVariable >= varMin && 
@@ -645,9 +645,6 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   // Set the title to the title string
   graph->SetTitle(title.c_str());
 
-  std::string input;
-  std::cout << "Press any key to continue...";
-  std::cin >> input;
   // Save the canvas as a PNG
   canvas->SaveAs(filename.c_str());
 
@@ -739,20 +736,25 @@ void performChi2Fits(TTree* data, const char* output_file, const char* kinematic
 
 }
 
-void BSA_rgc_fits_updated(const char* data_file, const char* mc_file, const char* output_file, 
-  const char* kinematic_file) {
+int main(int argc, char *argv[]) {
+  // initialize ROOT application for graphics
+  TApplication theApp("App", nullptr, nullptr);
+  // // Set ROOT to batch mode
+  // gROOT->SetBatch(kTRUE);
 
-  // // Check for correct number of command line arguments
-  // if (argc != 5) {
-  //     cout << "Usage: " << argv[0];
-  //     cout << " <data_root_file> <mc_root_file> ";
-  //     cout << " <output_asymmetry_file> <output_kinematic_file>" << endl;
-  //     return 1;
-  // }
+  // Check for correct number of command line arguments
+  if (argc != 5) {
+      cout << "Usage: " << argv[0];
+      cout << " <data_root_file> <mc_root_file> ";
+      cout << " <output_asymmetry_file> <output_kinematic_file>" << endl;
+      return 1;
+  }
 
+  const char* output_file = argv[3];
   // Clear the contents of the output_file
   std::ofstream ofs(output_file, std::ios::trunc);
   ofs.close();
+  const char* kinematic_file = argv[4];
   // Clear the contents of the kinematic_file
   std::ofstream ofs2(kinematic_file, std::ios::trunc);
   ofs2.close();
@@ -817,17 +819,17 @@ void BSA_rgc_fits_updated(const char* data_file, const char* mc_file, const char
   cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << " (nc)."<< endl << endl;
 
   // Load data and mc root files
-  TFile* data_tfile = new TFile(data_file, "READ");
-  TFile* mc_tfile = new TFile(mc_file, "READ");
-  if (!data_tfile->IsOpen() || !mc_tfile->IsOpen()) {
+  TFile* data_file = new TFile(argv[1], "READ");
+  TFile* mc_file = new TFile(argv[2], "READ");
+  if (!data_file->IsOpen() || !mc_file->IsOpen()) {
     cout << "Error opening ROOT files (is the location correct?). Exiting." << endl;
     return 2;
   } else {
     cout << "ROOT files opened successfully." << endl;
   }
   
-  TTree* data = (TTree*)data_tfile->Get("PhysicsEvents");
-  TTree* mc = (TTree*)mc_tfile->Get("PhysicsEvents");
+  TTree* data = (TTree*)data_file->Get("PhysicsEvents");
+  TTree* mc = (TTree*)mc_file->Get("PhysicsEvents");
 
   if (!data || !mc) {
     cout << "Error getting trees from ROOT files." << endl;
@@ -848,5 +850,5 @@ void BSA_rgc_fits_updated(const char* data_file, const char* mc_file, const char
     }
   }
 
-  cout << endl; 
+  cout << endl; return 0;
 }
