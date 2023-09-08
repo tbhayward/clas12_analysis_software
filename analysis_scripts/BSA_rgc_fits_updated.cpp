@@ -635,18 +635,18 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
     // Create the filename for the PNG
   std::string filename = "output/" + prefix + "_" + std::to_string(binIndex) + "_" + 
     fileNameSuffix + ".png";
-  cout << "We're here" << endl;
+  
   // Create a title string for the graph by removing the "output/" and ".png" portions 
   // of the filename
   std::string title = filename.substr(7, filename.size()-7-4);  
   // start from the 7th index (after "output/") and take (filename.size()-7-4) characters
-
+cout << "We're here" << endl;
   // Set the title to the title string
   graph->SetTitle(title.c_str());
 
   // Save the canvas as a PNG
   canvas->SaveAs(filename.c_str());
-  
+
   // Clean up
   delete canvas;
   delete graph;
