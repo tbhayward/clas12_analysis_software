@@ -448,6 +448,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
     if (applyKinematicCuts(data, entry, currentFits, 0) && currentVariable >= varMin && 
       currentVariable < varMax) {
       sumVariable+=currentVariable;
+      cout << "passed cuts" << endl;
 
       if (helicity > 0 && target_pol > 0) { histPosPos->Fill(phi); } 
       else if (helicity > 0 && target_pol < 0) { histPosNeg->Fill(phi); } 
@@ -492,8 +493,6 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
       meanPol, Ptp, Ptm, asymmetry_index);
     double error = asymmetry_error_calculation(meanVariable, prefix, Npp, Npm, Nmp, Nmm, meanPol, 
       Ptp, Ptm, asymmetry_index);
-
-    cout << asymmetry << " " << error << endl;
 
     // Fill the asymmetry histogram with the calculated values
     histAsymmetry->SetBinContent(iBin, asymmetry);
