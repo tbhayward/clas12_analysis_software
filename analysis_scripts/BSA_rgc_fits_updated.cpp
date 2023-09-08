@@ -432,7 +432,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   int numEventsPosTarget = 0;
   int numEventsNegTarget = 0;
 
-  double currentVariable = 0;
+  double currentVariable;
   data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable);
 
   int helicity; data->SetBranchAddress("helicity", &helicity); // beam helicity 
