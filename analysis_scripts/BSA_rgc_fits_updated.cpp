@@ -164,67 +164,69 @@ bool applyKinematicCuts(TTree* data, int entry, int currentFits, bool isMC) {
 
   bool goodEvent = 0;
   std::string property = binNames[currentFits];
-  // //
-  // //
-  // //
-  // // epX
-  // if (property == "xF") {
-  //   goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
-  //     data.data.at("y")<0.75;
-  // }
-  // if (property == "Q2bin") {
-  //   goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
-  //     data.data.at("y")<0.75 && data.data.at("x")>0.2 && data.data.at("x")<0.3 &&
-  //     data.data.at("pT")>0.25 && data.data.at("pT")<0.35 && data.data.at("xF")<0;
-  // }
-  // if (property == "PTTFR" || property ==  "xTFR" || property == "zetaTFR" || 
-  //   property == "Q2TFR" || property ==  "x") {
-  //   goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
-  //     data.data.at("y")<0.75 && data.data.at("xF")<0;
-  // }
-  // if (property == "PTCFR" || property == "xCFR" || property == "zetaCFR" ||
-  //   property == "Q2TFR") {
-  //   goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
-  //     data.data.at("y")<0.75 && data.data.at("xF")>0;
-  // } 
-  // //
-  // //
-  // //
-  // // epi+X
-  // if (property == "xFpip") { 
-  //   goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
-  //     data.data.at("y")<0.75;
-  // }
-  // if (property == "PTTFRpip" || property ==  "xTFRpip" || property == "zTFRpip" || 
-  //   property == "Q2TFRpip" || property ==  "xpip") {
-  //   goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
-  //     data.data.at("y")<0.75 && data.data.at("xF")<0;
-  // }
-  // if (property == "PTCFRpip" || property == "xCFRpip" || property == "zCFRpip" ||
-  //   property == "Q2TFRpip") {
-  //   goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
-  //     data.data.at("y")<0.75 && data.data.at("xF")>0;
-  // }
-  // //
-  // //
-  // //
-  // // epi-X
-  // if (property == "xFpim") { 
-  //   goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
-  //     data.data.at("y")<0.75;
-  // }
-  // if (property == "PTTFRpim" || property ==  "xTFRpim" || property == "zTFRpim" || 
-  //   property == "Q2TFRpim" || property ==  "xpim") {
-  //   goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
-  //     data.data.at("y")<0.75 && data.data.at("xF")<0;
-  // }
-  // if (property == "PTCFRpim" || property == "xCFRpim" || property == "zCFRpim" ||
-  //   property == "Q2TFRpim") {
-  //   goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.5 &&
-  //     data.data.at("y")<0.75 && data.data.at("xF")>0;
-  // } 
-  // if (isMC) { return goodEvent; }
-  // else {return goodEvent && data.data.at("target_pol") != 0; } // if data, skip Pt = 0 (carbon)
+
+  double target_pol, Q2, W, Mx, x, y, pT, xF;
+  data->SetBranchAddress("target_pol", &target_pol);
+  data->SetBranchAddress("Q2", &Q2);
+  data->SetBranchAddress("W", &W);
+  data->SetBranchAddress("Mx", &Mx);
+  data->SetBranchAddress("x", &x);
+  data->SetBranchAddress("y", &y);
+  data->SetBranchAddress("pT", &pT);
+  data->SetBranchAddress("xF", &xF);
+
+  data->GetEntry(entry);
+  //
+  //
+  //
+  // epX
+  if (property == "xF") {
+    goodEvent = Q2>1 && W>2 && Mx>1.4 && y <0.75;
+  }
+  if (property == "Q2bin") {
+    goodEvent = Q2>1 && W>2 && Mx>1.4 && y<0.75 && x>0.2 && x<0.3 && pT>0.25 && pT<0.35 && 
+      xF<0;
+  }
+  if (property == "PTTFR" || property ==  "xTFR" || property == "zetaTFR" || 
+    property == "Q2TFR" || property ==  "x") {
+    goodEvent = Q2>1 && W>2 && Mx>1.4 && y<0.75 && xF<0;
+  }
+  if (property == "PTCFR" || property == "xCFR" || property == "zetaCFR" ||
+    property == "Q2TFR") {
+    goodEvent = Q2>1 && W>2 && Mx>1.4 && y<0.75 && xF>0;
+  } 
+  //
+  //
+  //
+  // epi+X
+  if (property == "xFpip") { 
+    goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75;
+  }
+  if (property == "PTTFRpip" || property ==  "xTFRpip" || property == "zTFRpip" || 
+    property == "Q2TFRpip" || property ==  "xpip") {
+    goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75 && xF<0;
+  }
+  if (property == "PTCFRpip" || property == "xCFRpip" || property == "zCFRpip" ||
+    property == "Q2TFRpip") {
+    goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75 && xF>0;
+  }
+  //
+  //
+  //
+  // epi-X
+  if (property == "xFpim") { 
+    goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75;
+  }
+  if (property == "PTTFRpim" || property ==  "xTFRpim" || property == "zTFRpim" || 
+    property == "Q2TFRpim" || property ==  "xpim") {
+    goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75 && xF<0;
+  }
+  if (property == "PTCFRpim" || property == "xCFRpim" || property == "zCFRpim" ||
+    property == "Q2TFRpim") {
+    goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75 && xF>0;
+  } 
+  if (isMC) { return goodEvent; }
+  else {return goodEvent && target_pol != 0; } // if data, skip Pt = 0 (carbon)
 
   return goodEvent;  
 }
