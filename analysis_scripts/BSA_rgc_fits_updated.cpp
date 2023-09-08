@@ -194,7 +194,7 @@ int createHistogramForBin(TTree* data, const char* histName, int binIndex,
   delete histPosPos;
   delete histPosNeg;
   delete histNegPos;
-  // delete histNegNeg;
+  delete histNegNeg;
 
 
   // // Create the asymmetry histogram
