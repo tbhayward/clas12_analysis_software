@@ -434,19 +434,8 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   int numEventsNegTarget = 0;
 
   double currentVariable = 63;
-  cout << "Setting branch address for: " << propertyNames[currentFits].c_str() << endl;
-  if (data->GetBranch(propertyNames[currentFits].c_str()) == nullptr) {
-      cout << "Branch '" << propertyNames[currentFits].c_str() << "' does not exist!" << endl;
-  }
+  data->ResetBranchAddresses();
   data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable);
-  if (data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable) < 0) {
-      cout << "Failed to set branch address for '" << propertyNames[currentFits].c_str() << "'" << endl;
-  }
-  if (data->GetBranch(propertyNames[currentFits].c_str())) {
-      cout << "Data type of branch: " << data->GetBranch(propertyNames[currentFits].c_str())->GetLeaf(propertyNames[currentFits].c_str())->GetTypeName() << endl;
-  }
-
-
   
 
   int helicity; data->SetBranchAddress("helicity", &helicity); // beam helicity 
