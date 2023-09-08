@@ -646,11 +646,10 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
 
   // Save the canvas as a PNG
   canvas->SaveAs(filename.c_str());
-
+  cout << "We're here" << endl;
   // Clean up
   delete canvas;
   delete graph;
-  cout << "We're here" << endl;
 }
 
 void performChi2Fits(TTree* data, const char* output_file, const char* kinematic_file,
