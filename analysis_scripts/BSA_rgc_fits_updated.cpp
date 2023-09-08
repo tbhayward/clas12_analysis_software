@@ -442,7 +442,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
 
 
   // for (int entry = 0; entry < data->GetEntries(); ++entry) {
-  for (int entry = 0; entry < 1000; ++entry) {
+  for (int entry = 0; entry < 100000; ++entry) {
     data->GetEntry(entry);
     
     if (applyKinematicCuts(data, entry, currentFits, 0) && currentVariable >= varMin && 
@@ -740,8 +740,8 @@ void performChi2Fits(TTree* data, const char* output_file, const char* kinematic
 int main(int argc, char *argv[]) {
   // initialize ROOT application for graphics
   TApplication theApp("App", nullptr, nullptr);
-  // Set ROOT to batch mode
-  gROOT->SetBatch(kTRUE);
+  // // Set ROOT to batch mode
+  // gROOT->SetBatch(kTRUE);
 
   // Check for correct number of command line arguments
   if (argc != 5) {
