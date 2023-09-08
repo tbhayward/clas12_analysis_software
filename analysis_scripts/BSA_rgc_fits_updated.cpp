@@ -238,7 +238,7 @@ int main(int argc, char *argv[]) {
   cout << "Total pos-neg charge: " << cpm << " (nc). ";
   cout << "Total neg-pos charge: " << cmp << " (nc). ";
   cout << "Total neg-neg charge: " << cmm << " (nc). ";
-  cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << " (nc)."<<endl;
+  cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << " (nc)."<< endl << endl;
 
   // Load data and mc root files
   TFile* data_file = new TFile(argv[1], "READ");
@@ -249,7 +249,7 @@ int main(int argc, char *argv[]) {
   } else {
     cout << "ROOT files opened successfully." << endl;
   }
-  cout << endl << endl;
+  
 
   TTree* data = (TTree*)data_file->Get("PhysicsEvents");
   TTree* mc = (TTree*)mc_file->Get("PhysicsEvents");
@@ -258,7 +258,7 @@ int main(int argc, char *argv[]) {
     cout << "Error getting trees from ROOT files." << endl;
     return 3;
   } else {
-    cout << "Trees successfully extracted from ROOT files." << endl;
+    cout << "Trees successfully extracted from ROOT files." << endl << endl << endl;
   }
 
   for (size_t i = 0; i < allBins.size(); ++i) {
