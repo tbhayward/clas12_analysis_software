@@ -609,10 +609,12 @@ void performChi2Fits(TTree* data, const char* output_file, const char* kinematic
     // Create a histogram for the current bin
     TH1D* hist = createHistogramForBin(data, histName, i, prefix, asymmetry_index);
 
+
+
+    delete hist;
   }
 
 
-  delete hist;
 }
 
 int main(int argc, char *argv[]) {
