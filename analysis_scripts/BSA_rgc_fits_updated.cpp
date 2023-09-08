@@ -156,6 +156,11 @@ void load_run_info_from_csv(const std::string& filename) {
   }
 }
 
+void performChi2Fits(TTree* data, const char* output_file, const char* kinematic_file,
+  const std::string& prefix, int asymmetry_index) {
+
+}
+
 int main(int argc, char *argv[]) {
 
   // Check for correct number of command line arguments
@@ -166,12 +171,13 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+  const char* output_file = argv[3];
   // Clear the contents of the output_file
-  std::ofstream ofs(argv[3], std::ios::trunc);
+  std::ofstream ofs(output_file, std::ios::trunc);
   ofs.close();
-
+  const char* kinematic_file = argv[4];
   // Clear the contents of the kinematic_file
-  std::ofstream ofs2(argv[4], std::ios::trunc);
+  std::ofstream ofs2(kinematic_file, std::ios::trunc);
   ofs2.close();
 
   // load bins from external csv file
@@ -246,11 +252,11 @@ int main(int argc, char *argv[]) {
     cout << "-- Beginning kinematic fits." << endl;
     for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
       switch (asymmetry) {
-        case 0: cout << "    chi2 BSA." << endl; break;
-        case 1: cout << "    chi2 TSA." << endl; break;
-        case 2: cout << "    chi2 DSA." << endl; break;
+        case 0: cout << "    Beginning chi2 BSA." << endl; break;
+        case 1: cout << "    Beginning chi2 TSA." << endl; break;
+        case 2: cout << "    Beginning chi2 DSA." << endl; break;
       }
-
+      performChi2Fits(data, output_file, kinematic_file, binNames[i], asymmetry);
     }
   }
 
