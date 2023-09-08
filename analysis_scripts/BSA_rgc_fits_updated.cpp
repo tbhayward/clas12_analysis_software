@@ -183,10 +183,13 @@ int createHistogramForBin(TTree* data, const char* histName, int binIndex,
   int numEventsPosTarget = 0;
   int numEventsNegTarget = 0;
 
+  float currentVariable;
+  data->SetBranchAddress(propertyNames[currentFits], &currentVariable);
+
   // for (int entry = 0; entry < data->GetEntries(); ++entry) {
   for (int entry = 0; entry < 10; ++entry) {
     data->GetEntry(entry);
-    cout << propertyNames[currentFits] << " ";
+    cout << currentVariable << " ";
 
   }
 
