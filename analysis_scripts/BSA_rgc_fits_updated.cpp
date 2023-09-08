@@ -157,6 +157,7 @@ void load_run_info_from_csv(const std::string& filename) {
 }
 
 int main(int argc, char *argv[]) {
+  cout << endl;
 
   // Check for correct number of command line arguments
     if (argc != 5) {
@@ -242,5 +243,5 @@ int main(int argc, char *argv[]) {
       return 2;
   }
 
-  return 0;
+  cout << endl; return 0;
 }
