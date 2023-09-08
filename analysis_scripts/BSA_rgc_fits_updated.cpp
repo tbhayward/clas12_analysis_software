@@ -640,10 +640,10 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   // of the filename
   std::string title = filename.substr(7, filename.size()-7-4);  
   // start from the 7th index (after "output/") and take (filename.size()-7-4) characters
-cout << "We're here" << endl;
+
   // Set the title to the title string
   graph->SetTitle(title.c_str());
-
+  cout << "We're here " << filename.c_str() << endl;
   // Save the canvas as a PNG
   canvas->SaveAs(filename.c_str());
 
