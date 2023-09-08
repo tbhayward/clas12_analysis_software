@@ -445,6 +445,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   for (int entry = 0; entry < 1000000; ++entry) {
     data->GetEntry(entry);
     
+    cout << varMin << " " << currentVariable << " " << varMax << endl;
     if (applyKinematicCuts(data, entry, currentFits, 0) && currentVariable >= varMin && 
       currentVariable < varMax) {
       sumVariable+=currentVariable;
