@@ -441,8 +441,8 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   double phi; data->SetBranchAddress("phi", &phi); // trento phi
 
 
-  // for (int entry = 0; entry < data->GetEntries(); ++entry) {
-  for (int entry = 0; entry < 100000; ++entry) {
+  for (int entry = 0; entry < data->GetEntries(); ++entry) {
+  // for (int entry = 0; entry < 100000; ++entry) {
     data->GetEntry(entry);
     
     if (applyKinematicCuts(data, entry, currentFits, 0) && currentVariable >= varMin && 
@@ -644,7 +644,6 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
 
   // Set the title to the title string
   graph->SetTitle(title.c_str());
-  cout << "We're here " << filename.c_str() << endl;
 
   // Save the canvas as a PNG
   canvas->SaveAs(filename.c_str());
