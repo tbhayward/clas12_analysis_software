@@ -445,7 +445,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   for (int entry = 0; entry < 500000; ++entry) {
     data->GetEntry(entry);
     
-    cout << varMin << " " << currentVariable << " " << varMax << endl;
+    cout << varMin << " " << currentVariable << " " << helicity << " " << varMax << endl;
     if (applyKinematicCuts(data, entry, currentFits, 0) && currentVariable >= varMin && 
       currentVariable < varMax) {
       sumVariable+=currentVariable;
@@ -487,7 +487,6 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
     double Npm = histPosNeg->GetBinContent(iBin)/cpm;
     double Nmp = histNegPos->GetBinContent(iBin)/cmp;
     double Nmm = histNegNeg->GetBinContent(iBin)/cmm;
-    cout << Npp << " " << Npm << " " << Nmp << " " << Nmm << endl;
 
     // Calculate the asymmetry and error for the current bin
     double asymmetry = asymmetry_value_calculation(meanVariable, prefix, Npp, Npm, Nmp, Nmm, 
