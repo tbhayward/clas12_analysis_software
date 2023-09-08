@@ -441,8 +441,8 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   double phi; data->SetBranchAddress("phi", &phi); // trento phi
 
 
-  for (int entry = 0; entry < data->GetEntries(); ++entry) {
-  // for (int entry = 0; entry < 100000; ++entry) {
+  // for (int entry = 0; entry < data->GetEntries(); ++entry) {
+  for (int entry = 0; entry < 10000; ++entry) {
     data->GetEntry(entry);
     
     if (applyKinematicCuts(data, entry, currentFits, 0) && currentVariable >= varMin && 
@@ -823,8 +823,8 @@ void BSA_rgc_fits_updated(const char* data_file, const char* mc_file, const char
     cout << "ROOT files opened successfully." << endl;
   }
   
-  TTree* data = (TTree*)data_file->Get("PhysicsEvents");
-  TTree* mc = (TTree*)mc_file->Get("PhysicsEvents");
+  TTree* data = (TTree*)data_tfile->Get("PhysicsEvents");
+  TTree* mc = (TTree*)mc_tfile->Get("PhysicsEvents");
 
   if (!data || !mc) {
     cout << "Error getting trees from ROOT files." << endl;
