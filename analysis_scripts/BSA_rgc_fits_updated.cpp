@@ -548,6 +548,107 @@ double DSA_funcToFit(double* x, double* par) {
   // return (ALL+ALL_cosphi*cos(phi)) / (1 + AUU_cosphi*cos(phi) + AUU_cos2phi*cos(2*phi));
 }
 
+void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int asymmetryIndex, 
+  const std::string& prefix) {
+  // Define the label for the y-axis
+  std::string yAxisLabel, fileNameSuffix;
+  switch (asymmetryIndex) {
+      case 0: yAxisLabel = "A_{LU}"; fileNameSuffix = "ALU"; break;
+      case 1: yAxisLabel = "A_{UL}"; fileNameSuffix = "AUL"; break;
+      case 2: yAxisLabel = "A_{LL}"; fileNameSuffix = "ALL"; break;
+      default: std::cerr << "Invalid asymmetry index!" << std::endl; return;
+  }
+
+  // Create a canvas to draw on
+  TCanvas* canvas = new TCanvas("canvas", "", 800, 600);
+
+  // Adjust the canvas margins to ensure axis labels are not cut off
+  canvas->SetLeftMargin(0.16); canvas->SetBottomMargin(0.16);
+
+  // Create a TGraphErrors manually from the histogram
+  TGraphErrors *graph = new TGraphErrors();
+  
+  // Add points to the TGraphErrors
+  for (int i = 1; i <= histogram->GetNbinsX(); ++i) {
+    float x = histogram->GetBinCenter(i);
+    float y = histogram->GetBinContent(i);
+    float ex = 0;  // we don't want horizontal error bars
+    float ey = histogram->GetBinError(i);
+    graph->SetPoint(i - 1, x, y);
+    graph->SetPointError(i - 1, ex, ey);
+  }
+  
+  // Set the point color to black
+  graph->SetMarkerColor(kBlack);
+  graph->SetMarkerStyle(kFullCircle);
+
+  // Set the fit function's line color to red
+  fitFunction->SetLineColor(kRed);
+
+  // Set the labels of the x and y axis
+  graph->GetXaxis()->SetTitle("#phi");
+  graph->GetYaxis()->SetTitle(yAxisLabel.c_str());
+
+  // Set the range of the x-axis to be from 0 to 2pi
+  graph->GetXaxis()->SetRangeUser(0, 2*TMath::Pi());
+
+  // Draw the graph using the AP option to draw axis and points
+  graph->Draw("AP");
+
+  // Set the range of the fit function to match the range of the x-axis
+  fitFunction->SetRange(0, 2*TMath::Pi());
+  // Draw the fit function on top of the graph
+  fitFunction->Draw("same");
+
+  // Center the labels and increase the font size
+  graph->GetXaxis()->CenterTitle();
+  graph->GetYaxis()->CenterTitle();
+  graph->GetXaxis()->SetTitleSize(0.05);
+  graph->GetYaxis()->SetTitleSize(0.05);
+
+  // Create a new TPaveStats object which will serve as our custom statistics box.
+  // Adjusted the box position and size to ensure it doesn't overlap with the axes labels
+  TPaveStats *statBox = new TPaveStats(0.16, 0.73, 0.45, 0.9, "brNDC");
+  // changed coordinates for top left position
+  statBox->SetFillColor(0);
+  statBox->SetTextSize(0.0225);
+  statBox->SetTextAlign(12);
+  statBox->SetTextColor(1);
+  statBox->SetShadowColor(0); // remove shadow
+  
+  // Iterate over each parameter in the fit function.
+  for (int i = 0; i < fitFunction->GetNpar(); ++i) {
+    TText *text=statBox->AddText(Form("Param %d: %.4f +/- %.4f",i,fitFunction->GetParameter(i), 
+      fitFunction->GetParError(i))); 
+    text->SetTextColor(1);
+  }
+
+  TText *text = statBox->AddText(Form("#chi^{2}/Ndf: %.4f", fitFunction->GetChisquare() / 
+    fitFunction->GetNDF()));
+  text->SetTextColor(1);
+  statBox->Draw();
+
+    // Create the filename for the PNG
+  std::string filename = "output/" + prefix + "_" + std::to_string(binIndex) + "_" + 
+    fileNameSuffix + ".png";
+  
+  // Create a title string for the graph by removing the "output/" and ".png" portions 
+  // of the filename
+  std::string title = filename.substr(7, filename.size()-7-4);  
+  // start from the 7th index (after "output/") and take (filename.size()-7-4) characters
+
+  // Set the title to the title string
+  graph->SetTitle(title.c_str());
+
+
+  // Save the canvas as a PNG
+  canvas->SaveAs(filename.c_str());
+
+  // Clean up
+  delete canvas;
+  delete graph;
+}
+
 void performChi2Fits(TTree* data, const char* output_file, const char* kinematic_file,
   const std::string& prefix, int asymmetry_index) {
 
@@ -610,6 +711,18 @@ void performChi2Fits(TTree* data, const char* output_file, const char* kinematic
     TH1D* hist = createHistogramForBin(data, histName, i, prefix, asymmetry_index);
     // Fit the histogram using the fitFunction and get the fit result
     hist->Fit(fitFunction, "QS");
+    plotHistogramAndFit(hist, fitFunction, i, asymmetry_index, prefix);
+
+    // Initialize variables to store the sums and event counts
+    float sumVariable = 0;
+    float numEvents = 0;
+    // Variables to calculate the mean depolarization factor
+    float sumDepA = 0; float sumDepB = 0; float sumDepC = 0; float sumDepV = 0; float sumDepW = 0;
+
+    // Variables to calculate the mean kinematics in each bin
+    float sumQ2 = 0; float sumW = 0; float sumx = 0; float sumy = 0;
+    float sumz = 0; float sumzeta = 0; float sumpT = 0; float sumxF = 0;
+    float sumt = 0; float sumtmin = 0;
 
 
 
