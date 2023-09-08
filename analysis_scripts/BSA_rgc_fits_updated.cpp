@@ -581,7 +581,7 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
     graph->SetPoint(i - 1, x, y);
     graph->SetPointError(i - 1, ex, ey);
   }
-  
+
   // Set the point color to black
   graph->SetMarkerColor(kBlack);
   graph->SetMarkerStyle(kFullCircle);
@@ -643,7 +643,6 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
 
   // Set the title to the title string
   graph->SetTitle(title.c_str());
-  cout << "We're here" << endl;
 
   // Save the canvas as a PNG
   canvas->SaveAs(filename.c_str());
@@ -651,6 +650,7 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   // Clean up
   delete canvas;
   delete graph;
+  cout << "We're here" << endl;
 }
 
 void performChi2Fits(TTree* data, const char* output_file, const char* kinematic_file,
