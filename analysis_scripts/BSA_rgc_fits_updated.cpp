@@ -441,6 +441,10 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   if (data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable) < 0) {
       cout << "Failed to set branch address for '" << propertyNames[currentFits].c_str() << "'" << endl;
   }
+  if (data->GetBranch(propertyNames[currentFits].c_str())) {
+      cout << "Data type of branch: " << data->GetBranch(propertyNames[currentFits].c_str())->GetLeaf(propertyNames[currentFits].c_str())->GetTypeName() << endl;
+  }
+
 
   
 
