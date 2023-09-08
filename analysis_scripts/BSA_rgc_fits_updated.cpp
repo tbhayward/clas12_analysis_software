@@ -258,7 +258,7 @@ int main(int argc, char *argv[]) {
     cout << "Error getting trees from ROOT files." << endl;
     return 3;
   } else {
-    cout << "Trees successfully extracted from ROOT files." << endl << endl << endl;
+    cout << "Trees successfully extracted from ROOT files." << endl << endl;
   }
 
   for (size_t i = 0; i < allBins.size(); ++i) {
