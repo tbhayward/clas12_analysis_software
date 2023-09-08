@@ -157,7 +157,6 @@ void load_run_info_from_csv(const std::string& filename) {
 }
 
 int main(int argc, char *argv[]) {
-  cout << endl;
 
   // Check for correct number of command line arguments
     if (argc != 5) {
@@ -237,10 +236,22 @@ int main(int argc, char *argv[]) {
   // Load data and mc root files
   TFile* data = new TFile(argv[1], "READ");
   TFile* mc = new TFile(argv[2], "READ");
-
   if (!data->IsOpen() || !mc->IsOpen()) {
       cout << "Error opening ROOT files (is the location correct?). Exiting." << endl;
       return 2;
+  }
+  cout << endl << endl;
+
+  for (size_t i = 0; i < allBins.size(); ++i) {
+    cout << "-- Beginning kinematic fits." << endl;
+    for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
+      switch (asymmetry) {
+        case 0: cout << "    chi2 BSA." << endl; break;
+        case 1: cout << "    chi2 TSA." << endl; break;
+        case 2: cout << "    chi2 DSA." << endl; break;
+      }
+
+    }
   }
 
   cout << endl; return 0;
