@@ -157,10 +157,10 @@ void load_run_info_from_csv(const std::string& filename) {
   }
 }
 
-// void performChi2Fits(TTree* data, const char* output_file, const char* kinematic_file,
-//   const std::string& prefix, int asymmetry_index) {
+void performChi2Fits(TTree* data, const char* output_file, const char* kinematic_file,
+  const std::string& prefix, int asymmetry_index) {
 
-// }
+}
 
 int main(int argc, char *argv[]) {
 
@@ -264,7 +264,7 @@ int main(int argc, char *argv[]) {
         case 1: cout << "    Beginning chi2 TSA." << endl; break;
         case 2: cout << "    Beginning chi2 DSA." << endl; break;
       }
-      // performChi2Fits(data, output_file, kinematic_file, binNames[i], asymmetry);
+      performChi2Fits(data, output_file, kinematic_file, binNames[i], asymmetry);
     }
   }
 
