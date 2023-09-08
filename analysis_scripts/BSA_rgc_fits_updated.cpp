@@ -432,21 +432,21 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   int numEventsPosTarget = 0;
   int numEventsNegTarget = 0;
 
-  double currentVariable;
-  data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable);
+  double currentVariable = 0;
+  // data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable);
 
   int helicity; data->SetBranchAddress("helicity", &helicity); // beam helicity 
   double beam_pol; data->SetBranchAddress("beam_pol", &beam_pol); // beam polarization
   double target_pol; data->SetBranchAddress("target_pol", &target_pol); // target polarization
   double phi; data->SetBranchAddress("phi", &phi); // trento phi
-  // double xF; data->SetBranchAddress("xF", &xF); // xF
+  double xF; data->SetBranchAddress("xF", &xF); // xF
 
 
   // for (int entry = 0; entry < data->GetEntries(); ++entry) {
   for (int entry = 0; entry < 500000; ++entry) {
     data->GetEntry(entry);
     
-    cout << currentVariable << " " << "xF" << endl;
+    cout << currentVariable << " " << xF << endl;
     if (applyKinematicCuts(data, entry, currentFits, 0) && currentVariable >= varMin && 
       currentVariable < varMax) {
       sumVariable+=currentVariable;
