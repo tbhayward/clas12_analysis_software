@@ -493,6 +493,8 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
     double error = asymmetry_error_calculation(meanVariable, prefix, Npp, Npm, Nmp, Nmm, meanPol, 
       Ptp, Ptm, asymmetry_index);
 
+    cout << asymmetry << " " << error << endl;
+
     // Fill the asymmetry histogram with the calculated values
     histAsymmetry->SetBinContent(iBin, asymmetry);
     histAsymmetry->SetBinError(iBin, error);
@@ -646,7 +648,7 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   graph->SetTitle(title.c_str());
 
   // Save the canvas as a PNG
-  canvas->SaveAs(filename.c_str());
+  // canvas->SaveAs(filename.c_str());
 
   // Clean up
   delete canvas;
@@ -840,7 +842,7 @@ int main(int argc, char *argv[]) {
 
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
+    for (int asymmetry = 0; asymmetry < 1; ++asymmetry){
       switch (asymmetry) {
         case 0: cout << "    Beginning chi2 BSA." << endl; break;
         case 1: cout << "    Beginning chi2 TSA." << endl; break;
