@@ -738,7 +738,10 @@ void performChi2Fits(TTree* data, const char* output_file, const char* kinematic
 }
 
 int main(int argc, char *argv[]) {
+  // initialize ROOT application for graphics
   TApplication theApp("App", nullptr, nullptr);
+  // Set ROOT to batch mode
+  gROOT->SetBatch(kTRUE);
 
   // Check for correct number of command line arguments
   if (argc != 5) {
