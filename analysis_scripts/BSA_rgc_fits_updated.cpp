@@ -159,6 +159,31 @@ void load_run_info_from_csv(const std::string& filename) {
   }
 }
 
+TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex, 
+  const std::string& prefix, int asymmetry_index) {
+
+  // Determine the variable range for the specified bin
+  float varMin = allBins[currentFits][binIndex];
+  float varMax = allBins[currentFits][binIndex + 1];
+
+  // Create positive and negative helicity histograms
+  TH1D* histPosPos = new TH1D(Form("%s_pospos", histName), "", 12, 0, 2 * TMath::Pi());
+  TH1D* histPosNeg = new TH1D(Form("%s_posneg", histName), "", 12, 0, 2 * TMath::Pi());
+  TH1D* histNegPos = new TH1D(Form("%s_negpos", histName), "", 12, 0, 2 * TMath::Pi());
+  TH1D* histNegNeg = new TH1D(Form("%s_negneg", histName), "", 12, 0, 2 * TMath::Pi());
+
+  // Initialize variables to store the sums and event counts
+  float sumVariable = 0;
+  float numEvents = 0;
+  // Variables to calculate the mean polarization
+  float sumPol = 0; // sum of the beam polarization
+  float sumTargetPosPol = 0; // sum of the target positive polarization
+  float sumTargetNegPol = 0; // sum of the target negative polarization
+  int numEventsPosTarget = 0;
+  int numEventsNegTarget = 0;
+
+}
+
 // Function to fit the beam-spin asymmetry histogram
 double BSA_funcToFit(double* x, double* par) {
   // Retrieve the parameters 
@@ -260,6 +285,9 @@ void performChi2Fits(TTree* data, const char* output_file, const char* kinematic
       << " bin " << i << ". ";
     char histName[32];
     snprintf(histName, sizeof(histName), "hist_%zu", i);
+
+    // Create a histogram for the current bin
+    TH1D* hist = createHistogramForBin(data, histName, i, prefix, asymmetry_index);
 
   }
 
