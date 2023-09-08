@@ -13,6 +13,10 @@
 #include <TTree.h>
 #include <TMath.h>
 #include <TF1.h> 
+#include <TCanvas.h>
+#include <TGraphErrors.h>
+#include <TPaveStats.h>
+#include <TText.h>
 using namespace std;
 
 
