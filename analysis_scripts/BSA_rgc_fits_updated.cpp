@@ -581,7 +581,7 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
     graph->SetPoint(i - 1, x, y);
     graph->SetPointError(i - 1, ex, ey);
   }
-  
+  cout << "We're here" << endl;
   // Set the point color to black
   graph->SetMarkerColor(kBlack);
   graph->SetMarkerStyle(kFullCircle);
@@ -715,7 +715,6 @@ void performChi2Fits(TTree* data, const char* output_file, const char* kinematic
     TH1D* hist = createHistogramForBin(data, histName, i, prefix, asymmetry_index);
     // Fit the histogram using the fitFunction and get the fit result
     hist->Fit(fitFunction, "QS");
-    cout << "We're here" << endl;
     plotHistogramAndFit(hist, fitFunction, i, asymmetry_index, prefix);
 
     // Initialize variables to store the sums and event counts
