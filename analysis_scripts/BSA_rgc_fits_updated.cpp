@@ -13,6 +13,11 @@
 size_t currentFits = 0;
 size_t currentBin = 0;
 int n = 1;
+std::map<std::string, std::vector<float>> bins_map;
+std::vector<std::vector<float>> allBins;
+std::vector<std::string> binNames;
+std::vector<std::string> propertyNames;
+std::vector<std::string> variable_names;
 float total_charge_carbon;
 float cpp, cpm, cmp, cmm;
 
