@@ -814,9 +814,9 @@ void BSA_rgc_fits_updated(const char* data_file, const char* mc_file, const char
   cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << " (nc)."<< endl << endl;
 
   // Load data and mc root files
-  TFile* data_file = new TFile(argv[1], "READ");
-  TFile* mc_file = new TFile(argv[2], "READ");
-  if (!data_file->IsOpen() || !mc_file->IsOpen()) {
+  TFile* data_tfile = new TFile(data_file, "READ");
+  TFile* mc_tfile = new TFile(mc_file, "READ");
+  if (!data_tfile->IsOpen() || !mc_tfile->IsOpen()) {
     cout << "Error opening ROOT files (is the location correct?). Exiting." << endl;
     return 2;
   } else {
