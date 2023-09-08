@@ -159,7 +159,8 @@ void load_run_info_from_csv(const std::string& filename) {
   }
 }
 
-TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex, 
+// TH1D* createHistogramForBin
+int createHistogramForBin(TTree* data, const char* histName, int binIndex, 
   const std::string& prefix, int asymmetry_index) {
 
   // Determine the variable range for the specified bin
@@ -200,7 +201,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   //   numBins, 0, 2 * TMath::Pi());
 
   // Return the final asymmetry histogram
-  return histNegNeg;
+  return 0;
 
 }
 
