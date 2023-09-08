@@ -258,6 +258,12 @@ int createHistogramForBin(TTree* data, const char* histName, int binIndex,
   double currentVariable;
   data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable);
 
+  int helicity; data->SetBranchAddress("helicity", &helicity); // beam helicity 
+  double beam_pol; data->SetBranchAddress("beam_pol", &beam_pol); // beam polarization
+  double target_pol; data->SetBranchAddress("target_pol", &target_pol); // target polarization
+  double phi; data->SetBranchAddress("phi", &phi); // trento phi
+
+
   // for (int entry = 0; entry < data->GetEntries(); ++entry) {
   for (int entry = 0; entry < 10; ++entry) {
     data->GetEntry(entry);
@@ -265,8 +271,54 @@ int createHistogramForBin(TTree* data, const char* histName, int binIndex,
     if (applyKinematicCuts(data, entry, currentFits, 0) && currentVariable >= varMin && 
       currentVariable < varMax) {
       sumVariable+=currentVariable;
-    }
 
+      if (helicity > 0 && target_pol > 0) { histPosPos->Fill(phi); } 
+      else if (helicity > 0 && target_pol < 0) { histPosNeg->Fill(phi); } 
+      else if (helicity < 0 && target_pol > 0) { histNegPos->Fill(phi); } 
+      else if (helicity < 0 && target_pol < 0) { histNegNeg->Fill(phi); }
+
+      // Accumulate polarization and event count for mean polarization calculation
+      sumPol += beam_pol;
+      if (target_pol > 0) {
+        sumTargetPosPol+=target_pol;
+        numEventsPosTarget++;
+      } else if (target_pol < 0) {
+        sumTargetNegPol+=target_pol;
+        numEventsNegTarget++;
+      }
+      numEvents++;
+    }
+  }
+
+  // Calculate the mean polarization
+  float meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
+  float meanPol = sumPol / numEvents; // mean beam polarization for data 
+  float Ptp = sumTargetPosPol / numEventsPosTarget;// mean positive target polarization for data
+  float Ptm = - sumTargetNegPol / numEventsNegTarget;// mean negative target polarization for data
+  // the negative sign here is correct; RGC lists the polarizations with signs to tell which is 
+  // which but the polarization really should just be "percent of polarized nucleii"
+
+  // Create the asymmetry histogram
+  int numBins = histPosPos->GetNbinsX();
+  TH1D* histAsymmetry = new TH1D(Form("%s_asymmetry", histName), "", 
+    numBins, 0, 2 * TMath::Pi());
+
+  // Calculate the asymmetry and its error for each bin, and fill the asymmetry histogram
+  for (int iBin = 1; iBin <= numBins; ++iBin) {
+    float Npp = histPosPos->GetBinContent(iBin)/cpp;
+    float Npm = histPosNeg->GetBinContent(iBin)/cpm;
+    float Nmp = histNegPos->GetBinContent(iBin)/cmp;
+    float Nmm = histNegNeg->GetBinContent(iBin)/cmm;
+
+    // Calculate the asymmetry and error for the current bin
+    float asymmetry = asymmetry_value_calculation(meanVariable, prefix, Npp, Npm, Nmp, Nmm, 
+      meanPol, Ptp, Ptm, asymmetry_index);
+    float error = asymmetry_error_calculation(meanVariable, prefix, Npp, Npm, Nmp, Nmm, meanPol, 
+      Ptp, Ptm, asymmetry_index);
+
+    // Fill the asymmetry histogram with the calculated values
+    histAsymmetry->SetBinContent(iBin, asymmetry);
+    histAsymmetry->SetBinError(iBin, error);
   }
 
   // Delete the temporary positive and negative helicity histograms
@@ -275,14 +327,8 @@ int createHistogramForBin(TTree* data, const char* histName, int binIndex,
   delete histNegPos;
   delete histNegNeg;
 
-
-  // // Create the asymmetry histogram
-  // int numBins = histPosPos->GetNbinsX();
-  // TH1D* histAsymmetry = new TH1D(Form("%s_asymmetry", histName), "", 
-  //   numBins, 0, 2 * TMath::Pi());
-
   // Return the final asymmetry histogram
-  return 0;
+  return histAsymmetry;
 
 }
 
@@ -389,8 +435,7 @@ void performChi2Fits(TTree* data, const char* output_file, const char* kinematic
     snprintf(histName, sizeof(histName), "hist_%zu", i);
 
     // Create a histogram for the current bin
-    // TH1D* hist = createHistogramForBin(data, histName, i, prefix, asymmetry_index);
-    int hist = createHistogramForBin(data, histName, i, prefix, asymmetry_index);
+    TH1D* hist = createHistogramForBin(data, histName, i, prefix, asymmetry_index);
 
   }
 
