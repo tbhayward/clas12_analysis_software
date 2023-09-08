@@ -715,6 +715,7 @@ void performChi2Fits(TTree* data, const char* output_file, const char* kinematic
     TH1D* hist = createHistogramForBin(data, histName, i, prefix, asymmetry_index);
     // Fit the histogram using the fitFunction and get the fit result
     hist->Fit(fitFunction, "QS");
+    cout << "We're here" << endl;
     plotHistogramAndFit(hist, fitFunction, i, asymmetry_index, prefix);
 
     // Initialize variables to store the sums and event counts
