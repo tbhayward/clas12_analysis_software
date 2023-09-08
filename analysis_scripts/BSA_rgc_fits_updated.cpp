@@ -20,9 +20,9 @@ int main(int argc, char *argv[]) {
 
   // Check for correct number of command line arguments
     if (argc != 5) {
-        cout << "Usage: " << argv[0];
-        cout << " <data_root_file> <mc_root_file> ";
-        cout << " <output_asymmetry_file> <output_kinematic_file>" << endl;
+        std::cout << "Usage: " << argv[0];
+        std::cout << " <data_root_file> <mc_root_file> ";
+        std::cout << " <output_asymmetry_file> <output_kinematic_file>" << std::endl;
         return 1;
     }
 
@@ -36,40 +36,40 @@ int main(int argc, char *argv[]) {
 
   // load bins from external csv file
   load_bins_from_csv("bins_single_hadron.csv");
-  cout<< endl <<"-- Loaded information from bins.csv. " << endl;
+  std::cout<< std::endl <<"-- Loaded information from bins.csv. " << std::endl;
 
-  cout<< "Found " << allBins.size() << " sets of bins: " << endl;
+  std::cout<< "Found " << allBins.size() << " sets of bins: " << std::endl;
   for (size_t i = 0; i < binNames.size(); ++i) {
-    cout << binNames[i];
-    if (i == binNames.size() - 1) { cout << "."; }
-    else { cout << ", "; }
+    std::cout << binNames[i];
+    if (i == binNames.size() - 1) { std::cout << "."; }
+    else { std::cout << ", "; }
   }
-  std::cout << std::endl;
+  std::std::cout << std::std::endl;
 
-  cout<< "Found " << allBins[currentFits].size() << " bin indices for: " << endl;
+  std::cout<< "Found " << allBins[currentFits].size() << " bin indices for: " << std::endl;
   for (size_t i = 0; i < allBins[currentFits].size(); ++i) {
-    cout << allBins[currentFits][i];
-    if (i == allBins[currentFits].size() - 1) { cout << "."; }
-    else { cout << ", "; }
+    std::cout << allBins[currentFits][i];
+    if (i == allBins[currentFits].size() - 1) { std::cout << "."; }
+    else { std::cout << ", "; }
   }
-  std::cout << std::endl;
+  std::std::cout << std::std::endl;
 
-  cout << "Found " << variable_names.size() << " variables: " << endl;
+  std::cout << "Found " << variable_names.size() << " variables: " << std::endl;
   for (size_t i = 0; i < variable_names.size(); ++i) {
-    cout << i << ":" << variable_names[i] << std::flush;
+    std::cout << i << ":" << variable_names[i] << std::flush;
     if (i == variable_names.size() - 1) {
-      // cout << ". ";
+      // std::cout << ". ";
     } else {
-      cout << ", ";
+      std::cout << ", ";
     }
   }
-  cout << endl;
+  std::cout << std::endl;
 
   // load run infrom from external csv file
   load_run_info_from_csv("run_info_rgc.csv");
-  cout<< endl << endl <<"-- Loaded information from run_info_rgc.csv" << endl;
+  std::cout<< std::endl << std::endl <<"-- Loaded information from run_info_rgc.csv" << std::endl;
 
-  cout << "Found " << run_info_list.size() << " runs." << endl;
+  std::cout << "Found " << run_info_list.size() << " runs." << std::endl;
   cpp = 0; // total accumulated charge of positive beam - positive target
   cpm = 0; // total accumulated charge of positive beam - negative target
   cmp = 0; // total accumulated charge of negative beam - positive target
@@ -87,18 +87,21 @@ int main(int argc, char *argv[]) {
       }
   }
 
-  cout << "Total pos-pos (beam-target) charge: " << cpp << " (nc). ";
-  cout << "Total pos-neg charge: " << cpm << " (nc). ";
-  cout << "Total neg-pos charge: " << cmp << " (nc). ";
-  cout << "Total neg-neg charge: " << cmm << " (nc). ";
-  cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << " (nc)." << endl;
+  std::cout << "Total pos-pos (beam-target) charge: " << cpp << " (nc). ";
+  std::cout << "Total pos-neg charge: " << cpm << " (nc). ";
+  std::cout << "Total neg-pos charge: " << cmp << " (nc). ";
+  std::cout << "Total neg-neg charge: " << cmm << " (nc). ";
+  std::cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << " (nc)."<<std::endl;
 
   // Load data and mc root files
   TFile* gData = new TFile(argv[1], "READ");
   TFile* gMC = new TFile(argv[2], "READ");
 
+  TFile* file1 = new TFile(root_file1_path.c_str(), "READ");
+    TFile* file2 = new TFile(root_file2_path.c_str(), "READ");
+
   if (!gData->IsOpen() || !gMC->IsOpen()) {
-        cout << "Error opening ROOT files (is the location correct?). Exiting." << endl;
+        std::cout << "Error opening ROOT files (is the location correct?). Exiting." << std::endl;
         return 2;
     }
 
