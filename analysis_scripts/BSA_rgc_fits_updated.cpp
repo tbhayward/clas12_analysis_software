@@ -194,10 +194,10 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   // delete histNegNeg;
 
 
-  // Create the asymmetry histogram
-  int numBins = histPosPos->GetNbinsX();
-  TH1D* histAsymmetry = new TH1D(Form("%s_asymmetry", histName), "", 
-    numBins, 0, 2 * TMath::Pi());
+  // // Create the asymmetry histogram
+  // int numBins = histPosPos->GetNbinsX();
+  // TH1D* histAsymmetry = new TH1D(Form("%s_asymmetry", histName), "", 
+  //   numBins, 0, 2 * TMath::Pi());
 
   // Return the final asymmetry histogram
   return histNegNeg;
