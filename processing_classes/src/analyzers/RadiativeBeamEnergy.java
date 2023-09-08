@@ -52,11 +52,9 @@ public class RadiativeBeamEnergy {
     
 //    Random rand = new Random();
     double double_random=Math.random();
-//    System.out.println(double_random);
     for (int i = 0; i < beam_likelihood.length; i++) {
             if(double_random<beam_likelihood[i]) {
                 Ebp = Eb*beam_percentage[i];
-//                System.out.println(Ebp);
                 break;
             }
     }
