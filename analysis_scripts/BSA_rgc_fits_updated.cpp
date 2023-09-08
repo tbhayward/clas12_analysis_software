@@ -97,9 +97,6 @@ int main(int argc, char *argv[]) {
   TFile* gData = new TFile(argv[1], "READ");
   TFile* gMC = new TFile(argv[2], "READ");
 
-  TFile* file1 = new TFile(root_file1_path.c_str(), "READ");
-    TFile* file2 = new TFile(root_file2_path.c_str(), "READ");
-
   if (!gData->IsOpen() || !gMC->IsOpen()) {
         std::cout << "Error opening ROOT files (is the location correct?). Exiting." << std::endl;
         return 2;
