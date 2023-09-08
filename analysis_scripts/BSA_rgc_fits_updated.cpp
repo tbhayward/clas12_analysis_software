@@ -185,6 +185,7 @@ int createHistogramForBin(TTree* data, const char* histName, int binIndex,
 
   for (int entry = 0; entry < data->GetEntries(); ++entry) {
     data->GetEntry(entry);
+    cout << propertyNames[currentFits] << endl;
 
   }
 
