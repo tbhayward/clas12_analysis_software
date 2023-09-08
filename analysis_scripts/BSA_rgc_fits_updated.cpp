@@ -157,6 +157,50 @@ void load_run_info_from_csv(const std::string& filename) {
   }
 }
 
+// Function to fit the beam-spin asymmetry histogram
+double BSA_funcToFit(double* x, double* par) {
+  // Retrieve the parameters 
+  float ALU_offset = par[0];
+  float ALU_sinphi = par[1];
+  // double AUU_cosphi = par[2];
+  // double AUU_cos2phi = par[3];
+  // Retrieve the phi variable from the input x array
+  float phi = x[0];
+  // Calculate and return the value of the function for the given phi and parameters 
+  return ALU_offset + ALU_sinphi*sin(phi);
+  // return (ALU_offset + ALU_sinphi*sin(phi)) / (1 + AUU_cosphi*cos(phi) + AUU_cos2phi*cos(2*phi));
+}
+
+// Function to fit the target-spin asymmetry histogram
+double TSA_funcToFit(double* x, double* par) {
+  // Retrieve the parameters A
+  float AUL_offset = par[0];
+  float AUL_sinphi = par[1];
+  float AUL_sin2phi = par[2];
+  // double AUU_cosphi = par[3];
+  // double AUU_cos2phi = par[4];
+  // Retrieve the phi variable from the input x array
+  float phi = x[0];
+  // Calculate and return the value of the function for the given phi and parameters 
+  return AUL_offset + AUL_sinphi*sin(phi)+AUL_sin2phi*sin(2*phi);
+  // return (AUL_offset + AUL_sinphi*sin(phi)+AUL_sin2phi*sin(2*phi)) /
+  //   (1 + AUU_cosphi*cos(phi) + AUU_cos2phi*cos(2*phi));
+}
+
+// Function to fit the double-spin asymmetry histogram
+double DSA_funcToFit(double* x, double* par) {
+  // Retrieve the parameters A
+  float ALL = par[0];
+  float ALL_cosphi = par[1];
+  // double AUU_cosphi = par[2];
+  // double AUU_cos2phi = par[3];
+  // Retrieve the phi variable from the input x array
+  float phi = x[0];
+  // Calculate and return the value of the function for the given phi and parameters 
+  return ALL+ALL_cosphi*cos(phi);
+  // return (ALL+ALL_cosphi*cos(phi)) / (1 + AUU_cosphi*cos(phi) + AUU_cos2phi*cos(2*phi));
+}
+
 void performChi2Fits(TTree* data, const char* output_file, const char* kinematic_file,
   const std::string& prefix, int asymmetry_index) {
 
