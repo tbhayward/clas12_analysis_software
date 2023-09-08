@@ -845,5 +845,5 @@ void BSA_rgc_fits_updated(const char* data_file, const char* mc_file, const char
     }
   }
 
-  cout << endl; return 0;
+  cout << endl; 
 }
