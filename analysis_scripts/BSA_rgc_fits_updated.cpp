@@ -437,7 +437,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   double beam_pol; data->SetBranchAddress("beam_pol", &beam_pol); // beam polarization
   double target_pol; data->SetBranchAddress("target_pol", &target_pol); // target polarization
   double phi; data->SetBranchAddress("phi", &phi); // trento phi
-  double xF; data->SetBranchAddress("xF", &xF); // trento phi
+  double xF; data->SetBranchAddress("xF", &xF); // xF
   double currentVariable; 
   data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable); 
 
