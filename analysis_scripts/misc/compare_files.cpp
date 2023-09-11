@@ -354,8 +354,8 @@ void createHistograms(TTree* tree1, TTree* tree2,
         TH1F ratioHist(Form("%s_ratio", branchName), "", config.bins, config.min, config.max);
         ratioHist.Divide(&hist2, &hist1);
         ratioHist.SetLineColor(kBlack);
-        ratioHist.SetMinimum(0.75);  // Set Y-range
-        ratioHist.SetMaximum(2.50);  // Set Y-range
+        ratioHist.SetMinimum(0.00);  // Set Y-range
+        ratioHist.SetMaximum(2.00);  // Set Y-range
         ratioHist.GetXaxis()->SetTitle(formattedBranchName.c_str());
         std::string yAxisTitle = "ratio";
         ratioHist.GetYaxis()->SetTitle(yAxisTitle.c_str());
