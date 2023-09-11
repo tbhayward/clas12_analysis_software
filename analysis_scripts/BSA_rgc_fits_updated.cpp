@@ -441,16 +441,22 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   double currentVariable; 
   data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable); 
 
-  // for (int entry = 0; entry < 10; ++entry) {  // Just read the first 10 entries for debugging
-  //   data->GetEntry(entry);
-  //   cout << "Entry " << entry << " : " << propertyNames[currentFits].c_str() << " " << currentVariable << " " << phi << " " << helicity << endl;
-  // }
+  for (int entry = 0; entry < 10; ++entry) {  // Just read the first 10 entries for debugging
+    data->GetEntry(entry);
+    cout << "Entry " << entry << " : " << propertyNames[currentFits].c_str();
+    cout << " " << currentVariable << " " << xF << endl;
+  }
+
+  for (int entry = 0; entry < 10; ++entry) { // Just read the first 10 entries for debugging
+    data->GetEntry(entry);
+    cout << currentVariable << " " << " " << xF << " " << helicity << endl;
+  }
 
   // for (int entry = 0; entry < data->GetEntries(); ++entry) {
   for (int entry = 0; entry < 10; ++entry) {
     data->GetEntry(entry);
     
-    cout << currentVariable << " " << " " << xF << " " << helicity << endl;
+    // cout << currentVariable << " " << " " << xF << " " << helicity << endl;
     if (applyKinematicCuts(data, entry, currentFits, 0) && currentVariable >= varMin && 
       currentVariable < varMax) {
       sumVariable+=currentVariable;
