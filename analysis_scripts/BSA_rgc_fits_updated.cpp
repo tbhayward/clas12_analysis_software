@@ -452,7 +452,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   for (int entry = 0; entry < 10; ++entry) { // Just read the first 10 entries for debugging
     data->GetEntry(entry);
     cout << "Entry " << entry << " : " << propertyNames[currentFits].c_str();
-    cout << currentVariable << " " << " " << xF << " " << helicity << endl;
+    cout << " " << currentVariable << " " << " " << xF << " " << helicity << endl;
   }
 
   // for (int entry = 0; entry < data->GetEntries(); ++entry) {
