@@ -29,7 +29,9 @@ else
     set arg2 = "$2"
 endif
 
+git pull;
 cd clasqaDB/; source env.csh; cd ..;
+g++ `root-config --cflags --libs` -o processing_scripts/convert_txt_to_root processing_scripts/convert_txt_to_root.cpp
 coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4.txt" "$5" "$6"
 
 # Run the convert_txt_to_root program
