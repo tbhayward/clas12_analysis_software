@@ -32,7 +32,15 @@ endif
 git pull;
 cd clasqaDB/; source env.csh; cd ..;
 g++ `root-config --cflags --libs` -o processing_scripts/convert_txt_to_root processing_scripts/convert_txt_to_root.cpp
-coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4.txt" "$5" "$6"
+
+# execute command based on number of entries
+if ($arg1 == "processing_scripts/processing_single_hadrons.groovy") then
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4.txt" "$5" "$6"
+else if ($arg1 == "processing_scripts/processing_inclusive.groovy") then
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6"
+else if ($arg1 == "processing_scripts/processing_dihadrons.groovy") then
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4" "$5.txt" "$6"
+endif
 
 # Run the convert_txt_to_root program
 set txt_file = "$4.txt"
