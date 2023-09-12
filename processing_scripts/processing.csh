@@ -35,4 +35,4 @@ coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg
 # Run the convert_txt_to_root program
 set txt_file = "$4.txt"
 set root_file = "$4.root"
-./convert_txt_to_root $txt_file $root_file $convert_arg3
+.processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3
