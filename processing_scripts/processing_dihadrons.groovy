@@ -291,11 +291,11 @@ public static void main(String[] args) {
 		}
 
 		println("\n1:runnum, 2:evnum, 3:helicity, 4:e_p, 5:e_theta, 6:e_phi, 7:vz_e,"+
-		"8:p1_p, 9:p1_theta, 10:p1_phi, 11:vz_p1, 12:p2_p, 13:p2_theta, 14:p2_phi, 15:vz_p2"+
+		"8:p1_p, 9:p1_theta, 10:p1_phi, 11:vz_p1, 12:p2_p, 13:p2_theta, 14:p2_phi, 15:vz_p2, "+
 		"16:Q2, 17:W, 18:Mx, 19: Mx1, 20: Mx2, 21:x, 22:y, 23:z,"+
-		"24:z1, 25:z2, 26:Mh, 27:xF, 28:xF1, 29:xF2, 30:pT, 31:pT1, 32:pT2, 33:pTpT"+
-		"34:zeta, 35:zeta1, 36:zeta2, 37:eta, 38:eta1, 39:eta2, 40:Delta_eta, 41:eta1_gN, 42:eta2_gN"+
-		"43:phi1, 44:phi2, 45:Delta_phi, 46:phih, 47:phiR, 48:theta"+
+		"24:z1, 25:z2, 26:Mh, 27:xF, 28:xF1, 29:xF2, 30:pT, 31:pT1, 32:pT2, 33:pTpT, "+
+		"34:zeta, 35:zeta1, 36:zeta2, 37:eta, 38:eta1, 39:eta2, 40:Delta_eta, 41:eta1_gN, 42:eta2_gN, "+
+		"43:phi1, 44:phi2, 45:Delta_phi, 46:phih, 47:phiR, 48:theta, "+
 		"49:DepA, 50:DepB, 51:DepC, 52:DepV, 53:DepW\n");
 
 		println("Set p1 PID = $p1_Str");
