@@ -33,7 +33,7 @@ git pull;
 cd clasqaDB/; source env.csh; cd ..;
 g++ `root-config --cflags --libs` -o processing_scripts/convert_txt_to_root processing_scripts/convert_txt_to_root.cpp
 
-echo "HELLO WORLD"
+echo "HELLO WORLD" 
 # execute command based on number of entries
 if ($arg1 == "processing_scripts/processing_single_hadrons.groovy") then
     coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4.txt" "$5" "$6"
