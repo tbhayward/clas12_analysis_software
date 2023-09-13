@@ -168,77 +168,149 @@ void load_run_info_from_csv(const std::string& filename) {
   }
 }
 
-// Apply kinematic cuts to the data
-bool applyKinematicCuts(TTree* data, int entry, int currentFits, bool isMC) {
+// // Apply kinematic cuts to the data
+// bool applyKinematicCuts(TTree* data, int entry, int currentFits, bool isMC) {
 
-  bool goodEvent = 0;
-  std::string property = binNames[currentFits];
+//   bool goodEvent = 0;
+//   std::string property = binNames[currentFits];
 
-  double target_pol, Q2, W, Mx, x, y, pT, xF;
-  data->SetBranchAddress("target_pol", &target_pol);
-  data->SetBranchAddress("Q2", &Q2);
-  data->SetBranchAddress("W", &W);
-  data->SetBranchAddress("Mx", &Mx);
-  data->SetBranchAddress("x", &x);
-  data->SetBranchAddress("y", &y);
-  data->SetBranchAddress("pT", &pT);
-  data->SetBranchAddress("xF", &xF);
+//   double target_pol, Q2, W, Mx, x, y, pT, xF;
+//   data->SetBranchAddress("target_pol", &target_pol);
+//   data->SetBranchAddress("Q2", &Q2);
+//   data->SetBranchAddress("W", &W);
+//   data->SetBranchAddress("Mx", &Mx);
+//   data->SetBranchAddress("x", &x);
+//   data->SetBranchAddress("y", &y);
+//   data->SetBranchAddress("pT", &pT);
+//   data->SetBranchAddress("xF", &xF);
 
-  data->GetEntry(entry);
-  //
-  //
-  //
-  // epX
-  if (property == "xF") {
-    goodEvent = Q2>1 && W>2 && Mx>1.4 && y <0.75;
-  }
-  if (property == "Q2bin") {
-    goodEvent = Q2>1 && W>2 && Mx>1.4 && y<0.75 && x>0.2 && x<0.3 && pT>0.25 && pT<0.35 && 
-      xF<0;
-  }
-  if (property == "PTTFR" || property ==  "xTFR" || property == "zetaTFR" || 
-    property == "Q2TFR" || property ==  "x") {
-    goodEvent = Q2>1 && W>2 && Mx>1.4 && y<0.75 && xF<0;
-  }
-  if (property == "PTCFR" || property == "xCFR" || property == "zetaCFR" ||
-    property == "Q2TFR") {
-    goodEvent = Q2>1 && W>2 && Mx>1.4 && y<0.75 && xF>0;
-  } 
-  //
-  //
-  //
-  // epi+X
-  if (property == "xFpip") { 
-    goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75;
-  }
-  if (property == "PTTFRpip" || property ==  "xTFRpip" || property == "zTFRpip" || 
-    property == "Q2TFRpip" || property ==  "xpip") {
-    goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75 && xF<0;
-  }
-  if (property == "PTCFRpip" || property == "xCFRpip" || property == "zCFRpip" ||
-    property == "Q2TFRpip") {
-    goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75 && xF>0;
-  }
-  //
-  //
-  //
-  // epi-X
-  if (property == "xFpim") { 
-    goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75;
-  }
-  if (property == "PTTFRpim" || property ==  "xTFRpim" || property == "zTFRpim" || 
-    property == "Q2TFRpim" || property ==  "xpim") {
-    goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75 && xF<0;
-  }
-  if (property == "PTCFRpim" || property == "xCFRpim" || property == "zCFRpim" ||
-    property == "Q2TFRpim") {
-    goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75 && xF>0;
-  } 
-  if (isMC) { return goodEvent; }
-  else {return goodEvent && target_pol != 0; } // if data, skip Pt = 0 (carbon)
+//   data->GetEntry(entry);
+//   //
+//   //
+//   //
+//   // epX
+//   if (property == "xF") {
+//     goodEvent = Q2>1 && W>2 && Mx>1.4 && y <0.75;
+//   }
+//   if (property == "Q2bin") {
+//     goodEvent = Q2>1 && W>2 && Mx>1.4 && y<0.75 && x>0.2 && x<0.3 && pT>0.25 && pT<0.35 && 
+//       xF<0;
+//   }
+//   if (property == "PTTFR" || property ==  "xTFR" || property == "zetaTFR" || 
+//     property == "Q2TFR" || property ==  "x") {
+//     goodEvent = Q2>1 && W>2 && Mx>1.4 && y<0.75 && xF<0;
+//   }
+//   if (property == "PTCFR" || property == "xCFR" || property == "zetaCFR" ||
+//     property == "Q2TFR") {
+//     goodEvent = Q2>1 && W>2 && Mx>1.4 && y<0.75 && xF>0;
+//   } 
+//   //
+//   //
+//   //
+//   // epi+X
+//   if (property == "xFpip") { 
+//     goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75;
+//   }
+//   if (property == "PTTFRpip" || property ==  "xTFRpip" || property == "zTFRpip" || 
+//     property == "Q2TFRpip" || property ==  "xpip") {
+//     goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75 && xF<0;
+//   }
+//   if (property == "PTCFRpip" || property == "xCFRpip" || property == "zCFRpip" ||
+//     property == "Q2TFRpip") {
+//     goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75 && xF>0;
+//   }
+//   //
+//   //
+//   //
+//   // epi-X
+//   if (property == "xFpim") { 
+//     goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75;
+//   }
+//   if (property == "PTTFRpim" || property ==  "xTFRpim" || property == "zTFRpim" || 
+//     property == "Q2TFRpim" || property ==  "xpim") {
+//     goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75 && xF<0;
+//   }
+//   if (property == "PTCFRpim" || property == "xCFRpim" || property == "zCFRpim" ||
+//     property == "Q2TFRpim") {
+//     goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75 && xF>0;
+//   } 
+//   if (isMC) { return goodEvent; }
+//   else {return goodEvent && target_pol != 0; } // if data, skip Pt = 0 (carbon)
 
-  return goodEvent;  
-}
+//   return goodEvent;  
+// }
+
+class KinematicCuts {
+public:
+    KinematicCuts(TTreeReader& reader)
+        : Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), 
+          x(reader, "x"), y(reader, "y"), pT(reader, "pT"), 
+          xF(reader, "xF"), target_pol(reader, "target_pol") {}
+
+    bool applyCuts(int currentFits, bool isMC) {
+        bool goodEvent = false;
+        std::string property = binNames[currentFits];
+
+        if (property == "xF") {
+            goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.4 && *y < 0.75;
+        }
+        if (property == "Q2bin") {
+            goodEvent = Q2>1 && W>2 && Mx>1.4 && y<0.75 && x>0.2 && x<0.3 && pT>0.25 && pT<0.35 && 
+              xF<0;
+        }
+        if (property == "PTTFR" || property ==  "xTFR" || property == "zetaTFR" || 
+          property == "Q2TFR" || property ==  "x") {
+          goodEvent = Q2>1 && W>2 && Mx>1.4 && y<0.75 && xF<0;
+        }
+        if (property == "PTCFR" || property == "xCFR" || property == "zetaCFR" ||
+          property == "Q2TFR") {
+          goodEvent = Q2>1 && W>2 && Mx>1.4 && y<0.75 && xF>0;
+        } 
+        //
+        // epi+X
+        if (property == "xFpip") { 
+          goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75;
+        }
+        if (property == "PTTFRpip" || property ==  "xTFRpip" || property == "zTFRpip" || 
+          property == "Q2TFRpip" || property ==  "xpip") {
+          goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75 && xF<0;
+        }
+        if (property == "PTCFRpip" || property == "xCFRpip" || property == "zCFRpip" ||
+          property == "Q2TFRpip") {
+          goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75 && xF>0;
+        }
+        //
+        // epi-X
+        if (property == "xFpim") { 
+          goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75;
+        }
+        if (property == "PTTFRpim" || property ==  "xTFRpim" || property == "zTFRpim" || 
+          property == "Q2TFRpim" || property ==  "xpim") {
+          goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75 && xF<0;
+        }
+        if (property == "PTCFRpim" || property == "xCFRpim" || property == "zCFRpim" ||
+          property == "Q2TFRpim") {
+          goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75 && xF>0;
+        }
+
+        if (isMC) {
+            return goodEvent;
+        } else {
+            return goodEvent && *target_pol != 0;
+        }
+    }
+
+private:
+    TTreeReaderValue<double> Q2;
+    TTreeReaderValue<double> W;
+    TTreeReaderValue<double> Mx;
+    TTreeReaderValue<double> x;
+    TTreeReaderValue<double> y;
+    TTreeReaderValue<double> pT;
+    TTreeReaderValue<double> xF;
+    TTreeReaderValue<double> target_pol;
+};
+
 
 float dilution_factor(float currentVariable, const std::string& prefix) {
 
@@ -445,14 +517,9 @@ TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int b
   // Counter to limit the number of processed entries
   int counter = 0;
   while (dataReader.Next()) {
-      // Break if we've read enough entries
-      // if (counter >= 2250000) {
-      //     break;
-      // }
 
       // Apply kinematic cuts (this function will need to be adapted)
-      // bool passedKinematicCuts = applyKinematicCuts(dataReader.GetCurrentEntry(), /*other arguments*/);
-      bool passedKinematicCuts = true;
+      bool passedKinematicCuts = kinematicCuts.applyCuts(currentFits, false);
       // Check if the currentVariable is within the desired range
       if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
         sumVariable += *currentVariable;
