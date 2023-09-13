@@ -22,6 +22,7 @@
 #include <chrono>
 #include <TTreeReader.h>
 #include <TTreeReaderValue.h>
+#include <TLegend.h>
 using namespace std;
 
 
