@@ -436,7 +436,6 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   int helicity; data->SetBranchAddress("helicity", &helicity); // beam helicity 
   double beam_pol; data->SetBranchAddress("beam_pol", &beam_pol); // beam polarization
   double target_pol; data->SetBranchAddress("target_pol", &target_pol); // target polarization
-  cout << target_pol << endl;
   double phi; data->SetBranchAddress("phi", &phi); // trento phi
   double currentVariable; 
   data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable); 
@@ -447,6 +446,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   // for (int entry = 0; entry < data->GetEntries(); ++entry) {
   for (int entry = 0; entry < 2000000; ++entry) {
     data->GetEntry(entry);
+    cout << entry << " " << target_pol << endl;
     bool passedKinematicCuts = applyKinematicCuts(data, entry, currentFits, 0);
     bool inRange = currentVariable >= varMin && currentVariable < varMax;
     // reset the currentVariable address because it may have been overwritten by another
@@ -464,7 +464,6 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
 
       // Accumulate polarization and event count for mean polarization calculation
       sumPol += beam_pol;
-      cout << beam_pol << " " << target_pol << endl;
       if (target_pol > 0) {
         sumTargetPosPol+=target_pol;
         numEventsPosTarget++;
