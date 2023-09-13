@@ -442,7 +442,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
 
 
   // for (int entry = 0; entry < data->GetEntries(); ++entry) {
-  for (int entry = 0; entry < 100000; ++entry) {
+  for (int entry = 0; entry < 1000000; ++entry) {
     data->GetEntry(entry);
     bool passedKinematicCuts = applyKinematicCuts(data, entry, currentFits, 0);
     bool inRange = currentVariable >= varMin && currentVariable < varMax;
@@ -509,7 +509,13 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   delete histNegPos;
   delete histNegNeg;
 
-  cout << histAsymmetry << endl;
+  int nBinsX = histAsymmetry->GetXaxis()->GetNbins();
+  for (int i = 1; i <= nBinsX; ++i) {
+      double binCenter = histAsymmetry->GetXaxis()->GetBinCenter(i);
+      double binContent = histAsymmetry->GetBinContent(i);
+      std::cout << "Bin " << i << " (centered at " << binCenter << ") has content: " << binContent << std::endl;
+  }
+
   // Return the final asymmetry histogram
   return histAsymmetry;
 
