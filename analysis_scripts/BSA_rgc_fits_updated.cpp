@@ -479,6 +479,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   double Ptm = - sumTargetNegPol / numEventsNegTarget;// mean negative target polarization for data
   // the negative sign here is correct; RGC lists the polarizations with signs to tell which is 
   // which but the polarization really should just be "percent of polarized nucleii"
+  cout << meanVariable << " " << meanPol << " " << Ptp << " " << Ptm << endl;
 
   // Create the asymmetry histogram
   int numBins = histPosPos->GetNbinsX();
