@@ -351,7 +351,7 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
 
   // Create the legend
   // TLegend *leg = new TLegend(0.16171, 0.7, 0.4, 0.9);  // Adjusted to the upper-left corner
-  TLegend *leg = new TLegend(0.19, 0.625, 0.45, 0.825);  // Adjusted to the upper-left corner
+  TLegend *leg = new TLegend(0.19, 0.675, 0.45, 0.875);  // Adjusted to the upper-left corner
   leg->SetBorderSize(1);
   leg->SetFillColor(0);
   leg->SetTextSize(0.025);  // Reduced text size
