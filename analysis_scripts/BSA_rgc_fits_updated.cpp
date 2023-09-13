@@ -350,10 +350,10 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   graph->GetYaxis()->SetTitleSize(0.05);
 
   // Create the legend
-  TLegend *leg = new TLegend(0.45, 0.75, 0.9, 0.95);  // Adjust these values
+  TLegend *leg = new TLegend(0.15, 0.75, 0.4, 0.95);  // Adjusted to the upper-left corner
   leg->SetBorderSize(1);
   leg->SetFillColor(0);
-  leg->SetTextSize(0.04);
+  leg->SetTextSize(0.03);  // Reduced text size
   leg->SetTextAlign(12);  // Left-align text
 
   // Add fit parameters as legend entries based on the value of 'asymmetry'.
@@ -362,13 +362,13 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
       if (i == 0) {
           paramName = "offset";
       } else if (asymmetryIndex == 0) {
-          if (i == 1) paramName = "#it{A}_{LU}^{#sin#phi}";
+          if (i == 1) paramName = "#it{A}_{LU}^{sin#phi}";
       } else if (asymmetryIndex == 1) {
-          if (i == 1) paramName = "#it{A}_{UL}^{#sin#phi}";
-          if (i == 2) paramName = "#it{A}_{UL}^{#sin2#phi}";
+          if (i == 1) paramName = "#it{A}_{UL}^{sin#phi}";
+          if (i == 2) paramName = "#it{A}_{UL}^{sin2#phi}";
       } else if (asymmetryIndex == 2) {
           if (i == 1) paramName = "#it{A}_{LL}";
-          if (i == 2) paramName = "#it{A}_{LL}^{#cos#phi}";
+          if (i == 2) paramName = "#it{A}_{LL}^{cos#phi}";
       }
       leg->AddEntry((TObject*)0, Form("%s: %.4f #pm %.4f", paramName, 
         fitFunction->GetParameter(i), fitFunction->GetParError(i)), "");
