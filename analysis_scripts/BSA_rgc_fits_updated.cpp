@@ -446,8 +446,8 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
     data->GetEntry(entry);
     cout << "Entry " << entry << " : " << propertyNames[currentFits].c_str();
     cout << " " << currentVariable << " " << helicity << endl;
-    if (applyKinematicCuts(data, entry, currentFits, 0) && currentVariable >= varMin && 
-      currentVariable < varMax) {
+    bool passedKinematicCuts = applyKinematicCuts(data, entry, currentFits, 0);
+    if (passedKinematicCuts && currentVariable >= varMin && currentVariable < varMax) {
       // reset the currentVariable address because it may have been overwritten by another
       // variable in the applyKinematics class
       data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable);
