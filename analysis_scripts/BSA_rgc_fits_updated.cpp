@@ -445,6 +445,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   cout << endl;
   for (int entry = 0; entry < 10; ++entry) {  // Just read the first 10 entries for debugging
     data->GetEntry(entry);
+    data_copied->GetEntry(entry);
     cout << "Entry " << entry << " : " << propertyNames[currentFits].c_str();
     cout << " " << currentVariable << " " << xF << " " << helicity << endl;
   }
@@ -454,7 +455,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   // for (int entry = 0; entry < data->GetEntries(); ++entry) {
   for (int entry = 0; entry < 10; ++entry) {
     data->GetEntry(entry);
-    
+    data_copied->GetEntry(entry);
     cout << "Entry " << entry << " : " << propertyNames[currentFits].c_str();
     cout << " " << currentVariable << " " << xF << " " << helicity << endl;
     if (applyKinematicCuts(data, entry, currentFits, 0) && currentVariable >= varMin && 
