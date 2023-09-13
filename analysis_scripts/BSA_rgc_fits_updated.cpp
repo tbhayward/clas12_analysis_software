@@ -441,7 +441,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   TTree* data_copied = data;
   double currentVariable; 
   data_copied->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable); 
-
+ 
   cout << endl;
   for (int entry = 0; entry < 10; ++entry) {  // Just read the first 10 entries for debugging
     data->GetEntry(entry);
