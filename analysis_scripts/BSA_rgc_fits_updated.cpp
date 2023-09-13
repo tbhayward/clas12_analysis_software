@@ -457,6 +457,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
     cout << " " << currentVariable << " " << applyKinematicCuts(data, entry, currentFits, 0) << endl;
     if (applyKinematicCuts(data, entry, currentFits, 0) && currentVariable >= varMin && 
       currentVariable < varMax) {
+      data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable);
     //   sumVariable+=currentVariable;
 
     //   if (helicity > 0 && target_pol > 0) { histPosPos->Fill(phi); } 
