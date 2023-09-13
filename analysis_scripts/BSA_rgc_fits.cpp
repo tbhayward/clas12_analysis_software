@@ -8,6 +8,7 @@
 #include <vector>
 #include <map>
 #include <TSystem.h>
+#include <chrono>
 #include <iomanip> // Include this header for std::fixed and std::setprecision
 
 size_t currentFits = 0;
@@ -1311,6 +1312,8 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
 
 void BSA_rgc_fits(const char* data_file, const char* mc_file, const char* output_file, 
   const char* kinematic_file) {
+  // Start the timer
+  auto start_time = std::chrono::high_resolution_clock::now();
 
   // Clear the contents of the output_file
   std::ofstream ofs(output_file, std::ios::trunc);
@@ -1402,4 +1405,19 @@ void BSA_rgc_fits(const char* data_file, const char* mc_file, const char* output
     currentFits++;
   }
   cout << endl << endl;
+
+  // Stop the timer
+  auto end_time = std::chrono::high_resolution_clock::now();
+  // Calculate the elapsed time in seconds and microseconds
+  auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - 
+    start_time).count();
+  double seconds = duration / 1e6;
+  // Convert to hours, minutes, and seconds
+  int hours = static_cast<int>(seconds) / 3600;
+  int remaining_time = static_cast<int>(seconds) % 3600;
+  int mins = remaining_time / 60;
+  int remaining_seconds = remaining_time % 60;
+  // Print the elapsed time
+  cout << "Time elapsed: ";
+  cout << hours << " hours, " << mins << " mins, " << remaining_seconds << " seconds." << endl;
 }
