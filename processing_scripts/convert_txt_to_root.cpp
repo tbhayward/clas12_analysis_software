@@ -337,5 +337,7 @@ int main(int argc, char *argv[]) {
     // Close the input text file
     infile.close();
 
+    cout << "Output ROOT file: " << argv[2];
+
     return 0;
 }
