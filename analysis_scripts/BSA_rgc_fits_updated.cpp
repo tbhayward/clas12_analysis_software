@@ -413,7 +413,7 @@ double asymmetry_error_calculation(double currentVariable, const std::string& pr
   }
 }
 
-TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex, 
+TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int binIndex, 
   const std::string& prefix, int asymmetry_index) {
 
   // Determine the variable range for the specified bin
@@ -436,23 +436,22 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   int numEventsPosTarget = 0;
   int numEventsNegTarget = 0;
 
-  TTreeReader reader("data", file);
-  TTreeReaderValue<int> helicity(reader, "helicity");
-  TTreeReaderValue<double> beam_pol(reader, "beam_pol");
-  TTreeReaderValue<double> target_pol(reader, "target_pol");
-  TTreeReaderValue<double> phi(reader, "phi");
-  TTreeReaderValue<double> currentVariable(reader, propertyNames[currentFits].c_str());
+  TTreeReaderValue<int> helicity(data_reader, "helicity");
+  TTreeReaderValue<double> beam_pol(data_reader, "beam_pol");
+  TTreeReaderValue<double> target_pol(data_reader, "target_pol");
+  TTreeReaderValue<double> phi(data_reader, "phi");
+  TTreeReaderValue<double> currentVariable(data_reader, propertyNames[currentFits].c_str());
 
   // Counter to limit the number of processed entries
   int counter = 0;
-  while (reader.Next()) {
+  while (data_reader.Next()) {
       // Break if we've read enough entries
       // if (counter >= 2250000) {
       //     break;
       // }
 
       // Apply kinematic cuts (this function will need to be adapted)
-      // bool passedKinematicCuts = applyKinematicCuts(reader.GetCurrentEntry(), /*other arguments*/);
+      // bool passedKinematicCuts = applyKinematicCuts(data_reader.GetCurrentEntry(), /*other arguments*/);
       bool passedKinematicCuts = true;
       // Check if the currentVariable is within the desired range
       if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
@@ -472,11 +471,10 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
           sumTargetNegPol += *target_pol;
           numEventsNegTarget++;
         }
-        numEvents++;
+        numEvents++; // Increment the numEvents
       }
 
-      // Increment the counter
-      counter++;
+      counter++; // Increment the counter
   }
 
   // Calculate the mean polarization
@@ -665,7 +663,7 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   delete graph;
 }
 
-void performChi2Fits(TTree* data, const char* output_file, const char* kinematic_file,
+void performChi2Fits(TTreeReader &dataReader, const char* output_file, const char* kinematic_file,
   const std::string& prefix, int asymmetry_index) {
 
   // Initialize string streams to store the results for each bin
@@ -724,7 +722,7 @@ void performChi2Fits(TTree* data, const char* output_file, const char* kinematic
     snprintf(histName, sizeof(histName), "hist_%zu", i);
 
     // Create a histogram for the current bin
-    TH1D* hist = createHistogramForBin(data, histName, i, prefix, asymmetry_index);
+    TH1D* hist = createHistogramForBin(dataReader, histName, i, prefix, asymmetry_index);
     // Fit the histogram using the fitFunction and get the fit result
     hist->Fit(fitFunction, "QS");
     plotHistogramAndFit(hist, fitFunction, i, asymmetry_index, prefix);
@@ -853,6 +851,9 @@ int main(int argc, char *argv[]) {
     cout << "-- Trees successfully extracted from ROOT files." << endl << endl;
   }
 
+  TTreeReader dataReader(data); // Create a TTreeReader for the data tree
+  TTreeReader mcReader(mc); // Create a TTreeReader for the mc tree
+
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
     for (int asymmetry = 0; asymmetry < 1; ++asymmetry){
@@ -861,7 +862,7 @@ int main(int argc, char *argv[]) {
         case 1: cout << "    Beginning chi2 TSA." << endl; break;
         case 2: cout << "    Beginning chi2 DSA." << endl; break;
       }
-      performChi2Fits(data, output_file, kinematic_file, binNames[i], asymmetry);
+      performChi2Fits(dataReader, output_file, kinematic_file, binNames[i], asymmetry);
     }
   }
 
