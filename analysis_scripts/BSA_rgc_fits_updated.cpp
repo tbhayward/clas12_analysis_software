@@ -520,7 +520,7 @@ TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int b
   while (dataReader.Next()) {
 
       // Apply kinematic cuts (this function will need to be adapted)
-      bool passedKinematicCuts = KinematicCuts.applyCuts(currentFits, false);
+      bool passedKinematicCuts = kinematicCuts.applyCuts(currentFits, false);
       // bool passedKinematicCuts = true;
       // Check if the currentVariable is within the desired range
       if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
@@ -954,3 +954,5 @@ int main(int argc, char *argv[]) {
   cout << hours << " hours, " << mins << " mins, " << remaining_seconds << " seconds." << endl;
   return 0;
 }
+
+// g++ `root-config --cflags --libs` -o BSA_rgc_fits_updated BSA_rgc_fits_updated.cpp ;
