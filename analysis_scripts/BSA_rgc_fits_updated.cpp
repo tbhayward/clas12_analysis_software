@@ -509,6 +509,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   delete histNegPos;
   delete histNegNeg;
 
+  cout << histAsymmetry << endl;
   // Return the final asymmetry histogram
   return histAsymmetry;
 
