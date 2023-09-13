@@ -831,28 +831,29 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
       // Check if the currentVariable is within the desired range
       if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
         // sum the kinematic variable values
-        sumQ2 += Q2;
-        sumW += W;
-        sumx += x;
-        sumy += y;
-        sumz += z;
-        sumzeta += zeta;
-        sumpT += pT;
-        sumxF += xF;
-        sumt += t;
-        sumtmin += tmin;
+        sumQ2 += *Q2;
+        sumW += *W;
+        sumx += *x;
+        sumy += *y;
+        sumz += *z;
+        sumzeta += *zeta;
+        sumpT += *pT;
+        sumxF += *xF;
+        sumt += *t;
+        sumtmin += *tmin;
 
         // sum the depolarization values
-        sumDepA += DepA;
-        sumDepB += DepB;
-        sumDepC += DepC;
-        sumDepV += DepV;
-        sumDepW += DepW;
+        sumDepA += *DepA;
+        sumDepB += *DepB;
+        sumDepC += *DepC;
+        sumDepV += *DepV;
+        sumDepW += *DepW;
 
         numEvents += 1;
       }
 
     }
+    dataReader.Restart();  // Reset the TTreeReader at the end of the function
     cout << "Found " << numEvents << " events in this bin." << endl;
 
     delete hist;
