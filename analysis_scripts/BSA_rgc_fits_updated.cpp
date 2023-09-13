@@ -375,8 +375,8 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
     fileNameSuffix + ".png";
   
   // Determine the variable range for the specified bin
-  double varMin = allBins[currentFits][i];
-  double varMax = allBins[currentFits][i + 1];
+  double varMin = allBins[currentFits][binIndex];
+  double varMax = allBins[currentFits][binIndex + 1];
   // Create a title string for the graph 
   string formattedLabelName = formatLabelName(prefix);
   std::ostringstream oss;
