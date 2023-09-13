@@ -440,9 +440,11 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   double currentVariable; 
   data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable); 
 
+  // TTreeReader reader("data", file); 
+  // TTreeReaderValue<double> myVariable(reader, "currentVariable");
 
-  for (int entry = 0; entry < data->GetEntries(); ++entry) {
-  // for (int entry = 0; entry < 1000000; ++entry) {
+  // for (int entry = 0; entry < data->GetEntries(); ++entry) {
+  for (int entry = 0; entry < 1000000; ++entry) {
     data->GetEntry(entry);
     bool passedKinematicCuts = applyKinematicCuts(data, entry, currentFits, 0);
     bool inRange = currentVariable >= varMin && currentVariable < varMax;
@@ -454,14 +456,15 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
     if (passedKinematicCuts && inRange) {
       sumVariable+=currentVariable;
 
-      if (helicity > 0 && target_pol > 0) { histPosPos->Fill(phi);  cout << "pp" << endl;} 
-      else if (helicity > 0 && target_pol < 0) { histPosNeg->Fill(phi); cout << "pm" << endl;} 
-      else if (helicity < 0 && target_pol > 0) { histNegPos->Fill(phi); cout << "mp" << endl;} 
-      else if (helicity < 0 && target_pol < 0) { histNegNeg->Fill(phi); cout << "mm" << endl;}
+      if (helicity > 0 && target_pol > 0) { histPosPos->Fill(phi); } 
+      else if (helicity > 0 && target_pol < 0) { histPosNeg->Fill(phi); } 
+      else if (helicity < 0 && target_pol > 0) { histNegPos->Fill(phi); } 
+      else if (helicity < 0 && target_pol < 0) { histNegNeg->Fill(phi); }
 
       // Accumulate polarization and event count for mean polarization calculation
       sumPol += beam_pol;
       if (target_pol > 0) {
+        cout << "positive target pol" << endl;
         sumTargetPosPol+=target_pol;
         numEventsPosTarget++;
       } else if (target_pol < 0) {
