@@ -366,7 +366,6 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
         paramName = "{A}_{LL}"
       } else if (asymmetryIndex == 0) {
         if (i == 1) paramName = "#it{A}_{LU}^{sin#phi}";
-      }
       } else if (asymmetryIndex == 1) {
         if (i == 1) paramName = "#it{A}_{UL}^{sin#phi}";
         if (i == 2) paramName = "#it{A}_{UL}^{sin2#phi}";
