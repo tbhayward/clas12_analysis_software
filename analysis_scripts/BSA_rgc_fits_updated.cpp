@@ -445,7 +445,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   // TTreeReaderValue<double> myVariable(reader, "currentVariable");
 
   // for (int entry = 0; entry < data->GetEntries(); ++entry) {
-  for (int entry = 0; entry < 1500000; ++entry) {
+  for (int entry = 0; entry < 2250000; ++entry) {
     data->GetEntry(entry);
     cout << entry << " " << runnum << " " << target_pol << endl;
     bool passedKinematicCuts = applyKinematicCuts(data, entry, currentFits, 0);
