@@ -452,7 +452,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
       // }
 
       // Apply kinematic cuts (this function will need to be adapted)
-      bool passedKinematicCuts = applyKinematicCuts(reader.GetCurrentEntry(), /*other arguments*/);
+      // bool passedKinematicCuts = applyKinematicCuts(reader.GetCurrentEntry(), /*other arguments*/);
       bool passedKinematicCuts = true;
       // Check if the currentVariable is within the desired range
       if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
