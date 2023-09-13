@@ -438,8 +438,9 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   double target_pol; data->SetBranchAddress("target_pol", &target_pol); // target polarization
   double phi; data->SetBranchAddress("phi", &phi); // trento phi
   double xF; data->SetBranchAddress("xF", &xF); // xF
+  TTree* data_copied = data;
   double currentVariable; 
-  data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable); 
+  data_copied->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable); 
 
   cout << endl;
   for (int entry = 0; entry < 10; ++entry) {  // Just read the first 10 entries for debugging
