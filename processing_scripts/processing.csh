@@ -42,4 +42,7 @@ else if ($arg1 == "processing_scripts/processing_dihadrons.groovy") then
     coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4" "$5.txt" "$6"
 endif
 
-
+# Run the convert_txt_to_root program
+set txt_file = "$4.txt"
+set root_file = "$4.root"
+./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3
