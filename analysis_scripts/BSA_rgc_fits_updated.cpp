@@ -363,7 +363,7 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
       if (i == 0 && (asymmetryIndex == 0 || asymmetryIndex == 1)) {
         paramName = "offset";
       } else if (i == 0 && asymmetryIndex == 2) {
-        paramName = "{A}_{LL}";
+        paramName = "#it{A}_{LL}";
       } else if (asymmetryIndex == 0) {
         if (i == 1) paramName = "#it{A}_{LU}^{sin#phi}";
       } else if (asymmetryIndex == 1) {
