@@ -29,9 +29,8 @@ else
     set arg2 = "$2"
 endif
 
-git pull;
+
 cd clasqaDB/; source env.csh; cd ..;
-g++ `root-config --cflags --libs` -o processing_scripts/convert_txt_to_root processing_scripts/convert_txt_to_root.cpp
 
 # execute command based on number of entries
 if ($arg1 == "processing_scripts/processing_single_hadrons.groovy") then
