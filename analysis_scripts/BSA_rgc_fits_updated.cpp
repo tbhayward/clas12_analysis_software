@@ -348,27 +348,47 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   graph->GetXaxis()->SetTitleSize(0.05);
   graph->GetYaxis()->SetTitleSize(0.05);
 
-  // Create a new TPaveStats object which will serve as our custom statistics box.
-  // Adjusted the box position and size to ensure it doesn't overlap with the axes labels
-  TPaveStats *statBox = new TPaveStats(0.16, 0.73, 0.45, 0.9, "brNDC");
-  // changed coordinates for top left position
-  statBox->SetFillColor(0);
-  statBox->SetTextSize(0.0225);
-  statBox->SetTextAlign(12);
-  statBox->SetTextColor(1);
-  statBox->SetShadowColor(0); // remove shadow
+  // // Create a new TPaveStats object which will serve as our custom statistics box.
+  // // Adjusted the box position and size to ensure it doesn't overlap with the axes labels
+  // TPaveStats *statBox = new TPaveStats(0.16, 0.73, 0.45, 0.9, "brNDC");
+  // // changed coordinates for top left position
+  // statBox->SetFillColor(0);
+  // statBox->SetTextSize(0.0225);
+  // statBox->SetTextAlign(12);
+  // statBox->SetTextColor(1);
+  // statBox->SetShadowColor(0); // remove shadow
   
-  // Iterate over each parameter in the fit function.
+  // // Iterate over each parameter in the fit function.
+  // for (int i = 0; i < fitFunction->GetNpar(); ++i) {
+  //   TText *text=statBox->AddText(Form("Param %d: %.4f +/- %.4f",i,fitFunction->GetParameter(i), 
+  //     fitFunction->GetParError(i))); 
+  //   text->SetTextColor(1);
+  // }
+
+  // TText *text = statBox->AddText(Form("#chi^{2}/Ndf: %.4f", fitFunction->GetChisquare() / 
+  //   fitFunction->GetNDF()));
+  // text->SetTextColor(1);
+  // statBox->Draw();
+
+  // Create the legend
+  TLegend *leg = new TLegend(0.45, 0.8, 0.9, 0.9);  // Adjust these values as needed
+  leg->SetBorderSize(1);  // border size
+  leg->SetFillColor(0);  // Transparent fill
+  leg->SetTextSize(0.04);  // text size
+
+  // Add fit parameters as legend entries. No associated object, so the last parameter is "".
   for (int i = 0; i < fitFunction->GetNpar(); ++i) {
-    TText *text=statBox->AddText(Form("Param %d: %.4f +/- %.4f",i,fitFunction->GetParameter(i), 
-      fitFunction->GetParError(i))); 
-    text->SetTextColor(1);
+      leg->AddEntry((TObject*)0, Form("Param %d: %.4f +/- %.4f", i, fitFunction->GetParameter(i), 
+        fitFunction->GetParError(i)), "");
   }
 
-  TText *text = statBox->AddText(Form("#chi^{2}/Ndf: %.4f", fitFunction->GetChisquare() / 
-    fitFunction->GetNDF()));
-  text->SetTextColor(1);
-  statBox->Draw();
+  // Add the chi-squared per degree of freedom to the legend
+  leg->AddEntry((TObject*)0, Form("#chi^{2}/Ndf: %.4f", fitFunction->GetChisquare() / 
+    fitFunction->GetNDF()), "");
+
+  // Draw the legend
+  leg->Draw("same");
+
 
     // Create the filename for the PNG
   std::string filename = "output/" + prefix + "_" + std::to_string(binIndex) + "_" + 
