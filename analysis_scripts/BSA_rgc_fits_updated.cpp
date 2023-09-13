@@ -969,8 +969,39 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
     }
 
     delete hist;
+
+    // outputs of mean kinematic variables
+    meanVariablesStream << std::fixed << std::setprecision(3); // Set precision to 3 digits 
+    meanVariablesStream << (i+1) << "~&~" << meanQ2 << "~&~" << meanW << "~&~" << meanx << "~&~";
+    meanVariablesStream << meany << "~&~" << meanz << "~&~" << meanzeta << "~&~";
+    meanVariablesStream << meanpT << "~&~" << meanxF << "~&~" << meant << "~&~" << meantmin; 
+    meanVariablesStream << std::string(" \\\\ \\hline ");
   }
 
+  chi2FitsAStream << "};";  chi2FitsBStream << "};";  chi2FitsCStream << "};"; 
+  // chi2FitsDStream << "};";  chi2FitsEStream << "};"; 
+
+  std::ofstream outputFile(output_file, std::ios_base::app);
+  outputFile << chi2FitsAStream.str() << std::endl;
+  outputFile << chi2FitsBStream.str() << std::endl;
+  if (asymmetry_index==1) { outputFile << chi2FitsCStream.str() << std::endl; }
+  // outputFile << chi2FitsCStream.str() << std::endl;
+  // outputFile << chi2FitsDStream.str() << std::endl;
+  // if (asymmetry_index==1) { outputFile << chi2FitsEStream.str() << std::endl; }
+  outputFile.close();
+
+  meanVariablesStream << "\\end{tabular}\n";
+  meanVariablesStream << "\\caption{The mean kinematic variables in each of the bins ";
+  meanVariablesStream << "for the extracted $" << prefix << "$ asymmetries.}\n";
+  meanVariablesStream << "\\label{table:kinematics_" << prefix << "}\n";
+  meanVariablesStream << "\\end{table}. Values given in GeV or GeV$^2$ where appropriate.\n";
+  meanVariablesStream << endl << endl << endl;
+  if (asymmetry_index == 0) {
+    std::ofstream kinematicFile(kinematic_file, std::ios_base::app);
+    // Write the string stream content to the file
+    kinematicFile << meanVariablesStream.str() << std::endl; 
+    kinematicFile.close();
+  }
 
 }
 
