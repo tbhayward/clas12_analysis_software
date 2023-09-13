@@ -519,7 +519,7 @@ TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int b
   while (dataReader.Next()) {
 
       // Apply kinematic cuts (this function will need to be adapted)
-      bool passedKinematicCuts = kinematicCuts.applyCuts(currentFits, false);
+      bool passedKinematicCuts = KinematicCuts.applyCuts(currentFits, false);
       // bool passedKinematicCuts = true;
       // Check if the currentVariable is within the desired range
       if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
