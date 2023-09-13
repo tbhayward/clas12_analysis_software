@@ -20,6 +20,8 @@
 #include <TText.h>
 #include <TApplication.h>
 #include <chrono>
+#include <TTreeReader.h>
+#include <TTreeReaderValue.h>
 using namespace std;
 
 
@@ -434,44 +436,47 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   int numEventsPosTarget = 0;
   int numEventsNegTarget = 0;
 
-  int helicity; data->SetBranchAddress("helicity", &helicity); // beam helicity 
-  double beam_pol; data->SetBranchAddress("beam_pol", &beam_pol); // beam polarization
-  double target_pol; data->SetBranchAddress("target_pol", &target_pol); // target polarization
-  double phi; data->SetBranchAddress("phi", &phi); // trento phi
-  double currentVariable; 
-  data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable); 
+  TTreeReader reader("data", file);
+  TTreeReaderValue<int> helicity(reader, "helicity");
+  TTreeReaderValue<double> beam_pol(reader, "beam_pol");
+  TTreeReaderValue<double> target_pol(reader, "target_pol");
+  TTreeReaderValue<double> phi(reader, "phi");
+  TTreeReaderValue<double> currentVariable(reader, propertyNames[currentFits].c_str());
 
-  // TTreeReader reader("data", file); 
-  // TTreeReaderValue<double> myVariable(reader, "currentVariable");
+  // Counter to limit the number of processed entries
+  int counter = 0;
+  while (reader.Next()) {
+      // Break if we've read enough entries
+      // if (counter >= 2250000) {
+      //     break;
+      // }
 
-  for (int entry = 0; entry < data->GetEntries(); ++entry) {
-  // for (int entry = 0; entry < 2250000; ++entry) {
-    data->GetEntry(entry);
-    bool passedKinematicCuts = applyKinematicCuts(data, entry, currentFits, 0);
-    bool inRange = currentVariable >= varMin && currentVariable < varMax;
-    // reset the currentVariable address because it may have been overwritten by another
-    // variable in the applyKinematics class
-    data->SetBranchAddress("target_pol", &target_pol);
-    data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable);
-    if (passedKinematicCuts && inRange) {
-      sumVariable+=currentVariable;
+      // Apply kinematic cuts (this function will need to be adapted)
+      bool passedKinematicCuts = applyKinematicCuts(reader.GetCurrentEntry(), /*other arguments*/);
+      bool passedKinematicCuts = true;
+      // Check if the currentVariable is within the desired range
+      if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
+        sumVariable += *currentVariable;
 
-      if (helicity > 0 && target_pol > 0) { histPosPos->Fill(phi); } 
-      else if (helicity > 0 && target_pol < 0) { histPosNeg->Fill(phi); } 
-      else if (helicity < 0 && target_pol > 0) { histNegPos->Fill(phi); } 
-      else if (helicity < 0 && target_pol < 0) { histNegNeg->Fill(phi); }
+        if (*helicity > 0 && *target_pol > 0) { histPosPos->Fill(*phi); } 
+        else if (*helicity > 0 && *target_pol < 0) { histPosNeg->Fill(*phi); } 
+        else if (*helicity < 0 && *target_pol > 0) { histNegPos->Fill(*phi); } 
+        else if (*helicity < 0 && *target_pol < 0) { histNegNeg->Fill(*phi); }
 
-      // Accumulate polarization and event count for mean polarization calculation
-      sumPol += beam_pol;
-      if (target_pol > 0) {
-        sumTargetPosPol+=target_pol;
-        numEventsPosTarget++;
-      } else if (target_pol < 0) {
-        sumTargetNegPol+=target_pol;
-        numEventsNegTarget++;
+        // Accumulate polarization and event count for mean polarization calculation
+        sumPol += *beam_pol;
+        if (*target_pol > 0) {
+          sumTargetPosPol += *target_pol;
+          numEventsPosTarget++;
+        } else if (*target_pol < 0) {
+          sumTargetNegPol += *target_pol;
+          numEventsNegTarget++;
+        }
+        numEvents++;
       }
-      numEvents++;
-    }
+
+      // Increment the counter
+      counter++;
   }
 
   // Calculate the mean polarization
@@ -835,7 +840,7 @@ int main(int argc, char *argv[]) {
     cout << "Error opening ROOT files (is the location correct?). Exiting." << endl;
     return 2;
   } else {
-    cout << "ROOT files opened successfully." << endl;
+    cout << "-- ROOT files opened successfully." << endl;
   }
   
   TTree* data = (TTree*)data_file->Get("PhysicsEvents");
@@ -876,6 +881,6 @@ int main(int argc, char *argv[]) {
   int remaining_seconds = remaining_time % 60;
   // Print the elapsed time
   cout << "Time elapsed: ";
-  cout << hours << " hours " << mins << " mins " << remaining_seconds << " seconds" << endl;
+  cout << hours << " hours, " << mins << " mins, " << remaining_seconds << " seconds." << endl;
   return 0;
 }
