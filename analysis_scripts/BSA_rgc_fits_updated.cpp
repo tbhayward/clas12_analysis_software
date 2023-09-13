@@ -168,77 +168,56 @@ void load_run_info_from_csv(const std::string& filename) {
   }
 }
 
-// // Apply kinematic cuts to the data
-// bool applyKinematicCuts(TTree* data, int entry, int currentFits, bool isMC) {
+std::string formatLabelName(const std::string& original) {
+    std::map<std::string, std::string> specialLabels = {
+        {"Q2", "Q^{2} (GeV^{2})"},
+        {"W", "W (GeV)"},
+        {"pT", "P_{T} (GeV)"},
+        {"t", "t (GeV^{2})"},
+        {"tmin", "t_{min} (GeV^{2})"},
+        {"e_p", "e_{p} (GeV)"},
+        {"Mx", "M_{x} (GeV)"},
+        {"Mx2", "M_{x}^{2} (GeV)"},
+        {"p_p", "p_{p} (GeV)"},
+        {"xF", "x_{F}"},
+    };
+  
+    if (specialLabels.find(original) != specialLabels.end()) {
+        return specialLabels[original];
+    }
 
-//   bool goodEvent = 0;
-//   std::string property = binNames[currentFits];
+    std::string formatted = original;
+    size_t pos = 0;
+    while ((pos = formatted.find('_', pos)) != std::string::npos) {
+        formatted.replace(pos, 1, "_{");
+        size_t closing = formatted.find('_', pos + 2);
+        if (closing == std::string::npos) {
+            closing = formatted.length();
+        }
+        formatted.insert(closing, "}");
+        pos = closing + 1;
+    }
 
-//   double target_pol, Q2, W, Mx, x, y, pT, xF;
-//   data->SetBranchAddress("target_pol", &target_pol);
-//   data->SetBranchAddress("Q2", &Q2);
-//   data->SetBranchAddress("W", &W);
-//   data->SetBranchAddress("Mx", &Mx);
-//   data->SetBranchAddress("x", &x);
-//   data->SetBranchAddress("y", &y);
-//   data->SetBranchAddress("pT", &pT);
-//   data->SetBranchAddress("xF", &xF);
+    if (formatted.find("theta") != std::string::npos) {
+        formatted.replace(formatted.find("theta"), 5, "#theta");
+    }
 
-//   data->GetEntry(entry);
-//   //
-//   //
-//   //
-//   // epX
-//   if (property == "xF") {
-//     goodEvent = Q2>1 && W>2 && Mx>1.4 && y <0.75;
-//   }
-//   if (property == "Q2bin") {
-//     goodEvent = Q2>1 && W>2 && Mx>1.4 && y<0.75 && x>0.2 && x<0.3 && pT>0.25 && pT<0.35 && 
-//       xF<0;
-//   }
-//   if (property == "PTTFR" || property ==  "xTFR" || property == "zetaTFR" || 
-//     property == "Q2TFR" || property ==  "x") {
-//     goodEvent = Q2>1 && W>2 && Mx>1.4 && y<0.75 && xF<0;
-//   }
-//   if (property == "PTCFR" || property == "xCFR" || property == "zetaCFR" ||
-//     property == "Q2TFR") {
-//     goodEvent = Q2>1 && W>2 && Mx>1.4 && y<0.75 && xF>0;
-//   } 
-//   //
-//   //
-//   //
-//   // epi+X
-//   if (property == "xFpip") { 
-//     goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75;
-//   }
-//   if (property == "PTTFRpip" || property ==  "xTFRpip" || property == "zTFRpip" || 
-//     property == "Q2TFRpip" || property ==  "xpip") {
-//     goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75 && xF<0;
-//   }
-//   if (property == "PTCFRpip" || property == "xCFRpip" || property == "zCFRpip" ||
-//     property == "Q2TFRpip") {
-//     goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75 && xF>0;
-//   }
-//   //
-//   //
-//   //
-//   // epi-X
-//   if (property == "xFpim") { 
-//     goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75;
-//   }
-//   if (property == "PTTFRpim" || property ==  "xTFRpim" || property == "zTFRpim" || 
-//     property == "Q2TFRpim" || property ==  "xpim") {
-//     goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75 && xF<0;
-//   }
-//   if (property == "PTCFRpim" || property == "xCFRpim" || property == "zCFRpim" ||
-//     property == "Q2TFRpim") {
-//     goodEvent = Q2>1 && W>2 && Mx>1.5 && y<0.75 && xF>0;
-//   } 
-//   if (isMC) { return goodEvent; }
-//   else {return goodEvent && target_pol != 0; } // if data, skip Pt = 0 (carbon)
+    if (formatted.find("zeta") != std::string::npos) {
+        formatted.replace(formatted.find("zeta"), 5, "#zeta");
+    }
 
-//   return goodEvent;  
-// }
+    if (formatted.find("phi") != std::string::npos) {
+        formatted.replace(formatted.find("phi"), 3, "#phi");
+    }
+
+    if (formatted.find("eta") != std::string::npos && 
+        formatted.find("theta") == std::string::npos && 
+        formatted.find("zeta") == std::string::npos) {
+        formatted.replace(formatted.find("eta"), 3, "#eta");
+    }
+  
+    return formatted;
+}
 
 class KinematicCuts {
 public:
@@ -395,13 +374,18 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   std::string filename = "output/" + prefix + "_" + std::to_string(binIndex) + "_" + 
     fileNameSuffix + ".png";
   
-  // Create a title string for the graph by removing the "output/" and ".png" portions 
-  // of the filename
-  std::string title = filename.substr(7, filename.size()-7-4);  
-  // start from the 7th index (after "output/") and take (filename.size()-7-4) characters
+  // Determine the variable range for the specified bin
+  double varMin = allBins[currentFits][i];
+  double varMax = allBins[currentFits][i + 1];
+  // Create a title string for the graph 
+  string formattedLabelName = formatLabelName(prefix);
+  std::ostringstream oss;
+  oss << std::fixed << std::setprecision(3) << varMin << " ≤ ";
+  oss << formattedLabelName << " < " << varMax;
+  std::string title = oss.str();
 
   // Set the title to the title string
-  graph->SetTitle(title.c_str());
+  graph->SetTitle(title);
 
   // Save the canvas as a PNG
   canvas->SaveAs(filename.c_str());
@@ -825,9 +809,6 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
     TTreeReaderValue<double> DepW(dataReader, "DepW");
     TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
 
-    // Determine the variable range for the specified bin
-    double varMin = allBins[currentFits][i];
-    double varMax = allBins[currentFits][i + 1];
     KinematicCuts kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
     while (dataReader.Next()) {
       // Apply kinematic cuts (this function will need to be adapted)
@@ -1115,7 +1096,7 @@ int main(int argc, char *argv[]) {
 
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
+    for (int asymmetry = 0; asymmetry < 1; ++asymmetry){
       switch (asymmetry) {
         case 0: cout << "    Beginning chi2 BSA." << endl; break;
         case 1: cout << "    Beginning chi2 TSA." << endl; break;
