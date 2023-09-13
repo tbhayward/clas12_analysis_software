@@ -350,10 +350,10 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   graph->GetYaxis()->SetTitleSize(0.05);
 
   // Create the legend
-  TLegend *leg = new TLegend(0.2, 0.7, 0.5, 0.9);  // Adjusted to the upper-left corner
+  TLegend *leg = new TLegend(0.175, 0.7, 0.45, 0.9);  // Adjusted to the upper-left corner
   leg->SetBorderSize(1);
   leg->SetFillColor(0);
-  leg->SetTextSize(0.0225);  // Reduced text size
+  leg->SetTextSize(0.025);  // Reduced text size
   leg->SetTextAlign(12);  // Left-align text
 
   // Add fit parameters as legend entries based on the value of 'asymmetry'.
