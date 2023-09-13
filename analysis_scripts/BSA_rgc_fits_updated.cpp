@@ -451,7 +451,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
       // reset the currentVariable address because it may have been overwritten by another
       // variable in the applyKinematics class
       data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable);
-      // sumVariable+=currentVariable;
+      sumVariable+=currentVariable;
 
       // if (helicity > 0 && target_pol > 0) { histPosPos->Fill(phi); } 
       // else if (helicity > 0 && target_pol < 0) { histPosNeg->Fill(phi); } 
