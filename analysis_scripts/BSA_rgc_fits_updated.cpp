@@ -433,6 +433,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   int numEventsPosTarget = 0;
   int numEventsNegTarget = 0;
 
+  int runnum; data->SetBranchAddress("runnum", &runnum); // beam helicity 
   int helicity; data->SetBranchAddress("helicity", &helicity); // beam helicity 
   double beam_pol; data->SetBranchAddress("beam_pol", &beam_pol); // beam polarization
   double target_pol; data->SetBranchAddress("target_pol", &target_pol); // target polarization
@@ -444,9 +445,9 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   // TTreeReaderValue<double> myVariable(reader, "currentVariable");
 
   // for (int entry = 0; entry < data->GetEntries(); ++entry) {
-  for (int entry = 0; entry < 1000000; ++entry) {
+  for (int entry = 0; entry < 1500000; ++entry) {
     data->GetEntry(entry);
-    cout << entry << " " << target_pol << endl;
+    cout << entry << " " << runnum << " " << target_pol << endl;
     bool passedKinematicCuts = applyKinematicCuts(data, entry, currentFits, 0);
     bool inRange = currentVariable >= varMin && currentVariable < varMax;
     // reset the currentVariable address because it may have been overwritten by another
