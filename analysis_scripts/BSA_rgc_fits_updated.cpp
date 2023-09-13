@@ -853,14 +853,119 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
         sumDepV += *DepV;
         sumDepW += *DepW;
 
-        cout << *currentVariable << " " << *xF << endl;
-
         numEvents += 1;
       }
 
     }
     dataReader.Restart();  // Reset the TTreeReader at the end of the function
     cout << "Found " << numEvents << " events in this bin." << endl;
+
+    // Calculate the mean values for the variable and depolarization factors
+    float meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
+    float meanDepA = numEvents > 0 ? sumDepA / numEvents : 0.0;
+    float meanDepB = numEvents > 0 ? sumDepB / numEvents : 0.0;
+    float meanDepC = numEvents > 0 ? sumDepC / numEvents : 0.0;
+    float meanDepV = numEvents > 0 ? sumDepV / numEvents : 0.0;
+    float meanDepW = numEvents > 0 ? sumDepW / numEvents : 0.0;
+
+    // Calculate the mean values for the kinematic variables
+    float meanQ2 = numEvents > 0 ? sumQ2 / numEvents : 0.0;
+    float meanW = numEvents > 0 ? sumW / numEvents : 0.0;
+    float meanx = numEvents > 0 ? sumx / numEvents : 0.0;
+    float meany = numEvents > 0 ? sumy / numEvents : 0.0;
+    float meanz = numEvents > 0 ? sumz / numEvents : 0.0;
+    float meanzeta = numEvents > 0 ? sumzeta / numEvents : 0.0;
+    float meanpT = numEvents > 0 ? sumpT / numEvents : 0.0;
+    float meanxF = numEvents > 0 ? sumxF / numEvents : 0.0;
+    float meant = numEvents > 0 ? sumt / numEvents : 0.0;
+    float meantmin = numEvents > 0 ? sumtmin / numEvents : 0.0;
+
+    switch (asymmetry_index) {
+      case 0: {// beam-spin asymmetry
+        // Get the fitted parameters and their errors
+        float ALU_offset = fitFunction->GetParameter(0);
+        float ALU_offset_error = fitFunction->GetParError(0);
+        float ALU_sinphi = fitFunction->GetParameter(1); 
+        float ALU_sinphi_error = fitFunction->GetParError(1);
+        // float AUU_cosphi = fitFunction->GetParameter(2); 
+        // float AUU_cosphi_error = fitFunction->GetParError(2);
+        // float AUU_cos2phi = fitFunction->GetParameter(3); 
+        // float AUU_cos2phi_error = fitFunction->GetParError(3);
+        ALU_sinphi = (meanDepA/meanDepW)*ALU_sinphi;
+        ALU_sinphi_error = (meanDepA/meanDepW)*ALU_sinphi_error;
+        // AUU_cosphi = (meanDepA/meanDepV)*AUU_cosphi;
+        // AUU_cosphi_error = (meanDepA/meanDepV)*AUU_cosphi_error;
+        // AUU_cos2phi = (meanDepB/meanDepV)*AUU_cos2phi;
+        // AUU_cos2phi_error = (meanDepB/meanDepV)*AUU_cos2phi_error;
+        chi2FitsAStream<<"{"<<meanVariable<<", "<< ALU_offset << ", " << ALU_offset_error <<"}";
+        chi2FitsBStream<<"{"<<meanVariable<<", "<< ALU_sinphi << ", " << ALU_sinphi_error <<"}";
+        // chi2FitsCStream<<"{"<<meanVariable<<", "<< AUU_cosphi << ", " << AUU_cosphi_error <<"}";
+        // chi2FitsDStream<<"{"<<meanVariable<<", "<< AUU_cos2phi << ", "<<AUU_cos2phi_error <<"}";
+        if (i < numBins - 1) {
+            chi2FitsAStream << ", "; chi2FitsBStream << ", "; 
+            // chi2FitsCStream << ", "; chi2FitsDStream << ", ";
+        }
+        break;
+      }
+      case 1: {// target-spin asymmetry
+        // Get the fitted parameters and their errors
+        float AUL_offset = fitFunction->GetParameter(0);
+        float AUL_offset_error = fitFunction->GetParError(0);
+        float AUL_sinphi = fitFunction->GetParameter(1);
+        float AUL_sinphi_error = fitFunction->GetParError(1);
+        float AUL_sin2phi = fitFunction->GetParameter(2);
+        float AUL_sin2phi_error = fitFunction->GetParError(2);
+        // float AUU_cosphi = fitFunction->GetParameter(3); 
+        // float AUU_cosphi_error = fitFunction->GetParError(3);
+        // float AUU_cos2phi = fitFunction->GetParameter(4); 
+        // float AUU_cos2phi_error = fitFunction->GetParError(4);
+        AUL_sinphi = (meanDepA/meanDepV)*AUL_sinphi;
+        AUL_sinphi_error = (meanDepA/meanDepV)*AUL_sinphi_error;
+        AUL_sin2phi = (meanDepA/meanDepB)*AUL_sin2phi;
+        AUL_sin2phi_error = (meanDepA/meanDepB)*AUL_sin2phi_error;
+        // AUU_cosphi = (meanDepA/meanDepV)*AUU_cosphi;
+        // AUU_cosphi_error = (meanDepA/meanDepV)*AUU_cosphi_error;
+        // AUU_cos2phi = (meanDepB/meanDepV)*AUU_cos2phi;
+        // AUU_cos2phi_error = (meanDepB/meanDepV)*AUU_cos2phi_error;
+        chi2FitsAStream<<"{"<<meanVariable<<", "<< AUL_offset << ", " << AUL_offset_error <<"}";
+        chi2FitsBStream<<"{"<<meanVariable<<", "<< AUL_sinphi << ", " << AUL_sinphi_error <<"}";
+        chi2FitsCStream<<"{"<<meanVariable<<", "<< AUL_sin2phi << ", " << AUL_sin2phi_error <<"}";
+        // chi2FitsDStream<<"{"<<meanVariable<<", "<< AUU_cosphi << ", " << AUU_cosphi_error <<"}";
+        // chi2FitsEStream<<"{"<<meanVariable<<", "<< AUU_cos2phi << ", "<<AUU_cos2phi_error <<"}";
+        if (i < numBins - 1) {
+            chi2FitsAStream << ", "; chi2FitsBStream << ", "; chi2FitsCStream << ", ";
+            // chi2FitsDStream << ", "; chi2FitsEStream << ", ";
+        }
+        break;
+      }
+      case 2: {// double-spin asymmetry
+        // Get the fitted parameters and their errors
+        float ALL = fitFunction->GetParameter(0);
+        float ALL_error = fitFunction->GetParError(0);
+        float ALL_cosphi = fitFunction->GetParameter(1);
+        float ALL_cosphi_error = fitFunction->GetParError(1);
+        // float AUU_cosphi = fitFunction->GetParameter(2); 
+        // float AUU_cosphi_error = fitFunction->GetParError(2);
+        // float AUU_cos2phi = fitFunction->GetParameter(3); 
+        // float AUU_cos2phi_error = fitFunction->GetParError(3);
+        ALL = (meanDepA/meanDepC)*ALL;
+        ALL_error = (meanDepA/meanDepC)*ALL_error;
+        ALL_cosphi = (meanDepA/meanDepW)*ALL_cosphi;
+        ALL_cosphi_error = (meanDepA/meanDepW)*ALL_cosphi_error;
+        // AUU_cosphi = (meanDepA/meanDepV)*AUU_cosphi;
+        // AUU_cosphi_error = (meanDepA/meanDepV)*AUU_cosphi_error;
+        // AUU_cos2phi = (meanDepB/meanDepV)*AUU_cos2phi;
+        // AUU_cos2phi_error = (meanDepB/meanDepV)*AUU_cos2phi_error;
+        chi2FitsAStream<<"{"<<meanVariable<<", "<< ALL << ", " << ALL_error <<"}";
+        chi2FitsBStream<<"{"<<meanVariable<<", "<< ALL_cosphi << ", " << ALL_cosphi_error <<"}";
+        // chi2FitsCStream<<"{"<<meanVariable<<", "<< AUU_cosphi << ", " << AUU_cosphi_error <<"}";
+        // chi2FitsDStream<<"{"<<meanVariable<<", "<< AUU_cos2phi << ", "<<AUU_cos2phi_error <<"}";
+        if (i < numBins - 1) {
+            chi2FitsAStream << ", "; chi2FitsBStream << ", ";
+            // chi2FitsCStream << ", "; chi2FitsDStream << ", ";
+        }
+        break;
+      }
 
     delete hist;
   }
