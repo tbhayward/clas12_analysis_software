@@ -436,22 +436,22 @@ TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int b
   int numEventsPosTarget = 0;
   int numEventsNegTarget = 0;
 
-  TTreeReaderValue<int> helicity(data_reader, "helicity");
-  TTreeReaderValue<double> beam_pol(data_reader, "beam_pol");
-  TTreeReaderValue<double> target_pol(data_reader, "target_pol");
-  TTreeReaderValue<double> phi(data_reader, "phi");
-  TTreeReaderValue<double> currentVariable(data_reader, propertyNames[currentFits].c_str());
+  TTreeReaderValue<int> helicity(dataReader, "helicity");
+  TTreeReaderValue<double> beam_pol(dataReader, "beam_pol");
+  TTreeReaderValue<double> target_pol(dataReader, "target_pol");
+  TTreeReaderValue<double> phi(dataReader, "phi");
+  TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
 
   // Counter to limit the number of processed entries
   int counter = 0;
-  while (data_reader.Next()) {
+  while (dataReader.Next()) {
       // Break if we've read enough entries
       // if (counter >= 2250000) {
       //     break;
       // }
 
       // Apply kinematic cuts (this function will need to be adapted)
-      // bool passedKinematicCuts = applyKinematicCuts(data_reader.GetCurrentEntry(), /*other arguments*/);
+      // bool passedKinematicCuts = applyKinematicCuts(dataReader.GetCurrentEntry(), /*other arguments*/);
       bool passedKinematicCuts = true;
       // Check if the currentVariable is within the desired range
       if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
