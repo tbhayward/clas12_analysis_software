@@ -442,7 +442,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
 
 
   // for (int entry = 0; entry < data->GetEntries(); ++entry) {
-  for (int entry = 0; entry < 1000000; ++entry) {
+  for (int entry = 0; entry < 100000; ++entry) {
     data->GetEntry(entry);
     bool passedKinematicCuts = applyKinematicCuts(data, entry, currentFits, 0);
     bool inRange = currentVariable >= varMin && currentVariable < varMax;
@@ -454,10 +454,10 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
     if (passedKinematicCuts && inRange) {
       sumVariable+=currentVariable;
 
-      if (helicity > 0 && target_pol > 0) { histPosPos->Fill(phi); } 
-      else if (helicity > 0 && target_pol < 0) { histPosNeg->Fill(phi); } 
-      else if (helicity < 0 && target_pol > 0) { histNegPos->Fill(phi); } 
-      else if (helicity < 0 && target_pol < 0) { histNegNeg->Fill(phi); }
+      if (helicity > 0 && target_pol > 0) { histPosPos->Fill(phi);  cout << "pp" << endl;} 
+      else if (helicity > 0 && target_pol < 0) { histPosNeg->Fill(phi); cout << "pm" << endl;} 
+      else if (helicity < 0 && target_pol > 0) { histNegPos->Fill(phi); cout << "mp" << endl;} 
+      else if (helicity < 0 && target_pol < 0) { histNegNeg->Fill(phi); cout << "mm" << endl;}
 
       // Accumulate polarization and event count for mean polarization calculation
       sumPol += beam_pol;
