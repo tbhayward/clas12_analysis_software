@@ -9,6 +9,7 @@
 #include <map>
 #include <TSystem.h>
 #include <iomanip> // Include this header for std::fixed and std::setprecision
+
 size_t currentFits = 0;
 size_t currentBin = 0;
 int n = 1;
@@ -1395,8 +1396,8 @@ void BSA_rgc_fits(const char* data_file, const char* mc_file, const char* output
       performChi2Fits(data_file, output_file, kinematic_file, binNames[i], asymmetry);
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    performMLMFits(data_file, output_file, kinematic_file, binNames[i]);
-    cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
+    // performMLMFits(data_file, output_file, kinematic_file, binNames[i]);
+    // cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
     currentFits++;
   }
