@@ -437,18 +437,9 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   double beam_pol; data->SetBranchAddress("beam_pol", &beam_pol); // beam polarization
   double target_pol; data->SetBranchAddress("target_pol", &target_pol); // target polarization
   double phi; data->SetBranchAddress("phi", &phi); // trento phi
-  // TTree* data_copied = data->CloneTree();
   double currentVariable; 
   data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable); 
- 
-  cout << endl;
-  for (int entry = 0; entry < 10; ++entry) {  // Just read the first 10 entries for debugging
-    data->GetEntry(entry);
-    cout << "Entry " << entry << " : " << propertyNames[currentFits].c_str();
-    cout << " " << currentVariable << " " << helicity << endl;
-  }
 
-  cout << "End first loop" << endl;
 
   // for (int entry = 0; entry < data->GetEntries(); ++entry) {
   for (int entry = 0; entry < 10; ++entry) {
@@ -457,24 +448,26 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
     cout << " " << currentVariable << " " << applyKinematicCuts(data, entry, currentFits, 0) << endl;
     if (applyKinematicCuts(data, entry, currentFits, 0) && currentVariable >= varMin && 
       currentVariable < varMax) {
+      // reset the currentVariable address because it may have been overwritten by another
+      // variable in the applyKinematics class
       data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable);
-    //   sumVariable+=currentVariable;
+      sumVariable+=currentVariable;
 
-    //   if (helicity > 0 && target_pol > 0) { histPosPos->Fill(phi); } 
-    //   else if (helicity > 0 && target_pol < 0) { histPosNeg->Fill(phi); } 
-    //   else if (helicity < 0 && target_pol > 0) { histNegPos->Fill(phi); } 
-    //   else if (helicity < 0 && target_pol < 0) { histNegNeg->Fill(phi); }
+      if (helicity > 0 && target_pol > 0) { histPosPos->Fill(phi); } 
+      else if (helicity > 0 && target_pol < 0) { histPosNeg->Fill(phi); } 
+      else if (helicity < 0 && target_pol > 0) { histNegPos->Fill(phi); } 
+      else if (helicity < 0 && target_pol < 0) { histNegNeg->Fill(phi); }
 
-    //   // Accumulate polarization and event count for mean polarization calculation
-    //   sumPol += beam_pol;
-    //   if (target_pol > 0) {
-    //     sumTargetPosPol+=target_pol;
-    //     numEventsPosTarget++;
-    //   } else if (target_pol < 0) {
-    //     sumTargetNegPol+=target_pol;
-    //     numEventsNegTarget++;
-    //   }
-    //   numEvents++;
+      // Accumulate polarization and event count for mean polarization calculation
+      sumPol += beam_pol;
+      if (target_pol > 0) {
+        sumTargetPosPol+=target_pol;
+        numEventsPosTarget++;
+      } else if (target_pol < 0) {
+        sumTargetNegPol+=target_pol;
+        numEventsNegTarget++;
+      }
+      numEvents++;
     }
   }
 
