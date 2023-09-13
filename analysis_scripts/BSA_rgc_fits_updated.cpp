@@ -438,6 +438,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   double target_pol; data->SetBranchAddress("target_pol", &target_pol); // target polarization
   double phi; data->SetBranchAddress("phi", &phi); // trento phi
   double xF; data->SetBranchAddress("xF", &xF); // xF
+  double z; data->SetBranchAddress("xF", &z); // xF
   double currentVariable; 
   data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable); 
 
@@ -445,7 +446,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   for (int entry = 0; entry < 10; ++entry) {  // Just read the first 10 entries for debugging
     data->GetEntry(entry);
     cout << "Entry " << entry << " : " << propertyNames[currentFits].c_str();
-    cout << " " << currentVariable << " " << xF << " " << helicity << endl;
+    cout << " " << currentVariable << " " << xF << " " << z << endl;
   }
 
   cout << "End first loop" << endl;
@@ -455,7 +456,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
     data->GetEntry(entry);
     
     cout << "Entry " << entry << " : " << propertyNames[currentFits].c_str();
-    cout << " " << currentVariable << " " << xF << " " << helicity << endl;
+    cout << " " << currentVariable << " " << xF << " " << z << endl;
     if (applyKinematicCuts(data, entry, currentFits, 0) && currentVariable >= varMin && 
       currentVariable < varMax) {
     //   sumVariable+=currentVariable;
