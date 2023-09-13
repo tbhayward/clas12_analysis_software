@@ -484,7 +484,6 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   double Ptm = - sumTargetNegPol / numEventsNegTarget;// mean negative target polarization for data
   // the negative sign here is correct; RGC lists the polarizations with signs to tell which is 
   // which but the polarization really should just be "percent of polarized nucleii"
-  cout << meanVariable << " " << meanPol << " " << Ptp << " " << Ptm << endl;
 
   // Create the asymmetry histogram
   int numBins = histPosPos->GetNbinsX();
@@ -514,13 +513,6 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   delete histPosNeg;
   delete histNegPos;
   delete histNegNeg;
-
-  int nBinsX = histAsymmetry->GetXaxis()->GetNbins();
-  for (int i = 1; i <= nBinsX; ++i) {
-      double binCenter = histAsymmetry->GetXaxis()->GetBinCenter(i);
-      double binContent = histAsymmetry->GetBinContent(i);
-      std::cout << "Bin " << i << " (centered at " << binCenter << ") has content: " << binContent << std::endl;
-  }
 
   // Return the final asymmetry histogram
   return histAsymmetry;
@@ -664,7 +656,7 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   graph->SetTitle(title.c_str());
 
   // Save the canvas as a PNG
-  // canvas->SaveAs(filename.c_str());
+  canvas->SaveAs(filename.c_str());
 
   // Clean up
   delete canvas;
