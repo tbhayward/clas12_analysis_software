@@ -899,7 +899,7 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
         // AUU_cos2phi_error = (meanDepB/meanDepV)*AUU_cos2phi_error;
         chi2FitsAStream<<"{"<<meanVariable<<", "<< ALU_offset << ", " << ALU_offset_error <<"}";
         chi2FitsBStream<<"{"<<meanVariable<<", "<< ALU_sinphi << ", " << ALU_sinphi_error <<"}";
-        // chi2FitsCStream<<"{"<<meanVariable<<", "<< AUU_cosphi << ", " << AUU_cosphi_error <<"}";
+        // chi2FitsCStream<<"{"<<meanVariable<<", "<< AUU_cosphi << ", "<<AUU_cosphi_error <<"}";
         // chi2FitsDStream<<"{"<<meanVariable<<", "<< AUU_cos2phi << ", "<<AUU_cos2phi_error <<"}";
         if (i < numBins - 1) {
             chi2FitsAStream << ", "; chi2FitsBStream << ", "; 
@@ -930,7 +930,7 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
         chi2FitsAStream<<"{"<<meanVariable<<", "<< AUL_offset << ", " << AUL_offset_error <<"}";
         chi2FitsBStream<<"{"<<meanVariable<<", "<< AUL_sinphi << ", " << AUL_sinphi_error <<"}";
         chi2FitsCStream<<"{"<<meanVariable<<", "<< AUL_sin2phi << ", " << AUL_sin2phi_error <<"}";
-        // chi2FitsDStream<<"{"<<meanVariable<<", "<< AUU_cosphi << ", " << AUU_cosphi_error <<"}";
+        // chi2FitsDStream<<"{"<<meanVariable<<", "<< AUU_cosphi << ", "<<AUU_cosphi_error <<"}";
         // chi2FitsEStream<<"{"<<meanVariable<<", "<< AUU_cos2phi << ", "<<AUU_cos2phi_error <<"}";
         if (i < numBins - 1) {
             chi2FitsAStream << ", "; chi2FitsBStream << ", "; chi2FitsCStream << ", ";
@@ -958,7 +958,7 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
         // AUU_cos2phi_error = (meanDepB/meanDepV)*AUU_cos2phi_error;
         chi2FitsAStream<<"{"<<meanVariable<<", "<< ALL << ", " << ALL_error <<"}";
         chi2FitsBStream<<"{"<<meanVariable<<", "<< ALL_cosphi << ", " << ALL_cosphi_error <<"}";
-        // chi2FitsCStream<<"{"<<meanVariable<<", "<< AUU_cosphi << ", " << AUU_cosphi_error <<"}";
+        // chi2FitsCStream<<"{"<<meanVariable<<", "<< AUU_cosphi << ", "<<AUU_cosphi_error <<"}";
         // chi2FitsDStream<<"{"<<meanVariable<<", "<< AUU_cos2phi << ", "<<AUU_cos2phi_error <<"}";
         if (i < numBins - 1) {
             chi2FitsAStream << ", "; chi2FitsBStream << ", ";
@@ -966,6 +966,7 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
         }
         break;
       }
+    }
 
     delete hist;
   }
