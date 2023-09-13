@@ -436,6 +436,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   int helicity; data->SetBranchAddress("helicity", &helicity); // beam helicity 
   double beam_pol; data->SetBranchAddress("beam_pol", &beam_pol); // beam polarization
   double target_pol; data->SetBranchAddress("target_pol", &target_pol); // target polarization
+  cout << target_pol << endl;
   double phi; data->SetBranchAddress("phi", &phi); // trento phi
   double currentVariable; 
   data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable); 
@@ -444,14 +445,14 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   // TTreeReaderValue<double> myVariable(reader, "currentVariable");
 
   // for (int entry = 0; entry < data->GetEntries(); ++entry) {
-  for (int entry = 0; entry < 1000000; ++entry) {
+  for (int entry = 0; entry < 2000000; ++entry) {
     data->GetEntry(entry);
     bool passedKinematicCuts = applyKinematicCuts(data, entry, currentFits, 0);
     bool inRange = currentVariable >= varMin && currentVariable < varMax;
     // reset the currentVariable address because it may have been overwritten by another
     // variable in the applyKinematics class
-    cout << "Entry " << entry << " : " << propertyNames[currentFits].c_str();
-    cout << " " << currentVariable << " " << (passedKinematicCuts&&inRange) << endl;
+    // cout << "Entry " << entry << " : " << propertyNames[currentFits].c_str();
+    // cout << " " << currentVariable << " " << (passedKinematicCuts&&inRange) << endl;
     data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable);
     if (passedKinematicCuts && inRange) {
       sumVariable+=currentVariable;
