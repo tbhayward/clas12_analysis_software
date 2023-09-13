@@ -441,8 +441,8 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   double currentVariable; 
   data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable); 
 
-  TTreeReader reader("data", file); 
-  TTreeReaderValue<double> myVariable(reader, "currentVariable");
+  // TTreeReader reader("data", file); 
+  // TTreeReaderValue<double> myVariable(reader, "currentVariable");
 
   for (int entry = 0; entry < data->GetEntries(); ++entry) {
   // for (int entry = 0; entry < 2250000; ++entry) {
