@@ -455,8 +455,10 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
     data->GetEntry(entry);
     cout << "Entry " << entry << " : " << propertyNames[currentFits].c_str();
     cout << " " << currentVariable << " " << helicity << endl;
-    if (applyKinematicCuts(data, entry, currentFits, 0) && currentVariable >= varMin && 
+    if (currentVariable >= varMin && 
       currentVariable < varMax) {
+    // if (applyKinematicCuts(data, entry, currentFits, 0) && currentVariable >= varMin && 
+    //   currentVariable < varMax) {
     //   sumVariable+=currentVariable;
 
     //   if (helicity > 0 && target_pol > 0) { histPosPos->Fill(phi); } 
