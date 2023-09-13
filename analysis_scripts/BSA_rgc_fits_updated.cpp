@@ -361,12 +361,12 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   for (int i = 0; i < fitFunction->GetNpar(); ++i) {
       if (i == 0) {
           paramName = "offset";
-      } else if (asymmetry == 0) {
+      } else if (asymmetryIndex == 0) {
           if (i == 1) paramName = "#it{A}_{LU}^{#sin#phi}";
-      } else if (asymmetry == 1) {
+      } else if (asymmetryIndex == 1) {
           if (i == 1) paramName = "#it{A}_{UL}^{#sin#phi}";
           if (i == 2) paramName = "#it{A}_{UL}^{#sin2#phi}";
-      } else if (asymmetry == 2) {
+      } else if (asymmetryIndex == 2) {
           if (i == 1) paramName = "#it{A}_{LL}";
           if (i == 2) paramName = "#it{A}_{LL}^{#cos#phi}";
       }
@@ -377,15 +377,6 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   // Add the chi-squared per degree of freedom to the legend
   leg->AddEntry((TObject*)0, Form("#chi^{2}/Ndf: %.4f", 
     fitFunction->GetChisquare() / fitFunction->GetNDF()), "");
-
-  // Draw the legend
-  leg->Draw("same");
-
-
-
-  // Add the chi-squared per degree of freedom to the legend
-  leg->AddEntry((TObject*)0, Form("#chi^{2}/Ndf: %.4f", fitFunction->GetChisquare() / 
-    fitFunction->GetNDF()), "");
 
   // Draw the legend
   leg->Draw("same");
@@ -1119,7 +1110,7 @@ int main(int argc, char *argv[]) {
 
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    for (int asymmetry = 0; asymmetry < 1; ++asymmetry){
+    for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
       switch (asymmetry) {
         case 0: cout << "    Beginning chi2 BSA." << endl; break;
         case 1: cout << "    Beginning chi2 TSA." << endl; break;
