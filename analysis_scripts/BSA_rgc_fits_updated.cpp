@@ -442,7 +442,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
 
 
   // for (int entry = 0; entry < data->GetEntries(); ++entry) {
-  for (int entry = 0; entry < 100000; ++entry) {
+  for (int entry = 0; entry < 20; ++entry) {
     data->GetEntry(entry);
     cout << "Entry " << entry << " : " << propertyNames[currentFits].c_str();
     cout << " " << currentVariable << " " <<applyKinematicCuts(data, entry, currentFits, 0)<< endl;
@@ -650,7 +650,7 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   graph->SetTitle(title.c_str());
 
   // Save the canvas as a PNG
-  canvas->SaveAs(filename.c_str());
+  // canvas->SaveAs(filename.c_str());
 
   // Clean up
   delete canvas;
