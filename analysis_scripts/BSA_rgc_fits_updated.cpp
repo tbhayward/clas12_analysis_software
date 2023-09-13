@@ -454,10 +454,10 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
     if (passedKinematicCuts && inRange) {
       sumVariable+=currentVariable;
 
-      // if (helicity > 0 && target_pol > 0) { histPosPos->Fill(phi); } 
-      // else if (helicity > 0 && target_pol < 0) { histPosNeg->Fill(phi); } 
-      // else if (helicity < 0 && target_pol > 0) { histNegPos->Fill(phi); } 
-      // else if (helicity < 0 && target_pol < 0) { histNegNeg->Fill(phi); }
+      if (helicity > 0 && target_pol > 0) { histPosPos->Fill(phi); } 
+      else if (helicity > 0 && target_pol < 0) { histPosNeg->Fill(phi); } 
+      else if (helicity < 0 && target_pol > 0) { histNegPos->Fill(phi); } 
+      else if (helicity < 0 && target_pol < 0) { histNegNeg->Fill(phi); }
 
       // // Accumulate polarization and event count for mean polarization calculation
       // sumPol += beam_pol;
