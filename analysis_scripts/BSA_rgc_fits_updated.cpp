@@ -823,6 +823,7 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
     TTreeReaderValue<double> DepC(dataReader, "DepC");
     TTreeReaderValue<double> DepV(dataReader, "DepV");
     TTreeReaderValue<double> DepW(dataReader, "DepW");
+    TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
 
     KinematicCuts kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
     while (dataReader.Next()) {
