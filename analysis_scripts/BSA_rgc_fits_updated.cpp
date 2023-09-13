@@ -451,23 +451,23 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
       // reset the currentVariable address because it may have been overwritten by another
       // variable in the applyKinematics class
       data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable);
-      sumVariable+=currentVariable;
+      // sumVariable+=currentVariable;
 
-      if (helicity > 0 && target_pol > 0) { histPosPos->Fill(phi); } 
-      else if (helicity > 0 && target_pol < 0) { histPosNeg->Fill(phi); } 
-      else if (helicity < 0 && target_pol > 0) { histNegPos->Fill(phi); } 
-      else if (helicity < 0 && target_pol < 0) { histNegNeg->Fill(phi); }
+      // if (helicity > 0 && target_pol > 0) { histPosPos->Fill(phi); } 
+      // else if (helicity > 0 && target_pol < 0) { histPosNeg->Fill(phi); } 
+      // else if (helicity < 0 && target_pol > 0) { histNegPos->Fill(phi); } 
+      // else if (helicity < 0 && target_pol < 0) { histNegNeg->Fill(phi); }
 
-      // Accumulate polarization and event count for mean polarization calculation
-      sumPol += beam_pol;
-      if (target_pol > 0) {
-        sumTargetPosPol+=target_pol;
-        numEventsPosTarget++;
-      } else if (target_pol < 0) {
-        sumTargetNegPol+=target_pol;
-        numEventsNegTarget++;
-      }
-      numEvents++;
+      // // Accumulate polarization and event count for mean polarization calculation
+      // sumPol += beam_pol;
+      // if (target_pol > 0) {
+      //   sumTargetPosPol+=target_pol;
+      //   numEventsPosTarget++;
+      // } else if (target_pol < 0) {
+      //   sumTargetNegPol+=target_pol;
+      //   numEventsNegTarget++;
+      // }
+      // numEvents++;
     }
   }
 
