@@ -444,7 +444,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   // TTreeReaderValue<double> myVariable(reader, "currentVariable");
 
   // for (int entry = 0; entry < data->GetEntries(); ++entry) {
-  for (int entry = 0; entry < 2000000; ++entry) {
+  for (int entry = 0; entry < 1000000; ++entry) {
     data->GetEntry(entry);
     cout << entry << " " << target_pol << endl;
     bool passedKinematicCuts = applyKinematicCuts(data, entry, currentFits, 0);
@@ -453,6 +453,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
     // variable in the applyKinematics class
     // cout << "Entry " << entry << " : " << propertyNames[currentFits].c_str();
     // cout << " " << currentVariable << " " << (passedKinematicCuts&&inRange) << endl;
+    data->SetBranchAddress("target_pol", &target_pol);
     data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable);
     if (passedKinematicCuts && inRange) {
       sumVariable+=currentVariable;
@@ -848,10 +849,10 @@ int main(int argc, char *argv[]) {
   TTree* mc = (TTree*)mc_file->Get("PhysicsEvents");
 
   if (!data || !mc) {
-    cout << "Error getting trees from ROOT files." << endl;
+    cout << "-- Error getting trees from ROOT files." << endl;
     return 3;
   } else {
-    cout << "Trees successfully extracted from ROOT files." << endl << endl;
+    cout << "-- Trees successfully extracted from ROOT files." << endl << endl;
   }
 
   for (size_t i = 0; i < allBins.size(); ++i) {
