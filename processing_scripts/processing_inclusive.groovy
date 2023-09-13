@@ -176,7 +176,7 @@ public static void main(String[] args) {
 		println("\n1:runnum, 2:evnum, 3:helicity, 4:e_p, 5:e_theta, 6:e_phi, 7:vz_e,"+
 		"8:Q2, 9:W, 10:Mx, 11: Mx2, 13:x, 14:y\n");
 
-		println("output file is: $file");
+		println("output text file is: $file");
 	}
 
 	writer.close();

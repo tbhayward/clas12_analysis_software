@@ -300,7 +300,7 @@ public static void main(String[] args) {
 
 		println("Set p1 PID = $p1_Str");
 		println("Set p2 PID = $p2_Str");
-		println("output file is: $file");
+		println("output text file is: $file");
 	}
 
 	writer.close();

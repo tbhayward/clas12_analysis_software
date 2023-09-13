@@ -53,6 +53,3 @@ else if ($arg1 == "processing_scripts/processing_dihadrons.groovy") then
     set root_file = "$5.root"
     ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3
 endif
-
-
-echo "Output root file: $root_file"

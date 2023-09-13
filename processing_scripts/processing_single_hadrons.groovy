@@ -231,7 +231,7 @@ public static void main(String[] args) {
 		"24:DepA, 25:DepB, 26:DepC, 27:DepV, 28:DepW\n");
 
 		println("Set p1 PID = $p1_Str");
-		println("output file is: $file");
+		println("output text file is: $file");
 	}
 
 	writer.close();
