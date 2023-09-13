@@ -380,7 +380,7 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   // Create a title string for the graph 
   string formattedLabelName = formatLabelName(prefix);
   std::ostringstream oss;
-  oss << std::fixed << std::setprecision(3) << varMin << " ≤ ";
+  oss << std::fixed << std::setprecision(3) << varMin << " #leq ";
   oss << formattedLabelName << " < " << varMax;
   std::string title = oss.str();
 
