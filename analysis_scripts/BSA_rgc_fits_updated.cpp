@@ -440,7 +440,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
   double xF; data->SetBranchAddress("xF", &xF); // xF
   TTree* data_copied = data;
   double currentVariable; 
-  data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable); 
+  data_copied->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable); 
 
   cout << endl;
   for (int entry = 0; entry < 10; ++entry) {  // Just read the first 10 entries for debugging
@@ -458,8 +458,8 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
     data_copied->GetEntry(entry);
     cout << "Entry " << entry << " : " << propertyNames[currentFits].c_str();
     cout << " " << currentVariable << " " << xF << " " << helicity << endl;
-    if (applyKinematicCuts(data, entry, currentFits, 0) && currentVariable >= varMin && 
-      currentVariable < varMax) {
+    // if (applyKinematicCuts(data, entry, currentFits, 0) && currentVariable >= varMin && 
+    //   currentVariable < varMax) {
     //   sumVariable+=currentVariable;
 
     //   if (helicity > 0 && target_pol > 0) { histPosPos->Fill(phi); } 
@@ -477,7 +477,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
     //     numEventsNegTarget++;
     //   }
     //   numEvents++;
-    }
+    // }
   }
 
   // Calculate the mean polarization
