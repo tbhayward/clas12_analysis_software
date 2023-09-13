@@ -514,6 +514,7 @@ TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int b
   TTreeReaderValue<double> phi(dataReader, "phi");
   TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
 
+  KinematicCuts kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
   // Counter to limit the number of processed entries
   int counter = 0;
   while (dataReader.Next()) {
