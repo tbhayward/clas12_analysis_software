@@ -449,7 +449,7 @@ TH1D* createHistogramForBin(TTree* data, const char* histName, int binIndex,
     // reset the currentVariable address because it may have been overwritten by another
     // variable in the applyKinematics class
     cout << "Entry " << entry << " : " << propertyNames[currentFits].c_str();
-    cout << " " << currentVariable << " " << passedKinematicCuts && inRange << endl;
+    cout << " " << currentVariable << " " << (passedKinematicCuts&&inRange) << endl;
     data->SetBranchAddress(propertyNames[currentFits].c_str(), &currentVariable);
     if (passedKinematicCuts && inRange) {
       sumVariable+=currentVariable;
