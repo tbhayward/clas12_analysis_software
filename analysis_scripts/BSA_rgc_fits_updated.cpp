@@ -360,16 +360,18 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   // Add fit parameters as legend entries based on the value of 'asymmetry'.
   const char* paramName;
   for (int i = 0; i < fitFunction->GetNpar(); ++i) {
-      if (i == 0) {
-          paramName = "offset";
+      if (i == 0 && (asymmetryIndex == 0 || asymmetryIndex == 1)) {
+        paramName = "offset";
+      } else if (i == 0 && asymmetryIndex == 2) {
+        paramName = "{A}_{LL}"
       } else if (asymmetryIndex == 0) {
-          if (i == 1) paramName = "#it{A}_{LU}^{sin#phi}";
+        if (i == 1) paramName = "#it{A}_{LU}^{sin#phi}";
+      }
       } else if (asymmetryIndex == 1) {
-          if (i == 1) paramName = "#it{A}_{UL}^{sin#phi}";
-          if (i == 2) paramName = "#it{A}_{UL}^{sin2#phi}";
+        if (i == 1) paramName = "#it{A}_{UL}^{sin#phi}";
+        if (i == 2) paramName = "#it{A}_{UL}^{sin2#phi}";
       } else if (asymmetryIndex == 2) {
-          if (i == 1) paramName = "#it{A}_{LL}";
-          if (i == 2) paramName = "#it{A}_{LL}^{cos#phi}";
+        if (i == 1) paramName = "#it{A}_{LL}^{cos#phi}";
       }
       leg->AddEntry((TObject*)0, Form("%s: %.4f #pm %.4f", paramName, 
         fitFunction->GetParameter(i), fitFunction->GetParError(i)), "");
