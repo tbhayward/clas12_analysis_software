@@ -826,8 +826,8 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
     TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
 
     // Determine the variable range for the specified bin
-    double varMin = allBins[currentFits][binIndex];
-    double varMax = allBins[currentFits][binIndex + 1];
+    double varMin = allBins[currentFits][i];
+    double varMax = allBins[currentFits][i + 1];
     KinematicCuts kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
     while (dataReader.Next()) {
       // Apply kinematic cuts (this function will need to be adapted)
