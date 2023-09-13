@@ -807,7 +807,53 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
     float sumz = 0; float sumzeta = 0; float sumpT = 0; float sumxF = 0;
     float sumt = 0; float sumtmin = 0;
 
+    // Declare reader locations
+    TTreeReaderValue<double> Q2(dataReader, "Q2");
+    TTreeReaderValue<double> W(dataReader, "W");
+    TTreeReaderValue<double> x(dataReader, "x");
+    TTreeReaderValue<double> y(dataReader, "y");
+    TTreeReaderValue<double> z(dataReader, "z");
+    TTreeReaderValue<double> zeta(dataReader, "zeta");
+    TTreeReaderValue<double> pT(dataReader, "pT");
+    TTreeReaderValue<double> xF(dataReader, "xF");
+    TTreeReaderValue<double> t(dataReader, "t");
+    TTreeReaderValue<double> tmin(dataReader, "tmin");
+    TTreeReaderValue<double> DepA(dataReader, "DepA");
+    TTreeReaderValue<double> DepB(dataReader, "DepB");
+    TTreeReaderValue<double> DepC(dataReader, "DepC");
+    TTreeReaderValue<double> DepV(dataReader, "DepV");
+    TTreeReaderValue<double> DepW(dataReader, "DepW");
 
+    KinematicCuts kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
+    while (dataReader.Next()) {
+      // Apply kinematic cuts (this function will need to be adapted)
+      bool passedKinematicCuts = kinematicCuts.applyCuts(currentFits, false);
+      // Check if the currentVariable is within the desired range
+      if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
+        // sum the kinematic variable values
+        sumQ2 += Q2;
+        sumW += W;
+        sumx += x;
+        sumy += y;
+        sumz += z;
+        sumzeta += zeta;
+        sumpT += pT;
+        sumxF += xF;
+        sumt += t;
+        sumtmin += tmin;
+
+        // sum the depolarization values
+        sumDepA += DepA;
+        sumDepB += DepB;
+        sumDepC += DepC;
+        sumDepV += DepV;
+        sumDepW += DepW;
+
+        numEvents += 1;
+      }
+
+    }
+    cout << "Found " << numEvents << " events in this bin." << endl;
 
     delete hist;
   }
