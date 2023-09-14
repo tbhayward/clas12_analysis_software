@@ -809,6 +809,8 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
     float sumt = 0; float sumtmin = 0;
 
     // Declare reader locations
+    TTreeReaderValue<int> runnum(dataReader, "runnum");
+    TTreeReaderValue<int> evnum(dataReader, "evnum");
     TTreeReaderValue<double> Q2(dataReader, "Q2");
     TTreeReaderValue<double> W(dataReader, "W");
     TTreeReaderValue<double> x(dataReader, "x");
@@ -817,6 +819,7 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
     TTreeReaderValue<double> zeta(dataReader, "zeta");
     TTreeReaderValue<double> pT(dataReader, "pT");
     TTreeReaderValue<double> xF(dataReader, "xF");
+    TTreeReaderValue<double> Mx(dataReader, "Mx");
     TTreeReaderValue<double> t(dataReader, "t");
     TTreeReaderValue<double> tmin(dataReader, "tmin");
     TTreeReaderValue<double> DepA(dataReader, "DepA");
