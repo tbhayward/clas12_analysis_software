@@ -1162,6 +1162,7 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
           int runnum = event.data.at("runnum");
           int evnum = event.data.at("evnum");
           double Mx = event.data.at("Mx");
+          double xF = event.data.at("xF");
 
           cout << "{" << runnum << ", " << evnum << ", " << Mx << ", " << xF << "}, "
 
