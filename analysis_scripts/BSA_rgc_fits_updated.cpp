@@ -854,6 +854,8 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
         sumDepV += *DepV;
         sumDepW += *DepW;
 
+        cout << "{" << *runnum << ", " << *evnum << ", " << *Mx << ", " << *xF << "}, ";
+
         numEvents += 1;
       }
 
