@@ -1,29 +1,33 @@
-#include <iostream>
-#include <iomanip>
-#include <fstream>
-#include <sstream>
-#include <TH1D.h>
+// Standard C++ Library Headers
 #include <algorithm>
+#include <chrono>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <map>
+#include <sstream>
 #include <string>
 #include <vector>
-#include <map>
-#include <TSystem.h>
-#include <iomanip> 
-#include <TFile.h>
-#include <TTree.h>
-#include <TLeaf.h>
-#include <TMath.h>
-#include <TF1.h> 
-#include <TCanvas.h>
-#include <TGraphErrors.h>
-#include <TPaveStats.h>
-#include <TText.h>
+// ROOT Library Headers
 #include <TApplication.h>
-#include <chrono>
+#include <TCanvas.h>
+#include <TF1.h>
+#include <TFile.h>
+#include <TGraphErrors.h>
+#include <TLeaf.h>
+#include <TLegend.h>
+#include <TMath.h>
+#include <TPaveStats.h>
+#include <TSystem.h>
+#include <TText.h>
+#include <TTree.h>
 #include <TTreeReader.h>
 #include <TTreeReaderValue.h>
-#include <TLegend.h>
+#include <TH1D.h>
+
+// Using namespace declaration
 using namespace std;
+
 
 
 size_t currentFits = 0;
@@ -229,7 +233,7 @@ public:
 
     bool applyCuts(int currentFits, bool isMC) {
         bool goodEvent = false;
-        std::string property = binNames[currentFits];
+        string property = binNames[currentFits];
 
         if (property == "xF") {
             goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.4 && *y < 0.75;
@@ -1112,7 +1116,7 @@ int main(int argc, char *argv[]) {
 
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
+    for (int asymmetry = 0; asymmetry < 1; ++asymmetry){
       switch (asymmetry) {
         case 0: cout << "    Beginning chi2 BSA." << endl; break;
         case 1: cout << "    Beginning chi2 TSA." << endl; break;
