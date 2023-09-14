@@ -1134,7 +1134,11 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
     float sumt = 0; float sumtmin = 0;
 
     // Loop over all events and calculate the sums and event counts
+    counter = 0;
     for (const eventData& event : gData) {
+      if (counter > 1000) {
+        break;
+      }
       float currentVariable = getEventProperty(event, currentFits);
       if (applyKinematicCuts(event, currentFits, 0) && currentVariable>=allBins[currentFits][i] && 
         currentVariable < allBins[currentFits][i + 1]) {
@@ -1167,6 +1171,7 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
           cout << "{" << runnum << ", " << evnum << ", " << Mx << ", " << xF << "}, ";
 
           numEvents += 1;
+          counter++;
       }
     }
     cout << "Found " << numEvents << " events in this bin." << endl;

@@ -832,8 +832,12 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
     // Determine the variable range for the specified bin
     double varMin = allBins[currentFits][i];
     double varMax = allBins[currentFits][i + 1];
+    int counter = 0;
     KinematicCuts kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
     while (dataReader.Next()) {
+      if (counter > 1000) {
+        break;
+      }
       // Apply kinematic cuts (this function will need to be adapted)
       bool passedKinematicCuts = kinematicCuts.applyCuts(currentFits, false);
       // Check if the currentVariable is within the desired range
@@ -859,7 +863,8 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
 
         cout << "{" << *runnum << ", " << *evnum << ", " << *Mx << ", " << *xF << "}, ";
 
-        numEvents += 1;
+        numEvents += 1; 
+        counter++;
       }
 
     }
