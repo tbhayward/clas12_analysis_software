@@ -835,7 +835,7 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
     int counter = 0;
     KinematicCuts kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
     while (dataReader.Next()) {
-      if (counter > 1000) {
+      if (counter > 100000) {
         break;
       }
       // Apply kinematic cuts (this function will need to be adapted)

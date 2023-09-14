@@ -1136,7 +1136,7 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
     // Loop over all events and calculate the sums and event counts
     int counter = 0;
     for (const eventData& event : gData) {
-      if (counter > 1000) {
+      if (counter > 100000) {
         break;
       }
       float currentVariable = getEventProperty(event, currentFits);
