@@ -387,9 +387,9 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   // Draw the legend
   leg->Draw("same");
 
-    // Create the filename for the PNG
-  std::string filename = "output/" + prefix + "_" + std::to_string(binIndex) + "_" + 
-    fileNameSuffix + ".png";
+  // Create the filename for the PNG
+  string filename = "output/" + prefix + "_" + fileNameSuffix + "_" + std::to_string(binIndex) +
+    ".png";
   
   // Determine the variable range for the specified bin
   double varMin = allBins[currentFits][binIndex];
