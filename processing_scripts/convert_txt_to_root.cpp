@@ -456,7 +456,7 @@ int main(int argc, char *argv[]) {
             xF >> xF1 >> xF2 >> xF3 >> xF12 >> xF13 >> xF23 >> 
             eta >> eta1 >> eta2 >> eta3 >> eta12 >> eta13 >> eta23 >> 
             phi1 >> phi2 >> phi3 >> phi12 >> phi13 >> phi23 >> phih >> phiR >> theta >>
-            Delta_phi12 >> Deltaphi13 >> Delta_phi23 >> 
+            Delta_phi12 >> Delta_phi13 >> Delta_phi23 >> 
             DepA >> DepB >> DepC >> DepV >> DepW) {
 
             beam_pol = getPol(runnum);
