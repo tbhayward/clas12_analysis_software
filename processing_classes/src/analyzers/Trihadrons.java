@@ -148,6 +148,7 @@ public class Trihadrons {
 	nu = lv_beam.e()-lv_e.e();
 	x  = Q2 / (2 * particle_mass(2212) * nu);
 	W  = Math.pow(Math.pow(particle_mass(2212),2)+2*particle_mass(2212)*nu - Q2, 0.5);
+        System.out.println(W);
 	y = nu/lv_beam.e();
         gamma = 2*particle_mass(2212)*x/Math.pow(Q2, 0.5);
         
