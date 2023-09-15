@@ -320,7 +320,6 @@ public static void main(String[] args) {
 									.append(pT12).append(" ")
 									.append(pT13).append(" ")
 									.append(pT23).append(" ")
-									.append(pTpT).append(" ")
 									.append(Mh).append(" ")
 									.append(Mh12).append(" ")
 									.append(Mh13).append(" ")
@@ -399,7 +398,7 @@ public static void main(String[] args) {
 		print("70: phi1, 71: phi2, 72: phi3, 73: phi12, 74: phi13, 75: phi23, 76: phih, 77: phiR, 78: theta, ");
 		print("79: Delta_phi12, 80: Delta_phi13, 81: Delta_phi23, ")
 		print("82: DepA, 83: DepB, 84: DepC, 85: DepV, 86: DepW.");
-
+		println();
 		println("Set p1 PID = $p1_Str");
 		println("Set p2 PID = $p2_Str");
 		println("output text file is: $file");
