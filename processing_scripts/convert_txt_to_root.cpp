@@ -137,13 +137,13 @@ int main(int argc, char *argv[]) {
     // Additional variables for one or two hadrons
     double p1_p, p1_theta, p1_phi, vz_p1, p2_p, p2_theta, p2_phi, vz_p2;
     double z1, z2, Mh, xF1, xF2, pT1, pT2, pTpT, zeta1, zeta2;
-    double t1, t1min, t2, t2min;
+    double t1, t1min, t2, t2min, Mx1;
     double eta1, eta2, Delta_eta, eta1_gN, eta2_gN;
     double phi1, phi2, Delta_phi, phih, phiR, theta;
     // Additional variables for three hadrons
     double p3_p, p3_theta, p3_phi, vz_p3;
     double z3, z12, z13, z23, Mh12, Mh13, Mh23, xF3, xF12, xF13, xF23;
-    double t3, t3min;
+    double t3, t3min, Mx3, Mx12, Mx13, Mx23;
     double pT3, pT12, pT13, pT23, zeta3, zeta12, zeta23, zeta13;
     double eta3, eta12, eta23, eta13;
     double phi3, phi12, phi13, phi23, Delta_phi12, Delta_phi13, Delta_phi23;
