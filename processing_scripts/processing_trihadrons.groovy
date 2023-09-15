@@ -195,7 +195,7 @@ public static void main(String[] args) {
 				                Mx12 = variables.Mx12(); // missing mass calculated with p1 and p2
 				                Mx13 = variables.Mx13(); // missing mass calculated with p1 and p3
 				                Mx23 = variables.Mx23(); // missing mass calculated with p2 and p3
-				                println(Mx23+" "+W);
+				                
 				                // SIDIS variables
 				                z = variables.z(); // fractional hadron energy wrt virtual photon
 				                xF = variables.xF(); // Feynman-x
