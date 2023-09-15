@@ -79,7 +79,7 @@ public static void main(String[] args) {
 
 	// declare physics event variables
 	int helicity;
-	double e_p, e_theta, e_phi, 
+	double e_p, e_theta, e_phi; 
 	double p1_phi, p1_p, p1_theta, p2_phi, p2_p, p2_theta, p3_phi, p3_p, p3_theta; 
 	double vz_e, vz_p1, vz_p2, vz_p3;
 	double Q2, W, y, Mx, Mx1, Mx2, Mx3; 
