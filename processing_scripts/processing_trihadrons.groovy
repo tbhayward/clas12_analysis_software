@@ -51,7 +51,7 @@ public static void main(String[] args) {
 	int p2_int = p2_Str.toInteger(); // Convert p2_Str to integer
 
 	// Set the PDG PID for p3 based on the provided 4nd argument or default to 2212 (p)
-	String p2_Str = args.length < 4 ? "2212" : args[3];
+	String p3_Str = args.length < 4 ? "2212" : args[3];
 	if (args.length < 4) println("WARNING: Specify a PDG PID for p2! Set to proton (2212).");
 	println("Set p3 PID = $p3_Str");
 	int p3_int = p3_Str.toInteger(); // Convert p3_Str to integer
