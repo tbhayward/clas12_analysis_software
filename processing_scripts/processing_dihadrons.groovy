@@ -53,7 +53,7 @@ public static void main(String[] args) {
 	// Set the output file name based on the provided 3rd argument or use the default name
 	String output_file = args.length < 4 ? "hadron_dummy_out.txt" : args[3];
 	if (args.length < 4) 
-	    println("WARNING: Specify an output file name. Set to \"hadron_dummy_out.txt\".");
+	    println("WARNING: Specify an output file name. Set to \"dihadron_dummy_out.txt\".");
 	File file = new File(output_file);
 	file.delete();
 	BufferedWriter writer = new BufferedWriter(new FileWriter(file));
