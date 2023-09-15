@@ -148,7 +148,6 @@ public class Trihadrons {
 	nu = lv_beam.e()-lv_e.e();
 	x  = Q2 / (2 * particle_mass(2212) * nu);
 	W  = Math.pow(Math.pow(particle_mass(2212),2)+2*particle_mass(2212)*nu - Q2, 0.5);
-        System.out.println(W);
 	y = nu/lv_beam.e();
         gamma = 2*particle_mass(2212)*x/Math.pow(Q2, 0.5);
         
@@ -264,7 +263,7 @@ public class Trihadrons {
         Mx12 = lv_Mx12.mass(); // missing mass with p1 and p2 observed
         LorentzVector lv_Mx13 = new LorentzVector(lv_q); lv_Mx13.add(lv_target); lv_Mx13.sub(lv_p1); lv_Mx13.sub(lv_p3); 
         Mx13 = lv_Mx13.mass(); // missing mass with p1 and p3 observed
-        LorentzVector lv_Mx23 = new LorentzVector(lv_q); lv_Mx23.add(lv_target); lv_Mx13.sub(lv_p2); lv_Mx13.sub(lv_p3); 
+        LorentzVector lv_Mx23 = new LorentzVector(lv_q); lv_Mx23.add(lv_target); lv_Mx23.sub(lv_p2); lv_Mx23.sub(lv_p3);
         Mx23 = lv_Mx23.mass(); // missing mass with p2 and p3 observed
         System.out.println(Mx23+" "+W);
         // boost to gamma*-nucleon center of mass frame
