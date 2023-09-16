@@ -95,7 +95,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     HistConfig configMh13 = histConfigs["Mh13"];
     TH1F histMh13("Mh13", "", configMh13.bins, configMh13.min, configMh13.max);
     HistConfig configMh23 = histConfigs["Mh23"];
-    TH1F histMh23("Mh23", "", configMh13.bins, configMh13.min, configMh13.max);
+    TH1F histMh23("Mh23", "", configMh23.bins, configMh23.min, configMh23.max);
     HistConfig configMh1x = histConfigs["Mh1x"];
     TH1F histMh1x("Mh1x", "", configMh1x.bins, configMh1x.min, configMh1x.max);
     HistConfig configMh2x = histConfigs["Mh2x"];
@@ -143,8 +143,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 
 	}
 	dataReader.Restart();  // Reset the TTreeReader at the end of the function
-	delete histMh12, histMh13, histMh23;
-	delete histMh1x, histMh2x, histMh3x;
+	delete pad1;
 }
 
 void rhominusDeltaplusplus(std::string root_file_path) {
