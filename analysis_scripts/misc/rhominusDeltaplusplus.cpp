@@ -91,13 +91,13 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     HistConfig configMh13 = histConfigs["Mh13"];
     TH1F histMh13("Mh13", "", configMh13.bins, configMh13.min, configMh13.max);
     HistConfig configMh23 = histConfigs["Mh23"];
-    TH1F histMh13("Mh23", "", configMh13.bins, configMh13.min, configMh13.max);
+    TH1F histMh23("Mh23", "", configMh13.bins, configMh13.min, configMh13.max);
     HistConfig configMh1x = histConfigs["Mh1x"];
-    TH1F histMh12("Mh1x", "", configMh1x.bins, configMh1x.min, configMh1x.max);
+    TH1F histMh1x("Mh1x", "", configMh1x.bins, configMh1x.min, configMh1x.max);
     HistConfig configMh2x = histConfigs["Mh2x"];
-    TH1F histMh13("Mh2x", "", configMh2x.bins, configMh2x.min, configMh2x.max);
+    TH1F histMh2x("Mh2x", "", configMh2x.bins, configMh2x.min, configMh2x.max);
     HistConfig configMh3x = histConfigs["Mh3x"];
-    TH1F histMh13("Mh3x", "", configMh3x.bins, configMh3x.min, configMh3x.max);
+    TH1F histMh3x("Mh3x", "", configMh3x.bins, configMh3x.min, configMh3x.max);
 
 	int counter = 0;
 	while (dataReader.Next()) {
