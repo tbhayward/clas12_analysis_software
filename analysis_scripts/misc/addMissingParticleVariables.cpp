@@ -11,7 +11,6 @@ void addMissingParticleVariables(std::string root_file_path) {
     TFile* file = new TFile(root_file_path.c_str(), "UPDATE");
     TTree* tree = (TTree*)file->Get("PhysicsEvents");
 
-    cout << "passed" << endl;
     // Declare variables to read from the tree
     double e_p, e_theta, e_phi, p1_p, p1_theta, p1_phi, p2_p, p2_theta, p2_phi, p3_p, p3_theta; 
     double p3_phi;
@@ -48,6 +47,7 @@ void addMissingParticleVariables(std::string root_file_path) {
     // Define initial state 4-momentum (10.1998 GeV electron beam and stationary proton)
     TLorentzVector p_initial(0, 0, 10.1998, 10.1998 + 0.938); // (px, py, pz, E)
 
+    cout << "passed" << endl;
     // Loop over all events in the tree
     Long64_t nEntries = tree->GetEntries();
     for(Long64_t i = 0; i < nEntries; ++i) {
