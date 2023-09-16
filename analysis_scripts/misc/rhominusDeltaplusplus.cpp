@@ -33,7 +33,7 @@ struct HistConfig {
 std::map<std::string, HistConfig> histConfigs = {
     {"Mh12", {200, 0.00, 3.00}},
     {"Mh13", {200, 0.00, 1.50}},
-    {"Mh23", {200, 0.00, 3.50}},
+    {"Mh23", {200, 1.00, 3.00}},
     {"Mh1x", {200, 0.00, 1.50}},
     {"Mh2x", {200, 0.00, 1.50}},
     {"Mh3x", {200, 0.00, 1.50}}
@@ -147,21 +147,21 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 	histMh12.SetLineColor(kBlack); histMh13.SetLineColor(kBlack); 
     histMh23.SetLineColor(kBlack); histMh1x.SetLineColor(kBlack);
     histMh2x.SetLineColor(kBlack); histMh3x.SetLineColor(kBlack);
-    histMh12.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
-    histMh12.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
-    histMh13.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
-    histMh13.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
-    histMh23.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
-    histMh23.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
-    histMh1x.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
-    histMh1x.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
-    histMh2x.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
-    histMh2x.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
-    histMh3x.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
-    histMh3x.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
+    histMh12.GetXaxis()->SetLabelSize(0.05);  // Increase x-axis label size
+    histMh12.GetYaxis()->SetLabelSize(0.05);  // Increase y-axis label size
+    histMh13.GetXaxis()->SetLabelSize(0.05);  // Increase x-axis label size
+    histMh13.GetYaxis()->SetLabelSize(0.05);  // Increase y-axis label size
+    histMh23.GetXaxis()->SetLabelSize(0.05);  // Increase x-axis label size
+    histMh23.GetYaxis()->SetLabelSize(0.05);  // Increase y-axis label size
+    histMh1x.GetXaxis()->SetLabelSize(0.05);  // Increase x-axis label size
+    histMh1x.GetYaxis()->SetLabelSize(0.05);  // Increase y-axis label size
+    histMh2x.GetXaxis()->SetLabelSize(0.05);  // Increase x-axis label size
+    histMh2x.GetYaxis()->SetLabelSize(0.05);  // Increase y-axis label size
+    histMh3x.GetXaxis()->SetLabelSize(0.05);  // Increase x-axis label size
+    histMh3x.GetYaxis()->SetLabelSize(0.05);  // Increase y-axis label size
 
     histMh23.Draw(""); histMh23.SetStats(0);
-    histMh23.GetXaxis()->SetTitle("#it{M}_{#pi^{-}p}");
+    histMh23.GetXaxis()->SetTitle("#it{M}_{#pi^{-}p} (GeV)");
     histMh23.GetYaxis()->SetTitle("Counts");
 
 	// Save the canvas
