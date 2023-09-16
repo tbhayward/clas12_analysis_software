@@ -16,6 +16,14 @@
 #include <TTree.h>
 #include <TLorentzVector.h>
 
+// function get t
+double gett(double p, double theta) {
+    double mp = 0.938272; // proton mass in GeV
+    double E = mp; // target proton energy (written as E to help checking calculation but at rest)
+    return 2*mp*(E - p) - 2*sqrt(mp*mp + E*E)*sqrt(mp*mp + p*p) +
+          2*sqrt(mp*mp + E*E)*sqrt(mp*mp + p*p)*cos(theta);
+}
+
 void createHistograms(TTree* tree, const char* outDir) {
 	// Declare kinematic variables to read from the tree
 	double e_p, e_theta, e_phi, p1_p, p1_theta, p1_phi;
@@ -48,11 +56,10 @@ void createHistograms(TTree* tree, const char* outDir) {
     tree->SetBranchAddress("phi12", &phi12);
     tree->SetBranchAddress("phi13", &phi13);
     tree->SetBranchAddress("phi23", &phi23);
-    tree->SetBranchAddress("W", &W);
-    tree->SetBranchAddress("A", &A);
+    tree->SetBranchAddress("DepW", &DepW);
+    tree->SetBranchAddress("DepA", &DepA);
     tree->SetBranchAddress("x", &x);
     tree->SetBranchAddress("z13", &z13);
-    tree->SetBranchAddress("t13", &t13);
 
     // Declare new variables to store missing particle information
 	float px_p, px_theta, px_phi, Mx1x, Mx2x, Mx3x, Mh1x, Mh2x, Mh3x;
