@@ -149,10 +149,10 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMh2x.SetLineColor(kBlack); histMh3x.SetLineColor(kBlack);
     histMh12.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
     histMh12.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
-    histMh12.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
-    histMh12.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
+    histMh12.GetXaxis()->SetTitleSize(0.055);  // Increase x-axis title size
+    histMh12.GetYaxis()->SetTitleSize(0.055);  // Increase y-axis title size
 
-    histMh23.Draw(""); histMh23.SetStats(0);
+    histMh23.Draw(""); // histMh23.SetStats(0);
     histMh23.GetXaxis()->SetTitle("#it{M}_{#pi^{-}p} (GeV)");
     histMh23.GetYaxis()->SetTitle("Counts");
 
