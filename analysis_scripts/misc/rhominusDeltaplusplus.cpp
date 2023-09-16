@@ -139,10 +139,33 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 
         histMh12.Fill(*Mh12); histMh13.Fill(*Mh13); histMh23.Fill(*Mh23);
         histMh1x.Fill(Mh1x); histMh2x.Fill(Mh2x); histMh3x.Fill(Mh3x); 
-        cout << counter << " " << Mh2x << endl;
 
+        cout << counter << " " << Mh2x << endl;
 	}
 	dataReader.Restart();  // Reset the TTreeReader at the end of the function
+
+	histMh12.SetLineColor(kBlack); histMh13.SetLineColor(kBlack); 
+    histMh23.SetLineColor(kBlack); histMh1x.SetLineColor(kBlack);
+    histMh2x.SetLineColor(kBlack); histMh3x.SetLineColor(kBlack);
+    histMh12.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
+    histMh12.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
+    histMh13.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
+    histMh13.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
+    histMh23.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
+    histMh23.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
+    histMh1x.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
+    histMh1x.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
+    histMh2x.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
+    histMh2x.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
+    histMh3x.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
+    histMh3x.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
+
+    histMh12.Draw(""); histMh12.SetStats(0); 
+    histMh12.GetXaxis()->SetTitle("{M}_{h}");
+    histMh12.GetYaxis()->SetTitle("Counts");
+
+	// Save the canvas
+    canvas.SaveAs("output.png", outDir, branchName);
 	delete pad1;
 }
 
