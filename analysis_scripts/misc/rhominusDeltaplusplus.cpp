@@ -140,7 +140,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
         histMh12.Fill(*Mh12); histMh13.Fill(*Mh13); histMh23.Fill(*Mh23);
         histMh1x.Fill(Mh1x); histMh2x.Fill(Mh2x); histMh3x.Fill(Mh3x); 
 
-        cout << counter << " " << Mh2x << endl;
+        // cout << counter << " " << Mh2x << endl;
 	}
 	dataReader.Restart();  // Reset the TTreeReader at the end of the function
 
@@ -149,12 +149,12 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMh2x.SetLineColor(kBlack); histMh3x.SetLineColor(kBlack);
     histMh12.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
     histMh12.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
-    histMh12.GetXaxis()->SetTitleSize(0.055);  // Increase x-axis title size
-    histMh12.GetYaxis()->SetTitleSize(0.055);  // Increase y-axis title size
+    histMh12.GetXaxis()->SetTitleSize(0.06);  // Increase x-axis title size
+    histMh12.GetYaxis()->SetTitleSize(0.06);  // Increase y-axis title size
 
-    histMh23.Draw(""); // histMh23.SetStats(0);
-    histMh23.GetXaxis()->SetTitle("#it{M}_{#pi^{-}p} (GeV)");
-    histMh23.GetYaxis()->SetTitle("Counts");
+    histMh13.Draw(""); histMh23.SetStats(0);
+    histMh13.GetXaxis()->SetTitle("#it{M}_{#pi^{+}p} (GeV)");
+    histMh13.GetYaxis()->SetTitle("Counts");
 
 	// Save the canvas
     canvas.SaveAs(Form("%s/%s.png", outDir, "output"));
