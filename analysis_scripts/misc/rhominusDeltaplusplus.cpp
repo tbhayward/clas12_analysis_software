@@ -36,7 +36,10 @@ std::map<std::string, HistConfig> histConfigs = {
     {"Mh23", {500, 1.00, 3.00}},
     {"Mh1x", {500, 0.00, 1.50}},
     {"Mh2x", {500, 0.00, 1.50}},
-    {"Mh3x", {500, 0.00, 1.50}}
+    {"Mh3x", {500, 0.00, 1.50}},
+    {"Mx", {500, 0.00, 3.00}},
+    {"Mx13", {500, 0.00, 3.00}},
+    {"Mx2x", {500, 0.00, 3.00}}
 };
 
 void createHistograms(TTreeReader &dataReader, const char* outDir) {
