@@ -35,34 +35,34 @@ std::map<std::string, HistConfig> histConfigs = {
     {"Mh13", {200, 0.00, 1.50}}
 };
 
-void createHistograms(TTreeReader &data, const char* outDir) {
+void createHistograms(TTreeReader &dataReader, const char* outDir) {
 	// Declare derived variables to read from the tree
 	double z2x, t13, t2x;
 	// Declare reader locations
-	TTreeReaderValue<int> helicity(data, "helicity");
-	TTreeReaderValue<double> beam_pol(data, "beam_pol");
-    TTreeReaderValue<double> e_p(data, "e_p");
-    TTreeReaderValue<double> e_theta(data, "e_theta");
-    TTreeReaderValue<double> e_phi(data, "e_phi");
-    TTreeReaderValue<double> p1_p(data, "p1_p");
-    TTreeReaderValue<double> p1_theta(data, "p1_theta");
-    TTreeReaderValue<double> p1_phi(data, "p1_phi");
-    TTreeReaderValue<double> p2_p(data, "p2_p");
-    TTreeReaderValue<double> p2_theta(data, "p2_theta");
-    TTreeReaderValue<double> p2_phi(data, "p2_phi");
-    TTreeReaderValue<double> p3_p(data, "p3_p");
-    TTreeReaderValue<double> p3_theta(data, "p3_theta");
-    TTreeReaderValue<double> p3_phi(data, "p3_phi");
-    TTreeReaderValue<double> phi1(data, "phi1");
-    TTreeReaderValue<double> phi3(data, "phi2");
-    TTreeReaderValue<double> phi3(data, "phi3");
-    TTreeReaderValue<double> phi12(data, "phi12");
-    TTreeReaderValue<double> phi13(data, "phi13");
-    TTreeReaderValue<double> phi23(data, "phi23");
-    TTreeReaderValue<double> DepW(data, "DepW");
-    TTreeReaderValue<double> DepA(data, "DepA");
-    TTreeReaderValue<double> x(data, "x");
-    TTreeReaderValue<double> z13(data, "z");
+	TTreeReaderValue<int> helicity(dataReader, "helicity");
+	TTreeReaderValue<double> beam_pol(dataReader, "beam_pol");
+    TTreeReaderValue<double> e_p(dataReader, "e_p");
+    TTreeReaderValue<double> e_theta(dataReader, "e_theta");
+    TTreeReaderValue<double> e_phi(dataReader, "e_phi");
+    TTreeReaderValue<double> p1_p(dataReader, "p1_p");
+    TTreeReaderValue<double> p1_theta(dataReader, "p1_theta");
+    TTreeReaderValue<double> p1_phi(dataReader, "p1_phi");
+    TTreeReaderValue<double> p2_p(dataReader, "p2_p");
+    TTreeReaderValue<double> p2_theta(dataReader, "p2_theta");
+    TTreeReaderValue<double> p2_phi(dataReader, "p2_phi");
+    TTreeReaderValue<double> p3_p(dataReader, "p3_p");
+    TTreeReaderValue<double> p3_theta(dataReader, "p3_theta");
+    TTreeReaderValue<double> p3_phi(dataReader, "p3_phi");
+    TTreeReaderValue<double> phi1(dataReader, "phi1");
+    TTreeReaderValue<double> phi3(dataReader, "phi2");
+    TTreeReaderValue<double> phi3(dataReader, "phi3");
+    TTreeReaderValue<double> phi12(dataReader, "phi12");
+    TTreeReaderValue<double> phi13(dataReader, "phi13");
+    TTreeReaderValue<double> phi23(dataReader, "phi23");
+    TTreeReaderValue<double> DepW(dataReader, "DepW");
+    TTreeReaderValue<double> DepA(dataReader, "DepA");
+    TTreeReaderValue<double> x(dataReader, "x");
+    TTreeReaderValue<double> z13(dataReader, "z");
 
     // Declare new variables to store missing particle information
 	float px_p, px_theta, px_phi, Mx1x, Mx2x, Mx3x, Mh1x, Mh2x, Mh3x;
@@ -74,7 +74,9 @@ void createHistograms(TTreeReader &data, const char* outDir) {
     TH1F histMh12("Mh12", "", config.bins, config.min, config.max);
     TH1F histMh13("Mh13", "", config.bins, config.min, config.max);
 	KinematicCuts kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
-    	while (dataReader.Next()) {
+	int counter = 0;
+	while (dataReader.Next()) {
+		counter++;
 
     	// Create 4-momentum vectors for final state particles
         TLorentzVector p_e, p1, p2, p3;
@@ -105,7 +107,7 @@ void createHistograms(TTreeReader &data, const char* outDir) {
         Mh2x = (p2 + p_x).M();
         Mh3x = (p3 + p_x).M();
 
-        cout << entry << " " << Mh2x << endl;
+        cout << counter << " " << Mh2x << endl;
 
 	}
 	dataReader.Restart();  // Reset the TTreeReader at the end of the function
@@ -128,9 +130,9 @@ void rhominusDeltaplusplus(std::string root_file_path) {
         cout << "Error getting trees from ROOT files." << endl;
     }
 
-    TTreeReader dataReader(data); // Create a TTreeReader for the data tree
+    TTreeReader dataReader(tree); // Create a TTreeReader for the data tree
 
-    createHistograms(data, "output");
+    createHistograms(dataReader, "output");
 
     file->Close(); delete file;
 
