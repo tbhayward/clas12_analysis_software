@@ -87,6 +87,11 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     // Create a canvas and divide it into a 3x2 grid
 	TCanvas canvas("Invariant Masses", "Canvas", 1600, 1000);  // Changed the size to 1600x1000
 	canvas.Divide(3, 2);  // Divide into 3 columns and 2 rows
+	// Loop over each pad and adjust the bottom margin
+	for (int i = 1; i <= 6; ++i) {
+	    canvas.cd(i);
+	    gPad->SetBottomMargin(0.2);  // Increase bottom margin to 0.2 (20% of pad height)
+	}
 
     // histograms
     HistConfig configMh12 = histConfigs["Mh12"];
