@@ -33,7 +33,7 @@ void createHistograms(TTree* tree, const char* outDir) {
 	double Mx, Mx1, Mx2, Mx3, Mx12, Mx13, Mx23;
 	// Declare variables for asymmetry calculations
 	int helicity;
-	double beam_pol, phi1, phi2, phi3, phi12, phi13, phi23, W, A;
+	double beam_pol, phi1, phi2, phi3, phi12, phi13, phi23, DepW, DepA;
 	double x, z13, z2x, t13, t2x;
 	// Set branch addresses
 	tree->SetBranchAddress("helicity", &helicity);
