@@ -133,8 +133,8 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
         Mh2x = (p2 + p_x).M();
         Mh3x = (p3 + p_x).M();
 
-        histMh12.fill(Mh12); histMh13.fill(Mh13); histMh23.fill(Mh23);
-        histMh1x.fill(Mh1x); histMh2x.fill(Mh2x); histMh3x.fill(Mh3x); 
+        histMh12.Fill(Mh12); histMh13.Fill(Mh13); histMh23.Fill(Mh23);
+        histMh1x.Fill(Mh1x); histMh2x.Fill(Mh2x); histMh3x.Fill(Mh3x); 
         cout << counter << " " << Mh2x << endl;
 
 	}
