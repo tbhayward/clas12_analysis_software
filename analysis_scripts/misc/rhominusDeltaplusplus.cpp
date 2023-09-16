@@ -90,6 +90,8 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     pad1->cd();  // Set current pad to pad1
 
     // histograms
+    HistConfig configMh13 = histConfigs["Mh12"];
+    TH1F histMh12("Mh12", "", configMh12.bins, configMh12.min, configMh12.max);
     HistConfig configMh13 = histConfigs["Mh13"];
     TH1F histMh13("Mh13", "", configMh13.bins, configMh13.min, configMh13.max);
     HistConfig configMh23 = histConfigs["Mh23"];
