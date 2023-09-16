@@ -165,7 +165,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMh12.GetYaxis()->SetTitle("Counts");
 
 	// Save the canvas
-    canvas.SaveAs("output.png", outDir, branchName);
+    canvas.SaveAs(Form("%s/%s.png", outDir, "output"));
 	delete pad1;
 }
 
