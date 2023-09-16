@@ -71,9 +71,10 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     TLorentzVector p_initial(0, 0, 10.1998, 10.1998 + 0.938); // (px, py, pz, E)
 
     // histograms
-    HistConfig config = histConfigs[branchName];
-    TH1F histMh12("Mh12", "", config.bins, config.min, config.max);
-    TH1F histMh13("Mh13", "", config.bins, config.min, config.max);
+    HistConfig configMh12 = histConfigs["Mh12"];
+    TH1F histMh12("Mh12", "", configMh12.bins, configMh12.min, configMh12.max);
+    HistConfig configMh13 = histConfigs["Mh13"];
+    TH1F histMh13("Mh13", "", configMh13.bins, configMh13.min, configMh13.max);
 	KinematicCuts kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
 	int counter = 0;
 	while (dataReader.Next()) {
