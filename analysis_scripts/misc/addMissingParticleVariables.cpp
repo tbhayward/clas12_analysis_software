@@ -11,6 +11,7 @@ void addMissingParticleVariables(std::string root_file_path) {
     TFile* file = new TFile(root_file_path.c_str(), "UPDATE");
     TTree* tree = (TTree*)file->Get("PhysicsEvents");
 
+    cout << "passed" << endl;
     // Declare variables to read from the tree
     double e_p, e_theta, e_phi, p1_p, p1_theta, p1_phi, p2_p, p2_theta, p2_phi, p3_p, p3_theta; 
     double p3_phi;
