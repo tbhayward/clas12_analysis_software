@@ -75,10 +75,11 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     TH1F histMh12("Mh12", "", configMh12.bins, configMh12.min, configMh12.max);
     HistConfig configMh13 = histConfigs["Mh13"];
     TH1F histMh13("Mh13", "", configMh13.bins, configMh13.min, configMh13.max);
-	KinematicCuts kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
+
 	int counter = 0;
 	while (dataReader.Next()) {
 		counter++;
+		if (Mx < 0 || Mx12 < 0 || Mx13 < 0 || Mx23 < 0) { continue; }
 
     	// Create 4-momentum vectors for final state particles
         TLorentzVector p_e, p1, p2, p3;
