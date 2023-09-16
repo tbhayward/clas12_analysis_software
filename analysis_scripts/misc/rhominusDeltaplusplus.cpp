@@ -24,61 +24,68 @@ double gett(double p, double theta) {
           2*sqrt(mp*mp + E*E)*sqrt(mp*mp + p*p)*cos(theta);
 }
 
-void createHistograms(TTree* tree, const char* outDir) {
-	// Declare kinematic variables to read from the tree
-	double e_p, e_theta, e_phi, p1_p, p1_theta, p1_phi;
-	double p2_p, p2_theta, p2_phi, p3_p, p3_theta, p3_phi;
+struct HistConfig {
+    int bins;
+    double min;
+    double max;
+};
+
+std::map<std::string, HistConfig> histConfigs = {
+    {"Mh12", {200, 0.00, 3.00}},
+    {"Mh13", {200, 0.00, 1.50}}
+};
+
+void createHistograms(TTreeReader &data, const char* outDir) {
 	// Declare derived variables to read from the tree
-	double Mh, Mh12, Mh13, Mh23;
-	double Mx, Mx1, Mx2, Mx3, Mx12, Mx13, Mx23;
-	// Declare variables for asymmetry calculations
-	int helicity;
-	double beam_pol, phi1, phi2, phi3, phi12, phi13, phi23, DepW, DepA;
-	double x, z13, z2x, t13, t2x;
-	// Set branch addresses
-	tree->SetBranchAddress("helicity", &helicity);
-	tree->SetBranchAddress("beam_pol", &beam_pol);
-    tree->SetBranchAddress("e_p", &e_p);
-    tree->SetBranchAddress("e_theta", &e_theta);
-    tree->SetBranchAddress("e_phi", &e_phi);
-    tree->SetBranchAddress("p1_p", &p1_p);
-    tree->SetBranchAddress("p1_theta", &p1_theta);
-    tree->SetBranchAddress("p1_phi", &p1_phi);
-    tree->SetBranchAddress("p2_p", &p2_p);
-    tree->SetBranchAddress("p2_theta", &p2_theta);
-    tree->SetBranchAddress("p2_phi", &p2_phi);
-    tree->SetBranchAddress("p3_p", &p3_p);
-    tree->SetBranchAddress("p3_theta", &p3_theta);
-    tree->SetBranchAddress("p3_phi", &p3_phi);
-    tree->SetBranchAddress("phi1", &phi1);
-    tree->SetBranchAddress("phi2", &phi2);
-    tree->SetBranchAddress("phi3", &phi3);
-    tree->SetBranchAddress("phi12", &phi12);
-    tree->SetBranchAddress("phi13", &phi13);
-    tree->SetBranchAddress("phi23", &phi23);
-    tree->SetBranchAddress("DepW", &DepW);
-    tree->SetBranchAddress("DepA", &DepA);
-    tree->SetBranchAddress("x", &x);
-    tree->SetBranchAddress("z13", &z13);
+	double z2x, t13, t2x;
+	// Declare reader locations
+	TTreeReaderValue<int> helicity(data, "helicity");
+	TTreeReaderValue<double> beam_pol(data, "beam_pol");
+    TTreeReaderValue<double> e_p(data, "e_p");
+    TTreeReaderValue<double> e_theta(data, "e_theta");
+    TTreeReaderValue<double> e_phi(data, "e_phi");
+    TTreeReaderValue<double> p1_p(data, "p1_p");
+    TTreeReaderValue<double> p1_theta(data, "p1_theta");
+    TTreeReaderValue<double> p1_phi(data, "p1_phi");
+    TTreeReaderValue<double> p2_p(data, "p2_p");
+    TTreeReaderValue<double> p2_theta(data, "p2_theta");
+    TTreeReaderValue<double> p2_phi(data, "p2_phi");
+    TTreeReaderValue<double> p3_p(data, "p3_p");
+    TTreeReaderValue<double> p3_theta(data, "p3_theta");
+    TTreeReaderValue<double> p3_phi(data, "p3_phi");
+    TTreeReaderValue<double> phi1(data, "phi1");
+    TTreeReaderValue<double> phi3(data, "phi2");
+    TTreeReaderValue<double> phi3(data, "phi3");
+    TTreeReaderValue<double> phi12(data, "phi12");
+    TTreeReaderValue<double> phi13(data, "phi13");
+    TTreeReaderValue<double> phi23(data, "phi23");
+    TTreeReaderValue<double> DepW(data, "DepW");
+    TTreeReaderValue<double> DepA(data, "DepA");
+    TTreeReaderValue<double> x(data, "x");
+    TTreeReaderValue<double> z13(data, "z");
 
     // Declare new variables to store missing particle information
 	float px_p, px_theta, px_phi, Mx1x, Mx2x, Mx3x, Mh1x, Mh2x, Mh3x;
 
 	// Define initial state 4-momentum (10.1998 GeV electron beam and stationary proton)
     TLorentzVector p_initial(0, 0, 10.1998, 10.1998 + 0.938); // (px, py, pz, E)
-	for (Long64_t entry = 0; entry < tree->GetEntries(); entry++) {
-		tree->GetEntry(entry);
+
+    // histograms
+    TH1F histMh12("Mh12", "", config.bins, config.min, config.max);
+    TH1F histMh13("Mh13", "", config.bins, config.min, config.max);
+	KinematicCuts kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
+    	while (dataReader.Next()) {
 
     	// Create 4-momentum vectors for final state particles
         TLorentzVector p_e, p1, p2, p3;
-        p_e.SetXYZM(e_p*sin(e_theta)*cos(e_phi), e_p*sin(e_theta)*sin(e_phi), 
-        	e_p*cos(e_theta), 0.511e-3);
-        p1.SetXYZM(p1_p*sin(p1_theta)*cos(p1_phi), p1_p*sin(p1_theta)*sin(p1_phi), 
-        	p1_p*cos(p1_theta), 0.139570);
-        p2.SetXYZM(p2_p*sin(p2_theta)*cos(p2_phi), p2_p*sin(p2_theta)*sin(p2_phi), 
-        	p2_p*cos(p2_theta), 0.139570);
-        p3.SetXYZM(p3_p*sin(p3_theta)*cos(p3_phi), p3_p*sin(p3_theta)*sin(p3_phi), 
-        	p3_p*cos(p3_theta), 0.938272);
+        p_e.SetXYZM(*e_p*sin(*e_theta)*cos(*e_phi), *e_p*sin(*e_theta)*sin(*e_phi), 
+        	*e_p*cos(*e_theta), 0.511e-3);
+        p1.SetXYZM(*p1_p*sin(*p1_theta)*cos(*p1_phi), *p1_p*sin(*p1_theta)*sin(*p1_phi), 
+        	*p1_p*cos(*p1_theta), 0.139570);
+        p2.SetXYZM(*p2_p*sin(*p2_theta)*cos(*p2_phi), *p2_p*sin(*p2_theta)*sin(*p2_phi), 
+        	*p2_p*cos(*p2_theta), 0.139570);
+        p3.SetXYZM(*p3_p*sin(*p3_theta)*cos(*p3_phi), *p3_p*sin(*p3_theta)*sin(*p3_phi), 
+        	*p3_p*cos(*p3_theta), 0.938272);
 
         // Calculate 4-momentum of missing particle
         TLorentzVector p_x = p_initial - (p_e + p1 + p2 + p3);
@@ -101,6 +108,7 @@ void createHistograms(TTree* tree, const char* outDir) {
         cout << entry << " " << Mh2x << endl;
 
 	}
+	dataReader.Restart();  // Reset the TTreeReader at the end of the function
 }
 
 void rhominusDeltaplusplus(std::string root_file_path) {
@@ -120,7 +128,9 @@ void rhominusDeltaplusplus(std::string root_file_path) {
         cout << "Error getting trees from ROOT files." << endl;
     }
 
-    createHistograms(tree, "output");
+    TTreeReader dataReader(data); // Create a TTreeReader for the data tree
+
+    createHistograms(data, "output");
 
     file->Close(); delete file;
 
