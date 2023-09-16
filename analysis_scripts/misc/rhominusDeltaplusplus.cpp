@@ -144,8 +144,8 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 	}
 	dataReader.Restart();  // Reset the TTreeReader at the end of the function
 
-	histMh12.SetLineColor(kBlack); histMh13.SetLineColor(kBlack); 
-    histMh23.SetLineColor(kBlack); histMh1x.SetLineColor(kBlack);
+	histMh12.SetLineColor(kBlack); histMh13.SetLineColor(kRed); 
+    histMh23.SetLineColor(kBlue); histMh1x.SetLineColor(kBlack);
     histMh2x.SetLineColor(kBlack); histMh3x.SetLineColor(kBlack);
     histMh12.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
     histMh12.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
@@ -160,8 +160,10 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMh3x.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
     histMh3x.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
 
-    histMh12.Draw(""); histMh12.SetStats(0); 
-    histMh12.GetXaxis()->SetTitle("{M}_{h}");
+    histMh12.Draw(""); histMh12.SetStats(0);
+    histMh13.Draw("same"); histMh13.SetStats(0); 
+    histMh23.Draw("same"); histMh23.SetStats(0);
+    histMh12.GetXaxis()->SetTitle("#it{M}_{h}");
     histMh12.GetYaxis()->SetTitle("Counts");
 
 	// Save the canvas
