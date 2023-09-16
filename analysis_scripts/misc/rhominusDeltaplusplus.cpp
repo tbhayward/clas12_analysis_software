@@ -206,7 +206,6 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 
 	// Save the canvas
     canvas.SaveAs(Form("%s/%s.png", outDir, "output"));
-	delete pad1;
 }
 
 void rhominusDeltaplusplus(std::string root_file_path) {
