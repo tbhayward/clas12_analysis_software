@@ -32,7 +32,11 @@ struct HistConfig {
 
 std::map<std::string, HistConfig> histConfigs = {
     {"Mh12", {200, 0.00, 3.00}},
-    {"Mh13", {200, 0.00, 1.50}}
+    {"Mh13", {200, 0.00, 1.50}},
+    {"Mh23", {200, 0.00, 3.50}},
+    {"Mh1x", {200, 0.00, 1.50}},
+    {"Mh2x", {200, 0.00, 1.50}},
+    {"Mh3x", {200, 0.00, 1.50}}
 };
 
 void createHistograms(TTreeReader &dataReader, const char* outDir) {
@@ -74,11 +78,26 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 	// Define initial state 4-momentum (10.1998 GeV electron beam and stationary proton)
     TLorentzVector p_initial(0, 0, 10.1998, 10.1998 + 0.938); // (px, py, pz, E)
 
+    TCanvas canvas(branchName, "Canvas", 1600, 600);  // Width doubled for side-by-side panels
+    TPad *pad1 = new TPad("pad1", "The pad with the function",0.0,0.0,0.33,1.0,21);
+    pad1->SetLeftMargin(0.2); pad1->SetBottomMargin(0.2);
+    pad1->SetFillColor(0);  // Set the fill color to white for pad1
+    pad1->Draw();
+    pad1->cd();  // Set current pad to pad1
+
     // histograms
     HistConfig configMh12 = histConfigs["Mh12"];
     TH1F histMh12("Mh12", "", configMh12.bins, configMh12.min, configMh12.max);
     HistConfig configMh13 = histConfigs["Mh13"];
     TH1F histMh13("Mh13", "", configMh13.bins, configMh13.min, configMh13.max);
+    HistConfig configMh23 = histConfigs["Mh23"];
+    TH1F histMh13("Mh23", "", configMh13.bins, configMh13.min, configMh13.max);
+    HistConfig configMh1x = histConfigs["Mh1x"];
+    TH1F histMh12("Mh1x", "", configMh1x.bins, configMh1x.min, configMh1x.max);
+    HistConfig configMh2x = histConfigs["Mh2x"];
+    TH1F histMh13("Mh2x", "", configMh2x.bins, configMh2x.min, configMh2x.max);
+    HistConfig configMh3x = histConfigs["Mh3x"];
+    TH1F histMh13("Mh3x", "", configMh3x.bins, configMh3x.min, configMh3x.max);
 
 	int counter = 0;
 	while (dataReader.Next()) {
@@ -114,10 +133,14 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
         Mh2x = (p2 + p_x).M();
         Mh3x = (p3 + p_x).M();
 
+        histMh12.fill(Mh12); histMh13.fill(Mh13); histMh23.fill(Mh23);
+        histMh1x.fill(Mh1x); histMh2x.fill(Mh2x); histMh3x.fill(Mh3x); 
         cout << counter << " " << Mh2x << endl;
 
 	}
 	dataReader.Restart();  // Reset the TTreeReader at the end of the function
+	delete histMh12, histMh13, histMh23;
+	delete histMh1x, histMh2x, histMh3x;
 }
 
 void rhominusDeltaplusplus(std::string root_file_path) {
