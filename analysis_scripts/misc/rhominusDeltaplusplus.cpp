@@ -34,12 +34,12 @@ std::map<std::string, HistConfig> histConfigs = {
     {"Mh12", {500, 0.00, 3.00}},
     {"Mh13", {500, 1.00, 2.50}},
     {"Mh23", {500, 1.00, 3.00}},
-    {"Mh1x", {500, 0.00, 1.50}},
-    {"Mh2x", {500, 0.00, 1.50}},
-    {"Mh3x", {500, 0.00, 1.50}},
-    {"Mx", {500, 0.00, 3.00}},
-    {"Mx13", {500, 0.00, 3.00}},
-    {"Mx2x", {500, 0.00, 3.00}}
+    {"Mh1x", {500, 0.00, 2.50}},
+    {"Mh2x", {500, 0.00, 2.50}},
+    {"Mh3x", {500, 0.00, 2.50}},
+    {"Mx", {500, 0.00, 2.00}},
+    {"Mx13", {500, 0.00, 2.50}},
+    {"Mx2x", {500, 0.00, 2.50}}
 };
 
 void createHistograms(TTreeReader &dataReader, const char* outDir) {
@@ -188,7 +188,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMx13.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
     histMx13.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
     histMx13.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
-    histMx13.Draw(""); histMx.SetStats(0);
+    histMx13.Draw(""); histMx13.SetStats(0);
     histMx13.GetXaxis()->SetTitle("#it{M}_{X(ep -> e'p#pi^{+}[#pi^{-}]p[X])} (GeV)");
     histMx13.GetYaxis()->SetTitle("Counts");
     histMx13.Draw(); // Draw Mx13 in fourth pad
@@ -198,7 +198,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMx2x.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
     histMx2x.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
     histMx2x.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
-    histMx2x.Draw(""); histMx.SetStats(0);
+    histMx2x.Draw(""); histMx2x.SetStats(0);
     histMx2x.GetXaxis()->SetTitle("#it{M}_{X(ep -> e'p[#pi^{+}]#pi^{-}[p]X)} (GeV)");
     histMx2x.GetYaxis()->SetTitle("Counts");
     histMx2x.Draw(); // Draw Mx2x in fifth pad
