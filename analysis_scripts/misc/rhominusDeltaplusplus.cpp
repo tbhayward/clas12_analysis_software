@@ -54,7 +54,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     TTreeReaderValue<double> p3_theta(dataReader, "p3_theta");
     TTreeReaderValue<double> p3_phi(dataReader, "p3_phi");
     TTreeReaderValue<double> phi1(dataReader, "phi1");
-    TTreeReaderValue<double> phi3(dataReader, "phi2");
+    TTreeReaderValue<double> phi2(dataReader, "phi2");
     TTreeReaderValue<double> phi3(dataReader, "phi3");
     TTreeReaderValue<double> phi12(dataReader, "phi12");
     TTreeReaderValue<double> phi13(dataReader, "phi13");
@@ -71,6 +71,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     TLorentzVector p_initial(0, 0, 10.1998, 10.1998 + 0.938); // (px, py, pz, E)
 
     // histograms
+    HistConfig config = histConfigs[branchName];
     TH1F histMh12("Mh12", "", config.bins, config.min, config.max);
     TH1F histMh13("Mh13", "", config.bins, config.min, config.max);
 	KinematicCuts kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
