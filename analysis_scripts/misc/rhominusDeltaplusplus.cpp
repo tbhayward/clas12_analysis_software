@@ -71,6 +71,9 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     TTreeReaderValue<double> Mx12(dataReader, "Mx12");
     TTreeReaderValue<double> Mx13(dataReader, "Mx13");
     TTreeReaderValue<double> Mx23(dataReader, "Mx23");
+    TTreeReaderValue<double> Mh12(dataReader, "Mh12");
+    TTreeReaderValue<double> Mh13(dataReader, "Mh13");
+    TTreeReaderValue<double> Mh23(dataReader, "Mh23");
 
     // Declare new variables to store missing particle information
 	float px_p, px_theta, px_phi, Mx1x, Mx2x, Mx3x, Mh1x, Mh2x, Mh3x;
@@ -78,7 +81,8 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 	// Define initial state 4-momentum (10.1998 GeV electron beam and stationary proton)
     TLorentzVector p_initial(0, 0, 10.1998, 10.1998 + 0.938); // (px, py, pz, E)
 
-    TCanvas canvas(branchName, "Canvas", 1600, 600);  // Width doubled for side-by-side panels
+    TCanvas canvas("Invariant Masses", "Canvas", 1600, 600);  
+    // Width doubled for side-by-side panels
     TPad *pad1 = new TPad("pad1", "The pad with the function",0.0,0.0,0.33,1.0,21);
     pad1->SetLeftMargin(0.2); pad1->SetBottomMargin(0.2);
     pad1->SetFillColor(0);  // Set the fill color to white for pad1
