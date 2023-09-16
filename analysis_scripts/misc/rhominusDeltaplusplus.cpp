@@ -16,7 +16,7 @@
 #include <TTree.h>
 #include <TLorentzVector.h>
 
-void createHistograms(TTree* tree) {
+void createHistograms(TTree* tree, const char* outDir) {
 	for (Long64_t entry = 0; entry < tree->GetEntries(); entry++) {
 		// Declare kinematic variables to read from the tree
     	double e_p, e_theta, e_phi, p1_p, p1_theta, p1_phi;
@@ -110,5 +110,5 @@ void rhominusDeltaplusplus(std::string root_file_path) {
 
     createHistograms(tree, "output");
 
-    file->Close(); delete file1;
+    file->Close(); delete file;
 }
