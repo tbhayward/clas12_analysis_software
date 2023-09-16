@@ -102,6 +102,12 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     TH1F histMh2x("Mh2x", "", configMh2x.bins, configMh2x.min, configMh2x.max);
     HistConfig configMh3x = histConfigs["Mh3x"];
     TH1F histMh3x("Mh3x", "", configMh3x.bins, configMh3x.min, configMh3x.max);
+    HistConfig configMx = histConfigs["Mx"];
+    TH1F histMx("Mx", "", configMx.bins, configMx.min, configMx.max);
+    HistConfig configMx13 = histConfigs["Mx13"];
+    TH1F histMx13("Mx13", "", configMx13.bins, configMx13.min, configMx13.max);
+    HistConfig configMx2x = histConfigs["Mx2x"];
+    TH1F histMx2x("Mx2x", "", configMx2x.bins, configMx2x.min, configMx2x.max);
 
 	int counter = 0;
 	while (dataReader.Next()) {
@@ -139,22 +145,65 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 
         histMh12.Fill(*Mh12); histMh13.Fill(*Mh13); histMh23.Fill(*Mh23);
         histMh1x.Fill(Mh1x); histMh2x.Fill(Mh2x); histMh3x.Fill(Mh3x); 
+        histMx.Fill(*Mx); histMx13.Fill(*Mx13); histMx2x.Fill(Mx2x);
 
-        // cout << counter << " " << Mh2x << endl;
 	}
 	dataReader.Restart();  // Reset the TTreeReader at the end of the function
 
 	histMh12.SetLineColor(kBlack); histMh13.SetLineColor(kBlack); 
     histMh23.SetLineColor(kBlack); histMh1x.SetLineColor(kBlack);
     histMh2x.SetLineColor(kBlack); histMh3x.SetLineColor(kBlack);
-    histMh12.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
-    histMh12.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
-    histMh12.GetXaxis()->SetTitleSize(0.06);  // Increase x-axis title size
-    histMh12.GetYaxis()->SetTitleSize(0.06);  // Increase y-axis title size
-
+	// Draw histograms on the canvas sub-pads
+    canvas.cd(1);
+    histMh13.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
+    histMh13.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
+    histMh13.GetXaxis()->SetTitleSize(0.06);  // Increase x-axis title size
+    histMh13.GetYaxis()->SetTitleSize(0.06);  // Increase y-axis title size
     histMh13.Draw(""); histMh13.SetStats(0);
     histMh13.GetXaxis()->SetTitle("#it{M}_{#pi^{+}p} (GeV)");
     histMh13.GetYaxis()->SetTitle("Counts");
+    histMh13.Draw(); // Draw Mh13 in first pad
+    //
+    canvas.cd(2);
+    histMh2x.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
+    histMh2x.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
+    histMh2x.GetXaxis()->SetTitleSize(0.06);  // Increase x-axis title size
+    histMh2x.GetYaxis()->SetTitleSize(0.06);  // Increase y-axis title size
+    histMh2x.Draw(""); histMh2x.SetStats(0);
+    histMh2x.GetXaxis()->SetTitle("#it{M}_{#pi^{-}X} (GeV)");
+    histMh2x.GetYaxis()->SetTitle("Counts");
+    histMh2x.Draw(); // Draw Mh2x in second pad
+    //
+    canvas.cd(3);
+    histMx.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
+    histMx.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
+    histMx.GetXaxis()->SetTitleSize(0.06);  // Increase x-axis title size
+    histMx.GetYaxis()->SetTitleSize(0.06);  // Increase y-axis title size
+    histMx.Draw(""); histMx.SetStats(0);
+    histMx.GetXaxis()->SetTitle("#it{M}_{X(ep -> e'p#pi^{+}#pi^{-}p[X])} (GeV)");
+    histMx.GetYaxis()->SetTitle("Counts");
+    histMx.Draw(); // Draw Mx in third pad
+    //
+    canvas.cd(4);
+    histMx13.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
+    histMx13.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
+    histMx13.GetXaxis()->SetTitleSize(0.06);  // Increase x-axis title size
+    histMx13.GetYaxis()->SetTitleSize(0.06);  // Increase y-axis title size
+    histMx13.Draw(""); histMx.SetStats(0);
+    histMx13.GetXaxis()->SetTitle("#it{M}_{X(ep -> e'p#pi^{+}[#pi^{-}]p[X])} (GeV)");
+    histMx13.GetYaxis()->SetTitle("Counts");
+    histMx13.Draw(); // Draw Mx13 in fourth pad
+    //
+    canvas.cd(5);
+    histMx2x.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
+    histMx2x.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
+    histMx2x.GetXaxis()->SetTitleSize(0.06);  // Increase x-axis title size
+    histMx2x.GetYaxis()->SetTitleSize(0.06);  // Increase y-axis title size
+    histMx2x.Draw(""); histMx.SetStats(0);
+    histMx2x.GetXaxis()->SetTitle("#it{M}_{X(ep -> e'p[#pi^{+}]#pi^{-}[p]X)} (GeV)");
+    histMx2x.GetYaxis()->SetTitle("Counts");
+    histMx2x.Draw(); // Draw Mx2x in fifth pad
+	
 
 	// Save the canvas
     canvas.SaveAs(Form("%s/%s.png", outDir, "output"));
