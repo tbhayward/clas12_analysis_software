@@ -82,23 +82,22 @@ void addMissingParticleVariables(std::string root_file_path) {
         newTree->Fill();
     }
 
-    // Extract the file name, remove the ".root" extension and append "_MissingParticles.root"
+    // Generate new file name
     std::string new_file_name = 
         root_file_path.substr(0, root_file_path.find(".root")) + "_MissingParticles.root";
-
-    // Create a new ROOT file to store the new tree
+    
+    // Create new ROOT file
     TFile* newFile = new TFile(new_file_name.c_str(), "RECREATE");
-
-    // Write new tree to the new file
-    newTree->Write();
-
-    // Close all the files
+    
+    // Clone the tree into the new file
+    newTree->CloneTree();
+    
+    // Write and close the new file
+    newFile->Write();
     newFile->Close();
-    file->Close();
-
-    // Memory cleanup
-    delete newTree;
-    delete tree;
     delete newFile;
+
+    // Close the original file
+    file->Close();
     delete file;
 }
