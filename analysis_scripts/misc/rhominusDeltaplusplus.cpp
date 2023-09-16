@@ -84,13 +84,9 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 	// Define initial state 4-momentum (10.1998 GeV electron beam and stationary proton)
     TLorentzVector p_initial(0, 0, 10.1998, 10.1998 + 0.938); // (px, py, pz, E)
 
-    TCanvas canvas("Invariant Masses", "Canvas", 1600, 600);  
-    // Width doubled for side-by-side panels
-    TPad *pad1 = new TPad("pad1", "The pad with the function",0.0,0.0,0.33,1.0,21);
-    pad1->SetLeftMargin(0.2); pad1->SetBottomMargin(0.2);
-    pad1->SetFillColor(0);  // Set the fill color to white for pad1
-    pad1->Draw();
-    pad1->cd();  // Set current pad to pad1
+    // Create a canvas and divide it into a 3x2 grid
+	TCanvas canvas("Invariant Masses", "Canvas", 1600, 800);  // Changed the size to 1600x800
+	canvas.Divide(3, 2);  // Divide into 3 columns and 2 rows
 
     // histograms
     HistConfig configMh12 = histConfigs["Mh12"];
