@@ -47,7 +47,6 @@ void addMissingParticleVariables(std::string root_file_path) {
     // Define initial state 4-momentum (10.1998 GeV electron beam and stationary proton)
     TLorentzVector p_initial(0, 0, 10.1998, 10.1998 + 0.938); // (px, py, pz, E)
 
-    cout << "passed" << endl;
     // Loop over all events in the tree
     Long64_t nEntries = tree->GetEntries();
     for(Long64_t i = 0; i < nEntries; ++i) {
@@ -56,9 +55,9 @@ void addMissingParticleVariables(std::string root_file_path) {
         // Create 4-momentum vectors for final state particles
         TLorentzVector p_e, p1, p2, p3;
         p_e.SetXYZM(e_p * sin(e_theta) * cos(e_phi), e_p * sin(e_theta) * sin(e_phi), e_p * cos(e_theta), 0.511e-3);
-        p1.SetXYZM(p1_p * sin(p1_theta) * cos(p1_phi), p1_p * sin(p1_theta) * sin(p1_phi), p1_p * cos(p1_theta), 0.13957);
-        p2.SetXYZM(p2_p * sin(p2_theta) * cos(p2_phi), p2_p * sin(p2_theta) * sin(p2_phi), p2_p * cos(p2_theta), 0.13957);
-        p3.SetXYZM(p3_p * sin(p3_theta) * cos(p3_phi), p3_p * sin(p3_theta) * sin(p3_phi), p3_p * cos(p3_theta), 0.938);
+        p1.SetXYZM(p1_p * sin(p1_theta) * cos(p1_phi), p1_p * sin(p1_theta) * sin(p1_phi), p1_p * cos(p1_theta), 0.139570);
+        p2.SetXYZM(p2_p * sin(p2_theta) * cos(p2_phi), p2_p * sin(p2_theta) * sin(p2_phi), p2_p * cos(p2_theta), 0.139570);
+        p3.SetXYZM(p3_p * sin(p3_theta) * cos(p3_phi), p3_p * sin(p3_theta) * sin(p3_phi), p3_p * cos(p3_theta), 0.938272);
 
         // Calculate 4-momentum of missing particle
         TLorentzVector p_x = p_initial - (p_e + p1 + p2 + p3);
@@ -78,6 +77,7 @@ void addMissingParticleVariables(std::string root_file_path) {
         Mh2x = (p2 + p_x).M();
         Mh3x = (p3 + p_x).M();
 
+        cout << i << " passed" << endl;
         // Fill new tree
         newTree->Fill();
     }
