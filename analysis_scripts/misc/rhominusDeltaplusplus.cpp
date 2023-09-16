@@ -63,6 +63,10 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     TTreeReaderValue<double> DepA(dataReader, "DepA");
     TTreeReaderValue<double> x(dataReader, "x");
     TTreeReaderValue<double> z13(dataReader, "z");
+    TTreeReaderValue<double> Mx(dataReader, "Mx");
+    TTreeReaderValue<double> Mx12(dataReader, "Mx12");
+    TTreeReaderValue<double> Mx13(dataReader, "Mx13");
+    TTreeReaderValue<double> Mx23(dataReader, "Mx23");
 
     // Declare new variables to store missing particle information
 	float px_p, px_theta, px_phi, Mx1x, Mx2x, Mx3x, Mh1x, Mh2x, Mh3x;
