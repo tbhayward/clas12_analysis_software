@@ -85,7 +85,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     TLorentzVector p_initial(0, 0, 10.1998, 10.1998 + 0.938); // (px, py, pz, E)
 
     // Create a canvas and divide it into a 3x2 grid
-	TCanvas canvas("Invariant Masses", "Canvas", 1600, 800);  // Changed the size to 1600x800
+	TCanvas canvas("Invariant Masses", "Canvas", 1600, 1000);  // Changed the size to 1600x1000
 	canvas.Divide(3, 2);  // Divide into 3 columns and 2 rows
 
     // histograms
@@ -159,7 +159,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMh13.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
     histMh13.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
     histMh13.Draw(""); histMh13.SetStats(0);
-    histMh13.GetXaxis()->SetTitle("#it{M}_{#pi^{+}p} (GeV)");
+    histMh13.GetXaxis()->SetTitle("#it{M}_{h(#pi^{+}p)} (GeV)");
     histMh13.GetYaxis()->SetTitle("Counts");
     histMh13.Draw(); // Draw Mh13 in first pad
     //
@@ -169,7 +169,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMh2x.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
     histMh2x.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
     histMh2x.Draw(""); histMh2x.SetStats(0);
-    histMh2x.GetXaxis()->SetTitle("#it{M}_{#pi^{-}X} (GeV)");
+    histMh2x.GetXaxis()->SetTitle("#it{M}_{h(#pi^{-}X)} (GeV)");
     histMh2x.GetYaxis()->SetTitle("Counts");
     histMh2x.Draw(); // Draw Mh2x in second pad
     //
