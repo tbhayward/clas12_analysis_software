@@ -79,7 +79,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 	int counter = 0;
 	while (dataReader.Next()) {
 		counter++;
-		if (Mx < 0 || Mx12 < 0 || Mx13 < 0 || Mx23 < 0) { continue; }
+		if (*Mx < 0 || *Mx12 < 0 || *Mx13 < 0 || *Mx23 < 0) { continue; }
 
     	// Create 4-momentum vectors for final state particles
         TLorentzVector p_e, p1, p2, p3;
