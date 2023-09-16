@@ -147,18 +147,10 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 	histMh12.SetLineColor(kBlack); histMh13.SetLineColor(kBlack); 
     histMh23.SetLineColor(kBlack); histMh1x.SetLineColor(kBlack);
     histMh2x.SetLineColor(kBlack); histMh3x.SetLineColor(kBlack);
-    histMh12.GetXaxis()->SetLabelSize(0.05);  // Increase x-axis label size
-    histMh12.GetYaxis()->SetLabelSize(0.05);  // Increase y-axis label size
-    histMh13.GetXaxis()->SetLabelSize(0.05);  // Increase x-axis label size
-    histMh13.GetYaxis()->SetLabelSize(0.05);  // Increase y-axis label size
-    histMh23.GetXaxis()->SetLabelSize(0.05);  // Increase x-axis label size
-    histMh23.GetYaxis()->SetLabelSize(0.05);  // Increase y-axis label size
-    histMh1x.GetXaxis()->SetLabelSize(0.05);  // Increase x-axis label size
-    histMh1x.GetYaxis()->SetLabelSize(0.05);  // Increase y-axis label size
-    histMh2x.GetXaxis()->SetLabelSize(0.05);  // Increase x-axis label size
-    histMh2x.GetYaxis()->SetLabelSize(0.05);  // Increase y-axis label size
-    histMh3x.GetXaxis()->SetLabelSize(0.05);  // Increase x-axis label size
-    histMh3x.GetYaxis()->SetLabelSize(0.05);  // Increase y-axis label size
+    histMh12.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
+    histMh12.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
+    histMh12.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
+    histMh12.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
 
     histMh23.Draw(""); histMh23.SetStats(0);
     histMh23.GetXaxis()->SetTitle("#it{M}_{#pi^{-}p} (GeV)");
