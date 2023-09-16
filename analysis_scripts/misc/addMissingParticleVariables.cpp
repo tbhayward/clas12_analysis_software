@@ -8,7 +8,7 @@
 
 void addMissingParticleVariables(std::string root_file_path) {
     // Open ROOT file and get the tree
-    TFile* file = new TFile(root_file_path.c_str(), "UPDATE");
+    TFile* file = new TFile(root_file_path.c_str(), "READ");
     TTree* tree = (TTree*)file->Get("PhysicsEvents");
 
     // Declare variables to read from the tree
