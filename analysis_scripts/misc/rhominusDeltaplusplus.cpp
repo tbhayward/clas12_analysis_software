@@ -17,47 +17,50 @@
 #include <TLorentzVector.h>
 
 void createHistograms(TTree* tree, const char* outDir) {
+	// Declare kinematic variables to read from the tree
+	double e_p, e_theta, e_phi, p1_p, p1_theta, p1_phi;
+	double p2_p, p2_theta, p2_phi, p3_p, p3_theta, p3_phi;
+	// Declare derived variables to read from the tree
+	double Mh, Mh12, Mh13, Mh23;
+	double Mx, Mx1, Mx2, Mx3, Mx12, Mx13, Mx23;
+	// Declare variables for asymmetry calculations
+	int helicity;
+	double beam_pol, phi1, phi2, phi3, phi12, phi13, phi23, W, A;
+	double x, z13, z2x, t13, t2x;
+	// Set branch addresses
+	tree->SetBranchAddress("helicity", &helicity);
+	tree->SetBranchAddress("beam_pol", &beam_pol);
+    tree->SetBranchAddress("e_p", &e_p);
+    tree->SetBranchAddress("e_theta", &e_theta);
+    tree->SetBranchAddress("e_phi", &e_phi);
+    tree->SetBranchAddress("p1_p", &p1_p);
+    tree->SetBranchAddress("p1_theta", &p1_theta);
+    tree->SetBranchAddress("p1_phi", &p1_phi);
+    tree->SetBranchAddress("p2_p", &p2_p);
+    tree->SetBranchAddress("p2_theta", &p2_theta);
+    tree->SetBranchAddress("p2_phi", &p2_phi);
+    tree->SetBranchAddress("p3_p", &p3_p);
+    tree->SetBranchAddress("p3_theta", &p3_theta);
+    tree->SetBranchAddress("p3_phi", &p3_phi);
+    tree->SetBranchAddress("phi1", &phi1);
+    tree->SetBranchAddress("phi2", &phi2);
+    tree->SetBranchAddress("phi3", &phi3);
+    tree->SetBranchAddress("phi12", &phi12);
+    tree->SetBranchAddress("phi13", &phi13);
+    tree->SetBranchAddress("phi23", &phi23);
+    tree->SetBranchAddress("W", &W);
+    tree->SetBranchAddress("A", &A);
+    tree->SetBranchAddress("x", &x);
+    tree->SetBranchAddress("z13", &z13);
+    tree->SetBranchAddress("t13", &t13);
+
+    // Declare new variables to store missing particle information
+	float px_p, px_theta, px_phi, Mx1x, Mx2x, Mx3x, Mh1x, Mh2x, Mh3x;
+
+	// Define initial state 4-momentum (10.1998 GeV electron beam and stationary proton)
+    TLorentzVector p_initial(0, 0, 10.1998, 10.1998 + 0.938); // (px, py, pz, E)
 	for (Long64_t entry = 0; entry < tree->GetEntries(); entry++) {
-		// Declare kinematic variables to read from the tree
-    	double e_p, e_theta, e_phi, p1_p, p1_theta, p1_phi;
-    	double p2_p, p2_theta, p2_phi, p3_p, p3_theta, p3_phi;
-    	// Declare derived variables to read from the tree
-    	double Mh, Mh12, Mh13, Mh23;
-    	double Mx, Mx1, Mx2, Mx3, Mx12, Mx13, Mx23;
-    	// Declare variables for asymmetry calculations
-    	int helicity;
-    	double beam_pol, phi1, phi2, phi3, phi12, phi13, phi23, W, A;
-    	double x, z13, z2x, t13, t2x;
-    	// Set branch addresses
-    	tree->SetBranchAddress("helicity", &helicity);
-    	tree->SetBranchAddress("beam_pol", &beam_pol);
-	    tree->SetBranchAddress("e_p", &e_p);
-	    tree->SetBranchAddress("e_theta", &e_theta);
-	    tree->SetBranchAddress("e_phi", &e_phi);
-	    tree->SetBranchAddress("p1_p", &p1_p);
-	    tree->SetBranchAddress("p1_theta", &p1_theta);
-	    tree->SetBranchAddress("p1_phi", &p1_phi);
-	    tree->SetBranchAddress("p2_p", &p2_p);
-	    tree->SetBranchAddress("p2_theta", &p2_theta);
-	    tree->SetBranchAddress("p2_phi", &p2_phi);
-	    tree->SetBranchAddress("p3_p", &p3_p);
-	    tree->SetBranchAddress("p3_theta", &p3_theta);
-	    tree->SetBranchAddress("p3_phi", &p3_phi);
-	    tree->SetBranchAddress("phi1", &phi1);
-	    tree->SetBranchAddress("phi2", &phi2);
-	    tree->SetBranchAddress("phi3", &phi3);
-	    tree->SetBranchAddress("phi12", &phi12);
-	    tree->SetBranchAddress("phi13", &phi13);
-	    tree->SetBranchAddress("phi23", &phi23);
-	    tree->SetBranchAddress("W", &W);
-	    tree->SetBranchAddress("A", &A);
-	    tree->SetBranchAddress("x", &x);
-	    tree->SetBranchAddress("z13", &z13);
-	    tree->SetBranchAddress("t13", &t13);
-
-
-	    // Declare new variables to store missing particle information
-    	float px_p, px_theta, px_phi, Mx1x, Mx2x, Mx3x, Mh1x, Mh2x, Mh3x;
+		tree->GetEntry(entry);
 
     	// Create 4-momentum vectors for final state particles
         TLorentzVector p_e, p1, p2, p3;
