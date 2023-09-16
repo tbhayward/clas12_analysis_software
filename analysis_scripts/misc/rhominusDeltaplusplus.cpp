@@ -90,7 +90,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 	// Loop over each pad and adjust the bottom margin
 	for (int i = 1; i <= 6; ++i) {
 	    canvas.cd(i);
-	    gPad->SetBottomMargin(0.2);  // Increase bottom margin to 0.2 (20% of pad height)
+	    gPad->SetBottomMargin(0.1);  // Increase bottom margin to 0.2 (20% of pad height)
 	}
 
     // histograms
@@ -184,7 +184,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMx.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
     histMx.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
     histMx.Draw(""); histMx.SetStats(0);
-    histMx.GetXaxis()->SetTitle("#it{M}_{X(ep -> e'p#pi^{+}#pi^{-}p[X])} (GeV)");
+    histMx.GetXaxis()->SetTitle("#it{M}_{X(ep -> e'#pi^{+}#pi^{-}p[X])} (GeV)");
     histMx.GetYaxis()->SetTitle("Counts");
     histMx.Draw(); // Draw Mx in third pad
     //
@@ -194,7 +194,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMx13.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
     histMx13.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
     histMx13.Draw(""); histMx13.SetStats(0);
-    histMx13.GetXaxis()->SetTitle("#it{M}_{X(ep -> e'p#pi^{+}[#pi^{-}]p[X])} (GeV)");
+    histMx13.GetXaxis()->SetTitle("#it{M}_{X(ep -> e'#pi^{+}[#pi^{-}]p[X])} (GeV)");
     histMx13.GetYaxis()->SetTitle("Counts");
     histMx13.Draw(); // Draw Mx13 in fourth pad
     //
@@ -204,7 +204,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMx2x.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
     histMx2x.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
     histMx2x.Draw(""); histMx2x.SetStats(0);
-    histMx2x.GetXaxis()->SetTitle("#it{M}_{X(ep -> e'p[#pi^{+}]#pi^{-}[p]X)} (GeV)");
+    histMx2x.GetXaxis()->SetTitle("#it{M}_{X(ep -> e'[#pi^{+}]#pi^{-}[p]X)} (GeV)");
     histMx2x.GetYaxis()->SetTitle("Counts");
     histMx2x.Draw(); // Draw Mx2x in fifth pad
 	
