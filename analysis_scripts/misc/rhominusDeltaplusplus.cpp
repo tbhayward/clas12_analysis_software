@@ -32,7 +32,7 @@ struct HistConfig {
 
 std::map<std::string, HistConfig> histConfigs = {
     {"Mh12", {200, 0.00, 3.00}},
-    {"Mh13", {200, 0.00, 1.50}},
+    {"Mh13", {500, 1.00, 2.50}},
     {"Mh23", {200, 1.00, 3.00}},
     {"Mh1x", {200, 0.00, 1.50}},
     {"Mh2x", {200, 0.00, 1.50}},
@@ -90,18 +90,9 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     pad1->cd();  // Set current pad to pad1
 
     // histograms
-    HistConfig configMh12 = histConfigs["Mh12"];
-    TH1F histMh12("Mh12", "", configMh12.bins, configMh12.min, configMh12.max);
     HistConfig configMh13 = histConfigs["Mh13"];
     TH1F histMh13("Mh13", "", configMh13.bins, configMh13.min, configMh13.max);
     HistConfig configMh23 = histConfigs["Mh23"];
-    TH1F histMh23("Mh23", "", configMh23.bins, configMh23.min, configMh23.max);
-    HistConfig configMh1x = histConfigs["Mh1x"];
-    TH1F histMh1x("Mh1x", "", configMh1x.bins, configMh1x.min, configMh1x.max);
-    HistConfig configMh2x = histConfigs["Mh2x"];
-    TH1F histMh2x("Mh2x", "", configMh2x.bins, configMh2x.min, configMh2x.max);
-    HistConfig configMh3x = histConfigs["Mh3x"];
-    TH1F histMh3x("Mh3x", "", configMh3x.bins, configMh3x.min, configMh3x.max);
 
 	int counter = 0;
 	while (dataReader.Next()) {
@@ -152,7 +143,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMh12.GetXaxis()->SetTitleSize(0.06);  // Increase x-axis title size
     histMh12.GetYaxis()->SetTitleSize(0.06);  // Increase y-axis title size
 
-    histMh13.Draw(""); histMh23.SetStats(0);
+    histMh13.Draw(""); histMh13.SetStats(0);
     histMh13.GetXaxis()->SetTitle("#it{M}_{#pi^{+}p} (GeV)");
     histMh13.GetYaxis()->SetTitle("Counts");
 
