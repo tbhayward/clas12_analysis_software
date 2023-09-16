@@ -90,7 +90,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 	// Loop over each pad and adjust the bottom margin
 	for (int i = 1; i <= 6; ++i) {
 	    canvas.cd(i);
-	    gPad->SetBottomMargin(0.1);  // Increase bottom margin to 0.2 (20% of pad height)
+	    gPad->SetBottomMargin(0.15);  // Increase bottom margin to 15% of pad height
 	}
 
     // histograms
