@@ -98,7 +98,7 @@ void createHistograms(TTree* tree, const char* outDir) {
         Mh2x = (p2 + p_x).M();
         Mh3x = (p3 + p_x).M();
 
-        cout << Mh2x << endl;
+        cout << entry << " " << Mh2x << endl;
 
 	}
 }
