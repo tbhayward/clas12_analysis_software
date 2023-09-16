@@ -156,8 +156,8 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     canvas.cd(1);
     histMh13.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
     histMh13.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
-    histMh13.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
-    histMh13.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
+    histMh13.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
+    histMh13.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
     histMh13.Draw(""); histMh13.SetStats(0);
     histMh13.GetXaxis()->SetTitle("#it{M}_{h(#pi^{+}p)} (GeV)");
     histMh13.GetYaxis()->SetTitle("Counts");
@@ -166,8 +166,8 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     canvas.cd(2);
     histMh2x.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
     histMh2x.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
-    histMh2x.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
-    histMh2x.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
+    histMh2x.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
+    histMh2x.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
     histMh2x.Draw(""); histMh2x.SetStats(0);
     histMh2x.GetXaxis()->SetTitle("#it{M}_{h(#pi^{-}X)} (GeV)");
     histMh2x.GetYaxis()->SetTitle("Counts");
@@ -176,8 +176,8 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     canvas.cd(3);
     histMx.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
     histMx.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
-    histMx.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
-    histMx.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
+    histMx.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
+    histMx.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
     histMx.Draw(""); histMx.SetStats(0);
     histMx.GetXaxis()->SetTitle("#it{M}_{X(ep -> e'p#pi^{+}#pi^{-}p[X])} (GeV)");
     histMx.GetYaxis()->SetTitle("Counts");
@@ -186,8 +186,8 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     canvas.cd(4);
     histMx13.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
     histMx13.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
-    histMx13.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
-    histMx13.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
+    histMx13.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
+    histMx13.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
     histMx13.Draw(""); histMx13.SetStats(0);
     histMx13.GetXaxis()->SetTitle("#it{M}_{X(ep -> e'p#pi^{+}[#pi^{-}]p[X])} (GeV)");
     histMx13.GetYaxis()->SetTitle("Counts");
@@ -196,8 +196,8 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     canvas.cd(5);
     histMx2x.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
     histMx2x.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
-    histMx2x.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
-    histMx2x.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
+    histMx2x.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
+    histMx2x.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
     histMx2x.Draw(""); histMx2x.SetStats(0);
     histMx2x.GetXaxis()->SetTitle("#it{M}_{X(ep -> e'p[#pi^{+}]#pi^{-}[p]X)} (GeV)");
     histMx2x.GetYaxis()->SetTitle("Counts");
