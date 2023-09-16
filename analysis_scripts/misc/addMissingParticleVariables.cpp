@@ -12,8 +12,8 @@ void addMissingParticleVariables(std::string root_file_path) {
     TTree* tree = (TTree*)file->Get("PhysicsEvents");
 
     // Declare variables to read from the tree
-    float e_p, e_theta, e_phi, p1_p, p1_theta, p1_phi, p2_p, p2_theta, p2_phi, p3_p, p3_theta; 
-    float p3_phi;
+    double e_p, e_theta, e_phi, p1_p, p1_theta, p1_phi, p2_p, p2_theta, p2_phi, p3_p, p3_theta; 
+    double p3_phi;
 
     // Set branch addresses
     tree->SetBranchAddress("e_p", &e_p);
@@ -34,15 +34,15 @@ void addMissingParticleVariables(std::string root_file_path) {
 
     // Create new branches
     TTree* newTree = tree->CloneTree(0); // clone only structure, not events
-    newTree->Branch("px_p", &px_p, "px_p/F");
-    newTree->Branch("px_theta", &px_theta, "px_theta/F");
-    newTree->Branch("px_phi", &px_phi, "px_phi/F");
-    newTree->Branch("Mx1x", &Mx1x, "Mx1x/F");
-    newTree->Branch("Mx2x", &Mx2x, "Mx2x/F");
-    newTree->Branch("Mx3x", &Mx3x, "Mx3x/F");
-    newTree->Branch("Mh1x", &Mh1x, "Mh1x/F");
-    newTree->Branch("Mh2x", &Mh2x, "Mh2x/F");
-    newTree->Branch("Mh3x", &Mh3x, "Mh3x/F");
+    newTree->Branch("px_p", &px_p, "px_p/D");
+    newTree->Branch("px_theta", &px_theta, "px_theta/D");
+    newTree->Branch("px_phi", &px_phi, "px_phi/D");
+    newTree->Branch("Mx1x", &Mx1x, "Mx1x/D");
+    newTree->Branch("Mx2x", &Mx2x, "Mx2x/D");
+    newTree->Branch("Mx3x", &Mx3x, "Mx3x/D");
+    newTree->Branch("Mh1x", &Mh1x, "Mh1x/D");
+    newTree->Branch("Mh2x", &Mh2x, "Mh2x/D");
+    newTree->Branch("Mh3x", &Mh3x, "Mh3x/D");
 
     // Define initial state 4-momentum (10.1998 GeV electron beam and stationary proton)
     TLorentzVector p_initial(0, 0, 10.1998, 10.1998 + 0.938); // (px, py, pz, E)
