@@ -145,7 +145,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     	configp1_p.max,
     	configMh13.bins/5, configMh13.min, configMh13.max);
 
-    HistConfig configpxF13 = histConfigs["xF13"];
+    HistConfig configxF13 = histConfigs["xF13"];
     TH2F histMh13vsxF13("Mh13vsxF13", "", configxF13.bins/5, configxF13.min, 
     	configxF13.max,
     	configMh13.bins/5, configMh13.min, configMh13.max); 
