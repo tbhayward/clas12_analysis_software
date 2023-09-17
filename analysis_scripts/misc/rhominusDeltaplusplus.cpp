@@ -32,6 +32,7 @@ struct HistConfig {
 
 std::map<std::string, HistConfig> histConfigs = {
     {"z1", {500, 0.00, 1.00}},
+    {"p13_theta", {500, 0.00, 70.00}},
     {"Mh12", {500, 0.00, 3.00}},
     {"Mh13", {500, 1.00, 2.50}},
     {"Mh23", {500, 1.00, 3.00}},
@@ -129,7 +130,13 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     // test histograms
     HistConfig configz1 = histConfigs["z1"];
     TH1F histz1("z1", "", configz1.bins, configz1.min, configz1.max);
+
     TH2F histMh13vsz1("Mh13vsz1", "", configz1.bins/5, configz1.min, configz1.max,
+    	configMh13.bins/5, configMh13.min, configMh13.max); 
+
+    HistConfig configp13_theta = histConfigs["p13_theta"];
+    TH2F histMh13vsp13_theta("Mh13vsp13_theta", "", configp13_theta.bins/5, configp13_theta.min, 
+    	configp13_theta.max,
     	configMh13.bins/5, configMh13.min, configMh13.max); 
 
 	int counter = 0;
@@ -172,10 +179,12 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
         // test histograms
         histz1.Fill(*z1);
 
-        if (*Mx < 0.35 && 
-        	TMath::RadToDeg()*(p1+p3).Theta() > 30) {
+        if (*Mx < 0.35) {
         	histMh13_cuts.Fill(*Mh13); histMh2x_cuts.Fill(Mh2x);
+
         	histMh13vsMh2x.Fill(Mh2x, *Mh13);
+
+        	histMh13vsp13_theta.Fill(TMath::RadToDeg()*(p1+p3).Theta(), *Mh13);
 
         	histMh13vsz1.Fill(*z1, *Mh13);
         }
@@ -283,6 +292,16 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMh13vsz1.GetXaxis()->SetTitle("#it{z}_{#pi^{+}}");
     histMh13vsz1.GetYaxis()->SetTitle("#it{M}_{h(#pi^{+}p)} (GeV)");
     histMh13vsz1.Draw("colz"); 
+    //
+    test_canvas.cd(3);
+    histMh13vsp13_theta.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
+    histMh13vsp13_theta.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
+    histMh13vsp13_theta.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
+    histMh13vsp13_theta.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
+    histMh13vsp13_theta.Draw(""); histMh13vsp13_theta.SetStats(0);
+    histMh13vsp13_theta.GetXaxis()->SetTitle("#it{#theta}_{#pi^{+}p}");
+    histMh13vsp13_theta.GetYaxis()->SetTitle("#it{M}_{h(#pi^{+}p)} (GeV)");
+    histMh13vsp13_theta.Draw("colz"); 
     //
 
     // Save the canvas
