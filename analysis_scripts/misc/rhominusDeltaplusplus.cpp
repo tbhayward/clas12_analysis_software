@@ -34,9 +34,9 @@ std::map<std::string, HistConfig> histConfigs = {
     {"z1", {500, 0.00, 1.00}},
     {"p1_p", {500, 0.00, 3.50}},
     {"p3_p", {500, 0.00, 3.50}},
-    {"p13_theta", {500, 0.00, 70.00}},
+    {"p13_theta", {500, 0.00, 50.00}},
     {"Mh12", {500, 0.00, 3.00}},
-    {"Mh13", {500, 1.00, 2.50}},
+    {"Mh13", {500, 1.00, 2.00}},
     {"Mh23", {500, 1.00, 3.00}},
     {"Mh1x", {500, 0.00, 2.50}},
     {"Mh2x", {500, 0.00, 2.50}},
@@ -130,18 +130,18 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     ////////////////////////////////////////
     // test histograms
     HistConfig configz1 = histConfigs["z1"];
-    TH2F histMh13vsz1("Mh13vsz1", "", configz1.bins, configz1.min, configz1.max,
-    	configMh13.bins, configMh13.min, configMh13.max); 
+    TH2F histMh13vsz1("Mh13vsz1", "", configz1.bins/2, configz1.min, configz1.max,
+    	configMh13.bins/2, configMh13.min, configMh13.max); 
 
     HistConfig configp13_theta = histConfigs["p13_theta"];
-    TH2F histMh13vsp13_theta("Mh13vsp13_theta", "", configp13_theta.bins, configp13_theta.min, 
+    TH2F histMh13vsp13_theta("Mh13vsp13_theta", "", configp13_theta.bins/2, configp13_theta.min, 
     	configp13_theta.max,
-    	configMh13.bins, configMh13.min, configMh13.max);
+    	configMh13.bins/2, configMh13.min, configMh13.max);
 
     HistConfig configp1_p = histConfigs["p1_p"];
-    TH2F histMh13vsp1_p("Mh13vsp1_p", "", configp1_p.bins, configp1_p.min, 
+    TH2F histMh13vsp1_p("Mh13vsp1_p", "", configp1_p.bins/2, configp1_p.min, 
     	configp1_p.max,
-    	configMh13.bins, configMh13.min, configMh13.max); 
+    	configMh13.bins/2, configMh13.min, configMh13.max); 
 
 	int counter = 0;
 	while (dataReader.Next()) {
