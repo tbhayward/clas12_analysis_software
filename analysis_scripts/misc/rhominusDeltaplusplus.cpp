@@ -157,7 +157,10 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 	}
 	dataReader.Restart();  // Reset the TTreeReader at the end of the function
 
+	gStyle->SetTitleFontSize(0.07);
+
 	histMh13.SetLineColor(kBlack); histMh2x.SetLineColor(kBlack); 
+	histMh13_cuts.SetLineColor(kBlack); histMh2x_cuts.SetLineColor(kBlack); 
     histMx.SetLineColor(kBlack); 
 	// Draw histograms on the canvas sub-pads
     canvas.cd(1);
@@ -198,6 +201,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMh13_cuts.Draw(""); histMh13_cuts.SetStats(0);
     histMh13_cuts.GetXaxis()->SetTitle("#it{M}_{h(#pi^{+}p)} (GeV)");
     histMh13_cuts.GetYaxis()->SetTitle("Counts");
+    histMh13_cuts.SetTitle("#it{M}_{X} < 0.35 GeV");
     histMh13_cuts.Draw(); // Draw Mh13_cuts in fourth pad
     //
     canvas.cd(5);
@@ -206,11 +210,11 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMh2x_cuts.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
     histMh2x_cuts.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
     histMh2x_cuts.Draw(""); histMh2x_cuts.SetStats(0);
-    histMh2x_cuts.GetXaxis()->SetTitle("#it{M}_{h(#pi^{+}p)} (GeV)");
+    histMh2x_cuts.GetXaxis()->SetTitle("#it{M}_{h(#pi^{-}X)} (GeV)");
     histMh2x_cuts.GetYaxis()->SetTitle("Counts");
     histMh2x_cuts.Draw(); // Draw Mh2x_cuts in fifth pad
     //
-    // Draw the 2D histogram in the fourth panel
+    // Draw the 2D histogram in the sixth panel
     canvas.cd(6);
     histMh13vsMh2x.GetXaxis()->SetLabelSize(0.04);
     histMh13vsMh2x.GetYaxis()->SetLabelSize(0.04);
