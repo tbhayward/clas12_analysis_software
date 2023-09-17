@@ -104,10 +104,10 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 	// Loop over each pad and adjust the bottom margin
 	for (int i = 1; i <= 6; ++i) {
 	    test_canvas.cd(i);
-	    gPad->SetBottomMargin(0.30);  // Increase bottom margin to 15% of pad height
+	    gPad->SetBottomMargin(0.15);  // Increase bottom margin to 15% of pad height
 	    cout << "Currently modifying pad: " << gPad->GetName() << endl; // Debugging line
-	    if (i == 6) {
-	    	gPad->SetLeftMargin(0.7); gPad->SetRightMargin(0.25);
+	    if (i == 2) {
+	    	gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.2);
 	    }
 	}
 
@@ -274,7 +274,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histz1.GetYaxis()->SetTitle("Counts");
     histz1.Draw(); 
     //
-    test_canvas.cd(3);
+    test_canvas.cd(2);
     histMh13vsz1.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
     histMh13vsz1.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
     histMh13vsz1.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
