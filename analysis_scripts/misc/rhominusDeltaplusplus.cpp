@@ -117,7 +117,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 	while (dataReader.Next()) {
 		counter++;
 		if (*Mx < 0 || *Mx12 < 0 || *Mx13 < 0 || *Mx23 < 0) { continue; }
-		if (*Mx > 0.4) { continue; }
+		// if (*Mx > 0.35) { continue; }
 
     	// Create 4-momentum vectors for final state particles
         TLorentzVector p_e, p1, p2, p3;
@@ -188,26 +188,6 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMx.GetXaxis()->SetTitle("#it{M}_{X(ep -> e'#pi^{+}#pi^{-}p[X])} (GeV)");
     histMx.GetYaxis()->SetTitle("Counts");
     histMx.Draw(); // Draw Mx in third pad
-    //
-    canvas.cd(4);
-    histMx13.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
-    histMx13.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
-    histMx13.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
-    histMx13.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
-    histMx13.Draw(""); histMx13.SetStats(0);
-    histMx13.GetXaxis()->SetTitle("#it{M}_{X(ep -> e'#pi^{+}[#pi^{-}]p[X])} (GeV)");
-    histMx13.GetYaxis()->SetTitle("Counts");
-    histMx13.Draw(); // Draw Mx13 in fourth pad
-    //
-    canvas.cd(5);
-    histMx2x.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
-    histMx2x.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
-    histMx2x.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
-    histMx2x.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
-    histMx2x.Draw(""); histMx2x.SetStats(0);
-    histMx2x.GetXaxis()->SetTitle("#it{M}_{X(ep -> e'[#pi^{+}]#pi^{-}[p]X)} (GeV)");
-    histMx2x.GetYaxis()->SetTitle("Counts");
-    histMx2x.Draw(); // Draw Mx2x in fifth pad
 	
 
 	// Save the canvas
