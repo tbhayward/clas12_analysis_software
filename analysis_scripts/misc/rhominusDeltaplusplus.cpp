@@ -91,6 +91,9 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 	for (int i = 1; i <= 6; ++i) {
 	    canvas.cd(i);
 	    gPad->SetBottomMargin(0.15);  // Increase bottom margin to 15% of pad height
+	    if (i == 3) {
+	    	gPad->SetLeftMargin(0.15);
+	    }
 	}
 
     // 1D histograms
@@ -114,8 +117,8 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     TH1F histMx2x("Mx2x", "", configMx2x.bins, configMx2x.min, configMx2x.max);
 
     // Add a 2D histogram for Mh13 vs Mh2x
-    TH2F histMh13vsMh2x("Mh13vsMh2x", "", configMh13.bins/10, configMh13.min, configMh13.max, 
-    	configMh2x.bins/10, configMh2x.min, configMh2x.max); 
+    TH2F histMh13vsMh2x("Mh13vsMh2x", "", configMh2x.bins/10, configMh2x.min, configMh2x.max,
+    	configMh13.bins/10, configMh13.min, configMh13.max); 
 
 	int counter = 0;
 	while (dataReader.Next()) {
@@ -206,6 +209,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMh13vsMh2x.GetXaxis()->SetTitle("#it{M}_{h(#pi^{-}X)} (GeV)");
     histMh13vsMh2x.GetYaxis()->SetTitle("#it{M}_{h(#pi^{+}p)} (GeV)");
     histMh13vsMh2x.Draw("colz");  // Draw using color to represent the bin content
+    histMh13vsMh2x.SetStats(0);
 	
 
 	// Save the canvas
