@@ -139,7 +139,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     	configMh13.bins/5, configMh13.min, configMh13.max);
 
     HistConfig configp1_p = histConfigs["p1_p"];
-    TH2F histMh13vsp13_theta("Mh13vsp1_p", "", configp1_p.bins/5, configp1_p.min, 
+    TH2F histMh13vsp1_p("Mh13vsp1_p", "", configp1_p.bins/5, configp1_p.min, 
     	configp1_p.max,
     	configMh13.bins/5, configMh13.min, configMh13.max); 
 
