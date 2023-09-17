@@ -106,9 +106,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 	for (int i = 1; i <= 6; ++i) {
 	    test_canvas.cd(i);
 	    gPad->SetBottomMargin(0.15);  // Increase bottom margin to 15% of pad height
-	    if (i == 2) {
-	    	gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.2);
-	    }
+	    gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.2);
 	}
 
     // 1D histograms
@@ -129,8 +127,6 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 
     // test histograms
     HistConfig configz1 = histConfigs["z1"];
-    TH1F histz1("z1", "", configz1.bins, configz1.min, configz1.max);
-
     TH2F histMh13vsz1("Mh13vsz1", "", configz1.bins/5, configz1.min, configz1.max,
     	configMh13.bins/5, configMh13.min, configMh13.max); 
 
@@ -176,8 +172,6 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
         // Fill histograms without cuts
         histMh13.Fill(*Mh13); histMh2x.Fill(Mh2x); histMx.Fill(*Mx); 
 
-        // test histograms
-        histz1.Fill(*z1);
 
         if (*Mx < 0.35) {
         	histMh13_cuts.Fill(*Mh13); histMh2x_cuts.Fill(Mh2x);
@@ -271,19 +265,9 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 
 
     // test histograms
-    histz1.SetLineColor(kBlack); histMh13vsz1.SetLineColor(kBlack); 
+    histMh13vsz1.SetLineColor(kBlack); histMh13vsp13_theta.SetLineColor(kBlack); 
 	// Draw histograms on the canvas sub-pads
     test_canvas.cd(1);
-    histz1.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
-    histz1.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
-    histz1.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
-    histz1.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
-    histz1.Draw(""); histz1.SetStats(0);
-    histz1.GetXaxis()->SetTitle("#it{z}_{#pi^{+}}");
-    histz1.GetYaxis()->SetTitle("Counts");
-    histz1.Draw(); 
-    //
-    test_canvas.cd(2);
     histMh13vsz1.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
     histMh13vsz1.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
     histMh13vsz1.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
@@ -293,7 +277,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMh13vsz1.GetYaxis()->SetTitle("#it{M}_{h(#pi^{+}p)} (GeV)");
     histMh13vsz1.Draw("colz"); 
     //
-    test_canvas.cd(3);
+    test_canvas.cd(2);
     histMh13vsp13_theta.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
     histMh13vsp13_theta.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
     histMh13vsp13_theta.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
