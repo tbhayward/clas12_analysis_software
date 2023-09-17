@@ -152,8 +152,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 	dataReader.Restart();  // Reset the TTreeReader at the end of the function
 
 	histMh13.SetLineColor(kBlack); histMh2x.SetLineColor(kBlack); 
-    histMx.SetLineColor(kBlack); histMx13.SetLineColor(kBlack);
-    histMx13.SetLineColor(kBlack); histMx2x.SetLineColor(kBlack);
+    histMx.SetLineColor(kBlack); histMx2x.SetLineColor(kBlack);
 	// Draw histograms on the canvas sub-pads
     canvas.cd(1);
     histMh13.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
