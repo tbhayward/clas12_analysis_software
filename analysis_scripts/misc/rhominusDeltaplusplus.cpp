@@ -24,6 +24,28 @@ double gett(double p, double theta) {
           2*sqrt(mp*mp + E*E)*sqrt(mp*mp + p*p)*cos(theta);
 }
 
+// Function to set the style of a histogram
+void setHistStyle(TH1* hist, const char* xTitle, const char* yTitle) {
+    hist->GetXaxis()->SetLabelSize(0.04);
+    hist->GetYaxis()->SetLabelSize(0.04);
+    hist->GetXaxis()->SetTitleSize(0.07);
+    hist->GetYaxis()->SetTitleSize(0.07);
+    hist->GetXaxis()->SetTitle(xTitle);
+    hist->GetYaxis()->SetTitle(yTitle);
+    hist->SetStats(0);
+}
+
+// Function to set the style of a canvas and its pads
+void setCanvasStyle(TCanvas &canvas, int nCols, int nRows) {
+    canvas.Divide(nCols, nRows);
+    for (int i = 1; i <= nCols * nRows; ++i) {
+        canvas.cd(i);
+        gPad->SetBottomMargin(0.15);
+        gPad->SetLeftMargin(0.15);
+        gPad->SetRightMargin(0.2);
+    }
+}
+
 struct HistConfig {
     int bins;
     double min;
@@ -91,27 +113,13 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 	// Define initial state 4-momentum (10.1998 GeV electron beam and stationary proton)
     TLorentzVector p_initial(0, 0, 10.1998, 10.1998 + 0.938); // (px, py, pz, E)
 
-    // Create a canvas and divide it into a 3x2 grid
-	TCanvas canvas("Invariant Masses", "Canvas", 1600, 1000);  // Changed the size to 1600x1000
-	canvas.Divide(3, 2);  // Divide into 3 columns and 2 rows
-	// Loop over each pad and adjust the bottom margin
-	for (int i = 1; i <= 6; ++i) {
-	    canvas.cd(i);
-	    gPad->SetBottomMargin(0.15);  // Increase bottom margin to 15% of pad height
-	    if (i == 6) {
-	    	gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.2);
-	    }
-	}
+    // Create canvas and set its style
+    TCanvas canvas("Invariant Masses", "Canvas", 1600, 1000);
+    setCanvasStyle(canvas, 3, 2);
 
-	// Create a canvas and divide it into a 3x2 grid
-	TCanvas test_canvas("Cuts Test", "Canvas", 1600, 1000); 
-	test_canvas.Divide(3, 2);  // Divide into 3 columns and 2 rows
-	// Loop over each pad and adjust the bottom margin
-	for (int i = 1; i <= 6; ++i) {
-	    test_canvas.cd(i);
-	    gPad->SetBottomMargin(0.15);  // Increase bottom margin to 15% of pad height
-	    gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.2);
-	}
+	// Create test canvas and set its style
+    TCanvas test_canvas("Cuts Test", "Canvas", 1600, 1000);
+    setCanvasStyle(test_canvas, 3, 2);
 
     // 1D histograms
     HistConfig configMh13 = histConfigs["Mh13"];
@@ -205,77 +213,37 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 	}
 	dataReader.Restart();  // Reset the TTreeReader at the end of the function
 
-	gStyle->SetTitleFontSize(0.06);
 
-	histMh13.SetLineColor(kBlack); histMh2x.SetLineColor(kBlack); 
-	histMh13_cuts.SetLineColor(kBlack); histMh2x_cuts.SetLineColor(kBlack); 
-    histMx.SetLineColor(kBlack); 
 	// Draw histograms on the canvas sub-pads
     canvas.cd(1);
-    histMh13.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
-    histMh13.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
-    histMh13.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
-    histMh13.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
-    histMh13.Draw(""); histMh13.SetStats(0);
-    histMh13.GetXaxis()->SetTitle("#it{M}_{h(#pi^{+}p)} (GeV)");
-    histMh13.GetYaxis()->SetTitle("Counts");
+    setHistStyle(&histMh13, "#it{M}_{h(#pi^{+}p)} (GeV)", "Counts");
     histMh13.Draw(); // Draw Mh13 in first pad
     //
     canvas.cd(2);
-    histMh2x.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
-    histMh2x.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
-    histMh2x.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
-    histMh2x.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
-    histMh2x.Draw(""); histMh2x.SetStats(0);
-    histMh2x.GetXaxis()->SetTitle("#it{M}_{h(#pi^{-}X)} (GeV)");
-    histMh2x.GetYaxis()->SetTitle("Counts");
+    setHistStyle(&histMh2x, "#it{M}_{h(#pi^{-}X)} (GeV)", "Counts");
     histMh2x.Draw(); // Draw Mh2x in second pad
     //
     canvas.cd(3);
-    histMx.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
-    histMx.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
-    histMx.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
-    histMx.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
-    histMx.Draw(""); histMx.SetStats(0);
-    histMx.GetXaxis()->SetTitle("#it{M}_{X(ep -> e'#pi^{+}#pi^{-}p[X])} (GeV)");
-    histMx.GetYaxis()->SetTitle("Counts");
+    setHistStyle(&histMx, "#it{M}_{X(ep -> e'#pi^{+}#pi^{-}p[X])} (GeV)", "Counts");
     histMx.Draw(); // Draw Mx in third pad
     //
     canvas.cd(4);
-    histMh13_cuts.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
-    histMh13_cuts.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
-    histMh13_cuts.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
-    histMh13_cuts.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
-    histMh13_cuts.Draw(""); histMh13_cuts.SetStats(0);
-    histMh13_cuts.GetXaxis()->SetTitle("#it{M}_{h(#pi^{+}p)} (GeV)");
-    histMh13_cuts.GetYaxis()->SetTitle("Counts");
     histMh13_cuts.SetTitle("#it{M}_{X} < 0.35 GeV");
+    setHistStyle(&histMh13_cuts, "#it{M}_{h(#pi^{+}p)} (GeV)", "Counts");
     histMh13_cuts.Draw(); // Draw Mh13_cuts in fourth pad
     //
     canvas.cd(5);
-    histMh2x_cuts.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
-    histMh2x_cuts.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
-    histMh2x_cuts.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
-    histMh2x_cuts.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
-    histMh2x_cuts.Draw(""); histMh2x_cuts.SetStats(0);
-    histMh2x_cuts.GetXaxis()->SetTitle("#it{M}_{h(#pi^{-}X)} (GeV)");
-    histMh2x_cuts.GetYaxis()->SetTitle("Counts");
+    setHistStyle(&histMh2x_cuts, "#it{M}_{h(#pi^{-}X)} (GeV)", "Counts");
     histMh2x_cuts.SetTitle("#it{M}_{X} < 0.35 GeV");
     histMh2x_cuts.Draw(); // Draw Mh2x_cuts in fifth pad
     //
     // Draw the 2D histogram in the sixth panel
     canvas.cd(6);
-    histMh13vsMh2x.GetXaxis()->SetLabelSize(0.04);
-    histMh13vsMh2x.GetYaxis()->SetLabelSize(0.04);
-    histMh13vsMh2x.GetXaxis()->SetTitleSize(0.07);
-    histMh13vsMh2x.GetYaxis()->SetTitleSize(0.07);
-    histMh13vsMh2x.GetXaxis()->SetTitle("#it{M}_{h(#pi^{-}X)} (GeV)");
-    histMh13vsMh2x.GetYaxis()->SetTitle("#it{M}_{h(#pi^{+}p)} (GeV)");
+    setHistStyle(&histMh13vsMh2x, "#it{M}_{h(#pi^{-}X)} (GeV)", "#it{M}_{h(#pi^{+}p)} (GeV)");
     histMh13vsMh2x.SetTitle("#it{M}_{X} < 0.35 GeV");
     histMh13vsMh2x.Draw("colz");  // Draw using color to represent the bin content
     histMh13vsMh2x.SetStats(0);
 	
-
 	// Save the canvas
     canvas.SaveAs(Form("%s/%s.png", outDir, "output"));
 
@@ -284,46 +252,23 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 
 
     // test histograms
-    histMh13vsz1.SetLineColor(kBlack); histMh13vsp13_theta.SetLineColor(kBlack); 
 	// Draw histograms on the canvas sub-pads
     test_canvas.cd(1);
-    histMh13vsz1.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
-    histMh13vsz1.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
-    histMh13vsz1.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
-    histMh13vsz1.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
-    histMh13vsz1.Draw(""); histMh13vsz1.SetStats(0);
-    histMh13vsz1.GetXaxis()->SetTitle("#it{z}_{#pi^{+}}");
-    histMh13vsz1.GetYaxis()->SetTitle("#it{M}_{h(#pi^{+}p)} (GeV)");
+    setHistStyle(&histMh13vsz1, "#it{z}_{#pi^{+}}", "#it{M}_{h(#pi^{+}p)} (GeV)");
     histMh13vsz1.Draw("colz"); 
     //
     test_canvas.cd(2);
-    histMh13vsp13_theta.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
-    histMh13vsp13_theta.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
-    histMh13vsp13_theta.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
-    histMh13vsp13_theta.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
-    histMh13vsp13_theta.Draw(""); histMh13vsp13_theta.SetStats(0);
+    setHistStyle(&histMh13vsp13_theta, "#it{z}_{#pi^{+}}", "#it{M}_{h(#pi^{+}p)} (GeV)");
     histMh13vsp13_theta.GetXaxis()->SetTitle("#it{#theta}_{#pi^{+}p}");
     histMh13vsp13_theta.GetYaxis()->SetTitle("#it{M}_{h(#pi^{+}p)} (GeV)");
     histMh13vsp13_theta.Draw("colz"); 
     //
     test_canvas.cd(3);
-    histMh13vsp1_p.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
-    histMh13vsp1_p.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
-    histMh13vsp1_p.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
-    histMh13vsp1_p.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
-    histMh13vsp1_p.Draw(""); histMh13vsp1_p.SetStats(0);
-    histMh13vsp1_p.GetXaxis()->SetTitle("#it{p}_{#pi^{+}}");
-    histMh13vsp1_p.GetYaxis()->SetTitle("#it{M}_{h(#pi^{+}p)} (GeV)");
+    setHistStyle(&histMh13vsp1_p, "#it{p}_{#pi^{+}} (GeV)", "#it{M}_{h(#pi^{+}p)} (GeV)");
     histMh13vsp1_p.Draw("colz"); 
     //
     test_canvas.cd(4);
-    histMh13vsxF13.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
-    histMh13vsxF13.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
-    histMh13vsxF13.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
-    histMh13vsxF13.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
-    histMh13vsxF13.Draw(""); histMh13vsxF13.SetStats(0);
-    histMh13vsxF13.GetXaxis()->SetTitle("#it{x}_{F(#pi^{+}p)}");
-    histMh13vsxF13.GetYaxis()->SetTitle("#it{M}_{h(#pi^{+}p)} (GeV)");
+    setHistStyle(&histMh13vsxF13, "#it{x}_{F(#pi^{+}p)}", "#it{M}_{h(#pi^{+}p)} (GeV)");
     histMh13vsxF13.Draw("colz"); 
     //
 
