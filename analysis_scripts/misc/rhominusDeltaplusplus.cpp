@@ -41,7 +41,7 @@ void setCanvasStyle(TCanvas &canvas, int nCols, int nRows) {
     for (int i = 1; i <= nCols * nRows; ++i) {
         canvas.cd(i);
         gPad->SetBottomMargin(0.15);
-        gPad->SetLeftMargin(0.15);
+        gPad->SetLeftMargin(0.2);
         gPad->SetRightMargin(0.2);
     }
 }
