@@ -317,14 +317,14 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMh13vsp1_p.Draw("colz"); 
     //
     test_canvas.cd(4);
-    histMh13vsp1_p.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
-    histMh13vsp1_p.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
-    histMh13vsp1_p.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
-    histMh13vsp1_p.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
-    histMh13vsp1_p.Draw(""); histMh13vsp1_p.SetStats(0);
-    histMh13vsp1_p.GetXaxis()->SetTitle("#it{x}_{F(#pi^{+}p)}");
-    histMh13vsp1_p.GetYaxis()->SetTitle("#it{M}_{h(#pi^{+}p)} (GeV)");
-    histMh13vsp1_p.Draw("colz"); 
+    histMh13vsxF13.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
+    histMh13vsxF13.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
+    histMh13vsxF13.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
+    histMh13vsxF13.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
+    histMh13vsxF13.Draw(""); histMh13vsxF13.SetStats(0);
+    histMh13vsxF13.GetXaxis()->SetTitle("#it{x}_{F(#pi^{+}p)}");
+    histMh13vsxF13.GetYaxis()->SetTitle("#it{M}_{h(#pi^{+}p)} (GeV)");
+    histMh13vsxF13.Draw("colz"); 
     //
 
     // Save the canvas
