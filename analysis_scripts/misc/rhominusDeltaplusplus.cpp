@@ -274,7 +274,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histz1.GetYaxis()->SetTitle("Counts");
     histz1.Draw(); 
     //
-    test_canvas.cd(2);
+    test_canvas.cd(3);
     histMh13vsz1.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
     histMh13vsz1.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
     histMh13vsz1.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
