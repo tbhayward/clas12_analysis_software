@@ -130,18 +130,18 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     ////////////////////////////////////////
     // test histograms
     HistConfig configz1 = histConfigs["z1"];
-    TH2F histMh13vsz1("Mh13vsz1", "", configz1.bins/5, configz1.min, configz1.max,
-    	configMh13.bins/5, configMh13.min, configMh13.max); 
+    TH2F histMh13vsz1("Mh13vsz1", "", configz1.bins, configz1.min, configz1.max,
+    	configMh13.bins, configMh13.min, configMh13.max); 
 
     HistConfig configp13_theta = histConfigs["p13_theta"];
-    TH2F histMh13vsp13_theta("Mh13vsp13_theta", "", configp13_theta.bins/5, configp13_theta.min, 
+    TH2F histMh13vsp13_theta("Mh13vsp13_theta", "", configp13_theta.bins, configp13_theta.min, 
     	configp13_theta.max,
-    	configMh13.bins/5, configMh13.min, configMh13.max);
+    	configMh13.bins, configMh13.min, configMh13.max);
 
     HistConfig configp1_p = histConfigs["p1_p"];
-    TH2F histMh13vsp1_p("Mh13vsp1_p", "", configp1_p.bins/5, configp1_p.min, 
+    TH2F histMh13vsp1_p("Mh13vsp1_p", "", configp1_p.bins, configp1_p.min, 
     	configp1_p.max,
-    	configMh13.bins/5, configMh13.min, configMh13.max); 
+    	configMh13.bins, configMh13.min, configMh13.max); 
 
 	int counter = 0;
 	while (dataReader.Next()) {
