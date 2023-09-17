@@ -41,8 +41,8 @@ void setCanvasStyle(TCanvas &canvas, int nCols, int nRows) {
     for (int i = 1; i <= nCols * nRows; ++i) {
         canvas.cd(i);
         gPad->SetBottomMargin(0.15);
-        gPad->SetLeftMargin(0.2);
-        gPad->SetRightMargin(0.2);
+        gPad->SetLeftMargin(0.175);
+        gPad->SetRightMargin(0.175);
     }
 }
 
@@ -66,7 +66,8 @@ std::map<std::string, HistConfig> histConfigs = {
     {"Mx", {500, 0.00, 2.00}},
     {"Mx13", {500, 0.00, 2.50}},
     {"Mx2x", {500, 1.00, 3.50}},
-    {"xF13", {500, -1.00, 1.00}}
+    {"xF13", {500, -1.00, 1.00}},
+    {"Delta_E2Ex", {500, -3.00, 3.00}}
 };
 
 void createHistograms(TTreeReader &dataReader, const char* outDir) {
@@ -156,7 +157,13 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     HistConfig configxF13 = histConfigs["xF13"];
     TH2F histMh13vsxF13("Mh13vsxF13", "", configxF13.bins/5, configxF13.min, 
     	configxF13.max,
-    	configMh13.bins/5, configMh13.min, configMh13.max); 
+    	configMh13.bins/5, configMh13.min, configMh13.max);
+
+    HistConfig configE2EX = histConfigs["E2EX"];
+    TH2F histMh13vsE2EX("Mh13vsE2EX", "", configE2EX.bins/5, configE2EX.min, 
+    	configE2EX.max,
+    	configMh13.bins/5, configMh13.min, configMh13.max);
+
 
 	int counter = 0;
 	while (dataReader.Next()) {
@@ -208,6 +215,8 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
         	histMh13vsz1.Fill(*z1, *Mh13);
 
         	histMh13vsxF13.Fill(*xF13, *Mh13);
+
+        	histMh13vsE2EX.Fill(p2.E()-p_x.E(), *Mh13);
         }
 
 	}
@@ -270,6 +279,11 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     test_canvas.cd(4);
     setHistStyle(&histMh13vsxF13, "#it{x}_{F(#pi^{+}p)}", "#it{M}_{h(#pi^{+}p)} (GeV)");
     histMh13vsxF13.Draw("colz"); 
+    //
+    test_canvas.cd(5);
+    setHistStyle(&histMh13vsE2EX, "#it{E}_{#pi^{-}} - #it{E}_{#pi^{X}}", 
+    	"#it{M}_{h(#pi^{+}p)} (GeV)");
+    histMh13vsE2EX.Draw("colz"); 
     //
 
     // Save the canvas
