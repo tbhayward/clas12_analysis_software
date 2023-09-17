@@ -92,7 +92,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 	    canvas.cd(i);
 	    gPad->SetBottomMargin(0.15);  // Increase bottom margin to 15% of pad height
 	    if (i == 4) {
-	    	gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.175);
+	    	gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.2);
 	    }
 	}
 
@@ -117,8 +117,8 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     TH1F histMx2x("Mx2x", "", configMx2x.bins, configMx2x.min, configMx2x.max);
 
     // Add a 2D histogram for Mh13 vs Mh2x
-    TH2F histMh13vsMh2x("Mh13vsMh2x", "", configMh2x.bins/10, configMh2x.min, configMh2x.max,
-    	configMh13.bins/10, configMh13.min, configMh13.max); 
+    TH2F histMh13vsMh2x("Mh13vsMh2x", "", configMh2x.bins/5, configMh2x.min, configMh2x.max,
+    	configMh13.bins/5, configMh13.min, configMh13.max); 
 
 	int counter = 0;
 	while (dataReader.Next()) {
