@@ -157,7 +157,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 	}
 	dataReader.Restart();  // Reset the TTreeReader at the end of the function
 
-	gStyle->SetTitleFontSize(0.07);
+	gStyle->SetTitleFontSize(0.06);
 
 	histMh13.SetLineColor(kBlack); histMh2x.SetLineColor(kBlack); 
 	histMh13_cuts.SetLineColor(kBlack); histMh2x_cuts.SetLineColor(kBlack); 
@@ -212,6 +212,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMh2x_cuts.Draw(""); histMh2x_cuts.SetStats(0);
     histMh2x_cuts.GetXaxis()->SetTitle("#it{M}_{h(#pi^{-}X)} (GeV)");
     histMh2x_cuts.GetYaxis()->SetTitle("Counts");
+    histMh2x_cuts.SetTitle("#it{M}_{X} < 0.35 GeV");
     histMh2x_cuts.Draw(); // Draw Mh2x_cuts in fifth pad
     //
     // Draw the 2D histogram in the sixth panel
@@ -222,6 +223,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMh13vsMh2x.GetYaxis()->SetTitleSize(0.07);
     histMh13vsMh2x.GetXaxis()->SetTitle("#it{M}_{h(#pi^{-}X)} (GeV)");
     histMh13vsMh2x.GetYaxis()->SetTitle("#it{M}_{h(#pi^{+}p)} (GeV)");
+    histMh13vsMh2x.SetTitle("#it{M}_{X} < 0.35 GeV");
     histMh13vsMh2x.Draw("colz");  // Draw using color to represent the bin content
     histMh13vsMh2x.SetStats(0);
 	
