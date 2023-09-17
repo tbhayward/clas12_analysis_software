@@ -160,7 +160,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     	configMh13.bins/5, configMh13.min, configMh13.max);
 
     HistConfig configDelta_E2EX = histConfigs["Delta_E2EX"];
-    TH2F histMh13vsE2EX("Mh13vsE2EX", "", configDelta_E2EX.bins/5, configDelta_E2EX.min, 
+    TH2F histMh13vsDelta_E2EX("Mh13vsE2EX", "", configDelta_E2EX.bins/5, configDelta_E2EX.min, 
     	configDelta_E2EX.max,
     	configMh13.bins/5, configMh13.min, configMh13.max);
 
