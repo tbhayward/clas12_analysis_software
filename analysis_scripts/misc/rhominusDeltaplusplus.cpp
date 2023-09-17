@@ -97,34 +97,21 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 	}
 
     // 1D histograms
-    HistConfig configMh12 = histConfigs["Mh12"];
-    TH1F histMh12("Mh12", "", configMh12.bins, configMh12.min, configMh12.max);
     HistConfig configMh13 = histConfigs["Mh13"];
     TH1F histMh13("Mh13", "", configMh13.bins, configMh13.min, configMh13.max);
-    HistConfig configMh23 = histConfigs["Mh23"];
-    TH1F histMh23("Mh23", "", configMh23.bins, configMh23.min, configMh23.max);
-    HistConfig configMh1x = histConfigs["Mh1x"];
-    TH1F histMh1x("Mh1x", "", configMh1x.bins, configMh1x.min, configMh1x.max);
     HistConfig configMh2x = histConfigs["Mh2x"];
     TH1F histMh2x("Mh2x", "", configMh2x.bins, configMh2x.min, configMh2x.max);
-    HistConfig configMh3x = histConfigs["Mh3x"];
-    TH1F histMh3x("Mh3x", "", configMh3x.bins, configMh3x.min, configMh3x.max);
     HistConfig configMx = histConfigs["Mx"];
     TH1F histMx("Mx", "", configMx.bins, configMx.min, configMx.max);
-    HistConfig configMx13 = histConfigs["Mx13"];
-    TH1F histMx13("Mx13", "", configMx13.bins, configMx13.min, configMx13.max);
-    HistConfig configMx2x = histConfigs["Mx2x"];
-    TH1F histMx2x("Mx2x", "", configMx2x.bins, configMx2x.min, configMx2x.max);
 
     // Add a 2D histogram for Mh13 vs Mh2x
-    TH2F histMh13vsMh2x("Mh13vsMh2x", "", configMh2x.bins/5, configMh2x.min, configMh2x.max,
-    	configMh13.bins/5, configMh13.min, configMh13.max); 
+    TH2F histMh13vsMh2x("Mh13vsMh2x", "", configMh2x.bins/10, configMh2x.min, configMh2x.max,
+    	configMh13.bins/10, configMh13.min, configMh13.max); 
 
 	int counter = 0;
 	while (dataReader.Next()) {
 		counter++;
 		if (*Mx < 0 || *Mx12 < 0 || *Mx13 < 0 || *Mx23 < 0) { continue; }
-		// if (*Mx > 0.35 || *Mh13 > 1.35) { continue; }
 
     	// Create 4-momentum vectors for final state particles
         TLorentzVector p_e, p1, p2, p3;
@@ -156,9 +143,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
         Mh3x = (p3 + p_x).M();
 
         // Fill 1D histograms
-        histMh12.Fill(*Mh12); histMh13.Fill(*Mh13); histMh23.Fill(*Mh23);
-        histMh1x.Fill(Mh1x); histMh2x.Fill(Mh2x); histMh3x.Fill(Mh3x); 
-        histMx.Fill(*Mx); histMx13.Fill(*Mx13); histMx2x.Fill(Mx2x);
+        histMh13.Fill(*Mh13); histMh2x.Fill(Mh2x); histMx.Fill(*Mx); 
 
         // Fill 2D histogram
         histMh13vsMh2x.Fill(Mh2x, *Mh13);
