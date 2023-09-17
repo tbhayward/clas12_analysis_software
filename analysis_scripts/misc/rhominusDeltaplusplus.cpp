@@ -31,6 +31,7 @@ struct HistConfig {
 };
 
 std::map<std::string, HistConfig> histConfigs = {
+    {"z1", {500, 0.00, 1.00}},
     {"Mh12", {500, 0.00, 3.00}},
     {"Mh13", {500, 1.00, 2.50}},
     {"Mh23", {500, 1.00, 3.00}},
@@ -125,6 +126,12 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     TH2F histMh13vsMh2x("Mh13vsMh2x", "", configMh2x.bins/10, configMh2x.min, configMh2x.max,
     	configMh13.bins/10, configMh13.min, configMh13.max); 
 
+    // test histograms
+    HistConfig configz1 = histConfigs["z1"];
+    TH1F histz1("z1", "", configz1.bins, configz1.min, configz1.max);
+    TH2F histMh13vsz1("Mh13vsz1", "", configz1.bins/10, configz1.min, configz1.max,
+    	configMh13.bins/10, configMh13.min, configMh13.max); 
+
 	int counter = 0;
 	while (dataReader.Next()) {
 		counter++;
@@ -162,9 +169,14 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
         // Fill histograms without cuts
         histMh13.Fill(*Mh13); histMh2x.Fill(Mh2x); histMx.Fill(*Mx); 
 
-        if (*Mx < 0.35 && *z1 < 0.2) {
+        // test histograms
+        histz1.Fill(*z1);
+
+        if (*Mx < 0.35) {
         	histMh13_cuts.Fill(*Mh13); histMh2x_cuts.Fill(Mh2x);
         	histMh13vsMh2x.Fill(Mh2x, *Mh13);
+
+        	histMh13vsz1.Fill(*z1, *Mh13);
         }
 
 	}
@@ -243,6 +255,37 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 
 	// Save the canvas
     canvas.SaveAs(Form("%s/%s.png", outDir, "output"));
+
+
+
+
+
+    // test histograms
+    histz1.SetLineColor(kBlack); histMh13vsz1.SetLineColor(kBlack); 
+	// Draw histograms on the canvas sub-pads
+    test_canvas.cd(1);
+    histz1.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
+    histz1.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
+    histz1.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
+    histz1.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
+    histz1.Draw(""); histz1.SetStats(0);
+    histz1.GetXaxis()->SetTitle("#it{z}_{#pi^{+}}");
+    histz1.GetYaxis()->SetTitle("Counts");
+    histz1.Draw(); 
+    //
+    test_canvas.cd(2);
+    histMh13vsz1.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
+    histMh13vsz1.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
+    histMh13vsz1.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
+    histMh13vsz1.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
+    histMh13vsz1.Draw(""); histMh13vsz1.SetStats(0);
+    histMh13vsz1.GetXaxis()->SetTitle("#it{z}_{#pi^{+}}");
+    histMh13vsz1.GetYaxis()->SetTitle("Counts");
+    histMh13vsz1.Draw(); 
+    //
+
+    // Save the canvas
+    canvas.SaveAs(Form("%s/%s.png", outDir, "test_cuts"));
 }
 
 void rhominusDeltaplusplus(std::string root_file_path) {
