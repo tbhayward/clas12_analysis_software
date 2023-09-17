@@ -93,7 +93,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 	    gPad->SetBottomMargin(0.15);  // Increase bottom margin to 15% of pad height
 	}
 
-    // histograms
+    // 1D histograms
     HistConfig configMh12 = histConfigs["Mh12"];
     TH1F histMh12("Mh12", "", configMh12.bins, configMh12.min, configMh12.max);
     HistConfig configMh13 = histConfigs["Mh13"];
@@ -113,11 +113,15 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     HistConfig configMx2x = histConfigs["Mx2x"];
     TH1F histMx2x("Mx2x", "", configMx2x.bins, configMx2x.min, configMx2x.max);
 
+    // Add a 2D histogram for Mh13 vs Mh2x
+    TH2F histMh13vsMh2x("Mh13vsMh2x", "", configMh13.bins/10, configMh13.min, configMh13.max, 
+    	configMh2x.bins/10, configMh2x.min, configMh2x.max); 
+
 	int counter = 0;
 	while (dataReader.Next()) {
 		counter++;
 		if (*Mx < 0 || *Mx12 < 0 || *Mx13 < 0 || *Mx23 < 0) { continue; }
-		if (*Mx > 0.35 || *Mh13 > 1.35) { continue; }
+		// if (*Mx > 0.35 || *Mh13 > 1.35) { continue; }
 
     	// Create 4-momentum vectors for final state particles
         TLorentzVector p_e, p1, p2, p3;
@@ -148,9 +152,13 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
         Mh2x = (p2 + p_x).M();
         Mh3x = (p3 + p_x).M();
 
+        // Fill 1D histograms
         histMh12.Fill(*Mh12); histMh13.Fill(*Mh13); histMh23.Fill(*Mh23);
         histMh1x.Fill(Mh1x); histMh2x.Fill(Mh2x); histMh3x.Fill(Mh3x); 
         histMx.Fill(*Mx); histMx13.Fill(*Mx13); histMx2x.Fill(Mx2x);
+
+        // Fill 2D histogram
+        histMh13vsMh2x.Fill(*Mh2x, *Mh13);
 
 	}
 	dataReader.Restart();  // Reset the TTreeReader at the end of the function
@@ -188,6 +196,16 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMx.GetXaxis()->SetTitle("#it{M}_{X(ep -> e'#pi^{+}#pi^{-}p[X])} (GeV)");
     histMx.GetYaxis()->SetTitle("Counts");
     histMx.Draw(); // Draw Mx in third pad
+    //
+    // Draw the 2D histogram in the fourth panel
+    canvas.cd(4);
+    histMh13vsMh2x.GetXaxis()->SetLabelSize(0.04);
+    histMh13vsMh2x.GetYaxis()->SetLabelSize(0.04);
+    histMh13vsMh2x.GetXaxis()->SetTitleSize(0.07);
+    histMh13vsMh2x.GetYaxis()->SetTitleSize(0.07);
+    histMh13vsMh2x.GetXaxis()->SetTitle("#it{M}_{h(#pi^{-}X)} (GeV)");
+    histMh13vsMh2x.GetYaxis()->SetTitle("#it{M}_{h(#pi^{+}p)} (GeV)");
+    histMh13vsMh2x.Draw("colz");  // Draw using color to represent the bin content
 	
 
 	// Save the canvas
