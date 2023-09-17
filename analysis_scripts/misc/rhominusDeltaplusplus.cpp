@@ -34,7 +34,7 @@ std::map<std::string, HistConfig> histConfigs = {
     {"z1", {500, 0.00, 1.00}},
     {"p1_p", {500, 0.00, 3.50}},
     {"p3_p", {500, 0.00, 3.50}},
-    {"p13_theta", {500, 0.00, 50.00}},
+    {"p13_theta", {500, 0.00, 45.00}},
     {"Mh12", {500, 0.00, 3.00}},
     {"Mh13", {500, 1.00, 2.00}},
     {"Mh23", {500, 1.00, 3.00}},
@@ -43,7 +43,8 @@ std::map<std::string, HistConfig> histConfigs = {
     {"Mh3x", {500, 0.00, 2.50}},
     {"Mx", {500, 0.00, 2.00}},
     {"Mx13", {500, 0.00, 2.50}},
-    {"Mx2x", {500, 1.00, 3.50}}
+    {"Mx2x", {500, 1.00, 3.50}},
+    {"xF13", {500, -1.00, 1.00}}
 };
 
 void createHistograms(TTreeReader &dataReader, const char* outDir) {
@@ -82,6 +83,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     TTreeReaderValue<double> Mh12(dataReader, "Mh12");
     TTreeReaderValue<double> Mh13(dataReader, "Mh13");
     TTreeReaderValue<double> Mh23(dataReader, "Mh23");
+    TTreeReaderValue<double> xF13(dataReader, "xF13");
 
     // Declare new variables to store missing particle information
 	float px_p, px_theta, px_phi, Mx1x, Mx2x, Mx3x, Mh1x, Mh2x, Mh3x;
@@ -130,18 +132,23 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     ////////////////////////////////////////
     // test histograms
     HistConfig configz1 = histConfigs["z1"];
-    TH2F histMh13vsz1("Mh13vsz1", "", configz1.bins/2, configz1.min, configz1.max,
-    	configMh13.bins/2, configMh13.min, configMh13.max); 
+    TH2F histMh13vsz1("Mh13vsz1", "", configz1.bins/5, configz1.min, configz1.max,
+    	configMh13.bins/5, configMh13.min, configMh13.max); 
 
     HistConfig configp13_theta = histConfigs["p13_theta"];
-    TH2F histMh13vsp13_theta("Mh13vsp13_theta", "", configp13_theta.bins/2, configp13_theta.min, 
+    TH2F histMh13vsp13_theta("Mh13vsp13_theta", "", configp13_theta.bins/5, configp13_theta.min, 
     	configp13_theta.max,
-    	configMh13.bins/2, configMh13.min, configMh13.max);
+    	configMh13.bins/5, configMh13.min, configMh13.max);
 
     HistConfig configp1_p = histConfigs["p1_p"];
-    TH2F histMh13vsp1_p("Mh13vsp1_p", "", configp1_p.bins/2, configp1_p.min, 
+    TH2F histMh13vsp1_p("Mh13vsp1_p", "", configp1_p.bins/5, configp1_p.min, 
     	configp1_p.max,
-    	configMh13.bins/2, configMh13.min, configMh13.max); 
+    	configMh13.bins/5, configMh13.min, configMh13.max);
+
+    HistConfig configpxF13 = histConfigs["xF13"];
+    TH2F histMh13vsxF13("Mh13vsxF13", "", configxF13.bins/5, configxF13.min, 
+    	configxF13.max,
+    	configMh13.bins/5, configMh13.min, configMh13.max); 
 
 	int counter = 0;
 	while (dataReader.Next()) {
@@ -191,6 +198,8 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
         	histMh13vsp1_p.Fill(*p1_p, *Mh13);
 
         	histMh13vsz1.Fill(*z1, *Mh13);
+
+        	histMh13vsxF13.Fill(*xF13, *Mh13);
         }
 
 	}
@@ -304,6 +313,16 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMh13vsp1_p.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
     histMh13vsp1_p.Draw(""); histMh13vsp1_p.SetStats(0);
     histMh13vsp1_p.GetXaxis()->SetTitle("#it{p}_{#pi^{+}}");
+    histMh13vsp1_p.GetYaxis()->SetTitle("#it{M}_{h(#pi^{+}p)} (GeV)");
+    histMh13vsp1_p.Draw("colz"); 
+    //
+    test_canvas.cd(4);
+    histMh13vsp1_p.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
+    histMh13vsp1_p.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
+    histMh13vsp1_p.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
+    histMh13vsp1_p.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
+    histMh13vsp1_p.Draw(""); histMh13vsp1_p.SetStats(0);
+    histMh13vsp1_p.GetXaxis()->SetTitle("#it{x}_{F(#pi^{+}p)}");
     histMh13vsp1_p.GetYaxis()->SetTitle("#it{M}_{h(#pi^{+}p)} (GeV)");
     histMh13vsp1_p.Draw("colz"); 
     //
