@@ -92,7 +92,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 	    canvas.cd(i);
 	    gPad->SetBottomMargin(0.15);  // Increase bottom margin to 15% of pad height
 	    if (i == 4) {
-	    	gPad->SetLeftMargin(0.15);
+	    	gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.175);
 	    }
 	}
 
