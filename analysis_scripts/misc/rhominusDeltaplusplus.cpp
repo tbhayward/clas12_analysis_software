@@ -158,7 +158,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
         histMx.Fill(*Mx); histMx13.Fill(*Mx13); histMx2x.Fill(Mx2x);
 
         // Fill 2D histogram
-        histMh13vsMh2x.Fill(*Mh2x, *Mh13);
+        histMh13vsMh2x.Fill(Mh2x, *Mh13);
 
 	}
 	dataReader.Restart();  // Reset the TTreeReader at the end of the function
