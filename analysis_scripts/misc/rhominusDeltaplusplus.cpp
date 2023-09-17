@@ -99,8 +99,12 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     // 1D histograms
     HistConfig configMh13 = histConfigs["Mh13"];
     TH1F histMh13("Mh13", "", configMh13.bins, configMh13.min, configMh13.max);
+    TH1F histMh13_cuts("Mh13, cuts", "", configMh13.bins, configMh13.min, configMh13.max);
+    //
     HistConfig configMh2x = histConfigs["Mh2x"];
     TH1F histMh2x("Mh2x", "", configMh2x.bins, configMh2x.min, configMh2x.max);
+    TH1F histMh2x_cuts("Mh2x, cuts", "", configMh2x.bins, configMh2x.min, configMh2x.max);
+    //
     HistConfig configMx = histConfigs["Mx"];
     TH1F histMx("Mx", "", configMx.bins, configMx.min, configMx.max);
 
@@ -142,11 +146,13 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
         Mh2x = (p2 + p_x).M();
         Mh3x = (p3 + p_x).M();
 
-        // Fill 1D histograms
+        // Fill histograms without cuts
         histMh13.Fill(*Mh13); histMh2x.Fill(Mh2x); histMx.Fill(*Mx); 
 
-        // Fill 2D histogram
-        histMh13vsMh2x.Fill(Mh2x, *Mh13);
+        if (*Mx < 0.35) {
+        	histMh13_cuts.Fill(*Mh13); histMh2x_cuts(Mh2x);
+        	histMh13vsMh2x.Fill(Mh2x, *Mh13);
+        }
 
 	}
 	dataReader.Restart();  // Reset the TTreeReader at the end of the function
@@ -184,8 +190,28 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMx.GetYaxis()->SetTitle("Counts");
     histMx.Draw(); // Draw Mx in third pad
     //
-    // Draw the 2D histogram in the fourth panel
     canvas.cd(4);
+    histMh13_cuts.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
+    histMh13_cuts.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
+    histMh13_cuts.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
+    histMh13_cuts.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
+    histMh13_cuts.Draw(""); histMh13_cuts.SetStats(0);
+    histMh13_cuts.GetXaxis()->SetTitle("#it{M}_{h(#pi^{+}p)} (GeV)");
+    histMh13_cuts.GetYaxis()->SetTitle("Counts");
+    histMh13_cuts.Draw(); // Draw Mh13_cuts in fourth pad
+    //
+    canvas.cd(1);
+    histMh2x_cuts.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
+    histMh2x_cuts.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
+    histMh2x_cuts.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
+    histMh2x_cuts.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
+    histMh2x_cuts.Draw(""); histMh13_cuts.SetStats(0);
+    histMh2x_cuts.GetXaxis()->SetTitle("#it{M}_{h(#pi^{+}p)} (GeV)");
+    histMh2x_cuts.GetYaxis()->SetTitle("Counts");
+    histMh2x_cuts.Draw(); // Draw Mh2x_cuts in fifth pad
+    //
+    // Draw the 2D histogram in the fourth panel
+    canvas.cd(6);
     histMh13vsMh2x.GetXaxis()->SetLabelSize(0.04);
     histMh13vsMh2x.GetYaxis()->SetLabelSize(0.04);
     histMh13vsMh2x.GetXaxis()->SetTitleSize(0.07);
