@@ -69,7 +69,8 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     TTreeReaderValue<double> DepW(dataReader, "DepW");
     TTreeReaderValue<double> DepA(dataReader, "DepA");
     TTreeReaderValue<double> x(dataReader, "x");
-    TTreeReaderValue<double> z13(dataReader, "z");
+    TTreeReaderValue<double> z1(dataReader, "z1");
+    TTreeReaderValue<double> z13(dataReader, "z13");
     TTreeReaderValue<double> Mx(dataReader, "Mx");
     TTreeReaderValue<double> Mx12(dataReader, "Mx12");
     TTreeReaderValue<double> Mx13(dataReader, "Mx13");
@@ -90,6 +91,18 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 	// Loop over each pad and adjust the bottom margin
 	for (int i = 1; i <= 6; ++i) {
 	    canvas.cd(i);
+	    gPad->SetBottomMargin(0.15);  // Increase bottom margin to 15% of pad height
+	    if (i == 6) {
+	    	gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.2);
+	    }
+	}
+
+	// Create a canvas and divide it into a 3x2 grid
+	TCanvas test_canvas("Cuts Test", "Canvas", 1600, 1000); 
+	test_canvas.Divide(3, 2);  // Divide into 3 columns and 2 rows
+	// Loop over each pad and adjust the bottom margin
+	for (int i = 1; i <= 6; ++i) {
+	    test_canvas.cd(i);
 	    gPad->SetBottomMargin(0.15);  // Increase bottom margin to 15% of pad height
 	    if (i == 6) {
 	    	gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.2);
@@ -149,7 +162,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
         // Fill histograms without cuts
         histMh13.Fill(*Mh13); histMh2x.Fill(Mh2x); histMx.Fill(*Mx); 
 
-        if (*Mx < 0.35) {
+        if (*Mx < 0.35 && z1 < 0.3) {
         	histMh13_cuts.Fill(*Mh13); histMh2x_cuts.Fill(Mh2x);
         	histMh13vsMh2x.Fill(Mh2x, *Mh13);
         }
