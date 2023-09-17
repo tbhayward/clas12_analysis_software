@@ -175,7 +175,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
         if (*Mx < 0.35 && 
         	TMath::RadToDeg()**p1_theta > 30 &&
         	TMath::RadToDeg()**p2_theta < 30 &&
-        	TMath::RadToDeg()**p3_theta > 30 &&) {
+        	TMath::RadToDeg()**p3_theta > 30) {
         	histMh13_cuts.Fill(*Mh13); histMh2x_cuts.Fill(Mh2x);
         	histMh13vsMh2x.Fill(Mh2x, *Mh13);
 
