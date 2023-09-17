@@ -281,7 +281,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMh13vsxF13.Draw("colz"); 
     //
     test_canvas.cd(5);
-    setHistStyle(&histMh13vsDelta_E2EX, "#it{E}_{#pi^{-}} - #it{E}_{X}", 
+    setHistStyle(&histMh13vsDelta_E2EX, "#it{E}_{#pi^{-}} - #it{E}_{X} (GeV)", 
     	"#it{M}_{h(#pi^{+}p)} (GeV)");
     histMh13vsDelta_E2EX.Draw("colz"); 
     //
