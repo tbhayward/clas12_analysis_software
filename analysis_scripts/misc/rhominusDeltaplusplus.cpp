@@ -91,7 +91,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 	for (int i = 1; i <= 6; ++i) {
 	    canvas.cd(i);
 	    gPad->SetBottomMargin(0.15);  // Increase bottom margin to 15% of pad height
-	    if (i == 4) {
+	    if (i == 6) {
 	    	gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.2);
 	    }
 	}
@@ -200,12 +200,12 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMh13_cuts.GetYaxis()->SetTitle("Counts");
     histMh13_cuts.Draw(); // Draw Mh13_cuts in fourth pad
     //
-    canvas.cd(1);
+    canvas.cd(5);
     histMh2x_cuts.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
     histMh2x_cuts.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
     histMh2x_cuts.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
     histMh2x_cuts.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
-    histMh2x_cuts.Draw(""); histMh13_cuts.SetStats(0);
+    histMh2x_cuts.Draw(""); histMh2x_cuts.SetStats(0);
     histMh2x_cuts.GetXaxis()->SetTitle("#it{M}_{h(#pi^{+}p)} (GeV)");
     histMh2x_cuts.GetYaxis()->SetTitle("Counts");
     histMh2x_cuts.Draw(); // Draw Mh2x_cuts in fifth pad
