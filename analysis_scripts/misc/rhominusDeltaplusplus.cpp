@@ -280,8 +280,8 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMh13vsz1.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
     histMh13vsz1.Draw(""); histMh13vsz1.SetStats(0);
     histMh13vsz1.GetXaxis()->SetTitle("#it{z}_{#pi^{+}}");
-    histMh13vsz1.GetYaxis()->SetTitle("Counts");
-    histMh13vsz1.Draw(); 
+    histMh13vsz1.GetYaxis()->SetTitle("#it{M}_{h(#pi^{+}p)} (GeV)");
+    histMh13vsz1.Draw("colz"); 
     //
 
     // Save the canvas
