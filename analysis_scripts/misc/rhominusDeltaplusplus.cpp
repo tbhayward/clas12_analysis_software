@@ -105,7 +105,6 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 	for (int i = 1; i <= 6; ++i) {
 	    test_canvas.cd(i);
 	    gPad->SetBottomMargin(0.15);  // Increase bottom margin to 15% of pad height
-	    cout << "Currently modifying pad: " << gPad->GetName() << endl; // Debugging line
 	    if (i == 2) {
 	    	gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.2);
 	    }
@@ -173,7 +172,10 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
         // test histograms
         histz1.Fill(*z1);
 
-        if (*Mx < 0.35) {
+        if (*Mx < 0.35 && 
+        	TMath::RadToDeg(*p1_theta) > 30 &&
+        	TMath::RadToDeg(*p2_theta) < 30 &&
+        	TMath::RadToDeg(*p3_theta) > 30 &&) {
         	histMh13_cuts.Fill(*Mh13); histMh2x_cuts.Fill(Mh2x);
         	histMh13vsMh2x.Fill(Mh2x, *Mh13);
 
