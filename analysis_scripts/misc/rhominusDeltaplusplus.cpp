@@ -58,6 +58,7 @@ std::map<std::string, HistConfig> histConfigs = {
     {"p3_p", {500, 0.00, 3.50}},
     {"p13_theta", {500, 0.00, 45.00}},
     {"Mh12", {500, 0.00, 2.00}},
+    {"Mh1x", {500, 0.00, 2.00}},
     {"Mh2x", {500, 0.00, 2.00}},
     {"Mh13", {500, 1.00, 2.00}},
     {"Mh23", {500, 1.00, 3.00}},
@@ -158,6 +159,10 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     TH2F histMh13vsMh12("Mh13vsMh12", "", configMh12.bins/5, configMh12.min, configMh12.max,
     	configMh13.bins/5, configMh13.min, configMh13.max);
 
+    HistConfig configMh1x = histConfigs["Mh1x"];
+    TH2F histMh13vsMh1x("Mh13vsMh1x", "", configMh1x.bins/5, configMh1x.min, configMh1x.max,
+    	configMh13.bins/5, configMh13.min, configMh13.max);
+
     HistConfig configDelta_E2EX = histConfigs["Delta_E2EX"];
     TH2F histMh13vsDelta_E2EX("Mh13vsE2EX", "", configDelta_E2EX.bins/5, configDelta_E2EX.min, 
     	configDelta_E2EX.max,
@@ -214,6 +219,8 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
         	histMh13vsz1.Fill(*z1, *Mh13);
 
         	histMh13vsMh12.Fill(*Mh12, *Mh13);
+
+        	histMh13vsMh12.Fill(*Mh1x, *Mh13);
 
         	histMh13vsDelta_E2EX.Fill(p1.E()-p2.E(), *Mh13);
         }
@@ -280,8 +287,8 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMh13vsMh12.Draw("colz"); 
     //
     test_canvas.cd(5);
-    setHistStyle(&histMh13vsMh2x, "#it{M}_{h(#pi^{-}X)} (GeV)","#it{M}_{h(#pi^{+}p)} (GeV)");
-    histMh13vsMh2x.Draw("colz"); 
+    setHistStyle(&histMh13vsMh1x, "#it{M}_{h(#pi^{+}X)} (GeV)","#it{M}_{h(#pi^{+}p)} (GeV)");
+    histMh13vsMh1x.Draw("colz"); 
     //
     test_canvas.cd(6);
     setHistStyle(&histMh13vsDelta_E2EX, "#it{E}_{#pi^{-}} - #it{E}_{X} (GeV)", 
