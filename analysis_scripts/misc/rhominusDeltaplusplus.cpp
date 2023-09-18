@@ -146,7 +146,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     TH1F histMh12("Mh12", "", configMh12.bins, configMh12.min, configMh12.max);
 
     HistConfig configMh1x = histConfigs["Mh1x"];
-    TH1F histMh12("Mh1x", "", configMh1x.bins, configMh1x.min, configMh1x.max);
+    TH1F histMh1x("Mh1x", "", configMh1x.bins, configMh1x.min, configMh1x.max);
 
     HistConfig configp13_theta = histConfigs["p13_theta"];
     TH2F histMh13vsp13_theta("Mh13vsp13_theta", "", configp13_theta.bins/5, configp13_theta.min, 
