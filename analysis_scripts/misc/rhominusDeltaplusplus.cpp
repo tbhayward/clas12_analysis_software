@@ -205,7 +205,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
         histMh13.Fill(*Mh13); histMh2x.Fill(Mh2x); histMx.Fill(*Mx); 
 
 
-        if (*Mx < 0.35) {
+        if (*Mx < 0.35 && Mh12 > 1.00) {
         	histMh13_cuts.Fill(*Mh13); histMh2x_cuts.Fill(Mh2x);
 
         	histMh13vsMh2x.Fill(Mh2x, *Mh13);
@@ -293,7 +293,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     //
 
     // Save the canvas
-    test_canvas.SaveAs(Form("%s/%s.png", outDir, "test_cuts"));
+    test_canvas.SaveAs(Form("%s/%s.png", outDir, "output_test"));
 }
 
 void rhominusDeltaplusplus(std::string root_file_path) {
