@@ -158,10 +158,6 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     TH2F histMh13vsMh12("Mh13vsMh12", "", configMh12.bins/5, configMh12.min, configMh12.max,
     	configMh13.bins/5, configMh13.min, configMh13.max);
 
-    // HistConfig configMh2x = histConfigs["Mh2x"];
-    TH2F histMh13vsMh2x("Mh13vsMh2x", "", configMh2x.bins/5, configMh2x.min, configMh2x.max,
-    	configMh13.bins/5, configMh13.min, configMh13.max);
-
     HistConfig configDelta_E2EX = histConfigs["Delta_E2EX"];
     TH2F histMh13vsDelta_E2EX("Mh13vsE2EX", "", configDelta_E2EX.bins/5, configDelta_E2EX.min, 
     	configDelta_E2EX.max,
@@ -218,8 +214,6 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
         	histMh13vsz1.Fill(*z1, *Mh13);
 
         	histMh13vsMh12.Fill(*Mh12, *Mh13);
-
-        	histMh13vsMh2x.Fill(Mh2x, *Mh13);
 
         	histMh13vsDelta_E2EX.Fill(p1.E()-p2.E(), *Mh13);
         }
