@@ -26,6 +26,7 @@ double gett(double p, double theta) {
 
 // Function to set the style of a histogram
 void setHistStyle(TH1* hist, const char* xTitle, const char* yTitle) {
+	hist->SetLineColor("kBlack");
     hist->GetXaxis()->SetLabelSize(0.04);
     hist->GetYaxis()->SetLabelSize(0.04);
     hist->GetXaxis()->SetTitleSize(0.07);
