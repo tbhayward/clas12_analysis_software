@@ -58,6 +58,7 @@ std::map<std::string, HistConfig> histConfigs = {
     {"p3_p", {500, 0.00, 3.50}},
     {"p13_theta", {500, 0.00, 45.00}},
     {"Mh12", {500, 0.00, 3.00}},
+    {"Mh2x", {500, 0.00, 3.00}},
     {"Mh13", {500, 1.00, 2.00}},
     {"Mh23", {500, 1.00, 3.00}},
     {"Mh1x", {500, 0.00, 2.50}},
@@ -150,13 +151,15 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     	configMh13.bins/5, configMh13.min, configMh13.max);
 
     HistConfig configp1_p = histConfigs["p1_p"];
-    TH2F histMh13vsp1_p("Mh13vsp1_p", "", configp1_p.bins/5, configp1_p.min, 
-    	configp1_p.max,
+    TH2F histMh13vsp1_p("Mh13vsp1_p", "", configp1_p.bins/5, configp1_p.min, configp1_p.max,
     	configMh13.bins/5, configMh13.min, configMh13.max);
 
-    HistConfig configxF13 = histConfigs["xF13"];
-    TH2F histMh13vsxF13("Mh13vsxF13", "", configxF13.bins/5, configxF13.min, 
-    	configxF13.max,
+    HistConfig configp1_p = histConfigs["Mh12"];
+    TH2F histMh13vsMh12("Mh13vsMh12", "", configMh12.bins/5, configMh12.min, configMh12.max,
+    	configMh13.bins/5, configMh13.min, configMh13.max);
+
+    HistConfig configp1_p = histConfigs["Mh2x"];
+    TH2F histMh13vsMh2x("Mh13vsMh2x", "", configMh2x.bins/5, configMh2x.min, configMh2x.max,
     	configMh13.bins/5, configMh13.min, configMh13.max);
 
     HistConfig configDelta_E2EX = histConfigs["Delta_E2EX"];
@@ -214,7 +217,9 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 
         	histMh13vsz1.Fill(*z1, *Mh13);
 
-        	histMh13vsxF13.Fill(*xF13, *Mh13);
+        	histMh13vsMh12.Fill(*Mh12, *Mh13);
+
+        	histMh13vsMh2x.Fill(Mh2x, *Mh13);
 
         	histMh13vsDelta_E2EX.Fill(p1.E()-p2.E(), *Mh13);
         }
@@ -277,10 +282,14 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMh13vsp1_p.Draw("colz"); 
     //
     test_canvas.cd(4);
-    setHistStyle(&histMh13vsxF13, "#it{x}_{F(#pi^{+}p)}", "#it{M}_{h(#pi^{+}p)} (GeV)");
-    histMh13vsxF13.Draw("colz"); 
+    setHistStyle(&histMh13vsMh12, "#it{M}_{h(#pi^{+}#pi^{-})} (GeV)","#it{M}_{h(#pi^{+}p)} (GeV)");
+    histMh13vsMh12.Draw("colz"); 
     //
     test_canvas.cd(5);
+    setHistStyle(&histMh13vsMh2x, "#it{M}_{h(#pi^{-}X)} (GeV)","#it{M}_{h(#pi^{+}p)} (GeV)");
+    histMh13vsMh2x.Draw("colz"); 
+    //
+    test_canvas.cd(6);
     setHistStyle(&histMh13vsDelta_E2EX, "#it{E}_{#pi^{-}} - #it{E}_{X} (GeV)", 
     	"#it{M}_{h(#pi^{+}p)} (GeV)");
     histMh13vsDelta_E2EX.Draw("colz"); 
