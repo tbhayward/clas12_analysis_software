@@ -241,19 +241,19 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMx.Draw(); // Draw Mx in third pad
     //
     canvas.cd(4);
-    histMh13_cuts.SetTitle("#it{M}_{X} < 0.35 GeV");
+    histMh13_cuts.SetTitle("#it{M}_{X} < 0.3 GeV");
     setHistStyle(&histMh13_cuts, "#it{M}_{h(#pi^{+}p)} (GeV)", "Counts");
     histMh13_cuts.Draw(); // Draw Mh13_cuts in fourth pad
     //
     canvas.cd(5);
     setHistStyle(&histMh2x_cuts, "#it{M}_{h(#pi^{-}X)} (GeV)", "Counts");
-    histMh2x_cuts.SetTitle("#it{M}_{X} < 0.35 GeV");
+    histMh2x_cuts.SetTitle("#it{M}_{X} < 0.3 GeV");
     histMh2x_cuts.Draw(); // Draw Mh2x_cuts in fifth pad
     //
     // Draw the 2D histogram in the sixth panel
     canvas.cd(6);
     setHistStyle(&histMh13vsMh2x, "#it{M}_{h(#pi^{-}X)} (GeV)", "#it{M}_{h(#pi^{+}p)} (GeV)");
-    histMh13vsMh2x.SetTitle("#it{M}_{X} < 0.35 GeV");
+    histMh13vsMh2x.SetTitle("#it{M}_{X} < 0.3 GeV");
     histMh13vsMh2x.Draw("colz");  // Draw using color to represent the bin content
     histMh13vsMh2x.SetStats(0);
 	
