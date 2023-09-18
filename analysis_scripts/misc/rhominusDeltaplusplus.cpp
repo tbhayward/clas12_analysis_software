@@ -220,7 +220,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 
         	histMh13vsMh12.Fill(*Mh12, *Mh13);
 
-        	histMh13vsMh12.Fill(Mh1x, *Mh13);
+        	histMh13vsMh1x.Fill(Mh1x, *Mh13);
 
         	histMh13vsDelta_E2EX.Fill(p1.E()-p2.E(), *Mh13);
         }
