@@ -142,24 +142,21 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 
     ////////////////////////////////////////
     // test histograms
-    HistConfig configz1 = histConfigs["z1"];
-    TH2F histMh13vsz1("Mh13vsz1", "", configz1.bins/5, configz1.min, configz1.max,
-    	configMh13.bins/5, configMh13.min, configMh13.max); 
+    HistConfig configMh12 = histConfigs["Mh12"];
+    TH1F histMh12("Mh12", "", configMh12.bins, configMh12.min, configMh12.max);
+
+    HistConfig configMh1x = histConfigs["Mh1x"];
+    TH1F histMh12("Mh1x", "", configMh1x.bins, configMh1x.min, configMh1x.max);
 
     HistConfig configp13_theta = histConfigs["p13_theta"];
     TH2F histMh13vsp13_theta("Mh13vsp13_theta", "", configp13_theta.bins/5, configp13_theta.min, 
     	configp13_theta.max,
     	configMh13.bins/5, configMh13.min, configMh13.max);
 
-    HistConfig configp1_p = histConfigs["p1_p"];
-    TH2F histMh13vsp1_p("Mh13vsp1_p", "", configp1_p.bins/5, configp1_p.min, configp1_p.max,
-    	configMh13.bins/5, configMh13.min, configMh13.max);
-
-    HistConfig configMh12 = histConfigs["Mh12"];
     TH2F histMh13vsMh12("Mh13vsMh12", "", configMh12.bins/5, configMh12.min, configMh12.max,
     	configMh13.bins/5, configMh13.min, configMh13.max);
 
-    HistConfig configMh1x = histConfigs["Mh1x"];
+    // HistConfig configMh1x = histConfigs["Mh1x"];
     TH2F histMh13vsMh1x("Mh13vsMh1x", "", configMh1x.bins/5, configMh1x.min, configMh1x.max,
     	configMh13.bins/5, configMh13.min, configMh13.max);
 
@@ -214,10 +211,6 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 
         	histMh13vsp13_theta.Fill(TMath::RadToDeg()*(p1+p3).Theta(), *Mh13);
 
-        	histMh13vsp1_p.Fill(*p1_p, *Mh13);
-
-        	histMh13vsz1.Fill(*z1, *Mh13);
-
         	histMh13vsMh12.Fill(*Mh12, *Mh13);
 
         	histMh13vsMh1x.Fill(Mh1x, *Mh13);
@@ -269,18 +262,16 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     // test histograms
 	// Draw histograms on the canvas sub-pads
     test_canvas.cd(1);
-    setHistStyle(&histMh13vsz1, "#it{z}_{#pi^{+}}", "#it{M}_{h(#pi^{+}p)} (GeV)");
-    histMh13vsz1.Draw("colz"); 
+    setHistStyle(&histMh12, "#it{M}_{h(#pi^{+}#pi^{-})} (GeV)", "Counts");
+    histMh12.Draw(); 
     //
     test_canvas.cd(2);
-    setHistStyle(&histMh13vsp13_theta, "#it{z}_{#pi^{+}}", "#it{M}_{h(#pi^{+}p)} (GeV)");
-    histMh13vsp13_theta.GetXaxis()->SetTitle("#it{#theta}_{#pi^{+}p}");
-    histMh13vsp13_theta.GetYaxis()->SetTitle("#it{M}_{h(#pi^{+}p)} (GeV)");
-    histMh13vsp13_theta.Draw("colz"); 
+    setHistStyle(&histMh1x, "#it{M}_{h(#pi^{+}X)} (GeV)", "Counts");
+    histMh12.Draw(); 
     //
     test_canvas.cd(3);
-    setHistStyle(&histMh13vsp1_p, "#it{p}_{#pi^{+}} (GeV)", "#it{M}_{h(#pi^{+}p)} (GeV)");
-    histMh13vsp1_p.Draw("colz"); 
+    setHistStyle(&histMh13vsp13_theta, "#it{#theta}_{#pi^{+}p}", "#it{M}_{h(#pi^{+}p)} (GeV)");
+    histMh13vsp13_theta.Draw("colz"); 
     //
     test_canvas.cd(4);
     setHistStyle(&histMh13vsMh12, "#it{M}_{h(#pi^{+}#pi^{-})} (GeV)","#it{M}_{h(#pi^{+}p)} (GeV)");
