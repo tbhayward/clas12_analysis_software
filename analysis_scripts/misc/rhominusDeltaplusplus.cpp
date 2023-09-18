@@ -271,7 +271,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     //
     test_canvas.cd(2);
     setHistStyle(&histMh1x, "#it{M}_{h(#pi^{+}X)} (GeV)", "Counts");
-    histMh12.Draw(); 
+    histMh1x.Draw(); 
     //
     test_canvas.cd(3);
     setHistStyle(&histMh13vsp13_theta, "#it{#theta}_{#pi^{+}p}", "#it{M}_{h(#pi^{+}p)} (GeV)");
