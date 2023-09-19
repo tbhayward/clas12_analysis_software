@@ -206,7 +206,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
         histMh13.Fill(*Mh13); histMh2x.Fill(Mh2x); histMx.Fill(*Mx); 
 
 
-        if (*Mx < 0.30 && (*Delta_phi13 < 0.1 || Delta_phi13 > 0.5)) {
+        if (*Mx < 0.30 && (*Delta_phi13 < 0.1 || *Delta_phi13 > 0.5)) {
         	histMh13_cuts.Fill(*Mh13); histMh2x_cuts.Fill(Mh2x);
 
         	histMh13vsMh2x.Fill(Mh2x, *Mh13);
