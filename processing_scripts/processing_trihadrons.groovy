@@ -101,8 +101,8 @@ public static void main(String[] args) {
 	// GenericKinematicFitter fitter = new proton_energy_loss_corrections_fitter(10.6041); 
 	
 	// set filter for final states
-	// EventFilter filter = new EventFilter("11:"+p1_Str+":"+p2_Str+":"+p3_Str+":X+:X-:Xn");
-	EventFilter filter = new EventFilter("11:"+p1_Str+":"+p2_Str+":"+p3_Str+":Xn"); 
+	EventFilter filter = new EventFilter("11:"+p1_Str+":"+p2_Str+":"+p3_Str+":X+:X-:Xn");
+	// EventFilter filter = new EventFilter("11:22"+p1_Str+":"+p2_Str+":"+p3_Str+":Xn"); 
 	
 	// setup QA database
 	QADB qa = new QADB();
