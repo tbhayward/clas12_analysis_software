@@ -110,6 +110,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     TTreeReaderValue<double> Mh13(dataReader, "Mh13");
     TTreeReaderValue<double> Mh23(dataReader, "Mh23");
     TTreeReaderValue<double> xF13(dataReader, "xF13");
+    TTreeReaderValue<double> Delta_phi13(dataReader, "Delta_phi13");
 
     // Declare new variables to store missing particle information
 	float px_p, px_theta, px_phi, Mx1x, Mx2x, Mx3x, Mh1x, Mh2x, Mh3x;
@@ -205,7 +206,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
         histMh13.Fill(*Mh13); histMh2x.Fill(Mh2x); histMx.Fill(*Mx); 
 
 
-        if (*Mx < 0.30) {
+        if (*Mx < 0.30 && (*Delta_phi13 < 0.1 || Delta_phi13 > 0.5)) {
         	histMh13_cuts.Fill(*Mh13); histMh2x_cuts.Fill(Mh2x);
 
         	histMh13vsMh2x.Fill(Mh2x, *Mh13);
