@@ -262,12 +262,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
             if (runnum != 4984) {
                 continue;
             }
-            if (Mx > 0) {
-                tempHist.Fill(branchValue);
-            } else {
-                // handle the special case for Mx and Mx2
-                tempHist.Fill(branchValue);
-            }
+            tempHist.Fill(branchValue);
         }
 
         // Find the quantile edges
@@ -295,12 +290,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
             if (runnum != 4984) {
                 continue;
             }
-            if (Mx > 0) {
-                hist1.Fill(branchValue);
-            } else {
-                // handle the special case for Mx and Mx2
-                hist1.Fill(branchValue);
-            }
+            hist1.Fill(branchValue);
         }
 
         // Loop through tree2 and fill hist2
@@ -309,12 +299,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
             if (runnum != 5304) {
                 continue;
             }
-            if (Mx > 0) {
-                hist2.Fill(branchValue);
-            } else {
-                // handle the special case for Mx and Mx2
-                hist2.Fill(branchValue);
-            }
+            hist2.Fill(branchValue);
         }
 
         // Normalize the histogram
@@ -341,7 +326,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         hist2.SetStats(0);
 
         hist1.GetXaxis()->SetTitle(formattedBranchName.c_str());
-        hist1.GetYaxis()->SetTitle("Normalized counts");
+        hist1.GetYaxis()->SetTitle("Counts / nA");
 
         double max_value = std::max(hist1.GetMaximum(), hist2.GetMaximum());
         hist1.SetMaximum(max_value * 1.2);
