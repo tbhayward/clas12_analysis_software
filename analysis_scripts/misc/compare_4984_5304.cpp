@@ -25,7 +25,7 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
 
     // Create a 2D array to hold N+ and N- for each dynamic bin and phi bin
     std::vector<std::vector<double>> N_pos(9, std::vector<double>(12, 0));  
-    // 6 dynamic bins, 12 phi bins
+    // 9 dynamic bins, 12 phi bins
     std::vector<std::vector<double>> N_neg(9, std::vector<double>(12, 0));
 
     std::vector<double> sum_beam_pol(9, 0.0);
@@ -55,7 +55,7 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
         if(phi < 0 || phi > 2 * TMath::Pi()) continue;  
         // Skip entries out of range
 
-        int dyn_bin = int((branch_var - min_val) / ((max_val - min_val) / 6));
+        int dyn_bin = int((branch_var - min_val) / ((max_val - min_val) / 9));
         int phi_bin = int(phi / (2 * TMath::Pi() / 12));
 
         if(dyn_bin < 0 || dyn_bin >= 9) continue;  // Skip invalid indices
@@ -415,7 +415,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         aluGraph2.SetMarkerSize(1.1);
 
         aluGraph1.Draw("AP");
-        aluGraph1.GetYaxis()->SetRangeUser(-0.2, 0.04);
+        aluGraph1.GetYaxis()->SetRangeUser(-0.12, 0.04);
         aluGraph1.GetYaxis()->SetTitle("F_{LU}^{sin#phi} / F_{UU}");
         aluGraph1.GetXaxis()->SetRangeUser(min_val,max_val);
         aluGraph1.GetXaxis()->SetTitle(formattedBranchName.c_str());
