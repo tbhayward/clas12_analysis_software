@@ -141,7 +141,7 @@ std::map<std::string, HistConfig> histConfigs = {
     {"e_theta", {200, 0, 2 * TMath::Pi() / 180 * 40}}, // Convert degree to radian
     {"evnum", {200, 0, 0}},
     {"helicity", {2, -2, 2}},
-    {"Mx", {200, 0.00, 3.5}},
+    {"Mx", {200, 0.00, 3.}},
     {"Mx2", {200, -10, 10}},
     {"phi", {200, 0, 2 * TMath::Pi()}},
     {"p_p", {200, 0, 6}},
@@ -311,7 +311,6 @@ void createHistograms(TTree* tree1, TTree* tree2,
 
         hist1.SetLineColor(kRed);
         hist2.SetLineColor(kBlue);
-        hist1.GetXaxis()->SetRangeUser(min_val,max_val);
         hist1.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
         hist1.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
         hist1.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
@@ -388,7 +387,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         std::vector<double> average_bin_values1 = std::get<2>(result1);
         std::vector<double> average_bin_values2 = std::get<2>(result2);
 
-        TGraphErrors aluGraph1(9), aluGraph2(9);  // We have 6 dynamic bins for each
+        TGraphErrors aluGraph1(9), aluGraph2(9);  // We have 9 dynamic bins for each
 
         double offset = 0.1 * ((max_val - min_val) / 9);  // 10% of bin width
         // Populate aluGraph1 and aluGraph2 using result1 and result2
