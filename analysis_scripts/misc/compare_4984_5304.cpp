@@ -245,9 +245,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         
         // Set branches
         tree1->SetBranchAddress(branchName, &branchValue);
-        tree1->SetBranchAddress("Mx", &Mx);
         tree2->SetBranchAddress(branchName, &branchValue);
-        tree2->SetBranchAddress("Mx", &Mx);
 
         tree1->SetBranchAddress("runnum", &runnum);
         tree2->SetBranchAddress("runnum", &runnum);
