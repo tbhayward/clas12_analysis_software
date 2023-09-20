@@ -225,13 +225,13 @@ void createHistograms(TTree* tree1, TTree* tree2,
 
     for (int i = 0; i < branches1->GetEntries(); ++i) {
         const char* branchName = branches1->At(i)->GetName();
+        if (std::strcmp(branchName, "Mx") != 0) {
+            continue;
+        }
         if (std::strcmp(branchName, "runnum") == 0 || std::strcmp(branchName, "evnum") == 0 || 
             std::strcmp(branchName, "phi") == 0 || std::strcmp(branchName, "beam_pol") == 0 || 
             std::strcmp(branchName, "helicity") == 0 || 
             std::strcmp(branchName, "target_pol") == 0 ) {
-            continue;
-        }
-        if (std::strcmp(branchName, "Mx") != 0) {
             continue;
         }
 
@@ -290,6 +290,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
             if (runnum != 4984) {
                 continue;
             }
+            cout << "test" << endl;
             hist1.Fill(branchValue);
         }
 
@@ -355,8 +356,8 @@ void createHistograms(TTree* tree1, TTree* tree2,
         TH1F ratioHist(Form("%s_ratio", branchName), "", config.bins, config.min, config.max);
         ratioHist.Divide(&hist2, &hist1);
         ratioHist.SetLineColor(kBlack);
-        ratioHist.SetMinimum(0.75);  // Set Y-range
-        ratioHist.SetMaximum(2.50);  // Set Y-range
+        ratioHist.SetMinimum(0.5);  // Set Y-range
+        ratioHist.SetMaximum(1.75);  // Set Y-range
         ratioHist.GetXaxis()->SetTitle(formattedBranchName.c_str());
         std::string yAxisTitle = "ratio";
         ratioHist.GetYaxis()->SetTitle(yAxisTitle.c_str());
