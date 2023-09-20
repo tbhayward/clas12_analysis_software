@@ -354,7 +354,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         ratioHist.Divide(&hist2, &hist1);
         ratioHist.SetLineColor(kBlack);
         ratioHist.SetMinimum(0.5);  // Set Y-range
-        ratioHist.SetMaximum(1.75);  // Set Y-range
+        ratioHist.SetMaximum(2.00);  // Set Y-range
         ratioHist.GetXaxis()->SetTitle(formattedBranchName.c_str());
         std::string yAxisTitle = "ratio";
         ratioHist.GetYaxis()->SetTitle(yAxisTitle.c_str());
@@ -387,12 +387,12 @@ void createHistograms(TTree* tree1, TTree* tree2,
         std::vector<double> average_bin_values1 = std::get<2>(result1);
         std::vector<double> average_bin_values2 = std::get<2>(result2);
 
-        TGraphErrors aluGraph1(6), aluGraph2(6);  // We have 6 dynamic bins for each
+        TGraphErrors aluGraph1(9), aluGraph2(9);  // We have 6 dynamic bins for each
 
-        double offset = 0.1 * ((max_val - min_val) / 6);  // 10% of bin width
+        double offset = 0.1 * ((max_val - min_val) / 9);  // 10% of bin width
         // Populate aluGraph1 and aluGraph2 using result1 and result2
         // (This part can be put into a loop or function for efficiency)
-        for (int dyn_bin = 0; dyn_bin < 6; ++dyn_bin) {
+        for (int dyn_bin = 0; dyn_bin < 9; ++dyn_bin) {
             // Use average_bin_values instead of bin_center
             aluGraph1.SetPoint(dyn_bin, average_bin_values1[dyn_bin], 
                 std::get<0>(result1)[dyn_bin]);
