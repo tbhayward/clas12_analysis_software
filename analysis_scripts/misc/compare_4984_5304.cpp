@@ -288,7 +288,6 @@ void createHistograms(TTree* tree1, TTree* tree2,
             if (runnum != 4984) {
                 continue;
             }
-            cout << branchName << " " << branchValue << endl;
             hist1.Fill(branchValue);
         }
 
