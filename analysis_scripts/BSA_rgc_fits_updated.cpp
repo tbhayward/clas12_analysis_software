@@ -238,6 +238,9 @@ public:
         if (property == "xF") {
             goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.4 && *y < 0.75;
         }
+        if (property == "Mx") {
+            goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75;
+        }
         if (property == "Q2bin") {
             goodEvent = *Q2>1 && *W>2 && *Mx>1.4 && *y<0.75 && *x>0.2 && *x<0.3 && *pT>0.25 && 
             *pT<0.35 && *xF<0;
@@ -428,6 +431,11 @@ float dilution_factor(float currentVariable, const std::string& prefix) {
   if (prefix == "xFpim") { 
     return 0.128348+0.195055*currentVariable-0.242617*std::pow(currentVariable,2)-
       0.204807*std::pow(currentVariable,3);
+  }
+  // epX
+  if (prefix == "Mx") { 
+    return 0.0847657+0.0762168*currentVariable-0.0128988*std::pow(currentVariable,2)+
+      0.00274429*std::pow(currentVariable,3);
   }
   // epX
   if (prefix == "Q2TFR") {
@@ -835,9 +843,9 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
     int counter = 0;
     KinematicCuts kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
     while (dataReader.Next()) {
-      if (counter > 100000) {
-        break;
-      }
+      // if (counter > 100000) {
+      //   break;
+      // }
       // Apply kinematic cuts (this function will need to be adapted)
       bool passedKinematicCuts = kinematicCuts.applyCuts(currentFits, false);
       // Check if the currentVariable is within the desired range
@@ -861,7 +869,7 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
         sumDepV += *DepV;
         sumDepW += *DepW;
 
-        cout << "{" << *runnum << ", " << *evnum << ", " << *Mx << ", " << *xF << "}, ";
+        // cout << "{" << *runnum << ", " << *evnum << ", " << *Mx << ", " << *xF << "}, ";
 
         numEvents += 1; 
         counter++;
