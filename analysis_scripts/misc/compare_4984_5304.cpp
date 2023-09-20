@@ -271,9 +271,6 @@ void createHistograms(TTree* tree1, TTree* tree2,
             quantiles[i-1] = i * (sum / nQuantiles);
         }
         double edges[nQuantiles + 1];
-        double minPlot = edges[0];
-        double maxPlot = edges[9];
-        cout << edges << " " << edges[9] << " " << maxPlot << endl;
         tempHist.GetQuantiles(nQuantiles, edges, quantiles);
 
         std::string formattedBranchName = formatBranchName(branchName);
@@ -302,6 +299,10 @@ void createHistograms(TTree* tree1, TTree* tree2,
             hist2.Fill(branchValue);
         }
 
+        // Get min and max values for the branch
+        double min_val = hist1.GetXaxis()->GetXmin();
+        double max_val = hist1.GetXaxis()->GetXmax();
+
         // Normalize the histogram
         double scale1 = 1.0 / 394071.8; // 4984
         hist1.Scale(scale1);
@@ -310,7 +311,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
 
         hist1.SetLineColor(kRed);
         hist2.SetLineColor(kBlue);
-        hist1.GetXaxis()->SetRangeUser(minPlot,maxPlot);
+        hist1.GetXaxis()->SetRangeUser(min_val,max_val);
         hist1.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
         hist1.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
         hist1.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
@@ -361,7 +362,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         ratioHist.GetXaxis()->SetTitle(formattedBranchName.c_str());
         std::string yAxisTitle = "ratio";
         ratioHist.GetYaxis()->SetTitle(yAxisTitle.c_str());
-        ratioHist.GetXaxis()->SetRangeUser(minPlot,maxPlot);
+        ratioHist.GetXaxis()->SetRangeUser(min_val,max_val);
         ratioHist.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
         ratioHist.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
         ratioHist.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
@@ -377,10 +378,6 @@ void createHistograms(TTree* tree1, TTree* tree2,
         pad3->SetFillColor(0);  // Set the fill color to white for pad3
         pad3->Draw();
         pad3->cd();  // Set current pad to pad3
-
-        // Get min and max values for the branch
-        double min_val = hist1.GetXaxis()->GetXmin();
-        double max_val = hist1.GetXaxis()->GetXmax();
 
         std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> result1, result2;
 
@@ -419,7 +416,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         aluGraph1.Draw("AP");
         aluGraph1.GetYaxis()->SetRangeUser(-0.1, 0.1);
         aluGraph1.GetYaxis()->SetTitle("F_{LU}^{sin#phi} / F_{UU}");
-        aluGraph1.GetXaxis()->SetRangeUser(edges[0],edges[8]);
+        aluGraph1.GetXaxis()->SetRangeUser(min_val,max_val);
         aluGraph1.GetXaxis()->SetTitle(formattedBranchName.c_str());
         aluGraph1.SetTitle("");  // Remove title
         aluGraph1.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
