@@ -24,17 +24,17 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
     std::vector<double> ALU_errors;
 
     // Create a 2D array to hold N+ and N- for each dynamic bin and phi bin
-    std::vector<std::vector<double>> N_pos(6, std::vector<double>(12, 0));  
+    std::vector<std::vector<double>> N_pos(9, std::vector<double>(12, 0));  
     // 6 dynamic bins, 12 phi bins
-    std::vector<std::vector<double>> N_neg(6, std::vector<double>(12, 0));
+    std::vector<std::vector<double>> N_neg(9, std::vector<double>(12, 0));
 
-    std::vector<double> sum_beam_pol(6, 0.0);
-    std::vector<int> count_beam_pol(6, 0);
-    std::vector<double> sum_W_over_A(6, 0.0);
-    std::vector<int> count_W_over_A(6, 0);
+    std::vector<double> sum_beam_pol(9, 0.0);
+    std::vector<int> count_beam_pol(9, 0);
+    std::vector<double> sum_W_over_A(9, 0.0);
+    std::vector<int> count_W_over_A(9, 0);
     // Declare additional vectors to hold the sum and count of each dynamic bin.
-    std::vector<double> sum_branch_var(6, 0.0);
-    std::vector<int> count_branch_var(6, 0);
+    std::vector<double> sum_branch_var(9, 0.0);
+    std::vector<int> count_branch_var(9, 0);
 
     // Loop through the tree to fill N_pos and N_neg
     int runnum, helicity;
@@ -58,7 +58,7 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
         int dyn_bin = int((branch_var - min_val) / ((max_val - min_val) / 6));
         int phi_bin = int(phi / (2 * TMath::Pi() / 12));
 
-        if(dyn_bin < 0 || dyn_bin >= 6) continue;  // Skip invalid indices
+        if(dyn_bin < 0 || dyn_bin >= 9) continue;  // Skip invalid indices
         if(phi_bin < 0 || phi_bin >= 12) continue;  // Skip invalid indices
 
         if (helicity > 0) {
@@ -80,7 +80,7 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
 
     }
 
-    for (int dyn_bin = 0; dyn_bin < 6; ++dyn_bin) {
+    for (int dyn_bin = 0; dyn_bin < 9; ++dyn_bin) {
         TF1 fitFunc("fitFunc", "[0]*sin(x)", 0, 2 * TMath::Pi());
         TGraphErrors fitGraph;
         for (int phi_bin = 0; phi_bin < 12; ++phi_bin) {
@@ -107,9 +107,9 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
     }
 
     // Declare a new vector to hold the average bin values.
-    std::vector<double> average_bin_values(6, 0.0);
+    std::vector<double> average_bin_values(9, 0.0);
     // Calculate the average bin values.
-    for (int i = 0; i < 6; ++i) {
+    for (int i = 0; i < 9; ++i) {
         if (count_branch_var[i] != 0) {
             average_bin_values[i] = sum_branch_var[i] / count_branch_var[i];
         } else {
@@ -141,7 +141,7 @@ std::map<std::string, HistConfig> histConfigs = {
     {"e_theta", {200, 0, 2 * TMath::Pi() / 180 * 40}}, // Convert degree to radian
     {"evnum", {200, 0, 0}},
     {"helicity", {2, -2, 2}},
-    {"Mx", {200, 0.5, 2.5}},
+    {"Mx", {200, 0.5, 3.0}},
     {"Mx2", {200, -10, 10}},
     {"phi", {200, 0, 2 * TMath::Pi()}},
     {"p_p", {200, 0, 6}},
@@ -264,7 +264,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         }
 
         // Find the quantile edges
-        int nQuantiles = 6;
+        int nQuantiles = 9;
         double quantiles[nQuantiles];
         double sum = tempHist.GetEntries();
         for (int i = 1; i <= nQuantiles; ++i) {
@@ -294,7 +294,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         // Loop through tree2 and fill hist2
         for (Long64_t i = 0; i < tree2->GetEntries(); i++) {
             tree2->GetEntry(i);
-            if (runnum != 5304) {
+            if (runnum != 5304 || runnum != 5126) {
                 continue;
             }
             hist2.Fill(branchValue);
@@ -303,7 +303,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         // Normalize the histogram
         double scale1 = 1.0 / 394071.8; // 4984
         hist1.Scale(scale1);
-        double scale2 = 1.0 / 473646.34; // 5304
+        double scale2 = 1.0 / (473646.34 + 428257.66); // 5304, 5126
         hist2.Scale(scale2);
 
         hist1.SetLineColor(kRed);
