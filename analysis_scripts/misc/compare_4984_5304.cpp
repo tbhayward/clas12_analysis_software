@@ -141,7 +141,7 @@ std::map<std::string, HistConfig> histConfigs = {
     {"e_theta", {200, 0, 2 * TMath::Pi() / 180 * 40}}, // Convert degree to radian
     {"evnum", {200, 0, 0}},
     {"helicity", {2, -2, 2}},
-    {"Mx", {200, 0.5, 3.5}},
+    {"Mx", {200, 0., 3.}},
     {"Mx2", {200, -10, 10}},
     {"phi", {200, 0, 2 * TMath::Pi()}},
     {"p_p", {200, 0, 6}},
@@ -402,7 +402,6 @@ void createHistograms(TTree* tree1, TTree* tree2,
         // Populate aluGraph1 and aluGraph2 using result1 and result2
         // (This part can be put into a loop or function for efficiency)
         for (int dyn_bin = 0; dyn_bin < 9; ++dyn_bin) {
-            cout << std::get<0>(result1)[dyn_bin] << endl;
             if (std::get<0>(result1)[dyn_bin] == 0 ) { continue; }
             if (std::get<0>(result2)[dyn_bin] == 0 ) { continue; }
             // Use average_bin_values instead of bin_center
@@ -424,7 +423,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         aluGraph2.SetMarkerSize(1.1);
 
         aluGraph1.Draw("AP");
-        aluGraph1.GetYaxis()->SetRangeUser(-0.05, 0.20);
+        aluGraph1.GetYaxis()->SetRangeUser(-0.15, 0.10);
         aluGraph1.GetYaxis()->SetTitle("F_{LU}^{sin#phi} / F_{UU}");
         aluGraph1.GetXaxis()->SetRangeUser(min_val,max_val);
         aluGraph1.GetXaxis()->SetTitle(formattedBranchName.c_str());
