@@ -393,6 +393,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         // Populate aluGraph1 and aluGraph2 using result1 and result2
         // (This part can be put into a loop or function for efficiency)
         for (int dyn_bin = 0; dyn_bin < 9; ++dyn_bin) {
+            cout << std::get<0>(result1)[dyn_bin] << endl;
             if (std::get<0>(result1)[dyn_bin] == 0) { continue; }
             // Use average_bin_values instead of bin_center
             aluGraph1.SetPoint(dyn_bin, average_bin_values1[dyn_bin], 
