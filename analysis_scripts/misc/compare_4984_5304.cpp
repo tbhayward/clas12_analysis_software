@@ -273,6 +273,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         double edges[nQuantiles + 1];
         tempHist.GetQuantiles(nQuantiles, edges, quantiles);
         cout << edges[0] << endl;
+        double minPlot = edges[0];
 
         std::string formattedBranchName = formatBranchName(branchName);
         TCanvas canvas(branchName, "Canvas", 1600, 600);  // Width doubled for side-by-side panels
