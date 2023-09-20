@@ -355,10 +355,11 @@ void createHistograms(TTree* tree1, TTree* tree2,
         ratioHist.Divide(&hist2, &hist1);
         ratioHist.SetLineColor(kBlack);
         ratioHist.SetMinimum(0.5);  // Set Y-range
-        ratioHist.SetMaximum(2.00);  // Set Y-range
+        ratioHist.SetMaximum(2.50);  // Set Y-range
         ratioHist.GetXaxis()->SetTitle(formattedBranchName.c_str());
         std::string yAxisTitle = "ratio";
         ratioHist.GetYaxis()->SetTitle(yAxisTitle.c_str());
+        cout << edges[0] << endl;
         ratioHist.GetXaxis()->SetRangeUser(edges[0],edges[8]);
         ratioHist.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
         ratioHist.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
@@ -414,7 +415,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         aluGraph2.SetMarkerSize(1.1);
 
         aluGraph1.Draw("AP");
-        aluGraph1.GetYaxis()->SetRangeUser(-0.5, 0.5);
+        aluGraph1.GetYaxis()->SetRangeUser(-0.2, 0.2);
         aluGraph1.GetYaxis()->SetTitle("F_{LU}^{sin#phi} / F_{UU}");
         aluGraph1.GetXaxis()->SetRangeUser(edges[0],edges[8]);
         aluGraph1.GetXaxis()->SetTitle(formattedBranchName.c_str());
