@@ -237,7 +237,8 @@ void createHistograms(TTree* tree1, TTree* tree2,
         TH1F hist2(Form("%s_2", branchName), "", config.bins, config.min, config.max);
 
         // Declare variables to hold tree data
-        double branchValue, Mx, runnum;
+        double branchValue, Mx;
+        int runnum;
         
         // Set branches
         tree1->SetBranchAddress(branchName, &branchValue);
