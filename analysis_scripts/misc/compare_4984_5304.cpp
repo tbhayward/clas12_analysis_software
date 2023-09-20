@@ -231,6 +231,9 @@ void createHistograms(TTree* tree1, TTree* tree2,
             std::strcmp(branchName, "target_pol") == 0 ) {
             continue;
         }
+        if (std::strcmp(branchName, "Mx") != 0) {
+            continue;
+        }
 
         HistConfig config = histConfigs[branchName];
         TH1F hist1(Form("%s_1", branchName), "", config.bins, config.min, config.max);
