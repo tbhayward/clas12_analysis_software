@@ -271,8 +271,8 @@ void createHistograms(TTree* tree1, TTree* tree2,
             quantiles[i-1] = i * (sum / nQuantiles);
         }
         double edges[nQuantiles + 1];
-        tempHist.GetQuantiles(nQuantiles, edges, quantiles);
         double minPlot = edges[0];
+        tempHist.GetQuantiles(nQuantiles, edges, quantiles);
 
         std::string formattedBranchName = formatBranchName(branchName);
         TCanvas canvas(branchName, "Canvas", 1600, 600);  // Width doubled for side-by-side panels
@@ -414,7 +414,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         aluGraph2.SetMarkerSize(1.1);
 
         aluGraph1.Draw("AP");
-        aluGraph1.GetYaxis()->SetRangeUser(-0.2, 0.2);
+        aluGraph1.GetYaxis()->SetRangeUser(-0.1, 0.1);
         aluGraph1.GetYaxis()->SetTitle("F_{LU}^{sin#phi} / F_{UU}");
         aluGraph1.GetXaxis()->SetRangeUser(edges[0],edges[8]);
         aluGraph1.GetXaxis()->SetTitle(formattedBranchName.c_str());
