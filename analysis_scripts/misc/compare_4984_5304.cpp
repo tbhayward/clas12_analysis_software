@@ -141,7 +141,7 @@ std::map<std::string, HistConfig> histConfigs = {
     {"e_theta", {200, 0, 2 * TMath::Pi() / 180 * 40}}, // Convert degree to radian
     {"evnum", {200, 0, 0}},
     {"helicity", {2, -2, 2}},
-    {"Mx", {200, 0.5, 3.0}},
+    {"Mx", {100, 0.5, 3.5}},
     {"Mx2", {200, -10, 10}},
     {"phi", {200, 0, 2 * TMath::Pi()}},
     {"p_p", {200, 0, 6}},
@@ -294,7 +294,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         // Loop through tree2 and fill hist2
         for (Long64_t i = 0; i < tree2->GetEntries(); i++) {
             tree2->GetEntry(i);
-            if (runnum != 5304 || runnum != 5126) {
+            if (runnum != 5304 && runnum != 5126) {
                 continue;
             }
             hist2.Fill(branchValue);
