@@ -414,6 +414,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         aluGraph1.Draw("AP");
         aluGraph1.GetYaxis()->SetRangeUser(-0.5, 0.5);
         aluGraph1.GetYaxis()->SetTitle("F_{LU}^{sin#phi} / F_{UU}");
+        aluGraph1.GetXAxis()->SetRangeUser(edges[0],edges[8]);
         aluGraph1.GetXaxis()->SetTitle(formattedBranchName.c_str());
         aluGraph1.SetTitle("");  // Remove title
         aluGraph1.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
