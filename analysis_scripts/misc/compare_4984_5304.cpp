@@ -332,7 +332,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
 
 
         // Create the legend
-        TLegend *leg1 = new TLegend(0.6, 0.8, 0.9, 0.9);  // Adjust these coordinates as needed
+        TLegend *leg1 = new TLegend(0.55, 0.8, 0.9, 0.9);  // Adjust these coordinates as needed
         leg1->SetBorderSize(1);  // border size
         leg1->SetFillColor(0);  // Transparent fill
         leg1->SetTextSize(0.04);  // text size
@@ -412,7 +412,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         aluGraph2.SetMarkerSize(1.1);
 
         aluGraph1.Draw("AP");
-        aluGraph1.GetYaxis()->SetRangeUser(-0.1, 0.1);
+        aluGraph1.GetYaxis()->SetRangeUser(-0.1, 0.15);
         aluGraph1.GetYaxis()->SetTitle("F_{LU}^{sin#phi} / F_{UU}");
         aluGraph1.GetXaxis()->SetTitle(formattedBranchName.c_str());
         aluGraph1.SetTitle("");  // Remove title
@@ -429,7 +429,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         aluGraph2.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
 
         // Create the legend at x1, y1, x2, y2
-        TLegend *leg3 = new TLegend(0.63, 0.8, 0.9, 0.9);  // Adjust these values as needed
+        TLegend *leg3 = new TLegend(0.55, 0.8, 0.9, 0.9);  // Adjust these values as needed
         // Add entries
         leg3->AddEntry(&aluGraph1, data_set_1_name.c_str(), "p");
         leg3->AddEntry(&aluGraph2, data_set_2_name.c_str(), "p");
