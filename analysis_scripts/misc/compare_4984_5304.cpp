@@ -273,6 +273,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         double edges[nQuantiles + 1];
         double minPlot = edges[0];
         double maxPlot = edges[8];
+        cout << edges[8] << " " << maxPlot;
         tempHist.GetQuantiles(nQuantiles, edges, quantiles);
 
         std::string formattedBranchName = formatBranchName(branchName);
@@ -329,8 +330,8 @@ void createHistograms(TTree* tree1, TTree* tree2,
         hist1.GetYaxis()->SetTitle("Counts / nA");
 
         double max_value = std::max(hist1.GetMaximum(), hist2.GetMaximum());
-        hist1.SetMaximum(max_value * 1.2);
-        hist2.SetMaximum(max_value * 1.2);
+        hist1.SetMaximum(max_value * 1.3);
+        hist2.SetMaximum(max_value * 1.3);
 
 
         // Create the legend
@@ -399,7 +400,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
             // Use average_bin_values instead of bin_center
             aluGraph1.SetPoint(dyn_bin, average_bin_values1[dyn_bin], 
                 std::get<0>(result1)[dyn_bin]);
-            cout << dyn_bin << " " << average_bin_values1[dyn_bin] << " " << std::get<0>(result1)[dyn_bin];
+            cout << dyn_bin << " " << average_bin_values1[dyn_bin] << " " << std::get<0>(result1)[dyn_bin] << endl;;
             aluGraph1.SetPointError(dyn_bin, 0, std::get<1>(result1)[dyn_bin]);
             
             aluGraph2.SetPoint(dyn_bin, average_bin_values2[dyn_bin] + offset, 
