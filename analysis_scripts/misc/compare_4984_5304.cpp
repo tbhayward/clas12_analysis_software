@@ -250,6 +250,9 @@ void createHistograms(TTree* tree1, TTree* tree2,
         tree1->SetBranchAddress("runnum", &runnum);
         tree2->SetBranchAddress("runnum", &runnum);
 
+        tree1->SetBranchAddress("Mx", &Mx);
+        tree2->SetBranchAddress("Mx", &Mx);
+
 
         // Declare a temporary histogram to get statistics
         TH1F tempHist(Form("temp_%s", branchName), "", 1000, config.min, config.max);
