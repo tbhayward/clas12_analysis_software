@@ -851,7 +851,7 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
       // Check if the currentVariable is within the desired range
       if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
         // sum the kinematic variable values
-        sumVariable += currentVariable;
+        sumVariable += *currentVariable;
         sumQ2 += *Q2;
         sumW += *W;
         sumx += *x;
