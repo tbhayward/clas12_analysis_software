@@ -271,6 +271,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
             quantiles[i-1] = i * (sum / nQuantiles);
         }
         double edges[nQuantiles + 1];
+        cout << edges[0] << endl;
         tempHist.GetQuantiles(nQuantiles, edges, quantiles);
 
 
@@ -359,7 +360,6 @@ void createHistograms(TTree* tree1, TTree* tree2,
         ratioHist.GetXaxis()->SetTitle(formattedBranchName.c_str());
         std::string yAxisTitle = "ratio";
         ratioHist.GetYaxis()->SetTitle(yAxisTitle.c_str());
-        cout << edges[0] << endl;
         ratioHist.GetXaxis()->SetRangeUser(edges[0],edges[8]);
         ratioHist.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
         ratioHist.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
