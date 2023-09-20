@@ -141,7 +141,7 @@ std::map<std::string, HistConfig> histConfigs = {
     {"e_theta", {200, 0, 2 * TMath::Pi() / 180 * 40}}, // Convert degree to radian
     {"evnum", {200, 0, 0}},
     {"helicity", {2, -2, 2}},
-    {"Mx", {100, 0.5, 3.5}},
+    {"Mx", {200, 0.5, 3.5}},
     {"Mx2", {200, -10, 10}},
     {"phi", {200, 0, 2 * TMath::Pi()}},
     {"p_p", {200, 0, 6}},
