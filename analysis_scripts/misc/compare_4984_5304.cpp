@@ -290,7 +290,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
                 continue;
             }
             if (Mx > 1.5) {
-                his1.Fill(branchValue);
+                hist1.Fill(branchValue);
             }
         }
 
