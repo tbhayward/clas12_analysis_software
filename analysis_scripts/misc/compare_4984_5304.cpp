@@ -471,7 +471,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
     }
 }
 
-void compare_supplemental(std::string root_file1_path, std::string root_file2_path, 
+void compare_4984_5304(std::string root_file1_path, std::string root_file2_path, 
     std::string data_set_1_name, std::string data_set_2_name) {
     gStyle->SetCanvasColor(0);
 
