@@ -394,7 +394,8 @@ void createHistograms(TTree* tree1, TTree* tree2,
         // (This part can be put into a loop or function for efficiency)
         for (int dyn_bin = 0; dyn_bin < 9; ++dyn_bin) {
             cout << std::get<0>(result1)[dyn_bin] << endl;
-            if (std::get<0>(result1)[dyn_bin] == 0) { continue; }
+            if (std::get<0>(result1)[dyn_bin] == 0 ) { continue; }
+            if (std::get<0>(result2)[dyn_bin] == 0 ) { continue; }
             // Use average_bin_values instead of bin_center
             aluGraph1.SetPoint(dyn_bin, average_bin_values1[dyn_bin], 
                 std::get<0>(result1)[dyn_bin]);
@@ -414,7 +415,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         aluGraph2.SetMarkerSize(1.1);
 
         aluGraph1.Draw("AP");
-        aluGraph1.GetYaxis()->SetRangeUser(-0.1, 0.1);
+        aluGraph1.GetYaxis()->SetRangeUser(-0.2, 0.04);
         aluGraph1.GetYaxis()->SetTitle("F_{LU}^{sin#phi} / F_{UU}");
         aluGraph1.GetXaxis()->SetRangeUser(min_val,max_val);
         aluGraph1.GetXaxis()->SetTitle(formattedBranchName.c_str());
