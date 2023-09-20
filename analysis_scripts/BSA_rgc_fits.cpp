@@ -305,6 +305,9 @@ bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
     goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
       data.data.at("y")<0.75;
   }
+  if (property == "Mx") {
+    goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("y")<0.75;
+  }
   if (property == "Q2bin") {
     goodEvent = data.data.at("Q2")>1 && data.data.at("W")>2 && data.data.at("Mx")>1.4 &&
       data.data.at("y")<0.75 && data.data.at("x")>0.2 && data.data.at("x")<0.3 &&
@@ -378,6 +381,11 @@ float dilution_factor(float currentVariable, const std::string& prefix) {
   if (prefix == "xFpim") { 
     return 0.128348+0.195055*currentVariable-0.242617*std::pow(currentVariable,2)-
       0.204807*std::pow(currentVariable,3);
+  }
+  // epX
+  if (prefix == "Mx") { 
+    return 0.0847657+0.0762168*currentVariable-0.0128988*std::pow(currentVariable,2)+
+      0.00274429*std::pow(currentVariable,3);
   }
   // epX
   if (prefix == "Q2TFR") {
@@ -1136,9 +1144,9 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
     // Loop over all events and calculate the sums and event counts
     int counter = 0;
     for (const eventData& event : gData) {
-      if (counter > 100000) {
-        break;
-      }
+      // if (counter > 100000) {
+      //   break;
+      // }
       float currentVariable = getEventProperty(event, currentFits);
       if (applyKinematicCuts(event, currentFits, 0) && currentVariable>=allBins[currentFits][i] && 
         currentVariable < allBins[currentFits][i + 1]) {
