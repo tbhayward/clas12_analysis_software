@@ -225,7 +225,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
 
     for (int i = 0; i < branches1->GetEntries(); ++i) {
         const char* branchName = branches1->At(i)->GetName();
-        if (std::strcmp(branchName, "Mx") != 0) {
+        if (std::strcmp(branchName, "Mx") == 0) {
             continue;
         }
         if (std::strcmp(branchName, "runnum") == 0 || std::strcmp(branchName, "evnum") == 0 || 
@@ -260,7 +260,9 @@ void createHistograms(TTree* tree1, TTree* tree2,
             if (runnum != 4984) {
                 continue;
             }
-            tempHist.Fill(branchValue);
+            if (Mx > 1.5) {
+                tempHist.Fill(branchValue);
+            }
         }
 
         // Find the quantile edges
@@ -287,7 +289,9 @@ void createHistograms(TTree* tree1, TTree* tree2,
             if (runnum != 4984) {
                 continue;
             }
-            hist1.Fill(branchValue);
+            if (Mx > 1.5) {
+                his1.Fill(branchValue);
+            }
         }
 
         // Loop through tree2 and fill hist2
@@ -296,7 +300,9 @@ void createHistograms(TTree* tree1, TTree* tree2,
             if (runnum != 5304 && runnum != 5126) {
                 continue;
             }
-            hist2.Fill(branchValue);
+            if (Mx > 1.5) {
+                hist2.Fill(branchValue);
+            }
         }
 
         // Get min and max values for the branch
