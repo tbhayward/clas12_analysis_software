@@ -272,8 +272,8 @@ void createHistograms(TTree* tree1, TTree* tree2,
         }
         double edges[nQuantiles + 1];
         double minPlot = edges[0];
-        double maxPlot = edges[8];
-        cout << edges[8] << " " << maxPlot;
+        double maxPlot = edges[9];
+        cout << edges[9] << " " << maxPlot << endl;
         tempHist.GetQuantiles(nQuantiles, edges, quantiles);
 
         std::string formattedBranchName = formatBranchName(branchName);
