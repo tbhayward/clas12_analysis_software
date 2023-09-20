@@ -272,6 +272,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
         }
         double edges[nQuantiles + 1];
         double minPlot = edges[0];
+        double maxPlot = edges[8];
         tempHist.GetQuantiles(nQuantiles, edges, quantiles);
 
         std::string formattedBranchName = formatBranchName(branchName);
@@ -308,7 +309,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
 
         hist1.SetLineColor(kRed);
         hist2.SetLineColor(kBlue);
-        hist1.GetXaxis()->SetRangeUser(minPlot,edges[8]);
+        hist1.GetXaxis()->SetRangeUser(minPlot,maxPlot);
         hist1.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
         hist1.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
         hist1.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
@@ -355,11 +356,11 @@ void createHistograms(TTree* tree1, TTree* tree2,
         ratioHist.Divide(&hist2, &hist1);
         ratioHist.SetLineColor(kBlack);
         ratioHist.SetMinimum(0.5);  // Set Y-range
-        ratioHist.SetMaximum(2.50);  // Set Y-range
+        ratioHist.SetMaximum(3.00);  // Set Y-range
         ratioHist.GetXaxis()->SetTitle(formattedBranchName.c_str());
         std::string yAxisTitle = "ratio";
         ratioHist.GetYaxis()->SetTitle(yAxisTitle.c_str());
-        ratioHist.GetXaxis()->SetRangeUser(minPlot,edges[8]);
+        ratioHist.GetXaxis()->SetRangeUser(minPlot,maxPlot);
         ratioHist.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
         ratioHist.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
         ratioHist.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
@@ -398,6 +399,7 @@ void createHistograms(TTree* tree1, TTree* tree2,
             // Use average_bin_values instead of bin_center
             aluGraph1.SetPoint(dyn_bin, average_bin_values1[dyn_bin], 
                 std::get<0>(result1)[dyn_bin]);
+            cout << dyn_bin << " " << average_bin_values1[dyn_bin] << " " << std::get<0>(result1)[dyn_bin];
             aluGraph1.SetPointError(dyn_bin, 0, std::get<1>(result1)[dyn_bin]);
             
             aluGraph2.SetPoint(dyn_bin, average_bin_values2[dyn_bin] + offset, 
