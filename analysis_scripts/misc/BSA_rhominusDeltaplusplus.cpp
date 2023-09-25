@@ -58,7 +58,7 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
     float px_p, px_theta, px_phi, Mx1x, Mx2x, Mx3x, Mh1x, Mh2x, Mh3x;
 }
 
-void rhominusDeltaplusplus(std::string root_file_path) {
+void BSA_rhominusDeltaplusplus(std::string root_file_path) {
     // Start the timer
     auto start_time = std::chrono::high_resolution_clock::now();
     gStyle->SetCanvasColor(0);
