@@ -68,7 +68,7 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
             sum_beam_pol[dyn_bin] += beam_pol;
             count_beam_pol[dyn_bin]++;
 
-            double W_over_A = (A != 0) ? W / A : 0;
+            double W_over_A = (DepA != 0) ? DepW / DepA : 0;
             sum_W_over_A[dyn_bin] += W_over_A;
             count_W_over_A[dyn_bin]++;
 
