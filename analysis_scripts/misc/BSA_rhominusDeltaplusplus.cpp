@@ -26,13 +26,13 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
     // "num_kinematic_bins" dynamic bins, 12 phi bins
     std::vector<std::vector<double>> N_neg(num_kinematic_bins, std::vector<double>(12, 0));
 
-    std::vector<double> sum_beam_pol(9, 0.0);
-    std::vector<int> count_beam_pol(9, 0);
-    std::vector<double> sum_W_over_A(9, 0.0);
-    std::vector<int> count_W_over_A(9, 0);
+    std::vector<double> sum_beam_pol(num_kinematic_bins, 0.0);
+    std::vector<int> count_beam_pol(num_kinematic_bins, 0);
+    std::vector<double> sum_W_over_A(num_kinematic_bins, 0.0);
+    std::vector<int> count_W_over_A(num_kinematic_bins, 0);
     // Declare additional vectors to hold the sum and count of each dynamic bin.
-    std::vector<double> sum_branch_var(9, 0.0);
-    std::vector<int> count_branch_var(9, 0);
+    std::vector<double> sum_branch_var(num_kinematic_bins, 0.0);
+    std::vector<int> count_branch_var(num_kinematic_bins, 0);
 
     // Loop through the tree to fill N_pos and N_neg
     TTreeReaderValue<double> branch_var(dataReader, branchName);
