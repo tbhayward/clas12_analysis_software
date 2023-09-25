@@ -163,8 +163,42 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
         beam_pol_sum[Mh13_bin].push_back(*beam_pol);
         Dep_ratio_sum[Mh13_bin].push_back(*DepW / *DepA);
         events_in_bin[Mh13_bin].push_back(1); // Count number of events
-
     }
+
+    TH1F *asymmetry_plot = new TH1F("Asymmetry", "Beam-Spin Asymmetry", 10, min_Mh13, max_Mh13);
+    for (int i = 0; i < num_kinematic_bins; ++i) {
+        double A = 0;
+        double A_error = 0;
+
+        for (int j = 0; j < 12; ++j) {
+            int Np = helicity_count[i][j].first;
+            int Nm = helicity_count[i][j].second;
+            double Asin = (Np - Nm) / (Np + Nm);
+            double err = (1 / mean_beam_pol) * sqrt(Np * Nm / pow(Np + Nm, 3));
+            // Fit Asin to A * sin(phi13), where phi13 = j * 2 * M_PI / 12.0
+            A += Asin / 12;
+            A_error += err / 12;
+        }
+
+        // Divide by mean beam_pol and DepW/DepA
+        double mean_beam_pol = std::accumulate(beam_pol_sum[i].begin(), 
+            beam_pol_sum[i].end(), 0.0) / events_in_bin[i].size();
+        double mean_Dep_ratio = std::accumulate(Dep_ratio_sum[i].begin(), 
+            Dep_ratio_sum[i].end(), 0.0) / events_in_bin[i].size();
+        A /= (mean_beam_pol * mean_Dep_ratio);
+
+        // Plot on histogram
+        asymmetry_plot->SetBinContent(i + 1, A);
+        asymmetry_plot->SetBinError(i + 1, A_error);
+    }
+
+    // Add to canvas
+    canvas.cd();
+    asymmetry_plot->Draw();
+
+    // Save the plot
+    std::string outPath = std::string(outDir) + "/BSA_rhominusDeltaplusplus.png";
+    canvas.SaveAs(outPath.c_str());
 
 }
 
