@@ -237,7 +237,7 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
         aluGraph.SetPointError(dyn_bin, 0, std::get<1>(result)[dyn_bin]);
     }
 
-    aluGraph.SetLineColor(kBlack); aluGraph1.SetMarkerColor(kBlack);
+    aluGraph.SetLineColor(kBlack); aluGraph.SetMarkerColor(kBlack);
     aluGraph.SetMarkerStyle(20);
     aluGraph.SetMarkerSize(1.1);
 
