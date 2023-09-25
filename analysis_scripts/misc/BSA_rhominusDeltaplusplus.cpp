@@ -65,7 +65,7 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
 
     // Declare a temporary histogram to get statistics
     TH1F tempHist("bin hist", "", 1000, 1, 2.2);
-    
+
     int counter = 0;
     while (dataReader.Next()) {
         counter++;
@@ -110,6 +110,12 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
     }
     double edges[nQuantiles + 1];
     tempHist.GetQuantiles(nQuantiles, edges, quantiles);
+    // Get min and max values for the branch
+    double min_val = tempHist.GetXaxis()->GetXmin();
+    double max_val = tempHist.GetXaxis()->GetXmax();
+
+    std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> result;
+    // result1 = calculateAndPlotALU(tree1, "Mh13", min_val, max_val);
 }
 
 void BSA_rhominusDeltaplusplus(std::string root_file_path) {
