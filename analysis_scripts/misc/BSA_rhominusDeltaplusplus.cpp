@@ -46,7 +46,7 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
     int counter = 0;
     while (dataReader.Next()) {
         counter++;
-        if (counter > 1000000) { break; }
+        // if (counter > 1000000) { break; }
 
         if(*branch_var < min_val || *branch_var > max_val) continue;  
         // Skip entries out of range
