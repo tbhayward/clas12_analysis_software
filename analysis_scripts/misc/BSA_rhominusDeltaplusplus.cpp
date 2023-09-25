@@ -81,7 +81,7 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
     int counter = 0;
     while (dataReader.Next()) {
         counter++;
-        if (counter > 1000000) { break; }
+        // if (counter > 1000000) { break; }
         if (*Mx > 0.3) continue;
 
         // Create 4-momentum vectors for final state particles
