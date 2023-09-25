@@ -68,8 +68,7 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
         counter++;
         if (counter > 100000) { break; }
         if (*Mx < 0 || *Mx12 < 0 || *Mx13 < 0 || *Mx23 < 0) { continue; }
-        if (*Mx < 0.30) { continue; }
-
+        if (*Mx > 0.30) { continue; }
         // Create 4-momentum vectors for final state particles
         TLorentzVector p_e, p1, p2, p3;
         p_e.SetXYZM(*e_p*sin(*e_theta)*cos(*e_phi), *e_p*sin(*e_theta)*sin(*e_phi), 
@@ -95,10 +94,13 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
         Mh2x = (p2 + p_x).M();
         Mh3x = (p3 + p_x).M();
 
-        if (Mh2x > 0.6 && Mh2x < 0.9) { continue; }
+        if (Mh2x < 0.6 || Mh2x > 0.9) { continue; }
+        // Declare a temporary histogram to get statistics
+        TH1F tempHist(Form("temp_%s", branchName), "", 1000, config.min, config.max);
+        tempHist.Fill(Mh13);
+
+
     }
-
-
 }
 
 void BSA_rhominusDeltaplusplus(std::string root_file_path) {
