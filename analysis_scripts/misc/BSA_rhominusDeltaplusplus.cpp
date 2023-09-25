@@ -35,12 +35,10 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
     std::vector<int> count_branch_var(9, 0);
 
     // Loop through the tree to fill N_pos and N_neg
-    int runnum, helicity;
-    double branch_var, phi, beam_pol, DepW, DepA;
     TTreeReaderValue<double> branch_var(dataReader, branchName);
     TTreeReaderValue<double> phi(dataReader, "phi13");
-    TTreeReaderValue<double> runnum(dataReader, "runnum");
-    TTreeReaderValue<double> helicity(dataReader, "helicity");
+    TTreeReaderValue<int> runnum(dataReader, "runnum");
+    TTreeReaderValue<int> helicity(dataReader, "helicity");
     TTreeReaderValue<double> beam_pol(dataReader, "beam_pol");
     TTreeReaderValue<double> DepW(dataReader, "DepW");
     TTreeReaderValue<double> DepA(dataReader, "DepA");
