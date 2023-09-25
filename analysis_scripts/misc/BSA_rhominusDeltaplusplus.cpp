@@ -283,7 +283,7 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
     double max_val = tempHist.GetXaxis()->GetXmax();
 
     std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> result;
-    int num_kinematic_bins = 20;
+    int num_kinematic_bins = 30;
     result = calculateAndPlotALU(dataReader, "Mh13", min_val, max_val, num_kinematic_bins);
 
     // Extract the average_bin_values
