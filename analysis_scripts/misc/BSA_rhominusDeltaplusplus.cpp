@@ -100,7 +100,7 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
         double mean_W_over_A = (count_W_over_A[dyn_bin] != 0) ? 
             sum_W_over_A[dyn_bin] / count_W_over_A[dyn_bin] : 1.0;
         ALU_values.push_back(A / mean_W_over_A);
-        cout << ALU_values << endl;
+        cout << A << endl;
         ALU_errors.push_back(A_error / mean_W_over_A);
     }   
 
