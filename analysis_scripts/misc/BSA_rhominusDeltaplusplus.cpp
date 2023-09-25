@@ -253,7 +253,7 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
     aluGraph.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
 
     // Save the canvas
-    canvas.SaveAs("/output/BSA_rhominusDeltaplusplus.png");
+    canvas.SaveAs("output/BSA_rhominusDeltaplusplus.png");
 }
 
 void BSA_rhominusDeltaplusplus(std::string root_file_path) {
