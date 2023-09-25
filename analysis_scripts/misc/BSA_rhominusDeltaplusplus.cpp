@@ -236,6 +236,24 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
             std::get<0>(result)[dyn_bin]);
         aluGraph.SetPointError(dyn_bin, 0, std::get<1>(result)[dyn_bin]);
     }
+
+    aluGraph.SetLineColor(kBlack); aluGraph1.SetMarkerColor(kBlack);
+    aluGraph.SetMarkerStyle(20);
+    aluGraph.SetMarkerSize(1.1);
+
+    aluGraph.Draw("AP");
+    aluGraph.GetYaxis()->SetRangeUser(-0.15, 0.10);
+    aluGraph.GetYaxis()->SetTitle("F_{LU}^{sin#phi} / F_{UU}");
+    aluGraph.GetXaxis()->SetRangeUser(min_val,max_val);
+    aluGraph.GetXaxis()->SetTitle(formattedBranchName.c_str());
+    aluGraph.SetTitle("");  // Remove title
+    aluGraph.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
+    aluGraph.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
+    aluGraph.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
+    aluGraph.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
+
+    // Save the canvas
+    canvas.SaveAs("/output/BSA_rhominusDeltaplusplus.png");
 }
 
 void BSA_rhominusDeltaplusplus(std::string root_file_path) {
