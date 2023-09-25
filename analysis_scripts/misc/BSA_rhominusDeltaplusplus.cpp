@@ -76,6 +76,32 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
             count_branch_var[dyn_bin]++;
         }
 
+        for (int dyn_bin = 0; dyn_bin < num_kinematic_bins; ++dyn_bin) {
+        TF1 fitFunc("fitFunc", "[0]*sin(x)", 0, 2 * TMath::Pi());
+        TGraphErrors fitGraph;
+        for (int phi_bin = 0; phi_bin < 12; ++phi_bin) {
+            double phi_val = phi_bin * (2 * TMath::Pi() / 12);
+            double mean_beam_pol = (count_beam_pol[dyn_bin] != 0) ? sum_beam_pol[dyn_bin] 
+                / count_beam_pol[dyn_bin] : 1.0;
+            double ALU = (1 / mean_beam_pol) * 
+                (N_pos[dyn_bin][phi_bin] - N_neg[dyn_bin][phi_bin]) / 
+                (N_pos[dyn_bin][phi_bin] + N_neg[dyn_bin][phi_bin]);
+            double ALU_error = (2 / mean_beam_pol) * 
+                TMath::Sqrt((N_pos[dyn_bin][phi_bin] * N_neg[dyn_bin][phi_bin]) / 
+                TMath::Power(N_pos[dyn_bin][phi_bin] + N_neg[dyn_bin][phi_bin], 3));
+
+            fitGraph.SetPoint(phi_bin, phi_val, ALU);
+            fitGraph.SetPointError(phi_bin, 0, ALU_error);
+        }
+        fitGraph.Fit(&fitFunc, "Q");
+        double A = fitFunc.GetParameter(0);
+        double A_error = fitFunc.GetParError(0);
+        double mean_W_over_A = (count_W_over_A[dyn_bin] != 0) ? 
+            sum_W_over_A[dyn_bin] / count_W_over_A[dyn_bin] : 1.0;
+        ALU_values.push_back(A / mean_W_over_A);
+        ALU_errors.push_back(A_error / mean_W_over_A);
+    }
+
     }
 
 }
