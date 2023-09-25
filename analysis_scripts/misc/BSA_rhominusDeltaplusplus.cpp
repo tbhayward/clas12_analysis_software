@@ -245,7 +245,7 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
     aluGraph.GetYaxis()->SetRangeUser(-0.15, 0.10);
     aluGraph.GetYaxis()->SetTitle("F_{LU}^{sin#phi} / F_{UU}");
     aluGraph.GetXaxis()->SetRangeUser(min_val,max_val);
-    aluGraph.GetXaxis()->SetTitle(formattedBranchName.c_str());
+    aluGraph.GetXaxis()->SetTitle("M_{#pi^+ p} (GeV)");
     aluGraph.SetTitle("");  // Remove title
     aluGraph.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
     aluGraph.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
