@@ -15,7 +15,7 @@
 #include <cmath>
 
 std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calculateAndPlotALU(
-    TTree* tree1, const char* branchName, double min_val, double max_val) {
+    TTreeReader &dataReader, const char* branchName, double min_val, double max_val) {
 
 }
 
