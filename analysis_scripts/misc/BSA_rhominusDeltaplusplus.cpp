@@ -202,6 +202,7 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
         if (Mh2x < 0.6 || Mh2x > 0.9) { continue; }
         tempHist.Fill(*Mh13);
     }
+    dataReader.Restart();  // Reset the TTreeReader at the end of the function
 
     // Find the quantile edges
     int nQuantiles = 9;
