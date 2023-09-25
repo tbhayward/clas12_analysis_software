@@ -46,7 +46,7 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
     int counter = 0;
     while (dataReader.Next()) {
         counter++;
-        if (counter > 10000) { break; }
+        if (counter > 100000) { break; }
 
         if(*branch_var < min_val || *branch_var > max_val) continue;  
         // Skip entries out of range
@@ -100,6 +100,7 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
         double mean_W_over_A = (count_W_over_A[dyn_bin] != 0) ? 
             sum_W_over_A[dyn_bin] / count_W_over_A[dyn_bin] : 1.0;
         ALU_values.push_back(A / mean_W_over_A);
+        cout << ALU_values << endl;
         ALU_errors.push_back(A_error / mean_W_over_A);
     }   
 
