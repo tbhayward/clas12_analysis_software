@@ -53,6 +53,29 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
         if(*phi < 0 || *phi > 2 * TMath::Pi()) continue;  
         // Skip entries out of range
 
+        int dyn_bin = int((branch_var - min_val) / ((max_val - min_val) / num_kinematic_bins));
+        int phi_bin = int(phi / (2 * TMath::Pi() / 12));
+
+        if(dyn_bin < 0 || dyn_bin >= num_kinematic_bins) continue;  // Skip invalid indices
+        if(phi_bin < 0 || phi_bin >= 12) continue;  // Skip invalid indices
+
+        if (*helicity > 0) {
+            N_pos[dyn_bin][phi_bin]++;
+        } else if (*helicity < 0) {
+            N_neg[dyn_bin][phi_bin]++;
+        }
+        if (*helicity != 0) {  // assuming non-zero helicity implies valid polarization
+            sum_beam_pol[dyn_bin] += beam_pol;
+            count_beam_pol[dyn_bin]++;
+
+            double W_over_A = (A != 0) ? W / A : 0;
+            sum_W_over_A[dyn_bin] += W_over_A;
+            count_W_over_A[dyn_bin]++;
+
+            sum_branch_var[dyn_bin] += branch_var;
+            count_branch_var[dyn_bin]++;
+        }
+
     }
 
 }
