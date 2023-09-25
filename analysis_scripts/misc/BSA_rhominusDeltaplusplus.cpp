@@ -53,7 +53,7 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
         if(*phi < 0 || *phi > 2 * TMath::Pi()) continue;  
         // Skip entries out of range
 
-        int dyn_bin = int((branch_var - min_val) / ((max_val - min_val) / num_kinematic_bins));
+        int dyn_bin = int((*branch_var - min_val) / ((max_val - min_val) / num_kinematic_bins));
         int phi_bin = int(*phi / (2 * TMath::Pi() / 12));
 
         if(dyn_bin < 0 || dyn_bin >= num_kinematic_bins) continue;  // Skip invalid indices
