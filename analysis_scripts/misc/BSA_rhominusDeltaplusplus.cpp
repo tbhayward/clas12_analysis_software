@@ -119,7 +119,7 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
     double max_val = tempHist.GetXaxis()->GetXmax();
 
     std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> result;
-    result1 = calculateAndPlotALU(tree, "Mh13", min_val, max_val);
+    result = calculateAndPlotALU(dataReader, "Mh13", min_val, max_val);
 }
 
 void BSA_rhominusDeltaplusplus(std::string root_file_path) {
