@@ -16,6 +16,14 @@
 
 
 void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
+    std::vector<double> Mh13_vec;
+    int num_kinematic_bins = 10;
+    std::vector<std::pair<int, int>> helicity_count[num_kinematic_bins][12]; // [Mh13_bin][Phi13_bin]
+    std::vector<double> beam_pol_sum[num_kinematic_bins];
+    std::vector<double> Dep_ratio_sum[num_kinematic_bins];
+    std::vector<int> events_in_bin[num_kinematic_bins];
+
+
     // Declare derived variables to read from the tree
     double z2x, t13, t2x;
     // Declare reader locations
@@ -66,7 +74,9 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
     int counter = 0;
     while (dataReader.Next()) {
         counter++;
+        if (counter > 100000) { break; }
         if (*Mx < 0 || *Mx12 < 0 || *Mx13 < 0 || *Mx23 < 0) { continue; }
+        if (*Mx < 0.30) { continue; }
 
         // Create 4-momentum vectors for final state particles
         TLorentzVector p_e, p1, p2, p3;
@@ -78,24 +88,81 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
             *p2_p*cos(*p2_theta), 0.139570);
         p3.SetXYZM(*p3_p*sin(*p3_theta)*cos(*p3_phi), *p3_p*sin(*p3_theta)*sin(*p3_phi), 
             *p3_p*cos(*p3_theta), 0.938272);
-
         // Calculate 4-momentum of missing particle
         TLorentzVector p_x = p_initial - (p_e + p1 + p2 + p3);
-
         // Populate missing particle variables
         px_p = p_x.P();
         px_theta = p_x.Theta();
         px_phi = p_x.Phi();
-
         // Calculate missing mass variables
         Mx1x = (p_initial - (p_e + p1)).M();
         Mx2x = (p_initial - (p_e + p2)).M();
         Mx3x = (p_initial - (p_e + p3)).M();
-
         // Calculate invariant mass variables
         Mh1x = (p1 + p_x).M();
         Mh2x = (p2 + p_x).M();
         Mh3x = (p3 + p_x).M();
+
+        if (Mh2x > 0.6 && Mh2x < 0.9) { continue; }
+        Mh13_vec.push_back(*Mh13);
+
+    }
+
+    double min_Mh13 = *std::min_element(Mh13_vec.begin(), Mh13_vec.end());
+    double max_Mh13 = *std::max_element(Mh13_vec.begin(), Mh13_vec.end());
+    double Mh13_bin_width = (max_Mh13 - min_Mh13) / num_kinematic_bins;
+
+    counter = 0;
+    dataReader.Restart(); // restart the TTreeReader
+    while (dataReader.Next()) {
+        counter++;
+        if (counter > 100000) { break; }
+
+        if (*Mx < 0 || *Mx12 < 0 || *Mx13 < 0 || *Mx23 < 0) { continue; }
+        if (*Mx < 0.30) { continue; }
+
+        // Create 4-momentum vectors for final state particles
+        TLorentzVector p_e, p1, p2, p3;
+        p_e.SetXYZM(*e_p*sin(*e_theta)*cos(*e_phi), *e_p*sin(*e_theta)*sin(*e_phi), 
+            *e_p*cos(*e_theta), 0.511e-3);
+        p1.SetXYZM(*p1_p*sin(*p1_theta)*cos(*p1_phi), *p1_p*sin(*p1_theta)*sin(*p1_phi), 
+            *p1_p*cos(*p1_theta), 0.139570);
+        p2.SetXYZM(*p2_p*sin(*p2_theta)*cos(*p2_phi), *p2_p*sin(*p2_theta)*sin(*p2_phi), 
+            *p2_p*cos(*p2_theta), 0.139570);
+        p3.SetXYZM(*p3_p*sin(*p3_theta)*cos(*p3_phi), *p3_p*sin(*p3_theta)*sin(*p3_phi), 
+            *p3_p*cos(*p3_theta), 0.938272);
+        // Calculate 4-momentum of missing particle
+        TLorentzVector p_x = p_initial - (p_e + p1 + p2 + p3);
+        // Populate missing particle variables
+        px_p = p_x.P();
+        px_theta = p_x.Theta();
+        px_phi = p_x.Phi();
+        // Calculate missing mass variables
+        Mx1x = (p_initial - (p_e + p1)).M();
+        Mx2x = (p_initial - (p_e + p2)).M();
+        Mx3x = (p_initial - (p_e + p3)).M();
+        // Calculate invariant mass variables
+        Mh1x = (p1 + p_x).M();
+        Mh2x = (p2 + p_x).M();
+        Mh3x = (p3 + p_x).M();
+        if (Mh2x > 0.6 && Mh2x < 0.9) { continue; }
+
+        int Mh13_bin = int((*Mh13 - min_Mh13) / Mh13_bin_width);
+        int Phi13_bin = int((*Delta_phi13 + M_PI) / (2 * M_PI / 12.0));
+        if (Mh13_bin >= num_kinematic_bins) Mh13_bin = 9; //fix potential out-of-range bin index
+        if (Phi13_bin >= 12) Phi13_bin = 11; // fix potential out-of-range bin index
+
+        // Count helicity
+        if (*helicity > 0) {
+            helicity_count[Mh13_bin][Phi13_bin].first += 1;
+        } else {
+            helicity_count[Mh13_bin][Phi13_bin].second += 1;
+        }
+
+        // Sum beam_pol and DepW/DepA
+        beam_pol_sum[Mh13_bin].push_back(*beam_pol);
+        Dep_ratio_sum[Mh13_bin].push_back(*DepW / *DepA);
+        events_in_bin[Mh13_bin].push_back(1); // Count number of events
 
     }
 
