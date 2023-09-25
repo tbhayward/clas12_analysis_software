@@ -98,9 +98,17 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
         // Declare a temporary histogram to get statistics
         TH1F tempHist("bin hist", "", 1000, 1, 2.2);
         tempHist.Fill(*Mh13);
-
-
     }
+
+    // Find the quantile edges
+    int nQuantiles = 9;
+    double quantiles[nQuantiles];
+    double sum = tempHist.GetEntries();
+    for (int i = 1; i <= nQuantiles; ++i) {
+        quantiles[i-1] = i * (sum / nQuantiles);
+    }
+    double edges[nQuantiles + 1];
+    tempHist.GetQuantiles(nQuantiles, edges, quantiles);
 }
 
 void BSA_rhominusDeltaplusplus(std::string root_file_path) {
