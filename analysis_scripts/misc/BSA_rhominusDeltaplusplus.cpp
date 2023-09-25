@@ -65,14 +65,14 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
             N_neg[dyn_bin][phi_bin]++;
         }
         if (*helicity != 0) {  // assuming non-zero helicity implies valid polarization
-            sum_beam_pol[dyn_bin] += beam_pol;
+            sum_beam_pol[dyn_bin] += *beam_pol;
             count_beam_pol[dyn_bin]++;
 
             double W_over_A = (DepA != 0) ? DepW / DepA : 0;
             sum_W_over_A[dyn_bin] += W_over_A;
             count_W_over_A[dyn_bin]++;
 
-            sum_branch_var[dyn_bin] += branch_var;
+            sum_branch_var[dyn_bin] += *branch_var;
             count_branch_var[dyn_bin]++;
         }
 
