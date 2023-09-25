@@ -48,9 +48,9 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
         counter++;
         if (counter > 10000) { break; }
 
-        if(branch_var < min_val || branch_var > max_val) continue;  
+        if(*branch_var < min_val || *branch_var > max_val) continue;  
         // Skip entries out of range
-        if(phi < 0 || phi > 2 * TMath::Pi()) continue;  
+        if(*phi < 0 || *phi > 2 * TMath::Pi()) continue;  
         // Skip entries out of range
 
     }
