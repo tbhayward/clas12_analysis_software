@@ -100,7 +100,6 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
         double mean_W_over_A = (count_W_over_A[dyn_bin] != 0) ? 
             sum_W_over_A[dyn_bin] / count_W_over_A[dyn_bin] : 1.0;
         ALU_values.push_back(A / mean_W_over_A);
-        cout << A << " " << A_error << endl;
         ALU_errors.push_back(A_error / mean_W_over_A);
     }   
 
@@ -220,6 +219,22 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
 
     std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> result;
     result = calculateAndPlotALU(dataReader, "Mh13", min_val, max_val, 10);
+
+    // Extract the average_bin_values
+    std::vector<double> average_bin_values = std::get<2>(result);
+    TGraphErrors aluGraph(num_kinematic_bins);
+
+    double offset = 0.1 * ((max_val - min_val) / num_kinematic_bins);  // 10% of bin width
+    // Populate aluGraph using result
+    // (This part can be put into a loop or function for efficiency)
+
+    for (int dyn_bin = 0; dyn_bin < num_kinematic_bins; ++dyn_bin) {
+        if (std::get<0>(result)[dyn_bin] == 0 ) { continue; }
+        // Use average_bin_values instead of bin_center
+        aluGraph.SetPoint(dyn_bin, average_bin_values[dyn_bin], 
+            std::get<0>(result)[dyn_bin]);
+        aluGraph.SetPointError(dyn_bin, 0, std::get<1>(result)[dyn_bin]);
+    }
 }
 
 void BSA_rhominusDeltaplusplus(std::string root_file_path) {
