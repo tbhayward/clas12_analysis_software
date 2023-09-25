@@ -15,7 +15,47 @@
 #include <cmath>
 
 std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calculateAndPlotALU(
-    TTreeReader &dataReader, const char* branchName, double min_val, double max_val) {
+    TTreeReader &dataReader, const char* branchName, double min_val, double max_val,
+    int num_kinematic_bins) {
+
+    std::vector<double> ALU_values;
+    std::vector<double> ALU_errors;
+
+    // Create a 2D array to hold N+ and N- for each dynamic bin and phi bin
+    std::vector<std::vector<double>> N_pos(num_kinematic_bins, std::vector<double>(12, 0));  
+    // "num_kinematic_bins" dynamic bins, 12 phi bins
+    std::vector<std::vector<double>> N_neg(num_kinematic_bins, std::vector<double>(12, 0));
+
+    std::vector<double> sum_beam_pol(9, 0.0);
+    std::vector<int> count_beam_pol(9, 0);
+    std::vector<double> sum_W_over_A(9, 0.0);
+    std::vector<int> count_W_over_A(9, 0);
+    // Declare additional vectors to hold the sum and count of each dynamic bin.
+    std::vector<double> sum_branch_var(9, 0.0);
+    std::vector<int> count_branch_var(9, 0);
+
+    // Loop through the tree to fill N_pos and N_neg
+    int runnum, helicity;
+    double branch_var, phi, beam_pol, DepW, DepA;
+    TTreeReaderValue<double> branch_var(dataReader, branchName);
+    TTreeReaderValue<double> phi(dataReader, "phi13");
+    TTreeReaderValue<double> runnum(dataReader, "runnum");
+    TTreeReaderValue<double> helicity(dataReader, "helicity");
+    TTreeReaderValue<double> beam_pol(dataReader, "beam_pol");
+    TTreeReaderValue<double> DepW(dataReader, "DepW");
+    TTreeReaderValue<double> DepA(dataReader, "DepA");
+
+    int counter = 0;
+    while (dataReader.Next()) {
+        counter++;
+        if (counter > 10000) { break; }
+
+        if(branch_var < min_val || branch_var > max_val) continue;  
+        // Skip entries out of range
+        if(phi < 0 || phi > 2 * TMath::Pi()) continue;  
+        // Skip entries out of range
+
+    }
 
 }
 
@@ -119,7 +159,7 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
     double max_val = tempHist.GetXaxis()->GetXmax();
 
     std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> result;
-    result = calculateAndPlotALU(dataReader, "Mh13", min_val, max_val);
+    result = calculateAndPlotALU(dataReader, "Mh13", min_val, max_val, 10);
 }
 
 void BSA_rhominusDeltaplusplus(std::string root_file_path) {
