@@ -56,26 +56,6 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
 
     // Declare new variables to store missing particle information
     float px_p, px_theta, px_phi, Mx1x, Mx2x, Mx3x, Mh1x, Mh2x, Mh3x;
-
-    // Define initial state 4-momentum (10.1998 GeV electron beam and stationary proton)
-    TLorentzVector p_initial(0, 0, 10.1998, 10.1998 + 0.938); // (px, py, pz, E)
-
-    // Create canvas and set its style
-    TCanvas canvas("Invariant Masses", "Canvas", 1600, 1000);
-    setCanvasStyle(canvas, 3, 2);
-
-    // Create test canvas and set its style
-    TCanvas test_canvas("Cuts Test", "Canvas", 1600, 1000);
-    setCanvasStyle(test_canvas, 3, 2);
-
-    int counter = 0;
-    while (dataReader.Next()) {
-        counter++;
-        if (*Mx < 0 || *Mx12 < 0 || *Mx13 < 0 || *Mx23 < 0) { continue; }
-
-    }
-
-
 }
 
 void rhominusDeltaplusplus(std::string root_file_path) {
@@ -97,7 +77,7 @@ void rhominusDeltaplusplus(std::string root_file_path) {
 
     TTreeReader dataReader(tree); // Create a TTreeReader for the data tree
 
-    createHistograms(dataReader, "output");
+    createBSAPlot(dataReader, "output");
 
     file->Close(); delete file;
 
