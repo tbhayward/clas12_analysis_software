@@ -97,7 +97,7 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
         if (Mh2x < 0.6 || Mh2x > 0.9) { continue; }
         // Declare a temporary histogram to get statistics
         TH1F tempHist("bin hist", "", 1000, 1, 2.2);
-        tempHist.Fill(Mh13);
+        tempHist.Fill(*Mh13);
 
 
     }
