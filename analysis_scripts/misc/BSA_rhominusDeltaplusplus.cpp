@@ -34,19 +34,55 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
     std::vector<double> sum_branch_var(num_kinematic_bins, 0.0);
     std::vector<int> count_branch_var(num_kinematic_bins, 0);
 
-    // Loop through the tree to fill N_pos and N_neg
-    TTreeReaderValue<double> branch_var(dataReader, branchName);
-    TTreeReaderValue<double> phi(dataReader, "phi13");
+
+    // Declare reader locations
     TTreeReaderValue<int> runnum(dataReader, "runnum");
     TTreeReaderValue<int> helicity(dataReader, "helicity");
     TTreeReaderValue<double> beam_pol(dataReader, "beam_pol");
+    TTreeReaderValue<double> e_p(dataReader, "e_p");
+    TTreeReaderValue<double> e_theta(dataReader, "e_theta");
+    TTreeReaderValue<double> e_phi(dataReader, "e_phi");
+    TTreeReaderValue<double> p1_p(dataReader, "p1_p");
+    TTreeReaderValue<double> p1_theta(dataReader, "p1_theta");
+    TTreeReaderValue<double> p1_phi(dataReader, "p1_phi");
+    TTreeReaderValue<double> p2_p(dataReader, "p2_p");
+    TTreeReaderValue<double> p2_theta(dataReader, "p2_theta");
+    TTreeReaderValue<double> p2_phi(dataReader, "p2_phi");
+    TTreeReaderValue<double> p3_p(dataReader, "p3_p");
+    TTreeReaderValue<double> p3_theta(dataReader, "p3_theta");
+    TTreeReaderValue<double> p3_phi(dataReader, "p3_phi");
+    TTreeReaderValue<double> phi1(dataReader, "phi1");
+    TTreeReaderValue<double> phi2(dataReader, "phi2");
+    TTreeReaderValue<double> phi3(dataReader, "phi3");
+    TTreeReaderValue<double> phi12(dataReader, "phi12");
+    TTreeReaderValue<double> phi(dataReader, "phi13");
+    TTreeReaderValue<double> phi23(dataReader, "phi23");
     TTreeReaderValue<double> DepW(dataReader, "DepW");
     TTreeReaderValue<double> DepA(dataReader, "DepA");
+    TTreeReaderValue<double> x(dataReader, "x");
+    TTreeReaderValue<double> z1(dataReader, "z1");
+    TTreeReaderValue<double> z13(dataReader, "z13");
+    TTreeReaderValue<double> Mx(dataReader, "Mx");
+    TTreeReaderValue<double> Mx12(dataReader, "Mx12");
+    TTreeReaderValue<double> Mx13(dataReader, "Mx13");
+    TTreeReaderValue<double> Mx23(dataReader, "Mx23");
+    TTreeReaderValue<double> Mh12(dataReader, "Mh12");
+    TTreeReaderValue<double> branch_var(dataReader, branchName);
+    TTreeReaderValue<double> Mh23(dataReader, "Mh23");
+    TTreeReaderValue<double> xF13(dataReader, "xF13");
+    TTreeReaderValue<double> Delta_phi13(dataReader, "Delta_phi13");
+
+    // Declare new variables to store missing particle information
+    float px_p, px_theta, px_phi, Mx1x, Mx2x, Mx3x, Mh1x, Mh2x, Mh3x;
+
+    // Define initial state 4-momentum (10.1998 GeV electron beam and stationary proton)
+    TLorentzVector p_initial(0, 0, 10.1998, 10.1998 + 0.938); // (px, py, pz, E)
 
     int counter = 0;
     while (dataReader.Next()) {
         counter++;
-        // if (counter > 1000000) { break; }
+        if (counter > 1000000) { break; }
+        if (*Mx > 0.3) continue;
 
         if(*branch_var < min_val || *branch_var > max_val) continue;  
         // Skip entries out of range
