@@ -78,22 +78,42 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
 
 }
 
-void BSA_rhominusDeltaplusplus(std::string root_file1_path) {
+void rhominusDeltaplusplus(std::string root_file_path) {
+    // Start the timer
+    auto start_time = std::chrono::high_resolution_clock::now();
     gStyle->SetCanvasColor(0);
 
-    TFile* file1 = new TFile(root_file1_path.c_str(), "READ");
+    TFile* file = new TFile(root_file_path.c_str(), "READ");
 
-    if (!file1->IsOpen()) {
+    if (!file->IsOpen()) {
         cout << "Error opening ROOT file (is the location correct?). Exiting." << endl;
     }
 
-    TTree* tree1 = (TTree*)file1->Get("PhysicsEvents");
+    TTree* tree = (TTree*)file->Get("PhysicsEvents");
 
-    if (!tree1) {
-        cout << "Error getting tree from ROOT files." << endl;
+    if (!tree) {
+        cout << "Error getting trees from ROOT file." << endl;
     }
 
-    createBSAPlot(tree1, "output");
+    TTreeReader dataReader(tree); // Create a TTreeReader for the data tree
 
-    file1->Close(); delete file1;
+    createHistograms(dataReader, "output");
+
+    file->Close(); delete file;
+
+    // Stop the timer
+    auto end_time = std::chrono::high_resolution_clock::now();
+    // Calculate the elapsed time in seconds and microseconds
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - 
+    start_time).count();
+    double seconds = duration / 1e6;
+    // Convert to hours, minutes, and seconds
+    int hours = static_cast<int>(seconds) / 3600;
+    int remaining_time = static_cast<int>(seconds) % 3600;
+    int mins = remaining_time / 60;
+    int remaining_seconds = remaining_time % 60;
+    // Print the elapsed time
+    cout << "Time elapsed: ";
+    cout << hours << " hours, " << mins << " mins, " << remaining_seconds << " seconds." << endl;
+    return 0;
 }
