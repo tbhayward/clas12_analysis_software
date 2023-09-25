@@ -46,7 +46,7 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
     int counter = 0;
     while (dataReader.Next()) {
         counter++;
-        if (counter > 100000) { break; }
+        if (counter > 1000000) { break; }
 
         if(*branch_var < min_val || *branch_var > max_val) continue;  
         // Skip entries out of range
@@ -164,6 +164,8 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
 
     // Create canvas and set its style
     TCanvas canvas("Asymmetry", "Canvas", 1600, 1000);
+    canvas.SetLeftMargin(0.2);
+    canvas.SetBottomMargin(0.15);
 
     // Declare a temporary histogram to get statistics
     TH1F tempHist("bin hist", "", 1000, 1, 2.2);
@@ -245,7 +247,7 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
     aluGraph.GetYaxis()->SetRangeUser(-0.15, 0.10);
     aluGraph.GetYaxis()->SetTitle("F_{LU}^{sin#phi} / F_{UU}");
     aluGraph.GetXaxis()->SetRangeUser(min_val,max_val);
-    aluGraph.GetXaxis()->SetTitle("M_{#pi^+ p} (GeV)");
+    aluGraph.GetXaxis()->SetTitle("M_{#pi^{+}p} (GeV)");
     aluGraph.SetTitle("");  // Remove title
     aluGraph.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
     aluGraph.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
