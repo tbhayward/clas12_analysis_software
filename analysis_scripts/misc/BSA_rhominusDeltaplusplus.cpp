@@ -56,6 +56,49 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
 
     // Declare new variables to store missing particle information
     float px_p, px_theta, px_phi, Mx1x, Mx2x, Mx3x, Mh1x, Mh2x, Mh3x;
+
+    // Define initial state 4-momentum (10.1998 GeV electron beam and stationary proton)
+    TLorentzVector p_initial(0, 0, 10.1998, 10.1998 + 0.938); // (px, py, pz, E)
+
+    // Create canvas and set its style
+    TCanvas canvas("Asymmetry", "Canvas", 1600, 1000);
+
+    int counter = 0;
+    while (dataReader.Next()) {
+        counter++;
+        if (*Mx < 0 || *Mx12 < 0 || *Mx13 < 0 || *Mx23 < 0) { continue; }
+
+        // Create 4-momentum vectors for final state particles
+        TLorentzVector p_e, p1, p2, p3;
+        p_e.SetXYZM(*e_p*sin(*e_theta)*cos(*e_phi), *e_p*sin(*e_theta)*sin(*e_phi), 
+            *e_p*cos(*e_theta), 0.511e-3);
+        p1.SetXYZM(*p1_p*sin(*p1_theta)*cos(*p1_phi), *p1_p*sin(*p1_theta)*sin(*p1_phi), 
+            *p1_p*cos(*p1_theta), 0.139570);
+        p2.SetXYZM(*p2_p*sin(*p2_theta)*cos(*p2_phi), *p2_p*sin(*p2_theta)*sin(*p2_phi), 
+            *p2_p*cos(*p2_theta), 0.139570);
+        p3.SetXYZM(*p3_p*sin(*p3_theta)*cos(*p3_phi), *p3_p*sin(*p3_theta)*sin(*p3_phi), 
+            *p3_p*cos(*p3_theta), 0.938272);
+
+        // Calculate 4-momentum of missing particle
+        TLorentzVector p_x = p_initial - (p_e + p1 + p2 + p3);
+
+        // Populate missing particle variables
+        px_p = p_x.P();
+        px_theta = p_x.Theta();
+        px_phi = p_x.Phi();
+
+        // Calculate missing mass variables
+        Mx1x = (p_initial - (p_e + p1)).M();
+        Mx2x = (p_initial - (p_e + p2)).M();
+        Mx3x = (p_initial - (p_e + p3)).M();
+
+        // Calculate invariant mass variables
+        Mh1x = (p1 + p_x).M();
+        Mh2x = (p2 + p_x).M();
+        Mh3x = (p3 + p_x).M();
+
+    }
+
 }
 
 void BSA_rhominusDeltaplusplus(std::string root_file_path) {
