@@ -63,6 +63,9 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
     // Create canvas and set its style
     TCanvas canvas("Asymmetry", "Canvas", 1600, 1000);
 
+    // Declare a temporary histogram to get statistics
+    TH1F tempHist("bin hist", "", 1000, 1, 2.2);
+    
     int counter = 0;
     while (dataReader.Next()) {
         counter++;
@@ -95,8 +98,6 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
         Mh3x = (p3 + p_x).M();
 
         if (Mh2x < 0.6 || Mh2x > 0.9) { continue; }
-        // Declare a temporary histogram to get statistics
-        TH1F tempHist("bin hist", "", 1000, 1, 2.2);
         tempHist.Fill(*Mh13);
     }
 
