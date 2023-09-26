@@ -109,7 +109,7 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
         Mh2x = (p2 + p_x).M();
         Mh3x = (p3 + p_x).M();
 
-        if (Mh2x < 0.6 || Mh2x > 0.9) continue;
+        if (Mh2x < 0.775 - 0.13 || Mh2x > 0.775 + 0.13) continue;
 
         if(*branch_var < min_val || *branch_var > max_val) continue;  
         // Skip entries out of range
@@ -282,39 +282,41 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
     double max_val = tempHist.GetXaxis()->GetXmax();
 
     std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> resultMh13;
+    std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> resultMh23;
     int num_kinematic_bins = 25;
     resultMh13 = calculateAndPlotALU(dataReader, "Mh13", min_val, max_val, num_kinematic_bins);
+    resultMh23 = calculateAndPlotALU(dataReader, "Mh23", min_val, max_val, num_kinematic_bins);
 
     // Extract the average_bin_values
     std::vector<double> average_bin_values = std::get<2>(resultMh13);
-    TGraphErrors aluGraph(num_kinematic_bins);
+    std::vector<double> average_bin_values = std::get<2>(resultMh23);
+    TGraphErrors aluGraph1(num_kinematic_bins);
+    TGraphErrors aluGraph2(num_kinematic_bins);
 
     double offset = 0.1 * ((max_val - min_val) / num_kinematic_bins);  // 10% of bin width
     // Populate aluGraph using result
-    // (This part can be put into a loop or function for efficiency)
-
     for (int dyn_bin = 0; dyn_bin < num_kinematic_bins; ++dyn_bin) {
         if (std::get<0>(resultMh13)[dyn_bin] == 0 ) { continue; }
         // Use average_bin_values instead of bin_center
-        aluGraph.SetPoint(dyn_bin, average_bin_values[dyn_bin], 
+        aluGraph1.SetPoint(dyn_bin, average_bin_values[dyn_bin], 
             std::get<0>(resultMh13)[dyn_bin]);
-        aluGraph.SetPointError(dyn_bin, 0, std::get<1>(resultMh13)[dyn_bin]);
+        aluGraph1.SetPointError(dyn_bin, 0, std::get<1>(resultMh13)[dyn_bin]);
     }
 
-    aluGraph.SetLineColor(kBlack); aluGraph.SetMarkerColor(kBlack);
-    aluGraph.SetMarkerStyle(20);
-    aluGraph.SetMarkerSize(1.1);
+    aluGraph1.SetLineColor(kBlue); aluGraph1.SetMarkerColor(kBlack);
+    aluGraph1.SetMarkerStyle(20);
+    aluGraph1.SetMarkerSize(1.1);
 
-    aluGraph.Draw("AP");
-    aluGraph.GetYaxis()->SetRangeUser(-0.15, 0.10);
-    aluGraph.GetYaxis()->SetTitle("F_{LU}^{sin#phi} / F_{UU}");
-    aluGraph.GetXaxis()->SetRangeUser(min_val,max_val);
-    aluGraph.GetXaxis()->SetTitle("M_{#pi^{+}p} (GeV)");
-    aluGraph.SetTitle("");  // Remove title
-    aluGraph.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
-    aluGraph.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
-    aluGraph.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
-    aluGraph.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
+    aluGraph1.Draw("AP");
+    aluGraph1.GetYaxis()->SetRangeUser(-0.15, 0.10);
+    aluGraph1.GetYaxis()->SetTitle("F_{LU}^{sin#phi} / F_{UU}");
+    aluGraph1.GetXaxis()->SetRangeUser(min_val,max_val);
+    aluGraph1.GetXaxis()->SetTitle("M_{#pi^{+}p} (GeV)");
+    aluGraph1.SetTitle("");  // Remove title
+    aluGraph1.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
+    aluGraph1.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
+    aluGraph1.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
+    aluGraph1.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
 
     // Save the canvas
     canvas.SaveAs("output/BSA_rhominusDeltaplusplus.png");
