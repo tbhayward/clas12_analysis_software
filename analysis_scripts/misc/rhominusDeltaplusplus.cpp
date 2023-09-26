@@ -138,10 +138,6 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     HistConfig configMx = histConfigs["Mx"];
     TH1F histMx("Mx", "", configMx.bins, configMx.min, configMx.max);
 
-    // Add a 2D histogram for Mh13 vs Mh2x
-    TH2F histMh13vsMh2x("Mh13vsMh2x", "", configMh2x.bins/10, configMh2x.min, configMh2x.max,
-    	configMh13.bins/10, configMh13.min, configMh13.max); 
-
     ////////////////////////////////////////
     // test histograms
     HistConfig configMh12 = histConfigs["Mh12"];
@@ -150,22 +146,6 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     HistConfig configMh1x = histConfigs["Mh1x"];
     TH1F histMh1x("Mh1x", "", configMh1x.bins, configMh1x.min, configMh1x.max);
 
-    HistConfig configp13_theta = histConfigs["p13_theta"];
-    TH2F histMh13vsp13_theta("Mh13vsp13_theta", "", configp13_theta.bins/5, configp13_theta.min, 
-    	configp13_theta.max,
-    	configMh13.bins/5, configMh13.min, configMh13.max);
-
-    TH2F histMh13vsMh12("Mh13vsMh12", "", configMh12.bins/5, configMh12.min, configMh12.max,
-    	configMh13.bins/5, configMh13.min, configMh13.max);
-
-    // HistConfig configMh1x = histConfigs["Mh1x"];
-    TH2F histMh13vsMh1x("Mh13vsMh1x", "", configMh1x.bins/5, configMh1x.min, configMh1x.max,
-    	configMh13.bins/5, configMh13.min, configMh13.max);
-
-    HistConfig configDelta_E2EX = histConfigs["Delta_E2EX"];
-    TH2F histMh13vsDelta_E2EX("Mh13vsE2EX", "", configDelta_E2EX.bins/5, configDelta_E2EX.min, 
-    	configDelta_E2EX.max,
-    	configMh13.bins/5, configMh13.min, configMh13.max);
 
 
 	int counter = 0;
@@ -207,21 +187,13 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 
 
         if (*Mx < 0.30) {
-        	histMh13_cuts.Fill(*Mh13); histMh2x_cuts.Fill(Mh2x);
+        	histMh13_cuts.Fill(*Mh13); 
 
-        	histMh13vsMh2x.Fill(Mh2x, *Mh13);
-
-        	histMh13vsp13_theta.Fill(TMath::RadToDeg()*(p1+p3).Theta(), *Mh13);
-
-        	histMh13vsMh12.Fill(*Mh12, *Mh13);
-
-        	histMh13vsMh1x.Fill(Mh1x, *Mh13);
+        	histMh2x_cuts.Fill(Mh2x);
 
         	histMh12.Fill(*Mh12);
 
         	histMh1x.Fill(Mh1x);
-
-        	histMh13vsDelta_E2EX.Fill(p1.E()-p2.E(), *Mh13);
         }
 
 	}
@@ -251,50 +223,9 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMh2x_cuts.SetTitle("#it{M}_{X} < 0.3 GeV");
     histMh2x_cuts.Draw(); // Draw Mh2x_cuts in fifth pad
     //
-    // Draw the 2D histogram in the sixth panel
-    canvas.cd(6);
-    setHistStyle(&histMh13vsMh2x, "#it{M}_{h(#pi^{-}X)} (GeV)", "#it{M}_{h(#pi^{+}p)} (GeV)");
-    histMh13vsMh2x.SetTitle("#it{M}_{X} < 0.3 GeV");
-    histMh13vsMh2x.Draw("colz");  // Draw using color to represent the bin content
-    histMh13vsMh2x.SetStats(0);
 	
 	// Save the canvas
     canvas.SaveAs(Form("%s/%s.png", outDir, "output"));
-
-
-
-
-
-    // test histograms
-	// Draw histograms on the canvas sub-pads
-    test_canvas.cd(1);
-    setHistStyle(&histMh12, "#it{M}_{h(#pi^{+}#pi^{-})} (GeV)", "Counts");
-    histMh12.Draw(); 
-    //
-    test_canvas.cd(2);
-    setHistStyle(&histMh1x, "#it{M}_{h(#pi^{+}X)} (GeV)", "Counts");
-    histMh1x.Draw(); 
-    //
-    test_canvas.cd(3);
-    setHistStyle(&histMh13vsp13_theta, "#it{#theta}_{#pi^{+}p}", "#it{M}_{h(#pi^{+}p)} (GeV)");
-    histMh13vsp13_theta.Draw("colz"); 
-    //
-    test_canvas.cd(4);
-    setHistStyle(&histMh13vsMh12, "#it{M}_{h(#pi^{+}#pi^{-})} (GeV)","#it{M}_{h(#pi^{+}p)} (GeV)");
-    histMh13vsMh12.Draw("colz"); 
-    //
-    test_canvas.cd(5);
-    setHistStyle(&histMh13vsMh1x, "#it{M}_{h(#pi^{+}X)} (GeV)","#it{M}_{h(#pi^{+}p)} (GeV)");
-    histMh13vsMh1x.Draw("colz"); 
-    //
-    test_canvas.cd(6);
-    setHistStyle(&histMh13vsDelta_E2EX, "#it{E}_{#pi^{-}} - #it{E}_{X} (GeV)", 
-    	"#it{M}_{h(#pi^{+}p)} (GeV)");
-    histMh13vsDelta_E2EX.Draw("colz"); 
-    //
-
-    // Save the canvas
-    test_canvas.SaveAs(Form("%s/%s.png", outDir, "output_test"));
 }
 
 void rhominusDeltaplusplus(std::string root_file_path) {
