@@ -184,11 +184,11 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
         	histMh2x.Fill(Mh2x); 
 
         	if (Mh1x > (0.775 - 0.13) && Mh1x < (0.775 + 0.13)) {
-        		/* code */
+        		histMh23.Fill(*Mh23);
         	}
 
         	if (Mh2x > (0.775 - 0.13) && Mh2x < (0.775 + 0.13)) {
-        		/* code */
+        		histMh13.Fill(*Mh13);
         	}
         }
 
@@ -208,8 +208,19 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     //
     canvas.cd(3);
     setHistStyle(&histMh2x, "#it{M}_{h(#pi^{-}X)} (GeV)", "Counts");
-    histMh2x.Draw(); // Draw Mh2x in second pad
+    histMh2x.Draw(); // Draw Mh2x in third pad
     histMh2x.SetTitle("#it{M}_{X} < 0.3 GeV");
+    //
+    //
+    canvas.cd(5);
+    setHistStyle(&histMh23, "#it{M}_{h(#pi^{-}p)} (GeV)", "Counts");
+    histMh23.Draw(); // Draw Mh23 in fifth pad
+    histMh23.SetTitle("#it{M}_{X} < 0.3 GeV, 0.65 < #it{M}_{h(#pi^{+}X)} < 0.91");
+    //
+    canvas.cd(6);
+    setHistStyle(&histMh13, "#it{M}_{h(#pi^{}p)} (GeV)", "Counts");
+    histMh13.Draw(); // Draw Mh13 in fifth pad
+    histMh13.SetTitle("#it{M}_{X} < 0.3 GeV, 0.65 < #it{M}_{h(#pi^{-}X)} < 0.91");
     //
 	
 	// Save the canvas
