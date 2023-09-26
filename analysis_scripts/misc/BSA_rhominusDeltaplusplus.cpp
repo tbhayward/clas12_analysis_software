@@ -68,12 +68,14 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
     TTreeReaderValue<double> phi2(dataReader, "phi2");
     TTreeReaderValue<double> phi3(dataReader, "phi3");
     TTreeReaderValue<double> phi12(dataReader, "phi12");
-    TTreeReaderValue<double> phi;
+    std::unique_ptr<TTreeReaderValue<double>> phi;
+
     if (fit == 0) {
-        phi(dataReader, "phi13");
+        phi = std::make_unique<TTreeReaderValue<double>>(dataReader, "phi13");
     } else {
-        phi(dataReader, "phi23");
+        phi = std::make_unique<TTreeReaderValue<double>>(dataReader, "phi23");
     }
+
     TTreeReaderValue<double> DepW(dataReader, "DepW");
     TTreeReaderValue<double> DepA(dataReader, "DepA");
     TTreeReaderValue<double> x(dataReader, "x");
@@ -130,11 +132,11 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
 
         if(*branch_var < min_val || *branch_var > max_val) continue;  
         // Skip entries out of range
-        if(*phi < 0 || *phi > 2 * TMath::Pi()) continue;  
+        if(**phi < 0 || **phi > 2 * TMath::Pi()) continue;  
         // Skip entries out of range
 
         int dyn_bin = int((*branch_var - min_val) / ((max_val - min_val) / num_kinematic_bins));
-        int phi_bin = int(*phi / (2 * TMath::Pi() / 12));
+        int phi_bin = int(**phi / (2 * TMath::Pi() / 12));
 
         if(dyn_bin < 0 || dyn_bin >= num_kinematic_bins) continue;  // Skip invalid indices
         if(phi_bin < 0 || phi_bin >= 12) continue;  // Skip invalid indices
