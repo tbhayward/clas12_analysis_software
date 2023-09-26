@@ -68,7 +68,7 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
     TTreeReaderValue<double> phi2(dataReader, "phi2");
     TTreeReaderValue<double> phi3(dataReader, "phi3");
     TTreeReaderValue<double> phi12(dataReader, "phi12");
-    if (int == 0) {
+    if (fit == 0) {
         TTreeReaderValue<double> phi(dataReader, "phi13");
     } else {
         TTreeReaderValue<double> phi(dataReader, "phi23");
