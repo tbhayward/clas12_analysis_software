@@ -337,7 +337,7 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
     aluGraph1.GetYaxis()->SetTitle("F_{LU}^{sin#phi} / F_{UU}");
     aluGraph1.GetXaxis()->SetRangeUser(min_val,max_val);
     aluGraph1.GetXaxis()->SetTitle("M_{h(#pi^{+}p)} (GeV)");
-    aluGraph1.SetTitle("Q^2>1 (GeV^{2}), W>2 (GeV), y < 0.75, #it{M}_{X(ep -> e'#pi^{+}#pi^{-}p[X])} < 0.3 (GeV), 0.65 < #it{M}_{h(#pi^{-}X)} (GeV) < 0.91"); 
+    aluGraph1.SetTitle("Q^{2}>1 (GeV^{2}), W>2 (GeV), y < 0.75, #it{M}_{X(ep -> e'#pi^{+}#pi^{-}p[X])} < 0.3 (GeV), 0.65 < #it{M}_{h(#pi^{-}X)} (GeV) < 0.91"); 
     aluGraph1.GetXaxis()->SetLabelSize(0.05);  // Increase x-axis label size
     aluGraph1.GetYaxis()->SetLabelSize(0.05);  // Increase y-axis label size
     aluGraph1.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
@@ -349,7 +349,7 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
     aluGraph2.GetYaxis()->SetTitle("F_{LU}^{sin#phi} / F_{UU}");
     aluGraph2.GetXaxis()->SetRangeUser(min_val,max_val);
     aluGraph2.GetXaxis()->SetTitle("M_{h(#pi^{-}p)} (GeV)");
-    aluGraph2.SetTitle("Q^2>1 (GeV^{2}), W>2 (GeV), y < 0.75, #it{M}_{X(ep -> e'#pi^{+}#pi^{-}p[X])} < 0.3 (GeV), 0.65 < #it{M}_{h(#pi^{+}X)} < 0.91");  
+    aluGraph2.SetTitle("Q^{2}>1 (GeV^{2}), W>2 (GeV), y < 0.75, #it{M}_{X(ep -> e'#pi^{+}#pi^{-}p[X])} < 0.3 (GeV), 0.65 < #it{M}_{h(#pi^{+}X)} < 0.91");  
     aluGraph2.GetXaxis()->SetLabelSize(0.05);  // Increase x-axis label size
     aluGraph2.GetYaxis()->SetLabelSize(0.05);  // Increase y-axis label size
     aluGraph2.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
