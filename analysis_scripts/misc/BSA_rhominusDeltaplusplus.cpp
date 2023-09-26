@@ -16,6 +16,17 @@
 #include <TTree.h>
 #include <TLorentzVector.h>
 
+// Function to set the style of a canvas and its pads
+void setCanvasStyle(TCanvas &canvas, int nCols, int nRows) {
+    canvas.Divide(nCols, nRows);
+    for (int i = 1; i <= nCols * nRows; ++i) {
+        canvas.cd(i);
+        gPad->SetBottomMargin(0.15);
+        gPad->SetLeftMargin(0.185);
+        gPad->SetRightMargin(0.175);
+    }
+}
+
 std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calculateAndPlotALU(
     TTreeReader &dataReader, const char* branchName, double min_val, double max_val,
     int num_kinematic_bins) {
@@ -229,9 +240,7 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
 
     // Create canvas and set its style
     TCanvas canvas("Asymmetry", "Canvas", 1600, 1000);
-    canvas.Divide(1, 2);
-    canvas.SetLeftMargin(0.2);
-    canvas.SetBottomMargin(0.15);
+    setCanvasStyle(canvas, 1, 2);
 
     // Declare a temporary histogram to get statistics
     TH1F tempHist("bin hist", "", 1000, 1, 2.2);
