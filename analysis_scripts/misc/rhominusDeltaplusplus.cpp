@@ -176,8 +176,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
         Mh3x = (p3 + p_x).M();
 
         // Fill histograms without cuts
-        histMx.Fill(*Mx);
-        histMh12.Fill(*Mh12);  
+        histMx.Fill(*Mx); 
 
         if (*Mx < 0.3) {
         	histMh1x.Fill(Mh1x); 
