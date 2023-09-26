@@ -136,10 +136,10 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     TH1F histMh2x("Mh2x", "", configMh2x.bins, configMh2x.min, configMh2x.max);
 
     HistConfig configMh13 = histConfigs["Mh13"];
-    TH1F histMh1x("Mh13", "", configMh13.bins, configMh13.min, configMh13.max);
+    TH1F histMh13("Mh13", "", configMh13.bins, configMh13.min, configMh13.max);
 
     HistConfig configMh23 = histConfigs["Mh23"];
-    TH1F histMh1x("Mh23", "", configMh23.bins, configMh23.min, configMh23.max);
+    TH1F histMh23("Mh23", "", configMh23.bins, configMh23.min, configMh23.max);
 
 	int counter = 0;
 	while (dataReader.Next()) {
