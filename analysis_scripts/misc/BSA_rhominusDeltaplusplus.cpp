@@ -1,7 +1,6 @@
 // Created 9/25/23
 // get BSA of rho- Delta++ 
 
-#include <TTree.h>
 #include <TCanvas.h>
 #include <TH1F.h>
 #include <TObjArray.h>
@@ -13,6 +12,9 @@
 #include <cstring>
 #include <algorithm>
 #include <cmath>
+#include <TFile.h>
+#include <TTree.h>
+#include <TLorentzVector.h>
 
 std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calculateAndPlotALU(
     TTreeReader &dataReader, const char* branchName, double min_val, double max_val,
