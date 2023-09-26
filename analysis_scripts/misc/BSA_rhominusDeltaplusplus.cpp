@@ -288,8 +288,8 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
     resultMh23 = calculateAndPlotALU(dataReader, "Mh23", min_val, max_val, num_kinematic_bins);
 
     // Extract the average_bin_values
-    std::vector<double> average_bin_values = std::get<2>(resultMh13);
-    std::vector<double> average_bin_values = std::get<2>(resultMh23);
+    std::vector<double> average_bin_values1 = std::get<2>(resultMh13);
+    std::vector<double> average_bin_values2 = std::get<2>(resultMh23);
     TGraphErrors aluGraph1(num_kinematic_bins);
     TGraphErrors aluGraph2(num_kinematic_bins);
 
@@ -298,12 +298,12 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
     for (int dyn_bin = 0; dyn_bin < num_kinematic_bins; ++dyn_bin) {
         if (std::get<0>(resultMh13)[dyn_bin] == 0 ) { continue; }
         // Use average_bin_values instead of bin_center
-        aluGraph1.SetPoint(dyn_bin, average_bin_values[dyn_bin], 
+        aluGraph1.SetPoint(dyn_bin, average_bin_values1[dyn_bin], 
             std::get<0>(resultMh13)[dyn_bin]);
         aluGraph1.SetPointError(dyn_bin, 0, std::get<1>(resultMh13)[dyn_bin]);
     }
 
-    aluGraph1.SetLineColor(kBlue); aluGraph1.SetMarkerColor(kBlack);
+    aluGraph1.SetLineColor(kBlue); aluGraph1.SetMarkerColor(kBlue);
     aluGraph1.SetMarkerStyle(20);
     aluGraph1.SetMarkerSize(1.1);
 
