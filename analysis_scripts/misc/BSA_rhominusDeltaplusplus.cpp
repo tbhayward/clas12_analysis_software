@@ -324,27 +324,27 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
 
     canvas.cd(1);
     aluGraph1.Draw("AP");
-    aluGraph1.GetYaxis()->SetRangeUser(-0.10, 0.05);
+    aluGraph1.GetYaxis()->SetRangeUser(-0.06, 0.06);
     aluGraph1.GetYaxis()->SetTitle("F_{LU}^{sin#phi} / F_{UU}");
     aluGraph1.GetXaxis()->SetRangeUser(min_val,max_val);
     aluGraph1.GetXaxis()->SetTitle("#it{M}_{h(#pi^{+}p)} (GeV)");
     aluGraph1.SetTitle("");  // Remove title
-    aluGraph1.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
-    aluGraph1.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
-    aluGraph1.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
-    aluGraph1.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
+    aluGraph1.GetXaxis()->SetLabelSize(0.05);  // Increase x-axis label size
+    aluGraph1.GetYaxis()->SetLabelSize(0.05);  // Increase y-axis label size
+    aluGraph1.GetXaxis()->SetTitleSize(0.06);  // Increase x-axis title size
+    aluGraph1.GetYaxis()->SetTitleSize(0.06);  // Increase y-axis title size
 
     canvas.cd(2);
     aluGraph2.Draw("AP");
-    aluGraph2.GetYaxis()->SetRangeUser(-0.10, 0.05);
+    aluGraph2.GetYaxis()->SetRangeUser(-0.06, 0.06);
     aluGraph2.GetYaxis()->SetTitle("F_{LU}^{sin#phi} / F_{UU}");
     aluGraph2.GetXaxis()->SetRangeUser(min_val,max_val);
     aluGraph2.GetXaxis()->SetTitle("#it{M}_{h(#pi^{-}p)} (GeV)");
     aluGraph2.SetTitle("");  // Remove title
-    aluGraph2.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
-    aluGraph2.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
-    aluGraph2.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
-    aluGraph2.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
+    aluGraph2.GetXaxis()->SetLabelSize(0.05);  // Increase x-axis label size
+    aluGraph2.GetYaxis()->SetLabelSize(0.05);  // Increase y-axis label size
+    aluGraph2.GetXaxis()->SetTitleSize(0.06);  // Increase x-axis title size
+    aluGraph2.GetYaxis()->SetTitleSize(0.06);  // Increase y-axis title size
     
 
     // Save the canvas
