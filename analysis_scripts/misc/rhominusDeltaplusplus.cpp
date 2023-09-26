@@ -126,25 +126,17 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     TCanvas test_canvas("Cuts Test", "Canvas", 1600, 1000);
     setCanvasStyle(test_canvas, 3, 2);
 
-    // 1D histograms
-    HistConfig configMh13 = histConfigs["Mh13"];
-    TH1F histMh13("Mh13", "", configMh13.bins, configMh13.min, configMh13.max);
-    TH1F histMh13_cuts("Mh13, cuts", "", configMh13.bins, configMh13.min, configMh13.max);
-    //
-    HistConfig configMh2x = histConfigs["Mh2x"];
-    TH1F histMh2x("Mh2x", "", configMh2x.bins, configMh2x.min, configMh2x.max);
-    TH1F histMh2x_cuts("Mh2x, cuts", "", configMh2x.bins, configMh2x.min, configMh2x.max);
-    //
     HistConfig configMx = histConfigs["Mx"];
     TH1F histMx("Mx", "", configMx.bins, configMx.min, configMx.max);
 
-    ////////////////////////////////////////
-    // test histograms
     HistConfig configMh12 = histConfigs["Mh12"];
     TH1F histMh12("Mh12", "", configMh12.bins, configMh12.min, configMh12.max);
 
     HistConfig configMh1x = histConfigs["Mh1x"];
     TH1F histMh1x("Mh1x", "", configMh1x.bins, configMh1x.min, configMh1x.max);
+
+    HistConfig configMh2x = histConfigs["Mh2x"];
+    TH1F histMh2x("Mh2x", "", configMh2x.bins, configMh2x.min, configMh2x.max);
 
 
 
@@ -184,16 +176,12 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 
         // Fill histograms without cuts
         histMx.Fill(*Mx);
-        histMh12.Fill(*Mh12);
-        histMh13.Fill(*Mh13); histMh2x.Fill(Mh2x);  
+        histMh12.Fill(*Mh12);  
 
+        if (*Mx < 0.3) {
+        	histMh1x.Fill(Mh1x); 
 
-        if (*Mx < 0.30) {
-        	histMh13_cuts.Fill(*Mh13); 
-
-        	histMh2x_cuts.Fill(Mh2x);
-
-        	histMh1x.Fill(Mh1x);
+        	histMh2x.Fill(Mh2x); 
         }
 
 	}
@@ -210,22 +198,14 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMh12.Draw(); // Draw Mh12 in second pad
     //
     canvas.cd(3);
-    setHistStyle(&histMh2x, "#it{M}_{h(#pi^{-}X)} (GeV)", "Counts");
-    histMh2x.Draw(); // Draw Mh2x in second pad
+    setHistStyle(&histMh1x, "#it{M}_{h(#pi^{+}X)} (GeV)", "Counts");
+    histMh1x.Draw(); // Draw Mh1x in second pad
+    histMh1x.SetTitle("#it{M}_{X(ep -> e'#pi^{+}#pi^{-}p[X])} < 0.3 GeV");
     //
     canvas.cd(4);
-    setHistStyle(&histMh13, "#it{M}_{h(#pi^{+}p)} (GeV)", "Counts");
-    histMh13.Draw(); // Draw Mh13 in first pad
-    //
-    canvas.cd(5);
-    histMh13_cuts.SetTitle("#it{M}_{X} < 0.3 GeV");
-    setHistStyle(&histMh13_cuts, "#it{M}_{h(#pi^{+}p)} (GeV)", "Counts");
-    histMh13_cuts.Draw(); // Draw Mh13_cuts in fourth pad
-    //
-    canvas.cd(6);
-    setHistStyle(&histMh2x_cuts, "#it{M}_{h(#pi^{-}X)} (GeV)", "Counts");
-    histMh2x_cuts.SetTitle("#it{M}_{X} < 0.3 GeV");
-    histMh2x_cuts.Draw(); // Draw Mh2x_cuts in fifth pad
+    setHistStyle(&histMh2x, "#it{M}_{h(#pi^{-}X)} (GeV)", "Counts");
+    histMh2x.Draw(); // Draw Mh2x in second pad
+    histMh2x.SetTitle("#it{M}_{X(ep -> e'#pi^{+}#pi^{-}p[X])} < 0.3 GeV");
     //
 	
 	// Save the canvas
