@@ -207,7 +207,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     //
     canvas.cd(2);
     setHistStyle(&histMh12, "#it{M}_{h(#pi^{+}#pi^{-})} (GeV)", "Counts");
-    histMh2x.Draw(); // Draw Mh2x in second pad
+    histMh12.Draw(); // Draw Mh12 in second pad
     //
     canvas.cd(3);
     setHistStyle(&histMh2x, "#it{M}_{h(#pi^{-}X)} (GeV)", "Counts");
