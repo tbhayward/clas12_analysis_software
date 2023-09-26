@@ -329,7 +329,8 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
     aluGraph1.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
     aluGraph1.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
     aluGraph1.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
-    aluGraph2.Draw("APsame");
+    aluGraph2.Draw("Psame");
+    aluGraph2.SetTitle("");  // Remove title
 
     // Save the canvas
     canvas.SaveAs("output/BSA_rhominusDeltaplusplus.png");
