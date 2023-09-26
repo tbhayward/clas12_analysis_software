@@ -61,8 +61,8 @@ std::map<std::string, HistConfig> histConfigs = {
     {"Mh12", {500, 0.00, 2.00}},
     {"Mh1x", {500, 0.00, 2.00}},
     {"Mh2x", {500, 0.00, 2.00}},
-    {"Mh13", {500, 1.00, 2.00}},
-    {"Mh23", {500, 1.00, 3.00}},
+    {"Mh13", {250, 1.00, 2.25}},
+    {"Mh23", {250, 1.00, 2.25}},
     {"Mh1x", {500, 0.00, 2.50}},
     {"Mh2x", {500, 0.00, 2.50}},
     {"Mh3x", {500, 0.00, 2.50}},
@@ -204,23 +204,23 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     canvas.cd(2);
     setHistStyle(&histMh1x, "#it{M}_{h(#pi^{+}X)} (GeV)", "Counts");
     histMh1x.Draw(); // Draw Mh1x in second pad
-    histMh1x.SetTitle("#it{M}_{X} < 0.3 GeV");
+    histMh1x.SetTitle("#it{M}_{X} < 0.3");
     //
     canvas.cd(3);
     setHistStyle(&histMh2x, "#it{M}_{h(#pi^{-}X)} (GeV)", "Counts");
     histMh2x.Draw(); // Draw Mh2x in third pad
-    histMh2x.SetTitle("#it{M}_{X} < 0.3 GeV");
+    histMh2x.SetTitle("#it{M}_{X} < 0.3");
     //
     //
     canvas.cd(5);
     setHistStyle(&histMh23, "#it{M}_{h(#pi^{-}p)} (GeV)", "Counts");
     histMh23.Draw(); // Draw Mh23 in fifth pad
-    histMh23.SetTitle("#it{M}_{X} < 0.3 GeV, 0.65 < #it{M}_{h(#pi^{+}X)} < 0.91");
+    histMh23.SetTitle("#it{M}_{X} < 0.3, 0.65 < #it{M}_{h(#pi^{+}X)} < 0.91");
     //
     canvas.cd(6);
     setHistStyle(&histMh13, "#it{M}_{h(#pi^{}p)} (GeV)", "Counts");
     histMh13.Draw(); // Draw Mh13 in fifth pad
-    histMh13.SetTitle("#it{M}_{X} < 0.3 GeV, 0.65 < #it{M}_{h(#pi^{-}X)} < 0.91");
+    histMh13.SetTitle("#it{M}_{X} < 0.3, 0.65 < #it{M}_{h(#pi^{-}X)} < 0.91");
     //
 	
 	// Save the canvas
