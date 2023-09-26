@@ -129,16 +129,17 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     HistConfig configMx = histConfigs["Mx"];
     TH1F histMx("Mx", "", configMx.bins, configMx.min, configMx.max);
 
-    HistConfig configMh12 = histConfigs["Mh12"];
-    TH1F histMh12("Mh12", "", configMh12.bins, configMh12.min, configMh12.max);
-
     HistConfig configMh1x = histConfigs["Mh1x"];
     TH1F histMh1x("Mh1x", "", configMh1x.bins, configMh1x.min, configMh1x.max);
 
     HistConfig configMh2x = histConfigs["Mh2x"];
     TH1F histMh2x("Mh2x", "", configMh2x.bins, configMh2x.min, configMh2x.max);
 
+    HistConfig configMh13 = histConfigs["Mh13"];
+    TH1F histMh1x("Mh13", "", configMh13.bins, configMh13.min, configMh13.max);
 
+    HistConfig configMh23 = histConfigs["Mh23"];
+    TH1F histMh1x("Mh23", "", configMh23.bins, configMh23.min, configMh23.max);
 
 	int counter = 0;
 	while (dataReader.Next()) {
@@ -182,6 +183,14 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
         	histMh1x.Fill(Mh1x); 
 
         	histMh2x.Fill(Mh2x); 
+
+        	if (Mh1x > (0.775 - 0.13) && Mh1x < (0.775 + 0.13)) {
+        		/* code */
+        	}
+
+        	if (Mh2x > (0.775 - 0.13) && Mh2x < (0.775 + 0.13)) {
+        		/* code */
+        	}
         }
 
 	}
@@ -194,18 +203,14 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMx.Draw(); // Draw Mx in third pad
     //
     canvas.cd(2);
-    setHistStyle(&histMh12, "#it{M}_{h(#pi^{+}#pi^{-})} (GeV)", "Counts");
-    histMh12.Draw(); // Draw Mh12 in second pad
-    //
-    canvas.cd(3);
     setHistStyle(&histMh1x, "#it{M}_{h(#pi^{+}X)} (GeV)", "Counts");
     histMh1x.Draw(); // Draw Mh1x in second pad
-    histMh1x.SetTitle("#it{M}_{X(ep -> e'#pi^{+}#pi^{-}p[X])} < 0.3 GeV");
+    histMh1x.SetTitle("#it{M}_{X} < 0.3 GeV");
     //
-    canvas.cd(4);
+    canvas.cd(3);
     setHistStyle(&histMh2x, "#it{M}_{h(#pi^{-}X)} (GeV)", "Counts");
     histMh2x.Draw(); // Draw Mh2x in second pad
-    histMh2x.SetTitle("#it{M}_{X(ep -> e'#pi^{+}#pi^{-}p[X])} < 0.3 GeV");
+    histMh2x.SetTitle("#it{M}_{X} < 0.3 GeV");
     //
 	
 	// Save the canvas
