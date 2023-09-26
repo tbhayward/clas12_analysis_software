@@ -122,10 +122,6 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     TCanvas canvas("Invariant Masses", "Canvas", 1600, 1000);
     setCanvasStyle(canvas, 3, 2);
 
-	// Create test canvas and set its style
-    TCanvas test_canvas("Cuts Test", "Canvas", 1600, 1000);
-    setCanvasStyle(test_canvas, 3, 2);
-
     HistConfig configMx = histConfigs["Mx"];
     TH1F histMx("Mx", "", configMx.bins, configMx.min, configMx.max);
 
@@ -218,7 +214,7 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     histMh23.SetTitle("#it{M}_{X} < 0.3, 0.65 < #it{M}_{h(#pi^{+}X)} < 0.91");
     //
     canvas.cd(6);
-    setHistStyle(&histMh13, "#it{M}_{h(#pi^{}p)} (GeV)", "Counts");
+    setHistStyle(&histMh13, "#it{M}_{h(#pi^{+}p)} (GeV)", "Counts");
     histMh13.Draw(); // Draw Mh13 in fifth pad
     histMh13.SetTitle("#it{M}_{X} < 0.3, 0.65 < #it{M}_{h(#pi^{-}X)} < 0.91");
     //
