@@ -229,7 +229,7 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
 
     // Create canvas and set its style
     TCanvas canvas("Asymmetry", "Canvas", 1600, 1000);
-    setCanvasStyle(canvas, 2, 1);
+    canvas.Divide(1, 2);
     canvas.SetLeftMargin(0.2);
     canvas.SetBottomMargin(0.15);
 
