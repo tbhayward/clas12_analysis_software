@@ -236,7 +236,7 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
     int counter = 0;
     while (dataReader.Next()) {
         counter++;
-        if (counter > 1000000) { break; }
+        if (counter > 100000) { break; }
         if (*Mx < 0 || *Mx12 < 0 || *Mx13 < 0 || *Mx23 < 0) { continue; }
         if (*Mx > 0.30) { continue; }
         // Create 4-momentum vectors for final state particles
@@ -283,7 +283,7 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
 
     std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> resultMh13;
     std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> resultMh23;
-    int num_kinematic_bins = 25;
+    int num_kinematic_bins = 20;
     resultMh13 = calculateAndPlotALU(dataReader, "Mh13", min_val, max_val, num_kinematic_bins);
     dataReader.Restart();  // Reset the TTreeReader at the end of the function
     resultMh23 = calculateAndPlotALU(dataReader, "Mh23", min_val, max_val, num_kinematic_bins);
@@ -320,7 +320,7 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
     aluGraph2.SetMarkerSize(1.1);
 
     aluGraph1.Draw("AP");
-    aluGraph1.GetYaxis()->SetRangeUser(-0.10, 0.10);
+    aluGraph1.GetYaxis()->SetRangeUser(-0.10, 0.05);
     aluGraph1.GetYaxis()->SetTitle("F_{LU}^{sin#phi} / F_{UU}");
     aluGraph1.GetXaxis()->SetRangeUser(min_val,max_val);
     aluGraph1.GetXaxis()->SetTitle("M_{h} (GeV)");
