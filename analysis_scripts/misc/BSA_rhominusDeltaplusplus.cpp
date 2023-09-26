@@ -303,21 +303,33 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
             std::get<0>(resultMh13)[dyn_bin]);
         aluGraph1.SetPointError(dyn_bin, 0, std::get<1>(resultMh13)[dyn_bin]);
     }
+    for (int dyn_bin = 0; dyn_bin < num_kinematic_bins; ++dyn_bin) {
+        if (std::get<0>(resultMh23)[dyn_bin] == 0 ) { continue; }
+        // Use average_bin_values instead of bin_center
+        aluGraph2.SetPoint(dyn_bin, average_bin_values2[dyn_bin], 
+            std::get<0>(resultMh23)[dyn_bin]);
+        aluGraph2.SetPointError(dyn_bin, 0, std::get<1>(resultMh23)[dyn_bin]);
+    }
 
     aluGraph1.SetLineColor(kBlue); aluGraph1.SetMarkerColor(kBlue);
     aluGraph1.SetMarkerStyle(20);
     aluGraph1.SetMarkerSize(1.1);
 
+    aluGraph2.SetLineColor(kRed); aluGraph2.SetMarkerColor(kRed);
+    aluGraph2.SetMarkerStyle(20);
+    aluGraph2.SetMarkerSize(1.1);
+
     aluGraph1.Draw("AP");
-    aluGraph1.GetYaxis()->SetRangeUser(-0.15, 0.10);
+    aluGraph1.GetYaxis()->SetRangeUser(-0.10, 0.10);
     aluGraph1.GetYaxis()->SetTitle("F_{LU}^{sin#phi} / F_{UU}");
     aluGraph1.GetXaxis()->SetRangeUser(min_val,max_val);
-    aluGraph1.GetXaxis()->SetTitle("M_{#pi^{+}p} (GeV)");
+    aluGraph1.GetXaxis()->SetTitle("M_{h} (GeV)");
     aluGraph1.SetTitle("");  // Remove title
     aluGraph1.GetXaxis()->SetLabelSize(0.04);  // Increase x-axis label size
     aluGraph1.GetYaxis()->SetLabelSize(0.04);  // Increase y-axis label size
     aluGraph1.GetXaxis()->SetTitleSize(0.05);  // Increase x-axis title size
     aluGraph1.GetYaxis()->SetTitleSize(0.05);  // Increase y-axis title size
+    aluGraph2.Draw("APsame");
 
     // Save the canvas
     canvas.SaveAs("output/BSA_rhominusDeltaplusplus.png");
