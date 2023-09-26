@@ -299,9 +299,9 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
     std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> resultMh13;
     std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> resultMh23;
     int num_kinematic_bins = 20;
-    resultMh13 = calculateAndPlotALU(dataReader, "Mh13", min_val, max_val, num_kinematic_bins);
+    resultMh13 = calculateAndPlotALU(dataReader, "Mh13", min_val, max_val, num_kinematic_bins, 0);
     dataReader.Restart();  // Reset the TTreeReader at the end of the function
-    resultMh23 = calculateAndPlotALU(dataReader, "Mh23", min_val, max_val, num_kinematic_bins);
+    resultMh23 = calculateAndPlotALU(dataReader, "Mh23", min_val, max_val, num_kinematic_bins, 1);
 
     // Extract the average_bin_values
     std::vector<double> average_bin_values1 = std::get<2>(resultMh13);
