@@ -29,7 +29,7 @@ void setCanvasStyle(TCanvas &canvas, int nCols, int nRows) {
 
 std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calculateAndPlotALU(
     TTreeReader &dataReader, const char* branchName, double min_val, double max_val,
-    int num_kinematic_bins) {
+    int num_kinematic_bins, int fit) {
 
     std::vector<double> ALU_values;
     std::vector<double> ALU_errors;
@@ -68,8 +68,11 @@ std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> calcul
     TTreeReaderValue<double> phi2(dataReader, "phi2");
     TTreeReaderValue<double> phi3(dataReader, "phi3");
     TTreeReaderValue<double> phi12(dataReader, "phi12");
-    TTreeReaderValue<double> phi(dataReader, "phi13");
-    TTreeReaderValue<double> phi23(dataReader, "phi23");
+    if (int == 0) {
+        TTreeReaderValue<double> phi(dataReader, "phi13");
+    } else {
+        TTreeReaderValue<double> phi(dataReader, "phi23");
+    }
     TTreeReaderValue<double> DepW(dataReader, "DepW");
     TTreeReaderValue<double> DepA(dataReader, "DepA");
     TTreeReaderValue<double> x(dataReader, "x");
