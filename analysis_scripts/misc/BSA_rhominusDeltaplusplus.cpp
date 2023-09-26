@@ -236,7 +236,7 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
     int counter = 0;
     while (dataReader.Next()) {
         counter++;
-        if (counter > 100000) { break; }
+        if (counter > 1000000) { break; }
         if (*Mx < 0 || *Mx12 < 0 || *Mx13 < 0 || *Mx23 < 0) { continue; }
         if (*Mx > 0.30) { continue; }
         // Create 4-momentum vectors for final state particles
@@ -264,8 +264,7 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
         Mh2x = (p2 + p_x).M();
         Mh3x = (p3 + p_x).M();
 
-        if (Mh2x < 0.6 || Mh2x > 0.9) { continue; }
-        tempHist.Fill(*Mh13);
+        if (Mh2x > (0.775 - 0.13) && Mh2x < (0.775 + 0.13)) { tempHist.Fill(*Mh13); }
     }
     dataReader.Restart();  // Reset the TTreeReader at the end of the function
 
@@ -284,10 +283,10 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
 
     std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> result;
     int num_kinematic_bins = 30;
-    result = calculateAndPlotALU(dataReader, "Mh13", min_val, max_val, num_kinematic_bins);
+    resultMh13 = calculateAndPlotALU(dataReader, "Mh13", min_val, max_val, num_kinematic_bins);
 
     // Extract the average_bin_values
-    std::vector<double> average_bin_values = std::get<2>(result);
+    std::vector<double> average_bin_values = std::get<2>(resultMh13);
     TGraphErrors aluGraph(num_kinematic_bins);
 
     double offset = 0.1 * ((max_val - min_val) / num_kinematic_bins);  // 10% of bin width
@@ -295,11 +294,11 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
     // (This part can be put into a loop or function for efficiency)
 
     for (int dyn_bin = 0; dyn_bin < num_kinematic_bins; ++dyn_bin) {
-        if (std::get<0>(result)[dyn_bin] == 0 ) { continue; }
+        if (std::get<0>(resultMh13)[dyn_bin] == 0 ) { continue; }
         // Use average_bin_values instead of bin_center
         aluGraph.SetPoint(dyn_bin, average_bin_values[dyn_bin], 
-            std::get<0>(result)[dyn_bin]);
-        aluGraph.SetPointError(dyn_bin, 0, std::get<1>(result)[dyn_bin]);
+            std::get<0>(resultMh13)[dyn_bin]);
+        aluGraph.SetPointError(dyn_bin, 0, std::get<1>(resultMh13)[dyn_bin]);
     }
 
     aluGraph.SetLineColor(kBlack); aluGraph.SetMarkerColor(kBlack);
