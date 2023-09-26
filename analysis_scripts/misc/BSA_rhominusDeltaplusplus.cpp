@@ -22,8 +22,8 @@ void setCanvasStyle(TCanvas &canvas, int nCols, int nRows) {
     for (int i = 1; i <= nCols * nRows; ++i) {
         canvas.cd(i);
         gPad->SetBottomMargin(0.15);
-        gPad->SetLeftMargin(0.185);
-        gPad->SetRightMargin(0.175);
+        gPad->SetLeftMargin(0.15);
+        gPad->SetRightMargin(0.12);
     }
 }
 
@@ -340,8 +340,8 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
     aluGraph1.SetTitle("");  // Remove title
     aluGraph1.GetXaxis()->SetLabelSize(0.05);  // Increase x-axis label size
     aluGraph1.GetYaxis()->SetLabelSize(0.05);  // Increase y-axis label size
-    aluGraph1.GetXaxis()->SetTitleSize(0.06);  // Increase x-axis title size
-    aluGraph1.GetYaxis()->SetTitleSize(0.06);  // Increase y-axis title size
+    aluGraph1.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
+    aluGraph1.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
 
     canvas.cd(2);
     aluGraph2.Draw("AP");
@@ -352,8 +352,8 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
     aluGraph2.SetTitle("");  // Remove title
     aluGraph2.GetXaxis()->SetLabelSize(0.05);  // Increase x-axis label size
     aluGraph2.GetYaxis()->SetLabelSize(0.05);  // Increase y-axis label size
-    aluGraph2.GetXaxis()->SetTitleSize(0.06);  // Increase x-axis title size
-    aluGraph2.GetYaxis()->SetTitleSize(0.06);  // Increase y-axis title size
+    aluGraph2.GetXaxis()->SetTitleSize(0.07);  // Increase x-axis title size
+    aluGraph2.GetYaxis()->SetTitleSize(0.07);  // Increase y-axis title size
     
 
     // Save the canvas
