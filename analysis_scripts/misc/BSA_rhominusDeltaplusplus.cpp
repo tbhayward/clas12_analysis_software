@@ -339,7 +339,7 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
 
     canvas.cd(1);
     aluGraph1.Draw("AP");
-    aluGraph1.GetYaxis()->SetRangeUser(-0.06, 0.06);
+    aluGraph1.GetYaxis()->SetRangeUser(-0.1, 0.1);
     aluGraph1.GetYaxis()->SetTitle("F_{LU}^{sin#phi} / F_{UU}");
     aluGraph1.GetXaxis()->SetRangeUser(min_val,max_val);
     aluGraph1.GetXaxis()->SetTitle("M_{h(#pi^{+}p)} (GeV)");
@@ -351,7 +351,7 @@ void createBSAPlot(TTreeReader &dataReader, const char* outDir) {
 
     canvas.cd(2);
     aluGraph2.Draw("AP");
-    aluGraph2.GetYaxis()->SetRangeUser(-0.06, 0.06);
+    aluGraph2.GetYaxis()->SetRangeUser(-0.1, 0.1);
     aluGraph2.GetYaxis()->SetTitle("F_{LU}^{sin#phi} / F_{UU}");
     aluGraph2.GetXaxis()->SetRangeUser(min_val,max_val);
     aluGraph2.GetXaxis()->SetTitle("M_{h(#pi^{-}p)} (GeV)");
