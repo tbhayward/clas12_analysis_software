@@ -63,6 +63,7 @@ std::map<std::string, HistConfig> histConfigs = {
     {"Mh2x", {500, 0.00, 2.00}},
     {"Mh13", {250, 1.00, 2.25}},
     {"Mh23", {250, 1.00, 2.25}},
+    {"Mh12x", {250, 0.00, 2.00}},
     {"Mh1x", {500, 0.00, 2.50}},
     {"Mh2x", {500, 0.00, 2.50}},
     {"Mh3x", {500, 0.00, 2.50}},
@@ -137,6 +138,9 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     HistConfig configMh23 = histConfigs["Mh23"];
     TH1F histMh23("Mh23", "", configMh23.bins, configMh23.min, configMh23.max);
 
+    HistConfig configMh12x = histConfigs["Mh12x"];
+    TH1F histMh12x("Mh12x", "", configMh12x.bins, configMh12x.min, configMh12x.max);
+
 	int counter = 0;
 	while (dataReader.Next()) {
 		counter++;
@@ -170,6 +174,8 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
         Mh1x = (p1 + p_x).M();
         Mh2x = (p2 + p_x).M();
         Mh3x = (p3 + p_x).M();
+        Mh12x = (p1 + p2 + p_x).M();
+
 
         // Fill histograms without cuts
         histMx.Fill(*Mx); 
@@ -181,6 +187,8 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
 
         	if (Mh1x > (0.775 - 0.13) && Mh1x < (0.775 + 0.13)) {
         		histMh23.Fill(*Mh23);
+
+        		histMh12x.Fill(Mh12x);
         	}
 
         	if (Mh2x > (0.775 - 0.13) && Mh2x < (0.775 + 0.13)) {
@@ -206,6 +214,11 @@ void createHistograms(TTreeReader &dataReader, const char* outDir) {
     setHistStyle(&histMh2x, "#it{M}_{h(#pi^{-}X)} (GeV)", "Counts");
     histMh2x.Draw(); // Draw Mh2x in third pad
     histMh2x.SetTitle("#it{M}_{X} < 0.3");
+    //
+    canvas.cd(4);
+    setHistStyle(&histMh12x, "#it{M}_{h(#pi^{+}#pi^{-}X)} (GeV)", "Counts");
+    histMh12x.Draw(); // Draw Mh12x in third pad
+    histMh12x.SetTitle("#it{M}_{X} < 0.3, 0.65 < #it{M}_{h(#pi^{+}X)} < 0.91");
     //
     //
     canvas.cd(5);
