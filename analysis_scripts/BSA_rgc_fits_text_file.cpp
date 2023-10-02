@@ -622,10 +622,10 @@ void performMLMFits(const char *filename, const char* output_file, const char* k
   // Determine the number of bins
   size_t numBins = allBins[currentFits].size() - 1;
 
-  // Initialize TMinuit with 3 parameters 
+  // Initialize TMinuit
   double arglist[10]; arglist[0] = 1;
   int ierflg = 0;
-  TMinuit minuit(7);
+  TMinuit minuit(7); // parameter numbers
   minuit.SetPrintLevel(-1);
   minuit.SetFCN(negLogLikelihood);
 
