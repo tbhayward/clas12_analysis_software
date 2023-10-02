@@ -627,6 +627,9 @@ void performMLMFits(const char *filename, const char* output_file, const char* k
   int ierflg = 0;
   TMinuit minuit(7); // parameter numbers
   minuit.SetPrintLevel(-1);
+  minuit.SetErrorDef(0.5); // error definition for MLE, 1 for chi2
+  // This is due to the fact that −logL = chi2/2. 
+  // The default value of ErrorDef=1 corresponds to one standard deviation for chi2 function.
   minuit.SetFCN(negLogLikelihood);
 
   // Declare string streams for storing the MLM fit results
