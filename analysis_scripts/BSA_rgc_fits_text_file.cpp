@@ -534,7 +534,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           // Increment the event count
           N += 1;
 
-          // Extract Delta_phi and polarization (pol) from the event data
+          // Extract phi and polarization (pol) from the event data
           float phi = event.data.at("phi");
           float Pb = event.data.at("pol");
           float Pt = std::abs(event.data.at("target_pol"));
