@@ -675,6 +675,9 @@ void performMLMFits(const char *filename, const char* output_file, const char* k
 
     // Minimize the negative log-likelihood function
     minuit.Migrad(); cout << endl;
+    // minuit.mnexcm("MINImize",arglist,1,ierflg);
+    // minuit.mnexcm("MINOS",arglist,1,ierflg); // running MINOS and HESSE recommended
+    // minuit.mnexcm("HESSE",arglist,0,ierflg);
 
     // Extract the fitted parameter values and errors
     double ALU_sinphi, ALU_sinphi_error;
