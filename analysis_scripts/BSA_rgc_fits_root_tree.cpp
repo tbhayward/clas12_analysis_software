@@ -704,6 +704,8 @@ TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int b
   }
   dataReader.Restart();  // Reset the TTreeReader at the end of the function
 
+  cout << histPosPos.getMean() << " " << histPosNeg.getMean() << " " << histNegPos.getMean() << " " << histNegNeg.getMean() << endl;
+
   // Calculate the mean polarization
   double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
   double meanPol = sumPol / numEvents; // mean beam polarization for data 
