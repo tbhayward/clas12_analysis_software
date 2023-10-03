@@ -1018,7 +1018,7 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
   // outputFile << chi2FitsCStream.str() << std::endl;
   // outputFile << chi2FitsDStream.str() << std::endl;
   // if (asymmetry_index==1) { outputFile << chi2FitsEStream.str() << std::endl; }
-  outputFile.close();
+  // outputFile.close();
 
   meanVariablesStream << "\\end{tabular}\n";
   meanVariablesStream << "\\caption{The mean kinematic variables in each of the bins ";
