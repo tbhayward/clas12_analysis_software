@@ -640,6 +640,7 @@ double DSA_funcToFit(double* x, double* par) {
 TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int binIndex, 
   const std::string& prefix, int asymmetry_index, const char* output_file) {
   std::ofstream outputFile(output_file, std::ios_base::app);
+  std::ostringstream debugstream;
   // Determine the variable range for the specified bin
   double varMin = allBins[currentFits][binIndex];
   double varMax = allBins[currentFits][binIndex + 1];
@@ -756,7 +757,6 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
 
   // Initialize string streams to store the results for each bin
   std::ostringstream chi2FitsAStream, chi2FitsBStream, chi2FitsCStream;
-  std::ostringstream debugstream;
   // std::ostringstream chi2FitsDStream, chi2FitsEStream;
 
   // Initialize string streams to store the mean variables for each bin
