@@ -833,7 +833,7 @@ float asymmetry_error_calculation(float currentVariable, const std::string& pref
 
 TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* histName,
   int binIndex, const std::string& prefix, int asymmetry_index) {
-
+  std::ofstream outputFile(output_file, std::ios_base::app);
   // Determine the variable range for the specified bin
   float varMin = allBins[currentFits][binIndex];
   float varMax = allBins[currentFits][binIndex + 1];
@@ -872,6 +872,11 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
         histNegNeg->Fill(event.data.at("phi"));
       }
 
+      debugstream << runnum << " " << evnum << " " << Mx << " " << xF << endl;
+      outputFile << debugstream.str();
+      debugstream.str("");  // Clear the content
+      debugstream.clear();  // Clear any error flags
+
       // Accumulate polarization and event count for mean polarization calculation
       sumPol += event.data.at("pol");
       if (event.data.at("target_pol") > 0) {
@@ -884,6 +889,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
       numEvents++;
     }
   }
+  outputFile.close();
   // Calculate the mean polarization
   float meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
   float meanPol = sumPol / numEvents; // mean beam polarization for data 
@@ -1077,7 +1083,6 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
   // Initialize string streams to store the results for each bin
   std::ostringstream chi2FitsAStream, chi2FitsBStream, chi2FitsCStream;
   std::ostringstream debugstream;
-  std::ofstream outputFile(output_file, std::ios_base::app);
   // std::ostringstream chi2FitsDStream, chi2FitsEStream;
 
   // Initialize string streams to store the mean variables for each bin
@@ -1183,11 +1188,6 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
           int evnum = event.data.at("evnum");
           double Mx = event.data.at("Mx");
           double xF = event.data.at("xF");
-
-          debugstream << runnum << " " << evnum << " " << Mx << " " << xF << endl;
-          outputFile << debugstream.str();
-          debugstream.str("");  // Clear the content
-          debugstream.clear();  // Clear any error flags
 
           numEvents += 1;
           counter++;
@@ -1317,7 +1317,7 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
   chi2FitsAStream << "};";  chi2FitsBStream << "};";  chi2FitsCStream << "};"; 
   // chi2FitsDStream << "};";  chi2FitsEStream << "};"; 
 
-  
+  // std::ofstream outputFile(output_file, std::ios_base::app);
   // outputFile << chi2FitsAStream.str() << std::endl;
   // outputFile << chi2FitsBStream.str() << std::endl;
   // if (asymmetry_index==1) { outputFile << chi2FitsCStream.str() << std::endl; }
@@ -1325,7 +1325,7 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
   // outputFile << chi2FitsCStream.str() << std::endl;
   // outputFile << chi2FitsDStream.str() << std::endl;
   // if (asymmetry_index==1) { outputFile << chi2FitsEStream.str() << std::endl; }
-  outputFile.close();
+  // outputFile.close();
 
   meanVariablesStream << "\\end{tabular}\n";
   meanVariablesStream << "\\caption{The mean kinematic variables in each of the bins ";
