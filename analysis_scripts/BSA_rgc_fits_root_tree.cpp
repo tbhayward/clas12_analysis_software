@@ -710,6 +710,7 @@ TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int b
   double Ptm = - sumTargetNegPol / numEventsNegTarget;// mean negative target polarization for data
   // the negative sign here is correct; RGC lists the polarizations with signs to tell which is 
   // which but the polarization really should just be "percent of polarized nucleii"
+  cout << endl;
   cout << numEvents << " " << sumVariable << " " << meanVariable << endl;
   cout << numEvents << " " << sumPol << " " << meanPol << endl;
   cout << numEvents << " " << " " << numEventsPosTarget << " " << sumTargetPosPol << " " << Ptp << endl;

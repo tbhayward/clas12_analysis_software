@@ -873,6 +873,10 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
 
       // Accumulate polarization and event count for mean polarization calculation
       sumPol += event.data.at("pol");
+      if (event.data.at("pol") != 0.83534)
+      {
+        cout << "What the hell " << event.data.at("pol") << endl;
+      }
       if (event.data.at("target_pol") > 0) {
         sumTargetPosPol+=event.data.at("target_pol");
         numEventsPosTarget++;
@@ -891,11 +895,12 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   float Ptm = - sumTargetNegPol / numEventsNegTarget;// mean negative target polarization for data
   // the negative sign here is correct; RGC lists the polarizations with signs to tell which is 
   // which but the polarization really should just be "percent of polarized nucleii"
+  cout << endl;
   cout << numEvents << " " << sumVariable << " " << meanVariable << endl;
   cout << numEvents << " " << sumPol << " " << meanPol << endl;
   cout << numEvents << " " << " " << numEventsPosTarget << " " << sumTargetPosPol << " " << Ptp << endl;
   cout << numEvents << " " << " " << numEventsNegTarget << " " << sumTargetNegPol << " " << Ptm << endl;
- 
+
 
   // Create the asymmetry histogram
   int numBins = histPosPos->GetNbinsX();
