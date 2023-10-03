@@ -746,6 +746,7 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
 
   // Initialize string streams to store the results for each bin
   std::ostringstream chi2FitsAStream, chi2FitsBStream, chi2FitsCStream;
+  std::debugstream;
   // std::ostringstream chi2FitsDStream, chi2FitsEStream;
 
   // Initialize string streams to store the mean variables for each bin
@@ -843,9 +844,9 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
     int counter = 0;
     KinematicCuts kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
     while (dataReader.Next()) {
-      // if (counter > 100000) {
-      //   break;
-      // }
+      if (counter > 100000) {
+        break;
+      }
       // Apply kinematic cuts (this function will need to be adapted)
       bool passedKinematicCuts = kinematicCuts.applyCuts(currentFits, false);
       // Check if the currentVariable is within the desired range
@@ -870,7 +871,10 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
         sumDepV += *DepV;
         sumDepW += *DepW;
 
-        // cout << "{" << *runnum << ", " << *evnum << ", " << *Mx << ", " << *xF << "}, ";
+        debugstream << "{" << *runnum << ", " << *evnum << ", " << *Mx << ", " << *xF << "}, " << endl;
+        outputFile << debugstream;
+        debugstream.str("");  // Clear the content
+        debugstream.clear();  // Clear any error flags
 
         numEvents += 1; 
         counter++;
@@ -1002,9 +1006,11 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
   // chi2FitsDStream << "};";  chi2FitsEStream << "};"; 
 
   std::ofstream outputFile(output_file, std::ios_base::app);
-  outputFile << chi2FitsAStream.str() << std::endl;
-  outputFile << chi2FitsBStream.str() << std::endl;
-  if (asymmetry_index==1) { outputFile << chi2FitsCStream.str() << std::endl; }
+
+  // outputFile << chi2FitsAStream.str() << std::endl;
+  // outputFile << chi2FitsBStream.str() << std::endl;
+  // if (asymmetry_index==1) { outputFile << chi2FitsCStream.str() << std::endl; }
+
   // outputFile << chi2FitsCStream.str() << std::endl;
   // outputFile << chi2FitsDStream.str() << std::endl;
   // if (asymmetry_index==1) { outputFile << chi2FitsEStream.str() << std::endl; }
@@ -1135,7 +1141,7 @@ int main(int argc, char *argv[]) {
 
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
+    for (int asymmetry = 0; asymmetry < 1; ++asymmetry){
       switch (asymmetry) {
         case 0: cout << "    Beginning chi2 BSA." << endl; break;
         case 1: cout << "    Beginning chi2 TSA." << endl; break;
