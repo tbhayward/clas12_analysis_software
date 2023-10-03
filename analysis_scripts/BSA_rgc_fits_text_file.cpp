@@ -848,13 +848,13 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   float numEvents = 0;
   // Variables to calculate the mean polarization
   float sumPol = 0; // sum of the beam polarization
+  double test = 0;
   float sumTargetPosPol = 0; // sum of the target positive polarization
   float sumTargetNegPol = 0; // sum of the target negative polarization
   int numEventsPosTarget = 0;
   int numEventsNegTarget = 0;
 
   // Fill the positive and negative helicity histograms
-  double test = 0;
   for (const eventData& event : data) {
 
     float currentVariable = getEventProperty(event, currentFits);
