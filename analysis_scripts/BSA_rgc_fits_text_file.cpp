@@ -854,6 +854,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   int numEventsNegTarget = 0;
 
   // Fill the positive and negative helicity histograms
+  double test = 0;
   for (const eventData& event : data) {
 
     float currentVariable = getEventProperty(event, currentFits);
@@ -872,8 +873,8 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
       }
 
       // Accumulate polarization and event count for mean polarization calculation
-      // sumPol += event.data.at("pol");
-      sumPol += 0.89534;
+      sumPol += event.data.at("pol");
+      test += 0.34018;
       if (event.data.at("target_pol") > 0) {
         sumTargetPosPol+=event.data.at("target_pol");
         numEventsPosTarget++;
@@ -885,7 +886,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
     }
   }
 
-  cout << endl << sumPol;
+  cout << endl << test;
   // Calculate the mean polarization
   float meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
   float meanPol = sumPol / numEvents; // mean beam polarization for data 
