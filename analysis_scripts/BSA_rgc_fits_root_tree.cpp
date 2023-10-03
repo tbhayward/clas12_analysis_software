@@ -746,7 +746,7 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
 
   // Initialize string streams to store the results for each bin
   std::ostringstream chi2FitsAStream, chi2FitsBStream, chi2FitsCStream;
-  std::debugstream;
+  std::ostringstream debugstream;
   // std::ostringstream chi2FitsDStream, chi2FitsEStream;
 
   // Initialize string streams to store the mean variables for each bin
@@ -1171,10 +1171,9 @@ int main(int argc, char *argv[]) {
   return 0;
 }
 
-// g++ `root-config --cflags --libs` -o BSA_rgc_fits_updated BSA_rgc_fits_updated.cpp ;
 
-
-// git pull; g++ `root-config --cflags --libs` -o BSA_rgc_fits_updated BSA_rgc_fits_updated.cpp ; 
-// ./BSA_rgc_fits_updated /work/clas12/thayward/CLAS12_SIDIS/RGC/p/rgc_8.7.0_epX_Mx-1.4.root 
+// git pull; 
+// g++ `root-config --cflags --libs` -o BSA_rgc_fits_root_tree BSA_rgc_fits_root_tree.cpp; 
+// ./BSA_rgc_fits_root_tree /work/clas12/thayward/CLAS12_SIDIS/RGC/p/rgc_8.7.0_epX_Mx-1.4.root 
 // /work/clas12/thayward/CLAS12_SIDIS/RGC/p/rgc_nh3_mc.root /u/home/thayward/test_asymmetries.txt
 // /u/home/thayward/test_kinematics.txt

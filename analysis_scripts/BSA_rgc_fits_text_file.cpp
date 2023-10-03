@@ -1076,7 +1076,7 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
 
   // Initialize string streams to store the results for each bin
   std::ostringstream chi2FitsAStream, chi2FitsBStream, chi2FitsCStream;
-  std::debugstream;
+  std::ostringstream debugstream;
   // std::ostringstream chi2FitsDStream, chi2FitsEStream;
 
   // Initialize string streams to store the mean variables for each bin
