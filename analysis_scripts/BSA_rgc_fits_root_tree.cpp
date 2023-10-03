@@ -660,6 +660,10 @@ TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int b
   int numEventsPosTarget = 0;
   int numEventsNegTarget = 0;
 
+  TTreeReaderValue<int> runnum(dataReader, "runnum");
+  TTreeReaderValue<int> evnum(dataReader, "evnum");
+  TTreeReaderValue<double> xF(dataReader, "xF");
+  TTreeReaderValue<double> Mx(dataReader, "Mx");
   TTreeReaderValue<int> helicity(dataReader, "helicity");
   TTreeReaderValue<double> beam_pol(dataReader, "beam_pol");
   TTreeReaderValue<double> target_pol(dataReader, "target_pol");
