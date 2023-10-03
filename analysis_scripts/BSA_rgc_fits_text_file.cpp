@@ -1077,6 +1077,7 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
   // Initialize string streams to store the results for each bin
   std::ostringstream chi2FitsAStream, chi2FitsBStream, chi2FitsCStream;
   std::ostringstream debugstream;
+  std::ofstream outputFile(output_file, std::ios_base::app);
   // std::ostringstream chi2FitsDStream, chi2FitsEStream;
 
   // Initialize string streams to store the mean variables for each bin
@@ -1184,7 +1185,7 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
           double xF = event.data.at("xF");
 
           debugstream << "{" << *runnum << ", " << *evnum << ", " << *Mx << ", " << *xF << "}, " << endl;
-          outputFile << debugstream;
+          outputFile << debugstream.str();
           debugstream.str("");  // Clear the content
           debugstream.clear();  // Clear any error flags
 
@@ -1316,10 +1317,11 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
   chi2FitsAStream << "};";  chi2FitsBStream << "};";  chi2FitsCStream << "};"; 
   // chi2FitsDStream << "};";  chi2FitsEStream << "};"; 
 
-  std::ofstream outputFile(output_file, std::ios_base::app);
-  outputFile << chi2FitsAStream.str() << std::endl;
-  outputFile << chi2FitsBStream.str() << std::endl;
-  if (asymmetry_index==1) { outputFile << chi2FitsCStream.str() << std::endl; }
+  
+  // outputFile << chi2FitsAStream.str() << std::endl;
+  // outputFile << chi2FitsBStream.str() << std::endl;
+  // if (asymmetry_index==1) { outputFile << chi2FitsCStream.str() << std::endl; }
+
   // outputFile << chi2FitsCStream.str() << std::endl;
   // outputFile << chi2FitsDStream.str() << std::endl;
   // if (asymmetry_index==1) { outputFile << chi2FitsEStream.str() << std::endl; }
