@@ -639,8 +639,7 @@ double DSA_funcToFit(double* x, double* par) {
 
 TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int binIndex, 
   const std::string& prefix, int asymmetry_index, const char* output_file) {
-  std::ofstream outputFile(output_file, std::ios_base::app);
-  std::ostringstream debugstream;
+  
   // Determine the variable range for the specified bin
   double varMin = allBins[currentFits][binIndex];
   double varMax = allBins[currentFits][binIndex + 1];
@@ -688,10 +687,6 @@ TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int b
         else if (*helicity < 0 && *target_pol > 0) { histNegPos->Fill(*phi); } 
         else if (*helicity < 0 && *target_pol < 0) { histNegNeg->Fill(*phi); }
 
-        debugstream << *runnum << " " << *evnum << " " << *Mx << " " << *xF << endl;
-        outputFile << debugstream.str();
-        debugstream.str("");  // Clear the content
-        debugstream.clear();  // Clear any error flags
 
         // Accumulate polarization and event count for mean polarization calculation
         sumPol += *beam_pol;
@@ -708,7 +703,6 @@ TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int b
       counter++; // Increment the counter
   }
   dataReader.Restart();  // Reset the TTreeReader at the end of the function
-  outputFile.close();
 
   // Calculate the mean polarization
   double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
@@ -811,7 +805,7 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
     snprintf(histName, sizeof(histName), "hist_%zu", i);
 
     // Create a histogram for the current bin
-    TH1D* hist = createHistogramForBin(dataReader, histName, i, prefix, asymmetry_index, output_file);
+    TH1D* hist = createHistogramForBin(dataReader, histName, i, prefix, asymmetry_index);
     // Fit the histogram using the fitFunction and get the fit result
     hist->Fit(fitFunction, "QS");
     plotHistogramAndFit(hist, fitFunction, i, asymmetry_index, prefix);
@@ -1010,15 +1004,15 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
   chi2FitsAStream << "};";  chi2FitsBStream << "};";  chi2FitsCStream << "};"; 
   // chi2FitsDStream << "};";  chi2FitsEStream << "};"; 
 
-  // std::ofstream outputFile(output_file, std::ios_base::app);
-  // outputFile << chi2FitsAStream.str() << std::endl;
-  // outputFile << chi2FitsBStream.str() << std::endl;
-  // if (asymmetry_index==1) { outputFile << chi2FitsCStream.str() << std::endl; }
+  std::ofstream outputFile(output_file, std::ios_base::app);
+  outputFile << chi2FitsAStream.str() << std::endl;
+  outputFile << chi2FitsBStream.str() << std::endl;
+  if (asymmetry_index==1) { outputFile << chi2FitsCStream.str() << std::endl; }
 
   // outputFile << chi2FitsCStream.str() << std::endl;
   // outputFile << chi2FitsDStream.str() << std::endl;
   // if (asymmetry_index==1) { outputFile << chi2FitsEStream.str() << std::endl; }
-  // outputFile.close();
+  outputFile.close();
 
   meanVariablesStream << "\\end{tabular}\n";
   meanVariablesStream << "\\caption{The mean kinematic variables in each of the bins ";
