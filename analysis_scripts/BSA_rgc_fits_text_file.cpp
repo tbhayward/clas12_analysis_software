@@ -887,7 +887,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
     }
   }
 
-  cout << endl << test;
+  cout << endl << test << " " << sumPol;
   // Calculate the mean polarization
   float meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
   float meanPol = sumPol / numEvents; // mean beam polarization for data 
