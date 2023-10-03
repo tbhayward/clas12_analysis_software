@@ -638,8 +638,8 @@ double DSA_funcToFit(double* x, double* par) {
 }
 
 TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int binIndex, 
-  const std::string& prefix, int asymmetry_index, const char* output_file) {
-  
+  const std::string& prefix, int asymmetry_index) {
+
   // Determine the variable range for the specified bin
   double varMin = allBins[currentFits][binIndex];
   double varMax = allBins[currentFits][binIndex + 1];
