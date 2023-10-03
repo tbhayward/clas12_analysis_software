@@ -638,7 +638,7 @@ double DSA_funcToFit(double* x, double* par) {
 }
 
 TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int binIndex, 
-  const std::string& prefix, int asymmetry_index) {
+  const std::string& prefix, int asymmetry_index, const char* output_file) {
   std::ofstream outputFile(output_file, std::ios_base::app);
   // Determine the variable range for the specified bin
   double varMin = allBins[currentFits][binIndex];
@@ -704,7 +704,7 @@ TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int b
   }
   dataReader.Restart();  // Reset the TTreeReader at the end of the function
   outputFile.close();
-  
+
   // Calculate the mean polarization
   double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
   double meanPol = sumPol / numEvents; // mean beam polarization for data 
@@ -807,7 +807,7 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
     snprintf(histName, sizeof(histName), "hist_%zu", i);
 
     // Create a histogram for the current bin
-    TH1D* hist = createHistogramForBin(dataReader, histName, i, prefix, asymmetry_index);
+    TH1D* hist = createHistogramForBin(dataReader, histName, i, prefix, asymmetry_index, output_file);
     // Fit the histogram using the fitFunction and get the fit result
     hist->Fit(fitFunction, "QS");
     plotHistogramAndFit(hist, fitFunction, i, asymmetry_index, prefix);

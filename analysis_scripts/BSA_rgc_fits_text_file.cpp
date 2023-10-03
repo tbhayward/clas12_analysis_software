@@ -832,7 +832,7 @@ float asymmetry_error_calculation(float currentVariable, const std::string& pref
 }
 
 TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* histName,
-  int binIndex, const std::string& prefix, int asymmetry_index) {
+  int binIndex, const std::string& prefix, int asymmetry_index, const char* output_file) {
   std::ofstream outputFile(output_file, std::ios_base::app);
   // Determine the variable range for the specified bin
   float varMin = allBins[currentFits][binIndex];
@@ -1138,7 +1138,7 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
     snprintf(histName, sizeof(histName), "hist_%zu", i);
 
     // Create a histogram for the current bin
-    TH1D* hist = createHistogramForBin(gData, histName, i, prefix, asymmetry_index);
+    TH1D* hist = createHistogramForBin(gData, histName, i, prefix, asymmetry_index, output_file);
     // Fit the histogram using the fitFunction and get the fit result
     hist->Fit(fitFunction, "QS");
     plotHistogramAndFit(hist, fitFunction, i, asymmetry_index, prefix);
