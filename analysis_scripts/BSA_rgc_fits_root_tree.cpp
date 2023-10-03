@@ -873,7 +873,7 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
         sumDepW += *DepW;
 
         debugstream << "{" << *runnum << ", " << *evnum << ", " << *Mx << ", " << *xF << "}, " << endl;
-        outputFile << debugstream;
+        outputFile << debugstream.str();
         debugstream.str("");  // Clear the content
         debugstream.clear();  // Clear any error flags
 
