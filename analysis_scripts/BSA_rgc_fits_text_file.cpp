@@ -1184,10 +1184,10 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
           double Mx = event.data.at("Mx");
           double xF = event.data.at("xF");
 
-          // debugstream << "{" << runnum << ", " << evnum << ", " << Mx << ", " << xF << "}, " << endl;
-          // outputFile << debugstream.str();
-          // debugstream.str("");  // Clear the content
-          // debugstream.clear();  // Clear any error flags
+          debugstream << "{" << runnum << ", " << evnum << ", " << Mx << ", " << xF << "}, " << endl;
+          outputFile << debugstream.str();
+          debugstream.str("");  // Clear the content
+          debugstream.clear();  // Clear any error flags
 
           numEvents += 1;
           counter++;
