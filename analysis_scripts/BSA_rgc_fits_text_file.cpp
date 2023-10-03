@@ -1076,6 +1076,7 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
 
   // Initialize string streams to store the results for each bin
   std::ostringstream chi2FitsAStream, chi2FitsBStream, chi2FitsCStream;
+  std::debugstream;
   // std::ostringstream chi2FitsDStream, chi2FitsEStream;
 
   // Initialize string streams to store the mean variables for each bin
@@ -1182,7 +1183,10 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
           double Mx = event.data.at("Mx");
           double xF = event.data.at("xF");
 
-          cout << "{" << runnum << ", " << evnum << ", " << Mx << ", " << xF << "}, ";
+          debugstream << "{" << *runnum << ", " << *evnum << ", " << *Mx << ", " << *xF << "}, " << endl;
+          outputFile << debugstream;
+          debugstream.str("");  // Clear the content
+          debugstream.clear();  // Clear any error flags
 
           numEvents += 1;
           counter++;
