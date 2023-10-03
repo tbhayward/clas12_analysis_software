@@ -834,6 +834,7 @@ float asymmetry_error_calculation(float currentVariable, const std::string& pref
 TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* histName,
   int binIndex, const std::string& prefix, int asymmetry_index, const char* output_file) {
   std::ofstream outputFile(output_file, std::ios_base::app);
+  std::ostringstream debugstream;
   // Determine the variable range for the specified bin
   float varMin = allBins[currentFits][binIndex];
   float varMax = allBins[currentFits][binIndex + 1];
@@ -871,6 +872,11 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
       } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") < 0) {
         histNegNeg->Fill(event.data.at("phi"));
       }
+
+      int runnum = event.data.at("runnum");
+      int evnum = event.data.at("evnum");
+      double Mx = event.data.at("Mx");
+      double xF = event.data.at("xF");
 
       debugstream << runnum << " " << evnum << " " << Mx << " " << xF << endl;
       outputFile << debugstream.str();
@@ -1082,7 +1088,6 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
 
   // Initialize string streams to store the results for each bin
   std::ostringstream chi2FitsAStream, chi2FitsBStream, chi2FitsCStream;
-  std::ostringstream debugstream;
   // std::ostringstream chi2FitsDStream, chi2FitsEStream;
 
   // Initialize string streams to store the mean variables for each bin
@@ -1183,11 +1188,6 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
           sumxF += event.data.at("xF");
           sumt += event.data.at("t");
           sumtmin += event.data.at("tmin");
-
-          int runnum = event.data.at("runnum");
-          int evnum = event.data.at("evnum");
-          double Mx = event.data.at("Mx");
-          double xF = event.data.at("xF");
 
           numEvents += 1;
           counter++;
