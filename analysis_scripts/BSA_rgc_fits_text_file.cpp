@@ -883,7 +883,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
       numEvents++;
     }
   }
-  cout << histPosPos.getMean() << " " << histPosNeg.getMean() << " " << histNegPos.getMean() << " " << histNegNeg.getMean() << endl;
+  cout << histPosPos->GetMean() << " " << histPosNeg->GetMean() << " " << histNegPos->GetMean() << " " << histNegNeg->GetMean() << endl;
   
   // Calculate the mean polarization
   float meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
