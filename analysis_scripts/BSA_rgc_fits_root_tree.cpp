@@ -690,7 +690,8 @@ TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int b
 
 
         // Accumulate polarization and event count for mean polarization calculation
-        sumPol += *beam_pol;
+        // sumPol += *beam_pol;
+        sumPol += 0.83534;
         test += 0.34018;
         if (*target_pol > 0) {
           sumTargetPosPol += *target_pol;
