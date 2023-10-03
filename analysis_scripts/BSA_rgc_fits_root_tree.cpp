@@ -699,7 +699,6 @@ TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int b
         }
         numEvents++; // Increment the numEvents
       }
-
       counter++; // Increment the counter
   }
   dataReader.Restart();  // Reset the TTreeReader at the end of the function
@@ -713,8 +712,8 @@ TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int b
   // which but the polarization really should just be "percent of polarized nucleii"
   cout << numEvents << " " << sumVariable << " " << meanVariable << endl;
   cout << numEvents << " " << sumPol << " " << meanPol << endl;
-  cout << numEvents << " " << sumTargetPosPol << " " << Ptp << endl;
-  cout << numEvents << " " << sumTargetNegPol << " " << Ptm << endl;
+  cout << numEvents << " " << " " << numEventsPosTarget << " " << sumTargetPosPol << " " << Ptp << endl;
+  cout << numEvents << " " << " " << numEventsNegTarget << " " << sumTargetNegPol << " " << Ptm << endl;
 
   // Create the asymmetry histogram
   int numBins = histPosPos->GetNbinsX();

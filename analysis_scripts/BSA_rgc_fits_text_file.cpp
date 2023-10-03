@@ -893,8 +893,9 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   // which but the polarization really should just be "percent of polarized nucleii"
   cout << numEvents << " " << sumVariable << " " << meanVariable << endl;
   cout << numEvents << " " << sumPol << " " << meanPol << endl;
-  cout << numEvents << " " << sumTargetPosPol << " " << Ptp << endl;
-  cout << numEvents << " " << sumTargetNegPol << " " << Ptm << endl; 
+  cout << numEvents << " " << " " << numEventsPosTarget << " " << sumTargetPosPol << " " << Ptp << endl;
+  cout << numEvents << " " << " " << numEventsNegTarget << " " << sumTargetNegPol << " " << Ptm << endl;
+ 
 
   // Create the asymmetry histogram
   int numBins = histPosPos->GetNbinsX();
