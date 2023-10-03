@@ -747,6 +747,7 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
   // Initialize string streams to store the results for each bin
   std::ostringstream chi2FitsAStream, chi2FitsBStream, chi2FitsCStream;
   std::ostringstream debugstream;
+  std::ofstream outputFile(output_file, std::ios_base::app);
   // std::ostringstream chi2FitsDStream, chi2FitsEStream;
 
   // Initialize string streams to store the mean variables for each bin
@@ -1004,8 +1005,6 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
 
   chi2FitsAStream << "};";  chi2FitsBStream << "};";  chi2FitsCStream << "};"; 
   // chi2FitsDStream << "};";  chi2FitsEStream << "};"; 
-
-  std::ofstream outputFile(output_file, std::ios_base::app);
 
   // outputFile << chi2FitsAStream.str() << std::endl;
   // outputFile << chi2FitsBStream.str() << std::endl;
