@@ -1184,10 +1184,10 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
           double Mx = event.data.at("Mx");
           double xF = event.data.at("xF");
 
-          debugstream << "{" << runnum << ", " << evnum << ", " << Mx << ", " << xF << "}, " << endl;
-          outputFile << debugstream.str();
-          debugstream.str("");  // Clear the content
-          debugstream.clear();  // Clear any error flags
+          // debugstream << "{" << runnum << ", " << evnum << ", " << Mx << ", " << xF << "}, " << endl;
+          // outputFile << debugstream.str();
+          // debugstream.str("");  // Clear the content
+          // debugstream.clear();  // Clear any error flags
 
           numEvents += 1;
           counter++;
@@ -1422,8 +1422,7 @@ void BSA_rgc_fits_text_file(const char* data_file, const char* mc_file, const ch
   cout << endl << endl;
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    for (int asymmetry = 0; asymmetry < 1
-      ; ++asymmetry){
+    for (int asymmetry = 0; asymmetry < 1; ++asymmetry){
       switch (asymmetry) {
         case 0: cout << "    chi2 BSA." << endl; break;
         case 1: cout << "    chi2 TSA." << endl; break;
