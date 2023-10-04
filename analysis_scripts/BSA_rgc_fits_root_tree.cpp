@@ -675,7 +675,6 @@ TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int b
   // Counter to limit the number of processed entries
   int counter = 0;
   while (dataReader.Next()) {
-    if (counter > 1000) { break; }
 
     // Apply kinematic cuts (this function will need to be adapted)
     bool passedKinematicCuts = kinematicCuts.applyCuts(currentFits, false);
@@ -693,7 +692,7 @@ TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int b
       // Accumulate polarization and event count for mean polarization calculation
       // sumPol += *beam_pol;
       sumPol += 0.83534;
-      test += 0.34018;
+      test += 0.83534;
       if (*target_pol > 0) {
         sumTargetPosPol += *target_pol;
         numEventsPosTarget++;

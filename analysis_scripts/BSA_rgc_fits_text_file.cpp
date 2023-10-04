@@ -876,7 +876,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
       // Accumulate polarization and event count for mean polarization calculation
       // sumPol += event.data.at("pol");
       sumPol += 0.83534;
-      test += 0.34018;
+      test += 0.83534;
       if (event.data.at("target_pol") > 0) {
         sumTargetPosPol+=event.data.at("target_pol");
         numEventsPosTarget++;
