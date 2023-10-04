@@ -692,6 +692,7 @@ TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int b
       // sumPol += *beam_pol;
       sumPol += 0.83534;
       test += 0.83534;
+      cout << numEvents << " " << test << " " << sumPol << endl;
       if (*target_pol > 0) {
         sumTargetPosPol += *target_pol;
         numEventsPosTarget++;

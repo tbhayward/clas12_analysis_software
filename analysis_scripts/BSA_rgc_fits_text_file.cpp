@@ -876,6 +876,7 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
       // sumPol += event.data.at("pol");
       sumPol += 0.83534;
       test += 0.83534;
+      cout << numEvents << " " << test << " " << sumPol << endl;
       if (event.data.at("target_pol") > 0) {
         sumTargetPosPol+=event.data.at("target_pol");
         numEventsPosTarget++;
