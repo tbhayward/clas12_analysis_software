@@ -675,6 +675,7 @@ TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int b
   // Counter to limit the number of processed entries
   int counter = 0;
   while (dataReader.Next()) {
+    if (counter > 1000) { break; }
 
     // Apply kinematic cuts (this function will need to be adapted)
     bool passedKinematicCuts = kinematicCuts.applyCuts(currentFits, false);
