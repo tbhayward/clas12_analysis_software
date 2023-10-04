@@ -848,7 +848,6 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   double numEvents = 0;
   // Variables to calculate the mean polarization
   double sumPol = 0; // sum of the beam polarization
-  double test = 0;
   double sumTargetPosPol = 0; // sum of the target positive polarization
   double sumTargetNegPol = 0; // sum of the target negative polarization
   int numEventsPosTarget = 0;
@@ -874,7 +873,6 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
 
       // Accumulate polarization and event count for mean polarization calculation
       sumPol += event.data.at("pol");
-      test += 0.83534;
       if (event.data.at("target_pol") > 0) {
         sumTargetPosPol+=event.data.at("target_pol");
         numEventsPosTarget++;
@@ -886,7 +884,6 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
     }
   }
 
-  cout << endl << test << " " << sumPol;
   // Calculate the mean polarization
   double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
   double meanPol = sumPol / numEvents; // mean beam polarization for data 
@@ -894,12 +891,6 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   double Ptm = - sumTargetNegPol / numEventsNegTarget;// mean negative target polarization for data
   // the negative sign here is correct; RGC lists the polarizations with signs to tell which is 
   // which but the polarization really should just be "percent of polarized nucleii"
-  cout << endl;
-  cout << numEvents << " " << sumVariable << " " << meanVariable << endl;
-  cout << numEvents << " " << sumPol << " " << meanPol << endl;
-  cout << numEvents << " " << " " << numEventsPosTarget << " " << sumTargetPosPol << " " << Ptp << endl;
-  cout << numEvents << " " << " " << numEventsNegTarget << " " << sumTargetNegPol << " " << Ptm << endl;
-
 
   // Create the asymmetry histogram
   int numBins = histPosPos->GetNbinsX();
@@ -1419,7 +1410,7 @@ void BSA_rgc_fits_text_file(const char* data_file, const char* mc_file, const ch
   cout << endl << endl;
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    for (int asymmetry = 0; asymmetry < 1; ++asymmetry){
+    for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
       switch (asymmetry) {
         case 0: cout << "    chi2 BSA." << endl; break;
         case 1: cout << "    chi2 TSA." << endl; break;

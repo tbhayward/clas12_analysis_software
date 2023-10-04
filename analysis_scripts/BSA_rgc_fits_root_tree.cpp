@@ -320,10 +320,10 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   
   // Add points to the TGraphErrors
   for (int i = 1; i <= histogram->GetNbinsX(); ++i) {
-    float x = histogram->GetBinCenter(i);
-    float y = histogram->GetBinContent(i);
-    float ex = 0;  // we don't want horizontal error bars
-    float ey = histogram->GetBinError(i);
+    double x = histogram->GetBinCenter(i);
+    double y = histogram->GetBinContent(i);
+    double ex = 0;  // we don't want horizontal error bars
+    double ey = histogram->GetBinError(i);
     graph->SetPoint(i - 1, x, y);
     graph->SetPointError(i - 1, ex, ey);
   }
@@ -415,7 +415,7 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   delete graph;
 }
 
-float dilution_factor(float currentVariable, const std::string& prefix) {
+double dilution_factor(double currentVariable, const std::string& prefix) {
 
   // epX
   if (prefix == "xF") { 
@@ -655,7 +655,6 @@ TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int b
   double numEvents = 0;
   // Variables to calculate the mean polarization
   double sumPol = 0; // sum of the beam polarization
-  double test = 0;
   double sumTargetPosPol = 0; // sum of the target positive polarization
   double sumTargetNegPol = 0; // sum of the target negative polarization
   int numEventsPosTarget = 0;
@@ -690,7 +689,6 @@ TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int b
 
       // Accumulate polarization and event count for mean polarization calculation
       sumPol += *beam_pol;
-      test += 0.83534;
       if (*target_pol > 0) {
         sumTargetPosPol += *target_pol;
         numEventsPosTarget++;
@@ -703,7 +701,6 @@ TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int b
   }
   dataReader.Restart();  // Reset the TTreeReader at the end of the function
 
-  cout << endl << test << " " << sumPol;
   // Calculate the mean polarization
   double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
   double meanPol = sumPol / numEvents; // mean beam polarization for data 
@@ -711,11 +708,6 @@ TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int b
   double Ptm = - sumTargetNegPol / numEventsNegTarget;// mean negative target polarization for data
   // the negative sign here is correct; RGC lists the polarizations with signs to tell which is 
   // which but the polarization really should just be "percent of polarized nucleii"
-  cout << endl;
-  cout << numEvents << " " << sumVariable << " " << meanVariable << endl;
-  cout << numEvents << " " << sumPol << " " << meanPol << endl;
-  cout << numEvents << " " << " " << numEventsPosTarget << " " << sumTargetPosPol << " " << Ptp << endl;
-  cout << numEvents << " " << " " << numEventsNegTarget << " " << sumTargetNegPol << " " << Ptm << endl;
 
   // Create the asymmetry histogram
   int numBins = histPosPos->GetNbinsX();
@@ -816,15 +808,16 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
     plotHistogramAndFit(hist, fitFunction, i, asymmetry_index, prefix);
 
     // Initialize variables to store the sums and event counts
-    float sumVariable = 0;
-    float numEvents = 0;
+    double sumVariable = 0;
+    double numEvents = 0;
     // Variables to calculate the mean depolarization factor
-    float sumDepA = 0; float sumDepB = 0; float sumDepC = 0; float sumDepV = 0; float sumDepW = 0;
+    double sumDepA = 0; double sumDepB = 0; 
+    double sumDepC = 0; double sumDepV = 0; double sumDepW = 0;
 
     // Variables to calculate the mean kinematics in each bin
-    float sumQ2 = 0; float sumW = 0; float sumx = 0; float sumy = 0;
-    float sumz = 0; float sumzeta = 0; float sumpT = 0; float sumxF = 0;
-    float sumt = 0; float sumtmin = 0;
+    double sumQ2 = 0; double sumW = 0; double sumx = 0; double sumy = 0;
+    double sumz = 0; double sumzeta = 0; double sumpT = 0; double sumxF = 0;
+    double sumt = 0; double sumtmin = 0;
 
     // Declare reader locations
     TTreeReaderValue<int> runnum(dataReader, "runnum");
@@ -889,36 +882,36 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
     cout << "Found " << numEvents << " events in this bin." << endl;
 
     // Calculate the mean values for the variable and depolarization factors
-    float meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
-    float meanDepA = numEvents > 0 ? sumDepA / numEvents : 0.0;
-    float meanDepB = numEvents > 0 ? sumDepB / numEvents : 0.0;
-    float meanDepC = numEvents > 0 ? sumDepC / numEvents : 0.0;
-    float meanDepV = numEvents > 0 ? sumDepV / numEvents : 0.0;
-    float meanDepW = numEvents > 0 ? sumDepW / numEvents : 0.0;
+    double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
+    double meanDepA = numEvents > 0 ? sumDepA / numEvents : 0.0;
+    double meanDepB = numEvents > 0 ? sumDepB / numEvents : 0.0;
+    double meanDepC = numEvents > 0 ? sumDepC / numEvents : 0.0;
+    double meanDepV = numEvents > 0 ? sumDepV / numEvents : 0.0;
+    double meanDepW = numEvents > 0 ? sumDepW / numEvents : 0.0;
 
     // Calculate the mean values for the kinematic variables
-    float meanQ2 = numEvents > 0 ? sumQ2 / numEvents : 0.0;
-    float meanW = numEvents > 0 ? sumW / numEvents : 0.0;
-    float meanx = numEvents > 0 ? sumx / numEvents : 0.0;
-    float meany = numEvents > 0 ? sumy / numEvents : 0.0;
-    float meanz = numEvents > 0 ? sumz / numEvents : 0.0;
-    float meanzeta = numEvents > 0 ? sumzeta / numEvents : 0.0;
-    float meanpT = numEvents > 0 ? sumpT / numEvents : 0.0;
-    float meanxF = numEvents > 0 ? sumxF / numEvents : 0.0;
-    float meant = numEvents > 0 ? sumt / numEvents : 0.0;
-    float meantmin = numEvents > 0 ? sumtmin / numEvents : 0.0;
+    double meanQ2 = numEvents > 0 ? sumQ2 / numEvents : 0.0;
+    double meanW = numEvents > 0 ? sumW / numEvents : 0.0;
+    double meanx = numEvents > 0 ? sumx / numEvents : 0.0;
+    double meany = numEvents > 0 ? sumy / numEvents : 0.0;
+    double meanz = numEvents > 0 ? sumz / numEvents : 0.0;
+    double meanzeta = numEvents > 0 ? sumzeta / numEvents : 0.0;
+    double meanpT = numEvents > 0 ? sumpT / numEvents : 0.0;
+    double meanxF = numEvents > 0 ? sumxF / numEvents : 0.0;
+    double meant = numEvents > 0 ? sumt / numEvents : 0.0;
+    double meantmin = numEvents > 0 ? sumtmin / numEvents : 0.0;
 
     switch (asymmetry_index) {
       case 0: {// beam-spin asymmetry
         // Get the fitted parameters and their errors
-        float ALU_offset = fitFunction->GetParameter(0);
-        float ALU_offset_error = fitFunction->GetParError(0);
-        float ALU_sinphi = fitFunction->GetParameter(1); 
-        float ALU_sinphi_error = fitFunction->GetParError(1);
-        // float AUU_cosphi = fitFunction->GetParameter(2); 
-        // float AUU_cosphi_error = fitFunction->GetParError(2);
-        // float AUU_cos2phi = fitFunction->GetParameter(3); 
-        // float AUU_cos2phi_error = fitFunction->GetParError(3);
+        double ALU_offset = fitFunction->GetParameter(0);
+        double ALU_offset_error = fitFunction->GetParError(0);
+        double ALU_sinphi = fitFunction->GetParameter(1); 
+        double ALU_sinphi_error = fitFunction->GetParError(1);
+        // double AUU_cosphi = fitFunction->GetParameter(2); 
+        // double AUU_cosphi_error = fitFunction->GetParError(2);
+        // double AUU_cos2phi = fitFunction->GetParameter(3); 
+        // double AUU_cos2phi_error = fitFunction->GetParError(3);
         ALU_sinphi = (meanDepA/meanDepW)*ALU_sinphi;
         ALU_sinphi_error = (meanDepA/meanDepW)*ALU_sinphi_error;
         // AUU_cosphi = (meanDepA/meanDepV)*AUU_cosphi;
@@ -937,16 +930,16 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
       }
       case 1: {// target-spin asymmetry
         // Get the fitted parameters and their errors
-        float AUL_offset = fitFunction->GetParameter(0);
-        float AUL_offset_error = fitFunction->GetParError(0);
-        float AUL_sinphi = fitFunction->GetParameter(1);
-        float AUL_sinphi_error = fitFunction->GetParError(1);
-        float AUL_sin2phi = fitFunction->GetParameter(2);
-        float AUL_sin2phi_error = fitFunction->GetParError(2);
-        // float AUU_cosphi = fitFunction->GetParameter(3); 
-        // float AUU_cosphi_error = fitFunction->GetParError(3);
-        // float AUU_cos2phi = fitFunction->GetParameter(4); 
-        // float AUU_cos2phi_error = fitFunction->GetParError(4);
+        double AUL_offset = fitFunction->GetParameter(0);
+        double AUL_offset_error = fitFunction->GetParError(0);
+        double AUL_sinphi = fitFunction->GetParameter(1);
+        double AUL_sinphi_error = fitFunction->GetParError(1);
+        double AUL_sin2phi = fitFunction->GetParameter(2);
+        double AUL_sin2phi_error = fitFunction->GetParError(2);
+        // double AUU_cosphi = fitFunction->GetParameter(3); 
+        // double AUU_cosphi_error = fitFunction->GetParError(3);
+        // double AUU_cos2phi = fitFunction->GetParameter(4); 
+        // double AUU_cos2phi_error = fitFunction->GetParError(4);
         AUL_sinphi = (meanDepA/meanDepV)*AUL_sinphi;
         AUL_sinphi_error = (meanDepA/meanDepV)*AUL_sinphi_error;
         AUL_sin2phi = (meanDepA/meanDepB)*AUL_sin2phi;
@@ -968,14 +961,14 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
       }
       case 2: {// double-spin asymmetry
         // Get the fitted parameters and their errors
-        float ALL = fitFunction->GetParameter(0);
-        float ALL_error = fitFunction->GetParError(0);
-        float ALL_cosphi = fitFunction->GetParameter(1);
-        float ALL_cosphi_error = fitFunction->GetParError(1);
-        // float AUU_cosphi = fitFunction->GetParameter(2); 
-        // float AUU_cosphi_error = fitFunction->GetParError(2);
-        // float AUU_cos2phi = fitFunction->GetParameter(3); 
-        // float AUU_cos2phi_error = fitFunction->GetParError(3);
+        double ALL = fitFunction->GetParameter(0);
+        double ALL_error = fitFunction->GetParError(0);
+        double ALL_cosphi = fitFunction->GetParameter(1);
+        double ALL_cosphi_error = fitFunction->GetParError(1);
+        // double AUU_cosphi = fitFunction->GetParameter(2); 
+        // double AUU_cosphi_error = fitFunction->GetParError(2);
+        // double AUU_cos2phi = fitFunction->GetParameter(3); 
+        // double AUU_cos2phi_error = fitFunction->GetParError(3);
         ALL = (meanDepA/meanDepC)*ALL;
         ALL_error = (meanDepA/meanDepC)*ALL_error;
         ALL_cosphi = (meanDepA/meanDepW)*ALL_cosphi;
@@ -1144,7 +1137,7 @@ int main(int argc, char *argv[]) {
 
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    for (int asymmetry = 0; asymmetry < 1; ++asymmetry){
+    for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
       switch (asymmetry) {
         case 0: cout << "    Beginning chi2 BSA." << endl; break;
         case 1: cout << "    Beginning chi2 TSA." << endl; break;
