@@ -15,13 +15,13 @@ size_t currentFits = 0;
 size_t currentBin = 0;
 int n = 1;
 
-std::map<std::string, std::vector<float>> bins_map;
-std::vector<std::vector<float>> allBins;
+std::map<std::string, std::vector<double>> bins_map;
+std::vector<std::vector<double>> allBins;
 std::vector<std::string> binNames;
 std::vector<std::string> propertyNames;
 std::vector<std::string> variable_names;
-float total_charge_carbon;
-float cpp, cpm, cmp, cmm;
+double total_charge_carbon;
+double cpp, cpm, cmp, cmm;
 
 string trim_newline(const string &str) {
   if (!str.empty() && str.back() == '\n') {
@@ -73,7 +73,7 @@ void load_bins_from_csv(const std::string& filename) {
       propertyNames.push_back(property);
 
       // Declare a vector to store the bin values
-      std::vector<float> bin_values;
+      std::vector<double> bin_values;
 
       // Declare a string to store each value read from the stringstream
       std::string value;
@@ -102,11 +102,11 @@ void load_bins_from_csv(const std::string& filename) {
 
 struct RunInfo {
   int runnum;
-  float total_charge;
-  float positive_charge;
-  float negative_charge;
-  float target_polarization;
-  float target_polarization_uncertainty;
+  double total_charge;
+  double positive_charge;
+  double negative_charge;
+  double target_polarization;
+  double target_polarization_uncertainty;
 };
 
 // Declare a vector to store the run information
@@ -137,23 +137,23 @@ void load_run_info_from_csv(const std::string& filename) {
     std::getline(ss, info, ',');
     run_info.runnum = std::stoi(info);
 
-    // Read the total charge from the stringstream and convert it to a float
+    // Read the total charge from the stringstream and convert it to a double
     std::getline(ss, info, ',');
     run_info.total_charge = std::stof(info);
 
-    // Read the positive charge from the stringstream and convert it to a float
+    // Read the positive charge from the stringstream and convert it to a double
     std::getline(ss, info, ',');
     run_info.positive_charge = std::stof(info);
 
-    // Read the negative charge from the stringstream and convert it to a float
+    // Read the negative charge from the stringstream and convert it to a double
     std::getline(ss, info, ',');
     run_info.negative_charge = std::stof(info);
 
-    // Read the target polarization from the stringstream and convert it to a float
+    // Read the target polarization from the stringstream and convert it to a double
     std::getline(ss, info, ',');
     run_info.target_polarization = std::stof(info);
 
-    // Read the target polarization from the stringstream and convert it to a float
+    // Read the target polarization from the stringstream and convert it to a double
     std::getline(ss, info, ',');
     run_info.target_polarization_uncertainty = std::stof(info);
 
@@ -163,8 +163,8 @@ void load_run_info_from_csv(const std::string& filename) {
 }
 
 // function to get the polarization value
-float getPol(int runnum) {
-  float pol = 0.86; 
+double getPol(int runnum) {
+  double pol = 0.86; 
     if (runnum == 11 ) { pol = 0.86; } // runnum == 11 indicates Monte Carlo in CLAS12
     else if (runnum >= 5032 && runnum < 5333) { pol = 0.8592; } 
     else if (runnum >= 5333 && runnum <= 5666) { pol = 0.8922; }
@@ -187,7 +187,7 @@ float getPol(int runnum) {
 }
 
 struct eventData {
-  std::unordered_map<std::string, float> data;
+  std::unordered_map<std::string, double> data;
 };
 
 std::vector<eventData> gData;
@@ -200,14 +200,14 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
   // Initialize an eventData object to store the parsed data
   eventData data;
 
-  // Declare value for storing the extracted float and an index for variable names
-  float value;
+  // Declare value for storing the extracted double and an index for variable names
+  double value;
   std::string value_str;
   size_t var_name_index = 0;
 
   // Iterate through the provided variable names
   for (const auto& var_name : variable_names) {
-    // Attempt to extract a float value from the stringstream
+    // Attempt to extract a double value from the stringstream
     if (!(iss >> value)) {
       break;
     }
@@ -233,14 +233,14 @@ eventData parseLine(const std::string& line, const std::vector<std::string>& var
   }
 
   // Add in tmin and t
-  float me = 0.000511; // electron mass in GeV
-  float mp = 0.938272; // proton mass in GeV
-  // float E = 10.55; // beam energy
-  float E = mp;
-  // float Ep = data.data["e_p"]; // scattered electron momentum 
-  // float theta = data.data["e_theta"]; // scattered electron angle
-  float Ep = data.data["p_p"]; // scattered proton momentum 
-  float theta = data.data["p_theta"]; // scattered proton angle 
+  double me = 0.000511; // electron mass in GeV
+  double mp = 0.938272; // proton mass in GeV
+  // double E = 10.55; // beam energy
+  double E = mp;
+  // double Ep = data.data["e_p"]; // scattered electron momentum 
+  // double theta = data.data["e_theta"]; // scattered electron angle
+  double Ep = data.data["p_p"]; // scattered proton momentum 
+  double theta = data.data["p_theta"]; // scattered proton angle 
   data.data["tmin"] = -pow((mp*data.data["x"]),2)/(1-data.data["x"]);
   // data.data["t"] = 2*me*(E - Ep) - 2*sqrt(me*me + E*E)*sqrt(me*me + Ep*Ep) +
   //         2*sqrt(me*me + E*E)*sqrt(me*me + Ep*Ep)*cos(theta);
@@ -285,7 +285,7 @@ std::vector<eventData> readData(const std::string& filename,
   return data;
 }
 
-float getEventProperty(const eventData& event, int currentFits) {
+double getEventProperty(const eventData& event, int currentFits) {
 
   std::string property = propertyNames[currentFits];
   // Access the property value using the map's indexing
@@ -365,7 +365,7 @@ bool applyKinematicCuts(const eventData& data, int currentFits, bool isMC) {
   return goodEvent;  
 }
 
-float dilution_factor(float currentVariable, const std::string& prefix) {
+double dilution_factor(double currentVariable, const std::string& prefix) {
 
   // epX
   if (prefix == "xF") { 
@@ -524,7 +524,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     // Iterate through the global event data (gData)
     for (const eventData &event : gData) {
         // Get the value of the current variable of interest for the event
-        float currentVariable = getEventProperty(event, currentFits);
+        double currentVariable = getEventProperty(event, currentFits);
 
         // Apply kinematic cuts and check if the current variable is within the specified bin range
         if (applyKinematicCuts(event, currentFits, 0) && 
@@ -535,16 +535,16 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           N += 1;
 
           // Extract phi and polarization (pol) from the event data
-          float phi = event.data.at("phi");
-          float Pb = event.data.at("pol");
-          float Pt = std::abs(event.data.at("target_pol"));
-          float DepA = event.data.at("DepA");
-          float DepB = event.data.at("DepB");
-          float DepC = event.data.at("DepC");
-          float DepV = event.data.at("DepV");
-          float DepW = event.data.at("DepW");
+          double phi = event.data.at("phi");
+          double Pb = event.data.at("pol");
+          double Pt = std::abs(event.data.at("target_pol"));
+          double DepA = event.data.at("DepA");
+          double DepB = event.data.at("DepB");
+          double DepC = event.data.at("DepC");
+          double DepV = event.data.at("DepV");
+          double DepW = event.data.at("DepW");
 
-          float Df = dilution_factor(currentVariable, binNames[currentFits]); // dilution factor
+          double Df = dilution_factor(currentVariable, binNames[currentFits]); // dilution factor
           // Check if the helicities are positive or negative and update the corresponding sum
           if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
             sum_PP += log(1 
@@ -577,7 +577,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     // Iterate through the global event mc (gMC)
     for (const eventData &event : gMC) {
         // Get the value of the current variable of interest for the event
-        float currentVariable = getEventProperty(event, currentFits);
+        double currentVariable = getEventProperty(event, currentFits);
 
         // Apply kinematic cuts and check if the current variable is within the specified bin range
         if (applyKinematicCuts(event, currentFits, 1) && 
@@ -585,23 +585,23 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           currentVariable < allBins[currentFits][currentBin + 1]) {
 
           // Extract Delta_phi and polarization (pol) from the event data
-          float phi = event.data.at("phi");
-          float DepA = event.data.at("DepA");
-          float DepB = event.data.at("DepB");
-          float DepC = event.data.at("DepC");
-          float DepV = event.data.at("DepV");
-          float DepW = event.data.at("DepW");
+          double phi = event.data.at("phi");
+          double DepA = event.data.at("DepA");
+          double DepB = event.data.at("DepB");
+          double DepC = event.data.at("DepC");
+          double DepV = event.data.at("DepV");
+          double DepW = event.data.at("DepW");
 
           NUU+= 1 + (DepV/DepA)*AUU_cosphi*cos(phi) + (DepB/DepA)*AUU_cos2phi*cos(2*phi); // UU
         }
     }
 
     // determine min pos or neg beam helicity accumulated charge to scale down higher one
-    float minBeamCharge = std::min({(cpp+cpm),(cmp+cmm)}); 
+    double minBeamCharge = std::min({(cpp+cpm),(cmp+cmm)}); 
     // determine min pos or neg target helicity accumulated charge to scale down higher one
-    float minTargetCharge = std::min({(cpp+cmp),(cpm+cmm)}); 
+    double minTargetCharge = std::min({(cpp+cmp),(cpm+cmm)}); 
 
-    float nll = N * log(NUU) - 
+    double nll = N * log(NUU) - 
       minBeamCharge*minTargetCharge/((cpp+cpm)*(cpp+cmp))*sum_PP -
       minBeamCharge*minTargetCharge/((cpp+cpm)*(cpm+cmm))*sum_PM - 
       minBeamCharge*minTargetCharge/((cmp+cmm)*(cpp+cmp))*sum_MP - 
@@ -699,14 +699,14 @@ void performMLMFits(const char *filename, const char* output_file, const char* k
     double sumVariable = 0;
     double numEvents = 0;
     for (const eventData &event : gData) {
-      float currentVariable = getEventProperty(event, currentFits);
+      double currentVariable = getEventProperty(event, currentFits);
         if (applyKinematicCuts(event, currentFits, 0) && currentVariable >= 
           allBins[currentFits][i] && currentVariable < allBins[currentFits][i + 1]) {
             sumVariable += currentVariable;
             numEvents += 1;
         }
     }
-    float meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
+    double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
 
     // output to text file
     mlmFitsAStream << "{" << meanVariable << ", " << ALU_sinphi << ", " << ALU_sinphi_error << "}";
@@ -783,10 +783,10 @@ void performMLMFits(const char *filename, const char* output_file, const char* k
   kinematicFile.close();
 }
 
-float asymmetry_value_calculation(float currentVariable, const std::string& prefix, 
-  float Npp, float Npm, float Nmp, float Nmm, float meanPol, float Ptp, float Ptm, 
+double asymmetry_value_calculation(double currentVariable, const std::string& prefix, 
+  double Npp, double Npm, double Nmp, double Nmm, double meanPol, double Ptp, double Ptm, 
   int asymmetry_index) {
-  float Df = dilution_factor(currentVariable, prefix); // dilution factor
+  double Df = dilution_factor(currentVariable, prefix); // dilution factor
   // return the asymmetry value 
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
@@ -801,10 +801,10 @@ float asymmetry_value_calculation(float currentVariable, const std::string& pref
   }
 }
 
-float asymmetry_error_calculation(float currentVariable, const std::string& prefix, 
-  float Npp, float Npm, float Nmp, float Nmm, float meanPol, float Ptp, float Ptm, 
+double asymmetry_error_calculation(double currentVariable, const std::string& prefix, 
+  double Npp, double Npm, double Nmp, double Nmm, double meanPol, double Ptp, double Ptm, 
   int asymmetry_index) {
-  float Df = dilution_factor(currentVariable, prefix); // dilution factor
+  double Df = dilution_factor(currentVariable, prefix); // dilution factor
   // return the asymmetry error 
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
@@ -834,8 +834,8 @@ float asymmetry_error_calculation(float currentVariable, const std::string& pref
 TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* histName,
   int binIndex, const std::string& prefix, int asymmetry_index) {
   // Determine the variable range for the specified bin
-  float varMin = allBins[currentFits][binIndex];
-  float varMax = allBins[currentFits][binIndex + 1];
+  double varMin = allBins[currentFits][binIndex];
+  double varMax = allBins[currentFits][binIndex + 1];
 
   // Create positive and negative helicity histograms
   TH1D* histPosPos = new TH1D(Form("%s_pospos", histName), "", 12, 0, 2 * TMath::Pi());
@@ -844,20 +844,20 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   TH1D* histNegNeg = new TH1D(Form("%s_negneg", histName), "", 12, 0, 2 * TMath::Pi());
 
   // Initialize variables to store the sums and event counts
-  float sumVariable = 0;
-  float numEvents = 0;
+  double sumVariable = 0;
+  double numEvents = 0;
   // Variables to calculate the mean polarization
-  float sumPol = 0; // sum of the beam polarization
+  double sumPol = 0; // sum of the beam polarization
   double test = 0;
-  float sumTargetPosPol = 0; // sum of the target positive polarization
-  float sumTargetNegPol = 0; // sum of the target negative polarization
+  double sumTargetPosPol = 0; // sum of the target positive polarization
+  double sumTargetNegPol = 0; // sum of the target negative polarization
   int numEventsPosTarget = 0;
   int numEventsNegTarget = 0;
 
   // Fill the positive and negative helicity histograms
   for (const eventData& event : data) {
 
-    float currentVariable = getEventProperty(event, currentFits);
+    double currentVariable = getEventProperty(event, currentFits);
     if (applyKinematicCuts(event, currentFits, 0) && currentVariable >= varMin && 
       currentVariable < varMax) {
       sumVariable+=currentVariable;
@@ -890,10 +890,10 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
 
   cout << endl << test << " " << sumPol;
   // Calculate the mean polarization
-  float meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
-  float meanPol = sumPol / numEvents; // mean beam polarization for data 
-  float Ptp = sumTargetPosPol / numEventsPosTarget;// mean positive target polarization for data
-  float Ptm = - sumTargetNegPol / numEventsNegTarget;// mean negative target polarization for data
+  double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
+  double meanPol = sumPol / numEvents; // mean beam polarization for data 
+  double Ptp = sumTargetPosPol / numEventsPosTarget;// mean positive target polarization for data
+  double Ptm = - sumTargetNegPol / numEventsNegTarget;// mean negative target polarization for data
   // the negative sign here is correct; RGC lists the polarizations with signs to tell which is 
   // which but the polarization really should just be "percent of polarized nucleii"
   cout << endl;
@@ -910,15 +910,15 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
 
   // Calculate the asymmetry and its error for each bin, and fill the asymmetry histogram
   for (int iBin = 1; iBin <= numBins; ++iBin) {
-    float Npp = histPosPos->GetBinContent(iBin)/cpp;
-    float Npm = histPosNeg->GetBinContent(iBin)/cpm;
-    float Nmp = histNegPos->GetBinContent(iBin)/cmp;
-    float Nmm = histNegNeg->GetBinContent(iBin)/cmm;
+    double Npp = histPosPos->GetBinContent(iBin)/cpp;
+    double Npm = histPosNeg->GetBinContent(iBin)/cpm;
+    double Nmp = histNegPos->GetBinContent(iBin)/cmp;
+    double Nmm = histNegNeg->GetBinContent(iBin)/cmm;
 
     // Calculate the asymmetry and error for the current bin
-    float asymmetry = asymmetry_value_calculation(meanVariable, prefix, Npp, Npm, Nmp, Nmm, 
+    double asymmetry = asymmetry_value_calculation(meanVariable, prefix, Npp, Npm, Nmp, Nmm, 
       meanPol, Ptp, Ptm, asymmetry_index);
-    float error = asymmetry_error_calculation(meanVariable, prefix, Npp, Npm, Nmp, Nmm, meanPol, 
+    double error = asymmetry_error_calculation(meanVariable, prefix, Npp, Npm, Nmp, Nmm, meanPol, 
       Ptp, Ptm, asymmetry_index);
 
     // Fill the asymmetry histogram with the calculated values
@@ -939,12 +939,12 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
 // Function to fit the beam-spin asymmetry histogram
 double BSA_funcToFit(double* x, double* par) {
   // Retrieve the parameters 
-  float ALU_offset = par[0];
-  float ALU_sinphi = par[1];
+  double ALU_offset = par[0];
+  double ALU_sinphi = par[1];
   // double AUU_cosphi = par[2];
   // double AUU_cos2phi = par[3];
   // Retrieve the phi variable from the input x array
-  float phi = x[0];
+  double phi = x[0];
   // Calculate and return the value of the function for the given phi and parameters 
   return ALU_offset + ALU_sinphi*sin(phi);
   // return (ALU_offset + ALU_sinphi*sin(phi)) / (1 + AUU_cosphi*cos(phi) + AUU_cos2phi*cos(2*phi));
@@ -953,13 +953,13 @@ double BSA_funcToFit(double* x, double* par) {
 // Function to fit the target-spin asymmetry histogram
 double TSA_funcToFit(double* x, double* par) {
   // Retrieve the parameters A
-  float AUL_offset = par[0];
-  float AUL_sinphi = par[1];
-  float AUL_sin2phi = par[2];
+  double AUL_offset = par[0];
+  double AUL_sinphi = par[1];
+  double AUL_sin2phi = par[2];
   // double AUU_cosphi = par[3];
   // double AUU_cos2phi = par[4];
   // Retrieve the phi variable from the input x array
-  float phi = x[0];
+  double phi = x[0];
   // Calculate and return the value of the function for the given phi and parameters 
   return AUL_offset + AUL_sinphi*sin(phi)+AUL_sin2phi*sin(2*phi);
   // return (AUL_offset + AUL_sinphi*sin(phi)+AUL_sin2phi*sin(2*phi)) /
@@ -969,12 +969,12 @@ double TSA_funcToFit(double* x, double* par) {
 // Function to fit the double-spin asymmetry histogram
 double DSA_funcToFit(double* x, double* par) {
   // Retrieve the parameters A
-  float ALL = par[0];
-  float ALL_cosphi = par[1];
+  double ALL = par[0];
+  double ALL_cosphi = par[1];
   // double AUU_cosphi = par[2];
   // double AUU_cos2phi = par[3];
   // Retrieve the phi variable from the input x array
-  float phi = x[0];
+  double phi = x[0];
   // Calculate and return the value of the function for the given phi and parameters 
   return ALL+ALL_cosphi*cos(phi);
   // return (ALL+ALL_cosphi*cos(phi)) / (1 + AUU_cosphi*cos(phi) + AUU_cos2phi*cos(2*phi));
@@ -1002,10 +1002,10 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   
   // Add points to the TGraphErrors
   for (int i = 1; i <= histogram->GetNbinsX(); ++i) {
-    float x = histogram->GetBinCenter(i);
-    float y = histogram->GetBinContent(i);
-    float ex = 0;  // we don't want horizontal error bars
-    float ey = histogram->GetBinError(i);
+    double x = histogram->GetBinCenter(i);
+    double y = histogram->GetBinContent(i);
+    double ex = 0;  // we don't want horizontal error bars
+    double ey = histogram->GetBinError(i);
     graph->SetPoint(i - 1, x, y);
     graph->SetPointError(i - 1, ex, ey);
   }
@@ -1148,15 +1148,15 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
     plotHistogramAndFit(hist, fitFunction, i, asymmetry_index, prefix);
 
     // Initialize variables to store the sums and event counts
-    float sumVariable = 0;
-    float numEvents = 0;
+    double sumVariable = 0;
+    double numEvents = 0;
     // Variables to calculate the mean depolarization factor
-    float sumDepA = 0; float sumDepB = 0; float sumDepC = 0; float sumDepV = 0; float sumDepW = 0;
+    double sumDepA = 0; double sumDepB = 0; double sumDepC = 0; double sumDepV = 0; double sumDepW = 0;
 
     // Variables to calculate the mean kinematics in each bin
-    float sumQ2 = 0; float sumW = 0; float sumx = 0; float sumy = 0;
-    float sumz = 0; float sumzeta = 0; float sumpT = 0; float sumxF = 0;
-    float sumt = 0; float sumtmin = 0;
+    double sumQ2 = 0; double sumW = 0; double sumx = 0; double sumy = 0;
+    double sumz = 0; double sumzeta = 0; double sumpT = 0; double sumxF = 0;
+    double sumt = 0; double sumtmin = 0;
 
     // Loop over all events and calculate the sums and event counts
     int counter = 0;
@@ -1164,7 +1164,7 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
       // if (counter > 100000) {
       //   break;
       // }
-      float currentVariable = getEventProperty(event, currentFits);
+      double currentVariable = getEventProperty(event, currentFits);
       if (applyKinematicCuts(event, currentFits, 0) && currentVariable>=allBins[currentFits][i] && 
         currentVariable < allBins[currentFits][i + 1]) {
           sumVariable += currentVariable;
@@ -1195,36 +1195,36 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
     cout << "Found " << numEvents << " events in this bin." << endl;
 
     // Calculate the mean values for the variable and depolarization factors
-    float meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
-    float meanDepA = numEvents > 0 ? sumDepA / numEvents : 0.0;
-    float meanDepB = numEvents > 0 ? sumDepB / numEvents : 0.0;
-    float meanDepC = numEvents > 0 ? sumDepC / numEvents : 0.0;
-    float meanDepV = numEvents > 0 ? sumDepV / numEvents : 0.0;
-    float meanDepW = numEvents > 0 ? sumDepW / numEvents : 0.0;
+    double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
+    double meanDepA = numEvents > 0 ? sumDepA / numEvents : 0.0;
+    double meanDepB = numEvents > 0 ? sumDepB / numEvents : 0.0;
+    double meanDepC = numEvents > 0 ? sumDepC / numEvents : 0.0;
+    double meanDepV = numEvents > 0 ? sumDepV / numEvents : 0.0;
+    double meanDepW = numEvents > 0 ? sumDepW / numEvents : 0.0;
 
     // Calculate the mean values for the kinematic variables
-    float meanQ2 = numEvents > 0 ? sumQ2 / numEvents : 0.0;
-    float meanW = numEvents > 0 ? sumW / numEvents : 0.0;
-    float meanx = numEvents > 0 ? sumx / numEvents : 0.0;
-    float meany = numEvents > 0 ? sumy / numEvents : 0.0;
-    float meanz = numEvents > 0 ? sumz / numEvents : 0.0;
-    float meanzeta = numEvents > 0 ? sumzeta / numEvents : 0.0;
-    float meanpT = numEvents > 0 ? sumpT / numEvents : 0.0;
-    float meanxF = numEvents > 0 ? sumxF / numEvents : 0.0;
-    float meant = numEvents > 0 ? sumt / numEvents : 0.0;
-    float meantmin = numEvents > 0 ? sumtmin / numEvents : 0.0;
+    double meanQ2 = numEvents > 0 ? sumQ2 / numEvents : 0.0;
+    double meanW = numEvents > 0 ? sumW / numEvents : 0.0;
+    double meanx = numEvents > 0 ? sumx / numEvents : 0.0;
+    double meany = numEvents > 0 ? sumy / numEvents : 0.0;
+    double meanz = numEvents > 0 ? sumz / numEvents : 0.0;
+    double meanzeta = numEvents > 0 ? sumzeta / numEvents : 0.0;
+    double meanpT = numEvents > 0 ? sumpT / numEvents : 0.0;
+    double meanxF = numEvents > 0 ? sumxF / numEvents : 0.0;
+    double meant = numEvents > 0 ? sumt / numEvents : 0.0;
+    double meantmin = numEvents > 0 ? sumtmin / numEvents : 0.0;
 
     switch (asymmetry_index) {
       case 0: {// beam-spin asymmetry
         // Get the fitted parameters and their errors
-        float ALU_offset = fitFunction->GetParameter(0);
-        float ALU_offset_error = fitFunction->GetParError(0);
-        float ALU_sinphi = fitFunction->GetParameter(1); 
-        float ALU_sinphi_error = fitFunction->GetParError(1);
-        // float AUU_cosphi = fitFunction->GetParameter(2); 
-        // float AUU_cosphi_error = fitFunction->GetParError(2);
-        // float AUU_cos2phi = fitFunction->GetParameter(3); 
-        // float AUU_cos2phi_error = fitFunction->GetParError(3);
+        double ALU_offset = fitFunction->GetParameter(0);
+        double ALU_offset_error = fitFunction->GetParError(0);
+        double ALU_sinphi = fitFunction->GetParameter(1); 
+        double ALU_sinphi_error = fitFunction->GetParError(1);
+        // double AUU_cosphi = fitFunction->GetParameter(2); 
+        // double AUU_cosphi_error = fitFunction->GetParError(2);
+        // double AUU_cos2phi = fitFunction->GetParameter(3); 
+        // double AUU_cos2phi_error = fitFunction->GetParError(3);
         ALU_sinphi = (meanDepA/meanDepW)*ALU_sinphi;
         ALU_sinphi_error = (meanDepA/meanDepW)*ALU_sinphi_error;
         // AUU_cosphi = (meanDepA/meanDepV)*AUU_cosphi;
@@ -1243,16 +1243,16 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
       }
       case 1: {// target-spin asymmetry
         // Get the fitted parameters and their errors
-        float AUL_offset = fitFunction->GetParameter(0);
-        float AUL_offset_error = fitFunction->GetParError(0);
-        float AUL_sinphi = fitFunction->GetParameter(1);
-        float AUL_sinphi_error = fitFunction->GetParError(1);
-        float AUL_sin2phi = fitFunction->GetParameter(2);
-        float AUL_sin2phi_error = fitFunction->GetParError(2);
-        // float AUU_cosphi = fitFunction->GetParameter(3); 
-        // float AUU_cosphi_error = fitFunction->GetParError(3);
-        // float AUU_cos2phi = fitFunction->GetParameter(4); 
-        // float AUU_cos2phi_error = fitFunction->GetParError(4);
+        double AUL_offset = fitFunction->GetParameter(0);
+        double AUL_offset_error = fitFunction->GetParError(0);
+        double AUL_sinphi = fitFunction->GetParameter(1);
+        double AUL_sinphi_error = fitFunction->GetParError(1);
+        double AUL_sin2phi = fitFunction->GetParameter(2);
+        double AUL_sin2phi_error = fitFunction->GetParError(2);
+        // double AUU_cosphi = fitFunction->GetParameter(3); 
+        // double AUU_cosphi_error = fitFunction->GetParError(3);
+        // double AUU_cos2phi = fitFunction->GetParameter(4); 
+        // double AUU_cos2phi_error = fitFunction->GetParError(4);
         AUL_sinphi = (meanDepA/meanDepV)*AUL_sinphi;
         AUL_sinphi_error = (meanDepA/meanDepV)*AUL_sinphi_error;
         AUL_sin2phi = (meanDepA/meanDepB)*AUL_sin2phi;
@@ -1274,14 +1274,14 @@ void performChi2Fits(const char *filename, const char* output_file, const char* 
       }
       case 2: {// double-spin asymmetry
         // Get the fitted parameters and their errors
-        float ALL = fitFunction->GetParameter(0);
-        float ALL_error = fitFunction->GetParError(0);
-        float ALL_cosphi = fitFunction->GetParameter(1);
-        float ALL_cosphi_error = fitFunction->GetParError(1);
-        // float AUU_cosphi = fitFunction->GetParameter(2); 
-        // float AUU_cosphi_error = fitFunction->GetParError(2);
-        // float AUU_cos2phi = fitFunction->GetParameter(3); 
-        // float AUU_cos2phi_error = fitFunction->GetParError(3);
+        double ALL = fitFunction->GetParameter(0);
+        double ALL_error = fitFunction->GetParError(0);
+        double ALL_cosphi = fitFunction->GetParameter(1);
+        double ALL_cosphi_error = fitFunction->GetParError(1);
+        // double AUU_cosphi = fitFunction->GetParameter(2); 
+        // double AUU_cosphi_error = fitFunction->GetParError(2);
+        // double AUU_cos2phi = fitFunction->GetParameter(3); 
+        // double AUU_cos2phi_error = fitFunction->GetParError(3);
         ALL = (meanDepA/meanDepC)*ALL;
         ALL_error = (meanDepA/meanDepC)*ALL_error;
         ALL_cosphi = (meanDepA/meanDepW)*ALL_cosphi;
