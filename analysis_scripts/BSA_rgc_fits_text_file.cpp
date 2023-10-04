@@ -855,7 +855,6 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   int numEventsNegTarget = 0;
 
   // Fill the positive and negative helicity histograms
-  counter++;
   for (const eventData& event : data) {
 
     float currentVariable = getEventProperty(event, currentFits);

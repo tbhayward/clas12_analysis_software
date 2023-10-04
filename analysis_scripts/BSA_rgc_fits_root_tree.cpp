@@ -673,7 +673,6 @@ TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int b
 
   KinematicCuts kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
   // Counter to limit the number of processed entries
-  int counter = 0;
   while (dataReader.Next()) {
 
     // Apply kinematic cuts (this function will need to be adapted)
@@ -702,7 +701,6 @@ TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int b
       }
       numEvents++; // Increment the numEvents
     }
-    counter++; // Increment the counter
   }
   dataReader.Restart();  // Reset the TTreeReader at the end of the function
 
