@@ -857,10 +857,6 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   // Fill the positive and negative helicity histograms
   counter++;
   for (const eventData& event : data) {
-    counter++;
-    if (counter > 1000) {
-      break;
-    }
 
     float currentVariable = getEventProperty(event, currentFits);
     if (applyKinematicCuts(event, currentFits, 0) && currentVariable >= varMin && 
