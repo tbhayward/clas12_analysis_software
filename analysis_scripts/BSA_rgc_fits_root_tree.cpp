@@ -655,6 +655,7 @@ TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int b
   double numEvents = 0;
   // Variables to calculate the mean polarization
   double sumPol = 0; // sum of the beam polarization
+  double test = 0;
   double sumTargetPosPol = 0; // sum of the target positive polarization
   double sumTargetNegPol = 0; // sum of the target negative polarization
   int numEventsPosTarget = 0;
@@ -673,36 +674,39 @@ TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int b
   KinematicCuts kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
   // Counter to limit the number of processed entries
   int counter = 0;
-  double test = 0;
   while (dataReader.Next()) {
+    counter++;
+    if (counter > 1000) {
+      break;
+    }
 
-      // Apply kinematic cuts (this function will need to be adapted)
-      bool passedKinematicCuts = kinematicCuts.applyCuts(currentFits, false);
-      // bool passedKinematicCuts = true;
-      // Check if the currentVariable is within the desired range
-      if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
-        sumVariable += *currentVariable;
+    // Apply kinematic cuts (this function will need to be adapted)
+    bool passedKinematicCuts = kinematicCuts.applyCuts(currentFits, false);
+    // bool passedKinematicCuts = true;
+    // Check if the currentVariable is within the desired range
+    if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
+      sumVariable += *currentVariable;
 
-        if (*helicity > 0 && *target_pol > 0) { histPosPos->Fill(*phi); } 
-        else if (*helicity > 0 && *target_pol < 0) { histPosNeg->Fill(*phi); } 
-        else if (*helicity < 0 && *target_pol > 0) { histNegPos->Fill(*phi); } 
-        else if (*helicity < 0 && *target_pol < 0) { histNegNeg->Fill(*phi); }
+      if (*helicity > 0 && *target_pol > 0) { histPosPos->Fill(*phi); } 
+      else if (*helicity > 0 && *target_pol < 0) { histPosNeg->Fill(*phi); } 
+      else if (*helicity < 0 && *target_pol > 0) { histNegPos->Fill(*phi); } 
+      else if (*helicity < 0 && *target_pol < 0) { histNegNeg->Fill(*phi); }
 
 
-        // Accumulate polarization and event count for mean polarization calculation
-        // sumPol += *beam_pol;
-        sumPol += 0.83534;
-        test += 0.34018;
-        if (*target_pol > 0) {
-          sumTargetPosPol += *target_pol;
-          numEventsPosTarget++;
-        } else if (*target_pol < 0) {
-          sumTargetNegPol += *target_pol;
-          numEventsNegTarget++;
-        }
-        numEvents++; // Increment the numEvents
+      // Accumulate polarization and event count for mean polarization calculation
+      // sumPol += *beam_pol;
+      sumPol += 0.83534;
+      test += 0.34018;
+      if (*target_pol > 0) {
+        sumTargetPosPol += *target_pol;
+        numEventsPosTarget++;
+      } else if (*target_pol < 0) {
+        sumTargetNegPol += *target_pol;
+        numEventsNegTarget++;
       }
-      counter++; // Increment the counter
+      numEvents++; // Increment the numEvents
+    }
+    counter++; // Increment the counter
   }
   dataReader.Restart();  // Reset the TTreeReader at the end of the function
 
