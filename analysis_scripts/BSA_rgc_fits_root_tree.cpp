@@ -653,7 +653,7 @@ void performMLMFits(TTreeReader &dataReader, const char* output_file, const char
   minuit.SetErrorDef(0.5); // error definition for MLE, 1 for chi2
   // This is due to the fact that −logL = chi2/2. 
   // The default value of ErrorDef=1 corresponds to one standard deviation for chi2 function.
-  minuit.SetFCN(negLogLikelihood);
+  // minuit.SetFCN(negLogLikelihood);
 
   // Declare string streams for storing the MLM fit results
   std::ostringstream mlmFitsAStream; std::ostringstream mlmFitsBStream; 
@@ -1200,7 +1200,7 @@ int main(int argc, char *argv[]) {
       performChi2Fits(dataReader, output_file, kinematic_file, binNames[i], asymmetry);
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    performMLMfits(dataReader, output_file, kinematic_file, binNames[i]);
+    performMLMFits(dataReader, output_file, kinematic_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
     currentFits++;
