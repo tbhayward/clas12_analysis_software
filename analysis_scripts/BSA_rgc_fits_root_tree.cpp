@@ -637,6 +637,59 @@ double DSA_funcToFit(double* x, double* par) {
   // return (ALL+ALL_cosphi*cos(phi)) / (1 + AUU_cosphi*cos(phi) + AUU_cos2phi*cos(2*phi));
 }
 
+void performMLMFits(TTreeReader &dataReader, const char* output_file, const char* kinematic_file,
+  const std::string& prefix) {
+  // Read the event data from the input file and store it in the global variable gData
+
+  // Determine the number of bins
+  size_t numBins = allBins[currentFits].size() - 1;
+
+  // Initialize TMinuit
+  double arglist[10]; arglist[0] = 1;
+  int ierflg = 0;
+  TMinuit minuit(7); // parameter numbers
+  minuit.SetPrintLevel(-1);
+  minuit.SetErrorDef(0.5); // error definition for MLE, 1 for chi2
+  // This is due to the fact that −logL = chi2/2. 
+  // The default value of ErrorDef=1 corresponds to one standard deviation for chi2 function.
+  minuit.SetFCN(negLogLikelihood);
+
+  // Declare string streams for storing the MLM fit results
+  std::ostringstream mlmFitsAStream; std::ostringstream mlmFitsBStream; 
+  std::ostringstream mlmFitsCStream; std::ostringstream mlmFitsDStream; 
+  std::ostringstream mlmFitsEStream; std::ostringstream mlmFitsFStream;
+  std::ostringstream mlmFitsGStream; 
+
+  // Initialize the string streams with the output variable names
+  mlmFitsAStream << prefix << "MLMFitsALUsinphi = {";
+  mlmFitsBStream << prefix << "MLMFitsAULsinphi = {";
+  mlmFitsCStream << prefix << "MLMFitsAULsin2phi = {";
+  mlmFitsDStream << prefix << "MLMFitsALL = {";
+  mlmFitsEStream << prefix << "MLMFitsALLcosphi = {";
+  mlmFitsFStream << prefix << "MLMFitsAUUcosphi = {";
+  mlmFitsGStream << prefix << "MLMFitsAUUcos2phi = {";
+
+  // Initialize string streams to store the mean variables for each bin and asymmetries
+  std::ostringstream asymmetryStream;
+  asymmetryStream << "\\begin{table}[h]" << std::endl;
+  asymmetryStream << "\\centering" << std::endl;
+  asymmetryStream << "\\begin{tabular}{|c|c|c|c|c|c|c|c|c|} \\hline" << std::endl;
+  asymmetryStream << "Bin & $<" << prefix << ">$ & $F_{UU}^{\\cos(\\phi)}/F_{UU}$ & ";
+  asymmetryStream << "$F_{UU}^{\\cos(2\\phi)}/F_{UU}$ ";
+  asymmetryStream << "& $F_{LU}^{\\sin(\\phi)}/F_{UU}$ & $F_{UL}^{\\sin(\\phi)}/F_{UU}$ & ";
+  asymmetryStream << "$F_{UL}^{\\sin(2\\phi)}/F_{UU}$ & $F_{LL}/F_{UU}$ &";
+  asymmetryStream << "$F_{LL}^{\\cos(\\phi)}/F_{UU}$ \\\\ \\hline" << std::endl;
+
+  // Iterate through each bin
+  for (size_t i = 0; i < numBins; ++i) {
+    cout << endl << "Beginning MLM fit for " << binNames[currentFits]
+      << " bin " << i << ". ";
+    currentBin = i;
+
+  }
+
+  }
+
 TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int binIndex, 
   const std::string& prefix, int asymmetry_index) {
 
@@ -1145,6 +1198,11 @@ int main(int argc, char *argv[]) {
       }
       performChi2Fits(dataReader, output_file, kinematic_file, binNames[i], asymmetry);
     }
+    cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
+    perMLMfits(dataReader, output_file, kinematic_file, binNames[i]);
+    cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
+    cout << endl << endl;
+    currentFits++;
   }
 
   cout << endl; 
