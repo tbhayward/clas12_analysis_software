@@ -24,6 +24,7 @@
 #include <TTreeReader.h>
 #include <TTreeReaderValue.h>
 #include <TH1D.h>
+#include "TMinuit.h"
 
 // Using namespace declaration
 using namespace std;
@@ -1199,7 +1200,7 @@ int main(int argc, char *argv[]) {
       performChi2Fits(dataReader, output_file, kinematic_file, binNames[i], asymmetry);
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    perMLMfits(dataReader, output_file, kinematic_file, binNames[i]);
+    performMLMfits(dataReader, output_file, kinematic_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
     currentFits++;
