@@ -638,6 +638,44 @@ double DSA_funcToFit(double* x, double* par) {
   // return (ALL+ALL_cosphi*cos(phi)) / (1 + AUU_cosphi*cos(phi) + AUU_cos2phi*cos(2*phi));
 }
 
+// Negative log-likelihood function
+void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag) {
+  // npar: number of parameters
+  // gin: an array of derivatives (if needed)
+  // f: the value of the function
+  // par: an array of the parameter values
+  // iflag: a flag (see TMinuit documentation for details)
+
+  // Extract parameters from the input parameter array
+  double ALU_sinphi = par[0];
+  double AUL_sinphi = par[1];
+  double AUL_sin2phi = par[2];
+  double ALL = par[3];
+  double ALL_cosphi = par[4];
+  double AUU_cosphi = par[5];
+  double AUU_cos2phi = par[6];
+
+  // Initialize variables for counting events (N), positive helicity sum (sum_P), 
+  // and negative helicity sum (sum_N)
+  double N = 0;
+  double NUU = 0; // normalization integral
+  double sum_PP = 0; // positive beam -- positive target
+  double sum_PM = 0; // positive beam -- negative target
+  double sum_MP = 0; // negative beam -- positive target
+  double sum_MM = 0; // negative beam -- negative target
+
+  TTreeReaderValue<int> runnum(dataReader, "runnum");
+  TTreeReaderValue<int> evnum(dataReader, "evnum");
+  TTreeReaderValue<double> xF(dataReader, "xF");
+  TTreeReaderValue<double> Mx(dataReader, "Mx");
+  TTreeReaderValue<int> helicity(dataReader, "helicity");
+  TTreeReaderValue<double> beam_pol(dataReader, "beam_pol");
+  TTreeReaderValue<double> target_pol(dataReader, "target_pol");
+  TTreeReaderValue<double> phi(dataReader, "phi");
+  TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
+
+}
+
 void performMLMFits(TTreeReader &dataReader, const char* output_file, const char* kinematic_file,
   const std::string& prefix) {
   // Read the event data from the input file and store it in the global variable gData
