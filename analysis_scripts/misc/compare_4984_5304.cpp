@@ -260,9 +260,9 @@ void createHistograms(TTree* tree1, TTree* tree2,
         // Loop through tree1 and fill tempHist
         for (Long64_t i = 0; i < tree1->GetEntries(); i++) {
             tree1->GetEntry(i);
-            if (runnum != 4984) {
-                continue;
-            }
+            // if (runnum != 4984) {
+            //     continue;
+            // }
             if (Mx > 1.5) {
                 tempHist.Fill(branchValue);
             }
@@ -289,9 +289,9 @@ void createHistograms(TTree* tree1, TTree* tree2,
         // Loop through tree1 and fill hist1
         for (Long64_t i = 0; i < tree1->GetEntries(); i++) {
             tree1->GetEntry(i);
-            if (runnum != 4984) {
-                continue;
-            }
+            // if (runnum != 4984) {
+            //     continue;
+            // }
             if (Mx > 1.5) {
                 hist1.Fill(branchValue);
             }
@@ -300,9 +300,9 @@ void createHistograms(TTree* tree1, TTree* tree2,
         // Loop through tree2 and fill hist2
         for (Long64_t i = 0; i < tree2->GetEntries(); i++) {
             tree2->GetEntry(i);
-            if (runnum != 5304 && runnum != 5126) {
-                continue;
-            }
+            // if (runnum != 5304 && runnum != 5126) {
+            //     continue;
+            // }
             if (Mx > 1.5) {
                 hist2.Fill(branchValue);
             }
@@ -312,10 +312,16 @@ void createHistograms(TTree* tree1, TTree* tree2,
         double min_val = hist1.GetXaxis()->GetXmin();
         double max_val = hist1.GetXaxis()->GetXmax();
 
+        // // Normalize the histogram
+        // double scale1 = 1.0 / 394071.8; // 4984
+        // hist1.Scale(scale1);
+        // double scale2 = 1.0 / (473646.34 + 428257.66); // 5304, 5126
+        // hist2.Scale(scale2);
+
         // Normalize the histogram
-        double scale1 = 1.0 / 394071.8; // 4984
+        double scale1 = 1.0 / 625251.9; // 6715
         hist1.Scale(scale1);
-        double scale2 = 1.0 / (473646.34 + 428257.66); // 5304, 5126
+        double scale2 = 1.0 / (185330.48 + 150735.69); // 4044, 4071
         hist2.Scale(scale2);
 
         hist1.SetLineColor(kRed);
