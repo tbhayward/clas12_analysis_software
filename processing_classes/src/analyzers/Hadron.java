@@ -82,6 +82,7 @@ public class Hadron {
         
 //        helicity = eventBank.getByte("helicity", 0);
         helicity = eventBank.getByte("helicityRaw", 0);
+        System.out.println(helicity);
         runnum = configBank.getInt("run",0); // used for beam energy and polarization
     
         // default beam energy set to rga fall 2018
