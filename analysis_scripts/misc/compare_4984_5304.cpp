@@ -494,7 +494,7 @@ void compare_4984_5304(std::string root_file1_path, std::string root_file2_path,
         cout << "Error getting trees from ROOT files." << endl;
     }
 
-    createHistograms(tree1, tree2, data_set_1_name, data_set_2_name, "output_2");
+    createHistograms(tree1, tree2, data_set_1_name, data_set_2_name, "output");
 
     file1->Close(); delete file1;
     file2->Close(); delete file2;
