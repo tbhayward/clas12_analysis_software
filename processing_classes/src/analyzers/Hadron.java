@@ -80,8 +80,8 @@ public class Hadron {
         HipoDataBank configBank = (HipoDataBank) event.getBank("RUN::config");
         HipoDataBank rec_Bank = (HipoDataBank) event.getBank("REC::Particle"); // load particle bank
         
-        helicity = eventBank.getByte("helicity", 0);
-//        helicity = eventBank.getByte("helicityRaw", 0);
+//        helicity = eventBank.getByte("helicity", 0);
+        helicity = eventBank.getByte("helicityRaw", 0);
         runnum = configBank.getInt("run",0); // used for beam energy and polarization
     
         // default beam energy set to rga fall 2018
