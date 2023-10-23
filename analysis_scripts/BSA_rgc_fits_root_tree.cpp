@@ -1004,7 +1004,7 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
       numEvents++; // Increment the numEvents
     }
   }
-  cout << numEvents << endl;
+  
   dataReader.Restart();  // Reset the TTreeReader at the end of the function
 
   // Calculate the mean polarization
