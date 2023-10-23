@@ -688,14 +688,15 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     bool passedKinematicCuts = data_kinematicCuts.applyCuts(currentFits, false);
     // bool passedKinematicCuts = true;
     // Check if the currentVariable is within the desired range
-    if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
+    if (*currentVariable >= allBins[currentFits][currentBin] && 
+          *currentVariable < allBins[currentFits][currentBin + 1] && passedKinematicCuts) {
 
       // Increment the event count
       N += 1;
 
       double Df = dilution_factor(*currentVariable, mlmPrefix); // dilution factor
-      double Pb = beam_pol;
-      double Pt = target_pol;
+      double Pb = *beam_pol;
+      double Pt = *target_pol;
       if (*helicity > 0 && Pt > 0) { 
         sum_PP += log(1 
           + (*DepV / *DepA)*AUU_cosphi*cos(*phi) + (*DepB / *DepA)*AUU_cos2phi*cos(2 * *phi) // UU 
@@ -728,13 +729,13 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     }
   }
 
-  TTreeReaderValue<double> phi(mcReader, "phi");
-  TTreeReaderValue<double> DepA(mcReader, "DepA");
-  TTreeReaderValue<double> DepB(mcReader, "DepB");
-  TTreeReaderValue<double> DepC(mcReader, "DepC");
-  TTreeReaderValue<double> DepV(mcReader, "DepV");
-  TTreeReaderValue<double> DepW(mcReader, "DepW");
-  TTreeReaderValue<double> currentVariable(mcReader, propertyNames[currentFits].c_str());
+  phi(mcReader, "phi");
+  DepA(mcReader, "DepA");
+  DepB(mcReader, "DepB");
+  DepC(mcReader, "DepC");
+  DepV(mcReader, "DepV");
+  DepW(mcReader, "DepW");
+  currentVariable(mcReader, propertyNames[currentFits].c_str());
 
   KinematicCuts mc_kinematicCuts(mcReader);  // Create an instance of the KinematicCuts class
   while (mcReader.Next()) {
@@ -742,7 +743,8 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     bool passedKinematicCuts = mc_kinematicCuts.applyCuts(currentFits, false);
     // bool passedKinematicCuts = true;
     // Check if the currentVariable is within the desired range
-    if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
+    if (*currentVariable >= allBins[currentFits][currentBin] && 
+          *currentVariable < allBins[currentFits][currentBin + 1] && passedKinematicCuts) {
       NUU+=1+(*DepV / *DepA)*AUU_cosphi*cos(*phi)+(*DepB / *DepA)*AUU_cos2phi*cos(2 * *phi); // UU
     }
   }
@@ -826,7 +828,7 @@ void performMLMFits(const char* output_file, const char* kinematic_file,
     minuit.DefineParameter(5, "AUU_cosphi", -0.1, 0.01, -1, 1);
     minuit.DefineParameter(6, "AUU_cos2phi", 0.10, 0.01, -1, 1);
 
-    Minimize the negative log-likelihood function
+    // Minimize the negative log-likelihood function
     minuit.Migrad(); cout << endl;
 
     // Extract the fitted parameter values and errors
@@ -857,7 +859,7 @@ void performMLMFits(const char* output_file, const char* kinematic_file,
       // Check if the currentVariable is within the desired range
       if (*currentVariable >= allBins[currentFits][i] && 
         *currentVariable < allBins[currentFits][i + 1] && passedKinematicCuts) {
-        sumVariable += currentVariable;
+        sumVariable += *currentVariable;
         numEvents += 1;
       }
     }
