@@ -833,8 +833,8 @@ double asymmetry_error_calculation(double currentVariable, const std::string& pr
 TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* histName,
   int binIndex, const std::string& prefix, int asymmetry_index) {
   // Determine the variable range for the specified bin
-  double varMin = allBins[currentFits][binIndex];
-  double varMax = allBins[currentFits][binIndex + 1];
+  // double varMin = allBins[currentFits][binIndex];
+  // double varMax = allBins[currentFits][binIndex + 1];
 
   // Create positive and negative helicity histograms
   TH1D* histPosPos = new TH1D(Form("%s_pospos", histName), "", 12, 0, 2 * TMath::Pi());
