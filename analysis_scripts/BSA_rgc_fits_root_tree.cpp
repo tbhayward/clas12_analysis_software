@@ -729,13 +729,13 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     }
   }
 
-  phi(mcReader, "phi");
-  DepA(mcReader, "DepA");
-  DepB(mcReader, "DepB");
-  DepC(mcReader, "DepC");
-  DepV(mcReader, "DepV");
-  DepW(mcReader, "DepW");
-  currentVariable(mcReader, propertyNames[currentFits].c_str());
+  TTreeReaderValue<double> mc_phi(mcReader, "phi");
+  TTreeReaderValue<double> mc_DepA(mcReader, "DepA");
+  TTreeReaderValue<double> mc_DepB(mcReader, "DepB");
+  TTreeReaderValue<double> mc_DepC(mcReader, "DepC");
+  TTreeReaderValue<double> mc_DepV(mcReader, "DepV");
+  TTreeReaderValue<double> mc_DepW(mcReader, "DepW");
+  TTreeReaderValue<double> mc_currentVariable(mcReader, propertyNames[currentFits].c_str());
 
   KinematicCuts mc_kinematicCuts(mcReader);  // Create an instance of the KinematicCuts class
   while (mcReader.Next()) {
@@ -743,9 +743,10 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     bool passedKinematicCuts = mc_kinematicCuts.applyCuts(currentFits, false);
     // bool passedKinematicCuts = true;
     // Check if the currentVariable is within the desired range
-    if (*currentVariable >= allBins[currentFits][currentBin] && 
-          *currentVariable < allBins[currentFits][currentBin + 1] && passedKinematicCuts) {
-      NUU+=1+(*DepV / *DepA)*AUU_cosphi*cos(*phi)+(*DepB / *DepA)*AUU_cos2phi*cos(2 * *phi); // UU
+    if (*mc_currentVariable >= allBins[currentFits][currentBin] && 
+          *mc_currentVariable < allBins[currentFits][currentBin + 1] && passedKinematicCuts) {
+      NUU+=1+(*mc_DepV / *mc_DepA)*AUU_cosphi*cos(*mc_phi)+
+        (*mc_DepB / *mc_DepA)*AUU_cos2phi*cos(2 * *mc_phi); // UU
     }
   }
 
