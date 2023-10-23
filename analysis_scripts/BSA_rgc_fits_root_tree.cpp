@@ -697,6 +697,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
       double Df = dilution_factor(*currentVariable, mlmPrefix); // dilution factor
       double Pb = *beam_pol;
       double Pt = *target_pol;
+      cout << endl << endl << *helicity << " " << Pt << endl << endl;
       if (*helicity > 0 && Pt > 0) { 
         sum_PP += log(1 
           + (*DepV / *DepA)*AUU_cosphi*cos(*phi) + (*DepB / *DepA)*AUU_cos2phi*cos(2 * *phi) // UU 
