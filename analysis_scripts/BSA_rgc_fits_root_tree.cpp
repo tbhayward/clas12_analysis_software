@@ -674,7 +674,6 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
   TTreeReaderValue<double> target_pol(dataReader, "target_pol");
   TTreeReaderValue<double> phi(dataReader, "phi");
   TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
-  cout << xF << endl;
 
 }
 
@@ -727,6 +726,18 @@ void performMLMFits(const char* output_file, const char* kinematic_file,
     cout << endl << "Beginning MLM fit for " << binNames[currentFits]
       << " bin " << i << ". ";
     currentBin = i;
+
+    // Define the parameters with initial values and limits
+    minuit.DefineParameter(0, "ALU_sinphi", -0.015, 0.01, -1, 1);
+    minuit.DefineParameter(1, "AUL_sinphi", -0.020, 0.01, -1, 1);
+    minuit.DefineParameter(2, "AUL_sin2phi", -0.010, 0.01, -1, 1);
+    minuit.DefineParameter(3, "ALL", 0.40, 0.01, -1, 1);
+    minuit.DefineParameter(4, "ALL_cosphi", 0.01, 0.01, -1, 1);
+    minuit.DefineParameter(5, "AUU_cosphi", -0.1, 0.01, -1, 1);
+    minuit.DefineParameter(6, "AUU_cos2phi", 0.10, 0.01, -1, 1);
+
+    // Minimize the negative log-likelihood function
+    // minuit.Migrad(); cout << endl;
 
   }
 
@@ -1238,7 +1249,7 @@ int main(int argc, char *argv[]) {
         case 1: cout << "    Beginning chi2 TSA." << endl; break;
         case 2: cout << "    Beginning chi2 DSA." << endl; break;
       }
-      performChi2Fits(output_file, kinematic_file, binNames[i], asymmetry);
+      // performChi2Fits(output_file, kinematic_file, binNames[i], asymmetry);
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
     performMLMFits(output_file, kinematic_file, binNames[i]);
