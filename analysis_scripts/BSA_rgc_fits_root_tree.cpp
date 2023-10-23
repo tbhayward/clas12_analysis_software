@@ -747,6 +747,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     // Check if the currentVariable is within the desired range
     if (*mc_currentVariable >= allBins[currentFits][currentBin] && 
           *mc_currentVariable < allBins[currentFits][currentBin + 1] && passedKinematicCuts) {
+      cout << "Hello world" << endl;
       NUU+=1+(*mc_DepV / *mc_DepA)*AUU_cosphi*cos(*mc_phi)+
         (*mc_DepB / *mc_DepA)*AUU_cos2phi*cos(2 * *mc_phi); // UU
     }
