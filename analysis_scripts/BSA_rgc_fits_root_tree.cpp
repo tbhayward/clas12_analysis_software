@@ -29,7 +29,8 @@
 // Using namespace declaration
 using namespace std;
 
-
+TTreeReader dataReader;  // Declare as global variable
+TTreeReader mcReader;  // Declare as global variable
 
 size_t currentFits = 0;
 size_t currentBin = 0;
@@ -639,9 +640,7 @@ double DSA_funcToFit(double* x, double* par) {
 }
 
 // Negative log-likelihood function
-// void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag) {
-void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag, 
-  TTreeReader& dataReader) {
+void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag) {
   // npar: number of parameters
   // gin: an array of derivatives (if needed)
   // f: the value of the function
@@ -678,7 +677,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
 
 }
 
-void performMLMFits(TTreeReader &dataReader, const char* output_file, const char* kinematic_file,
+void performMLMFits(const char* output_file, const char* kinematic_file,
   const std::string& prefix) {
   // Read the event data from the input file and store it in the global variable gData
 
@@ -693,10 +692,7 @@ void performMLMFits(TTreeReader &dataReader, const char* output_file, const char
   minuit.SetErrorDef(0.5); // error definition for MLE, 1 for chi2
   // This is due to the fact that −logL = chi2/2. 
   // The default value of ErrorDef=1 corresponds to one standard deviation for chi2 function.
-  // minuit.SetFCN(negLogLikelihood);
-  minuit.SetFCN([&](Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag) {
-    negLogLikelihood(npar, gin, f, par, iflag, dataReader);
-  });
+  minuit.SetFCN(negLogLikelihood);
 
 
   // Declare string streams for storing the MLM fit results
@@ -735,7 +731,7 @@ void performMLMFits(TTreeReader &dataReader, const char* output_file, const char
 
 }
 
-TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int binIndex, 
+TH1D* createHistogramForBin(const char* histName, int binIndex, 
   const std::string& prefix, int asymmetry_index) {
 
   // Determine the variable range for the specified bin
@@ -841,7 +837,7 @@ TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int b
 
 }
 
-void performChi2Fits(TTreeReader &dataReader, const char* output_file, const char* kinematic_file,
+void performChi2Fits(const char* output_file, const char* kinematic_file,
   const std::string& prefix, int asymmetry_index) {
 
   // Initialize string streams to store the results for each bin
@@ -1230,8 +1226,8 @@ int main(int argc, char *argv[]) {
     cout << "-- Trees successfully extracted from ROOT files." << endl << endl;
   }
 
-  TTreeReader dataReader(data); // Create a TTreeReader for the data tree
-  TTreeReader mcReader(mc); // Create a TTreeReader for the mc tree
+  dataReader.SetTree(data);  // Initialize the global variable
+  mcReader.SetTree(mc);  // Initialize the global variable
 
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
@@ -1241,10 +1237,10 @@ int main(int argc, char *argv[]) {
         case 1: cout << "    Beginning chi2 TSA." << endl; break;
         case 2: cout << "    Beginning chi2 DSA." << endl; break;
       }
-      performChi2Fits(dataReader, output_file, kinematic_file, binNames[i], asymmetry);
+      performChi2Fits(output_file, kinematic_file, binNames[i], asymmetry);
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    performMLMFits(dataReader, output_file, kinematic_file, binNames[i]);
+    performMLMFits(output_file, kinematic_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
     currentFits++;
