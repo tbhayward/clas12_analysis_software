@@ -728,6 +728,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
       }
     }
   }
+  dataReader.Restart();  // Reset the TTreeReader at the end of the function
 
   TTreeReaderValue<double> mc_phi(mcReader, "phi");
   TTreeReaderValue<double> mc_DepA(mcReader, "DepA");
@@ -749,6 +750,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
         (*mc_DepB / *mc_DepA)*AUU_cos2phi*cos(2 * *mc_phi); // UU
     }
   }
+  mcReader.Restart();  // Reset the TTreeReader at the end of the function
 
   // determine min pos or neg beam helicity accumulated charge to scale down higher one
   double minBeamCharge = std::min({(cpp+cpm),(cmp+cmm)}); 
@@ -864,6 +866,7 @@ void performMLMFits(const char* output_file, const char* kinematic_file,
         numEvents += 1;
       }
     }
+    dataReader.Restart();  // Reset the TTreeReader at the end of the function
     double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
 
     // output to text file
