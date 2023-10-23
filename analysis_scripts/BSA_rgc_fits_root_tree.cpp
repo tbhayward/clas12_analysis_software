@@ -29,8 +29,7 @@
 // Using namespace declaration
 using namespace std;
 
-TTreeReader dataReader;  // Declare as global variable
-TTreeReader mcReader;  // Declare as global variable
+
 
 size_t currentFits = 0;
 size_t currentBin = 0;
@@ -677,7 +676,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
 
 }
 
-void performMLMFits(const char* output_file, const char* kinematic_file,
+void performMLMFits(TTreeReader &dataReader, const char* output_file, const char* kinematic_file,
   const std::string& prefix) {
   // Read the event data from the input file and store it in the global variable gData
 
@@ -692,8 +691,7 @@ void performMLMFits(const char* output_file, const char* kinematic_file,
   minuit.SetErrorDef(0.5); // error definition for MLE, 1 for chi2
   // This is due to the fact that −logL = chi2/2. 
   // The default value of ErrorDef=1 corresponds to one standard deviation for chi2 function.
-  minuit.SetFCN(negLogLikelihood);
-
+  // minuit.SetFCN(negLogLikelihood);
 
   // Declare string streams for storing the MLM fit results
   std::ostringstream mlmFitsAStream; std::ostringstream mlmFitsBStream; 
@@ -731,7 +729,7 @@ void performMLMFits(const char* output_file, const char* kinematic_file,
 
 }
 
-TH1D* createHistogramForBin(const char* histName, int binIndex, 
+TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int binIndex, 
   const std::string& prefix, int asymmetry_index) {
 
   // Determine the variable range for the specified bin
@@ -837,7 +835,7 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
 
 }
 
-void performChi2Fits(const char* output_file, const char* kinematic_file,
+void performChi2Fits(TTreeReader &dataReader, const char* output_file, const char* kinematic_file,
   const std::string& prefix, int asymmetry_index) {
 
   // Initialize string streams to store the results for each bin
@@ -896,7 +894,7 @@ void performChi2Fits(const char* output_file, const char* kinematic_file,
     snprintf(histName, sizeof(histName), "hist_%zu", i);
 
     // Create a histogram for the current bin
-    TH1D* hist = createHistogramForBin(histName, i, prefix, asymmetry_index);
+    TH1D* hist = createHistogramForBin(dataReader, histName, i, prefix, asymmetry_index);
     // Fit the histogram using the fitFunction and get the fit result
     hist->Fit(fitFunction, "QS");
     plotHistogramAndFit(hist, fitFunction, i, asymmetry_index, prefix);
@@ -1226,8 +1224,8 @@ int main(int argc, char *argv[]) {
     cout << "-- Trees successfully extracted from ROOT files." << endl << endl;
   }
 
-  dataReader.SetTree(data);  // Initialize the global variable
-  mcReader.SetTree(mc);  // Initialize the global variable
+  TTreeReader dataReader(data); // Create a TTreeReader for the data tree
+  TTreeReader mcReader(mc); // Create a TTreeReader for the mc tree
 
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
@@ -1237,10 +1235,10 @@ int main(int argc, char *argv[]) {
         case 1: cout << "    Beginning chi2 TSA." << endl; break;
         case 2: cout << "    Beginning chi2 DSA." << endl; break;
       }
-      performChi2Fits(output_file, kinematic_file, binNames[i], asymmetry);
+      performChi2Fits(dataReader, output_file, kinematic_file, binNames[i], asymmetry);
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    performMLMFits(output_file, kinematic_file, binNames[i]);
+    performMLMFits(dataReader, output_file, kinematic_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
     currentFits++;
