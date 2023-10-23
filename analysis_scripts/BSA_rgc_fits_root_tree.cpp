@@ -29,7 +29,8 @@
 // Using namespace declaration
 using namespace std;
 
-
+TTreeReader* dataReader;
+TTreeReader* mcReader;
 
 size_t currentFits = 0;
 size_t currentBin = 0;
@@ -1224,8 +1225,8 @@ int main(int argc, char *argv[]) {
     cout << "-- Trees successfully extracted from ROOT files." << endl << endl;
   }
 
-  TTreeReader dataReader(data); // Create a TTreeReader for the data tree
-  TTreeReader mcReader(mc); // Create a TTreeReader for the mc tree
+  dataReader = new TTreeReader(data); // Initialize the global dataReader pointer
+  mcReader = new TTreeReader(mc);     // Initialize the global mcReader pointer
 
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
@@ -1247,6 +1248,8 @@ int main(int argc, char *argv[]) {
   cout << endl; 
 
 
+  delete dataReader;
+  delete mcReader;
   // Stop the timer
   auto end_time = std::chrono::high_resolution_clock::now();
   // Calculate the elapsed time in seconds and microseconds
