@@ -757,7 +757,8 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
   // determine min pos or neg target helicity accumulated charge to scale down higher one
   double minTargetCharge = std::min({(cpp+cmp),(cpm+cmm)}); 
 
-  double nll = N * log(NUU) - 
+  double nll = N * 1 - 
+  // double nll = N * log(NUU) - 
     minBeamCharge*minTargetCharge/((cpp+cpm)*(cpp+cmp))*sum_PP -
     minBeamCharge*minTargetCharge/((cpp+cpm)*(cpm+cmm))*sum_PM - 
     minBeamCharge*minTargetCharge/((cmp+cmm)*(cpp+cmp))*sum_MP - 
