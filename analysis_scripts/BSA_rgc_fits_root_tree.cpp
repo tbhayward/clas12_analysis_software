@@ -743,8 +743,6 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
   while (mcReader.Next()) {
     // Apply kinematic cuts (this function will need to be adapted)
     bool passedKinematicCuts = mc_kinematicCuts.applyCuts(currentFits, true);
-    cout << passedKinematicCuts << endl;
-    // bool passedKinematicCuts = true;
     // Check if the currentVariable is within the desired range
     if (*mc_currentVariable >= allBins[currentFits][currentBin] && 
           *mc_currentVariable < allBins[currentFits][currentBin + 1] && passedKinematicCuts) {
@@ -1452,7 +1450,7 @@ int main(int argc, char *argv[]) {
         case 1: cout << "    Beginning chi2 TSA." << endl; break;
         case 2: cout << "    Beginning chi2 DSA." << endl; break;
       }
-      // performChi2Fits(output_file, kinematic_file, binNames[i], asymmetry);
+      performChi2Fits(output_file, kinematic_file, binNames[i], asymmetry);
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
     performMLMFits(output_file, kinematic_file, binNames[i]);
