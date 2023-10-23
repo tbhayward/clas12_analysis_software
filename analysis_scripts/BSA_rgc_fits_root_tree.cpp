@@ -1121,7 +1121,7 @@ void performChi2Fits(const char* output_file, const char* kinematic_file,
 
 }
 
-int BSA_rgc_fits_root_tree(int argc, char *argv[]) {
+int main(int argc, char *argv[]) {
   // Start the timer
   auto start_time = std::chrono::high_resolution_clock::now();
 
