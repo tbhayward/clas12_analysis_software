@@ -741,9 +741,9 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
 
   KinematicCuts mc_kinematicCuts(mcReader);  // Create an instance of the KinematicCuts class
   while (mcReader.Next()) {
-    cout << "Hello world" << endl;
     // Apply kinematic cuts (this function will need to be adapted)
     bool passedKinematicCuts = mc_kinematicCuts.applyCuts(currentFits, false);
+    cout << passedKinematicCuts << endl;
     // bool passedKinematicCuts = true;
     // Check if the currentVariable is within the desired range
     if (*mc_currentVariable >= allBins[currentFits][currentBin] && 
