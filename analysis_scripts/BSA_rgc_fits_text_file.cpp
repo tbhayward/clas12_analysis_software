@@ -617,9 +617,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
 
 void performMLMFits(const char *filename, const char* output_file, const char* kinematic_file,
   const std::string& prefix) {
-  double varMin = allBins[currentFits][binIndex];
-  double varMax = allBins[currentFits][binIndex + 1];
-  
+
   // Determine the number of bins
   size_t numBins = allBins[currentFits].size() - 1;
 
@@ -858,8 +856,9 @@ TH1D* createHistogramForBin(const std::vector<eventData>& data, const char* hist
   for (const eventData& event : data) {
 
     double currentVariable = getEventProperty(event, currentFits);
-    if (applyKinematicCuts(event, currentFits, 0) && currentVariable >= varMin && 
-      currentVariable < varMax) {
+    if (applyKinematicCuts(event, currentFits, 0) && 
+        currentVariable >= allBins[currentFits][currentBin] && 
+        currentVariable < allBins[currentFits][currentBin + 1]) {
       sumVariable+=currentVariable;
 
       if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
