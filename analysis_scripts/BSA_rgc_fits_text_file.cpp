@@ -1416,7 +1416,7 @@ void BSA_rgc_fits_text_file(const char* data_file, const char* mc_file, const ch
         case 1: cout << "    chi2 TSA." << endl; break;
         case 2: cout << "    chi2 DSA." << endl; break;
       }
-      // performChi2Fits(data_file, output_file, kinematic_file, binNames[i], asymmetry);
+      performChi2Fits(data_file, output_file, kinematic_file, binNames[i], asymmetry);
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
     performMLMFits(data_file, output_file, kinematic_file, binNames[i]);
