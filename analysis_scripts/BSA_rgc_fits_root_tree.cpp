@@ -674,6 +674,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
   TTreeReaderValue<double> target_pol(dataReader, "target_pol");
   TTreeReaderValue<double> phi(dataReader, "phi");
   TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
+  cout << xF << endl;
 
 }
 
@@ -1268,7 +1269,8 @@ int main(int argc, char *argv[]) {
 
 
 // git pull; 
-// g++ `root-config --cflags --libs` -o BSA_rgc_fits_root_tree BSA_rgc_fits_root_tree.cpp; 
+// g++ -o BSA_rgc_fits_root_tree BSA_rgc_fits_root_tree.cpp 
+// -L/site/12gev_phys/2.4/Linux_CentOS7.9.2009-gcc9.2.0/root/6.20.04/lib `root-config --cflags --libs` -lMinuit;
 // ./BSA_rgc_fits_root_tree /work/clas12/thayward/CLAS12_SIDIS/RGC/p/rgc_8.7.0_epX_Mx-1.4.root 
 // /work/clas12/thayward/CLAS12_SIDIS/RGC/p/rgc_nh3_mc.root /u/home/thayward/test_asymmetries.txt
 // /u/home/thayward/test_kinematics.txt
