@@ -640,9 +640,7 @@ double DSA_funcToFit(double* x, double* par) {
 }
 
 // Negative log-likelihood function
-// void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag) {
-void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag, 
-  TTreeReader& dataReader) {
+void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag) {
   // npar: number of parameters
   // gin: an array of derivatives (if needed)
   // f: the value of the function
@@ -679,7 +677,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
 
 }
 
-void performMLMFits(TTreeReader &dataReader, const char* output_file, const char* kinematic_file,
+void performMLMFits(const char* output_file, const char* kinematic_file,
   const std::string& prefix) {
   // Read the event data from the input file and store it in the global variable gData
 
@@ -733,7 +731,7 @@ void performMLMFits(TTreeReader &dataReader, const char* output_file, const char
 
 }
 
-TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int binIndex, 
+TH1D* createHistogramForBin(const char* histName, int binIndex, 
   const std::string& prefix, int asymmetry_index) {
 
   // Determine the variable range for the specified bin
@@ -839,7 +837,7 @@ TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int b
 
 }
 
-void performChi2Fits(TTreeReader &dataReader, const char* output_file, const char* kinematic_file,
+void performChi2Fits(const char* output_file, const char* kinematic_file,
   const std::string& prefix, int asymmetry_index) {
 
   // Initialize string streams to store the results for each bin
@@ -898,7 +896,7 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
     snprintf(histName, sizeof(histName), "hist_%zu", i);
 
     // Create a histogram for the current bin
-    TH1D* hist = createHistogramForBin(dataReader, histName, i, prefix, asymmetry_index);
+    TH1D* hist = createHistogramForBin(histName, i, prefix, asymmetry_index);
     // Fit the histogram using the fitFunction and get the fit result
     hist->Fit(fitFunction, "QS");
     plotHistogramAndFit(hist, fitFunction, i, asymmetry_index, prefix);
@@ -1239,10 +1237,10 @@ int main(int argc, char *argv[]) {
         case 1: cout << "    Beginning chi2 TSA." << endl; break;
         case 2: cout << "    Beginning chi2 DSA." << endl; break;
       }
-      performChi2Fits(dataReader, output_file, kinematic_file, binNames[i], asymmetry);
+      performChi2Fits(output_file, kinematic_file, binNames[i], asymmetry);
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    performMLMFits(dataReader, output_file, kinematic_file, binNames[i]);
+    performMLMFits(output_file, kinematic_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
     currentFits++;
