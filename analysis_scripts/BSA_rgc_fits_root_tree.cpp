@@ -42,6 +42,7 @@ std::vector<std::string> propertyNames;
 std::vector<std::string> variable_names;
 double total_charge_carbon;
 double cpp, cpm, cmp, cmm;
+std::string mlmPrefix = "xF";
 
 void load_bins_from_csv(const std::string& filename) {
   // Open the input file with the given filename
@@ -639,7 +640,6 @@ double DSA_funcToFit(double* x, double* par) {
   // return (ALL+ALL_cosphi*cos(phi)) / (1 + AUU_cosphi*cos(phi) + AUU_cos2phi*cos(2*phi));
 }
 
-std::string& mlmPrefix = " ";
 // Negative log-likelihood function
 void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag) {
   // npar: number of parameters
