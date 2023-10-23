@@ -664,16 +664,6 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
   double sum_MP = 0; // negative beam -- positive target
   double sum_MM = 0; // negative beam -- negative target
 
-  TTreeReaderValue<int> runnum(dataReader, "runnum");
-  TTreeReaderValue<int> evnum(dataReader, "evnum");
-  TTreeReaderValue<double> xF(dataReader, "xF");
-  TTreeReaderValue<double> Mx(dataReader, "Mx");
-  TTreeReaderValue<int> helicity(dataReader, "helicity");
-  TTreeReaderValue<double> beam_pol(dataReader, "beam_pol");
-  TTreeReaderValue<double> target_pol(dataReader, "target_pol");
-  TTreeReaderValue<double> phi(dataReader, "phi");
-  TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
-
 }
 
 void performMLMFits(TTreeReader &dataReader, const char* output_file, const char* kinematic_file,
@@ -727,7 +717,7 @@ void performMLMFits(TTreeReader &dataReader, const char* output_file, const char
 
   }
 
-}
+  }
 
 TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int binIndex, 
   const std::string& prefix, int asymmetry_index) {
