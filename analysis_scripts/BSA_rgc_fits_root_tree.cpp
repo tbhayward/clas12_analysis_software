@@ -665,15 +665,15 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
   double sum_MP = 0; // negative beam -- positive target
   double sum_MM = 0; // negative beam -- negative target
 
-  TTreeReaderValue<int> runnum(dataReader, "runnum");
-  TTreeReaderValue<int> evnum(dataReader, "evnum");
-  TTreeReaderValue<double> xF(dataReader, "xF");
-  TTreeReaderValue<double> Mx(dataReader, "Mx");
-  TTreeReaderValue<int> helicity(dataReader, "helicity");
-  TTreeReaderValue<double> beam_pol(dataReader, "beam_pol");
-  TTreeReaderValue<double> target_pol(dataReader, "target_pol");
-  TTreeReaderValue<double> phi(dataReader, "phi");
-  TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
+  TTreeReaderValue<int> runnum(*dataReader, "runnum");
+  TTreeReaderValue<int> evnum(*dataReader, "evnum");
+  TTreeReaderValue<double> xF(*dataReader, "xF");
+  TTreeReaderValue<double> Mx(*dataReader, "Mx");
+  TTreeReaderValue<int> helicity(*dataReader, "helicity");
+  TTreeReaderValue<double> beam_pol(*dataReader, "beam_pol");
+  TTreeReaderValue<double> target_pol(*dataReader, "target_pol");
+  TTreeReaderValue<double> phi(*dataReader, "phi");
+  TTreeReaderValue<double> currentVariable(*dataReader, propertyNames[currentFits].c_str());
 
 }
 
@@ -753,15 +753,15 @@ TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int b
   int numEventsPosTarget = 0;
   int numEventsNegTarget = 0;
 
-  TTreeReaderValue<int> runnum(dataReader, "runnum");
-  TTreeReaderValue<int> evnum(dataReader, "evnum");
-  TTreeReaderValue<double> xF(dataReader, "xF");
-  TTreeReaderValue<double> Mx(dataReader, "Mx");
-  TTreeReaderValue<int> helicity(dataReader, "helicity");
-  TTreeReaderValue<double> beam_pol(dataReader, "beam_pol");
-  TTreeReaderValue<double> target_pol(dataReader, "target_pol");
-  TTreeReaderValue<double> phi(dataReader, "phi");
-  TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
+  TTreeReaderValue<int> runnum(*dataReader, "runnum");
+  TTreeReaderValue<int> evnum(*dataReader, "evnum");
+  TTreeReaderValue<double> xF(*dataReader, "xF");
+  TTreeReaderValue<double> Mx(*dataReader, "Mx");
+  TTreeReaderValue<int> helicity(*dataReader, "helicity");
+  TTreeReaderValue<double> beam_pol(*dataReader, "beam_pol");
+  TTreeReaderValue<double> target_pol(*dataReader, "target_pol");
+  TTreeReaderValue<double> phi(*dataReader, "phi");
+  TTreeReaderValue<double> currentVariable(*dataReader, propertyNames[currentFits].c_str());
 
   KinematicCuts kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
   // Counter to limit the number of processed entries
@@ -913,25 +913,25 @@ void performChi2Fits(TTreeReader &dataReader, const char* output_file, const cha
     double sumt = 0; double sumtmin = 0;
 
     // Declare reader locations
-    TTreeReaderValue<int> runnum(dataReader, "runnum");
-    TTreeReaderValue<int> evnum(dataReader, "evnum");
-    TTreeReaderValue<double> Q2(dataReader, "Q2");
-    TTreeReaderValue<double> W(dataReader, "W");
-    TTreeReaderValue<double> x(dataReader, "x");
-    TTreeReaderValue<double> y(dataReader, "y");
-    TTreeReaderValue<double> z(dataReader, "z");
-    TTreeReaderValue<double> zeta(dataReader, "zeta");
-    TTreeReaderValue<double> pT(dataReader, "pT");
-    TTreeReaderValue<double> xF(dataReader, "xF");
-    TTreeReaderValue<double> Mx(dataReader, "Mx");
-    TTreeReaderValue<double> t(dataReader, "t");
-    TTreeReaderValue<double> tmin(dataReader, "tmin");
-    TTreeReaderValue<double> DepA(dataReader, "DepA");
-    TTreeReaderValue<double> DepB(dataReader, "DepB");
-    TTreeReaderValue<double> DepC(dataReader, "DepC");
-    TTreeReaderValue<double> DepV(dataReader, "DepV");
-    TTreeReaderValue<double> DepW(dataReader, "DepW");
-    TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
+    TTreeReaderValue<int> runnum(*dataReader, "runnum");
+    TTreeReaderValue<int> evnum(*dataReader, "evnum");
+    TTreeReaderValue<double> Q2(*dataReader, "Q2");
+    TTreeReaderValue<double> W(*dataReader, "W");
+    TTreeReaderValue<double> x(*dataReader, "x");
+    TTreeReaderValue<double> y(*dataReader, "y");
+    TTreeReaderValue<double> z(*dataReader, "z");
+    TTreeReaderValue<double> zeta(*dataReader, "zeta");
+    TTreeReaderValue<double> pT(*dataReader, "pT");
+    TTreeReaderValue<double> xF(*dataReader, "xF");
+    TTreeReaderValue<double> Mx(*dataReader, "Mx");
+    TTreeReaderValue<double> t(*dataReader, "t");
+    TTreeReaderValue<double> tmin(*dataReader, "tmin");
+    TTreeReaderValue<double> DepA(*dataReader, "DepA");
+    TTreeReaderValue<double> DepB(*dataReader, "DepB");
+    TTreeReaderValue<double> DepC(*dataReader, "DepC");
+    TTreeReaderValue<double> DepV(*dataReader, "DepV");
+    TTreeReaderValue<double> DepW(*dataReader, "DepW");
+    TTreeReaderValue<double> currentVariable(*dataReader, propertyNames[currentFits].c_str());
 
     // Determine the variable range for the specified bin
     double varMin = allBins[currentFits][i];
