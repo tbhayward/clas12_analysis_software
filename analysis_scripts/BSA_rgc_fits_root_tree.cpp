@@ -756,9 +756,8 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
   double minBeamCharge = std::min({(cpp+cpm),(cmp+cmm)}); 
   // determine min pos or neg target helicity accumulated charge to scale down higher one
   double minTargetCharge = std::min({(cpp+cmp),(cpm+cmm)}); 
-
-  double nll = N * 1 - 
-  // double nll = N * log(NUU) - 
+  cout << N << endl;
+  double nll = N * log(NUU) - 
     minBeamCharge*minTargetCharge/((cpp+cpm)*(cpp+cmp))*sum_PP -
     minBeamCharge*minTargetCharge/((cpp+cpm)*(cpm+cmm))*sum_PM - 
     minBeamCharge*minTargetCharge/((cmp+cmm)*(cpp+cmp))*sum_MP - 
@@ -1005,6 +1004,7 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
       numEvents++; // Increment the numEvents
     }
   }
+  cout << numEvents << endl;
   dataReader.Restart();  // Reset the TTreeReader at the end of the function
 
   // Calculate the mean polarization
