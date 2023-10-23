@@ -677,9 +677,11 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
 
 }
 
+const std::string& mlmPrefix = " ";
 void performMLMFits(const char* output_file, const char* kinematic_file,
   const std::string& prefix) {
   // Read the event data from the input file and store it in the global variable gData
+  mlmPrefix = prefix;
 
   // Determine the number of bins
   size_t numBins = allBins[currentFits].size() - 1;
