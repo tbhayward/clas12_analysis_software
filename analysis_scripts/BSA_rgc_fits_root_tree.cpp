@@ -676,7 +676,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
   TTreeReaderValue<double> phi(dataReader, "phi");
   TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
 
-  double Df = dilution_factor(currentVariable, mlmPrefix); // dilution factor
+  double Df = dilution_factor(*currentVariable, mlmPrefix); // dilution factor
 
 }
 
