@@ -896,7 +896,7 @@ void performChi2Fits(const char* output_file, const char* kinematic_file,
     snprintf(histName, sizeof(histName), "hist_%zu", i);
 
     // Create a histogram for the current bin
-    TH1D* hist = createHistogramForBin(dataReader, histName, i, prefix, asymmetry_index);
+    TH1D* hist = createHistogramForBin(histName, i, prefix, asymmetry_index);
     // Fit the histogram using the fitFunction and get the fit result
     hist->Fit(fitFunction, "QS");
     plotHistogramAndFit(hist, fitFunction, i, asymmetry_index, prefix);
