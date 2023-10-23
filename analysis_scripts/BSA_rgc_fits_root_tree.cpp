@@ -639,7 +639,9 @@ double DSA_funcToFit(double* x, double* par) {
 }
 
 // Negative log-likelihood function
-void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag) {
+// void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag) {
+void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag, 
+  TTreeReader& dataReader) {
   // npar: number of parameters
   // gin: an array of derivatives (if needed)
   // f: the value of the function
@@ -692,6 +694,10 @@ void performMLMFits(TTreeReader &dataReader, const char* output_file, const char
   // This is due to the fact that −logL = chi2/2. 
   // The default value of ErrorDef=1 corresponds to one standard deviation for chi2 function.
   // minuit.SetFCN(negLogLikelihood);
+  minuit.SetFCN([&](Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag) {
+    negLogLikelihood(npar, gin, f, par, iflag, dataReader);
+  });
+
 
   // Declare string streams for storing the MLM fit results
   std::ostringstream mlmFitsAStream; std::ostringstream mlmFitsBStream; 
@@ -727,7 +733,7 @@ void performMLMFits(TTreeReader &dataReader, const char* output_file, const char
 
   }
 
-  }
+}
 
 TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int binIndex, 
   const std::string& prefix, int asymmetry_index) {
