@@ -29,7 +29,8 @@
 // Using namespace declaration
 using namespace std;
 
-
+TTreeReader dataReader;  // Declare as global variable
+TTreeReader mcReader;  // Declare as global variable
 
 size_t currentFits = 0;
 size_t currentBin = 0;
@@ -639,7 +640,9 @@ double DSA_funcToFit(double* x, double* par) {
 }
 
 // Negative log-likelihood function
-void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag) {
+// void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag) {
+void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag, 
+  TTreeReader& dataReader) {
   // npar: number of parameters
   // gin: an array of derivatives (if needed)
   // f: the value of the function
@@ -664,6 +667,16 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
   double sum_MP = 0; // negative beam -- positive target
   double sum_MM = 0; // negative beam -- negative target
 
+  TTreeReaderValue<int> runnum(dataReader, "runnum");
+  TTreeReaderValue<int> evnum(dataReader, "evnum");
+  TTreeReaderValue<double> xF(dataReader, "xF");
+  TTreeReaderValue<double> Mx(dataReader, "Mx");
+  TTreeReaderValue<int> helicity(dataReader, "helicity");
+  TTreeReaderValue<double> beam_pol(dataReader, "beam_pol");
+  TTreeReaderValue<double> target_pol(dataReader, "target_pol");
+  TTreeReaderValue<double> phi(dataReader, "phi");
+  TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
+
 }
 
 void performMLMFits(TTreeReader &dataReader, const char* output_file, const char* kinematic_file,
@@ -682,6 +695,10 @@ void performMLMFits(TTreeReader &dataReader, const char* output_file, const char
   // This is due to the fact that −logL = chi2/2. 
   // The default value of ErrorDef=1 corresponds to one standard deviation for chi2 function.
   // minuit.SetFCN(negLogLikelihood);
+  minuit.SetFCN([&](Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag) {
+    negLogLikelihood(npar, gin, f, par, iflag, dataReader);
+  });
+
 
   // Declare string streams for storing the MLM fit results
   std::ostringstream mlmFitsAStream; std::ostringstream mlmFitsBStream; 
@@ -717,7 +734,7 @@ void performMLMFits(TTreeReader &dataReader, const char* output_file, const char
 
   }
 
-  }
+}
 
 TH1D* createHistogramForBin(TTreeReader &dataReader, const char* histName, int binIndex, 
   const std::string& prefix, int asymmetry_index) {
@@ -1214,8 +1231,8 @@ int main(int argc, char *argv[]) {
     cout << "-- Trees successfully extracted from ROOT files." << endl << endl;
   }
 
-  TTreeReader dataReader(data); // Create a TTreeReader for the data tree
-  TTreeReader mcReader(mc); // Create a TTreeReader for the mc tree
+  dataReader.SetTree(data);  // Initialize the global variable
+  mcReader.SetTree(mc);  // Initialize the global variable
 
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
