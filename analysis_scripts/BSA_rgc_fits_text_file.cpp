@@ -521,7 +521,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     double sum_MP = 0; // negative beam -- positive target
     double sum_MM = 0; // negative beam -- negative target
 
-    phisum = 0;
+    double phisum = 0;
     // Iterate through the global event data (gData)
     for (const eventData &event : gData) {
         // Get the value of the current variable of interest for the event
