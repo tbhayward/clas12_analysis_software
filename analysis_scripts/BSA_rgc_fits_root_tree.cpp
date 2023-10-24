@@ -981,6 +981,10 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
 
   KinematicCuts kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
   // Counter to limit the number of processed entries
+  int npp = 0;
+  int npm = 0;
+  int nmp = 0;
+  int nmm = 0;
   while (dataReader.Next()) {
 
     // Apply kinematic cuts (this function will need to be adapted)
@@ -990,10 +994,10 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
     if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
       sumVariable += *currentVariable;
 
-      if (*helicity > 0 && *target_pol > 0) { histPosPos->Fill(*phi); } 
-      else if (*helicity > 0 && *target_pol < 0) { histPosNeg->Fill(*phi); } 
-      else if (*helicity < 0 && *target_pol > 0) { histNegPos->Fill(*phi); } 
-      else if (*helicity < 0 && *target_pol < 0) { histNegNeg->Fill(*phi); }
+      if (*helicity > 0 && *target_pol > 0) { histPosPos->Fill(*phi); npp+;} 
+      else if (*helicity > 0 && *target_pol < 0) { histPosNeg->Fill(*phi); npm++;} 
+      else if (*helicity < 0 && *target_pol > 0) { histNegPos->Fill(*phi); nmp++;} 
+      else if (*helicity < 0 && *target_pol < 0) { histNegNeg->Fill(*phi); nmm++;}
 
 
       // Accumulate polarization and event count for mean polarization calculation
@@ -1008,7 +1012,7 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
       numEvents++; // Increment the numEvents
     }
   }
-
+  cout << npp << " " << npm << " " << nmp << " " << nmm << endl;
   dataReader.Restart();  // Reset the TTreeReader at the end of the function
 
   // Calculate the mean polarization
@@ -1023,8 +1027,6 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
   int numBins = histPosPos->GetNbinsX();
   TH1D* histAsymmetry = new TH1D(Form("%s_asymmetry", histName), "", 
     numBins, 0, 2 * TMath::Pi());
-
-  cout << histPosPos->GetBinContent(iBin) << " " << histPosNeg->GetBinContent(iBin) << " " << histNegPos->GetBinContent(iBin) << " " << histNegNeg->GetBinContent(iBin) << endl;
 
   // Calculate the asymmetry and its error for each bin, and fill the asymmetry histogram
   for (int iBin = 1; iBin <= numBins; ++iBin) {
