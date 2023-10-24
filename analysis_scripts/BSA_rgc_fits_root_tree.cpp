@@ -682,7 +682,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
   TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
 
   KinematicCuts data_kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
-  sumphi = 0;
+  double sumphi = 0;
   while (dataReader.Next()) {
     // Apply kinematic cuts (this function will need to be adapted)
     bool passedKinematicCuts = data_kinematicCuts.applyCuts(currentFits, false);
