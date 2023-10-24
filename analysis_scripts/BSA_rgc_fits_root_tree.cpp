@@ -994,7 +994,7 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
     if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
       sumVariable += *currentVariable;
 
-      if (*helicity > 0 && *target_pol > 0) { histPosPos->Fill(*phi); npp+;} 
+      if (*helicity > 0 && *target_pol > 0) { histPosPos->Fill(*phi); npp++;} 
       else if (*helicity > 0 && *target_pol < 0) { histPosNeg->Fill(*phi); npm++;} 
       else if (*helicity < 0 && *target_pol > 0) { histNegPos->Fill(*phi); nmp++;} 
       else if (*helicity < 0 && *target_pol < 0) { histNegNeg->Fill(*phi); nmm++;}
