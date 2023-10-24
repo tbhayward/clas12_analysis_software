@@ -683,6 +683,10 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
 
   KinematicCuts data_kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
   // Counter to limit the number of processed entries
+  int npp = 0;
+  int npm = 0;
+  int nmp = 0;
+  int nmm = 0;
   while (dataReader.Next()) {
     // Apply kinematic cuts (this function will need to be adapted)
     bool passedKinematicCuts = data_kinematicCuts.applyCuts(currentFits, false);
@@ -697,10 +701,6 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
       double Pb = *beam_pol;
       double Pt = *target_pol;
 
-      int npp = 0;
-      int npm = 0;
-      int nmp = 0;
-      int nmm = 0;
       if (*helicity > 0 && Pt > 0) { npp++;
         sum_PP += log(1 
           + (*DepV / *DepA)*AUU_cosphi*cos(*phi) + (*DepB / *DepA)*AUU_cos2phi*cos(2 * *phi) // UU 
