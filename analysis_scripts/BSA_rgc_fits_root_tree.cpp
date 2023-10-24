@@ -682,6 +682,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
   TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
 
   KinematicCuts data_kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
+  sumphi = 0;
   while (dataReader.Next()) {
     // Apply kinematic cuts (this function will need to be adapted)
     bool passedKinematicCuts = data_kinematicCuts.applyCuts(currentFits, false);
@@ -703,7 +704,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           + Df*Pt*((*DepV / *DepA)*AUL_sinphi*sin(*phi)+ // TSA
             (*DepB / *DepA)*AUL_sin2phi*sin(2 * *phi))//TSA
           + Df*Pb*Pt*((*DepC / *DepA)*ALL + (*DepW / *DepA)*ALL_cosphi*cos(*phi)) ); // DSA
-      } else if (*helicity > 0 && *target_pol < 0) { 
+      } else if (*helicity > 0 && *target_pol < 0) { sumphi+=*phi;
         sum_PM += log(1 
           + (*DepV / *DepA)*AUU_cosphi*cos(*phi) + (*DepB / *DepA)*AUU_cos2phi*cos(2 * *phi) // UU 
           + Pb*((*DepW / *DepA)*ALU_sinphi*sin(*phi)) // BSA
@@ -717,7 +718,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           + Df*Pt*((*DepV / *DepA)*AUL_sinphi*sin(*phi)+ // TSA
             (*DepB / *DepA)*AUL_sin2phi*sin(2 * *phi))//TSA
           - Df*Pb*Pt*((*DepC / *DepA)*ALL + (*DepW / *DepA)*ALL_cosphi*cos(*phi)) ); // DSA
-      } else if (*helicity < 0 && Pt < 0) { 
+      } else if (*helicity < 0 && *target_pol < 0) { 
         sum_MM += log(1 
           + (*DepV / *DepA)*AUU_cosphi*cos(*phi) + (*DepB / *DepA)*AUU_cos2phi*cos(2 * *phi) // UU 
           - Pb*((*DepW / *DepA)*ALU_sinphi*sin(*phi)) // BSA
@@ -728,7 +729,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     }
   }
   dataReader.Restart();  // Reset the TTreeReader at the end of the function
-
+  cout << sumphi << endl;
   TTreeReaderValue<double> mc_phi(mcReader, "phi");
   TTreeReaderValue<double> mc_DepA(mcReader, "DepA");
   TTreeReaderValue<double> mc_DepB(mcReader, "DepB");
