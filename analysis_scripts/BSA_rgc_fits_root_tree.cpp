@@ -695,7 +695,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
       double Df = dilution_factor(*currentVariable, mlmPrefix); // dilution factor
       double Pb = *beam_pol;
       double Pt = *target_pol;
-      cout << *target_pol << endl;
+
       if (*helicity > 0 && *target_pol > 0) { 
         sum_PP += log(1 
           + (*DepV / *DepA)*AUU_cosphi*cos(*phi) + (*DepB / *DepA)*AUU_cos2phi*cos(2 * *phi) // UU 
@@ -705,10 +705,10 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           + Df*Pb*Pt*((*DepC / *DepA)*ALL + (*DepW / *DepA)*ALL_cosphi*cos(*phi)) ); // DSA
       } else if (*helicity > 0 && *target_pol < 0) { 
         sum_PM += log(1 
-          + (*DepV / *DepA)*AUU_cosphi*cos(*phi) + (*DepB / *DepA)*AUU_cos2phi*cos(2 * *phi) // UU 
+          + (*DepV / *DepA)*AUU_cosphi*cos(*phi) + (*DepB / *DepA)*AUU_cos2phi*cos(2 * *phi) // UU
           + Pb*((*DepW / *DepA)*ALU_sinphi*sin(*phi)) // BSA
           - Df*Pt*((*DepV / *DepA)*AUL_sinphi*sin(*phi)+ // TSA
-            (*DepB / *DepA)*AUL_sin2phi*sin(2 * *phi))//TSA
+            (*DepB / *DepA)*AUL_sin2phi*sin(2 * *phi)) // TSA
           - Df*Pb*Pt*((*DepC / *DepA)*ALL + (*DepW / *DepA)*ALL_cosphi*cos(*phi)) ); // DSA
       } else if (*helicity < 0 && *target_pol > 0) { 
         sum_MP += log(1 
