@@ -682,11 +682,6 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
   TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
 
   KinematicCuts data_kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
-  // Counter to limit the number of processed entries
-  int npp = 0;
-  int npm = 0;
-  int nmp = 0;
-  int nmm = 0;
   while (dataReader.Next()) {
     // Apply kinematic cuts (this function will need to be adapted)
     bool passedKinematicCuts = data_kinematicCuts.applyCuts(currentFits, false);
@@ -701,28 +696,28 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
       double Pb = *beam_pol;
       double Pt = *target_pol;
 
-      if (*helicity > 0 && Pt > 0) { npp++;
+      if (*helicity > 0 && Pt > 0) { 
         sum_PP += log(1 
           + (*DepV / *DepA)*AUU_cosphi*cos(*phi) + (*DepB / *DepA)*AUU_cos2phi*cos(2 * *phi) // UU 
           + Pb*((*DepW / *DepA)*ALU_sinphi*sin(*phi)) // BSA
           + Df*Pt*((*DepV / *DepA)*AUL_sinphi*sin(*phi)+ // TSA
             (*DepB / *DepA)*AUL_sin2phi*sin(2 * *phi))//TSA
           + Df*Pb*Pt*((*DepC / *DepA)*ALL + (*DepW / *DepA)*ALL_cosphi*cos(*phi)) ); // DSA
-      } else if (*helicity > 0 && Pt < 0) { npm++;
+      } else if (*helicity > 0 && Pt < 0) { 
         sum_PM += log(1 
           + (*DepV / *DepA)*AUU_cosphi*cos(*phi) + (*DepB / *DepA)*AUU_cos2phi*cos(2 * *phi) // UU 
           + Pb*((*DepW / *DepA)*ALU_sinphi*sin(*phi)) // BSA
           - Df*Pt*((*DepV / *DepA)*AUL_sinphi*sin(*phi)+ // TSA
             (*DepB / *DepA)*AUL_sin2phi*sin(2 * *phi)) // TSA
           - Df*Pb*Pt*((*DepC / *DepA)*ALL + (*DepW / *DepA)*ALL_cosphi*cos(*phi)) ); // DSA
-      } else if (*helicity < 0 && Pt > 0) { nmp++;
+      } else if (*helicity < 0 && Pt > 0) { 
         sum_MP += log(1 
           + (*DepV / *DepA)*AUU_cosphi*cos(*phi) + (*DepB / *DepA)*AUU_cos2phi*cos(2 * *phi) // UU 
           - Pb*((*DepW / *DepA)*ALU_sinphi*sin(*phi)) // BSA
           + Df*Pt*((*DepV / *DepA)*AUL_sinphi*sin(*phi)+ // TSA
             (*DepB / *DepA)*AUL_sin2phi*sin(2 * *phi)) // TSA
           - Df*Pb*Pt*((*DepC / *DepA)*ALL + (*DepW / *DepA)*ALL_cosphi*cos(*phi)) ); // DSA
-      } else if (*helicity < 0 && Pt < 0) { nmm++;
+      } else if (*helicity < 0 && Pt < 0) { 
         sum_MM += log(1 
           + (*DepV / *DepA)*AUU_cosphi*cos(*phi) + (*DepB / *DepA)*AUU_cos2phi*cos(2 * *phi) // UU 
           - Pb*((*DepW / *DepA)*ALU_sinphi*sin(*phi)) // BSA
@@ -733,7 +728,6 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     }
   }
   dataReader.Restart();  // Reset the TTreeReader at the end of the function
-  cout << npp << " " << npm << " " << nmp << " " << nmm << endl;
 
   TTreeReaderValue<double> mc_phi(mcReader, "phi");
   TTreeReaderValue<double> mc_DepA(mcReader, "DepA");
@@ -760,7 +754,8 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
   double minBeamCharge = std::min({(cpp+cpm),(cmp+cmm)}); 
   // determine min pos or neg target helicity accumulated charge to scale down higher one
   double minTargetCharge = std::min({(cpp+cmp),(cpm+cmm)}); 
-  cout << N << endl;
+  
+  cout << minBeamCharge << " " << minTargetCharge << " " << sum_PP << " " << sum_PM << " " << sum_MP << " " << sum_MM << endl;
   double nll = N * log(NUU) - 
     minBeamCharge*minTargetCharge/((cpp+cpm)*(cpp+cmp))*sum_PP -
     minBeamCharge*minTargetCharge/((cpp+cpm)*(cpm+cmm))*sum_PM - 
@@ -981,10 +976,6 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
 
   KinematicCuts kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
   // Counter to limit the number of processed entries
-  int npp = 0;
-  int npm = 0;
-  int nmp = 0;
-  int nmm = 0;
   while (dataReader.Next()) {
 
     // Apply kinematic cuts (this function will need to be adapted)
@@ -994,10 +985,10 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
     if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
       sumVariable += *currentVariable;
 
-      if (*helicity > 0 && *target_pol > 0) { histPosPos->Fill(*phi); npp++;} 
-      else if (*helicity > 0 && *target_pol < 0) { histPosNeg->Fill(*phi); npm++;} 
-      else if (*helicity < 0 && *target_pol > 0) { histNegPos->Fill(*phi); nmp++;} 
-      else if (*helicity < 0 && *target_pol < 0) { histNegNeg->Fill(*phi); nmm++;}
+      if (*helicity > 0 && *target_pol > 0) { histPosPos->Fill(*phi);} 
+      else if (*helicity > 0 && *target_pol < 0) { histPosNeg->Fill(*phi);} 
+      else if (*helicity < 0 && *target_pol > 0) { histNegPos->Fill(*phi);} 
+      else if (*helicity < 0 && *target_pol < 0) { histNegNeg->Fill(*phi);}
 
 
       // Accumulate polarization and event count for mean polarization calculation
@@ -1012,7 +1003,6 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
       numEvents++; // Increment the numEvents
     }
   }
-  cout << npp << " " << npm << " " << nmp << " " << nmm << endl;
   dataReader.Restart();  // Reset the TTreeReader at the end of the function
 
   // Calculate the mean polarization
@@ -1451,15 +1441,15 @@ int main(int argc, char *argv[]) {
 
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
-      switch (asymmetry) {
-        case 0: cout << "    Beginning chi2 BSA." << endl; break;
-        case 1: cout << "    Beginning chi2 TSA." << endl; break;
-        case 2: cout << "    Beginning chi2 DSA." << endl; break;
-      }
-      performChi2Fits(output_file, kinematic_file, binNames[i], asymmetry);
-    }
-    cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
+    // for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
+    //   switch (asymmetry) {
+    //     case 0: cout << "    Beginning chi2 BSA." << endl; break;
+    //     case 1: cout << "    Beginning chi2 TSA." << endl; break;
+    //     case 2: cout << "    Beginning chi2 DSA." << endl; break;
+    //   }
+    //   performChi2Fits(output_file, kinematic_file, binNames[i], asymmetry);
+    // }
+    // cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
     performMLMFits(output_file, kinematic_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;

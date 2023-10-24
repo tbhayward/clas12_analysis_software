@@ -601,6 +601,8 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     // determine min pos or neg target helicity accumulated charge to scale down higher one
     double minTargetCharge = std::min({(cpp+cmp),(cpm+cmm)}); 
 
+    cout << minBeamCharge << " " << minTargetCharge << " " << sum_PP << " " << sum_PM << " " << sum_MP << " " << sum_MM << endl;
+
     double nll = N * log(NUU) - 
       minBeamCharge*minTargetCharge/((cpp+cpm)*(cpp+cmp))*sum_PP -
       minBeamCharge*minTargetCharge/((cpp+cpm)*(cpm+cmm))*sum_PM - 
@@ -1410,15 +1412,15 @@ void BSA_rgc_fits_text_file(const char* data_file, const char* mc_file, const ch
   cout << endl << endl;
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
-      switch (asymmetry) {
-        case 0: cout << "    chi2 BSA." << endl; break;
-        case 1: cout << "    chi2 TSA." << endl; break;
-        case 2: cout << "    chi2 DSA." << endl; break;
-      }
-      performChi2Fits(data_file, output_file, kinematic_file, binNames[i], asymmetry);
-    }
-    cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
+    // for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
+    //   switch (asymmetry) {
+    //     case 0: cout << "    chi2 BSA." << endl; break;
+    //     case 1: cout << "    chi2 TSA." << endl; break;
+    //     case 2: cout << "    chi2 DSA." << endl; break;
+    //   }
+    //   performChi2Fits(data_file, output_file, kinematic_file, binNames[i], asymmetry);
+    // }
+    // cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
     performMLMFits(data_file, output_file, kinematic_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
