@@ -686,7 +686,6 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
   while (dataReader.Next()) {
     // Apply kinematic cuts (this function will need to be adapted)
     bool passedKinematicCuts = data_kinematicCuts.applyCuts(currentFits, false);
-    // bool passedKinematicCuts = true;
     // Check if the currentVariable is within the desired range
     if (*currentVariable >= allBins[currentFits][currentBin] && 
           *currentVariable < allBins[currentFits][currentBin + 1] && passedKinematicCuts) {
@@ -697,29 +696,33 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
       double Df = dilution_factor(*currentVariable, mlmPrefix); // dilution factor
       double Pb = *beam_pol;
       double Pt = *target_pol;
-      // cout << endl << endl << *helicity << " " << Pt << endl << endl;
-      if (*helicity > 0 && Pt > 0) { 
+
+      int npp = 0;
+      int npm = 0;
+      int nmp = 0;
+      int nmm = 0;
+      if (*helicity > 0 && Pt > 0) { npp++;
         sum_PP += log(1 
           + (*DepV / *DepA)*AUU_cosphi*cos(*phi) + (*DepB / *DepA)*AUU_cos2phi*cos(2 * *phi) // UU 
           + Pb*((*DepW / *DepA)*ALU_sinphi*sin(*phi)) // BSA
           + Df*Pt*((*DepV / *DepA)*AUL_sinphi*sin(*phi)+ // TSA
             (*DepB / *DepA)*AUL_sin2phi*sin(2 * *phi))//TSA
           + Df*Pb*Pt*((*DepC / *DepA)*ALL + (*DepW / *DepA)*ALL_cosphi*cos(*phi)) ); // DSA
-      } else if (*helicity > 0 && Pt < 0) { 
+      } else if (*helicity > 0 && Pt < 0) { npm++;
         sum_PM += log(1 
           + (*DepV / *DepA)*AUU_cosphi*cos(*phi) + (*DepB / *DepA)*AUU_cos2phi*cos(2 * *phi) // UU 
           + Pb*((*DepW / *DepA)*ALU_sinphi*sin(*phi)) // BSA
           - Df*Pt*((*DepV / *DepA)*AUL_sinphi*sin(*phi)+ // TSA
             (*DepB / *DepA)*AUL_sin2phi*sin(2 * *phi)) // TSA
           - Df*Pb*Pt*((*DepC / *DepA)*ALL + (*DepW / *DepA)*ALL_cosphi*cos(*phi)) ); // DSA
-      } else if (*helicity < 0 && Pt > 0) { 
+      } else if (*helicity < 0 && Pt > 0) { nmp++;
         sum_MP += log(1 
           + (*DepV / *DepA)*AUU_cosphi*cos(*phi) + (*DepB / *DepA)*AUU_cos2phi*cos(2 * *phi) // UU 
           - Pb*((*DepW / *DepA)*ALU_sinphi*sin(*phi)) // BSA
           + Df*Pt*((*DepV / *DepA)*AUL_sinphi*sin(*phi)+ // TSA
             (*DepB / *DepA)*AUL_sin2phi*sin(2 * *phi)) // TSA
           - Df*Pb*Pt*((*DepC / *DepA)*ALL + (*DepW / *DepA)*ALL_cosphi*cos(*phi)) ); // DSA
-      } else if (*helicity < 0 && Pt < 0) { 
+      } else if (*helicity < 0 && Pt < 0) { nmm++;
         sum_MM += log(1 
           + (*DepV / *DepA)*AUU_cosphi*cos(*phi) + (*DepB / *DepA)*AUU_cos2phi*cos(2 * *phi) // UU 
           - Pb*((*DepW / *DepA)*ALU_sinphi*sin(*phi)) // BSA
@@ -730,6 +733,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     }
   }
   dataReader.Restart();  // Reset the TTreeReader at the end of the function
+  cout << npp << " " << npm << " " << nmp << " " << nmm << endl;
 
   TTreeReaderValue<double> mc_phi(mcReader, "phi");
   TTreeReaderValue<double> mc_DepA(mcReader, "DepA");
@@ -1004,7 +1008,7 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
       numEvents++; // Increment the numEvents
     }
   }
-  
+
   dataReader.Restart();  // Reset the TTreeReader at the end of the function
 
   // Calculate the mean polarization
@@ -1019,6 +1023,8 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
   int numBins = histPosPos->GetNbinsX();
   TH1D* histAsymmetry = new TH1D(Form("%s_asymmetry", histName), "", 
     numBins, 0, 2 * TMath::Pi());
+
+  cout << histPosPos->GetBinContent(iBin) << " " << histPosNeg->GetBinContent(iBin) << " " << histNegPos->GetBinContent(iBin) << " " << histNegNeg->GetBinContent(iBin) << endl;
 
   // Calculate the asymmetry and its error for each bin, and fill the asymmetry histogram
   for (int iBin = 1; iBin <= numBins; ++iBin) {
