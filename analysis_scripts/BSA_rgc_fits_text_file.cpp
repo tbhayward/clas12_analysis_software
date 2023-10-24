@@ -521,7 +521,6 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     double sum_MP = 0; // negative beam -- positive target
     double sum_MM = 0; // negative beam -- negative target
 
-    double phisum = 0;
     // Iterate through the global event data (gData)
     for (const eventData &event : gData) {
         // Get the value of the current variable of interest for the event
@@ -553,7 +552,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
               + Pb*((DepW/DepA)*ALU_sinphi*sin(phi)) // BSA
               + Df*Pt*((DepV/DepA)*AUL_sinphi*sin(phi) + (DepB/DepA)*AUL_sin2phi*sin(2*phi)) // TSA
               + Df*Pb*Pt*((DepC/DepA)*ALL + (DepW/DepA)*ALL_cosphi*cos(phi)) ); // DSA
-          } else if (event.data.at("helicity") > 0 && event.data.at("target_pol") < 0 ) { phisum+= DepA;
+          } else if (event.data.at("helicity") > 0 && event.data.at("target_pol") < 0 ) { 
             sum_PM += log(1 
               + (DepV/DepA)*AUU_cosphi*cos(phi) + (DepB/DepA)*AUU_cos2phi*cos(2*phi) // UU
               + Pb*((DepW/DepA)*ALU_sinphi*sin(phi)) // BSA
@@ -574,7 +573,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
           }
         }
     }
-    cout << phisum << endl;
+    cout << N << " " << sum_PP << " " << sum_PM << " " << sum_MP << " " << sum_MM << endl;
     // Iterate through the global event mc (gMC)
     for (const eventData &event : gMC) {
         // Get the value of the current variable of interest for the event
@@ -601,8 +600,6 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
     double minBeamCharge = std::min({(cpp+cpm),(cmp+cmm)}); 
     // determine min pos or neg target helicity accumulated charge to scale down higher one
     double minTargetCharge = std::min({(cpp+cmp),(cpm+cmm)}); 
-
-    cout << minBeamCharge << " " << minTargetCharge << " " << sum_PP << " " << sum_PM << " " << sum_MP << " " << sum_MM << endl;
 
     double nll = N * log(NUU) - 
       minBeamCharge*minTargetCharge/((cpp+cpm)*(cpp+cmp))*sum_PP -
