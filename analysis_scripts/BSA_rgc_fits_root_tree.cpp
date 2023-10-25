@@ -844,6 +844,7 @@ void performMLMFits(const char* output_file, const char* kinematic_file,
     std::string key = std::string(prefix) + "chi2Fits" + std::to_string(currentFits); 
     std::vector<double> chi2Result = chi2Fits[key];
 
+    cout << endl << chi2Result[1] << " " << chi2Result[2] << endl;
     // Define the parameters with initial values and limits
     minuit.DefineParameter(0, "ALU_sinphi", chi2Result[1], 0.01, -1, 1);
     minuit.DefineParameter(1, "AUL_sinphi", chi2Result[2], 0.01, -1, 1);
