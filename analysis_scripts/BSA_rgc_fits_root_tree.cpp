@@ -640,23 +640,27 @@ double DSA_funcToFit(double* x, double* par) {
   // return (ALL+ALL_cosphi*cos(phi)) / (1 + AUU_cosphi*cos(phi) + AUU_cos2phi*cos(2*phi));
 }
 
-// function to read in the fitted chi2 values to use as starting points for the MLE fit
 std::map<std::string, std::vector<double>> readChi2Fits(const std::string& filepath) {
   std::ifstream infile(filepath);
   std::string line;
   std::map<std::string, std::vector<double>> chi2Fits;
 
-  cout << "starting while loop" << endl;
+  std::cout << "starting while loop" << std::endl;
   while (std::getline(infile, line)) {
-    std::stringstream ss(line);
-    std::string key;
+    std::size_t start = line.find("{{") + 2;
+    std::size_t end = line.find("}}");
+    std::string sub = line.substr(start, end - start);
+    std::stringstream ss(sub);
     double mean, value, error;
-    std::cout << "Reading line: " << line << std::endl;
-    ss >> key; // Read the fit name (e.g., "xFchi2FitsALUsinphi")
-    ss.ignore(4); // Ignore " = {"
-    ss >> mean >> value >> error; // Read the mean, value, and error
+    ss >> mean >> value >> error;
+    
+    std::size_t eq_pos = line.find("=");
+    std::string key = line.substr(0, eq_pos - 1);
+    
     std::cout << "Key: " << key << " Mean: " << mean << " Value: " << value << " Error: " << error << std::endl;
+    
     chi2Fits[key] = {mean, value, error}; // Store in the map
+    
     std::cout << "Inserted into map. Current size: " << chi2Fits.size() << std::endl;
   }
 
