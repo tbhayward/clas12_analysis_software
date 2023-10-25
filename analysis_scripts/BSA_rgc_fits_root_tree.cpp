@@ -651,11 +651,13 @@ std::map<std::string, std::vector<double>> readChi2Fits(const std::string& filep
     std::stringstream ss(line);
     std::string key;
     double mean, value, error;
-    cout << "before key part" << endl;
+    std::cout << "Reading line: " << line << std::endl;
     ss >> key; // Read the fit name (e.g., "xFchi2FitsALUsinphi")
     ss.ignore(4); // Ignore " = {"
     ss >> mean >> value >> error; // Read the mean, value, and error
+    std::cout << "Key: " << key << " Mean: " << mean << " Value: " << value << " Error: " << error << std::endl;
     chi2Fits[key] = {mean, value, error}; // Store in the map
+    std::cout << "Inserted into map. Current size: " << chi2Fits.size() << std::endl;
   }
 
   return chi2Fits;
