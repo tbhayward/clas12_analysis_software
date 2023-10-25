@@ -725,10 +725,11 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
             (*DepB / *DepA)*AUL_sin2phi*sin(2 * *phi))//TSA
           + Df*Pb*Pt*((*DepC / *DepA)*ALL + (*DepW / *DepA)*ALL_cosphi*cos(*phi)) ); // DSA
       }
+      cout << N << " " << sum_PP << " " << sum_PM << " " << sum_MP << " " << sum_MM << endl;
     }
   }
   dataReader.Restart();  // Reset the TTreeReader at the end of the function
-  cout << N << " " << sum_PP << " " << sum_PM << " " << sum_MP << " " << sum_MM << endl;
+  
   TTreeReaderValue<double> mc_phi(mcReader, "phi");
   TTreeReaderValue<double> mc_DepA(mcReader, "DepA");
   TTreeReaderValue<double> mc_DepB(mcReader, "DepB");

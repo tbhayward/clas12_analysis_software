@@ -523,57 +523,58 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
 
     // Iterate through the global event data (gData)
     for (const eventData &event : gData) {
-        // Get the value of the current variable of interest for the event
-        double currentVariable = getEventProperty(event, currentFits);
+      // Get the value of the current variable of interest for the event
+      double currentVariable = getEventProperty(event, currentFits);
 
-        // Apply kinematic cuts and check if the current variable is within the specified bin range
-        if (applyKinematicCuts(event, currentFits, 0) && 
-          currentVariable >= allBins[currentFits][currentBin] && 
-          currentVariable < allBins[currentFits][currentBin + 1]) {
+      // Apply kinematic cuts and check if the current variable is within the specified bin range
+      if (applyKinematicCuts(event, currentFits, 0) && 
+        currentVariable >= allBins[currentFits][currentBin] && 
+        currentVariable < allBins[currentFits][currentBin + 1]) {
 
-          // Increment the event count
-          N += 1;
+        // Increment the event count
+        N += 1;
 
-          // Extract phi and polarization (pol) from the event data
-          double phi = event.data.at("phi");
-          double Pb = event.data.at("pol");
-          double Pt = std::abs(event.data.at("target_pol"));
-          double DepA = event.data.at("DepA");
-          double DepB = event.data.at("DepB");
-          double DepC = event.data.at("DepC");
-          double DepV = event.data.at("DepV");
-          double DepW = event.data.at("DepW");
+        // Extract phi and polarization (pol) from the event data
+        double phi = event.data.at("phi");
+        double Pb = event.data.at("pol");
+        double Pt = std::abs(event.data.at("target_pol"));
+        double DepA = event.data.at("DepA");
+        double DepB = event.data.at("DepB");
+        double DepC = event.data.at("DepC");
+        double DepV = event.data.at("DepV");
+        double DepW = event.data.at("DepW");
 
-          double Df = dilution_factor(currentVariable, binNames[currentFits]); // dilution factor
-          // Check if the helicities are positive or negative and update the corresponding sum
-          if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
-            sum_PP = sum_PP + log(1 
-              + (DepV/DepA)*AUU_cosphi*cos(phi) + (DepB/DepA)*AUU_cos2phi*cos(2*phi) // UU 
-              + Pb*((DepW/DepA)*ALU_sinphi*sin(phi)) // BSA
-              + Df*Pt*((DepV/DepA)*AUL_sinphi*sin(phi) + (DepB/DepA)*AUL_sin2phi*sin(2*phi)) // TSA
-              + Df*Pb*Pt*((DepC/DepA)*ALL + (DepW/DepA)*ALL_cosphi*cos(phi)) ); // DSA
-          } else if (event.data.at("helicity") > 0 && event.data.at("target_pol") < 0 ) { 
-            sum_PM = sum_PM + log(1 
-              + (DepV/DepA)*AUU_cosphi*cos(phi) + (DepB/DepA)*AUU_cos2phi*cos(2*phi) // UU
-              + Pb*((DepW/DepA)*ALU_sinphi*sin(phi)) // BSA
-              - Df*Pt*((DepV/DepA)*AUL_sinphi*sin(phi) + (DepB/DepA)*AUL_sin2phi*sin(2*phi)) // TSA
-              - Df*Pb*Pt*((DepC/DepA)*ALL + (DepW/DepA)*ALL_cosphi*cos(phi)) ); // DSA
-          } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") > 0 ) {
-            sum_MP = sum_MP + log(1
-              + (DepV/DepA)*AUU_cosphi*cos(phi) + (DepB/DepA)*AUU_cos2phi*cos(2*phi) // UU
-              - Pb*((DepW/DepA)*ALU_sinphi*sin(phi)) // BSA
-              + Df*Pt*((DepV/DepA)*AUL_sinphi*sin(phi) + (DepB/DepA)*AUL_sin2phi*sin(2*phi)) // TSA
-              - Df*Pb*Pt*((DepC/DepA)*ALL + (DepW/DepA)*ALL_cosphi*cos(phi)) ); // DSA
-          } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") < 0 ) {
-            sum_MM = sum_MM+log(1 
-              + (DepV/DepA)*AUU_cosphi*cos(phi) + (DepB/DepA)*AUU_cos2phi*cos(2*phi) // UU
-              - Pb*((DepW/DepA)*ALU_sinphi*sin(phi)) // BSA
-              - Df*Pt*((DepV/DepA)*AUL_sinphi*sin(phi) + (DepB/DepA)*AUL_sin2phi*sin(2*phi)) // TSA
-              + Df*Pb*Pt*((DepC/DepA)*ALL + (DepW/DepA)*ALL_cosphi*cos(phi)) ); // DSA
-          }
+        double Df = dilution_factor(currentVariable, binNames[currentFits]); // dilution factor
+        // Check if the helicities are positive or negative and update the corresponding sum
+        if (event.data.at("helicity") > 0 && event.data.at("target_pol") > 0) {
+          sum_PP = sum_PP + log(1 
+            + (DepV/DepA)*AUU_cosphi*cos(phi) + (DepB/DepA)*AUU_cos2phi*cos(2*phi) // UU 
+            + Pb*((DepW/DepA)*ALU_sinphi*sin(phi)) // BSA
+            + Df*Pt*((DepV/DepA)*AUL_sinphi*sin(phi) + (DepB/DepA)*AUL_sin2phi*sin(2*phi)) // TSA
+            + Df*Pb*Pt*((DepC/DepA)*ALL + (DepW/DepA)*ALL_cosphi*cos(phi)) ); // DSA
+        } else if (event.data.at("helicity") > 0 && event.data.at("target_pol") < 0 ) { 
+          sum_PM = sum_PM + log(1 
+            + (DepV/DepA)*AUU_cosphi*cos(phi) + (DepB/DepA)*AUU_cos2phi*cos(2*phi) // UU
+            + Pb*((DepW/DepA)*ALU_sinphi*sin(phi)) // BSA
+            - Df*Pt*((DepV/DepA)*AUL_sinphi*sin(phi) + (DepB/DepA)*AUL_sin2phi*sin(2*phi)) // TSA
+            - Df*Pb*Pt*((DepC/DepA)*ALL + (DepW/DepA)*ALL_cosphi*cos(phi)) ); // DSA
+        } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") > 0 ) {
+          sum_MP = sum_MP + log(1
+            + (DepV/DepA)*AUU_cosphi*cos(phi) + (DepB/DepA)*AUU_cos2phi*cos(2*phi) // UU
+            - Pb*((DepW/DepA)*ALU_sinphi*sin(phi)) // BSA
+            + Df*Pt*((DepV/DepA)*AUL_sinphi*sin(phi) + (DepB/DepA)*AUL_sin2phi*sin(2*phi)) // TSA
+            - Df*Pb*Pt*((DepC/DepA)*ALL + (DepW/DepA)*ALL_cosphi*cos(phi)) ); // DSA
+        } else if (event.data.at("helicity") < 0 && event.data.at("target_pol") < 0 ) {
+          sum_MM = sum_MM+log(1 
+            + (DepV/DepA)*AUU_cosphi*cos(phi) + (DepB/DepA)*AUU_cos2phi*cos(2*phi) // UU
+            - Pb*((DepW/DepA)*ALU_sinphi*sin(phi)) // BSA
+            - Df*Pt*((DepV/DepA)*AUL_sinphi*sin(phi) + (DepB/DepA)*AUL_sin2phi*sin(2*phi)) // TSA
+            + Df*Pb*Pt*((DepC/DepA)*ALL + (DepW/DepA)*ALL_cosphi*cos(phi)) ); // DSA
         }
+        cout << N << " " << sum_PP << " " << sum_PM << " " << sum_MP << " " << sum_MM << endl;
+      }
     }
-    cout << N << " " << sum_PP << " " << sum_PM << " " << sum_MP << " " << sum_MM << endl;
+    
     // Iterate through the global event mc (gMC)
     for (const eventData &event : gMC) {
         // Get the value of the current variable of interest for the event
