@@ -640,10 +640,10 @@ double DSA_funcToFit(double* x, double* par) {
   // return (ALL+ALL_cosphi*cos(phi)) / (1 + AUU_cosphi*cos(phi) + AUU_cos2phi*cos(2*phi));
 }
 
-std::map<std::string, std::vector<double>> readChi2Fits(const std::string& filepath) {
+std::map<std::string, std::vector<std::vector<double>>> readChi2Fits(const std::string& filepath){
   std::ifstream infile(filepath);
   std::string line;
-  std::map<std::string, std::vector<double>> chi2Fits;
+  std::map<std::string, std::vector<std::vector<double>>> chi2Fits;
 
   std::cout << "starting while loop" << std::endl;
   while (std::getline(infile, line)) {
@@ -660,7 +660,7 @@ std::map<std::string, std::vector<double>> readChi2Fits(const std::string& filep
     
     std::cout << "Key: " << key << " Mean: " << mean << " Value: " << value << " Error: " << error << std::endl;
     
-    chi2Fits[key] = {mean, value, error}; // Store in the map
+    chi2Fits[key].push_back({mean, value, error});  // Store in the map
     
     std::cout << "Inserted into map. Current size: " << chi2Fits.size() << std::endl;
   }
