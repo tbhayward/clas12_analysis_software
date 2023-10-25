@@ -848,23 +848,23 @@ void performMLMFits(const char* output_file, const char* kinematic_file,
       << " bin " << i << ". ";
     currentBin = i;
 
-    // Look up the chi2 results for this bin and fit.
-    cout << "entering chi2fits" << endl;
-    std::map<std::string, std::vector<double>> chi2Fits = readChi2Fits(std::string(output_file));
-    cout << " passed the output " << endl;
-    std::string key = std::string(prefix) + "chi2Fits" + std::to_string(currentFits); 
-
+    // Read the chi2 fits into a map
     std::map<std::string, std::vector<std::vector<double>>> chi2Fits = 
-      readChi2Fits(std::string(output_file));
+        readChi2Fits(std::string(output_file));
+
+    // Construct the key based on the prefix and the fit name
+    // For now, let's assume fitName is a string that contains the fit name like "ALUsinphi"
+    std::string fitName = "ALUsinphi";// Replace this with the logic to determine the fit name
     std::string key = std::string(prefix) + "chi2Fits" + fitName; 
+
+    // Check if the key exists and if the bin index is valid
     if(chi2Fits.find(key) != chi2Fits.end() && chi2Fits[key].size() > currentFits) {
-      std::vector<double> chi2Result = chi2Fits[key][currentFits]; 
-      cout << "hey found and sufficient bins." << endl;
+        std::vector<double> chi2Result = chi2Fits[key][currentFits]; 
+        cout << "Key found and sufficient bins." << endl;
     } else {
-      std::cout << "Key not found or insufficient bins: " << key << std::endl;
+        std::cout << "Key not found or insufficient bins: " << key << std::endl;
     }
 
-    cout << endl << chi2Result[1] << " " << chi2Result[2] << endl;
     // Define the parameters with initial values and limits
     minuit.DefineParameter(0, "ALU_sinphi", chi2Result[1], 0.01, -1, 1);
     minuit.DefineParameter(1, "AUL_sinphi", chi2Result[2], 0.01, -1, 1);
@@ -878,20 +878,13 @@ void performMLMFits(const char* output_file, const char* kinematic_file,
     minuit.Migrad(); cout << endl;
 
     // Extract the fitted parameter values and errors
-    double ALU_sinphi, ALU_sinphi_error;
-    minuit.GetParameter(0, ALU_sinphi, ALU_sinphi_error);
-    double AUL_sinphi, AUL_sinphi_error;
-    minuit.GetParameter(1, AUL_sinphi, AUL_sinphi_error);
-    double AUL_sin2phi, AUL_sin2phi_error;
-    minuit.GetParameter(2, AUL_sin2phi, AUL_sin2phi_error);
-    double ALL, ALL_error;
-    minuit.GetParameter(3, ALL, ALL_error);
-    double ALL_cosphi, ALL_cosphi_error;
-    minuit.GetParameter(4, ALL_cosphi, ALL_cosphi_error);
-    double AUU_cosphi, AUU_cosphi_error;
-    minuit.GetParameter(5, AUU_cosphi, AUU_cosphi_error);
-    double AUU_cos2phi, AUU_cos2phi_error;
-    minuit.GetParameter(6, AUU_cos2phi, AUU_cos2phi_error);
+    double ALU_sinphi, ALU_sinphi_error; minuit.GetParameter(0, ALU_sinphi, ALU_sinphi_error);
+    double AUL_sinphi, AUL_sinphi_error; minuit.GetParameter(1, AUL_sinphi, AUL_sinphi_error);
+    double AUL_sin2phi, AUL_sin2phi_error; minuit.GetParameter(2, AUL_sin2phi, AUL_sin2phi_error);
+    double ALL, ALL_error; minuit.GetParameter(3, ALL, ALL_error);
+    double ALL_cosphi, ALL_cosphi_error; minuit.GetParameter(4, ALL_cosphi, ALL_cosphi_error);
+    double AUU_cosphi, AUU_cosphi_error; minuit.GetParameter(5, AUU_cosphi, AUU_cosphi_error);
+    double AUU_cos2phi, AUU_cos2phi_error; minuit.GetParameter(6, AUU_cos2phi, AUU_cos2phi_error);
 
     // Calculate the mean values of the current variable 
     double sumVariable = 0;
