@@ -652,7 +652,8 @@ std::map<std::string, std::vector<double>> readChi2Fits(const std::string& filep
     std::string sub = line.substr(start, end - start);
     std::stringstream ss(sub);
     double mean, value, error;
-    ss >> mean >> value >> error;
+    char comma;
+    ss >> mean >> comma >> value >> comma >> error;
     
     std::size_t eq_pos = line.find("=");
     std::string key = line.substr(0, eq_pos - 1);
