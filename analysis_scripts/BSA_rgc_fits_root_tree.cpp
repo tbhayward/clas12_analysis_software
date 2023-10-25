@@ -640,6 +640,26 @@ double DSA_funcToFit(double* x, double* par) {
   // return (ALL+ALL_cosphi*cos(phi)) / (1 + AUU_cosphi*cos(phi) + AUU_cos2phi*cos(2*phi));
 }
 
+// function to read in the fitted chi2 values to use as starting points for the MLE fit
+std::map<std::string, std::vector<double>> readChi2Fits(const std::string& filepath) {
+  std::ifstream infile(filepath);
+  std::string line;
+  std::map<std::string, std::vector<double>> chi2Fits;
+
+  while (std::getline(infile, line)) {
+    std::stringstream ss(line);
+    std::string key;
+    double mean, value, error;
+    ss >> key; // Read the fit name (e.g., "xFchi2FitsALUsinphi")
+    ss.ignore(4); // Ignore " = {"
+    ss >> mean >> value >> error; // Read the mean, value, and error
+    chi2Fits[key] = {mean, value, error}; // Store in the map
+  }
+
+  return chi2Fits;
+}
+
+
 // Negative log-likelihood function
 void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag) {
   // npar: number of parameters
@@ -820,12 +840,16 @@ void performMLMFits(const char* output_file, const char* kinematic_file,
       << " bin " << i << ". ";
     currentBin = i;
 
+    // Look up the chi2 results for this bin and fit.
+    std::string key = prefix + "chi2Fits" + currentFits;  // Adjust the prefix dynamically
+    std::vector<double> chi2Result = chi2Fits[key];
+
     // Define the parameters with initial values and limits
-    minuit.DefineParameter(0, "ALU_sinphi", -0.015, 0.01, -1, 1);
-    minuit.DefineParameter(1, "AUL_sinphi", -0.020, 0.01, -1, 1);
-    minuit.DefineParameter(2, "AUL_sin2phi", -0.010, 0.01, -1, 1);
-    minuit.DefineParameter(3, "ALL", 0.40, 0.01, -1, 1);
-    minuit.DefineParameter(4, "ALL_cosphi", 0.01, 0.01, -1, 1);
+    minuit.DefineParameter(0, "ALU_sinphi", chi2Result[1], 0.01, -1, 1);
+    minuit.DefineParameter(1, "AUL_sinphi", chi2Result[2], 0.01, -1, 1);
+    minuit.DefineParameter(2, "AUL_sin2phi", chi2Result[3], 0.01, -1, 1);
+    minuit.DefineParameter(3, "ALL", 0.40, chi2Result[4], -1, 1);
+    minuit.DefineParameter(4, "ALL_cosphi", chi2Result[5], 0.01, -1, 1);
     minuit.DefineParameter(5, "AUU_cosphi", -0.1, 0.01, -1, 1);
     minuit.DefineParameter(6, "AUU_cos2phi", 0.10, 0.01, -1, 1);
 
@@ -1449,6 +1473,8 @@ int main(int argc, char *argv[]) {
       performChi2Fits(output_file, kinematic_file, binNames[i], asymmetry);
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
+    // read in the fitted chi2 values to use as starting points for MLE fit
+    std::map<std::string, std::vector<double>> chi2Fits = readChi2Fits(std::string(output_file));
     performMLMFits(output_file, kinematic_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
