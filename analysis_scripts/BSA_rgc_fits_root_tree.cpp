@@ -857,14 +857,19 @@ void performMLMFits(const char* output_file, const char* kinematic_file,
     std::string fitName = "ALUsinphi";// Replace this with the logic to determine the fit name
     std::string key = std::string(prefix) + "chi2Fits" + fitName; 
 
-    // Check if the key exists and if the bin index is valid
-    if(chi2Fits.find(key) != chi2Fits.end() && chi2Fits[key].size() > currentFits) {
-        std::vector<double> chi2Result = chi2Fits[key][currentFits]; 
-        cout << "Key found and sufficient bins." << endl;
-    } else {
-        std::cout << "Key not found or insufficient bins: " << key << std::endl;
-    }
+    // // Check if the key exists and if the bin index is valid
+    // if(chi2Fits.find(key) != chi2Fits.end() && chi2Fits[key].size() > currentFits) {
+    //     std::vector<double> chi2Result = chi2Fits[key][currentFits]; 
+    //     cout << "Key found and sufficient bins." << endl;
+    // } else {
+    //     std::cout << "Key not found or insufficient bins: " << key << std::endl;
+    // }
     std::vector<double> chi2Result = chi2Fits[key][currentFits];
+    cout << "ALUsinphi = " << chi2Fits["ALU_sinphi_key"][currentFits][1] << endl;
+    cout << "AULsinphi = " << chi2Fits["AUL_sinphi_key"][currentFits][1] << endl;
+    cout << "AULsin2phi = " << chi2Fits["AUL_sin2phi_key"][currentFits][1] << endl;
+    cout << "ALL = " << chi2Fits["ALL_key"][currentFits][1] << endl;
+    cout << "ALLcosphi = " << chi2Fits["ALL_cosphi_key"][currentFits][1] << endl;
     // Define the parameters with initial values and limits
     minuit.DefineParameter(0, "ALU_sinphi", chi2Result[1], 0.01, -1, 1);
     minuit.DefineParameter(1, "AUL_sinphi", chi2Result[2], 0.01, -1, 1);
