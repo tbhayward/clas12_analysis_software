@@ -858,17 +858,17 @@ void performMLMFits(const char* output_file, const char* kinematic_file,
     std::string key = std::string(prefix) + "chi2Fits" + fitName; 
 
     std::vector<double> chi2Result = chi2Fits[key][currentFits];
-    cout << chi2Fits[std::string(prefix)+"chi2FitsALUsinphi"][0][1] << endl;
-    cout << chi2Fits[std::string(prefix)+"chi2FitsAULsinphi"][0][1] << endl;
-    cout << chi2Fits[std::string(prefix)+"chi2FitsAULsin2phi"][0][1] << endl;
-    cout << chi2Fits[std::string(prefix)+"chi2FitsALL"][0][1] << endl;
-    cout << chi2Fits[std::string(prefix)+"chi2FitsALLcosphi"][0][1] << endl;
     // Define the parameters with initial values and limits
-    minuit.DefineParameter(0, "ALU_sinphi", chi2Result[1], 0.01, -1, 1);
-    minuit.DefineParameter(1, "AUL_sinphi", chi2Result[2], 0.01, -1, 1);
-    minuit.DefineParameter(2, "AUL_sin2phi", chi2Result[3], 0.01, -1, 1);
-    minuit.DefineParameter(3, "ALL", 0.40, chi2Result[4], -1, 1);
-    minuit.DefineParameter(4, "ALL_cosphi", chi2Result[5], 0.01, -1, 1);
+    minuit.DefineParameter(0, "ALU_sinphi", 
+      chi2Fits[std::string(prefix)+"chi2FitsALUsinphi"][currentFits][1], 0.01, -1, 1);
+    minuit.DefineParameter(1, "AUL_sinphi", 
+      chi2Fits[std::string(prefix)+"chi2FitsAULsinphi"][currentFits][1], 0.01, -1, 1);
+    minuit.DefineParameter(2, "AUL_sin2phi", 
+      chi2Fits[std::string(prefix)+"chi2FitsAULsin2phi"][currentFits][1], 0.01, -1, 1);
+    minuit.DefineParameter(3, "ALL", 
+      chi2Fits[std::string(prefix)+"chi2FitsALL"][currentFits][1], 0.01, -1, 1);
+    minuit.DefineParameter(4, "ALL_cosphi", 
+      chi2Fits[std::string(prefix)+"chi2FitsALLcosphi"][currentFits][1], 0.01, -1, 1);
     minuit.DefineParameter(5, "AUU_cosphi", -0.1, 0.01, -1, 1);
     minuit.DefineParameter(6, "AUU_cos2phi", 0.10, 0.01, -1, 1);
 
