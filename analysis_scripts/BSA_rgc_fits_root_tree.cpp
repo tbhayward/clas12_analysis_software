@@ -842,6 +842,7 @@ void performMLMFits(const char* output_file, const char* kinematic_file,
     // Look up the chi2 results for this bin and fit.
     std::map<std::string, std::vector<double>> chi2Fits = readChi2Fits(std::string(output_file));
     std::string key = std::string(prefix) + "chi2Fits" + std::to_string(currentFits); 
+    cout << key << endl;
     std::vector<double> chi2Result = chi2Fits[key];
 
     cout << endl << chi2Result[1] << " " << chi2Result[2] << endl;
