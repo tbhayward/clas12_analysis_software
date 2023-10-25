@@ -1440,15 +1440,15 @@ int main(int argc, char *argv[]) {
 
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    // for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
-    //   switch (asymmetry) {
-    //     case 0: cout << "    Beginning chi2 BSA." << endl; break;
-    //     case 1: cout << "    Beginning chi2 TSA." << endl; break;
-    //     case 2: cout << "    Beginning chi2 DSA." << endl; break;
-    //   }
-    //   performChi2Fits(output_file, kinematic_file, binNames[i], asymmetry);
-    // }
-    // cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
+    for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
+      switch (asymmetry) {
+        case 0: cout << "    Beginning chi2 BSA." << endl; break;
+        case 1: cout << "    Beginning chi2 TSA." << endl; break;
+        case 2: cout << "    Beginning chi2 DSA." << endl; break;
+      }
+      performChi2Fits(output_file, kinematic_file, binNames[i], asymmetry);
+    }
+    cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
     performMLMFits(output_file, kinematic_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
