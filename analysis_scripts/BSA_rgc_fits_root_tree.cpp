@@ -694,7 +694,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
 
       double Df = dilution_factor(*currentVariable, mlmPrefix); // dilution factor
       double Pb = *beam_pol;
-      double Pt = *target_pol;
+      double Pt = std::abs(*target_pol);
 
       if (*helicity > 0 && *target_pol > 0) { 
         sum_PP = sum_PP + log(1 
@@ -725,9 +725,6 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
             (*DepB / *DepA)*AUL_sin2phi*sin(2 * *phi))//TSA
           + Df*Pb*Pt*((*DepC / *DepA)*ALL + (*DepW / *DepA)*ALL_cosphi*cos(*phi)) ); // DSA
       }
-      cout << *helicity << " " << *target_pol << " " << Pb << " " << Pt << " " << Df << " " << *DepA << " " << *DepB << " " << *DepC << " " << *DepV << " " << *DepW << " " << *phi << endl;
-      cout << endl << N << " " << sum_PP << " " << sum_PM << " " << sum_MP << " " << sum_MM << endl;
-      if (N > 50) {break;}
     }
   }
   dataReader.Restart();  // Reset the TTreeReader at the end of the function
