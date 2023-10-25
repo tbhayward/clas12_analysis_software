@@ -853,17 +853,15 @@ void performMLMFits(const char* output_file, const char* kinematic_file,
     std::map<std::string, std::vector<double>> chi2Fits = readChi2Fits(std::string(output_file));
     cout << " passed the output " << endl;
     std::string key = std::string(prefix) + "chi2Fits" + std::to_string(currentFits); 
-    if(chi2Fits.find(key) != chi2Fits.end()) {
-      std::vector<double> chi2Result = chi2Fits[key];
-      cout << "Key exists." << endl;
+
+    std::map<std::string, std::vector<std::vector<double>>> chi2Fits = 
+      readChi2Fits(std::string(output_file));
+    std::string key = std::string(prefix) + "chi2Fits" + fitName; 
+    if(chi2Fits.find(key) != chi2Fits.end() && chi2Fits[key].size() > currentFits) {
+      std::vector<double> chi2Result = chi2Fits[key][currentFits]; 
+      cout << "hey found and sufficient bins." << endl;
     } else {
-      std::cout << "Key not found: " << key << std::endl;
-    }
-    std::vector<double> chi2Result = chi2Fits[key];
-    if(chi2Result.size() >= 6) {
-      cout << "Key is appropriate size." << endl;
-    } else {
-      std::cout << "Vector has insufficient elements." << std::endl;
+      std::cout << "Key not found or insufficient bins: " << key << std::endl;
     }
 
     cout << endl << chi2Result[1] << " " << chi2Result[2] << endl;
