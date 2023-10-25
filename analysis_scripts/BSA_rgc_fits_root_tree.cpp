@@ -640,6 +640,35 @@ double DSA_funcToFit(double* x, double* par) {
   // return (ALL+ALL_cosphi*cos(phi)) / (1 + AUU_cosphi*cos(phi) + AUU_cos2phi*cos(2*phi));
 }
 
+std::map<std::string, std::vector<std::vector<double>>> readChi2Fits(const std::string& filepath){
+  std::ifstream infile(filepath);
+  std::string line;
+  std::map<std::string, std::vector<std::vector<double>>> chi2Fits;
+
+  std::cout << "starting while loop" << std::endl;
+  while (std::getline(infile, line)) {
+    std::size_t start = line.find("{{") + 2;
+    std::size_t end = line.find("}}");
+    std::string sub = line.substr(start, end - start);
+    std::stringstream ss(sub);
+    double mean, value, error;
+    char comma;
+    ss >> mean >> comma >> value >> comma >> error;
+    
+    std::size_t eq_pos = line.find("=");
+    std::string key = line.substr(0, eq_pos - 1);
+    
+    std::cout << "Key: " << key << " Mean: " << mean << " Value: " << value << " Error: " << error << std::endl;
+    
+    chi2Fits[key].push_back({mean, value, error});  // Store in the map
+    
+    std::cout << "Inserted into map. Current size: " << chi2Fits.size() << std::endl;
+  }
+
+  return chi2Fits;
+}
+
+
 // Negative log-likelihood function
 void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag) {
   // npar: number of parameters
@@ -787,7 +816,6 @@ void performMLMFits(const char* output_file, const char* kinematic_file,
   // The default value of ErrorDef=1 corresponds to one standard deviation for chi2 function.
   minuit.SetFCN(negLogLikelihood);
 
-
   // Declare string streams for storing the MLM fit results
   std::ostringstream mlmFitsAStream; std::ostringstream mlmFitsBStream; 
   std::ostringstream mlmFitsCStream; std::ostringstream mlmFitsDStream; 
@@ -820,12 +848,27 @@ void performMLMFits(const char* output_file, const char* kinematic_file,
       << " bin " << i << ". ";
     currentBin = i;
 
+    // Read the chi2 fits into a map
+    std::map<std::string, std::vector<std::vector<double>>> chi2Fits = 
+        readChi2Fits(std::string(output_file));
+
+    // Construct the key based on the prefix and the fit name
+    // For now, let's assume fitName is a string that contains the fit name like "ALUsinphi"
+    std::string fitName = "ALUsinphi";// Replace this with the logic to determine the fit name
+    std::string key = std::string(prefix) + "chi2Fits" + fitName; 
+
+    std::vector<double> chi2Result = chi2Fits[key][currentFits];
     // Define the parameters with initial values and limits
-    minuit.DefineParameter(0, "ALU_sinphi", -0.015, 0.01, -1, 1);
-    minuit.DefineParameter(1, "AUL_sinphi", -0.020, 0.01, -1, 1);
-    minuit.DefineParameter(2, "AUL_sin2phi", -0.010, 0.01, -1, 1);
-    minuit.DefineParameter(3, "ALL", 0.40, 0.01, -1, 1);
-    minuit.DefineParameter(4, "ALL_cosphi", 0.01, 0.01, -1, 1);
+    minuit.DefineParameter(0, "ALU_sinphi", 
+      chi2Fits[std::string(prefix)+"chi2FitsALUsinphi"][currentFits][1], 0.01, -1, 1);
+    minuit.DefineParameter(1, "AUL_sinphi", 
+      chi2Fits[std::string(prefix)+"chi2FitsAULsinphi"][currentFits][1], 0.01, -1, 1);
+    minuit.DefineParameter(2, "AUL_sin2phi", 
+      chi2Fits[std::string(prefix)+"chi2FitsAULsin2phi"][currentFits][1], 0.01, -1, 1);
+    minuit.DefineParameter(3, "ALL", 
+      chi2Fits[std::string(prefix)+"chi2FitsALL"][currentFits][1], 0.01, -1, 1);
+    minuit.DefineParameter(4, "ALL_cosphi", 
+      chi2Fits[std::string(prefix)+"chi2FitsALLcosphi"][currentFits][1], 0.01, -1, 1);
     minuit.DefineParameter(5, "AUU_cosphi", -0.1, 0.01, -1, 1);
     minuit.DefineParameter(6, "AUU_cos2phi", 0.10, 0.01, -1, 1);
 
@@ -833,20 +876,13 @@ void performMLMFits(const char* output_file, const char* kinematic_file,
     minuit.Migrad(); cout << endl;
 
     // Extract the fitted parameter values and errors
-    double ALU_sinphi, ALU_sinphi_error;
-    minuit.GetParameter(0, ALU_sinphi, ALU_sinphi_error);
-    double AUL_sinphi, AUL_sinphi_error;
-    minuit.GetParameter(1, AUL_sinphi, AUL_sinphi_error);
-    double AUL_sin2phi, AUL_sin2phi_error;
-    minuit.GetParameter(2, AUL_sin2phi, AUL_sin2phi_error);
-    double ALL, ALL_error;
-    minuit.GetParameter(3, ALL, ALL_error);
-    double ALL_cosphi, ALL_cosphi_error;
-    minuit.GetParameter(4, ALL_cosphi, ALL_cosphi_error);
-    double AUU_cosphi, AUU_cosphi_error;
-    minuit.GetParameter(5, AUU_cosphi, AUU_cosphi_error);
-    double AUU_cos2phi, AUU_cos2phi_error;
-    minuit.GetParameter(6, AUU_cos2phi, AUU_cos2phi_error);
+    double ALU_sinphi, ALU_sinphi_error; minuit.GetParameter(0, ALU_sinphi, ALU_sinphi_error);
+    double AUL_sinphi, AUL_sinphi_error; minuit.GetParameter(1, AUL_sinphi, AUL_sinphi_error);
+    double AUL_sin2phi, AUL_sin2phi_error; minuit.GetParameter(2, AUL_sin2phi, AUL_sin2phi_error);
+    double ALL, ALL_error; minuit.GetParameter(3, ALL, ALL_error);
+    double ALL_cosphi, ALL_cosphi_error; minuit.GetParameter(4, ALL_cosphi, ALL_cosphi_error);
+    double AUU_cosphi, AUU_cosphi_error; minuit.GetParameter(5, AUU_cosphi, AUU_cosphi_error);
+    double AUU_cos2phi, AUU_cos2phi_error; minuit.GetParameter(6, AUU_cos2phi, AUU_cos2phi_error);
 
     // Calculate the mean values of the current variable 
     double sumVariable = 0;
@@ -1449,6 +1485,7 @@ int main(int argc, char *argv[]) {
       performChi2Fits(output_file, kinematic_file, binNames[i], asymmetry);
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
+    // read in the fitted chi2 values to use as starting points for MLE fit
     performMLMFits(output_file, kinematic_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
