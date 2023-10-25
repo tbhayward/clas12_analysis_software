@@ -807,7 +807,6 @@ void performMLMFits(const char* output_file, const char* kinematic_file,
   // The default value of ErrorDef=1 corresponds to one standard deviation for chi2 function.
   minuit.SetFCN(negLogLikelihood);
 
-
   // Declare string streams for storing the MLM fit results
   std::ostringstream mlmFitsAStream; std::ostringstream mlmFitsBStream; 
   std::ostringstream mlmFitsCStream; std::ostringstream mlmFitsDStream; 
@@ -841,7 +840,8 @@ void performMLMFits(const char* output_file, const char* kinematic_file,
     currentBin = i;
 
     // Look up the chi2 results for this bin and fit.
-    std::string key = prefix + "chi2Fits" + currentFits;  // Adjust the prefix dynamically
+    std::map<std::string, std::vector<double>> chi2Fits = readChi2Fits(std::string(output_file));
+    std::string key = std::string(prefix) + "chi2Fits" + std::string(currentFits.Data());  
     std::vector<double> chi2Result = chi2Fits[key];
 
     // Define the parameters with initial values and limits
@@ -1474,7 +1474,6 @@ int main(int argc, char *argv[]) {
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
     // read in the fitted chi2 values to use as starting points for MLE fit
-    std::map<std::string, std::vector<double>> chi2Fits = readChi2Fits(std::string(output_file));
     performMLMFits(output_file, kinematic_file, binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
