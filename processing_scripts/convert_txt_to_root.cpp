@@ -127,6 +127,7 @@ int main(int argc, char *argv[]) {
 
     // Determine the hadron count from the command line argument
     int hadron_count = atoi(argv[3]);
+    int is_mc = atoi(argv[4]);
 
     // Declare common variables
     int runnum, evnum, helicity;
@@ -155,7 +156,7 @@ int main(int argc, char *argv[]) {
     double mc_DepA, mc_DepB, mc_DepC, mc_DepV, mc_DepW;
 
     // Case for zero hadrons (inclusive)
-    if (hadron_count == 0 && std::stoi(argv[4]) == 0) {
+    if (hadron_count == 0 && is_mc == 0) {
         // Link TTree branches to variables for zero hadrons
         tree->Branch("runnum", &runnum, "runnum/I");
         tree->Branch("evnum", &evnum, "evnum/I");
@@ -177,7 +178,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Case for one hadron
-    else if (hadron_count == 1 && std::stoi(argv[4]) == 0) {
+    else if (hadron_count == 1 && is_mc == 0) {
         // Link TTree branches to variables for one hadron
         tree->Branch("runnum", &runnum, "runnum/I");
         tree->Branch("evnum", &evnum, "evnum/I");
@@ -214,7 +215,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Case for one hadron and is monte carlo
-    else if (hadron_count == 1 && std::stoi(argv[4]) == 1) {
+    else if (hadron_count == 1 && is_mc == 1) {
         // Link TTree branches to variables for one hadron
         tree->Branch("runnum", &runnum, "runnum/I");
         tree->Branch("evnum", &evnum, "evnum/I");
@@ -279,7 +280,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Case for two hadrons (dihadrons)
-    else if (hadron_count == 2 && std::stoi(argv[4]) == 0) {
+    else if (hadron_count == 2 && is_mc == 0) {
 
         // Link TTree branches to variables for two hadrons
         tree->Branch("runnum", &runnum, "runnum/I");
@@ -343,7 +344,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Case for two hadrons (trihadrons)
-    else if (hadron_count == 3 && std::stoi(argv[4]) == 0) {
+    else if (hadron_count == 3 && is_mc == 0) {
 
         // Link TTree branches to variables for three hadrons
         tree->Branch("runnum", &runnum, "runnum/I");
@@ -446,7 +447,7 @@ int main(int argc, char *argv[]) {
     load_run_info_from_csv(package_location+csv_location);
 
     // Loop to read each line from the text file and fill the TTree based on hadron_count
-    if (hadron_count == 0 && std::stoi(argv[4]) == 0) {
+    if (hadron_count == 0 && is_mc == 0) {
         while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             Q2 >> W >> Mx >> Mx2 >> x >> y) {
 
@@ -467,7 +468,7 @@ int main(int argc, char *argv[]) {
             tree->Fill(); // Fill the tree with the read data
         }
     } 
-    else if (hadron_count == 1 && std::stoi(argv[4]) == 0) {
+    else if (hadron_count == 1 && is_mc == 0) {
         while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             p_p >> p_theta >> p_phi >> vz_p >> Q2 >> W >> Mx >> Mx2 >> x >> y >> z >> xF >> 
             pT >> zeta >> eta >> phi >> DepA >> DepB >> DepC >> DepV >> DepW) {
@@ -489,7 +490,7 @@ int main(int argc, char *argv[]) {
             tree->Fill(); // Fill the tree with the read data
         }
     }
-    else if (hadron_count == 1 && std::stoi(argv[4]) == 1) {
+    else if (hadron_count == 1 && is_mc == 1) {
         while (infile >> e_p >> mc_e_p >> e_theta >> mc_e_theta >> e_phi >> mc_e_phi >> vz_e >> 
             mc_vz_e >> p_p >> mc_p_p >> p_theta >> mc_p_theta >> p_phi >> mc_p_phi >> vz_p >>
             mc_vz_p >> Q2 >> mc_Q2 >> W >> mc_W >> Mx >> mc_Mx >> Mx2 >> mc_Mx2 >> x >> mc_x >> 
@@ -510,7 +511,7 @@ int main(int argc, char *argv[]) {
             tree->Fill(); // Fill the tree with the read data
         }
     } 
-    else if (hadron_count == 2 && std::stoi(argv[4]) == 0) {
+    else if (hadron_count == 2 && is_mc == 0) {
         while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             p1_p >> p1_theta >> p1_phi >> vz_p1 >> p2_p >> p2_theta >> p2_phi >> vz_p2 >> 
             Q2 >> W >> Mx >> Mx1 >> Mx2 >> x >> y >> z >> z1 >> z2 >> Mh >> xF >> xF1 >> xF2 >> 
@@ -536,7 +537,7 @@ int main(int argc, char *argv[]) {
             tree->Fill(); // Fill the tree with the read data
         }
     }
-    else if (hadron_count == 3 && std::stoi(argv[4]) == 0) {
+    else if (hadron_count == 3 && is_mc == 0) {
         while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             p1_p >> p1_theta >> p1_phi >> vz_p1 >> p2_p >> p2_theta >> p2_phi >> vz_p2 >>
             p3_p >> p3_theta >> p3_phi >> vz_p3 >> 

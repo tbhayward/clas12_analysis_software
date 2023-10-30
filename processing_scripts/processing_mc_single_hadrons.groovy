@@ -98,7 +98,7 @@ public static void main(String[] args) {
 
 		while(reader.hasEvent()){
 			num_events++; 
-			if (num_events > 100000) { break; }
+			if (num_events > 10000) { break; }
 			if (num_events%100000 == 0) { 
 				print("processed: "+num_events+" events.     ");
 			}
