@@ -498,14 +498,13 @@ int main(int argc, char *argv[]) {
         }
     }
     else if (hadron_count == 1 && is_mc == 1) {
-        cout << "made it in" << endl;
+        cout << "Before read: " << infile.good() << endl;
         while (infile >> e_p >> mc_e_p >> e_theta >> mc_e_theta >> e_phi >> mc_e_phi >> vz_e >> 
             mc_vz_e >> p_p >> mc_p_p >> p_theta >> mc_p_theta >> p_phi >> mc_p_phi >> vz_p >>
             mc_vz_p >> Q2 >> mc_Q2 >> W >> mc_W >> Mx >> mc_Mx >> Mx2 >> mc_Mx2 >> x >> mc_x >> 
             y >> mc_y >> z >> mc_z >> xF >> mc_xF >> pT >> mc_pT >> zeta >> mc_zeta >> eta >> 
             mc_eta >> phi >> mc_phi >> DepA >> mc_DepA >> DepB >> mc_DepB >> DepC >> mc_DepC >> 
-            DepV >> mc_DepV >> DepW >> mc_DepW >> matching_e_pid >> matching_p1_pid >>
-            mc_p1_parent) {
+            DepV >> mc_DepV >> DepW >> mc_DepW) {
             cout << e_p << " " << mc_e_p << endl;
 
             runnum = 11;

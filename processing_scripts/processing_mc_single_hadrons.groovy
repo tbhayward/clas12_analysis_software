@@ -301,7 +301,7 @@ public static void main(String[] args) {
 		print("1: e_p, 3: e_theta, 5: p1_p, 7: p1_theta, ");
 		print("9: Q2, 11: W, 13: Mx, 15: x, 17: y, 19: z, 21: xF, 23: pT, 25: zeta, ");
 		print("27: eta, 29: phi, ");
-		print("31: Dep_A, 33: Dep_B, 35: Dep_C, 37: Dep_V, 39: Dep_W ")
+		print("31: Dep_A, 33: Dep_B, 35: Dep_C, 37: Dep_V, 39: Dep_W, ")
 		print("41: matching e pid, 42: matching p1 pid, 43: p1 parent id\n");
 
 		println(); println();
