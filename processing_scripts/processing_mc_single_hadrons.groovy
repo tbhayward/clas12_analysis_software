@@ -86,7 +86,6 @@ public static void main(String[] args) {
 
 
 	int num_events = 0;
-	int current_file = 0;
 
 	for (current_file in 0..<n_files) {
 		// limit to a certain number of files defined by n_files
