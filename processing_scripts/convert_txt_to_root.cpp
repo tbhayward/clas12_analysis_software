@@ -154,6 +154,7 @@ int main(int argc, char *argv[]) {
     double mc_Q2, mc_W, mc_Mx, mc_Mx2, mc_x, mc_y, mc_t, mc_tmin;
     double mc_z, mc_xF, mc_pT, mc_zeta, mc_eta, mc_phi;
     double mc_DepA, mc_DepB, mc_DepC, mc_DepV, mc_DepW;
+    int matching_e_pid, matching_p1_pid, mc_p1_parent;
 
     // Case for zero hadrons (inclusive)
     if (hadron_count == 0 && is_mc == 0) {
