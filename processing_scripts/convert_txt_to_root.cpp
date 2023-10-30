@@ -150,12 +150,12 @@ int main(int argc, char *argv[]) {
 
     // Additional variables for mc single hadron
     double mc_e_p, mc_e_theta, mc_e_phi, mc_vz_e, mc_p_p, mc_p_theta, mc_p_phi, mc_vz_p;
-    double mc_Q2, mc_W, mc_Mx, mc_Mx2, mc_x, mc_y, mc_t, mc_t_min;
+    double mc_Q2, mc_W, mc_Mx, mc_Mx2, mc_x, mc_y, mc_t, mc_tmin;
     double mc_z, mc_xF, mc_pT, mc_zeta, mc_eta, mc_phi;
     double mc_DepA, mc_DepB, mc_DepC, mc_DepV, mc_DepW;
 
     // Case for zero hadrons (inclusive)
-    if (hadron_count == 0 && argv[4] == 0) {
+    if (hadron_count == 0 && std::stoi(argv[4]) == 0) {
         // Link TTree branches to variables for zero hadrons
         tree->Branch("runnum", &runnum, "runnum/I");
         tree->Branch("evnum", &evnum, "evnum/I");
@@ -177,7 +177,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Case for one hadron
-    else if (hadron_count == 1 && argv[4] == 0) {
+    else if (hadron_count == 1 && std::stoi(argv[4]) == 0) {
         // Link TTree branches to variables for one hadron
         tree->Branch("runnum", &runnum, "runnum/I");
         tree->Branch("evnum", &evnum, "evnum/I");
@@ -214,7 +214,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Case for one hadron and is monte carlo
-    else if (hadron_count == 1 && argv[4] == 1) {
+    else if (hadron_count == 1 && std::stoi(argv[4]) == 1) {
         // Link TTree branches to variables for one hadron
         tree->Branch("runnum", &runnum, "runnum/I");
         tree->Branch("evnum", &evnum, "evnum/I");
@@ -279,7 +279,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Case for two hadrons (dihadrons)
-    else if (hadron_count == 2 && argv[4] == 0) {
+    else if (hadron_count == 2 && std::stoi(argv[4]) == 0) {
 
         // Link TTree branches to variables for two hadrons
         tree->Branch("runnum", &runnum, "runnum/I");
@@ -343,7 +343,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Case for two hadrons (trihadrons)
-    else if (hadron_count == 3 && argv[4] == 0) {
+    else if (hadron_count == 3 && std::stoi(argv[4]) == 0) {
 
         // Link TTree branches to variables for three hadrons
         tree->Branch("runnum", &runnum, "runnum/I");
@@ -490,10 +490,10 @@ int main(int argc, char *argv[]) {
         }
     }
     else if (hadron_count == 1 && argv[4] == 1) {
-        while (infile >> e_p >> mc_e_p >> e_theta >> mc_e_theta >> e_phi >> mc_ephi >> vz_e >> 
+        while (infile >> e_p >> mc_e_p >> e_theta >> mc_e_theta >> e_phi >> mc_e_phi >> vz_e >> 
             mc_vz_e >> p_p >> mc_p_p >> p_theta >> mc_p_theta >> p_phi >> mc_p_phi >> vz_p >>
             mc_vz_p >> Q2 >> mc_Q2 >> W >> mc_W >> Mx >> mc_Mx >> Mx2 >> mc_Mx2 >> x >> mc_x >> 
-            y >> mc_y >> z >> mc_z >> xF >> mc_xF >> pT >> >> mc_pT >> zeta >> mc_zeta >> eta >> 
+            y >> mc_y >> z >> mc_z >> xF >> mc_xF >> pT >> mc_pT >> zeta >> mc_zeta >> eta >> 
             mc_eta >> phi >> mc_phi >> DepA >> mc_DepA >> DepB >> mc_DepB >> DepC >> mc_DepC >> 
             DepV >> mc_DepV >> DepW >> mc_DepW) {
 
