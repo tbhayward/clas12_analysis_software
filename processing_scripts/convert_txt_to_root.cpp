@@ -108,9 +108,9 @@ double getPol(int runnum) {
 
 int main(int argc, char *argv[]) {
     // Check for correct number of command line arguments
-    if (argc != 4) {
+    if (argc != 5) {
         cout << "Usage: " << argv[0];
-        cout << " <input_text_file> <output_root_file> <hadron_count>" << endl;
+        cout << " <input_text_file> <output_root_file> <hadron_count> <is_mc>" << endl;
         return 1;
     }
     
@@ -148,8 +148,14 @@ int main(int argc, char *argv[]) {
     double eta3, eta12, eta23, eta13;
     double phi3, phi12, phi13, phi23, Delta_phi12, Delta_phi13, Delta_phi23;
 
+    // Additional variables for mc single hadron
+    double mc_e_p, mc_e_theta, mc_e_phi, mc_vz_e, mc_p_p, mc_p_theta, mc_p_phi, mc_vz_p;
+    double mc_Q2, mc_W, mc_Mx, mc_Mx2, mc_x, mc_y, mc_t, mc_t_min;
+    double mc_z, mc_xF, mc_pT, mc_zeta, mc_eta, mc_phi;
+    double mc_DepA, mc_DepB, mc_DepC, mc_DepV, mc_DepW;
+
     // Case for zero hadrons (inclusive)
-    if (hadron_count == 0) {
+    if (hadron_count == 0 && argv[4] == 0) {
         // Link TTree branches to variables for zero hadrons
         tree->Branch("runnum", &runnum, "runnum/I");
         tree->Branch("evnum", &evnum, "evnum/I");
@@ -171,7 +177,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Case for one hadron
-    else if (hadron_count == 1) {
+    else if (hadron_count == 1 && argv[4] == 0) {
         // Link TTree branches to variables for one hadron
         tree->Branch("runnum", &runnum, "runnum/I");
         tree->Branch("evnum", &evnum, "evnum/I");
@@ -207,8 +213,73 @@ int main(int argc, char *argv[]) {
         tree->Branch("DepW", &DepW, "DepW/D");
     }
 
+    // Case for one hadron and is monte carlo
+    else if (hadron_count == 1 && argv[4] == 1) {
+        // Link TTree branches to variables for one hadron
+        tree->Branch("runnum", &runnum, "runnum/I");
+        tree->Branch("evnum", &evnum, "evnum/I");
+        tree->Branch("helicity", &helicity, "helicity/I");
+        tree->Branch("beam_pol", &beam_pol, "beam_pol/D");
+        tree->Branch("target_pol", &target_pol, "target_pol/D");
+        tree->Branch("e_p", &e_p, "e_p/D");
+        tree->Branch("e_theta", &e_theta, "e_theta/D");
+        tree->Branch("e_phi", &e_phi, "e_phi/D");
+        tree->Branch("vz_e", &vz_e, "vz_e/D");
+        tree->Branch("p_p", &p_p, "p_p/D");
+        tree->Branch("p_theta", &p_theta, "p_theta/D");
+        tree->Branch("p_phi", &p_phi, "p_phi/D");
+        tree->Branch("vz_p", &vz_p, "vz_p/D");
+        tree->Branch("Q2", &Q2, "Q2/D");
+        tree->Branch("W", &W, "W/D");
+        tree->Branch("Mx", &Mx, "Mx/D");
+        tree->Branch("Mx2", &Mx2, "Mx2/D");
+        tree->Branch("x", &x, "x/D");
+        tree->Branch("y", &y, "y/D");
+        tree->Branch("t", &t, "t/D");
+        tree->Branch("tmin", &tmin, "tmin/D");
+        tree->Branch("z", &z, "z/D");
+        tree->Branch("xF", &xF, "xF/D");
+        tree->Branch("pT", &pT, "pT/D");
+        tree->Branch("zeta", &zeta, "zeta/D");
+        tree->Branch("eta", &eta, "eta/D");
+        tree->Branch("phi", &phi, "phi/D");
+        tree->Branch("DepA", &DepA, "DepA/D");
+        tree->Branch("DepB", &DepB, "DepB/D");
+        tree->Branch("DepC", &DepC, "DepC/D");
+        tree->Branch("DepV", &DepV, "DepV/D");
+        tree->Branch("DepW", &DepW, "DepW/D");
+        //
+        tree->Branch("mc_e_p", &mc_e_p, "mc_e_p/D");
+        tree->Branch("mc_e_theta", &mc_e_theta, "mc_e_theta/D");
+        tree->Branch("mc_e_phi", &mc_e_phi, "mc_e_phi/D");
+        tree->Branch("mc_vz_e", &mc_vz_e, "mc_vz_e/D");
+        tree->Branch("mc_p_p", &mc_p_p, "mc_p_p/D");
+        tree->Branch("mc_p_theta", &mc_p_theta, "mc_p_theta/D");
+        tree->Branch("mc_p_phi", &mc_p_phi, "mc_p_phi/D");
+        tree->Branch("mc_vz_p", &mc_vz_p, "mc_vz_p/D");
+        tree->Branch("mc_Q2", &mc_Q2, "mc_Q2/D");
+        tree->Branch("mc_W", &mc_W, "mc_W/D");
+        tree->Branch("mc_Mx", &mc_Mx, "mc_Mx/D");
+        tree->Branch("mc_Mx2", &mc_Mx2, "mc_Mx2/D");
+        tree->Branch("mc_x", &mc_x, "mc_x/D");
+        tree->Branch("mc_y", &mc_y, "mc_y/D");
+        tree->Branch("mc_t", &mc_t, "mc_t/D");
+        tree->Branch("mc_tmin", &mc_tmin, "mc_tmin/D");
+        tree->Branch("mc_z", &mc_z, "mc_z/D");
+        tree->Branch("mc_xF", &mc_xF, "mc_xF/D");
+        tree->Branch("mc_pT", &mc_pT, "mc_pT/D");
+        tree->Branch("mc_zeta", &mc_zeta, "mc_zeta/D");
+        tree->Branch("mc_eta", &mc_eta, "mc_eta/D");
+        tree->Branch("mc_phi", &mc_phi, "mc_phi/D");
+        tree->Branch("mc_DepA", &mc_DepA, "mc_DepA/D");
+        tree->Branch("mc_DepB", &mc_DepB, "mc_DepB/D");
+        tree->Branch("mc_DepC", &mc_DepC, "mc_DepC/D");
+        tree->Branch("mc_DepV", &mc_DepV, "mc_DepV/D");
+        tree->Branch("mc_DepW", &mc_DepW, "mc_DepW/D");
+    }
+
     // Case for two hadrons (dihadrons)
-    else if (hadron_count == 2) {
+    else if (hadron_count == 2 && argv[4] == 0) {
 
         // Link TTree branches to variables for two hadrons
         tree->Branch("runnum", &runnum, "runnum/I");
@@ -272,7 +343,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Case for two hadrons (trihadrons)
-    else if (hadron_count == 3) {
+    else if (hadron_count == 3 && argv[4] == 0) {
 
         // Link TTree branches to variables for three hadrons
         tree->Branch("runnum", &runnum, "runnum/I");
@@ -375,7 +446,7 @@ int main(int argc, char *argv[]) {
     load_run_info_from_csv(package_location+csv_location);
 
     // Loop to read each line from the text file and fill the TTree based on hadron_count
-    if (hadron_count == 0) {
+    if (hadron_count == 0 && argv[4] == 0) {
         while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             Q2 >> W >> Mx >> Mx2 >> x >> y) {
 
@@ -396,7 +467,7 @@ int main(int argc, char *argv[]) {
             tree->Fill(); // Fill the tree with the read data
         }
     } 
-    else if (hadron_count == 1) {
+    else if (hadron_count == 1 && argv[4] == 0) {
         while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             p_p >> p_theta >> p_phi >> vz_p >> Q2 >> W >> Mx >> Mx2 >> x >> y >> z >> xF >> 
             pT >> zeta >> eta >> phi >> DepA >> DepB >> DepC >> DepV >> DepW) {
@@ -417,8 +488,29 @@ int main(int argc, char *argv[]) {
 
             tree->Fill(); // Fill the tree with the read data
         }
+    }
+    else if (hadron_count == 1 && argv[4] == 1) {
+        while (infile >> e_p >> mc_e_p >> e_theta >> mc_e_theta >> e_phi >> mc_ephi >> vz_e >> 
+            mc_vz_e >> p_p >> mc_p_p >> p_theta >> mc_p_theta >> p_phi >> mc_p_phi >> vz_p >>
+            mc_vz_p >> Q2 >> mc_Q2 >> W >> mc_W >> Mx >> mc_Mx >> Mx2 >> mc_Mx2 >> x >> mc_x >> 
+            y >> mc_y >> z >> mc_z >> xF >> mc_xF >> pT >> >> mc_pT >> zeta >> mc_zeta >> eta >> 
+            mc_eta >> phi >> mc_phi >> DepA >> mc_DepA >> DepB >> mc_DepB >> DepC >> mc_DepC >> 
+            DepV >> mc_DepV >> DepW >> mc_DepW) {
+
+            runnum = 11;
+            beam_pol = 0;
+            target_pol = 0;
+            if (runnum < 16000) { target_pol = 0; }
+
+            t = gett(p_p, p_theta); // for SIDIS we calculate t with proton kinematics
+            mc_t = gett(mc_p_p, mc_p_theta);
+            tmin = gettmin(x);
+            mc_tmin = gettmin(x); 
+
+            tree->Fill(); // Fill the tree with the read data
+        }
     } 
-    else if (hadron_count == 2) {
+    else if (hadron_count == 2 && argv[4] == 0) {
         while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             p1_p >> p1_theta >> p1_phi >> vz_p1 >> p2_p >> p2_theta >> p2_phi >> vz_p2 >> 
             Q2 >> W >> Mx >> Mx1 >> Mx2 >> x >> y >> z >> z1 >> z2 >> Mh >> xF >> xF1 >> xF2 >> 
@@ -444,7 +536,7 @@ int main(int argc, char *argv[]) {
             tree->Fill(); // Fill the tree with the read data
         }
     }
-    else if (hadron_count == 3) {
+    else if (hadron_count == 3 && argv[4] == 0) {
         while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             p1_p >> p1_theta >> p1_phi >> vz_p1 >> p2_p >> p2_theta >> p2_phi >> vz_p2 >>
             p3_p >> p3_theta >> p3_phi >> vz_p3 >> 

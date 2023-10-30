@@ -135,13 +135,6 @@ public static void main(String[] args) {
 		                helicity = variables.get_helicity(); // helicity of event
 		                // if (runnum =! 11 && helicity == 0) { continue; }
 
-		                HipoDataBank lundBank = (HipoDataBank) event.getBank("MC::Lund");
-		                for (int current_part = 0; current_part < lundBank.rows(); current_part++) {
-							int pid = lundBank.getInt("pid", current_part);
-							if (pid == 22) { helicity = 1; break; }
-
-						}
-
 		                // lab kinematics
 		                e_p = variables.e_p(); // lab frame momentum
 		                e_theta = variables.e_theta(); // lab polar angle
