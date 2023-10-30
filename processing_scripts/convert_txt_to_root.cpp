@@ -446,6 +446,7 @@ int main(int argc, char *argv[]) {
     string csv_location="clas12_analysis_software/analysis_scripts/run_info_rgc.csv";
     load_run_info_from_csv(package_location+csv_location);
 
+    cout << "HELLO HELLO is_mc = " << is_mc << endl;
     // Loop to read each line from the text file and fill the TTree based on hadron_count
     if (hadron_count == 0 && is_mc == 0) {
         while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
