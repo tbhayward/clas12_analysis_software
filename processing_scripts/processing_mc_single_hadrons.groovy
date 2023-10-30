@@ -130,6 +130,7 @@ public static void main(String[] args) {
 						p1_Str.toInteger(), current_p1);
 
 					if (variables.channel_test(variables)) {
+						println("hello world");
 
 						// lab kinematics data
 						double e_p = variables.e_p();
