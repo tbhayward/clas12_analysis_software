@@ -26,9 +26,9 @@ else if ($arg1 == "processing_scripts/processing_trihadrons.groovy") then
 endif
 
 # determine if Monte Carlo
-set is_mc = false;
+set is_mc = 0;
 if ($arg1 == "processing_scripts/processing_mc_single_hadrons.groovy") then
-    set is_mc = true;
+    set is_mc = 1;
 endif
 
 # Set the second argument to default to the RGA Fall2018 inbending nSidis skim if not provided
