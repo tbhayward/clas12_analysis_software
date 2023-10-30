@@ -279,9 +279,9 @@ int main(int argc, char *argv[]) {
         tree->Branch("mc_DepV", &mc_DepV, "mc_DepV/D");
         tree->Branch("mc_DepW", &mc_DepW, "mc_DepW/D");
         //
-        tree->Branch("matching_e_pid", &matching_e_pid, "matching_e_pid/D");
-        tree->Branch("matching_p1_pid", &matching_p1_pid, "matching_p1_pid/D");
-        tree->Branch("mc_p1_parent", &mc_p1_parent, "mc_p1_parent/D");
+        tree->Branch("matching_e_pid", &matching_e_pid, "matching_e_pid/I");
+        tree->Branch("matching_p1_pid", &matching_p1_pid, "matching_p1_pid/I");
+        tree->Branch("mc_p1_parent", &mc_p1_parent, "mc_p1_parent/I");
     }
 
     // Case for two hadrons (dihadrons)
@@ -504,7 +504,8 @@ int main(int argc, char *argv[]) {
             mc_vz_p >> Q2 >> mc_Q2 >> W >> mc_W >> Mx >> mc_Mx >> Mx2 >> mc_Mx2 >> x >> mc_x >> 
             y >> mc_y >> z >> mc_z >> xF >> mc_xF >> pT >> mc_pT >> zeta >> mc_zeta >> eta >> 
             mc_eta >> phi >> mc_phi >> DepA >> mc_DepA >> DepB >> mc_DepB >> DepC >> mc_DepC >> 
-            DepV >> mc_DepV >> DepW >> mc_DepW) {
+            DepV >> mc_DepV >> DepW >> mc_DepW >> matching_e_pid >> matching_p1_pid >>
+            mc_p1_parent) {
             cout << e_p << " " << mc_e_p << endl;
 
             runnum = 11;
