@@ -451,8 +451,6 @@ int main(int argc, char *argv[]) {
     string csv_location="clas12_analysis_software/analysis_scripts/run_info_rgc.csv";
     load_run_info_from_csv(package_location+csv_location);
 
-    cout << "HELLO is_mc = " << is_mc << endl;
-    cout << "hadron_count = " << hadron_count << endl;
     // Loop to read each line from the text file and fill the TTree based on hadron_count
     if (hadron_count == 0 && is_mc == 0) {
         while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
@@ -498,7 +496,6 @@ int main(int argc, char *argv[]) {
         }
     }
     else if (hadron_count == 1 && is_mc == 1) {
-        cout << "Before read: " << infile.good() << endl;
         while (infile >> e_p >> mc_e_p >> e_theta >> mc_e_theta >> e_phi >> mc_e_phi >> vz_e >> 
             mc_vz_e >> p_p >> mc_p_p >> p_theta >> mc_p_theta >> p_phi >> mc_p_phi >> vz_p >>
             mc_vz_p >> Q2 >> mc_Q2 >> W >> mc_W >> Mx >> mc_Mx >> Mx2 >> mc_Mx2 >> x >> mc_x >> 
