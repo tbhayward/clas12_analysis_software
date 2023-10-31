@@ -1474,6 +1474,10 @@ int main(int argc, char *argv[]) {
   dataReader.SetTree(data);  // Initialize the global variable
   mcReader.SetTree(mc);  // Initialize the global variable
 
+  cout << endl;
+  read_json_file(fit_definitions.json);
+  cout << endl;
+
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
     for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
