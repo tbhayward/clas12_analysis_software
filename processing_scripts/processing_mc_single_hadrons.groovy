@@ -84,6 +84,8 @@ public static void main(String[] args) {
 	GenericKinematicFitter mc_fitter = new monte_carlo_fitter(10.6041);
 	EventFilter filter = new EventFilter("11:"+p1_Str+":"+":X+:X-:Xn");
 
+	// create a StringBuilder for accumulating lines
+	StringBuilder batchLines = new StringBuilder();
 
 	int num_events = 0;
 	int max_lines = 1000;
