@@ -25,6 +25,8 @@
 #include <TTreeReaderValue.h>
 #include <TH1D.h>
 #include "TMinuit.h"
+// tbhayward libraries
+#include "common_vars.h"  // Include the common header
 
 std::map<std::string, std::vector<double>> bins_map;
 std::vector<std::vector<double>> allBins;
