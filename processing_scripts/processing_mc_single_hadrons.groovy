@@ -281,6 +281,8 @@ public static void main(String[] args) {
 						}
 
 						if (mc_e_p > 20 || mc_p_p > 20 || mc_y > 2 || mc_xF > 10) { continue; }
+						if (mc_DepB > 2 || mc_DepC > 2 || mc_DepW > 2 ) { continue; }
+						if (mc_W > 10) { continue; }
 						// Use a StringBuilder to append all data in a single call
 		                StringBuilder line = new StringBuilder();
 						line.append(e_p).append(" ")
