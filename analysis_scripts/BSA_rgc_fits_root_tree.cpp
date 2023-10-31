@@ -1513,9 +1513,33 @@ int main(int argc, char *argv[]) {
 }
 
 
+void read_json_file(const std::string& filename) {
+    // Open the file with the given filename
+    std::ifstream file(filename);
+
+    // Check if the file could be opened
+    if (!file.is_open()) {
+        std::cerr << "Could not open the file: " << filename << std::endl;
+        return;
+    }
+
+    // Declare a string to hold each line from the file
+    std::string line;
+
+    // Loop through each line in the file
+    while (std::getline(file, line)) {
+        // Print the line (for testing purposes)
+        std::cout << line << std::endl;
+    }
+
+    // Close the file
+    file.close();
+}
+
 // git pull; 
 // g++ -o BSA_rgc_fits_root_tree BSA_rgc_fits_root_tree.cpp 
-// -L/site/12gev_phys/2.4/Linux_CentOS7.9.2009-gcc9.2.0/root/6.20.04/lib `root-config --cflags --libs` -lMinuit;
+// -L/site/12gev_phys/2.4/Linux_CentOS7.9.2009-gcc9.2.0/root/6.20.04/lib 
+// `root-config --cflags --libs` -lMinuit;
 // ./BSA_rgc_fits_root_tree /work/clas12/thayward/CLAS12_SIDIS/RGC/p/rgc_8.7.0_epX_Mx-1.4.root 
 // /work/clas12/thayward/CLAS12_SIDIS/RGC/p/rgc_nh3_mc.root /u/home/thayward/test_asymmetries.txt
 // /u/home/thayward/test_kinematics.txt
