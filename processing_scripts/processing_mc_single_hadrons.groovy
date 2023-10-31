@@ -197,10 +197,10 @@ public static void main(String[] args) {
 				    	double mc_Depolarization_W = mc_variables.Depolarization_W();
 
 						// angles data
-						double phi = variables.phi();
+						double trento_phi = variables.phi();
 
 						// angles MC
-						double mc_phi = mc_variables.phi();
+						double mc_trento_phi = mc_variables.phi();
 
 						boolean matching_e = false;
 						boolean matching_p1 = false;
@@ -318,8 +318,8 @@ public static void main(String[] args) {
 							.append(mc_zeta).append(" ")
 							.append(eta).append(" ")
 							.append(mc_eta).append(" ")
-							.append(phi).append(" ")
-							.append(mc_phi).append(" ")
+							.append(trento_phi).append(" ")
+							.append(mc_trento_phi).append(" ")
 							.append(Depolarization_A).append(" ")
 							.append(mc_Depolarization_A).append(" ")
 							.append(Depolarization_B).append(" ")
