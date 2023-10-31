@@ -1,3 +1,31 @@
+// Standard C++ Library Headers
+#include <algorithm>
+#include <chrono>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <map>
+#include <sstream>
+#include <string>
+#include <vector>
+// ROOT Library Headers
+#include <TApplication.h>
+#include <TCanvas.h>
+#include <TF1.h>
+#include <TFile.h>
+#include <TGraphErrors.h>
+#include <TLeaf.h>
+#include <TLegend.h>
+#include <TMath.h>
+#include <TPaveStats.h>
+#include <TSystem.h>
+#include <TText.h>
+#include <TTree.h>
+#include <TTreeReader.h>
+#include <TTreeReaderValue.h>
+#include <TH1D.h>
+#include "TMinuit.h"
+
 void load_bins_from_csv(const std::string& filename) {
   // Open the input file with the given filename
   std::ifstream file(filename);
