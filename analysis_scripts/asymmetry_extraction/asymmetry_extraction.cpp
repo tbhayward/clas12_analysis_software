@@ -400,7 +400,7 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
   leg->Draw("same");
 
   // Create the filename for the PNG
-  string filename = "analysis_scripts/asymmetry_extraction/output/" + prefix + "_" + 
+  string filename = "output/" + prefix + "_" + 
     fileNameSuffix + "_" + std::to_string(binIndex) + ".png";
   
   // Determine the variable range for the specified bin
@@ -1399,7 +1399,7 @@ int main(int argc, char *argv[]) {
   ofs2.close();
 
   // load bins from external csv file
-  load_bins_from_csv("analysis_scripts/asymmetry_extraction/imports/bins_single_hadron.csv");
+  load_bins_from_csv("bins_single_hadron.csv");
   cout<< endl <<"-- Loaded information from bins.csv. " << endl;
 
   cout<< "Found " << allBins.size() << " sets of bins: " << endl;
@@ -1430,7 +1430,7 @@ int main(int argc, char *argv[]) {
   cout << endl;
 
   // load run infrom from external csv file
-  load_run_info_from_csv("analysis_scripts/asymmetry_extraction/imports/rgc_run_info_rgc.csv");
+  load_run_info_from_csv("rgc_run_info_rgc.csv");
   cout<< endl << endl <<"-- Loaded information from run_info_rgc.csv" << endl;
 
   cout << "Found " << run_info_list.size() << " runs." << endl;
