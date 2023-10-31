@@ -9,7 +9,6 @@
 #include <string>
 #include <vector>
 // ROOT Library Headers
-#include <nlohmann/json.hpp>
 #include <TApplication.h>
 #include <TCanvas.h>
 #include <TF1.h>
