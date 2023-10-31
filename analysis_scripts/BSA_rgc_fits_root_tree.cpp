@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 // ROOT Library Headers
+#include <nlohmann/json.hpp>
 #include <TApplication.h>
 #include <TCanvas.h>
 #include <TF1.h>
@@ -43,6 +44,7 @@ std::vector<std::string> variable_names;
 double total_charge_carbon;
 double cpp, cpm, cmp, cmm;
 std::string mlmPrefix = "xF";
+
 
 void load_bins_from_csv(const std::string& filename) {
   // Open the input file with the given filename
