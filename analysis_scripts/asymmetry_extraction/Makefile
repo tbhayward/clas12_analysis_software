@@ -6,9 +6,8 @@ LFLAGS = -L/site/12gev_phys/2.4/Linux_CentOS7.9.2009-gcc9.2.0/root/6.20.04/lib $
 # Target executable
 TARGET = analysis_scripts/asymmetry_extraction/asymmetry_extraction
 
-
 # Source files
-SRC = BSA_rgc_fits_root_tree.cpp load_bins_from_csv.cpp
+SRC = asymmetry_extraction.cpp load_bins_from_csv.cpp
 
 # Object files
 OBJ = $(SRC:.cpp=.o)
