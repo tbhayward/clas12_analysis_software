@@ -1366,6 +1366,29 @@ void performChi2Fits(const char* output_file, const char* kinematic_file,
 
 }
 
+void read_json_file(const std::string& filename) {
+    // Open the file with the given filename
+    std::ifstream file(filename);
+
+    // Check if the file could be opened
+    if (!file.is_open()) {
+        std::cerr << "Could not open the file: " << filename << std::endl;
+        return;
+    }
+
+    // Declare a string to hold each line from the file
+    std::string line;
+
+    // Loop through each line in the file
+    while (std::getline(file, line)) {
+        // Print the line (for testing purposes)
+        std::cout << line << std::endl;
+    }
+
+    // Close the file
+    file.close();
+}
+
 int main(int argc, char *argv[]) {
   // Start the timer
   auto start_time = std::chrono::high_resolution_clock::now();
@@ -1516,29 +1539,6 @@ int main(int argc, char *argv[]) {
   return 0;
 }
 
-
-void read_json_file(const std::string& filename) {
-    // Open the file with the given filename
-    std::ifstream file(filename);
-
-    // Check if the file could be opened
-    if (!file.is_open()) {
-        std::cerr << "Could not open the file: " << filename << std::endl;
-        return;
-    }
-
-    // Declare a string to hold each line from the file
-    std::string line;
-
-    // Loop through each line in the file
-    while (std::getline(file, line)) {
-        // Print the line (for testing purposes)
-        std::cout << line << std::endl;
-    }
-
-    // Close the file
-    file.close();
-}
 
 // git pull; 
 // g++ -o BSA_rgc_fits_root_tree BSA_rgc_fits_root_tree.cpp 
