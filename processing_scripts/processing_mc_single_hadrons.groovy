@@ -284,6 +284,7 @@ public static void main(String[] args) {
 						// Use a StringBuilder to append all data in a single call
 		                StringBuilder line = new StringBuilder();
 						line.append(e_p).append(" ")
+							.append(mc_e_p).append(" ")
 							.append(e_theta).append(" ")
 							.append(mc_e_theta).append(" ")
 							.append(e_phi).append(" ")
