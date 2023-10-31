@@ -101,6 +101,7 @@ public static void main(String[] args) {
 
 		while(reader.hasEvent()){
 			++num_events; 
+			if (num_events>200000) { break; }
 			if (num_events%100000 == 0) { 
 				print("processed: "+num_events+" events.     ");
 			}
@@ -280,9 +281,11 @@ public static void main(String[] args) {
 							}
 						}
 
-						if (mc_e_p > 20 || mc_p_p > 20 || mc_y > 2 || mc_xF > 10) { continue; }
-						if (mc_DepB > 2 || mc_DepC > 2 || mc_DepW > 2 ) { continue; }
-						if (mc_W > 10) { continue; }
+						if (e_p > 20 || mc_e_p > 20) {
+							lundBank.show();
+							println(); println(); println(); println();
+							recBank.show();
+						}
 						// Use a StringBuilder to append all data in a single call
 		                StringBuilder line = new StringBuilder();
 						line.append(e_p).append(" ")
