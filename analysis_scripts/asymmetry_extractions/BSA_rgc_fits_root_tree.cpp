@@ -1367,118 +1367,6 @@ void performChi2Fits(const char* output_file, const char* kinematic_file,
 
 }
 
-struct FitDefinition {
-    std::string expression;
-    std::vector<std::string> parameters;
-    std::vector<double> initial_values;
-    std::vector<std::string> depolarization_factors;
-};
-
-std::map<std::string, FitDefinition> parse_json_content(const std::string& filename) {
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        std::cerr << "Could not open the file: " << filename << std::endl;
-        return {};
-    }
-
-    std::map<std::string, FitDefinition> fit_definitions;
-    std::string line, fit_type;
-    FitDefinition current_fit;
-
-    while (std::getline(file, line)) {
-        // Skip empty lines
-        if (line.empty()) continue;
-
-        // Check if the line contains a fit type definition like "BSA": {
-        if (line.find("\"BSA\": {") != std::string::npos) {
-            fit_type = "BSA";
-            current_fit = FitDefinition();
-        } else if (line.find("\"TSA\": {") != std::string::npos) {
-            fit_type = "TSA";
-            current_fit = FitDefinition();
-        } else if (line.find("\"DSA\": {") != std::string::npos) {
-            fit_type = "DSA";
-            current_fit = FitDefinition();
-        } else if (line.find("\"Spin-independent\": {") != std::string::npos) {
-            fit_type = "Spin-independent";
-            current_fit = FitDefinition();
-        } 
-
-        // Parse 'expression'
-        if (line.find("\"expression\": ") != std::string::npos) {
-            size_t start = line.find("\"expression\": ") + 14;
-            size_t end = line.find_last_of("\"");
-            current_fit.expression = line.substr(start, end - start);
-        }
-        
-        // Parse 'parameters'
-        if (line.find("\"parameters\": [") != std::string::npos) {
-            size_t start = line.find("\"parameters\": [") + 15;
-            size_t end = line.find_last_of("]");
-            std::string params_str = line.substr(start, end - start);
-            std::stringstream ss(params_str);
-            std::string param;
-            while (std::getline(ss, param, ',')) {
-                current_fit.parameters.push_back(param);
-            }
-        }
-
-        // Parse 'initial_values'
-        if (line.find("\"initial_values\": [") != std::string::npos) {
-            size_t start = line.find("\"initial_values\": [") + 19;
-            size_t end = line.find_last_of("]");
-            std::string init_vals_str = line.substr(start, end - start);
-            std::stringstream ss(init_vals_str);
-            std::string init_val;
-            while (std::getline(ss, init_val, ',')) {
-                current_fit.initial_values.push_back(std::stod(init_val));
-            }
-        }
-
-        // Parse 'depolarization_factors'
-        if (line.find("\"depolarization_factors\": [") != std::string::npos) {
-            size_t start = line.find("\"depolarization_factors\": [") + 27;
-            size_t end = line.find_last_of("]");
-            std::string depolarization_str = line.substr(start, end - start);
-            std::stringstream ss(depolarization_str);
-            std::string depolarization;
-            while (std::getline(ss, depolarization, ',')) {
-                current_fit.depolarization_factors.push_back(depolarization);
-            }
-        }
-
-        // If line contains '}', it marks the end of the current fit definition, so save it.
-        if (line.find("}") != std::string::npos) {
-            fit_definitions[fit_type] = current_fit;
-        }
-    }
-    file.close();
-    return fit_definitions;
-}
-
-// For demonstration purposes, print out parsed content
-void print_parsed_content(const std::map<std::string, FitDefinition>& fit_definitions) {
-    for (const auto& [fit_type, fit_def] : fit_definitions) {
-        std::cout << "Fit Type: " << fit_type << std::endl;
-        std::cout << "  Expression: " << fit_def.expression << std::endl;
-        std::cout << "  Parameters: ";
-        for (const auto& param : fit_def.parameters) {
-            std::cout << param << " ";
-        }
-        std::cout << std::endl;
-        std::cout << "  Initial Values: ";
-        for (const auto& init_val : fit_def.initial_values) {
-            std::cout << init_val << " ";
-        }
-        std::cout << std::endl;
-        std::cout << "  Depolarization Factors: ";
-        for (const auto& depolarization : fit_def.depolarization_factors) {
-            std::cout << depolarization << " ";
-        }
-        std::cout << std::endl;
-    }
-}
-
 int main(int argc, char *argv[]) {
   // Start the timer
   auto start_time = std::chrono::high_resolution_clock::now();
@@ -1506,7 +1394,7 @@ int main(int argc, char *argv[]) {
   ofs2.close();
 
   // load bins from external csv file
-  load_bins_from_csv("bins_single_hadron.csv");
+  load_bins_from_csv("analysis_scripts/asymmetry_extractions/imports/bins_single_hadron.csv");
   cout<< endl <<"-- Loaded information from bins.csv. " << endl;
 
   cout<< "Found " << allBins.size() << " sets of bins: " << endl;
@@ -1537,7 +1425,7 @@ int main(int argc, char *argv[]) {
   cout << endl;
 
   // load run infrom from external csv file
-  load_run_info_from_csv("run_info_rgc.csv");
+  load_run_info_from_csv("analysis_scripts/asymmetry_extractions/imports/rgc_run_info_rgc.csv");
   cout<< endl << endl <<"-- Loaded information from run_info_rgc.csv" << endl;
 
   cout << "Found " << run_info_list.size() << " runs." << endl;
