@@ -503,6 +503,7 @@ int main(int argc, char *argv[]) {
             mc_eta >> phi >> mc_phi >> DepA >> mc_DepA >> DepB >> mc_DepB >> DepC >> mc_DepC >> 
             DepV >> mc_DepV >> DepW >> mc_DepW >> matching_e_pid) {
 
+            cout << e_p << endl;
             runnum = 11;
             beam_pol = 0;
             target_pol = 0;
