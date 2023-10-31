@@ -16,5 +16,11 @@
     "parameters": ["ALL", "ALL_cosphi"],
     "initial_values": [0, 0],
     "depolarization_factors": ["DepC", "DepW"]
+  },
+  "Spin-independent": {
+    "expression": "AUU_cosphi*cos(phi) + AUU_cos2phi*cos(2*phi)",
+    "parameters": ["AUU_cosphi", "AUU_cos2phi"],
+    "initial_values": [0, 0],
+    "depolarization_factors": ["DepV", "DepB"]
   }
 }
