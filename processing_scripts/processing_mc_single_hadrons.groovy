@@ -86,7 +86,8 @@ public static void main(String[] args) {
 
 
 	int num_events = 0;
-
+	int max_lines = 1000;
+	int lineCount = 0;
 	for (current_file in 0..<n_files) {
 		// limit to a certain number of files defined by n_files
 		println("\n Opening file "+Integer.toString(current_file+1)
@@ -97,7 +98,7 @@ public static void main(String[] args) {
 		HipoDataEvent event = reader.getNextEvent(); 
 
 		while(reader.hasEvent()){
-			num_events++; 
+			++num_events; 
 			if (num_events > 10000) { break; }
 			if (num_events%100000 == 0) { 
 				print("processed: "+num_events+" events.     ");
@@ -134,26 +135,36 @@ public static void main(String[] args) {
 						// lab kinematics data
 						double e_p = variables.e_p();
 						double e_theta = variables.e_theta();
-						double p1_p = variables.p_p();
-						double p1_theta = variables.p_theta();
+						double e_phi = variables.e_phi();
+						double vz_e = variables.vz_e();
+						double p_p = variables.p_p();
+						double p_theta = variables.p_theta();
+						double p_phi = variables.p_phi();
+						double vz_p = variables.vz_p();
 
 						// lab kinematics MC
 						double mc_e_p = mc_variables.e_p();
 						double mc_e_theta = mc_variables.e_theta();
-						double mc_p1_p = mc_variables.p_p();
-						double mc_p1_theta = mc_variables.p_theta();
+						double mc_e_phi = mc_variables.e_phi();
+						double mc_vz_e = mc_variables.vz_e();
+						double mc_p_p = mc_variables.p_p();
+						double mc_p_theta = mc_variables.p_theta();
+						double mc_p_phi = mc_variables.p_phi();
+						double mc_vz_p = mc_variables.vz_p();
 
 						// DIS variables data
 						double Q2 = variables.Q2();
 						double W = variables.W();
 						double y = variables.y();
 						double Mx = variables.Mx();
+						double Mx2 = variables.Mx2();
 
 						// DIS variables MC
 						double mc_Q2 = mc_variables.Q2();
 						double mc_W = mc_variables.W(); 
 						double mc_y = mc_variables.y();
 						double mc_Mx = mc_variables.Mx();
+						double mc_Mx2 = mc_variables.Mx2();
 
 						// SIDIS variables data
 						double x = variables.x();
@@ -161,7 +172,6 @@ public static void main(String[] args) {
 						double xF = variables.xF();
 						double pT = variables.pT();
 						double eta = variables.eta();
-						double eta_gN = variables.eta_gN();
 						double zeta = variables.zeta();
 
 						// SIDIS variables MC
@@ -170,7 +180,6 @@ public static void main(String[] args) {
 						double mc_xF = mc_variables.xF();
 						double mc_pT = mc_variables.pT();
 						double mc_eta = mc_variables.eta();
-						double mc_eta_gN = mc_variables.eta_gN();
 						double mc_zeta = mc_variables.zeta();
 
 						// depolarization factors data
@@ -270,31 +279,81 @@ public static void main(String[] args) {
 							}
 						}
 
-						// if (Mx > 1.55 && Mx < 1.65) {
-						// 	lundBank.show();
-						// }
+						/ Use a StringBuilder to append all data in a single call
+		                StringBuilder line = new StringBuilder();
+						line.append(e_p).append(" ")
+							.append(e_theta).append(" ")
+							.append(mc_e_theta).append(" ")
+							.append(e_phi).append(" ")
+							.append(mc_e_phi).append(" ")
+							.append(vz_e).append(" ")
+							.append(mc_vz_e).append(" ")
+							.append(p_p).append(" ")
+							.append(mc_p_p).append(" ")
+							.append(p_theta).append(" ")
+							.append(mc_p_theta).append(" ")
+							.append(p_phi).append(" ")
+							.append(mc_p_phi).append(" ")
+							.append(vz_p).append(" ")
+							.append(mc_vz_p).append(" ")
+							.append(Q2).append(" ")
+							.append(mc_Q2).append(" ")
+							.append(W).append(" ")
+							.append(mc_W).append(" ")
+							.append(Mx).append(" ")
+							.append(mc_Mx).append(" ")
+							.append(Mx2).append(" ")
+							.append(mc_Mx2).append(" ")
+							.append(x).append(" ")
+							.append(mc_x).append(" ")
+							.append(y).append(" ")
+							.append(mc_y).append(" ")
+							.append(z).append(" ")
+							.append(mc_z).append(" ")
+							.append(xF).append(" ")
+							.append(mc_xF).append(" ")
+							.append(pT).append(" ")
+							.append(mc_pT).append(" ")
+							.append(zeta).append(" ")
+							.append(mc_zeta).append(" ")
+							.append(eta).append(" ")
+							.append(mc_eta).append(" ")
+							.append(phi).append(" ")
+							.append(mc_phi).append(" ")
+							.append(Depolarization_A).append(" ")
+							.append(mc_Depolarization_A).append(" ")
+							.append(Depolarization_B).append(" ")
+							.append(mc_Depolarization_B).append(" ")
+							.append(Depolarization_C).append(" ")
+							.append(mc_Depolarization_C).append(" ")
+							.append(Depolarization_V).append(" ")
+							.append(mc_Depolarization_V).append(" ")
+							.append(Depolarization_W).append(" ")
+							.append(mc_Depolarization_W).append(" ")
+							.append(matching_e_pid).append(" ")
+							.append(matching_p1_pid).append(" ")
+							.append(mc_p1_parent).append("\n");
 
-						file.append(e_p+" "+mc_e_p+" "+e_theta+" "+mc_e_theta+" ");
-						file.append(p1_p+" "+mc_p1_p+" "+p1_theta+" "+mc_p1_theta+" ");
-						file.append(Q2+" "+mc_Q2+" "+W+" "+mc_W+" ");
-						file.append(Mx+" "+mc_Mx+" ");
-						file.append(x+" "+mc_x+" "+y+" "+mc_y+" "+z+" "+mc_z+" ");
-						file.append(xF+" "+mc_xF+" ");
-						file.append(pT+" "+mc_pT+" ");
-						file.append(zeta+" "+mc_zeta+" ");
-						file.append(eta+" "+mc_eta+" ");
-						file.append(trento_phi+" "+mc_trento_phi+" ");
-						file.append(Depolarization_A+" "+mc_Depolarization_A+" ");
-						file.append(Depolarization_B+" "+mc_Depolarization_B+" ");
-						file.append(Depolarization_C+" "+mc_Depolarization_C+" ");
-						file.append(Depolarization_V+" "+mc_Depolarization_V+" ");
-						file.append(Depolarization_W+" "+mc_Depolarization_W+" ");
-						file.append(matching_e_pid+" "+matching_p1_pid+" ");
-						file.append(mc_p1_parent+"\n");
+						// Append the line to the batchLines StringBuilder
+		                batchLines.append(line.toString());
+		                lineCount++; // Increment the line count
 
+		                // If the line count reaches 1000, write to the file and reset
+		                if (lineCount >= max_lines) {
+		                    file.append(batchLines.toString());
+		                    batchLines.setLength(0);
+		                    lineCount = 0;
+		                }
 					}
 				}
 			}
+		reader.close();
+		}
+
+		// Write any remaining lines in the batchLines StringBuilder to the file
+		if (batchLines.length() > 0) {
+		    file.append(batchLines.toString());
+		    batchLines.setLength(0);
 		}
 
 		println(); println();
