@@ -504,7 +504,6 @@ int main(int argc, char *argv[]) {
             DepV >> mc_DepV >> DepW >> mc_DepW >> matching_e_pid >> matching_p1_pid >>
             mc_p1_parent) {
 
-            cout << e_p << endl;
             runnum = 11;
             beam_pol = 0;
             target_pol = 0;
