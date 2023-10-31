@@ -26,6 +26,12 @@
 #include <TH1D.h>
 #include "TMinuit.h"
 
+std::map<std::string, std::vector<double>> bins_map;
+std::vector<std::vector<double>> allBins;
+std::vector<std::string> binNames;
+std::vector<std::string> propertyNames;
+std::vector<std::string> variable_names;
+
 void load_bins_from_csv(const std::string& filename) {
   // Open the input file with the given filename
   std::ifstream file(filename);
