@@ -475,63 +475,28 @@ int main(int argc, char *argv[]) {
             tree->Fill(); // Fill the tree with the read data
         }
     } 
-    else if (hadron_count == 1 && is_mc == 1) {
-    cout << "Before read: " << infile.good() << endl;
-    
-    string line;
-    while (getline(infile, line)) {
-        stringstream ss(line);
-        cout << line << endl;
-        if (!(ss >> e_p >> mc_e_p >> e_theta >> mc_e_theta >> e_phi >> mc_e_phi >> vz_e >> 
-            mc_vz_e >> p_p >> mc_p_p >> p_theta >> mc_p_theta >> p_phi >> mc_p_phi >> vz_p >>
-            mc_vz_p >> Q2 >> mc_Q2 >> W >> mc_W >> Mx >> mc_Mx >> Mx2 >> mc_Mx2 >> x >> mc_x >> 
-            y >> mc_y >> z >> mc_z >> xF >> mc_xF >> pT >> mc_pT >> zeta >> mc_zeta >> eta >> 
-            mc_eta >> phi >> mc_phi >> DepA >> mc_DepA >> DepB >> mc_DepB >> DepC >> mc_DepC >> 
-            DepV >> mc_DepV >> DepW >> mc_DepW >> matching_e_pid >> matching_p1_pid >> mc_p1_parent)) {
-            
-            
-            cout << "Failed to read from stringstreams." << endl;
-            break; // Exit the loop if reading fails
+    else if (hadron_count == 1 && is_mc == 0) {
+        while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
+            p_p >> p_theta >> p_phi >> vz_p >> Q2 >> W >> Mx >> Mx2 >> x >> y >> z >> xF >> 
+            pT >> zeta >> eta >> phi >> DepA >> DepB >> DepC >> DepV >> DepW) {
+
+            beam_pol = getPol(runnum);
+            if (runnum < 16000) { target_pol = 0; }
+            else { 
+                for (const auto& run_info : run_info_list) {
+                    if (run_info.runnum == runnum) {
+                        target_pol = run_info.target_polarization;
+                        break;
+                    }
+                }
+            }
+
+            t = gett(p_p, p_theta); // for SIDIS we calculate t with proton kinematics
+            tmin = gettmin(x); 
+
+            tree->Fill(); // Fill the tree with the read data
         }
-        
-        cout << e_p << " " << mc_e_p << endl;
-
-        runnum = 11;
-        beam_pol = 0;
-        target_pol = 0;
-        if (runnum < 16000) { target_pol = 0; }
-
-        t = gett(p_p, p_theta); // for SIDIS we calculate t with proton kinematics
-        mc_t = gett(mc_p_p, mc_p_theta);
-        tmin = gettmin(x);
-        mc_tmin = gettmin(x); 
-
-        tree->Fill(); // Fill the tree with the read data
     }
-}
-
-    // else if (hadron_count == 1 && is_mc == 0) {
-    //     while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
-    //         p_p >> p_theta >> p_phi >> vz_p >> Q2 >> W >> Mx >> Mx2 >> x >> y >> z >> xF >> 
-    //         pT >> zeta >> eta >> phi >> DepA >> DepB >> DepC >> DepV >> DepW) {
-
-    //         beam_pol = getPol(runnum);
-    //         if (runnum < 16000) { target_pol = 0; }
-    //         else { 
-    //             for (const auto& run_info : run_info_list) {
-    //                 if (run_info.runnum == runnum) {
-    //                     target_pol = run_info.target_polarization;
-    //                     break;
-    //                 }
-    //             }
-    //         }
-
-    //         t = gett(p_p, p_theta); // for SIDIS we calculate t with proton kinematics
-    //         tmin = gettmin(x); 
-
-    //         tree->Fill(); // Fill the tree with the read data
-    //     }
-    // }
     else if (hadron_count == 1 && is_mc == 1) {
         cout << "Before read: " << infile.good() << endl;
         while (infile >> e_p >> mc_e_p >> e_theta >> mc_e_theta >> e_phi >> mc_e_phi >> vz_e >> 
@@ -545,7 +510,6 @@ int main(int argc, char *argv[]) {
             runnum = 11;
             beam_pol = 0;
             target_pol = 0;
-            if (runnum < 16000) { target_pol = 0; }
 
             t = gett(p_p, p_theta); // for SIDIS we calculate t with proton kinematics
             mc_t = gett(mc_p_p, mc_p_theta);
