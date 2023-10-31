@@ -281,11 +281,6 @@ public static void main(String[] args) {
 							}
 						}
 
-						if (e_p > 20 || mc_e_p > 20) {
-							lundBank.show();
-							println(); println(); println(); println();
-							recBank.show();
-						}
 						// Use a StringBuilder to append all data in a single call
 		                StringBuilder line = new StringBuilder();
 						line.append(e_p).append(" ")
