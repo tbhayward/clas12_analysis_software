@@ -279,7 +279,7 @@ public static void main(String[] args) {
 							}
 						}
 
-						/ Use a StringBuilder to append all data in a single call
+						// Use a StringBuilder to append all data in a single call
 		                StringBuilder line = new StringBuilder();
 						line.append(e_p).append(" ")
 							.append(e_theta).append(" ")
