@@ -26,7 +26,9 @@
 #include <TH1D.h>
 #include "TMinuit.h"
 // tbhayward libraries
+#include "common_vars.h"  // Include the common header
 #include "load_bins_from_csv.h"
+
 
 
 // Using namespace declaration
@@ -38,11 +40,11 @@ TTreeReader mcReader;  // Declare as global variable
 size_t currentFits = 0;
 size_t currentBin = 0;
 int n = 1;
-std::map<std::string, std::vector<double>> bins_map;
-std::vector<std::vector<double>> allBins;
-std::vector<std::string> binNames;
-std::vector<std::string> propertyNames;
-std::vector<std::string> variable_names;
+// std::map<std::string, std::vector<double>> bins_map;
+// std::vector<std::vector<double>> allBins;
+// std::vector<std::string> binNames;
+// std::vector<std::string> propertyNames;
+// std::vector<std::string> variable_names;
 double total_charge_carbon;
 double cpp, cpm, cmp, cmm;
 std::string mlmPrefix = "xF";
