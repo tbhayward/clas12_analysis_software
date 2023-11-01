@@ -13,3 +13,4 @@ extern double cmm;
 extern double cpm;
 extern double cmp;
 extern double cpp;
+extern int currentFits;
