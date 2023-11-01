@@ -30,7 +30,7 @@
 #include "load_bins_from_csv.h"
 #include "load_run_info_from_csv.h"
 #include "dilution_factor.h"
-#include "chi2fits.h"
+#include "asymmetry_fits.h"
 
 
 // Using namespace declaration
