@@ -1,4 +1,6 @@
+#include "common_vars.h"
 #include "chi2fits.h"
+#include "dilution_factor.h" 
 
 double asymmetry_value_calculation(double currentVariable, const std::string& prefix, 
   double Npp, double Npm, double Nmp, double Nmm, double meanPol, double Ptp, double Ptm, 
@@ -13,7 +15,7 @@ double asymmetry_value_calculation(double currentVariable, const std::string& pr
     case 2: // double-spin asymmetry
       return (1 / (Df*meanPol)) * ((Npp-Nmp)+(Nmm-Npm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
     default:
-      cout << "Invalid asymmetry_index!" << endl;
+      std::cout << "Invalid asymmetry_index!" << std::endl;
       return 0;
   }
 }
@@ -43,7 +45,7 @@ double asymmetry_error_calculation(double currentVariable, const std::string& pr
         cpp*Nmp*std::pow((Nmm-Npm+2*Npp)*Ptm+(Nmm+Npm)*Ptp,2))) / 
         (cmm*cmp*cpm*cpp*std::pow((Nmp+Npp)*Ptm+(Nmm+Npm)*Ptp,4)));
     default:
-      cout << "Invalid asymmetry_index!" << endl;
+      std::cout << "Invalid asymmetry_index!" << std::endl;
       return 0;
   }
 }

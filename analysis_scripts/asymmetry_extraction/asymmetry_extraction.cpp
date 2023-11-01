@@ -43,7 +43,10 @@ size_t currentFits = 0;
 size_t currentBin = 0;
 int n = 1;
 double total_charge_carbon;
-double cpp, cpm, cmp, cmm;
+double cmm = 0; 
+double cpm = 0; 
+double cmp = 0; 
+double cpp = 0; 
 std::string mlmPrefix = "xF";
 
 std::string formatLabelName(const std::string& original) {
