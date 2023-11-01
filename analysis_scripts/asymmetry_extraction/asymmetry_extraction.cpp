@@ -39,7 +39,7 @@ using namespace std;
 TTreeReader dataReader;  // Declare as global variable
 TTreeReader mcReader;  // Declare as global variable
 
-size_t currentFits = 0;
+int currentFits = 0;
 size_t currentBin = 0;
 int n = 1;
 double total_charge_carbon;
