@@ -9,7 +9,7 @@ KinematicCuts::KinematicCuts(TTreeReader& reader)
       x(reader, "x"), y(reader, "y"), pT(reader, "pT"), 
       xF(reader, "xF"), target_pol(reader, "target_pol") {}
 
-bool applyCuts(int currentFits, bool isMC) {
+bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
         bool goodEvent = false;
         string property = binNames[currentFits];
 
