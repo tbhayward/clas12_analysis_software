@@ -1,5 +1,5 @@
-#ifndef CHI2FITS_H
-#define CHI2FITS_H
+#ifndef ASYMMETRY_FITS_H
+#define ASYMMETRY_FITS_H
 
 #include <string>
 #include <cmath>
@@ -15,4 +15,4 @@ double BSA_funcToFit(double* x, double* par);
 double TSA_funcToFit(double* x, double* par);
 double DSA_funcToFit(double* x, double* par);
 
-#endif // CHI2FITS_H
+#endif // ASYMMETRY_FITS_H
