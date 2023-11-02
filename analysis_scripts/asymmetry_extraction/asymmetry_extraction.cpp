@@ -945,8 +945,10 @@ void createIntegratedKinematicPlots() {
 
         dataHists[branchName] = dataHist;
         mcHists[branchName] = mcHist;
-        dataVals[branchName] = TTreeReaderValue<Double_t>(dataReader, branchName.c_str());
-        mcVals[branchName] = TTreeReaderValue<Double_t>(mcReader, branchName.c_str());
+
+        // Construct TTreeReaderValue objects in-place
+        dataVals.try_emplace(branchName, dataReader, branchName.c_str());
+        mcVals.try_emplace(branchName, mcReader, branchName.c_str());
     }
 
     KinematicCuts kinematicCuts(dataReader);
