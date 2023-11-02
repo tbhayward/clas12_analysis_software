@@ -903,7 +903,7 @@ void createIntegratedKinematicPlots() {
       {"zeta", {200, 0.0, 1}}
     };
 
-    TObjArray* branches = dataReader.GetTree()->GetListOfBranches();
+    ObjArray* branches = dataReader.GetTree()->GetListOfBranches();
     if (!branches) {
         std::cerr << "Error: Unable to retrieve branch list from data TTree." << std::endl;
         return;
@@ -948,12 +948,13 @@ void createIntegratedKinematicPlots() {
 
         dataVals[branchName] = TTreeReaderValue<Double_t>(dataReader, branchName.c_str());
         mcVals[branchName] = TTreeReaderValue<Double_t>(mcReader, branchName.c_str());
-
     }
 
     KinematicCuts kinematicCuts(dataReader);
     while (dataReader.Next()) {
-        for (auto& [branchName, hist] : dataHists) {
+        for (std::map<std::string, TH1D*>::iterator it = dataHists.begin(); it != dataHists.end(); ++it) {
+            const std::string& branchName = it->first;
+            TH1D* hist = it->second;
             bool passedKinematicCuts = kinematicCuts.applyCuts(0, false);
             if (*dataVals[branchName] >= histConfigs[branchName].xMin && *dataVals[branchName] < histConfigs[branchName].xMax && passedKinematicCuts) {
                 hist->Fill(*dataVals[branchName]);
@@ -963,7 +964,9 @@ void createIntegratedKinematicPlots() {
 
     KinematicCuts mc_kinematicCuts(mcReader);
     while (mcReader.Next()) {
-        for (auto& [branchName, hist] : mcHists) {
+        for (std::map<std::string, TH1D*>::iterator it = mcHists.begin(); it != mcHists.end(); ++it) {
+            const std::string& branchName = it->first;
+            TH1D* hist = it->second;
             bool passedKinematicCuts = mc_kinematicCuts.applyCuts(0, true);
             if (*mcVals[branchName] >= histConfigs[branchName].xMin && *mcVals[branchName] < histConfigs[branchName].xMax && passedKinematicCuts) {
                 hist->Fill(*mcVals[branchName]);
@@ -971,7 +974,9 @@ void createIntegratedKinematicPlots() {
         }
     }
 
-    for (auto& [branchName, dataHist] : dataHists) {
+    for (std::map<std::string, TH1D*>::iterator it = dataHists.begin(); it != dataHists.end(); ++it) {
+        const std::string& branchName = it->first;
+        TH1D* dataHist = it->second;
         TH1D* mcHist = mcHists[branchName];
 
         dataHist->Scale(1.0 / dataHist->Integral());
@@ -983,7 +988,7 @@ void createIntegratedKinematicPlots() {
 
         TCanvas* c = new TCanvas((branchName + "_canvas").c_str(), branchName.c_str(), 800, 600);
         TLegend* leg = new TLegend(0.7, 0.7, 0.9, 0.9);
-        
+
         std::ostringstream ss;
         ss << std::scientific << dataHist->GetEntries();
         leg->AddEntry(dataHist, ("Data (" + ss.str() + " entries)").c_str(), "l");
