@@ -879,16 +879,16 @@ void createIntegratedKinematicPlots() {
       {"e_p", {200, 2, 8}},
       {"e_phi", {200, 0, 2 * TMath::Pi()}},
       {"eta", {200, -1, 3}},
-      {"e_theta", {200, 0, 2 * TMath::Pi() / 180 * 40}}, // Convert degree to radian
+      {"e_theta", {200, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
       {"evnum", {200, 0, 0}},
       {"helicity", {2, -2, 2}},
       {"Mx", {200, 0., 3.}},
-      {"Mx2", {200, -10, 10}},
+      {"Mx2", {200, -4, 10}},
       {"phi", {200, 0, 2 * TMath::Pi()}},
       {"p_p", {200, 0, 6}},
       {"p_phi", {200, 0, 2 * TMath::Pi()}},
       {"pT", {200, 0, 1.2}},
-      {"p_theta", {200, 0, 2 * TMath::Pi() / 180 * 60}}, // Convert degree to radian
+      {"p_theta", {200, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
       {"Q2", {200, 0, 9}},
       {"runnum", {200, 0, 0}},
       {"t", {200, -10, 1}},
@@ -898,9 +898,9 @@ void createIntegratedKinematicPlots() {
       {"W", {200, 2, 4}},
       {"x", {200, 0, 0.6}},
       {"xF", {200, -1, 1}},
-      {"y", {200, 0.3, 0.75}},
+      {"y", {200, 0.0, 1.00}},
       {"z", {200, 0, 1}},
-      {"zeta", {200, 0.3, 1}}
+      {"zeta", {200, 0.0, 1}}
     };
 
     TObjArray* branches = dataReader.GetTree()->GetListOfBranches();
@@ -910,6 +910,11 @@ void createIntegratedKinematicPlots() {
     }
 
     gStyle->SetOptStat(0);
+    gStyle->SetTextSize(0.04); // Increase the global text size
+
+    std::map<std::string, TH1D*> dataHists;
+    std::map<std::string, TH1D*> mcHists;
+    
     for (Int_t i = 0; i < branches->GetEntries(); ++i) {
         TBranch* branch = (TBranch*)branches->At(i);
         std::string branchName = branch->GetName();
@@ -917,9 +922,6 @@ void createIntegratedKinematicPlots() {
         if (std::find(branchesToSkip.begin(), branchesToSkip.end(), branchName) != branchesToSkip.end()) {
             continue; // Skip this branch
         }
-
-        TTreeReaderValue<Double_t> dataVal(dataReader, branchName.c_str());
-        TTreeReaderValue<Double_t> mcVal(mcReader, branchName.c_str());
 
         HistConfig config = {100, 0, 1}; // Default configuration
         if (histConfigs.find(branchName) != histConfigs.end()) {
@@ -931,22 +933,49 @@ void createIntegratedKinematicPlots() {
 
         dataHist->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
         mcHist->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
+        dataHist->GetYaxis()->SetTitle("Normalized Counts");
+        mcHist->GetYaxis()->SetTitle("Normalized Counts");
 
-        KinematicCuts kinematicCuts(dataReader);
-        while (dataReader.Next()) {
+        dataHist->GetXaxis()->CenterTitle();
+        mcHist->GetXaxis()->CenterTitle();
+        dataHist->GetYaxis()->CenterTitle();
+        mcHist->GetYaxis()->CenterTitle();
+
+        dataHists[branchName] = dataHist;
+        mcHists[branchName] = mcHist;
+    }
+
+    TTreeReaderValue<Double_t> dataVals[dataReader.GetTree()->GetListOfBranches()->GetEntries()];
+    TTreeReaderValue<Double_t> mcVals[mcReader.GetTree()->GetListOfBranches()->GetEntries()];
+
+    KinematicCuts kinematicCuts(dataReader);
+    while (dataReader.Next()) {
+        for (auto& [branchName, hist] : dataHists) {
+            if (!dataVals[branchName]) {
+                dataVals[branchName] = new TTreeReaderValue<Double_t>(dataReader, branchName.c_str());
+            }
             bool passedKinematicCuts = kinematicCuts.applyCuts(0, false);
-            if (*dataVal >= config.xMin && *dataVal < config.xMax && passedKinematicCuts) {
-                dataHist->Fill(*dataVal);
+            if (**dataVals[branchName] >= histConfigs[branchName].xMin && **dataVals[branchName] < histConfigs[branchName].xMax && passedKinematicCuts) {
+                hist->Fill(**dataVals[branchName]);
             }
         }
+    }
 
-        KinematicCuts mc_kinematicCuts(mcReader);
-        while (mcReader.Next()) {
+    KinematicCuts mc_kinematicCuts(mcReader);
+    while (mcReader.Next()) {
+        for (auto& [branchName, hist] : mcHists) {
+            if (!mcVals[branchName]) {
+                mcVals[branchName] = new TTreeReaderValue<Double_t>(mcReader, branchName.c_str());
+            }
             bool passedKinematicCuts = mc_kinematicCuts.applyCuts(0, true);
-            if (*mcVal >= config.xMin && *mcVal < config.xMax && passedKinematicCuts) {
-                mcHist->Fill(*mcVal);
+            if (**mcVals[branchName] >= histConfigs[branchName].xMin && **mcVals[branchName] < histConfigs[branchName].xMax && passedKinematicCuts) {
+                hist->Fill(**mcVals[branchName]);
             }
         }
+    }
+
+    for (auto& [branchName, dataHist] : dataHists) {
+        TH1D* mcHist = mcHists[branchName];
 
         dataHist->Scale(1.0 / dataHist->Integral());
         mcHist->Scale(1.0 / mcHist->Integral());
@@ -957,8 +986,12 @@ void createIntegratedKinematicPlots() {
 
         TCanvas* c = new TCanvas((branchName + "_canvas").c_str(), branchName.c_str(), 800, 600);
         TLegend* leg = new TLegend(0.7, 0.7, 0.9, 0.9);
-        leg->AddEntry(dataHist, ("Data (" + std::to_string((int)dataHist->GetEntries()) + " entries)").c_str(), "l");
-        leg->AddEntry(mcHist, ("MC (" + std::to_string((int)mcHist->GetEntries()) + " entries)").c_str(), "l");
+        std::stringstream ss;
+        ss << std::scientific << dataHist->GetEntries();
+        leg->AddEntry(dataHist, ("Data (" + ss.str() + " entries)").c_str(), "l");
+        ss.str("");
+        ss << std::scientific << mcHist->GetEntries();
+        leg->AddEntry(mcHist, ("MC (" + ss.str() + " entries)").c_str(), "l");
 
         dataHist->SetLineColor(kBlack);
         mcHist->SetLineColor(kRed);
@@ -973,10 +1006,10 @@ void createIntegratedKinematicPlots() {
         delete mcHist;
         delete c;
         delete leg;
-
-        dataReader.Restart();  // Reset the TTreeReader for the next iteration
-        mcReader.Restart();    // Reset the TTreeReader for the next iteration
     }
+
+    dataReader.Restart();  // Reset the TTreeReader for the next iteration
+    mcReader.Restart();    // Reset the TTreeReader for the next iteration
 }
 
 
