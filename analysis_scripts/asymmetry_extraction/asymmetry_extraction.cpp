@@ -1086,10 +1086,13 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
 
     // Loop over all sets of supplied kinematic variables
     for (size_t fitIndex = 0; fitIndex < allBins.size(); ++fitIndex) {
+        std::string currentVariable = binNames[fitIndex]; // Assuming binNames is a vector<string> with the same size as allBins
+
         // Loop over all possible bins within the current set
         for (size_t binIndex = 0; binIndex < allBins[fitIndex].size() - 1; ++binIndex) {
-            double varMin = allBins[fitIndex][binIndex];
-            double varMax = allBins[fitIndex][binIndex + 1];
+            double binLowerEdge = allBins[fitIndex][binIndex];
+            double binUpperEdge = allBins[fitIndex][binIndex + 1];
+            std::string binEdgeLabel = std::to_string(binLowerEdge) + "to" + std::to_string(binUpperEdge);
 
             // Now we iterate over all branches, except those we wish to skip
             for (Int_t i = 0; i < branches->GetEntries(); ++i) {
@@ -1100,24 +1103,24 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                     continue; // Skip this branch
                 }
 
-                // Set up the data and MC values to be read from the trees
-                TTreeReaderValue<Double_t> dataVal(dataReader, branchName.c_str());
-                TTreeReaderValue<Double_t> mcVal(mcReader, branchName.c_str());
-
                 // Determine histogram configuration, default or specific
                 HistConfig config = {100, 0, 1}; // Default configuration
                 if (histConfigs.find(branchName) != histConfigs.end()) {
                     config = histConfigs[branchName];
+                } else {
+                    std::cerr << "Warning: No specific histogram configuration found for " << branchName << ". Using default configuration." << std::endl;
                 }
 
-                // Create histograms
-                TH1D* dataHist = new TH1D((branchName + "_data").c_str(), "", config.nBins, varMin, varMax);
-                TH1D* mcHist = new TH1D((branchName + "_mc").c_str(), "", config.nBins, varMin, varMax);
+                // Set up the data and MC values to be read from the trees
+                TTreeReaderValue<Double_t> dataVal(dataReader, branchName.c_str());
+                TTreeReaderValue<Double_t> mcVal(mcReader, branchName.c_str());
+
+                // Create histograms with titles reflecting the bin edges
+                std::string histName = currentVariable + "_" + binEdgeLabel + "_" + branchName;
+                TH1D* dataHist = new TH1D((histName + "_data").c_str(), (histName + " Data").c_str(), config.nBins, config.xMin, config.xMax);
+                TH1D* mcHist = new TH1D((histName + "_mc").c_str(), (histName + " MC").c_str(), config.nBins, config.xMin, config.xMax);
 
                 // Set histogram titles and styles
-                dataHist->SetTitle((branchName + " Data").c_str());
-                mcHist->SetTitle((branchName + " MC").c_str());
-
                 dataHist->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
                 mcHist->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
 
@@ -1137,7 +1140,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 KinematicCuts kinematicCuts(dataReader);
                 while (dataReader.Next()) {
                     bool passedKinematicCuts = kinematicCuts.applyCuts(fitIndex, false);
-                    if (*dataVal >= varMin && *dataVal < varMax && passedKinematicCuts) {
+                    if (*dataVal >= binLowerEdge && *dataVal < binUpperEdge && passedKinematicCuts) {
                         dataHist->Fill(*dataVal);
                     }
                 }
@@ -1146,7 +1149,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 KinematicCuts mc_kinematicCuts(mcReader);
                 while (mcReader.Next()) {
                     bool passedKinematicCuts = mc_kinematicCuts.applyCuts(fitIndex, true);
-                    if (*mcVal >= varMin && *mcVal < varMax && passedKinematicCuts) {
+                    if (*mcVal >= binLowerEdge && *mcVal < binUpperEdge && passedKinematicCuts) {
                         mcHist->Fill(*mcVal);
                     }
                 }
@@ -1159,8 +1162,13 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                     mcHist->Scale(1.0 / mcHist->Integral());
                 }
 
+                // Find the maximum y-value between both histograms to set the y-axis range
+                double maxY = std::max(dataHist->GetMaximum(), mcHist->GetMaximum());
+                dataHist->SetMaximum(1.2 * maxY);
+                mcHist->SetMaximum(1.2 * maxY);
+
                 // Create a canvas for drawing the histograms
-                TCanvas* c = new TCanvas((branchName + "_canvas").c_str(), branchName.c_str(), 800, 600);
+                TCanvas* c = new TCanvas((histName + "_canvas").c_str(), branchName.c_str(), 800, 600);
                 c->SetLeftMargin(0.15);
                 c->SetBottomMargin(0.15);
 
@@ -1175,7 +1183,8 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 leg->Draw();
 
                 // Save the canvas to a file
-                c->SaveAs((outputDir + branchName + ".png").c_str());
+                std::string outputFileName = outputDir + histName + ".png";
+                c->SaveAs(outputFileName.c_str());
 
                 // Clean up
                 delete dataHist;
@@ -1192,7 +1201,6 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
         currentFits++;
     }
 }
-
 
 
 
