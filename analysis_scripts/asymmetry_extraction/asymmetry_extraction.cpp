@@ -1092,7 +1092,6 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
         for (size_t binIndex = 0; binIndex < allBins[fitIndex].size() - 1; ++binIndex) {
             double binLowerEdge = allBins[fitIndex][binIndex];
             double binUpperEdge = allBins[fitIndex][binIndex + 1];
-            std::string binIndexLabel = "bin_" + std::to_string(binIndex + 1);
 
             // Now we iterate over all branches, except those we wish to skip
             for (Int_t i = 0; i < branches->GetEntries(); ++i) {
@@ -1117,10 +1116,14 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 TTreeReaderValue<Double_t> binVariable(dataReader, currentVariable.c_str());
                 TTreeReaderValue<Double_t> mc_binVariable(mcReader, currentVariable.c_str());
 
-                // Create histograms with titles reflecting the bin index
-                std::string histName = currentVariable + "_" + binIndexLabel + "_" + branchName;
-                TH1D* dataHist = new TH1D((histName + "_data").c_str(), (histName + " Data").c_str(), config.nBins, config.xMin, config.xMax);
-                TH1D* mcHist = new TH1D((histName + "_mc").c_str(), (histName + " MC").c_str(), config.nBins, config.xMin, config.xMax);
+                // Format the title to include the bin range
+                std::string formattedVariableName = formatFrameLabel(currentVariable);
+                std::string plotTitle = std::to_string(binLowerEdge) + " < " + formattedVariableName + " < " + std::to_string(binUpperEdge);
+
+                // Create histograms with titles reflecting the bin edges
+                std::string histName = currentVariable + "_" + branchName + "_bin_" + std::to_string(binIndex + 1);
+                TH1D* dataHist = new TH1D((histName + "_data").c_str(), plotTitle.c_str(), config.nBins, config.xMin, config.xMax);
+                TH1D* mcHist = new TH1D((histName + "_mc").c_str(), plotTitle.c_str(), config.nBins, config.xMin, config.xMax);
 
                 // Set histogram titles and styles
                 dataHist->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
@@ -1170,7 +1173,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 mcHist->SetMaximum(1.2 * maxY);
 
                 // Create a canvas for drawing the histograms
-                TCanvas* c = new TCanvas((histName + "_canvas").c_str(), branchName.c_str(), 800, 600);
+                TCanvas* c = new TCanvas((histName + "_canvas").c_str(), plotTitle.c_str(), 800, 600);
                 c->SetLeftMargin(0.15);
                 c->SetBottomMargin(0.15);
 
@@ -1203,6 +1206,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
         currentFits++;
     }
 }
+
 
 
 
