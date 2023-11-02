@@ -1117,11 +1117,15 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 TTreeReaderValue<Double_t> binVariable(dataReader, currentVariable.c_str());
                 TTreeReaderValue<Double_t> mc_binVariable(mcReader, currentVariable.c_str());
 
-                // Create histograms with titles reflecting the bin index
-                std::string histName = currentVariable + "_" + binIndexLabel + "_" + branchName;
-                TH1D* dataHist = new TH1D((histName + "_data").c_str(), (histName + " Data").c_str(), config.nBins, config.xMin, config.xMax);
-                TH1D* mcHist = new TH1D((histName + "_mc").c_str(), (histName + " MC").c_str(), config.nBins, config.xMin, config.xMax);
+                // Create histogram title with formatted bin edges
+                std::string formattedVariableName = formatLabelName(currentVariable);
+                std::string plotTitle = lowerEdgeStream.str() + " < " + formattedVariableName + " < " + upperEdgeStream.str();
 
+                // Create histograms with titles reflecting the bin edges and plotted variable
+                std::string histName = currentVariable + "_" + branchName + "_" + binIndexLabel;
+                TH1D* dataHist = new TH1D((histName + "_data").c_str(), plotTitle.c_str(), config.nBins, config.xMin, config.xMax);
+                TH1D* mcHist = new TH1D((histName + "_mc").c_str(), plotTitle.c_str(), config.nBins, config.xMin, config.xMax);
+                
                 // Set histogram titles and styles
                 dataHist->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
                 mcHist->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
