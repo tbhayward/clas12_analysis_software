@@ -984,7 +984,7 @@ void createIntegratedKinematicPlots() {
         c->SetBottomMargin(0.15);
 
         // Create a legend and adjust its font size
-        TLegend* leg = new TLegend(0.5, 0.7, 0.95, 0.9);
+        TLegend* leg = new TLegend(0.5, 0.7, 0.9, 0.9);
         leg->SetTextSize(0.04); // Increase the legend text size
 
         // Add entries to the legend with scientific notation for the number of entries
