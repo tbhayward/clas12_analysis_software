@@ -1070,7 +1070,7 @@ void createCorrelationPlots() {
 }
 
 void createIntegratedKinematicPlotsForBinsAndFits() {
-    const std::string outputDir = "output/integrated_plots/";
+    const std::string outputDir = "output/binned_plots/";
     const std::vector<std::string> branchesToSkip = {
         "helicity", "beam_pol", "target_pol", "runnum", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"
     };
