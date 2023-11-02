@@ -926,8 +926,11 @@ void createIntegratedKinematicPlots() {
             config = histConfigs[branchName];
         }
 
-        TH1D* dataHist = new TH1D((branchName + "_data").c_str(), formatLabelName(branchName).c_str(), config.nBins, config.xMin, config.xMax);
-        TH1D* mcHist = new TH1D((branchName + "_mc").c_str(), formatLabelName(branchName).c_str(), config.nBins, config.xMin, config.xMax);
+        TH1D* dataHist = new TH1D((branchName + "_data").c_str(), "", config.nBins, config.xMin, config.xMax);
+        TH1D* mcHist = new TH1D((branchName + "_mc").c_str(), "", config.nBins, config.xMin, config.xMax);
+
+        dataHist->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
+        mcHist->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
 
         KinematicCuts kinematicCuts(dataReader);
         while (dataReader.Next()) {
@@ -948,10 +951,14 @@ void createIntegratedKinematicPlots() {
         dataHist->Scale(1.0 / dataHist->Integral());
         mcHist->Scale(1.0 / mcHist->Integral());
 
+        double maxY = std::max(dataHist->GetMaximum(), mcHist->GetMaximum());
+        dataHist->SetMaximum(1.1 * maxY);
+        mcHist->SetMaximum(1.1 * maxY);
+
         TCanvas* c = new TCanvas((branchName + "_canvas").c_str(), branchName.c_str(), 800, 600);
         TLegend* leg = new TLegend(0.7, 0.7, 0.9, 0.9);
-        leg->AddEntry(dataHist, "Data", "l");
-        leg->AddEntry(mcHist, "MC", "l");
+        leg->AddEntry(dataHist, ("Data (" + std::to_string((int)dataHist->GetEntries()) + " entries)").c_str(), "l");
+        leg->AddEntry(mcHist, ("MC (" + std::to_string((int)mcHist->GetEntries()) + " entries)").c_str(), "l");
 
         dataHist->SetLineColor(kBlack);
         mcHist->SetLineColor(kRed);
