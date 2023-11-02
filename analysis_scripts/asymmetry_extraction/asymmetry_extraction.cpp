@@ -1117,7 +1117,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 TTreeReaderValue<Double_t> mc_binVariable(mcReader, currentVariable.c_str());
 
                 // Format the title to include the bin range
-                std::string formattedVariableName = formatFrameLabel(currentVariable);
+                std::string formattedVariableName = formatLabelName(currentVariable);
                 std::string plotTitle = std::to_string(binLowerEdge) + " < " + formattedVariableName + " < " + std::to_string(binUpperEdge);
 
                 // Create histograms with titles reflecting the bin edges
