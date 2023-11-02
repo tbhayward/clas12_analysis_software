@@ -1092,7 +1092,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
         for (size_t binIndex = 0; binIndex < allBins[fitIndex].size() - 1; ++binIndex) {
             double binLowerEdge = allBins[fitIndex][binIndex];
             double binUpperEdge = allBins[fitIndex][binIndex + 1];
-            std::string binEdgeLabel = std::to_string(binLowerEdge) + "to" + std::to_string(binUpperEdge);
+            std::string binIndexLabel = "bin_" + std::to_string(binIndex + 1);
 
             // Now we iterate over all branches, except those we wish to skip
             for (Int_t i = 0; i < branches->GetEntries(); ++i) {
@@ -1114,9 +1114,10 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 // Set up the data and MC values to be read from the trees
                 TTreeReaderValue<Double_t> dataVal(dataReader, branchName.c_str());
                 TTreeReaderValue<Double_t> mcVal(mcReader, branchName.c_str());
+                TTreeReaderValue<Double_t> binVariable(dataReader, currentVariable.c_str());
 
-                // Create histograms with titles reflecting the bin edges
-                std::string histName = currentVariable + "_" + binEdgeLabel + "_" + branchName;
+                // Create histograms with titles reflecting the bin index
+                std::string histName = currentVariable + "_" + binIndexLabel + "_" + branchName;
                 TH1D* dataHist = new TH1D((histName + "_data").c_str(), (histName + " Data").c_str(), config.nBins, config.xMin, config.xMax);
                 TH1D* mcHist = new TH1D((histName + "_mc").c_str(), (histName + " MC").c_str(), config.nBins, config.xMin, config.xMax);
 
@@ -1140,8 +1141,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 KinematicCuts kinematicCuts(dataReader);
                 while (dataReader.Next()) {
                     bool passedKinematicCuts = kinematicCuts.applyCuts(fitIndex, false);
-                    cout << binLowerEdge << " " << *dataVal << " " << binUpperEdge << " " << passedKinematicCuts << endl;
-                    if (*dataVal >= binLowerEdge && *dataVal < binUpperEdge && passedKinematicCuts) {
+                    if (*binVariable >= binLowerEdge && *binVariable < binUpperEdge && passedKinematicCuts) {
                         dataHist->Fill(*dataVal);
                     }
                 }
@@ -1150,7 +1150,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 KinematicCuts mc_kinematicCuts(mcReader);
                 while (mcReader.Next()) {
                     bool passedKinematicCuts = mc_kinematicCuts.applyCuts(fitIndex, true);
-                    if (*mcVal >= binLowerEdge && *mcVal < binUpperEdge && passedKinematicCuts) {
+                    if (*binVariable >= binLowerEdge && *binVariable < binUpperEdge && passedKinematicCuts) {
                         mcHist->Fill(*mcVal);
                     }
                 }
@@ -1202,6 +1202,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
         currentFits++;
     }
 }
+
 
 
 
