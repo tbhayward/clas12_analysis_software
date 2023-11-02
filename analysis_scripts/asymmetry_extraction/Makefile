@@ -19,7 +19,7 @@ $(TARGET): $(OBJ)
 
 # Generic rule for compiling source files
 %.o: %.cpp
-	$(CXX) $(CXXFLAGS) -c $< $(ROOTLIBS)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 # Clean target
 clean:
