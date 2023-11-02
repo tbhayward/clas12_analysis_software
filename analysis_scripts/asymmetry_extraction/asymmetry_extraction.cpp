@@ -933,9 +933,12 @@ void createIntegratedKinematicPlots() {
 
         // Set x-axis title
         dataHist->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
-        dataHist->GetXaxis()->CenterTitle();
         mcHist->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
-        mcHist->GetXaxis()->CenterTitle();
+
+        dataHist->GetXaxis()->SetTitleSize(0.05); // Increase the x-axis title font size
+        dataHist->GetYaxis()->SetTitleSize(0.05); // Increase the y-axis title font size
+        mcHist->GetXaxis()->SetTitleSize(0.05);
+        mcHist->GetYaxis()->SetTitleSize(0.05);
 
         // Set y-axis title and center it
         dataHist->GetYaxis()->SetTitle("Normalized Counts");
@@ -978,10 +981,12 @@ void createIntegratedKinematicPlots() {
         TCanvas* c = new TCanvas((branchName + "_canvas").c_str(), branchName.c_str(), 800, 600);
 
         // Create a legend and adjust its font size
-        TLegend* leg = new TLegend(0.7, 0.7, 0.9, 0.9);
+        TLegend* leg = new TLegend(0.7, 0.6, 0.9, 0.8);
         leg->SetTextSize(0.04); // Increase the legend text size
 
         // Add entries to the legend with scientific notation for the number of entries
+        dataHist->SetEntries(dataHist->GetEntries());
+        mcHist->SetEntries(mcHist->GetEntries());
         leg->AddEntry(dataHist, (std::string("Data (") + std::to_string((int)dataHist->GetEntries()) + " entries)").c_str(), "l");
         leg->AddEntry(mcHist, (std::string("MC (") + std::to_string((int)mcHist->GetEntries()) + " entries)").c_str(), "l");
 
