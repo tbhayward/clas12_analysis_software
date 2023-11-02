@@ -986,6 +986,7 @@ void createCorrelationPlots() {
     const std::string outputDir = "output/correlation_plots/";
     const std::vector<std::string> branchesToSkip = {"helicity", "beam_pol", "target_pol", "runnum", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"};
 
+
     // Assuming histConfigs is a global variable or it is accessible within this function's scope
     extern std::map<std::string, HistConfig> histConfigs;
 
@@ -1078,6 +1079,7 @@ int main(int argc, char *argv[]) {
   TApplication theApp("App", nullptr, nullptr);
   // Set ROOT to batch mode
   gROOT->SetBatch(kTRUE);
+  gStyle->SetOptStat(0);
 
   // Check for correct number of command line arguments
   if (argc != 5) {
