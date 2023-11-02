@@ -24,6 +24,7 @@
 #include <TTreeReader.h>
 #include <TTreeReaderValue.h>
 #include <TH1D.h>
+#include "TH2.h"
 #include "TMinuit.h"
 #include "TStyle.h"
 // tbhayward libraries
