@@ -981,10 +981,10 @@ void createIntegratedKinematicPlots() {
         TCanvas* c = new TCanvas((branchName + "_canvas").c_str(), branchName.c_str(), 800, 600);
         // Adjust the margins to avoid cutting off labels
         c->SetLeftMargin(0.15);
-        c->SetRightMargin(0.15);
-        
+        c->SetBottomMargin(0.15);
+
         // Create a legend and adjust its font size
-        TLegend* leg = new TLegend(0.6, 0.7, 0.8, 0.9);
+        TLegend* leg = new TLegend(0.55, 0.8, 0.75, 0.9);
         leg->SetTextSize(0.04); // Increase the legend text size
 
         // Add entries to the legend with scientific notation for the number of entries
