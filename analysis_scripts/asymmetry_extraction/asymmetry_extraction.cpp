@@ -1072,7 +1072,7 @@ void createCorrelationPlots() {
 void createIntegratedKinematicPlotsForBinsAndFits() {
     const std::string outputDir = "output/integrated_plots/";
     const std::vector<std::string> branchesToSkip = {"helicity", "beam_pol", "target_pol", "runnum", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"};
-    cout << "HELLO WORLD" << endl;
+
     // Loop over all the current fits
     for (size_t fitIndex = 0; fitIndex < currentFits; ++fitIndex) {
         // Loop over each bin within the current fit
@@ -1122,7 +1122,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 dataHist->GetYaxis()->SetTitleSize(0.05);
                 mcHist->GetXaxis()->SetTitleSize(0.05);
                 mcHist->GetYaxis()->SetTitleSize(0.05);
-
+                cout << "BEFORE DATA READER " << endl;
                 // Loop over dataReader and mcReader to fill the histograms
                 KinematicCuts kinematicCuts(dataReader);
                 while (dataReader.Next()) {
