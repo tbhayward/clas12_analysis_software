@@ -903,7 +903,7 @@ void createIntegratedKinematicPlots() {
       {"zeta", {200, 0.0, 1}}
     };
 
-    ObjArray* branches = dataReader.GetTree()->GetListOfBranches();
+    TObjArray* branches = dataReader.GetTree()->GetListOfBranches();
     if (!branches) {
         std::cerr << "Error: Unable to retrieve branch list from data TTree." << std::endl;
         return;
@@ -946,8 +946,12 @@ void createIntegratedKinematicPlots() {
         dataHists[branchName] = dataHist;
         mcHists[branchName] = mcHist;
 
-        dataVals[branchName] = TTreeReaderValue<Double_t>(dataReader, branchName.c_str());
-        mcVals[branchName] = TTreeReaderValue<Double_t>(mcReader, branchName.c_str());
+        dataVals.emplace(std::piecewise_construct,
+                     std::forward_as_tuple(branchName),
+                     std::forward_as_tuple(dataReader, branchName.c_str()));
+        mcVals.emplace(std::piecewise_construct,
+                     std::forward_as_tuple(branchName),
+                     std::forward_as_tuple(mcReader, branchName.c_str()));
     }
 
     KinematicCuts kinematicCuts(dataReader);
