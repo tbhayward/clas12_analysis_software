@@ -1092,6 +1092,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
         for (size_t binIndex = 0; binIndex < allBins[fitIndex].size() - 1; ++binIndex) {
             double binLowerEdge = allBins[fitIndex][binIndex];
             double binUpperEdge = allBins[fitIndex][binIndex + 1];
+            std::string binIndexLabel = "bin_" + std::to_string(binIndex + 1);
 
             // Now we iterate over all branches, except those we wish to skip
             for (Int_t i = 0; i < branches->GetEntries(); ++i) {
@@ -1106,23 +1107,21 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 HistConfig config = {100, 0, 1}; // Default configuration
                 if (histConfigs.find(branchName) != histConfigs.end()) {
                     config = histConfigs[branchName];
+                } else {
+                    std::cerr << "Warning: No specific histogram configuration found for " << branchName << ". Using default configuration." << std::endl;
                 }
-
-                // Create histogram title with formatted bin edges
-                std::string formattedVariableName = formatFrameLabel(currentVariable);
-                std::string plotTitle = lowerEdgeStream.str() + " < " + formattedVariableName + " < " + upperEdgeStream.str();
 
                 // Set up the data and MC values to be read from the trees
                 TTreeReaderValue<Double_t> dataVal(dataReader, branchName.c_str());
                 TTreeReaderValue<Double_t> mcVal(mcReader, branchName.c_str());
                 TTreeReaderValue<Double_t> binVariable(dataReader, currentVariable.c_str());
-                TTreeReaderValue<Double_t> mcBinVariable(mcReader, currentVariable.c_str());
+                TTreeReaderValue<Double_t> mc_binVariable(mcReader, currentVariable.c_str());
 
-                // Create histograms with titles reflecting the bin edges and plotted variable
-                std::string histName = currentVariable + "_" + branchName + "_" + binIndexLabel;
-                TH1D* dataHist = new TH1D((histName + "_data").c_str(), plotTitle.c_str(), config.nBins, config.xMin, config.xMax);
-                TH1D* mcHist = new TH1D((histName + "_mc").c_str(), plotTitle.c_str(), config.nBins, config.xMin, config.xMax);
-                
+                // Create histograms with titles reflecting the bin index
+                std::string histName = currentVariable + "_" + binIndexLabel + "_" + branchName;
+                TH1D* dataHist = new TH1D((histName + "_data").c_str(), (histName + " Data").c_str(), config.nBins, config.xMin, config.xMax);
+                TH1D* mcHist = new TH1D((histName + "_mc").c_str(), (histName + " MC").c_str(), config.nBins, config.xMin, config.xMax);
+
                 // Set histogram titles and styles
                 dataHist->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
                 mcHist->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
@@ -1171,7 +1170,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 mcHist->SetMaximum(1.2 * maxY);
 
                 // Create a canvas for drawing the histograms
-                TCanvas* c = new TCanvas((histName + "_canvas").c_str(), plotTitle.c_str(), 800, 600);
+                TCanvas* c = new TCanvas((histName + "_canvas").c_str(), branchName.c_str(), 800, 600);
                 c->SetLeftMargin(0.15);
                 c->SetBottomMargin(0.15);
 
@@ -1204,7 +1203,6 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
         currentFits++;
     }
 }
-
 
 
 
