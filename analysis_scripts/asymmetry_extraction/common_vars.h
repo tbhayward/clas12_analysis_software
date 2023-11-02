@@ -3,6 +3,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include "histConfigs.h"
 
 extern std::map<std::string, std::vector<double>> bins_map;
 extern std::vector<std::vector<double>> allBins;
