@@ -946,9 +946,15 @@ void createIntegratedKinematicPlots() {
         dataHists[branchName] = dataHist;
         mcHists[branchName] = mcHist;
 
-        // Construct TTreeReaderValue objects in-place
-        dataVals.try_emplace(branchName, dataReader, branchName.c_str());
-        mcVals.try_emplace(branchName, mcReader, branchName.c_str());
+        // Use emplace to construct TTreeReaderValue objects in-place
+        auto dataInsertResult = dataVals.emplace(branchName, TTreeReaderValue<Double_t>(dataReader, branchName.c_str()));
+        auto mcInsertResult = mcVals.emplace(branchName, TTreeReaderValue<Double_t>(mcReader, branchName.c_str()));
+
+        // Check if emplace was successful, if not, handle the error or log a message
+        if (!dataInsertResult.second || !mcInsertResult.second) {
+            std::cerr << "Error: Failed to emplace TTreeReaderValue for branch " << branchName << std::endl;
+            return;
+        }
     }
 
     KinematicCuts kinematicCuts(dataReader);
