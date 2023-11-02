@@ -1,4 +1,5 @@
 #include "common_vars.h"
+#include "TMath.h" 
 
 std::map<std::string, HistConfig> histConfigs = {
       {"DepA", {200, 0, 1}},
