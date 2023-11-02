@@ -914,11 +914,13 @@ void createIntegratedKinematicPlots() {
 
     std::map<std::string, TH1D*> dataHists;
     std::map<std::string, TH1D*> mcHists;
-    
+    std::map<std::string, TTreeReaderValue<Double_t>> dataVals;
+    std::map<std::string, TTreeReaderValue<Double_t>> mcVals;
+
     for (Int_t i = 0; i < branches->GetEntries(); ++i) {
         TBranch* branch = (TBranch*)branches->At(i);
         std::string branchName = branch->GetName();
-        
+
         if (std::find(branchesToSkip.begin(), branchesToSkip.end(), branchName) != branchesToSkip.end()) {
             continue; // Skip this branch
         }
@@ -943,20 +945,16 @@ void createIntegratedKinematicPlots() {
 
         dataHists[branchName] = dataHist;
         mcHists[branchName] = mcHist;
+        dataVals[branchName] = TTreeReaderValue<Double_t>(dataReader, branchName.c_str());
+        mcVals[branchName] = TTreeReaderValue<Double_t>(mcReader, branchName.c_str());
     }
-
-    TTreeReaderValue<Double_t> dataVals[dataReader.GetTree()->GetListOfBranches()->GetEntries()];
-    TTreeReaderValue<Double_t> mcVals[mcReader.GetTree()->GetListOfBranches()->GetEntries()];
 
     KinematicCuts kinematicCuts(dataReader);
     while (dataReader.Next()) {
         for (auto& [branchName, hist] : dataHists) {
-            if (!dataVals[branchName]) {
-                dataVals[branchName] = new TTreeReaderValue<Double_t>(dataReader, branchName.c_str());
-            }
             bool passedKinematicCuts = kinematicCuts.applyCuts(0, false);
-            if (**dataVals[branchName] >= histConfigs[branchName].xMin && **dataVals[branchName] < histConfigs[branchName].xMax && passedKinematicCuts) {
-                hist->Fill(**dataVals[branchName]);
+            if (*dataVals[branchName] >= histConfigs[branchName].xMin && *dataVals[branchName] < histConfigs[branchName].xMax && passedKinematicCuts) {
+                hist->Fill(*dataVals[branchName]);
             }
         }
     }
@@ -964,12 +962,9 @@ void createIntegratedKinematicPlots() {
     KinematicCuts mc_kinematicCuts(mcReader);
     while (mcReader.Next()) {
         for (auto& [branchName, hist] : mcHists) {
-            if (!mcVals[branchName]) {
-                mcVals[branchName] = new TTreeReaderValue<Double_t>(mcReader, branchName.c_str());
-            }
             bool passedKinematicCuts = mc_kinematicCuts.applyCuts(0, true);
-            if (**mcVals[branchName] >= histConfigs[branchName].xMin && **mcVals[branchName] < histConfigs[branchName].xMax && passedKinematicCuts) {
-                hist->Fill(**mcVals[branchName]);
+            if (*mcVals[branchName] >= histConfigs[branchName].xMin && *mcVals[branchName] < histConfigs[branchName].xMax && passedKinematicCuts) {
+                hist->Fill(*mcVals[branchName]);
             }
         }
     }
@@ -986,7 +981,8 @@ void createIntegratedKinematicPlots() {
 
         TCanvas* c = new TCanvas((branchName + "_canvas").c_str(), branchName.c_str(), 800, 600);
         TLegend* leg = new TLegend(0.7, 0.7, 0.9, 0.9);
-        std::stringstream ss;
+        
+        std::ostringstream ss;
         ss << std::scientific << dataHist->GetEntries();
         leg->AddEntry(dataHist, ("Data (" + ss.str() + " entries)").c_str(), "l");
         ss.str("");
