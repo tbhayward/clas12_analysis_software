@@ -928,15 +928,17 @@ void createIntegratedKinematicPlots() {
         TH1D* dataHist = new TH1D((branchName + "_data").c_str(), formatLabelName(branchName).c_str(), config.nBins, config.xMin, config.xMax);
         TH1D* mcHist = new TH1D((branchName + "_mc").c_str(), formatLabelName(branchName).c_str(), config.nBins, config.xMin, config.xMax);
 
+        KinematicCuts kinematicCuts(dataReader);
         while (dataReader.Next()) {
-            bool passedKinematicCuts = KinematicCuts.applyCuts(0, false);
+            bool passedKinematicCuts = kinematicCuts.applyCuts(0, false);
             if (*dataVal >= config.xMin && *dataVal < config.xMax && passedKinematicCuts) {
                 dataHist->Fill(*dataVal);
             }
         }
 
+        KinematicCuts mc_kinematicCuts(mcReader);
         while (mcReader.Next()) {
-            bool passedKinematicCuts = KinematicCuts.applyCuts(0, true);
+            bool passedKinematicCuts = mc_kinematicCuts.applyCuts(0, true);
             if (*mcVal >= config.xMin && *mcVal < config.xMax && passedKinematicCuts) {
                 mcHist->Fill(*mcVal);
             }
