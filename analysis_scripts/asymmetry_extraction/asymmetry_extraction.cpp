@@ -35,6 +35,7 @@
 #include "KinematicCuts.h"
 #include "formatLabelName.h"
 #include "readChi2Fits.h"
+#include "histConfigs.h"
 
 // Using namespace declaration
 using namespace std;

@@ -1,10 +1,4 @@
 #include "common_vars.h"
-#include "TMath.h" 
-
-struct HistConfig {
-    int nBins;
-    double xMin, xMax;
-};
 
 std::map<std::string, HistConfig> histConfigs = {
       {"DepA", {200, 0, 1}},
