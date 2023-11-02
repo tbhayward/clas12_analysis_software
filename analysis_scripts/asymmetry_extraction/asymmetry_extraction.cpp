@@ -1069,6 +1069,117 @@ void createCorrelationPlots() {
     }
 }
 
+void createIntegratedKinematicPlotsForBinsAndFits() {
+    const std::string outputDir = "output/integrated_plots/";
+    const std::vector<std::string> branchesToSkip = {"helicity", "beam_pol", "target_pol", "runnum", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"};
+
+    // Loop over all the current fits
+    for (size_t fitIndex = 0; fitIndex < currentFits; ++fitIndex) {
+        // Loop over each bin within the current fit
+        for (const auto& binName : binNames) {
+            std::string binFitDir = outputDir + "fit_" + std::to_string(fitIndex) + "_bin_" + binName + "/";
+
+            TObjArray* branches = dataReader.GetTree()->GetListOfBranches();
+            if (!branches) {
+                std::cerr << "Error: Unable to retrieve branch list from data TTree." << std::endl;
+                continue;
+            }
+
+            gStyle->SetOptStat(0);
+            gStyle->SetTextSize(0.05); // Increase the text size globally
+
+            for (Int_t i = 0; i < branches->GetEntries(); ++i) {
+                TBranch* branch = (TBranch*)branches->At(i);
+                std::string branchName = branch->GetName();
+
+                if (std::find(branchesToSkip.begin(), branchesToSkip.end(), branchName) != branchesToSkip.end()) {
+                    continue; // Skip this branch
+                }
+
+                TTreeReaderValue<Double_t> dataVal(dataReader, branchName.c_str());
+                TTreeReaderValue<Double_t> mcVal(mcReader, branchName.c_str());
+
+                HistConfig config = {100, 0, 1}; // Default configuration
+                if (histConfigs.find(branchName) != histConfigs.end()) {
+                    config = histConfigs[branchName];
+                }
+
+                TH1D* dataHist = new TH1D((branchName + "_data").c_str(), "", config.nBins, config.xMin, config.xMax);
+                TH1D* mcHist = new TH1D((branchName + "_mc").c_str(), "", config.nBins, config.xMin, config.xMax);
+
+                // Set x-axis and y-axis titles
+                dataHist->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
+                dataHist->GetYaxis()->SetTitle("Normalized Counts");
+                dataHist->GetYaxis()->CenterTitle();
+                dataHist->GetYaxis()->SetTitleOffset(1.6);
+                mcHist->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
+                mcHist->GetYaxis()->SetTitle("Normalized Counts");
+                mcHist->GetYaxis()->CenterTitle();
+                mcHist->GetYaxis()->SetTitleOffset(1.6);
+
+                // Increase title font size
+                dataHist->GetXaxis()->SetTitleSize(0.05);
+                dataHist->GetYaxis()->SetTitleSize(0.05);
+                mcHist->GetXaxis()->SetTitleSize(0.05);
+                mcHist->GetYaxis()->SetTitleSize(0.05);
+
+                // Loop over dataReader and mcReader to fill the histograms
+                KinematicCuts kinematicCuts(dataReader);
+                while (dataReader.Next()) {
+                    if (kinematicCuts.applyCuts(fitIndex, false) && *dataVal >= config.xMin && *dataVal <= config.xMax) {
+                        dataHist->Fill(*dataVal);
+                    }
+                }
+                KinematicCuts mc_kinematicCuts(mcReader);
+                while (mcReader.Next()) {
+                    if (mc_kinematicCuts.applyCuts(fitIndex, true) && *mcVal >= config.xMin && *mcVal <= config.xMax) {
+                        mcHist->Fill(*mcVal);
+                    }
+                }
+
+                // Normalize histograms
+                dataHist->Scale(1.0 / dataHist->Integral());
+                mcHist->Scale(1.0 / mcHist->Integral());
+
+                // Find the maximum value for y-axis scaling
+                double maxY = 1.2 * std::max(dataHist->GetMaximum(), mcHist->GetMaximum());
+                dataHist->SetMaximum(1.1 * maxY);
+                mcHist->SetMaximum(1.1 * maxY);
+
+                // Draw histograms
+                TCanvas* c = new TCanvas((branchName + "_canvas").c_str(), branchName.c_str(), 800, 600);
+                c->SetLeftMargin(0.15);
+                c->SetBottomMargin(0.15);
+
+                TLegend* leg = new TLegend(0.5, 0.7, 0.9, 0.9);
+                leg->SetTextSize(0.04);
+                leg->AddEntry(dataHist, (std::string("Data (") + std::to_string(static_cast<int>(dataHist->GetEntries())) + " entries)").c_str(), "l");
+                leg->AddEntry(mcHist, (std::string("MC (") + std::to_string(static_cast<int>(mcHist->GetEntries())) + " entries)").c_str(), "l");
+
+                dataHist->SetLineColor(kBlack);
+                mcHist->SetLineColor(kRed);
+
+                dataHist->Draw("HIST");
+                mcHist->Draw("HIST SAME");
+                leg->Draw();
+
+                // Save the canvas to a file
+                c->SaveAs((binFitDir + branchName + ".png").c_str());
+
+                // Clean up
+                delete dataHist;
+                delete mcHist;
+                delete c;
+                delete leg;
+
+                // Restart the readers
+                dataReader.Restart();
+                mcReader.Restart();
+            }
+        }
+    }
+}
+
 
 
 int main(int argc, char *argv[]) {
@@ -1181,7 +1292,8 @@ int main(int argc, char *argv[]) {
   mcReader.SetTree(mc);  // Initialize the global variable
 
   // createIntegratedKinematicPlots();
-  createCorrelationPlots();
+  // createCorrelationPlots();
+  createIntegratedKinematicPlotsForBinsAndFits();
 
   // for (size_t i = 0; i < allBins.size(); ++i) {
   //   cout << "-- Beginning kinematic fits." << endl;
