@@ -910,12 +910,7 @@ void createIntegratedKinematicPlots() {
     }
 
     gStyle->SetOptStat(0);
-    gStyle->SetTextSize(0.04); // Increase the global text size
-
-    std::map<std::string, TH1D*> dataHists;
-    std::map<std::string, TH1D*> mcHists;
-    std::map<std::string, TTreeReaderValue<Double_t>> dataVals;
-    std::map<std::string, TTreeReaderValue<Double_t>> mcVals;
+    gStyle->SetTextSize(0.05); // Increase the text size globally
 
     for (Int_t i = 0; i < branches->GetEntries(); ++i) {
         TBranch* branch = (TBranch*)branches->At(i);
@@ -925,6 +920,9 @@ void createIntegratedKinematicPlots() {
             continue; // Skip this branch
         }
 
+        TTreeReaderValue<Double_t> dataVal(dataReader, branchName.c_str());
+        TTreeReaderValue<Double_t> mcVal(mcReader, branchName.c_str());
+
         HistConfig config = {100, 0, 1}; // Default configuration
         if (histConfigs.find(branchName) != histConfigs.end()) {
             config = histConfigs[branchName];
@@ -933,90 +931,82 @@ void createIntegratedKinematicPlots() {
         TH1D* dataHist = new TH1D((branchName + "_data").c_str(), "", config.nBins, config.xMin, config.xMax);
         TH1D* mcHist = new TH1D((branchName + "_mc").c_str(), "", config.nBins, config.xMin, config.xMax);
 
+        // Set x-axis title
         dataHist->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
-        mcHist->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
-        dataHist->GetYaxis()->SetTitle("Normalized Counts");
-        mcHist->GetYaxis()->SetTitle("Normalized Counts");
-
         dataHist->GetXaxis()->CenterTitle();
+        mcHist->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
         mcHist->GetXaxis()->CenterTitle();
+
+        // Set y-axis title and center it
+        dataHist->GetYaxis()->SetTitle("Normalized Counts");
         dataHist->GetYaxis()->CenterTitle();
+        mcHist->GetYaxis()->SetTitle("Normalized Counts");
         mcHist->GetYaxis()->CenterTitle();
 
-        dataHists[branchName] = dataHist;
-        mcHists[branchName] = mcHist;
+        // Set y-axis title offset to make room for centering
+        dataHist->GetYaxis()->SetTitleOffset(1.6);
+        mcHist->GetYaxis()->SetTitleOffset(1.6);
 
-        dataVals.emplace(std::piecewise_construct,
-                     std::forward_as_tuple(branchName),
-                     std::forward_as_tuple(dataReader, branchName.c_str()));
-        mcVals.emplace(std::piecewise_construct,
-                     std::forward_as_tuple(branchName),
-                     std::forward_as_tuple(mcReader, branchName.c_str()));
-    }
-
-    KinematicCuts kinematicCuts(dataReader);
-    while (dataReader.Next()) {
-        for (std::map<std::string, TH1D*>::iterator it = dataHists.begin(); it != dataHists.end(); ++it) {
-            const std::string& branchName = it->first;
-            TH1D* hist = it->second;
+        // Loop over dataReader to fill the histogram
+        KinematicCuts kinematicCuts(dataReader);
+        while (dataReader.Next()) {
             bool passedKinematicCuts = kinematicCuts.applyCuts(0, false);
-            if (*dataVals[branchName] >= histConfigs[branchName].xMin && *dataVals[branchName] < histConfigs[branchName].xMax && passedKinematicCuts) {
-                hist->Fill(*dataVals[branchName]);
+            if (*dataVal >= config.xMin && *dataVal < config.xMax && passedKinematicCuts) {
+                dataHist->Fill(*dataVal);
             }
         }
-    }
 
-    KinematicCuts mc_kinematicCuts(mcReader);
-    while (mcReader.Next()) {
-        for (std::map<std::string, TH1D*>::iterator it = mcHists.begin(); it != mcHists.end(); ++it) {
-            const std::string& branchName = it->first;
-            TH1D* hist = it->second;
+        // Loop over mcReader to fill the histogram
+        KinematicCuts mc_kinematicCuts(mcReader);
+        while (mcReader.Next()) {
             bool passedKinematicCuts = mc_kinematicCuts.applyCuts(0, true);
-            if (*mcVals[branchName] >= histConfigs[branchName].xMin && *mcVals[branchName] < histConfigs[branchName].xMax && passedKinematicCuts) {
-                hist->Fill(*mcVals[branchName]);
+            if (*mcVal >= config.xMin && *mcVal < config.xMax && passedKinematicCuts) {
+                mcHist->Fill(*mcVal);
             }
         }
-    }
 
-    for (std::map<std::string, TH1D*>::iterator it = dataHists.begin(); it != dataHists.end(); ++it) {
-        const std::string& branchName = it->first;
-        TH1D* dataHist = it->second;
-        TH1D* mcHist = mcHists[branchName];
-
+        // Normalize the histograms
         dataHist->Scale(1.0 / dataHist->Integral());
         mcHist->Scale(1.0 / mcHist->Integral());
 
+        // Find the maximum value for y-axis
         double maxY = std::max(dataHist->GetMaximum(), mcHist->GetMaximum());
         dataHist->SetMaximum(1.1 * maxY);
         mcHist->SetMaximum(1.1 * maxY);
 
+        // Create a canvas for drawing the histograms
         TCanvas* c = new TCanvas((branchName + "_canvas").c_str(), branchName.c_str(), 800, 600);
+
+        // Create a legend and adjust its font size
         TLegend* leg = new TLegend(0.7, 0.7, 0.9, 0.9);
+        leg->SetTextSize(0.04); // Increase the legend text size
 
-        std::ostringstream ss;
-        ss << std::scientific << dataHist->GetEntries();
-        leg->AddEntry(dataHist, ("Data (" + ss.str() + " entries)").c_str(), "l");
-        ss.str("");
-        ss << std::scientific << mcHist->GetEntries();
-        leg->AddEntry(mcHist, ("MC (" + ss.str() + " entries)").c_str(), "l");
+        // Add entries to the legend with scientific notation for the number of entries
+        leg->AddEntry(dataHist, (std::string("Data (") + std::to_string((int)dataHist->GetEntries()) + " entries)").c_str(), "l");
+        leg->AddEntry(mcHist, (std::string("MC (") + std::to_string((int)mcHist->GetEntries()) + " entries)").c_str(), "l");
 
+        // Set line colors for histograms
         dataHist->SetLineColor(kBlack);
         mcHist->SetLineColor(kRed);
 
+        // Draw histograms on the canvas
         dataHist->Draw("HIST");
         mcHist->Draw("HISTSAME");
         leg->Draw();
 
+        // Save the canvas to a file
         c->SaveAs((outputDir + branchName + ".png").c_str());
 
+        // Clean up the created objects to avoid memory leaks
         delete dataHist;
         delete mcHist;
         delete c;
         delete leg;
-    }
 
-    dataReader.Restart();  // Reset the TTreeReader for the next iteration
-    mcReader.Restart();    // Reset the TTreeReader for the next iteration
+        // Restart the TTreeReaders for the next branch
+        dataReader.Restart();
+        mcReader.Restart();
+    }
 }
 
 
