@@ -1140,6 +1140,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 KinematicCuts kinematicCuts(dataReader);
                 while (dataReader.Next()) {
                     bool passedKinematicCuts = kinematicCuts.applyCuts(fitIndex, false);
+                    cout << binLowerEdge << " " << *dataVal << " " << binUpperEdge << " " << passedKinematicCuts << endl;
                     if (*dataVal >= binLowerEdge && *dataVal < binUpperEdge && passedKinematicCuts) {
                         dataHist->Fill(*dataVal);
                     }
