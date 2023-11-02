@@ -1,0 +1,40 @@
+#include "common_vars.h"
+#include "TMath.h" 
+
+struct HistConfig {
+    int nBins;
+    double xMin, xMax;
+};
+
+std::map<std::string, HistConfig> histConfigs = {
+      {"DepA", {200, 0, 1}},
+      {"DepB", {200, 0, 1}},
+      {"DepC", {200, 0, 1}},
+      {"DepV", {200, 0, 2}},
+      {"DepW", {200, 0, 1}},
+      {"e_p", {200, 2, 8}},
+      {"e_phi", {200, 0, 2 * TMath::Pi()}},
+      {"eta", {200, -1, 3}},
+      {"e_theta", {200, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
+      {"evnum", {200, 0, 0}},
+      {"helicity", {2, -2, 2}},
+      {"Mx", {200, 0., 3.}},
+      {"Mx2", {200, -4, 10}},
+      {"phi", {200, 0, 2 * TMath::Pi()}},
+      {"p_p", {200, 0, 6}},
+      {"p_phi", {200, 0, 2 * TMath::Pi()}},
+      {"pT", {200, 0, 1.2}},
+      {"p_theta", {200, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
+      {"Q2", {200, 0, 9}},
+      {"runnum", {200, 0, 0}},
+      {"t", {200, -10, 1}},
+      {"tmin", {200, -0.5, 0}},
+      {"vz_e", {200, -15, 15}},
+      {"vz_p", {200, -15, 15}},
+      {"W", {200, 2, 4}},
+      {"x", {200, 0, 0.6}},
+      {"xF", {200, -1, 1}},
+      {"y", {200, 0.0, 1.00}},
+      {"z", {200, 0, 1}},
+      {"zeta", {200, 0.0, 1}}
+    };

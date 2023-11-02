@@ -14,3 +14,5 @@ extern double cpm;
 extern double cmp;
 extern double cpp;
 extern int currentFits;
+
+extern std::map<std::string, HistConfig> histConfigs;
