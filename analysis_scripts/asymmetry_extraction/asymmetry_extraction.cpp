@@ -1092,6 +1092,12 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
         for (size_t binIndex = 0; binIndex < allBins[fitIndex].size() - 1; ++binIndex) {
             double binLowerEdge = allBins[fitIndex][binIndex];
             double binUpperEdge = allBins[fitIndex][binIndex + 1];
+
+            // Format the bin edges with three decimal places
+            std::ostringstream lowerEdgeStream, upperEdgeStream;
+            lowerEdgeStream << std::fixed << std::setprecision(3) << binLowerEdge;
+            upperEdgeStream << std::fixed << std::setprecision(3) << binUpperEdge;
+
             std::string binIndexLabel = "bin_" + std::to_string(binIndex + 1);
 
             // Now we iterate over all branches, except those we wish to skip
@@ -1125,7 +1131,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 std::string histName = currentVariable + "_" + branchName + "_" + binIndexLabel;
                 TH1D* dataHist = new TH1D((histName + "_data").c_str(), plotTitle.c_str(), config.nBins, config.xMin, config.xMax);
                 TH1D* mcHist = new TH1D((histName + "_mc").c_str(), plotTitle.c_str(), config.nBins, config.xMin, config.xMax);
-                
+
                 // Set histogram titles and styles
                 dataHist->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
                 mcHist->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
