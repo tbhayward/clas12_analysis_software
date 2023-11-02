@@ -52,123 +52,6 @@ double cpp = 0;
 std::string mlmPrefix = "xF";
 
 
-void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int asymmetryIndex, 
-  const std::string& prefix) {
-  // Define the label for the y-axis
-  std::string yAxisLabel, fileNameSuffix;
-  switch (asymmetryIndex) {
-      case 0: yAxisLabel = "A_{LU}"; fileNameSuffix = "ALU"; break;
-      case 1: yAxisLabel = "A_{UL}"; fileNameSuffix = "AUL"; break;
-      case 2: yAxisLabel = "A_{LL}"; fileNameSuffix = "ALL"; break;
-      default: std::cerr << "Invalid asymmetry index!" << std::endl; return;
-  }
-
-  // Create a canvas to draw on
-  TCanvas* canvas = new TCanvas("canvas", "", 800, 600);
-
-  // Adjust the canvas margins to ensure axis labels are not cut off
-  canvas->SetLeftMargin(0.16); canvas->SetBottomMargin(0.16);
-
-  // Create a TGraphErrors manually from the histogram
-  TGraphErrors *graph = new TGraphErrors();
-  
-  // Add points to the TGraphErrors
-  for (int i = 1; i <= histogram->GetNbinsX(); ++i) {
-    double x = histogram->GetBinCenter(i);
-    double y = histogram->GetBinContent(i);
-    double ex = 0;  // we don't want horizontal error bars
-    double ey = histogram->GetBinError(i);
-    graph->SetPoint(i - 1, x, y);
-    graph->SetPointError(i - 1, ex, ey);
-  }
-
-  // Set the point color to black
-  graph->SetMarkerColor(kBlack);
-  graph->SetMarkerStyle(kFullCircle);
-
-  // Set the fit function's line color to red
-  fitFunction->SetLineColor(kRed);
-
-  // Set the labels of the x and y axis
-  graph->GetXaxis()->SetTitle("#phi");
-  graph->GetYaxis()->SetTitle(yAxisLabel.c_str());
-
-  // Set the range of the x-axis to be from 0 to 2pi
-  graph->GetXaxis()->SetRangeUser(0, 2*TMath::Pi());
-
-  // Draw the graph using the AP option to draw axis and points
-  graph->Draw("AP");
-
-  // Set the range of the fit function to match the range of the x-axis
-  fitFunction->SetRange(0, 2*TMath::Pi());
-  // Draw the fit function on top of the graph
-  fitFunction->Draw("same");
-
-  // Center the labels and increase the font size
-  graph->GetXaxis()->CenterTitle();
-  graph->GetYaxis()->CenterTitle();
-  graph->GetXaxis()->SetTitleSize(0.05);
-  graph->GetYaxis()->SetTitleSize(0.05);
-
-  // Create the legend
-  // TLegend *leg = new TLegend(0.16171, 0.7, 0.4, 0.9);  // Adjusted to the upper-left corner
-  TLegend *leg = new TLegend(0.19, 0.675, 0.45, 0.875);  // Adjusted to the upper-left corner
-  leg->SetBorderSize(1);
-  leg->SetFillColor(0);
-  leg->SetTextSize(0.025);  // Reduced text size
-  // leg->SetTextAlign(12);  // Left-align text
-
-  // Add fit parameters as legend entries based on the value of 'asymmetry'.
-  const char* paramName;
-  for (int i = 0; i < fitFunction->GetNpar(); ++i) {
-      if (i == 0 && (asymmetryIndex == 0 || asymmetryIndex == 1)) {
-        paramName = "offset";
-      } else if (i == 0 && asymmetryIndex == 2) {
-        paramName = "#it{A}_{LL}";
-      } else if (asymmetryIndex == 0) {
-        if (i == 1) paramName = "#it{A}_{LU}^{sin#phi}";
-      } else if (asymmetryIndex == 1) {
-        if (i == 1) paramName = "#it{A}_{UL}^{sin#phi}";
-        if (i == 2) paramName = "#it{A}_{UL}^{sin2#phi}";
-      } else if (asymmetryIndex == 2) {
-        if (i == 1) paramName = "#it{A}_{LL}^{cos#phi}";
-      }
-      leg->AddEntry((TObject*)0, Form("%s: %.4f #pm %.4f", paramName, 
-        fitFunction->GetParameter(i), fitFunction->GetParError(i)), "");
-  }
-
-  // Add the chi-squared per degree of freedom to the legend
-  leg->AddEntry((TObject*)0, Form("#chi^{2}/Ndf: %.4f", 
-    fitFunction->GetChisquare() / fitFunction->GetNDF()), "");
-
-  // Draw the legend
-  leg->Draw("same");
-
-  // Create the filename for the PNG
-  string filename = "output/" + prefix + "_" + 
-    fileNameSuffix + "_" + std::to_string(binIndex) + ".png";
-  
-  // Determine the variable range for the specified bin
-  double varMin = allBins[currentFits][binIndex];
-  double varMax = allBins[currentFits][binIndex + 1];
-  // Create a title string for the graph 
-  string formattedLabelName = formatLabelName(prefix);
-  std::ostringstream oss;
-  oss << std::fixed << std::setprecision(3) << varMin << " #leq ";
-  oss << formattedLabelName << " < " << varMax;
-  std::string title = oss.str();
-
-  // Set the title to the title string
-  graph->SetTitle(title.c_str());
-
-  // Save the canvas as a PNG
-  canvas->SaveAs(filename.c_str());
-
-  // Clean up
-  delete canvas;
-  delete graph;
-}
-
 // Negative log-likelihood function
 void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag) {
   // npar: number of parameters
@@ -476,6 +359,123 @@ void performMLMFits(const char* output_file, const char* kinematic_file,
   kinematicFile.close();
 }
 
+void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int asymmetryIndex, 
+  const std::string& prefix) {
+  // Define the label for the y-axis
+  std::string yAxisLabel, fileNameSuffix;
+  switch (asymmetryIndex) {
+      case 0: yAxisLabel = "A_{LU}"; fileNameSuffix = "ALU"; break;
+      case 1: yAxisLabel = "A_{UL}"; fileNameSuffix = "AUL"; break;
+      case 2: yAxisLabel = "A_{LL}"; fileNameSuffix = "ALL"; break;
+      default: std::cerr << "Invalid asymmetry index!" << std::endl; return;
+  }
+
+  // Create a canvas to draw on
+  TCanvas* canvas = new TCanvas("canvas", "", 800, 600);
+
+  // Adjust the canvas margins to ensure axis labels are not cut off
+  canvas->SetLeftMargin(0.16); canvas->SetBottomMargin(0.16);
+
+  // Create a TGraphErrors manually from the histogram
+  TGraphErrors *graph = new TGraphErrors();
+  
+  // Add points to the TGraphErrors
+  for (int i = 1; i <= histogram->GetNbinsX(); ++i) {
+    double x = histogram->GetBinCenter(i);
+    double y = histogram->GetBinContent(i);
+    double ex = 0;  // we don't want horizontal error bars
+    double ey = histogram->GetBinError(i);
+    graph->SetPoint(i - 1, x, y);
+    graph->SetPointError(i - 1, ex, ey);
+  }
+
+  // Set the point color to black
+  graph->SetMarkerColor(kBlack);
+  graph->SetMarkerStyle(kFullCircle);
+
+  // Set the fit function's line color to red
+  fitFunction->SetLineColor(kRed);
+
+  // Set the labels of the x and y axis
+  graph->GetXaxis()->SetTitle("#phi");
+  graph->GetYaxis()->SetTitle(yAxisLabel.c_str());
+
+  // Set the range of the x-axis to be from 0 to 2pi
+  graph->GetXaxis()->SetRangeUser(0, 2*TMath::Pi());
+
+  // Draw the graph using the AP option to draw axis and points
+  graph->Draw("AP");
+
+  // Set the range of the fit function to match the range of the x-axis
+  fitFunction->SetRange(0, 2*TMath::Pi());
+  // Draw the fit function on top of the graph
+  fitFunction->Draw("same");
+
+  // Center the labels and increase the font size
+  graph->GetXaxis()->CenterTitle();
+  graph->GetYaxis()->CenterTitle();
+  graph->GetXaxis()->SetTitleSize(0.05);
+  graph->GetYaxis()->SetTitleSize(0.05);
+
+  // Create the legend
+  // TLegend *leg = new TLegend(0.16171, 0.7, 0.4, 0.9);  // Adjusted to the upper-left corner
+  TLegend *leg = new TLegend(0.19, 0.675, 0.45, 0.875);  // Adjusted to the upper-left corner
+  leg->SetBorderSize(1);
+  leg->SetFillColor(0);
+  leg->SetTextSize(0.025);  // Reduced text size
+  // leg->SetTextAlign(12);  // Left-align text
+
+  // Add fit parameters as legend entries based on the value of 'asymmetry'.
+  const char* paramName;
+  for (int i = 0; i < fitFunction->GetNpar(); ++i) {
+      if (i == 0 && (asymmetryIndex == 0 || asymmetryIndex == 1)) {
+        paramName = "offset";
+      } else if (i == 0 && asymmetryIndex == 2) {
+        paramName = "#it{A}_{LL}";
+      } else if (asymmetryIndex == 0) {
+        if (i == 1) paramName = "#it{A}_{LU}^{sin#phi}";
+      } else if (asymmetryIndex == 1) {
+        if (i == 1) paramName = "#it{A}_{UL}^{sin#phi}";
+        if (i == 2) paramName = "#it{A}_{UL}^{sin2#phi}";
+      } else if (asymmetryIndex == 2) {
+        if (i == 1) paramName = "#it{A}_{LL}^{cos#phi}";
+      }
+      leg->AddEntry((TObject*)0, Form("%s: %.4f #pm %.4f", paramName, 
+        fitFunction->GetParameter(i), fitFunction->GetParError(i)), "");
+  }
+
+  // Add the chi-squared per degree of freedom to the legend
+  leg->AddEntry((TObject*)0, Form("#chi^{2}/Ndf: %.4f", 
+    fitFunction->GetChisquare() / fitFunction->GetNDF()), "");
+
+  // Draw the legend
+  leg->Draw("same");
+
+  // Create the filename for the PNG
+  string filename = "output/" + prefix + "_" + 
+    fileNameSuffix + "_" + std::to_string(binIndex) + ".png";
+  
+  // Determine the variable range for the specified bin
+  double varMin = allBins[currentFits][binIndex];
+  double varMax = allBins[currentFits][binIndex + 1];
+  // Create a title string for the graph 
+  string formattedLabelName = formatLabelName(prefix);
+  std::ostringstream oss;
+  oss << std::fixed << std::setprecision(3) << varMin << " #leq ";
+  oss << formattedLabelName << " < " << varMax;
+  std::string title = oss.str();
+
+  // Set the title to the title string
+  graph->SetTitle(title.c_str());
+
+  // Save the canvas as a PNG
+  canvas->SaveAs(filename.c_str());
+
+  // Clean up
+  delete canvas;
+  delete graph;
+}
+
 TH1D* createHistogramForBin(const char* histName, int binIndex, 
   const std::string& prefix, int asymmetry_index) {
 
@@ -579,7 +579,6 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
 
   // Return the final asymmetry histogram
   return histAsymmetry;
-
 }
 
 void performChi2Fits(const char* output_file, const char* kinematic_file,
@@ -685,9 +684,6 @@ void performChi2Fits(const char* output_file, const char* kinematic_file,
     int counter = 0;
     KinematicCuts kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
     while (dataReader.Next()) {
-      // if (counter > 100000) {
-      //   break;
-      // }
       // Apply kinematic cuts (this function will need to be adapted)
       bool passedKinematicCuts = kinematicCuts.applyCuts(currentFits, false);
       // Check if the currentVariable is within the desired range
@@ -863,8 +859,116 @@ void performChi2Fits(const char* output_file, const char* kinematic_file,
     kinematicFile << meanVariablesStream.str() << std::endl; 
     kinematicFile.close();
   }
-
 }
+
+struct HistConfig {
+    int nBins;
+    double xMin, xMax;
+};
+
+void createIntegratedKinematicPlots() {
+    const std::string outputDir = "output/integrated_plots/";
+    const std::vector<std::string> branchesToSkip = {"helicity", "beam_pol", "target_pol", "runnum", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"};
+    std::map<std::string, HistConfig> histConfigs = {
+      {"DepA", {200, 0, 1}},
+      {"DepB", {200, 0, 1}},
+      {"DepC", {200, 0, 1}},
+      {"DepV", {200, 0, 2}},
+      {"DepW", {200, 0, 1}},
+      {"e_p", {200, 2, 8}},
+      {"e_phi", {200, 0, 2 * TMath::Pi()}},
+      {"eta", {200, -1, 3}},
+      {"e_theta", {200, 0, 2 * TMath::Pi() / 180 * 40}}, // Convert degree to radian
+      {"evnum", {200, 0, 0}},
+      {"helicity", {2, -2, 2}},
+      {"Mx", {200, 0., 3.}},
+      {"Mx2", {200, -10, 10}},
+      {"phi", {200, 0, 2 * TMath::Pi()}},
+      {"p_p", {200, 0, 6}},
+      {"p_phi", {200, 0, 2 * TMath::Pi()}},
+      {"pT", {200, 0, 1.2}},
+      {"p_theta", {200, 0, 2 * TMath::Pi() / 180 * 60}}, // Convert degree to radian
+      {"Q2", {200, 0, 9}},
+      {"runnum", {200, 0, 0}},
+      {"t", {200, -10, 1}},
+      {"tmin", {200, -0.5, 0}},
+      {"vz_e", {200, -15, 15}},
+      {"vz_p", {200, -15, 15}},
+      {"W", {200, 2, 4}},
+      {"x", {200, 0, 0.6}},
+      {"xF", {200, -1, 1}},
+      {"y", {200, 0.3, 0.75}},
+      {"z", {200, 0, 1}},
+      {"zeta", {200, 0.3, 1}}
+    };
+
+    TObjArray* branches = dataReader.GetTree()->GetListOfBranches();
+    if (!branches) {
+        std::cerr << "Error: Unable to retrieve branch list from data TTree." << std::endl;
+        return;
+    }
+
+    gStyle->SetOptStat(0);
+    for (Int_t i = 0; i < branches->GetEntries(); ++i) {
+        TBranch* branch = (TBranch*)branches->At(i);
+        std::string branchName = branch->GetName();
+        
+        if (std::find(branchesToSkip.begin(), branchesToSkip.end(), branchName) != branchesToSkip.end()) {
+            continue; // Skip this branch
+        }
+
+        TTreeReaderValue<Double_t> dataVal(dataReader, branchName.c_str());
+        TTreeReaderValue<Double_t> mcVal(mcReader, branchName.c_str());
+
+        HistConfig config = {100, 0, 1}; // Default configuration
+        if (histConfigs.find(branchName) != histConfigs.end()) {
+            config = histConfigs[branchName];
+        }
+
+        TH1D* dataHist = new TH1D((branchName + "_data").c_str(), formatLabelName(branchName).c_str(), config.nBins, config.xMin, config.xMax);
+        TH1D* mcHist = new TH1D((branchName + "_mc").c_str(), formatLabelName(branchName).c_str(), config.nBins, config.xMin, config.xMax);
+
+        while (dataReader.Next()) {
+            bool passedKinematicCuts = kinematicCuts.applyCuts(0, false);
+            if (*dataVal >= config.xMin && *dataVal < config.xMax && passedKinematicCuts) {
+                dataHist->Fill(*dataVal);
+            }
+        }
+
+        while (mcReader.Next()) {
+            bool passedKinematicCuts = kinematicCuts.applyCuts(0, true);
+            if (*mcVal >= config.xMin && *mcVal < config.xMax && passedKinematicCuts) {
+                mcHist->Fill(*mcVal);
+            }
+        }
+
+        dataHist->Scale(1.0 / dataHist->Integral());
+        mcHist->Scale(1.0 / mcHist->Integral());
+
+        TCanvas* c = new TCanvas((branchName + "_canvas").c_str(), branchName.c_str(), 800, 600);
+        TLegend* leg = new TLegend(0.7, 0.7, 0.9, 0.9);
+        leg->AddEntry(dataHist, "Data", "l");
+        leg->AddEntry(mcHist, "MC", "l");
+
+        dataHist->SetLineColor(kBlack);
+        mcHist->SetLineColor(kRed);
+
+        dataHist->Draw("HIST");
+        mcHist->Draw("HISTSAME");
+        leg->Draw();
+
+        c->SaveAs((outputDir + branchName + ".png").c_str());
+
+        delete dataHist;
+        delete mcHist;
+        delete c;
+        delete leg;
+
+        dataReader.Restart();  // Reset the TTreeReader for the next iteration
+        mcReader.Restart();    // Reset the TTreeReader for the next iteration
+    }
+}
+
 
 int main(int argc, char *argv[]) {
   // Start the timer
@@ -974,23 +1078,25 @@ int main(int argc, char *argv[]) {
   dataReader.SetTree(data);  // Initialize the global variable
   mcReader.SetTree(mc);  // Initialize the global variable
 
-  for (size_t i = 0; i < allBins.size(); ++i) {
-    cout << "-- Beginning kinematic fits." << endl;
-    for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
-      switch (asymmetry) {
-        case 0: cout << "    Beginning chi2 BSA." << endl; break;
-        case 1: cout << "    Beginning chi2 TSA." << endl; break;
-        case 2: cout << "    Beginning chi2 DSA." << endl; break;
-      }
-      performChi2Fits(output_file, kinematic_file, binNames[i], asymmetry);
-    }
-    cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    // read in the fitted chi2 values to use as starting points for MLE fit
-    performMLMFits(output_file, kinematic_file, binNames[i]);
-    cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
-    cout << endl << endl;
-    currentFits++;
-  }
+  createIntegratedKinematicPlots();
+
+  // for (size_t i = 0; i < allBins.size(); ++i) {
+  //   cout << "-- Beginning kinematic fits." << endl;
+  //   for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
+  //     switch (asymmetry) {
+  //       case 0: cout << "    Beginning chi2 BSA." << endl; break;
+  //       case 1: cout << "    Beginning chi2 TSA." << endl; break;
+  //       case 2: cout << "    Beginning chi2 DSA." << endl; break;
+  //     }
+  //     performChi2Fits(output_file, kinematic_file, binNames[i], asymmetry);
+  //   }
+  //   cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
+  //   // read in the fitted chi2 values to use as starting points for MLE fit
+  //   performMLMFits(output_file, kinematic_file, binNames[i]);
+  //   cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
+  //   cout << endl << endl;
+  //   currentFits++;
+  // }
 
   cout << endl; 
 
