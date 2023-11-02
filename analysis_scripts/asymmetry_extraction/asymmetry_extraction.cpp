@@ -1093,6 +1093,13 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
             double binLowerEdge = allBins[fitIndex][binIndex];
             double binUpperEdge = allBins[fitIndex][binIndex + 1];
 
+            // Format the bin edges with three decimal places
+            std::ostringstream lowerEdgeStream, upperEdgeStream;
+            lowerEdgeStream << std::fixed << std::setprecision(3) << binLowerEdge;
+            upperEdgeStream << std::fixed << std::setprecision(3) << binUpperEdge;
+
+            std::string binIndexLabel = "bin_" + std::to_string(binIndex + 1);
+
             // Now we iterate over all branches, except those we wish to skip
             for (Int_t i = 0; i < branches->GetEntries(); ++i) {
                 TBranch* branch = (TBranch*)branches->At(i);
@@ -1106,22 +1113,20 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 HistConfig config = {100, 0, 1}; // Default configuration
                 if (histConfigs.find(branchName) != histConfigs.end()) {
                     config = histConfigs[branchName];
-                } else {
-                    std::cerr << "Warning: No specific histogram configuration found for " << branchName << ". Using default configuration." << std::endl;
                 }
+
+                // Create histogram title with formatted bin edges
+                std::string formattedVariableName = formatFrameLabel(currentVariable);
+                std::string plotTitle = lowerEdgeStream.str() + " < " + formattedVariableName + " < " + upperEdgeStream.str();
 
                 // Set up the data and MC values to be read from the trees
                 TTreeReaderValue<Double_t> dataVal(dataReader, branchName.c_str());
                 TTreeReaderValue<Double_t> mcVal(mcReader, branchName.c_str());
                 TTreeReaderValue<Double_t> binVariable(dataReader, currentVariable.c_str());
-                TTreeReaderValue<Double_t> mc_binVariable(mcReader, currentVariable.c_str());
+                TTreeReaderValue<Double_t> mcBinVariable(mcReader, currentVariable.c_str());
 
-                // Format the title to include the bin range
-                std::string formattedVariableName = formatLabelName(currentVariable);
-                std::string plotTitle = std::to_string(binLowerEdge) + " < " + formattedVariableName + " < " + std::to_string(binUpperEdge);
-
-                // Create histograms with titles reflecting the bin edges
-                std::string histName = currentVariable + "_" + branchName + "_bin_" + std::to_string(binIndex + 1);
+                // Create histograms with titles reflecting the bin edges and plotted variable
+                std::string histName = currentVariable + "_" + branchName + "_" + binIndexLabel;
                 TH1D* dataHist = new TH1D((histName + "_data").c_str(), plotTitle.c_str(), config.nBins, config.xMin, config.xMax);
                 TH1D* mcHist = new TH1D((histName + "_mc").c_str(), plotTitle.c_str(), config.nBins, config.xMin, config.xMax);
 
