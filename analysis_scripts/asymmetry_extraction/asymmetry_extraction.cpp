@@ -1093,13 +1093,6 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
             double binLowerEdge = allBins[fitIndex][binIndex];
             double binUpperEdge = allBins[fitIndex][binIndex + 1];
 
-            // Format the bin edges with three decimal places
-            std::ostringstream lowerEdgeStream, upperEdgeStream;
-            lowerEdgeStream << std::fixed << std::setprecision(3) << binLowerEdge;
-            upperEdgeStream << std::fixed << std::setprecision(3) << binUpperEdge;
-
-            std::string binIndexLabel = "bin_" + std::to_string(binIndex + 1);
-
             // Now we iterate over all branches, except those we wish to skip
             for (Int_t i = 0; i < branches->GetEntries(); ++i) {
                 TBranch* branch = (TBranch*)branches->At(i);
@@ -1129,89 +1122,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 std::string histName = currentVariable + "_" + branchName + "_" + binIndexLabel;
                 TH1D* dataHist = new TH1D((histName + "_data").c_str(), plotTitle.c_str(), config.nBins, config.xMin, config.xMax);
                 TH1D* mcHist = new TH1D((histName + "_mc").c_str(), plotTitle.c_str(), config.nBins, config.xMin, config.xMax);
-
-                // Set histogram titles and styles
-                dataHist->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
-                mcHist->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
-
-                dataHist->GetYaxis()->SetTitle("Normalized Counts");
-                mcHist->GetYaxis()->SetTitle("Normalized Counts");
-
-                dataHist->GetYaxis()->CenterTitle();
-                mcHist->GetYaxis()->CenterTitle();
-
-                dataHist->GetYaxis()->SetTitleOffset(1.6);
-                mcHist->GetYaxis()->SetTitleOffset(1.6);
-
-                dataHist->SetLineColor(kBlack);
-                mcHist->SetLineColor(kRed);
-
-                // Fill the histograms
-                KinematicCuts kinematicCuts(dataReader);
-                while (dataReader.Next()) {
-                    bool passedKinematicCuts = kinematicCuts.applyCuts(fitIndex, false);
-                    if (*binVariable >= binLowerEdge && *binVariable < binUpperEdge && passedKinematicCuts) {
-                        dataHist->Fill(*dataVal);
-                    }
-                }
-
-                // Repeat for mcReader
-                KinematicCuts mcKinematicCuts(mcReader);
-                while (mcReader.Next()) {
-                    bool passedKinematicCuts = mcKinematicCuts.applyCuts(fitIndex, true);
-                    if (*mcBinVariable >= binLowerEdge && *mcBinVariable < binUpperEdge && passedKinematicCuts) {
-                        mcHist->Fill(*mcVal);
-                    }
-                }
-
-                // Normalize the histograms
-                if (dataHist->Integral() != 0) {
-                    dataHist->Scale(1.0 / dataHist->Integral());
-                }
-                if (mcHist->Integral() != 0) {
-                    mcHist->Scale(1.0 / mcHist->Integral());
-                }
-
-                // Find the maximum y-value between both histograms to set the y-axis range
-                double maxY = std::max(dataHist->GetMaximum(), mcHist->GetMaximum());
-                dataHist->SetMaximum(1.2 * maxY);
-                mcHist->SetMaximum(1.2 * maxY);
-
-                // Create a canvas for drawing the histograms
-                TCanvas* c = new TCanvas((histName + "_canvas").c_str(), branchName.c_str(), 800, 600);
-                c->SetLeftMargin(0.15);
-                c->SetBottomMargin(0.15);
-
-                // Draw histograms on the canvas
-                dataHist->Draw("HIST");
-                mcHist->Draw("HIST SAME");
-
-                // Create a legend for the histograms
-                TLegend* leg = new TLegend(0.5, 0.7, 0.9, 0.9);
-                leg->AddEntry(dataHist, ("Data (" + std::to_string(static_cast<int>(dataHist->GetEntries())) + " entries)").c_str(), "l");
-                leg->AddEntry(mcHist, ("MC (" + std::to_string(static_cast<int>(mcHist->GetEntries())) + " entries)").c_str(), "l");
-                leg->Draw();
-
-                // Save the canvas to a file, with the bin index and variable name swapped in the filename
-                std::string outputFileName = outputDir + currentVariable + "_" + branchName + "_bin_" + std::to_string(binIndex + 1) + ".png";
-                c->SaveAs(outputFileName.c_str());
-
-                // Clean up
-                delete dataHist;
-                delete mcHist;
-                delete c;
-                delete leg;
-
-                // Restart the TTreeReaders for the next branch
-                dataReader.Restart();
-                mcReader.Restart();
-            }
-        }
-        // Increment the currentFits to process the next set of kinematic variables
-        currentFits++;
-    }
-}
-
+                
                 // Set histogram titles and styles
                 dataHist->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
                 mcHist->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
