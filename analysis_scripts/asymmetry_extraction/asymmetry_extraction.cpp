@@ -25,6 +25,7 @@
 #include <TTreeReaderValue.h>
 #include <TH1D.h>
 #include "TMinuit.h"
+#include "TStyle.h"
 // tbhayward libraries
 #include "common_vars.h"  // Include the common header
 #include "load_bins_from_csv.h"
