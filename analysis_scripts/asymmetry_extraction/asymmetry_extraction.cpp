@@ -1249,10 +1249,10 @@ int main(int argc, char *argv[]) {
   auto time_now = std::chrono::system_clock::now();
   std::time_t time_now_t = std::chrono::system_clock::to_time_t(time_now);
   std::tm tm = *std::localtime(&time_now_t);
-  std::tm *gmt = std::gmtime(&time_now_t);
-  std::mktime(&gmt) - std::mktime(&tm);
+  std::tm gmt = *std::gmtime(&time_now_t); // Corrected line
+  std::mktime(&gmt) - std::mktime(&tm);     // Corrected line
   char buffer[80];
-  std::strftime(buffer, sizeof(buffer), "%d_%H%M%S", gmt);
+  std::strftime(buffer, sizeof(buffer), "%d_%H%M%S", &gmt); // Corrected line
 
   std::string timeStamp(buffer);
   std::string output_file = "output/results/asymmetries_" + baseName + 
@@ -1363,10 +1363,10 @@ int main(int argc, char *argv[]) {
         case 1: cout << "    Beginning chi2 TSA." << endl; break;
         case 2: cout << "    Beginning chi2 DSA." << endl; break;
       }
-      performChi2Fits(output_file, kinematic_file, binNames[i], asymmetry);
+      performChi2Fits(output_file.c_str(), kinematic_file.c_str(), binNames[i], asymmetry);
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    if (argc == 3) { performMLMFits(output_file, kinematic_file, binNames[i]); }
+    if (argc == 3) { performMLMFits(output_file.c_str(), kinematic_file.c_str(), binNames[i]); }
     cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
     currentFits++;
