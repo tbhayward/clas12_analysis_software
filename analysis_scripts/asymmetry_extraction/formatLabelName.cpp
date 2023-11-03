@@ -12,8 +12,8 @@ std::string formatLabelName(const std::string& original) {
         {"Mx2", "M_{x}^{2} (GeV)"},
         {"p_p", "p_{p} (GeV)"},
         {"xF", "x_{F}"},
-        {"vz_e", "{v_{e}}_z"},
-        {"vz_p", "{v_{p}}_z"},
+        {"vz_e", "{v_{ez}"},
+        {"vz_p", "{v_{pz}"},
     };
   
     if (specialLabels.find(original) != specialLabels.end()) {
