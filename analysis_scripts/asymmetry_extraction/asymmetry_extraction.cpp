@@ -1327,8 +1327,9 @@ int main(int argc, char *argv[]) {
 
   // Load data and mc root files
   TFile* data_file = new TFile(argv[1], "READ");
-  TFile* mc_file = new TFile(argv[2], "READ");
-  if (!data_file->IsOpen() || !mc_file->IsOpen()) {
+  TFile* mc_file;
+  if (argc == 3) { mc_file = = new TFile(argv[2], "READ"); } 
+  if (!data_file->IsOpen() || (!mc_file->IsOpen() && (argc == 3))) {
     cout << "Error opening ROOT files (is the location correct?). Exiting." << endl;
     return 2;
   } else {
@@ -1336,9 +1337,10 @@ int main(int argc, char *argv[]) {
   }
   
   TTree* data = (TTree*)data_file->Get("PhysicsEvents");
-  TTree* mc = (TTree*)mc_file->Get("PhysicsEvents");
+  TTree* mc;
+  if (argc == 3) { mc = (TTree*)mc_file->Get("PhysicsEvents")};
 
-  if (!data || !mc) {
+  if (!data || (!mc && argc == 3)) {
     cout << "-- Error getting trees from ROOT files." << endl;
     return 3;
   } else {
@@ -1346,7 +1348,7 @@ int main(int argc, char *argv[]) {
   }
 
   dataReader.SetTree(data);  // Initialize the global variable
-  mcReader.SetTree(mc);  // Initialize the global variable
+  if (argc == 3) {mcReader.SetTree(mc);  // Initialize the global variable }
 
   createCorrelationPlots();
   if (argc == 3) {
