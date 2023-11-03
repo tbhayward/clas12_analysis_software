@@ -1338,7 +1338,7 @@ int main(int argc, char *argv[]) {
   
   TTree* data = (TTree*)data_file->Get("PhysicsEvents");
   TTree* mc;
-  if (argc == 3) { mc = (TTree*)mc_file->Get("PhysicsEvents")};
+  if (argc == 3) { mc = (TTree*)mc_file->Get("PhysicsEvents"); }
 
   if (!data || (!mc && argc == 3)) {
     cout << "-- Error getting trees from ROOT files." << endl;
