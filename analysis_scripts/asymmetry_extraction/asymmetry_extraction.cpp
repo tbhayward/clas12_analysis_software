@@ -1069,26 +1069,6 @@ void createCorrelationPlots() {
     }
 }
 
-#include <iostream>
-#include <fstream>
-#include <vector>
-#include <string>
-#include <algorithm>
-#include <sstream>
-#include <iomanip>
-#include <TStyle.h>
-#include <TCanvas.h>
-#include <TLegend.h>
-#include <TH1D.h>
-#include <TTree.h>
-#include <TBranch.h>
-#include <TFile.h>
-#include <TTreeReader.h>
-#include <TTreeReaderValue.h>
-
-// Assuming all other necessary ROOT headers and other headers are included
-// Assuming other necessary global variables, structures, and functions are defined elsewhere
-
 void createIntegratedKinematicPlotsForBinsAndFits() {
     const std::string outputDir = "output/binned_plots/";
     const std::vector<std::string> branchesToSkip = {
@@ -1235,10 +1215,6 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
     }
 }
 
-
-
-
-
 int main(int argc, char *argv[]) {
   // Start the timer
   auto start_time = std::chrono::high_resolution_clock::now();
@@ -1348,8 +1324,8 @@ int main(int argc, char *argv[]) {
   dataReader.SetTree(data);  // Initialize the global variable
   mcReader.SetTree(mc);  // Initialize the global variable
 
-  // createIntegratedKinematicPlots();
-  // createCorrelationPlots();
+  createIntegratedKinematicPlots();
+  createCorrelationPlots();
   createIntegratedKinematicPlotsForBinsAndFits(); currentFits=0;
 
   // for (size_t i = 0; i < allBins.size(); ++i) {
