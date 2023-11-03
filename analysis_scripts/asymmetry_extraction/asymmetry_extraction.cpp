@@ -1243,14 +1243,18 @@ int main(int argc, char *argv[]) {
       return 1;
   }
 
-  // Get the current time in EST
+  // Get the current time in UTC
   auto time_now = std::chrono::system_clock::now();
   std::time_t time_now_t = std::chrono::system_clock::to_time_t(time_now);
-  std::tm tm = *std::localtime(&time_now_t);
-  std::tm gmt = *std::gmtime(&time_now_t); // Corrected line
-  std::mktime(&gmt) - std::mktime(&tm);     // Corrected line
+  // Convert it to UTC (GMT)
+  std::tm gmt = *std::gmtime(&time_now_t);
+  // Apply the Eastern Time Zone offset
+  // EST: UTC-5, EDT: UTC-4. Assuming EST here
+  gmt.tm_hour -= 5;
+  // Correct for out-of-range hours
+  std::mktime(&gmt);
   char buffer[80];
-  std::strftime(buffer, sizeof(buffer), "%d_%H%M%S", &gmt); // Corrected line
+  std::strftime(buffer, sizeof(buffer), "%m_%d_%H%M%S", &gmt);
 
   std::string timeStamp(buffer);
   std::string output_file = "output/results/asymmetries_" + baseName + 
