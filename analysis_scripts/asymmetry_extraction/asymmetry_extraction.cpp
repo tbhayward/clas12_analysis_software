@@ -1226,20 +1226,44 @@ int main(int argc, char *argv[]) {
   gStyle->SetOptStat(0);
 
   // Check for correct number of command line arguments
-  if (argc != 5) {
-      cout << "Usage: " << argv[0];
-      cout << " <data_root_file> <mc_root_file> ";
-      cout << " <output_asymmetry_file> <output_kinematic_file>" << endl;
+  if (argc < 2) {
+      std::cout << "Usage: " << argv[0];
+      std::cout << " <data_root_file> [Optional: <mc_root_file>]" << std::endl;
+      cout << "If mc_root_file not specified then all plots will not be created and ";
+      cout << "the MLE will not be performed." << endl;
       return 1;
   }
 
-  const char* output_file = argv[3];
-  // Clear the contents of the output_file
-  std::ofstream ofs(output_file, std::ios::trunc);
+  // Generate output file names based on the input data file name and current time
+  std::string dataRootFileName = argv[1];
+  std::string baseName = dataRootFileName.substr(dataRootFileName.find_last_of("/\\") + 1);
+  baseName = baseName.substr(0, baseName.find_last_of(".")); // Remove the file extension
+
+  // Check if the file extension is .root
+  if (dataRootFileName.substr(dataRootFileName.find_last_of(".") + 1) != "root") {
+      std::cerr << "The input file must be a .root file." << std::endl;
+      return 1;
+  }
+
+  // Get the current time in EST
+  auto time_now = std::chrono::system_clock::now();
+  std::time_t time_now_t = std::chrono::system_clock::to_time_t(time_now);
+  std::tm tm = *std::localtime(&time_now_t);
+  std::tm *gmt = std::gmtime(&time_now_t);
+  std::mktime(&gmt) - std::mktime(&tm);
+  char buffer[80];
+  std::strftime(buffer, sizeof(buffer), "%d_%H%M%S", gmt);
+
+  std::string timeStamp(buffer);
+  std::string outputAsymmetryFile = "output/results/asymmetries_" + baseName + 
+    "_" + timeStamp + ".txt";
+  std::string outputKinematicFile = "output/results/kinematics_" + baseName + 
+    "_" + timeStamp + ".txt";
+
+  // Clear the contents of the output files
+  std::ofstream ofs(outputAsymmetryFile, std::ios::trunc);
   ofs.close();
-  const char* kinematic_file = argv[4];
-  // Clear the contents of the kinematic_file
-  std::ofstream ofs2(kinematic_file, std::ios::trunc);
+  std::ofstream ofs2(outputKinematicFile, std::ios::trunc);
   ofs2.close();
 
   // load bins from external csv file
@@ -1324,9 +1348,12 @@ int main(int argc, char *argv[]) {
   dataReader.SetTree(data);  // Initialize the global variable
   mcReader.SetTree(mc);  // Initialize the global variable
 
-  createIntegratedKinematicPlots();
   createCorrelationPlots();
-  createIntegratedKinematicPlotsForBinsAndFits(); currentFits=0;
+  if (argc == 3) {
+    createIntegratedKinematicPlots();
+    createIntegratedKinematicPlotsForBinsAndFits();
+  }
+  currentFits=0;
 
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
@@ -1339,8 +1366,7 @@ int main(int argc, char *argv[]) {
       performChi2Fits(output_file, kinematic_file, binNames[i], asymmetry);
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    // read in the fitted chi2 values to use as starting points for MLE fit
-    performMLMFits(output_file, kinematic_file, binNames[i]);
+    if (argc == 3) { performMLMFits(output_file, kinematic_file, binNames[i]); }
     cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
     currentFits++;
