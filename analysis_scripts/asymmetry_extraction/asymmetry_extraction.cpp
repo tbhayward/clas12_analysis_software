@@ -1226,11 +1226,9 @@ int main(int argc, char *argv[]) {
   gStyle->SetOptStat(0);
 
   // Check for correct number of command line arguments
-  if (argc < 2) {
+  if (argc < 3) {
       std::cout << "Usage: " << argv[0];
-      std::cout << " <data_root_file> [Optional: <mc_root_file>]" << std::endl;
-      cout << "If mc_root_file not specified then all plots will not be created and ";
-      cout << "the MLE will not be performed." << endl;
+      std::cout << " <data_root_file> <mc_root_file>" << std::endl;
       return 1;
   }
 
@@ -1327,9 +1325,8 @@ int main(int argc, char *argv[]) {
 
   // Load data and mc root files
   TFile* data_file = new TFile(argv[1], "READ");
-  TFile* mc_file;
-  if (argc == 3) { mc_file = new TFile(argv[2], "READ"); } 
-  if (!data_file->IsOpen() || (!mc_file->IsOpen() && (argc == 3))) {
+  TFile* mc_file = new TFile(argv[2], "READ");
+  if (!data_file->IsOpen() || !mc_file->IsOpen()) {
     cout << "Error opening ROOT files (is the location correct?). Exiting." << endl;
     return 2;
   } else {
@@ -1337,10 +1334,9 @@ int main(int argc, char *argv[]) {
   }
   
   TTree* data = (TTree*)data_file->Get("PhysicsEvents");
-  TTree* mc;
-  if (argc == 3) { mc = (TTree*)mc_file->Get("PhysicsEvents"); }
+  TTree* mc = (TTree*)mc_file->Get("PhysicsEvents");
 
-  if (!data || (!mc && argc == 3)) {
+  if (!data || !mc) {
     cout << "-- Error getting trees from ROOT files." << endl;
     return 3;
   } else {
@@ -1348,13 +1344,11 @@ int main(int argc, char *argv[]) {
   }
 
   dataReader.SetTree(data);  // Initialize the global variable
-  if (argc == 3) {mcReader.SetTree(mc);}  // Initialize the global variable 
+  mcReader.SetTree(mc);  // Initialize the global variable
 
   createCorrelationPlots();
-  if (argc == 3) {
-    createIntegratedKinematicPlots();
-    createIntegratedKinematicPlotsForBinsAndFits();
-  }
+  createIntegratedKinematicPlots();
+  createIntegratedKinematicPlotsForBinsAndFits();
   currentFits=0;
 
   for (size_t i = 0; i < allBins.size(); ++i) {
