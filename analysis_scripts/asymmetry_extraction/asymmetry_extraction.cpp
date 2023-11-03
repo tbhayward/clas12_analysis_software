@@ -1069,6 +1069,26 @@ void createCorrelationPlots() {
     }
 }
 
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <string>
+#include <algorithm>
+#include <sstream>
+#include <iomanip>
+#include <TStyle.h>
+#include <TCanvas.h>
+#include <TLegend.h>
+#include <TH1D.h>
+#include <TTree.h>
+#include <TBranch.h>
+#include <TFile.h>
+#include <TTreeReader.h>
+#include <TTreeReaderValue.h>
+
+// Assuming all other necessary ROOT headers and other headers are included
+// Assuming other necessary global variables, structures, and functions are defined elsewhere
+
 void createIntegratedKinematicPlotsForBinsAndFits() {
     const std::string outputDir = "output/binned_plots/";
     const std::vector<std::string> branchesToSkip = {
@@ -1087,6 +1107,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
     // Loop over all sets of supplied kinematic variables
     for (size_t fitIndex = 0; fitIndex < allBins.size(); ++fitIndex) {
         std::string currentVariable = binNames[fitIndex]; // Assuming binNames is a vector<string> with the same size as allBins
+        std::string branchVariable = propertyNames[fitIndex]; // Corresponding branch name for the current variable
 
         // Loop over all possible bins within the current set
         for (size_t binIndex = 0; binIndex < allBins[fitIndex].size() - 1; ++binIndex) {
@@ -1120,8 +1141,8 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 // Set up the data and MC values to be read from the trees
                 TTreeReaderValue<Double_t> dataVal(dataReader, branchName.c_str());
                 TTreeReaderValue<Double_t> mcVal(mcReader, branchName.c_str());
-                TTreeReaderValue<Double_t> binVariable(dataReader, currentVariable.c_str());
-                TTreeReaderValue<Double_t> mc_binVariable(mcReader, currentVariable.c_str());
+                TTreeReaderValue<Double_t> binVariable(dataReader, branchVariable.c_str());
+                TTreeReaderValue<Double_t> mcBinVariable(mcReader, branchVariable.c_str());
 
                 // Create histogram title with formatted bin edges
                 std::string formattedVariableName = formatLabelName(currentVariable);
@@ -1158,10 +1179,10 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 }
 
                 // Repeat for mcReader
-                KinematicCuts mc_kinematicCuts(mcReader);
+                KinematicCuts mcKinematicCuts(mcReader);
                 while (mcReader.Next()) {
-                    bool passedKinematicCuts = mc_kinematicCuts.applyCuts(fitIndex, true);
-                    if (*mc_binVariable >= binLowerEdge && *mc_binVariable < binUpperEdge && passedKinematicCuts) {
+                    bool passedKinematicCuts = mcKinematicCuts.applyCuts(fitIndex, true);
+                    if (*mcBinVariable >= binLowerEdge && *mcBinVariable < binUpperEdge && passedKinematicCuts) {
                         mcHist->Fill(*mcVal);
                     }
                 }
@@ -1213,6 +1234,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
         currentFits++;
     }
 }
+
 
 
 
