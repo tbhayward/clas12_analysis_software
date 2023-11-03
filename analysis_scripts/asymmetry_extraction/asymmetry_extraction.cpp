@@ -1348,7 +1348,7 @@ int main(int argc, char *argv[]) {
   }
 
   dataReader.SetTree(data);  // Initialize the global variable
-  if (argc == 3) {mcReader.SetTree(mc);  // Initialize the global variable }
+  if (argc == 3) {mcReader.SetTree(mc);}  // Initialize the global variable 
 
   createCorrelationPlots();
   if (argc == 3) {
