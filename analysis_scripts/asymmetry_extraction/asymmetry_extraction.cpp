@@ -1258,9 +1258,9 @@ int main(int argc, char *argv[]) {
 
   std::string timeStamp(buffer);
   std::string output_file = "output/results/asymmetries_" + baseName + 
-    "_" + timeStamp + ".txt";
+    "_timeStamp_" + timeStamp + ".txt";
   std::string kinematic_file = "output/results/kinematics_" + baseName + 
-    "_" + timeStamp + ".txt";
+    "_timeStamp_" + timeStamp + ".txt";
 
   // Clear the contents of the output files
   std::ofstream ofs(output_file, std::ios::trunc);
