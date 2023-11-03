@@ -1145,7 +1145,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 TTreeReaderValue<Double_t> mcBinVariable(mcReader, branchVariable.c_str());
 
                 // Create histogram title with formatted bin edges
-                std::string formattedVariableName = formatLabelName(currentVariable);
+                std::string formattedVariableName = formatLabelName(branchVariable);
                 std::string plotTitle = lowerEdgeStream.str() + " < " + formattedVariableName + " < " + upperEdgeStream.str();
 
                 // Create histograms with titles reflecting the bin edges and plotted variable
