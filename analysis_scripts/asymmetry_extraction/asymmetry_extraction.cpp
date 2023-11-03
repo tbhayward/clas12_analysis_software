@@ -1255,15 +1255,15 @@ int main(int argc, char *argv[]) {
   std::strftime(buffer, sizeof(buffer), "%d_%H%M%S", gmt);
 
   std::string timeStamp(buffer);
-  std::string outputAsymmetryFile = "output/results/asymmetries_" + baseName + 
+  std::string output_file = "output/results/asymmetries_" + baseName + 
     "_" + timeStamp + ".txt";
-  std::string outputKinematicFile = "output/results/kinematics_" + baseName + 
+  std::string kinematic_file = "output/results/kinematics_" + baseName + 
     "_" + timeStamp + ".txt";
 
   // Clear the contents of the output files
-  std::ofstream ofs(outputAsymmetryFile, std::ios::trunc);
+  std::ofstream ofs(output_file, std::ios::trunc);
   ofs.close();
-  std::ofstream ofs2(outputKinematicFile, std::ios::trunc);
+  std::ofstream ofs2(kinematic_file, std::ios::trunc);
   ofs2.close();
 
   // load bins from external csv file
