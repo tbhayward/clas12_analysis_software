@@ -1351,7 +1351,7 @@ int main(int argc, char *argv[]) {
   mcReader.SetTree(mc);  // Initialize the global variable
 
   // createCorrelationPlots();
-  createIntegratedKinematicPlots();
+  // createIntegratedKinematicPlots();
   // createIntegratedKinematicPlotsForBinsAndFits();
   currentFits=0;
 
