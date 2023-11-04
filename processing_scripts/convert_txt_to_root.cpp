@@ -3,8 +3,26 @@
 #include <TTree.h>
 #include <iostream>
 #include <fstream>
+#include <cmath>
 
 using namespace std;
+
+// Function to calculate the Cartesian components from spherical coordinates
+void sphericalToCartesian(double p, double phi, double theta, double& px, double& py, double& pz) {
+    px = p * sin(theta) * cos(phi);
+    py = p * sin(theta) * sin(phi);
+    pz = p * cos(theta);
+}
+
+// Function to calculate the magnitude of a vector from its Cartesian components
+double vectorMagnitude(double px, double py, double pz) {
+    return sqrt(px * px + py * py + pz * pz);
+}
+
+// Function to calculate the polar angle from the Cartesian components
+double vectorPolarAngle(double pz, double vectorMag) {
+    return acos(pz / vectorMag);
+}
 
 struct RunInfo {
       int runnum;
@@ -312,6 +330,7 @@ int main(int argc, char *argv[]) {
         tree->Branch("Mx2", &Mx2, "Mx2/D");
         tree->Branch("x", &x, "x/D");
         tree->Branch("y", &y, "y/D");
+        tree->Branch("t", &t, "t/D");
         tree->Branch("t1", &t1, "t1/D");
         tree->Branch("t2", &t2, "t2/D");
         tree->Branch("tmin", &tmin, "tmin/D");
@@ -338,7 +357,7 @@ int main(int argc, char *argv[]) {
         tree->Branch("phi1", &phi1, "phi1/D");
         tree->Branch("phi2", &phi2, "phi2/D");
         tree->Branch("Delta_phi", &Delta_phi, "Delta_phi/D");
-        tree->Branch("phih", &phih, "phih/D");
+        tree->Branch("phi", &phi, "phi/D");
         tree->Branch("phiR", &phiR, "phiR/D");
         tree->Branch("theta", &theta, "theta/D");
         tree->Branch("DepA", &DepA, "DepA/D");
@@ -521,7 +540,7 @@ int main(int argc, char *argv[]) {
             p1_p >> p1_theta >> p1_phi >> vz_p1 >> p2_p >> p2_theta >> p2_phi >> vz_p2 >> 
             Q2 >> W >> Mx >> Mx1 >> Mx2 >> x >> y >> z >> z1 >> z2 >> Mh >> xF >> xF1 >> xF2 >> 
             pT >> pT1 >> pT2 >> pTpT >> zeta >> zeta1 >> zeta2 >> eta >> eta1 >> eta2 >> Delta_eta>> 
-            eta1_gN >> eta2_gN >> phi1 >> phi2 >> Delta_phi >> phih >> phiR >> theta >> 
+            eta1_gN >> eta2_gN >> phi1 >> phi2 >> Delta_phi >> phi >> phiR >> theta >> 
             DepA >> DepB >> DepC >> DepV >> DepW) {
 
             beam_pol = getPol(runnum);
@@ -535,6 +554,25 @@ int main(int argc, char *argv[]) {
                 }
             }
 
+            // Convert spherical coordinates to Cartesian coordinates for each hadron
+            double p1_x, p1_y, p1_z;
+            sphericalToCartesian(p1_p, p1_phi, p1_theta, p1_x, p1_y, p1_z);
+            
+            double p2_x, p2_y, p2_z;
+            sphericalToCartesian(p2_p, p2_phi, p2_theta, p2_x, p2_y, p2_z);
+            
+            // Calculate the total momentum components of the parent hadron
+            double p_parent_x = p1_x + p2_x;
+            double p_parent_y = p1_y + p2_y;
+            double p_parent_z = p1_z + p2_z;
+            
+            // Calculate the magnitude of the parent hadron's momentum
+            p_p = vectorMagnitude(p_parent_x, p_parent_y, p_parent_z);
+            
+            // Calculate the polar angle of the parent hadron's momentum
+            p_theta = vectorPolarAngle(p_parent_z, p_p);
+
+            t = gett(p_p, p_theta);
             t1 = gett(p1_p, p1_theta);
             t2 = gett(p2_p, p2_theta); 
             tmin = gettmin(x); 
