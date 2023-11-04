@@ -1350,9 +1350,9 @@ int main(int argc, char *argv[]) {
   dataReader.SetTree(data);  // Initialize the global variable
   mcReader.SetTree(mc);  // Initialize the global variable
 
-  createCorrelationPlots();
+  // createCorrelationPlots();
   createIntegratedKinematicPlots();
-  createIntegratedKinematicPlotsForBinsAndFits();
+  // createIntegratedKinematicPlotsForBinsAndFits();
   currentFits=0;
 
   for (size_t i = 0; i < allBins.size(); ++i) {
@@ -1366,7 +1366,7 @@ int main(int argc, char *argv[]) {
       performChi2Fits(output_file.c_str(), kinematic_file.c_str(), binNames[i], asymmetry);
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    if (argc == 3) { performMLMFits(output_file.c_str(), kinematic_file.c_str(), binNames[i]); }
+    // performMLMFits(output_file.c_str(), kinematic_file.c_str(), binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
     currentFits++;
