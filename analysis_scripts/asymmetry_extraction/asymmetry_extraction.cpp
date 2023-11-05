@@ -635,7 +635,6 @@ void performChi2Fits(const char* output_file, const char* kinematic_file,
   // Determine the number of bins
   size_t numBins = allBins[currentFits].size() - 1;
 
-  cout << "starting loop over bins" << endl;
   // Loop over each bin
   for (size_t i = 0; i < numBins; ++i) {
     cout << "Beginning chi2 fit for " << binNames[currentFits]
@@ -881,6 +880,7 @@ void createIntegratedKinematicPlots() {
     for (Int_t i = 0; i < branches->GetEntries(); ++i) {
         TBranch* branch = (TBranch*)branches->At(i);
         std::string branchName = branch->GetName();
+        cout << branchName << endl;
 
         if (std::find(branchesToSkip.begin(), branchesToSkip.end(), branchName) != branchesToSkip.end()) {
             continue; // Skip this branch
