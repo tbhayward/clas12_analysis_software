@@ -2,8 +2,8 @@
 #include "TMath.h" 
 
 std::map<std::string, HistConfig> histConfigs = {
-      // {"Delta_eta", {200, -3, 3}},
-      // {"Delta_phi", {200, 0, 0, TMath::Pi()}},
+      {"Delta_eta", {200, -3, 3}},
+      {"Delta_phi", {200, 0, 0, TMath::Pi()}},
       {"DepA", {200, 0, 1}},
       {"DepB", {200, 0, 1}},
       {"DepC", {200, 0, 1}},
