@@ -1,6 +1,7 @@
 #include "KinematicCuts.h"
 #include "common_vars.h"
 #include <string>
+#include <cmath>
 
 using std::string;
 
@@ -56,6 +57,11 @@ bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
         if (property == "PTCFRpim" || property == "xCFRpim" || property == "zCFRpim" ||
           property == "Q2TFRpim") {
           goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *xF>0;
+        }
+        //
+        // epi+pi+X, exclusive rho
+        if (property == "exclusiveRhoIntegrated") {
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && fabs(*Mx-0.95)<0.15;
         }
 
         if (isMC) {
