@@ -65,4 +65,5 @@ runnum,evnum,helicity,e_p,e_theta,e_phi,vz_e,p1_p,p1_theta,p1_phi,vz_p1,Q2,W,Mx,
 #
 # epi+pi-X, exclusiveRho
 exclusiveRhoIntegrated,x,0,1
-#exclusiveRhoIntegrated,x,0.05,0.12,0.20,0.28,0.60
+exclusiveRhoIntegratedx,x,0.05,0.12,0.20,0.28,0.60
+exclusiveRhoIntegratedt,x,0.05,0.12,0.20,0.28,0.60

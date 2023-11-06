@@ -69,7 +69,13 @@ bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
         }
         //
         // epi+pi+X, exclusive rho
-        if (property == "exclusiveRhoIntegrated") {
+        if (property == "exclusiveRhoIntegrated" || property == "exclusiveRhoIntegratedx" ||
+            property == "exclusiveRhoIntegratedt") {
+
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && fabs(*Mx-0.95)<0.15 && 
+            fabs(*Mh-0.78)<0.10 && *z>0.80;
+        }
+        if (property == "exclusiveRhoTransversex" || property == "exclusiveRhoTransverset") {
           // Convert spherical coordinates to Cartesian for p1
           double p1_x, p1_y, p1_z;
           SphericalToCartesian(*p1_p, *p1_phi, *p1_theta, p1_x, p1_y, p1_z);
@@ -88,7 +94,28 @@ bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
           std::cout << magnitude << std::endl;
 
           goodEvent = *Q2>1 && *W>2 && *y<0.75 && fabs(*Mx-0.95)<0.15 && 
-            fabs(*Mh-0.78)<0.10 && *z>0.80;
+            fabs(*Mh-0.78)<0.10 && *z>0.80 && magnitude<1.5;
+        }
+        if (property == "exclusiveRhoLongitudinalx" || property == "exclusiveRhoLongitudinalt") {
+          // Convert spherical coordinates to Cartesian for p1
+          double p1_x, p1_y, p1_z;
+          SphericalToCartesian(*p1_p, *p1_phi, *p1_theta, p1_x, p1_y, p1_z);
+
+          // Convert spherical coordinates to Cartesian for p2
+          double p2_x, p2_y, p2_z;
+          SphericalToCartesian(*p2_p, *p2_phi, *p2_theta, p2_x, p2_y, p2_z);
+
+          // Calculate the difference in components
+          double delta_x = p1_x - p2_x;
+          double delta_y = p1_y - p2_y;
+          double delta_z = p1_z - p2_z;
+
+          // Calculate the magnitude of the vector difference
+          double magnitude = sqrt(delta_x * delta_x + delta_y * delta_y + delta_z * delta_z);
+          std::cout << magnitude << std::endl;
+
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && fabs(*Mx-0.95)<0.15 && 
+            fabs(*Mh-0.78)<0.10 && *z>0.80 && magnitude>1.5;
         }
 
         if (isMC) {
