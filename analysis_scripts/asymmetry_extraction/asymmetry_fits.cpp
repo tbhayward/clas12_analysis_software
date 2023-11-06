@@ -12,7 +12,7 @@ double BSA_funcToFit(double* x, double* par) {
   // Retrieve the phi variable from the input x array
   double phi = x[0];
   // Calculate and return the value of the function for the given phi and parameters 
-  std::cout << ALU_offset + ALU_sinphi*sin(phi) << std::endl;
+  // std::cout << ALU_offset + ALU_sinphi*sin(phi) << std::endl;
   return ALU_offset + ALU_sinphi*sin(phi);
   // return (ALU_offset + ALU_sinphi*sin(phi)) / (1 + AUU_cosphi*cos(phi) + AUU_cos2phi*cos(2*phi));
 }
