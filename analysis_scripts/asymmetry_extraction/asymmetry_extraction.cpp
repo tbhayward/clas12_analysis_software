@@ -1355,6 +1355,7 @@ int main(int argc, char *argv[]) {
   createIntegratedKinematicPlots();
   // createIntegratedKinematicPlotsForBinsAndFits();
   currentFits=0;
+  dataReader.Restart(); mcReader.Restart();
 
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
