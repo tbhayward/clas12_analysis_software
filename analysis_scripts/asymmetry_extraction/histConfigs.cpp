@@ -17,23 +17,23 @@ std::map<std::string, HistConfig> histConfigs = {
       // {"eta1_gN", {200, -3, 3}},
       // {"eta2_gN", {200, -3, 3}},
       // {"e_theta", {200, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
-      // {"evnum", {200, 0, 0}},
-      // {"helicity", {2, -2, 2}},
-      // {"Mx", {200, 0., 3.}},
-      // {"Mx2", {200, -4, 10}},
-      // {"phi", {200, 0, 2 * TMath::Pi()}},
-      // {"phi1", {200, 0, 2 * TMath::Pi()}},
-      // {"phi2", {200, 0, 2 * TMath::Pi()}},
-      // {"phih", {200, 0, 2 * TMath::Pi()}},
-      // {"phiR", {200, 0, 2 * TMath::Pi()}},
-      // {"p_p", {200, 0, 6}},
-      // {"p_phi", {200, 0, 2 * TMath::Pi()}},
-      // {"p1_phi", {200, 0, 2 * TMath::Pi()}},
-      // {"p2_phi", {200, 0, 2 * TMath::Pi()}},
-      // {"pT", {200, 0, 1.2}},
-      // {"p_theta", {200, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
-      // {"p1_theta", {200, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
-      // {"p2_theta", {200, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
+      {"evnum", {200, 0, 0}},
+      {"helicity", {2, -2, 2}},
+      {"Mx", {200, 0., 3.}},
+      {"Mx2", {200, -4, 10}},
+      {"phi", {200, 0, 2 * TMath::Pi()}},
+      {"phi1", {200, 0, 2 * TMath::Pi()}},
+      {"phi2", {200, 0, 2 * TMath::Pi()}},
+      {"phih", {200, 0, 2 * TMath::Pi()}},
+      {"phiR", {200, 0, 2 * TMath::Pi()}},
+      {"p_p", {200, 0, 6}},
+      {"p_phi", {200, 0, 2 * TMath::Pi()}},
+      {"p1_phi", {200, 0, 2 * TMath::Pi()}},
+      {"p2_phi", {200, 0, 2 * TMath::Pi()}},
+      {"pT", {200, 0, 1.2}},
+      {"p_theta", {200, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
+      {"p1_theta", {200, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
+      {"p2_theta", {200, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
       {"Q2", {200, 0, 9}},
       {"runnum", {200, 0, 0}},
       {"theta", {200, 0, TMath::Pi()}},
