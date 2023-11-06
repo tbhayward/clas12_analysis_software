@@ -531,7 +531,6 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
 
       // Accumulate polarization and event count for mean polarization calculation
       sumPol += *beam_pol;
-      cout << *target_pol << endl;
       if (*target_pol > 0) {
         sumTargetPosPol += *target_pol;
         numEventsPosTarget++;
@@ -563,8 +562,6 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
     double Npm = histPosNeg->GetBinContent(iBin)/cpm;
     double Nmp = histNegPos->GetBinContent(iBin)/cmp;
     double Nmm = histNegNeg->GetBinContent(iBin)/cmm;
-
-    cout << Npp << " " << Npm << " " << Nmp << " " << Nmm << endl;
 
     // Calculate the asymmetry and error for the current bin
     double asymmetry = asymmetry_value_calculation(meanVariable, prefix, Npp, Npm, Nmp, Nmm, 
