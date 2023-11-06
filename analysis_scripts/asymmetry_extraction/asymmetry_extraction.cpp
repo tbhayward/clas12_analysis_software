@@ -531,6 +531,7 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
 
       // Accumulate polarization and event count for mean polarization calculation
       sumPol += *beam_pol;
+      cout << *target_pol << endl;
       if (*target_pol > 0) {
         sumTargetPosPol += *target_pol;
         numEventsPosTarget++;
