@@ -10,16 +10,16 @@ public:
     bool applyCuts(int currentFits, bool isMC);
 
 private:
-    TTreeReaderValue<double> p1_p;
-    TTreeReaderValue<double> p1_phi;
-    TTreeReaderValue<double> p1_theta;
-    TTreeReaderValue<double> p2_p;
-    TTreeReaderValue<double> p2_phi;
-    TTreeReaderValue<double> p2_theta;
+    // TTreeReaderValue<double> p1_p;
+    // TTreeReaderValue<double> p1_phi;
+    // TTreeReaderValue<double> p1_theta;
+    // TTreeReaderValue<double> p2_p;
+    // TTreeReaderValue<double> p2_phi;
+    // TTreeReaderValue<double> p2_theta;
+    // TTreeReaderValue<double> Mh;
     TTreeReaderValue<double> Q2;
     TTreeReaderValue<double> W;
     TTreeReaderValue<double> Mx;
-    TTreeReaderValue<double> Mh;
     TTreeReaderValue<double> x;
     TTreeReaderValue<double> y;
     TTreeReaderValue<double> z;
