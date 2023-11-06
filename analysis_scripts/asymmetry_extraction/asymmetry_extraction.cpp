@@ -880,7 +880,6 @@ void createIntegratedKinematicPlots() {
     for (Int_t i = 0; i < branches->GetEntries(); ++i) {
         TBranch* branch = (TBranch*)branches->At(i);
         std::string branchName = branch->GetName();
-        cout << branchName << endl;
 
         if (std::find(branchesToSkip.begin(), branchesToSkip.end(), branchName) != branchesToSkip.end()) {
             continue; // Skip this branch
@@ -1352,7 +1351,7 @@ int main(int argc, char *argv[]) {
   mcReader.SetTree(mc);  // Initialize the global variable
 
   // createCorrelationPlots();
-  createIntegratedKinematicPlots();
+  // createIntegratedKinematicPlots();
   // createIntegratedKinematicPlotsForBinsAndFits();
   currentFits=0;
   dataReader.Restart(); mcReader.Restart();
