@@ -6,8 +6,8 @@
 using std::string;
 
 KinematicCuts::KinematicCuts(TTreeReader& reader)
-    : Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), 
-      x(reader, "x"), y(reader, "y"), pT(reader, "pT"), 
+    : Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), Mh(reader, "Mh"), 
+      x(reader, "x"), y(reader, "y"), z(reader, "z"), pT(reader, "pT"), 
       xF(reader, "xF"), target_pol(reader, "target_pol") {}
 
 bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
