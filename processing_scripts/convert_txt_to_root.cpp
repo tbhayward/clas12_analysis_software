@@ -547,10 +547,8 @@ int main(int argc, char *argv[]) {
             if (runnum < 16000) { target_pol = 0; }
             else { 
                 for (const auto& run_info : run_info_list) {
-                    cout << run_info.runnum << " " << runnum << endl;
                     if (run_info.runnum == runnum) {
                         target_pol = run_info.target_polarization;
-                        cout << target_pol << endl;
                         break;
                     }
                 }
