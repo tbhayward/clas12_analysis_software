@@ -72,11 +72,11 @@ bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
         if (property == "exclusiveRhoIntegrated") {
           // Convert spherical coordinates to Cartesian for p1
           double p1_x, p1_y, p1_z;
-          SphericalToCartesian(p1_p, p1_phi, p1_theta, p1_x, p1_y, p1_z);
+          SphericalToCartesian(*p1_p, *p1_phi, *p1_theta, p1_x, p1_y, p1_z);
 
           // Convert spherical coordinates to Cartesian for p2
           double p2_x, p2_y, p2_z;
-          SphericalToCartesian(p2_p, p2_phi, p2_theta, p2_x, p2_y, p2_z);
+          SphericalToCartesian(*p2_p, *p2_phi, *p2_theta, p2_x, p2_y, p2_z);
 
           // Calculate the difference in components
           double delta_x = p1_x - p2_x;
