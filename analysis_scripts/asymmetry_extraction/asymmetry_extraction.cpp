@@ -522,7 +522,6 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
     // Check if the currentVariable is within the desired range
     if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
       sumVariable += *currentVariable;
-      cout << *currentVariable << endl;
 
       if (*helicity > 0 && *target_pol > 0) { histPosPos->Fill(*phi);} 
       else if (*helicity > 0 && *target_pol < 0) { histPosNeg->Fill(*phi);} 
@@ -563,6 +562,8 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
     double Npm = histPosNeg->GetBinContent(iBin)/cpm;
     double Nmp = histNegPos->GetBinContent(iBin)/cmp;
     double Nmm = histNegNeg->GetBinContent(iBin)/cmm;
+
+    cout << Npp << " " << Npm << " " << Nmp << " " << Nmm << endl;
 
     // Calculate the asymmetry and error for the current bin
     double asymmetry = asymmetry_value_calculation(meanVariable, prefix, Npp, Npm, Nmp, Nmm, 
