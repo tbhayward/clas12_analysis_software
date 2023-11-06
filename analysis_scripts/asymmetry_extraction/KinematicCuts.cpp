@@ -91,7 +91,6 @@ bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
 
           // Calculate the magnitude of the vector difference
           double magnitude = sqrt(delta_x * delta_x + delta_y * delta_y + delta_z * delta_z);
-          std::cout << magnitude << std::endl;
 
           goodEvent = *Q2>1 && *W>2 && *y<0.75 && fabs(*Mx-0.95)<0.15 && 
             fabs(*Mh-0.78)<0.10 && *z>0.80 && magnitude<1.5;
@@ -112,7 +111,6 @@ bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
 
           // Calculate the magnitude of the vector difference
           double magnitude = sqrt(delta_x * delta_x + delta_y * delta_y + delta_z * delta_z);
-          std::cout << magnitude << std::endl;
 
           goodEvent = *Q2>1 && *W>2 && *y<0.75 && fabs(*Mx-0.95)<0.15 && 
             fabs(*Mh-0.78)<0.10 && *z>0.80 && magnitude>1.5;
