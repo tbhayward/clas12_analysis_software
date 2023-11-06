@@ -4,8 +4,8 @@ std::string formatLabelName(const std::string& original) {
     std::map<std::string, std::string> specialLabels = {
         {"Q2", "Q^{2} (GeV^{2})"},
         {"W", "W (GeV)"},
-        {"Delta_eta", "#Delta #eta"},
-        {"Delta_phi", "#Delta #phi"},
+        {"Delta_eta", "#Delta#eta"},
+        {"Delta_phi", "#Delta#phi"},
         {"eta1", "#eta_{1}"},
         {"eta2", "#eta_{2}"},
         {"pT", "P_{T} (GeV)"},
