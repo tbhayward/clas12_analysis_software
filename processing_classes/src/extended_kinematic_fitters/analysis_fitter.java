@@ -459,6 +459,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                         double calc_max = maxparams_out_elec_had[pid][sector][region][0]+maxparams_out_elec_had[pid][sector][region][1]*x_New;
                         
                         track_success = y_New > calc_min && y_New < calc_max;
+                        System.out.println(track_success+" "+traj_Bank.getFloat("edge", current_Row));
                     } 
                 }
             }
