@@ -125,9 +125,8 @@ public static void main(String[] args) {
 
 		    // do not use the qa if it is MC (runnum = 11) 
 		    // do not use the qa if the run is from RGC (until QA is produced!)
-		    // boolean process_event = filter.isValid(research_Event) && 
-		    // 	(runnum == 11 || runnum >= 11571 || qa.OkForAsymmetry(runnum, evnum));
-		    boolean process_event = filter.isValid(research_Event);
+		    boolean process_event = filter.isValid(research_Event) && 
+		    	(runnum == 11 || runnum >= 11571 || qa.OkForAsymmetry(runnum, evnum));
 
 		    if (process_event) {
 
@@ -144,7 +143,7 @@ public static void main(String[] args) {
 							p1_int, current_p1, p2_int, current_p2);
 			            // this is my class for defining all relevant kinematic variables
 
-			            if (variables.channel_test(variables)) {
+			            if (variables.channel_test(variables) && variables.get_helicity()!=0) {
 			                helicity = variables.get_helicity(); // helicity of event
 
 			                // lab kinematics
