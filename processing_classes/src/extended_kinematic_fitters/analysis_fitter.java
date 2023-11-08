@@ -307,6 +307,7 @@ public class analysis_fitter extends GenericKinematicFitter {
             {{6.20459, -0.543148},{14.6326, -0.561623},{39.2154, -0.631762}}}};
         
         boolean track_success = true; 
+        System.out.println("HELLO WORLD");
         for (int current_Row = 0; current_Row < traj_Bank.rows(); current_Row++) {
             if (!track_success) { continue; }
             // loop over all entries in the trajectory bank
