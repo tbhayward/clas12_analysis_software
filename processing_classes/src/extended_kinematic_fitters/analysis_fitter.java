@@ -424,7 +424,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                         double calc_min = minparams_in_elec[pid][sector][region][0]+minparams_in_elec[pid][sector][region][1]*x_New;
                         double calc_max = maxparams_in_elec[pid][sector][region][0]+maxparams_in_elec[pid][sector][region][1]*x_New;
                         track_success = y_New > calc_min && y_New < calc_max;
-                        System.out.println(track_success+" "+traj_Bank.getFloat("edge", current_Row));
+//                        System.out.println(track_success+" "+traj_Bank.getFloat("edge", current_Row));
                     } 
                     else { // outbending electrons and hadrons
 //                        System.out.println(rec_Bank.getInt("pid", particle_Index));
