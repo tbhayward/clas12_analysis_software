@@ -74,7 +74,7 @@ public class Trihadrons {
 //        if (variables.helicity==0){ return false; }
         if (variables.Q2()<1) { return false; } 
         else if (variables.W()<2) { return false; } 
-//        else if (variables.y()>0.75) { return false; } 
+        else if (variables.y()>0.75) { return false; } 
 //        else if (variables.Mx()<1.5) { return false; } 
 //        else if (variables.xF1()<0.0) { return false; } 
 //        else if (variables.xF2()<0.0) { return false; } 
