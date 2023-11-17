@@ -74,7 +74,7 @@ bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
           goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *xF>0;
         }
         
-        epi+pi+X, exclusive rho
+        // epi+pi+X, exclusive rho
         if (property == "exclusiveRhoIntegrated" || property == "exclusiveRhoIntegratedx" ||
             property == "exclusiveRhoIntegratedt") {
 
