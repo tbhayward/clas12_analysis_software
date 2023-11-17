@@ -5,17 +5,18 @@
 
 using std::string;
 
-// KinematicCuts::KinematicCuts(TTreeReader& reader)
-//     : p1_p(reader, "p1_p"), p1_phi(reader, "p1_phi"), p1_theta(reader, "p1_theta"), 
-//       p2_p(reader, "p2_p"), p2_phi(reader, "p2_phi"), p2_theta(reader, "p2_theta"), 
-//       Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), Mh(reader, "Mh"), 
-//       x(reader, "x"), y(reader, "y"), z(reader, "z"), pT(reader, "pT"), 
-//       xF(reader, "xF"), target_pol(reader, "target_pol") {}
-
 KinematicCuts::KinematicCuts(TTreeReader& reader)
-    : Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), 
+    : p1_p(reader, "p1_p"), p1_phi(reader, "p1_phi"), p1_theta(reader, "p1_theta"), 
+      p2_p(reader, "p2_p"), p2_phi(reader, "p2_phi"), p2_theta(reader, "p2_theta"), 
+      Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), Mx1(reader, "Mx1"),
+      Mx23(reader, "Mx23"), Mh(reader, "Mh"), 
       x(reader, "x"), y(reader, "y"), z(reader, "z"), pT(reader, "pT"), 
       xF(reader, "xF"), target_pol(reader, "target_pol") {}
+
+// KinematicCuts::KinematicCuts(TTreeReader& reader)
+//     : Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), 
+//       x(reader, "x"), y(reader, "y"), z(reader, "z"), pT(reader, "pT"), 
+//       xF(reader, "xF"), target_pol(reader, "target_pol") {}
 
 // Function to convert spherical to Cartesian coordinates
 void SphericalToCartesian(double p, double phi, double theta, double &x, double &y, double &z) {
@@ -72,54 +73,54 @@ bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
           property == "Q2TFRpim") {
           goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *xF>0;
         }
-        //
-        // epi+pi+X, exclusive rho
-        // if (property == "exclusiveRhoIntegrated" || property == "exclusiveRhoIntegratedx" ||
-        //     property == "exclusiveRhoIntegratedt") {
+        
+        epi+pi+X, exclusive rho
+        if (property == "exclusiveRhoIntegrated" || property == "exclusiveRhoIntegratedx" ||
+            property == "exclusiveRhoIntegratedt") {
 
-        //   goodEvent = *Q2>1 && *W>2 && *y<0.75 && fabs(*Mx-0.95)<0.15 && 
-        //     fabs(*Mh-0.78)<0.10 && *z>0.80;
-        // }
-        // if (property == "exclusiveRhoTransversex" || property == "exclusiveRhoTransverset") {
-        //   // Convert spherical coordinates to Cartesian for p1
-        //   double p1_x, p1_y, p1_z;
-        //   SphericalToCartesian(*p1_p, *p1_phi, *p1_theta, p1_x, p1_y, p1_z);
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && fabs(*Mx1-0.775)<0.10 && 
+            fabs(*Mx23-0.938)<0.10 && fabs(*Mh-0.775)<0.15 && *z>0.80;
+        }
+        if (property == "exclusiveRhoTransversex" || property == "exclusiveRhoTransverset") {
+          // Convert spherical coordinates to Cartesian for p1
+          double p1_x, p1_y, p1_z;
+          SphericalToCartesian(*p1_p, *p1_phi, *p1_theta, p1_x, p1_y, p1_z);
 
-        //   // Convert spherical coordinates to Cartesian for p2
-        //   double p2_x, p2_y, p2_z;
-        //   SphericalToCartesian(*p2_p, *p2_phi, *p2_theta, p2_x, p2_y, p2_z);
+          // Convert spherical coordinates to Cartesian for p2
+          double p2_x, p2_y, p2_z;
+          SphericalToCartesian(*p2_p, *p2_phi, *p2_theta, p2_x, p2_y, p2_z);
 
-        //   // Calculate the difference in components
-        //   double delta_x = p1_x - p2_x;
-        //   double delta_y = p1_y - p2_y;
-        //   double delta_z = p1_z - p2_z;
+          // Calculate the difference in components
+          double delta_x = p1_x - p2_x;
+          double delta_y = p1_y - p2_y;
+          double delta_z = p1_z - p2_z;
 
-        //   // Calculate the magnitude of the vector difference
-        //   double magnitude = sqrt(delta_x * delta_x + delta_y * delta_y + delta_z * delta_z);
+          // Calculate the magnitude of the vector difference
+          double magnitude = sqrt(delta_x * delta_x + delta_y * delta_y + delta_z * delta_z);
 
-        //   goodEvent = *Q2>1 && *W>2 && *y<0.75 && fabs(*Mx-0.95)<0.15 && 
-        //     fabs(*Mh-0.78)<0.10 && *z>0.80 && magnitude<1.5;
-        // }
-        // if (property == "exclusiveRhoLongitudinalx" || property == "exclusiveRhoLongitudinalt") {
-        //   // Convert spherical coordinates to Cartesian for p1
-        //   double p1_x, p1_y, p1_z;
-        //   SphericalToCartesian(*p1_p, *p1_phi, *p1_theta, p1_x, p1_y, p1_z);
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && fabs(*Mx1-0.775)<0.10 && 
+            fabs(*Mx23-0.938)<0.10 && fabs(*Mh-0.775)<0.15 && *z>0.80 && magnitude<1.5;
+        }
+        if (property == "exclusiveRhoLongitudinalx" || property == "exclusiveRhoLongitudinalt") {
+          // Convert spherical coordinates to Cartesian for p1
+          double p1_x, p1_y, p1_z;
+          SphericalToCartesian(*p1_p, *p1_phi, *p1_theta, p1_x, p1_y, p1_z);
 
-        //   // Convert spherical coordinates to Cartesian for p2
-        //   double p2_x, p2_y, p2_z;
-        //   SphericalToCartesian(*p2_p, *p2_phi, *p2_theta, p2_x, p2_y, p2_z);
+          // Convert spherical coordinates to Cartesian for p2
+          double p2_x, p2_y, p2_z;
+          SphericalToCartesian(*p2_p, *p2_phi, *p2_theta, p2_x, p2_y, p2_z);
 
-        //   // Calculate the difference in components
-        //   double delta_x = p1_x - p2_x;
-        //   double delta_y = p1_y - p2_y;
-        //   double delta_z = p1_z - p2_z;
+          // Calculate the difference in components
+          double delta_x = p1_x - p2_x;
+          double delta_y = p1_y - p2_y;
+          double delta_z = p1_z - p2_z;
 
-        //   // Calculate the magnitude of the vector difference
-        //   double magnitude = sqrt(delta_x * delta_x + delta_y * delta_y + delta_z * delta_z);
+          // Calculate the magnitude of the vector difference
+          double magnitude = sqrt(delta_x * delta_x + delta_y * delta_y + delta_z * delta_z);
 
-        //   goodEvent = *Q2>1 && *W>2 && *y<0.75 && fabs(*Mx-0.95)<0.15 && 
-        //     fabs(*Mh-0.78)<0.10 && *z>0.80 && magnitude>1.5;
-        // }
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && fabs(*Mx1-0.775)<0.10 && 
+            fabs(*Mx23-0.938)<0.10 && fabs(*Mh-0.775)<0.15 && *z>0.80 && magnitude>1.5;
+        }
 
         if (isMC) {
             return goodEvent;

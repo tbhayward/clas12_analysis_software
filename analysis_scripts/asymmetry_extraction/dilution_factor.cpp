@@ -128,5 +128,10 @@ double dilution_factor(double currentVariable, const std::string& prefix) {
     return 0.0997319+0.28069*currentVariable-0.547782*std::pow(currentVariable,2)+
       0.244802*std::pow(currentVariable,3);
   }
+  // erho0 (exclusive rho)
+  if (prefix == "exclusiveRhoIntegrated" || "exclusiveRhoIntegratedx" || 
+    "exclusiveRhoIntegratedt") {
+    return 0.652823;
+  }
   return 0.12;
 }

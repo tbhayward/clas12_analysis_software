@@ -5,7 +5,7 @@
 runnum,evnum,helicity,e_p,e_theta,e_phi,vz_e,p1_p,p1_theta,p1_phi,vz_p1,Q2,W,Mx,Mx1,Mx2,x,y,z,z1,z2,Mh,xF,xF1,xF2,pT,pT1,pT2,pTpT,zeta,zeta1,zeta2,eta,eta1,eta2,Delta_eta,eta1_gN,eta2_gN,phi1,phi2,Delta_phi,phi,phiR,theta,DepA,DepB,DepC,DepV,DepW
 -
 # epX
-xF,xF,-0.1,0.00,0.1
+#xF,xF,-0.1,0.00,0.1
 #xF,xF,-1.00,-0.50,-0.41,-0.32,-0.23,-0.14,-0.05,0.04,0.16,0.28,1.00
 #PTTFR,pT,0,0.18,0.36,0.54,0.72,1.30
 #PTCFR,pT,0,0.18,0.36,0.54,1.30
@@ -64,13 +64,13 @@ xF,xF,-0.1,0.00,0.1
 #
 #
 # epi+pi-X, exclusiveRho
-#exclusiveRhoIntegrated,x,0,1
+exclusiveRhoIntegrated,x,0,1
 #exclusiveRhoTransversex,x,0,1
 #exclusiveRhoTransverset,t,-20,0
 #exclusiveRhoLongitudinalx,x,0,1
 #exclusiveRhoLongitudinalt,t,-20,0
-#exclusiveRhoIntegratedx,x,0.05,0.20,0.30,0.80
-#exclusiveRhoIntegratedt,t,-15.0,-8.0,-5.0,-3.0,0.0
+exclusiveRhoIntegratedx,x,0.05,0.20,0.30,0.80
+exclusiveRhoIntegratedt,t,-15.0,-8.0,-5.0,-3.0,0.0
 #exclusiveRhoTransversex,x,0.05,0.20,0.30,0.80
 #exclusiveRhoTransverset,t,-15.0,-8.0,-5.0,-3.0,0.0
 #exclusiveRhoLongitudinalx,x,0.05,0.20,0.30,0.80
