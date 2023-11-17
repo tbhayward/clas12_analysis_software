@@ -85,17 +85,6 @@ public class Dihadrons {
 //        else if (variables.Mx() < 0.95) { return false; }
 //        else if (variables.Mx1()<1.50) { return false; } 
 //        else if (variables.Mx2()<1.50) { return false; } 
-//        else if (variables.Mh()<0.60 || variables.Mh() > 0.90) { return false; }
-//        else if (variables.xF1()<0.0) { return false; } 
-//        else if (variables.xF2()>0.0) { return false; } 
-//        else if (variables.z2()<0.2) { return false; } 
-//        else if (variables.vz_e() < -12 || variables.vz_e() > 6) { return false; }
-//        else if (variables.vz_p1() < -12 || variables.vz_p1() > 6) { return false; }
-//        else if (variables.vz_p2() < -12 || variables.vz_p2() > 6) { return false; }
-//        else if (variables.vz_e() < -10 || variables.vz_e() > 2.5) { return false; }
-//        else if (variables.vz_p1() < -8 || variables.vz_p1() > 3) { return false; }
-//        else if (variables.vz_p2() < -8 || variables.vz_p2() > 3) { return false; }
-//
 	return true;
     }
     

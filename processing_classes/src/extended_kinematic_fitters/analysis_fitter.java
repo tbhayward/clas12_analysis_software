@@ -708,7 +708,7 @@ public class analysis_fitter extends GenericKinematicFitter {
         double p = Math.sqrt(Math.pow(px,2)+Math.pow(py,2)+Math.pow(pz,2));
         
         return true
-            && p > 1.00
+            && p > 1.20
             && p < 3.5 
             && forward_detector_cut(particle_Index, rec_Bank)
             && pion_z_vertex_cut(vz, trigger_electron_vz)
