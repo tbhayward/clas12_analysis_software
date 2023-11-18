@@ -145,7 +145,8 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
   }
   dataReader.Restart();  // Reset the TTreeReader at the end of the function
   
-  TTreeReaderValue<double> mc_phi(mcReader, "phi");
+  // TTreeReaderValue<double> mc_phi(mcReader, "phi");
+  TTreeReaderValue<double> mc_phi(mcReader, "phi23");
   TTreeReaderValue<double> mc_DepA(mcReader, "DepA");
   TTreeReaderValue<double> mc_DepB(mcReader, "DepB");
   TTreeReaderValue<double> mc_DepC(mcReader, "DepC");
@@ -510,8 +511,8 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
   TTreeReaderValue<int> helicity(dataReader, "helicity");
   TTreeReaderValue<double> beam_pol(dataReader, "beam_pol");
   TTreeReaderValue<double> target_pol(dataReader, "target_pol");
-  TTreeReaderValue<double> phi(dataReader, "phi");
-  // TTreeReaderValue<double> phi(dataReader, "phi23");
+  // TTreeReaderValue<double> phi(dataReader, "phi");
+  TTreeReaderValue<double> phi(dataReader, "phi23");
   TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
 
   KinematicCuts kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
