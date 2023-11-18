@@ -16,7 +16,7 @@ KinematicCuts::KinematicCuts(TTreeReader& reader)
     : p1_p(reader, "p1_p"), p1_phi(reader, "p1_phi"), p1_theta(reader, "p1_theta"), 
       p2_p(reader, "p2_p"), p2_phi(reader, "p2_phi"), p2_theta(reader, "p2_theta"), 
       p3_p(reader, "p3_p"), p3_phi(reader, "p3_phi"), p3_theta(reader, "p3_theta"), 
-      Mx1(reader, "Mx1"), Mx23(reader, "Mx23"), Mh23(reader, "Mh23"),
+      Mx1(reader, "Mx1"), Mx23(reader, "Mx23"), Mh23(reader, "Mh23"), z23(reader, "z23"),
       Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), 
       x(reader, "x"), y(reader, "y"), z(reader, "z"), pT(reader, "pT"), 
       xF(reader, "xF"), target_pol(reader, "target_pol") {}
