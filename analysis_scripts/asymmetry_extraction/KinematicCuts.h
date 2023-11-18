@@ -19,6 +19,8 @@ private:
     TTreeReaderValue<double> Mh;
     TTreeReaderValue<double> Mx1;
     TTreeReaderValue<double> Mx23;
+    TTreeReaderValue<double> phi23;
+
     TTreeReaderValue<double> Q2;
     TTreeReaderValue<double> W;
     TTreeReaderValue<double> Mx;

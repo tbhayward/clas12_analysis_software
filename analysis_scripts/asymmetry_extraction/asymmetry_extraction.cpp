@@ -88,12 +88,18 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
   TTreeReaderValue<int> helicity(dataReader, "helicity");
   TTreeReaderValue<double> beam_pol(dataReader, "beam_pol");
   TTreeReaderValue<double> target_pol(dataReader, "target_pol");
-  TTreeReaderValue<double> phi(dataReader, "phi");
   TTreeReaderValue<double> DepA(dataReader, "DepA");
   TTreeReaderValue<double> DepB(dataReader, "DepB");
   TTreeReaderValue<double> DepC(dataReader, "DepC");
   TTreeReaderValue<double> DepV(dataReader, "DepV");
   TTreeReaderValue<double> DepW(dataReader, "DepW");
+  TTreeReader dataReader(tree);
+  TTreeReaderValue<double> phi;
+  if (tree->FindBranch("phi")) {
+      phi = TTreeReaderValue<double>(dataReader, "phi");
+  } else if (tree->FindBranch("phi23")) {
+      phi = TTreeReaderValue<double>(dataReader, "phi23");
+  }
   TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
 
   KinematicCuts data_kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
@@ -145,6 +151,14 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
   dataReader.Restart();  // Reset the TTreeReader at the end of the function
   
   TTreeReaderValue<double> mc_phi(mcReader, "phi");
+
+  TTreeReader mcReader(mc_tree);
+  TTreeReaderValue<double> mc_phi;
+  if (mc_tree->FindBranch("phi")) {
+      mc_phi = TTreeReaderValue<double>(mcReader, "phi");
+  } else if (mc_tree->FindBranch("phi23")) {
+      mc_phi = TTreeReaderValue<double>(mcReader, "phi23");
+  }
   TTreeReaderValue<double> mc_DepA(mcReader, "DepA");
   TTreeReaderValue<double> mc_DepB(mcReader, "DepB");
   TTreeReaderValue<double> mc_DepC(mcReader, "DepC");
@@ -509,7 +523,13 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
   TTreeReaderValue<int> helicity(dataReader, "helicity");
   TTreeReaderValue<double> beam_pol(dataReader, "beam_pol");
   TTreeReaderValue<double> target_pol(dataReader, "target_pol");
-  TTreeReaderValue<double> phi(dataReader, "phi");
+  TTreeReader dataReader(tree);
+  TTreeReaderValue<double> phi;
+  if (tree->FindBranch("phi")) {
+      phi = TTreeReaderValue<double>(dataReader, "phi");
+  } else if (tree->FindBranch("phi23")) {
+      phi = TTreeReaderValue<double>(dataReader, "phi23");
+  }
   TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
 
   KinematicCuts kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
