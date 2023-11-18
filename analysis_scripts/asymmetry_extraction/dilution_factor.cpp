@@ -131,7 +131,7 @@ double dilution_factor(double currentVariable, const std::string& prefix) {
   // erho0 (exclusive rho)
   if (prefix == "exclusiveRhoIntegrated" || "exclusiveRhoIntegratedx" || 
     "exclusiveRhoIntegratedt") {
-    return 0.652823;
+    return 0.680990505210383;
   }
   return 0.12;
 }
