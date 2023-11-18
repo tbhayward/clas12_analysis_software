@@ -40,6 +40,7 @@ std::map<std::string, HistConfig> histConfigs = {
       {"phi", {200, 0, 2 * TMath::Pi()}},
       {"phi1", {200, 0, 2 * TMath::Pi()}},
       {"phi2", {200, 0, 2 * TMath::Pi()}},
+      {"phi3", {200, 0, 2 * TMath::Pi()}},
       {"phih", {200, 0, 2 * TMath::Pi()}},
       {"phiR", {200, 0, 2 * TMath::Pi()}},
       {"p_p", {200, 0, 6}},
