@@ -5,17 +5,17 @@
 
 using std::string;
 
-KinematicCuts::KinematicCuts(TTreeReader& reader)
-    : p1_p(reader, "p1_p"), p1_phi(reader, "p1_phi"), p1_theta(reader, "p1_theta"), 
-      p2_p(reader, "p2_p"), p2_phi(reader, "p2_phi"), p2_theta(reader, "p2_theta"), 
-      Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), Mx1(reader, "Mx1"),
-      Mx23(reader, "Mx23"), Mh23(reader, "Mh23"), 
-      x(reader, "x"), y(reader, "y"), z23(reader, "z23"), target_pol(reader, "target_pol") {}
-
 // KinematicCuts::KinematicCuts(TTreeReader& reader)
-//     : Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), 
-//       x(reader, "x"), y(reader, "y"), z(reader, "z"), pT(reader, "pT"), 
-//       xF(reader, "xF"), target_pol(reader, "target_pol") {}
+//     : p1_p(reader, "p1_p"), p1_phi(reader, "p1_phi"), p1_theta(reader, "p1_theta"), 
+//       p2_p(reader, "p2_p"), p2_phi(reader, "p2_phi"), p2_theta(reader, "p2_theta"), 
+//       Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), Mx1(reader, "Mx1"),
+//       Mx23(reader, "Mx23"), Mh23(reader, "Mh23"), 
+//       x(reader, "x"), y(reader, "y"), z23(reader, "z23"), target_pol(reader, "target_pol") {}
+
+KinematicCuts::KinematicCuts(TTreeReader& reader)
+    : Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), 
+      x(reader, "x"), y(reader, "y"), z(reader, "z"), pT(reader, "pT"), 
+      xF(reader, "xF"), target_pol(reader, "target_pol") {}
 
 // Function to convert spherical to Cartesian coordinates
 void SphericalToCartesian(double p, double phi, double theta, double &x, double &y, double &z) {
