@@ -510,8 +510,8 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
   TTreeReaderValue<int> helicity(dataReader, "helicity");
   TTreeReaderValue<double> beam_pol(dataReader, "beam_pol");
   TTreeReaderValue<double> target_pol(dataReader, "target_pol");
-  // TTreeReaderValue<double> phi(dataReader, "phi");
-  TTreeReaderValue<double> phi(dataReader, "phi23");
+  TTreeReaderValue<double> phi(dataReader, "phi");
+  // TTreeReaderValue<double> phi(dataReader, "phi23");
   TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
 
   KinematicCuts kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
