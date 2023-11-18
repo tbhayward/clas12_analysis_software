@@ -110,7 +110,7 @@ bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
             fabs(*Mx23-0.938)<0.10 && fabs(*Mh23-0.775)<0.15 && *z23>0.80 && magnitude<1.5;
         }
         if (property == "exclusiveRhoLongitudinalx" || property == "exclusiveRhoLongitudinalt") {
-          / Convert spherical coordinates to Cartesian for p1
+          // Convert spherical coordinates to Cartesian for p1
           double p2_x, p2_y, p2_z;
           SphericalToCartesian(*p2_p, *p2_phi, *p2_theta, p2_x, p2_y, p2_z);
 
