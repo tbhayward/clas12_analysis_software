@@ -69,8 +69,8 @@ exclusiveRhoIntegrated,x,0,1
 #exclusiveRhoTransverset,t,-20,0
 #exclusiveRhoLongitudinalx,x,0,1
 #exclusiveRhoLongitudinalt,t,-20,0
-exclusiveRhoIntegratedx,x,0.05,0.20,0.30,0.80
-exclusiveRhoIntegratedt,t,-15.0,-8.0,-5.0,-3.0,0.0
+#exclusiveRhoIntegratedx,x,0.05,0.20,0.30,0.80
+#exclusiveRhoIntegratedt,t,-15.0,-8.0,-5.0,-3.0,0.0
 #exclusiveRhoTransversex,x,0.05,0.20,0.30,0.80
 #exclusiveRhoTransverset,t,-15.0,-8.0,-5.0,-3.0,0.0
 #exclusiveRhoLongitudinalx,x,0.05,0.20,0.30,0.80
