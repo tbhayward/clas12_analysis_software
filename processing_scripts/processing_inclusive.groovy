@@ -112,9 +112,9 @@ public static void main(String[] args) {
 
 		    if (process_event) {
 
-		        
-
-	            Inclusive variables = new Inclusive(event, research_Event);
+				// supply runnum and boolean for radiative simulation or not
+	        	BeamEnergy Eb = new BeamEnergy(runnum, false);		       
+	            Inclusive variables = new Inclusive(event, research_Event, Eb.Eb());
 	            // this is my class for defining all relevant kinematic variables
 
 	            if (variables.channel_test(variables)) {

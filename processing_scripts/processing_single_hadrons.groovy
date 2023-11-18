@@ -128,8 +128,8 @@ public static void main(String[] args) {
 		        // cycle over all hadrons
 		        for (int current_p1 = 0; current_p1 < num_p1; current_p1++) { 
 
-		        	BeamEnergy Eb = new BeamEnergy(runnum, true);
-		        	println(Eb.Eb());
+		        	// supply runnum and boolean for radiative simulation or not
+		        	BeamEnergy Eb = new BeamEnergy(runnum, false);
 		            Hadron variables = new Hadron(event, research_Event,
 		                    p1_int, current_p1, Eb.Eb());
 		            // this is my class for defining all relevant kinematic variables

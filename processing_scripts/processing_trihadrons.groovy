@@ -158,8 +158,10 @@ public static void main(String[] args) {
 							if (current_p1 == current_p3 && p1_Str.toInteger() == p3_Str.toInteger()) {continue; }
 							if (current_p2 == current_p3 && p2_Str.toInteger() == p3_Str.toInteger()) {continue; }
 
-				            Trihadrons variables = new Trihadrons(event, research_Event, 
-								p1_int, current_p1, p2_int, current_p2, p3_int, current_p3);
+							// supply runnum and boolean for radiative simulation or not
+				        	BeamEnergy Eb = new BeamEnergy(runnum, false);
+				            Trihadrons variables = new Trihadrons(event, research_Event, p1_int, 
+				            	current_p1, p2_int, current_p2, p3_int, current_p3, Eb.Eb());
 				            // this is my class for defining all relevant kinematic variables
 
 				            if (variables.channel_test(variables)) {
