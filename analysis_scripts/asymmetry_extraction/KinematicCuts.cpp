@@ -82,53 +82,53 @@ bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
           goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *xF>0;
         }
         
-        // // epi+pi+X, exclusive rho
-        // if (property == "exclusiveRhoIntegrated" || property == "exclusiveRhoIntegratedx" ||
-        //     property == "exclusiveRhoIntegratedt") {
+        // epi+pi+X, exclusive rho
+        if (property == "exclusiveRhoIntegrated" || property == "exclusiveRhoIntegratedx" ||
+            property == "exclusiveRhoIntegratedt") {
 
-        //   goodEvent = *Q2>1 && *W>2 && *y<0.75 && fabs(*Mx1-0.775)<0.10 && 
-        //     fabs(*Mx23-0.938)<0.10 && fabs(*Mh23-0.775)<0.15 && *z23>0.80;
-        // }
-        // if (property == "exclusiveRhoTransversex" || property == "exclusiveRhoTransverset") {
-        //   // Convert spherical coordinates to Cartesian for p1
-        //   double p2_x, p2_y, p2_z;
-        //   SphericalToCartesian(*p2_p, *p2_phi, *p2_theta, p2_x, p2_y, p2_z);
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && fabs(*Mx1-0.775)<0.10 && 
+            fabs(*Mx23-0.938)<0.10 && fabs(*Mh23-0.775)<0.15 && *z23>0.80;
+        }
+        if (property == "exclusiveRhoTransversex" || property == "exclusiveRhoTransverset") {
+          // Convert spherical coordinates to Cartesian for p1
+          double p2_x, p2_y, p2_z;
+          SphericalToCartesian(*p2_p, *p2_phi, *p2_theta, p2_x, p2_y, p2_z);
 
-        //   // Convert spherical coordinates to Cartesian for p2
-        //   double p3_x, p3_y, p3_z;
-        //   SphericalToCartesian(*p3_p, *p3_phi, *p3_theta, p3_x, p3_y, p3_z);
+          // Convert spherical coordinates to Cartesian for p2
+          double p3_x, p3_y, p3_z;
+          SphericalToCartesian(*p3_p, *p3_phi, *p3_theta, p3_x, p3_y, p3_z);
 
-        //   // Calculate the difference in components
-        //   double delta_x = p2_x - p3_x;
-        //   double delta_y = p2_y - p3_y;
-        //   double delta_z = p2_z - p3_z;
+          // Calculate the difference in components
+          double delta_x = p2_x - p3_x;
+          double delta_y = p2_y - p3_y;
+          double delta_z = p2_z - p3_z;
 
-        //   // Calculate the magnitude of the vector difference
-        //   double magnitude = sqrt(delta_x * delta_x + delta_y * delta_y + delta_z * delta_z);
+          // Calculate the magnitude of the vector difference
+          double magnitude = sqrt(delta_x * delta_x + delta_y * delta_y + delta_z * delta_z);
 
-        //   goodEvent = *Q2>1 && *W>2 && *y<0.75 && fabs(*Mx1-0.775)<0.10 && 
-        //     fabs(*Mx23-0.938)<0.10 && fabs(*Mh23-0.775)<0.15 && *z23>0.80 && magnitude<1.5;
-        // }
-        // if (property == "exclusiveRhoLongitudinalx" || property == "exclusiveRhoLongitudinalt") {
-        //   // Convert spherical coordinates to Cartesian for p1
-        //   double p2_x, p2_y, p2_z;
-        //   SphericalToCartesian(*p2_p, *p2_phi, *p2_theta, p2_x, p2_y, p2_z);
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && fabs(*Mx1-0.775)<0.10 && 
+            fabs(*Mx23-0.938)<0.10 && fabs(*Mh23-0.775)<0.15 && *z23>0.80 && magnitude<1.5;
+        }
+        if (property == "exclusiveRhoLongitudinalx" || property == "exclusiveRhoLongitudinalt") {
+          // Convert spherical coordinates to Cartesian for p1
+          double p2_x, p2_y, p2_z;
+          SphericalToCartesian(*p2_p, *p2_phi, *p2_theta, p2_x, p2_y, p2_z);
 
-        //   // Convert spherical coordinates to Cartesian for p2
-        //   double p3_x, p3_y, p3_z;
-        //   SphericalToCartesian(*p3_p, *p3_phi, *p3_theta, p3_x, p3_y, p3_z);
+          // Convert spherical coordinates to Cartesian for p2
+          double p3_x, p3_y, p3_z;
+          SphericalToCartesian(*p3_p, *p3_phi, *p3_theta, p3_x, p3_y, p3_z);
 
-        //   // Calculate the difference in components
-        //   double delta_x = p2_x - p3_x;
-        //   double delta_y = p2_y - p3_y;
-        //   double delta_z = p2_z - p3_z;
+          // Calculate the difference in components
+          double delta_x = p2_x - p3_x;
+          double delta_y = p2_y - p3_y;
+          double delta_z = p2_z - p3_z;
 
-        //   // Calculate the magnitude of the vector difference
-        //   double magnitude = sqrt(delta_x * delta_x + delta_y * delta_y + delta_z * delta_z);
+          // Calculate the magnitude of the vector difference
+          double magnitude = sqrt(delta_x * delta_x + delta_y * delta_y + delta_z * delta_z);
 
-        //   goodEvent = *Q2>1 && *W>2 && *y<0.75 && fabs(*Mx1-0.775)<0.10 && 
-        //     fabs(*Mx23-0.938)<0.10 && fabs(*Mh23-0.775)<0.15 && *z23>0.80 && magnitude>1.5;
-        // }
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && fabs(*Mx1-0.775)<0.10 && 
+            fabs(*Mx23-0.938)<0.10 && fabs(*Mh23-0.775)<0.15 && *z23>0.80 && magnitude>1.5;
+        }
 
         if (isMC) {
             return goodEvent;
