@@ -676,7 +676,7 @@ void performChi2Fits(const char* output_file, const char* kinematic_file,
     TTreeReaderValue<double> xF(dataReader, "xF");
     TTreeReaderValue<double> Mx(dataReader, "Mx");
     // TTreeReaderValue<double> t(dataReader, "t");
-    TTreeReaderValue<double> t1(dataReader, "t1");
+    TTreeReaderValue<double> t(dataReader, "t1");
     TTreeReaderValue<double> tmin(dataReader, "tmin");
     TTreeReaderValue<double> DepA(dataReader, "DepA");
     TTreeReaderValue<double> DepB(dataReader, "DepB");
