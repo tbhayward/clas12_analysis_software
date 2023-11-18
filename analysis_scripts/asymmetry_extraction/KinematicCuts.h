@@ -19,11 +19,10 @@ private:
     TTreeReaderValue<double> p3_p;
     TTreeReaderValue<double> p3_phi;
     TTreeReaderValue<double> p3_theta;
-    // TTreeReaderValue<double> Mh;
-    // TTreeReaderValue<double> Mh23;
-    // TTreeReaderValue<double> z23;
-    // TTreeReaderValue<double> Mx1;
-    // TTreeReaderValue<double> Mx23;
+    TTreeReaderValue<double> Mx1;
+    TTreeReaderValue<double> Mx23;
+    TTreeReaderValue<double> Mh23;
+    TTreeReaderValue<double> z23;
 
     TTreeReaderValue<double> Q2;
     TTreeReaderValue<double> W;
