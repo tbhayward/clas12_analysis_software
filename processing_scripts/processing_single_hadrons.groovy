@@ -131,7 +131,7 @@ public static void main(String[] args) {
 		        	BeamEnergy Eb = new BeamEnergy(runnum);
 		        	println(Eb.Eb())
 		            Hadron variables = new Hadron(event, research_Event,
-		                    p1_int, current_p1);
+		                    p1_int, current_p1, Eb.Eb());
 		            // this is my class for defining all relevant kinematic variables
 
 		            if (variables.channel_test(variables)) {
