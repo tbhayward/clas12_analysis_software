@@ -13,7 +13,8 @@ using std::string;
 //       x(reader, "x"), y(reader, "y"), z23(reader, "z23"), target_pol(reader, "target_pol") {}
 
 KinematicCuts::KinematicCuts(TTreeReader& reader)
-    : p1_p(reader, "p1_p"), Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), 
+    : p1_p(reader, "p1_p"), p1_phi(reader, "p1_phi"), p1_theta(reader, "p1_theta"),
+      Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), 
       x(reader, "x"), y(reader, "y"), z(reader, "z"), pT(reader, "pT"), 
       xF(reader, "xF"), target_pol(reader, "target_pol") {}
 
