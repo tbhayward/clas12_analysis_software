@@ -14,6 +14,7 @@ extern double cmm;
 extern double cpm;
 extern double cmp;
 extern double cpp;
+extern double total_charge_carbon;
 extern int currentFits;
 
 extern std::map<std::string, HistConfig> histConfigs;
