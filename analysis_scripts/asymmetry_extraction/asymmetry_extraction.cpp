@@ -1237,6 +1237,29 @@ int main(int argc, char *argv[]) {
       return 1;
   }
 
+  // Load data and mc root files
+  TFile* data_file = new TFile(argv[1], "READ");
+  TFile* mc_file = new TFile(argv[2], "READ");
+  if (!data_file->IsOpen() || !mc_file->IsOpen()) {
+    cout << "Error opening ROOT files (is the location correct?). Exiting." << endl;
+    return 2;
+  } else {
+    cout << "-- ROOT files opened successfully." << endl;
+  }
+  
+  TTree* data = (TTree*)data_file->Get("PhysicsEvents");
+  TTree* mc = (TTree*)mc_file->Get("PhysicsEvents");
+
+  if (!data || !mc) {
+    cout << "-- Error getting trees from ROOT files." << endl;
+    return 3;
+  } else {
+    cout << "-- Trees successfully extracted from ROOT files." << endl << endl;
+  }
+
+  dataReader.SetTree(data);  // Initialize the global variable
+  mcReader.SetTree(mc);  // Initialize the global variable
+
   // Generate output file names based on the input data file name and current time
   std::string dataRootFileName = argv[1];
   std::string baseName = dataRootFileName.substr(dataRootFileName.find_last_of("/\\") + 1);
@@ -1353,29 +1376,6 @@ int main(int argc, char *argv[]) {
   cout << "Total neg-pos charge: " << cmp << " (nc). ";
   cout << "Total neg-neg charge: " << cmm << " (nc). ";
   cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << " (nc)."<< endl << endl;
-
-  // Load data and mc root files
-  TFile* data_file = new TFile(argv[1], "READ");
-  TFile* mc_file = new TFile(argv[2], "READ");
-  if (!data_file->IsOpen() || !mc_file->IsOpen()) {
-    cout << "Error opening ROOT files (is the location correct?). Exiting." << endl;
-    return 2;
-  } else {
-    cout << "-- ROOT files opened successfully." << endl;
-  }
-  
-  TTree* data = (TTree*)data_file->Get("PhysicsEvents");
-  TTree* mc = (TTree*)mc_file->Get("PhysicsEvents");
-
-  if (!data || !mc) {
-    cout << "-- Error getting trees from ROOT files." << endl;
-    return 3;
-  } else {
-    cout << "-- Trees successfully extracted from ROOT files." << endl << endl;
-  }
-
-  dataReader.SetTree(data);  // Initialize the global variable
-  mcReader.SetTree(mc);  // Initialize the global variable
 
   // createCorrelationPlots();
   // createIntegratedKinematicPlots();
