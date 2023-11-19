@@ -1313,16 +1313,17 @@ int main(int argc, char *argv[]) {
   cmp = 0; // total accumulated charge of negative beam - positive target
   cmm = 0; // total accumulated charge of negative beam - negative target
   total_charge_carbon = 0; // total accumulated charge of carbon target
-  for (const auto& run_info : run_info_list) {
-      if (run_info.target_polarization > 0) {
-        cpp += run_info.positive_charge;
-        cmp += run_info.negative_charge;
-      } else if (run_info.target_polarization < 0) {
-        cpm += run_info.positive_charge;
-        cmm += run_info.negative_charge;
-      } else if (run_info.target_polarization == 0) {
-        total_charge_carbon += run_info.positive_charge+run_info.negative_charge;
-      }
+  charge_accumulation(dataReader, run_info_list);
+  // for (const auto& run_info : run_info_list) {
+  //     if (run_info.target_polarization > 0) {
+  //       cpp += run_info.positive_charge;
+  //       cmp += run_info.negative_charge;
+  //     } else if (run_info.target_polarization < 0) {
+  //       cpm += run_info.positive_charge;
+  //       cmm += run_info.negative_charge;
+  //     } else if (run_info.target_polarization == 0) {
+  //       total_charge_carbon += run_info.positive_charge+run_info.negative_charge;
+  //     }
   }
 
   cout << "Total pos-pos (beam-target) charge: " << cpp << " (nc). ";
