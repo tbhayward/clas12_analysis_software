@@ -12,24 +12,21 @@ void charge_accumulation(TTreeReader& dataReader, const std::vector<RunInfo>& ru
     TTreeReaderValue<int> runnum(dataReader, "runnum"); // For retrieving the runnum from the data
     std::cout << "Entered function." << std::endl;
     while (dataReader.Next()) {
-        bool passedKinematicCuts = kinematicCuts.applyCuts(currentFits, false);
         std::cout << "Entered dataReader." << std::endl;
-        if (passedKinematicCuts) {
-            if (processedRuns.find(*runnum) == processedRuns.end()) {
-                processedRuns.insert(*runnum);
-                std::cout << "Passed processed runs." << std::endl;
-                // Find run_info for the current run and update cpp, cpm, cmp, cmm
-                for (const auto& run_info : run_info_list) {
-                    if (run_info.runnum == *runnum) {
-                        if (run_info.target_polarization > 0) {
-                            cpp += run_info.positive_charge;
-                            cmp += run_info.negative_charge;
-                        } else if (run_info.target_polarization < 0) {
-                            cpm += run_info.positive_charge;
-                            cmm += run_info.negative_charge;
-                        }
-                        break;
+        if (processedRuns.find(*runnum) == processedRuns.end()) {
+            processedRuns.insert(*runnum);
+            std::cout << "Passed processed runs." << std::endl;
+            // Find run_info for the current run and update cpp, cpm, cmp, cmm
+            for (const auto& run_info : run_info_list) {
+                if (run_info.runnum == *runnum) {
+                    if (run_info.target_polarization > 0) {
+                        cpp += run_info.positive_charge;
+                        cmp += run_info.negative_charge;
+                    } else if (run_info.target_polarization < 0) {
+                        cpm += run_info.positive_charge;
+                        cmm += run_info.negative_charge;
                     }
+                    break;
                 }
             }
         }
