@@ -1313,7 +1313,29 @@ int main(int argc, char *argv[]) {
   cmp = 0; // total accumulated charge of negative beam - positive target
   cmm = 0; // total accumulated charge of negative beam - negative target
   total_charge_carbon = 0; // total accumulated charge of carbon target
-  charge_accumulation(dataReader, run_info_list);
+  std::set<int> processedRuns; // To keep track of processed runs
+  TTreeReaderValue<int> runnum(dataReader, "runnum"); // For retrieving the runnum from the data
+  std::cout << "Entered function." << std::endl;
+  while (dataReader.Next()) {
+      std::cout << "Entered dataReader." << std::endl;
+      if (processedRuns.find(*runnum) == processedRuns.end()) {
+          processedRuns.insert(*runnum);
+          std::cout << "Passed processed runs." << std::endl;
+          // Find run_info for the current run and update cpp, cpm, cmp, cmm
+          for (const auto& run_info : run_info_list) {
+              if (run_info.runnum == *runnum) {
+                  if (run_info.target_polarization > 0) {
+                      cpp += run_info.positive_charge;
+                      cmp += run_info.negative_charge;
+                  } else if (run_info.target_polarization < 0) {
+                      cpm += run_info.positive_charge;
+                      cmm += run_info.negative_charge;
+                  }
+                  break;
+              }
+          }
+      }
+  }
   // for (const auto& run_info : run_info_list) {
   //     if (run_info.target_polarization > 0) {
   //       cpp += run_info.positive_charge;
