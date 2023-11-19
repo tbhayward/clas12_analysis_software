@@ -90,7 +90,6 @@ public class Trihadrons {
         // load banks
         HipoDataBank eventBank = (HipoDataBank) event.getBank("REC::Event");
         HipoDataBank configBank = (HipoDataBank) event.getBank("RUN::config");
-        HipoDataBank rec_Bank = (HipoDataBank) event.getBank("REC::Particle"); // load particle bank
         
         helicity = eventBank.getByte("helicity", 0);
 //        helicity = eventBank.getByte("helicityRaw", 0);

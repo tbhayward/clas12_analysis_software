@@ -27,6 +27,7 @@ void charge_accumulation(TTreeReader& dataReader, const std::vector<RunInfo>& ru
                     }
                     if (run_info.positive_charge==0 || run_info.negative_charge == 0) {
                         std::cout<<"WARNING: run "<<*runnum<<" has no FC charge info."<<std::endl;
+                        std::cout<<"Proceed with caution."<<std::endl;
                     }
                     break;
                 }
