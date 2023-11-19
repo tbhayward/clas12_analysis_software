@@ -10,12 +10,9 @@ void charge_accumulation(TTreeReader& dataReader, const std::vector<RunInfo>& ru
     std::set<int> processedRuns; // To keep track of processed runs
     KinematicCuts kinematicCuts(dataReader); // Assumes KinematicCuts class is properly set up
     TTreeReaderValue<int> runnum(dataReader, "runnum"); // For retrieving the runnum from the data
-    std::cout << "Entered function." << std::endl;
     while (dataReader.Next()) {
-        std::cout << "Entered dataReader." << std::endl;
         if (processedRuns.find(*runnum) == processedRuns.end()) {
             processedRuns.insert(*runnum);
-            std::cout << "Passed processed runs." << std::endl;
             // Find run_info for the current run and update cpp, cpm, cmp, cmm
             for (const auto& run_info : run_info_list) {
                 if (run_info.runnum == *runnum) {
