@@ -32,4 +32,5 @@ void charge_accumulation(TTreeReader& dataReader, const std::vector<RunInfo>& ru
             }
         }
     }
+    cpp = 1000;
 }
