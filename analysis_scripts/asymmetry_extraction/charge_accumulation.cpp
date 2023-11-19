@@ -6,7 +6,7 @@
 #include "load_run_info_from_csv.h"
 
 // This function accumulates the charges for the runs that pass the kinematic cuts.
-void accumulateCharges(TTreeReader& dataReader, const std::vector<RunInfo>& run_info_list) {
+void charge_accumulation(TTreeReader& dataReader, const std::vector<RunInfo>& run_info_list) {
     std::set<int> processedRuns; // To keep track of processed runs
     KinematicCuts kinematicCuts(dataReader); // Assumes KinematicCuts class is properly set up
     TTreeReaderValue<int> runnum(dataReader, "runnum"); // For retrieving the runnum from the data
