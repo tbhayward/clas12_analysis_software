@@ -3,11 +3,9 @@
 
 #include <vector>
 #include "load_run_info_from_csv.h" // Include this if RunInfo is defined here
-
-// Assuming TTreeReader is part of ROOT libraries
 #include <TTreeReader.h>
 
 // Updated function declaration
-void accumulateCharges(TTreeReader& dataReader, const std::vector<RunInfo>& run_info_list);
+void charge_accumulation(TTreeReader& dataReader, const std::vector<RunInfo>& run_info_list);
 
 #endif // CHARGE_ACCUMULATION_H
