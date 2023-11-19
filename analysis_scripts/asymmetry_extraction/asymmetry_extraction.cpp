@@ -1339,11 +1339,11 @@ int main(int argc, char *argv[]) {
   // charge_acuumulation determines the total charges from the runs in supplied dataFile
   // by comparing to master list of CLAS12 runs 
   charge_accumulation(dataReader, run_info_list);
-  cout << "Total pos-pos (beam-target) charge: " << cpp << " (nc). ";
-  cout << "Total pos-neg charge: " << cpm << " (nc). ";
-  cout << "Total neg-pos charge: " << cmp << " (nc). ";
-  cout << "Total neg-neg charge: " << cmm << " (nc). ";
-  cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << " (nc)."<< endl << endl;
+  cout << "Total pos-pos (beam-target) charge: " << cpp << " (nC). ";
+  cout << "Total pos-neg charge: " << cpm << " (nC). ";
+  cout << "Total neg-pos charge: " << cmp << " (nC). ";
+  cout << "Total neg-neg charge: " << cmm << " (nC). ";
+  cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << " (nC)."<< endl << endl;
 
   // createCorrelationPlots();
   // createIntegratedKinematicPlots();
