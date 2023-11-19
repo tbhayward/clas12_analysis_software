@@ -25,6 +25,9 @@ void charge_accumulation(TTreeReader& dataReader, const std::vector<RunInfo>& ru
                     } else if (run_info.target_polarization == 0 && *runnum > 15000) {
                         total_charge_carbon+=run_info.positive_charge+run_info.negative_charge;
                     }
+                    if (run_info.positive_charge==0 || run_info.negative_charge == 0) {
+                        std::cout<<"WARNING: run "<<*runnum<<" has no FC charge info."<<std::endl;
+                    }
                     break;
                 }
             }
