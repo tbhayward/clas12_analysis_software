@@ -1324,7 +1324,7 @@ int main(int argc, char *argv[]) {
   //     } else if (run_info.target_polarization == 0) {
   //       total_charge_carbon += run_info.positive_charge+run_info.negative_charge;
   //     }
-  }
+  // }
 
   cout << "Total pos-pos (beam-target) charge: " << cpp << " (nc). ";
   cout << "Total pos-neg charge: " << cpm << " (nc). ";
