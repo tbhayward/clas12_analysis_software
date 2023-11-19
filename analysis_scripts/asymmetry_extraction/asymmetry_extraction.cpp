@@ -37,6 +37,7 @@
 #include "formatLabelName.h"
 #include "readChi2Fits.h"
 #include "histConfigs.h"
+#include "charge_accumulation.h"
 
 // Using namespace declaration
 using namespace std;
@@ -988,7 +989,7 @@ void createIntegratedKinematicPlots() {
 
 void createCorrelationPlots() {
     const std::string outputDir = "output/correlation_plots/";
-    const std::vector<std::string> branchesToSkip = {"helicity", "beam_pol", "target_pol", "runnum", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"};
+    const std::vector<std::string> branchesToSkip = {"helicity", "beam_pol", "target_pol", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"};
 
 
     // Assuming histConfigs is a global variable or it is accessible within this function's scope
@@ -1303,10 +1304,9 @@ int main(int argc, char *argv[]) {
   }
   cout << endl;
 
-  // load run infrom from external csv file
+  // load run info from external csv file
   load_run_info_from_csv("imports/run_info_rgc.csv");
   cout<< endl << endl <<"-- Loaded information from run_info_rgc.csv" << endl;
-
   cout << "Found " << run_info_list.size() << " runs." << endl;
   cpp = 0; // total accumulated charge of positive beam - positive target
   cpm = 0; // total accumulated charge of positive beam - negative target
@@ -1321,7 +1321,7 @@ int main(int argc, char *argv[]) {
         cpm += run_info.positive_charge;
         cmm += run_info.negative_charge;
       } else if (run_info.target_polarization == 0) {
-        total_charge_carbon += run_info.total_charge;
+        total_charge_carbon += run_info.positive_charge+run_info.negative_charge;
       }
   }
 
