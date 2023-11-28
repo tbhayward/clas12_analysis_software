@@ -148,7 +148,7 @@ public static void main(String[] args) {
 
 			            if (variables.channel_test(variables) && variables.get_helicity()!=0) {
 			                helicity = variables.get_helicity(); // helicity of event
-
+			                println("HELLO WORLD")
 			                // lab kinematics
 			                e_p = variables.e_p(); // lab frame momentum
 			                e_theta = variables.e_theta(); // lab polar angle
