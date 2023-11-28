@@ -55,6 +55,9 @@ double cmp = 0;
 double cpp = 0; 
 std::string mlmPrefix = "xF";
 
+int num_data_elec = 626802;
+int num_mc_elec = 1224069;
+
 
 // Negative log-likelihood function
 void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag) {
@@ -89,8 +92,8 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
   TTreeReaderValue<int> helicity(dataReader, "helicity");
   TTreeReaderValue<double> beam_pol(dataReader, "beam_pol");
   TTreeReaderValue<double> target_pol(dataReader, "target_pol");
-  // TTreeReaderValue<double> phi(dataReader, "phi");
-  TTreeReaderValue<double> phi(dataReader, "phi23");
+  TTreeReaderValue<double> phi(dataReader, "phi");
+  // TTreeReaderValue<double> phi(dataReader, "phi23");
   TTreeReaderValue<double> DepA(dataReader, "DepA");
   TTreeReaderValue<double> DepB(dataReader, "DepB");
   TTreeReaderValue<double> DepC(dataReader, "DepC");
@@ -146,8 +149,8 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
   }
   dataReader.Restart();  // Reset the TTreeReader at the end of the function
   
-  // TTreeReaderValue<double> mc_phi(mcReader, "phi");
-  TTreeReaderValue<double> mc_phi(mcReader, "phi23");
+  TTreeReaderValue<double> mc_phi(mcReader, "phi");
+  // TTreeReaderValue<double> mc_phi(mcReader, "phi23");
   TTreeReaderValue<double> mc_DepA(mcReader, "DepA");
   TTreeReaderValue<double> mc_DepB(mcReader, "DepB");
   TTreeReaderValue<double> mc_DepC(mcReader, "DepC");
@@ -512,8 +515,8 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
   TTreeReaderValue<int> helicity(dataReader, "helicity");
   TTreeReaderValue<double> beam_pol(dataReader, "beam_pol");
   TTreeReaderValue<double> target_pol(dataReader, "target_pol");
-  // TTreeReaderValue<double> phi(dataReader, "phi");
-  TTreeReaderValue<double> phi(dataReader, "phi23");
+  TTreeReaderValue<double> phi(dataReader, "phi");
+  // TTreeReaderValue<double> phi(dataReader, "phi23");
   TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
 
   KinematicCuts kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
@@ -676,8 +679,8 @@ void performChi2Fits(const char* output_file, const char* kinematic_file,
     TTreeReaderValue<double> pT(dataReader, "pT");
     TTreeReaderValue<double> xF(dataReader, "xF");
     TTreeReaderValue<double> Mx(dataReader, "Mx");
-    // TTreeReaderValue<double> t(dataReader, "t");
-    TTreeReaderValue<double> t(dataReader, "t1");
+    TTreeReaderValue<double> t(dataReader, "t");
+    // TTreeReaderValue<double> t(dataReader, "t1");
     TTreeReaderValue<double> tmin(dataReader, "tmin");
     TTreeReaderValue<double> DepA(dataReader, "DepA");
     TTreeReaderValue<double> DepB(dataReader, "DepB");
@@ -938,9 +941,13 @@ void createIntegratedKinematicPlots() {
             }
         }
 
+        // // Normalize the histograms
+        // dataHist->Scale(1.0 / dataHist->Integral());
+        // mcHist->Scale(1.0 / mcHist->Integral());
+
         // Normalize the histograms
-        dataHist->Scale(1.0 / dataHist->Integral());
-        mcHist->Scale(1.0 / mcHist->Integral());
+        dataHist->Scale(1.0 / num_data_elec);
+        mcHist->Scale(1.0 / num_mc_elec);
 
         // Find the maximum value for y-axis
         double maxY = 1.2*std::max(dataHist->GetMaximum(), mcHist->GetMaximum());
@@ -1172,12 +1179,20 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                     }
                 }
 
+                // // Normalize the histograms
+                // if (dataHist->Integral() != 0) {
+                //     dataHist->Scale(1.0 / dataHist->Integral());
+                // }
+                // if (mcHist->Integral() != 0) {
+                //     mcHist->Scale(1.0 / mcHist->Integral());
+                // }
+
                 // Normalize the histograms
                 if (dataHist->Integral() != 0) {
-                    dataHist->Scale(1.0 / dataHist->Integral());
+                    dataHist->Scale(1.0 / num_data_elec);
                 }
                 if (mcHist->Integral() != 0) {
-                    mcHist->Scale(1.0 / mcHist->Integral());
+                    mcHist->Scale(1.0 / num_mc_elec);
                 }
 
                 // Find the maximum y-value between both histograms to set the y-axis range
