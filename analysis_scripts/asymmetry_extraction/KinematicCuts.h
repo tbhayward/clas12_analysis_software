@@ -24,6 +24,7 @@ private:
     // TTreeReaderValue<double> Mh23;
     // TTreeReaderValue<double> z23;
 
+    TTreeReaderValue<int> runnum;
     TTreeReaderValue<double> Q2;
     TTreeReaderValue<double> W;
     TTreeReaderValue<double> Mx;
