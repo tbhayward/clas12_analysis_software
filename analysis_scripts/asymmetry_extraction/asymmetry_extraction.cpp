@@ -1163,9 +1163,10 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
 
                 // Fill the histograms
                 KinematicCuts kinematicCuts(dataReader);
+                cout << "entering" << endl;
                 while (dataReader.Next()) {
+                  cout << "entered" << endl;
                     bool passedKinematicCuts = kinematicCuts.applyCuts(fitIndex, false);
-                    cout << *dataVal << endl;
                     if (*binVariable >= binLowerEdge && *binVariable < binUpperEdge && passedKinematicCuts) {
                         dataHist->Fill(*dataVal);
                     }
