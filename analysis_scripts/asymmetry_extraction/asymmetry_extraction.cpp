@@ -56,7 +56,7 @@ double cpp = 0;
 std::string mlmPrefix = "xF";
 
 int num_data_elec = 626802;
-int num_mc_elec = 1224069;
+int num_mc_elec = 300366;
 
 
 // Negative log-likelihood function
