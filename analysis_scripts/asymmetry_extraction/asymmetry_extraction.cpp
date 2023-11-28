@@ -930,6 +930,7 @@ void createIntegratedKinematicPlots() {
           cout << "entered" << endl;
             bool passedKinematicCuts = kinematicCuts.applyCuts(0, false);
             if (*dataVal >= config.xMin && *dataVal < config.xMax && passedKinematicCuts) {
+              cout << "passed" << endl;
                 dataHist->Fill(*dataVal);
             }
         }
