@@ -134,7 +134,7 @@ public static void main(String[] args) {
 		        // get # of particles 
 		        int num_p1 = research_Event.countByPid(p1_Str.toInteger());
 		        int num_p2 = research_Event.countByPid(p2_Str.toInteger()); 
-		        println("HELLO WORLD")
+
 		        // cycle over all hadrons
 		        for (int current_p1 = 0; current_p1 < num_p1; current_p1++) { 
 		        	for (int current_p2 = 0; current_p2 < num_p2; current_p2++) { 
@@ -146,9 +146,9 @@ public static void main(String[] args) {
 							p1_int, current_p1, p2_int, current_p2, Eb.Eb());
 			            // this is my class for defining all relevant kinematic variables
 
-			            if (variables.channel_test(variables) && variables.get_helicity()!=0) {
+			            if (variables.channel_test(variables)) {
 			                helicity = variables.get_helicity(); // helicity of event
-			                
+
 			                // lab kinematics
 			                e_p = variables.e_p(); // lab frame momentum
 			                e_theta = variables.e_theta(); // lab polar angle
