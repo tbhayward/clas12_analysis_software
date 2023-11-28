@@ -928,7 +928,6 @@ void createIntegratedKinematicPlots() {
         while (dataReader.Next()) {
             bool passedKinematicCuts = kinematicCuts.applyCuts(0, false);
             if (*dataVal >= config.xMin && *dataVal < config.xMax && passedKinematicCuts) {
-              cout << "passed" << endl;
                 dataHist->Fill(*dataVal);
             }
         }
@@ -942,13 +941,13 @@ void createIntegratedKinematicPlots() {
             }
         }
 
-        // // Normalize the histograms
-        // dataHist->Scale(1.0 / dataHist->Integral());
-        // mcHist->Scale(1.0 / mcHist->Integral());
-
         // Normalize the histograms
-        dataHist->Scale(1.0 / num_data_elec);
-        mcHist->Scale(1.0 / num_mc_elec);
+        dataHist->Scale(1.0 / dataHist->Integral());
+        mcHist->Scale(1.0 / mcHist->Integral());
+
+        // // Normalize the histograms
+        // dataHist->Scale(1.0 / num_data_elec);
+        // mcHist->Scale(1.0 / num_mc_elec);
 
         // Find the maximum value for y-axis
         double maxY = 1.2*std::max(dataHist->GetMaximum(), mcHist->GetMaximum());
