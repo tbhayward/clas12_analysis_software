@@ -559,7 +559,7 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
   double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
   double meanPol = sumPol / numEvents; // mean beam polarization for data 
   double Ptp = numEventsPosTarget > 0 ? sumTargetPosPol / numEventsPosTarget : 1;
-  double Ptm = numEventsNegTarget > 0 ? -sumTargetNegPol / numEventsNegTarget : 1;
+  double Ptm = numEventsNegTarget > 0 ? -sumTargetNegPol / numEventsNegTarget : -1;
   // the negative sign here is correct; RGC lists the polarizations with signs to tell which is 
   // which but the polarization really should just be "percent of polarized nucleii"
   // the sign gives the helicity
@@ -1368,7 +1368,7 @@ int main(int argc, char *argv[]) {
   cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << " (nC)."<< endl << endl;
 
   // createCorrelationPlots();
-  createIntegratedKinematicPlots();
+  // createIntegratedKinematicPlots();
   // createIntegratedKinematicPlotsForBinsAndFits();
   currentFits=0;
   dataReader.Restart(); mcReader.Restart();
