@@ -587,7 +587,6 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
     histAsymmetry->SetBinContent(iBin, asymmetry);
     histAsymmetry->SetBinError(iBin, error);
   }
-  cout << "asymmetries and errors calculated" << endl;
 
   // Delete the temporary positive and negative helicity histograms
   delete histPosPos;
