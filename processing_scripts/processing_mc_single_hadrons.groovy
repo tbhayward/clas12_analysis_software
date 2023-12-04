@@ -126,7 +126,7 @@ public static void main(String[] args) {
 					Particle exp_e = research_Event.getParticleByPid(11,0);
 					Particle exp_p1 = research_Event.getParticleByPid(p1_Str.toInteger(),current_p1);
 
-					BeamEnergy Eb = new BeamEnergy(runnum, false);
+					BeamEnergy Eb = new BeamEnergy(runnum, true);
 					Hadron variables = new Hadron(event, research_Event, 
 						p1_Str.toInteger(), current_p1, Eb.Eb());
 					Hadron mc_variables = new Hadron(event, mc_Event, 
