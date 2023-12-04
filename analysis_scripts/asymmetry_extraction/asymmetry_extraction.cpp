@@ -1179,21 +1179,21 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                     }
                 }
 
-                // // Normalize the histograms
-                // if (dataHist->Integral() != 0) {
-                //     dataHist->Scale(1.0 / dataHist->Integral());
-                // }
-                // if (mcHist->Integral() != 0) {
-                //     mcHist->Scale(1.0 / mcHist->Integral());
-                // }
-
                 // Normalize the histograms
                 if (dataHist->Integral() != 0) {
-                    dataHist->Scale(1.0 / num_data_elec);
+                    dataHist->Scale(1.0 / dataHist->Integral());
                 }
                 if (mcHist->Integral() != 0) {
-                    mcHist->Scale(1.0 / num_mc_elec);
+                    mcHist->Scale(1.0 / mcHist->Integral());
                 }
+
+                // // Normalize the histograms
+                // if (dataHist->Integral() != 0) {
+                //     dataHist->Scale(1.0 / num_data_elec);
+                // }
+                // if (mcHist->Integral() != 0) {
+                //     mcHist->Scale(1.0 / num_mc_elec);
+                // }
 
                 // Find the maximum y-value between both histograms to set the y-axis range
                 double maxY = std::max(dataHist->GetMaximum(), mcHist->GetMaximum());
