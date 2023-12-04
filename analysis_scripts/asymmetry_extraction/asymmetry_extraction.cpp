@@ -557,7 +557,7 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
   double Ptm = - sumTargetNegPol / numEventsNegTarget;// mean negative target polarization for data
   // the negative sign here is correct; RGC lists the polarizations with signs to tell which is 
   // which but the polarization really should just be "percent of polarized nucleii"
-  cout << "means calculated" << endl;
+
   // Create the asymmetry histogram
   int numBins = histPosPos->GetNbinsX();
   TH1D* histAsymmetry = new TH1D(Form("%s_asymmetry", histName), "", 
@@ -580,6 +580,7 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
     histAsymmetry->SetBinContent(iBin, asymmetry);
     histAsymmetry->SetBinError(iBin, error);
   }
+  cout << "asymmetries and errors calculated" << endl;
 
   // Delete the temporary positive and negative helicity histograms
   delete histPosPos;
