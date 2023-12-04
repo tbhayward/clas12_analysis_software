@@ -52,6 +52,7 @@ bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
         // epi+X
         if (property == "xFpip") { 
           goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75;
+          cout << "are we here?" << endl;
         }
         if (property == "PTTFRpip" || property ==  "xTFRpip" || property == "zTFRpip" || 
           property == "Q2TFRpip" || property ==  "xpip") {
@@ -127,7 +128,6 @@ bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
             return goodEvent;
         } else {
             if (*runnum >= 11571) {
-              std::cout << "HELLO WORLD" << std::endl;
               return goodEvent && *target_pol != 0;
             }
             return goodEvent;

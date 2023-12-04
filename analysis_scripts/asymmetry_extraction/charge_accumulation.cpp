@@ -34,7 +34,9 @@ void charge_accumulation(TTreeReader& dataReader, const std::vector<RunInfo>& ru
             }
         }
     }
-    if (cpp == 0) { cpp = 1; }
+    if (cpp == 0) { 
+        cpp = 1; 
+        std::cout << "Target polarization not detected. Setting cii = 1." << std::endl; }
     if (cpm == 0) { cpm = 1; }
     if (cmp == 0) { cmp = 1; }
     if (cmm == 0) { cmm = 1; }
