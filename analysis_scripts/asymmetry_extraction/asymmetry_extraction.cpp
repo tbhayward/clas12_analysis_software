@@ -529,11 +529,13 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
     // Check if the currentVariable is within the desired range
     if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
       sumVariable += *currentVariable;
-      cout << "we're in" << endl;
-      if (*helicity > 0 && *target_pol > 0) { histPosPos->Fill(*phi);} 
-      else if (*helicity > 0 && *target_pol < 0) { histPosNeg->Fill(*phi);} 
-      else if (*helicity < 0 && *target_pol > 0) { histNegPos->Fill(*phi);} 
+
+      if (*helicity > 0 && *target_pol < 0) { histPosNeg->Fill(*phi);} 
       else if (*helicity < 0 && *target_pol < 0) { histNegNeg->Fill(*phi);}
+
+      if (*helicity > 0 && (*target_pol > 0 || *runnum < 15000) ) { histPosPos->Fill(*phi);} 
+      else if (*helicity < 0 (*target_pol > 0 || *runnum < 15000) ) { histNegPos->Fill(*phi);} 
+      
 
 
       // Accumulate polarization and event count for mean polarization calculation
@@ -553,10 +555,11 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
   // Calculate the mean polarization
   double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
   double meanPol = sumPol / numEvents; // mean beam polarization for data 
-  double Ptp = sumTargetPosPol / numEventsPosTarget;// mean positive target polarization for data
-  double Ptm = - sumTargetNegPol / numEventsNegTarget;// mean negative target polarization for data
+  double Ptp = numEventsPosTarget > 0 ? sumTargetPosPol / numEventsPosTarget : 1;
+  double Ptm = numEventsNegTarget > 0 ? -sumTargetNegPol / numEventsNegTarget : 1;
   // the negative sign here is correct; RGC lists the polarizations with signs to tell which is 
   // which but the polarization really should just be "percent of polarized nucleii"
+  // the sign gives the helicity
 
   // Create the asymmetry histogram
   int numBins = histPosPos->GetNbinsX();
