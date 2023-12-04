@@ -575,7 +575,7 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
       meanPol, Ptp, Ptm, asymmetry_index);
     double error = asymmetry_error_calculation(meanVariable, prefix, Npp, Npm, Nmp, Nmm, meanPol, 
       Ptp, Ptm, asymmetry_index);
-    cout << asymmetry << " " << error << endl;
+    cout << Npp << " " << Npm << " " << Nmp << " " << Nmm << " " << asymmetry << " " << error << endl;
 
     // Fill the asymmetry histogram with the calculated values
     histAsymmetry->SetBinContent(iBin, asymmetry);
