@@ -49,10 +49,10 @@ int currentFits = 0;
 size_t currentBin = 0;
 int n = 1;
 double total_charge_carbon = 0;
-double cmm = 1; 
-double cpm = 1; 
-double cmp = 1; 
-double cpp = 1; 
+double cmm = 0; 
+double cpm = 0; 
+double cmp = 0; 
+double cpp = 0; 
 std::string mlmPrefix = "xF";
 
 int num_data_elec = 626802;
@@ -521,6 +521,7 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
 
   KinematicCuts kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
   // Counter to limit the number of processed entries
+  cout << "entering while statement for createHistogramForBin" << endl;
   while (dataReader.Next()) {
 
     // Apply kinematic cuts (this function will need to be adapted)
