@@ -22,7 +22,7 @@ void charge_accumulation(TTreeReader& dataReader, const std::vector<RunInfo>& ru
                     } else if (run_info.target_polarization < 0) {
                         cpm += run_info.positive_charge;
                         cmm += run_info.negative_charge;
-                    } else if (run_info.target_polarization == 0 && *runnum > 15000) {
+                    } else if (run_info.target_polarization == 0 && *runnum > 11571) {
                         total_charge_carbon+=run_info.positive_charge+run_info.negative_charge;
                     }
                     if (run_info.positive_charge==0 || run_info.negative_charge == 0) {
