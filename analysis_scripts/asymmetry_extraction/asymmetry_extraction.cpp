@@ -487,7 +487,7 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
 
 TH1D* createHistogramForBin(const char* histName, int binIndex, 
   const std::string& prefix, int asymmetry_index) {
-  cout << "entered" << endl;
+
   // Determine the variable range for the specified bin
   double varMin = allBins[currentFits][binIndex];
   double varMax = allBins[currentFits][binIndex + 1];
@@ -521,6 +521,7 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
 
   KinematicCuts kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
   // Counter to limit the number of processed entries
+  cout << "entering while statement for createHistogramForBin" << endl;
   while (dataReader.Next()) {
 
     // Apply kinematic cuts (this function will need to be adapted)
