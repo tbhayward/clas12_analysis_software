@@ -530,12 +530,15 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
     if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
       sumVariable += *currentVariable;
 
-      if (*helicity > 0 && *target_pol < 0) { histPosNeg->Fill(*phi);} 
-      else if (*helicity < 0 && *target_pol < 0) { histNegNeg->Fill(*phi);}
+      if (*helicity > 0 && *target_pol < 0) { histPosNeg->Fill(*phi); } 
+      else if (*helicity < 0 && *target_pol > 0) { histNegPos->Fill(*phi); }
 
-      if (*helicity > 0 && (*target_pol > 0 || *runnum < 15000) ) { histPosPos->Fill(*phi);} 
-      else if (*helicity < 0 (*target_pol > 0 || *runnum < 15000) ) { histNegPos->Fill(*phi);} 
-      
+      if (*helicity > 0 && (*target_pol > 0 || *runnum < 15000) ) { histPosPos->Fill(*phi); } 
+      else if (*helicity < 0 && (*target_pol < 0 || *runnum < 15000) ) { histNegNeg->Fill(*phi); } 
+      // this structure allows the same script to run for both polarized and unpolarized targets
+      // if it is an RGC run with a polarized target (runnum > 15000) then we assign all four
+      // combinations, if it is an earlier experiment then we only assign PosPos and NegNeg
+      // and set the Ptp and Ptm below to 1, this allows for a regular BSA calculation
 
 
       // Accumulate polarization and event count for mean polarization calculation
