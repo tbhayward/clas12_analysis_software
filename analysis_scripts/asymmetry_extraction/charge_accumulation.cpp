@@ -15,7 +15,6 @@ void charge_accumulation(TTreeReader& dataReader, const std::vector<RunInfo>& ru
             processedRuns.insert(*runnum);
             // Find run_info for the current run and update cpp, cpm, cmp, cmm
             for (const auto& run_info : run_info_list) {
-                std::cout << run_info.runnum << std::endl;
                 if (run_info.runnum == *runnum) {
                     if (run_info.target_polarization > 0) {
                         cpp += run_info.positive_charge;
@@ -35,4 +34,8 @@ void charge_accumulation(TTreeReader& dataReader, const std::vector<RunInfo>& ru
             }
         }
     }
+    if (cpp == 0) { cpp = 1; }
+    if (cpm == 0) { cpm = 1; }
+    if (cmp == 0) { cmp = 1; }
+    if (cmm == 0) { cmm = 1; }
 }
