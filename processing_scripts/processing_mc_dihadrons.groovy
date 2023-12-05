@@ -1,7 +1,7 @@
 /*
  * author Timothy B. Hayward
  * 
- * SIDIS dihadron 
+ * SIDIS dihadron mc (generated and reconstructed variables saved)
  */
 
 import java.io.File;
@@ -487,8 +487,8 @@ public static void main(String[] args) {
 								.append(matching_e_pid).append(" ")			// 91
 								.append(matching_p1_pid).append(" ")		// 92
 								.append(matching_p2_pid).append(" ")		// 93
-								.append(matching_p1_parent).append(" ") 	// 94
-								.append(matching_p2_parent).append("\n"); 	// 95
+								.append(mc_p1_parent).append(" ") 	// 94
+								.append(mc_p2_parent).append("\n"); 	// 95
 
 							// Append the line to the batchLines StringBuilder
 			                batchLines.append(line.toString());
