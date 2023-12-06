@@ -142,7 +142,7 @@ public static void main(String[] args) {
 						Particle exp_p1 = research_Event.getParticleByPid(p1_Str.toInteger(),current_p1);
 						Particle exp_p2 = research_Event.getParticleByPid(p2_Str.toInteger(),current_p2);
 
-						BeamEnergy Eb = new BeamEnergy(runnum, true);
+						BeamEnergy Eb = new BeamEnergy(runnum, false);
 						Dihadrons variables = new Dihadrons(event, research_Event, 
 							p1_Str.toInteger(), current_p1, p2_Str.toInteger(), current_p2, 
 							Eb.Eb());
