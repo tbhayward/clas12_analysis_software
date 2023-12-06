@@ -40,10 +40,15 @@ public class BeamEnergy {
     
     public BeamEnergy(int runnum, boolean isRadiative) {
         // default beam energy set to rga fall 2018
-        Eb = 10.6041; // rga fall 2018
+        Eb = 10.6041; // RGA Fall 2018
         if (runnum >= 5032 && runnum <= 5666) { Eb = 10.6041; } // RGA Fall 2018
-        else if (runnum >= 5875 && runnum <= 5995) { Eb = 6.535; } // RGK Fall 2018
-        else if (runnum >= 5674 && runnum <= 5870) { Eb = 7.546; } // RGK Fall 2018
+        else if (runnum >= 2365 && runnum <= 2598) { Eb = 2.22193; } // "RGA" Spring 2018 engineering
+        else if (runnum >= 3030 && runnum <= 3106) { Eb = 6.42313; } // RGA Spring 2018 6 GeV
+        else if (runnum >= 3819 && runnum <= 3862) { Eb = 6.42313; } // RGA Spring 2018 6 GeV
+        else if (runnum >= 3172 && runnum <= 3817) { Eb = 10.5940; } // RGA Spring 2018 10 GeV
+        else if (runnum >= 3863 && runnum <= 4326) { Eb = 10.5940 ; } // RGA Spring 2018 10 GeV
+        else if (runnum >= 5875 && runnum <= 5995) { Eb = 6.535; } // RGK Fall 2018 6 GeV
+        else if (runnum >= 5674 && runnum <= 5870) { Eb = 7.546; } // RGK Fall 2018 7 GeV
         else if (runnum >= 6616 && runnum <= 6783) { Eb = 10.1998; } // RGA Spring 2019
         else if (runnum >= 6120 && runnum <= 6399) { Eb = 10.5986; } // RGB Spring 2019
         else if (runnum >= 6409 && runnum <= 6604) { Eb = 10.1998; } // RGB Spring 2019
