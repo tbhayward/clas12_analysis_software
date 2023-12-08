@@ -51,7 +51,7 @@ bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
         //
         // epi+X
         if (property == "xpip") { 
-          goodEvent = *xF>0 && *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && true;
+          goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *xF>0;
         }
         if (property == "PTTFRpip" || property ==  "xTFRpip" || property == "zTFRpip" || 
           property == "Q2TFRpip" || property ==  "xpip") {
