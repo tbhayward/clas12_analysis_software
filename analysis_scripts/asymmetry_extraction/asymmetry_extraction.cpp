@@ -901,6 +901,7 @@ void createIntegratedKinematicPlots() {
         }
 
         TTreeReaderValue<Double_t> dataVal(dataReader, branchName.c_str());
+        TTreeReaderValue<Double_t> xF(dataReader, "xF");
         TTreeReaderValue<Double_t> mcVal(mcReader, branchName.c_str());
 
         HistConfig config = {100, 0, 1}; // Default configuration
@@ -936,6 +937,7 @@ void createIntegratedKinematicPlots() {
             bool passedKinematicCuts = kinematicCuts.applyCuts(0, false);
             if (*dataVal >= config.xMin && *dataVal < config.xMax && passedKinematicCuts) {
                 dataHist->Fill(*dataVal);
+                cout << *xF << endl;
             }
         }
 
