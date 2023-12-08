@@ -29,6 +29,7 @@ void SphericalToCartesian(double p, double phi, double theta, double &x, double 
 bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
         bool goodEvent = false;
         string property = binNames[currentFits];
+        std::cout << property << std::endl;
 
         if (property == "xF") {
             goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.4 && *y < 0.75;
