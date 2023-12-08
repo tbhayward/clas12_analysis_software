@@ -934,11 +934,9 @@ void createIntegratedKinematicPlots() {
         // Loop over dataReader to fill the histogram
         KinematicCuts kinematicCuts(dataReader);
         while (dataReader.Next()) {
-            cout << *xF << endl;
             bool passedKinematicCuts = kinematicCuts.applyCuts(0, false);
             if (*dataVal >= config.xMin && *dataVal < config.xMax && passedKinematicCuts) {
                 dataHist->Fill(*dataVal);
-                cout << *xF << " " << config.xMin << " " << config.xMax << endl;
             }
         }
 
