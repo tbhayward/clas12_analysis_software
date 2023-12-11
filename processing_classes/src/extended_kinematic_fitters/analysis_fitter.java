@@ -479,8 +479,22 @@ public class analysis_fitter extends GenericKinematicFitter {
         return false; 
     }
     
+    
+    public int rich_detector_pid(int particle_Index, HipoDataBank rich_Bank) {
+        // Iterate through the rows of the data bank
+        for (int current_Row = 0; current_Row < rich_Bank.rows(); current_Row++) {
+            // Get the pindex for the current row
+            int pindex = rich_Bank.getInt("pindex", current_Row);
+            
+            // Check if the pindex value matches the specified particle
+            if (pindex == particle_Index) {
+                return rich_Bank.getInt("best_PID", current_Row);
+            }
+        }
+        return 0;
+    }
 
-   public boolean calorimeter_energy_cut(int particle_Index, HipoDataBank cal_Bank) {
+    public boolean calorimeter_energy_cut(int particle_Index, HipoDataBank cal_Bank) {
         // Iterate through the rows of the data bank
         for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
             // Get the pindex and layer values for the current row
@@ -830,22 +844,27 @@ public class analysis_fitter extends GenericKinematicFitter {
                 float vy = rec_Bank.getFloat("vy",particle_Index);
                 float vz = rec_Bank.getFloat("vz",particle_Index);
                 pion_vz = vz;
-                if (particle_test(particle_Index, rec_Bank) 
-                    && pion_test(particle_Index, pid, vz, trigger_electron_vz, rec_Bank, cal_Bank, 
-                    track_Bank, traj_Bank, run_Bank)) {
-                    // check for pion PID
-                   
-                   Particle part = new Particle(pid,px,py,pz,vx,vy,vz);
-                   physEvent.addParticle(part);   
-               }
+//                if (particle_test(particle_Index, rec_Bank) 
+//                    && pion_test(particle_Index, pid, vz, trigger_electron_vz, rec_Bank, cal_Bank, 
+//                    track_Bank, traj_Bank, run_Bank)) {
+//                    // check for pion PID
+//                   Particle part = new Particle(pid,px,py,pz,vx,vy,vz);
+//                   physEvent.addParticle(part);   
+//                }
+                if (event.hasBank("RICH::Particle")) {
+                    HipoDataBank rich_Bank = (HipoDataBank) event.getBank("RICH::Particle");
+                    pid = rich_detector_pid(particle_Index, rich_Bank);
+                    Particle part = new Particle(pid,px,py,pz,vx,vy,vz);
+                    physEvent.addParticle(part); 
+                }
             }
             
             for (int particle_Index = 0; particle_Index < rec_Bank.rows(); particle_Index++) {
                 int pid = rec_Bank.getInt("pid", particle_Index);
                 
-                
                 if ((Math.abs(pid)!=321) || trigger_electron_vz == -99) { continue; }
-                // requires the particle to be pion by EventBuilder and for an electron to have been assigned to event
+                // requires the particle to be pion by EventBuilder and 
+                // for an electron to have been assigned to event
                 // if no electron was assigned we just skip
                 
 //                if (pid == 321) { pid = 211; }
@@ -859,14 +878,20 @@ public class analysis_fitter extends GenericKinematicFitter {
                 float vy = rec_Bank.getFloat("vy",particle_Index);
                 float vz = rec_Bank.getFloat("vz",particle_Index);
                 pion_vz = vz;
-                if (particle_test(particle_Index, rec_Bank) 
-                    && kaon_test(particle_Index, pid, vz, trigger_electron_vz, rec_Bank, cal_Bank, 
-                    track_Bank, traj_Bank, run_Bank)) {
-                    // check for pion PID
-                   
-                   Particle part = new Particle(pid,px,py,pz,vx,vy,vz);
-                   physEvent.addParticle(part);   
-               }
+//                if (particle_test(particle_Index, rec_Bank) 
+//                    && kaon_test(particle_Index, pid, vz, trigger_electron_vz, rec_Bank, cal_Bank, 
+//                    track_Bank, traj_Bank, run_Bank)) {
+//                    // check for pion PID
+//                   
+//                   Particle part = new Particle(pid,px,py,pz,vx,vy,vz);
+//                   physEvent.addParticle(part);   
+//                }
+                if (event.hasBank("RICH::Particle")) {
+                    HipoDataBank rich_Bank = (HipoDataBank) event.getBank("RICH::Particle");
+                    pid = rich_detector_pid(particle_Index, rich_Bank);
+                    Particle part = new Particle(pid,px,py,pz,vx,vy,vz);
+                    physEvent.addParticle(part); 
+                }
             }
             
             
