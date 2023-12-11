@@ -204,7 +204,7 @@ public static void main(String[] args) {
 							.append(matching_p1_pid).append(" ")
 							.append(beta).append(" ")
 							.append(chi2pid).append("\n");
-						int numLines++;
+						numLines++;
 
 						// Append the line to the batchLines StringBuilder
 		                batchLines.append(line.toString());
