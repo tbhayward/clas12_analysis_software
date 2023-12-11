@@ -118,7 +118,6 @@ public static void main(String[] args) {
 				HipoDataBank recBank = (HipoDataBank) event.getBank("REC::Particle");
 				HipoDataBank richBank = (HipoDataBank) event.getBank("RICH::Particle");
 
-
 				int num_p1 = research_Event.countByPid(p1_Str.toInteger()); 
 
 				for (int current_p1 = 0; current_p1 < num_p1; current_p1++) {
@@ -140,7 +139,6 @@ public static void main(String[] args) {
 
 						int rich_pid = 0;
 						float beta, chi2pid;
-						HipoDataBank richBank = (HipoDataBank) event.getBank("RICH::Particle");
 						for(int current_part = 0; current_part < recBank.rows(); current_part++) {
 							if (recBank.getInt("pid", current_part) == p1_Str.toInteger()) {
 								beta = recBank.getFloat("beta", current_part);
