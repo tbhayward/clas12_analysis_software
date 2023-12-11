@@ -150,12 +150,13 @@ public static void main(String[] args) {
 							}
 						}
 						for (int current_Row = 0; current_Row < rich_Bank.rows(); current_Row++) {
-			            // Get the pindex for the current row
-			            int pindex = rich_Bank.getInt("pindex", current_Row);
-			            // Check if the pindex value matches the specified particle
-			            if (pindex == particle_Index) {
-			                rich_pid = rich_Bank.getInt("best_PID", current_Row);
-			            }
+				            // Get the pindex for the current row
+				            int pindex = rich_Bank.getInt("pindex", current_Row);
+				            // Check if the pindex value matches the specified particle
+				            if (pindex == particle_Index) {
+				                rich_pid = rich_Bank.getInt("best_PID", current_Row);
+				            }
+				        }
 			            if (rich_pid == 0) { continue; }
 
 						// Use a StringBuilder to append all data in a single call
