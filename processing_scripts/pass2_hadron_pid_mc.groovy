@@ -148,10 +148,9 @@ public static void main(String[] args) {
 						double mc_vz_p = mc_variables.vz_p();
 
 						matching_p1 = false;
-
 						matching_p1_pid = 0;
 						mc_p1_parent_index = 0;
-						for (int current_part = 0; current_part < 1; current_part++) {
+						for (int current_part = 0; current_part < mcBank.rows(); current_part++) {
 							int pid = mcBank.getInt("pid", current_part);
 							if (matching_p1) { continue; }
 							double mc_px = mcBank.getFloat("px", current_part);
