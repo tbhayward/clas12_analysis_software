@@ -115,8 +115,7 @@ public static void main(String[] args) {
 
 			if (filter.isValid(research_Event)) {
 
-				HipoDataBank recBank = (HipoDataBank) event.getBank("REC::Event");
-				HipoDataBank particleBank = (HipoDataBank) event.getBank("REC::Particle");
+				HipoDataBank recBank = (HipoDataBank) event.getBank("REC::Particle");
 				HipoDataBank lundBank = (HipoDataBank) event.getBank("MC::Lund");
 				HipoDataBank mcBank = (HipoDataBank) event.getBank("MC::Particle");
 
@@ -175,13 +174,12 @@ public static void main(String[] args) {
 
 						// int rich_pid = 0;
 						float beta, chi2pid;
-						int particle_Index = -1;
 						// if (event.hasBank("RICH::Particle")) {
 							// HipoDataBank richBank = (HipoDataBank) event.getBank("RICH::Particle");
-							for(int current_part = 0; current_part < particleBank.rows(); current_part++) {
-								if (particleBank.getFloat("vz", current_part) == vz_p) {
-									beta = particleBank.getFloat("beta", current_Part);
-				            		chi2pid = particleBank.getFloat("chi2pid", current_Part);
+							for(int current_part = 0; current_part < recBank.rows(); current_part++) {
+								if (recBank.getFloat("vz", current_part) == vz_p) {
+									beta = recBank.getFloat("beta", current_Part);
+				            		chi2pid = recBank.getFloat("chi2pid", current_Part);
 				            		particle_Index = current_part;
 								}
 							}
