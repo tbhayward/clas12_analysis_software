@@ -178,8 +178,8 @@ public static void main(String[] args) {
 							// HipoDataBank richBank = (HipoDataBank) event.getBank("RICH::Particle");
 							for(int current_part = 0; current_part < recBank.rows(); current_part++) {
 								if (recBank.getFloat("vz", current_part) == vz_p) {
-									beta = recBank.getFloat("beta", current_Part);
-				            		chi2pid = recBank.getFloat("chi2pid", current_Part);
+									beta = recBank.getFloat("beta", current_part);
+				            		chi2pid = recBank.getFloat("chi2pid", current_part);
 				            		particle_Index = current_part;
 								}
 							}
