@@ -857,7 +857,6 @@ public class analysis_fitter extends GenericKinematicFitter {
                     if (pid != 0) {
                         Particle part = new Particle(pid,px,py,pz,vx,vy,vz);
                         physEvent.addParticle(part);
-                        System.out.println(pid+"hello");
                     } 
                 }
             }
