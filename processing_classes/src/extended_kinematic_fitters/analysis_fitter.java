@@ -656,7 +656,7 @@ public class analysis_fitter extends GenericKinematicFitter {
     public boolean hadron_chi2pid_cut(int particle_Index, HipoDataBank rec_Bank) {
         float chi2pid = rec_Bank.getFloat("chi2pid", particle_Index);
         
-        return Math.abs(chi2pid) < 3;
+        return Math.abs(chi2pid) < 5;
     }
     
     public boolean random_photon_cut(int particle_Index, HipoDataBank rec_Bank) {
