@@ -174,24 +174,23 @@ public static void main(String[] args) {
 
 						// int rich_pid = 0;
 						float beta, chi2pid;
-						// int particle_Index = -1;
+						int particle_Index = -1;
 						// if (event.hasBank("RICH::Particle")) {
-						// 	HipoDataBank richBank = (HipoDataBank) event.getBank("RICH::Particle");
-						// 	for(int current_part = 0; current_part < recBank.rows(); current_part++) {
-						// 		if (recBank.getInt("vz", current_part) == vz_p) {
-						// 			float beta = rec_Bank.getFloat("beta", current_Part);
-				        //     		float chi2pid = rec_Bank.getFloat("chi2pid", current_Part);
-				        //     		particle_Index = current_part;
-						// 			rich_pid = richBank.getInt("best_PID", current_part);
-						// 		}
-						// 	}
-						// 	for (int current_Row = 0; current_Row < rich_Bank.rows(); current_Row++) {
-				        //     // Get the pindex for the current row
-				        //     int pindex = rich_Bank.getInt("pindex", current_Row);
-				        //     // Check if the pindex value matches the specified particle
-				        //     if (pindex == particle_Index) {
-				        //         rich_pid = rich_Bank.getInt("best_PID", current_Row);
-				        //     }
+							// HipoDataBank richBank = (HipoDataBank) event.getBank("RICH::Particle");
+							for(int current_part = 0; current_part < recBank.rows(); current_part++) {
+								if (recBank.getInt("vz", current_part) == vz_p) {
+									float beta = rec_Bank.getFloat("beta", current_Part);
+				            		float chi2pid = rec_Bank.getFloat("chi2pid", current_Part);
+				            		particle_Index = current_part;
+								}
+							}
+							// for (int current_Row = 0; current_Row < rich_Bank.rows(); current_Row++) {
+				            // // Get the pindex for the current row
+				            // int pindex = rich_Bank.getInt("pindex", current_Row);
+				            // // Check if the pindex value matches the specified particle
+				            // if (pindex == particle_Index) {
+				            //     rich_pid = rich_Bank.getInt("best_PID", current_Row);
+				            // }
 						// }
 
 						// Use a StringBuilder to append all data in a single call
