@@ -139,11 +139,12 @@ public static void main(String[] args) {
 
 						int rich_pid = 0;
 						float beta, chi2pid;
+						int particle_Index = 0;
 						for(int current_part = 0; current_part < recBank.rows(); current_part++) {
 							if (recBank.getInt("pid", current_part) == p1_Str.toInteger()) {
 								beta = recBank.getFloat("beta", current_part);
 			            		chi2pid = recBank.getFloat("chi2pid", current_part);
-			            		// particle_Index = current_part;
+			            		particle_Index = current_part;
 							}
 						}
 						for (int current_Row = 0; current_Row < richBank.rows(); current_Row++) {
