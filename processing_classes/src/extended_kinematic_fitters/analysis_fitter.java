@@ -854,8 +854,10 @@ public class analysis_fitter extends GenericKinematicFitter {
                 if (event.hasBank("RICH::Particle")) {
                     HipoDataBank rich_Bank = (HipoDataBank) event.getBank("RICH::Particle");
                     pid = rich_detector_pid(particle_Index, rich_Bank);
-                    Particle part = new Particle(pid,px,py,pz,vx,vy,vz);
-                    physEvent.addParticle(part); 
+                    if (pid != 0) {
+                        Particle part = new Particle(pid,px,py,pz,vx,vy,vz);
+                        physEvent.addParticle(part);
+                    } 
                 }
             }
             
@@ -889,8 +891,10 @@ public class analysis_fitter extends GenericKinematicFitter {
                 if (event.hasBank("RICH::Particle")) {
                     HipoDataBank rich_Bank = (HipoDataBank) event.getBank("RICH::Particle");
                     pid = rich_detector_pid(particle_Index, rich_Bank);
-                    Particle part = new Particle(pid,px,py,pz,vx,vy,vz);
-                    physEvent.addParticle(part); 
+                    if (pid != 0) {
+                        Particle part = new Particle(pid,px,py,pz,vx,vy,vz);
+                        physEvent.addParticle(part);
+                    } 
                 }
             }
             
