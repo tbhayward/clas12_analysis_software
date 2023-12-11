@@ -116,6 +116,7 @@ public static void main(String[] args) {
 			if (filter.isValid(research_Event) && event.hasBank("RICH::Particle")) {
 
 				HipoDataBank recBank = (HipoDataBank) event.getBank("REC::Particle");
+				HipoDataBank richBank = (HipoDataBank) event.getBank("RICH::Particle");
 
 
 				int num_p1 = research_Event.countByPid(p1_Str.toInteger()); 
