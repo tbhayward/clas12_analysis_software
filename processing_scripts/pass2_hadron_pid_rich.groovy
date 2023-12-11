@@ -81,7 +81,6 @@ public static void main(String[] args) {
 
 	int hadron_pair_counts = 0;
 	GenericKinematicFitter research_fitter = new analysis_fitter(10.6041);
-	GenericKinematicFitter mc_fitter = new monte_carlo_fitter(10.6041);
 	EventFilter filter = new EventFilter("11:"+p1_Str+":"+":X+:X-:Xn");
 
 	// create a StringBuilder for accumulating lines
@@ -113,13 +112,10 @@ public static void main(String[] args) {
 		    int evnum = event.getBank("RUN::config").getInt('event',0);
 
 		    PhysicsEvent research_Event = research_fitter.getPhysicsEvent(event);
-		    PhysicsEvent mc_Event = mc_fitter.getPhysicsEvent(event);
 
-			if (filter.isValid(research_Event)) {
+			if (filter.isValid(research_Event) && event.hasBank("RICH::Particle")) {
 
 				HipoDataBank recBank = (HipoDataBank) event.getBank("REC::Particle");
-				HipoDataBank lundBank = (HipoDataBank) event.getBank("MC::Lund");
-				HipoDataBank mcBank = (HipoDataBank) event.getBank("MC::Particle");
 
 
 				int num_p1 = research_Event.countByPid(p1_Str.toInteger()); 
@@ -143,65 +139,31 @@ public static void main(String[] args) {
 						double p_phi = variables.p_phi();
 						double vz_p = variables.vz_p();
 
-						// lab kinematics MC
-						double mc_p_p = mc_variables.p_p();
-						double mc_p_theta = mc_variables.p_theta();
-						double mc_p_phi = mc_variables.p_phi();
-						double mc_vz_p = mc_variables.vz_p();
-
-						matching_p1 = false;
-						matching_p1_pid = 0;
-						mc_p1_parent_index = 0;
-						for (int current_part = 0; current_part < mcBank.rows(); current_part++) {
-							int pid = mcBank.getInt("pid", current_part);
-							if (matching_p1) { continue; }
-							double mc_px = mcBank.getFloat("px", current_part);
-							double mc_py = mcBank.getFloat("py", current_part);
-							double mc_pz = mcBank.getFloat("pz", current_part);
-
-							double mc_phi = phi_calculation(mc_px, mc_py);
-							double mc_theta_lab = theta_calculation(mc_px, mc_py, mc_pz);
-
-							double exp_phi = phi_calculation(exp_p1.px(), exp_p1.py());
-							double exp_theta = theta_calculation(exp_p1.px(), exp_p1.py(), 
-								exp_p1.pz());
-
-							matching_p1 = Math.abs(exp_phi - mc_phi) < scale*3.0 && 
-								Math.abs(exp_theta - mc_theta_lab) < scale*1.0;
-							if (matching_p1) {
-								matching_p1_pid = pid;
+						int rich_pid = 0;
+						float beta, chi2pid;
+						HipoDataBank richBank = (HipoDataBank) event.getBank("RICH::Particle");
+						for(int current_part = 0; current_part < recBank.rows(); current_part++) {
+							if (recBank.getInt("pid", current_part) == p1_Str.toInteger()) {
+								beta = recBank.getFloat("beta", current_part);
+			            		chi2pid = recBank.getFloat("chi2pid", current_part);
+			            		// particle_Index = current_part;
 							}
 						}
-
-						// int rich_pid = 0;
-						float beta, chi2pid;
-						// if (event.hasBank("RICH::Particle")) {
-							// HipoDataBank richBank = (HipoDataBank) event.getBank("RICH::Particle");
-							for(int current_part = 0; current_part < recBank.rows(); current_part++) {
-								if (recBank.getInt("pid", current_part) == p1_Str.toInteger()) {
-									beta = recBank.getFloat("beta", current_part);
-				            		chi2pid = recBank.getFloat("chi2pid", current_part);
-				            		// particle_Index = current_part;
-								}
-							}
-							// for (int current_Row = 0; current_Row < rich_Bank.rows(); current_Row++) {
-				            // // Get the pindex for the current row
-				            // int pindex = rich_Bank.getInt("pindex", current_Row);
-				            // // Check if the pindex value matches the specified particle
-				            // if (pindex == particle_Index) {
-				            //     rich_pid = rich_Bank.getInt("best_PID", current_Row);
-				            // }
-						// }
+						for (int current_Row = 0; current_Row < rich_Bank.rows(); current_Row++) {
+			            // Get the pindex for the current row
+			            int pindex = rich_Bank.getInt("pindex", current_Row);
+			            // Check if the pindex value matches the specified particle
+			            if (pindex == particle_Index) {
+			                rich_pid = rich_Bank.getInt("best_PID", current_Row);
+			            }
+			            if (rich_pid == 0) { continue; }
 
 						// Use a StringBuilder to append all data in a single call
 		                StringBuilder line = new StringBuilder();
 						line.append(p_p).append(" ")
-							.append(mc_p_p).append(" ")
 							.append(p_theta).append(" ")
-							.append(mc_p_theta).append(" ")
 							.append(p_phi).append(" ")
-							.append(mc_p_phi).append(" ")
-							.append(matching_p1_pid).append(" ")
+							.append(rich_pid).append(" ")
 							.append(beta).append(" ")
 							.append(chi2pid).append("\n");
 						int numLines++;
@@ -229,8 +191,8 @@ public static void main(String[] args) {
 		}
 
 		println(); println();
-		print("1: p_p, 2: mc_p_p, 3: p_theta, 4: mc_p_theta, 5: p_phi, 6: mc_p_phi, ");
-		print("7: matching_p_pid, 8: beta, 9: chi2pid.\n");
+		print("1: p_p, 2: p_theta, 3: p_phi, ");
+		print("4: rich_PID, 5: beta, 6: chi2pid.\n");
 
 		println(); println();
 		println("Set p1 PID = "+p1_Str+"\n");
