@@ -123,7 +123,7 @@ bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
         //     fabs(*Mx23-0.938)<0.10 && fabs(*Mh23-0.775)<0.15 && *z23>0.80 && magnitude>1.5;
         // }
         if (isMC || *runnum < 11571) {
-            std::cout << "HEY WE SHOULD BE HERE" << std::endl;
+            // std::cout << "HEY WE SHOULD BE HERE" << std::endl;
             return goodEvent;
         } else {
             return goodEvent && *target_pol != 0;
