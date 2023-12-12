@@ -128,6 +128,7 @@ bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
             return goodEvent;
         } else {
             if (*runnum >= 11571) {
+              std::cout << "are we here?" << std::endl;
               return goodEvent && *target_pol != 0;
             }
             std::cout << goodEvent << std::endl << std::endl << std::endl;
