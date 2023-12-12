@@ -1,8 +1,8 @@
 # Timothy B. Hayward
 # bin names given before the first comma, bin edges proceed after this point
 # keep in mind this is definining bin *edges*, so you will have n-1 bins in total
-#runnum,evnum,helicity,e_p,e_theta,e_phi,vz_e,p_p,p_theta,p_phi,vz_p,Q2,W,Mx,Mx2,x,y,z,xF,pT,zeta,eta,phi,DepA,DepB,DepC,DepV,DepW
-runnum,evnum,helicity,e_p,e_theta,e_phi,vz_e,p1_p,p1_theta,p1_phi,vz_p1,Q2,W,Mx,Mx1,Mx2,x,y,z,z1,z2,Mh,xF,xF1,xF2,pT,pT1,pT2,pTpT,zeta,zeta1,zeta2,eta,eta1,eta2,Delta_eta,eta1_gN,eta2_gN,phi1,phi2,Delta_phi,phi,phiR,theta,DepA,DepB,DepC,DepV,DepW
+runnum,evnum,helicity,e_p,e_theta,e_phi,vz_e,p_p,p_theta,p_phi,vz_p,Q2,W,Mx,Mx2,x,y,z,xF,pT,zeta,eta,phi,DepA,DepB,DepC,DepV,DepW
+#runnum,evnum,helicity,e_p,e_theta,e_phi,vz_e,p1_p,p1_theta,p1_phi,vz_p1,Q2,W,Mx,Mx1,Mx2,x,y,z,z1,z2,Mh,xF,xF1,xF2,pT,pT1,pT2,pTpT,zeta,zeta1,zeta2,eta,eta1,eta2,Delta_eta,eta1_gN,eta2_gN,phi1,phi2,Delta_phi,phi,phiR,theta,DepA,DepB,DepC,DepV,DepW
 -
 # epX
 #xF,xF,-1,1
@@ -23,6 +23,8 @@ runnum,evnum,helicity,e_p,e_theta,e_phi,vz_e,p1_p,p1_theta,p1_phi,vz_p1,Q2,W,Mx,
 #
 # epi+X
 xpip,x,0.05,0.6
+xpip,x,0.05,0.2,0.4,0.6
+#xpip,p_p,1.000,1.333,1.667,2.000,2.333,2.667,3.000,3.333,3.667,4.000,4.333,4.667,5.000,5.333,5.667,6.000,6.333,6.667,7.000
 #xFpip,xF,-1.00,-0.36,-0.27,-0.18,-0.09,0.00,0.09,0.18,0.27,0.36,0.45,1.00
 #PTTFRpip,pT,0,0.27,0.36,0.45,0.54,1.30
 #PTCFRpip,pT,0,0.18,0.27,0.36,0.45,0.54,0.72,1.30
