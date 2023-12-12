@@ -935,8 +935,7 @@ void createIntegratedKinematicPlots() {
         KinematicCuts kinematicCuts(dataReader);
         while (dataReader.Next()) {
             bool passedKinematicCuts = kinematicCuts.applyCuts(0, false);
-            // if (*dataVal >= config.xMin && *dataVal < config.xMax && passedKinematicCuts) {
-            if (passedKinematicCuts) {
+            if (*dataVal >= config.xMin && *dataVal < config.xMax && passedKinematicCuts) {
                 cout << *xF << endl;
                 dataHist->Fill(*dataVal);
             }
