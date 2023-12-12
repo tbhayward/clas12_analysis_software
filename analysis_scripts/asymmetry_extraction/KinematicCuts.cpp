@@ -131,7 +131,7 @@ bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
               std::cout << "are we here?" << std::endl;
               return goodEvent && *target_pol != 0;
             }
-            std::cout << goodEvent << std::endl << std::endl << std::endl;
+            std::cout << goodEvent << "what about here?" << std::endl << std::endl;
             return goodEvent;
         }
     }
