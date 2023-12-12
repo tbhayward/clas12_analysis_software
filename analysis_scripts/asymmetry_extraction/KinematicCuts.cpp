@@ -130,7 +130,7 @@ bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
             if (*runnum >= 11571) {
               return goodEvent && *target_pol != 0;
             }
-            std::cout << goodEvent << std::endl << std::endl;
+            std::cout << goodEvent << std::endl << std::endl << std::endl;
             return goodEvent;
         }
     }
