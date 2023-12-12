@@ -123,7 +123,7 @@ bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
         //   goodEvent = *Q2>1 && *W>2 && *y<0.75 && fabs(*Mx1-0.775)<0.10 && 
         //     fabs(*Mx23-0.938)<0.10 && fabs(*Mh23-0.775)<0.15 && *z23>0.80 && magnitude>1.5;
         // }
-
+        std::cout << "MC: " << isMC << std::endl;
         if (isMC) {
             return goodEvent;
         } else {
