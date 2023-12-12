@@ -52,7 +52,7 @@ bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
         // epi+X
         if (property == "xpip") { 
           goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *xF>0;
-          std::cout << *xF << " " << goodEvent << std::endl;
+          std::cout << "1: " << *xF << " " << goodEvent << std::endl;
         }
         if (property == "PTTFRpip" || property ==  "xTFRpip" || property == "zTFRpip" || 
           property == "Q2TFRpip" || property ==  "xpip") {
@@ -75,6 +75,7 @@ bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
           property == "Q2TFRpim") {
           goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *xF>0;
         }
+        std::cout << "2: " << *xF << " " << goodEvent << std::endl;
         
         // // epi+pi+X, exclusive rho
         // if (property == "exclusiveRhoIntegrated" || property == "exclusiveRhoIntegratedx" ||
@@ -124,7 +125,7 @@ bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
         //     fabs(*Mx23-0.938)<0.10 && fabs(*Mh23-0.775)<0.15 && *z23>0.80 && magnitude>1.5;
         // }
         if (isMC || *runnum < 11571) {
-            std::cout << *xF << " " << goodEvent << std::endl << std::endl;
+            std::cout << "end: " << *xF << " " << goodEvent << std::endl << std::endl;
             return goodEvent;
         } else {
             return goodEvent && *target_pol != 0;
