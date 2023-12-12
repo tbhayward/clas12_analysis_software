@@ -62,6 +62,7 @@ bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
           property == "Q2TFRpip") {
           goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *xF>0;
         }
+        std::cout << "2: " << *xF << " " << goodEvent << std::endl;
         //
         // epi-X
         if (property == "xpim") { 
@@ -75,7 +76,6 @@ bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
           property == "Q2TFRpim") {
           goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *xF>0;
         }
-        std::cout << "2: " << *xF << " " << goodEvent << std::endl;
         
         // // epi+pi+X, exclusive rho
         // if (property == "exclusiveRhoIntegrated" || property == "exclusiveRhoIntegratedx" ||
