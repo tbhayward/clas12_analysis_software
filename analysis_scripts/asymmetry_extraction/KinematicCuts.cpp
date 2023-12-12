@@ -52,7 +52,6 @@ bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
         // epi+X
         if (property == "xpip") { 
           goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *xF>0;
-          std::cout << goodEvent << std::endl;
         }
         if (property == "PTTFRpip" || property ==  "xTFRpip" || property == "zTFRpip" || 
           property == "Q2TFRpip" || property ==  "xpip") {
@@ -123,12 +122,10 @@ bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
         //   goodEvent = *Q2>1 && *W>2 && *y<0.75 && fabs(*Mx1-0.775)<0.10 && 
         //     fabs(*Mx23-0.938)<0.10 && fabs(*Mh23-0.775)<0.15 && *z23>0.80 && magnitude>1.5;
         // }
-        if (isMC) {
+        if (isMC || *runnum < 11571) {
+            std::cout << "HEY WE SHOULD BE HERE" << std::endl;
             return goodEvent;
         } else {
-            if (*runnum >= 11571) {
-              return goodEvent && *target_pol != 0;
-            }
-            return goodEvent;
+            return goodEvent && *target_pol != 0;
         }
     }
