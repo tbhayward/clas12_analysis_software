@@ -656,7 +656,7 @@ public class analysis_fitter extends GenericKinematicFitter {
     public boolean hadron_chi2pid_cut(int particle_Index, HipoDataBank rec_Bank) {
         float chi2pid = rec_Bank.getFloat("chi2pid", particle_Index);
         
-        return Math.abs(chi2pid) < 5;
+        return Math.abs(chi2pid) < 3;
     }
     
     public boolean random_photon_cut(int particle_Index, HipoDataBank rec_Bank) {
@@ -703,12 +703,12 @@ public class analysis_fitter extends GenericKinematicFitter {
         double p = Math.sqrt(Math.pow(px,2)+Math.pow(py,2)+Math.pow(pz,2));
         
         return true
-            && p > 1.00
-//            && p < 5.00 // this wasn't used in the dihadron publication but was used in the submitted single pion
+            && p > 1.20
+            && p < 5.00 // this wasn't used in the dihadron publication but was used in the submitted single pion
             && forward_detector_cut(particle_Index, rec_Bank)
             && pion_z_vertex_cut(vz, trigger_electron_vz)
-//            && pion_chi2pid_cut(particle_Index, rec_Bank)
-            && hadron_chi2pid_cut(particle_Index, rec_Bank)
+            && pion_chi2pid_cut(particle_Index, rec_Bank)
+//            && hadron_chi2pid_cut(particle_Index, rec_Bank)
             && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
               ;
     }
@@ -722,8 +722,8 @@ public class analysis_fitter extends GenericKinematicFitter {
         double p = Math.sqrt(Math.pow(px,2)+Math.pow(py,2)+Math.pow(pz,2));
         
         return true
-            && p > 1.00
-//            && p < 3.5 
+            && p > 1.20
+            && p < 3.5 
             && forward_detector_cut(particle_Index, rec_Bank)
             && pion_z_vertex_cut(vz, trigger_electron_vz)
             && hadron_chi2pid_cut(particle_Index, rec_Bank)
