@@ -581,7 +581,7 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
       meanPol, Ptp, Ptm, asymmetry_index);
     double error = asymmetry_error_calculation(meanVariable, prefix, Npp, Npm, Nmp, Nmm, meanPol, 
       Ptp, Ptm, asymmetry_index);
-    
+
     // Fill the asymmetry histogram with the calculated values
     histAsymmetry->SetBinContent(iBin, asymmetry);
     histAsymmetry->SetBinError(iBin, error);
@@ -1368,8 +1368,8 @@ int main(int argc, char *argv[]) {
   cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << " (nC)."<< endl << endl;
 
   // createCorrelationPlots();
-  createIntegratedKinematicPlots();
-  createIntegratedKinematicPlotsForBinsAndFits();
+  // createIntegratedKinematicPlots();
+  // createIntegratedKinematicPlotsForBinsAndFits();
   currentFits=0;
   dataReader.Restart(); mcReader.Restart();
 
