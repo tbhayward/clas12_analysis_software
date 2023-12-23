@@ -109,7 +109,6 @@ public static void main(String[] args) {
 		    int evnum = event.getBank("RUN::config").getInt('event',0);
 
 		    PhysicsEvent research_Event = research_fitter.getPhysicsEvent(event);
-		    PhysicsEvent mc_Event = mc_fitter.getPhysicsEvent(event);
 
 			if (filter.isValid(research_Event)) {
 
