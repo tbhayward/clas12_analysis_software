@@ -78,8 +78,7 @@ public static void main(String[] args) {
 	}
 
 	int hadron_pair_counts = 0;
-	// GenericKinematicFitter research_fitter = new analysis_fitter(10.6041);
-	GenericKinematicFitter research_fitter = new event_builder_fitter(10.6041);
+	GenericKinematicFitter research_fitter = new analysis_fitter(10.6041);
 	EventFilter filter = new EventFilter("11:"+p1_Str+":"+":X+:X-:Xn");
 
 	// create a StringBuilder for accumulating lines

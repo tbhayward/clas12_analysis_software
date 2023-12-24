@@ -626,6 +626,68 @@ public class analysis_fitter extends GenericKinematicFitter {
 //        return Math.abs(vz) < 13;
     }
     
+    public boolean hadron_pass2_cut(int particle_Index, HipoDataBank rec_Bank) {
+        // Retrieve values from the data bank
+        float chi2pid = rec_Bank.getFloat("chi2pid", particle_Index);
+        float px = rec_Bank.getFloat("px", particle_Index);
+        float py = rec_Bank.getFloat("py", particle_Index);
+        float pz = rec_Bank.getFloat("pz", particle_Index);
+
+        // Calculate the momentum
+        double p = Math.sqrt(px * px + py * py + pz * pz);
+        // Determine the constant C based on the particle ID
+        int pid = rec_Bank.getInt("pid", particle_Index);
+        double C = (pid > 0) ? 1.12955 : 1.13167;
+        
+        if (pid == -211) {
+            if (p < 3) {
+                return chi2pid > -3*C && chi2pid < 3*C; 
+            } else {
+                return chi2pid > -3*C && chi2pid < chi2pid_cut(-0.7, 3*C+0.7, 0.9, 3, p);
+            }
+        }
+        
+        if (pid == -321) {
+            if (p < 2) {
+                return chi2pid > -3*C && chi2pid < 3*C; 
+            } else {
+                return chi2pid > chi2pid_cut(1.7, -3*C-1.7, 1.0, 2.0, p) && chi2pid < 3*C;
+            }
+        }
+        
+        if (pid == 211) {
+            if (p < 3.5) {
+                return chi2pid > -3*C && chi2pid < 3*C; 
+            } else {
+                return chi2pid > -3*C && chi2pid < chi2pid_cut(-0.55, 3*C+0.55, 0.55, 3.5, p);
+            }
+        }
+        
+        if (pid == 321) {
+            if (p < 2) {
+                return chi2pid > -3*C && chi2pid < 3*C; 
+            } else if (p > 2 && p < 2.5) {
+                return chi2pid > chi2pid_cut(1.2, -3*C-1.2, 0.6, 2, p) && chi2pid < 3*C;
+            } else {
+                return chi2pid > chi2pid_cut(1.2, -3*C-1.2, 0.6, 2, p) && chi2pid < chi2pid_cut(2.6, 3*C-2.6, 0.3, 2.5, p);
+            }
+        }
+        
+        if (pid == 2212) {
+            if (p < 2) {
+                return chi2pid > -3*C && chi2pid < 3*C; 
+            } else {
+                return chi2pid > chi2pid_cut(1.8, -3*C-1.8, 1.3, 2, p) && chi2pid < 3*C;
+            }
+        }
+        
+        return false; // not a hadron? 
+    }
+    
+    public double chi2pid_cut(double a, double b, double c, double x0, double p) {
+        return a + b * Math.exp(-(p-x0)/c);
+    }
+    
     public boolean pion_chi2pid_cut(int particle_Index, HipoDataBank rec_Bank) {
         // Retrieve values from the data bank
         float chi2pid = rec_Bank.getFloat("chi2pid", particle_Index);
@@ -706,10 +768,11 @@ public class analysis_fitter extends GenericKinematicFitter {
 //            && p > 1.00
 //            && p < 5.00 // this wasn't used in the dihadron publication but was used in the submitted single pion
             && forward_detector_cut(particle_Index, rec_Bank)
-//            && pion_z_vertex_cut(vz, trigger_electron_vz)
+            && pion_z_vertex_cut(vz, trigger_electron_vz)
+            && hadron_pass2_cut(particle_Index, rec_Bank)
 //            && pion_chi2pid_cut(particle_Index, rec_Bank)
 //            && hadron_chi2pid_cut(particle_Index, rec_Bank)
-//            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
+            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
               ;
     }
     
@@ -725,9 +788,10 @@ public class analysis_fitter extends GenericKinematicFitter {
 //            && p > 1.00
 //            && p < 3.5 
             && forward_detector_cut(particle_Index, rec_Bank)
-//            && pion_z_vertex_cut(vz, trigger_electron_vz)
+            && pion_z_vertex_cut(vz, trigger_electron_vz)
+            && hadron_pass2_cut(particle_Index, rec_Bank)
 //            && hadron_chi2pid_cut(particle_Index, rec_Bank)
-//            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
+            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
               ;
     }
     
@@ -742,9 +806,9 @@ public class analysis_fitter extends GenericKinematicFitter {
         
         return true
 //            && p > 0.4
-//            && proton_z_vertex_cut(vz, pion_vz)
+            && proton_z_vertex_cut(vz, pion_vz)
             && forward_detector_cut(particle_Index, rec_Bank)
-//            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
+            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
 //            && hadron_chi2pid_cut(particle_Index, rec_Bank)
               ;
     }
