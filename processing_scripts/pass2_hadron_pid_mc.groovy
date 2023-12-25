@@ -183,9 +183,9 @@ public static void main(String[] args) {
 								if (recBank.getInt("pid", current_part) == p1_Str.toInteger()) {
 									beta = recBank.getFloat("beta", current_part);
 				            		chi2pid = recBank.getFloat("chi2pid", current_part);
-				            		float px = recBank.getFloat("px", particle_Index);
-							        float py = recBank.getFloat("py", particle_Index);
-							        float pz = recBank.getFloat("pz", particle_Index);
+				            		float px = recBank.getFloat("px", current_part);
+							        float py = recBank.getFloat("py", current_part);
+							        float pz = recBank.getFloat("pz", current_part);
 							        p_p = Math.sqrt(Math.pow(px,2)+Math.pow(py,2)+Math.pow(pz,2));
 							        p_theta = theta_calculation(px, py, pz);
 						        	p_phi = phi_calculation(px, py);
