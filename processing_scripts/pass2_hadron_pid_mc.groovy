@@ -157,7 +157,7 @@ public static void main(String[] args) {
 							double mc_px = mcBank.getFloat("px", current_part);
 							double mc_py = mcBank.getFloat("py", current_part);
 							double mc_pz = mcBank.getFloat("pz", current_part);
-							mc_p_p = Math.sqrt(Math.pow(px,2)+Math.pow(py,2)+Math.pow(pz,2));
+							mc_p_p = Math.sqrt(Math.pow(mc_px,2)+Math.pow(mc_py,2)+Math.pow(mc_pz,2));
 							mc_p_theta = theta_calculation(mc_px, mc_py, mc_pz);
 					        mc_p_phi = phi_calculation(mc_px, mc_py);
 
