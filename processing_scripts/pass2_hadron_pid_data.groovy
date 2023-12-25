@@ -141,7 +141,7 @@ public static void main(String[] args) {
 			            		float px = rec_Bank.getFloat("px", particle_Index);
 						        float py = rec_Bank.getFloat("py", particle_Index);
 						        float pz = rec_Bank.getFloat("pz", particle_Index);
-						        double p_p = Math.sqrt(Math.pow(px,2)+Math.pow(py,2)+Math.pow(pz,2));
+						        p_p = Math.sqrt(Math.pow(px,2)+Math.pow(py,2)+Math.pow(pz,2));
 						        p_theta = theta_calculation(px, py, pz);
 						        p_phi = phi_calculation(px, py);
 							}
