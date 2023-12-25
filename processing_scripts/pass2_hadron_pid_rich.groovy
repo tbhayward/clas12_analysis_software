@@ -81,7 +81,7 @@ public static void main(String[] args) {
 
 	int hadron_pair_counts = 0;
 	GenericKinematicFitter research_fitter = new analysis_fitter(10.6041);
-	EventFilter filter = new EventFilter("11:"+p1_Str+":"+":X+:X-:Xn");
+	EventFilter filter = new EventFilter("11:X+:X-:Xn");
 
 	// create a StringBuilder for accumulating lines
 	StringBuilder batchLines = new StringBuilder();
@@ -132,7 +132,7 @@ public static void main(String[] args) {
 					if (variables.channel_test(variables)) {
 
 						// lab kinematics data
-						double p_p = variables.p_p();
+						double p_p;
 						double p_theta = variables.p_theta();
 						double p_phi = variables.p_phi();
 						double vz_p = variables.vz_p();
@@ -142,6 +142,10 @@ public static void main(String[] args) {
 						int particle_Index = 0;
 						for(int current_part = 0; current_part < recBank.rows(); current_part++) {
 							if (recBank.getInt("pid", current_part) == p1_Str.toInteger()) {
+								float px = rec_Bank.getFloat("px", particle_Index);
+						        float py = rec_Bank.getFloat("py", particle_Index);
+						        float pz = rec_Bank.getFloat("pz", particle_Index);
+						        p_p = Math.sqrt(Math.pow(px,2)+Math.pow(py,2)+Math.pow(pz,2));
 								beta = recBank.getFloat("beta", current_part);
 			            		chi2pid = recBank.getFloat("chi2pid", current_part);
 			            		particle_Index = current_part;

@@ -138,15 +138,15 @@ public static void main(String[] args) {
 					if (variables.channel_test(variables)) {
 
 						// lab kinematics data
-						double p_p = variables.p_p();
-						double p_theta = variables.p_theta();
-						double p_phi = variables.p_phi();
+						double p_p;
+						double p_theta;
+						double p_phi;
 						double vz_p = variables.vz_p();
 
 						// lab kinematics MC
-						double mc_p_p = mc_variables.p_p();
-						double mc_p_theta = mc_variables.p_theta();
-						double mc_p_phi = mc_variables.p_phi();
+						double mc_p_p;
+						double mc_p_theta;
+						double mc_p_phi;
 						double mc_vz_p = mc_variables.vz_p();
 
 						matching_p1 = false;
@@ -158,6 +158,8 @@ public static void main(String[] args) {
 							double mc_px = mcBank.getFloat("px", current_part);
 							double mc_py = mcBank.getFloat("py", current_part);
 							double mc_pz = mcBank.getFloat("pz", current_part);
+							mc_p_theta = theta_calculation(px, py, pz);
+					        mc_p_phi = phi_calculation(px, py);
 
 							double mc_phi = phi_calculation(mc_px, mc_py);
 							double mc_theta_lab = theta_calculation(mc_px, mc_py, mc_pz);
@@ -181,7 +183,12 @@ public static void main(String[] args) {
 								if (recBank.getInt("pid", current_part) == p1_Str.toInteger()) {
 									beta = recBank.getFloat("beta", current_part);
 				            		chi2pid = recBank.getFloat("chi2pid", current_part);
-				            		// particle_Index = current_part;
+				            		float px = rec_Bank.getFloat("px", particle_Index);
+							        float py = rec_Bank.getFloat("py", particle_Index);
+							        float pz = rec_Bank.getFloat("pz", particle_Index);
+							        p_p = Math.sqrt(Math.pow(px,2)+Math.pow(py,2)+Math.pow(pz,2));
+							        p_theta = theta_calculation(px, py, pz);
+						        	p_phi = phi_calculation(px, py);
 								}
 							}
 							// for (int current_Row = 0; current_Row < rich_Bank.rows(); current_Row++) {
