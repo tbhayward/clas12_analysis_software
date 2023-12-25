@@ -142,9 +142,9 @@ public static void main(String[] args) {
 						int particle_Index = 0;
 						for(int current_part = 0; current_part < recBank.rows(); current_part++) {
 							if (recBank.getInt("pid", current_part) == p1_Str.toInteger()) {
-								float px = rec_Bank.getFloat("px", particle_Index);
-						        float py = rec_Bank.getFloat("py", particle_Index);
-						        float pz = rec_Bank.getFloat("pz", particle_Index);
+								float px = recBank.getFloat("px", particle_Index);
+						        float py = recBank.getFloat("py", particle_Index);
+						        float pz = recBank.getFloat("pz", particle_Index);
 						        p_p = Math.sqrt(Math.pow(px,2)+Math.pow(py,2)+Math.pow(pz,2));
 								beta = recBank.getFloat("beta", current_part);
 			            		chi2pid = recBank.getFloat("chi2pid", current_part);
