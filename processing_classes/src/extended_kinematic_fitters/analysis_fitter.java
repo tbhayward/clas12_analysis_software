@@ -637,9 +637,10 @@ public class analysis_fitter extends GenericKinematicFitter {
         double p = Math.sqrt(px * px + py * py + pz * pz);
         // Determine the constant C based on the particle ID
         int pid = rec_Bank.getInt("pid", particle_Index);
-        double C = (pid > 0) ? 1.12955 : 1.13167;
+        double C = 1;
         
         if (pid == -211) {
+            C = 0.947;
             if (p < 3) {
                 return chi2pid > -3*C && chi2pid < 3*C; 
             } else {
@@ -648,6 +649,7 @@ public class analysis_fitter extends GenericKinematicFitter {
         }
         
         if (pid == -321) {
+            C = 0.958;
             if (p < 2) {
                 return chi2pid > -3*C && chi2pid < 3*C; 
             } else {
@@ -656,6 +658,7 @@ public class analysis_fitter extends GenericKinematicFitter {
         }
         
         if (pid == 211) {
+            C = 0.956;
             if (p < 3.5) {
                 return chi2pid > -3*C && chi2pid < 3*C; 
             } else {
@@ -664,6 +667,7 @@ public class analysis_fitter extends GenericKinematicFitter {
         }
         
         if (pid == 321) {
+            C = 0.985;
             if (p < 2) {
                 return chi2pid > -3*C && chi2pid < 3*C; 
             } else if (p > 2 && p < 2.5) {
@@ -674,10 +678,11 @@ public class analysis_fitter extends GenericKinematicFitter {
         }
         
         if (pid == 2212) {
+            C = 1.192;
             if (p < 2) {
                 return chi2pid > -3*C && chi2pid < 3*C; 
             } else {
-                return chi2pid > chi2pid_cut(1.8, -3*C-1.8, 1.3, 2, p) && chi2pid < 3*C;
+                return chi2pid > chi2pid_cut(2, -3*C-2, 0.9, 2, p) && chi2pid < 3*C;
             }
         }
         
