@@ -1368,8 +1368,8 @@ int main(int argc, char *argv[]) {
   cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << " (nC)."<< endl << endl;
 
   // createCorrelationPlots();
-  createIntegratedKinematicPlots();
-  createIntegratedKinematicPlotsForBinsAndFits();
+  // createIntegratedKinematicPlots();
+  // createIntegratedKinematicPlotsForBinsAndFits();
   currentFits=0;
   dataReader.Restart(); mcReader.Restart();
 
