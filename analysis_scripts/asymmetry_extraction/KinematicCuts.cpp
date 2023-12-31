@@ -15,8 +15,8 @@ using std::string;
 //       xF(reader, "xF"), target_pol(reader, "target_pol") {}
 
 KinematicCuts::KinematicCuts(TTreeReader& reader)
-    : runnum(reader, "runnum"), Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), 
-      x(reader, "x"), y(reader, "y"), z(reader, "z"), pT(reader, "pT"), 
+    : runnum(reader, "runnum"), p_theta(reader, "p_theta"), Q2(reader, "Q2"), W(reader, "W"), 
+        Mx(reader, "Mx"), x(reader, "x"), y(reader, "y"), z(reader, "z"), pT(reader, "pT"), 
       xF(reader, "xF"), target_pol(reader, "target_pol") {}
 
 // Function to convert spherical to Cartesian coordinates
@@ -51,7 +51,8 @@ bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
         //
         // epi+X
         if (property == "xpip") { 
-          goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *xF>0;
+          // goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *xF>0;
+            goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *xF>0 && *p_theta < 0.4;
             // goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0;
         }
         if (property == "PTTFRpip" || property ==  "xTFRpip" || property == "zTFRpip" || 
