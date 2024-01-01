@@ -637,52 +637,58 @@ public class analysis_fitter extends GenericKinematicFitter {
         double p = Math.sqrt(px * px + py * py + pz * pz);
         // Determine the constant C based on the particle ID
         int pid = rec_Bank.getInt("pid", particle_Index);
-        double C = 1;
+        double mu = 1;
+        double sigma =1 ;
         
         if (pid == -211) {
-            C = 0.947;
+            mu = -0.063;
+            sigma = 0.947;
             if (p < 3) {
-                return chi2pid > -3*C && chi2pid < 3*C; 
+                return chi2pid > mu-3*sigma && chi2pid < mu+3*sigma; 
             } else {
-                return chi2pid > -3*C && chi2pid < chi2pid_cut(-0.7, 3*C+0.7, 0.9, 3, p);
+                return chi2pid > mu-3*sigma && chi2pid < chi2pid_cut(-0.7, mu+3*sigma+0.7, 0.9, 3, p);
             }
         }
         
         if (pid == -321) {
-            C = 0.958;
+            mu = 0.115;
+            sigma = 0.958;
             if (p < 2) {
-                return chi2pid > -3*C && chi2pid < 3*C; 
+                return chi2pid > mu-3*sigma && chi2pid < mu+3*sigma; 
             } else {
-                return chi2pid > chi2pid_cut(1.7, -3*C-1.7, 1.0, 2.0, p) && chi2pid < 3*C;
+                return chi2pid > chi2pid_cut(1.7, mu-3*sigma-1.7, 1.0, 2.0, p) && chi2pid < mu+3*sigma;
             }
         }
         
         if (pid == 211) {
-            C = 0.956;
+            mu = -0.067;
+            sigma = 0.956;
             if (p < 3.5) {
-                return chi2pid > -3*C && chi2pid < 3*C; 
+                return chi2pid > mu-3*sigma && chi2pid < mu+3*sigma; 
             } else {
-                return chi2pid > -3*C && chi2pid < chi2pid_cut(-0.55, 3*C+0.55, 0.55, 3.5, p);
+                return chi2pid > mu-3*sigma && chi2pid < chi2pid_cut(-0.55, mu+3*sigma+0.55, 0.55, 3.5, p);
             }
         }
         
         if (pid == 321) {
-            C = 0.985;
+            mu = 0.082;
+            sigma = 0.985;
             if (p < 2) {
-                return chi2pid > -3*C && chi2pid < 3*C; 
+                return chi2pid > mu-3*sigma && chi2pid < mu+3*sigma; 
             } else if (p > 2 && p < 2.5) {
-                return chi2pid > chi2pid_cut(1.2, -3*C-1.2, 0.6, 2, p) && chi2pid < 3*C;
+                return chi2pid > chi2pid_cut(1.2, mu-3*sigma-1.2, 0.6, 2, p) && chi2pid < mu+3*sigma;
             } else {
-                return chi2pid > chi2pid_cut(1.2, -3*C-1.2, 0.6, 2, p) && chi2pid < chi2pid_cut(2.6, 3*C-2.6, 0.3, 2.5, p);
+                return chi2pid > chi2pid_cut(1.2, mu-3*sigma-1.2, 0.6, 2, p) && chi2pid < chi2pid_cut(2.6, mu+3*sigma-2.6, 0.3, 2.5, p);
             }
         }
         
         if (pid == 2212) {
-            C = 1.192;
+            mu = 0.372;
+            sigma = 1.192;
             if (p < 2) {
-                return chi2pid > -3*C && chi2pid < 3*C; 
+                return chi2pid > mu-3*sigma && chi2pid < mu+3*sigma; 
             } else {
-                return chi2pid > chi2pid_cut(2, -3*C-2, 0.9, 2, p) && chi2pid < 3*C;
+                return chi2pid > chi2pid_cut(2, mu-3*sigma-2, 0.9, 2, p) && chi2pid < mu+3*sigma;
             }
         }
         
