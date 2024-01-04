@@ -28,9 +28,9 @@ void compareTrees(const char* file1, const char* file2, const char* output) {
     // Set branch addresses
     double p_p, Mx;
     tree1->SetBranchAddress("p_p", &p_p);
-    tree1->SetBranchAddress("Mx", &Mx);
+    tree1->SetBranchAddress("Mx2", &Mx);
     tree2->SetBranchAddress("p_p", &p_p);
-    tree2->SetBranchAddress("Mx", &Mx);
+    tree2->SetBranchAddress("Mx2", &Mx);
 
     // Fill histograms
     Long64_t nEntries1 = tree1->GetEntries();
