@@ -101,11 +101,11 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         hist1[i]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
         hist1[i]->GetYaxis()->SetTitle("Counts");
 
-        // Draw the histograms
-        hist1[i]->SetLineColor(kBlack);
-        hist2[i]->SetLineColor(kRed);
-        hist1[i]->Draw();
-        hist2[i]->Draw("same");
+        // // Draw the histograms
+        // hist1[i]->SetLineColor(kBlack);
+        // hist2[i]->SetLineColor(kRed);
+        // hist1[i]->Draw();
+        // hist2[i]->Draw("same");
 
         // Create and add a legend
         TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9); // Adjust these coordinates as needed
