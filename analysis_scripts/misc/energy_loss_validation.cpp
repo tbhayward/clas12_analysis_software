@@ -42,14 +42,14 @@ void compareTrees(const char* file1, const char* file2, const char* output) {
         tree1->GetEntry(i);
         for (int b = 0; b < nBins; ++b) {
             if (p_p >= binEdges[b] && p_p < binEdges[b+1])
-                hist1[b]->Fill(Mx);
+                hist1[b]->Fill(Mx2);
         }
     }
     for (Long64_t i = 0; i < nEntries2; ++i) {
         tree2->GetEntry(i);
         for (int b = 0; b < nBins; ++b) {
             if (p_p >= binEdges[b] && p_p < binEdges[b+1])
-                hist2[b]->Fill(Mx);
+                hist2[b]->Fill(Mx2);
         }
     }
 
