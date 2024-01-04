@@ -71,7 +71,7 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
     }
 
     // Gaussian + Linear Background Function
-    TF1 *fitFunc = new TF1("fitFunc", "gaus(0) + pol1(3)", xMin, xMax);
+    TF1 *fitFunc = new TF1("fitFunc", "gaus(0) + pol1(3)", binEdges[0], binEdges.size());
     // gaus(0): Gaussian part with parameters [0, 1, 2] (amplitude, mean, sigma)
     // pol1(3): Linear background with parameters [3, 4] (constant, slope)
 
