@@ -13,7 +13,12 @@
 
 void compareTrees(const char* file1, const char* file2, const char* output, double lineValue) {
     // Define the momentum bin edges
-    std::vector<double> binEdges = {0,0.6,0.7,0.8,1.0,1.2,1.4,1.8,2.4,3.0};
+    
+    // pion and kaon
+    std::vector<double> binEdges = {0.8,0.9,1.0,1.1,1.3,1.6,2.0,2.6,4.0};
+
+    // proton 
+    // std::vector<double> binEdges = {0,0.6,0.7,0.8,1.0,1.2,1.4,1.8,2.4,3.0};
     int nBins = binEdges.size() - 1;
 
     // Open ROOT files and get trees
