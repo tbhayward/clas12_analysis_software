@@ -13,7 +13,7 @@
 
 void compareTrees(const char* file1, const char* file2, const char* output, double lineValue) {
     // Define the momentum bin edges
-    std::vector<double> binEdges = {0,0.6,0.8,1.0,1.3,1.6,2.0,2.5,3.0};
+    std::vector<double> binEdges = {0,0.6,0.7,0.8,1.0,1.2,1.4,1.8,2.4,3.0};
     int nBins = binEdges.size() - 1;
 
     // Open ROOT files and get trees
@@ -25,8 +25,8 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
     // Create histograms for each bin
     std::vector<TH1D*> hist1, hist2;
     for (int i = 0; i < nBins; ++i) {
-        hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0, 2));
-        hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 0, 2));
+        hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0, 1));
+        hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 0, 1));
     }
 
     // Set branch addresses
@@ -90,7 +90,7 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         legend->Draw();
 
         // Create and draw a vertical line
-        TLine *line = new TLine(lineValue, 0, lineValue, maxVal * 1.10);
+        TLine *line = new TLine(lineValue, hist1[i]->GetMinimum(), lineValue, maxVal * 1.10);
         line->SetLineStyle(2); // Set the line style to dashed
         line->Draw();
 
