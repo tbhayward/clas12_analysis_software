@@ -131,8 +131,9 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         hist1[i]->GetYaxis()->CenterTitle();
 
         // Set initial parameter estimates for the fit function
-        fitFunc->SetParameters(10, lineValue, 0.1, 0, 1); // Example values, adjust as needed
-        fitFunc->SetParLimits(1, lineValue - 0.2, lineValue + 0.2); // Limit the mean around lineValue
+        fitFunc->SetParameters(100, lineValue, 0.1, 0, 1); // Example values, adjust as needed
+        fitFunc->SetParLimits(0, 0, 10e6); // Limit the mean around lineValue
+        fitFunc->SetParLimits(1, 0, lineValue + 0.2); // Limit the mean around lineValue
 
         // Perform the fit
         hist1[i]->Fit(fitFunc, "R"); // "R" option for fit range
