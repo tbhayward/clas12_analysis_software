@@ -10,7 +10,7 @@
 #include <TStyle.h>
 
 
-void compareTrees(const char* file1, const char* file2, const char* output) {
+void compareTrees(const char* file1, const char* file2, const char* output, double lineValue) {
     // Define the momentum bin edges
     std::vector<double> binEdges = {0,0.5,1.0,1.5,2.0,2.5,3.0,3.5,4.0};
     int nBins = binEdges.size() - 1;
@@ -88,6 +88,11 @@ void compareTrees(const char* file1, const char* file2, const char* output) {
         legend->AddEntry(hist2[i], "Corrected", "l");
         legend->Draw();
 
+        // Create and draw a vertical line
+        TLine *line = new TLine(lineValue, 0, lineValue, maxVal * 1.10);
+        line->SetLineStyle(2); // Set the line style to dashed
+        line->Draw();
+
         // Remove the statistics box
         gStyle->SetOptStat(0);
 
@@ -107,8 +112,8 @@ void compareTrees(const char* file1, const char* file2, const char* output) {
 }
 
 int main(int argc, char** argv) {
-    if (argc != 4) {
-        std::cout << "Usage: " << argv[0] << " <file1> <file2> <output>" << std::endl;
+    if (argc != 5) {
+        std::cout << "Usage: " << argv[0] << " <file1> <file2> <output> <peak value>" << std::endl;
         return 1;
     }
     compareTrees(argv[1], argv[2], argv[3]);
