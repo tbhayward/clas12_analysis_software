@@ -30,13 +30,13 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
     // Create histograms for each bin
     std::vector<TH1D*> hist1, hist2;
     for (int i = 0; i < nBins; ++i) {
-        // pion 
-        hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.6, 1.2));
-        hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 0.6, 1.2));
+        // // pion 
+        // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.6, 1.2));
+        // hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 0.6, 1.2));
 
-        // kaon 
-        // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.8, 1.6));
-        // hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 0.8, 1.6));
+        kaon 
+        hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.8, 1.6));
+        hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 0.8, 1.6));
 
         // // proton
         // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0, 1));
