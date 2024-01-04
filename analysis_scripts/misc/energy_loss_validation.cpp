@@ -137,18 +137,23 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
 
         // Perform the fit on the first histogram
         hist1[i]->Fit(fitFunc, "R");
-        fitFunc->SetLineColor(hist1[i]->GetLineColor()); // Match the line color
-        fitFunc->SetLineStyle(1); // Solid line
-        fitFunc->Draw("SAME"); // Draw the fit function on the same pad
+        fitFunc->SetLineColor(hist1[i]->GetLineColor());
+        fitFunc->SetLineStyle(1);
+        fitFunc->Draw("SAME");
+
+        // Save the parameters from the first fit
+        Double_t params[5];
+        fitFunc->GetParameters(params);
 
         // Perform the fit on the second histogram
         hist2[i]->Fit(fitFunc, "R+");
-        fitFunc->SetLineColor(hist2[i]->GetLineColor()); // Match the line color
-        fitFunc->SetLineStyle(1); // Solid line
-        fitFunc->Draw("SAME"); // Draw the fit function on the same pad
+        fitFunc->SetLineColor(hist2[i]->GetLineColor());
+        fitFunc->Draw("SAME");
+
+        // Reset the parameters for the next iteration
+        fitFunc->SetParameters(params);
 
     }
-
 
     // Save the canvas
     c1->SaveAs(output);
