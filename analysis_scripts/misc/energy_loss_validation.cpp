@@ -31,9 +31,9 @@ void compareTrees(const char* file1, const char* file2, const char* output) {
     // Set branch addresses
     double p_p, Mx;
     tree1->SetBranchAddress("p_p", &p_p);
-    tree1->SetBranchAddress("Mx2", &Mx);
+    tree1->SetBranchAddress("Mx2", &Mx2);
     tree2->SetBranchAddress("p_p", &p_p);
-    tree2->SetBranchAddress("Mx2", &Mx);
+    tree2->SetBranchAddress("Mx2", &Mx2);
 
     // Fill histograms
     Long64_t nEntries1 = tree1->GetEntries();
@@ -58,6 +58,7 @@ void compareTrees(const char* file1, const char* file2, const char* output) {
     double globalFontSize = 0.04; // You can adjust this value as needed
     for (int i = 0; i < nBins; ++i) {
         c1->cd(i+1);
+        gPad->SetLeftMargin(0.15);  
 
         // Setting the title of the histogram to include the bin range
         char title[100];
