@@ -15,8 +15,8 @@ void compareTrees(const char* file1, const char* file2, const char* output) {
     // Open ROOT files and get trees
     TFile* f1 = new TFile(file1);
     TFile* f2 = new TFile(file2);
-    TTree* tree1 = (TTree*)f1->Get("tree_name"); // Replace "tree_name" with your tree name
-    TTree* tree2 = (TTree*)f2->Get("tree_name"); // Same as above
+    TTree* tree1 = (TTree*)f1->Get("PhysicsEvents"); // Replace "tree_name" with your tree name
+    TTree* tree2 = (TTree*)f2->Get("PhysicsEvents"); // Same as above
 
     // Create histograms for each bin
     std::vector<TH1D*> hist1, hist2;
