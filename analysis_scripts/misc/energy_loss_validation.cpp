@@ -55,8 +55,15 @@ void compareTrees(const char* file1, const char* file2, const char* output) {
 
     TCanvas* c1 = new TCanvas("c1", "Comparison", 1200, 800);
     c1->Divide(TMath::CeilNint(sqrt(nBins)), TMath::CeilNint(sqrt(nBins)));
+    double globalFontSize = 0.04; // You can adjust this value as needed
     for (int i = 0; i < nBins; ++i) {
         c1->cd(i+1);
+
+        // Setting the title of the histogram to include the bin range
+        char title[100];
+        sprintf(title, "%.1f < p (GeV) < %.1f; M_{x}^{2} (GeV^{2}); Counts", 
+            binEdges[i], binEdges[i+1]);
+        hist1[i]->SetTitle(title);
 
         // Find the maximum value in both histograms for this bin
         double maxVal = TMath::Max(hist1[i]->GetMaximum(), hist2[i]->GetMaximum());
@@ -82,6 +89,15 @@ void compareTrees(const char* file1, const char* file2, const char* output) {
 
         // Remove the statistics box
         gStyle->SetOptStat(0);
+
+        // Adjust font size and center axis labels
+        hist1[i]->GetXaxis()->SetTitleSize(globalFontSize);
+        hist1[i]->GetYaxis()->SetTitleSize(globalFontSize);
+        hist1[i]->GetXaxis()->SetLabelSize(globalFontSize);
+        hist1[i]->GetYaxis()->SetLabelSize(globalFontSize);
+        
+        hist1[i]->GetXaxis()->CenterTitle();
+        hist1[i]->GetYaxis()->CenterTitle();
     }
 
 
