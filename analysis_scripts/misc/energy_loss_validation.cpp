@@ -5,6 +5,7 @@
 #include <TMath.h>
 #include <vector>
 #include <string>
+#include <iostream>
 
 void compareTrees(const char* file1, const char* file2, const char* output) {
     // Define the momentum bin edges
