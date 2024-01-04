@@ -9,6 +9,7 @@
 #include <TLegend.h>
 #include <TStyle.h>
 #include <TLine.h>
+#include <TF1.h>
 
 
 void compareTrees(const char* file1, const char* file2, const char* output, double lineValue) {
