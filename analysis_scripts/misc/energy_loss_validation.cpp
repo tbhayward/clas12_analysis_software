@@ -135,9 +135,21 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         fitFunc->SetParLimits(0, 0, 10e6); // Limit the mean around lineValue
         fitFunc->SetParLimits(1, 0, lineValue + 0.2); // Limit the mean around lineValue
 
-        // Perform the fit
-        hist1[i]->Fit(fitFunc, "R"); // "R" option for fit range
-        hist2[i]->Fit(fitFunc, "R+"); // "+": Draw this fit on top of the existing one
+        // Perform the fit on the first histogram
+        hist1[i]->Fit(fitFunc1, "R");
+        fitFunc1->SetLineColor(hist1[i]->GetLineColor()); // Match the line color
+        fitFunc1->SetLineStyle(1); // Solid line
+        fitFunc1->Draw("SAME"); // Draw the fit function on the same pad
+
+        // Set initial parameter estimates for the second histogram fit
+        fitFunc2->SetParameters(100, lineValue, 0.1, 0, 1);
+        fitFunc2->SetParLimits(1, lineValue - 0.2, lineValue + 0.2);
+
+        // Perform the fit on the second histogram
+        hist2[i]->Fit(fitFunc2, "R+");
+        fitFunc2->SetLineColor(hist2[i]->GetLineColor()); // Match the line color
+        fitFunc2->SetLineStyle(1); // Solid line
+        fitFunc2->Draw("SAME"); // Draw the fit function on the same pad
 
     }
 
