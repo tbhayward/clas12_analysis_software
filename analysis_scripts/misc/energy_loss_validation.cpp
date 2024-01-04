@@ -6,6 +6,9 @@
 #include <vector>
 #include <string>
 #include <iostream>
+#include <TLegend.h>
+#include <TStyle.h>
+
 
 void compareTrees(const char* file1, const char* file2, const char* output) {
     // Define the momentum bin edges
@@ -50,37 +53,35 @@ void compareTrees(const char* file1, const char* file2, const char* output) {
         }
     }
 
-    // Create a canvas and draw histograms
-    TCanvas* c1 = new TCanvas("c1", "Comparison", 1200, 800);
-    c1->Divide(TMath::CeilNint(sqrt(nBins)), TMath::CeilNint(sqrt(nBins)));
-
     for (int i = 0; i < nBins; ++i) {
-    c1->cd(i+1);
+        c1->cd(i+1);
 
-    // Find the maximum value in both histograms for this bin
-    double maxVal = TMath::Max(hist1[i]->GetMaximum(), hist2[i]->GetMaximum());
+        // Find the maximum value in both histograms for this bin
+        double maxVal = TMath::Max(hist1[i]->GetMaximum(), hist2[i]->GetMaximum());
 
-    // Set the range of y-axis to 0 - 10% more than the max value
-    hist1[i]->SetMaximum(maxVal * 1.10); 
+        // Set the range of y-axis to 0 - 10% more than the max value
+        hist1[i]->SetMaximum(maxVal * 1.10); 
 
-    // Set x and y axis labels
-    hist1[i]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
-    hist1[i]->GetYaxis()->SetTitle("Counts");
+        // Set x and y axis labels
+        hist1[i]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
+        hist1[i]->GetYaxis()->SetTitle("Counts");
 
-    // Draw the histograms
-    hist1[i]->SetLineColor(kBlack);
-    hist2[i]->SetLineColor(kRed);
-    hist1[i]->Draw();
-    hist2[i]->Draw("same");
+        // Draw the histograms
+        hist1[i]->SetLineColor(kBlack);
+        hist2[i]->SetLineColor(kRed);
+        hist1[i]->Draw();
+        hist2[i]->Draw("same");
 
-    // Create and add a legend
-    TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9); // Adjust these coordinates as needed
-    legend->AddEntry(hist1[i], "Uncorrected", "l");
-    legend->AddEntry(hist2[i], "Corrected", "l");
-    legend->Draw();
+        // Create and add a legend
+        TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9); // Adjust these coordinates as needed
+        legend->AddEntry(hist1[i], "Uncorrected", "l");
+        legend->AddEntry(hist2[i], "Corrected", "l");
+        legend->Draw();
 
-    // Remove the statistics box
-    gStyle->SetOptStat(0);
+        // Remove the statistics box
+        gStyle->SetOptStat(0);
+    }
+
 
     // Save the canvas
     c1->SaveAs(output);
