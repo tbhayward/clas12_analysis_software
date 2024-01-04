@@ -24,8 +24,8 @@ void compareTrees(const char* file1, const char* file2, const char* output) {
     // Create histograms for each bin
     std::vector<TH1D*> hist1, hist2;
     for (int i = 0; i < nBins; ++i) {
-        hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0, 4));
-        hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 0, 4));
+        hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0, 2));
+        hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 0, 2));
     }
 
     // Set branch addresses
