@@ -70,6 +70,13 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         }
     }
 
+    // Gaussian + Linear Background Function
+    TF1 *fitFunc = new TF1("fitFunc", "gaus(0) + pol1(3)", xMin, xMax);
+    // gaus(0): Gaussian part with parameters [0, 1, 2] (amplitude, mean, sigma)
+    // pol1(3): Linear background with parameters [3, 4] (constant, slope)
+
+
+
     TCanvas* c1 = new TCanvas("c1", "Comparison", 1200, 800);
     c1->Divide(TMath::CeilNint(sqrt(nBins)), TMath::CeilNint(sqrt(nBins)));
     double globalFontSize = 0.04; // You can adjust this value as needed
@@ -121,6 +128,15 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         
         hist1[i]->GetXaxis()->CenterTitle();
         hist1[i]->GetYaxis()->CenterTitle();
+
+        // Set initial parameter estimates for the fit function
+        fitFunc->SetParameters(10, lineValue, 0.1, 0, 1); // Example values, adjust as needed
+        fitFunc->SetParLimits(1, lineValue - 0.2, lineValue + 0.2); // Limit the mean around lineValue
+
+        // Perform the fit
+        hist1[i]->Fit(fitFunc, "R"); // "R" option for fit range
+        hist2[i]->Fit(fitFunc, "R+"); // "+": Draw this fit on top of the existing one
+
     }
 
 
