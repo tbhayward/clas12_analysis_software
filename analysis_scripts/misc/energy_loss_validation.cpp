@@ -8,6 +8,7 @@
 #include <iostream>
 #include <TLegend.h>
 #include <TStyle.h>
+#include <TLine.h>
 
 
 void compareTrees(const char* file1, const char* file2, const char* output, double lineValue) {
@@ -116,6 +117,6 @@ int main(int argc, char** argv) {
         std::cout << "Usage: " << argv[0] << " <file1> <file2> <output> <peak value>" << std::endl;
         return 1;
     }
-    compareTrees(argv[1], argv[2], argv[3]);
+    compareTrees(argv[1], argv[2], argv[3], atof(argv[4]));
     return 0;
 }
