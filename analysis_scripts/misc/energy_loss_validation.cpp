@@ -15,7 +15,7 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
     // Define the momentum bin edges
     
     // pion and kaon
-    std::vector<double> binEdges = {1.0,2.0,2.2,2.4,2.6,3.0,3.4,3.8,4.2};
+    std::vector<double> binEdges = {1.0,2.2,2.4,2.6,3.0,3.4,3.8,4.2,5.0};
 
     // proton 
     // std::vector<double> binEdges = {0,0.6,0.7,0.8,1.0,1.2,1.4,1.8,2.4,3.0};
@@ -82,9 +82,11 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         hist1[i]->SetTitle(title);
 
         // Find the maximum value in both histograms for this bin
-        double maxVal = TMath::Max(hist1[i]->GetMaximum(), hist2[i]->GetMaximum());
+        double minVal = TMath::Min(hist1[i]->GetMinimum(), hist2[i]->GetMinimum());
+        double maxVal = TMath::Min(hist1[i]->GetMinimum(), hist2[i]->GetMinimum());
 
         // Set the range of y-axis to 0 - 10% more than the max value
+        hist1[i]->SetMinimum(minVal);
         hist1[i]->SetMaximum(maxVal * 1.10); 
 
         // Set x and y axis labels
