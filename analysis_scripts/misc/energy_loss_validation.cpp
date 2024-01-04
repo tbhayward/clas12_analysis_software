@@ -82,11 +82,9 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         hist1[i]->SetTitle(title);
 
         // Find the maximum value in both histograms for this bin
-        double minVal = TMath::Min(hist1[i]->GetMinimum(), hist2[i]->GetMinimum());
-        double maxVal = TMath::Min(hist1[i]->GetMinimum(), hist2[i]->GetMinimum());
+        double maxVal = TMath::Max(hist1[i]->GetMaximum(), hist2[i]->GetMaximum());
 
         // Set the range of y-axis to 0 - 10% more than the max value
-        // hist1[i]->SetMinimum(minVal);
         hist1[i]->SetMaximum(maxVal * 1.10); 
 
         // Set x and y axis labels
