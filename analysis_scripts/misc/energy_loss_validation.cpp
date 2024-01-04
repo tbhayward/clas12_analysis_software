@@ -53,6 +53,8 @@ void compareTrees(const char* file1, const char* file2, const char* output) {
         }
     }
 
+    TCanvas* c1 = new TCanvas("c1", "Comparison", 1200, 800);
+    c1->Divide(TMath::CeilNint(sqrt(nBins)), TMath::CeilNint(sqrt(nBins)));
     for (int i = 0; i < nBins; ++i) {
         c1->cd(i+1);
 
