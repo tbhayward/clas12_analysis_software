@@ -29,7 +29,7 @@ void compareTrees(const char* file1, const char* file2, const char* output) {
     }
 
     // Set branch addresses
-    double p_p, Mx;
+    double p_p, Mx2;
     tree1->SetBranchAddress("p_p", &p_p);
     tree1->SetBranchAddress("Mx2", &Mx2);
     tree2->SetBranchAddress("p_p", &p_p);
