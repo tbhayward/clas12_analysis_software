@@ -193,7 +193,7 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
     gr1->SetMarkerColor(kBlue);
     gr1->SetMarkerStyle(20);
     gr1->SetMarkerSize(0.6);
-    gr1->SetTitle("Fitted Mean Values; Momentum (GeV); Mean of Gaussian");
+    gr1->SetTitle("Fitted Mean Values; Momentum (GeV); Mean of Gaussian (GeV^{2})");
 
     // Graph for the second histogram
     TGraphErrors* gr2 = new TGraphErrors(nPoints, &binCenters[0], &meanValues2[0], 0, 
