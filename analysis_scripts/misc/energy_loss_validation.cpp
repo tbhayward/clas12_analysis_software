@@ -72,7 +72,8 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
     }
 
     // Gaussian + Linear Background Function
-    TF1 *fitFunc = new TF1("fitFunc", "gaus(0) + pol1(3)", binEdges[0], binEdges.size());
+    TF1 *fitFunc1 = new TF1("fitFunc1", "gaus(0) + pol1(3)", binEdges[0], binEdges.size());
+    TF1 *fitFunc2 = new TF1("fitFunc2", "gaus(0) + pol1(3)", binEdges[0], binEdges.size());
     // gaus(0): Gaussian part with parameters [0, 1, 2] (amplitude, mean, sigma)
     // pol1(3): Linear background with parameters [3, 4] (constant, slope)
 
@@ -131,27 +132,24 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         hist1[i]->GetYaxis()->CenterTitle();
 
         // Set initial parameter estimates for the fit function
-        fitFunc->SetParameters(100, lineValue, 0.1, 0, 1); // Example values, adjust as needed
-        fitFunc->SetParLimits(0, 0, 10e6); // Limit the mean around lineValue
-        fitFunc->SetParLimits(1, 0, lineValue + 0.2); // Limit the mean around lineValue
+        fitFunc1->SetParameters(100, lineValue, 0.1, 0, 1); // Example values, adjust as needed
+        fitFunc1->SetParLimits(0, 0, 10e6); // Limit the mean around lineValue
+        fitFunc1->SetParLimits(1, 0, lineValue + 0.2); // Limit the mean around lineValue
+
+        fitFunc2->SetParameters(100, lineValue, 0.1, 0, 1); // Example values, adjust as needed
+        fitFunc2->SetParLimits(0, 0, 10e6); // Limit the mean around lineValue
+        fitFunc2->SetParLimits(1, 0, lineValue + 0.2); // Limit the mean around lineValue
 
         // Perform the fit on the first histogram
-        hist1[i]->Fit(fitFunc, "R");
-        fitFunc->SetLineColor(hist1[i]->GetLineColor());
-        fitFunc->SetLineStyle(1);
-        fitFunc->Draw("SAME");
-
-        // Save the parameters from the first fit
-        Double_t params[5];
-        fitFunc->GetParameters(params);
+        hist1[i]->Fit(fitFunc1, "R");
+        fitFunc1->SetLineColor(hist1[i]->GetLineColor());
+        fitFunc1->SetLineStyle(1);
+        fitFunc1->Draw("SAME");
 
         // Perform the fit on the second histogram
-        hist2[i]->Fit(fitFunc, "R+");
-        fitFunc->SetLineColor(hist2[i]->GetLineColor());
-        fitFunc->Draw("SAME");
-
-        // Reset the parameters for the next iteration
-        fitFunc->SetParameters(params);
+        hist2[i]->Fit(fitFunc2, "R+");
+        fitFunc2->SetLineColor(hist2[i]->GetLineColor());
+        fitFunc2->Draw("SAME");
 
     }
 
