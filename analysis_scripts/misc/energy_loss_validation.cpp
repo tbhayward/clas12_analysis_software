@@ -165,20 +165,20 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         legend->AddEntry(hist2[i], entry2, "l");
         legend->Draw();
 
-        // Create Gaussian-only functions using parameters from the fits
-        TF1 *gausFunc1 = new TF1(Form("gausFunc1_%d", i), "gaus", xMin, xMax);
-        gausFunc1->SetParameters(fitFunc1->GetParameter(0), fitFunc1->GetParameter(1), 
-            fitFunc1->GetParameter(2));
-        gausFunc1->SetLineColor(hist1[i]->GetLineColor());
-        gausFunc1->SetLineStyle(7); // Dotted dashed line
-        gausFunc1->Draw("SAME");
+        // Create polynomial-only functions using parameters from the fits
+        TF1 *polFunc1 = new TF1(Form("polFunc1_%d", i), "pol2", xMin, xMax);
+        polFunc1->SetParameters(fitFunc1->GetParameter(3), fitFunc1->GetParameter(4), 
+            fitFunc1->GetParameter(5));
+        polFunc1->SetLineColor(hist1[i]->GetLineColor());
+        polFunc1->SetLineStyle(2); // Dashed line
+        polFunc1->Draw("SAME");
 
-        TF1 *gausFunc2 = new TF1(Form("gausFunc2_%d", i), "gaus", xMin, xMax);
-        gausFunc2->SetParameters(fitFunc2->GetParameter(0), fitFunc2->GetParameter(1), 
-            fitFunc2->GetParameter(2));
-        gausFunc2->SetLineColor(hist2[i]->GetLineColor());
-        gausFunc2->SetLineStyle(7); // Dotted dashed line
-        gausFunc2->Draw("SAME");
+        TF1 *polFunc2 = new TF1(Form("polFunc2_%d", i), "pol2", xMin, xMax);
+        polFunc2->SetParameters(fitFunc2->GetParameter(3), fitFunc2->GetParameter(4), 
+            fitFunc2->GetParameter(5));
+        polFunc2->SetLineColor(hist2[i]->GetLineColor());
+        polFunc2->SetLineStyle(2); // Dashed line
+        polFunc2->Draw("SAME");
 
     }
 
