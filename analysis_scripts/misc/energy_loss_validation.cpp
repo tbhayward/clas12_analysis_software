@@ -20,7 +20,7 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
     // std::vector<double> binEdges = {1.0,2.2,2.4,2.6,3.0,3.4,3.8,4.2,5.0};
 
     // proton 
-    std::vector<double> binEdges = {0,0.5,0.6,0.65,0.7,0.75,0.8,0.85,1.0,1.1,1.2,1.4,1.8,2.4,3.0};
+    std::vector<double> binEdges = {0,0.6,0.625,0.65,0.7,0.75,0.8,0.85,1.0,1.1,1.2,1.4,1.8,2.4,3.0};
     
 
     int nBins = binEdges.size() - 1;
@@ -191,8 +191,8 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
     TGraphErrors* gr1 = new TGraphErrors(nPoints, &binCenters[0], &meanValues1[0], 0, 
         &meanErrors1[0]);
     gr1->SetMarkerColor(kBlue);
-    gr1->SetLineColor(kBlue);
     gr1->SetMarkerStyle(20);
+    gr1->SetMarkerSize(0.6);
     gr1->SetTitle("Fitted Mean Values; Momentum (GeV); Mean of Gaussian");
 
     // Graph for the second histogram
@@ -201,14 +201,15 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
     gr2->SetMarkerColor(kRed);
     gr2->SetLineColor(kRed);
     gr2->SetMarkerStyle(21);
+    gr2->SetMarkerSize(0.6);
 
     // Draw the graphs
     gr1->Draw("AP");
     gr2->Draw("P SAME");
 
     // Set the Y-axis range to be lineValue +/- 0.15
-    double yAxisMin = lineValue - 0.15;
-    double yAxisMax = lineValue + 0.15;
+    double yAxisMin = lineValue - 0.2;
+    double yAxisMax = lineValue + 0.2;
     gr1->GetYaxis()->SetRangeUser(yAxisMin, yAxisMax);
     gr2->GetYaxis()->SetRangeUser(yAxisMin, yAxisMax);
 
