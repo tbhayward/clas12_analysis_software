@@ -39,9 +39,9 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.6, 1.2));
         // hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 0.6, 1.2));
 
-        // pi-
-        hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 1.0, 2.0));
-        hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 1.0, 2.0));
+        // // pi-
+        // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 1.0, 2.0));
+        // hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 1.0, 2.0));
 
         // kaon 
         hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.4, 1.8));
