@@ -146,11 +146,14 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         hist1[i]->Fit(fitFunc1, "R");
         fitFunc1->SetLineColor(hist1[i]->GetLineColor());
         fitFunc1->SetLineStyle(1);
+        fitFunc1->SetLineWidth(0.5); // Set the line width
         fitFunc1->Draw("SAME");
 
         // Perform the fit on the second histogram
         hist2[i]->Fit(fitFunc2, "R+");
         fitFunc2->SetLineColor(hist2[i]->GetLineColor());
+        fitFunc2->SetLineStyle(1);
+        fitFunc2->SetLineWidth(0.5); // Set the line width
         fitFunc2->Draw("SAME");
 
     }
