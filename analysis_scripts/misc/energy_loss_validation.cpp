@@ -222,7 +222,7 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
     // Draw a horizontal line at lineValue
     TF1 *line = new TF1("line", Form("%f", lineValue), binEdges.front(), binEdges.back());
     line->SetLineColor(kBlack);
-    line->SetLineStyle(2); // Dashed line
+    line->SetLineStyle(3); // Dashed line
     line->Draw("SAME");
 
     // Create and add a legend
