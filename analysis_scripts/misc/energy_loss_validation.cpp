@@ -143,6 +143,7 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         fitFunc1->SetParameters(100, lineValue, 0.1, 0, 1); // Example values, adjust as needed
         fitFunc1->SetParLimits(0, 0, 10e6); // amplitude limits
         fitFunc1->SetParLimits(1, 0, lineValue + 0.1); // Limit the mean around lineValue
+        fitFunc1->SetParLimits(2, 0.025, 1); // Limit the mean around lineValue
 
         fitFunc2->SetParameters(100, lineValue, 0.1, 0, 1); // Example values, adjust as needed
         fitFunc2->SetParLimits(0, 0, 10e6); // amplitude limits
