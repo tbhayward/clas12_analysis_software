@@ -128,18 +128,18 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         double xMin = hist1[i]->GetXaxis()->GetXmin();
         double xMax = hist1[i]->GetXaxis()->GetXmax();
         // Gaussian + Linear Background Function
-        TF1 *fitFunc1 = new TF1(Form("fitFunc1_%d", i), "gaus(0) + pol1(3)", xMin, xMax);
-        TF1 *fitFunc2 = new TF1(Form("fitFunc2_%d", i), "gaus(0) + pol1(3)", xMin, xMax);
+        TF1 *fitFunc1 = new TF1(Form("fitFunc1_%d", i), "gaus(0) + pol2(3)", xMin, xMax);
+        TF1 *fitFunc2 = new TF1(Form("fitFunc2_%d", i), "gaus(0) + pol2(3)", xMin, xMax);
         // gaus(0): Gaussian part with parameters [0, 1, 2] (amplitude, mean, sigma)
-        // pol1(3): Linear background with parameters [3, 4] (constant, slope)
+        // pol1(3): Linear background with parameters [3, 4, 5] (constant, slope, x^2)
 
         // Set initial parameter estimates for the fit function
         fitFunc1->SetParameters(100, lineValue, 0.1, 0, 1); // Example values, adjust as needed
-        fitFunc1->SetParLimits(0, 0, 10e6); // Limit the mean around lineValue
+        fitFunc1->SetParLimits(0, 0, 10e6); // amplitude limits
         fitFunc1->SetParLimits(1, 0, lineValue + 0.1); // Limit the mean around lineValue
 
         fitFunc2->SetParameters(100, lineValue, 0.1, 0, 1); // Example values, adjust as needed
-        fitFunc2->SetParLimits(0, 0, 10e6); // Limit the mean around lineValue
+        fitFunc2->SetParLimits(0, 0, 10e6); // amplitude limits
         fitFunc2->SetParLimits(1, 0, lineValue + 0.1); // Limit the mean around lineValue
 
         // Perform the fit on the first histogram
