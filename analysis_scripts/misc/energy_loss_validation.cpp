@@ -156,10 +156,11 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         double meanError2 = fitFunc2->GetParError(1);
 
         // Create and add a legend with fit results
-        TLegend* legend = new TLegend(0.15, 0.7, 0.35, 0.9); // Adjust these coordinates as needed
+        TLegend* legend = new TLegend(0.15, 0.7, 0.34, 0.9); // Adjust these coordinates as needed
+        legend->SetTextSize(0.04); // Set the text size. Adjust as needed.
         char entry1[100], entry2[100];
-        sprintf(entry1, "Uncorrected, #mu = %.2f #pm %.2f", mean1, meanError1);
-        sprintf(entry2, "Corrected, #mu = %.2f #pm %.2f", mean2, meanError2);
+        sprintf(entry1, "Uncorrected, #mu = %.3f #pm %.3f", mean1, meanError1);
+        sprintf(entry2, "Corrected, #mu = %.3f #pm %.3f", mean2, meanError2);
         legend->AddEntry(hist1[i], entry1, "l");
         legend->AddEntry(hist2[i], entry2, "l");
         legend->Draw();
