@@ -20,7 +20,7 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
     // std::vector<double> binEdges = {0.6,1.8,2.0,2.1,2.2,2.3,2.4,2.5,2.6,2.8,3.0,3.2,3.4,3.8,4.2,5.0};
 
     // pions and kaon less
-    std::vector<double> binEdges = {0.6,2.0,2.2,2.4,2.6,3.0,3.4,4.2,5.0};
+    std::vector<double> binEdges = {0.6,2.2,2.6,3.3,4.0,5.0};
 
 
     // // proton 
