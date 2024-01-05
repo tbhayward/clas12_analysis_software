@@ -89,7 +89,7 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         double maxVal = TMath::Max(hist1[i]->GetMaximum(), hist2[i]->GetMaximum());
 
         // Set the range of y-axis to 0 - 10% more than the max value
-        hist1[i]->SetMaximum(maxVal * 1.10); 
+        hist1[i]->SetMaximum(maxVal * 1.25); 
 
         // Set x and y axis labels
         hist1[i]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
@@ -156,7 +156,7 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         double meanError2 = fitFunc2->GetParError(1);
 
         // Create and add a legend with fit results
-        TLegend* legend = new TLegend(0.15, 0.7, 0.55, 0.9); // Adjust these coordinates as needed
+        TLegend* legend = new TLegend(0.15, 0.7, 0.60, 0.9); // Adjust these coordinates as needed
         legend->SetTextSize(0.04); // Set the text size. Adjust as needed.
         char entry1[100], entry2[100];
         sprintf(entry1, "Uncorrected, #mu = %.3f #pm %.3f", mean1, meanError1);
