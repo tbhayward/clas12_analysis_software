@@ -170,14 +170,15 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         polFunc1->SetParameters(fitFunc1->GetParameter(3), fitFunc1->GetParameter(4), 
             fitFunc1->GetParameter(5));
         polFunc1->SetLineColor(hist1[i]->GetLineColor());
-        polFunc1->SetLineStyle(2); // Dashed line
+        polFunc1->SetLineStyle(3); // Dashed line
         polFunc1->Draw("SAME");
 
         TF1 *polFunc2 = new TF1(Form("polFunc2_%d", i), "pol2", xMin, xMax);
         polFunc2->SetParameters(fitFunc2->GetParameter(3), fitFunc2->GetParameter(4), 
             fitFunc2->GetParameter(5));
         polFunc2->SetLineColor(hist2[i]->GetLineColor());
-        polFunc2->SetLineStyle(2); // Dashed line
+        polFunc2->SetLineStyle(3); // Dashed line
+        polFunc2->SetLineWidth(1);
         polFunc2->Draw("SAME");
 
     }
