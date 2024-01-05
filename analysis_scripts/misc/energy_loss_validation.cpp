@@ -89,7 +89,7 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         double maxVal = TMath::Max(hist1[i]->GetMaximum(), hist2[i]->GetMaximum());
 
         // Set the range of y-axis to 0 - 10% more than the max value
-        hist1[i]->SetMaximum(maxVal * 1.25); 
+        hist1[i]->SetMaximum(maxVal * 1.3); 
 
         // Set x and y axis labels
         hist1[i]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
@@ -164,6 +164,21 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         legend->AddEntry(hist1[i], entry1, "l");
         legend->AddEntry(hist2[i], entry2, "l");
         legend->Draw();
+
+        // Create Gaussian-only functions using parameters from the fits
+        TF1 *gausFunc1 = new TF1(Form("gausFunc1_%d", i), "gaus", xMin, xMax);
+        gausFunc1->SetParameters(fitFunc1->GetParameter(0), fitFunc1->GetParameter(1), 
+            fitFunc1->GetParameter(2));
+        gausFunc1->SetLineColor(hist1[i]->GetLineColor());
+        gausFunc1->SetLineStyle(7); // Dotted dashed line
+        gausFunc1->Draw("SAME");
+
+        TF1 *gausFunc2 = new TF1(Form("gausFunc2_%d", i), "gaus", xMin, xMax);
+        gausFunc2->SetParameters(fitFunc2->GetParameter(0), fitFunc2->GetParameter(1), 
+            fitFunc2->GetParameter(2));
+        gausFunc2->SetLineColor(hist2[i]->GetLineColor());
+        gausFunc2->SetLineStyle(7); // Dotted dashed line
+        gausFunc2->Draw("SAME");
 
     }
 
