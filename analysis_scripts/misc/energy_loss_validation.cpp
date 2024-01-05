@@ -15,7 +15,7 @@
 void compareTrees(const char* file1, const char* file2, const char* output, double lineValue) {
     // Define the momentum bin edges
     
-    // pion and kaon
+    // pions and kaon
     // std::vector<double> binEdges = {1.0,2.2,2.4,2.6,3.0,3.4,3.8,4.2,5.0};
 
     // proton 
@@ -33,9 +33,13 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
     // Create histograms for each bin
     std::vector<TH1D*> hist1, hist2;
     for (int i = 0; i < nBins; ++i) {
-        // // pion 
+        // pi+ 
         // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.6, 1.2));
         // hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 0.6, 1.2));
+
+        // pi-
+        // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 1.1, 1.8));
+        // hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 1.1, 1.8));
 
         // kaon 
         // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.8, 1.6));
@@ -71,6 +75,8 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         }
     }
 
+    // Before your loop
+    std::vector<double> binCenters, meanValues1, meanErrors1, meanValues2, meanErrors2;
 
     TCanvas* c1 = new TCanvas("c1", "Comparison", 1200, 800);
     c1->Divide(TMath::CeilNint(sqrt(nBins)), TMath::CeilNint(sqrt(nBins)));
@@ -165,26 +171,56 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         legend->AddEntry(hist2[i], entry2, "l");
         legend->Draw();
 
-        // Create polynomial-only functions using parameters from the fits
-        TF1 *polFunc1 = new TF1(Form("polFunc1_%d", i), "pol2", xMin, xMax);
-        polFunc1->SetParameters(fitFunc1->GetParameter(3), fitFunc1->GetParameter(4), 
-            fitFunc1->GetParameter(5));
-        polFunc1->SetLineColor(hist1[i]->GetLineColor());
-        polFunc1->SetLineStyle(3); // Dashed line
-        polFunc1->Draw("SAME");
-
-        TF1 *polFunc2 = new TF1(Form("polFunc2_%d", i), "pol2", xMin, xMax);
-        polFunc2->SetParameters(fitFunc2->GetParameter(3), fitFunc2->GetParameter(4), 
-            fitFunc2->GetParameter(5));
-        polFunc2->SetLineColor(hist2[i]->GetLineColor());
-        polFunc2->SetLineStyle(3); // Dashed line
-        polFunc2->SetLineWidth(1);
-        polFunc2->Draw("SAME");
+        // Inside your loop, after fitting
+        double binCenter = (binEdges[i] + binEdges[i+1]) / 2.0;
+        binCenters.push_back(binCenter);
+        meanValues1.push_back(mean1); // mean1 from the fit of hist1
+        meanErrors1.push_back(meanError1); // meanError1 from the fit of hist1
+        meanValues2.push_back(mean2); // mean2 from the fit of hist2
+        meanErrors2.push_back(meanError2); // meanError2 from the fit of hist2
 
     }
 
-    // Save the canvas
+    // After the loop
+    c1->cd(nBins + 1); // Create a new pad for the final plot
+
+    int nPoints = binCenters.size();
+
+    // Graph for the first histogram
+    TGraphErrors* gr1 = new TGraphErrors(nPoints, &binCenters[0], &meanValues1[0], 0, 
+        &meanErrors1[0]);
+    gr1->SetMarkerColor(kBlue);
+    gr1->SetLineColor(kBlue);
+    gr1->SetMarkerStyle(20);
+    gr1->SetTitle("Fitted Mean Values; Momentum (GeV); Mean of Gaussian");
+
+    // Graph for the second histogram
+    TGraphErrors* gr2 = new TGraphErrors(nPoints, &binCenters[0], &meanValues2[0], 0, 
+        &meanErrors2[0]);
+    gr2->SetMarkerColor(kRed);
+    gr2->SetLineColor(kRed);
+    gr2->SetMarkerStyle(21);
+
+    // Draw the graphs
+    gr1->Draw("AP");
+    gr2->Draw("P SAME");
+
+    // Draw a horizontal line at lineValue
+    TF1 *line = new TF1("line", Form("%f", lineValue), binEdges.front(), binEdges.back());
+    line->SetLineColor(kBlack);
+    line->SetLineStyle(2); // Dashed line
+    line->Draw("SAME");
+
+    // Create and add a legend
+    TLegend* legend = new TLegend(0.15, 0.7, 0.63, 0.9);
+    legend->SetTextSize(0.04);
+    legend->AddEntry(gr1, "Uncorrected", "p");
+    legend->AddEntry(gr2, "Corrected", "p");
+    legend->Draw();
+
+    // Optionally, add more settings for axis labels, title, etc.
     c1->SaveAs(output);
+
 }
 
 int main(int argc, char** argv) {
