@@ -101,12 +101,6 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         hist1[i]->Draw();
         hist2[i]->Draw("same");
 
-        // Create and add a legend
-        TLegend* legend = new TLegend(0.15, 0.7, 0.35, 0.9); // Adjust these coordinates as needed
-        legend->AddEntry(hist1[i], "Uncorrected", "l");
-        legend->AddEntry(hist2[i], "Corrected", "l");
-        legend->Draw();
-
         // Create and draw a vertical line
         TLine *line = new TLine(lineValue, hist1[i]->GetMinimum(), lineValue, maxVal * 1.10);
         line->SetLineStyle(2); // Set the line style to dashed
@@ -146,13 +140,29 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         hist1[i]->Fit(fitFunc1, "R");
         fitFunc1->SetLineColor(hist1[i]->GetLineColor());
         fitFunc1->SetLineStyle(1);
-        fitFunc1->SetLineWidth(1);
         fitFunc1->Draw("SAME");
 
         // Perform the fit on the second histogram
         hist2[i]->Fit(fitFunc2, "R+");
         fitFunc2->SetLineColor(hist2[i]->GetLineColor());
         fitFunc2->Draw("SAME");
+
+        // Retrieve the mean and its error for the first fit
+        double mean1 = fitFunc1->GetParameter(1);
+        double meanError1 = fitFunc1->GetParError(1);
+
+        // Retrieve the mean and its error for the second fit
+        double mean2 = fitFunc2->GetParameter(1);
+        double meanError2 = fitFunc2->GetParError(1);
+
+        // Create and add a legend with fit results
+        TLegend* legend = new TLegend(0.15, 0.7, 0.35, 0.9); // Adjust these coordinates as needed
+        char entry1[100], entry2[100];
+        sprintf(entry1, "Uncorrected, #mu = %.2f #pm %.2f", mean1, meanError1);
+        sprintf(entry2, "Corrected, #mu = %.2f #pm %.2f", mean2, meanError2);
+        legend->AddEntry(hist1[i], entry1, "l");
+        legend->AddEntry(hist2[i], entry2, "l");
+        legend->Draw();
 
     }
 
