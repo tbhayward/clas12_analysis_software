@@ -17,7 +17,7 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
     // Define the momentum bin edges
     
     // pions and kaon
-    std::vector<double> binEdges = {1.0,2.2,2.4,2.6,3.0,3.4,3.8,4.2,5.0};
+    std::vector<double> binEdges = {0.6,1.0,1.6,2.2,2.3,2.4,2.5,2.6,2.8,3.0,3.2,3.4,3.8,4.2,5.0};
 
     // // proton 
     // std::vector<double> binEdges = 
@@ -97,7 +97,7 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         double maxVal = TMath::Max(hist1[i]->GetMaximum(), hist2[i]->GetMaximum());
 
         // Set the range of y-axis to 0 - 10% more than the max value
-        hist1[i]->SetMaximum(maxVal * 1.3); 
+        hist1[i]->SetMaximum(maxVal * 1.4); 
 
         // Set x and y axis labels
         hist1[i]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
