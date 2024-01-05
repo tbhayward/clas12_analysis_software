@@ -17,7 +17,7 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
     // Define the momentum bin edges
     
     // pions and kaon
-    std::vector<double> binEdges = {0.6,1.0,1.6,2.2,2.3,2.4,2.5,2.6,2.8,3.0,3.2,3.4,3.8,4.2,5.0};
+    std::vector<double> binEdges = {0.6,1.2,1.8,2.0,2.2,2.3,2.4,2.5,2.6,2.8,3.0,3.2,3.4,3.8,4.2,5.0};
 
     // // proton 
     // std::vector<double> binEdges = 
