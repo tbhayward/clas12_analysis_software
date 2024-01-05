@@ -71,15 +71,6 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         }
     }
 
-    // Define the fit function range
-    double xMin = hist1[i]->GetXaxis()->GetXmin();
-    double xMax = hist1[i]->GetXaxis()->GetXmax();
-    // Gaussian + Linear Background Function
-    TF1 *fitFunc1 = new TF1(Form("fitFunc1_%d", i), "gaus(0) + pol1(3)", xMin, xMax);
-    TF1 *fitFunc2 = new TF1(Form("fitFunc2_%d", i), "gaus(0) + pol1(3)", xMin, xMax);
-    // gaus(0): Gaussian part with parameters [0, 1, 2] (amplitude, mean, sigma)
-    // pol1(3): Linear background with parameters [3, 4] (constant, slope)
-
 
     TCanvas* c1 = new TCanvas("c1", "Comparison", 1200, 800);
     c1->Divide(TMath::CeilNint(sqrt(nBins)), TMath::CeilNint(sqrt(nBins)));
@@ -132,6 +123,15 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         
         hist1[i]->GetXaxis()->CenterTitle();
         hist1[i]->GetYaxis()->CenterTitle();
+
+        // Define the fit function range
+        double xMin = hist1[i]->GetXaxis()->GetXmin();
+        double xMax = hist1[i]->GetXaxis()->GetXmax();
+        // Gaussian + Linear Background Function
+        TF1 *fitFunc1 = new TF1(Form("fitFunc1_%d", i), "gaus(0) + pol1(3)", xMin, xMax);
+        TF1 *fitFunc2 = new TF1(Form("fitFunc2_%d", i), "gaus(0) + pol1(3)", xMin, xMax);
+        // gaus(0): Gaussian part with parameters [0, 1, 2] (amplitude, mean, sigma)
+        // pol1(3): Linear background with parameters [3, 4] (constant, slope)
 
         // Set initial parameter estimates for the fit function
         fitFunc1->SetParameters(100, lineValue, 0.1, 0, 1); // Example values, adjust as needed
