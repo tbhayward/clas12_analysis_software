@@ -102,7 +102,7 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         hist2[i]->Draw("same");
 
         // Create and add a legend
-        TLegend* legend = new TLegend(0.1, 0.7, 0.3, 0.9);
+        TLegend* legend = new TLegend(0.25, 0.7, 0.3, 0.9);
         legend->AddEntry(hist1[i], "Uncorrected", "l");
         legend->AddEntry(hist2[i], "Corrected", "l");
         legend->Draw();
@@ -148,6 +148,7 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         fitFunc1->SetLineStyle(1);
         fitFunc1->SetLineWidth(0.25); // Set the line width
         fitFunc1->Draw("SAME");
+        gPad->Update(); // Force the canvas to update
 
         // Perform the fit on the second histogram
         hist2[i]->Fit(fitFunc2, "R+");
@@ -155,6 +156,7 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         fitFunc2->SetLineStyle(1);
         fitFunc2->SetLineWidth(0.25); // Set the line width
         fitFunc2->Draw("SAME");
+        gPad->Update(); // Force the canvas to update
 
     }
 
