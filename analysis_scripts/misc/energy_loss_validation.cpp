@@ -20,7 +20,7 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
     // std::vector<double> binEdges = {1.0,2.2,2.4,2.6,3.0,3.4,3.8,4.2,5.0};
 
     // proton 
-    std::vector<double> binEdges = {0,0.6,0.7,0.8,1.0,1.2,1.4,1.8,2.4,3.0};
+    std::vector<double> binEdges = {0,0.5,0.6,0.65,0.7,0.75,0.8,0.85,1.0,1.1,1.2,1.4,1.8,2.4,3.0};
     
 
     int nBins = binEdges.size() - 1;
@@ -205,6 +205,18 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
     // Draw the graphs
     gr1->Draw("AP");
     gr2->Draw("P SAME");
+
+    // Set the Y-axis range to be lineValue +/- 0.15
+    double yAxisMin = lineValue - 0.15;
+    double yAxisMax = lineValue + 0.15;
+    gr1->GetYaxis()->SetRangeUser(yAxisMin, yAxisMax);
+    gr2->GetYaxis()->SetRangeUser(yAxisMin, yAxisMax);
+
+    // Center the axis labels
+    gr1->GetXaxis()->CenterTitle();
+    gr1->GetYaxis()->CenterTitle();
+    gr2->GetXaxis()->CenterTitle();
+    gr2->GetYaxis()->CenterTitle();
 
     // Draw a horizontal line at lineValue
     TF1 *line = new TF1("line", Form("%f", lineValue), binEdges.front(), binEdges.back());
