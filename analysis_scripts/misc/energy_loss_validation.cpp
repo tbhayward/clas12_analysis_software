@@ -20,7 +20,7 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
     // std::vector<double> binEdges = {1.0,2.2,2.4,2.6,3.0,3.4,3.8,4.2,5.0};
 
     // proton 
-    std::vector<double> binEdges = {0,0.6,0.625,0.65,0.7,0.75,0.8,0.85,1.0,1.1,1.2,1.4,1.8,2.4,3.0};
+    std::vector<double> binEdges = {0,0.6,0.625,0.65,0.675,0.7,0.75,0.8,0.85,1.0,1.1,1.2,1.4,1.8,2.4,3.0};
     
 
     int nBins = binEdges.size() - 1;
@@ -47,8 +47,8 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         // hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 0.8, 1.6));
 
         // // proton
-        hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0, 1));
-        hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 0, 1));
+        hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.1, 0.9));
+        hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 0.1, 0.9));
     }
 
     // Set branch addresses
