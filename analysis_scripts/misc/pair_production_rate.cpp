@@ -114,8 +114,8 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     leg3->AddEntry(h_W2, "run 5482, e^+", "l");
     leg3->Draw();
 
-    // // Save the canvas
-    // c1->SaveAs(output);
+    // Save the canvas
+    c1->SaveAs(output);
 
     // // Clean up
     // delete f1;
