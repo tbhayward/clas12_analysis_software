@@ -15,12 +15,12 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     TTree* tree2 = (TTree*)f2->Get("PhysicsEvents");
 
     // Define histograms for each variable
-    TH1D* h_e_p1 = new TH1D("h_e_p1", "e_p;e_p (GeV);Normalized Counts", 100, 2.6, 10);
-    TH1D* h_e_p2 = new TH1D("h_e_p2", "e_p;e_p (GeV);Normalized Counts", 100, 2.6, 10);
-    TH1D* h_Q21 = new TH1D("h_Q21", "Q^2;Q^2 (GeV^2);Normalized Counts", 100, 0, 10); 
-    TH1D* h_Q22 = new TH1D("h_Q22", "Q^2;Q^2 (GeV^2);Normalized Counts", 100, 0, 10);
-    TH1D* h_W1 = new TH1D("h_W1", "W;W (GeV);Normalized Counts", 100, 0.8, 4); 
-    TH1D* h_W2 = new TH1D("h_W2", "W;W (GeV);Normalized Counts", 100, 0.8, 4);
+    TH1D* h_e_p1 = new TH1D("h_e_p1", ";e_p (GeV);Normalized Counts", 100, 2.6, 10);
+    TH1D* h_e_p2 = new TH1D("h_e_p2", ";e_p (GeV);Normalized Counts", 100, 2.6, 10);
+    TH1D* h_Q21 = new TH1D("h_Q21", ";Q^2 (GeV^2);Normalized Counts", 100, 0, 10); 
+    TH1D* h_Q22 = new TH1D("h_Q22", ";Q^2 (GeV^2);Normalized Counts", 100, 0, 10);
+    TH1D* h_W1 = new TH1D("h_W1", ";W (GeV);Normalized Counts", 100, 0.8, 4); 
+    TH1D* h_W2 = new TH1D("h_W2", ";W (GeV);Normalized Counts", 100, 0.8, 4);
 
     // Set branch addresses
     double e_p, Q2, W;
@@ -59,6 +59,8 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     double labelFontSize = 0.05; // Adjust as needed
     double titleFontSize = 0.06; // Adjust as needed
     double legendFontSize = 0.05; // Adjust as needed
+    double leftMargin = 0.15; // Increase left margin
+    double bottomMargin = 0.15; // Increase bottom margin
 
     // Create a canvas
     TCanvas* c1 = new TCanvas("c1", "Pair Production Rate", 1200, 800);
@@ -68,6 +70,8 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     // e_p
     c1->cd(1);
     gPad->SetLogy(1);
+    gPad->SetLeftMargin(leftMargin);
+    gPad->SetBottomMargin(bottomMargin);
     h_e_p1->SetLineColor(kBlue);
     h_e_p1->SetLabelSize(labelFontSize);
     h_e_p1->SetTitleSize(titleFontSize);
@@ -84,9 +88,12 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
 
     c1->cd(2);
     gPad->SetLogy(1);
+    gPad->SetLeftMargin(leftMargin);
+    gPad->SetBottomMargin(bottomMargin);
     TH1D* h_ratio_e_p = (TH1D*)h_e_p2->Clone();
     h_ratio_e_p->Divide(h_e_p1);
     h_ratio_e_p->SetLineColor(kBlack);
+    h_ratio_e_p->SetTitle(";e_p (GeV);Ratio");
     h_ratio_e_p->SetLabelSize(labelFontSize);
     h_ratio_e_p->SetTitleSize(titleFontSize);
     h_ratio_e_p->Draw();
@@ -98,6 +105,8 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     // Q^2
     c1->cd(3);
     gPad->SetLogy(1);
+    gPad->SetLeftMargin(leftMargin);
+    gPad->SetBottomMargin(bottomMargin);
     h_Q21->Draw();
     h_Q21->SetLineColor(kBlue);
     h_Q21->SetLabelSize(labelFontSize);
@@ -113,8 +122,11 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
 
     c1->cd(4);
     gPad->SetLogy(1);
+    gPad->SetLeftMargin(leftMargin);
+    gPad->SetBottomMargin(bottomMargin);
     TH1D* h_ratio_Q2 = (TH1D*)h_Q22->Clone();
     h_ratio_Q2->Divide(h_Q21);
+    h_ratio_Q2->SetTitle(";Q^2 (GeV^2);Ratio");
     h_ratio_Q2->SetLineColor(kBlack);
     h_ratio_Q2->SetLabelSize(labelFontSize);
     h_ratio_Q2->SetTitleSize(titleFontSize);
@@ -126,6 +138,8 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     // W
     c1->cd(5);
     gPad->SetLogy(1);
+    gPad->SetLeftMargin(leftMargin);
+    gPad->SetBottomMargin(bottomMargin);
     h_W1->SetLabelSize(labelFontSize);
     h_W1->SetTitleSize(titleFontSize);
     h_W1->Draw();
@@ -141,8 +155,11 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
 
     c1->cd(6);
     gPad->SetLogy(1);
+    gPad->SetLeftMargin(leftMargin);
+    gPad->SetBottomMargin(bottomMargin);
     TH1D* h_ratio_W = (TH1D*)h_W2->Clone();
     h_ratio_W->Divide(h_W1);
+    h_ratio_W->SetTitle(";W (GeV);Ratio");
     h_ratio_W->SetLineColor(kBlack);
     h_ratio_W->SetLabelSize(labelFontSize);
     h_ratio_W->SetTitleSize(titleFontSize);
