@@ -277,13 +277,16 @@ void pair_production_rate(const char* file1, const char* file2,
         h_ratio_W_Q2[i]->GetYaxis()->CenterTitle();
 
         // Set Y-axis range from 0 to 0.1
-        h_ratio_W_Q2[i]->SetMinimum(0.0);
+        h_ratio_W_Q2[i]->SetMinimum(0.001);
         h_ratio_W_Q2[i]->SetMaximum(0.1);
     }
 
     // Plot histograms on canvas
     for (int i = 0; i < nQ2Bins; ++i) {
         c2->cd(i+1);
+        gPad->SetLeftMargin(leftMargin); // Set left margin for padding
+        gPad->SetBottomMargin(bottomMargin); // Set bottom margin for padding
+        gPad->SetLogy(1); // Optional, for logarithmic scale
         h_ratio_W_Q2[i]->Draw();
     }
 
