@@ -865,11 +865,11 @@ public class analysis_fitter extends GenericKinematicFitter {
         return true
 //            && p > 2.2 // higher cut ultimately enforced when we cut on y < 0.8 or y < 0.75
 //                // this is just to speed up processing
-//            && forward_detector_cut(particle_Index, rec_Bank)
+            && forward_detector_cut(particle_Index, rec_Bank)
 //            && calorimeter_energy_cut(particle_Index, cal_Bank) 
 //            && calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
 //            && calorimeter_diagonal_cut(particle_Index, p, cal_Bank)
-//            && electron_z_vertex_cut(vz)
+            && electron_z_vertex_cut(vz)
 //            && pcal_fiducial_cut(particle_Index, rec_Bank, cal_Bank)
 //            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
 //            && nphe_cut(particle_Index, cc_Bank) // legacy cut used in the analysis note to check the effect
@@ -1006,7 +1006,6 @@ public class analysis_fitter extends GenericKinematicFitter {
                                 run_Bank, cc_Bank)) {
                     // this checks all of the PID requirements, if it passes all of them the electron is 
                     // added to the event below
-                    System.out.println("hey");
                     Particle part = new Particle(11,px,py,pz,vx,vy,vz);
                     physEvent.addParticle(part);
                     lv_e.setPxPyPzM(px, py, pz, 0.0005109989461);
