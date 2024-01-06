@@ -76,7 +76,7 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     h_e_p2->SetLabelSize(labelFontSize);
     h_e_p2->SetTitleSize(titleFontSize);
     h_e_p2->Draw("same");
-    h_e_p1->SetMaximum(h_e_p1->GetMaximum() * 2.0); // 100% higher than the maximum
+    h_e_p1->SetMaximum(100); // 100% higher than the maximum
     h_e_p1->SetMinimum(1e-5); // Minimum set to 10e-5
     h_e_p1->SetStats(0); // Remove stat box
     h_e_p2->SetStats(0); // Remove stat box
