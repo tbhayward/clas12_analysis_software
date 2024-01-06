@@ -85,9 +85,9 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     h_e_p1->SetStats(0); // Remove stat box
     h_e_p2->SetStats(0); // Remove stat box
     h_e_p1->GetXaxis()->SetLabelSize(labelFontSize);
-    h_e_p1->GetXaxis()->SetTitleSize(axisTitleFontSize); // Increase x-axis title size
+    h_e_p1->GetXaxis()->SetTitleSize(titleFontSize); // Increase x-axis title size
     h_e_p1->GetYaxis()->SetLabelSize(labelFontSize);
-    h_e_p1->GetYaxis()->SetTitleSize(axisTitleFontSize); // Increase y-axis title size
+    h_e_p1->GetYaxis()->SetTitleSize(titleFontSize); // Increase y-axis title size
 
 
     c1->cd(2);
