@@ -31,21 +31,21 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     tree2->SetBranchAddress("Q2", &Q2);
     tree2->SetBranchAddress("W", &W);
 
-    // // Fill histograms
-    // Long64_t nEntries1 = tree1->GetEntries();
-    // Long64_t nEntries2 = tree2->GetEntries();
-    // for (Long64_t i = 0; i < nEntries1; ++i) {
-    //     tree1->GetEntry(i);
-    //     h_e_p1->Fill(e_p);
-    //     h_Q21->Fill(Q2);
-    //     h_W1->Fill(W);
-    // }
-    // for (Long64_t i = 0; i < nEntries2; ++i) {
-    //     tree2->GetEntry(i);
-    //     h_e_p2->Fill(e_p);
-    //     h_Q22->Fill(Q2);
-    //     h_W2->Fill(W);
-    // }
+    // Fill histograms
+    Long64_t nEntries1 = tree1->GetEntries();
+    Long64_t nEntries2 = tree2->GetEntries();
+    for (Long64_t i = 0; i < nEntries1; ++i) {
+        tree1->GetEntry(i);
+        h_e_p1->Fill(e_p);
+        h_Q21->Fill(Q2);
+        h_W1->Fill(W);
+    }
+    for (Long64_t i = 0; i < nEntries2; ++i) {
+        tree2->GetEntry(i);
+        h_e_p2->Fill(e_p);
+        h_Q22->Fill(Q2);
+        h_W2->Fill(W);
+    }
 
     // // Normalize histograms
     // h_e_p1->Scale(1.0 / 378709);
