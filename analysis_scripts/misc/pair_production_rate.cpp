@@ -100,12 +100,12 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     h_ratio_e_p->SetTitle(";e_{p} (GeV);Ratio");
     h_ratio_e_p->SetLabelSize(labelFontSize);
     h_ratio_e_p->SetTitleSize(titleFontSize);
+    h_ratio_e_p->GetYaxis()->SetLabelSize(labelFontSize);
+    h_ratio_e_p->GetYaxis()->SetTitleSize(titleFontSize); // Increase y-axis title size
     h_ratio_e_p->Draw();
     h_ratio_e_p->SetMaximum(10.0); // 100% higher than the maximum
     h_ratio_e_p->SetMinimum(1e-5); // Minimum set to 10e-5
     h_ratio_e_p->SetStats(0); // Remove stat box
-    h_ratio_e_p->GetXaxis()->SetLabelSize(labelFontSize);
-    h_ratio_e_p->GetXaxis()->SetTitleSize(titleFontSize); // Increase x-axis title size
 
 
     // Q^2
