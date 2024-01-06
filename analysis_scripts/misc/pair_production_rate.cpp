@@ -59,9 +59,6 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     TCanvas* c1 = new TCanvas("c1", "Pair Production Rate", 1200, 800);
     c1->Divide(2, 3);
 
-    // Remove the statistics box
-    gStyle->SetOptStat(0);
-
     // Draw histograms and ratios
     // e_p
     c1->cd(1);
@@ -72,6 +69,8 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     h_e_p2->Draw("same");
     h_e_p1->SetMaximum(h_e_p1->GetMaximum() * 2.0); // 100% higher than the maximum
     h_e_p1->SetMinimum(1e-5); // Minimum set to 10e-5
+    h_e_p1->SetStats(0); // Remove stat box
+    h_e_p2->SetStats(0); // Remove stat box
 
     c1->cd(2);
     gPad->SetLogy(1);
@@ -81,6 +80,8 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     h_ratio_e_p->Draw();
     h_ratio_e_p->SetMaximum(2.0); // 100% higher than the maximum
     h_ratio_e_p->SetMinimum(1e-5); // Minimum set to 10e-5
+    h_ratio_e_p->SetStats(0); // Remove stat box
+
 
     // Q^2
     c1->cd(3);
@@ -91,6 +92,8 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     h_Q22->SetLineColor(kBlue);
     h_Q21->SetMaximum(2.0); // 100% higher than the maximum
     h_Q21->SetMinimum(1e-5); // Minimum set to 10e-5
+    h_Q21->SetStats(0); // Remove stat box
+    h_Q22->SetStats(0); // Remove stat box
 
     c1->cd(4);
     gPad->SetLogy(1);
@@ -100,6 +103,7 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     h_ratio_Q2->Draw();
     h_ratio_Q2->SetMaximum(2.0); // 100% higher than the maximum
     h_ratio_Q2->SetMinimum(1e-5); // Minimum set to 10e-5
+    h_ratio_Q2->SetStats(0); // Remove stat box
 
     // W
     c1->cd(5);
@@ -110,6 +114,8 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     h_W2->SetLineColor(kBlue);
     h_W1->SetMaximum(2.0); // 100% higher than the maximum
     h_W1->SetMinimum(1e-5); // Minimum set to 10e-5
+    h_W1->SetStats(0); // Remove stat box
+    h_W2->SetStats(0); // Remove stat box
 
     c1->cd(6);
     gPad->SetLogy(1);
@@ -119,6 +125,7 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     h_ratio_W->Draw();
     h_ratio_W->SetMaximum(2.0); // 100% higher than the maximum
     h_ratio_W->SetMinimum(1e-5); // Minimum set to 10e-5
+    h_ratio_W->SetStats(0); // Remove stat box
 
     // Add legends to the left-side plots
     TLegend* leg_e_p = new TLegend(0.15, 0.7, 0.63, 0.9);
