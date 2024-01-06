@@ -865,12 +865,12 @@ public class analysis_fitter extends GenericKinematicFitter {
         return true
 //            && p > 2.2 // higher cut ultimately enforced when we cut on y < 0.8 or y < 0.75
 //                // this is just to speed up processing
-//            && forward_detector_cut(particle_Index, rec_Bank)
-//            && calorimeter_energy_cut(particle_Index, cal_Bank) 
-//            && calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
-//            && calorimeter_diagonal_cut(particle_Index, p, cal_Bank)
-//            && electron_z_vertex _cut(vz)
-//            && pcal_fiducial_cut(particle_Index, rec_Bank, cal_Bank)
+            && forward_detector_cut(particle_Index, rec_Bank)
+            && calorimeter_energy_cut(particle_Index, cal_Bank) 
+            && calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
+            && calorimeter_diagonal_cut(particle_Index, p, cal_Bank)
+            && electron_z_vertex_cut(vz)
+            && pcal_fiducial_cut(particle_Index, rec_Bank, cal_Bank)
 //            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
 //            && nphe_cut(particle_Index, cc_Bank) // legacy cut used in the analysis note to check the effect
                 ;
@@ -977,7 +977,6 @@ public class analysis_fitter extends GenericKinematicFitter {
                 float px = rec_Bank.getFloat("px", particle_Index);
                 float py = rec_Bank.getFloat("py", particle_Index);
                 float pz = rec_Bank.getFloat("pz", particle_Index);
-                System.out.println("hey");
                 double p = Math.sqrt(px*px+py*py+pz*pz);
 
                 float vz = rec_Bank.getFloat("vz", particle_Index);
