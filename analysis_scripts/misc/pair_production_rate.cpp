@@ -15,12 +15,12 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     TTree* tree2 = (TTree*)f2->Get("PhysicsEvents");
 
     // Define histograms for each variable
-    TH1D* h_e_p1 = new TH1D("h_e_p1", "e_p", 100, 2.6, 10);
-    TH1D* h_e_p2 = new TH1D("h_e_p2", "e_p", 100, 2.6, 10);
-    TH1D* h_Q21 = new TH1D("h_Q21", "Q^2", 100, 0, 10); // Adjust range as needed
-    TH1D* h_Q22 = new TH1D("h_Q22", "Q^2", 100, 0, 10);
-    TH1D* h_W1 = new TH1D("h_W1", "W", 100, 0, 3); // Adjust range as needed
-    TH1D* h_W2 = new TH1D("h_W2", "W", 100, 0, 3);
+    TH1D* h_e_p1 = new TH1D("h_e_p1", "e_p;e_p (GeV);Normalized Counts", 100, 2.6, 10);
+    TH1D* h_e_p2 = new TH1D("h_e_p2", "e_p;e_p (GeV);Normalized Counts", 100, 2.6, 10);
+    TH1D* h_Q21 = new TH1D("h_Q21", "Q^2;Q^2 (GeV^2);Normalized Counts", 100, 0, 10); 
+    TH1D* h_Q22 = new TH1D("h_Q22", "Q^2;Q^2 (GeV^2);Normalized Counts", 100, 0, 10);
+    TH1D* h_W1 = new TH1D("h_W1", "W;W (GeV);Normalized Counts", 100, 0.8, 4); 
+    TH1D* h_W2 = new TH1D("h_W2", "W;W (GeV);Normalized Counts", 100, 0.8, 4);
 
     // Set branch addresses
     double e_p, Q2, W;
@@ -78,7 +78,9 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     c1->cd(3);
     gPad->SetLogy(1);
     h_Q21->Draw();
+    h_Q21->SetLineColor(kBlue);
     h_Q22->Draw("same");
+    h_Q22->SetLineColor(kBlue);
 
     c1->cd(4);
     gPad->SetLogy(1);
@@ -90,7 +92,9 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     c1->cd(5);
     gPad->SetLogy(1);
     h_W1->Draw();
+    h_W1->SetLineColor(kBlue);
     h_W2->Draw("same");
+    h_W2->SetLineColor(kBlue);
 
     c1->cd(6);
     gPad->SetLogy(1);
@@ -98,21 +102,24 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     h_ratio_W->Divide(h_W1);
     h_ratio_W->Draw();
 
-    // Add legends
-    TLegend* leg1 = new TLegend(0.7, 0.7, 0.9, 0.9);
-    leg1->AddEntry(h_e_p1, "run 5038, e^-", "l");
-    leg1->AddEntry(h_e_p2, "run 5482, e^+", "l");
-    leg1->Draw();
+    // Add legends to the left-side plots
+    TLegend* leg_e_p = new TLegend(0.7, 0.7, 0.9, 0.9);
+    leg_e_p->AddEntry(h_e_p1, "run 5038, e^-", "l");
+    leg_e_p->AddEntry(h_e_p2, "run 5482, e^+", "l");
+    c1->cd(1);
+    leg_e_p->Draw();
 
-    TLegend* leg2 = new TLegend(0.7, 0.7, 0.9, 0.9);
-    leg2->AddEntry(h_Q21, "run 5038, e^-", "l");
-    leg2->AddEntry(h_Q22, "run 5482, e^+", "l");
-    leg2->Draw();
+    TLegend* leg_Q2 = new TLegend(0.7, 0.7, 0.9, 0.9);
+    leg_Q2->AddEntry(h_Q21, "run 5038, e^-", "l");
+    leg_Q2->AddEntry(h_Q22, "run 5482, e^+", "l");
+    c1->cd(3);
+    leg_Q2->Draw();
 
-    TLegend* leg3 = new TLegend(0.7, 0.7, 0.9, 0.9);
-    leg3->AddEntry(h_W1, "run 5038, e^-", "l");
-    leg3->AddEntry(h_W2, "run 5482, e^+", "l");
-    leg3->Draw();
+    TLegend* leg_W = new TLegend(0.7, 0.7, 0.9, 0.9);
+    leg_W->AddEntry(h_W1, "run 5038, e^-", "l");
+    leg_W->AddEntry(h_W2, "run 5482, e^+", "l");
+    c1->cd(5);
+    leg_W->Draw();
 
     // Save the canvas
     c1->SaveAs(output);
