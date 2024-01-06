@@ -865,13 +865,13 @@ public class analysis_fitter extends GenericKinematicFitter {
         return true
 //            && p > 2.2 // higher cut ultimately enforced when we cut on y < 0.8 or y < 0.75
 //                // this is just to speed up processing
-//            && forward_detector_cut(particle_Index, rec_Bank)
-//            && calorimeter_energy_cut(particle_Index, cal_Bank) 
-//            && calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
-//            && calorimeter_diagonal_cut(particle_Index, p, cal_Bank)
-//            && electron_z_vertex_cut(vz)
-//            && pcal_fiducial_cut(particle_Index, rec_Bank, cal_Bank)
-//            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
+            && forward_detector_cut(particle_Index, rec_Bank)
+            && calorimeter_energy_cut(particle_Index, cal_Bank) 
+            && calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
+            && calorimeter_diagonal_cut(particle_Index, p, cal_Bank)
+            && electron_z_vertex_cut(vz)
+            && pcal_fiducial_cut(particle_Index, rec_Bank, cal_Bank)
+            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
 //            && nphe_cut(particle_Index, cc_Bank) // legacy cut used in the analysis note to check the effect
                 ;
     }
@@ -973,7 +973,7 @@ public class analysis_fitter extends GenericKinematicFitter {
             for (int particle_Index = 0; particle_Index < rec_Bank.rows(); particle_Index++) {
                 int pid = rec_Bank.getInt("pid", particle_Index);
                 // find electron candidates assigned by EventBuilder
-                if (pid!=-11) { continue; } // we are only investigating electrons at this point
+                if (pid!=11) { continue; } // we are only investigating electrons at this point
                 float px = rec_Bank.getFloat("px", particle_Index);
                 float py = rec_Bank.getFloat("py", particle_Index);
                 float pz = rec_Bank.getFloat("pz", particle_Index);

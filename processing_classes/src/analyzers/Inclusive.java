@@ -67,7 +67,7 @@ public class Inclusive {
 	lv_target.setPxPyPzM(0, 0, 0, particle_mass(2212));
         // pull from rec banks for outgoing particles
         // electron
-        String electron_index = "[-11,0]"; // highest p, kinematic fitter should require FD etc
+        String electron_index = "[11,0]"; // highest p, kinematic fitter should require FD etc
 	Particle scattered_electron = recEvent.getParticle(electron_index); //
         LorentzVector lv_e = new LorentzVector();
 	lv_e.setPxPyPzM(scattered_electron.px(), scattered_electron.py(), 
