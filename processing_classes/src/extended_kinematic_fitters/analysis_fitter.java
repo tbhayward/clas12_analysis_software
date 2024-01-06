@@ -992,6 +992,7 @@ public class analysis_fitter extends GenericKinematicFitter {
 
             LorentzVector lv_e = new LorentzVector(); 
             if (p_max_index >= 0) { 
+                System.out.println("hey");
                 // require that the highest momentum electron be in the forward detector 
                 // THIS MAY BE MODIFIED IN A FUTURE ANALYSIS
                 float px = rec_Bank.getFloat("px", p_max_index);
