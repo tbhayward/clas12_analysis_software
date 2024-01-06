@@ -14,13 +14,13 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     TTree* tree1 = (TTree*)f1->Get("PhysicsEvents"); // Adjust tree name if necessary
     TTree* tree2 = (TTree*)f2->Get("PhysicsEvents");
 
-    // // Define histograms for each variable
-    // TH1D* h_e_p1 = new TH1D("h_e_p1", "e_p", 100, 2.6, 10);
-    // TH1D* h_e_p2 = new TH1D("h_e_p2", "e_p", 100, 2.6, 10);
-    // TH1D* h_Q21 = new TH1D("h_Q21", "Q^2", 100, 0, 10); // Adjust range as needed
-    // TH1D* h_Q22 = new TH1D("h_Q22", "Q^2", 100, 0, 10);
-    // TH1D* h_W1 = new TH1D("h_W1", "W", 100, 0, 3); // Adjust range as needed
-    // TH1D* h_W2 = new TH1D("h_W2", "W", 100, 0, 3);
+    // Define histograms for each variable
+    TH1D* h_e_p1 = new TH1D("h_e_p1", "e_p", 100, 2.6, 10);
+    TH1D* h_e_p2 = new TH1D("h_e_p2", "e_p", 100, 2.6, 10);
+    TH1D* h_Q21 = new TH1D("h_Q21", "Q^2", 100, 0, 10); // Adjust range as needed
+    TH1D* h_Q22 = new TH1D("h_Q22", "Q^2", 100, 0, 10);
+    TH1D* h_W1 = new TH1D("h_W1", "W", 100, 0, 3); // Adjust range as needed
+    TH1D* h_W2 = new TH1D("h_W2", "W", 100, 0, 3);
 
     // // Set branch addresses
     // double e_p, Q2, W;
