@@ -225,7 +225,7 @@ void pair_production_rate(const char* file1, const char* file2,
     c1->SaveAs(output);
 
     // Define Q2 bin edges
-    std::vector<double> q2BinEdges = {2.55, 2.99, 3.49, 4.08, 4.78, 5.59, 6.53, 7.64, 8.94};
+    std::vector<double> q2BinEdges = {2.55, 2.99, 3.49, 4.08, 4.78, 5.59, 6.53, 7.64, 8.94, 10.4};
     int nQ2Bins = q2BinEdges.size() - 1;
 
 
@@ -240,8 +240,8 @@ void pair_production_rate(const char* file1, const char* file2,
 
     for (int i = 0; i < nQ2Bins; ++i) {
         // Define histograms for W for each Q2 bin
-        h_W1_Q2[i] = new TH1D(Form("h_W1_Q2_%d", i), ";W (GeV);Normalized Counts", 75, 0.8, 4);
-        h_W2_Q2[i] = new TH1D(Form("h_W2_Q2_%d", i), ";W (GeV);Normalized Counts", 75, 0.8, 4);
+        h_W1_Q2[i] = new TH1D(Form("h_W1_Q2_%d", i), ";W (GeV);Normalized Counts", 50, 0.8, 4);
+        h_W2_Q2[i] = new TH1D(Form("h_W2_Q2_%d", i), ";W (GeV);Normalized Counts", 50, 0.8, 4);
         
         // Fill histograms
         for (Long64_t j = 0; j < nEntries1; j++) {
