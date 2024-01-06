@@ -244,7 +244,7 @@ void pair_production_rate(const char* file1, const char* file2,
             tree1->GetEntry(j);
             if (Q2 >= q2BinEdges[i] && Q2 < q2BinEdges[i+1]) {
                 h_W1_Q2->Fill(W);
-                cout << W << endl;
+                std::cout << W << std::endl;
             }
         }
 
