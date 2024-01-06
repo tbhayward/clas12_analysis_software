@@ -169,19 +169,19 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     h_ratio_W->SetStats(0); // Remove stat box
 
     // Add legends to the left-side plots
-    TLegend* leg_e_p = new TLegend(0.1, 0.7, 0.5, 0.9);;
+    TLegend* leg_e_p = new TLegend(0.3, 0.7, 0.5, 0.9);;
     leg_e_p->AddEntry(h_e_p1, "run 5038, e^-", "l");
     leg_e_p->AddEntry(h_e_p2, "run 5482, e^+", "l");
     c1->cd(1);
     leg_e_p->Draw();
 
-    TLegend* leg_Q2 = new TLegend(0.1, 0.7, 0.5, 0.9);;
+    TLegend* leg_Q2 = new TLegend(0.3, 0.7, 0.5, 0.9);;
     leg_Q2->AddEntry(h_Q21, "run 5038, e^-", "l");
     leg_Q2->AddEntry(h_Q22, "run 5482, e^+", "l");
     c1->cd(3);
     leg_Q2->Draw();
 
-    TLegend* leg_W = new TLegend(0.1, 0.7, 0.5, 0.9);;
+    TLegend* leg_W = new TLegend(0.3, 0.7, 0.5, 0.9);;
     leg_W->AddEntry(h_W1, "run 5038, e^-", "l");
     leg_W->AddEntry(h_W2, "run 5482, e^+", "l");
     c1->cd(5);
