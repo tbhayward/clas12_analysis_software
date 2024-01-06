@@ -978,7 +978,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                 float px = rec_Bank.getFloat("px", particle_Index);
                 float py = rec_Bank.getFloat("py", particle_Index);
                 float pz = rec_Bank.getFloat("pz", particle_Index);
-
+                System.out.println("hey");
                 double p = Math.sqrt(px*px+py*py+pz*pz);
 
                 float vz = rec_Bank.getFloat("vz", particle_Index);
