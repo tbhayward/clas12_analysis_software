@@ -74,29 +74,29 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     h_ratio_e_p->Divide(h_e_p1);
     h_ratio_e_p->Draw();
 
-    // // Q^2
-    // c1->cd(3);
-    // gPad->SetLogy(1);
-    // h_Q21->Draw();
-    // h_Q22->Draw("same");
+    // Q^2
+    c1->cd(3);
+    gPad->SetLogy(1);
+    h_Q21->Draw();
+    h_Q22->Draw("same");
 
-    // c1->cd(4);
-    // gPad->SetLogy(1);
-    // TH1D* h_ratio_Q2 = (TH1D*)h_Q22->Clone();
-    // h_ratio_Q2->Divide(h_Q21);
-    // h_ratio_Q2->Draw();
+    c1->cd(4);
+    gPad->SetLogy(1);
+    TH1D* h_ratio_Q2 = (TH1D*)h_Q22->Clone();
+    h_ratio_Q2->Divide(h_Q21);
+    h_ratio_Q2->Draw();
 
-    // // W
-    // c1->cd(5);
-    // gPad->SetLogy(1);
-    // h_W1->Draw();
-    // h_W2->Draw("same");
+    // W
+    c1->cd(5);
+    gPad->SetLogy(1);
+    h_W1->Draw();
+    h_W2->Draw("same");
 
-    // c1->cd(6);
-    // gPad->SetLogy(1);
-    // TH1D* h_ratio_W = (TH1D*)h_W2->Clone();
-    // h_ratio_W->Divide(h_W1);
-    // h_ratio_W->Draw();
+    c1->cd(6);
+    gPad->SetLogy(1);
+    TH1D* h_ratio_W = (TH1D*)h_W2->Clone();
+    h_ratio_W->Divide(h_W1);
+    h_ratio_W->Draw();
 
     // // Add legends
     // TLegend* leg1 = new TLegend(0.7, 0.7, 0.9, 0.9);
