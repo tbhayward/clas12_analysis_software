@@ -97,7 +97,7 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     TH1D* h_ratio_e_p = (TH1D*)h_e_p2->Clone();
     h_ratio_e_p->Divide(h_e_p1);
     h_ratio_e_p->SetLineColor(kBlack);
-    h_ratio_e_p->SetTitle(";e_p (GeV);Ratio");
+    h_ratio_e_p->SetTitle(";e_{p} (GeV);Ratio");
     h_ratio_e_p->SetLabelSize(labelFontSize);
     h_ratio_e_p->SetTitleSize(titleFontSize);
     h_ratio_e_p->Draw();
@@ -136,7 +136,7 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     gPad->SetBottomMargin(bottomMargin);
     TH1D* h_ratio_Q2 = (TH1D*)h_Q22->Clone();
     h_ratio_Q2->Divide(h_Q21);
-    h_ratio_Q2->SetTitle(";Q^2 (GeV^2);Ratio");
+    h_ratio_Q2->SetTitle(";Q^{2} (GeV^2);Ratio");
     h_ratio_Q2->SetLineColor(kBlack);
     h_ratio_Q2->SetLabelSize(labelFontSize);
     h_ratio_Q2->SetTitleSize(titleFontSize);
@@ -187,19 +187,19 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     h_ratio_W->GetXaxis()->SetTitleSize(titleFontSize); // Increase x-axis title size
 
     // Add legends to the left-side plots
-    TLegend* leg_e_p = new TLegend(0.8, 0.7, 0.5, 0.9);;
+    TLegend* leg_e_p = new TLegend(0.9, 0.7, 0.5, 0.9);;
     leg_e_p->AddEntry(h_e_p1, "run 5038, e^{-}", "l");
     leg_e_p->AddEntry(h_e_p2, "run 5482, e^{+}", "l");
     c1->cd(1);
     leg_e_p->Draw();
 
-    TLegend* leg_Q2 = new TLegend(0.8, 0.7, 0.5, 0.9);;
+    TLegend* leg_Q2 = new TLegend(0.9, 0.7, 0.5, 0.9);;
     leg_Q2->AddEntry(h_Q21, "run 5038, e^{-}", "l");
     leg_Q2->AddEntry(h_Q22, "run 5482, e^{+}", "l");
     c1->cd(3);
     leg_Q2->Draw();
 
-    TLegend* leg_W = new TLegend(0.8, 0.7, 0.5, 0.9);;
+    TLegend* leg_W = new TLegend(0.9, 0.7, 0.5, 0.9);;
     leg_W->AddEntry(h_W1, "run 5038, e^{-}", "l");
     leg_W->AddEntry(h_W2, "run 5482, e^{+}", "l");
     c1->cd(5);
