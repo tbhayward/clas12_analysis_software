@@ -98,21 +98,21 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     h_ratio_W->Divide(h_W1);
     h_ratio_W->Draw();
 
-    // // Add legends
-    // TLegend* leg1 = new TLegend(0.7, 0.7, 0.9, 0.9);
-    // leg1->AddEntry(h_e_p1, "run 5038, e^-", "l");
-    // leg1->AddEntry(h_e_p2, "run 5482, e^+", "l");
-    // leg1->Draw();
+    // Add legends
+    TLegend* leg1 = new TLegend(0.7, 0.7, 0.9, 0.9);
+    leg1->AddEntry(h_e_p1, "run 5038, e^-", "l");
+    leg1->AddEntry(h_e_p2, "run 5482, e^+", "l");
+    leg1->Draw();
 
-    // TLegend* leg2 = new TLegend(0.7, 0.7, 0.9, 0.9);
-    // leg2->AddEntry(h_Q21, "run 5038, e^-", "l");
-    // leg2->AddEntry(h_Q22, "run 5482, e^+", "l");
-    // leg2->Draw();
+    TLegend* leg2 = new TLegend(0.7, 0.7, 0.9, 0.9);
+    leg2->AddEntry(h_Q21, "run 5038, e^-", "l");
+    leg2->AddEntry(h_Q22, "run 5482, e^+", "l");
+    leg2->Draw();
 
-    // TLegend* leg3 = new TLegend(0.7, 0.7, 0.9, 0.9);
-    // leg3->AddEntry(h_W1, "run 5038, e^-", "l");
-    // leg3->AddEntry(h_W2, "run 5482, e^+", "l");
-    // leg3->Draw();
+    TLegend* leg3 = new TLegend(0.7, 0.7, 0.9, 0.9);
+    leg3->AddEntry(h_W1, "run 5038, e^-", "l");
+    leg3->AddEntry(h_W2, "run 5482, e^+", "l");
+    leg3->Draw();
 
     // // Save the canvas
     // c1->SaveAs(output);
