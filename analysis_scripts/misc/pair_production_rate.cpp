@@ -99,10 +99,10 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     h_e_p1->SetMinimum(1e-5); // Minimum set to 10e-5
     h_e_p1->SetStats(0); // Remove stat box
     h_e_p2->SetStats(0); // Remove stat box
-    h_e_p1->GetXaxis()->SetLabelSize(labelFontSize);
-    h_e_p1->GetXaxis()->SetTitleSize(titleFontSize); // Increase x-axis title size
-    h_e_p1->GetYaxis()->SetLabelSize(labelFontSize);
-    h_e_p1->GetYaxis()->SetTitleSize(titleFontSize); // Increase y-axis title size
+    // h_e_p1->GetXaxis()->SetLabelSize(labelFontSize);
+    // h_e_p1->GetXaxis()->SetTitleSize(titleFontSize); // Increase x-axis title size
+    // h_e_p1->GetYaxis()->SetLabelSize(labelFontSize);
+    // h_e_p1->GetYaxis()->SetTitleSize(titleFontSize); // Increase y-axis title size
 
 
     c1->cd(2);
@@ -115,11 +115,11 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     h_ratio_e_p->SetTitle(";e_{p} (GeV);Ratio");
     h_ratio_e_p->SetLabelSize(labelFontSize);
     h_ratio_e_p->SetTitleSize(titleFontSize);
-    h_ratio_e_p->GetYaxis()->SetLabelSize(labelFontSize);
-    h_ratio_e_p->GetYaxis()->SetTitleSize(titleFontSize); // Increase y-axis title size
+    // h_ratio_e_p->GetYaxis()->SetLabelSize(labelFontSize);
+    // h_ratio_e_p->GetYaxis()->SetTitleSize(titleFontSize); // Increase y-axis title size
     h_ratio_e_p->Draw();
-    h_ratio_e_p->SetMaximum(10.0); // 100% higher than the maximum
-    h_ratio_e_p->SetMinimum(1e-5); // Minimum set to 10e-5
+    h_ratio_e_p->SetMaximum(1.0); // 100% higher than the maximum
+    h_ratio_e_p->SetMinimum(1e-4); // Minimum set to 10e-5
     h_ratio_e_p->SetStats(0); // Remove stat box
 
 
@@ -140,10 +140,10 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     h_Q21->SetMinimum(1e-5); // Minimum set to 10e-5
     h_Q21->SetStats(0); // Remove stat box
     h_Q22->SetStats(0); // Remove stat box
-    h_Q21->GetXaxis()->SetLabelSize(labelFontSize);
-    h_Q21->GetXaxis()->SetTitleSize(titleFontSize); // Increase x-axis title size
-    h_Q22->GetYaxis()->SetLabelSize(labelFontSize);
-    h_Q22->GetYaxis()->SetTitleSize(titleFontSize); // Increase y-axis title size
+    // h_Q21->GetXaxis()->SetLabelSize(labelFontSize);
+    // h_Q21->GetXaxis()->SetTitleSize(titleFontSize); // Increase x-axis title size
+    // h_Q22->GetYaxis()->SetLabelSize(labelFontSize);
+    // h_Q22->GetYaxis()->SetTitleSize(titleFontSize); // Increase y-axis title size
 
     c1->cd(4);
     gPad->SetLogy(1);
@@ -156,11 +156,11 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     h_ratio_Q2->SetLabelSize(labelFontSize);
     h_ratio_Q2->SetTitleSize(titleFontSize);
     h_ratio_Q2->Draw();
-    h_ratio_Q2->SetMaximum(10.0); // 100% higher than the maximum
-    h_ratio_Q2->SetMinimum(1e-5); // Minimum set to 10e-5
+    h_ratio_Q2->SetMaximum(1.0); // 100% higher than the maximum
+    h_ratio_Q2->SetMinimum(1e-4); // Minimum set to 10e-5
     h_ratio_Q2->SetStats(0); // Remove stat box
-    h_ratio_Q2->GetXaxis()->SetLabelSize(labelFontSize);
-    h_ratio_Q2->GetXaxis()->SetTitleSize(titleFontSize); // Increase x-axis title size
+    // h_ratio_Q2->GetXaxis()->SetLabelSize(labelFontSize);
+    // h_ratio_Q2->GetXaxis()->SetTitleSize(titleFontSize); // Increase x-axis title size
 
     // W
     c1->cd(5);
@@ -179,10 +179,10 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     h_W1->SetMinimum(1e-5); // Minimum set to 10e-5
     h_W1->SetStats(0); // Remove stat box
     h_W2->SetStats(0); // Remove stat box
-    h_W1->GetXaxis()->SetLabelSize(labelFontSize);
-    h_W1->GetXaxis()->SetTitleSize(titleFontSize); // Increase x-axis title size
-    h_W2->GetYaxis()->SetLabelSize(labelFontSize);
-    h_W2->GetYaxis()->SetTitleSize(titleFontSize); // Increase y-axis title size
+    // h_W1->GetXaxis()->SetLabelSize(labelFontSize);
+    // h_W1->GetXaxis()->SetTitleSize(titleFontSize); // Increase x-axis title size
+    // h_W2->GetYaxis()->SetLabelSize(labelFontSize);
+    // h_W2->GetYaxis()->SetTitleSize(titleFontSize); // Increase y-axis title size
 
     c1->cd(6);
     gPad->SetLogy(1);
@@ -195,11 +195,11 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     h_ratio_W->SetLabelSize(labelFontSize);
     h_ratio_W->SetTitleSize(titleFontSize);
     h_ratio_W->Draw();
-    h_ratio_W->SetMaximum(10.0); // 100% higher than the maximum
-    h_ratio_W->SetMinimum(1e-5); // Minimum set to 10e-5
+    h_ratio_W->SetMaximum(1.0); // 100% higher than the maximum
+    h_ratio_W->SetMinimum(1e-4); // Minimum set to 10e-5
     h_ratio_W->SetStats(0); // Remove stat box
-    h_ratio_W->GetXaxis()->SetLabelSize(labelFontSize);
-    h_ratio_W->GetXaxis()->SetTitleSize(titleFontSize); // Increase x-axis title size
+    // h_ratio_W->GetXaxis()->SetLabelSize(labelFontSize);
+    // h_ratio_W->GetXaxis()->SetTitleSize(titleFontSize); // Increase x-axis title size
 
     // Add legends to the left-side plots
     TLegend* leg_e_p = new TLegend(0.7, 0.7, 0.9, 0.9);
