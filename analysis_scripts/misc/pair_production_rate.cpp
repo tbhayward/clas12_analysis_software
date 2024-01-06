@@ -223,29 +223,73 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     // Save the canvas
     c1->SaveAs(output);
 
-    // // Clean up
-    // delete f1;
-    // delete f2;
-    // delete h_e_p1;
-    // delete h_e_p2;
-    // delete h_Q21;
-    // delete h_Q22;
-    // delete h_W1;
-    // delete h_W2;
-    // delete h_ratio_e_p;
-    // delete h_ratio_Q2;
-    // delete h_ratio_W;
-    // delete leg1;
-    // delete leg2;
-    // delete leg3;
-    // delete c1;
+    // Define Q2 bin edges
+    std::vector<double> q2BinEdges = {2.55, 2.99, 3.49, 4.08, 4.78, 5.59, 6.53, 7.64, 8.94};
+    int nQ2Bins = q2BinEdges.size() - 1;
+
+    // Create a second canvas for Q2 bins
+    TCanvas* c2 = new TCanvas("c2", "Q2 Binned Ratios", 1200, 800);
+    c2->Divide(2, 4); // Adjust the division based on the number of Q2 bins
+
+    for (int i = 0; i < nQ2Bins; ++i) {
+    c2->cd(i+1);
+
+    // Define histograms for W for each Q2 bin
+    TH1D* h_W1_Q2 = new TH1D(Form("h_W1_Q2_%d", i), ";W (GeV);Normalized Counts", 100, 0.8, 4);
+    TH1D* h_W2_Q2 = new TH1D(Form("h_W2_Q2_%d", i), ";W (GeV);Normalized Counts", 100, 0.8, 4);
+
+    // Loop over entries to fill histograms for the specific Q2 bin
+    for (Long64_t j = 0; j < nEntries1; j++) {
+        tree1->GetEntry(j);
+        if (Q2 >= q2BinEdges[i] && Q2 < q2BinEdges[i+1]) {
+            h_W1_Q2->Fill(W);
+        }
+    }
+
+    for (Long64_t j = 0; j < nEntries2; j++) {
+        tree2->GetEntry(j);
+        if (Q2 >= q2BinEdges[i] && Q2 < q2BinEdges[i+1]) {
+            h_W2_Q2->Fill(W);
+        }
+    }
+
+    // Normalize histograms
+    h_W1_Q2->Scale(1.0 / 378709);
+    h_W2_Q2->Scale(1.0 / 266653);
+
+    // Create ratio histogram
+    TH1D* h_ratio_W_Q2 = (TH1D*)h_W2_Q2->Clone();
+    h_ratio_W_Q2->Divide(h_W1_Q2);
+    h_ratio_W_Q2->SetTitle(Form("%g < Q^{2} (GeV^{2}) < %g;W (GeV);Ratio", 
+        q2BinEdges[i], q2BinEdges[i+1]));
+    h_ratio_W_Q2->SetStats(0); // Remove stat box
+
+    // Set label and title sizes
+    h_ratio_W_Q2->GetXaxis()->SetLabelSize(labelFontSize);
+    h_ratio_W_Q2->GetXaxis()->SetTitleSize(titleFontSize);
+    h_ratio_W_Q2->GetYaxis()->SetLabelSize(labelFontSize);
+    h_ratio_W_Q2->GetYaxis()->SetTitleSize(titleFontSize);
+
+    // Plot the ratio histogram
+    h_ratio_W_Q2->Draw();
+
+    // Clean up
+    delete h_W1_Q2;
+    delete h_W2_Q2;
+    delete h_ratio_W_Q2;
+}
+
+// Save the second canvas
+c2->SaveAs(output2);
+
 }
 
 int main(int argc, char** argv) {
-    if (argc != 4) {
-        std::cout << "Usage: " << argv[0] << " <file1> <file2> <output>" << std::endl;
+    if (argc != 5) {
+        std::cout << "Usage: " << argv[0] << " <file1> <file2> <output1> <output2>" << std::endl;
         return 1;
     }
-    pair_production_rate(argv[1], argv[2], argv[3]);
+    pair_production_rate(argv[1], argv[2], argv[3], argv[4]);
     return 0;
 }
+
