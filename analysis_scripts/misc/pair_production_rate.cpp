@@ -7,7 +7,8 @@
 #include <TGraphErrors.h>
 #include <iostream>
 
-void pair_production_rate(const char* file1, const char* file2, const char* output) {
+void pair_production_rate(const char* file1, const char* file2, 
+    const char* output, const char* output2) {
     // Open ROOT files and get trees
     TFile* f1 = new TFile(file1);
     TFile* f2 = new TFile(file2);
