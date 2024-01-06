@@ -969,7 +969,7 @@ public class analysis_fitter extends GenericKinematicFitter {
             double pion_vz = -99;
             double p_max = 0;
             int p_max_index = -99; // find the index of the highest energy electron before FD cut
-            
+            System.out.println("test");
             // cycle over the particles in recBank and investigate electron and pion IDs
             for (int particle_Index = 0; particle_Index < rec_Bank.rows(); particle_Index++) {
                 int pid = rec_Bank.getInt("pid", particle_Index);
