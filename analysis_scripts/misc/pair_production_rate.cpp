@@ -228,6 +228,7 @@ void pair_production_rate(const char* file1, const char* file2,
     std::vector<double> q2BinEdges = {2.55, 2.99, 3.49, 4.08, 4.78, 5.59, 6.53, 7.64, 8.94};
     int nQ2Bins = q2BinEdges.size() - 1;
 
+
     // Create a second canvas for Q2 bins
     TCanvas* c2 = new TCanvas("c2", "Q2 Binned Ratios", 1200, 800);
     c2->Divide(2, 4); // Adjust the division based on the number of Q2 bins
@@ -266,6 +267,18 @@ void pair_production_rate(const char* file1, const char* file2,
         h_ratio_W_Q2[i]->SetTitle(Form("%g < Q^{2} (GeV^{2}) < %g;W (GeV);Ratio", 
             q2BinEdges[i], q2BinEdges[i+1]));
         h_ratio_W_Q2[i]->SetStats(0); // Remove stat box
+
+        // Set label and title sizes and center titles
+        h_ratio_W_Q2[i]->GetXaxis()->SetLabelSize(labelFontSize);
+        h_ratio_W_Q2[i]->GetXaxis()->SetTitleSize(titleFontSize);
+        h_ratio_W_Q2[i]->GetXaxis()->CenterTitle();
+        h_ratio_W_Q2[i]->GetYaxis()->SetLabelSize(labelFontSize);
+        h_ratio_W_Q2[i]->GetYaxis()->SetTitleSize(titleFontSize);
+        h_ratio_W_Q2[i]->GetYaxis()->CenterTitle();
+
+        // Set Y-axis range from 0 to 0.1
+        h_ratio_W_Q2[i]->SetMinimum(0.0);
+        h_ratio_W_Q2[i]->SetMaximum(0.1);
     }
 
     // Plot histograms on canvas
