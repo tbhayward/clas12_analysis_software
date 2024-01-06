@@ -22,14 +22,14 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     TH1D* h_W1 = new TH1D("h_W1", "W", 100, 0, 3); // Adjust range as needed
     TH1D* h_W2 = new TH1D("h_W2", "W", 100, 0, 3);
 
-    // // Set branch addresses
-    // double e_p, Q2, W;
-    // tree1->SetBranchAddress("e_p", &e_p);
-    // tree1->SetBranchAddress("Q2", &Q2);
-    // tree1->SetBranchAddress("W", &W);
-    // tree2->SetBranchAddress("e_p", &e_p);
-    // tree2->SetBranchAddress("Q2", &Q2);
-    // tree2->SetBranchAddress("W", &W);
+    // Set branch addresses
+    double e_p, Q2, W;
+    tree1->SetBranchAddress("e_p", &e_p);
+    tree1->SetBranchAddress("Q2", &Q2);
+    tree1->SetBranchAddress("W", &W);
+    tree2->SetBranchAddress("e_p", &e_p);
+    tree2->SetBranchAddress("Q2", &Q2);
+    tree2->SetBranchAddress("W", &W);
 
     // // Fill histograms
     // Long64_t nEntries1 = tree1->GetEntries();
