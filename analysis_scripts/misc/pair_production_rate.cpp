@@ -69,14 +69,18 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     h_e_p2->Draw("same");
     h_e_p1->SetMaximum(h_e_p1->GetMaximum() * 2.0); // 100% higher than the maximum
     h_e_p1->SetMinimum(1e-5); // Minimum set to 10e-5
+    h_e_p1->SetOptStat(0); // Remove stat box
+    h_e_p2->SetOptStat(0); // Remove stat box
 
     c1->cd(2);
     gPad->SetLogy(1);
     TH1D* h_ratio_e_p = (TH1D*)h_e_p2->Clone();
     h_ratio_e_p->Divide(h_e_p1);
+    h_ratio_e_p->SetLineColor(kBlack);
     h_ratio_e_p->Draw();
     h_ratio_e_p->SetMaximum(2.0); // 100% higher than the maximum
     h_ratio_e_p->SetMinimum(1e-5); // Minimum set to 10e-5
+    h_ratio_e_p->SetOptStat(0); // Remove stat box
 
     // Q^2
     c1->cd(3);
@@ -87,14 +91,19 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     h_Q22->SetLineColor(kBlue);
     h_Q21->SetMaximum(2.0); // 100% higher than the maximum
     h_Q21->SetMinimum(1e-5); // Minimum set to 10e-5
+    h_Q21->SetOptStat(0); // Remove stat box
+    h_Q22->SetOptStat(0); // Remove stat box
 
     c1->cd(4);
     gPad->SetLogy(1);
     TH1D* h_ratio_Q2 = (TH1D*)h_Q22->Clone();
     h_ratio_Q2->Divide(h_Q21);
+    h_ratio_Q2->SetLineColor(kBlack);
     h_ratio_Q2->Draw();
     h_ratio_Q2->SetMaximum(2.0); // 100% higher than the maximum
     h_ratio_Q2->SetMinimum(1e-5); // Minimum set to 10e-5
+    h_ratio_Q2->SetOptStat(0); // Remove stat box
+    h_ratio_Q2->SetOptStat(0); // Remove stat box
 
     // W
     c1->cd(5);
@@ -105,29 +114,33 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     h_W2->SetLineColor(kBlue);
     h_W1->SetMaximum(2.0); // 100% higher than the maximum
     h_W1->SetMinimum(1e-5); // Minimum set to 10e-5
+    h_W1->SetOptStat(0); // Remove stat box
+    h_W2->SetOptStat(0); // Remove stat box
 
     c1->cd(6);
     gPad->SetLogy(1);
     TH1D* h_ratio_W = (TH1D*)h_W2->Clone();
     h_ratio_W->Divide(h_W1);
+    h_ratio_W->SetLineColor(kBlack);
     h_ratio_W->Draw();
     h_ratio_W->SetMaximum(2.0); // 100% higher than the maximum
     h_ratio_W->SetMinimum(1e-5); // Minimum set to 10e-5
+    h_ratio_W->SetOptStat(0); // Remove stat box
 
     // Add legends to the left-side plots
-    TLegend* leg_e_p = new TLegend(0.7, 0.7, 0.9, 0.9);
+    TLegend* leg_e_p = new TLegend(0.15, 0.7, 0.63, 0.9);
     leg_e_p->AddEntry(h_e_p1, "run 5038, e^-", "l");
     leg_e_p->AddEntry(h_e_p2, "run 5482, e^+", "l");
     c1->cd(1);
     leg_e_p->Draw();
 
-    TLegend* leg_Q2 = new TLegend(0.7, 0.7, 0.9, 0.9);
+    TLegend* leg_Q2 = new TLegend(0.15, 0.7, 0.63, 0.9);
     leg_Q2->AddEntry(h_Q21, "run 5038, e^-", "l");
     leg_Q2->AddEntry(h_Q22, "run 5482, e^+", "l");
     c1->cd(3);
     leg_Q2->Draw();
 
-    TLegend* leg_W = new TLegend(0.7, 0.7, 0.9, 0.9);
+    TLegend* leg_W = new TLegend(0.15, 0.7, 0.63, 0.9);
     leg_W->AddEntry(h_W1, "run 5038, e^-", "l");
     leg_W->AddEntry(h_W2, "run 5482, e^+", "l");
     c1->cd(5);
