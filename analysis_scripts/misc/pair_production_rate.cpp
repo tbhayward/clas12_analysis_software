@@ -22,6 +22,23 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     TH1D* h_W1 = new TH1D("h_W1", ";W (GeV);Normalized Counts", 100, 0.8, 4); 
     TH1D* h_W2 = new TH1D("h_W2", ";W (GeV);Normalized Counts", 100, 0.8, 4);
 
+    // Set label and title sizes for y-axis for all histograms
+    double labelFontSize = 0.05; // Adjust as needed
+    double titleFontSize = 0.06; // Adjust as needed
+
+    h_e_p1->GetYaxis()->SetLabelSize(labelFontSize);
+    h_e_p1->GetYaxis()->SetTitleSize(titleFontSize);
+    h_e_p2->GetYaxis()->SetLabelSize(labelFontSize);
+    h_e_p2->GetYaxis()->SetTitleSize(titleFontSize);
+    h_Q21->GetYaxis()->SetLabelSize(labelFontSize);
+    h_Q21->GetYaxis()->SetTitleSize(titleFontSize);
+    h_Q22->GetYaxis()->SetLabelSize(labelFontSize);
+    h_Q22->GetYaxis()->SetTitleSize(titleFontSize);
+    h_W1->GetYaxis()->SetLabelSize(labelFontSize);
+    h_W1->GetYaxis()->SetTitleSize(titleFontSize);
+    h_W2->GetYaxis()->SetLabelSize(labelFontSize);
+    h_W2->GetYaxis()->SetTitleSize(titleFontSize);
+
     // Set branch addresses
     double e_p, Q2, W;
     tree1->SetBranchAddress("e_p", &e_p);
@@ -56,8 +73,6 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     h_W2->Scale(1.0 / 266653);
 
     // Define larger font sizes
-    double labelFontSize = 0.05; // Adjust as needed
-    double titleFontSize = 0.06; // Adjust as needed
     double legendFontSize = 0.05; // Adjust as needed
     double leftMargin = 0.15; // Increase left margin
     double bottomMargin = 0.15; // Increase bottom margin
