@@ -67,12 +67,16 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     h_e_p1->Draw();
     h_e_p2->SetLineColor(kRed);
     h_e_p2->Draw("same");
+    h_e_p1->SetMaximum(h_e_p1->GetMaximum() * 2.0); // 100% higher than the maximum
+    h_e_p1->SetMinimum(1e-5); // Minimum set to 10e-5
 
     c1->cd(2);
     gPad->SetLogy(1);
     TH1D* h_ratio_e_p = (TH1D*)h_e_p2->Clone();
     h_ratio_e_p->Divide(h_e_p1);
     h_ratio_e_p->Draw();
+    h_ratio_e_p->SetMaximum(2.0); // 100% higher than the maximum
+    h_ratio_e_p->SetMinimum(1e-5); // Minimum set to 10e-5
 
     // Q^2
     c1->cd(3);
@@ -81,12 +85,16 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     h_Q21->SetLineColor(kBlue);
     h_Q22->Draw("same");
     h_Q22->SetLineColor(kBlue);
+    h_Q21->SetMaximum(2.0); // 100% higher than the maximum
+    h_Q21->SetMinimum(1e-5); // Minimum set to 10e-5
 
     c1->cd(4);
     gPad->SetLogy(1);
     TH1D* h_ratio_Q2 = (TH1D*)h_Q22->Clone();
     h_ratio_Q2->Divide(h_Q21);
     h_ratio_Q2->Draw();
+    h_ratio_Q2->SetMaximum(2.0); // 100% higher than the maximum
+    h_ratio_Q2->SetMinimum(1e-5); // Minimum set to 10e-5
 
     // W
     c1->cd(5);
@@ -95,12 +103,16 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     h_W1->SetLineColor(kBlue);
     h_W2->Draw("same");
     h_W2->SetLineColor(kBlue);
+    h_W1->SetMaximum(2.0); // 100% higher than the maximum
+    h_W1->SetMinimum(1e-5); // Minimum set to 10e-5
 
     c1->cd(6);
     gPad->SetLogy(1);
     TH1D* h_ratio_W = (TH1D*)h_W2->Clone();
     h_ratio_W->Divide(h_W1);
     h_ratio_W->Draw();
+    h_ratio_W->SetMaximum(2.0); // 100% higher than the maximum
+    h_ratio_W->SetMinimum(1e-5); // Minimum set to 10e-5
 
     // Add legends to the left-side plots
     TLegend* leg_e_p = new TLegend(0.7, 0.7, 0.9, 0.9);
