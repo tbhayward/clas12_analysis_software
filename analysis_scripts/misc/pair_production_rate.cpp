@@ -231,7 +231,7 @@ void pair_production_rate(const char* file1, const char* file2,
 
     // Create a second canvas for Q2 bins
     TCanvas* c2 = new TCanvas("c2", "Q2 Binned Ratios", 1200, 800);
-    c2->Divide(2, 4); // Adjust the division based on the number of Q2 bins
+    c2->Divide(2, 5); // Adjust the division based on the number of Q2 bins
 
     // Array of histograms for each Q2 bin
     std::vector<TH1D*> h_W1_Q2(nQ2Bins);
@@ -240,8 +240,8 @@ void pair_production_rate(const char* file1, const char* file2,
 
     for (int i = 0; i < nQ2Bins; ++i) {
         // Define histograms for W for each Q2 bin
-        h_W1_Q2[i] = new TH1D(Form("h_W1_Q2_%d", i), ";W (GeV);Normalized Counts", 50, 0.8, 4);
-        h_W2_Q2[i] = new TH1D(Form("h_W2_Q2_%d", i), ";W (GeV);Normalized Counts", 50, 0.8, 4);
+        h_W1_Q2[i] = new TH1D(Form("h_W1_Q2_%d", i), ";W (GeV);Normalized Counts", 50, 0.8, 2.5);
+        h_W2_Q2[i] = new TH1D(Form("h_W2_Q2_%d", i), ";W (GeV);Normalized Counts", 50, 0.8, 2.5);
         
         // Fill histograms
         for (Long64_t j = 0; j < nEntries1; j++) {
