@@ -4,6 +4,8 @@
 #include <TCanvas.h>
 #include <TLegend.h>
 #include <TMath.h>
+#include <TGraphErrors.h>
+#include <iostream>
 
 void pair_production_rate(const char* file1, const char* file2, const char* output) {
     // Open ROOT files and get trees
@@ -60,32 +62,38 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     // Draw histograms and ratios
     // e_p
     c1->cd(1);
+    gPad->SetLogy(1);
     h_e_p1->SetLineColor(kBlue);
     h_e_p1->Draw();
     h_e_p2->SetLineColor(kRed);
     h_e_p2->Draw("same");
 
     c1->cd(2);
+    gPad->SetLogy(1);
     TH1D* h_ratio_e_p = (TH1D*)h_e_p2->Clone();
     h_ratio_e_p->Divide(h_e_p1);
     h_ratio_e_p->Draw();
 
     // Q^2
     c1->cd(3);
+    gPad->SetLogy(1);
     h_Q21->Draw();
     h_Q22->Draw("same");
 
     c1->cd(4);
+    gPad->SetLogy(1);
     TH1D* h_ratio_Q2 = (TH1D*)h_Q22->Clone();
     h_ratio_Q2->Divide(h_Q21);
     h_ratio_Q2->Draw();
 
     // W
     c1->cd(5);
+    gPad->SetLogy(1);
     h_W1->Draw();
     h_W2->Draw("same");
 
     c1->cd(6);
+    gPad->SetLogy(1);
     TH1D* h_ratio_W = (TH1D*)h_W2->Clone();
     h_ratio_W->Divide(h_W1);
     h_ratio_W->Draw();
