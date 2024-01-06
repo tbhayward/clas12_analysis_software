@@ -992,7 +992,6 @@ public class analysis_fitter extends GenericKinematicFitter {
 
             LorentzVector lv_e = new LorentzVector(); 
             if (p_max_index >= 0) { 
-                System.out.println("hey");
                 // require that the highest momentum electron be in the forward detector 
                 // THIS MAY BE MODIFIED IN A FUTURE ANALYSIS
                 float px = rec_Bank.getFloat("px", p_max_index);
@@ -1007,6 +1006,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                                 run_Bank, cc_Bank)) {
                     // this checks all of the PID requirements, if it passes all of them the electron is 
                     // added to the event below
+                    System.out.println("hey");
                     Particle part = new Particle(11,px,py,pz,vx,vy,vz);
                     physEvent.addParticle(part);
                     lv_e.setPxPyPzM(px, py, pz, 0.0005109989461);
