@@ -974,7 +974,7 @@ public class analysis_fitter extends GenericKinematicFitter {
             for (int particle_Index = 0; particle_Index < rec_Bank.rows(); particle_Index++) {
                 int pid = rec_Bank.getInt("pid", particle_Index);
                 // find electron candidates assigned by EventBuilder
-                if (pid != 11) { continue; } // we are only investigating electrons at this point
+                if (pid != 11 || pid!=-11) { continue; } // we are only investigating electrons at this point
                 float px = rec_Bank.getFloat("px", particle_Index);
                 float py = rec_Bank.getFloat("py", particle_Index);
                 float pz = rec_Bank.getFloat("pz", particle_Index);
