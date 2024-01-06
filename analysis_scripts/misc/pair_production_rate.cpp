@@ -240,8 +240,8 @@ void pair_production_rate(const char* file1, const char* file2,
 
     for (int i = 0; i < nQ2Bins; ++i) {
         // Define histograms for W for each Q2 bin
-        h_W1_Q2[i] = new TH1D(Form("h_W1_Q2_%d", i), ";W (GeV);Normalized Counts", 100, 0.8, 4);
-        h_W2_Q2[i] = new TH1D(Form("h_W2_Q2_%d", i), ";W (GeV);Normalized Counts", 100, 0.8, 4);
+        h_W1_Q2[i] = new TH1D(Form("h_W1_Q2_%d", i), ";W (GeV);Normalized Counts", 75, 0.8, 4);
+        h_W2_Q2[i] = new TH1D(Form("h_W2_Q2_%d", i), ";W (GeV);Normalized Counts", 75, 0.8, 4);
         
         // Fill histograms
         for (Long64_t j = 0; j < nEntries1; j++) {
