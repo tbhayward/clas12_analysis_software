@@ -258,8 +258,8 @@ void pair_production_rate(const char* file1, const char* file2,
         }
 
         // Normalize histograms
-        h_W1_Q2[i]->Scale(1.0 / 378709);
-        h_W2_Q2[i]->Scale(1.0 / 266653);
+        h_W1_Q2[i]->Scale(1.0 / 1068727);
+        h_W2_Q2[i]->Scale(1.0 / 1092823);
 
         // Create ratio histogram
         h_ratio_W_Q2[i] = (TH1D*)h_W2_Q2[i]->Clone();
