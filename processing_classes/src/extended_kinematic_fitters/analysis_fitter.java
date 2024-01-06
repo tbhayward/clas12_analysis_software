@@ -866,8 +866,8 @@ public class analysis_fitter extends GenericKinematicFitter {
 //            && p > 2.2 // higher cut ultimately enforced when we cut on y < 0.8 or y < 0.75
 //                // this is just to speed up processing
             && forward_detector_cut(particle_Index, rec_Bank)
-            && calorimeter_energy_cut(particle_Index, cal_Bank) 
-            && calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
+//            && calorimeter_energy_cut(particle_Index, cal_Bank) 
+//            && calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
             && calorimeter_diagonal_cut(particle_Index, p, cal_Bank)
             && electron_z_vertex_cut(vz)
 //            && pcal_fiducial_cut(particle_Index, rec_Bank, cal_Bank)
