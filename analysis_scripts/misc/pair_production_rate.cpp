@@ -59,20 +59,20 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
     TCanvas* c1 = new TCanvas("c1", "Pair Production Rate", 1200, 800);
     c1->Divide(2, 3);
 
-    // // Draw histograms and ratios
-    // // e_p
-    // c1->cd(1);
-    // gPad->SetLogy(1);
-    // h_e_p1->SetLineColor(kBlue);
-    // h_e_p1->Draw();
-    // h_e_p2->SetLineColor(kRed);
-    // h_e_p2->Draw("same");
+    // Draw histograms and ratios
+    // e_p
+    c1->cd(1);
+    gPad->SetLogy(1);
+    h_e_p1->SetLineColor(kBlue);
+    h_e_p1->Draw();
+    h_e_p2->SetLineColor(kRed);
+    h_e_p2->Draw("same");
 
-    // c1->cd(2);
-    // gPad->SetLogy(1);
-    // TH1D* h_ratio_e_p = (TH1D*)h_e_p2->Clone();
-    // h_ratio_e_p->Divide(h_e_p1);
-    // h_ratio_e_p->Draw();
+    c1->cd(2);
+    gPad->SetLogy(1);
+    TH1D* h_ratio_e_p = (TH1D*)h_e_p2->Clone();
+    h_ratio_e_p->Divide(h_e_p1);
+    h_ratio_e_p->Draw();
 
     // // Q^2
     // c1->cd(3);
