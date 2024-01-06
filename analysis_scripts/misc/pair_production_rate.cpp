@@ -152,7 +152,7 @@ void pair_production_rate(const char* file1, const char* file2,
     gPad->SetBottomMargin(bottomMargin);
     TH1D* h_ratio_Q2 = (TH1D*)h_Q22->Clone();
     h_ratio_Q2->Divide(h_Q21);
-    h_ratio_Q2->SetTitle(";Q^{2} (GeV^2);Ratio");
+    h_ratio_Q2->SetTitle(";Q^{2} (GeV^{2});Ratio");
     h_ratio_Q2->SetLineColor(kBlack);
     h_ratio_Q2->SetLabelSize(labelFontSize);
     h_ratio_Q2->SetTitleSize(titleFontSize);
@@ -233,55 +233,56 @@ void pair_production_rate(const char* file1, const char* file2,
     c2->Divide(2, 4); // Adjust the division based on the number of Q2 bins
 
     for (int i = 0; i < nQ2Bins; ++i) {
-    c2->cd(i+1);
+        c2->cd(i+1);
 
-    // Define histograms for W for each Q2 bin
-    TH1D* h_W1_Q2 = new TH1D(Form("h_W1_Q2_%d", i), ";W (GeV);Normalized Counts", 100, 0.8, 4);
-    TH1D* h_W2_Q2 = new TH1D(Form("h_W2_Q2_%d", i), ";W (GeV);Normalized Counts", 100, 0.8, 4);
+        // Define histograms for W for each Q2 bin
+        TH1D* h_W1_Q2 = new TH1D(Form("h_W1_Q2_%d", i), ";W (GeV);Normalized Counts", 100, 0.8, 4);
+        TH1D* h_W2_Q2 = new TH1D(Form("h_W2_Q2_%d", i), ";W (GeV);Normalized Counts", 100, 0.8, 4);
 
-    // Loop over entries to fill histograms for the specific Q2 bin
-    for (Long64_t j = 0; j < nEntries1; j++) {
-        tree1->GetEntry(j);
-        if (Q2 >= q2BinEdges[i] && Q2 < q2BinEdges[i+1]) {
-            h_W1_Q2->Fill(W);
+        // Loop over entries to fill histograms for the specific Q2 bin
+        for (Long64_t j = 0; j < nEntries1; j++) {
+            tree1->GetEntry(j);
+            if (Q2 >= q2BinEdges[i] && Q2 < q2BinEdges[i+1]) {
+                h_W1_Q2->Fill(W);
+                cout << W << endl;
+            }
         }
+
+        for (Long64_t j = 0; j < nEntries2; j++) {
+            tree2->GetEntry(j);
+            if (Q2 >= q2BinEdges[i] && Q2 < q2BinEdges[i+1]) {
+                h_W2_Q2->Fill(W);
+            }
+        }
+
+        // Normalize histograms
+        h_W1_Q2->Scale(1.0 / 378709);
+        h_W2_Q2->Scale(1.0 / 266653);
+
+        // Create ratio histogram
+        TH1D* h_ratio_W_Q2 = (TH1D*)h_W2_Q2->Clone();
+        h_ratio_W_Q2->Divide(h_W1_Q2);
+        h_ratio_W_Q2->SetTitle(Form("%g < Q^{2} (GeV^{2}) < %g;W (GeV);Ratio", 
+            q2BinEdges[i], q2BinEdges[i+1]));
+        h_ratio_W_Q2->SetStats(0); // Remove stat box
+
+        // Set label and title sizes
+        h_ratio_W_Q2->GetXaxis()->SetLabelSize(labelFontSize);
+        h_ratio_W_Q2->GetXaxis()->SetTitleSize(titleFontSize);
+        h_ratio_W_Q2->GetYaxis()->SetLabelSize(labelFontSize);
+        h_ratio_W_Q2->GetYaxis()->SetTitleSize(titleFontSize);
+
+        // Plot the ratio histogram
+        h_ratio_W_Q2->Draw();
+
+        // Clean up
+        delete h_W1_Q2;
+        delete h_W2_Q2;
+        delete h_ratio_W_Q2;
     }
 
-    for (Long64_t j = 0; j < nEntries2; j++) {
-        tree2->GetEntry(j);
-        if (Q2 >= q2BinEdges[i] && Q2 < q2BinEdges[i+1]) {
-            h_W2_Q2->Fill(W);
-        }
-    }
-
-    // Normalize histograms
-    h_W1_Q2->Scale(1.0 / 378709);
-    h_W2_Q2->Scale(1.0 / 266653);
-
-    // Create ratio histogram
-    TH1D* h_ratio_W_Q2 = (TH1D*)h_W2_Q2->Clone();
-    h_ratio_W_Q2->Divide(h_W1_Q2);
-    h_ratio_W_Q2->SetTitle(Form("%g < Q^{2} (GeV^{2}) < %g;W (GeV);Ratio", 
-        q2BinEdges[i], q2BinEdges[i+1]));
-    h_ratio_W_Q2->SetStats(0); // Remove stat box
-
-    // Set label and title sizes
-    h_ratio_W_Q2->GetXaxis()->SetLabelSize(labelFontSize);
-    h_ratio_W_Q2->GetXaxis()->SetTitleSize(titleFontSize);
-    h_ratio_W_Q2->GetYaxis()->SetLabelSize(labelFontSize);
-    h_ratio_W_Q2->GetYaxis()->SetTitleSize(titleFontSize);
-
-    // Plot the ratio histogram
-    h_ratio_W_Q2->Draw();
-
-    // Clean up
-    delete h_W1_Q2;
-    delete h_W2_Q2;
-    delete h_ratio_W_Q2;
-}
-
-// Save the second canvas
-c2->SaveAs(output2);
+    // Save the second canvas
+    c2->SaveAs(output2);
 
 }
 
