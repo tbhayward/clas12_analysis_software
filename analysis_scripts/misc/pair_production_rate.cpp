@@ -47,17 +47,17 @@ void pair_production_rate(const char* file1, const char* file2, const char* outp
         h_W2->Fill(W);
     }
 
-    // // Normalize histograms
-    // h_e_p1->Scale(1.0 / 378709);
-    // h_e_p2->Scale(1.0 / 266653);
-    // h_Q21->Scale(1.0 / 378709);
-    // h_Q22->Scale(1.0 / 266653);
-    // h_W1->Scale(1.0 / 378709);
-    // h_W2->Scale(1.0 / 266653);
+    // Normalize histograms
+    h_e_p1->Scale(1.0 / 378709);
+    h_e_p2->Scale(1.0 / 266653);
+    h_Q21->Scale(1.0 / 378709);
+    h_Q22->Scale(1.0 / 266653);
+    h_W1->Scale(1.0 / 378709);
+    h_W2->Scale(1.0 / 266653);
 
-    // // Create a canvas
-    // TCanvas* c1 = new TCanvas("c1", "Pair Production Rate", 1200, 800);
-    // c1->Divide(2, 3);
+    // Create a canvas
+    TCanvas* c1 = new TCanvas("c1", "Pair Production Rate", 1200, 800);
+    c1->Divide(2, 3);
 
     // // Draw histograms and ratios
     // // e_p
