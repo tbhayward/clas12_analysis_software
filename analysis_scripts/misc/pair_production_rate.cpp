@@ -306,7 +306,7 @@ int main(int argc, char** argv) {
         std::cout << "Usage: " << argv[0] << " <file1> <file2> <output1> <output2> <output3>" << std::endl;
         return 1;
     }
-    pair_production_rate(argv[1], argv[2], argv[3], argv[4]);
+    pair_production_rate(argv[1], argv[2], argv[3], argv[4], argv[5]);
     return 0;
 }
 
