@@ -54,15 +54,19 @@ void pair_production_rate(const char* file1, const char* file2,
     Long64_t nEntries2 = tree2->GetEntries();
     for (Long64_t i = 0; i < nEntries1; ++i) {
         tree1->GetEntry(i);
-        h_e_p1->Fill(e_p);
-        h_Q21->Fill(Q2);
-        h_W1->Fill(W);
+        if (Q2 > 2.55 && Q2 < 10.4 && W > 1.1 && W < 2.5) {
+            h_e_p1->Fill(e_p);
+            h_Q21->Fill(Q2);
+            h_W1->Fill(W);
+        }
     }
     for (Long64_t i = 0; i < nEntries2; ++i) {
         tree2->GetEntry(i);
-        h_e_p2->Fill(e_p);
-        h_Q22->Fill(Q2);
-        h_W2->Fill(W);
+        if (Q2 > 2.55 && Q2 < 10.4 && W > 1.1 && W < 2.5) {
+            h_e_p2->Fill(e_p);
+            h_Q22->Fill(Q2);
+            h_W2->Fill(W);
+        }
     }
 
     // Normalize histograms
@@ -240,20 +244,24 @@ void pair_production_rate(const char* file1, const char* file2,
 
     for (int i = 0; i < nQ2Bins; ++i) {
         // Define histograms for W for each Q2 bin
-        h_W1_Q2[i] = new TH1D(Form("h_W1_Q2_%d", i), ";W (GeV);Normalized Counts", 50, 0.8, 2.5);
-        h_W2_Q2[i] = new TH1D(Form("h_W2_Q2_%d", i), ";W (GeV);Normalized Counts", 50, 0.8, 2.5);
+        h_W1_Q2[i] = new TH1D(Form("h_W1_Q2_%d", i), ";W (GeV);Normalized Counts", 28, 1.1, 2.5);
+        h_W2_Q2[i] = new TH1D(Form("h_W2_Q2_%d", i), ";W (GeV);Normalized Counts", 28, 1.1, 2.5);
         
         // Fill histograms
         for (Long64_t j = 0; j < nEntries1; j++) {
             tree1->GetEntry(j);
             if (Q2 >= q2BinEdges[i] && Q2 < q2BinEdges[i+1]) {
-                h_W1_Q2[i]->Fill(W);
+                if (Q2 > 2.55 && Q2 < 10.4 && W > 1.1 && W < 2.5) {
+                    h_W1_Q2[i]->Fill(W);
+                }
             }
         }
         for (Long64_t j = 0; j < nEntries2; j++) {
             tree2->GetEntry(j);
             if (Q2 >= q2BinEdges[i] && Q2 < q2BinEdges[i+1]) {
-                h_W2_Q2[i]->Fill(W);
+                if (Q2 > 2.55 && Q2 < 10.4 && W > 1.1 && W < 2.5) {
+                    h_W2_Q2[i]->Fill(W);
+                }
             }
         }
 
