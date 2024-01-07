@@ -16,11 +16,11 @@
 void compareTrees(const char* file1, const char* file2, const char* output, double lineValue) {
     // Define the momentum bin edges
     
-    // // pions and kaon
-    // std::vector<double> binEdges = {0.6,1.8,2.0,2.1,2.2,2.3,2.4,2.5,2.6,2.8,3.0,3.2,3.4,3.8,4.2,5.0};
+    // pions and kaon
+    std::vector<double> binEdges = {0.6,1.8,2.0,2.1,2.2,2.3,2.4,2.5,2.6,2.8,3.0,3.2,3.4,3.8,4.2,5.0};
 
-    // pions and kaon less
-    std::vector<double> binEdges = {0.6,2.6,3.8,5.0};
+    // // pions and kaon less
+    // std::vector<double> binEdges = {0.6,2.6,3.8,5.0};
 
 
     // // proton 
@@ -47,13 +47,13 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 1.0, 2.0));
         // hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 1.0, 2.0));
 
-        // // k+ 
-        // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 1.0, 1.6));
-        // hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 1.0, 1.6));
+        // k+ 
+        hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 1.0, 1.6));
+        hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 1.0, 1.6));
 
-        // k- 
-        hist1.push_back(new TH1D(Form("hist1_%d", i), "", 50, 1.0, 1.9));
-        hist2.push_back(new TH1D(Form("hist2_%d", i), "", 50, 1.0, 1.9));
+        // // k- 
+        // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 50, 1.0, 1.9));
+        // hist2.push_back(new TH1D(Form("hist2_%d", i), "", 50, 1.0, 1.9));
 
         // // proton rho
         // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.1, 0.9));
