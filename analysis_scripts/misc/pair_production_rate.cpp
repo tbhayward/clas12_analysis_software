@@ -286,7 +286,7 @@ void pair_production_rate(const char* file1, const char* file2,
         c2->cd(i+1);
         gPad->SetLeftMargin(leftMargin); // Set left margin for padding
         gPad->SetBottomMargin(bottomMargin); // Set bottom margin for padding
-        // gPad->SetLogy(1); // Optional, for logarithmic scale
+        gPad->SetLogy(1); // Optional, for logarithmic scale
         h_ratio_W_Q2[i]->Draw();
     }
 
