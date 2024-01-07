@@ -16,12 +16,12 @@ void pair_production_rate(const char* file1, const char* file2,
     TTree* tree2 = (TTree*)f2->Get("PhysicsEvents");
 
     // Define histograms for each variable
-    TH1D* h_e_p1 = new TH1D("h_e_p1", ";e_{p} (GeV);Normalized Counts", 100, 2.6, 10);
-    TH1D* h_e_p2 = new TH1D("h_e_p2", ";e_{p} (GeV);Normalized Counts", 100, 2.6, 10);
-    TH1D* h_Q21 = new TH1D("h_Q21", ";Q^{2} (GeV^{2});Normalized Counts", 100, 0, 10); 
-    TH1D* h_Q22 = new TH1D("h_Q22", ";Q^{2} (GeV^{2});Normalized Counts", 100, 0, 10);
-    TH1D* h_W1 = new TH1D("h_W1", ";W (GeV);Normalized Counts", 100, 0.8, 4); 
-    TH1D* h_W2 = new TH1D("h_W2", ";W (GeV);Normalized Counts", 100, 0.8, 4);
+    TH1D* h_e_p1 = new TH1D("h_e_p1", ";e_{p} (GeV);Normalized Counts", 50, 2.6, 10);
+    TH1D* h_e_p2 = new TH1D("h_e_p2", ";e_{p} (GeV);Normalized Counts", 50, 2.6, 10);
+    TH1D* h_Q21 = new TH1D("h_Q21", ";Q^{2} (GeV^{2});Normalized Counts", 9, 2.55, 10.4); 
+    TH1D* h_Q22 = new TH1D("h_Q22", ";Q^{2} (GeV^{2});Normalized Counts", 9, 2.55, 10.4);
+    TH1D* h_W1 = new TH1D("h_W1", ";W (GeV);Normalized Counts", 28, 1.1, 2.5); 
+    TH1D* h_W2 = new TH1D("h_W2", ";W (GeV);Normalized Counts", 28, 1.1, 2.5);
 
     // Set label and title sizes for y-axis for all histograms
     double labelFontSize = 0.05; // Adjust as needed
@@ -66,12 +66,12 @@ void pair_production_rate(const char* file1, const char* file2,
     }
 
     // Normalize histograms
-    h_e_p1->Scale(1.0 / 378709);
-    h_e_p2->Scale(1.0 / 266653);
-    h_Q21->Scale(1.0 / 378709);
-    h_Q22->Scale(1.0 / 266653);
-    h_W1->Scale(1.0 / 378709);
-    h_W2->Scale(1.0 / 266653);
+    h_e_p1->Scale(1.0 / 1068727);
+    h_e_p2->Scale(1.0 / 2050279);
+    h_Q21->Scale(1.0 / 1068727);
+    h_Q22->Scale(1.0 / 2050279);
+    h_W1->Scale(1.0 / 1068727);
+    h_W2->Scale(1.0 / 2050279);
 
     // Define larger font sizes
     double legendFontSize = 0.05; // Adjust as needed
@@ -204,20 +204,20 @@ void pair_production_rate(const char* file1, const char* file2,
 
     // Add legends to the left-side plots
     TLegend* leg_e_p = new TLegend(0.7, 0.7, 0.9, 0.9);
-    leg_e_p->AddEntry(h_e_p1, "run 5038, e^{-}", "l");
-    leg_e_p->AddEntry(h_e_p2, "run 5482, e^{+}", "l");
+    leg_e_p->AddEntry(h_e_p1, "inb, e^{-}, 1.07mC", "l");
+    leg_e_p->AddEntry(h_e_p2, "out, e^{+}, 2.05mC", "l");
     c1->cd(1);
     leg_e_p->Draw();
 
     TLegend* leg_Q2 = new TLegend(0.7, 0.7, 0.9, 0.9);
-    leg_Q2->AddEntry(h_Q21, "run 5038, e^{-}", "l");
-    leg_Q2->AddEntry(h_Q22, "run 5482, e^{+}", "l");
+    leg_Q2->AddEntry(h_Q21, "inb, e^{-}, 1.07mC", "l");
+    leg_Q2->AddEntry(h_Q22, "out, e^{+}, 2.05mC", "l");
     c1->cd(3);
     leg_Q2->Draw();
 
     TLegend* leg_W = new TLegend(0.7, 0.7, 0.9, 0.9);
-    leg_W->AddEntry(h_W1, "run 5038, e^{-}", "l");
-    leg_W->AddEntry(h_W2, "run 5482, e^{+}", "l");
+    leg_W->AddEntry(h_W1, "inb, e^{-}, 1.07mC", "l");
+    leg_W->AddEntry(h_W2, "out, e^{+}, 2.05mC", "l");
     c1->cd(5);
     leg_W->Draw();
 
