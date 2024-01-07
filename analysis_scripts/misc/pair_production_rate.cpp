@@ -259,7 +259,7 @@ void pair_production_rate(const char* file1, const char* file2,
 
         // Normalize histograms
         h_W1_Q2[i]->Scale(1.0 / 1068727);
-        h_W2_Q2[i]->Scale(1.0 / 1092823);
+        h_W2_Q2[i]->Scale(1.0 / 2050279);
 
         // Create ratio histogram
         h_ratio_W_Q2[i] = (TH1D*)h_W2_Q2[i]->Clone();
@@ -278,7 +278,7 @@ void pair_production_rate(const char* file1, const char* file2,
 
         // Set Y-axis range from 0 to 0.1
         h_ratio_W_Q2[i]->SetMinimum(0.0001);
-        h_ratio_W_Q2[i]->SetMaximum(0.1);
+        h_ratio_W_Q2[i]->SetMaximum(1);
     }
 
     // Plot histograms on canvas
@@ -286,7 +286,7 @@ void pair_production_rate(const char* file1, const char* file2,
         c2->cd(i+1);
         gPad->SetLeftMargin(leftMargin); // Set left margin for padding
         gPad->SetBottomMargin(bottomMargin); // Set bottom margin for padding
-        gPad->SetLogy(1); // Optional, for logarithmic scale
+        // gPad->SetLogy(1); // Optional, for logarithmic scale
         h_ratio_W_Q2[i]->Draw();
     }
 
