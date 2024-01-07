@@ -100,8 +100,8 @@ void pair_production_rate(const char* file1, const char* file2,
     h_e_p2->SetLabelSize(labelFontSize);
     h_e_p2->SetTitleSize(titleFontSize);
     h_e_p2->Draw("same");
-    h_e_p1->SetMaximum(10); // 100% higher than the maximum
-    h_e_p1->SetMinimum(1e-5); // Minimum set to 10e-5
+    h_e_p1->SetMaximum(1); // 100% higher than the maximum
+    h_e_p1->SetMinimum(1e-6); // Minimum set to 10e-5
     h_e_p1->SetStats(0); // Remove stat box
     h_e_p2->SetStats(0); // Remove stat box
     // h_e_p1->GetXaxis()->SetLabelSize(labelFontSize);
@@ -123,8 +123,8 @@ void pair_production_rate(const char* file1, const char* file2,
     // h_ratio_e_p->GetYaxis()->SetLabelSize(labelFontSize);
     // h_ratio_e_p->GetYaxis()->SetTitleSize(titleFontSize); // Increase y-axis title size
     h_ratio_e_p->Draw();
-    h_ratio_e_p->SetMaximum(1.0); // 100% higher than the maximum
-    h_ratio_e_p->SetMinimum(1e-4); // Minimum set to 10e-5
+    h_ratio_e_p->SetMaximum(0.1); // 100% higher than the maximum
+    h_ratio_e_p->SetMinimum(1e-5); // Minimum set to 10e-5
     h_ratio_e_p->SetStats(0); // Remove stat box
 
 
@@ -141,8 +141,8 @@ void pair_production_rate(const char* file1, const char* file2,
     h_Q22->SetLineColor(kRed);
     h_Q22->SetLabelSize(labelFontSize);
     h_Q22->SetTitleSize(titleFontSize);
-    h_Q21->SetMaximum(10.0); // 100% higher than the maximum
-    h_Q21->SetMinimum(1e-5); // Minimum set to 10e-5
+    h_Q21->SetMaximum(1); // 100% higher than the maximum
+    h_Q21->SetMinimum(1e-6); // Minimum set to 10e-5
     h_Q21->SetStats(0); // Remove stat box
     h_Q22->SetStats(0); // Remove stat box
     // h_Q21->GetXaxis()->SetLabelSize(labelFontSize);
@@ -161,8 +161,8 @@ void pair_production_rate(const char* file1, const char* file2,
     h_ratio_Q2->SetLabelSize(labelFontSize);
     h_ratio_Q2->SetTitleSize(titleFontSize);
     h_ratio_Q2->Draw();
-    h_ratio_Q2->SetMaximum(1.0); // 100% higher than the maximum
-    h_ratio_Q2->SetMinimum(1e-4); // Minimum set to 10e-5
+    h_ratio_Q2->SetMaximum(0.1); // 100% higher than the maximum
+    h_ratio_Q2->SetMinimum(1e-5); // Minimum set to 10e-5
     h_ratio_Q2->SetStats(0); // Remove stat box
     // h_ratio_Q2->GetXaxis()->SetLabelSize(labelFontSize);
     // h_ratio_Q2->GetXaxis()->SetTitleSize(titleFontSize); // Increase x-axis title size
@@ -180,8 +180,8 @@ void pair_production_rate(const char* file1, const char* file2,
     h_W2->SetTitleSize(titleFontSize);
     h_W2->Draw("same");
     h_W2->SetLineColor(kRed);
-    h_W1->SetMaximum(10.0); // 100% higher than the maximum
-    h_W1->SetMinimum(1e-5); // Minimum set to 10e-5
+    h_W1->SetMaximum(1.0); // 100% higher than the maximum
+    h_W1->SetMinimum(1e-6); // Minimum set to 10e-5
     h_W1->SetStats(0); // Remove stat box
     h_W2->SetStats(0); // Remove stat box
     // h_W1->GetXaxis()->SetLabelSize(labelFontSize);
@@ -200,8 +200,8 @@ void pair_production_rate(const char* file1, const char* file2,
     h_ratio_W->SetLabelSize(labelFontSize);
     h_ratio_W->SetTitleSize(titleFontSize);
     h_ratio_W->Draw();
-    h_ratio_W->SetMaximum(1.0); // 100% higher than the maximum
-    h_ratio_W->SetMinimum(1e-4); // Minimum set to 10e-5
+    h_ratio_W->SetMaximum(0.1); // 100% higher than the maximum
+    h_ratio_W->SetMinimum(1e-5); // Minimum set to 10e-5
     h_ratio_W->SetStats(0); // Remove stat box
     // h_ratio_W->GetXaxis()->SetLabelSize(labelFontSize);
     // h_ratio_W->GetXaxis()->SetTitleSize(titleFontSize); // Increase x-axis title size
@@ -286,7 +286,7 @@ void pair_production_rate(const char* file1, const char* file2,
 
         // Set Y-axis range from 0 to 0.1
         h_ratio_W_Q2[i]->SetMinimum(0.0001);
-        h_ratio_W_Q2[i]->SetMaximum(1);
+        h_ratio_W_Q2[i]->SetMaximum(0.4);
     }
 
     // Plot histograms on canvas
