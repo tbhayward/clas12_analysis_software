@@ -8,7 +8,7 @@
 #include <iostream>
 
 void pair_production_rate(const char* file1, const char* file2, 
-    const char* output, const char* output2) {
+    const char* output, const char* output2, const char* output3) {
     // Open ROOT files and get trees
     TFile* f1 = new TFile(file1);
     TFile* f2 = new TFile(file2);
@@ -293,11 +293,17 @@ void pair_production_rate(const char* file1, const char* file2,
     // Save the second canvas
     c2->SaveAs(output2);
 
+    // Create a canvas
+    TCanvas* c3 = new TCanvas("c3", "Final Bin", 1200, 800);
+    c3->cd(0);
+    h_ratio_W_Q2[8]->Draw();
+    c3->SaveAs(output3);
+
 }
 
 int main(int argc, char** argv) {
-    if (argc != 5) {
-        std::cout << "Usage: " << argv[0] << " <file1> <file2> <output1> <output2>" << std::endl;
+    if (argc != 6) {
+        std::cout << "Usage: " << argv[0] << " <file1> <file2> <output1> <output2> <output3>" << std::endl;
         return 1;
     }
     pair_production_rate(argv[1], argv[2], argv[3], argv[4]);
