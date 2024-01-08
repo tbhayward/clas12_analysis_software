@@ -8,7 +8,7 @@
 #include <iostream>
 
 void pair_production_rate(const char* file1, const char* file2, 
-    const char* output, const char* output2, const char* output3) {
+    const char* output, const char* output2, const char* output3, const char* output4) {
     // Open ROOT files and get trees
     TFile* f1 = new TFile(file1);
     TFile* f2 = new TFile(file2);
@@ -22,6 +22,8 @@ void pair_production_rate(const char* file1, const char* file2,
     TH1D* h_Q22 = new TH1D("h_Q22", ";Q^{2} (GeV^{2});Normalized Counts", 9, 2.55, 10.4);
     TH1D* h_W1 = new TH1D("h_W1", ";W (GeV);Normalized Counts", 28, 1.1, 2.5); 
     TH1D* h_W2 = new TH1D("h_W2", ";W (GeV);Normalized Counts", 28, 1.1, 2.5);
+    TH1D* h_W1_last_bin = new TH1D("h_W1", ";W (GeV);Normalized Counts", 28, 1.1, 2.5); 
+    TH1D* h_W2_last_bin = new TH1D("h_W2", ";W (GeV);Normalized Counts", 28, 1.1, 2.5);
 
     // Set label and title sizes for y-axis for all histograms
     double labelFontSize = 0.05; // Adjust as needed
@@ -58,6 +60,9 @@ void pair_production_rate(const char* file1, const char* file2,
             h_e_p1->Fill(e_p);
             h_Q21->Fill(Q2);
             h_W1->Fill(W);
+            if (Q2 > 8.94) {
+                h_W1_last_bin->Fill(W);
+            }
         }
     }
     for (Long64_t i = 0; i < nEntries2; ++i) {
@@ -66,6 +71,9 @@ void pair_production_rate(const char* file1, const char* file2,
             h_e_p2->Fill(e_p);
             h_Q22->Fill(Q2);
             h_W2->Fill(W);
+            if (Q2 > 8.94) {
+                h_W2_last_bin->Fill(W);
+            }
         }
     }
 
@@ -76,6 +84,8 @@ void pair_production_rate(const char* file1, const char* file2,
     h_Q22->Scale(1.0 / 2050279);
     h_W1->Scale(1.0 / 1068727);
     h_W2->Scale(1.0 / 2050279);
+    h_W1_last_bin->Scale(1.0 / 1068727);
+    h_W2_last_bin->Scale(1.0 / 2050279);
 
     // Define larger font sizes
     double legendFontSize = 0.05; // Adjust as needed
@@ -309,14 +319,36 @@ void pair_production_rate(const char* file1, const char* file2,
     h_ratio_W_Q2[8]->Draw();
     c3->SaveAs(output3);
 
+    // Create a canvas
+    TCanvas* c4 = new TCanvas("c3", "Final Bin", 1200, 800);
+    c4->cd(0);
+    gPad->SetLeftMargin(leftMargin); // Set left margin for padding
+    gPad->SetBottomMargin(bottomMargin); // Set bottom margin for padding
+    gPad->SetLogy(1);
+    gPad->SetLeftMargin(leftMargin);
+    gPad->SetBottomMargin(bottomMargin);
+    h_W1_last_bin->SetLineColor(kBlue);
+    h_W1_last_bin->SetLabelSize(labelFontSize);
+    h_W1_last_bin->SetTitleSize(titleFontSize);
+    h_W1_last_bin->Draw();
+    h_W2_last_bin->SetLineColor(kRed);
+    h_W2_last_bin->SetLabelSize(labelFontSize);
+    h_W2_last_bin->SetTitleSize(titleFontSize);
+    h_W2_last_bin->Draw("same");
+    h_W1_last_bin->SetMaximum(1); // 100% higher than the maximum
+    h_W1_last_bin->SetMinimum(1e-6); // Minimum set to 10e-5
+    h_W1_last_bin->SetStats(0); // Remove stat box
+    h_W2_last_bin->SetStats(0); // Remove stat box
+    c4->SaveAs(output4);
+
 }
 
 int main(int argc, char** argv) {
-    if (argc != 6) {
-        std::cout << "Usage: " << argv[0] << " <file1> <file2> <output1> <output2> <output3>" << std::endl;
+    if (argc != 7) {
+        std::cout << "Usage: " << argv[0] << " <file1> <file2> <output1> <output2> <output3> <output4>" << std::endl;
         return 1;
     }
-    pair_production_rate(argv[1], argv[2], argv[3], argv[4], argv[5]);
+    pair_production_rate(argv[1], argv[2], argv[3], argv[4], argv[5], argv[6]);
     return 0;
 }
 
