@@ -43,13 +43,13 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
         // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.6, 1.2));
         // hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 0.6, 1.2));
 
-        // pi-
-        hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 1.0, 1.8));
-        hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 1.0, 1.8));
+        // // pi-
+        // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 1.0, 1.8));
+        // hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 1.0, 1.8));
 
-        // // k+ 
-        // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 1.0, 1.4));
-        // hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 1.0, 1.4));
+        // k+ 
+        hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 1.0, 1.4));
+        hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 1.0, 1.4));
 
         // // k- 
         // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 50, 0.0, 1.9));
