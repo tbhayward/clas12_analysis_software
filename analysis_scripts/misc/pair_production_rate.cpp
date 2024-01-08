@@ -313,7 +313,7 @@ void pair_production_rate(const char* file1, const char* file2,
 
     // Create a canvas
     TCanvas* c3 = new TCanvas("c3", "Final Bin", 1200, 800);
-    c3->Divide(2, 1);
+    c3->Divide(1, 2);
     c3->cd(2);
     gPad->SetLeftMargin(leftMargin); // Set left margin for padding
     gPad->SetBottomMargin(bottomMargin); // Set bottom margin for padding
