@@ -22,8 +22,8 @@ void pair_production_rate(const char* file1, const char* file2,
     TH1D* h_Q22 = new TH1D("h_Q22", ";Q^{2} (GeV^{2});Normalized Counts", 9, 2.55, 10.4);
     TH1D* h_W1 = new TH1D("h_W1", ";W (GeV);Normalized Counts", 28, 1.1, 2.5); 
     TH1D* h_W2 = new TH1D("h_W2", ";W (GeV);Normalized Counts", 28, 1.1, 2.5);
-    TH1D* h_W1_last_bin = new TH1D("h_W1", ";W (GeV);Normalized Counts", 28, 1.1, 2.5); 
-    TH1D* h_W2_last_bin = new TH1D("h_W2", ";W (GeV);Normalized Counts", 28, 1.1, 2.5);
+    TH1D* h_W1_last_bin = new TH1D("h_W1", "8.94 < Q^{2} (GeV^{2}) < 10.4;W (GeV);Normalized Counts", 28, 1.1, 2.5); 
+    TH1D* h_W2_last_bin = new TH1D("h_W2", "8.94 < Q^{2} (GeV^{2}) < 10.4;W (GeV);Normalized Counts", 28, 1.1, 2.5);
 
     // Set label and title sizes for y-axis for all histograms
     double labelFontSize = 0.05; // Adjust as needed
@@ -313,14 +313,14 @@ void pair_production_rate(const char* file1, const char* file2,
 
     // Create a canvas
     TCanvas* c3 = new TCanvas("c3", "Final Bin", 1200, 800);
-    c3->Divide(1, 2);
-    c3->cd(1);
+    c3->Divide(2, 1);
+    c3->cd(2);
     gPad->SetLeftMargin(leftMargin); // Set left margin for padding
     gPad->SetBottomMargin(bottomMargin); // Set bottom margin for padding
     h_ratio_W_Q2[8]->Draw();
     // c3->SaveAs(output3);
 
-    c3->cd(2);
+    c3->cd(1);
     gPad->SetLeftMargin(leftMargin); // Set left margin for padding
     gPad->SetBottomMargin(bottomMargin); // Set bottom margin for padding
     gPad->SetLogy(1);
@@ -334,7 +334,7 @@ void pair_production_rate(const char* file1, const char* file2,
     h_W2_last_bin->SetLabelSize(labelFontSize);
     h_W2_last_bin->SetTitleSize(titleFontSize);
     h_W2_last_bin->Draw("same");
-    h_W1_last_bin->SetMaximum(1e-2); // 100% higher than the maximum
+    h_W1_last_bin->SetMaximum(1e-1); // 100% higher than the maximum
     h_W1_last_bin->SetMinimum(1e-6); // Minimum set to 10e-5
     h_W1_last_bin->SetStats(0); // Remove stat box
     h_W2_last_bin->SetStats(0); // Remove stat box
