@@ -8,7 +8,7 @@
 #include <iostream>
 
 void pair_production_rate(const char* file1, const char* file2, 
-    const char* output, const char* output2, const char* output3, const char* output4) {
+    const char* output, const char* output2, const char* output3) {
     // Open ROOT files and get trees
     TFile* f1 = new TFile(file1);
     TFile* f2 = new TFile(file2);
@@ -313,15 +313,14 @@ void pair_production_rate(const char* file1, const char* file2,
 
     // Create a canvas
     TCanvas* c3 = new TCanvas("c3", "Final Bin", 1200, 800);
-    c3->cd(0);
+    c3->Divide(1, 2);
+    c3->cd(1);
     gPad->SetLeftMargin(leftMargin); // Set left margin for padding
     gPad->SetBottomMargin(bottomMargin); // Set bottom margin for padding
     h_ratio_W_Q2[8]->Draw();
-    c3->SaveAs(output3);
+    // c3->SaveAs(output3);
 
-    // Create a canvas
-    TCanvas* c4 = new TCanvas("c3", "Final Bin", 1200, 800);
-    c4->cd(0);
+    c3->cd(2);
     gPad->SetLeftMargin(leftMargin); // Set left margin for padding
     gPad->SetBottomMargin(bottomMargin); // Set bottom margin for padding
     gPad->SetLogy(1);
@@ -344,16 +343,16 @@ void pair_production_rate(const char* file1, const char* file2,
     leg_last_bin->AddEntry(h_W1_last_bin, "inb, e^{-}, 1.07mC", "l");
     leg_last_bin->AddEntry(h_W2_last_bin, "out, e^{+}, 2.05mC", "l");
     leg_last_bin->Draw();
-    c4->SaveAs(output4);
+    c3->SaveAs(output4);
 
 }
 
 int main(int argc, char** argv) {
     if (argc != 7) {
-        std::cout << "Usage: " << argv[0] << " <file1> <file2> <output1> <output2> <output3> <output4>" << std::endl;
+        std::cout << "Usage: " << argv[0] << " <file1> <file2> <output1> <output2> <output3>" << std::endl;
         return 1;
     }
-    pair_production_rate(argv[1], argv[2], argv[3], argv[4], argv[5], argv[6]);
+    pair_production_rate(argv[1], argv[2], argv[3], argv[4], argv[5]);
     return 0;
 }
 
