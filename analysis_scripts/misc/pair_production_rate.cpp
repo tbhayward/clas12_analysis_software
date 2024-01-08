@@ -335,10 +335,15 @@ void pair_production_rate(const char* file1, const char* file2,
     h_W2_last_bin->SetLabelSize(labelFontSize);
     h_W2_last_bin->SetTitleSize(titleFontSize);
     h_W2_last_bin->Draw("same");
-    h_W1_last_bin->SetMaximum(1); // 100% higher than the maximum
+    h_W1_last_bin->SetMaximum(1e-2); // 100% higher than the maximum
     h_W1_last_bin->SetMinimum(1e-6); // Minimum set to 10e-5
     h_W1_last_bin->SetStats(0); // Remove stat box
     h_W2_last_bin->SetStats(0); // Remove stat box
+
+    TLegend* leg_last_bin = new TLegend(0.7, 0.7, 0.9, 0.9);
+    leg_last_bin->AddEntry(h_W1_last_bin, "inb, e^{-}, 1.07mC", "l");
+    leg_last_bin->AddEntry(h_W2_last_bin, "out, e^{+}, 2.05mC", "l");
+    leg_last_bin->Draw();
     c4->SaveAs(output4);
 
 }
