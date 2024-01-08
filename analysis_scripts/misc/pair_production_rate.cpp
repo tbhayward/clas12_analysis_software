@@ -348,7 +348,7 @@ void pair_production_rate(const char* file1, const char* file2,
 }
 
 int main(int argc, char** argv) {
-    if (argc != 7) {
+    if (argc != 6) {
         std::cout << "Usage: " << argv[0] << " <file1> <file2> <output1> <output2> <output3>" << std::endl;
         return 1;
     }
