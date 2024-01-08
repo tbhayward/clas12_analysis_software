@@ -343,7 +343,7 @@ void pair_production_rate(const char* file1, const char* file2,
     leg_last_bin->AddEntry(h_W1_last_bin, "inb, e^{-}, 1.07mC", "l");
     leg_last_bin->AddEntry(h_W2_last_bin, "out, e^{+}, 2.05mC", "l");
     leg_last_bin->Draw();
-    c3->SaveAs(output4);
+    c3->SaveAs(output3);
 
 }
 
