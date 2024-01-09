@@ -259,8 +259,8 @@ void compareTrees(const char* file1, const char* file2, const char* output,
     gr2->SetLineColor(kRed);
     gr2->SetMarkerStyle(21);
     gr2->SetMarkerSize(0.6);
-    gr1->Draw("P");
-    gr2->Draw("SAMEp");
+    gr1->Draw("");
+    gr2->Draw("SAME");
     line->Draw("SAME");
     legend->Draw("SAME");
     c2->SaveAs(output2);
