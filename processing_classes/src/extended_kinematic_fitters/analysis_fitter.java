@@ -909,7 +909,7 @@ public class analysis_fitter extends GenericKinematicFitter {
 //            && p < 3.5 
             && forward_detector_cut(particle_Index, rec_Bank)
             && pion_z_vertex_cut(vz, trigger_electron_vz)
-//            && hadron_pass2_cut(particle_Index, rec_Bank)
+            && hadron_pass2_cut(particle_Index, rec_Bank)
 //            && hadron_chi2pid_cut(particle_Index, rec_Bank)
             && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
               ;
