@@ -223,8 +223,8 @@ void compareTrees(const char* file1, const char* file2, const char* output,
     gr2->Draw("P SAME");
 
     // Set the Y-axis range to be lineValue +/- 0.15
-    double yAxisMin = lineValue - 0.05;
-    double yAxisMax = lineValue + 0.05;
+    double yAxisMin = lineValue - 0.025;
+    double yAxisMax = lineValue + 0.025;
     gr1->GetYaxis()->SetRangeUser(yAxisMin, yAxisMax);
     gr2->GetYaxis()->SetRangeUser(yAxisMin, yAxisMax);
 
@@ -257,12 +257,17 @@ void compareTrees(const char* file1, const char* file2, const char* output,
     gr1->SetMarkerSize(0.6);
     gr2->SetMarkerColor(kRed);
     gr2->SetLineColor(kRed);
-    gr2->SetMarkerStyle(21);
+    gr2->SetMarkerStyle(20);
     gr2->SetMarkerSize(0.6);
-    gr1->Draw("");
-    gr2->Draw("SAME");
+    gr1->Draw("AP");
+    gr2->Draw("P SAME");
     line->Draw("SAME");
-    legend->Draw("SAME");
+    // Move the legend to the bottom right
+    TLegend* legend2 = new TLegend(0.7, 0.1, 0.9, 0.3);
+    legend2->SetTextSize(0.04);
+    legend2->AddEntry(gr1, "Uncorrected", "p");
+    legend2->AddEntry(gr2, "Corrected", "p");
+    legend2->Draw();
     c2->SaveAs(output2);
 
 
