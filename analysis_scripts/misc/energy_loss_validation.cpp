@@ -265,7 +265,7 @@ void compareTrees(const char* file1, const char* file2, const char* output,
 
     // Draw other objects as required
     line->Draw("SAME");
-    legend->Draw("SAME");
+    // legend->Draw("SAME");
 
     // Draw gr1 and gr2 with the "P" option for points only
     gr1->Draw("P");      // Draw gr1 with points only
