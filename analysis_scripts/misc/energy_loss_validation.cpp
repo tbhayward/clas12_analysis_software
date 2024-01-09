@@ -13,11 +13,12 @@
 #include <TGraphErrors.h>
 
 
-void compareTrees(const char* file1, const char* file2, const char* output, double lineValue) {
+void compareTrees(const char* file1, const char* file2, const char* output,
+    const char* output2, double lineValue) {
     // Define the momentum bin edges
     
     // pions and kaon
-    std::vector<double> binEdges = {0.6,1.8,2.0,2.1,2.2,2.3,2.4,2.5,2.6,2.8,3.0,3.2,3.4,3.8,4.2,5.0};
+    std::vector<double> binEdges = {0.6,1.5,1.8,2.0,2.1,2.2,2.3,2.4,2.5,2.6,2.8,3.0,3.2,3.4,3.8,5.0};
 
     // // pions and kaon less
     // std::vector<double> binEdges = {0.6,2.6,3.8,5.0};
@@ -223,7 +224,7 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
 
     // Set the Y-axis range to be lineValue +/- 0.15
     double yAxisMin = lineValue - 0.05;
-    double yAxisMax = lineValue + 0.1;
+    double yAxisMax = lineValue + 0.05;
     gr1->GetYaxis()->SetRangeUser(yAxisMin, yAxisMax);
     gr2->GetYaxis()->SetRangeUser(yAxisMin, yAxisMax);
 
@@ -249,13 +250,20 @@ void compareTrees(const char* file1, const char* file2, const char* output, doub
     // Optionally, add more settings for axis labels, title, etc.
     c1->SaveAs(output);
 
+    TCanvas* c2 = new TCanvas("c1", "Comparison", 1200, 800);
+    c2->cd(1);
+    gr1->Draw();
+    gr2->Draw("SAME");
+    line->Draw("SAME");
+    c2->SaveAs(output2);
+
 }
 
 int main(int argc, char** argv) {
-    if (argc != 5) {
-        std::cout << "Usage: " << argv[0] << " <file1> <file2> <output> <peak value>" << std::endl;
+    if (argc != 6) {
+        std::cout << "Usage: " << argv[0] << " <file1> <file2> <output> <output> <peak value>" << std::endl;
         return 1;
     }
-    compareTrees(argv[1], argv[2], argv[3], atof(argv[4]));
+    compareTrees(argv[1], argv[2], argv[3], argv[4], atof(argv[5]));
     return 0;
 }
