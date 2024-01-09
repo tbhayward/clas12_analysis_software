@@ -65,9 +65,9 @@ public static void main(String[] args) {
 	double Q2, W, y, Mx, Mx2, x;
 
 	// load my kinematic fitter/PID
-	// GenericKinematicFitter fitter = new analysis_fitter(10.6041); 
+	GenericKinematicFitter fitter = new analysis_fitter(10.6041); 
 	// GenericKinematicFitter fitter = new monte_carlo_fitter(10.6041);
-	GenericKinematicFitter fitter = new event_builder_fitter(10.6041); 
+	// GenericKinematicFitter fitter = new event_builder_fitter(10.6041); 
 	// GenericKinematicFitter fitter = new proton_energy_loss_corrections_fitter(10.6041); 
 	
 	// set filter for final states
