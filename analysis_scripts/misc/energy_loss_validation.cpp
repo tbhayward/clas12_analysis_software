@@ -252,26 +252,17 @@ void compareTrees(const char* file1, const char* file2, const char* output,
 
     TCanvas* c2 = new TCanvas("c1", "Comparison", 1200, 800);
     c2->cd(1);
-
-    // Set properties for gr1
     gr1->SetMarkerColor(kBlue);
     gr1->SetMarkerStyle(20);
     gr1->SetMarkerSize(0.6);
-
-    // Set properties for gr2
     gr2->SetMarkerColor(kRed);
+    gr2->SetLineColor(kRed);
     gr2->SetMarkerStyle(21);
     gr2->SetMarkerSize(0.6);
-
-    // Draw other objects as required
+    gr1->Draw("P");
+    gr2->Draw("SAMEp");
     line->Draw("SAME");
     legend->Draw("SAME");
-
-    // Draw gr1 and gr2 with the "P" option for points only
-    gr1->Draw("P");      // Draw gr1 with points only
-    gr2->Draw("PSAME"); // Draw gr2 with points only, on the same canvas
-
-    // Save the canvas
     c2->SaveAs(output2);
 
 
