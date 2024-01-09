@@ -264,12 +264,12 @@ void compareTrees(const char* file1, const char* file2, const char* output,
     gr2->SetMarkerSize(0.6);
 
     // Draw other objects as required
-    // line->Draw("SAME");
-    // legend->Draw("SAME");
+    line->Draw("SAME");
+    legend->Draw("SAME");
 
     // Draw gr1 and gr2 with the "P" option for points only
     gr1->Draw("P");      // Draw gr1 with points only
-    gr2->Draw("P SAME"); // Draw gr2 with points only, on the same canvas
+    gr2->Draw("PSAME"); // Draw gr2 with points only, on the same canvas
 
     // Save the canvas
     c2->SaveAs(output2);
