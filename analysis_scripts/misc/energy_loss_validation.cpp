@@ -223,8 +223,8 @@ void compareTrees(const char* file1, const char* file2, const char* output,
     gr2->Draw("P SAME");
 
     // Set the Y-axis range to be lineValue +/- 0.15
-    double yAxisMin = lineValue - 0.02;
-    double yAxisMax = lineValue + 0.08;
+    double yAxisMin = lineValue - 0.04;
+    double yAxisMax = lineValue + 0.04;
     gr1->GetYaxis()->SetRangeUser(yAxisMin, yAxisMax);
     gr2->GetYaxis()->SetRangeUser(yAxisMin, yAxisMax);
 
