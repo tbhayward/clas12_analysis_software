@@ -223,8 +223,8 @@ void compareTrees(const char* file1, const char* file2, const char* output,
     gr2->Draw("P SAME");
 
     // Set the Y-axis range to be lineValue +/- 0.15
-    double yAxisMin = lineValue - 0.025;
-    double yAxisMax = lineValue + 0.025;
+    double yAxisMin = lineValue - 0.03;
+    double yAxisMax = lineValue + 0.03;
     gr1->GetYaxis()->SetRangeUser(yAxisMin, yAxisMax);
     gr2->GetYaxis()->SetRangeUser(yAxisMin, yAxisMax);
 
@@ -252,7 +252,7 @@ void compareTrees(const char* file1, const char* file2, const char* output,
 
     TCanvas* c2 = new TCanvas("c1", "Comparison", 1200, 800);
     c2->cd(1);
-    gr1->SetMarkerColor(kBlue);
+    gr1->SetLineColor(kBlue);
     gr1->SetMarkerStyle(20);
     gr1->SetMarkerSize(0.6);
     gr2->SetMarkerColor(kRed);
