@@ -194,7 +194,59 @@ int main(int argc, char *argv[]) {
         tree->Branch("y", &y, "y/D");
         tree->Branch("t", &t, "t/D");
         tree->Branch("tmin", &tmin, "tmin/D");
+        tree->Branch("DepA", &DepA, "DepA/D");
+        tree->Branch("DepB", &DepB, "DepB/D");
+        tree->Branch("DepC", &DepC, "DepC/D");
+        tree->Branch("DepV", &DepV, "DepV/D");
+        tree->Branch("DepW", &DepW, "DepW/D");
     }
+
+    // Case for zero hadrons (inclusive) with mc
+    if (hadron_count == 0 && is_mc == 1) {
+        // Link TTree branches to variables for zero hadrons
+        tree->Branch("runnum", &runnum, "runnum/I");
+        tree->Branch("evnum", &evnum, "evnum/I");
+        tree->Branch("helicity", &helicity, "helicity/I");
+        tree->Branch("beam_pol", &beam_pol, "beam_pol/D");
+        tree->Branch("target_pol", &target_pol, "target_pol/D");
+        tree->Branch("e_p", &e_p, "e_p/D");
+        tree->Branch("e_theta", &e_theta, "e_theta/D");
+        tree->Branch("e_phi", &e_phi, "e_phi/D");
+        tree->Branch("vz_e", &vz_e, "vz_e/D");
+        tree->Branch("Q2", &Q2, "Q2/D");
+        tree->Branch("W", &W, "W/D");
+        tree->Branch("Mx", &Mx, "Mx/D");
+        tree->Branch("Mx2", &Mx2, "Mx2/D");
+        tree->Branch("x", &x, "x/D");
+        tree->Branch("y", &y, "y/D");
+        tree->Branch("t", &t, "t/D");
+        tree->Branch("tmin", &tmin, "tmin/D");
+        tree->Branch("DepA", &DepA, "DepA/D");
+        tree->Branch("DepB", &DepB, "DepB/D");
+        tree->Branch("DepC", &DepC, "DepC/D");
+        tree->Branch("DepV", &DepV, "DepV/D");
+        tree->Branch("DepW", &DepW, "DepW/D");
+        \\
+        tree->Branch("mc_e_p", &mc_e_p, "mc_e_p/D");
+        tree->Branch("mc_e_theta", &mc_e_theta, "mc_e_theta/D");
+        tree->Branch("mc_e_phi", &mc_e_phi, "mc_e_phi/D");
+        tree->Branch("mc_vz_e", &mc_vz_e, "mc_vz_e/D");
+        tree->Branch("mc_Q2", &mc_Q2, "mc_Q2/D");
+        tree->Branch("mc_W", &mc_W, "mc_W/D");
+        tree->Branch("mc_Mx", &mc_Mx, "mc_Mx/D");
+        tree->Branch("mc_Mx2", &mc_Mx2, "mc_Mx2/D");
+        tree->Branch("mc_x", &mc_x, "mc_x/D");
+        tree->Branch("mc_y", &mc_y, "mc_y/D");
+        tree->Branch("mc_t", &mc_t, "mc_t/D");
+        tree->Branch("mc_tmin", &mc_tmin, "mc_tmin/D");
+        tree->Branch("mc_DepA", &mc_DepA, "mc_DepA/D");
+        tree->Branch("mc_DepB", &mc_DepB, "mc_DepB/D");
+        tree->Branch("mc_DepC", &mc_DepC, "mc_DepC/D");
+        tree->Branch("mc_DepV", &mc_DepV, "mc_DepV/D");
+        tree->Branch("mc_DepW", &mc_DepW, "mc_DepW/D");
+    }
+
+
 
     // Case for one hadron
     else if (hadron_count == 1 && is_mc == 0) {
@@ -473,7 +525,7 @@ int main(int argc, char *argv[]) {
     // Loop to read each line from the text file and fill the TTree based on hadron_count
     if (hadron_count == 0 && is_mc == 0) {
         while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
-            Q2 >> W >> Mx >> Mx2 >> x >> y) {
+            Q2 >> W >> Mx >> Mx2 >> x >> y >> DepA >> DepB >> DepC >> DepV >> DepW) {
 
             beam_pol = getPol(runnum);
             if (runnum < 16000) { target_pol = 0; }
@@ -488,6 +540,31 @@ int main(int argc, char *argv[]) {
 
             t = gett(e_p, e_theta); // for inclusive we calculate t with electron kinematics
             tmin = gettmin(x);  
+
+            tree->Fill(); // Fill the tree with the read data
+        }
+    } 
+    if (hadron_count == 0 && is_mc == 1) {
+        while (infile >> runnum >> evnum >> helicity >> e_p >> mc_e_p >> e_theta >> mc_e_theta >>
+            e_phi >> mc_e_phi >> vz_e >> mc_vz_e >> Q2 >> >> mc_Q2 >> W >> mc_W >> Mx >> mc_Mx >>
+            Mx2 >> mc_Mx2 >> x >> mc_x >> y >> mc_y >> DepA >> mc_DepA >> DepB >> mc_DepB >> 
+            DepC >> mc_DepC >> DepV >> mc_DepV >> DepW >> mc_DepW) {
+
+            beam_pol = getPol(runnum);
+            if (runnum < 16000) { target_pol = 0; }
+            else { 
+                for (const auto& run_info : run_info_list) {
+                    if (run_info.runnum == runnum) {
+                        target_pol = run_info.target_polarization;
+                        break;
+                    }
+                }
+            }
+
+            t = gett(e_p, e_theta); // for inclusive we calculate t with electron kinematics
+            tmin = gettmin(x);  
+            mc_t = gett(mc_e_p, mc_e_theta);
+            mc_tmin = gettmin(mc_x);  
 
             tree->Fill(); // Fill the tree with the read data
         }
@@ -530,7 +607,7 @@ int main(int argc, char *argv[]) {
             t = gett(p_p, p_theta); // for SIDIS we calculate t with proton kinematics
             mc_t = gett(mc_p_p, mc_p_theta);
             tmin = gettmin(x);
-            mc_tmin = gettmin(x); 
+            mc_tmin = gettmin(mc_x); 
 
             tree->Fill(); // Fill the tree with the read data
         }

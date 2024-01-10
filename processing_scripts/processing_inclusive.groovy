@@ -137,6 +137,13 @@ public static void main(String[] args) {
 	                // vertices
 	                vz_e = variables.vz_e();
 
+	                // depolarization factors data
+	                double Depolarization_A = variables.Depolarization_A();
+	                double Depolarization_B = variables.Depolarization_B();
+	                double Depolarization_C = variables.Depolarization_C();
+	                double Depolarization_V = variables.Depolarization_V();
+			    	double Depolarization_W = variables.Depolarization_W();
+
 	                // Use a StringBuilder to append all data in a single call
 	                StringBuilder line = new StringBuilder();
 	                line.append(runnum).append(" ")
@@ -151,7 +158,12 @@ public static void main(String[] args) {
 	                	.append(Mx).append(" ")
 	                	.append(Mx2).append(" ")
 	                	.append(x).append(" ")
-	                	.append(y).append("\n");
+	                	.append(y).append("")
+	                	.append(Depolarization_A).append(" ")
+	                	.append(Depolarization_B).append(" ")
+	                	.append(Depolarization_C).append(" ")
+	                	.append(Depolarization_V).append(" ")
+	                	.append(Depolarization_W).append("\n");
 
 	                // Append the line to the batchLines StringBuilder
 	                batchLines.append(line.toString());
@@ -175,7 +187,7 @@ public static void main(String[] args) {
 		}
 
 		println("\n1:runnum, 2:evnum, 3:helicity, 4:e_p, 5:e_theta, 6:e_phi, 7:vz_e,"+
-		"8:Q2, 9:W, 10:Mx, 11: Mx2, 13:x, 14:y\n");
+		"8:Q2, 9:W, 10:Mx, 11: Mx2, 13:x, 14:y, 15: DepA, 16: DepB, 17: DepC, 18: DepV, 19: DepW\n");
 
 		println("output text file is: $file");
 	}

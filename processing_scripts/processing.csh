@@ -15,6 +15,8 @@ set convert_arg3 = 0
 # Set convert_arg3 based on the value of arg1
 if ($arg1 == "processing_scripts/processing_inclusive.groovy") then
     set convert_arg3 = 0
+else if ($arg1 == "processing_scripts/processing_mc_inclusive.groovy") then
+    set convert_arg3 = 0
 else if ($arg1 == "processing_scripts/processing_single_hadrons.groovy") then
     set convert_arg3 = 1
 else if ($arg1 == "processing_scripts/processing_mc_single_hadrons.groovy") then
@@ -33,7 +35,9 @@ endif
 
 # determine if Monte Carlo
 set is_mc = 0;
-if ($arg1 == "processing_scripts/processing_mc_single_hadrons.groovy") then
+if ($arg1 == "processing_scripts/processing_mc_inclusive.groovy") then
+    set is_mc = 1;
+else if ($arg1 == "processing_scripts/processing_mc_single_hadrons.groovy") then
     set is_mc = 1;
 else if ($arg1 == "processing_scripts/processing_mc_dihadrons.groovy") then
     set is_mc = 1;
