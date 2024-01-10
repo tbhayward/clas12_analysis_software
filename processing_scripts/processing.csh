@@ -6,7 +6,7 @@ if ( $#argv < 1 ) then
 else
     set arg1 = "$1"
 endif
-
+echo "HEY!!!!"
 # Determine the third argument for ./convert_txt_to_root based on arg1
 # Initialize to 0 as default value
 set convert_arg3 = 0
