@@ -16,6 +16,7 @@ set convert_arg3 = 0
 if ($arg1 == "processing_scripts/processing_inclusive.groovy") then
     set convert_arg3 = 0
 else if ($arg1 == "processing_scripts/processing_mc_inclusive.groovy") then
+    echo "Hello world"
     set convert_arg3 = 0
 else if ($arg1 == "processing_scripts/processing_single_hadrons.groovy") then
     set convert_arg3 = 1
