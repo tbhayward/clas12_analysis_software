@@ -1,5 +1,5 @@
 #!/bin/csh
-
+echo "Hello world"
 # Set the first argument to be processing single hadrons if not provided
 if ( $#argv < 1 ) then
     set arg1 = "processing_scripts/processing_single_hadrons.groovy"
@@ -16,7 +16,6 @@ set convert_arg3 = 0
 if ($arg1 == "processing_scripts/processing_inclusive.groovy") then
     set convert_arg3 = 0
 else if ($arg1 == "processing_scripts/processing_mc_inclusive.groovy") then
-    echo "Hello world"
     set convert_arg3 = 0
 else if ($arg1 == "processing_scripts/processing_single_hadrons.groovy") then
     set convert_arg3 = 1
