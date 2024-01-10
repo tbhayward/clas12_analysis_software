@@ -53,8 +53,8 @@ void compareTrees(const char* file1, const char* file2, const char* output,
         // hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 1.0, 1.4));
 
         // k- 
-        hist1.push_back(new TH1D(Form("hist1_%d", i), "", 50, 0.0, 1.9));
-        hist2.push_back(new TH1D(Form("hist2_%d", i), "", 50, 0.0, 1.9));
+        hist1.push_back(new TH1D(Form("hist1_%d", i), "", 50, 0.5, 2.5));
+        hist2.push_back(new TH1D(Form("hist2_%d", i), "", 50, 0.5, 2.5));
 
         // // proton rho
         // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.1, 0.9));
@@ -162,12 +162,12 @@ void compareTrees(const char* file1, const char* file2, const char* output,
         hist1[i]->Fit(fitFunc1, "R");
         fitFunc1->SetLineColor(hist1[i]->GetLineColor());
         fitFunc1->SetLineStyle(1);
-        fitFunc1->Draw("SAME");
+        // fitFunc1->Draw("SAME");
 
         // Perform the fit on the second histogram
         hist2[i]->Fit(fitFunc2, "R+");
         fitFunc2->SetLineColor(hist2[i]->GetLineColor());
-        fitFunc2->Draw("SAME");
+        // fitFunc2->Draw("SAME");
 
         // Retrieve the mean and its error for the first fit
         double mean1 = fitFunc1->GetParameter(1);
