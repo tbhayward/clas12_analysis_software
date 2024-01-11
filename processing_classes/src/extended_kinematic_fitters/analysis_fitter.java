@@ -33,7 +33,10 @@ public class analysis_fitter extends GenericKinematicFitter {
         if (polarity < 0) {
             if (theta < 27) {
                 switch (pid) { 
-                    
+                    case 11:
+                        dp = 0.00730953+Math.exp(-14.0303+0.957154*p);
+                        break;
+                        
                     case 211:
                         dp = -36.3456+Math.exp(3.59313-0.0000065*p);
                         break;
@@ -56,7 +59,10 @@ public class analysis_fitter extends GenericKinematicFitter {
                 }
             } else if (theta >= 27) {
                 switch (pid) { 
-                    
+                    case 11:
+                        dp = 0.00552679+Math.exp(-4.2381-0.660486*p);
+                        break;
+                        
                     case 211:
                         dp = -45.9594+Math.exp(3.82795-0.0000358352*p);
                         break;
@@ -81,6 +87,9 @@ public class analysis_fitter extends GenericKinematicFitter {
         } else if (polarity > 0) {
             if (theta < 27) {
                 switch (pid) { 
+                    case 11:
+                        dp = -30.2+Math.exp(3.40808-0.0000048*p);
+                        break;
                     
                     case 211:
                         dp = 0.00392301+Math.exp(3.83445-13.9503*p);
@@ -104,7 +113,10 @@ public class analysis_fitter extends GenericKinematicFitter {
                 }
             } else if (theta >= 27) {
                 switch (pid) { 
-                    
+                    case 11:
+                        dp = -0.0154673+Math.exp(-3.42119-0.096196*p);
+                        break;
+                        
                     case 211:
                         dp = 0.00185544+Math.exp(-4.41637-0.878962*p);
                         break;
@@ -1007,7 +1019,9 @@ public class analysis_fitter extends GenericKinematicFitter {
                                 run_Bank, cc_Bank)) {
                     // this checks all of the PID requirements, if it passes all of them the electron is 
                     // added to the event below
-                    Particle part = new Particle(pid,px,py,pz,vx,vy,vz);
+                    double fe = EnergyLoss(run_Bank.getFloat("torus", 0), pid, px, py, pz);
+//                   double fe = 1;
+                    Particle part = new Particle(pid,fe*px,fe*py,fe*pz,vx,vy,vz);
                     physEvent.addParticle(part);
                     lv_e.setPxPyPzM(px, py, pz, 0.0005109989461);
                 }
