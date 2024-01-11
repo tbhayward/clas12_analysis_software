@@ -119,7 +119,7 @@ public static void main(String[] args) {
 				BeamEnergy Eb = new BeamEnergy(runnum, false);
 				BeamEnergy mc_Eb = new BeamEnergy(runnum, false);
 				Hadron variables = new Inclusive(event, research_Event, Eb.Eb());
-				Hadron mc_variables = new Hadron(event, mc_Event, mc_Eb.Eb());
+				Hadron mc_variables = new Inclusive(event, mc_Event, mc_Eb.Eb());
 
 				if (variables.channel_test(variables)) {
 
