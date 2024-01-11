@@ -111,9 +111,7 @@ public static void main(String[] args) {
 
 				HipoDataBank recBank = (HipoDataBank) event.getBank("REC::Event");
 				HipoDataBank lundBank = (HipoDataBank) event.getBank("MC::Lund");
-				HipoDataBank mcBank = (HipoDataBank) event.getBank("MC::Particle");
-
-				int num_p1 = research_Event.countByPid(p1_Str.toInteger()); 
+				HipoDataBank mcBank = (HipoDataBank) event.getBank("MC::Particle"); 
 
 				Particle exp_e = research_Event.getParticleByPid(11,0);
 				BeamEnergy Eb = new BeamEnergy(runnum, false);
