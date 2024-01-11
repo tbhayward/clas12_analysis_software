@@ -250,10 +250,10 @@ public static void main(String[] args) {
 		}
 
 		println(); println();
-		print("1: e_p, 3: e_theta, ");
-		print("5: Q2, 7: W, 9: Mx, 11: x, 13: y, ");
-		print("15: Dep_A, 17: Dep_B, 19: Dep_C, 21: Dep_V, 23: Dep_W, ")
-		print("35: matching e pid\n");
+		print("1: e_p, 3: e_theta, 5: e_phi, 7: vz_e");
+		print("9: Q2, 11: W, 13: Mx, 15: Mx2, 17: x, 19: y, ");
+		print("21: Dep_A, 23: Dep_B, 25: Dep_C, 27: Dep_V, 29: Dep_W, ")
+		print("31: matching e pid\n");
 
 		println(); println();
 		println("output file is: "+file);
