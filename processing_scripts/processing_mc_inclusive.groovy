@@ -116,8 +116,8 @@ public static void main(String[] args) {
 				Particle exp_e = research_Event.getParticleByPid(11,0);
 				BeamEnergy Eb = new BeamEnergy(runnum, false);
 				BeamEnergy mc_Eb = new BeamEnergy(runnum, false);
-				Hadron variables = new Inclusive(event, research_Event, Eb.Eb());
-				Hadron mc_variables = new Inclusive(event, mc_Event, mc_Eb.Eb());
+				Inclusive variables = new Inclusive(event, research_Event, Eb.Eb());
+				Inclusive mc_variables = new Inclusive(event, mc_Event, mc_Eb.Eb());
 
 				if (variables.channel_test(variables)) {
 
