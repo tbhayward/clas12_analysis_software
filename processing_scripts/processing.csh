@@ -50,63 +50,63 @@ else
     set arg2 = "$2"
 endif
 
-# git pull;
-# cd clasqaDB/; source env.csh; cd ..;
-# g++ `root-config --cflags --libs` -o processing_scripts/convert_txt_to_root processing_scripts/convert_txt_to_root.cpp
+git pull;
+cd clasqaDB/; source env.csh; cd ..;
+g++ `root-config --cflags --libs` -o processing_scripts/convert_txt_to_root processing_scripts/convert_txt_to_root.cpp
 
-# # execute command based on number of entries
-# if ($arg1 == "processing_scripts/processing_inclusive.groovy") then
-#     coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6"
-#     # Run the convert_txt_to_root program
-#     set txt_file = "$3.txt"
-#     set root_file = "$3.root"
-#     ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
-# else if ($arg1 == "processing_scripts/processing_single_hadrons.groovy") then
-#     coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4.txt" "$5" "$6"
-#     # Run the convert_txt_to_root program
-#     set txt_file = "$4.txt"
-#     set root_file = "$4.root"
-#     ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
-# else if ($arg1 == "processing_scripts/processing_mc_single_hadrons.groovy") then
-#     coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4.txt" "$5" "$6"
-#     # Run the convert_txt_to_root program
-#     set txt_file = "$4.txt"
-#     set root_file = "$4.root"
-#     ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
-# else if ($arg1 == "processing_scripts/pass2_hadron_pid_mc.groovy") then
-#     coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4.txt" "$5" "$6"
-#     # Run the convert_txt_to_root program
-#     set txt_file = "$4.txt"
-#     set root_file = "$4.root"
-#     ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
-# else if ($arg1 == "processing_scripts/pass2_hadron_pid_rich.groovy") then
-#     coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4.txt" "$5" "$6"
-#     # Run the convert_txt_to_root program
-#     set txt_file = "$4.txt"
-#     set root_file = "$4.root"
-#     ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
-# else if ($arg1 == "processing_scripts/pass2_hadron_pid_data.groovy") then
-#     coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4.txt" "$5" "$6"
-#     # Run the convert_txt_to_root program
-#     set txt_file = "$4.txt"
-#     set root_file = "$4.root"
-#     ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
-# else if ($arg1 == "processing_scripts/processing_dihadrons.groovy") then
-#     coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4" "$5.txt" "$6"
-#     # Run the convert_txt_to_root program
-#     set txt_file = "$5.txt"
-#     set root_file = "$5.root"
-#     ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
-# else if ($arg1 == "processing_scripts/processing_mc_dihadrons.groovy") then
-#     coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4" "$5.txt" "$6"
-#     # Run the convert_txt_to_root program
-#     set txt_file = "$5.txt"
-#     set root_file = "$5.root"
-#     ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
-# else if ($arg1 == "processing_scripts/processing_trihadrons.groovy") then
-#     coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4" "$5" "$6.txt" "$7"
-#     # Run the convert_txt_to_root program
-#     set txt_file = "$6.txt"
-#     set root_file = "$6.root"
-#     ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
-# endif
+# execute command based on number of entries
+if ($arg1 == "processing_scripts/processing_inclusive.groovy") then
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6"
+    # Run the convert_txt_to_root program
+    set txt_file = "$3.txt"
+    set root_file = "$3.root"
+    ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
+else if ($arg1 == "processing_scripts/processing_single_hadrons.groovy") then
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4.txt" "$5" "$6"
+    # Run the convert_txt_to_root program
+    set txt_file = "$4.txt"
+    set root_file = "$4.root"
+    ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
+else if ($arg1 == "processing_scripts/processing_mc_single_hadrons.groovy") then
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4.txt" "$5" "$6"
+    # Run the convert_txt_to_root program
+    set txt_file = "$4.txt"
+    set root_file = "$4.root"
+    ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
+else if ($arg1 == "processing_scripts/pass2_hadron_pid_mc.groovy") then
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4.txt" "$5" "$6"
+    # Run the convert_txt_to_root program
+    set txt_file = "$4.txt"
+    set root_file = "$4.root"
+    ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
+else if ($arg1 == "processing_scripts/pass2_hadron_pid_rich.groovy") then
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4.txt" "$5" "$6"
+    # Run the convert_txt_to_root program
+    set txt_file = "$4.txt"
+    set root_file = "$4.root"
+    ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
+else if ($arg1 == "processing_scripts/pass2_hadron_pid_data.groovy") then
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4.txt" "$5" "$6"
+    # Run the convert_txt_to_root program
+    set txt_file = "$4.txt"
+    set root_file = "$4.root"
+    ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
+else if ($arg1 == "processing_scripts/processing_dihadrons.groovy") then
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4" "$5.txt" "$6"
+    # Run the convert_txt_to_root program
+    set txt_file = "$5.txt"
+    set root_file = "$5.root"
+    ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
+else if ($arg1 == "processing_scripts/processing_mc_dihadrons.groovy") then
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4" "$5.txt" "$6"
+    # Run the convert_txt_to_root program
+    set txt_file = "$5.txt"
+    set root_file = "$5.root"
+    ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
+else if ($arg1 == "processing_scripts/processing_trihadrons.groovy") then
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4" "$5" "$6.txt" "$7"
+    # Run the convert_txt_to_root program
+    set txt_file = "$6.txt"
+    set root_file = "$6.root"
+    ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
+endif
