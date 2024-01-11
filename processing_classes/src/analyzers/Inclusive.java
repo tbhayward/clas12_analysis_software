@@ -30,6 +30,15 @@ public class Inclusive {
   
     protected double e_px, e_py, e_pz, e_p, e_e, e_theta, e_phi, vz_e; // electron kinematics
     
+    // depolarization vectors defining the polarization lost during the transfer from beam to 
+    // the virtual photon. 
+    // in ALU BSAs the twist 2 terms are modified by C/A and the twist 3 terms by W/A
+    // B and V come in AUL
+    protected double Depolarization_A;
+    protected double Depolarization_B;
+    protected double Depolarization_C;
+    protected double Depolarization_V;
+    protected double Depolarization_W;
     
     public static boolean channel_test(Inclusive variables) {
 //        if (variables.helicity==0){ 
@@ -88,6 +97,13 @@ public class Inclusive {
 	W  = Math.pow(Math.pow(particle_mass(2212),2)+2*particle_mass(2212)*nu - Q2, 0.5);
 	y = nu/lv_beam.e();
         gamma = 2*particle_mass(2212)*x/Math.pow(Q2, 0.5);
+        
+        // Depolarization variables
+        Depolarization_A = 1/(1+gamma*gamma)*(1-y+y*y/2+y*y*gamma*gamma/4);
+        Depolarization_B = 1/(1+gamma*gamma)*(1-y-y*y*gamma*gamma/4);
+        Depolarization_C = (y/Math.pow(1+gamma*gamma, 0.5))*(1-y/2);
+        Depolarization_V = (2-y)/(1+gamma*gamma)*Math.pow(1-y-y*y*gamma*gamma/4,0.5);
+        Depolarization_W = y/(Math.pow(1+gamma*gamma, 0.5))*Math.pow(1-y-y*y*gamma*gamma/4,0.5);
                 
         vz_e = scattered_electron.vz();
         
@@ -136,6 +152,11 @@ public class Inclusive {
     // frame polar angle
     public double e_phi() { return Double.valueOf(Math.round(e_phi*100000))/100000; } // returns electron lab 
     // frame polar angle
+    public double Depolarization_A() { return ((int) (Depolarization_A * 100000)) / 100000.0; }
+    public double Depolarization_B() { return ((int) (Depolarization_B * 100000)) / 100000.0; }
+    public double Depolarization_C() { return ((int) (Depolarization_C * 100000)) / 100000.0; }
+    public double Depolarization_V() { return ((int) (Depolarization_V * 100000)) / 100000.0; }
+    public double Depolarization_W() { return ((int) (Depolarization_W * 100000)) / 100000.0; }
   
     public double vz_e() { return Double.valueOf(Math.round(vz_e*100000))/100000; }// returns electron z vertex
     
