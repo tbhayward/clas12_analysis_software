@@ -17,16 +17,16 @@ void compareTrees(const char* file1, const char* file2, const char* output,
     const char* output2, double lineValue) {
     // Define the momentum bin edges
     
-    // pions and kaon
-    std::vector<double> binEdges = {0.6,1.5,1.8,2.0,2.1,2.2,2.3,2.4,2.5,2.6,2.8,3.0,3.2,3.4,3.8,5.0};
+    // // pions and kaon
+    // std::vector<double> binEdges = {0.6,1.5,1.8,2.0,2.1,2.2,2.3,2.4,2.5,2.6,2.8,3.0,3.2,3.4,3.8,5.0};
 
     // // pions and kaon less
     // std::vector<double> binEdges = {0.6,2.6,3.8,5.0};
 
 
-    // // proton 
-    // std::vector<double> binEdges = 
-    //     {0,0.6,0.625,0.65,0.675,0.7,0.725,0.75,0.8,1.0,1.1,1.2,1.4,1.8,2.4,3.0};
+    // proton 
+    std::vector<double> binEdges = 
+        {0,0.6,0.625,0.65,0.675,0.7,0.725,0.75,0.8,1.0,1.1,1.2,1.4,1.8,2.4,3.0};
     
 
     int nBins = binEdges.size() - 1;
@@ -40,9 +40,9 @@ void compareTrees(const char* file1, const char* file2, const char* output,
     // Create histograms for each bin
     std::vector<TH1D*> hist1, hist2;
     for (int i = 0; i < nBins; ++i) {
-        // pi+ 
-        hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.6, 1.2));
-        hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 0.6, 1.2));
+        // // pi+ 
+        // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.6, 1.2));
+        // hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 0.6, 1.2));
 
         // // pi-
         // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 1.0, 1.8));
@@ -60,9 +60,9 @@ void compareTrees(const char* file1, const char* file2, const char* output,
         // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.1, 0.9));
         // hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 0.1, 0.9));
 
-        // // // proton f2
-        // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 1.2, 1.8));
-        // hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 1.2, 1.8));
+        // // proton f2
+        hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 1.2, 1.8));
+        hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 1.2, 1.8));
     }
 
     // Set branch addresses
@@ -162,12 +162,12 @@ void compareTrees(const char* file1, const char* file2, const char* output,
         hist1[i]->Fit(fitFunc1, "R");
         fitFunc1->SetLineColor(kBlue);
         fitFunc1->SetLineStyle(1);
-        // fitFunc1->Draw("SAME");
+        fitFunc1->Draw("SAME");
 
         // Perform the fit on the second histogram
         hist2[i]->Fit(fitFunc2, "R+");
         fitFunc2->SetLineColor(kRed);
-        // fitFunc2->Draw("SAME");
+        fitFunc2->Draw("SAME");
 
         // Retrieve the mean and its error for the first fit
         double mean1 = fitFunc1->GetParameter(1);
@@ -253,6 +253,7 @@ void compareTrees(const char* file1, const char* file2, const char* output,
 
     TCanvas* c2 = new TCanvas("c1", "Comparison", 1200, 800);
     c2->cd(1);
+    gr1->SetMarkerColor(kBlue);
     gr1->SetLineColor(kBlue);
     gr1->SetMarkerStyle(20);
     gr1->SetMarkerSize(0.6);
