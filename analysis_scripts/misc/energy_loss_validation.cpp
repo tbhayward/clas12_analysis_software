@@ -44,13 +44,13 @@ void compareTrees(const char* file1, const char* file2, const char* output,
         // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.6, 1.2));
         // hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 0.6, 1.2));
 
-        // pi-
-        hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 1.0, 1.8));
-        hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 1.0, 1.8));
+        // // pi-
+        // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 1.0, 1.8));
+        // hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 1.0, 1.8));
 
-        // // k+ 
-        // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 1.0, 1.4));
-        // hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 1.0, 1.4));
+        // k+ 
+        hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 1.0, 1.4));
+        hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 1.0, 1.4));
 
         // // k- 
         // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 50, 0.5, 2.5));
@@ -224,8 +224,10 @@ void compareTrees(const char* file1, const char* file2, const char* output,
     gr2->Draw("P SAME");
 
     // Set the Y-axis range to be lineValue +/- 0.15
-    double yAxisMin = lineValue - 0.12;
-    double yAxisMax = lineValue + 0.04;
+    // double yAxisMin = lineValue - 0.12; // proton, pion
+    // double yAxisMax = lineValue + 0.04; // proton, pion
+    double yAxisMin = lineValue - 0.08; // kaon
+    double yAxisMax = lineValue + 0.08; // kaon
     gr1->GetYaxis()->SetRangeUser(yAxisMin, yAxisMax);
     gr2->GetYaxis()->SetRangeUser(yAxisMin, yAxisMax);
 
