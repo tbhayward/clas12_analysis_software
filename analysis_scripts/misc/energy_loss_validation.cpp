@@ -160,13 +160,13 @@ void compareTrees(const char* file1, const char* file2, const char* output,
 
         // Perform the fit on the first histogram
         hist1[i]->Fit(fitFunc1, "R");
-        fitFunc1->SetLineColor(hist1[i]->GetLineColor());
+        fitFunc1->SetLineColor(kBlue);
         fitFunc1->SetLineStyle(1);
         // fitFunc1->Draw("SAME");
 
         // Perform the fit on the second histogram
         hist2[i]->Fit(fitFunc2, "R+");
-        fitFunc2->SetLineColor(hist2[i]->GetLineColor());
+        fitFunc2->SetLineColor(kRed);
         // fitFunc2->Draw("SAME");
 
         // Retrieve the mean and its error for the first fit
@@ -206,6 +206,7 @@ void compareTrees(const char* file1, const char* file2, const char* output,
     TGraphErrors* gr1 = new TGraphErrors(nPoints, &binCenters[0], &meanValues1[0], 0, 
         &meanErrors1[0]);
     gr1->SetMarkerColor(kBlue);
+    gr1->SetLineColor(kBlue);
     gr1->SetMarkerStyle(20);
     gr1->SetMarkerSize(0.6);
     gr1->SetTitle("Fitted Mean Values; Momentum (GeV); Mean of Gaussian (GeV^{2})");
