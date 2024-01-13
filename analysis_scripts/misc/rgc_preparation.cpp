@@ -7,7 +7,7 @@
 
 const std::string output_dir = "output/";
 
-void rgc_preparation(const char* inputFile1, const char* inputFile2, const char* outputFile) {
+void rgc_preparation() {
     // File paths and tree names
     const char* rga_eX_file = "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rga_ready_for_calibration_eX.root";
     const char* rga_epipX_file = "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rga_ready_for_calibration_epi+X.root";
