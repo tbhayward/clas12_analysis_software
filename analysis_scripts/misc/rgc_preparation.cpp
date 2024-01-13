@@ -4,6 +4,9 @@
 #include <TH1.h>
 #include <TGraph.h>
 #include <iostream>
+#include <TLegend.h>
+#include <TLatex.h>
+#include <TStyle.h>
 
 const std::string output_dir = "output/rgc_ready_for_cooking_plots/";
 
@@ -61,7 +64,7 @@ void rgc_preparation() {
     const char* titles[] = {"eX", "e#pi^{+}X", "epX", "e#pi^{+}#pi^{-}X"};
     const char* variables[] = {"Mx", "Mx", "Mx", "Mx"};
     const char* cuts[] = {"runnum != 16297", "runnum == 16297"};
-    double norms[] = {rga_norm, rgc_pos_norm, rgc_neg_norm, rgc_carbon_norm};
+    double norms[] = {rga_H2_norm, rgc_NH3_norm, rgc_NH3_norm, rgc_C_norm};
 
     for (int i = 0; i < 4; i++) {
         // Left column plots (NH3, C, H2 distributions)
