@@ -44,6 +44,6 @@ int main(int argc, char** argv) {
         std::cerr << "Usage: " << argv[0] << " <InputFile1> <InputFile2> <OutputFile>" << std::endl;
         return 1;
     }
-    AnalyzeData(argv[1], argv[2], argv[3]);
+    rgc_preparation(argv[1], argv[2], argv[3]);
     return 0;
 }
