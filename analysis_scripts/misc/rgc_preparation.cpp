@@ -68,6 +68,11 @@ void rgc_preparation() {
         pad1->SetBottomMargin(0.15);
         pad1->SetLeftMargin(0.15);
 
+        // Adjust variable and range for the eX plot
+        const char* var = (i == 0) ? "x" : "Mx"; // Use "x" for the first plot
+        double xMin = (i == 0) ? 0.0 : -2.0; // Set minimum x to 0 for the first plot
+        double xMax = (i == 0) ? 1.0 : 4.0; // Set maximum x to 1 for the first plot
+
         // Creating H2 histogram (red)
         hists[i] = createHistogram(trees[i], (std::string("h_rga_") + titles[i]).c_str(), titles[i], variables[i], "", rga_H2_norm);
         hists[i]->SetLineColor(kRed);
@@ -101,6 +106,12 @@ void rgc_preparation() {
         leg->AddEntry(hists[i + 4], "NH3", "l");
         leg->AddEntry(hists[i + 8], "C", "l");
         leg->Draw();
+
+        // Set x-axis label for eX plots
+        const char* xAxisTitle = (i == 0) ? "x_{B}" : "M_{X} (GeV)";
+        hists[i]->GetXaxis()->SetTitle(xAxisTitle);
+        hists[i + 4]->GetXaxis()->SetTitle(xAxisTitle);
+        hists[i + 8]->GetXaxis()->SetTitle(xAxisTitle);
 
         // Right column plots (NH3/C ratio)
         c1->cd(i * 2 + 2);
