@@ -51,12 +51,12 @@ void rgc_preparation() {
     std::string output_file = output_dir + "analysis_output_example.png";
     c1->SaveAs(output_file.c_str());
 
-    // Clean up
-    delete c1;
-    rga_eX->Close(); rga_epipX->Close(); rga_epX->Close(); rga_epippimX->Close();
-    rgc_eX->Close(); rgc_epipX->Close(); rgc_epX->Close(); rgc_epippimX->Close();
-    delete rga_eX; delete rga_epipX; delete rga_epX; delete rga_epippimX;
-    delete rgc_eX; delete rgc_epipX; delete rgc_epX; delete rgc_epippimX;
+    // // Clean up
+    // delete c1;
+    // rga_eX->Close(); rga_epipX->Close(); rga_epX->Close(); rga_epippimX->Close();
+    // rgc_eX->Close(); rgc_epipX->Close(); rgc_epX->Close(); rgc_epippimX->Close();
+    // delete rga_eX; delete rga_epipX; delete rga_epX; delete rga_epippimX;
+    // delete rgc_eX; delete rgc_epipX; delete rgc_epX; delete rgc_epippimX;
 }
 
 int main() {
