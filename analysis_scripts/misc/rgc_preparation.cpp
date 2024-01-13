@@ -7,12 +7,13 @@
 #include <TLegend.h>
 #include <TLatex.h>
 #include <TStyle.h>
+#include <TMath.h> // For TMath::Max
 
 const std::string output_dir = "output/rgc_ready_for_cooking_plots/";
 
 // Function to create a histogram for a given dataset
 TH1D* createHistogram(TTree* tree, const char* name, const char* title, 
-        const char* variable, const char* cut, double norm) {
+                      const char* variable, const char* cut, double norm) {
     TH1D* hist = new TH1D(name, title, 100, -2, 4);
     tree->Draw((std::string(variable) + ">>" + name).c_str(), cut, "goff");
     hist->Scale(1.0 / norm);
@@ -21,7 +22,6 @@ TH1D* createHistogram(TTree* tree, const char* name, const char* title,
 }
 
 void rgc_preparation() {
-    
     const char* files[] = {
         "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rga_ready_for_calibration_eX.root",
         "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rga_ready_for_calibration_epi+X.root",
@@ -33,7 +33,6 @@ void rgc_preparation() {
         "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rgc_ready_for_calibration_epi+pi-X.root"
     };
 
-    // Open files and get trees
     TFile* filesOpened[8];
     TTree* trees[8];
     for (int i = 0; i < 8; i++) {
@@ -47,19 +46,16 @@ void rgc_preparation() {
     double rgc_NH3_norm = rgc_pos_NH3_norm+rgc_neg_NH3_norm;
     double rgc_C_norm = 8883.014+8834.256;
 
-    // Create canvas with 4x2 pads
     TCanvas *c1 = new TCanvas("c1", "Data Analysis", 1600, 1200);
     c1->Divide(2, 4);
 
-    // Histograms for each dataset
     TH1D* hists[12]; // 4 plots * 3 histograms per plot
 
-    // Set style
     gStyle->SetOptStat(0);
     gStyle->SetTitleAlign(23);
     gStyle->SetTitleX(.5);
-    gStyle->SetLabelSize(0.05, "XY"); // Increased label size
-    gStyle->SetTitleSize(0.05, "XY"); // Increased title size
+    gStyle->SetLabelSize(0.05, "XY");
+    gStyle->SetTitleSize(0.05, "XY");
 
     const char* titles[] = {"eX", "e#pi^{+}X", "epX", "e#pi^{+}#pi^{-}X"};
     const char* variables[] = {"Mx", "Mx", "Mx", "Mx"};
@@ -67,7 +63,6 @@ void rgc_preparation() {
     const char* cuts_C[] = {"runnum == 16297", "runnum == 16297", "runnum == 16297", "runnum == 16297"};
 
     for (int i = 0; i < 4; i++) {
-        // Left column plots (NH3, C, H2 distributions)
         c1->cd(i * 2 + 1);
         TPad* pad1 = (TPad*)c1->GetPad(i * 2 + 1);
         pad1->SetBottomMargin(0.15);
@@ -92,8 +87,16 @@ void rgc_preparation() {
         hists[i + 8]->SetLineColor(kGreen);
         hists[i + 8]->Draw("same");
 
+        // Determine the maximum value of the histograms
+        double maxVal = TMath::Max(hists[i]->GetMaximum(), hists[i + 4]->GetMaximum());
+        maxVal = TMath::Max(maxVal, hists[i + 8]->GetMaximum());
+        double newMax = maxVal * 1.2;  // 20% higher than the maximum value
+        hists[i]->SetMaximum(newMax);
+        hists[i + 4]->SetMaximum(newMax);
+        hists[i + 8]->SetMaximum(newMax);
+
         // Add legend in the top left
-        TLegend* leg = new TLegend(0.1, 0.7, 0.3, 0.9); // Adjusted coordinates for top left
+        TLegend* leg = new TLegend(0.15, 0.7, 0.35, 0.9); // Adjusted coordinates for top left
         leg->AddEntry(hists[i], "H2", "l");
         leg->AddEntry(hists[i + 4], "NH3", "l");
         leg->AddEntry(hists[i + 8], "C", "l");
@@ -107,7 +110,7 @@ void rgc_preparation() {
 
         TH1D* ratioHist = (TH1D*)hists[i + 4]->Clone((std::string("ratio_") + titles[i]).c_str());
         ratioHist->Divide(hists[i + 8]);
-        ratioHist->SetLineColor(kRed);
+        ratioHist->SetLineColor(kBlack);  // Changed to black
         ratioHist->GetXaxis()->SetTitle("M_{X} (GeV)");
         ratioHist->GetYaxis()->SetTitle("NH_{3} / C");
         ratioHist->GetXaxis()->SetTitleSize(0.05);
@@ -116,8 +119,8 @@ void rgc_preparation() {
 
         // Add label for ratio plots
         TLatex *ratioLabel = new TLatex();
-    ratioLabel->SetTextSize(0.04);
-    ratioLabel->DrawLatexNDC(0.7, 0.8, "NH3/C Ratio");
+        ratioLabel->SetTextSize(0.04);
+        ratioLabel->DrawLatexNDC(0.7, 0.8, "NH3/C Ratio");
     }
 
     // Save the canvas as "normalizations.png"
@@ -129,10 +132,11 @@ void rgc_preparation() {
         delete filesOpened[i];
     }
     delete c1;
-
-}
+    }
 
 int main() {
     rgc_preparation();
     return 0;
 }
+
+
