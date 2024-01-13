@@ -13,7 +13,7 @@ const std::string output_dir = "output/rgc_ready_for_cooking_plots/";
 // Function to create a histogram for a given dataset
 TH1D* createHistogram(TTree* tree, const char* name, const char* title, 
         const char* variable, const char* cut, double norm) {
-    TH1D* hist = new TH1D(name, title, 80, -4, 4);
+    TH1D* hist = new TH1D(name, title, 100, -2, 4);
     tree->Draw((std::string(variable) + ">>" + name).c_str(), cut, "goff");
     hist->Scale(1.0 / norm);
     hist->SetStats(kFALSE);
@@ -52,41 +52,51 @@ void rgc_preparation() {
     c1->Divide(2, 4);
 
     // Histograms for each dataset
-    TH1D* hists[8];
+    TH1D* hists[12]; // 4 plots * 3 histograms per plot
 
     // Set style
     gStyle->SetOptStat(0);
     gStyle->SetTitleAlign(23);
     gStyle->SetTitleX(.5);
-    gStyle->SetLabelSize(0.04, "XY");
-    gStyle->SetTitleSize(0.04, "XY");
+    gStyle->SetLabelSize(0.05, "XY"); // Increased label size
+    gStyle->SetTitleSize(0.05, "XY"); // Increased title size
 
     const char* titles[] = {"eX", "e#pi^{+}X", "epX", "e#pi^{+}#pi^{-}X"};
     const char* variables[] = {"Mx", "Mx", "Mx", "Mx"};
-    const char* cuts[] = {"runnum != 16297", "runnum == 16297"};
-    double norms[] = {rga_H2_norm, rgc_NH3_norm, rgc_NH3_norm, rgc_C_norm};
+    const char* cuts_NH3[] = {"runnum != 16297", "runnum != 16297", "runnum != 16297", "runnum != 16297"};
+    const char* cuts_C[] = {"runnum == 16297", "runnum == 16297", "runnum == 16297", "runnum == 16297"};
 
     for (int i = 0; i < 4; i++) {
         // Left column plots (NH3, C, H2 distributions)
         c1->cd(i * 2 + 1);
-        TPad *pad1 = (TPad*)c1->GetPad(i * 2 + 1);
+        TPad pad1 = (TPad)c1->GetPad(i * 2 + 1);
         pad1->SetBottomMargin(0.15);
         pad1->SetLeftMargin(0.15);
 
-        hists[i] = createHistogram(trees[i], (std::string("h_rg") + titles[i]).c_str(), titles[i], variables[i], cuts[0], norms[i]);
-        hists[i]->SetLineColor(kBlue);
+        // Creating H2 histogram (red)
+        hists[i] = createHistogram(trees[i], (std::string("h_rga_") + titles[i]).c_str(), titles[i], variables[i], "", rga_H2_norm);
+        hists[i]->SetLineColor(kRed);
         hists[i]->GetXaxis()->SetTitle("M_{X} (GeV)");
         hists[i]->GetYaxis()->SetTitle("Counts / nC");
+        hists[i]->GetXaxis()->SetTitleSize(0.05);
+        hists[i]->GetYaxis()->SetTitleSize(0.05);
         hists[i]->Draw();
 
-        hists[i + 4] = createHistogram(trees[i + 4], (std::string("h_rgc") + titles[i]).c_str(), "", variables[i], cuts[1], norms[i + 4]);
-        hists[i + 4]->SetLineColor(kGreen);
+        // Creating NH3 histogram (blue)
+        hists[i + 4] = createHistogram(trees[i + 4], (std::string("h_rgc_nh3_") + titles[i]).c_str(), "", variables[i], cuts_NH3[i], rgc_NH3_norm);
+        hists[i + 4]->SetLineColor(kBlue);
         hists[i + 4]->Draw("same");
 
-        // Add legend
-        TLegend* leg = new TLegend(0.7, 0.7, 0.9, 0.9);
-        leg->AddEntry(hists[i], "NH3", "l");
-        leg->AddEntry(hists[i + 4], "C", "l");
+        // Creating C histogram (green)
+        hists[i + 8] = createHistogram(trees[i + 4], (std::string("h_rgc_c_") + titles[i]).c_str(), "", variables[i], cuts_C[i], rgc_C_norm);
+        hists[i + 8]->SetLineColor(kGreen);
+        hists[i + 8]->Draw("same");
+
+        // Add legend in the top left
+        TLegend* leg = new TLegend(0.1, 0.7, 0.3, 0.9); // Adjusted coordinates for top left
+        leg->AddEntry(hists[i], "H2", "l");
+        leg->AddEntry(hists[i + 4], "NH3", "l");
+        leg->AddEntry(hists[i + 8], "C", "l");
         leg->Draw();
 
         // Right column plots (NH3/C ratio)
@@ -95,16 +105,19 @@ void rgc_preparation() {
         pad2->SetBottomMargin(0.15);
         pad2->SetLeftMargin(0.15);
 
-        TH1D* ratioHist = (TH1D*)hists[i]->Clone((std::string("ratio_") + titles[i]).c_str());
-        ratioHist->Divide(hists[i + 4]);
+        TH1D* ratioHist = (TH1D*)hists[i + 4]->Clone((std::string("ratio_") + titles[i]).c_str());
+        ratioHist->Divide(hists[i + 8]);
         ratioHist->SetLineColor(kRed);
         ratioHist->GetXaxis()->SetTitle("M_{X} (GeV)");
         ratioHist->GetYaxis()->SetTitle("NH_{3} / C");
+        ratioHist->GetXaxis()->SetTitleSize(0.05);
+        ratioHist->GetYaxis()->SetTitleSize(0.05);
         ratioHist->Draw();
+
         // Add label for ratio plots
-        TLatex *label = new TLatex();
-        label->SetTextSize(0.04);
-        label->DrawLatexNDC(0.7, 0.8, "NH3/C Ratio");
+        TLatex *ratioLabel = new TLatex();
+    ratioLabel->SetTextSize(0.04);
+    ratioLabel->DrawLatexNDC(0.7, 0.8, "NH3/C Ratio");
     }
 
     // Save the canvas as "normalizations.png"
