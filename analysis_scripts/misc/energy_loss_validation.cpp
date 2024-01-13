@@ -224,10 +224,10 @@ void compareTrees(const char* file1, const char* file2, const char* output,
     gr2->Draw("P SAME");
 
     // Set the Y-axis range to be lineValue +/- offset
-    double yAxisMin = lineValue - 0.12; // proton, pion
-    double yAxisMax = lineValue + 0.04; // proton, pion
-    // double yAxisMin = lineValue - 0.08; // kaon
-    // double yAxisMax = lineValue + 0.08; // kaon
+    // double yAxisMin = lineValue - 0.12; // proton, pion
+    // double yAxisMax = lineValue + 0.04; // proton, pion
+    double yAxisMin = lineValue - 0.08; // kaon
+    double yAxisMax = lineValue + 0.08; // kaon
     gr1->GetYaxis()->SetRangeUser(yAxisMin, yAxisMax);
     gr2->GetYaxis()->SetRangeUser(yAxisMin, yAxisMax);
 
