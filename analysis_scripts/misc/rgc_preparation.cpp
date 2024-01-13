@@ -11,10 +11,9 @@
 
 const std::string output_dir = "output/rgc_ready_for_cooking_plots/";
 
-// Function to create a histogram for a given dataset
-TH1D* createHistogram(TTree* tree, const char* name, const char* title, 
-                      const char* variable, const char* cut, double norm) {
-    TH1D* hist = new TH1D(name, title, 100, -2, 4);
+TH1D* createHistogram(TTree* tree, const char* name, const char* title, const char* variable, 
+    const char* cut, double norm, double xMin, double xMax) {
+    TH1D* hist = new TH1D(name, title, 100, xMin, xMax);
     tree->Draw((std::string(variable) + ">>" + name).c_str(), cut, "goff");
     hist->Scale(1.0 / norm);
     hist->SetStats(kFALSE);
@@ -68,13 +67,20 @@ void rgc_preparation() {
         pad1->SetBottomMargin(0.15);
         pad1->SetLeftMargin(0.15);
 
-        // Adjust variable and range for the eX plot
-        const char* var = (i == 0) ? "x" : "Mx"; // Use "x" for the first plot
-        double xMin = (i == 0) ? 0.0 : -2.0; // Set minimum x to 0 for the first plot
-        double xMax = (i == 0) ? 1.0 : 4.0; // Set maximum x to 1 for the first plot
+        // Define histogram ranges for each channel
+        double xMin, xMax;
+        if (i == 0) {        // eX
+            xMin = 1.0; xMax = 4.0;
+        } else if (i == 1) { // epi+X
+            xMin = 0.0; xMax = 3.5;
+        } else if (i == 2) { // epX
+            xMin = -2.0; xMax = 3.0;
+        } else {             // epi+pi-X
+            xMin = 0.0; xMax = 3.0;
+        }
 
         // Creating H2 histogram (red)
-        hists[i] = createHistogram(trees[i], (std::string("h_rga_") + titles[i]).c_str(), titles[i], variables[i], "", rga_H2_norm);
+        hists[i] = createHistogram(trees[i], (std::string("h_rga_") + titles[i]).c_str(), titles[i], variables[i], "", rga_H2_norm, xMin, xMax);
         hists[i]->SetLineColor(kRed);
         hists[i]->GetXaxis()->SetTitle("M_{X} (GeV)");
         hists[i]->GetYaxis()->SetTitle("Counts / nC");
@@ -83,12 +89,12 @@ void rgc_preparation() {
         hists[i]->Draw();
 
         // Creating NH3 histogram (blue)
-        hists[i + 4] = createHistogram(trees[i + 4], (std::string("h_rgc_nh3_") + titles[i]).c_str(), "", variables[i], cuts_NH3[i], rgc_NH3_norm);
+        hists[i + 4] = createHistogram(trees[i + 4], (std::string("h_rgc_nh3_") + titles[i]).c_str(), "", variables[i], cuts_NH3[i], rgc_NH3_norm, xMin, xMax);
         hists[i + 4]->SetLineColor(kBlue);
         hists[i + 4]->Draw("same");
 
         // Creating C histogram (green)
-        hists[i + 8] = createHistogram(trees[i + 4], (std::string("h_rgc_c_") + titles[i]).c_str(), "", variables[i], cuts_C[i], rgc_C_norm);
+        hists[i + 8] = createHistogram(trees[i + 4], (std::string("h_rgc_c_") + titles[i]).c_str(), "", variables[i], cuts_C[i], rgc_C_norm, xMin, xMax);
         hists[i + 8]->SetLineColor(kGreen);
         hists[i + 8]->Draw("same");
 
@@ -106,12 +112,6 @@ void rgc_preparation() {
         leg->AddEntry(hists[i + 4], "NH3", "l");
         leg->AddEntry(hists[i + 8], "C", "l");
         leg->Draw();
-
-        // Set x-axis label for eX plots
-        const char* xAxisTitle = (i == 0) ? "x_{B}" : "M_{X} (GeV)";
-        hists[i]->GetXaxis()->SetTitle(xAxisTitle);
-        hists[i + 4]->GetXaxis()->SetTitle(xAxisTitle);
-        hists[i + 8]->GetXaxis()->SetTitle(xAxisTitle);
 
         // Right column plots (NH3/C ratio)
         c1->cd(i * 2 + 2);

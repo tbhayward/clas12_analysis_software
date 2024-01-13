@@ -63,7 +63,7 @@ public class Hadron {
 //            System.out.println("You're returning false because helicity = 0. Is this data or MC?");
 //            return false; }
         if (variables.Q2()<1) { return false; } 
-        if (variables.W()<2) { return false; } 
+//        if (variables.W()<2) { return false; } 
 //        if (variables.xF()<0.0) { return false; } 
         else if (variables.y()>0.75) { return false; } 
 //        else if (variables.z()<0.2 || variables.z() > 0.95) { return false; } 
