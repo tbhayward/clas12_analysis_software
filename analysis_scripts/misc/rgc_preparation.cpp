@@ -43,21 +43,76 @@ void rgc_preparation() {
     double rgc_neg_NH3_norm = 21282.264+21217.414+21303.576+21297.766;
     double rgc_C_norm = 8883.014+8834.256;
 
-    // Example: Initialize a canvas for plotting for one of the datasets
-    TCanvas *c1 = new TCanvas("c1", "Data Analysis", 800, 600);
+    // Create canvas with 4x2 pads
+    TCanvas *c1 = new TCanvas("c1", "Data Analysis", 1600, 1200);
+    c1->Divide(2, 4);
 
-    // More analysis and plotting logic here
+    // Histograms for each dataset
+    TH1D* hists[8];
 
-    // Example: Save the canvas to a file for one of the datasets
-    std::string output_file = output_dir + "analysis_output_example.png";
-    c1->SaveAs(output_file.c_str());
+    // Set style
+    gStyle->SetOptStat(0);
+    gStyle->SetTitleAlign(23);
+    gStyle->SetTitleX(.5);
+    gStyle->SetLabelSize(0.04, "XY");
+    gStyle->SetTitleSize(0.04, "XY");
 
-    // // Clean up
-    // delete c1;
-    // rga_eX->Close(); rga_epipX->Close(); rga_epX->Close(); rga_epippimX->Close();
-    // rgc_eX->Close(); rgc_epipX->Close(); rgc_epX->Close(); rgc_epippimX->Close();
-    // delete rga_eX; delete rga_epipX; delete rga_epX; delete rga_epippimX;
-    // delete rgc_eX; delete rgc_epipX; delete rgc_epX; delete rgc_epippimX;
+    const char* titles[] = {"eX", "e#pi^{+}X", "epX", "e#pi^{+}#pi^{-}X"};
+    const char* variables[] = {"Mx", "Mx", "Mx", "Mx"};
+    const char* cuts[] = {"runnum != 16297", "runnum == 16297"};
+    double norms[] = {rga_norm, rgc_pos_norm, rgc_neg_norm, rgc_carbon_norm};
+
+    for (int i = 0; i < 4; i++) {
+        // Left column plots (NH3, C, H2 distributions)
+        c1->cd(i * 2 + 1);
+        TPad *pad1 = (TPad*)c1->GetPad(i * 2 + 1);
+        pad1->SetBottomMargin(0.15);
+        pad1->SetLeftMargin(0.15);
+
+        hists[i] = createHistogram(trees[i], (std::string("h_rg") + titles[i]).c_str(), titles[i], variables[i], cuts[0], norms[i]);
+        hists[i]->SetLineColor(kBlue);
+        hists[i]->GetXaxis()->SetTitle("M_{X} (GeV)");
+        hists[i]->GetYaxis()->SetTitle("Counts / nC");
+        hists[i]->Draw();
+
+        hists[i + 4] = createHistogram(trees[i + 4], (std::string("h_rgc") + titles[i]).c_str(), "", variables[i], cuts[1], norms[i + 4]);
+        hists[i + 4]->SetLineColor(kGreen);
+        hists[i + 4]->Draw("same");
+
+        // Add legend
+        TLegend* leg = new TLegend(0.7, 0.7, 0.9, 0.9);
+        leg->AddEntry(hists[i], "NH3", "l");
+        leg->AddEntry(hists[i + 4], "C", "l");
+        leg->Draw();
+
+        // Right column plots (NH3/C ratio)
+        c1->cd(i * 2 + 2);
+        TPad *pad2 = (TPad*)c1->GetPad(i * 2 + 2);
+        pad2->SetBottomMargin(0.15);
+        pad2->SetLeftMargin(0.15);
+
+        TH1D* ratioHist = (TH1D*)hists[i]->Clone((std::string("ratio_") + titles[i]).c_str());
+        ratioHist->Divide(hists[i + 4]);
+        ratioHist->SetLineColor(kRed);
+        ratioHist->GetXaxis()->SetTitle("M_{X} (GeV)");
+        ratioHist->GetYaxis()->SetTitle("NH_{3} / C");
+        ratioHist->Draw();
+        // Add label for ratio plots
+        TLatex *label = new TLatex();
+        label->SetTextSize(0.04);
+        label->DrawLatexNDC(0.7, 0.8, "NH3/C Ratio");
+    }
+
+    // Save the canvas as "normalizations.png"
+    std::string final_output = output_dir + "normalizations.png";
+    c1->SaveAs(final_output.c_str());
+
+    // Clean up
+    for (int i = 0; i < 8; i++) {
+        delete filesOpened[i];
+    }
+    delete c1;
+
 }
 
 int main() {
