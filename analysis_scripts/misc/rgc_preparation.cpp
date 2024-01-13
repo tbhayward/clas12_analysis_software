@@ -122,6 +122,9 @@ void rgc_preparation() {
         TH1D* ratioHist = (TH1D*)hists[i + 4]->Clone((std::string("ratio_") + titles[i]).c_str());
         ratioHist->Divide(hists[i + 8]);
         ratioHist->SetLineColor(kBlack);  // Changed to black
+        // Set y-axis range from 0.5 to 1.2
+        ratioHist->SetMinimum(0.5);
+        ratioHist->SetMaximum(1.2);
         ratioHist->GetXaxis()->SetTitle("M_{X} (GeV)");
         ratioHist->GetYaxis()->SetTitle("NH_{3} / C");
         ratioHist->GetXaxis()->SetTitleSize(0.05);
