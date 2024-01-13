@@ -221,7 +221,8 @@ public class Dihadrons {
         LorentzVector lv_Mx1 = new LorentzVector(lv_q); lv_Mx1.add(lv_target); lv_Mx1.sub(lv_p1); 
         Mx1 = lv_Mx1.mass(); // missing mass with p1 observed
         LorentzVector lv_Mx2 = new LorentzVector(lv_q); lv_Mx2.add(lv_target); lv_Mx2.sub(lv_p2);
-        Mx2 = lv_Mx2.mass(); // missing mass with p2 observed
+//        Mx2 = lv_Mx2.mass(); // missing mass with p2 observed
+        Mx2 = mass2;
         
         // boost to gamma*-nucleon center of mass frame
         LorentzVector lv_p_gN = new LorentzVector(lv_p); lv_p_gN.boost(gNBoost);
