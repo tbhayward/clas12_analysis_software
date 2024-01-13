@@ -69,7 +69,7 @@ void rgc_preparation() {
     for (int i = 0; i < 4; i++) {
         // Left column plots (NH3, C, H2 distributions)
         c1->cd(i * 2 + 1);
-        TPad pad1 = (TPad)c1->GetPad(i * 2 + 1);
+        TPad* pad1 = (TPad*)c1->GetPad(i * 2 + 1);
         pad1->SetBottomMargin(0.15);
         pad1->SetLeftMargin(0.15);
 
@@ -101,7 +101,7 @@ void rgc_preparation() {
 
         // Right column plots (NH3/C ratio)
         c1->cd(i * 2 + 2);
-        TPad *pad2 = (TPad*)c1->GetPad(i * 2 + 2);
+        TPad* pad2 = (TPad*)c1->GetPad(i * 2 + 2);
         pad2->SetBottomMargin(0.15);
         pad2->SetLeftMargin(0.15);
 
