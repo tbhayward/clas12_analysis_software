@@ -5,7 +5,7 @@
 #include <TGraph.h>
 #include <iostream>
 
-const std::string output_dir = "output/";
+const std::string output_dir = "output/rgc_ready_for_cooking_plots/";
 
 void rgc_preparation() {
     // File paths and tree names
