@@ -56,13 +56,13 @@ void compareTrees(const char* file1, const char* file2, const char* output,
         // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 50, 0.5, 2.5));
         // hist2.push_back(new TH1D(Form("hist2_%d", i), "", 50, 0.5, 2.5));
 
-        // // proton rho
-        // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.1, 0.9));
-        // hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 0.1, 0.9));
+        // proton rho
+        hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.1, 0.9));
+        hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 0.1, 0.9));
 
-        // // proton f2
-        hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.0, 4));
-        hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 0.0, 4));
+        // // // proton f2
+        // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 1.2, 1.8));
+        // hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 1.2, 1.8));
     }
 
     // Set branch addresses
