@@ -50,8 +50,8 @@ void compareTrees(const char* file1, const char* file2, const char* output,
     std::vector<TH1D*> hist1, hist2;
     for (int i = 0; i < nBins; ++i) {
         // electron proton 
-        hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.5, 1.1));
-        hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 0.5, 1.1));
+        hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.7, 1.2));
+        hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 0.7, 1.2));
 
         // // pi+ 
         // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.6, 1.2));
@@ -81,7 +81,10 @@ void compareTrees(const char* file1, const char* file2, const char* output,
     // Set branch addresses
     double p_p, Mx2;
     // Check if 'p_p' branch exists in tree1
-    if (BranchExists(tree1, "p_p")) {
+    if (BranchExists(tree1, "p2_p")) {
+        tree1->SetBranchAddress("p2_p", &p_p);
+        tree1->SetBranchAddress("Mx2", &Mx2);
+    } else if (BranchExists(tree1, "p_p")){
         tree1->SetBranchAddress("p_p", &p_p);
         tree1->SetBranchAddress("Mx2", &Mx2);
     } else {
@@ -90,11 +93,15 @@ void compareTrees(const char* file1, const char* file2, const char* output,
         tree1->SetBranchAddress("W", &Mx2);
     }
 
-    // Repeat for tree2
-    if (BranchExists(tree2, "p_p")) {
+     // Check if 'p_p' branch exists in tree2
+    if (BranchExists(tree2, "p2_p")) {
+        tree2->SetBranchAddress("p2_p", &p_p);
+        tree2->SetBranchAddress("Mx2", &Mx2);
+    } else if (BranchExists(tree2, "p_p")){
         tree2->SetBranchAddress("p_p", &p_p);
         tree2->SetBranchAddress("Mx2", &Mx2);
     } else {
+        // Use 'e_p' and 'W' instead
         tree2->SetBranchAddress("e_p", &p_p);
         tree2->SetBranchAddress("W", &Mx2);
     }
