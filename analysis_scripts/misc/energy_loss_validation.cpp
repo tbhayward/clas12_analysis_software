@@ -12,6 +12,12 @@
 #include <TF1.h>
 #include <TGraphErrors.h>
 
+// Check if the branch exists in the tree
+bool BranchExists(TTree* tree, const char* branchName) {
+    TBranch* branch = tree->GetBranch(branchName);
+    return (branch != nullptr);
+}
+
 
 void compareTrees(const char* file1, const char* file2, const char* output,
     const char* output2, double lineValue) {
@@ -74,10 +80,24 @@ void compareTrees(const char* file1, const char* file2, const char* output,
 
     // Set branch addresses
     double p_p, Mx2;
-    tree1->SetBranchAddress("p_p", &p_p);
-    tree1->SetBranchAddress("Mx2", &Mx2);
-    tree2->SetBranchAddress("p_p", &p_p);
-    tree2->SetBranchAddress("Mx2", &Mx2);
+    // Check if 'p_p' branch exists in tree1
+    if (BranchExists(tree1, "p_p")) {
+        tree1->SetBranchAddress("p_p", &p_p);
+        tree1->SetBranchAddress("Mx2", &Mx2);
+    } else {
+        // Use 'e_p' and 'W' instead
+        tree1->SetBranchAddress("e_p", &p_p);
+        tree1->SetBranchAddress("W", &Mx2);
+    }
+
+    // Repeat for tree2
+    if (BranchExists(tree2, "p_p")) {
+        tree2->SetBranchAddress("p_p", &p_p);
+        tree2->SetBranchAddress("Mx2", &Mx2);
+    } else {
+        tree2->SetBranchAddress("e_p", &p_p);
+        tree2->SetBranchAddress("W", &Mx2);
+    }
 
     // Fill histograms
     Long64_t nEntries1 = tree1->GetEntries();
