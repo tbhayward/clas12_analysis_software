@@ -24,7 +24,7 @@ void compareTrees(const char* file1, const char* file2, const char* output,
     // Define the momentum bin edges
     
     // electrons
-    std::vector<double> binEdges = {0,6,6.5,7,7.5,7.75,8,8.25,8.5,8.75,9,9.25,9.5,9.75,10,10.6};
+    std::vector<double> binEdges = {5,6,6.5,7,7.25,7.5,7.75,8,8.25,8.5,8.75,9,9.25,9.5,9.75,10.6};
 
     // // pions and kaon
     // std::vector<double> binEdges = {0.6,1.3,1.8,2.0,2.1,2.2,2.3,2.4,2.5,2.6,2.8,3.0,3.2,3.4,3.8,5.0};
@@ -253,8 +253,8 @@ void compareTrees(const char* file1, const char* file2, const char* output,
     // Set the Y-axis range to be lineValue +/- offset
     // double yAxisMin = lineValue - 0.12; // proton, pion
     // double yAxisMax = lineValue + 0.04; // proton, pion
-    double yAxisMin = lineValue - 0.08; // kaon
-    double yAxisMax = lineValue + 0.08; // kaon
+    double yAxisMin = lineValue - 0.04; // kaon
+    double yAxisMax = lineValue + 0.12; // kaon
     gr1->GetYaxis()->SetRangeUser(yAxisMin, yAxisMax);
     gr2->GetYaxis()->SetRangeUser(yAxisMin, yAxisMax);
 
