@@ -13,7 +13,7 @@ const std::string output_dir = "output/rgc_ready_for_cooking_plots/";
 
 TH1D* createHistogram(TTree* tree, const char* name, const char* title, const char* variable, 
     const char* cut, double norm, double xMin, double xMax) {
-    TH1D* hist = new TH1D(name, title, 100, xMin, xMax);
+    TH1D* hist = new TH1D(name, title, 50, xMin, xMax);
     tree->Draw((std::string(variable) + ">>" + name).c_str(), cut, "goff");
     hist->Scale(1.0 / norm);
     hist->SetStats(kFALSE);
