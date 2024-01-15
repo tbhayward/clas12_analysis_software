@@ -26,11 +26,11 @@ void compareTrees(const char* file1, const char* file2, const char* output,
     // // electrons
     // std::vector<double> binEdges = {6.0,7,7.25,7.5,7.75,8,8.25,8.5,8.67,9,9.15,9.3,9.5,10.6};
 
-    // // pions and kaon
-    // std::vector<double> binEdges = {0.6,1.3,1.8,2.0,2.1,2.2,2.3,2.4,2.5,2.6,2.8,3.0,3.2,3.4,3.8,5.0};
+    // pions and kaon
+    std::vector<double> binEdges = {0.6,1.3,1.8,2.0,2.1,2.2,2.3,2.4,2.5,2.6,2.8,3.0,3.2,3.4,3.8,5.0};
 
-    // pions and kaon less
-    std::vector<double> binEdges = {0.6,2.2,3.0,5.0};
+    // // pions and kaon less
+    // std::vector<double> binEdges = {0.6,2.2,3.0,5.0};
 
 
     // // proton 
@@ -49,9 +49,9 @@ void compareTrees(const char* file1, const char* file2, const char* output,
     // Create histograms for each bin
     std::vector<TH1D*> hist1, hist2;
     for (int i = 0; i < nBins; ++i) {
-        // electron proton 
-        hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.75, 1.1));
-        hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 0.75, 1.1));
+        // // electron proton 
+        // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.75, 1.1));
+        // hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 0.75, 1.1));
 
         // // pi+ 
         // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.6, 1.2));
@@ -61,9 +61,9 @@ void compareTrees(const char* file1, const char* file2, const char* output,
         // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 1.0, 1.8));
         // hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 1.0, 1.8));
 
-        // // k+ 
-        // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 1.0, 1.4));
-        // hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 1.0, 1.4));
+        // k+ 
+        hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 1.0, 1.4));
+        hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 1.0, 1.4));
 
         // // k- 
         // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 50, 0.5, 2.5));
