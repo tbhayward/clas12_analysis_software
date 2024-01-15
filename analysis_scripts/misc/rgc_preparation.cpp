@@ -164,7 +164,7 @@ void rgc_preparation() {
         // Define fit range based on the channel
         double fitMin, fitMax;
         if (i == 0 || i == 1 || i == 3) { // eX, epi+X, epi+pi-X
-            fitMin = 0.4; fitMax = 0.75;
+            fitMin = 0.4; fitMax = 0.8;
         } else if (i == 2) { // epX
             fitMin = -1.0; fitMax = -0.2;
         }
@@ -234,9 +234,9 @@ void rgc_preparation() {
 
         // Create and plot the difference histogram for "x" (black)
         TH1D* xDiffHist = (TH1D*)xHists[i + 4]->Clone(); 
-        xDiffHist->Scale(1/normalization);
+        // xDiffHist->Scale(1/normalization);
         TH1D* scaledCHist = (TH1D*)xHists[i + 8]->Clone(); 
-        scaledCHist->Scale(-1);
+        scaledCHist->Scale(-normalization);
         xDiffHist->Add(scaledCHist);
         xDiffHist->SetLineColor(kBlack);
         xDiffHist->Draw("same");
