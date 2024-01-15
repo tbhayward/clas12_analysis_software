@@ -215,12 +215,6 @@ void rgc_preparation() {
         xDiffHist->GetYaxis()->SetTitle("NH_{3} - s*C (Counts/nC)");
         xDiffHist->GetYaxis()->SetTitleSize(0.08);
 
-        // Add legend for the third column at top right
-        TLegend* thirdColLeg = new TLegend(0.70, 0.75, 0.90, 0.90); // Top right coordinates
-        thirdColLeg->AddEntry(xH2Hist, "H2 (RGA)", "l");
-        thirdColLeg->AddEntry(xDiffHist, "NH_{3} - s*C (RGC)", "l");
-        thirdColLeg->Draw();
-
         // Find the maximum value between xH2Hist and xDiffHist
         double maxValThirdCol = TMath::Max(xH2Hist->GetMaximum(), xDiffHist->GetMaximum());
         double newMaxThirdCol = maxValThirdCol * 1.20; // 20% higher than the max value
@@ -236,6 +230,12 @@ void rgc_preparation() {
         // Draw histograms again to update axis settings
         xH2Hist->Draw();
         xDiffHist->Draw("same");
+
+        // Add legend for the third column at top right
+        TLegend* thirdColLeg = new TLegend(0.70, 0.75, 0.90, 0.90); // Top right coordinates
+        thirdColLeg->AddEntry(xH2Hist, "H2 (RGA)", "l");
+        thirdColLeg->AddEntry(xDiffHist, "NH_{3} - s*C (RGC)", "l");
+        thirdColLeg->Draw();
     }
 
     // Save the canvas as "normalizations.png"
