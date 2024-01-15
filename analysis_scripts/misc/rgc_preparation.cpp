@@ -189,8 +189,14 @@ void rgc_preparation() {
         pad3->SetLeftMargin(0.15);
 
         // Fill the histograms for "x"
-        xHists[i] = createHistogram(trees[i], (std::string("x_hist_") + std::to_string(i)).c_str(), 
-            "", "x_{B}", cuts[i], norms[i], xBMin, xBMax);
+        xHists[i] = createHistogram(trees[i], (std::string("x_hist_h2_")+std::to_string(i)).c_str(), 
+            "", "x", xCuts_NH3[i], xNorms[0], xBMin, xBMax);
+        xHists[i + 4] = createHistogram(trees[i + 4], 
+            (std::string("x_hist_nh3_")+std::to_string(i)).c_str(), "", "x", xCuts_NH3[i], 
+            xNorms[1], xBMin, xBMax);
+        xHists[i + 8] = createHistogram(trees[i + 4], 
+            (std::string("x_hist_c_")+std::to_string(i)).c_str(), "", "x", xCuts_C[i], 
+            xNorms[3], xBMin, xBMax);
 
         // Plot H2 histogram for "x" (red)
         TH1D* xH2Hist = (TH1D*)xHists[i]->Clone();
@@ -213,11 +219,11 @@ void rgc_preparation() {
         diffLabel->SetTextSize(0.06);
         diffLabel->DrawLatexNDC(0.2, 0.86, "s*C - NH_{3} (RGC)");
 
-        // Set axis titles
-        diffHist->GetXaxis()->SetTitle("M_{X} (GeV)");
-        diffHist->GetYaxis()->SetTitle("s*C - NH_{3} (Counts/nC)");
-        diffHist->GetXaxis()->SetTitleSize(0.08);
-        diffHist->GetYaxis()->SetTitleSize(0.08);
+        // Set axis titles for xDiffHist
+        xDiffHist->GetXaxis()->SetTitle("x_{B}");
+        xDiffHist->GetYaxis()->SetTitle("s*C - NH_{3} (Counts/nC)");
+        xDiffHist->GetXaxis()->SetTitleSize(0.08);
+        xDiffHist->GetYaxis()->SetTitleSize(0.08);
     }
 
     // Save the canvas as "normalizations.png"
