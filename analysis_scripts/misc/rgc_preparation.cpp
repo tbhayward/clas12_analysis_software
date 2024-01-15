@@ -98,10 +98,11 @@ void rgc_preparation() {
         hists[i + 8]->SetLineColor(kGreen);
         hists[i + 8]->Draw("same");
 
-        // Add custom title using TLatex
-        TLatex *latexTitle = new TLatex();
-        latexTitle->SetTextSize(0.08); // Set large title size
-        latexTitle->DrawLatexNDC(0.5, 0.85, titles[i]); // Adjust position and title
+        // Create a title using TLatex at the top of each pad
+        TLatex *title = new TLatex();
+        title->SetTextSize(0.05); // Adjust text size as needed
+        title->SetTextAlign(22); // Center alignment
+        title->DrawLatexNDC(0.5, 0.93, titles[i]); // Draw title at the top center of the pad
 
 
         // Determine the maximum value of the histograms
