@@ -67,7 +67,7 @@ void rgc_preparation() {
         c1->cd(i * 2 + 1);
         TPad* pad1 = (TPad*)c1->GetPad(i * 2 + 1);
         pad1->SetBottomMargin(0.20);
-        pad1->SetLeftMargin(0.15);
+        pad1->SetLeftMargin(0.20);
 
         // Define histogram ranges for each channel
         double xMin, xMax;
@@ -115,7 +115,7 @@ void rgc_preparation() {
         hists[i + 8]->SetMaximum(newMax);
 
         // Add legend in the top left
-        TLegend* leg = new TLegend(0.15, 0.7, 0.35, 0.9); // Adjusted coordinates for top left
+        TLegend* leg = new TLegend(0.20, 0.7, 0.35, 0.9); // Adjusted coordinates for top left
         leg->AddEntry(hists[i], "H2 (RGA)", "l");
         leg->AddEntry(hists[i + 4], "NH3 (RGC)", "l");
         leg->AddEntry(hists[i + 8], "C (RGC)", "l");
