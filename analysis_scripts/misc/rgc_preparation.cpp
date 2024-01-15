@@ -64,8 +64,8 @@ void rgc_preparation() {
     const char* cuts_C[] = {"runnum == 16297", "runnum == 16297", "runnum == 16297", "runnum == 16297"};
 
     for (int i = 0; i < 4; i++) {
-        c1->cd(i * 2 + 1);
-        TPad* pad1 = (TPad*)c1->GetPad(i * 2 + 1);
+        c1->cd(i * 3 + 1);
+        TPad* pad1 = (TPad*)c1->GetPad(i * 3 + 1);
         pad1->SetBottomMargin(0.20);
         pad1->SetLeftMargin(0.20);
 
@@ -124,8 +124,8 @@ void rgc_preparation() {
         /* ~~~~~~~~~~~~~~~~ SECOND COLUMN ~~~~~~~~~~~~~~~~ */
 
         // Right column plots (NH3/C ratio)
-        c1->cd(i * 2 + 2);
-        TPad* pad2 = (TPad*)c1->GetPad(i * 2 + 2);
+        c1->cd(i * 3 + 2);
+        TPad* pad2 = (TPad*)c1->GetPad(i * 3 + 2);
         pad2->SetBottomMargin(0.20);
         pad2->SetLeftMargin(0.15);
 
@@ -179,7 +179,7 @@ void rgc_preparation() {
         /* ~~~~~~~~~~~~~~~~ THIRD COLUMN ~~~~~~~~~~~~~~~~ */
 
         // Right column plots (H2 and scaled difference)
-        c1->cd(i * 3 + 3); // Adjust to access the third column
+        c1->cd(i * 3 + 3);
         TPad* pad3 = (TPad*)c1->GetPad(i * 3 + 3);
         pad3->SetBottomMargin(0.20);
         pad3->SetLeftMargin(0.15);
