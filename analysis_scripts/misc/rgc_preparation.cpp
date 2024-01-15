@@ -77,7 +77,7 @@ void rgc_preparation() {
 
     const char* titles[] = {"eX", "e#pi^{+}X", "epX", "e#pi^{+}#pi^{-}X"};
     const char* variables[] = {"Mx", "Mx", "Mx", "Mx"};
-    const char* cuts_NH3[] = {"runnum != 16297 && y < 0.75", "runnum != 16297", "runnum != 16297", "runnum != 16297"};
+    const char* cuts_NH3[] = {"runnum != 16297 && x < 0.4", "runnum != 16297", "runnum != 16297", "runnum != 16297"};
     const char* cuts_C[] = {"runnum == 16297", "runnum == 16297", "runnum == 16297", "runnum == 16297"};
 
     for (int i = 0; i < 4; i++) {
