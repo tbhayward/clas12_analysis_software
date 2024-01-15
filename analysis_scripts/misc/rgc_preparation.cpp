@@ -128,7 +128,7 @@ void rgc_preparation() {
         // Determine the maximum value of the histograms
         double maxVal = TMath::Max(hists[i]->GetMaximum(), hists[i + 4]->GetMaximum());
         maxVal = TMath::Max(maxVal, hists[i + 8]->GetMaximum());
-        double newMax = maxVal * 1.2;  // 20% higher than the maximum value
+        double newMax = maxVal * 5.2;  // 20% higher than the maximum value
         hists[i]->SetMaximum(newMax);
         hists[i + 4]->SetMaximum(newMax);
         hists[i + 8]->SetMaximum(newMax);
@@ -255,7 +255,7 @@ void rgc_preparation() {
 
         // Find the maximum value between xH2Hist and xDiffHist
         double maxValThirdCol = TMath::Max(xH2Hist->GetMaximum(), xDiffHist->GetMaximum());
-        double newMaxThirdCol = maxValThirdCol * 5.20; // 20% higher than the max value
+        double newMaxThirdCol = maxValThirdCol * 1.20; // 20% higher than the max value
         xH2Hist->SetMaximum(newMaxThirdCol); // Set max for H2 histogram
         xDiffHist->SetMaximum(newMaxThirdCol); // Set max for difference histogram
 
