@@ -114,10 +114,12 @@ void rgc_preparation() {
 
         // Add legend in the top left
         TLegend* leg = new TLegend(0.15, 0.7, 0.35, 0.9); // Adjusted coordinates for top left
-        leg->AddEntry(hists[i], "H2 (RGA runs 5418, 5419)", "l");
-        leg->AddEntry(hists[i + 4], "NH3 (RGC runs 16320, 16327, 16346, 16353)", "l");
-        leg->AddEntry(hists[i + 8], "C (RGC run 16297)", "l");
+        leg->AddEntry(hists[i], "H2 (RGA)", "l");
+        leg->AddEntry(hists[i + 4], "NH3 (RGC)", "l");
+        leg->AddEntry(hists[i + 8], "C (RGC)", "l");
         leg->Draw();
+
+        /* ~~~~~~~~~~~~~~~~ SECOND COLUMN ~~~~~~~~~~~~~~~~ */
 
         // Right column plots (NH3/C ratio)
         c1->cd(i * 2 + 2);
@@ -137,10 +139,37 @@ void rgc_preparation() {
         ratioHist->GetYaxis()->SetTitleSize(0.08);
         ratioHist->Draw();
 
+        // Define fit range based on the channel
+        double fitMin, fitMax;
+        if (i == 0 || i == 1 || i == 3) { // eX, epi+X, epi+pi-X
+            fitMin = 0.4; fitMax = 0.8;
+        } else if (i == 2) { // epX
+            fitMin = -1.0; fitMax = 0.0;
+        }
+
+        // Perform a linear fit
+        TF1 *fitFunc = new TF1("fitFunc", "pol1", fitMin, fitMax);
+        ratioGraph->Fit(fitFunc, "RQ"); // "R" for range, "Q" for quiet mode
+
+        // Draw the fit function over the full range
+        fitFunc->SetLineColor(kRed);
+        fitFunc->SetLineStyle(2); // Dashed line
+        fitFunc->Draw("same");
+
+        // Draw the fit function again over the fit range with a solid line
+        TF1 *fitFuncSolid = (TF1*)fitFunc->Clone();
+        fitFuncSolid->SetRange(fitMin, fitMax);
+        fitFuncSolid->SetLineStyle(1); // Solid line
+        fitFuncSolid->Draw("same");
+
         // Add label for ratio plots
+        double normalization = fitFunc->GetParameter(0); // Get the normalization factor
+        char label[100];
+        sprintf(label, "NH_{3}/C normalization = %.3f", normalization); // Format the label
+
         TLatex *ratioLabel = new TLatex();
         ratioLabel->SetTextSize(0.04);
-        ratioLabel->DrawLatexNDC(0.7, 0.8, "NH3/C Ratio");
+        ratioLabel->DrawLatexNDC(0.7, 0.8, label);
     }
 
     // Save the canvas as "normalizations.png"
