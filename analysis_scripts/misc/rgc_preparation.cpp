@@ -15,7 +15,7 @@ const std::string output_dir = "output/rgc_ready_for_cooking_plots/";
 
 TH1D* createHistogram(TTree* tree, const char* name, const char* title, const char* variable, 
     const char* cut, double norm, double xMin, double xMax) {
-    TH1D* hist = new TH1D(name, "", 30, xMin, 3.3);
+    TH1D* hist = new TH1D(name, "", 30, xMin, xMax);
     tree->Draw((std::string(variable) + ">>" + name).c_str(), cut, "goff");
     hist->Scale(1.0 / norm);
     hist->SetStats(kFALSE);
@@ -194,6 +194,14 @@ void rgc_preparation() {
         TLatex *ratioLabel = new TLatex();
         ratioLabel->SetTextSize(0.06);
         ratioLabel->DrawLatexNDC(0.6, 0.8, label);
+
+        // Find maximum Mx value in tree[4]
+trees[4]->Draw("Mx>>hist(1000, 0, 10)", "", "goff"); // Adjust the histogram range as needed
+TH1F* hist = (TH1F*)gROOT->FindObject("hist");
+double maxMx = hist->GetMaximum();
+
+// Print or use maxMx as needed
+std::cout << "Maximum Mx value in tree[4]: " << maxMx << std::endl;
 
         /* ~~~~~~~~~~~~~~~~ THIRD COLUMN ~~~~~~~~~~~~~~~~ */
 
