@@ -63,6 +63,7 @@ void rgc_preparation() {
     double rga_H2_norm = trees[0]->GetEntries();
     double rgc_pos_NH3_norm = trees[4]->GetEntries("runnum == 16320 || runnum == 16327");
     double rgc_neg_NH3_norm = trees[4]->GetEntries("runnum == 16346 || runnum == 16353");
+    double rgc_NH3_norm = rgc_pos_NH3_norm+rgc_neg_NH3_norm;
     double rgc_C_norm = trees[4]->GetEntries("runnum == 16297");
 
     TCanvas *c1 = new TCanvas("c1", "Data Analysis", 2200, 1200);
