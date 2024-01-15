@@ -64,19 +64,19 @@ void rgc_preparation() {
     for (int i = 0; i < 4; i++) {
         c1->cd(i * 2 + 1);
         TPad* pad1 = (TPad*)c1->GetPad(i * 2 + 1);
-        pad1->SetBottomMargin(0.15);
-        pad1->SetLeftMargin(0.15);
+        pad1->SetBottomMargin(0.20);
+        pad1->SetLeftMargin(0.20);
 
         // Define histogram ranges for each channel
         double xMin, xMax;
         if (i == 0) {        // eX
-            xMin = 0.0; xMax = 2.0;
+            xMin = 0.3; xMax = 1.5;
         } else if (i == 1) { // epi+X
-            xMin = 0.0; xMax = 2.0;
+            xMin = 0.3; xMax = 1.5;
         } else if (i == 2) { // epX
             xMin = -2.0; xMax = 1.0;
         } else {             // epi+pi-X
-            xMin = 0.0; xMax = 1.5;
+            xMin = 0.3; xMax = 1.5;
         }
 
         // Creating H2 histogram (red)
