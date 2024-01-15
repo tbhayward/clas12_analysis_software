@@ -198,15 +198,16 @@ void rgc_preparation() {
             (std::string("x_hist_c_")+std::to_string(i)).c_str(), "", "x", cuts_C[i], 
             rgc_C_norm, xBMin, xBMax);
 
-        // // Plot H2 histogram for "x" (red)
-        // TH1D* xH2Hist = (TH1D*)xHists[i]->Clone();
-        // xH2Hist->SetLineColor(kRed);
-        // xH2Hist->Draw();
+        // Plot H2 histogram for "x" (red)
+        TH1D* xH2Hist = (TH1D*)xHists[i]->Clone();
+        xH2Hist->SetLineColor(kRed);
+        xH2Hist->Draw();
 
-        // Create and plot the scaled difference histogram for "x" (black)
-        TH1D* xDiffHist = (TH1D*)xHists[i + 8]->Clone(); // Clone the C histogram for "x"
-        xDiffHist->Scale(normalization); // Scale by the normalization factor
-        xDiffHist->Add(xHists[i + 4], -1); // Subtract the NH3 histogram for "x"
+        // Create and plot the difference histogram for "x" (black)
+        TH1D* xDiffHist = (TH1D*)xHists[i + 4]->Clone(); // Clone the NH3 histogram for "x"
+        TH1D* scaledCHist = (TH1D*)xHists[i + 8]->Clone(); // Clone the C histogram for "x"
+        scaledCHist->Scale(-normalization); // Scale by the negative normalization factor
+        xDiffHist->Add(scaledCHist); // Add the scaled C histogram
         xDiffHist->SetLineColor(kBlack);
         xDiffHist->Draw("");
 
