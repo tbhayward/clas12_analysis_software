@@ -7,6 +7,7 @@
 #include <TLegend.h>
 #include <TLatex.h>
 #include <TStyle.h>
+#include <TF1.h>
 #include <TMath.h> // For TMath::Max
 
 const std::string output_dir = "output/rgc_ready_for_cooking_plots/";
