@@ -77,7 +77,7 @@ void rgc_preparation() {
     gStyle->SetTitleSize(0.08, "XY");
 
     const char* titles[] = {"eX", "e#pi^{+}X", "epX", "e#pi^{+}#pi^{-}X"};
-    const char* variables[] = {"W", "Mx", "Mx", "Mx"};
+    const char* variables[] = {"Mx", "Mx", "Mx", "Mx"};
     const char* cuts_NH3[] = {"runnum != 16297", "runnum != 16297", "runnum != 16297", "runnum != 16297"};
     const char* cuts_C[] = {"runnum == 16297", "runnum == 16297", "runnum == 16297", "runnum == 16297"};
 
@@ -255,7 +255,7 @@ void rgc_preparation() {
 
         // Find the maximum value between xH2Hist and xDiffHist
         double maxValThirdCol = TMath::Max(xH2Hist->GetMaximum(), xDiffHist->GetMaximum());
-        double newMaxThirdCol = maxValThirdCol * 1.20; // 20% higher than the max value
+        double newMaxThirdCol = maxValThirdCol * 5.20; // 20% higher than the max value
         xH2Hist->SetMaximum(newMaxThirdCol); // Set max for H2 histogram
         xDiffHist->SetMaximum(newMaxThirdCol); // Set max for difference histogram
 
