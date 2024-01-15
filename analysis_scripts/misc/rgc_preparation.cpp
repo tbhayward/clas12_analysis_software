@@ -190,7 +190,7 @@ void rgc_preparation() {
 
         // Fill the histograms for "x"
         xHists[i] = createHistogram(trees[i], (std::string("x_hist_h2_")+std::to_string(i)).c_str(), 
-            "", "x", Cuts_NH3[i], rga_H2_norm, xBMin, xBMax);
+            "", "x", "", rga_H2_norm, xBMin, xBMax);
         xHists[i + 4] = createHistogram(trees[i + 4], 
             (std::string("x_hist_nh3_")+std::to_string(i)).c_str(), "", "x", cuts_NH3[i], 
            rgc_NH3_norm, xBMin, xBMax);
