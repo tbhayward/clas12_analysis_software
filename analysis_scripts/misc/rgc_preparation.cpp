@@ -68,7 +68,7 @@ void rgc_preparation() {
     TH1D* hists[12]; // 4 plots * 3 histograms per plot
     TH1D* xHists[12]; // 4 plots * 3 histograms per plot for "x"
     double xBMin = 0;
-    double xBMax = 1.3;
+    double xBMax = 1.8;
 
     gStyle->SetOptStat(0);
     gStyle->SetTitleAlign(23);
@@ -92,13 +92,13 @@ void rgc_preparation() {
         // Define histogram ranges for each channel
         double xMin, xMax;
         if (i == 0) {        // eX
-            xMin = 0.4; xMax = 1.3;
+            xMin = 0.4; xMax = 1.3+1;
         } else if (i == 1) { // epi+X
-            xMin = 0.4; xMax = 1.3;
+            xMin = 0.4; xMax = 1.3+1;
         } else if (i == 2) { // epX
-            xMin = -1.0; xMax = 1.0;
+            xMin = -1.0; xMax = 1.0+1;
         } else {             // epi+pi-X
-            xMin = 0.4; xMax = 1.3;
+            xMin = 0.4; xMax = 1.3+1;
         }
 
         // Creating H2 histogram (red)
