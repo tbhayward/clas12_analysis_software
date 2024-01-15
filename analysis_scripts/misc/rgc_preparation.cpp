@@ -155,6 +155,7 @@ void rgc_preparation() {
 
         // Draw the fit function over the full range
         fitFunc->SetLineColor(kRed);
+        fitFunc->SetRange(fitMax,5);
         fitFunc->SetLineStyle(2); // Dashed line
         fitFunc->Draw("same");
 
