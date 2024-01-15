@@ -186,7 +186,7 @@ void rgc_preparation() {
         c1->cd(i * 3 + 3); // Adjust to access the third column
         TPad* pad3 = (TPad*)c1->GetPad(i * 3 + 3);
         pad3->SetBottomMargin(0.20);
-        pad3->SetLeftMargin(0.15);
+        pad3->SetLeftMargin(0.2);
 
         // Fill the histograms for "x"
         xHists[i] = createHistogram(trees[i], (std::string("x_hist_h2_")+std::to_string(i)).c_str(), 
@@ -209,7 +209,7 @@ void rgc_preparation() {
         scaledCHist->Scale(-normalization); // Scale by the negative normalization factor
         xDiffHist->Add(scaledCHist); // Add the scaled C histogram
         xDiffHist->SetLineColor(kBlack);
-        xDiffHist->Draw("");
+        xDiffHist->Draw("same");
 
         // Add labels for the third column
         TLatex *h2Label = new TLatex();
@@ -218,11 +218,11 @@ void rgc_preparation() {
 
         TLatex *diffLabel = new TLatex();
         diffLabel->SetTextSize(0.06);
-        diffLabel->DrawLatexNDC(0.2, 0.86, "s*C - NH_{3} (RGC)");
+        diffLabel->DrawLatexNDC(0.2, 0.86, "NH_{3} - s*C (RGC)");
 
         // Set axis titles for xDiffHist
         xDiffHist->GetXaxis()->SetTitle("x_{B}");
-        xDiffHist->GetYaxis()->SetTitle("s*C - NH_{3} (Counts/nC)");
+        xDiffHist->GetYaxis()->SetTitle("NH_{3} - s*C (Counts/nC)");
         xDiffHist->GetXaxis()->SetTitleSize(0.08);
         xDiffHist->GetYaxis()->SetTitleSize(0.08);
     }
