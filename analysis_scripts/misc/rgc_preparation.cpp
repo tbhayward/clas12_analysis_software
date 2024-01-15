@@ -150,7 +150,7 @@ void rgc_preparation() {
         }
 
         // Perform a linear fit on the histogram
-        TF1 *fitFunc = new TF1("fitFunc", "pol1", fitMin, fitMax);
+        TF1 *fitFunc = new TF1("fitFunc", "pol0", fitMin, fitMax);
         ratioHist->Fit(fitFunc, "RQ"); // "R" for range, "Q" for quiet mode
 
         // Draw the fit function over the full range
