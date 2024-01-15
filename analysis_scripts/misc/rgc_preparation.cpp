@@ -36,7 +36,7 @@ void rgc_preparation() {
 
     const char* newFilesEX[] = {
         "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rga_ready_for_calibration_eX.root",
-        "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rgc_ready_for_calibration_elastic_eX.root"
+        "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rgc_ready_for_calibration_eX.root"
     };
 
     TFile* filesOpened[8];
