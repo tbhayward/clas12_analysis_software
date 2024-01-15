@@ -46,7 +46,7 @@ void rgc_preparation() {
         trees[i] = (TTree*)filesOpened[i]->Get("PhysicsEvents");
     }
 
-    double rga_H2_norm = 159661.55+145813.73;
+    double rga_H2_norm = 51797.38;
     // double rga_H2_norm = 53381.99+41401.77;
     // double rgc_pos_NH3_norm = 19355.9+19392.53+21683.25+21621.178;
     double rgc_pos_NH3_norm = 40926.816+45619.707;
@@ -78,6 +78,7 @@ void rgc_preparation() {
 
     const char* titles[] = {"eX", "e#pi^{+}X", "epX", "e#pi^{+}#pi^{-}X"};
     const char* variables[] = {"Mx", "Mx", "Mx", "Mx"};
+    // Define the additional cuts for Q2 and W
     const char* cuts_NH3[] = {"runnum != 16297", "runnum != 16297", "runnum != 16297", "runnum != 16297"};
     const char* cuts_C[] = {"runnum == 16297", "runnum == 16297", "runnum == 16297", "runnum == 16297"};
 
