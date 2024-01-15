@@ -47,7 +47,7 @@ void rgc_preparation() {
     double rgc_NH3_norm = rgc_pos_NH3_norm+rgc_neg_NH3_norm;
     double rgc_C_norm = 8883.014+8834.256;
 
-    TCanvas *c1 = new TCanvas("c1", "Data Analysis", 1600, 1800);
+    TCanvas *c1 = new TCanvas("c1", "Data Analysis", 2200, 1200);
     c1->Divide(2, 4);
 
     TH1D* hists[12]; // 4 plots * 3 histograms per plot
