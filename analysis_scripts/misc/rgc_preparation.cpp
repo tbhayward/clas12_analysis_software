@@ -7,7 +7,8 @@
 #include <TLegend.h>
 #include <TLatex.h>
 #include <TStyle.h>
-#include <TF1.h>
+#include <TF1.h>         // For TF1 class
+#include <TGraphErrors.h> // For TGraphErrors class
 #include <TMath.h> // For TMath::Max
 
 const std::string output_dir = "output/rgc_ready_for_cooking_plots/";
@@ -148,9 +149,9 @@ void rgc_preparation() {
             fitMin = -1.0; fitMax = 0.0;
         }
 
-        // Perform a linear fit
+        // Perform a linear fit on the histogram
         TF1 *fitFunc = new TF1("fitFunc", "pol1", fitMin, fitMax);
-        ratioGraph->Fit(fitFunc, "RQ"); // "R" for range, "Q" for quiet mode
+        ratioHist->Fit(fitFunc, "RQ"); // "R" for range, "Q" for quiet mode
 
         // Draw the fit function over the full range
         fitFunc->SetLineColor(kRed);
