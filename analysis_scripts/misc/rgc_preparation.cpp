@@ -54,17 +54,17 @@ void rgc_preparation() {
     // double rgc_NH3_norm = rgc_pos_NH3_norm+rgc_neg_NH3_norm;
     // double rgc_C_norm = 8883.014+8834.256;
 
-    // double rga_H2_norm = 159661.55+145813.73;
-    // double rgc_pos_NH3_norm = 40926.816+45619.707;
-    // double rgc_neg_NH3_norm = 44842.426+44852.715;
-    // double rgc_C_norm = 8883.014+8834.256;
+    double rga_H2_norm = 159661.55+145813.73;
+    double rgc_pos_NH3_norm = 40926.816+45619.707;
+    double rgc_neg_NH3_norm = 44842.426+44852.715;
+    double rgc_C_norm = 8883.014+8834.256;
 
-    // Compute normalization factors based on the number of entries under specific conditions
-    double rga_H2_norm = trees[0]->GetEntries();
-    double rgc_pos_NH3_norm = trees[4]->GetEntries("runnum == 16320 || runnum == 16327");
-    double rgc_neg_NH3_norm = trees[4]->GetEntries("runnum == 16346 || runnum == 16353");
-    double rgc_NH3_norm = rgc_pos_NH3_norm+rgc_neg_NH3_norm;
-    double rgc_C_norm = trees[4]->GetEntries("runnum == 16297");
+    // // Compute normalization factors based on the number of entries under specific conditions
+    // double rga_H2_norm = trees[0]->GetEntries();
+    // double rgc_pos_NH3_norm = trees[4]->GetEntries("runnum == 16320 || runnum == 16327");
+    // double rgc_neg_NH3_norm = trees[4]->GetEntries("runnum == 16346 || runnum == 16353");
+    // double rgc_NH3_norm = rgc_pos_NH3_norm+rgc_neg_NH3_norm;
+    // double rgc_C_norm = trees[4]->GetEntries("runnum == 16297");
 
     TCanvas *c1 = new TCanvas("c1", "Data Analysis", 2200, 1200);
     c1->Divide(3, 4);
