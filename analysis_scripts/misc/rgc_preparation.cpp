@@ -72,9 +72,6 @@ void rgc_preparation() {
         pad1->SetBottomMargin(0.20);
         pad1->SetLeftMargin(0.20);
 
-        // Fill the histograms for "x"
-        xHists[i] = createHistogram(trees[i], (std::string("x_hist_") + std::to_string(i)).c_str(), 
-            "", "x_{B}", cuts[i], norms[i], xMin, xMax);
 
         // Define histogram ranges for each channel
         double xMin, xMax;
@@ -190,6 +187,10 @@ void rgc_preparation() {
         TPad* pad3 = (TPad*)c1->GetPad(i * 3 + 3);
         pad3->SetBottomMargin(0.20);
         pad3->SetLeftMargin(0.15);
+
+        // Fill the histograms for "x"
+        xHists[i] = createHistogram(trees[i], (std::string("x_hist_") + std::to_string(i)).c_str(), 
+            "", "x_{B}", cuts[i], norms[i], xBMin, xBMax);
 
         // Plot H2 histogram for "x" (red)
         TH1D* xH2Hist = (TH1D*)xHists[i]->Clone();
