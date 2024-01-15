@@ -225,7 +225,7 @@ void rgc_preparation() {
         TH1D* xDiffHist = (TH1D*)xHists[i + 4]->Clone(); 
         TH1D* scaledCHist = (TH1D*)xHists[i + 8]->Clone(); 
         // scaledCHist->Scale(-normalization);
-        scaledCHist->Scale(-0.78); 
+        scaledCHist->Scale(-1); 
         xDiffHist->Add(scaledCHist);
         xDiffHist->SetLineColor(kBlack);
         xDiffHist->Draw("same");
