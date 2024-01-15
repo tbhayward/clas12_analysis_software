@@ -204,30 +204,38 @@ void rgc_preparation() {
         xH2Hist->Draw();
 
         // Create and plot the difference histogram for "x" (black)
-        TH1D* xDiffHist = (TH1D*)xHists[i + 4]->Clone(); // Clone the NH3 histogram for "x"
-        TH1D* scaledCHist = (TH1D*)xHists[i + 8]->Clone(); // Clone the C histogram for "x"
-        scaledCHist->Scale(-normalization); // Scale by the negative normalization factor
-        xDiffHist->Add(scaledCHist); // Add the scaled C histogram
+        TH1D* xDiffHist = (TH1D*)xHists[i + 4]->Clone(); 
+        TH1D* scaledCHist = (TH1D*)xHists[i + 8]->Clone(); 
+        scaledCHist->Scale(-normalization); 
+        xDiffHist->Add(scaledCHist);
         xDiffHist->SetLineColor(kBlack);
         xDiffHist->Draw("same");
 
-        // Add legend for the third column
-        TLegend* thirdColLeg = new TLegend(0.15, 0.75, 0.35, 0.9); // Adjust position as needed
+        // Set y-axis title for xDiffHist
+        xDiffHist->GetYaxis()->SetTitle("NH_{3} - s*C (Counts/nC)");
+        xDiffHist->GetYaxis()->SetTitleSize(0.08);
+
+        // Add legend for the third column at top right
+        TLegend* thirdColLeg = new TLegend(0.70, 0.75, 0.90, 0.90); // Top right coordinates
         thirdColLeg->AddEntry(xH2Hist, "H2 (RGA)", "l");
         thirdColLeg->AddEntry(xDiffHist, "NH_{3} - s*C (RGC)", "l");
         thirdColLeg->Draw();
 
-        // Set axis titles
-        xDiffHist->GetXaxis()->SetTitle("x_{B}");
-        xDiffHist->GetYaxis()->SetTitle("NH_{3} - s*C (Counts/nC)");
-        xDiffHist->GetXaxis()->SetTitleSize(0.08);
-        xDiffHist->GetYaxis()->SetTitleSize(0.08);
+        // Find the maximum value between xH2Hist and xDiffHist
+        double maxValThirdCol = TMath::Max(xH2Hist->GetMaximum(), xDiffHist->GetMaximum());
+        double newMaxThirdCol = maxValThirdCol * 1.20; // 20% higher than the max value
+        xH2Hist->SetMaximum(newMaxThirdCol); // Set max for H2 histogram
+        xDiffHist->SetMaximum(newMaxThirdCol); // Set max for difference histogram
 
-        // Set axis titles for xDiffHist
+        // Set axis titles
+        xH2Hist->GetXaxis()->SetTitle("x_{B}");
+        xH2Hist->GetXaxis()->SetTitleSize(0.08);
         xDiffHist->GetXaxis()->SetTitle("x_{B}");
-        xDiffHist->GetYaxis()->SetTitle("NH_{3} - s*C (Counts/nC)");
         xDiffHist->GetXaxis()->SetTitleSize(0.08);
-        xDiffHist->GetYaxis()->SetTitleSize(0.08);
+
+        // Draw histograms again to update axis settings
+        xH2Hist->Draw();
+        xDiffHist->Draw("same");
     }
 
     // Save the canvas as "normalizations.png"
