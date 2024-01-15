@@ -24,19 +24,19 @@ TH1D* createHistogram(TTree* tree, const char* name, const char* title, const ch
 
 void rgc_preparation() {
     const char* files[] = {
-        "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rga_ready_for_calibration_elastic_eX.root",
+        "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rga_ready_for_calibration_eX.root",
         "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rga_ready_for_calibration_epi+X.root",
         "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rga_ready_for_calibration_epX.root",
         "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rga_ready_for_calibration_epi+pi-X.root",
-        "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rgc_ready_for_calibration_elastic_eX.root",
+        "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rgc_ready_for_calibration_eX.root",
         "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rgc_ready_for_calibration_epi+X.root",
         "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rgc_ready_for_calibration_epX.root",
         "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rgc_ready_for_calibration_epi+pi-X.root"
     };
 
     const char* newFilesEX[] = {
-        "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rga_ready_for_calibration_elastic_eX.root",
-        "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rgc_ready_for_calibration_elastic_eX.root"
+        "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rga_ready_for_calibration_eX.root",
+        "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rgc_ready_for_calibration_eX.root"
     };
 
     TFile* filesOpened[8];
@@ -128,7 +128,7 @@ void rgc_preparation() {
         // Determine the maximum value of the histograms
         double maxVal = TMath::Max(hists[i]->GetMaximum(), hists[i + 4]->GetMaximum());
         maxVal = TMath::Max(maxVal, hists[i + 8]->GetMaximum());
-        double newMax = maxVal * 5.2;  // 20% higher than the maximum value
+        double newMax = maxVal * 1.2;  // 20% higher than the maximum value
         hists[i]->SetMaximum(newMax);
         hists[i + 4]->SetMaximum(newMax);
         hists[i + 8]->SetMaximum(newMax);
