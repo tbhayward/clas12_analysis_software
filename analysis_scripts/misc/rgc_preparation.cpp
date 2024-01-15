@@ -48,7 +48,7 @@ void rgc_preparation() {
     double rgc_C_norm = 8883.014+8834.256;
 
     TCanvas *c1 = new TCanvas("c1", "Data Analysis", 2200, 1200);
-    c1->Divide(2, 4);
+    c1->Divide(3, 4);
 
     TH1D* hists[12]; // 4 plots * 3 histograms per plot
 
@@ -169,13 +169,47 @@ void rgc_preparation() {
         double normalization = fitFunc->GetParameter(0); // Get the constant value
         double normalizationError = fitFunc->GetParError(0); // Get the error on the constant
         char label[100];
-        sprintf(label, "normalization = %.3f #pm %.3f", 
+        sprintf(label, "s (normalization) = %.3f #pm %.3f", 
             normalization, normalizationError); // Format the label with uncertainty
-
 
         TLatex *ratioLabel = new TLatex();
         ratioLabel->SetTextSize(0.06);
         ratioLabel->DrawLatexNDC(0.6, 0.8, label);
+
+        /* ~~~~~~~~~~~~~~~~ THIRD COLUMN ~~~~~~~~~~~~~~~~ */
+
+        // Right column plots (H2 and scaled difference)
+        c1->cd(i * 3 + 3); // Adjust to access the third column
+        TPad* pad3 = (TPad*)c1->GetPad(i * 3 + 3);
+        pad3->SetBottomMargin(0.20);
+        pad3->SetLeftMargin(0.15);
+
+        // Plot H2 histogram (red)
+        TH1D* h2Hist = (TH1D*)hists[i]->Clone();
+        h2Hist->SetLineColor(kRed);
+        h2Hist->Draw();
+
+        // Create and plot the scaled difference histogram (black)
+        TH1D* diffHist = (TH1D*)hists[i + 8]->Clone(); // Clone the C histogram
+        diffHist->Scale(normalization); // Scale by the normalization factor
+        diffHist->Add(hists[i + 4], -1); // Subtract the NH3 histogram
+        diffHist->SetLineColor(kBlack);
+        diffHist->Draw("same");
+
+        // Add labels for the third column
+        TLatex *h2Label = new TLatex();
+        h2Label->SetTextSize(0.06);
+        h2Label->DrawLatexNDC(0.2, 0.92, "H2 (RGA)");
+
+        TLatex *diffLabel = new TLatex();
+        diffLabel->SetTextSize(0.06);
+        diffLabel->DrawLatexNDC(0.2, 0.86, "s*C - NH_{3} (RGC)");
+
+        // Set axis titles
+        diffHist->GetXaxis()->SetTitle("M_{X} (GeV)");
+        diffHist->GetYaxis()->SetTitle("s*C - NH_{3} (Counts/nC)");
+        diffHist->GetXaxis()->SetTitleSize(0.08);
+        diffHist->GetYaxis()->SetTitleSize(0.08);
     }
 
     // Save the canvas as "normalizations.png"
