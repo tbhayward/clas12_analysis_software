@@ -64,7 +64,7 @@ void rgc_preparation() {
     for (int i = 0; i < 4; i++) {
         c1->cd(i * 2 + 1);
         TPad* pad1 = (TPad*)c1->GetPad(i * 2 + 1);
-        pad1->SetBottomMargin(0.25);
+        pad1->SetBottomMargin(0.20);
         pad1->SetLeftMargin(0.15);
 
         // Define histogram ranges for each channel
@@ -116,7 +116,7 @@ void rgc_preparation() {
         // Right column plots (NH3/C ratio)
         c1->cd(i * 2 + 2);
         TPad* pad2 = (TPad*)c1->GetPad(i * 2 + 2);
-        pad2->SetBottomMargin(0.15);
+        pad2->SetBottomMargin(0.20);
         pad2->SetLeftMargin(0.15);
 
         TH1D* ratioHist = (TH1D*)hists[i + 4]->Clone((std::string("ratio_") + titles[i]).c_str());
