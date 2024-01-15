@@ -70,13 +70,13 @@ void rgc_preparation() {
         // Define histogram ranges for each channel
         double xMin, xMax;
         if (i == 0) {        // eX
-            xMin = 0.0; xMax = 3.0;
+            xMin = 0.0; xMax = 2.0;
         } else if (i == 1) { // epi+X
-            xMin = 0.0; xMax = 3.5;
+            xMin = 0.0; xMax = 2.0;
         } else if (i == 2) { // epX
-            xMin = -2.0; xMax = 3.0;
+            xMin = -2.0; xMax = 1.0;
         } else {             // epi+pi-X
-            xMin = 0.0; xMax = 3.0;
+            xMin = 0.0; xMax = 1.5;
         }
 
         // Creating H2 histogram (red)
