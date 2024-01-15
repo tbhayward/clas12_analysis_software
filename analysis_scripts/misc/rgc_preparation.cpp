@@ -107,17 +107,17 @@ void rgc_preparation() {
         hists[i]->GetYaxis()->SetTitle("Counts / nC");
         hists[i]->GetXaxis()->SetTitleSize(0.08);
         hists[i]->GetYaxis()->SetTitleSize(0.08);
-        hists[i]->Draw();
+        // hists[i]->Draw();
 
         // Creating NH3 histogram (blue)
         hists[i + 4] = createHistogram(trees[i + 4], (std::string("h_rgc_nh3_") + titles[i]).c_str(), "", variables[i], cuts_NH3[i], rgc_NH3_norm, xMin, xMax);
         hists[i + 4]->SetLineColor(kBlue);
-        hists[i + 4]->Draw("same");
+        hists[i + 4]->Draw("");
 
         // Creating C histogram (green)
         hists[i + 8] = createHistogram(trees[i + 4], (std::string("h_rgc_c_") + titles[i]).c_str(), "", variables[i], cuts_C[i], rgc_C_norm, xMin, xMax);
         hists[i + 8]->SetLineColor(kGreen);
-        hists[i + 8]->Draw("same");
+        // hists[i + 8]->Draw("same");
 
         // Create a title using TLatex at the top of each pad
         TLatex *title = new TLatex();
