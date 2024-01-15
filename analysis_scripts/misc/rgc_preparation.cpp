@@ -192,17 +192,17 @@ void rgc_preparation() {
         const char* fileNH3 = (i == 0) ? newFilesEX[1] : files[i + 4];
         const char* fileC = (i == 0) ? newFilesEX[1] : files[i + 4];
 
-        // Right column plots (H2 and scaled difference)
-        c1->cd(i * 3 + 3); // Adjust to access the third column
-        TPad* pad3 = (TPad*)c1->GetPad(i * 3 + 3);
-        pad3->SetBottomMargin(0.20);
-        pad3->SetLeftMargin(0.2);
-
         // Open the new files for H2 and NH3 histograms for the third column (eX case)
         TFile* fileH2Opened = new TFile(fileH2);
         TFile* fileNH3Opened = new TFile(fileNH3);
         TTree* treeH2 = (TTree*)fileH2Opened->Get("PhysicsEvents");
         TTree* treeNH3 = (TTree*)fileNH3Opened->Get("PhysicsEvents");
+
+        // Right column plots (H2 and scaled difference)
+        c1->cd(i * 3 + 3); // Adjust to access the third column
+        TPad* pad3 = (TPad*)c1->GetPad(i * 3 + 3);
+        pad3->SetBottomMargin(0.25);
+        pad3->SetLeftMargin(0.2);
 
         // Create histograms for "x" for H2, NH3, and C
         xHists[i] = createHistogram(treeH2, 
@@ -224,7 +224,8 @@ void rgc_preparation() {
         // Create and plot the difference histogram for "x" (black)
         TH1D* xDiffHist = (TH1D*)xHists[i + 4]->Clone(); 
         TH1D* scaledCHist = (TH1D*)xHists[i + 8]->Clone(); 
-        scaledCHist->Scale(-normalization); 
+        // scaledCHist->Scale(-normalization);
+        scaledCHist->Scale(-0.78); 
         xDiffHist->Add(scaledCHist);
         xDiffHist->SetLineColor(kBlack);
         xDiffHist->Draw("same");
