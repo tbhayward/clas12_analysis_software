@@ -146,7 +146,7 @@ void rgc_preparation() {
         if (i == 0 || i == 1 || i == 3) { // eX, epi+X, epi+pi-X
             fitMin = 0.4; fitMax = 0.8;
         } else if (i == 2) { // epX
-            fitMin = -1.0; fitMax = 0.0;
+            fitMin = -1.0; fitMax = -0.2;
         }
 
         // Perform a linear fit on the histogram
@@ -165,13 +165,16 @@ void rgc_preparation() {
         fitFuncSolid->SetLineStyle(1); // Solid line
         fitFuncSolid->Draw("same");
 
-        // Add label for ratio plots
-        double normalization = fitFunc->GetParameter(0); // Get the normalization factor
+        // Add updated label for ratio plots
+        double normalization = fitFunc->GetParameter(0); // Get the constant value
+        double normalizationError = fitFunc->GetParError(0); // Get the error on the constant
         char label[100];
-        sprintf(label, "NH_{3}/C normalization = %.3f", normalization); // Format the label
+        sprintf(label, "NH_{3}/C normalization = %.3f #pm %.3f", 
+            normalization, normalizationError); // Format the label with uncertainty
+
 
         TLatex *ratioLabel = new TLatex();
-        ratioLabel->SetTextSize(0.04);
+        ratioLabel->SetTextSize(0.06);
         ratioLabel->DrawLatexNDC(0.7, 0.8, label);
     }
 
