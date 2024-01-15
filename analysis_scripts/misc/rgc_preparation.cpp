@@ -164,7 +164,7 @@ void rgc_preparation() {
         // Define fit range based on the channel
         double fitMin, fitMax;
         if (i == 0 || i == 1 || i == 3) { // eX, epi+X, epi+pi-X
-            fitMin = 0.4; fitMax = 0.8;
+            fitMin = 0.4; fitMax = 0.75;
         } else if (i == 2) { // epX
             fitMin = -1.0; fitMax = -0.2;
         }
