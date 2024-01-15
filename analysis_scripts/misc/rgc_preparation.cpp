@@ -196,7 +196,7 @@ void rgc_preparation() {
         ratioLabel->DrawLatexNDC(0.6, 0.8, label);
 
         // Find maximum Mx value in tree[4]
-trees[4]->Draw("Mx>>hist(1000, 0, 10)", "", "goff"); // Adjust the histogram range as needed
+trees[4]->Draw("W>>hist(1000, 0, 10)", "", "goff"); // Adjust the histogram range as needed
 TH1F* hist = (TH1F*)gROOT->FindObject("hist");
 double maxMx = hist->GetMaximum();
 
