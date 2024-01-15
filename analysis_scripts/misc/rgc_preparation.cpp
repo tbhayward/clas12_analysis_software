@@ -91,7 +91,7 @@ void rgc_preparation() {
         // Define histogram ranges for each channel
         double xMin, xMax;
         if (i == 0) {        // eX
-            xMin = 0.4; xMax = 3.3;
+            xMin = 0.4; xMax = 5.3;
         } else if (i == 1) { // epi+X
             xMin = 0.4; xMax = 3.3;
         } else if (i == 2) { // epX
