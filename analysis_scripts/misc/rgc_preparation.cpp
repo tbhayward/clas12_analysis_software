@@ -52,9 +52,9 @@ void rgc_preparation() {
 
     gStyle->SetOptStat(0);
     gStyle->SetTitleAlign(23);
-    gStyle->SetTitleX(.5);
-    gStyle->SetLabelSize(0.05, "XY");
-    gStyle->SetTitleSize(0.05, "XY");
+    gStyle->SetTitleX(.8);
+    gStyle->SetLabelSize(0.08, "XY");
+    gStyle->SetTitleSize(0.08, "XY");
 
     const char* titles[] = {"eX", "e#pi^{+}X", "epX", "e#pi^{+}#pi^{-}X"};
     const char* variables[] = {"Mx", "Mx", "Mx", "Mx"};
@@ -70,7 +70,7 @@ void rgc_preparation() {
         // Define histogram ranges for each channel
         double xMin, xMax;
         if (i == 0) {        // eX
-            xMin = 1.0; xMax = 4.0;
+            xMin = 0.0; xMax = 3.0;
         } else if (i == 1) { // epi+X
             xMin = 0.0; xMax = 3.5;
         } else if (i == 2) { // epX
@@ -84,8 +84,8 @@ void rgc_preparation() {
         hists[i]->SetLineColor(kRed);
         hists[i]->GetXaxis()->SetTitle("M_{X} (GeV)");
         hists[i]->GetYaxis()->SetTitle("Counts / nC");
-        hists[i]->GetXaxis()->SetTitleSize(0.05);
-        hists[i]->GetYaxis()->SetTitleSize(0.05);
+        hists[i]->GetXaxis()->SetTitleSize(0.08);
+        hists[i]->GetYaxis()->SetTitleSize(0.08);
         hists[i]->Draw();
 
         // Creating NH3 histogram (blue)
@@ -127,8 +127,8 @@ void rgc_preparation() {
         ratioHist->SetMaximum(1.2);
         ratioHist->GetXaxis()->SetTitle("M_{X} (GeV)");
         ratioHist->GetYaxis()->SetTitle("NH_{3} / C");
-        ratioHist->GetXaxis()->SetTitleSize(0.05);
-        ratioHist->GetYaxis()->SetTitleSize(0.05);
+        ratioHist->GetXaxis()->SetTitleSize(0.08);
+        ratioHist->GetYaxis()->SetTitleSize(0.08);
         ratioHist->Draw();
 
         // Add label for ratio plots
