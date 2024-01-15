@@ -51,6 +51,9 @@ void rgc_preparation() {
     c1->Divide(3, 4);
 
     TH1D* hists[12]; // 4 plots * 3 histograms per plot
+    TH1D* xHists[12]; // 4 plots * 3 histograms per plot for "x"
+    double xBMin = 0;
+    double xBMax = 0.6;
 
     gStyle->SetOptStat(0);
     gStyle->SetTitleAlign(23);
@@ -68,6 +71,10 @@ void rgc_preparation() {
         TPad* pad1 = (TPad*)c1->GetPad(i * 3 + 1);
         pad1->SetBottomMargin(0.20);
         pad1->SetLeftMargin(0.20);
+
+        // Fill the histograms for "x"
+        xHists[i] = createHistogram(trees[i], (std::string("x_hist_") + std::to_string(i)).c_str(), 
+            "", "x_{B}", cuts[i], norms[i], xMin, xMax);
 
         // Define histogram ranges for each channel
         double xMin, xMax;
@@ -179,22 +186,22 @@ void rgc_preparation() {
         /* ~~~~~~~~~~~~~~~~ THIRD COLUMN ~~~~~~~~~~~~~~~~ */
 
         // Right column plots (H2 and scaled difference)
-        c1->cd(i * 3 + 3);
+        c1->cd(i * 3 + 3); // Adjust to access the third column
         TPad* pad3 = (TPad*)c1->GetPad(i * 3 + 3);
         pad3->SetBottomMargin(0.20);
         pad3->SetLeftMargin(0.15);
 
-        // Plot H2 histogram (red)
-        TH1D* h2Hist = (TH1D*)hists[i]->Clone();
-        h2Hist->SetLineColor(kRed);
-        h2Hist->Draw();
+        // Plot H2 histogram for "x" (red)
+        TH1D* xH2Hist = (TH1D*)xHists[i]->Clone();
+        xH2Hist->SetLineColor(kRed);
+        xH2Hist->Draw();
 
-        // Create and plot the scaled difference histogram (black)
-        TH1D* diffHist = (TH1D*)hists[i + 8]->Clone(); // Clone the C histogram
-        diffHist->Scale(normalization); // Scale by the normalization factor
-        diffHist->Add(hists[i + 4], -1); // Subtract the NH3 histogram
-        diffHist->SetLineColor(kBlack);
-        diffHist->Draw("same");
+        // Create and plot the scaled difference histogram for "x" (black)
+        TH1D* xDiffHist = (TH1D*)xHists[i + 8]->Clone(); // Clone the C histogram for "x"
+        xDiffHist->Scale(normalization); // Scale by the normalization factor
+        xDiffHist->Add(xHists[i + 4], -1); // Subtract the NH3 histogram for "x"
+        xDiffHist->SetLineColor(kBlack);
+        xDiffHist->Draw("same");
 
         // Add labels for the third column
         TLatex *h2Label = new TLatex();
