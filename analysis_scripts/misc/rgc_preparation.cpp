@@ -13,7 +13,7 @@ const std::string output_dir = "output/rgc_ready_for_cooking_plots/";
 
 TH1D* createHistogram(TTree* tree, const char* name, const char* title, const char* variable, 
     const char* cut, double norm, double xMin, double xMax) {
-    TH1D* hist = new TH1D(name, title, 50, xMin, xMax);
+    TH1D* hist = new TH1D(name, title, 30, xMin, xMax);
     tree->Draw((std::string(variable) + ">>" + name).c_str(), cut, "goff");
     hist->Scale(1.0 / norm);
     hist->SetStats(kFALSE);
@@ -70,13 +70,13 @@ void rgc_preparation() {
         // Define histogram ranges for each channel
         double xMin, xMax;
         if (i == 0) {        // eX
-            xMin = 0.3; xMax = 1.5;
+            xMin = 0.3; xMax = 1.3;
         } else if (i == 1) { // epi+X
-            xMin = 0.3; xMax = 1.5;
+            xMin = 0.3; xMax = 1.3;
         } else if (i == 2) { // epX
-            xMin = -2.0; xMax = 1.0;
+            xMin = -1.0; xMax = 1.0;
         } else {             // epi+pi-X
-            xMin = 0.3; xMax = 1.5;
+            xMin = 0.3; xMax = 1.3;
         }
 
         // Creating H2 histogram (red)
