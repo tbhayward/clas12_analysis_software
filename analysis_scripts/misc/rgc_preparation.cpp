@@ -72,7 +72,7 @@ void rgc_preparation() {
     TH1D* hists[12]; // 4 plots * 3 histograms per plot
     TH1D* xHists[12]; // 4 plots * 3 histograms per plot for "x"
     double xBMin = 0;
-    double xBMax = 3.3;
+    double xBMax = 0.8;
 
     gStyle->SetOptStat(0);
     gStyle->SetTitleAlign(23);
