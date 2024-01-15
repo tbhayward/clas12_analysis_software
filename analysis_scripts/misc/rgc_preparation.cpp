@@ -114,9 +114,9 @@ void rgc_preparation() {
 
         // Add legend in the top left
         TLegend* leg = new TLegend(0.15, 0.7, 0.35, 0.9); // Adjusted coordinates for top left
-        leg->AddEntry(hists[i], "H2", "l");
-        leg->AddEntry(hists[i + 4], "NH3", "l");
-        leg->AddEntry(hists[i + 8], "C", "l");
+        leg->AddEntry(hists[i], "H2 (RGA runs 5418, 5419)", "l");
+        leg->AddEntry(hists[i + 4], "NH3 (RGC runs 16320, 16327, 16346, 16353)", "l");
+        leg->AddEntry(hists[i + 8], "C (RGC run 16297)", "l");
         leg->Draw();
 
         // Right column plots (NH3/C ratio)
