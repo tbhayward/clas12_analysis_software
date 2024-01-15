@@ -78,7 +78,6 @@ void rgc_preparation() {
 
     const char* titles[] = {"eX", "e#pi^{+}X", "epX", "e#pi^{+}#pi^{-}X"};
     const char* variables[] = {"Mx", "Mx", "Mx", "Mx"};
-    // Define the additional cuts for Q2 and W
     const char* cuts_NH3[] = {"runnum != 16297", "runnum != 16297", "runnum != 16297", "runnum != 16297"};
     const char* cuts_C[] = {"runnum == 16297", "runnum == 16297", "runnum == 16297", "runnum == 16297"};
 
