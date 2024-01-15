@@ -100,7 +100,7 @@ void rgc_preparation() {
 
         // Create a title using TLatex at the top of each pad
         TLatex *title = new TLatex();
-        title->SetTextSize(0.05); // Adjust text size as needed
+        title->SetTextSize(0.10); // Adjust text size as needed
         title->SetTextAlign(22); // Center alignment
         title->DrawLatexNDC(0.5, 0.93, titles[i]); // Draw title at the top center of the pad
 
