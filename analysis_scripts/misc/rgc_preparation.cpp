@@ -55,7 +55,7 @@ void rgc_preparation() {
     // double rgc_NH3_norm = rgc_pos_NH3_norm+rgc_neg_NH3_norm;
     // double rgc_C_norm = 18917.57;
 
-    double rga_H2_norm = 159661.55 + 145813.73;
+    double rga_H2_norm = 159661.55;
     double rgc_NH3_norm = 41392.934 + 43299.863;
     double rgc_C_norm =  43098.254;
 
