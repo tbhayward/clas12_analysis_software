@@ -98,10 +98,11 @@ void rgc_preparation() {
         hists[i + 8]->SetLineColor(kGreen);
         hists[i + 8]->Draw("same");
 
-        // Set larger title size for the histograms
-        hists[i]->SetTitleSize(0.1, "t"); // Larger title size. "t" is for title.
-        hists[i + 4]->SetTitleSize(0.1, "t");
-        hists[i + 8]->SetTitleSize(0.1, "t");
+        // Add custom title using TLatex
+        TLatex *latexTitle = new TLatex();
+        latexTitle->SetTextSize(0.08); // Set large title size
+        latexTitle->DrawLatexNDC(0.5, 0.85, titles[i]); // Adjust position and title
+
 
         // Determine the maximum value of the histograms
         double maxVal = TMath::Max(hists[i]->GetMaximum(), hists[i + 4]->GetMaximum());
