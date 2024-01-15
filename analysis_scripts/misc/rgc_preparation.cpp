@@ -34,6 +34,11 @@ void rgc_preparation() {
         "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rgc_ready_for_calibration_epi+pi-X.root"
     };
 
+    const char* newFilesEX[] = {
+        "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rga_ready_for_calibration_eX.root",
+        "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rgc_ready_for_calibration_elastic_eX.root"
+    };
+
     TFile* filesOpened[8];
     TTree* trees[8];
     for (int i = 0; i < 8; i++) {
@@ -182,21 +187,34 @@ void rgc_preparation() {
 
         /* ~~~~~~~~~~~~~~~~ THIRD COLUMN ~~~~~~~~~~~~~~~~ */
 
+        // Determine which file to use for the third column
+        const char* fileH2 = (i == 0) ? newFilesEX[0] : files[i];
+        const char* fileNH3 = (i == 0) ? newFilesEX[1] : files[i + 4];
+        const char* fileC = (i == 0) ? newFilesEX[1] : files[i + 4];
+
         // Right column plots (H2 and scaled difference)
         c1->cd(i * 3 + 3); // Adjust to access the third column
         TPad* pad3 = (TPad*)c1->GetPad(i * 3 + 3);
         pad3->SetBottomMargin(0.20);
         pad3->SetLeftMargin(0.2);
 
-        // Fill the histograms for "x"
-        xHists[i] = createHistogram(trees[i], (std::string("x_hist_h2_")+std::to_string(i)).c_str(), 
-            "", "x", "", rga_H2_norm, xBMin, xBMax);
-        xHists[i + 4] = createHistogram(trees[i + 4], 
-            (std::string("x_hist_nh3_")+std::to_string(i)).c_str(), "", "x", cuts_NH3[i], 
-           rgc_NH3_norm, xBMin, xBMax);
+        // Open the new files for H2 and NH3 histograms for the third column (eX case)
+        TFile* fileH2Opened = new TFile(fileH2);
+        TFile* fileNH3Opened = new TFile(fileNH3);
+        TTree* treeH2 = (TTree*)fileH2Opened->Get("PhysicsEvents");
+        TTree* treeNH3 = (TTree*)fileNH3Opened->Get("PhysicsEvents");
+
+        // Create histograms for "x" for H2, NH3, and C
+        xHists[i] = createHistogram(treeH2, 
+            (std::string("x_hist_h2_") + std::to_string(i)).c_str(), "", "x", "", 
+            rga_H2_norm, xBMin, xBMax);
+        xHists[i + 4] = createHistogram(treeNH3, 
+            (std::string("x_hist_nh3_") + std::to_string(i)).c_str(), "", "x", 
+            cuts_NH3[i], rgc_NH3_norm, xBMin, xBMax);
         xHists[i + 8] = createHistogram(trees[i + 4], 
-            (std::string("x_hist_c_")+std::to_string(i)).c_str(), "", "x", cuts_C[i], 
-            rgc_C_norm, xBMin, xBMax);
+            (std::string("x_hist_c_") + std::to_string(i)).c_str(), "", "x", 
+            cuts_C[i], rgc_C_norm, xBMin, xBMax);
+
 
         // Plot H2 histogram for "x" (red)
         TH1D* xH2Hist = (TH1D*)xHists[i]->Clone();
