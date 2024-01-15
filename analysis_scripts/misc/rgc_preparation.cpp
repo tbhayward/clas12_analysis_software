@@ -211,14 +211,17 @@ void rgc_preparation() {
         xDiffHist->SetLineColor(kBlack);
         xDiffHist->Draw("same");
 
-        // Add labels for the third column
-        TLatex *h2Label = new TLatex();
-        h2Label->SetTextSize(0.06);
-        h2Label->DrawLatexNDC(0.2, 0.92, "H2 (RGA)");
+        // Add legend for the third column
+        TLegend* thirdColLeg = new TLegend(0.15, 0.75, 0.35, 0.9); // Adjust position as needed
+        thirdColLeg->AddEntry(xH2Hist, "H2 (RGA)", "l");
+        thirdColLeg->AddEntry(xDiffHist, "NH_{3} - s*C (RGC)", "l");
+        thirdColLeg->Draw();
 
-        TLatex *diffLabel = new TLatex();
-        diffLabel->SetTextSize(0.06);
-        diffLabel->DrawLatexNDC(0.2, 0.86, "NH_{3} - s*C (RGC)");
+        // Set axis titles
+        xDiffHist->GetXaxis()->SetTitle("x_{B}");
+        xDiffHist->GetYaxis()->SetTitle("NH_{3} - s*C (Counts/nC)");
+        xDiffHist->GetXaxis()->SetTitleSize(0.08);
+        xDiffHist->GetYaxis()->SetTitleSize(0.08);
 
         // Set axis titles for xDiffHist
         xDiffHist->GetXaxis()->SetTitle("x_{B}");
