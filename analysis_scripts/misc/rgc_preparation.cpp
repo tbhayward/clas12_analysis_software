@@ -64,8 +64,8 @@ void rgc_preparation() {
     for (int i = 0; i < 4; i++) {
         c1->cd(i * 2 + 1);
         TPad* pad1 = (TPad*)c1->GetPad(i * 2 + 1);
-        pad1->SetBottomMargin(0.20);
-        pad1->SetLeftMargin(0.20);
+        pad1->SetBottomMargin(0.25);
+        pad1->SetLeftMargin(0.15);
 
         // Define histogram ranges for each channel
         double xMin, xMax;
