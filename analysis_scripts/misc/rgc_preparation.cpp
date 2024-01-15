@@ -224,8 +224,8 @@ void rgc_preparation() {
         // Create and plot the difference histogram for "x" (black)
         TH1D* xDiffHist = (TH1D*)xHists[i + 4]->Clone(); 
         TH1D* scaledCHist = (TH1D*)xHists[i + 8]->Clone(); 
-        // scaledCHist->Scale(-normalization);
-        scaledCHist->Scale(-1); 
+        std::cout << normalization << std::endl;
+        scaledCHist->Scale(-normalization);
         xDiffHist->Add(scaledCHist);
         xDiffHist->SetLineColor(kBlack);
         xDiffHist->Draw("same");
