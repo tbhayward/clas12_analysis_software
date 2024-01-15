@@ -169,13 +169,13 @@ void rgc_preparation() {
         double normalization = fitFunc->GetParameter(0); // Get the constant value
         double normalizationError = fitFunc->GetParError(0); // Get the error on the constant
         char label[100];
-        sprintf(label, "NH_{3}/C normalization = %.3f #pm %.3f", 
+        sprintf(label, "normalization = %.3f #pm %.3f", 
             normalization, normalizationError); // Format the label with uncertainty
 
 
         TLatex *ratioLabel = new TLatex();
         ratioLabel->SetTextSize(0.06);
-        ratioLabel->DrawLatexNDC(0.7, 0.8, label);
+        ratioLabel->DrawLatexNDC(0.4, 0.8, label);
     }
 
     // Save the canvas as "normalizations.png"
