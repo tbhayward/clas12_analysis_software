@@ -192,10 +192,10 @@ void rgc_preparation() {
         xHists[i] = createHistogram(trees[i], (std::string("x_hist_h2_")+std::to_string(i)).c_str(), 
             "", "x", Cuts_NH3[i], rga_H2_norm, xBMin, xBMax);
         xHists[i + 4] = createHistogram(trees[i + 4], 
-            (std::string("x_hist_nh3_")+std::to_string(i)).c_str(), "", "x", Cuts_NH3[i], 
+            (std::string("x_hist_nh3_")+std::to_string(i)).c_str(), "", "x", cuts_NH3[i], 
            rgc_NH3_norm, xBMin, xBMax);
         xHists[i + 8] = createHistogram(trees[i + 4], 
-            (std::string("x_hist_c_")+std::to_string(i)).c_str(), "", "x", Cuts_C[i], 
+            (std::string("x_hist_c_")+std::to_string(i)).c_str(), "", "x", cuts_C[i], 
             rgc_C_norm, xBMin, xBMax);
 
         // Plot H2 histogram for "x" (red)
