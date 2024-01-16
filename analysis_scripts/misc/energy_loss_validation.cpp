@@ -206,17 +206,19 @@ void compareTrees(const char* file1, const char* file2, const char* output,
         // Retrieve the mean and its error for the first fit
         double mean1 = fitFunc1->GetParameter(1);
         double meanError1 = fitFunc1->GetParError(1);
+        double sigma1 = fitFunc1->GetParameter(2);
 
         // Retrieve the mean and its error for the second fit
         double mean2 = fitFunc2->GetParameter(1);
         double meanError2 = fitFunc2->GetParError(1);
+        double sigma2 = fitFunc1->GetParameter(2);
 
         // Create and add a legend with fit results
         TLegend* legend = new TLegend(0.15, 0.7, 0.63, 0.9); // Adjust these coordinates as needed
         legend->SetTextSize(0.04); // Set the text size. Adjust as needed.
         char entry1[100], entry2[100];
-        sprintf(entry1, "Uncorrected, #mu = %.3f #pm %.3f", mean1, meanError1);
-        sprintf(entry2, "Corrected, #mu = %.3f #pm %.3f", mean2, meanError2);
+        sprintf(entry1, "Uncorrected, #mu = %.4f #pm %.4f", mean1, sigma1);
+        sprintf(entry2, "Corrected, #mu = %.4f #pm %.4f", mean2, sigma2);
         legend->AddEntry(hist1[i], entry1, "l");
         legend->AddEntry(hist2[i], entry2, "l");
         legend->Draw();
