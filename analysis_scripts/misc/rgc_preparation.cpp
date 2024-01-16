@@ -241,6 +241,22 @@ void rgc_preparation() {
         // Draw the resulting histogram
         nh3HistThirdCol->Draw();
 
+        // Creating a new H2 histogram for Mx in the third column
+        TH1D* h2HistThirdCol = createHistogram(trees[i], 
+            (std::string("h2_third_col_") + titles[i]).c_str(), titles[i], 
+            "Mx", "", rga_H2_norm, xMin, xMax);
+        h2HistThirdCol->SetLineColor(kRed); // Set line color to red
+        h2HistThirdCol->GetXaxis()->SetTitle("M_{X} (GeV)");
+        h2HistThirdCol->GetYaxis()->SetTitle("Counts / mC");
+        h2HistThirdCol->GetXaxis()->SetTitleSize(0.08);
+        h2HistThirdCol->GetYaxis()->SetTitleSize(0.08);
+
+        // Draw the NH3 minus Carbon histogram
+        nh3HistThirdCol->Draw();
+
+        // Overlay the H2 histogram on top of the NH3 minus Carbon histogram
+        h2HistThirdCol->Draw("same");
+
 
 
     }
