@@ -103,7 +103,7 @@ void compareTrees(const char* file1, const char* file2, const char* output,
     } else {
         // Use 'e_p' and 'W' instead
         tree2->SetBranchAddress("e_p", &p_p);
-        tree2->SetBranchAddress("mx2", &Mx2);
+        tree2->SetBranchAddress("Mx2", &Mx2);
     }
 
     // Fill histograms
