@@ -220,9 +220,9 @@ void rgc_preparation() {
         if (i == 0) {        // eX
             xMin = 0.0; xMax = 1; var = "x";
         } else if (i == 1) { // epi+X
-            xMin = 0.0; xMax = 1.2; var = "pT";
+            xMin = 0.0; xMax = 1.2; var = "x";
         } else if (i == 2) { // epX
-            xMin = -1.0; xMax = 1.0; var = "xF";
+            xMin = -1.0; xMax = 1.0; var = "x";
         } else {             // epi+pi-X
             xMin = 0.2; xMax = 1.5; var = "Mh";
         }
