@@ -204,13 +204,13 @@ void rgc_preparation() {
         pad3->SetLeftMargin(0.20);
 
         if (i == 0) {        // eX
-            xMin = 0.0; xMax = 0.8;
+            xMin = 0.0; xMax = 1.0;
         } else if (i == 1) { // epi+X
-            xMin = 0.0; xMax = 0.8;
+            xMin = 0.0; xMax = 1.0;
         } else if (i == 2) { // epX
-            xMin = 0.0; xMax = 0.8;
+            xMin = 0.0; xMax = 1.0;
         } else {             // epi+pi-X
-            xMin = 0.0; xMax = 0.8;
+            xMin = 0.0; xMax = 1.0;
         }
 
         // Creating a new NH3 histogram for Mx in the third column
