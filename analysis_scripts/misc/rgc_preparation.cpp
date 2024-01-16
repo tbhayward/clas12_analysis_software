@@ -203,7 +203,6 @@ void rgc_preparation() {
         pad3->SetBottomMargin(0.20);
         pad3->SetLeftMargin(0.20);
 
-        double xMin, xMax;
         if (i == 0) {        // eX
             xMin = 0.4; xMax = 1.1;
         } else if (i == 1) { // epi+X
