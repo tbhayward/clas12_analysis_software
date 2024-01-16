@@ -215,26 +215,26 @@ void rgc_preparation() {
         // For H2 histograms, as there are no initial cuts, just use the additional constraints
         std::string h2CutsWithConstraints = additionalCuts;
 
-
+        string var = "x";
         if (i == 0) {        // eX
-            xMin = 0.0; xMax = 2;
+            xMin = 0.0; xMax = 10; var = "Q2";
         } else if (i == 1) { // epi+X
-            xMin = 0.0; xMax = 1.0;
+            xMin = 0.0; xMax = 1.0; var = "x";
         } else if (i == 2) { // epX
-            xMin = 0.0; xMax = 1.0;
+            xMin = 0.0; xMax = 1.0; var = "x";
         } else {             // epi+pi-X
-            xMin = 0.0; xMax = 1.0;
+            xMin = 0.0; xMax = 1.0; var = "x";
         }
 
         // Creating a new NH3 histogram for Mx in the third column
         TH1D* nh3HistThirdCol = createHistogram(trees[i + 4],
             (std::string("nh3_third_col_") + titles[i]).c_str(), titles[i],
-            "x", nh3CutsWithConstraints.c_str(), rgc_NH3_norm, xMin, xMax);
+            var, nh3CutsWithConstraints.c_str(), rgc_NH3_norm, xMin, xMax);
 
         // Creating a new Carbon histogram for Mx in the third column
         TH1D* cHistThirdCol = createHistogram(trees[i + 4], 
             (std::string("c_third_col_") + titles[i]).c_str(), titles[i],
-        "x", cCutsWithConstraints.c_str(), rgc_C_norm, xMin, xMax);
+        var, cCutsWithConstraints.c_str(), rgc_C_norm, xMin, xMax);
 
         // Scale the Carbon histogram by the normalization factor
         cHistThirdCol->Scale(normalization);
@@ -260,7 +260,7 @@ void rgc_preparation() {
         // Creating a new H2 histogram for Mx in the third column
         TH1D* h2HistThirdCol = createHistogram(trees[i], 
             (std::string("h2_third_col_") + titles[i]).c_str(), titles[i], 
-            "x", h2CutsWithConstraints.c_str(), rga_H2_norm, xMin, xMax);
+            var, h2CutsWithConstraints.c_str(), rga_H2_norm, xMin, xMax);
         h2HistThirdCol->SetLineColor(kRed); // Set line color to red
         h2HistThirdCol->GetXaxis()->SetTitle("x_{B}");
         h2HistThirdCol->GetYaxis()->SetTitle("Counts / mC");
