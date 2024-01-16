@@ -222,7 +222,7 @@ void rgc_preparation() {
         } else if (i == 1) { // epi+X
             xMin = 0.0; xMax = 1.2; var = "pT";
         } else if (i == 2) { // epX
-            xMin = -0.0; xMax = 1.0; var = "xF";
+            xMin = -1.0; xMax = 1.0; var = "xF";
         } else {             // epi+pi-X
             xMin = 0.0; xMax = 1.5; var = "Mh";
         }
