@@ -188,7 +188,7 @@ public static void main(String[] args) {
 		}
 
 		println("\n1:runnum, 2:evnum, 3:helicity, 4:e_p, 5:e_theta, 6:e_phi, 7:vz_e,"+
-		"8:Q2, 9:W, 10:Mx, 11: Mx2, 13:x, 14:y, 15: DepA, 16: DepB, 17: DepC, 18: DepV, 19: DepW\n");
+		"8:Q2, 9:W, 10:Mx, 11: Mx2, 12:x, 13:y, 14: DepA, 15: DepB, 16: DepC, 17: DepV, 18: DepW\n");
 
 		println("output text file is: $file");
 	}
