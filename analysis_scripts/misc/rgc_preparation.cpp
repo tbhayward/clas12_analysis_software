@@ -218,7 +218,7 @@ void rgc_preparation() {
 
         std::string var = "x";
         if (i == 0) {        // eX
-            xMin = 0.0; xMax = 10; var = "Q2";
+            xMin = 0.0; xMax = 1; var = "x";
         } else if (i == 1) { // epi+X
             xMin = 0.0; xMax = 1.2; var = "pT";
         } else if (i == 2) { // epX
@@ -231,6 +231,8 @@ void rgc_preparation() {
         TH1D* nh3HistThirdCol = createHistogram(trees[i + 4],
             (std::string("nh3_third_col_") + titles[i]).c_str(), titles[i],
             var.c_str(), nh3CutsWithConstraints.c_str(), rgc_NH3_norm, xMin, xMax);
+        // Clone the histogram to preserve original values
+        TH1D* nh3HistOriginal = (TH1D*)nh3HistThirdCol->Clone("nh3HistOriginal");
 
         // Creating a new Carbon histogram for Mx in the third column
         TH1D* cHistThirdCol = createHistogram(trees[i + 4], 
@@ -239,9 +241,10 @@ void rgc_preparation() {
 
         // Scale the Carbon histogram by the normalization factor
         cHistThirdCol->Scale(normalization);
-
         // Subtract the scaled Carbon histogram from the NH3 histogram
         nh3HistThirdCol->Add(cHistThirdCol, -1); // The second argument "-1" is for subtraction
+        // Scale the NH3-sC histogram by NH3
+        nh3HistThirdCol->Divide(nh3HistOriginal);
 
         // Set line color for the resulting histogram
         nh3HistThirdCol->SetLineColor(kBlack);
@@ -273,6 +276,82 @@ void rgc_preparation() {
 
         // Overlay the H2 histogram on top of the NH3 minus Carbon histogram
         h2HistThirdCol->Draw("same");
+
+        // /* ~~~~~~~~~~~~~~~~ THIRD COLUMN ~~~~~~~~~~~~~~~~ */
+        // c1->cd(i * 3 + 3); // Access the third column for each row
+        // TPad* pad3 = (TPad*)c1->GetPad(i * 3 + 3);
+        // pad3->SetBottomMargin(0.20);
+        // pad3->SetLeftMargin(0.20);
+
+        // // Modify cuts with additional constraints
+        // const char* additionalCuts = "W > 2 && y < 0.75";
+
+        // // For NH3 histograms
+        // std::string nh3CutsWithConstraints = std::string(cuts_NH3[i]) + " && " + additionalCuts;
+
+        // // For Carbon histograms
+        // std::string cCutsWithConstraints = std::string(cuts_C[i]) + " && " + additionalCuts;
+
+        // // For H2 histograms, as there are no initial cuts, just use the additional constraints
+        // std::string h2CutsWithConstraints = additionalCuts;
+
+        // std::string var = "x";
+        // if (i == 0) {        // eX
+        //     xMin = 0.0; xMax = 10; var = "Q2";
+        // } else if (i == 1) { // epi+X
+        //     xMin = 0.0; xMax = 1.2; var = "pT";
+        // } else if (i == 2) { // epX
+        //     xMin = -1.0; xMax = 1.0; var = "xF";
+        // } else {             // epi+pi-X
+        //     xMin = 0.2; xMax = 1.5; var = "Mh";
+        // }
+
+        // // Creating a new NH3 histogram for Mx in the third column
+        // TH1D* nh3HistThirdCol = createHistogram(trees[i + 4],
+        //     (std::string("nh3_third_col_") + titles[i]).c_str(), titles[i],
+        //     var.c_str(), nh3CutsWithConstraints.c_str(), rgc_NH3_norm, xMin, xMax);
+
+        // // Creating a new Carbon histogram for Mx in the third column
+        // TH1D* cHistThirdCol = createHistogram(trees[i + 4], 
+        //     (std::string("c_third_col_") + titles[i]).c_str(), titles[i],
+        // var.c_str(), cCutsWithConstraints.c_str(), rgc_C_norm, xMin, xMax);
+
+        // // Scale the Carbon histogram by the normalization factor
+        // cHistThirdCol->Scale(normalization);
+
+        // // Subtract the scaled Carbon histogram from the NH3 histogram
+        // nh3HistThirdCol->Add(cHistThirdCol, -1); // The second argument "-1" is for subtraction
+
+        // // Set line color for the resulting histogram
+        // nh3HistThirdCol->SetLineColor(kBlack);
+
+        // // Set titles and sizes for axes
+        // nh3HistThirdCol->GetXaxis()->SetTitle("x_{B}");
+        // nh3HistThirdCol->GetYaxis()->SetTitle("NH_{3} - s*C (Counts/mC)");
+        // nh3HistThirdCol->GetXaxis()->SetTitleSize(0.08);
+        // nh3HistThirdCol->GetYaxis()->SetTitleSize(0.08);
+
+        // // integrate histogram
+        // nh3HistThirdCol->Scale(1/nh3HistThirdCol->Integral());
+
+        // // Draw the resulting histogram
+        // nh3HistThirdCol->Draw();
+
+        // // Creating a new H2 histogram for Mx in the third column
+        // TH1D* h2HistThirdCol = createHistogram(trees[i], 
+        //     (std::string("h2_third_col_") + titles[i]).c_str(), titles[i], 
+        //     var.c_str(), h2CutsWithConstraints.c_str(), rga_H2_norm, xMin, xMax);
+        // h2HistThirdCol->SetLineColor(kRed); // Set line color to red
+        // h2HistThirdCol->GetXaxis()->SetTitle("x_{B}");
+        // h2HistThirdCol->GetYaxis()->SetTitle("Counts / mC");
+        // h2HistThirdCol->GetXaxis()->SetTitleSize(0.08);
+        // h2HistThirdCol->GetYaxis()->SetTitleSize(0.08);
+        
+        // // integrate histogram
+        // h2HistThirdCol->Scale(1/h2HistThirdCol->Integral());
+
+        // // Overlay the H2 histogram on top of the NH3 minus Carbon histogram
+        // h2HistThirdCol->Draw("same");
 
 
 
