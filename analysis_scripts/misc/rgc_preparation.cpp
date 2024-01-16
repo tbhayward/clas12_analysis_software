@@ -220,11 +220,11 @@ void rgc_preparation() {
         if (i == 0) {        // eX
             xMin = 0.0; xMax = 10; var = "Q2";
         } else if (i == 1) { // epi+X
-            xMin = 0.0; xMax = 1.0; var = "x";
+            xMin = 0.0; xMax = 1.2; var = "pT";
         } else if (i == 2) { // epX
-            xMin = 0.0; xMax = 1.0; var = "x";
+            xMin = -0.0; xMax = 1.0; var = "xF";
         } else {             // epi+pi-X
-            xMin = 0.0; xMax = 1.2; var = "Mh";
+            xMin = 0.0; xMax = 1.5; var = "Mh";
         }
 
         // Creating a new NH3 histogram for Mx in the third column
