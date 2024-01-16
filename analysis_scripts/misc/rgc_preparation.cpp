@@ -195,7 +195,7 @@ void rgc_preparation() {
 
         TLatex *ratioLabel = new TLatex();
         ratioLabel->SetTextSize(0.06);
-        ratioLabel->DrawLatexNDC(0.6, 0.8, label);
+        ratioLabel->DrawLatexNDC(0.4, 0.8, label);
 
 
         /* ~~~~~~~~~~~~~~~~ THIRD COLUMN ~~~~~~~~~~~~~~~~ */
