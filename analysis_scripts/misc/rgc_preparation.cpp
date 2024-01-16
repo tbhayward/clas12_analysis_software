@@ -218,11 +218,11 @@ void rgc_preparation() {
 
         std::string var = "x";
         if (i == 0) {        // eX
-            xMin = 0.0; xMax = 1; var = "x";
+            xMin = 0.0; xMax = 0.6; var = "x";
         } else if (i == 1) { // epi+X
-            xMin = 0.0; xMax = 1.2; var = "x";
+            xMin = 0.0; xMax = 0.6; var = "x";
         } else if (i == 2) { // epX
-            xMin = -1.0; xMax = 1.0; var = "x";
+            xMin = -1.0; xMax = 0.6; var = "x";
         } else {             // epi+pi-X
             xMin = 0.2; xMax = 1.5; var = "Mh";
         }
