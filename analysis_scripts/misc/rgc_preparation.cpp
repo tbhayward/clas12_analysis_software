@@ -230,12 +230,12 @@ void rgc_preparation() {
         // Creating a new NH3 histogram for Mx in the third column
         TH1D* nh3HistThirdCol = createHistogram(trees[i + 4],
             (std::string("nh3_third_col_") + titles[i]).c_str(), titles[i],
-            var, nh3CutsWithConstraints.c_str(), rgc_NH3_norm, xMin, xMax);
+            var.c_str(), nh3CutsWithConstraints.c_str(), rgc_NH3_norm, xMin, xMax);
 
         // Creating a new Carbon histogram for Mx in the third column
         TH1D* cHistThirdCol = createHistogram(trees[i + 4], 
             (std::string("c_third_col_") + titles[i]).c_str(), titles[i],
-        var, cCutsWithConstraints.c_str(), rgc_C_norm, xMin, xMax);
+        var.c_str(), cCutsWithConstraints.c_str(), rgc_C_norm, xMin, xMax);
 
         // Scale the Carbon histogram by the normalization factor
         cHistThirdCol->Scale(normalization);
@@ -261,7 +261,7 @@ void rgc_preparation() {
         // Creating a new H2 histogram for Mx in the third column
         TH1D* h2HistThirdCol = createHistogram(trees[i], 
             (std::string("h2_third_col_") + titles[i]).c_str(), titles[i], 
-            var, h2CutsWithConstraints.c_str(), rga_H2_norm, xMin, xMax);
+            var.c_str(), h2CutsWithConstraints.c_str(), rga_H2_norm, xMin, xMax);
         h2HistThirdCol->SetLineColor(kRed); // Set line color to red
         h2HistThirdCol->GetXaxis()->SetTitle("x_{B}");
         h2HistThirdCol->GetYaxis()->SetTitle("Counts / mC");
