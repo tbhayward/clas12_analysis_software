@@ -25,13 +25,13 @@ TH1D* createHistogram(TTree* tree, const char* name, const char* title, const ch
 void rgc_preparation() {
     const char* files[] = {
         "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rga_ready_for_calibration_eX.root",
-        "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files_2/rga_ready_for_calibration_epi+X.root",
-        "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files_2/rga_ready_for_calibration_epX.root",
-        "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files_2/rga_ready_for_calibration_epi+pi-X.root",
+        "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rga_ready_for_calibration_epi+X.root",
+        "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rga_ready_for_calibration_epX.root",
+        "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rga_ready_for_calibration_epi+pi-X.root",
         "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rgc_ready_for_calibration_eX.root",
-        "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files_2/rgc_ready_for_calibration_epi+X.root",
-        "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files_2/rgc_ready_for_calibration_epX.root",
-        "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files_2/rgc_ready_for_calibration_epi+pi-X.root"
+        "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rgc_ready_for_calibration_epi+X.root",
+        "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rgc_ready_for_calibration_epX.root",
+        "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rgc_ready_for_calibration_epi+pi-X.root"
     };
 
     const char* newFilesEX[] = {
@@ -46,18 +46,18 @@ void rgc_preparation() {
         trees[i] = (TTree*)filesOpened[i]->Get("PhysicsEvents");
     }
 
-    // double rga_H2_norm = 443959;
-    // // double rga_H2_norm = 53381.99+41401.77;
-    // // double rgc_pos_NH3_norm = 19355.9+19392.53+21683.25+21621.178;
-    // double rgc_pos_NH3_norm = 45759.5+41050.555;
-    // // double rgc_neg_NH3_norm = 21282.264+21217.414+21303.576+21297.766;
-    // double rgc_neg_NH3_norm = 44970.203+44984.06;
-    // double rgc_NH3_norm = rgc_pos_NH3_norm+rgc_neg_NH3_norm;
-    // double rgc_C_norm = 18917.57;
+    double rga_H2_norm = 443959;
+    // double rga_H2_norm = 53381.99+41401.77;
+    // double rgc_pos_NH3_norm = 19355.9+19392.53+21683.25+21621.178;
+    double rgc_pos_NH3_norm = 45759.5+41050.555;
+    // double rgc_neg_NH3_norm = 21282.264+21217.414+21303.576+21297.766;
+    double rgc_neg_NH3_norm = 44970.203+44984.06;
+    double rgc_NH3_norm = rgc_pos_NH3_norm+rgc_neg_NH3_norm;
+    double rgc_C_norm = 18917.57;
 
-    double rga_H2_norm = 159661.55;
-    double rgc_NH3_norm = 41392.934 + 43299.863;
-    double rgc_C_norm =  43098.254;
+    // double rga_H2_norm = 159661.55;
+    // double rgc_NH3_norm = 41392.934 + 43299.863;
+    // double rgc_C_norm =  43098.254;
 
     // // Compute normalization factors based on the number of entries under specific conditions
     // double rga_H2_norm = trees[0]->GetEntries();
@@ -82,11 +82,11 @@ void rgc_preparation() {
 
     const char* titles[] = {"eX", "e#pi^{+}X", "epX", "e#pi^{+}#pi^{-}X"};
     const char* variables[] = {"Mx", "Mx", "Mx", "Mx"};
-    // const char* cuts_NH3[] = {"runnum != 16297", "runnum != 16297", "runnum != 16297", "runnum != 16297"};
-    // const char* cuts_C[] = {"runnum == 16297", "runnum == 16297", "runnum == 16297", "runnum == 16297"};
+    const char* cuts_NH3[] = {"runnum != 16297", "runnum != 16297", "runnum != 16297", "runnum != 16297"};
+    const char* cuts_C[] = {"runnum == 16297", "runnum == 16297", "runnum == 16297", "runnum == 16297"};
 
-    const char* cuts_NH3[] = {"runnum != 16293", "runnum != 16293", "runnum != 16293", "runnum != 16293"};
-    const char* cuts_C[] = {"runnum == 16293", "runnum == 16293", "runnum == 16293", "runnum == 16293"};
+    // const char* cuts_NH3[] = {"runnum != 16293", "runnum != 16293", "runnum != 16293", "runnum != 16293"};
+    // const char* cuts_C[] = {"runnum == 16293", "runnum == 16293", "runnum == 16293", "runnum == 16293"};
 
 
     for (int i = 0; i < 4; i++) {

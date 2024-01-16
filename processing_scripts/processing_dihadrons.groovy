@@ -111,7 +111,7 @@ public static void main(String[] args) {
 
 		while (reader.hasEvent()) {
 		    ++num_events;
-		    if (num_events % 100000 == 0) { // not necessary, just updates output
+		    if (num_events % 1000000 == 0) { // not necessary, just updates output
 		        print("processed: " + num_events + " events. ");
 		    }
 
@@ -125,10 +125,10 @@ public static void main(String[] args) {
 
 		    // do not use the qa if it is MC (runnum = 11) 
 		    // do not use the qa if the run is from RGC (until QA is produced!)
-		    boolean process_event = filter.isValid(research_Event);
-		    // boolean process_event = filter.isValid(research_Event) && 
-		    // 	(runnum == 11 || runnum < 5020 || runnum >= 11571 ||
-		    // 	qa.OkForAsymmetry(runnum, evnum));
+		    // boolean process_event = filter.isValid(research_Event);
+		    boolean process_event = filter.isValid(research_Event) && 
+		    	(runnum == 11 || runnum < 5020 || runnum >= 11571 ||
+		    	qa.OkForAsymmetry(runnum, evnum));
 
 		    if (process_event) {
 
