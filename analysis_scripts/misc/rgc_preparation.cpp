@@ -34,11 +34,6 @@ void rgc_preparation() {
         "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rgc_ready_for_calibration_epi+pi-X.root"
     };
 
-    const char* newFilesEX[] = {
-        "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rga_ready_for_calibration_eX.root",
-        "/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rgc_ready_for_calibration_eX.root"
-    };
-
     TFile* filesOpened[8];
     TTree* trees[8];
     for (int i = 0; i < 8; i++) {
@@ -203,78 +198,26 @@ void rgc_preparation() {
 
 
         /* ~~~~~~~~~~~~~~~~ THIRD COLUMN ~~~~~~~~~~~~~~~~ */
-
-        // Determine which file to use for the third column
-        const char* fileH2 = (i == 0) ? newFilesEX[0] : files[i];
-        const char* fileNH3 = (i == 0) ? newFilesEX[1] : files[i + 4];
-        const char* fileC = (i == 0) ? newFilesEX[1] : files[i + 4];
-
-        // Open the new files for H2 and NH3 histograms for the third column (eX case)
-        TFile* fileH2Opened = new TFile(fileH2);
-        TFile* fileNH3Opened = new TFile(fileNH3);
-        TTree* treeH2 = (TTree*)fileH2Opened->Get("PhysicsEvents");
-        TTree* treeNH3 = (TTree*)fileNH3Opened->Get("PhysicsEvents");
-
-        // Right column plots (H2 and scaled difference)
-        c1->cd(i * 3 + 3); // Adjust to access the third column
+        for (int i = 0; i < 4; i++) {
+        c1->cd(i * 3 + 3); // Access the third column for each row
         TPad* pad3 = (TPad*)c1->GetPad(i * 3 + 3);
-        pad3->SetBottomMargin(0.25);
-        pad3->SetLeftMargin(0.2);
+        pad3->SetBottomMargin(0.20);
+        pad3->SetLeftMargin(0.20);
 
-        double xBMin = -1.0;
-        double xBMax = 4.1;
-        // Create histograms for "x" for H2, NH3, and C
-        xHists[i] = createHistogram(treeH2, 
-            (std::string("x_hist_h2_") + std::to_string(i)).c_str(), "", "Mx", "", 
-            rga_H2_norm, xBMin, xBMax);
-        xHists[i + 4] = createHistogram(treeNH3, 
-            (std::string("x_hist_nh3_") + std::to_string(i)).c_str(), "", "Mx", 
-            cuts_NH3[i], rgc_NH3_norm, xBMin, xBMax);
-        xHists[i + 8] = createHistogram(treeNH3, 
-            (std::string("x_hist_c_") + std::to_string(i)).c_str(), "", "Mx", 
-            cuts_C[i], rgc_C_norm, xBMin, xBMax);
+        double xMin = -1; // Define your xMin for Mx
+        double xMax = 4.1; // Define your xMax for Mx
 
+        // Creating a new NH3 histogram for Mx in the third column
+        TH1D* nh3HistThirdCol = createHistogram(trees[i + 4], 
+            (std::string("nh3_third_col_") + titles[i]).c_str(), titles[i], 
+            "Mx", cuts_NH3[i], rgc_NH3_norm, xMin, xMax);
+        nh3HistThirdCol->SetLineColor(kBlue); // Set line color to blue
+        nh3HistThirdCol->GetXaxis()->SetTitle("M_{X} (GeV)");
+        nh3HistThirdCol->GetYaxis()->SetTitle("Counts / mC");
+        nh3HistThirdCol->GetXaxis()->SetTitleSize(0.08);
+        nh3HistThirdCol->GetYaxis()->SetTitleSize(0.08);
+        nh3HistThirdCol->Draw(); // Draw the histogram
 
-        // Plot H2 histogram for "x" (red)
-        TH1D* xH2Hist = (TH1D*)xHists[i]->Clone();
-        xH2Hist->SetLineColor(kRed);
-        xH2Hist->Draw();
-
-        // Create and plot the difference histogram for "x" (black)
-        TH1D* xDiffHist = (TH1D*)xHists[i + 4]->Clone(); 
-        // xDiffHist->Scale(1/normalization);
-        TH1D* scaledCHist = (TH1D*)xHists[i + 8]->Clone(); 
-        // scaledCHist->Scale(-1);
-        xDiffHist->Add(scaledCHist);
-        xDiffHist->SetLineColor(kBlack);
-        xDiffHist->Draw("same");
-
-
-        // Set y-axis title for xDiffHist
-        xDiffHist->GetYaxis()->SetTitle("NH_{3} - s*C (Counts/mC)");
-        xDiffHist->GetYaxis()->SetTitleSize(0.08);
-
-        // Find the maximum value between xH2Hist and xDiffHist
-        double maxValThirdCol = TMath::Max(xH2Hist->GetMaximum(), xDiffHist->GetMaximum());
-        double newMaxThirdCol = maxValThirdCol * 1.20; // 20% higher than the max value
-        xH2Hist->SetMaximum(newMaxThirdCol); // Set max for H2 histogram
-        xDiffHist->SetMaximum(newMaxThirdCol); // Set max for difference histogram
-
-        // Set axis titles
-        xH2Hist->GetXaxis()->SetTitle("x_{B}");
-        xH2Hist->GetXaxis()->SetTitleSize(0.08);
-        xDiffHist->GetXaxis()->SetTitle("x_{B}");
-        xDiffHist->GetXaxis()->SetTitleSize(0.08);
-
-        // Draw histograms again to update axis settings
-        xH2Hist->Draw();
-        xDiffHist->Draw("same");
-
-        // Add legend for the third column at top right
-        TLegend* thirdColLeg = new TLegend(0.70, 0.75, 0.90, 0.90); // Top right coordinates
-        thirdColLeg->AddEntry(xH2Hist, "H2 (RGA)", "l");
-        thirdColLeg->AddEntry(xDiffHist, "NH_{3} - s*C (RGC)", "l");
-        thirdColLeg->Draw();
     }
 
     // Save the canvas as "normalizations.png"
