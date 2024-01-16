@@ -41,7 +41,7 @@ void rgc_preparation() {
         trees[i] = (TTree*)filesOpened[i]->Get("PhysicsEvents");
     }
 
-    double rga_H2_norm = 443.959;
+    double rga_H2_norm = 53.3819946084075;
     // double rga_H2_norm = 53381.99+41401.77;
     // double rgc_pos_NH3_norm = 19355.9+19392.53+21683.25+21621.178;
     double rgc_pos_NH3_norm = 45.7595+41.050555;
