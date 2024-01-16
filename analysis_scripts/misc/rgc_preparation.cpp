@@ -203,19 +203,26 @@ void rgc_preparation() {
         pad3->SetBottomMargin(0.20);
         pad3->SetLeftMargin(0.20);
 
-        xMin = -1; // Define your xMin for Mx
-        xMax = 4.1; // Define your xMax for Mx
+        double xMin = -1; // Define your xMin for Mx
+        double xMax = 4.1; // Define your xMax for Mx
 
         // Creating a new NH3 histogram for Mx in the third column
-        TH1D* nh3HistThirdCol = createHistogram(trees[i + 4], 
-            (std::string("nh3_third_col_") + titles[i]).c_str(), titles[i], 
-            "Mx", cuts_NH3[i], rgc_NH3_norm, xMin, xMax);
+        TH1D* nh3HistThirdCol = createHistogram(trees[i +4],
+        (std::string("nh3_third_col_") + titles[i]).c_str(), titles[i],
+        "Mx", cuts_NH3[i], rgc_NH3_norm, xMin, xMax);
         nh3HistThirdCol->SetLineColor(kBlue); // Set line color to blue
         nh3HistThirdCol->GetXaxis()->SetTitle("M_{X} (GeV)");
         nh3HistThirdCol->GetYaxis()->SetTitle("Counts / mC");
         nh3HistThirdCol->GetXaxis()->SetTitleSize(0.08);
         nh3HistThirdCol->GetYaxis()->SetTitleSize(0.08);
-        nh3HistThirdCol->Draw(); // Draw the histogram
+        nh3HistThirdCol->Draw(); // Draw the NH3 histogram
+
+        // Creating a new Carbon histogram for Mx in the third column
+        TH1D* cHistThirdCol = createHistogram(trees[i + 4], 
+                (std::string("c_third_col_") + titles[i]).c_str(), titles[i], 
+                "Mx", cuts_C[i], rgc_C_norm, xMin, xMax);
+        cHistThirdCol->SetLineColor(kGreen); // Set line color to green
+        cHistThirdCol->Draw("same"); // Overlay the Carbon histogram on the NH3 histogram
 
 
     }
