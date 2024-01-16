@@ -198,7 +198,6 @@ void rgc_preparation() {
 
 
         /* ~~~~~~~~~~~~~~~~ THIRD COLUMN ~~~~~~~~~~~~~~~~ */
-        for (int i = 0; i < 4; i++) {
         c1->cd(i * 3 + 3); // Access the third column for each row
         TPad* pad3 = (TPad*)c1->GetPad(i * 3 + 3);
         pad3->SetBottomMargin(0.20);
@@ -217,6 +216,7 @@ void rgc_preparation() {
         nh3HistThirdCol->GetXaxis()->SetTitleSize(0.08);
         nh3HistThirdCol->GetYaxis()->SetTitleSize(0.08);
         nh3HistThirdCol->Draw(); // Draw the histogram
+
 
     }
 
