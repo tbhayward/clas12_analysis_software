@@ -97,13 +97,13 @@ void rgc_preparation() {
         // Define histogram ranges for each channel
         double xMin, xMax;
         if (i == 0) {        // eX
-            xMin = 0.4; xMax = 4.1;
+            xMin = -1; xMax = 4.1;
         } else if (i == 1) { // epi+X
-            xMin = 0.4; xMax = 4.1;
+            xMin = -1; xMax = 4.1;
         } else if (i == 2) { // epX
-            xMin = -1.0; xMax = 4.8;
+            xMin = -1.0; xMax = 4.1;
         } else {             // epi+pi-X
-            xMin = 0.4; xMax = 4.1;
+            xMin = -1; xMax = 4.1;
         }
 
         // Creating H2 histogram (red)
@@ -221,7 +221,7 @@ void rgc_preparation() {
         pad3->SetBottomMargin(0.25);
         pad3->SetLeftMargin(0.2);
 
-        double xBMin = 0.5;
+        double xBMin = -1.0;
         double xBMax = 4.1;
         // Create histograms for "x" for H2, NH3, and C
         xHists[i] = createHistogram(treeH2, 
