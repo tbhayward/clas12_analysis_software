@@ -531,7 +531,11 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
       sumVariable += *currentVariable;
 
       if (*runnum == 16297) {
-        *target_pol = 0; cout << "hello world" << endl;
+        *target_pol = 0; 
+      } else if (*runnum == 16320 || *runnum == 16327) {
+        *target_pol = 0.692;
+      } else if (*runnum == 16346 || *runnum == 16353) {
+        *target_pol = -0.664;
       }
       if (*helicity > 0 && *target_pol < 0) { histPosNeg->Fill(*phi); } 
       else if (*helicity < 0 && *target_pol > 0) { histNegPos->Fill(*phi); }
