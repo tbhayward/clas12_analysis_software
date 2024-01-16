@@ -194,8 +194,8 @@ void rgc_preparation() {
             normalization, normalizationError); // Format the label with uncertainty
 
         TLatex *ratioLabel = new TLatex();
-        ratioLabel->SetTextSize(0.06);
-        ratioLabel->DrawLatexNDC(0.4, 0.8, label);
+        ratioLabel->SetTextSize(0.07);
+        ratioLabel->DrawLatexNDC(0.4, 0.825, label);
 
 
         /* ~~~~~~~~~~~~~~~~ THIRD COLUMN ~~~~~~~~~~~~~~~~ */
@@ -205,7 +205,7 @@ void rgc_preparation() {
         pad3->SetLeftMargin(0.20);
 
         // Modify cuts with additional constraints
-        const char* additionalCuts = "W > 0 && y < 0.75";
+        const char* additionalCuts = "W > 2 && y < 0.75";
 
         // For NH3 histograms
         std::string nh3CutsWithConstraints = std::string(cuts_NH3[i]) + " && " + additionalCuts;
