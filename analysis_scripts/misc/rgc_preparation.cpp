@@ -223,11 +223,11 @@ void rgc_preparation() {
             (std::string("c_third_col_") + titles[i]).c_str(), titles[i],
         "Mx", cuts_C[i], rgc_C_norm, xMin, xMax);
 
-            // Scale the Carbon histogram by the normalization factor
+        // Scale the Carbon histogram by the normalization factor
         cHistThirdCol->Scale(normalization);
 
-        // Subtract the scaled Carbon histogram from the NH3 histogram
-        nh3HistThirdCol->Add(cHistThirdCol, -1); // The second argument "-1" is for subtraction
+        // // Subtract the scaled Carbon histogram from the NH3 histogram
+        // nh3HistThirdCol->Add(cHistThirdCol, -1); // The second argument "-1" is for subtraction
 
         // Set line color for the resulting histogram
         nh3HistThirdCol->SetLineColor(kBlack);
