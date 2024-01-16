@@ -83,27 +83,27 @@ void compareTrees(const char* file1, const char* file2, const char* output,
     // Check if 'p_p' branch exists in tree1
     if (BranchExists(tree1, "p2_p")) {
         tree1->SetBranchAddress("p2_p", &p_p);
-        tree1->SetBranchAddress("Mx", &Mx2);
+        tree1->SetBranchAddress("Mx2", &Mx2);
     } else if (BranchExists(tree1, "p_p")){
         tree1->SetBranchAddress("p_p", &p_p);
-        tree1->SetBranchAddress("Mx", &Mx2);
+        tree1->SetBranchAddress("Mx2", &Mx2);
     } else {
         // Use 'e_p' and 'W' instead
         tree1->SetBranchAddress("e_p", &p_p);
-        tree1->SetBranchAddress("W", &Mx2);
+        tree1->SetBranchAddress("Mx2", &Mx2);
     }
 
      // Check if 'p_p' branch exists in tree2
     if (BranchExists(tree2, "p2_p")) {
         tree2->SetBranchAddress("p2_p", &p_p);
-        tree2->SetBranchAddress("Mx", &Mx2);
+        tree2->SetBranchAddress("Mx2", &Mx2);
     } else if (BranchExists(tree2, "p_p")){
         tree2->SetBranchAddress("p_p", &p_p);
-        tree2->SetBranchAddress("Mx", &Mx2);
+        tree2->SetBranchAddress("Mx2", &Mx2);
     } else {
         // Use 'e_p' and 'W' instead
         tree2->SetBranchAddress("e_p", &p_p);
-        tree2->SetBranchAddress("W", &Mx2);
+        tree2->SetBranchAddress("mx2", &Mx2);
     }
 
     // Fill histograms
@@ -147,7 +147,7 @@ void compareTrees(const char* file1, const char* file2, const char* output,
         hist1[i]->SetMaximum(maxVal * 1.4); 
 
         // Set x and y axis labels
-        hist1[i]->GetXaxis()->SetTitle("M_{x} (GeV)");
+        hist1[i]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
         hist1[i]->GetYaxis()->SetTitle("Counts");
 
         // Draw the histograms
@@ -206,19 +206,17 @@ void compareTrees(const char* file1, const char* file2, const char* output,
         // Retrieve the mean and its error for the first fit
         double mean1 = fitFunc1->GetParameter(1);
         double meanError1 = fitFunc1->GetParError(1);
-        double sigma1 = fitFunc1->GetParameter(2);
 
         // Retrieve the mean and its error for the second fit
         double mean2 = fitFunc2->GetParameter(1);
         double meanError2 = fitFunc2->GetParError(1);
-        double sigma2 = fitFunc1->GetParameter(2);
 
         // Create and add a legend with fit results
-        TLegend* legend = new TLegend(0.15, 0.7, 0.7, 0.9); // Adjust these coordinates as needed
+        TLegend* legend = new TLegend(0.15, 0.7, 0.63, 0.9); // Adjust these coordinates as needed
         legend->SetTextSize(0.04); // Set the text size. Adjust as needed.
         char entry1[100], entry2[100];
-        sprintf(entry1, "Uncorrected, #mu = %.4f #pm %.4f", mean1, sigma1);
-        sprintf(entry2, "Corrected, #mu = %.4f #pm %.4f", mean2, sigma2);
+        sprintf(entry1, "Uncorrected, #mu = %.3f #pm %.3f", mean1, meanError1);
+        sprintf(entry2, "Corrected, #mu = %.3f #pm %.3f", mean2, meanError2);
         legend->AddEntry(hist1[i], entry1, "l");
         legend->AddEntry(hist2[i], entry2, "l");
         legend->Draw();
