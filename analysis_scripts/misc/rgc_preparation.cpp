@@ -255,27 +255,27 @@ void rgc_preparation() {
         nh3HistThirdCol->GetXaxis()->SetTitleSize(0.08);
         nh3HistThirdCol->GetYaxis()->SetTitleSize(0.08);
 
-        // integrate histogram
-        nh3HistThirdCol->Scale(1/nh3HistThirdCol->Integral());
+        // // integrate histogram
+        // nh3HistThirdCol->Scale(1/nh3HistThirdCol->Integral());
 
         // Draw the resulting histogram
         nh3HistThirdCol->Draw();
 
-        // Creating a new H2 histogram for Mx in the third column
-        TH1D* h2HistThirdCol = createHistogram(trees[i], 
-            (std::string("h2_third_col_") + titles[i]).c_str(), titles[i], 
-            var.c_str(), h2CutsWithConstraints.c_str(), rga_H2_norm, xMin, xMax);
-        h2HistThirdCol->SetLineColor(kRed); // Set line color to red
-        h2HistThirdCol->GetXaxis()->SetTitle("x_{B}");
-        h2HistThirdCol->GetYaxis()->SetTitle("Counts / mC");
-        h2HistThirdCol->GetXaxis()->SetTitleSize(0.08);
-        h2HistThirdCol->GetYaxis()->SetTitleSize(0.08);
+        // // Creating a new H2 histogram for Mx in the third column
+        // TH1D* h2HistThirdCol = createHistogram(trees[i], 
+        //     (std::string("h2_third_col_") + titles[i]).c_str(), titles[i], 
+        //     var.c_str(), h2CutsWithConstraints.c_str(), rga_H2_norm, xMin, xMax);
+        // h2HistThirdCol->SetLineColor(kRed); // Set line color to red
+        // h2HistThirdCol->GetXaxis()->SetTitle("x_{B}");
+        // h2HistThirdCol->GetYaxis()->SetTitle("Counts / mC");
+        // h2HistThirdCol->GetXaxis()->SetTitleSize(0.08);
+        // h2HistThirdCol->GetYaxis()->SetTitleSize(0.08);
         
-        // integrate histogram
-        h2HistThirdCol->Scale(1/h2HistThirdCol->Integral());
+        // // integrate histogram
+        // h2HistThirdCol->Scale(1/h2HistThirdCol->Integral());
 
         // Overlay the H2 histogram on top of the NH3 minus Carbon histogram
-        h2HistThirdCol->Draw("same");
+        // h2HistThirdCol->Draw("same");
 
         // /* ~~~~~~~~~~~~~~~~ THIRD COLUMN ~~~~~~~~~~~~~~~~ */
         // c1->cd(i * 3 + 3); // Access the third column for each row
