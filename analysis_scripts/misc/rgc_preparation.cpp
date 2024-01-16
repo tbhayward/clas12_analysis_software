@@ -221,7 +221,7 @@ void rgc_preparation() {
         pad3->SetBottomMargin(0.25);
         pad3->SetLeftMargin(0.2);
 
-        double xBMin = 0;
+        double xBMin = 0.5;
         double xBMax = 4.1;
         // Create histograms for "x" for H2, NH3, and C
         xHists[i] = createHistogram(treeH2, 
