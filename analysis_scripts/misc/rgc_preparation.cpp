@@ -41,7 +41,7 @@ void rgc_preparation() {
         trees[i] = (TTree*)filesOpened[i]->Get("PhysicsEvents");
     }
 
-    double rga_H2_norm = 53.3819946084075;
+    double rga_H2_norm = 51.79738;
     // double rga_H2_norm = 53381.99+41401.77;
     // double rgc_pos_NH3_norm = 19355.9+19392.53+21683.25+21621.178;
     double rgc_pos_NH3_norm = 45.7595+41.050555;
@@ -204,24 +204,24 @@ void rgc_preparation() {
         pad3->SetLeftMargin(0.20);
 
         if (i == 0) {        // eX
-            xMin = 0.4; xMax = 1.1;
+            xMin = 0.0; xMax = 0.8;
         } else if (i == 1) { // epi+X
-            xMin = 0.4; xMax = 1.1;
+            xMin = 0.0; xMax = 0.8;
         } else if (i == 2) { // epX
-            xMin = -1.0; xMax = 1.0;
+            xMin = 0.0; xMax = 0.8;
         } else {             // epi+pi-X
-            xMin = 0.4; xMax = 1.1;
+            xMin = 0.0; xMax = 0.8;
         }
 
         // Creating a new NH3 histogram for Mx in the third column
         TH1D* nh3HistThirdCol = createHistogram(trees[i + 4],
             (std::string("nh3_third_col_") + titles[i]).c_str(), titles[i],
-            "Mx", cuts_NH3[i], rgc_NH3_norm, xMin, xMax);
+            "x", cuts_NH3[i], rgc_NH3_norm, xMin, xMax);
 
         // Creating a new Carbon histogram for Mx in the third column
         TH1D* cHistThirdCol = createHistogram(trees[i + 4], 
             (std::string("c_third_col_") + titles[i]).c_str(), titles[i],
-        "Mx", cuts_C[i], rgc_C_norm, xMin, xMax);
+        "x", cuts_C[i], rgc_C_norm, xMin, xMax);
 
             // Scale the Carbon histogram by the normalization factor
         cHistThirdCol->Scale(normalization);
@@ -233,7 +233,7 @@ void rgc_preparation() {
         nh3HistThirdCol->SetLineColor(kBlack);
 
         // Set titles and sizes for axes
-        nh3HistThirdCol->GetXaxis()->SetTitle("M_{X} (GeV)");
+        nh3HistThirdCol->GetXaxis()->SetTitle("x_{B}");
         nh3HistThirdCol->GetYaxis()->SetTitle("NH_{3} - s*C (Counts/mC)");
         nh3HistThirdCol->GetXaxis()->SetTitleSize(0.08);
         nh3HistThirdCol->GetYaxis()->SetTitleSize(0.08);
