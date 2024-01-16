@@ -203,8 +203,8 @@ void rgc_preparation() {
         pad3->SetBottomMargin(0.20);
         pad3->SetLeftMargin(0.20);
 
-        double xMin = -1; // Define your xMin for Mx
-        double xMax = 4.1; // Define your xMax for Mx
+        xMin = -1; // Define your xMin for Mx
+        xMax = 4.1; // Define your xMax for Mx
 
         // Creating a new NH3 histogram for Mx in the third column
         TH1D* nh3HistThirdCol = createHistogram(trees[i + 4], 
