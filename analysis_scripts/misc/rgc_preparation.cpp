@@ -41,25 +41,25 @@ void rgc_preparation() {
         trees[i] = (TTree*)filesOpened[i]->Get("PhysicsEvents");
     }
 
-    // double rga_H2_norm = 51.79738;
-    // // double rga_H2_norm = 53381.99+41401.77;
-    // // double rgc_pos_NH3_norm = 19355.9+19392.53+21683.25+21621.178;
-    // double rgc_pos_NH3_norm = 45.7595+41.050555;
-    // // double rgc_neg_NH3_norm = 21282.264+21217.414+21303.576+21297.766;
-    // double rgc_neg_NH3_norm = 44.970203+44.98406;
-    // double rgc_NH3_norm = rgc_pos_NH3_norm+rgc_neg_NH3_norm;
-    // double rgc_C_norm = 18.91757;
+    double rga_H2_norm = 51.79738;
+    // double rga_H2_norm = 53381.99+41401.77;
+    // double rgc_pos_NH3_norm = 19355.9+19392.53+21683.25+21621.178;
+    double rgc_pos_NH3_norm = 45.7595+41.050555;
+    // double rgc_neg_NH3_norm = 21282.264+21217.414+21303.576+21297.766;
+    double rgc_neg_NH3_norm = 44.970203+44.98406;
+    double rgc_NH3_norm = rgc_pos_NH3_norm+rgc_neg_NH3_norm;
+    double rgc_C_norm = 18.91757;
 
     // double rga_H2_norm = 159661.55;
     // double rgc_NH3_norm = 41392.934 + 43299.863;
     // double rgc_C_norm =  43098.254;
 
-    // Compute normalization factors based on the number of entries under specific conditions
-    double rga_H2_norm = trees[0]->GetEntries();
-    double rgc_pos_NH3_norm = trees[4]->GetEntries("runnum == 16320 || runnum == 16327");
-    double rgc_neg_NH3_norm = trees[4]->GetEntries("runnum == 16346 || runnum == 16353");
-    double rgc_NH3_norm = rgc_pos_NH3_norm+rgc_neg_NH3_norm;
-    double rgc_C_norm = trees[4]->GetEntries("runnum == 16297");
+    // // Compute normalization factors based on the number of entries under specific conditions
+    // double rga_H2_norm = trees[0]->GetEntries();
+    // double rgc_pos_NH3_norm = trees[4]->GetEntries("runnum == 16320 || runnum == 16327");
+    // double rgc_neg_NH3_norm = trees[4]->GetEntries("runnum == 16346 || runnum == 16353");
+    // double rgc_NH3_norm = rgc_pos_NH3_norm+rgc_neg_NH3_norm;
+    // double rgc_C_norm = trees[4]->GetEntries("runnum == 16297");
 
     TCanvas *c1 = new TCanvas("c1", "Data Analysis", 2200, 1200);
     c1->Divide(3, 4);
@@ -238,6 +238,9 @@ void rgc_preparation() {
         nh3HistThirdCol->GetXaxis()->SetTitleSize(0.08);
         nh3HistThirdCol->GetYaxis()->SetTitleSize(0.08);
 
+        // integrate histogram
+        nh3HistThirdCol->Scale(1/nh3HistThirdCol->Integral());
+
         // Draw the resulting histogram
         nh3HistThirdCol->Draw();
 
@@ -250,9 +253,9 @@ void rgc_preparation() {
         h2HistThirdCol->GetYaxis()->SetTitle("Counts / mC");
         h2HistThirdCol->GetXaxis()->SetTitleSize(0.08);
         h2HistThirdCol->GetYaxis()->SetTitleSize(0.08);
-
-        // Draw the NH3 minus Carbon histogram
-        nh3HistThirdCol->Draw();
+        
+        // integrate histogram
+        h2HistThirdCol->Scale(1/h2HistThirdCol->Integral());
 
         // Overlay the H2 histogram on top of the NH3 minus Carbon histogram
         h2HistThirdCol->Draw("same");
