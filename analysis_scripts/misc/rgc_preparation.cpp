@@ -230,7 +230,7 @@ void rgc_preparation() {
         xHists[i + 4] = createHistogram(treeNH3, 
             (std::string("x_hist_nh3_") + std::to_string(i)).c_str(), "", "Mx", 
             cuts_NH3[i], rgc_NH3_norm, xBMin, xBMax);
-        xHists[i + 8] = createHistogram(trees[i + 4], 
+        xHists[i + 8] = createHistogram(treeNH3, 
             (std::string("x_hist_c_") + std::to_string(i)).c_str(), "", "Mx", 
             cuts_C[i], rgc_C_norm, xBMin, xBMax);
 
