@@ -15,7 +15,7 @@ const std::string output_dir = "output/rgc_ready_for_cooking_plots/";
 
 TH1D* createHistogram(TTree* tree, const char* name, const char* title, const char* variable, 
     const char* cut, double norm, double xMin, double xMax) {
-    TH1D* hist = new TH1D(name, "", 35, xMin, xMax);
+    TH1D* hist = new TH1D(name, "", 30, xMin, xMax);
     tree->Draw((std::string(variable) + ">>" + name).c_str(), cut, "goff");
     hist->Scale(1.0 / norm);
     hist->SetStats(kFALSE);
@@ -92,13 +92,13 @@ void rgc_preparation() {
         // Define histogram ranges for each channel
         double xMin, xMax;
         if (i == 0) {        // eX
-            xMin = 0.0; xMax = 1.1;
+            xMin = 0.3; xMax = 1.1;
         } else if (i == 1) { // epi+X
-            xMin = 0.0; xMax = 1.1;
+            xMin = 0.3; xMax = 1.1;
         } else if (i == 2) { // epX
             xMin = -1.0; xMax = 1.0;
         } else {             // epi+pi-X
-            xMin = 0.0; xMax = 1.1;
+            xMin = 0.3; xMax = 1.1;
         }
 
         // Creating H2 histogram (red)
@@ -226,8 +226,8 @@ void rgc_preparation() {
         // Scale the Carbon histogram by the normalization factor
         cHistThirdCol->Scale(normalization);
 
-        // // Subtract the scaled Carbon histogram from the NH3 histogram
-        // nh3HistThirdCol->Add(cHistThirdCol, -1); // The second argument "-1" is for subtraction
+        // Subtract the scaled Carbon histogram from the NH3 histogram
+        nh3HistThirdCol->Add(cHistThirdCol, -1); // The second argument "-1" is for subtraction
 
         // Set line color for the resulting histogram
         nh3HistThirdCol->SetLineColor(kBlack);
