@@ -221,6 +221,7 @@ void rgc_preparation() {
         TH1D* cHistThirdCol = createHistogram(trees[i + 4], 
                 (std::string("c_third_col_") + titles[i]).c_str(), titles[i], 
                 "Mx", cuts_C[i], rgc_C_norm, xMin, xMax);
+        cHistThirdCol->Scale(normalization);
         cHistThirdCol->SetLineColor(kGreen); // Set line color to green
         cHistThirdCol->Draw("same"); // Overlay the Carbon histogram on the NH3 histogram
 
