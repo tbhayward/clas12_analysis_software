@@ -222,7 +222,7 @@ void rgc_preparation() {
         pad3->SetLeftMargin(0.2);
 
         double xBMin = 0;
-        double xBMax = 4.8;
+        double xBMax = 4.1;
         // Create histograms for "x" for H2, NH3, and C
         xHists[i] = createHistogram(treeH2, 
             (std::string("x_hist_h2_") + std::to_string(i)).c_str(), "", "Mx", "", 
