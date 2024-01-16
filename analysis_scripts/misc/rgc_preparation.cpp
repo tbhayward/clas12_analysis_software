@@ -92,7 +92,7 @@ void rgc_preparation() {
         // Define histogram ranges for each channel
         double xMin, xMax;
         if (i == 0) {        // eX
-            xMin = 0.4; xMax = 1.1;
+            xMin = 0.4; xMax = 4.1;
         } else if (i == 1) { // epi+X
             xMin = 0.4; xMax = 1.1;
         } else if (i == 2) { // epX
@@ -204,7 +204,7 @@ void rgc_preparation() {
         pad3->SetLeftMargin(0.20);
 
         if (i == 0) {        // eX
-            xMin = 0.0; xMax = 0.8;
+            xMin = 0.4; xMax = 4.1;
         } else if (i == 1) { // epi+X
             xMin = 0.0; xMax = 0.8;
         } else if (i == 2) { // epX
@@ -216,12 +216,12 @@ void rgc_preparation() {
         // Creating a new NH3 histogram for Mx in the third column
         TH1D* nh3HistThirdCol = createHistogram(trees[i + 4],
             (std::string("nh3_third_col_") + titles[i]).c_str(), titles[i],
-            "x", cuts_NH3[i], rgc_NH3_norm, xMin, xMax);
+            "Mx", cuts_NH3[i], rgc_NH3_norm, xMin, xMax);
 
         // Creating a new Carbon histogram for Mx in the third column
         TH1D* cHistThirdCol = createHistogram(trees[i + 4], 
             (std::string("c_third_col_") + titles[i]).c_str(), titles[i],
-        "x", cuts_C[i], rgc_C_norm, xMin, xMax);
+        "Mx", cuts_C[i], rgc_C_norm, xMin, xMax);
 
             // Scale the Carbon histogram by the normalization factor
         cHistThirdCol->Scale(normalization);
