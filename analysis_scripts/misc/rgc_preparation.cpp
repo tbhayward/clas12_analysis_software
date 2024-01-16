@@ -244,9 +244,9 @@ void rgc_preparation() {
         // Creating a new H2 histogram for Mx in the third column
         TH1D* h2HistThirdCol = createHistogram(trees[i], 
             (std::string("h2_third_col_") + titles[i]).c_str(), titles[i], 
-            "Mx", "", rga_H2_norm, xMin, xMax);
+            "x", "", rga_H2_norm, xMin, xMax);
         h2HistThirdCol->SetLineColor(kRed); // Set line color to red
-        h2HistThirdCol->GetXaxis()->SetTitle("M_{X} (GeV)");
+        h2HistThirdCol->GetXaxis()->SetTitle("x_{B}");
         h2HistThirdCol->GetYaxis()->SetTitle("Counts / mC");
         h2HistThirdCol->GetXaxis()->SetTitleSize(0.08);
         h2HistThirdCol->GetYaxis()->SetTitleSize(0.08);
