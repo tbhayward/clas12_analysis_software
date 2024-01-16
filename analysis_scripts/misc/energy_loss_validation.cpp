@@ -83,10 +83,10 @@ void compareTrees(const char* file1, const char* file2, const char* output,
     // Check if 'p_p' branch exists in tree1
     if (BranchExists(tree1, "p2_p")) {
         tree1->SetBranchAddress("p2_p", &p_p);
-        tree1->SetBranchAddress("Mx2", &Mx2);
+        tree1->SetBranchAddress("Mx", &Mx2);
     } else if (BranchExists(tree1, "p_p")){
         tree1->SetBranchAddress("p_p", &p_p);
-        tree1->SetBranchAddress("Mx2", &Mx2);
+        tree1->SetBranchAddress("Mx", &Mx2);
     } else {
         // Use 'e_p' and 'W' instead
         tree1->SetBranchAddress("e_p", &p_p);
@@ -96,10 +96,10 @@ void compareTrees(const char* file1, const char* file2, const char* output,
      // Check if 'p_p' branch exists in tree2
     if (BranchExists(tree2, "p2_p")) {
         tree2->SetBranchAddress("p2_p", &p_p);
-        tree2->SetBranchAddress("Mx2", &Mx2);
+        tree2->SetBranchAddress("Mx", &Mx2);
     } else if (BranchExists(tree2, "p_p")){
         tree2->SetBranchAddress("p_p", &p_p);
-        tree2->SetBranchAddress("Mx2", &Mx2);
+        tree2->SetBranchAddress("Mx", &Mx2);
     } else {
         // Use 'e_p' and 'W' instead
         tree2->SetBranchAddress("e_p", &p_p);
@@ -214,7 +214,7 @@ void compareTrees(const char* file1, const char* file2, const char* output,
         double sigma2 = fitFunc1->GetParameter(2);
 
         // Create and add a legend with fit results
-        TLegend* legend = new TLegend(0.15, 0.7, 0.63, 0.9); // Adjust these coordinates as needed
+        TLegend* legend = new TLegend(0.15, 0.7, 0.7, 0.9); // Adjust these coordinates as needed
         legend->SetTextSize(0.04); // Set the text size. Adjust as needed.
         char entry1[100], entry2[100];
         sprintf(entry1, "Uncorrected, #mu = %.4f #pm %.4f", mean1, sigma1);
