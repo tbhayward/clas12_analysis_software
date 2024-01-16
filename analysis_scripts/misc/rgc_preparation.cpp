@@ -255,6 +255,9 @@ void rgc_preparation() {
         nh3HistThirdCol->GetXaxis()->SetTitleSize(0.08);
         nh3HistThirdCol->GetYaxis()->SetTitleSize(0.08);
 
+        nh3HistThirdCol->SetMinimum(0.0);
+        nh3HistThirdCol->SetMaximum(0.25);
+
         // // integrate histogram
         // nh3HistThirdCol->Scale(1/nh3HistThirdCol->Integral());
 
