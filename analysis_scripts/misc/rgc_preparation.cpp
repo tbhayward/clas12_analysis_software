@@ -217,7 +217,7 @@ void rgc_preparation() {
 
 
         if (i == 0) {        // eX
-            xMin = 0.0; xMax = 1.0;
+            xMin = 0.0; xMax = 1.5;
         } else if (i == 1) { // epi+X
             xMin = 0.0; xMax = 1.0;
         } else if (i == 2) { // epX
