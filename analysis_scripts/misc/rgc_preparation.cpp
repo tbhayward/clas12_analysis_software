@@ -71,8 +71,6 @@ void rgc_preparation() {
 
     TH1D* hists[12]; // 4 plots * 3 histograms per plot
     TH1D* xHists[12]; // 4 plots * 3 histograms per plot for "x"
-    double xBMin = 0;
-    double xBMax = 0.8;
 
     gStyle->SetOptStat(0);
     gStyle->SetTitleAlign(23);
@@ -223,6 +221,8 @@ void rgc_preparation() {
         pad3->SetBottomMargin(0.25);
         pad3->SetLeftMargin(0.2);
 
+        double xBMin = 0;
+        double xBMax = 4.8;
         // Create histograms for "x" for H2, NH3, and C
         xHists[i] = createHistogram(treeH2, 
             (std::string("x_hist_h2_") + std::to_string(i)).c_str(), "", "Mx", "", 
