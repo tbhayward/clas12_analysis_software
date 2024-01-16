@@ -159,7 +159,7 @@ public static void main(String[] args) {
 	                	.append(Mx).append(" ")
 	                	.append(Mx2).append(" ")
 	                	.append(x).append(" ")
-	                	.append(y).append("")
+	                	.append(y).append(" ")
 	                	.append(Depolarization_A).append(" ")
 	                	.append(Depolarization_B).append(" ")
 	                	.append(Depolarization_C).append(" ")
