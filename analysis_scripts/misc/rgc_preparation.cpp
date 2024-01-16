@@ -203,6 +203,7 @@ void rgc_preparation() {
         pad3->SetBottomMargin(0.20);
         pad3->SetLeftMargin(0.20);
 
+        double xMin, xMax;
         if (i == 0) {        // eX
             xMin = 0.4; xMax = 1.1;
         } else if (i == 1) { // epi+X
@@ -214,23 +215,33 @@ void rgc_preparation() {
         }
 
         // Creating a new NH3 histogram for Mx in the third column
-        TH1D* nh3HistThirdCol = createHistogram(trees[i +4],
-        (std::string("nh3_third_col_") + titles[i]).c_str(), titles[i],
-        "Mx", cuts_NH3[i], rgc_NH3_norm, xMin, xMax);
-        nh3HistThirdCol->SetLineColor(kBlue); // Set line color to blue
-        nh3HistThirdCol->GetXaxis()->SetTitle("M_{X} (GeV)");
-        nh3HistThirdCol->GetYaxis()->SetTitle("Counts / mC");
-        nh3HistThirdCol->GetXaxis()->SetTitleSize(0.08);
-        nh3HistThirdCol->GetYaxis()->SetTitleSize(0.08);
-        nh3HistThirdCol->Draw(); // Draw the NH3 histogram
+        TH1D* nh3HistThirdCol = createHistogram(trees[i + 4],
+            (std::string("nh3_third_col_") + titles[i]).c_str(), titles[i],
+            "Mx", cuts_NH3[i], rgc_NH3_norm, xMin, xMax);
 
         // Creating a new Carbon histogram for Mx in the third column
         TH1D* cHistThirdCol = createHistogram(trees[i + 4], 
-                (std::string("c_third_col_") + titles[i]).c_str(), titles[i], 
-                "Mx", cuts_C[i], rgc_C_norm, xMin, xMax);
+            (std::string("c_third_col_") + titles[i]).c_str(), titles[i],
+        "Mx", cuts_C[i], rgc_C_norm, xMin, xMax);
+
+            // Scale the Carbon histogram by the normalization factor
         cHistThirdCol->Scale(normalization);
-        cHistThirdCol->SetLineColor(kGreen); // Set line color to green
-        cHistThirdCol->Draw("same"); // Overlay the Carbon histogram on the NH3 histogram
+
+        // Subtract the scaled Carbon histogram from the NH3 histogram
+        nh3HistThirdCol->Add(cHistThirdCol, -1); // The second argument "-1" is for subtraction
+
+        // Set line color for the resulting histogram
+        nh3HistThirdCol->SetLineColor(kBlack);
+
+        // Set titles and sizes for axes
+        nh3HistThirdCol->GetXaxis()->SetTitle("M_{X} (GeV)");
+        nh3HistThirdCol->GetYaxis()->SetTitle("NH_{3} - s*C (Counts/mC)");
+        nh3HistThirdCol->GetXaxis()->SetTitleSize(0.08);
+        nh3HistThirdCol->GetYaxis()->SetTitleSize(0.08);
+
+        // Draw the resulting histogram
+        nh3HistThirdCol->Draw();
+
 
 
     }
