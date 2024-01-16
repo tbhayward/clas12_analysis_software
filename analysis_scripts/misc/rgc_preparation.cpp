@@ -204,7 +204,7 @@ void rgc_preparation() {
         pad3->SetLeftMargin(0.20);
 
         // Modify cuts with additional constraints
-        const char* additionalCuts = "W > 2 && y < 0.75";
+        const char* additionalCuts = "W > 0 && y < 0.75";
 
         // For NH3 histograms
         std::string nh3CutsWithConstraints = std::string(cuts_NH3[i]) + " && " + additionalCuts;
