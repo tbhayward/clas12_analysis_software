@@ -46,14 +46,14 @@ void rgc_preparation() {
         trees[i] = (TTree*)filesOpened[i]->Get("PhysicsEvents");
     }
 
-    double rga_H2_norm = 443959;
+    double rga_H2_norm = 443.959;
     // double rga_H2_norm = 53381.99+41401.77;
     // double rgc_pos_NH3_norm = 19355.9+19392.53+21683.25+21621.178;
-    double rgc_pos_NH3_norm = 45759.5+41050.555;
+    double rgc_pos_NH3_norm = 45.7595+41.050555;
     // double rgc_neg_NH3_norm = 21282.264+21217.414+21303.576+21297.766;
-    double rgc_neg_NH3_norm = 44970.203+44984.06;
+    double rgc_neg_NH3_norm = 44.970203+44.98406;
     double rgc_NH3_norm = rgc_pos_NH3_norm+rgc_neg_NH3_norm;
-    double rgc_C_norm = 18917.57;
+    double rgc_C_norm = 18.91757;
 
     // double rga_H2_norm = 159661.55;
     // double rgc_NH3_norm = 41392.934 + 43299.863;
@@ -112,7 +112,7 @@ void rgc_preparation() {
         hists[i] = createHistogram(trees[i], (std::string("h_rga_") + titles[i]).c_str(), titles[i], variables[i], "", rga_H2_norm, xMin, xMax);
         hists[i]->SetLineColor(kRed);
         hists[i]->GetXaxis()->SetTitle("M_{X} (GeV)");
-        hists[i]->GetYaxis()->SetTitle("Counts / nC");
+        hists[i]->GetYaxis()->SetTitle("Counts / mC");
         hists[i]->GetXaxis()->SetTitleSize(0.08);
         hists[i]->GetYaxis()->SetTitleSize(0.08);
         hists[i]->Draw();
@@ -258,7 +258,7 @@ void rgc_preparation() {
         // xDiffHist->Draw("same");
 
         // Set y-axis title for xDiffHist
-        xDiffHist->GetYaxis()->SetTitle("NH_{3} - s*C (Counts/nC)");
+        xDiffHist->GetYaxis()->SetTitle("NH_{3} - s*C (Counts/mC)");
         xDiffHist->GetYaxis()->SetTitleSize(0.08);
 
         // Find the maximum value between xH2Hist and xDiffHist
