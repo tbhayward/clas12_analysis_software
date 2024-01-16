@@ -4,6 +4,7 @@
 #include <TH1.h>
 #include <TGraph.h>
 #include <iostream>
+#include <string>
 #include <TLegend.h>
 #include <TLatex.h>
 #include <TStyle.h>
@@ -215,7 +216,7 @@ void rgc_preparation() {
         // For H2 histograms, as there are no initial cuts, just use the additional constraints
         std::string h2CutsWithConstraints = additionalCuts;
 
-        string var = "x";
+        std::string var = "x";
         if (i == 0) {        // eX
             xMin = 0.0; xMax = 10; var = "Q2";
         } else if (i == 1) { // epi+X
