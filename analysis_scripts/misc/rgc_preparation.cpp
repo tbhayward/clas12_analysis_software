@@ -244,18 +244,11 @@ void rgc_preparation() {
         TH1D* xDiffHist = (TH1D*)xHists[i + 4]->Clone(); 
         // xDiffHist->Scale(1/normalization);
         TH1D* scaledCHist = (TH1D*)xHists[i + 8]->Clone(); 
-        scaledCHist->Scale(-normalization);
+        scaledCHist->Scale(-1);
         xDiffHist->Add(scaledCHist);
         xDiffHist->SetLineColor(kBlack);
         xDiffHist->Draw("same");
 
-        // // Create and plot the difference histogram for "x" (black)
-        // TH1D* xDiffHist = (TH1D*)xHists[i + 4]->Clone(); 
-        // TH1D* scaledCHist = (TH1D*)xHists[i + 8]->Clone(); 
-        // scaledCHist->Scale(-normalization);
-        // xDiffHist->Add(scaledCHist);
-        // xDiffHist->SetLineColor(kBlack);
-        // xDiffHist->Draw("same");
 
         // Set y-axis title for xDiffHist
         xDiffHist->GetYaxis()->SetTitle("NH_{3} - s*C (Counts/mC)");
