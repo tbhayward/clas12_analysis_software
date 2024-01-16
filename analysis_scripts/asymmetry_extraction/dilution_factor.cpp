@@ -30,6 +30,7 @@ double dilution_factor(double currentVariable, const std::string& prefix) {
   }
   // epX
   if (prefix == "Q2bin") {
+    std::cout << "test" << std::endl;
     return -0.341032+0.762811*currentVariable-0.399944*std::pow(currentVariable,2)+
       0.0686534*std::pow(currentVariable,3);
   }
