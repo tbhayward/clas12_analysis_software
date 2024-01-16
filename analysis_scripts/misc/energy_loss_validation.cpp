@@ -147,7 +147,7 @@ void compareTrees(const char* file1, const char* file2, const char* output,
         hist1[i]->SetMaximum(maxVal * 1.4); 
 
         // Set x and y axis labels
-        hist1[i]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
+        hist1[i]->GetXaxis()->SetTitle("M_{x} (GeV)");
         hist1[i]->GetYaxis()->SetTitle("Counts");
 
         // Draw the histograms
