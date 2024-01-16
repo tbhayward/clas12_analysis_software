@@ -1358,6 +1358,11 @@ int main(int argc, char *argv[]) {
   // cmp = 0; // total accumulated charge of negative beam - positive target
   // cmm = 0; // total accumulated charge of negative beam - negative target
   // total_charge_carbon = 0; // total accumulated charge of carbon target
+  cpp = 19355.9+21683.25;
+  cmp = 19392.53+21621.178;
+  cpm = 21282.264+21303.576;
+  cmm = 21217.414+21297.766;
+  total_charge_carbon = 18917.57;
   // charge_acuumulation determines the total charges from the runs in supplied dataFile
   // by comparing to master list of CLAS12 runs 
   charge_accumulation(dataReader, run_info_list);
