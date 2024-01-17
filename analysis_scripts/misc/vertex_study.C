@@ -37,14 +37,14 @@ void vertex_study() {
 
     // Add a legend
     TLegend *legend = new TLegend(0.7, 0.9, 0.9, 0.95);
-    legend->AddEntry(h1_rgafa18inbeX, "e^{-}", "l");
+    legend->AddEntry(h_rgafa18inbeX, "e^{-}", "l");
     legend->Draw();
 
     // Remove the stat box
     gStyle->SetOptStat(0);
 
     // Draw the histogram on the canvas
-    h1_rgafa18inbeX->Draw("HIST");
+    h_h_rgafa18inbeX->Draw("HIST");
 
     // Save the canvas as a PNG file
     c1->SaveAs("output/neg_vertices.png");
