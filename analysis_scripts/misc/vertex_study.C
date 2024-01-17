@@ -62,10 +62,10 @@ void vertex_study() {
         h_epi_X->SetLineColor(kRed);
         h_ek_X->SetLineColor(kBlue);
 
-        // Fill histograms
-        tree_eX->Draw(Form("vz_e>>h_eX_%d", i));
-        tree_epi_X->Draw(Form("vz_p>>h_epi_X_%d", i));
-        tree_ek_X->Draw(Form("vz_p>>h_ek_X_%d", i));
+        // Fill histograms with the cast to int for the format
+        tree_eX->Draw(Form("vz_e>>h_eX_%d", static_cast<int>(i)));
+        tree_epi_X->Draw(Form("vz_p>>h_epi_X_%d", static_cast<int>(i)));
+        tree_ek_X->Draw(Form("vz_p>>h_ek_X_%d", static_cast<int>(i)));
 
         // Normalize histograms
         h_eX->Scale(1.0 / h_eX->Integral());
