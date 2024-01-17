@@ -6,7 +6,7 @@
 
 void vertex_study() {
     // Define run periods and channels
-    const char* run_periods[] = {"rga_fa18_inb", "rga_fa18_out", "rga_sp19_inb", "rgb_sp19_inb", "rgb_fa19_out", "rgb_sp20_inb"};
+    const char* run_periods[] = {"RGA_Fa18_Inb", "RGA_Fa18_Out", "RGA_Sp19_Inb", "RGB_Sp19_Inb", "RGB_Fa19_Out", "RGB_Sp20_Inb"};
     const char* channels[] = {"eX", "epi+X", "epi-X", "epX", "ek-X"};
 
     // Create a canvas with six subplots
@@ -16,13 +16,19 @@ void vertex_study() {
     // Loop over each run period
     for (int i = 0; i < 6; i++) {
         canvas->cd(i + 1);
-        TH1F* hist_eX = new TH1F("hist_eX", run_periods[i], 100, -15, 10);
-        TH1F* hist_epiX = new TH1F("hist_epiX", run_periods[i], 100, -15, 10);
-        TH1F* hist_ekX = new TH1F("hist_ekX", run_periods[i], 100, -15, 10);
+        TH1F* hist_eX = new TH1F("hist_eX", run_periods[i], 100, -10, 15);
+        TH1F* hist_epiX = new TH1F("hist_epiX", run_periods[i], 100, -10, 15);
+        TH1F* hist_ekX = new TH1F("hist_ekX", run_periods[i], 100, -10, 15);
 
         // Loop over channels for each run period
         for (int j = 0; j < 5; j++) {
-            TString file_name = Form("/volatile/clas12/thayward/vertex_studies/%s/%s_%s.root", run_periods[i], run_periods[i], channels[j]);
+            // Construct file path
+            TString group = TString(run_periods[i]).Tokenize("_")->First()->GetName();
+            TString season = TString(run_periods[i]).Tokenize("_")->Next()->GetName();
+            TString bending = TString(run_periods[i]).Tokenize("_")->Next()->GetName();
+            TString file_name = Form("/volatile/clas12/thayward/vertex_studies/%s/%s/%s_%s.root", 
+                                     group.Data(), season.Data(), bending.Data(), run_periods[i], channels[j]);
+
             TFile* file = new TFile(file_name);
             TTree* tree = (TTree*)file->Get("PhysicsEvents");
 
