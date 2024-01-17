@@ -6,7 +6,7 @@
 #include <TStyle.h>
 
 void vertex_study() {
-    const char* run_periods[] = {"Fa18_Inb", "Fa18_Out", "Sp19_Inb", "Sp19_Inb", "Fa19_Out", "Sp20_Inb"};
+    const char* run_periods[] = {"Fa18_inb", "Fa18_out", "Sp19_inb", "Sp19_inb", "Fa19_out", "Sp20_inb"};
     const char* neg_channels[] = {"eX", "epi-X", "ek-X"};  // Only negative tracks
     const char* pos_channels[] = {"epi+X", "epX"};  // Only positive tracks
     const char* colors[] = {"black", "blue", "red"};
