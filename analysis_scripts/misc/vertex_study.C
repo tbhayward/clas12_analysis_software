@@ -18,6 +18,8 @@ void vertex_study() {
     for (int i = 0; i < 6; i++) {
         c1->cd(i+1);
         TLegend* leg = new TLegend(0.1, 0.7, 0.3, 0.9);
+        leg->SetBorderSize(0);
+        bool firstHistDrawn = false;
         for (int j = 0; j < 3; j++) {
             TString file_path = Form("/volatile/clas12/thayward/vertex_studies/rg%c/%s/rg%c_%s_%s.root", 
                                      (i < 3 ? 'a' : 'b'), run_periods[i], (i < 3 ? 'a' : 'b'), run_periods[i], neg_channels[j]);
