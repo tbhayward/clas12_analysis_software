@@ -37,8 +37,8 @@ void vertex_study() {
 
     // Processing for each dataset
     for (size_t i = 0; i < eX_files.size(); ++i) {
-        c1->cd(i+1);
-        TPad *pad = new TPad(Form("pad%d", i), Form("Pad%d", i), 0, 0, 1, 1);
+        c1->cd(i + 1);
+        TPad *pad = new TPad(Form("pad%d", static_cast<int>(i)), Form("Pad%d", static_cast<int>(i)), 0, 0, 1, 1);
         pad->SetBottomMargin(0.15);
         pad->SetLeftMargin(0.15);
         pad->Draw();
@@ -53,9 +53,9 @@ void vertex_study() {
         TTree *tree_ek_X = (TTree*)file_ek_X->Get("PhysicsEvents");
 
         // Create histograms
-        TH1D *h_eX = new TH1D(Form("h_eX_%d", i), Form("%s;v_{z} (cm);Normalized counts", titles[i].c_str()), 100, -10, 5);
-        TH1D *h_epi_X = new TH1D(Form("h_epi_X_%d", i), "", 100, -10, 5);
-        TH1D *h_ek_X = new TH1D(Form("h_ek_X_%d", i), "", 100, -10, 5);
+        TH1D *h_eX = new TH1D(Form("h_eX_%d", static_cast<int>(i)), Form("%s;v_{z} (cm);Normalized counts", titles[i].c_str()), 100, -10, 5);
+        TH1D *h_epi_X = new TH1D(Form("h_epi_X_%d", static_cast<int>(i)), "", 100, -10, 5);
+        TH1D *h_ek_X = new TH1D(Form("h_ek_X_%d", static_cast<int>(i)), "", 100, -10, 5);
 
         // Set colors
         h_eX->SetLineColor(kBlack);
