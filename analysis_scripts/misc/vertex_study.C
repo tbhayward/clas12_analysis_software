@@ -11,6 +11,8 @@ void vertex_study() {
     const char* pos_channels[] = {"epi+X", "epX"};  // Only positive tracks
     const char* colors[] = {"black", "blue", "red"};
    
+    gStyle->SetOptStat(0); // Turn off the statistics box
+
     TCanvas* c1 = new TCanvas("c1", "Vertex Position Study", 2000, 1200);
     c1->Divide(3, 2);
 
