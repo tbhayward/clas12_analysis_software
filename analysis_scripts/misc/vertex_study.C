@@ -8,21 +8,27 @@
 
 void vertex_study() {
     // Import the file and get the tree
-    TFile *file = new TFile("/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_eX.root");
-    TTree *tree = (TTree*)file->Get("PhysicsEvents");
+
+    // RGA Fa18 Inb
+    TFile *rgafa18inbeXfile = new TFile("/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_eX.root");
+    TTree *rgafa18inbeXtree = (TTree*)rgafa18inbeXfile->Get("PhysicsEvents");
+    TFile *rgafa18inbepimXfile = new TFile("/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_epi-X.root");
+    TTree *rgafa18inbepimXtree = (TTree*)rgafa18inbepimXfile->Get("PhysicsEvents");
+    TFile *rgafa18inbekmXfile = new TFile("/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_ek-X.root");
+    TTree *rgafa18inbekmXtree = (TTree*)rgafa18inbekmXfile->Get("PhysicsEvents");
 
     // Create a histogram for vz_e
-    TH1F *h1 = new TH1F("h1", "Vertex Study", 100, -15, 5);
-    h1->SetLineColor(kBlack);
+    TH1F *h_rgafa18inbeX = new TH1F("h_rgafa18inbeX", "Vertex Study", 100, -15, 5);
+    h_rgafa18inbeX->SetLineColor(kBlack);
 
     // Fill the histogram from the tree
-    tree->Draw("vz_e>>h1");
+    rgafa18inbeXtree->Draw("vz_e>>h_rgafa18inbeX");
 
     // Create a canvas
     TCanvas *c1 = new TCanvas("c1", "Canvas", 800, 600);
 
     // Style the histogram
-    h1->GetXaxis()->SetTitle("v_{z}");
+    h1->GetXaxis()->SetTitle("v_{z} (cm)");
     h1->GetYaxis()->SetTitle("counts");
     h1->GetXaxis()->CenterTitle();
     h1->GetYaxis()->CenterTitle();
