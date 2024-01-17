@@ -19,6 +19,7 @@ void vertex_study() {
     for (int i = 0; i < 6; i++) {
         c1->cd(i+1);
         TLegend* leg = new TLegend(0.1, 0.7, 0.3, 0.9);
+
         for (int j = 0; j < 3; j++) {
             TString file_path = Form("/volatile/clas12/thayward/vertex_studies/rg%c/%s/rg%c_%s_%s.root", 
                                      (i < 3 ? 'a' : 'b'), run_periods[i], (i < 3 ? 'a' : 'b'), run_periods[i], neg_channels[j]);
@@ -27,27 +28,30 @@ void vertex_study() {
                 std::cerr << "Error opening file: " << file_path << std::endl;
                 continue;
             }
+
             TTree* tree = (TTree*)file->Get("PhysicsEvents");
             if (!tree) {
                 std::cerr << "Tree PhysicsEvents not found in file: " << file_path << std::endl;
                 file->Close();
                 continue;
             }
+
             TString hist_name = Form("hist_%d_%d", i, j);
             TH1F* hist = new TH1F(hist_name, run_periods[i], 100, -15, 10);
-            if (!hist) {
-                std::cerr << "Failed to create histogram: " << hist_name << std::endl;
-                file->Close();
-                continue;
-            }
             TString var_name = (j == 0 ? "vz_e" : "vz_p");
-            tree->Draw(Form("%s>>%s", var_name.Data(), hist_name.Data())); // Removed "goff"
+            tree->Draw(Form("%s>>%s", var_name.Data(), hist_name.Data()));
+            
             int color = (j == 0) ? kBlack : ((j == 1) ? kRed : kBlue);
             hist->SetLineColor(color);
             hist->Draw(j == 0 ? "" : "SAME");
-            leg->AddEntry(hist, neg_channels[j], "l");
+
+            if (hist) {
+                leg->AddEntry(hist, neg_channels[j], "l");
+            }
+
             file->Close(); // Close the file after use
         }
+
         leg->Draw();
         gPad->Modified();
     }
