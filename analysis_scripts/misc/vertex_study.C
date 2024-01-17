@@ -11,6 +11,7 @@ void vertex_study() {
     const char* pos_channels[] = {"epi+X", "epX"};  // Only positive tracks
     const char* colors[] = {"black", "blue", "red"};
 
+    gStyle->SetOptStat(0); // Turn off the statistics box
     TCanvas* c1 = new TCanvas("c1", "Vertex Position Study", 2000, 1200);
     c1->Divide(3, 2);
 
@@ -34,11 +35,17 @@ void vertex_study() {
             TString hist_name = Form("hist_%d_%d", i, j);
             TH1F* hist = new TH1F(hist_name, run_periods[i], 100, -15, 10);
             TString var_name = (j == 0 ? "vz_e" : "vz_p");
-            tree->Draw(Form("%s>>%s", var_name.Data(), hist_name.Data()));
-            hist->SetLineColor(j + 1);  // Color codes: 1-Black, 2-Red, 3-Green, 4-Blue, etc.
-            if (j == 0) hist->Draw();
-            // else hist->Draw("SAME");
+            tree->Draw(Form("%s>>%s", var_name.Data(), hist_name.Data()), "", "goff");
+            int color = (j == 0) ? kBlack : ((j == 1) ? kRed : kBlue);
+            hist->SetLineColor(color);
+            if (!firstHistDrawn) {
+                hist->Draw();
+                firstHistDrawn = true;
+            } else {
+                hist->Draw("SAME");
+            }
             leg->AddEntry(hist, neg_channels[j], "l");
+            file->Close();
         }
         leg->Draw();
         gPad->Modified();
@@ -46,3 +53,4 @@ void vertex_study() {
 
     c1->SaveAs("output/negative_vz.png");
 }
+
