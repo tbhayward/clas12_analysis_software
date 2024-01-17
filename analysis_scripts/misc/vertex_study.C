@@ -22,9 +22,13 @@ void vertex_study() {
 
         // Loop over channels for each run period
         for (int j = 0; j < 5; j++) {
-            // Construct file path directly
+            TString run_period_dir(run_periods[i]);
+            TString run_period_file(run_periods[i]);
+            run_period_file.ReplaceAll("/", "_"); // Replace '/' with '_' for file name
+
+            // Construct file path
             TString file_name = Form("/volatile/clas12/thayward/vertex_studies/%s/%s_%s.root", 
-                                     run_periods[i], run_periods[i], channels[j]);
+                                     run_period_dir.Data(), run_period_file.Data(), channels[j]);
 
             TFile* file = new TFile(file_name);
             TTree* tree = (TTree*)file->Get("PhysicsEvents");
