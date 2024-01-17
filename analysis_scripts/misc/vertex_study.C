@@ -26,13 +26,12 @@ void vertex_study() {
         for (int j = 0; j < 5; j++) {
             TObjArray* tokens = TString(run_periods[i]).Tokenize("_");
             TString group = ((TObjString*)tokens->At(0))->GetString();
-            TString season = ((TObjString*)tokens->At(1))->GetString();
-            TString bending = ((TObjString*)tokens->At(2))->GetString();
+            TString season_bending = ((TObjString*)tokens->At(1))->GetString() + ((TObjString*)tokens->At(2))->GetString();
             delete tokens; // Free memory
 
             // Construct file path
-            TString file_name = Form("/volatile/clas12/thayward/vertex_studies/%s/%s_%s/%s_%s.root", 
-                                     group.Data(), season.Data(), bending.Data(), run_periods[i], channels[j]);
+            TString file_name = Form("/volatile/clas12/thayward/vertex_studies/%s/%s/%s_%s.root", 
+                                     group.ToLower().Data(), season_bending.ToLower().Data(), TString(run_periods[i]).ToLower().Data(), channels[j]);
 
             TFile* file = new TFile(file_name);
             TTree* tree = (TTree*)file->Get("PhysicsEvents");
