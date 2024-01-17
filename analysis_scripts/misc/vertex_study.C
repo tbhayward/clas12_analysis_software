@@ -28,12 +28,12 @@ void vertex_study() {
     TCanvas *c1 = new TCanvas("c1", "Canvas", 800, 600);
 
     // Style the histogram
-    h1->GetXaxis()->SetTitle("v_{z} (cm)");
-    h1->GetYaxis()->SetTitle("counts");
-    h1->GetXaxis()->CenterTitle();
-    h1->GetYaxis()->CenterTitle();
-    h1->GetXaxis()->SetTitleSize(0.05);
-    h1->GetYaxis()->SetTitleSize(0.05);
+    h_rgafa18inbeX->GetXaxis()->SetTitle("v_{z} (cm)");
+    h_rgafa18inbeX->GetYaxis()->SetTitle("counts");
+    h_rgafa18inbeX->GetXaxis()->CenterTitle();
+    h_rgafa18inbeX->GetYaxis()->CenterTitle();
+    h_rgafa18inbeX->GetXaxis()->SetTitleSize(0.05);
+    h_rgafa18inbeX->GetYaxis()->SetTitleSize(0.05);
 
     // Add a legend
     TLegend *legend = new TLegend(0.7, 0.9, 0.9, 0.95);
