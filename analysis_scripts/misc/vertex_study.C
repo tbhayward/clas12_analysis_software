@@ -9,7 +9,7 @@ void vertex_study() {
     const char* run_periods[] = {"fa18_inb", "fa18_out", "sp19_inb", "sp19_inb", "fa19_out", "sp20_inb"};
     const char* neg_channels[] = {"eX", "epi-X", "ek-X"};  // Only negative tracks
     const char* pos_channels[] = {"epi+X", "epX"};  // Only positive tracks
-    const char* colors[] = {"kblack", "kblue", "kred"};
+    const char* colors[] = {"black", "blue", "red"};
 
     TCanvas* c1 = new TCanvas("c1", "Vertex Position Study", 2000, 1200);
     c1->Divide(3, 2);
@@ -35,7 +35,7 @@ void vertex_study() {
             TH1F* hist = new TH1F(hist_name, run_periods[i], 100, -15, 10);
             TString var_name = (j == 0 ? "vz_e" : "vz_p");
             tree->Draw(Form("%s>>%s", var_name.Data(), hist_name.Data()));
-            hist->SetLineColor(colors[j+1]);  // Color codes: 1-Black, 2-Red, 3-Green, 4-Blue, etc.
+            hist->SetLineColor(j + 1);  // Color codes: 1-Black, 2-Red, 3-Green, 4-Blue, etc.
             if (j == 0) hist->Draw();
             else hist->Draw("SAME");
             leg->AddEntry(hist, neg_channels[j], "l");
