@@ -35,10 +35,22 @@ void vertex_study() {
     gStyle->SetLabelSize(0.04, "xyz");
     gStyle->SetLegendTextSize(0.04);
 
+    // Pre-create histograms
+    std::vector<TH1D*> h_eX, h_epi_X, h_ek_X;
+    for (size_t i = 0; i < eX_files.size(); ++i) {
+        h_eX.push_back(new TH1D(Form("h_eX_%zu", i), Form("%s;v_{z} (cm);Normalized counts", titles[i].c_str()), 100, -10, 5));
+        h_epi_X.push_back(new TH1D(Form("h_epi_X_%zu", i), "", 100, -10, 5));
+        h_ek_X.push_back(new TH1D(Form("h_ek_X_%zu", i), "", 100, -10, 5));
+
+        h_eX[i]->SetLineColor(kBlack);
+        h_epi_X[i]->SetLineColor(kRed);
+        h_ek_X[i]->SetLineColor(kBlue);
+    }
+
     // Processing for each dataset
     for (size_t i = 0; i < eX_files.size(); ++i) {
         c1->cd(i + 1);
-        TPad *pad = new TPad(Form("pad%d", static_cast<int>(i)), Form("Pad%d", static_cast<int>(i)), 0, 0, 1, 1);
+        TPad *pad = new TPad(Form("pad%zu", i), Form("Pad%zu", i), 0, 0, 1, 1);
         pad->SetBottomMargin(0.15);
         pad->SetLeftMargin(0.15);
         pad->Draw();
@@ -52,36 +64,26 @@ void vertex_study() {
         TFile *file_ek_X = TFile::Open(ek_X_files[i].c_str());
         TTree *tree_ek_X = (TTree*)file_ek_X->Get("PhysicsEvents");
 
-        // Create histograms
-        TH1D *h_eX = new TH1D(Form("h_eX_%d", static_cast<int>(i)), Form("%s;v_{z} (cm);Normalized counts", titles[i].c_str()), 100, -10, 5);
-        TH1D *h_epi_X = new TH1D(Form("h_epi_X_%d", static_cast<int>(i)), "", 100, -10, 5);
-        TH1D *h_ek_X = new TH1D(Form("h_ek_X_%d", static_cast<int>(i)), "", 100, -10, 5);
-
-        // Set colors
-        h_eX->SetLineColor(kBlack);
-        h_epi_X->SetLineColor(kRed);
-        h_ek_X->SetLineColor(kBlue);
-
         // Fill histograms
-        tree_eX->Draw(Form("vz_e>>%s", h_eX->GetName()), "", "goff");
-        tree_epi_X->Draw(Form("vz_p>>%s", h_epi_X->GetName()), "", "goff");
-        tree_ek_X->Draw(Form("vz_p>>%s", h_ek_X->GetName()), "", "goff");
+        tree_eX->Draw(Form("vz_e>>%s", h_eX[i]->GetName()), "", "goff");
+        tree_epi_X->Draw(Form("vz_p>>%s", h_epi_X[i]->GetName()), "", "goff");
+        tree_ek_X->Draw(Form("vz_p>>%s", h_ek_X[i]->GetName()), "", "goff");
 
         // Normalize histograms
-        h_eX->Scale(1.0 / h_eX->Integral());
-        h_epi_X->Scale(1.0 / h_epi_X->Integral());
-        h_ek_X->Scale(1.0 / h_ek_X->Integral());
+        h_eX[i]->Scale(1.0 / h_eX[i]->Integral());
+        h_epi_X[i]->Scale(1.0 / h_epi_X[i]->Integral());
+        h_ek_X[i]->Scale(1.0 / h_ek_X[i]->Integral());
 
         // Draw histograms
-        h_eX->Draw("HIST");
-        h_epi_X->Draw("HIST same");
-        h_ek_X->Draw("HIST same");
+        h_eX[i]->Draw("HIST");
+        h_epi_X[i]->Draw("HIST same");
+        h_ek_X[i]->Draw("HIST same");
 
         // Add legend
         TLegend *leg = new TLegend(0.85, 0.7, 0.9, 0.9);
-        leg->AddEntry(h_eX, "e^{-}", "l");
-        leg->AddEntry(h_epi_X, "#pi^{-}", "l");
-        leg->AddEntry(h_ek_X, "k^{-}", "l");
+        leg->AddEntry(h_eX[i], "e^{-}", "l");
+        leg->AddEntry(h_epi_X[i], "#pi^{-}", "l");
+        leg->AddEntry(h_ek_X[i], "k^{-}", "l");
         leg->Draw();
 
         // Close files
