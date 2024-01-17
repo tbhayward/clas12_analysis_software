@@ -4,6 +4,7 @@
 #include <TH1F.h>
 #include <TLegend.h>
 #include <TStyle.h>
+#include <TCanvas.h>
 
 void vertex_study() {
     // Import the file and get the tree
@@ -16,6 +17,9 @@ void vertex_study() {
 
     // Fill the histogram from the tree
     tree->Draw("vz_e>>h1");
+
+    // Create a canvas
+    TCanvas *c1 = new TCanvas("c1", "Canvas", 800, 600);
 
     // Style the histogram
     h1->GetXaxis()->SetTitle("v_{z}");
@@ -33,7 +37,7 @@ void vertex_study() {
     // Remove the stat box
     gStyle->SetOptStat(0);
 
-    // Draw the histogram
+    // Draw the histogram on the canvas
     h1->Draw("HIST");
 
     // Save the canvas as a PNG file
