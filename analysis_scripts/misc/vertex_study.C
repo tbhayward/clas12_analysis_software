@@ -18,7 +18,7 @@ void vertex_study() {
     TTree *rgafa18inbekmXtree = (TTree*)rgafa18inbekmXfile->Get("PhysicsEvents");
 
     // Create a histogram for vz_e
-    TH1F *h_rgafa18inbeX = new TH1F("h_rgafa18inbeX", "Vertex Study", 100, -15, 5);
+    TH1F *h_rgafa18inbeX = new TH1F("h_rgafa18inbeX", "RGA Fa18 Inb", 100, -15, 10);
     h_rgafa18inbeX->SetLineColor(kBlack);
 
     // Fill the histogram from the tree
@@ -26,6 +26,9 @@ void vertex_study() {
 
     // Create a canvas
     TCanvas *c1 = new TCanvas("c1", "Canvas", 800, 600);
+    c1->SetLeftMargin(0.15);
+    c1->SetRightMargin(0.15);
+    c1->SetBottomMargin(0.15);
 
     // Style the histogram
     h_rgafa18inbeX->GetXaxis()->SetTitle("v_{z} (cm)");
@@ -35,6 +38,9 @@ void vertex_study() {
     h_rgafa18inbeX->GetXaxis()->SetTitleSize(0.05);
     h_rgafa18inbeX->GetYaxis()->SetTitleSize(0.05);
 
+    // Draw the histogram on the canvas
+    h_rgafa18inbeX->Draw("HIST");
+
     // Add a legend
     TLegend *legend = new TLegend(0.7, 0.9, 0.9, 0.95);
     legend->AddEntry(h_rgafa18inbeX, "e^{-}", "l");
@@ -42,9 +48,6 @@ void vertex_study() {
 
     // Remove the stat box
     gStyle->SetOptStat(0);
-
-    // Draw the histogram on the canvas
-    h_rgafa18inbeX->Draw("HIST");
 
     // Save the canvas as a PNG file
     c1->SaveAs("output/neg_vertices.png");
