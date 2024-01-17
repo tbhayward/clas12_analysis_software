@@ -16,6 +16,7 @@ void vertex_study() {
 
     for (int i = 0; i < 6; i++) {
         c1->cd(i+1);
+
         TLegend* leg = new TLegend(0.1, 0.7, 0.3, 0.9);
         leg->SetBorderSize(0);
 
