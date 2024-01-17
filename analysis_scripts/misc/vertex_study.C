@@ -57,11 +57,6 @@ void vertex_study() {
         TH1D *h_epi_X = new TH1D(Form("h_epi_X_%d", static_cast<int>(i)), "", 100, -10, 5);
         TH1D *h_ek_X = new TH1D(Form("h_ek_X_%d", static_cast<int>(i)), "", 100, -10, 5);
 
-        / Create histograms
-        TH1D *h_eX = new TH1D(Form("h_eX_%d", static_cast<int>(i)), Form("%s;v_{z} (cm);Normalized counts", titles[i].c_str()), 100, -10, 5);
-        TH1D *h_epi_X = new TH1D(Form("h_epi_X_%d", static_cast<int>(i)), "", 100, -10, 5);
-        TH1D *h_ek_X = new TH1D(Form("h_ek_X_%d", static_cast<int>(i)), "", 100, -10, 5);
-
         // Set colors
         h_eX->SetLineColor(kBlack);
         h_epi_X->SetLineColor(kRed);
