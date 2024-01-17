@@ -19,7 +19,7 @@ void vertex_study() {
         TLegend* leg = new TLegend(0.1, 0.7, 0.3, 0.9);
         for (int j = 0; j < 3; j++) {
             TString file_path = Form("/volatile/clas12/thayward/vertex_studies/rg%c/%s/rg%c_%s_%s.root", 
-                                     (i < 3 ? 'a' : 'b'), run_periods[i], (i < 3 ? 'a' : 'b'), run_periods[i], channels[j]);
+                                     (i < 3 ? 'a' : 'b'), run_periods[i], (i < 3 ? 'a' : 'b'), run_periods[i], neg_channels[j]);
             TFile* file = new TFile(file_path);
             TTree* tree = (TTree*)file->Get("PhysicsEvents");
             TString hist_name = Form("hist_%d_%d", i, j);
