@@ -8,7 +8,6 @@
 void vertex_study() {
     const char* run_periods[] = {"fa18_inb", "fa18_out", "sp19_inb", "sp19_inb", "fa19_out", "sp20_inb"};
     const char* neg_channels[] = {"eX", "epi-X", "ek-X"};  // Only negative tracks
-    const char* pos_channels[] = {"epi+X", "epX"};  // Only positive tracks
 
     gStyle->SetOptStat(0); // Turn off the statistics box
 
@@ -21,7 +20,7 @@ void vertex_study() {
         leg->SetBorderSize(0);
         bool firstHistDrawn = false;
 
-        for (int j = 0; j < 3; j++) { // Loop for negative channels
+        for (int j = 0; j < 3; j++) {
             TString file_path = Form("/volatile/clas12/thayward/vertex_studies/rg%c/%s/rg%c_%s_%s.root", 
                                      (i < 3 ? 'a' : 'b'), run_periods[i], (i < 3 ? 'a' : 'b'), run_periods[i], neg_channels[j]);
             TFile* file = new TFile(file_path);
