@@ -35,6 +35,9 @@ void vertex_study() {
 
     // Draw the histogram
     h1->Draw("HIST");
+
+    // Save the canvas as a PNG file
+    c1->SaveAs("output/neg_vertices.png");
 }
 
 int main() {
