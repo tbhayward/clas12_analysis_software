@@ -4,28 +4,9 @@
 #include <TCanvas.h>
 #include <TLegend.h>
 #include <TPad.h>
-#include <vector>
 #include <string>
 
 void vertex_study() {
-    // List of file paths and titles
-    std::vector<std::string> eX_files = {
-        "/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_eX.root",
-        "/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_eX.root"
-        // Add more file paths as needed
-    };
-    std::vector<std::string> epi_X_files = {
-        "/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_epi-X.root",
-        "/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_epi-X.root"
-        // Add more file paths as needed
-    };
-    std::vector<std::string> ek_X_files = {
-        "/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_ek-X.root",
-        "/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_ek-X.root"
-        // Add more file paths as needed
-    };
-    std::vector<std::string> titles = {"RGA Fa18 Inb", "RGA Fa18 Out"};
-
     // Create a canvas and divide it into two subpads (two columns, one row)
     TCanvas *c1 = new TCanvas("c1", "Canvas", 1600, 800);
     c1->Divide(2, 1); // 2 columns, 1 row
@@ -35,76 +16,108 @@ void vertex_study() {
     gStyle->SetLabelSize(0.04, "xyz");
     gStyle->SetLegendTextSize(0.04);
 
-    // Processing for each dataset
-    for (size_t i = 0; i < eX_files.size(); ++i) {
-        c1->cd(i + 1);
-        TPad *pad = new TPad(Form("pad%d", static_cast<int>(i)), Form("Pad%d", static_cast<int>(i)), 0, 0, 1, 1);
-        pad->SetBottomMargin(0.15);
-        pad->SetLeftMargin(0.15);
-        pad->Draw();
-        pad->cd();
+    // Process "Inb" data
+    c1->cd(1);
+    TPad *pad1 = new TPad("pad1", "Inb Pad", 0, 0, 1, 1);
+    pad1->SetBottomMargin(0.15);
+    pad1->SetLeftMargin(0.15);
+    pad1->Draw();
+    pad1->cd();
 
-        // Open files and get TTrees
-        TFile *file_eX = TFile::Open(eX_files[i].c_str());
-        TTree *tree_eX = (TTree*)file_eX->Get("PhysicsEvents");
-        TFile *file_epi_X = TFile::Open(epi_X_files[i].c_str());
-        TTree *tree_epi_X = (TTree*)file_epi_X->Get("PhysicsEvents");
-        TFile *file_ek_X = TFile::Open(ek_X_files[i].c_str());
-        TTree *tree_ek_X = (TTree*)file_ek_X->Get("PhysicsEvents");
+    // Open files and get TTrees for "Inb" data
+    TFile *file_eX_inb = TFile::Open("/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_eX.root");
+    TTree *tree_eX_inb = (TTree*)file_eX_inb->Get("PhysicsEvents");
+    TFile *file_epi_X_inb = TFile::Open("/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_epi-X.root");
+    TTree *tree_epi_X_inb = (TTree*)file_epi_X_inb->Get("PhysicsEvents");
+    TFile *file_ek_X_inb = TFile::Open("/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_ek-X.root");
+    TTree *tree_ek_X_inb = (TTree*)file_ek_X_inb->Get("PhysicsEvents");
 
-        // Create histograms
-        TH1D *h_eX = new TH1D(Form("h_eX_%d", static_cast<int>(i)), Form("%s;v_{z} (cm);Normalized counts", titles[i].c_str()), 100, -10, 5);
-        TH1D *h_epi_X = new TH1D(Form("h_epi_X_%d", static_cast<int>(i)), "", 100, -10, 5);
-        TH1D *h_ek_X = new TH1D(Form("h_ek_X_%d", static_cast<int>(i)), "", 100, -10, 5);
+    // Create histograms for "Inb" data
+    TH1D *h_eX_inb = new TH1D("h_eX_inb", "RGA Fa18 Inb;v_{z} (cm);Normalized counts", 100, -10, 5);
+    TH1D *h_epi_X_inb = new TH1D("h_epi_X_inb", "", 100, -10, 5);
+    TH1D *h_ek_X_inb = new TH1D("h_ek_X_inb", "", 100, -10, 5);
 
-        h_eX->SetLineColor(kBlack);
-        h_epi_X->SetLineColor(kRed);
-        h_ek_X->SetLineColor(kBlue);
+    h_eX_inb->SetLineColor(kBlack);
+    h_epi_X_inb->SetLineColor(kRed);
+    h_ek_X_inb->SetLineColor(kBlue);
 
-        // Fill histograms
-        if (tree_eX) tree_eX->Draw(Form("vz_e>>%s", h_eX->GetName()), "", "goff");
-        if (tree_epi_X) tree_epi_X->Draw(Form("vz_p>>%s", h_epi_X->GetName()), "", "goff");
-        if (tree_ek_X) tree_ek_X->Draw(Form("vz_p>>%s", h_ek_X->GetName()), "", "goff");
+    // Fill histograms for "Inb" data
+    tree_eX_inb->Draw("vz_e>>h_eX_inb", "", "goff");
+    tree_epi_X_inb->Draw("vz_p>>h_epi_X_inb", "", "goff");
+    tree_ek_X_inb->Draw("vz_p>>h_ek_X_inb", "", "goff");
 
-        // Check if histograms are filled
-        if (h_eX->GetEntries() == 0 || h_epi_X->GetEntries() == 0 || h_ek_X->GetEntries() == 0) {
-            std::cerr << "Error: One or more histograms are empty." << std::endl;
-            delete h_eX;
-            delete h_epi_X;
-            delete h_ek_X;
-            file_eX->Close();
-            file_epi_X->Close();
-            file_ek_X->Close();
-            continue;
-        }
+    // Normalize histograms for "Inb" data
+    h_eX_inb->Scale(1.0 / h_eX_inb->Integral());
+    h_epi_X_inb->Scale(1.0 / h_epi_X_inb->Integral());
+    h_ek_X_inb->Scale(1.0 / h_ek_X_inb->Integral());
 
-        // Normalize histograms
-        h_eX->Scale(1.0 / h_eX->Integral());
-        h_epi_X->Scale(1.0 / h_epi_X->Integral());
-        h_ek_X->Scale(1.0 / h_ek_X->Integral());
+    // Draw histograms for "Inb" data
+    h_eX_inb->Draw("HIST");
+    h_epi_X_inb->Draw("HIST same");
+    h_ek_X_inb->Draw("HIST same");
 
-        // Draw histograms
-        h_eX->Draw("HIST");
-        h_epi_X->Draw("HIST same");
-        h_ek_X->Draw("HIST same");
+    // Add legend for "Inb" data
+    TLegend *leg_inb = new TLegend(0.85, 0.7, 0.9, 0.9);
+    leg_inb->AddEntry(h_eX_inb, "e^{-}", "l");
+    leg_inb->AddEntry(h_epi_X_inb, "#pi^{-}", "l");
+    leg_inb->AddEntry(h_ek_X_inb, "k^{-}", "l");
+    leg_inb->Draw();
 
-        // Add legend
-        TLegend *leg = new TLegend(0.85, 0.7, 0.9, 0.9);
-        leg->AddEntry(h_eX, "e^{-}", "l");
-        leg->AddEntry(h_epi_X, "#pi^{-}", "l");
-        leg->AddEntry(h_ek_X, "k^{-}", "l");
-        leg->Draw();
+    // Process "Out" data
+    c1->cd(2);
+    TPad *pad2 = new TPad("pad2", "Out Pad", 0, 0, 1, 1);
+    pad2->SetBottomMargin(0.15);
+    pad2->SetLeftMargin(0.15);
+    pad2->Draw();
+    pad2->cd();
 
-        // Clean up
-        delete h_eX;
-        delete h_epi_X;
-        delete h_ek_X;
-        file_eX->Close();
-        file_epi_X->Close();
-        file_ek_X->Close();
-    }
+    // Open files and get TTrees for "Out" data
+    TFile *file_eX_out = TFile::Open("/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_eX.root");
+    TTree *tree_eX_out = (TTree*)file_eX_out->Get("PhysicsEvents");
+    TFile *file_epi_X_out = TFile::Open("/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_epi-X.root");
+    TTree *tree_epi_X_out = (TTree*)file_epi_X_out->Get("PhysicsEvents");
+    TFile *file_ek_X_out = TFile::Open("/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_ek-X.root");
+    TTree *tree_ek_X_out = (TTree*)file_ek_X_out->Get("PhysicsEvents");
+
+    // Create histograms for "Out" data
+    TH1D *h_eX_out = new TH1D("h_eX_out", "RGA Fa18 Out;v_{z} (cm);Normalized counts", 100, -10, 5);
+    TH1D *h_epi_X_out = new TH1D("h_epi_X_out", "", 100, -10, 5);
+    TH1D *h_ek_X_out = new TH1D("h_ek_X_out", "", 100, -10, 5);
+
+    h_eX_out->SetLineColor(kBlack);
+    h_epi_X_out->SetLineColor(kRed);
+    h_ek_X_out->SetLineColor(kBlue);
+
+    // Fill histograms for "Out" data
+    tree_eX_out->Draw("vz_e>>h_eX_out", "", "goff");
+    tree_epi_X_out->Draw("vz_p>>h_epi_X_out", "", "goff");
+    tree_ek_X_out->Draw("vz_p>>h_ek_X_out", "", "goff");
+
+    // Normalize histograms for "Out" data
+    h_eX_out->Scale(1.0 / h_eX_out->Integral());
+    h_epi_X_out->Scale(1.0 / h_epi_X_out->Integral());
+    h_ek_X_out->Scale(1.0 / h_ek_X_out->Integral());
+
+    // Draw histograms for "Out" data
+    h_eX_out->Draw("HIST");
+    h_epi_X_out->Draw("HIST same");
+    h_ek_X_out->Draw("HIST same");
+
+    // Add legend for "Out" data
+    TLegend *leg_out = new TLegend(0.85, 0.7, 0.9, 0.9);
+    leg_out->AddEntry(h_eX_out, "e^{-}", "l");
+    leg_out->AddEntry(h_epi_X_out, "#pi^{-}", "l");
+    leg_out->AddEntry(h_ek_X_out, "k^{-}", "l");
+    leg_out->Draw();
+
+    // Close files
+    file_eX_inb->Close();
+    file_epi_X_inb->Close();
+    file_ek_X_inb->Close();
+    file_eX_out->Close();
+    file_epi_X_out->Close();
+    file_ek_X_out->Close();
 
     // Save the canvas
     c1->SaveAs("output/all_vertices.png");
 }
-
