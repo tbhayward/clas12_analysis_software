@@ -2,26 +2,72 @@
 #include <TTree.h>
 #include <TH1F.h>
 #include <TCanvas.h>
-#include <TStyle.h>
+#include <TLegend.h>
 
 void vertex_study() {
-    gStyle->SetOptStat(0); // Turn off the statistics box
+    // Define run periods and channels
+    const char* run_periods[] = {"RGA_Fa18_Inb", "RGA_Fa18_Out", "RGA_Sp19_Inb", "RGB_Sp19_Inb", "RGB_Fa19_Out", "RGB_Sp20_Inb"};
+    const char* channels[] = {"eX", "epi+X", "epi-X", "epX", "ek-X"};
 
-    TCanvas* c1 = new TCanvas("c1", "Vertex Position Study", 800, 600);
+    // Create a canvas with six subplots
+    TCanvas* canvas = new TCanvas("canvas", "Vertex Study", 1200, 800);
+    canvas->Divide(3, 2);
 
-    TString file_path = "/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_eX.root";
-    TFile* file = new TFile(file_path);
+    // Loop over each run period
+    for (int i = 0; i < 6; i++) {
+        canvas->cd(i + 1);
+        TH1F* hist_eX = new TH1F("hist_eX", run_periods[i], 100, -15, 10);
+        TH1F* hist_epiX = new TH1F("hist_epiX", run_periods[i], 100, -15, 10);
+        TH1F* hist_ekX = new TH1F("hist_ekX", run_periods[i], 100, -15, 10);
 
-    TTree* tree = (TTree*)file->Get("PhysicsEvents");
+        // Loop over channels for each run period
+        for (int j = 0; j < 5; j++) {
+            TString file_name = Form("/volatile/clas12/thayward/vertex_studies/%s/%s_%s.root", run_periods[i], run_periods[i], channels[j]);
+            TFile* file = new TFile(file_name);
+            TTree* tree = (TTree*)file->Get("PhysicsEvents");
 
-    TH1F* hist = new TH1F("hist_eX", "fa18_inb;v_{z};Counts", 100, -15, 10);
-    tree->Draw("vz_e>>hist_eX");
+            TString branch_name = (j == 0) ? "vz_e" : "vz_p";
+            float vz;
+            tree->SetBranchAddress(branch_name, &vz);
 
-    hist->SetLineColor(kBlack);
-    hist->SetLineWidth(2);
-    hist->Draw();
+            // Fill histograms
+            for (int k = 0; k < tree->GetEntries(); k++) {
+                tree->GetEntry(k);
+                if (j == 0) hist_eX->Fill(vz);
+                else if (j == 2) hist_epiX->Fill(vz);
+                else if (j == 4) hist_ekX->Fill(vz);
+            }
 
-    file->Close(); // Close the file after use
+            file->Close();
+        }
 
-    c1->SaveAs("output/single_histogram.png");
+        // Draw histograms
+        hist_eX->SetLineColor(kBlack);
+        hist_eX->Draw();
+        hist_epiX->SetLineColor(kBlue);
+        hist_epiX->Draw("same");
+        hist_ekX->SetLineColor(kRed);
+        hist_ekX->Draw("same");
+
+        // Add legend
+        if (i == 0) {
+            TLegend* leg = new TLegend(0.1, 0.7, 0.3, 0.9);
+            leg->AddEntry(hist_eX, "e^{-}", "l");
+            leg->AddEntry(hist_epiX, "#pi^{-}", "l");
+            leg->AddEntry(hist_ekX, "k^{-}", "l");
+            leg->Draw();
+        }
+
+        // Customize plot
+        gPad->SetLeftMargin(0.15);
+        hist_eX->GetYaxis()->SetTitle("Counts");
+        hist_eX->GetYaxis()->CenterTitle();
+        hist_eX->GetYaxis()->SetTitleSize(0.05);
+        hist_eX->GetXaxis()->SetTitle("v_{z}");
+        hist_eX->GetXaxis()->CenterTitle();
+        hist_eX->GetXaxis()->SetTitleSize(0.05);
+    }
+
+    // Save canvas
+    canvas->SaveAs("output/negative_vz.png");
 }
