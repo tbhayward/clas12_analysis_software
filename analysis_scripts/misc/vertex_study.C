@@ -21,6 +21,17 @@ void vertex_study() {
             TString file_path = Form("/volatile/clas12/thayward/vertex_studies/rg%c/%s/rg%c_%s_%s.root", 
                                      (i < 3 ? 'a' : 'b'), run_periods[i], (i < 3 ? 'a' : 'b'), run_periods[i], neg_channels[j]);
             TFile* file = new TFile(file_path);
+            if (!file || file->IsZombie()) {
+                std::cerr << "Error opening file: " << file_path << std::endl;
+                continue;
+            }
+
+            TTree* tree = (TTree*)file->Get("PhysicsEvents");
+            if (!tree) {
+                std::cerr << "Tree PhysicsEvents not found in file: " << file_path << std::endl;
+                file->Close();
+                continue;
+            }
             TTree* tree = (TTree*)file->Get("PhysicsEvents");
             TString hist_name = Form("hist_%d_%d", i, j);
             TH1F* hist = new TH1F(hist_name, run_periods[i], 100, -10, 15);
