@@ -4,127 +4,93 @@
 #include <TCanvas.h>
 #include <TLegend.h>
 #include <TPad.h>
+#include <vector>
+#include <string>
 
 void vertex_study() {
-    // Create a canvas and divide it into two subpads
-    TCanvas *c1 = new TCanvas("c1", "Canvas", 800, 1200);
-    c1->Divide(1, 2); // 1 column, 2 rows
+    // List of file paths and titles
+    std::vector<std::string> eX_files = {
+        "/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_eX.root",
+        "/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_eX.root"
+        // Add more file paths as needed
+    };
+    std::vector<std::string> epi_X_files = {
+        "/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_epi-X.root",
+        "/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_epi-X.root"
+        // Add more file paths as needed
+    };
+    std::vector<std::string> ek_X_files = {
+        "/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_ek-X.root",
+        "/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_ek-X.root"
+        // Add more file paths as needed
+    };
+    std::vector<std::string> titles = {"RGA Fa18 Inb", "RGA Fa18 Out"}; // Add more titles as needed
 
-    // First subpad (Inb data)
-    c1->cd(1);
-    TPad *pad1 = new TPad("pad1", "Pad1", 0.0, 0.5, 1.0, 1.0);
-    pad1->SetBottomMargin(0.15);
-    pad1->SetLeftMargin(0.15);
-    pad1->Draw();
-    pad1->cd();
+    // Create a canvas and divide it into two subpads (two columns, one row)
+    TCanvas *c1 = new TCanvas("c1", "Canvas", 1600, 800);
+    c1->Divide(2, 1); // 2 columns, 1 row
 
-    // Open the ROOT files for Inb data and get the TTrees
-    TFile *file1 = TFile::Open("/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_eX.root");
-    TTree *tree1 = (TTree*)file1->Get("PhysicsEvents");
-    TFile *file2 = TFile::Open("/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_epi-X.root");
-    TTree *tree2 = (TTree*)file2->Get("PhysicsEvents");
-    TFile *file3 = TFile::Open("/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_ek-X.root");
-    TTree *tree3 = (TTree*)file3->Get("PhysicsEvents");
+    // Increase font size globally
+    gStyle->SetTitleFontSize(0.05);
+    gStyle->SetLabelSize(0.04, "xyz");
+    gStyle->SetLegendTextSize(0.04);
 
-    // Create histograms for Inb data
-    TH1D *h1 = new TH1D("h1", "RGA Fa18 Inb;v_{z} (cm);Normalized counts", 100, -10, 5);
-    TH1D *h2 = new TH1D("h2", "", 100, -10, 5);
-    TH1D *h3 = new TH1D("h3", "", 100, -10, 5);
+    // Processing for each dataset
+    for (size_t i = 0; i < eX_files.size(); ++i) {
+        c1->cd(i+1);
+        TPad *pad = new TPad(Form("pad%d", i), Form("Pad%d", i), 0, 0, 1, 1);
+        pad->SetBottomMargin(0.15);
+        pad->SetLeftMargin(0.15);
+        pad->Draw();
+        pad->cd();
 
-    // Set histogram colors for Inb data
-    h1->SetLineColor(kBlack);
-    h2->SetLineColor(kRed);
-    h3->SetLineColor(kBlue);
+        // Open files and get TTrees
+        TFile *file_eX = TFile::Open(eX_files[i].c_str());
+        TTree *tree_eX = (TTree*)file_eX->Get("PhysicsEvents");
+        TFile *file_epi_X = TFile::Open(epi_X_files[i].c_str());
+        TTree *tree_epi_X = (TTree*)file_epi_X->Get("PhysicsEvents");
+        TFile *file_ek_X = TFile::Open(ek_X_files[i].c_str());
+        TTree *tree_ek_X = (TTree*)file_ek_X->Get("PhysicsEvents");
 
-    // Fill the histograms for Inb data
-    tree1->Draw("vz_e>>h1");
-    tree2->Draw("vz_p>>h2");
-    tree3->Draw("vz_p>>h3");
+        // Create histograms
+        TH1D *h_eX = new TH1D(Form("h_eX_%d", i), Form("%s;v_{z} (cm);Normalized counts", titles[i].c_str()), 100, -10, 5);
+        TH1D *h_epi_X = new TH1D(Form("h_epi_X_%d", i), "", 100, -10, 5);
+        TH1D *h_ek_X = new TH1D(Form("h_ek_X_%d", i), "", 100, -10, 5);
 
-    // Normalize histograms for Inb data
-    h1->Scale(1.0 / h1->Integral());
-    h2->Scale(1.0 / h2->Integral());
-    h3->Scale(1.0 / h3->Integral());
+        // Set colors
+        h_eX->SetLineColor(kBlack);
+        h_epi_X->SetLineColor(kRed);
+        h_ek_X->SetLineColor(kBlue);
 
-    // Draw the histograms on the first subpad
-    h1->Draw("HIST");
-    h2->Draw("HIST same");
-    h3->Draw("HIST same");
+        // Fill histograms
+        tree_eX->Draw(Form("vz_e>>h_eX_%d", i));
+        tree_epi_X->Draw(Form("vz_p>>h_epi_X_%d", i));
+        tree_ek_X->Draw(Form("vz_p>>h_ek_X_%d", i));
 
-    // Add a legend for Inb data
-    TLegend *leg1 = new TLegend(0.85, 0.7, 0.9, 0.9);
-    leg1->AddEntry(h1, "e^{-}", "l");
-    leg1->AddEntry(h2, "#pi^{-}", "l");
-    leg1->AddEntry(h3, "k^{-}", "l");
-    leg1->Draw();
+        // Normalize histograms
+        h_eX->Scale(1.0 / h_eX->Integral());
+        h_epi_X->Scale(1.0 / h_epi_X->Integral());
+        h_ek_X->Scale(1.0 / h_ek_X->Integral());
 
-    // Remove the stat box from all Inb histograms
-    h1->SetStats(0);
-    h2->SetStats(0);
-    h3->SetStats(0);
+        // Draw histograms
+        h_eX->Draw("HIST");
+        h_epi_X->Draw("HIST same");
+        h_ek_X->Draw("HIST same");
 
-    // Second subpad (Out data)
-    c1->cd(2);
-    TPad *pad2 = new TPad("pad2", "Pad2", 0.0, 0.0, 1.0, 0.5);
-    pad2->SetBottomMargin(0.15);
-    pad2->SetLeftMargin(0.15);
-    pad2->Draw();
-    pad2->cd();
+        // Add legend
+        TLegend *leg = new TLegend(0.85, 0.7, 0.9, 0.9);
+        leg->AddEntry(h_eX, "e^{-}", "l");
+        leg->AddEntry(h_epi_X, "#pi^{-}", "l");
+        leg->AddEntry(h_ek_X, "k^{-}", "l");
+        leg->Draw();
 
-    // Open the ROOT files for Out data and get the TTrees
-    TFile *file4 = TFile::Open("/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_eX.root");
-    TTree *tree4 = (TTree*)file4->Get("PhysicsEvents");
-    TFile *file5 = TFile::Open("/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_epi-X.root");
-    TTree *tree5 = (TTree*)file5->Get("PhysicsEvents");
-    TFile *file6 = TFile::Open("/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_ek-X.root");
-    TTree *tree6 = (TTree*)file6->Get("PhysicsEvents");
+        // Close files
+        file_eX->Close();
+        file_epi_X->Close();
+        file_ek_X->Close();
+    }
 
-    // Create histograms for Out data
-    TH1D *h4 = new TH1D("h4", "RGA Fa18 Out;v_{z} (cm);Normalized counts", 100, -10, 5);
-    TH1D *h5 = new TH1D("h5", "", 100, -10, 5);
-    TH1D *h6 = new TH1D("h6", "", 100, -10, 5);
-
-    // Set histogram colors for Out data
-    h4->SetLineColor(kBlack);
-    h5->SetLineColor(kRed);
-    h6->SetLineColor(kBlue);
-
-    // Fill the histograms for Out data
-    tree4->Draw("vz_e>>h4");
-    tree5->Draw("vz_p>>h5");
-    tree6->Draw("vz_p>>h6");
-
-    // Normalize histograms for Out data
-    h4->Scale(1.0 / h4->Integral());
-    h5->Scale(1.0 / h5->Integral());
-    h6->Scale(1.0 / h6->Integral());
-
-    // Draw the histograms on the second subpad
-    h4->Draw("HIST");
-    h5->Draw("HIST same");
-    h6->Draw("HIST same");
-
-    // Add a legend for Out data
-    TLegend *leg2 = new TLegend(0.85, 0.7, 0.9, 0.9);
-    leg2->AddEntry(h4, "e^{-}", "l");
-    leg2->AddEntry(h5, "#pi^{-}", "l");
-    leg2->AddEntry(h6, "k^{-}", "l");
-    leg2->Draw();
-
-    // Remove the stat box from all Out histograms
-    h4->SetStats(0);
-    h5->SetStats(0);
-    h6->SetStats(0);
-
-    // Save the entire canvas with both subpads
-    c1->cd();
+    // Save the canvas
     c1->SaveAs("output/all_vertices.png");
-
-    // Close all files
-    file1->Close();
-    file2->Close();
-    file3->Close();
-    file4->Close();
-    file5->Close();
-    file6->Close();
 }
+
