@@ -3,6 +3,8 @@
 #include <TH1F.h>
 #include <TCanvas.h>
 #include <TLegend.h>
+#include <TObjArray.h>
+#include <TObjString.h>
 
 void vertex_study() {
     // Define run periods and channels
@@ -22,11 +24,14 @@ void vertex_study() {
 
         // Loop over channels for each run period
         for (int j = 0; j < 5; j++) {
+            TObjArray* tokens = TString(run_periods[i]).Tokenize("_");
+            TString group = ((TObjString*)tokens->At(0))->GetString();
+            TString season = ((TObjString*)tokens->At(1))->GetString();
+            TString bending = ((TObjString*)tokens->At(2))->GetString();
+            delete tokens; // Free memory
+
             // Construct file path
-            TString group = TString(run_periods[i]).Tokenize("_")->First()->GetName();
-            TString season = TString(run_periods[i]).Tokenize("_")->Next()->GetName();
-            TString bending = TString(run_periods[i]).Tokenize("_")->Next()->GetName();
-            TString file_name = Form("/volatile/clas12/thayward/vertex_studies/%s/%s/%s_%s.root", 
+            TString file_name = Form("/volatile/clas12/thayward/vertex_studies/%s/%s_%s/%s_%s.root", 
                                      group.Data(), season.Data(), bending.Data(), run_periods[i], channels[j]);
 
             TFile* file = new TFile(file_name);
