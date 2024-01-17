@@ -8,55 +8,31 @@
 void vertex_study() {
     gStyle->SetOptStat(0); // Turn off the statistics box
 
-    // Define arrays of run periods and channels
-    const char* run_periods[] = {"fa18_inb", "fa18_out", "sp19_inb", "sp19_inb", "fa19_out", "sp20_inb"};
-    const char* channels[] = {"eX", "epi-X", "ek-X", "epi+X", "epX"};
-
     TCanvas* c1 = new TCanvas("c1", "Vertex Position Study", 2000, 1200);
-    c1->Divide(3, 2);
 
-    // Loop over each run period
-    for (int i = 0; i < 6; i++) {
-        c1->cd(i + 1);
-        TLegend* leg = new TLegend(0.1, 0.7, 0.3, 0.9);
-        leg->SetBorderSize(0);
-
-        // Loop over each channel
-        for (int j = 0; j < 5; j++) {
-            TString file_path = Form("/volatile/clas12/thayward/vertex_studies/rg%c/%s/rg%c_%s_%s.root",
-                                     (i < 3 ? 'a' : 'b'), run_periods[i], (i < 3 ? 'a' : 'b'), run_periods[i], channels[j]);
-            TFile* file = new TFile(file_path);
-            if (!file || file->IsZombie()) {
-                std::cerr << "Error opening file: " << file_path << std::endl;
-                continue;
-            }
-
-            TTree* tree = (TTree*)file->Get("PhysicsEvents");
-            if (!tree) {
-                std::cerr << "Tree PhysicsEvents not found in file: " << file_path << std::endl;
-                file->Close();
-                continue;
-            }
-
-            TString hist_name = Form("%s_%s", run_periods[i], channels[j]);
-            TH1F* hist = new TH1F(hist_name, run_periods[i], 100, -15, 10);
-            TString var_name = (j == 0 ? "vz_e" : "vz_p");
-            tree->Draw(Form("%s>>%s", var_name.Data(), hist_name.Data()));
-
-            // Set colors explicitly
-            if (channels[j] == TString("eX")) hist->SetLineColor(kBlack);
-            else if (channels[j] == TString("epi-X")) hist->SetLineColor(kBlue);
-            else if (channels[j] == TString("ek-X")) hist->SetLineColor(kRed);
-            else continue; // Skip positive channels for now
-
-            hist->Draw(j == 0 ? "" : "SAME");
-            leg->AddEntry(hist, channels[j], "l");
-            file->Close(); // Close the file after use
-        }
-
-        leg->Draw();
-        gPad->Modified();
+    // Process only one file and one channel
+    TString file_path = "/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_eX.root";
+    TFile* file = new TFile(file_path);
+    if (!file || file->IsZombie()) {
+        std::cerr << "Error opening file: " << file_path << std::endl;
+        return;
     }
 
-    c1->SaveAs("output/negative_vz.png");
+    TTree* tree = (TTree*)file->Get("PhysicsEvents");
+    if (!tree) {
+        std::cerr << "Tree PhysicsEvents not found in file: " << file_path << std::endl;
+        file->Close();
+        return;
+    }
+
+    TH1F* hist = new TH1F("hist_eX", "fa18_inb", 100, -15, 10);
+    tree->Draw("vz_e>>hist_eX");
+
+    hist->SetLineColor(kBlack);
+    hist->Draw();
+
+    file->Close(); // Close the file after use
+
+    c1->SaveAs("output/single_histogram.png");
 }
+
