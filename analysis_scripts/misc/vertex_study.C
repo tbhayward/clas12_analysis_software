@@ -1,80 +1,55 @@
 #include <TFile.h>
 #include <TTree.h>
-#include <TH1F.h>
+#include <TH1D.h>
 #include <TCanvas.h>
 #include <TLegend.h>
 
 void vertex_study() {
-    // Define run periods and channels with exact file path format
-    const char* run_periods[] = {"rga/fa18_inb", "rga/fa18_out", "rga/sp19_inb", "rgb/sp19_inb", "rgb/fa19_out", "rgb/sp20_inb"};
-    const char* channels[] = {"eX", "epi+X", "epi-X", "epX", "ek-X"};
-
-    // Create a canvas with six subplots
-    TCanvas* canvas = new TCanvas("canvas", "Vertex Study", 1200, 800);
-    canvas->Divide(3, 2);
-
-    // Loop over each run period
-    for (int i = 0; i < 6; i++) {
-        canvas->cd(i + 1);
-        TH1F* hist_eX = new TH1F("hist_eX", run_periods[i], 100, -10, 15);
-        TH1F* hist_epiX = new TH1F("hist_epiX", run_periods[i], 100, -10, 15);
-        TH1F* hist_ekX = new TH1F("hist_ekX", run_periods[i], 100, -10, 15);
-
-        // Loop over channels for each run period
-        for (int j = 0; j < 5; j++) {
-            TString run_period_dir(run_periods[i]);
-            TString run_period_file(run_periods[i]);
-            run_period_file.ReplaceAll("/", "_"); // Replace '/' with '_' for file name
-
-            // Construct file path
-            TString file_name = Form("/volatile/clas12/thayward/vertex_studies/%s/%s_%s.root", 
-                                     run_period_dir.Data(), run_period_file.Data(), channels[j]);
-
-            TFile* file = new TFile(file_name);
-            TTree* tree = (TTree*)file->Get("PhysicsEvents");
-
-            TString branch_name = (j == 0) ? "vz_e" : "vz_p";
-            float vz;
-            tree->SetBranchAddress(branch_name, &vz);
-
-            // Fill histograms
-            for (int k = 0; k < tree->GetEntries(); k++) {
-                tree->GetEntry(k);
-                if (j == 0) hist_eX->Fill(vz);
-                else if (j == 2) hist_epiX->Fill(vz);
-                else if (j == 4) hist_ekX->Fill(vz);
-            }
-
-            file->Close();
-        }
-
-        // Draw histograms
-        hist_eX->SetLineColor(kBlack);
-        hist_eX->Draw();
-        hist_epiX->SetLineColor(kBlue);
-        hist_epiX->Draw("same");
-        hist_ekX->SetLineColor(kRed);
-        hist_ekX->Draw("same");
-
-        // Add legend
-        if (i == 0) {
-            TLegend* leg = new TLegend(0.1, 0.7, 0.3, 0.9);
-            leg->AddEntry(hist_eX, "e^{-}", "l");
-            leg->AddEntry(hist_epiX, "#pi^{-}", "l");
-            leg->AddEntry(hist_ekX, "k^{-}", "l");
-            leg->Draw();
-        }
-
-        // Customize plot
-        gPad->SetLeftMargin(0.15);
-        hist_eX->GetYaxis()->SetTitle("Counts");
-        hist_eX->GetYaxis()->CenterTitle();
-        hist_eX->GetYaxis()->SetTitleSize(0.05);
-        hist_eX->GetXaxis()->SetTitle("v_{z}");
-        hist_eX->GetXaxis()->CenterTitle();
-        hist_eX->GetXaxis()->SetTitleSize(0.05);
+    // Open the ROOT file
+    TFile *file = TFile::Open("/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_eX.root");
+    if (file == 0) {
+        // If the file couldn't be opened, print an error and return
+        printf("Error: could not open the file.\n");
+        return;
     }
 
-    // Save canvas
-    canvas->SaveAs("output/negative_vz.png");
+    // Get the TTree
+    TTree *tree = (TTree*)file->Get("PhysicsEvents");
+    if (tree == 0) {
+        // If the tree couldn't be found, print an error and return
+        printf("Error: could not find the tree.\n");
+        return;
+    }
+
+    // Create the histogram
+    TH1D *h1 = new TH1D("h1", "v_{z} distribution;v_{z};counts", 100, -15, 5);
+    h1->SetLineColor(kBlack);
+
+    // Draw the histogram
+    tree->Draw("vz_e>>h1");
+
+    // Customize the histogram appearance
+    h1->GetXaxis()->CenterTitle(true);
+    h1->GetYaxis()->CenterTitle(true);
+    h1->GetXaxis()->SetTitleSize(0.05);
+    h1->GetYaxis()->SetTitleSize(0.05);
+
+    // Create a canvas to draw the histogram
+    TCanvas *c1 = new TCanvas("c1", "Canvas", 800, 600);
+    h1->Draw();
+
+    // Remove the stat box
+    h1->SetStats(0);
+
+    // Add a legend
+    TLegend *leg = new TLegend(0.7, 0.8, 0.9, 0.9);
+    leg->AddEntry(h1, "e^{-}", "l");
+    leg->Draw();
+
+    // Save the histogram as an image
+    c1->SaveAs("vz_distribution.png");
+
+    // Close the file
+    file->Close();
 }
+
