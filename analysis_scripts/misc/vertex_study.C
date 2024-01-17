@@ -25,18 +25,23 @@ void vertex_study() {
 
     // Create histograms
     TH1D *h1 = new TH1D("h1", "v_{z} distribution;v_{z};counts", 100, -15, 5);
-    TH1D *h2 = new TH1D("h2", "", 100, -15, 5);
-    TH1D *h3 = new TH1D("h3", "", 100, -15, 5);
+    TH1D *h2 = new TH1D("h2", "v_{z} distribution", 100, -15, 5);
+    TH1D *h3 = new TH1D("h3", "v_{z} distribution", 100, -15, 5);
 
     // Set histogram colors
     h1->SetLineColor(kBlack);
     h2->SetLineColor(kRed);
     h3->SetLineColor(kBlue);
 
-    // Draw the histograms
+    // Fill the histograms
     tree1->Draw("vz_e>>h1");
-    tree2->Draw("vz_p>>h2", "same");
-    tree3->Draw("vz_p>>h3", "same");
+    tree2->Draw("vz_p>>h2");
+    tree3->Draw("vz_p>>h3");
+
+    // Draw the histograms on the same canvas
+    h1->Draw();
+    h2->Draw("same");
+    h3->Draw("same");
 
     // Customize histogram appearance
     h1->GetXaxis()->CenterTitle(true);
@@ -69,4 +74,3 @@ void vertex_study() {
     file2->Close();
     file3->Close();
 }
-
