@@ -44,7 +44,7 @@ void vertex_study() {
     gStyle->SetOptStat(0);
 
     // Draw the histogram on the canvas
-    h_h_rgafa18inbeX->Draw("HIST");
+    h_rgafa18inbeX->Draw("HIST");
 
     // Save the canvas as a PNG file
     c1->SaveAs("output/neg_vertices.png");
