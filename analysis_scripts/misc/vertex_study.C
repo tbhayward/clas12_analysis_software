@@ -9,7 +9,7 @@ void vertex_study() {
     const char* run_periods[] = {"fa18_inb", "fa18_out", "sp19_inb", "sp19_inb", "fa19_out", "sp20_inb"};
     const char* neg_channels[] = {"eX", "epi-X", "ek-X"};  // Only negative tracks
     const char* pos_channels[] = {"epi+X", "epX"};  // Only positive tracks
-    const char* colors[] = {"black", "blue", "red"};
+    const char* colors[] = {"kblack", "kblue", "kred"};
 
     TCanvas* c1 = new TCanvas("c1", "Vertex Position Study", 2000, 1200);
     c1->Divide(3, 2);
