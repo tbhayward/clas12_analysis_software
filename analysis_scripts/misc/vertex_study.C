@@ -19,9 +19,9 @@ void vertex_study() {
     TTree *tree3 = (TTree*)file3->Get("PhysicsEvents");
 
     // Create histograms
-    TH1D *h1 = new TH1D("h1", "RGA Fa18 Inb;v_{z};Normalized counts", 100, -15, 5);
-    TH1D *h2 = new TH1D("h2", "", 100, -15, 5);
-    TH1D *h3 = new TH1D("h3", "", 100, -15, 5);
+    TH1D *h1 = new TH1D("h1", "RGA Fa18 Inb;v_{z} (cm);Normalized counts", 100, -10, 5);
+    TH1D *h2 = new TH1D("h2", "", 100, -10, 5);
+    TH1D *h3 = new TH1D("h3", "", 100, -10, 5);
 
     // Set histogram colors
     h1->SetLineColor(kBlack);
@@ -44,7 +44,7 @@ void vertex_study() {
     h3->Draw("HIST same");
 
     // Add a legend
-    TLegend *leg = new TLegend(0.8, 0.7, 0.9, 0.9);
+    TLegend *leg = new TLegend(0.85, 0.7, 0.9, 0.9);
     leg->AddEntry(h1, "e^{-}", "l");
     leg->AddEntry(h2, "#pi^{-}", "l");
     leg->AddEntry(h3, "k^{-}", "l");
