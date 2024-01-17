@@ -25,14 +25,12 @@ void vertex_study() {
                 std::cerr << "Error opening file: " << file_path << std::endl;
                 continue;
             }
-
             TTree* tree = (TTree*)file->Get("PhysicsEvents");
             if (!tree) {
                 std::cerr << "Tree PhysicsEvents not found in file: " << file_path << std::endl;
                 file->Close();
                 continue;
             }
-            TTree* tree = (TTree*)file->Get("PhysicsEvents");
             TString hist_name = Form("hist_%d_%d", i, j);
             TH1F* hist = new TH1F(hist_name, run_periods[i], 100, -10, 15);
             TString var_name = (j == 0 ? "vz_e" : "vz_p");
