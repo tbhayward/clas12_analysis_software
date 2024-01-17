@@ -35,12 +35,23 @@ void vertex_study() {
             }
             TString hist_name = Form("hist_%d_%d", i, j);
             TH1F* hist = new TH1F(hist_name, run_periods[i], 100, -15, 10);
+            if (!hist) {
+                std::cerr << "Failed to create histogram: " << hist_name << std::endl;
+                file->Close();
+                continue;
+            }
             TString var_name = (j == 0 ? "vz_e" : "vz_p");
-            tree->Draw(Form("%s>>%s", var_name.Data(), hist_name.Data()));
-            hist->SetLineColor(j + 1);  // Color codes: 1-Black, 2-Red, 3-Green, 4-Blue, etc.
-            if (j == 0) hist->Draw();
-            else hist->Draw("SAME");
+            tree->Draw(Form("%s>>%s", var_name.Data(), hist_name.Data()), "", "goff");
+            if (hist->GetEntries() == 0) {
+                std::cerr << "No entries in histogram: " << hist_name << std::endl;
+                file->Close();
+                continue;
+            }
+            int color = (j == 0) ? kBlack : ((j == 1) ? kRed : kBlue);
+            hist->SetLineColor(color);
+            hist->Draw(j == 0 ? "" : "SAME");
             leg->AddEntry(hist, neg_channels[j], "l");
+            file->Close(); // Close the file after use
         }
         leg->Draw();
         gPad->Modified();
