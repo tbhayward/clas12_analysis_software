@@ -41,12 +41,7 @@ void vertex_study() {
                 continue;
             }
             TString var_name = (j == 0 ? "vz_e" : "vz_p");
-            tree->Draw(Form("%s>>%s", var_name.Data(), hist_name.Data()), "", "goff");
-            if (hist->GetEntries() == 0) {
-                std::cerr << "No entries in histogram: " << hist_name << std::endl;
-                file->Close();
-                continue;
-            }
+            tree->Draw(Form("%s>>%s", var_name.Data(), hist_name.Data())); // Removed "goff"
             int color = (j == 0) ? kBlack : ((j == 1) ? kRed : kBlue);
             hist->SetLineColor(color);
             hist->Draw(j == 0 ? "" : "SAME");
