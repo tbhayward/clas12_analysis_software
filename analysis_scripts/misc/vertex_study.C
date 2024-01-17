@@ -6,7 +6,7 @@
 
 void vertex_study() {
     // Define run periods and channels
-    const char* run_periods[] = {"RGA_Fa18_Inb", "RGA_Fa18_Out", "RGA_Sp19_Inb", "RGB_Sp19_Inb", "RGB_Fa19_Out", "RGB_Sp20_Inb"};
+    const char* run_periods[] = {"rga_fa18_inb", "rga_fa18_out", "rga_sp19_inb", "rgb_sp19_inb", "rgb_fa19_out", "rgb_sp20_inb"};
     const char* channels[] = {"eX", "epi+X", "epi-X", "epX", "ek-X"};
 
     // Create a canvas with six subplots
