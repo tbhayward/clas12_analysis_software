@@ -158,7 +158,7 @@ void DrawDiffPosHistogramsForPanel(const char* file_epiX, const char* file_epX,
     h_diffEpiX->GetYaxis()->SetTitleSize(0.05);
 
     // Remove the stat box
-    gStyle->SetOptStat(0);
+    // gStyle->SetOptStat(0);
 }
 
 
