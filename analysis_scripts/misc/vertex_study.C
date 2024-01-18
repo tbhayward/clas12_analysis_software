@@ -124,9 +124,9 @@ void DrawDiffPosHistogramsForPanel(const char* file_epiX, const char* file_epX,
     TTree* treeEpX = (TTree*)fileEpX->Get("PhysicsEvents");
 
     // Create histograms for vz_e - vz_p
-    TH1F* h_diffEpiX = new TH1F("h_diffEpiX", title, 100, -15, 15);
+    TH1F* h_diffEpiX = new TH1F("h_diffEpiX", title, 100, -10, 10);
     h_diffEpiX->SetLineColor(kRed);
-    TH1F* h_diffEpX = new TH1F("h_diffEpX", title, 100, -15, 15);
+    TH1F* h_diffEpX = new TH1F("h_diffEpX", title, 100, -10, 10);
     h_diffEpX->SetLineColor(kBlue);
 
     // Fill histograms with the difference vz_e - vz_p
