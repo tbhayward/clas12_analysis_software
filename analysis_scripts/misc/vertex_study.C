@@ -18,11 +18,11 @@ void DrawHistogramsForPanel(const char* file_eX, const char* file_epiX, const ch
     TTree* treeEkX = (TTree*)fileEkX->Get("PhysicsEvents");
 
     // Create histograms
-    TH1F* h_eX = new TH1F("h_eX", title, 100, -10, 10);
+    TH1F* h_eX = new TH1F("h_eX", title, 100, -15, 10);
     h_eX->SetLineColor(kBlack);
-    TH1F* h_epiX = new TH1F("h_epiX", title, 100, -10, 10);
+    TH1F* h_epiX = new TH1F("h_epiX", title, 100, -15, 10);
     h_epiX->SetLineColor(kRed);
-    TH1F* h_ekX = new TH1F("h_ekX", title, 100, -10, 10);
+    TH1F* h_ekX = new TH1F("h_ekX", title, 100, -15, 10);
     h_ekX->SetLineColor(kBlue);
 
     // Fill histograms
