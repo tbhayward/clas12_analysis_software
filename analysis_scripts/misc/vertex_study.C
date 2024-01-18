@@ -61,67 +61,141 @@ void DrawNegHistogramsForPanel(const char* file_eX, const char* file_epiX, const
     gStyle->SetOptStat(0);
 }
 
+void DrawPosHistogramsForPanel(const char* file_epiX, const char* file_epX, TPad* pad, const char* title) {
+    // Load files and trees
+    TFile* fileEpiX = new TFile(file_epiX);
+    TTree* treeEpiX = (TTree*)fileEpiX->Get("PhysicsEvents");
+    TFile* fileEpX = new TFile(file_epX);
+    TTree* treeEpX = (TTree*)fileEpX->Get("PhysicsEvents");
+
+    // Create histograms
+    TH1F* h_epiX = new TH1F("h_epiX", title, 100, -15, 10);
+    h_epiX->SetLineColor(kRed);
+    TH1F* h_epX = new TH1F("h_ekX", title, 100, -15, 10);
+    h_epX->SetLineColor(kBlue);
+
+    // Fill histograms
+    treeEpiX->Draw("vz_p>>h_epiX");
+    treeEpX->Draw("vz_p>>h_epX");
+
+    // Normalize histograms
+    h_epiX->Scale(1.0 / h_epiX->Integral());
+    h_epX->Scale(1.0 / h_epX->Integral());
+
+    // Draw histograms on the pad
+    pad->cd();
+    h_epiX->Draw("HIST");
+    h_epX->Draw("HIST SAME");
+
+    // Add a legend
+    TLegend* legend = new TLegend(0.8, 0.75, 0.9, 0.9);
+    legend->SetTextSize(0.04); // Increase font size
+    legend->AddEntry(h_epiX, "#pi^{-}", "l");
+    legend->AddEntry(h_epX, "p", "l");
+    legend->Draw();
+
+    // Style the histograms
+    h_epiX->GetXaxis()->SetTitle("v_{z} (cm)");
+    h_epiX->GetYaxis()->SetTitle("normalized counts");
+    h_epiX->GetXaxis()->CenterTitle();
+    h_epiX->GetYaxis()->CenterTitle();
+    h_epiX->GetXaxis()->SetTitleSize(0.05);
+    h_epiX->GetYaxis()->SetTitleSize(0.05);
+
+    // Remove the stat box
+    gStyle->SetOptStat(0);
+}
+
 void vertex_study() {
     // Create a canvas with multiple pads
     TCanvas *c_neg = new TCanvas("c_neg", "Vertex Study", 1200, 800);
     c_neg->Divide(3, 2); // 3 columns, 2 rows
-
     // RGA Fa18 Inb
     DrawNegHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_eX.root",
         "/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_epi-X.root",
         "/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_ek-X.root",
-        (TPad*)c_neg->cd(1),
-        "RGA Fa18 Inb"
+        (TPad*)c_neg->cd(1), "RGA Fa18 Inb"
     );
-
     // RGA Fa18 Out
     DrawNegHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_eX.root",
         "/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_epi-X.root",
         "/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_ek-X.root",
-        (TPad*)c_neg->cd(2),
-        "RGA Fa18 Out"
+        (TPad*)c_neg->cd(2), "RGA Fa18 Out"
     );
-
     // RGA Sp19 Inb
     DrawNegHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rga/sp19_inb/rga_sp19_inb_eX.root",
         "/volatile/clas12/thayward/vertex_studies/rga/sp19_inb/rga_sp19_inb_epi-X.root",
         "/volatile/clas12/thayward/vertex_studies/rga/sp19_inb/rga_sp19_inb_ek-X.root",
-        (TPad*)c_neg->cd(3),
-        "RGA Sp19 Inb"
+        (TPad*)c_neg->cd(3), "RGA Sp19 Inb"
     );
-
     // RGB Sp19 Inb
     DrawNegHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rgb/sp19_inb/rgb_sp19_inb_eX.root",
         "/volatile/clas12/thayward/vertex_studies/rgb/sp19_inb/rgb_sp19_inb_epi-X.root",
         "/volatile/clas12/thayward/vertex_studies/rgb/sp19_inb/rgb_sp19_inb_ek-X.root",
-        (TPad*)c_neg->cd(4),
-        "RGB Sp19 Inb"
+        (TPad*)c_neg->cd(4), "RGB Sp19 Inb"
     );
-
     // RGB Fa19 Out
     DrawNegHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rgb/fa19_out/rgb_fa19_out_eX.root",
         "/volatile/clas12/thayward/vertex_studies/rgb/fa19_out/rgb_fa19_out_epi-X.root",
         "/volatile/clas12/thayward/vertex_studies/rgb/fa19_out/rgb_fa19_out_ek-X.root",
-        (TPad*)c_neg->cd(5),
-        "RGB Fa19 Out"
+        (TPad*)c_neg->cd(5), "RGB Fa19 Out"
     );
-
     // RGB Sp20 Inb
     DrawNegHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rgb/sp20_inb/rgb_sp20_inb_eX.root",
         "/volatile/clas12/thayward/vertex_studies/rgb/sp20_inb/rgb_sp20_inb_epi-X.root",
         "/volatile/clas12/thayward/vertex_studies/rgb/sp20_inb/rgb_sp20_inb_ek-X.root",
-        (TPad*)c_neg->cd(6),
-        "RGB Sp20 Inb"
+        (TPad*)c_neg->cd(6), "RGB Sp20 Inb"
     );
-
     // Save the canvas as a PNG file
     c_neg->SaveAs("output/neg_vz.png");
+
+    // Create a canvas with multiple pads
+    TCanvas *c_pos = new TCanvas("c_neg", "Vertex Study", 1200, 800);
+    c_pos->Divide(3, 2); // 3 columns, 2 rows
+    // RGA Fa18 Inb
+    DrawNegHistogramsForPanel(
+        "/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_epi+X.root",
+        "/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_epX.root",
+        (TPad*)c_pos->cd(1), "RGA Fa18 Inb"
+    );
+    // RGA Fa18 Out
+    DrawNegHistogramsForPanel(
+        "/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_epi+X.root",
+        "/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_epX.root",
+        (TPad*)c_pos->cd(2), "RGA Fa18 Out"
+    );
+    // RGA Sp19 Inb
+    DrawNegHistogramsForPanel(
+        "/volatile/clas12/thayward/vertex_studies/rga/sp19_inb/rga_sp19_inb_epi+X.root",
+        "/volatile/clas12/thayward/vertex_studies/rga/sp19_inb/rga_sp19_inb_epX.root",
+        (TPad*)c_pos->cd(3), "RGA Sp19 Inb"
+    );
+    // RGB Sp19 Inb
+    DrawNegHistogramsForPanel(
+        "/volatile/clas12/thayward/vertex_studies/rgb/sp19_inb/rgb_sp19_inb_epi+X.root",
+        "/volatile/clas12/thayward/vertex_studies/rgb/sp19_inb/rgb_sp19_inb_epX.root",
+        (TPad*)c_pos->cd(4), "RGB Sp19 Inb"
+    );
+    // RGB Fa19 Out
+    DrawNegHistogramsForPanel(
+        "/volatile/clas12/thayward/vertex_studies/rgb/fa19_out/rgb_fa19_out_epi+X.root",
+        "/volatile/clas12/thayward/vertex_studies/rgb/fa19_out/rgb_fa19_out_epX.root",
+        (TPad*)c_pos->cd(5), "RGB Fa19 Out"
+    );
+    // RGB Sp20 Inb
+    DrawNegHistogramsForPanel(
+        "/volatile/clas12/thayward/vertex_studies/rgb/sp20_inb/rgb_sp20_inb_epi+X.root",
+        "/volatile/clas12/thayward/vertex_studies/rgb/sp20_inb/rgb_sp20_inb_epX.root",
+        (TPad*)c_pos->cd(6), "RGB Sp20 Inb"
+    );
+    // Save the canvas as a PNG file
+    c_pos->SaveAs("output/pos_vz.png");
 }
 
 int main() {
