@@ -1056,7 +1056,8 @@ void createCorrelationPlots() {
             // Set the margins to avoid cutting off labels
             hist->GetXaxis()->SetTitleOffset(1.3);
             hist->GetYaxis()->SetTitleOffset(1.6);
-
+            
+            cout << "HELLO WORLD" << endl;
             // Loop over dataReader to fill the histogram
             KinematicCuts kinematicCuts(dataReader);
             while (dataReader.Next()) {
@@ -1081,7 +1082,6 @@ void createCorrelationPlots() {
             delete hist;
             delete c;
 
-            cout << "HELLO WORLD" << endl;
             // Restart the TTreeReader for the next iteration
             dataReader.Restart();
         }
