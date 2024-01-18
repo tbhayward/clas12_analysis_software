@@ -90,7 +90,7 @@ void DrawPosHistogramsForPanel(const char* file_epiX, const char* file_epX, TPad
     // Add a legend
     TLegend* legend = new TLegend(0.8, 0.75, 0.9, 0.9);
     legend->SetTextSize(0.04); // Increase font size
-    legend->AddEntry(h_epiX, "#pi^{-}", "l");
+    legend->AddEntry(h_epiX, "#pi^{+}", "l");
     legend->AddEntry(h_epX, "p", "l");
     legend->Draw();
 
