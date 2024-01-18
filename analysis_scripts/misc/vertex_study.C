@@ -93,11 +93,13 @@ void DrawDiffNegHistogramsForPanel(const char* file_epiX, const char* file_epX,
     TH1F* h_diffEpX = new TH1F("h_diffEpX", title, 100, -8, 8);
     h_diffEpX->SetLineColor(kBlue);
 
-    // Construct the condition string using vz_min and vz_max
+    // Construct the draw command with condition
+    TString drawCommandEpiX = Form("vz_e-vz_p>>h_diffEpiX", vz_min, vz_max);
+    TString drawCommandEpX = Form("vz_e-vz_p>>h_diffEpX", vz_min, vz_max);
     TString condition = Form("%f < vz_e && vz_e < %f", vz_min, vz_max);
     // Fill histograms with the difference vz_e - vz_p, with the condition
-    treeEpiX->Draw(Form("vz_e-vz_p>>h_diffEpiX", condition.Data()));
-    treeEpX->Draw(Form("vz_e-vz_p>>h_diffEpX", condition.Data()));
+    treeEpiX->Draw(drawCommandEpiX + " " + condition);
+    treeEpX->Draw(drawCommandEpX + " " + condition);
 
     // Normalize histograms
     h_diffEpiX->Scale(1.0 / h_diffEpiX->Integral());
@@ -162,11 +164,13 @@ void DrawDiffPosHistogramsForPanel(const char* file_epiX, const char* file_epX,
     TH1F* h_diffEpX = new TH1F("h_diffEpX", title, 100, -8, 8);
     h_diffEpX->SetLineColor(kBlue);
 
-    // Construct the condition string using vz_min and vz_max
+    // Construct the draw command with condition
+    TString drawCommandEpiX = Form("vz_e-vz_p>>h_diffEpiX", vz_min, vz_max);
+    TString drawCommandEpX = Form("vz_e-vz_p>>h_diffEpX", vz_min, vz_max);
     TString condition = Form("%f < vz_e && vz_e < %f", vz_min, vz_max);
     // Fill histograms with the difference vz_e - vz_p, with the condition
-    treeEpiX->Draw(Form("vz_e-vz_p>>h_diffEpiX", condition.Data()));
-    treeEpX->Draw(Form("vz_e-vz_p>>h_diffEpX", condition.Data()));
+    treeEpiX->Draw(drawCommandEpiX + " " + condition);
+    treeEpX->Draw(drawCommandEpX + " " + condition);
 
     // Normalize histograms
     h_diffEpiX->Scale(1.0 / h_diffEpiX->Integral());
