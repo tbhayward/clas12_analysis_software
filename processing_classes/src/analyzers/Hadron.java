@@ -69,6 +69,15 @@ public class Hadron {
 //        else if (variables.z()<0.2 || variables.z() > 0.95) { return false; } 
 //        else if (variables.p_p()<1.25) { return false; } 
 //        else if (variables.Mx()<1.5) { return false; } 
+        
+        
+        else if (variables.e_p > 12 || variables.p_p > 12 || variables.Q2 > 12 || variables.W > 6 || 
+                variables.z > 2 || variables.zeta > 2 || 
+                variables.Mx < - 4 || variables.pT > 2 || variables.xF < -2 || variables.xF > 2 || 
+                variables.Depolarization_A > 5 || variables.Depolarization_B > 5 ||
+                variables.Depolarization_C > 5 || variables.Depolarization_V > 5 ||
+                variables.Depolarization_W > 5) 
+                { return false; }
 	return true;
     }
     
