@@ -1003,9 +1003,8 @@ void createIntegratedKinematicPlots() {
 
 void createCorrelationPlots() {
     const std::string outputDir = "output/correlation_plots/";
-    const std::vector<std::string> branchesToSkip = {"helicity", "beam_pol", "target_pol", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"};
+    const std::vector<std::string> branchesToSkip = {"helicity", "beam_pol", "target_pol", "runnum", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"};
 
-    cout << "HELLO WORLD" << endl;
     // Assuming histConfigs is a global variable or it is accessible within this function's scope
     extern std::map<std::string, HistConfig> histConfigs;
 
@@ -1024,6 +1023,8 @@ void createCorrelationPlots() {
             branchNames.push_back(name);
         }
     }
+
+    cout << "HELLO WORLD" << endl;
 
     // Generate all possible pairs of branches to plot
     for (size_t i = 0; i < branchNames.size(); ++i) {
