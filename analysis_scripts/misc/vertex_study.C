@@ -124,9 +124,9 @@ void DrawDiffPosHistogramsForPanel(const char* file_epiX, const char* file_epX,
     TTree* treeEpX = (TTree*)fileEpX->Get("PhysicsEvents");
 
     // Create histograms for vz_e - vz_p
-    TH1F* h_diffEpiX = new TH1F("h_diffEpiX", title, 100, -10, 10);
+    TH1F* h_diffEpiX = new TH1F("h_diffEpiX", title, 100, -8, 8);
     h_diffEpiX->SetLineColor(kRed);
-    TH1F* h_diffEpX = new TH1F("h_diffEpX", title, 100, -10, 10);
+    TH1F* h_diffEpX = new TH1F("h_diffEpX", title, 100, -8, 8);
     h_diffEpX->SetLineColor(kBlue);
 
     // Fill histograms with the difference vz_e - vz_p
@@ -149,7 +149,7 @@ void DrawDiffPosHistogramsForPanel(const char* file_epiX, const char* file_epX,
     double stdEpX = h_diffEpX->GetStdDev();
 
     // Add a legend with mean and std
-    TLegend* legend = new TLegend(0.7, 0.75, 0.9, 0.9);
+    TLegend* legend = new TLegend(0.6, 0.75, 0.9, 0.9);
     legend->SetTextSize(0.04); // Increase font size
     TString legendEntryEpiX = Form("#pi^{+}, #mu = %.2f, #sigma = %.2f", meanEpiX, stdEpiX);
     TString legendEntryEpX = Form("p, #mu = %.2f, #sigma = %.2f", meanEpX, stdEpX);
