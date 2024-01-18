@@ -42,7 +42,7 @@ void vertex_study() {
     h_rgafa18inbeX->Draw("HIST");
 
     // Add a legend
-    TTLegend *legend = new TLegend(0.7 - c1->GetLeftMargin(), 0.9, 0.9 - c1->GetLeftMargin(), 0.95);
+    TLegend *legend = new TLegend(0.7 - c1->GetLeftMargin(), 0.9, 0.9 - c1->GetLeftMargin(), 0.95);
     legend->AddEntry(h_rgafa18inbeX, "e^{-}", "l");
     legend->Draw();
 
