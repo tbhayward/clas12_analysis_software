@@ -21,11 +21,11 @@ void DrawNegHistogramsForPanel(const char* file_eX, const char* file_epiX, const
     TTree* treeEkX = (TTree*)fileEkX->Get("PhysicsEvents");
 
     // Create histograms
-    TH1F* h_eX = new TH1F("h_eX", title, 100, -15, 1);
+    TH1F* h_eX = new TH1F("h_eX", title, 100, -15, 10);
     h_eX->SetLineColor(kBlack);
-    TH1F* h_epiX = new TH1F("h_epiX", title, 100, -15, 1);
+    TH1F* h_epiX = new TH1F("h_epiX", title, 100, -15, 10);
     h_epiX->SetLineColor(kRed);
-    TH1F* h_ekX = new TH1F("h_ekX", title, 100, -15, 1);
+    TH1F* h_ekX = new TH1F("h_ekX", title, 100, -15, 10);
     h_ekX->SetLineColor(kBlue);
 
     // Fill histograms
@@ -77,7 +77,7 @@ void DrawNegHistogramsForPanel(const char* file_eX, const char* file_epiX, const
 }
 
 void DrawDiffNegHistogramsForPanel(const char* file_epiX, const char* file_epX, 
-        TPad* pad, const char* title, double vz_min, double vz_max) {
+        TPad* pad, const char* title) {
     pad->SetLeftMargin(0.15); // Increase left margin
     pad->SetBottomMargin(0.15); // Increase bottom margin
 
@@ -93,13 +93,11 @@ void DrawDiffNegHistogramsForPanel(const char* file_epiX, const char* file_epX,
     TH1F* h_diffEpX = new TH1F("h_diffEpX", title, 100, -8, 8);
     h_diffEpX->SetLineColor(kBlue);
 
-    // Construct the condition string
+    // Construct the condition string using vz_min and vz_max
     TString condition = Form("%f < vz_e && vz_e < %f", vz_min, vz_max);
     // Fill histograms with the difference vz_e - vz_p, with the condition
-    TString drawCommandEpiX = "vz_e-vz_p>>h_diffEpiX";
-    TString drawCommandEpX = "vz_e-vz_p>>h_diffEpX";
-    treeEpiX->Draw(drawCommandEpiX + " (" + condition + ")");
-    treeEpX->Draw(drawCommandEpX + " (" + condition + ")");
+    treeEpiX->Draw(Form("vz_e-vz_p>>h_diffEpiX", condition.Data()));
+    treeEpX->Draw(Form("vz_e-vz_p>>h_diffEpX", condition.Data()));
 
     // Normalize histograms
     h_diffEpiX->Scale(1.0 / h_diffEpiX->Integral());
@@ -148,7 +146,7 @@ void DrawDiffNegHistogramsForPanel(const char* file_epiX, const char* file_epX,
 }
 
 void DrawDiffPosHistogramsForPanel(const char* file_epiX, const char* file_epX, 
-        TPad* pad, const char* title, double vz_min, double vz_max) {
+        TPad* pad, const char* title) {
     pad->SetLeftMargin(0.15); // Increase left margin
     pad->SetBottomMargin(0.15); // Increase bottom margin
 
@@ -164,13 +162,9 @@ void DrawDiffPosHistogramsForPanel(const char* file_epiX, const char* file_epX,
     TH1F* h_diffEpX = new TH1F("h_diffEpX", title, 100, -8, 8);
     h_diffEpX->SetLineColor(kBlue);
 
-    // Construct the condition string
-    TString condition = Form("%f < vz_e && vz_e < %f", vz_min, vz_max);
-    // Fill histograms with the difference vz_e - vz_p, with the condition
-    TString drawCommandEpiX = "vz_e-vz_p>>h_diffEpiX";
-    TString drawCommandEpX = "vz_e-vz_p>>h_diffEpX";
-    treeEpiX->Draw(drawCommandEpiX + " (" + condition + ")");
-    treeEpX->Draw(drawCommandEpX + " (" + condition + ")");
+    // Fill histograms with the difference vz_e - vz_p
+    treeEpiX->Draw("vz_e-vz_p>>h_diffEpiX");
+    treeEpX->Draw("vz_e-vz_p>>h_diffEpX");
 
     // Normalize histograms
     h_diffEpiX->Scale(1.0 / h_diffEpiX->Integral());
@@ -268,6 +262,48 @@ void vertex_study() {
     // Save the canvas as a PNG file
     c_neg->SaveAs("output/neg_vz.png");
 
+    // // Create a canvas with multiple pads
+    // TCanvas *c_pos = new TCanvas("c_neg", "Vertex Study", 1200, 800);
+    // c_pos->Divide(3, 2); // 3 columns, 2 rows
+    // // RGA Fa18 Inb
+    // DrawPosHistogramsForPanel(
+    //     "/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_epi+X.root",
+    //     "/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_epX.root",
+    //     (TPad*)c_pos->cd(1), "RGA Fa18 Inb"
+    // );
+    // // RGA Fa18 Out
+    // DrawPosHistogramsForPanel(
+    //     "/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_epi+X.root",
+    //     "/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_epX.root",
+    //     (TPad*)c_pos->cd(2), "RGA Fa18 Out"
+    // );
+    // // RGA Sp19 Inb
+    // DrawPosHistogramsForPanel(
+    //     "/volatile/clas12/thayward/vertex_studies/rga/sp19_inb/rga_sp19_inb_epi+X.root",
+    //     "/volatile/clas12/thayward/vertex_studies/rga/sp19_inb/rga_sp19_inb_epX.root",
+    //     (TPad*)c_pos->cd(3), "RGA Sp19 Inb"
+    // );
+    // // RGB Sp19 Inb
+    // DrawPosHistogramsForPanel(
+    //     "/volatile/clas12/thayward/vertex_studies/rgb/sp19_inb/rgb_sp19_inb_epi+X.root",
+    //     "/volatile/clas12/thayward/vertex_studies/rgb/sp19_inb/rgb_sp19_inb_epX.root",
+    //     (TPad*)c_pos->cd(4), "RGB Sp19 Inb"
+    // );
+    // // RGB Fa19 Out
+    // DrawPosHistogramsForPanel(
+    //     "/volatile/clas12/thayward/vertex_studies/rgb/fa19_out/rgb_fa19_out_epi+X.root",
+    //     "/volatile/clas12/thayward/vertex_studies/rgb/fa19_out/rgb_fa19_out_epX.root",
+    //     (TPad*)c_pos->cd(5), "RGB Fa19 Out"
+    // );
+    // // RGB Sp20 Inb
+    // DrawPosHistogramsForPanel(
+    //     "/volatile/clas12/thayward/vertex_studies/rgb/sp20_inb/rgb_sp20_inb_epi+X.root",
+    //     "/volatile/clas12/thayward/vertex_studies/rgb/sp20_inb/rgb_sp20_inb_epX.root",
+    //     (TPad*)c_pos->cd(6), "RGB Sp20 Inb"
+    // );
+    // // Save the canvas as a PNG file
+    // c_pos->SaveAs("output/pos_vz.png");
+
     // Create a canvas with multiple pads
     TCanvas *c_neg_diff = new TCanvas("c_neg", "Vertex Study", 1200, 800);
     c_neg_diff->Divide(3, 2); // 3 columns, 2 rows
@@ -275,37 +311,37 @@ void vertex_study() {
     DrawDiffNegHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_epi-X.root",
         "/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_ek-X.root",
-        (TPad*)c_neg_diff->cd(1), "RGA Fa18 Inb", -6, 1
+        (TPad*)c_neg_diff->cd(1), "RGA Fa18 Inb"
     );
     // RGA Fa18 Out
     DrawDiffNegHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_epi-X.root",
         "/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_ek-X.root",
-        (TPad*)c_neg_diff->cd(2), "RGA Fa18 Out", -7, 0
+        (TPad*)c_neg_diff->cd(2), "RGA Fa18 Out"
     );
     // RGA Sp19 Inb
     DrawDiffNegHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rga/sp19_inb/rga_sp19_inb_epi-X.root",
         "/volatile/clas12/thayward/vertex_studies/rga/sp19_inb/rga_sp19_inb_ek-X.root",
-        (TPad*)c_neg_diff->cd(3), "RGA Sp19 Inb", -6, 1
+        (TPad*)c_neg_diff->cd(3), "RGA Sp19 Inb"
     );
     // RGB Sp19 Inb
     DrawDiffNegHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rgb/sp19_inb/rgb_sp19_inb_epi-X.root",
         "/volatile/clas12/thayward/vertex_studies/rgb/sp19_inb/rgb_sp19_inb_ek-X.root",
-        (TPad*)c_neg_diff->cd(4), "RGB Sp19 Inb", -6, 1
+        (TPad*)c_neg_diff->cd(4), "RGB Sp19 Inb"
     );
     // RGB Fa19 Out
     DrawDiffNegHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rgb/fa19_out/rgb_fa19_out_epi-X.root",
         "/volatile/clas12/thayward/vertex_studies/rgb/fa19_out/rgb_fa19_out_ek-X.root",
-        (TPad*)c_neg_diff->cd(5), "RGB Fa19 Out", -7, 0
+        (TPad*)c_neg_diff->cd(5), "RGB Fa19 Out"
     );
     // RGB Sp20 Inb
     DrawDiffNegHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rgb/sp20_inb/rgb_sp20_inb_epi-X.root",
         "/volatile/clas12/thayward/vertex_studies/rgb/sp20_inb/rgb_sp20_inb_ek-X.root",
-        (TPad*)c_neg_diff->cd(6), "RGB Sp20 Inb", -6, 1
+        (TPad*)c_neg_diff->cd(6), "RGB Sp20 Inb"
     );
     // Save the canvas as a PNG file
     c_neg_diff->SaveAs("output/neg_diff_vz.png");
@@ -317,37 +353,37 @@ void vertex_study() {
     DrawDiffPosHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_epi+X.root",
         "/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_epX.root",
-        (TPad*)c_pos_diff->cd(1), "RGA Fa18 Inb", -6, 1
+        (TPad*)c_pos_diff->cd(1), "RGA Fa18 Inb"
     );
     // RGA Fa18 Out
     DrawDiffPosHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_epi+X.root",
         "/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_epX.root",
-        (TPad*)c_pos_diff->cd(2), "RGA Fa18 Out", -7, 0
+        (TPad*)c_pos_diff->cd(2), "RGA Fa18 Out"
     );
     // RGA Sp19 Inb
     DrawDiffPosHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rga/sp19_inb/rga_sp19_inb_epi+X.root",
         "/volatile/clas12/thayward/vertex_studies/rga/sp19_inb/rga_sp19_inb_epX.root",
-        (TPad*)c_pos_diff->cd(3), "RGA Sp19 Inb", -6, 1
+        (TPad*)c_pos_diff->cd(3), "RGA Sp19 Inb"
     );
     // RGB Sp19 Inb
     DrawDiffPosHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rgb/sp19_inb/rgb_sp19_inb_epi+X.root",
         "/volatile/clas12/thayward/vertex_studies/rgb/sp19_inb/rgb_sp19_inb_epX.root",
-        (TPad*)c_pos_diff->cd(4), "RGB Sp19 Inb", -6, 1
+        (TPad*)c_pos_diff->cd(4), "RGB Sp19 Inb"
     );
     // RGB Fa19 Out
     DrawDiffPosHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rgb/fa19_out/rgb_fa19_out_epi+X.root",
         "/volatile/clas12/thayward/vertex_studies/rgb/fa19_out/rgb_fa19_out_epX.root",
-        (TPad*)c_pos_diff->cd(5), "RGB Fa19 Out", -7, 0
+        (TPad*)c_pos_diff->cd(5), "RGB Fa19 Out"
     );
     // RGB Sp20 Inb
     DrawDiffPosHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rgb/sp20_inb/rgb_sp20_inb_epi+X.root",
         "/volatile/clas12/thayward/vertex_studies/rgb/sp20_inb/rgb_sp20_inb_epX.root",
-        (TPad*)c_pos_diff->cd(6), "RGB Sp20 Inb", -6, 1
+        (TPad*)c_pos_diff->cd(6), "RGB Sp20 Inb"
     );
     // Save the canvas as a PNG file
     c_pos_diff->SaveAs("output/pos_diff_vz.png");
