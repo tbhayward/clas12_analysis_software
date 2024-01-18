@@ -17,6 +17,7 @@
 std::vector<RunInfo> run_info_list;
 
 void load_run_info_from_csv(const std::string& filename) {
+  std::cout << "HELLO WORLD ARE WE EVEN IN HERE" << std::endl;
   // Open the input file with the given filename
   std::ifstream file(filename);
   if (!file) {
