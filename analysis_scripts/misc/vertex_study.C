@@ -277,31 +277,31 @@ void vertex_study() {
     DrawDiffNegHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_epi-X.root",
         "/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_ek-X.root",
-        (TPad*)c_neg_diff->cd(2), "RGA Fa18 Out", -7, 0,
+        (TPad*)c_neg_diff->cd(2), "RGA Fa18 Out", -7, 0
     );
     // RGA Sp19 Inb
     DrawDiffNegHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rga/sp19_inb/rga_sp19_inb_epi-X.root",
         "/volatile/clas12/thayward/vertex_studies/rga/sp19_inb/rga_sp19_inb_ek-X.root",
-        (TPad*)c_neg_diff->cd(3), "RGA Sp19 Inb", -6, 1,
+        (TPad*)c_neg_diff->cd(3), "RGA Sp19 Inb", -6, 1
     );
     // RGB Sp19 Inb
     DrawDiffNegHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rgb/sp19_inb/rgb_sp19_inb_epi-X.root",
         "/volatile/clas12/thayward/vertex_studies/rgb/sp19_inb/rgb_sp19_inb_ek-X.root",
-        (TPad*)c_neg_diff->cd(4), "RGB Sp19 Inb", -6, 1,
+        (TPad*)c_neg_diff->cd(4), "RGB Sp19 Inb", -6, 1
     );
     // RGB Fa19 Out
     DrawDiffNegHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rgb/fa19_out/rgb_fa19_out_epi-X.root",
         "/volatile/clas12/thayward/vertex_studies/rgb/fa19_out/rgb_fa19_out_ek-X.root",
-        (TPad*)c_neg_diff->cd(5), "RGB Fa19 Out", -7, 0,
+        (TPad*)c_neg_diff->cd(5), "RGB Fa19 Out", -7, 0
     );
     // RGB Sp20 Inb
     DrawDiffNegHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rgb/sp20_inb/rgb_sp20_inb_epi-X.root",
         "/volatile/clas12/thayward/vertex_studies/rgb/sp20_inb/rgb_sp20_inb_ek-X.root",
-        (TPad*)c_neg_diff->cd(6), "RGB Sp20 Inb", -6, 1,
+        (TPad*)c_neg_diff->cd(6), "RGB Sp20 Inb", -6, 1
     );
     // Save the canvas as a PNG file
     c_neg_diff->SaveAs("output/neg_diff_vz.png");
@@ -313,37 +313,37 @@ void vertex_study() {
     DrawDiffPosHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_epi+X.root",
         "/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_epX.root",
-        (TPad*)c_pos_diff->cd(1), "RGA Fa18 Inb", -6, 1,
+        (TPad*)c_pos_diff->cd(1), "RGA Fa18 Inb", -6, 1
     );
     // RGA Fa18 Out
     DrawDiffPosHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_epi+X.root",
         "/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_epX.root",
-        (TPad*)c_pos_diff->cd(2), "RGA Fa18 Out", -7, 0,
+        (TPad*)c_pos_diff->cd(2), "RGA Fa18 Out", -7, 0
     );
     // RGA Sp19 Inb
     DrawDiffPosHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rga/sp19_inb/rga_sp19_inb_epi+X.root",
         "/volatile/clas12/thayward/vertex_studies/rga/sp19_inb/rga_sp19_inb_epX.root",
-        (TPad*)c_pos_diff->cd(3), "RGA Sp19 Inb", -6, 1,
+        (TPad*)c_pos_diff->cd(3), "RGA Sp19 Inb", -6, 1
     );
     // RGB Sp19 Inb
     DrawDiffPosHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rgb/sp19_inb/rgb_sp19_inb_epi+X.root",
         "/volatile/clas12/thayward/vertex_studies/rgb/sp19_inb/rgb_sp19_inb_epX.root",
-        (TPad*)c_pos_diff->cd(4), "RGB Sp19 Inb", -6, 1,
+        (TPad*)c_pos_diff->cd(4), "RGB Sp19 Inb", -6, 1
     );
     // RGB Fa19 Out
     DrawDiffPosHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rgb/fa19_out/rgb_fa19_out_epi+X.root",
         "/volatile/clas12/thayward/vertex_studies/rgb/fa19_out/rgb_fa19_out_epX.root",
-        (TPad*)c_pos_diff->cd(5), "RGB Fa19 Out", -7, 0,
+        (TPad*)c_pos_diff->cd(5), "RGB Fa19 Out", -7, 0
     );
     // RGB Sp20 Inb
     DrawDiffPosHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rgb/sp20_inb/rgb_sp20_inb_epi+X.root",
         "/volatile/clas12/thayward/vertex_studies/rgb/sp20_inb/rgb_sp20_inb_epX.root",
-        (TPad*)c_pos_diff->cd(6), "RGB Sp20 Inb", -6, 1,
+        (TPad*)c_pos_diff->cd(6), "RGB Sp20 Inb", -6, 1
     );
     // Save the canvas as a PNG file
     c_pos_diff->SaveAs("output/pos_diff_vz.png");
