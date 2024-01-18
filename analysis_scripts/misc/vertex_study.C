@@ -112,6 +112,73 @@ void DrawPosHistogramsForPanel(const char* file_epiX, const char* file_epX, TPad
     gStyle->SetOptStat(0);
 }
 
+void DrawDiffNegHistogramsForPanel(const char* file_epiX, const char* file_epX, 
+        TPad* pad, const char* title) {
+    pad->SetLeftMargin(0.15); // Increase left margin
+    pad->SetBottomMargin(0.15); // Increase bottom margin
+
+    // Load files and trees
+    TFile* fileEpiX = new TFile(file_epiX);
+    TTree* treeEpiX = (TTree*)fileEpiX->Get("PhysicsEvents");
+    TFile* fileEpX = new TFile(file_epX);
+    TTree* treeEpX = (TTree*)fileEpX->Get("PhysicsEvents");
+
+    // Create histograms for vz_e - vz_p
+    TH1F* h_diffEpiX = new TH1F("h_diffEpiX", title, 100, -8, 8);
+    h_diffEpiX->SetLineColor(kRed);
+    TH1F* h_diffEpX = new TH1F("h_diffEpX", title, 100, -8, 8);
+    h_diffEpX->SetLineColor(kBlue);
+
+    // Fill histograms with the difference vz_e - vz_p
+    treeEpiX->Draw("vz_e-vz_p>>h_diffEpiX");
+    treeEpX->Draw("vz_e-vz_p>>h_diffEpX");
+
+    // Normalize histograms
+    h_diffEpiX->Scale(1.0 / h_diffEpiX->Integral());
+    h_diffEpX->Scale(1.0 / h_diffEpX->Integral());
+
+    // Find the maximum value among the histograms
+    double maxValEpiX = h_diffEpiX->GetMaximum();
+    double maxValEpX = h_diffEpX->GetMaximum();
+    double maxVal = TMath::Max(maxValEpiX, maxValEpX);
+
+    // Set y-axis to 20% higher than the largest maximum
+    double maxYAxis = maxVal * 1.3;
+    h_diffEpiX->SetMaximum(maxYAxis);
+    h_diffEpX->SetMaximum(maxYAxis); // This might be redundant but ensures consistency
+
+    // Draw histograms on the pad
+    pad->cd();
+    h_diffEpiX->Draw("HIST");
+    h_diffEpX->Draw("HIST SAME");
+
+    // Calculate mean and standard deviation for each histogram
+    double meanEpiX = h_diffEpiX->GetMean();
+    double stdEpiX = h_diffEpiX->GetStdDev();
+    double meanEpX = h_diffEpX->GetMean();
+    double stdEpX = h_diffEpX->GetStdDev();
+
+    // Add a legend with mean and std
+    TLegend* legend = new TLegend(0.4, 0.9, 0.9, 0.8);
+    legend->SetTextSize(0.04); // Increase font size
+    TString legendEntryEpiX = Form("#pi^{-}, #mu = %.2f, #sigma = %.2f", meanEpiX, stdEpiX);
+    TString legendEntryEpX = Form("k^{-}, #mu = %.2f, #sigma = %.2f", meanEpX, stdEpX);
+    legend->AddEntry(h_diffEpiX, legendEntryEpiX, "l");
+    legend->AddEntry(h_diffEpX, legendEntryEpX, "l");
+    legend->Draw();
+
+    // Style the histograms
+    h_diffEpiX->GetXaxis()->SetTitle("v_{z_{e}} - v_{z_{h}} (cm)");
+    h_diffEpiX->GetYaxis()->SetTitle("normalized counts");
+    h_diffEpiX->GetXaxis()->CenterTitle();
+    h_diffEpiX->GetYaxis()->CenterTitle();
+    h_diffEpiX->GetXaxis()->SetTitleSize(0.05);
+    h_diffEpiX->GetYaxis()->SetTitleSize(0.05);
+
+    // Remove the stat box
+    gStyle->SetOptStat(0);
+}
+
 void DrawDiffPosHistogramsForPanel(const char* file_epiX, const char* file_epX, 
         TPad* pad, const char* title) {
     pad->SetLeftMargin(0.15); // Increase left margin
@@ -275,37 +342,37 @@ void vertex_study() {
     TCanvas *c_neg_diff = new TCanvas("c_neg", "Vertex Study", 1200, 800);
     c_neg_diff->Divide(3, 2); // 3 columns, 2 rows
     // RGA Fa18 Inb
-    DrawDiffPosHistogramsForPanel(
+    DrawDiffNegHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_epi-X.root",
         "/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_ek-X.root",
         (TPad*)c_neg_diff->cd(1), "RGA Fa18 Inb"
     );
     // RGA Fa18 Out
-    DrawDiffPosHistogramsForPanel(
+    DrawDiffNegHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_epi-X.root",
         "/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_ek-X.root",
         (TPad*)c_neg_diff->cd(2), "RGA Fa18 Out"
     );
     // RGA Sp19 Inb
-    DrawDiffPosHistogramsForPanel(
+    DrawDiffNegHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rga/sp19_inb/rga_sp19_inb_epi-X.root",
         "/volatile/clas12/thayward/vertex_studies/rga/sp19_inb/rga_sp19_inb_ek-X.root",
         (TPad*)c_neg_diff->cd(3), "RGA Sp19 Inb"
     );
     // RGB Sp19 Inb
-    DrawDiffPosHistogramsForPanel(
+    DrawDiffNegHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rgb/sp19_inb/rgb_sp19_inb_epi-X.root",
         "/volatile/clas12/thayward/vertex_studies/rgb/sp19_inb/rgb_sp19_inb_ek-X.root",
         (TPad*)c_neg_diff->cd(4), "RGB Sp19 Inb"
     );
     // RGB Fa19 Out
-    DrawDiffPosHistogramsForPanel(
+    DrawDiffNegHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rgb/fa19_out/rgb_fa19_out_epi-X.root",
         "/volatile/clas12/thayward/vertex_studies/rgb/fa19_out/rgb_fa19_out_ek-X.root",
         (TPad*)c_neg_diff->cd(5), "RGB Fa19 Out"
     );
     // RGB Sp20 Inb
-    DrawDiffPosHistogramsForPanel(
+    DrawDiffNegHistogramsForPanel(
         "/volatile/clas12/thayward/vertex_studies/rgb/sp20_inb/rgb_sp20_inb_epi-X.root",
         "/volatile/clas12/thayward/vertex_studies/rgb/sp20_inb/rgb_sp20_inb_ek-X.root",
         (TPad*)c_neg_diff->cd(6), "RGB Sp20 Inb"
