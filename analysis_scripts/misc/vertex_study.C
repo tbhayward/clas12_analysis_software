@@ -143,7 +143,7 @@ void DrawDiffPosHistogramsForPanel(const char* file_epiX, const char* file_epX,
     double maxVal = TMath::Max(maxValEpiX, maxValEpX);
 
     // Set y-axis to 20% higher than the largest maximum
-    double maxYAxis = maxVal * 1.35;
+    double maxYAxis = maxVal * 1.3;
     h_diffEpiX->SetMaximum(maxYAxis);
     h_diffEpX->SetMaximum(maxYAxis); // This might be redundant but ensures consistency
 
