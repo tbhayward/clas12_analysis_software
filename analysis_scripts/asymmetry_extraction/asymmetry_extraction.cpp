@@ -1350,7 +1350,7 @@ int main(int argc, char *argv[]) {
   cout << endl;
 
   // load run info from external csv file
-  load_run_info_from_csv("imports/run_info_rgc.csv");
+  load_run_info_from_csv("clas12_run_info.csv");
   cout<< endl << endl <<"-- Loaded information from run_info_rgc.csv" << endl;
   cout << "Found " << run_info_list.size() << " runs." << endl;
   // cpp = 0; // total accumulated charge of positive beam - positive target
