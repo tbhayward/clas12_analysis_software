@@ -224,8 +224,7 @@ public class analysis_fitter extends GenericKinematicFitter {
             return lv > 9 && lw > 9; // "loose cut"
         }
     }
-
-
+    
     public boolean dc_fiducial_cut(int particle_Index, HipoDataBank rec_Bank, 
     HipoDataBank track_Bank, HipoDataBank traj_Bank, HipoDataBank run_Bank) {
         // trajectory crosses  (layers: 6 = DC region 1 start,  18 = DC region 2 center,  
@@ -737,14 +736,35 @@ public class analysis_fitter extends GenericKinematicFitter {
         return vz>-13 && vz<12;
     }
     
-    public boolean pion_z_vertex_cut(float vz, double trigger_electron_vz) {
-        return Math.abs(trigger_electron_vz - vz) < 20;
-//        return Math.abs(vz) < 13;
-    }
+//    public boolean pion_z_vertex_cut(float vz, double trigger_electron_vz) {
+//        return Math.abs(trigger_electron_vz - vz) < 20;
+////        return Math.abs(vz) < 13;
+//    }
+//    
+//    public boolean proton_z_vertex_cut(float vz, double pion_vz) {
+//        return Math.abs(pion_vz - vz) < 20;
+////        return Math.abs(vz) < 13;
+//    }
     
-    public boolean proton_z_vertex_cut(float vz, double pion_vz) {
-        return Math.abs(pion_vz - vz) < 20;
-//        return Math.abs(vz) < 13;
+    public boolean vertex_cut(int particle_Index, double trigger_electron_vz, 
+            HipoDataBank rec_Bank, HipoDataBank run_Bank) {
+        // pass2 derived vertex cuts
+        int pid = rec_Bank.getInt("pid", particle_Index);
+        float vz = rec_Bank.getFloat("vz", particle_Index);
+        double Delta_vz = trigger_electron_vz - vz;
+        float polarity = run_Bank.getFloat("torus", 0);
+        
+        if (pid == 11) {
+            if (polarity < 0) { return vz > -6 && vz < 1; }
+            if (polarity > 0) { return vz > -7 && vz < 0; }
+        } else if (pid > 0) { // positive hadrons
+            if (polarity < 0) { return Delta_vz > 1.15 - 3*2.44 && Delta_vz < 1.15 + 3*2.44; }
+            if (polarity > 0) { return Delta_vz > -0.86 - 3*2.24 && Delta_vz < -0.86 + 3*2.24; }
+        } else if (pid > 0) { // negative hadrons
+            if (polarity < 0) { return Delta_vz > 0.03 - 3*2.24 && Delta_vz < 0.03 + 3*2.24; }
+            if (polarity > 0) { return Delta_vz > 0.38 - 3*2.55 && Delta_vz < 0.38 + 3*2.55; }
+        }
+        return false;  // track didn't match any pid?
     }
     
     public boolean hadron_pass2_cut(int particle_Index, HipoDataBank rec_Bank) {
@@ -872,8 +892,9 @@ public class analysis_fitter extends GenericKinematicFitter {
             ;
     }
     
-    public boolean electron_test(int particle_Index, double p, float vz, HipoDataBank rec_Bank, HipoDataBank cal_Bank, 
-            HipoDataBank track_Bank, HipoDataBank traj_Bank, HipoDataBank run_Bank, HipoDataBank cc_Bank) {
+    public boolean electron_test(int particle_Index, double p, float vz, double trigger_electron_vz, 
+            HipoDataBank rec_Bank, HipoDataBank cal_Bank,  HipoDataBank track_Bank, 
+            HipoDataBank traj_Bank, HipoDataBank run_Bank, HipoDataBank cc_Bank) {
         return true
 //            && p > 2.2 // higher cut ultimately enforced when we cut on y < 0.8 or y < 0.75
 //                // this is just to speed up processing
@@ -881,7 +902,7 @@ public class analysis_fitter extends GenericKinematicFitter {
             && calorimeter_energy_cut(particle_Index, cal_Bank) 
             && calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
             && calorimeter_diagonal_cut(particle_Index, p, cal_Bank)
-//            && electron_z_vertex_cut(vz)
+            && vertex_cut(particle_Index, trigger_electron_vz, rec_Bank, run_Bank)    
             && pcal_fiducial_cut(particle_Index, rec_Bank, cal_Bank)
             && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
 //            && nphe_cut(particle_Index, cc_Bank) // legacy cut used in the analysis note to check the effect
@@ -900,7 +921,7 @@ public class analysis_fitter extends GenericKinematicFitter {
 //            && p > 1.00
 //            && p < 5.00 // this wasn't used in the dihadron publication but was used in the submitted single pion
             && forward_detector_cut(particle_Index, rec_Bank)
-            && pion_z_vertex_cut(vz, trigger_electron_vz)
+            && vertex_cut(particle_Index, trigger_electron_vz, rec_Bank, run_Bank) 
             && hadron_pass2_cut(particle_Index, rec_Bank)
 //            && pion_chi2pid_cut(particle_Index, rec_Bank)
 //            && hadron_chi2pid_cut(particle_Index, rec_Bank)
@@ -920,14 +941,14 @@ public class analysis_fitter extends GenericKinematicFitter {
 //            && p > 1.00
 //            && p < 3.5 
             && forward_detector_cut(particle_Index, rec_Bank)
-            && pion_z_vertex_cut(vz, trigger_electron_vz)
+            && vertex_cut(particle_Index, trigger_electron_vz, rec_Bank, run_Bank) 
             && hadron_pass2_cut(particle_Index, rec_Bank)
 //            && hadron_chi2pid_cut(particle_Index, rec_Bank)
             && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
               ;
     }
     
-    public boolean proton_test(int particle_Index, int pid, float vz, double pion_vz, 
+    public boolean proton_test(int particle_Index, int pid, float vz, double trigger_electron_vz, 
             HipoDataBank rec_Bank, HipoDataBank cal_Bank, HipoDataBank track_Bank, 
             HipoDataBank traj_Bank, HipoDataBank run_Bank) {
         
@@ -938,7 +959,7 @@ public class analysis_fitter extends GenericKinematicFitter {
         
         return true
 //            && p > 0.4
-            && proton_z_vertex_cut(vz, pion_vz)
+            && vertex_cut(particle_Index, trigger_electron_vz, rec_Bank, run_Bank) 
             && forward_detector_cut(particle_Index, rec_Bank)
             && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
             && hadron_pass2_cut(particle_Index, rec_Bank)
@@ -1015,8 +1036,8 @@ public class analysis_fitter extends GenericKinematicFitter {
                 float vy = rec_Bank.getFloat("vy",p_max_index);
                 float vz = rec_Bank.getFloat("vz",p_max_index);
                 if (particle_test(p_max_index, rec_Bank)
-                        && electron_test(p_max_index, p, vz, rec_Bank, cal_Bank, track_Bank, traj_Bank, 
-                                run_Bank, cc_Bank)) {
+                        && electron_test(p_max_index, p, vz, trigger_electron_vz, rec_Bank, 
+                                cal_Bank, track_Bank, traj_Bank,  run_Bank, cc_Bank)) {
                     // this checks all of the PID requirements, if it passes all of them the electron is 
                     // added to the event below
                     double fe = EnergyLoss(run_Bank.getFloat("torus", 0), pid, px, py, pz);
