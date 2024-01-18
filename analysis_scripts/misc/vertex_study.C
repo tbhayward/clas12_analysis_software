@@ -9,6 +9,9 @@
 
 // Function to draw histograms for a given panel
 void DrawNegHistogramsForPanel(const char* file_eX, const char* file_epiX, const char* file_ekX, TPad* pad, const char* title) {
+    pad->SetLeftMargin(0.15); // Increase left margin
+    pad->SetBottomMargin(0.15); // Increase bottom margin
+
     // Load files and trees
     TFile* fileEX = new TFile(file_eX);
     TTree* treeEX = (TTree*)fileEX->Get("PhysicsEvents");
@@ -62,6 +65,9 @@ void DrawNegHistogramsForPanel(const char* file_eX, const char* file_epiX, const
 }
 
 void DrawPosHistogramsForPanel(const char* file_epiX, const char* file_epX, TPad* pad, const char* title) {
+    pad->SetLeftMargin(0.15); // Increase left margin
+    pad->SetBottomMargin(0.15); // Increase bottom margin
+
     // Load files and trees
     TFile* fileEpiX = new TFile(file_epiX);
     TTree* treeEpiX = (TTree*)fileEpiX->Get("PhysicsEvents");
