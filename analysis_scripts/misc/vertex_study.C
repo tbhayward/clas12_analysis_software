@@ -54,7 +54,7 @@ void vertex_study() {
     h_rgafa18inbekmX->Draw("HIST SAME");
 
     // Add a legend
-    TLegend *legend = new TLegend(0.15, 0.8, 0.22, 0.9);
+    TLegend *legend = new TLegend(0.15, 0.75, 0.22, 0.9);
     legend->SetTextSize(0.04); // Increase font size
     legend->AddEntry(h_rgafa18inbeX, "e^{-}", "l");
     legend->AddEntry(h_rgafa18inbepimX, "#pi^{-}", "l");
