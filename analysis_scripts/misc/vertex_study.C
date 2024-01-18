@@ -137,6 +137,16 @@ void DrawDiffPosHistogramsForPanel(const char* file_epiX, const char* file_epX,
     h_diffEpiX->Scale(1.0 / h_diffEpiX->Integral());
     h_diffEpX->Scale(1.0 / h_diffEpX->Integral());
 
+    // Find the maximum value among the histograms
+    double maxValEpiX = h_diffEpiX->GetMaximum();
+    double maxValEpX = h_diffEpX->GetMaximum();
+    double maxVal = TMath::Max(maxValEpiX, maxValEpX);
+
+    // Set y-axis to 20% higher than the largest maximum
+    double maxYAxis = maxVal * 1.20;
+    h_diffEpiX->SetMaximum(maxYAxis);
+    h_diffEpX->SetMaximum(maxYAxis); // This might be redundant but ensures consistency
+
     // Draw histograms on the pad
     pad->cd();
     h_diffEpiX->Draw("HIST");
