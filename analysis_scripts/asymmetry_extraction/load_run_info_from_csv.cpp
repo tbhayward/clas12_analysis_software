@@ -8,6 +8,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <iostream>
 
 // tbhayward includes
 #include "load_run_info_from_csv.h"
