@@ -17,12 +17,18 @@ void vertex_study() {
     TFile *rgafa18inbekmXfile = new TFile("/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_ek-X.root");
     TTree *rgafa18inbekmXtree = (TTree*)rgafa18inbekmXfile->Get("PhysicsEvents");
 
-    // Create a histogram for vz_e
+    // Create histograms
     TH1F *h_rgafa18inbeX = new TH1F("h_rgafa18inbeX", "RGA Fa18 Inb", 100, -15, 10);
     h_rgafa18inbeX->SetLineColor(kBlack);
+    TH1F *h_rgafa18inbepimX = new TH1F("h_rgafa18inbepimX", "RGA Fa18 Inb", 100, -15, 10);
+    h_rgafa18inbepimX->SetLineColor(kRed);
+    TH1F *h_rgafa18inbekmX = new TH1F("h_rgafa18inbekmX", "RGA Fa18 Inb", 100, -15, 10);
+    h_rgafa18inbekmX->SetLineColor(kBlue);
 
     // Fill the histogram from the tree
     rgafa18inbeXtree->Draw("vz_e>>h_rgafa18inbeX");
+    rgafa18inbepimXtree->Draw("vz_p>>h_rgafa18inbepimX");
+    rgafa18inbekmXtree->Draw("vz_p>>h_rgafa18inbekmX");
 
     // Create a canvas
     TCanvas *c1 = new TCanvas("c1", "Canvas", 800, 600);
@@ -39,11 +45,15 @@ void vertex_study() {
     h_rgafa18inbeX->GetYaxis()->SetTitleSize(0.05);
 
     // Draw the histogram on the canvas
-    h_rgafa18inbeX->Draw("HIST");
+    h_rgafa18inbeX->Draw("HIST"); 
+    h_rgafa18inbepimX->Draw("HIST SAME"); 
+    h_rgafa18inbekmX->Draw("HIST SAME");
 
     // Add a legend
-    TLegend *legend = new TLegend(0.15, 0.8, 0.25, 0.9);
+    TLegend *legend = new TLegend(0.15, 0.8, 0.22, 0.9);
     legend->AddEntry(h_rgafa18inbeX, "e^{-}", "l");
+    legend->AddEntry(h_rgafa18inbepimX, "#pi^{-}", "l");
+    legend->AddEntry(h_rgafa18inbekmX, "k^{-}", "l");
     legend->Draw();
 
     // Remove the stat box
