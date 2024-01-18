@@ -61,7 +61,7 @@ void DrawNegHistogramsForPanel(const char* file_eX, const char* file_epiX, const
     h_eX->GetYaxis()->SetTitleSize(0.05);
 
     // Remove the stat box
-    // gStyle->SetOptStat(0);
+    gStyle->SetOptStat(0);
 }
 
 void DrawPosHistogramsForPanel(const char* file_epiX, const char* file_epX, TPad* pad, const char* title) {
@@ -109,7 +109,7 @@ void DrawPosHistogramsForPanel(const char* file_epiX, const char* file_epX, TPad
     h_epiX->GetYaxis()->SetTitleSize(0.05);
 
     // Remove the stat box
-    // gStyle->SetOptStat(0);
+    gStyle->SetOptStat(0);
 }
 
 void DrawDiffPosHistogramsForPanel(const char* file_epiX, const char* file_epX, 
@@ -142,11 +142,19 @@ void DrawDiffPosHistogramsForPanel(const char* file_epiX, const char* file_epX,
     h_diffEpiX->Draw("HIST");
     h_diffEpX->Draw("HIST SAME");
 
-    // Add a legend
+    // Calculate mean and standard deviation for each histogram
+    double meanEpiX = h_diffEpiX->GetMean();
+    double stdEpiX = h_diffEpiX->GetStdDev();
+    double meanEpX = h_diffEpX->GetMean();
+    double stdEpX = h_diffEpX->GetStdDev();
+
+    // Add a legend with mean and std
     TLegend* legend = new TLegend(0.8, 0.75, 0.9, 0.9);
     legend->SetTextSize(0.04); // Increase font size
-    legend->AddEntry(h_diffEpiX, "#pi^{+}", "l");
-    legend->AddEntry(h_diffEpX, "p", "l");
+    TString legendEntryEpiX = Form("#pi^{+}, #mu = %.2f, #sigma = %.2f", meanEpiX, stdEpiX);
+    TString legendEntryEpX = Form("p, #mu = %.2f, #sigma = %.2f", meanEpX, stdEpX);
+    legend->AddEntry(h_diffEpiX, legendEntryEpiX, "l");
+    legend->AddEntry(h_diffEpX, legendEntryEpX, "l");
     legend->Draw();
 
     // Style the histograms
@@ -158,7 +166,7 @@ void DrawDiffPosHistogramsForPanel(const char* file_epiX, const char* file_epX,
     h_diffEpiX->GetYaxis()->SetTitleSize(0.05);
 
     // Remove the stat box
-    // gStyle->SetOptStat(0);
+    gStyle->SetOptStat(0);
 }
 
 
