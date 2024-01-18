@@ -17,7 +17,6 @@
 std::vector<RunInfo> run_info_list;
 
 void load_run_info_from_csv(const std::string& filename) {
-  std::cout << "HELLO WORLD ARE WE EVEN IN HERE" << std::endl;
   // Open the input file with the given filename
   std::ifstream file(filename);
   if (!file) {
@@ -30,7 +29,8 @@ void load_run_info_from_csv(const std::string& filename) {
 
   // Loop through each line in the file until there are no more lines left to read
   while (std::getline(file, line)) {
-    std::cout << "Reading line: " << line << std::endl;
+    // std::cout << "Reading line: " << line << std::endl;
+    
     // If the line is empty or starts with a '#' (comment), skip to the next line
     if (line.empty() || line[0] == '#') { continue; }
 
