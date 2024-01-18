@@ -64,8 +64,8 @@ std::string formatLabelName(const std::string& original) {
         {"zeta12", "#zeta_{12}"},
         {"zeta13", "#zeta_{13}"},
         {"zeta23", "#zeta_{23}"},
-        {"vz_e", "{v_{ez}"},
-        {"vz_p", "{v_{pz}"},
+        {"vz_e", "v_{z_{e}}"},
+        {"vz_p", "v_{z_{p}}"},
     };
   
     if (specialLabels.find(original) != specialLabels.end()) {
