@@ -38,18 +38,30 @@ void DrawNegHistogramsForPanel(const char* file_eX, const char* file_epiX, const
     h_epiX->Scale(1.0 / h_epiX->Integral());
     h_ekX->Scale(1.0 / h_ekX->Integral());
 
+    // Find the maximum value among the histograms
+    double maxVal = h_eX->GetMaximum();
+
+    // Set y-axis to 20% higher than the largest maximum
+    double maxYAxis = maxVal * 1.3;
+    h_eX->SetMaximum(maxYAxis);
+    h_epiX->SetMaximum(maxYAxis); // This might be redundant but ensures consistency
+    h_ekX->SetMaximum(maxYAxis); // This might be redundant but ensures consistency
+
     // Draw histograms on the pad
     pad->cd();
     h_eX->Draw("HIST");
-    h_epiX->Draw("HIST SAME");
-    h_ekX->Draw("HIST SAME");
+    // h_epiX->Draw("HIST SAME");
+    // h_ekX->Draw("HIST SAME");
 
-    // Add a legend
-    TLegend* legend = new TLegend(0.8, 0.75, 0.9, 0.9);
+    // Calculate mean and standard deviation for each histogram
+    double meanEpiX = h_eX->GetMean();
+    double stdEpiX = h_eX->GetStdDev();
+
+    // Add a legend with mean and std
+    TLegend* legend = new TLegend(0.4, 0.9, 0.9, 0.8);
     legend->SetTextSize(0.04); // Increase font size
-    legend->AddEntry(h_eX, "e^{-}", "l");
-    legend->AddEntry(h_epiX, "#pi^{-}", "l");
-    legend->AddEntry(h_ekX, "k^{-}", "l");
+    TString legendEntryEpiX = Form("e^{-}, #mu = %.2f, #sigma = %.2f", meanEpiX, stdEpiX);
+    legend->AddEntry(h_diffEpiX, legendEntryEpiX, "l");
     legend->Draw();
 
     // Style the histograms
@@ -296,47 +308,47 @@ void vertex_study() {
     // Save the canvas as a PNG file
     c_neg->SaveAs("output/neg_vz.png");
 
-    // Create a canvas with multiple pads
-    TCanvas *c_pos = new TCanvas("c_neg", "Vertex Study", 1200, 800);
-    c_pos->Divide(3, 2); // 3 columns, 2 rows
-    // RGA Fa18 Inb
-    DrawPosHistogramsForPanel(
-        "/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_epi+X.root",
-        "/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_epX.root",
-        (TPad*)c_pos->cd(1), "RGA Fa18 Inb"
-    );
-    // RGA Fa18 Out
-    DrawPosHistogramsForPanel(
-        "/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_epi+X.root",
-        "/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_epX.root",
-        (TPad*)c_pos->cd(2), "RGA Fa18 Out"
-    );
-    // RGA Sp19 Inb
-    DrawPosHistogramsForPanel(
-        "/volatile/clas12/thayward/vertex_studies/rga/sp19_inb/rga_sp19_inb_epi+X.root",
-        "/volatile/clas12/thayward/vertex_studies/rga/sp19_inb/rga_sp19_inb_epX.root",
-        (TPad*)c_pos->cd(3), "RGA Sp19 Inb"
-    );
-    // RGB Sp19 Inb
-    DrawPosHistogramsForPanel(
-        "/volatile/clas12/thayward/vertex_studies/rgb/sp19_inb/rgb_sp19_inb_epi+X.root",
-        "/volatile/clas12/thayward/vertex_studies/rgb/sp19_inb/rgb_sp19_inb_epX.root",
-        (TPad*)c_pos->cd(4), "RGB Sp19 Inb"
-    );
-    // RGB Fa19 Out
-    DrawPosHistogramsForPanel(
-        "/volatile/clas12/thayward/vertex_studies/rgb/fa19_out/rgb_fa19_out_epi+X.root",
-        "/volatile/clas12/thayward/vertex_studies/rgb/fa19_out/rgb_fa19_out_epX.root",
-        (TPad*)c_pos->cd(5), "RGB Fa19 Out"
-    );
-    // RGB Sp20 Inb
-    DrawPosHistogramsForPanel(
-        "/volatile/clas12/thayward/vertex_studies/rgb/sp20_inb/rgb_sp20_inb_epi+X.root",
-        "/volatile/clas12/thayward/vertex_studies/rgb/sp20_inb/rgb_sp20_inb_epX.root",
-        (TPad*)c_pos->cd(6), "RGB Sp20 Inb"
-    );
-    // Save the canvas as a PNG file
-    c_pos->SaveAs("output/pos_vz.png");
+    // // Create a canvas with multiple pads
+    // TCanvas *c_pos = new TCanvas("c_neg", "Vertex Study", 1200, 800);
+    // c_pos->Divide(3, 2); // 3 columns, 2 rows
+    // // RGA Fa18 Inb
+    // DrawPosHistogramsForPanel(
+    //     "/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_epi+X.root",
+    //     "/volatile/clas12/thayward/vertex_studies/rga/fa18_inb/rga_fa18_inb_epX.root",
+    //     (TPad*)c_pos->cd(1), "RGA Fa18 Inb"
+    // );
+    // // RGA Fa18 Out
+    // DrawPosHistogramsForPanel(
+    //     "/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_epi+X.root",
+    //     "/volatile/clas12/thayward/vertex_studies/rga/fa18_out/rga_fa18_out_epX.root",
+    //     (TPad*)c_pos->cd(2), "RGA Fa18 Out"
+    // );
+    // // RGA Sp19 Inb
+    // DrawPosHistogramsForPanel(
+    //     "/volatile/clas12/thayward/vertex_studies/rga/sp19_inb/rga_sp19_inb_epi+X.root",
+    //     "/volatile/clas12/thayward/vertex_studies/rga/sp19_inb/rga_sp19_inb_epX.root",
+    //     (TPad*)c_pos->cd(3), "RGA Sp19 Inb"
+    // );
+    // // RGB Sp19 Inb
+    // DrawPosHistogramsForPanel(
+    //     "/volatile/clas12/thayward/vertex_studies/rgb/sp19_inb/rgb_sp19_inb_epi+X.root",
+    //     "/volatile/clas12/thayward/vertex_studies/rgb/sp19_inb/rgb_sp19_inb_epX.root",
+    //     (TPad*)c_pos->cd(4), "RGB Sp19 Inb"
+    // );
+    // // RGB Fa19 Out
+    // DrawPosHistogramsForPanel(
+    //     "/volatile/clas12/thayward/vertex_studies/rgb/fa19_out/rgb_fa19_out_epi+X.root",
+    //     "/volatile/clas12/thayward/vertex_studies/rgb/fa19_out/rgb_fa19_out_epX.root",
+    //     (TPad*)c_pos->cd(5), "RGB Fa19 Out"
+    // );
+    // // RGB Sp20 Inb
+    // DrawPosHistogramsForPanel(
+    //     "/volatile/clas12/thayward/vertex_studies/rgb/sp20_inb/rgb_sp20_inb_epi+X.root",
+    //     "/volatile/clas12/thayward/vertex_studies/rgb/sp20_inb/rgb_sp20_inb_epX.root",
+    //     (TPad*)c_pos->cd(6), "RGB Sp20 Inb"
+    // );
+    // // Save the canvas as a PNG file
+    // c_pos->SaveAs("output/pos_vz.png");
 
     // Create a canvas with multiple pads
     TCanvas *c_neg_diff = new TCanvas("c_neg", "Vertex Study", 1200, 800);
