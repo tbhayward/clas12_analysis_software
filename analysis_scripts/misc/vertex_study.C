@@ -29,6 +29,10 @@ void vertex_study() {
     rgafa18inbeXtree->Draw("vz_e>>h_rgafa18inbeX");
     rgafa18inbepimXtree->Draw("vz_p>>h_rgafa18inbepimX");
     rgafa18inbekmXtree->Draw("vz_p>>h_rgafa18inbekmX");
+    // Normalize the histograms
+    h_rgafa18inbeX->Scale(1.0 / h_rgafa18inbeX->Integral());
+    h_rgafa18inbepimX->Scale(1.0 / h_rgafa18inbepimX->Integral());
+    h_rgafa18inbekmX->Scale(1.0 / h_rgafa18inbekmX->Integral());
 
     // Create a canvas
     TCanvas *c1 = new TCanvas("c1", "Canvas", 800, 600);
@@ -38,7 +42,7 @@ void vertex_study() {
 
     // Style the histogram
     h_rgafa18inbeX->GetXaxis()->SetTitle("v_{z} (cm)");
-    h_rgafa18inbeX->GetYaxis()->SetTitle("counts");
+    h_rgafa18inbeX->GetYaxis()->SetTitle("normalized counts");
     h_rgafa18inbeX->GetXaxis()->CenterTitle();
     h_rgafa18inbeX->GetYaxis()->CenterTitle();
     h_rgafa18inbeX->GetXaxis()->SetTitleSize(0.05);
@@ -51,6 +55,7 @@ void vertex_study() {
 
     // Add a legend
     TLegend *legend = new TLegend(0.15, 0.8, 0.22, 0.9);
+    legend->SetTextSize(0.04); // Increase font size
     legend->AddEntry(h_rgafa18inbeX, "e^{-}", "l");
     legend->AddEntry(h_rgafa18inbepimX, "#pi^{-}", "l");
     legend->AddEntry(h_rgafa18inbekmX, "k^{-}", "l");
