@@ -71,7 +71,7 @@ void DrawPosHistogramsForPanel(const char* file_epiX, const char* file_epX, TPad
     // Create histograms
     TH1F* h_epiX = new TH1F("h_epiX", title, 100, -15, 10);
     h_epiX->SetLineColor(kRed);
-    TH1F* h_epX = new TH1F("h_ekX", title, 100, -15, 10);
+    TH1F* h_epX = new TH1F("h_epX", title, 100, -15, 10);
     h_epX->SetLineColor(kBlue);
 
     // Fill histograms
