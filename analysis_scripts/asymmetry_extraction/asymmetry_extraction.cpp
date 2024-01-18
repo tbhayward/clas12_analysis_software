@@ -1024,8 +1024,6 @@ void createCorrelationPlots() {
         }
     }
 
-    cout << "HELLO WORLD" << endl;
-
     // Generate all possible pairs of branches to plot
     for (size_t i = 0; i < branchNames.size(); ++i) {
         for (size_t j = i + 1; j < branchNames.size(); ++j) {
@@ -1083,6 +1081,7 @@ void createCorrelationPlots() {
             delete hist;
             delete c;
 
+            cout << "HELLO WORLD" << endl;
             // Restart the TTreeReader for the next iteration
             dataReader.Restart();
         }
