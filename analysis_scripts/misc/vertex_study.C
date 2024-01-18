@@ -159,7 +159,7 @@ void DrawDiffPosHistogramsForPanel(const char* file_epiX, const char* file_epX,
     double stdEpX = h_diffEpX->GetStdDev();
 
     // Add a legend with mean and std
-    TLegend* legend = new TLegend(0.45, 1-0.15, 0.9, 0.8);
+    TLegend* legend = new TLegend(0.4, 1, 0.9, 0.8);
     legend->SetTextSize(0.04); // Increase font size
     TString legendEntryEpiX = Form("#pi^{+}, #mu = %.2f, #sigma = %.2f", meanEpiX, stdEpiX);
     TString legendEntryEpX = Form("p, #mu = %.2f, #sigma = %.2f", meanEpX, stdEpX);
