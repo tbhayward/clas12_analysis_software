@@ -61,7 +61,7 @@ void DrawNegHistogramsForPanel(const char* file_eX, const char* file_epiX, const
     TLegend* legend = new TLegend(0.4, 0.9, 0.9, 0.8);
     legend->SetTextSize(0.04); // Increase font size
     TString legendEntryEpiX = Form("e^{-}, #mu = %.2f, #sigma = %.2f", meanEpiX, stdEpiX);
-    legend->AddEntry(h_diffEpiX, legendEntryEpiX, "l");
+    legend->AddEntry(h_eX, legendEntryEpiX, "l");
     legend->Draw();
 
     // Style the histograms
