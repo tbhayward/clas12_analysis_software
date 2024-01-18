@@ -42,7 +42,7 @@ void DrawHistogramsForPanel(const char* file_eX, const char* file_epiX, const ch
     h_ekX->Draw("HIST SAME");
 
     // Add a legend
-    TLegend* legend = new TLegend(0.15, 0.75, 0.35, 0.9);
+    TLegend* legend = new TLegend(0.7, 0.75, 0.35, 0.9);
     legend->SetTextSize(0.04); // Increase font size
     legend->AddEntry(h_eX, "e^{-}", "l");
     legend->AddEntry(h_epiX, "#pi^{-}", "l");
@@ -121,7 +121,7 @@ void vertex_study() {
     );
 
     // Save the canvas as a PNG file
-    c1->SaveAs("output/multi_panel_neg_vertices.png");
+    c1->SaveAs("output/neg_vz.png");
 }
 
 int main() {
