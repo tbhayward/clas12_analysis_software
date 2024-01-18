@@ -61,7 +61,7 @@ void DrawNegHistogramsForPanel(const char* file_eX, const char* file_epiX, const
     h_eX->GetYaxis()->SetTitleSize(0.05);
 
     // Remove the stat box
-    gStyle->SetOptStat(0);
+    // gStyle->SetOptStat(0);
 }
 
 void DrawPosHistogramsForPanel(const char* file_epiX, const char* file_epX, TPad* pad, const char* title) {
@@ -109,7 +109,7 @@ void DrawPosHistogramsForPanel(const char* file_epiX, const char* file_epX, TPad
     h_epiX->GetYaxis()->SetTitleSize(0.05);
 
     // Remove the stat box
-    gStyle->SetOptStat(0);
+    // gStyle->SetOptStat(0);
 }
 
 void DrawDiffPosHistogramsForPanel(const char* file_epiX, const char* file_epX, 
