@@ -150,7 +150,7 @@ void DrawDiffPosHistogramsForPanel(const char* file_epiX, const char* file_epX,
     legend->Draw();
 
     // Style the histograms
-    h_diffEpiX->GetXaxis()->SetTitle("v_{z_{e}} - v_{z_{p}} (cm)");
+    h_diffEpiX->GetXaxis()->SetTitle("v_{z_{e}} - v_{z_{h}} (cm)");
     h_diffEpiX->GetYaxis()->SetTitle("normalized counts");
     h_diffEpiX->GetXaxis()->CenterTitle();
     h_diffEpiX->GetYaxis()->CenterTitle();
