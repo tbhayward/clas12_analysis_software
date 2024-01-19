@@ -5,7 +5,7 @@
 
 void counts_check() {
     // Open the ROOT file
-    TFile *file = TFile::Open("/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rgc_ready_for_calibration_eX.root");
+    TFile *file = TFile::Open("/volatile/clas12/thayward/rgc_ready_for_cooking/processed_files/rgc_ready_for_calibration_epX.root");
     if (!file || file->IsZombie()) {
         std::cerr << "Error opening file" << std::endl;
         return;
