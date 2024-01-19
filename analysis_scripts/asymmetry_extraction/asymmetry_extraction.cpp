@@ -530,6 +530,7 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
     if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
       sumVariable += *currentVariable;
 
+      cout << *target_pol << endl;
       if (*helicity > 0 && *target_pol < 0) { cout << "posneg" << endl;histPosNeg->Fill(*phi); } 
       else if (*helicity < 0 && *target_pol > 0) { cout << "negpos" << endl; histNegPos->Fill(*phi); }
 
