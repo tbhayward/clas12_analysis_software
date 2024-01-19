@@ -1034,14 +1034,16 @@ void createCorrelationPlots() {
             TTreeReaderValue<Double_t> valY(dataReader, branchY.c_str());
 
             // Get the configurations for each branch
-            HistConfig configX = histConfigs.count(branchX) ? histConfigs[branchX] : HistConfig{100, 0, 1};
-            HistConfig configY = histConfigs.count(branchY) ? histConfigs[branchY] : HistConfig{100, 0, 1};
+            HistConfig configX = 
+              histConfigs.count(branchX) ? histConfigs[branchX] : HistConfig{100, 0, 1};
+            HistConfig configY = 
+              histConfigs.count(branchY) ? histConfigs[branchY] : HistConfig{100, 0, 1};
 
             // Define the histogram for this pair
             std::string histName = branchX + "_vs_" + branchY;
             TH2D* hist = new TH2D(histName.c_str(), "",
-                                  configX.nBins, configX.xMin, configX.xMax, // X-axis bins and range
-                                  configY.nBins, configY.xMin, configY.xMax); // Y-axis bins and range
+              configX.nBins, configX.xMin, configX.xMax, // X-axis bins and range
+              configY.nBins, configY.xMin, configY.xMax); // Y-axis bins and range
 
             // Set axis titles and center them
             hist->GetXaxis()->SetTitle(formatLabelName(branchX).c_str());
@@ -1056,8 +1058,7 @@ void createCorrelationPlots() {
             // Set the margins to avoid cutting off labels
             hist->GetXaxis()->SetTitleOffset(1.3);
             hist->GetYaxis()->SetTitleOffset(1.6);
-            
-            cout << "HELLO WORLD" << endl;
+
             // Loop over dataReader to fill the histogram
             KinematicCuts kinematicCuts(dataReader);
             while (dataReader.Next()) {

@@ -13,7 +13,7 @@ std::map<std::string, HistConfig> histConfigs = {
       {"DepC", {200, 0, 1}},
       {"DepV", {200, 0, 2}},
       {"DepW", {200, 0, 1}},
-      {"e_p", {200, 2, 8}},
+      {"e_p", {200, 1, 8}},
       {"e_phi", {200, 0, 2 * TMath::Pi()}},
       {"eta", {200, -3, 3}},
       {"eta1", {200, -3, 3}},
