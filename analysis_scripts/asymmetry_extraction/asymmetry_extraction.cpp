@@ -1362,11 +1362,6 @@ int main(int argc, char *argv[]) {
   // charge_acuumulation determines the total charges from the runs in supplied dataFile
   // by comparing to master list of CLAS12 runs 
   charge_accumulation(dataReader, run_info_list);
-  cpp = 1; // total accumulated charge of positive beam - positive target
-  cpm = 1; // total accumulated charge of positive beam - negative target
-  cmp = 1; // total accumulated charge of negative beam - positive target
-  cmm = 1; // total accumulated charge of negative beam - negative target
-  total_charge_carbon = 1; // total accumulated charge of carbon target
   cout << "Total pos-pos (beam-target) charge: " << cpp << " (nC). ";
   cout << "Total pos-neg charge: " << cpm << " (nC). ";
   cout << "Total neg-pos charge: " << cmp << " (nC). ";
