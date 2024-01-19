@@ -1354,11 +1354,11 @@ int main(int argc, char *argv[]) {
   load_run_info_from_csv("imports/clas12_run_info.csv");
   cout<< endl << endl <<"-- Loaded information from run_info_rgc.csv" << endl;
   cout << "Found " << run_info_list.size() << " runs." << endl;
-  // cpp = 0; // total accumulated charge of positive beam - positive target
-  // cpm = 0; // total accumulated charge of positive beam - negative target
-  // cmp = 0; // total accumulated charge of negative beam - positive target
-  // cmm = 0; // total accumulated charge of negative beam - negative target
-  // total_charge_carbon = 0; // total accumulated charge of carbon target
+  cpp = 1; // total accumulated charge of positive beam - positive target
+  cpm = 1; // total accumulated charge of positive beam - negative target
+  cmp = 1; // total accumulated charge of negative beam - positive target
+  cmm = 1; // total accumulated charge of negative beam - negative target
+  total_charge_carbon = 1; // total accumulated charge of carbon target
   // charge_acuumulation determines the total charges from the runs in supplied dataFile
   // by comparing to master list of CLAS12 runs 
   charge_accumulation(dataReader, run_info_list);
