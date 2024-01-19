@@ -19,53 +19,43 @@ void counts_check() {
     }
 
     // Set up variables to read branches
-    Int_t runnum;
-    Double_t x, W, A;  // Changed x to Double_t, added W and A
+    Int_t runnum, helicity;
+    Double_t DepolarizationA, DepolarizationW;
     tree->SetBranchAddress("runnum", &runnum);
-    tree->SetBranchAddress("x", &x);  // Corrected type for x
-    tree->SetBranchAddress("W", &W);
-    tree->SetBranchAddress("A", &A);
+    tree->SetBranchAddress("helicity", &helicity);
+    tree->SetBranchAddress("DepolarizationA", &DepolarizationA);
+    tree->SetBranchAddress("DepolarizationW", &DepolarizationW);
 
-    // Variables for overall mean calculations
-    double sum_x = 0, sum_W = 0, sum_A = 0;
-    int count_x = 0, count_WA = 0;
-
-    // Map to store counts for each runnum
-    std::map<int, int> counts;
+    // Counters for npp, npm, nmp, nmm
+    int npp = 0, npm = 0, nmp = 0, nmm = 0;
 
     Long64_t nentries = tree->GetEntries();
     for (Long64_t i = 0; i < nentries; ++i) {
         tree->GetEntry(i);
 
-        // Count entries per runnum
-        counts[runnum]++;
+        // Skip run 16297
+        if (runnum == 16297) continue;
 
-        // For x calculations (excluding run 16297)
-        if (runnum != 16297) {
-            sum_x += x;
-            count_x++;
+        // Determine target polarization
+        bool isPositiveTarget = (runnum == 16320 || runnum == 16327);
+        bool isNegativeTarget = (runnum == 16346 || runnum == 16353);
+
+        // Increment counters based on helicity and target polarization
+        if (helicity > 0) {  // Positive helicity
+            if (isPositiveTarget) npp++;
+            if (isNegativeTarget) npm++;
+        } else if (helicity < 0) {  // Negative helicity
+            if (isPositiveTarget) nmp++;
+            if (isNegativeTarget) nmm++;
         }
-
-        // For W and A calculations
-        sum_W += W;
-        sum_A += A;
-        count_WA++;
     }
-
-    // Calculate overall means
-    double mean_x = (count_x > 0) ? sum_x / count_x : 0;
-    double mean_W = (count_WA > 0) ? sum_W / count_WA : 0;
-    double mean_A = (count_WA > 0) ? sum_A / count_WA : 0;
-    double mean_W_over_A = (mean_A > 0) ? mean_W / mean_A : 0;
 
     // Print results
-    std::cout << "Entries per Runnum:" << std::endl;
-    for (const auto &count : counts) {
-        std::cout << "Runnum " << count.first << ": " << count.second << " entries" << std::endl;
-    }
-
-    std::cout << "\nOverall mean x (excluding run 16297): " << mean_x << std::endl;
-    std::cout << "Overall mean W over mean A: " << mean_W_over_A << std::endl;
+    std::cout << "Counts:" << std::endl;
+    std::cout << "npp: " << npp << std::endl;
+    std::cout << "npm: " << npm << std::endl;
+    std::cout << "nmp: " << nmp << std::endl;
+    std::cout << "nmm: " << nmm << std::endl;
 
     // Close the file
     file->Close();
