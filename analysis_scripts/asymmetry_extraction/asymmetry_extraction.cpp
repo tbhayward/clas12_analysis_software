@@ -530,12 +530,11 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
     if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
       sumVariable += *currentVariable;
 
-      cout << *target_pol << endl;
-      if (*helicity > 0 && *target_pol < 0) { cout << "posneg" << endl;histPosNeg->Fill(*phi); } 
-      else if (*helicity < 0 && *target_pol > 0) { cout << "negpos" << endl; histNegPos->Fill(*phi); }
+      if (*helicity > 0 && *target_pol < 0) { histPosNeg->Fill(*phi); } 
+      else if (*helicity < 0 && *target_pol > 0) {  histNegPos->Fill(*phi); }
 
-      if (*helicity > 0 && (*target_pol > 0 || *runnum < 11571) ) { cout << "pospos" << endl; histPosPos->Fill(*phi); } 
-      else if (*helicity < 0 && (*target_pol < 0 || *runnum < 11571) ) { cout << "negneg" << endl; histNegNeg->Fill(*phi); } 
+      if (*helicity > 0 && (*target_pol > 0 || *runnum < 11571) ) { histPosPos->Fill(*phi); } 
+      else if (*helicity < 0 && (*target_pol < 0 || *runnum < 11571) ) {  histNegNeg->Fill(*phi); } 
       // this structure allows the same script to run for both polarized and unpolarized targets
       // if it is an RGC run with a polarized target (runnum > 11571) then we assign all four
       // combinations, if it is an earlier experiment then we only assign PosPos and NegNeg
