@@ -519,7 +519,7 @@ int main(int argc, char *argv[]) {
 
     // load run infrom from external csv file
     string package_location = "/u/home/thayward/clas12_analysis_software/";
-    string csv_location="analysis_scripts/asymmetry_extraction/imports/run_info_rgc.csv";
+    string csv_location="analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv";
     load_run_info_from_csv(package_location+csv_location);
 
     // Loop to read each line from the text file and fill the TTree based on hadron_count
