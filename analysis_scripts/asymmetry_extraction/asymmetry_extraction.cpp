@@ -892,14 +892,13 @@ void createIntegratedKinematicPlots() {
     gStyle->SetTextSize(0.05); // Increase the text size globally
     bool restart = true;
     for (Int_t i = 0; i < branches->GetEntries(); ++i) {
-      cout << i << " " << restart << endl;
-        if (i == 1 && restart) {
-          i = 0; 
+        TBranch* branch = (TBranch*)branches->At(i);
+        std::string branchName = branch->GetName();
+        if (branchName == "e_theta" && restart) {
+          i = i-1; 
           cout << " HELLO WORLD " << endl;
           restart = false;
         }
-        TBranch* branch = (TBranch*)branches->At(i);
-        std::string branchName = branch->GetName();
 
         if (std::find(branchesToSkip.begin(), branchesToSkip.end(), branchName) != branchesToSkip.end()) {
             continue; // Skip this branch
