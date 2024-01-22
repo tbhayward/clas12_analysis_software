@@ -114,7 +114,7 @@ public static void main(String[] args) {
 
 		while(reader.hasEvent()==true){
 			num_events++; 
-			if (num_events%100000 == 0) { 
+			if (num_events%1000000 == 0) { 
 				print("processed: "+num_events+" events. ");
 			}
 
