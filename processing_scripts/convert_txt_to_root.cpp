@@ -177,6 +177,13 @@ int main(int argc, char *argv[]) {
     double mc_z, mc_xF, mc_pT, mc_zeta, mc_eta, mc_phi;
     double mc_DepA, mc_DepB, mc_DepC, mc_DepV, mc_DepW;
     int matching_e_pid, matching_p1_pid, mc_p1_parent;
+    // Additional variables for mc dihadron 
+    double mc_p1_p, mc_p1_theta, mc_p1_phi, mc_vz_p1, mc_p2_p, mc_p2_theta, mc_p2_phi, mc_vz_p2;
+    double mc_z1, mc_z2, mc_Mh, mc_xF1, mc_xF2, mc_pT1, mc_pT2, mc_pTpT, mc_zeta1, mc_zeta2;
+    double mc_t1, mc_t1min, mc_t2, mc_t2min, mc_Mx1;
+    double mc_eta1, mc_eta2, mc_Delta_eta, mc_eta1_gN, mc_eta2_gN;
+    double mc_phi1, mc_phi2, mc_Delta_phi, mc_phih, mc_phiR, mc_theta;
+    int matching_p2_pid, mc_p2_parent;
 
     // Case for zero hadrons (inclusive)
     if (hadron_count == 0 && is_mc == 0) {
