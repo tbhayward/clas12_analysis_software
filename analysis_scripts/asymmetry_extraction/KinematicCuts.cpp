@@ -52,28 +52,28 @@ bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
         // epi+X
         if (property == "xpip") { 
           // goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *xF>0;
-            goodEvent = *Q2>1 && *W>2 && *y<0.75;
+            goodEvent = *Q2>1 && *W>2 && *y<0.75 && *z>0.20;
         }
         if (property == "PTTFRpip" || property ==  "xTFRpip" || property == "zTFRpip" || 
           property == "Q2TFRpip") {
-          goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *xF<0;
+          goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *z>0.20 && *xF<0;
         }
         if (property == "PTCFRpip" || property == "xCFRpip" || property == "zCFRpip" ||
           property == "Q2TFRpip") {
-          goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *xF>0;
+          goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *z>0.20 && *xF>0;
         }
         //
         // epi-X
         if (property == "xpim") { 
-          goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *xF>0;
+          goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *z>0.20 && *xF>0;
         }
         if (property == "PTTFRpim" || property ==  "xTFRpim" || property == "zTFRpim" || 
           property == "Q2TFRpim") {
-          goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *xF<0;
+          goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *z>0.20 && *xF<0;
         }
         if (property == "PTCFRpim" || property == "xCFRpim" || property == "zCFRpim" ||
           property == "Q2TFRpim") {
-          goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *xF>0;
+          goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *z>0.20 && *xF>0;
         }
         
         // // epi+pi+X, exclusive rho

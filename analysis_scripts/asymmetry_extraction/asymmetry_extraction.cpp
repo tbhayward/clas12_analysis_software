@@ -975,7 +975,7 @@ void createIntegratedKinematicPlots() {
         dataHist->SetEntries(dataHist->GetEntries());
         mcHist->SetEntries(mcHist->GetEntries());
         leg->AddEntry(dataHist, (std::string("Data (") + std::to_string((int)dataHist->GetEntries()) + " entries)").c_str(), "l");
-        // leg->AddEntry(mcHist, (std::string("MC (") + std::to_string((int)mcHist->GetEntries()) + " entries)").c_str(), "l");
+        leg->AddEntry(mcHist, (std::string("MC (") + std::to_string((int)mcHist->GetEntries()) + " entries)").c_str(), "l");
 
         // Set line colors for histograms
         dataHist->SetLineColor(kBlack);
@@ -983,7 +983,7 @@ void createIntegratedKinematicPlots() {
 
         // Draw histograms on the canvas
         dataHist->Draw("HIST");
-        // mcHist->Draw("HISTSAME");
+        mcHist->Draw("HISTSAME");
         leg->Draw();
 
         // Save the canvas to a file
@@ -1376,7 +1376,7 @@ int main(int argc, char *argv[]) {
 
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    for (int asymmetry = 0; asymmetry < 2; ++asymmetry){
+    for (int asymmetry = 0; asymmetry < 1; ++asymmetry){
       switch (asymmetry) {
         case 0: cout << "    Beginning chi2 BSA." << endl; break;
         case 1: cout << "    Beginning chi2 TSA." << endl; break;
