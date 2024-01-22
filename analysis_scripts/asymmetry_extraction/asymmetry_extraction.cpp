@@ -892,6 +892,7 @@ void createIntegratedKinematicPlots() {
     gStyle->SetTextSize(0.05); // Increase the text size globally
     bool restart = true;
     for (Int_t i = 0; i < branches->GetEntries(); ++i) {
+      cout << i << " " << restart << endl;
         if (i == 1 && restart) {
           i = 0; 
           cout << " HELLO WORLD " << endl;
