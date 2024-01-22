@@ -892,6 +892,7 @@ void createIntegratedKinematicPlots() {
     gStyle->SetTextSize(0.05); // Increase the text size globally
     bool restart = true;
     for (Int_t i = 0; i < branches->GetEntries(); ++i) {
+        cout << "Entered for loop for branches" << endl;
         TBranch* branch = (TBranch*)branches->At(i);
         std::string branchName = branch->GetName();
         if (branchName == "e_theta" && restart) {
@@ -942,7 +943,6 @@ void createIntegratedKinematicPlots() {
         while (dataReader.Next()) {
             bool passedKinematicCuts = kinematicCuts.applyCuts(0, false);
             if (*dataVal >= config.xMin && *dataVal < config.xMax && passedKinematicCuts) {
-                cout << *dataVal << endl;
                 dataHist->Fill(*dataVal);
             }
         }
