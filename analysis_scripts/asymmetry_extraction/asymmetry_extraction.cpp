@@ -909,7 +909,7 @@ void createIntegratedKinematicPlots() {
 
         TTreeReaderValue<Double_t> dataVal(dataReader, branchName.c_str());
         TTreeReaderValue<Double_t> mcVal(mcReader, branchName.c_str());
-        cout << dataVal << " " << mcVal << endl;
+        cout << *dataVal << " " << *mcVal << endl;
 
         HistConfig config = {100, 0, 1}; // Default configuration
         if (histConfigs.find(branchName) != histConfigs.end()) {
