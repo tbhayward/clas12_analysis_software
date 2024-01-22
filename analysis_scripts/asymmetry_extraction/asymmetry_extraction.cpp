@@ -894,6 +894,7 @@ void createIntegratedKinematicPlots() {
     for (Int_t i = 0; i < branches->GetEntries(); ++i) {
         if (i == 1 && restart) {
           i = 0; 
+          cout << " HELLO WORLD " << endl;
           restart = false;
         }
         TBranch* branch = (TBranch*)branches->At(i);
