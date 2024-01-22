@@ -784,6 +784,7 @@ int main(int argc, char *argv[]) {
             mc_DepB >> DepC >> mc_DepC >> DepV >> mc_DepV >> DepW >> mc_DepW >> matching_e_pid >>
             matching_p1_pid >> matching_p2_pid >> mc_p1_parent >> mc_p2_parent) {
 
+            cout << "HELLO WORLD" << endl;
             // Convert spherical coordinates to Cartesian coordinates for each hadron
             double p1_x, p1_y, p1_z;
             sphericalToCartesian(p1_p, p1_phi, p1_theta, p1_x, p1_y, p1_z);
