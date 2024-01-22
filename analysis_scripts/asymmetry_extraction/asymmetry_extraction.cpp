@@ -899,6 +899,8 @@ void createIntegratedKinematicPlots() {
           cout << " HELLO WORLD " << endl;
           restart = false;
         }
+        branch = (TBranch*)branches->At(i);
+        branchName = branch->GetName();
 
         if (std::find(branchesToSkip.begin(), branchesToSkip.end(), branchName) != branchesToSkip.end()) {
             continue; // Skip this branch
