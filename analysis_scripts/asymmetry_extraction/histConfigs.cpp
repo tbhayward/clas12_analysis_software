@@ -1,6 +1,92 @@
 #include "common_vars.h"
 #include "TMath.h" 
 
+std::map<std::string, HistConfig> histConfigs;
+
+void initializeHistConfigs() {
+    std::vector<std::pair<std::string, HistConfig>> baseConfigs = {
+      {"runnum", {14000, 3000, 17000}},
+      {"Delta_eta", {200, -3, 3}},
+      {"Delta_phi", {200, 0, 2*TMath::Pi()}},
+      {"Delta_phi12", {200, 0, 2*TMath::Pi()}},
+      {"Delta_phi13", {200, 0, 2*TMath::Pi()}},
+      {"Delta_phi23", {200, 0, 2*TMath::Pi()}},
+      {"DepA", {200, 0, 1}},
+      {"DepB", {200, 0, 1}},
+      {"DepC", {200, 0, 1}},
+      {"DepV", {200, 0, 2}},
+      {"DepW", {200, 0, 1}},
+      {"e_p", {200, 1, 8}},
+      {"e_phi", {200, 0, 2 * TMath::Pi()}},
+      {"eta", {200, -3, 3}},
+      {"eta1", {200, -3, 3}},
+      {"eta2", {200, -3, 3}},
+      {"eta3", {200, -3, 3}},
+      {"eta12", {200, -3, 3}},
+      {"eta13", {200, -3, 3}},
+      {"eta23", {200, -3, 3}},
+      {"eta1_gN", {200, -3, 3}},
+      {"eta2_gN", {200, -3, 3}},
+      {"e_theta", {200, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
+      {"evnum", {200, 0, 0}},
+      {"helicity", {2, -2, 2}},
+      {"Mh", {200, 0., 2}},
+      {"Mh12", {200, 0., 2}},
+      {"Mh13", {200, 0., 2}},
+      {"Mh23", {200, 0., 2}},
+      {"Mx", {200, -1, 5.}},
+      {"Mx1", {200, -1, 5.}},
+      {"Mx2", {200, -1, 5}},
+      {"Mx3", {200, -1, 5}},
+      {"Mx12", {200, -1, 5.}},
+      {"Mx13", {200, -1, 5.}},
+      {"Mx23", {200, -1, 5.}},
+      {"phi", {200, 0, 2 * TMath::Pi()}},
+      {"phi1", {200, 0, 2 * TMath::Pi()}},
+      {"phi2", {200, 0, 2 * TMath::Pi()}},
+      {"phi3", {200, 0, 2 * TMath::Pi()}},
+      {"phih", {200, 0, 2 * TMath::Pi()}},
+      {"phiR", {200, 0, 2 * TMath::Pi()}},
+      {"p_p", {200, 0, 6}},
+      {"p1_p", {200, 0, 6}},
+      {"p2_p", {200, 0, 6}},
+      {"p3_p", {200, 0, 6}},
+      {"p_phi", {200, 0, 2 * TMath::Pi()}},
+      {"p1_phi", {200, 0, 2 * TMath::Pi()}},
+      {"p2_phi", {200, 0, 2 * TMath::Pi()}},
+      {"p3_phi", {200, 0, 2 * TMath::Pi()}},
+      {"pT", {200, 0, 1.2}},
+      {"p_theta", {200, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
+      {"p1_theta", {200, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
+      {"p2_theta", {200, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
+      {"p3_theta", {200, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
+      {"Q2", {200, 0, 9}},
+      {"runnum", {200, 0, 0}},
+      {"theta", {200, 0, TMath::Pi()}},
+      {"t", {200, -12, 1}},
+      {"t1", {200, -12, 1}},
+      {"t2", {200, -12, 1}},
+      {"tmin", {200, -0.5, 0}},
+      {"vz_e", {200, -15, 15}},
+      {"vz_p", {200, -15, 15}},
+      {"vz_p1", {200, -15, 15}},
+      {"vz_p2", {200, -15, 15}},
+      {"vz_p3", {200, -15, 15}},
+      {"W", {200, 2, 4}},
+      {"x", {200, 0, 0.8}},
+      {"xF", {200, -1, 1}},
+      {"xF1", {200, -1, 1}},
+      {"xF2", {200, -1, 1}},
+      {"xF3", {200, -1, 1}},
+      {"xF12", {200, -1, 1}},
+      {"xF13", {200, -1, 1}},
+      {"xF23", {200, -1, 1}},
+      {"y", {200, 0.0, 1.00}},
+      {"z", {200, 0, 1}},
+      {"Mh", {200, 0, 2}},
+      {"zeta", {200, 0.0, 1}}
+    };
+
 std::map<std::string, HistConfig> histConfigs = {
       {"runnum", {14000, 3000, 17000}},
       {"Delta_eta", {200, -3, 3}},
@@ -83,3 +169,13 @@ std::map<std::string, HistConfig> histConfigs = {
       {"Mh", {200, 0, 2}},
       {"zeta", {200, 0.0, 1}}
     };
+
+    // Add original and MC versions to the map
+    for (const auto& [key, config] : baseConfigs) {
+        histConfigs[key] = config; // Original key
+        histConfigs["mc_" + key] = config; // MC version of the key
+    }
+}
+
+// Call this function at the start 
+initializeHistConfigs();
