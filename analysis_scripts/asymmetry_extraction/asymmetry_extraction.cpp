@@ -890,7 +890,7 @@ void createIntegratedKinematicPlots() {
 
     gStyle->SetOptStat(0);
     gStyle->SetTextSize(0.05); // Increase the text size globally
-    boolean restart = true;
+    bool restart = true;
     for (Int_t i = 0; i < branches->GetEntries(); ++i) {
         if (i == 1 && restart) {
           i = 0; 
