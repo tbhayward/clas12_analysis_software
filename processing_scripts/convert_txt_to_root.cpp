@@ -548,13 +548,12 @@ int main(int argc, char *argv[]) {
             tree->Fill(); // Fill the tree with the read data
         }
     } 
-    cout << "HELLO WORLD BEFORE" << endl;
     if (hadron_count == 0 && is_mc == 1) {
         while (infile >> e_p >> mc_e_p >> e_theta >> mc_e_theta >>
             e_phi >> mc_e_phi >> vz_e >> mc_vz_e >> Q2 >> mc_Q2 >> W >> mc_W >> Mx >> mc_Mx >>
             Mx2 >> mc_Mx2 >> x >> mc_x >> y >> mc_y >> DepA >> mc_DepA >> DepB >> mc_DepB >> 
             DepC >> mc_DepC >> DepV >> mc_DepV >> DepW >> mc_DepW >> matching_e_pid) {
-            cout << "HELLO WORLD" << endl;
+            
             beam_pol = getPol(runnum);
             if (runnum < 16000) { target_pol = 0; }
             else { 
