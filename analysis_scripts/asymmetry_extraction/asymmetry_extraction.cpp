@@ -895,8 +895,9 @@ void createIntegratedKinematicPlots() {
         TBranch* branch = (TBranch*)branches->At(i);
         std::string branchName = branch->GetName();
         if (branchName == "e_theta" && restart) {
+          // stupid hack to get it to do the e_p plot instead of it being blank 
+          // due to reader restarts
           i = i-1; 
-          cout << " HELLO WORLD " << endl;
           restart = false;
         }
         branch = (TBranch*)branches->At(i);

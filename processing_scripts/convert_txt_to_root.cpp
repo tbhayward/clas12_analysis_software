@@ -37,8 +37,12 @@ struct RunInfo {
 std::vector<RunInfo> run_info_list;
 
 void load_run_info_from_csv(const std::string& filename) {
-  // Open the input file with the given filename
+   // Open the input file with the given filename
   std::ifstream file(filename);
+  if (!file) {
+    std::cerr << "Failed to open file: " << filename << std::endl;
+    return;
+  }
 
   // Declare a string to store each line read from the file
   std::string line;
