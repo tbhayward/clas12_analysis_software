@@ -28,6 +28,8 @@ else if ($arg1 == "processing_scripts/pass2_hadron_pid_data.groovy") then
     set convert_arg3 = 1
 else if ($arg1 == "processing_scripts/processing_dihadrons.groovy") then
     set convert_arg3 = 2
+else if ($arg1 == "processing_scripts/processing_mc_dihadrons.groovy") then
+    set convert_arg3 = 2
 else if ($arg1 == "processing_scripts/processing_trihadrons.groovy") then
     set convert_arg3 = 3
 endif
