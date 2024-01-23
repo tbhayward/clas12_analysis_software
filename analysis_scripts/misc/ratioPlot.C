@@ -7,10 +7,10 @@
 
 void ratioPlot() {
     // Open the ROOT files and get the trees
-    TFile *f1 = new TFile("/scratch/thayward/ratios/epi-X_inb");
+    TFile *f1 = new TFile("/scratch/thayward/ratios/epi-X_inb.root");
     TTree *tree1 = (TTree*)f1->Get("PhysicsEvents");
 
-    TFile *f2 = new TFile("/scratch/thayward/ratios/ek-X_inb");
+    TFile *f2 = new TFile("/scratch/thayward/ratios/ek-X_inb.root");
     TTree *tree2 = (TTree*)f2->Get("PhysicsEvents");
 
     // Create histograms for pi- and k- counts
