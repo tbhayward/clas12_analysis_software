@@ -771,7 +771,7 @@ int main(int argc, char *argv[]) {
     }
     cout << hadron_count << " " << is_mc << endl;
     if (hadron_count == 2 && is_mc == 1) {
-        cout << "Hey" << endl;
+        
         while (infile >> e_p >> mc_e_p >> e_theta >> mc_e_theta >> e_phi >> mc_e_phi >> vz_e >> 
             mc_vz_e >> p1_p >> mc_p1_p >> p1_theta >> mc_p1_theta >> p1_phi >> mc_p1_phi >> 
             vz_p1 >> mc_vz_p1 >> p2_p >> mc_p2_p >> p2_theta >> mc_p2_theta >> p2_phi >> 
@@ -785,7 +785,7 @@ int main(int argc, char *argv[]) {
             phi >> mc_phi >> phiR >> mc_phiR >> theta >> mc_theta >> DepA >> mc_DepA >> DepB >> 
             mc_DepB >> DepC >> mc_DepC >> DepV >> mc_DepV >> DepW >> mc_DepW >> matching_e_pid >>
             matching_p1_pid >> matching_p2_pid >> mc_p1_parent >> mc_p2_parent) {
-            cout << "HELLO WORLD" << endl;
+
             // Convert spherical coordinates to Cartesian coordinates for each hadron
             double p1_x, p1_y, p1_z;
             sphericalToCartesian(p1_p, p1_phi, p1_theta, p1_x, p1_y, p1_z);
