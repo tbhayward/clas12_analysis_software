@@ -976,14 +976,14 @@ void createIntegratedKinematicPlots() {
         c->SetBottomMargin(0.15);
 
         // Create a legend and adjust its font size
-        TLegend* leg = new TLegend(0.5, 0.7, 0.9, 0.9);
+        TLegend* leg = new TLegend(0.45, 0.7, 0.9, 0.9);
         leg->SetTextSize(0.04); // Increase the legend text size
 
         // Add entries to the legend with scientific notation for the number of entries
         dataHist->SetEntries(dataHist->GetEntries());
         mcHist->SetEntries(mcHist->GetEntries());
-        leg->AddEntry(dataHist, (std::string("Data (") + std::to_string((int)dataHist->GetEntries()) + " entries)").c_str(), "l");
-        leg->AddEntry(mcHist, (std::string("MC (") + std::to_string((int)mcHist->GetEntries()) + " entries)").c_str(), "l");
+        leg->AddEntry(dataHist, (std::string("CLAS12 (") + std::to_string((int)dataHist->GetEntries()) + " entries)").c_str(), "l");
+        leg->AddEntry(mcHist, (std::string("CLAS12+RADGEN (") + std::to_string((int)mcHist->GetEntries()) + " entries)").c_str(), "l");
 
         // Set line colors for histograms
         dataHist->SetLineColor(kBlack);
