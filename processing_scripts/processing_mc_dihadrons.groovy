@@ -117,7 +117,7 @@ public static void main(String[] args) {
 			if (num_events%1000000 == 0) { 
 				print("processed: "+num_events+" events. ");
 			}
-			
+
 			// get run and event numbers
 			event = reader.getNextEvent();
 		    int runnum = event.getBank("RUN::config").getInt('run',0);
@@ -125,9 +125,9 @@ public static void main(String[] args) {
 
 		    PhysicsEvent research_Event = research_fitter.getPhysicsEvent(event);
 		    PhysicsEvent mc_Event = mc_fitter.getPhysicsEvent(event);
-
+		    println("hello world"+p1_Str+" "+p2_Str);
 			if (filter.isValid(research_Event)) {
-				println("hello world");
+				
 				HipoDataBank recBank = (HipoDataBank) event.getBank("REC::Event");
 				HipoDataBank lundBank = (HipoDataBank) event.getBank("MC::Lund");
 				HipoDataBank mcBank = (HipoDataBank) event.getBank("MC::Particle");
