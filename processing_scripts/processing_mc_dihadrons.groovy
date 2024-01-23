@@ -111,7 +111,7 @@ public static void main(String[] args) {
 		reader.open(hipo_list[current_file]); // open next hipo file
 		current_file++;
 		HipoDataEvent event = reader.getNextEvent(); 
-
+		println("hello world");
 		while(reader.hasEvent()==true){
 			num_events++; 
 			if (num_events%1000000 == 0) { 
@@ -127,7 +127,7 @@ public static void main(String[] args) {
 		    PhysicsEvent mc_Event = mc_fitter.getPhysicsEvent(event);
 
 			if (filter.isValid(research_Event)) {
-				println("hello world");
+				
 				HipoDataBank recBank = (HipoDataBank) event.getBank("REC::Event");
 				HipoDataBank lundBank = (HipoDataBank) event.getBank("MC::Lund");
 				HipoDataBank mcBank = (HipoDataBank) event.getBank("MC::Particle");
