@@ -125,7 +125,7 @@ public static void main(String[] args) {
 
 		    PhysicsEvent research_Event = research_fitter.getPhysicsEvent(event);
 		    PhysicsEvent mc_Event = mc_fitter.getPhysicsEvent(event);
-		    println("hello world "+p1_Str+" "+p2_Str);
+		    
 			if (filter.isValid(research_Event)) {
 
 				HipoDataBank recBank = (HipoDataBank) event.getBank("REC::Event");
