@@ -769,9 +769,9 @@ int main(int argc, char *argv[]) {
             tree->Fill(); // Fill the tree with the read data
         }
     }
-    cout << hadron_count << " " << is_mc << endl;
+    
     if (hadron_count == 2 && is_mc == 1) {
-        
+
         while (infile >> e_p >> mc_e_p >> e_theta >> mc_e_theta >> e_phi >> mc_e_phi >> vz_e >> 
             mc_vz_e >> p1_p >> mc_p1_p >> p1_theta >> mc_p1_theta >> p1_phi >> mc_p1_phi >> 
             vz_p1 >> mc_vz_p1 >> p2_p >> mc_p2_p >> p2_theta >> mc_p2_theta >> p2_phi >> 
