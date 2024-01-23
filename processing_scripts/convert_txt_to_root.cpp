@@ -634,7 +634,6 @@ int main(int argc, char *argv[]) {
     string csv_location="analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv";
     load_run_info_from_csv(package_location+csv_location);
 
-    cout << hadron_count << " "<< is_mc << endl;
     // Loop to read each line from the text file and fill the TTree based on hadron_count
     if (hadron_count == 0 && is_mc == 0) {
         while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
