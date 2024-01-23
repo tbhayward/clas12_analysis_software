@@ -14,8 +14,8 @@ void ratioPlot() {
     TTree *tree2 = (TTree*)f2->Get("PhysicsEvents");
 
     // Create histograms for pi- and k- counts
-    TH1F *h1 = new TH1F("h1", "pi- counts", 50, 0, 6);
-    TH1F *h2 = new TH1F("h2", "k- counts", 50, 0, 6);
+    TH1F *h1 = new TH1F("h1", "pi- counts", 50, 0, 7);
+    TH1F *h2 = new TH1F("h2", "k- counts", 50, 0, 7);
 
     // Fill histograms with the branch variable p_p
     tree1->Draw("p_p>>h1");
