@@ -89,8 +89,8 @@ public static void main(String[] args) {
 	}
 
 	int hadron_pair_counts = 0;
-	// GenericKinematicFitter research_fitter = new analysis_fitter(10.6041);
-	GenericKinematicFitter research_fitter=event_builder_fitter(10.6041);
+	GenericKinematicFitter research_fitter = new analysis_fitter(10.6041);
+	// GenericKinematicFitter research_fitter = event_builder_fitter(10.6041);
 	GenericKinematicFitter mc_fitter = new monte_carlo_fitter(10.6041);
 	EventFilter filter = new EventFilter("11:"+p1_Str+":"+p2_Str+":X+:X-:Xn");
 
