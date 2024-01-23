@@ -125,7 +125,7 @@ public static void main(String[] args) {
 
 		    PhysicsEvent research_Event = research_fitter.getPhysicsEvent(event);
 		    PhysicsEvent mc_Event = mc_fitter.getPhysicsEvent(event);
-		    
+
 			if (filter.isValid(research_Event)) {
 
 				HipoDataBank recBank = (HipoDataBank) event.getBank("REC::Event");
@@ -156,23 +156,29 @@ public static void main(String[] args) {
 							double e_p = variables.e_p();
 							double e_theta = variables.e_theta();
 							double e_phi = variables.e_phi();
+							double vz_e = variables.vz_e();
 							double p1_p = variables.p1_p();
 							double p1_theta = variables.p1_theta();
 							double p1_phi = variables.p1_phi();
+							double vz_p1 = variables.vz_p1();
 							double p2_p = variables.p2_p();
 							double p2_theta = variables.p2_theta();
 							double p2_phi = variables.p2_phi();
+							double vz_p2 = variables.vz_p2();
 
 							// lab kinematics MC
 							double mc_e_p = mc_variables.e_p();
 							double mc_e_theta = mc_variables.e_theta();
 							double mc_e_phi = mc_variables.e_phi();
+							double mc_vz_e = mc_variables.vz_e();
 							double mc_p1_p = mc_variables.p1_p();
 							double mc_p1_theta = mc_variables.p1_theta();
 							double mc_p1_phi = mc_variables.p1_phi();
+							double mc_vz_p1 = mc_variables.mc_vz_p1();
 							double mc_p2_p = mc_variables.p2_p();
 							double mc_p2_theta = mc_variables.p2_theta();
 							double mc_p2_phi = mc_variables.p2_phi();
+							double mc_vz_p2 = mc_variables.mc_vz_p2();
 
 							// DIS variables data
 							double Q2 = variables.Q2();
@@ -219,6 +225,8 @@ public static void main(String[] args) {
 							double eta1 = variables.eta1();
 							double eta2 = variables.eta2();
 							double Delta_eta = variables.Delta_eta();
+							double eta1_gN = variables.eta1_gN();
+							double eta2_gN = variables.eta2_gN();
 
 							// SIDIS dihadron variables MC
 							double mc_z1 = mc_variables.z1();
@@ -235,6 +243,8 @@ public static void main(String[] args) {
 							double mc_eta1 = mc_variables.eta1();
 							double mc_eta2 = mc_variables.eta2();
 							double mc_Delta_eta = mc_variables.Delta_eta();
+							double mc_eta1_gN = mc_variables.eta1_gN();
+							double mc_eta2_gN = mc_variables.eta2_gN();
 
 							// angles data
 							double phi1 = variables.phi1();
@@ -400,18 +410,24 @@ public static void main(String[] args) {
 								.append(mc_e_theta).append(" ")		// 4
 								.append(e_phi).append(" ")			// 5
 								.append(mc_e_phi).append(" ")		// 6
+								.append(vz_e).append(" ")			//
+								.append(mc_vz_e).append(" ")		//
 								.append(p1_p).append(" ")			// 7
 				                .append(mc_p1_p).append(" ")		// 8
 				                .append(p1_theta).append(" ")		// 9 
 								.append(mc_p1_theta).append(" ")	// 10
 								.append(p1_phi).append(" ")			// 11
 								.append(mc_p1_phi).append(" ")		// 12
+								.append(vz_p1).append(" ")			//
+								.append(mc_vz_p1).append(" ")		//
 								.append(p2_p).append(" ")			// 13
 				                .append(mc_p2_p).append(" ")		// 14
 				                .append(p2_theta).append(" ")		// 15
 								.append(mc_p2_theta).append(" ")	// 16
 								.append(p2_phi).append(" ")			// 17
 								.append(mc_p2_phi).append(" ")		// 18
+								.append(vz_p2).append(" ")			//
+								.append(mc_vz_p2).append(" ")		//
 								.append(Q2).append(" ")				// 19
 								.append(mc_Q2).append(" ")			// 20
 								.append(W).append(" ")				// 21
@@ -462,6 +478,10 @@ public static void main(String[] args) {
 								.append(mc_eta2).append(" ")		// 66
 								.append(Delta_eta).append(" ")		// 67
 								.append(mc_Delta_eta).append(" ")	// 68
+								.append(eta1_gN).append(" ")		//
+								.append(mc_eta1_gN).append(" ")		//
+			                	.append(eta2_gN).append(" ")		//
+			                	.append(mc_eta2_gN).append(" ")		//
 								.append(phi1).append(" ")			// 69
 								.append(mc_phi1).append(" ")		// 70
 								.append(phi2).append(" ")			// 71
