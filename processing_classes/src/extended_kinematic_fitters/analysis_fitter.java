@@ -760,11 +760,11 @@ public class analysis_fitter extends GenericKinematicFitter {
         } else if (pid > 0) { // positive hadrons
             if (polarity < 0) { return Delta_vz > 1.15 - 3*2.44 && Delta_vz < 1.15 + 3*2.44; }
             if (polarity > 0) { return Delta_vz > -0.86 - 3*2.24 && Delta_vz < -0.86 + 3*2.24; }
-        } else if (pid > 0) { // negative hadrons
+        } else if (pid < 0) { // negative hadrons
             if (polarity < 0) { return Delta_vz > 0.03 - 3*2.24 && Delta_vz < 0.03 + 3*2.24; }
             if (polarity > 0) { return Delta_vz > 0.38 - 3*2.55 && Delta_vz < 0.38 + 3*2.55; }
         }
-        return false;  // track didn't match any pid?
+        return true;  // track didn't match any pid?
     }
     
     public boolean hadron_pass2_cut(int particle_Index, HipoDataBank rec_Bank) {
@@ -921,7 +921,7 @@ public class analysis_fitter extends GenericKinematicFitter {
 //            && p > 1.00
 //            && p < 5.00 // this wasn't used in the dihadron publication but was used in the submitted single pion
             && forward_detector_cut(particle_Index, rec_Bank)
-//            && vertex_cut(particle_Index, trigger_electron_vz, rec_Bank, run_Bank) 
+            && vertex_cut(particle_Index, trigger_electron_vz, rec_Bank, run_Bank) 
             && hadron_pass2_cut(particle_Index, rec_Bank)
 //            && pion_chi2pid_cut(particle_Index, rec_Bank)
 //            && hadron_chi2pid_cut(particle_Index, rec_Bank)
