@@ -7,10 +7,10 @@
 
 void ratioPlot() {
     // Open the ROOT files and get the trees
-    TFile *f1 = new TFile("/scratch/thayward/ratios/epi-X_inb.root");
+    TFile *f1 = new TFile("/scratch/thayward/ratios/epi-X_out.root");
     TTree *tree1 = (TTree*)f1->Get("PhysicsEvents");
 
-    TFile *f2 = new TFile("/scratch/thayward/ratios/ek-X_inb.root");
+    TFile *f2 = new TFile("/scratch/thayward/ratios/ek-X_out.root");
     TTree *tree2 = (TTree*)f2->Get("PhysicsEvents");
 
     // Create histograms for pi- and k- counts
@@ -27,7 +27,7 @@ void ratioPlot() {
 
     // Style the plot
     gStyle->SetOptStat(0);
-    hRatio->SetTitle("Negatives Inbending;p (GeV);#pi^{-} /k^{-}");
+    hRatio->SetTitle("Negatives Outbending;p (GeV);#pi^{-} /k^{-}");
     hRatio->GetXaxis()->CenterTitle();
     hRatio->GetXaxis()->SetLabelSize(0.04);
     hRatio->GetYaxis()->SetLabelSize(0.04);
@@ -37,7 +37,7 @@ void ratioPlot() {
     hRatio->Draw("E");
 
     // Save the canvas as a PNG file
-    c1->SaveAs("output/negative_inb_ratio.png");
+    c1->SaveAs("output/negative_out_ratio.png");
 
     // Save the canvas as a .C file
     c1->SaveAs("ratio.C");
