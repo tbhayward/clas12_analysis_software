@@ -27,7 +27,7 @@ void ratioPlot() {
 
     // Style the plot
     gStyle->SetOptStat(0);
-    hRatio->SetTitle("Negatives Outbending;p (GeV);#pi^{-} /k^{-}");
+    hRatio->SetTitle("Negatives Inbending;p (GeV);#pi^{-} /k^{-}");
     hRatio->GetXaxis()->CenterTitle();
     hRatio->GetXaxis()->SetLabelSize(0.04);
     hRatio->GetYaxis()->SetLabelSize(0.04);
