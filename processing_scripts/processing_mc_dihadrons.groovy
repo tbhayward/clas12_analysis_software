@@ -178,7 +178,7 @@ public static void main(String[] args) {
 							double mc_p2_p = mc_variables.p2_p();
 							double mc_p2_theta = mc_variables.p2_theta();
 							double mc_p2_phi = mc_variables.p2_phi();
-							double mc_vz_p2 = mc_variables.mc_vz_p2();
+							double mc_vz_p2 = mc_variables.vz_p2();
 
 							// DIS variables data
 							double Q2 = variables.Q2();
