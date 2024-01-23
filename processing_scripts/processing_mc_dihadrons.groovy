@@ -174,7 +174,7 @@ public static void main(String[] args) {
 							double mc_p1_p = mc_variables.p1_p();
 							double mc_p1_theta = mc_variables.p1_theta();
 							double mc_p1_phi = mc_variables.p1_phi();
-							double mc_vz_p1 = mc_variables.mc_vz_p1();
+							double mc_vz_p1 = mc_variables.vz_p1();
 							double mc_p2_p = mc_variables.p2_p();
 							double mc_p2_theta = mc_variables.p2_theta();
 							double mc_p2_phi = mc_variables.p2_phi();
