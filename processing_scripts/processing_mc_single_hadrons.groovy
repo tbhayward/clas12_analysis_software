@@ -114,7 +114,7 @@ public static void main(String[] args) {
 		    PhysicsEvent mc_Event = mc_fitter.getPhysicsEvent(event);
 
 			if (filter.isValid(research_Event)) {
-
+				println("hello world");
 				HipoDataBank recBank = (HipoDataBank) event.getBank("REC::Event");
 				HipoDataBank lundBank = (HipoDataBank) event.getBank("MC::Lund");
 				HipoDataBank mcBank = (HipoDataBank) event.getBank("MC::Particle");
