@@ -49,8 +49,8 @@ void misIDPlot() {
 
     // Set axis styles
     graph->GetXaxis()->CenterTitle();
-    graph->GetXaxis()->SetLabelSize(0.06);
-    graph->GetYaxis()->SetLabelSize(0.06);
+    graph->GetXaxis()->SetLabelSize(0.04);
+    graph->GetYaxis()->SetLabelSize(0.04);
     graph->GetYaxis()->SetTitleOffset(1.5); // Adjust if necessary
 
     // Save the canvas as a PNG file
