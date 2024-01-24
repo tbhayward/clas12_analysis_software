@@ -8,7 +8,7 @@
 
 void misIDPlot() {
     // Open the ROOT file and get the tree
-    TFile *file = new TFile("/scratch/thayward/ratios/epi-X.root");
+    TFile *file = new TFile("/scratch/thayward/ratios/epi-X_inb.root");
     TTree *tree = (TTree*)file->Get("PhysicsEvents");
 
     // Create a histogram for the fraction calculation
