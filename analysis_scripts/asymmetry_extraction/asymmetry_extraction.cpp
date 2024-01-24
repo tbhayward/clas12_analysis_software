@@ -428,7 +428,7 @@ void plotHistogramAndFit(TH1D* histogram, TF1* fitFunction, int binIndex, int as
 
   // Create the legend
   // TLegend *leg = new TLegend(0.16171, 0.7, 0.4, 0.9);  // Adjusted to the upper-left corner
-  TLegend *leg = new TLegend(0.19, 0.675, 0.45, 0.875);  // Adjusted to the upper-left corner
+  TLegend *leg = new TLegend(1-0.19, 0.675, 0.45, 0.875);  // Adjusted to the upper-left corner
   leg->SetBorderSize(1);
   leg->SetFillColor(0);
   leg->SetTextSize(0.025);  // Reduced text size
@@ -892,7 +892,7 @@ void createIntegratedKinematicPlots() {
     gStyle->SetTextSize(0.05); // Increase the text size globally
     bool restart = true;
     for (Int_t i = 0; i < branches->GetEntries(); ++i) {
-      
+
         TBranch* branch = (TBranch*)branches->At(i);
         std::string branchName = branch->GetName();
         if (branchName == "e_theta" && restart) {
