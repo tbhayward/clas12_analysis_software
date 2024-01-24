@@ -15,7 +15,7 @@ void misIDPlot() {
     TH1F *hFraction = new TH1F("hFraction", ";p (GeV);k^{-} #rightarrow #pi^{-}", 15, 0, 7);
 
     // Loop over the tree and fill the histogram
-    float p_p;
+    double p_p;
     int matching_p1_pid;
     tree->SetBranchAddress("p_p", &p_p);
     tree->SetBranchAddress("matching_p1_pid", &matching_p1_pid);
