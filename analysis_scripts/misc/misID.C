@@ -195,8 +195,20 @@ void misIDPlot() {
     // Draw the plot using TGraphErrors
     TCanvas *c1 = new TCanvas("c1", "Canvas", 800, 600);
     c1->SetLeftMargin(0.15);
-    graph2->Draw("AP"); // "AP" to draw the graph with markers and lines
-    graph->Draw("APSAME"); // "AP" to draw the graph with markers and lines
+    // Create an invisible histogram to set the axis range
+    TH1F *frame = new TH1F("frame", ";p (GeV);% h #rightarrow #pi^{+}", 12, 0, 7);
+    frame->SetMaximum(maxVal * 1.1); // Set the maximum y-value
+    frame->SetMinimum(0); // Set the minimum y-value
+    frame->SetStats(0); // No statistics box
+
+    // Draw the invisible histogram to set up the axis
+    TCanvas *c1 = new TCanvas("c1", "Canvas", 800, 600);
+    c1->SetLeftMargin(0.15);
+    frame->Draw();
+
+    // Draw the graphs on the same canvas
+    graph->Draw("P SAME"); // Draw the first graph
+    graph2->Draw("P SAME"); // Draw the second graph
 
     // Set axis styles
     graph->GetXaxis()->CenterTitle();
