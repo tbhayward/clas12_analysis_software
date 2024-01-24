@@ -12,7 +12,7 @@ void misIDPlot() {
     TTree *tree = (TTree*)file->Get("PhysicsEvents");
 
     // Create a histogram for the fraction calculation
-    TH1F *hFraction = new TH1F("hFraction", ";p (GeV);% k^{-} #rightarrow #pi^{-}", 15, 0, 7);
+    TH1F *hFraction = new TH1F("hFraction", ";p (GeV);% k^{-} #rightarrow #pi^{-}", 12, 0, 7);
 
     // Loop over the tree and fill the histogram
     double p_p;
