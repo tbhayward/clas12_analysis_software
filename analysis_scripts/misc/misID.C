@@ -157,6 +157,7 @@ void misIDPlot() {
     // Create a TGraphErrors from the histogram with only vertical error bars
     TGraphErrors *graph = new TGraphErrors();
     for (int i = 1; i <= hFraction->GetNbinsX(); ++i) {
+        hFraction->GetBinContent(i)
         if (hFraction->GetBinContent(i) == 0) {
             continue;
         }
