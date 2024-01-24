@@ -202,8 +202,6 @@ void misIDPlot() {
     frame->SetStats(0); // No statistics box
 
     // Draw the invisible histogram to set up the axis
-    TCanvas *c1 = new TCanvas("c1", "Canvas", 800, 600);
-    c1->SetLeftMargin(0.15);
     frame->Draw();
 
     // Draw the graphs on the same canvas
