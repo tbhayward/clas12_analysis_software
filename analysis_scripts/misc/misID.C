@@ -28,7 +28,7 @@ void misIDPlot() {
     }
 
     // Normalize the histogram to get the fraction
-    hFraction->Scale(1.0 / tree->GetEntries());
+    hFraction->Scale(100.0 / tree->GetEntries());
 
     // Print the histogram values
     std::cout << "Bin Contents:" << std::endl;
