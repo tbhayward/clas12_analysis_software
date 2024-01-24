@@ -30,17 +30,24 @@ void misIDPlot() {
     // Normalize the histogram to get the fraction
     hFraction->Scale(100.0 / tree->GetEntries());
 
-    // Create a TGraphErrors from the histogram with only vertical error bars
-    TGraphErrors *graph = new TGraphErrors();
+    // Print the histogram values
+    std::cout << "Bin Contents:" << std::endl;
     for (int i = 1; i <= hFraction->GetNbinsX(); ++i) {
-        graph->SetPoint(i-1, hFraction->GetBinCenter(i), hFraction->GetBinContent(i));
-        graph->SetPointError(i-1, 0, hFraction->GetBinError(i)); // Set horizontal error to 0
+        std::cout << "Bin " << i << ": " << hFraction->GetBinContent(i) << std::endl;
     }
 
-    // Draw the plot using TGraphErrors
+    // Style the plot
+    gStyle->SetOptStat(0);
+    hFraction->GetXaxis()->CenterTitle();
+    hFraction->GetXaxis()->SetLabelSize(0.04);
+    hFraction->GetYaxis()->SetLabelSize(0.04);
+    hFraction->SetMarkerStyle(20);
+    hFraction->SetMarkerSize(1.2);
+
+    // Draw the plot
     TCanvas *c1 = new TCanvas("c1", "Canvas", 800, 600);
     c1->SetLeftMargin(0.15);
-    graph->Draw("AP"); // "AP" to draw the graph with markers and lines
+    hFraction->Draw("E1");
 
     // Save the canvas as a PNG file
     c1->SaveAs("output/epi-X_misid.png");
