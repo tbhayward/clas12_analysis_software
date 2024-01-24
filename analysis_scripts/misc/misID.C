@@ -242,6 +242,7 @@ void misIDPlot() {
     // Create a histogram for the fraction calculation
     TH1F *hFraction = new TH1F("hFraction", ";p (GeV);% #pi^{+} #rightarrow k^{+}", 12, 0, 7);
     TH1F *hFraction2 = new TH1F("hFraction2", ";p (GeV);% p #rightarrow k^{+}", 12, 0, 7);
+    TH1F *hTotal = new TH1F("hTotal", ";p (GeV);Total Counts", 12, 0, 7);
 
     // Loop over the tree and fill the histogram
     double p_p;
