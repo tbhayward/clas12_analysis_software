@@ -38,7 +38,6 @@ void misIDPlot() {
     }
 
     // Draw the plot using TGraphErrors
-    TCanvas *c1 = new TCanvas("c1", "Canvas", 800, 600);
     c1->SetLeftMargin(0.15);
     graph->Draw("AP"); // "AP" to draw the graph with markers and lines
 
