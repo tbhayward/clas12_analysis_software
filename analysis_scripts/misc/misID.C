@@ -149,6 +149,14 @@ void misIDPlot() {
     hFraction->Scale(100.0 / tree->GetEntries());
     hFraction2->Scale(100.0 / tree->GetEntries());
 
+    // After scaling the histograms
+    double maxVal1 = hFraction->GetMaximum();
+    double maxVal2 = hFraction2->GetMaximum();
+    double maxVal = maxVal1 > maxVal2 ? maxVal1 : maxVal2;
+
+    graph->SetMaximum(maxVal * 1.1); // 10% higher than the max value for better visibility
+    graph->SetMinimum(0); // Assuming you want to start from 0
+
     // Create a TGraphErrors from the histogram with only vertical error bars
     TGraphErrors *graph = new TGraphErrors();
     for (int i = 1; i <= hFraction->GetNbinsX(); ++i) {
