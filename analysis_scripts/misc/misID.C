@@ -30,6 +30,12 @@ void misIDPlot() {
     // Normalize the histogram to get the fraction
     hFraction->Scale(1.0 / tree->GetEntries());
 
+    // Print the histogram values
+    std::cout << "Bin Contents:" << std::endl;
+    for (int i = 1; i <= hFraction->GetNbinsX(); ++i) {
+        std::cout << "Bin " << i << ": " << hFraction->GetBinContent(i) << std::endl;
+    }
+
     // Style the plot
     gStyle->SetOptStat(0);
     hFraction->GetXaxis()->CenterTitle();
