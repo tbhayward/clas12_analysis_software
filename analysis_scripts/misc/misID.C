@@ -38,14 +38,9 @@ void misIDPlot() {
     }
 
     // Draw the plot using TGraphErrors
-    c1->SetLeftMargin(0.15);
-    graph->Draw("AP"); // "AP" to draw the graph with markers and lines
-
-
-    // Draw the plot
     TCanvas *c1 = new TCanvas("c1", "Canvas", 800, 600);
     c1->SetLeftMargin(0.15);
-    hFraction->Draw("E1");
+    graph->Draw("AP"); // "AP" to draw the graph with markers and lines
 
     // Save the canvas as a PNG file
     c1->SaveAs("output/epi-X_misid.png");
