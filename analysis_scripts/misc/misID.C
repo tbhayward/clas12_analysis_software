@@ -40,7 +40,7 @@ void misIDPlot() {
     // Style the graph with markers
     graph->SetTitle(";p (GeV);% k^{-} #rightarrow #pi^{-}"); // Setting title and axis labels
     graph->SetMarkerStyle(20);  // Style 20 is a filled circle
-    graph->SetMarkerSize(1.8);  // Adjust the size as needed
+    graph->SetMarkerSize(4);  // Adjust the size as needed
 
     // Draw the plot using TGraphErrors
     TCanvas *c1 = new TCanvas("c1", "Canvas", 800, 600);
