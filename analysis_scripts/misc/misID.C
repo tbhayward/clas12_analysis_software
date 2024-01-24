@@ -176,57 +176,57 @@ void misIDPlot() {
         graph2->SetPointError(i-1, 0, hFraction2->GetBinError(i));
     }
 
-//     // Style the graphs with markers and colors
-//     graph->SetMarkerStyle(20);
-//     graph->SetMarkerSize(1.2);
-//     graph->SetMarkerColor(kRed);  // Red for matching_p1_pid == 321
-//     graph->SetLineColor(kRed);
+    // Style the graphs with markers and colors
+    graph->SetMarkerStyle(20);
+    graph->SetMarkerSize(1.2);
+    graph->SetMarkerColor(kRed);  // Red for matching_p1_pid == 321
+    graph->SetLineColor(kRed);
 
-//     graph2->SetMarkerStyle(21);
-//     graph2->SetMarkerSize(1.2);
-//     graph2->SetMarkerColor(kBlue);  // Blue for matching_p1_pid == 2212
-//     graph2->SetLineColor(kBlue);
+    graph2->SetMarkerStyle(21);
+    graph2->SetMarkerSize(1.2);
+    graph2->SetMarkerColor(kBlue);  // Blue for matching_p1_pid == 2212
+    graph2->SetLineColor(kBlue);
 
-//     // Style the graph with markers
-//     graph->SetTitle(";p (GeV);% h #rightarrow #pi^{+}"); // Setting title and axis labels
+    // Style the graph with markers
+    graph->SetTitle(";p (GeV);% h #rightarrow #pi^{+}"); // Setting title and axis labels
 
-//     graph->SetMaximum(maxVal * 1.1); // 10% higher than the max value for better visibility
-//     graph->SetMinimum(0); // Assuming you want to start from 0
+    graph->SetMaximum(maxVal * 1.1); // 10% higher than the max value for better visibility
+    graph->SetMinimum(0); // Assuming you want to start from 0
 
-//     // Draw the plot using TGraphErrors
-//     TCanvas *c1 = new TCanvas("c1", "Canvas", 800, 600);
-//     c1->SetLeftMargin(0.15);
-//     // Create an invisible histogram to set the axis range
-//     TH1F *frame = new TH1F("frame", ";p (GeV);% h #rightarrow #pi^{+}", 12, 0, 7);
-//     frame->SetMaximum(maxVal * 1.1); // Set the maximum y-value
-//     frame->SetMinimum(0); // Set the minimum y-value
-//     frame->SetStats(0); // No statistics box
+    // Draw the plot using TGraphErrors
+    TCanvas *c1 = new TCanvas("c1", "Canvas", 800, 600);
+    c1->SetLeftMargin(0.15);
+    // Create an invisible histogram to set the axis range
+    TH1F *frame = new TH1F("frame", ";p (GeV);% h #rightarrow #pi^{+}", 12, 0, 7);
+    frame->SetMaximum(maxVal * 1.1); // Set the maximum y-value
+    frame->SetMinimum(0); // Set the minimum y-value
+    frame->SetStats(0); // No statistics box
 
-//     // Draw the invisible histogram to set up the axis
-//     frame->Draw();
+    // Draw the invisible histogram to set up the axis
+    frame->Draw();
 
-//     // Draw the graphs on the same canvas
-//     graph->Draw("P SAME"); // Draw the first graph
-//     graph2->Draw("P SAME"); // Draw the second graph
+    // Draw the graphs on the same canvas
+    graph->Draw("P SAME"); // Draw the first graph
+    graph2->Draw("P SAME"); // Draw the second graph
 
-//     // Set axis styles
-//     graph->GetXaxis()->CenterTitle();
-//     graph->GetXaxis()->SetTitleSize(0.05);
-//     graph->GetYaxis()->CenterTitle();
-//     graph->GetYaxis()->SetTitleSize(0.05);
-//     graph->GetXaxis()->SetLabelSize(0.04);
-//     graph->GetYaxis()->SetLabelSize(0.04);
-//     graph->GetYaxis()->SetTitleOffset(1.5); // Adjust if necessary
+    // Set axis styles
+    graph->GetXaxis()->CenterTitle();
+    graph->GetXaxis()->SetTitleSize(0.05);
+    graph->GetYaxis()->CenterTitle();
+    graph->GetYaxis()->SetTitleSize(0.05);
+    graph->GetXaxis()->SetLabelSize(0.04);
+    graph->GetYaxis()->SetLabelSize(0.04);
+    graph->GetYaxis()->SetTitleOffset(1.5); // Adjust if necessary
 
-//     // Adding a legend
-//     TLegend *legend = new TLegend(0.7, 0.8, 0.9, 0.9); // Adjust the position as needed
-//     legend->AddEntry(graph, "k^{+} #rightarrow #pi^{+}", "lp");
-//     legend->AddEntry(graph2, "p #rightarrow #pi^{+}", "lp");
-//     legend->Draw();
+    // Adding a legend
+    TLegend *legend = new TLegend(0.7, 0.8, 0.9, 0.9); // Adjust the position as needed
+    legend->AddEntry(graph, "k^{+} #rightarrow #pi^{+}", "lp");
+    legend->AddEntry(graph2, "p #rightarrow #pi^{+}", "lp");
+    legend->Draw();
 
-//     // Save the canvas as a PNG file
-//     c1->SaveAs("output/epi+X_misid.png");
-// }
+    // Save the canvas as a PNG file
+    c1->SaveAs("output/epi+X_misid.png");
+}
 
 // void misIDPlot() {
 //     // Open the ROOT file and get the tree
