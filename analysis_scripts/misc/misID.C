@@ -154,9 +154,6 @@ void misIDPlot() {
     double maxVal2 = hFraction2->GetMaximum();
     double maxVal = maxVal1 > maxVal2 ? maxVal1 : maxVal2;
 
-    graph->SetMaximum(maxVal * 1.1); // 10% higher than the max value for better visibility
-    graph->SetMinimum(0); // Assuming you want to start from 0
-
     // Create a TGraphErrors from the histogram with only vertical error bars
     TGraphErrors *graph = new TGraphErrors();
     for (int i = 1; i <= hFraction->GetNbinsX(); ++i) {
@@ -190,6 +187,9 @@ void misIDPlot() {
 
     // Style the graph with markers
     graph->SetTitle(";p (GeV);% h #rightarrow #pi^{+}"); // Setting title and axis labels
+
+    graph->SetMaximum(maxVal * 1.1); // 10% higher than the max value for better visibility
+    graph->SetMinimum(0); // Assuming you want to start from 0
 
     // Draw the plot using TGraphErrors
     TCanvas *c1 = new TCanvas("c1", "Canvas", 800, 600);
