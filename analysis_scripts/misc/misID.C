@@ -22,7 +22,7 @@ void misIDPlot() {
 
     for (int i = 0; i < tree->GetEntries(); ++i) {
         tree->GetEntry(i);
-        if (matching_p1_pid == 321) {
+        if (matching_p1_pid == -321) {
             hFraction->Fill(p_p);
         }
     }
