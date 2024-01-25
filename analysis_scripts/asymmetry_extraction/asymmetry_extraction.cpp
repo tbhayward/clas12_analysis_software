@@ -1217,6 +1217,20 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
     }
 }
 
+template<typename T1, typename T2>
+void createAndFillHistogram(TTreeReader& reader, TH2D* hist, const std::string& branchX, 
+                            const std::string& branchY, KinematicCuts& kinematicCuts) {
+    TTreeReaderValue<T1> valX(reader, branchX.c_str());
+    TTreeReaderValue<T2> valY(reader, branchY.c_str());
+
+    reader.Restart();
+    while (reader.Next()) {
+        if (kinematicCuts.applyCuts(0, false)) {
+            hist->Fill(*valX, *valY);
+        }
+    }
+}
+
 void createCorrelationPlots() {
     const std::string outputDir = "output/correlation_plots/";
     const std::vector<std::string> branchesToSkip = {"helicity", "beam_pol", "target_pol", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"};
@@ -1258,27 +1272,14 @@ void createCorrelationPlots() {
             hist->GetXaxis()->SetTitleOffset(1.3);
             hist->GetYaxis()->SetTitleOffset(1.6);
 
-            dataReader.Restart();
-            while (dataReader.Next()) {
-                if (kinematicCuts.applyCuts(0, false)) {
-                    if (branchX == "runnum" && branchY == "runnum") {
-                        TTreeReaderValue<int> valX(dataReader, branchX.c_str());
-                        TTreeReaderValue<int> valY(dataReader, branchY.c_str());
-                        hist->Fill(*valX, *valY);
-                    } else if (branchX == "runnum" && branchY != "runnum") {
-                        TTreeReaderValue<int> valX(dataReader, branchX.c_str());
-                        TTreeReaderValue<double> valY(dataReader, branchY.c_str());
-                        hist->Fill(*valX, *valY);
-                    } else if (branchX != "runnum" && branchY == "runnum") {
-                        TTreeReaderValue<double> valX(dataReader, branchX.c_str());
-                        TTreeReaderValue<int> valY(dataReader, branchY.c_str());
-                        hist->Fill(*valX, *valY);
-                    } else {
-                        TTreeReaderValue<double> valX(dataReader, branchX.c_str());
-                        TTreeReaderValue<double> valY(dataReader, branchY.c_str());
-                        hist->Fill(*valX, *valY);
-                    }
-                }
+            if (branchX == "runnum" && branchY == "runnum") {
+                createAndFillHistogram<int, int>(dataReader, hist, branchX, branchY, kinematicCuts);
+            } else if (branchX == "runnum") {
+                createAndFillHistogram<int, double>(dataReader, hist, branchX, branchY, kinematicCuts);
+            } else if (branchY == "runnum") {
+                createAndFillHistogram<double, int>(dataReader, hist, branchX, branchY, kinematicCuts);
+            } else {
+                createAndFillHistogram<double, double>(dataReader, hist, branchX, branchY, kinematicCuts);
             }
 
 
