@@ -1217,22 +1217,6 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
     }
 }
 
-void addDoubleBranchForRunnum(TTree* tree) {
-    int runnum;
-    double runnum_double;
-    TBranch* branch = tree->GetBranch("runnum");
-    TBranch* newBranch = tree->Branch("runnum_double", &runnum_double);
-
-    branch->SetAddress(&runnum);
-    for (Long64_t i = 0; i < tree->GetEntries(); ++i) {
-        branch->GetEntry(i);
-        runnum_double = static_cast<double>(runnum);
-        newBranch->Fill();
-    }
-    tree->Write("", TObject::kOverwrite); // Update the tree with the new branch
-}
-
-
 void createCorrelationPlots() {
     const std::string outputDir = "output/correlation_plots/";
     const std::vector<std::string> branchesToSkip = {"helicity", "beam_pol", "target_pol", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"};
@@ -1281,8 +1265,8 @@ void createCorrelationPlots() {
             dataReader.Restart();
             while (dataReader.Next()) {
                 if (kinematicCuts.applyCuts(0, false)) {
-                    double xValue = *TTreeReaderValue<double>(dataReader, branchX.c_str());
-                    double yValue = *TTreeReaderValue<double>(dataReader, branchY.c_str());
+                    double xValue = branchX == "runnum" ? static_cast<double>(*runnumVal) : *TTreeReaderValue<double>(dataReader, branchX.c_str());
+                    double yValue = branchY == "runnum" ? static_cast<double>(*runnumVal) : *TTreeReaderValue<double>(dataReader, branchY.c_str());
                     hist->Fill(xValue, yValue);
                 }
             }
@@ -1338,8 +1322,6 @@ int main(int argc, char *argv[]) {
     cout << "-- Trees successfully extracted from ROOT files." << endl << endl;
   }
 
-  addDoubleBranchForRunnum(data);
-  addDoubleBranchForRunnum(mc);
   dataReader.SetTree(data);  // Initialize the global variable
   mcReader.SetTree(mc);  // Initialize the global variable
 
