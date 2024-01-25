@@ -1227,11 +1227,11 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
 
                 if (branchName == "runnum") {
                   TTreeReaderValue<int> dataVal(dataReader, branchName.c_str());
-                  TTreeReaderValue<int> binVariable(dataReader, branchVariable.c_str());
+                  TTreeReaderValue<double> binVariable(dataReader, branchVariable.c_str());
 
                   if (mcReader.GetTree()->GetBranch(branchName.c_str())) {
                       TTreeReaderValue<int> mcVal(mcReader, branchName.c_str());
-                      TTreeReaderValue<int> mcBinVariable(mcReader, branchVariable.c_str());
+                      TTreeReaderValue<double> mcBinVariable(mcReader, branchVariable.c_str());
                       FillHistogram<int>(dataReader, branchName, dataHist, kinematicCuts, fitIndex);
                       FillHistogram<int>(mcReader, branchName, mcHist, mcKinematicCuts, fitIndex);
                   } else {
