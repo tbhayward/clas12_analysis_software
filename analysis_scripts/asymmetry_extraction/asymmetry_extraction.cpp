@@ -1217,25 +1217,10 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
     }
 }
 
-template<typename T1, typename T2>
-void createAndFillHistogram(TTreeReader& reader, TH2D* hist, const std::string& branchX, 
-      const std::string& branchY, KinematicCuts& kinematicCuts) {
-    TTreeReaderValue<T1> valX(reader, branchX.c_str());
-    TTreeReaderValue<T2> valY(reader, branchY.c_str());
-
-    reader.Restart();
-    while (reader.Next()) {
-        if (kinematicCuts.applyCuts(0, false)) {
-            hist->Fill(*valX, *valY);
-        }
-    }
-}
-
 void createCorrelationPlots() {
     const std::string outputDir = "output/correlation_plots/";
     const std::vector<std::string> branchesToSkip = {"helicity", "beam_pol", "target_pol", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"};
 
-    // Retrieve the list of branches
     TObjArray* branches = dataReader.GetTree()->GetListOfBranches();
     if (!branches) {
         std::cerr << "Error: Unable to retrieve branch list from data TTree." << std::endl;
@@ -1251,21 +1236,6 @@ void createCorrelationPlots() {
     }
 
     KinematicCuts kinematicCuts(dataReader);
-
-    // Create a map to hold TTreeReaderValue objects for each branch
-    std::map<std::string, TTreeReaderValue<int>*> readerValuesInt;
-    std::map<std::string, TTreeReaderValue<double>*> readerValuesDouble;
-
-    // Initialize TTreeReaderValue objects for each branch
-    for (const auto& branchName : branchNames) {
-        if (branchName == "runnum") {
-            readerValuesInt[branchName] = new 
-              TTreeReaderValue<int>(dataReader, branchName.c_str());
-        } else {
-            readerValuesDouble[branchName] = new 
-              TTreeReaderValue<double>(dataReader, branchName.c_str());
-        }
-    }
 
     for (size_t i = 0; i < branchNames.size(); ++i) {
         for (size_t j = i + 1; j < branchNames.size(); ++j) {
@@ -1288,20 +1258,14 @@ void createCorrelationPlots() {
             hist->GetYaxis()->SetTitleOffset(1.6);
 
             dataReader.Restart();
+            TTreeReaderValue<double> valX(dataReader, branchX == "runnum" ? "runnum_double" : branchX.c_str());
+            TTreeReaderValue<double> valY(dataReader, branchY == "runnum" ? "runnum_double" : branchY.c_str());
+
             while (dataReader.Next()) {
                 if (kinematicCuts.applyCuts(0, false)) {
-                    if (branchX == "runnum" && branchY == "runnum") {
-                        hist->Fill(**readerValuesInt[branchX], **readerValuesInt[branchY]);
-                    } else if (branchX == "runnum") {
-                        hist->Fill(**readerValuesInt[branchX], **readerValuesDouble[branchY]);
-                    } else if (branchY == "runnum") {
-                        hist->Fill(**readerValuesDouble[branchX], **readerValuesInt[branchY]);
-                    } else {
-                        hist->Fill(**readerValuesDouble[branchX], **readerValuesDouble[branchY]);
-                    }
+                    hist->Fill(*valX, *valY);
                 }
             }
-
 
             TCanvas* c = new TCanvas(histName.c_str(), histName.c_str(), 800, 600);
             c->SetLeftMargin(0.15);
@@ -1311,14 +1275,6 @@ void createCorrelationPlots() {
             c->SaveAs((outputDir + histName + ".png").c_str());
             delete hist;
             delete c;
-
-            // Clean up TTreeReaderValue objects
-            for (auto& entry : readerValuesInt) {
-                delete entry.second;
-            }
-            for (auto& entry : readerValuesDouble) {
-                delete entry.second;
-            }
         }
     }
 }
