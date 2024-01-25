@@ -1258,31 +1258,44 @@ void createCorrelationPlots() {
             hist->GetXaxis()->SetTitleOffset(1.3);
             hist->GetYaxis()->SetTitleOffset(1.6);
 
-            dataReader.Restart();
-            // Lambda function for filling histogram
-            auto fillHistogram = [&]() {
-                if (kinematicCuts.applyCuts(0, false)) {
-                    if (branchX == "runnum") {
-                        TTreeReaderValue<int> valX(dataReader, branchX.c_str());
-                        if (branchY == "runnum") {
-                            TTreeReaderValue<int> valY(dataReader, branchY.c_str());
-                            hist->Fill(*valX, *valY);
-                        } else {
-                            TTreeReaderValue<double> valY(dataReader, branchY.c_str());
+            std::function<void()> fillHistogram;
+
+            // Define the lambda function outside the loop
+            if (branchX == "runnum") {
+                TTreeReaderValue<int> valX(dataReader, branchX.c_str());
+                if (branchY == "runnum") {
+                    TTreeReaderValue<int> valY(dataReader, branchY.c_str());
+                    fillHistogram = [&]() {
+                        if (kinematicCuts.applyCuts(0, false)) {
                             hist->Fill(*valX, *valY);
                         }
-                    } else {
-                        TTreeReaderValue<double> valX(dataReader, branchX.c_str());
-                        if (branchY == "runnum") {
-                            TTreeReaderValue<int> valY(dataReader, branchY.c_str());
-                            hist->Fill(*valX, *valY);
-                        } else {
-                            TTreeReaderValue<double> valY(dataReader, branchY.c_str());
+                    };
+                } else {
+                    TTreeReaderValue<double> valY(dataReader, branchY.c_str());
+                    fillHistogram = [&]() {
+                        if (kinematicCuts.applyCuts(0, false)) {
                             hist->Fill(*valX, *valY);
                         }
-                    }
+                    };
                 }
-            };
+            } else {
+                TTreeReaderValue<double> valX(dataReader, branchX.c_str());
+                if (branchY == "runnum") {
+                    TTreeReaderValue<int> valY(dataReader, branchY.c_str());
+                    fillHistogram = [&]() {
+                        if (kinematicCuts.applyCuts(0, false)) {
+                            hist->Fill(*valX, *valY);
+                        }
+                    };
+                } else {
+                    TTreeReaderValue<double> valY(dataReader, branchY.c_str());
+                    fillHistogram = [&]() {
+                        if (kinematicCuts.applyCuts(0, false)) {
+                            hist->Fill(*valX, *valY);
+                        }
+                    };
+                }
+            }
 
             // Restart the reader and fill the histogram
             dataReader.Restart();
@@ -1428,7 +1441,7 @@ int main(int argc, char *argv[]) {
   cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << " (nC)."<< endl << endl;
 
   createIntegratedKinematicPlots();
-  createIntegratedKinematicPlotsForBinsAndFits();
+  // createIntegratedKinematicPlotsForBinsAndFits();
   createCorrelationPlots();
   currentFits=0;
   dataReader.Restart(); mcReader.Restart();
