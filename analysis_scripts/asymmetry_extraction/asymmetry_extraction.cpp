@@ -1261,11 +1261,11 @@ void createCorrelationPlots() {
             hist->GetXaxis()->SetTitleOffset(1.3);
             hist->GetYaxis()->SetTitleOffset(1.6);
 
+            TTreeReaderValue<double> valX(dataReader, branchX.c_str());
+            TTreeReaderValue<double> valY(dataReader, branchY.c_str());
             dataReader.Restart();
             while (dataReader.Next()) {
                 if (kinematicCuts.applyCuts(0, false)) {
-                    TTreeReaderValue<double> valX(dataReader, branchX.c_str());
-                    TTreeReaderValue<double> valY(dataReader, branchY.c_str());
                     hist->Fill(*valX, *valY);
                 }
             }
