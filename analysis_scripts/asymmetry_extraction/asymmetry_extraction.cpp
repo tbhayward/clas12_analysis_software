@@ -1217,22 +1217,6 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
     }
 }
 
-void fillCorrelationHistogram(TTreeReader& reader, TH2D* hist, const std::string& branchX, const std::string& branchY, KinematicCuts& kinematicCuts) {
-    double xValue, yValue;
-    TTreeReaderValue<int> valX_int(reader, branchX == "runnum" ? "runnum" : "");
-    TTreeReaderValue<double> valX_double(reader, branchX != "runnum" ? branchX.c_str() : "");
-    TTreeReaderValue<int> valY_int(reader, branchY == "runnum" ? "runnum" : "");
-    TTreeReaderValue<double> valY_double(reader, branchY != "runnum" ? branchY.c_str() : "");
-
-    while (reader.Next()) {
-        if (kinematicCuts.applyCuts(0, false)) {
-            xValue = branchX == "runnum" ? static_cast<double>(*valX_int) : *valX_double;
-            yValue = branchY == "runnum" ? static_cast<double>(*valY_int) : *valY_double;
-            hist->Fill(xValue, yValue);
-        }
-    }
-}
-
 void createCorrelationPlots() {
     const std::string outputDir = "output/correlation_plots/";
     const std::vector<std::string> branchesToSkip = {"helicity", "beam_pol", "target_pol", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"};
@@ -1252,6 +1236,7 @@ void createCorrelationPlots() {
     }
 
     KinematicCuts kinematicCuts(dataReader);
+    TTreeReaderValue<int> runnumVal(dataReader, "runnum");
 
     for (size_t i = 0; i < branchNames.size(); ++i) {
         for (size_t j = i + 1; j < branchNames.size(); ++j) {
@@ -1274,7 +1259,13 @@ void createCorrelationPlots() {
             hist->GetYaxis()->SetTitleOffset(1.6);
 
             dataReader.Restart();
-            fillCorrelationHistogram(dataReader, hist, branchX, branchY, kinematicCuts);
+            while (dataReader.Next()) {
+                if (kinematicCuts.applyCuts(0, false)) {
+                    double xValue = branchX == "runnum" ? static_cast<double>(*runnumVal) : *TTreeReaderValue<double>(dataReader, branchX.c_str());
+                    double yValue = branchY == "runnum" ? static_cast<double>(*runnumVal) : *TTreeReaderValue<double>(dataReader, branchY.c_str());
+                    hist->Fill(xValue, yValue);
+                }
+            }
 
             TCanvas* c = new TCanvas(histName.c_str(), histName.c_str(), 800, 600);
             c->SetLeftMargin(0.15);
@@ -1287,7 +1278,6 @@ void createCorrelationPlots() {
         }
     }
 }
-
 
 
 int main(int argc, char *argv[]) {
