@@ -1260,8 +1260,17 @@ void createCorrelationPlots() {
             dataReader.Restart();
             while (dataReader.Next()) {
                 if (kinematicCuts.applyCuts(0, false)) {
-                    double xValue = (branchX == "runnum") ? *TTreeReaderValue<int>(dataReader, branchX.c_str()) : *TTreeReaderValue<double>(dataReader, branchX.c_str());
-                    double yValue = (branchY == "runnum") ? *TTreeReaderValue<int>(dataReader, branchY.c_str()) : *TTreeReaderValue<double>(dataReader, branchY.c_str());
+                    double xValue, yValue;
+                    if (branchX == "runnum") {
+                        xValue = static_cast<double>(*TTreeReaderValue<int>(dataReader, branchX.c_str()));
+                    } else {
+                        xValue = *TTreeReaderValue<double>(dataReader, branchX.c_str());
+                    }
+                    if (branchY == "runnum") {
+                        yValue = static_cast<double>(*TTreeReaderValue<int>(dataReader, branchY.c_str()));
+                    } else {
+                        yValue = *TTreeReaderValue<double>(dataReader, branchY.c_str());
+                    }
                     hist->Fill(xValue, yValue);
                 }
             }
