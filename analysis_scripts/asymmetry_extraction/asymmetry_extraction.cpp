@@ -1259,26 +1259,28 @@ void createCorrelationPlots() {
             hist->GetYaxis()->SetTitleOffset(1.6);
 
             dataReader.Restart();
-
             while (dataReader.Next()) {
-              if (kinematicCuts.applyCuts(0, false)) {
-                double valX, valY;
-
-                if (branchX == "runnum") {
-                  TTreeReaderValue<int> valX(dataReader, branchX.c_str());
-                } else {
-                  TTreeReaderValue<double> valX(dataReader, branchX.c_str());
+                if (kinematicCuts.applyCuts(0, false)) {
+                    if (branchX == "runnum" && branchY == "runnum") {
+                        TTreeReaderValue<int> valX(dataReader, branchX.c_str());
+                        TTreeReaderValue<int> valY(dataReader, branchY.c_str());
+                        hist->Fill(*valX, *valY);
+                    } else if (branchX == "runnum" && branchY != "runnum") {
+                        TTreeReaderValue<int> valX(dataReader, branchX.c_str());
+                        TTreeReaderValue<double> valY(dataReader, branchY.c_str());
+                        hist->Fill(*valX, *valY);
+                    } else if (branchX != "runnum" && branchY == "runnum") {
+                        TTreeReaderValue<double> valX(dataReader, branchX.c_str());
+                        TTreeReaderValue<int> valY(dataReader, branchY.c_str());
+                        hist->Fill(*valX, *valY);
+                    } else {
+                        TTreeReaderValue<double> valX(dataReader, branchX.c_str());
+                        TTreeReaderValue<double> valY(dataReader, branchY.c_str());
+                        hist->Fill(*valX, *valY);
+                    }
                 }
-
-                if (branchY == "runnum") {
-                    TTreeReaderValue<int> valY(dataReader, branchY.c_str());
-                } else {
-                    TTreeReaderValue<double> valY(dataReader, branchY.c_str());
-                }
-
-                hist->Fill(valX, valY);
-              }
             }
+
 
             TCanvas* c = new TCanvas(histName.c_str(), histName.c_str(), 800, 600);
             c->SetLeftMargin(0.15);
