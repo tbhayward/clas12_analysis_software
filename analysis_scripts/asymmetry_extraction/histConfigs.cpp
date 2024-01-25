@@ -2,7 +2,7 @@
 #include "TMath.h" 
 
 std::map<std::string, HistConfig> histConfigs = {
-      {"runnum", {3000, 14000, 17000}},
+      {"runnum", {14000, 3000, 17000}},
       {"Delta_eta", {200, -3, 3}},
       {"mc_Delta_eta", {200, -3, 3}},
       {"Delta_phi", {200, 0, 2*TMath::Pi()}},
