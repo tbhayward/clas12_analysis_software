@@ -1077,6 +1077,8 @@ void createCorrelationPlots() {
         }
     }
 
+    KinematicCuts kinematicCuts(dataReader);
+
     // Generate all possible pairs of branches to plot
     for (size_t i = 0; i < branchNames.size(); ++i) {
         for (size_t j = i + 1; j < branchNames.size(); ++j) {
