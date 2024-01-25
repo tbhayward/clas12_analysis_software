@@ -1222,22 +1222,29 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 dataHist->SetLineColor(kBlack);
                 mcHist->SetLineColor(kRed);
 
-                // Fill the histograms
                 KinematicCuts kinematicCuts(dataReader);
-                while (dataReader.Next()) {
-                    bool passedKinematicCuts = kinematicCuts.applyCuts(fitIndex, false);
-                    if (*binVariable >= binLowerEdge && *binVariable < binUpperEdge && passedKinematicCuts) {
-                        dataHist->Fill(*dataVal);
-                    }
-                }
-
-                // Repeat for mcReader
                 KinematicCuts mcKinematicCuts(mcReader);
-                while (mcReader.Next()) {
-                    bool passedKinematicCuts = mcKinematicCuts.applyCuts(fitIndex, true);
-                    if (*mcBinVariable >= binLowerEdge && *mcBinVariable < binUpperEdge && passedKinematicCuts) {
-                        mcHist->Fill(*mcVal);
-                    }
+
+                if (branchName == "runnum") {
+                  TTreeReaderValue<int> dataVal(dataReader, branchName.c_str());
+                  // Check if the "runnum" branch exists in mcReader
+                  if (mcReader.GetTree()->GetBranch(branchName.c_str())) {
+                      TTreeReaderValue<int> mcVal(mcReader, branchName.c_str());
+                      // Fill histograms
+                      FillHistogram<int>(dataReader, branchName, dataHist, kinematicCuts, fitIndex);
+                      FillHistogram<int>(mcReader, branchName, mcHist, mcKinematicCuts, fitIndex);
+                  } else {
+                      // "runnum" branch does not exist, use default value for mcReader
+                      int defaultRunNum = 11;
+                      FillHistogram<int>(dataReader, branchName, dataHist, kinematicCuts, fitIndex);
+                      mcHist->Fill(defaultRunNum);
+                  }
+                } else {
+                  TTreeReaderValue<double> dataVal(dataReader, branchName.c_str());
+                  TTreeReaderValue<double> mcVal(mcReader, branchName.c_str());
+                  // Fill histograms
+                  FillHistogram<double>(dataReader, branchName, dataHist, kinematicCuts, fitIndex);
+                  FillHistogram<double>(mcReader, branchName, mcHist, mcKinematicCuts, fitIndex);
                 }
 
                 // Normalize the histograms
@@ -1423,7 +1430,7 @@ int main(int argc, char *argv[]) {
 
   // createCorrelationPlots();
   createIntegratedKinematicPlots();
-  // createIntegratedKinematicPlotsForBinsAndFits();
+  createIntegratedKinematicPlotsForBinsAndFits();
   currentFits=0;
   dataReader.Restart(); mcReader.Restart();
 
