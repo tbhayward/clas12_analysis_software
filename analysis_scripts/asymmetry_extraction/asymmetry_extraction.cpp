@@ -1258,49 +1258,26 @@ void createCorrelationPlots() {
             hist->GetXaxis()->SetTitleOffset(1.3);
             hist->GetYaxis()->SetTitleOffset(1.6);
 
-            std::function<void()> fillHistogram;
-
-            // Define the lambda function outside the loop
-            if (branchX == "runnum") {
-                TTreeReaderValue<int> valX(dataReader, branchX.c_str());
-                if (branchY == "runnum") {
-                    TTreeReaderValue<int> valY(dataReader, branchY.c_str());
-                    fillHistogram = [&]() {
-                        if (kinematicCuts.applyCuts(0, false)) {
-                            hist->Fill(*valX, *valY);
-                        }
-                    };
-                } else {
-                    TTreeReaderValue<double> valY(dataReader, branchY.c_str());
-                    fillHistogram = [&]() {
-                        if (kinematicCuts.applyCuts(0, false)) {
-                            hist->Fill(*valX, *valY);
-                        }
-                    };
-                }
-            } else {
-                TTreeReaderValue<double> valX(dataReader, branchX.c_str());
-                if (branchY == "runnum") {
-                    TTreeReaderValue<int> valY(dataReader, branchY.c_str());
-                    fillHistogram = [&]() {
-                        if (kinematicCuts.applyCuts(0, false)) {
-                            hist->Fill(*valX, *valY);
-                        }
-                    };
-                } else {
-                    TTreeReaderValue<double> valY(dataReader, branchY.c_str());
-                    fillHistogram = [&]() {
-                        if (kinematicCuts.applyCuts(0, false)) {
-                            hist->Fill(*valX, *valY);
-                        }
-                    };
-                }
-            }
-
-            // Restart the reader and fill the histogram
             dataReader.Restart();
+
             while (dataReader.Next()) {
-                fillHistogram();
+              if (kinematicCuts.applyCuts(0, false)) {
+                double valX, valY;
+
+                if (branchX == "runnum") {
+                    valX = *TTreeReaderValue<int>(dataReader, branchX.c_str());
+                } else {
+                    valX = *TTreeReaderValue<double>(dataReader, branchX.c_str());
+                }
+
+                if (branchY == "runnum") {
+                    valY = *TTreeReaderValue<int>(dataReader, branchY.c_str());
+                } else {
+                    valY = *TTreeReaderValue<double>(dataReader, branchY.c_str());
+                }
+
+                hist->Fill(valX, valY);
+              }
             }
 
             TCanvas* c = new TCanvas(histName.c_str(), histName.c_str(), 800, 600);
