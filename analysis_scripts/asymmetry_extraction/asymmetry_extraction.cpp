@@ -878,9 +878,21 @@ void performChi2Fits(const char* output_file, const char* kinematic_file,
   }
 }
 
+template<typename T>
+void FillHistogram(TTreeReader& reader, const std::string& branchName, TH1D* hist, 
+  KinematicCuts& kinematicCuts, int fitIndex) {
+    TTreeReaderValue<T> val(reader, branchName.c_str());
+    while (reader.Next()) {
+        if (kinematicCuts.applyCuts(fitIndex, false)) {
+            hist->Fill(*val);
+        }
+    }
+}
+
+
 void createIntegratedKinematicPlots() {
     const std::string outputDir = "output/integrated_plots/";
-    const std::vector<std::string> branchesToSkip = {"helicity", "beam_pol", "target_pol", "runnum", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"};
+    const std::vector<std::string> branchesToSkip = {"helicity", "beam_pol", "target_pol", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"};
 
     TObjArray* branches = dataReader.GetTree()->GetListOfBranches();
     if (!branches) {
@@ -904,7 +916,8 @@ void createIntegratedKinematicPlots() {
         branch = (TBranch*)branches->At(i);
         branchName = branch->GetName();
 
-        if (std::find(branchesToSkip.begin(), branchesToSkip.end(), branchName) != branchesToSkip.end()) {
+        if (std::find(branchesToSkip.begin(), branchesToSkip.end(), branchName) != 
+          branchesToSkip.end()) {
             continue; // Skip this branch
         }
 
@@ -938,22 +951,39 @@ void createIntegratedKinematicPlots() {
         dataHist->GetYaxis()->SetTitleOffset(1.6);
         mcHist->GetYaxis()->SetTitleOffset(1.6);
 
-        // Loop over dataReader to fill the histogram
-        KinematicCuts kinematicCuts(dataReader);
-        while (dataReader.Next()) {
-            bool passedKinematicCuts = kinematicCuts.applyCuts(0, false);
-            if (*dataVal >= config.xMin && *dataVal < config.xMax && passedKinematicCuts) {
-                dataHist->Fill(*dataVal);
-            }
+        // // Loop over dataReader to fill the histogram
+        // KinematicCuts kinematicCuts(dataReader);
+        // while (dataReader.Next()) {
+        //     bool passedKinematicCuts = kinematicCuts.applyCuts(0, false);
+        //     if (*dataVal >= config.xMin && *dataVal < config.xMax && passedKinematicCuts) {
+        //         dataHist->Fill(*dataVal);
+        //     }
+        // }
+
+        // // Loop over mcReader to fill the histogram
+        // KinematicCuts mc_kinematicCuts(mcReader);
+        // while (mcReader.Next()) {
+        //     bool passedKinematicCuts = mc_kinematicCuts.applyCuts(0, true);
+        //     if (*mcVal >= config.xMin && *mcVal < config.xMax && passedKinematicCuts) {
+        //         mcHist->Fill(*mcVal);
+        //     }
+        // }
+
+        KinematicCuts dataKinematicCuts(dataReader);
+        KinematicCuts mcKinematicCuts(mcReader);
+
+        // Fill data histogram
+        if (branchName == "runnum") {
+            FillHistogram<int>(dataReader, branchName, dataHist, dataKinematicCuts, 0);
+        } else {
+            FillHistogram<double>(dataReader, branchName, dataHist, dataKinematicCuts, 0);
         }
 
-        // Loop over mcReader to fill the histogram
-        KinematicCuts mc_kinematicCuts(mcReader);
-        while (mcReader.Next()) {
-            bool passedKinematicCuts = mc_kinematicCuts.applyCuts(0, true);
-            if (*mcVal >= config.xMin && *mcVal < config.xMax && passedKinematicCuts) {
-                mcHist->Fill(*mcVal);
-            }
+        // Fill MC histogram
+        if (branchName == "runnum") {
+            FillHistogram<int>(mcReader, branchName, mcHist, mcKinematicCuts, 0);
+        } else {
+            FillHistogram<double>(mcReader, branchName, mcHist, mcKinematicCuts, 0);
         }
 
         // Normalize the histograms
@@ -1011,7 +1041,7 @@ void createIntegratedKinematicPlots() {
 
 void createCorrelationPlots() {
     const std::string outputDir = "output/correlation_plots/";
-    const std::vector<std::string> branchesToSkip = {"helicity", "beam_pol", "target_pol", "runnum", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"};
+    const std::vector<std::string> branchesToSkip = {"helicity", "beam_pol", "target_pol", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"};
 
     // Assuming histConfigs is a global variable or it is accessible within this function's scope
     extern std::map<std::string, HistConfig> histConfigs;
@@ -1100,7 +1130,7 @@ void createCorrelationPlots() {
 void createIntegratedKinematicPlotsForBinsAndFits() {
     const std::string outputDir = "output/binned_plots/";
     const std::vector<std::string> branchesToSkip = {
-        "helicity", "beam_pol", "target_pol", "runnum", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"
+        "helicity", "beam_pol", "target_pol", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"
     };
 
     TObjArray* branches = dataReader.GetTree()->GetListOfBranches();
@@ -1376,7 +1406,7 @@ int main(int argc, char *argv[]) {
   cout << "Total neg-neg charge: " << cmm << " (nC). ";
   cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << " (nC)."<< endl << endl;
 
-  createCorrelationPlots();
+  // createCorrelationPlots();
   createIntegratedKinematicPlots();
   // createIntegratedKinematicPlotsForBinsAndFits();
   currentFits=0;
@@ -1398,9 +1428,6 @@ int main(int argc, char *argv[]) {
     cout << endl << endl;
     currentFits++;
   }
-
-  // cout << endl; 
-
 
   // Stop the timer
   auto end_time = std::chrono::high_resolution_clock::now();
