@@ -1219,7 +1219,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
 
 void createCorrelationPlots() {
     const std::string outputDir = "output/correlation_plots/";
-    const std::vector<std::string> branchesToSkip = {"helicity", "beam_pol", "target_pol", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"};
+    const std::vector<std::string> branchesToSkip = {"helicity", "runnum", "beam_pol", "target_pol", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"};
 
     TObjArray* branches = dataReader.GetTree()->GetListOfBranches();
     if (!branches) {
