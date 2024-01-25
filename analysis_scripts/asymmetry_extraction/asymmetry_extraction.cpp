@@ -1258,12 +1258,11 @@ void createCorrelationPlots() {
             hist->GetYaxis()->SetTitleOffset(1.6);
 
             dataReader.Restart();
-            TTreeReaderValue<double> valX(dataReader, branchX == "runnum" ? "runnum_double" : branchX.c_str());
-            TTreeReaderValue<double> valY(dataReader, branchY == "runnum" ? "runnum_double" : branchY.c_str());
-
             while (dataReader.Next()) {
                 if (kinematicCuts.applyCuts(0, false)) {
-                    hist->Fill(*valX, *valY);
+                    double xValue = (branchX == "runnum") ? *TTreeReaderValue<int>(dataReader, branchX.c_str()) : *TTreeReaderValue<double>(dataReader, branchX.c_str());
+                    double yValue = (branchY == "runnum") ? *TTreeReaderValue<int>(dataReader, branchY.c_str()) : *TTreeReaderValue<double>(dataReader, branchY.c_str());
+                    hist->Fill(xValue, yValue);
                 }
             }
 
@@ -1278,6 +1277,7 @@ void createCorrelationPlots() {
         }
     }
 }
+
 
 int main(int argc, char *argv[]) {
   // Start the timer
