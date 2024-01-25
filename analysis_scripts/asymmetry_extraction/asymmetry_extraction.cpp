@@ -1217,10 +1217,26 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
     }
 }
 
+template<typename T1, typename T2>
+void createAndFillHistogram(TTreeReader& reader, TH2D* hist, const std::string& branchX, 
+                            const std::string& branchY, KinematicCuts& kinematicCuts) {
+    TTreeReaderValue<T1> valX(reader, branchX.c_str());
+    TTreeReaderValue<T2> valY(reader, branchY.c_str());
+
+    reader.Restart();
+    while (reader.Next()) {
+        if (kinematicCuts.applyCuts(0, false)) {
+            hist->Fill(*valX, *valY);
+        }
+    }
+}
+
 void createCorrelationPlots() {
     const std::string outputDir = "output/correlation_plots/";
-    // Include "runnum" in the branchesToSkip list
-    const std::vector<std::string> branchesToSkip = {"helicity", "beam_pol", "target_pol", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum", "runnum"};
+    const std::vector<std::string> branchesToSkip = {"helicity", "beam_pol", "target_pol", "runnum", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"};
+
+    // Assuming histConfigs is a global variable or it is accessible within this function's scope
+    extern std::map<std::string, HistConfig> histConfigs;
 
     // Retrieve the list of branches
     TObjArray* branches = dataReader.GetTree()->GetListOfBranches();
@@ -1229,6 +1245,7 @@ void createCorrelationPlots() {
         return;
     }
 
+    // Prepare a vector with the names of the branches to be used
     std::vector<std::string> branchNames;
     for (Int_t i = 0; i < branches->GetEntries(); ++i) {
         std::string name = branches->At(i)->GetName();
@@ -1237,52 +1254,70 @@ void createCorrelationPlots() {
         }
     }
 
-    KinematicCuts kinematicCuts(dataReader);
-
+    // Generate all possible pairs of branches to plot
     for (size_t i = 0; i < branchNames.size(); ++i) {
         for (size_t j = i + 1; j < branchNames.size(); ++j) {
             const std::string& branchX = branchNames[i];
             const std::string& branchY = branchNames[j];
 
-            HistConfig configX = histConfigs.count(branchX) ? histConfigs[branchX] : HistConfig{100, 0, 1};
-            HistConfig configY = histConfigs.count(branchY) ? histConfigs[branchY] : HistConfig{100, 0, 1};
+            TTreeReaderValue<Double_t> valX(dataReader, branchX.c_str());
+            TTreeReaderValue<Double_t> valY(dataReader, branchY.c_str());
 
+            // Get the configurations for each branch
+            HistConfig configX = 
+              histConfigs.count(branchX) ? histConfigs[branchX] : HistConfig{100, 0, 1};
+            HistConfig configY = 
+              histConfigs.count(branchY) ? histConfigs[branchY] : HistConfig{100, 0, 1};
+
+            // Define the histogram for this pair
             std::string histName = branchX + "_vs_" + branchY;
             TH2D* hist = new TH2D(histName.c_str(), "",
-                                  configX.nBins, configX.xMin, configX.xMax,
-                                  configY.nBins, configY.xMin, configY.xMax);
+              configX.nBins, configX.xMin, configX.xMax, // X-axis bins and range
+              configY.nBins, configY.xMin, configY.xMax); // Y-axis bins and range
 
+            // Set axis titles and center them
             hist->GetXaxis()->SetTitle(formatLabelName(branchX).c_str());
             hist->GetYaxis()->SetTitle(formatLabelName(branchY).c_str());
             hist->GetXaxis()->CenterTitle();
             hist->GetYaxis()->CenterTitle();
+
+            // Increase the title font size for both axes
             hist->GetXaxis()->SetTitleSize(0.05);
             hist->GetYaxis()->SetTitleSize(0.05);
+
+            // Set the margins to avoid cutting off labels
             hist->GetXaxis()->SetTitleOffset(1.3);
             hist->GetYaxis()->SetTitleOffset(1.6);
 
-            TTreeReaderValue<double> valX(dataReader, branchX.c_str());
-            TTreeReaderValue<double> valY(dataReader, branchY.c_str());
-            dataReader.Restart();
+            // Loop over dataReader to fill the histogram
+            KinematicCuts kinematicCuts(dataReader);
             while (dataReader.Next()) {
                 if (kinematicCuts.applyCuts(0, false)) {
                     hist->Fill(*valX, *valY);
                 }
             }
 
+            // Create a canvas for drawing the histogram
             TCanvas* c = new TCanvas(histName.c_str(), histName.c_str(), 800, 600);
             c->SetLeftMargin(0.15);
             c->SetBottomMargin(0.15);
             c->SetRightMargin(0.15);
-            hist->Draw("COLZ");
+
+            // Draw the histogram on the canvas
+            hist->Draw("COLZ"); // Draw as a 2D color plot
+
+            // Save the canvas to a file
             c->SaveAs((outputDir + histName + ".png").c_str());
 
+            // Clean up the created objects to avoid memory leaks
             delete hist;
             delete c;
+
+            // Restart the TTreeReader for the next iteration
+            dataReader.Restart();
         }
     }
 }
-
 
 int main(int argc, char *argv[]) {
   // Start the timer
