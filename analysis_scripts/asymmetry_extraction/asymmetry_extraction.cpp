@@ -1378,11 +1378,7 @@ void createCorrelationPlots() {
             // Loop over dataReader to fill the histogram
             KinematicCuts kinematicCuts(dataReader);
             while (dataReader.Next()) {
-                if (kinematicCuts.applyCuts(0, false) && branchX.c_str() == "runnum") {
-                    hist->Fill(runnum, *valY);
-                } else if (kinematicCuts.applyCuts(0, false) && branchY.c_str() == "runnum") {
-                    hist->Fill(*valX, runnum);
-                } else if (kinematicCuts.applyCuts(0, false)) {
+                if (kinematicCuts.applyCuts(0, false)) {
                     hist->Fill(*valX, *valY);
                 }
             }
