@@ -921,8 +921,8 @@ void createIntegratedKinematicPlots() {
             continue; // Skip this branch
         }
 
-        TTreeReaderValue<Double_t> dataVal(dataReader, branchName.c_str());
-        TTreeReaderValue<Double_t> mcVal(mcReader, branchName.c_str());
+        // TTreeReaderValue<Double_t> dataVal(dataReader, branchName.c_str());
+        // TTreeReaderValue<Double_t> mcVal(mcReader, branchName.c_str());
 
         HistConfig config = {100, 0, 1}; // Default configuration
         if (histConfigs.find(branchName) != histConfigs.end()) {
@@ -972,18 +972,23 @@ void createIntegratedKinematicPlots() {
         KinematicCuts dataKinematicCuts(dataReader);
         KinematicCuts mcKinematicCuts(mcReader);
 
-        // Fill data histogram
+        // Fill histograms with check for runnum
         if (branchName == "runnum") {
-            FillHistogram<int>(dataReader, branchName, dataHist, dataKinematicCuts, 0);
-        } else {
-            FillHistogram<double>(dataReader, branchName, dataHist, dataKinematicCuts, 0);
-        }
+          // Declare TTreeReaderValue for integers
+          TTreeReaderValue<int> dataVal(dataReader, branchName.c_str());
+          TTreeReaderValue<int> mcVal(mcReader, branchName.c_str());
 
-        // Fill MC histogram
-        if (branchName == "runnum") {
-            FillHistogram<int>(mcReader, branchName, mcHist, mcKinematicCuts, 0);
+          // Fill histograms for integer values
+          FillHistogram<int>(dataReader, branchName, dataHist, dataKinematicCuts, 0);
+          FillHistogram<int>(mcReader, branchName, mcHist, mcKinematicCuts, 0);
         } else {
-            FillHistogram<double>(mcReader, branchName, mcHist, mcKinematicCuts, 0);
+          // Declare TTreeReaderValue for doubles
+          TTreeReaderValue<double> dataVal(dataReader, branchName.c_str());
+          TTreeReaderValue<double> mcVal(mcReader, branchName.c_str());
+
+          // Fill histograms for double values
+          FillHistogram<double>(dataReader, branchName, dataHist, dataKinematicCuts, 0);
+          FillHistogram<double>(mcReader, branchName, mcHist, mcKinematicCuts, 0);
         }
 
         // Normalize the histograms
