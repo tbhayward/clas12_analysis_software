@@ -1219,7 +1219,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
 
 void createCorrelationPlots() {
     const std::string outputDir = "output/correlation_plots/";
-    const std::vector<std::string> branchesToSkip = {"helicity", "runnum", "beam_pol", "target_pol", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"};
+    const std::vector<std::string> branchesToSkip = {"helicity", "beam_pol", "target_pol", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"};
 
     TObjArray* branches = dataReader.GetTree()->GetListOfBranches();
     if (!branches) {
@@ -1236,6 +1236,7 @@ void createCorrelationPlots() {
     }
 
     KinematicCuts kinematicCuts(dataReader);
+    TTreeReaderValue<int> runnumVal(dataReader, "runnum");
 
     for (size_t i = 0; i < branchNames.size(); ++i) {
         for (size_t j = i + 1; j < branchNames.size(); ++j) {
@@ -1260,17 +1261,8 @@ void createCorrelationPlots() {
             dataReader.Restart();
             while (dataReader.Next()) {
                 if (kinematicCuts.applyCuts(0, false)) {
-                    double xValue, yValue;
-                    if (branchX == "runnum") {
-                        xValue = static_cast<double>(*TTreeReaderValue<int>(dataReader, branchX.c_str()));
-                    } else {
-                        xValue = *TTreeReaderValue<double>(dataReader, branchX.c_str());
-                    }
-                    if (branchY == "runnum") {
-                        yValue = static_cast<double>(*TTreeReaderValue<int>(dataReader, branchY.c_str()));
-                    } else {
-                        yValue = *TTreeReaderValue<double>(dataReader, branchY.c_str());
-                    }
+                    double xValue = (branchX == "runnum") ? static_cast<double>(*runnumVal) : *TTreeReaderValue<double>(dataReader, branchX.c_str());
+                    double yValue = (branchY == "runnum") ? static_cast<double>(*runnumVal) : *TTreeReaderValue<double>(dataReader, branchY.c_str());
                     hist->Fill(xValue, yValue);
                 }
             }
@@ -1286,7 +1278,6 @@ void createCorrelationPlots() {
         }
     }
 }
-
 
 
 int main(int argc, char *argv[]) {
