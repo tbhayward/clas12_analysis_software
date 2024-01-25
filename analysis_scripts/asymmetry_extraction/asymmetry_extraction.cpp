@@ -972,15 +972,25 @@ void createIntegratedKinematicPlots() {
         KinematicCuts dataKinematicCuts(dataReader);
         KinematicCuts mcKinematicCuts(mcReader);
 
-        // Fill histograms with check for runnum
         if (branchName == "runnum") {
-          // Declare TTreeReaderValue for integers
+          // Declare TTreeReaderValue for integers for dataReader
           TTreeReaderValue<int> dataVal(dataReader, branchName.c_str());
-          TTreeReaderValue<int> mcVal(mcReader, branchName.c_str());
 
-          // Fill histograms for integer values
+          // Fill histogram for dataReader
           FillHistogram<int>(dataReader, branchName, dataHist, dataKinematicCuts, 0);
-          FillHistogram<int>(mcReader, branchName, mcHist, mcKinematicCuts, 0);
+
+          // Check if the "runnum" branch exists in mcReader
+          if (mcReader.GetTree()->GetBranch(branchName.c_str())) {
+              // "runnum" branch exists, declare TTreeReaderValue for mcReader
+              TTreeReaderValue<int> mcVal(mcReader, branchName.c_str());
+
+              // Fill histogram for mcReader
+              FillHistogram<int>(mcReader, branchName, mcHist, mcKinematicCuts, 0);
+          } else {
+              // "runnum" branch does not exist, use default value
+              int defaultRunNum = 11;
+              mcHist->Fill(defaultRunNum);
+          }
         } else {
           // Declare TTreeReaderValue for doubles
           TTreeReaderValue<double> dataVal(dataReader, branchName.c_str());
