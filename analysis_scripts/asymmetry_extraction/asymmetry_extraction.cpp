@@ -1237,6 +1237,7 @@ void createCorrelationPlots() {
     }
 
     KinematicCuts kinematicCuts(dataReader);
+    TTreeReaderValue<int> runnumVal(dataReader, "runnum");
 
     for (size_t i = 0; i < branchNames.size(); ++i) {
         for (size_t j = i + 1; j < branchNames.size(); ++j) {
