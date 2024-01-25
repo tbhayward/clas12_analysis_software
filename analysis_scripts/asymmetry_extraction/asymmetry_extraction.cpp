@@ -1219,7 +1219,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
 
 template<typename T1, typename T2>
 void createAndFillHistogram(TTreeReader& reader, TH2D* hist, const std::string& branchX, 
-                            const std::string& branchY, KinematicCuts& kinematicCuts) {
+      const std::string& branchY, KinematicCuts& kinematicCuts) {
     TTreeReaderValue<T1> valX(reader, branchX.c_str());
     TTreeReaderValue<T2> valY(reader, branchY.c_str());
 
@@ -1252,6 +1252,21 @@ void createCorrelationPlots() {
 
     KinematicCuts kinematicCuts(dataReader);
 
+    // Create a map to hold TTreeReaderValue objects for each branch
+    std::map<std::string, TTreeReaderValue<int>*> readerValuesInt;
+    std::map<std::string, TTreeReaderValue<double>*> readerValuesDouble;
+
+    // Initialize TTreeReaderValue objects for each branch
+    for (const auto& branchName : branchNames) {
+        if (branchName == "runnum") {
+            readerValuesInt[branchName] = new 
+              TTreeReaderValue<int>(dataReader, branchName.c_str());
+        } else {
+            readerValuesDouble[branchName] = new 
+              TTreeReaderValue<double>(dataReader, branchName.c_str());
+        }
+    }
+
     for (size_t i = 0; i < branchNames.size(); ++i) {
         for (size_t j = i + 1; j < branchNames.size(); ++j) {
             const std::string& branchX = branchNames[i];
@@ -1272,14 +1287,19 @@ void createCorrelationPlots() {
             hist->GetXaxis()->SetTitleOffset(1.3);
             hist->GetYaxis()->SetTitleOffset(1.6);
 
-            if (branchX == "runnum" && branchY == "runnum") {
-                createAndFillHistogram<int, int>(dataReader, hist, branchX, branchY, kinematicCuts);
-            } else if (branchX == "runnum") {
-                createAndFillHistogram<int, double>(dataReader, hist, branchX, branchY, kinematicCuts);
-            } else if (branchY == "runnum") {
-                createAndFillHistogram<double, int>(dataReader, hist, branchX, branchY, kinematicCuts);
-            } else {
-                createAndFillHistogram<double, double>(dataReader, hist, branchX, branchY, kinematicCuts);
+            dataReader.Restart();
+            while (dataReader.Next()) {
+                if (kinematicCuts.applyCuts(0, false)) {
+                    if (branchX == "runnum" && branchY == "runnum") {
+                        hist->Fill(**readerValuesInt[branchX], **readerValuesInt[branchY]);
+                    } else if (branchX == "runnum") {
+                        hist->Fill(**readerValuesInt[branchX], **readerValuesDouble[branchY]);
+                    } else if (branchY == "runnum") {
+                        hist->Fill(**readerValuesDouble[branchX], **readerValuesInt[branchY]);
+                    } else {
+                        hist->Fill(**readerValuesDouble[branchX], **readerValuesDouble[branchY]);
+                    }
+                }
             }
 
 
@@ -1291,6 +1311,14 @@ void createCorrelationPlots() {
             c->SaveAs((outputDir + histName + ".png").c_str());
             delete hist;
             delete c;
+
+            // Clean up TTreeReaderValue objects
+            for (auto& entry : readerValuesInt) {
+                delete entry.second;
+            }
+            for (auto& entry : readerValuesDouble) {
+                delete entry.second;
+            }
         }
     }
 }
