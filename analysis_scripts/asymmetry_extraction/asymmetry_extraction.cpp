@@ -1256,7 +1256,7 @@ void createCorrelationPlotsforrunnum() {
 
     // Generate all possible pairs of branches to plot
     for (size_t i = 0; i < branchNames.size(); ++i) {
-        const std::string& branchY = "runnum";
+        const std::string& branchX = "runnum";
         const std::string& branchY = branchNames[i];
 
         TTreeReaderValue<int> valX(dataReader, "runnum");
@@ -1533,6 +1533,7 @@ int main(int argc, char *argv[]) {
 
   createIntegratedKinematicPlots();
   // createIntegratedKinematicPlotsForBinsAndFits();
+  createCorrelationPlotsforrunnum()
   createCorrelationPlots();
   currentFits=0;
   dataReader.Restart(); mcReader.Restart();
