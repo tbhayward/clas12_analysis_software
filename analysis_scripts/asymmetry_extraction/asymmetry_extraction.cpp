@@ -1533,7 +1533,7 @@ int main(int argc, char *argv[]) {
 
   createIntegratedKinematicPlots();
   // createIntegratedKinematicPlotsForBinsAndFits();
-  createCorrelationPlotsforrunnum()
+  createCorrelationPlotsforrunnum();
   createCorrelationPlots();
   currentFits=0;
   dataReader.Restart(); mcReader.Restart();
