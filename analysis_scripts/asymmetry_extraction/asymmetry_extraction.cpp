@@ -1217,10 +1217,27 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
     }
 }
 
+void addDoubleBranchForRunnum(TTree* tree) {
+    int runnum;
+    double runnum_double;
+    TBranch* branch = tree->GetBranch("runnum");
+    TBranch* newBranch = tree->Branch("runnum_double", &runnum_double);
+
+    branch->SetAddress(&runnum);
+    for (Long64_t i = 0; i < tree->GetEntries(); ++i) {
+        branch->GetEntry(i);
+        runnum_double = static_cast<double>(runnum);
+        newBranch->Fill();
+    }
+    tree->Write("", TObject::kOverwrite); // Update the tree with the new branch
+}
+
+
 void createCorrelationPlots() {
     const std::string outputDir = "output/correlation_plots/";
     const std::vector<std::string> branchesToSkip = {"helicity", "beam_pol", "target_pol", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"};
 
+    // Retrieve the list of branches
     TObjArray* branches = dataReader.GetTree()->GetListOfBranches();
     if (!branches) {
         std::cerr << "Error: Unable to retrieve branch list from data TTree." << std::endl;
@@ -1236,12 +1253,15 @@ void createCorrelationPlots() {
     }
 
     KinematicCuts kinematicCuts(dataReader);
-    TTreeReaderValue<int> runnumVal(dataReader, "runnum");
 
     for (size_t i = 0; i < branchNames.size(); ++i) {
         for (size_t j = i + 1; j < branchNames.size(); ++j) {
-            const std::string& branchX = branchNames[i];
-            const std::string& branchY = branchNames[j];
+            std::string branchX = branchNames[i];
+            std::string branchY = branchNames[j];
+
+            // Use the double version for runnum
+            if (branchX == "runnum") branchX = "runnum_double";
+            if (branchY == "runnum") branchY = "runnum_double";
 
             HistConfig configX = histConfigs.count(branchX) ? histConfigs[branchX] : HistConfig{100, 0, 1};
             HistConfig configY = histConfigs.count(branchY) ? histConfigs[branchY] : HistConfig{100, 0, 1};
@@ -1261,8 +1281,8 @@ void createCorrelationPlots() {
             dataReader.Restart();
             while (dataReader.Next()) {
                 if (kinematicCuts.applyCuts(0, false)) {
-                    double xValue = branchX == "runnum" ? static_cast<double>(*runnumVal) : *TTreeReaderValue<double>(dataReader, branchX.c_str());
-                    double yValue = branchY == "runnum" ? static_cast<double>(*runnumVal) : *TTreeReaderValue<double>(dataReader, branchY.c_str());
+                    double xValue = *TTreeReaderValue<double>(dataReader, branchX.c_str());
+                    double yValue = *TTreeReaderValue<double>(dataReader, branchY.c_str());
                     hist->Fill(xValue, yValue);
                 }
             }
@@ -1278,6 +1298,7 @@ void createCorrelationPlots() {
         }
     }
 }
+
 
 
 int main(int argc, char *argv[]) {
@@ -1317,6 +1338,8 @@ int main(int argc, char *argv[]) {
     cout << "-- Trees successfully extracted from ROOT files." << endl << endl;
   }
 
+  addDoubleBranchForRunnum(data);
+  addDoubleBranchForRunnum(mc);
   dataReader.SetTree(data);  // Initialize the global variable
   mcReader.SetTree(mc);  // Initialize the global variable
 
