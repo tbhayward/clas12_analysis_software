@@ -1265,15 +1265,15 @@ void createCorrelationPlots() {
                 double valX, valY;
 
                 if (branchX == "runnum") {
-                  TTreeReaderValue<int> valX(dataReader, branchName.c_str());
+                  TTreeReaderValue<int> valX(dataReader, branchX);
                 } else {
-                  TTreeReaderValue<double> valX(dataReader, branchName.c_str());
+                  TTreeReaderValue<double> valX(dataReader, branchX);
                 }
 
                 if (branchY == "runnum") {
-                    TTreeReaderValue<int> valY(dataReader, branchName.c_str());
+                    TTreeReaderValue<int> valY(dataReader, branchY);
                 } else {
-                    TTreeReaderValue<double> valY(dataReader, branchName.c_str());
+                    TTreeReaderValue<double> valY(dataReader, branchY);
                 }
 
                 hist->Fill(valX, valY);
