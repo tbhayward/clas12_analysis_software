@@ -1077,14 +1077,13 @@ void createCorrelationPlots() {
         }
     }
 
+    KinematicCuts kinematicCuts(dataReader);
+
     // Generate all possible pairs of branches to plot
     for (size_t i = 0; i < branchNames.size(); ++i) {
         for (size_t j = i + 1; j < branchNames.size(); ++j) {
             const std::string& branchX = branchNames[i];
             const std::string& branchY = branchNames[j];
-
-            TTreeReaderValue<Double_t> valX(dataReader, branchX.c_str());
-            TTreeReaderValue<Double_t> valY(dataReader, branchY.c_str());
 
             // Get the configurations for each branch
             HistConfig configX = 
@@ -1112,11 +1111,28 @@ void createCorrelationPlots() {
             hist->GetXaxis()->SetTitleOffset(1.3);
             hist->GetYaxis()->SetTitleOffset(1.6);
 
-            // Loop over dataReader to fill the histogram
-            KinematicCuts kinematicCuts(dataReader);
+            // Fill the histogram
             while (dataReader.Next()) {
                 if (kinematicCuts.applyCuts(0, false)) {
-                    hist->Fill(*valX, *valY);
+                    if (branchX == "runnum") {
+                        TTreeReaderValue<int> valX(dataReader, branchX.c_str());
+                        if (branchY == "runnum") {
+                            TTreeReaderValue<int> valY(dataReader, branchY.c_str());
+                            hist->Fill(*valX, *valY);
+                        } else {
+                            TTreeReaderValue<double> valY(dataReader, branchY.c_str());
+                            hist->Fill(*valX, *valY);
+                        }
+                    } else {
+                        TTreeReaderValue<double> valX(dataReader, branchX.c_str());
+                        if (branchY == "runnum") {
+                            TTreeReaderValue<int> valY(dataReader, branchY.c_str());
+                            hist->Fill(*valX, *valY);
+                        } else {
+                            TTreeReaderValue<double> valY(dataReader, branchY.c_str());
+                            hist->Fill(*valX, *valY);
+                        }
+                    }
                 }
             }
 
@@ -1429,9 +1445,9 @@ int main(int argc, char *argv[]) {
   cout << "Total neg-neg charge: " << cmm << " (nC). ";
   cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << " (nC)."<< endl << endl;
 
-  // createCorrelationPlots();
   createIntegratedKinematicPlots();
   createIntegratedKinematicPlotsForBinsAndFits();
+  createCorrelationPlots();
   currentFits=0;
   dataReader.Restart(); mcReader.Restart();
 
