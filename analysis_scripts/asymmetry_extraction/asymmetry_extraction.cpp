@@ -57,10 +57,6 @@ double cmp = 0;
 double cpp = 0; 
 std::string mlmPrefix = "xF";
 
-int num_data_elec = 626802;
-int num_mc_elec = 300366;
-
-
 // Negative log-likelihood function
 void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag) {
   // npar: number of parameters
@@ -900,16 +896,24 @@ void modifyTree(const char* inputFileName, const char* outputFileName) {
     TFile* outputFile = new TFile(outputFileName, "RECREATE");
     TTree* clonedTree = tree->CloneTree(0); // Clone without copying the entries
 
-    // Check if the branch "runnum" exists
-    TBranch* runnumBranch = tree->GetBranch("runnum");
-
     // Create or modify the "runnum" branch
     Int_t runnumValue = 11;
-    TBranch* newBranch = nullptr;
+    TBranch* runnumBranch = tree->GetBranch("runnum");
+    TBranch* newRunnumBranch = nullptr;
     if (runnumBranch) {
-        newBranch = clonedTree->Branch("runnum", &runnumValue, "runnum/I");
+        newRunnumBranch = clonedTree->Branch("runnum", &runnumValue, "runnum/I");
     } else {
-        newBranch = clonedTree->Branch("runnum", &runnumValue, "runnum/I");
+        newRunnumBranch = clonedTree->Branch("runnum", &runnumValue, "runnum/I");
+    }
+
+    // Create or modify the "target_pol" branch
+    Int_t targetPolValue = 0;
+    TBranch* targetPolBranch = tree->GetBranch("target_pol");
+    TBranch* newTargetPolBranch = nullptr;
+    if (targetPolBranch) {
+        newTargetPolBranch = clonedTree->Branch("target_pol", &targetPolValue, "target_pol/I");
+    } else {
+        newTargetPolBranch = clonedTree->Branch("target_pol", &targetPolValue, "target_pol/I");
     }
 
     // Copy the entries from the original tree to the cloned tree
@@ -917,6 +921,7 @@ void modifyTree(const char* inputFileName, const char* outputFileName) {
     for (Long64_t i = 0; i < nentries; ++i) {
         tree->GetEntry(i); // Load the original entry
         runnumValue = 11;  // Modify "runnum"
+        targetPolValue = 0; // Modify "target_pol"
         clonedTree->Fill(); // Fill the cloned tree with the modified entry
     }
 
@@ -925,8 +930,9 @@ void modifyTree(const char* inputFileName, const char* outputFileName) {
     outputFile->Close();
     inputFile->Close();
 
-    std::cout << "New file with modified tree created: " << outputFileName << std::endl;
+    std::cout << "New mc file with modified tree created: " << outputFileName << std::endl;
 }
+
 
 int main(int argc, char *argv[]) {
   // Start the timer
