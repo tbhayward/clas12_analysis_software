@@ -126,7 +126,7 @@ void createIntegratedKinematicPlots() {
 
           // Fill histogram for dataReader
           FillHistogram<int>(dataReader, branchName, dataHist, dataKinematicCuts, 0);
-
+          std::cout << " About to check the runnum branch exists in mcReader " << std::endl;
           // Check if the "runnum" branch exists in mcReader
           if (mcReader.GetTree()->GetBranch(branchName.c_str())) {
               // "runnum" branch exists, declare TTreeReaderValue for mcReader
