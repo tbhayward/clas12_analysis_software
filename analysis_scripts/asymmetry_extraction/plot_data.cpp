@@ -11,21 +11,6 @@ extern std::map<std::string, HistConfig> histConfigs;
 // Global variables, if any, used by the plotting functions
 // extern std::map<std::string, HistConfig> histConfigs; // Example
 
-// Function prototypes
-template<typename T>
-void FillHistogram(TTreeReader& reader, TTreeReaderValue<T>& val, TH1D* hist, 
-                   KinematicCuts& kinematicCuts, int fitIndex);
-
-// FillHistogram template definition
-template<typename T>
-void FillHistogram(TTreeReader& reader, TTreeReaderValue<T>& val, TH1D* hist, 
-    KinematicCuts& kinematicCuts, int fitIndex) {
-    while (reader.Next()) {
-        if (kinematicCuts.applyCuts(fitIndex, false)) {
-            hist->Fill(*val);
-        }
-    }
-}
 
 template<typename T1, typename T2>
 void createAndFillHistogram(TTreeReader& reader, TH2D* hist, const std::string& branchX, 
