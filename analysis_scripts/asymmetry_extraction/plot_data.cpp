@@ -115,10 +115,10 @@ void createIntegratedKinematicPlots() {
         //         mcHist->Fill(*mcVal);
         //     }
         // }
-        std::cout << "BEFORE THE CUTS" << std::endl;
+        std::cout << "BEFORE THE CUTS " << branchName << std::endl;
         KinematicCuts dataKinematicCuts(dataReader);
         KinematicCuts mcKinematicCuts(mcReader);
-        std::cout << " WE MADE IT TO HERE " << std::endl;
+        std::cout << " WE MADE IT TO HERE " << branchName << std::endl;
         if (branchName == "runnum") {
           // Declare TTreeReaderValue for integers for dataReader
           TTreeReaderValue<int> dataVal(dataReader, branchName.c_str());
