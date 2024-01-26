@@ -5,7 +5,7 @@
 #include <TLegend.h>
 #include <TStyle.h>
 #include "KinematicCuts.h"
-#include "HistConfig.h"
+#include "histConfig.h"
 
 extern std::map<std::string, HistConfig> histConfigs;
 
