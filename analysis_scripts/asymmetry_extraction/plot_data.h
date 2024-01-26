@@ -20,9 +20,8 @@ void createCorrelationPlots();
 
 // FillHistogram template definition
 template<typename T>
-void FillHistogram(TTreeReader& reader, const std::string& branchName, TH1D* hist, 
+void FillHistogram(TTreeReader& reader, TTreeReaderValue<T>& val, TH1D* hist, 
                    KinematicCuts& kinematicCuts, int fitIndex) {
-    TTreeReaderValue<T> val(reader, branchName.c_str());
     while (reader.Next()) {
         if (kinematicCuts.applyCuts(fitIndex, false)) {
             hist->Fill(*val);
