@@ -122,9 +122,7 @@ void createIntegratedKinematicPlots() {
           TTreeReaderValue<double> mcVal(mcReader, branchName.c_str());
           // Fill histograms for double values
           FillHistogram<double>(dataReader, branchName, dataHist, dataKinematicCuts, 0, false);
-          std::cout << "before mc histogram fill" << std::endl;
           FillHistogram<double>(mcReader, branchName, mcHist, mcKinematicCuts, 0, true);
-          std::cout << "after mc histogram fill" << std::endl;
         }
 
         // Normalize the histograms

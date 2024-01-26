@@ -983,9 +983,6 @@ int main(int argc, char *argv[]) {
   dataReader.SetTree(data);  // Initialize the global variable
   mcReader.SetTree(mc);  // Initialize the global variable
 
-  // mc_file->Close();
-  // delete mc_file;
-
   // Generate output file names based on the input data file name and current time
   std::string dataRootFileName = argv[1];
   std::string baseName = dataRootFileName.substr(dataRootFileName.find_last_of("/\\") + 1);
@@ -1094,6 +1091,9 @@ int main(int argc, char *argv[]) {
     cout << endl << endl;
     currentFits++;
   }
+
+  mc_file->Close();
+  delete mc_file;
 
   // Stop the timer
   auto end_time = std::chrono::high_resolution_clock::now();
