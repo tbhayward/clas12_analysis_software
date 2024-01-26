@@ -115,7 +115,7 @@ void createIntegratedKinematicPlots() {
         //         mcHist->Fill(*mcVal);
         //     }
         // }
-
+        std::cout << "BEFORE THE CUTS" << std::endl;
         KinematicCuts dataKinematicCuts(dataReader);
         KinematicCuts mcKinematicCuts(mcReader);
         std::cout << " WE MADE IT TO HERE " << std::endl;
