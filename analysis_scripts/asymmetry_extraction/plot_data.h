@@ -4,6 +4,10 @@
 #include <TCanvas.h>
 #include <TLegend.h>
 #include <TStyle.h>
+#include "KinematicCuts.h"
+#include "HistConfig.h"
+
+extern std::map<std::string, HistConfig> histConfigs;
 
 #ifndef PLOT_DATA_H
 #define PLOT_DATA_H
