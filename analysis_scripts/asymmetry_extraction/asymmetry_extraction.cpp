@@ -954,9 +954,12 @@ int main(int argc, char *argv[]) {
   }
 
   cout << endl << endl;
-  std::filesystem::path inputFilePath(argv[2]);
-  std::filesystem::path outputFilePath = inputFilePath.parent_path() / "temp_mc.root";
-  modifyTree(argv[2], outputFilePath.string().c_str());
+  std::string inputFileName(argv[2]);
+  std::size_t found = inputFileName.find_last_of("/\\");
+  std::string directoryPath = inputFileName.substr(0, found);
+  std::string outputFileName = directoryPath + "/temp_mc.root";
+
+  modifyTree(argv[2], outputFileName.c_str());
 
   // Load data and mc root files
   TFile* data_file = new TFile(argv[1], "READ");
