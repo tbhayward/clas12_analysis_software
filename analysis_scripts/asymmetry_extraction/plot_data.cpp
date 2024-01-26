@@ -14,10 +14,8 @@ extern std::map<std::string, HistConfig> histConfigs;
 template<typename T>
 void FillHistogram(TTreeReader& reader, const std::string& branchName, TH1D* hist, 
   KinematicCuts& kinematicCuts, int fitIndex, bool isMC) {
-    std::cout << "entered fill histogram" << std::endl;
     TTreeReaderValue<T> val(reader, branchName.c_str());
     while (reader.Next()) {
-        if (isMC) { std::cout << "true" << std::endl; }
         if (kinematicCuts.applyCuts(fitIndex, isMC)) {
             hist->Fill(*val);
         }
