@@ -56,16 +56,17 @@ void createIntegratedKinematicPlots() {
     gStyle->SetTextSize(0.05); // Increase the text size globally
 
     // Initialize TTreeReaderValue for each branch
-    std::map<std::string, TTreeReaderValue<double>> dataReaderValues;
-    std::map<std::string, TTreeReaderValue<double>> mcReaderValues;
+    std::map<std::string, TTreeReaderValue<double>*> dataReaderValues;
+    std::map<std::string, TTreeReaderValue<double>*> mcReaderValues;
     for (Int_t i = 0; i < branches->GetEntries(); ++i) {
         TBranch* branch = (TBranch*)branches->At(i);
         std::string branchName = branch->GetName();
         if (std::find(branchesToSkip.begin(), branchesToSkip.end(), branchName) == branchesToSkip.end()) {
-            dataReaderValues[branchName] = TTreeReaderValue<double>(dataReader, branchName.c_str());
-            mcReaderValues[branchName] = TTreeReaderValue<double>(mcReader, branchName.c_str());
+            dataReaderValues[branchName] = new TTreeReaderValue<double>(dataReader, branchName.c_str());
+            mcReaderValues[branchName] = new TTreeReaderValue<double>(mcReader, branchName.c_str());
         }
     }
+
 
     for (Int_t i = 0; i < branches->GetEntries(); ++i) {
         TBranch* branch = (TBranch*)branches->At(i);
@@ -128,8 +129,8 @@ void createIntegratedKinematicPlots() {
             }
         } else {
             // Fill histograms for double values
-            FillHistogram<double>(dataReader, dataReaderValues[branchName], dataHist, dataKinematicCuts, 0);
-            FillHistogram<double>(mcReader, mcReaderValues[branchName], mcHist, mcKinematicCuts, 0);
+            FillHistogram<double>(dataReader, *dataReaderValues[branchName], dataHist, dataKinematicCuts, 0);
+            FillHistogram<double>(mcReader, *mcReaderValues[branchName], mcHist, mcKinematicCuts, 0);
         }
 
         // Normalize the histograms
@@ -177,6 +178,13 @@ void createIntegratedKinematicPlots() {
         // Restart the TTreeReaders for the next branch
         dataReader.Restart();
         mcReader.Restart();
+
+        for (auto& pair : dataReaderValues) {
+            delete pair.second;
+        }
+        for (auto& pair : mcReaderValues) {
+            delete pair.second;
+        }
     }
 }
 
