@@ -11,11 +11,15 @@ extern std::map<std::string, HistConfig> histConfigs;
 // Global variables, if any, used by the plotting functions
 // extern std::map<std::string, HistConfig> histConfigs; // Example
 
+// Function prototypes
 template<typename T>
-void FillHistogram(TTreeReader& reader, const std::string& branchName, TH1D* hist, 
-  KinematicCuts& kinematicCuts, int fitIndex) {
-    std::cout << "entered fill histogram" << std::endl;
-    TTreeReaderValue<T> val(reader, branchName.c_str());
+void FillHistogram(TTreeReader& reader, TTreeReaderValue<T>& val, TH1D* hist, 
+                   KinematicCuts& kinematicCuts, int fitIndex);
+
+// FillHistogram template definition
+template<typename T>
+void FillHistogram(TTreeReader& reader, TTreeReaderValue<T>& val, TH1D* hist, 
+    KinematicCuts& kinematicCuts, int fitIndex) {
     while (reader.Next()) {
         if (kinematicCuts.applyCuts(fitIndex, false)) {
             hist->Fill(*val);
@@ -37,10 +41,10 @@ void createAndFillHistogram(TTreeReader& reader, TH2D* hist, const std::string& 
     }
 }
 
+
 void createIntegratedKinematicPlots() {
     const std::string outputDir = "output/integrated_plots/";
-    const std::vector<std::string> branchesToSkip = {"helicity", "beam_pol", 
-        "target_pol", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"};
+    const std::vector<std::string> branchesToSkip = {"helicity", "beam_pol", "target_pol", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"};
 
     TObjArray* branches = dataReader.GetTree()->GetListOfBranches();
     if (!branches) {
@@ -50,28 +54,29 @@ void createIntegratedKinematicPlots() {
 
     gStyle->SetOptStat(0);
     gStyle->SetTextSize(0.05); // Increase the text size globally
-    bool restart = true;
-    for (Int_t i = 0; i < branches->GetEntries(); ++i) {
 
+    // Initialize TTreeReaderValue for each branch
+    std::map<std::string, TTreeReaderValue<double>> dataReaderValues;
+    std::map<std::string, TTreeReaderValue<double>> mcReaderValues;
+    for (Int_t i = 0; i < branches->GetEntries(); ++i) {
         TBranch* branch = (TBranch*)branches->At(i);
         std::string branchName = branch->GetName();
-        if (branchName == "e_p" && restart) {
-          // stupid hack to get it to do the runnum plot instead of it being blank 
-          // due to reader restarts
-          i = 0; 
-          restart = false;
+        if (std::find(branchesToSkip.begin(), branchesToSkip.end(), branchName) == branchesToSkip.end()) {
+            dataReaderValues[branchName] = TTreeReaderValue<double>(dataReader, branchName.c_str());
+            mcReaderValues[branchName] = TTreeReaderValue<double>(mcReader, branchName.c_str());
         }
-        branch = (TBranch*)branches->At(i);
-        branchName = branch->GetName();
+    }
+
+    for (Int_t i = 0; i < branches->GetEntries(); ++i) {
+        TBranch* branch = (TBranch*)branches->At(i);
+        std::string branchName = branch->GetName();
 
         if (std::find(branchesToSkip.begin(), branchesToSkip.end(), branchName) != 
-          branchesToSkip.end()) {
+            branchesToSkip.end()) {
             continue; // Skip this branch
         }
 
-        // TTreeReaderValue<Double_t> dataVal(dataReader, branchName.c_str());
-        // TTreeReaderValue<Double_t> mcVal(mcReader, branchName.c_str());
-
+        // Determine histogram configuration, default or specific
         HistConfig config = {100, 0, 1}; // Default configuration
         if (histConfigs.find(branchName) != histConfigs.end()) {
             config = histConfigs[branchName];
@@ -99,73 +104,45 @@ void createIntegratedKinematicPlots() {
         dataHist->GetYaxis()->SetTitleOffset(1.6);
         mcHist->GetYaxis()->SetTitleOffset(1.6);
 
-        // // Loop over dataReader to fill the histogram
-        // KinematicCuts kinematicCuts(dataReader);
-        // while (dataReader.Next()) {
-        //     bool passedKinematicCuts = kinematicCuts.applyCuts(0, false);
-        //     if (*dataVal >= config.xMin && *dataVal < config.xMax && passedKinematicCuts) {
-        //         dataHist->Fill(*dataVal);
-        //     }
-        // }
-
-        // // Loop over mcReader to fill the histogram
-        // KinematicCuts mc_kinematicCuts(mcReader);
-        // while (mcReader.Next()) {
-        //     bool passedKinematicCuts = mc_kinematicCuts.applyCuts(0, true);
-        //     if (*mcVal >= config.xMin && *mcVal < config.xMax && passedKinematicCuts) {
-        //         mcHist->Fill(*mcVal);
-        //     }
-        // }
-        std::cout << "BEFORE THE CUTS " << branchName << std::endl;
         KinematicCuts dataKinematicCuts(dataReader);
         KinematicCuts mcKinematicCuts(mcReader);
-        std::cout << " WE MADE IT TO HERE " << branchName << std::endl;
+
         if (branchName == "runnum") {
-          std::cout << "we entered the branchName == runnum check" << std::endl;
-          // Declare TTreeReaderValue for integers for dataReader
-          TTreeReaderValue<int> dataVal(dataReader, branchName.c_str());
-          std::cout << "passed first dataVal assignment" << std::endl;
-          // Fill histogram for dataReader
-          FillHistogram<int>(dataReader, branchName, dataHist, dataKinematicCuts, 0);
-          std::cout << " About to check the runnum branch exists in mcReader " << std::endl;
-          // Check if the "runnum" branch exists in mcReader
-          if (mcReader.GetTree()->GetBranch(branchName.c_str())) {
-              // "runnum" branch exists, declare TTreeReaderValue for mcReader
-              TTreeReaderValue<int> mcVal(mcReader, branchName.c_str());
+            // Declare TTreeReaderValue for integers for dataReader
+            TTreeReaderValue<int> dataVal(dataReader, branchName.c_str());
 
-              // Fill histogram for mcReader
-              FillHistogram<int>(mcReader, branchName, mcHist, mcKinematicCuts, 0);
-          } else {
-              // "runnum" branch does not exist, use default value
-              int defaultRunNum = 11;
-              mcHist->Fill(defaultRunNum);
-          }
+            // Fill histogram for dataReader
+            FillHistogram<int>(dataReader, dataVal, dataHist, dataKinematicCuts, 0);
+
+            // Check if the "runnum" branch exists in mcReader
+            if (mcReader.GetTree()->GetBranch(branchName.c_str())) {
+                // "runnum" branch exists, declare TTreeReaderValue for mcReader
+                TTreeReaderValue<int> mcVal(mcReader, branchName.c_str());
+
+                // Fill histogram for mcReader
+                FillHistogram<int>(mcReader, mcVal, mcHist, mcKinematicCuts, 0);
+            } else {
+                // "runnum" branch does not exist, use default value
+                int defaultRunNum = 11;
+                mcHist->Fill(defaultRunNum);
+            }
         } else {
-          // Declare TTreeReaderValue for doubles
-          TTreeReaderValue<double> dataVal(dataReader, branchName.c_str());
-          TTreeReaderValue<double> mcVal(mcReader, branchName.c_str());
-
-          // Fill histograms for double values
-          FillHistogram<double>(dataReader, branchName, dataHist, dataKinematicCuts, 0);
-          FillHistogram<double>(mcReader, branchName, mcHist, mcKinematicCuts, 0);
+            // Fill histograms for double values
+            FillHistogram<double>(dataReader, dataReaderValues[branchName], dataHist, dataKinematicCuts, 0);
+            FillHistogram<double>(mcReader, mcReaderValues[branchName], mcHist, mcKinematicCuts, 0);
         }
 
         // Normalize the histograms
         dataHist->Scale(1.0 / dataHist->Integral());
         mcHist->Scale(1.0 / mcHist->Integral());
 
-        // // Normalize the histograms
-        // dataHist->Scale(1.0 / num_data_elec);
-        // mcHist->Scale(1.0 / num_mc_elec);
-
         // Find the maximum value for y-axis
-        double maxY = 1.2*std::max(dataHist->GetMaximum(), mcHist->GetMaximum());
+        double maxY = 1.2 * std::max(dataHist->GetMaximum(), mcHist->GetMaximum());
         dataHist->SetMaximum(1.1 * maxY);
         mcHist->SetMaximum(1.1 * maxY);
 
         // Create a canvas for drawing the histograms
         TCanvas* c = new TCanvas((branchName + "_canvas").c_str(), branchName.c_str(), 800, 600);
-        // Adjust the margins to avoid cutting off labels
         c->SetLeftMargin(0.15);
         c->SetBottomMargin(0.15);
 
@@ -173,7 +150,7 @@ void createIntegratedKinematicPlots() {
         TLegend* leg = new TLegend(0.5, 0.7, 0.9, 0.9);
         leg->SetTextSize(0.04); // Increase the legend text size
 
-        // Add entries to the legend with scientific notation for the number of entries
+        // Add entries to the legend
         dataHist->SetEntries(dataHist->GetEntries());
         mcHist->SetEntries(mcHist->GetEntries());
         leg->AddEntry(dataHist, (std::string("Data (") + std::to_string((int)dataHist->GetEntries()) + " entries)").c_str(), "l");
