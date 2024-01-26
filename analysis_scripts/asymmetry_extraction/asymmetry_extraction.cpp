@@ -8,6 +8,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <filesystem>
 // ROOT Library Headers
 #include <TApplication.h>
 #include <TCanvas.h>
@@ -953,7 +954,9 @@ int main(int argc, char *argv[]) {
   }
 
   cout << endl << endl;
-  modifyTree(argv[2], "/scratch/thayward/temp_mc.root");
+  std::filesystem::path inputFilePath(argv[2]);
+  std::filesystem::path outputFilePath = inputFilePath.parent_path() / "temp_mc.root";
+  modifyTree(argv[2], outputFilePath.string().c_str());
 
   // Load data and mc root files
   TFile* data_file = new TFile(argv[1], "READ");
