@@ -38,7 +38,8 @@ void createAndFillHistogram(TTreeReader& reader, TH2D* hist, const std::string& 
 
 void createIntegratedKinematicPlots() {
     const std::string outputDir = "output/integrated_plots/";
-    const std::vector<std::string> branchesToSkip = {"helicity", "beam_pol", "target_pol", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"};
+    const std::vector<std::string> branchesToSkip = {"helicity", "beam_pol", 
+        "target_pol", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"};
 
     TObjArray* branches = dataReader.GetTree()->GetListOfBranches();
     if (!branches) {
@@ -117,7 +118,7 @@ void createIntegratedKinematicPlots() {
 
         KinematicCuts dataKinematicCuts(dataReader);
         KinematicCuts mcKinematicCuts(mcReader);
-
+        cout << " WE MADE IT TO HERE " << endl;
         if (branchName == "runnum") {
           // Declare TTreeReaderValue for integers for dataReader
           TTreeReaderValue<int> dataVal(dataReader, branchName.c_str());
