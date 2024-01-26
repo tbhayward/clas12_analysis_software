@@ -118,7 +118,7 @@ void createIntegratedKinematicPlots() {
 
         KinematicCuts dataKinematicCuts(dataReader);
         KinematicCuts mcKinematicCuts(mcReader);
-        cout << " WE MADE IT TO HERE " << endl;
+        std::cout << " WE MADE IT TO HERE " << std::endl;
         if (branchName == "runnum") {
           // Declare TTreeReaderValue for integers for dataReader
           TTreeReaderValue<int> dataVal(dataReader, branchName.c_str());
