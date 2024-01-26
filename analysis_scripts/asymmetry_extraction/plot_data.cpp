@@ -120,6 +120,7 @@ void createIntegratedKinematicPlots() {
         KinematicCuts mcKinematicCuts(mcReader);
         std::cout << " WE MADE IT TO HERE " << branchName << std::endl;
         if (branchName == "runnum") {
+            std::cout << "we entered the branchName == runnum check" << std::endl;
           // Declare TTreeReaderValue for integers for dataReader
           TTreeReaderValue<int> dataVal(dataReader, branchName.c_str());
 
