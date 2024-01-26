@@ -27,6 +27,7 @@
 #include "TH2.h"
 #include "TMinuit.h"
 #include "TStyle.h"
+#include <TBranch.h>
 // tbhayward libraries
 #include "common_vars.h"  // Include the common header
 #include "load_bins_from_csv.h"
@@ -879,6 +880,53 @@ void performChi2Fits(const char* output_file, const char* kinematic_file,
   }
 }
 
+void modifyTree(const char* inputFileName, const char* outputFileName) {
+    // Open the original file
+    TFile* inputFile = new TFile(inputFileName, "READ");
+    if (!inputFile || !inputFile->IsOpen()) {
+        std::cerr << "Error opening input file." << std::endl;
+        return;
+    }
+
+    // Get the tree from the file
+    TTree* tree = (TTree*)inputFile->Get("PhysicsEvents");
+    if (!tree) {
+        std::cerr << "Error getting tree from input file." << std::endl;
+        inputFile->Close();
+        return;
+    }
+
+    // Clone the tree into a new file
+    TFile* outputFile = new TFile(outputFileName, "RECREATE");
+    TTree* clonedTree = tree->CloneTree(0); // Clone without copying the entries
+
+    // Check if the branch "runnum" exists
+    TBranch* runnumBranch = tree->GetBranch("runnum");
+
+    // Create or modify the "runnum" branch
+    Int_t runnumValue = 11;
+    TBranch* newBranch = nullptr;
+    if (runnumBranch) {
+        newBranch = clonedTree->Branch("runnum", &runnumValue, "runnum/I");
+    } else {
+        newBranch = clonedTree->Branch("runnum", &runnumValue, "runnum/I");
+    }
+
+    // Copy the entries from the original tree to the cloned tree
+    Long64_t nentries = tree->GetEntries();
+    for (Long64_t i = 0; i < nentries; ++i) {
+        tree->GetEntry(i); // Load the original entry
+        runnumValue = 11;  // Modify "runnum"
+        clonedTree->Fill(); // Fill the cloned tree with the modified entry
+    }
+
+    // Write and close the new file
+    clonedTree->Write();
+    outputFile->Close();
+    inputFile->Close();
+
+    std::cout << "New file with modified tree created: " << outputFileName << std::endl;
+}
 
 int main(int argc, char *argv[]) {
   // Start the timer
@@ -897,9 +945,11 @@ int main(int argc, char *argv[]) {
       return 1;
   }
 
+  modifyTree(agrv[2], "/scratch/thayward/temp_mc.root")
+
   // Load data and mc root files
   TFile* data_file = new TFile(argv[1], "READ");
-  TFile* mc_file = new TFile(argv[2], "READ");
+  TFile* mc_file = new TFile("/scratch/thayward/temp_mc.root", "READ");
   if (!data_file->IsOpen() || !mc_file->IsOpen()) {
     cout << "Error opening ROOT files (is the location correct?). Exiting." << endl;
     return 2;
@@ -1045,12 +1095,3 @@ int main(int argc, char *argv[]) {
   cout << hours << " hours, " << mins << " mins, " << remaining_seconds << " seconds." << endl;
   return 0;
 }
-
-
-// git pull; 
-// g++ -o BSA_rgc_fits_root_tree BSA_rgc_fits_root_tree.cpp 
-// -L/site/12gev_phys/2.4/Linux_CentOS7.9.2009-gcc9.2.0/root/6.20.04/lib 
-// `root-config --cflags --libs` -lMinuit;
-// ./BSA_rgc_fits_root_tree /work/clas12/thayward/CLAS12_SIDIS/RGC/p/rgc_8.7.0_epX_Mx-1.4.root 
-// /work/clas12/thayward/CLAS12_SIDIS/RGC/p/rgc_nh3_mc.root /u/home/thayward/test_asymmetries.txt
-// /u/home/thayward/test_kinematics.txt
