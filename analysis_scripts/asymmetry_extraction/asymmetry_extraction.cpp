@@ -935,7 +935,6 @@ void modifyTree(const char* inputFileName, const char* outputFileName) {
 }
 
 
-
 int main(int argc, char *argv[]) {
   // Start the timer
   auto start_time = std::chrono::high_resolution_clock::now();
@@ -984,8 +983,8 @@ int main(int argc, char *argv[]) {
   dataReader.SetTree(data);  // Initialize the global variable
   mcReader.SetTree(mc);  // Initialize the global variable
 
-  mc_file->Close();
-  delete mc_file;
+  // mc_file->Close();
+  // delete mc_file;
 
   // Generate output file names based on the input data file name and current time
   std::string dataRootFileName = argv[1];
