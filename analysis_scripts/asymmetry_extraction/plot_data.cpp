@@ -18,6 +18,7 @@ void FillHistogram(TTreeReader& reader, const std::string& branchName, TH1D* his
     TTreeReaderValue<T> val(reader, branchName.c_str());
     while (reader.Next()) {
         if (kinematicCuts.applyCuts(fitIndex, isMC)) {
+            std::cout << isMC << std::endl;
             hist->Fill(*val);
         }
     }
