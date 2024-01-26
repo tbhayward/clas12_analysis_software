@@ -106,13 +106,13 @@ void createIntegratedKinematicPlots() {
           // Declare TTreeReaderValue for integers for dataReader
           TTreeReaderValue<int> dataVal(dataReader, branchName.c_str());
           // Fill histogram for dataReader
-          FillHistogram<int>(dataReader, branchName, dataHist, dataKinematicCuts, 0, 0);
+          FillHistogram<int>(dataReader, branchName, dataHist, dataKinematicCuts, 0, false);
           // Check if the "runnum" branch exists in mcReader
           if (mcReader.GetTree()->GetBranch(branchName.c_str())) {
               // "runnum" branch exists, declare TTreeReaderValue for mcReader
               TTreeReaderValue<int> mcVal(mcReader, branchName.c_str());
               // Fill histogram for mcReader
-              FillHistogram<int>(mcReader, branchName, mcHist, mcKinematicCuts, 0, 1);
+              FillHistogram<int>(mcReader, branchName, mcHist, mcKinematicCuts, 0, true);
           } else {
               // "runnum" branch does not exist, use default value
               int defaultRunNum = 11;
@@ -124,8 +124,8 @@ void createIntegratedKinematicPlots() {
           TTreeReaderValue<double> mcVal(mcReader, branchName.c_str());
           std::cout << "we're in here" << std::endl;
           // Fill histograms for double values
-          FillHistogram<double>(dataReader, branchName, dataHist, dataKinematicCuts, 0, 0);
-          FillHistogram<double>(mcReader, branchName, mcHist, mcKinematicCuts, 0, 1);
+          FillHistogram<double>(dataReader, branchName, dataHist, dataKinematicCuts, 0, false);
+          FillHistogram<double>(mcReader, branchName, mcHist, mcKinematicCuts, 0, true);
         }
 
         // Normalize the histograms
