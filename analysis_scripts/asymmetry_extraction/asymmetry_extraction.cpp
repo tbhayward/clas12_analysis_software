@@ -963,7 +963,7 @@ int main(int argc, char *argv[]) {
 
   // Load data and mc root files
   TFile* data_file = new TFile(argv[1], "READ");
-  TFile* mc_file = new TFile(outputFileName, "READ");
+  TFile* mc_file = new TFile(outputFileName.c_str(), "READ");
   if (!data_file->IsOpen() || !mc_file->IsOpen()) {
     cout << "Error opening ROOT files (is the location correct?). Exiting." << endl;
     return 2;
