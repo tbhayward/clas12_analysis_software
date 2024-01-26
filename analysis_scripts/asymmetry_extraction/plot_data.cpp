@@ -100,35 +100,13 @@ void createIntegratedKinematicPlots() {
         dataHist->GetYaxis()->SetTitleOffset(1.6);
         mcHist->GetYaxis()->SetTitleOffset(1.6);
 
-        // // Loop over dataReader to fill the histogram
-        // KinematicCuts kinematicCuts(dataReader);
-        // while (dataReader.Next()) {
-        //     bool passedKinematicCuts = kinematicCuts.applyCuts(0, false);
-        //     if (*dataVal >= config.xMin && *dataVal < config.xMax && passedKinematicCuts) {
-        //         dataHist->Fill(*dataVal);
-        //     }
-        // }
-
-        // // Loop over mcReader to fill the histogram
-        // KinematicCuts mc_kinematicCuts(mcReader);
-        // while (mcReader.Next()) {
-        //     bool passedKinematicCuts = mc_kinematicCuts.applyCuts(0, true);
-        //     if (*mcVal >= config.xMin && *mcVal < config.xMax && passedKinematicCuts) {
-        //         mcHist->Fill(*mcVal);
-        //     }
-        // }
-        std::cout << "BEFORE THE CUTS " << branchName << std::endl;
         KinematicCuts dataKinematicCuts(dataReader);
         KinematicCuts mcKinematicCuts(mcReader);
-        std::cout << " WE MADE IT TO HERE " << branchName << std::endl;
         if (branchName == "runnum") {
-           std::cout << "we entered the branchName == runnum check" << std::endl;
           // Declare TTreeReaderValue for integers for dataReader
           TTreeReaderValue<int> dataVal(dataReader, branchName.c_str());
-          std::cout << "passed first dataVal assignment" << std::endl;
           // Fill histogram for dataReader
           FillHistogram<int>(dataReader, branchName, dataHist, dataKinematicCuts, 0, 0);
-          std::cout << " About to check the runnum branch exists in mcReader " << std::endl;
           // Check if the "runnum" branch exists in mcReader
           if (mcReader.GetTree()->GetBranch(branchName.c_str())) {
               // "runnum" branch exists, declare TTreeReaderValue for mcReader
@@ -139,6 +117,7 @@ void createIntegratedKinematicPlots() {
           } else {
               // "runnum" branch does not exist, use default value
               int defaultRunNum = 11;
+              std::cout << "assigning runnum = 11" << std::endl;
               mcHist->Fill(defaultRunNum);
           }
         } else {
