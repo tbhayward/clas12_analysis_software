@@ -945,7 +945,7 @@ int main(int argc, char *argv[]) {
       return 1;
   }
 
-  modifyTree(argv[2], "/scratch/thayward/temp_mc.root")
+  modifyTree(argv[2], "/scratch/thayward/temp_mc.root");
 
   // Load data and mc root files
   TFile* data_file = new TFile(argv[1], "READ");
