@@ -8,7 +8,6 @@
 #include <sstream>
 #include <string>
 #include <vector>
-#include <filesystem>
 // ROOT Library Headers
 #include <TApplication.h>
 #include <TCanvas.h>
@@ -29,6 +28,7 @@
 #include "TMinuit.h"
 #include "TStyle.h"
 #include <TBranch.h>
+#include <cstdio>
 // tbhayward libraries
 #include "common_vars.h"  // Include the common header
 #include "load_bins_from_csv.h"
@@ -963,7 +963,7 @@ int main(int argc, char *argv[]) {
 
   // Load data and mc root files
   TFile* data_file = new TFile(argv[1], "READ");
-  TFile* mc_file = new TFile("/scratch/thayward/temp_mc.root", "READ");
+  TFile* mc_file = new TFile(outputFileName, "READ");
   if (!data_file->IsOpen() || !mc_file->IsOpen()) {
     cout << "Error opening ROOT files (is the location correct?). Exiting." << endl;
     return 2;
