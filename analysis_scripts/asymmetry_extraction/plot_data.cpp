@@ -245,7 +245,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 if (branchName == "runnum") {
                     TTreeReaderValue<int> dataVal(dataReader, branchName.c_str());
                     TTreeReaderValue<int> mcVal(mcReader, branchName.c_str()); // Even if you don't use it
-                    FillHistogram<int>(dataReader, dataVal, dataHist, KinematicCuts, fitIndex);
+                    FillHistogram<int>(dataReader, dataVal, dataHist, kinematicCuts, fitIndex);
                     if (mcReader.GetTree()->GetBranch(branchName.c_str())) {
                         FillHistogram<int>(mcReader, mcVal, mcHist, mcKinematicCuts, fitIndex);
                     } else {
@@ -255,7 +255,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 } else {
                     TTreeReaderValue<double> dataVal(dataReader, branchName.c_str());
                     TTreeReaderValue<double> mcVal(mcReader, branchName.c_str());
-                    FillHistogram<double>(dataReader, dataVal, dataHist, KinematicCuts, fitIndex);
+                    FillHistogram<double>(dataReader, dataVal, dataHist, kinematicCuts, fitIndex);
                     FillHistogram<double>(mcReader, mcVal, mcHist, mcKinematicCuts, fitIndex);
                 }
 
