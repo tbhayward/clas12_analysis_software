@@ -1021,7 +1021,11 @@ int main(int argc, char *argv[]) {
 
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    for (int asymmetry = 0; asymmetry < 1; ++asymmetry){
+    for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
+      if (asymmetry > 0 && cpp != 1) {
+        cout << "Skipping TSA and DSA for unpolarized target data." << endl;
+        continue;
+      }
       switch (asymmetry) {
         case 0: cout << "    Beginning chi2 BSA." << endl; break;
         case 1: cout << "    Beginning chi2 TSA." << endl; break;
