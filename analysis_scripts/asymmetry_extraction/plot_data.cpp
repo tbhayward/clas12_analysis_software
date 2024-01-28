@@ -396,7 +396,7 @@ void createCorrelationPlotsforrunnum() {
 
         // Loop over dataReader to fill the histogram
         while (dataReader.Next()) {
-            bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
+            bool passedKinematicCuts = kinematicCuts->applyCuts(0, false);
             if (passedKinematicCuts) {
                 hist->Fill(*valX, *valY);
             }
@@ -484,7 +484,7 @@ void createCorrelationPlots() {
 
             // Loop over dataReader to fill the histogram
             while (dataReader.Next()) {
-                bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
+                bool passedKinematicCuts = kinematicCuts->applyCuts(0, false);
                 if (passedKinematicCuts) {
                     hist->Fill(*valX, *valY);
                 }
