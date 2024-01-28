@@ -225,12 +225,6 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                     std::cerr << "Warning: No specific histogram configuration found for " << branchName << ". Using default configuration." << std::endl;
                 }
 
-                // // Set up the data and MC values to be read from the trees
-                // TTreeReaderValue<Double_t> dataVal(dataReader, branchName.c_str());
-                // TTreeReaderValue<Double_t> mcVal(mcReader, branchName.c_str());
-                // TTreeReaderValue<Double_t> binVariable(dataReader, branchVariable.c_str());
-                // TTreeReaderValue<Double_t> mcBinVariable(mcReader, branchVariable.c_str());
-
                 // Create histogram title with formatted bin edges
                 std::string formattedVariableName = formatLabelName(branchVariable);
                 std::string plotTitle = lowerEdgeStream.str() + " < " + formattedVariableName + " < " + upperEdgeStream.str();
@@ -328,8 +322,6 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 // Restart the TTreeReaders for the next branch
                 dataReader.Restart();
                 mcReader.Restart();
-
-                delete kinematicCuts;
             }
         }
         // Increment the currentFits to process the next set of kinematic variables
