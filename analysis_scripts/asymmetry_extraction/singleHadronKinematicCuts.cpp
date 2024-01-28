@@ -1,16 +1,16 @@
-#include "KinematicCuts.h"
+#include "singleHadronKinematicCuts.h"
 #include "common_vars.h"
 #include <string>
 #include <cmath>
 
 using std::string;
 
-KinematicCuts::KinematicCuts(TTreeReader& reader)
+singleHadronKinematicCuts::singleHadronKinematicCuts(TTreeReader& reader)
     : runnum(reader, "runnum"), p_p(reader, "p_p"), p_theta(reader, "p_theta"), Q2(reader, "Q2"), 
         W(reader, "W"), Mx(reader, "Mx"), x(reader, "x"), y(reader, "y"), z(reader, "z"), 
         pT(reader, "pT"), xF(reader, "xF"), target_pol(reader, "target_pol") {}
 
-bool KinematicCuts::applyCuts(int currentFits, bool isMC) {
+bool singleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         bool goodEvent = false;
         string property = binNames[currentFits];
 

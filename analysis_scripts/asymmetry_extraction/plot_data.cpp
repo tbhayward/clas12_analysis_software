@@ -258,13 +258,20 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 dataHist->SetLineColor(kBlack);
                 mcHist->SetLineColor(kRed);
 
-                // KinematicCuts kinematicCuts(dataReader);
-                KinematicCuts kinematicCuts;
+                BaseKinematicCuts* kinematicCuts = nullptr;
                 switch (channel) {
-                  case 0: kinematicCuts = new inclusiveKinematicCuts(dataReader);
-                  case 1: kinematicCuts = new singleHadronKinematicCuts(dataReader);
-                  case 2: kinematicCuts = new b2bDihadronKinematicCuts(dataReader);
-                  case 3: kinematicCuts = new dihadronKinematicCuts(dataReader);
+                  case 0:
+                    kinematicCuts = new inclusiveKinematicCuts(dataReader);
+                    break;
+                  case 1:
+                    kinematicCuts = new singleHadronKinematicCuts(dataReader);
+                    break;
+                  case 2:
+                    kinematicCuts = new b2bDihadronKinematicCuts(dataReader);
+                    break;
+                  case 3:
+                    kinematicCuts = new dihadronKinematicCuts(dataReader);
+                    break;
                 }
                 KinematicCuts mcKinematicCuts(mcReader);
 
