@@ -37,7 +37,7 @@
 #include "asymmetry_fits.h"
 #include "KinematicCuts.h"
 #include "inclusiveKinematicCuts.h"
-#include "b2bdihadronKinematicCuts.h"
+#include "b2bDihadronKinematicCuts.h"
 #include "dihadronKinematicCuts.h"
 #include "formatLabelName.h"
 #include "readChi2Fits.h"
