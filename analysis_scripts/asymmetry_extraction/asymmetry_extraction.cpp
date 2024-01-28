@@ -65,7 +65,7 @@ double cmm = 0;
 double cpm = 0; 
 double cmp = 0; 
 double cpp = 0; 
-extern int channel;
+int channel = 1;
 std::string mlmPrefix = "xF";
 
 // Negative log-likelihood function
