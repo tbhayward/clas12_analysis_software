@@ -13,7 +13,7 @@ extern std::map<std::string, HistConfig> histConfigs;
 
 template<typename T>
 void FillHistogram(TTreeReader& reader, const std::string& branchName, TH1D* hist, 
-  KinematicCuts& kinematicCuts, int fitIndex, bool isMC) {
+  BaseKinematicCuts& kinematicCuts, int fitIndex, bool isMC) {
     TTreeReaderValue<T> val(reader, branchName.c_str());
     while (reader.Next()) {
         if (kinematicCuts.applyCuts(fitIndex, isMC)) {
@@ -282,11 +282,11 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                   if (mcReader.GetTree()->GetBranch(branchName.c_str())) {
                       TTreeReaderValue<int> mcVal(mcReader, branchName.c_str());
                       TTreeReaderValue<double> mcBinVariable(mcReader, branchVariable.c_str());
-                      FillHistogram<int>(dataReader, branchName, dataHist, kinematicCuts, fitIndex, 0);
+                      FillHistogram<int>(dataReader, branchName, dataHist, *kinematicCuts, fitIndex, 0);
                       FillHistogram<int>(mcReader, branchName, mcHist, mcKinematicCuts, fitIndex, 1);
                   } else {
                       int defaultRunNum = 11;
-                      FillHistogram<int>(dataReader, branchName, dataHist, kinematicCuts, fitIndex, 0);
+                      FillHistogram<int>(dataReader, branchName, dataHist, *kinematicCuts, fitIndex, 0);
                       mcHist->Fill(defaultRunNum);
                   }
                 } else {
@@ -294,7 +294,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                   TTreeReaderValue<double> binVariable(dataReader, branchVariable.c_str());
                   TTreeReaderValue<double> mcVal(mcReader, branchName.c_str());
                   TTreeReaderValue<double> mcBinVariable(mcReader, branchVariable.c_str());
-                  FillHistogram<double>(dataReader, branchName, dataHist, kinematicCuts, fitIndex, 0);
+                  FillHistogram<double>(dataReader, branchName, dataHist, *kinematicCuts, fitIndex, 0);
                   FillHistogram<double>(mcReader, branchName, mcHist, mcKinematicCuts, fitIndex, 1);
                 }
 
@@ -347,6 +347,8 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 // Restart the TTreeReaders for the next branch
                 dataReader.Restart();
                 mcReader.Restart();
+
+                delete kinematicCuts;
             }
         }
         // Increment the currentFits to process the next set of kinematic variables
