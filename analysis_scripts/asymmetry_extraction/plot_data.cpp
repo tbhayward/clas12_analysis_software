@@ -260,18 +260,18 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
 
                 BaseKinematicCuts* kinematicCuts = nullptr;
                 switch (channel) {
-                  case 0:
-                    kinematicCuts = new inclusiveKinematicCuts(dataReader);
-                    break;
-                  case 1:
-                    kinematicCuts = new singleHadronKinematicCuts(dataReader);
-                    break;
-                  case 2:
-                    kinematicCuts = new b2bDihadronKinematicCuts(dataReader);
-                    break;
-                  case 3:
-                    kinematicCuts = new dihadronKinematicCuts(dataReader);
-                    break;
+                    case 0:
+                        kinematicCuts = new InclusiveKinematicCuts(dataReader);
+                        break;
+                    case 1:
+                        kinematicCuts = new SingleHadronKinematicCuts(dataReader);
+                        break;
+                    case 2:
+                        kinematicCuts = new B2BDihadronKinematicCuts(dataReader);
+                        break;
+                    case 3:
+                        kinematicCuts = new DihadronKinematicCuts(dataReader);
+                        break;
                 }
                 KinematicCuts mcKinematicCuts(mcReader);
 
