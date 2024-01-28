@@ -281,14 +281,6 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                     mcHist->Scale(1.0 / mcHist->Integral());
                 }
 
-                // // Normalize the histograms
-                // if (dataHist->Integral() != 0) {
-                //     dataHist->Scale(1.0 / num_data_elec);
-                // }
-                // if (mcHist->Integral() != 0) {
-                //     mcHist->Scale(1.0 / num_mc_elec);
-                // }
-
                 // Find the maximum y-value between both histograms to set the y-axis range
                 double maxY = std::max(dataHist->GetMaximum(), mcHist->GetMaximum());
                 dataHist->SetMaximum(1.2 * maxY);
@@ -403,9 +395,8 @@ void createCorrelationPlotsforrunnum() {
         hist->GetYaxis()->SetTitleOffset(1.6);
 
         // Loop over dataReader to fill the histogram
-        KinematicCuts kinematicCuts(dataReader);
         while (dataReader.Next()) {
-            if (kinematicCuts.applyCuts(0, false)) {
+            if (kinematicCuts->applyCuts(currentFits, false)) {
                 hist->Fill(*valX, *valY);
             }
         }
@@ -493,7 +484,7 @@ void createCorrelationPlots() {
             // Loop over dataReader to fill the histogram
             KinematicCuts kinematicCuts(dataReader);
             while (dataReader.Next()) {
-                if (kinematicCuts.applyCuts(0, false)) {
+                if (kinematicCuts->applyCuts(currentFits, false);) {
                     hist->Fill(*valX, *valY);
                 }
             }
