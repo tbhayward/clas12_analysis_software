@@ -899,6 +899,7 @@ int main(int argc, char *argv[]) {
       return 1;
   }
 
+  cout << endl << endl;
   // Set default channel to 1
   channel = 1;  // Default value
   if (argc >= 4) {
@@ -914,7 +915,6 @@ int main(int argc, char *argv[]) {
   } else {
       cout << "No channel specified. Defaulting to channel single hadron." << endl;
   }
-
   cout << "Using channel: " << channel << endl << endl;
 
   // Allocate kinematicCuts and mckinematicCuts based on the channel
@@ -1048,7 +1048,7 @@ int main(int argc, char *argv[]) {
   cout << "Total neg-neg charge: " << cmm << " (nC). ";
   cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << " (nC)."<< endl << endl;
 
-  createIntegratedKinematicPlots();
+  // createIntegratedKinematicPlots();
   createIntegratedKinematicPlotsForBinsAndFits();
   createCorrelationPlotsforrunnum();
   createCorrelationPlots();
