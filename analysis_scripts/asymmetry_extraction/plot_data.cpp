@@ -377,7 +377,7 @@ void createCorrelationPlotsforrunnum() {
         // Define the histogram for this pair
         std::string histName = branchX + "_vs_" + branchY;
         TH2D* hist = new TH2D(histName.c_str(), "",
-          configX.nBins, configX.xMin, configX.xMax, // X-axis bins and range
+          configX.nBins, minRunNum, maxRunNum, // Adjusted X-axis bins and range
           configY.nBins, configY.xMin, configY.xMax); // Y-axis bins and range
 
         // Set axis titles and center them
