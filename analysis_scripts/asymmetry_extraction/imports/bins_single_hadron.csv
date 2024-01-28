@@ -68,4 +68,4 @@ runnum,evnum,helicity,e_p,e_theta,e_phi,vz_e,p_p,p_theta,p_phi,vz_p,Q2,W,Mx,Mx2,
 #
 #
 #eX, inclusive 
-eX,x,0.05,0.15,0.3,0.45,0.6,0.8
+eX,x,0.05,1.00

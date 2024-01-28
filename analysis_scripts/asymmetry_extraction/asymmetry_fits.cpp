@@ -3,47 +3,37 @@
 #include "dilution_factor.h" 
 
 // Function to fit the beam-spin asymmetry histogram
-double BSA_funcToFit(double* x, double* par) {
+double BSA_single_hadron(double* x, double* par) {
   // Retrieve the parameters 
   double ALU_offset = par[0];
   double ALU_sinphi = par[1];
-  // double AUU_cosphi = par[2];
-  // double AUU_cos2phi = par[3];
   // Retrieve the phi variable from the input x array
   double phi = x[0];
   // Calculate and return the value of the function for the given phi and parameters 
   return ALU_offset + ALU_sinphi*sin(phi);
-  // return (ALU_offset + ALU_sinphi*sin(phi)) / (1 + AUU_cosphi*cos(phi) + AUU_cos2phi*cos(2*phi));
 }
 
 // Function to fit the target-spin asymmetry histogram
-double TSA_funcToFit(double* x, double* par) {
+double TSA_single_hadron(double* x, double* par) {
   // Retrieve the parameters A
   double AUL_offset = par[0];
   double AUL_sinphi = par[1];
   double AUL_sin2phi = par[2];
-  // double AUU_cosphi = par[3];
-  // double AUU_cos2phi = par[4];
   // Retrieve the phi variable from the input x array
   double phi = x[0];
   // Calculate and return the value of the function for the given phi and parameters 
   return AUL_offset + AUL_sinphi*sin(phi)+AUL_sin2phi*sin(2*phi);
-  // return (AUL_offset + AUL_sinphi*sin(phi)+AUL_sin2phi*sin(2*phi)) /
-  //   (1 + AUU_cosphi*cos(phi) + AUU_cos2phi*cos(2*phi));
 }
 
 // Function to fit the double-spin asymmetry histogram
-double DSA_funcToFit(double* x, double* par) {
+double DSA_single_hadron(double* x, double* par) {
   // Retrieve the parameters A
   double ALL = par[0];
   double ALL_cosphi = par[1];
-  // double AUU_cosphi = par[2];
-  // double AUU_cos2phi = par[3];
   // Retrieve the phi variable from the input x array
   double phi = x[0];
   // Calculate and return the value of the function for the given phi and parameters 
   return ALL+ALL_cosphi*cos(phi);
-  // return (ALL+ALL_cosphi*cos(phi)) / (1 + AUU_cosphi*cos(phi) + AUU_cos2phi*cos(2*phi));
 }
 
 double asymmetry_value_calculation(double currentVariable, const std::string& prefix, 

@@ -606,7 +606,6 @@ void performChi2Fits(const char* output_file, const char* kinematic_file,
 
   // Initialize string streams to store the results for each bin
   std::ostringstream chi2FitsAStream, chi2FitsBStream, chi2FitsCStream;
-  // std::ostringstream chi2FitsDStream, chi2FitsEStream;
 
   // Initialize string streams to store the mean variables for each bin
   std::ostringstream meanVariablesStream;
@@ -623,30 +622,24 @@ void performChi2Fits(const char* output_file, const char* kinematic_file,
   TF1* fitFunction;
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
-      fitFunction = new TF1("fitFunction", BSA_funcToFit, 0, 2*TMath::Pi(), 2);
+      fitFunction = new TF1("fitFunction", BSA_single_hadron, 0, 2*TMath::Pi(), 2);
       chi2FitsAStream << prefix << "chi2FitsALUoffset = {";
       chi2FitsBStream << prefix << "chi2FitsALUsinphi = {";
-      // chi2FitsCStream << prefix << "chi2FitsALUAUUcosphi = {";
-      // chi2FitsDStream << prefix << "chi2FitsALUAUUcos2phi = {";
       break;
     case 1: // target-spin asymmetry
-      fitFunction = new TF1("fitFunction", TSA_funcToFit, 0, 2*TMath::Pi(), 3);
+      fitFunction = new TF1("fitFunction", TSA_single_hadron, 0, 2*TMath::Pi(), 3);
       chi2FitsAStream << prefix << "chi2FitsAULoffset = {";
       chi2FitsBStream << prefix << "chi2FitsAULsinphi = {";
       chi2FitsCStream << prefix << "chi2FitsAULsin2phi = {";
-      // chi2FitsDStream << prefix << "chi2FitsAULAUUcosphi = {";
-      // chi2FitsEStream << prefix << "chi2FitsAULAUUcos2phi = {";
       break;
     case 2: // double-spin asymmetry
-      fitFunction = new TF1("fitFunction", DSA_funcToFit, 0, 2*TMath::Pi(), 2);
+      fitFunction = new TF1("fitFunction", DSA_single_hadron, 0, 2*TMath::Pi(), 2);
       chi2FitsAStream << prefix << "chi2FitsALL = {";
       chi2FitsBStream << prefix << "chi2FitsALLcosphi = {";
-      // chi2FitsCStream << prefix << "chi2FitsALLAUUcosphi = {";
-      // chi2FitsDStream << prefix << "chi2FitsALLAUUcos2phi = {";
       break;
     default:
       cout << "Invalid asymmetry_index! Using default function form of BSA." << endl;
-      fitFunction = new TF1("fitFunction", BSA_funcToFit, 0, 2*TMath::Pi(), 2);
+      fitFunction = new TF1("fitFunction", BSA_single_hadron, 0, 2*TMath::Pi(), 2);
   }
 
   // Determine the number of bins
@@ -690,7 +683,6 @@ void performChi2Fits(const char* output_file, const char* kinematic_file,
     TTreeReaderValue<double> xF(dataReader, "xF");
     TTreeReaderValue<double> Mx(dataReader, "Mx");
     TTreeReaderValue<double> t(dataReader, "t");
-    // TTreeReaderValue<double> t(dataReader, "t1");
     TTreeReaderValue<double> tmin(dataReader, "tmin");
     TTreeReaderValue<double> DepA(dataReader, "DepA");
     TTreeReaderValue<double> DepB(dataReader, "DepB");
@@ -763,23 +755,12 @@ void performChi2Fits(const char* output_file, const char* kinematic_file,
         double ALU_offset_error = fitFunction->GetParError(0);
         double ALU_sinphi = fitFunction->GetParameter(1); 
         double ALU_sinphi_error = fitFunction->GetParError(1);
-        // double AUU_cosphi = fitFunction->GetParameter(2); 
-        // double AUU_cosphi_error = fitFunction->GetParError(2);
-        // double AUU_cos2phi = fitFunction->GetParameter(3); 
-        // double AUU_cos2phi_error = fitFunction->GetParError(3);
         ALU_sinphi = (meanDepA/meanDepW)*ALU_sinphi;
         ALU_sinphi_error = (meanDepA/meanDepW)*ALU_sinphi_error;
-        // AUU_cosphi = (meanDepA/meanDepV)*AUU_cosphi;
-        // AUU_cosphi_error = (meanDepA/meanDepV)*AUU_cosphi_error;
-        // AUU_cos2phi = (meanDepB/meanDepV)*AUU_cos2phi;
-        // AUU_cos2phi_error = (meanDepB/meanDepV)*AUU_cos2phi_error;
         chi2FitsAStream<<"{"<<meanVariable<<", "<< ALU_offset << ", " << ALU_offset_error <<"}";
         chi2FitsBStream<<"{"<<meanVariable<<", "<< ALU_sinphi << ", " << ALU_sinphi_error <<"}";
-        // chi2FitsCStream<<"{"<<meanVariable<<", "<< AUU_cosphi << ", "<<AUU_cosphi_error <<"}";
-        // chi2FitsDStream<<"{"<<meanVariable<<", "<< AUU_cos2phi << ", "<<AUU_cos2phi_error <<"}";
         if (i < numBins - 1) {
             chi2FitsAStream << ", "; chi2FitsBStream << ", "; 
-            // chi2FitsCStream << ", "; chi2FitsDStream << ", ";
         }
         break;
       }
@@ -791,26 +772,15 @@ void performChi2Fits(const char* output_file, const char* kinematic_file,
         double AUL_sinphi_error = fitFunction->GetParError(1);
         double AUL_sin2phi = fitFunction->GetParameter(2);
         double AUL_sin2phi_error = fitFunction->GetParError(2);
-        // double AUU_cosphi = fitFunction->GetParameter(3); 
-        // double AUU_cosphi_error = fitFunction->GetParError(3);
-        // double AUU_cos2phi = fitFunction->GetParameter(4); 
-        // double AUU_cos2phi_error = fitFunction->GetParError(4);
         AUL_sinphi = (meanDepA/meanDepV)*AUL_sinphi;
         AUL_sinphi_error = (meanDepA/meanDepV)*AUL_sinphi_error;
         AUL_sin2phi = (meanDepA/meanDepB)*AUL_sin2phi;
         AUL_sin2phi_error = (meanDepA/meanDepB)*AUL_sin2phi_error;
-        // AUU_cosphi = (meanDepA/meanDepV)*AUU_cosphi;
-        // AUU_cosphi_error = (meanDepA/meanDepV)*AUU_cosphi_error;
-        // AUU_cos2phi = (meanDepB/meanDepV)*AUU_cos2phi;
-        // AUU_cos2phi_error = (meanDepB/meanDepV)*AUU_cos2phi_error;
         chi2FitsAStream<<"{"<<meanVariable<<", "<< AUL_offset << ", " << AUL_offset_error <<"}";
         chi2FitsBStream<<"{"<<meanVariable<<", "<< AUL_sinphi << ", " << AUL_sinphi_error <<"}";
         chi2FitsCStream<<"{"<<meanVariable<<", "<< AUL_sin2phi << ", " << AUL_sin2phi_error <<"}";
-        // chi2FitsDStream<<"{"<<meanVariable<<", "<< AUU_cosphi << ", "<<AUU_cosphi_error <<"}";
-        // chi2FitsEStream<<"{"<<meanVariable<<", "<< AUU_cos2phi << ", "<<AUU_cos2phi_error <<"}";
         if (i < numBins - 1) {
             chi2FitsAStream << ", "; chi2FitsBStream << ", "; chi2FitsCStream << ", ";
-            // chi2FitsDStream << ", "; chi2FitsEStream << ", ";
         }
         break;
       }
@@ -820,25 +790,14 @@ void performChi2Fits(const char* output_file, const char* kinematic_file,
         double ALL_error = fitFunction->GetParError(0);
         double ALL_cosphi = fitFunction->GetParameter(1);
         double ALL_cosphi_error = fitFunction->GetParError(1);
-        // double AUU_cosphi = fitFunction->GetParameter(2); 
-        // double AUU_cosphi_error = fitFunction->GetParError(2);
-        // double AUU_cos2phi = fitFunction->GetParameter(3); 
-        // double AUU_cos2phi_error = fitFunction->GetParError(3);
         ALL = (meanDepA/meanDepC)*ALL;
         ALL_error = (meanDepA/meanDepC)*ALL_error;
         ALL_cosphi = (meanDepA/meanDepW)*ALL_cosphi;
         ALL_cosphi_error = (meanDepA/meanDepW)*ALL_cosphi_error;
-        // AUU_cosphi = (meanDepA/meanDepV)*AUU_cosphi;
-        // AUU_cosphi_error = (meanDepA/meanDepV)*AUU_cosphi_error;
-        // AUU_cos2phi = (meanDepB/meanDepV)*AUU_cos2phi;
-        // AUU_cos2phi_error = (meanDepB/meanDepV)*AUU_cos2phi_error;
         chi2FitsAStream<<"{"<<meanVariable<<", "<< ALL << ", " << ALL_error <<"}";
         chi2FitsBStream<<"{"<<meanVariable<<", "<< ALL_cosphi << ", " << ALL_cosphi_error <<"}";
-        // chi2FitsCStream<<"{"<<meanVariable<<", "<< AUU_cosphi << ", "<<AUU_cosphi_error <<"}";
-        // chi2FitsDStream<<"{"<<meanVariable<<", "<< AUU_cos2phi << ", "<<AUU_cos2phi_error <<"}";
         if (i < numBins - 1) {
             chi2FitsAStream << ", "; chi2FitsBStream << ", ";
-            // chi2FitsCStream << ", "; chi2FitsDStream << ", ";
         }
         break;
       }
@@ -855,16 +814,12 @@ void performChi2Fits(const char* output_file, const char* kinematic_file,
   }
 
   chi2FitsAStream << "};";  chi2FitsBStream << "};";  chi2FitsCStream << "};"; 
-  // chi2FitsDStream << "};";  chi2FitsEStream << "};"; 
 
   std::ofstream outputFile(output_file, std::ios_base::app);
   outputFile << chi2FitsAStream.str() << std::endl;
   outputFile << chi2FitsBStream.str() << std::endl;
   if (asymmetry_index==1) { outputFile << chi2FitsCStream.str() << std::endl; }
 
-  // outputFile << chi2FitsCStream.str() << std::endl;
-  // outputFile << chi2FitsDStream.str() << std::endl;
-  // if (asymmetry_index==1) { outputFile << chi2FitsEStream.str() << std::endl; }
   outputFile.close();
 
   meanVariablesStream << "\\end{tabular}\n";
@@ -1055,26 +1010,26 @@ int main(int argc, char *argv[]) {
   currentFits=0;
   dataReader.Restart(); mcReader.Restart();
 
-  // for (size_t i = 0; i < allBins.size(); ++i) {
-  //   cout << "-- Beginning kinematic fits." << endl;
-  //   for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
-  //     if (asymmetry > 0 && cpp == 1) {
-  //       cout << "Skipping TSA and DSA for unpolarized target data." << endl;
-  //       continue;
-  //     }
-  //     switch (asymmetry) {
-  //       case 0: cout << "    Beginning chi2 BSA." << endl; break;
-  //       case 1: cout << "    Beginning chi2 TSA." << endl; break;
-  //       case 2: cout << "    Beginning chi2 DSA." << endl; break;
-  //     }
-  //     performChi2Fits(output_file.c_str(), kinematic_file.c_str(), binNames[i], asymmetry);
-  //   }
-  //   cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-  //   // performMLMFits(output_file.c_str(), kinematic_file.c_str(), binNames[i]);
-  //   cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
-  //   cout << endl << endl;
-  //   currentFits++;
-  // }
+  for (size_t i = 0; i < allBins.size(); ++i) {
+    cout << "-- Beginning kinematic fits." << endl;
+    for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
+      if (asymmetry > 0 && cpp == 1) {
+        cout << "Skipping TSA and DSA for unpolarized target data." << endl;
+        continue;
+      }
+      switch (asymmetry) {
+        case 0: cout << "    Beginning chi2 BSA." << endl; break;
+        case 1: cout << "    Beginning chi2 TSA." << endl; break;
+        case 2: cout << "    Beginning chi2 DSA." << endl; break;
+      }
+      performChi2Fits(output_file.c_str(), kinematic_file.c_str(), binNames[i], asymmetry);
+    }
+    cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
+    // performMLMFits(output_file.c_str(), kinematic_file.c_str(), binNames[i]);
+    cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
+    cout << endl << endl;
+    currentFits++;
+  }
 
   mc_file->Close();
   delete mc_file;
