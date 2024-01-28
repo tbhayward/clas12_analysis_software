@@ -6,9 +6,11 @@
 using std::string;
 
 SingleHadronKinematicCuts::SingleHadronKinematicCuts(TTreeReader& reader)
-    : runnum(reader, "runnum"), p_p(reader, "p_p"), p_theta(reader, "p_theta"), Q2(reader, "Q2"), 
-        W(reader, "W"), Mx(reader, "Mx"), x(reader, "x"), y(reader, "y"), z(reader, "z"), 
-        pT(reader, "pT"), xF(reader, "xF"), target_pol(reader, "target_pol") {}
+    : BaseKinematicCuts(reader), // Call to the BaseKinematicCuts constructor
+      runnum(reader, "runnum"), p_p(reader, "p_p"), p_theta(reader, "p_theta"), 
+      Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), x(reader, "x"), 
+      y(reader, "y"), z(reader, "z"), pT(reader, "pT"), xF(reader, "xF"), 
+      target_pol(reader, "target_pol") {}
 
 bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         bool goodEvent = false;
