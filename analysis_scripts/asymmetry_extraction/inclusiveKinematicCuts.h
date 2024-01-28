@@ -3,14 +3,14 @@
 #include <TTreeReaderValue.h>
 #include <string>
 #include "common_vars.h"
+#include "BaseKinematicCuts.h" // Include BaseKinematicCuts
 
-class inclusiveKinematicCuts {
+class InclusiveKinematicCuts : public BaseKinematicCuts { // Inherit from BaseKinematicCuts
 public:
-    inclusiveKinematicCuts(TTreeReader& reader);
-    bool applyCuts(int currentFits, bool isMC);
+    InclusiveKinematicCuts(TTreeReader& reader);
+    bool applyCuts(int currentFits, bool isMC) override; // Override applyCuts method
 
 private:
-
     TTreeReaderValue<int> runnum;
     TTreeReaderValue<double> Q2;
     TTreeReaderValue<double> W;

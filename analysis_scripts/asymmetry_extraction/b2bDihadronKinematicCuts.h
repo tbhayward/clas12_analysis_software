@@ -3,14 +3,14 @@
 #include <TTreeReaderValue.h>
 #include <string>
 #include "common_vars.h"
+#include "BaseKinematicCuts.h" // Include BaseKinematicCuts
 
-class b2bDihadronKinematicCuts {
+class B2BDihadronKinematicCuts : public BaseKinematicCuts { // Inherit from BaseKinematicCuts
 public:
-    b2bDihadronKinematicCuts(TTreeReader& reader);
-    bool applyCuts(int currentFits, bool isMC);
+    B2BDihadronKinematicCuts(TTreeReader& reader);
+    bool applyCuts(int currentFits, bool isMC) override; // Override applyCuts method
 
 private:
-
     TTreeReaderValue<int> runnum;
     TTreeReaderValue<double> Q2;
     TTreeReaderValue<double> W;

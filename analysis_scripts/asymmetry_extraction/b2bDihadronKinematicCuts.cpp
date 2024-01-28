@@ -1,15 +1,17 @@
-#include "b2bDihadronKinematicCuts.h"
+#include "B2BDihadronKinematicCuts.h"
 #include "common_vars.h"
+#include "BaseKinematicCuts.h" // Include BaseKinematicCuts
 #include <string>
 #include <cmath>
 
 using std::string;
 
-b2bDihadronKinematicCuts::b2bDihadronKinematicCuts(TTreeReader& reader)
-    : runnum(reader, "runnum"),  Q2(reader, "Q2"), W(reader, "W"), 
-      x(reader, "x"), y(reader, "y"),  target_pol(reader, "target_pol") {}
+B2BDihadronKinematicCuts::B2BDihadronKinematicCuts(TTreeReader& reader)
+    : BaseKinematicCuts(reader), // Initialize BaseKinematicCuts
+      runnum(reader, "runnum"), Q2(reader, "Q2"), W(reader, "W"),
+      x(reader, "x"), y(reader, "y"), target_pol(reader, "target_pol") {}
 
-bool b2bDihadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
+bool B2BDihadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     bool goodEvent = false;
     string property = binNames[currentFits];
 

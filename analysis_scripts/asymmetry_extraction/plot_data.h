@@ -4,10 +4,12 @@
 #include <TCanvas.h>
 #include <TLegend.h>
 #include <TStyle.h>
+#include "BaseKinematicCuts.h"
 #include "KinematicCuts.h"
-#include "inclusiveKinematicCuts.h"
-#include "b2bDihadronKinematicCuts.h"
-#include "dihadronKinematicCuts.h"
+#include "InclusiveKinematicCuts.h"
+#include "SingleHadronKinematicCuts.h"
+#include "B2BDihadronKinematicCuts.h"
+#include "DihadronKinematicCuts.h"
 #include "histConfigs.h"
 
 extern std::map<std::string, HistConfig> histConfigs;

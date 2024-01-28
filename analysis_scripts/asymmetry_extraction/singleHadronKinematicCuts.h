@@ -3,11 +3,12 @@
 #include <TTreeReaderValue.h>
 #include <string>
 #include "common_vars.h"
+#include "BaseKinematicCuts.h" // Include BaseKinematicCuts
 
-class KinematicCuts {
+class SingleHadronKinematicCuts : public BaseKinematicCuts {
 public:
-    KinematicCuts(TTreeReader& reader);
-    bool applyCuts(int currentFits, bool isMC);
+    SingleHadronKinematicCuts(TTreeReader& reader);
+    bool applyCuts(int currentFits, bool isMC) override;
 
 private:
     TTreeReaderValue<int> runnum;
