@@ -1048,7 +1048,7 @@ int main(int argc, char *argv[]) {
   cout << "Total neg-neg charge: " << cmm << " (nC). ";
   cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << " (nC)."<< endl << endl;
 
-  // createIntegratedKinematicPlots();
+  createIntegratedKinematicPlots();
   createIntegratedKinematicPlotsForBinsAndFits();
   createCorrelationPlotsforrunnum();
   createCorrelationPlots();
