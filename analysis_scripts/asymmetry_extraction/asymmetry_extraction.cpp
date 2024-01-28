@@ -57,6 +57,7 @@ double cmm = 0;
 double cpm = 0; 
 double cmp = 0; 
 double cpp = 0; 
+int channel = 1;
 std::string mlmPrefix = "xF";
 
 // Negative log-likelihood function
@@ -1013,16 +1014,16 @@ int main(int argc, char *argv[]) {
   cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << " (nC)."<< endl << endl;
 
   // createIntegratedKinematicPlots();
-  // createIntegratedKinematicPlotsForBinsAndFits();
-  // createCorrelationPlotsforrunnum();
-  // createCorrelationPlots();
+  createIntegratedKinematicPlotsForBinsAndFits();
+  createCorrelationPlotsforrunnum();
+  createCorrelationPlots();
   currentFits=0;
   dataReader.Restart(); mcReader.Restart();
 
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
     for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
-      if (asymmetry > 0 && cpp != 1) {
+      if (asymmetry > 0 && cpp == 1) {
         cout << "Skipping TSA and DSA for unpolarized target data." << endl;
         continue;
       }
