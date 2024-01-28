@@ -98,19 +98,37 @@ void createIntegratedKinematicPlots() {
         dataHist->GetYaxis()->SetTitleOffset(1.6);
         mcHist->GetYaxis()->SetTitleOffset(1.6);
 
-        KinematicCuts dataKinematicCuts(dataReader);
-        KinematicCuts mcKinematicCuts(mcReader);
+        BaseKinematicCuts* kinematicCuts = nullptr;
+        BaseKinematicCuts* mckinematicCuts = nullptr;
+        switch (channel) {
+            case 0:
+                kinematicCuts = new InclusiveKinematicCuts(dataReader);
+                mckinematicCuts = new InclusiveKinematicCuts(mcReader);
+                break;
+            case 1:
+                kinematicCuts = new SingleHadronKinematicCuts(dataReader);
+                mckinematicCuts = new SingleHadronKinematicCuts(mcReader);
+                break;
+            case 2:
+                kinematicCuts = new B2BDihadronKinematicCuts(dataReader);
+                mckinematicCuts = new B2BDihadronKinematicCuts(mcReader);
+                break;
+            case 3:
+                kinematicCuts = new DihadronKinematicCuts(dataReader);
+                mckinematicCuts = new DihadronKinematicCuts(mcReader);
+                break;
+        }
         if (branchName == "runnum") {
           // Declare TTreeReaderValue for integers for dataReader
           TTreeReaderValue<int> dataVal(dataReader, branchName.c_str());
           // Fill histogram for dataReader
-          FillHistogram<int>(dataReader, branchName, dataHist, dataKinematicCuts, 0, false);
+          FillHistogram<int>(dataReader, branchName, dataHist, *kinematicCuts, 0, false);
           // Check if the "runnum" branch exists in mcReader
           if (mcReader.GetTree()->GetBranch(branchName.c_str())) {
               // "runnum" branch exists, declare TTreeReaderValue for mcReader
               TTreeReaderValue<int> mcVal(mcReader, branchName.c_str());
               // Fill histogram for mcReader
-              FillHistogram<int>(mcReader, branchName, mcHist, mcKinematicCuts, 0, true);
+              FillHistogram<int>(mcReader, branchName, mcHist, *mckinematicCuts, 0, true);
           } else {
               // "runnum" branch does not exist, use default value
               int defaultRunNum = 11;
@@ -121,8 +139,8 @@ void createIntegratedKinematicPlots() {
           TTreeReaderValue<double> dataVal(dataReader, branchName.c_str());
           TTreeReaderValue<double> mcVal(mcReader, branchName.c_str());
           // Fill histograms for double values
-          FillHistogram<double>(dataReader, branchName, dataHist, dataKinematicCuts, 0, false);
-          FillHistogram<double>(mcReader, branchName, mcHist, mcKinematicCuts, 0, true);
+          FillHistogram<double>(dataReader, branchName, dataHist, *KinematicCuts, 0, false);
+          FillHistogram<double>(mcReader, branchName, mcHist, *mckinematicCuts, 0, true);
         }
 
         // Normalize the histograms
@@ -259,21 +277,25 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 mcHist->SetLineColor(kRed);
 
                 BaseKinematicCuts* kinematicCuts = nullptr;
+                BaseKinematicCuts* mckinematicCuts = nullptr;
                 switch (channel) {
                     case 0:
                         kinematicCuts = new InclusiveKinematicCuts(dataReader);
+                        mckinematicCuts = new InclusiveKinematicCuts(mcReader);
                         break;
                     case 1:
                         kinematicCuts = new SingleHadronKinematicCuts(dataReader);
+                        mckinematicCuts = new SingleHadronKinematicCuts(mcReader);
                         break;
                     case 2:
                         kinematicCuts = new B2BDihadronKinematicCuts(dataReader);
+                        mckinematicCuts = new B2BDihadronKinematicCuts(mcReader);
                         break;
                     case 3:
                         kinematicCuts = new DihadronKinematicCuts(dataReader);
+                        mckinematicCuts = new DihadronKinematicCuts(mcReader);
                         break;
                 }
-                KinematicCuts mcKinematicCuts(mcReader);
 
                 if (branchName == "runnum") {
                   TTreeReaderValue<int> dataVal(dataReader, branchName.c_str());
@@ -283,7 +305,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                       TTreeReaderValue<int> mcVal(mcReader, branchName.c_str());
                       TTreeReaderValue<double> mcBinVariable(mcReader, branchVariable.c_str());
                       FillHistogram<int>(dataReader, branchName, dataHist, *kinematicCuts, fitIndex, 0);
-                      FillHistogram<int>(mcReader, branchName, mcHist, mcKinematicCuts, fitIndex, 1);
+                      FillHistogram<int>(mcReader, branchName, mcHist, *mcKinematicCuts, fitIndex, 1);
                   } else {
                       int defaultRunNum = 11;
                       FillHistogram<int>(dataReader, branchName, dataHist, *kinematicCuts, fitIndex, 0);
@@ -295,7 +317,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                   TTreeReaderValue<double> mcVal(mcReader, branchName.c_str());
                   TTreeReaderValue<double> mcBinVariable(mcReader, branchVariable.c_str());
                   FillHistogram<double>(dataReader, branchName, dataHist, *kinematicCuts, fitIndex, 0);
-                  FillHistogram<double>(mcReader, branchName, mcHist, mcKinematicCuts, fitIndex, 1);
+                  FillHistogram<double>(mcReader, branchName, mcHist, *mcKinematicCuts, fitIndex, 1);
                 }
 
                 // Normalize the histograms
