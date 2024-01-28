@@ -5,6 +5,9 @@
 #include <TLegend.h>
 #include <TStyle.h>
 #include "KinematicCuts.h"
+#include "inclusiveKinematicCuts.h"
+#include "b2bDihadronKinematicCuts.h"
+#include "dihadronKinematicCuts.h"
 #include "histConfigs.h"
 
 extern std::map<std::string, HistConfig> histConfigs;
