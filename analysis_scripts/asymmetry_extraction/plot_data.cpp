@@ -139,7 +139,7 @@ void createIntegratedKinematicPlots() {
           TTreeReaderValue<double> dataVal(dataReader, branchName.c_str());
           TTreeReaderValue<double> mcVal(mcReader, branchName.c_str());
           // Fill histograms for double values
-          FillHistogram<double>(dataReader, branchName, dataHist, *KinematicCuts, 0, false);
+          FillHistogram<double>(dataReader, branchName, dataHist, *kinematicCuts, 0, false);
           FillHistogram<double>(mcReader, branchName, mcHist, *mckinematicCuts, 0, true);
         }
 
@@ -305,7 +305,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                       TTreeReaderValue<int> mcVal(mcReader, branchName.c_str());
                       TTreeReaderValue<double> mcBinVariable(mcReader, branchVariable.c_str());
                       FillHistogram<int>(dataReader, branchName, dataHist, *kinematicCuts, fitIndex, 0);
-                      FillHistogram<int>(mcReader, branchName, mcHist, *mcKinematicCuts, fitIndex, 1);
+                      FillHistogram<int>(mcReader, branchName, mcHist, *mckinematicCuts, fitIndex, 1);
                   } else {
                       int defaultRunNum = 11;
                       FillHistogram<int>(dataReader, branchName, dataHist, *kinematicCuts, fitIndex, 0);
@@ -317,7 +317,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                   TTreeReaderValue<double> mcVal(mcReader, branchName.c_str());
                   TTreeReaderValue<double> mcBinVariable(mcReader, branchVariable.c_str());
                   FillHistogram<double>(dataReader, branchName, dataHist, *kinematicCuts, fitIndex, 0);
-                  FillHistogram<double>(mcReader, branchName, mcHist, *mcKinematicCuts, fitIndex, 1);
+                  FillHistogram<double>(mcReader, branchName, mcHist, *mckinematicCuts, fitIndex, 1);
                 }
 
                 // Normalize the histograms
