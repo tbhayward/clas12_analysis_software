@@ -98,26 +98,6 @@ void createIntegratedKinematicPlots() {
         dataHist->GetYaxis()->SetTitleOffset(1.6);
         mcHist->GetYaxis()->SetTitleOffset(1.6);
 
-        BaseKinematicCuts* kinematicCuts = nullptr;
-        BaseKinematicCuts* mckinematicCuts = nullptr;
-        switch (channel) {
-            case 0:
-                kinematicCuts = new InclusiveKinematicCuts(dataReader);
-                mckinematicCuts = new InclusiveKinematicCuts(mcReader);
-                break;
-            case 1:
-                kinematicCuts = new SingleHadronKinematicCuts(dataReader);
-                mckinematicCuts = new SingleHadronKinematicCuts(mcReader);
-                break;
-            case 2:
-                kinematicCuts = new B2BDihadronKinematicCuts(dataReader);
-                mckinematicCuts = new B2BDihadronKinematicCuts(mcReader);
-                break;
-            case 3:
-                kinematicCuts = new DihadronKinematicCuts(dataReader);
-                mckinematicCuts = new DihadronKinematicCuts(mcReader);
-                break;
-        }
         if (branchName == "runnum") {
           // Declare TTreeReaderValue for integers for dataReader
           TTreeReaderValue<int> dataVal(dataReader, branchName.c_str());
@@ -275,27 +255,6 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
 
                 dataHist->SetLineColor(kBlack);
                 mcHist->SetLineColor(kRed);
-
-                BaseKinematicCuts* kinematicCuts = nullptr;
-                BaseKinematicCuts* mckinematicCuts = nullptr;
-                switch (channel) {
-                    case 0:
-                        kinematicCuts = new InclusiveKinematicCuts(dataReader);
-                        mckinematicCuts = new InclusiveKinematicCuts(mcReader);
-                        break;
-                    case 1:
-                        kinematicCuts = new SingleHadronKinematicCuts(dataReader);
-                        mckinematicCuts = new SingleHadronKinematicCuts(mcReader);
-                        break;
-                    case 2:
-                        kinematicCuts = new B2BDihadronKinematicCuts(dataReader);
-                        mckinematicCuts = new B2BDihadronKinematicCuts(mcReader);
-                        break;
-                    case 3:
-                        kinematicCuts = new DihadronKinematicCuts(dataReader);
-                        mckinematicCuts = new DihadronKinematicCuts(mcReader);
-                        break;
-                }
 
                 if (branchName == "runnum") {
                   TTreeReaderValue<int> dataVal(dataReader, branchName.c_str());

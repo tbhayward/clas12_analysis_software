@@ -54,6 +54,9 @@ using namespace std;
 TTreeReader dataReader;  // Declare as global variable
 TTreeReader mcReader;  // Declare as global variable
 
+BaseKinematicCuts* kinematicCuts = nullptr;
+BaseKinematicCuts* mckinematicCuts = nullptr;
+
 int currentFits = 0;
 size_t currentBin = 0;
 int n = 1;
@@ -107,10 +110,9 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
   TTreeReaderValue<double> DepW(dataReader, "DepW");
   TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
 
-  KinematicCuts data_kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
   while (dataReader.Next()) {
     // Apply kinematic cuts (this function will need to be adapted)
-    bool passedKinematicCuts = data_kinematicCuts.applyCuts(currentFits, false);
+    bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
     // Check if the currentVariable is within the desired range
     if (*currentVariable >= allBins[currentFits][currentBin] && 
           *currentVariable < allBins[currentFits][currentBin + 1] && passedKinematicCuts) {
@@ -164,10 +166,9 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, In
   TTreeReaderValue<double> mc_DepW(mcReader, "DepW");
   TTreeReaderValue<double> mc_currentVariable(mcReader, propertyNames[currentFits].c_str());
 
-  KinematicCuts mc_kinematicCuts(mcReader);  // Create an instance of the KinematicCuts class
   while (mcReader.Next()) {
     // Apply kinematic cuts (this function will need to be adapted)
-    bool passedKinematicCuts = mc_kinematicCuts.applyCuts(currentFits, true);
+    bool passedKinematicCuts = mckinematicCuts->applyCuts(currentFits, true);
     // Check if the currentVariable is within the desired range
     if (*mc_currentVariable >= allBins[currentFits][currentBin] && 
           *mc_currentVariable < allBins[currentFits][currentBin + 1] && passedKinematicCuts) {
@@ -285,12 +286,10 @@ void performMLMFits(const char* output_file, const char* kinematic_file,
     // Calculate the mean values of the current variable 
     double sumVariable = 0;
     double numEvents = 0;
-    KinematicCuts data_kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
     TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
     while (dataReader.Next()) {
       // Apply kinematic cuts (this function will need to be adapted)
-      bool passedKinematicCuts = data_kinematicCuts.applyCuts(currentFits, false);
-      // bool passedKinematicCuts = true;
+      bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
       // Check if the currentVariable is within the desired range
       if (*currentVariable >= allBins[currentFits][i] && 
         *currentVariable < allBins[currentFits][i + 1] && passedKinematicCuts) {
@@ -525,12 +524,11 @@ TH1D* createHistogramForBin(const char* histName, int binIndex,
   // TTreeReaderValue<double> phi(dataReader, "phi23");
   TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
 
-  KinematicCuts kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
   // Counter to limit the number of processed entries
   while (dataReader.Next()) {
 
     // Apply kinematic cuts (this function will need to be adapted)
-    bool passedKinematicCuts = kinematicCuts.applyCuts(currentFits, false);
+    bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
     // bool passedKinematicCuts = true;
     // Check if the currentVariable is within the desired range
     if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
@@ -705,10 +703,9 @@ void performChi2Fits(const char* output_file, const char* kinematic_file,
     double varMin = allBins[currentFits][i];
     double varMax = allBins[currentFits][i + 1];
     int counter = 0;
-    KinematicCuts kinematicCuts(dataReader);  // Create an instance of the KinematicCuts class
     while (dataReader.Next()) {
       // Apply kinematic cuts (this function will need to be adapted)
-      bool passedKinematicCuts = kinematicCuts.applyCuts(currentFits, false);
+      bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
       // Check if the currentVariable is within the desired range
       if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
         // sum the kinematic variable values
@@ -920,6 +917,26 @@ int main(int argc, char *argv[]) {
 
   cout << "Using channel: " << channel << endl << endl;
 
+  // Allocate kinematicCuts and mckinematicCuts based on the channel
+  switch (channel) {
+      case 0:
+          kinematicCuts = new InclusiveKinematicCuts(dataReader);
+          mckinematicCuts = new InclusiveKinematicCuts(mcReader);
+          break;
+      case 1:
+          kinematicCuts = new SingleHadronKinematicCuts(dataReader);
+          mckinematicCuts = new SingleHadronKinematicCuts(mcReader);
+          break;
+      case 2:
+          kinematicCuts = new B2BDihadronKinematicCuts(dataReader);
+          mckinematicCuts = new B2BDihadronKinematicCuts(mcReader);
+          break;
+      case 3:
+          kinematicCuts = new DihadronKinematicCuts(dataReader);
+          mckinematicCuts = new DihadronKinematicCuts(mcReader);
+          break;
+  }
+
   cout << endl << endl;
   std::string inputFileName(argv[2]);
   std::size_t found = inputFileName.find_last_of("/\\");
@@ -1061,6 +1078,10 @@ int main(int argc, char *argv[]) {
 
   mc_file->Close();
   delete mc_file;
+  delete kinematicCuts;
+  delete mckinematicCuts;
+  kinematicCuts = nullptr;
+  mckinematicCuts = nullptr;
 
   // Stop the timer
   auto end_time = std::chrono::high_resolution_clock::now();

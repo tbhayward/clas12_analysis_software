@@ -4,12 +4,19 @@
 #include <string>
 #include <vector>
 #include "histConfigs.h"
+#include "BaseKinematicCuts.h"
+#include "InclusiveKinematicCuts.h"
+#include "SingleHadronKinematicCuts.h"
+#include "B2BDihadronKinematicCuts.h"
+#include "DihadronKinematicCuts.h"
 
 extern std::map<std::string, std::vector<double>> bins_map;
 extern std::vector<std::vector<double>> allBins;
 extern std::vector<std::string> binNames;
 extern std::vector<std::string> propertyNames;
 extern std::vector<std::string> variable_names;
+extern BaseKinematicCuts* kinematicCuts;
+extern BaseKinematicCuts* mckinematicCuts;
 extern double cmm;
 extern double cpm;
 extern double cmp;
