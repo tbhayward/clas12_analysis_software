@@ -1055,26 +1055,26 @@ int main(int argc, char *argv[]) {
   currentFits=0;
   dataReader.Restart(); mcReader.Restart();
 
-  for (size_t i = 0; i < allBins.size(); ++i) {
-    cout << "-- Beginning kinematic fits." << endl;
-    for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
-      if (asymmetry > 0 && cpp == 1) {
-        cout << "Skipping TSA and DSA for unpolarized target data." << endl;
-        continue;
-      }
-      switch (asymmetry) {
-        case 0: cout << "    Beginning chi2 BSA." << endl; break;
-        case 1: cout << "    Beginning chi2 TSA." << endl; break;
-        case 2: cout << "    Beginning chi2 DSA." << endl; break;
-      }
-      performChi2Fits(output_file.c_str(), kinematic_file.c_str(), binNames[i], asymmetry);
-    }
-    cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    // performMLMFits(output_file.c_str(), kinematic_file.c_str(), binNames[i]);
-    cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
-    cout << endl << endl;
-    currentFits++;
-  }
+  // for (size_t i = 0; i < allBins.size(); ++i) {
+  //   cout << "-- Beginning kinematic fits." << endl;
+  //   for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
+  //     if (asymmetry > 0 && cpp == 1) {
+  //       cout << "Skipping TSA and DSA for unpolarized target data." << endl;
+  //       continue;
+  //     }
+  //     switch (asymmetry) {
+  //       case 0: cout << "    Beginning chi2 BSA." << endl; break;
+  //       case 1: cout << "    Beginning chi2 TSA." << endl; break;
+  //       case 2: cout << "    Beginning chi2 DSA." << endl; break;
+  //     }
+  //     performChi2Fits(output_file.c_str(), kinematic_file.c_str(), binNames[i], asymmetry);
+  //   }
+  //   cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
+  //   // performMLMFits(output_file.c_str(), kinematic_file.c_str(), binNames[i]);
+  //   cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
+  //   cout << endl << endl;
+  //   currentFits++;
+  // }
 
   mc_file->Close();
   delete mc_file;

@@ -352,6 +352,22 @@ void createCorrelationPlotsforrunnum() {
         }
     }
 
+    // Initialize min and max runnum variables
+    int minRunNum = std::numeric_limits<int>::max();
+    int maxRunNum = std::numeric_limits<int>::min();
+
+    // Loop over the dataReader to find the min and max runnum values
+    TTreeReaderValue<int> runnumValue(dataReader, "runnum");
+    while (dataReader.Next()) {
+        minRunNum = std::min(minRunNum, *runnumValue);
+        maxRunNum = std::max(maxRunNum, *runnumValue);
+    }
+    dataReader.Restart(); // Restart the dataReader after finding min and max
+
+    // Adjust min and max for the plot range
+    minRunNum -= 1;
+    maxRunNum += 1;
+
     // Generate all possible pairs of branches to plot
     for (size_t i = 0; i < branchNames.size(); ++i) {
         const std::string& branchX = "runnum";
