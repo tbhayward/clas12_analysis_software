@@ -483,7 +483,6 @@ void createCorrelationPlots() {
             hist->GetYaxis()->SetTitleOffset(1.6);
 
             // Loop over dataReader to fill the histogram
-            KinematicCuts kinematicCuts(dataReader);
             while (dataReader.Next()) {
                 bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
                 if (passedKinematicCuts) {
