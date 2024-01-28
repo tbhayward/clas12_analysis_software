@@ -62,7 +62,7 @@ double cmm = 0;
 double cpm = 0; 
 double cmp = 0; 
 double cpp = 0; 
-int channel = 1;
+extern int channel;
 std::string mlmPrefix = "xF";
 
 // Negative log-likelihood function
@@ -898,9 +898,27 @@ int main(int argc, char *argv[]) {
   // Check for correct number of command line arguments
   if (argc < 3) {
       std::cout << "Usage: " << argv[0];
-      std::cout << " <data_root_file> <mc_root_file>" << std::endl;
+      std::cout << " <data_root_file> <mc_root_file> [channel]" << std::endl;
       return 1;
   }
+
+  // Set default channel to 1
+  channel = 1;  // Default value
+  if (argc >= 4) {
+      try {
+          channel = std::stoi(argv[3]);
+          if (channel < 0 || channel > 3) {
+              cout << "Invalid channel specified. Defaulting to single hadron." << endl;
+              channel = 1;
+          }
+      } catch (const std::exception& e) {
+          cout << "Error parsing channel. Defaulting to channel single hadron." << endl;
+      }
+  } else {
+      cout << "No channel specified. Defaulting to channel single hadron." << endl;
+  }
+
+  cout << "Using channel: " << channel << endl << endl;
 
   cout << endl << endl;
   std::string inputFileName(argv[2]);
@@ -1004,11 +1022,6 @@ int main(int argc, char *argv[]) {
   load_run_info_from_csv("imports/clas12_run_info.csv");
   cout<< endl << endl <<"-- Loaded information from run_info_rgc.csv" << endl;
   cout << "Found " << run_info_list.size() << " runs." << endl;
-  // cpp = 0; // total accumulated charge of positive beam - positive target
-  // cpm = 0; // total accumulated charge of positive beam - negative target
-  // cmp = 0; // total accumulated charge of negative beam - positive target
-  // cmm = 0; // total accumulated charge of negative beam - negative target
-  // total_charge_carbon = 0; // total accumulated charge of carbon target
   // charge_acuumulation determines the total charges from the runs in supplied dataFile
   // by comparing to master list of CLAS12 runs 
   charge_accumulation(dataReader, run_info_list);
