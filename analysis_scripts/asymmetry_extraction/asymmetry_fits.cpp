@@ -124,7 +124,7 @@ double TSA_b2b_dihadron(double* x, double* y, double* par) {
   // Calculate and return the value of the function for the given phi and parameters 
   return AUL_offset + AUL_sinphi1*sin(phi1) + AUL_sinphi2*sin(phi2) +
     AUL_sin2phi1*sin(2*phi1) + AUL_sin2phi2*sin(2*phi2) +
-    + ALU_sinDeltaphi*sin(phi1 - phi2) + ALU_sinSumphi*sin(phi1 + phi2);
+    + AUL_sinDeltaphi*sin(phi1 - phi2) + AUL_sinSumphi*sin(phi1 + phi2);
 }
 
 double BSA_dihadron(double* x, double* y, double* z, double* par) {
