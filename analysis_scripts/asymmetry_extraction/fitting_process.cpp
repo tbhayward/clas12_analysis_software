@@ -1,4 +1,21 @@
-#include "common_vars.h" // common vars
+// tbhayward libraries
+#include "common_vars.h"  // Include the common header
+#include "load_bins_from_csv.h"
+#include "load_run_info_from_csv.h"
+#include "dilution_factor.h"
+#include "asymmetry_fits.h"
+#include "BaseKinematicCuts.h"
+#include "KinematicCuts.h"
+#include "InclusiveKinematicCuts.h"
+#include "SingleHadronKinematicCuts.h"
+#include "B2BDihadronKinematicCuts.h"
+#include "DihadronKinematicCuts.h"
+#include "formatLabelName.h"
+#include "readChi2Fits.h"
+#include "histConfigs.h"
+#include "charge_accumulation.h"
+#include "plot_data.h"
+#include "modifyTree.h"
 #include "fitting_process.h" // Include your header file
 // Standard C++ Library Headers
 #include <algorithm>
