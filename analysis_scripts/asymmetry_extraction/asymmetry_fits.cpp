@@ -5,15 +5,15 @@
 /******** Legendre Polynomial ********/
 double Legendre_P(int ell, int m, float theta) {
   if (ell == 0 && m == 0) return 1;
-  if (ell == 1 && m == 0) return TMath::Cos(theta);
-  if ((ell == 1 && m == 1) || (ell == 1 && m == -1)) return TMath::Sin(theta);
-  if (ell == 2 && m == 0) return 0.5*(3*TMath::Cos(theta)*TMath::Cos(theta)-1);
-  if ((ell == 2 && m == 1) || (ell == 2 && m == -1)) return TMath::Sin(2*theta);
-  if ((ell == 2 && m == 2) || (ell == 2 && m == -2)) return TMath::Sin(theta)*TMath::Sin(theta);
-  if (ell == 3 && m == 0) return 0.5*TMath::Cos(theta)*(5*TMath::Cos(theta)*TMath::Cos(theta)-3);
-  if ((ell == 3 && m == 1) || (ell == 3 && m == -1)) return (5*TMath::Cos(theta)*TMath::Cos(theta)-1)*TMath::Sin(theta);
-  if ((ell == 3 && m == 2) || (ell == 3 && m == -2)) return TMath::Sin(2*theta)*TMath::Sin(theta);
-  if ((ell == 3 && m == 3) || (ell == 3 && m == -3)) return TMath::Sin(theta)*TMath::Sin(theta)*TMath::Sin(theta);
+  if (ell == 1 && m == 0) return cos(theta);
+  if ((ell == 1 && m == 1) || (ell == 1 && m == -1)) return sin(theta);
+  if (ell == 2 && m == 0) return 0.5*(3*cos(theta)*cos(theta)-1);
+  if ((ell == 2 && m == 1) || (ell == 2 && m == -1)) return sin(2*theta);
+  if ((ell == 2 && m == 2) || (ell == 2 && m == -2)) return sin(theta)*sin(theta);
+  if (ell == 3 && m == 0) return 0.5*cos(theta)*(5*cos(theta)*cos(theta)-3);
+  if ((ell == 3 && m == 1) || (ell == 3 && m == -1)) return (5*cos(theta)*cos(theta)-1)*sin(theta);
+  if ((ell == 3 && m == 2) || (ell == 3 && m == -2)) return sin(2*theta)*sin(theta);
+  if ((ell == 3 && m == 3) || (ell == 3 && m == -3)) return sin(theta)*sin(theta)*sin(theta);
   return 0;
 }
 
