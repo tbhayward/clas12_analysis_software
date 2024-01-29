@@ -45,6 +45,8 @@ std::string formatLabelName(const std::string& original) {
         {"Mx23", "M_{x23} (GeV)"},
         // {"Mx2", "M_{x}^{2} (GeV)"},
         {"p_p", "p_{p} (GeV)"},
+        {"p1_p", "p1_{p} (GeV)"},
+        {"p2_p", "p2_{p} (GeV)"},
         {"t1", "t_{1}"},
         {"t2", "t_{2}"},
         {"t3", "t_{3}"},
@@ -64,8 +66,11 @@ std::string formatLabelName(const std::string& original) {
         {"zeta12", "#zeta_{12}"},
         {"zeta13", "#zeta_{13}"},
         {"zeta23", "#zeta_{23}"},
-        {"vz_e", "v_{z_{e}}"},
-        {"vz_p", "v_{z_{p}}"},
+        {"vz_e", "v_{z_{e}} (cm)"},
+        {"vz_p", "v_{z_{p}} (cm)"},
+        {"vz_p1", "v_{z_{p1}} (cm)"},
+        {"vz_p2", "v_{z_{p2}} (cm)"},
+        {"vz_p3", "v_{z_{p3}} (cm)"}
     };
   
     if (specialLabels.find(original) != specialLabels.end()) {
