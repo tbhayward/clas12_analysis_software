@@ -52,6 +52,287 @@
 // Using namespace declaration
 using namespace std;
 
+/******************** INCLUSIVE DIS CASE ********************/
+
+std::tuple<int, int, int, int, double, double, double> getInclusiveCounts(int binIndex, 
+  const std::string& prefix) {
+
+  // Determine the variable range for the specified bin
+  double varMin = allBins[currentFits][binIndex];
+  double varMax = allBins[currentFits][binIndex + 1];
+
+  // Create positive and negative helicity histograms
+  int npp = 0; 
+  int npm = 0;
+  int nmp = 0;
+  int nmm = 0;
+
+  // Initialize variables to store the sums and event counts
+  double sumVariable = 0;
+  double numEvents = 0;
+  // Variables to calculate the mean polarization
+  double sumPol = 0; // sum of the beam polarization
+  double sumTargetPosPol = 0; // sum of the target positive polarization
+  double sumTargetNegPol = 0; // sum of the target negative polarization
+  int numEventsPosTarget = 0;
+  int numEventsNegTarget = 0;
+
+  TTreeReaderValue<int> runnum(dataReader, "runnum");
+  TTreeReaderValue<int> evnum(dataReader, "evnum");
+  TTreeReaderValue<int> helicity(dataReader, "helicity");
+  TTreeReaderValue<double> beam_pol(dataReader, "beam_pol");
+  TTreeReaderValue<double> target_pol(dataReader, "target_pol");
+  TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
+
+  // Counter to limit the number of processed entries
+  while (dataReader.Next()) {
+
+    // Apply kinematic cuts (this function will need to be adapted)
+    bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
+    // bool passedKinematicCuts = true;
+    // Check if the currentVariable is within the desired range
+    if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
+      sumVariable += *currentVariable;
+
+      if (*helicity > 0 && *target_pol < 0) { npm++; } 
+      else if (*helicity < 0 && *target_pol > 0) {  nmp++; }
+
+      if (*helicity > 0 && (*target_pol > 0 || *runnum < 11571) ) { npp++; } 
+      else if (*helicity < 0 && (*target_pol < 0 || *runnum < 11571) ) {  nmm++; } 
+      // this structure allows the same script to run for both polarized and unpolarized targets
+      // if it is an RGC run with a polarized target (runnum > 11571) then we assign all four
+      // combinations, if it is an earlier experiment then we only assign PosPos and NegNeg
+      // and set the Ptp and Ptm below to 1, this allows for a regular BSA calculation
+
+
+      // Accumulate polarization and event count for mean polarization calculation
+      sumPol += *beam_pol;
+      if (*target_pol > 0) {
+        sumTargetPosPol += *target_pol;
+        numEventsPosTarget++;
+      } else if (*target_pol < 0) {
+        sumTargetNegPol += *target_pol;
+        numEventsNegTarget++;
+      }
+      numEvents++; // Increment the numEvents
+    }
+  }
+  dataReader.Restart();  // Reset the TTreeReader at the end of the function
+
+  // Calculate the mean polarization
+  double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
+  double meanPol = sumPol / numEvents; // mean beam polarization for data 
+  double Ptp = numEventsPosTarget > 0 ? sumTargetPosPol / numEventsPosTarget : 1;
+  double Ptm = numEventsNegTarget > 0 ? -sumTargetNegPol / numEventsNegTarget : 1;
+  // the negative sign here is correct; RGC lists the polarizations with signs to tell which is 
+  // which but the polarization really should just be "percent of polarized nucleii"
+  // the sign gives the helicity
+
+  return std::make_tuple(npp, npm, nmp, nmm, meanPol, Ptp, Ptm);
+}
+
+void performChi2Fits_inclusive(const char* output_file, const char* kinematic_file,
+  const std::string& prefix, int asymmetry_index) {
+
+  // Initialize string streams to store the results for each bin
+  std::ostringstream chi2FitsAStream;
+
+  // Initialize string streams to store the mean variables for each bin
+  std::ostringstream meanVariablesStream;
+  meanVariablesStream << "\\begin{table}[h]" << endl;
+  meanVariablesStream << "\\centering" << endl;
+  meanVariablesStream << "\\begin{tabular}{|c|c|c|c|c|c|c|} \\hline" << endl;
+  meanVariablesStream << "Bin & $<Q^2>$ & $<W>$ & $<x_B>$ & $<y>$ & $<t>$ &";
+  meanVariablesStream << "$<t_{\\text{min}}>$\\\\ \\hline" << endl; 
+
+  // Create a new TF1 object called fitFunction representing the function to fit
+  // and create string stream prefix depending on current asymmetry we're fitting
+  TF1* fitFunction;
+  switch (asymmetry_index) {
+    case 0: // beam-spin asymmetry
+      chi2FitsAStream << prefix << "chi2FitsALUoffset = {";
+      break;
+    case 1: // target-spin asymmetry
+      chi2FitsAStream << prefix << "chi2FitsAULoffset = {";
+      break;
+    case 2: // double-spin asymmetry
+      chi2FitsAStream << prefix << "chi2FitsALL = {";
+      break;
+    default:
+      cout << "Invalid asymmetry_index! Using default function form of BSA." << endl;
+  }
+
+  // Determine the number of bins
+  size_t numBins = allBins[currentFits].size() - 1;
+
+  // Loop over each bin
+  for (size_t i = 0; i < numBins; ++i) {
+    cout << "Beginning chi2 fit for " << binNames[currentFits]
+      << " bin " << i << ". ";
+    char histName[32];
+    snprintf(histName, sizeof(histName), "hist_%zu", i);
+
+    // Get counts for the current bin
+    auto [npp, npm, nmp, nmm, meanPol, Ptp, Ptm] = getInclusiveCounts(i, prefix);
+    // TH1D* hist = getForBin_inclusive(histName, i, prefix, asymmetry_index);
+    // Fit the histogram using the fitFunction and get the fit result
+    hist->Fit(fitFunction, "QS");
+
+    // Initialize variables to store the sums and event counts
+    double sumVariable = 0;
+    double numEvents = 0;
+    // Variables to calculate the mean depolarization factor
+    double sumDepA = 0; double sumDepB = 0; 
+    double sumDepC = 0; double sumDepV = 0; double sumDepW = 0;
+
+    // Variables to calculate the mean kinematics in each bin
+    double sumQ2 = 0; double sumW = 0; double sumx = 0; double sumy = 0;
+    double sumt = 0; double sumtmin = 0;
+
+    // Declare reader locations
+    TTreeReaderValue<int> runnum(dataReader, "runnum");
+    TTreeReaderValue<int> evnum(dataReader, "evnum");
+    TTreeReaderValue<double> Q2(dataReader, "Q2");
+    TTreeReaderValue<double> W(dataReader, "W");
+    TTreeReaderValue<double> x(dataReader, "x");
+    TTreeReaderValue<double> y(dataReader, "y");
+    TTreeReaderValue<double> t(dataReader, "t");
+    TTreeReaderValue<double> tmin(dataReader, "tmin");
+    TTreeReaderValue<double> DepA(dataReader, "DepA");
+    TTreeReaderValue<double> DepB(dataReader, "DepB");
+    TTreeReaderValue<double> DepC(dataReader, "DepC");
+    TTreeReaderValue<double> DepV(dataReader, "DepV");
+    TTreeReaderValue<double> DepW(dataReader, "DepW");
+    TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
+
+    // Determine the variable range for the specified bin
+    double varMin = allBins[currentFits][i];
+    double varMax = allBins[currentFits][i + 1];
+    int counter = 0;
+    while (dataReader.Next()) {
+      // Apply kinematic cuts (this function will need to be adapted)
+      bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
+      // Check if the currentVariable is within the desired range
+      if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
+        // sum the kinematic variable values
+        sumVariable += *currentVariable;
+        sumQ2 += *Q2;
+        sumW += *W;
+        sumx += *x;
+        sumy += *y;
+        sumt += *t;
+        sumtmin += *tmin;
+
+        // sum the depolarization values
+        sumDepA += *DepA;
+        sumDepB += *DepB;
+        sumDepC += *DepC;
+        sumDepV += *DepV;
+        sumDepW += *DepW;
+
+        numEvents += 1; 
+        counter++;
+      }
+
+    }
+    dataReader.Restart();  // Reset the TTreeReader at the end of the function
+    cout << "Found " << numEvents << " events in this bin." << endl;
+
+    // Calculate the mean values for the variable and depolarization factors
+    double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
+    double meanDepA = numEvents > 0 ? sumDepA / numEvents : 0.0;
+    double meanDepB = numEvents > 0 ? sumDepB / numEvents : 0.0;
+    double meanDepC = numEvents > 0 ? sumDepC / numEvents : 0.0;
+    double meanDepV = numEvents > 0 ? sumDepV / numEvents : 0.0;
+    double meanDepW = numEvents > 0 ? sumDepW / numEvents : 0.0;
+
+    // Calculate the mean values for the kinematic variables
+    double meanQ2 = numEvents > 0 ? sumQ2 / numEvents : 0.0;
+    double meanW = numEvents > 0 ? sumW / numEvents : 0.0;
+    double meanx = numEvents > 0 ? sumx / numEvents : 0.0;
+    double meany = numEvents > 0 ? sumy / numEvents : 0.0;
+    double meant = numEvents > 0 ? sumt / numEvents : 0.0;
+    double meantmin = numEvents > 0 ? sumtmin / numEvents : 0.0;
+
+
+    switch (asymmetry_index) {
+      case 0: {// beam-spin asymmetry
+        // Get the fitted parameters and their errors
+        double ALU_offset = asymmetry_value_calculation(currentVariable, prefix, 
+          Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
+        double ALU_offset_error = asymmetry_error_calculation(currentVariable, prefix, 
+          Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
+        ALU_sinphi = (meanDepA/meanDepW)*ALU_sinphi;
+        ALU_sinphi_error = (meanDepA/meanDepW)*ALU_sinphi_error;
+        chi2FitsAStream<<"{"<<meanVariable<<", "<< ALU_offset << ", " << ALU_offset_error <<"}";
+        if (i < numBins - 1) {
+            chi2FitsAStream << ", "; 
+        }
+        break;
+      }
+      case 1: {// target-spin asymmetry
+        // Get the fitted parameters and their errors
+        double AUL_offset = asymmetry_value_calculation(currentVariable, prefix, 
+          Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
+        double AUL_offset_error = asymmetry_error_calculation(currentVariable, prefix, 
+          Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
+        AUL_sinphi = (meanDepA/meanDepV)*AUL_sinphi;
+        AUL_sinphi_error = (meanDepA/meanDepV)*AUL_sinphi_error;
+        chi2FitsAStream<<"{"<<meanVariable<<", "<< AUL_offset << ", " << AUL_offset_error <<"}";
+        if (i < numBins - 1) {
+            chi2FitsAStream << ", "; 
+        }
+        break;
+      }
+      case 2: {// double-spin asymmetry
+        // Get the fitted parameters and their errors
+        double ALL = asymmetry_value_calculation(currentVariable, prefix, 
+          Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
+        double ALL_error = asymmetry_error_calculation(currentVariable, prefix, 
+          Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
+        ALL = (meanDepA/meanDepC)*ALL;
+        ALL_error = (meanDepA/meanDepC)*ALL_error;
+        chi2FitsAStream<<"{"<<meanVariable<<", "<< ALL << ", " << ALL_error <<"}";
+        if (i < numBins - 1) {
+            chi2FitsAStream << ", "; 
+        }
+        break;
+      }
+    }
+
+    delete hist;
+
+    // outputs of mean kinematic variables
+    meanVariablesStream << std::fixed << std::setprecision(3); // Set precision to 3 digits 
+    meanVariablesStream << (i+1) << "~&~" << meanQ2 << "~&~" << meanW << "~&~" << meanx << "~&~";
+    meanVariablesStream << meany << "~&~";
+    meanVariablesStream << meant << "~&~" << meantmin; 
+    meanVariablesStream << std::string(" \\\\ \\hline ");
+  }
+
+  chi2FitsAStream << "};"; 
+
+  std::ofstream outputFile(output_file, std::ios_base::app);
+  outputFile << chi2FitsAStream.str() << std::endl;
+
+  outputFile.close();
+
+  meanVariablesStream << "\\end{tabular}\n";
+  meanVariablesStream << "\\caption{The mean kinematic variables in each of the bins ";
+  meanVariablesStream << "for the extracted $" << prefix << "$ asymmetries.}\n";
+  meanVariablesStream << "\\label{table:kinematics_" << prefix << "}\n";
+  meanVariablesStream << "\\end{table}. Values given in GeV or GeV$^2$ where appropriate.\n";
+  meanVariablesStream << endl << endl << endl;
+  if (asymmetry_index == 0) {
+    std::ofstream kinematicFile(kinematic_file, std::ios_base::app);
+    // Write the string stream content to the file
+    kinematicFile << meanVariablesStream.str() << std::endl; 
+    kinematicFile.close();
+  }
+}
+
+/******************** SINGLE HADRON CASE ********************/
+
 // Negative log-likelihood function
 void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f, 
   Double_t *par, Int_t iflag) {

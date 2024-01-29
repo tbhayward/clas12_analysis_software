@@ -2,6 +2,17 @@
 #ifndef FITTING_PROCESS_H
 #define FITTING_PROCESS_H
 
+#include <string>
+#include <Rtypes.h>  // For ROOT types like Int_t, Double_t
+#include "TH1D.h"
+#include "TF1.h"
+
+// inclusive
+std::tuple<int, int, int, int, double, double, double> getInclusiveCounts(int binIndex, 
+  const std::string& prefix);
+void calculate_inclusive(const char* output_file, const char* kinematic_file,
+  const std::string& prefix, int asymmetry_index);
+// single hadron
 void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag);
 void performMLMFits_single_hadron(const char* output_file, const char* kinematic_file, const std::string& prefix);
 void plotHistogramAndFit_single_hadron(TH1D* histogram, TF1* fitFunction, int binIndex, int asymmetryIndex, const std::string& prefix);
