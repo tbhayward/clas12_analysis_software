@@ -25,7 +25,7 @@ bool DihadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     } else if (property == "xekpkmX") {
         goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75 && *xF1 > 0 && *xF2 > 0;
     } else {
-        std::cout << "Property not detected" << std::endl;
+      std::cout << "Property, " << property << ", not detected." << std::endl;
     }
     return goodEvent;
 }
