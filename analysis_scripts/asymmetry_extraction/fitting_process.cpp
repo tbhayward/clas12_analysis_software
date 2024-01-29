@@ -171,7 +171,6 @@ void calculate_inclusive(const char* output_file, const char* kinematic_file,
 
     // Get counts for the current bin
     auto [npp, npm, nmp, nmm, meanPol, Ptp, Ptm] = getInclusiveCounts(i);
-    cout << npp << " " << npm << " " << nmp << " " << nmm << " " << meanPol << " " << Ptp << " " << Ptm << endl;
     // Initialize variables to store the sums and event counts
     double sumVariable = 0;
     double numEvents = 0;

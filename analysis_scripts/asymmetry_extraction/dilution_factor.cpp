@@ -135,7 +135,7 @@ double dilution_factor(double currentVariable, const std::string& prefix) {
   }
 
   // eX
-  if (prefix == "eX") {
+  if (prefix == "xeX") {
     return 0.111702+0.0858432*currentVariable+0.880331*std::pow(currentVariable,2)-
       0.990298*std::pow(currentVariable,3);
   }
