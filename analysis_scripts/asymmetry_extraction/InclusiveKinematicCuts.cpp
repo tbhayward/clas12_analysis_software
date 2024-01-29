@@ -20,5 +20,5 @@ bool InclusiveKinematicCuts::applyCuts(int currentFits, bool isMC) {
     } else {
       std::cout << "Property, " << property << ", not detected." << std::endl;
     }
-    return goodEvent;
+    return isMC ? goodEvent : goodEvent && *target_pol!=0;
 }
