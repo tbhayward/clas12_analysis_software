@@ -106,8 +106,8 @@ std::map<std::string, HistConfig> histConfigs = {
       {"mc_pT1", {200, 0, 1.2}},
       {"pT2", {200, 0, 1.2}},
       {"mc_pT2", {200, 0, 1.2}},
-      {"pTpT", {200, 0, 1.2}},
-      {"mc_pTpT", {200, 0, 1.2}},
+      {"pTpT", {200, 0, 1.0}},
+      {"mc_pTpT", {200, 0, 1.0}},
       {"p_theta", {200, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
       {"mc_p_theta", {200, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
       {"p1_theta", {200, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
@@ -161,8 +161,16 @@ std::map<std::string, HistConfig> histConfigs = {
       {"mc_y", {200, 0.0, 1.00}},
       {"z", {200, 0, 1}},
       {"mc_z", {200, 0, 1}},
+      {"z1", {200, 0, 1}},
+      {"mc_z1", {200, 0, 1}},
+      {"z2", {200, 0, 1}},
+      {"mc_z2", {200, 0, 1}},
       {"Mh", {200, 0, 2}},
       {"mc_Mh", {200, 0, 2}},
       {"zeta", {200, 0.0, 1}},
-      {"mc_zeta", {200, 0.0, 1}}
+      {"mc_zeta", {200, 0.0, 1}},
+      {"zeta1", {200, 0.0, 1}},
+      {"mc_zeta1", {200, 0.0, 1}},
+      {"zeta2", {200, 0.0, 1}},
+      {"mc_zet2", {200, 0.0, 1}}
     };

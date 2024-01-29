@@ -17,13 +17,15 @@ bool DihadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     string property = binNames[currentFits];
 
     if (property == "epippimX") {
-        goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75;
+        goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75 && *z1 > 0.2 && *z2 > 0.2;
     } else if (property == "xepippimX") {
-        goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75 && *xF1 > 0 && *xF2 > 0;
+        goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75 && *z1 > 0.2 && *z2 > 0.2 && 
+            *xF1 > 0 && *xF2 > 0;
     } else if (property == "ekpkmX") {
-        goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75;
+        goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75 && *z1 > 0.2 && *z2 > 0.2;
     } else if (property == "xekpkmX") {
-        goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75 && *xF1 > 0 && *xF2 > 0;
+        goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75 && *z1 > 0.2 && *z2 > 0.2 && 
+            *xF1 > 0 && *xF2 > 0;
     } else {
       std::cout << "Property, " << property << ", not detected." << std::endl;
     }

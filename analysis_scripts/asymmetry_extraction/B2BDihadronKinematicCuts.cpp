@@ -17,11 +17,11 @@ bool B2BDihadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     string property = binNames[currentFits];
 
     if (property == "epippX") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75;
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75 && *z1 > 0.2;
     } else if (property == "xepimpX") {
       goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75 && *z1 > 0.2 && *xF1 > 0 && *xF2 < 0;
     } else if (property == "epimpX") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75;
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75 && *z1 > 0.2;
     } else if (property == "xepimpX") {
       goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75 && *z1 > 0.2 && *xF1 > 0 && *xF2 < 0;;
     } else {
