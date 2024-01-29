@@ -25,7 +25,7 @@ bool B2BDihadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     } else if (property == "xepimpX") {
       goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75 && *z1 > 0.2 && *xF1 > 0 && *xF2 < 0;;
     } else {
-      std::cout << "Property not detected b2b" << std::endl;
+      std::cout << "Property, " << property << ", not detected." << std::endl;
     }
     return goodEvent;
 }
