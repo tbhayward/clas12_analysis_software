@@ -102,6 +102,12 @@ std::map<std::string, HistConfig> histConfigs = {
       {"mc_p3_phi", {200, 0, 2 * TMath::Pi()}},
       {"pT", {200, 0, 1.2}},
       {"mc_pT", {200, 0, 1.2}},
+      {"pT1", {200, 0, 1.2}},
+      {"mc_pT1", {200, 0, 1.2}},
+      {"pT2", {200, 0, 1.2}},
+      {"mc_pT2", {200, 0, 1.2}},
+      {"pTpT", {200, 0, 1.2}},
+      {"mc_pTpT", {200, 0, 1.2}},
       {"p_theta", {200, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
       {"mc_p_theta", {200, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
       {"p1_theta", {200, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
