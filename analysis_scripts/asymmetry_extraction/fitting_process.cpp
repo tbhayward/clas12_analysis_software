@@ -253,8 +253,10 @@ void calculate_inclusive(const char* output_file, const char* kinematic_file,
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
         double ALU_offset_error = asymmetry_error_calculation(*currentVariable, prefix, 
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
-        ALU_offset = (meanDepA/meanDepW)*ALU_offset;
-        ALU_offset_error = (meanDepA/meanDepW)*ALU_offset_error;
+        // ALU_offset = (meanDepA/meanDepW)*ALU_offset;
+        // ALU_offset_error = (meanDepA/meanDepW)*ALU_offset_error;
+        ALU_offset = ALU_offset;
+        ALU_offset_error = ALU_offset_error;
         chi2FitsAStream<<"{"<<meanVariable<<", "<< ALU_offset << ", " << ALU_offset_error <<"}";
         if (i < numBins - 1) {
             chi2FitsAStream << ", "; 
@@ -267,8 +269,10 @@ void calculate_inclusive(const char* output_file, const char* kinematic_file,
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
         double AUL_offset_error = asymmetry_error_calculation(*currentVariable, prefix, 
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
-        AUL_offset = (meanDepA/meanDepV)*AUL_offset;
-        AUL_offset_error = (meanDepA/meanDepV)*AUL_offset_error;
+        // AUL_offset = (meanDepA/meanDepV)*AUL_offset;
+        // AUL_offset_error = (meanDepA/meanDepV)*AUL_offset_error;
+        AUL_offset = AUL_offset;
+        AUL_offset_error = AUL_offset_error;
         chi2FitsAStream<<"{"<<meanVariable<<", "<< AUL_offset << ", " << AUL_offset_error <<"}";
         if (i < numBins - 1) {
             chi2FitsAStream << ", "; 
@@ -281,8 +285,10 @@ void calculate_inclusive(const char* output_file, const char* kinematic_file,
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
         double ALL_error = asymmetry_error_calculation(*currentVariable, prefix, 
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
-        ALL = (meanDepA/meanDepC)*ALL;
-        ALL_error = (meanDepA/meanDepC)*ALL_error;
+        // ALL = (meanDepA/meanDepC)*ALL;
+        // ALL_error = (meanDepA/meanDepC)*ALL_error;
+        ALL = ALL;
+        ALL_error = ALL_error;
         chi2FitsAStream<<"{"<<meanVariable<<", "<< ALL << ", " << ALL_error <<"}";
         if (i < numBins - 1) {
             chi2FitsAStream << ", "; 
