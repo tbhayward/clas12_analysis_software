@@ -10,7 +10,7 @@ DihadronKinematicCuts::DihadronKinematicCuts(TTreeReader& reader)
     : BaseKinematicCuts(reader), // Initialize BaseKinematicCuts
       runnum(reader, "runnum"), Q2(reader, "Q2"), W(reader, "W"), 
       x(reader, "x"), y(reader, "y"), z1(reader, "z1"), z2(reader, "z2"), 
-      xF1(reader, "xF2"), xF2(reader, "xF2"),target_pol(reader, "target_pol") {}
+      xF1(reader, "xF1"), xF2(reader, "xF2"),target_pol(reader, "target_pol") {}
 
 bool DihadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     bool goodEvent = false;
