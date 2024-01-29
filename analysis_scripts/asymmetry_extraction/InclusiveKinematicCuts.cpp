@@ -17,6 +17,8 @@ bool InclusiveKinematicCuts::applyCuts(int currentFits, bool isMC) {
 
     if (property == "eX") {
         goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75;
+    } else if (property == "xeX") {
+        goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75;
     } else {
       std::cout << "Property, " << property << ", not detected." << std::endl;
     }
