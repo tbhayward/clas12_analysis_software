@@ -254,10 +254,11 @@ int main(int argc, char *argv[]) {
         case 1: cout << "    Beginning chi2 TSA." << endl; break;
         case 2: cout << "    Beginning chi2 DSA." << endl; break;
       }
-      performChi2Fits(output_file.c_str(), kinematic_file.c_str(), binNames[i], asymmetry);
+      performChi2Fits_single_hadron(output_file.c_str(), kinematic_file.c_str(), 
+        binNames[i], asymmetry);
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    // performMLMFits(output_file.c_str(), kinematic_file.c_str(), binNames[i]);
+    // performMLMFits_single_hadron(output_file.c_str(), kinematic_file.c_str(), binNames[i]);
     cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
     currentFits++;
