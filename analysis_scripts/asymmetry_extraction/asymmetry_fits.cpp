@@ -261,7 +261,7 @@ double asymmetry_value_calculation(double currentVariable, const std::string& pr
   double Npp, double Npm, double Nmp, double Nmm, double meanPol, double Ptp, double Ptm, 
   int asymmetry_index) {
   double Df = dilution_factor(currentVariable, prefix); // dilution factor
-  srd::cout << Df << std::endl;
+  std::cout << Df << std::endl;
   // return the asymmetry value 
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
