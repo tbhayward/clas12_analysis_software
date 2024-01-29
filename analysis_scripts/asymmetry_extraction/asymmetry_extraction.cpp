@@ -255,6 +255,8 @@ int main(int argc, char *argv[]) {
         case 2: cout << "    Beginning chi2 DSA." << endl; break;
       }
       switch (channel) {
+        case 0: calculate_inclusive(output_file.c_str(), kinematic_file.c_str(), 
+        binNames[i], asymmetry); break;
         case 1: performChi2Fits_single_hadron(output_file.c_str(), kinematic_file.c_str(), 
         binNames[i], asymmetry); break;
       }
