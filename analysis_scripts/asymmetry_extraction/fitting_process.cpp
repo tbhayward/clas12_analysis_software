@@ -280,7 +280,7 @@ void calculate_inclusive(const char* output_file, const char* kinematic_file,
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
         double ALL_error = asymmetry_error_calculation(meanVariable, prefix, 
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
-        ALL = (meanDepA/meanDepC)*ALL;
+        ALL = -(meanDepA/meanDepC)*ALL;
         ALL_error = (meanDepA/meanDepC)*ALL_error;
         chi2FitsAStream<<"{"<<meanVariable<<", "<< ALL << ", " << ALL_error <<"}";
         if (i < numBins - 1) {
