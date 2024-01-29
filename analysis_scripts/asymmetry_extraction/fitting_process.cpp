@@ -54,8 +54,7 @@ using namespace std;
 
 /******************** INCLUSIVE DIS CASE ********************/
 
-std::tuple<int, int, int, int, double, double, double> getInclusiveCounts(int binIndex, 
-  const std::string& prefix) {
+std::tuple<int, int, int, int, double, double, double> getInclusiveCounts(int binIndex) {
 
   // Determine the variable range for the specified bin
   double varMin = allBins[currentFits][binIndex];
@@ -120,7 +119,6 @@ std::tuple<int, int, int, int, double, double, double> getInclusiveCounts(int bi
   dataReader.Restart();  // Reset the TTreeReader at the end of the function
 
   // Calculate the mean polarization
-  double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
   double meanPol = sumPol / numEvents; // mean beam polarization for data 
   double Ptp = numEventsPosTarget > 0 ? sumTargetPosPol / numEventsPosTarget : 1;
   double Ptm = numEventsNegTarget > 0 ? -sumTargetNegPol / numEventsNegTarget : 1;
@@ -145,9 +143,7 @@ void calculate_inclusive(const char* output_file, const char* kinematic_file,
   meanVariablesStream << "Bin & $<Q^2>$ & $<W>$ & $<x_B>$ & $<y>$ & $<t>$ &";
   meanVariablesStream << "$<t_{\\text{min}}>$\\\\ \\hline" << endl; 
 
-  // Create a new TF1 object called fitFunction representing the function to fit
   // and create string stream prefix depending on current asymmetry we're fitting
-  TF1* fitFunction;
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
       chi2FitsAStream << prefix << "chi2FitsALUoffset = {";
@@ -173,13 +169,13 @@ void calculate_inclusive(const char* output_file, const char* kinematic_file,
     snprintf(histName, sizeof(histName), "hist_%zu", i);
 
     // Get counts for the current bin
-    auto [npp, npm, nmp, nmm, meanPol, Ptp, Ptm] = getInclusiveCounts(i, prefix);
+    auto [npp, npm, nmp, nmm, meanPol, Ptp, Ptm] = getInclusiveCounts(i);
 
     // Initialize variables to store the sums and event counts
     double sumVariable = 0;
     double numEvents = 0;
     // Variables to calculate the mean depolarization factor
-    double sumDepA = 0; double sumDepB = 0; 
+    double sumDepA = 0; 
     double sumDepC = 0; double sumDepV = 0; double sumDepW = 0;
 
     // Variables to calculate the mean kinematics in each bin
@@ -196,7 +192,6 @@ void calculate_inclusive(const char* output_file, const char* kinematic_file,
     TTreeReaderValue<double> t(dataReader, "t");
     TTreeReaderValue<double> tmin(dataReader, "tmin");
     TTreeReaderValue<double> DepA(dataReader, "DepA");
-    TTreeReaderValue<double> DepB(dataReader, "DepB");
     TTreeReaderValue<double> DepC(dataReader, "DepC");
     TTreeReaderValue<double> DepV(dataReader, "DepV");
     TTreeReaderValue<double> DepW(dataReader, "DepW");
@@ -222,7 +217,6 @@ void calculate_inclusive(const char* output_file, const char* kinematic_file,
 
         // sum the depolarization values
         sumDepA += *DepA;
-        sumDepB += *DepB;
         sumDepC += *DepC;
         sumDepV += *DepV;
         sumDepW += *DepW;
@@ -238,7 +232,6 @@ void calculate_inclusive(const char* output_file, const char* kinematic_file,
     // Calculate the mean values for the variable and depolarization factors
     double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
     double meanDepA = numEvents > 0 ? sumDepA / numEvents : 0.0;
-    double meanDepB = numEvents > 0 ? sumDepB / numEvents : 0.0;
     double meanDepC = numEvents > 0 ? sumDepC / numEvents : 0.0;
     double meanDepV = numEvents > 0 ? sumDepV / numEvents : 0.0;
     double meanDepW = numEvents > 0 ? sumDepW / numEvents : 0.0;
