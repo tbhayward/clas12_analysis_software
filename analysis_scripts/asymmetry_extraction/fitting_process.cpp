@@ -297,8 +297,6 @@ void calculate_inclusive(const char* output_file, const char* kinematic_file,
       }
     }
 
-    delete hist;
-
     // outputs of mean kinematic variables
     meanVariablesStream << std::fixed << std::setprecision(3); // Set precision to 3 digits 
     meanVariablesStream << (i+1) << "~&~" << meanQ2 << "~&~" << meanW << "~&~" << meanx << "~&~";
