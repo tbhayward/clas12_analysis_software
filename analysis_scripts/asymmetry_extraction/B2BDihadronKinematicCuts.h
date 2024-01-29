@@ -3,7 +3,7 @@
 #include <TTreeReaderValue.h>
 #include <string>
 #include "common_vars.h"
-#include "BaseKinematicCuts.h" // Include BaseKinematicCuts
+#include "BaseKinematicCuts.h" 
 
 class B2BDihadronKinematicCuts : public BaseKinematicCuts { // Inherit from BaseKinematicCuts
 public:
@@ -16,6 +16,6 @@ private:
     TTreeReaderValue<double> W;
     TTreeReaderValue<double> x;
     TTreeReaderValue<double> y;
-    TTreeReaderValue<double> z;
+    TTreeReaderValue<double> z1;
     TTreeReaderValue<double> target_pol;
 };
