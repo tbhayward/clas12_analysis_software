@@ -172,7 +172,7 @@ double TSA_dihadron(double* x, double* y, double* z, double* par) {
     ALU_B_ell2_mn2*Legendre_P(2,-2,theta)*sin(4*phih-2*phiR) +    // tw2, B, ell=2, m=-2
     ALU_B_ell2_mn1*Legendre_P(2,-1,theta)*sin(3*phih-phiR) +      // tw2, B, ell=2, m=-1
     ALU_B_ell2_m0*Legendre_P(2,0,theta)*sin(2*phih) +             // tw2, B, ell=2, m=0
-    ALU_B_ell_2_m1*Legendre_P(2,1,theta)*sin(phih+phiR) +         // tw2, B, ell=2, m=1
+    ALU_B_ell2_m1*Legendre_P(2,1,theta)*sin(phih+phiR) +          // tw2, B, ell=2, m=1
     ALU_B_ell2_m2*Legendre_P(2,2,theta)*sin(2*phiR) +             // tw2, B, ell=2, m=2
     ALU_V_ell2_mn2*Legendre_P(2,-2,theta)*sin(3*phih-2*phiR) +    // tw3, V, ell=2, m=-2
     ALU_V_ell2_mn1*Legendre_P(2,-1,theta)*sin(2*phih-phiR) +      // tw3, V, ell=2, m=-1
