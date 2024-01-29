@@ -1,5 +1,6 @@
 #include "dilution_factor.h"
 #include <cmath>
+#include <iostream>
 
 double dilution_factor(double currentVariable, const std::string& prefix) {
 
