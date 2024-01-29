@@ -9,7 +9,7 @@ using std::string;
 B2BDihadronKinematicCuts::B2BDihadronKinematicCuts(TTreeReader& reader)
     : BaseKinematicCuts(reader), // Initialize BaseKinematicCuts
       runnum(reader, "runnum"), Q2(reader, "Q2"), W(reader, "W"),
-      x(reader, "x"), y(reader, "y"), target_pol(reader, "target_pol") {}
+      x(reader, "x"), y(reader, "y"), z(reader, "z"), target_pol(reader, "target_pol") {}
 
 bool B2BDihadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     bool goodEvent = false;
