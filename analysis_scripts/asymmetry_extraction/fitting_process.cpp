@@ -49,6 +49,9 @@
 #include <TBranch.h>
 #include <cstdio>
 
+// Using namespace declaration
+using namespace std;
+
 // Negative log-likelihood function
 void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f, 
   Double_t *par, Int_t iflag) {
