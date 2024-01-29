@@ -16,6 +16,6 @@ private:
     TTreeReaderValue<double> W;
     TTreeReaderValue<double> x;
     TTreeReaderValue<double> y;
-    TTreeReaderValue<double> z1;
+    TTreeReaderValue<double> z;
     TTreeReaderValue<double> target_pol;
 };
