@@ -307,9 +307,10 @@ void calculate_inclusive(const char* output_file, const char* kinematic_file,
 
   meanVariablesStream << "\\end{tabular}\n";
   meanVariablesStream << "\\caption{The mean kinematic variables in each of the bins ";
-  meanVariablesStream << "for the extracted $" << prefix << "$ asymmetries.}\n";
+  meanVariablesStream << "for the extracted $" << prefix << "$ asymmetries.";
+  meanVariablesStream << " Values given in GeV or GeV$^2$ where appropriate.}\n";
   meanVariablesStream << "\\label{table:kinematics_" << prefix << "}\n";
-  meanVariablesStream << "\\end{table}. Values given in GeV or GeV$^2$ where appropriate.\n";
+  meanVariablesStream << "\\end{table}.\n";
   meanVariablesStream << endl << endl << endl;
   if (asymmetry_index == 0) {
     std::ofstream kinematicFile(kinematic_file, std::ios_base::app);
@@ -1081,9 +1082,9 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
 
   meanVariablesStream << "\\end{tabular}\n";
   meanVariablesStream << "\\caption{The mean kinematic variables in each of the bins ";
-  meanVariablesStream << "for the extracted $" << prefix << "$ asymmetries.}\n";
-  meanVariablesStream << "\\label{table:kinematics_" << prefix << "}\n";
-  meanVariablesStream << "\\end{table}. Values given in GeV or GeV$^2$ where appropriate.\n";
+  meanVariablesStream << "for the extracted $" << prefix << "$ asymmetries.";
+  meanVariablesStream << " Values given in GeV or GeV$^2$ where appropriate.}\n";
+  meanVariablesStream << "\\end{table}.\n";
   meanVariablesStream << endl << endl << endl;
   if (asymmetry_index == 0) {
     std::ofstream kinematicFile(kinematic_file, std::ios_base::app);
