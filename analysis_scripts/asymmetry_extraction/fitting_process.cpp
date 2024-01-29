@@ -131,7 +131,7 @@ std::tuple<int, int, int, int, double, double, double> getInclusiveCounts(int bi
   return std::make_tuple(npp, npm, nmp, nmm, meanPol, Ptp, Ptm);
 }
 
-void performChi2Fits_inclusive(const char* output_file, const char* kinematic_file,
+void calculate_inclusive(const char* output_file, const char* kinematic_file,
   const std::string& prefix, int asymmetry_index) {
 
   // Initialize string streams to store the results for each bin
@@ -174,9 +174,6 @@ void performChi2Fits_inclusive(const char* output_file, const char* kinematic_fi
 
     // Get counts for the current bin
     auto [npp, npm, nmp, nmm, meanPol, Ptp, Ptm] = getInclusiveCounts(i, prefix);
-    // TH1D* hist = getForBin_inclusive(histName, i, prefix, asymmetry_index);
-    // Fit the histogram using the fitFunction and get the fit result
-    hist->Fit(fitFunction, "QS");
 
     // Initialize variables to store the sums and event counts
     double sumVariable = 0;
@@ -259,9 +256,9 @@ void performChi2Fits_inclusive(const char* output_file, const char* kinematic_fi
       case 0: {// beam-spin asymmetry
         // Get the fitted parameters and their errors
         double ALU_offset = asymmetry_value_calculation(currentVariable, prefix, 
-          Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
+          npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
         double ALU_offset_error = asymmetry_error_calculation(currentVariable, prefix, 
-          Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
+          npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
         ALU_sinphi = (meanDepA/meanDepW)*ALU_sinphi;
         ALU_sinphi_error = (meanDepA/meanDepW)*ALU_sinphi_error;
         chi2FitsAStream<<"{"<<meanVariable<<", "<< ALU_offset << ", " << ALU_offset_error <<"}";
@@ -273,9 +270,9 @@ void performChi2Fits_inclusive(const char* output_file, const char* kinematic_fi
       case 1: {// target-spin asymmetry
         // Get the fitted parameters and their errors
         double AUL_offset = asymmetry_value_calculation(currentVariable, prefix, 
-          Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
+          npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
         double AUL_offset_error = asymmetry_error_calculation(currentVariable, prefix, 
-          Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
+          npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
         AUL_sinphi = (meanDepA/meanDepV)*AUL_sinphi;
         AUL_sinphi_error = (meanDepA/meanDepV)*AUL_sinphi_error;
         chi2FitsAStream<<"{"<<meanVariable<<", "<< AUL_offset << ", " << AUL_offset_error <<"}";
@@ -287,9 +284,9 @@ void performChi2Fits_inclusive(const char* output_file, const char* kinematic_fi
       case 2: {// double-spin asymmetry
         // Get the fitted parameters and their errors
         double ALL = asymmetry_value_calculation(currentVariable, prefix, 
-          Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
+          npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
         double ALL_error = asymmetry_error_calculation(currentVariable, prefix, 
-          Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
+          npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
         ALL = (meanDepA/meanDepC)*ALL;
         ALL_error = (meanDepA/meanDepC)*ALL_error;
         chi2FitsAStream<<"{"<<meanVariable<<", "<< ALL << ", " << ALL_error <<"}";
