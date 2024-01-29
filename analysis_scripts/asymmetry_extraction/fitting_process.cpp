@@ -248,9 +248,9 @@ void calculate_inclusive(const char* output_file, const char* kinematic_file,
     switch (asymmetry_index) {
       case 0: {// beam-spin asymmetry
         // Get the fitted parameters and their errors
-        double ALU_offset = asymmetry_value_calculation(*currentVariable, prefix, 
+        double ALU_offset = asymmetry_value_calculation(meanVariable, prefix, 
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
-        double ALU_offset_error = asymmetry_error_calculation(*currentVariable, prefix, 
+        double ALU_offset_error = asymmetry_error_calculation(meanVariable, prefix, 
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
         ALU_offset = (meanDepA/meanDepW)*ALU_offset;
         ALU_offset_error = (meanDepA/meanDepW)*ALU_offset_error;
@@ -262,9 +262,9 @@ void calculate_inclusive(const char* output_file, const char* kinematic_file,
       }
       case 1: {// target-spin asymmetry
         // Get the fitted parameters and their errors
-        double AUL_offset = asymmetry_value_calculation(*currentVariable, prefix, 
+        double AUL_offset = asymmetry_value_calculation(meanVariable, prefix, 
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
-        double AUL_offset_error = asymmetry_error_calculation(*currentVariable, prefix, 
+        double AUL_offset_error = asymmetry_error_calculation(meanVariable, prefix, 
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
         AUL_offset = (meanDepA/meanDepV)*AUL_offset;
         AUL_offset_error = (meanDepA/meanDepV)*AUL_offset_error;
@@ -276,9 +276,9 @@ void calculate_inclusive(const char* output_file, const char* kinematic_file,
       }
       case 2: {// double-spin asymmetry
         // Get the fitted parameters and their errors
-        double ALL = asymmetry_value_calculation(*currentVariable, prefix, 
+        double ALL = asymmetry_value_calculation(meanVariable, prefix, 
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
-        double ALL_error = asymmetry_error_calculation(*currentVariable, prefix, 
+        double ALL_error = asymmetry_error_calculation(meanVariable, prefix, 
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
         ALL = (meanDepA/meanDepC)*ALL;
         ALL_error = (meanDepA/meanDepC)*ALL_error;
