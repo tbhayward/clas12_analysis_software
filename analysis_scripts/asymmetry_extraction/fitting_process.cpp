@@ -259,8 +259,8 @@ void calculate_inclusive(const char* output_file, const char* kinematic_file,
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
         double ALU_offset_error = asymmetry_error_calculation(currentVariable, prefix, 
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
-        ALU_sinphi = (meanDepA/meanDepW)*ALU_sinphi;
-        ALU_sinphi_error = (meanDepA/meanDepW)*ALU_sinphi_error;
+        ALU_offset = (meanDepA/meanDepW)*ALU_offset;
+        ALU_offset_error = (meanDepA/meanDepW)*ALU_offset_error;
         chi2FitsAStream<<"{"<<meanVariable<<", "<< ALU_offset << ", " << ALU_offset_error <<"}";
         if (i < numBins - 1) {
             chi2FitsAStream << ", "; 
@@ -273,8 +273,8 @@ void calculate_inclusive(const char* output_file, const char* kinematic_file,
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
         double AUL_offset_error = asymmetry_error_calculation(currentVariable, prefix, 
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
-        AUL_sinphi = (meanDepA/meanDepV)*AUL_sinphi;
-        AUL_sinphi_error = (meanDepA/meanDepV)*AUL_sinphi_error;
+        AUL_offset = (meanDepA/meanDepV)*AUL_offset;
+        AUL_offset_error = (meanDepA/meanDepV)*AUL_offset_error;
         chi2FitsAStream<<"{"<<meanVariable<<", "<< AUL_offset << ", " << AUL_offset_error <<"}";
         if (i < numBins - 1) {
             chi2FitsAStream << ", "; 
