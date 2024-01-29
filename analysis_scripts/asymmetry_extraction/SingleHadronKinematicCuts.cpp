@@ -64,5 +64,5 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         else {
           std::cout << "Property, " << property << ", not detected." << std::endl;
         }
-        return isMC ? goodEvent : goodEvent && target_pol!=0;
+        return isMC ? goodEvent : goodEvent && *target_pol!=0;
     }
