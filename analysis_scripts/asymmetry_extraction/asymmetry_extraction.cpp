@@ -59,7 +59,7 @@ BaseKinematicCuts* kinematicCuts = nullptr;
 BaseKinematicCuts* mckinematicCuts = nullptr;
 
 int currentFits = 0;
-size_t currentBin = 0;
+int currentBin = 0;
 int n = 1;
 double total_charge_carbon = 0;
 double cmm = 0; 
