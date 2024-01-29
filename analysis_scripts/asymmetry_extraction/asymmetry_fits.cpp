@@ -127,7 +127,7 @@ double TSA_b2b_dihadron(double* x, double* y, double* par) {
     + AUL_sinDeltaphi*sin(phi1 - phi2) + AUL_sinSumphi*sin(phi1 + phi2);
 }
 
-double BSA_dihadron(double* x, double* y, double* z, double* par) {
+double TSA_dihadron(double* x, double* y, double* z, double* par) {
   // Retrieve the parameters
   double ALU_offset = par[0];
   double ALU_B_ell0_m0 = par[1];
@@ -183,11 +183,11 @@ double BSA_dihadron(double* x, double* y, double* z, double* par) {
 
 /******** DOUBLE-SPIN ASYMMETRY ********/
 
-double DSA_inclusive(double* x, double* par) {
+double DSA_inclusive(double* par) {
   // Retrieve the parameters A
   double ALL = par[0];
   // Calculate and return the value of the function for the given phi and parameters 
-  return ALL+ALL_cosphi*cos(phi);
+  return ALL;
 }
 
 double DSA_single_hadron(double* x, double* par) {
@@ -212,7 +212,7 @@ double DSA_single_hadron(double* x, double* y, double* par) {
   return ALL + ALL_cosphi1*cos(phi1) + ALL_cosphi2*cos(phi2);
 }
 
-double BSA_dihadron(double* x, double* y, double* z, double* par) {
+double DSA_dihadron(double* x, double* y, double* z, double* par) {
   // Retrieve the parameters
   double ALU_offset = par[0];
   double ALU_C_ell0_m0 = par[1];
@@ -251,7 +251,7 @@ double BSA_dihadron(double* x, double* y, double* z, double* par) {
     ALU_W_ell2_mn1*Legendre_P(2,-1,theta)*cos(2*phih-phiR) +  // tw3, ell=2, m=-1
     ALU_W_ell2_m0*Legendre_P(2,0,theta)*cos(phih) +           // tw3, ell=2, m=0
     ALU_W_ell2_m1*Legendre_P(2,1,theta)*cos(phiR) +           // tw3, ell=2, m=1
-    ALU_W_ell2_m2*Legendre_P(2,2,theta)*cos(-phih+2*phiR) +   // tw3, ell=2, m=2
+    ALU_W_ell2_m2*Legendre_P(2,2,theta)*cos(-phih+2*phiR);    // tw3, ell=2, m=2
 }
 
 
