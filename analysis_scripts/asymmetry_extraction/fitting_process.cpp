@@ -1,21 +1,35 @@
 #include "fitting_process.h" // Include your header file
-
-// ROOT classes used in the functions
+// Standard C++ Library Headers
+#include <algorithm>
+#include <chrono>
+#include <fstream>
+#include <iomanip>
+#include <iostream>
+#include <map>
+#include <sstream>
+#include <string>
+#include <vector>
+// ROOT Library Headers
+#include <TApplication.h>
+#include <TCanvas.h>
+#include <TF1.h>
+#include <TFile.h>
+#include <TGraphErrors.h>
+#include <TLeaf.h>
+#include <TLegend.h>
+#include <TMath.h>
+#include <TPaveStats.h>
+#include <TSystem.h>
+#include <TText.h>
+#include <TTree.h>
 #include <TTreeReader.h>
 #include <TTreeReaderValue.h>
 #include <TH1D.h>
-#include <TF1.h>
-#include <TCanvas.h>
-#include <TGraphErrors.h>
-#include <TLegend.h>
-#include <TMath.h>
-
-// Other standard libraries
-#include <iostream>
-#include <string>
-#include <vector>
-#include <map>
-#include <cmath>
+#include "TH2.h"
+#include "TMinuit.h"
+#include "TStyle.h"
+#include <TBranch.h>
+#include <cstdio>
 
 // Negative log-likelihood function
 void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f, 
