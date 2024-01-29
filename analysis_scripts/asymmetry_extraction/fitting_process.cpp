@@ -1,3 +1,4 @@
+#include "common_vars.h" // common vars
 #include "fitting_process.h" // Include your header file
 // Standard C++ Library Headers
 #include <algorithm>
