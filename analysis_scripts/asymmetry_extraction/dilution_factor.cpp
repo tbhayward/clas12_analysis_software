@@ -130,12 +130,6 @@ double dilution_factor(double currentVariable, const std::string& prefix) {
       0.244802*std::pow(currentVariable,3);
   }
   std::cout << prefix << std::endl;
-  // erho0 (exclusive rho)
-  if (prefix == "exclusiveRhoIntegrated" || "exclusiveRhoIntegratedx" || 
-    "exclusiveRhoIntegratedt") {
-    return 0.680990505210383;
-  }
-
   // eX
   if (prefix == "xeX") {
     std::cout << "in the right dilution factor" << std::endl;
