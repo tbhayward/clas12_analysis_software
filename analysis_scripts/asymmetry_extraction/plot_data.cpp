@@ -152,6 +152,7 @@ void createIntegratedKinematicPlots() {
         leg->Draw();
 
         std::cout << "HELLO WORLD BEFORE SAVE" << std::endl;
+        std::cout << outputDir << std::endl << branchName << std::endl;
         // Save the canvas to a file
         c->SaveAs((outputDir + branchName + ".png").c_str());
         std::cout << "HELLO WORLD AFTER SAVE" << std::endl;
