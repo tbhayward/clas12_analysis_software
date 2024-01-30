@@ -17,8 +17,6 @@ double Legendre_P(int ell, int m, float theta) {
   return 0;
 }
 
-
-
 /******** BEAM-SPIN ASYMMETRY ********/
 // Function to fit the beam-spin asymmetry histogram
 
@@ -45,12 +43,13 @@ double BSA_b2b_dihadron(double* x, double* y, double* par) {
   double ALU_sinphi1 = par[1];
   double ALU_sinphi2 = par[2];
   double ALU_sinDeltaphi = par[3];
+  double ALU_sin2Deltaphi = par[4];
   // Retrieve the phi variables from the input arrays
   double phi1 = x[0];
   double phi2 = y[0];
   // Calculate and return the value of the function for the given phi and parameters 
   return ALU_offset + ALU_sinphi1*sin(phi1) + ALU_sinphi2*sin(phi2) +
-    ALU_sinDeltaphi*sin(phi1 - phi2);
+    ALU_sinDeltaphi*sin(phi1 - phi2) + ALU_sin2Deltaphi*sin(2*phi1 - 2*phi2);
 }
 
 double BSA_dihadron(double* x, double* y, double* z, double* par) {
@@ -117,14 +116,16 @@ double TSA_b2b_dihadron(double* x, double* y, double* par) {
   double AUL_sin2phi1 = par[3];
   double AUL_sin2phi2 = par[4];
   double AUL_sinDeltaphi = par[5];
-  double AUL_sinSumphi = par[6];
+  double AUL_sin2Deltaphi = par[6];
+  double AUL_sinSumphi = par[7];
   // Retrieve the phi variable from the input x array
   double phi1 = x[0];
   double phi2 = y[0];
   // Calculate and return the value of the function for the given phi and parameters 
   return AUL_offset + AUL_sinphi1*sin(phi1) + AUL_sinphi2*sin(phi2) +
     AUL_sin2phi1*sin(2*phi1) + AUL_sin2phi2*sin(2*phi2) +
-    + AUL_sinDeltaphi*sin(phi1 - phi2) + AUL_sinSumphi*sin(phi1 + phi2);
+    + AUL_sinDeltaphi*sin(phi1 - phi2) + AUL_sin2Deltaphi*sin(2*phi1 - 2*phi2) +
+    AUL_sinSumphi*sin(phi1 + phi2);
 }
 
 double TSA_dihadron(double* x, double* y, double* z, double* par) {
@@ -200,7 +201,7 @@ double DSA_single_hadron(double* x, double* par) {
   return ALL + ALL_cosphi*cos(phi);
 }
 
-double DSA_single_hadron(double* x, double* y, double* par) {
+double DSA_b2b_dihadron(double* x, double* y, double* par) {
   // Retrieve the parameters A
   double ALL = par[0];
   double ALL_cosphi1 = par[1];
