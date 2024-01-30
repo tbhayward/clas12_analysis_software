@@ -1490,6 +1490,8 @@ void performChi2Fits_b2b_dihadron(const char* output_file, const char* kinematic
   }
 
   chi2FitsStreams[0] << "};";  chi2FitsStreams[1] << "};";  chi2FitsStreams[3] << "};"; 
+  chi2FitsStreams[4] << "};";  chi2FitsStreams[5] << "};";  chi2FitsStreams[6] << "};"; 
+  chi2FitsStreams[7] << "};"; 
 
   std::ofstream outputFile(output_file, std::ios_base::app);
   outputFile << chi2FitsStreams[0].str() << std::endl;
