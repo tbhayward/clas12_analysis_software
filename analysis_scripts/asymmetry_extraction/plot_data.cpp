@@ -72,7 +72,7 @@ void createIntegratedKinematicPlots() {
         if (histConfigs.find(branchName) != histConfigs.end()) {
             config = histConfigs[branchName];
         }
-        
+
         TH1D* dataHist = new TH1D((branchName + "_data").c_str(), "", config.nBins, config.xMin, config.xMax);
         TH1D* mcHist = new TH1D((branchName + "_mc").c_str(), "", config.nBins, config.xMin, config.xMax);
 
@@ -124,8 +124,6 @@ void createIntegratedKinematicPlots() {
         dataHist->Scale(1.0 / dataHist->Integral());
         mcHist->Scale(1.0 / mcHist->Integral());
 
-        std::cout << "HELLO WORLD" << std::endl;
-
         // Find the maximum value for y-axis
         double maxY = 1.2*std::max(dataHist->GetMaximum(), mcHist->GetMaximum());
         dataHist->SetMaximum(1.1 * maxY);
@@ -164,6 +162,7 @@ void createIntegratedKinematicPlots() {
         delete mcHist;
         delete c;
         delete leg;
+        std::cout << "HELLO WORLD" << std::endl;
 
         // Restart the TTreeReaders for the next branch
         dataReader.Restart();
