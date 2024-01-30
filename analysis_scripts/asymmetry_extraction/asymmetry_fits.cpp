@@ -37,7 +37,7 @@ double BSA_single_hadron(double* x, double* par) {
   return ALU_offset + ALU_sinphi*sin(phi);
 }
 
-double BSA_b2b_dihadron(double* x, double* y, double* par) {
+double BSA_b2b_dihadron(double* x, double* par) {
   // Retrieve the parameters 
   double ALU_offset = par[0];
   double ALU_sinphi1 = par[1];
@@ -46,13 +46,13 @@ double BSA_b2b_dihadron(double* x, double* y, double* par) {
   double ALU_sin2Deltaphi = par[4];
   // Retrieve the phi variables from the input arrays
   double phi1 = x[0];
-  double phi2 = y[0];
+  double phi2 = x[1];
   // Calculate and return the value of the function for the given phi and parameters 
   return ALU_offset + ALU_sinphi1*sin(phi1) + ALU_sinphi2*sin(phi2) +
     ALU_sinDeltaphi*sin(phi1 - phi2) + ALU_sin2Deltaphi*sin(2*phi1 - 2*phi2);
 }
 
-double BSA_dihadron(double* x, double* y, double* z, double* par) {
+double BSA_dihadron(double* x, double* par) {
   // Retrieve the parameters
   double ALU_offset = par[0];
   double ALU_W_ell0_m0 = par[1];
@@ -70,8 +70,8 @@ double BSA_dihadron(double* x, double* y, double* z, double* par) {
 
   // Retrieve the angle variables from the input arrays
   double phih = x[0];
-  double phiR = y[0];
-  double theta = z[0];
+  double phiR = x[1];
+  double theta = x[2];
   // Calculate and return the value of the function for the given phi and parameters
   return ALU_offset + 
     ALU_W_ell0_m0*Legendre_P(0,0,theta)*sin(phih) +             // tw3, ell=0, m=0
@@ -108,7 +108,7 @@ double TSA_single_hadron(double* x, double* par) {
   return AUL_offset + AUL_sinphi*sin(phi)+AUL_sin2phi*sin(2*phi);
 }
 
-double TSA_b2b_dihadron(double* x, double* y, double* par) {
+double TSA_b2b_dihadron(double* x, double* par) {
   // Retrieve the parameters 
   double AUL_offset = par[0];
   double AUL_sinphi1 = par[1];
@@ -120,7 +120,7 @@ double TSA_b2b_dihadron(double* x, double* y, double* par) {
   double AUL_sinSumphi = par[7];
   // Retrieve the phi variable from the input x array
   double phi1 = x[0];
-  double phi2 = y[0];
+  double phi2 = x[1];
   // Calculate and return the value of the function for the given phi and parameters 
   return AUL_offset + AUL_sinphi1*sin(phi1) + AUL_sinphi2*sin(phi2) +
     AUL_sin2phi1*sin(2*phi1) + AUL_sin2phi2*sin(2*phi2) +
@@ -128,7 +128,7 @@ double TSA_b2b_dihadron(double* x, double* y, double* par) {
     AUL_sinSumphi*sin(phi1 + phi2);
 }
 
-double TSA_dihadron(double* x, double* y, double* z, double* par) {
+double TSA_dihadron(double* x, double* par) {
   // Retrieve the parameters
   double ALU_offset = par[0];
   double ALU_B_ell0_m0 = par[1];
@@ -155,8 +155,8 @@ double TSA_dihadron(double* x, double* y, double* z, double* par) {
 
   // Retrieve the angle variables from the input arrays
   double phih = x[0];
-  double phiR = y[0];
-  double theta = z[0];
+  double phiR = x[1];
+  double theta = x[2];
   // Calculate and return the value of the function for the given phi and parameters
   return ALU_offset + 
     ALU_B_ell0_m0*Legendre_P(0,0,theta)*sin(2*phih) +             // tw2, B, ell=0, m=0
@@ -201,19 +201,19 @@ double DSA_single_hadron(double* x, double* par) {
   return ALL + ALL_cosphi*cos(phi);
 }
 
-double DSA_b2b_dihadron(double* x, double* y, double* par) {
+double DSA_b2b_dihadron(double* x, double* par) {
   // Retrieve the parameters A
   double ALL = par[0];
   double ALL_cosphi1 = par[1];
   double ALL_cosphi2 = par[2];
   // Retrieve the phi variable from the input x array
   double phi1 = x[0];
-  double phi2 = y[0];
+  double phi2 = x[1];
   // Calculate and return the value of the function for the given phi and parameters 
   return ALL + ALL_cosphi1*cos(phi1) + ALL_cosphi2*cos(phi2);
 }
 
-double DSA_dihadron(double* x, double* y, double* z, double* par) {
+double DSA_dihadron(double* x, double* par) {
   // Retrieve the parameters
   double ALU_offset = par[0];
   double ALU_C_ell0_m0 = par[1];
@@ -234,8 +234,8 @@ double DSA_dihadron(double* x, double* y, double* z, double* par) {
 
   // Retrieve the angle variables from the input arrays
   double phih = x[0];
-  double phiR = y[0];
-  double theta = z[0];
+  double phiR = x[1];
+  double theta = x[2];
   // Calculate and return the value of the function for the given phi and parameters
   return ALU_offset + 
     ALU_C_ell0_m0*2*Legendre_P(0,0,theta)*cos(0) +            // tw2, ell=0, m=0
