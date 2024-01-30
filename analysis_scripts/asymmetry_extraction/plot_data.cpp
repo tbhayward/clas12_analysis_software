@@ -59,7 +59,7 @@ void createIntegratedKinematicPlots() {
         }
         branch = (TBranch*)branches->At(i);
         branchName = branch->GetName();
-        std::cout << "HELLO WORLD MID FUNCTION" << std::endl;
+        
         if (std::find(branchesToSkip.begin(), branchesToSkip.end(), branchName) != 
           branchesToSkip.end()) {
             continue; // Skip this branch
@@ -91,7 +91,7 @@ void createIntegratedKinematicPlots() {
         // Set y-axis title offset to make room for centering
         dataHist->GetYaxis()->SetTitleOffset(1.6);
         mcHist->GetYaxis()->SetTitleOffset(1.6);
-
+        std::cout << "HELLO WORLD MID FUNCTION" << std::endl;
         if (branchName == "runnum") {
           // Declare TTreeReaderValue for integers for dataReader
           TTreeReaderValue<int> dataVal(dataReader, branchName.c_str());
