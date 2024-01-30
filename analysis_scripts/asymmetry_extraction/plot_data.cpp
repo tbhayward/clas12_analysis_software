@@ -59,14 +59,11 @@ void createIntegratedKinematicPlots() {
         }
         branch = (TBranch*)branches->At(i);
         branchName = branch->GetName();
-
+        std::cout << "HELLO WORLD MID FUNCTION" << std::endl;
         if (std::find(branchesToSkip.begin(), branchesToSkip.end(), branchName) != 
           branchesToSkip.end()) {
             continue; // Skip this branch
         }
-
-        // TTreeReaderValue<Double_t> dataVal(dataReader, branchName.c_str());
-        // TTreeReaderValue<Double_t> mcVal(mcReader, branchName.c_str());
 
         HistConfig config = {100, 0, 1}; // Default configuration
         if (histConfigs.find(branchName) != histConfigs.end()) {
@@ -167,7 +164,7 @@ void createIntegratedKinematicPlots() {
         dataReader.Restart();
         mcReader.Restart();
 
-        std::cout << "HELLO WORLD" << std::endl;
+        std::cout << "HELLO WORLD END OF FUNCTION" << std::endl;
     }
 }
 
