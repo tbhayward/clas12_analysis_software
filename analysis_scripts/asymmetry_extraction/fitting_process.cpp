@@ -5,6 +5,7 @@
 #include "dilution_factor.h"
 #include "asymmetry_fits.h"
 #include "BaseKinematicCuts.h"
+#include "KinematicCuts.h"
 #include "InclusiveKinematicCuts.h"
 #include "SingleHadronKinematicCuts.h"
 #include "B2BDihadronKinematicCuts.h"
@@ -1227,12 +1228,12 @@ void performChi2Fits_b2b_dihadron(const char* output_file, const char* kinematic
   meanVariablesStream << "& $<P_{2T}>$ & $<x_{F1}>$ & ";
   meanVariablesStream << "$<x_{F2}>$\\\\ \\hline" << endl; 
 
-  // Create a new TF2 object called fitFunction representing the function to fit
+  // Create a new TF1 object called fitFunction representing the function to fit
   // and create string stream prefix depending on current asymmetry we're fitting
   TF2* fitFunction;
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
-      fitFunction = new TF2("fitFunction", BSA_b2b_dihadron,0,2*TMath::Pi(),0,2*TMath::Pi(),5);
+      fitFunction = new TF2("fitFunction", BSA_b2b_dihadron,0,2*TMath::Pi(),0,2*TMath::Pi(),4);
       chi2FitsStreams[0] << prefix << "chi2FitsALUoffset = {";
       chi2FitsStreams[1] << prefix << "chi2FitsALUsinphi1 = {";
       chi2FitsStreams[2] << prefix << "chi2FitsALUsinphi2 = {";
@@ -1240,7 +1241,7 @@ void performChi2Fits_b2b_dihadron(const char* output_file, const char* kinematic
       chi2FitsStreams[4] << prefix << "chi2FitsALUsin2Deltaphi = {";
       break;
     case 1: // target-spin asymmetry
-      fitFunction = new TF2("fitFunction", TSA_b2b_dihadron,0,2*TMath::Pi(),0,2*TMath::Pi(),8);
+      fitFunction = new TF2("fitFunction", TSA_b2b_dihadron,0,2*TMath::Pi(),0,2*TMath::Pi(),4);
       chi2FitsStreams[0] << prefix << "chi2FitsAULoffset = {";
       chi2FitsStreams[1] << prefix << "chi2FitsAULsinphi1 = {";
       chi2FitsStreams[2] << prefix << "chi2FitsAULsinphi2 = {";
@@ -1251,7 +1252,7 @@ void performChi2Fits_b2b_dihadron(const char* output_file, const char* kinematic
       chi2FitsStreams[7] << prefix << "chi2FitsAULsinSumphi = {";
       break;
     case 2: // double-spin asymmetry
-      fitFunction = new TF2("fitFunction", DSA_b2b_dihadron,0,2*TMath::Pi(),0,2*TMath::Pi(),3);
+      fitFunction = new TF2("fitFunction", DSA_b2b_dihadron,0,2*TMath::Pi(),0,2*TMath::Pi(),4);
       chi2FitsStreams[0] << prefix << "chi2FitsALL = {";
       chi2FitsStreams[1] << prefix << "chi2FitsALLcosphi1 = {";
       chi2FitsStreams[2] << prefix << "chi2FitsALLcosphi2 = {";
