@@ -22,7 +22,7 @@ double TSA_b2b_dihadron(double* x, double* y, double* par);
 double TSA_dihadron(double* x, double* y, double* z, double* par);
 double DSA_single_hadron(double* x, double* par);
 double DSA_inclusive(double* par);
-double BSA_b2b_dihadron(double* x, double* y, double* par);
+double DSA_b2b_dihadron(double* x, double* y, double* par);
 double DSA_dihadron(double* x, double* y, double* z, double* par);
 
 #endif // ASYMMETRY_FITS_H
