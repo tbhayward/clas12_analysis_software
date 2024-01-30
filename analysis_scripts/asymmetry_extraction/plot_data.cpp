@@ -131,7 +131,7 @@ void createIntegratedKinematicPlots() {
         // Adjust the margins to avoid cutting off labels
         c->SetLeftMargin(0.15);
         c->SetBottomMargin(0.15);
-        
+
         // Create a legend and adjust its font size
         TLegend* leg = new TLegend(0.5, 0.7, 0.9, 0.9);
         leg->SetTextSize(0.04); // Increase the legend text size
@@ -150,7 +150,7 @@ void createIntegratedKinematicPlots() {
         dataHist->Draw("HIST");
         mcHist->Draw("HISTSAME");
         leg->Draw();
-        std::cout << "HELLO WORLD MID FUNCTION" << std::endl;
+        std::cout << "HELLO WORLD MID FUNCTION BUT AFTER DRAW" << std::endl;
         // Save the canvas to a file
         c->SaveAs((outputDir + branchName + ".png").c_str());
 
