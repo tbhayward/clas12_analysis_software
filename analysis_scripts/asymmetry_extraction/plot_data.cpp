@@ -8,9 +8,6 @@ extern TTreeReader dataReader;
 extern TTreeReader mcReader;
 extern std::map<std::string, HistConfig> histConfigs;
 
-// Global variables, if any, used by the plotting functions
-// extern std::map<std::string, HistConfig> histConfigs; // Example
-
 template<typename T>
 void FillHistogram(TTreeReader& reader, const std::string& branchName, TH1D* hist, 
   BaseKinematicCuts& kinematicCuts, int fitIndex, bool isMC) {
@@ -75,7 +72,7 @@ void createIntegratedKinematicPlots() {
         if (histConfigs.find(branchName) != histConfigs.end()) {
             config = histConfigs[branchName];
         }
-
+        std::cout << "HELLO WORLD" << std::endl;
         TH1D* dataHist = new TH1D((branchName + "_data").c_str(), "", config.nBins, config.xMin, config.xMax);
         TH1D* mcHist = new TH1D((branchName + "_mc").c_str(), "", config.nBins, config.xMin, config.xMax);
 
