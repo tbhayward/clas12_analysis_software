@@ -22,7 +22,7 @@ void FillHistogram(TTreeReader& reader, const std::string& branchName, TH1D* his
 
 template<typename T1, typename T2>
 void createAndFillHistogram(TTreeReader& reader, TH2D* hist, const std::string& branchX, 
-                            const std::string& branchY, BaseKinematicCuts& kinematicCuts) {
+    const std::string& branchY, BaseKinematicCuts& kinematicCuts) {
     TTreeReaderValue<T1> valX(reader, branchX.c_str());
     TTreeReaderValue<T2> valY(reader, branchY.c_str());
 
