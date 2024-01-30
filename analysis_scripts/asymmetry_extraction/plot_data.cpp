@@ -151,9 +151,10 @@ void createIntegratedKinematicPlots() {
         mcHist->Draw("HISTSAME");
         leg->Draw();
 
+        std::cout << "HELLO WORLD BEFORE SAVE" << std::endl;
         // Save the canvas to a file
         c->SaveAs((outputDir + branchName + ".png").c_str());
-        std::cout << "HELLO WORLD MID FUNCTION" << std::endl;
+        std::cout << "HELLO WORLD AFTER SAVE" << std::endl;
         // Clean up the created objects to avoid memory leaks
         delete dataHist;
         delete mcHist;
@@ -163,8 +164,6 @@ void createIntegratedKinematicPlots() {
         // Restart the TTreeReaders for the next branch
         dataReader.Restart();
         mcReader.Restart();
-
-        std::cout << "HELLO WORLD END OF FUNCTION" << std::endl;
     }
 }
 
