@@ -162,11 +162,12 @@ void createIntegratedKinematicPlots() {
         delete mcHist;
         delete c;
         delete leg;
-        std::cout << "HELLO WORLD" << std::endl;
 
         // Restart the TTreeReaders for the next branch
         dataReader.Restart();
         mcReader.Restart();
+
+        std::cout << "HELLO WORLD" << std::endl;
     }
 }
 

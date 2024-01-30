@@ -86,7 +86,7 @@ int main(int argc, char *argv[]) {
       return 1;
   }
 
-  cout << endl;
+  cout << endl << endl;
   // Set default channel to 1
   channel = 1;  // Default value
   if (argc >= 4) {
@@ -102,7 +102,7 @@ int main(int argc, char *argv[]) {
   } else {
       cout << "No channel specified. Defaulting to channel single hadron." << endl;
   }
-  cout << "Using channel: " << channel << endl;
+  cout << "Using channel: " << channel;
 
   // Allocate kinematicCuts and mckinematicCuts based on the channel
   switch (channel) {
