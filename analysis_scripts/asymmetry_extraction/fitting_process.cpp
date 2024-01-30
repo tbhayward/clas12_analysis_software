@@ -783,8 +783,7 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
     bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
     // bool passedKinematicCuts = true;
     // Check if the currentVariable is within the desired range
-    if (*currentVariable >= varMin && *currentVariable < varMax) {
-    // if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
+    if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
       sumVariable += *currentVariable;
 
       if (*helicity > 0 && *target_pol < 0) { histPosNeg->Fill(*phi); } 
@@ -955,6 +954,7 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
       // Apply kinematic cuts (this function will need to be adapted)
       bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
       // Check if the currentVariable is within the desired range
+      cout << *currentVariable << " " << passedKinematicCuts << endl;
       if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
         // sum the kinematic variable values
         sumVariable += *currentVariable;
