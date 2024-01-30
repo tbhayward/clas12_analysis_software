@@ -8,8 +8,6 @@ extern TTreeReader dataReader;
 extern TTreeReader mcReader;
 extern std::map<std::string, HistConfig> histConfigs;
 
-// Global variables, if any, used by the plotting functions
-// extern std::map<std::string, HistConfig> histConfigs; // Example
 
 template<typename T>
 void FillHistogram(TTreeReader& reader, const std::string& branchName, TH1D* hist, 
