@@ -72,7 +72,7 @@ void createIntegratedKinematicPlots() {
         if (histConfigs.find(branchName) != histConfigs.end()) {
             config = histConfigs[branchName];
         }
-        std::cout << "HELLO WORLD" << std::endl;
+        
         TH1D* dataHist = new TH1D((branchName + "_data").c_str(), "", config.nBins, config.xMin, config.xMax);
         TH1D* mcHist = new TH1D((branchName + "_mc").c_str(), "", config.nBins, config.xMin, config.xMax);
 
@@ -124,9 +124,7 @@ void createIntegratedKinematicPlots() {
         dataHist->Scale(1.0 / dataHist->Integral());
         mcHist->Scale(1.0 / mcHist->Integral());
 
-        // // Normalize the histograms
-        // dataHist->Scale(1.0 / num_data_elec);
-        // mcHist->Scale(1.0 / num_mc_elec);
+        std::cout << "HELLO WORLD" << std::endl;
 
         // Find the maximum value for y-axis
         double maxY = 1.2*std::max(dataHist->GetMaximum(), mcHist->GetMaximum());
