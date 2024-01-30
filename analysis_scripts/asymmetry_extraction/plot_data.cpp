@@ -131,7 +131,7 @@ void createIntegratedKinematicPlots() {
         // Adjust the margins to avoid cutting off labels
         c->SetLeftMargin(0.15);
         c->SetBottomMargin(0.15);
-        
+
         // Create a legend and adjust its font size
         TLegend* leg = new TLegend(0.5, 0.7, 0.9, 0.9);
         leg->SetTextSize(0.04); // Increase the legend text size
@@ -145,7 +145,7 @@ void createIntegratedKinematicPlots() {
         // Set line colors for histograms
         dataHist->SetLineColor(kBlack);
         mcHist->SetLineColor(kRed);
-        std::cout << "HELLO WORLD MID FUNCTION" << std::endl;
+        
         // Draw histograms on the canvas
         dataHist->Draw("HIST");
         mcHist->Draw("HISTSAME");
@@ -153,7 +153,7 @@ void createIntegratedKinematicPlots() {
 
         // Save the canvas to a file
         c->SaveAs((outputDir + branchName + ".png").c_str());
-
+        std::cout << "HELLO WORLD MID FUNCTION" << std::endl;
         // Clean up the created objects to avoid memory leaks
         delete dataHist;
         delete mcHist;
