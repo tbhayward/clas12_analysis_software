@@ -1,8 +1,7 @@
 #include "charge_accumulation.h"
 #include <set>
 #include <vector>
-#include "KinematicCuts.h"  // Assuming this is the correct path to your KinematicCuts class
-#include "common_vars.h"    // Assuming this contains the global variables and necessary imports
+#include "common_vars.h"    
 #include "load_run_info_from_csv.h"
 
 // This function accumulates the charges for the runs that pass the kinematic cuts.
