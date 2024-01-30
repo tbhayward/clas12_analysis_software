@@ -5,7 +5,6 @@
 #include <TLegend.h>
 #include <TStyle.h>
 #include "BaseKinematicCuts.h"
-#include "KinematicCuts.h"
 #include "InclusiveKinematicCuts.h"
 #include "SingleHadronKinematicCuts.h"
 #include "B2BDihadronKinematicCuts.h"
