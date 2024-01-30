@@ -116,7 +116,7 @@ void createIntegratedKinematicPlots() {
           FillHistogram<double>(dataReader, branchName, dataHist, *kinematicCuts, 0, false);
           FillHistogram<double>(mcReader, branchName, mcHist, *mckinematicCuts, 0, true);
         }
-        std::cout << "PASSED FILLHISTOGRAM" << std::endl;
+        
         // Normalize the histograms
         dataHist->Scale(1.0 / dataHist->Integral());
         mcHist->Scale(1.0 / mcHist->Integral());
