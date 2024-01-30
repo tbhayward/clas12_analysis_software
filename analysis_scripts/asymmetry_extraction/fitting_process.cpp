@@ -770,13 +770,10 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
 
   TTreeReaderValue<int> runnum(dataReader, "runnum");
   TTreeReaderValue<int> evnum(dataReader, "evnum");
-  TTreeReaderValue<double> xF(dataReader, "xF");
-  TTreeReaderValue<double> Mx(dataReader, "Mx");
   TTreeReaderValue<int> helicity(dataReader, "helicity");
   TTreeReaderValue<double> beam_pol(dataReader, "beam_pol");
   TTreeReaderValue<double> target_pol(dataReader, "target_pol");
   TTreeReaderValue<double> phi(dataReader, "phi");
-  // TTreeReaderValue<double> phi(dataReader, "phi23");
   TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
 
   // Counter to limit the number of processed entries
@@ -786,7 +783,8 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
     bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
     // bool passedKinematicCuts = true;
     // Check if the currentVariable is within the desired range
-    if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
+    if (*currentVariable >= varMin && *currentVariable < varMax) {
+    // if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
       sumVariable += *currentVariable;
 
       if (*helicity > 0 && *target_pol < 0) { histPosNeg->Fill(*phi); } 
