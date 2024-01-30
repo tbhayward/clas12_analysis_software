@@ -157,10 +157,10 @@ void createIntegratedKinematicPlots() {
         c->SaveAs((outputDir + branchName + ".png").c_str());
         std::cout << "HELLO WORLD AFTER SAVE" << std::endl;
         // Clean up the created objects to avoid memory leaks
-        delete dataHist;
-        delete mcHist;
-        delete c;
-        delete leg;
+        // delete dataHist;
+        // delete mcHist;
+        // delete c;
+        // delete leg;
 
         // Restart the TTreeReaders for the next branch
         dataReader.Restart();
