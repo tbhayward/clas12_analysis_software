@@ -1487,7 +1487,7 @@ void performChi2Fits_b2b_dihadron(const char* output_file, const char* kinematic
     // outputs of mean kinematic variables
     meanVariablesStream << std::fixed << std::setprecision(3); // Set precision to 3 digits 
     meanVariablesStream << (i+1) << "~&~" << meanQ2 << "~&~" << meanW << "~&~" << meanx << "~&~";
-    meanVariablesStream << meany << "~&~" << meanz1 << "~&~" << meanzeta 2<< "~&~";
+    meanVariablesStream << meany << "~&~" << meanz1 << "~&~" << meanzeta2 << "~&~";
     meanVariablesStream << meanpT1 << "~&~" << meanpT2 << "~&~" << meanxF1 << "~&~" << meanxF2; 
     meanVariablesStream << std::string(" \\\\ \\hline ");
   }
