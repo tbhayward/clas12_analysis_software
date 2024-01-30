@@ -37,7 +37,6 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         //
         // epi+X
         else if (property == "xpip") { 
-          // goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *xF>0;
             goodEvent = *Q2>1 && *W>2 && *y<0.75 && *z>0.20;
         }
         else if (property == "PTTFRpip" || property ==  "xTFRpip" || property == "zTFRpip" || 
@@ -64,7 +63,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         else {
           std::cout << "Property, " << property << ", not detected." << std::endl;
         }
-        
+
         if (isMC || *runnum < 11571) {
           return goodEvent
         } else {
