@@ -954,7 +954,6 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
       // Apply kinematic cuts (this function will need to be adapted)
       bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
       // Check if the currentVariable is within the desired range
-      cout << *currentVariable << " " << passedKinematicCuts << endl;
       if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
         // sum the kinematic variable values
         sumVariable += *currentVariable;
