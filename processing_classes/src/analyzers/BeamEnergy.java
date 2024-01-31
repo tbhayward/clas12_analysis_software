@@ -41,8 +41,8 @@ public class BeamEnergy {
     public BeamEnergy(int runnum, boolean isRadiative) {
         // default beam energy set to rga fall 2018
 //        Eb = 10.6041; // RGA Fall 2018
-        Eb = 6.535; // RGK Fall 2018 6 GeV
-//        Eb = 7.546; // RGK Fall 2018 7 GeV
+//        Eb = 6.535; // RGK Fall 2018 6 GeV
+        Eb = 7.546; // RGK Fall 2018 7 GeV
         if (runnum >= 5032 && runnum <= 5666) { Eb = 10.6041; } // RGA Fall 2018
         else if (runnum >= 2365 && runnum <= 2598) { Eb = 2.22193; } // "RGA" Spring 2018 engineering
         else if (runnum >= 3030 && runnum <= 3106) { Eb = 6.42313; } // RGA Spring 2018 6 GeV
