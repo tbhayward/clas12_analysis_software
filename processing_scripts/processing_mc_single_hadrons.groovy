@@ -360,7 +360,7 @@ public static void main(String[] args) {
 		    batchLines.setLength(0);
 		}
 
-		println(); println();
+		println(); println(); // NUMBERS ARE WRONG, NEED PHIS AND VERTICES
 		print("1: e_p, 3: e_theta, 5: p1_p, 7: p1_theta, ");
 		print("9: Q2, 11: W, 13: Mx, 15: x, 17: y, 19: z, 21: xF, 23: pT, 25: zeta, ");
 		print("27: eta, 29: phi, ");
