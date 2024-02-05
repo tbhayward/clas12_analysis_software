@@ -1122,11 +1122,11 @@ void negLogLikelihood_b2b_dihadron(Int_t &npar, Double_t *gin, Double_t &f,
   double ALL_cosphi1 = par[12]; 
   double ALL_cosphi2 = par[13]; 
   // UU
-  double AUU_cosphi1[14];
-  double AUU_cosphi2[15]; 
-  double AUU_cos2phi1[16];
-  double AUU_cos2phi2[17];
-  double AUU_cosSumphi[17]; 
+  double AUU_cosphi1 = par[14];
+  double AUU_cosphi2 = par[15]; 
+  double AUU_cos2phi1 = par[16];
+  double AUU_cos2phi2 = par[17];
+  double AUU_cosSumphi = par[18]; 
 
   // Initialize variables for counting events (N), positive helicity sum (sum_P), 
   // and negative helicity sum (sum_N)
@@ -1178,7 +1178,7 @@ void negLogLikelihood_b2b_dihadron(Int_t &npar, Double_t *gin, Double_t &f,
             (*DepW / *DepA)*ALU_sinphi1*sin(*phi1) +
             (*DepW / *DepA)*ALU_sinphi2*sin(*phi2) +
             (*DepC / *DepA)*ALU_sinDeltaphi*sin(*phi1 - *phi2) +
-            (*DepC / *DepA)*ALU_sinDeltaphi*sin(2**phi1 - 2**phi2)
+            (*DepC / *DepA)*ALU_sin2Deltaphi*sin(2**phi1 - 2**phi2)
           )
           // UL
           + Df*Pt*(
@@ -1472,24 +1472,24 @@ void performMLMFits_b2b_dihadron(const char* output_file, const char* kinematic_
 
     // Extract the fitted parameter values and errors
     double ALU_sinphi1, ALU_sinphi1_error; minuit.GetParameter(0, ALU_sinphi1, ALU_sinphi1_error);
-    double ALU_sinphi2, ALU_sinphi2_error; minuit.GetParameter(0, ALU_sinphi2, ALU_sinphi2_error);
-    double ALU_sinDeltaphi, ALU_sinDeltaphi_error; minuit.GetParameter(0, ALU_sinDeltaphi, ALU_sinDeltaphi_error);
-    double ALU_sin2Deltaphi, ALU_sin2Deltaphi_error; minuit.GetParameter(0, ALU_sin2Deltaphi, ALU_sin2Deltaphi_error);
-    double AUL_sinphi1, AUL_sinphi1_error; minuit.GetParameter(0, AUL_sinphi1, AUL_sinphi1_error);
-    double AUL_sinphi2, AUL_sinphi2_error; minuit.GetParameter(0, AUL_sinphi2, AUL_sinphi2_error);
-    double AUL_sin2phi1, AUL_sin2phi1_error; minuit.GetParameter(0, AUL_sin2phi1, AUL_sin2phi1_error);
-    double AUL_sin2phi2, AUL_sin2phi2_error; minuit.GetParameter(0, AUL_sin2phi2, AUL_sin2phi2_error);
-    double AUL_sinDeltaphi, AUL_sinDeltaphi_error; minuit.GetParameter(0, AUL_sinDeltaphi, AUL_sinDeltaphi_error);
-    double AUL_sin2Deltaphi, AUL_sin2Deltaphi_error; minuit.GetParameter(0, AUL_sin2Deltaphi, AUL_sin2Deltaphi_error);
-    double AUL_sinSumphi, AUL_sinSumphi_error; minuit.GetParameter(0, AUL_sinSumphi, AUL_sinSumphi_error);
-    double ALL, ALL_error; minuit.GetParameter(0, ALL, ALL_error);
-    double ALL_cosphi1, ALL_cosphi1_error; minuit.GetParameter(0, ALL_cosphi1, ALL_cosphi1_error);
-    double ALL_cosphi2, ALL_cosphi2_error; minuit.GetParameter(0, ALL_cosphi2, ALL_cosphi2_error);
-    double AUU_cosphi1, AUU_cosphi1_error; minuit.GetParameter(0, AUU_cosphi1, AUU_cosphi1_error);
-    double AUU_cosphi2, AUU_cosphi2_error; minuit.GetParameter(0, AUU_cosphi2, AUU_cosphi2_error);
-    double AUU_cos2phi1, AUU_cos2phi1_error; minuit.GetParameter(0, AUU_cos2phi1, AUU_cos2phi1_error);
-    double AUU_cos2phi2, AUU_cos2phi2_error; minuit.GetParameter(0, AUU_cos2phi2, AUU_cos2phi2_error);
-    double AUU_cosSumphi, AUU_cosSumphi_error; minuit.GetParameter(0, AUU_cosSumphi, AUU_cosSumphi_error);
+    double ALU_sinphi2, ALU_sinphi2_error; minuit.GetParameter(1, ALU_sinphi2, ALU_sinphi2_error);
+    double ALU_sinDeltaphi, ALU_sinDeltaphi_error; minuit.GetParameter(2, ALU_sinDeltaphi, ALU_sinDeltaphi_error);
+    double ALU_sin2Deltaphi, ALU_sin2Deltaphi_error; minuit.GetParameter(3, ALU_sin2Deltaphi, ALU_sin2Deltaphi_error);
+    double AUL_sinphi1, AUL_sinphi1_error; minuit.GetParameter(4, AUL_sinphi1, AUL_sinphi1_error);
+    double AUL_sinphi2, AUL_sinphi2_error; minuit.GetParameter(5, AUL_sinphi2, AUL_sinphi2_error);
+    double AUL_sin2phi1, AUL_sin2phi1_error; minuit.GetParameter(6, AUL_sin2phi1, AUL_sin2phi1_error);
+    double AUL_sin2phi2, AUL_sin2phi2_error; minuit.GetParameter(7, AUL_sin2phi2, AUL_sin2phi2_error);
+    double AUL_sinDeltaphi, AUL_sinDeltaphi_error; minuit.GetParameter(8, AUL_sinDeltaphi, AUL_sinDeltaphi_error);
+    double AUL_sin2Deltaphi, AUL_sin2Deltaphi_error; minuit.GetParameter(9, AUL_sin2Deltaphi, AUL_sin2Deltaphi_error);
+    double AUL_sinSumphi, AUL_sinSumphi_error; minuit.GetParameter(10, AUL_sinSumphi, AUL_sinSumphi_error);
+    double ALL, ALL_error; minuit.GetParameter(11, ALL, ALL_error);
+    double ALL_cosphi1, ALL_cosphi1_error; minuit.GetParameter(12, ALL_cosphi1, ALL_cosphi1_error);
+    double ALL_cosphi2, ALL_cosphi2_error; minuit.GetParameter(13, ALL_cosphi2, ALL_cosphi2_error);
+    double AUU_cosphi1, AUU_cosphi1_error; minuit.GetParameter(14, AUU_cosphi1, AUU_cosphi1_error);
+    double AUU_cosphi2, AUU_cosphi2_error; minuit.GetParameter(15, AUU_cosphi2, AUU_cosphi2_error);
+    double AUU_cos2phi1, AUU_cos2phi1_error; minuit.GetParameter(16, AUU_cos2phi1, AUU_cos2phi1_error);
+    double AUU_cos2phi2, AUU_cos2phi2_error; minuit.GetParameter(17, AUU_cos2phi2, AUU_cos2phi2_error);
+    double AUU_cosSumphi, AUU_cosSumphi_error; minuit.GetParameter(18, AUU_cosSumphi, AUU_cosSumphi_error);
 
     // Calculate the mean values of the current variable 
     double sumVariable = 0;
@@ -1601,7 +1601,7 @@ void performMLMFits_b2b_dihadron(const char* output_file, const char* kinematic_
     ALLStream << 100*ALL_cosphi1_error << "}$ &";
     // ALL cosphi2
     ALLStream << "$" << 100*ALL_cosphi2 << "_{" << TMath::Abs(100*0.092*ALL_cosphi2) << "}^{";
-    ALLStream << 100*ALL_cosphi_error2 << "}$ &";
+    ALLStream << 100*ALL_cosphi2_error << "}$ &";
     //
     ALUStream << std::string(" \\\\ \\hline ");
     //
@@ -1655,10 +1655,6 @@ void performMLMFits_b2b_dihadron(const char* output_file, const char* kinematic_
   ALUStream << "\\label{table:kinematics_" << prefix << "}" << std::endl;
   ALUStream << "\\end{table}" << std::endl;
   ALUStream << endl << endl << endl;
-  std::ofstream kinematicFile(kinematic_file, std::ios_base::app);
-  // Write the string stream content to the file
-  kinematicFile << ALUStream.str() << std::endl; 
-  kinematicFile.close();
   //
   AULStream << "\\end{tabular}" << std::endl;
   AULStream << "\\caption{The mean kinematic value and the final ";
@@ -1669,10 +1665,6 @@ void performMLMFits_b2b_dihadron(const char* output_file, const char* kinematic_
   AULStream << "\\label{table:kinematics_" << prefix << "}" << std::endl;
   AULStream << "\\end{table}" << std::endl;
   AULStream << endl << endl << endl;
-  std::ofstream kinematicFile(kinematic_file, std::ios_base::app);
-  // Write the string stream content to the file
-  kinematicFile << AULStream.str() << std::endl; 
-  kinematicFile.close();
   //
   ALLStream << "\\end{tabular}" << std::endl;
   ALLStream << "\\caption{The mean kinematic value and the final ";
@@ -1683,10 +1675,6 @@ void performMLMFits_b2b_dihadron(const char* output_file, const char* kinematic_
   ALLStream << "\\label{table:kinematics_" << prefix << "}" << std::endl;
   ALLStream << "\\end{table}" << std::endl;
   ALLStream << endl << endl << endl;
-  std::ofstream kinematicFile(kinematic_file, std::ios_base::app);
-  // Write the string stream content to the file
-  kinematicFile << ALLStream.str() << std::endl; 
-  kinematicFile.close();
   //
   AUUStream << "\\end{tabular}" << std::endl;
   AUUStream << "\\caption{The mean kinematic value and the final ";
@@ -1697,9 +1685,13 @@ void performMLMFits_b2b_dihadron(const char* output_file, const char* kinematic_
   AUUStream << "\\label{table:kinematics_" << prefix << "}" << std::endl;
   AUUStream << "\\end{table}" << std::endl;
   AUUStream << endl << endl << endl;
+  //
   std::ofstream kinematicFile(kinematic_file, std::ios_base::app);
   // Write the string stream content to the file
-  kinematicFile << AUUStream.str() << std::endl; 
+  kinematicFile << ALUStream.str() << std::endl; 
+  kinematicFile << AULStream.str() << std::endl;
+  kinematicFile << ALLStream.str() << std::endl;
+  kinematicFile << AUUStream.str() << std::endl;
   kinematicFile.close();
 }
 
