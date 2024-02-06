@@ -152,7 +152,7 @@ void createIntegratedKinematicPlots() {
         leg->Draw();
 
         // Save the canvas to a file
-        c->SaveAs((outputDir + branchName + ".png").c_str());
+        // c->SaveAs((outputDir + branchName + ".png").c_str());
         // Clean up the created objects to avoid memory leaks
         delete dataHist;
         delete mcHist;
