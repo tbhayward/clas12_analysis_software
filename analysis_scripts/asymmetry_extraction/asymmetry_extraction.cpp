@@ -238,7 +238,7 @@ int main(int argc, char *argv[]) {
   createIntegratedKinematicPlots();
   // createIntegratedKinematicPlotsForBinsAndFits();
   // createCorrelationPlotsforrunnum();
-  // createCorrelationPlots();
+  createCorrelationPlots();
   currentFits=0;
   dataReader.Restart(); mcReader.Restart();
 
