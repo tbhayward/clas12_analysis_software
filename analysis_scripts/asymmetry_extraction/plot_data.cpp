@@ -36,7 +36,7 @@ void createAndFillHistogram(TTreeReader& reader, TH2D* hist, const std::string& 
 void createIntegratedKinematicPlots() {
     const std::string outputDir = "output/integrated_plots/";
     const std::vector<std::string> branchesToSkip = {"helicity", "beam_pol", 
-        "target_pol", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum", "runnum", "e_p", "e_theta", "e_phi", "vz_e", "p_p", "p_phi", "p_theta", "vz_p", "Q2", "x", "y", "p1_p", "p1_phi", "p1_theta", "p2_p", "p2_phi", "p2_theta"};
+        "target_pol", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum", "runnum"};
 
     TObjArray* branches = dataReader.GetTree()->GetListOfBranches();
     if (!branches) {
