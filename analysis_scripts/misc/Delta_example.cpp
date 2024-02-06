@@ -22,7 +22,7 @@ void analyzeROOTFile(const char* fileName) {
     }
 
     // Define variables to hold the branch values
-    float mc_p_p, p_p;
+    double mc_p_p, p_p;
     tree->SetBranchAddress("mc_p_p", &mc_p_p);
     tree->SetBranchAddress("p_p", &p_p);
 
