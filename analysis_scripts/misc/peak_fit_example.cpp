@@ -26,7 +26,7 @@ void analyzeROOTFile(const char* fileName) {
     tree->SetBranchAddress("Mx", &Mx);
 
     // Create a histogram for Mx
-    TH1D* hMx = new TH1D("hMx", "Mx Distribution;Mx (GeV/c^2);Entries", 125, 0.6, 1.1);
+    TH1D* hMx = new TH1D("hMx", "Mx Distribution;Mx (GeV);Entries", 125, 0.6, 1.1);
 
     // Loop over the tree entries and fill the histogram
     Long64_t nEntries = tree->GetEntries();
@@ -34,11 +34,12 @@ void analyzeROOTFile(const char* fileName) {
         tree->GetEntry(i);
         hMx->Fill(Mx);
     }
+    hMx->Scale(1/hMx->Integral());
 
     // Define a fitting function: Gaussian + second degree polynomial
-    TF1* fitFunc = new TF1("fitFunc", "gaus(0)+pol2(3)", 0, 1.5);
+    TF1* fitFunc = new TF1("fitFunc", "gaus(0)+pol2(3)", 0.6, 1.1);
     // Gaussian initial parameters: constant, mean (neutron mass), sigma (0.01)
-    fitFunc->SetParameters(500, 0.939, 0.01);
+    fitFunc->SetParameters(500, 0.939, 0.075);
     // Polynomial initial parameters can remain as the default
 
     // Perform the fit
