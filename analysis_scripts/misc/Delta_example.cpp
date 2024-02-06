@@ -27,7 +27,7 @@ void analyzeROOTFile(const char* fileName) {
     tree->SetBranchAddress("p_p", &p_p);
 
     // Create a histogram for Delta p
-    TH1F* hDeltaP = new TH1F("hDeltaP", "#Delta p (GeV);#Delta p;Entries", 100, -0.3, 0.3);
+    TH1F* hDeltaP = new TH1F("hDeltaP", "#Delta p (GeV);#Delta p;Entries", 100, -0.1, 0.1);
 
     // Loop over the tree entries and fill the histogram
     Long64_t nEntries = tree->GetEntries();
@@ -38,7 +38,7 @@ void analyzeROOTFile(const char* fileName) {
     }
 
     // Fit the histogram to a Gaussian
-    TF1* gaussFit = new TF1("gaussFit", "gaus", -0.3, 0.3);
+    TF1* gaussFit = new TF1("gaussFit", "gaus", -0.1, 0.1);
     hDeltaP->Fit(gaussFit, "RQ"); // "RQ" option for Range and Quiet mode
 
     // Plot the histogram and the fitted function
