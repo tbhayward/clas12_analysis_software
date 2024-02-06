@@ -26,7 +26,7 @@ void analyzeROOTFile(const char* fileName) {
     tree->SetBranchAddress("Mx", &Mx);
 
     // Create a histogram for Mx
-    TH1D* hMx = new TH1D("hMx", "Mx Distribution;Mx (GeV/c^2);Entries", 150, 0, 1.5);
+    TH1D* hMx = new TH1D("hMx", "Mx Distribution;Mx (GeV/c^2);Entries", 125, 0.6, 1.1);
 
     // Loop over the tree entries and fill the histogram
     Long64_t nEntries = tree->GetEntries();
