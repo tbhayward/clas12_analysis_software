@@ -122,7 +122,7 @@ void createIntegratedKinematicPlots() {
         mcHist->Scale(1.0 / mcHist->Integral());
 
         // Find the maximum value for y-axis
-        double maxY = 1.2*std::max(dataHist->GetMaximum(), mcHist->GetMaximum());
+        double maxY = 1.4*std::max(dataHist->GetMaximum(), mcHist->GetMaximum());
         dataHist->SetMaximum(1.1 * maxY);
         mcHist->SetMaximum(1.1 * maxY);
 

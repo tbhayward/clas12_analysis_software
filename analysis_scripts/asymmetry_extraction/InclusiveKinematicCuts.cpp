@@ -23,7 +23,7 @@ bool InclusiveKinematicCuts::applyCuts(int currentFits, bool isMC) {
       std::cout << "Property, " << property << ", not detected." << std::endl;
     }
     
-    if (isMC || *runnum < 11571) {
+    if (isMC || (*runnum < 16042 || *runnum > 17811)) {
       return goodEvent;
     } else {
       return goodEvent && *target_pol!=0;

@@ -28,8 +28,6 @@ bool B2BDihadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
       goodEvent = goodEvent; // && *z1 > 0.2 && *Mx > 0.95 && *Mx1 > 1.4 && *Mx2 > 1.8;
     } 
 
-
-
     else if (property == "b2banalysis") {
       goodEvent = goodEvent && *xF1 > 0 && *xF2 < 0 && *z1 > 0.2 && *Mx > 0.95 && 
         *Mx1 > 1.4 && *Mx2 > 1.8;
@@ -37,7 +35,7 @@ bool B2BDihadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
       std::cout << "Property, " << property << ", not detected." << std::endl;
     }
     
-    if (isMC || *runnum < 11571) {
+    if (isMC || (*runnum < 16042 || *runnum > 17811)) {
       return goodEvent;
     } else {
       return goodEvent && *target_pol!=0;
