@@ -2075,6 +2075,8 @@ void performChi2Fits_b2b_dihadron(const char* output_file, const char* kinematic
         chi2FitsStreams[2]<<"{"<<meanVariable<<", "<< ALL_cosphi2 << ", " << ALL_cosphi2_error <<"}";
         if (i < numBins - 1) {
             chi2FitsStreams[0] << ", "; chi2FitsStreams[1] << ", "; chi2FitsStreams[2] << ", ";
+            chi2FitsStreams[3] << ", "; chi2FitsStreams[4] << ", "; chi2FitsStreams[5] << ", ";
+            chi2FitsStreams[6] << ", "; chi2FitsStreams[7] << ", "; 
         }
         break;
       }
