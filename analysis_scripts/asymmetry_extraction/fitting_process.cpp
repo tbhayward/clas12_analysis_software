@@ -1164,7 +1164,6 @@ void negLogLikelihood_b2b_dihadron(Int_t &npar, Double_t *gin, Double_t &f,
       double Df = dilution_factor(*currentVariable, mlmPrefix); // dilution factor
       double Pb = *beam_pol;
       double Pt = std::abs(*target_pol);
-      cout << "Pb: " << Pb << ", Pt = " << Pt << endl << endl;
 
       if (*helicity > 0 && *target_pol >= 0) { 
         sum_PP = sum_PP + log(1 +
