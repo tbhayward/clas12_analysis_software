@@ -16,14 +16,19 @@ bool B2BDihadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     bool goodEvent = false;
     string property = binNames[currentFits];
 
-    if (property == "epippX") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75 && *z1 > 0.2;
-    } else if (property == "xepippX") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75 && *z1 > 0.2 && *xF1 > 0 && *xF2 < 0 && *Mx > 0.95;
-    } else if (property == "epimpX") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75 && *z1 > 0.2;
-    } else if (property == "xepimpX") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75 && *z1 > 0.2 && *xF1 > 0 && *xF2 < 0 && *Mx > 0.95;
+    goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75; // DIS cuts
+    goodEvent = goodEvent && *x > 0.05 && *x < 0.70;
+    if (property == "b2bchannel") {
+      goodEvent = goodEvent;
+    } else if (property == "b2bchannelMxStudy") {
+      goodEvent = goodEvent; // && *xF1 > 0 && *xF2 < 0 && *z1 > 0.2;
+    } else if (property == "b2bchannelz1Study") {
+      goodEvent = goodEvent; // && *xF1 > 0 && *xF2 < 0 && *Mx > 0.95 && *Mx1 > 1.4 && *Mx2 > 1.8;
+    } else if (property == "b2bchannelxFStudy") {
+      goodEvent = goodEvent; // && *z1 > 0.2 && *Mx > 0.95 && *Mx1 > 1.4 && *Mx2 > 1.8;
+    } else if (property == "b2banalysis") {
+      goodEvent = goodEvent && *xF1 > 0 && *xF2 < 0 && *z1 > 0.2 && *Mx > 0.95 && 
+        *Mx1 > 1.4 && *Mx2 > 1.8;
     } else {
       std::cout << "Property, " << property << ", not detected." << std::endl;
     }
