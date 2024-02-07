@@ -1451,21 +1451,21 @@ void performMLMFits_b2b_dihadron(const char* output_file, const char* kinematic_
     minuit.DefineParameter(1, "ALU_sinphi2", 0, 0.01, -1, 1);
     minuit.DefineParameter(2, "ALU_sinDeltaphi", 0, 0.01, -1, 1);
     minuit.DefineParameter(3, "ALU_sin2Deltaphi", 0, 0.01, -1, 1);
-    minuit.DefineParameter(4, "AUL_sinphi1", 0, 0.01, -1, 1);
-    minuit.DefineParameter(5, "AUL_sinphi2", 0, 0.01, -1, 1);
-    minuit.DefineParameter(6, "AUL_sin2phi1", 0.0, 0.01, -1, 1);
-    minuit.DefineParameter(7, "AUL_sin2phi2", 0, 0.01, -1, 1);
-    minuit.DefineParameter(8, "AUL_sinDeltaphi", 0, 0.01, -1, 1);
-    minuit.DefineParameter(9, "AUL_sin2Deltaphi", 0, 0.01, -1, 1);
-    minuit.DefineParameter(10, "AUL_sinSumphi", 0, 0.01, -1, 1);
-    minuit.DefineParameter(11, "ALL", 0, 0.01, -1, 1);
-    minuit.DefineParameter(12, "ALL_cosphi1", 0, 0.01, -1, 1);
-    minuit.DefineParameter(13, "ALL_cosphi2", 0.0, 0.01, -1, 1);
-    minuit.DefineParameter(14, "AUU_cosphi1", 0, 0.01, -1, 1);
-    minuit.DefineParameter(15, "AUU_cosphi2", 0, 0.01, -1, 1);
-    minuit.DefineParameter(16, "AUU_cos2phi1", 0, 0.01, -1, 1);
-    minuit.DefineParameter(17, "AUU_cos2phi2", 0, 0.01, -1, 1);
-    minuit.DefineParameter(18, "AUU_cosSumphi", 0, 0.01, -1, 1);
+    minuit.DefineParameter(4, "AUL_sinphi1", 0, 0.0, -1, 1);
+    minuit.DefineParameter(5, "AUL_sinphi2", 0, 0.0, -1, 1);
+    minuit.DefineParameter(6, "AUL_sin2phi1", 0.0, 0.0, -1, 1);
+    minuit.DefineParameter(7, "AUL_sin2phi2", 0, 0.0, -1, 1);
+    minuit.DefineParameter(8, "AUL_sinDeltaphi", 0, 0.0, -1, 1);
+    minuit.DefineParameter(9, "AUL_sin2Deltaphi", 0, 0.0, -1, 1);
+    minuit.DefineParameter(10, "AUL_sinSumphi", 0, 0.0, -1, 1);
+    minuit.DefineParameter(11, "ALL", 0, 0.0, -1, 1);
+    minuit.DefineParameter(12, "ALL_cosphi1", 0, 0.0, -1, 1);
+    minuit.DefineParameter(13, "ALL_cosphi2", 0.0, 0.0, -1, 1);
+    minuit.DefineParameter(14, "AUU_cosphi1", 0, 0.0, -1, 1);
+    minuit.DefineParameter(15, "AUU_cosphi2", 0, 0.0, -1, 1);
+    minuit.DefineParameter(16, "AUU_cos2phi1", 0, 0.0, -1, 1);
+    minuit.DefineParameter(17, "AUU_cos2phi2", 0, 0.0, -1, 1);
+    minuit.DefineParameter(18, "AUU_cosSumphi", 0, 0.0, -1, 1);
 
     // Minimize the negative log-likelihood function
     minuit.Migrad(); cout << endl;
