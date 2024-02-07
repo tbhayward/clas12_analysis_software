@@ -1166,7 +1166,7 @@ void negLogLikelihood_b2b_dihadron(Int_t &npar, Double_t *gin, Double_t &f,
       double Pt = std::abs(*target_pol);
       cout << "Pb: " << Pb << ", Pt = " << Pt << endl << endl;
 
-      if (*helicity > 0 && *target_pol > 0) { 
+      if (*helicity > 0 && *target_pol >= 0) { 
         sum_PP = sum_PP + log(1 +
           // UU
           (*DepV / *DepA)*AUU_cosphi1*cos(*phi1) +
@@ -1199,7 +1199,7 @@ void negLogLikelihood_b2b_dihadron(Int_t &npar, Double_t *gin, Double_t &f,
           )
         );
       }
-      if (*helicity < 0 && *target_pol > 0) { 
+      if (*helicity < 0 && *target_pol >= 0) { 
         sum_MP = sum_MP + log(1 +
           // UU
           (*DepV / *DepA)*AUU_cosphi1*cos(*phi1) +
