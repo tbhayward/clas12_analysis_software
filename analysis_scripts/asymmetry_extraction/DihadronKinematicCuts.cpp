@@ -30,7 +30,7 @@ bool DihadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
       std::cout << "Property, " << property << ", not detected." << std::endl;
     }
     
-    (isMC || (*runnum < 16042 || *runnum > 17811)) {
+    if (isMC || (*runnum < 16042 || *runnum > 17811)) {
       return goodEvent;
     } else {
       return goodEvent && *target_pol!=0;
