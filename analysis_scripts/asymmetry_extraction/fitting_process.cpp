@@ -1336,6 +1336,7 @@ void negLogLikelihood_b2b_dihadron(Int_t &npar, Double_t *gin, Double_t &f,
     minBeamCharge*minTargetCharge/((cpp+cpm)*(cpm+cmm))*sum_PM - 
     minBeamCharge*minTargetCharge/((cmp+cmm)*(cpp+cmp))*sum_MP - 
     minBeamCharge*minTargetCharge/((cmp+cmm)*(cpm+cmm))*sum_MM;
+  cout << sum_PP << " " << sum_PM << " " << sum_MP << " " << sum_MM << endl;
   cout << "On MLM fit " << binNames[currentFits] << " " << currentFits << ", " << nll << endl;
   cout << "ALU_sinphi1 = " << ALU_sinphi1;
   cout << ", ALU_sinphi2 = " << ALU_sinphi2;
