@@ -26,7 +26,9 @@ bool B2BDihadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
       goodEvent = goodEvent; // && *xF1 > 0 && *xF2 < 0 && *z1 > 0.2;
     } else if (property == "b2bchannelMx2Study") {
       goodEvent = goodEvent; // && *xF1 > 0 && *xF2 < 0 && *z1 > 0.2;
-    } else if (property == "b2bchannelxFStudy") {
+    } else if (property == "b2bchannelxF1Study") {
+      goodEvent = goodEvent && *Mx > 0.95 && *Mx1 > 1.8 && *Mx2 > 1.4;
+    } else if (property == "b2bchannelxF2Study") {
       goodEvent = goodEvent && *Mx > 0.95 && *Mx1 > 1.8 && *Mx2 > 1.4;
     } 
 
