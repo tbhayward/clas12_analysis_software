@@ -57,7 +57,7 @@ public class BeamEnergy {
         else if (runnum >= 11093 && runnum <= 11283) { Eb = 10.4096; } // RGB Fall 2019
         else if (runnum >= 11284 && runnum <= 11300) { Eb = 4.17179; } // RGB Fall 2019
         else if (runnum >= 11323 && runnum <= 11571) { Eb = 10.3894; } // RGB Spring 2020
-        else if (runnum >= 16290 && runnum <= 16353) { Eb = 10.5473; } // RGC preliminary summer 2022
+        else if (runnum >= 16042 && runnum <= 17811) { Eb = 10.5473; } // RGC preliminary summer 2022
         
         if (isRadiative) {
             double double_random=Math.random();
