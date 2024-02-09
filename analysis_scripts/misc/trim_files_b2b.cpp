@@ -30,7 +30,7 @@ int main(int argc, char *argv[]) {
     TTree *outputTree = inputTree->CloneTree(0); // Clone structure, but no entries yet
 
     // Set branch addresses for input tree
-    Float_t Mx, Mx1, Mx2, z1, xF1, xF2;
+    double Mx, Mx1, Mx2, z1, xF1, xF2;
     inputTree->SetBranchAddress("Mx", &Mx);
     inputTree->SetBranchAddress("Mx1", &Mx1);
     inputTree->SetBranchAddress("Mx2", &Mx2);
