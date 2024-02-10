@@ -8,16 +8,28 @@ extern TTreeReader dataReader;
 extern TTreeReader mcReader;
 extern std::map<std::string, HistConfig> histConfigs;
 
-template<typename T>
+#include <optional>
+
+template<typename T, typename TVar>
 void FillHistogram(TTreeReader& reader, const std::string& branchName, TH1D* hist, 
-  BaseKinematicCuts& kinematicCuts, int fitIndex, bool isMC) {
+  BaseKinematicCuts& kinematicCuts, int fitIndex, bool isMC, 
+  std::optional<TVar> varMin = std::nullopt, std::optional<TVar> varMax = std::nullopt) {
     TTreeReaderValue<T> val(reader, branchName.c_str());
+    TTreeReaderValue<TVar> currentVariable(reader, propertyNames[fitIndex].c_str());
+
     while (reader.Next()) {
-        if (kinematicCuts.applyCuts(fitIndex, isMC)) {
+        bool inRange = true; // Assume in range if no range is specified
+        if (varMin.has_value() && varMax.has_value()) {
+            inRange = *currentVariable >= varMin.value() && *currentVariable < varMax.value();
+        }
+
+        if (kinematicCuts.applyCuts(fitIndex, isMC) && inRange) {
             hist->Fill(*val);
         }
     }
 }
+
+
 
 template<typename T1, typename T2>
 void createAndFillHistogram(TTreeReader& reader, TH2D* hist, const std::string& branchX, 
@@ -246,11 +258,11 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                   if (mcReader.GetTree()->GetBranch(branchName.c_str())) {
                       TTreeReaderValue<int> mcVal(mcReader, branchName.c_str());
                       TTreeReaderValue<double> mcBinVariable(mcReader, branchVariable.c_str());
-                      FillHistogram<int>(dataReader, branchName, dataHist, *kinematicCuts, fitIndex, 0);
-                      FillHistogram<int>(mcReader, branchName, mcHist, *mckinematicCuts, fitIndex, 1);
+                      FillHistogram<int>(dataReader, branchName, dataHist, *kinematicCuts, fitIndex, false, binLowerEdge, binUpperEdge);
+                      FillHistogram<int>(mcReader, branchName, mcHist, *mckinematicCuts, fitIndex, true, binLowerEdge, binUpperEdge);
                   } else {
                       int defaultRunNum = 11;
-                      FillHistogram<int>(dataReader, branchName, dataHist, *kinematicCuts, fitIndex, 0);
+                      FillHistogram<int>(dataReader, branchName, dataHist, *kinematicCuts, fitIndex, false, binLowerEdge, binUpperEdge);
                       mcHist->Fill(defaultRunNum);
                   }
                 } else {
@@ -258,8 +270,8 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                   TTreeReaderValue<double> binVariable(dataReader, branchVariable.c_str());
                   TTreeReaderValue<double> mcVal(mcReader, branchName.c_str());
                   TTreeReaderValue<double> mcBinVariable(mcReader, branchVariable.c_str());
-                  FillHistogram<double>(dataReader, branchName, dataHist, *kinematicCuts, fitIndex, 0);
-                  FillHistogram<double>(mcReader, branchName, mcHist, *mckinematicCuts, fitIndex, 1);
+                  FillHistogram<double>(dataReader, branchName, dataHist, *kinematicCuts, fitIndex, false, binLowerEdge, binUpperEdge);
+                  FillHistogram<double>(mcReader, branchName, mcHist, *mckinematicCuts, fitIndex, true, binLowerEdge, binUpperEdge);
                 }
 
                 // Normalize the histograms
