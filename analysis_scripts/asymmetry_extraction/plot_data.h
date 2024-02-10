@@ -4,7 +4,6 @@
 #include <TCanvas.h>
 #include <TLegend.h>
 #include <TStyle.h>
-#include <optional> 
 #include "BaseKinematicCuts.h"
 #include "KinematicCuts.h"
 #include "InclusiveKinematicCuts.h"
@@ -25,10 +24,15 @@ void createCorrelationPlotsforrunnum();
 void createCorrelationPlots();
 
 // Updated FillHistogram declaration
-template<typename T, typename TVar = double>
-void FillHistogram(TTreeReader& reader, const std::string& branchName, TH1D* hist, 
-  BaseKinematicCuts& kinematicCuts, int fitIndex, bool isMC, 
-  std::optional<TVar> varMin = std::nullopt, std::optional<TVar> varMax = std::nullopt);
+template<typename T>
+void FillHistogram(TTreeReader& reader, const std::string& branchName, TH1D* hist,
+  BaseKinematicCuts& kinematicCuts, int fitIndex, bool isMC);
+
+template<typename T>
+void FillHistogramForBins(TTreeReader& reader, const std::string& branchName, TH1D* hist,
+  BaseKinematicCuts& kinematicCuts, int fitIndex, bool isMC,
+  double varMin, double varMax);
+
 
 template<typename T1, typename T2>
 void createAndFillHistogram(TTreeReader& reader, TH2D* hist, const std::string& branchX, 
