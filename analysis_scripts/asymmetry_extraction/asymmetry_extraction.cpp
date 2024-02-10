@@ -29,6 +29,7 @@
 #include "TStyle.h"
 #include <TBranch.h>
 #include <cstdio>
+#include <optional> 
 // tbhayward libraries
 #include "common_vars.h"  // Include the common header
 #include "load_bins_from_csv.h"
