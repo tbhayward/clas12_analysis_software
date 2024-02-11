@@ -513,18 +513,13 @@ void performMLMFits_single_hadron(const char* output_file, const char* kinematic
 
     std::vector<double> chi2Result = chi2Fits[key][currentFits];
     // Define the parameters with initial values and limits
-    minuit.DefineParameter(0, "ALU_sinphi", 
-      chi2Fits[std::string(prefix)+"chi2FitsALUsinphi"][currentFits][1], 0.01, -1, 1);
-    minuit.DefineParameter(1, "AUL_sinphi", 
-      chi2Fits[std::string(prefix)+"chi2FitsAULsinphi"][currentFits][1], 0.01, -1, 1);
-    minuit.DefineParameter(2, "AUL_sin2phi", 
-      chi2Fits[std::string(prefix)+"chi2FitsAULsin2phi"][currentFits][1], 0.01, -1, 1);
-    minuit.DefineParameter(3, "ALL", 
-      chi2Fits[std::string(prefix)+"chi2FitsALL"][currentFits][1], 0.01, -1, 1);
-    minuit.DefineParameter(4, "ALL_cosphi", 
-      chi2Fits[std::string(prefix)+"chi2FitsALLcosphi"][currentFits][1], 0.01, -1, 1);
-    minuit.DefineParameter(5, "AUU_cosphi", -0.1, 0.01, -1, 1);
-    minuit.DefineParameter(6, "AUU_cos2phi", 0.10, 0.01, -1, 1);
+    minuit.DefineParameter(0, "ALU_sinphi", 0.0, 0.01, -1, 1);
+    minuit.DefineParameter(1, "AUL_sinphi", 0.0, 0.01, -1, 1);
+    minuit.DefineParameter(2, "AUL_sin2phi", 0.0, 0.01, -1, 1);
+    minuit.DefineParameter(3, "ALL", 0.0, 0.01, -1, 1);
+    minuit.DefineParameter(4, "ALL_cosphi", 0.0, 0.01, -1, 1);
+    minuit.DefineParameter(5, "AUU_cosphi", 0.0, 0.01, -1, 1);
+    minuit.DefineParameter(6, "AUU_cos2phi", 0.0, 0.01, -1, 1);
 
     // Minimize the negative log-likelihood function
     minuit.Migrad(); cout << endl;
