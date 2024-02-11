@@ -351,13 +351,10 @@ void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f,
 
   TTreeReaderValue<int> runnum(dataReader, "runnum");
   TTreeReaderValue<int> evnum(dataReader, "evnum");
-  TTreeReaderValue<double> xF(dataReader, "xF");
-  TTreeReaderValue<double> Mx(dataReader, "Mx");
   TTreeReaderValue<int> helicity(dataReader, "helicity");
   TTreeReaderValue<double> beam_pol(dataReader, "beam_pol");
   TTreeReaderValue<double> target_pol(dataReader, "target_pol");
   TTreeReaderValue<double> phi(dataReader, "phi");
-  // TTreeReaderValue<double> phi(dataReader, "phi23");
   TTreeReaderValue<double> DepA(dataReader, "DepA");
   TTreeReaderValue<double> DepB(dataReader, "DepB");
   TTreeReaderValue<double> DepC(dataReader, "DepC");
@@ -514,10 +511,10 @@ void performMLMFits_single_hadron(const char* output_file, const char* kinematic
     std::vector<double> chi2Result = chi2Fits[key][currentFits];
     // Define the parameters with initial values and limits
     minuit.DefineParameter(0, "ALU_sinphi", 0.0, 0.01, -1, 1);
-    minuit.DefineParameter(1, "AUL_sinphi", 0.0, 0.01, -1, 1);
-    minuit.DefineParameter(2, "AUL_sin2phi", 0.0, 0.01, -1, 1);
-    minuit.DefineParameter(3, "ALL", 0.0, 0.01, -1, 1);
-    minuit.DefineParameter(4, "ALL_cosphi", 0.0, 0.01, -1, 1);
+    minuit.DefineParameter(1, "AUL_sinphi", 0.0, 0.00, -1, 1);
+    minuit.DefineParameter(2, "AUL_sin2phi", 0.0, 0.00, -1, 1);
+    minuit.DefineParameter(3, "ALL", 0.0, 0.00, -1, 1);
+    minuit.DefineParameter(4, "ALL_cosphi", 0.0, 0.00, -1, 1);
     minuit.DefineParameter(5, "AUU_cosphi", 0.0, 0.01, -1, 1);
     minuit.DefineParameter(6, "AUU_cos2phi", 0.0, 0.01, -1, 1);
 
