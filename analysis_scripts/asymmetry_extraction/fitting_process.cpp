@@ -410,7 +410,6 @@ void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f,
   dataReader.Restart();  // Reset the TTreeReader at the end of the function
   
   TTreeReaderValue<double> mc_phi(mcReader, "phi");
-  // TTreeReaderValue<double> mc_phi(mcReader, "phi23");
   TTreeReaderValue<double> mc_DepA(mcReader, "DepA");
   TTreeReaderValue<double> mc_DepB(mcReader, "DepB");
   TTreeReaderValue<double> mc_DepC(mcReader, "DepC");
@@ -995,6 +994,7 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
     double meant = numEvents > 0 ? sumt / numEvents : 0.0;
     double meantmin = numEvents > 0 ? sumtmin / numEvents : 0.0;
 
+    cout << "Depolarization factors: " << (meanDepA/meanDepV) << " " << (meanDepA/meanDepB) << endl;
     switch (asymmetry_index) {
       case 0: {// beam-spin asymmetry
         // Get the fitted parameters and their errors
