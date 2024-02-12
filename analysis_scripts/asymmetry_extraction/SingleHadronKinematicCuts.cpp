@@ -60,7 +60,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
             && *x>0.20 && *x<0.30 && *Q2<1.7 && *z>0.25 && *z<0.30;
         } else if (property == "UUNH2") {
           goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF > 0
-            && *x>0.10 && *x<0.20 && *Q2<1.3 && *z>0.25 && *z<0.30;
+            && *x>0.20 && *x<0.30 && *Q2<1.3 && *z>0.25 && *z<0.30;
         }
         //
         // epi-X
