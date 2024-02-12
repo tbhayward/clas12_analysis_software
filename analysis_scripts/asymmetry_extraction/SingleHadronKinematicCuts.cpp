@@ -46,9 +46,18 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         else if (property == "PTCFRpip" || property == "xCFRpip" || property == "zCFRpip" ||
           property == "Q2TFRpip") {
           goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *z>0.20 && *xF>0;
-        } else if (property == "UUstudyPTlowz" || property == "UUstudyPThighz") {
+        } else if (property == "UURC1") {
           goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF > 0 && *Mx > 1.5 &&
-            *y>0.65 && *y<0.75 && *Q2>2 && *Q2<2.5 && *z>0.3 && *z<0.4;
+            *y>0.65 && *y<0.75 && *Q2>4 && *Q2<5.5 && *z>0.2 && *z<0.25;
+        } else if (property == "UURC2") {
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF > 0 && *Mx > 1.5 &&
+            *y>0.55 && *y<0.65 && *Q2>2.5 && *Q2<3.0 && *z>0.25 && *z<0.30;
+        } else if (property == "UURC3") {
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF > 0 && *Mx > 1.5 &&
+            *y>0.65 && *y<0.75;
+        } else if (property == "UUNH1") {
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF > 0 &&
+            *x>0.20 && *y<0.30 && *Q2<1.7 && *z>0.25 && *z<0.30;
         }
         //
         // epi-X
