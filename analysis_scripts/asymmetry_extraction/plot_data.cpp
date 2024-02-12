@@ -216,7 +216,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
             std::string binIndexLabel = "bin_" + std::to_string(binIndex + 1);
 
             // Now we iterate over all branches, except those we wish to skip
-            for (Int_t i = 0; i < branches->GetEntries(); ++i) {
+            for (Int_t i = 21; i < branches->GetEntries(); ++i) {
                 TBranch* branch = (TBranch*)branches->At(i);
                 std::string branchName = branch->GetName();
 
@@ -318,6 +318,9 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                     ratioHist->Divide(mcHist); // Compute the ratio of dataHist over mcHist for each bin
                     ratioHist->SetTitle((std::string("Rec/Gen;") + branchName + ";Rec/Gen").c_str()); // Set title and axis labels
                     
+                    // Manually set the y-axis range for the ratio plot
+                    ratioHist->GetYaxis()->SetRangeUser(0.5, 1.5);
+
                     // Aesthetics for ratio histogram
                     ratioHist->SetLineColor(kBlue);
                     ratioHist->SetMarkerStyle(21); // Choose a marker style
