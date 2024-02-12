@@ -312,6 +312,31 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 std::string outputFileName = outputDir + histName + ".png";
                 c->SaveAs(outputFileName.c_str());
 
+                // Now, create and handle the ratio plot for phi
+                if (branchName == "phi") { // make special rec/gen phi distribution
+                    TH1D* ratioHist = static_cast<TH1D*>(dataHist->Clone((histName + "_ratio").c_str()));
+                    ratioHist->Divide(mcHist); // Compute the ratio of dataHist over mcHist for each bin
+                    ratioHist->SetTitle((std::string("Rec/Gen;") + branchName + ";Rec/Gen").c_str()); // Set title and axis labels
+                    
+                    // Aesthetics for ratio histogram
+                    ratioHist->SetLineColor(kBlue);
+                    ratioHist->SetMarkerStyle(21); // Choose a marker style
+                    ratioHist->GetYaxis()->SetTitle("Rec/Gen");
+                    ratioHist->GetXaxis()->SetTitle(branchName.c_str());
+
+                    // Draw the ratio histogram
+                    TCanvas* ratioCanvas = new TCanvas((histName + "_ratio_canvas").c_str(), "Ratio Plot", 800, 600);
+                    ratioHist->Draw("E"); // "E" for drawing error bars
+
+                    // Save the ratio histogram
+                    std::string ratioOutputFileName = outputDir + histName + "_phi_ratio.png";
+                    ratioCanvas->SaveAs(ratioOutputFileName.c_str());
+
+                    // Cleanup
+                    delete ratioHist;
+                    delete ratioCanvas;
+                }
+
                 // Clean up
                 delete dataHist;
                 delete mcHist;
