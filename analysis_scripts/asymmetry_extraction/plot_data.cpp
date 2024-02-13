@@ -315,8 +315,8 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 // Now, create and handle the ratio plot for phi
                 if (branchName == "phi") { // make special rec/gen phi distribution
                     // Redefine histograms for phi with 24 bins covering the desired phi range
-                    TH1D* dataPhiHist = new TH1D("data_phi", "", 24, 0, 2*TMath::Pi());
-                    TH1D* mcPhiHist = new TH1D("mc_phi", "", 24, 0, 2*TMath::Pi());
+                    TH1D* dataPhiHist = new TH1D("data_phi", "", 24, 0, 2*3.14159);
+                    TH1D* mcPhiHist = new TH1D("mc_phi", "", 24, 0, 2*3.14159);
 
                     // Fill these histograms. Assuming FillHistogramForBins function can be used here, 
                     // or adapt your existing data filling code to fill dataPhiHist and mcPhiHist
