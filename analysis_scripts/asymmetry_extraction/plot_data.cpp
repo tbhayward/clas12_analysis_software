@@ -371,7 +371,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                     graph->GetHistogram()->SetMaximum(1.5); // Set maximum y-value
 
                     // Save the graph canvas
-                    std::string graphOutputFileName = outputDir + histName + "_phi_ratio_graph.png";
+                    std::string graphOutputFileName = outputDir + histName + "_phi_ratio.png";
                     graphCanvas->SaveAs(graphOutputFileName.c_str());
 
                     // Cleanup
