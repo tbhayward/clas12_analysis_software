@@ -3,6 +3,8 @@
 #include <TH1D.h>
 #include <TH2D.h>
 #include "formatLabelName.h"
+#include "TGraphErrors.h"
+
 
 extern TTreeReader dataReader;
 extern TTreeReader mcReader;
