@@ -206,7 +206,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
         std::string branchVariable = propertyNames[fitIndex]; // Corresponding branch name for the current variable
 
         // Loop over all possible bins within the current set
-        for (size_t binIndex = 25; binIndex < allBins[fitIndex].size() - 1; ++binIndex) {
+        for (size_t binIndex = 0; binIndex < allBins[fitIndex].size() - 1; ++binIndex) {
             double binLowerEdge = allBins[fitIndex][binIndex];
             double binUpperEdge = allBins[fitIndex][binIndex + 1];
 
