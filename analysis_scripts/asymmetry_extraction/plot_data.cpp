@@ -323,6 +323,9 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                     FillHistogramForBins<double>(dataReader, "phi", dataPhiHist, *kinematicCuts, fitIndex, false, binLowerEdge, binUpperEdge);
                     FillHistogramForBins<double>(mcReader, "phi", mcPhiHist, *mckinematicCuts, fitIndex, true, binLowerEdge, binUpperEdge);
 
+                    std::cout << "Data Histogram Entries: " << dataPhiHist->GetEntries() << std::endl;
+                    std::cout << "MC Histogram Entries: " << mcPhiHist->GetEntries() << std::endl;
+
                     // Compute the ratio of dataHist over mcHist for each bin
                     TH1D* ratioHist = static_cast<TH1D*>(dataPhiHist->Clone((histName + "_ratio").c_str()));
                     ratioHist->Divide(mcPhiHist);
