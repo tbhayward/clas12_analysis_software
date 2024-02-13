@@ -236,47 +236,47 @@ int main(int argc, char *argv[]) {
   cout << "Total neg-neg charge: " << cmm << " (nC). ";
   cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << " (nC)."<< endl << endl;
 
-  // createIntegratedKinematicPlots();
-  // createIntegratedKinematicPlotsForBinsAndFits();
-  // createCorrelationPlotsforrunnum();
-  // createCorrelationPlots();
+  createIntegratedKinematicPlots();
+  createIntegratedKinematicPlotsForBinsAndFits();
+  createCorrelationPlotsforrunnum();
+  createCorrelationPlots();
   currentFits=0;
   dataReader.Restart(); mcReader.Restart();
 
-  for (size_t i = 0; i < allBins.size(); ++i) {
-    cout << "-- Beginning kinematic fits." << endl;
-    for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
-      if (asymmetry > 0 && cpp == 1) {
-        cout << "Skipping TSA and DSA for unpolarized target data." << endl;
-        continue;
-      }
-      switch (asymmetry) {
-        case 0: cout << "    Beginning chi2 BSA." << endl; break;
-        case 1: cout << "    Beginning chi2 TSA." << endl; break;
-        case 2: cout << "    Beginning chi2 DSA." << endl; break;
-      }
-      switch (channel) {
-        case 0: calculate_inclusive(output_file.c_str(), kinematic_file.c_str(), 
-        binNames[i], asymmetry); break;
-        case 1: performChi2Fits_single_hadron(output_file.c_str(), kinematic_file.c_str(), 
-        binNames[i], asymmetry); break;
-        case 2: performChi2Fits_b2b_dihadron(output_file.c_str(), kinematic_file.c_str(), 
-        binNames[i], asymmetry); break;
-      }
-    }
-    cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    switch (channel) {
-      case 0: cout << "No MLM fit for inclusive." << endl; break;
-      case 1: performMLMFits_single_hadron(output_file.c_str(), 
-        kinematic_file.c_str(), binNames[i]); break;
-      case 2: performMLMFits_b2b_dihadron(output_file.c_str(), 
-        kinematic_file.c_str(), binNames[i]); break;
-      case 3: cout << "No dihadron MLM fit (yet)." << endl; break;
-    }
-    cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
-    cout << endl << endl;
-    currentFits++;
-  }
+  // for (size_t i = 0; i < allBins.size(); ++i) {
+  //   cout << "-- Beginning kinematic fits." << endl;
+  //   for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
+  //     if (asymmetry > 0 && cpp == 1) {
+  //       cout << "Skipping TSA and DSA for unpolarized target data." << endl;
+  //       continue;
+  //     }
+  //     switch (asymmetry) {
+  //       case 0: cout << "    Beginning chi2 BSA." << endl; break;
+  //       case 1: cout << "    Beginning chi2 TSA." << endl; break;
+  //       case 2: cout << "    Beginning chi2 DSA." << endl; break;
+  //     }
+  //     switch (channel) {
+  //       case 0: calculate_inclusive(output_file.c_str(), kinematic_file.c_str(), 
+  //       binNames[i], asymmetry); break;
+  //       case 1: performChi2Fits_single_hadron(output_file.c_str(), kinematic_file.c_str(), 
+  //       binNames[i], asymmetry); break;
+  //       case 2: performChi2Fits_b2b_dihadron(output_file.c_str(), kinematic_file.c_str(), 
+  //       binNames[i], asymmetry); break;
+  //     }
+  //   }
+  //   cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
+  //   switch (channel) {
+  //     case 0: cout << "No MLM fit for inclusive." << endl; break;
+  //     case 1: performMLMFits_single_hadron(output_file.c_str(), 
+  //       kinematic_file.c_str(), binNames[i]); break;
+  //     case 2: performMLMFits_b2b_dihadron(output_file.c_str(), 
+  //       kinematic_file.c_str(), binNames[i]); break;
+  //     case 3: cout << "No dihadron MLM fit (yet)." << endl; break;
+  //   }
+  //   cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
+  //   cout << endl << endl;
+  //   currentFits++;
+  // }
 
   mc_file->Close();
   delete mc_file;
