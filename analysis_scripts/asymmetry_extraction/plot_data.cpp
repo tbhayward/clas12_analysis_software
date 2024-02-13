@@ -292,8 +292,8 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
 
                 // Find the maximum y-value between both histograms to set the y-axis range
                 double maxY = std::max(dataHist->GetMaximum(), mcHist->GetMaximum());
-                dataHist->SetMaximum(1.2 * maxY);
-                mcHist->SetMaximum(1.2 * maxY);
+                dataHist->SetMaximum(1.5 * maxY);
+                mcHist->SetMaximum(1.5 * maxY);
 
                 // Create a canvas for drawing the histograms
                 TCanvas* c = new TCanvas((histName + "_canvas").c_str(), branchName.c_str(), 800, 600);
@@ -350,7 +350,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                         ex[i-1] = 0;
                         // Calculate error in y as sqrt((1/a) + (1/b))
                         if (dataValue > 0 && mcValue > 0) {
-                            ey[i-1] = sqrt((1.0 / dataValue) + (1.0 / mcValue));
+                            ey[i-1] = sqrt(dataValue*(dataValue+mcValue)/(dataValue*dataValue*dataValue));
                         } else {
                             ey[i-1] = 0; // Handle division by zero or negative values if necessary
                         }
