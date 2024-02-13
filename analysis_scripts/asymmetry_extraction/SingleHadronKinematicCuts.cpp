@@ -46,23 +46,38 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         else if (property == "PTCFRpip" || property == "xCFRpip" || property == "zCFRpip" ||
           property == "Q2TFRpip") {
           goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *z>0.20 && *xF>0;
-        } else if (property == "UURC1") {
+        } 
+
+        else if (property == "UURCy1clasdis") {
           goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF > 0 && *Mx > 1.5 &&
-            *y>0.65 && *y<0.75 && *Q2>4 && *Q2<5.5 && *z>0.2 && *z<0.25;
-        } else if (property == "UURC2") {
+            *y>0.45 && *y<0.55;
+        } else if (property == "UURCy1claspyth") {
           goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF > 0 && *Mx > 1.5 &&
-            *y>0.55 && *y<0.65 && *Q2>2.5 && *Q2<3.0 && *z>0.25 && *z<0.30;
-        } else if (property == "UURC3") {
+            *y>0.45 && *y<0.55;
+        } else if (property == "UURCy2clasdis") {
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF > 0 && *Mx > 1.5 &&
+            *y>0.55 && *y<0.65;
+        } else if (property == "UURCy2claspyth") {
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF > 0 && *Mx > 1.5 &&
+            *y>0.55 && *y<0.65;
+        } else if (property == "UURCy3clasdis") {
           goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF > 0 && *Mx > 1.5 &&
             *y>0.65 && *y<0.75;
-        } else if (property == "UUNH1") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF > 0
-            && *x>0.20 && *x<0.30 && *Q2<1.7 && *z>0.25 && *z<0.30;
-        } else if (property == "UUNH2") {
-          // goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF > 0
-          //   && *x>0.10 && *x<0.20 && *Q2<1.3 && *z>0.25 && *z<0.30;
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF > 0
-            && *x>0.10 && *x<0.20 && *Q2<1.7 && *z>0.25 && *z<0.30;
+        } else if (property == "UURCy3claspyth") {
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF > 0 && *Mx > 1.5 &&
+            *y>0.65 && *y<0.75;
+        } else if (property == "UURCy3z2clasdis") {
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF > 0 && *Mx > 1.5 &&
+            *y>0.65 && *y<0.75 && *z>0.2 && *z<0.24 && *Q2>2.0 && *Q2<2.5;
+        } else if (property == "UURCy3z2claspyth") {
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF > 0 && *Mx > 1.5 &&
+            *y>0.65 && *y<0.75 && *z>0.2 && *z<0.24 && *Q2>2.0 && *Q2<2.5;
+        } else if (property == "UURCy3z5clasdis") {
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF > 0 && *Mx > 1.5 &&
+            *y>0.65 && *y<0.75 && *z>0.40 && *z<0.73 && *Q2>2.0 && *Q2<2.5;
+        } else if (property == "UURCy3z5claspyth") {
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF > 0 && *Mx > 1.5 &&
+            *y>0.65 && *y<0.75 && *z>0.40 && *z<0.73 && *Q2>2.0 && *Q2<2.5;
         }
         //
         // epi-X

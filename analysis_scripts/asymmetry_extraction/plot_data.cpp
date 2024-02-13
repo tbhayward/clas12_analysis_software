@@ -216,7 +216,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
             std::string binIndexLabel = "bin_" + std::to_string(binIndex + 1);
 
             // Now we iterate over all branches, except those we wish to skip
-            for (Int_t i = 20; i < branches->GetEntries(); ++i) {
+            for (Int_t i = 23; i < branches->GetEntries(); ++i) {
                 TBranch* branch = (TBranch*)branches->At(i);
                 std::string branchName = branch->GetName();
 
@@ -316,7 +316,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 if (branchName == "phi") { // make special rec/gen phi distribution
                     TH1D* ratioHist = static_cast<TH1D*>(dataHist->Clone((histName + "_ratio").c_str()));
                     ratioHist->Divide(mcHist); // Compute the ratio of dataHist over mcHist for each bin
-                    ratioHist->SetTitle((std::string("Rec/Gen;") + branchName + ";Rec/Gen").c_str()); // Set title and axis labels
+                    ratioHist->SetTitle(";#phi;Rec/Gen"); // Set title and axis labels
                     
                     // Manually set the y-axis range for the ratio plot
                     ratioHist->GetYaxis()->SetRangeUser(0.5, 1.5);
@@ -325,7 +325,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                     ratioHist->SetLineColor(kBlue);
                     ratioHist->SetMarkerStyle(21); // Choose a marker style
                     ratioHist->GetYaxis()->SetTitle("Rec/Gen");
-                    ratioHist->GetXaxis()->SetTitle(branchName.c_str());
+                    ratioHist->GetXaxis()->SetTitle("#phi");
 
                     // Draw the ratio histogram
                     TCanvas* ratioCanvas = new TCanvas((histName + "_ratio_canvas").c_str(), "Ratio Plot", 800, 600);
