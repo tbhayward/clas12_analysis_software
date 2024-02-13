@@ -334,9 +334,9 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                         dataRebinned->SetBinContent(i, dataSum);
                         mcRebinned->SetBinContent(i, mcSum);
                     }
-                    // Compute the ratio of dataHist over mcHist for each bin
-                    TH1D* ratioHist = static_cast<TH1D*>(dataPhiHist->Clone((histName + "_ratio").c_str()));
-                    ratioHist->Divide(mcPhiHist);
+                    // Proceed with ratio calculation as before
+                    TH1D* ratioHist = static_cast<TH1D*>(dataRebinned->Clone("ratio_hist"));
+                    ratioHist->Divide(mcRebinned);
                     
                     // Manually set the y-axis range for the ratio plot
                     ratioHist->GetYaxis()->SetRangeUser(0.5, 1.5);
