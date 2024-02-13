@@ -216,7 +216,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
             std::string binIndexLabel = "bin_" + std::to_string(binIndex + 1);
 
             // Now we iterate over all branches, except those we wish to skip
-            for (Int_t i = 23; i < branches->GetEntries(); ++i) {
+            for (Int_t i = 25; i < branches->GetEntries(); ++i) {
                 TBranch* branch = (TBranch*)branches->At(i);
                 std::string branchName = branch->GetName();
 
@@ -314,18 +314,26 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
 
                 // Now, create and handle the ratio plot for phi
                 if (branchName == "phi") { // make special rec/gen phi distribution
-                    // Redefine histograms for phi with 24 bins covering the desired phi range
-                    TH1D* dataPhiHist = new TH1D("data_phi", "", 24, 0, 2*3.14159);
-                    TH1D* mcPhiHist = new TH1D("mc_phi", "", 24, 0, 2*3.14159);
+                    // Assuming original histograms have a compatible binning scheme.
+                    const int targetBins = 24;
+                    int originalBins = dataHist->GetNbinsX();
+                    int combineFactor = originalBins / targetBins; // Determine how many bins to combine.
 
-                    // Fill these histograms. Assuming FillHistogramForBins function can be used here, 
-                    // or adapt your existing data filling code to fill dataPhiHist and mcPhiHist
-                    FillHistogramForBins<double>(dataReader, "phi", dataPhiHist, *kinematicCuts, fitIndex, false, binLowerEdge, binUpperEdge);
-                    FillHistogramForBins<double>(mcReader, "phi", mcPhiHist, *mckinematicCuts, fitIndex, true, binLowerEdge, binUpperEdge);
+                    // Create new histograms for re-binned data
+                    TH1D* dataRebinned = new TH1D("data_rebinned", ";#phi;Normalized Counts", targetBins, 0, 2*3.1459);
+                    TH1D* mcRebinned = new TH1D("mc_rebinned", ";#phi;Normalized Counts", targetBins, 0, 2*3.1459);
 
-                    std::cout << "Data Histogram Entries: " << dataPhiHist->GetEntries() << std::endl;
-                    std::cout << "MC Histogram Entries: " << mcPhiHist->GetEntries() << std::endl;
-
+                    // Manually combine bins
+                    for (int i = 1; i <= targetBins; i++) {
+                        double dataSum = 0, mcSum = 0;
+                        for (int j = 0; j < combineFactor; j++) {
+                            int binIndex = (i - 1) * combineFactor + j + 1; // Calculate original bin index
+                            dataSum += dataHist->GetBinContent(binIndex);
+                            mcSum += mcHist->GetBinContent(binIndex);
+                        }
+                        dataRebinned->SetBinContent(i, dataSum);
+                        mcRebinned->SetBinContent(i, mcSum);
+                    }
                     // Compute the ratio of dataHist over mcHist for each bin
                     TH1D* ratioHist = static_cast<TH1D*>(dataPhiHist->Clone((histName + "_ratio").c_str()));
                     ratioHist->Divide(mcPhiHist);
