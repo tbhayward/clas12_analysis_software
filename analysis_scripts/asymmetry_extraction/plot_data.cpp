@@ -206,7 +206,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
         std::string branchVariable = propertyNames[fitIndex]; // Corresponding branch name for the current variable
 
         // Loop over all possible bins within the current set
-        for (size_t binIndex = 0; binIndex < allBins[fitIndex].size() - 1; ++binIndex) {
+        for (size_t binIndex = 25; binIndex < allBins[fitIndex].size() - 1; ++binIndex) {
             double binLowerEdge = allBins[fitIndex][binIndex];
             double binUpperEdge = allBins[fitIndex][binIndex + 1];
 
@@ -218,7 +218,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
             std::string binIndexLabel = "bin_" + std::to_string(binIndex + 1);
 
             // Now we iterate over all branches, except those we wish to skip
-            for (Int_t i = 25; i < branches->GetEntries(); ++i) {
+            for (Int_t i = 0; i < branches->GetEntries(); ++i) {
                 TBranch* branch = (TBranch*)branches->At(i);
                 std::string branchName = branch->GetName();
 
@@ -367,8 +367,8 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                     graph->Draw("APE"); // "AP" for drawing markers and lines, "E" for error bars
 
                     // Adjust Y-axis range manually
-                    graph->GetHistogram()->SetMinimum(0.5); // Set minimum y-value
-                    graph->GetHistogram()->SetMaximum(1.5); // Set maximum y-value
+                    graph->GetHistogram()->SetMinimum(0.0); // Set minimum y-value
+                    graph->GetHistogram()->SetMaximum(2.0); // Set maximum y-value
 
                     // Save the graph canvas
                     std::string graphOutputFileName = outputDir + histName + "_phi_ratio.png";
