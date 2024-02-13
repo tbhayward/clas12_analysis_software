@@ -216,7 +216,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
             std::string binIndexLabel = "bin_" + std::to_string(binIndex + 1);
 
             // Now we iterate over all branches, except those we wish to skip
-            for (Int_t i = 0; i < branches->GetEntries(); ++i) {
+            for (Int_t i = 25; i < branches->GetEntries(); ++i) {
                 TBranch* branch = (TBranch*)branches->At(i);
                 std::string branchName = branch->GetName();
 
@@ -314,9 +314,18 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
 
                 // Now, create and handle the ratio plot for phi
                 if (branchName == "phi") { // make special rec/gen phi distribution
-                    TH1D* ratioHist = static_cast<TH1D*>(dataHist->Clone((histName + "_ratio").c_str()));
-                    ratioHist->Divide(mcHist); // Compute the ratio of dataHist over mcHist for each bin
-                    ratioHist->SetTitle(";#phi;Rec/Gen"); // Set title and axis labels
+                    // Redefine histograms for phi with 24 bins covering the desired phi range
+                    TH1D* dataPhiHist = new TH1D("data_phi", "", 24, 0, 2*TMath::Pi());
+                    TH1D* mcPhiHist = new TH1D("mc_phi", "", 24, 0, 2*TMath::Pi());
+
+                    // Fill these histograms. Assuming FillHistogramForBins function can be used here, 
+                    // or adapt your existing data filling code to fill dataPhiHist and mcPhiHist
+                    FillHistogramForBins<double>(dataReader, "phi", dataPhiHist, *kinematicCuts, fitIndex, false, binLowerEdge, binUpperEdge);
+                    FillHistogramForBins<double>(mcReader, "phi", mcPhiHist, *mckinematicCuts, fitIndex, true, binLowerEdge, binUpperEdge);
+
+                    // Compute the ratio of dataHist over mcHist for each bin
+                    TH1D* ratioHist = static_cast<TH1D*>(dataPhiHist->Clone((histName + "_ratio").c_str()));
+                    ratioHist->Divide(mcPhiHist);
                     
                     // Manually set the y-axis range for the ratio plot
                     ratioHist->GetYaxis()->SetRangeUser(0.5, 1.5);
