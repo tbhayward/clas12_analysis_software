@@ -216,7 +216,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
             std::string binIndexLabel = "bin_" + std::to_string(binIndex + 1);
 
             // Now we iterate over all branches, except those we wish to skip
-            for (Int_t i = 25; i < branches->GetEntries(); ++i) {
+            for (Int_t i = 26; i < branches->GetEntries(); ++i) {
                 TBranch* branch = (TBranch*)branches->At(i);
                 std::string branchName = branch->GetName();
 
@@ -316,6 +316,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 if (branchName == "phi") { // make special rec/gen phi distribution
                     // Assuming original histograms have a compatible binning scheme.
                     const int targetBins = 24;
+                    double x[targetBins], y[targetBins], ex[targetBins], ey[targetBins];
                     int originalBins = dataHist->GetNbinsX();
                     int combineFactor = originalBins / targetBins; // Determine how many bins to combine.
 
@@ -334,30 +335,70 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                         dataRebinned->SetBinContent(i, dataSum);
                         mcRebinned->SetBinContent(i, mcSum);
                     }
-                    // Proceed with ratio calculation as before
-                    TH1D* ratioHist = static_cast<TH1D*>(dataRebinned->Clone("ratio_hist"));
-                    ratioHist->Divide(mcRebinned);
-                    
-                    // Manually set the y-axis range for the ratio plot
-                    ratioHist->GetYaxis()->SetRangeUser(0.5, 1.5);
 
-                    // Aesthetics for ratio histogram
-                    ratioHist->SetLineColor(kBlue);
-                    ratioHist->SetMarkerStyle(21); // Choose a marker style
-                    ratioHist->GetYaxis()->SetTitle("Rec/Gen");
-                    ratioHist->GetXaxis()->SetTitle("#phi");
+                    // Assuming you've already filled dataRebinned and mcRebinned as before
+                    for (int i = 1; i <= targetBins; i++) {
+                        // Calculate the center of each bin as the x-value
+                        x[i-1] = dataRebinned->GetBinCenter(i);
+                        // y-values are the ratio
+                        double dataValue = dataRebinned->GetBinContent(i);
+                        double mcValue = mcRebinned->GetBinContent(i);
+                        y[i-1] = dataValue / mcValue;
+                        // Assuming no error in the x-direction (bin center)
+                        ex[i-1] = 0;
+                        // Calculate error in y as sqrt((1/a) + (1/b))
+                        if (dataValue > 0 && mcValue > 0) {
+                            ey[i-1] = sqrt((1.0 / dataValue) + (1.0 / mcValue));
+                        } else {
+                            ey[i-1] = 0; // Handle division by zero or negative values if necessary
+                        }
+                    }
 
-                    // Draw the ratio histogram
-                    TCanvas* ratioCanvas = new TCanvas((histName + "_ratio_canvas").c_str(), "Ratio Plot", 800, 600);
-                    ratioHist->Draw("E"); // "E" for drawing error bars
+                    // Create a TGraphErrors with the arrays
+                    TGraphErrors* graph = new TGraphErrors(targetBins, x, y, ex, ey);
+                    graph->SetTitle(";#phi;Rec/Gen"); // Set title and axis labels
+                    graph->SetMarkerStyle(21); // Choose a marker style
+                    graph->SetLineColor(kBlue);
 
-                    // Save the ratio histogram
-                    std::string ratioOutputFileName = outputDir + histName + "_phi_ratio.png";
-                    ratioCanvas->SaveAs(ratioOutputFileName.c_str());
+                    // Draw the TGraphErrors
+                    TCanvas* graphCanvas = new TCanvas((histName + "_ratio_graph").c_str(), "Ratio Plot", 800, 600);
+                    graph->Draw("APE"); // "AP" for drawing markers and lines, "E" for error bars
+
+                    // Adjust Y-axis range manually
+                    graph->GetHistogram()->SetMinimum(0.5); // Set minimum y-value
+                    graph->GetHistogram()->SetMaximum(1.5); // Set maximum y-value
+
+                    // Save the graph canvas
+                    std::string graphOutputFileName = outputDir + histName + "_phi_ratio_graph.png";
+                    graphCanvas->SaveAs(graphOutputFileName.c_str());
 
                     // Cleanup
-                    delete ratioHist;
-                    delete ratioCanvas;
+                    delete graph;
+                    delete graphCanvas;
+                    // // Proceed with ratio calculation as before
+                    // TH1D* ratioHist = static_cast<TH1D*>(dataRebinned->Clone("ratio_hist"));
+                    // ratioHist->Divide(mcRebinned);
+                    
+                    // // Manually set the y-axis range for the ratio plot
+                    // ratioHist->GetYaxis()->SetRangeUser(0.5, 1.5);
+
+                    // // Aesthetics for ratio histogram
+                    // ratioHist->SetLineColor(kBlue);
+                    // ratioHist->SetMarkerStyle(21); // Choose a marker style
+                    // ratioHist->GetYaxis()->SetTitle("Rec/Gen");
+                    // ratioHist->GetXaxis()->SetTitle("#phi");
+
+                    // // Draw the ratio histogram
+                    // TCanvas* ratioCanvas = new TCanvas((histName + "_ratio_canvas").c_str(), "Ratio Plot", 800, 600);
+                    // ratioHist->Draw("E"); // "E" for drawing error bars
+
+                    // // Save the ratio histogram
+                    // std::string ratioOutputFileName = outputDir + histName + "_phi_ratio.png";
+                    // ratioCanvas->SaveAs(ratioOutputFileName.c_str());
+
+                    // // Cleanup
+                    // delete ratioHist;
+                    // delete ratioCanvas;
                 }
 
                 // Clean up
