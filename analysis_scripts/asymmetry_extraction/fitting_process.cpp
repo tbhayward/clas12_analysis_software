@@ -509,7 +509,7 @@ void performMLMFits_single_hadron(const char* output_file, const char* kinematic
 
     // std::vector<double> chi2Result = chi2Fits[key][currentFits];
     // Define the parameters with initial values and limits
-    minuit.DefineParameter(0, "ALU_sinphi", 0.0, 0.01, -1, 1);
+    minuit.DefineParameter(0, "ALU_sinphi", 0.0, 0.0, -1, 1);
     minuit.DefineParameter(1, "AUL_sinphi", 0.0, 0.00, -1, 1);
     minuit.DefineParameter(2, "AUL_sin2phi", 0.0, 0.00, -1, 1);
     minuit.DefineParameter(3, "ALL", 0.0, 0.00, -1, 1);
