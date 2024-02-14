@@ -35,9 +35,9 @@ runnum,evnum,helicity,e_p,e_theta,e_phi,vz_e,p_p,p_theta,p_phi,vz_p,Q2,W,Mx,Mx2,
 #xCFRpip,x,0.05,0.12,0.20,0.28,0.36,0.44,0.60
 #zTFRpip,z,0.0,0.08,0.26,0.34,0.42,0.80
 #zCFRpip,z,0.0,0.08,0.26,0.34,0.42,0.50,0.58,0.80
-UURCy1clasdis,Q2,2.0,2.5,3.0,4.0,6.0
+#UURCy1clasdis,Q2,2.0,2.5,3.0,4.0,6.0
 #UURCy1claspyth,Q2,2.0,2.5,3.0,4.0,6.0
-#UURCy2clasdis,Q2,2.0,2.5,3.0,4.0,5.5,8.0
+UURCy2clasdis,Q2,2.0,2.5,3.0,4.0,5.5,8.0
 #UURCy2claspyth,Q2,2.0,2.5,3.0,4.0,5.5,8.0
 #UURCy3clasdis,Q2,2.0,2.5,3.0,4.0,5.5,8.0
 #UURCy3claspyth,Q2,2.0,2.5,3.0,4.0,5.5,10.0
