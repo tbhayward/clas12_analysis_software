@@ -504,8 +504,8 @@ void performMLMFits_single_hadron(const char* output_file, const char* kinematic
 
     // Construct the key based on the prefix and the fit name
     // For now, let's assume fitName is a string that contains the fit name like "ALUsinphi"
-    std::string fitName = "ALUsinphi";// Replace this with the logic to determine the fit name
-    std::string key = std::string(prefix) + "chi2Fits" + fitName; 
+    // std::string fitName = "ALUsinphi";// Replace this with the logic to determine the fit name
+    // std::string key = std::string(prefix) + "chi2Fits" + fitName; 
 
     std::vector<double> chi2Result = chi2Fits[key][currentFits];
     // Define the parameters with initial values and limits
