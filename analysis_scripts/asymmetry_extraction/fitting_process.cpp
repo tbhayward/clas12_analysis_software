@@ -498,9 +498,9 @@ void performMLMFits_single_hadron(const char* output_file, const char* kinematic
       << " bin " << i << ". ";
     currentBin = i;
 
-    // Read the chi2 fits into a map
-    std::map<std::string, std::vector<std::vector<double>>> chi2Fits = 
-        readChi2Fits(std::string(output_file));
+    // // Read the chi2 fits into a map
+    // std::map<std::string, std::vector<std::vector<double>>> chi2Fits = 
+    //     readChi2Fits(std::string(output_file));
 
     // Construct the key based on the prefix and the fit name
     // For now, let's assume fitName is a string that contains the fit name like "ALUsinphi"
