@@ -282,6 +282,14 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                   FillHistogramForBins<double>(mcReader, branchName, mcHist, *mckinematicCuts, fitIndex, true, binLowerEdge, binUpperEdge);
                 }
 
+                // clone so we have the unnormalized version for the ratio plot for phi
+                // Clone dataHist
+                TH1* clonedDataHist = (TH1*)dataHist->Clone("clonedDataHist");
+                clonedDataHist->SetTitle("Cloned Data Histogram");
+
+                // Clone mcHist
+                TH1* clonedMcHist = (TH1*)mcHist->Clone("clonedMcHist");
+                clonedMcHist->SetTitle("Cloned MC Histogram");
                 // Normalize the histograms
                 if (dataHist->Integral() != 0) {
                     dataHist->Scale(1.0 / dataHist->Integral());
@@ -331,8 +339,8 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                         double dataSum = 0, mcSum = 0;
                         for (int j = 0; j < combineFactor; j++) {
                             int binIndex = (i - 1) * combineFactor + j + 1; // Calculate original bin index
-                            dataSum += dataHist->GetBinContent(binIndex);
-                            mcSum += mcHist->GetBinContent(binIndex);
+                            dataSum += clonedDataHist->GetBinContent(binIndex);
+                            mcSum += clonedMcHist->GetBinContent(binIndex);
                         }
                         dataRebinned->SetBinContent(i, dataSum);
                         mcRebinned->SetBinContent(i, mcSum);
@@ -377,35 +385,11 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                     // Cleanup
                     delete graph;
                     delete graphCanvas;
-                    // // Proceed with ratio calculation as before
-                    // TH1D* ratioHist = static_cast<TH1D*>(dataRebinned->Clone("ratio_hist"));
-                    // ratioHist->Divide(mcRebinned);
-                    
-                    // // Manually set the y-axis range for the ratio plot
-                    // ratioHist->GetYaxis()->SetRangeUser(0.5, 1.5);
-
-                    // // Aesthetics for ratio histogram
-                    // ratioHist->SetLineColor(kBlue);
-                    // ratioHist->SetMarkerStyle(21); // Choose a marker style
-                    // ratioHist->GetYaxis()->SetTitle("Rec/Gen");
-                    // ratioHist->GetXaxis()->SetTitle("#phi");
-
-                    // // Draw the ratio histogram
-                    // TCanvas* ratioCanvas = new TCanvas((histName + "_ratio_canvas").c_str(), "Ratio Plot", 800, 600);
-                    // ratioHist->Draw("E"); // "E" for drawing error bars
-
-                    // // Save the ratio histogram
-                    // std::string ratioOutputFileName = outputDir + histName + "_phi_ratio.png";
-                    // ratioCanvas->SaveAs(ratioOutputFileName.c_str());
-
-                    // // Cleanup
-                    // delete ratioHist;
-                    // delete ratioCanvas;
                 }
 
                 // Clean up
-                delete dataHist;
-                delete mcHist;
+                delete dataHist; delete clonedDataHist;
+                delete mcHist; delete clonedMcHist;
                 delete c;
                 delete leg;
 
