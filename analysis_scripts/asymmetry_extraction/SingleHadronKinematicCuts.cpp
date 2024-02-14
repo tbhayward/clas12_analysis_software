@@ -51,7 +51,10 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         else if (property == "UURCy1clasdis") {
           goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF > 0 && *Mx > 1.5 && *z>0.2 &&
             *y>0.45 && *y<0.55;
-        } else if (property == "UURCy1claspyth") {
+        } else if (property == "UURCy1clasdis_noLU") {
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF > 0 && *Mx > 1.5 && *z>0.2 &&
+            *y>0.45 && *y<0.55;
+        }else if (property == "UURCy1claspyth") {
           goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF > 0 && *Mx > 1.5 && *z>0.2 &&
             *y>0.45 && *y<0.55;
         } else if (property == "UURCy2clasdis") {
