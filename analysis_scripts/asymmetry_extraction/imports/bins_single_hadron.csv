@@ -24,7 +24,7 @@ runnum,evnum,helicity,e_p,e_theta,e_phi,vz_e,p_p,p_theta,p_phi,vz_p,Q2,W,Mx,Mx2,
 #
 #
 # epi+X
-#xpip,x,0.05,0.7
+xpip,x,0.05,0.7
 #xpip,x,0.05,0.15,0.3,0.45,0.7
 #xpip,W,2,3,4
 #xpip,p_p,0,0.5,1.,1.5,2.,2.5,3.,3.5,4.,4.5,5.,5.5,6.,6.5,7.0
@@ -42,10 +42,10 @@ runnum,evnum,helicity,e_p,e_theta,e_phi,vz_e,p_p,p_theta,p_phi,vz_p,Q2,W,Mx,Mx2,
 #UURCy3clasdis,Q2,2.0,2.5,3.0,4.0,5.5,8.0
 #UURCy3claspyth,Q2,2.0,2.5,3.0,4.0,5.5,10.0
 #UURCy3z2clasdis,pT,0.05,0.20,0.30,0.40,0.50,0.60,0.75
-#UURCy3z2clasdis_noLU,pT,0.05,0.20,0.30,0.40,0.50,0.60,0.75
+UURCy3z2clasdis_noLU,pT,0.05,0.20,0.30,0.40,0.50,0.60,0.75
 #UURCy3z2claspyth,pT,0.05,0.20,0.30,0.40,0.50,0.60,0.75
 #UURCy3z5clasdis,pT,0.05,0.20,0.30,0.40,0.50,0.60,0.75,1.00
-UURCy3z5clasdis_noLU,pT,0.05,0.20,0.30,0.40,0.50,0.60,0.75,1.00
+#UURCy3z5clasdis_noLU,pT,0.05,0.20,0.30,0.40,0.50,0.60,0.75,1.00
 #UURCy3z5claspyth,pT,0.05,0.20,0.30,0.40,0.50,0.60,0.75,1.00
 #
 #
