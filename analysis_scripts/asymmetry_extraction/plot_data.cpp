@@ -282,12 +282,16 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                   FillHistogramForBins<double>(mcReader, branchName, mcHist, *mckinematicCuts, fitIndex, true, binLowerEdge, binUpperEdge);
                 }
 
+                double dataScale = 0;
+                double mcScale = 0;
                 // Normalize the histograms
                 if (dataHist->Integral() != 0) {
-                    dataHist->Scale(1.0 / dataHist->Integral());
+                    dataScale = dataHist->Integral();
+                    dataHist->Scale(1.0 / dataScale);
                 }
                 if (mcHist->Integral() != 0) {
-                    mcHist->Scale(1.0 / mcHist->Integral());
+                    mcScale = mcHist->Integral();
+                    mcHist->Scale(1.0 / mcScale);
                 }
 
                 // Find the maximum y-value between both histograms to set the y-axis range
@@ -351,8 +355,8 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
 
                         // Corrected calculation of error in y
                         if (dataValue > 0 && mcValue > 0) {
-                            double dataError = sqrt(dataValue); // For normalized, this should be scaled appropriately if needed
-                            double mcError = sqrt(mcValue); // Same as above
+                            double dataError = sqrt(dataValue)/dataScale; // For normalized, this should be scaled appropriately if needed
+                            double mcError = sqrt(mcValue)/mcScale; // Same as above
                             // Calculate the relative errors and then the error on the ratio
                             double relativeErrorData = dataError / dataValue;
                             double relativeErrorMC = mcError / mcValue;
