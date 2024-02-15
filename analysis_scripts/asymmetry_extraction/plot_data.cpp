@@ -361,7 +361,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                             double relativeErrorData = dataError / dataValue;
                             double relativeErrorMC = mcError / mcValue;
                             // ey[i-1] = y[i-1] * sqrt(relativeErrorData * relativeErrorData + relativeErrorMC * relativeErrorMC);
-                            ey[i-1] = (mcScale*dataValue)/(dataScale*mcValue)*sqrt(1/mcValue + 1/dataValue + 1/mcScale + 1/dataScale);
+                            ey[i-1] = sqrt(mcError*mcError+dataError*dataError);
                         } else {
                             ey[i-1] = 0; // Handle division by zero or negative values if necessary
                         }
