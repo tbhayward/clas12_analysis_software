@@ -353,18 +353,18 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                         // Assuming no error in the x-direction (bin center)
                         ex[i-1] = 0;
 
-                        // Corrected calculation of error in y
-                        if (dataValue > 0 && mcValue > 0) {
-                            double dataError = sqrt(dataValue); // For normalized, this should be scaled appropriately if needed
-                            double mcError = sqrt(mcValue); // Same as above
-                            // Calculate the relative errors and then the error on the ratio
-                            double relativeErrorData = dataError / dataValue;
-                            double relativeErrorMC = mcError / mcValue;
-                            // ey[i-1] = y[i-1] * sqrt(relativeErrorData * relativeErrorData + relativeErrorMC * relativeErrorMC);
-                            ey[i-1] = sqrt(mcError*mcError+dataError*dataError);
-                        } else {
-                            ey[i-1] = 0; // Handle division by zero or negative values if necessary
-                        }
+                        // // Corrected calculation of error in y
+                        // if (dataValue > 0 && mcValue > 0) {
+                        //     double dataError = sqrt(dataValue); // For normalized, this should be scaled appropriately if needed
+                        //     double mcError = sqrt(mcValue); // Same as above
+                        //     // Calculate the relative errors and then the error on the ratio
+                        //     double relativeErrorData = dataError / dataValue;
+                        //     double relativeErrorMC = mcError / mcValue;
+                        //     // ey[i-1] = y[i-1] * sqrt(relativeErrorData * relativeErrorData + relativeErrorMC * relativeErrorMC);
+                        //     ey[i-1] = sqrt(mcError*mcError+dataError*dataError);
+                        // } else {
+                        //     ey[i-1] = 0; // Handle division by zero or negative values if necessary
+                        // }
                     }
 
 
