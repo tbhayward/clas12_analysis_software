@@ -355,12 +355,13 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
 
                         // Corrected calculation of error in y
                         if (dataValue > 0 && mcValue > 0) {
-                            double dataError = sqrt(dataValue)/dataScale; // For normalized, this should be scaled appropriately if needed
-                            double mcError = sqrt(mcValue)/mcScale; // Same as above
+                            double dataError = sqrt(dataValue); // For normalized, this should be scaled appropriately if needed
+                            double mcError = sqrt(mcValue); // Same as above
                             // Calculate the relative errors and then the error on the ratio
                             double relativeErrorData = dataError / dataValue;
                             double relativeErrorMC = mcError / mcValue;
-                            ey[i-1] = y[i-1] * sqrt(relativeErrorData * relativeErrorData + relativeErrorMC * relativeErrorMC);
+                            // ey[i-1] = y[i-1] * sqrt(relativeErrorData * relativeErrorData + relativeErrorMC * relativeErrorMC);
+                            ey[i-1] = (mcScale*dataValue)/(dataScale*mcValue)*sqrt(1/mcValue + 1/dataValue + 1/mcScale + 1/dataScale);
                         } else {
                             ey[i-1] = 0; // Handle division by zero or negative values if necessary
                         }
