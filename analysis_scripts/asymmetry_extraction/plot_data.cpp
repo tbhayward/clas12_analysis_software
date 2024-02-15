@@ -67,7 +67,7 @@ void createIntegratedKinematicPlots() {
     gStyle->SetOptStat(0);
     gStyle->SetTextSize(0.05); // Increase the text size globally
     bool restart = true;
-    for (Int_t i = 25; i < branches->GetEntries(); ++i) {
+    for (Int_t i = 0; i < branches->GetEntries(); ++i) {
 
         TBranch* branch = (TBranch*)branches->At(i);
         std::string branchName = branch->GetName();
@@ -218,7 +218,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
             std::string binIndexLabel = "bin_" + std::to_string(binIndex + 1);
 
             // Now we iterate over all branches, except those we wish to skip
-            for (Int_t i = 0; i < branches->GetEntries(); ++i) {
+            for (Int_t i = 25; i < branches->GetEntries(); ++i) {
                 TBranch* branch = (TBranch*)branches->At(i);
                 std::string branchName = branch->GetName();
 
@@ -360,8 +360,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                             // Calculate the relative errors and then the error on the ratio
                             double relativeErrorData = dataError / dataValue;
                             double relativeErrorMC = mcError / mcValue;
-                            // ey[i-1] = y[i-1] * sqrt(relativeErrorData * relativeErrorData + relativeErrorMC * relativeErrorMC);
-                            ey[i-1] = (mcScale*dataValue)/(dataScale*mcValue)*sqrt(1/mcValue + 1/dataValue + 1/mcScale + 1/dataScale);
+                            ey[i-1] = y[i-1] * sqrt(relativeErrorData * relativeErrorData + relativeErrorMC * relativeErrorMC);
                         } else {
                             ey[i-1] = 0; // Handle division by zero or negative values if necessary
                         }
