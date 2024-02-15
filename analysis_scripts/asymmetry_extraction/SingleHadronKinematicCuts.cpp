@@ -31,7 +31,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
           goodEvent = *Q2>1 && *W>2 && *Mx>1.4 && *y<0.75 && *xF<0;
         }
         else if (property == "PTCFR" || property == "xCFR" || property == "zetaCFR" ||
-          property == "Q2TFR") {
+          property == "Q2CFR") {
           goodEvent = *Q2>1 && *W>2 && *Mx>1.4 && *y<0.75 && *xF>0;
         } 
         //
@@ -44,7 +44,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
           goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *z>0.20 && *xF<0;
         }
         else if (property == "PTCFRpip" || property == "xCFRpip" || property == "zCFRpip" ||
-          property == "Q2TFRpip") {
+          property == "Q2CFRpip") {
           goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *z>0.20 && *xF>0;
         } 
 
