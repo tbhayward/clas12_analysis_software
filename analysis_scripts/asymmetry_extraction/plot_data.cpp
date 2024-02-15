@@ -318,77 +318,77 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 std::string outputFileName = outputDir + histName + ".png";
                 c->SaveAs(outputFileName.c_str());
 
-                // // Now, create and handle the ratio plot for phi
-                // if (branchName == "phi") { // make special rec/gen phi distribution
-                //     // Assuming original histograms have a compatible binning scheme.
-                //     const int targetBins = 24;
-                //     double x[targetBins], y[targetBins], ex[targetBins], ey[targetBins];
-                //     int originalBins = dataHist->GetNbinsX();
-                //     int combineFactor = originalBins / targetBins; // Determine how many bins to combine.
+                // Now, create and handle the ratio plot for phi
+                if (branchName == "phi") { // make special rec/gen phi distribution
+                    // Assuming original histograms have a compatible binning scheme.
+                    const int targetBins = 24;
+                    double x[targetBins], y[targetBins], ex[targetBins], ey[targetBins];
+                    int originalBins = dataHist->GetNbinsX();
+                    int combineFactor = originalBins / targetBins; // Determine how many bins to combine.
 
-                //     // Create new histograms for re-binned data
-                //     TH1D* dataRebinned = new TH1D("data_rebinned", ";#phi;Normalized Counts", targetBins, 0, 2*3.1459);
-                //     TH1D* mcRebinned = new TH1D("mc_rebinned", ";#phi;Normalized Counts", targetBins, 0, 2*3.1459);
+                    // Create new histograms for re-binned data
+                    TH1D* dataRebinned = new TH1D("data_rebinned", ";#phi;Normalized Counts", targetBins, 0, 2*3.1459);
+                    TH1D* mcRebinned = new TH1D("mc_rebinned", ";#phi;Normalized Counts", targetBins, 0, 2*3.1459);
 
-                //     // Manually combine bins
-                //     for (int i = 1; i <= targetBins; i++) {
-                //         double dataSum = 0, mcSum = 0;
-                //         for (int j = 0; j < combineFactor; j++) {
-                //             int binIndex = (i - 1) * combineFactor + j + 1; // Calculate original bin index
-                //             dataSum += dataHist->GetBinContent(binIndex);
-                //             mcSum += mcHist->GetBinContent(binIndex);
-                //         }
-                //         dataRebinned->SetBinContent(i, dataSum);
-                //         mcRebinned->SetBinContent(i, mcSum);
-                //     }
+                    // Manually combine bins
+                    for (int i = 1; i <= targetBins; i++) {
+                        double dataSum = 0, mcSum = 0;
+                        for (int j = 0; j < combineFactor; j++) {
+                            int binIndex = (i - 1) * combineFactor + j + 1; // Calculate original bin index
+                            dataSum += dataHist->GetBinContent(binIndex);
+                            mcSum += mcHist->GetBinContent(binIndex);
+                        }
+                        dataRebinned->SetBinContent(i, dataSum);
+                        mcRebinned->SetBinContent(i, mcSum);
+                    }
 
-                //     // filled dataRebinned and mcRebinned as before
-                //     for (int i = 1; i <= targetBins; i++) {
-                //         // Calculate the center of each bin as the x-value
-                //         x[i-1] = dataRebinned->GetBinCenter(i);
-                //         // y-values are the ratio
-                //         double dataValue = dataRebinned->GetBinContent(i);
-                //         double mcValue = mcRebinned->GetBinContent(i);
-                //         y[i-1] = dataValue / mcValue;
-                //         // Assuming no error in the x-direction (bin center)
-                //         ex[i-1] = 0;
+                    // filled dataRebinned and mcRebinned as before
+                    for (int i = 1; i <= targetBins; i++) {
+                        // Calculate the center of each bin as the x-value
+                        x[i-1] = dataRebinned->GetBinCenter(i);
+                        // y-values are the ratio
+                        double dataValue = dataRebinned->GetBinContent(i);
+                        double mcValue = mcRebinned->GetBinContent(i);
+                        y[i-1] = dataValue / mcValue;
+                        // Assuming no error in the x-direction (bin center)
+                        ex[i-1] = 0;
 
-                //         // // Corrected calculation of error in y
-                //         // if (dataValue > 0 && mcValue > 0) {
-                //         //     double dataError = sqrt(dataValue); // For normalized, this should be scaled appropriately if needed
-                //         //     double mcError = sqrt(mcValue); // Same as above
-                //         //     // Calculate the relative errors and then the error on the ratio
-                //         //     double relativeErrorData = dataError / dataValue;
-                //         //     double relativeErrorMC = mcError / mcValue;
-                //         //     // ey[i-1] = y[i-1] * sqrt(relativeErrorData * relativeErrorData + relativeErrorMC * relativeErrorMC);
-                //         //     ey[i-1] = sqrt(mcError*mcError+dataError*dataError);
-                //         // } else {
-                //         //     ey[i-1] = 0; // Handle division by zero or negative values if necessary
-                //         // }
-                //     }
+                        // Corrected calculation of error in y
+                        if (dataValue > 0 && mcValue > 0) {
+                            double dataError = sqrt(dataValue); // For normalized, this should be scaled appropriately if needed
+                            double mcError = sqrt(mcValue); // Same as above
+                            // Calculate the relative errors and then the error on the ratio
+                            double relativeErrorData = dataError / dataValue;
+                            double relativeErrorMC = mcError / mcValue;
+                            // ey[i-1] = y[i-1] * sqrt(relativeErrorData * relativeErrorData + relativeErrorMC * relativeErrorMC);
+                            ey[i-1] = (mcScale*dataValue)/(dataScale*mcValue)*sqrt(1/mcValue + 1/dataValue + 1/mcScale + 1/dataScale);
+                        } else {
+                            ey[i-1] = 0; // Handle division by zero or negative values if necessary
+                        }
+                    }
 
 
-                    // // Create a TGraphErrors with the arrays
-                    // TGraphErrors* graph = new TGraphErrors(targetBins, x, y, ex, ey);
-                    // graph->SetTitle(";#phi;Rec/Gen"); // Set title and axis labels
-                    // graph->SetMarkerStyle(21); // Choose a marker style
-                    // graph->SetLineColor(kBlue);
+                    // Create a TGraphErrors with the arrays
+                    TGraphErrors* graph = new TGraphErrors(targetBins, x, y, ex, ey);
+                    graph->SetTitle(";#phi;Rec/Gen"); // Set title and axis labels
+                    graph->SetMarkerStyle(21); // Choose a marker style
+                    graph->SetLineColor(kBlue);
 
-                    // // Draw the TGraphErrors
-                    // TCanvas* graphCanvas = new TCanvas((histName + "_ratio_graph").c_str(), "Ratio Plot", 800, 600);
-                    // graph->Draw("APE"); // "AP" for drawing markers and lines, "E" for error bars
+                    // Draw the TGraphErrors
+                    TCanvas* graphCanvas = new TCanvas((histName + "_ratio_graph").c_str(), "Ratio Plot", 800, 600);
+                    graph->Draw("APE"); // "AP" for drawing markers and lines, "E" for error bars
 
-                    // // Adjust Y-axis range manually
-                    // graph->GetHistogram()->SetMinimum(0.0); // Set minimum y-value
-                    // graph->GetHistogram()->SetMaximum(2.0); // Set maximum y-value
+                    // Adjust Y-axis range manually
+                    graph->GetHistogram()->SetMinimum(0.0); // Set minimum y-value
+                    graph->GetHistogram()->SetMaximum(2.0); // Set maximum y-value
 
-                    // // Save the graph canvas
-                    // std::string graphOutputFileName = outputDir + histName + "_phi_ratio.png";
-                    // graphCanvas->SaveAs(graphOutputFileName.c_str());
+                    // Save the graph canvas
+                    std::string graphOutputFileName = outputDir + histName + "_phi_ratio.png";
+                    graphCanvas->SaveAs(graphOutputFileName.c_str());
 
-                    // // Cleanup
-                    // delete graph;
-                    // delete graphCanvas;
+                    // Cleanup
+                    delete graph;
+                    delete graphCanvas;
                 }
 
                 // Clean up
