@@ -368,27 +368,27 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 //     }
 
 
-                    // Create a TGraphErrors with the arrays
-                    TGraphErrors* graph = new TGraphErrors(targetBins, x, y, ex, ey);
-                    graph->SetTitle(";#phi;Rec/Gen"); // Set title and axis labels
-                    graph->SetMarkerStyle(21); // Choose a marker style
-                    graph->SetLineColor(kBlue);
+                    // // Create a TGraphErrors with the arrays
+                    // TGraphErrors* graph = new TGraphErrors(targetBins, x, y, ex, ey);
+                    // graph->SetTitle(";#phi;Rec/Gen"); // Set title and axis labels
+                    // graph->SetMarkerStyle(21); // Choose a marker style
+                    // graph->SetLineColor(kBlue);
 
-                    // Draw the TGraphErrors
-                    TCanvas* graphCanvas = new TCanvas((histName + "_ratio_graph").c_str(), "Ratio Plot", 800, 600);
-                    graph->Draw("APE"); // "AP" for drawing markers and lines, "E" for error bars
+                    // // Draw the TGraphErrors
+                    // TCanvas* graphCanvas = new TCanvas((histName + "_ratio_graph").c_str(), "Ratio Plot", 800, 600);
+                    // graph->Draw("APE"); // "AP" for drawing markers and lines, "E" for error bars
 
-                    // Adjust Y-axis range manually
-                    graph->GetHistogram()->SetMinimum(0.0); // Set minimum y-value
-                    graph->GetHistogram()->SetMaximum(2.0); // Set maximum y-value
+                    // // Adjust Y-axis range manually
+                    // graph->GetHistogram()->SetMinimum(0.0); // Set minimum y-value
+                    // graph->GetHistogram()->SetMaximum(2.0); // Set maximum y-value
 
-                    // Save the graph canvas
-                    std::string graphOutputFileName = outputDir + histName + "_phi_ratio.png";
-                    graphCanvas->SaveAs(graphOutputFileName.c_str());
+                    // // Save the graph canvas
+                    // std::string graphOutputFileName = outputDir + histName + "_phi_ratio.png";
+                    // graphCanvas->SaveAs(graphOutputFileName.c_str());
 
-                    // Cleanup
-                    delete graph;
-                    delete graphCanvas;
+                    // // Cleanup
+                    // delete graph;
+                    // delete graphCanvas;
                 }
 
                 // Clean up
