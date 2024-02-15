@@ -201,7 +201,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
     gStyle->SetTextSize(0.05); // Increase the text size globally
 
     // Loop over all sets of supplied kinematic variables
-    for (size_t fitIndex = 0; fitIndex < allBins.size(); ++fitIndex) {
+    for (size_t fitIndex = 25; fitIndex < allBins.size(); ++fitIndex) {
         std::string currentVariable = binNames[fitIndex]; // Assuming binNames is a vector<string> with the same size as allBins
         std::string branchVariable = propertyNames[fitIndex]; // Corresponding branch name for the current variable
 
