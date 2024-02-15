@@ -387,8 +387,8 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 }
 
                 // Clean up
-                delete dataHist; delete clonedDataHist;
-                delete mcHist; delete clonedMcHist;
+                delete dataHist;
+                delete mcHist;
                 delete c;
                 delete leg;
 
