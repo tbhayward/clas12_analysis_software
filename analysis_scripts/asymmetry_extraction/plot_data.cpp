@@ -218,7 +218,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
             std::string binIndexLabel = "bin_" + std::to_string(binIndex + 1);
 
             // Now we iterate over all branches, except those we wish to skip
-            for (Int_t i = 25; i < branches->GetEntries(); ++i) {
+            for (Int_t i = 0; i < branches->GetEntries(); ++i) {
                 TBranch* branch = (TBranch*)branches->At(i);
                 std::string branchName = branch->GetName();
 
@@ -305,8 +305,8 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 c->SetBottomMargin(0.15);
 
                 // Draw histograms on the canvas
-                dataHist->Draw("HIST");
-                mcHist->Draw("HIST SAME");
+                dataHist->Draw("EP");
+                mcHist->Draw("EP SAME");
 
                 // Create a legend for the histograms
                 TLegend* leg = new TLegend(0.5, 0.7, 0.9, 0.9);
