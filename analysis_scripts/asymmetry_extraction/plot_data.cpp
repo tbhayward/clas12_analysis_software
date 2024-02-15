@@ -218,7 +218,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
             std::string binIndexLabel = "bin_" + std::to_string(binIndex + 1);
 
             // Now we iterate over all branches, except those we wish to skip
-            for (Int_t i = 0; i < branches->GetEntries(); ++i) {
+            for (Int_t i = 25; i < branches->GetEntries(); ++i) {
                 TBranch* branch = (TBranch*)branches->At(i);
                 std::string branchName = branch->GetName();
 
@@ -282,14 +282,6 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                   FillHistogramForBins<double>(mcReader, branchName, mcHist, *mckinematicCuts, fitIndex, true, binLowerEdge, binUpperEdge);
                 }
 
-                // clone so we have the unnormalized version for the ratio plot for phi
-                // Clone dataHist
-                TH1* clonedDataHist = (TH1*)dataHist->Clone("clonedDataHist");
-                clonedDataHist->SetTitle("Cloned Data Histogram");
-
-                // Clone mcHist
-                TH1* clonedMcHist = (TH1*)mcHist->Clone("clonedMcHist");
-                clonedMcHist->SetTitle("Cloned MC Histogram");
                 // Normalize the histograms
                 if (dataHist->Integral() != 0) {
                     dataHist->Scale(1.0 / dataHist->Integral());
@@ -339,14 +331,14 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                         double dataSum = 0, mcSum = 0;
                         for (int j = 0; j < combineFactor; j++) {
                             int binIndex = (i - 1) * combineFactor + j + 1; // Calculate original bin index
-                            dataSum += clonedDataHist->GetBinContent(binIndex);
-                            mcSum += clonedMcHist->GetBinContent(binIndex);
+                            dataSum += dataHist->GetBinContent(binIndex);
+                            mcSum += mcHist->GetBinContent(binIndex);
                         }
                         dataRebinned->SetBinContent(i, dataSum);
                         mcRebinned->SetBinContent(i, mcSum);
                     }
 
-                    // Assuming you've already filled dataRebinned and mcRebinned as before
+                    // filled dataRebinned and mcRebinned as before
                     for (int i = 1; i <= targetBins; i++) {
                         // Calculate the center of each bin as the x-value
                         x[i-1] = dataRebinned->GetBinCenter(i);
@@ -356,13 +348,20 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                         y[i-1] = dataValue / mcValue;
                         // Assuming no error in the x-direction (bin center)
                         ex[i-1] = 0;
-                        // Calculate error in y as sqrt((1/a) + (1/b))
+
+                        // Corrected calculation of error in y
                         if (dataValue > 0 && mcValue > 0) {
-                            ey[i-1] = sqrt(dataValue*(dataValue+mcValue)/(dataValue*dataValue*dataValue));
+                            double dataError = sqrt(dataValue); // For normalized, this should be scaled appropriately if needed
+                            double mcError = sqrt(mcValue); // Same as above
+                            // Calculate the relative errors and then the error on the ratio
+                            double relativeErrorData = dataError / dataValue;
+                            double relativeErrorMC = mcError / mcValue;
+                            ey[i-1] = y[i-1] * sqrt(relativeErrorData * relativeErrorData + relativeErrorMC * relativeErrorMC);
                         } else {
                             ey[i-1] = 0; // Handle division by zero or negative values if necessary
                         }
                     }
+
 
                     // Create a TGraphErrors with the arrays
                     TGraphErrors* graph = new TGraphErrors(targetBins, x, y, ex, ey);
