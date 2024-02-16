@@ -75,7 +75,7 @@ void analyzePions() {
             std::stringstream histName, histTitle;
             histName << "hist_" << pid << "_" << i;
             histTitle << "PID " << pid << ": " << std::fixed << std::setprecision(2) << pTBins[i] << " < P_T (GeV) < " << pTBins[i+1];
-            pidHists.push_back(new TH1F(histName.str().c_str(), histTitle.str().c_str(), 24, 0, 2*M_PI));
+            pidHists.push_back(new TH1F(histName.str().c_str(), histTitle.str().c_str(), 75, 0, 2*M_PI));
         }
         pidHistograms[pid] = pidHists;
     }
