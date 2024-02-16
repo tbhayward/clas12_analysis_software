@@ -54,7 +54,7 @@ void analyzePions() {
         stringstream histName, histTitle;
         histName << "thetaHist_" << i;
         histTitle << fixed << setprecision(2) << pTBins[i] << " < P_T (GeV) < " << pTBins[i+1] << ";#theta (degrees);Counts";
-        thetaHistograms.push_back(new TH1F(histName.str().c_str(), histTitle.str().c_str(), 80, 0, 40)); // 80 bins for better resolution
+        thetaHistograms.push_back(new TH1F(histName.str().c_str(), "", 80, 0, 40)); // 80 bins for better resolution
     }
 
     // Loop through the tree to fill histograms
@@ -77,8 +77,12 @@ void analyzePions() {
     thetaCanvas->cd();
 
     // Create legend
-    TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);
+    TLegend* legend = new TLegend(0.1, 0.7, 0.3, 0.9);
     legend->SetTextSize(0.03);
+
+    for (size_t i = 0; i < thetaHistograms.size(); ++i) {
+        thetaHistograms[i]->SetStats(0); // Explicitly hide the stats box for each histogram
+    }
 
     // Custom colors for visibility
     int colors[] = {kBlack, kBlue, kRed, kGreen+2, kMagenta, kCyan, kOrange, kGray};
