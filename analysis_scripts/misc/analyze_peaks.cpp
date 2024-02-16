@@ -10,6 +10,8 @@
 #include <iomanip> // For std::setprecision
 #include <sstream> // For std::stringstream
 
+// Using namespace declaration
+using namespace std;
 
 void analyzePions() {
     // Open the ROOT file
@@ -111,7 +113,7 @@ void analyzePions() {
 
                     // Check for specific pids and fill their histograms
                     if (pidHistograms.find(mc_p1_parent) != pidHistograms.end()) {
-                        cout << mc_p1_parent << endl;
+                        std::cout << mc_p1_parent << endl;
                         pidHistograms[mc_p1_parent][bin]->Fill(phi);
                     }
                 }
