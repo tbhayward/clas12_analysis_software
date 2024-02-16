@@ -183,6 +183,34 @@ void analyzePions() {
                     break;
             }
         }
+        for (TH1F* hist : thetaHistograms[pid]) {
+            switch (pid) {
+                case 92: // Dashed blue lines
+                    hist->SetLineColor(kBlue);
+                    hist->SetLineStyle(2); // Dashed
+                    break;
+                case 213: // Dashed dotted dark red lines
+                    hist->SetLineColor(kRed+2);
+                    hist->SetLineStyle(5); // Dashed-dotted
+                    break;
+                case 223: // Double dashed dark red lines
+                    hist->SetLineColor(kRed+2);
+                    hist->SetLineStyle(3); // Double dashed
+                    break;
+                case 113: // Dotted green lines
+                    hist->SetLineColor(kGreen+2);
+                    hist->SetLineStyle(4); // Dotted
+                    break;
+                case 310: // Dotted orange lines
+                    hist->SetLineColor(kOrange+2);
+                    hist->SetLineStyle(2); // Dashed
+                    break;
+                case 323: // Dotted green lines
+                    hist->SetLineColor(kYellow+2);
+                    hist->SetLineStyle(3); // Double dashed
+                    break;
+            }
+        }
     }
 
 
@@ -254,6 +282,10 @@ void analyzePions() {
             pidThetaHistograms[pid][i]->Draw("HIST SAME");
         }
     }
+
+    // Move to the empty eighth pad
+    thetaCanvas->cd(8);
+    legend->Draw();
 
     // Use the eighth pad of thetaCanvas for the legend, similar to your phi plot
     thetaCanvas->cd(8);
