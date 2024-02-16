@@ -5,6 +5,7 @@
 #include <TPad.h>
 #include <TStyle.h>
 #include <TLatex.h>
+#include <TLegend.h>
 #include <iostream>
 #include <iomanip> // For std::setprecision
 #include <sstream> // For std::stringstream
