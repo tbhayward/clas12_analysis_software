@@ -1,9 +1,12 @@
-#include <TH1F.h> // For histograms
-#include <TCanvas.h> // For canvas
-#include <TPad.h> // For pad manipulation
-#include <TStyle.h> // For global style settings
-#include <TLatex.h> // For text on plots
+#include <TFile.h>
+#include <TTree.h>
+#include <TH1F.h>
+#include <TCanvas.h>
+#include <TPad.h>
+#include <TStyle.h>
+#include <TLatex.h>
 #include <iostream>
+
 
 
 void analyzePions() {
@@ -118,7 +121,6 @@ void analyzePions() {
     canvas->SaveAs("output/q2y-1_z3.png");
     // Cleanup
     file->Close();
-    delete file;
 }
 
 int main() {
