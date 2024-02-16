@@ -71,7 +71,7 @@ void analyzePions() {
     thetaCanvas->cd();
     gStyle->SetOptStat(0); // Hide the stats box globally
 
-    TLegend* legend = new TLegend(0.5, 0.7, 0.7, 0.9);
+    TLegend* legend = new TLegend(0.6, 0.7, 0.9, 0.9);
     legend->SetTextSize(0.03);
 
     int colors[] = {kBlack, kBlue, kRed, kGreen+2, kMagenta, kCyan, kOrange, kGray};
