@@ -30,10 +30,11 @@ void analyzePions() {
     }
 
     // Define variables to hold branch data
-    Double_t Q2, W, y, xF, Mx, z, p_p, pT, phi;
+    Double_t p_theta, Q2, W, y, xF, Mx, z, p_p, pT, phi;
     Int_t mc_p1_parent;
 
     // Set branch addresses
+    tree->SetBranchAddress("p_theta", &p_theta);
     tree->SetBranchAddress("Q2", &Q2);
     tree->SetBranchAddress("W", &W);
     tree->SetBranchAddress("y", &y);
@@ -80,6 +81,24 @@ void analyzePions() {
         pidHistograms[pid] = pidHists;
     }
 
+    // Assuming theta is in radians and needs to be converted to degrees
+    vector<TH1F*> thetaHistograms;
+    map<int, vector<TH1F*>> pidThetaHistograms;
+
+    for (size_t i = 0; i < pTBins.size() - 1; ++i) {
+        stringstream histName, histTitle;
+        histName << "thetaHist" << i;
+        histTitle << fixed << setprecision(2) << pTBins[i] << " < P_T (GeV) < " << pTBins[i+1];
+        thetaHistograms.push_back(new TH1F(histName.str().c_str(), histTitle.str().c_str(), 40, 0, 40)); // 40 bins from 0 to 40 degrees
+
+        for (int pid : pids) {
+            stringstream pidHistName, pidHistTitle;
+            pidHistName << "thetaHist_" << pid << "_" << i;
+            pidHistTitle << "PID " << pid << ": " << fixed << setprecision(2) << pTBins[i] << " < P_T (GeV) < " << pTBins[i+1];
+            pidThetaHistograms[pid].push_back(new TH1F(pidHistName.str().c_str(), pidHistTitle.str().c_str(), 40, 0, 40));
+        }
+    }
+
 
     // Set global style options
     gStyle->SetOptStat(0); // Hide the statistics box
@@ -105,14 +124,21 @@ void analyzePions() {
             parentEventCounts[mc_p1_parent]++;
             totalEventsMeetingCriteria++;
 
+            double thetaDeg = p_theta * 180.0 / M_PI; // Convert to degrees
+
             for (size_t bin = 0; bin < pTBins.size() - 1; ++bin) {
                 if (pT > pTBins[bin] && pT <= pTBins[bin + 1]) {
                     histograms[bin]->Fill(phi);
-
                     // Check for specific pids and fill their histograms
                     if (pidHistograms.find(mc_p1_parent) != pidHistograms.end()) {
                         // std::cout << mc_p1_parent << endl;
                         pidHistograms[mc_p1_parent][bin]->Fill(phi);
+                    }
+
+                    thetaHistograms[bin]->Fill(thetaDeg);
+
+                    if (pidThetaHistograms.find(mc_p1_parent) != pidThetaHistograms.end()) {
+                        pidThetaHistograms[mc_p1_parent][bin]->Fill(thetaDeg);
                     }
                 }
             }
@@ -206,6 +232,38 @@ void analyzePions() {
 
     // Save the canvas to a file
     canvas->SaveAs("output/q2y-1_z3.png");
+
+
+
+    TCanvas* thetaCanvas = new TCanvas("thetaCanvas", "Theta Distributions", 1200, 800);
+    thetaCanvas->Divide(4, 2); // 4 columns, 2 rows for consistency
+
+    for (size_t i = 0; i < thetaHistograms.size(); ++i) {
+        thetaCanvas->cd(i + 1);
+        // Adjust pad margins
+        gPad->SetLeftMargin(0.12);
+        gPad->SetBottomMargin(0.12);
+        gPad->SetRightMargin(0.05);
+
+        thetaHistograms[i]->GetXaxis()->SetTitle("#phi");
+        thetaHistograms[i]->GetYaxis()->SetTitle("Counts");
+        thetaHistograms[i]->SetMinimum(0); // Set y-axis to start at 0
+        thetaHistograms[i]->Draw("HIST");
+        
+        for (int pid : pids) {
+            pidThetaHistograms[pid][i]->Draw("HIST SAME");
+        }
+    }
+
+    // Use the eighth pad of thetaCanvas for the legend, similar to your phi plot
+    thetaCanvas->cd(8);
+    // Create and draw the legend as before
+
+    // Save the theta canvas to a file
+    thetaCanvas->SaveAs("output/theta_q2y-1_z3.png");
+
+
+
     // Cleanup
     file->Close();
 }
