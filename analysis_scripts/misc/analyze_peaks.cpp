@@ -111,7 +111,7 @@ void analyzePions() {
 
                     // Check for specific pids and fill their histograms
                     if (pidHistograms.find(mc_p1_parent) != pidHistograms.end()) {
-                        std::cout << mc_p1_parent << endl;
+                        // std::cout << mc_p1_parent << endl;
                         pidHistograms[mc_p1_parent][bin]->Fill(phi);
                     }
                 }
@@ -154,14 +154,14 @@ void analyzePions() {
 
     for (size_t i = 0; i < histograms.size(); ++i) {
         canvas->cd(i + 1);
-
         // Adjust pad margins
         gPad->SetLeftMargin(0.12);
         gPad->SetBottomMargin(0.12);
         gPad->SetRightMargin(0.05);
 
         histograms[i]->GetXaxis()->SetTitle("#phi");
-            histograms[i]->GetYaxis()->SetTitle("Counts");
+        histograms[i]->GetYaxis()->SetTitle("Counts");
+        histograms[i]->SetMinimum(0); // Set y-axis to start at 0
         histograms[i]->Draw("HIST"); // Draw the main histogram first
 
         // Draw additional pid histograms
@@ -183,10 +183,10 @@ void analyzePions() {
     legend->AddEntry(histograms[0], "Main Histogram", "l");
 
     // Add entries for each specific PID with a description and the corresponding line style
-    legend->AddEntry(pidHistograms[92][0], "PID 92: Dashed Blue", "l");
-    legend->AddEntry(pidHistograms[213][0], "PID 213: Dashed Dotted Dark Red", "l");
-    legend->AddEntry(pidHistograms[223][0], "PID 223: Double Dashed Dark Red", "l");
-    legend->AddEntry(pidHistograms[113][0], "PID 113: Dotted Green", "l");
+    legend->AddEntry(pidHistograms[92][0], "Direct", "l");
+    legend->AddEntry(pidHistograms[213][0], "#rho^{0}", "l");
+    legend->AddEntry(pidHistograms[223][0], "#rho^{+1}", "l");
+    legend->AddEntry(pidHistograms[113][0], "#omega", "l");
 
     // You might need to draw a representative line for each style in the legend
     // This is handled automatically by specifying the correct options ("l") and having the histograms styled accordingly
