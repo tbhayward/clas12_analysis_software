@@ -3,6 +3,7 @@
 #include <iostream>
 #include <set>
 #include <vector>
+#include <map> // Include map header
 
 void analyzePions() {
     // Open the ROOT file
@@ -32,11 +33,12 @@ void analyzePions() {
     tree->SetBranchAddress("Mx", &Mx);
     tree->SetBranchAddress("z", &z);
     tree->SetBranchAddress("p_p", &p_p);
-    tree->SetBranchAddress("pT", &pT); // Assuming pT is a branch; adjust as needed
+    tree->SetBranchAddress("pT", &pT);
     tree->SetBranchAddress("mc_p1_parent", &mc_p1_parent);
 
-    // Container for unique mc_p1_parent values
-    std::set<int> uniqueParents;
+    // Containers for unique mc_p1_parent values and event counts
+    std::map<int, int> parentEventCounts;
+    int totalEventsMeetingCriteria = 0;
 
     // Loop through the tree
     Long64_t nEntries = tree->GetEntries();
@@ -46,15 +48,17 @@ void analyzePions() {
         // Apply the kinematic conditions
         if (Q2 > 1 && W > 2 && y < 0.75 && xF > 0 && Mx > 1.5 && z > 0.2 && p_p > 1.2 &&
             y > 0.65 && y < 0.75 && z > 0.24 && z < 0.29 && Q2 > 2.0 && Q2 < 2.5) {
-            // Store unique mc_p1_parent
-            uniqueParents.insert(mc_p1_parent);
+            // Increment count for this mc_p1_parent
+            parentEventCounts[mc_p1_parent]++;
+            totalEventsMeetingCriteria++;
         }
     }
 
-    // Print unique mc_p1_parent values
-    std::cout << "Unique mc_p1_parent values in the filtered set:" << std::endl;
-    for (int parent : uniqueParents) {
-        std::cout << parent << std::endl;
+    // Print unique mc_p1_parent values and their corresponding percentages
+    std::cout << "Percentage of events for each unique mc_p1_parent:" << std::endl;
+    for (const auto& pair : parentEventCounts) {
+        double percentage = 100.0 * pair.second / totalEventsMeetingCriteria;
+        std::cout << "mc_p1_parent = " << pair.first << ": " << percentage << "%" << std::endl;
     }
 
     // Define pT bins (adjust if necessary)
