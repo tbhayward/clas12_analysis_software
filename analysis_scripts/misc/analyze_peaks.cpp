@@ -81,7 +81,6 @@ void analyzePions() {
     }
 
 
-
     // Set global style options
     gStyle->SetOptStat(0); // Hide the statistics box
     gStyle->SetTextFont(42); // Set font
@@ -109,7 +108,6 @@ void analyzePions() {
             for (size_t bin = 0; bin < pTBins.size() - 1; ++bin) {
                 if (pT > pTBins[bin] && pT <= pTBins[bin + 1]) {
                     histograms[bin]->Fill(phi);
-                    break;
 
                     // Check for specific pids and fill their histograms
                     if (pidHistograms.find(mc_p1_parent) != pidHistograms.end()) {
