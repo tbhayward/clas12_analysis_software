@@ -60,7 +60,7 @@ void analyzePions() {
         std::stringstream histName, histTitle;
         histName << "hist" << i;
         histTitle << std::fixed << std::setprecision(2) << pTBins[i] << " < P_T (GeV) < " << pTBins[i+1];
-        histograms.push_back(new TH1F(histName.str().c_str(), histTitle.str().c_str(), 24, 0, 2*M_PI));
+        histograms.push_back(new TH1F(histName.str().c_str(), histTitle.str().c_str(), 75, 0, 2*M_PI));
         histograms.back()->SetLineColor(kBlack); // Make the plot black
     }
 
