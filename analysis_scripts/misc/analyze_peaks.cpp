@@ -195,8 +195,8 @@ void analyzePions() {
     legend->AddEntry(pidHistograms[213][0], "#rho^{0}", "l");
     legend->AddEntry(pidHistograms[223][0], "#rho^{+1}", "l");
     legend->AddEntry(pidHistograms[113][0], "#omega", "l");
-    legend->AddEntry(pidHistograms[310][0], "#K_{0}^{s}", "l");
-    legend->AddEntry(pidHistograms[323][0], "#K^{*+}(892)", "l");
+    legend->AddEntry(pidHistograms[310][0], "K_{0}^{s}", "l");
+    legend->AddEntry(pidHistograms[323][0], "K^{*+}(892)", "l");
 
     // You might need to draw a representative line for each style in the legend
     // This is handled automatically by specifying the correct options ("l") and having the histograms styled accordingly
