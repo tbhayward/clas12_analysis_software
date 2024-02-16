@@ -55,10 +55,10 @@ void analyzePions() {
     }
 
     // Print unique mc_p1_parent values and their corresponding percentages
-    std::cout << "mc_p1_parent values with >0.1% of events:" << std::endl;
+    std::cout << "mc_p1_parent values with >1.0% of events:" << std::endl;
     for (const auto& pair : parentEventCounts) {
         double percentage = 100.0 * pair.second / totalEventsMeetingCriteria;
-        if (percentage > 0.1) { // Check if percentage is greater than 0.1%
+        if (percentage > 1.0) { // Check if percentage is greater than 0.1%
             std::cout << "mc_p1_parent = " << pair.first << ": " << percentage << "%" << std::endl;
         }
     }
