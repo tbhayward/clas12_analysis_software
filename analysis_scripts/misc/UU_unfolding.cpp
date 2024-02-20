@@ -81,25 +81,40 @@ int main() {
                 break;
             }
         }
-
         // Fill the corresponding histogram if the event is in a valid bin
         if (pT_bin != -1 && z_bin != -1) {
             int histIndex = z_bin * num_pT_bins + pT_bin;
             histograms[histIndex]->Fill(phi);
-            std::cout << z_bin << " " << z << " " << pT_bin << " " << pT << " " << (z_bin * num_pT_bins + pT_bin) << std::endl;
         }
     }
 
-    // Plot and save histograms
+    // Loop over the histograms to draw them
     for (size_t i = 0; i < histograms.size(); ++i) {
         if (histograms[i]->GetEntries() > 0) {
+            // Navigate to the correct pad
             canvas->cd(i + 1);
-            histograms[i]->DrawNormalized();
+
+            // Adjust pad margins to add space around the plots
+            gPad->SetLeftMargin(0.15);
+            gPad->SetRightMargin(0.15);
+            gPad->SetTopMargin(0.15);
+            gPad->SetBottomMargin(0.15);
+
+            // Remove the stat box
+            histograms[i]->SetStats(0);
+
+            // Change the line color to a darker blue
+            histograms[i]->SetLineColor(kBlue+2);
+
+            // Draw the histogram
+            histograms[i]->DrawNormalized("HIST");
+
+            // Display z-pT bin information as 'z-P_{T} bin: histIndex'
+            // Note: Adjust the positioning (x, y coordinates) as needed
+            latex.DrawLatexNDC(0.1, 0.92, Form("z-P_{T} bin: %zu", i));
         }
     }
 
-    // canvas->cd(0 + 1);
-    // histograms[0]->DrawNormalized();
 
     // Save the canvas
     canvas->SaveAs("output/Q2y1.png");
