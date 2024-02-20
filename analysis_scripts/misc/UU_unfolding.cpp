@@ -90,7 +90,7 @@ int main() {
     }
 
 
-
+    /* ~~~~~~~~~~~~~~~~~~~~~~ */ 
     // Declare the TLatex object here, before the loop
     TLatex latex;
     latex.SetTextSize(0.05);
@@ -116,12 +116,20 @@ int main() {
             histograms[i]->SetLineColor(kBlue+2);
             histograms[i]->SetLineWidth(2); // Increase line width
 
+            // Increase font size for axis labels
+            h->GetXaxis()->SetLabelSize(0.04); // Adjust as needed
+            h->GetYaxis()->SetLabelSize(0.04); // Adjust as needed
+            
+            // Increase font size for axis titles
+            h->GetXaxis()->SetTitleSize(0.04); // Adjust as needed
+            h->GetYaxis()->SetTitleSize(0.04); // Adjust as needed
+
             // Draw the histogram
             histograms[i]->DrawNormalized("HIST");
 
             // Display z-pT bin information as 'z-P_{T} bin: histIndex'
             // Note: Adjust the positioning (x, y coordinates) as needed
-            latex.DrawLatexNDC(0.7, 0.7, Form("Q2-y bin: %d, z-P_{T} bin: %zu", currentQ2yBin, i));
+            latex.DrawLatexNDC(0.58, 0.78, Form("Q2-y bin: %d, z-P_{T} bin: %zu", currentQ2yBin, i));
         }
     }
 
