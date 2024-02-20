@@ -127,7 +127,7 @@ int main() {
     /* ~~~~~~~~~~~~~~~~~~~~~~ */ 
     // Declare the TLatex object here, before the loop
     TLatex latex;
-    latex.SetTextSize(0.08);
+    latex.SetTextSize(0.10);
     latex.SetNDC();
 
     int currentQ2yBin = 1;
@@ -149,7 +149,7 @@ int main() {
             // Change the line color to a darker blue
             hData[i]->SetLineColor(kBlue+2);
             hData[i]->SetLineWidth(2); // Increase line width
-            hMCReco[i]->SetLineColor(kBlue+2);
+            hMCReco[i]->SetLineColor(kRed+2);
             hMCReco[i]->SetLineWidth(2); // Increase line width
 
             // Increase font size for axis labels
@@ -165,7 +165,7 @@ int main() {
 
             // Display z-pT bin information as 'z-P_{T} bin: histIndex'
             // Note: Adjust the positioning (x, y coordinates) as needed
-            latex.DrawLatexNDC(0.35, 0.88, Form("Q2-y bin: %d, z-P_{T} bin: %zu", currentQ2yBin, i));
+            latex.DrawLatexNDC(0.3, 0.92, Form("Q2-y bin: %d, z-P_{T} bin: %zu", currentQ2yBin, i));
         }
     }
 
@@ -176,9 +176,12 @@ int main() {
     // Cleanup
     delete canvas;
     for (auto& hist : hData) delete hist;
+    for (auto& hist : hMCReco) delete hist;
     fData->Close();
-    tMCReco->Close();
-    delete fData,fMCReco;
+    fMCReco->Close();
+    delete fData;
+    delete fMCReco;
+
 
     return 0;
 }
