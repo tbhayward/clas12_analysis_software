@@ -51,12 +51,14 @@ int main() {
     TCanvas* canvas = new TCanvas("canvas", "Q2-y Bin 1 Phi Distributions", 2000, 1200);
     canvas->Divide(num_pT_bins, num_z_bins); // Adjust the division based on the number of bins
 
+    std::cout << std::endl << "Creating histograms." << std::endl;
     // Create histograms for each z-pT bin
     std::vector<TH1F*> histograms;
     for (int i = 0; i < num_pT_bins * num_z_bins; ++i) {
         histograms.push_back(new TH1F(Form("hist_%d", i), "Phi Distribution;Phi;Counts", 24, 0, 2*3.14159));
     }
 
+    std::cout << "Looping over data." << std::endl;
     // Loop over the tree and fill histograms
     Long64_t nentries = tree->GetEntries();
     for (Long64_t i = 0; i < nentries; ++i) {
@@ -82,7 +84,7 @@ int main() {
 
         // Fill the corresponding histogram if the event is in a valid bin
         if (pT_bin != -1 && z_bin != -1) {
-            int histIndex = pT_bin * num_z_bins + z_bin;
+            int histIndex = z_bin * num_pT_bins + pT_bin;
             histograms[histIndex]->Fill(phi);
         }
     }
