@@ -62,7 +62,7 @@ int main() {
 
     std::cout << std::endl << "Creating histograms." << std::endl;
     // Create histograms for each z-pT bin
-    std::vector<TH1F*> histograms;
+    std::vector<TH1F*> hData, hMCReco;
     for (int i = 0; i < num_pT_bins * num_z_bins; ++i) {
         hData.push_back(new TH1F(Form("hData_%d", i), ";#phi;Normalized Counts", 24, 0, 2*3.14159));
         hMCReco.push_back(new TH1F(Form("hMCReco_%d", i), ";#phi;Normalized Counts", 24, 0, 2*3.14159));
