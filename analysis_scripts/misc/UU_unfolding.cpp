@@ -77,7 +77,7 @@ int main() {
         }
         for (int k = 0; k < num_z_bins; ++k) {
             if (z > z_edges[k] && z <= z_edges[k+1]) {
-                z_bin = k;
+                z_bin = num_z_bins-k;
                 break;
             }
         }
@@ -90,16 +90,16 @@ int main() {
         }
     }
 
-    // // Plot and save histograms
-    // for (size_t i = 0; i < histograms.size(); ++i) {
-    //     if (histograms[i]->GetEntries() > 0) {
-    //         canvas->cd(i + 1);
-    //         histograms[i]->DrawNormalized();
-    //     }
-    // }
+    // Plot and save histograms
+    for (size_t i = 0; i < histograms.size(); ++i) {
+        if (histograms[i]->GetEntries() > 0) {
+            canvas->cd(i + 1);
+            histograms[i]->DrawNormalized();
+        }
+    }
 
-    canvas->cd(0 + 1);
-    histograms[0]->DrawNormalized();
+    // canvas->cd(0 + 1);
+    // histograms[0]->DrawNormalized();
 
     // Save the canvas
     canvas->SaveAs("output/Q2y1.png");
