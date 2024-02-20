@@ -56,7 +56,7 @@ int main() {
     // Create histograms for each z-pT bin
     std::vector<TH1F*> histograms;
     for (int i = 0; i < num_pT_bins * num_z_bins; ++i) {
-        histograms.push_back(new TH1F(Form("hist_%d", i), "Phi Distribution;Phi;Counts", 24, 0, 2*3.14159));
+        histograms.push_back(new TH1F(Form("hist_%d", i), ";#phi;Normalized Counts", 24, 0, 2*3.14159));
     }
 
     std::cout << "Looping over data." << std::endl;
@@ -89,10 +89,14 @@ int main() {
         }
     }
 
+
+
     // Declare the TLatex object here, before the loop
     TLatex latex;
-    latex.SetTextSize(0.02);
+    latex.SetTextSize(0.05);
     latex.SetNDC();
+
+    int currentQ2yBin = 1;
     // Loop over the histograms to draw them
     for (size_t i = 0; i < histograms.size(); ++i) {
         if (histograms[i]->GetEntries() > 0) {
@@ -110,13 +114,14 @@ int main() {
 
             // Change the line color to a darker blue
             histograms[i]->SetLineColor(kBlue+2);
+            histograms[i]->SetLineWidth(2); // Increase line width
 
             // Draw the histogram
             histograms[i]->DrawNormalized("HIST");
 
             // Display z-pT bin information as 'z-P_{T} bin: histIndex'
             // Note: Adjust the positioning (x, y coordinates) as needed
-            latex.DrawLatexNDC(0.1, 0.92, Form("z-P_{T} bin: %zu", i));
+            latex.DrawLatexNDC(0.7, 0.7, Form("Q2-y bin: %d, z-P_{T} bin: %zu", currentQ2yBin, i));
         }
     }
 
