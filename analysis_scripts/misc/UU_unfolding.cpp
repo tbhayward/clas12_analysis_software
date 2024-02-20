@@ -3,6 +3,7 @@
 #include <TH1F.h>
 #include <TCanvas.h>
 #include <iostream>
+#include <TLatex.h>
 
 // Function to determine the Q2-y bin based on given Q2 and y values.
 // This function is a simplified version for Q2-y bin 1, adjust for full range as needed.
@@ -88,6 +89,10 @@ int main() {
         }
     }
 
+    // Declare the TLatex object here, before the loop
+    TLatex latex;
+    latex.SetTextSize(0.02);
+    latex.SetNDC();
     // Loop over the histograms to draw them
     for (size_t i = 0; i < histograms.size(); ++i) {
         if (histograms[i]->GetEntries() > 0) {
