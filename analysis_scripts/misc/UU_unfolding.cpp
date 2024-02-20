@@ -18,29 +18,37 @@ int DetermineQ2yBin(float Q2, float y) {
 
 // Main function
 int main() {
-    // Open the ROOT file
-    TFile* file = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_epi+X_skimmed.root");
-    if (!file || file->IsZombie()) {
-        std::cerr << "Failed to open the file." << std::endl;
+    // Open the ROOT files for data and Monte Carlo
+    TFile* fData = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_epi+X_skimmed.root");
+    TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nA_epi+X_skimmed.root");
+    if (!fData || fData->IsZombie() || !fMCReco || fMCReco->IsZombie()) {
+        std::cerr << "Failed to open one or more files." << std::endl;
         return -1;
     }
 
-    // Get the TTree
-    TTree* tree;
-    file->GetObject("PhysicsEvents", tree); // Replace "tree_name" with the actual tree name
-    if (!tree) {
-        std::cerr << "Tree not found in the file." << std::endl;
+    // Get the TTrees
+    TTree* tData;
+    TTree* tMCReco;
+    fData->GetObject("PhysicsEvents", tData);
+    fMCReco->GetObject("PhysicsEvents", tMCReco);
+    if (!tData || !tMCReco) {
+        std::cerr << "Tree not found in one or more files." << std::endl;
         return -1;
     }
 
-    // Define variables to hold the data from the tree branches
-    double Q2, y, phi, pT, z;
-    // Assuming these are the branch names, adjust as necessary
-    tree->SetBranchAddress("Q2", &Q2);
-    tree->SetBranchAddress("y", &y);
-    tree->SetBranchAddress("phi", &phi);
-    tree->SetBranchAddress("pT", &pT);
-    tree->SetBranchAddress("z", &z);
+    // Define variables for both trees
+    double Q2Data, yData, phiData, pTData, zData;
+    double Q2MC, yMC, phiMC, pTMC, zMC;
+    tData->SetBranchAddress("Q2", &Q2Data);
+    tData->SetBranchAddress("y", &yData);
+    tData->SetBranchAddress("phi", &phiData);
+    tData->SetBranchAddress("pT", &pTData);
+    tData->SetBranchAddress("z", &zData);
+    tMCReco->SetBranchAddress("Q2", &Q2MC);
+    tMCReco->SetBranchAddress("y", &yMC);
+    tMCReco->SetBranchAddress("phi", &phiMC);
+    tMCReco->SetBranchAddress("pT", &pTMC);
+    tMCReco->SetBranchAddress("z", &zMC);
 
     // Define the bin edges for z and pT
     float pT_edges[] = {0.05, 0.2, 0.3, 0.4, 0.5, 0.6, 0.75, 1.0};
@@ -56,28 +64,27 @@ int main() {
     // Create histograms for each z-pT bin
     std::vector<TH1F*> histograms;
     for (int i = 0; i < num_pT_bins * num_z_bins; ++i) {
-        histograms.push_back(new TH1F(Form("hist_%d", i), ";#phi;Normalized Counts", 24, 0, 2*3.14159));
+        hData.push_back(new TH1F(Form("hData_%d", i), ";#phi;Normalized Counts", 24, 0, 2*3.14159));
+        hMCReco.push_back(new TH1F(Form("hMCReco_%d", i), ";#phi;Normalized Counts", 24, 0, 2*3.14159));
     }
 
     std::cout << "Looping over data." << std::endl;
-    // Loop over the tree and fill histograms
-    Long64_t nentries = tree->GetEntries();
-    for (Long64_t i = 0; i < nentries; ++i) {
-        tree->GetEntry(i);
-
-        // Determine if the event is in Q2-y bin 1
-        if (DetermineQ2yBin(Q2, y) != 1) continue;
-
+    // Fill histograms for data
+    Long64_t nDataEntries = tData->GetEntries();
+    for (Long64_t i = 0; i < nDataEntries; ++i) {
+        tData->GetEntry(i);
+        if (DetermineQ2yBin(Q2Data, yData) != 1) continue;
+        int pT_bin = -1, z_bin = -1;
         // Determine the corresponding pT and z bins
         int pT_bin = -1, z_bin = -1;
         for (int j = 0; j < num_pT_bins; ++j) {
-            if (pT > pT_edges[j] && pT <= pT_edges[j+1]) {
+            if (pTData > pT_edges[j] && pTData <= pT_edges[j+1]) {
                 pT_bin = j;
                 break;
             }
         }
         for (int k = 0; k < num_z_bins; k++) {
-            if (z > z_edges[k] && z <= z_edges[k+1]) {
+            if (zData > z_edges[k] && zData <= z_edges[k+1]) {
                 z_bin = num_z_bins - k - 1;
                 break;
             }
@@ -85,7 +92,7 @@ int main() {
         // Fill the corresponding histogram if the event is in a valid bin
         if (pT_bin != -1 && z_bin != -1) {
             int histIndex = z_bin * num_pT_bins + pT_bin;
-            histograms[histIndex]->Fill(phi);
+            hData[histIndex]->Fill(phi);
         }
     }
 
@@ -110,22 +117,22 @@ int main() {
             gPad->SetBottomMargin(0.15);
 
             // Remove the stat box
-            histograms[i]->SetStats(0);
+            hData[i]->SetStats(0);
 
             // Change the line color to a darker blue
-            histograms[i]->SetLineColor(kBlue+2);
-            histograms[i]->SetLineWidth(2); // Increase line width
+            hData[i]->SetLineColor(kBlue+2);
+            hData[i]->SetLineWidth(2); // Increase line width
 
             // Increase font size for axis labels
-            histograms[i]->GetXaxis()->SetLabelSize(0.04); // Adjust as needed
-            histograms[i]->GetYaxis()->SetLabelSize(0.04); // Adjust as needed
+            hData[i]->GetXaxis()->SetLabelSize(0.04); // Adjust as needed
+            hData[i]->GetYaxis()->SetLabelSize(0.04); // Adjust as needed
             
             // Increase font size for axis titles
-            histograms[i]->GetXaxis()->SetTitleSize(0.04); // Adjust as needed
-            histograms[i]->GetYaxis()->SetTitleSize(0.04); // Adjust as needed
+            hData[i]->GetXaxis()->SetTitleSize(0.04); // Adjust as needed
+            hData[i]->GetYaxis()->SetTitleSize(0.04); // Adjust as needed
 
             // Draw the histogram
-            histograms[i]->DrawNormalized("HIST");
+            hData[i]->DrawNormalized("HIST");
 
             // Display z-pT bin information as 'z-P_{T} bin: histIndex'
             // Note: Adjust the positioning (x, y coordinates) as needed
@@ -139,7 +146,7 @@ int main() {
 
     // Cleanup
     delete canvas;
-    for (auto& hist : histograms) delete hist;
+    for (auto& hist : hData) delete hist;
     file->Close();
     delete file;
 
