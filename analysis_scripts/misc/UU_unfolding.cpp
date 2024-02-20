@@ -120,7 +120,7 @@ int main() {
         // Fill the corresponding histogram if the event is in a valid bin
         if (pT_bin != -1 && z_bin != -1) {
             int histIndex = z_bin * num_pT_bins + pT_bin;
-            hMC[histIndex]->Fill(phiMC);
+            hMCReco[histIndex]->Fill(phiMC);
         }
     }
 
@@ -133,7 +133,7 @@ int main() {
     int currentQ2yBin = 1;
     // Loop over the histograms to draw them
     for (size_t i = 0; i < hData.size(); ++i) {
-        if (hData[i]->GetEntries() > 0 && hMC[i]->GetEntries() > 0) {
+        if (hData[i]->GetEntries() > 0 && hMCReco[i]->GetEntries() > 0) {
             // Navigate to the correct pad
             canvas->cd(i + 1);
 
@@ -144,13 +144,13 @@ int main() {
             gPad->SetBottomMargin(0.15);
 
             // Remove the stat box
-            hData[i]->SetStats(0); hMC[i]->SetStats(0);
+            hData[i]->SetStats(0); hMCReco[i]->SetStats(0);
 
             // Change the line color to a darker blue
             hData[i]->SetLineColor(kBlue+2);
             hData[i]->SetLineWidth(2); // Increase line width
-            hMC[i]->SetLineColor(kBlue+2);
-            hMC[i]->SetLineWidth(2); // Increase line width
+            hMCReco[i]->SetLineColor(kBlue+2);
+            hMCReco[i]->SetLineWidth(2); // Increase line width
 
             // Increase font size for axis labels
             hData[i]->GetXaxis()->SetLabelSize(0.04); // Adjust as needed
@@ -161,7 +161,7 @@ int main() {
 
             // Draw the histogram
             hData[i]->DrawNormalized("HIST");
-            hMC[i]->DrawNormalized("HIST same");
+            hMCReco[i]->DrawNormalized("HIST same");
 
             // Display z-pT bin information as 'z-P_{T} bin: histIndex'
             // Note: Adjust the positioning (x, y coordinates) as needed
