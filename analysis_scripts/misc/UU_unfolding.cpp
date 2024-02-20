@@ -99,7 +99,7 @@ int main() {
     // }
 
     canvas->cd(0 + 1);
-    histograms[i]->DrawNormalized();
+    histograms[0]->DrawNormalized();
 
     // Save the canvas
     canvas->SaveAs("output/Q2y1.png");
