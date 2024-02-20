@@ -75,7 +75,7 @@ int main() {
                 break;
             }
         }
-        for (int k = num_z_bins - 1; k >= 0; k--) {
+        for (int k = num_z_bins; k >= 0; k--) {
             if (z > z_edges[k] && z <= z_edges[k+1]) {
                 z_bin = k;
                 break;
@@ -86,7 +86,7 @@ int main() {
         if (pT_bin != -1 && z_bin != -1) {
             int histIndex = z_bin * num_pT_bins + pT_bin;
             histograms[histIndex]->Fill(phi);
-            std::cout << z_bin << " " << pT_bin << " " << (z_bin * num_pT_bins + pT_bin) << std::endl;
+            // std::cout << z_bin << " " << pT_bin << " " << (z_bin * num_pT_bins + pT_bin) << std::endl;
         }
     }
 
