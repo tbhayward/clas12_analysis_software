@@ -54,7 +54,7 @@ int main() {
     // Create histograms for each z-pT bin
     std::vector<TH1F*> histograms;
     for (int i = 0; i < num_pT_bins * num_z_bins; ++i) {
-        histograms.push_back(new TH1F(Form("hist_%d", i), "Phi Distribution;Phi;Counts", 24, 0, 2*TMath::Pi()));
+        histograms.push_back(new TH1F(Form("hist_%d", i), "Phi Distribution;Phi;Counts", 24, 0, 2*3.14159));
     }
 
     // Loop over the tree and fill histograms
