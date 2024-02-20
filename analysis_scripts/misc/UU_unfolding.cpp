@@ -74,7 +74,7 @@ int main() {
     for (Long64_t i = 0; i < nDataEntries; ++i) {
         tData->GetEntry(i);
         if (DetermineQ2yBin(Q2Data, yData) != 1) continue;
-        
+
         // Determine the corresponding pT and z bins
         int pT_bin = -1, z_bin = -1;
         for (int j = 0; j < num_pT_bins; ++j) {
@@ -105,8 +105,8 @@ int main() {
 
     int currentQ2yBin = 1;
     // Loop over the histograms to draw them
-    for (size_t i = 0; i < histograms.size(); ++i) {
-        if (histograms[i]->GetEntries() > 0) {
+    for (size_t i = 0; i < hData.size(); ++i) {
+        if (hData[i]->GetEntries() > 0) {
             // Navigate to the correct pad
             canvas->cd(i + 1);
 
@@ -147,8 +147,9 @@ int main() {
     // Cleanup
     delete canvas;
     for (auto& hist : hData) delete hist;
-    file->Close();
-    delete file;
+    fData->Close();
+    fMC->Close();
+    delete fData,fMC;
 
     return 0;
 }
