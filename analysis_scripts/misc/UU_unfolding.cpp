@@ -96,17 +96,44 @@ int main() {
         }
     }
 
+    std::cout << "Looping over reconstructed MC." << std::endl;
+    // Fill histograms for rec MC
+    Long64_t nMCEntries = tMC->GetEntries();
+    for (Long64_t i = 0; i < nMCEntries; ++i) {
+        tMC->GetEntry(i);
+        if (DetermineQ2yBin(Q2MC, yMC) != 1) continue;
+
+        // Determine the corresponding pT and z bins
+        int pT_bin = -1, z_bin = -1;
+        for (int j = 0; j < num_pT_bins; ++j) {
+            if (pTMC > pT_edges[j] && pTMC <= pT_edges[j+1]) {
+                pT_bin = j;
+                break;
+            }
+        }
+        for (int k = 0; k < num_z_bins; k++) {
+            if (zMC > z_edges[k] && zMC <= z_edges[k+1]) {
+                z_bin = num_z_bins - k - 1;
+                break;
+            }
+        }
+        // Fill the corresponding histogram if the event is in a valid bin
+        if (pT_bin != -1 && z_bin != -1) {
+            int histIndex = z_bin * num_pT_bins + pT_bin;
+            hMC[histIndex]->Fill(phiMC);
+        }
+    }
 
     /* ~~~~~~~~~~~~~~~~~~~~~~ */ 
     // Declare the TLatex object here, before the loop
     TLatex latex;
-    latex.SetTextSize(0.05);
+    latex.SetTextSize(0.08);
     latex.SetNDC();
 
     int currentQ2yBin = 1;
     // Loop over the histograms to draw them
     for (size_t i = 0; i < hData.size(); ++i) {
-        if (hData[i]->GetEntries() > 0) {
+        if (hData[i]->GetEntries() > 0 && hMC[i]->GetEntries() > 0) {
             // Navigate to the correct pad
             canvas->cd(i + 1);
 
@@ -117,26 +144,28 @@ int main() {
             gPad->SetBottomMargin(0.15);
 
             // Remove the stat box
-            hData[i]->SetStats(0);
+            hData[i]->SetStats(0); hMC[i]->SetStats(0);
 
             // Change the line color to a darker blue
             hData[i]->SetLineColor(kBlue+2);
             hData[i]->SetLineWidth(2); // Increase line width
+            hMC[i]->SetLineColor(kBlue+2);
+            hMC[i]->SetLineWidth(2); // Increase line width
 
             // Increase font size for axis labels
             hData[i]->GetXaxis()->SetLabelSize(0.04); // Adjust as needed
             hData[i]->GetYaxis()->SetLabelSize(0.04); // Adjust as needed
-            
             // Increase font size for axis titles
             hData[i]->GetXaxis()->SetTitleSize(0.04); // Adjust as needed
             hData[i]->GetYaxis()->SetTitleSize(0.04); // Adjust as needed
 
             // Draw the histogram
             hData[i]->DrawNormalized("HIST");
+            hMC[i]->DrawNormalized("HIST same");
 
             // Display z-pT bin information as 'z-P_{T} bin: histIndex'
             // Note: Adjust the positioning (x, y coordinates) as needed
-            latex.DrawLatexNDC(0.5, 0.85, Form("Q2-y bin: %d, z-P_{T} bin: %zu", currentQ2yBin, i));
+            latex.DrawLatexNDC(0.35, 0.88, Form("Q2-y bin: %d, z-P_{T} bin: %zu", currentQ2yBin, i));
         }
     }
 
