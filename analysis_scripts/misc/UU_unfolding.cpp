@@ -84,7 +84,8 @@ int main() {
 
         // Fill the corresponding histogram if the event is in a valid bin
         if (pT_bin != -1 && z_bin != -1) {
-            int histIndex = pT_bin * num_z_bins + (num_z_bins - z_bin - 1);
+            // int histIndex = pT_bin * num_z_bins + (num_z_bins - z_bin - 1);
+            int histIndex = z_bin * num_pT_bins + pT_bin;
             histograms[histIndex]->Fill(phi);
             // std::cout << z_bin << " " << pT_bin << " " << (z_bin * num_pT_bins + pT_bin + 1) << std::endl;
         }
