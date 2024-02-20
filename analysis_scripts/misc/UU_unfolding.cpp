@@ -74,7 +74,7 @@ int main() {
     for (Long64_t i = 0; i < nDataEntries; ++i) {
         tData->GetEntry(i);
         if (DetermineQ2yBin(Q2Data, yData) != 1) continue;
-        int pT_bin = -1, z_bin = -1;
+        
         // Determine the corresponding pT and z bins
         int pT_bin = -1, z_bin = -1;
         for (int j = 0; j < num_pT_bins; ++j) {
@@ -92,7 +92,7 @@ int main() {
         // Fill the corresponding histogram if the event is in a valid bin
         if (pT_bin != -1 && z_bin != -1) {
             int histIndex = z_bin * num_pT_bins + pT_bin;
-            hData[histIndex]->Fill(phi);
+            hData[histIndex]->Fill(phiData);
         }
     }
 
