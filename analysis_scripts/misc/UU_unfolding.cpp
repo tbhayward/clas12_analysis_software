@@ -117,12 +117,12 @@ int main() {
             histograms[i]->SetLineWidth(2); // Increase line width
 
             // Increase font size for axis labels
-            h->GetXaxis()->SetLabelSize(0.04); // Adjust as needed
-            h->GetYaxis()->SetLabelSize(0.04); // Adjust as needed
+            histograms[i]->GetXaxis()->SetLabelSize(0.04); // Adjust as needed
+            histograms[i]->GetYaxis()->SetLabelSize(0.04); // Adjust as needed
             
             // Increase font size for axis titles
-            h->GetXaxis()->SetTitleSize(0.04); // Adjust as needed
-            h->GetYaxis()->SetTitleSize(0.04); // Adjust as needed
+            histograms[i]->GetXaxis()->SetTitleSize(0.04); // Adjust as needed
+            histograms[i]->GetYaxis()->SetTitleSize(0.04); // Adjust as needed
 
             // Draw the histogram
             histograms[i]->DrawNormalized("HIST");
