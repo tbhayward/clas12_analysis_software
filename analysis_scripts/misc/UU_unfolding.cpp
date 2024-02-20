@@ -77,7 +77,7 @@ int main() {
         }
         for (int k = num_z_bins; k >= 1; k--) {
             if (z > z_edges[k] && z <= z_edges[k+1]) {
-                z_bin = k-1;
+                z_bin = k;
                 break;
             }
         }
