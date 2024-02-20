@@ -153,11 +153,11 @@ int main() {
             hMCReco[i]->SetLineWidth(2); // Increase line width
 
             // Increase font size for axis labels
-            hData[i]->GetXaxis()->SetLabelSize(0.04); // Adjust as needed
-            hData[i]->GetYaxis()->SetLabelSize(0.04); // Adjust as needed
+            hData[i]->GetXaxis()->SetLabelSize(0.06); // Adjust as needed
+            hData[i]->GetYaxis()->SetLabelSize(0.06); // Adjust as needed
             // Increase font size for axis titles
-            hData[i]->GetXaxis()->SetTitleSize(0.04); // Adjust as needed
-            hData[i]->GetYaxis()->SetTitleSize(0.04); // Adjust as needed
+            hData[i]->GetXaxis()->SetTitleSize(0.06); // Adjust as needed
+            hData[i]->GetYaxis()->SetTitleSize(0.06); // Adjust as needed
 
             // Draw the histogram
             hData[i]->DrawNormalized("HIST");
@@ -165,7 +165,7 @@ int main() {
 
             // Display z-pT bin information as 'z-P_{T} bin: histIndex'
             // Note: Adjust the positioning (x, y coordinates) as needed
-            latex.DrawLatexNDC(0.3, 0.92, Form("Q2-y bin: %d, z-P_{T} bin: %zu", currentQ2yBin, i));
+            latex.DrawLatexNDC(0.2, 0.92, Form("Q2-y bin: %d, z-P_{T} bin: %zu", currentQ2yBin, i));
         }
     }
 
