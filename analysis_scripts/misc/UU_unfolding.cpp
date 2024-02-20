@@ -75,16 +75,16 @@ int main() {
                 break;
             }
         }
-        for (int k = 0; k < num_z_bins; ++k) {
+        for (int k = num_z_bins - 1; k >= 0; k--) {
             if (z > z_edges[k] && z <= z_edges[k+1]) {
-                z_bin = num_z_bins-k;
+                z_bin = k;
                 break;
             }
         }
 
         // Fill the corresponding histogram if the event is in a valid bin
         if (pT_bin != -1 && z_bin != -1) {
-            int histIndex = z_bin * num_z_bins + pT_bin - 1;
+            int histIndex = pT_bin * num_z_bins + (num_z_bins - z_bin - 1);
             histograms[histIndex]->Fill(phi);
             // std::cout << z_bin << " " << pT_bin << " " << (z_bin * num_pT_bins + pT_bin + 1) << std::endl;
         }
