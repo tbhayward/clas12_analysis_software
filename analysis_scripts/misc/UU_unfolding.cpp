@@ -98,9 +98,9 @@ int main() {
 
     std::cout << "Looping over reconstructed MC." << std::endl;
     // Fill histograms for rec MC
-    Long64_t nMCEntries = hMCReco->GetEntries();
+    Long64_t nMCEntries = tMCReco->GetEntries();
     for (Long64_t i = 0; i < nMCEntries; ++i) {
-        hMCReco->GetEntry(i);
+        tMCReco->GetEntry(i);
         if (DetermineQ2yBin(Q2MC, yMC) != 1) continue;
 
         // Determine the corresponding pT and z bins
