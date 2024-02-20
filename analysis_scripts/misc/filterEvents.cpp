@@ -24,7 +24,7 @@ void filterEvents(const char* inputFile) {
     }
 
     // Define variables to hold the branch data
-    float p_p, Q2, z, xF, Mx, y;
+    double p_p, Q2, z, xF, Mx, y;
 
     // Set branch addresses
     tree->SetBranchAddress("p_p", &p_p);
