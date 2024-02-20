@@ -127,7 +127,7 @@ int main() {
     /* ~~~~~~~~~~~~~~~~~~~~~~ */ 
     // Declare the TLatex object here, before the loop
     TLatex latex;
-    latex.SetTextSize(0.10);
+    latex.SetTextSize(0.09);
     latex.SetNDC();
 
     int currentQ2yBin = 1;
@@ -138,10 +138,10 @@ int main() {
             canvas->cd(i + 1);
 
             // Adjust pad margins to add space around the plots
-            gPad->SetLeftMargin(0.15);
-            gPad->SetRightMargin(0.15);
-            gPad->SetTopMargin(0.15);
-            gPad->SetBottomMargin(0.15);
+            gPad->SetLeftMargin(0.2);
+            gPad->SetRightMargin(0.2);
+            gPad->SetTopMargin(0.2);
+            gPad->SetBottomMargin(0.2);
 
             // Remove the stat box
             hData[i]->SetStats(0); hMCReco[i]->SetStats(0);
@@ -153,11 +153,11 @@ int main() {
             hMCReco[i]->SetLineWidth(2); // Increase line width
 
             // Increase font size for axis labels
-            hData[i]->GetXaxis()->SetLabelSize(0.06); // Adjust as needed
-            hData[i]->GetYaxis()->SetLabelSize(0.06); // Adjust as needed
+            hData[i]->GetXaxis()->SetLabelSize(0.07); // Adjust as needed
+            hData[i]->GetYaxis()->SetLabelSize(0.07); // Adjust as needed
             // Increase font size for axis titles
-            hData[i]->GetXaxis()->SetTitleSize(0.06); // Adjust as needed
-            hData[i]->GetYaxis()->SetTitleSize(0.06); // Adjust as needed
+            hData[i]->GetXaxis()->SetTitleSize(0.07); // Adjust as needed
+            hData[i]->GetYaxis()->SetTitleSize(0.07); // Adjust as needed
 
             // Draw the histogram
             hData[i]->DrawNormalized("HIST");
