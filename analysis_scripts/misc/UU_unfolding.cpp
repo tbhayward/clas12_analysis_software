@@ -92,7 +92,7 @@ int main() {
 
     // Plot and save histograms
     for (size_t i = 0; i < histograms.size(); ++i) {
-        if (histograms[i]->GetEntries() > 0) {
+        // if (histograms[i]->GetEntries() > 0) {
             canvas->cd(i + 1);
             histograms[i]->DrawNormalized();
         }
