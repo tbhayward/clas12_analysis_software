@@ -177,7 +177,7 @@ int main() {
     delete canvas;
     for (auto& hist : hData) delete hist;
     fData->Close();
-    fMC->Close();
+    tMCReco->Close();
     delete fData,fMCReco;
 
     return 0;
