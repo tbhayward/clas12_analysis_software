@@ -90,13 +90,16 @@ int main() {
         }
     }
 
-    // Plot and save histograms
-    for (size_t i = 0; i < histograms.size(); ++i) {
-        // if (histograms[i]->GetEntries() > 0) {
-            canvas->cd(i + 1);
-            histograms[i]->DrawNormalized();
-        }
-    }
+    // // Plot and save histograms
+    // for (size_t i = 0; i < histograms.size(); ++i) {
+    //     if (histograms[i]->GetEntries() > 0) {
+    //         canvas->cd(i + 1);
+    //         histograms[i]->DrawNormalized();
+    //     }
+    // }
+
+    canvas->cd(0 + 1);
+    histograms[i]->DrawNormalized();
 
     // Save the canvas
     canvas->SaveAs("output/Q2y1.png");
