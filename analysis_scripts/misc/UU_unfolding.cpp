@@ -149,7 +149,7 @@ int main() {
     for (auto& hist : hData) delete hist;
     fData->Close();
     fMC->Close();
-    delete fData,fMC;
+    delete fData,fMCReco;
 
     return 0;
 }
