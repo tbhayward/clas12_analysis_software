@@ -233,7 +233,7 @@ int main() {
             if (zMC < currentZEdges[0] || zMC > currentZEdges[num_z_bins[binIndex]]) {
                 continue;
             }
-            std::cout << currentPTEdges[0] << " " << pTMC << " " << currentPTEdges[num_pT_bins[binIndex]];
+            std::cout << " " << currentPTEdges[0] << " " << pTMC << " " << currentPTEdges[num_pT_bins[binIndex]];
             if (pTMC < currentPTEdges[0] || pTMC > currentPTEdges[num_pT_bins[binIndex]]) {
                 continue;
             }
