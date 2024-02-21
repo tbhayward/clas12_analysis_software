@@ -220,7 +220,7 @@ int main() {
 
     std::cout << "Looping over reconstructed MC." << std::endl;
     // Fill histograms for MC
-    Long64_t nDataEntries = tMCReco->GetEntries();
+    Long64_t nMCEntries = tMCReco->GetEntries();
     for (Long64_t i = 0; i < nMCEntries; ++i) {
         tMCReco->GetEntry(i);
 
