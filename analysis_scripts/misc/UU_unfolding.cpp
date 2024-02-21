@@ -7,6 +7,7 @@
 #include <TGraphErrors.h> 
 #include <TF1.h>
 #include <fstream> 
+#include <vector>
 
 // Function to determine the Q2-y bin based on given Q2 and y values.
 int DetermineQ2yBin(float Q2, float y) {
@@ -366,9 +367,9 @@ int main() {
                 TLatex latexParams;
                 latexParams.SetNDC();
                 latexParams.SetTextSize(0.04); // Adjust as needed
-                latexParams.DrawLatex(0.4, 0.375, Form("A = %.2f #pm %.2f", A, errA));
-                latexParams.DrawLatex(0.4, 0.325, Form("B = %.2f #pm %.2f", B, errB));
-                latexParams.DrawLatex(0.4, 0.275, Form("C = %.2f #pm %.2f", C, errC));
+                latexParams.DrawLatex(0.375, 0.375, Form("A = %.2f #pm %.2f", A, errA));
+                latexParams.DrawLatex(0.375, 0.325, Form("B = %.2f #pm %.2f", B, errB));
+                latexParams.DrawLatex(0.375, 0.275, Form("C = %.2f #pm %.2f", C, errC));
                 
                 // Label
                 latex.DrawLatexNDC(0.10, 0.86, Form("Q2-y bin: %d, z-P_{T} bin: %zu", (bin+1), (i+1)));
@@ -410,34 +411,55 @@ int main() {
     }
     capobiancoFile.close(); // Close the file after writing
 
-    std::ofstream structureFile("output/structure_functions.txt");
-    for (size_t bin = 0; bin < allBinParams.size(); ++bin) {
-        for (size_t i = 0; i < allBinParams[bin].size(); ++i) {
-            if (allBinParams[bin][i].count > 0) {
-                double meanDepA = allBinParams[bin][i].sumDepA / allBinParams[bin][i].count;
-                double meanDepB = allBinParams[bin][i].sumDepB / allBinParams[bin][i].count;
-                double meanDepV = allBinParams[bin][i].sumDepV / allBinParams[bin][i].count;
-                double meanPT = allBinParams[bin][i].sumPT / allBinParams[bin][i].count;
+    struct StructureFunction {
+        double meanPT;
+        double value;
+        double error;
+    };
+    // Loop over Q2-y bins
+    for (size_t q2yBin = 0; q2yBin < allBinParams.size(); ++q2yBin) {
+        // Assuming 5 z
+        std::vector<std::vector<StructureFunction>> structureFunctionsB(5);
+        std::vector<std::vector<StructureFunction>> structureFunctionsC(5);
 
-                const auto& params = allFitParams[bin][i];
+        // Loop over all pT bins within each Q2-y bin to fill the structure functions
+        for (size_t zpTBin = 0; zpTBin < allBinParams[q2yBin].size(); ++zpTBin) {
+            if (allBinParams[q2yBin][zpTBin].count > 0) {
+                // Calculate mean values and structure functions
+                double meanDepA = allBinParams[q2yBin][zpTBin].sumDepA / allBinParams[q2yBin][zpTBin].count;
+                double meanDepB = allBinParams[q2yBin][zpTBin].sumDepB / allBinParams[q2yBin][zpTBin].count;
+                double meanDepV = allBinParams[q2yBin][zpTBin].sumDepV / allBinParams[q2yBin][zpTBin].count;
+                double meanPT = allBinParams[q2yBin][zpTBin].sumPT / allBinParams[q2yBin][zpTBin].count;
+
+                const auto& params = allFitParams[q2yBin][zpTBin];
                 double structureB = params.B * meanDepA / meanDepV;
                 double structureC = params.C * meanDepA / meanDepB;
 
-                // Retrieve errors directly from params
-                double errorB = params.errB;
-                double errorC = params.errC;
-
-                // Assuming the errors on meanDepA, meanDepV, and meanDepB are small compared to the errors on B and C
-
-                structureFile << "Q2-y bin: " << bin+1 << ", z-PT bin: " << i+1 << ", B: Mean pT = " << meanPT
-                              << ", Value = " << structureB << ", Error = " << errorB << std::endl;
-
-                structureFile << "Q2-y bin: " << bin+1 << ", z-PT bin: " << i+1 << ", C: Mean pT = " << meanPT
-                              << ", Value = " << structureC << ", Error = " << errorC << std::endl;
+                // Determine which z-bin this pT bin belongs to
+                int zBinIndex = zpTBin / 7; // Adjust based on your actual bin grouping logic
+                structureFunctionsB[zBinIndex].push_back({meanPT, structureB, params.errB});
+                structureFunctionsC[zBinIndex].push_back({meanPT, structureC, params.errC});
             }
         }
+
+        // Now, print the aggregated lists for each Q2-y and z-bin
+        structureFile << "Q2-y bin: " << q2yBin + 1 << std::endl;
+        for (size_t zBin = 0; zBin < 5; ++zBin) {
+            structureFile << "z-bin " << zBin + 1 << " B: {";
+            for (const auto& func : structureFunctionsB[zBin]) {
+                structureFile << "{" << func.meanPT << ", " << func.value << ", " << func.error << "}, ";
+            }
+            structureFile << "}" << std::endl;
+
+            structureFile << "z-bin " << zBin + 1 << " C: {";
+            for (const auto& func : structureFunctionsC[zBin]) {
+                structureFile << "{" << func.meanPT << ", " << func.value << ", " << func.error << "}, ";
+            }
+            structureFile << "}" << std::endl;
+        }
     }
-    structureFile.close(); // Close the file after writing
+
+    structureFile.close();
 
 
     fData->Close();
