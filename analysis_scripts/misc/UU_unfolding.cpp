@@ -229,13 +229,16 @@ int main() {
             const auto& currentZEdges = zEdges[binIndex+1]; 
             const auto& currentPTEdges = pTEdges[binIndex+1];
 
+            std::cout << currentZEdges[0] << " " << zMC << " " << currentZEdges[currentZEdges.size()];
             if (zMC < currentZEdges[0] || zMC > currentZEdges[currentZEdges.size()]) {
                 continue;
             }
+            std::cout << currentPTEdges[0] << " " << pTData << " " << currentPTEdges[currentPTEdges.size()];
             if (pTMC < currentPTEdges[0] || pTMC > currentPTEdges[currentPTEdges.size()]) {
                 continue;
             }
-            std::cout << binIndex << std::endl;
+            std::cout<< endl;
+
 
             int z_bin = findBinIndex(zMC, currentZEdges);
             int pT_bin = findBinIndex(pTMC, currentPTEdges);
