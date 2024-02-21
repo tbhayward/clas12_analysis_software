@@ -374,7 +374,7 @@ int main() {
         for (auto& hist : hMCGene[bin]) delete hist;
     }
 
-    std::cout << endl << endl << endl;
+    std::cout << std::endl << std::endl << std::endl;
     for (size_t bin = 0; bin < allFitParams.size(); ++bin) {
         for (size_t i = 0; i < allFitParams[bin].size(); ++i) {
             const auto& params = allFitParams[bin][i];
