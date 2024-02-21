@@ -186,6 +186,7 @@ int main() {
     for (Long64_t i = 0; i < nDataEntries; ++i) {
         tData->GetEntry(i);
         int binIndex = DetermineQ2yBin(Q2Data, yData) - 1; // Adjusted for 0-based indexing
+        std::cout << binIndex << std::endl;
         if (binIndex >= 0) {
 
             const auto& currentZEdges = zEdges[binIndex]; 
@@ -233,7 +234,7 @@ int main() {
     for (Long64_t i = 0; i < nGenEntries; ++i) {
         tMCGene->GetEntry(i);
         int binIndex = DetermineQ2yBin(Q2Gen, yGen) - 1; // Adjusted for 0-based indexing
-        std::cout << binIndex << std::endl;
+
         if (binIndex >= 0) {
 
             const auto& currentZEdges = zEdges[binIndex]; 
