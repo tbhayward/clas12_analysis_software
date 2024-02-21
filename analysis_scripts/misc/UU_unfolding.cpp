@@ -4,6 +4,8 @@
 #include <TCanvas.h>
 #include <iostream>
 #include <TLatex.h>
+#include <TGraphErrors.h> // For TGraphErrors
+#include <TColor.h>       // For color definitions such as kBrown
 
 // Function to determine the Q2-y bin based on given Q2 and y values.
 int DetermineQ2yBin(float Q2, float y) {
@@ -306,6 +308,9 @@ int main() {
                     gUnfolded->SetPoint(binX-1, x, y);
                     gUnfolded->SetPointError(binX-1, 0., yError); // Set 0 as the x-error
                 }
+                // Inside the loop, after using hUnfolded
+                delete hUnfolded; // Delete the cloned histogram
+
 
                 // Prepare the canvas and draw the graph
                 unfoldedCanvas->cd(i + 1);
