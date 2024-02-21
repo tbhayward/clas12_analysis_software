@@ -421,7 +421,7 @@ int main() {
 
                 // Assuming you have B and C values calculated and stored somewhere accessible
                 // For example, if they're in allFitParams[bin][i].B and .C
-                double structureB = allFitParams[bin][i].B * meanDepA / meanDepC; // Check this formula as per your requirements
+                double structureB = allFitParams[bin][i].B * meanDepA / meanDepV; // Check this formula as per your requirements
                 double structureC = allFitParams[bin][i].C * meanDepA / meanDepB; // Ditto
 
                 // Now you can print or store these values as needed
