@@ -167,7 +167,7 @@ int main() {
         int num_pT_bins = pTEdges[i].size() - 1; // Number of pT bins for this Q2-y bin
         int totalbins = num_z_bins * num_pT_bins; // Total number of z-pT bin combinations for this Q2-y bin
 
-        allBinParams[i - 1].resize(totalBins); // Resize the vector for this Q2-y bin to hold all combinations
+        allBinParams[i - 1].resize(totalbins); // Resize the vector for this Q2-y bin to hold all combinations
     }
 
 
