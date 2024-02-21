@@ -172,7 +172,7 @@ int main() {
     // Create histograms for each z-pT bin
     std::vector<std::vector<TH1F*>> hData(17), hMCReco(17), hMCGene(17);
     for (int bin = 0; bin < 17; ++bin) {
-        std::cout << bin << " " << num_pT_bins[bin] << " " << num_z_bins[bin] << " " << num_pT_bins[bin] * num_z_bins[bin] << std::endl;
+        // std::cout << bin << " " << num_pT_bins[bin] << " " << num_z_bins[bin] << " " << num_pT_bins[bin] * num_z_bins[bin] << std::endl;
         for (int i = 0; i < num_pT_bins[bin] * num_z_bins[bin]; ++i) {
             hData[bin].push_back(new TH1F(Form("hData_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 24, 0, 2*3.14159));
             hMCReco[bin].push_back(new TH1F(Form("hMCReco_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 24, 0, 2*3.14159));
@@ -195,16 +195,12 @@ int main() {
             const auto& currentZEdges = zEdges[binIndex+1]; 
             const auto& currentPTEdges = pTEdges[binIndex+1];
 
-            // number of bins
-            int num_pT_bins = currentZEdges.size() - 1;
-            int num_z_bins = currentPTEdges.size() - 1;
-
             int z_bin = findBinIndex(zData, currentZEdges);
             int pT_bin = findBinIndex(pTData, currentPTEdges);
             std::cout << zData << " " << z_bin << " " << pTData << " " << pT_bin << std::endl;
             // Fill the corresponding histogram if the event is in a valid bin
             if (pT_bin != -1 && z_bin != -1) {
-                int histIndex = z_bin * num_pT_bins + pT_bin;
+                int histIndex = z_bin * num_pT_bins[binIndex] + pT_bin;
                 std::cout << z_bin << " " << num_pT_bins << " " << pT_bin << " " << histIndex << std::endl << std::endl;
                 hData[binIndex][histIndex]->Fill(phiData);
                 allBinParams[binIndex][histIndex].sumDepA += DepAData;
@@ -227,15 +223,11 @@ int main() {
             const auto& currentZEdges = zEdges[binIndex+1]; 
             const auto& currentPTEdges = pTEdges[binIndex+1];
 
-            // number of bins
-            int num_pT_bins = sizeof(currentZEdges)/sizeof(float) - 1;
-            int num_z_bins = sizeof(currentPTEdges)/sizeof(float) - 1;
-
             int z_bin = findBinIndex(zMC, currentZEdges);
             int pT_bin = findBinIndex(pTMC, currentPTEdges);
             // Fill the corresponding histogram if the event is in a valid bin
             if (pT_bin != -1 && z_bin != -1) {
-                int histIndex = z_bin * num_pT_bins + pT_bin;
+                int histIndex = z_bin * num_pT_bins[binIndex] + pT_bin;
                 hMCReco[binIndex][histIndex]->Fill(phiMC);
             }
         }
@@ -253,15 +245,11 @@ int main() {
             const auto& currentZEdges = zEdges[binIndex+1]; 
             const auto& currentPTEdges = pTEdges[binIndex+1];
 
-            // number of bins
-            int num_pT_bins = sizeof(currentZEdges)/sizeof(float) - 1;
-            int num_z_bins = sizeof(currentPTEdges)/sizeof(float) - 1;
-
             int z_bin = findBinIndex(zGen, currentZEdges);
             int pT_bin = findBinIndex(pTGen, currentPTEdges);
             // Fill the corresponding histogram if the event is in a valid bin
             if (pT_bin != -1 && z_bin != -1) {
-                int histIndex = z_bin * num_pT_bins + pT_bin;
+                int histIndex = z_bin * num_pT_bins[binIndex] + pT_bin;
                 hMCGene[binIndex][histIndex]->Fill(phiGen);
             }
         }
