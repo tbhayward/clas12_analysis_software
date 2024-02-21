@@ -162,11 +162,11 @@ int main() {
     allBinParams.resize(zEdges.size()); // Ensure there's a vector for each Q2-y bin
 
     int num_z_bins, num_pT_bins;
-    for (int i = 1; i <= zEdges.size(); ++i) { // Assuming your bins are 1-indexed based on your map
-        int num_z_binsins = zEdges[i].size() - 1; // Number of z bins for this Q2-y bin
-        int num_pT_bins = pTEdges[i].size() - 1; // Number of pT bins for this Q2-y bin
+    for (int i = 0; i <= zEdges.size()-1; ++i) { // Assuming bins are 1-indexed based on your map
+        int num_z_bins = zEdges[i-1].size() - 1; // Number of z bins for this Q2-y bin
+        int num_pT_bins = pTEdges[i-1].size() - 1; // Number of pT bins for this Q2-y bin
         int totalbins = num_z_bins * num_pT_bins; // Total number of z-pT bin combinations for this Q2-y bin
-        std::cout << (zEdges[i].size()-1) << " " << (pTEdges[i].size()-1) << std::endl;
+        std::cout << (zEdges[i-1].size()-1) << " " << (pTEdges[i-1].size()-1) << std::endl;
         allBinParams[i - 1].resize(totalbins); // Resize the vector for this Q2-y bin to hold all combinations
     }
     std::cout << std::endl << "Creating histograms." << std::endl;
