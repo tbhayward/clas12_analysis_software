@@ -416,6 +416,7 @@ int main() {
         double value;
         double error;
     };
+    std::ofstream structureFile("output/structure_functions.txt");
     // Loop over Q2-y bins
     for (size_t q2yBin = 0; q2yBin < allBinParams.size(); ++q2yBin) {
         // Assuming 5 z
