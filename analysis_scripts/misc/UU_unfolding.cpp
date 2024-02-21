@@ -315,8 +315,8 @@ int main() {
                 // Prepare the canvas and draw the graph
                 unfoldedCanvas->cd(i + 1);
                 gUnfolded->SetMarkerStyle(20); // Choose style suitable for your data points
-                gUnfolded->SetMarkerColor(kBrown);
-                gUnfolded->SetLineColor(kBrown);
+                gUnfolded->SetMarkerColor(kBlack);
+                gUnfolded->SetLineColor(kBlack);
                 gUnfolded->Draw("AP"); // "A" draws the axes, "P" draws the points with error bars
                 
                 // Label
