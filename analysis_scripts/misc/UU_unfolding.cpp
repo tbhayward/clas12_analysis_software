@@ -201,7 +201,7 @@ int main() {
             // Fill the corresponding histogram if the event is in a valid bin
             if (pT_bin != -1 && z_bin != -1) {
                 int histIndex = z_bin * num_pT_bins[binIndex] + pT_bin;
-                std::cout << z_bin << " " << num_pT_bins << " " << pT_bin << " " << histIndex << std::endl << std::endl;
+                std::cout << z_bin << " " << num_pT_bins[binIndex] << " " << pT_bin << " " << histIndex << std::endl << std::endl;
                 hData[binIndex][histIndex]->Fill(phiData);
                 allBinParams[binIndex][histIndex].sumDepA += DepAData;
                 allBinParams[binIndex][histIndex].sumDepB += DepBData;
