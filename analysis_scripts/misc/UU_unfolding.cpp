@@ -58,7 +58,7 @@ int DetermineQ2yBin(float Q2, float y) {
 std::map<int, std::vector<float>> zEdges = {
     {1, {0.15, 0.2, 0.24, 0.29, 0.40, 0.73}},
     {2, {0.18, 0.23, 0.26, 0.31, 0.38, 0.50, 0.74}},
-    {3, {0.20, 0.28, 0.35, 0.45, 0.60, 0.78}},
+    {3, {0.22, 0.28, 0.35, 0.45, 0.60, 0.78}},
     {4, {0.26, 0.32, 0.37, 0.43, 0.50, 0.60, 0.71}},
     {5, {0.15, 0.19, 0.24, 0.29, 0.38, 0.50, 0.73}},
     {6, {0.18, 0.23, 0.30, 0.39, 0.50, 0.78}},
@@ -69,7 +69,7 @@ std::map<int, std::vector<float>> zEdges = {
     {11, {0.21, 0.26, 0.32, 0.40, 0.50, 0.70}},
     {12, {0.26, 0.32, 0.40, 0.50, 0.70}},
     {13, {0.15, 0.20, 0.24, 0.30, 0.40, 0.72}},
-    {14, {0.18, 0.23, 0.27, 0.33, 0.44, 0.80}},
+    {14, {0.18, 0.23, 0.27, 0.33, 0.44, 0.74}},
     {15, {0.21, 0.28, 0.35, 0.47, 0.72}},
     {16, {0.15, 0.20, 0.25, 0.32, 0.41, 0.71}},
     {17, {0.18, 0.23, 0.30, 0.38, 0.48, 0.72}}
@@ -192,6 +192,13 @@ int main() {
 
             const auto& currentZEdges = zEdges[binIndex+1]; 
             const auto& currentPTEdges = pTEdges[binIndex+1];
+
+            if (zData < currentZEdges[0] || zData > currentZEdges[currentZEdges.size()]) {
+                continue;
+            }
+            if (pTData < currentPTEdges[0] || pTData > currentPTEdges[currentPTEdges.size()]) {
+                continue;
+            }
 
             int z_bin = num_z_bins[binIndex]-findBinIndex(zData, currentZEdges);
             int pT_bin = findBinIndex(pTData, currentPTEdges);
