@@ -232,7 +232,7 @@ int main() {
             if (zMC < currentZEdges[0] || zMC > currentZEdges[currentZEdges.size()]) {
                 continue;
             }
-            if (pMC < currentPTEdges[0] || pTMC > currentPTEdges[currentPTEdges.size()]) {
+            if (pTMC < currentPTEdges[0] || pTMC > currentPTEdges[currentPTEdges.size()]) {
                 continue;
             }
 
@@ -261,7 +261,7 @@ int main() {
             if (zGen < currentZEdges[0] || zGen > currentZEdges[currentZEdges.size()]) {
                 continue;
             }
-            if (pTGen < currentPTEdges[0] || pGen > currentPTEdges[currentPTEdges.size()]) {
+            if (pTGen < currentPTEdges[0] || pTGen > currentPTEdges[currentPTEdges.size()]) {
                 continue;
             }
 
