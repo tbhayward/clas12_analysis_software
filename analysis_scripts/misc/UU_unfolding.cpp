@@ -176,6 +176,7 @@ int main() {
     std::vector<std::vector<TH1F*>> hData(17), hMCReco(17), hMCGene(17);
     for (int bin = 0; bin < 17; ++bin) {
         for (int i = 0; i < num_pT_bins * num_z_bins; ++i) {
+            std::cout << i << std::endl;
             hData[bin].push_back(new TH1F(Form("hData_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 24, 0, 2*3.14159));
             hMCReco[bin].push_back(new TH1F(Form("hMCReco_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 24, 0, 2*3.14159));
             hMCGene[bin].push_back(new TH1F(Form("hMCGene_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 24, 0, 2*3.14159));
@@ -188,9 +189,10 @@ int main() {
     Long64_t nDataEntries = tData->GetEntries();
     for (Long64_t i = 0; i < nDataEntries; ++i) {
         tData->GetEntry(i);
-        std::cout << "picking bin" << std::endl;
+
         int binIndex = DetermineQ2yBin(Q2Data, yData) - 1; // Adjusted for 0-based indexing
         std::cout << binIndex << std::endl;
+
         if (binIndex >= 0) {
 
             const auto& currentZEdges = zEdges[binIndex+1]; 
