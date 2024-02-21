@@ -272,7 +272,7 @@ int main() {
         }
     }
 
-    struct FitParams { double A, B, C, errA, errB, errC, chi2ndf};
+    struct FitParams { double A, B, C, errA, errB, errC, chi2ndf; };
     std::vector<std::vector<FitParams>> allFitParams(17, std::vector<FitParams>(num_pT_bins * num_z_bins));
     for (int bin = 0; bin < 17; ++bin) {
         TCanvas* unfoldedCanvas = new TCanvas(Form("unfolded_canvas_bin_%d", bin+1), Form("Unfolded Q2-y Bin %d Phi Distributions", bin+1), 2000, 1200);
