@@ -272,7 +272,7 @@ int main() {
         }
     }
 
-    struct FitParams { double A, B, C, errA, errB, errC; };
+    struct FitParams { double A, B, C, errA, errB, errC, chi2ndf};
     std::vector<std::vector<FitParams>> allFitParams(17, std::vector<FitParams>(num_pT_bins * num_z_bins));
     for (int bin = 0; bin < 17; ++bin) {
         TCanvas* unfoldedCanvas = new TCanvas(Form("unfolded_canvas_bin_%d", bin+1), Form("Unfolded Q2-y Bin %d Phi Distributions", bin+1), 2000, 1200);
@@ -299,6 +299,10 @@ int main() {
                 double errB = fitFunc->GetParError(1);
                 double errC = fitFunc->GetParError(2);
 
+                double chi2 = fitFunc->GetChisquare();
+                double ndf = fitFunc->GetNDF();
+                double chi2ndf = ndf > 0 ? chi2 / ndf : 0;
+
                 // Inside the loop, after the fit
                 FitParams params;
                 params.A = A;
@@ -307,10 +311,10 @@ int main() {
                 params.errA = errA;
                 params.errB = errB;
                 params.errC = errC;
+                params.chi2ndf = chi2ndf;
 
                 allFitParams[bin][i] = params;
 
-                
                 // Create TGraphErrors from hUnfolded
                 TGraphErrors* gUnfolded = new TGraphErrors();
                 gUnfolded->SetName(Form("gUnfolded_bin%d_%d", bin+1, i));
@@ -346,9 +350,9 @@ int main() {
                 TLatex latexParams;
                 latexParams.SetNDC();
                 latexParams.SetTextSize(0.03); // Adjust as needed
-                latexParams.DrawLatex(0.15, 0.8, Form("A = %.2f #pm %.2f", A, errA));
-                latexParams.DrawLatex(0.15, 0.75, Form("B = %.2f #pm %.2f", B, errB));
-                latexParams.DrawLatex(0.15, 0.7, Form("C = %.2f #pm %.2f", C, errC));
+                latexParams.DrawLatex(0.35, 0.3, Form("A = %.2f #pm %.2f", A, errA));
+                latexParams.DrawLatex(0.35, 0.25, Form("B = %.2f #pm %.2f", B, errB));
+                latexParams.DrawLatex(0.35, 0.2, Form("C = %.2f #pm %.2f", C, errC));
                 
                 // Label
                 latex.DrawLatexNDC(0.10, 0.86, Form("Q2-y bin: %d, z-P_{T} bin: %zu", (bin+1), (i+1)));
@@ -377,10 +381,20 @@ int main() {
     for (size_t bin = 0; bin < allFitParams.size(); ++bin) {
         for (size_t i = 0; i < allFitParams[bin].size(); ++i) {
             const auto& params = allFitParams[bin][i];
-            std::cout << "Bin " << bin+1 << ", Sub-bin " << i+1 << ": A = " << params.A << " +/- " << params.errA
-                      << ", B = " << params.B << " +/- " << params.errB << ", C = " << params.C << " +/- " << params.errC << std::endl;
+            // Check if a fit was performed based on one of the parameters or chi2ndf
+            if (params.A != 0) { // Assuming -1 is the sentinel value for "fit not performed"
+                std::cout << "Bin " << bin+1 << ", Sub-bin " << i+1 << ": "
+                          << "A = " << params.A << " +/- " << params.errA
+                          << ", B = " << params.B << " +/- " << params.errB
+                          << ", C = " << params.C << " +/- " << params.errC
+                          << ", Chi2/NDF = " << params.chi2ndf << std::endl;
+            } else {
+                // Optionally, print a message indicating no fit was performed for this bin/sub-bin
+                std::cout << "Bin " << bin+1 << ", Sub-bin " << i+1 << ": No fit performed due to insufficient statistics." << std::endl;
+            }
         }
     }
+
 
     fData->Close();
     fMCReco->Close();
