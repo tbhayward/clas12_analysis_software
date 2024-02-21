@@ -193,12 +193,12 @@ int main() {
             const auto& currentZEdges = zEdges[binIndex+1]; 
             const auto& currentPTEdges = pTEdges[binIndex+1];
 
-            // if (zData < currentZEdges[0] || zData > currentZEdges[currentZEdges.size()]) {
-            //     continue;
-            // }
-            // if (pTData < currentPTEdges[0] || pTData > currentPTEdges[currentPTEdges.size()]) {
-            //     continue;
-            // }
+            if (zData < currentZEdges[0] || zData > currentZEdges[currentZEdges.size()]) {
+                continue;
+            }
+            if (pTData < currentPTEdges[0] || pTData > currentPTEdges[currentPTEdges.size()]) {
+                continue;
+            }
 
             int z_bin = num_z_bins[binIndex]-findBinIndex(zData, currentZEdges);
             int pT_bin = findBinIndex(pTData, currentPTEdges);
