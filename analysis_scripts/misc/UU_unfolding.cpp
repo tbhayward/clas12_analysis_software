@@ -188,8 +188,11 @@ int main() {
         int binIndex = DetermineQ2yBin(Q2Data, yData) - 1; // Adjusted for 0-based indexing
         if (binIndex >= 0) {
 
-            int z_bin = findBinIndex(zMC, currentZEdges);
-            int pT_bin = findBinIndex(pTMC, currentPTEdges);
+            const auto& currentZEdges = zEdges[binIndex]; 
+            const auto& currentPTEdges = pTEdges[binIndex];
+
+            int z_bin = findBinIndex(zData, currentZEdges);
+            int pT_bin = findBinIndex(pTData, currentPTEdges);
             // Fill the corresponding histogram if the event is in a valid bin
             if (pT_bin != -1 && z_bin != -1) {
                 int histIndex = z_bin * num_pT_bins + pT_bin;
@@ -211,6 +214,9 @@ int main() {
         int binIndex = DetermineQ2yBin(Q2MC, yMC) - 1; // Adjusted for 0-based indexing
         if (binIndex >= 0) {
 
+            const auto& currentZEdges = zEdges[binIndex]; 
+            const auto& currentPTEdges = pTEdges[binIndex];
+
             int z_bin = findBinIndex(zMC, currentZEdges);
             int pT_bin = findBinIndex(pTMC, currentPTEdges);
             // Fill the corresponding histogram if the event is in a valid bin
@@ -228,6 +234,9 @@ int main() {
         tMCGene->GetEntry(i);
         int binIndex = DetermineQ2yBin(Q2Gen, yGen) - 1; // Adjusted for 0-based indexing
         if (binIndex >= 0) {
+
+            const auto& currentZEdges = zEdges[binIndex]; 
+            const auto& currentPTEdges = pTEdges[binIndex];
 
             int z_bin = findBinIndex(zGen, currentZEdges);
             int pT_bin = findBinIndex(pTGen, currentPTEdges);
