@@ -75,7 +75,7 @@ int main() {
     }
 
     // Define variables for both trees
-    double Q2Data, yData, phiData, pTData, zData;
+    double Q2Data, yData, phiData, pTData, zData, DepAData, DepBData, DepVData;
     double Q2MC, yMC, phiMC, pTMC, zMC;
     double Q2Gen, yGen, phiGen, pTGen, zGen;
     tData->SetBranchAddress("Q2", &Q2Data);
@@ -83,6 +83,9 @@ int main() {
     tData->SetBranchAddress("phi", &phiData);
     tData->SetBranchAddress("pT", &pTData);
     tData->SetBranchAddress("z", &zData);
+    tData->SetBranchAddress("DepA", &DepAData);
+    tData->SetBranchAddress("DepB", &DepBData);
+    tData->SetBranchAddress("DeV", &DepVData);
     tMCReco->SetBranchAddress("Q2", &Q2MC);
     tMCReco->SetBranchAddress("y", &yMC);
     tMCReco->SetBranchAddress("phi", &phiMC);
@@ -99,6 +102,13 @@ int main() {
     float z_edges[] = {0.15, 0.2, 0.24, 0.29, 0.4, 0.73};
     int num_pT_bins = sizeof(pT_edges)/sizeof(float) - 1;
     int num_z_bins = sizeof(z_edges)/sizeof(float) - 1;
+
+    struct BinParams {
+        double sumDepA = 0, sumDepB = 0, sumDepV = 0, sumPT = 0;
+        int count = 0; 
+    };
+    std::vector<std::vector<BinParams>> allBinParams(17, std::vector<BinParams>(num_pT_bins * num_z_bins));
+
 
     std::cout << std::endl << "Creating histograms." << std::endl;
     // Create histograms for each z-pT bin
@@ -138,6 +148,11 @@ int main() {
             if (pT_bin != -1 && z_bin != -1) {
                 int histIndex = z_bin * num_pT_bins + pT_bin;
                 hData[binIndex][histIndex]->Fill(phiData);
+                allBinParams[binIndex][histIndex].sumDepA += DepA;
+                allBinParams[binIndex][histIndex].sumDepB += DepB;
+                allBinParams[binIndex][histIndex].sumDepV += DepV;
+                allBinParams[binIndex][histIndex].sumPT += pTData; // Assuming pTData is your pT variable
+                allBinParams[binIndex][histIndex].count++;
             }
         }
     }
@@ -349,10 +364,10 @@ int main() {
                 // Display parameters on the plot
                 TLatex latexParams;
                 latexParams.SetNDC();
-                latexParams.SetTextSize(0.03); // Adjust as needed
-                latexParams.DrawLatex(0.35, 0.3, Form("A = %.2f #pm %.2f", A, errA));
-                latexParams.DrawLatex(0.35, 0.25, Form("B = %.2f #pm %.2f", B, errB));
-                latexParams.DrawLatex(0.35, 0.2, Form("C = %.2f #pm %.2f", C, errC));
+                latexParams.SetTextSize(0.04); // Adjust as needed
+                latexParams.DrawLatex(0.35, 0.375, Form("A = %.2f #pm %.2f", A, errA));
+                latexParams.DrawLatex(0.35, 0.325, Form("B = %.2f #pm %.2f", B, errB));
+                latexParams.DrawLatex(0.35, 0.275, Form("C = %.2f #pm %.2f", C, errC));
                 
                 // Label
                 latex.DrawLatexNDC(0.10, 0.86, Form("Q2-y bin: %d, z-P_{T} bin: %zu", (bin+1), (i+1)));
@@ -387,13 +402,35 @@ int main() {
                           << "A = " << params.A << " +/- " << params.errA
                           << ", B = " << params.B << " +/- " << params.errB
                           << ", C = " << params.C << " +/- " << params.errC
-                          << ", Chi2/NDF = " << params.chi2ndf << std::endl;
+                          << ", chi2/NDF = " << params.chi2ndf << std::endl;
             } else {
                 // Optionally, print a message indicating no fit was performed for this bin/sub-bin
-                std::cout << "Bin " << bin+1 << ", Sub-bin " << i+1 << ": No fit performed due to insufficient statistics." << std::endl;
+                std::cout << "Q2-y bin: " << bin+1 << ", z-PT bin: " << i+1 << ": No fit performed due to insufficient statistics." << std::endl;
             }
         }
     }
+
+    std::cout << std::endl << std::endl << std::endl;
+    for (size_t bin = 0; bin < allBinParams.size(); ++bin) {
+        for (size_t i = 0; i < allBinParams[bin].size(); ++i) {
+            if (allBinParams[bin][i].count > 0) { // Ensure there are events in the bin
+                double meanDepA = allBinParams[bin][i].sumDepA / allBinParams[bin][i].count;
+                double meanDepB = allBinParams[bin][i].sumDepB / allBinParams[bin][i].count;
+                double meanDepV = allBinParams[bin][i].sumDepV / allBinParams[bin][i].count;
+                double meanPT = allBinParams[bin][i].sumPT / allBinParams[bin][i].count;
+
+                // Assuming you have B and C values calculated and stored somewhere accessible
+                // For example, if they're in allFitParams[bin][i].B and .C
+                double structureB = allFitParams[bin][i].B * meanDepA / meanDepC; // Check this formula as per your requirements
+                double structureC = allFitParams[bin][i].C * meanDepA / meanDepB; // Ditto
+
+                // Now you can print or store these values as needed
+                std::cout << "Q2-y bin: " << bin+1 << ", z-PT bin: " << i+1 << ": {" << meanPT
+                          << ", " << structureB << ", " << structureC << "}, " << std::endl;
+            }
+        }
+    }
+
 
 
     fData->Close();
