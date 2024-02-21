@@ -273,6 +273,8 @@ int main() {
         }
     }
 
+    struct FitParams { double A, B, C, errA, errB, errC; };
+    std::vector<std::vector<FitParams>> allFitParams(17, std::vector<FitParams>(num_pT_bins * num_z_bins));
     for (int bin = 0; bin < 17; ++bin) {
         TCanvas* unfoldedCanvas = new TCanvas(Form("unfolded_canvas_bin_%d", bin+1), Form("Unfolded Q2-y Bin %d Phi Distributions", bin+1), 2000, 1200);
         unfoldedCanvas->Divide(num_pT_bins, num_z_bins);
@@ -284,6 +286,31 @@ int main() {
             if (hData[bin][i]->GetEntries() > 100 && hAcceptance[bin][i] != nullptr) {
                 TH1F* hUnfolded = (TH1F*)hData[bin][i]->Clone(Form("hUnfolded_bin%d_%d", bin+1, i));
                 hUnfolded->Multiply(hAcceptance[bin][i]); // Multiply data by acceptance correction
+                // Assuming gUnfolded is already properly filled and drawn
+                TF1* fitFunc = new TF1("fitFunc", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", 0, 2*TMath::Pi());
+                hUnfolded->Fit(fitFunc, "Q"); // "Q" for quiet mode - doesn't print fit results to the console
+
+                // Save fit parameters
+                double A = fitFunc->GetParameter(0);
+                double B = fitFunc->GetParameter(1);
+                double C = fitFunc->GetParameter(2);
+
+                // Optionally, save the errors of the parameters too
+                double errA = fitFunc->GetParError(0);
+                double errB = fitFunc->GetParError(1);
+                double errC = fitFunc->GetParError(2);
+
+                // Inside the loop, after the fit
+                FitParams params;
+                params.A = A;
+                params.B = B;
+                params.C = C;
+                params.errA = errA;
+                params.errB = errB;
+                params.errC = errC;
+
+                allFitParams[bin][i] = params;
+
                 
                 // Create TGraphErrors from hUnfolded
                 TGraphErrors* gUnfolded = new TGraphErrors();
@@ -313,6 +340,16 @@ int main() {
                 gUnfolded->GetXaxis()->SetTitleSize(0.07); // Adjust as needed
                 gUnfolded->GetYaxis()->SetTitleSize(0.07); // Adjust as needed
 
+                fitFunc->SetLineColor(kRed);
+                fitFunc->Draw("same");
+
+                // Display parameters on the plot
+                TLatex latexParams;
+                latexParams.SetNDC();
+                latexParams.SetTextSize(0.03); // Adjust as needed
+                latexParams.DrawLatex(0.15, 0.8, Form("A = %.2f #pm %.2f", A, errA));
+                latexParams.DrawLatex(0.15, 0.75, Form("B = %.2f #pm %.2f", B, errB));
+                latexParams.DrawLatex(0.15, 0.7, Form("C = %.2f #pm %.2f", C, errC));
                 
                 // Label
                 latex.DrawLatexNDC(0.10, 0.86, Form("Q2-y bin: %d, z-P_{T} bin: %zu", (bin+1), (i+1)));
@@ -335,6 +372,15 @@ int main() {
         for (auto& hist : hData[bin]) delete hist;
         for (auto& hist : hMCReco[bin]) delete hist;
         for (auto& hist : hMCGene[bin]) delete hist;
+    }
+
+    std::cout << endl << endl << endl;
+    for (size_t bin = 0; bin < allFitParams.size(); ++bin) {
+        for (size_t i = 0; i < allFitParams[bin].size(); ++i) {
+            const auto& params = allFitParams[bin][i];
+            std::cout << "Bin " << bin+1 << ", Sub-bin " << i+1 << ": A = " << params.A << " +/- " << params.errA
+                      << ", B = " << params.B << " +/- " << params.errB << ", C = " << params.C << " +/- " << params.errC << std::endl;
+        }
     }
 
     fData->Close();
