@@ -285,17 +285,6 @@ int main() {
                 TH1F* hUnfolded = (TH1F*)hData[bin][i]->Clone(Form("hUnfolded_bin%d_%d", bin+1, i));
                 hUnfolded->Multiply(hAcceptance[bin][i]); // Multiply data by acceptance correction
                 
-                // // Plotting style adjustments
-                // hUnfolded->SetLineColor(kBlack);
-                // hUnfolded->SetLineWidth(2);
-                // hUnfolded->GetYaxis()->SetTitle("Counts");
-                // hUnfolded->GetXaxis()->SetTitleSize(0.07);
-                // hUnfolded->GetYaxis()->SetTitleSize(0.07);
-                // hUnfolded->GetXaxis()->SetLabelSize(0.06);
-                // hUnfolded->GetYaxis()->SetLabelSize(0.06);
-                
-                // hUnfolded->Draw("HIST"); // Draw unfolded histogram
-
                 // Create TGraphErrors from hUnfolded
                 TGraphErrors* gUnfolded = new TGraphErrors();
                 gUnfolded->SetName(Form("gUnfolded_bin%d_%d", bin+1, i));
@@ -311,13 +300,19 @@ int main() {
                 // Inside the loop, after using hUnfolded
                 delete hUnfolded; // Delete the cloned histogram
 
-
                 // Prepare the canvas and draw the graph
                 unfoldedCanvas->cd(i + 1);
                 gUnfolded->SetMarkerStyle(20); // Choose style suitable for your data points
                 gUnfolded->SetMarkerColor(kBlack);
                 gUnfolded->SetLineColor(kBlack);
-                gUnfolded->Draw("AP"); // "A" draws the axes, "P" draws the points with error bars
+                gUnfolded->Draw("AP"); // Draw the graph to ensure axes are created
+
+                // Now adjust axis label and title sizes
+                gUnfolded->GetXaxis()->SetLabelSize(0.06); // Adjust as needed
+                gUnfolded->GetYaxis()->SetLabelSize(0.06); // Adjust as needed
+                gUnfolded->GetXaxis()->SetTitleSize(0.07); // Adjust as needed
+                gUnfolded->GetYaxis()->SetTitleSize(0.07); // Adjust as needed
+
                 
                 // Label
                 latex.DrawLatexNDC(0.10, 0.86, Form("Q2-y bin: %d, z-P_{T} bin: %zu", (bin+1), (i+1)));
