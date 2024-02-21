@@ -8,6 +8,7 @@
 #include <TF1.h>
 #include <fstream> 
 #include <vector>
+#include <map>
 
 // Function to determine the Q2-y bin based on given Q2 and y values.
 int DetermineQ2yBin(float Q2, float y) {
@@ -52,9 +53,6 @@ int DetermineQ2yBin(float Q2, float y) {
 
     return -1; // Not in any defined Q2-y bin
 }
-
-#include <map>
-#include <vector>
 
 // Define bin edges for z for each Q2-y bin
 std::map<int, std::vector<float>> zEdges = {
@@ -159,7 +157,18 @@ int main() {
         double sumDepA = 0, sumDepB = 0, sumDepV = 0, sumPT = 0;
         int count = 0; 
     };
-    std::vector<std::vector<BinParams>> allBinParams(17, std::vector<BinParams>(num_pT_bins * num_z_bins));
+    std::vector<std::vector<BinParams>> allBinParams;
+    // After defining zEdges and pTEdges
+    allBinParams.resize(zEdges.size()); // Ensure there's a vector for each Q2-y bin
+
+    int num_z_bins, num_pT_bins;
+    for (int i = 1; i <= zEdges.size(); ++i) { // Assuming your bins are 1-indexed based on your map
+        int num_z_binsins = zEdges[i].size() - 1; // Number of z bins for this Q2-y bin
+        int num_pT_bins = pTEdges[i].size() - 1; // Number of pT bins for this Q2-y bin
+        int totalbins = num_z_bins * num_pT_bins; // Total number of z-pT bin combinations for this Q2-y bin
+
+        allBinParams[i - 1].resize(totalBins); // Resize the vector for this Q2-y bin to hold all combinations
+    }
 
 
     std::cout << std::endl << "Creating histograms." << std::endl;
@@ -188,8 +197,8 @@ int main() {
             const auto& currentPTEdges = pTEdges[binIndex+1];
 
             // number of bins
-            int num_pT_bins = sizeof(currentZEdges)/sizeof(float) - 1;
-            int num_z_bins = sizeof(currentPTEdges)/sizeof(float) - 1;
+            int num_pT_bins = currentZEdges.size() - 1;
+            int num_z_bins = currentPTEdges.size() - 1;
 
             int z_bin = findBinIndex(zData, currentZEdges);
             int pT_bin = findBinIndex(pTData, currentPTEdges);
