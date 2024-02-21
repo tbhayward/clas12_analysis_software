@@ -179,44 +179,44 @@ int main() {
         }
     }
 
-    std::cout << "Looping over data." << std::endl;
-    // Fill histograms for data
-    Long64_t nDataEntries = tData->GetEntries();
-    for (Long64_t i = 0; i < nDataEntries; ++i) {
-        tData->GetEntry(i);
+    // std::cout << "Looping over data." << std::endl;
+    // // Fill histograms for data
+    // Long64_t nDataEntries = tData->GetEntries();
+    // for (Long64_t i = 0; i < nDataEntries; ++i) {
+    //     tData->GetEntry(i);
 
-        int binIndex = DetermineQ2yBin(Q2Data, yData) - 1; // Adjusted for 0-based indexing
-        // std::cout << binIndex << std::endl;
+    //     int binIndex = DetermineQ2yBin(Q2Data, yData) - 1; // Adjusted for 0-based indexing
+    //     // std::cout << binIndex << std::endl;
 
-        if (binIndex >= 0) {
+    //     if (binIndex >= 0) {
 
-            const auto& currentZEdges = zEdges[binIndex+1]; 
-            const auto& currentPTEdges = pTEdges[binIndex+1];
+    //         const auto& currentZEdges = zEdges[binIndex+1]; 
+    //         const auto& currentPTEdges = pTEdges[binIndex+1];
 
-            if (zData < currentZEdges[0] || zData > currentZEdges[currentZEdges.size()]) {
-                continue;
-            }
-            if (pTData < currentPTEdges[0] || pTData > currentPTEdges[currentPTEdges.size()]) {
-                continue;
-            }
+    //         if (zData < currentZEdges[0] || zData > currentZEdges[currentZEdges.size()]) {
+    //             continue;
+    //         }
+    //         if (pTData < currentPTEdges[0] || pTData > currentPTEdges[currentPTEdges.size()]) {
+    //             continue;
+    //         }
 
-            int z_bin = num_z_bins[binIndex]-findBinIndex(zData, currentZEdges);
-            int pT_bin = findBinIndex(pTData, currentPTEdges);
-            // std::cout << zData << " " << z_bin << " " << pTData << " " << pT_bin << std::endl;
-            // Fill the corresponding histogram if the event is in a valid bin
-            if (pT_bin != -1 && z_bin != -1) {
-                int histIndex = (z_bin-1)*(num_pT_bins[binIndex])+(pT_bin+1);
-                std::cout << zData << " " << pTData << std::endl;
-                std::cout << (z_bin) << " " << num_pT_bins[binIndex] << " " << (pT_bin+1) << " " << histIndex << std::endl << std::endl;
-                hData[binIndex][histIndex]->Fill(phiData);
-                allBinParams[binIndex][histIndex].sumDepA += DepAData;
-                allBinParams[binIndex][histIndex].sumDepB += DepBData;
-                allBinParams[binIndex][histIndex].sumDepV += DepVData;
-                allBinParams[binIndex][histIndex].sumPT += pTData; // Assuming pTData is your pT variable
-                allBinParams[binIndex][histIndex].count++;
-            }
-        }
-    }
+    //         int z_bin = num_z_bins[binIndex]-findBinIndex(zData, currentZEdges);
+    //         int pT_bin = findBinIndex(pTData, currentPTEdges);
+    //         // std::cout << zData << " " << z_bin << " " << pTData << " " << pT_bin << std::endl;
+    //         // Fill the corresponding histogram if the event is in a valid bin
+    //         if (pT_bin != -1 && z_bin != -1) {
+    //             int histIndex = (z_bin-1)*(num_pT_bins[binIndex])+(pT_bin+1);
+    //             std::cout << zData << " " << pTData << std::endl;
+    //             std::cout << (z_bin) << " " << num_pT_bins[binIndex] << " " << (pT_bin+1) << " " << histIndex << std::endl << std::endl;
+    //             hData[binIndex][histIndex]->Fill(phiData);
+    //             allBinParams[binIndex][histIndex].sumDepA += DepAData;
+    //             allBinParams[binIndex][histIndex].sumDepB += DepBData;
+    //             allBinParams[binIndex][histIndex].sumDepV += DepVData;
+    //             allBinParams[binIndex][histIndex].sumPT += pTData; // Assuming pTData is your pT variable
+    //             allBinParams[binIndex][histIndex].count++;
+    //         }
+    //     }
+    // }
 
     std::cout << "Looping over reconstructed MC." << std::endl;
     // Fill histograms for rec MC
@@ -242,6 +242,7 @@ int main() {
             if (pT_bin != -1 && z_bin != -1) {
                 int histIndex = (z_bin+1)*num_pT_bins[binIndex]+(pT_bin+1);
                 hMCReco[binIndex][histIndex]->Fill(phiMC);
+                std::cout << phiMC << std::endl;
             }
         }
     }
@@ -317,7 +318,7 @@ int main() {
             hMCGene[bin][i]->GetXaxis()->SetTitleSize(0.07); // Adjust as needed
             hMCGene[bin][i]->GetYaxis()->SetTitleSize(0.07); // Adjust as needed
 
-            if (hMCReco[bin][i]->GetEntries() > 400) {
+            if (hMCReco[bin][i]->GetEntries() > 100) {
                 hData[bin][i]->DrawNormalized("HIST");
                 hMCReco[bin][i]->DrawNormalized("HIST same");
                 hMCGene[bin][i]->DrawNormalized("HIST same");
@@ -338,7 +339,7 @@ int main() {
         hAcceptance[bin].resize(num_pT_bins[bin] * num_z_bins[bin]);
         for (int i = 0; i < num_pT_bins[bin] * num_z_bins[bin]; ++i) {
             // Ensure MC reco histogram has entries to avoid division by zero
-            if (hMCReco[bin][i]->GetEntries() > 400) {
+            if (hMCReco[bin][i]->GetEntries() > 100) {
                 hAcceptance[bin][i] = (TH1F*)hMCGene[bin][i]->Clone(Form("hAcceptance_bin%d_%d", bin+1, i));
                 hAcceptance[bin][i]->Divide(hMCReco[bin][i]); // Divide generated by reconstructed
             }
@@ -363,7 +364,7 @@ int main() {
             unfoldedCanvas->cd(i + 1);
             
             // Apply acceptance correction if both histograms have entries
-            if (hData[bin][i]->GetEntries() > 400 && hAcceptance[bin][i] != nullptr) {
+            if (hData[bin][i]->GetEntries() > 100 && hAcceptance[bin][i] != nullptr) {
                 TH1F* hUnfolded = (TH1F*)hData[bin][i]->Clone(Form("hUnfolded_bin%d_%d", bin+1, i));
                 hUnfolded->Multiply(hAcceptance[bin][i]); // Multiply data by acceptance correction
                 // Assuming gUnfolded is already properly filled and drawn
