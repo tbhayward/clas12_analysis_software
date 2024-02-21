@@ -186,19 +186,19 @@ int main() {
         tData->GetEntry(i);
 
         int binIndex = DetermineQ2yBin(Q2Data, yData) - 1; // Adjusted for 0-based indexing
-        std::cout << binIndex << std::endl;
+        // std::cout << binIndex << std::endl;
 
         if (binIndex >= 0) {
 
             const auto& currentZEdges = zEdges[binIndex+1]; 
             const auto& currentPTEdges = pTEdges[binIndex+1];
 
-            if (zData < currentZEdges[0] || zData > currentZEdges[currentZEdges.size()]) {
-                continue;
-            }
-            if (pTData < currentPTEdges[0] || pTData > currentPTEdges[currentPTEdges.size()]) {
-                continue;
-            }
+            // if (zData < currentZEdges[0] || zData > currentZEdges[currentZEdges.size()]) {
+            //     continue;
+            // }
+            // if (pTData < currentPTEdges[0] || pTData > currentPTEdges[currentPTEdges.size()]) {
+            //     continue;
+            // }
 
             int z_bin = num_z_bins[binIndex]-findBinIndex(zData, currentZEdges);
             int pT_bin = findBinIndex(pTData, currentPTEdges);
@@ -229,6 +229,13 @@ int main() {
             const auto& currentZEdges = zEdges[binIndex+1]; 
             const auto& currentPTEdges = pTEdges[binIndex+1];
 
+            if (zMC < currentZEdges[0] || zMC > currentZEdges[currentZEdges.size()]) {
+                continue;
+            }
+            if (pMC < currentPTEdges[0] || pTMC > currentPTEdges[currentPTEdges.size()]) {
+                continue;
+            }
+
             int z_bin = findBinIndex(zMC, currentZEdges);
             int pT_bin = findBinIndex(pTMC, currentPTEdges);
             // Fill the corresponding histogram if the event is in a valid bin
@@ -250,6 +257,13 @@ int main() {
 
             const auto& currentZEdges = zEdges[binIndex+1]; 
             const auto& currentPTEdges = pTEdges[binIndex+1];
+
+            if (zGen < currentZEdges[0] || zGen > currentZEdges[currentZEdges.size()]) {
+                continue;
+            }
+            if (pTGen < currentPTEdges[0] || pGen > currentPTEdges[currentPTEdges.size()]) {
+                continue;
+            }
 
             int z_bin = findBinIndex(zGen, currentZEdges);
             int pT_bin = findBinIndex(pTGen, currentPTEdges);
