@@ -174,12 +174,12 @@ int main() {
     for (int bin = 0; bin < 17; ++bin) {
         // std::cout << bin << " " << num_pT_bins[bin] << " " << num_z_bins[bin] << " " << num_pT_bins[bin] * num_z_bins[bin] << std::endl;
         for (int i = 0; i < num_pT_bins[bin] * num_z_bins[bin]; ++i) {
+            std::cout << i << " " << num_pT_bins[bin] * num_z_bins[bin] << std::endl;
             hData[bin].push_back(new TH1F(Form("hData_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 24, 0, 2*3.14159));
             hMCReco[bin].push_back(new TH1F(Form("hMCReco_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 24, 0, 2*3.14159));
             hMCGene[bin].push_back(new TH1F(Form("hMCGene_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 24, 0, 2*3.14159));
         }
     }
-
 
     std::cout << "Looping over data." << std::endl;
     // Fill histograms for data
