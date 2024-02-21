@@ -166,7 +166,7 @@ int main() {
         int num_z_binsins = zEdges[i].size() - 1; // Number of z bins for this Q2-y bin
         int num_pT_bins = pTEdges[i].size() - 1; // Number of pT bins for this Q2-y bin
         int totalbins = num_z_bins * num_pT_bins; // Total number of z-pT bin combinations for this Q2-y bin
-        std::cout << zEdges[i].size() << " " << pTEdges[i].size() << std::endl;
+        std::cout << (zEdges[i].size()-1) << " " << (pTEdges[i].size()-1) << std::endl;
         allBinParams[i - 1].resize(totalbins); // Resize the vector for this Q2-y bin to hold all combinations
     }
     std::cout << std::endl << "Creating histograms." << std::endl;
