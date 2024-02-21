@@ -186,7 +186,7 @@ int main() {
         tData->GetEntry(i);
 
         int binIndex = DetermineQ2yBin(Q2Data, yData) - 1; // Adjusted for 0-based indexing
-        // std::cout << binIndex << std::endl;
+        std::cout << binIndex << std::endl;
 
         if (binIndex >= 0) {
 
