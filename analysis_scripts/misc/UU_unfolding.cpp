@@ -200,7 +200,7 @@ int main() {
             if (pT_bin != -1 && z_bin != -1) {
                 int histIndex = (z_bin)*num_pT_bins[binIndex]+(pT_bin+1);
                 std::cout << zData << " " << pTData << std::endl;
-                std::cout << (z_bin) << " " << num_pT_bins[binIndex] << " " << (pT_bin+1) << " " << (z_bin+1)*num_pT_bins[binIndex]+(pT_bin+1) << std::endl << std::endl;
+                std::cout << (z_bin) << " " << num_pT_bins[binIndex] << " " << (pT_bin+1) << " " << (z_bin)*num_pT_bins[binIndex]+(pT_bin+1) << std::endl << std::endl;
                 hData[binIndex][histIndex]->Fill(phiData);
                 allBinParams[binIndex][histIndex].sumDepA += DepAData;
                 allBinParams[binIndex][histIndex].sumDepB += DepBData;
