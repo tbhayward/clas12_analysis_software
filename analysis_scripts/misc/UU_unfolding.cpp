@@ -229,7 +229,7 @@ int main() {
             const auto& currentZEdges = zEdges[binIndex+1]; 
             const auto& currentPTEdges = pTEdges[binIndex+1];
 
-            std::cout << currentZEdges[0] << " " << zMC << " " << currentZEdges[currentZEdges.size()];
+            std::cout << endl << currentZEdges[0] << " " << zMC << " " << currentZEdges[currentZEdges.size()];
             if (zMC < currentZEdges[0] || zMC > currentZEdges[currentZEdges.size()]) {
                 continue;
             }
@@ -237,7 +237,7 @@ int main() {
             if (pTMC < currentPTEdges[0] || pTMC > currentPTEdges[currentPTEdges.size()]) {
                 continue;
             }
-            std::cout<< endl;
+
 
 
             int z_bin = findBinIndex(zMC, currentZEdges);
