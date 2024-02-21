@@ -419,26 +419,25 @@ int main() {
                 double meanDepV = allBinParams[bin][i].sumDepV / allBinParams[bin][i].count;
                 double meanPT = allBinParams[bin][i].sumPT / allBinParams[bin][i].count;
 
-                // Assuming the errors for B and C are calculated and available
-                double errorB = /* calculation or retrieval of error for B */;
-                double errorC = /* calculation or retrieval of error for C */;
+                const auto& params = allFitParams[bin][i];
+                double structureB = params.B * meanDepA / meanDepV;
+                double structureC = params.C * meanDepA / meanDepB;
 
-                double structureB = allFitParams[bin][i].B * meanDepA / meanDepV;
-                double structureC = allFitParams[bin][i].C * meanDepA / meanDepB;
-                
-                // Error propagation for structureB and structureC, if not already calculated
-                double structureBError = /* your error propagation formula for structureB */;
-                double structureCError = /* your error propagation formula for structureC */;
+                // Retrieve errors directly from params
+                double errorB = params.errB;
+                double errorC = params.errC;
+
+                // Assuming the errors on meanDepA, meanDepV, and meanDepB are small compared to the errors on B and C
 
                 structureFile << "Q2-y bin: " << bin+1 << ", z-PT bin: " << i+1 << ", B: Mean pT = " << meanPT
-                              << ", Value = " << structureB << ", Error = " << structureBError << std::endl;
+                              << ", Value = " << structureB << ", Error = " << errorB << std::endl;
+
                 structureFile << "Q2-y bin: " << bin+1 << ", z-PT bin: " << i+1 << ", C: Mean pT = " << meanPT
-                              << ", Value = " << structureC << ", Error = " << structureCError << std::endl;
+                              << ", Value = " << structureC << ", Error = " << errorC << std::endl;
             }
         }
     }
     structureFile.close(); // Close the file after writing
-
 
 
     fData->Close();
