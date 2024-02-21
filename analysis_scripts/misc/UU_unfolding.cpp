@@ -219,36 +219,70 @@ int main() {
     // }
 
     std::cout << "Looping over reconstructed MC." << std::endl;
-    // Fill histograms for rec MC
-    Long64_t nMCEntries = tMCReco->GetEntries();
+    // Fill histograms for MC
+    Long64_t nDataEntries = tMC->GetEntries();
     for (Long64_t i = 0; i < nMCEntries; ++i) {
-        tMCReco->GetEntry(i);
+        tMC->GetEntry(i);
+
         int binIndex = DetermineQ2yBin(Q2MC, yMC) - 1; // Adjusted for 0-based indexing
+        // std::cout << binIndex << std::endl;
+
         if (binIndex >= 0) {
 
             const auto& currentZEdges = zEdges[binIndex+1]; 
             const auto& currentPTEdges = pTEdges[binIndex+1];
 
-            std::cout << std::endl << currentZEdges[0] << " " << zMC << " " << currentZEdges[num_z_bins[binIndex]];
             if (zMC < currentZEdges[0] || zMC > currentZEdges[num_z_bins[binIndex]]) {
                 continue;
             }
-            std::cout << " " << currentPTEdges[0] << " " << pTMC << " " << currentPTEdges[num_pT_bins[binIndex]];
             if (pTMC < currentPTEdges[0] || pTMC > currentPTEdges[num_pT_bins[binIndex]]) {
                 continue;
             }
-            std::cout << zMC << " " << pTMC << std::endl;
+
             int z_bin = num_z_bins[binIndex]-findBinIndex(zMC, currentZEdges);
             int pT_bin = findBinIndex(pTMC, currentPTEdges);
+            // std::cout << zMC << " " << z_bin << " " << pTMC << " " << pT_bin << std::endl;
             // Fill the corresponding histogram if the event is in a valid bin
             if (pT_bin != -1 && z_bin != -1) {
-                int histIndex = (z_bin+1)*num_pT_bins[binIndex]+(pT_bin+1);
-                std::cout << binIndex << " " << z_bin << " " << pT_bin << " " << histIndex << std::endl << std::endl;
-                hMCReco[binIndex][histIndex]->Fill(phiMC);
-                std::cout << phiMC << std::endl;
+                int histIndex = (z_bin-1)*(num_pT_bins[binIndex])+(pT_bin+1);
+                std::cout << zMC << " " << pMC << std::endl;
+                std::cout << (z_bin) << " " << num_pT_bins[binIndex] << " " << (pT_bin+1) << " " << histIndex << std::endl << std::endl;
+                hMC[binIndex][histIndex]->Fill(phiMC);
             }
         }
     }
+
+    // std::cout << "Looping over reconstructed MC." << std::endl;
+    // // Fill histograms for rec MC
+    // Long64_t nMCEntries = tMCReco->GetEntries();
+    // for (Long64_t i = 0; i < nMCEntries; ++i) {
+    //     tMCReco->GetEntry(i);
+    //     int binIndex = DetermineQ2yBin(Q2MC, yMC) - 1; // Adjusted for 0-based indexing
+    //     if (binIndex >= 0) {
+
+    //         const auto& currentZEdges = zEdges[binIndex+1]; 
+    //         const auto& currentPTEdges = pTEdges[binIndex+1];
+
+    //         std::cout << std::endl << currentZEdges[0] << " " << zMC << " " << currentZEdges[num_z_bins[binIndex]];
+    //         if (zMC < currentZEdges[0] || zMC > currentZEdges[num_z_bins[binIndex]]) {
+    //             continue;
+    //         }
+    //         std::cout << " " << currentPTEdges[0] << " " << pTMC << " " << currentPTEdges[num_pT_bins[binIndex]];
+    //         if (pTMC < currentPTEdges[0] || pTMC > currentPTEdges[num_pT_bins[binIndex]]) {
+    //             continue;
+    //         }
+    //         std::cout << zMC << " " << pTMC << std::endl;
+    //         int z_bin = num_z_bins[binIndex]-findBinIndex(zMC, currentZEdges);
+    //         int pT_bin = findBinIndex(pTMC, currentPTEdges);
+    //         // Fill the corresponding histogram if the event is in a valid bin
+    //         if (pT_bin != -1 && z_bin != -1) {
+    //             int histIndex = (z_bin+1)*num_pT_bins[binIndex]+(pT_bin+1);
+    //             std::cout << binIndex << " " << z_bin << " " << pT_bin << " " << histIndex << std::endl << std::endl;
+    //             hMCReco[binIndex][histIndex]->Fill(phiMC);
+    //             std::cout << phiMC << std::endl;
+    //         }
+    //     }
+    // }
 
     std::cout << "Looping over generated MC." << std::endl;
     // Fill histograms for gen MC
