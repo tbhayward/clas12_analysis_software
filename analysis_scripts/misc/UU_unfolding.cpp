@@ -220,9 +220,9 @@ int main() {
 
     std::cout << "Looping over reconstructed MC." << std::endl;
     // Fill histograms for MC
-    Long64_t nDataEntries = tMC->GetEntries();
+    Long64_t nDataEntries = tMCReco->GetEntries();
     for (Long64_t i = 0; i < nMCEntries; ++i) {
-        tMC->GetEntry(i);
+        tMCReco->GetEntry(i);
 
         int binIndex = DetermineQ2yBin(Q2MC, yMC) - 1; // Adjusted for 0-based indexing
         // std::cout << binIndex << std::endl;
@@ -245,7 +245,7 @@ int main() {
             // Fill the corresponding histogram if the event is in a valid bin
             if (pT_bin != -1 && z_bin != -1) {
                 int histIndex = (z_bin-1)*(num_pT_bins[binIndex])+(pT_bin+1);
-                std::cout << zMC << " " << pMC << std::endl;
+                std::cout << zMC << " " << pTMC << std::endl;
                 std::cout << (z_bin) << " " << num_pT_bins[binIndex] << " " << (pT_bin+1) << " " << histIndex << std::endl << std::endl;
                 hMC[binIndex][histIndex]->Fill(phiMC);
             }
