@@ -243,7 +243,7 @@ int main() {
             // Fill the corresponding histogram if the event is in a valid bin
             if (pT_bin != -1 && z_bin != -1) {
                 int histIndex = (z_bin+1)*num_pT_bins[binIndex]+(pT_bin+1);
-                std::cout << binIndex << " " << z_bin << " " << pT_bin << " " << histIndex << std::endl;
+                std::cout << binIndex << " " << z_bin << " " << pT_bin << " " << histIndex << std::endl << std::endl;
                 hMCReco[binIndex][histIndex]->Fill(phiMC);
                 std::cout << phiMC << std::endl;
             }
