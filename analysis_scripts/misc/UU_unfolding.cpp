@@ -166,13 +166,13 @@ int main() {
         int num_z_bins = zEdges[i-1].size() - 1; // Number of z bins for this Q2-y bin
         int num_pT_bins = pTEdges[i-1].size() - 1; // Number of pT bins for this Q2-y bin
         int totalbins = num_z_bins * num_pT_bins; // Total number of z-pT bin combinations for this Q2-y bin
-        std::cout << (zEdges[i-1].size()-1) << " " << (pTEdges[i-1].size()-1) << std::endl;
         allBinParams[i - 1].resize(totalbins); // Resize the vector for this Q2-y bin to hold all combinations
     }
     std::cout << std::endl << "Creating histograms." << std::endl;
     // Create histograms for each z-pT bin
     std::vector<std::vector<TH1F*>> hData(17), hMCReco(17), hMCGene(17);
     for (int bin = 0; bin < 17; ++bin) {
+        std::cout << bin << " " << num_pT_bins * num_z_bins << std::endl;
         for (int i = 0; i < num_pT_bins * num_z_bins; ++i) {
             std::cout << i << std::endl;
             hData[bin].push_back(new TH1F(Form("hData_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 24, 0, 2*3.14159));
