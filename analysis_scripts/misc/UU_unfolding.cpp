@@ -85,7 +85,7 @@ int main() {
     tData->SetBranchAddress("z", &zData);
     tData->SetBranchAddress("DepA", &DepAData);
     tData->SetBranchAddress("DepB", &DepBData);
-    tData->SetBranchAddress("DeV", &DepVData);
+    tData->SetBranchAddress("DepV", &DepVData);
     tMCReco->SetBranchAddress("Q2", &Q2MC);
     tMCReco->SetBranchAddress("y", &yMC);
     tMCReco->SetBranchAddress("phi", &phiMC);
