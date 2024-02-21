@@ -171,7 +171,7 @@ int main() {
     std::cout << std::endl << "Creating histograms." << std::endl;
     // Create histograms for each z-pT bin
     std::vector<std::vector<TH1F*>> hData(17), hMCReco(17), hMCGene(17);
-    for (int bin = 0; bin < 17; ++bin) {
+    for (int bin = 1; bin <= 17; ++bin) {
         std::cout << bin << " " << num_pT_bins[bin] << " " << num_z_bins[bin] << " " << num_pT_bins[bin] * num_z_bins[bin] << std::endl;
         for (int i = 0; i < num_pT_bins[bin] * num_z_bins[bin]; ++i) {
             hData[bin].push_back(new TH1F(Form("hData_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 24, 0, 2*3.14159));
