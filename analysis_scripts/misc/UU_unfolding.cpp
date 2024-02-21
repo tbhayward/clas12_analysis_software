@@ -198,8 +198,9 @@ int main() {
             // std::cout << zData << " " << z_bin << " " << pTData << " " << pT_bin << std::endl;
             // Fill the corresponding histogram if the event is in a valid bin
             if (pT_bin != -1 && z_bin != -1) {
-                int histIndex = (num_z_bins[binIndex]-z_bin) * num_pT_bins[binIndex] + pT_bin;
-                // std::cout << z_bin << " " << num_pT_bins[binIndex] << " " << pT_bin << " " << histIndex << std::endl;
+                int histIndex = z_bin * num_pT_bins[binIndex] + pT_bin;
+                std::cout << z_bin << " " << num_pT_bins[binIndex] << " " << pT_bin << " " << histIndex << std::endl;
+                std::cout << (num_z_bins[binIndex]-z_bin) << " " << num_pT_bins[binIndex] << " " << pT_bin << " " << histIndex << std::endl;
                 hData[binIndex][histIndex]->Fill(phiData);
                 allBinParams[binIndex][histIndex].sumDepA += DepAData;
                 allBinParams[binIndex][histIndex].sumDepB += DepBData;
@@ -225,7 +226,7 @@ int main() {
             int pT_bin = findBinIndex(pTMC, currentPTEdges);
             // Fill the corresponding histogram if the event is in a valid bin
             if (pT_bin != -1 && z_bin != -1) {
-                int histIndex = (num_z_bins[binIndex]-z_bin) * num_pT_bins[binIndex] + pT_bin;
+                int histIndex = z_bin * num_pT_bins[binIndex] + pT_bin;
                 hMCReco[binIndex][histIndex]->Fill(phiMC);
             }
         }
@@ -247,7 +248,7 @@ int main() {
             int pT_bin = findBinIndex(pTGen, currentPTEdges);
             // Fill the corresponding histogram if the event is in a valid bin
             if (pT_bin != -1 && z_bin != -1) {
-                int histIndex = (num_z_bins[binIndex]-z_bin) * num_pT_bins[binIndex] + pT_bin;
+                int histIndex = z_bin * num_pT_bins[binIndex] + pT_bin;
                 hMCGene[binIndex][histIndex]->Fill(phiGen);
             }
         }
