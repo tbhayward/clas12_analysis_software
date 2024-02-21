@@ -208,7 +208,7 @@ int main() {
                 allBinParams[binIndex][histIndex].sumDepV += DepVData;
                 allBinParams[binIndex][histIndex].sumPT += pTData; // Assuming pTData is your pT variable
                 allBinParams[binIndex][histIndex].count++;
-                std:;cout << "passed indexing" << std::endl << std::endl;
+                std::cout << "passed indexing" << std::endl << std::endl;
             }
         }
     }
