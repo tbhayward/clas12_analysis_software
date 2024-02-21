@@ -21,7 +21,8 @@ int main() {
     // Open the ROOT files for data and Monte Carlo
     TFile* fData = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_epi+X_skimmed.root");
     TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nA_epi+X_skimmed.root");
-    if (!fData || fData->IsZombie() || !fMCReco || fMCReco->IsZombie()) {
+    TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nA_gen_epi+X_skimmed.root");
+    if (!fData || fData->IsZombie() || !fMCReco || fMCReco->IsZombie() || !fMCGene || fMCGene->IsZombie()) {
         std::cerr << "Failed to open one or more files." << std::endl;
         return -1;
     }
@@ -29,9 +30,11 @@ int main() {
     // Get the TTrees
     TTree* tData;
     TTree* tMCReco;
+    TTree* tMCGene;
     fData->GetObject("PhysicsEvents", tData);
     fMCReco->GetObject("PhysicsEvents", tMCReco);
-    if (!tData || !tMCReco) {
+    fMCGene->GetObject("PhysicsEvents", tMCGene);
+    if (!tData || !tMCReco || !tMCGene) {
         std::cerr << "Tree not found in one or more files." << std::endl;
         return -1;
     }
@@ -39,6 +42,7 @@ int main() {
     // Define variables for both trees
     double Q2Data, yData, phiData, pTData, zData;
     double Q2MC, yMC, phiMC, pTMC, zMC;
+    double Q2Gen, yGen, phiGen, pTGen, zGen;
     tData->SetBranchAddress("Q2", &Q2Data);
     tData->SetBranchAddress("y", &yData);
     tData->SetBranchAddress("phi", &phiData);
@@ -49,6 +53,11 @@ int main() {
     tMCReco->SetBranchAddress("phi", &phiMC);
     tMCReco->SetBranchAddress("pT", &pTMC);
     tMCReco->SetBranchAddress("z", &zMC);
+    tMCGene->SetBranchAddress("Q2", &Q2Gen);
+    tMCGene->SetBranchAddress("y", &yGen);
+    tMCGene->SetBranchAddress("phi", &phiGen);
+    tMCGene->SetBranchAddress("pT", &pTGen);
+    tMCGene->SetBranchAddress("z", &zGen);
 
     // Define the bin edges for z and pT
     float pT_edges[] = {0.05, 0.2, 0.3, 0.4, 0.5, 0.6, 0.75, 1.0};
@@ -62,10 +71,11 @@ int main() {
 
     std::cout << std::endl << "Creating histograms." << std::endl;
     // Create histograms for each z-pT bin
-    std::vector<TH1F*> hData, hMCReco;
+    std::vector<TH1F*> hData, hMCReco, hMCGene;
     for (int i = 0; i < num_pT_bins * num_z_bins; ++i) {
         hData.push_back(new TH1F(Form("hData_%d", i), ";#phi;Normalized Counts", 24, 0, 2*3.14159));
         hMCReco.push_back(new TH1F(Form("hMCReco_%d", i), ";#phi;Normalized Counts", 24, 0, 2*3.14159));
+        hMCGene.push_back(new TH1F(Form("hMCGene_%d", i), ";#phi;Normalized Counts", 24, 0, 2*3.14159));
     }
 
     std::cout << "Looping over data." << std::endl;
@@ -124,6 +134,34 @@ int main() {
         }
     }
 
+    std::cout << "Looping over generated MC." << std::endl;
+    // Fill histograms for gen MC
+    Long64_t nGenEntries = tMCGene->GetEntries();
+    for (Long64_t i = 0; i < nGenEntries; ++i) {
+        tMCGene->GetEntry(i);
+        if (DetermineQ2yBin(Q2Gen, yGen) != 1) continue;
+
+        // Determine the corresponding pT and z bins
+        int pT_bin = -1, z_bin = -1;
+        for (int j = 0; j < num_pT_bins; ++j) {
+            if (pTGen > pT_edges[j] && pTGen <= pT_edges[j+1]) {
+                pT_bin = j;
+                break;
+            }
+        }
+        for (int k = 0; k < num_z_bins; k++) {
+            if (zGen > z_edges[k] && zGen <= z_edges[k+1]) {
+                z_bin = num_z_bins - k - 1;
+                break;
+            }
+        }
+        // Fill the corresponding histogram if the event is in a valid bin
+        if (pT_bin != -1 && z_bin != -1) {
+            int histIndex = z_bin * num_pT_bins + pT_bin;
+            hMCGene[histIndex]->Fill(phiGen);
+        }
+    }
+
     /* ~~~~~~~~~~~~~~~~~~~~~~ */ 
     // Declare the TLatex object here, before the loop
     TLatex latex;
@@ -151,21 +189,21 @@ int main() {
             hData[i]->SetLineWidth(2); // Increase line width
             hMCReco[i]->SetLineColor(kRed+2);
             hMCReco[i]->SetLineWidth(2); // Increase line width
+            hMCGene[i]->SetLineColor(kGreen+2);
+            hMCGene[i]->SetLineWidth(2); // Increase line width
 
             // Increase font size for axis labels
             hData[i]->GetXaxis()->SetLabelSize(0.07); // Adjust as needed
             hData[i]->GetYaxis()->SetLabelSize(0.07); // Adjust as needed
-            // Increase font size for axis titles
-            hData[i]->GetXaxis()->SetTitleSize(0.07); // Adjust as needed
-            hData[i]->GetYaxis()->SetTitleSize(0.07); // Adjust as needed
 
             // Draw the histogram
             hData[i]->DrawNormalized("HIST");
             hMCReco[i]->DrawNormalized("HIST same");
+            hMCGene[i]->DrawNormalized("HIST same");
 
             // Display z-pT bin information as 'z-P_{T} bin: histIndex'
             // Note: Adjust the positioning (x, y coordinates) as needed
-            latex.DrawLatexNDC(0.16, 0.88, Form("Q2-y bin: %d, z-P_{T} bin: %zu", currentQ2yBin, (i+1)));
+            latex.DrawLatexNDC(0.10, 0.86, Form("Q2-y bin: %d, z-P_{T} bin: %zu", currentQ2yBin, (i+1)));
         }
     }
 
@@ -177,10 +215,13 @@ int main() {
     delete canvas;
     for (auto& hist : hData) delete hist;
     for (auto& hist : hMCReco) delete hist;
+    for (auto& hist : hMCGene) delete hist;
     fData->Close();
     fMCReco->Close();
+    fMCGene->Close();
     delete fData;
     delete fMCReco;
+    delete fMCGene;
 
 
     return 0;
