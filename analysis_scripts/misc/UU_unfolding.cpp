@@ -148,9 +148,9 @@ int main() {
             if (pT_bin != -1 && z_bin != -1) {
                 int histIndex = z_bin * num_pT_bins + pT_bin;
                 hData[binIndex][histIndex]->Fill(phiData);
-                allBinParams[binIndex][histIndex].sumDepA += DepA;
-                allBinParams[binIndex][histIndex].sumDepB += DepB;
-                allBinParams[binIndex][histIndex].sumDepV += DepV;
+                allBinParams[binIndex][histIndex].sumDepA += DepAData;
+                allBinParams[binIndex][histIndex].sumDepB += DepBData;
+                allBinParams[binIndex][histIndex].sumDepV += DepVData;
                 allBinParams[binIndex][histIndex].sumPT += pTData; // Assuming pTData is your pT variable
                 allBinParams[binIndex][histIndex].count++;
             }
