@@ -237,7 +237,7 @@ int main() {
             // if (pTMC < currentPTEdges[0] || pTMC > currentPTEdges[num_pT_bins[binIndex]]) {
             //     continue;
             // }
-
+            std::cout << zMC << " " << pTMC << std::endl;
             int z_bin = findBinIndex(zMC, currentZEdges);
             int pT_bin = findBinIndex(pTMC, currentPTEdges);
             // Fill the corresponding histogram if the event is in a valid bin
