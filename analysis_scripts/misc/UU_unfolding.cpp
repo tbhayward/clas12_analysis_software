@@ -53,6 +53,62 @@ int DetermineQ2yBin(float Q2, float y) {
     return -1; // Not in any defined Q2-y bin
 }
 
+#include <map>
+#include <vector>
+
+// Define bin edges for z for each Q2-y bin
+std::map<int, std::vector<float>> zEdges = {
+    {1, {0.15, 0.2, 0.24, 0.29, 0.40, 0.73}},
+    {2, {0.18, 0.23, 0.26, 0.31, 0.38, 0.50, 0.74}},
+    {3, {0.22, 0.28, 0.35, 0.45, 0.60, 0.78}},
+    {4, {0.26, 0.32, 0.37, 0.43, 0.50, 0.60}},
+    {5, {0.15, 0.19, 0.24, 0.29, 0.38, 0.50, 0.73}},
+    {6, {0.18, 0.23, 0.30, 0.39, 0.50, 0.78}},
+    {7, {0.18, 0.23, 0.30, 0.39, 0.50, 0.78}},
+    {8, {0.26, 0.32, 0.36, 0.40, 0.53, 0.72}},
+    {9, {0.15, 0.20, 0.24, 0.30, 0.38, 0.48, 0.72}},
+    {10, {0.18, 0.23, 0.26, 0.32, 0.40, 0.50, 0.72}},
+    {11, {0.21, 0.26, 0.32, 0.40, 0.50, 0.70}},
+    {12, {0.26, 0.32, 0.40, 0.50, 0.70}},
+    {13, {0.15, 0.20, 0.24, 0.30, 0.40, 0.72}},
+    {14, {0.18, 0.23, 0.27, 0.33, 0.44, 0.74}},
+    {15, {0.21, 0.28, 0.35, 0.47, 0.72}},
+    {16, {0.15, 0.20, 0.25, 0.32, 0.41, 0.71}},
+    {17, {0.18, 0.23, 0.30, 0.38, 0.48, 0.72}}
+};
+
+// Define bin edges for pT for each Q2-y bin
+std::map<int, std::vector<float>> pTEdges = {
+    {1, {0.05, 0.20, 0.30, 0.40, 0.50, 0.60, 0.75, 1.00}},
+    {2, {0.05, 0.20, 0.30, 0.40, 0.50, 0.60, 0.75, 1.00}},
+    {3, {0.05, 0.20, 0.30, 0.40, 0.50, 0.60, 0.75, 1.00}},
+    {4, {0.05, 0.20, 0.30, 0.40, 0.50, 0.60, 0.80}},
+    {5, {0.05, 0.22, 0.22, 0.32, 0.41, 0.51, 0.65, 1.00}},
+    {6, {0.05, 0.22, 0.32, 0.41, 0.51, 0.51, 0.65, 1.00}},
+    {7, {0.05, 0.20, 0.30, 0.40, 0.50, 0.65, 1.00}},
+    {8, {0.05, 0.20, 0.30, 0.40, 0.52, 0.75}},
+    {9, {0.05, 0.22, 0.30, 0.38, 0.46, 0.60, 0.95}},
+    {10, {0.05, 0.22, 0.32, 0.41, 0.51, 0.65, 1.00}},
+    {11, {0.05, 0.20, 0.31, 0.40, 0.50, 0.64, 0.95}},
+    {12, {0.05, 0.22, 0.32, 0.41, 0.51, 0.67}},
+    {13, {0.05, 0.23, 0.34, 0.43, 0.55, 0.90}},
+    {14, {0.05, 0.23, 0.34, 0.44, 0.55, 0.90}},
+    {15, {0.05, 0.23, 0.34, 0.45, 0.58, 0.90}},
+    {16, {0.05, 0.24, 0.36, 0.55, 0.80}},
+    {17, {0.05, 0.23, 0.36, 0.51, 0.85}}
+};
+
+
+// Function to find bin index given value and bin edges
+int findBinIndex(float value, const std::vector<float>& edges) {
+    for (size_t i = 0; i < edges.size() - 1; i++) {
+        if (value > edges[i] && value <= edges[i + 1]) {
+            return i;
+        }
+    }
+    return -1; // Value outside bin edges
+}
+
 // Main function
 int main() {
     // Open the ROOT files for data and Monte Carlo
@@ -132,20 +188,8 @@ int main() {
         int binIndex = DetermineQ2yBin(Q2Data, yData) - 1; // Adjusted for 0-based indexing
         if (binIndex >= 0) {
 
-            // Determine the corresponding pT and z bins
-            int pT_bin = -1, z_bin = -1;
-            for (int j = 0; j < num_pT_bins; ++j) {
-                if (pTData > pT_edges[j] && pTData <= pT_edges[j+1]) {
-                    pT_bin = j;
-                    break;
-                }
-            }
-            for (int k = 0; k < num_z_bins; k++) {
-                if (zData > z_edges[k] && zData <= z_edges[k+1]) {
-                    z_bin = num_z_bins - k - 1;
-                    break;
-                }
-            }
+            int z_Bin = findBinIndex(zMC, currentZEdges);
+            int pT_Bin = findBinIndex(pTMC, currentPTEdges);
             // Fill the corresponding histogram if the event is in a valid bin
             if (pT_bin != -1 && z_bin != -1) {
                 int histIndex = z_bin * num_pT_bins + pT_bin;
@@ -167,20 +211,8 @@ int main() {
         int binIndex = DetermineQ2yBin(Q2MC, yMC) - 1; // Adjusted for 0-based indexing
         if (binIndex >= 0) {
 
-            // Determine the corresponding pT and z bins
-            int pT_bin = -1, z_bin = -1;
-            for (int j = 0; j < num_pT_bins; ++j) {
-                if (pTMC > pT_edges[j] && pTMC <= pT_edges[j+1]) {
-                    pT_bin = j;
-                    break;
-                }
-            }
-            for (int k = 0; k < num_z_bins; k++) {
-                if (zMC > z_edges[k] && zMC <= z_edges[k+1]) {
-                    z_bin = num_z_bins - k - 1;
-                    break;
-                }
-            }
+            int z_Bin = findBinIndex(zMC, currentZEdges);
+            int pT_Bin = findBinIndex(pTMC, currentPTEdges);
             // Fill the corresponding histogram if the event is in a valid bin
             if (pT_bin != -1 && z_bin != -1) {
                 int histIndex = z_bin * num_pT_bins + pT_bin;
@@ -197,20 +229,8 @@ int main() {
         int binIndex = DetermineQ2yBin(Q2Gen, yGen) - 1; // Adjusted for 0-based indexing
         if (binIndex >= 0) {
 
-            // Determine the corresponding pT and z bins
-            int pT_bin = -1, z_bin = -1;
-            for (int j = 0; j < num_pT_bins; ++j) {
-                if (pTGen > pT_edges[j] && pTGen <= pT_edges[j+1]) {
-                    pT_bin = j;
-                    break;
-                }
-            }
-            for (int k = 0; k < num_z_bins; k++) {
-                if (zGen > z_edges[k] && zGen <= z_edges[k+1]) {
-                    z_bin = num_z_bins - k - 1;
-                    break;
-                }
-            }
+            int z_Bin = findBinIndex(zGen, currentZEdges);
+            int pT_Bin = findBinIndex(pTGen, currentPTEdges);
             // Fill the corresponding histogram if the event is in a valid bin
             if (pT_bin != -1 && z_bin != -1) {
                 int histIndex = z_bin * num_pT_bins + pT_bin;
@@ -437,7 +457,7 @@ int main() {
                 double structureC = params.C * meanDepA / meanDepB;
 
                 // Determine which z-bin this pT bin belongs to
-                int zBinIndex = zpTBin / 7; // Adjust based on your actual bin grouping logic
+                int zBinIndex = zpTBin / (pTEdges[q2yBin].size() - 1); 
                 structureFunctionsB[zBinIndex].push_back({meanPT, structureB, params.errB});
                 structureFunctionsC[zBinIndex].push_back({meanPT, structureC, params.errC});
             }
