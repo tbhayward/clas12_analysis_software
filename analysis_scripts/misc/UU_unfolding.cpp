@@ -155,12 +155,6 @@ int main() {
     tMCGene->SetBranchAddress("pT", &pTGen);
     tMCGene->SetBranchAddress("z", &zGen);
 
-    // Define the bin edges for z and pT
-    float pT_edges[] = {0.05, 0.2, 0.3, 0.4, 0.5, 0.6, 0.75, 1.0};
-    float z_edges[] = {0.15, 0.2, 0.24, 0.29, 0.4, 0.73};
-    int num_pT_bins = sizeof(pT_edges)/sizeof(float) - 1;
-    int num_z_bins = sizeof(z_edges)/sizeof(float) - 1;
-
     struct BinParams {
         double sumDepA = 0, sumDepB = 0, sumDepV = 0, sumPT = 0;
         int count = 0; 
@@ -193,7 +187,11 @@ int main() {
             const auto& currentZEdges = zEdges[binIndex+1]; 
             const auto& currentPTEdges = pTEdges[binIndex+1];
 
-            int z_bin = num_z_bins - findBinIndex(zData, currentZEdges);
+            // number of bins
+            int num_pT_bins = sizeof(currentZEdges)/sizeof(float) - 1;
+            int num_z_bins = sizeof(currentPTEdges)/sizeof(float) - 1;
+
+            int z_bin = findBinIndex(zData, currentZEdges);
             int pT_bin = findBinIndex(pTData, currentPTEdges);
             std::cout << zData << " " << z_bin << " " << pTData << " " << pT_bin << std::endl;
             // Fill the corresponding histogram if the event is in a valid bin
@@ -221,6 +219,10 @@ int main() {
             const auto& currentZEdges = zEdges[binIndex+1]; 
             const auto& currentPTEdges = pTEdges[binIndex+1];
 
+            // number of bins
+            int num_pT_bins = sizeof(currentZEdges)/sizeof(float) - 1;
+            int num_z_bins = sizeof(currentPTEdges)/sizeof(float) - 1;
+
             int z_bin = findBinIndex(zMC, currentZEdges);
             int pT_bin = findBinIndex(pTMC, currentPTEdges);
             // Fill the corresponding histogram if the event is in a valid bin
@@ -242,6 +244,10 @@ int main() {
 
             const auto& currentZEdges = zEdges[binIndex+1]; 
             const auto& currentPTEdges = pTEdges[binIndex+1];
+
+            // number of bins
+            int num_pT_bins = sizeof(currentZEdges)/sizeof(float) - 1;
+            int num_z_bins = sizeof(currentPTEdges)/sizeof(float) - 1;
 
             int z_bin = findBinIndex(zGen, currentZEdges);
             int pT_bin = findBinIndex(pTGen, currentPTEdges);
