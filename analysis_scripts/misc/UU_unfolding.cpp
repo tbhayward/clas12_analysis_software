@@ -284,7 +284,7 @@ int main() {
             hUnfolded->Multiply(hAcceptance[bin][i]); // Multiply data by acceptance correction
             
             // Plotting style adjustments
-            hUnfolded->SetLineColor(kBrown);
+            hUnfolded->SetLineColor(kBlack);
             hUnfolded->SetLineWidth(2);
             hUnfolded->GetYaxis()->SetTitle("Counts");
             hUnfolded->GetXaxis()->SetTitleSize(0.07);
