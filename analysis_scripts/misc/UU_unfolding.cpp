@@ -229,7 +229,7 @@ int main() {
             const auto& currentZEdges = zEdges[binIndex+1]; 
             const auto& currentPTEdges = pTEdges[binIndex+1];
 
-            std::cout << endl << currentZEdges[0] << " " << zMC << " " << currentZEdges[currentZEdges.size()];
+            std::cout << std::endl << currentZEdges[0] << " " << zMC << " " << currentZEdges[currentZEdges.size()];
             if (zMC < currentZEdges[0] || zMC > currentZEdges[currentZEdges.size()]) {
                 continue;
             }
