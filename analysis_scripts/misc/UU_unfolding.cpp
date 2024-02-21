@@ -4,8 +4,8 @@
 #include <TCanvas.h>
 #include <iostream>
 #include <TLatex.h>
-#include <TGraphErrors.h> // For TGraphErrors
-#include <TColor.h>       // For color definitions such as kBrown
+#include <TGraphErrors.h> 
+#include <TF1.h>
 
 // Function to determine the Q2-y bin based on given Q2 and y values.
 int DetermineQ2yBin(float Q2, float y) {
@@ -50,7 +50,6 @@ int DetermineQ2yBin(float Q2, float y) {
 
     return -1; // Not in any defined Q2-y bin
 }
-
 
 // Main function
 int main() {
