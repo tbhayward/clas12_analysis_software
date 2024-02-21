@@ -229,16 +229,16 @@ int main() {
             const auto& currentZEdges = zEdges[binIndex+1]; 
             const auto& currentPTEdges = pTEdges[binIndex+1];
 
-            // std::cout << std::endl << currentZEdges[0] << " " << zMC << " " << currentZEdges[num_z_bins[binIndex]];
-            // if (zMC < currentZEdges[0] || zMC > currentZEdges[num_z_bins[binIndex]]) {
-            //     continue;
-            // }
-            // std::cout << " " << currentPTEdges[0] << " " << pTMC << " " << currentPTEdges[num_pT_bins[binIndex]];
-            // if (pTMC < currentPTEdges[0] || pTMC > currentPTEdges[num_pT_bins[binIndex]]) {
-            //     continue;
-            // }
+            std::cout << std::endl << currentZEdges[0] << " " << zMC << " " << currentZEdges[num_z_bins[binIndex]];
+            if (zMC < currentZEdges[0] || zMC > currentZEdges[num_z_bins[binIndex]]) {
+                continue;
+            }
+            std::cout << " " << currentPTEdges[0] << " " << pTMC << " " << currentPTEdges[num_pT_bins[binIndex]];
+            if (pTMC < currentPTEdges[0] || pTMC > currentPTEdges[num_pT_bins[binIndex]]) {
+                continue;
+            }
             std::cout << zMC << " " << pTMC << std::endl;
-            int z_bin = findBinIndex(zMC, currentZEdges);
+            int z_bin = num_z_bins[binIndex]-findBinIndex(zMC, currentZEdges);
             int pT_bin = findBinIndex(pTMC, currentPTEdges);
             // Fill the corresponding histogram if the event is in a valid bin
             if (pT_bin != -1 && z_bin != -1) {
@@ -269,7 +269,7 @@ int main() {
                 continue;
             }
 
-            int z_bin = findBinIndex(zGen, currentZEdges);
+            int z_bin = num_z_bins[binIndex]-findBinIndex(zGen, currentZEdges);
             int pT_bin = findBinIndex(pTGen, currentPTEdges);
             // Fill the corresponding histogram if the event is in a valid bin
             if (pT_bin != -1 && z_bin != -1) {
