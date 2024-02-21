@@ -6,6 +6,7 @@
 #include <TLatex.h>
 #include <TGraphErrors.h> 
 #include <TF1.h>
+#include <fstream> 
 
 // Function to determine the Q2-y bin based on given Q2 and y values.
 int DetermineQ2yBin(float Q2, float y) {
@@ -365,9 +366,9 @@ int main() {
                 TLatex latexParams;
                 latexParams.SetNDC();
                 latexParams.SetTextSize(0.04); // Adjust as needed
-                latexParams.DrawLatex(0.35, 0.375, Form("A = %.2f #pm %.2f", A, errA));
-                latexParams.DrawLatex(0.35, 0.325, Form("B = %.2f #pm %.2f", B, errB));
-                latexParams.DrawLatex(0.35, 0.275, Form("C = %.2f #pm %.2f", C, errC));
+                latexParams.DrawLatex(0.4, 0.375, Form("A = %.2f #pm %.2f", A, errA));
+                latexParams.DrawLatex(0.4, 0.325, Form("B = %.2f #pm %.2f", B, errB));
+                latexParams.DrawLatex(0.4, 0.275, Form("C = %.2f #pm %.2f", C, errC));
                 
                 // Label
                 latex.DrawLatexNDC(0.10, 0.86, Form("Q2-y bin: %d, z-P_{T} bin: %zu", (bin+1), (i+1)));
@@ -392,44 +393,51 @@ int main() {
         for (auto& hist : hMCGene[bin]) delete hist;
     }
 
-    std::cout << std::endl << std::endl << std::endl;
+    std::ofstream capobiancoFile("output/capobianco_cross_check.txt");
     for (size_t bin = 0; bin < allFitParams.size(); ++bin) {
         for (size_t i = 0; i < allFitParams[bin].size(); ++i) {
             const auto& params = allFitParams[bin][i];
-            // Check if a fit was performed based on one of the parameters or chi2ndf
             if (params.A != 0) { // Assuming -1 is the sentinel value for "fit not performed"
-                std::cout << "Bin " << bin+1 << ", Sub-bin " << i+1 << ": "
-                          << "A = " << params.A << " +/- " << params.errA
-                          << ", B = " << params.B << " +/- " << params.errB
-                          << ", C = " << params.C << " +/- " << params.errC
-                          << ", chi2/NDF = " << params.chi2ndf << std::endl;
+                capobiancoFile << "Bin " << bin+1 << ", Sub-bin " << i+1 << ": "
+                               << "A = " << params.A << " +/- " << params.errA
+                               << ", B = " << params.B << " +/- " << params.errB
+                               << ", C = " << params.C << " +/- " << params.errC
+                               << ", chi2/NDF = " << params.chi2ndf << std::endl;
             } else {
-                // Optionally, print a message indicating no fit was performed for this bin/sub-bin
-                std::cout << "Q2-y bin: " << bin+1 << ", z-PT bin: " << i+1 << ": No fit performed due to insufficient statistics." << std::endl;
+                capobiancoFile << "Q2-y bin: " << bin+1 << ", z-PT bin: " << i+1 << ": No fit performed due to insufficient statistics." << std::endl;
             }
         }
     }
+    capobiancoFile.close(); // Close the file after writing
 
-    std::cout << std::endl << std::endl << std::endl;
+    std::ofstream structureFile("output/structure_functions.txt");
     for (size_t bin = 0; bin < allBinParams.size(); ++bin) {
         for (size_t i = 0; i < allBinParams[bin].size(); ++i) {
-            if (allBinParams[bin][i].count > 0) { // Ensure there are events in the bin
+            if (allBinParams[bin][i].count > 0) {
                 double meanDepA = allBinParams[bin][i].sumDepA / allBinParams[bin][i].count;
                 double meanDepB = allBinParams[bin][i].sumDepB / allBinParams[bin][i].count;
                 double meanDepV = allBinParams[bin][i].sumDepV / allBinParams[bin][i].count;
                 double meanPT = allBinParams[bin][i].sumPT / allBinParams[bin][i].count;
 
-                // Assuming you have B and C values calculated and stored somewhere accessible
-                // For example, if they're in allFitParams[bin][i].B and .C
-                double structureB = allFitParams[bin][i].B * meanDepA / meanDepV; // Check this formula as per your requirements
-                double structureC = allFitParams[bin][i].C * meanDepA / meanDepB; // Ditto
+                // Assuming the errors for B and C are calculated and available
+                double errorB = /* calculation or retrieval of error for B */;
+                double errorC = /* calculation or retrieval of error for C */;
 
-                // Now you can print or store these values as needed
-                std::cout << "Q2-y bin: " << bin+1 << ", z-PT bin: " << i+1 << ": {" << meanPT
-                          << ", " << structureB << ", " << structureC << "}, " << std::endl;
+                double structureB = allFitParams[bin][i].B * meanDepA / meanDepV;
+                double structureC = allFitParams[bin][i].C * meanDepA / meanDepB;
+                
+                // Error propagation for structureB and structureC, if not already calculated
+                double structureBError = /* your error propagation formula for structureB */;
+                double structureCError = /* your error propagation formula for structureC */;
+
+                structureFile << "Q2-y bin: " << bin+1 << ", z-PT bin: " << i+1 << ", B: Mean pT = " << meanPT
+                              << ", Value = " << structureB << ", Error = " << structureBError << std::endl;
+                structureFile << "Q2-y bin: " << bin+1 << ", z-PT bin: " << i+1 << ", C: Mean pT = " << meanPT
+                              << ", Value = " << structureC << ", Error = " << structureCError << std::endl;
             }
         }
     }
+    structureFile.close(); // Close the file after writing
 
 
 
