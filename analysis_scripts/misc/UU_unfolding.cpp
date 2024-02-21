@@ -191,9 +191,10 @@ int main() {
 
             const auto& currentZEdges = zEdges[binIndex+1]; 
             const auto& currentPTEdges = pTEdges[binIndex+1];
-            std::cout << zData << " " < z_bin << " " << pTData << " " << pT_bin << std::endl << std::endl;
+
             int z_bin = findBinIndex(zData, currentZEdges);
             int pT_bin = findBinIndex(pTData, currentPTEdges);
+            std::cout << zData << " " < z_bin << " " << pTData << " " << pT_bin << std::endl << std::endl;
             // Fill the corresponding histogram if the event is in a valid bin
             if (pT_bin != -1 && z_bin != -1) {
                 int histIndex = z_bin * num_pT_bins + pT_bin;
