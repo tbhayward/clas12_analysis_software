@@ -240,6 +240,7 @@ int main() {
             std::cout << zMC << " " << pTMC << std::endl;
             int z_bin = findBinIndex(zMC, currentZEdges);
             int pT_bin = findBinIndex(pTMC, currentPTEdges);
+            std::cout << "here" << std::endl;
             // Fill the corresponding histogram if the event is in a valid bin
             if (pT_bin != -1 || z_bin != -1) {
                 int histIndex = (z_bin+1)*num_pT_bins[binIndex]+(pT_bin+1);
