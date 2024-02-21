@@ -225,7 +225,6 @@ int main() {
         tMCReco->GetEntry(i);
         int binIndex = DetermineQ2yBin(Q2MC, yMC) - 1; // Adjusted for 0-based indexing
         if (binIndex >= 0) {
-            std::cout << binIndex << std::endl;
 
             const auto& currentZEdges = zEdges[binIndex+1]; 
             const auto& currentPTEdges = pTEdges[binIndex+1];
@@ -236,6 +235,7 @@ int main() {
             if (pTMC < currentPTEdges[0] || pTMC > currentPTEdges[currentPTEdges.size()]) {
                 continue;
             }
+            std::cout << binIndex << std::endl;
 
             int z_bin = findBinIndex(zMC, currentZEdges);
             int pT_bin = findBinIndex(pTMC, currentPTEdges);
