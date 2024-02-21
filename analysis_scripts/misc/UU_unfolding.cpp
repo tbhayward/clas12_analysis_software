@@ -241,9 +241,9 @@ int main() {
             int z_bin = findBinIndex(zMC, currentZEdges);
             int pT_bin = findBinIndex(pTMC, currentPTEdges);
             // Fill the corresponding histogram if the event is in a valid bin
-            std::cout << z_bin << " " << pT_bin << std::endl;
             if (pT_bin != -1 && z_bin != -1) {
                 int histIndex = (z_bin+1)*num_pT_bins[binIndex]+(pT_bin+1);
+                std::cout << z_bin << " " << pT_bin << " " << histIndex << std::endl;
                 hMCReco[binIndex][histIndex]->Fill(phiMC);
                 std::cout << phiMC << std::endl;
             }
