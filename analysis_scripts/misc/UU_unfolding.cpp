@@ -172,7 +172,7 @@ int main() {
     // Create histograms for each z-pT bin
     std::vector<std::vector<TH1F*>> hData(17), hMCReco(17), hMCGene(17);
     for (int bin = 0; bin < 17; ++bin) {
-        std::cout << bin << " " << num_pT_bins * num_z_bins << std::endl;
+        std::cout << bin << " " << num_pT_bins[bin] * num_z_bins[bin] << std::endl;
         for (int i = 0; i < num_pT_bins[bin] * num_z_bins[bin]; ++i) {
             std::cout << i << std::endl;
             hData[bin].push_back(new TH1F(Form("hData_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 24, 0, 2*3.14159));
@@ -273,9 +273,9 @@ int main() {
     TLatex latex; latex.SetTextSize(0.09); latex.SetNDC();
     for (int bin = 0; bin < 17; ++bin) {
         TCanvas* canvas = new TCanvas(Form("canvas_bin_%d", bin+1), Form("Q2-y Bin %d Phi Distributions", bin+1), 2000, 1200);
-        canvas->Divide(num_pT_bins, num_z_bins);
+        canvas->Divide(num_pT_bins[bin], num_z_bins[bin]);
         
-        for (int i = 0; i < num_pT_bins * num_z_bins; ++i) {
+        for (int i = 0; i < num_pT_bins[bin] * num_z_bins[bin]; ++i) {
             canvas->cd(i + 1);
 
             // Adjust pad margins to add space around the plots
@@ -328,8 +328,8 @@ int main() {
 
     std::vector<std::vector<TH1F*>> hAcceptance(17);
     for (int bin = 0; bin < 17; ++bin) {
-        hAcceptance[bin].resize(num_pT_bins * num_z_bins);
-        for (int i = 0; i < num_pT_bins * num_z_bins; ++i) {
+        hAcceptance[bin].resize(num_pT_bins[bin] * num_z_bins[bin]);
+        for (int i = 0; i < num_pT_bins[bin] * num_z_bins[bin]; ++i) {
             // Ensure MC reco histogram has entries to avoid division by zero
             if (hMCReco[bin][i]->GetEntries() > 100) {
                 hAcceptance[bin][i] = (TH1F*)hMCGene[bin][i]->Clone(Form("hAcceptance_bin%d_%d", bin+1, i));
@@ -338,13 +338,21 @@ int main() {
         }
     }
 
-    struct FitParams { double A, B, C, errA, errB, errC, chi2ndf; };
-    std::vector<std::vector<FitParams>> allFitParams(17, std::vector<FitParams>(num_pT_bins * num_z_bins));
+    astruct FitParams { double A, B, C, errA, errB, errC, chi2ndf; };
+    std::vector<std::vector<FitParams>> allFitParams;
+    allFitParams.resize(zEdges.size()); // Ensure there's a vector for each Q2-y bin
+
+    for (int bin = 0; bin < zEdges.size(); ++bin) {
+        // Corrected indexing for num_z_bins and num_pT_bins arrays
+        int totalBins = num_z_bins[bin] * num_pT_bins[bin];
+        allFitParams[bin].resize(totalBins);
+    }
+
     for (int bin = 0; bin < 17; ++bin) {
         TCanvas* unfoldedCanvas = new TCanvas(Form("unfolded_canvas_bin_%d", bin+1), Form("Unfolded Q2-y Bin %d Phi Distributions", bin+1), 2000, 1200);
-        unfoldedCanvas->Divide(num_pT_bins, num_z_bins);
+        unfoldedCanvas->Divide(num_pT_bins[bin], num_z_bins[bin]);
         
-        for (int i = 0; i < num_pT_bins * num_z_bins; ++i) {
+        for (int i = 0; i < num_pT_bins[bin] * num_z_bins[bin]; ++i) {
             unfoldedCanvas->cd(i + 1);
             
             // Apply acceptance correction if both histograms have entries
