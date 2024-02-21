@@ -193,10 +193,10 @@ int main() {
     //         const auto& currentZEdges = zEdges[binIndex+1]; 
     //         const auto& currentPTEdges = pTEdges[binIndex+1];
 
-    //         if (zData < currentZEdges[0] || zData > currentZEdges[n_z_bins[binIndex]]) {
+    //         if (zData < currentZEdges[0] || zData > currentZEdges[num_z_bins[binIndex]]) {
     //             continue;
     //         }
-    //         if (pTData < currentPTEdges[0] || pTData > currentPTEdges[n_pT_bins[binIndex]]) {
+    //         if (pTData < currentPTEdges[0] || pTData > currentPTEdges[num_pT_bins[binIndex]]) {
     //             continue;
     //         }
 
@@ -229,12 +229,12 @@ int main() {
             const auto& currentZEdges = zEdges[binIndex+1]; 
             const auto& currentPTEdges = pTEdges[binIndex+1];
 
-            std::cout << std::endl << currentZEdges[0] << " " << zMC << " " << currentZEdges[n_z_bins[binIndex]];
-            if (zMC < currentZEdges[0] || zMC > currentZEdges[n_z_bins[binIndex]]) {
+            std::cout << std::endl << currentZEdges[0] << " " << zMC << " " << currentZEdges[num_z_bins[binIndex]];
+            if (zMC < currentZEdges[0] || zMC > currentZEdges[num_z_bins[binIndex]]) {
                 continue;
             }
-            std::cout << currentPTEdges[0] << " " << pTData << " " << currentPTEdges[n_pT_bins[binIndex]];
-            if (pTMC < currentPTEdges[0] || pTMC > currentPTEdges[n_pT_bins[binIndex]]) {
+            std::cout << currentPTEdges[0] << " " << pTData << " " << currentPTEdges[num_pT_bins[binIndex]];
+            if (pTMC < currentPTEdges[0] || pTMC > currentPTEdges[num_pT_bins[binIndex]]) {
                 continue;
             }
 
@@ -263,10 +263,10 @@ int main() {
             const auto& currentZEdges = zEdges[binIndex+1]; 
             const auto& currentPTEdges = pTEdges[binIndex+1];
 
-            if (zGen < currentZEdges[0] || zGen > currentZEdges[n_z_bins[binIndex]]) {
+            if (zGen < currentZEdges[0] || zGen > currentZEdges[num_z_bins[binIndex]]) {
                 continue;
             }
-            if (pTGen < currentPTEdges[0] || pTGen > currentPTEdges[n_pT_bins[binIndex]]) {
+            if (pTGen < currentPTEdges[0] || pTGen > currentPTEdges[num_pT_bins[binIndex]]) {
                 continue;
             }
 
