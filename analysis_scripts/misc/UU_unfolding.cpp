@@ -138,7 +138,7 @@ int main() {
             canvas->cd(i + 1);
 
             // Adjust pad margins to add space around the plots
-            gPad->SetLeftMargin(0.2);
+            gPad->SetLeftMargin(0.25);
             gPad->SetRightMargin(0.2);
             gPad->SetTopMargin(0.2);
             gPad->SetBottomMargin(0.2);
