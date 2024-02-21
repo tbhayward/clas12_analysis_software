@@ -338,7 +338,7 @@ int main() {
         }
     }
 
-    astruct FitParams { double A, B, C, errA, errB, errC, chi2ndf; };
+    struct FitParams { double A, B, C, errA, errB, errC, chi2ndf; };
     std::vector<std::vector<FitParams>> allFitParams;
     allFitParams.resize(zEdges.size()); // Ensure there's a vector for each Q2-y bin
 
