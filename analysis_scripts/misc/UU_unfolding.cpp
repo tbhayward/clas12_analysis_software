@@ -247,7 +247,7 @@ int main() {
                 int histIndex = (z_bin-1)*(num_pT_bins[binIndex])+(pT_bin+1);
                 std::cout << zMC << " " << pTMC << std::endl;
                 std::cout << (z_bin) << " " << num_pT_bins[binIndex] << " " << (pT_bin+1) << " " << histIndex << std::endl << std::endl;
-                hMC[binIndex][histIndex]->Fill(phiMC);
+                hMCReco[binIndex][histIndex]->Fill(phiMC);
             }
         }
     }
