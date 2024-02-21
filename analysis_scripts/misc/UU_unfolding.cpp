@@ -165,7 +165,7 @@ int main() {
 
             // Display z-pT bin information as 'z-P_{T} bin: histIndex'
             // Note: Adjust the positioning (x, y coordinates) as needed
-            latex.DrawLatexNDC(0.16, 0.88, Form("Q2-y bin: %d, z-P_{T} bin: %zu", currentQ2yBin, (i+1));
+            latex.DrawLatexNDC(0.16, 0.88, Form("Q2-y bin: %d, z-P_{T} bin: %zu", currentQ2yBin, (i+1)));
         }
     }
 
