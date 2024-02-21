@@ -230,22 +230,29 @@ int main() {
             hMCGene[bin][i]->SetLineWidth(2); // Increase line width
 
             // Increase font size for axis labels
-            hData[bin][i]->GetXaxis()->SetLabelSize(0.08); // Adjust as needed
-            hData[bin][i]->GetYaxis()->SetLabelSize(0.08); // Adjust as needed
-            hMCReco[bin][i]->GetXaxis()->SetLabelSize(0.08); // Adjust as needed
-            hMCReco[bin][i]->GetYaxis()->SetLabelSize(0.08); // Adjust as needed
-            hMCGene[bin][i]->GetXaxis()->SetLabelSize(0.08); // Adjust as needed
-            hMCGene[bin][i]->GetYaxis()->SetLabelSize(0.08); // Adjust as needed
+            hData[bin][i]->GetXaxis()->SetLabelSize(0.07); // Adjust as needed
+            hData[bin][i]->GetYaxis()->SetLabelSize(0.07); // Adjust as needed
+            hMCReco[bin][i]->GetXaxis()->SetLabelSize(0.07); // Adjust as needed
+            hMCReco[bin][i]->GetYaxis()->SetLabelSize(0.07); // Adjust as needed
+            hMCGene[bin][i]->GetXaxis()->SetLabelSize(0.07); // Adjust as needed
+            hMCGene[bin][i]->GetYaxis()->SetLabelSize(0.07); // Adjust as needed
+            // Increase font size for axis titles
+            hData[bin][i]->GetXaxis()->SetTitleSize(0.05); // Adjust as needed
+            hData[bin][i]->GetYaxis()->SetTitleSize(0.05); // Adjust as needed
+            hMCReco[bin][i]->GetXaxis()->SetTitleSize(0.05); // Adjust as needed
+            hMCReco[bin][i]->GetYaxis()->SetTitleSize(0.05); // Adjust as needed
+            hMCGene[bin][i]->GetXaxis()->SetTitleSize(0.05); // Adjust as needed
+            hMCGene[bin][i]->GetYaxis()->SetTitleSize(0.05); // Adjust as needed
 
             if (hMCReco[bin][i]->GetEntries() > 100) {
                 hData[bin][i]->DrawNormalized("HIST");
                 hMCReco[bin][i]->DrawNormalized("HIST same");
                 hMCGene[bin][i]->DrawNormalized("HIST same");
-            }
 
-            // Display z-pT bin information as 'z-P_{T} bin: histIndex'
-            // Note: Adjust the positioning (x, y coordinates) as needed
-            latex.DrawLatexNDC(0.10, 0.86, Form("Q2-y bin: %d, z-P_{T} bin: %zu", bin, (i+1)));
+                // Display z-pT bin information as 'z-P_{T} bin: histIndex'
+                // Note: Adjust the positioning (x, y coordinates) as needed
+                latex.DrawLatexNDC(0.10, 0.86, Form("Q2-y bin: %d, z-P_{T} bin: %zu", (bin+1), (i+1)));
+            }
         }
         
         canvas->SaveAs(Form("output/Q2yBin_%d.png", bin+1));
