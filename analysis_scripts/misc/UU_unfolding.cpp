@@ -170,7 +170,7 @@ int main() {
         allBinParams[i - 1].resize(totalbins); // Resize the vector for this Q2-y bin to hold all combinations
     }
 
-
+    std::cout << zEdges[i].size() << " " << pTEdges[i].size() << std::endl;
     std::cout << std::endl << "Creating histograms." << std::endl;
     // Create histograms for each z-pT bin
     std::vector<std::vector<TH1F*>> hData(17), hMCReco(17), hMCGene(17);
