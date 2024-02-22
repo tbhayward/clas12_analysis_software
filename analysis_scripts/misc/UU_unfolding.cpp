@@ -423,12 +423,13 @@ int main() {
                     TLatex latexParams;
                     latexParams.SetNDC();
                     latexParams.SetTextSize(0.08);
-                    latexParams.DrawLatex(0.375, 0.375, Form("A = %.2f #pm %.2f", params.A, params.errA));
-                    latexParams.DrawLatex(0.375, 0.325, Form("B = %.2f #pm %.2f", params.B, params.errB));
-                    latexParams.DrawLatex(0.375, 0.275, Form("C = %.2f #pm %.2f", params.C, params.errC));
+                    // latexParams.DrawLatex(0.3, 0.375, Form("A = %.2f #pm %.2f", params.A, params.errA));
+                    latexParams.DrawLatex(0.3, 0.335, Form("B = %.2f #pm %.3f", params.B, params.errB));
+                    latexParams.DrawLatex(0.3, 0.275, Form("C = %.2f #pm %.3f", params.C, params.errC));
+                    latexParams.DrawLatex(0.3, 0.215, Form("#chi^{2}/ndf = %.2f", params.chi2ndf));
 
                     // Adjusting this display to correctly label each bin according to your new structure
-                    latex.DrawLatexNDC(0.10, 0.86, Form("Q2-y bin: %d, z-P_{T} bin: z%d-pT%d", bin + 1, num_z_bins[bin] - z_bin, pT_bin + 1));
+                    latex.DrawLatexNDC(0.14, 0.86, Form("Q2-y bin: %d, z-P_{T} bin: z%d-pT%d", bin + 1, num_z_bins[bin] - z_bin, pT_bin + 1));
 
                     delete hUnfolded; // Clean up
                 }
@@ -441,18 +442,17 @@ int main() {
 
     std::ofstream capobiancoFile("output/capobianco_cross_check.txt");
     for (size_t bin = 0; bin < allFitParams.size(); ++bin) {
-        // Print Q2-y bin heading
-        capobiancoFile << "Q2-y Bin " << bin + 1 << std::endl;
-
-        int current_bin = 0;
+        int current_bin = 1;
         for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
             for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
                 // Calculate the linear index based on z_bin and pT_bin
                 int i = z_bin * num_pT_bins[bin] + pT_bin;
                 const auto& params = allFitParams[bin][i];
                 if (params.A != 0) { // Check if the fit was performed
+                    // Print Q2-y bin heading
+                    capobiancoFile << "Q2-y Bin " << bin + 1 << std::endl;
                     capobiancoFile << "z-PT bin: " << current_bin
-                       << "A = " << params.A << " +/- " << params.errA
+                       << ", A = " << params.A << " +/- " << params.errA
                        << ", B = " << params.B << " +/- " << params.errB
                        << ", C = " << params.C << " +/- " << params.errC
                        << ", chi2/NDF = " << params.chi2ndf << std::endl;
@@ -466,58 +466,6 @@ int main() {
     }
     capobiancoFile.close(); // Close the file after writing
 
-
-    // struct StructureFunction {
-    //     double meanPT;
-    //     double value;
-    //     double error;
-    // };
-    // std::ofstream structureFile("output/structure_functions.txt");
-    // // Loop over Q2-y bins
-    // for (size_t q2yBin = 0; q2yBin < allBinParams.size(); ++q2yBin) {
-    //     // Assuming 5 z
-    //     std::vector<std::vector<StructureFunction>> structureFunctionsB(5);
-    //     std::vector<std::vector<StructureFunction>> structureFunctionsC(5);
-
-    //     // Loop over all pT bins within each Q2-y bin to fill the structure functions
-    //     for (size_t zpTBin = 0; zpTBin < allBinParams[q2yBin].size(); ++zpTBin) {
-    //         if (allBinParams[q2yBin][zpTBin].count > 0) {
-    //             // Calculate mean values and structure functions
-    //             double meanDepA = allBinParams[q2yBin][zpTBin].sumDepA / allBinParams[q2yBin][zpTBin].count;
-    //             double meanDepB = allBinParams[q2yBin][zpTBin].sumDepB / allBinParams[q2yBin][zpTBin].count;
-    //             double meanDepV = allBinParams[q2yBin][zpTBin].sumDepV / allBinParams[q2yBin][zpTBin].count;
-    //             double meanPT = allBinParams[q2yBin][zpTBin].sumPT / allBinParams[q2yBin][zpTBin].count;
-
-    //             const auto& params = allFitParams[q2yBin][zpTBin];
-    //             double structureB = params.B * meanDepA / meanDepV;
-    //             double structureC = params.C * meanDepA / meanDepB;
-
-    //             // Determine which z-bin this pT bin belongs to
-    //             int zBinIndex = zpTBin / (pTEdges[q2yBin].size() - 1); 
-    //             structureFunctionsB[zBinIndex].push_back({meanPT, structureB, params.errB});
-    //             structureFunctionsC[zBinIndex].push_back({meanPT, structureC, params.errC});
-    //         }
-    //     }
-
-    //     // Now, print the aggregated lists for each Q2-y and z-bin
-    //     structureFile << "Q2-y bin: " << q2yBin + 1 << std::endl;
-    //     for (size_t zBin = 0; zBin < 5; ++zBin) {
-    //         structureFile << "z-bin " << zBin + 1 << " B: {";
-    //         for (const auto& func : structureFunctionsB[zBin]) {
-    //             structureFile << "{" << func.meanPT << ", " << func.value << ", " << func.error << "}, ";
-    //         }
-    //         structureFile << "}" << std::endl;
-
-    //         structureFile << "z-bin " << zBin + 1 << " C: {";
-    //         for (const auto& func : structureFunctionsC[zBin]) {
-    //             structureFile << "{" << func.meanPT << ", " << func.value << ", " << func.error << "}, ";
-    //         }
-    //         structureFile << "}" << std::endl;
-    //     }
-    // }
-
-    // structureFile.close();
-
     struct StructureFunction {
         double meanPT;
         double value;
@@ -528,9 +476,8 @@ int main() {
 
     // Loop over Q2-y bins
     for (int bin = 0; bin < 17; ++bin) {
-        structureFile << "Q2-y Bin " << bin + 1 << std::endl;
 
-        int current_bin = 0;
+        int current_bin = 1;
         // Iterate through z and pT bins in the desired order
         for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
             for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
@@ -542,9 +489,12 @@ int main() {
                     const auto& fitParams = allFitParams[bin][index];
                     double structureB = fitParams.B * binParams.sumDepA / binParams.sumDepV;
                     double structureC = fitParams.C * binParams.sumDepA / binParams.sumDepB;
+                    double structureBerr = fitParams.errB * binParams.sumDepA / binParams.sumDepV;
+                    double structureCerr = fitParams.errC * binParams.sumDepA / binParams.sumDepB;
+                    structureFile << "Q2-y Bin " << bin + 1 << std::endl;
                     structureFile << "z-pT Bin " << current_bin << ": "
-                    << "B = {" << meanPT << ", " << structureB << ", " << fitParams.errB << "}, "
-                    << "C = {" << meanPT << ", " << structureC << ", " << fitParams.errC << "}, " << std::endl;
+                    << "B = {" << meanPT << ", " << structureB << ", " << structureBerr << "}, "
+                    << "C = {" << meanPT << ", " << structureC << ", " << structureCerr << "}, " << std::endl;
                     current_bin++;
                 }
             }
