@@ -622,6 +622,7 @@ void createMisIDRatePlots() {
 
             // Increment corresponding misID histogram based on PID value
             if (misIDHists.find(currentValue) != misIDHists.end()) {
+                std::cout << "Misid found" << std::endl;
                 misIDHists[currentValue]->Fill(currentValue);
             }
         }
