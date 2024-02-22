@@ -481,7 +481,9 @@ int main() {
                        << ", chi2/NDF = " << params.chi2ndf << std::endl;
                 } else {
                     // If no fit was performed due to insufficient statistics
-                    capobiancoFile << "Sub-bin (z" << num_z_bins[bin] - z_bin << "-pT" << pT_bin + 1 << "): No fit performed due to insufficient statistics." << std::endl;
+                    capobiancoFile << "Q2-y Bin " << bin + 1;
+                    capobiancoFile << ", z-PT bin: " << current_bin << 
+                    "): No fit performed due to insufficient statistics." << std::endl;
                 }
                 current_bin++;
             }
@@ -519,7 +521,7 @@ int main() {
                     << "C = {" << meanPT << ", " << structureC << ", " << structureCerr << "}, " << std::endl;
                     current_bin++;
                 } else {
-                    structureFile << "Q2-y Bin " << bin + 1 << std::endl;
+                    structureFile << "Q2-y Bin " << bin + 1;
                     structureFile << "z-pT Bin " << current_bin << ": "
                     << "B = {" << meanPT << ", - , -}, "
                     << "C = {" << meanPT << ", - , -}, " << std::endl;
