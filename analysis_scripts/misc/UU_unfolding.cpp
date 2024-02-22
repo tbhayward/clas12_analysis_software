@@ -280,8 +280,8 @@ int main() {
         }
     }
 
-    // /* ~~~~~~~~~~~~~~~~~~~~~~ */ 
-    // // Declare the TLatex object here, before the loop
+    /* ~~~~~~~~~~~~~~~~~~~~~~ */ 
+    // Declare the TLatex object here, before the loop
     // TLatex latex; latex.SetTextSize(0.09); latex.SetNDC();
     // for (int bin = 0; bin < 17; ++bin) {
     //     TCanvas* canvas = new TCanvas(Form("canvas_bin_%d", bin+1), Form("Q2-y Bin %d Phi Distributions", bin+1), 2000, 1200);
@@ -336,6 +336,68 @@ int main() {
     //     canvas->SaveAs(Form("output/Q2yBin_%d.png", bin+1));
     //     delete canvas;
     // }
+
+
+    for (int bin = 0; bin < 17; ++bin) {
+        TCanvas* canvas = new TCanvas(Form("canvas_bin_%d", bin + 1), Form("Q2-y Bin %d Phi Distributions", bin + 1), 2000, 1200);
+        canvas->Divide(num_pT_bins[bin], num_z_bins[bin]);
+
+        // Adjust loop to iterate over z and pT bins separately
+        for (int z_bin = 0; z_bin < num_z_bins[bin]; ++z_bin) {
+            for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
+                int histIndex = z_bin * num_pT_bins[bin] + pT_bin;
+                // Calculate pad number with the highest z bins at the top and pT increasing left to right
+                int padNumber = (num_z_bins[bin] - z_bin - 1) * num_pT_bins[bin] + pT_bin + 1;
+                canvas->cd(padNumber);
+
+                // Setup for hData histograms
+                TH1F* hDataHist = hData[bin][histIndex];
+                hDataHist->SetStats(0); // Remove the stat box
+                hDataHist->SetLineColor(kBlue + 2);
+                hDataHist->SetLineWidth(2);
+                hDataHist->GetXaxis()->SetLabelSize(0.06); 
+                hDataHist->GetYaxis()->SetLabelSize(0.06); 
+                hDataHist->GetXaxis()->SetTitleSize(0.07);
+                hDataHist->GetYaxis()->SetTitleSize(0.07); 
+
+                // Setup for hMCReco histograms
+                TH1F* hMCRecoHist = hMCReco[bin][histIndex];
+                hMCRecoHist->SetLineColor(kRed + 2);
+                hMCRecoHist->SetLineWidth(2);
+                hMCRecoHist->GetXaxis()->SetLabelSize(0.06); 
+                hMCRecoHist->GetYaxis()->SetLabelSize(0.06); 
+                hMCRecoHist->GetXaxis()->SetTitleSize(0.07);
+                hMCRecoHist->GetYaxis()->SetTitleSize(0.07);
+
+                // Setup for hMCGene histograms
+                TH1F* hMCGeneHist = hMCGene[bin][histIndex];
+                hMCGeneHist->SetLineColor(kGreen + 2);
+                hMCGeneHist->SetLineWidth(2);
+                hMCGeneHist->GetXaxis()->SetLabelSize(0.06); 
+                hMCGeneHist->GetYaxis()->SetLabelSize(0.06); 
+                hMCGeneHist->GetXaxis()->SetTitleSize(0.07);
+                hMCGeneHist->GetYaxis()->SetTitleSize(0.07);
+
+                // Draw histograms if they have sufficient entries
+                if (hDataHist->GetEntries() > 200) {
+                    hDataHist->DrawNormalized("HIST");
+                    if (hMCRecoHist->GetEntries() > 200) {
+                        hMCRecoHist->DrawNormalized("HIST same");
+                    }
+                    if (hMCGeneHist->GetEntries() > 200) {
+                        hMCGeneHist->DrawNormalized("HIST same");
+                    }
+
+                    // Display z-pT bin information
+                    latex.DrawLatexNDC(0.10, 0.86, Form("Q2-y bin: %d, z-P_{T} bin: z%d-pT%d", bin + 1, num_z_bins[bin] - z_bin, pT_bin + 1));
+                }
+            }
+        }
+
+        canvas->SaveAs(Form("output/Q2yBin_%d.png", bin + 1));
+        delete canvas;
+    }
+
 
 
     // std::vector<std::vector<TH1F*>> hAcceptance(17);
