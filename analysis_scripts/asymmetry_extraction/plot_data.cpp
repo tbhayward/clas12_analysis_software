@@ -621,6 +621,7 @@ void createMisIDRatePlots() {
             if (!kinematicCuts->applyCuts(fitIndex, true)) continue;
 
             int pid = *matchingEPID;
+            std::cout << pid << ", ";
             // Check if PID is one of the misID conditions we're tracking
             if (misIDHists.find(pid) != misIDHists.end()) {
                 std::cout << "Misid found." << std::endl;
