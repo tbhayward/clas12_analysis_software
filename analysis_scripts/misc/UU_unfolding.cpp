@@ -342,7 +342,7 @@ int main() {
                     }
 
                     // Display z-pT bin information
-                    latex.DrawLatexNDC(0.10, 0.86, Form("Q2-y bin: %d, z-P_{T} bin: z%d-pT%d", bin + 1, num_z_bins[bin] - z_bin, pT_bin + 1));
+                    latex.DrawLatexNDC(0.10, 0.86, Form("Q2-y bin: %d, z-PT bin: z%d-pT%d", bin + 1, z_bin * num_pT_bins[binIndex] + pT_bin));
                 }
             }
         }
@@ -385,10 +385,10 @@ int main() {
                 unfoldedCanvas->cd(padNumber);
 
                 // Adjust pad margins to add space around the plots
-                gPad->SetLeftMargin(0.2);
-                gPad->SetRightMargin(0.15);
-                gPad->SetTopMargin(0.15);
-                gPad->SetBottomMargin(0.15);
+                gPad->SetLeftMargin(0.25);
+                gPad->SetRightMargin(0.1);
+                gPad->SetTopMargin(0.2);
+                gPad->SetBottomMargin(0.2);
 
                 if (hData[bin][histIndex]->GetEntries() > 100 && hAcceptance[bin][histIndex] != nullptr) {
                     TH1F* hUnfolded = (TH1F*)hData[bin][histIndex]->Clone(Form("hUnfolded_bin%d_%d", bin + 1, histIndex));
@@ -439,7 +439,7 @@ int main() {
                     fitFunc->SetLineColor(kRed);
                     fitFunc->Draw("same");
 
-                    TPaveText *pt = new TPaveText(0.25, 0.175, 0.75, 0.475, "brNDC");
+                    TPaveText *pt = new TPaveText(0.175, 0.10, 0.675, 0.40, "brNDC");
                     pt->SetBorderSize(1); // Set border size
                     pt->SetLineColor(kBlack); // Set border color
                     pt->SetFillColor(kWhite); // Set solid background color
@@ -454,7 +454,7 @@ int main() {
                     // Draw the TPaveText
                     pt->Draw();
                     // Adjusting this display to correctly label each bin according to your new structure
-                    latex.DrawLatexNDC(0.12, 0.9, Form("Q2-y bin: %d, z-PT bin: z%d-pT%d", bin + 1, num_z_bins[bin] - z_bin, pT_bin + 1));
+                    latex.DrawLatexNDC(0.12, 0.9, Form("Q2-y bin: %d, z-PT bin: z%d-pT%d", bin + 1, z_bin * num_pT_bins[binIndex] + pT_bin));
 
                     delete hUnfolded; // Clean up
                 }
