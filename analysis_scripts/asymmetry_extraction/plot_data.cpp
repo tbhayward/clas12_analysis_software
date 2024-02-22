@@ -623,6 +623,7 @@ void createElectronMisIDRatePlots() {
             int pid = *matchingEPID;
             // Check if PID is one of the misID conditions we're tracking
             if (misIDHists.find(pid) != misIDHists.end()) {
+                std::cout << "Misid found." << std::endl;
                 misIDHists[pid]->Fill(pid);
             }
             totalHist->Fill(pid); // Count every electron for normalization
