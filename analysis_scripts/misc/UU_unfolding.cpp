@@ -350,33 +350,15 @@ int main() {
                 int padNumber = (num_z_bins[bin] - z_bin - 1) * num_pT_bins[bin] + pT_bin + 1;
                 canvas->cd(padNumber);
 
-                // Setup for hData histograms
+                // Adjust pad margins to add space around the plots
+                gPad->SetLeftMargin(0.25);
+                gPad->SetRightMargin(0.2);
+                gPad->SetTopMargin(0.2);
+                gPad->SetBottomMargin(0.2);
+
                 TH1F* hDataHist = hData[bin][histIndex];
-                hDataHist->SetStats(0); // Remove the stat box
-                hDataHist->SetLineColor(kBlue + 2);
-                hDataHist->SetLineWidth(2);
-                hDataHist->GetXaxis()->SetLabelSize(0.06); 
-                hDataHist->GetYaxis()->SetLabelSize(0.06); 
-                hDataHist->GetXaxis()->SetTitleSize(0.07);
-                hDataHist->GetYaxis()->SetTitleSize(0.07); 
-
-                // Setup for hMCReco histograms
                 TH1F* hMCRecoHist = hMCReco[bin][histIndex];
-                hMCRecoHist->SetLineColor(kRed + 2);
-                hMCRecoHist->SetLineWidth(2);
-                hMCRecoHist->GetXaxis()->SetLabelSize(0.06); 
-                hMCRecoHist->GetYaxis()->SetLabelSize(0.06); 
-                hMCRecoHist->GetXaxis()->SetTitleSize(0.07);
-                hMCRecoHist->GetYaxis()->SetTitleSize(0.07);
-
-                // Setup for hMCGene histograms
                 TH1F* hMCGeneHist = hMCGene[bin][histIndex];
-                hMCGeneHist->SetLineColor(kGreen + 2);
-                hMCGeneHist->SetLineWidth(2);
-                hMCGeneHist->GetXaxis()->SetLabelSize(0.06); 
-                hMCGeneHist->GetYaxis()->SetLabelSize(0.06); 
-                hMCGeneHist->GetXaxis()->SetTitleSize(0.07);
-                hMCGeneHist->GetYaxis()->SetTitleSize(0.07);
 
                 // Draw histograms if they have sufficient entries
                 if (hDataHist->GetEntries() > 200) {
@@ -391,6 +373,34 @@ int main() {
                     // Display z-pT bin information
                     latex.DrawLatexNDC(0.10, 0.86, Form("Q2-y bin: %d, z-P_{T} bin: z%d-pT%d", bin + 1, num_z_bins[bin] - z_bin, pT_bin + 1));
                 }
+
+                // Setup for hData histograms
+                hDataHist->SetStats(0); // Remove the stat box
+                hDataHist->SetLineColor(kBlue + 2);
+                hDataHist->SetLineWidth(2);
+                hDataHist->GetXaxis()->SetLabelSize(0.06); 
+                hDataHist->GetYaxis()->SetLabelSize(0.06); 
+                hDataHist->GetXaxis()->SetTitleSize(0.07);
+                hDataHist->GetYaxis()->SetTitleSize(0.07); 
+
+                // Setup for hMCReco histograms
+                hMCRecoHist->SetLineColor(kRed + 2);
+                hMCRecoHist->SetLineWidth(2);
+                hMCRecoHist->GetXaxis()->SetLabelSize(0.06); 
+                hMCRecoHist->GetYaxis()->SetLabelSize(0.06); 
+                hMCRecoHist->GetXaxis()->SetTitleSize(0.07);
+                hMCRecoHist->GetYaxis()->SetTitleSize(0.07);
+
+                // Setup for hMCGene histograms
+                hMCGeneHist->SetLineColor(kGreen + 2);
+                hMCGeneHist->SetLineWidth(2);
+                hMCGeneHist->GetXaxis()->SetLabelSize(0.06); 
+                hMCGeneHist->GetYaxis()->SetLabelSize(0.06); 
+                hMCGeneHist->GetXaxis()->SetTitleSize(0.07);
+                hMCGeneHist->GetYaxis()->SetTitleSize(0.07);
+
+                gPad->Modified();
+                gPad->Update();
             }
         }
 
