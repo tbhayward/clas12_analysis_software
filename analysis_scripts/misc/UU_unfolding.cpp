@@ -179,44 +179,44 @@ int main() {
         }
     }
 
-    // std::cout << "Looping over data." << std::endl;
-    // // Fill histograms for data
-    // Long64_t nDataEntries = tData->GetEntries();
-    // for (Long64_t i = 0; i < nDataEntries; ++i) {
-    //     tData->GetEntry(i);
+    std::cout << "Looping over data." << std::endl;
+    // Fill histograms for data
+    Long64_t nDataEntries = tData->GetEntries();
+    for (Long64_t i = 0; i < nDataEntries; ++i) {
+        tData->GetEntry(i);
 
-    //     int binIndex = DetermineQ2yBin(Q2Data, yData) - 1; // Adjusted for 0-based indexing
-    //     // std::cout << binIndex << std::endl;
+        int binIndex = DetermineQ2yBin(Q2Data, yData) - 1; // Adjusted for 0-based indexing
+        // std::cout << binIndex << std::endl;
 
-    //     if (binIndex >= 0) {
+        if (binIndex >= 0) {
 
-    //         const auto& currentZEdges = zEdges[binIndex+1]; 
-    //         const auto& currentPTEdges = pTEdges[binIndex+1];
+            const auto& currentZEdges = zEdges[binIndex+1]; 
+            const auto& currentPTEdges = pTEdges[binIndex+1];
 
-    //         if (zData < currentZEdges[0] || zData > currentZEdges[num_z_bins[binIndex]]) {
-    //             continue;
-    //         }
-    //         if (pTData < currentPTEdges[0] || pTData > currentPTEdges[num_pT_bins[binIndex]]) {
-    //             continue;
-    //         }
+            if (zData < currentZEdges[0] || zData > currentZEdges[num_z_bins[binIndex]]) {
+                continue;
+            }
+            if (pTData < currentPTEdges[0] || pTData > currentPTEdges[num_pT_bins[binIndex]]) {
+                continue;
+            }
 
-    //         int z_bin = num_z_bins[binIndex]-findBinIndex(zData, currentZEdges);
-    //         int pT_bin = findBinIndex(pTData, currentPTEdges);
-    //         // std::cout << zData << " " << z_bin << " " << pTData << " " << pT_bin << std::endl;
-    //         // Fill the corresponding histogram if the event is in a valid bin
-    //         if (pT_bin != -1 && z_bin != -1) {
-    //             int histIndex = (z_bin-1)*(num_pT_bins[binIndex])+(pT_bin+1);
-    //             std::cout << zData << " " << pTData << std::endl;
-    //             std::cout << (z_bin) << " " << num_pT_bins[binIndex] << " " << (pT_bin+1) << " " << histIndex << std::endl << std::endl;
-    //             hData[binIndex][histIndex]->Fill(phiData);
-    //             allBinParams[binIndex][histIndex].sumDepA += DepAData;
-    //             allBinParams[binIndex][histIndex].sumDepB += DepBData;
-    //             allBinParams[binIndex][histIndex].sumDepV += DepVData;
-    //             allBinParams[binIndex][histIndex].sumPT += pTData; // Assuming pTData is your pT variable
-    //             allBinParams[binIndex][histIndex].count++;
-    //         }
-    //     }
-    // }
+            int z_bin = num_z_bins[binIndex]-findBinIndex(zData, currentZEdges);
+            int pT_bin = findBinIndex(pTData, currentPTEdges);
+            // std::cout << zData << " " << z_bin << " " << pTData << " " << pT_bin << std::endl;
+            // Fill the corresponding histogram if the event is in a valid bin
+            if (pT_bin != -1 && z_bin != -1) {
+                int histIndex = (z_bin-1)*(num_pT_bins[binIndex])+(pT_bin);
+                std::cout << zData << " " << pTData << std::endl;
+                std::cout << (z_bin) << " " << num_pT_bins[binIndex] << " " << (pT_bin+1) << " " << histIndex << std::endl << std::endl;
+                hData[binIndex][histIndex]->Fill(phiData);
+                allBinParams[binIndex][histIndex].sumDepA += DepAData;
+                allBinParams[binIndex][histIndex].sumDepB += DepBData;
+                allBinParams[binIndex][histIndex].sumDepV += DepVData;
+                allBinParams[binIndex][histIndex].sumPT += pTData; // Assuming pTData is your pT variable
+                allBinParams[binIndex][histIndex].count++;
+            }
+        }
+    }
 
     std::cout << "Looping over reconstructed MC." << std::endl;
     // Fill histograms for MC
@@ -244,7 +244,6 @@ int main() {
             // Fill the corresponding histogram if the event is in a valid bin
             if (pT_bin != -1 && z_bin != -1) {
                 int histIndex = (z_bin-1)*(num_pT_bins[binIndex])+(pT_bin);
-                // int histIndex = z_bin * num_pT_bins[binIndex] + pT_bin;
                 std::cout << zMC << " " << pTMC << std::endl;
                 std::cout << num_z_bins[binIndex] << " " << num_pT_bins[binIndex] << std::endl;
                 std::cout << binIndex << " " << (z_bin-1) << " " << num_pT_bins[binIndex] << " " << (pT_bin+1) << " " << histIndex << std::endl << std::endl;
@@ -254,37 +253,6 @@ int main() {
         }
     }
 
-    // std::cout << "Looping over reconstructed MC." << std::endl;
-    // // Fill histograms for rec MC
-    // Long64_t nMCEntries = tMCReco->GetEntries();
-    // for (Long64_t i = 0; i < nMCEntries; ++i) {
-    //     tMCReco->GetEntry(i);
-    //     int binIndex = DetermineQ2yBin(Q2MC, yMC) - 1; // Adjusted for 0-based indexing
-    //     if (binIndex >= 0) {
-
-    //         const auto& currentZEdges = zEdges[binIndex+1]; 
-    //         const auto& currentPTEdges = pTEdges[binIndex+1];
-
-    //         std::cout << std::endl << currentZEdges[0] << " " << zMC << " " << currentZEdges[num_z_bins[binIndex]];
-    //         if (zMC < currentZEdges[0] || zMC > currentZEdges[num_z_bins[binIndex]]) {
-    //             continue;
-    //         }
-    //         std::cout << " " << currentPTEdges[0] << " " << pTMC << " " << currentPTEdges[num_pT_bins[binIndex]];
-    //         if (pTMC < currentPTEdges[0] || pTMC > currentPTEdges[num_pT_bins[binIndex]]) {
-    //             continue;
-    //         }
-    //         std::cout << zMC << " " << pTMC << std::endl;
-    //         int z_bin = num_z_bins[binIndex]-findBinIndex(zMC, currentZEdges);
-    //         int pT_bin = findBinIndex(pTMC, currentPTEdges);
-    //         // Fill the corresponding histogram if the event is in a valid bin
-    //         if (pT_bin != -1 && z_bin != -1) {
-    //             int histIndex = (z_bin+1)*num_pT_bins[binIndex]+(pT_bin+1);
-    //             std::cout << binIndex << " " << z_bin << " " << pT_bin << " " << histIndex << std::endl << std::endl;
-    //             hMCReco[binIndex][histIndex]->Fill(phiMC);
-    //             std::cout << phiMC << std::endl;
-    //         }
-    //     }
-    // }
 
     std::cout << "Looping over generated MC." << std::endl;
     // Fill histograms for gen MC
@@ -309,7 +277,7 @@ int main() {
             int pT_bin = findBinIndex(pTGen, currentPTEdges);
             // Fill the corresponding histogram if the event is in a valid bin
             if (pT_bin != -1 && z_bin != -1) {
-                int histIndex = (z_bin+1)*num_pT_bins[binIndex]+(pT_bin+1);
+                int histIndex = (z_bin+1)*num_pT_bins[binIndex]+(pT_bin);
                 hMCGene[binIndex][histIndex]->Fill(phiGen);
             }
         }
