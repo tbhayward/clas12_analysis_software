@@ -9,6 +9,8 @@
 #include <fstream> 
 #include <vector>
 #include <map>
+#include <TPaveText.h>
+
 
 // Function to determine the Q2-y bin based on given Q2 and y values.
 int DetermineQ2yBin(float Q2, float y) {
@@ -420,14 +422,20 @@ int main() {
                     fitFunc->SetLineColor(kRed);
                     fitFunc->Draw("same");
 
-                    TLatex latexParams;
-                    latexParams.SetNDC();
-                    latexParams.SetTextSize(0.08);
-                    // latexParams.DrawLatex(0.3, 0.375, Form("A = %.2f #pm %.2f", params.A, params.errA));
-                    latexParams.DrawLatex(0.3, 0.335, Form("B = %.2f #pm %.3f", params.B, params.errB));
-                    latexParams.DrawLatex(0.3, 0.275, Form("C = %.2f #pm %.3f", params.C, params.errC));
-                    latexParams.DrawLatex(0.3, 0.215, Form("#chi^{2}/ndf = %.2f", params.chi2ndf));
+                    TPaveText *pt = new TPaveText(0.25, 0.2, 0.55, 0.45, "brNDC");
+                    pt->SetBorderSize(1); // Set border size
+                    pt->SetLineColor(kBlack); // Set border color
+                    pt->SetFillColor(kWhite); // Set solid background color
+                    pt->SetTextAlign(12); // Align text left and vertically centered
+                    pt->SetTextSize(0.07); // Set text size
+                    // Add lines of text
+                    pt->AddText(Form("A = %.2f #pm %.3f", params.A, params.errA));
+                    pt->AddText(Form("B = %.2f #pm %.3f", params.B, params.errB));
+                    pt->AddText(Form("C = %.2f #pm %.3f", params.C, params.errC));
+                    pt->AddText(Form("#chi^{2}/ndf = %.2f", params.chi2ndf));
 
+                    // Draw the TPaveText
+                    pt->Draw();
                     // Adjusting this display to correctly label each bin according to your new structure
                     latex.DrawLatexNDC(0.14, 0.86, Form("Q2-y bin: %d, z-P_{T} bin: z%d-pT%d", bin + 1, num_z_bins[bin] - z_bin, pT_bin + 1));
 
