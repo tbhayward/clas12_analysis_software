@@ -509,8 +509,8 @@ int main() {
                 int index = z_bin * num_pT_bins[bin] + pT_bin;
                 const auto& params = allBinParams[bin][index];
                 const auto& fitParams = allFitParams[bin][index];
+                double meanPT = params.sumPT / params.count;
                 if (fitParams.B != 0) {
-                    double meanPT = params.sumPT / params.count;
                     double structureB = fitParams.B * params.sumDepA / params.sumDepV;
                     double structureC = fitParams.C * params.sumDepA / params.sumDepB;
                     double structureBerr = fitParams.errB * params.sumDepA / params.sumDepV;
