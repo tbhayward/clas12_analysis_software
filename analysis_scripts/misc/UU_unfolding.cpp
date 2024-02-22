@@ -439,14 +439,14 @@ int main() {
                     fitFunc->SetLineColor(kRed);
                     fitFunc->Draw("same");
 
-                    TPaveText *pt = new TPaveText(0.175, 0.10, 0.675, 0.40, "brNDC");
+                    TPaveText *pt = new TPaveText(0.125, 0.075, 0.70, 0.375, "brNDC");
                     pt->SetBorderSize(1); // Set border size
                     pt->SetLineColor(kBlack); // Set border color
                     pt->SetFillColor(kWhite); // Set solid background color
                     pt->SetTextAlign(12); // Align text left and vertically centered
                     pt->SetTextSize(0.07); // Set text size
                     // Add lines of text
-                    pt->AddText(Form("A = %.2f #pm %.2f", params.A, params.errA));
+                    pt->AddText(Form("A = %.2f #pm %.1f", params.A, params.errA));
                     pt->AddText(Form("B = %.2f #pm %.3f", params.B, params.errB));
                     pt->AddText(Form("C = %.2f #pm %.3f", params.C, params.errC));
                     pt->AddText(Form("#chi^{2}/ndf = %.2f", params.chi2ndf));
@@ -454,7 +454,7 @@ int main() {
                     // Draw the TPaveText
                     pt->Draw();
                     // Adjusting this display to correctly label each bin according to your new structure
-                    latex.DrawLatexNDC(0.10, 0.86, Form("Q2-y bin: %d, z-PT bin: %d", bin + 1, histIndex));
+                    latex.DrawLatexNDC(0.12, 0.86, Form("Q2-y bin: %d, z-PT bin: %d", bin + 1, histIndex));
 
                     delete hUnfolded; // Clean up
                 }
