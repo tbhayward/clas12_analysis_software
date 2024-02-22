@@ -385,10 +385,10 @@ int main() {
                 unfoldedCanvas->cd(padNumber);
 
                 // Adjust pad margins to add space around the plots
-                gPad->SetLeftMargin(0.25);
-                gPad->SetRightMargin(0.2);
-                gPad->SetTopMargin(0.2);
-                gPad->SetBottomMargin(0.2);
+                gPad->SetLeftMargin(0.2);
+                gPad->SetRightMargin(0.15);
+                gPad->SetTopMargin(0.15);
+                gPad->SetBottomMargin(0.15);
 
                 if (hData[bin][histIndex]->GetEntries() > 100 && hAcceptance[bin][histIndex] != nullptr) {
                     TH1F* hUnfolded = (TH1F*)hData[bin][histIndex]->Clone(Form("hUnfolded_bin%d_%d", bin + 1, histIndex));
