@@ -23,7 +23,7 @@ void createIntegratedKinematicPlots();
 void createIntegratedKinematicPlotsForBinsAndFits();
 void createCorrelationPlotsforrunnum();
 void createCorrelationPlots();
-void createElectronMisIDRatePlots();
+void createMisIDRatePlots();
 
 // Updated FillHistogram declaration
 template<typename T>
