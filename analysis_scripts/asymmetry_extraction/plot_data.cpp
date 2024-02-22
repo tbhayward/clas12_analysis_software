@@ -595,7 +595,7 @@ void createCorrelationPlots() {
     }
 }
 
-void createElectronMisIDRatePlots() {
+void createMisIDRatePlots() {
     const std::string outputDir = "output/misid/";
     gStyle->SetOptStat(0); // No histogram statistics
 
