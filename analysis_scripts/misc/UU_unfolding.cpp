@@ -523,8 +523,8 @@ int main() {
                 } else {
                     structureFile << "Q2-y Bin " << bin + 1 << std::endl;
                     structureFile << "z-pT Bin " << current_bin << ": "
-                    << "B = {" << meanPT << ", - , -},";
-                    << "C = {" << meanPT << ", - , -}," << std::endl;
+                    << "B = {" << meanPT << ", - , -}, "
+                    << "C = {" << meanPT << ", - , -}, " << std::endl;
                     current_bin++;
                 }
             }
