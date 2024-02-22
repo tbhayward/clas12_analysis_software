@@ -205,6 +205,11 @@ int main() {
 
             if (pT_bin != -1 && z_bin != -1) {
                 int histIndex = z_bin * num_pT_bins[binIndex] + pT_bin;
+                std::cout << "z: " << zData;
+                std::cout << ", z_bin: " << z_bin;
+                std::cout << ", pT: " << pTData;
+                std::cout << ", pT_bin: " << pT_bin;
+                std::cout << ", histIndex " << histIndex << std::endl;
                 hData[binIndex][histIndex]->Fill(phiData);
                 allBinParams[binIndex][histIndex].sumDepA += DepAData;
                 allBinParams[binIndex][histIndex].sumDepB += DepBData;
