@@ -282,7 +282,7 @@ int main() {
 
     /* ~~~~~~~~~~~~~~~~~~~~~~ */ 
     // Declare the TLatex object here, before the loop
-    // TLatex latex; latex.SetTextSize(0.09); latex.SetNDC();
+    TLatex latex; latex.SetTextSize(0.09); latex.SetNDC();
     // for (int bin = 0; bin < 17; ++bin) {
     //     TCanvas* canvas = new TCanvas(Form("canvas_bin_%d", bin+1), Form("Q2-y Bin %d Phi Distributions", bin+1), 2000, 1200);
     //     canvas->Divide(num_pT_bins[bin], num_z_bins[bin]);
