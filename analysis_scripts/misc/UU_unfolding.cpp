@@ -384,6 +384,12 @@ int main() {
                 int padNumber = (num_z_bins[bin] - z_bin - 1) * num_pT_bins[bin] + pT_bin + 1;
                 unfoldedCanvas->cd(padNumber);
 
+                // Adjust pad margins to add space around the plots
+                gPad->SetLeftMargin(0.25);
+                gPad->SetRightMargin(0.2);
+                gPad->SetTopMargin(0.2);
+                gPad->SetBottomMargin(0.2);
+
                 if (hData[bin][histIndex]->GetEntries() > 100 && hAcceptance[bin][histIndex] != nullptr) {
                     TH1F* hUnfolded = (TH1F*)hData[bin][histIndex]->Clone(Form("hUnfolded_bin%d_%d", bin + 1, histIndex));
                     hUnfolded->Multiply(hAcceptance[bin][histIndex]); // Apply acceptance correction
@@ -422,14 +428,14 @@ int main() {
                     fitFunc->SetLineColor(kRed);
                     fitFunc->Draw("same");
 
-                    TPaveText *pt = new TPaveText(0.25, 0.2, 0.55, 0.45, "brNDC");
+                    TPaveText *pt = new TPaveText(0.25, 0.1, 0.7, 0.4, "brNDC");
                     pt->SetBorderSize(1); // Set border size
                     pt->SetLineColor(kBlack); // Set border color
                     pt->SetFillColor(kWhite); // Set solid background color
                     pt->SetTextAlign(12); // Align text left and vertically centered
                     pt->SetTextSize(0.07); // Set text size
                     // Add lines of text
-                    pt->AddText(Form("A = %.2f #pm %.3f", params.A, params.errA));
+                    pt->AddText(Form("A = %.2f #pm %.2f", params.A, params.errA));
                     pt->AddText(Form("B = %.2f #pm %.3f", params.B, params.errB));
                     pt->AddText(Form("C = %.2f #pm %.3f", params.C, params.errC));
                     pt->AddText(Form("#chi^{2}/ndf = %.2f", params.chi2ndf));
