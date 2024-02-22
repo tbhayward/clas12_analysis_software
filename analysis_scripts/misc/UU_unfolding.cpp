@@ -332,12 +332,12 @@ int main() {
                 hMCGeneHist->GetYaxis()->SetTitleSize(0.07);
 
                 // Draw histograms if they have sufficient entries
-                if (hDataHist->GetEntries() > 500) {
+                if (hDataHist->GetEntries() > 1000) {
                     hDataHist->DrawNormalized("HIST");
-                    if (hMCRecoHist->GetEntries() > 500) {
+                    if (hMCRecoHist->GetEntries() > 1000) {
                         hMCRecoHist->DrawNormalized("HIST same");
                     }
-                    if (hMCGeneHist->GetEntries() > 500) {
+                    if (hMCGeneHist->GetEntries() > 1000) {
                         hMCGeneHist->DrawNormalized("HIST same");
                     }
 
@@ -415,6 +415,17 @@ int main() {
                         gUnfolded->SetPointError(binX - 1, 0., hUnfolded->GetBinError(binX));
                     }
 
+                    gUnfolded->GetXaxis()->SetTitle("#phi");
+                    gUnfolded->GetYaxis()->SetTitle("Counts");
+
+                    // After setting titles, you can adjust their sizes if needed (though you've already set title sizes):
+                    gUnfolded->GetXaxis()->SetTitleSize(0.07);
+                    gUnfolded->GetYaxis()->SetTitleSize(0.07);
+
+                    // Optionally, adjust the title offset to position the title correctly
+                    gUnfolded->GetXaxis()->SetTitleOffset(1.2);
+                    gUnfolded->GetYaxis()->SetTitleOffset(1.2);
+
                     gUnfolded->SetMarkerStyle(20);
                     gUnfolded->SetMarkerColor(kBlack);
                     gUnfolded->SetLineColor(kBlack);
@@ -428,7 +439,7 @@ int main() {
                     fitFunc->SetLineColor(kRed);
                     fitFunc->Draw("same");
 
-                    TPaveText *pt = new TPaveText(0.25, 0.1, 0.7, 0.4, "brNDC");
+                    TPaveText *pt = new TPaveText(0.25, 0.175, 0.75, 0.475, "brNDC");
                     pt->SetBorderSize(1); // Set border size
                     pt->SetLineColor(kBlack); // Set border color
                     pt->SetFillColor(kWhite); // Set solid background color
@@ -443,7 +454,7 @@ int main() {
                     // Draw the TPaveText
                     pt->Draw();
                     // Adjusting this display to correctly label each bin according to your new structure
-                    latex.DrawLatexNDC(0.14, 0.86, Form("Q2-y bin: %d, z-P_{T} bin: z%d-pT%d", bin + 1, num_z_bins[bin] - z_bin, pT_bin + 1));
+                    latex.DrawLatexNDC(0.12, 0.9, Form("Q2-y bin: %d, z-PT bin: z%d-pT%d", bin + 1, num_z_bins[bin] - z_bin, pT_bin + 1));
 
                     delete hUnfolded; // Clean up
                 }
@@ -464,8 +475,8 @@ int main() {
                 const auto& params = allFitParams[bin][i];
                 if (params.A != 0) { // Check if the fit was performed
                     // Print Q2-y bin heading
-                    capobiancoFile << "Q2-y Bin " << bin + 1 << std::endl;
-                    capobiancoFile << "z-PT bin: " << current_bin
+                    capobiancoFile << "Q2-y Bin " << bin + 1;
+                    capobiancoFile << ", z-PT bin: " << current_bin
                        << ", A = " << params.A << " +/- " << params.errA
                        << ", B = " << params.B << " +/- " << params.errB
                        << ", C = " << params.C << " +/- " << params.errC
@@ -496,19 +507,25 @@ int main() {
         for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
             for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
                 int index = z_bin * num_pT_bins[bin] + pT_bin;
-                const auto& binParams = allBinParams[bin][index];
-                if (binParams.count > 0) {
-                    double meanPT = binParams.sumPT / binParams.count;
+                const auto& paramas = allBinParams[bin][index];
+                if (params.A != 0) {
+                    double meanPT = paramas.sumPT / paramas.count;
                     // Assuming the existence of an allFitParams similar structure to hold fit parameters for B and C
                     const auto& fitParams = allFitParams[bin][index];
-                    double structureB = fitParams.B * binParams.sumDepA / binParams.sumDepV;
-                    double structureC = fitParams.C * binParams.sumDepA / binParams.sumDepB;
-                    double structureBerr = fitParams.errB * binParams.sumDepA / binParams.sumDepV;
-                    double structureCerr = fitParams.errC * binParams.sumDepA / binParams.sumDepB;
-                    structureFile << "Q2-y Bin " << bin + 1 << std::endl;
-                    structureFile << "z-pT Bin " << current_bin << ": "
+                    double structureB = fitParams.B * paramas.sumDepA / paramas.sumDepV;
+                    double structureC = fitParams.C * paramas.sumDepA / paramas.sumDepB;
+                    double structureBerr = fitParams.errB * paramas.sumDepA / paramas.sumDepV;
+                    double structureCerr = fitParams.errC * paramas.sumDepA / paramas.sumDepB;
+                    structureFile << "Q2-y Bin " << (bin+1);
+                    structureFile << ", z-pT Bin " << current_bin << ": "
                     << "B = {" << meanPT << ", " << structureB << ", " << structureBerr << "}, "
                     << "C = {" << meanPT << ", " << structureC << ", " << structureCerr << "}, " << std::endl;
+                    current_bin++;
+                } else {
+                    structureFile << "Q2-y Bin " << bin + 1 << std::endl;
+                    structureFile << "z-pT Bin " << current_bin << ": "
+                    << "B = {" << meanPT << ", - , -},";
+                    << "C = {" << meanPT << ", - , -},"; std::endl;
                     current_bin++;
                 }
             }
