@@ -205,11 +205,11 @@ int main() {
 
             if (pT_bin != -1 && z_bin != -1) {
                 int histIndex = z_bin * num_pT_bins[binIndex] + pT_bin;
-                std::cout << "z: " << zData;
-                std::cout << ", z_bin: " << z_bin;
-                std::cout << ", pT: " << pTData;
-                std::cout << ", pT_bin: " << pT_bin;
-                std::cout << ", histIndex " << histIndex << std::endl;
+                // std::cout << "z: " << zData;
+                // std::cout << ", z_bin: " << z_bin;
+                // std::cout << ", pT: " << pTData;
+                // std::cout << ", pT_bin: " << pT_bin;
+                // std::cout << ", histIndex " << histIndex << std::endl;
                 hData[binIndex][histIndex]->Fill(phiData);
                 allBinParams[binIndex][histIndex].sumDepA += DepAData;
                 allBinParams[binIndex][histIndex].sumDepB += DepBData;
@@ -220,70 +220,65 @@ int main() {
         }
     }
 
-    // std::cout << "Looping over reconstructed MC." << std::endl;
-    // // Fill histograms for MC
-    // Long64_t nMCEntries = tMCReco->GetEntries();
-    // for (Long64_t i = 0; i < nMCEntries; ++i) {
-    //     tMCReco->GetEntry(i);
+    std::cout << "Looping over reconstructed MC." << std::endl;
+    // Fill histograms for MC
+    Long64_t nMCEntries = tMCReco->GetEntries();
+    for (Long64_t i = 0; i < nMCEntries; ++i) {
+        tMCReco->GetEntry(i);
 
-    //     int binIndex = DetermineQ2yBin(Q2MC, yMC) - 1; // Adjusted for 0-based indexing
+        int binIndex = DetermineQ2yBin(Q2MC, yMC) - 1; // Adjusted for 0-based indexing
 
-    //     if (binIndex >= 0) {
+        if (binIndex >= 0) {
 
-    //         const auto& currentZEdges = zEdges[binIndex+1]; 
-    //         const auto& currentPTEdges = pTEdges[binIndex+1];
+            const auto& currentZEdges = zEdges[binIndex+1]; 
+            const auto& currentPTEdges = pTEdges[binIndex+1];
 
-    //         if (zMC < currentZEdges[0] || zMC > currentZEdges[num_z_bins[binIndex]]) {
-    //             continue;
-    //         }
-    //         if (pTMC < currentPTEdges[0] || pTMC > currentPTEdges[num_pT_bins[binIndex]]) {
-    //             continue;
-    //         }
+            if (zMC < currentZEdges[0] || zMC > currentZEdges[num_z_bins[binIndex]]) {
+                continue;
+            }
+            if (pTMC < currentPTEdges[0] || pTMC > currentPTEdges[num_pT_bins[binIndex]]) {
+                continue;
+            }
 
-    //         int z_bin = num_z_bins[binIndex]-findBinIndex(zMC, currentZEdges);
-    //         int pT_bin = findBinIndex(pTMC, currentPTEdges);
-    //         // std::cout << zMC << " " << z_bin << " " << pTMC << " " << pT_bin << std::endl;
-    //         // Fill the corresponding histogram if the event is in a valid bin
-    //         if (pT_bin != -1 && z_bin != -1) {
-    //             int histIndex = (z_bin-1)*(num_pT_bins[binIndex])+(pT_bin);
-    //             // std::cout << zMC << " " << pTMC << std::endl;
-    //             // std::cout << num_z_bins[binIndex] << " " << num_pT_bins[binIndex] << std::endl;
-    //             // std::cout << binIndex << " " << (z_bin-1) << " " << num_pT_bins[binIndex] << " " << (pT_bin+1) << " " << histIndex << std::endl << std::endl;
-    //             // std::cout << binIndex << " " << histIndex << std::endl;
-    //             hMCReco[binIndex][histIndex]->Fill(phiMC);
-    //         }
-    //     }
-    // }
+            int z_bin = findBinIndex(zMC, currentZEdges);
+            int pT_bin = findBinIndex(pTMC, currentPTEdges);
+            // Fill the corresponding histogram if the event is in a valid bin
+            if (pT_bin != -1 && z_bin != -1) {
+                int histIndex = = z_bin * num_pT_bins[binIndex] + pT_bin;
+                hMCReco[binIndex][histIndex]->Fill(phiMC);
+            }
+        }
+    }
 
 
-    // std::cout << "Looping over generated MC." << std::endl;
-    // // Fill histograms for gen MC
-    // Long64_t nGenEntries = tMCGene->GetEntries();
-    // for (Long64_t i = 0; i < nGenEntries; ++i) {
-    //     tMCGene->GetEntry(i);
-    //     int binIndex = DetermineQ2yBin(Q2Gen, yGen) - 1; // Adjusted for 0-based indexing
+    std::cout << "Looping over generated MC." << std::endl;
+    // Fill histograms for gen MC
+    Long64_t nGenEntries = tMCGene->GetEntries();
+    for (Long64_t i = 0; i < nGenEntries; ++i) {
+        tMCGene->GetEntry(i);
+        int binIndex = DetermineQ2yBin(Q2Gen, yGen) - 1; // Adjusted for 0-based indexing
 
-    //     if (binIndex >= 0) {
+        if (binIndex >= 0) {
 
-    //         const auto& currentZEdges = zEdges[binIndex+1]; 
-    //         const auto& currentPTEdges = pTEdges[binIndex+1];
+            const auto& currentZEdges = zEdges[binIndex+1]; 
+            const auto& currentPTEdges = pTEdges[binIndex+1];
 
-    //         if (zGen < currentZEdges[0] || zGen > currentZEdges[num_z_bins[binIndex]]) {
-    //             continue;
-    //         }
-    //         if (pTGen < currentPTEdges[0] || pTGen > currentPTEdges[num_pT_bins[binIndex]]) {
-    //             continue;
-    //         }
+            if (zGen < currentZEdges[0] || zGen > currentZEdges[num_z_bins[binIndex]]) {
+                continue;
+            }
+            if (pTGen < currentPTEdges[0] || pTGen > currentPTEdges[num_pT_bins[binIndex]]) {
+                continue;
+            }
 
-    //         int z_bin = num_z_bins[binIndex]-findBinIndex(zGen, currentZEdges);
-    //         int pT_bin = findBinIndex(pTGen, currentPTEdges);
-    //         // Fill the corresponding histogram if the event is in a valid bin
-    //         if (pT_bin != -1 && z_bin != -1) {
-    //             int histIndex = (z_bin+1)*num_pT_bins[binIndex]+(pT_bin);
-    //             hMCGene[binIndex][histIndex]->Fill(phiGen);
-    //         }
-    //     }
-    // }
+            int z_bin = findBinIndex(zGen, currentZEdges);
+            int pT_bin = findBinIndex(pTGen, currentPTEdges);
+            // Fill the corresponding histogram if the event is in a valid bin
+            if (pT_bin != -1 && z_bin != -1) {
+                int histIndex = = z_bin * num_pT_bins[binIndex] + pT_bin;
+                hMCGene[binIndex][histIndex]->Fill(phiGen);
+            }
+        }
+    }
 
     // /* ~~~~~~~~~~~~~~~~~~~~~~ */ 
     // // Declare the TLatex object here, before the loop
