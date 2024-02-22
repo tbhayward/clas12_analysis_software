@@ -5,7 +5,6 @@
 #include "formatLabelName.h"
 #include "TGraphErrors.h"
 
-
 extern TTreeReader dataReader;
 extern TTreeReader mcReader;
 extern std::map<std::string, HistConfig> histConfigs;
