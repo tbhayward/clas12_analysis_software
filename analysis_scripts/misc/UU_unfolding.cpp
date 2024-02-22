@@ -206,8 +206,8 @@ int main() {
             // Fill the corresponding histogram if the event is in a valid bin
             if (pT_bin != -1 && z_bin != -1) {
                 int histIndex = (z_bin-1)*(num_pT_bins[binIndex])+(pT_bin);
-                std::cout << zData << " " << pTData << std::endl;
-                std::cout << (z_bin) << " " << num_pT_bins[binIndex] << " " << (pT_bin+1) << " " << histIndex << std::endl << std::endl;
+                // std::cout << zData << " " << pTData << std::endl;
+                // std::cout << (z_bin) << " " << num_pT_bins[binIndex] << " " << (pT_bin+1) << " " << histIndex << std::endl << std::endl;
                 hData[binIndex][histIndex]->Fill(phiData);
                 allBinParams[binIndex][histIndex].sumDepA += DepAData;
                 allBinParams[binIndex][histIndex].sumDepB += DepBData;
@@ -244,10 +244,10 @@ int main() {
             // Fill the corresponding histogram if the event is in a valid bin
             if (pT_bin != -1 && z_bin != -1) {
                 int histIndex = (z_bin-1)*(num_pT_bins[binIndex])+(pT_bin);
-                std::cout << zMC << " " << pTMC << std::endl;
-                std::cout << num_z_bins[binIndex] << " " << num_pT_bins[binIndex] << std::endl;
-                std::cout << binIndex << " " << (z_bin-1) << " " << num_pT_bins[binIndex] << " " << (pT_bin+1) << " " << histIndex << std::endl << std::endl;
-                std::cout << binIndex << " " << histIndex << std::endl;
+                // std::cout << zMC << " " << pTMC << std::endl;
+                // std::cout << num_z_bins[binIndex] << " " << num_pT_bins[binIndex] << std::endl;
+                // std::cout << binIndex << " " << (z_bin-1) << " " << num_pT_bins[binIndex] << " " << (pT_bin+1) << " " << histIndex << std::endl << std::endl;
+                // std::cout << binIndex << " " << histIndex << std::endl;
                 hMCReco[binIndex][histIndex]->Fill(phiMC);
             }
         }
