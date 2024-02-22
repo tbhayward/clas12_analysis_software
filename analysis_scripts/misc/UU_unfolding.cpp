@@ -507,15 +507,15 @@ int main() {
         for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
             for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
                 int index = z_bin * num_pT_bins[bin] + pT_bin;
-                const auto& paramas = allBinParams[bin][index];
+                const auto& params = allBinParams[bin][index];
                 if (params.A != 0) {
-                    double meanPT = paramas.sumPT / paramas.count;
+                    double meanPT = params.sumPT / params.count;
                     // Assuming the existence of an allFitParams similar structure to hold fit parameters for B and C
                     const auto& fitParams = allFitParams[bin][index];
-                    double structureB = fitParams.B * paramas.sumDepA / paramas.sumDepV;
-                    double structureC = fitParams.C * paramas.sumDepA / paramas.sumDepB;
-                    double structureBerr = fitParams.errB * paramas.sumDepA / paramas.sumDepV;
-                    double structureCerr = fitParams.errC * paramas.sumDepA / paramas.sumDepB;
+                    double structureB = fitParams.B * params.sumDepA / params.sumDepV;
+                    double structureC = fitParams.C * params.sumDepA / params.sumDepB;
+                    double structureBerr = fitParams.errB * params.sumDepA / params.sumDepV;
+                    double structureCerr = fitParams.errC * params.sumDepA / params.sumDepB;
                     structureFile << "Q2-y Bin " << (bin+1);
                     structureFile << ", z-pT Bin " << current_bin << ": "
                     << "B = {" << meanPT << ", " << structureB << ", " << structureBerr << "}, "
@@ -525,7 +525,7 @@ int main() {
                     structureFile << "Q2-y Bin " << bin + 1 << std::endl;
                     structureFile << "z-pT Bin " << current_bin << ": "
                     << "B = {" << meanPT << ", - , -},";
-                    << "C = {" << meanPT << ", - , -},"; std::endl;
+                    << "C = {" << meanPT << ", - , -}," << std::endl;
                     current_bin++;
                 }
             }
