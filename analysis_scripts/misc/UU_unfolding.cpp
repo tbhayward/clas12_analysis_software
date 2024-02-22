@@ -11,6 +11,15 @@
 #include <map>
 #include <TPaveText.h>
 
+// Helper function to join vector of strings with a delimiter
+std::string join(const std::vector<std::string>& vec, const std::string& delim) {
+    std::string result;
+    for (const auto& s : vec) {
+        if (!result.empty()) result += delim;
+        result += s;
+    }
+    return result;
+}
 
 // Function to determine the Q2-y bin based on given Q2 and y values.
 int DetermineQ2yBin(float Q2, float y) {
@@ -175,9 +184,9 @@ int main() {
     for (int bin = 0; bin < 17; ++bin) {
         // std::cout << bin << " " << num_pT_bins[bin] << " " << num_z_bins[bin] << " " << num_pT_bins[bin] * num_z_bins[bin] << std::endl;
         for (int i = 0; i < num_pT_bins[bin] * num_z_bins[bin]; ++i) {
-            hData[bin].push_back(new TH1F(Form("hData_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 24, 0, 2*TMath::Pi()));
-            hMCReco[bin].push_back(new TH1F(Form("hMCReco_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 24, 0, 2*TMath::Pi()));
-            hMCGene[bin].push_back(new TH1F(Form("hMCGene_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 24, 0, 2*TMath::Pi()));
+            hData[bin].push_back(new TH1F(Form("hData_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 9, 0, 2*TMath::Pi()));
+            hMCReco[bin].push_back(new TH1F(Form("hMCReco_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 9, 0, 2*TMath::Pi()));
+            hMCGene[bin].push_back(new TH1F(Form("hMCGene_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 9, 0, 2*TMath::Pi()));
         }
     }
 
@@ -491,6 +500,34 @@ int main() {
     }
     capobiancoFile.close(); // Close the file after writing
 
+    // std::ofstream capobiancoFilePlotting("output/capobianco_cross_check_plotting.txt");
+    // for (size_t bin = 0; bin < allFitParams.size(); ++bin) {
+    //     int current_bin = 1;
+    //     int current_z_bin = 1;
+    //     for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
+    //         for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
+    //             // Calculate the linear index based on z_bin and pT_bin
+    //             int i = z_bin * num_pT_bins[bin] + pT_bin;
+    //             capobiancoFilePlotting << "Q2y" << bin + 1 << "z" << current_z_bin << "B = {"
+    //             const auto& params = allFitParams[bin][i];
+    //             if (params.A != 0) { // Check if the fit was performed
+    //                    << ", A = " << params.A << " +/- " << params.errA
+    //                    << ", B = " << params.B << " +/- " << params.errB
+    //                    << ", C = " << params.C << " +/- " << params.errC
+    //                    << ", chi2/ndf = " << params.chi2ndf << std::endl;
+    //             } else {
+    //                 // If no fit was performed due to insufficient statistics
+    //                 capobiancoFilePlotting << "Q2-y Bin " << bin + 1;
+    //                 capobiancoFilePlotting << ", z-PT bin: " << current_bin << 
+    //                 "): No fit performed due to insufficient statistics." << std::endl;
+    //             }
+    //             current_bin++; 
+    //             current_z_bin++;
+    //         }
+    //     }
+    // }
+    // capobiancoFilePlotting.close(); // Close the file after writing
+
     struct StructureFunction {
         double meanPT;
         double value;
@@ -500,8 +537,7 @@ int main() {
     std::ofstream structureFile("output/structure_functions.txt");
 
     // Loop over Q2-y bins
-    for (int bin = 0; bin < 17; ++bin) {
-
+    for (int bin = 0; bin < allFitParams.size(); ++bin) {
         int current_bin = 1;
         // Iterate through z and pT bins in the desired order
         for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
@@ -530,7 +566,6 @@ int main() {
             }
         }
     }
-
     structureFile.close();
 
 
