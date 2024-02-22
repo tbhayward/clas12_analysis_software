@@ -200,339 +200,336 @@ int main() {
                 continue;
             }
 
-            int z_bin = num_z_bins[binIndex]-findBinIndex(zData, currentZEdges);
+            int z_bin = findBinIndex(zData, currentZEdges);
             int pT_bin = findBinIndex(pTData, currentPTEdges);
-            // std::cout << zData << " " << z_bin << " " << pTData << " " << pT_bin << std::endl;
-            // Fill the corresponding histogram if the event is in a valid bin
+
             if (pT_bin != -1 && z_bin != -1) {
-                int histIndex = (z_bin-1)*(num_pT_bins[binIndex])+(pT_bin);
-                // std::cout << zData << " " << pTData << std::endl;
-                // std::cout << (z_bin) << " " << num_pT_bins[binIndex] << " " << (pT_bin+1) << " " << histIndex << std::endl << std::endl;
+                int histIndex = z_bin * num_pT_bins[binIndex] + pT_bin;
                 hData[binIndex][histIndex]->Fill(phiData);
                 allBinParams[binIndex][histIndex].sumDepA += DepAData;
                 allBinParams[binIndex][histIndex].sumDepB += DepBData;
                 allBinParams[binIndex][histIndex].sumDepV += DepVData;
-                allBinParams[binIndex][histIndex].sumPT += pTData; // Assuming pTData is your pT variable
+                allBinParams[binIndex][histIndex].sumPT += pTData; 
                 allBinParams[binIndex][histIndex].count++;
             }
         }
     }
 
-    std::cout << "Looping over reconstructed MC." << std::endl;
-    // Fill histograms for MC
-    Long64_t nMCEntries = tMCReco->GetEntries();
-    for (Long64_t i = 0; i < nMCEntries; ++i) {
-        tMCReco->GetEntry(i);
+    // std::cout << "Looping over reconstructed MC." << std::endl;
+    // // Fill histograms for MC
+    // Long64_t nMCEntries = tMCReco->GetEntries();
+    // for (Long64_t i = 0; i < nMCEntries; ++i) {
+    //     tMCReco->GetEntry(i);
 
-        int binIndex = DetermineQ2yBin(Q2MC, yMC) - 1; // Adjusted for 0-based indexing
+    //     int binIndex = DetermineQ2yBin(Q2MC, yMC) - 1; // Adjusted for 0-based indexing
 
-        if (binIndex >= 0) {
+    //     if (binIndex >= 0) {
 
-            const auto& currentZEdges = zEdges[binIndex+1]; 
-            const auto& currentPTEdges = pTEdges[binIndex+1];
+    //         const auto& currentZEdges = zEdges[binIndex+1]; 
+    //         const auto& currentPTEdges = pTEdges[binIndex+1];
 
-            if (zMC < currentZEdges[0] || zMC > currentZEdges[num_z_bins[binIndex]]) {
-                continue;
-            }
-            if (pTMC < currentPTEdges[0] || pTMC > currentPTEdges[num_pT_bins[binIndex]]) {
-                continue;
-            }
+    //         if (zMC < currentZEdges[0] || zMC > currentZEdges[num_z_bins[binIndex]]) {
+    //             continue;
+    //         }
+    //         if (pTMC < currentPTEdges[0] || pTMC > currentPTEdges[num_pT_bins[binIndex]]) {
+    //             continue;
+    //         }
 
-            int z_bin = num_z_bins[binIndex]-findBinIndex(zMC, currentZEdges);
-            int pT_bin = findBinIndex(pTMC, currentPTEdges);
-            // std::cout << zMC << " " << z_bin << " " << pTMC << " " << pT_bin << std::endl;
-            // Fill the corresponding histogram if the event is in a valid bin
-            if (pT_bin != -1 && z_bin != -1) {
-                int histIndex = (z_bin-1)*(num_pT_bins[binIndex])+(pT_bin);
-                // std::cout << zMC << " " << pTMC << std::endl;
-                // std::cout << num_z_bins[binIndex] << " " << num_pT_bins[binIndex] << std::endl;
-                // std::cout << binIndex << " " << (z_bin-1) << " " << num_pT_bins[binIndex] << " " << (pT_bin+1) << " " << histIndex << std::endl << std::endl;
-                // std::cout << binIndex << " " << histIndex << std::endl;
-                hMCReco[binIndex][histIndex]->Fill(phiMC);
-            }
-        }
-    }
+    //         int z_bin = num_z_bins[binIndex]-findBinIndex(zMC, currentZEdges);
+    //         int pT_bin = findBinIndex(pTMC, currentPTEdges);
+    //         // std::cout << zMC << " " << z_bin << " " << pTMC << " " << pT_bin << std::endl;
+    //         // Fill the corresponding histogram if the event is in a valid bin
+    //         if (pT_bin != -1 && z_bin != -1) {
+    //             int histIndex = (z_bin-1)*(num_pT_bins[binIndex])+(pT_bin);
+    //             // std::cout << zMC << " " << pTMC << std::endl;
+    //             // std::cout << num_z_bins[binIndex] << " " << num_pT_bins[binIndex] << std::endl;
+    //             // std::cout << binIndex << " " << (z_bin-1) << " " << num_pT_bins[binIndex] << " " << (pT_bin+1) << " " << histIndex << std::endl << std::endl;
+    //             // std::cout << binIndex << " " << histIndex << std::endl;
+    //             hMCReco[binIndex][histIndex]->Fill(phiMC);
+    //         }
+    //     }
+    // }
 
 
-    std::cout << "Looping over generated MC." << std::endl;
-    // Fill histograms for gen MC
-    Long64_t nGenEntries = tMCGene->GetEntries();
-    for (Long64_t i = 0; i < nGenEntries; ++i) {
-        tMCGene->GetEntry(i);
-        int binIndex = DetermineQ2yBin(Q2Gen, yGen) - 1; // Adjusted for 0-based indexing
+    // std::cout << "Looping over generated MC." << std::endl;
+    // // Fill histograms for gen MC
+    // Long64_t nGenEntries = tMCGene->GetEntries();
+    // for (Long64_t i = 0; i < nGenEntries; ++i) {
+    //     tMCGene->GetEntry(i);
+    //     int binIndex = DetermineQ2yBin(Q2Gen, yGen) - 1; // Adjusted for 0-based indexing
 
-        if (binIndex >= 0) {
+    //     if (binIndex >= 0) {
 
-            const auto& currentZEdges = zEdges[binIndex+1]; 
-            const auto& currentPTEdges = pTEdges[binIndex+1];
+    //         const auto& currentZEdges = zEdges[binIndex+1]; 
+    //         const auto& currentPTEdges = pTEdges[binIndex+1];
 
-            if (zGen < currentZEdges[0] || zGen > currentZEdges[num_z_bins[binIndex]]) {
-                continue;
-            }
-            if (pTGen < currentPTEdges[0] || pTGen > currentPTEdges[num_pT_bins[binIndex]]) {
-                continue;
-            }
+    //         if (zGen < currentZEdges[0] || zGen > currentZEdges[num_z_bins[binIndex]]) {
+    //             continue;
+    //         }
+    //         if (pTGen < currentPTEdges[0] || pTGen > currentPTEdges[num_pT_bins[binIndex]]) {
+    //             continue;
+    //         }
 
-            int z_bin = num_z_bins[binIndex]-findBinIndex(zGen, currentZEdges);
-            int pT_bin = findBinIndex(pTGen, currentPTEdges);
-            // Fill the corresponding histogram if the event is in a valid bin
-            if (pT_bin != -1 && z_bin != -1) {
-                int histIndex = (z_bin+1)*num_pT_bins[binIndex]+(pT_bin);
-                hMCGene[binIndex][histIndex]->Fill(phiGen);
-            }
-        }
-    }
+    //         int z_bin = num_z_bins[binIndex]-findBinIndex(zGen, currentZEdges);
+    //         int pT_bin = findBinIndex(pTGen, currentPTEdges);
+    //         // Fill the corresponding histogram if the event is in a valid bin
+    //         if (pT_bin != -1 && z_bin != -1) {
+    //             int histIndex = (z_bin+1)*num_pT_bins[binIndex]+(pT_bin);
+    //             hMCGene[binIndex][histIndex]->Fill(phiGen);
+    //         }
+    //     }
+    // }
 
-    /* ~~~~~~~~~~~~~~~~~~~~~~ */ 
-    // Declare the TLatex object here, before the loop
-    TLatex latex; latex.SetTextSize(0.09); latex.SetNDC();
-    for (int bin = 0; bin < 17; ++bin) {
-        TCanvas* canvas = new TCanvas(Form("canvas_bin_%d", bin+1), Form("Q2-y Bin %d Phi Distributions", bin+1), 2000, 1200);
-        canvas->Divide(num_pT_bins[bin], num_z_bins[bin]);
+    // /* ~~~~~~~~~~~~~~~~~~~~~~ */ 
+    // // Declare the TLatex object here, before the loop
+    // TLatex latex; latex.SetTextSize(0.09); latex.SetNDC();
+    // for (int bin = 0; bin < 17; ++bin) {
+    //     TCanvas* canvas = new TCanvas(Form("canvas_bin_%d", bin+1), Form("Q2-y Bin %d Phi Distributions", bin+1), 2000, 1200);
+    //     canvas->Divide(num_pT_bins[bin], num_z_bins[bin]);
         
-        for (int i = 0; i < num_pT_bins[bin] * num_z_bins[bin]; ++i) {
-            canvas->cd(i + 1);
+    //     for (int i = 0; i < num_pT_bins[bin] * num_z_bins[bin]; ++i) {
+    //         canvas->cd(i + 1);
 
-            // Adjust pad margins to add space around the plots
-            gPad->SetLeftMargin(0.25);
-            gPad->SetRightMargin(0.2);
-            gPad->SetTopMargin(0.2);
-            gPad->SetBottomMargin(0.2);
+    //         // Adjust pad margins to add space around the plots
+    //         gPad->SetLeftMargin(0.25);
+    //         gPad->SetRightMargin(0.2);
+    //         gPad->SetTopMargin(0.2);
+    //         gPad->SetBottomMargin(0.2);
 
-            // Remove the stat box
-            hData[bin][i]->SetStats(0); hMCReco[bin][i]->SetStats(0); hMCGene[bin][i]->SetStats(0);
+    //         // Remove the stat box
+    //         hData[bin][i]->SetStats(0); hMCReco[bin][i]->SetStats(0); hMCGene[bin][i]->SetStats(0);
 
-            // Change the line color to a darker blue
-            hData[bin][i]->SetLineColor(kBlue+2);
-            hData[bin][i]->SetLineWidth(2); // Increase line width
-            hMCReco[bin][i]->SetLineColor(kRed+2);
-            hMCReco[bin][i]->SetLineWidth(2); // Increase line width
-            hMCGene[bin][i]->SetLineColor(kGreen+2);
-            hMCGene[bin][i]->SetLineWidth(2); // Increase line width
+    //         // Change the line color to a darker blue
+    //         hData[bin][i]->SetLineColor(kBlue+2);
+    //         hData[bin][i]->SetLineWidth(2); // Increase line width
+    //         hMCReco[bin][i]->SetLineColor(kRed+2);
+    //         hMCReco[bin][i]->SetLineWidth(2); // Increase line width
+    //         hMCGene[bin][i]->SetLineColor(kGreen+2);
+    //         hMCGene[bin][i]->SetLineWidth(2); // Increase line width
 
-            // Increase font size for axis labels
-            hData[bin][i]->GetXaxis()->SetLabelSize(0.06); // Adjust as needed
-            hData[bin][i]->GetYaxis()->SetLabelSize(0.06); // Adjust as needed
-            hMCReco[bin][i]->GetXaxis()->SetLabelSize(0.06); // Adjust as needed
-            hMCReco[bin][i]->GetYaxis()->SetLabelSize(0.06); // Adjust as needed
-            hMCGene[bin][i]->GetXaxis()->SetLabelSize(0.06); // Adjust as needed
-            hMCGene[bin][i]->GetYaxis()->SetLabelSize(0.06); // Adjust as needed
-            // Increase font size for axis titles
-            hData[bin][i]->GetXaxis()->SetTitleSize(0.07); // Adjust as needed
-            hData[bin][i]->GetYaxis()->SetTitleSize(0.07); // Adjust as needed
-            hMCReco[bin][i]->GetXaxis()->SetTitleSize(0.07); // Adjust as needed
-            hMCReco[bin][i]->GetYaxis()->SetTitleSize(0.07); // Adjust as needed
-            hMCGene[bin][i]->GetXaxis()->SetTitleSize(0.07); // Adjust as needed
-            hMCGene[bin][i]->GetYaxis()->SetTitleSize(0.07); // Adjust as needed
+    //         // Increase font size for axis labels
+    //         hData[bin][i]->GetXaxis()->SetLabelSize(0.06); // Adjust as needed
+    //         hData[bin][i]->GetYaxis()->SetLabelSize(0.06); // Adjust as needed
+    //         hMCReco[bin][i]->GetXaxis()->SetLabelSize(0.06); // Adjust as needed
+    //         hMCReco[bin][i]->GetYaxis()->SetLabelSize(0.06); // Adjust as needed
+    //         hMCGene[bin][i]->GetXaxis()->SetLabelSize(0.06); // Adjust as needed
+    //         hMCGene[bin][i]->GetYaxis()->SetLabelSize(0.06); // Adjust as needed
+    //         // Increase font size for axis titles
+    //         hData[bin][i]->GetXaxis()->SetTitleSize(0.07); // Adjust as needed
+    //         hData[bin][i]->GetYaxis()->SetTitleSize(0.07); // Adjust as needed
+    //         hMCReco[bin][i]->GetXaxis()->SetTitleSize(0.07); // Adjust as needed
+    //         hMCReco[bin][i]->GetYaxis()->SetTitleSize(0.07); // Adjust as needed
+    //         hMCGene[bin][i]->GetXaxis()->SetTitleSize(0.07); // Adjust as needed
+    //         hMCGene[bin][i]->GetYaxis()->SetTitleSize(0.07); // Adjust as needed
 
-            if (hMCReco[bin][i]->GetEntries() > 100) {
-                hData[bin][i]->DrawNormalized("HIST");
-                hMCReco[bin][i]->DrawNormalized("HIST same");
-                hMCGene[bin][i]->DrawNormalized("HIST same");
+    //         if (hMCReco[bin][i]->GetEntries() > 100) {
+    //             hData[bin][i]->DrawNormalized("HIST");
+    //             hMCReco[bin][i]->DrawNormalized("HIST same");
+    //             hMCGene[bin][i]->DrawNormalized("HIST same");
 
-                // Display z-pT bin information as 'z-P_{T} bin: histIndex'
-                // Note: Adjust the positioning (x, y coordinates) as needed
-                latex.DrawLatexNDC(0.10, 0.86, Form("Q2-y bin: %d, z-P_{T} bin: %zu", (bin+1), (i+1)));
-            }
-        }
+    //             // Display z-pT bin information as 'z-P_{T} bin: histIndex'
+    //             // Note: Adjust the positioning (x, y coordinates) as needed
+    //             latex.DrawLatexNDC(0.10, 0.86, Form("Q2-y bin: %d, z-P_{T} bin: %zu", (bin+1), (i+1)));
+    //         }
+    //     }
         
-        canvas->SaveAs(Form("output/Q2yBin_%d.png", bin+1));
-        delete canvas;
-    }
+    //     canvas->SaveAs(Form("output/Q2yBin_%d.png", bin+1));
+    //     delete canvas;
+    // }
 
 
-    std::vector<std::vector<TH1F*>> hAcceptance(17);
-    for (int bin = 0; bin < 17; ++bin) {
-        hAcceptance[bin].resize(num_pT_bins[bin] * num_z_bins[bin]);
-        for (int i = 0; i < num_pT_bins[bin] * num_z_bins[bin]; ++i) {
-            // Ensure MC reco histogram has entries to avoid division by zero
-            if (hMCReco[bin][i]->GetEntries() > 100) {
-                hAcceptance[bin][i] = (TH1F*)hMCGene[bin][i]->Clone(Form("hAcceptance_bin%d_%d", bin+1, i));
-                hAcceptance[bin][i]->Divide(hMCReco[bin][i]); // Divide generated by reconstructed
-            }
-        }
-    }
+    // std::vector<std::vector<TH1F*>> hAcceptance(17);
+    // for (int bin = 0; bin < 17; ++bin) {
+    //     hAcceptance[bin].resize(num_pT_bins[bin] * num_z_bins[bin]);
+    //     for (int i = 0; i < num_pT_bins[bin] * num_z_bins[bin]; ++i) {
+    //         // Ensure MC reco histogram has entries to avoid division by zero
+    //         if (hMCReco[bin][i]->GetEntries() > 100) {
+    //             hAcceptance[bin][i] = (TH1F*)hMCGene[bin][i]->Clone(Form("hAcceptance_bin%d_%d", bin+1, i));
+    //             hAcceptance[bin][i]->Divide(hMCReco[bin][i]); // Divide generated by reconstructed
+    //         }
+    //     }
+    // }
 
-    struct FitParams { double A, B, C, errA, errB, errC, chi2ndf; };
-    std::vector<std::vector<FitParams>> allFitParams;
-    allFitParams.resize(zEdges.size()); // Ensure there's a vector for each Q2-y bin
+    // struct FitParams { double A, B, C, errA, errB, errC, chi2ndf; };
+    // std::vector<std::vector<FitParams>> allFitParams;
+    // allFitParams.resize(zEdges.size()); // Ensure there's a vector for each Q2-y bin
 
-    for (int bin = 0; bin < zEdges.size(); ++bin) {
-        // Corrected indexing for num_z_bins and num_pT_bins arrays
-        int totalBins = num_z_bins[bin] * num_pT_bins[bin];
-        allFitParams[bin].resize(totalBins);
-    }
+    // for (int bin = 0; bin < zEdges.size(); ++bin) {
+    //     // Corrected indexing for num_z_bins and num_pT_bins arrays
+    //     int totalBins = num_z_bins[bin] * num_pT_bins[bin];
+    //     allFitParams[bin].resize(totalBins);
+    // }
 
-    for (int bin = 0; bin < 17; ++bin) {
-        TCanvas* unfoldedCanvas = new TCanvas(Form("unfolded_canvas_bin_%d", bin+1), Form("Unfolded Q2-y Bin %d Phi Distributions", bin+1), 2000, 1200);
-        unfoldedCanvas->Divide(num_pT_bins[bin], num_z_bins[bin]);
+    // for (int bin = 0; bin < 17; ++bin) {
+    //     TCanvas* unfoldedCanvas = new TCanvas(Form("unfolded_canvas_bin_%d", bin+1), Form("Unfolded Q2-y Bin %d Phi Distributions", bin+1), 2000, 1200);
+    //     unfoldedCanvas->Divide(num_pT_bins[bin], num_z_bins[bin]);
         
-        for (int i = 0; i < num_pT_bins[bin] * num_z_bins[bin]; ++i) {
-            unfoldedCanvas->cd(i + 1);
+    //     for (int i = 0; i < num_pT_bins[bin] * num_z_bins[bin]; ++i) {
+    //         unfoldedCanvas->cd(i + 1);
             
-            // Apply acceptance correction if both histograms have entries
-            if (hData[bin][i]->GetEntries() > 100 && hAcceptance[bin][i] != nullptr) {
-                TH1F* hUnfolded = (TH1F*)hData[bin][i]->Clone(Form("hUnfolded_bin%d_%d", bin+1, i));
-                hUnfolded->Multiply(hAcceptance[bin][i]); // Multiply data by acceptance correction
-                // Assuming gUnfolded is already properly filled and drawn
-                TF1* fitFunc = new TF1("fitFunc", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", 0, 2*TMath::Pi());
-                hUnfolded->Fit(fitFunc, "Q"); // "Q" for quiet mode - doesn't print fit results to the console
+    //         // Apply acceptance correction if both histograms have entries
+    //         if (hData[bin][i]->GetEntries() > 100 && hAcceptance[bin][i] != nullptr) {
+    //             TH1F* hUnfolded = (TH1F*)hData[bin][i]->Clone(Form("hUnfolded_bin%d_%d", bin+1, i));
+    //             hUnfolded->Multiply(hAcceptance[bin][i]); // Multiply data by acceptance correction
+    //             // Assuming gUnfolded is already properly filled and drawn
+    //             TF1* fitFunc = new TF1("fitFunc", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", 0, 2*TMath::Pi());
+    //             hUnfolded->Fit(fitFunc, "Q"); // "Q" for quiet mode - doesn't print fit results to the console
 
-                // Save fit parameters
-                double A = fitFunc->GetParameter(0);
-                double B = fitFunc->GetParameter(1);
-                double C = fitFunc->GetParameter(2);
+    //             // Save fit parameters
+    //             double A = fitFunc->GetParameter(0);
+    //             double B = fitFunc->GetParameter(1);
+    //             double C = fitFunc->GetParameter(2);
 
-                // Optionally, save the errors of the parameters too
-                double errA = fitFunc->GetParError(0);
-                double errB = fitFunc->GetParError(1);
-                double errC = fitFunc->GetParError(2);
+    //             // Optionally, save the errors of the parameters too
+    //             double errA = fitFunc->GetParError(0);
+    //             double errB = fitFunc->GetParError(1);
+    //             double errC = fitFunc->GetParError(2);
 
-                double chi2 = fitFunc->GetChisquare();
-                double ndf = fitFunc->GetNDF();
-                double chi2ndf = ndf > 0 ? chi2 / ndf : 0;
+    //             double chi2 = fitFunc->GetChisquare();
+    //             double ndf = fitFunc->GetNDF();
+    //             double chi2ndf = ndf > 0 ? chi2 / ndf : 0;
 
-                // Inside the loop, after the fit
-                FitParams params;
-                params.A = A;
-                params.B = B;
-                params.C = C;
-                params.errA = errA;
-                params.errB = errB;
-                params.errC = errC;
-                params.chi2ndf = chi2ndf;
+    //             // Inside the loop, after the fit
+    //             FitParams params;
+    //             params.A = A;
+    //             params.B = B;
+    //             params.C = C;
+    //             params.errA = errA;
+    //             params.errB = errB;
+    //             params.errC = errC;
+    //             params.chi2ndf = chi2ndf;
 
-                allFitParams[bin][i] = params;
+    //             allFitParams[bin][i] = params;
 
-                // Create TGraphErrors from hUnfolded
-                TGraphErrors* gUnfolded = new TGraphErrors();
-                gUnfolded->SetName(Form("gUnfolded_bin%d_%d", bin+1, i));
-                for (int binX = 1; binX <= hUnfolded->GetNbinsX(); ++binX) {
-                    double x = hUnfolded->GetBinCenter(binX);
-                    double y = hUnfolded->GetBinContent(binX);
-                    double yError = hUnfolded->GetBinError(binX);
+    //             // Create TGraphErrors from hUnfolded
+    //             TGraphErrors* gUnfolded = new TGraphErrors();
+    //             gUnfolded->SetName(Form("gUnfolded_bin%d_%d", bin+1, i));
+    //             for (int binX = 1; binX <= hUnfolded->GetNbinsX(); ++binX) {
+    //                 double x = hUnfolded->GetBinCenter(binX);
+    //                 double y = hUnfolded->GetBinContent(binX);
+    //                 double yError = hUnfolded->GetBinError(binX);
                     
-                    // Set the point and its vertical error
-                    gUnfolded->SetPoint(binX-1, x, y);
-                    gUnfolded->SetPointError(binX-1, 0., yError); // Set 0 as the x-error
-                }
-                // Inside the loop, after using hUnfolded
-                delete hUnfolded; // Delete the cloned histogram
+    //                 // Set the point and its vertical error
+    //                 gUnfolded->SetPoint(binX-1, x, y);
+    //                 gUnfolded->SetPointError(binX-1, 0., yError); // Set 0 as the x-error
+    //             }
+    //             // Inside the loop, after using hUnfolded
+    //             delete hUnfolded; // Delete the cloned histogram
 
-                // Prepare the canvas and draw the graph
-                unfoldedCanvas->cd(i + 1);
-                gUnfolded->SetMarkerStyle(20); // Choose style suitable for your data points
-                gUnfolded->SetMarkerColor(kBlack);
-                gUnfolded->SetLineColor(kBlack);
-                gUnfolded->Draw("AP"); // Draw the graph to ensure axes are created
+    //             // Prepare the canvas and draw the graph
+    //             unfoldedCanvas->cd(i + 1);
+    //             gUnfolded->SetMarkerStyle(20); // Choose style suitable for your data points
+    //             gUnfolded->SetMarkerColor(kBlack);
+    //             gUnfolded->SetLineColor(kBlack);
+    //             gUnfolded->Draw("AP"); // Draw the graph to ensure axes are created
 
-                // Now adjust axis label and title sizes
-                gUnfolded->GetXaxis()->SetLabelSize(0.06); // Adjust as needed
-                gUnfolded->GetYaxis()->SetLabelSize(0.06); // Adjust as needed
-                gUnfolded->GetXaxis()->SetTitleSize(0.07); // Adjust as needed
-                gUnfolded->GetYaxis()->SetTitleSize(0.07); // Adjust as needed
+    //             // Now adjust axis label and title sizes
+    //             gUnfolded->GetXaxis()->SetLabelSize(0.06); // Adjust as needed
+    //             gUnfolded->GetYaxis()->SetLabelSize(0.06); // Adjust as needed
+    //             gUnfolded->GetXaxis()->SetTitleSize(0.07); // Adjust as needed
+    //             gUnfolded->GetYaxis()->SetTitleSize(0.07); // Adjust as needed
 
-                fitFunc->SetLineColor(kRed);
-                fitFunc->Draw("same");
+    //             fitFunc->SetLineColor(kRed);
+    //             fitFunc->Draw("same");
 
-                // Display parameters on the plot
-                TLatex latexParams;
-                latexParams.SetNDC();
-                latexParams.SetTextSize(0.04); // Adjust as needed
-                latexParams.DrawLatex(0.375, 0.375, Form("A = %.2f #pm %.2f", A, errA));
-                latexParams.DrawLatex(0.375, 0.325, Form("B = %.2f #pm %.2f", B, errB));
-                latexParams.DrawLatex(0.375, 0.275, Form("C = %.2f #pm %.2f", C, errC));
+    //             // Display parameters on the plot
+    //             TLatex latexParams;
+    //             latexParams.SetNDC();
+    //             latexParams.SetTextSize(0.04); // Adjust as needed
+    //             latexParams.DrawLatex(0.375, 0.375, Form("A = %.2f #pm %.2f", A, errA));
+    //             latexParams.DrawLatex(0.375, 0.325, Form("B = %.2f #pm %.2f", B, errB));
+    //             latexParams.DrawLatex(0.375, 0.275, Form("C = %.2f #pm %.2f", C, errC));
                 
-                // Label
-                latex.DrawLatexNDC(0.10, 0.86, Form("Q2-y bin: %d, z-P_{T} bin: %zu", (bin+1), (i+1)));
-            }
+    //             // Label
+    //             latex.DrawLatexNDC(0.10, 0.86, Form("Q2-y bin: %d, z-P_{T} bin: %zu", (bin+1), (i+1)));
+    //         }
             
-            // Adjust pad margins as before
-            gPad->SetLeftMargin(0.25);
-            gPad->SetRightMargin(0.2);
-            gPad->SetTopMargin(0.2);
-            gPad->SetBottomMargin(0.2);
-            }
+    //         // Adjust pad margins as before
+    //         gPad->SetLeftMargin(0.25);
+    //         gPad->SetRightMargin(0.2);
+    //         gPad->SetTopMargin(0.2);
+    //         gPad->SetBottomMargin(0.2);
+    //         }
 
-            // Save the unfolded canvas
-            unfoldedCanvas->SaveAs(Form("output/unfolded_Q2yBin_%d.png", bin+1));
-            delete unfoldedCanvas;
-        }
+    //         // Save the unfolded canvas
+    //         unfoldedCanvas->SaveAs(Form("output/unfolded_Q2yBin_%d.png", bin+1));
+    //         delete unfoldedCanvas;
+    //     }
 
-        // Cleanup
-        for (int bin = 0; bin < 17; ++bin) {
-        for (auto& hist : hData[bin]) delete hist;
-        for (auto& hist : hMCReco[bin]) delete hist;
-        for (auto& hist : hMCGene[bin]) delete hist;
-    }
+    //     // Cleanup
+    //     for (int bin = 0; bin < 17; ++bin) {
+    //     for (auto& hist : hData[bin]) delete hist;
+    //     for (auto& hist : hMCReco[bin]) delete hist;
+    //     for (auto& hist : hMCGene[bin]) delete hist;
+    // }
 
-    std::ofstream capobiancoFile("output/capobianco_cross_check.txt");
-    for (size_t bin = 0; bin < allFitParams.size(); ++bin) {
-        for (size_t i = 0; i < allFitParams[bin].size(); ++i) {
-            const auto& params = allFitParams[bin][i];
-            if (params.A != 0) { // Assuming -1 is the sentinel value for "fit not performed"
-                capobiancoFile << "Bin " << bin+1 << ", Sub-bin " << i+1 << ": "
-                               << "A = " << params.A << " +/- " << params.errA
-                               << ", B = " << params.B << " +/- " << params.errB
-                               << ", C = " << params.C << " +/- " << params.errC
-                               << ", chi2/NDF = " << params.chi2ndf << std::endl;
-            } else {
-                capobiancoFile << "Q2-y bin: " << bin+1 << ", z-PT bin: " << i+1 << ": No fit performed due to insufficient statistics." << std::endl;
-            }
-        }
-    }
-    capobiancoFile.close(); // Close the file after writing
+    // std::ofstream capobiancoFile("output/capobianco_cross_check.txt");
+    // for (size_t bin = 0; bin < allFitParams.size(); ++bin) {
+    //     for (size_t i = 0; i < allFitParams[bin].size(); ++i) {
+    //         const auto& params = allFitParams[bin][i];
+    //         if (params.A != 0) { // Assuming -1 is the sentinel value for "fit not performed"
+    //             capobiancoFile << "Bin " << bin+1 << ", Sub-bin " << i+1 << ": "
+    //                            << "A = " << params.A << " +/- " << params.errA
+    //                            << ", B = " << params.B << " +/- " << params.errB
+    //                            << ", C = " << params.C << " +/- " << params.errC
+    //                            << ", chi2/NDF = " << params.chi2ndf << std::endl;
+    //         } else {
+    //             capobiancoFile << "Q2-y bin: " << bin+1 << ", z-PT bin: " << i+1 << ": No fit performed due to insufficient statistics." << std::endl;
+    //         }
+    //     }
+    // }
+    // capobiancoFile.close(); // Close the file after writing
 
-    struct StructureFunction {
-        double meanPT;
-        double value;
-        double error;
-    };
-    std::ofstream structureFile("output/structure_functions.txt");
-    // Loop over Q2-y bins
-    for (size_t q2yBin = 0; q2yBin < allBinParams.size(); ++q2yBin) {
-        // Assuming 5 z
-        std::vector<std::vector<StructureFunction>> structureFunctionsB(5);
-        std::vector<std::vector<StructureFunction>> structureFunctionsC(5);
+    // struct StructureFunction {
+    //     double meanPT;
+    //     double value;
+    //     double error;
+    // };
+    // std::ofstream structureFile("output/structure_functions.txt");
+    // // Loop over Q2-y bins
+    // for (size_t q2yBin = 0; q2yBin < allBinParams.size(); ++q2yBin) {
+    //     // Assuming 5 z
+    //     std::vector<std::vector<StructureFunction>> structureFunctionsB(5);
+    //     std::vector<std::vector<StructureFunction>> structureFunctionsC(5);
 
-        // Loop over all pT bins within each Q2-y bin to fill the structure functions
-        for (size_t zpTBin = 0; zpTBin < allBinParams[q2yBin].size(); ++zpTBin) {
-            if (allBinParams[q2yBin][zpTBin].count > 0) {
-                // Calculate mean values and structure functions
-                double meanDepA = allBinParams[q2yBin][zpTBin].sumDepA / allBinParams[q2yBin][zpTBin].count;
-                double meanDepB = allBinParams[q2yBin][zpTBin].sumDepB / allBinParams[q2yBin][zpTBin].count;
-                double meanDepV = allBinParams[q2yBin][zpTBin].sumDepV / allBinParams[q2yBin][zpTBin].count;
-                double meanPT = allBinParams[q2yBin][zpTBin].sumPT / allBinParams[q2yBin][zpTBin].count;
+    //     // Loop over all pT bins within each Q2-y bin to fill the structure functions
+    //     for (size_t zpTBin = 0; zpTBin < allBinParams[q2yBin].size(); ++zpTBin) {
+    //         if (allBinParams[q2yBin][zpTBin].count > 0) {
+    //             // Calculate mean values and structure functions
+    //             double meanDepA = allBinParams[q2yBin][zpTBin].sumDepA / allBinParams[q2yBin][zpTBin].count;
+    //             double meanDepB = allBinParams[q2yBin][zpTBin].sumDepB / allBinParams[q2yBin][zpTBin].count;
+    //             double meanDepV = allBinParams[q2yBin][zpTBin].sumDepV / allBinParams[q2yBin][zpTBin].count;
+    //             double meanPT = allBinParams[q2yBin][zpTBin].sumPT / allBinParams[q2yBin][zpTBin].count;
 
-                const auto& params = allFitParams[q2yBin][zpTBin];
-                double structureB = params.B * meanDepA / meanDepV;
-                double structureC = params.C * meanDepA / meanDepB;
+    //             const auto& params = allFitParams[q2yBin][zpTBin];
+    //             double structureB = params.B * meanDepA / meanDepV;
+    //             double structureC = params.C * meanDepA / meanDepB;
 
-                // Determine which z-bin this pT bin belongs to
-                int zBinIndex = zpTBin / (pTEdges[q2yBin].size() - 1); 
-                structureFunctionsB[zBinIndex].push_back({meanPT, structureB, params.errB});
-                structureFunctionsC[zBinIndex].push_back({meanPT, structureC, params.errC});
-            }
-        }
+    //             // Determine which z-bin this pT bin belongs to
+    //             int zBinIndex = zpTBin / (pTEdges[q2yBin].size() - 1); 
+    //             structureFunctionsB[zBinIndex].push_back({meanPT, structureB, params.errB});
+    //             structureFunctionsC[zBinIndex].push_back({meanPT, structureC, params.errC});
+    //         }
+    //     }
 
-        // Now, print the aggregated lists for each Q2-y and z-bin
-        structureFile << "Q2-y bin: " << q2yBin + 1 << std::endl;
-        for (size_t zBin = 0; zBin < 5; ++zBin) {
-            structureFile << "z-bin " << zBin + 1 << " B: {";
-            for (const auto& func : structureFunctionsB[zBin]) {
-                structureFile << "{" << func.meanPT << ", " << func.value << ", " << func.error << "}, ";
-            }
-            structureFile << "}" << std::endl;
+    //     // Now, print the aggregated lists for each Q2-y and z-bin
+    //     structureFile << "Q2-y bin: " << q2yBin + 1 << std::endl;
+    //     for (size_t zBin = 0; zBin < 5; ++zBin) {
+    //         structureFile << "z-bin " << zBin + 1 << " B: {";
+    //         for (const auto& func : structureFunctionsB[zBin]) {
+    //             structureFile << "{" << func.meanPT << ", " << func.value << ", " << func.error << "}, ";
+    //         }
+    //         structureFile << "}" << std::endl;
 
-            structureFile << "z-bin " << zBin + 1 << " C: {";
-            for (const auto& func : structureFunctionsC[zBin]) {
-                structureFile << "{" << func.meanPT << ", " << func.value << ", " << func.error << "}, ";
-            }
-            structureFile << "}" << std::endl;
-        }
-    }
+    //         structureFile << "z-bin " << zBin + 1 << " C: {";
+    //         for (const auto& func : structureFunctionsC[zBin]) {
+    //             structureFile << "{" << func.meanPT << ", " << func.value << ", " << func.error << "}, ";
+    //         }
+    //         structureFile << "}" << std::endl;
+    //     }
+    // }
 
-    structureFile.close();
+    // structureFile.close();
 
 
     fData->Close();
