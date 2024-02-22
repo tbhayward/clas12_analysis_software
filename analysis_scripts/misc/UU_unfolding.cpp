@@ -342,7 +342,7 @@ int main() {
                     }
 
                     // Display z-pT bin information
-                    latex.DrawLatexNDC(0.10, 0.86, Form("Q2-y bin: %d, z-PT bin: z%d-pT%d", bin + 1, z_bin * num_pT_bins[binIndex] + pT_bin));
+                    latex.DrawLatexNDC(0.10, 0.86, Form("Q2-y bin: %d, z-PT bin: %d", bin + 1, histIndex));
                 }
             }
         }
@@ -454,7 +454,7 @@ int main() {
                     // Draw the TPaveText
                     pt->Draw();
                     // Adjusting this display to correctly label each bin according to your new structure
-                    latex.DrawLatexNDC(0.12, 0.9, Form("Q2-y bin: %d, z-PT bin: z%d-pT%d", bin + 1, z_bin * num_pT_bins[binIndex] + pT_bin));
+                    latex.DrawLatexNDC(0.10, 0.86, Form("Q2-y bin: %d, z-PT bin: %d", bin + 1, histIndex));
 
                     delete hUnfolded; // Clean up
                 }
