@@ -595,10 +595,12 @@ void createCorrelationPlots() {
     }
 }
 
-void createMisIDRatePlots() {
+void createElectronMisIDRatePlots() {
     const std::string outputDir = "output/misid/";
     gStyle->SetOptStat(0); // No histogram statistics
-    std::map<int, int> pidColors = {{-211, kRed}, {-321, kOrange}}; // Color assignments for misidentified electrons
+
+    // Color assignments for misidentified electrons
+    std::map<int, int> pidColors = {{-211, kRed}, {-321, kOrange}};
 
     // Loop over kinematic bins
     for (size_t fitIndex = 0; fitIndex < allBins.size(); ++fitIndex) {
@@ -608,7 +610,7 @@ void createMisIDRatePlots() {
         // Setup TTreeReaderValue for electron PID
         TTreeReaderValue<int> matchingEPID(mcReader, "matching_e_pid");
 
-        // Histograms to track total and misidentified electron counts for each bin
+        // Histograms to track total electron counts and misidentified electron counts for each bin
         TH1D* totalHist = new TH1D("totalHist", "", bins.size() - 1, &bins[0]);
         std::map<int, TH1D*> misIDHists;
         for (auto& pidColor : pidColors) {
@@ -616,50 +618,57 @@ void createMisIDRatePlots() {
         }
 
         while (mcReader.Next()) {
-            if (!kinematicCuts->applyCuts(fitIndex, true)) continue; // Apply kinematic cuts
-            double currentValue = *matchingEPID; // PID value for the current electron
-            totalHist->Fill(currentValue); // Increment total electron count
+            if (!kinematicCuts->applyCuts(fitIndex, true)) continue;
 
-            // Increment corresponding misID histogram based on PID value
-            if (misIDHists.find(currentValue) != misIDHists.end()) {
-                std::cout << "Misid found" << std::endl;
-                misIDHists[currentValue]->Fill(currentValue);
+            int pid = *matchingEPID;
+            // Check if PID is one of the misID conditions we're tracking
+            if (misIDHists.find(pid) != misIDHists.end()) {
+                misIDHists[pid]->Fill(pid);
             }
+            totalHist->Fill(pid); // Count every electron for normalization
         }
 
-        // Create TGraphErrors for misID rates and plot them
+        // Create TGraphErrors for each misID rate and plot them together
+        TCanvas* c = new TCanvas(Form("c_%s", currentVariable.c_str()), currentVariable.c_str(), 800, 600);
+        TLegend* legend = new TLegend(0.7, 0.8, 0.9, 0.9);
+        legend->SetTextSize(0.03);
+
         for (auto& pidColor : pidColors) {
-            std::vector<double> misIDRates, misIDRateErrors, binCenters;
+            std::vector<double> misIDRates, misIDRateErrors, binCenters, binWidths;
             for (int i = 1; i <= bins.size() - 1; ++i) {
                 double binCenter = totalHist->GetBinCenter(i);
                 binCenters.push_back(binCenter);
+                binWidths.push_back(0.0); // No error in x
+
                 double total = totalHist->GetBinContent(i);
                 double misID = misIDHists[pidColor.first]->GetBinContent(i);
                 double rate = total > 0 ? misID / total : 0;
-                double error = sqrt(rate * (1 - rate) / total);
+                double error = total > 0 ? sqrt(rate * (1 - rate) / total) : 0;
                 misIDRates.push_back(rate);
                 misIDRateErrors.push_back(error);
             }
 
-            TGraphErrors* graph = new TGraphErrors(binCenters.size(), &binCenters[0], &misIDRates[0], nullptr, &misIDRateErrors[0]);
-            graph->SetTitle(Form("%s MisID Rate; %s; MisID Rate", currentVariable.c_str(), currentVariable.c_str()));
+            TGraphErrors* graph = new TGraphErrors(binCenters.size(), &binCenters[0], &misIDRates[0], &binWidths[0], &misIDRateErrors[0]);
             graph->SetMarkerColor(pidColor.second);
             graph->SetLineColor(pidColor.second);
+            graph->SetTitle(Form("%s MisID Rate; %s; MisID Rate", currentVariable.c_str(), currentVariable.c_str()));
+            graph->GetYaxis()->SetRangeUser(0.0, 0.01); // Set y-axis range
 
-            TCanvas* c = new TCanvas(Form("c_%s_%d", currentVariable.c_str(), pidColor.first), currentVariable.c_str(), 800, 600);
-            graph->Draw("AP");
+            if (pidColor.first == -211) {
+                graph->Draw("AP"); // Draw the first graph with axes
+            } else {
+                graph->Draw("P SAME"); // Draw subsequent graphs without axes
+            }
 
-            TLegend* legend = new TLegend(0.7, 0.8, 0.9, 0.9);
             legend->AddEntry(graph, Form("MisID as PID %d", pidColor.first), "lp");
-            legend->Draw();
-
-            std::string outputFileName = outputDir + currentVariable + "_electronMisIDRate_" + std::to_string(pidColor.first) + ".png";
-            c->SaveAs(outputFileName.c_str());
-
-            delete graph;
-            delete c;
         }
 
+        legend->Draw();
+
+        std::string outputFileName = outputDir + currentVariable + "_electronMisIDRates.png";
+        c->SaveAs(outputFileName.c_str());
+
+        delete c;
         delete totalHist;
         for (auto& hist : misIDHists) {
             delete hist.second;
