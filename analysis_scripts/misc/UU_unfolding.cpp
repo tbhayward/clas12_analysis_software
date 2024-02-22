@@ -283,61 +283,6 @@ int main() {
     /* ~~~~~~~~~~~~~~~~~~~~~~ */ 
     // Declare the TLatex object here, before the loop
     TLatex latex; latex.SetTextSize(0.09); latex.SetNDC();
-    // for (int bin = 0; bin < 17; ++bin) {
-    //     TCanvas* canvas = new TCanvas(Form("canvas_bin_%d", bin+1), Form("Q2-y Bin %d Phi Distributions", bin+1), 2000, 1200);
-    //     canvas->Divide(num_pT_bins[bin], num_z_bins[bin]);
-        
-    //     for (int i = 0; i < num_pT_bins[bin] * num_z_bins[bin]; ++i) {
-    //         canvas->cd(i + 1);
-
-    //         // Adjust pad margins to add space around the plots
-    //         gPad->SetLeftMargin(0.25);
-    //         gPad->SetRightMargin(0.2);
-    //         gPad->SetTopMargin(0.2);
-    //         gPad->SetBottomMargin(0.2);
-
-    //         // Remove the stat box
-    //         hData[bin][i]->SetStats(0); hMCReco[bin][i]->SetStats(0); hMCGene[bin][i]->SetStats(0);
-
-    //         // Change the line color to a darker blue
-    //         hData[bin][i]->SetLineColor(kBlue+2);
-    //         hData[bin][i]->SetLineWidth(2); // Increase line width
-    //         hMCReco[bin][i]->SetLineColor(kRed+2);
-    //         hMCReco[bin][i]->SetLineWidth(2); // Increase line width
-    //         hMCGene[bin][i]->SetLineColor(kGreen+2);
-    //         hMCGene[bin][i]->SetLineWidth(2); // Increase line width
-
-    //         // Increase font size for axis labels
-    //         hData[bin][i]->GetXaxis()->SetLabelSize(0.06); // Adjust as needed
-    //         hData[bin][i]->GetYaxis()->SetLabelSize(0.06); // Adjust as needed
-    //         hMCReco[bin][i]->GetXaxis()->SetLabelSize(0.06); // Adjust as needed
-    //         hMCReco[bin][i]->GetYaxis()->SetLabelSize(0.06); // Adjust as needed
-    //         hMCGene[bin][i]->GetXaxis()->SetLabelSize(0.06); // Adjust as needed
-    //         hMCGene[bin][i]->GetYaxis()->SetLabelSize(0.06); // Adjust as needed
-    //         // Increase font size for axis titles
-    //         hData[bin][i]->GetXaxis()->SetTitleSize(0.07); // Adjust as needed
-    //         hData[bin][i]->GetYaxis()->SetTitleSize(0.07); // Adjust as needed
-    //         hMCReco[bin][i]->GetXaxis()->SetTitleSize(0.07); // Adjust as needed
-    //         hMCReco[bin][i]->GetYaxis()->SetTitleSize(0.07); // Adjust as needed
-    //         hMCGene[bin][i]->GetXaxis()->SetTitleSize(0.07); // Adjust as needed
-    //         hMCGene[bin][i]->GetYaxis()->SetTitleSize(0.07); // Adjust as needed
-
-    //         if (hMCReco[bin][i]->GetEntries() > 100) {
-    //             hData[bin][i]->DrawNormalized("HIST");
-    //             hMCReco[bin][i]->DrawNormalized("HIST same");
-    //             hMCGene[bin][i]->DrawNormalized("HIST same");
-
-    //             // Display z-pT bin information as 'z-P_{T} bin: histIndex'
-    //             // Note: Adjust the positioning (x, y coordinates) as needed
-    //             latex.DrawLatexNDC(0.10, 0.86, Form("Q2-y bin: %d, z-P_{T} bin: %zu", (bin+1), (i+1)));
-    //         }
-    //     }
-        
-    //     canvas->SaveAs(Form("output/Q2yBin_%d.png", bin+1));
-    //     delete canvas;
-    // }
-
-
     for (int bin = 0; bin < 17; ++bin) {
         TCanvas* canvas = new TCanvas(Form("canvas_bin_%d", bin + 1), Form("Q2-y Bin %d Phi Distributions", bin + 1), 2000, 1200);
         canvas->Divide(num_pT_bins[bin], num_z_bins[bin]);
@@ -477,7 +422,7 @@ int main() {
 
                     TLatex latexParams;
                     latexParams.SetNDC();
-                    latexParams.SetTextSize(0.04);
+                    latexParams.SetTextSize(0.08);
                     latexParams.DrawLatex(0.375, 0.375, Form("A = %.2f #pm %.2f", params.A, params.errA));
                     latexParams.DrawLatex(0.375, 0.325, Form("B = %.2f #pm %.2f", params.B, params.errB));
                     latexParams.DrawLatex(0.375, 0.275, Form("C = %.2f #pm %.2f", params.C, params.errC));
@@ -494,22 +439,33 @@ int main() {
         delete unfoldedCanvas;
     }
 
-    // std::ofstream capobiancoFile("output/capobianco_cross_check.txt");
-    // for (size_t bin = 0; bin < allFitParams.size(); ++bin) {
-    //     for (size_t i = 0; i < allFitParams[bin].size(); ++i) {
-    //         const auto& params = allFitParams[bin][i];
-    //         if (params.A != 0) { // Assuming -1 is the sentinel value for "fit not performed"
-    //             capobiancoFile << "Bin " << bin+1 << ", Sub-bin " << i+1 << ": "
-    //                            << "A = " << params.A << " +/- " << params.errA
-    //                            << ", B = " << params.B << " +/- " << params.errB
-    //                            << ", C = " << params.C << " +/- " << params.errC
-    //                            << ", chi2/NDF = " << params.chi2ndf << std::endl;
-    //         } else {
-    //             capobiancoFile << "Q2-y bin: " << bin+1 << ", z-PT bin: " << i+1 << ": No fit performed due to insufficient statistics." << std::endl;
-    //         }
-    //     }
-    // }
-    // capobiancoFile.close(); // Close the file after writing
+    std::ofstream capobiancoFile("output/capobianco_cross_check.txt");
+    for (size_t bin = 0; bin < allFitParams.size(); ++bin) {
+        // Print Q2-y bin heading
+        capobiancoFile << "Q2-y Bin " << bin + 1 << std::endl;
+
+        int current_bin = 0;
+        for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
+            for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
+                // Calculate the linear index based on z_bin and pT_bin
+                int i = z_bin * num_pT_bins[bin] + pT_bin;
+                const auto& params = allFitParams[bin][i];
+                if (params.A != 0) { // Check if the fit was performed
+                    capobiancoFile << "z-PT bin: " << current_bin
+                       << "A = " << params.A << " +/- " << params.errA
+                       << ", B = " << params.B << " +/- " << params.errB
+                       << ", C = " << params.C << " +/- " << params.errC
+                       << ", chi2/NDF = " << params.chi2ndf << std::endl;
+                } else {
+                    // If no fit was performed due to insufficient statistics
+                    capobiancoFile << "Sub-bin (z" << num_z_bins[bin] - z_bin << "-pT" << pT_bin + 1 << "): No fit performed due to insufficient statistics." << std::endl;
+                }
+                current_bin++;
+            }
+        }
+    }
+    capobiancoFile.close(); // Close the file after writing
+
 
     // struct StructureFunction {
     //     double meanPT;
@@ -561,6 +517,41 @@ int main() {
     // }
 
     // structureFile.close();
+
+    struct StructureFunction {
+        double meanPT;
+        double value;
+        double error;
+    };
+
+    std::ofstream structureFile("output/structure_functions.txt");
+
+    // Loop over Q2-y bins
+    for (int bin = 0; bin < 17; ++bin) {
+        structureFile << "Q2-y Bin " << bin + 1 << std::endl;
+
+        int current_bin = 0;
+        // Iterate through z and pT bins in the desired order
+        for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
+            for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
+                int index = z_bin * num_pT_bins[bin] + pT_bin;
+                const auto& binParams = allBinParams[bin][index];
+                if (binParams.count > 0) {
+                    double meanPT = binParams.sumPT / binParams.count;
+                    // Assuming the existence of an allFitParams similar structure to hold fit parameters for B and C
+                    const auto& fitParams = allFitParams[bin][index];
+                    double structureB = fitParams.B * binParams.sumDepA / binParams.sumDepV;
+                    double structureC = fitParams.C * binParams.sumDepA / binParams.sumDepB;
+                    structureFile << "z-pT Bin " << current_bin << ": "
+                    << "B = {" << meanPT << ", " << structureB << ", " << fitParams.errB << "}, "
+                    << "C = {" << meanPT << ", " << structureC << ", " << fitParams.errC << "}, " << std::endl;
+                    current_bin++;
+                }
+            }
+        }
+    }
+
+    structureFile.close();
 
 
     fData->Close();
