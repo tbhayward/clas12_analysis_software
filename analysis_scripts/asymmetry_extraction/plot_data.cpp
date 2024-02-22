@@ -37,7 +37,6 @@ void FillHistogramForBins(TTreeReader& reader, const std::string& branchName, TH
 }
 
 
-
 template<typename T1, typename T2>
 void createAndFillHistogram(TTreeReader& reader, TH2D* hist, const std::string& branchX, 
                             const std::string& branchY, KinematicCuts& kinematicCuts) {
@@ -592,6 +591,77 @@ void createCorrelationPlots() {
 
             // Restart the TTreeReader for the next iteration
             dataReader.Restart();
+        }
+    }
+}
+
+void createMisIDRatePlots() {
+    const std::string outputDir = "output/misid/";
+    gStyle->SetOptStat(0); // No histogram statistics
+    std::map<int, int> pidColors = {{-211, kRed}, {-321, kOrange}}; // Color assignments for misidentified electrons
+
+    // Loop over kinematic bins
+    for (size_t fitIndex = 0; fitIndex < allBins.size(); ++fitIndex) {
+        std::string currentVariable = binNames[fitIndex];
+        std::vector<double> bins = allBins[fitIndex];
+
+        // Setup TTreeReaderValue for electron PID
+        TTreeReaderValue<int> matchingEPID(mcReader, "matching_e_pid");
+
+        // Histograms to track total and misidentified electron counts for each bin
+        TH1D* totalHist = new TH1D("totalHist", "", bins.size() - 1, &bins[0]);
+        std::map<int, TH1D*> misIDHists;
+        for (auto& pidColor : pidColors) {
+            misIDHists[pidColor.first] = new TH1D(("misIDHist_" + std::to_string(pidColor.first)).c_str(), "", bins.size() - 1, &bins[0]);
+        }
+
+        while (mcReader.Next()) {
+            if (!kinematicCuts->applyCuts(fitIndex, true)) continue; // Apply kinematic cuts
+            double currentValue = *matchingEPID; // PID value for the current electron
+            totalHist->Fill(currentValue); // Increment total electron count
+
+            // Increment corresponding misID histogram based on PID value
+            if (misIDHists.find(currentValue) != misIDHists.end()) {
+                misIDHists[currentValue]->Fill(currentValue);
+            }
+        }
+
+        // Create TGraphErrors for misID rates and plot them
+        for (auto& pidColor : pidColors) {
+            std::vector<double> misIDRates, misIDRateErrors, binCenters;
+            for (int i = 1; i <= bins.size() - 1; ++i) {
+                double binCenter = totalHist->GetBinCenter(i);
+                binCenters.push_back(binCenter);
+                double total = totalHist->GetBinContent(i);
+                double misID = misIDHists[pidColor.first]->GetBinContent(i);
+                double rate = total > 0 ? misID / total : 0;
+                double error = sqrt(rate * (1 - rate) / total);
+                misIDRates.push_back(rate);
+                misIDRateErrors.push_back(error);
+            }
+
+            TGraphErrors* graph = new TGraphErrors(binCenters.size(), &binCenters[0], &misIDRates[0], nullptr, &misIDRateErrors[0]);
+            graph->SetTitle(Form("%s MisID Rate; %s; MisID Rate", currentVariable.c_str(), currentVariable.c_str()));
+            graph->SetMarkerColor(pidColor.second);
+            graph->SetLineColor(pidColor.second);
+
+            TCanvas* c = new TCanvas(Form("c_%s_%d", currentVariable.c_str(), pidColor.first), currentVariable.c_str(), 800, 600);
+            graph->Draw("AP");
+
+            TLegend* legend = new TLegend(0.7, 0.8, 0.9, 0.9);
+            legend->AddEntry(graph, Form("MisID as PID %d", pidColor.first), "lp");
+            legend->Draw();
+
+            std::string outputFileName = outputDir + currentVariable + "_electronMisIDRate_" + std::to_string(pidColor.first) + ".png";
+            c->SaveAs(outputFileName.c_str());
+
+            delete graph;
+            delete c;
+        }
+
+        delete totalHist;
+        for (auto& hist : misIDHists) {
+            delete hist.second;
         }
     }
 }
