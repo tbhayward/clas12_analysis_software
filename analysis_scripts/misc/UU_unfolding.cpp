@@ -620,8 +620,8 @@ int main() {
                 } else {
                     structureFile << "Q2-y Bin " << bin + 1;
                     structureFile << ", z-pT Bin " << current_bin << ": "
-                    << "B = {" << meanPT << ", - , -}, "
-                    << "C = {" << meanPT << ", - , -}, " << std::endl;
+                    << "B = {No fit performed due to insufficient statistics.}, "
+                    << "C = {No fit performed due to insufficient statistics.}" << std::endl;
                     current_bin++;
                 }
             }
