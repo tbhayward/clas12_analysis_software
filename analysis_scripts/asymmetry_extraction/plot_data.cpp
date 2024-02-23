@@ -604,6 +604,7 @@ void createMisIDRatePlots() {
 
     // Loop over kinematic bins
     for (size_t fitIndex = 0; fitIndex < allBins.size(); ++fitIndex) {
+        std::cout << "hey are we in here?" << std::endl;
         std::string currentVariable = binNames[fitIndex];
         std::vector<double> bins = allBins[fitIndex];
 
@@ -618,7 +619,6 @@ void createMisIDRatePlots() {
         }
 
         while (mcReader.Next()) {
-            std::cout << "hey are we in here?" << std::endl;
             if (!kinematicCuts->applyCuts(fitIndex, true)) continue;
 
             int pid = *matchingEPID;
