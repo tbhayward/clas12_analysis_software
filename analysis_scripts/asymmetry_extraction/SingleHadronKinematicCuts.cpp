@@ -65,22 +65,22 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
             *y>0.65 && *y<0.75 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.40 && *z<0.73;
         }
 
-        else if (property == "UURCQ2y1z1") {
+        else if (property == "UURCQ2y4z1") {
           goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 &&
             *y>0.30 && *y<0.45 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.26 && *z<0.32;
-        } else if (property == "UURCQ2y1z2") {
+        } else if (property == "UURCQ2y4z2") {
           goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 &&
             *y>0.30 && *y<0.45 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.32 && *z<0.37;
-        } else if (property == "UURCQ2y1z3") {
+        } else if (property == "UURCQ2y4z3") {
           goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 &&
             *y>0.30 && *y<0.45 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.37 && *z<0.43;
-        } else if (property == "UURCQ2y1z4") {
+        } else if (property == "UURCQ2y4z4") {
           goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 &&
             *y>0.30 && *y<0.45 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.43 && *z<0.50;
-        } else if (property == "UURCQ2y1z5") {
+        } else if (property == "UURCQ2y4z5") {
           goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 &&
             *y>0.30 && *y<0.45 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.50 && *z<0.60;
-        } else if (property == "UURCQ2y1z6") {
+        } else if (property == "UURCQ2y4z6") {
           goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 &&
             *y>0.30 && *y<0.45 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.60 && *z<0.71;
         } 
