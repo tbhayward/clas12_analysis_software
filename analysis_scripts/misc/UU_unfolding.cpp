@@ -374,7 +374,6 @@ int main() {
         delete canvas;
     }
 
-
     // Calculate the acceptance in each of the bins
     std::vector<std::vector<TH1F*>> hAcceptance(17);
     for (int bin = 0; bin < 17; ++bin) {
@@ -445,6 +444,7 @@ int main() {
     }
 
 
+    // create struct to hold the values and errors of the fits as well as chi2
     struct FitParams { double A, B, C, errA, errB, errC, chi2ndf; };
     std::vector<std::vector<FitParams>> allFitParams(zEdges.size());
 
@@ -462,6 +462,7 @@ int main() {
             for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
                 int histIndex = z_bin * num_pT_bins[bin] + pT_bin;
                 int padNumber = (num_z_bins[bin] - z_bin - 1) * num_pT_bins[bin] + pT_bin + 1;
+                // calculate which pad we are in (highest z bins are first)
                 unfoldedCanvas->cd(padNumber);
 
                 // Adjust pad margins to add space around the plots
@@ -481,9 +482,9 @@ int main() {
                         double sigma_a = hData[bin][histIndex]->GetBinError(binX);
                         double sigma_b = hAcceptance[bin][histIndex]->GetBinError(binX);
 
-                        // Calculate the product error using the propagation formula
+                        // Calculate the uncertainty using error propagation 
                         if (a > 0 && b > 0) { // Check to avoid division by zero
-                            double f = a * b; // This is already calculated by Multiply(), but shown for clarity
+                            double f = a * b; 
                             double sigma_f = f * sqrt(pow(sigma_a / a, 2) + pow(sigma_b / b, 2));
                             hUnfolded->SetBinError(binX, sigma_f);
                         }
@@ -515,11 +516,9 @@ int main() {
                     gUnfolded->GetXaxis()->SetTitle("#phi");
                     gUnfolded->GetYaxis()->SetTitle("Counts");
 
-                    // After setting titles, you can adjust their sizes if needed (though you've already set title sizes):
                     gUnfolded->GetXaxis()->SetTitleSize(0.07);
                     gUnfolded->GetYaxis()->SetTitleSize(0.07);
 
-                    // Optionally, adjust the title offset to position the title correctly
                     gUnfolded->GetXaxis()->SetTitleOffset(1.2);
                     gUnfolded->GetYaxis()->SetTitleOffset(1.2);
 
@@ -550,7 +549,7 @@ int main() {
 
                     // Draw the TPaveText
                     pt->Draw();
-                    // Adjusting this display to correctly label each bin according to your new structure
+                    // Adjusting this display to correctly label each bin according to the new structure
                     latex.DrawLatexNDC(0.18, 0.86, Form("Q2-y bin: %d, z-PT bin: %d", bin + 1, padNumber));
 
                     delete hUnfolded; // Clean up
@@ -590,40 +589,12 @@ int main() {
     }
     capobiancoFile.close(); // Close the file after writing
 
-    // std::ofstream capobiancoFilePlotting("output/capobianco_cross_check_plotting.txt");
-    // for (size_t bin = 0; bin < allFitParams.size(); ++bin) {
-    //     int current_bin = 1;
-    //     int current_z_bin = 1;
-    //     for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
-    //         for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
-    //             // Calculate the linear index based on z_bin and pT_bin
-    //             int i = z_bin * num_pT_bins[bin] + pT_bin;
-    //             capobiancoFilePlotting << "Q2y" << bin + 1 << "z" << current_z_bin << "B = {"
-    //             const auto& params = allFitParams[bin][i];
-    //             if (params.A != 0) { // Check if the fit was performed
-    //                    << ", A = " << params.A << " +/- " << params.errA
-    //                    << ", B = " << params.B << " +/- " << params.errB
-    //                    << ", C = " << params.C << " +/- " << params.errC
-    //                    << ", chi2/ndf = " << params.chi2ndf << std::endl;
-    //             } else {
-    //                 // If no fit was performed due to insufficient statistics
-    //                 capobiancoFilePlotting << "Q2-y Bin " << bin + 1;
-    //                 capobiancoFilePlotting << ", z-PT bin: " << current_bin << 
-    //                 "): No fit performed due to insufficient statistics." << std::endl;
-    //             }
-    //             current_bin++; 
-    //             current_z_bin++;
-    //         }
-    //     }
-    // }
-    // capobiancoFilePlotting.close(); // Close the file after writing
-
+    // also print out a version for myself where the asymmetries are scaled by the structure functions
     struct StructureFunction {
         double meanPT;
         double value;
         double error;
     };
-
     std::ofstream structureFile("output/structure_functions.txt");
 
     // Loop over Q2-y bins
@@ -648,7 +619,7 @@ int main() {
                     current_bin++;
                 } else {
                     structureFile << "Q2-y Bin " << bin + 1;
-                    structureFile << "z-pT Bin " << current_bin << ": "
+                    structureFile << ", z-pT Bin " << current_bin << ": "
                     << "B = {" << meanPT << ", - , -}, "
                     << "C = {" << meanPT << ", - , -}, " << std::endl;
                     current_bin++;
@@ -658,14 +629,12 @@ int main() {
     }
     structureFile.close();
 
-
     fData->Close();
     fMCReco->Close();
     fMCGene->Close();
     delete fData;
     delete fMCReco;
     delete fMCGene;
-
 
     return 0;
 }
