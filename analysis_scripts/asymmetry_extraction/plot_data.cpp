@@ -620,7 +620,7 @@ void createMisIDRatePlots() {
 
         while (mcReader.Next()) {
             if (!kinematicCuts->applyCuts(fitIndex, true)) continue;
-            std::cout << *matchingEPID << std::endl;
+            std::cout << *matchingEPID << "hello is this thing on" << std::endl;
             int pid = *matchingEPID;
             std::cout << pid << ", ";
             // Check if PID is one of the misID conditions we're tracking
