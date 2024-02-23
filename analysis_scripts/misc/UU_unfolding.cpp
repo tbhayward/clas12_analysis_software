@@ -620,8 +620,8 @@ int main() {
                 } else {
                     structureFile << "Q2-y Bin " << bin + 1;
                     structureFile << ", z-pT Bin " << current_bin << ": "
-                    << "B = {0,0,1000}, "
-                    << "C = {0,0,1000}" << std::endl;
+                    << "B = {-1,0,1000}, "
+                    << "C = {-1,0,1000}" << std::endl;
                     current_bin++;
                 }
             }
