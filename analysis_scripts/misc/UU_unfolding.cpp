@@ -164,6 +164,8 @@ int main() {
     tMCGene->SetBranchAddress("pT", &pTGen);
     tMCGene->SetBranchAddress("z", &zGen);
 
+    // record depolarization values to turn the asymmetries into structure functions
+    // record PT for each event to calculate mean PT of the bin
     struct BinParams {
         double sumDepA = 0, sumDepB = 0, sumDepV = 0, sumPT = 0;
         int count = 0; 
@@ -172,7 +174,7 @@ int main() {
     // After defining zEdges and pTEdges
     allBinParams.resize(zEdges.size()); // Ensure there's a vector for each Q2-y bin
     int num_z_bins[17], num_pT_bins[17];
-    for (int i = 0; i <= zEdges.size()-1; ++i) { // Assuming bins are 1-indexed based on your map
+    for (int i = 0; i <= zEdges.size()-1; ++i) { //  bins are 1-indexed=
         num_z_bins[i] = zEdges[i+1].size() - 1; // Number of z bins for this Q2-y bin
         num_pT_bins[i] = pTEdges[i+1].size() - 1; // Number of pT bins for this Q2-y bin
         int totalbins = num_z_bins[i] * num_pT_bins[i]; // Total number of z-pT bin combinations for this Q2-y bin
@@ -181,7 +183,8 @@ int main() {
     std::cout << std::endl << "Creating histograms." << std::endl;
     // Create histograms for each z-pT bin
     std::vector<std::vector<TH1F*>> hData(17), hMCReco(17), hMCGene(17);
-    for (int bin = 0; bin < 17; ++bin) {
+    // 17 Q2-y bins in total
+    for (int bin = 0; bin < 17; ++bin) { 
         // std::cout << bin << " " << num_pT_bins[bin] << " " << num_z_bins[bin] << " " << num_pT_bins[bin] * num_z_bins[bin] << std::endl;
         for (int i = 0; i < num_pT_bins[bin] * num_z_bins[bin]; ++i) {
             hData[bin].push_back(new TH1F(Form("hData_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 24, 0, 2*TMath::Pi()));
@@ -197,13 +200,13 @@ int main() {
         tData->GetEntry(i);
 
         int binIndex = DetermineQ2yBin(Q2Data, yData) - 1; // Adjusted for 0-based indexing
-        // std::cout << binIndex << std::endl;
 
         if (binIndex >= 0) {
 
             const auto& currentZEdges = zEdges[binIndex+1]; 
             const auto& currentPTEdges = pTEdges[binIndex+1];
 
+            // extra check to make sure data is not outside the bins
             if (zData < currentZEdges[0] || zData > currentZEdges[num_z_bins[binIndex]]) {
                 continue;
             }
@@ -215,6 +218,8 @@ int main() {
             int pT_bin = findBinIndex(pTData, currentPTEdges);
 
             if (pT_bin != -1 && z_bin != -1) {
+                // index of bins is flipped (per Kyungseon's request), first bin is highest z (top left)
+                // "binIndex" is the Q2-y bin
                 int histIndex = z_bin * num_pT_bins[binIndex] + pT_bin;
                 // std::cout << "z: " << zData;
                 // std::cout << ", z_bin: " << z_bin;
@@ -244,6 +249,7 @@ int main() {
             const auto& currentZEdges = zEdges[binIndex+1]; 
             const auto& currentPTEdges = pTEdges[binIndex+1];
 
+            // extra check to make sure data is not outside the bins
             if (zMC < currentZEdges[0] || zMC > currentZEdges[num_z_bins[binIndex]]) {
                 continue;
             }
@@ -255,6 +261,8 @@ int main() {
             int pT_bin = findBinIndex(pTMC, currentPTEdges);
             // Fill the corresponding histogram if the event is in a valid bin
             if (pT_bin != -1 && z_bin != -1) {
+                // index of bins is flipped (per Kyungseon's request), first bin is highest z (top left)
+                // "binIndex" is the Q2-y bin
                 int histIndex = z_bin * num_pT_bins[binIndex] + pT_bin;
                 hMCReco[binIndex][histIndex]->Fill(phiMC);
             }
@@ -274,6 +282,7 @@ int main() {
             const auto& currentZEdges = zEdges[binIndex+1]; 
             const auto& currentPTEdges = pTEdges[binIndex+1];
 
+            // extra check to make sure data is not outside the bins
             if (zGen < currentZEdges[0] || zGen > currentZEdges[num_z_bins[binIndex]]) {
                 continue;
             }
@@ -285,6 +294,8 @@ int main() {
             int pT_bin = findBinIndex(pTGen, currentPTEdges);
             // Fill the corresponding histogram if the event is in a valid bin
             if (pT_bin != -1 && z_bin != -1) {
+                // index of bins is flipped (per Kyungseon's request), first bin is highest z (top left)
+                // "binIndex" is the Q2-y bin
                 int histIndex = z_bin * num_pT_bins[binIndex] + pT_bin;
                 hMCGene[binIndex][histIndex]->Fill(phiGen);
             }
@@ -292,11 +303,13 @@ int main() {
     }
 
     /* ~~~~~~~~~~~~~~~~~~~~~~ */ 
+    // First loop is for plotting the normalized data and reconstructed and generated Monte Carlo plots
     // Declare the TLatex object here, before the loop
     TLatex latex; latex.SetTextSize(0.09); latex.SetNDC();
     for (int bin = 0; bin < 17; ++bin) {
         TCanvas* canvas = new TCanvas(Form("canvas_bin_%d", bin + 1), Form("Q2-y Bin %d Phi Distributions", bin + 1), 2000, 1200);
         canvas->Divide(num_pT_bins[bin], num_z_bins[bin]);
+        // create a canvas with subplots for each possible z-PT bin (some will be empty)
 
         // Adjust loop to iterate over z and pT bins separately
         for (int z_bin = 0; z_bin < num_z_bins[bin]; ++z_bin) {
@@ -345,13 +358,11 @@ int main() {
                 // hMCGeneHist->SetMaximum(hMCGeneHist->GetMaximum() * 1.2); // Set maximum to 120% of the current maximum value for some headroom
 
                 // Draw histograms if they have sufficient entries
-                if (hDataHist->GetEntries() > 2000 && hMCRecoHist->GetEntries() > 2000 && hMCGeneHist->GetEntries() > 2000) {
+                // just picked 100, probably should have done another number
+                if (hDataHist->GetEntries() > 100 && hMCRecoHist->GetEntries() > 100 && hMCGeneHist->GetEntries() > 100) {
                     hDataHist->DrawNormalized("HIST");
                     hMCRecoHist->DrawNormalized("HIST same");
                     hMCGeneHist->DrawNormalized("HIST same");
-                    // hDataHist->Draw("HIST");
-                    // hMCGeneHist->Draw("HIST same");
-                    // hMCRecoHist->Draw("HIST same");
 
                     // Display z-pT bin information
                     latex.DrawLatexNDC(0.10, 0.86, Form("Q2-y bin: %d, z-PT bin: %d", bin + 1, padNumber));
@@ -364,7 +375,7 @@ int main() {
     }
 
 
-
+    // Calculate the acceptance in each of the bins
     std::vector<std::vector<TH1F*>> hAcceptance(17);
     for (int bin = 0; bin < 17; ++bin) {
         hAcceptance[bin].resize(num_pT_bins[bin] * num_z_bins[bin]);
@@ -393,10 +404,10 @@ int main() {
         }
     }
 
-
+    // Plot the acceptance function (ratio of gen to rec MC). This plot isn't on Richard's site
     for (int bin = 0; bin < 17; ++bin) {
         TCanvas* acceptanceCanvas = new TCanvas(Form("acceptance_canvas_bin_%d", bin + 1), Form("Acceptance Q2-y Bin %d", bin + 1), 2000, 1200);
-        acceptanceCanvas->Divide(num_pT_bins[bin], num_z_bins[bin]); // Adjust this to your specific binning
+        acceptanceCanvas->Divide(num_pT_bins[bin], num_z_bins[bin]); =
 
         for (int z_bin = 0; z_bin < num_z_bins[bin]; ++z_bin) {
             for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
@@ -414,9 +425,9 @@ int main() {
                     TH1F* hAcc = hAcceptance[bin][histIndex];
                     
                     hAcc->SetMarkerStyle(20);
-                    hAcc->Draw("PE"); // Use "PE" for drawing error bars with points
+                    hAcc->Draw("PE"); // "PE" for drawing error bars with points
 
-                    // Set axis titles and sizes as per your unfolded plot settings
+                    // Set axis titles and sizes
                     hAcc->GetXaxis()->SetTitle("#phi");
                     hAcc->GetYaxis()->SetTitle("Acceptance");
                     hAcc->GetXaxis()->SetTitleSize(0.07);
