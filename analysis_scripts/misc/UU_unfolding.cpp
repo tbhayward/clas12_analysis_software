@@ -370,6 +370,49 @@ int main() {
         }
     }
 
+    for (int bin = 0; bin < 17; ++bin) {
+        TCanvas* acceptanceCanvas = new TCanvas(Form("acceptance_canvas_bin_%d", bin + 1), Form("Acceptance Q2-y Bin %d", bin + 1), 2000, 1200);
+        acceptanceCanvas->Divide(num_pT_bins[bin], num_z_bins[bin]); // Adjust this to your specific binning
+
+        for (int z_bin = 0; z_bin < num_z_bins[bin]; ++z_bin) {
+            for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
+                int histIndex = z_bin * num_pT_bins[bin] + pT_bin;
+                int padNumber = (num_z_bins[bin] - z_bin - 1) * num_pT_bins[bin] + pT_bin + 1;
+                acceptanceCanvas->cd(padNumber);
+
+                // Set pad margins
+                gPad->SetLeftMargin(0.3);
+                gPad->SetRightMargin(0.1);
+                gPad->SetTopMargin(0.2);
+                gPad->SetBottomMargin(0.2);
+
+                if (hAcceptance[bin][histIndex] != nullptr) {
+                    TH1F* hAcc = hAcceptance[bin][histIndex];
+                    
+                    hAcc->SetMarkerStyle(20);
+                    hAcc->SetMarkerColor(kBlue);
+                    hAcc->SetLineColor(kBlue);
+                    hAcc->Draw("PE"); // Use "PE" for drawing error bars with points
+
+                    // Set axis titles and sizes as per your unfolded plot settings
+                    hAcc->GetXaxis()->SetTitle("#phi");
+                    hAcc->GetYaxis()->SetTitle("Acceptance");
+                    hAcc->GetXaxis()->SetTitleSize(0.07);
+                    hAcc->GetYaxis()->SetTitleSize(0.07);
+                    hAcc->GetXaxis()->SetTitleOffset(1.2);
+                    hAcc->GetYaxis()->SetTitleOffset(1.2);
+                    hAcc->GetXaxis()->SetLabelSize(0.06);
+                    hAcc->GetYaxis()->SetLabelSize(0.06);
+
+                    // Optional: Draw a TPaveText or TLatex for additional bin info, just like in your unfolded plots
+                }
+            }
+        }
+        acceptanceCanvas->SaveAs(Form("output/acceptance_Q2yBin_%d.png", bin + 1)); // Save each canvas
+        delete acceptanceCanvas; // Clean up
+    }
+
+
     struct FitParams { double A, B, C, errA, errB, errC, chi2ndf; };
     std::vector<std::vector<FitParams>> allFitParams(zEdges.size());
 
