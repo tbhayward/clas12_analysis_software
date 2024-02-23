@@ -340,18 +340,18 @@ int main() {
                 hMCGeneHist->GetXaxis()->SetTitleSize(0.07);
                 hMCGeneHist->GetYaxis()->SetTitleSize(0.07);
 
-                // Set the y-axis scale minimum and maximum
-                hMCGeneHist->SetMinimum(0); // For example, set minimum to 0
-                hMCGeneHist->SetMaximum(hMCGeneHist->GetMaximum() * 1.2); // Set maximum to 120% of the current maximum value for some headroom
+                // // Set the y-axis scale minimum and maximum
+                // hMCGeneHist->SetMinimum(0); // For example, set minimum to 0
+                // hMCGeneHist->SetMaximum(hMCGeneHist->GetMaximum() * 1.2); // Set maximum to 120% of the current maximum value for some headroom
 
                 // Draw histograms if they have sufficient entries
                 if (hDataHist->GetEntries() > 2000 && hMCRecoHist->GetEntries() > 2000 && hMCGeneHist->GetEntries() > 2000) {
-                    // hDataHist->DrawNormalized("HIST");
-                    // hMCRecoHist->DrawNormalized("HIST same");
-                    // hMCGeneHist->DrawNormalized("HIST same");
+                    hDataHist->DrawNormalized("HIST");
+                    hMCRecoHist->DrawNormalized("HIST same");
+                    hMCGeneHist->DrawNormalized("HIST same");
                     // hDataHist->Draw("HIST");
-                    hMCGeneHist->Draw("HIST same");
-                    hMCRecoHist->Draw("HIST same");
+                    // hMCGeneHist->Draw("HIST same");
+                    // hMCRecoHist->Draw("HIST same");
 
                     // Display z-pT bin information
                     latex.DrawLatexNDC(0.10, 0.86, Form("Q2-y bin: %d, z-PT bin: %d", bin + 1, padNumber));
