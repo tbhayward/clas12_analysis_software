@@ -346,8 +346,9 @@ int main() {
                     // hMCRecoHist->DrawNormalized("HIST same");
                     // hMCGeneHist->DrawNormalized("HIST same");
                     // hDataHist->Draw("HIST");
-                    hMCRecoHist->Draw("HIST same");
                     hMCGeneHist->Draw("HIST same");
+                    hMCRecoHist->Draw("HIST same");
+                    
 
                     // Display z-pT bin information
                     latex.DrawLatexNDC(0.10, 0.86, Form("Q2-y bin: %d, z-PT bin: %d", bin + 1, padNumber));
