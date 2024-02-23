@@ -463,6 +463,21 @@ int main() {
                     TH1F* hUnfolded = (TH1F*)hData[bin][histIndex]->Clone(Form("hUnfolded_bin%d_%d", bin + 1, histIndex));
                     hUnfolded->Multiply(hAcceptance[bin][histIndex]); // Apply acceptance correction
 
+                    // calculate and set the errors for each bin
+                    for (int binX = 1; binX <= hUnfolded->GetNbinsX(); ++binX) {
+                        double a = hData[bin][histIndex]->GetBinContent(binX);
+                        double b = hAcceptance[bin][histIndex]->GetBinContent(binX);
+                        double sigma_a = hData[bin][histIndex]->GetBinError(binX);
+                        double sigma_b = hAcceptance[bin][histIndex]->GetBinError(binX);
+
+                        // Calculate the product error using the propagation formula
+                        if (a > 0 && b > 0) { // Check to avoid division by zero
+                            double f = a * b; // This is already calculated by Multiply(), but shown for clarity
+                            double sigma_f = f * sqrt(pow(sigma_a / a, 2) + pow(sigma_b / b, 2));
+                            hUnfolded->SetBinError(binX, sigma_f);
+                        }
+                    }
+
                     TF1* fitFunc = new TF1("fitFunc", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", 0, 2*TMath::Pi());
                     hUnfolded->Fit(fitFunc, "Q"); // Quiet mode fit
 
