@@ -342,9 +342,12 @@ int main() {
 
                 // Draw histograms if they have sufficient entries
                 if (hDataHist->GetEntries() > 2000 && hMCRecoHist->GetEntries() > 2000 && hMCGeneHist->GetEntries() > 2000) {
-                    hDataHist->DrawNormalized("HIST");
-                    hMCRecoHist->DrawNormalized("HIST same");
-                    hMCGeneHist->DrawNormalized("HIST same");
+                    // hDataHist->DrawNormalized("HIST");
+                    // hMCRecoHist->DrawNormalized("HIST same");
+                    // hMCGeneHist->DrawNormalized("HIST same");
+                    // hDataHist->Draw("HIST");
+                    hMCRecoHist->Draw("HIST same");
+                    hMCGeneHist->Draw("HIST same");
 
                     // Display z-pT bin information
                     latex.DrawLatexNDC(0.10, 0.86, Form("Q2-y bin: %d, z-PT bin: %d", bin + 1, padNumber));
@@ -390,8 +393,8 @@ int main() {
                     TH1F* hAcc = hAcceptance[bin][histIndex];
                     
                     hAcc->SetMarkerStyle(20);
-                    hAcc->SetMarkerColor(kBlue);
-                    hAcc->SetLineColor(kBlue);
+                    // hAcc->SetMarkerColor(kBlue);
+                    // hAcc->SetLineColor(kBlue);
                     hAcc->Draw("PE"); // Use "PE" for drawing error bars with points
 
                     // Set axis titles and sizes as per your unfolded plot settings
@@ -404,7 +407,6 @@ int main() {
                     hAcc->GetXaxis()->SetLabelSize(0.06);
                     hAcc->GetYaxis()->SetLabelSize(0.06);
 
-                    // Optional: Draw a TPaveText or TLatex for additional bin info, just like in your unfolded plots
                 }
             }
         }
