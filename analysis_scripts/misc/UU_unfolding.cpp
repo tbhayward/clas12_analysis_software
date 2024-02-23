@@ -581,7 +581,7 @@ int main() {
                     // If no fit was performed due to insufficient statistics
                     capobiancoFile << "Q2-y Bin " << bin + 1;
                     capobiancoFile << ", z-PT bin: " << current_bin << 
-                    "): No fit performed due to insufficient statistics." << std::endl;
+                    ", No fit performed due to insufficient statistics." << std::endl;
                 }
                 current_bin++;
             }
