@@ -406,7 +406,7 @@ int main() {
     // Plot the acceptance function (ratio of gen to rec MC). This plot isn't on Richard's site
     for (int bin = 0; bin < 17; ++bin) {
         TCanvas* acceptanceCanvas = new TCanvas(Form("acceptance_canvas_bin_%d", bin + 1), Form("Acceptance Q2-y Bin %d", bin + 1), 2000, 1200);
-        acceptanceCanvas->Divide(num_pT_bins[bin], num_z_bins[bin]); =
+        acceptanceCanvas->Divide(num_pT_bins[bin], num_z_bins[bin]); 
 
         for (int z_bin = 0; z_bin < num_z_bins[bin]; ++z_bin) {
             for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
