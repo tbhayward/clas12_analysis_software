@@ -422,6 +422,11 @@ int main() {
 
                 if (hAcceptance[bin][histIndex] != nullptr) {
                     TH1F* hAcc = hAcceptance[bin][histIndex];
+
+                    // // Set the y-axis scale minimum and maximum
+                    hAcc->SetMinimum(0); // For example, set minimum to 0
+                    hAcc->SetMaximum(20); // Set maximum to 120% of the current maximum value for some headroom
+
                     
                     hAcc->SetMarkerStyle(20);
                     hAcc->Draw("PE"); // "PE" for drawing error bars with points
