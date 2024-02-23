@@ -618,8 +618,8 @@ void createMisIDRatePlots() {
         }
 
         while (mcReader.Next()) {
-            if (!kinematicCuts->applyCuts(fitIndex, true)) continue;
             std::cout << "hey are we in here?" << std::endl;
+            if (!kinematicCuts->applyCuts(fitIndex, true)) continue;
 
             int pid = *matchingEPID;
             std::cout << pid << ", ";
