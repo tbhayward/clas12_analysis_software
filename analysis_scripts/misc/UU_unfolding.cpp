@@ -630,7 +630,7 @@ int main() {
                        << ", B = " << fitParams.B << " +/- " << fitParams.errB
                        << ", C = " << fitParams.C << " +/- " << fitParams.errC
                        << ", chi2/NDF = " << fitParams.chi2ndf
-                       << ", counts = " << params.count << std::endl;
+                       << ", counts = " << hData[bin][i]->GetEntries() << std::endl;
                 } else {
                     // If no fit was performed due to insufficient statistics
                     capobiancoFile << "Q2-y Bin " << bin + 1;
