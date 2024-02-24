@@ -622,7 +622,7 @@ int main() {
                 int i = z_bin * num_pT_bins[bin] + pT_bin;
                 // const auto& params = allBinParams[bin][index];
                 const auto& fitParams = allFitParams[bin][index];
-                if (params.A != 0) { // Check if the fit was performed
+                if (fitParams.A != 0) { // Check if the fit was performed
                     // Print Q2-y bin heading
                     capobiancoFile << "Q2-y Bin " << bin + 1;
                     capobiancoFile << ", z-PT bin: " << current_bin
