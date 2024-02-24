@@ -701,7 +701,7 @@ int main() {
                 } else {
                     structureFile2 << "{-1.00, 0.00, 1000.00}";
                 }
-                if (z_bin != 1) {
+                if (!(z_bin == 0 && pT_bin == num_pT_bins[bin]-1)) {
                     structureFile2 << ",";
                 }
             }
@@ -724,7 +724,7 @@ int main() {
                 } else {
                     structureFile2 << "{-1.00, 0.00, 1000.00}";
                 }
-                if (z_bin != 0) {
+                if (!(z_bin == 0 && pT_bin == num_pT_bins[bin]-1)) {
                     structureFile2 << ",";
                 }
             }
@@ -750,7 +750,7 @@ int main() {
                 } else {
                     structureFile2 << "{-1.00, 0.00, 1000.00}";
                 }
-                if (z_bin != 0) {
+                if (!(z_bin == 0 && pT_bin == num_pT_bins[bin]-1)) {
                     structureFile2 << ",";
                 }
             }
@@ -773,7 +773,7 @@ int main() {
                 } else {
                     structureFile2 << "{-1.00, 0.00, 1000.00}";
                 }
-                if (z_bin != 0) {
+                if (!(z_bin == 0 && pT_bin == num_pT_bins[bin]-1)) {
                     structureFile2 << ",";
                 }
             }
@@ -794,7 +794,7 @@ int main() {
                 } else {
                     structureFile2 << "-1.00";
                 }
-                if (z_bin != 0) {
+                if (!(z_bin == 0 && pT_bin == num_pT_bins[bin]-1)) {
                     structureFile2 << ",";
                 }
             }
@@ -802,11 +802,8 @@ int main() {
         structureFile2 << "};\n\n" << std::endl;
     }
 
-
-
-
-
     structureFile.close();
+    structureFile2.close();
 
     fData->Close();
     fMCReco->Close();
