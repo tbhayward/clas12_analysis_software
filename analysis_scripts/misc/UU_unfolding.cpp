@@ -683,7 +683,7 @@ int main() {
     structureFile.close();
 
 
-    std::ofstream structureFile2("output/structure_functions_mathematica.txt");
+    std::ofstream structureFile2("output/mathematica.txt");
     // Loop over Q2-y bins
     for (int bin = 0; bin < allFitParams.size(); ++bin) {
         structureFile2 << "sfQ2y" << (bin+1) << "B = {";
@@ -706,7 +706,7 @@ int main() {
                 }
             }
         }
-        structureFile2 << "};" << std::endl;
+        structureFile2 << "};\n\n" << std::endl;
     }
     for (int bin = 0; bin < allFitParams.size(); ++bin) {
         structureFile2 << "sfQ2y" << (bin+1) << "C = {";
@@ -724,13 +724,89 @@ int main() {
                 } else {
                     structureFile2 << "{-1.00, 0.00, 1000.00}";
                 }
-                if (z_bin != 1) {
+                if (z_bin != 0) {
                     structureFile2 << ",";
                 }
             }
         }
-        structureFile2 << "};" << std::endl;
+        structureFile2 << "};\n\n" << std::endl;
     }
+
+
+    // Loop over Q2-y bins
+    for (int bin = 0; bin < allFitParams.size(); ++bin) {
+        structureFile2 << "unfQ2y" << (bin+1) << "B = {";
+        // Iterate through z and pT bins in the desired order
+        for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
+            for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
+                int index = z_bin * num_pT_bins[bin] + pT_bin;
+                const auto& params = allBinParams[bin][index];
+                const auto& fitParams = allFitParams[bin][index];
+                double meanPT = params.sumPT / params.count;
+                if (fitParams.B != 0) {
+                    double structureB = fitParams.B ;
+                    double structureBerr = fitParams.errB;
+                    structureFile2 << "{" << meanPT << ", " << structureB << ", " << structureBerr << "}";
+                } else {
+                    structureFile2 << "{-1.00, 0.00, 1000.00}";
+                }
+                if (z_bin != 0) {
+                    structureFile2 << ",";
+                }
+            }
+        }
+        structureFile2 << "};\n\n" << std::endl;
+    }
+    for (int bin = 0; bin < allFitParams.size(); ++bin) {
+        structureFile2 << "unfQ2y" << (bin+1) << "C = {";
+        // Iterate through z and pT bins in the desired order
+        for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
+            for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
+                int index = z_bin * num_pT_bins[bin] + pT_bin;
+                const auto& params = allBinParams[bin][index];
+                const auto& fitParams = allFitParams[bin][index];
+                double meanPT = params.sumPT / params.count;
+                if (fitParams.B != 0) {
+                    double structureC = fitParams.C;
+                    double structureCerr = fitParams.errC;
+                    structureFile2 << "{" << meanPT << ", " << structureC << ", " << structureCerr << "}";
+                } else {
+                    structureFile2 << "{-1.00, 0.00, 1000.00}";
+                }
+                if (z_bin != 0) {
+                    structureFile2 << ",";
+                }
+            }
+        }
+        structureFile2 << "};\n\n" << std::endl;
+    }
+    for (int bin = 0; bin < allFitParams.size(); ++bin) {
+        structureFile2 << "chi2ndfQ2y" << (bin+1) << "C = {";
+        // Iterate through z and pT bins in the desired order
+        for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
+            for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
+                int index = z_bin * num_pT_bins[bin] + pT_bin;
+                const auto& params = allFitParams[bin][i];
+                double meanPT = params.sumPT / params.count;
+                if (fitParams.B != 0) {
+                    double structureC = fitParams.C;
+                    double structureCerr = fitParams.errC;
+                    structureFile2 << params.chi2ndf;
+                } else {
+                    structureFile2 << "-1.00";
+                }
+                if (z_bin != 0) {
+                    structureFile2 << ",";
+                }
+            }
+        }
+        structureFile2 << "};\n\n" << std::endl;
+    }
+
+
+
+
+
     structureFile.close();
 
     fData->Close();
