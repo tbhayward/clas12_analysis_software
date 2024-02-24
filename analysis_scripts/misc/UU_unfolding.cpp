@@ -454,7 +454,7 @@ int main() {
 
                     // // Set the y-axis scale minimum and maximum
                     hAcc->SetMinimum(0); // For example, set minimum to 0
-                    hAcc->SetMaximum(1); // Set maximum to 120% of the current maximum value for some headroom
+                    hAcc->SetMaximum(0.5); // Set maximum to 120% of the current maximum value for some headroom
                     
                     hAcc->SetMarkerStyle(20);
                     hAcc->Draw("PE"); // "PE" for drawing error bars with points
@@ -546,11 +546,16 @@ int main() {
                         }
                     }
 
-                    // Evaluate the function at x = 0 (mean) and x = Pi (to calculate amplitude)
-                    double mean = fitFunc->Eval(0);
-                    double atPi = fitFunc->Eval(TMath::Pi());
+                    // Find the maximum value of the function between 0 and 2*pi
+                    double maxVal = fitFunc->GetMaximum(0, 2 * TMath::Pi());
+                    double minVal = fitFunc->GetMinimum(0, 2 * TMath::Pi());
 
-                    double amplitude = TMath::Abs(atPi - mean);
+                    // Assuming the mean is still best estimated at x = 0
+                    double mean = fitFunc->Eval(0);
+
+                    // Now use the maximum value to determine the amplitude
+                    // Amplitude is now taken as the maximum deviation from the mean
+                    double amplitude = TMath::Max(TMath::Abs(maxVal - mean), TMath::Abs(mean - minVal));
 
                     // Setting y-axis limits to +/- 2 times the amplitude around the mean
                     double yMin = mean - 2 * amplitude;
@@ -607,35 +612,6 @@ int main() {
         delete unfoldedCanvas;
     }
 
-    std::ofstream capobiancoFile("output/capobianco_cross_check.txt");
-    for (size_t bin = 0; bin < allFitParams.size(); ++bin) {
-        int current_bin = 1;
-        for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
-            for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
-                // Calculate the linear index based on z_bin and pT_bin
-                int i = z_bin * num_pT_bins[bin] + pT_bin;
-                const auto& params = allFitParams[bin][i];
-                if (params.A != 0) { // Check if the fit was performed
-                    // Print Q2-y bin heading
-                    capobiancoFile << "Q2-y Bin " << bin + 1;
-                    capobiancoFile << ", z-PT bin: " << current_bin
-                       << ", A = " << params.A << " +/- " << params.errA
-                       << ", B = " << params.B << " +/- " << params.errB
-                       << ", C = " << params.C << " +/- " << params.errC
-                       << ", chi2/NDF = " << params.chi2ndf
-                       << ", counts = " << hMCReco[z_bin][pT_bin]->GetEntries() << std::endl;
-                } else {
-                    // If no fit was performed due to insufficient statistics
-                    capobiancoFile << "Q2-y Bin " << bin + 1;
-                    capobiancoFile << ", z-PT bin: " << current_bin << 
-                    ", No fit performed due to insufficient statistics." << std::endl;
-                }
-                current_bin++;
-            }
-        }
-    }
-    capobiancoFile.close(); // Close the file after writing
-
     // also print out a version for myself where the asymmetries are scaled by the structure functions
     struct StructureFunction {
         double meanPT;
@@ -675,6 +651,123 @@ int main() {
         }
     }
     structureFile.close();
+
+    struct BinData {
+        double pTMean;
+        double structureB;
+        double structureBerr;
+        double structureC;
+        double structureCerr;
+    };
+    std::ofstream file("output/structure_functions_mathematica.txt");
+
+    if (!file.is_open()) {
+        std::cerr << "Failed to open file for writing: " << filename << std::endl;
+        return;
+    }
+    // Iterate over Q2y bins
+    for (size_t q2yIndex = 0; q2yIndex < data.size(); ++q2yIndex) {
+        const auto& q2yBin = data[q2yIndex];
+
+        // Start the Mathematica list for B and C
+        file << "Q2y" << (q2yIndex + 1) << "B = {";
+        for (size_t zPTIndex = 0; zPTIndex < q2yBin.size(); ++zPTIndex) {
+            const auto& binData = q2yBin[zPTIndex];
+            // Assuming pTMean, structureB, and structureBerr are available
+            file << "{" << binData.pTMean << ", " << binData.structureB << ", " << binData.structureBerr << "}";
+            if (zPTIndex < q2yBin.size() - 1) file << ", ";
+        }
+        file << "};\n";
+
+        file << "Q2y" << (q2yIndex + 1) << "C = {";
+        for (size_t zPTIndex = 0; zPTIndex < q2yBin.size(); ++zPTIndex) {
+            const auto& binData = q2yBin[zPTIndex];
+            // Assuming pTMean, structureC, and structureCerr are available
+            file << "{" << binData.pTMean << ", " << binData.structureC << ", " << binData.structureCerr << "}";
+            if (zPTIndex < q2yBin.size() - 1) file << ", ";
+        }
+        file << "};\n";
+    }
+    file.close();
+    std::cout << "Finished writing Mathematica lists to " << filename << std::endl;
+
+    std::ofstream capobiancoFile("output/capobianco_cross_check.txt");
+    for (size_t bin = 0; bin < allFitParams.size(); ++bin) {
+        int current_bin = 1;
+        for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
+            for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
+                // Calculate the linear index based on z_bin and pT_bin
+                int i = z_bin * num_pT_bins[bin] + pT_bin;
+                const auto& params = allFitParams[bin][i];
+                double meanPT = params.sumPT / params.count;
+                if (params.A != 0) { // Check if the fit was performed
+                    // Print Q2-y bin heading
+                    capobiancoFile << "Q2-y Bin " << bin + 1;
+                    capobiancoFile << ", z-PT bin: " << current_bin
+                       << ", A = " << params.A << " +/- " << params.errA
+                       << ", B = " << params.B << " +/- " << params.errB
+                       << ", C = " << params.C << " +/- " << params.errC
+                       << ", chi2/NDF = " << params.chi2ndf
+                       << ", counts = " << params.count << std::endl;
+                } else {
+                    // If no fit was performed due to insufficient statistics
+                    capobiancoFile << "Q2-y Bin " << bin + 1;
+                    capobiancoFile << ", z-PT bin: " << current_bin << 
+                    ", No fit performed due to insufficient statistics." << std::endl;
+                }
+                current_bin++;
+            }
+        }
+    }
+    capobiancoFile.close(); // Close the file after writing
+
+
+
+
+    std::ofstream file("output/capobianco_cross_check_mathematica.txt");
+
+    if (!file.is_open()) {
+        std::cerr << "Failed to open file for writing." << std::endl;
+        return;
+    }
+
+    for (size_t bin = 0; bin < allFitParams.size(); ++bin) {
+        file << "Q2y" << (bin + 1) << "A = {";
+        file << "Q2y" << (bin + 1) << "B = {";
+        file << "Q2y" << (bin + 1) << "C = {";
+        
+        bool firstEntryA = true;
+        bool firstEntryB = true;
+        bool firstEntryC = true;
+        int current_bin = 1;
+
+        for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
+            for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
+                int index = z_bin * num_pT_bins[bin] + pT_bin;
+                const auto& params = allFitParams[bin][index];
+
+                if (!firstEntryA) file << ", ";
+                if (!firstEntryB) file << ", ";
+                if (!firstEntryC) file << ", ";
+
+                file << "{" << current_bin << ", " << params.A << ", " << params.errA << "}";
+                file << "{" << current_bin << ", " << params.B << ", " << params.errB << "}";
+                file << "{" << current_bin << ", " << params.C << ", " << params.errC << "}";
+
+                firstEntryA = false;
+                firstEntryB = false;
+                firstEntryC = false;
+                current_bin++;
+            }
+        }
+
+        file << "};\n";
+        file << "};\n";
+        file << "};\n";
+    }
+
+    file.close();
+    std::cout << "Finished writing Mathematica lists to output/structure_functions_mathematica.txt" << std::endl;
 
     fData->Close();
     fMCReco->Close();
