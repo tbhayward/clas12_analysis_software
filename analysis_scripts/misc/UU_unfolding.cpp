@@ -661,10 +661,6 @@ int main() {
     };
     std::ofstream file("output/structure_functions_mathematica.txt");
 
-    if (!file.is_open()) {
-        std::cerr << "Failed to open file for writing: " << filename << std::endl;
-        return;
-    }
     // Iterate over Q2y bins
     for (size_t q2yIndex = 0; q2yIndex < data.size(); ++q2yIndex) {
         const auto& q2yBin = data[q2yIndex];
@@ -722,14 +718,7 @@ int main() {
     capobiancoFile.close(); // Close the file after writing
 
 
-
-
     std::ofstream file("output/capobianco_cross_check_mathematica.txt");
-
-    if (!file.is_open()) {
-        std::cerr << "Failed to open file for writing." << std::endl;
-        return;
-    }
 
     for (size_t bin = 0; bin < allFitParams.size(); ++bin) {
         file << "Q2y" << (bin + 1) << "A = {";
