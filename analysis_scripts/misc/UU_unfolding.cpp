@@ -590,7 +590,7 @@ int main() {
                     fitFunc->SetLineColor(kRed);
                     fitFunc->Draw("same");
 
-                    TPaveText *pt = new TPaveText(0.125, 0.075, 0.70, 0.375, "brNDC");
+                    TPaveText *pt = new TPaveText(0.125, 0.075, 0.75, 0.375, "brNDC");
                     pt->SetBorderSize(1); // Set border size
                     pt->SetLineColor(kBlack); // Set border color
                     pt->SetFillColor(kWhite); // Set solid background color

@@ -509,16 +509,22 @@ void performMLMFits_single_hadron(const char* output_file, const char* kinematic
 
     // std::vector<double> chi2Result = chi2Fits[key][currentFits];
     // Define the parameters with initial values and limits
-    minuit.DefineParameter(0, "ALU_sinphi", 0.0, 0.01, -1, 1);
+    minuit.DefineParameter(0, "ALU_sinphi", 0.02, 0.001, -1, 1);
     minuit.DefineParameter(1, "AUL_sinphi", 0.0, 0.00, -1, 1);
     minuit.DefineParameter(2, "AUL_sin2phi", 0.0, 0.00, -1, 1);
     minuit.DefineParameter(3, "ALL", 0.0, 0.00, -1, 1);
     minuit.DefineParameter(4, "ALL_cosphi", 0.0, 0.00, -1, 1);
-    minuit.DefineParameter(5, "AUU_cosphi", 0.0, 0.01, -1, 1);
-    minuit.DefineParameter(6, "AUU_cos2phi", 0.0, 0.01, -1, 1);
+    minuit.DefineParameter(5, "AUU_cosphi", -0.15, 0.001, -1, 1);
+    minuit.DefineParameter(6, "AUU_cos2phi", 0.0, 0.001, -1, 1);
 
-    // Minimize the negative log-likelihood function
-    minuit.Migrad(); cout << endl;
+    // After defining parameters
+    minuit.Migrad(); cout << endl; // First attempt to find the minimum
+
+    // If you decide to use MINImize, replace Migrad with the following lines:
+    arglist[0] = 500; // Max calls
+    arglist[1] = 1.;  // Tolerance
+    minuit.mnexcm("MINImize", arglist, 2, ierflg);
+
 
     // Extract the fitted parameter values and errors
     double ALU_sinphi, ALU_sinphi_error; minuit.GetParameter(0, ALU_sinphi, ALU_sinphi_error);
