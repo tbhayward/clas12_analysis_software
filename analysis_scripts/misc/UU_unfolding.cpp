@@ -620,17 +620,16 @@ int main() {
             for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
                 // Calculate the linear index based on z_bin and pT_bin
                 int i = z_bin * num_pT_bins[bin] + pT_bin;
-                // const auto& params = allBinParams[bin][index];
-                const auto& fitParams = allFitParams[bin][index];
-                if (fitParams.A != 0) { // Check if the fit was performed
+                const auto& params = allFitParams[bin][i];
+                if (params.A != 0) { // Check if the fit was performed
                     // Print Q2-y bin heading
                     capobiancoFile << "Q2-y Bin " << bin + 1;
                     capobiancoFile << ", z-PT bin: " << current_bin
-                       << ", A = " << fitParams.A << " +/- " << fitParams.errA
-                       << ", B = " << fitParams.B << " +/- " << fitParams.errB
-                       << ", C = " << fitParams.C << " +/- " << fitParams.errC
-                       << ", chi2/NDF = " << fitParams.chi2ndf
-                       << ", counts = " << hData[bin][i]->GetEntries() << std::endl;
+                       << ", A = " << params.A << " +/- " << params.errA
+                       << ", B = " << params.B << " +/- " << params.errB
+                       << ", C = " << params.C << " +/- " << params.errC
+                       << ", chi2/NDF = " << params.chi2ndf
+                       << ", counts = " << hMCReco[bin][i]->GetEntries() << std::endl;
                 } else {
                     // If no fit was performed due to insufficient statistics
                     capobiancoFile << "Q2-y Bin " << bin + 1;
