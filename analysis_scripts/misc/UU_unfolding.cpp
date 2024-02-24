@@ -623,7 +623,7 @@ int main() {
                        << ", B = " << params.B << " +/- " << params.errB
                        << ", C = " << params.C << " +/- " << params.errC
                        << ", chi2/NDF = " << params.chi2ndf
-                       << ", counts = " << hMCReco[z_bin][pT_bin].GetEntries() << std::endl;
+                       << ", counts = " << hMCReco[z_bin][pT_bin]->GetEntries() << std::endl;
                 } else {
                     // If no fit was performed due to insufficient statistics
                     capobiancoFile << "Q2-y Bin " << bin + 1;
