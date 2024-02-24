@@ -303,8 +303,8 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 c->SetBottomMargin(0.15);
 
                 // Draw histograms on the canvas
-                dataHist->Draw("EP");
-                mcHist->Draw("EP SAME");
+                dataHist->Draw("");
+                mcHist->Draw("SAME");
 
                 // Create a legend for the histograms
                 TLegend* leg = new TLegend(0.5, 0.7, 0.9, 0.9);
