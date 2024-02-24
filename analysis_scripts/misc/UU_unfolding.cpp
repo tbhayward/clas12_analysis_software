@@ -454,7 +454,7 @@ int main() {
 
                     // // Set the y-axis scale minimum and maximum
                     hAcc->SetMinimum(0); // For example, set minimum to 0
-                    hAcc->SetMaximum(0.5); // Set maximum to 120% of the current maximum value for some headroom
+                    hAcc->SetMaximum(1); // Set maximum to 120% of the current maximum value for some headroom
                     
                     hAcc->SetMarkerStyle(20);
                     hAcc->Draw("PE"); // "PE" for drawing error bars with points
@@ -546,16 +546,11 @@ int main() {
                         }
                     }
 
-                    // Find the maximum value of the function between 0 and 2*pi
-                    double maxVal = fitFunc->GetMaximum(0, 2 * TMath::Pi());
-                    double minVal = fitFunc->GetMinimum(0, 2 * TMath::Pi());
-
-                    // Assuming the mean is still best estimated at x = 0
+                    // Evaluate the function at x = 0 (mean) and x = Pi (to calculate amplitude)
                     double mean = fitFunc->Eval(0);
+                    double atPi = fitFunc->Eval(TMath::Pi());
 
-                    // Now use the maximum value to determine the amplitude
-                    // Amplitude is now taken as the maximum deviation from the mean
-                    double amplitude = TMath::Max(TMath::Abs(maxVal - mean), TMath::Abs(mean - minVal));
+                    double amplitude = TMath::Abs(atPi - mean);
 
                     // Setting y-axis limits to +/- 2 times the amplitude around the mean
                     double yMin = mean - 2 * amplitude;
@@ -612,6 +607,35 @@ int main() {
         delete unfoldedCanvas;
     }
 
+    std::ofstream capobiancoFile("output/capobianco_cross_check.txt");
+    for (size_t bin = 0; bin < allFitParams.size(); ++bin) {
+        int current_bin = 1;
+        for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
+            for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
+                // Calculate the linear index based on z_bin and pT_bin
+                int i = z_bin * num_pT_bins[bin] + pT_bin;
+                const auto& params = allFitParams[bin][i];
+                if (params.A != 0) { // Check if the fit was performed
+                    // Print Q2-y bin heading
+                    capobiancoFile << "Q2-y Bin " << bin + 1;
+                    capobiancoFile << ", z-PT bin: " << current_bin
+                       << ", A = " << params.A << " +/- " << params.errA
+                       << ", B = " << params.B << " +/- " << params.errB
+                       << ", C = " << params.C << " +/- " << params.errC
+                       << ", chi2/NDF = " << params.chi2ndf
+                       << ", counts = " << hMCReco[z_bin][pT_bin].GetEntries() << std::endl;
+                } else {
+                    // If no fit was performed due to insufficient statistics
+                    capobiancoFile << "Q2-y Bin " << bin + 1;
+                    capobiancoFile << ", z-PT bin: " << current_bin << 
+                    ", No fit performed due to insufficient statistics." << std::endl;
+                }
+                current_bin++;
+            }
+        }
+    }
+    capobiancoFile.close(); // Close the file after writing
+
     // also print out a version for myself where the asymmetries are scaled by the structure functions
     struct StructureFunction {
         double meanPT;
@@ -651,36 +675,6 @@ int main() {
         }
     }
     structureFile.close();
-
-    std::ofstream capobiancoFile("output/capobianco_cross_check.txt");
-    for (size_t bin = 0; bin < allFitParams.size(); ++bin) {
-        int current_bin = 1;
-        for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
-            for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
-                // Calculate the linear index based on z_bin and pT_bin
-                int i = z_bin * num_pT_bins[bin] + pT_bin;
-                const auto& params = allFitParams[bin][i];
-                double meanPT = params.sumPT / params.count;
-                if (params.A != 0) { // Check if the fit was performed
-                    // Print Q2-y bin heading
-                    capobiancoFile << "Q2-y Bin " << bin + 1;
-                    capobiancoFile << ", z-PT bin: " << current_bin
-                       << ", A = " << params.A << " +/- " << params.errA
-                       << ", B = " << params.B << " +/- " << params.errB
-                       << ", C = " << params.C << " +/- " << params.errC
-                       << ", chi2/NDF = " << params.chi2ndf
-                       << ", counts = " << params.count << std::endl;
-                } else {
-                    // If no fit was performed due to insufficient statistics
-                    capobiancoFile << "Q2-y Bin " << bin + 1;
-                    capobiancoFile << ", z-PT bin: " << current_bin << 
-                    ", No fit performed due to insufficient statistics." << std::endl;
-                }
-                current_bin++;
-            }
-        }
-    }
-    capobiancoFile.close(); // Close the file after writing
 
     fData->Close();
     fMCReco->Close();
