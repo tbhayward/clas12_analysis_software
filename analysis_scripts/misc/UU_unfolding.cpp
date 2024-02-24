@@ -546,11 +546,17 @@ int main() {
                         }
                     }
 
-                    // Evaluate the function at x = 0 (mean) and x = Pi (to calculate amplitude)
-                    double mean = fitFunc->Eval(0);
-                    double atPi = fitFunc->Eval(TMath::Pi());
+                    // Find the maximum value of the function between 0 and 2*pi
+                    double maxVal = fitFunc->GetMaximum(0, 2 * TMath::Pi());
+                    double minVal = fitFunc->GetMinimum(0, 2 * TMath::Pi());
 
-                    double amplitude = TMath::Abs(atPi - mean);
+                    // Assuming the mean is still best estimated at x = 0
+                    double mean = fitFunc->Eval(0);
+
+                    // Now use the maximum value to determine the amplitude
+                    // Amplitude is now taken as the maximum deviation from the mean
+                    double amplitude = TMath::Max(TMath::Abs(maxVal - mean), TMath::Abs(mean - minVal));
+
 
                     // Setting y-axis limits to +/- 2 times the amplitude around the mean
                     double yMin = mean - 2 * amplitude;
@@ -623,7 +629,7 @@ int main() {
                        << ", B = " << params.B << " +/- " << params.errB
                        << ", C = " << params.C << " +/- " << params.errC
                        << ", chi2/NDF = " << params.chi2ndf
-                       << ", counts = " << hMCReco[z_bin][pT_bin].GetEntries() << std::endl;
+                       << ", counts = " << hMCReco[z_bin][pT_bin]->GetEntries() << std::endl;
                 } else {
                     // If no fit was performed due to insufficient statistics
                     capobiancoFile << "Q2-y Bin " << bin + 1;
