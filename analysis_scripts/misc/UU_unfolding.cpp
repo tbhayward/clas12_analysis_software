@@ -187,9 +187,9 @@ int main() {
     for (int bin = 0; bin < 17; ++bin) { 
         // std::cout << bin << " " << num_pT_bins[bin] << " " << num_z_bins[bin] << " " << num_pT_bins[bin] * num_z_bins[bin] << std::endl;
         for (int i = 0; i < num_pT_bins[bin] * num_z_bins[bin]; ++i) {
-            hData[bin].push_back(new TH1F(Form("hData_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 24, 0, 2*TMath::Pi()));
-            hMCReco[bin].push_back(new TH1F(Form("hMCReco_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 24, 0, 2*TMath::Pi()));
-            hMCGene[bin].push_back(new TH1F(Form("hMCGene_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 24, 0, 2*TMath::Pi()));
+            hData[bin].push_back(new TH1F(Form("hData_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 60, 0, 2*TMath::Pi()));
+            hMCReco[bin].push_back(new TH1F(Form("hMCReco_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 60, 0, 2*TMath::Pi()));
+            hMCGene[bin].push_back(new TH1F(Form("hMCGene_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 60, 0, 2*TMath::Pi()));
         }
     }
 
@@ -470,6 +470,8 @@ int main() {
                     hAcc->GetXaxis()->SetLabelSize(0.06);
                     hAcc->GetYaxis()->SetLabelSize(0.06);
 
+                    // Display z-pT bin information
+                    latex.DrawLatexNDC(0.10, 0.86, Form("Q2-y bin: %d, z-PT bin: %d", bin + 1, padNumber));
                 }
             }
         }
