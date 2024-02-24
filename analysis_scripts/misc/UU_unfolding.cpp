@@ -662,7 +662,7 @@ int main() {
     std::ofstream file("output/structure_functions_mathematica.txt");
 
     // Iterate over Q2y bins
-    for (size_t q2yIndex = 0; q2yIndex < data.size(); ++q2yIndex) {
+    for (size_t q2yIndex = 0; q2yIndex < allFitParams.size(); ++q2yIndex) {
         const auto& q2yBin = data[q2yIndex];
 
         // Start the Mathematica list for B and C
@@ -685,7 +685,7 @@ int main() {
         file << "};\n";
     }
     file.close();
-    std::cout << "Finished writing Mathematica lists to " << filename << std::endl;
+    std::cout << "Finished writing Mathematica lists to " << file << std::endl;
 
     std::ofstream capobiancoFile("output/capobianco_cross_check.txt");
     for (size_t bin = 0; bin < allFitParams.size(); ++bin) {
