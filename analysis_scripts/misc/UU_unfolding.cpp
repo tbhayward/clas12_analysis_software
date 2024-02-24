@@ -786,7 +786,7 @@ int main() {
         for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
             for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
                 int index = z_bin * num_pT_bins[bin] + pT_bin;
-                const auto& params = allFitParams[bin][i];
+                const auto& params = allFitParams[bin][index];
                 double meanPT = params.sumPT / params.count;
                 if (fitParams.B != 0) {
                     double structureC = fitParams.C;
