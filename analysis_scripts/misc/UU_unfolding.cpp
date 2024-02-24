@@ -652,40 +652,40 @@ int main() {
     }
     structureFile.close();
 
-    struct BinData {
-        double pTMean;
-        double structureB;
-        double structureBerr;
-        double structureC;
-        double structureCerr;
-    };
-    std::ofstream file("output/structure_functions_mathematica.txt");
+    // struct BinData {
+    //     double pTMean;
+    //     double structureB;
+    //     double structureBerr;
+    //     double structureC;
+    //     double structureCerr;
+    // };
+    // std::ofstream file("output/structure_functions_mathematica.txt");
 
-    // Iterate over Q2y bins
-    for (size_t q2yIndex = 0; q2yIndex < allFitParams.size(); ++q2yIndex) {
-        const auto& q2yBin = data[q2yIndex];
+    // // Iterate over Q2y bins
+    // for (size_t q2yIndex = 0; q2yIndex < allFitParams.size(); ++q2yIndex) {
+    //     const auto& q2yBin = data[q2yIndex];
 
-        // Start the Mathematica list for B and C
-        file << "Q2y" << (q2yIndex + 1) << "B = {";
-        for (size_t zPTIndex = 0; zPTIndex < q2yBin.size(); ++zPTIndex) {
-            const auto& binData = q2yBin[zPTIndex];
-            // Assuming pTMean, structureB, and structureBerr are available
-            file << "{" << binData.pTMean << ", " << binData.structureB << ", " << binData.structureBerr << "}";
-            if (zPTIndex < q2yBin.size() - 1) file << ", ";
-        }
-        file << "};\n";
+    //     // Start the Mathematica list for B and C
+    //     file << "Q2y" << (q2yIndex + 1) << "B = {";
+    //     for (size_t zPTIndex = 0; zPTIndex < q2yBin.size(); ++zPTIndex) {
+    //         const auto& binData = q2yBin[zPTIndex];
+    //         // Assuming pTMean, structureB, and structureBerr are available
+    //         file << "{" << binData.pTMean << ", " << binData.structureB << ", " << binData.structureBerr << "}";
+    //         if (zPTIndex < q2yBin.size() - 1) file << ", ";
+    //     }
+    //     file << "};\n";
 
-        file << "Q2y" << (q2yIndex + 1) << "C = {";
-        for (size_t zPTIndex = 0; zPTIndex < q2yBin.size(); ++zPTIndex) {
-            const auto& binData = q2yBin[zPTIndex];
-            // Assuming pTMean, structureC, and structureCerr are available
-            file << "{" << binData.pTMean << ", " << binData.structureC << ", " << binData.structureCerr << "}";
-            if (zPTIndex < q2yBin.size() - 1) file << ", ";
-        }
-        file << "};\n";
-    }
-    file.close();
-    std::cout << "Finished writing Mathematica lists to output/structure_functions_mathematica.txt." << std::endl;
+    //     file << "Q2y" << (q2yIndex + 1) << "C = {";
+    //     for (size_t zPTIndex = 0; zPTIndex < q2yBin.size(); ++zPTIndex) {
+    //         const auto& binData = q2yBin[zPTIndex];
+    //         // Assuming pTMean, structureC, and structureCerr are available
+    //         file << "{" << binData.pTMean << ", " << binData.structureC << ", " << binData.structureCerr << "}";
+    //         if (zPTIndex < q2yBin.size() - 1) file << ", ";
+    //     }
+    //     file << "};\n";
+    // }
+    // file.close();
+    // std::cout << "Finished writing Mathematica lists to output/structure_functions_mathematica.txt." << std::endl;
 
     std::ofstream capobiancoFile("output/capobianco_cross_check.txt");
     for (size_t bin = 0; bin < allFitParams.size(); ++bin) {
@@ -718,70 +718,70 @@ int main() {
     capobiancoFile.close(); // Close the file after writing
 
 
-    std::ofstream mathematicaFile("output/capobianco_cross_check_mathematica.txt");
+//     std::ofstream mathematicaFile("output/capobianco_cross_check_mathematica.txt");
 
-    for (size_t bin = 0; bin < allFitParams.size(); ++bin) {
-        mathematicaFile << "Q2y" << (bin + 1) << "A = {";
-        bool firstEntry = true; // Reset for each parameter
-        int current_bin = 1; // Reset for each Q2-y bin
+//     for (size_t bin = 0; bin < allFitParams.size(); ++bin) {
+//         mathematicaFile << "Q2y" << (bin + 1) << "A = {";
+//         bool firstEntry = true; // Reset for each parameter
+//         int current_bin = 1; // Reset for each Q2-y bin
 
-        for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
-            for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
-                int index = z_bin * num_pT_bins[bin] + pT_bin;
-                const auto& params = allFitParams[bin][index];
-                double meanPT = params.sumPT / params.count;
-                if (!firstEntry) {
-                    mathematicaFile << ", ";
-                }
-                // Assuming you correct how meanPT is calculated
-                mathematicaFile << "{" << meanPT << ", " << params.A << ", " << params.errA << "}";
-                firstEntry = false;
-                current_bin++;
-            }
-        }
-        mathematicaFile << "};\n";
+//         for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
+//             for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
+//                 int index = z_bin * num_pT_bins[bin] + pT_bin;
+//                 const auto& params = allFitParams[bin][index];
+//                 double meanPT = params.sumPT / params.count;
+//                 if (!firstEntry) {
+//                     mathematicaFile << ", ";
+//                 }
+//                 // Assuming you correct how meanPT is calculated
+//                 mathematicaFile << "{" << meanPT << ", " << params.A << ", " << params.errA << "}";
+//                 firstEntry = false;
+//                 current_bin++;
+//             }
+//         }
+//         mathematicaFile << "};\n";
 
-        mathematicaFile << "Q2y" << (bin + 1) << "B = {";
+//         mathematicaFile << "Q2y" << (bin + 1) << "B = {";
 
-        for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
-            for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
-                int index = z_bin * num_pT_bins[bin] + pT_bin;
-                const auto& params = allFitParams[bin][index];
-                double meanPT = params.sumPT / params.count;
-                if (!firstEntry) {
-                    mathematicaFile << ", ";
-                }
-                // Assuming you correct how meanPT is calculated
-                mathematicaFile << "{" << meanPT << ", " << params.B << ", " << params.errB << "}";
-                firstEntry = false;
-                current_bin++;
-            }
-        }
-        mathematicaFile << "};\n";
+//         for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
+//             for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
+//                 int index = z_bin * num_pT_bins[bin] + pT_bin;
+//                 const auto& params = allFitParams[bin][index];
+//                 double meanPT = params.sumPT / params.count;
+//                 if (!firstEntry) {
+//                     mathematicaFile << ", ";
+//                 }
+//                 // Assuming you correct how meanPT is calculated
+//                 mathematicaFile << "{" << meanPT << ", " << params.B << ", " << params.errB << "}";
+//                 firstEntry = false;
+//                 current_bin++;
+//             }
+//         }
+//         mathematicaFile << "};\n";
 
 
-        mathematicaFile << "Q2y" << (bin + 1) << "C = {";
+//         mathematicaFile << "Q2y" << (bin + 1) << "C = {";
 
-        for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
-            for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
-                int index = z_bin * num_pT_bins[bin] + pT_bin;
-                const auto& params = allFitParams[bin][index];
-                double meanPT = params.sumPT / params.count;
-                if (!firstEntry) {
-                    mathematicaFile << ", ";
-                }
-                // Assuming you correct how meanPT is calculated
-                mathematicaFile << "{" << meanPT << ", " << params.C << ", " << params.errC << "}";
-                firstEntry = false;
-                current_bin++;
-            }
-        }
-        mathematicaFile << "};\n";
+//         for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
+//             for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
+//                 int index = z_bin * num_pT_bins[bin] + pT_bin;
+//                 const auto& params = allFitParams[bin][index];
+//                 double meanPT = params.sumPT / params.count;
+//                 if (!firstEntry) {
+//                     mathematicaFile << ", ";
+//                 }
+//                 // Assuming you correct how meanPT is calculated
+//                 mathematicaFile << "{" << meanPT << ", " << params.C << ", " << params.errC << "}";
+//                 firstEntry = false;
+//                 current_bin++;
+//             }
+//         }
+//         mathematicaFile << "};\n";
 
-}
+// }
 
-    file.close();
-    std::cout << "Finished writing Mathematica lists to output/structure_functions_mathematica.txt" << std::endl;
+//     file.close();
+//     std::cout << "Finished writing Mathematica lists to output/structure_functions_mathematica.txt" << std::endl;
 
     fData->Close();
     fMCReco->Close();
