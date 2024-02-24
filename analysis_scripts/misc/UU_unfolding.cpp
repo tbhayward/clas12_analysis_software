@@ -620,7 +620,7 @@ int main() {
             for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
                 // Calculate the linear index based on z_bin and pT_bin
                 int i = z_bin * num_pT_bins[bin] + pT_bin;
-                const auto& params = allBinParams[bin][index];
+                // const auto& params = allBinParams[bin][index];
                 const auto& fitParams = allFitParams[bin][index];
                 if (params.A != 0) { // Check if the fit was performed
                     // Print Q2-y bin heading
