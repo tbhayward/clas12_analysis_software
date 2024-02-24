@@ -648,8 +648,8 @@ int main() {
         double value;
         double error;
     };
-    std::ofstream structureFile("output/structure_functions.txt");
 
+    std::ofstream structureFile("output/structure_functions.txt");
     // Loop over Q2-y bins
     for (int bin = 0; bin < allFitParams.size(); ++bin) {
         int current_bin = 1;
@@ -679,6 +679,37 @@ int main() {
                 }
             }
         }
+    }
+    structureFile.close();
+
+
+    std::ofstream structureFile2("output/structure_functions_mathematica.txt");
+    // Loop over Q2-y bins
+    for (int bin = 0; bin < allFitParams.size(); ++bin) {
+        int current_bin = 1;
+        structureFile2 << "sfQ2y" << (bin+1) << "= {";
+        // Iterate through z and pT bins in the desired order
+        for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
+            for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
+                int index = z_bin * num_pT_bins[bin] + pT_bin;
+                const auto& params = allBinParams[bin][index];
+                const auto& fitParams = allFitParams[bin][index];
+                double meanPT = params.sumPT / params.count;
+                if (fitParams.B != 0) {
+                    double structureB = fitParams.B * params.sumDepA / params.sumDepV;
+                    double structureBerr = fitParams.errB * params.sumDepA / params.sumDepV;
+                    structureFile2 << "{" << meanPT << ", " << structureB << ", " << structureBerr << "}"
+                    current_bin++;
+                } else {
+                    structureFile2 << "{-1.00, 0.00, 1000.00}";
+                    current_bin++;
+                }
+                if (z_bin != 1) {
+                    structureFile2 << ",";
+                }
+            }
+        }
+        structureFile2 << "};" << std::endl;
     }
     structureFile.close();
 
