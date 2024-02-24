@@ -698,7 +698,7 @@ int main() {
                 if (fitParams.B != 0) {
                     double structureB = fitParams.B * params.sumDepA / params.sumDepV;
                     double structureBerr = fitParams.errB * params.sumDepA / params.sumDepV;
-                    structureFile2 << "{" << meanPT << ", " << structureB << ", " << structureBerr << "}"
+                    structureFile2 << "{" << meanPT << ", " << structureB << ", " << structureBerr << "}";
                     current_bin++;
                 } else {
                     structureFile2 << "{-1.00, 0.00, 1000.00}";
