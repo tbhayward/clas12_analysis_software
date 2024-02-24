@@ -685,7 +685,7 @@ int main() {
         file << "};\n";
     }
     file.close();
-    std::cout << "Finished writing Mathematica lists to " << file << std::endl;
+    std::cout << "Finished writing Mathematica lists to output/structure_functions_mathematica.txt." << std::endl;
 
     std::ofstream capobiancoFile("output/capobianco_cross_check.txt");
     for (size_t bin = 0; bin < allFitParams.size(); ++bin) {
