@@ -451,6 +451,7 @@ int main() {
 
                 if (hAcceptanceInverse[bin][histIndex] != nullptr) {
                     TH1F* hAcc = hAcceptanceInverse[bin][histIndex];
+                    hAcc->SetStats(0);
 
                     // // Set the y-axis scale minimum and maximum
                     hAcc->SetMinimum(0); 
