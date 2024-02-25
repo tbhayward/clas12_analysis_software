@@ -303,8 +303,8 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 c->SetBottomMargin(0.15);
 
                 // Draw histograms on the canvas
-                dataHist->Draw("");
-                mcHist->Draw("SAME");
+                dataHist->Draw("HIST");
+                mcHist->Draw("HISTSAME");
 
                 // Create a legend for the histograms
                 TLegend* leg = new TLegend(0.5, 0.7, 0.9, 0.9);
@@ -355,10 +355,7 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                         if (dataValue > 0 && mcValue > 0) {
                             double dataError = sqrt(dataValue); // For normalized, this should be scaled appropriately if needed
                             double mcError = sqrt(mcValue); // Same as above
-                            // Calculate the relative errors and then the error on the ratio
-                            double relativeErrorData = dataError / dataValue;
-                            double relativeErrorMC = mcError / mcValue;
-                            ey[i-1] = y[i-1] * sqrt(relativeErrorData * relativeErrorData + relativeErrorMC * relativeErrorMC);
+                            ey[i-1] = y[i-1] * sqrt((1/dataError) + (1/mcError));
                         } else {
                             ey[i-1] = 0; // Handle division by zero or negative values if necessary
                         }

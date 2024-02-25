@@ -1446,10 +1446,10 @@ void performMLMFits_b2b_dihadron(const char* output_file, const char* kinematic_
     currentBin = i;
 
     // Define the parameters with initial values and limits
-    minuit.DefineParameter(0, "ALU_sinphi1", 0, 0.01, -1, 1);
-    minuit.DefineParameter(1, "ALU_sinphi2", 0, 0.01, -1, 1);
-    minuit.DefineParameter(2, "ALU_sinDeltaphi", 0, 0.01, -1, 1);
-    minuit.DefineParameter(3, "ALU_sin2Deltaphi", 0, 0.01, -1, 1);
+    minuit.DefineParameter(0, "ALU_sinphi1", 0, 0.001, -1, 1);
+    minuit.DefineParameter(1, "ALU_sinphi2", 0, 0.001, -1, 1);
+    minuit.DefineParameter(2, "ALU_sinDeltaphi", 0, 0.001, -1, 1);
+    minuit.DefineParameter(3, "ALU_sin2Deltaphi", 0, 0.001, -1, 1);
     minuit.DefineParameter(4, "AUL_sinphi1", 0, 0.0, -1, 1);
     minuit.DefineParameter(5, "AUL_sinphi2", 0, 0.0, -1, 1);
     minuit.DefineParameter(6, "AUL_sin2phi1", 0.0, 0.0, -1, 1);
@@ -1460,14 +1460,19 @@ void performMLMFits_b2b_dihadron(const char* output_file, const char* kinematic_
     minuit.DefineParameter(11, "ALL", 0, 0.0, -1, 1);
     minuit.DefineParameter(12, "ALL_cosphi1", 0, 0.0, -1, 1);
     minuit.DefineParameter(13, "ALL_cosphi2", 0.0, 0.0, -1, 1);
-    minuit.DefineParameter(14, "AUU_cosphi1", 0, 0.01, -1, 1);
-    minuit.DefineParameter(15, "AUU_cosphi2", 0, 0.01, -1, 1);
-    minuit.DefineParameter(16, "AUU_cos2phi1", 0, 0.01, -1, 1);
-    minuit.DefineParameter(17, "AUU_cos2phi2", 0, 0.01, -1, 1);
-    minuit.DefineParameter(18, "AUU_cosSumphi", 0, 0.01, -1, 1);
+    minuit.DefineParameter(14, "AUU_cosphi1", 0, 0.001, -1, 1);
+    minuit.DefineParameter(15, "AUU_cosphi2", 0, 0.001, -1, 1);
+    minuit.DefineParameter(16, "AUU_cos2phi1", 0, 0.001, -1, 1);
+    minuit.DefineParameter(17, "AUU_cos2phi2", 0, 0.001, -1, 1);
+    minuit.DefineParameter(18, "AUU_cosSumphi", 0, 0.001, -1, 1);
 
-    // Minimize the negative log-likelihood function
-    minuit.Migrad(); cout << endl;
+    // After defining parameters
+    minuit.Migrad(); cout << endl; // First attempt to find the minimum
+
+    // If you decide to use MINImize, replace Migrad with the following lines:
+    arglist[0] = 500; // Max calls
+    arglist[1] = 1.;  // Tolerance
+    minuit.mnexcm("MINImize", arglist, 2, ierflg);
 
     // Extract the fitted parameter values and errors
     double ALU_sinphi1, ALU_sinphi1_error; minuit.GetParameter(0, ALU_sinphi1, ALU_sinphi1_error);
