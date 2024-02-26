@@ -528,7 +528,7 @@ int main() {
 
                     TF1* fitFunc = new TF1("fitFunc", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", 0, 2*TMath::Pi());
                     // Threshold for acceptance
-                    double acceptanceThreshold = 1/0.25;
+                    double acceptanceThreshold = 1/0.15; // lower number is the percentage threshold
                     // Clone the original histogram to preserve the data
                     TH1F* hUnfoldedFiltered = (TH1F*)hUnfolded->Clone("hUnfoldedFiltered");
                     // Loop over bins and only keep those with acceptance above the threshold
@@ -537,7 +537,7 @@ int main() {
                         if (acceptance > acceptanceThreshold) {
                             // For bins below the threshold, set content and error in the filtered histogram to indicate exclusion
                             hUnfoldedFiltered->SetBinContent(binX, 0);
-                            hUnfoldedFiltered->SetBinError(binX, sqrt(std::numeric_limits<double>::max())); // Set a very high error
+                            hUnfoldedFiltered->SetBinError(binX, 100000.0); // Set a very high error
                         }
                     }
                     // Now fit hUnfoldedFiltered
