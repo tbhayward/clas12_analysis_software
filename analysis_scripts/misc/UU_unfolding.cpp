@@ -396,7 +396,7 @@ int main() {
                         hAcceptance[bin][i]->SetBinError(binX, error);
                     } else {
                         // Set error to 0 if either N1 or N2 is 0 to avoid division by zero
-                        hAcceptance[bin][i]->SetBinError(binX, 0);
+                        hAcceptance[bin][i]->SetBinError(binX, 1e10);
                     }
                 }
             }
@@ -425,7 +425,7 @@ int main() {
                         hAcceptanceInverse[bin][i]->SetBinError(binX, error);
                     } else {
                         // Set error to 0 if either N1 or N2 is 0 to avoid division by zero
-                        hAcceptanceInverse[bin][i]->SetBinError(binX, 0);
+                        hAcceptanceInverse[bin][i]->SetBinError(binX, 1e10);
                     }
                 }
             }
