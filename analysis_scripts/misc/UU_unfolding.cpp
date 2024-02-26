@@ -396,7 +396,7 @@ int main() {
                         hAcceptance[bin][i]->SetBinError(binX, error);
                     } else {
                         // Set error to 0 if either N1 or N2 is 0 to avoid division by zero
-                        hAcceptance[bin][i]->SetBinError(binX, 1e10);
+                        hAcceptance[bin][i]->SetBinError(binX, 0);
                     }
                 }
             }
@@ -425,7 +425,7 @@ int main() {
                         hAcceptanceInverse[bin][i]->SetBinError(binX, error);
                     } else {
                         // Set error to 0 if either N1 or N2 is 0 to avoid division by zero
-                        hAcceptanceInverse[bin][i]->SetBinError(binX, 1e10);
+                        hAcceptanceInverse[bin][i]->SetBinError(binX, 0);
                     }
                 }
             }
@@ -522,12 +522,14 @@ int main() {
                             double f = a * b; 
                             double sigma_f = f * sqrt(pow(sigma_a / a, 2) + pow(sigma_b / b, 2));
                             hUnfolded->SetBinError(binX, sigma_f);
+                        } else if (b == 0) {
+                            hUnfolded->SetBinError(binX, 1e10);
                         }
                     }
 
                     TF1* fitFunc = new TF1("fitFunc", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", 0, 2*TMath::Pi());
                     // Threshold for acceptance
-                    double acceptanceThreshold = 1/0.15; // lower number is the percentage threshold
+                    double acceptanceThreshold = 1/0.00000000000001; // lower number is the percentage threshold
                     // Clone the original histogram to preserve the data
                     TH1F* hUnfoldedFiltered = (TH1F*)hUnfolded->Clone("hUnfoldedFiltered");
                     // Loop over bins and only keep those with acceptance above the threshold
