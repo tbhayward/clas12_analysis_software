@@ -528,7 +528,7 @@ int main() {
 
                     TF1* fitFunc = new TF1("fitFunc", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", 0, 2*TMath::Pi());
                     // Threshold for acceptance
-                    double acceptanceThreshold = 0.15;
+                    double acceptanceThreshold = 0.25;
                     // Clone the original histogram to preserve the data
                     TH1F* hUnfoldedFiltered = (TH1F*)hUnfolded->Clone("hUnfoldedFiltered");
                     // Loop over bins and only keep those with acceptance above the threshold
@@ -556,10 +556,16 @@ int main() {
                     allFitParams[bin][histIndex] = params;
 
                     TGraphErrors* gUnfolded = new TGraphErrors();
-                    for (int binX = 1; binX <= hUnfolded->GetNbinsX(); ++binX) {
-                        if (hUnfolded->GetBinContent(binX) != 0) {
-                            gUnfolded->SetPoint(binX - 1, hUnfolded->GetBinCenter(binX), hUnfolded->GetBinContent(binX));
-                            gUnfolded->SetPointError(binX - 1, 0., hUnfolded->GetBinError(binX));
+                    // for (int binX = 1; binX <= hUnfolded->GetNbinsX(); ++binX) {
+                    //     if (hUnfolded->GetBinContent(binX) != 0) {
+                    //         gUnfolded->SetPoint(binX - 1, hUnfolded->GetBinCenter(binX), hUnfolded->GetBinContent(binX));
+                    //         gUnfolded->SetPointError(binX - 1, 0., hUnfolded->GetBinError(binX));
+                    //     }
+                    // }
+                    for (int binX = 1; binX <= hUnfoldedFiltered->GetNbinsX(); ++binX) {
+                        if (hUnfoldedFiltered->GetBinContent(binX) != 0) {
+                            gUnfolded->SetPoint(binX - 1, hUnfoldedFiltered->GetBinCenter(binX), hUnfoldedFiltered->GetBinContent(binX));
+                            gUnfolded->SetPointError(binX - 1, 0., hUnfoldedFiltered->GetBinError(binX));
                         }
                     }
 
