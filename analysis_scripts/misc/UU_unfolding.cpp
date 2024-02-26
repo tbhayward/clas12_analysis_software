@@ -187,9 +187,9 @@ int main() {
     for (int bin = 0; bin < 17; ++bin) { 
         // std::cout << bin << " " << num_pT_bins[bin] << " " << num_z_bins[bin] << " " << num_pT_bins[bin] * num_z_bins[bin] << std::endl;
         for (int i = 0; i < num_pT_bins[bin] * num_z_bins[bin]; ++i) {
-            hData[bin].push_back(new TH1F(Form("hData_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 48, 0, 2*TMath::Pi()));
-            hMCReco[bin].push_back(new TH1F(Form("hMCReco_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 48, 0, 2*TMath::Pi()));
-            hMCGene[bin].push_back(new TH1F(Form("hMCGene_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 48, 0, 2*TMath::Pi()));
+            hData[bin].push_back(new TH1F(Form("hData_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 60, 0, 2*TMath::Pi()));
+            hMCReco[bin].push_back(new TH1F(Form("hMCReco_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 60, 0, 2*TMath::Pi()));
+            hMCGene[bin].push_back(new TH1F(Form("hMCGene_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 60, 0, 2*TMath::Pi()));
         }
     }
 
@@ -519,7 +519,7 @@ int main() {
                         double sigma_b = hAcceptance[bin][histIndex]->GetBinError(binX);
 
                         // Calculate the uncertainty using error propagation 
-                        if (a > 0 && b > 0) { // Check to avoid division by zero
+                        if (a > 0 && b > 0.15) { // Check to avoid division by zero
                             double f = a * b; 
                             double sigma_f = f * sqrt(pow(sigma_a / a, 2) + pow(sigma_b / b, 2));
                             hUnfolded->SetBinError(binX, sigma_f);
@@ -560,13 +560,15 @@ int main() {
                     // Amplitude is now taken as the maximum deviation from the mean
                     double amplitude = TMath::Max(TMath::Abs(maxVal - mean), TMath::Abs(mean - minVal));
 
-
                     // Setting y-axis limits to +/- 2 times the amplitude around the mean
                     double yMin = mean - 2 * amplitude;
                     double yMax = mean + 2 * amplitude;
 
                     gUnfolded->SetMinimum(yMin);
                     gUnfolded->SetMaximum(yMax);
+
+                    // Setting x-axis range to 0 to 2pi
+                    gUnfolded->GetXaxis()->SetLimits(0, TMath::TwoPi());
 
                     gUnfolded->GetXaxis()->SetTitle("#phi");
                     gUnfolded->GetYaxis()->SetTitle("Counts");
