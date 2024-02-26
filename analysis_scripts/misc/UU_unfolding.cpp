@@ -555,7 +555,7 @@ int main() {
                     };
                     allFitParams[bin][histIndex] = params;
 
-                    // TGraphErrors* gUnfolded = new TGraphErrors();
+                    TGraphErrors* gUnfolded = new TGraphErrors();
                     // for (int binX = 1; binX <= hUnfolded->GetNbinsX(); ++binX) {
                     //     if (hUnfolded->GetBinContent(binX) != 0) {
                     //         gUnfolded->SetPoint(binX - 1, hUnfolded->GetBinCenter(binX), hUnfolded->GetBinContent(binX));
