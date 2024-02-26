@@ -528,7 +528,7 @@ int main() {
 
                     TF1* fitFunc = new TF1("fitFunc", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", 0, 2*TMath::Pi());
                     // Threshold for acceptance
-                    double acceptanceThreshold = 1/0.15; // lower number is the percentage threshold
+                    double acceptanceThreshold = 1/0.05; // lower number is the percentage threshold
                     // Clone the original histogram to preserve the data
                     TH1F* hUnfoldedFiltered = (TH1F*)hUnfolded->Clone("hUnfoldedFiltered");
                     // Loop over bins and only keep those with acceptance above the threshold
@@ -536,8 +536,8 @@ int main() {
                         double acceptance = hAcceptance[bin][histIndex]->GetBinContent(binX);
                         if (acceptance > acceptanceThreshold) {
                             // For bins below the threshold, set content and error in the filtered histogram to indicate exclusion
-                            hUnfoldedFiltered->SetBinContent(binX, 0);
-                            hUnfoldedFiltered->SetBinError(binX, 100000.0); // Set a very high error
+                            hUnfoldedFiltered->SetBinContent(7, 0);
+                            hUnfoldedFiltered->SetBinError(binX, 1e9); // Set a very high error
                         }
                     }
                     // Now fit hUnfoldedFiltered
@@ -556,12 +556,12 @@ int main() {
                     allFitParams[bin][histIndex] = params;
 
                     TGraphErrors* gUnfolded = new TGraphErrors();
-                    // for (int binX = 1; binX <= hUnfolded->GetNbinsX(); ++binX) {
-                    //     if (hUnfolded->GetBinContent(binX) != 0) {
-                    //         gUnfolded->SetPoint(binX - 1, hUnfolded->GetBinCenter(binX), hUnfolded->GetBinContent(binX));
-                    //         gUnfolded->SetPointError(binX - 1, 0., hUnfolded->GetBinError(binX));
-                    //     }
-                    // }
+                    for (int binX = 1; binX <= hUnfolded->GetNbinsX(); ++binX) {
+                        if (hUnfolded->GetBinContent(binX) != 0) {
+                            gUnfolded->SetPoint(binX - 1, hUnfolded->GetBinCenter(binX), hUnfolded->GetBinContent(binX));
+                            gUnfolded->SetPointError(binX - 1, 0., hUnfolded->GetBinError(binX));
+                        }
+                    }
                     for (int binX = 1; binX <= hUnfoldedFiltered->GetNbinsX(); ++binX) {
                         if (hUnfoldedFiltered->GetBinContent(binX) != 0) {
                             gUnfolded->SetPoint(binX - 1, hUnfoldedFiltered->GetBinCenter(binX), hUnfoldedFiltered->GetBinContent(binX));
