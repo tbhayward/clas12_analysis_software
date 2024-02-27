@@ -838,7 +838,7 @@ int main() {
         // Use a single loop since your index calculation already accounts for both z and pT bins
         for (int index = 0; index < hAcceptanceInverse[bin].size(); ++index) {
             structureFile2 << "{";
-            for (int binX = 0; binX < hAcceptanceInverse[bin][index]->GetNbinsX(); ++i) {
+            for (int binX = 0; binX < hAcceptanceInverse[bin][index]->GetNbinsX(); ++binX) {
                 if (hAcceptanceInverse[bin][index] != nullptr) { // Check if the histogram exists
                     structureFile2 << hAcceptanceInverse[bin][index]->GetBinContent(binX);
                 } else {
