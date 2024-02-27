@@ -844,7 +844,7 @@ int main() {
                 } else {
                     structureFile2 << "0"; // Use a placeholder (e.g., -1) to indicate missing data
                 }
-                if (binX < hAcceptanceInverse[bin][i]->GetNbinsX()) {
+                if (binX < hAcceptanceInverse[bin][index]->GetNbinsX()) {
                     structureFile2 << ",";
                 }
             }
