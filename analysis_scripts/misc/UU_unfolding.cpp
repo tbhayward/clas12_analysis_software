@@ -529,7 +529,7 @@ int main() {
 
                     TF1* fitFunc = new TF1("fitFunc", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", 0, 2*TMath::Pi());
                     // Threshold for acceptance
-                    double acceptanceThreshold = 1/0.20; // lower number is the percentage threshold
+                    double acceptanceThreshold = 1/0.000000001; // lower number is the percentage threshold
                     // Clone the original histogram to preserve the data
                     TH1F* hUnfoldedFiltered = (TH1F*)hUnfolded->Clone("hUnfoldedFiltered");
                     // Loop over bins and only keep those with acceptance above the threshold
@@ -813,7 +813,7 @@ int main() {
         structureFile2 << "};\n\n" << std::endl;
     }
     for (int bin = 0; bin < allFitParams.size(); ++bin) {
-        structureFile2 << "chi2ndfQ2y" << (bin+1) << "C = {";
+        structureFile2 << "chi2ndfQ2y" << (bin+1) << " = {";
         // Iterate through z and pT bins in the desired order
         for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
             for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
@@ -833,6 +833,22 @@ int main() {
         }
         structureFile2 << "};\n\n" << std::endl;
     }
+    for (int bin = 0; bin < allFitParams.size(); ++bin) {
+        structureFile2 << "acceptanceQ2y" << (bin+1) << " = {";
+        // Iterate through z and pT bins in the desired order
+        for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
+            for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
+                int index = z_bin * num_pT_bins[bin] + pT_bin;
+                structureFile2 << hAcceptanceInverse[bin][index]->GetEntries();
+                if (!(z_bin == 0 && pT_bin == num_pT_bins[bin]-1)) {
+                    structureFile2 << ",";
+                }
+            }
+        }
+        structureFile2 << "};\n\n" << std::endl;
+    }
+
+
 
     structureFile.close();
     structureFile2.close();
