@@ -839,8 +839,8 @@ int main() {
         // Iterate through z and pT bins in the desired order
         for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
             for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
-                std::cout << z_bin << " " << pT_bin << " " << index << std::endl;
                 int index = z_bin * num_pT_bins[bin] + pT_bin;
+                std::cout << z_bin << " " << pT_bin << " " << index << std::endl;
                 structureFile2 << hAcceptanceInverse[bin][index]->GetEntries();
                 if (!(z_bin == 0 && pT_bin == num_pT_bins[bin]-1)) {
                     structureFile2 << ",";
