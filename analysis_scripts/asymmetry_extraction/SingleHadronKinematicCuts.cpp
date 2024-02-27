@@ -65,6 +65,26 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
             *y>0.65 && *y<0.75 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.40 && *z<0.73;
         }
 
+        else if (property == "UURCQ2y2z1") {
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
+            *y>0.55 && *y<0.65 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.18 && *z<0.23;
+        } else if (property == "UURCQ2y2z2") {
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
+            *y>0.55 && *y<0.65 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.23 && *z<0.26;
+        } else if (property == "UURCQ2y2z3") {
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
+            *y>0.55 && *y<0.65 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.26 && *z<0.31;
+        } else if (property == "UURCQ2y2z4") {
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
+            *y>0.55 && *y<0.65 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.31 && *z<0.38;
+        } else if (property == "UURCQ2y2z5") {
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
+            *y>0.55 && *y<0.65 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.38 && *z<0.50;
+        } else if (property == "UURCQ2y2z6") {
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
+            *y>0.55 && *y<0.65 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.50 && *z<0.74;
+        }
+
         else if (property == "UURCQ2y4z1") {
           goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
             *y>0.30 && *y<0.45 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.26 && *z<0.32;
@@ -100,6 +120,23 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         } else if (property == "UURCQ2y16z5") {
           goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
             *y>0.65 && *y<0.75 && *Q2 > 5.384 && *Q2 <= 9.896 && *z>0.41 && *z<0.71;
+        }
+
+        else if (property == "UURCQ2y17z1") {
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
+            *y>0.55 && *y<0.65 && *Q2 > 5.384 && *Q2 <= 7.922 && *z>0.18 && *z<0.23;
+        } else if (property == "UURCQ2y17z2") {
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
+            *y>0.55 && *y<0.65 && *Q2 > 5.384 && *Q2 <= 7.922 && *z>0.23 && *z<0.30;
+        } else if (property == "UURCQ2y17z3") {
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
+            *y>0.55 && *y<0.65 && *Q2 > 5.384 && *Q2 <= 7.922 && *z>0.30 && *z<0.38;
+        } else if (property == "UURCQ2y17z4") {
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
+            *y>0.55 && *y<0.65 && *Q2 > 5.384 && *Q2 <= 7.922 && *z>0.38 && *z<0.48;
+        } else if (property == "UURCQ2y17z5") {
+          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
+            *y>0.55 && *y<0.65 && *Q2 > 5.384 && *Q2 <= 7.922 && *z>0.48 && *z<0.72;
         }
 
         //
