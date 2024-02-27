@@ -835,27 +835,28 @@ int main() {
     }
     for (int bin = 0; bin < hAcceptanceInverse.size(); ++bin) { 
         structureFile2 << "acceptanceQ2y" << (bin+1) << " = {";
-        // Use a single loop since your index calculation already accounts for both z and pT bins
         for (int index = 0; index < hAcceptanceInverse[bin].size(); ++index) {
             structureFile2 << "{";
-            for (int binX = 0; binX < hAcceptanceInverse[bin][index]->GetNbinsX(); ++binX) {
-                if (hAcceptanceInverse[bin][index] != nullptr) { // Check if the histogram exists
+            if (hAcceptanceInverse[bin][index] != nullptr) { // Move check outside the loop
+                // Loop through bins only if histogram exists
+                for (int binX = 1; binX <= hAcceptanceInverse[bin][index]->GetNbinsX(); ++binX) { // binX should start from 1 for ROOT histograms
                     structureFile2 << hAcceptanceInverse[bin][index]->GetBinContent(binX);
-                } else {
-                    structureFile2 << "0"; // Use a placeholder (e.g., -1) to indicate missing data
+                    if (binX < hAcceptanceInverse[bin][index]->GetNbinsX()) {
+                        structureFile2 << ",";
+                    }
                 }
-                if (binX < hAcceptanceInverse[bin][index]->GetNbinsX()) {
-                    structureFile2 << ",";
-                }
+            } else {
+                // If histogram does not exist, output placeholder for entire histogram
+                structureFile2 << "0"; // Adjusted to output just one "0" as a placeholder
             }
             structureFile2 << "}";
-            // Add comma only if it's not the last element in the list
             if (index < hAcceptanceInverse[bin].size() - 1) {
                 structureFile2 << ",";
             }
         }
         structureFile2 << "};\n\n"; 
     }
+
 
 
 
