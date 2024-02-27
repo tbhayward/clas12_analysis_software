@@ -834,20 +834,21 @@ int main() {
         structureFile2 << "};\n\n" << std::endl;
     }
     std::cout << "starting acceptance writing" << std::endl;
-    for (int bin = 0; bin < allFitParams.size(); ++bin) {
+    for (int bin = 0; bin < hAcceptanceInverse.size(); ++bin) { 
         structureFile2 << "acceptanceQ2y" << (bin+1) << " = {";
-        // Iterate through z and pT bins in the desired order
-        for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
-            for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
-                int index = z_bin * num_pT_bins[bin] + pT_bin;
-                std::cout << z_bin << " " << pT_bin << " " << index << std::endl;
+        // Use a single loop since your index calculation already accounts for both z and pT bins
+        for (int index = 0; index < hAcceptanceInverse[bin].size(); ++index) {
+            if (hAcceptanceInverse[bin][index] != nullptr) { // Check if the histogram exists
                 structureFile2 << hAcceptanceInverse[bin][index]->GetEntries();
-                if (!(z_bin == 0 && pT_bin == num_pT_bins[bin]-1)) {
-                    structureFile2 << ",";
-                }
+            } else {
+                structureFile2 << "0"; // Use a placeholder (e.g., -1) to indicate missing data
+            }
+            // Add comma only if it's not the last element in the list
+            if (index < hAcceptanceInverse[bin].size() - 1) {
+                structureFile2 << ",";
             }
         }
-        structureFile2 << "};\n\n" << std::endl;
+        structureFile2 << "};\n\n"; 
     }
 
 
