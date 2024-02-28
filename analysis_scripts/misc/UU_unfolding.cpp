@@ -10,6 +10,9 @@
 #include <vector>
 #include <map>
 #include <TPaveText.h>
+#include <TMath.h>
+#include <TFitResult.h>
+#include <TMatrixDSym.h>
 
 // Helper function to join vector of strings with a delimiter
 std::string join(const std::vector<std::string>& vec, const std::string& delim) {
@@ -529,24 +532,72 @@ int main() {
                         }
                     }
 
+                    // TF1* fitFunc = new TF1("fitFunc", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", 0, 2*TMath::Pi());
+                    // // Threshold for acceptance
+                    // double acceptanceThreshold = 1/0.000000001; // lower number is the percentage threshold
+                    // // Clone the original histogram to preserve the data
+                    // TH1F* hUnfoldedFiltered = (TH1F*)hUnfolded->Clone("hUnfoldedFiltered");
+                    // // Loop over bins and only keep those with acceptance above the threshold
+                    // for (int binX = 1; binX <= hUnfolded->GetNbinsX(); ++binX) {
+                    //     double acceptance = hAcceptance[bin][histIndex]->GetBinContent(binX);
+                    //     if (acceptance > acceptanceThreshold) {
+                    //         // For bins below the threshold, set content and error in the filtered histogram to indicate exclusion
+                    //         hUnfoldedFiltered->SetBinContent(binX, 0);
+                    //         hUnfoldedFiltered->SetBinError(binX, 1e10); // Set a very high error
+                    //     }
+                    // }
+                    // // Now fit hUnfoldedFiltered
+                    // hUnfoldedFiltered->Fit(fitFunc, "Q");
+
+                    // // Extracting fit parameters and their errors
+                    // FitParams params = {
+                    //     fitFunc->GetParameter(0),
+                    //     fitFunc->GetParameter(1),
+                    //     fitFunc->GetParameter(2),
+                    //     fitFunc->GetParError(0),
+                    //     fitFunc->GetParError(1),
+                    //     fitFunc->GetParError(2),
+                    //     fitFunc->GetChisquare() / fitFunc->GetNDF()
+                    // };
+                    // allFitParams[bin][histIndex] = params;
+
+                    // Define the fit function
                     TF1* fitFunc = new TF1("fitFunc", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", 0, 2*TMath::Pi());
+
+                    // Set initial parameter guesses and their step sizes
+                    fitFunc->SetParameters(0, -0.15, 0); // Initial guesses
+                    fitFunc->SetParNames("A0", "A1", "A2");
+                    fitFunc->SetParLimits(0, 0, 1e9);
+                    fitFunc->SetParLimits(1, -1, 1);
+                    fitFunc->SetParLimits(2, -1, 1);
+                    for (int i = 0; i < 3; ++i) {
+                        fitFunc->SetParameter(i, 0); // Initial guess for each parameter
+                        fitFunc->SetParStep(i, 0.001); // Step size for each parameter
+                    }
+
                     // Threshold for acceptance
-                    double acceptanceThreshold = 1/0.000000001; // lower number is the percentage threshold
-                    // Clone the original histogram to preserve the data
+                    double acceptanceThreshold = 1/0.000000001;
+                    // Clone the original histogram
                     TH1F* hUnfoldedFiltered = (TH1F*)hUnfolded->Clone("hUnfoldedFiltered");
-                    // Loop over bins and only keep those with acceptance above the threshold
+
+                    // Filter bins based on acceptance
                     for (int binX = 1; binX <= hUnfolded->GetNbinsX(); ++binX) {
                         double acceptance = hAcceptance[bin][histIndex]->GetBinContent(binX);
-                        if (acceptance > acceptanceThreshold) {
-                            // For bins below the threshold, set content and error in the filtered histogram to indicate exclusion
+                        if (acceptance <= acceptanceThreshold) {
                             hUnfoldedFiltered->SetBinContent(binX, 0);
-                            hUnfoldedFiltered->SetBinError(binX, 1e10); // Set a very high error
+                            hUnfoldedFiltered->SetBinError(binX, 1e10);
                         }
                     }
-                    // Now fit hUnfoldedFiltered
-                    hUnfoldedFiltered->Fit(fitFunc, "Q");
 
-                    // Extracting fit parameters and their errors
+                    // Fit using Migrad
+                    TFitResultPtr fitResult = hUnfoldedFiltered->Fit(fitFunc, "SQ");
+
+                    // Optionally, call Minimize, Minos, and Hesse for further optimization and error estimation
+                    fitResult->Minimize();
+                    fitResult->Hesse();
+                    fitResult->Minos();
+
+                    // Extract fit parameters, errors, and chi-square/NDF
                     FitParams params = {
                         fitFunc->GetParameter(0),
                         fitFunc->GetParameter(1),
