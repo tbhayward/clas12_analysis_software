@@ -572,7 +572,7 @@ int main() {
                     fitFunc->SetParLimits(2, -1, 1);
                     for (int i = 0; i < 3; ++i) {
                         fitFunc->SetParameter(i, 0); // Initial guess for each parameter
-                        fitFunc->SetParStep(i, 0.001); // Step size for each parameter
+                        fitFunc->SetParSteps(i, 0.001); // Step size for each parameter
                     }
 
                     // Threshold for acceptance
@@ -589,13 +589,15 @@ int main() {
                         }
                     }
 
-                    // Fit using Migrad
-                    TFitResultPtr fitResult = hUnfoldedFiltered->Fit(fitFunc, "SQ");
+                    // Now fit hUnfoldedFiltered using the Fit method with options for MIGRAD, Minimize, Minos, and Hesse
+                    TFitResultPtr fitResult = hUnfoldedFiltered->Fit(fitFunc, "S", "", 0, 2*TMath::Pi());
 
-                    // Optionally, call Minimize, Minos, and Hesse for further optimization and error estimation
-                    fitResult->Minimize();
-                    fitResult->Hesse();
-                    fitResult->Minos();
+                    // Explicitly call Minimize (MIGRAD is part of the "S" option in Fit)
+                    ROOT::Math::MinimizerOptions::SetDefaultMinimizer("Minuit2", "Migrad");
+
+                    // Optionally, after fitting, you can call Minos and Hesse for error analysis
+                    fitResult->GetMinimizer()->Minos();
+                    fitResult->GetMinimizer()->Hesse();
 
                     // Extract fit parameters, errors, and chi-square/NDF
                     FitParams params = {
