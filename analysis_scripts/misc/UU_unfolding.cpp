@@ -193,9 +193,8 @@ int main() {
         }
     }
 
-    std::cout << "Looping over data." << std::endl;
-    // Fill histograms for data
     Long64_t nDataEntries = tData->GetEntries();
+    std::cout << "Looping over data. " << nDataEntries << " entries." << std::endl;
     for (Long64_t i = 0; i < nDataEntries; ++i) {
         tData->GetEntry(i);
 
@@ -236,9 +235,8 @@ int main() {
         }
     }
 
-    std::cout << "Looping over reconstructed MC." << std::endl;
-    // Fill histograms for MC
     Long64_t nMCEntries = tMCReco->GetEntries();
+    std::cout << "Looping over reconstructed MC. " << nMCEntries << " entries." << std::endl;
     for (Long64_t i = 0; i < nMCEntries; ++i) {
         tMCReco->GetEntry(i);
 
@@ -270,9 +268,10 @@ int main() {
     }
 
 
-    std::cout << "Looping over generated MC." << std::endl;
+    
     // Fill histograms for gen MC
     Long64_t nGenEntries = tMCGene->GetEntries();
+    std::cout << "Looping over generated MC. " << nGenEntries << " entries." << std::endl;
     for (Long64_t i = 0; i < nGenEntries; ++i) {
         tMCGene->GetEntry(i);
         int binIndex = DetermineQ2yBin(Q2Gen, yGen) - 1; // Adjusted for 0-based indexing
