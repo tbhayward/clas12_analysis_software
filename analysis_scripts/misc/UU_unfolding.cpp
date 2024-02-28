@@ -13,6 +13,8 @@
 #include <TMath.h>
 #include <TFitResult.h>
 #include <TMatrixDSym.h>
+#include <TMinuit.h>
+
 
 // Global pointer to histogram, so it can be accessed in the chi2 function
 TH1F *hUnfoldedFilteredGlobal;
@@ -576,56 +578,36 @@ int main() {
                     // Now fit hUnfoldedFiltered
                     // hUnfoldedFiltered->Fit(fitFunc, "Q");
 
-                    // Initialize TMinuit
                     TMinuit minuit(3); // Assuming 3 parameters for the fit function
                     minuit.SetPrintLevel(-1);
                     minuit.SetErrorDef(1); // Use 1 for chi-square
                     minuit.SetFCN(chiSquare);
 
-                    // Define the parameters with initial values and limits
-                    minuit.DefineParameter(0, "p0", 1.0, 0.01, 0, 0); // Initial value, step size, no limits
+                    minuit.DefineParameter(0, "p0", 1.0, 0.01, 0, 0);
                     minuit.DefineParameter(1, "p1", 0.0, 0.01, -1, 1);
                     minuit.DefineParameter(2, "p2", 0.0, 0.01, -1, 1);
 
-                    // Point the global histogram pointer to your histogram
                     hUnfoldedFilteredGlobal = hUnfoldedFiltered;
 
-                    // Perform the minimization using MIGRAD
                     minuit.Migrad();
 
-                    // Optionally, you can retrieve the fit results
                     double par[3], err[3];
                     for (int i = 0; i < 3; i++) {
                         minuit.GetParameter(i, par[i], err[i]);
                     }
 
-                    // // Structure to hold fit parameters and their errors, along with chi-square per NDF
-                    // struct FitParams {
-                    //     double p0, p1, p2;          // Parameters
-                    //     double p0_err, p1_err, p2_err; // Parameter errors
-                    //     double chi2_ndf;            // Chi-square per degree of freedom
-                    // };
+                    // Corrected mnstat call
+                    double chi2, dum1, dum2;
+                    int nvpar, nparx, icstat;
+                    minuit.mnstat(chi2, dum1, dum2, nvpar, nparx, icstat);
+                    int ndf = hUnfoldedFilteredGlobal->GetNbinsX() - nvpar;
 
-                    // Retrieve parameters and their errors
-                    for (int i = 0; i < 3; i++) {
-                        minuit.GetParameter(i, par[i], err[i]);
-                    }
-
-                    // Calculate the chi-square per NDF
-                    double chi2 = 0.0;
-                    int npar = 0; 
-                    minuit.mnstat(chi2, double dum1, double dum2, int nvpar, int nparx, int icstat);
-                    // nvpar is the number of free parameters, nparx is the total number of parameters
-                    int ndf = hUnfoldedFilteredGlobal->GetNbinsX() - nvpar; // NDF = Number of data points - Number of free parameters
-
-                    // Fill the FitParams structure
                     FitParams params = {
-                        par[0], par[1], par[2],      // Parameters
-                        err[0], err[1], err[2],      // Errors
-                        chi2 / ndf                   // Chi-square per NDF
+                        par[0], par[1], par[2],
+                        err[0], err[1], err[2],
+                        chi2 / ndf
                     };
 
-                    // Assuming allFitParams is a data structure to store these for each bin/histIndex
                     allFitParams[bin][histIndex] = params;
 
                     TGraphErrors* gUnfolded = new TGraphErrors();
