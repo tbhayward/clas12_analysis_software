@@ -607,7 +607,6 @@ int main() {
                     // };
 
                     // Retrieve parameters and their errors
-                    double par[3], err[3];
                     for (int i = 0; i < 3; i++) {
                         minuit.GetParameter(i, par[i], err[i]);
                     }
