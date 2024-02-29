@@ -590,10 +590,13 @@ int main() {
                     hUnfoldedFilteredGlobal = hUnfoldedFiltered;
 
                     minuit.Migrad();
-                    minuit.Minimize(); 
+                    // After MIGRAD, call Hesse
+                    double arglist[10];
+                    int ierflg = 0;
+                    arglist[0] = 0; // Number of steps (0 indicates to use the default value)
+                    minuit.mnexcm("MINImize", arglist, 1, ierflg);
+                    minuit.mnexcm("HESSE", arglist, 1, ierflg);
 
-                    // Calculate the Hessian matrix to accurately determine parameter errors
-                    minuit.Hesse();
 
                     // For calculating asymmetric errors, use Minos
                     // minuit.Minos();
