@@ -583,13 +583,20 @@ int main() {
                     minuit.SetErrorDef(1); // Use 1 for chi-square
                     minuit.SetFCN(chiSquare);
 
-                    minuit.DefineParameter(0, "p0", 1.0, 0.01, 0, 0);
-                    minuit.DefineParameter(1, "p1", 0.0, 0.01, -1, 1);
-                    minuit.DefineParameter(2, "p2", 0.0, 0.01, -1, 1);
+                    minuit.DefineParameter(0, "p0", 1.0, 0.0001, 0, 0);
+                    minuit.DefineParameter(1, "p1", 0.0, 0.0001, -1, 1);
+                    minuit.DefineParameter(2, "p2", 0.0, 0.0001, -1, 1);
 
                     hUnfoldedFilteredGlobal = hUnfoldedFiltered;
 
                     minuit.Migrad();
+                    minuit.Minimize(); 
+
+                    // Calculate the Hessian matrix to accurately determine parameter errors
+                    minuit.Hesse();
+
+                    // For calculating asymmetric errors, use Minos
+                    // minuit.Minos();
 
                     double par[3], err[3];
                     for (int i = 0; i < 3; i++) {
@@ -630,12 +637,22 @@ int main() {
                         }
                     }
 
-                    // Find the maximum value of the function between 0 and 2*pi
-                    double maxVal = fitFunc->GetMaximum(0, 2 * TMath::Pi());
-                    double minVal = fitFunc->GetMinimum(0, 2 * TMath::Pi());
+                    double stepSize = 0.005; // Define a step size for scanning the range
+                    double maxVal = -DBL_MAX; // Start with the smallest possible double
+                    double minVal = DBL_MAX;  // Start with the largest possible double
+
+                    for (double x = 0; x <= 2 * TMath::Pi(); x += stepSize) {
+                        double val = fitFunction(x, par);
+                        if (val > maxVal) maxVal = val;
+                        if (val < minVal) minVal = val;
+                    }
+                    // // Find the maximum value of the function between 0 and 2*pi
+                    // double maxVal = fitFunc->GetMaximum(0, 2 * TMath::Pi());
+                    // double minVal = fitFunc->GetMinimum(0, 2 * TMath::Pi());
 
                     // Assuming the mean is still best estimated at x = 0
-                    double mean = fitFunc->Eval(0);
+                    // double mean = fitFunc->Eval(0);
+                    double mean = fitFunction(0, par);
 
                     // Now use the maximum value to determine the amplitude
                     // Amplitude is now taken as the maximum deviation from the mean
@@ -670,8 +687,13 @@ int main() {
                     gUnfolded->GetXaxis()->SetTitleSize(0.07);
                     gUnfolded->GetYaxis()->SetTitleSize(0.07);
 
-                    fitFunc->SetLineColor(kRed);
-                    fitFunc->Draw("same");
+                    // fitFunc->SetLineColor(kRed);
+                    // fitFunc->Draw("same");
+                    // For drawing the fit result, you can create a TF1 object with the final parameters:
+                    TF1* fitResult = new TF1("fitResult", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", 0, 2*TMath::Pi());
+                    fitResult->SetParameters(par);
+                    fitResult->SetLineColor(kRed);
+                    fitResult->Draw("same");
 
                     TPaveText *pt = new TPaveText(0.125, 0.075, 0.75, 0.375, "brNDC");
                     pt->SetBorderSize(1); // Set border size
