@@ -55,7 +55,7 @@ void chiSquare(int &npar, double *gin, double &f, double *par, int iflag) {
 // Function to determine the Q2-y bin based on given Q2 and y values.
 int DetermineQ2yBin(float Q2, float y) {
     // Q2-y Bins 1-4
-    else if (Q2 > 1.000 && Q2 <= 2.000) {
+    if (Q2 > 1.000 && Q2 <= 2.000) {
         if (y > 0.650 && y <= 0.750) return 1;
         if (y > 0.550 && y <= 0.650) return 2;
         if (y > 0.450 && y <= 0.550) return 3;
