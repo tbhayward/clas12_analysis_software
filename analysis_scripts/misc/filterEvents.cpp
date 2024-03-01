@@ -42,21 +42,21 @@ void filterEvents(const char* inputFile) {
     Long64_t nentries = tree->GetEntries();
     Long64_t nselected = 0;
 
-    for (Long64_t i = 0; i < nentries; i++) {
-        tree->GetEntry(i);
-        if (p_p > 1.25 && Q2 > 2.0 && z > 0.15 && xF > 0 && Mx > 1.5 && y > 0.30 && y < 0.75) {
-            outTree->Fill(); // Copy this entry to the output tree
-            nselected++;
-        }
-    }
-
     // for (Long64_t i = 0; i < nentries; i++) {
     //     tree->GetEntry(i);
-    //     if (Mx > 1.4 && y < 0.75) {
+    //     if (p_p > 1.25 && Q2 > 2.0 && z > 0.15 && xF > 0 && Mx > 1.5 && y > 0.30 && y < 0.75) {
     //         outTree->Fill(); // Copy this entry to the output tree
     //         nselected++;
     //     }
     // }
+
+    for (Long64_t i = 0; i < nentries; i++) {
+        tree->GetEntry(i);
+        if (Mx > 1.4 && y < 0.75) {
+            outTree->Fill(); // Copy this entry to the output tree
+            nselected++;
+        }
+    }
 
     // Save the skimmed tree and close files
     outTree->AutoSave();
