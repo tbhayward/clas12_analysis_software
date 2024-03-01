@@ -81,7 +81,7 @@ int DetermineQ2yBin(float Q2, float y) {
         if (y > 0.550 && y <= 0.650) return 14;
         if (y > 0.450 && y <= 0.550) return 15;
     }
-    // Q2-y Bins 15-16
+    // Q2-y Bins 16-17
     else if (Q2 > 5.000 && Q2 <= 7.000) {
         if (y > 0.650 && y <= 0.750) return 16;
         if (y > 0.550 && y <= 0.650) return 17;
@@ -146,9 +146,6 @@ int findBinIndex(float value, const std::vector<float>& edges) {
 // Main function
 int main() {
     // Open the ROOT files for data and Monte Carlo
-    // TFile* fData = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_epi+X_skimmed.root");
-    // TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nA_epi+X_skimmed.root");
-    // TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nA_gen_epi+X_skimmed.root");
     TFile* fData = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_epX_skimmed.root");
     TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nA_epX_skimmed.root");
     TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nA_gen_epX_skimmed.root");
