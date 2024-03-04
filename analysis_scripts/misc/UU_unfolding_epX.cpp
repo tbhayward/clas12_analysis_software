@@ -562,7 +562,7 @@ int main() {
                     // TF1* fitFunc = new TF1("fitFunc", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", 0, 2*TMath::Pi());
                     // fitFunc->SetParameters(0, 0, 0);
                     // Threshold for acceptance
-                    double acceptanceThreshold = 1/0.001; // lower number is the percentage threshold
+                    double acceptanceThreshold = 1/0.000000000000001; // lower number is the percentage threshold
                     // Clone the original histogram to preserve the data
                     TH1F* hUnfoldedFiltered = (TH1F*)hUnfolded->Clone("hUnfoldedFiltered");
                     // Loop over bins and only keep those with acceptance above the threshold
@@ -574,6 +574,10 @@ int main() {
                             hUnfoldedFiltered->SetBinError(binX, 1e20); // Set a very high error
                         }
                     }
+                    for (int binX = 0; binX <= hUnfolded->GetNbinsX(); ++binX) {
+                        std::cout << hUnfoldedFiltered->GetBinContent(binX) << " " << hUnfoldedFiltered->GetBinError(binX) << std::endl;
+                    }
+
                     // Now fit hUnfoldedFiltered
                     // hUnfoldedFiltered->Fit(fitFunc, "Q");
 
@@ -595,7 +599,6 @@ int main() {
                     arglist[0] = 0; // Number of steps (0 indicates to use the default value)
                     minuit.mnexcm("MINImize", arglist, 1, ierflg);
                     minuit.mnexcm("HESSE", arglist, 1, ierflg);
-
 
                     // For calculating asymmetric errors, use Minos
                     // minuit.Minos();
@@ -639,7 +642,7 @@ int main() {
                         }
                     }
 
-                    double stepSize = 0.005; // Define a step size for scanning the range
+                    double stepSize = 0.001; // Define a step size for scanning the range
                     double maxVal = -DBL_MAX; // Start with the smallest possible double
                     double minVal = DBL_MAX;  // Start with the largest possible double
 
