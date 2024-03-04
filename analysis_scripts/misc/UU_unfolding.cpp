@@ -155,9 +155,6 @@ int main() {
     TFile* fData = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_epi+X_skimmed.root");
     TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nA_epi+X_skimmed.root");
     TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nA_gen_epi+X_skimmed.root");
-    // TFile* fData = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_epX_skimmed.root");
-    // TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nA_epX_skimmed.root");
-    // TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nA_gen_epX_skimmed.root");
     if (!fData || fData->IsZombie() || !fMCReco || fMCReco->IsZombie() || !fMCGene || fMCGene->IsZombie()) {
         std::cerr << "Failed to open one or more files." << std::endl;
         return -1;
@@ -555,8 +552,8 @@ int main() {
                             double f = a * b; 
                             double sigma_f = f * sqrt(pow(sigma_a / a, 2) + pow(sigma_b / b, 2));
                             hUnfolded->SetBinError(binX, sigma_f);
-                        } else if (b == 0) {
-                            hUnfolded->SetBinError(binX, 1e10);
+                        } else if (a==0 || b == 0) {
+                            hUnfolded->SetBinError(binX, 1e20);
                         }
                     }
 

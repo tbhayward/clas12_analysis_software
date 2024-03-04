@@ -551,8 +551,8 @@ int main() {
                             double f = a * b; 
                             double sigma_f = f * sqrt(pow(sigma_a / a, 2) + pow(sigma_b / b, 2));
                             hUnfolded->SetBinError(binX, sigma_f);
-                        } else if (b == 0) {
-                            hUnfolded->SetBinError(binX, 1e10);
+                        } else if (a == 0 || b == 0) {
+                            hUnfolded->SetBinError(binX, 1e20);
                         }
                     }
 
