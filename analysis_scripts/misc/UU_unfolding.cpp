@@ -546,6 +546,7 @@ int main() {
                         double b = hAcceptance[bin][histIndex]->GetBinContent(binX);
                         double sigma_a = hData[bin][histIndex]->GetBinError(binX);
                         double sigma_b = hAcceptance[bin][histIndex]->GetBinError(binX);
+                        hUnfolded->SetBinContent(binX, a*b);
 
                         // Calculate the uncertainty using error propagation 
                         if (a > 0 && b > 0) { // Check to avoid division by zero
@@ -566,7 +567,7 @@ int main() {
                     // Loop over bins and only keep those with acceptance above the threshold
                     for (int binX = 0; binX <= hUnfolded->GetNbinsX(); ++binX) {
                         double acceptance = hAcceptance[bin][histIndex]->GetBinContent(binX);
-                        if (acceptance > acceptanceThreshold) {
+                        if (acceptance > acceptanceThreshold || acceptance == 0) {
                             // For bins below the threshold, set content and error in the filtered histogram to indicate exclusion
                             hUnfoldedFiltered->SetBinContent(binX, 0);
                             hUnfoldedFiltered->SetBinError(binX, 1e20); // Set a very high error
@@ -627,7 +628,7 @@ int main() {
                     for (int binX = 0; binX <= hUnfoldedFiltered->GetNbinsX(); ++binX) {
                         if (hUnfoldedFiltered->GetBinContent(binX) != 0) {
                             double acceptance = hAcceptance[bin][histIndex]->GetBinContent(binX);
-                            if (acceptance > acceptanceThreshold) {
+                            if (acceptance > acceptanceThreshold || acceptance == 0) {
                                 gUnfolded->SetPoint(binX - 1, 9, hUnfoldedFiltered->GetBinContent(binX));
                                 gUnfolded->SetPointError(binX - 1, 0., hUnfoldedFiltered->GetBinError(binX));
                             } else {
