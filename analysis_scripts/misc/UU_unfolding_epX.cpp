@@ -552,6 +552,7 @@ int main() {
                             double sigma_f = f * sqrt(pow(sigma_a / a, 2) + pow(sigma_b / b, 2));
                             hUnfolded->SetBinError(binX, sigma_f);
                         } else if (a == 0 || b == 0) {
+                            std::cout << bin << " " << padNumber << " " << binX << std::endl;
                             hUnfolded->SetBinError(binX, 1e20);
                         }
                     }
