@@ -566,7 +566,7 @@ int main() {
                     // Loop over bins and only keep those with acceptance above the threshold
                     for (int binX = 1; binX <= hUnfolded->GetNbinsX(); ++binX) {
                         double acceptance = hAcceptance[bin][histIndex]->GetBinContent(binX);
-                        if (bin == 0 && padNumber == 1) {
+                        if (bin == 0 && padNumber == 9) {
                             std::cout << hUnfoldedFiltered->GetBinContent(binX) << " " << hUnfoldedFiltered->GetBinError(binX) << std::endl;
                         }
                         if (acceptance > acceptanceThreshold) {
