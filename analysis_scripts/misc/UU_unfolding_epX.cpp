@@ -626,6 +626,9 @@ int main() {
                     for (int binX = 1; binX <= hUnfoldedFiltered->GetNbinsX(); ++binX) {
                         if (hUnfoldedFiltered->GetBinContent(binX) != 0) {
                             double acceptance = hAcceptance[bin][histIndex]->GetBinContent(binX);
+                            if (bin == 0 && padNumber == 0) {
+                                std::cout << hUnfoldedFiltered->GetBinContent(binX) << " " << hUnfoldedFiltered->GetBinError(binX) << std::endl;
+                            }
                             if (acceptance > acceptanceThreshold) {
                                 gUnfolded->SetPoint(binX - 1, 9, hUnfoldedFiltered->GetBinContent(binX));
                                 gUnfolded->SetPointError(binX - 1, 0., hUnfoldedFiltered->GetBinError(binX));
@@ -665,7 +668,7 @@ int main() {
                     gUnfolded->SetMaximum(yMax);
 
                     // Setting x-axis range to 0 to 2pi
-                    gUnfolded->GetXaxis()->SetLimits(0, 2*TMath::TwoPi());
+                    gUnfolded->GetXaxis()->SetLimits(0, TMath::TwoPi());
 
                     gUnfolded->GetXaxis()->SetTitle("#phi");
                     gUnfolded->GetYaxis()->SetTitle("Counts");
