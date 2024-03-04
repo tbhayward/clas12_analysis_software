@@ -545,6 +545,7 @@ int main() {
                         double b = hAcceptance[bin][histIndex]->GetBinContent(binX);
                         double sigma_a = hData[bin][histIndex]->GetBinError(binX);
                         double sigma_b = hAcceptance[bin][histIndex]->GetBinError(binX);
+                        hUnfolded->SetBinContent(binX, a*b);
 
                         // Calculate the uncertainty using error propagation 
                         if (a > 0 && b > 0) { // Check to avoid division by zero
@@ -555,7 +556,7 @@ int main() {
                             hUnfolded->SetBinError(binX, 1e20);
                         }
 
-                        if (bin == 0 && padNumber == 2) { std::cout << a << " " << b << " " << hUnfolded->GetBinContent(binX) << " " << hUnfolded->GetBinError(binX) << std::endl; }
+                        if (bin == 0 && padNumber == 3) { std::cout << a << " " << b << " " << hUnfolded->GetBinContent(binX) << " " << hUnfolded->GetBinError(binX) << std::endl; }
                     }
 
                     // TF1* fitFunc = new TF1("fitFunc", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", 0, 2*TMath::Pi());
