@@ -568,7 +568,7 @@ int main() {
                     // Loop over bins and only keep those with acceptance above the threshold
                     for (int binX = 0; binX <= hUnfolded->GetNbinsX(); ++binX) {
                         double acceptance = hAcceptance[bin][histIndex]->GetBinContent(binX);
-                        if (acceptance > acceptanceThreshold) {
+                        if (acceptance > acceptanceThreshold || acceptance == 0) {
                             // For bins below the threshold, set content and error in the filtered histogram to indicate exclusion
                             hUnfoldedFiltered->SetBinContent(binX, 0);
                             hUnfoldedFiltered->SetBinError(binX, 1e20); // Set a very high error
