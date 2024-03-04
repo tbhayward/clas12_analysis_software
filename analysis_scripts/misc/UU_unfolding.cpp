@@ -627,18 +627,18 @@ int main() {
                     //         gUnfolded->SetPointError(binX - 1, 0., hUnfolded->GetBinError(binX));
                     //     }
                     // }
-                    for (int binX = 1; binX <= hUnfoldedFiltered->GetNbinsX(); ++binX) {
-                        if (hUnfoldedFiltered->GetBinContent(binX) != 0) {
-                            double acceptance = hAcceptance[bin][histIndex]->GetBinContent(binX);
-                            if (acceptance > acceptanceThreshold) {
-                                gUnfolded->SetPoint(binX - 1, 9, hUnfoldedFiltered->GetBinContent(binX));
-                                gUnfolded->SetPointError(binX - 1, 0., hUnfoldedFiltered->GetBinError(binX));
-                            } else {
-                                gUnfolded->SetPoint(binX - 1, hUnfoldedFiltered->GetBinCenter(binX), hUnfoldedFiltered->GetBinContent(binX));
-                                gUnfolded->SetPointError(binX - 1, 0., hUnfoldedFiltered->GetBinError(binX));
-                            }
-                        }
-                    }
+                    // for (int binX = 1; binX <= hUnfoldedFiltered->GetNbinsX(); ++binX) {
+                    //     if (hUnfoldedFiltered->GetBinContent(binX) != 0) {
+                    //         double acceptance = hAcceptance[bin][histIndex]->GetBinContent(binX);
+                    //         if (acceptance > acceptanceThreshold) {
+                    //             gUnfolded->SetPoint(binX - 1, 9, hUnfoldedFiltered->GetBinContent(binX));
+                    //             gUnfolded->SetPointError(binX - 1, 0., hUnfoldedFiltered->GetBinError(binX));
+                    //         } else {
+                    //             gUnfolded->SetPoint(binX - 1, hUnfoldedFiltered->GetBinCenter(binX), hUnfoldedFiltered->GetBinContent(binX));
+                    //             gUnfolded->SetPointError(binX - 1, 0., hUnfoldedFiltered->GetBinError(binX));
+                    //         }
+                    //     }
+                    // }
 
                     double stepSize = 0.005; // Define a step size for scanning the range
                     double maxVal = -DBL_MAX; // Start with the smallest possible double
