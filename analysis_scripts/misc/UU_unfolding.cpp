@@ -564,7 +564,7 @@ int main() {
                     // Clone the original histogram to preserve the data
                     TH1F* hUnfoldedFiltered = (TH1F*)hUnfolded->Clone("hUnfoldedFiltered");
                     // Loop over bins and only keep those with acceptance above the threshold
-                    for (int binX = 1; binX <= hUnfolded->GetNbinsX(); ++binX) {
+                    for (int binX = 0; binX <= hUnfolded->GetNbinsX(); ++binX) {
                         double acceptance = hAcceptance[bin][histIndex]->GetBinContent(binX);
                         if (acceptance > acceptanceThreshold) {
                             // For bins below the threshold, set content and error in the filtered histogram to indicate exclusion
@@ -618,13 +618,13 @@ int main() {
                     allFitParams[bin][histIndex] = params;
 
                     TGraphErrors* gUnfolded = new TGraphErrors();
-                    // for (int binX = 1; binX <= hUnfolded->GetNbinsX(); ++binX) {
+                    // for (int binX = 0; binX <= hUnfolded->GetNbinsX(); ++binX) {
                     //     if (hUnfolded->GetBinContent(binX) != 0) {
                     //         gUnfolded->SetPoint(binX - 1, hUnfolded->GetBinCenter(binX), hUnfolded->GetBinContent(binX));
                     //         gUnfolded->SetPointError(binX - 1, 0., hUnfolded->GetBinError(binX));
                     //     }
                     // }
-                    for (int binX = 1; binX <= hUnfoldedFiltered->GetNbinsX(); ++binX) {
+                    for (int binX = 0; binX <= hUnfoldedFiltered->GetNbinsX(); ++binX) {
                         if (hUnfoldedFiltered->GetBinContent(binX) != 0) {
                             double acceptance = hAcceptance[bin][histIndex]->GetBinContent(binX);
                             if (acceptance > acceptanceThreshold) {

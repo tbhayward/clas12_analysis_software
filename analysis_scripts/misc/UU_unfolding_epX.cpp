@@ -555,7 +555,7 @@ int main() {
                             hUnfolded->SetBinError(binX, 1e20);
                         }
 
-                        if (bin == 1) {std::cout << a << " " << b << " " << hUnfolded->GetBinContent(binX) << " " << hUnfolded->GetBinError(binX) << std::endl;}
+                        if (bin == 1 && padNumber == 1) {std::cout << a << " " << b << " " << hUnfolded->GetBinContent(binX) << " " << hUnfolded->GetBinError(binX) << std::endl;}
                     }
 
                     // TF1* fitFunc = new TF1("fitFunc", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", 0, 2*TMath::Pi());
@@ -619,7 +619,7 @@ int main() {
                     allFitParams[bin][histIndex] = params;
 
                     TGraphErrors* gUnfolded = new TGraphErrors();
-                    // for (int binX = 1; binX <= hUnfolded->GetNbinsX(); ++binX) {
+                    // for (int binX = 0; binX <= hUnfolded->GetNbinsX(); ++binX) {
                     //     if (hUnfolded->GetBinContent(binX) != 0) {
                     //         gUnfolded->SetPoint(binX - 1, hUnfolded->GetBinCenter(binX), hUnfolded->GetBinContent(binX));
                     //         gUnfolded->SetPointError(binX - 1, 0., hUnfolded->GetBinError(binX));
