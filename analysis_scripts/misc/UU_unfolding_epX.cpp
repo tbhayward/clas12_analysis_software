@@ -147,13 +147,13 @@ int findBinIndex(float value, const std::vector<float>& edges) {
 int main() {
     // Open the ROOT files for data and Monte Carlo
     // inbending files
-    // TFile* fData = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_epX_skimmed.root");
-    // TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nA_epX_skimmed.root");
-    // TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nA_gen_epX_skimmed.root");
+    TFile* fData = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_epX_skimmed.root");
+    TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nA_epX_skimmed.root");
+    TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nA_gen_epX_skimmed.root");
     // outbending files
-    TFile* fData = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_out_epX_skimmed.root");
-    TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_out_clasdis_50nA_epX_skimmed.root");
-    TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_out_clasdis_50nA_gen_epX_skimmed.root");
+    // TFile* fData = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_out_epX_skimmed.root");
+    // TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_out_clasdis_50nA_epX_skimmed.root");
+    // TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_out_clasdis_50nA_gen_epX_skimmed.root");
     if (!fData || fData->IsZombie() || !fMCReco || fMCReco->IsZombie() || !fMCGene || fMCGene->IsZombie()) {
         std::cerr << "Failed to open one or more files." << std::endl;
         return -1;
@@ -554,6 +554,8 @@ int main() {
                         } else if (a == 0 || b == 0) {
                             hUnfolded->SetBinError(binX, 1e20);
                         }
+
+                        if (bin == 1) {std::cout << a << " " << b << " " << hUnfolded[bin][i]->GetBinContent(binX) << " " << hUnfolded[bin][i]->GetBinError(binX) << std::endl;}
                     }
 
                     // TF1* fitFunc = new TF1("fitFunc", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", 0, 2*TMath::Pi());
