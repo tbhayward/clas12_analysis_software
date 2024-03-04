@@ -555,7 +555,7 @@ int main() {
                             hUnfolded->SetBinError(binX, 1e20);
                         }
 
-                        if (bin == 1) {std::cout << a << " " << b << " " << hUnfolded[bin][binX]->GetBinContent(binX) << " " << hUnfolded[bin][i]->GetBinError(binX) << std::endl;}
+                        if (bin == 1) {std::cout << a << " " << b << " " << hUnfolded->GetBinContent(binX) << " " << hUnfolded->GetBinError(binX) << std::endl;}
                     }
 
                     // TF1* fitFunc = new TF1("fitFunc", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", 0, 2*TMath::Pi());
