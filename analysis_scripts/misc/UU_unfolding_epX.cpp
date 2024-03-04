@@ -146,9 +146,14 @@ int findBinIndex(float value, const std::vector<float>& edges) {
 // Main function
 int main() {
     // Open the ROOT files for data and Monte Carlo
-    TFile* fData = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_epX_skimmed.root");
-    TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nA_epX_skimmed.root");
-    TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nA_gen_epX_skimmed.root");
+    // inbending files
+    // TFile* fData = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_epX_skimmed.root");
+    // TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nA_epX_skimmed.root");
+    // TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nA_gen_epX_skimmed.root");
+    // outbending files
+    TFile* fData = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_out_epX_skimmed.root");
+    TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_out_clasdis_50nA_epX_skimmed.root");
+    TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_out_clasdis_50nA_gen_epX_skimmed.root");
     if (!fData || fData->IsZombie() || !fMCReco || fMCReco->IsZombie() || !fMCGene || fMCGene->IsZombie()) {
         std::cerr << "Failed to open one or more files." << std::endl;
         return -1;
@@ -420,7 +425,7 @@ int main() {
                         hAcceptance[bin][i]->SetBinError(binX, error);
                     } else {
                         // Set error to 0 if either N1 or N2 is 0 to avoid division by zero
-                        hAcceptance[bin][i]->SetBinError(binX, 0);
+                        hAcceptance[bin][i]->SetBinError(binX, 1e20);
                     }
                 }
             }
@@ -449,7 +454,7 @@ int main() {
                         hAcceptanceInverse[bin][i]->SetBinError(binX, error);
                     } else {
                         // Set error to 0 if either N1 or N2 is 0 to avoid division by zero
-                        hAcceptanceInverse[bin][i]->SetBinError(binX, 0);
+                        hAcceptanceInverse[bin][i]->SetBinError(binX, 1e20);
                     }
                 }
             }
