@@ -655,6 +655,7 @@ int main() {
                     // Assuming the mean is still best estimated at x = 0
                     // double mean = fitFunc->Eval(0);
                     double mean = fitFunction(0, par);
+                    minVal = -1000;
 
                     // Now use the maximum value to determine the amplitude
                     // Amplitude is now taken as the maximum deviation from the mean
@@ -709,10 +710,10 @@ int main() {
                     pt->AddText(Form("C = %.2f #pm %.3f", params.C, params.errC));
                     pt->AddText(Form("#chi^{2}/ndf = %.2f", params.chi2ndf));
 
-                    // Draw the TPaveText
-                    pt->Draw();
-                    // Adjusting this display to correctly label each bin according to the new structure
-                    latex.DrawLatexNDC(0.18, 0.86, Form("Q2-y bin: %d, z-PT bin: %d", bin + 1, padNumber));
+                    // // Draw the TPaveText
+                    // pt->Draw();
+                    // // Adjusting this display to correctly label each bin according to the new structure
+                    // latex.DrawLatexNDC(0.18, 0.86, Form("Q2-y bin: %d, z-PT bin: %d", bin + 1, padNumber));
 
                     delete hUnfolded; // Clean up
                 }
