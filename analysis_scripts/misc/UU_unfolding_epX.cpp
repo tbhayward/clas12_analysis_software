@@ -552,7 +552,6 @@ int main() {
                             double sigma_f = f * sqrt(pow(sigma_a / a, 2) + pow(sigma_b / b, 2));
                             hUnfolded->SetBinError(binX, sigma_f);
                         } else if (a == 0 || b == 0) {
-                            std::cout << bin << " " << padNumber << " " << binX << std::endl;
                             hUnfolded->SetBinError(binX, 1e20);
                         }
                     }
@@ -560,7 +559,7 @@ int main() {
                     // TF1* fitFunc = new TF1("fitFunc", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", 0, 2*TMath::Pi());
                     // fitFunc->SetParameters(0, 0, 0);
                     // Threshold for acceptance
-                    double acceptanceThreshold = 1/0.000000001; // lower number is the percentage threshold
+                    double acceptanceThreshold = 1/0.00000000001; // lower number is the percentage threshold
                     // Clone the original histogram to preserve the data
                     TH1F* hUnfoldedFiltered = (TH1F*)hUnfolded->Clone("hUnfoldedFiltered");
                     // Loop over bins and only keep those with acceptance above the threshold
@@ -569,7 +568,7 @@ int main() {
                         if (acceptance > acceptanceThreshold) {
                             // For bins below the threshold, set content and error in the filtered histogram to indicate exclusion
                             hUnfoldedFiltered->SetBinContent(binX, 0);
-                            hUnfoldedFiltered->SetBinError(binX, 1e10); // Set a very high error
+                            hUnfoldedFiltered->SetBinError(binX, 1e20); // Set a very high error
                         }
                     }
                     // Now fit hUnfoldedFiltered
@@ -666,7 +665,7 @@ int main() {
                     gUnfolded->SetMaximum(yMax);
 
                     // Setting x-axis range to 0 to 2pi
-                    gUnfolded->GetXaxis()->SetLimits(0, TMath::TwoPi());
+                    gUnfolded->GetXaxis()->SetLimits(0, 2*TMath::TwoPi());
 
                     gUnfolded->GetXaxis()->SetTitle("#phi");
                     gUnfolded->GetYaxis()->SetTitle("Counts");
