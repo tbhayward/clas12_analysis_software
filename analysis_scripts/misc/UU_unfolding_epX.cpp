@@ -92,44 +92,44 @@ int DetermineQ2yBin(float Q2, float y) {
 
 // Define bin edges for z for each Q2-y bin
 std::map<int, std::vector<float>> zEdges = {
-    {1, {0.10, 0.20, 0.30, 0.40, 0.50, 0.70}},
-    {2, {0.10, 0.20, 0.30, 0.40, 0.50, 0.70}},
-    {3, {0.10, 0.20, 0.30, 0.40, 0.50, 0.70}},
-    {4, {0.10, 0.20, 0.30, 0.40, 0.50, 0.70}},
-    {5, {0.10, 0.20, 0.30, 0.40, 0.50, 0.70}},
-    {6, {0.10, 0.20, 0.30, 0.40, 0.50, 0.70}},
-    {7, {0.10, 0.20, 0.30, 0.40, 0.50, 0.70}},
-    {8, {0.10, 0.20, 0.30, 0.40, 0.50, 0.70}},
-    {9, {0.10, 0.20, 0.30, 0.40, 0.50, 0.70}},
-    {10, {0.10, 0.20, 0.30, 0.40, 0.50, 0.70}},
-    {11, {0.10, 0.20, 0.30, 0.40, 0.50, 0.70}},
-    {12, {0.10, 0.20, 0.30, 0.40, 0.50, 0.70}},
-    {13, {0.10, 0.20, 0.30, 0.40, 0.50, 0.70}},
-    {14, {0.10, 0.20, 0.30, 0.40, 0.50, 0.70}},
-    {15, {0.10, 0.20, 0.30, 0.40, 0.50, 0.70}},
-    {16, {0.10, 0.20, 0.30, 0.40, 0.50, 0.70}},
-    {17, {0.10, 0.20, 0.30, 0.40, 0.50, 0.70}},
+    {1, {0.10, 0.25, 0.35, 0.45, 0.55, 0.75}},
+    {2, {0.10, 0.25, 0.35, 0.45, 0.55, 0.75}},
+    {3, {0.10, 0.25, 0.35, 0.45, 0.55, 0.75}},
+    {4, {0.10, 0.25, 0.35, 0.45, 0.55, 0.75}},
+    {5, {0.10, 0.25, 0.35, 0.45, 0.55, 0.75}},
+    {6, {0.10, 0.25, 0.35, 0.45, 0.55, 0.75}},
+    {7, {0.10, 0.25, 0.35, 0.45, 0.55, 0.75}},
+    {8, {0.10, 0.25, 0.35, 0.45, 0.55, 0.75}},
+    {9, {0.10, 0.25, 0.35, 0.45, 0.55, 0.75}},
+    {10, {0.10, 0.25, 0.35, 0.45, 0.55, 0.75}},
+    {11, {0.10, 0.25, 0.35, 0.45, 0.55, 0.75}},
+    {12, {0.10, 0.25, 0.35, 0.45, 0.55, 0.75}},
+    {13, {0.10, 0.25, 0.35, 0.45, 0.55, 0.75}},
+    {14, {0.10, 0.25, 0.35, 0.45, 0.55, 0.75}},
+    {15, {0.10, 0.25, 0.35, 0.45, 0.55, 0.75}},
+    {16, {0.10, 0.25, 0.35, 0.45, 0.55, 0.75}},
+    {17, {0.10, 0.25, 0.35, 0.45, 0.55, 0.75}}
 };
 
 // Define bin edges for pT for each Q2-y bin
 std::map<int, std::vector<float>> pTEdges = {
-    {1, {0.00, 0.20, 0.30, 0.40, 0.50, 0.60, 0.90}},
-    {2, {0.00, 0.20, 0.30, 0.40, 0.50, 0.60, 0.90}},
-    {3, {0.00, 0.20, 0.30, 0.40, 0.50, 0.60, 0.90}},
-    {4, {0.00, 0.20, 0.30, 0.40, 0.50, 0.60, 0.90}},
-    {5, {0.00, 0.20, 0.30, 0.40, 0.50, 0.60, 0.90}},
-    {6, {0.00, 0.20, 0.30, 0.40, 0.50, 0.60, 0.90}},
-    {7, {0.00, 0.20, 0.30, 0.40, 0.50, 0.60, 0.90}},
-    {8, {0.00, 0.20, 0.30, 0.40, 0.50, 0.60, 0.90}},
-    {9, {0.00, 0.20, 0.30, 0.40, 0.50, 0.60, 0.90}},
-    {10, {0.00, 0.20, 0.30, 0.40, 0.50, 0.60, 0.90}},
-    {11, {0.00, 0.20, 0.30, 0.40, 0.50, 0.60, 0.90}},
-    {12, {0.00, 0.20, 0.30, 0.40, 0.50, 0.60, 0.90}},
-    {13, {0.00, 0.20, 0.30, 0.40, 0.50, 0.60, 0.90}},
-    {14, {0.00, 0.20, 0.30, 0.40, 0.50, 0.60, 0.90}},
-    {15, {0.00, 0.20, 0.30, 0.40, 0.50, 0.60, 0.90}},
-    {16, {0.00, 0.20, 0.30, 0.40, 0.50, 0.60, 0.90}},
-    {17, {0.00, 0.20, 0.30, 0.40, 0.50, 0.60, 0.90}}
+    {1, {0.00, 0.21, 0.34, 0.47, 0.60, 1.00}},
+    {2, {0.00, 0.21, 0.34, 0.47, 0.60, 1.00}},
+    {3, {0.00, 0.21, 0.34, 0.47, 0.60, 1.00}},
+    {4, {0.00, 0.21, 0.34, 0.47, 0.60, 1.00}},
+    {5, {0.00, 0.21, 0.34, 0.47, 0.60, 1.00}},
+    {6, {0.00, 0.21, 0.34, 0.47, 0.60, 1.00}},
+    {7, {0.00, 0.21, 0.34, 0.47, 0.60, 1.00}},
+    {8, {0.00, 0.21, 0.34, 0.47, 0.60, 1.00}},
+    {9, {0.00, 0.21, 0.34, 0.47, 0.60, 1.00}},
+    {10, {0.00, 0.21, 0.34, 0.47, 0.60, 1.00}},
+    {11, {0.00, 0.21, 0.34, 0.47, 0.60, 1.00}},
+    {12, {0.00, 0.21, 0.34, 0.47, 0.60, 1.00}},
+    {13, {0.00, 0.21, 0.34, 0.47, 0.60, 1.00}},
+    {14, {0.00, 0.21, 0.34, 0.47, 0.60, 1.00}},
+    {15, {0.00, 0.21, 0.34, 0.47, 0.60, 1.00}},
+    {16, {0.00, 0.21, 0.34, 0.47, 0.60, 1.00}},
+    {17, {0.00, 0.21, 0.34, 0.47, 0.60, 1.00}}
 };
 
 
@@ -147,13 +147,13 @@ int findBinIndex(float value, const std::vector<float>& edges) {
 int main() {
     // Open the ROOT files for data and Monte Carlo
     // inbending files
-    // TFile* fData = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_epX_skimmed.root");
-    // TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nA_epX_skimmed.root");
-    // TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nA_gen_epX_skimmed.root");
+    TFile* fData = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_epX_skimmed.root");
+    TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nA_epX_skimmed.root");
+    TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nA_gen_epX_skimmed.root");
     // outbending files
-    TFile* fData = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_out_epX_skimmed.root");
-    TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_out_clasdis_50nA_epX_skimmed.root");
-    TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_out_clasdis_50nA_gen_epX_skimmed.root");
+    // TFile* fData = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_out_epX_skimmed.root");
+    // TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_out_clasdis_50nA_epX_skimmed.root");
+    // TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_out_clasdis_50nA_gen_epX_skimmed.root");
     if (!fData || fData->IsZombie() || !fMCReco || fMCReco->IsZombie() || !fMCGene || fMCGene->IsZombie()) {
         std::cerr << "Failed to open one or more files." << std::endl;
         return -1;
