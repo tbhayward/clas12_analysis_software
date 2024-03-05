@@ -556,7 +556,7 @@ int main() {
                             hUnfolded->SetBinError(binX, 1e20);
                         }
 
-                        // if (bin == 0 && padNumber == 3) { std::cout << a << " " << b << " " << hUnfolded->GetBinContent(binX) << " " << hUnfolded->GetBinError(binX) << std::endl; }
+                        if (bin == 0 && padNumber == 2) { std::cout << a << " " << b << " " << hUnfolded->GetBinContent(binX) << " " << hUnfolded->GetBinError(binX) << std::endl; }
                     }
 
                     // TF1* fitFunc = new TF1("fitFunc", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", 0, 2*TMath::Pi());
@@ -572,11 +572,6 @@ int main() {
                             // For bins below the threshold, set content and error in the filtered histogram to indicate exclusion
                             hUnfoldedFiltered->SetBinContent(binX, 0);
                             hUnfoldedFiltered->SetBinError(binX, 1e20); // Set a very high error
-                        }
-                    }
-                    if (bin == 0 && padNumber == 2) {
-                        for (int binX = 0; binX <= hUnfolded->GetNbinsX(); ++binX) {
-                            std::cout << binX << " " << hUnfoldedFiltered->GetBinContent(binX) << " " << hUnfoldedFiltered->GetBinError(binX) << std::endl;
                         }
                     }
 
