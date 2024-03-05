@@ -48,7 +48,7 @@ int main(int argc, char **argv) {
     fitFunc->Draw("same");
 
     // Save the canvas as a PNG image
-    c1->SaveAs("/Users/tbhayward/Desktop/fit_distro.png");
+    c1->SaveAs("/u/home/thayward/fit_distro.png");
 
     // Cleanup
     delete c1;
