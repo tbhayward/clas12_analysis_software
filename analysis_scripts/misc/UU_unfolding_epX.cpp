@@ -217,9 +217,9 @@ int main() {
     for (int bin = 0; bin < 17; ++bin) { 
         // std::cout << bin << " " << num_pT_bins[bin] << " " << num_z_bins[bin] << " " << num_pT_bins[bin] * num_z_bins[bin] << std::endl;
         for (int i = 0; i < num_pT_bins[bin] * num_z_bins[bin]; ++i) {
-            hData[bin].push_back(new TH1F(Form("hData_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 24, 0, 2*TMath::Pi()));
-            hMCReco[bin].push_back(new TH1F(Form("hMCReco_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 24, 0, 2*TMath::Pi()));
-            hMCGene[bin].push_back(new TH1F(Form("hMCGene_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 24, 0, 2*TMath::Pi()));
+            hData[bin].push_back(new TH1F(Form("hData_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 48, 0, 2*TMath::Pi()));
+            hMCReco[bin].push_back(new TH1F(Form("hMCReco_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 48, 0, 2*TMath::Pi()));
+            hMCGene[bin].push_back(new TH1F(Form("hMCGene_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 48, 0, 2*TMath::Pi()));
         }
     }
 
@@ -574,14 +574,11 @@ int main() {
                             hUnfoldedFiltered->SetBinError(binX, 1e20); // Set a very high error
                         }
                     }
-                    if (bin == 0 && padNumber == 2) {
-                        for (int binX = 0; binX <= hUnfolded->GetNbinsX(); ++binX) {
-                            std::cout << binX << " " << hUnfoldedFiltered->GetBinContent(binX) << " " << hUnfoldedFiltered->GetBinError(binX) << std::endl;
-                        }
-                    }
-
-                    // Now fit hUnfoldedFiltered
-                    // hUnfoldedFiltered->Fit(fitFunc, "Q");
+                    // if (bin == 0 && padNumber == 2) {
+                    //     for (int binX = 0; binX <= hUnfolded->GetNbinsX(); ++binX) {
+                    //         std::cout << binX << " " << hUnfoldedFiltered->GetBinContent(binX) << " " << hUnfoldedFiltered->GetBinError(binX) << std::endl;
+                    //     }
+                    // }
 
                     TMinuit minuit(3); // Assuming 3 parameters for the fit function
                     minuit.SetPrintLevel(-1);
@@ -635,7 +632,7 @@ int main() {
                     for (int binX = 1; binX <= hUnfoldedFiltered->GetNbinsX(); ++binX) {
                         // if (hUnfoldedFiltered->GetBinContent(binX) != 0) {
                             double acceptance = hAcceptance[bin][histIndex]->GetBinContent(binX);
-                            if (acceptance > acceptanceThreshold || hUnfoldedFiltered->GetBinError(binX) < 1) {
+                            if (acceptance > acceptanceThreshold || hUnfoldedFiltered->GetBinError(binX) < 1 || hUnfoldedFiltered->GetBinContent(binX) == 0) {
                                 gUnfolded->SetPoint(binX - 1, 9, hUnfoldedFiltered->GetBinContent(binX));
                                 gUnfolded->SetPointError(binX - 1, 0., 1e20);
                             } else {
@@ -645,14 +642,14 @@ int main() {
                         // }
                     }
 
-                    if (bin == 0 && padNumber == 2) {
-                        for (int binX = 1; binX <= hUnfolded->GetNbinsX(); ++binX) {
-                            Double_t x, y;
-                            gUnfolded->GetPoint(binX, x, y); // Get the x and y values of the point at index i
-                            Double_t yerr = gUnfolded->GetErrorY(binX);
-                            std::cout << binX << " " << x << " " << y << " " << yerr << std::endl;
-                        }
-                    }
+                    // if (bin == 0 && padNumber == 2) {
+                    //     for (int binX = 1; binX <= hUnfolded->GetNbinsX(); ++binX) {
+                    //         Double_t x, y;
+                    //         gUnfolded->GetPoint(binX, x, y); // Get the x and y values of the point at index i
+                    //         Double_t yerr = gUnfolded->GetErrorY(binX);
+                    //         std::cout << binX << " " << x << " " << y << " " << yerr << std::endl;
+                    //     }
+                    // }
 
                     double stepSize = 0.001; // Define a step size for scanning the range
                     double maxVal = -DBL_MAX; // Start with the smallest possible double
