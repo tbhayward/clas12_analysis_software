@@ -17,7 +17,7 @@ int main(int argc, char **argv) {
     // Set parameter names
     fitFunc->SetParNames("b", "m", "A", "mu", "sigma");
     // Initial parameter guesses
-    fitFunc->SetParameters(0, 0.1, hist->GetMaximum(), 0.94, 0.1); 
+    fitFunc->SetParameters(0, 0.1, hist->GetMaximum(), hist->GetMean(), hist->GetStdDev());
     fitFunc->SetParLimits(4, 0.0000, 1e10); // positive sigma
     hist->Fit(fitFunc, "R");
     hist->SetStats(kFALSE);
