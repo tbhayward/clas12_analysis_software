@@ -20,8 +20,21 @@ int main(int argc, char **argv) {
     hist->Fit(fitFunc, "R");
 
     TCanvas *c1 = new TCanvas("c1", "Histogram Fit", 800, 600);
+    gStyle->SetOptStat(0);
     hist->Draw();
     fitFunc->Draw("same");
+
+    // Create a TPaveText to display fitted parameters
+    TPaveText *pt = new TPaveText(0.6, 0.7, 0.9, 0.9, "NDC"); // NDC coordinates
+    pt->SetBorderSize(1);
+    pt->SetFillStyle(1001);
+    pt->SetTextAlign(12);
+    pt->AddText(Form("b = %.3f #pm %.3f", fitFunc->GetParameter(0), fitFunc->GetParError(0)));
+    pt->AddText(Form("m = %.3f #pm %.3f", fitFunc->GetParameter(1), fitFunc->GetParError(1)));
+    pt->AddText(Form("A = %.3f #pm %.3f", fitFunc->GetParameter(2), fitFunc->GetParError(2)));
+    pt->AddText(Form("mu = %.3f #pm %.3f", fitFunc->GetParameter(3), fitFunc->GetParError(3)));
+    pt->AddText(Form("sigma = %.3f #pm %.3f", fitFunc->GetParameter(4), fitFunc->GetParError(4)));
+    pt->Draw();
 
     // Save the canvas as a PNG image
     c1->SaveAs("/u/home/thayward/fit_distro.png");
