@@ -643,7 +643,7 @@ int main() {
                             }
                         }
                     }
-                    std::cout << endl << endl << endl;
+                    std::cout << std::endl << std::endl << std::endl;
                     if (bin == 0 && padNumber == 21) {
                         for (int binX = 0; binX <= hUnfolded->GetNbinsX(); ++binX) {
                             Double_t x, y;
