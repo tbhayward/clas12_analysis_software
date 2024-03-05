@@ -2,6 +2,8 @@
 #include "TH1F.h"
 #include "TF1.h"
 #include "TCanvas.h"
+#include "TStyle.h" 
+#include "TPaveText.h"
 #include <iostream>
 
 int main(int argc, char **argv) {
