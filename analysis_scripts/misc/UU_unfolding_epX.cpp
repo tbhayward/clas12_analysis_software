@@ -585,9 +585,9 @@ int main() {
                     minuit.SetErrorDef(1); // Use 1 for chi-square
                     minuit.SetFCN(chiSquare);
 
-                    minuit.DefineParameter(0, "p0", 1.0, 0.0001, 0, 0);
-                    minuit.DefineParameter(1, "p1", 0.0, 0.0001, -1, 1);
-                    minuit.DefineParameter(2, "p2", 0.0, 0.0001, -1, 1);
+                    minuit.DefineParameter(0, "p0", 1.0, 0.00001, 0, 0);
+                    minuit.DefineParameter(1, "p1", -0.1, 0.00001, -1, 1);
+                    minuit.DefineParameter(2, "p2", 0.0, 0.00001, -1, 1);
 
                     hUnfoldedFilteredGlobal = hUnfoldedFiltered;
 
@@ -600,7 +600,7 @@ int main() {
                     minuit.mnexcm("HESSE", arglist, 1, ierflg);
 
                     // For calculating asymmetric errors, use Minos
-                    // minuit.Minos();
+                    minuit.Minos();
 
                     double par[3], err[3];
                     for (int i = 0; i < 3; i++) {
