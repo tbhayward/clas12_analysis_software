@@ -638,7 +638,7 @@ int main() {
                     //     }
                     // }
                     for (int binX = 1; binX <= hUnfoldedFiltered->GetNbinsX(); ++binX) {
-                        if (hUnfoldedFiltered->GetBinContent(binX) != 0) {
+                        // if (hUnfoldedFiltered->GetBinContent(binX) != 0) {
                             double acceptance = hAcceptance[bin][histIndex]->GetBinContent(binX);
                             if (acceptance > acceptanceThreshold || acceptance == 0) {
                                 gUnfolded->SetPoint(binX - 1, 9, hUnfoldedFiltered->GetBinContent(binX));
@@ -647,7 +647,7 @@ int main() {
                                 gUnfolded->SetPoint(binX - 1, hUnfoldedFiltered->GetBinCenter(binX), hUnfoldedFiltered->GetBinContent(binX));
                                 gUnfolded->SetPointError(binX - 1, 0., hUnfoldedFiltered->GetBinError(binX));
                             }
-                        }
+                        // }
                     }
                     std::cout << std::endl;
                     if (bin == 0 && padNumber == 2) {
@@ -674,7 +674,7 @@ int main() {
 
                     // Assuming the mean is still best estimated at x = 0
                     // double mean = fitFunc->Eval(0);
-                    double mean = fitFunction(0, par);
+                    double mean = fitFunction(TMath::Pi()/2, par);
                     minVal = -1000;
 
                     // Now use the maximum value to determine the amplitude
