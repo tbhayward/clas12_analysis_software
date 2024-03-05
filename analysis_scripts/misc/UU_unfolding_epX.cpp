@@ -635,9 +635,9 @@ int main() {
                     for (int binX = 1; binX <= hUnfoldedFiltered->GetNbinsX(); ++binX) {
                         if (hUnfoldedFiltered->GetBinContent(binX) != 0) {
                             double acceptance = hAcceptance[bin][histIndex]->GetBinContent(binX);
-                            if (acceptance > acceptanceThreshold || acceptance < 1) {
+                            if (acceptance > acceptanceThreshold || hUnfoldedFiltered->GetBinError(binX) < 1) {
                                 gUnfolded->SetPoint(binX - 1, 9, hUnfoldedFiltered->GetBinContent(binX));
-                                gUnfolded->SetPointError(binX - 1, 0., hUnfoldedFiltered->GetBinError(binX));
+                                gUnfolded->SetPointError(binX - 1, 0., 1e20);
                             } else {
                                 gUnfolded->SetPoint(binX - 1, hUnfoldedFiltered->GetBinCenter(binX), hUnfoldedFiltered->GetBinContent(binX));
                                 gUnfolded->SetPointError(binX - 1, 0., hUnfoldedFiltered->GetBinError(binX));
@@ -712,7 +712,7 @@ int main() {
                     fitResult->SetLineColor(kRed);
                     fitResult->Draw("same");
 
-                    TPaveText *pt = new TPaveText(0.1, 0.0725, 0.725, 0.350, "brNDC");
+                    TPaveText *pt = new TPaveText(0.1, 0.0725, 0.65, 0.350, "brNDC");
                     pt->SetBorderSize(1); // Set border size
                     pt->SetLineColor(kBlack); // Set border color
                     pt->SetFillColor(kWhite); // Set solid background color
