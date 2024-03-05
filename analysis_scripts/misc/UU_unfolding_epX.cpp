@@ -586,8 +586,8 @@ int main() {
                     minuit.SetFCN(chiSquare);
 
                     minuit.DefineParameter(0, "p0", 1.0, 0.00001, 0, 0);
-                    minuit.DefineParameter(1, "p1", -0.1, 0.00001, -1, 1);
-                    minuit.DefineParameter(2, "p2", 0.0, 0.00001, -1, 1);
+                    minuit.DefineParameter(1, "p1", -0.1, 0.00001, 0, 0);
+                    minuit.DefineParameter(2, "p2", 0.0, 0.00001, 0, 0);
 
                     hUnfoldedFilteredGlobal = hUnfoldedFiltered;
 
