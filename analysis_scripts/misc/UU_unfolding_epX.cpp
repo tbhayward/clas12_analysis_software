@@ -580,25 +580,37 @@ int main() {
                     //     }
                     // }
 
-                    TMinuit minuit(3); // Assuming 3 parameters for the fit function
+                    TMinuit minuit(3);
                     minuit.SetPrintLevel(-1);
-                    minuit.SetErrorDef(1); // Use 1 for chi-square
+                    minuit.SetErrorDef(1);
                     minuit.SetFCN(chiSquare);
 
-                    minuit.DefineParameter(0, "p0", 1.0, 0.00001, 0, 0);
+                    minuit.DefineParameter(0, "p0", hUnfoldedFiltered->GetMaximum(), 0.00001, 0, 0);
                     minuit.DefineParameter(1, "p1", -0.1, 0.00001, 0, 0);
                     minuit.DefineParameter(2, "p2", 0.0, 0.00001, 0, 0);
 
                     hUnfoldedFilteredGlobal = hUnfoldedFiltered;
 
-                    minuit.Migrad();
-                    // After MIGRAD, call Hesse
                     double arglist[10];
                     int ierflg = 0;
-                    arglist[0] = 0; // Number of steps (0 indicates to use the default value)
-                    minuit.mnexcm("MINImize", arglist, 1, ierflg);
-                    minuit.mnexcm("HESSE", arglist, 1, ierflg);
-                    minuit.mnexcm("MINOS", arglist, 1, ierflg);
+
+                    // Migrad with increased iterations and tolerance
+                    arglist[0] = 50000;
+                    arglist[1] = 0.01;
+                    minuit.mnexcm("MIGRAD", arglist, 2, ierflg);
+
+                    if (ierflg == 0) {
+                        // Proceed only if MIGRAD converged
+                        minuit.mnexcm("HESSE", arglist, 1, ierflg);
+                        if (ierflg == 0) {
+                            // Proceed to MINOS only if HESSE was successful
+                            minuit.mnexcm("MINOS", arglist, 1, ierflg);
+                        } else {
+                            std::cerr << "HESSE failed to converge." << std::endl;
+                        }
+                    } else {
+                        std::cerr << "MIGRAD failed to converge." << std::endl;
+                    }
 
                     // For calculating asymmetric errors, use Minos
                     // minuit.Minos();
