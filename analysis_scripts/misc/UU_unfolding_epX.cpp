@@ -598,9 +598,10 @@ int main() {
                     arglist[0] = 0; // Number of steps (0 indicates to use the default value)
                     minuit.mnexcm("MINImize", arglist, 1, ierflg);
                     minuit.mnexcm("HESSE", arglist, 1, ierflg);
+                    minuit.mnexcm("MINOS", arglist, 1, ierflg);
 
                     // For calculating asymmetric errors, use Minos
-                    minuit.Minos();
+                    // minuit.Minos();
 
                     double par[3], err[3];
                     for (int i = 0; i < 3; i++) {
