@@ -571,10 +571,10 @@ int main() {
                         if (acceptance > acceptanceThreshold || acceptance == 0) {
                             // For bins below the threshold, set content and error in the filtered histogram to indicate exclusion
                             hUnfoldedFiltered->SetBinContent(binX, 0);
-                            hUnfoldedFiltered->SetBinError(binX, 1e20); // Set a very high error
+                            hUnfoldedFiltered->SetBinError(binX, 1e9); // Set a very high error
                         }
                     }
-                    if (bin == 0 && padNumber == 2) {
+                    if (bin == 0 && padNumber == 21) {
                         for (int binX = 0; binX <= hUnfolded->GetNbinsX(); ++binX) {
                             std::cout << hUnfoldedFiltered->GetBinContent(binX) << " " << hUnfoldedFiltered->GetBinError(binX) << std::endl;
                         }
