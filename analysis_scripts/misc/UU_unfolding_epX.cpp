@@ -217,9 +217,9 @@ int main() {
     for (int bin = 0; bin < 17; ++bin) { 
         // std::cout << bin << " " << num_pT_bins[bin] << " " << num_z_bins[bin] << " " << num_pT_bins[bin] * num_z_bins[bin] << std::endl;
         for (int i = 0; i < num_pT_bins[bin] * num_z_bins[bin]; ++i) {
-            hData[bin].push_back(new TH1F(Form("hData_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 48, 0, 2*TMath::Pi()));
-            hMCReco[bin].push_back(new TH1F(Form("hMCReco_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 48, 0, 2*TMath::Pi()));
-            hMCGene[bin].push_back(new TH1F(Form("hMCGene_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 48, 0, 2*TMath::Pi()));
+            hData[bin].push_back(new TH1F(Form("hData_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 24, 0, 2*TMath::Pi()));
+            hMCReco[bin].push_back(new TH1F(Form("hMCReco_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 24, 0, 2*TMath::Pi()));
+            hMCGene[bin].push_back(new TH1F(Form("hMCGene_bin%d_%d", bin+1, i), ";#phi;Normalized Counts", 24, 0, 2*TMath::Pi()));
         }
     }
 
@@ -712,7 +712,7 @@ int main() {
                     fitResult->SetLineColor(kRed);
                     fitResult->Draw("same");
 
-                    TPaveText *pt = new TPaveText(0.1, 0.0725, 0.65, 0.350, "brNDC");
+                    TPaveText *pt = new TPaveText(0.075, 0.0725, 0.6, 0.325 , "brNDC");
                     pt->SetBorderSize(1); // Set border size
                     pt->SetLineColor(kBlack); // Set border color
                     pt->SetFillColor(kWhite); // Set solid background color
