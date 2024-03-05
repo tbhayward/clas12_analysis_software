@@ -14,12 +14,9 @@ int main(int argc, char **argv) {
 
     TF1 *fitFunc = new TF1("fitFunc", "pol1 + gaus(2)", hist->GetXaxis()->GetXmin(), hist->GetXaxis()->GetXmax());
 
-    // Set parameter names
     fitFunc->SetParNames("b", "m", "A", "mu", "sigma");
-    // Initial parameter guesses
     fitFunc->SetParameters(0, 0.1, hist->GetMaximum(), hist->GetMean(), hist->GetStdDev());
     fitFunc->SetParLimits(2, 0.0000, 1e10); // positive amplitude
-    fitFunc->SetParLimits(4, 0.0000, 1e10); // positive sigma
     hist->Fit(fitFunc, "R");
     hist->SetStats(kFALSE);
 
@@ -28,7 +25,7 @@ int main(int argc, char **argv) {
     fitFunc->Draw("same");
 
     // Create a TPaveText to display fitted parameters
-    TPaveText *pt = new TPaveText(0.6, 0.7, 0.9, 0.9, "NDC"); // NDC coordinates
+    TPaveText *pt = new TPaveText(0.6, 0.7, 0.9, 0.9, "NDC"); 
     pt->SetBorderSize(1);
     pt->SetFillStyle(1001);
     pt->SetTextAlign(12);
@@ -39,10 +36,8 @@ int main(int argc, char **argv) {
     pt->AddText(Form("sigma = %.3f #pm %.3f", fitFunc->GetParameter(4), fitFunc->GetParError(4)));
     pt->Draw();
 
-    // Save the canvas as a PNG image
     c1->SaveAs("/u/home/thayward/fit_distro.png");
 
-    // Cleanup
     delete c1;
     file->Close();
     delete file;
