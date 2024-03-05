@@ -666,15 +666,15 @@ int main() {
 
                     // Assuming the mean is still best estimated at x = 0
                     // double mean = fitFunc->Eval(0);
-                    double mean = fitFunction(0, par);
+                    double mean = fitFunction(TMath::Pi()/2, par);
 
                     // Now use the maximum value to determine the amplitude
                     // Amplitude is now taken as the maximum deviation from the mean
                     double amplitude = TMath::Max(TMath::Abs(maxVal - mean), TMath::Abs(mean - minVal));
 
                     // Setting y-axis limits to +/- 2 times the amplitude around the mean
-                    double yMin = mean - 2.5 * amplitude;
-                    double yMax = mean + 2.5 * amplitude;
+                    double yMin = mean - 2.0 * amplitude;
+                    double yMax = mean + 2.0 * amplitude;
 
                     gUnfolded->SetMinimum(yMin);
                     gUnfolded->SetMaximum(yMax);
