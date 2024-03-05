@@ -44,7 +44,7 @@ void chiSquare(int &npar, double *gin, double &f, double *par, int iflag) {
         double err = hUnfoldedFilteredGlobal->GetBinError(i);
         double fit = fitFunction(x, par);
         
-        if (err > 0) {
+        if (err > 0 && err < 1e10) {
             chi2 += pow((meas - fit) / err, 2);
         }
     }
@@ -574,7 +574,7 @@ int main() {
                             hUnfoldedFiltered->SetBinError(binX, 1e9); // Set a very high error
                         }
                     }
-                    if (bin == 0 && padNumber == 21) {
+                    if (bin == 0 && padNumber == 2) {
                         for (int binX = 0; binX <= hUnfolded->GetNbinsX(); ++binX) {
                             std::cout << binX << " " << hUnfoldedFiltered->GetBinContent(binX) << " " << hUnfoldedFiltered->GetBinError(binX) << std::endl;
                         }
@@ -614,7 +614,13 @@ int main() {
                     double chi2, dum1, dum2;
                     int nvpar, nparx, icstat;
                     minuit.mnstat(chi2, dum1, dum2, nvpar, nparx, icstat);
-                    int ndf = hUnfoldedFilteredGlobal->GetNbinsX() - nvpar;
+                    int num_empty_bins = 0;
+                    for (int binX = 1; binX < hUnfoldedFilteredGlobal->GetNbinsX(); ++binX) {
+                        if (hUnfoldedFiltered->GetBinError(binX) > 1e10) {
+                            num_empty_bins++;
+                        }
+                    }
+                    int ndf = hUnfoldedFilteredGlobal->GetNbinsX() - nvpar - num_empty_bins;
 
                     FitParams params = {
                         par[0], par[1], par[2],
@@ -631,7 +637,7 @@ int main() {
                     //         gUnfolded->SetPointError(binX - 1, 0., hUnfolded->GetBinError(binX));
                     //     }
                     // }
-                    for (int binX = 0; binX <= hUnfoldedFiltered->GetNbinsX(); ++binX) {
+                    for (int binX = 1; binX <= hUnfoldedFiltered->GetNbinsX(); ++binX) {
                         if (hUnfoldedFiltered->GetBinContent(binX) != 0) {
                             double acceptance = hAcceptance[bin][histIndex]->GetBinContent(binX);
                             if (acceptance > acceptanceThreshold || acceptance == 0) {
@@ -643,9 +649,9 @@ int main() {
                             }
                         }
                     }
-                    std::cout << std::endl << std::endl << std::endl;
-                    if (bin == 0 && padNumber == 21) {
-                        for (int binX = 0; binX <= hUnfolded->GetNbinsX(); ++binX) {
+                    std::cout << std::endl;
+                    if (bin == 0 && padNumber == 2) {
+                        for (int binX = 1; binX <= hUnfolded->GetNbinsX(); ++binX) {
                             Double_t x, y;
                             gUnfolded->GetPoint(binX, x, y); // Get the x and y values of the point at index i
                             Double_t yerr = gUnfolded->GetErrorY(binX);
