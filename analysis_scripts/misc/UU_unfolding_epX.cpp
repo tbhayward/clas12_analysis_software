@@ -664,8 +664,8 @@ int main() {
                         if (val < minVal) minVal = val;
                     }
                     // // Find the maximum value of the function between 0 and 2*pi
-                    double maxVal = fitFunc->GetMaximum(0, 2 * TMath::Pi());
-                    double minVal = fitFunc->GetMinimum(0, 2 * TMath::Pi());
+                    // double maxVal = fitFunc->GetMaximum(0, 2 * TMath::Pi());
+                    // double minVal = fitFunc->GetMinimum(0, 2 * TMath::Pi());
 
                     // Assuming the mean is still best estimated at x = 0
                     // double mean = fitFunc->Eval(0);
