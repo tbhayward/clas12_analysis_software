@@ -574,8 +574,10 @@ int main() {
                             hUnfoldedFiltered->SetBinError(binX, 1e20); // Set a very high error
                         }
                     }
-                    for (int binX = 0; binX <= hUnfolded->GetNbinsX(); ++binX) {
-                        std::cout << hUnfoldedFiltered->GetBinContent(binX) << " " << hUnfoldedFiltered->GetBinError(binX) << std::endl;
+                    if (bin == 0 && padNumber == 2) {
+                        for (int binX = 0; binX <= hUnfolded->GetNbinsX(); ++binX) {
+                            std::cout << hUnfoldedFiltered->GetBinContent(binX) << " " << hUnfoldedFiltered->GetBinError(binX) << std::endl;
+                        }
                     }
 
                     // Now fit hUnfoldedFiltered
