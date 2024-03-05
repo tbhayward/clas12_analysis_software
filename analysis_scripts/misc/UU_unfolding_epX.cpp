@@ -574,18 +574,18 @@ int main() {
                             hUnfoldedFiltered->SetBinError(binX, 1e20); // Set a very high error
                         }
                     }
-                    // if (bin == 0 && padNumber == 2) {
-                    //     for (int binX = 0; binX <= hUnfolded->GetNbinsX(); ++binX) {
-                    //         std::cout << binX << " " << hUnfoldedFiltered->GetBinContent(binX) << " " << hUnfoldedFiltered->GetBinError(binX) << std::endl;
-                    //     }
-                    // }
+                    if (bin == 0 && padNumber == 2) {
+                        for (int binX = 0; binX <= hUnfolded->GetNbinsX(); ++binX) {
+                            std::cout << binX << " " << hUnfoldedFiltered->GetBinContent(binX) << " " << hUnfoldedFiltered->GetBinError(binX) << std::endl;
+                        }
+                    }
 
                     TMinuit minuit(3);
                     minuit.SetPrintLevel(-1);
                     minuit.SetErrorDef(1);
                     minuit.SetFCN(chiSquare);
 
-                    minuit.DefineParameter(0, "p0", hUnfoldedFiltered->GetMaximum(), 0.00001, 0, 0);
+                    minuit.DefineParameter(0, "p0", 0.8*hUnfoldedFiltered->GetMaximum(), 0.00001, 0, 0);
                     minuit.DefineParameter(1, "p1", -0.1, 0.00001, 0, 0);
                     minuit.DefineParameter(2, "p2", 0.0, 0.00001, 0, 0);
 
