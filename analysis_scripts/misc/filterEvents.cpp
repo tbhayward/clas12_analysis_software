@@ -52,7 +52,8 @@ void filterEvents(const char* inputFile) {
 
     for (Long64_t i = 0; i < nentries; i++) {
         tree->GetEntry(i);
-        if (Mx > 1.4 && y < 0.75) {
+        // if (Mx > 1.4 && y < 0.75) {
+        if (Mx > 1.9 && y < 0.75) {
             outTree->Fill(); // Copy this entry to the output tree
             nselected++;
         }
