@@ -633,7 +633,7 @@ int main() {
                     TGraphErrors* gUnfolded = new TGraphErrors();
 
                     for (int binX = 1; binX <= hUnfoldedFiltered->GetNbinsX(); ++binX) {
-                        if (hUnfoldedFiltered->GetBinContent(binX) != 0) {
+                        // if (hUnfoldedFiltered->GetBinContent(binX) != 0) {
                             double acceptance = hAcceptance[bin][histIndex]->GetBinContent(binX);
                             if (acceptance > acceptanceThreshold || hUnfoldedFiltered->GetBinError(binX) < 1) {
                                 gUnfolded->SetPoint(binX - 1, 9, hUnfoldedFiltered->GetBinContent(binX));
@@ -642,7 +642,7 @@ int main() {
                                 gUnfolded->SetPoint(binX - 1, hUnfoldedFiltered->GetBinCenter(binX), hUnfoldedFiltered->GetBinContent(binX));
                                 gUnfolded->SetPointError(binX - 1, 0., hUnfoldedFiltered->GetBinError(binX));
                             }
-                        }
+                        // }
                     }
 
                     if (bin == 0 && padNumber == 2) {
