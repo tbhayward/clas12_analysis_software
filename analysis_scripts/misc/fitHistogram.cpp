@@ -18,11 +18,11 @@ int main(int argc, char **argv) {
     fitFunc->SetParNames("b", "m", "A", "mu", "sigma");
     // Initial parameter guesses
     fitFunc->SetParameters(0, 0.1, hist->GetMaximum(), 0.94, 0.1); 
-    // fitFunc->SetParLimits(2, 0.0001, 1e10); 
+    fitFunc->SetParLimits(4, 0.0000, 1e10); // positive sigma
     hist->Fit(fitFunc, "R");
+    hist->SetStats(kFALSE);
 
     TCanvas *c1 = new TCanvas("c1", "Histogram Fit", 800, 600);
-    gStyle->SetOptStat(0);
     hist->Draw();
     fitFunc->Draw("same");
 
