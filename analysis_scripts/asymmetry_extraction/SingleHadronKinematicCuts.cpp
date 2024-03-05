@@ -32,7 +32,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         } 
 
         // multidimensional analysis checks
-        else if (*Q2>1 && *W>2 && *Mx>1.4 && *y<0.75) {
+        else if (*Q2>1 && *W>2 && *Mx>1.9  && *y<0.75) {
           size_t pos = property.find("z");
           std::string prez = property.substr(0, pos);
           std::string postz = property.substr(pos + 1); // Skip "z" itself
@@ -63,15 +63,15 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
 
             // Corrected z bin checks
             if (postz == "z1") {
-                goodEvent = *z > 0.10 && *z <= 0.20;
+                goodEvent = *z > 0.10 && *z <= 0.25;
             } else if (postz == "z2") {
-                goodEvent = *z > 0.20 && *z <= 0.30;
+                goodEvent = *z > 0.25 && *z <= 0.35;
             } else if (postz == "z3") {
-                goodEvent = *z > 0.30 && *z <= 0.40;
+                goodEvent = *z > 0.35 && *z <= 0.45;
             } else if (postz == "z4") {
-                goodEvent = *z > 0.40 && *z <= 0.50;
+                goodEvent = *z > 0.45 && *z <= 0.55;
             } else if (postz == "z5") {
-                goodEvent = *z > 0.50 && *z <= 0.70;
+                goodEvent = *z > 0.55 && *z <= 0.75;
             }
           }
         }

@@ -542,6 +542,7 @@ int main() {
                     // calculate and set the errors for each bin
                     for (int binX = 1; binX <= hUnfolded->GetNbinsX(); ++binX) {
                         double a = hData[bin][histIndex]->GetBinContent(binX);
+                        double c = hMCReco[bin][histIndex]->GetBinContent(binX);
                         double b = hAcceptance[bin][histIndex]->GetBinContent(binX);
                         double sigma_a = hData[bin][histIndex]->GetBinError(binX);
                         double sigma_b = hAcceptance[bin][histIndex]->GetBinError(binX);
@@ -556,13 +557,13 @@ int main() {
                             hUnfolded->SetBinError(binX, 1e20);
                         }
 
-                        if (bin == 0 && padNumber == 2) { std::cout << a << " " << b << " " << hUnfolded->GetBinContent(binX) << " " << hUnfolded->GetBinError(binX) << std::endl; }
+                        if (bin == 0 && padNumber == 2) { std::cout << a << " " << c << " " << b << " " << hUnfolded->GetBinContent(binX) << " " << hUnfolded->GetBinError(binX) << std::endl; }
                     }
 
                     // TF1* fitFunc = new TF1("fitFunc", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", 0, 2*TMath::Pi());
                     // fitFunc->SetParameters(0, 0, 0);
                     // Threshold for acceptance
-                    double acceptanceThreshold = 1/0.001; // lower number is the percentage threshold
+                    double acceptanceThreshold = 1/0.000000000000001; // lower number is the percentage threshold
                     // Clone the original histogram to preserve the data
                     TH1F* hUnfoldedFiltered = (TH1F*)hUnfolded->Clone("hUnfoldedFiltered");
                     // Loop over bins and only keep those with acceptance above the threshold
