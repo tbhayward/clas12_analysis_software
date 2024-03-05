@@ -633,16 +633,16 @@ int main() {
                     TGraphErrors* gUnfolded = new TGraphErrors();
 
                     for (int binX = 1; binX <= hUnfoldedFiltered->GetNbinsX(); ++binX) {
-                        // if (hUnfoldedFiltered->GetBinContent(binX) != 0) {
+                        if (hUnfoldedFiltered->GetBinContent(binX) != 0) {
                             double acceptance = hAcceptance[bin][histIndex]->GetBinContent(binX);
-                            if (acceptance > acceptanceThreshold || acceptance == 0) {
+                            if (acceptance > acceptanceThreshold || acceptance < 1) {
                                 gUnfolded->SetPoint(binX - 1, 9, hUnfoldedFiltered->GetBinContent(binX));
                                 gUnfolded->SetPointError(binX - 1, 0., hUnfoldedFiltered->GetBinError(binX));
                             } else {
                                 gUnfolded->SetPoint(binX - 1, hUnfoldedFiltered->GetBinCenter(binX), hUnfoldedFiltered->GetBinContent(binX));
                                 gUnfolded->SetPointError(binX - 1, 0., hUnfoldedFiltered->GetBinError(binX));
                             }
-                        // }
+                        }
                     }
 
                     if (bin == 0 && padNumber == 2) {
@@ -669,15 +669,15 @@ int main() {
 
                     // Assuming the mean is still best estimated at x = 0
                     // double mean = fitFunc->Eval(0);
-                    double mean = fitFunction(TMath::Pi()/2, par);
+                    double mean = fitFunction(0, par);
 
                     // Now use the maximum value to determine the amplitude
                     // Amplitude is now taken as the maximum deviation from the mean
                     double amplitude = TMath::Max(TMath::Abs(maxVal - mean), TMath::Abs(mean - minVal));
 
                     // Setting y-axis limits to +/- 2 times the amplitude around the mean
-                    double yMin = mean - 2 * amplitude;
-                    double yMax = mean + 2 * amplitude;
+                    double yMin = mean - 2.5 * amplitude;
+                    double yMax = mean + 2.5 * amplitude;
 
                     gUnfolded->SetMinimum(yMin);
                     gUnfolded->SetMaximum(yMax);
@@ -712,7 +712,7 @@ int main() {
                     fitResult->SetLineColor(kRed);
                     fitResult->Draw("same");
 
-                    TPaveText *pt = new TPaveText(0.125, 0.075, 0.75, 0.375, "brNDC");
+                    TPaveText *pt = new TPaveText(0.1, 0.0725, 0.725, 0.350, "brNDC");
                     pt->SetBorderSize(1); // Set border size
                     pt->SetLineColor(kBlack); // Set border color
                     pt->SetFillColor(kWhite); // Set solid background color
