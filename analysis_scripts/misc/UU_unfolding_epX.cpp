@@ -576,7 +576,7 @@ int main() {
                     }
                     if (bin == 0 && padNumber == 21) {
                         for (int binX = 0; binX <= hUnfolded->GetNbinsX(); ++binX) {
-                            std::cout << hUnfoldedFiltered->GetBinContent(binX) << " " << hUnfoldedFiltered->GetBinError(binX) << std::endl;
+                            std::cout << binX << " " << hUnfoldedFiltered->GetBinContent(binX) << " " << hUnfoldedFiltered->GetBinError(binX) << std::endl;
                         }
                     }
 
@@ -641,6 +641,15 @@ int main() {
                                 gUnfolded->SetPoint(binX - 1, hUnfoldedFiltered->GetBinCenter(binX), hUnfoldedFiltered->GetBinContent(binX));
                                 gUnfolded->SetPointError(binX - 1, 0., hUnfoldedFiltered->GetBinError(binX));
                             }
+                        }
+                    }
+                    std::cout << endl << endl << endl;
+                    if (bin == 0 && padNumber == 21) {
+                        for (int binX = 0; binX <= hUnfolded->GetNbinsX(); ++binX) {
+                            Double_t x, y;
+                            gUnfolded->GetPoint(binX, x, y); // Get the x and y values of the point at index i
+                            Double_t yerr = gUnfolded->GetErrorY(binX);
+                            std::cout << binX << " " << x << " " << y << " " << yerr << std::endl;
                         }
                     }
 
