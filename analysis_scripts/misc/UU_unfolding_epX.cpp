@@ -571,7 +571,7 @@ int main() {
                         if (acceptance > acceptanceThreshold || acceptance == 0) {
                             // For bins below the threshold, set content and error in the filtered histogram to indicate exclusion
                             hUnfoldedFiltered->SetBinContent(binX, 0);
-                            hUnfoldedFiltered->SetBinError(binX, 1e9); // Set a very high error
+                            hUnfoldedFiltered->SetBinError(binX, 1e20); // Set a very high error
                         }
                     }
                     if (bin == 0 && padNumber == 2) {
@@ -631,12 +631,7 @@ int main() {
                     allFitParams[bin][histIndex] = params;
 
                     TGraphErrors* gUnfolded = new TGraphErrors();
-                    // for (int binX = 0; binX <= hUnfolded->GetNbinsX(); ++binX) {
-                    //     if (hUnfolded->GetBinContent(binX) != 0) {
-                    //         gUnfolded->SetPoint(binX - 1, hUnfolded->GetBinCenter(binX), hUnfolded->GetBinContent(binX));
-                    //         gUnfolded->SetPointError(binX - 1, 0., hUnfolded->GetBinError(binX));
-                    //     }
-                    // }
+
                     for (int binX = 1; binX <= hUnfoldedFiltered->GetNbinsX(); ++binX) {
                         // if (hUnfoldedFiltered->GetBinContent(binX) != 0) {
                             double acceptance = hAcceptance[bin][histIndex]->GetBinContent(binX);
@@ -649,7 +644,7 @@ int main() {
                             }
                         // }
                     }
-                    std::cout << std::endl;
+
                     if (bin == 0 && padNumber == 2) {
                         for (int binX = 1; binX <= hUnfolded->GetNbinsX(); ++binX) {
                             Double_t x, y;
@@ -669,13 +664,12 @@ int main() {
                         if (val < minVal) minVal = val;
                     }
                     // // Find the maximum value of the function between 0 and 2*pi
-                    // double maxVal = fitFunc->GetMaximum(0, 2 * TMath::Pi());
-                    // double minVal = fitFunc->GetMinimum(0, 2 * TMath::Pi());
+                    double maxVal = fitFunc->GetMaximum(0, 2 * TMath::Pi());
+                    double minVal = fitFunc->GetMinimum(0, 2 * TMath::Pi());
 
                     // Assuming the mean is still best estimated at x = 0
                     // double mean = fitFunc->Eval(0);
                     double mean = fitFunction(TMath::Pi()/2, par);
-                    minVal = -1000;
 
                     // Now use the maximum value to determine the amplitude
                     // Amplitude is now taken as the maximum deviation from the mean
@@ -730,10 +724,10 @@ int main() {
                     pt->AddText(Form("C = %.2f #pm %.3f", params.C, params.errC));
                     pt->AddText(Form("#chi^{2}/ndf = %.2f", params.chi2ndf));
 
-                    // // Draw the TPaveText
-                    // pt->Draw();
-                    // // Adjusting this display to correctly label each bin according to the new structure
-                    // latex.DrawLatexNDC(0.18, 0.86, Form("Q2-y bin: %d, z-PT bin: %d", bin + 1, padNumber));
+                    // Draw the TPaveText
+                    pt->Draw();
+                    // Adjusting this display to correctly label each bin according to the new structure
+                    latex.DrawLatexNDC(0.18, 0.86, Form("Q2-y bin: %d, z-PT bin: %d", bin + 1, padNumber));
 
                     delete hUnfolded; // Clean up
                 }
