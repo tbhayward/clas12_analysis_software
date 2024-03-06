@@ -226,7 +226,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
 
 
 
-        else if (check == false) {
+        else if (checked == false) {
           std::cout << "Property, " << property << ", not detected." << std::endl;
         }
 
