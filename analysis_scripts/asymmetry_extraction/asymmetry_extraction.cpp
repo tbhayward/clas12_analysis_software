@@ -268,8 +268,8 @@ int main(int argc, char *argv[]) {
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
     switch (channel) {
       case 0: cout << "No MLM fit for inclusive." << endl; break;
-      // case 1: performMLMFits_single_hadron(output_file.c_str(), 
-      //   kinematic_file.c_str(), binNames[i]); break;
+      case 1: performMLMFits_single_hadron(output_file.c_str(), 
+        kinematic_file.c_str(), binNames[i]); break;
       case 2: performMLMFits_b2b_dihadron(output_file.c_str(), 
         kinematic_file.c_str(), binNames[i]); break;
       case 3: cout << "No dihadron MLM fit (yet)." << endl; break;
