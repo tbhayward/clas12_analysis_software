@@ -36,7 +36,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
           size_t pos = property.find("z");
           std::string prez = property.substr(0, pos);
           std::string postz = property.substr(pos + 1); // Skip "z" itself
-          std::cout << prez << " " << postz << " " property << std::endl;
+          std::cout << prez << " " << postz << " " << property << std::endl;
 
           // Corrected conditional checks for prez
           if (prez == "Q2y1" || prez == "Q2y2" || prez == "Q2y3"  || prez == "Q2y4") {
