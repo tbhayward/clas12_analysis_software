@@ -66,7 +66,6 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
             // Corrected z bin checks
             if (postz == "z1") {
                 goodEvent = *z > 0.10 && *z <= 0.25;
-                std::cout << "sup" << std::endl;
             } else if (postz == "z2") {
                 goodEvent = *z > 0.25 && *z <= 0.35;
             } else if (postz == "z3") {
@@ -226,9 +225,9 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
 
 
 
-        else if (checked == false) {
-          std::cout << "Property, " << property << ", not detected." << std::endl;
-        }
+        // else if (checked == false) {
+        //   std::cout << "Property, " << property << ", not detected." << std::endl;
+        // }
 
         if (isMC || (*runnum < 16042 || *runnum > 17811)) {
           return goodEvent;
