@@ -14,6 +14,7 @@ SingleHadronKinematicCuts::SingleHadronKinematicCuts(TTreeReader& reader)
 
 bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         bool goodEvent = false;
+        bool checked = false;
         string property = binNames[currentFits];
 
         if (property == "xF") {
@@ -33,10 +34,10 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
 
         // multidimensional analysis checks
         else if (*Q2>1 && *W>2 && *Mx>1.9  && *y<0.75) {
+          checked = true;
           size_t pos = property.find("z");
           std::string prez = property.substr(0, pos);
           std::string postz = property.substr(pos); // Skip "z" itself
-          std::cout << prez << " " << postz << " " << property << std::endl;
 
           // Corrected conditional checks for prez
           if (prez == "Q2y1" || prez == "Q2y2" || prez == "Q2y3"  || prez == "Q2y4") {
@@ -65,6 +66,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
             // Corrected z bin checks
             if (postz == "z1") {
                 goodEvent = *z > 0.10 && *z <= 0.25;
+                std::cout << "sup" << std::endl;
             } else if (postz == "z2") {
                 goodEvent = *z > 0.25 && *z <= 0.35;
             } else if (postz == "z3") {
@@ -218,7 +220,13 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
           property == "Q2TFRpim") {
           goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *z>0.20 && *xF>0;
         }
-        else {
+
+
+
+
+
+
+        else if (check == false) {
           std::cout << "Property, " << property << ", not detected." << std::endl;
         }
 
