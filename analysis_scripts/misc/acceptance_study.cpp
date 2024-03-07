@@ -71,7 +71,7 @@ int acceptanceStudy(double B, double C) {
 
     // Saving the plot
     std::ostringstream filename;
-    filename << "output/acceptance_study_B=" << B << "_C=" << fitFunc->GetParameter(1) << ".png";
+    filename << "output/acceptance_study_B=" << B << "_C=" << C << ".png";
     c->SaveAs(filename.str().c_str());
 
     delete c;
