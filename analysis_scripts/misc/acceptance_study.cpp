@@ -28,6 +28,25 @@ void generateData(double B, double C, long unsigned int N, std::vector<double>& 
     }
 }
 
+void setupCanvas(TCanvas* masterCanvas) {
+    masterCanvas->Divide(3, 2, 0.001, 0.001); // Small gaps to visually separate pads, adjust as needed
+
+    // Loop over all pads to adjust margins
+    for (int i = 1; i <= 6; ++i) {
+        masterCanvas->cd(i);
+        TPad *pad = (TPad*)gPad;
+
+        bool isLeftColumn = (i % 3 == 1); // Pads 1, 4 are in the left column
+        bool isBottomRow = (i > 3); // Pads 4, 5, 6 are in the bottom row
+
+        pad->SetTopMargin(0.12);
+        pad->SetBottomMargin(isBottomRow ? 0.15 : 0.02); // Increase bottom margin for bottom row
+        pad->SetLeftMargin(isLeftColumn ? 0.15 : 0.02); // Increase left margin for left column
+        pad->SetRightMargin(0.05);
+    }
+}
+
+
 void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int canvasIndex, int binsToExclude, TCanvas* masterCanvas) {
     double binWidth = (2 * TMath::Pi()) / 24;
     TGraphErrors *graphIncluded = new TGraphErrors();
@@ -100,6 +119,17 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     double ndf = fitFuncLimited->GetNDF();
     pt->AddText(Form("#chi^{2}/ndf = %.3f", chi2 / ndf));
     pt->Draw();
+
+    // After drawing the graphs and fit function, adjust axis titles visibility if necessary
+    bool isLeftColumn = (canvasIndex % 3 == 1); // Adjust based on your actual layout
+    bool isBottomRow = (canvasIndex > 3); // Adjust based on your actual layout
+
+    if (!isLeftColumn) {
+        graphIncluded->GetYaxis()->SetTitle("");
+    }
+    if (!isBottomRow) {
+        graphIncluded->GetXaxis()->SetTitle("");
+    }
 }
 
 int acceptanceStudy(double B, double C) {
@@ -108,7 +138,7 @@ int acceptanceStudy(double B, double C) {
     generateData(B, C, N, phiVec);
 
     TCanvas *masterCanvas = new TCanvas("masterCanvas", "Phi Distribution Fits", 1200, 800);
-    masterCanvas->Divide(3, 2);
+    setupCanvas(masterCanvas); // Correct placement
 
     // Loop over different numbers of bins to exclude
     for (int i = 0; i <= 5; ++i) {
@@ -130,6 +160,7 @@ int main(int argc, char** argv) {
     }
     double B = atof(argv[1]);
     double C = atof(argv[2]);
+
 
     return acceptanceStudy(B, C);
 }
