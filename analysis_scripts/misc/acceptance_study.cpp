@@ -94,8 +94,8 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     pt->SetFillColor(0);
     pt->SetTextAlign(12);
     pt->AddText(Form("Exclusion: %.1f%%", exclusionPercentage));
-    pt->AddText(Form("A_{UU}^{cos#phi} = %.3f #pm %.3f", fitFunc->GetParameter(1), fitFunc->GetParError(1)));
-    pt->AddText(Form("A_{UU}^{cos2#phi} = %.3f #pm %.3f", fitFunc->GetParameter(2), fitFunc->GetParError(2)));
+    pt->AddText(Form("A_{UU}^{cos#phi} = %.3f #pm %.3f", fitFuncLimited->GetParameter(1), fitFuncLimited->GetParError(1)));
+    pt->AddText(Form("A_{UU}^{cos2#phi} = %.3f #pm %.3f", fitFuncLimited->GetParameter(2), fitFuncLimited->GetParError(2)));
     double chi2 = fitFunc->GetChisquare();
     double ndf = fitFunc->GetNDF();
     pt->AddText(Form("#chi^{2}/ndf = %.3f", chi2 / ndf));
