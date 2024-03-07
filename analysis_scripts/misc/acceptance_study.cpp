@@ -29,7 +29,7 @@ void generateData(double B, double C, long unsigned int N, std::vector<double>& 
 }
 
 int acceptanceStudy(double B, double C) {
-    const long unsigned int N = 1e5; // Target number of points
+    const long unsigned int N = 5e4; // Target number of points
     std::vector<double> phiVec;
     generateData(B, C, N, phiVec);
     std::cout << "Data generated. Number of accepted phi values: " << phiVec.size() << std::endl;
@@ -66,6 +66,8 @@ int acceptanceStudy(double B, double C) {
     graph->Draw("APE");
     graph->GetXaxis()->SetLimits(0, TMath::TwoPi()); // Set x-axis range to 0 to 2pi
     graph->GetYaxis()->SetRangeUser(*std::min_element(binCounts, binCounts + nBins) * 0.8, *std::max_element(binCounts, binCounts + nBins) * 1.2); 
+    graph->GetXaxis()->SetTitle("#phi");
+    graph->GetYaxis()->SetTitle("Counts");
 
     fitFunc->SetLineColor(kRed);
     fitFunc->Draw("same");
