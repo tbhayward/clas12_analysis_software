@@ -80,6 +80,7 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
 
 	masterCanvas->cd(canvasIndex);
 	graphIncluded->Draw("AP");
+	graphIncluded->GetYaxis()->SetRangeUser(3000, 7000);
 	graphExcluded->Draw("P SAME");
 	fitFuncFullRange->Draw("SAME");
 
@@ -87,7 +88,6 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     graphIncluded->GetXaxis()->SetTitle("#phi");
     graphIncluded->GetYaxis()->SetTitle("Counts");
     graphIncluded->GetXaxis()->SetLimits(0, TMath::TwoPi());
-    graphIncluded->GetYaxis()->SetLimits(3000, 7000);
 
     // Adding TPaveText for fit parameters and chi2/ndf
     TPaveText *pt = new TPaveText(0.1, 0.65, 0.5, 0.9, "NDC");
