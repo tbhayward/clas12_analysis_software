@@ -29,18 +29,43 @@ void generateData(double B, double C, long unsigned int N, std::vector<double>& 
 }
 
 void setupCanvas(TCanvas* masterCanvas) {
-    masterCanvas->Divide(3, 2, 0, 0); // Set gaps to 0
+    // Delete the automatic divide and manually create pads
+    masterCanvas->Clear();
 
-    for (int i = 1; i <= 6; ++i) {
-        masterCanvas->cd(i);
-        TPad *pad = (TPad*)gPad;
+    double padWidth = 1.0 / 3.0;
+    double padHeight = 1.0 / 2.0;
+    for (int i = 0; i < 6; ++i) {
+        double left = (i % 3) * padWidth;
+        double right = left + padWidth;
+        double bottom = 1.0 - (i / 3 + 1) * padHeight;
+        double top = bottom + padHeight;
+
+        // Creating a unique name and title for each pad
+        TString padName = Form("pad%d", i + 1);
+        TString padTitle = Form("Pad %d", i + 1);
+
+        TPad* pad = new TPad(padName, padTitle, left, bottom, right, top, 0, 0, 0);
+        pad->SetTopMargin((i < 3) ? 0.02 : 0.01); // Adjust if needed
+        pad->SetBottomMargin((i >= 3) ? 0.15 : 0.01); // Adjust if needed
+        pad->SetLeftMargin(((i % 3) == 0) ? 0.15 : 0.01);
+        pad->SetRightMargin(((i % 3) == 2) ? 0.01 : 0.01);
+
+        masterCanvas->cd();
+        pad->Draw();
+        pad->cd();
         
-        pad->SetTopMargin((i <= 3) ? 0.02 : 0.01); // Smaller margin for top row
-        pad->SetBottomMargin((i > 3) ? 0.15 : 0.01); // Larger bottom margin only for bottom row
-        pad->SetLeftMargin(((i-1) % 3 == 0) ? 0.15 : 0.01); // Larger left margin only for first column
-        pad->SetRightMargin(((i-1) % 3 == 2) ? 0.01 : 0.01); // Uniform right margin
+        // Ensuring axes and labels are drawn only where needed
+        if ((i % 3) != 0) { // Not the first column
+            pad->SetLeftMargin(0.01); // Minimize left margin
+        }
+        if (i < 3) { // Not the bottom row
+            pad->SetBottomMargin(0.01); // Minimize bottom margin
+        }
+
+        // Note: You might need to adjust drawing commands within each pad accordingly.
     }
 }
+
 
 
 void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int canvasIndex, int binsToExclude, TCanvas* masterCanvas) {
