@@ -74,7 +74,7 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
         }
     }
 
-    double exclusionPercentage = binsToExclude * 100.0 / 12.0; // 12.0 because 24 bins total, and we exclude from both sides
+    double exclusionPercentage = (binsToExclude / 24.0) * 100.0; // Update formula to accurately represent the exclusion percentage
 
     masterCanvas->cd(canvasIndex);
     graphIncluded->SetMarkerStyle(20); // Filled circles for included points
@@ -164,10 +164,11 @@ int acceptanceStudy(double B, double C) {
     TCanvas *masterCanvas = new TCanvas("masterCanvas", "Phi Distribution Fits", 1200, 800);
     setupCanvas(masterCanvas); // Correct placement
 
-    // Loop over different numbers of bins to exclude
-    for (int i = 0; i <= 5; ++i) {
-        plotForExclusion(phiVec, B, C, (i + 1), i, masterCanvas);
-    }
+    int exclusionSteps[] = {2, 4, 6, 8};
+	for (int i = 0; i < 4; ++i) { // Update loop to iterate over your new exclusionSteps
+	    int binsToExclude = exclusionSteps[i];
+	    plotForExclusion(phiVec, B, C, i + 1, binsToExclude, masterCanvas);
+	}
 
     std::ostringstream filename;
     filename << "output/acceptance_study_B=" << B << "_C=" << C << ".png";
