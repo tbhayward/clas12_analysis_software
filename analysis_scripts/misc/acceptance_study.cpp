@@ -78,8 +78,8 @@ int acceptanceStudy(double B, double C) {
 	pt->SetTextAlign(12);
 	// Remove or comment out the line for A
 	// pt->AddText(Form("A = %.3f #pm %.3f", fitFunc->GetParameter(0), fitFunc->GetParError(0)));
-	pt->AddText(Form("A_{UU}^{cos#phi} = %.2f #pm %.3f", fitFunc->GetParameter(1), fitFunc->GetParError(1)));
-	pt->AddText(Form("A_{UU}^{cos2#phi} = %.2f #pm %.3f", fitFunc->GetParameter(2), fitFunc->GetParError(2)));
+	pt->AddText(Form("A_{UU}^{cos#phi} = %.3f #pm %.3f", fitFunc->GetParameter(1), fitFunc->GetParError(1)));
+	pt->AddText(Form("A_{UU}^{cos2#phi} = %.3f #pm %.3f", fitFunc->GetParameter(2), fitFunc->GetParError(2)));
 	// Add a line for chi2/ndf
 	double chi2 = fitFunc->GetChisquare();
 	double ndf = fitFunc->GetNDF(); // number of degrees of freedom
