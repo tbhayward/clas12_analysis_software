@@ -138,7 +138,7 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
 }
 
 int acceptanceStudy(double B, double C) {
-    const long unsigned int N = 1e6; // Increased number of points
+    const long unsigned int N = 1e7; // Increased number of points
     std::vector<double> phiVec;
     generateData(B, C, N, phiVec);
 
