@@ -108,18 +108,19 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     	graphIncluded->GetXaxis()->SetLimits(0.001, TMath::TwoPi());
     }
 
-    // Adjusting TPaveText for fit parameters and chi2/ndf
-	TPaveText *pt = new TPaveText(0.15 , 0.75, 0.55, 1.0, "NDC"); // Adjusted coordinates
-	pt->SetFillColor(0);
-	pt->SetTextAlign(12);
-	pt->AddText(Form("Exclusion: %.1f%%", exclusionPercentage));
+    // Adjusting TPaveText position based on the pad's column
+    double padLeftMargin = ((canvasIndex % 3 == 1) ? 0.15 : 0.02);
+    TPaveText *pt = new TPaveText(padLeftMargin , 0.75, padLeftMargin + 0.4, 1.0, "NDC");
+    pt->SetFillColor(0);
+    pt->SetTextAlign(12);
+    pt->SetTextSize(0.04); // Increase text size within TPaveText
+    pt->AddText(Form("Exclusion: %.1f%%", exclusionPercentage));
 	pt->AddText(Form("A_{UU}^{cos#phi} = %.3f #pm %.3f", fitFuncLimited->GetParameter(1), fitFuncLimited->GetParError(1)));
 	pt->AddText(Form("A_{UU}^{cos2#phi} = %.3f #pm %.3f", fitFuncLimited->GetParameter(2), fitFuncLimited->GetParError(2)));
 	double chi2 = fitFuncLimited->GetChisquare();
 	double ndf = fitFuncLimited->GetNDF();
 	pt->AddText(Form("#chi^{2}/ndf = %.3f", chi2 / ndf));
 	pt->Draw();
-
 
     // After drawing the graphs and fit function, adjust axis titles visibility if necessary
     bool isLeftColumn = (canvasIndex % 3 == 1); // Adjust based on your actual layout
