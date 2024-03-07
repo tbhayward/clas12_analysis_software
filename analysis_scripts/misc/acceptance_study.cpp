@@ -29,52 +29,53 @@ void generateData(double B, double C, long unsigned int N, std::vector<double>& 
 }
 
 void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int canvasIndex, double exclusionFraction, TCanvas* masterCanvas) {
-    // Define the fit range based on the exclusion fraction
     double fitRangeMin = 2 * TMath::Pi() * exclusionFraction / 2.0;
     double fitRangeMax = 2 * TMath::Pi() * (1 - exclusionFraction / 2.0);
-    int N = phiVec.size();
     double binWidth = (2*TMath::Pi()) / 24;
 
-    TGraphErrors *graph = new TGraphErrors();
-    std::vector<int> binCounts(24, 0);
+    TGraphErrors *graphIncluded = new TGraphErrors();
+    TGraphErrors *graphExcluded = new TGraphErrors();
+    graphExcluded->SetMarkerStyle(24); // Empty circles for excluded points
+    graphExcluded->SetMarkerColor(kBlack);
 
-    // Counting only the values within the specified range
+    int binIndexIncluded = 0;
+    int binIndexExcluded = 0;
+
     for (double phi : phiVec) {
+        double binCenter = phi;
+        double yValue = 1.0; // Dummy Y value, replace with actual if needed
+        double yError = sqrt(yValue); // Example error calculation
+
         if (phi >= fitRangeMin && phi <= fitRangeMax) {
-            int binIndex = static_cast<int>((phi - fitRangeMin) / binWidth);
-            if (binIndex >= 0 && binIndex < 24) {
-                binCounts[binIndex]++;
-            }
+            graphIncluded->SetPoint(binIndexIncluded, binCenter, yValue);
+            graphIncluded->SetPointError(binIndexIncluded, 0, yError);
+            binIndexIncluded++;
+        } else {
+            graphExcluded->SetPoint(binIndexExcluded, binCenter, yValue);
+            graphExcluded->SetPointError(binIndexExcluded, 0, yError);
+            binIndexExcluded++;
         }
     }
 
-    for (int i = 0; i < 24; ++i) {
-        double binCenter = fitRangeMin + binWidth * i + binWidth / 2;
-        if (binCounts[i] > 0) {
-            double binError = sqrt(binCounts[i]); // Statistical error
-            graph->SetPoint(graph->GetN(), binCenter, binCounts[i]);
-            graph->SetPointError(graph->GetN() - 1, 0, binError);
-        }
-    }
-
-    // Fitting
+    // Proceed with fitting only the included graph
     TF1 *fitFunc = new TF1("fitFunc", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", fitRangeMin, fitRangeMax);
     fitFunc->SetParameters(1, B, C);
 
-    // Sub-pad for the plot
     masterCanvas->cd(canvasIndex);
-    graph->SetMarkerStyle(20);
-    graph->Draw("AP");
-    graph->Fit(fitFunc, "Q");
-    graph->GetXaxis()->SetTitle("#phi");
-    graph->GetYaxis()->SetTitle("Counts");
-    graph->GetXaxis()->SetLimits(fitRangeMin, fitRangeMax);
-    graph->GetYaxis()->SetRangeUser(*std::min_element(binCounts.begin(), binCounts.end()) * 0.85, *std::max_element(binCounts.begin(), binCounts.end()) * 1.35);
+    graphIncluded->Draw("AP");
+    graphIncluded->Fit(fitFunc, "Q");
+    graphExcluded->Draw("P SAME");
+
+    // Set axis titles and ranges
+    graphIncluded->GetXaxis()->SetTitle("#phi");
+    graphIncluded->GetYaxis()->SetTitle("Counts");
+    graphIncluded->GetXaxis()->SetLimits(0, 2*TMath::Pi());
+    graphIncluded->GetYaxis()->SetRangeUser(0, *std::max_element(binCounts.begin(), binCounts.end()) * 1.35);
 
     fitFunc->SetLineColor(kRed);
     fitFunc->Draw("same");
 
-    // Adding TPaveText for fit parameters and chi2/ndf
+    // TPaveText for parameters
     TPaveText *pt = new TPaveText(0.1, 0.65, 0.5, 0.9, "NDC");
     pt->SetFillColor(0);
     pt->SetTextAlign(12);
@@ -86,6 +87,7 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     pt->AddText(Form("#chi^{2}/ndf = %.3f", chi2 / ndf));
     pt->Draw();
 }
+
 
 int acceptanceStudy(double B, double C) {
     const long unsigned int N = 1e5;
