@@ -164,7 +164,7 @@ int acceptanceStudy(double B, double C) {
     TCanvas *masterCanvas = new TCanvas("masterCanvas", "Phi Distribution Fits", 1200, 800);
     setupCanvas(masterCanvas); // Correct placement
 
-    int exclusionSteps[] = {2, 4, 6, 8};
+    int exclusionSteps[] = {0, 2, 4, 6, 8};
 	for (int i = 0; i < 4; ++i) { // Update loop to iterate over your new exclusionSteps
 	    int binsToExclude = exclusionSteps[i];
 	    plotForExclusion(phiVec, B, C, i + 1, binsToExclude, masterCanvas);
