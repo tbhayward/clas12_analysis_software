@@ -15,7 +15,7 @@ void generateData(double B, double C, int N, double* phi, double* values) {
     for (int i = 0; i < N; ++i) {
         phi[i] = rand.Uniform(0, 2*TMath::Pi());
         double A = 1.0; // Assuming A is constant
-        values[i] = rand.Gaus(A * (1 + B * TMath::Cos(phi[i]) + C * TMath::Cos(2 * phi[i])), 0.1); // Adding some noise
+        values[i] = rand.Gaus(A * (1 + B * TMath::Cos(phi[i]) + C * TMath::Cos(2 * phi[i])), 0.0); // Adding some noise
     }
 }
 
@@ -23,6 +23,7 @@ int acceptanceStudy(double B, double C) {
     const long unsigned int N = 5e5; // Number of points
     double phi[N], values[N];
     generateData(B, C, N, phi, values);
+    std::cout << "Data generated." << std::endl;
 
     // Binning data
     const int nBins = 24;
@@ -31,13 +32,11 @@ int acceptanceStudy(double B, double C) {
     int binCounts[nBins] = {0};
     double binValues[nBins] = {0.0};
     double binErrors[nBins] = {0.0};
-
     for (int i = 0; i < N; ++i) {
         int binIndex = static_cast<int>(phi[i] / binWidth);
         binCounts[binIndex]++;
-        binValues[binIndex] += values[i];
+        binValues[binIndex]+=values[i];
     }
-
     for (int i = 0; i < nBins; ++i) {
         if (binCounts[i] > 0) {
             binValues[i] = binCounts[i]; // Average value for the bin
