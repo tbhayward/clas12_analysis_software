@@ -80,7 +80,7 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
 
 	masterCanvas->cd(canvasIndex);
 	graphIncluded->Draw("AP");
-	graphIncluded->GetYaxis()->SetRangeUser(13000, 17000);
+	graphIncluded->GetYaxis()->SetRangeUser(0.6*fitFuncLimited->GetParameter(0), 1.5*fitFuncLimited->GetParameter(0));
 	graphExcluded->Draw("P SAME");
 	fitFuncFullRange->Draw("SAME");
 
