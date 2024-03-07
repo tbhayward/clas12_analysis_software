@@ -80,7 +80,7 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
 
 	masterCanvas->cd(canvasIndex);
 	graphIncluded->Draw("AP");
-	graphIncluded->GetYaxis()->SetRangeUser(0.8*fitFuncLimited->GetParameter(0), 1.5*fitFuncLimited->GetParameter(0));
+	graphIncluded->GetYaxis()->SetRangeUser(0.8*fitFuncLimited->GetParameter(0), 1.4*fitFuncLimited->GetParameter(0));
 	graphExcluded->Draw("P SAME");
 	fitFuncFullRange->Draw("SAME");
 
@@ -103,7 +103,7 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
 }
 
 int acceptanceStudy(double B, double C) {
-    const long unsigned int N = 1e6; // Increased number of points
+    const long unsigned int N = 1e7; // Increased number of points
     std::vector<double> phiVec;
     generateData(B, C, N, phiVec);
 
