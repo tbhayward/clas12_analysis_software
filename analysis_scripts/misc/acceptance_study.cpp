@@ -20,7 +20,7 @@ void generateData(double B, double C, int N, double* phi, double* values) {
 }
 
 int acceptanceStudy(double B, double C) {
-    const int N = 10000; // Number of points
+    const int N = 1000 0; // Number of points
     double phi[N], values[N];
     generateData(B, C, N, phi, values);
 
@@ -40,8 +40,8 @@ int acceptanceStudy(double B, double C) {
 
     for (int i = 0; i < nBins; ++i) {
         if (binCounts[i] > 0) {
-            binValues[i] /= binCounts[i]; // Average value for the bin
-            binErrors[i] = 1.0 / sqrt(binCounts[i]); // Statistical error
+            binValues[i] = binCounts[i]; // Average value for the bin
+            binErrors[i] = sqrt(binCounts[i]); // Statistical error
             graph->SetPoint(i, binWidth*i + binWidth/2, binValues[i]);
             graph->SetPointError(i, 0, binErrors[i]);
         }
