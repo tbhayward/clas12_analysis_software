@@ -65,7 +65,7 @@ int acceptanceStudy(double B, double C) {
     graph->SetMarkerColor(kBlack);
     graph->Draw("APE");
     graph->GetXaxis()->SetLimits(0, TMath::TwoPi()); // Set x-axis range to 0 to 2pi
-    graph->GetYaxis()->SetRangeUser(*std::max_element(binCounts, binCounts + nBins) * 0.8, *std::max_element(binCounts, binCounts + nBins) * 1.2); 
+    graph->GetYaxis()->SetRangeUser(*std::min_element(binCounts, binCounts + nBins) * 0.8, *std::max_element(binCounts, binCounts + nBins) * 1.2); 
 
     fitFunc->SetLineColor(kRed);
     fitFunc->Draw("same");
