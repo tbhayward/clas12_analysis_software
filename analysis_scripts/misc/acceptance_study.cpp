@@ -110,13 +110,13 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     	graphIncluded->GetXaxis()->SetLimits(0.001, TMath::TwoPi());
     }
 
-    // Calculate the starting position for the TPaveText based on the column
-	double textStartX = (canvasIndex % 3 == 1) ? padLeftMargin : padLeftMargin - 0.03; // Move text slightly left for middle and right columns
-	TPaveText *pt = new TPaveText(textStartX, 0.75, textStartX + 0.4, 1.0, "NDC");
-	pt->SetFillColor(0);
-	pt->SetTextAlign(12);
-	pt->SetTextSize(0.04); // Optionally adjust the text size
-	pt->AddText(Form("Exclusion: %.1f%%", exclusionPercentage));
+    // Calculate the start position for TPaveText based on the column, directly here
+    double textStartX = (canvasIndex % 3 == 1) ? 0.15 : 0.12; // Example: 0.15 for left column, adjust 0.12 for middle/right columns
+    TPaveText *pt = new TPaveText(textStartX, 0.75, textStartX + 0.4, 1.0, "NDC");
+    pt->SetFillColor(0);
+    pt->SetTextAlign(12);
+    pt->SetTextSize(0.04); // Adjust the text size if needed
+    pt->AddText(Form("Exclusion: %.1f%%", exclusionPercentage));
 	pt->AddText(Form("A_{UU}^{cos#phi} = %.3f #pm %.3f", fitFuncLimited->GetParameter(1), fitFuncLimited->GetParError(1)));
 	pt->AddText(Form("A_{UU}^{cos2#phi} = %.3f #pm %.3f", fitFuncLimited->GetParameter(2), fitFuncLimited->GetParError(2)));
 	double chi2 = fitFuncLimited->GetChisquare();
