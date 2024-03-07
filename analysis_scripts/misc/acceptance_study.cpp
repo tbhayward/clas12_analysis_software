@@ -20,7 +20,7 @@ void generateData(double B, double C, int N, double* phi, double* values) {
 }
 
 int acceptanceStudy(double B, double C) {
-    const int N = 100000; // Number of points
+    const int N = 1000000; // Number of points
     double phi[N], values[N];
     generateData(B, C, N, phi, values);
 
