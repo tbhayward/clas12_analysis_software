@@ -66,7 +66,7 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     graphIncluded->Draw("AP");
     graphExcluded->Draw("P SAME");
     graphExcluded->GetXaxis()->SetLimits(0, TMath::TwoPi());
-    graphExcluded->GetYaxis()->SetLimits(3000, 7000);
+    graphExcluded->GetYaxis()->SetLimits(13000, 17000);
 
     // Perform the fit within the limited range
 	TF1 *fitFuncLimited = new TF1("fitFuncLimited", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", binWidth * binsToExclude, 2*TMath::Pi() - binWidth * binsToExclude);
@@ -80,7 +80,7 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
 
 	masterCanvas->cd(canvasIndex);
 	graphIncluded->Draw("AP");
-	graphIncluded->GetYaxis()->SetRangeUser(3000, 7000);
+	graphIncluded->GetYaxis()->SetRangeUser(13000, 17000);
 	graphExcluded->Draw("P SAME");
 	fitFuncFullRange->Draw("SAME");
 
@@ -103,7 +103,7 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
 }
 
 int acceptanceStudy(double B, double C) {
-    const long unsigned int N = 1e5; // Increased number of points
+    const long unsigned int N = 1e6; // Increased number of points
     std::vector<double> phiVec;
     generateData(B, C, N, phiVec);
 
