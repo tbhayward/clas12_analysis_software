@@ -15,7 +15,7 @@ void generateData(double B, double C, int N, double* phi, double* values) {
     for (int i = 0; i < N; ++i) {
         phi[i] = rand.Uniform(0, 2*TMath::Pi());
         double A = 1.0; // Assuming A is constant
-        values[i] = rand.Gaus(A * (1 + B * TMath::Cos(phi[i]) + C * TMath::Cos(2 * phi[i])), 0.0); // Adding some noise
+        values[i] = A * (1 + B * TMath::Cos(phi[i]) + C * TMath::Cos(2 * phi[i])); 
     }
 }
 
@@ -56,6 +56,9 @@ int acceptanceStudy(double B, double C) {
     graph->SetMarkerStyle(20);
     graph->SetMarkerColor(kBlack);
     graph->Draw("APE");
+    // Setting x-axis range to 0 to 2pi
+    graph->GetXaxis()->SetLimits(0, TMath::TwoPi());
+    graph->GetYaxis()->SetLimits(0.6, 1.3);
     fitFunc->SetLineColor(kRed);
     fitFunc->Draw("same");
 
