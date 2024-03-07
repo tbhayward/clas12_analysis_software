@@ -33,47 +33,43 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     double fitRangeMax = 2 * TMath::Pi() * (1 - exclusionFraction / 2.0);
     double binWidth = (2*TMath::Pi()) / 24;
 
-    TGraphErrors *graphIncluded = new TGraphErrors();
-    TGraphErrors *graphExcluded = new TGraphErrors();
-    graphExcluded->SetMarkerStyle(24); // Empty circles for excluded points
-    graphExcluded->SetMarkerColor(kBlack);
+    TGraphErrors *graphIncluded = new TGraphErrors(); // Graph for included data points
+    TGraphErrors *graphExcluded = new TGraphErrors(); // Graph for excluded data points
+    graphExcluded->SetMarkerStyle(4); // Open circles for excluded points
 
-    int binIndexIncluded = 0;
-    int binIndexExcluded = 0;
-
+    int binIndexIncluded = 0, binIndexExcluded = 0;
     for (double phi : phiVec) {
-        double binCenter = phi;
-        double yValue = 1.0; // Dummy Y value, replace with actual if needed
-        double yError = sqrt(yValue); // Example error calculation
-
+        double yValue = 1.0; // Assuming a constant value for illustration, replace with your actual y value or bin count logic
+        double error = sqrt(yValue); // Example error calculation
         if (phi >= fitRangeMin && phi <= fitRangeMax) {
-            graphIncluded->SetPoint(binIndexIncluded, binCenter, yValue);
-            graphIncluded->SetPointError(binIndexIncluded, 0, yError);
+            graphIncluded->SetPoint(binIndexIncluded, phi, yValue);
+            graphIncluded->SetPointError(binIndexIncluded, 0, error);
             binIndexIncluded++;
         } else {
-            graphExcluded->SetPoint(binIndexExcluded, binCenter, yValue);
-            graphExcluded->SetPointError(binIndexExcluded, 0, yError);
+            graphExcluded->SetPoint(binIndexExcluded, phi, yValue);
+            graphExcluded->SetPointError(binIndexExcluded, 0, error);
             binIndexExcluded++;
         }
     }
 
-    // Proceed with fitting only the included graph
+    // Fitting only the included data points
     TF1 *fitFunc = new TF1("fitFunc", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", fitRangeMin, fitRangeMax);
-    fitFunc->SetParameters(1, B, C);
+    fitFunc->SetParameters(1, B, C); // Example parameters
 
     masterCanvas->cd(canvasIndex);
     graphIncluded->Draw("AP");
     graphIncluded->Fit(fitFunc, "Q");
     graphExcluded->Draw("P SAME");
 
-    // Set axis titles and ranges
+    // Setting up the plot
     graphIncluded->GetXaxis()->SetTitle("#phi");
     graphIncluded->GetYaxis()->SetTitle("Counts");
     graphIncluded->GetXaxis()->SetLimits(0, 2*TMath::Pi());
-    graphIncluded->GetYaxis()->SetRangeUser(0, *std::max_element(binCounts.begin(), binCounts.end()) * 1.35);
+    // Adjust y-axis range as needed
+    // graphIncluded->GetYaxis()->SetRangeUser(0, maxYValue);
 
     fitFunc->SetLineColor(kRed);
-    fitFunc->Draw("same");
+    fitFunc->Draw("SAME");
 
     // TPaveText for parameters
     TPaveText *pt = new TPaveText(0.1, 0.65, 0.5, 0.9, "NDC");
