@@ -102,7 +102,11 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     // Customize axis limits and labels
     graphIncluded->GetXaxis()->SetTitle("#phi");
     graphIncluded->GetYaxis()->SetTitle("Counts");
-    graphIncluded->GetXaxis()->SetLimits(0, TMath::TwoPi());
+    if (canvasIndex<5) {
+    	graphIncluded->GetXaxis()->SetLimits(0, TMath::TwoPi());
+    } else {
+    	graphIncluded->GetXaxis()->SetLimits(0.005, TMath::TwoPi());
+    }
 
     // Adjusting TPaveText for fit parameters and chi2/ndf
 	TPaveText *pt = new TPaveText(0.12, 0.75, 0.4, 0.9, "NDC"); // Adjusted coordinates
