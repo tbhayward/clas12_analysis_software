@@ -102,25 +102,28 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     // Customize axis limits and labels
     graphIncluded->GetXaxis()->SetTitle("#phi");
     graphIncluded->GetYaxis()->SetTitle("Counts");
+    graphIncluded->GetXaxis()->SetTitleSize(0.05);
+    graphIncluded->GetYaxis()->SetTitleSize(0.05);
     if (canvasIndex<5) {
     	graphIncluded->GetXaxis()->SetLimits(0, TMath::TwoPi());
     } else {
     	graphIncluded->GetXaxis()->SetLimits(0.001, TMath::TwoPi());
     }
 
-    // Adjusting TPaveText position based on the pad's column
-    double padLeftMargin = ((canvasIndex % 3 == 1) ? 0.15 : 0.02);
-    TPaveText *pt = new TPaveText(padLeftMargin , 0.75, padLeftMargin + 0.4, 1.0, "NDC");
-    pt->SetFillColor(0);
-    pt->SetTextAlign(12);
-    pt->SetTextSize(0.04); // Increase text size within TPaveText
-    pt->AddText(Form("Exclusion: %.1f%%", exclusionPercentage));
+    // Calculate the starting position for the TPaveText based on the column
+	double textStartX = (canvasIndex % 3 == 1) ? padLeftMargin : padLeftMargin - 0.03; // Move text slightly left for middle and right columns
+	TPaveText *pt = new TPaveText(textStartX, 0.75, textStartX + 0.4, 1.0, "NDC");
+	pt->SetFillColor(0);
+	pt->SetTextAlign(12);
+	pt->SetTextSize(0.04); // Optionally adjust the text size
+	pt->AddText(Form("Exclusion: %.1f%%", exclusionPercentage));
 	pt->AddText(Form("A_{UU}^{cos#phi} = %.3f #pm %.3f", fitFuncLimited->GetParameter(1), fitFuncLimited->GetParError(1)));
 	pt->AddText(Form("A_{UU}^{cos2#phi} = %.3f #pm %.3f", fitFuncLimited->GetParameter(2), fitFuncLimited->GetParError(2)));
 	double chi2 = fitFuncLimited->GetChisquare();
 	double ndf = fitFuncLimited->GetNDF();
 	pt->AddText(Form("#chi^{2}/ndf = %.3f", chi2 / ndf));
 	pt->Draw();
+
 
     // After drawing the graphs and fit function, adjust axis titles visibility if necessary
     bool isLeftColumn = (canvasIndex % 3 == 1); // Adjust based on your actual layout
