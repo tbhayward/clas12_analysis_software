@@ -83,10 +83,29 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     graphExcluded->GetXaxis()->SetLimits(0, TMath::TwoPi());
     graphExcluded->GetYaxis()->SetLimits(13000, 17000);
 
-    // Perform the fit within the limited range
+    // Find the maximum value of the distribution for the initial guess of [0]
+	double maxY = 0;
+	for (int i = 0; i < graphIncluded->GetN(); ++i) {
+	    double x, y;
+	    graphIncluded->GetPoint(i, x, y);
+	    if (y > maxY) maxY = y;
+	}
+
+	// Perform the fit within the limited range
 	TF1 *fitFuncLimited = new TF1("fitFuncLimited", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", binWidth * binsToExclude, 2*TMath::Pi() - binWidth * binsToExclude);
-	fitFuncLimited->SetParameters(1, B, C);
+
+	// Set initial parameters
+	fitFuncLimited->SetParameter(0, maxY); // Initial guess for [0] is the max Y value
+	fitFuncLimited->SetParameter(1, B);    // Initial guess for [1]
+	fitFuncLimited->SetParameter(2, C);    // Initial guess for [2]
+
+	// Set parameter limits for [1] and [2]
+	fitFuncLimited->SetParLimits(1, -1, 1); // Constrain [1] to be between -1 and 1
+	fitFuncLimited->SetParLimits(2, -1, 1); // Constrain [2] to be between -1 and 1
+
+	// Fit the graph with these settings
 	graphIncluded->Fit(fitFuncLimited, "Q R");
+
 
 	// Define a new TF1 that uses the parameters from the fit but extends across the full range
 	TF1 *fitFuncFullRange = new TF1("fitFuncFullRange", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", 0, 2*TMath::Pi());
