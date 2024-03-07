@@ -6,11 +6,23 @@
 #include <TPad.h>
 #include <TPaveText.h>
 #include <TAxis.h>
+#include <TH1D.h>
+#include <TLegend.h>
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <vector>
 #include <algorithm>
+
+// Global variables for storing deviations
+std::vector<std::vector<double>> deviationsB(6); // Deviations for B (cos(phi)) from each exclusion case
+std::vector<std::vector<double>> deviationsC(6); // Deviations for C (cos(2*phi)) from each exclusion case
+
+// Function declarations
+void generateData(double B, double C, long unsigned int N, std::vector<double>& phiVec);
+void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int canvasIndex, int binsToExclude, TCanvas* masterCanvas = nullptr);
+void acceptanceStudy(double B, double C, int iterations);
+void analyzeDeviations();
 
 void generateData(double B, double C, long unsigned int N, std::vector<double>& phiVec) {
     TRandom3 rand(0); // Seed for reproducibility
@@ -103,9 +115,27 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
 	fitFuncLimited->SetParLimits(1, -1, 1); // Constrain [1] to be between -1 and 1
 	fitFuncLimited->SetParLimits(2, -1, 1); // Constrain [2] to be between -1 and 1
 
+	// After fitting
+    graphIncluded->Fit(fitFuncLimited, "Q R");
+
+    // Extract fitted parameters and their errors
+    double fittedA = fitFuncLimited->GetParameter(0);
+    double fittedB = fitFuncLimited->GetParameter(1);
+    double fittedC = fitFuncLimited->GetParameter(2);
+
+    double errB = fitFuncLimited->GetParError(1);
+    double errC = fitFuncLimited->GetParError(2);
+
+    // Calculate deviations in terms of sigma (standard deviations)
+    double deviationB = (inputB - fittedB) / errB;
+    double deviationC = (inputC - fittedC) / errC;
+
+    // Store the deviations for this exclusion case
+    deviationsB[canvasIndex - 1].push_back(deviationB); // Assuming canvasIndex matches with the exclusion scenario index
+    deviationsC[canvasIndex - 1].push_back(deviationC);
+
 	// Fit the graph with these settings
 	graphIncluded->Fit(fitFuncLimited, "Q R");
-
 
 	// Define a new TF1 that uses the parameters from the fit but extends across the full range
 	TF1 *fitFuncFullRange = new TF1("fitFuncFullRange", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", 0, 2*TMath::Pi());
@@ -156,26 +186,70 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     }
 }
 
-int acceptanceStudy(double B, double C) {
-    const long unsigned int N = 1e5; // Increased number of points
-    std::vector<double> phiVec;
-    generateData(B, C, N, phiVec);
+void acceptanceStudy(double B, double C, int iterations) {
+    for (int i = 0; i < iterations; ++i) {
+        std::vector<double> phiVec;
+        generateData(B, C, 1e5, phiVec); // Generate new data for each iteration
 
-    TCanvas *masterCanvas = new TCanvas("masterCanvas", "Phi Distribution Fits", 1200, 800);
-    setupCanvas(masterCanvas); // Correct placement
+        // Optionally create a canvas for the first iteration to visualize the result
+        TCanvas* masterCanvas = i == 0 ? new TCanvas("masterCanvas", "Phi Distribution Fits", 1200, 800) : nullptr;
+        if(masterCanvas) setupCanvas(masterCanvas);
 
-    int exclusionSteps[] = {0, 1, 2, 3, 4, 5};
-	for (int i = 0; i < 6; ++i) { // Update loop to iterate over your new exclusionSteps
-	    int binsToExclude = exclusionSteps[i];
-	    plotForExclusion(phiVec, B, C, i + 1, binsToExclude, masterCanvas);
-	}
+        // Define new exclusion steps
+        int exclusionSteps[] = {2, 4, 6, 8};
 
-    std::ostringstream filename;
-    filename << "output/acceptance_study_B=" << B << "_C=" << C << ".png";
-    masterCanvas->SaveAs(filename.str().c_str());
+        for (int j = 0; j < sizeof(exclusionSteps)/sizeof(exclusionSteps[0]); ++j) {
+            int binsToExclude = exclusionSteps[j];
+            plotForExclusion(phiVec, B, C, j + 1, binsToExclude, masterCanvas);
+        }
 
-    delete masterCanvas;
-    return 0;
+        if (masterCanvas) {
+            std::ostringstream filename;
+            filename << "output/acceptance_study_B=" << B << "_C=" << C << ".png";
+            masterCanvas->SaveAs(filename.str().c_str());
+            delete masterCanvas;
+        }
+    }
+}
+
+void analyzeDeviations() {
+    // Create a new canvas for plotting histograms of deviations
+    TCanvas *deviationCanvas = new TCanvas("deviationCanvas", "Deviations", 1200, 800);
+    deviationCanvas->Divide(3, 2);
+
+    // For each exclusion case, plot histograms of deviations for B and C
+    for (size_t i = 0; i < 6; ++i) {
+        deviationCanvas->cd(i + 1);
+
+        TH1D *histB = new TH1D(Form("histB_%zu", i), "Deviations in B;Sigma;Entries", 50, -5, 5);
+        TH1D *histC = new TH1D(Form("histC_%zu", i), "Deviations in C;Sigma;Entries", 50, -5, 5);
+
+        // Fill histograms
+        for (size_t j = 0; j < deviationsB[i].size(); ++j) {
+            histB->Fill(deviationsB[i][j]);
+            histC->Fill(deviationsC[i][j]);
+        }
+
+        // Style and draw histograms
+        histB->SetLineColor(kRed);
+        histC->SetLineColor(kBlue);
+        histB->Draw();
+        histC->Draw("SAME");
+
+        // Add legend
+        TLegend *legend = new TLegend(0.7, 0.7, 0.9, 0.9);
+        legend->AddEntry(histB, "cos(#phi)", "l");
+        legend->AddEntry(histC, "cos(2#phi)", "l");
+        legend->Draw();
+
+        // Remove stat boxes
+        histB->SetStats(false);
+        histC->SetStats(false);
+    }
+
+    // Save the canvas
+    deviationCanvas->SaveAs("deviations.png");
+    delete deviationCanvas;
 }
 
 int main(int argc, char** argv) {
@@ -186,6 +260,12 @@ int main(int argc, char** argv) {
     double B = atof(argv[1]);
     double C = atof(argv[2]);
 
+    // Perform the study multiple times
+    int iterations = 5; // For example, run the study 50 times
+    acceptanceStudy(B, C, iterations);
 
-    return acceptanceStudy(B, C);
+    // Analyze and plot the deviations
+    analyzeDeviations();
+
+    return 0;
 }
