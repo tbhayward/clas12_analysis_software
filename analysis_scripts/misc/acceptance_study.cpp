@@ -29,7 +29,7 @@ void generateData(double B, double C, long unsigned int N, std::vector<double>& 
 }
 
 int acceptanceStudy(double B, double C) {
-    const long unsigned int N = 5e4; // Target number of points
+    const long unsigned int N = 1e5; // Target number of points
     std::vector<double> phiVec;
     generateData(B, C, N, phiVec);
     std::cout << "Data generated. Number of accepted phi values: " << phiVec.size() << std::endl;
@@ -73,13 +73,19 @@ int acceptanceStudy(double B, double C) {
     fitFunc->Draw("same");
 
     // Adding TPaveText for fit parameters
-    TPaveText *pt = new TPaveText(0.1, 0.7, 0.5, 0.9, "NDC");
-    pt->SetFillColor(0);
-    pt->SetTextAlign(12);
-    pt->AddText(Form("A = %.3f #pm %.3f", fitFunc->GetParameter(0), fitFunc->GetParError(0)));
-    pt->AddText(Form("B = %.3f #pm %.3f", fitFunc->GetParameter(1), fitFunc->GetParError(1)));
-    pt->AddText(Form("C = %.3f #pm %.3f", fitFunc->GetParameter(2), fitFunc->GetParError(2)));
-    pt->Draw();
+	TPaveText *pt = new TPaveText(0.1, 0.7, 0.5, 0.9, "NDC");
+	pt->SetFillColor(0);
+	pt->SetTextAlign(12);
+	// Remove or comment out the line for A
+	// pt->AddText(Form("A = %.3f #pm %.3f", fitFunc->GetParameter(0), fitFunc->GetParError(0)));
+	pt->AddText(Form("B = %.3f #pm %.3f", fitFunc->GetParameter(1), fitFunc->GetParError(1)));
+	pt->AddText(Form("C = %.3f #pm %.3f", fitFunc->GetParameter(2), fitFunc->GetParError(2)));
+	// Add a line for chi2/ndf
+	double chi2 = fitFunc->GetChisquare();
+	double ndf = fitFunc->GetNDF(); // number of degrees of freedom
+	pt->AddText(Form("#chi^{2}/ndf = %.3f", chi2 / ndf));
+	pt->Draw();
+
 
     // Saving the plot
     std::ostringstream filename;
