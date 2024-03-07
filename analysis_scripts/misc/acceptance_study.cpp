@@ -25,7 +25,7 @@ int acceptanceStudy(double B, double C) {
     generateData(B, C, N, phi, values);
 
     // Binning data
-    const int nBins = 48;
+    const int nBins = 24;
     double binWidth = (2*TMath::Pi()) / nBins;
     TGraphErrors *graph = new TGraphErrors();
     int binCounts[nBins] = {0};
