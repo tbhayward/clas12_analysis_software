@@ -105,11 +105,11 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     if (canvasIndex<5) {
     	graphIncluded->GetXaxis()->SetLimits(0, TMath::TwoPi());
     } else {
-    	graphIncluded->GetXaxis()->SetLimits(0.005, TMath::TwoPi());
+    	graphIncluded->GetXaxis()->SetLimits(0.001, TMath::TwoPi());
     }
 
     // Adjusting TPaveText for fit parameters and chi2/ndf
-	TPaveText *pt = new TPaveText(0.12, 0.75, 0.4, 0.9, "NDC"); // Adjusted coordinates
+	TPaveText *pt = new TPaveText(0.15 , 0.75, 0.55, 1.0, "NDC"); // Adjusted coordinates
 	pt->SetFillColor(0);
 	pt->SetTextAlign(12);
 	pt->AddText(Form("Exclusion: %.1f%%", exclusionPercentage));
