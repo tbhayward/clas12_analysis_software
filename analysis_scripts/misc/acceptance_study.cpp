@@ -69,7 +69,7 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     graph->GetXaxis()->SetTitle("#phi");
     graph->GetYaxis()->SetTitle("Counts");
     graph->GetXaxis()->SetLimits(fitRangeMin, fitRangeMax);
-    graph->GetYaxis()->SetRangeUser(*std::min_element(binCounts.begin(), binCounts.end()) * 0.85, *std::max_element(binCounts.begin(), binCounts.end()) * 1.35);
+    graph->GetYaxis()->SetRangeUser(0, 2e4);
 
     fitFunc->SetLineColor(kRed);
     fitFunc->Draw("same");
@@ -88,7 +88,7 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
 }
 
 int acceptanceStudy(double B, double C) {
-    const long unsigned int N = 1e4;
+    const long unsigned int N = 1e5;
     std::vector<double> phiVec;
     generateData(B, C, N, phiVec);
 
