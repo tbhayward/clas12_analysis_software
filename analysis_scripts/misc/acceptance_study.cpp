@@ -131,7 +131,7 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
 
     // Calculate the start position for TPaveText based on the column, directly here
     double textStartX = (canvasIndex % 3 == 1) ? 0.15 : 0.0; // Example: 0.15 for left column, adjust 0.12 for middle/right columns
-    TPaveText *pt = new TPaveText(textStartX, 0.75, textStartX + 0.4, 1.0, "NDC");
+    TPaveText *pt = new TPaveText(textStartX, 0.75, textStartX + 0.45, 1.0, "NDC");
     pt->SetFillColor(0);
     pt->SetTextAlign(12);
     pt->SetTextSize(0.04); // Adjust the text size if needed
@@ -157,7 +157,7 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
 }
 
 int acceptanceStudy(double B, double C) {
-    const long unsigned int N = 1e4; // Increased number of points
+    const long unsigned int N = 1e5; // Increased number of points
     std::vector<double> phiVec;
     generateData(B, C, N, phiVec);
 
