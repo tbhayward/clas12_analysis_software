@@ -65,6 +65,7 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     graphIncluded->SetMarkerStyle(20); // Filled circles for included points
     graphIncluded->Draw("AP");
     graphExcluded->Draw("P SAME");
+    graphExcluded->GetXaxis()->SetLimits(0, TMath::TwoPi());
 
     TF1 *fitFunc = new TF1("fitFunc", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", binWidth * binsToExclude, 2*TMath::Pi() - binWidth * binsToExclude);
     fitFunc->SetParameters(1, B, C);
