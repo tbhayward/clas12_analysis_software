@@ -35,10 +35,10 @@ void setupCanvas(TCanvas* masterCanvas) {
         masterCanvas->cd(i);
         TPad *pad = (TPad*)gPad;
         
-        pad->SetTopMargin((i <= 3) ? 0.02 : 0.01); // Smaller margin for top row
-        pad->SetBottomMargin((i > 3) ? 0.15 : 0.01); // Larger bottom margin only for bottom row
-        pad->SetLeftMargin(((i-1) % 3 == 0) ? 0.15 : 0.01); // Larger left margin only for first column
-        pad->SetRightMargin(((i-1) % 3 == 2) ? 0.01 : 0.01); // Uniform right margin
+        pad->SetTopMargin((i <= 3) ? 0.02 : 0.00); // Smaller margin for top row
+        pad->SetBottomMargin((i > 3) ? 0.15 : 0.00); // Larger bottom margin only for bottom row
+        pad->SetLeftMargin(((i-1) % 3 == 0) ? 0.15 : 0.00); // Larger left margin only for first column
+        pad->SetRightMargin(((i-1) % 3 == 2) ? 0.01 : 0.00); // Uniform right margin
     }
 }
 
