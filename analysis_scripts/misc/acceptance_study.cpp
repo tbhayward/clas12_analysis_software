@@ -68,12 +68,20 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     graphExcluded->GetXaxis()->SetLimits(0, TMath::TwoPi());
     graphExcluded->GetYaxis()->SetLimits(3000, 7000);
 
-    TF1 *fitFunc = new TF1("fitFunc", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", binWidth * binsToExclude, 2*TMath::Pi() - binWidth * binsToExclude);
-    fitFunc->SetParameters(1, B, C);
-    graphIncluded->Fit(fitFunc, "Q R");
+    // Perform the fit within the limited range
+	TF1 *fitFuncLimited = new TF1("fitFuncLimited", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", binWidth * binsToExclude, 2*TMath::Pi() - binWidth * binsToExclude);
+	fitFuncLimited->SetParameters(1, B, C);
+	graphIncluded->Fit(fitFuncLimited, "Q R");
 
-    fitFunc->SetLineColor(kRed);
-    fitFunc->Draw("SAME");
+	// Define a new TF1 that uses the parameters from the fit but extends across the full range
+	TF1 *fitFuncFullRange = new TF1("fitFuncFullRange", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", 0, 2*TMath::Pi());
+	fitFuncFullRange->SetParameters(fitFuncLimited->GetParameters());
+	fitFuncFullRange->SetLineColor(kRed);
+
+	masterCanvas->cd(canvasIndex);
+	graphIncluded->Draw("AP");
+	graphExcluded->Draw("P SAME");
+	fitFuncFullRange->Draw("SAME");
 
     // Customize axis limits and labels
     graphIncluded->GetXaxis()->SetTitle("#phi");
