@@ -20,7 +20,7 @@ void generateData(double B, double C, int N, double* phi, double* values) {
 }
 
 int acceptanceStudy(double B, double C) {
-    const long unsigned int N = 1e7; // Number of points
+    const long unsigned int N = 1e6; // Number of points
     double phi[N], values[N];
     generateData(B, C, N, phi, values);
 
