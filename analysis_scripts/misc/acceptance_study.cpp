@@ -112,7 +112,7 @@ int acceptanceStudy(double B, double C) {
 
     // Loop over different numbers of bins to exclude
     for (int i = 0; i <= 5; ++i) {
-        plotForExclusion(phiVec, B, C, 2*(i + 1), i, masterCanvas);
+        plotForExclusion(phiVec, B, C, (i + 1), i, masterCanvas);
     }
 
     std::ostringstream filename;
