@@ -127,8 +127,8 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     double errC = fitFuncLimited->GetParError(2);
 
     // Calculate deviations in terms of sigma (standard deviations)
-    double deviationB = (inputB - fittedB) / errB;
-    double deviationC = (inputC - fittedC) / errC;
+    double deviationB = (B - fittedB) / errB;
+    double deviationC = (C - fittedC) / errC;
 
     // Store the deviations for this exclusion case
     deviationsB[canvasIndex - 1].push_back(deviationB); // Assuming canvasIndex matches with the exclusion scenario index
