@@ -73,7 +73,7 @@ int acceptanceStudy(double B, double C) {
     fitFunc->Draw("same");
 
     // Adding TPaveText for fit parameters
-	TPaveText *pt = new TPaveText(0.1, 0.7, 0.5, 0.9, "NDC");
+	TPaveText *pt = new TPaveText(0.1, 0.65, 0.5, 0.9, "NDC");
 	pt->SetFillColor(0);
 	pt->SetTextAlign(12);
 	// Remove or comment out the line for A
