@@ -9,40 +9,48 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <vector>
+#include <algorithm>
 
-void generateData(double B, double C, int N, double* phi, double* values) {
+void generateData(double B, double C, long unsigned int N, std::vector<double>& phiVec) {
     TRandom3 rand(0); // Seed for reproducibility
-    for (int i = 0; i < N; ++i) {
-        phi[i] = rand.Uniform(0, 2*TMath::Pi());
-        double A = 1.0; // Assuming A is constant
-        values[i] = A * (1 + B * TMath::Cos(phi[i]) + C * TMath::Cos(2 * phi[i])); 
+    double A = 1.0; // Assuming A is constant
+    long unsigned int accepted = 0;
+    while (accepted < N) {
+        double phi = rand.Uniform(0, 2*TMath::Pi());
+        double value = A * (1 + B * TMath::Cos(phi) + C * TMath::Cos(2 * phi));
+        double randVal = rand.Uniform(0, A * (1 + fabs(B) + fabs(C))); // Max possible value
+
+        if (randVal < value) {
+            phiVec.push_back(phi);
+            accepted++;
+        }
     }
 }
 
 int acceptanceStudy(double B, double C) {
-    const long unsigned int N = 5e5; // Number of points
-    double phi[N], values[N];
-    generateData(B, C, N, phi, values);
-    std::cout << "Data generated." << std::endl;
+    const long unsigned int N = 5e5; // Target number of points
+    std::vector<double> phiVec;
+    generateData(B, C, N, phiVec);
+    std::cout << "Data generated. Number of accepted phi values: " << phiVec.size() << std::endl;
 
     // Binning data
     const int nBins = 24;
     double binWidth = (2*TMath::Pi()) / nBins;
     TGraphErrors *graph = new TGraphErrors();
     int binCounts[nBins] = {0};
-    double binValues[nBins] = {0.0};
-    double binErrors[nBins] = {0.0};
-    for (int i = 0; i < N; ++i) {
-        int binIndex = static_cast<int>(phi[i] / binWidth);
+
+    for (double phi : phiVec) {
+        int binIndex = static_cast<int>(phi / binWidth);
         binCounts[binIndex]++;
-        binValues[binIndex]+=values[i];
     }
+
     for (int i = 0; i < nBins; ++i) {
+        double binCenter = binWidth * i + binWidth / 2;
+        double binError = sqrt(binCounts[i]); // Statistical error
         if (binCounts[i] > 0) {
-            binValues[i] = binCounts[i]; // Average value for the bin
-            binErrors[i] = sqrt(binCounts[i]); // Statistical error
-            graph->SetPoint(i, binWidth*i + binWidth/2, binValues[i]);
-            graph->SetPointError(i, 0, binErrors[i]);
+            graph->SetPoint(graph->GetN(), binCenter, binCounts[i]);
+            graph->SetPointError(graph->GetN() - 1, 0, binError);
         }
     }
 
@@ -56,9 +64,9 @@ int acceptanceStudy(double B, double C) {
     graph->SetMarkerStyle(20);
     graph->SetMarkerColor(kBlack);
     graph->Draw("APE");
-    // Setting x-axis range to 0 to 2pi
-    graph->GetXaxis()->SetLimits(0, TMath::TwoPi());
-    graph->GetYaxis()->SetLimits(0.6, 1.3);
+    graph->GetXaxis()->SetLimits(0, TMath::TwoPi()); // Set x-axis range to 0 to 2pi
+    graph->GetYaxis()->SetRangeUser(0, *std::max_element(binCounts, binCounts + nBins) * 1.1); 
+
     fitFunc->SetLineColor(kRed);
     fitFunc->Draw("same");
 
