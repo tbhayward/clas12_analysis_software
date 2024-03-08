@@ -238,7 +238,7 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     // For chi^2 lines in red
     TText *chi2Text1 = pt->AddText(Form("#chi^{2}: A_{UU}^{cos#phi} = %.3f #pm %.3f", fitFuncLimited->GetParameter(1),fitFuncLimited->GetParError(1));
     chi2Text1->SetTextColor(kRed);
-    TText *chi2Text2 = pt->AddText(Form("#chi^{2}: A_{UU}^{cos2#phi} = %.3f #pm %.3f", fitFuncLimited->GetParameter(2),fitFuncLimited->GetParError(2)));
+    TText *chi2Text2 = pt->AddText(Form("#chi^{2}: A_{UU}^{cos2#phi} = %.3f #pm %.3f", fitFuncLimited->GetParameter(2),fitFuncLimited->GetParError(2));
     chi2Text2->SetTextColor(kRed);
     double chi2 = fitFuncLimited->GetChisquare();
     double ndf = fitFuncLimited->GetNDF();
