@@ -36,9 +36,9 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f,
     // par: an array of the parameter values
     // iflag: a flag (see TMinuit documentation for details)
 
-    double A = par[0];
-    double AUU_cosphi = par[1];
-    double AUU_cos2phi = par[2];
+    // double A = par[0];
+    double AUU_cosphi = par[0];
+    double AUU_cos2phi = par[1];
 
     double sum = 0;
     for (int phi = 0; phi < phiVecGlobal.size(); ++phi) {
@@ -156,21 +156,21 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
 	fitFuncFullRange->SetLineColor(kRed);
 
     /****** MLM MINIMIZATION PORTION *******/
-    TMinuit minuit(3);
+    TMinuit minuit(2);
     minuit.SetPrintLevel(0);
     minuit.SetErrorDef(0.5);
     minuit.SetFCN(negLogLikelihood);
-    minuit.DefineParameter(0, "A", maxY, 0.00, 0, 0);
-    minuit.DefineParameter(1, "B", B, 0.01, 0, 0);
-    minuit.DefineParameter(2, "C", C, 0.01, 0, 0);
+    // minuit.DefineParameter(0, "A", maxY, 0.00, 0, 0);
+    minuit.DefineParameter(0, "B", B, 0.01, 0, 0);
+    minuit.DefineParameter(1, "C", C, 0.01, 0, 0);
     double arglist[10];
     int ierflg = 0;
     minuit.mnexcm("MIGRAD", arglist, 2, ierflg);
 
     double fittedA, errA; minuit.GetParameter(0,fittedA,errA);
     std::cout << fittedB << " " << fittedC << std::endl;
-    minuit.GetParameter(1, fittedB, errB);
-    minuit.GetParameter(2, fittedC, errC);
+    minuit.GetParameter(0, fittedB, errB);
+    minuit.GetParameter(1, fittedC, errC);
     std::cout << fittedB << " " << fittedC << std::endl;
     // Calculate deviations in sigma
     deviationSigmaB = (fittedB - B) / errB;
