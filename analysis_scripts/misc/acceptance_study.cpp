@@ -58,7 +58,8 @@ void generateData(double B, double C, long unsigned int N, std::vector<double>& 
     double A = 1.0; // Assuming A is constant
     long unsigned int accepted = 0;
     while (accepted < N) {
-        double phi = rand.Uniform(0, 2*TMath::Pi());
+        // double phi = rand.Uniform(0, 2*TMath::Pi());
+        double phi = rand.Uniform(0.5, 2*TMath::Pi()-0.5);
         double value = A * (1 + B * TMath::Cos(phi) + C * TMath::Cos(2 * phi));
         double randVal = rand.Uniform(0, A * (1 + fabs(B) + fabs(C))); // Max possible value
 
