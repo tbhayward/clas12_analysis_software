@@ -178,7 +178,7 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
 
 void acceptanceStudy(double B, double C, int iterations) {
     for (int loop = 0; loop < iterations; ++loop) {
-        std::cout << "Starting loop " << loop + 1 << " of " << iterations << ". ";
+        std::cout << "Starting loop " << loop + 1 << " of " << iterations << ". " << std::endl;
 
         std::vector<double> phiVec;
         generateData(B, C, 1e5, phiVec); // Generate fresh data for each iteration
@@ -234,10 +234,10 @@ void plotDeviationsDistributions(double B, double C) {
         histB->Draw();
         histC->Draw("SAME");
 
-        TLegend* legend = new TLegend(0.1, 0.7, 0.3, 0.9);
+        TLegend* legend = new TLegend(0.1, 0.7, 0.6, 0.9);
         legend->SetTextSize(0.04); // Set the text size for the legend
-        legend->AddEntry(histB, Form("B: Mean=%.2f, SD=%.2f", histB->GetMean(), histB->GetStdDev()), "l");
-        legend->AddEntry(histC, Form("C: Mean=%.2f, SD=%.2f", histC->GetMean(), histC->GetStdDev()), "l");
+        legend->AddEntry(histB, Form("B: #mu=%.2f, #sigma=%.2f", histB->GetMean(), histB->GetStdDev()), "l");
+        legend->AddEntry(histC, Form("C: #mu=%.2f, #sigma=%.2f", histC->GetMean(), histC->GetStdDev()), "l");
         legend->Draw();
     }
 
