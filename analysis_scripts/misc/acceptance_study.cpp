@@ -120,8 +120,7 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     double errC = fitFuncLimited->GetParError(2);
 
     // Calculate deviations in sigma
-    double deviationSigmaB = (fittedB - B) / errB;
-    double deviationSigmaC = (fittedC - C) / errC;
+    double deviationSigmaB  errC;
 
     // Store deviations
     deviationsForCases[canvasIndex-1].first.push_back(deviationSigmaB); // Store deviation for B
@@ -196,7 +195,7 @@ void acceptanceStudy(double B, double C, int iterations) {
 
         if (loop == 0) {
             std::ostringstream filename;
-            filename << "output/acceptance_study_B=" << B << "_C=" << C << ".png";
+            filename << "output/example_B=" << B << "_C=" << C << ".png";
             masterCanvas->SaveAs(filename.str().c_str());
         }
         delete masterCanvas;
@@ -270,7 +269,7 @@ void plotDeviationsDistributions(double B, double C) {
     }
 
     std::ostringstream filename;
-    filename << "output/acceptance_study_B=" << B << "_C=" << C << "_distributions.png";
+    filename << "output/systematic_study_B=" << B << "_C=" << C << ".png";
     canvas->SaveAs(filename.str().c_str());
 
     delete canvas; // Clean up
