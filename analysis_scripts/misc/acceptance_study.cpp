@@ -178,7 +178,7 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
 
 void acceptanceStudy(double B, double C, int iterations) {
     for (int loop = 0; loop < iterations; ++loop) {
-        std::cout << "Starting loop " << loop + 1 << " of " << iterations << std::endl;
+        std::cout << "Starting loop " << loop + 1 << " of " << iterations << ". ";
 
         std::vector<double> phiVec;
         generateData(B, C, 1e5, phiVec); // Generate fresh data for each iteration
@@ -207,9 +207,13 @@ void plotDeviationsDistributions(double B, double C) {
     TCanvas* canvas = new TCanvas("canvas", "Deviations Distribution", 1200, 800);
     canvas->Divide(3, 2);
 
-    for (int i = 0; i < deviationsForCases.size(); ++i) {
+    int exclusionSteps[] = {0, 1, 2, 3, 4, 5}; // Assuming this matches your exclusion logic
+    for (int i = 0; i < 6; ++i) {
         canvas->cd(i + 1);
-        TH1D* histB = new TH1D(Form("histB_%d", i), ";#Delta#sigma;Frequency", 30, -3, 3);
+        int excludedBins = exclusionSteps[i];
+        double exclusionPercentage = (excludedBins / 24.0) * 100.0; // Recalculate if needed
+
+        TH1D* histB = new TH1D(Form("histB_%d", i), Form("Excluded: %.1f%%;#Delta#sigma;Frequency", exclusionPercentage), 30, -3, 3);
         TH1D* histC = new TH1D(Form("histC_%d", i), "", 30, -3, 3); // No need for title, shared with histB
 
         // deviationsForCases[i].first is the vector for B deviations
