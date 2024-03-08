@@ -17,7 +17,35 @@
 
 // Global structure to hold deviations. 
 // Each pair corresponds to an exclusion case, holding two vectors for deviations in B and C respectively.
-std::vector<std::pair<std::vector<double>, std::vector<double>>> deviationsForCases(6); 
+std::vector<std::pair<std::vector<double>, std::vector<double>>> deviationsForCases(6);
+std::vector<std::pair<std::vector<double>, std::vector<double>>> deviationsForCasesMLM(6); 
+
+// Fit function: a trigonometric polynomial
+double fitFunction(double x, double *par) {
+    return par[0] * (1 + par[1] * cos(x) + par[2] * cos(2*x));
+}
+
+// Negative log-likelihood function
+void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, 
+    Double_t *par, Int_t iflag) {
+    // npar: number of parameters
+    // gin: an array of derivatives (if needed)
+    // f: the value of the function
+    // par: an array of the parameter values
+    // iflag: a flag (see TMinuit documentation for details)
+
+    double A = par[0];
+    double AUU_cosphi = par[1];
+    double AUU_cos2phi = par[2];
+
+    double sum = 0;
+    for (int phi = 0; phi < 1e5; ++i) {
+        sum =+ log(1 + (AUU_cosphi*cos(phiVec[phi]) + AUU_cos2phi*cos(2*phiVec[phi])));
+    }
+
+    double nll = A * sum;
+    f = nll;
+}
 
 void generateData(double B, double C, long unsigned int N, std::vector<double>& phiVec) {
     TRandom3 rand(0); // Seed for reproducibility
@@ -98,40 +126,56 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
 	    if (y > maxY) maxY = y;
 	}
 
+    /****** CHI2 MINIMIZATION PORTION *******/
 	// Perform the fit within the limited range
 	TF1 *fitFuncLimited = new TF1("fitFuncLimited", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", binWidth * binsToExclude, 2*TMath::Pi() - binWidth * binsToExclude);
-
 	// Set initial parameters
 	fitFuncLimited->SetParameter(0, maxY); // Initial guess for [0] is the max Y value
 	fitFuncLimited->SetParameter(1, B);    // Initial guess for [1]
 	fitFuncLimited->SetParameter(2, C);    // Initial guess for [2]
-
 	// Set parameter limits for [1] and [2]
 	fitFuncLimited->SetParLimits(1, -1, 1); // Constrain [1] to be between -1 and 1
 	fitFuncLimited->SetParLimits(2, -1, 1); // Constrain [2] to be between -1 and 1
-
 	// Fit the graph with these settings
 	graphIncluded->Fit(fitFuncLimited, "Q R");
-
 	// Extract fitted parameters and their errors
     double fittedB = fitFuncLimited->GetParameter(1);
     double fittedC = fitFuncLimited->GetParameter(2);
     double errB = fitFuncLimited->GetParError(1);
     double errC = fitFuncLimited->GetParError(2);
-
     // Calculate deviations in sigma
     double deviationSigmaB = (fittedB - B) / errB;
     double deviationSigmaC = (fittedC - C) / errC;
-
     // Store deviations
     deviationsForCases[canvasIndex-1].first.push_back(deviationSigmaB); // Store deviation for B
     deviationsForCases[canvasIndex-1].second.push_back(deviationSigmaC); // Store deviation for C
-
 	// Define a new TF1 that uses the parameters from the fit but extends across the full range
 	TF1 *fitFuncFullRange = new TF1("fitFuncFullRange", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", 0, 2*TMath::Pi());
 	fitFuncFullRange->SetParameters(fitFuncLimited->GetParameters());
 	fitFuncFullRange->SetLineColor(kRed);
 
+    /****** MLM MINIMIZATION PORTION *******/
+    TMinuit minuit(3);
+    minuit.SetPrintLevel(-1);
+    minuit.SetErrorDef(0.5);
+    minuit.SetFCN(negLogLikelihood);
+    minuit.DefineParameter(0, "A", maxY, 0.001, 0, 0);
+    minuit.DefineParameter(1, "B", B, 0.001, 0, 0);
+    minuit.DefineParameter(2, "C", C, 0.001, 0, 0);
+    minuit.mnexcm("MIGRAD", arglist, 2, ierflg);
+
+    double fittedA, errA; minuit.GetParameter(1,fittedA,errA);
+    minuit.GetParameter(2, fittedB, errB);
+    minuit.GetParameter(3, fittedC, errC);
+    // Calculate deviations in sigma
+    deviationSigmaB = (fittedB - B) / errB;
+    deviationSigmaC = (fittedC - C) / errC;
+    // Store deviations
+    deviationsForCasesMLM[canvasIndex-1].first.push_back(deviationSigmaB);
+    deviationsForCasesMLM[canvasIndex-1].second.push_back(deviationSigmaC); 
+
+
+    /****** PLOTTING PORTION *******/
 	masterCanvas->cd(canvasIndex);
 	graphIncluded->Draw("AP");
 	graphIncluded->GetYaxis()->SetRangeUser(0.6*fitFuncLimited->GetParameter(0), 1.3*fitFuncLimited->GetParameter(0));
@@ -287,7 +331,7 @@ int main(int argc, char** argv) {
     double C = atof(argv[2]);
 
     // Run the acceptance study n times
-    acceptanceStudy(B, C, 10000);
+    acceptanceStudy(B, C, 1);
 
     // In your main function or at the end of acceptanceStudy
 	plotDeviationsDistributions(B, C);
