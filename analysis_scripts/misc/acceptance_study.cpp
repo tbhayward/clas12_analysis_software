@@ -49,8 +49,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f,
     }
 
     double diff = ((24-binsToExcludeGlobal)*2*3.14159/24-binsToExcludeGlobal*2*3.14159/24)/(2*3.14159);
-    std::cout << diff << std::endl;
-    f = phiVecGlobal.size()-sum;
+    f = diff*phiVecGlobal.size()-sum;
 }
 
 void generateData(double B, double C, long unsigned int N, std::vector<double>& phiVec) {
