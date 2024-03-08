@@ -164,7 +164,7 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     double arglist[10]; arglist[0] = 1;
     int ierflg = 0;
     TMinuit minuit(2);
-    minuit.SetPrintLevel(-1);
+    minuit.SetPrintLevel(0);
     minuit.SetErrorDef(0.5);
     minuit.SetFCN(negLogLikelihood);
     // minuit.DefineParameter(0, "A", maxY, 0.00, 0, 0);
