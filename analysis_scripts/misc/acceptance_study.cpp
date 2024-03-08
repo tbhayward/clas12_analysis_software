@@ -63,7 +63,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f,
     } else if (binsToExcludeGlobal = 5) {
         diff = 1.23334;
     }
-    f = counts/(diff)-sum;
+    f = counts-sum;
 }
 
 void generateData(double B, double C, long unsigned int N, std::vector<double>& phiVec) {
