@@ -221,7 +221,7 @@ void plotDeviationsDistributions(double B, double C) {
 
         // The rest of the code to draw histograms and legends goes here
         double exclusionPercentage = (exclusionSteps[i] / 24.0) * 100.0;
-        TH1D* histB = new TH1D(Form("histB_%d", i), Form("Excluded: %.1f%%;#Delta#sigma;Counts",""), 60, -3, 3);
+        TH1D* histB = new TH1D(Form("histB_%d", i), Form(";#Delta#sigma;Counts",""), 60, -3, 3);
         TH1D* histC = new TH1D(Form("histC_%d", i), "", 60, -3, 3); // No need for title, shared with histB
 
         // deviationsForCases[i].first is the vector for B deviations
