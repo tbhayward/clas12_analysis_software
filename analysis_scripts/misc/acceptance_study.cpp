@@ -256,7 +256,7 @@ void plotDeviationsDistributions(double B, double C) {
         if (i % 3 == 1) textStartX = 0.10; // Adjust for middle column
         if (i % 3 == 2) textStartX = 0.10; // Adjust for right column
         
-        TPaveText* pt = new TPaveText(textStartX, 0.775, textStartX + 0.35, 0.925, "NDC");
+        TPaveText* pt = new TPaveText(textStartX, 0.775, textStartX + 0.375, 0.925, "NDC");
         pt->SetBorderSize(1); // Enable border
         pt->SetFillColor(0); // Set fill color to white or transparent
         pt->SetFillStyle(1001); // Solid fill
@@ -287,7 +287,7 @@ int main(int argc, char** argv) {
     double C = atof(argv[2]);
 
     // Run the acceptance study n times
-    acceptanceStudy(B, C, 50);
+    acceptanceStudy(B, C, 10000);
 
     // In your main function or at the end of acceptanceStudy
 	plotDeviationsDistributions(B, C);
