@@ -183,10 +183,8 @@ void acceptanceStudy(double B, double C, int iterations) {
 
         // Create the example plot only during the first iteration
         TCanvas *masterCanvas = nullptr;
-        if (loop == 0) {
-            masterCanvas = new TCanvas("masterCanvas", "Phi Distribution Fits", 1200, 800);
-            setupCanvas(masterCanvas);
-        }
+        masterCanvas = new TCanvas("masterCanvas", "Phi Distribution Fits", 1200, 800);
+        setupCanvas(masterCanvas);
 
         int exclusionSteps[] = {0, 1, 2, 3, 4, 5};
         for (int i = 0; i < sizeof(exclusionSteps)/sizeof(exclusionSteps[0]); ++i) {
