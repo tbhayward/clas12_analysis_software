@@ -43,6 +43,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f,
 
     double sum = 0;
     for (int phi = 0; phi < phiVecGlobal.size(); ++phi) {
+        std::cout << " HEY " << binsToExcludeGlobal*2*3.14159/24 << " " << (24-binsToExcludeGlobal)*2*3.14159/24 << std::endl;
         if (phi > binsToExcludeGlobal*2*3.14159/24 && phi < (24-binsToExcludeGlobal)*2*3.14159/24) {
             sum += log((1 + AUU_cosphi*cos(phiVecGlobal[phi]) + AUU_cos2phi*cos(2*phiVecGlobal[phi])));
         }
@@ -195,7 +196,7 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     /****** PLOTTING PORTION *******/
 	masterCanvas->cd(canvasIndex);
 	graphIncluded->Draw("AP");
-	graphIncluded->GetYaxis()->SetRangeUser(0.5*fitFuncLimited->GetParameter(0), 1.5*fitFuncLimited->GetParameter(0));
+	graphIncluded->GetYaxis()->SetRangeUser(0.4*fitFuncLimited->GetParameter(0), 1.6 *fitFuncLimited->GetParameter(0));
 	graphExcluded->Draw("P SAME");
 	fitFuncFullRange->Draw("SAME");
     fitFuncMLMChi2->Draw("SAME");
@@ -227,7 +228,7 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
 
     // // Calculate the start position for TPaveText based on the column, directly here
     double textStartX = (canvasIndex % 3 == 1) ? 0.15 : 0.0; // Example: 0.15 for left column, adjust 0.12 for middle/right columns
-    TPaveText *pt = new TPaveText(textStartX, 0.75, textStartX + 0.45, 1.0, "NDC");
+    TPaveText *pt = new TPaveText(textStartX, 0.7, textStartX + 0.55, 1.0, "NDC");
     pt->SetFillColor(0);
     pt->SetTextAlign(12);
     pt->SetTextSize(0.04); // Adjust the text size if needed
