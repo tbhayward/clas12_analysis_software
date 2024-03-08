@@ -213,6 +213,12 @@ void plotDeviationsDistributions(double B, double C) {
         int excludedBins = exclusionSteps[i];
         double exclusionPercentage = (excludedBins / 24.0) * 100.0; // Recalculate if needed
 
+         // Adjust margins and labels for pads
+        pad->SetTopMargin((i < 3) ? 0.12 : 0.00);
+        pad->SetBottomMargin((i >= 3) ? 0.12 : 0.00);
+        pad->SetLeftMargin((i % 3 == 0) ? 0.12 : 0.00);
+        pad->SetRightMargin(0.01);
+
         TH1D* histB = new TH1D(Form("histB_%d", i), Form("Excluded: %.1f%%;#Delta#sigma;Frequency", exclusionPercentage), 60, -3, 3);
         TH1D* histC = new TH1D(Form("histC_%d", i), "", 60, -3, 3); // No need for title, shared with histB
 
