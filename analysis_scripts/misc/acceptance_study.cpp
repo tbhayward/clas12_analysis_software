@@ -231,9 +231,10 @@ void plotDeviationsDistributions(double B, double C) {
         histB->SetStats(false); // Hide stats box
         histC->SetStats(false);
 
-        gUnfolded->SetMaximum(1.25*histB->GetMaximum());
-
         histB->Draw();
+        // Find the maximum bin content in histB and scale it
+		double maxValB = histB->GetMaximum();
+		histB->SetMaximum(maxValB * 1.25); // Set Y-axis max to 1.25 times the max bin content
         histC->Draw("SAME");
 
         TLegend* legend = new TLegend(0.1, 0.7, 0.65, 0.9);
