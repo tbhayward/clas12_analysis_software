@@ -213,7 +213,7 @@ void plotDeviationsDistributions(double B, double C) {
         int excludedBins = exclusionSteps[i];
         double exclusionPercentage = (excludedBins / 24.0) * 100.0; // Recalculate if needed
 
-        TH1D* histB = new TH1D(Form("histB_%d", i), Form("Excluded: %.1f%%;#Delta#sigma;Frequency", exclusionPercentage), 30, -3, 3);
+        TH1D* histB = new TH1D(Form("histB_%d", i), Form("Excluded: %.1f%%;#Delta#sigma;Frequency", exclusionPercentage), 60, -3, 3);
         TH1D* histC = new TH1D(Form("histC_%d", i), "", 60, -3, 3); // No need for title, shared with histB
 
         // deviationsForCases[i].first is the vector for B deviations
@@ -231,10 +231,12 @@ void plotDeviationsDistributions(double B, double C) {
         histB->SetStats(false); // Hide stats box
         histC->SetStats(false);
 
+        gUnfolded->SetMaximum(1.25*histB->GetMaximum());
+
         histB->Draw();
         histC->Draw("SAME");
 
-        TLegend* legend = new TLegend(0.1, 0.7, 0.6, 0.9);
+        TLegend* legend = new TLegend(0.1, 0.7, 0.65, 0.9);
         legend->SetTextSize(0.04); // Set the text size for the legend
         legend->AddEntry(histB, Form("A_{UU}^{cos#phi}: #mu=%.2f, #sigma=%.2f", histB->GetMean(), histB->GetStdDev()), "l");
         legend->AddEntry(histC, Form("A_{UU}^{cos2#phi}: #mu=%.2f, #sigma=%.2f", histC->GetMean(), histC->GetStdDev()), "l");
