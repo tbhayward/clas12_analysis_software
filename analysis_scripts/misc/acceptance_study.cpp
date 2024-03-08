@@ -281,7 +281,8 @@ void plotDeviationsDistributions(double B, double C) {
         }
 
         // deviationsForCases[i].second is the vector for C deviations
-        for (double deviation : deviationsForCases[i].second) {
+        // for (double deviation : deviationsForCases[i].second) {
+        for (double deviation : deviationsForCasesMLM[i].first) {
             histC->Fill(deviation);
         }
 
