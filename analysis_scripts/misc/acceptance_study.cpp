@@ -20,7 +20,7 @@
 // Each pair corresponds to an exclusion case, holding two vectors for deviations in B and C respectively.
 std::vector<std::pair<std::vector<double>, std::vector<double>>> deviationsForCases(6);
 std::vector<std::pair<std::vector<double>, std::vector<double>>> deviationsForCasesMLM(6); 
- std::vector<double> phiVecGlobal;
+std::vector<double> phiVecGlobal;
 
 // Fit function: a trigonometric polynomial
 double fitFunction(double x, double *par) {
@@ -158,18 +158,14 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
 
     /****** MLM MINIMIZATION PORTION *******/
     TMinuit minuit(3);
-    minuit.SetPrintLevel(-1);
+    minuit.SetPrintLevel(0);
     minuit.SetErrorDef(0.5);
     minuit.SetFCN(negLogLikelihood);
-    minuit.DefineParameter(0, "A", maxY, 0.001, 0, 0);
-    minuit.DefineParameter(1, "B", B, 0.001, 0, 0);
-    minuit.DefineParameter(2, "C", C, 0.001, 0, 0);
+    minuit.DefineParameter(0, "A", maxY, 0.01, 0, 0);
+    minuit.DefineParameter(1, "B", B, 0.01, 0, 0);
+    minuit.DefineParameter(2, "C", C, 0.01, 0, 0);
     double arglist[10];
     int ierflg = 0;
-
-    // Migrad with increased iterations and tolerance
-    arglist[0] = 50000;
-    arglist[1] = 0.1;
     minuit.mnexcm("MIGRAD", arglist, 2, ierflg);
 
     double fittedA, errA; minuit.GetParameter(1,fittedA,errA);
