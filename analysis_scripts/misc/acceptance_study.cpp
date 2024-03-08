@@ -161,16 +161,16 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
 	fitFuncFullRange->SetLineColor(kRed);
 
     /****** MLM MINIMIZATION PORTION *******/
-    double arglist[10]; arglist[0] = 1;
+    double arglist[10]; arglist[0] = 0.001;
     int ierflg = 0;
     TMinuit minuit(2);
     minuit.SetPrintLevel(0);
     minuit.SetErrorDef(0.5);
     minuit.SetFCN(negLogLikelihood);
     // minuit.DefineParameter(0, "A", maxY, 0.00, 0, 0);
-    minuit.DefineParameter(0, "B", B, 0.001, -1, 1);
-    minuit.DefineParameter(1, "C", C, 0.001, -1, 1);
-    minuit.Migrad();
+    minuit.DefineParameter(0, "B", B, 0.0001, -1, 1);
+    minuit.DefineParameter(1, "C", C, 0.0001, -1, 1);
+    minuit.mnexcm("MIGRAD", arglist, 2, ierflg);
 
     double fittedA, errA; minuit.GetParameter(0,fittedA,errA);
     std::cout << fittedB << " " << fittedC << std::endl;
@@ -382,7 +382,7 @@ int main(int argc, char** argv) {
     double C = atof(argv[2]);
 
     // Run the acceptance study n times
-    acceptanceStudy(B, C, 25);
+    acceptanceStudy(B, C, 1);
 
     // In your main function or at the end of acceptanceStudy
 	plotDeviationsDistributions(B, C);
