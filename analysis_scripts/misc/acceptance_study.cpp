@@ -196,8 +196,8 @@ void acceptanceStudy(double B, double C, int iterations) {
             std::ostringstream filename;
             filename << "output/acceptance_study_B=" << B << "_C=" << C << ".png";
             masterCanvas->SaveAs(filename.str().c_str());
-            delete masterCanvas;
         }
+        delete masterCanvas;
     }
 }
 
