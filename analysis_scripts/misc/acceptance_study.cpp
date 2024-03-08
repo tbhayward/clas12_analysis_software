@@ -174,27 +174,35 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     }
 }
 
-int acceptanceStudy(double B, double C) {
-    const long unsigned int N = 1e5; // Increased number of points
-    std::vector<double> phiVec;
-    generateData(B, C, N, phiVec);
+void acceptanceStudy(double B, double C, int iterations) {
+    for (int loop = 0; loop < iterations; ++loop) {
+        std::cout << "Starting loop " << loop + 1 << " of " << iterations << std::endl;
 
-    TCanvas *masterCanvas = new TCanvas("masterCanvas", "Phi Distribution Fits", 1200, 800);
-    setupCanvas(masterCanvas); // Correct placement
+        std::vector<double> phiVec;
+        generateData(B, C, 1e5, phiVec); // Generate fresh data for each iteration
 
-    int exclusionSteps[] = {0, 1, 2, 3, 4, 5};
-	for (int i = 0; i < 6; ++i) { // Update loop to iterate over your new exclusionSteps
-	    int binsToExclude = exclusionSteps[i];
-	    plotForExclusion(phiVec, B, C, i + 1, binsToExclude, masterCanvas);
-	}
+        // Create the example plot only during the first iteration
+        TCanvas *masterCanvas = nullptr;
+        if (loop == 0) {
+            masterCanvas = new TCanvas("masterCanvas", "Phi Distribution Fits", 1200, 800);
+            setupCanvas(masterCanvas);
+        }
 
-    std::ostringstream filename;
-    filename << "output/acceptance_study_B=" << B << "_C=" << C << ".png";
-    masterCanvas->SaveAs(filename.str().c_str());
+        int exclusionSteps[] = {0, 1, 2, 3, 4, 5};
+        for (int i = 0; i < sizeof(exclusionSteps)/sizeof(exclusionSteps[0]); ++i) {
+            int binsToExclude = exclusionSteps[i];
+            plotForExclusion(phiVec, B, C, i + 1, binsToExclude, masterCanvas);
+        }
 
-    delete masterCanvas;
-    return 0;
+        if (loop == 0) {
+            std::ostringstream filename;
+            filename << "output/acceptance_study_B=" << B << "_C=" << C << ".png";
+            masterCanvas->SaveAs(filename.str().c_str());
+            delete masterCanvas;
+        }
+    }
 }
+
 
 int main(int argc, char** argv) {
     if (argc != 3) {
@@ -204,6 +212,6 @@ int main(int argc, char** argv) {
     double B = atof(argv[1]);
     double C = atof(argv[2]);
 
-
-    return acceptanceStudy(B, C);
+    // Run the acceptance study n times
+    acceptanceStudy(B, C, 10);
 }
