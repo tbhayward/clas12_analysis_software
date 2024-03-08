@@ -42,10 +42,10 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f,
 
     double sum = 0;
     for (int phi = 0; phi < 1e5; ++phi) {
-        sum =+ log(A + AUU_cosphi*cos(phiVecGlobal[phi]) + AUU_cos2phi*cos(2*phiVecGlobal[phi]));
+        sum += log(1 + AUU_cosphi*cos(phiVecGlobal[phi]) + AUU_cos2phi*cos(2*phiVecGlobal[phi]));
     }
 
-    double nll = 1e5 * sum;
+    double nll = A * sum;
     f = nll;
 }
 
