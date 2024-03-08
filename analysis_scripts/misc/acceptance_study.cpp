@@ -210,10 +210,11 @@ void plotDeviationsDistributions(double B, double C) {
     int exclusionSteps[] = {0, 1, 2, 3, 4, 5}; // Assuming this matches your exclusion logic
     for (int i = 0; i < 6; ++i) {
         canvas->cd(i + 1);
+        TPad *pad = (TPad*)gPad;
         int excludedBins = exclusionSteps[i];
         double exclusionPercentage = (excludedBins / 24.0) * 100.0; // Recalculate if needed
 
-         // Adjust margins and labels for pads
+		// Adjust margins and labels for pads
         pad->SetTopMargin((i < 3) ? 0.12 : 0.00);
         pad->SetBottomMargin((i >= 3) ? 0.12 : 0.00);
         pad->SetLeftMargin((i % 3 == 0) ? 0.12 : 0.00);
