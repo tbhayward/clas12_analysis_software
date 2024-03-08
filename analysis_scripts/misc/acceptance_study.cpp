@@ -45,7 +45,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f,
         sum += log((1 + AUU_cosphi*cos(phiVecGlobal[phi]) + AUU_cos2phi*cos(2*phiVecGlobal[phi])));
     }
 
-    f = -phiVecGlobal.size()*sum;
+    f = phiVecGlobal.size()-sum;
 }
 
 void generateData(double B, double C, long unsigned int N, std::vector<double>& phiVec) {
