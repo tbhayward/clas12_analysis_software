@@ -165,8 +165,10 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     minuit.mnexcm("MIGRAD", arglist, 2, ierflg);
 
     double fittedA, errA; minuit.GetParameter(1,fittedA,errA);
+    std::cout << fittedB << " " << fittedC << std::endl;
     minuit.GetParameter(2, fittedB, errB);
     minuit.GetParameter(3, fittedC, errC);
+    std::cout << fittedB << " " << fittedC << std::endl;
     // Calculate deviations in sigma
     deviationSigmaB = (fittedB - B) / errB;
     deviationSigmaC = (fittedC - C) / errC;
