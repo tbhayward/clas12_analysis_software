@@ -239,15 +239,21 @@ void plotDeviationsDistributions(double B, double C) {
         histB->SetStats(false); // Hide stats box
         histC->SetStats(false);
 
+        // Inside your loop, before drawing the histograms
+        if (i >= 4) { // Adjust for pads 5 and 6
+            histB->GetXaxis()->SetRangeUser(-2.99, 3);
+            histC->GetXaxis()->SetRangeUser(-2.99, 3);
+        }
+
         histB->Draw();
         histC->Draw("SAME");
         // Find the maximum bin content in histB and scale it
 		double maxValB = histB->GetMaximum();
 		histB->SetMaximum(maxValB * 1.25); // Set Y-axis max to 1.25 times the max bin content
 
-        // Calculating text box positions based on the column
-        double textStartX = ((i % 3) == 0) ? 0.1 : (((i % 3) == 1) ? 0.4 : 0.7);
-        TPaveText *pt = new TPaveText(textStartX, 0.75, textStartX + 0.3, 0.9, "NDC");
+        // Calculate the start position for TPaveText based on the column, directly here
+        double textStartX = (canvasIndex % 3 == 1) ? 0.15 : 0.0; // Example: 0.15 for left column, adjust 0.12 for middle/right columns
+        TPaveText *pt = new TPaveText(textStartX, 0.75, textStartX + 0.45, 1.0, "NDC");
         pt->SetFillColor(0);
         pt->SetTextAlign(12);
         pt->SetTextSize(0.04); // Adjust the text size if needed
