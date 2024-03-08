@@ -201,6 +201,47 @@ void acceptanceStudy(double B, double C, int iterations) {
     }
 }
 
+void plotDeviationsDistributions(double B, double C) {
+    TCanvas* canvas = new TCanvas("canvas", "Deviations Distribution", 1200, 800);
+    canvas->Divide(3, 2);
+
+    for (int i = 0; i < deviationsForCases.size(); ++i) {
+        canvas->cd(i + 1);
+        TH1D* histB = new TH1D(Form("histB_%d", i), "Deviations in B;Sigma;Frequency", 60, -3, 3);
+        TH1D* histC = new TH1D(Form("histC_%d", i), "", 60, -3, 3); // No need for title, shared with histB
+
+        // deviationsForCases[i].first is the vector for B deviations
+        for (double deviation : deviationsForCases[i].first) {
+            histB->Fill(deviation);
+        }
+
+        // deviationsForCases[i].second is the vector for C deviations
+        for (double deviation : deviationsForCases[i].second) {
+            histC->Fill(deviation);
+        }
+
+        histB->SetLineColor(kBlue);
+        histC->SetLineColor(kRed);
+        histB->SetStats(false); // Hide stats box
+        histC->SetStats(false);
+
+        histB->Draw();
+        histC->Draw("SAME");
+
+        TLegend* legend = new TLegend(0.1, 0.7, 0.3, 0.9);
+        legend->AddEntry(histB, Form("B: Mean=%.2f, SD=%.2f", histB->GetMean(), histB->GetStdDev()), "l");
+        legend->AddEntry(histC, Form("C: Mean=%.2f, SD=%.2f", histC->GetMean(), histC->GetStdDev()), "l");
+        legend->Draw();
+    }
+
+    std::ostringstream filename;
+    filename << "output/acceptance_study_B=" << B << "_C=" << C << "_distributions.png";
+    canvas->SaveAs(filename.str().c_str());
+
+    delete canvas; // Clean up
+}
+
+
 
 int main(int argc, char** argv) {
     if (argc != 3) {
@@ -211,5 +252,9 @@ int main(int argc, char** argv) {
     double C = atof(argv[2]);
 
     // Run the acceptance study n times
-    acceptanceStudy(B, C, 10);
+    acceptanceStudy(B, C, 20);
+
+    // In your main function or at the end of acceptanceStudy
+	plotDeviationsDistributions(B, C);
+
 }
