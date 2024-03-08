@@ -214,7 +214,7 @@ void plotDeviationsDistributions(double B, double C) {
         double exclusionPercentage = (excludedBins / 24.0) * 100.0; // Recalculate if needed
 
         TH1D* histB = new TH1D(Form("histB_%d", i), Form("Excluded: %.1f%%;#Delta#sigma;Frequency", exclusionPercentage), 30, -3, 3);
-        TH1D* histC = new TH1D(Form("histC_%d", i), "", 30, -3, 3); // No need for title, shared with histB
+        TH1D* histC = new TH1D(Form("histC_%d", i), "", 60, -3, 3); // No need for title, shared with histB
 
         // deviationsForCases[i].first is the vector for B deviations
         for (double deviation : deviationsForCases[i].first) {
@@ -236,8 +236,8 @@ void plotDeviationsDistributions(double B, double C) {
 
         TLegend* legend = new TLegend(0.1, 0.7, 0.6, 0.9);
         legend->SetTextSize(0.04); // Set the text size for the legend
-        legend->AddEntry(histB, Form("B: #mu=%.2f, #sigma=%.2f", histB->GetMean(), histB->GetStdDev()), "l");
-        legend->AddEntry(histC, Form("C: #mu=%.2f, #sigma=%.2f", histC->GetMean(), histC->GetStdDev()), "l");
+        legend->AddEntry(histB, Form("A_{UU}^{cos#phi}: #mu=%.2f, #sigma=%.2f", histB->GetMean(), histB->GetStdDev()), "l");
+        legend->AddEntry(histC, Form("A_{UU}^{cos2#phi}: #mu=%.2f, #sigma=%.2f", histC->GetMean(), histC->GetStdDev()), "l");
         legend->Draw();
     }
 
@@ -259,7 +259,7 @@ int main(int argc, char** argv) {
     double C = atof(argv[2]);
 
     // Run the acceptance study n times
-    acceptanceStudy(B, C, 1000);
+    acceptanceStudy(B, C, 10000);
 
     // In your main function or at the end of acceptanceStudy
 	plotDeviationsDistributions(B, C);
