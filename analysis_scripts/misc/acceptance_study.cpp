@@ -269,7 +269,7 @@ void plotDeviationsDistributions(double B, double C) {
     }
 
     std::ostringstream filename;
-    filename << "output/systematic_study_B=" << B << "_C=" << C << ". png";
+    filename << "output/systematic_study_B=" << B << "_C=" << C << ".png";
     canvas->SaveAs(filename.str().c_str());
 
     delete canvas; // Clean up
