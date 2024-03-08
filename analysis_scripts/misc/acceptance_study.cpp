@@ -219,6 +219,8 @@ void plotDeviationsDistributions(double B, double C) {
         float bottomMargin = (i >= 3) ? 0.15 : 0.05;
         pad->SetMargin(leftMargin, rightMargin, bottomMargin, topMargin);
 
+        // The rest of the code to draw histograms and legends goes here
+        double exclusionPercentage = (exclusionSteps[i] / 24.0) * 100.0;
         TH1D* histB = new TH1D(Form("histB_%d", i), Form("Excluded: %.1f%%;#Delta#sigma;Frequency", exclusionPercentage), 60, -3, 3);
         TH1D* histC = new TH1D(Form("histC_%d", i), "", 60, -3, 3); // No need for title, shared with histB
 
