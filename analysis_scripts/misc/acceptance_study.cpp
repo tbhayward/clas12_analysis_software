@@ -42,14 +42,27 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f,
     double AUU_cos2phi = par[1];
 
     double sum = 0;
+    double counts = 0;
     for (int phi = 0; phi < phiVecGlobal.size(); ++phi) {
         if (phiVecGlobal[phi] >= binsToExcludeGlobal*2*3.14159/24 && phiVecGlobal[phi] < (24-binsToExcludeGlobal)*2*3.14159/24) {
+            counts++;
             sum += log((1 + AUU_cosphi*cos(phiVecGlobal[phi]) + AUU_cos2phi*cos(2*phiVecGlobal[phi])));
         }
     }
 
-    double diff = ((24-binsToExcludeGlobal)*2*3.14159/24-binsToExcludeGlobal*2*3.14159/24)/(2*3.14159);
-    f = phiVecGlobal.size()/(2*3.14159)-sum;
+    double diff = 6.28319;
+    if (binsToExcludeGlobal = 1) {
+        diff = 4.74195;
+    } else if (binsToExcludeGlobal = 2) {
+        diff = 3.36996;
+    } else if (binsToExcludeGlobal = 3) {
+        diff = 2.29818;
+    } else if (binsToExcludeGlobal = 4) {
+        diff = 1.59071;
+    } else if (binsToExcludeGlobal = 5) {
+        diff = 1.23334;
+    }
+    f = counts/(diff)-sum;
 }
 
 void generateData(double B, double C, long unsigned int N, std::vector<double>& phiVec) {
