@@ -162,16 +162,16 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     minuit.SetErrorDef(0.5);
     minuit.SetFCN(negLogLikelihood);
     minuit.DefineParameter(0, "A", maxY, 0.01, 0, 0);
-    minuit.DefineParameter(0, "B", B, 0.01, 0, 0);
-    minuit.DefineParameter(1, "C", C, 0.01, 0, 0);
+    minuit.DefineParameter(1, "B", B, 0.01, 0, 0);
+    minuit.DefineParameter(2, "C", C, 0.01, 0, 0);
     double arglist[10];
     int ierflg = 0;
     minuit.mnexcm("MIGRAD", arglist, 2, ierflg);
 
-    double fittedA, errA; minuit.GetParameter(1,fittedA,errA);
+    double fittedA, errA; minuit.GetParameter(0,fittedA,errA);
     std::cout << fittedB << " " << fittedC << std::endl;
-    minuit.GetParameter(2, fittedB, errB);
-    minuit.GetParameter(3, fittedC, errC);
+    minuit.GetParameter(1, fittedB, errB);
+    minuit.GetParameter(2, fittedC, errC);
     std::cout << fittedB << " " << fittedC << std::endl;
     // Calculate deviations in sigma
     deviationSigmaB = (fittedB - B) / errB;
