@@ -213,10 +213,10 @@ void plotDeviationsDistributions(double B, double C) {
         TPad *pad = (TPad*)gPad;
 
         // Set margins to remove space between subplots. Adjust values as needed.
-        float leftMargin = (i % 3 == 0) ? 0.15 : 0.05;
-        float rightMargin = 0.05;
-        float topMargin = (i < 3) ? 0.05 : 0.05;
-        float bottomMargin = (i >= 3) ? 0.15 : 0.05;
+        float leftMargin = (i % 3 == 0) ? 0.15 : 0.0;
+        float rightMargin = 0.0;
+        float topMargin = (i < 3) ? 0.05 : 0.0;
+        float bottomMargin = (i >= 3) ? 0.15 : 0.0;
         pad->SetMargin(leftMargin, rightMargin, bottomMargin, topMargin);
 
         // The rest of the code to draw histograms and legends goes here
