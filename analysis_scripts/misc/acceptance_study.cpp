@@ -21,6 +21,7 @@
 std::vector<std::pair<std::vector<double>, std::vector<double>>> deviationsForCases(6);
 std::vector<std::pair<std::vector<double>, std::vector<double>>> deviationsForCasesMLM(6); 
 std::vector<double> phiVecGlobal;
+int binsToExcludeGlobal;
 
 // Fit function: a trigonometric polynomial
 double fitFunction(double x, double *par) {
@@ -42,7 +43,9 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f,
 
     double sum = 0;
     for (int phi = 0; phi < phiVecGlobal.size(); ++phi) {
-        sum += log((1 + AUU_cosphi*cos(phiVecGlobal[phi]) + AUU_cos2phi*cos(2*phiVecGlobal[phi])));
+        if (phi > binsToExcludeGlobal*2*3.14159/24 && phi < (24-binsToExcludeGlobal)*2*3.14159/24) {
+            sum += log((1 + AUU_cosphi*cos(phiVecGlobal[phi]) + AUU_cos2phi*cos(2*phiVecGlobal[phi])));
+        }
     }
 
     f = phiVecGlobal.size()-sum;
@@ -179,13 +182,23 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     deviationsForCasesMLM[canvasIndex-1].first.push_back(deviationSigmaB);
     deviationsForCasesMLM[canvasIndex-1].second.push_back(deviationSigmaC); 
 
+    // Assuming 'fittedA' holds the A value from the chi2 fit,
+    // and 'fittedB', 'fittedC' are from the MLM fit:
+    TF1* fitFuncMLMChi2 = new TF1("fitFuncMLMChi2", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", 0, 2*TMath::Pi());
+
+    // Set the parameters with A from chi2 fit and B, C from MLM fit
+    fitFuncMLMChi2->SetParameter(0, fitFuncLimited->GetParameter(0)); // Use A from chi2 fit
+    fitFuncMLMChi2->SetParameter(1, fittedB); // Use B from MLM fit
+    fitFuncMLMChi2->SetParameter(2, fittedC); // Use C from MLM fit
+    fitFuncMLMChi2->SetLineColor(kBlue); // Set a different color for distinction
 
     /****** PLOTTING PORTION *******/
 	masterCanvas->cd(canvasIndex);
 	graphIncluded->Draw("AP");
-	graphIncluded->GetYaxis()->SetRangeUser(0.6*fitFuncLimited->GetParameter(0), 1.3*fitFuncLimited->GetParameter(0));
+	graphIncluded->GetYaxis()->SetRangeUser(0.5*fitFuncLimited->GetParameter(0), 1.5*fitFuncLimited->GetParameter(0));
 	graphExcluded->Draw("P SAME");
 	fitFuncFullRange->Draw("SAME");
+    fitFuncMLMChi2->Draw("SAME");
 
     // Customize axis limits and labels
     graphIncluded->GetXaxis()->SetTitle("#phi");
@@ -198,19 +211,32 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     	graphIncluded->GetXaxis()->SetLimits(0.001, TMath::TwoPi());
     }
 
-    // Calculate the start position for TPaveText based on the column, directly here
-    double textStartX = (canvasIndex % 3 == 1) ? 0.15 : 0.0; // Example: 0.15 for left column, adjust 0.12 for middle/right columns
+    // // Calculate the start position for TPaveText based on the column, directly here
+    // double textStartX = (canvasIndex % 3 == 1) ? 0.15 : 0.0; // Example: 0.15 for left column, adjust 0.12 for middle/right columns
+    // TPaveText *pt = new TPaveText(textStartX, 0.75, textStartX + 0.45, 1.0, "NDC");
+    // pt->SetFillColor(0);
+    // pt->SetTextAlign(12);
+    // pt->SetTextSize(0.04); // Adjust the text size if needed
+    // pt->AddText(Form("Exclusion: %.1f%%", exclusionPercentage));
+	// pt->AddText(Form("A_{UU}^{cos#phi} = %.3f #pm %.3f", fitFuncLimited->GetParameter(1), fitFuncLimited->GetParError(1)));
+	// pt->AddText(Form("A_{UU}^{cos2#phi} = %.3f #pm %.3f", fitFuncLimited->GetParameter(2), fitFuncLimited->GetParError(2)));
+	// double chi2 = fitFuncLimited->GetChisquare();
+	// double ndf = fitFuncLimited->GetNDF();
+	// pt->AddText(Form("#chi^{2}/ndf = %.3f", chi2 / ndf));
+	// pt->Draw();
+
     TPaveText *pt = new TPaveText(textStartX, 0.75, textStartX + 0.45, 1.0, "NDC");
     pt->SetFillColor(0);
     pt->SetTextAlign(12);
     pt->SetTextSize(0.04); // Adjust the text size if needed
     pt->AddText(Form("Exclusion: %.1f%%", exclusionPercentage));
-	pt->AddText(Form("A_{UU}^{cos#phi} = %.3f #pm %.3f", fitFuncLimited->GetParameter(1), fitFuncLimited->GetParError(1)));
-	pt->AddText(Form("A_{UU}^{cos2#phi} = %.3f #pm %.3f", fitFuncLimited->GetParameter(2), fitFuncLimited->GetParError(2)));
-	double chi2 = fitFuncLimited->GetChisquare();
-	double ndf = fitFuncLimited->GetNDF();
-	pt->AddText(Form("#chi^{2}/ndf = %.3f", chi2 / ndf));
-	pt->Draw();
+    pt->AddText(Form("Chi2: A_{UU}^{cos#phi} = %.3f", fitFuncLimited->GetParameter(0)));
+    pt->AddText(Form("MLM: A_{UU}^{cos#phi} = %.3f #pm %.3f", fittedB, errB));
+    pt->AddText(Form("MLM: A_{UU}^{cos2#phi} = %.3f #pm %.3f", fittedC, errC));
+    double chi2 = fitFuncLimited->GetChisquare();
+    double ndf = fitFuncLimited->GetNDF();
+    pt->AddText(Form("#chi^{2}/ndf = %.3f", chi2 / ndf));
+    pt->Draw();
 
 
     // After drawing the graphs and fit function, adjust axis titles visibility if necessary
@@ -242,6 +268,7 @@ void acceptanceStudy(double B, double C, int iterations) {
         int exclusionSteps[] = {0, 1, 2, 3, 4, 5};
         for (int i = 0; i < sizeof(exclusionSteps)/sizeof(exclusionSteps[0]); ++i) {
             int binsToExclude = exclusionSteps[i];
+            binsToExcludeGlobal = binsToExclude;
             plotForExclusion(phiVec, B, C, i + 1, binsToExclude, masterCanvas);
         }
 
