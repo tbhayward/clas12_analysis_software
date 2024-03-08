@@ -240,21 +240,21 @@ void plotDeviationsDistributions(double B, double C) {
         histC->SetStats(false);
 
         histB->Draw();
+        histC->Draw("SAME");
         // Find the maximum bin content in histB and scale it
 		double maxValB = histB->GetMaximum();
 		histB->SetMaximum(maxValB * 1.25); // Set Y-axis max to 1.25 times the max bin content
-        histC->Draw("SAME");
 
-        // Position the legend based on the subplot's position
-        double legendX1 = (i % 3 == 0) ? 0.2 : 0.6; // Adjust X start based on column
-        double legendY1 = 0.7; // Y start
-        double legendX2 = legendX1 + 0.3; // X end
-        double legendY2 = legendY1 + 0.2; // Y end
-        TLegend* legend = new TLegend(legendX1, legendY1, legendX2, legendY2);
-        legend->SetTextSize(0.04); // Keeping text size consistent
-        legend->AddEntry(histB, Form("A_{UU}^{cos#phi}: #mu=%.2f, #sigma=%.2f", histB->GetMean(), histB->GetStdDev()), "l");
-        legend->AddEntry(histC, Form("A_{UU}^{cos2#phi}: #mu=%.2f, #sigma=%.2f", histC->GetMean(), histC->GetStdDev()), "l");
-        legend->Draw();
+        // Calculating text box positions based on the column
+        double textStartX = ((i % 3) == 0) ? 0.1 : (((i % 3) == 1) ? 0.4 : 0.7);
+        TPaveText *pt = new TPaveText(textStartX, 0.75, textStartX + 0.3, 0.9, "NDC");
+        pt->SetFillColor(0);
+        pt->SetTextAlign(12);
+        pt->SetTextSize(0.04); // Adjust the text size if needed
+        pt->AddText(Form("Exclusion: %.1f%%", exclusionPercentage));
+        pt->AddText(Form("B: #mu=%.2f, #sigma=%.2f", histB->GetMean(), histB->GetStdDev()));
+        pt->AddText(Form("C: #mu=%.2f, #sigma=%.2f", histC->GetMean(), histC->GetStdDev()));
+        pt->Draw();
     }
 
     std::ostringstream filename;
