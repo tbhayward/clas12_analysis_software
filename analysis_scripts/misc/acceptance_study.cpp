@@ -134,7 +134,7 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
 
 	masterCanvas->cd(canvasIndex);
 	graphIncluded->Draw("AP");
-	graphIncluded->GetYaxis()->SetRangeUser(0.8*fitFuncLimited->GetParameter(0), 1.3 *fitFuncLimited->GetParameter(0));
+	graphIncluded->GetYaxis()->SetRangeUser(0.6*fitFuncLimited->GetParameter(0), 1.3*fitFuncLimited->GetParameter(0));
 	graphExcluded->Draw("P SAME");
 	fitFuncFullRange->Draw("SAME");
 
@@ -256,7 +256,7 @@ void plotDeviationsDistributions(double B, double C) {
         if (i % 3 == 1) textStartX = 0.10; // Adjust for middle column
         if (i % 3 == 2) textStartX = 0.10; // Adjust for right column
         
-        TPaveText* pt = new TPaveText(textStartX, 0.775, textStartX + 0.375, 0.925, "NDC");
+        TPaveText* pt = new TPaveText(textStartX, 0.775, textStartX + 0.425, 0.925, "NDC");
         pt->SetBorderSize(1); // Enable border
         pt->SetFillColor(0); // Set fill color to white or transparent
         pt->SetFillStyle(1001); // Solid fill
@@ -264,8 +264,8 @@ void plotDeviationsDistributions(double B, double C) {
         pt->SetTextAlign(12);
         pt->SetTextSize(0.04);
         pt->AddText(Form("Exclusion: %.1f%%", exclusionPercentage));
-        pt->AddText(Form("B: #mu=%.2f, #sigma=%.2f", histB->GetMean(), histB->GetStdDev()));
-        pt->AddText(Form("C: #mu=%.2f, #sigma=%.2f", histC->GetMean(), histC->GetStdDev()));
+        pt->AddText(Form("A_{UU}^{cos#phi}: #mu=%.2f, #sigma=%.2f", histB->GetMean(), histB->GetStdDev()));
+        pt->AddText(Form("A_{UU}^{cos2#phi}: #mu=%.2f, #sigma=%.2f", histC->GetMean(), histC->GetStdDev()));
         pt->Draw();
     }
 
