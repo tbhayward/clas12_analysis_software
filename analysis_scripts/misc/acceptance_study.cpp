@@ -43,12 +43,13 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f,
 
     double sum = 0;
     for (int phi = 0; phi < phiVecGlobal.size(); ++phi) {
-        std::cout << " HEY " << binsToExcludeGlobal*2*3.14159/24 << " " << (24-binsToExcludeGlobal)*2*3.14159/24 << std::endl;
         if (phi > binsToExcludeGlobal*2*3.14159/24 && phi < (24-binsToExcludeGlobal)*2*3.14159/24) {
             sum += log((1 + AUU_cosphi*cos(phiVecGlobal[phi]) + AUU_cos2phi*cos(2*phiVecGlobal[phi])));
         }
     }
 
+    double diff = ((24-binsToExcludeGlobal)*2*3.14159/24-binsToExcludeGlobal*2*3.14159/24)/(2*3.14159);
+    std::cout << diff << std::endl;
     f = phiVecGlobal.size()-sum;
 }
 
