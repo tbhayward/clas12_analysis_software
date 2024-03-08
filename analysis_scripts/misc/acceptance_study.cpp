@@ -287,7 +287,7 @@ int main(int argc, char** argv) {
     double C = atof(argv[2]);
 
     // Run the acceptance study n times
-    acceptanceStudy(B, C, 10);
+    acceptanceStudy(B, C, 10000);
 
     // In your main function or at the end of acceptanceStudy
 	plotDeviationsDistributions(B, C);
