@@ -235,17 +235,15 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     pt->SetTextAlign(12);
     pt->SetTextSize(0.04); // Adjust the text size if needed
     pt->AddText(Form("Exclusion: %.1f%%", exclusionPercentage));
-
     // For chi^2 lines in red
-    TText *chi2Text1 = pt->AddText(Form("#chi^{2}: A_{UU}^{cos#phi} = %.3f", fitFuncLimited->GetParameter(1)));
+    TText *chi2Text1 = pt->AddText(Form("#chi^{2}: A_{UU}^{cos#phi} = %.3f #pm %.3f", fitFuncLimited->GetParameter(1),fitFuncLimited->GetParError(1));
     chi2Text1->SetTextColor(kRed);
-    TText *chi2Text2 = pt->AddText(Form("#chi^{2}: A_{UU}^{cos2#phi} = %.3f", fitFuncLimited->GetParameter(2)));
+    TText *chi2Text2 = pt->AddText(Form("#chi^{2}: A_{UU}^{cos2#phi} = %.3f #pm %.3f", fitFuncLimited->GetParameter(2),fitFuncLimited->GetParError(2)));
     chi2Text2->SetTextColor(kRed);
     double chi2 = fitFuncLimited->GetChisquare();
     double ndf = fitFuncLimited->GetNDF();
     TText *chi2NdfText = pt->AddText(Form("#chi^{2}/ndf = %.3f", chi2 / ndf));
     chi2NdfText->SetTextColor(kRed);
-
     // For MLM lines in blue
     TText *mlmText1 = pt->AddText(Form("MLM: A_{UU}^{cos#phi} = %.3f #pm %.3f", fittedB, errB));
     mlmText1->SetTextColor(kBlue);
