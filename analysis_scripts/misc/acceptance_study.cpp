@@ -168,8 +168,8 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     minuit.SetErrorDef(0.5);
     minuit.SetFCN(negLogLikelihood);
     // minuit.DefineParameter(0, "A", maxY, 0.00, 0, 0);
-    minuit.DefineParameter(0, "B", B, 0.01, 0, 0);
-    minuit.DefineParameter(1, "C", C, 0.01, 0, 0);
+    minuit.DefineParameter(0, "B", B, 0.001, -1, 1);
+    minuit.DefineParameter(1, "C", C, 0.001, -1, 1);
     minuit.Migrad();
 
     double fittedA, errA; minuit.GetParameter(0,fittedA,errA);
