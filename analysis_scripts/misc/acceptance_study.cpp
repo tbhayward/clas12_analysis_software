@@ -14,11 +14,13 @@
 #include <utility> // For std::pair
 #include <TH1D.h>     // For histograms
 #include <TLegend.h>  // For legends
+#include <TMinuit.h>
 
 // Global structure to hold deviations. 
 // Each pair corresponds to an exclusion case, holding two vectors for deviations in B and C respectively.
 std::vector<std::pair<std::vector<double>, std::vector<double>>> deviationsForCases(6);
 std::vector<std::pair<std::vector<double>, std::vector<double>>> deviationsForCasesMLM(6); 
+ std::vector<double> phiVecGlobal;
 
 // Fit function: a trigonometric polynomial
 double fitFunction(double x, double *par) {
@@ -39,8 +41,8 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f,
     double AUU_cos2phi = par[2];
 
     double sum = 0;
-    for (int phi = 0; phi < 1e5; ++i) {
-        sum =+ log(1 + (AUU_cosphi*cos(phiVec[phi]) + AUU_cos2phi*cos(2*phiVec[phi])));
+    for (int phi = 0; phi < 1e5; ++phi) {
+        sum =+ log(1 + (AUU_cosphi*cos(phiVecGlobal[phi]) + AUU_cos2phi*cos(2*phiVecGlobal[phi])));
     }
 
     double nll = A * sum;
@@ -225,9 +227,11 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
 void acceptanceStudy(double B, double C, int iterations) {
     for (int loop = 0; loop < iterations; ++loop) {
         std::cout << "Starting loop " << loop + 1 << " of " << iterations << ". " << std::endl;
+        phiVecGlobal.clear();
 
         std::vector<double> phiVec;
         generateData(B, C, 1e5, phiVec); // Generate fresh data for each iteration
+        phiVecGlobal = phiVec;
 
         // Create the example plot only during the first iteration
         TCanvas *masterCanvas = nullptr;
