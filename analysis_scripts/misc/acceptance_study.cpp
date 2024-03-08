@@ -241,8 +241,8 @@ void plotDeviationsDistributions(double B, double C) {
 
         // Inside your loop, before drawing the histograms
         if (i >= 4) { // Adjust for pads 5 and 6
-            histB->GetXaxis()->SetRangeUser(-2.99, 3);
-            histC->GetXaxis()->SetRangeUser(-2.99, 3);
+            histB->GetXaxis()->SetRangeUser(-2.95, 3);
+            histC->GetXaxis()->SetRangeUser(-2.95, 3);
         }
 
         histB->Draw();
