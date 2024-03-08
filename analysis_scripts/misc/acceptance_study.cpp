@@ -214,11 +214,10 @@ void plotDeviationsDistributions(double B, double C) {
         int excludedBins = exclusionSteps[i];
         double exclusionPercentage = (excludedBins / 24.0) * 100.0; // Recalculate if needed
 
-		// Adjust margins and labels for pads
-        pad->SetTopMargin((i < 3) ? 0.12 : 0.00);
-        pad->SetBottomMargin((i >= 3) ? 0.12 : 0.00);
-        pad->SetLeftMargin((i % 3 == 0) ? 0.12 : 0.00);
-        pad->SetRightMargin(0.01);
+		pad->SetTopMargin((i <= 3) ? 0.02 : 0.00); // Smaller margin for top row
+        pad->SetBottomMargin((i > 3) ? 0.15 : 0.00); // Larger bottom margin only for bottom row
+        pad->SetLeftMargin(((i-1) % 3 == 0) ? 0.15 : 0.00); // Larger left margin only for first column
+        pad->SetRightMargin(((i-1) % 3 == 2) ? 0.01 : 0.00); // Uniform right margin
 
         TH1D* histB = new TH1D(Form("histB_%d", i), Form("Excluded: %.1f%%;#Delta#sigma;Frequency", exclusionPercentage), 60, -3, 3);
         TH1D* histC = new TH1D(Form("histC_%d", i), "", 60, -3, 3); // No need for title, shared with histB
@@ -244,8 +243,18 @@ void plotDeviationsDistributions(double B, double C) {
 		histB->SetMaximum(maxValB * 1.25); // Set Y-axis max to 1.25 times the max bin content
         histC->Draw("SAME");
 
-        TLegend* legend = new TLegend(0.1, 0.7, 0.65, 0.9);
-        legend->SetTextSize(0.04); // Set the text size for the legend
+        // Adjusting the legend position relatively
+        double legendX1 = 0.6, legendX2 = 0.9;
+        double legendY1 = 0.7, legendY2 = 0.9;
+        if (i % 3 == 1) { // Adjust for middle column
+            legendX1 = 0.4;
+            legendX2 = 0.7;
+        } else if (i % 3 == 2) { // Adjust for right column
+            legendX1 = 0.2;
+            legendX2 = 0.5;
+        }
+        TLegend* legend = new TLegend(legendX1, legendY1, legendX2, legendY2);
+        legend->SetTextSize(0.04); // Keeping text size consistent
         legend->AddEntry(histB, Form("A_{UU}^{cos#phi}: #mu=%.2f, #sigma=%.2f", histB->GetMean(), histB->GetStdDev()), "l");
         legend->AddEntry(histC, Form("A_{UU}^{cos2#phi}: #mu=%.2f, #sigma=%.2f", histC->GetMean(), histC->GetStdDev()), "l");
         legend->Draw();
