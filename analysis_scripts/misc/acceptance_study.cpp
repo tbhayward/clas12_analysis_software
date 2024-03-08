@@ -253,10 +253,10 @@ void plotDeviationsDistributions(double B, double C) {
 
         // Adjust TPaveText position based on column
         double textStartX = 0.175; // Default for left column
-        if (i % 3 == 1) textStartX = 0.125; // Adjust for middle column
-        if (i % 3 == 2) textStartX = 0.125; // Adjust for right column
+        if (i % 3 == 1) textStartX = 0.10; // Adjust for middle column
+        if (i % 3 == 2) textStartX = 0.10; // Adjust for right column
         
-        TPaveText* pt = new TPaveText(textStartX, 0.75, textStartX + 0.28, 0.9, "NDC");
+        TPaveText* pt = new TPaveText(textStartX, 0.8, textStartX + 0.28, 0.95, "NDC");
         pt->SetBorderSize(0);
         pt->SetFillColor(0);
         pt->SetTextAlign(12);
