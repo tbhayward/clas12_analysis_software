@@ -261,10 +261,16 @@ void plotDeviationsDistributions(double B, double C) {
             textStartX = 0.7; // More to the right
         }
 
-        TPaveText *pt = new TPaveText(textStartX, 0.75, textStartX + 0.3, 0.9, "NDC");
+        // Adjust TPaveText position based on column
+        double textStartX = 0.15; // Default for left column
+        if (i % 3 == 1) textStartX = 0.45; // Adjust for middle column
+        if (i % 3 == 2) textStartX = 0.75; // Adjust for right column
+        
+        TPaveText* pt = new TPaveText(textStartX, 0.75, textStartX + 0.28, 0.9, "NDC");
+        pt->SetBorderSize(0);
         pt->SetFillColor(0);
         pt->SetTextAlign(12);
-        pt->SetTextSize(0.04); // Adjust the text size if needed
+        pt->SetTextSize(0.04);
         pt->AddText(Form("Exclusion: %.1f%%", exclusionPercentage));
         pt->AddText(Form("B: #mu=%.2f, #sigma=%.2f", histB->GetMean(), histB->GetStdDev()));
         pt->AddText(Form("C: #mu=%.2f, #sigma=%.2f", histC->GetMean(), histC->GetStdDev()));
