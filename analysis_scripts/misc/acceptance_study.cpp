@@ -42,28 +42,15 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f,
     double AUU_cos2phi = par[1];
 
     double sum = 0;
-    double counts = 0;
     for (int phi = 0; phi < phiVecGlobal.size(); ++phi) {
-        // std::cout << binsToExcludeGlobal*2*3.14159/24 << " " << phiVecGlobal[phi] << " " << (24-binsToExcludeGlobal)*2*3.14159/24 << std::endl;
         if (phiVecGlobal[phi] >= binsToExcludeGlobal*2*3.14159/24 && phiVecGlobal[phi] < (24-binsToExcludeGlobal)*2*3.14159/24) {
-            counts++;
+        // if (true) {
             sum += log((1 + AUU_cosphi*cos(phiVecGlobal[phi]) + AUU_cos2phi*cos(2*phiVecGlobal[phi])));
         }
     }
 
-    double diff = 6.28319;
-    if (binsToExcludeGlobal = 1) {
-        diff = 4.74195;
-    } else if (binsToExcludeGlobal = 2) {
-        diff = 3.36996;
-    } else if (binsToExcludeGlobal = 3) {
-        diff = 2.29818;
-    } else if (binsToExcludeGlobal = 4) {
-        diff = 1.59071;
-    } else if (binsToExcludeGlobal = 5) {
-        diff = 1.23334;
-    }
-    f = counts-sum;
+    double diff = ((24-binsToExcludeGlobal)*2*3.14159/24-binsToExcludeGlobal*2*3.14159/24)/(2*3.14159);
+    f = diff*phiVecGlobal.size()-sum;
 }
 
 void generateData(double B, double C, long unsigned int N, std::vector<double>& phiVec) {
@@ -174,7 +161,7 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
 	fitFuncFullRange->SetLineColor(kRed);
 
     /****** MLM MINIMIZATION PORTION *******/
-    double arglist[10]; arglist[0] = 50000; arglist[1] = 0.01;
+    double arglist[10]; arglist[0] = 1;
     int ierflg = 0;
     TMinuit minuit(2);
     minuit.SetPrintLevel(-1);
@@ -183,7 +170,7 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     // minuit.DefineParameter(0, "A", maxY, 0.00, 0, 0);
     minuit.DefineParameter(0, "B", B, 0.001, -1, 1);
     minuit.DefineParameter(1, "C", C, 0.001, -1, 1);
-    minuit.mnexcm("MIGRAD", arglist, 2, ierflg);
+    minuit.Migrad();
 
     double fittedA, errA; minuit.GetParameter(0,fittedA,errA);
     std::cout << fittedB << " " << fittedC << std::endl;
