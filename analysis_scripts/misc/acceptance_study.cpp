@@ -209,8 +209,8 @@ void plotDeviationsDistributions(double B, double C) {
 
     for (int i = 0; i < deviationsForCases.size(); ++i) {
         canvas->cd(i + 1);
-        TH1D* histB = new TH1D(Form("histB_%d", i), "Deviations in B;Sigma;Frequency", 60, -3, 3);
-        TH1D* histC = new TH1D(Form("histC_%d", i), "", 60, -3, 3); // No need for title, shared with histB
+        TH1D* histB = new TH1D(Form("histB_%d", i), "Deviations in B;#Delta#sigma;Frequency", 30, -3, 3);
+        TH1D* histC = new TH1D(Form("histC_%d", i), "", 30, -3, 3); // No need for title, shared with histB
 
         // deviationsForCases[i].first is the vector for B deviations
         for (double deviation : deviationsForCases[i].first) {
@@ -254,7 +254,7 @@ int main(int argc, char** argv) {
     double C = atof(argv[2]);
 
     // Run the acceptance study n times
-    acceptanceStudy(B, C, 20);
+    acceptanceStudy(B, C, 100);
 
     // In your main function or at the end of acceptanceStudy
 	plotDeviationsDistributions(B, C);
