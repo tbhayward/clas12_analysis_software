@@ -251,16 +251,6 @@ void plotDeviationsDistributions(double B, double C) {
 		double maxValB = histB->GetMaximum();
 		histB->SetMaximum(maxValB * 1.25); // Set Y-axis max to 1.25 times the max bin content
 
-        // Adjusting text box positions based on the column
-        double textStartX;
-        if (i % 3 == 0) { // First column
-            textStartX = 0.1; // More to the left
-        } else if (i % 3 == 1) { // Second (middle) column
-            textStartX = 0.4; // Centered
-        } else { // Third (right) column
-            textStartX = 0.7; // More to the right
-        }
-
         // Adjust TPaveText position based on column
         double textStartX = 0.15; // Default for left column
         if (i % 3 == 1) textStartX = 0.45; // Adjust for middle column
