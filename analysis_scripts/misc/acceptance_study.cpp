@@ -156,6 +156,8 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
 	fitFuncFullRange->SetLineColor(kRed);
 
     /****** MLM MINIMIZATION PORTION *******/
+    double arglist[10]; arglist[0] = 1;
+    int ierflg = 0;
     TMinuit minuit(2);
     minuit.SetPrintLevel(0);
     minuit.SetErrorDef(0.5);
@@ -163,9 +165,7 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     // minuit.DefineParameter(0, "A", maxY, 0.00, 0, 0);
     minuit.DefineParameter(0, "B", B, 0.01, 0, 0);
     minuit.DefineParameter(1, "C", C, 0.01, 0, 0);
-    double arglist[10];
-    int ierflg = 0;
-    minuit.mnexcm("MIGRAD", arglist, 2, ierflg);
+    minuit.Migrad();
 
     double fittedA, errA; minuit.GetParameter(0,fittedA,errA);
     std::cout << fittedB << " " << fittedC << std::endl;
