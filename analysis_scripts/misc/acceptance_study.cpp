@@ -45,7 +45,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f,
         sum =+ log(1 + (AUU_cosphi*cos(phiVecGlobal[phi]) + AUU_cos2phi*cos(2*phiVecGlobal[phi])));
     }
 
-    double nll = A * sum;
+    double nll = 1e5 * sum;
     f = nll;
 }
 
@@ -161,7 +161,7 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     minuit.SetPrintLevel(0);
     minuit.SetErrorDef(0.5);
     minuit.SetFCN(negLogLikelihood);
-    minuit.DefineParameter(0, "A", maxY, 0.01, 0, 0);
+    minuit.DefineParameter(0, "A", maxY, 0.00, 0, 0);
     minuit.DefineParameter(1, "B", B, 0.01, 0, 0);
     minuit.DefineParameter(2, "C", C, 0.01, 0, 0);
     double arglist[10];
