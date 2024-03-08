@@ -164,6 +164,12 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     minuit.DefineParameter(0, "A", maxY, 0.001, 0, 0);
     minuit.DefineParameter(1, "B", B, 0.001, 0, 0);
     minuit.DefineParameter(2, "C", C, 0.001, 0, 0);
+    double arglist[10];
+    int ierflg = 0;
+
+    // Migrad with increased iterations and tolerance
+    arglist[0] = 50000;
+    arglist[1] = 0.1;
     minuit.mnexcm("MIGRAD", arglist, 2, ierflg);
 
     double fittedA, errA; minuit.GetParameter(1,fittedA,errA);
