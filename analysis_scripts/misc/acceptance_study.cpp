@@ -209,7 +209,7 @@ void plotDeviationsDistributions(double B, double C) {
 
     for (int i = 0; i < deviationsForCases.size(); ++i) {
         canvas->cd(i + 1);
-        TH1D* histB = new TH1D(Form("histB_%d", i), "Deviations in B;#Delta#sigma;Frequency", 30, -3, 3);
+        TH1D* histB = new TH1D(Form("histB_%d", i), ";#Delta#sigma;Frequency", 30, -3, 3);
         TH1D* histC = new TH1D(Form("histC_%d", i), "", 30, -3, 3); // No need for title, shared with histB
 
         // deviationsForCases[i].first is the vector for B deviations
@@ -231,6 +231,7 @@ void plotDeviationsDistributions(double B, double C) {
         histC->Draw("SAME");
 
         TLegend* legend = new TLegend(0.1, 0.7, 0.3, 0.9);
+        legend->SetTextSize(0.04); // Set the text size for the legend
         legend->AddEntry(histB, Form("B: Mean=%.2f, SD=%.2f", histB->GetMean(), histB->GetStdDev()), "l");
         legend->AddEntry(histC, Form("C: Mean=%.2f, SD=%.2f", histC->GetMean(), histC->GetStdDev()), "l");
         legend->Draw();
@@ -254,7 +255,7 @@ int main(int argc, char** argv) {
     double C = atof(argv[2]);
 
     // Run the acceptance study n times
-    acceptanceStudy(B, C, 100);
+    acceptanceStudy(B, C, 1000);
 
     // In your main function or at the end of acceptanceStudy
 	plotDeviationsDistributions(B, C);
