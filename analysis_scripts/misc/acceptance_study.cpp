@@ -251,9 +251,17 @@ void plotDeviationsDistributions(double B, double C) {
 		double maxValB = histB->GetMaximum();
 		histB->SetMaximum(maxValB * 1.25); // Set Y-axis max to 1.25 times the max bin content
 
-        // Calculate the start position for TPaveText based on the column, directly here
-        double textStartX = (i % 3 == 1) ? 0.15 : 0.0; // Example: 0.15 for left column, adjust 0.12 for middle/right columns
-        TPaveText *pt = new TPaveText(textStartX, 0.75, textStartX + 0.45, 1.0, "NDC");
+        // Adjusting text box positions based on the column
+        double textStartX;
+        if (i % 3 == 0) { // First column
+            textStartX = 0.1; // More to the left
+        } else if (i % 3 == 1) { // Second (middle) column
+            textStartX = 0.4; // Centered
+        } else { // Third (right) column
+            textStartX = 0.7; // More to the right
+        }
+
+        TPaveText *pt = new TPaveText(textStartX, 0.75, textStartX + 0.3, 0.9, "NDC");
         pt->SetFillColor(0);
         pt->SetTextAlign(12);
         pt->SetTextSize(0.04); // Adjust the text size if needed
