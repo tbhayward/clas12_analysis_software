@@ -11,6 +11,11 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <utility> // For std::pair
+
+// Global structure to hold deviations. 
+// Each pair corresponds to an exclusion case, holding two vectors for deviations in B and C respectively.
+std::vector<std::pair<std::vector<double>, std::vector<double>>> deviationsForCases(6); 
 
 void generateData(double B, double C, long unsigned int N, std::vector<double>& phiVec) {
     TRandom3 rand(0); // Seed for reproducibility
@@ -106,6 +111,19 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
 	// Fit the graph with these settings
 	graphIncluded->Fit(fitFuncLimited, "Q R");
 
+	// Extract fitted parameters and their errors
+    double fittedB = fitFuncLimited->GetParameter(1);
+    double fittedC = fitFuncLimited->GetParameter(2);
+    double errB = fitFuncLimited->GetParError(1);
+    double errC = fitFuncLimited->GetParError(2);
+
+    // Calculate deviations in sigma
+    double deviationSigmaB = (fittedB - B) / errB;
+    double deviationSigmaC = (fittedC - C) / errC;
+
+    // Store deviations
+    deviationsForCases[canvasIndex-1].first.push_back(deviationSigmaB); // Store deviation for B
+    deviationsForCases[canvasIndex-1].second.push_back(deviationSigmaC); // Store deviation for C
 
 	// Define a new TF1 that uses the parameters from the fit but extends across the full range
 	TF1 *fitFuncFullRange = new TF1("fitFuncFullRange", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", 0, 2*TMath::Pi());
