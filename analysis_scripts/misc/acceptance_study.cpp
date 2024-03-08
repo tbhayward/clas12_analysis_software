@@ -175,7 +175,7 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     std::cout << fittedB << " " << fittedC << std::endl;
     minuit.GetParameter(0, fittedB, errB);
     minuit.GetParameter(1, fittedC, errC);
-    std::cout << fittedB << " " << fittedC << std::endl;
+    std::cout << fittedB << " " << fittedC << std::endl << std::endl;
     // Calculate deviations in sigma
     deviationSigmaB = (fittedB - B) / errB;
     deviationSigmaC = (fittedC - C) / errC;
@@ -212,34 +212,48 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     	graphIncluded->GetXaxis()->SetLimits(0.001, TMath::TwoPi());
     }
 
-    // // Calculate the start position for TPaveText based on the column, directly here
+    // // // Calculate the start position for TPaveText based on the column, directly here
     // double textStartX = (canvasIndex % 3 == 1) ? 0.15 : 0.0; // Example: 0.15 for left column, adjust 0.12 for middle/right columns
-    // TPaveText *pt = new TPaveText(textStartX, 0.75, textStartX + 0.45, 1.0, "NDC");
+    // TPaveText *pt = new TPaveText(textStartX, 0.65, textStartX + 0.575, 1.0, "NDC");
     // pt->SetFillColor(0);
     // pt->SetTextAlign(12);
     // pt->SetTextSize(0.04); // Adjust the text size if needed
     // pt->AddText(Form("Exclusion: %.1f%%", exclusionPercentage));
-	// pt->AddText(Form("A_{UU}^{cos#phi} = %.3f #pm %.3f", fitFuncLimited->GetParameter(1), fitFuncLimited->GetParError(1)));
-	// pt->AddText(Form("A_{UU}^{cos2#phi} = %.3f #pm %.3f", fitFuncLimited->GetParameter(2), fitFuncLimited->GetParError(2)));
-	// double chi2 = fitFuncLimited->GetChisquare();
-	// double ndf = fitFuncLimited->GetNDF();
-	// pt->AddText(Form("#chi^{2}/ndf = %.3f", chi2 / ndf));
-	// pt->Draw();
+    // pt->AddText(Form("#chi^{2}: A_{UU}^{cos#phi} = %.3f", fitFuncLimited->GetParameter(1)));
+    // pt->AddText(Form("#chi^{2}: A_{UU}^{cos2#phi} = %.3f", fitFuncLimited->GetParameter(2)));
+    // pt->AddText(Form("#chi^{2}/ndf = %.3f", chi2 / ndf)); 
+    // pt->AddText(Form("MLM: A_{UU}^{cos#phi} = %.3f #pm %.3f", fittedB, errB));
+    // pt->AddText(Form("MLM: A_{UU}^{cos2#phi} = %.3f #pm %.3f", fittedC, errC));
+    // double chi2 = fitFuncLimited->GetChisquare();
+    // double ndf = fitFuncLimited->GetNDF();
+    // pt->Draw();
 
-    // // Calculate the start position for TPaveText based on the column, directly here
+    // Calculate the start position for TPaveText based on the column, directly here
     double textStartX = (canvasIndex % 3 == 1) ? 0.15 : 0.0; // Example: 0.15 for left column, adjust 0.12 for middle/right columns
-    TPaveText *pt = new TPaveText(textStartX, 0.7, textStartX + 0.55, 1.0, "NDC");
+    TPaveText *pt = new TPaveText(textStartX, 0.65, textStartX + 0.575, 1.0, "NDC");
     pt->SetFillColor(0);
     pt->SetTextAlign(12);
     pt->SetTextSize(0.04); // Adjust the text size if needed
     pt->AddText(Form("Exclusion: %.1f%%", exclusionPercentage));
-    pt->AddText(Form("Chi2: A_{UU}^{cos#phi} = %.3f", fitFuncLimited->GetParameter(0)));
-    pt->AddText(Form("MLM: A_{UU}^{cos#phi} = %.3f #pm %.3f", fittedB, errB));
-    pt->AddText(Form("MLM: A_{UU}^{cos2#phi} = %.3f #pm %.3f", fittedC, errC));
+
+    // For chi^2 lines in red
+    TText *chi2Text1 = pt->AddText(Form("#chi^{2}: A_{UU}^{cos#phi} = %.3f", fitFuncLimited->GetParameter(1)));
+    chi2Text1->SetTextColor(kRed);
+    TText *chi2Text2 = pt->AddText(Form("#chi^{2}: A_{UU}^{cos2#phi} = %.3f", fitFuncLimited->GetParameter(2)));
+    chi2Text2->SetTextColor(kRed);
     double chi2 = fitFuncLimited->GetChisquare();
     double ndf = fitFuncLimited->GetNDF();
-    pt->AddText(Form("#chi^{2}/ndf = %.3f", chi2 / ndf));
+    TText *chi2NdfText = pt->AddText(Form("#chi^{2}/ndf = %.3f", chi2 / ndf));
+    chi2NdfText->SetTextColor(kRed);
+
+    // For MLM lines in blue
+    TText *mlmText1 = pt->AddText(Form("MLM: A_{UU}^{cos#phi} = %.3f #pm %.3f", fittedB, errB));
+    mlmText1->SetTextColor(kBlue);
+    TText *mlmText2 = pt->AddText(Form("MLM: A_{UU}^{cos2#phi} = %.3f #pm %.3f", fittedC, errC));
+    mlmText2->SetTextColor(kBlue);
+
     pt->Draw();
+
 
 
     // After drawing the graphs and fit function, adjust axis titles visibility if necessary
