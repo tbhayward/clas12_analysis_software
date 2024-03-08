@@ -12,6 +12,8 @@
 #include <vector>
 #include <algorithm>
 #include <utility> // For std::pair
+#include <TH1D.h>     // For histograms
+#include <TLegend.h>  // For legends
 
 // Global structure to hold deviations. 
 // Each pair corresponds to an exclusion case, holding two vectors for deviations in B and C respectively.
