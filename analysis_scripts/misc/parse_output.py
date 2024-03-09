@@ -3,7 +3,7 @@ import re
 
 # Define base directories and output file path
 base_dir = "/volatile/clas12/thayward/UU_validation/packages"
-output_file_path = "output/analysis_statistics.txt"
+output_file_path = "output2/analysis_statistics.txt"
 
 # Ensure the output directory exists
 os.makedirs(os.path.dirname(output_file_path), exist_ok=True)
