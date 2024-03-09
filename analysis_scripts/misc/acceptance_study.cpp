@@ -15,6 +15,9 @@
 #include <TH1D.h>     // For histograms
 #include <TLegend.h>  // For legends
 #include <TMinuit.h>
+#include <Math/Integrator.h>
+#include <Math/IntegratorMultiDim.h>
+#include <functional>
 
 // Global structure to hold deviations. 
 // Each pair corresponds to an exclusion case, holding two vectors for deviations in B and C respectively.
@@ -28,36 +31,32 @@ double fitFunction(double x, double *par) {
     return par[0] * (1 + par[1] * cos(x) + par[2] * cos(2*x));
 }
 
-// Negative log-likelihood function
-void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, 
-    Double_t *par, Int_t iflag) {
-    // npar: number of parameters
-    // gin: an array of derivatives (if needed)
-    // f: the value of the function
-    // par: an array of the parameter values
-    // iflag: a flag (see TMinuit documentation for details)
+#include <cmath> // For sin, cos, log
 
-    // double A = par[0];
+void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag) {
     double B = par[0];
     double C = par[1];
 
-    double N = 0;
+    double a = binsToExcludeGlobal * 2 * M_PI / 24;
+    double b = (24 - binsToExcludeGlobal) * 2 * M_PI / 24;
+
+    // Calculate normalization factor alpha
+    double integral = (b - a) + B * (sin(b) - sin(a)) + C / 2 * (sin(2*b) - sin(2*a));
+    double alpha = 1 / integral;
+
     double sum = 0;
-    for (int phi = 0; phi < phiVecGlobal.size(); ++phi) {
-        if (phiVecGlobal[phi] >= binsToExcludeGlobal*2*3.14159/24 && phiVecGlobal[phi] < (24-binsToExcludeGlobal)*2*3.14159/24) {
-            double probDensity = 1 + B * cos(phiVecGlobal[phi]) + C * cos(2 * phiVecGlobal[phi]);
-            // Ensure probDensity is positive to avoid log of non-positive number
+    for (size_t phi = 0; phi < phiVecGlobal.size(); ++phi) {
+        if (phiVecGlobal[phi] >= a && phiVecGlobal[phi] < b) {
+            double probDensity = alpha * (1 + B * cos(phiVecGlobal[phi]) + C * cos(2*phiVecGlobal[phi]));
             if (probDensity > 0) {
                 sum += log(probDensity);
-                N++;
-            } else {
-                // Handle non-positive probability densities appropriately
-            }
+            } 
         }
     }
 
-    f = N-sum;
+    f = -sum;
 }
+
 
 void generateData(double B, double C, long unsigned int N, std::vector<double>& phiVec) {
     TRandom3 rand(0); // Seed for reproducibility
