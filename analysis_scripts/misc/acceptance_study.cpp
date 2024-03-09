@@ -167,7 +167,7 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
 	fitFuncFullRange->SetLineColor(kRed);
 
     /****** MLM MINIMIZATION PORTION *******/
-    double arglist[10]; arglist[0] = 0.001;
+    double arglist[10]; arglist[0] = 50000; arglist[1] = 0.01;
     int ierflg = 0;
     TMinuit minuit(2);
     minuit.SetPrintLevel(0);
