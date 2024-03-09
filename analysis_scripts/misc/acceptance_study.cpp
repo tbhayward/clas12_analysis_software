@@ -302,40 +302,40 @@ void plotDeviationsDistributionsB(double B, double C) {
 
         // The rest of the code to draw histograms and legends goes here
         double exclusionPercentage = (exclusionSteps[i] / 24.0) * 100.0;
-        TH1D* histchi2 = new TH1D(Form("histB_%d", i), Form(";#Delta#sigma;Counts",""), 60, -3, 3);
-        TH1D* histMLM = new TH1D(Form("histC_%d", i), "", 60, -3, 3); // No need for title, shared with histchi2
+        TH1D* hischi2 = new TH1D(Form("histB_%d", i), Form(";#Delta#sigma;Counts",""), 60, -3, 3);
+        TH1D* histMLM = new TH1D(Form("histC_%d", i), "", 60, -3, 3); // No need for title, shared with hischi2
 
         // deviationsForCases[i].first is the vector for B deviations
         for (double deviation : deviationsForCases[i].first) {
-            histchi2->Fill(deviation);
+            hischi2->Fill(deviation);
         }
         for (double deviation : deviationsForCasesMLM[i].first) {
             histMLM->Fill(deviation);
         }
 
-        histchi2->SetLineColor(kBlue);
+        hischi2->SetLineColor(kBlue);
         histMLM->SetLineColor(kRed);
-        histchi2->SetStats(false); // Hide stats box
+        hischi2->SetStats(false); // Hide stats box
         histMLM->SetStats(false);
 
         // Inside your loop, before drawing the histograms
         if (i >= 4) { // Adjust for pads 5 and 6
-            histchi2->GetXaxis()->SetRangeUser(-2.95, 3);
+            hischi2->GetXaxis()->SetRangeUser(-2.95, 3);
             histMLM->GetXaxis()->SetRangeUser(-2.95, 3);
         }
 
-        histchi2->Draw();
+        hischi2->Draw();
         histMLM->Draw("SAME");
-        // Find the maximum bin content in histchi2 and scale it
-		double maxValB = histchi2->GetMaximum();
-		histchi2->SetMaximum(maxValB * 1.25); // Set Y-axis max to 1.25 times the max bin content
+        // Find the maximum bin content in hischi2 and scale it
+		double maxValB = hischi2->GetMaximum();
+		hischi2->SetMaximum(maxValB * 1.25); // Set Y-axis max to 1.25 times the max bin content
 
         // Adjust TPaveText position based on column
         double textStartX = 0.175; // Default for left column
         if (i % 3 == 1) textStartX = 0.10; // Adjust for middle column
         if (i % 3 == 2) textStartX = 0.10; // Adjust for right column
         
-        TPaveText* pt = new TPaveText(textStartX, 0.75, textStartX + 0.525, 0.95, "NDC");
+        TPaveText* pt = new TPaveText(textStartX, 0.75, textStartX + 0.475, 0.95, "NDC");
         pt->SetBorderSize(1); // Enable border
         pt->SetFillColor(0); // Set fill color to white or transparent
         pt->SetFillStyle(1001); // Solid fill
@@ -343,11 +343,9 @@ void plotDeviationsDistributionsB(double B, double C) {
         pt->SetTextAlign(12);
         pt->SetTextSize(0.04);
         pt->AddText(Form("Exclusion: %.1f%%", exclusionPercentage));
-        pt->AddText(Form("#chi^{2}, A_{UU}^{cos#phi}: #mu=%.2f, #sigma=%.2f", histchi2->GetMean(), histchi2->GetStdDev()));
+        pt->AddText(Form("#chi^{2}, A_{UU}^{cos#phi}: #mu=%.2f, #sigma=%.2f", hischi2->GetMean(), hischi2->GetStdDev()));
         pt->AddText(Form("MLM, A_{UU}^{cos#phi}: #mu=%.2f, #sigma=%.2f", histMLM->GetMean(), histMLM->GetStdDev()));
         pt->Draw();
-
-        delete histchi2, histMLM;
     }
 
     std::ostringstream filename;
@@ -375,40 +373,40 @@ void plotDeviationsDistributionsC(double B, double C) {
 
         // The rest of the code to draw histograms and legends goes here
         double exclusionPercentage = (exclusionSteps[i] / 24.0) * 100.0;
-        TH1D* histchi2 = new TH1D(Form("histB_%d", i), Form(";#Delta#sigma;Counts",""), 60, -3, 3);
-        TH1D* histMLM = new TH1D(Form("histC_%d", i), "", 60, -3, 3); // No need for title, shared with histchi2
+        TH1D* hischi2 = new TH1D(Form("histB_%d", i), Form(";#Delta#sigma;Counts",""), 60, -3, 3);
+        TH1D* histMLM = new TH1D(Form("histC_%d", i), "", 60, -3, 3); // No need for title, shared with hischi2
 
         // deviationsForCases[i].first is the vector for B deviations
         for (double deviation : deviationsForCases[i].second) {
-            histchi2->Fill(deviation);
+            hischi2->Fill(deviation);
         }
         for (double deviation : deviationsForCasesMLM[i].second) {
             histMLM->Fill(deviation);
         }
 
-        histchi2->SetLineColor(kBlue);
+        hischi2->SetLineColor(kBlue);
         histMLM->SetLineColor(kRed);
-        histchi2->SetStats(false); // Hide stats box
+        hischi2->SetStats(false); // Hide stats box
         histMLM->SetStats(false);
 
         // Inside your loop, before drawing the histograms
         if (i >= 4) { // Adjust for pads 5 and 6
-            histchi2->GetXaxis()->SetRangeUser(-2.95, 3);
+            hischi2->GetXaxis()->SetRangeUser(-2.95, 3);
             histMLM->GetXaxis()->SetRangeUser(-2.95, 3);
         }
 
-        histchi2->Draw();
+        hischi2->Draw();
         histMLM->Draw("SAME");
-        // Find the maximum bin content in histchi2 and scale it
-        double maxValB = histchi2->GetMaximum();
-        histchi2->SetMaximum(maxValB * 1.25); // Set Y-axis max to 1.25 times the max bin content
+        // Find the maximum bin content in hischi2 and scale it
+        double maxValB = hischi2->GetMaximum();
+        hischi2->SetMaximum(maxValB * 1.25); // Set Y-axis max to 1.25 times the max bin content
 
         // Adjust TPaveText position based on column
         double textStartX = 0.175; // Default for left column
         if (i % 3 == 1) textStartX = 0.10; // Adjust for middle column
         if (i % 3 == 2) textStartX = 0.10; // Adjust for right column
         
-        TPaveText* pt = new TPaveText(textStartX, 0.75, textStartX + 0.525, 0.95, "NDC");
+        TPaveText* pt = new TPaveText(textStartX, 0.75, textStartX + 0.475, 0.95, "NDC");
         pt->SetBorderSize(1); // Enable border
         pt->SetFillColor(0); // Set fill color to white or transparent
         pt->SetFillStyle(1001); // Solid fill
@@ -416,11 +414,9 @@ void plotDeviationsDistributionsC(double B, double C) {
         pt->SetTextAlign(12);
         pt->SetTextSize(0.04);
         pt->AddText(Form("Exclusion: %.1f%%", exclusionPercentage));
-        pt->AddText(Form("#chi^{2}, A_{UU}^{cos2#phi}: #mu=%.2f, #sigma=%.2f", histchi2->GetMean(), histchi2->GetStdDev()));
+        pt->AddText(Form("#chi^{2}, A_{UU}^{cos2#phi}: #mu=%.2f, #sigma=%.2f", hischi2->GetMean(), hischi2->GetStdDev()));
         pt->AddText(Form("MLM, A_{UU}^{cos2#phi}: #mu=%.2f, #sigma=%.2f", histMLM->GetMean(), histMLM->GetStdDev()));
         pt->Draw();
-
-        delete histchi2, histMLM;
     }
 
     std::ostringstream filename;
@@ -441,7 +437,7 @@ int main(int argc, char** argv) {
     double C = atof(argv[2]);
 
     // Run the acceptance study n times
-    acceptanceStudy(B, C, 10 );
+    acceptanceStudy(B, C, 100);
 
     // In your main function or at the end of acceptanceStudy
 	plotDeviationsDistributionsB(B, C);
