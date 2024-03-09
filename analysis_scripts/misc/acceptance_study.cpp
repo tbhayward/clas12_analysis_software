@@ -37,19 +37,24 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f,
     // par: an array of the parameter values
     // iflag: a flag (see TMinuit documentation for details)
 
-    // double A = par[0];
-    double AUU_cosphi = par[0];
-    double AUU_cos2phi = par[1];
+    double A = par[0];
+    double B = par[1];
+    double C = par[2];
 
     double sum = 0;
     for (int phi = 0; phi < phiVecGlobal.size(); ++phi) {
         if (phiVecGlobal[phi] >= binsToExcludeGlobal*2*3.14159/24 && phiVecGlobal[phi] < (24-binsToExcludeGlobal)*2*3.14159/24) {
-        // if (phiVecGlobal[phi] >= 0.1 && phiVecGlobal[phi] < 2*3.14159-0.1) {
-            sum += log((1 + AUU_cosphi*cos(phiVecGlobal[phi]) + AUU_cos2phi*cos(2*phiVecGlobal[phi])));
+            double probDensity = A * (1 + B * cos(phiVecGlobal[phi]) + C * cos(2 * phiVecGlobal[phi]));
+            // Ensure probDensity is positive to avoid log of non-positive number
+            if (probDensity > 0) {
+                sum += log(probDensity);
+            } else {
+                // Handle non-positive probability densities appropriately
+            }
         }
     }
 
-    double diff = ((24-binsToExcludeGlobal)*2*3.14159/24-binsToExcludeGlobal*2*3.14159/24)/(2*3.14159);
+    // double diff = ((24-binsToExcludeGlobal)*2*3.14159/24-binsToExcludeGlobal*2*3.14159/24)/(2*3.14159);
     f = phiVecGlobal.size()-sum;
 }
 
@@ -168,15 +173,15 @@ void plotForExclusion(const std::vector<double>& phiVec, double B, double C, int
     minuit.SetPrintLevel(0);
     minuit.SetErrorDef(0.5);
     minuit.SetFCN(negLogLikelihood);
-    // minuit.DefineParameter(0, "A", maxY, 0.00, 0, 0);
-    minuit.DefineParameter(0, "B", B, 0.0001, -1, 1);
-    minuit.DefineParameter(1, "C", C, 0.0001, -1, 1);
+    minuit.DefineParameter(0, "A", maxY, 0.001, 0, 0);
+    minuit.DefineParameter(1, "B", B, 0.0001, -1, 1);
+    minuit.DefineParameter(2, "C", C, 0.0001, -1, 1);
     minuit.mnexcm("MIGRAD", arglist, 2, ierflg);
 
     double fittedA, errA; minuit.GetParameter(0,fittedA,errA);
     std::cout << fittedB << " " << fittedC << std::endl;
-    minuit.GetParameter(0, fittedB, errB);
-    minuit.GetParameter(1, fittedC, errC);
+    minuit.GetParameter(1, fittedB, errB);
+    minuit.GetParameter(2, fittedC, errC);
     std::cout << fittedB << " " << fittedC << std::endl << std::endl;
     // Calculate deviations in sigma
     deviationSigmaB = (fittedB - B) / errB;
