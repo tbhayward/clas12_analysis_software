@@ -41,6 +41,7 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f,
     double B = par[0];
     double C = par[1];
 
+    double N = 0;
     double sum = 0;
     for (int phi = 0; phi < phiVecGlobal.size(); ++phi) {
         if (phiVecGlobal[phi] >= binsToExcludeGlobal*2*3.14159/24 && phiVecGlobal[phi] < (24-binsToExcludeGlobal)*2*3.14159/24) {
@@ -48,14 +49,14 @@ void negLogLikelihood(Int_t &npar, Double_t *gin, Double_t &f,
             // Ensure probDensity is positive to avoid log of non-positive number
             if (probDensity > 0) {
                 sum += log(probDensity);
+                N++;
             } else {
                 // Handle non-positive probability densities appropriately
             }
         }
     }
 
-    double diff = ((24-binsToExcludeGlobal)*2*3.14159/24-binsToExcludeGlobal*2*3.14159/24)/(2*3.14159);
-    f = phiVecGlobal.size()-sum;
+    f = N-sum;
 }
 
 void generateData(double B, double C, long unsigned int N, std::vector<double>& phiVec) {
