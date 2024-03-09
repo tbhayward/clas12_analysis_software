@@ -31,28 +31,32 @@ def parse_asymmetries(file_path, q2y_bin, data):
 def parse_latex(file_path, data):
     with open(file_path) as f:
         content = f.read()
-        
+
         # Regular expression to match LaTeX tables for kinematics
         table_pattern = re.compile(r"\\begin\{table\}.*?\\end\{table\}", re.DOTALL)
-        value_pattern = re.compile(r"(\d+(?:\.\d+)?~&~)+")
-        
+        # New pattern to capture rows of kinematic data
+        row_pattern = re.compile(r"\\hline\s+(\d+)~&~([.\d]+)~&~([.\d]+)~&~([.\d]+)~&~([.\d]+)~&~([.\d]+)~&~([.\d]+)~&~([.\d]+)~&~([.\d]+)~&~([.\d]+)~&~([.\d]+)\s+\\hline")
+
         for table in table_pattern.findall(content):
-            # Attempt to extract the Q2y and z bin from the caption
-            caption_match = re.search(r"\\caption\{.*?Q2y(\d+)z(\d+).*?\}", table)
-            if not caption_match:
-                continue  # Skip if we can't find a caption match
-            
-            q2y_bin, z_bin = caption_match.groups()
-            
-            # Pre-generate keys for missing values insertion
-            keys = [f"Q2y{q2y_bin}z{z_bin}_{var}" for var in ["Q2", "W", "xB", "y", "z", "zeta", "PT", "xF", "t"]]
-            insert_default(data, keys, -100)
-            
-            for row_match in value_pattern.finditer(table):
-                values = row_match.group().split("~&~")
-                for i, val in enumerate(values[:-1]):  # Exclude the last empty split
-                    key = keys[i]
-                    data[key].append(float(val))
+            # Check if table contains kinematic data
+            if "$<Q^2>$" in table and "$<W>$" in table:  # Adjust criteria as necessary
+                # Attempt to extract the Q2y and z bin from the caption
+                caption_match = re.search(r"\\caption\{.*?Q2y(\d+)z(\d+).*?\}", table)
+                if not caption_match:
+                    continue  # Skip if we can't find a caption match
+                
+                q2y_bin, z_bin = caption_match.groups()
+                
+                # Extract and process each row of kinematic data
+                for row in row_pattern.findall(table):
+                    # row[0] is the Bin number, row[1:] are the kinematic values
+                    kinematic_vars = ["Q2", "W", "xB", "y", "z", "zeta", "PT", "xF", "t"]
+                    for i, val in enumerate(row[1:], start=1):  # Start at 1 to skip Bin number
+                        key = f"Q2y{q2y_bin}z{z_bin}_{kinematic_vars[i-1]}"
+                        if key not in data:
+                            data[key] = []
+                        data[key].append(float(val))
+
 
 # Initialize the data dictionary
 data = {}
