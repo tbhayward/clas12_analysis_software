@@ -335,7 +335,7 @@ void plotDeviationsDistributionsB(double B, double C) {
         if (i % 3 == 1) textStartX = 0.10; // Adjust for middle column
         if (i % 3 == 2) textStartX = 0.10; // Adjust for right column
         
-        TPaveText* pt = new TPaveText(textStartX, 0.75, textStartX + 0.475, 0.95, "NDC");
+        TPaveText* pt = new TPaveText(textStartX, 0.725, textStartX + 0.55, 0.95, "NDC");
         pt->SetBorderSize(1); // Enable border
         pt->SetFillColor(0); // Set fill color to white or transparent
         pt->SetFillStyle(1001); // Solid fill
