@@ -384,8 +384,8 @@ void plotDeviationsDistributionsC(double B, double C) {
             histMLM->Fill(deviation);
         }
 
-        hischi2->SetLineColor(kBlue);
-        histMLM->SetLineColor(kRed);
+        hischi2->SetLineColor(kRed);
+        histMLM->SetLineColor(kBlue);
         hischi2->SetStats(false); // Hide stats box
         histMLM->SetStats(false);
 
@@ -406,7 +406,7 @@ void plotDeviationsDistributionsC(double B, double C) {
         if (i % 3 == 1) textStartX = 0.10; // Adjust for middle column
         if (i % 3 == 2) textStartX = 0.10; // Adjust for right column
         
-        TPaveText* pt = new TPaveText(textStartX, 0.725, textStartX + 0.525, 0.975, "NDC");
+        TPaveText* pt = new TPaveText(textStartX, 0.725, textStartX + 0.55 , 0.975, "NDC");
         pt->SetBorderSize(1); // Enable border
         pt->SetFillColor(0); // Set fill color to white or transparent
         pt->SetFillStyle(1001); // Solid fill
@@ -437,7 +437,7 @@ int main(int argc, char** argv) {
     double C = atof(argv[2]);
 
     // Run the acceptance study n times
-    acceptanceStudy(B, C, 10);
+    acceptanceStudy(B, C, 25);
 
     // In your main function or at the end of acceptanceStudy
 	plotDeviationsDistributionsB(B, C);
