@@ -346,13 +346,14 @@ void plotDeviationsDistributionsB(double B, double C) {
         pt->AddText(Form("#chi^{2}, A_{UU}^{cos#phi}: #mu=%.2f, #sigma=%.2f", histchi2->GetMean(), histchi2->GetStdDev()));
         pt->AddText(Form("MLM, A_{UU}^{cos#phi}: #mu=%.2f, #sigma=%.2f", histMLM->GetMean(), histMLM->GetStdDev()));
         pt->Draw();
+
+        delete histchi2, histMLM;
     }
 
     std::ostringstream filename;
     filename << "output/systematic_study_cosphi_B=" << B << "_C=" << C << ".png";
     canvas->SaveAs(filename.str().c_str());
 
-    delete histchi2, histMLM;
     delete canvas; // Clean up
 }
 
@@ -418,13 +419,14 @@ void plotDeviationsDistributionsC(double B, double C) {
         pt->AddText(Form("#chi^{2}, A_{UU}^{cos2#phi}: #mu=%.2f, #sigma=%.2f", histchi2->GetMean(), histchi2->GetStdDev()));
         pt->AddText(Form("MLM, A_{UU}^{cos2#phi}: #mu=%.2f, #sigma=%.2f", histMLM->GetMean(), histMLM->GetStdDev()));
         pt->Draw();
+
+        delete histchi2, histMLM;
     }
 
     std::ostringstream filename;
     filename << "output/systematic_study_cos2phi_B=" << B << "_C=" << C << ".png";
     canvas->SaveAs(filename.str().c_str());
 
-    delete histchi2, histMLM;
     delete canvas; // Clean up
 }
 
