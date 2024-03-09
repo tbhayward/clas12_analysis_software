@@ -89,12 +89,12 @@ for q2y_bin in range(1, 18):
 # Write the processed data to the output file
 with open(output_file_path, "w") as f_out:
     for key, value_lists in data.items():
-        # Ensure each sublist is formatted as a Mathematica list; handle edge cases where lists might be empty or incomplete
+        # Directly format each list of values into Mathematica-friendly format
         formatted_values = ", ".join(
-            "{" + ", ".join(map(lambda x: str(x) if x != -1 else "{-1, 0, 0}", values)) + "}"
-            for values in value_lists
+            "{" + ", ".join(map(str, value)) + "}" for value in value_lists
         )
         # Write the formatted string to the output file, ensuring Mathematica list syntax is used
         f_out.write(f"{key} = {{{formatted_values}}};\n")
+
 
 
