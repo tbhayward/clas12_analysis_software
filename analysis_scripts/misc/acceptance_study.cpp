@@ -343,8 +343,12 @@ void plotDeviationsDistributionsB(double B, double C) {
         pt->SetTextAlign(12);
         pt->SetTextSize(0.04);
         pt->AddText(Form("Exclusion: %.1f%%", exclusionPercentage));
-        pt->AddText(Form("#chi^{2}, A_{UU}^{cos#phi}: #mu=%.2f, #sigma=%.2f", hischi2->GetMean(), hischi2->GetStdDev()));
-        pt->AddText(Form("MLM, A_{UU}^{cos#phi}: #mu=%.2f, #sigma=%.2f", histMLM->GetMean(), histMLM->GetStdDev()));
+        // For chi^2 lines in red
+        TText *chi2Text1 = pt->AddText(Form("#chi^{2}, A_{UU}^{cos#phi}: #mu=%.2f, #sigma=%.2f", hischi2->GetMean(), hischi2->GetStdDev()));
+        chi2Text1->SetTextColor(kRed);
+        // For MLM lines in blue
+        TText *mlmText1 = pt->AddText(Form("MLM, A_{UU}^{cos#phi}: #mu=%.2f, #sigma=%.2f", histMLM->GetMean(), histMLM->GetStdDev()));
+        mlmText1->SetTextColor(kBlue);
         pt->Draw();
     }
 
@@ -406,7 +410,7 @@ void plotDeviationsDistributionsC(double B, double C) {
         if (i % 3 == 1) textStartX = 0.10; // Adjust for middle column
         if (i % 3 == 2) textStartX = 0.10; // Adjust for right column
         
-        TPaveText* pt = new TPaveText(textStartX, 0.725, textStartX + 0.55 , 0.975, "NDC");
+        TPaveText* pt = new TPaveText(textStartX, 0.725, textStartX + 0.55, 0.95, "NDC");
         pt->SetBorderSize(1); // Enable border
         pt->SetFillColor(0); // Set fill color to white or transparent
         pt->SetFillStyle(1001); // Solid fill
@@ -414,8 +418,12 @@ void plotDeviationsDistributionsC(double B, double C) {
         pt->SetTextAlign(12);
         pt->SetTextSize(0.04);
         pt->AddText(Form("Exclusion: %.1f%%", exclusionPercentage));
-        pt->AddText(Form("#chi^{2}, A_{UU}^{cos2#phi}: #mu=%.2f, #sigma=%.2f", hischi2->GetMean(), hischi2->GetStdDev()));
-        pt->AddText(Form("MLM, A_{UU}^{cos2#phi}: #mu=%.2f, #sigma=%.2f", histMLM->GetMean(), histMLM->GetStdDev()));
+        // For chi^2 lines in red
+        TText *chi2Text1 = pt->AddText(Form("#chi^{2}, A_{UU}^{cos2#phi}: #mu=%.2f, #sigma=%.2f", hischi2->GetMean(), hischi2->GetStdDev()));
+        chi2Text1->SetTextColor(kRed);
+        // For MLM lines in blue
+        TText *mlmText1 = pt->AddText(Form("MLM, A_{UU}^{cos2#phi}: #mu=%.2f, #sigma=%.2f", histMLM->GetMean(), histMLM->GetStdDev()));
+        mlmText1->SetTextColor(kBlue);
         pt->Draw();
     }
 
@@ -437,7 +445,7 @@ int main(int argc, char** argv) {
     double C = atof(argv[2]);
 
     // Run the acceptance study n times
-    acceptanceStudy(B, C, 1000);
+    acceptanceStudy(B, C, 10);
 
     // In your main function or at the end of acceptanceStudy
 	plotDeviationsDistributionsB(B, C);
