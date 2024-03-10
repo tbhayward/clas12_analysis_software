@@ -302,8 +302,8 @@ void plotDeviationsDistributionsB(double B, double C) {
 
         // The rest of the code to draw histograms and legends goes here
         double exclusionPercentage = (exclusionSteps[i] / 24.0) * 100.0;
-        TH1D* hischi2 = new TH1D(Form("histB_%d", i), Form(";#Delta#sigma;Counts",""), 60, -3, 3);
-        TH1D* histMLM = new TH1D(Form("histC_%d", i), "", 60, -3, 3); // No need for title, shared with hischi2
+        TH1D* hischi2 = new TH1D(Form("histB_%d", i), Form(";#Delta#sigma;Counts",""), 40, -3, 3);
+        TH1D* histMLM = new TH1D(Form("histC_%d", i), "", 40, -3, 3); // No need for title, shared with hischi2
 
         // deviationsForCases[i].first is the vector for B deviations
         for (double deviation : deviationsForCases[i].first) {
@@ -313,8 +313,8 @@ void plotDeviationsDistributionsB(double B, double C) {
             histMLM->Fill(deviation);
         }
 
-        hischi2->SetLineColor(kBlue);
-        histMLM->SetLineColor(kRed);
+        hischi2->SetLineColor(kRed);
+        histMLM->SetLineColor(kBlue);
         hischi2->SetStats(false); // Hide stats box
         histMLM->SetStats(false);
 
@@ -373,8 +373,8 @@ void plotDeviationsDistributionsC(double B, double C) {
 
         // The rest of the code to draw histograms and legends goes here
         double exclusionPercentage = (exclusionSteps[i] / 24.0) * 100.0;
-        TH1D* hischi2 = new TH1D(Form("histB_%d", i), Form(";#Delta#sigma;Counts",""), 60, -3, 3);
-        TH1D* histMLM = new TH1D(Form("histC_%d", i), "", 60, -3, 3); // No need for title, shared with hischi2
+        TH1D* hischi2 = new TH1D(Form("histB_%d", i), Form(";#Delta#sigma;Counts",""), 40, -3, 3);
+        TH1D* histMLM = new TH1D(Form("histC_%d", i), "", 40, -3, 3); // No need for title, shared with hischi2
 
         // deviationsForCases[i].first is the vector for B deviations
         for (double deviation : deviationsForCases[i].second) {
@@ -437,7 +437,7 @@ int main(int argc, char** argv) {
     double C = atof(argv[2]);
 
     // Run the acceptance study n times
-    acceptanceStudy(B, C, 10000);
+    acceptanceStudy(B, C, 1000);
 
     // In your main function or at the end of acceptanceStudy
 	plotDeviationsDistributionsB(B, C);
