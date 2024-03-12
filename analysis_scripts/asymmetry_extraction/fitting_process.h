@@ -21,7 +21,7 @@ void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f, Dou
 void performMLMFits_single_hadron(const char* output_file, const char* kinematic_file, const std::string& prefix);
 void plotHistogramAndFit_single_hadron(TH1D* histogram, TF1* fitFunction, int binIndex, int asymmetryIndex, const std::string& prefix);
 TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex, const std::string& prefix, int asymmetry_index);
-void performChi2Fits_single_hadron(const char* output_file, const char* kinematic_file, const std::string& prefix, int asymmetry_index);
+void performChi2Fits_single_hadron(const char* output_file, const char* kinematic_file, const char* kinematicPlot_file, const std::string& prefix, int asymmetry_index);
 
 
 // b2b dihadron (dSIDIS)
