@@ -185,6 +185,8 @@ int main(int argc, char *argv[]) {
     "_timeStamp_" + timeStamp + ".txt";
   std::string kinematic_file = "output/results/kinematics_" + baseName + 
     "_timeStamp_" + timeStamp + ".txt";
+  std::string kinematicPlot_file = "output/results/kinematicPlots_" + baseName + 
+    "_timeStamp_" + timeStamp + ".txt";
 
   // Clear the contents of the output files
   std::ofstream ofs(output_file, std::ios::trunc);
@@ -260,7 +262,7 @@ int main(int argc, char *argv[]) {
         case 0: calculate_inclusive(output_file.c_str(), kinematic_file.c_str(), 
         binNames[i], asymmetry); break;
         case 1: performChi2Fits_single_hadron(output_file.c_str(), kinematic_file.c_str(), 
-        binNames[i], asymmetry); break;
+        kinematicPlot_file.c_str(), binNames[i], asymmetry); break;
         case 2: performChi2Fits_b2b_dihadron(output_file.c_str(), kinematic_file.c_str(), 
         binNames[i], asymmetry); break;
       }
