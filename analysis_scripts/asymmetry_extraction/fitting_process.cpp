@@ -879,7 +879,7 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
 
   // Initalize string stream to store the kinematics in each bin for use in plotting 
   std::ostringstream meanVariablesPlotStream;
-  meanVariablesPlotStream << "{";
+  meanVariablesPlotStream << prefix << "Kinematics = {";
 
   // Create a new TF1 object called fitFunction representing the function to fit
   // and create string stream prefix depending on current asymmetry we're fitting
