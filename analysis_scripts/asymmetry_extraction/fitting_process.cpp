@@ -439,7 +439,7 @@ void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f,
     minBeamCharge*minTargetCharge/((cpp+cpm)*(cpm+cmm))*sum_PM - 
     minBeamCharge*minTargetCharge/((cmp+cmm)*(cpp+cmp))*sum_MP - 
     minBeamCharge*minTargetCharge/((cmp+cmm)*(cpm+cmm))*sum_MM;
-  cout << "On MLM fit " << binNames[currentFits]+1 << " " << currentFits+1 << ", " << nll << endl;
+  cout << "On MLM fit " << binNames[currentFits] << " " << currentFits << ", " << nll << endl;
   cout << "AUU_cosphi = " << AUU_cosphi << ", AUU_cos2phi = " << AUU_cos2phi;
   cout << ", ALU_sinphi = " << ALU_sinphi;
   cout << ", AUL_sinphi = " << AUL_sinphi << ", AUL_sin2phi = " << AUL_sin2phi;
@@ -911,7 +911,7 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
 
   // Loop over each bin
   for (size_t i = 0; i < numBins; ++i) {
-    cout << "Beginning chi2 fit for " << binNames[currentFits]+1
+    cout << "Beginning chi2 fit for " << binNames[currentFits]
       << " bin " << i << ". ";
     char histName[32];
     snprintf(histName, sizeof(histName), "hist_%zu", i);
