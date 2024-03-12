@@ -1083,8 +1083,8 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
 
     // outputs of mean kinematic variables for plotting
     meanVariablesPlotStream << "{" << meanQ2 << ", " << meanW << ", " << meanx << ", ";
-    meanVariablesPlotStream << meany << ", " << meanz << ", " << meanzeta;
-    meanVariablesPlotStream << ", " << meanxF << " " << meant << "}";
+    meanVariablesPlotStream << meany << ", " << meanz << ", " << meanzeta << ", ";
+    meanVariablesPlotStream << meanPT << ", " << meanxF << " " << meant << "}";
     if (i < numBins - 1) {
         meanVariablesPlotStream << ", "; 
     }
