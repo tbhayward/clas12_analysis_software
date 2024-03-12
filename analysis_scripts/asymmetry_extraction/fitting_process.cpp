@@ -859,7 +859,7 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
 }
 
 void performChi2Fits_single_hadron(const char* output_file, const char* kinematic_file,
-  const char* kinematicPlot_file,, const std::string& prefix, int asymmetry_index) {
+  const char* kinematicPlot_file, const std::string& prefix, int asymmetry_index) {
 
   // Initialize string streams to store the results for each bin
   std::ostringstream chi2FitsAStream, chi2FitsBStream, chi2FitsCStream;
