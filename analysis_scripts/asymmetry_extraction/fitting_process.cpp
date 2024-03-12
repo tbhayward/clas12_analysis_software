@@ -1012,7 +1012,6 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
     double meant = numEvents > 0 ? sumt / numEvents : 0.0;
     double meantmin = numEvents > 0 ? sumtmin / numEvents : 0.0;
 
-    cout << "Depolarization factors: " << (meanDepA/meanDepV) << " " << (meanDepA/meanDepB) << endl;
     switch (asymmetry_index) {
       case 0: {// beam-spin asymmetry
         // Get the fitted parameters and their errors
@@ -1107,6 +1106,7 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
     meanVariablesPlotStream << "};";
     std::ofstream kinematicPlot_File(kinematic_file, std::ios_base::app);
     // Write the string stream content to the file
+    kinematicPlot_File << meanVariablesStream.str() << std::endl;
     kinematicPlot_File.close();
   }
 }
