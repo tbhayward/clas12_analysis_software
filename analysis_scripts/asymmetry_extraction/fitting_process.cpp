@@ -472,6 +472,14 @@ void performMLMFits_single_hadron(const char* output_file, const char* kinematic
   std::ostringstream mlmFitsEStream; std::ostringstream mlmFitsFStream;
   std::ostringstream mlmFitsGStream; 
 
+  mlmFitsAStream << std::fixed << std::setprecision(9);
+  mlmFitsBStream << std::fixed << std::setprecision(9);
+  mlmFitsCStream << std::fixed << std::setprecision(9);
+  mlmFitsDStream << std::fixed << std::setprecision(9);
+  mlmFitsEStream << std::fixed << std::setprecision(9);
+  mlmFitsFStream << std::fixed << std::setprecision(9);
+  mlmFitsGStream << std::fixed << std::setprecision(9);
+
   // Initialize the string streams with the output variable names
   mlmFitsAStream << prefix << "MLMFitsALUsinphi = {";
   mlmFitsBStream << prefix << "MLMFitsAULsinphi = {";
@@ -851,7 +859,7 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
 }
 
 void performChi2Fits_single_hadron(const char* output_file, const char* kinematic_file,
-  const std::string& prefix, int asymmetry_index) {
+  const char* kinematicPlot_file,, const std::string& prefix, int asymmetry_index) {
 
   // Initialize string streams to store the results for each bin
   std::ostringstream chi2FitsAStream, chi2FitsBStream, chi2FitsCStream;
@@ -859,7 +867,7 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
   chi2FitsBStream << std::fixed << std::setprecision(9);
   chi2FitsCStream << std::fixed << std::setprecision(9);
 
-  // Initialize string streams to store the mean variables for each bin
+  // Initialize string stream to store the kinematics in each bin for use in LaTeX 
   std::ostringstream meanVariablesStream;
   meanVariablesStream << "\\begin{table}[h]" << endl;
   meanVariablesStream << "\\centering" << endl;
@@ -868,6 +876,10 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
   meanVariablesStream << "& $<x_B>$ & $<y>$ & $<z>$ & $<\\zeta>$ & $<P_T>$ ";
   meanVariablesStream << "& $<x_F>$ & $<t>$ & ";
   meanVariablesStream << "$<t_{\\text{min}}>$\\\\ \\hline" << endl; 
+
+  // Initalize string stream to store the kinematics in each bin for use in plotting 
+  std::ostringstream meanVariablesPlotStream;
+  meanVariablesPlotStream << "{"
 
   // Create a new TF1 object called fitFunction representing the function to fit
   // and create string stream prefix depending on current asymmetry we're fitting
@@ -1058,12 +1070,17 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
 
     delete hist;
 
-    // outputs of mean kinematic variables
+    // outputs of mean kinematic variables for LaTeX
     meanVariablesStream << std::fixed << std::setprecision(3); // Set precision to 3 digits 
     meanVariablesStream << (i+1) << "~&~" << meanQ2 << "~&~" << meanW << "~&~" << meanx << "~&~";
     meanVariablesStream << meany << "~&~" << meanz << "~&~" << meanzeta << "~&~";
     meanVariablesStream << meanpT << "~&~" << meanxF << "~&~" << meant << "~&~" << meantmin; 
     meanVariablesStream << std::string(" \\\\ \\hline ");
+
+    // outputs of mean kinematic variables for plotting
+    meanVariablesPlotStream << "{" << meanQ2 << ", " << meanW << ", " meanx << ", ";
+    meanVariablesPlotStream << ", " << meany << ", " meanz << ", " << meanzeta;
+    meanVariablesPlotStream << ", " << mean << "}"
   }
 
   chi2FitsAStream << "};";  chi2FitsBStream << "};";  chi2FitsCStream << "};"; 
@@ -1086,6 +1103,11 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
     // Write the string stream content to the file
     kinematicFile << meanVariablesStream.str() << std::endl; 
     kinematicFile.close();
+
+    meanVariablesPlotStream << "};"
+    std::ofstream kinematicPlot_File(kinematic_file, std::ios_base::app);
+    // Write the string stream content to the file
+    kinematicFilePlot.close();
   }
 }
 
@@ -1369,6 +1391,26 @@ void performMLMFits_b2b_dihadron(const char* output_file, const char* kinematic_
   for (auto& stream : mlmFitsStreams) {
     stream << std::fixed << std::setprecision(9);
   }
+
+  mlmFitsStreams[0] << std::fixed << std::setprecision(9);
+  mlmFitsStreams[1] << std::fixed << std::setprecision(9);
+  mlmFitsStreams[2] << std::fixed << std::setprecision(9);
+  mlmFitsStreams[3] << std::fixed << std::setprecision(9);
+  mlmFitsStreams[4] << std::fixed << std::setprecision(9);
+  mlmFitsStreams[5] << std::fixed << std::setprecision(9);
+  mlmFitsStreams[6] << std::fixed << std::setprecision(9);
+  mlmFitsStreams[7] << std::fixed << std::setprecision(9);
+  mlmFitsStreams[8] << std::fixed << std::setprecision(9);
+  mlmFitsStreams[9] << std::fixed << std::setprecision(9);
+  mlmFitsStreams[10] << std::fixed << std::setprecision(9);
+  mlmFitsStreams[11] << std::fixed << std::setprecision(9);
+  mlmFitsStreams[12] << std::fixed << std::setprecision(9);
+  mlmFitsStreams[13] << std::fixed << std::setprecision(9);
+  mlmFitsStreams[14] << std::fixed << std::setprecision(9);
+  mlmFitsStreams[15] << std::fixed << std::setprecision(9);
+  mlmFitsStreams[16] << std::fixed << std::setprecision(9);
+  mlmFitsStreams[17] << std::fixed << std::setprecision(9);
+  mlmFitsStreams[18] << std::fixed << std::setprecision(9);
 
   // Initialize the string streams with the output variable names
   mlmFitsStreams[0] << prefix << "MLMFitsALUsinphi1 = {";

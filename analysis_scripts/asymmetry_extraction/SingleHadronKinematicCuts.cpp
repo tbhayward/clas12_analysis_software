@@ -63,17 +63,19 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
                 goodEvent = *y > 0.30 && *y <= 0.45;
             }
 
-            // Corrected z bin checks
-            if (postz == "z1") {
-                goodEvent = *z > 0.10 && *z <= 0.25;
-            } else if (postz == "z2") {
-                goodEvent = *z > 0.25 && *z <= 0.35;
-            } else if (postz == "z3") {
-                goodEvent = *z > 0.35 && *z <= 0.45;
-            } else if (postz == "z4") {
-                goodEvent = *z > 0.45 && *z <= 0.55;
-            } else if (postz == "z5") {
-                goodEvent = *z > 0.55 && *z <= 0.75;
+            if (goodEvent) {
+              // Corrected z bin checks
+              if (postz == "z1") {
+                  goodEvent = *z > 0.10 && *z <= 0.25;
+              } else if (postz == "z2") {
+                  goodEvent = *z > 0.25 && *z <= 0.35;
+              } else if (postz == "z3") {
+                  goodEvent = *z > 0.35 && *z <= 0.45;
+              } else if (postz == "z4") {
+                  goodEvent = *z > 0.45 && *z <= 0.55;
+              } else if (postz == "z5") {
+                  goodEvent = *z > 0.55 && *z <= 0.75;
+              }
             }
           }
         }
