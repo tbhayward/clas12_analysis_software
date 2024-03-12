@@ -1104,10 +1104,10 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
     kinematicFile << meanVariablesStream.str() << std::endl; 
     kinematicFile.close();
 
-    meanVariablesPlotStream << "};"
+    meanVariablesPlotStream << "};";
     std::ofstream kinematicPlot_File(kinematic_file, std::ios_base::app);
     // Write the string stream content to the file
-    kinematicFilePlot.close();
+    kinematicPlot_File.close();
   }
 }
 
