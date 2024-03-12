@@ -203,7 +203,7 @@ Q2y15z5,pT,0.00, 0.21, 0.34, 0.47, 0.60#higher bins removed due to limited stati
 #Q2y16z4,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #Q2y16z5,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #
-#Q2y17z1,pT,0.00, 0.21, 0.34#higher bins removed due to limited statistics
+#Q2y17z1,pT,removed due to limited statistics
 #Q2y17z2,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #Q2y17z3,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #Q2y17z4,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
