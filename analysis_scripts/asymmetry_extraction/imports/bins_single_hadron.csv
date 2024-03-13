@@ -15,7 +15,7 @@ runnum,evnum,helicity,e_p,e_theta,e_phi,vz_e,p_p,p_theta,p_phi,vz_p,Q2,W,Mx,Mx2,
 #xCFR,x,0.05,0.12,0.20,0.28,0.36,0.60
 #zetaTFR,zeta,0.30,0.48,0.56,0.64,0.72,0.90
 #zetaCFR,zeta,0.30,0.48,0.56,0.64,0.72,0.90
-#Mx,Mx,0,0.25,0.50,0.75,1.00,1.25,1.50,1.75,2.00,2.25,2.50,2.75
+Mx,Mx,0,0.25,0.50,0.75,1.00,1.25,1.50,1.75,2.00,2.25,2.50,2.75
 #Q2bin,Q2,1.0,1.5,1.80,2.10,2.4,3
 #Q2bin,Q2,1.45615,2.036912,2.617674,3.198436,3.779198,4.35996
 #Q2TFR,Q2,1.0,2.0,3.0,4.0,5.0,6.0,7.0,9.0
@@ -203,9 +203,9 @@ runnum,evnum,helicity,e_p,e_theta,e_phi,vz_e,p_p,p_theta,p_phi,vz_p,Q2,W,Mx,Mx2,
 #Q2y16z4,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #Q2y16z5,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #
-Q2y17z1,pT,0.00, 0.21, 0.34, 0.47#higher bins removed due to limited statistics
-Q2y17z2,pT,0.00, 0.21, 0.34, 0.47, 0.60#higher bins removed due to limited statistics
-Q2y17z3,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
-Q2y17z4,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
-Q2y17z5,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
+#Q2y17z1,pT,0.00, 0.21, 0.34, 0.47#higher bins removed due to limited statistics
+#Q2y17z2,pT,0.00, 0.21, 0.34, 0.47, 0.60#higher bins removed due to limited statistics
+#Q2y17z3,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
+#Q2y17z4,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
+#Q2y17z5,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #
