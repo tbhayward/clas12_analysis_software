@@ -148,8 +148,8 @@ int main() {
     // Open the ROOT files for data and Monte Carlo
     // inbending files
     TFile* fData = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_epX_skimmed.root");
-    TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nA_epX_skimmed.root");
-    TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nA_gen_epX_skimmed.root");
+    TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nAbkg_rec_epX_skimmed.root");
+    TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nAbkg_gen_epX_skimmed.root");
     // outbending files
     // TFile* fData = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_out_epX_skimmed.root");
     // TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_out_clasdis_50nA_epX_skimmed.root");
@@ -399,7 +399,7 @@ int main() {
             }
         }
 
-        canvas->SaveAs(Form("output/Q2yBin_%d.png", bin + 1));
+        canvas->SaveAs(Form("output3/Q2yBin_%d.png", bin + 1));
         delete canvas;
     }
 
@@ -504,7 +504,7 @@ int main() {
                 }
             }
         }
-        acceptanceCanvas->SaveAs(Form("output/acceptance_Q2yBin_%d.png", bin + 1)); // Save each canvas
+        acceptanceCanvas->SaveAs(Form("output3/acceptance_Q2yBin_%d.png", bin + 1)); // Save each canvas
         delete acceptanceCanvas; // Clean up
     }
 
@@ -740,11 +740,11 @@ int main() {
             }
         }
 
-        unfoldedCanvas->SaveAs(Form("output/unfolded_Q2yBin_%d.png", bin + 1));
+        unfoldedCanvas->SaveAs(Form("output3/unfolded_Q2yBin_%d.png", bin + 1));
         delete unfoldedCanvas;
     }
 
-    std::ofstream capobiancoFile("output/capobianco_cross_check.txt");
+    std::ofstream capobiancoFile("output3/capobianco_cross_check.txt");
     for (size_t bin = 0; bin < allFitParams.size(); ++bin) {
         int current_bin = 1;
         for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
@@ -780,7 +780,7 @@ int main() {
         double error;
     };
 
-    std::ofstream structureFile("output/structure_functions.txt");
+    std::ofstream structureFile("output3/structure_functions.txt");
     // Loop over Q2-y bins
     for (int bin = 0; bin < allFitParams.size(); ++bin) {
         int current_bin = 1;
@@ -814,7 +814,7 @@ int main() {
     structureFile.close();
 
 
-    std::ofstream structureFile2("output/mathematica.txt");
+    std::ofstream structureFile2("output3/mathematica.txt");
     // Loop over Q2-y bins
     for (int bin = 0; bin < allFitParams.size(); ++bin) {
         structureFile2 << "sfQ2y" << (bin+1) << "B = {";
