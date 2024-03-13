@@ -119,7 +119,7 @@ xF,xF,-1.00,1.00
 #Q2y2z4,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #Q2y2z5,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #
-#Q2y3z1,pT,removed due to limited statistics
+#Q2y3z1,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #Q2y3z2,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #Q2y3z3,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #Q2y3z4,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
@@ -149,11 +149,11 @@ xF,xF,-1.00,1.00
 #Q2y7z4,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #Q2y7z5,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #
-#Q2y8z1,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
-#Q2y8z2,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
-#Q2y8z3,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
-#Q2y8z4,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
-#Q2y8z5,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
+#Q2y8z1,pT,removed due to limited statistics
+#Q2y8z2,pT,0.00, 0.21#higher bins removed due to limited statistics
+#Q2y8z3,pT,0.00, 0.21, 0.34, 0.47, 0.60#higher bins removed due to limited statistics
+#Q2y8z4,pT,0.00, 0.21, 0.34, 0.47, 0.60#higher bins removed due to limited statistics
+#Q2y8z5,pT,0.00, 0.21, 0.34, 0.47, 0.60#higher bins removed due to limited statistics
 #
 #Q2y9z1,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #Q2y9z2,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
@@ -161,7 +161,7 @@ xF,xF,-1.00,1.00
 #Q2y9z4,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #Q2y9z5,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #
-#Q2y10z1,pT,removed due to limited statistics
+#Q2y10z1,pT,0.00, 0.21, 0.34, 0.47#higher bins removed due to limited statistics
 #Q2y10z2,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #Q2y10z3,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #Q2y10z4,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
@@ -179,7 +179,7 @@ xF,xF,-1.00,1.00
 #Q2y12z4,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #Q2y12z5,pT,0.00, 0.21, 0.34, 0.47#higher bins removed due to limited statistics
 #
-#Q2y13z1,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
+#Q2y13z1,pT,0.00, 0.21, 0.34, 0.47, 0.60#higher bins removed due to limited statistics
 #Q2y13z2,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #Q2y13z3,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #Q2y13z4,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
@@ -191,21 +191,21 @@ xF,xF,-1.00,1.00
 #Q2y14z4,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #Q2y14z5,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #
-#Q2y15z1,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
-#Q2y15z2,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
-#Q2y15z3,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
-#Q2y15z4,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
-#Q2y15z5,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
+#Q2y15z1,pT,removed due to limited statistics
+#Q2y15z2,pT,0.00, 0.21, 0.34, 0.47, 0.60#higher bins removed due to limited statistics
+#Q2y15z3,pT,0.00, 0.21, 0.34, 0.47, 0.60#higher bins removed due to limited statistics
+#Q2y15z4,pT,0.00, 0.21, 0.34, 0.47, 0.60#higher bins removed due to limited statistics
+#Q2y15z5,pT,0.00, 0.21, 0.34, 0.47, 0.60#higher bins removed due to limited statistics
 #
-#Q2y16z1,pT,removed due to weird lack of convergence -- limited statistics?
+#Q2y16z1,pT,0.00, 0.21, 0.34, 0.47#higher bins removed due to limited statistics
 #Q2y16z2,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #Q2y16z3,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #Q2y16z4,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #Q2y16z5,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #
-#Q2y17z1,pT,removed due to limited statistics
-#Q2y17z2,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
+#Q2y17z1,pT,0.00, 0.21, 0.34, 0.47#higher bins removed due to limited statistics
+#Q2y17z2,pT,0.00, 0.21, 0.34, 0.47, 0.60#higher bins removed due to limited statistics
 #Q2y17z3,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #Q2y17z4,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
-#Q2y17z5,pT,0.00, 0.21, 0.34, 0.47, 0.60#higher bins removed due to limited statistics
+#Q2y17z5,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #
