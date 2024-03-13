@@ -925,7 +925,7 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
     TH1D* hist = createHistogramForBin_single_hadron(histName, i, prefix, asymmetry_index);
     // Fit the histogram using the fitFunction and get the fit result
     hist->Fit(fitFunction, "QS");
-    // plotHistogramAndFit_single_hadron(hist, fitFunction, i, asymmetry_index, prefix);
+    plotHistogramAndFit_single_hadron(hist, fitFunction, i, asymmetry_index, prefix);
 
     // Initialize variables to store the sums and event counts
     double sumVariable = 0;
