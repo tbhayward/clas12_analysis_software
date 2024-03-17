@@ -124,7 +124,8 @@ double getPol(int runnum) {
     else if (runnum >= 11323 && runnum <= 11334) { pol = 0.87135; }
     else if (runnum >= 11335 && runnum <= 11387) { pol = 0.85048; }
     else if (runnum >= 11389 && runnum <= 11571) { pol = 0.84262; }
-    else if (runnum >= 16000) { pol = 0.83534; } // RGC +/- 0.01440
+    // else if (runnum >= 16000) { pol = 0.83534; } // RGC +/- 0.01440
+    else if (runnum >= 16042 && runnum <= 17811) { pol = 0.827; } // RGC +/- 0.01440
   return pol;
 }
 
