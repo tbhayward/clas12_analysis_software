@@ -230,8 +230,8 @@ int main() {
         }
     }
 
-    double phi_min = 0;
-    double phi_max = 3.14159*2+0.001;
+    double phi_min = 0.62;
+    double phi_max = 5.95;
     Long64_t nDataEntries = tData->GetEntries();
     std::cout << "Looping over data. " << nDataEntries << " entries." << std::endl;
     for (Long64_t i = 0; i < nDataEntries; ++i) {
@@ -255,8 +255,11 @@ int main() {
             int z_bin = findBinIndex(zData, currentZEdges);
             int pT_bin = findBinIndex(pTData, currentPTEdges);
 
-            if (pT_bin != -1 && z_bin != -1 && p_phiData > phi_min && p_phiData < phi_max) {
-            // if (pT_bin != -1 && z_bin != -1 && p_phiData < phi_min || p_phiData > phi_max) {
+            if (phiData<3.14159/3 || phiData>(2*3.14159)-3.14159/3) {
+                continue;
+            }
+            // if (pT_bin != -1 && z_bin != -1 && p_phiData > phi_min && p_phiData < phi_max) {
+            if (pT_bin != -1 && z_bin != -1 && p_phiData < phi_min || p_phiData > phi_max) {
                 // index of bins is flipped (per Kyungseon's request), first bin is highest z (top left)
                 // "binIndex" is the Q2-y bin
                 int histIndex = z_bin * num_pT_bins[binIndex] + pT_bin;
@@ -293,8 +296,11 @@ int main() {
             int z_bin = findBinIndex(zMC, currentZEdges);
             int pT_bin = findBinIndex(pTMC, currentPTEdges);
             // Fill the corresponding histogram if the event is in a valid bin
-            if (pT_bin != -1 && z_bin != -1 && p_phiMC > phi_min && p_phiMC < phi_max) {
-            // if (pT_bin != -1 && z_bin != -1 && p_phiMC < phi_min || p_phiMC > phi_max) {
+            if (phiMC<3.14159/3 || phiMC>(2*3.14159)-3.14159/3) {
+                continue;
+            }
+            // if (pT_bin != -1 && z_bin != -1 && p_phiMC > phi_min && p_phiMC < phi_max) {
+            if (pT_bin != -1 && z_bin != -1 && p_phiMC < phi_min || p_phiMC > phi_max) {
                 // index of bins is flipped (per Kyungseon's request), first bin is highest z (top left)
                 // "binIndex" is the Q2-y bin
                 int histIndex = z_bin * num_pT_bins[binIndex] + pT_bin;
@@ -328,8 +334,11 @@ int main() {
             int z_bin = findBinIndex(zGen, currentZEdges);
             int pT_bin = findBinIndex(pTGen, currentPTEdges);
             // Fill the corresponding histogram if the event is in a valid bin
-            if (pT_bin != -1 && z_bin != -1 && p_phiGen > phi_min && p_phiGen < phi_max) {
-            // if (pT_bin != -1 && z_bin != -1 && p_phiGen < phi_min || p_phiGen > phi_max) {
+            if (phiGen<3.14159/3 || phiGen>(2*3.14159)-3.14159/3) {
+                continue;
+            }
+            // if (pT_bin != -1 && z_bin != -1 && p_phiGen > phi_min && p_phiGen < phi_max) {
+            if (pT_bin != -1 && z_bin != -1 && p_phiGen < phi_min || p_phiGen > phi_max) {
                 // index of bins is flipped (per Kyungseon's request), first bin is highest z (top left)
                 // "binIndex" is the Q2-y bin
                 int histIndex = z_bin * num_pT_bins[binIndex] + pT_bin;
