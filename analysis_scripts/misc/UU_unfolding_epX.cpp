@@ -230,8 +230,8 @@ int main() {
         }
     }
 
-    double phi_min = 1.80;
-    double phi_max = 2.75;
+    double phi_min = 2.80;
+    double phi_max = 3.78;
     Long64_t nDataEntries = tData->GetEntries();
     std::cout << "Looping over data. " << nDataEntries << " entries." << std::endl;
     for (Long64_t i = 0; i < nDataEntries; ++i) {
