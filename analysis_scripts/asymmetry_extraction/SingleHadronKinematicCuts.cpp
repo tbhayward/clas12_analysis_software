@@ -76,10 +76,10 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
               } else if (postz == "z4") {
                   goodEvent = *z > 0.45 && *z <= 0.55;
 
-                  // goodEvent = goodEvent && *phi>3.14159/3 && *phi<(2*3.14159)-3.14159/3;
+                  goodEvent = goodEvent && *phi>(3.14159/3) && *phi<((2*3.14159)-3.14159/3);
                   // electron sector study
-                  // // sec 1
-                  // goodEvent = goodEvent && (*e_phi < 0.62 || *e_phi > 5.95);
+                  // sec 1
+                  goodEvent = goodEvent && (*e_phi < 0.62 || *e_phi > 5.95);
                   // //sec 2
                   // goodEvent = goodEvent && (*e_phi > 0.66 && *e_phi < 1.65);
                   // //sec 3
