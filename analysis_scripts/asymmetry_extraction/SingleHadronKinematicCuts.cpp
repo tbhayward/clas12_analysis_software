@@ -7,7 +7,8 @@ using std::string;
 
 SingleHadronKinematicCuts::SingleHadronKinematicCuts(TTreeReader& reader)
     : BaseKinematicCuts(reader), // Call to the BaseKinematicCuts constructor
-      runnum(reader, "runnum"), p_p(reader, "p_p"), p_theta(reader, "p_theta"), 
+      runnum(reader, "runnum"), e_phi(reader, "e_phi"), p_p(reader, "p_p"), 
+      p_theta(reader, "p_theta"), p_phi(reader, "p_phi"), 
       Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), x(reader, "x"), 
       y(reader, "y"), z(reader, "z"), pT(reader, "pT"), xF(reader, "xF"), 
       target_pol(reader, "target_pol") {}
@@ -73,6 +74,18 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
                   goodEvent = *z > 0.35 && *z <= 0.45;
               } else if (postz == "z4") {
                   goodEvent = *z > 0.45 && *z <= 0.55;
+                  //sec 1
+                  goodEvent = goodEvent && (*e_phi < 0.62 || *e_phi > 5.95);
+                  // //sec 2
+                  // goodEvent = goodEvent && (*e_phi > 0.66 || *e_phi < 1.65);
+                  // //sec 3
+                  // goodEvent = goodEvent && (*e_phi > 1.80 || *e_phi < 2.75);
+                  // //sec 4
+                  // goodEvent = goodEvent && (*e_phi > 2.80 || *e_phi < 3.78);
+                  // //sec 5
+                  // goodEvent = goodEvent && (*e_phi > 3.85 || *e_phi < 4.80);
+                  // //sec 6
+                  // goodEvent = goodEvent && (*e_phi > 4.95 || *e_phi < 5.9);
               } else if (postz == "z5") {
                   goodEvent = *z > 0.55 && *z <= 0.75;
               }
