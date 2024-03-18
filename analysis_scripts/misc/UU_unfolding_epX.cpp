@@ -230,8 +230,8 @@ int main() {
         }
     }
 
-    double phi_min = 4.40;
-    double phi_max = 5.45;
+    double phi_min = 0;
+    double phi_max = 3.14159*2+0.001;
     Long64_t nDataEntries = tData->GetEntries();
     std::cout << "Looping over data. " << nDataEntries << " entries." << std::endl;
     for (Long64_t i = 0; i < nDataEntries; ++i) {
@@ -491,7 +491,7 @@ int main() {
 
                     // // Set the y-axis scale minimum and maximum
                     hAcc->SetMinimum(0); 
-                    hAcc->SetMaximum(0.5); 
+                    hAcc->SetMaximum(0.1); 
                     
                     hAcc->SetMarkerStyle(20);
                     hAcc->Draw("PE"); // "PE" for drawing error bars with points

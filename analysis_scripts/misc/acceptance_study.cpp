@@ -277,7 +277,7 @@ void acceptanceStudy(double B, double C, int iterations) {
 
         if (loop == 0) {
             std::ostringstream filename;
-            filename << "output3/example_B=" << B << "_C=" << C << ".png";
+            filename << "output/example_B=" << B << "_C=" << C << ".png";
             masterCanvas->SaveAs(filename.str().c_str());
         }
         delete masterCanvas;
@@ -353,7 +353,7 @@ void plotDeviationsDistributionsB(double B, double C) {
     }
 
     std::ostringstream filename;
-    filename << "output3/systematic_study_cosphi_B=" << B << "_C=" << C << ".png";
+    filename << "output/systematic_study_cosphi_B=" << B << "_C=" << C << ".png";
     canvas->SaveAs(filename.str().c_str());
 
     delete canvas; // Clean up
@@ -428,7 +428,7 @@ void plotDeviationsDistributionsC(double B, double C) {
     }
 
     std::ostringstream filename;
-    filename << "output3/systematic_study_cos2phi_B=" << B << "_C=" << C << ".png";
+    filename << "output/systematic_study_cos2phi_B=" << B << "_C=" << C << ".png";
     canvas->SaveAs(filename.str().c_str());
 
     delete canvas; // Clean up
