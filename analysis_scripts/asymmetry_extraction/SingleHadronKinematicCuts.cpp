@@ -76,10 +76,10 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
                   goodEvent = *z > 0.45 && *z <= 0.55;
                   // // sec 1
                   // goodEvent = goodEvent && (*e_phi < 0.62 || *e_phi > 5.95);
-                  //sec 2
-                  goodEvent = goodEvent && (*e_phi > 0.66 || *e_phi < 1.65);
-                  // //sec 3
-                  // goodEvent = goodEvent && (*e_phi > 1.80 || *e_phi < 2.75);
+                  // //sec 2
+                  // goodEvent = goodEvent && (*e_phi > 0.66 || *e_phi < 1.65);
+                  //sec 3
+                  goodEvent = goodEvent && (*e_phi > 1.80 || *e_phi < 2.75);
                   // //sec 4
                   // goodEvent = goodEvent && (*e_phi > 2.80 || *e_phi < 3.78);
                   // //sec 5
