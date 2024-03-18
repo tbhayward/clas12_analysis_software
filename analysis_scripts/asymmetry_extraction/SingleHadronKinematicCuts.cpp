@@ -10,7 +10,8 @@ SingleHadronKinematicCuts::SingleHadronKinematicCuts(TTreeReader& reader)
       runnum(reader, "runnum"), e_phi(reader, "e_phi"), p_p(reader, "p_p"), 
       p_theta(reader, "p_theta"), p_phi(reader, "p_phi"), 
       Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), x(reader, "x"), 
-      y(reader, "y"), z(reader, "z"), pT(reader, "pT"), xF(reader, "xF"), 
+      y(reader, "y"), z(reader, "z"), pT(reader, "pT"), xF(reader, "xF"),
+      phi(reader, "phi"), 
       target_pol(reader, "target_pol") {}
 
 bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
@@ -75,9 +76,10 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
               } else if (postz == "z4") {
                   goodEvent = *z > 0.45 && *z <= 0.55;
 
+                  goodEvent = goodEvent && *phi>3.14159/3 && *phi<(2*3.14159)-3.14159/3;
                   // electron sector study
-                  // // sec 1
-                  // goodEvent = goodEvent && (*e_phi < 0.62 || *e_phi > 5.95);
+                  // sec 1
+                  goodEvent = goodEvent && (*e_phi < 0.62 || *e_phi > 5.95);
                   // //sec 2
                   // goodEvent = goodEvent && (*e_phi > 0.66 && *e_phi < 1.65);
                   // //sec 3
