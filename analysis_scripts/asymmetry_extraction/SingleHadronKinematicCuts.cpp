@@ -86,12 +86,12 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
                   // goodEvent = goodEvent && (*e_phi > 2.80 || *e_phi < 3.78);
                   // //sec 5
                   // goodEvent = goodEvent && (*e_phi > 3.85 || *e_phi < 4.80);
-                  //sec 6
-                  goodEvent = goodEvent && (*e_phi > 4.95 || *e_phi < 5.9);
+                  // //sec 6
+                  // goodEvent = goodEvent && (*e_phi > 4.95 || *e_phi < 5.9);
 
                   // pion sector study
-                  // // sec 1
-                  // goodEvent = goodEvent && (*e_phi < 0.20 || *e_phi > 5.45);
+                  // sec 1
+                  goodEvent = goodEvent && (*e_phi < 0.20 || *e_phi > 5.45);
                   // //sec 2
                   // goodEvent = goodEvent && (*e_phi > 0.20 || *e_phi < 1.25);
                   // //sec 3
