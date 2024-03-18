@@ -172,7 +172,7 @@ int main() {
     }
 
     // Define variables for both trees
-    double e_phiData; p_phiData, e_phiMC, p_phiMC, e_phiGen, p_phiGen;
+    double e_phiData, p_phiData, e_phiMC, p_phiMC, e_phiGen, p_phiGen;
     tData->SetBranchAddress("e_phi", &e_phiData);
     tData->SetBranchAddress("p_phi", &p_phiData);
     tMCReco->SetBranchAddress("e_phi", &e_phiMC);
