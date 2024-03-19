@@ -253,7 +253,7 @@ public static void main(String[] args) {
 		        for (int current_p1 = 0; current_p1 < 1; current_p1++) { 
 
 		            Hadron variables = new Hadron(event, research_Event,
-		                    p1_int, current_p1);
+		                    p1_int, current_p1, 10.6);
 		            // this is my class for defining all relevant kinematic variables
 
 		            if (variables.channel_test(variables)) {
