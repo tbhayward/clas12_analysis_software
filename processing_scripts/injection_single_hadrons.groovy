@@ -87,9 +87,18 @@ def helicity_assignment(double Q2, double x, double PT, double z, double zeta, d
 	// double ALL = 0.308+0.018*xF-0.250*xF*xF;
 	// double ALLcosphi = 0.019+0.090*xF+0.109*xF*xF;
 
-	// TEST "7", UU studies
-	double AUUcosphi = -0.1;
-	double AUUcos2phi = 0.05;
+	// // TEST "7", UU studies
+	// double AUUcosphi = -0.1;
+	// double AUUcos2phi = 0.05;
+	// double ALUsinphi = -0.01;
+	// double AULsinphi = 0;
+	// double AULsin2phi = 0;
+	// double ALL = 0;
+	// double ALLcosphi = 0;
+
+	// TEST "8", UU studies
+	double AUUcosphi = -0.15;
+	double AUUcos2phi = -0.05;
 	double ALUsinphi = -0.01;
 	double AULsinphi = 0;
 	double AULsin2phi = 0;
