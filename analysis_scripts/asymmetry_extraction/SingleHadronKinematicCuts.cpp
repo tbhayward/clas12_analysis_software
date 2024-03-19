@@ -77,7 +77,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
               } else if (postz == "z4") {
                   goodEvent = *z > 0.45 && *z <= 0.55;
 
-                  goodEvent = goodEvent && *phi>(TMath::Pi()*60/180) && *phi<(TMath::Pi()*300/180);
+                  // goodEvent = goodEvent && *phi>(TMath::Pi()*60/180) && *phi<(TMath::Pi()*300/180);
                   // electron sector study
                   // // sec 1
                   // goodEvent = goodEvent && (*e_phi < 0.62 || *e_phi > 5.95);
@@ -103,8 +103,8 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
                   // goodEvent = goodEvent && (*p_phi > 2.30 && *p_phi < 3.35);
                   // //sec 5
                   // goodEvent = goodEvent && (*p_phi > 3.35 && *p_phi < 4.40);
-                  // sec 6
-                  goodEvent = goodEvent && (*p_phi > 4.40 && *p_phi < 5.45);
+                  // // sec 6
+                  // goodEvent = goodEvent && (*p_phi > 4.40 && *p_phi < 5.45);
               } else if (postz == "z5") {
                   goodEvent = *z > 0.55 && *z <= 0.75;
               }

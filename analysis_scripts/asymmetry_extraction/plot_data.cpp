@@ -135,9 +135,20 @@ void createIntegratedKinematicPlots() {
           FillHistogram<double>(mcReader, branchName, mcHist, *mckinematicCuts, 0, true);
         }
         
-        // Normalize the histograms
-        dataHist->Scale(1.0 / dataHist->Integral());
-        mcHist->Scale(1.0 / mcHist->Integral());
+        // // Normalize the histograms
+        // dataHist->Scale(1.0 / dataHist->Integral());
+        // mcHist->Scale(1.0 / mcHist->Integral());
+
+        if (dataHist->Integral() != 0) {
+            // dataScale = dataHist->Integral();
+            dataScale = data_count;
+            dataHist->Scale(1.0 / dataScale);
+        }
+        if (mcHist->Integral() != 0) {
+            // mcScale = mcHist->Integral();
+            mcScale = mc_count;
+            mcHist->Scale(1.0 / mcScale);
+        }
 
         // Find the maximum value for y-axis
         double maxY = 1.4*std::max(dataHist->GetMaximum(), mcHist->GetMaximum());
@@ -284,11 +295,13 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
                 double mcScale = 0;
                 // Normalize the histograms
                 if (dataHist->Integral() != 0) {
-                    dataScale = dataHist->Integral();
+                    // dataScale = dataHist->Integral();
+                    dataScale = data_count;
                     dataHist->Scale(1.0 / dataScale);
                 }
                 if (mcHist->Integral() != 0) {
-                    mcScale = mcHist->Integral();
+                    // mcScale = mcHist->Integral();
+                    mcScale = mc_count;
                     mcHist->Scale(1.0 / mcScale);
                 }
 
