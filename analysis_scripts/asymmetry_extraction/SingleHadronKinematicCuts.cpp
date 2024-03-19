@@ -77,6 +77,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
               } else if (postz == "z4") {
                   goodEvent = *z > 0.45 && *z <= 0.55;
 
+                  std::cout << phi << std::endl;
                   goodEvent = goodEvent && *phi>(TMath::Pi()*180/60);
                   // electron sector study
                   // sec 1
