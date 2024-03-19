@@ -231,7 +231,7 @@ int main() {
     }
 
     double phi_min = 0.20;
-    double phi_max = 5.45;
+    double phi_max = 1.25;
     Long64_t nDataEntries = tData->GetEntries();
     std::cout << "Looping over data. " << nDataEntries << " entries." << std::endl;
     for (Long64_t i = 0; i < nDataEntries; ++i) {
@@ -258,8 +258,8 @@ int main() {
             if (phiData<3.14159/3 || phiData>(2*3.14159)-3.14159/3) {
                 continue;
             }
-            // if (pT_bin != -1 && z_bin != -1 && p_phiData > phi_min && p_phiData < phi_max) {
-            if (pT_bin != -1 && z_bin != -1 && p_phiData < phi_min || p_phiData > phi_max) {
+            if (pT_bin != -1 && z_bin != -1 && p_phiData > phi_min && p_phiData < phi_max) {
+            // if (pT_bin != -1 && z_bin != -1 && p_phiData < phi_min || p_phiData > phi_max) {
                 // index of bins is flipped (per Kyungseon's request), first bin is highest z (top left)
                 // "binIndex" is the Q2-y bin
                 int histIndex = z_bin * num_pT_bins[binIndex] + pT_bin;
@@ -299,8 +299,8 @@ int main() {
             if (phiMC<3.14159/3 || phiMC>(2*3.14159)-3.14159/3) {
                 continue;
             }
-            // if (pT_bin != -1 && z_bin != -1 && p_phiMC > phi_min && p_phiMC < phi_max) {
-            if (pT_bin != -1 && z_bin != -1 && p_phiMC < phi_min || p_phiMC > phi_max) {
+            if (pT_bin != -1 && z_bin != -1 && p_phiMC > phi_min && p_phiMC < phi_max) {
+            // if (pT_bin != -1 && z_bin != -1 && p_phiMC < phi_min || p_phiMC > phi_max) {
                 // index of bins is flipped (per Kyungseon's request), first bin is highest z (top left)
                 // "binIndex" is the Q2-y bin
                 int histIndex = z_bin * num_pT_bins[binIndex] + pT_bin;
@@ -337,8 +337,8 @@ int main() {
             if (phiGen<3.14159/3 || phiGen>(2*3.14159)-3.14159/3) {
                 continue;
             }
-            // if (pT_bin != -1 && z_bin != -1 && p_phiGen > phi_min && p_phiGen < phi_max) {
-            if (pT_bin != -1 && z_bin != -1 && p_phiGen < phi_min || p_phiGen > phi_max) {
+            if (pT_bin != -1 && z_bin != -1 && p_phiGen > phi_min && p_phiGen < phi_max) {
+            // if (pT_bin != -1 && z_bin != -1 && p_phiGen < phi_min || p_phiGen > phi_max) {
                 // index of bins is flipped (per Kyungseon's request), first bin is highest z (top left)
                 // "binIndex" is the Q2-y bin
                 int histIndex = z_bin * num_pT_bins[binIndex] + pT_bin;
