@@ -219,6 +219,8 @@ public static void main(String[] args) {
 
 		    if (process_event) {
 
+		    	println("sup");
+
 		    	HipoDataBank recBank = (HipoDataBank) event.getBank("REC::Event");
 				HipoDataBank lundBank = (HipoDataBank) event.getBank("MC::Lund");
 				HipoDataBank mcBank = (HipoDataBank) event.getBank("MC::Particle");
