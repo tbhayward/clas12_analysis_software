@@ -153,6 +153,40 @@ int main(int argc, char *argv[]) {
     cout << "-- Trees successfully extracted from ROOT files." << endl << endl;
   }
 
+  // Define variables to hold the tree values
+  Float_t e_theta_data;
+  Float_t e_theta_mc;
+  // Set branch addresses
+  data_tree->SetBranchAddress("e_theta", &e_theta_data);
+  mc_tree->SetBranchAddress("e_theta", &e_theta_mc);
+  // Convert angle range from degrees to radians
+  Float_t min_theta = 12 * TMath::DegToRad();
+  Float_t max_theta = 20 * TMath::DegToRad();
+  // Counters for events in range
+  data_count = 0;
+  mc_count = 0;
+  // Loop over data tree
+  Long64_t nEntriesData = data_tree->GetEntries();
+  for (Long64_t i = 0; i < nEntriesData; ++i) {
+    data_tree->GetEntry(i);
+    if (e_theta_data > min_theta && e_theta_data < max_theta) {
+      ++data_count;
+    }
+  }
+  // Loop over mc tree
+  Long64_t nEntriesMC = mc_tree->GetEntries();
+  for (Long64_t i = 0; i < nEntriesMC; ++i) {
+    mc_tree->GetEntry(i);
+    if (e_theta_mc > min_theta && e_theta_mc < max_theta) {
+      ++mc_count;
+    }
+  }
+  // Print the results
+  std::cout << "Number of events in range (12 < e_theta < 20 degrees) ";
+  std::cout << "to be used as normalization," << std::endl;
+  std::cout << "Data: " << data_count << std::endl;
+  std::cout << "MC: " << mc_count << std::endl;
+
   dataReader.SetTree(data);  // Initialize the global variable
   mcReader.SetTree(mc);  // Initialize the global variable
 
