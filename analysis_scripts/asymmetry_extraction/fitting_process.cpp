@@ -745,7 +745,7 @@ void plotHistogramAndFit_single_hadron(TH1D* histogram, TF1* fitFunction, int bi
   // Save the canvas as a PNG
   if (canvas->GetListOfPrimitives()->GetSize() > 0) {
       // There's something in the canvas, save it
-      canvas->SaveAs(filename.c_str());
+      // canvas->SaveAs(filename.c_str());
   } else {
       std::cout << "Canvas is empty, not saving to file." << std::endl;
   }
