@@ -7,7 +7,7 @@
 
 extern TTreeReader dataReader;
 extern TTreeReader mcReader;
-extern data_count, mc_count;
+extern int data_count, mc_count;
 extern std::map<std::string, HistConfig> histConfigs;
 
 #include <optional>
