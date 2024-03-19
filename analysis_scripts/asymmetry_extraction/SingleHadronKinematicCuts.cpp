@@ -8,8 +8,8 @@ using std::string;
 
 SingleHadronKinematicCuts::SingleHadronKinematicCuts(TTreeReader& reader)
     : BaseKinematicCuts(reader), // Call to the BaseKinematicCuts constructor
-      runnum(reader, "runnum"), e_phi(reader, "e_phi"), p_p(reader, "p_p"), 
-      p_theta(reader, "p_theta"), p_phi(reader, "p_phi"), 
+      runnum(reader, "runnum"), e_theta(reader, "e_theta"), e_phi(reader, "e_phi"),
+      p_p(reader, "p_p"), p_theta(reader, "p_theta"), p_phi(reader, "p_phi"), 
       Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), x(reader, "x"), 
       y(reader, "y"), z(reader, "z"), pT(reader, "pT"), xF(reader, "xF"),
       phi(reader, "phi"), 
@@ -21,7 +21,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         string property = binNames[currentFits];
 
         if (property == "xF") {
-            goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.4 && *y < 0.75;
+            goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.4 && *y < 0.75 && *e_theta < TMath::Pi()*13/180;
         }
         else if (property == "Mx") {
             goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75;

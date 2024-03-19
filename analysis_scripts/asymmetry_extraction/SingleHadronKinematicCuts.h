@@ -12,6 +12,7 @@ public:
 
 private:
     TTreeReaderValue<int> runnum;
+    TTreeReaderValue<double> e_theta;
     TTreeReaderValue<double> e_phi;
     TTreeReaderValue<double> p_p;
     TTreeReaderValue<double> p_theta;
