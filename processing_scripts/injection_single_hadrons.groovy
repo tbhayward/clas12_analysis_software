@@ -80,12 +80,22 @@ def helicity_assignment(double Q2, double x, double PT, double z, double zeta, d
 	// double ALL = 0.296;
 	// double ALLcosphi = 0.100-0.020*PT;
 
-	// TEST 6, data-like xF injection
-	double ALUsinphi = -0.017+0.052*xF+0.103*xF*xF; 
-	double AULsinphi = -0.017+0.102*xF+0.204*xF*xF;
-	double AULsin2phi = -0.020-0.119*xF-0.248*xF*xF;
-	double ALL = 0.308+0.018*xF-0.250*xF*xF;
-	double ALLcosphi = 0.019+0.090*xF+0.109*xF*xF;
+	// // TEST 6, data-like xF injection
+	// double ALUsinphi = -0.017+0.052*xF+0.103*xF*xF; 
+	// double AULsinphi = -0.017+0.102*xF+0.204*xF*xF;
+	// double AULsin2phi = -0.020-0.119*xF-0.248*xF*xF;
+	// double ALL = 0.308+0.018*xF-0.250*xF*xF;
+	// double ALLcosphi = 0.019+0.090*xF+0.109*xF*xF;
+
+	// TEST "7", UU studies
+	double AUUcosphi = -0.1;
+	double AUUcos2phi = 0.05;
+	double ALUsinphi = -0.01;
+	double AULsinphi = 0;
+	double AULsin2phi = 0;
+	double ALL = 0;
+	double ALLcosphi = 0;
+
 
 	int hb, ht;
 	boolean weight_check = true;
@@ -93,7 +103,10 @@ def helicity_assignment(double Q2, double x, double PT, double z, double zeta, d
 	while(weight_check) {
 		hb = new Random().nextBoolean() ? 1 : -1; // beam helicity
 		ht = new Random().nextBoolean() ? 1 : -1; // target helicity
-		double weight = 1 + hb*Pb*(W/A)*ALUsinphi*Math.sin(phi) + 
+		double weight = 1 + 
+			(V/A)*AUUcosphi*Math.cos(phi) +
+			(B/A)*AUUcos2phi*Math.cos(2*phi) +
+			hb*Pb*(W/A)*ALUsinphi*Math.sin(phi) + 
 			ht*Pt*Df*(V/A)*AULsinphi*Math.sin(phi) +
 			ht*Pt*Df*(B/A)*AULsin2phi*Math.sin(2*phi) + 
 			hb*Pb*ht*Pt*Df*(C/A)*ALL + 
