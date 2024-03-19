@@ -163,8 +163,8 @@ int main(int argc, char *argv[]) {
   Float_t min_theta = 12 * TMath::DegToRad();
   Float_t max_theta = 20 * TMath::DegToRad();
   // Counters for events in range
-  data_count = 0;
-  mc_count = 0;
+  int data_count = 0;
+  int mc_count = 0;
   // Loop over data tree
   Long64_t nEntriesData = data->GetEntries();
   for (Long64_t i = 0; i < nEntriesData; ++i) {
