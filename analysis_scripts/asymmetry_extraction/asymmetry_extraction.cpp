@@ -156,14 +156,14 @@ int main(int argc, char *argv[]) {
   }
 
   // Define variables to hold the tree values
-  Float_t e_theta_data;
-  Float_t e_theta_mc;
+  double e_theta_data;
+  double e_theta_mc;
   // Set branch addresses
   data->SetBranchAddress("e_theta", &e_theta_data);
   mc->SetBranchAddress("e_theta", &e_theta_mc);
   // Convert angle range from degrees to radians
-  Float_t min_theta = 12 * TMath::DegToRad();
-  Float_t max_theta = 20 * TMath::DegToRad();
+  double min_theta = 12 * TMath::DegToRad();
+  double max_theta = 20 * TMath::DegToRad();
   // Counters for events in range
   data_count = 0;
   mc_count = 0;
