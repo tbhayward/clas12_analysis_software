@@ -168,7 +168,7 @@ int main(int argc, char *argv[]) {
   // Loop over data tree
   Long64_t nEntriesData = data->GetEntries();
   for (Long64_t i = 0; i < nEntriesData; ++i) {
-    data_tree->GetEntry(i);
+    data->GetEntry(i);
     if (e_theta_data > min_theta && e_theta_data < max_theta) {
       ++data_count;
     }
@@ -176,7 +176,7 @@ int main(int argc, char *argv[]) {
   // Loop over mc tree
   Long64_t nEntriesMC = mc->GetEntries();
   for (Long64_t i = 0; i < nEntriesMC; ++i) {
-    mc_tree->GetEntry(i);
+    mc->GetEntry(i);
     if (e_theta_mc > min_theta && e_theta_mc < max_theta) {
       ++mc_count;
     }
