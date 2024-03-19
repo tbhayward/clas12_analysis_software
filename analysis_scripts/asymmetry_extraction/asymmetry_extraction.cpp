@@ -157,8 +157,8 @@ int main(int argc, char *argv[]) {
   Float_t e_theta_data;
   Float_t e_theta_mc;
   // Set branch addresses
-  data_tree->SetBranchAddress("e_theta", &e_theta_data);
-  mc_tree->SetBranchAddress("e_theta", &e_theta_mc);
+  data->SetBranchAddress("e_theta", &e_theta_data);
+  mc->SetBranchAddress("e_theta", &e_theta_mc);
   // Convert angle range from degrees to radians
   Float_t min_theta = 12 * TMath::DegToRad();
   Float_t max_theta = 20 * TMath::DegToRad();
