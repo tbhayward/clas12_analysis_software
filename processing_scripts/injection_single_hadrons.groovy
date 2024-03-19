@@ -231,7 +231,7 @@ public static void main(String[] args) {
 		        int num_p1 = research_Event.countByPid(p1_Str.toInteger());
 		        int mc_num_p1 = mc_Event.countByPid(p1_Str.toInteger()); 
 
-		        Hadron mc_variables = new Hadron(event, mc_Event, p1_int, 0);
+		        Hadron mc_variables = new Hadron(event, mc_Event, p1_int, 0, 10.6);
 		        mc_Q2 = mc_variables.Q2();
 		        mc_x = mc_variables.x();
 		        mc_pT = mc_variables.pT();
