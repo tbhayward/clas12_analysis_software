@@ -253,6 +253,7 @@ int main(int argc, char *argv[]) {
     }
     // Case for one hadron
     else if (hadron_count == 1 && is_mc == 0) {
+        std::cout << "hey?" << std::endl;
         // Link TTree branches to variables for one hadron
         tree->Branch("runnum", &runnum, "runnum/I");
         tree->Branch("evnum", &evnum, "evnum/I");
