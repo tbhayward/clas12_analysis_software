@@ -683,11 +683,11 @@ int main(int argc, char *argv[]) {
         }
     } 
     if (hadron_count == 1 && is_mc == 0) {
-        std::cout << "hey?" << std::endl;
+
         while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             p_p >> p_theta >> p_phi >> vz_p >> Q2 >> W >> Mx >> Mx2 >> x >> y >> z >> xF >> 
             pT >> zeta >> eta >> phi >> DepA >> DepB >> DepC >> DepV >> DepW) {
-
+            std::cout << "hey?" << std::endl;
             beam_pol = getPol(runnum);
             if (runnum < 16000) { target_pol = 0; }
             else { 
