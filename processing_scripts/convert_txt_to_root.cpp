@@ -186,6 +186,8 @@ int main(int argc, char *argv[]) {
     double mc_phi1, mc_phi2, mc_Delta_phi, mc_phih, mc_phiR, mc_theta;
     int matching_p2_pid, mc_p2_parent;
 
+    std::cout << "hey?" << std::endl;
+
     // Case for zero hadrons (inclusive)
     if (hadron_count == 0 && is_mc == 0) {
         // Link TTree branches to variables for zero hadrons
@@ -253,7 +255,6 @@ int main(int argc, char *argv[]) {
     }
     // Case for one hadron
     else if (hadron_count == 1 && is_mc == 0) {
-        std::cout << "hey?" << std::endl;
         // Link TTree branches to variables for one hadron
         tree->Branch("runnum", &runnum, "runnum/I");
         tree->Branch("evnum", &evnum, "evnum/I");
