@@ -689,9 +689,9 @@ int main(int argc, char *argv[]) {
             pT >> zeta >> eta >> phi >> DepA >> DepB >> DepC >> DepV >> DepW) {
 
             helicity = static_cast<int>(helicity_double); // Convert double to int
-            std::cout << runnum << " " << evnum << " " << helicity << " " << e_p << " " << e_theta << " " << e_phi << " " << vz_e << " " << 
-            p_p << " " << p_theta << " " << p_phi << " " << vz_p << " " << Q2 << " " << W << " " << Mx << " " << Mx2 << " " << x << " " << y << " " << z << " " << xF << " " << 
-            pT << " " << zeta << " " << eta << " " << phi << " " << DepA << " " << DepB << " " << DepC << " " << DepV << " " << DepW << std::endl;
+            // std::cout << runnum << " " << evnum << " " << helicity << " " << e_p << " " << e_theta << " " << e_phi << " " << vz_e << " " << 
+            // p_p << " " << p_theta << " " << p_phi << " " << vz_p << " " << Q2 << " " << W << " " << Mx << " " << Mx2 << " " << x << " " << y << " " << z << " " << xF << " " << 
+            // pT << " " << zeta << " " << eta << " " << phi << " " << DepA << " " << DepB << " " << DepC << " " << DepV << " " << DepW << std::endl;
             
             beam_pol = getPol(runnum);
             if (runnum < 16000) { target_pol = 0; }
