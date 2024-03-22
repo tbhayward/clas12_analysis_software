@@ -147,7 +147,7 @@ int findBinIndex(float value, const std::vector<float>& edges) {
 int main() {
     // Open the ROOT files for data and Monte Carlo
     // inbending files
-    TFile* fData = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_epX_skimmed.root");
+    TFile* fData = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nAbkg_epX_test_7_skimmed.root");
     TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nA_epX_skimmed.root");
     TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_inb_clasdis_50nAbkg_gen_epX_skimmed.root");
     // outbending files
