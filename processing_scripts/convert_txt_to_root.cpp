@@ -710,12 +710,12 @@ int main(int argc, char *argv[]) {
 
             tree->Fill(); // Fill the tree with the read data
         }
-        if (infile.fail()) {
-            std::cerr << "Stream failed after reading line. Checking for bad bit..." << std::endl;
-            if (infile.bad()) std::cerr << "Bad bit set. I/O error while reading." << std::endl;
-            else if (infile.eof()) std::cerr << "End of file reached unexpectedly." << std::endl;
-            else std::cerr << "Format mismatch or other error." << std::endl;
-        }
+        // if (infile.fail()) {
+        //     std::cerr << "Stream failed after reading line. Checking for bad bit..." << std::endl;
+        //     if (infile.bad()) std::cerr << "Bad bit set. I/O error while reading." << std::endl;
+        //     else if (infile.eof()) std::cerr << "End of file reached unexpectedly." << std::endl;
+        //     else std::cerr << "Format mismatch or other error." << std::endl;
+        // }
     }
     if (hadron_count == 1 && is_mc == 1) {
         while (infile >> e_p >> mc_e_p >> e_theta >> mc_e_theta >> e_phi >> mc_e_phi >> vz_e >> 
