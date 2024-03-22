@@ -256,7 +256,7 @@ int main(int argc, char *argv[]) {
         // Link TTree branches to variables for one hadron
         tree->Branch("runnum", &runnum, "runnum/I");
         tree->Branch("evnum", &evnum, "evnum/I");
-        tree->Branch("helicity", &helicity, "helicity/D");
+        tree->Branch("helicity", &helicity, "helicity/I");
         tree->Branch("beam_pol", &beam_pol, "beam_pol/D");
         tree->Branch("target_pol", &target_pol, "target_pol/D");
         tree->Branch("e_p", &e_p, "e_p/D");

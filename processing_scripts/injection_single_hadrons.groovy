@@ -87,23 +87,23 @@ def helicity_assignment(double Q2, double x, double PT, double z, double zeta, d
 	// double ALL = 0.308+0.018*xF-0.250*xF*xF;
 	// double ALLcosphi = 0.019+0.090*xF+0.109*xF*xF;
 
-	// // TEST "7", UU studies
-	// double AUUcosphi = -0.1;
-	// double AUUcos2phi = 0.05;
-	// double ALUsinphi = -0.01;
-	// double AULsinphi = 0;
-	// double AULsin2phi = 0;
-	// double ALL = 0;
-	// double ALLcosphi = 0;
+	// TEST "7", UU studies
+	double AUUcosphi = -0.1;
+	double AUUcos2phi = 0.05;
+	double ALUsinphi = -0.01;
+	double AULsinphi = 0;
+	double AULsin2phi = 0;
+	double ALL = 0;
+	double ALLcosphi = 0;
 
-	// // TEST "8", UU studies
-	// double AUUcosphi = -0.15;
-	// double AUUcos2phi = -0.05;
-	// double ALUsinphi = -0.01;
-	// double AULsinphi = 0;
-	// double AULsin2phi = 0;
-	// double ALL = 0;
-	// double ALLcosphi = 0;
+	// TEST "8", UU studies
+	double AUUcosphi = -0.15;
+	double AUUcos2phi = -0.05;
+	double ALUsinphi = -0.01;
+	double AULsinphi = 0;
+	double AULsin2phi = 0;
+	double ALL = 0;
+	double ALLcosphi = 0;
 
 	// TEST "9", UU studies
 	double AUUcosphi = -0.3*PT;
@@ -260,7 +260,7 @@ public static void main(String[] args) {
 		        int[] helicities = helicity_assignment(mc_Q2, mc_x, mc_pT, mc_z, mc_zeta, mc_xF,
 		        	mc_phi, mc_Depolarization_A, mc_Depolarization_B, mc_Depolarization_C,
 		        	mc_Depolarization_V, mc_Depolarization_W);
-		        double hb = helicities[0]; double ht = helicities[1];
+		        int hb = helicities[0]; double ht = helicities[1];
 
 		        // cycle over all hadrons
 		        for (int current_p1 = 0; current_p1 < 1; current_p1++) { 
