@@ -153,7 +153,8 @@ int main(int argc, char *argv[]) {
     int is_mc = atoi(argv[4]);
 
     // Declare common variables
-    int runnum, evnum, helicity;
+    int runnum, evnum;//, helicity;
+    double helicity;
     double beam_pol, target_pol, e_p, e_theta, e_phi, vz_e, Q2, W, Mx, Mx2, x, y;
     double t, tmin;
     double z, xF, pT, zeta, eta, phi, DepA, DepB, DepC, DepV, DepW;
@@ -256,7 +257,7 @@ int main(int argc, char *argv[]) {
         // Link TTree branches to variables for one hadron
         tree->Branch("runnum", &runnum, "runnum/I");
         tree->Branch("evnum", &evnum, "evnum/I");
-        tree->Branch("helicity", &helicity, "helicity/I");
+        tree->Branch("helicity", &helicity, "helicity/D");
         tree->Branch("beam_pol", &beam_pol, "beam_pol/D");
         tree->Branch("target_pol", &target_pol, "target_pol/D");
         tree->Branch("e_p", &e_p, "e_p/D");
