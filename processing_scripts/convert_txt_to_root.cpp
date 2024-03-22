@@ -687,7 +687,7 @@ int main(int argc, char *argv[]) {
         while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             p_p >> p_theta >> p_phi >> vz_p >> Q2 >> W >> Mx >> Mx2 >> x >> y >> z >> xF >> 
             pT >> zeta >> eta >> phi >> DepA >> DepB >> DepC >> DepV >> DepW) {
-            std::cout << "hey?" << std::endl;
+            std::cout << "hey? " << hadron_count << std::endl;
             beam_pol = getPol(runnum);
             if (runnum < 16000) { target_pol = 0; }
             else { 
@@ -701,6 +701,7 @@ int main(int argc, char *argv[]) {
 
             t = gett(p_p, p_theta); // for SIDIS we calculate t with proton kinematics
             tmin = gettmin(x); 
+            std::cout << t << std::endl;
 
             tree->Fill(); // Fill the tree with the read data
         }
