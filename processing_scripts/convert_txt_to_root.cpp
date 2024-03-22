@@ -684,9 +684,19 @@ int main(int argc, char *argv[]) {
     } 
     if (hadron_count == 1 && is_mc == 0) {
 
-        while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
-            p_p >> p_theta >> p_phi >> vz_p >> Q2 >> W >> Mx >> Mx2 >> x >> y >> z >> xF >> 
-            pT >> zeta >> eta >> phi >> DepA >> DepB >> DepC >> DepV >> DepW) {
+        std::string line;
+        while (std::getline(infile, line)) {
+            // Use a stringstream to read from the line instead of directly from the file
+            std::istringstream iss(line);
+
+            if (!(iss >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
+                    p_p >> p_theta >> p_phi >> vz_p >> Q2 >> W >> Mx >> Mx2 >> x >> y >> z >> xF >> 
+                    pT >> zeta >> eta >> phi >> DepA >> DepB >> DepC >> DepV >> DepW)) {
+                std::cerr << "Failed to parse line: " << line << std::endl;
+                // Clear the error state of iss to attempt the next line
+                iss.clear();
+                continue; // Skip to the next iteration of the loop
+            }
             
             beam_pol = getPol(runnum);
             if (runnum < 16000) { target_pol = 0; }
