@@ -687,7 +687,7 @@ int main(int argc, char *argv[]) {
         while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             p_p >> p_theta >> p_phi >> vz_p >> Q2 >> W >> Mx >> Mx2 >> x >> y >> z >> xF >> 
             pT >> zeta >> eta >> phi >> DepA >> DepB >> DepC >> DepV >> DepW) {
-            std::cout << infile << hadron_count << std::endl;
+            std::cout << infile  << std::endl;
             beam_pol = getPol(runnum);
             if (runnum < 16000) { target_pol = 0; }
             else { 
@@ -704,6 +704,12 @@ int main(int argc, char *argv[]) {
             std::cout << t << std::endl;
 
             tree->Fill(); // Fill the tree with the read data
+        }
+        if (infile.fail()) {
+            std::cerr << "Stream failed after reading line. Checking for bad bit..." << std::endl;
+            if (infile.bad()) std::cerr << "Bad bit set. I/O error while reading." << std::endl;
+            else if (infile.eof()) std::cerr << "End of file reached unexpectedly." << std::endl;
+            else std::cerr << "Format mismatch or other error." << std::endl;
         }
     }
     if (hadron_count == 1 && is_mc == 1) {
