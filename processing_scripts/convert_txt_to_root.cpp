@@ -711,7 +711,7 @@ int main(int argc, char *argv[]) {
 
             t = gett(p_p, p_theta); // for SIDIS we calculate t with proton kinematics
             tmin = gettmin(x); 
-            std::cout << t << std::endl;
+            // std::cout << t << std::endl;
 
             tree->Fill(); // Fill the tree with the read data
         }
