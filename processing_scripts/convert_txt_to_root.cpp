@@ -692,10 +692,10 @@ int main(int argc, char *argv[]) {
             if (!(iss >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
                     p_p >> p_theta >> p_phi >> vz_p >> Q2 >> W >> Mx >> Mx2 >> x >> y >> z >> xF >> 
                     pT >> zeta >> eta >> phi >> DepA >> DepB >> DepC >> DepV >> DepW)) {
-                std::cerr << "Failed to parse line: " << line << std::endl;
-                // Clear the error state of iss to attempt the next line
-                iss.clear();
-                continue; // Skip to the next iteration of the loop
+                // std::cerr << "Failed to parse line: " << line << std::endl;
+                // // Clear the error state of iss to attempt the next line
+                // iss.clear();
+                // continue; // Skip to the next iteration of the loop
             }
             
             beam_pol = getPol(runnum);
