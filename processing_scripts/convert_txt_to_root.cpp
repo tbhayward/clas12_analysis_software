@@ -153,8 +153,7 @@ int main(int argc, char *argv[]) {
     int is_mc = atoi(argv[4]);
 
     // Declare common variables
-    int runnum, evnum;//, helicity;
-    double helicity;
+    int runnum, evnum, helicity;
     double beam_pol, target_pol, e_p, e_theta, e_phi, vz_e, Q2, W, Mx, Mx2, x, y;
     double t, tmin;
     double z, xF, pT, zeta, eta, phi, DepA, DepB, DepC, DepV, DepW;
@@ -684,14 +683,15 @@ int main(int argc, char *argv[]) {
         }
     } 
     if (hadron_count == 1 && is_mc == 0) {
-
-        while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
+        double helicity_double
+        while (infile >> runnum >> evnum >> helicity_double >> e_p >> e_theta >> e_phi >> vz_e >> 
             p_p >> p_theta >> p_phi >> vz_p >> Q2 >> W >> Mx >> Mx2 >> x >> y >> z >> xF >> 
             pT >> zeta >> eta >> phi >> DepA >> DepB >> DepC >> DepV >> DepW) {
 
             // std::cout << runnum << " " << evnum << " " << helicity << " " << e_p << " " << e_theta << " " << e_phi << " " << vz_e << " " << 
             // p_p << " " << p_theta << " " << p_phi << " " << vz_p << " " << Q2 << " " << W << " " << Mx << " " << Mx2 << " " << x << " " << y << " " << z << " " << xF << " " << 
             // pT << " " << zeta << " " << eta << " " << phi << " " << DepA << " " << DepB << " " << DepC << " " << DepV << " " << DepW << std::endl;
+            helicity = static_cast<int>(helicity_double); // Convert double to int
             beam_pol = getPol(runnum);
             if (runnum < 16000) { target_pol = 0; }
             else { 
