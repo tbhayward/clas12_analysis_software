@@ -153,10 +153,10 @@ int main(int argc, char *argv[]) {
     int is_mc = atoi(argv[4]);
 
     // Declare common variables
-    int runnum, evnum, helicity;
+    int runnum, evnum, helicity, eta;
     double beam_pol, target_pol, e_p, e_theta, e_phi, vz_e, Q2, W, Mx, Mx2, x, y;
     double t, tmin;
-    double z, xF, pT, zeta, eta, phi, DepA, DepB, DepC, DepV, DepW;
+    double z, xF, pT, zeta, phi, DepA, DepB, DepC, DepV, DepW;
     double p_p, p_theta, p_phi, vz_p;
     // Additional variables for one or two hadrons
     double p1_p, p1_theta, p1_phi, vz_p1, p2_p, p2_theta, p2_phi, vz_p2;
@@ -279,7 +279,7 @@ int main(int argc, char *argv[]) {
         tree->Branch("xF", &xF, "xF/D");
         tree->Branch("pT", &pT, "pT/D");
         tree->Branch("zeta", &zeta, "zeta/D");
-        tree->Branch("eta", &eta, "eta/D");
+        tree->Branch("eta", &eta, "eta/I");
         tree->Branch("phi", &phi, "phi/D");
         tree->Branch("DepA", &DepA, "DepA/D");
         tree->Branch("DepB", &DepB, "DepB/D");
@@ -687,7 +687,7 @@ int main(int argc, char *argv[]) {
         while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             p_p >> p_theta >> p_phi >> vz_p >> Q2 >> W >> Mx >> Mx2 >> x >> y >> z >> xF >> 
             pT >> zeta >> eta >> phi >> DepA >> DepB >> DepC >> DepV >> DepW) {
-            
+
             beam_pol = getPol(runnum);
             if (runnum < 16000) { target_pol = 0; }
             else { 
