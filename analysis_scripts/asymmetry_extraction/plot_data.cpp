@@ -179,8 +179,10 @@ void createIntegratedKinematicPlots() {
         mcHist->SetLineColor(kRed);
         
         // Draw histograms on the canvas
-        dataHist->Draw("HIST");
-        mcHist->Draw("HISTSAME");
+        // dataHist->Draw("HIST");
+        // mcHist->Draw("HISTSAME");
+        dataHist->Draw("EP");
+        mcHist->Draw("EPSAME");
         leg->Draw();
 
         // Save the canvas to a file
