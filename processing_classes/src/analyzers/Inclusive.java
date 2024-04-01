@@ -46,7 +46,7 @@ public class Inclusive {
 //            return false; }
         if (variables.Q2()<1) { return false; } 
         if (variables.W()<2) { return false; } 
-//         if (variables.y()>0.75) { return false; } 
+         if (variables.y()>0.75) { return false; } 
 	return true;
     }
     
