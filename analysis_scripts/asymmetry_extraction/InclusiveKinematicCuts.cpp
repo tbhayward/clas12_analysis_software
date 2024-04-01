@@ -16,7 +16,7 @@ bool InclusiveKinematicCuts::applyCuts(int currentFits, bool isMC) {
     string property = binNames[currentFits];
 
     if (property == "eX") {
-        goodEvent = *Q2 > 1 && *W > 2 && *y < 10.75 && *Q2 < 2.99;
+        goodEvent = *Q2 > 2 && *W > 2 && *y < 10.75 && *Q2 < 2.99;
     } else if (property == "xeX") {
         goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75;
     } else {
