@@ -920,7 +920,7 @@ public class analysis_fitter extends GenericKinematicFitter {
         return true
 //            && p > 1.00
 //            && p < 5.00 // this wasn't used in the dihadron publication but was used in the submitted single pion
-//            && forward_detector_cut(particle_Index, rec_Bank)
+            && forward_detector_cut(particle_Index, rec_Bank)
             && vertex_cut(particle_Index, trigger_electron_vz, rec_Bank, run_Bank) 
             && hadron_pass2_cut(particle_Index, rec_Bank)
 //            && pion_chi2pid_cut(particle_Index, rec_Bank)
@@ -940,7 +940,7 @@ public class analysis_fitter extends GenericKinematicFitter {
         return true
 //            && p > 1.00
 //            && p < 3.5 
-//            && forward_detector_cut(particle_Index, rec_Bank)
+            && forward_detector_cut(particle_Index, rec_Bank)
             && vertex_cut(particle_Index, trigger_electron_vz, rec_Bank, run_Bank) 
             && hadron_pass2_cut(particle_Index, rec_Bank)
 //            && hadron_chi2pid_cut(particle_Index, rec_Bank)
@@ -960,7 +960,7 @@ public class analysis_fitter extends GenericKinematicFitter {
         return true
 //            && p > 0.4
             && vertex_cut(particle_Index, trigger_electron_vz, rec_Bank, run_Bank) 
-//            && forward_detector_cut(particle_Index, rec_Bank)
+            && forward_detector_cut(particle_Index, rec_Bank)
             && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
             && hadron_pass2_cut(particle_Index, rec_Bank)
 //            && hadron_chi2pid_cut(particle_Index, rec_Bank)
