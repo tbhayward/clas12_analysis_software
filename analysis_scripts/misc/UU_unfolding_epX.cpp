@@ -415,7 +415,7 @@ int main() {
             }
         }
 
-        canvas->SaveAs(Form("output3/Q2yBin_%d.png", bin + 1));
+        canvas->SaveAs(Form("output3/yields/Q2yBin_%d.png", bin + 1));
         delete canvas;
     }
 
@@ -520,7 +520,7 @@ int main() {
                 }
             }
         }
-        acceptanceCanvas->SaveAs(Form("output3/acceptance_Q2yBin_%d.png", bin + 1)); // Save each canvas
+        acceptanceCanvas->SaveAs(Form("output3/acceptance/acceptance_Q2yBin_%d.png", bin + 1)); // Save each canvas
         delete acceptanceCanvas; // Clean up
     }
 
@@ -756,7 +756,7 @@ int main() {
             }
         }
 
-        unfoldedCanvas->SaveAs(Form("output3/unfolded_Q2yBin_%d.png", bin + 1));
+        unfoldedCanvas->SaveAs(Form("output3/unfolded/unfolded_Q2yBin_%d.png", bin + 1));
         delete unfoldedCanvas;
     }
 
