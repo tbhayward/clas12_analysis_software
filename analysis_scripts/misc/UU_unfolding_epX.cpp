@@ -920,7 +920,7 @@ int main() {
                 if (fitParams.B != 0) {
                     double structureA = fitParams.A ;
                     double structureAerr = fitParams.errA;
-                    structureFile2 << "{" << meanPT << ", " << structureB << ", " << structureBerr << "}";
+                    structureFile2 << "{" << meanPT << ", " << structureA << ", " << structureAerr << "}";
                 } else {
                     structureFile2 << "{-1.00, 0.00, 1000.00}";
                 }
