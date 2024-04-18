@@ -205,8 +205,8 @@ int main() {
     std::vector<int> countDISGene(17, 0);
     // Update counts for each TTree
     updateCounts(tDISData, countDISData);
-    updateCounts(tDISReco, countDISReco);
-    updateCounts(tDISGene, countDISGene);
+    updateCounts(tDISMCReco, countDISReco);
+    updateCounts(tDISMCGene, countDISGene);
 
 
     // Define variables for both trees
@@ -1087,7 +1087,7 @@ int main() {
 
 
 
-    structureFile.close();
+    // structureFile.close();
     structureFile2.close();
 
     fData->Close();
