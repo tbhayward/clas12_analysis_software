@@ -14,6 +14,8 @@
 #include <TFitResult.h>
 #include <TMatrixDSym.h>
 #include <TMinuit.h>
+#include <iomanip>  // Include this at the top of your file
+
 
 
 // Global pointer to histogram, so it can be accessed in the chi2 function
@@ -164,9 +166,9 @@ void updateCounts(TTree* tree, std::vector<int>& counts) {
 int main() {
     // Open the ROOT files for data and Monte Carlo
     // inbending files
-    TFile* fData = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+X/rga_sp19_inb_epi+X.root");
-    TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+X/rga_sp19_inb_clasdis_50nAbkg_rec_epi+X.root");
-    TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+X/rga_sp19_inb_clasdis_50nAbkg_gen_epi+X.root");
+    TFile* fData = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+X/rga_sp19_inb_epi+X_skimmed.root");
+    TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+X/rga_sp19_inb_clasdis_50nAbkg_rec_epi+X_skimmed.root");
+    TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+X/rga_sp19_inb_clasdis_50nAbkg_gen_epi+X_skimmed.root");
     
     TFile* fDISData = TFile::Open("/volatile/clas12/thayward/multiplicities/data/eX/rga_sp19_inb_eX.root");
     TFile* fDISMCReco = TFile::Open("/volatile/clas12/thayward/multiplicities/data/eX/rga_sp19_inb_clasdis_50nAbkg_rec_eX.root");
@@ -204,10 +206,12 @@ int main() {
     std::vector<int> countDISReco(17, 0);
     std::vector<int> countDISGene(17, 0);
     // Update counts for each TTree
+    std::cout << "Looping over data. " << tDISData->GetEntries() << " entries." << std::endl;
     updateCounts(tDISData, countDISData);
+    std::cout << "Looping over rec MC. " << tDISMCReco->GetEntries() << " entries." << std::endl;
     updateCounts(tDISMCReco, countDISReco);
+    std::cout << "Looping over gen MC. " << tDISMCGene->GetEntries() << " entries." << std::endl;
     updateCounts(tDISMCGene, countDISGene);
-
 
     // Define variables for both trees
     double e_phiData, p_phiData, e_phiMC, p_phiMC, e_phiGen, p_phiGen;
@@ -801,6 +805,7 @@ int main() {
 
     //
     std::ofstream capobiancoFile("output3/cross_check.txt");
+    capobiancoFile << std::fixed << std::setprecision(4);
     // Write the DIS event counts for each Q2-y bin
     capobiancoFile << "DIS Event Counts per Q2-y Bin:" << std::endl;
     for (int i = 0; i < 17; ++i) {
@@ -888,6 +893,7 @@ int main() {
 
 
     std::ofstream structureFile2("output3/mathematica.txt");
+    structureFile2 << std::fixed << std::setprecision(4);
     // Write the DIS event counts for each Q2-y bin in Mathematica list format
     structureFile2 << "disElectrons = {";
     for (int i = 0; i < 17; ++i) {
