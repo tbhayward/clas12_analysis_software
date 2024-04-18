@@ -143,6 +143,23 @@ int findBinIndex(float value, const std::vector<float>& edges) {
     return -1; // Value outside bin edges
 }
 
+
+// Function to update counts for a TTree
+void updateCounts(TTree* tree, std::vector<int>& counts) {
+    float Q2, y;
+    tree->SetBranchAddress("Q2", &Q2);
+    tree->SetBranchAddress("y", &y);
+    
+    Long64_t nEntries = tree->GetEntries();
+    for (Long64_t i = 0; i < nEntries; ++i) {
+        tree->GetEntry(i);
+        int binIndex = DetermineQ2yBin(Q2, y) - 1; // Adjusted for 0-based indexing
+        if (binIndex >= 0 && binIndex < 17) {
+            counts[binIndex]++;
+        }
+    }
+}
+
 // Main function
 int main() {
     // Open the ROOT files for data and Monte Carlo
@@ -150,10 +167,10 @@ int main() {
     TFile* fData = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+X/rga_sp19_inb_epi+X.root");
     TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+X/rga_sp19_inb_clasdis_50nAbkg_rec_epi+X.root");
     TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+X/rga_sp19_inb_clasdis_50nAbkg_gen_epi+X.root");
-    // outbending files
-    // TFile* fData = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_out_epX_skimmed.root");
-    // TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_out_clasdis_50nA_epX_skimmed.root");
-    // TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/UU_validation/root_files/rga_fa18_out_clasdis_50nA_gen_epX_skimmed.root");
+    
+    TFile* fDISData = TFile::Open("/volatile/clas12/thayward/multiplicities/data/eX/rga_sp19_inb_eX.root");
+    TFile* fDISReco = TFile::Open("/volatile/clas12/thayward/multiplicities/data/eX/rga_sp19_inb_clasdis_50nAbkg_rec_eX.root");
+    TFile* fDISGene = TFile::Open("/volatile/clas12/thayward/multiplicities/data/eX/rga_sp19_inb_clasdis_50nAbkg_gen_eX.root");
     if (!fData || fData->IsZombie() || !fMCReco || fMCReco->IsZombie() || !fMCGene || fMCGene->IsZombie()) {
         std::cerr << "Failed to open one or more files." << std::endl;
         return -1;
@@ -170,6 +187,27 @@ int main() {
         std::cerr << "Tree not found in one or more files." << std::endl;
         return -1;
     }
+
+    // Get the TTrees
+    TTree* tDISData;
+    TTree* tDISMCReco;
+    TTree* tDISMCGene;
+    fDISData->GetObject("PhysicsEvents", tDISData);
+    fDISMCReco->GetObject("PhysicsEvents", tDISMCReco);
+    fDISMCGene->GetObject("PhysicsEvents", tDISMCGene);
+    if (!tDISData || !tDISMCReco || !tDISMCGene) {
+        std::cerr << "Tree not found in one or more files." << std::endl;
+        return -1;
+    }
+    // Define vectors to store counts for each bin
+    std::vector<int> countDISData(17, 0);
+    std::vector<int> countDISReco(17, 0);
+    std::vector<int> countDISGene(17, 0);
+    // Update counts for each TTree
+    updateCounts(tDISData, countDISData);
+    updateCounts(tDISReco, countDISReco);
+    updateCounts(tDISGene, countDISGene);
+
 
     // Define variables for both trees
     double e_phiData, p_phiData, e_phiMC, p_phiMC, e_phiGen, p_phiGen;
@@ -500,7 +538,7 @@ int main() {
 
                     // // Set the y-axis scale minimum and maximum
                     hAcc->SetMinimum(0); 
-                    hAcc->SetMaximum(0.1); 
+                    hAcc->SetMaximum(0.5); 
                     
                     hAcc->SetMarkerStyle(20);
                     hAcc->Draw("PE"); // "PE" for drawing error bars with points
@@ -698,8 +736,8 @@ int main() {
                     double amplitude = TMath::Max(TMath::Abs(maxVal - mean), TMath::Abs(mean - minVal));
 
                     // Setting y-axis limits to +/- 2 times the amplitude around the mean
-                    double yMin = mean - 2.0 * amplitude;
-                    double yMax = mean + 2.0 * amplitude;
+                    double yMin = mean - 5.0 * amplitude;
+                    double yMax = mean + 5.0 * amplitude;
 
                     gUnfolded->SetMinimum(yMin);
                     gUnfolded->SetMaximum(yMax);
@@ -760,7 +798,21 @@ int main() {
         delete unfoldedCanvas;
     }
 
-    std::ofstream capobiancoFile("output3/capobianco_cross_check.txt");
+
+    //
+    std::ofstream capobiancoFile("output3/cross_check.txt");
+    // Write the DIS event counts for each Q2-y bin
+    capobiancoFile << "DIS Event Counts per Q2-y Bin:" << std::endl;
+    for (int i = 0; i < 17; ++i) {
+        capobiancoFile << "Q2-y Bin " << (i+1) << ", "
+                       << "Rec Data: " << countDISData[i] << ", "
+                       << "Rec MC: " << countDISReco[i] << ", "
+                       << "Gen MC: " << countDISGene[i] << std::endl;
+    }
+    // Formatting line break to separate the sections
+    capobiancoFile << std::endl << "Fitting Results:" << std::endl;
+
+    // Existing loop for detailed z-pT bin fitting results
     for (size_t bin = 0; bin < allFitParams.size(); ++bin) {
         int current_bin = 1;
         for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
@@ -787,6 +839,7 @@ int main() {
             }
         }
     }
+
     capobiancoFile.close(); // Close the file after writing
 
     // also print out a version for myself where the asymmetries are scaled by the structure functions
@@ -796,45 +849,54 @@ int main() {
         double error;
     };
 
-    std::ofstream structureFile("output3/structure_functions.txt");
-    // Loop over Q2-y bins
-    for (int bin = 0; bin < allFitParams.size(); ++bin) {
-        int current_bin = 1;
-        // Iterate through z and pT bins in the desired order
-        for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
-            for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
-                int index = z_bin * num_pT_bins[bin] + pT_bin;
-                const auto& params = allBinParams[bin][index];
-                const auto& fitParams = allFitParams[bin][index];
-                double meanPT = params.sumPT / params.count;
-                if (fitParams.B != 0) {
-                    double structureA = fitParams.A;
-                    double structureB = fitParams.B * params.sumDepA / params.sumDepV;
-                    double structureC = fitParams.C * params.sumDepA / params.sumDepB;
-                    double structureAerr = fitParams.errA;
-                    double structureBerr = fitParams.errB * params.sumDepA / params.sumDepV;
-                    double structureCerr = fitParams.errC * params.sumDepA / params.sumDepB;
-                    structureFile << "Q2-y Bin " << (bin+1);
-                    structureFile << ", z-pT Bin " << current_bin << ": "
-                    << "A = {" << meanPT << ", " << structureA << ", " << structureAerr << "}, "
-                    << "B = {" << meanPT << ", " << structureB << ", " << structureBerr << "}, "
-                    << "C = {" << meanPT << ", " << structureC << ", " << structureCerr << "}, " << std::endl;
-                    current_bin++;
-                } else {
-                    structureFile << "Q2-y Bin " << bin + 1;
-                    structureFile << ", z-pT Bin " << current_bin << ": "
-                    << "A = {-1.00, 0.00, 1000.00}, "
-                    << "B = {-1.00, 0.00, 1000.00}, "
-                    << "C = {-1.00, 0.00, 1000.00}" << std::endl;
-                    current_bin++;
-                }
-            }
-        }
-    }
-    structureFile.close();
+    // std::ofstream structureFile("output3/structure_functions.txt");
+    // // Loop over Q2-y bins
+    // for (int bin = 0; bin < allFitParams.size(); ++bin) {
+    //     int current_bin = 1;
+    //     // Iterate through z and pT bins in the desired order
+    //     for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
+    //         for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
+    //             int index = z_bin * num_pT_bins[bin] + pT_bin;
+    //             const auto& params = allBinParams[bin][index];
+    //             const auto& fitParams = allFitParams[bin][index];
+    //             double meanPT = params.sumPT / params.count;
+    //             if (fitParams.B != 0) {
+    //                 double structureA = fitParams.A;
+    //                 double structureB = fitParams.B * params.sumDepA / params.sumDepV;
+    //                 double structureC = fitParams.C * params.sumDepA / params.sumDepB;
+    //                 double structureAerr = fitParams.errA;
+    //                 double structureBerr = fitParams.errB * params.sumDepA / params.sumDepV;
+    //                 double structureCerr = fitParams.errC * params.sumDepA / params.sumDepB;
+    //                 structureFile << "Q2-y Bin " << (bin+1);
+    //                 structureFile << ", z-pT Bin " << current_bin << ": "
+    //                 << "A = {" << meanPT << ", " << structureA << ", " << structureAerr << "}, "
+    //                 << "B = {" << meanPT << ", " << structureB << ", " << structureBerr << "}, "
+    //                 << "C = {" << meanPT << ", " << structureC << ", " << structureCerr << "}, " << std::endl;
+    //                 current_bin++;
+    //             } else {
+    //                 structureFile << "Q2-y Bin " << bin + 1;
+    //                 structureFile << ", z-pT Bin " << current_bin << ": "
+    //                 << "A = {-1.00, 0.00, 1000.00}, "
+    //                 << "B = {-1.00, 0.00, 1000.00}, "
+    //                 << "C = {-1.00, 0.00, 1000.00}" << std::endl;
+    //                 current_bin++;
+    //             }
+    //         }
+    //     }
+    // }
+    // structureFile.close();
 
 
     std::ofstream structureFile2("output3/mathematica.txt");
+    // Write the DIS event counts for each Q2-y bin in Mathematica list format
+    structureFile2 << "disElectrons = {";
+    for (int i = 0; i < 17; ++i) {
+        structureFile2 << "{" << countDISData[i] << ", " << countDISReco[i] << ", " << countDISGene[i] << "}";
+        if (i < 16) {
+            structureFile2 << ", ";
+        }
+    }
+    structureFile2 << "};\n\n";  // End of the disElectrons list
     // Loop over Q2-y bins
     for (int bin = 0; bin < allFitParams.size(); ++bin) {
         structureFile2 << "sfQ2y" << (bin+1) << "A = {";
