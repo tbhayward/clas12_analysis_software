@@ -169,8 +169,8 @@ int main() {
     TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+X/rga_sp19_inb_clasdis_50nAbkg_gen_epi+X.root");
     
     TFile* fDISData = TFile::Open("/volatile/clas12/thayward/multiplicities/data/eX/rga_sp19_inb_eX.root");
-    TFile* fDISReco = TFile::Open("/volatile/clas12/thayward/multiplicities/data/eX/rga_sp19_inb_clasdis_50nAbkg_rec_eX.root");
-    TFile* fDISGene = TFile::Open("/volatile/clas12/thayward/multiplicities/data/eX/rga_sp19_inb_clasdis_50nAbkg_gen_eX.root");
+    TFile* fDISMCReco = TFile::Open("/volatile/clas12/thayward/multiplicities/data/eX/rga_sp19_inb_clasdis_50nAbkg_rec_eX.root");
+    TFile* fDISMCGene = TFile::Open("/volatile/clas12/thayward/multiplicities/data/eX/rga_sp19_inb_clasdis_50nAbkg_gen_eX.root");
     if (!fData || fData->IsZombie() || !fMCReco || fMCReco->IsZombie() || !fMCGene || fMCGene->IsZombie()) {
         std::cerr << "Failed to open one or more files." << std::endl;
         return -1;
