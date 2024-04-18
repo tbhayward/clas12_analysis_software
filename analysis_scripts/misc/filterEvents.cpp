@@ -27,7 +27,7 @@ void filterEvents(const char* inputFile) {
     double p_p, Q2, z, xF, Mx, y;
 
     // Set branch addresses
-    tree->SetBranchAddress("p_p", &p_p);
+    // tree->SetBranchAddress("p_p", &p_p);
     tree->SetBranchAddress("Q2", &Q2);
     tree->SetBranchAddress("z", &z);
     tree->SetBranchAddress("xF", &xF);
