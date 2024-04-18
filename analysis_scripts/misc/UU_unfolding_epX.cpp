@@ -146,7 +146,7 @@ int findBinIndex(float value, const std::vector<float>& edges) {
 
 // Function to update counts for a TTree
 void updateCounts(TTree* tree, std::vector<int>& counts) {
-    float Q2, y;
+    double Q2, y;
     tree->SetBranchAddress("Q2", &Q2);
     tree->SetBranchAddress("y", &y);
     
