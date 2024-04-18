@@ -808,18 +808,22 @@ int main() {
                 const auto& fitParams = allFitParams[bin][index];
                 double meanPT = params.sumPT / params.count;
                 if (fitParams.B != 0) {
+                    double structureA = fitParams.A;
                     double structureB = fitParams.B * params.sumDepA / params.sumDepV;
                     double structureC = fitParams.C * params.sumDepA / params.sumDepB;
+                    double structureAerr = fitParams.errA;
                     double structureBerr = fitParams.errB * params.sumDepA / params.sumDepV;
                     double structureCerr = fitParams.errC * params.sumDepA / params.sumDepB;
                     structureFile << "Q2-y Bin " << (bin+1);
                     structureFile << ", z-pT Bin " << current_bin << ": "
+                    << "A = {" << meanPT << ", " << structureA << ", " << structureAerr << "}, "
                     << "B = {" << meanPT << ", " << structureB << ", " << structureBerr << "}, "
                     << "C = {" << meanPT << ", " << structureC << ", " << structureCerr << "}, " << std::endl;
                     current_bin++;
                 } else {
                     structureFile << "Q2-y Bin " << bin + 1;
                     structureFile << ", z-pT Bin " << current_bin << ": "
+                    << "A = {-1.00, 0.00, 1000.00}, "
                     << "B = {-1.00, 0.00, 1000.00}, "
                     << "C = {-1.00, 0.00, 1000.00}" << std::endl;
                     current_bin++;
@@ -832,6 +836,29 @@ int main() {
 
     std::ofstream structureFile2("output3/mathematica.txt");
     // Loop over Q2-y bins
+    for (int bin = 0; bin < allFitParams.size(); ++bin) {
+        structureFile2 << "sfQ2y" << (bin+1) << "A = {";
+        // Iterate through z and pT bins in the desired order
+        for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
+            for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
+                int index = z_bin * num_pT_bins[bin] + pT_bin;
+                const auto& params = allBinParams[bin][index];
+                const auto& fitParams = allFitParams[bin][index];
+                double meanPT = params.sumPT / params.count;
+                if (fitParams.B != 0) {
+                    double structureA = fitParams.A;
+                    double structureAerr = fitParams.errB;
+                    structureFile2 << "{" << meanPT << ", " << structureB << ", " << structureBerr << "}";
+                } else {
+                    structureFile2 << "{-1.00, 0.00, 1000.00}";
+                }
+                if (!(z_bin == 0 && pT_bin == num_pT_bins[bin]-1)) {
+                    structureFile2 << ",";
+                }
+            }
+        }
+        structureFile2 << "};\n\n" << std::endl;
+    }
     for (int bin = 0; bin < allFitParams.size(); ++bin) {
         structureFile2 << "sfQ2y" << (bin+1) << "B = {";
         // Iterate through z and pT bins in the desired order
@@ -881,6 +908,29 @@ int main() {
 
 
     // Loop over Q2-y bins
+    for (int bin = 0; bin < allFitParams.size(); ++bin) {
+        structureFile2 << "unfQ2y" << (bin+1) << "A = {";
+        // Iterate through z and pT bins in the desired order
+        for (int z_bin = num_z_bins[bin] - 1; z_bin >= 0; --z_bin) {
+            for (int pT_bin = 0; pT_bin < num_pT_bins[bin]; ++pT_bin) {
+                int index = z_bin * num_pT_bins[bin] + pT_bin;
+                const auto& params = allBinParams[bin][index];
+                const auto& fitParams = allFitParams[bin][index];
+                double meanPT = params.sumPT / params.count;
+                if (fitParams.B != 0) {
+                    double structureA = fitParams.A ;
+                    double structureAerr = fitParams.errA;
+                    structureFile2 << "{" << meanPT << ", " << structureB << ", " << structureBerr << "}";
+                } else {
+                    structureFile2 << "{-1.00, 0.00, 1000.00}";
+                }
+                if (!(z_bin == 0 && pT_bin == num_pT_bins[bin]-1)) {
+                    structureFile2 << ",";
+                }
+            }
+        }
+        structureFile2 << "};\n\n" << std::endl;
+    }
     for (int bin = 0; bin < allFitParams.size(); ++bin) {
         structureFile2 << "unfQ2y" << (bin+1) << "B = {";
         // Iterate through z and pT bins in the desired order
