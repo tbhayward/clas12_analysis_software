@@ -847,8 +847,8 @@ int main() {
                 double meanPT = params.sumPT / params.count;
                 if (fitParams.B != 0) {
                     double structureA = fitParams.A;
-                    double structureAerr = fitParams.errB;
-                    structureFile2 << "{" << meanPT << ", " << structureB << ", " << structureBerr << "}";
+                    double structureAerr = fitParams.errA;
+                    structureFile2 << "{" << meanPT << ", " << structureA << ", " << structureAerr << "}";
                 } else {
                     structureFile2 << "{-1.00, 0.00, 1000.00}";
                 }
