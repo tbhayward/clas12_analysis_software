@@ -321,8 +321,8 @@ int main() {
 
     Long64_t nMCEntries = tMCReco->GetEntries();
     std::cout << "Looping over reconstructed MC. " << nMCEntries << " entries." << std::endl;
-    // for (Long64_t i = 0; i < nMCEntries; ++i) {
-    for (Long64_t i = 0; i < 1000; ++i) {
+    for (Long64_t i = 0; i < nMCEntries; ++i) {
+    // for (Long64_t i = 0; i < 1000; ++i) {
         tMCReco->GetEntry(i);
 
         int binIndex = DetermineQ2yBin(Q2MC, yMC) - 1; // Adjusted for 0-based indexing
@@ -361,8 +361,8 @@ int main() {
     // Fill histograms for gen MC
     Long64_t nGenEntries = tMCGene->GetEntries();
     std::cout << "Looping over generated MC. " << nGenEntries << " entries." << std::endl;
-    // for (Long64_t i = 0; i < nGenEntries; ++i) {
-    for (Long64_t i = 0; i < 1000; ++i) {
+    for (Long64_t i = 0; i < nGenEntries; ++i) {
+    // for (Long64_t i = 0; i < 1000; ++i) {
         tMCGene->GetEntry(i);
         int binIndex = DetermineQ2yBin(Q2Gen, yGen) - 1; // Adjusted for 0-based indexing
 
@@ -395,7 +395,6 @@ int main() {
         }
     }
 
-    std::cout << hData[0][0]->GetEntries() << " THIS IS THE BEFORE" << std::endl;
     /* ~~~~~~~~~~~~~~~~~~~~~~ */ 
     // First loop is for plotting the normalized data and reconstructed and generated Monte Carlo plots
     // Declare the TLatex object here, before the loop
