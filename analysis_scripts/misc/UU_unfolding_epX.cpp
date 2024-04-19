@@ -135,7 +135,6 @@ std::map<int, std::vector<float>> pTEdges = {
 };
 
 
-
 // // Define bin edges for pT for each Q2-y bin
 // std::map<int, std::vector<float>> pTEdges = {
 //     {1, {0.00, 0.14, 0.21, 0.27, 0.34, 0.41, 0.47, 0.53, 0.60, 0.74, 1.00}},
@@ -217,29 +216,6 @@ int main() {
         std::cerr << "Tree not found in one or more files." << std::endl;
         return -1;
     }
-
-    // Get the TTrees
-    TTree* tDISData;
-    TTree* tDISMCReco;
-    TTree* tDISMCGene;
-    fDISData->GetObject("PhysicsEvents", tDISData);
-    fDISMCReco->GetObject("PhysicsEvents", tDISMCReco);
-    fDISMCGene->GetObject("PhysicsEvents", tDISMCGene);
-    if (!tDISData || !tDISMCReco || !tDISMCGene) {
-        std::cerr << "Tree not found in one or more files." << std::endl;
-        return -1;
-    }
-    // Define vectors to store counts for each bin
-    std::vector<int> countDISData(17, 0);
-    std::vector<int> countDISReco(17, 0);
-    std::vector<int> countDISGene(17, 0);
-    // Update counts for each TTree
-    std::cout << "Looping over data. " << tDISData->GetEntries() << " entries." << std::endl;
-    updateCounts(tDISData, countDISData);
-    std::cout << "Looping over rec MC. " << tDISMCReco->GetEntries() << " entries." << std::endl;
-    updateCounts(tDISMCReco, countDISReco);
-    std::cout << "Looping over gen MC. " << tDISMCGene->GetEntries() << " entries." << std::endl;
-    updateCounts(tDISMCGene, countDISGene);
 
     // Define variables for both trees
     double e_phiData, p_phiData, e_phiMC, p_phiMC, e_phiGen, p_phiGen;
@@ -332,6 +308,7 @@ int main() {
             // if (pT_bin != -1 && z_bin != -1 && p_phiData < phi_min || p_phiData > phi_max) {
                 // index of bins is flipped (per Kyungseon's request), first bin is highest z (top left)
                 // "binIndex" is the Q2-y bin
+                std::cout<<"hey"<<std::endl;
                 int histIndex = z_bin * num_pT_bins[binIndex] + pT_bin;
                 hData[binIndex][histIndex]->Fill(phiData);
                 allBinParams[binIndex][histIndex].sumDepA += DepAData;
@@ -416,6 +393,29 @@ int main() {
             }
         }
     }
+
+    // Get the TTrees
+    TTree* tDISData;
+    TTree* tDISMCReco;
+    TTree* tDISMCGene;
+    fDISData->GetObject("PhysicsEvents", tDISData);
+    fDISMCReco->GetObject("PhysicsEvents", tDISMCReco);
+    fDISMCGene->GetObject("PhysicsEvents", tDISMCGene);
+    if (!tDISData || !tDISMCReco || !tDISMCGene) {
+        std::cerr << "Tree not found in one or more files." << std::endl;
+        return -1;
+    }
+    // Define vectors to store counts for each bin
+    std::vector<int> countDISData(17, 0);
+    std::vector<int> countDISReco(17, 0);
+    std::vector<int> countDISGene(17, 0);
+    // Update counts for each TTree
+    std::cout << "Looping over data. " << tDISData->GetEntries() << " entries." << std::endl;
+    updateCounts(tDISData, countDISData);
+    std::cout << "Looping over rec MC. " << tDISMCReco->GetEntries() << " entries." << std::endl;
+    updateCounts(tDISMCReco, countDISReco);
+    std::cout << "Looping over gen MC. " << tDISMCGene->GetEntries() << " entries." << std::endl;
+    updateCounts(tDISMCGene, countDISGene);
 
     /* ~~~~~~~~~~~~~~~~~~~~~~ */ 
     // First loop is for plotting the normalized data and reconstructed and generated Monte Carlo plots
