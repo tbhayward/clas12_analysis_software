@@ -166,10 +166,14 @@ void updateCounts(TTree* tree, std::vector<int>& counts) {
 int main() {
     // Open the ROOT files for data and Monte Carlo
     // inbending files
-    TFile* fData = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+X/rga_sp19_inb_epi+X_skimmed.root");
-    TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+X/rga_sp19_inb_clasdis_50nAbkg_rec_epi+X_skimmed.root");
-    TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+X/rga_sp19_inb_clasdis_50nAbkg_gen_epi+X_skimmed.root");
+    // TFile* fData = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+X/rga_sp19_inb_epi+X_skimmed.root");
+    // TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+X/rga_sp19_inb_clasdis_50nAbkg_rec_epi+X_skimmed.root");
+    // TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+X/rga_sp19_inb_clasdis_50nAbkg_gen_epi+X_skimmed.root");
     
+    TFile* fData = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+pi-X/rga_sp19_inb_epi+pi-X_skimmed.root");
+    TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+pi-X/rga_sp19_inb_clasdis_50nAbkg_rec_epi+pi-X_skimmed.root");
+    TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+pi-X/rga_sp19_inb_clasdis_50nAbkg_gen_epi+pi-X_skimmed.root");
+
     TFile* fDISData = TFile::Open("/volatile/clas12/thayward/multiplicities/data/eX/rga_sp19_inb_eX.root");
     TFile* fDISMCReco = TFile::Open("/volatile/clas12/thayward/multiplicities/data/eX/rga_sp19_inb_clasdis_50nAbkg_rec_eX.root");
     TFile* fDISMCGene = TFile::Open("/volatile/clas12/thayward/multiplicities/data/eX/rga_sp19_inb_clasdis_50nAbkg_gen_eX.root");
@@ -216,17 +220,17 @@ int main() {
     // Define variables for both trees
     double e_phiData, p_phiData, e_phiMC, p_phiMC, e_phiGen, p_phiGen;
     tData->SetBranchAddress("e_phi", &e_phiData);
-    tData->SetBranchAddress("p_phi", &p_phiData);
+    // tData->SetBranchAddress("p_phi", &p_phiData);
     tMCReco->SetBranchAddress("e_phi", &e_phiMC);
-    tMCReco->SetBranchAddress("p_phi", &p_phiMC);
+    // tMCReco->SetBranchAddress("p_phi", &p_phiMC);
     tMCGene->SetBranchAddress("e_phi", &e_phiGen);
-    tMCGene->SetBranchAddress("p_phi", &p_phiGen);
+    // tMCGene->SetBranchAddress("p_phi", &p_phiGen);
     double Q2Data, yData, phiData, pTData, zData, DepAData, DepBData, DepVData;
     double Q2MC, yMC, phiMC, pTMC, zMC;
     double Q2Gen, yGen, phiGen, pTGen, zGen;
     tData->SetBranchAddress("Q2", &Q2Data);
     tData->SetBranchAddress("y", &yData);
-    tData->SetBranchAddress("phi", &phiData);
+    tData->SetBranchAddress("phih", &phiData);
     tData->SetBranchAddress("pT", &pTData);
     tData->SetBranchAddress("z", &zData);
     tData->SetBranchAddress("DepA", &DepAData);
@@ -234,12 +238,12 @@ int main() {
     tData->SetBranchAddress("DepV", &DepVData);
     tMCReco->SetBranchAddress("Q2", &Q2MC);
     tMCReco->SetBranchAddress("y", &yMC);
-    tMCReco->SetBranchAddress("phi", &phiMC);
+    tMCReco->SetBranchAddress("phih", &phiMC);
     tMCReco->SetBranchAddress("pT", &pTMC);
     tMCReco->SetBranchAddress("z", &zMC);
     tMCGene->SetBranchAddress("Q2", &Q2Gen);
     tMCGene->SetBranchAddress("y", &yGen);
-    tMCGene->SetBranchAddress("phi", &phiGen);
+    tMCGene->SetBranchAddress("phih", &phiGen);
     tMCGene->SetBranchAddress("pT", &pTGen);
     tMCGene->SetBranchAddress("z", &zGen);
 
