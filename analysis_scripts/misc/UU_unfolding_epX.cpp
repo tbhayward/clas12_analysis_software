@@ -189,9 +189,9 @@ void updateCounts(TTree* tree, std::vector<int>& counts) {
 int main() {
     // Open the ROOT files for data and Monte Carlo
     // inbending files
-    TFile* fData = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+X/rga_sp19_inb_epi+X_skimmed.root");
-    TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+X/rga_sp19_inb_clasdis_50nAbkg_rec_epi+X_skimmed.root");
-    TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+X/rga_sp19_inb_clasdis_50nAbkg_gen_epi+X_skimmed.root");
+    TFile* fData = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+X/rga_sp19_inb_epi+X.root");
+    TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+X/rga_sp19_inb_clasdis_50nAbkg_rec_epi+X.root");
+    TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+X/rga_sp19_inb_clasdis_50nAbkg_gen_epi+X.root");
     
     // TFile* fData = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+pi-X/rga_sp19_inb_epi+pi-X_skimmed.root");
     // TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+pi-X/rga_sp19_inb_clasdis_50nAbkg_rec_epi+pi-X_skimmed.root");
