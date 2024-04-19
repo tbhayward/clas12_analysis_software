@@ -135,6 +135,30 @@ std::map<int, std::vector<float>> pTEdges = {
 };
 
 
+
+// // Define bin edges for pT for each Q2-y bin
+// std::map<int, std::vector<float>> pTEdges = {
+//     {1, {0.00, 0.14, 0.21, 0.27, 0.34, 0.41, 0.47, 0.53, 0.60, 0.74, 1.00}},
+//     {2, {0.00, 0.14, 0.21, 0.27, 0.34, 0.41, 0.47, 0.53, 0.60, 0.74, 1.00}},
+//     {3, {0.00, 0.14, 0.21, 0.27, 0.34, 0.41, 0.47, 0.53, 0.60, 0.74, 1.00}},
+//     {4, {0.00, 0.14, 0.21, 0.27, 0.34, 0.41, 0.47, 0.53, 0.60, 0.74, 1.00}},
+//     {5, {0.00, 0.14, 0.21, 0.27, 0.34, 0.41, 0.47, 0.53, 0.60, 0.74, 1.00}},
+//     {6, {0.00, 0.14, 0.21, 0.27, 0.34, 0.41, 0.47, 0.53, 0.60, 0.74, 1.00}},
+//     {7, {0.00, 0.14, 0.21, 0.27, 0.34, 0.41, 0.47, 0.53, 0.60, 0.74, 1.00}},
+//     {8, {0.00, 0.14, 0.21, 0.27, 0.34, 0.41, 0.47, 0.53, 0.60, 0.74, 1.00}},
+//     {9, {0.00, 0.14, 0.21, 0.27, 0.34, 0.41, 0.47, 0.53, 0.60, 0.74, 1.00}},
+//     {10, {0.00, 0.14, 0.21, 0.27, 0.34, 0.41, 0.47, 0.53, 0.60, 0.74, 1.00}},
+//     {11, {0.00, 0.14, 0.21, 0.27, 0.34, 0.41, 0.47, 0.53, 0.60, 0.74, 1.00}},
+//     {12, {0.00, 0.14, 0.21, 0.27, 0.34, 0.41, 0.47, 0.53, 0.60, 0.74, 1.00}},
+//     {13, {0.00, 0.14, 0.21, 0.27, 0.34, 0.41, 0.47, 0.53, 0.60, 0.74, 1.00}},
+//     {14, {0.00, 0.14, 0.21, 0.27, 0.34, 0.41, 0.47, 0.53, 0.60, 0.74, 1.00}},
+//     {15, {0.00, 0.14, 0.21, 0.27, 0.34, 0.41, 0.47, 0.53, 0.60, 0.74, 1.00}},
+//     {16, {0.00, 0.14, 0.21, 0.27, 0.34, 0.41, 0.47, 0.53, 0.60, 0.74, 1.00}},
+//     {17, {0.00, 0.14, 0.21, 0.27, 0.34, 0.41, 0.47, 0.53, 0.60, 0.74, 1.00}}
+// };
+
+
+
 // Function to find bin index given value and bin edges
 int findBinIndex(float value, const std::vector<float>& edges) {
     for (size_t i = 0; i < edges.size() - 1; i++) {
@@ -230,7 +254,7 @@ int main() {
     double Q2Gen, yGen, phiGen, pTGen, zGen;
     tData->SetBranchAddress("Q2", &Q2Data);
     tData->SetBranchAddress("y", &yData);
-    tData->SetBranchAddress("phih", &phiData);
+    tData->SetBranchAddress("phi", &phiData);
     tData->SetBranchAddress("pT", &pTData);
     tData->SetBranchAddress("z", &zData);
     tData->SetBranchAddress("DepA", &DepAData);
@@ -238,12 +262,12 @@ int main() {
     tData->SetBranchAddress("DepV", &DepVData);
     tMCReco->SetBranchAddress("Q2", &Q2MC);
     tMCReco->SetBranchAddress("y", &yMC);
-    tMCReco->SetBranchAddress("phih", &phiMC);
+    tMCReco->SetBranchAddress("phi", &phiMC);
     tMCReco->SetBranchAddress("pT", &pTMC);
     tMCReco->SetBranchAddress("z", &zMC);
     tMCGene->SetBranchAddress("Q2", &Q2Gen);
     tMCGene->SetBranchAddress("y", &yGen);
-    tMCGene->SetBranchAddress("phih", &phiGen);
+    tMCGene->SetBranchAddress("phi", &phiGen);
     tMCGene->SetBranchAddress("pT", &pTGen);
     tMCGene->SetBranchAddress("z", &zGen);
 
