@@ -310,7 +310,6 @@ int main() {
                 // "binIndex" is the Q2-y bin
                 int histIndex = z_bin * num_pT_bins[binIndex] + pT_bin;
                 hData[binIndex][histIndex]->Fill(phiData);
-                std::cout << binIndex << " " << histIndex << " " << phiData << std::endl;
                 allBinParams[binIndex][histIndex].sumDepA += DepAData;
                 allBinParams[binIndex][histIndex].sumDepB += DepBData;
                 allBinParams[binIndex][histIndex].sumDepV += DepVData;
@@ -322,7 +321,8 @@ int main() {
 
     Long64_t nMCEntries = tMCReco->GetEntries();
     std::cout << "Looping over reconstructed MC. " << nMCEntries << " entries." << std::endl;
-    for (Long64_t i = 0; i < nMCEntries; ++i) {
+    // for (Long64_t i = 0; i < nMCEntries; ++i) {
+    for (Long64_t i = 0; i < 1000; ++i) {
         tMCReco->GetEntry(i);
 
         int binIndex = DetermineQ2yBin(Q2MC, yMC) - 1; // Adjusted for 0-based indexing
@@ -420,6 +420,7 @@ int main() {
 
                 // Setup for hData histograms
                 TH1F* hDataHist = hData[bin][histIndex];
+                std::cout << hData[bin][histIndex] << std::endl;
                 hDataHist->SetStats(0); // Remove the stat box
                 hDataHist->SetLineColor(kBlue + 2);
                 hDataHist->SetLineWidth(2);
