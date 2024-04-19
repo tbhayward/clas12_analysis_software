@@ -395,6 +395,7 @@ int main() {
         }
     }
 
+    std::cout << hData[0][0]->GetEntries() << " THIS IS THE BEFORE" << std::endl;
     /* ~~~~~~~~~~~~~~~~~~~~~~ */ 
     // First loop is for plotting the normalized data and reconstructed and generated Monte Carlo plots
     // Declare the TLatex object here, before the loop
@@ -420,7 +421,6 @@ int main() {
 
                 // Setup for hData histograms
                 TH1F* hDataHist = hData[bin][histIndex];
-                std::cout << hData[bin][histIndex]->GetEntries() << std::endl;
                 hDataHist->SetStats(0); // Remove the stat box
                 hDataHist->SetLineColor(kBlue + 2);
                 hDataHist->SetLineWidth(2);
