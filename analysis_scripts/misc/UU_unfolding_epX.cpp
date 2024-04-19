@@ -308,7 +308,6 @@ int main() {
             // if (pT_bin != -1 && z_bin != -1 && p_phiData < phi_min || p_phiData > phi_max) {
                 // index of bins is flipped (per Kyungseon's request), first bin is highest z (top left)
                 // "binIndex" is the Q2-y bin
-                std::cout<<"hey"<<std::endl;
                 int histIndex = z_bin * num_pT_bins[binIndex] + pT_bin;
                 hData[binIndex][histIndex]->Fill(phiData);
                 allBinParams[binIndex][histIndex].sumDepA += DepAData;
@@ -442,6 +441,7 @@ int main() {
 
                 // Setup for hData histograms
                 TH1F* hDataHist = hData[bin][histIndex];
+                std::cout << hDataHist->GetEntries() << " counts here for check" << std::endl;
                 hDataHist->SetStats(0); // Remove the stat box
                 hDataHist->SetLineColor(kBlue + 2);
                 hDataHist->SetLineWidth(2);
