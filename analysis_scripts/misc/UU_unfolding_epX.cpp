@@ -393,29 +393,6 @@ int main() {
         }
     }
 
-    // Get the TTrees
-    TTree* tDISData;
-    TTree* tDISMCReco;
-    TTree* tDISMCGene;
-    fDISData->GetObject("PhysicsEvents", tDISData);
-    fDISMCReco->GetObject("PhysicsEvents", tDISMCReco);
-    fDISMCGene->GetObject("PhysicsEvents", tDISMCGene);
-    if (!tDISData || !tDISMCReco || !tDISMCGene) {
-        std::cerr << "Tree not found in one or more files." << std::endl;
-        return -1;
-    }
-    // Define vectors to store counts for each bin
-    std::vector<int> countDISData(17, 0);
-    std::vector<int> countDISReco(17, 0);
-    std::vector<int> countDISGene(17, 0);
-    // Update counts for each TTree
-    std::cout << "Looping over data. " << tDISData->GetEntries() << " entries." << std::endl;
-    updateCounts(tDISData, countDISData);
-    std::cout << "Looping over rec MC. " << tDISMCReco->GetEntries() << " entries." << std::endl;
-    updateCounts(tDISMCReco, countDISReco);
-    std::cout << "Looping over gen MC. " << tDISMCGene->GetEntries() << " entries." << std::endl;
-    updateCounts(tDISMCGene, countDISGene);
-
     /* ~~~~~~~~~~~~~~~~~~~~~~ */ 
     // First loop is for plotting the normalized data and reconstructed and generated Monte Carlo plots
     // Declare the TLatex object here, before the loop
@@ -488,6 +465,29 @@ int main() {
         canvas->SaveAs(Form("output3/yields/Q2yBin_%d.png", bin + 1));
         delete canvas;
     }
+
+    // Get the TTrees
+    TTree* tDISData;
+    TTree* tDISMCReco;
+    TTree* tDISMCGene;
+    fDISData->GetObject("PhysicsEvents", tDISData);
+    fDISMCReco->GetObject("PhysicsEvents", tDISMCReco);
+    fDISMCGene->GetObject("PhysicsEvents", tDISMCGene);
+    if (!tDISData || !tDISMCReco || !tDISMCGene) {
+        std::cerr << "Tree not found in one or more files." << std::endl;
+        return -1;
+    }
+    // Define vectors to store counts for each bin
+    std::vector<int> countDISData(17, 0);
+    std::vector<int> countDISReco(17, 0);
+    std::vector<int> countDISGene(17, 0);
+    // Update counts for each TTree
+    std::cout << "Looping over data. " << tDISData->GetEntries() << " entries." << std::endl;
+    updateCounts(tDISData, countDISData);
+    std::cout << "Looping over rec MC. " << tDISMCReco->GetEntries() << " entries." << std::endl;
+    updateCounts(tDISMCReco, countDISReco);
+    std::cout << "Looping over gen MC. " << tDISMCGene->GetEntries() << " entries." << std::endl;
+    updateCounts(tDISMCGene, countDISGene);
 
     // Calculate the acceptance in each of the bins
     std::vector<std::vector<TH1F*>> hAcceptance(17);
