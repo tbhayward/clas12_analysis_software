@@ -193,7 +193,7 @@ int main() {
     // TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+X/rga_sp19_inb_clasdis_50nAbkg_rec_epi+X_skimmed.root");
     // TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+X/rga_sp19_inb_clasdis_50nAbkg_gen_epi+X_skimmed.root");
     
-    TFile* fData = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+pi-X/rga_sp19_inb_epi+pi-X_skimmed.root");
+    TFile* fData = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+pi-X/rga_sp19_inb_epi+pi-X.root");
     TFile* fMCReco = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+pi-X/rga_sp19_inb_clasdis_50nAbkg_rec_epi+pi-X_skimmed.root");
     TFile* fMCGene = TFile::Open("/volatile/clas12/thayward/multiplicities/data/epi+pi-X/rga_sp19_inb_clasdis_50nAbkg_gen_epi+pi-X_skimmed.root");
 
