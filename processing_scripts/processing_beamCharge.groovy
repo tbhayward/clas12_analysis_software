@@ -53,6 +53,7 @@ public class processing_beamCharge {
 		int runnum;
 		while (current_file < n_files) {
 			beamChargeMax = 0;
+			runnum = 0;
 			println(); println(); println("Opening file "+Integer.toString(current_file+1)
 				+" out of "+n_files); println(); println();
 			// limit to a certain number of files defined by n_files
@@ -89,8 +90,9 @@ public class processing_beamCharge {
 
 				// get run and event numbers
 				event = reader.getNextEvent();
-			    runnum = event.getBank("RUN::config").getInt('run',0); 
-			    println(runnum);
+				if (runnum==0) {
+					runnum = event.getBank("RUN::config").getInt('run',0);
+				}
 
 			}
 			beamChargeList+=runnum.toString()+","+beamChargeMax.toString()+",";
