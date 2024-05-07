@@ -23,8 +23,8 @@ void compareTrees(const char* file1, const char* file2, const char* output,
     const char* output2, double lineValue) {
     // Define the momentum bin edges
     
-    // electrons
-    std::vector<double> binEdges = {6.0,7.5,7.75,8,8.25,8.5,8.67,9,9.15,9.3,10.6};
+    // // electrons
+    // std::vector<double> binEdges = {6.0,7.5,7.75,8,8.25,8.5,8.67,9,9.15,9.3,10.6};
 
     // // pions and kaon
     // std::vector<double> binEdges = {0.6,1.3,1.8,2.0,2.1,2.2,2.3,2.4,2.5,2.6,2.8,3.0,3.2,3.4,3.8,5.0};
@@ -33,9 +33,9 @@ void compareTrees(const char* file1, const char* file2, const char* output,
     // std::vector<double> binEdges = {0.6,2.2,3.0,5.0};
 
 
-    // // proton 
-    // std::vector<double> binEdges = 
-    //     {0,0.6,0.625,0.65,0.675,0.7,0.725,0.75,0.8,1.0,1.1,1.2,1.4,1.8,2.4,3.0};
+    // proton 
+    std::vector<double> binEdges = 
+        {0,0.6,0.625,0.65,0.675,0.7,0.725,0.75,0.8,1.0,1.1,1.2,1.4,1.8,2.4,3.0};
     
 
     int nBins = binEdges.size() - 1;
@@ -49,9 +49,9 @@ void compareTrees(const char* file1, const char* file2, const char* output,
     // Create histograms for each bin
     std::vector<TH1D*> hist1, hist2;
     for (int i = 0; i < nBins; ++i) {
-        // electron proton 
-        hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.75, 1.1));
-        hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 0.75, 1.1));
+        // // electron proton 
+        // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.75, 1.1));
+        // hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 0.75, 1.1));
 
         // // pi+ 
         // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.6, 1.2));
@@ -69,9 +69,9 @@ void compareTrees(const char* file1, const char* file2, const char* output,
         // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 50, 0.5, 2.5));
         // hist2.push_back(new TH1D(Form("hist2_%d", i), "", 50, 0.5, 2.5));
 
-        // // proton rho
-        // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.1, 0.9));
-        // hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 0.1, 0.9));
+        // proton rho
+        hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 0.1, 0.9));
+        hist2.push_back(new TH1D(Form("hist2_%d", i), "", 100, 0.1, 0.9));
 
         // // // proton f2
         // hist1.push_back(new TH1D(Form("hist1_%d", i), "", 100, 1.2, 1.8));
