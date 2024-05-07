@@ -258,10 +258,10 @@ void compareTrees(const char* file1, const char* file2, const char* output,
     gr2->Draw("P SAME");
 
     // Set the Y-axis range to be lineValue +/- offset
-    // double yAxisMin = lineValue - 0.12; // proton, pion
-    // double yAxisMax = lineValue + 0.04; // proton, pion
-    double yAxisMin = lineValue - 0.04; // kaon
-    double yAxisMax = lineValue + 0.08; // kaon
+    double yAxisMin = lineValue - 0.12; // proton, pion
+    double yAxisMax = lineValue + 0.04; // proton, pion
+    // double yAxisMin = lineValue - 0.04; // kaon
+    // double yAxisMax = lineValue + 0.08; // kaon
     gr1->GetYaxis()->SetRangeUser(yAxisMin, yAxisMax);
     gr2->GetYaxis()->SetRangeUser(yAxisMin, yAxisMax);
 
@@ -280,8 +280,8 @@ void compareTrees(const char* file1, const char* file2, const char* output,
     // Create and add a legend
     TLegend* legend = new TLegend(0.1, 0.7, 0.5, 0.9);
     legend->SetTextSize(0.04);
-    legend->AddEntry(gr1, "Uncorrected", "p");
-    legend->AddEntry(gr2, "Corrected", "p");
+    legend->AddEntry(gr1, "pass-2", "p");
+    legend->AddEntry(gr2, "DAF", "p");
     legend->Draw();
 
     // Optionally, add more settings for axis labels, title, etc.
@@ -303,8 +303,8 @@ void compareTrees(const char* file1, const char* file2, const char* output,
     // Move the legend to the bottom right
     TLegend* legend2 = new TLegend(0.7, 0.1, 0.9, 0.3);
     legend2->SetTextSize(0.04);
-    legend2->AddEntry(gr1, "Uncorrected", "p");
-    legend2->AddEntry(gr2, "Corrected", "p");
+    legend2->AddEntry(gr1, "pass-2", "p");
+    legend2->AddEntry(gr2, "DAF", "p");
     legend2->Draw();
     c2->SaveAs(output2);
 
