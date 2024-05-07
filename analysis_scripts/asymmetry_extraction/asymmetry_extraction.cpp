@@ -261,7 +261,6 @@ int main(int argc, char *argv[]) {
   }
   cout << endl;
 
-  std::cout << " Hello WORLD " << std::endl;
   // load run info from external csv file
   load_run_info_from_csv("imports/clas12_run_info.csv");
   cout<< endl << endl <<"-- Loaded information from run_info_rgc.csv" << endl;

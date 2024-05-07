@@ -205,8 +205,6 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
         "helicity", "beam_pol", "target_pol", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"
     };
 
-    std::cout << " Hello WORLD " << std::endl;
-
     TObjArray* branches = dataReader.GetTree()->GetListOfBranches();
     if (!branches) {
         std::cerr << "Error: Unable to retrieve branch list from data TTree." << std::endl;
