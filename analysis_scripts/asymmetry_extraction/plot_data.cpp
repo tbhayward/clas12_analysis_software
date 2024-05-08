@@ -143,13 +143,13 @@ void createIntegratedKinematicPlots() {
         double dataScale = 0;
         double mcScale = 0;
         if (dataHist->Integral() != 0) {
-            // dataScale = dataHist->Integral();
-            dataScale = data_count;
+            dataScale = dataHist->Integral();
+            // dataScale = data_count;
             dataHist->Scale(1.0 / dataScale);
         }
         if (mcHist->Integral() != 0) {
-            // mcScale = mcHist->Integral();
-            mcScale = mc_count;
+            mcScale = mcHist->Integral();
+            // mcScale = mc_count;
             mcHist->Scale(1.0 / mcScale);
         }
 

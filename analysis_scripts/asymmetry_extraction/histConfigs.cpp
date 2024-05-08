@@ -2,7 +2,7 @@
 #include "TMath.h" 
 
 std::map<std::string, HistConfig> histConfigs = {
-      {"runnum", {2000, 4000, 6000}},
+      {"runnum", {10000, 4000, 6000}},
       {"Delta_eta", {100, -3, 3}},
       {"mc_Delta_eta", {100, -3, 3}},
       {"Delta_phi", {100, 0, 2*TMath::Pi()}},
@@ -23,8 +23,8 @@ std::map<std::string, HistConfig> histConfigs = {
       {"mc_DepV", {100, 0, 2}},
       {"DepW", {100, 0, 1}},
       {"mc_DepW", {100, 0, 1}},
-      {"e_p", {20, 1, 9}},
-      {"mc_e_p", {20, 1, 9}},
+      {"e_p", {100, 1, 9}},
+      {"mc_e_p", {100, 1, 9}},
       {"e_phi", {100, 0, 2 * TMath::Pi()}},
       {"mc_e_phi", {100, 0, 2 * TMath::Pi()}},
       {"eta", {100, -3, 3}},
@@ -116,8 +116,8 @@ std::map<std::string, HistConfig> histConfigs = {
       {"mc_p2_theta", {100, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
       {"p3_theta", {100, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
       {"mc_p3_theta", {100, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
-      {"Q2", {20, 0, 9}},
-      {"mc_Q2", {20, 0, 9}},
+      {"Q2", {100, 0, 9}},
+      {"mc_Q2", {100, 0, 9}},
       {"runnum", {100, 0, 0}},
       {"theta", {100, 0, TMath::Pi()}},
       {"mc_theta", {100, 0, TMath::Pi()}},
@@ -139,10 +139,10 @@ std::map<std::string, HistConfig> histConfigs = {
       {"mc_vz_p2", {100, -15, 15}},
       {"vz_p3", {100, -15, 15}},
       {"mc_vz_p3", {100, -15, 15}},
-      {"W", {20, 2, 4}},
-      {"mc_W", {20, 2, 4}},
-      {"x", {20, 0, 0.8}},
-      {"mc_x", {20, 0, 0.8}},
+      {"W", {100, 2, 4}},
+      {"mc_W", {100, 2, 4}},
+      {"x", {100, 0, 0.8}},
+      {"mc_x", {100, 0, 0.8}},
       {"xF", {100, -1, 1}},
       {"mc_xF", {100, -1, 1}},
       {"xF1", {100, -1, 1}},
@@ -157,8 +157,8 @@ std::map<std::string, HistConfig> histConfigs = {
       {"mc_xF13", {100, -1, 1}},
       {"xF23", {100, -1, 1}},
       {"mc_xF23", {100, -1, 1}},
-      {"y", {20, 0.0, 1.00}},
-      {"mc_y", {20, 0.0, 1.00}},
+      {"y", {100, 0.0, 1.00}},
+      {"mc_y", {100, 0.0, 1.00}},
       {"z", {100, 0, 1}},
       {"mc_z", {100, 0, 1}},
       {"z1", {100, 0, 1}},
