@@ -800,7 +800,7 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
       else if (*helicity < 0 && *target_pol > 0) {  histNegPos->Fill(*phi); }
 
       if (*helicity > 0 && (*target_pol >= 0) ) { histPosPos->Fill(*phi); } 
-      else if (*helicity < 0 && (*target_pol =< 0) ) {  histNegNeg->Fill(*phi); } 
+      else if (*helicity < 0 && (*target_pol <= 0) ) {  histNegNeg->Fill(*phi); } 
       // this structure allows the same script to run for both polarized and unpolarized targets
       // if it is an RGC run with a polarized target (runnum > 11571) then we assign all four
       // combinations, if it is an earlier experiment then we only assign PosPos and NegNeg
