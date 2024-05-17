@@ -123,7 +123,7 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
         double c_counts = h_pTpT_carbon->GetBinContent(i);
         if (nh3_counts > 0) {
             double dilution = (nh3_counts - c_counts) / nh3_counts;
-            double error = std::sqrt((nh3_counts - c_counts) * (nh3_counts - c_counts) * nh3_counts + (c_counts * c_counts)) / nh3_counts;
+            double error = std::sqrt((c_counts / nh3_counts) * (c_counts / nh3_counts) / nh3_counts + c_counts / (nh3_counts * nh3_counts));
             gr_dilution->SetPoint(i - 1, h_pTpT_nh3->GetBinCenter(i), dilution);
             gr_dilution->SetPointError(i - 1, 0, error);
         }
