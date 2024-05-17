@@ -116,7 +116,7 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     // Add legend
     TLegend *leg_pTpT = new TLegend(0.55, 0.8, 0.9, 0.9);
     leg_pTpT->SetTextSize(0.04);
-    leg_pTpT->AddEntry(h_pTpT_nh3, "{NH}_{3}", "l");
+    leg_pTpT->AddEntry(h_pTpT_nh3, "NH_{3}", "l");
     leg_pTpT->AddEntry(h_pTpT_carbon, "s*C", "l");
     leg_pTpT->Draw();
 
