@@ -118,9 +118,9 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     c1->cd(4);
     gPad->SetLeftMargin(0.15);
     TGraphErrors *gr_dilution = new TGraphErrors();
-    for (int i = 1; i <= h_xF2_nh3->GetNbinsX(); ++i) {
-        double nh3_counts = h_xF2_nh3->GetBinContent(i);
-        double c_counts = h_xF2_carbon->GetBinContent(i) * scale_factor;
+    for (int i = 1; i <= h_pTpT_nh3->GetNbinsX(); ++i) {
+        double nh3_counts = h_pTpT_nh3->GetBinContent(i);
+        double c_counts = h_pTpT_carbon->GetBinContent(i) * scale_factor;
         if (nh3_counts > 0) {
             double dilution = (nh3_counts - c_counts) / nh3_counts;
             double error = std::sqrt((1 - dilution) * (1 - dilution) * nh3_counts + dilution * dilution * c_counts) / nh3_counts;
