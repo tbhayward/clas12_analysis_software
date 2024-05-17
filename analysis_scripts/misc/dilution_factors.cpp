@@ -130,7 +130,7 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     TGraphErrors *gr_dilution = new TGraphErrors();
     for (int i = 1; i <= h_pTpT_nh3->GetNbinsX(); ++i) {
         double nh3_counts = h_pTpT_nh3->GetBinContent(i);
-        double c_counts = h_pTpT_carbon->GetBinContent(i);
+        double c_counts = (h_pTpT_carbon->GetBinContent(i))/fit_value;
         if (nh3_counts > 0) {
             double dilution = (nh3_counts - c_counts) / nh3_counts;
             double error = std::sqrt((fit_value * fit_value * c_counts * c_counts / nh3_counts / nh3_counts / nh3_counts) +
