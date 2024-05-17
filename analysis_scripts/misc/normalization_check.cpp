@@ -51,10 +51,10 @@ void normalization_check(const char* inputFileName) {
     tree->SetBranchAddress("Delta_phi", &Delta_phi);
 
     // Create histograms
-    TH1F* h1 = new TH1F("h1", "Helicity +, Target Pol +;#Delta_{#phi};Counts/FC", 200, 0, 2 * TMath::Pi());
-    TH1F* h2 = new TH1F("h2", "Helicity +, Target Pol -;#Delta_{#phi};Counts/FC", 200, 0, 2 * TMath::Pi());
-    TH1F* h3 = new TH1F("h3", "Helicity -, Target Pol +;#Delta_{#phi};Counts/FC", 200, 0, 2 * TMath::Pi());
-    TH1F* h4 = new TH1F("h4", "Helicity -, Target Pol -;#Delta_{#phi};Counts/FC", 200, 0, 2 * TMath::Pi());
+    TH1F* h1 = new TH1F("h1", "Helicity +, Target Pol +;#Delta_{#phi};Counts/nC", 200, 0, 2 * TMath::Pi());
+    TH1F* h2 = new TH1F("h2", "Helicity +, Target Pol -;#Delta_{#phi};Counts/nC", 200, 0, 2 * TMath::Pi());
+    TH1F* h3 = new TH1F("h3", "Helicity -, Target Pol +;#Delta_{#phi};Counts/nC", 200, 0, 2 * TMath::Pi());
+    TH1F* h4 = new TH1F("h4", "Helicity -, Target Pol -;#Delta_{#phi};Counts/nC", 200, 0, 2 * TMath::Pi());
 
     // Accumulate charges for normalization
     double charge_h1 = 0.0, charge_h2 = 0.0, charge_h3 = 0.0, charge_h4 = 0.0;
