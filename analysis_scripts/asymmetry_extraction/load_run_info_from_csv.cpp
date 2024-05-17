@@ -54,7 +54,6 @@ void load_run_info_from_csv(const std::string& filename) {
         std::cerr << "Exception message: " << e.what() << "\n";
         continue; // Skip to next line or handle error appropriately
     }
-    std::cout << info << std::endl;
 
     // Read the total charge from the stringstream and convert it to a double
     std::getline(ss, info, ',');
