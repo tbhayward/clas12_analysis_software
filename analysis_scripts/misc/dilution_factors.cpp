@@ -161,8 +161,8 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     // Fifth panel: xB histograms scaled by the fit constant
     c1->cd(5);
     gPad->SetLeftMargin(0.15);
-    TH1D *h_xB_nh3 = new TH1D("h_xB_nh3", "x_{B} Distribution; x_{B}; Counts", 100, 0.05, 0.7);
-    TH1D *h_xB_carbon = new TH1D("h_xB_carbon", "x_{B} Distribution; x_{B}; Counts", 100, 0.05, 0.7);
+    TH1D *h_xB_nh3 = new TH1D("h_xB_nh3", "x_{B} Distribution; x_{B}; Counts", 100, 0.1, 0.7);
+    TH1D *h_xB_carbon = new TH1D("h_xB_carbon", "x_{B} Distribution; x_{B}; Counts", 100, 0.1, 0.7);
     tree_nh3->Draw("x>>h_xB_nh3");
     tree_carbon->Draw("x>>h_xB_carbon");
 
@@ -203,7 +203,7 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     gr_dilution_xB->Draw("AP");
 
     // Fit to a third-degree polynomial
-    TF1 *fit_poly_xB = new TF1("fit_poly_xB", "[0] + [1]*x + [2]*x^2 + [3]*x^3", 0.05, 0.7);
+    TF1 *fit_poly_xB = new TF1("fit_poly_xB", "[0] + [1]*x + [2]*x^2 + [3]*x^3", 0.1, 0.7);
     gr_dilution_xB->Fit(fit_poly_xB, "R");
     fit_poly_xB->SetLineColor(kRed);
     fit_poly_xB->Draw("SAME");
