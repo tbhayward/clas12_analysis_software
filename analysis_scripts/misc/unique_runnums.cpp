@@ -13,7 +13,7 @@ int main() {
 
     // Get the tree from the file
     TTree *tree;
-    file->GetObject("PhysicsData", tree);
+    file->GetObject("PhysicsEvents", tree);
     if (!tree) {
         std::cerr << "Error: PhysicsData tree not found!" << std::endl;
         file->Close();
