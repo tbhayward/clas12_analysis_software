@@ -30,7 +30,6 @@ std::map<int, RunInfo> parseCSV(const std::string& filename) {
         char comma;
         ss >> runnum >> comma >> info.total_charge >> comma >> info.pos_beam_charge >> comma >> info.neg_beam_charge >> comma >> info.target_pol >> comma >> info.target_pol_unc;
         runInfoMap[runnum] = info;
-        std::cout << runnum << std::endl;
     }
     return runInfoMap;
 }
@@ -51,12 +50,13 @@ void normalization_check(const char* inputFileName) {
     tree->SetBranchAddress("Delta_phi", &Delta_phi);
 
     // Create histograms
-    TH1F* h1 = new TH1F("h1", "Helicity +, Target Pol +;#Delta_{#phi};Counts/FC", 200, 0, 2*3.14159);
-    TH1F* h2 = new TH1F("h2", "Helicity +, Target Pol -;#Delta_{#phi};Counts/FC", 200, 0, 2*3.14159);
-    TH1F* h3 = new TH1F("h3", "Helicity -, Target Pol +;#Delta_{#phi};Counts/FC", 200, 0, 2*3.14159);
-    TH1F* h4 = new TH1F("h4", "Helicity -, Target Pol -;#Delta_{#phi};Counts/FC", 200, 0, 2*3.14159);
+    TH1F* h1 = new TH1F("h1", "Helicity +, Target Pol +;#Delta_{#phi};Counts", 100, 0, 2 * TMath::Pi());
+    TH1F* h2 = new TH1F("h2", "Helicity +, Target Pol -;#Delta_{#phi};Counts", 100, 0, 2 * TMath::Pi());
+    TH1F* h3 = new TH1F("h3", "Helicity -, Target Pol +;#Delta_{#phi};Counts", 100, 0, 2 * TMath::Pi());
+    TH1F* h4 = new TH1F("h4", "Helicity -, Target Pol -;#Delta_{#phi};Counts", 100, 0, 2 * TMath::Pi());
 
-    std::map<int, double> totalCharges;
+    // Accumulate charges for normalization
+    double charge_h1 = 0.0, charge_h2 = 0.0, charge_h3 = 0.0, charge_h4 = 0.0;
 
     // Loop over the tree
     Long64_t nentries = tree->GetEntries();
@@ -65,32 +65,33 @@ void normalization_check(const char* inputFileName) {
         if (helicity == 0) continue; // Skip if helicity is 0
 
         double target_pol = runInfoMap[runnum].target_pol;
-        double charge = runInfoMap[runnum].total_charge;
-        totalCharges[runnum] += charge;
+        double pos_beam_charge = runInfoMap[runnum].pos_beam_charge;
+        double neg_beam_charge = runInfoMap[runnum].neg_beam_charge;
 
         if (helicity > 0) {
             if (target_pol > 0) {
                 h1->Fill(Delta_phi);
+                charge_h1 += pos_beam_charge;
             } else {
                 h2->Fill(Delta_phi);
+                charge_h2 += pos_beam_charge;
             }
         } else {
             if (target_pol > 0) {
                 h3->Fill(Delta_phi);
+                charge_h3 += neg_beam_charge;
             } else {
                 h4->Fill(Delta_phi);
+                charge_h4 += neg_beam_charge;
             }
         }
     }
 
-    // // Normalize histograms
-    // for (const auto& entry : totalCharges) {
-    //     double charge = entry.second;
-    //     h1->Scale(1.0 / charge);
-    //     h2->Scale(1.0 / charge);
-    //     h3->Scale(1.0 / charge);
-    //     h4->Scale(1.0 / charge);
-    // }
+    // Normalize histograms
+    if (charge_h1 > 0) h1->Scale(1.0 / charge_h1);
+    if (charge_h2 > 0) h2->Scale(1.0 / charge_h2);
+    if (charge_h3 > 0) h3->Scale(1.0 / charge_h3);
+    if (charge_h4 > 0) h4->Scale(1.0 / charge_h4);
 
     // Draw histograms
     TCanvas* c = new TCanvas("c", "Normalization Check", 800, 600);
@@ -106,10 +107,10 @@ void normalization_check(const char* inputFileName) {
     h4->Draw("HIST SAME");
 
     TLegend* legend = new TLegend(0.75, 0.75, 0.9, 0.9);
-    legend->AddEntry(h1, "Beam Pol +, Target Pol +", "l");
-    legend->AddEntry(h2, "Beam Pol +, Target Pol -", "l");
-    legend->AddEntry(h3, "Beam Pol -, Target Pol +", "l");
-    legend->AddEntry(h4, "Beam Pol -, Target Pol -", "l");
+    legend->AddEntry(h1, "Helicity +, Target Pol +", "l");
+    legend->AddEntry(h2, "Helicity +, Target Pol -", "l");
+    legend->AddEntry(h3, "Helicity -, Target Pol +", "l");
+    legend->AddEntry(h4, "Helicity -, Target Pol -", "l");
     legend->Draw();
 
     c->SaveAs("normalization_check.pdf");
