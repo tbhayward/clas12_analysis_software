@@ -48,6 +48,7 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     // First panel: plot xF2 histograms
     c1->cd(1);
     gPad->SetLeftMargin(0.15);
+    gPad->SetLogy(); // Log scale to better see differences
     h_xF2_nh3->SetLineColor(kBlue);
     h_xF2_carbon->SetLineColor(kRed);
     h_xF2_nh3->Draw();
@@ -59,11 +60,14 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     leg->AddEntry(h_xF2_carbon, "Carbon", "l");
     leg->Draw();
 
+    // Remove statboxes
+    h_xF2_nh3->SetStats(0);
+    h_xF2_carbon->SetStats(0);
+
     // Second panel: ratio of NH3 to Carbon counts
     c1->cd(2);
     gPad->SetLeftMargin(0.15);
     TGraphErrors *gr_ratio = new TGraphErrors();
-    TH1D *h_ratio = new TH1D("h_ratio", "NH3/Carbon Ratio; xF2; Ratio", 100, -2.5, 0);
     for (int i = 1; i <= h_xF2_nh3->GetNbinsX(); ++i) {
         double nh3_counts = h_xF2_nh3->GetBinContent(i);
         double c_counts = h_xF2_carbon->GetBinContent(i);
@@ -72,8 +76,6 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
             double error = ratio * std::sqrt(1 / nh3_counts + 1 / c_counts);
             gr_ratio->SetPoint(i - 1, h_xF2_nh3->GetBinCenter(i), ratio);
             gr_ratio->SetPointError(i - 1, 0, error);
-            h_ratio->SetBinContent(i, ratio);
-            h_ratio->SetBinError(i, error);
         }
     }
     gr_ratio->SetTitle("NH3 to Carbon Ratio; xF2; Ratio");
@@ -82,15 +84,15 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
 
     // Fit the data from -2.5 to -1 to a constant
     TF1 *fit_const = new TF1("fit_const", "[0]", -2.5, -1);
-    h_ratio->Fit(fit_const, "R");
+    gr_ratio->Fit(fit_const, "R");
     fit_const->SetLineColor(kRed);
     fit_const->Draw("SAME");
 
     // Third panel: pTpT histograms scaled by the fit constant
     c1->cd(3);
     gPad->SetLeftMargin(0.15);
-    TH1D *h_pTpT_nh3 = new TH1D("h_pTpT_nh3", "pTpT Distribution; pTpT; Counts", 100, 0, 1);
-    TH1D *h_pTpT_carbon = new TH1D("h_pTpT_carbon", "pTpT Distribution; pTpT; Counts", 100, 0, 1);
+    TH1D *h_pTpT_nh3 = new TH1D("h_pTpT_nh3", "pTpT Distribution; pTpT; Counts", 100, 0, 0.8);
+    TH1D *h_pTpT_carbon = new TH1D("h_pTpT_carbon", "pTpT Distribution; pTpT; Counts", 100, 0, 0.8);
     tree_nh3->Draw("pTpT>>h_pTpT_nh3");
     tree_carbon->Draw("pTpT>>h_pTpT_carbon");
 
@@ -108,6 +110,10 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     leg_pTpT->AddEntry(h_pTpT_carbon, "Carbon (scaled)", "l");
     leg_pTpT->Draw();
 
+    // Remove statboxes
+    h_pTpT_nh3->SetStats(0);
+    h_pTpT_carbon->SetStats(0);
+
     // Fourth panel: (NH3 - Carbon) / NH3 with fit to a third-degree polynomial
     c1->cd(4);
     gPad->SetLeftMargin(0.15);
@@ -117,17 +123,17 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
         double c_counts = h_xF2_carbon->GetBinContent(i) * scale_factor;
         if (nh3_counts > 0) {
             double dilution = (nh3_counts - c_counts) / nh3_counts;
-            double error = std::sqrt(nh3_counts + std::pow(c_counts * scale_factor, 2)) / nh3_counts;
+            double error = std::sqrt((1 - dilution) * (1 - dilution) * nh3_counts + dilution * dilution * c_counts) / nh3_counts;
             gr_dilution->SetPoint(i - 1, h_xF2_nh3->GetBinCenter(i), dilution);
             gr_dilution->SetPointError(i - 1, 0, error);
         }
     }
-    gr_dilution->SetTitle("Dilution Factor; xF2; (NH3 - Carbon) / NH3");
+    gr_dilution->SetTitle("Dilution Factor; pTpT; (NH3 - Carbon) / NH3");
     gr_dilution->SetMarkerStyle(20);
     gr_dilution->Draw("AP");
 
     // Fit to a third-degree polynomial
-    TF1 *fit_poly = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2 + [3]*x^3", -2.5, 1);
+    TF1 *fit_poly = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2 + [3]*x^3", 0, 0.8);
     gr_dilution->Fit(fit_poly, "R");
     fit_poly->SetLineColor(kRed);
     fit_poly->Draw("SAME");
@@ -143,7 +149,7 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     pt->Draw();
 
     // Save the canvas
-    c1->SaveAs("dilution_factors.png");
+    c1->SaveAs("dilution_factors_updated.png");
 
     // Clean up
     nh3->Close();
@@ -158,11 +164,11 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     delete fit_poly;
     delete pt;
     delete c1;
-}
+    }
 
 int main(int argc, char** argv) {
     if (argc != 3) {
-        std::cerr << "Usage: " << argv[0] << " <NH3 ROOT file> <Carbon ROOT file>" << std::endl;
+        std::cerr << “Usage: “ << argv[0] << “  ” << std::endl;
         return 1;
     }
 
