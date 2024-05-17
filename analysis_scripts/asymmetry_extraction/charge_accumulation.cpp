@@ -12,7 +12,7 @@ void charge_accumulation(TTreeReader& dataReader, const std::vector<RunInfo>& ru
     while (dataReader.Next()) {
         if (processedRuns.find(*runnum) == processedRuns.end()) {
             processedRuns.insert(*runnum);
-            std::cout << runnum << std::endl;
+            std::cout << *runnum << std::endl;
             // Find run_info for the current run and update cpp, cpm, cmp, cmm
             for (const auto& run_info : run_info_list) {
                 if (run_info.runnum == *runnum) {
