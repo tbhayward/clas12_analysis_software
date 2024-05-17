@@ -4,6 +4,7 @@
 #include <TCanvas.h>
 #include <TLegend.h>
 #include <TStyle.h>
+#include <TMath.h>
 #include <fstream>
 #include <sstream>
 #include <map>
