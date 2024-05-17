@@ -264,7 +264,7 @@ int main(int argc, char *argv[]) {
   // load run info from external csv file
   load_run_info_from_csv("imports/clas12_run_info.csv");
   cout<< endl << endl <<"-- Loaded information from run_info_rgc.csv" << endl;
-  cout << "Found " << run_info_list.size() << " runs." << endl;
+  cout << "Found " << run_info_list.size() << " runs in list." << endl;
   // charge_acuumulation determines the total charges from the runs in supplied dataFile
   // by comparing to master list of CLAS12 runs 
   charge_accumulation(dataReader, run_info_list);
@@ -274,10 +274,10 @@ int main(int argc, char *argv[]) {
   cout << "Total neg-neg charge: " << cmm << " (nC). ";
   cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << " (nC)."<< endl << endl;
 
-  createIntegratedKinematicPlots();
-  createIntegratedKinematicPlotsForBinsAndFits();
-  createCorrelationPlotsforrunnum();
-  createCorrelationPlots();
+  // createIntegratedKinematicPlots();
+  // createIntegratedKinematicPlotsForBinsAndFits();
+  // createCorrelationPlotsforrunnum();
+  // createCorrelationPlots();
   // createMisIDRatePlots();
   currentFits=0;
   dataReader.Restart(); mcReader.Restart();
