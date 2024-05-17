@@ -68,7 +68,6 @@ void normalization_check(const char* inputFileName) {
         totalCharges[runnum] += charge;
 
         if (helicity > 0) {
-            std::cout<<"hey"<<std::endl;
             if (target_pol > 0) {
                 h1->Fill(Delta_phi);
             } else {
