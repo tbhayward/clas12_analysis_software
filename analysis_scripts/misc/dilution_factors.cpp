@@ -149,7 +149,7 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     pt->Draw();
 
     // Save the canvas
-    c1->SaveAs("dilution_factors_updated.png");
+    c1->SaveAs("dilution_factors.png");
 
     // Clean up
     nh3->Close();
