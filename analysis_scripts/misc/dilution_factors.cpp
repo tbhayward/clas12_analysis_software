@@ -9,7 +9,8 @@
 #include <TLegend.h>
 #include <TGraphErrors.h>
 #include <TF1.h>
-#include <TPaveStats.h>
+#include <TPad.h>
+#include <TPaveText.h>
 
 void dilution_factors(const char* nh3_file, const char* c_file) {
     // Open the ROOT files
@@ -46,6 +47,7 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
 
     // First panel: plot xF2 histograms
     c1->cd(1);
+    gPad->SetLeftMargin(0.15);
     h_xF2_nh3->SetLineColor(kBlue);
     h_xF2_carbon->SetLineColor(kRed);
     h_xF2_nh3->Draw();
@@ -59,6 +61,7 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
 
     // Second panel: ratio of NH3 to Carbon counts
     c1->cd(2);
+    gPad->SetLeftMargin(0.15);
     TGraphErrors *gr_ratio = new TGraphErrors();
     TH1D *h_ratio = new TH1D("h_ratio", "NH3/Carbon Ratio; xF2; Ratio", 100, -2.5, 0);
     for (int i = 1; i <= h_xF2_nh3->GetNbinsX(); ++i) {
@@ -77,14 +80,15 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     gr_ratio->SetMarkerStyle(20);
     gr_ratio->Draw("AP");
 
-    // Fit the data from -2.5 to 0 to a constant
-    TF1 *fit_const = new TF1("fit_const", "[0]", -2.5, 0);
+    // Fit the data from -2.5 to -1 to a constant
+    TF1 *fit_const = new TF1("fit_const", "[0]", -2.5, -1);
     h_ratio->Fit(fit_const, "R");
     fit_const->SetLineColor(kRed);
     fit_const->Draw("SAME");
 
     // Third panel: pTpT histograms scaled by the fit constant
     c1->cd(3);
+    gPad->SetLeftMargin(0.15);
     TH1D *h_pTpT_nh3 = new TH1D("h_pTpT_nh3", "pTpT Distribution; pTpT; Counts", 100, 0, 1);
     TH1D *h_pTpT_carbon = new TH1D("h_pTpT_carbon", "pTpT Distribution; pTpT; Counts", 100, 0, 1);
     tree_nh3->Draw("pTpT>>h_pTpT_nh3");
@@ -106,6 +110,7 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
 
     // Fourth panel: (NH3 - Carbon) / NH3 with fit to a third-degree polynomial
     c1->cd(4);
+    gPad->SetLeftMargin(0.15);
     TGraphErrors *gr_dilution = new TGraphErrors();
     for (int i = 1; i <= h_xF2_nh3->GetNbinsX(); ++i) {
         double nh3_counts = h_xF2_nh3->GetBinContent(i);
@@ -128,18 +133,17 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     fit_poly->Draw("SAME");
 
     // Add fit parameters box
-    TPaveStats *stats = new TPaveStats(0.7, 0.7, 0.9, 0.9, "brNDC");
-    stats->SetBorderSize(1);
-    stats->SetTextAlign(12);
-    stats->SetFillStyle(0);
-    stats->AddText(Form("p0 = %.3f", fit_poly->GetParameter(0)));
-    stats->AddText(Form("p1 = %.3f", fit_poly->GetParameter(1)));
-    stats->AddText(Form("p2 = %.3f", fit_poly->GetParameter(2)));
-    stats->AddText(Form("p3 = %.3f", fit_poly->GetParameter(3)));
-    stats->Draw();
+    TPaveText *pt = new TPaveText(0.7, 0.7, 0.9, 0.9, "brNDC");
+    pt->SetBorderSize(1);
+    pt->SetFillStyle(0);
+    pt->AddText(Form("p0 = %.3f", fit_poly->GetParameter(0)));
+    pt->AddText(Form("p1 = %.3f", fit_poly->GetParameter(1)));
+    pt->AddText(Form("p2 = %.3f", fit_poly->GetParameter(2)));
+    pt->AddText(Form("p3 = %.3f", fit_poly->GetParameter(3)));
+    pt->Draw();
 
     // Save the canvas
-    c1->SaveAs("dilution_factors.png");
+    c1->SaveAs("dilution_factors_updated.png");
 
     // Clean up
     nh3->Close();
