@@ -35,8 +35,8 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     }
 
     // Create histograms for xF2
-    TH1D *h_xF2_nh3 = new TH1D("h_xF2_nh3", "{x_F}_{2} Distribution; {x_F}_{2}; Counts", 100, -2.5, 1);
-    TH1D *h_xF2_carbon = new TH1D("h_xF2_carbon", "{x_F}_{2} Distribution; {x_F}_{2}; Counts", 100, -2.5, 1);
+    TH1D *h_xF2_nh3 = new TH1D("h_xF2_nh3", "x_{F}_{2} Distribution; x_{F}_{2}; Counts", 100, -2.5, 1);
+    TH1D *h_xF2_carbon = new TH1D("h_xF2_carbon", "x_{F}_{2} Distribution; x_{F}_{2}; Counts", 100, -2.5, 1);
 
     // Fill the histograms
     tree_nh3->Draw("xF2>>h_xF2_nh3");
@@ -57,7 +57,7 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
 
     // Add legend
     TLegend *leg = new TLegend(0.75, 0.8, 0.9, 0.9);
-    leg->AddEntry(h_xF2_nh3, "{NH}_{3}", "l");
+    leg->AddEntry(h_xF2_nh3, "NH_{3}", "l");
     leg->AddEntry(h_xF2_carbon, "C", "l");
     leg->Draw();
 
@@ -79,7 +79,7 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
             gr_ratio->SetPointError(i - 1, 0, error);
         }
     }
-    gr_ratio->SetTitle("{NH}_{3} to Carbon Ratio; {x_F}_{2}; Ratio");
+    gr_ratio->SetTitle("NH_{3} to Carbon Ratio; x_{F2}; Ratio");
     gr_ratio->SetMarkerStyle(20);
     gr_ratio->Draw("AP");
 
@@ -130,12 +130,10 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     TGraphErrors *gr_dilution = new TGraphErrors();
     for (int i = 1; i <= h_pTpT_nh3->GetNbinsX(); ++i) {
         double nh3_counts = h_pTpT_nh3->GetBinContent(i);
-        double c_counts = (h_pTpT_carbon->GetBinContent(i))/fit_value;
+        double c_counts = h_pTpT_carbon->GetBinContent(i);
         if (nh3_counts > 0) {
             double dilution = (nh3_counts - c_counts) / nh3_counts;
-            double error = std::sqrt((fit_value * fit_value * c_counts * c_counts / nh3_counts / nh3_counts / nh3_counts) +
-                                     (fit_value * fit_value * c_counts / nh3_counts / nh3_counts) +
-                                     (c_counts * c_counts * fit_error * fit_error / nh3_counts / nh3_counts));
+            double error = std::sqrt((c_counts / nh3_counts) * (c_counts / nh3_counts) / nh3_counts + c_counts / (nh3_counts * nh3_counts));
             gr_dilution->SetPoint(i - 1, h_pTpT_nh3->GetBinCenter(i), dilution);
             gr_dilution->SetPointError(i - 1, 0, error);
         }
