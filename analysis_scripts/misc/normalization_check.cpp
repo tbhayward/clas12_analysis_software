@@ -50,10 +50,10 @@ void normalization_check(const char* inputFileName) {
     tree->SetBranchAddress("Delta_phi", &Delta_phi);
 
     // Create histograms
-    TH1F* h1 = new TH1F("h1", "Helicity +, Target Pol +;Delta_phi;Counts", 100, -3.14, 3.14);
-    TH1F* h2 = new TH1F("h2", "Helicity +, Target Pol -;Delta_phi;Counts", 100, -3.14, 3.14);
-    TH1F* h3 = new TH1F("h3", "Helicity -, Target Pol +;Delta_phi;Counts", 100, -3.14, 3.14);
-    TH1F* h4 = new TH1F("h4", "Helicity -, Target Pol -;Delta_phi;Counts", 100, -3.14, 3.14);
+    TH1F* h1 = new TH1F("h1", "Helicity +, Target Pol +;#Delta_{#phi};Counts/FC", 100, 0, 2*3.14159);
+    TH1F* h2 = new TH1F("h2", "Helicity +, Target Pol -;#Delta_{#phi};Counts/FC", 100, 0, 2*3.14159);
+    TH1F* h3 = new TH1F("h3", "Helicity -, Target Pol +;#Delta_{#phi};Counts/FC", 100, 0, 2*3.14159);
+    TH1F* h4 = new TH1F("h4", "Helicity -, Target Pol -;#Delta_{#phi};Counts/FC", 100, 0, 2*3.14159);
 
     std::map<int, double> totalCharges;
 
@@ -105,10 +105,10 @@ void normalization_check(const char* inputFileName) {
     h4->Draw("HIST SAME");
 
     TLegend* legend = new TLegend(0.75, 0.75, 0.9, 0.9);
-    legend->AddEntry(h1, "Helicity +, Target Pol +", "l");
-    legend->AddEntry(h2, "Helicity +, Target Pol -", "l");
-    legend->AddEntry(h3, "Helicity -, Target Pol +", "l");
-    legend->AddEntry(h4, "Helicity -, Target Pol -", "l");
+    legend->AddEntry(h1, "Beam Pol +, Target Pol +", "l");
+    legend->AddEntry(h2, "Beam Pol +, Target Pol -", "l");
+    legend->AddEntry(h3, "Beam Pol -, Target Pol +", "l");
+    legend->AddEntry(h4, "Beam Pol -, Target Pol -", "l");
     legend->Draw();
 
     c->SaveAs("normalization_check.pdf");
