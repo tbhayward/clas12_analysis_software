@@ -120,11 +120,11 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     TGraphErrors *gr_dilution = new TGraphErrors();
     for (int i = 1; i <= h_pTpT_nh3->GetNbinsX(); ++i) {
         double nh3_counts = h_pTpT_nh3->GetBinContent(i);
-        double c_counts = h_pTpT_carbon->GetBinContent(i) * scale_factor;
+        double c_counts = h_pTpT_carbon->GetBinContent(i);
         if (nh3_counts > 0) {
             double dilution = (nh3_counts - c_counts) / nh3_counts;
-            double error = std::sqrt((1 - dilution) * (1 - dilution) * nh3_counts + dilution * dilution * c_counts) / nh3_counts;
-            gr_dilution->SetPoint(i - 1, h_xF2_nh3->GetBinCenter(i), dilution);
+            double error = std::sqrt((nh3_counts - c_counts) * (nh3_counts - c_counts) * nh3_counts + (c_counts * c_counts)) / nh3_counts;
+            gr_dilution->SetPoint(i - 1, h_pTpT_nh3->GetBinCenter(i), dilution);
             gr_dilution->SetPointError(i - 1, 0, error);
         }
     }
@@ -149,7 +149,7 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     pt->Draw();
 
     // Save the canvas
-    c1->SaveAs("dilution_factors.png");
+    c1->SaveAs("dilution_factors_updated.png");
 
     // Clean up
     nh3->Close();
@@ -164,11 +164,11 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     delete fit_poly;
     delete pt;
     delete c1;
-    }
+}
 
 int main(int argc, char** argv) {
     if (argc != 3) {
-        std::cerr << "Usage: " << argv[0] << " " << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <NH3 ROOT file> <Carbon ROOT file>" << std::endl;
         return 1;
     }
 
