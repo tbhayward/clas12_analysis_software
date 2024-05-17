@@ -151,7 +151,8 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     // Add fit parameters box
     TPaveText *pt = new TPaveText(0.7, 0.7, 0.9, 0.9, "brNDC");
     pt->SetBorderSize(1);
-    pt->SetFillStyle(1);
+    pt->SetFillStyle(1001); // Solid fill style
+    pt->SetFillColor(kWhite); // White background
     pt->AddText(Form("p0 = %.3f", fit_poly->GetParameter(0)));
     pt->AddText(Form("p1 = %.3f", fit_poly->GetParameter(1)));
     pt->AddText(Form("p2 = %.3f", fit_poly->GetParameter(2)));
@@ -210,7 +211,8 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     // Add fit parameters box
     TPaveText *pt_xB = new TPaveText(0.7, 0.7, 0.9, 0.9, "brNDC");
     pt_xB->SetBorderSize(1);
-    pt_xB->SetFillStyle(1);
+    pt_xB->SetFillStyle(1001); // Solid fill style
+    pt_xB->SetFillColor(kWhite); // White background
     pt_xB->AddText(Form("p0 = %.3f", fit_poly_xB->GetParameter(0)));
     pt_xB->AddText(Form("p1 = %.3f", fit_poly_xB->GetParameter(1)));
     pt_xB->AddText(Form("p2 = %.3f", fit_poly_xB->GetParameter(2)));
