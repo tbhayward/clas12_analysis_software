@@ -83,26 +83,26 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     fit_const->SetLineColor(kRed);
     fit_const->Draw("SAME");
 
-    // Third panel: PTPT histograms scaled by the fit constant
+    // Third panel: pTpT histograms scaled by the fit constant
     c1->cd(3);
-    TH1D *h_PTPT_nh3 = new TH1D("h_PTPT_nh3", "PTPT Distribution; PTPT; Counts", 100, 0, 1);
-    TH1D *h_PTPT_carbon = new TH1D("h_PTPT_carbon", "PTPT Distribution; PTPT; Counts", 100, 0, 1);
-    tree_nh3->Draw("PTPT>>h_PTPT_nh3");
-    tree_carbon->Draw("PTPT>>h_PTPT_carbon");
+    TH1D *h_pTpT_nh3 = new TH1D("h_pTpT_nh3", "pTpT Distribution; pTpT; Counts", 100, 0, 1);
+    TH1D *h_pTpT_carbon = new TH1D("h_pTpT_carbon", "pTpT Distribution; pTpT; Counts", 100, 0, 1);
+    tree_nh3->Draw("pTpT>>h_pTpT_nh3");
+    tree_carbon->Draw("pTpT>>h_pTpT_carbon");
 
     double scale_factor = fit_const->GetParameter(0);
-    h_PTPT_carbon->Scale(scale_factor);
+    h_pTpT_carbon->Scale(scale_factor);
 
-    h_PTPT_nh3->SetLineColor(kBlue);
-    h_PTPT_carbon->SetLineColor(kRed);
-    h_PTPT_nh3->Draw();
-    h_PTPT_carbon->Draw("SAME");
+    h_pTpT_nh3->SetLineColor(kBlue);
+    h_pTpT_carbon->SetLineColor(kRed);
+    h_pTpT_nh3->Draw();
+    h_pTpT_carbon->Draw("SAME");
 
     // Add legend
-    TLegend *leg_PTPT = new TLegend(0.75, 0.8, 0.9, 0.9);
-    leg_PTPT->AddEntry(h_PTPT_nh3, "NH3", "l");
-    leg_PTPT->AddEntry(h_PTPT_carbon, "Carbon (scaled)", "l");
-    leg_PTPT->Draw();
+    TLegend *leg_pTpT = new TLegend(0.75, 0.8, 0.9, 0.9);
+    leg_pTpT->AddEntry(h_pTpT_nh3, "NH3", "l");
+    leg_pTpT->AddEntry(h_pTpT_carbon, "Carbon (scaled)", "l");
+    leg_pTpT->Draw();
 
     // Fourth panel: (NH3 - Carbon) / NH3 with fit to a third-degree polynomial
     c1->cd(4);
@@ -146,8 +146,8 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     carbon->Close();
     delete h_xF2_nh3;
     delete h_xF2_carbon;
-    delete h_PTPT_nh3;
-    delete h_PTPT_carbon;
+    delete h_pTpT_nh3;
+    delete h_pTpT_carbon;
     delete gr_ratio;
     delete fit_const;
     delete gr_dilution;
