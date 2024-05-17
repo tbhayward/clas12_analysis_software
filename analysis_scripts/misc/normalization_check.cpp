@@ -30,6 +30,7 @@ std::map<int, RunInfo> parseCSV(const std::string& filename) {
         char comma;
         ss >> runnum >> comma >> info.total_charge >> comma >> info.pos_beam_charge >> comma >> info.neg_beam_charge >> comma >> info.target_pol >> comma >> info.target_pol_unc;
         runInfoMap[runnum] = info;
+        std::cout << runnum << std::endl;
     }
     return runInfoMap;
 }
@@ -50,10 +51,10 @@ void normalization_check(const char* inputFileName) {
     tree->SetBranchAddress("Delta_phi", &Delta_phi);
 
     // Create histograms
-    TH1F* h1 = new TH1F("h1", "Helicity +, Target Pol +;#Delta_{#phi};Counts/FC", 100, 0, 2*3.14159);
-    TH1F* h2 = new TH1F("h2", "Helicity +, Target Pol -;#Delta_{#phi};Counts/FC", 100, 0, 2*3.14159);
-    TH1F* h3 = new TH1F("h3", "Helicity -, Target Pol +;#Delta_{#phi};Counts/FC", 100, 0, 2*3.14159);
-    TH1F* h4 = new TH1F("h4", "Helicity -, Target Pol -;#Delta_{#phi};Counts/FC", 100, 0, 2*3.14159);
+    TH1F* h1 = new TH1F("h1", "Helicity +, Target Pol +;#Delta_{#phi};Counts/FC", 200, 0, 2*3.14159);
+    TH1F* h2 = new TH1F("h2", "Helicity +, Target Pol -;#Delta_{#phi};Counts/FC", 200, 0, 2*3.14159);
+    TH1F* h3 = new TH1F("h3", "Helicity -, Target Pol +;#Delta_{#phi};Counts/FC", 200, 0, 2*3.14159);
+    TH1F* h4 = new TH1F("h4", "Helicity -, Target Pol -;#Delta_{#phi};Counts/FC", 200, 0, 2*3.14159);
 
     std::map<int, double> totalCharges;
 
