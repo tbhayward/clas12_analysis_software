@@ -37,14 +37,14 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     // Create histograms for xF2
     // TH1D *h_xF2_nh3 = new TH1D("h_xF2_nh3", "x_{F2} Distribution; x_{F2}; Counts", 100, -2.5, 1);
     // TH1D *h_xF2_carbon = new TH1D("h_xF2_carbon", "x_{F2} Distribution; x_{F2}; Counts", 100, -2.5, 1);
-    TH1D *h_xF2_nh3 = new TH1D("h_xF2_nh3", "#zeta_{2} Distribution; #zeta_{2}; Counts", 100, 0.4, 1.5);
-    TH1D *h_xF2_carbon = new TH1D("h_xF2_carbon", "#zeta_{2} Distribution; #zeta_{2}; Counts", 100, 0.4, 1.5);
+    TH1D *h_xF2_nh3 = new TH1D("h_xF2_nh3", "#zeta_{2} Distribution; #zeta_{2}; Counts", 100, -1, 2);
+    TH1D *h_xF2_carbon = new TH1D("h_xF2_carbon", "#zeta_{2} Distribution; #zeta_{2}; Counts", 100, -1, 2);
 
     // Fill the histograms
     // tree_nh3->Draw("xF2>>h_xF2_nh3");
     // tree_carbon->Draw("xF2>>h_xF2_carbon");
-    tree_nh3->Draw("zeta2>>h_xF2_nh3");
-    tree_carbon->Draw("zeta2>>h_xF2_carbon");
+    tree_nh3->Draw("Mx>>h_xF2_nh3");
+    tree_carbon->Draw("Mx>>h_xF2_carbon");
 
     // Create canvas and divide it into four panels
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1200, 1200);
