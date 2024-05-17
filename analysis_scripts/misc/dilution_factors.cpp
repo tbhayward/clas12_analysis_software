@@ -156,8 +156,8 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     delete fit_const;
     delete gr_dilution;
     delete fit_poly;
-    delete stats;
-    delete c1;
+    delete pt;
+    delete c1
 }
 
 int main(int argc, char** argv) {
