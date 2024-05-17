@@ -155,3 +155,13 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     delete stats;
     delete c1;
 }
+
+int main(int argc, char** argv) {
+    if (argc != 3) {
+        std::cerr << "Usage: " << argv[0] << " <NH3 ROOT file> <Carbon ROOT file>" << std::endl;
+        return 1;
+    }
+
+    dilution_factors(argv[1], argv[2]);
+    return 0;
+}
