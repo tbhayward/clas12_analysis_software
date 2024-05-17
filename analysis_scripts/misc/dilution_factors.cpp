@@ -37,8 +37,8 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     // Create histograms for xF2
     // TH1D *h_xF2_nh3 = new TH1D("h_xF2_nh3", "x_{F2} Distribution; x_{F2}; Counts", 100, -2.5, 1);
     // TH1D *h_xF2_carbon = new TH1D("h_xF2_carbon", "x_{F2} Distribution; x_{F2}; Counts", 100, -2.5, 1);
-    TH1D *h_xF2_nh3 = new TH1D("h_xF2_nh3", "#zeta_{2} Distribution; #zeta_{2}; Counts", 100, -1, 2);
-    TH1D *h_xF2_carbon = new TH1D("h_xF2_carbon", "#zeta_{2} Distribution; #zeta_{2}; Counts", 100, -1, 2);
+    TH1D *h_xF2_nh3 = new TH1D("h_xF2_nh3", "M_{x} Distribution; M_{x} (GeV); Counts", 100, -1, 2);
+    TH1D *h_xF2_carbon = new TH1D("h_xF2_carbon", "M_{x} Distribution; M_{x} (GeV); Counts", 100, -1, 2);
 
     // Fill the histograms
     // tree_nh3->Draw("xF2>>h_xF2_nh3");
@@ -84,12 +84,12 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
         }
     }
     // gr_ratio->SetTitle("NH_{3} to Carbon Ratio; x_{F2}; Ratio");
-    gr_ratio->SetTitle("NH_{3} to Carbon Ratio; #zeta_{2}; Ratio");
+    gr_ratio->SetTitle("NH_{3} to Carbon Ratio; M_{x} (GeV); Ratio");
     gr_ratio->SetMarkerStyle(20);
     gr_ratio->Draw("AP");
 
     // Fit the data from -2.5 to -1 to a constant
-    TF1 *fit_const = new TF1("fit_const", "[0]", -2.5, -1);
+    TF1 *fit_const = new TF1("fit_const", "[0]", -1, -0.5);
     gr_ratio->Fit(fit_const, "R");
     fit_const->SetLineColor(kRed);
     fit_const->Draw("SAME");
