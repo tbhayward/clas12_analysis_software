@@ -11,6 +11,7 @@
 #include <TF1.h>
 #include <TPad.h>
 #include <TPaveText.h>
+#include <TLatex.h>
 
 void dilution_factors(const char* nh3_file, const char* c_file) {
     // Open the ROOT files
@@ -34,8 +35,8 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     }
 
     // Create histograms for xF2
-    TH1D *h_xF2_nh3 = new TH1D("h_xF2_nh3", "xF2 Distribution; xF2; Counts", 100, -2.5, 1);
-    TH1D *h_xF2_carbon = new TH1D("h_xF2_carbon", "xF2 Distribution; xF2; Counts", 100, -2.5, 1);
+    TH1D *h_xF2_nh3 = new TH1D("h_xF2_nh3", "{x_F}_2 Distribution; {x_F}_2; Counts", 100, -2.5, 1);
+    TH1D *h_xF2_carbon = new TH1D("h_xF2_carbon", "{x_F}_2 Distribution; {x_F}_2; Counts", 100, -2.5, 1);
 
     // Fill the histograms
     tree_nh3->Draw("xF2>>h_xF2_nh3");
@@ -56,7 +57,7 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
 
     // Add legend
     TLegend *leg = new TLegend(0.75, 0.8, 0.9, 0.9);
-    leg->AddEntry(h_xF2_nh3, "NH3", "l");
+    leg->AddEntry(h_xF2_nh3, "{NH}_3", "l");
     leg->AddEntry(h_xF2_carbon, "Carbon", "l");
     leg->Draw();
 
@@ -78,7 +79,7 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
             gr_ratio->SetPointError(i - 1, 0, error);
         }
     }
-    gr_ratio->SetTitle("NH3 to Carbon Ratio; xF2; Ratio");
+    gr_ratio->SetTitle("NH3 to Carbon Ratio; {x_F}_2; Ratio");
     gr_ratio->SetMarkerStyle(20);
     gr_ratio->Draw("AP");
 
@@ -88,11 +89,19 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     fit_const->SetLineColor(kRed);
     fit_const->Draw("SAME");
 
+    // Add fit constant value and uncertainty
+    double fit_value = fit_const->GetParameter(0);
+    double fit_error = fit_const->GetParError(0);
+    TLatex latex;
+    latex.SetNDC();
+    latex.SetTextSize(0.04);
+    latex.DrawLatex(0.15, 0.85, Form("Fit Const = %.3f #pm %.3f", fit_value, fit_error));
+
     // Third panel: pTpT histograms scaled by the fit constant
     c1->cd(3);
     gPad->SetLeftMargin(0.15);
-    TH1D *h_pTpT_nh3 = new TH1D("h_pTpT_nh3", "pTpT Distribution; pTpT; Counts", 100, 0, 0.8);
-    TH1D *h_pTpT_carbon = new TH1D("h_pTpT_carbon", "pTpT Distribution; pTpT; Counts", 100, 0, 0.8);
+    TH1D *h_pTpT_nh3 = new TH1D("h_pTpT_nh3", "P_{1T}P_{2T} Distribution; P_{1T}P_{2T} (GeV); Counts", 100, 0, 0.8);
+    TH1D *h_pTpT_carbon = new TH1D("h_pTpT_carbon", "P_{1T}P_{2T} Distribution; P_{1T}P_{2T} (GeV); Counts", 100, 0, 0.8);
     tree_nh3->Draw("pTpT>>h_pTpT_nh3");
     tree_carbon->Draw("pTpT>>h_pTpT_carbon");
 
@@ -105,8 +114,9 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     h_pTpT_carbon->Draw("SAME");
 
     // Add legend
-    TLegend *leg_pTpT = new TLegend(0.75, 0.8, 0.9, 0.9);
-    leg_pTpT->AddEntry(h_pTpT_nh3, "NH3", "l");
+    TLegend *leg_pTpT = new TLegend(0.15, 0.8, 0.3, 0.9);
+    leg_pTpT->SetTextSize(0.04);
+    leg_pTpT->AddEntry(h_pTpT_nh3, "{NH}_3", "l");
     leg_pTpT->AddEntry(h_pTpT_carbon, "Carbon (scaled)", "l");
     leg_pTpT->Draw();
 
@@ -128,7 +138,7 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
             gr_dilution->SetPointError(i - 1, 0, error);
         }
     }
-    gr_dilution->SetTitle("Dilution Factor; pTpT; (NH3 - Carbon) / NH3");
+    gr_dilution->SetTitle("Dilution Factor; P_{1T}P_{2T}; (NH3 - Carbon) / NH3");
     gr_dilution->SetMarkerStyle(20);
     gr_dilution->Draw("AP");
 
