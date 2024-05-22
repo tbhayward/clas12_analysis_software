@@ -269,7 +269,8 @@ double asymmetry_value_calculation(double currentVariable, const std::string& pr
     case 1: // target-spin asymmetry
       return (1 / Df) * ((Npp+Nmp)-(Npm+Nmm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
     case 2: // double-spin asymmetry
-      return (1 / (Df*meanPol)) * ((Npp-Nmp)+(Nmm-Npm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
+      // return (1 / (Df*meanPol)) * ((Npp-Nmp)+(Nmm-Npm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
+      return (1 / (meanPol)) * ((Npp-Nmp)+(Nmm-Npm)) / (Ptm*(Npp+Nmp)+Ptp*(Npm+Nmm));
     default:
       std::cout << "Invalid asymmetry_index!" << std::endl;
       return 0;
