@@ -89,7 +89,7 @@ runnum,evnum,helicity,e_p,e_theta,e_phi,vz_e,p_p,p_theta,p_phi,vz_p,Q2,W,Mx,Mx2,
 #b2bchannelxF2Study,xF2,-0.8,-0.6,-0.5,-0.4,-0.3,-0.2,-0.1,0.0,0.1,0.2,0.3,0.6
 #b2banalysisx,x,0.08,0.58
 #b2banalysisx,x,0.08,0.18,0.28,0.38,0.48,0.58
-b2banalysispTpT,pTpT,0.0,0.075,0.150,0.225,0.300,0.375,0.450,0.4875,0.525,0.5625,0.60
+b2banalysispTpT,pTpT,0.0,0.075,0.150,0.225,0.300,0.375,0.450,0.525,0.600
 #
 #
 #
