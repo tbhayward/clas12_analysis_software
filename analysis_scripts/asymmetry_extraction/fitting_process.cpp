@@ -2114,11 +2114,8 @@ void performChi2Fits_b2b_dihadron(const char* output_file, const char* kinematic
         double ALL_cosphi2 = fitFunction->GetParameter(2);
         double ALL_cosphi2_error = fitFunction->GetParError(2);
         //
-        // ALL = (meanDepA/meanDepC)*ALL;
-        // ALL_error = (meanDepA/meanDepC)*ALL_error;
-        ALL = ALL;
-        ALL_error = ALL_error;
-        std::cout << (meanDepA/meanDepC) << std::endl;
+        ALL = (meanDepA/meanDepC)*ALL;
+        ALL_error = (meanDepA/meanDepC)*ALL_error;
         //
         ALL_cosphi1 = (meanDepA/meanDepW)*ALL_cosphi1;
         ALL_cosphi1_error = (meanDepA/meanDepW)*ALL_cosphi1_error;
