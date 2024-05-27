@@ -12,6 +12,9 @@
 #include <TPad.h>
 #include <TPaveText.h>
 #include <TLatex.h>
+#include <TMath.h>
+#include <TLegend.h>
+
 
 void dilution_factors(const char* nh3_file, const char* c_file) {
     // Open the ROOT files
