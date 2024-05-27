@@ -207,31 +207,6 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     gr_dilution_xB->SetMarkerStyle(20);
     gr_dilution_xB->Draw("AP");
 
-    std::vector<std::string> output;
-    output.push_back("{");
-
-    for (int i = 1; i <= h_xB_nh3->GetNbinsX(); ++i) {
-        double nh3_counts = h_xB_nh3->GetBinContent(i);
-        double c_counts = h_xB_carbon->GetBinContent(i);
-        if (nh3_counts > 0) {
-            double dilution = (nh3_counts - c_counts) / nh3_counts;
-            double error = std::sqrt((c_counts / nh3_counts) * (c_counts / nh3_counts) / nh3_counts + c_counts / (nh3_counts * nh3_counts));
-            std::ostringstream ss;
-            ss << "{" << h_xB_nh3->GetBinCenter(i) << ", " << dilution << ", " << error << "}";
-            output.push_back(ss.str());
-        }
-    }
-
-    output.push_back("}");
-
-    for (size_t i = 0; i < output.size(); ++i) {
-        std::cout << output[i];
-        if (i != output.size() - 1) {
-            std::cout << ", ";
-        }
-    }
-    std::cout << std::endl;
-
     // Fit to a third-degree polynomial
     TF1 *fit_poly_xB = new TF1("fit_poly_xB", "[0] + [1]*x + [2]*x^2", 0.08, 0.58);
     gr_dilution_xB->Fit(fit_poly_xB, "R");
