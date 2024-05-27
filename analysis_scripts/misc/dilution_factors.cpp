@@ -46,7 +46,7 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     // tree_nh3->Draw("Mx>>h_xF2_nh3");
     // tree_carbon->Draw("Mx>>h_xF2_carbon");
     // Fill the histograms with cuts
-    tree_nh3->Draw("Mx>>h_xF2_nh3", "helicity < 0 && target_pol > 0");
+    tree_nh3->Draw("Mx>>h_xF2_nh3", "helicity < 0 && target_pol < 0");
     tree_carbon->Draw("Mx>>h_xF2_carbon", "helicity < 0");
     // Scale the carbon histogram by 1/2
     h_xF2_carbon->Scale(0.5);
