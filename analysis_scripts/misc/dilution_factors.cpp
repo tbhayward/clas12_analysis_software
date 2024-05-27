@@ -12,9 +12,6 @@
 #include <TPad.h>
 #include <TPaveText.h>
 #include <TLatex.h>
-#include <TMath.h>
-#include <TLegend.h>
-
 
 void dilution_factors(const char* nh3_file, const char* c_file) {
     // Open the ROOT files
@@ -46,8 +43,11 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     // Fill the histograms
     // tree_nh3->Draw("xF2>>h_xF2_nh3");
     // tree_carbon->Draw("xF2>>h_xF2_carbon");
-    tree_nh3->Draw("Mx>>h_xF2_nh3");
-    tree_carbon->Draw("Mx>>h_xF2_carbon");
+    // tree_nh3->Draw("Mx>>h_xF2_nh3");
+    // tree_carbon->Draw("Mx>>h_xF2_carbon");
+    // Fill the histograms with cuts
+    tree_nh3->Draw("Mx>>h_xF2_nh3", "helicity > 0 && target_polarization > 0");
+    tree_carbon->Draw("Mx>>h_xF2_carbon", "helicity > 0");
 
     // Create canvas and divide it into four panels
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1200, 1200);
@@ -90,6 +90,31 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     gr_ratio->SetTitle("NH_{3} to Carbon Ratio; M_{x} (GeV); Ratio");
     gr_ratio->SetMarkerStyle(20);
     gr_ratio->Draw("AP");
+
+    std::vector<std::string> output;
+    output.push_back("{");
+
+    for (int i = 1; i <= h_xB_nh3->GetNbinsX(); ++i) {
+        double nh3_counts = h_xB_nh3->GetBinContent(i);
+        double c_counts = h_xB_carbon->GetBinContent(i);
+        if (nh3_counts > 0) {
+            double dilution = (nh3_counts - c_counts) / nh3_counts;
+            double error = std::sqrt((c_counts / nh3_counts) * (c_counts / nh3_counts) / nh3_counts + c_counts / (nh3_counts * nh3_counts));
+            std::ostringstream ss;
+            ss << "{" << h_xB_nh3->GetBinCenter(i) << ", " << dilution << ", " << error << "}";
+            output.push_back(ss.str());
+        }
+    }
+
+    output.push_back("}");
+
+    for (size_t i = 0; i < output.size(); ++i) {
+        std::cout << output[i];
+        if (i != output.size() - 1) {
+            std::cout << ", ";
+        }
+    }
+    std::cout << std::endl;
 
     // Fit the data from -2.5 to -1 to a constant
     TF1 *fit_const = new TF1("fit_const", "[0]", -1, -0.5);
