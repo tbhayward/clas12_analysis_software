@@ -142,7 +142,7 @@ double dilution_factor(double currentVariable, const std::string& prefix) {
   }
   // epi+pX
   if (prefix == "b2banalysispTpT") {
-    return 0.177-0.201*currentVariable+0.458*std::pow(currentVariable,2);
+    return 0.163-0.143*currentVariable+0.319*std::pow(currentVariable,2);
   }
   return 0.12;
 }

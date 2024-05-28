@@ -284,7 +284,7 @@ int main(int argc, char *argv[]) {
 
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
+    for (int asymmetry = 2; asymmetry < 3; ++asymmetry){
       if (asymmetry > 0 && cpp == 1) {
         cout << "Skipping TSA and DSA for unpolarized target data." << endl;
         continue;
