@@ -43,13 +43,13 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     // Fill the histograms
     // tree_nh3->Draw("xF2>>h_xF2_nh3");
     // tree_carbon->Draw("xF2>>h_xF2_carbon");
-    // tree_nh3->Draw("Mx>>h_xF2_nh3");
-    // tree_carbon->Draw("Mx>>h_xF2_carbon");
+    tree_nh3->Draw("Mx>>h_xF2_nh3");
+    tree_carbon->Draw("Mx>>h_xF2_carbon");
     // Fill the histograms with cuts
-    tree_nh3->Draw("Mx>>h_xF2_nh3", "helicity > 0 && target_pol < 0");
-    tree_carbon->Draw("Mx>>h_xF2_carbon", "helicity > 0");
+    // tree_nh3->Draw("Mx>>h_xF2_nh3", "helicity > 0 && target_pol < 0");
+    // tree_carbon->Draw("Mx>>h_xF2_carbon", "helicity > 0");
     // Scale the carbon histogram by 1/2
-    h_xF2_carbon->Scale(0.5);
+    // h_xF2_carbon->Scale(0.5);
 
     // Create canvas and divide it into four panels
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1200, 1200);
@@ -110,8 +110,8 @@ void dilution_factors(const char* nh3_file, const char* c_file) {
     // Third panel: pTpT histograms scaled by the fit constant
     c1->cd(3);
     gPad->SetLeftMargin(0.15);
-    TH1D *h_pTpT_nh3 = new TH1D("h_pTpT_nh3", "P_{1T}P_{2T} Distribution; P_{1T}P_{2T} (GeV); Counts", 50, 0, 0.5);
-    TH1D *h_pTpT_carbon = new TH1D("h_pTpT_carbon", "P_{1T}P_{2T} Distribution; P_{1T}P_{2T} (GeV); Counts", 50, 0, 0.5);
+    TH1D *h_pTpT_nh3 = new TH1D("h_pTpT_nh3", "P_{1T}P_{2T} Distribution; P_{1T}P_{2T} (GeV); Counts", 5, 0, 0.5);
+    TH1D *h_pTpT_carbon = new TH1D("h_pTpT_carbon", "P_{1T}P_{2T} Distribution; P_{1T}P_{2T} (GeV); Counts", 5, 0, 0.5);
     tree_nh3->Draw("pTpT>>h_pTpT_nh3");
     tree_carbon->Draw("pTpT>>h_pTpT_carbon");
 
