@@ -204,14 +204,14 @@ double DSA_single_hadron(double* x, double* par) {
 double DSA_b2b_dihadron(double* x, double* par) {
   // Retrieve the parameters A
   double ALL = par[0];
-  // double ALL_cosphi1 = par[1];
-  // double ALL_cosphi2 = par[2];
+  double ALL_cosphi1 = par[1];
+  double ALL_cosphi2 = par[2];
   // Retrieve the phi variable from the input x array
   double phi1 = x[0];
   double phi2 = x[1];
   // Calculate and return the value of the function for the given phi and parameters 
   return ALL;
-  return ALL + ALL_cosphi1*cos(phi1) + ALL_cosphi2*cos(phi2);
+  // return ALL + ALL_cosphi1*cos(phi1) + ALL_cosphi2*cos(phi2);
 }
 
 double DSA_dihadron(double* x, double* par) {
