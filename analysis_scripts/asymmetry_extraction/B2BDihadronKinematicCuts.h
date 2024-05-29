@@ -14,6 +14,7 @@ private:
     TTreeReaderValue<int> runnum;
     TTreeReaderValue<double> Q2;
     TTreeReaderValue<double> W;
+    TTreeReaderValue<double> p1_p;
     TTreeReaderValue<double> x;
     TTreeReaderValue<double> y;
     TTreeReaderValue<double> z1;

@@ -8,7 +8,7 @@ using std::string;
 
 B2BDihadronKinematicCuts::B2BDihadronKinematicCuts(TTreeReader& reader)
     : BaseKinematicCuts(reader), // Initialize BaseKinematicCuts
-      runnum(reader, "runnum"), Q2(reader, "Q2"), W(reader, "W"),
+      runnum(reader, "runnum"), Q2(reader, "Q2"), W(reader, "W"), p1_p(reader, "p1_p"),
       x(reader, "x"), y(reader, "y"), z1(reader, "z1"), xF1(reader, "xF1"), xF2(reader, "xF2"), 
       Mx(reader, "Mx"), Mx1(reader, "Mx1"), Mx2(reader, "Mx2"), target_pol(reader, "target_pol") {}
 
