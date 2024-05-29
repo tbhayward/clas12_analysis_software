@@ -17,7 +17,8 @@ bool B2BDihadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     string property = binNames[currentFits];
 
     goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75; // DIS cuts
-    goodEvent = goodEvent && *z1 > 0.2 && *x > 0.05 && *x < 0.70;
+    // goodEvent = goodEvent && *z1 > 0.2 && *x > 0.05 && *x < 0.70;
+    goodEvent = goodEvent && *z1 > 0.3 && *x > 0.05 && *x < 0.70 && p1_p > 1.4;
     if (property == "b2bchannel") {
       goodEvent = goodEvent;
     } else if (property == "b2bchannelMxStudy") {
@@ -39,8 +40,10 @@ bool B2BDihadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
       goodEvent = goodEvent && *xF1 > 0 && *xF2 < 0 && *z1 > 0.2 && *Mx > 0.95 && 
         *Mx1 > 1.8 && *Mx2 > 1.4;
     } else if (property == "b2banalysispTpT") {
-      goodEvent = goodEvent && *xF1 > 0 && *xF2 < 0 && *z1 > 0.2 && *Mx > 0.95 && 
-        *Mx1 > 1.8 && *Mx2 > 1.4;
+      // goodEvent = goodEvent && *xF1 > 0 && *xF2 < 0 && *z1 > 0.2 && *Mx > 0.95 && 
+      //   *Mx1 > 1.8 && *Mx2 > 1.4;
+      goodEvent = goodEvent && *xF1 > 0 && *xF2 < 0 && *z1 > 0.2 && *Mx > 1.2 && 
+        *Mx1 > 1.5 && *Mx2 > 1.2;
     } else {
       std::cout << "Property, " << property << ", not detected." << std::endl;
     }

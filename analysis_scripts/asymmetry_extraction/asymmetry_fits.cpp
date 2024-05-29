@@ -210,8 +210,8 @@ double DSA_b2b_dihadron(double* x, double* par) {
   double phi1 = x[0];
   double phi2 = x[1];
   // Calculate and return the value of the function for the given phi and parameters 
-  return ALL;
-  // return ALL + ALL_cosphi1*cos(phi1) + ALL_cosphi2*cos(phi2);
+  // return ALL;
+  return ALL + ALL_cosphi1*cos(phi1) + ALL_cosphi2*cos(phi2);
 }
 
 double DSA_dihadron(double* x, double* par) {
