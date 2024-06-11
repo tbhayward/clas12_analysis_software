@@ -69,7 +69,7 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
             p3.Boost(boost_vector);
 
             Double_t calculated_p3_theta = p3.Theta();
-
+            std::cout << p3_theta << " " << calculated_p3_theta << " " << (p3_theta - calculated_p3_theta) << std::endl;
             // Apply the cut on p3_theta
             if (fabs(p3_theta - calculated_p3_theta) < 0.05) { // Adjusted tolerance to 0.05
                 new_tree_nh3->Fill();
@@ -109,7 +109,6 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
 
             // Apply the cut on p3_theta
             if (fabs(p3_theta - calculated_p3_theta) < 0.05) { // Adjusted tolerance to 0.05
-                std::cout << p1_p << std::endl;
                 new_tree_carbon->Fill();
             }
         }
