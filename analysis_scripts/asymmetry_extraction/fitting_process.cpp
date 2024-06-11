@@ -787,10 +787,10 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
   TTreeReaderValue<double> phi(dataReader, "phi2");
   TTreeReaderValue<double> Mh23(dataReader, "phi2");
   TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
-  std::cout << "HEY " << *Mh23 << std::endl;
 
   // Counter to limit the number of processed entries
   while (dataReader.Next()) {
+    std::cout << "HEY " << *Mh23 << std::endl;
 
     // Apply kinematic cuts (this function will need to be adapted)
     bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
