@@ -59,8 +59,8 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
         if (fabs(Mx23 - 0.95) < 0.06 && z23 > 0.9) {
             // Calculate the calculated p3_theta
             TLorentzVector p1, p2, p3;
-            p1.SetMagThetaPhi(p1_p, p1_theta, p1_phi); // Use provided theta and phi directly
-            p2.SetMagThetaPhi(p2_p, p2_theta, p2_phi); // Use provided theta and phi directly
+            p1.SetMagThetaPhiE(p1_p, p1_theta, p1_phi, std::sqrt(p1_p*p1_p + 0.938*0.938)); // Assume mass of proton (in GeV)
+            p2.SetMagThetaPhiE(p2_p, p2_theta, p2_phi, std::sqrt(p2_p*p2_p + 0.139*0.139)); // Assume mass of pi+ (in GeV)
 
             // Calculate the missing four-momentum
             TLorentzVector system = p1 + p2;
@@ -95,8 +95,8 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
         if (fabs(Mx23 - 0.95) < 0.06 && z23 > 0.9) {
             // Calculate the calculated p3_theta
             TLorentzVector p1, p2, p3;
-            p1.SetMagThetaPhi(p1_p, p1_theta, p1_phi); // Use provided theta and phi directly
-            p2.SetMagThetaPhi(p2_p, p2_theta, p2_phi); // Use provided theta and phi directly
+            p1.SetMagThetaPhiE(p1_p, p1_theta, p1_phi, std::sqrt(p1_p*p1_p + 0.938*0.938)); // Assume mass of proton (in GeV)
+            p2.SetMagThetaPhiE(p2_p, p2_theta, p2_phi, std::sqrt(p2_p*p2_p + 0.139*0.139)); // Assume mass of pi+ (in GeV)
 
             // Calculate the missing four-momentum
             TLorentzVector system = p1 + p2;
