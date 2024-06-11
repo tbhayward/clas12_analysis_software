@@ -69,7 +69,7 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
         tree_nh3->GetEntry(i);
 
         // Apply the cuts
-        if (fabs(Mx23 - 0.95) < 0.06 && z23 > 0.9) {
+        if (fabs(Mx23 - 0.95) < 0.06 && z23 > 0.9 && p1_p > 1.2 && p2_p > 1.2) {
             // Calculate the calculated p3_theta
             TLorentzVector p1, p2, p3, scattered_electron;
 
@@ -126,7 +126,7 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
         tree_carbon->GetEntry(i);
 
         // Apply the cuts
-        if (fabs(Mx23 - 0.95) < 0.06 && z23 > 0.9) {
+        if (fabs(Mx23 - 0.95) < 0.06 && z23 > 0.9 && p1_p > 1.2 && p2_p > 1.2) {
             // Calculate the calculated p3_theta
             TLorentzVector p1, p2, p3, scattered_electron;
 
@@ -241,9 +241,9 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
     // gr_ratio->SetTitle("NH_{3} to Carbon Ratio; x_{F2}; Ratio");
     gr_ratio->SetTitle("NH_{3} to Carbon Ratio; M_{x} (GeV); Ratio");
     gr_ratio->SetMarkerStyle(20);
-    gr_ratio->SetMinimum(0);   // Set the minimum value for the y-axis
-    gr_ratio->SetMaximum(20);  // Set the maximum value for the y-axis
-    gr_ratio->GetXaxis()->SetLimits(-0.4, 0.1); // Set the x-axis limits
+    // gr_ratio->SetMinimum(0);   // Set the minimum value for the y-axis
+    // gr_ratio->SetMaximum(20);  // Set the maximum value for the y-axis
+    // gr_ratio->GetXaxis()->SetLimits(-0.4, 0.1); // Set the x-axis limits
     gr_ratio->Draw("AP");
 
     // Fit the data from -2.5 to -1 to a constant
