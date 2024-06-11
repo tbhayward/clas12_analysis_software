@@ -245,8 +245,8 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
     // Third panel: Mh23 histograms scaled by the fit constant
     c1->cd(3);
     gPad->SetLeftMargin(0.15);
-    TH1D *h_Mh23_nh3 = new TH1D("h_Mh23_nh3", "P_{1T}P_{2T} Distribution; P_{1T}P_{2T} (GeV); Counts", 100, 0.2, 1.5);
-    TH1D *h_Mh23_carbon = new TH1D("h_Mh23_carbon", "P_{1T}P_{2T} Distribution; P_{1T}P_{2T} (GeV); Counts", 100, 0.2, 1.5);
+    TH1D *h_Mh23_nh3 = new TH1D("h_Mh23_nh3", "M_{#pi#pi} Distribution; M_{#pi#pi} (GeV); Counts", 100, 0.3, 1.5);
+    TH1D *h_Mh23_carbon = new TH1D("h_Mh23_carbon", "M_{#pi#pi} Distribution; M_{#pi#pi} (GeV); Counts", 100, 0.3, 1.5);
     tree_nh3->Draw("Mh23>>h_Mh23_nh3"); 
     tree_carbon->Draw("Mh23>>h_Mh23_carbon");
 
@@ -288,7 +288,7 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
     gr_dilution->Draw("AP");
 
     // Fit to a third-degree polynomial
-    TF1 *fit_poly = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2", 0.2, 1.5);
+    TF1 *fit_poly = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2", 0.3, 1.5);
     gr_dilution->Fit(fit_poly, "R");
     fit_poly->SetLineColor(kRed);
     fit_poly->Draw("SAME");
@@ -306,8 +306,8 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
     // Fifth panel: xB histograms scaled by the fit constant
     c1->cd(5);
     gPad->SetLeftMargin(0.15);
-    TH1D *h_xB_nh3 = new TH1D("h_xB_nh3", "x_{B} Distribution; x_{B}; Counts", 100, 0.00, 2);
-    TH1D *h_xB_carbon = new TH1D("h_xB_carbon", "x_{B} Distribution; x_{B}; Counts", 100, 0.0, 2);
+    TH1D *h_xB_nh3 = new TH1D("h_xB_nh3", "M_{x1} Distribution; M_{x1}; Counts", 100, 0.00, 2);
+    TH1D *h_xB_carbon = new TH1D("h_xB_carbon", "M_{x1} Distribution; M_{x1}; Counts", 100, 0.0, 2);
     tree_nh3->Draw("Mx1>>h_xB_nh3");
     tree_carbon->Draw("Mx1>>h_xB_carbon");
 
@@ -343,7 +343,7 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
             gr_dilution_xB->SetPointError(i - 1, 0, error);
         }
     }
-    gr_dilution_xB->SetTitle("Dilution Factor; x_{B}; (NH3 - Carbon) / NH3");
+    gr_dilution_xB->SetTitle("Dilution Factor; M_{x1}; (NH3 - Carbon) / NH3");
     gr_dilution_xB->SetMarkerStyle(20);
     gr_dilution_xB->Draw("AP");
 
