@@ -241,6 +241,8 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
     // gr_ratio->SetTitle("NH_{3} to Carbon Ratio; x_{F2}; Ratio");
     gr_ratio->SetTitle("NH_{3} to Carbon Ratio; M_{x} (GeV); Ratio");
     gr_ratio->SetMarkerStyle(20);
+    gr_ratio->SetMinimum(0);   // Set the minimum value for the y-axis
+    gr_ratio->SetMaximum(20);  // Set the maximum value for the y-axis
     gr_ratio->Draw("AP");
 
     // Fit the data from -2.5 to -1 to a constant
@@ -260,8 +262,8 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
     // Third panel: Mh23 histograms scaled by the fit constant
     c1->cd(3);
     gPad->SetLeftMargin(0.15);
-    TH1D *h_Mh23_nh3 = new TH1D("h_Mh23_nh3", "M_{#pi#pi} Distribution; M_{#pi#pi} (GeV); Counts", 33, 0.26, 1.5);
-    TH1D *h_Mh23_carbon = new TH1D("h_Mh23_carbon", "M_{#pi#pi} Distribution; M_{#pi#pi} (GeV); Counts", 33, 0.26, 1.5);
+    TH1D *h_Mh23_nh3 = new TH1D("h_Mh23_nh3", "M_{#pi#pi} Distribution; M_{#pi#pi} (GeV); Counts", 33, 0.25, 1.5);
+    TH1D *h_Mh23_carbon = new TH1D("h_Mh23_carbon", "M_{#pi#pi} Distribution; M_{#pi#pi} (GeV); Counts", 33, 0.25, 1.5);
     tree_nh3->Draw("Mh23>>h_Mh23_nh3"); 
     tree_carbon->Draw("Mh23>>h_Mh23_carbon");
 
