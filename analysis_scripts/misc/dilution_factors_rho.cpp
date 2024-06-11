@@ -245,8 +245,8 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
     // Third panel: Mh23 histograms scaled by the fit constant
     c1->cd(3);
     gPad->SetLeftMargin(0.15);
-    TH1D *h_Mh23_nh3 = new TH1D("h_Mh23_nh3", "M_{#pi#pi} Distribution; M_{#pi#pi} (GeV); Counts", 12, 0.3, 1.5);
-    TH1D *h_Mh23_carbon = new TH1D("h_Mh23_carbon", "M_{#pi#pi} Distribution; M_{#pi#pi} (GeV); Counts", 12, 0.3, 1.5);
+    TH1D *h_Mh23_nh3 = new TH1D("h_Mh23_nh3", "M_{#pi#pi} Distribution; M_{#pi#pi} (GeV); Counts", 14, 0.3, 1.5);
+    TH1D *h_Mh23_carbon = new TH1D("h_Mh23_carbon", "M_{#pi#pi} Distribution; M_{#pi#pi} (GeV); Counts", 14, 0.3, 1.5);
     tree_nh3->Draw("Mh23>>h_Mh23_nh3"); 
     tree_carbon->Draw("Mh23>>h_Mh23_carbon");
 
@@ -306,8 +306,8 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
     // Fifth panel: xB histograms scaled by the fit constant
     c1->cd(5);
     gPad->SetLeftMargin(0.15);
-    TH1D *h_xB_nh3 = new TH1D("h_xB_nh3", "M_{x (p)} Distribution; M_{x (p)}; Counts", 12, 0.2, 2);
-    TH1D *h_xB_carbon = new TH1D("h_xB_carbon", "M_{x (p)} Distribution; M_{x (p)}; Counts", 12, 0.2, 2);
+    TH1D *h_xB_nh3 = new TH1D("h_xB_nh3", "M_{x (p)} Distribution; M_{x (p)}; Counts", 14, 0.2, 2);
+    TH1D *h_xB_carbon = new TH1D("h_xB_carbon", "M_{x (p)} Distribution; M_{x (p)}; Counts", 14, 0.2, 2);
     tree_nh3->Draw("Mx1>>h_xB_nh3");
     tree_carbon->Draw("Mx1>>h_xB_carbon");
 
