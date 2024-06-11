@@ -59,17 +59,16 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
         if (fabs(Mx23 - 0.95) < 0.06 && z23 > 0.9) {
             // Calculate the calculated p3_theta
             TLorentzVector p1, p2, p3;
-            p1.SetPtEtaPhiM(p1_p * sin(p1_theta), p1_p * cos(p1_theta), p1_phi, 0.938); // Assume mass of proton (in GeV)
-            p2.SetPtEtaPhiM(p2_p * sin(p2_theta), p2_p * cos(p2_theta), p2_phi, 0.139); // Assume mass of pi+ (in GeV)
-            TLorentzVector system = p1 + p2;
-            TVector3 boost_vector = system.BoostVector();
+            p1.SetPThetaPhi(p1_p, p1_theta, p1_phi); // Use provided theta and phi directly
+            p2.SetPThetaPhi(p2_p, p2_theta, p2_phi); // Use provided theta and phi directly
 
-            // Assuming momentum conservation, p3 is the missing momentum
-            p3 = -system;
-            p3.Boost(boost_vector);
+            // Calculate the missing four-momentum
+            TLorentzVector system = p1 + p2;
+            p3 = -system; // Missing momentum
 
             Double_t calculated_p3_theta = p3.Theta();
             std::cout << p3_theta << " " << calculated_p3_theta << " " << (p3_theta - calculated_p3_theta) << std::endl;
+
             // Apply the cut on p3_theta
             if (fabs(p3_theta - calculated_p3_theta) < 0.05) { // Adjusted tolerance to 0.05
                 new_tree_nh3->Fill();
@@ -96,16 +95,15 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
         if (fabs(Mx23 - 0.95) < 0.06 && z23 > 0.9) {
             // Calculate the calculated p3_theta
             TLorentzVector p1, p2, p3;
-            p1.SetPtEtaPhiM(p1_p * sin(p1_theta), p1_p * cos(p1_theta), p1_phi, 0.938); // Assume mass of proton (in GeV)
-            p2.SetPtEtaPhiM(p2_p * sin(p2_theta), p2_p * cos(p2_theta), p2_phi, 0.139); // Assume mass of pi+ (in GeV)
-            TLorentzVector system = p1 + p2;
-            TVector3 boost_vector = system.BoostVector();
+            p1.SetPThetaPhi(p1_p, p1_theta, p1_phi); // Use provided theta and phi directly
+            p2.SetPThetaPhi(p2_p, p2_theta, p2_phi); // Use provided theta and phi directly
 
-            // Assuming momentum conservation, p3 is the missing momentum
-            p3 = -system;
-            p3.Boost(boost_vector);
+            // Calculate the missing four-momentum
+            TLorentzVector system = p1 + p2;
+            p3 = -system; // Missing momentum
 
             Double_t calculated_p3_theta = p3.Theta();
+            std::cout << p3_theta << " " << calculated_p3_theta << " " << (p3_theta - calculated_p3_theta) << std::endl;
 
             // Apply the cut on p3_theta
             if (fabs(p3_theta - calculated_p3_theta) < 0.05) { // Adjusted tolerance to 0.05
