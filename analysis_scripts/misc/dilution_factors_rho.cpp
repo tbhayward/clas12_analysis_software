@@ -172,8 +172,8 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
     // Create histograms for xF2
     // TH1D *h_xF2_nh3 = new TH1D("h_xF2_nh3", "x_{F2} Distribution; x_{F2}; Counts", 100, -2.5, 1);
     // TH1D *h_xF2_carbon = new TH1D("h_xF2_carbon", "x_{F2} Distribution; x_{F2}; Counts", 100, -2.5, 1);
-    TH1D *h_xF2_nh3 = new TH1D("h_xF2_nh3", "M_{x} Distribution; M_{x} (GeV); Counts", 100, -1, 2);
-    TH1D *h_xF2_carbon = new TH1D("h_xF2_carbon", "M_{x} Distribution; M_{x} (GeV); Counts", 100, -1, 2);
+    TH1D *h_xF2_nh3 = new TH1D("h_xF2_nh3", "M_{x} Distribution; M_{x} (GeV); Counts", 50, -1, 0.5);
+    TH1D *h_xF2_carbon = new TH1D("h_xF2_carbon", "M_{x} Distribution; M_{x} (GeV); Counts", 50, -1, 0.5);
 
     // Fill the histograms
     // tree_nh3->Draw("xF2>>h_xF2_nh3");
@@ -229,7 +229,7 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
     gr_ratio->Draw("AP");
 
     // Fit the data from -2.5 to -1 to a constant
-    TF1 *fit_const = new TF1("fit_const", "[0]", -1, -0.5);
+    TF1 *fit_const = new TF1("fit_const", "[0]", -1, -0.2);
     gr_ratio->Fit(fit_const, "R");
     fit_const->SetLineColor(kRed);
     fit_const->Draw("SAME");
@@ -245,8 +245,8 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
     // Third panel: Mh23 histograms scaled by the fit constant
     c1->cd(3);
     gPad->SetLeftMargin(0.15);
-    TH1D *h_Mh23_nh3 = new TH1D("h_Mh23_nh3", "P_{1T}P_{2T} Distribution; P_{1T}P_{2T} (GeV); Counts", 5, 0, 0.5);
-    TH1D *h_Mh23_carbon = new TH1D("h_Mh23_carbon", "P_{1T}P_{2T} Distribution; P_{1T}P_{2T} (GeV); Counts", 5, 0, 0.5);
+    TH1D *h_Mh23_nh3 = new TH1D("h_Mh23_nh3", "P_{1T}P_{2T} Distribution; P_{1T}P_{2T} (GeV); Counts", 5, 0.2, 1.5);
+    TH1D *h_Mh23_carbon = new TH1D("h_Mh23_carbon", "P_{1T}P_{2T} Distribution; P_{1T}P_{2T} (GeV); Counts", 5, 0.2, 1.5);
     tree_nh3->Draw("Mh23>>h_Mh23_nh3"); 
     tree_carbon->Draw("Mh23>>h_Mh23_carbon");
 
@@ -288,7 +288,7 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
     gr_dilution->Draw("AP");
 
     // Fit to a third-degree polynomial
-    TF1 *fit_poly = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2", 0, 0.5);
+    TF1 *fit_poly = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2", 0.2, 1.5);
     gr_dilution->Fit(fit_poly, "R");
     fit_poly->SetLineColor(kRed);
     fit_poly->Draw("SAME");
@@ -306,10 +306,10 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
     // Fifth panel: xB histograms scaled by the fit constant
     c1->cd(5);
     gPad->SetLeftMargin(0.15);
-    TH1D *h_xB_nh3 = new TH1D("h_xB_nh3", "x_{B} Distribution; x_{B}; Counts", 50, 0.08, 0.58);
-    TH1D *h_xB_carbon = new TH1D("h_xB_carbon", "x_{B} Distribution; x_{B}; Counts", 50, 0.08, 0.58);
-    tree_nh3->Draw("x>>h_xB_nh3");
-    tree_carbon->Draw("x>>h_xB_carbon");
+    TH1D *h_xB_nh3 = new TH1D("h_xB_nh3", "x_{B} Distribution; x_{B}; Counts", 50, 0.00, 2);
+    TH1D *h_xB_carbon = new TH1D("h_xB_carbon", "x_{B} Distribution; x_{B}; Counts", 50, 0.0, 2);
+    tree_nh3->Draw("Mx1>>h_xB_nh3");
+    tree_carbon->Draw("Mx1>>h_xB_carbon");
 
     h_xB_carbon->Scale(scale_factor);
 
@@ -373,7 +373,7 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
     std::cout << std::endl;
 
     // Fit to a third-degree polynomial
-    TF1 *fit_poly_xB = new TF1("fit_poly_xB", "[0] + [1]*x + [2]*x^2", 0.08, 0.58);
+    TF1 *fit_poly_xB = new TF1("fit_poly_xB", "[0] + [1]*x + [2]*x^2", 0.0, 2);
     gr_dilution_xB->Fit(fit_poly_xB, "R");
     fit_poly_xB->SetLineColor(kRed);
     fit_poly_xB->Draw("SAME");
