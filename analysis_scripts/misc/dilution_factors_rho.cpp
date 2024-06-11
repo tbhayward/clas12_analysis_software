@@ -98,7 +98,7 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
 
             // Calculate theta using the custom function
             Double_t calculated_p3_theta = theta_calculation(p3.Px(), p3.Py(), p3.Pz());
-            std::cout << p3_theta << " " << calculated_p3_theta << " " << (p3_theta - calculated_p3_theta) << std::endl;
+            // std::cout << p3_theta << " " << calculated_p3_theta << " " << (p3_theta - calculated_p3_theta) << std::endl;
 
             // Apply the cut on p3_theta
             if (fabs(p3_theta - calculated_p3_theta) < 0.05) { // Adjusted tolerance to 0.05
