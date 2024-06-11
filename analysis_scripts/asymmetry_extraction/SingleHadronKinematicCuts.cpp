@@ -12,13 +12,17 @@ SingleHadronKinematicCuts::SingleHadronKinematicCuts(TTreeReader& reader)
       p_p(reader, "p_p"), p_theta(reader, "p_theta"), p_phi(reader, "p_phi"), 
       Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), x(reader, "x"), 
       y(reader, "y"), z(reader, "z"), pT(reader, "pT"), xF(reader, "xF"),
-      phi(reader, "phi"), 
+      phi(reader, "phi"), phi1(reader, "phi1"), Mh23(reader, "Mh23"), 
       target_pol(reader, "target_pol") {}
 
 bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         bool goodEvent = false;
         bool checked = false;
         string property = binNames[currentFits];
+
+        if (property == "rho") {
+            goodEvent = true;
+        }
 
         if (property == "xF") {
             goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.4 && *y < 0.75;
