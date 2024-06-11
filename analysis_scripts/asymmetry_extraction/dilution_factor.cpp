@@ -137,7 +137,7 @@ double dilution_factor(double currentVariable, const std::string& prefix) {
 
   // rho
   if (prefix == "rho") {
-    return 0.9;
+    return 0.94;
     // return 0.96-0.308*currentVariable-0.174*std::pow(currentVariable,2);
   }
 
