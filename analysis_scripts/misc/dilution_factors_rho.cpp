@@ -12,6 +12,7 @@
 #include <TPad.h>
 #include <TPaveText.h>
 #include <TLatex.h>
+#include <TLorentzVector.h>
 
 void dilution_factors_rho(const char* nh3_file, const char* c_file) {
     // Open the ROOT files
@@ -360,6 +361,6 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    dilution_factors(argv[1], argv[2]);
+    dilution_factors_rho(argv[1], argv[2]);
     return 0;
 }
