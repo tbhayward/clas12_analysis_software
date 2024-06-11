@@ -169,6 +169,21 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
     tree_nh3 = new_tree_nh3;
     tree_carbon = new_tree_carbon;
 
+    // Create new ROOT files to save the trees
+    TFile *output_nh3 = TFile::Open("/scratch/thayward/NH3.root", "RECREATE");
+    TFile *output_carbon = TFile::Open("/scratch/thayward/C.root", "RECREATE");
+
+    // Write the new trees to the files
+    output_nh3->cd();
+    new_tree_nh3->Write("PhysicsEvents");
+
+    output_carbon->cd();
+    new_tree_carbon->Write("PhysicsEvents");
+
+    // Close the files
+    output_nh3->Close();
+    output_carbon->Close();
+
     // Create histograms for xF2
     // TH1D *h_xF2_nh3 = new TH1D("h_xF2_nh3", "x_{F2} Distribution; x_{F2}; Counts", 100, -2.5, 1);
     // TH1D *h_xF2_carbon = new TH1D("h_xF2_carbon", "x_{F2} Distribution; x_{F2}; Counts", 100, -2.5, 1);
