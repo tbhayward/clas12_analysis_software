@@ -42,9 +42,12 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
     }
 
     // Define the variables for trimming
-    Double_t Mx23, z23, p1_p, p1_phi, p1_theta, p2_p, p2_theta, p2_phi, p3_theta;
+    Double_t Mx23, z23, e_p, e_theta, e_phi, p1_p, p1_phi, p1_theta, p2_p, p2_theta, p2_phi, p3_theta;
     tree_nh3->SetBranchAddress("Mx23", &Mx23);
     tree_nh3->SetBranchAddress("z23", &z23);
+    tree_nh3->SetBranchAddress("e_p", &e_p);
+    tree_nh3->SetBranchAddress("e_theta", &e_theta);
+    tree_nh3->SetBranchAddress("e_phi", &e_phi);
     tree_nh3->SetBranchAddress("p1_p", &p1_p);
     tree_nh3->SetBranchAddress("p1_phi", &p1_phi);
     tree_nh3->SetBranchAddress("p1_theta", &p1_theta);
@@ -57,6 +60,10 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
     TTree *new_tree_nh3 = tree_nh3->CloneTree(0);
     TTree *new_tree_carbon = tree_carbon->CloneTree(0);
 
+    // Initial conditions
+    TLorentzVector initial_electron(0, 0, 10.6, 10.6); // 10.6 GeV/c along z-axis
+    TLorentzVector initial_proton(0, 0, 0, 0.938); // Stationary proton target, mass 0.938 GeV/c^2
+
     Long64_t nentries = tree_nh3->GetEntries();
     for (Long64_t i = 0; i < nentries; ++i) {
         tree_nh3->GetEntry(i);
@@ -64,9 +71,14 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
         // Apply the cuts
         if (fabs(Mx23 - 0.95) < 0.06 && z23 > 0.9) {
             // Calculate the calculated p3_theta
-            TLorentzVector p1, p2, p3;
+            TLorentzVector p1, p2, p3, scattered_electron;
 
-            // Convert to Cartesian coordinates
+            // Convert to Cartesian coordinates for the scattered electron
+            Double_t e_px = e_p * sin(e_theta) * cos(e_phi);
+            Double_t e_py = e_p * sin(e_theta) * sin(e_phi);
+            Double_t e_pz = e_p * cos(e_theta);
+
+            // Convert to Cartesian coordinates for the detected particles
             Double_t p1_px = p1_p * sin(p1_theta) * cos(p1_phi);
             Double_t p1_py = p1_p * sin(p1_theta) * sin(p1_phi);
             Double_t p1_pz = p1_p * cos(p1_theta);
@@ -76,14 +88,14 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
             Double_t p2_pz = p2_p * cos(p2_theta);
 
             // Set the four-momentum vectors
+            scattered_electron.SetXYZM(e_px, e_py, e_pz, 0.000511); // Mass of electron in GeV/c^2
             p1.SetXYZM(p1_px, p1_py, p1_pz, 0.938); // Assume mass of proton (in GeV)
             p2.SetXYZM(p2_px, p2_py, p2_pz, 0.139); // Assume mass of pi+ (in GeV)
 
             // Calculate the missing four-momentum
-            TLorentzVector system = p1 + p2;
-            p3 = -system; // Missing momentum
+            TLorentzVector system = initial_electron + initial_proton - scattered_electron - p1 - p2;
+            p3 = system; // Missing momentum (pi-)
 
-            // Double_t calculated_p3_theta = p3.Theta();
             // Calculate theta using the custom function
             Double_t calculated_p3_theta = theta_calculation(p3.Px(), p3.Py(), p3.Pz());
             std::cout << p3_theta << " " << calculated_p3_theta << " " << (p3_theta - calculated_p3_theta) << std::endl;
@@ -98,6 +110,9 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
     // Repeat the same process for carbon tree
     tree_carbon->SetBranchAddress("Mx23", &Mx23);
     tree_carbon->SetBranchAddress("z23", &z23);
+    tree_carbon->SetBranchAddress("e_p", &e_p);
+    tree_carbon->SetBranchAddress("e_theta", &e_theta);
+    tree_carbon->SetBranchAddress("e_phi", &e_phi);
     tree_carbon->SetBranchAddress("p1_p", &p1_p);
     tree_carbon->SetBranchAddress("p1_phi", &p1_phi);
     tree_carbon->SetBranchAddress("p1_theta", &p1_theta);
@@ -113,9 +128,14 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
         // Apply the cuts
         if (fabs(Mx23 - 0.95) < 0.06 && z23 > 0.9) {
             // Calculate the calculated p3_theta
-            TLorentzVector p1, p2, p3;
+            TLorentzVector p1, p2, p3, scattered_electron;
 
-            // Convert to Cartesian coordinates
+            // Convert to Cartesian coordinates for the scattered electron
+            Double_t e_px = e_p * sin(e_theta) * cos(e_phi);
+            Double_t e_py = e_p * sin(e_theta) * sin(e_phi);
+            Double_t e_pz = e_p * cos(e_theta);
+
+            // Convert to Cartesian coordinates for the detected particles
             Double_t p1_px = p1_p * sin(p1_theta) * cos(p1_phi);
             Double_t p1_py = p1_p * sin(p1_theta) * sin(p1_phi);
             Double_t p1_pz = p1_p * cos(p1_theta);
@@ -125,12 +145,13 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
             Double_t p2_pz = p2_p * cos(p2_theta);
 
             // Set the four-momentum vectors
+            scattered_electron.SetXYZM(e_px, e_py, e_pz, 0.000511); // Mass of electron in GeV/c^2
             p1.SetXYZM(p1_px, p1_py, p1_pz, 0.938); // Assume mass of proton (in GeV)
             p2.SetXYZM(p2_px, p2_py, p2_pz, 0.139); // Assume mass of pi+ (in GeV)
 
             // Calculate the missing four-momentum
-            TLorentzVector system = p1 + p2;
-            p3 = -system; // Missing momentum
+            TLorentzVector system = initial_electron + initial_proton - scattered_electron - p1 - p2;
+            p3 = system; // Missing momentum (pi-)
 
             // Double_t calculated_p3_theta = p3.Theta();
             // Calculate theta using the custom function
