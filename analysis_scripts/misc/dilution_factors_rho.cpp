@@ -229,7 +229,7 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
     gr_ratio->Draw("AP");
 
     // Fit the data from -2.5 to -1 to a constant
-    TF1 *fit_const = new TF1("fit_const", "[0]", -1, -0.2);
+    TF1 *fit_const = new TF1("fit_const", "[0]", -0.6, -0.2);
     gr_ratio->Fit(fit_const, "R");
     fit_const->SetLineColor(kRed);
     fit_const->Draw("SAME");
@@ -306,8 +306,8 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
     // Fifth panel: xB histograms scaled by the fit constant
     c1->cd(5);
     gPad->SetLeftMargin(0.15);
-    TH1D *h_xB_nh3 = new TH1D("h_xB_nh3", "x_{B} Distribution; x_{B}; Counts", 50, 0.00, 2);
-    TH1D *h_xB_carbon = new TH1D("h_xB_carbon", "x_{B} Distribution; x_{B}; Counts", 50, 0.0, 2);
+    TH1D *h_xB_nh3 = new TH1D("h_xB_nh3", "x_{B} Distribution; x_{B}; Counts", 100, 0.00, 2);
+    TH1D *h_xB_carbon = new TH1D("h_xB_carbon", "x_{B} Distribution; x_{B}; Counts", 100, 0.0, 2);
     tree_nh3->Draw("Mx1>>h_xB_nh3");
     tree_carbon->Draw("Mx1>>h_xB_carbon");
 
