@@ -96,7 +96,6 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
         if (fabs(Mx23 - 0.95) < 0.06 && z23 > 0.9) {
             // Calculate the calculated p3_theta
             TLorentzVector p1, p2, p3;
-            std::cout << p1_p << std::endl;
             p1.SetPtEtaPhiM(p1_p * sin(p1_theta), p1_p * cos(p1_theta), p1_phi, 0.938); // Assume mass of proton (in GeV)
             p2.SetPtEtaPhiM(p2_p * sin(p2_theta), p2_p * cos(p2_theta), p2_phi, 0.139); // Assume mass of pi+ (in GeV)
             TLorentzVector system = p1 + p2;
@@ -110,6 +109,7 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
 
             // Apply the cut on p3_theta
             if (fabs(p3_theta - calculated_p3_theta) < 0.05) { // Adjusted tolerance to 0.05
+                std::cout << p1_p << std::endl;
                 new_tree_carbon->Fill();
             }
         }
