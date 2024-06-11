@@ -16,6 +16,10 @@ bool DihadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     bool goodEvent = false;
     string property = binNames[currentFits];
 
+    if (property == "rho") {
+        goodEvent = true;
+    }
+
     if (property == "epippimX") {
         goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75 && *z1 > 0.2 && *z2 > 0.2;
     } else if (property == "xepippimX") {
