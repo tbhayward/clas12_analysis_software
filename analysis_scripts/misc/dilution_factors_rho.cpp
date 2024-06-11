@@ -14,6 +14,12 @@
 #include <TLatex.h>
 #include <TLorentzVector.h>
 
+// Function to calculate the polar angle theta from Cartesian coordinates
+Double_t theta_calculation(Double_t x, Double_t y, Double_t z) {
+    Double_t r = std::sqrt(x*x + y*y + z*z);
+    return std::acos(z / r);
+}
+
 void dilution_factors_rho(const char* nh3_file, const char* c_file) {
     // Open the ROOT files
     TFile *nh3 = TFile::Open(nh3_file);
@@ -77,7 +83,9 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
             TLorentzVector system = p1 + p2;
             p3 = -system; // Missing momentum
 
-            Double_t calculated_p3_theta = p3.Theta();
+            // Double_t calculated_p3_theta = p3.Theta();
+            // Calculate theta using the custom function
+            Double_t calculated_p3_theta = theta_calculation(p3.Px(), p3.Py(), p3.Pz());
             std::cout << p3_theta << " " << calculated_p3_theta << " " << (p3_theta - calculated_p3_theta) << std::endl;
 
             // Apply the cut on p3_theta
@@ -124,7 +132,9 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
             TLorentzVector system = p1 + p2;
             p3 = -system; // Missing momentum
 
-            Double_t calculated_p3_theta = p3.Theta();
+            // Double_t calculated_p3_theta = p3.Theta();
+            // Calculate theta using the custom function
+            Double_t calculated_p3_theta = theta_calculation(p3.Px(), p3.Py(), p3.Pz());
             std::cout << p3_theta << " " << calculated_p3_theta << " " << (p3_theta - calculated_p3_theta) << std::endl;
 
             // Apply the cut on p3_theta
