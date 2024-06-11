@@ -135,6 +135,10 @@ double dilution_factor(double currentVariable, const std::string& prefix) {
       0.990298*std::pow(currentVariable,3);
   }
 
+  // rho
+  if (prefix == "rho") {
+    return 0.096-0.308*currentVariable-0.174*std::pow(currentVariable,2);
+  }
 
   // epi+pX
   if (prefix == "b2banalysisx") {
