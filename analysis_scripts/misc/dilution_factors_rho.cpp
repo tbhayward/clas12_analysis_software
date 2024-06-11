@@ -59,8 +59,19 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
         if (fabs(Mx23 - 0.95) < 0.06 && z23 > 0.9) {
             // Calculate the calculated p3_theta
             TLorentzVector p1, p2, p3;
-            p1.SetMagThetaPhiE(p1_p, p1_theta, p1_phi, std::sqrt(p1_p*p1_p + 0.938*0.938)); // Assume mass of proton (in GeV)
-            p2.SetMagThetaPhiE(p2_p, p2_theta, p2_phi, std::sqrt(p2_p*p2_p + 0.139*0.139)); // Assume mass of pi+ (in GeV)
+
+            // Convert to Cartesian coordinates
+            Double_t p1_px = p1_p * sin(p1_theta) * cos(p1_phi);
+            Double_t p1_py = p1_p * sin(p1_theta) * sin(p1_phi);
+            Double_t p1_pz = p1_p * cos(p1_theta);
+
+            Double_t p2_px = p2_p * sin(p2_theta) * cos(p2_phi);
+            Double_t p2_py = p2_p * sin(p2_theta) * sin(p2_phi);
+            Double_t p2_pz = p2_p * cos(p2_theta);
+
+            // Set the four-momentum vectors
+            p1.SetXYZM(p1_px, p1_py, p1_pz, 0.938); // Assume mass of proton (in GeV)
+            p2.SetXYZM(p2_px, p2_py, p2_pz, 0.139); // Assume mass of pi+ (in GeV)
 
             // Calculate the missing four-momentum
             TLorentzVector system = p1 + p2;
@@ -95,8 +106,19 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
         if (fabs(Mx23 - 0.95) < 0.06 && z23 > 0.9) {
             // Calculate the calculated p3_theta
             TLorentzVector p1, p2, p3;
-            p1.SetMagThetaPhiE(p1_p, p1_theta, p1_phi, std::sqrt(p1_p*p1_p + 0.938*0.938)); // Assume mass of proton (in GeV)
-            p2.SetMagThetaPhiE(p2_p, p2_theta, p2_phi, std::sqrt(p2_p*p2_p + 0.139*0.139)); // Assume mass of pi+ (in GeV)
+
+            // Convert to Cartesian coordinates
+            Double_t p1_px = p1_p * sin(p1_theta) * cos(p1_phi);
+            Double_t p1_py = p1_p * sin(p1_theta) * sin(p1_phi);
+            Double_t p1_pz = p1_p * cos(p1_theta);
+
+            Double_t p2_px = p2_p * sin(p2_theta) * cos(p2_phi);
+            Double_t p2_py = p2_p * sin(p2_theta) * sin(p2_phi);
+            Double_t p2_pz = p2_p * cos(p2_theta);
+
+            // Set the four-momentum vectors
+            p1.SetXYZM(p1_px, p1_py, p1_pz, 0.938); // Assume mass of proton (in GeV)
+            p2.SetXYZM(p2_px, p2_py, p2_pz, 0.139); // Assume mass of pi+ (in GeV)
 
             // Calculate the missing four-momentum
             TLorentzVector system = p1 + p2;
