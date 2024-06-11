@@ -228,7 +228,7 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
     c1->cd(2);
     gPad->SetLeftMargin(0.15);
     TGraphErrors *gr_ratio = new TGraphErrors();
-    for (int i = 1; i <= h_xF2_nh3->GetNbinsX(); ++i) {
+    for (int i = 1; i <= h_xF2_nh3->GetNbinsX()-1; ++i) {
         double nh3_counts = h_xF2_nh3->GetBinContent(i);
         double c_counts = h_xF2_carbon->GetBinContent(i);
         if (c_counts > 0) {
