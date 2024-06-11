@@ -13,7 +13,7 @@ SingleHadronKinematicCuts::SingleHadronKinematicCuts(TTreeReader& reader)
       p_p(reader, "p1_p"), p_theta(reader, "p1_theta"), p_phi(reader, "p1_phi"), 
       Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), x(reader, "x"), 
       y(reader, "y"), z(reader, "z"), pT(reader, "pT"), xF(reader, "xF"),
-      phi(reader, "phi1"),  Mh23(reader, "Mh23"), 
+      phi(reader, "phi1"), Mh23(reader, "Mh23"), 
       target_pol(reader, "target_pol") {}
 
 bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
