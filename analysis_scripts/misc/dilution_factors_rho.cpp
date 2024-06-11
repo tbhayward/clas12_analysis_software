@@ -193,7 +193,7 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
     // First panel: plot xF2 histograms
     c1->cd(1);
     gPad->SetLeftMargin(0.15);
-    gPad->SetLogy(); // Log scale to better see differences
+    // gPad->SetLogy(); // Log scale to better see differences
     h_xF2_nh3->SetLineColor(kBlue);
     h_xF2_carbon->SetLineColor(kRed);
     h_xF2_nh3->Draw();
