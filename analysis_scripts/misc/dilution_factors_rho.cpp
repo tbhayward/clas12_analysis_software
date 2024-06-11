@@ -243,6 +243,7 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
     gr_ratio->SetMarkerStyle(20);
     gr_ratio->SetMinimum(0);   // Set the minimum value for the y-axis
     gr_ratio->SetMaximum(20);  // Set the maximum value for the y-axis
+    gr_ratio->GetXaxis()->SetLimits(-0.4, 0.1); // Set the x-axis limits
     gr_ratio->Draw("AP");
 
     // Fit the data from -2.5 to -1 to a constant
