@@ -789,7 +789,6 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
 
   // Counter to limit the number of processed entries
   while (dataReader.Next()) {
-    std::cout << "HEY " << *currentVariable << std::endl;
 
     // Apply kinematic cuts (this function will need to be adapted)
     bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
@@ -797,6 +796,7 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
     // Check if the currentVariable is within the desired range
     if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
       sumVariable += *currentVariable;
+      std::cout << "HEY " << *sumVariable << std::endl;
 
       if (*helicity > 0 && *target_pol < 0) { histPosNeg->Fill(*phi); } 
       else if (*helicity < 0 && *target_pol > 0) {  histNegPos->Fill(*phi); }
