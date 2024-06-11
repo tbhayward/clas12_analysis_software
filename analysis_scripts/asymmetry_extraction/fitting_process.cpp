@@ -787,7 +787,7 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
   TTreeReaderValue<double> phi(dataReader, "phi1");
   TTreeReaderValue<double> Mh23(dataReader, "Mh23");
   TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
-  std::cout << "HEY " << Mh23 << std::endl;
+  std::cout << "HEY " << *Mh23 << std::endl;
 
   // Counter to limit the number of processed entries
   while (dataReader.Next()) {
