@@ -69,8 +69,8 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
         tree_nh3->GetEntry(i);
 
         // Apply the cuts
-        // if (fabs(Mx23 - 0.95) < 0.06 && z23 > 0.9) {
-        if (z23 > 0.9) {
+        if (fabs(Mx23 - 0.95) < 0.06 && z23 > 0.9) {
+        // if (z23 > 0.9) {
             // Calculate the calculated p3_theta
             TLorentzVector p1, p2, p3, scattered_electron;
 
@@ -127,8 +127,8 @@ void dilution_factors_rho(const char* nh3_file, const char* c_file) {
         tree_carbon->GetEntry(i);
 
         // Apply the cuts
-        // if (fabs(Mx23 - 0.95) < 0.06 && z23 > 0.9) {
-        if (z23 > 0.9) {
+        if (fabs(Mx23 - 0.95) < 0.06 && z23 > 0.9) {
+        // if (z23 > 0.9) {
             // Calculate the calculated p3_theta
             TLorentzVector p1, p2, p3, scattered_electron;
 
