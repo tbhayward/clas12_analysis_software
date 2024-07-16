@@ -79,12 +79,15 @@ public class Dihadrons {
     
     public static boolean channel_test(Dihadrons variables) {
 //        if (variables.helicity==0){ return false; }
-        if (variables.Q2()<1.00) { return false; } 
-        else if (variables.W()<2) { return false; } 
-        else if (variables.y()>0.75) { return false; } 
+        if (variables.Q2()<0.95) { return false; } 
+//        else if (variables.W()<2) { return false; } 
+//        else if (variables.y()>0.75) { return false; } 
 //        else if (variables.Mx() < 0.95) { return false; }
 //        else if (variables.Mx1()<1.50) { return false; } 
 //        else if (variables.Mx2()<1.50) { return false; } 
+
+//        else if (variables.xF1()<0.00 || variables.xF2()<0.00) { return false; }
+//        else if (variables.z1()<0.15 || variables.z2()<0.15) { return false; }
 
 //        else if (variables.e_p > 12 || variables.p1_p > 12 || variables.p2_p > 12 || variables.Q2 > 12 || 
 //                variables.W > 6 || variables.z > 2 || variables.zeta > 2 || 

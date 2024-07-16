@@ -62,13 +62,13 @@ public class Hadron {
 //        if (variables.helicity==0){ 
 //            System.out.println("You're returning false because helicity = 0. Is this data or MC?");
 //            return false; }
-        if (variables.Q2()<1.00) { return false; } 
-        if (variables.W()<2) { return false; } 
-        if (variables.xF()<0.0) { return false; } 
-        else if (variables.y()>0.75) { return false; } 
+        if (variables.Q2()<0.95) { return false; } 
+//        if (variables.W()<2) { return false; } 
+//        if (variables.xF()<0.0) { return false; } 
+//        else if (variables.y()>0.75) { return false; } 
 //        else if (variables.z()<0.2 || variables.z() > 0.95) { return false; } 
 //        else if (variables.p_p()<1.25) { return false; } 
-        else if (variables.Mx()<1.4) { return false; } 
+//        else if (variables.Mx()<1.4) { return false; } 
         
         
         else if (variables.e_p > 12 || variables.p_p > 12 || variables.Q2 > 12 || variables.W > 6 || 
