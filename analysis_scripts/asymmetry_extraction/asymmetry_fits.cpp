@@ -198,8 +198,8 @@ double DSA_single_hadron(double* x, double* par) {
   // Retrieve the phi variable from the input x array
   double phi = x[0];
   // Calculate and return the value of the function for the given phi and parameters 
-  // return ALL + ALL_cosphi*cos(phi);
-  return ALL;
+  return ALL + ALL_cosphi*cos(phi);
+  // return ALL;
 }
 
 double DSA_b2b_dihadron(double* x, double* par) {
