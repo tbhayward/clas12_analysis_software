@@ -1040,8 +1040,8 @@ public class analysis_fitter extends GenericKinematicFitter {
                                 cal_Bank, track_Bank, traj_Bank,  run_Bank, cc_Bank)) {
                     // this checks all of the PID requirements, if it passes all of them the electron is 
                     // added to the event below
-                    double fe = EnergyLoss(run_Bank.getFloat("torus", 0), pid, px, py, pz);
-//                   double fe = 1;
+//                    double fe = EnergyLoss(run_Bank.getFloat("torus", 0), pid, px, py, pz);
+                   double fe = 1;
                     Particle part = new Particle(pid,fe*px,fe*py,fe*pz,vx,vy,vz);
                     physEvent.addParticle(part);
                     lv_e.setPxPyPzM(px, py, pz, 0.0005109989461);
@@ -1068,8 +1068,8 @@ public class analysis_fitter extends GenericKinematicFitter {
                     track_Bank, traj_Bank, run_Bank)) {
                     // check for pion PID
                     
-                   double fe = EnergyLoss(run_Bank.getFloat("torus", 0), pid, px, py, pz);
-//                   double fe = 1;
+//                   double fe = EnergyLoss(run_Bank.getFloat("torus", 0), pid, px, py, pz);
+                   double fe = 1;
                    Particle part = new Particle(pid,fe*px,fe*py,fe*pz,vx,vy,vz);
                    physEvent.addParticle(part);   
                 }
@@ -1152,8 +1152,8 @@ public class analysis_fitter extends GenericKinematicFitter {
                     && proton_test(particle_Index, pid, vz, trigger_electron_vz, rec_Bank, cal_Bank, 
                     track_Bank, traj_Bank, run_Bank)) {
                    
-                   double fe = EnergyLoss(run_Bank.getFloat("torus", 0), pid, px, py, pz);
-//                   double fe = 1;
+//                   double fe = EnergyLoss(run_Bank.getFloat("torus", 0), pid, px, py, pz);
+                   double fe = 1;
                    Particle part = new Particle(pid,fe*px,fe*py,fe*pz,vx,vy,vz);
                    physEvent.addParticle(part);   
                }
