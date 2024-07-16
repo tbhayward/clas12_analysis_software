@@ -79,9 +79,9 @@ public class Dihadrons {
     
     public static boolean channel_test(Dihadrons variables) {
 //        if (variables.helicity==0){ return false; }
-        if (variables.Q2()<0.95) { return false; } 
-//        else if (variables.W()<2) { return false; } 
-//        else if (variables.y()>0.75) { return false; } 
+        if (variables.Q2()<1.00) { return false; } 
+        else if (variables.W()<2) { return false; } 
+        else if (variables.y()>0.75) { return false; } 
 //        else if (variables.Mx() < 0.95) { return false; }
 //        else if (variables.Mx1()<1.50) { return false; } 
 //        else if (variables.Mx2()<1.50) { return false; } 
