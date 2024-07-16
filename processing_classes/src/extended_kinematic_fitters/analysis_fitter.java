@@ -918,7 +918,7 @@ public class analysis_fitter extends GenericKinematicFitter {
         double p = Math.sqrt(Math.pow(px,2)+Math.pow(py,2)+Math.pow(pz,2));
         
         return true
-//            && p > 1.00
+            && p > 1.25
 //            && p < 5.00 // this wasn't used in the dihadron publication but was used in the submitted single pion
             && forward_detector_cut(particle_Index, rec_Bank)
 //            && vertex_cut(particle_Index, trigger_electron_vz, rec_Bank, run_Bank) 
