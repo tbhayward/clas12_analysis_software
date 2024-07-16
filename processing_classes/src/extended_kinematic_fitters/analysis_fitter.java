@@ -899,9 +899,9 @@ public class analysis_fitter extends GenericKinematicFitter {
 //            && p > 2.2 // higher cut ultimately enforced when we cut on y < 0.8 or y < 0.75
 //                // this is just to speed up processing
             && forward_detector_cut(particle_Index, rec_Bank)
-            && calorimeter_energy_cut(particle_Index, cal_Bank) 
-            && calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
-            && calorimeter_diagonal_cut(particle_Index, p, cal_Bank)
+//            && calorimeter_energy_cut(particle_Index, cal_Bank) 
+//            && calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
+//            && calorimeter_diagonal_cut(particle_Index, p, cal_Bank)
 //            && vertex_cut(particle_Index, trigger_electron_vz, rec_Bank, run_Bank)    
 //            && pcal_fiducial_cut(particle_Index, rec_Bank, cal_Bank)
 //            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
@@ -962,7 +962,7 @@ public class analysis_fitter extends GenericKinematicFitter {
 //            && vertex_cut(particle_Index, trigger_electron_vz, rec_Bank, run_Bank) 
             && forward_detector_cut(particle_Index, rec_Bank)
 //            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
-//            && hadron_pass2_cut(particle_Index, rec_Bank)
+            && hadron_pass2_cut(particle_Index, rec_Bank)
 //            && hadron_chi2pid_cut(particle_Index, rec_Bank)
               ;
     }
