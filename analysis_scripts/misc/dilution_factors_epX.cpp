@@ -197,15 +197,25 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     fit_poly->SetLineColor(kRed);
     fit_poly->Draw("SAME");
 
+    // Retrieve fit parameters and their errors
+    double p0 = fit_poly->GetParameter(0);
+    double p0_err = fit_poly->GetParError(0);
+    double p1 = fit_poly->GetParameter(1);
+    double p1_err = fit_poly->GetParError(1);
+    double p2 = fit_poly->GetParameter(2);
+    double p2_err = fit_poly->GetParError(2);
+    double p3 = fit_poly->GetParameter(3);
+    double p3_err = fit_poly->GetParError(3);
+
     // Add fit parameters box
     TPaveText *pt = new TPaveText(0.7, 0.7, 0.9, 0.9, "brNDC");
     pt->SetBorderSize(1);
     pt->SetFillStyle(1001); // Solid fill style
     pt->SetFillColor(kWhite); // White background
-    pt->AddText(Form("p0 = %.3f", fit_poly->GetParameter(0)));
-    pt->AddText(Form("p1 = %.3f", fit_poly->GetParameter(1)));
-    pt->AddText(Form("p2 = %.3f", fit_poly->GetParameter(2)));
-    pt->AddText(Form("p3 = %.3f", fit_poly->GetParameter(2)));
+    pt->AddText(Form("p0 = %.3f +/- %.3f", p0, p0_err));
+    pt->AddText(Form("p1 = %.3f +/- %.3f", p1, p1_err));
+    pt->AddText(Form("p2 = %.3f +/- %.3f", p2, p2_err));
+    pt->AddText(Form("p3 = %.3f +/- %.3f", p3, p3_err));
     pt->Draw();
 
     // Save the canvas
