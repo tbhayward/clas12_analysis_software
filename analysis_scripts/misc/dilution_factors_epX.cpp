@@ -159,13 +159,30 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     gPad->SetLeftMargin(0.15);
     TGraphErrors *gr_dilution = new TGraphErrors();
     for (int i = 1; i <= h_pT_nh3->GetNbinsX(); ++i) {
+        // double nh3_counts = h_pT_nh3->GetBinContent(i);
+        // double c_counts = h_pT_carbon_scaled->GetBinContent(i);
+        // if (nh3_counts > 0) {
+        //     double dilution = (nh3_counts - c_counts) / nh3_counts;
+        //     double error = std::sqrt((c_counts / nh3_counts) * (c_counts / nh3_counts) / nh3_counts + c_counts / (nh3_counts * nh3_counts));
+        //     gr_dilution->SetPoint(i - 1, h_pT_nh3->GetBinCenter(i), dilution);
+        //     gr_dilution->SetPointError(i - 1, 0, error);
+        // }
         double nh3_counts = h_pT_nh3->GetBinContent(i);
+        double nh3_error = h_pT_nh3->GetBinError(i);
         double c_counts = h_pT_carbon_scaled->GetBinContent(i);
+        double c_error = h_pT_carbon_scaled->GetBinError(i);
+
         if (nh3_counts > 0) {
             double dilution = (nh3_counts - c_counts) / nh3_counts;
-            double error = std::sqrt((c_counts / nh3_counts) * (c_counts / nh3_counts) / nh3_counts + c_counts / (nh3_counts * nh3_counts));
+
+            // Propagate the error
+            double dilution_error = std::sqrt(
+                std::pow((c_counts / (nh3_counts * nh3_counts)) * nh3_error, 2) +
+                std::pow(1.0 / nh3_counts * c_error, 2);
+            );
+
             gr_dilution->SetPoint(i - 1, h_pT_nh3->GetBinCenter(i), dilution);
-            gr_dilution->SetPointError(i - 1, 0, error);
+            gr_dilution->SetPointError(i - 1, 0, dilution_error);
         }
     }
     gr_dilution->SetTitle("Dilution Factor; P_{T} (GeV); (NH3 - Carbon) / NH3");
