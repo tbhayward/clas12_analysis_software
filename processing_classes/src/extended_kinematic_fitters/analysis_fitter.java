@@ -902,7 +902,7 @@ public class analysis_fitter extends GenericKinematicFitter {
             && calorimeter_energy_cut(particle_Index, cal_Bank) 
             && calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
             && calorimeter_diagonal_cut(particle_Index, p, cal_Bank)
-//            && vertex_cut(particle_Index, trigger_electron_vz, rec_Bank, run_Bank)    
+            && vertex_cut(particle_Index, trigger_electron_vz, rec_Bank, run_Bank)    
             && pcal_fiducial_cut(particle_Index, rec_Bank, cal_Bank)
             && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
 //            && nphe_cut(particle_Index, cc_Bank) // legacy cut used in the analysis note to check the effect
@@ -918,13 +918,13 @@ public class analysis_fitter extends GenericKinematicFitter {
         double p = Math.sqrt(Math.pow(px,2)+Math.pow(py,2)+Math.pow(pz,2));
         
         return true
-            && p > 1.25
+//            && p > 1.25
 //            && p < 5.00 // this wasn't used in the dihadron publication but was used in the submitted single pion
             && forward_detector_cut(particle_Index, rec_Bank)
-//            && vertex_cut(particle_Index, trigger_electron_vz, rec_Bank, run_Bank) 
-//            && hadron_pass2_cut(particle_Index, rec_Bank)
+            && vertex_cut(particle_Index, trigger_electron_vz, rec_Bank, run_Bank) 
+            && hadron_pass2_cut(particle_Index, rec_Bank)
 //            && pion_chi2pid_cut(particle_Index, rec_Bank)
-            && hadron_chi2pid_cut(particle_Index, rec_Bank)
+//            && hadron_chi2pid_cut(particle_Index, rec_Bank)
             && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
               ;
     }
@@ -941,10 +941,10 @@ public class analysis_fitter extends GenericKinematicFitter {
 //            && p > 1.00
 //            && p < 3.5 
             && forward_detector_cut(particle_Index, rec_Bank)
-//            && vertex_cut(particle_Index, trigger_electron_vz, rec_Bank, run_Bank) 
-//            && hadron_pass2_cut(particle_Index, rec_Bank)
+            && vertex_cut(particle_Index, trigger_electron_vz, rec_Bank, run_Bank) 
+            && hadron_pass2_cut(particle_Index, rec_Bank)
 //            && hadron_chi2pid_cut(particle_Index, rec_Bank)
-//            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
+            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
               ;
     }
     
@@ -959,7 +959,7 @@ public class analysis_fitter extends GenericKinematicFitter {
         
         return true
 //            && p > 0.4
-//            && vertex_cut(particle_Index, trigger_electron_vz, rec_Bank, run_Bank) 
+            && vertex_cut(particle_Index, trigger_electron_vz, rec_Bank, run_Bank) 
             && forward_detector_cut(particle_Index, rec_Bank)
             && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
             && hadron_pass2_cut(particle_Index, rec_Bank)

@@ -4,6 +4,7 @@
 #include <iostream>
 #include <fstream>
 #include <cmath>
+#include <sstream>
 
 using namespace std;
 
