@@ -188,6 +188,9 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     gr_dilution->SetMarkerStyle(20);
     gr_dilution->Draw("AP");
 
+    // Set x-axis range from 0 to 1
+    gr_dilution->GetXaxis()->SetRangeUser(0, 1);
+
     // Fit to a third-degree polynomial
     TF1 *fit_poly = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2", 0, 1.0);
     gr_dilution->Fit(fit_poly, "R");
