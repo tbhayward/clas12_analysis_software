@@ -12,6 +12,7 @@
 #include <TPad.h>
 #include <TPaveText.h>
 #include <TLatex.h>
+#include <sstream>
 
 void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     // Open the ROOT files
@@ -257,7 +258,7 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     delete h_xF2_nh3;
     delete h_xF2_carbon;
     delete h_pT_nh3;
-    delete h_pTe_carbon;
+    delete h_pT_carbon;
     delete gr_ratio;
     delete fit_const;
     delete gr_dilution;
