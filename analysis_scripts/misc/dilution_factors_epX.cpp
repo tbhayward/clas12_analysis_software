@@ -257,7 +257,7 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     delete h_xF2_nh3;
     delete h_xF2_carbon;
     delete h_pT_nh3;
-    delete h_pT_carbon;
+    delete h_pTe_carbon;
     delete gr_ratio;
     delete fit_const;
     delete gr_dilution;
@@ -272,6 +272,6 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    dilution_factors(argv[1], argv[2]);
+    dilution_factors_epX(argv[1], argv[2]);
     return 0;
 }
