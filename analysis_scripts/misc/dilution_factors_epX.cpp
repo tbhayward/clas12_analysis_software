@@ -85,8 +85,8 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
         }
     }
     // Set y-axis range from 5 to 15
-    gr_ratio->GetYaxis()->SetRangeUser(5, 15);
-    
+    gr_ratio->GetYaxis()->SetRangeUser(9, 15);
+
     // gr_ratio->SetTitle("NH_{3} to Carbon Ratio; x_{F2}; Ratio");
     gr_ratio->SetTitle("NH_{3} to Carbon Ratio; M_{x} (GeV); Ratio");
     gr_ratio->SetMarkerStyle(20);
@@ -173,16 +173,16 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     // Clean up
     nh3->Close();
     carbon->Close();
-    delete h_xF2_nh3;
-    delete h_xF2_carbon;
-    delete h_pT_nh3;
-    delete h_pT_carbon;
-    delete gr_ratio;
-    delete fit_const;
-    delete gr_dilution;
-    delete fit_poly;
-    delete pt;
-    delete c1;
+    // delete h_xF2_nh3;
+    // delete h_xF2_carbon;
+    // delete h_pT_nh3;
+    // delete h_pT_carbon;
+    // delete gr_ratio;
+    // delete fit_const;
+    // delete gr_dilution;
+    // delete fit_poly;
+    // delete pt;
+    // delete c1;
 }
 
 int main(int argc, char** argv) {
