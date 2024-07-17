@@ -49,7 +49,7 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
 
     // Create canvas and divide it into four panels
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1200, 1200);
-    c1->Divide(2, 3);
+    c1->Divide(2, 2);
 
     // First panel: plot xF2 histograms
     c1->cd(1);
@@ -106,8 +106,8 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     // Third panel: pT histograms scaled by the fit constant
     c1->cd(3);
     gPad->SetLeftMargin(0.15);
-    TH1D *h_pT_nh3 = new TH1D("h_pT_nh3", "P_{T} Distribution; P_{T} (GeV); Counts", 5, 0, 0.5);
-    TH1D *h_pT_carbon = new TH1D("h_pT_carbon", "P_{T} Distribution; P_{T} (GeV); Counts", 5, 0, 0.5);
+    TH1D *h_pT_nh3 = new TH1D("h_pT_nh3", "P_{T} Distribution; P_{T} (GeV); Counts", 50, 0, 1.0);
+    TH1D *h_pT_carbon = new TH1D("h_pT_carbon", "P_{T} Distribution; P_{T} (GeV); Counts", 50, 0, 1.0);
     tree_nh3->Draw("pT>>h_pT_nh3");
     tree_carbon->Draw("pT>>h_pT_carbon");
 
@@ -163,91 +163,6 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     pt->AddText(Form("p1 = %.3f", fit_poly->GetParameter(1)));
     pt->AddText(Form("p2 = %.3f", fit_poly->GetParameter(2)));
     pt->Draw();
-
-    // Fifth panel: xB histograms scaled by the fit constant
-    c1->cd(5);
-    gPad->SetLeftMargin(0.15);
-    TH1D *h_xB_nh3 = new TH1D("h_xB_nh3", "x_{B} Distribution; x_{B}; Counts", 50, 0.08, 0.58);
-    TH1D *h_xB_carbon = new TH1D("h_xB_carbon", "x_{B} Distribution; x_{B}; Counts", 50, 0.08, 0.58);
-    tree_nh3->Draw("x>>h_xB_nh3");
-    tree_carbon->Draw("x>>h_xB_carbon");
-
-    h_xB_carbon->Scale(scale_factor);
-
-    h_xB_nh3->SetLineColor(kBlue);
-    h_xB_carbon->SetLineColor(kRed);
-    h_xB_nh3->Draw();
-    h_xB_carbon->Draw("SAME");
-
-    // Add legend
-    TLegend *leg_xB = new TLegend(0.55, 0.8, 0.9, 0.9);
-    leg_xB->SetTextSize(0.04);
-    leg_xB->AddEntry(h_xB_nh3, "NH_{3}", "l");
-    leg_xB->AddEntry(h_xB_carbon, "s*C", "l");
-    leg_xB->Draw();
-
-    // Remove statboxes
-    h_xB_nh3->SetStats(0);
-    h_xB_carbon->SetStats(0);
-
-    // Sixth panel: (NH3 - Carbon) / NH3 with fit to a third-degree polynomial for xB
-    c1->cd(6);
-    gPad->SetLeftMargin(0.15);
-    TGraphErrors *gr_dilution_xB = new TGraphErrors();
-    for (int i = 1; i <= h_xB_nh3->GetNbinsX(); ++i) {
-        double nh3_counts = h_xB_nh3->GetBinContent(i);
-        double c_counts = h_xB_carbon->GetBinContent(i);
-        if (nh3_counts > 0) {
-            double dilution = (nh3_counts - c_counts) / nh3_counts;
-            double error = std::sqrt((c_counts / nh3_counts) * (c_counts / nh3_counts) / nh3_counts + c_counts / (nh3_counts * nh3_counts));
-            gr_dilution_xB->SetPoint(i - 1, h_xB_nh3->GetBinCenter(i), dilution);
-            gr_dilution_xB->SetPointError(i - 1, 0, error);
-        }
-    }
-    gr_dilution_xB->SetTitle("Dilution Factor; x_{B}; (NH3 - Carbon) / NH3");
-    gr_dilution_xB->SetMarkerStyle(20);
-    gr_dilution_xB->Draw("AP");
-
-    std::vector<std::string> output;
-    output.push_back("{");
-
-    for (int i = 1; i <= h_xB_nh3->GetNbinsX(); ++i) {
-        double nh3_counts = h_xB_nh3->GetBinContent(i);
-        double c_counts = h_xB_carbon->GetBinContent(i);
-        if (nh3_counts > 0) {
-            double dilution = (nh3_counts - c_counts) / nh3_counts;
-            double error = std::sqrt((c_counts / nh3_counts) * (c_counts / nh3_counts) / nh3_counts + c_counts / (nh3_counts * nh3_counts));
-            std::ostringstream ss;
-            ss << "{" << h_xB_nh3->GetBinCenter(i) << ", " << dilution << ", " << error << "}";
-            output.push_back(ss.str());
-        }
-    }
-
-    output.push_back("}");
-
-    for (size_t i = 0; i < output.size(); ++i) {
-        std::cout << output[i];
-        if (i != output.size() - 1) {
-            std::cout << ", ";
-        }
-    }
-    std::cout << std::endl;
-
-    // Fit to a third-degree polynomial
-    TF1 *fit_poly_xB = new TF1("fit_poly_xB", "[0] + [1]*x + [2]*x^2", 0.08, 0.58);
-    gr_dilution_xB->Fit(fit_poly_xB, "R");
-    fit_poly_xB->SetLineColor(kRed);
-    fit_poly_xB->Draw("SAME");
-
-    // Add fit parameters box
-    TPaveText *pt_xB = new TPaveText(0.7, 0.7, 0.9, 0.9, "brNDC");
-    pt_xB->SetBorderSize(1);
-    pt_xB->SetFillStyle(1001); // Solid fill style
-    pt_xB->SetFillColor(kWhite); // White background
-    pt_xB->AddText(Form("p0 = %.3f", fit_poly_xB->GetParameter(0)));
-    pt_xB->AddText(Form("p1 = %.3f", fit_poly_xB->GetParameter(1)));
-    pt_xB->AddText(Form("p2 = %.3f", fit_poly_xB->GetParameter(2)));
-    pt_xB->Draw();
 
     // Save the canvas
     c1->SaveAs("dilution_factors.pdf");
