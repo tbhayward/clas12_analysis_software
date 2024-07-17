@@ -84,6 +84,9 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
             gr_ratio->SetPointError(i - 1, 0, error);
         }
     }
+    // Set y-axis range from 5 to 15
+    gr_ratio->GetYaxis()->SetRangeUser(5, 15);
+    
     // gr_ratio->SetTitle("NH_{3} to Carbon Ratio; x_{F2}; Ratio");
     gr_ratio->SetTitle("NH_{3} to Carbon Ratio; M_{x} (GeV); Ratio");
     gr_ratio->SetMarkerStyle(20);
