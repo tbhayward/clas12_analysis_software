@@ -178,8 +178,7 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
             // Propagate the error
             double dilution_error = std::sqrt(
                 std::pow((c_counts / (nh3_counts * nh3_counts)) * nh3_error, 2) +
-                std::pow(1.0 / nh3_counts * c_error, 2);
-            );
+                std::pow(1.0 / nh3_counts * c_error, 2));
 
             gr_dilution->SetPoint(i - 1, h_pT_nh3->GetBinCenter(i), dilution);
             gr_dilution->SetPointError(i - 1, 0, dilution_error);
