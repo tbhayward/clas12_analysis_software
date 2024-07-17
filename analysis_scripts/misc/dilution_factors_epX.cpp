@@ -113,7 +113,7 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     latex.SetTextSize(0.04);
     latex.DrawLatex(0.20, 0.85, Form("Fit Const, s = %.3f #pm %.3f", fit_value, fit_error));
 
-    // Third panel: pT histograms scaled by the fit constant
+    // Third panel: pT histograms scaled by the fit constant with propagated errors
     c1->cd(3);
     gPad->SetLeftMargin(0.15);
     TH1D *h_pT_nh3 = new TH1D("h_pT_nh3", "P_{T} Distribution; P_{T} (GeV); Counts", 100, 0, 1.0);
@@ -122,23 +122,37 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     tree_carbon->Draw("pT>>h_pT_carbon");
 
     double scale_factor = fit_const->GetParameter(0);
-    h_pT_carbon->Scale(scale_factor);
+    double scale_error = fit_const->GetParError(0);
+
+    TH1D *h_pT_carbon_scaled = (TH1D*)h_pT_carbon->Clone("h_pT_carbon_scaled");
+    h_pT_carbon_scaled->SetTitle("P_{T} Distribution; P_{T} (GeV); Counts (Scaled)");
+
+    for (int i = 1; i <= h_pT_carbon->GetNbinsX(); ++i) {
+        double bin_content = h_pT_carbon->GetBinContent(i);
+        double bin_error = h_pT_carbon->GetBinError(i);
+
+        double new_content = bin_content * scale_factor;
+        double new_error = new_content * std::sqrt((bin_error / bin_content) * (bin_error / bin_content) + (scale_error / scale_factor) * (scale_error / scale_factor));
+
+        h_pT_carbon_scaled->SetBinContent(i, new_content);
+        h_pT_carbon_scaled->SetBinError(i, new_error);
+    }
 
     h_pT_nh3->SetLineColor(kBlue);
-    h_pT_carbon->SetLineColor(kRed);
+    h_pT_carbon_scaled->SetLineColor(kRed);
     h_pT_nh3->Draw();
-    h_pT_carbon->Draw("SAME");
+    h_pT_carbon_scaled->Draw("SAME");
 
     // Add legend
     TLegend *leg_pT = new TLegend(0.55, 0.8, 0.9, 0.9);
     leg_pT->SetTextSize(0.04);
     leg_pT->AddEntry(h_pT_nh3, "NH_{3}", "l");
-    leg_pT->AddEntry(h_pT_carbon, "s*C", "l");
+    leg_pT->AddEntry(h_pT_carbon_scaled, "s*C", "l");
     leg_pT->Draw();
 
     // Remove statboxes
     h_pT_nh3->SetStats(0);
-    h_pT_carbon->SetStats(0);
+    h_pT_carbon_scaled->SetStats(0);
 
     // Fourth panel: (NH3 - Carbon) / NH3 with fit to a third-degree polynomial
     c1->cd(4);
@@ -146,7 +160,7 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     TGraphErrors *gr_dilution = new TGraphErrors();
     for (int i = 1; i <= h_pT_nh3->GetNbinsX(); ++i) {
         double nh3_counts = h_pT_nh3->GetBinContent(i);
-        double c_counts = h_pT_carbon->GetBinContent(i);
+        double c_counts = h_pT_carbon_scaled->GetBinContent(i);
         if (nh3_counts > 0) {
             double dilution = (nh3_counts - c_counts) / nh3_counts;
             double error = std::sqrt((c_counts / nh3_counts) * (c_counts / nh3_counts) / nh3_counts + c_counts / (nh3_counts * nh3_counts));
