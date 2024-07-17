@@ -192,7 +192,7 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     gr_dilution->GetXaxis()->SetRangeUser(0, 1);
 
     // Fit to a third-degree polynomial
-    TF1 *fit_poly = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2", 0, 1.0);
+    TF1 *fit_poly = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2 + [3]*x^3", 0, 1.0);
     gr_dilution->Fit(fit_poly, "R");
     fit_poly->SetLineColor(kRed);
     fit_poly->Draw("SAME");
@@ -205,6 +205,7 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     pt->AddText(Form("p0 = %.3f", fit_poly->GetParameter(0)));
     pt->AddText(Form("p1 = %.3f", fit_poly->GetParameter(1)));
     pt->AddText(Form("p2 = %.3f", fit_poly->GetParameter(2)));
+    pt->AddText(Form("p3 = %.3f", fit_poly->GetParameter(2)));
     pt->Draw();
 
     // Save the canvas
