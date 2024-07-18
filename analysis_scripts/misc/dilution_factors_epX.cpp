@@ -14,10 +14,9 @@
 #include <TLatex.h>
 #include <sstream>
 
-// Function to plot histograms and ratios for a given branch
-void plot_histograms_and_ratios(TCanvas* c1, TTree* tree_nh3, TTree* tree_carbon, const char* branch_name, 
-                                const char* title, double hist_min, double hist_max, double fit_min, 
-                                double fit_max, double plot_y_min, double plot_y_max, int pad_hist, int pad_ratio) {
+void plot_histograms_and_ratios(TTree* tree_nh3, TTree* tree_carbon, const char* branch_name, const char* title, 
+                                double hist_min, double hist_max, double fit_min, double fit_max, 
+                                double plot_y_min, double plot_y_max, TCanvas* canvas, int pad_hist, int pad_ratio) {
     // Create histograms
     std::string hist_name_nh3 = std::string(branch_name) + "_nh3";
     std::string hist_name_carbon = std::string(branch_name) + "_carbon";
@@ -29,7 +28,7 @@ void plot_histograms_and_ratios(TCanvas* c1, TTree* tree_nh3, TTree* tree_carbon
     tree_carbon->Draw(Form("%s>>%s", branch_name, hist_name_carbon.c_str()));
 
     // First panel: plot histograms
-    c1->cd(pad_hist);
+    canvas->cd(pad_hist);
     gPad->SetLeftMargin(0.15);
     gPad->SetLogy(); // Log scale to better see differences
     h_nh3->SetLineColor(kBlue);
@@ -48,7 +47,7 @@ void plot_histograms_and_ratios(TCanvas* c1, TTree* tree_nh3, TTree* tree_carbon
     h_carbon->SetStats(0);
 
     // Second panel: ratio of NH3 to Carbon counts
-    c1->cd(pad_ratio);
+    canvas->cd(pad_ratio);
     gPad->SetLeftMargin(0.15);
     TGraphErrors* gr_ratio = new TGraphErrors();
     for (int i = 1; i <= h_nh3->GetNbinsX(); ++i) {
@@ -121,10 +120,10 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     c1->Divide(2, 2);
 
     // Plot Mx histograms and ratios
-    plot_histograms_and_ratios(c1, tree_nh3, tree_carbon, "Mx", "M_{x} (GeV)", -2, 3, -2, -0.5, 9, 15, 1, 2);
+    plot_histograms_and_ratios(tree_nh3, tree_carbon, "Mx", "M_{x} (GeV)", -2, 3, -2, -0.5, 9, 15, c1, 1, 2);
 
     // Plot xF histograms and ratios
-    plot_histograms_and_ratios(c1, tree_nh3, tree_carbon, "xF", "x_{F}", -2.5, 1, -2, -1.25, 5, 15, 3, 4);
+    plot_histograms_and_ratios(tree_nh3, tree_carbon, "xF", "x_{F}", -2.5, 1, -2, -1.25, 5, 15, c1, 3, 4);
 
     // Save the canvas
     c1->SaveAs("dilution_factors.pdf");
