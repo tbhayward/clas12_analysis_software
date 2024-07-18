@@ -160,13 +160,13 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     gr_ratio_xF->SetMarkerStyle(20);
     gr_ratio_xF->Draw("AP");
 
-    // Fit the data from -2 to -1.25 to a constant for xF
-    TF1* fit_const_xF = new TF1("fit_const_xF", "[0]", -2, -1.25);
+    // Fit the data from -2 to -1.00 to a constant for xF
+    TF1* fit_const_xF = new TF1("fit_const_xF", "[0]", -2, -1.00);
     gr_ratio_xF->Fit(fit_const_xF, "R");
     fit_const_xF->SetLineColor(kRed);
     fit_const_xF->Draw("SAME");
-    // Add the dotted-dashed line from -1.25 to 1 for xF
-    TF1* dotted_line_xF = new TF1("dotted_line_xF", "[0]", -1.25, 1);
+    // Add the dotted-dashed line from -1.00 to 1 for xF
+    TF1* dotted_line_xF = new TF1("dotted_line_xF", "[0]", -1.00, 1);
     dotted_line_xF->SetParameter(0, fit_const_xF->GetParameter(0)); // Use the same constant value as the fit
     dotted_line_xF->SetLineColor(kRed);
     dotted_line_xF->SetLineStyle(7); // Set line style to dotted-dashed
@@ -191,7 +191,7 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     // Clean up
     nh3->Close();
     carbon->Close();
-    }
+}
 
 int main(int argc, char** argv) {
     if (argc != 3) {
