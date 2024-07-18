@@ -29,7 +29,7 @@ void plotHistogramsAndRatio(TTree* tree_nh3, TTree* tree_carbon, const char* bra
     tree_carbon->Draw(Form("%s>>%s", branch_name, hist_name_carbon.c_str()));
 
     // First panel: plot histograms
-    canvas->cd(1);
+    canvas->cd(hist_pad);  // Ensure correct pad is activated
     gPad->SetLeftMargin(0.15);
     gPad->SetLogy(); // Log scale to better see differences
     h_nh3->SetLineColor(kBlue);
@@ -48,7 +48,7 @@ void plotHistogramsAndRatio(TTree* tree_nh3, TTree* tree_carbon, const char* bra
     h_carbon->SetStats(0);
 
     // Second panel: ratio of NH3 to Carbon counts
-    canvas->cd(2);
+    canvas->cd(ratio_pad);  // Ensure correct pad is activated
     gPad->SetLeftMargin(0.15);
     TGraphErrors* gr_ratio = new TGraphErrors();
     for (int i = 1; i <= h_nh3->GetNbinsX(); ++i) {
@@ -126,6 +126,8 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     plotHistogramsAndRatio(tree_nh3, tree_carbon, "zeta", "#zeta", 0, 1.5, 1.0, 1.5, 5, 15, c1, 5, 6);
 
     // Save the canvas
+    c1->Modified(); // Ensures the canvas updates correctly
+    c1->Update();   // Ensures the canvas updates correctly
     c1->SaveAs("dilution_factors.pdf");
 
     // Clean up
