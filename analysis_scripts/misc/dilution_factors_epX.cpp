@@ -35,52 +35,48 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
         return;
     }
 
-    // Create histograms for xF2
-    // TH1D *h_xF2_nh3 = new TH1D("h_xF2_nh3", "x_{F2} Distribution; x_{F2}; Counts", 100, -2.5, 1);
-    // TH1D *h_xF2_carbon = new TH1D("h_xF2_carbon", "x_{F2} Distribution; x_{F2}; Counts", 100, -2.5, 1);
-    TH1D *h_xF2_nh3 = new TH1D("h_xF2_nh3", "M_{x} Distribution; M_{x} (GeV); Counts", 100, -2, 3);
-    TH1D *h_xF2_carbon = new TH1D("h_xF2_carbon", "M_{x} Distribution; M_{x} (GeV); Counts", 100, -2, 3);
+    // Create histograms for Mx
+    TH1D *h_Mx_nh3 = new TH1D("h_Mx_nh3", "M_{x} Distribution; M_{x} (GeV); Counts", 100, -2, 3);
+    TH1D *h_Mx_carbon = new TH1D("h_Mx_carbon", "M_{x} Distribution; M_{x} (GeV); Counts", 100, -2, 3);
 
     // Fill the histograms
-    // tree_nh3->Draw("xF2>>h_xF2_nh3");
-    // tree_carbon->Draw("xF2>>h_xF2_carbon");
-    tree_nh3->Draw("Mx>>h_xF2_nh3");
-    tree_carbon->Draw("Mx>>h_xF2_carbon");
+    tree_nh3->Draw("Mx>>h_Mx_nh3");
+    tree_carbon->Draw("Mx>>h_Mx_carbon");
 
     // Create canvas and divide it into four panels
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1200, 1200);
     c1->Divide(2, 2);
 
-    // First panel: plot xF2 histograms
+    // First panel: plot Mx histograms
     c1->cd(1);
     gPad->SetLeftMargin(0.15);
     gPad->SetLogy(); // Log scale to better see differences
-    h_xF2_nh3->SetLineColor(kBlue);
-    h_xF2_carbon->SetLineColor(kRed);
-    h_xF2_nh3->Draw();
-    h_xF2_carbon->Draw("SAME");
+    h_Mx_nh3->SetLineColor(kBlue);
+    h_Mx_carbon->SetLineColor(kRed);
+    h_Mx_nh3->Draw();
+    h_Mx_carbon->Draw("SAME");
 
     // Add legend
     TLegend *leg = new TLegend(0.75, 0.8, 0.9, 0.9);
-    leg->AddEntry(h_xF2_nh3, "NH_{3}", "l");
-    leg->AddEntry(h_xF2_carbon, "C", "l");
+    leg->AddEntry(h_Mx_nh3, "NH_{3}", "l");
+    leg->AddEntry(h_Mx_carbon, "C", "l");
     leg->Draw();
 
     // Remove statboxes
-    h_xF2_nh3->SetStats(0);
-    h_xF2_carbon->SetStats(0);
+    h_Mx_nh3->SetStats(0);
+    h_Mx_carbon->SetStats(0);
 
     // Second panel: ratio of NH3 to Carbon counts
     c1->cd(2);
     gPad->SetLeftMargin(0.15);
     TGraphErrors *gr_ratio = new TGraphErrors();
-    for (int i = 1; i <= h_xF2_nh3->GetNbinsX(); ++i) {
-        double nh3_counts = h_xF2_nh3->GetBinContent(i);
-        double c_counts = h_xF2_carbon->GetBinContent(i);
+    for (int i = 1; i <= h_Mx_nh3->GetNbinsX(); ++i) {
+        double nh3_counts = h_Mx_nh3->GetBinContent(i);
+        double c_counts = h_Mx_carbon->GetBinContent(i);
         if (c_counts > 0) {
             double ratio = nh3_counts / c_counts;
             double error = ratio * std::sqrt(1 / nh3_counts + 1 / c_counts);
-            gr_ratio->SetPoint(i - 1, h_xF2_nh3->GetBinCenter(i), ratio);
+            gr_ratio->SetPoint(i - 1, h_Mx_nh3->GetBinCenter(i), ratio);
             gr_ratio->SetPointError(i - 1, 0, error);
         }
     }
