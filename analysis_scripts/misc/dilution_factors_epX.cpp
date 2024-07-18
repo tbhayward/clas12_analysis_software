@@ -129,7 +129,7 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     h_xF_carbon->Draw("SAME");
 
     // Add legend
-    *leg = new TLegend(0.75, 0.8, 0.9, 0.9);
+    TLegend *leg = new TLegend(0.75, 0.8, 0.9, 0.9);
     leg->AddEntry(h_xF_nh3, "NH_{3}", "l");
     leg->AddEntry(h_xF_carbon, "C", "l");
     leg->Draw();
@@ -140,7 +140,7 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     // Second panel: ratio of NH3 to Carbon counts
     c1->cd(2);
     gPad->SetLeftMargin(0.15);
-    *gr_ratio = new TGraphErrors();
+    TGraphErrors *gr_ratio = new TGraphErrors();
     for (int i = 1; i <= h_xF_nh3->GetNbinsX(); ++i) {
         double nh3_counts = h_xF_nh3->GetBinContent(i);
         double c_counts = h_xF_carbon->GetBinContent(i);
@@ -157,12 +157,12 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     gr_ratio->Draw("AP");
 
     // Fit the data from -2.5 to -1 to a constant
-    *fit_const = new TF1("fit_const", "[0]", -2, -0.5);
+    TF1 *fit_const = new TF1("fit_const", "[0]", -2, -0.5);
     gr_ratio->Fit(fit_const, "R");
     fit_const->SetLineColor(kRed);
     fit_const->Draw("SAME");
     // Add the dotted-dashed line from -0.5 to 3
-    *dotted_line = new TF1("dotted_line", "[0]", -0.5, 3);
+    TF1 *dotted_line = new TF1("dotted_line", "[0]", -0.5, 3);
     dotted_line->SetParameter(0, fit_const->GetParameter(0)); // Use the same constant value as the fit
     dotted_line->SetLineColor(kRed);
     dotted_line->SetLineStyle(7); // Set line style to dotted-dashed
