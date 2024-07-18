@@ -122,7 +122,7 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     latex.DrawLatex(0.20, 0.80, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
 
     // Third panel: plot xF histograms
-    c1->cd(1);
+    c1->cd(3);
     gPad->SetLeftMargin(0.15);
     gPad->SetLogy(); // Log scale to better see differences
     h_xF_nh3->SetLineColor(kBlue);
@@ -140,8 +140,8 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     h_xF_nh3->SetStats(0);
     h_xF_carbon->SetStats(0);
 
-    // Second panel: ratio of NH3 to Carbon counts
-    c1->cd(2);
+    // Fourth panel: ratio of NH3 to Carbon counts
+    c1->cd(4);
     gPad->SetLeftMargin(0.15);
     TGraphErrors *gr_ratio_xF = new TGraphErrors();
     for (int i = 1; i <= h_xF_nh3->GetNbinsX(); ++i) {
