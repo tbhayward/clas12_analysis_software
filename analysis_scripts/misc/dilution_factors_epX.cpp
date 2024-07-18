@@ -23,7 +23,9 @@ void createAndFillHistograms(TTree* tree_nh3, TTree* tree_carbon, const char* br
 }
 
 // Function to plot histograms and ratios
-void plotHistogramsAndRatios(TTree* tree_nh3, TTree* tree_carbon, const char* branch_name, const char* title, double hist_min, double hist_max, double fit_min, double fit_max, double plot_y_min, double plot_y_max, TCanvas* canvas, int hist_pad, int ratio_pad) {
+void plotHistogramsAndRatios(TTree* tree_nh3, TTree* tree_carbon, const char* branch_name, const char* title, 
+                             double hist_min, double hist_max, double fit_min, double fit_max, 
+                             double plot_y_min, double plot_y_max, TCanvas* canvas, int hist_pad, int ratio_pad) {
     TH1D* h_nh3 = nullptr;
     TH1D* h_carbon = nullptr;
     createAndFillHistograms(tree_nh3, tree_carbon, branch_name, h_nh3, h_carbon, hist_min, hist_max);
