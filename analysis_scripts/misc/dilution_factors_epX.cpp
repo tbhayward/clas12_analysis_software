@@ -64,6 +64,7 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     h_Mx_carbon->SetLineColor(kRed);
     h_Mx_nh3->Draw();
     h_Mx_carbon->Draw("SAME");
+    c1->Modified();
     c1->Update();
 
     // Add legend
@@ -71,12 +72,15 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     leg_Mx->AddEntry(h_Mx_nh3, "NH_{3}", "l");
     leg_Mx->AddEntry(h_Mx_carbon, "C", "l");
     leg_Mx->Draw();
+    c1->Modified();
+    c1->Update();
     // Remove statboxes
     h_Mx_nh3->SetStats(0);
     h_Mx_carbon->SetStats(0);
 
     // Second panel: ratio of NH3 to Carbon counts for Mx
     c1->cd(2);
+    c1->Modified();
     c1->Update();
     gPad->SetLeftMargin(0.15);
     TGraphErrors* gr_ratio_Mx = new TGraphErrors();
@@ -95,6 +99,8 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     gr_ratio_Mx->SetMarkerStyle(20);
     c1->cd(2);
     gr_ratio_Mx->Draw("AP");
+    c1->Modified();
+    c1->Update();
 
     // // Fit the data from -2 to -0.5 to a constant for Mx
     // TF1* fit_const_Mx = new TF1("fit_const_Mx", "[0]", -2, -0.5);
