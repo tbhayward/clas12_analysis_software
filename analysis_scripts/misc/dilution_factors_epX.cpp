@@ -206,9 +206,9 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     double p3_err = fit_poly->GetParError(3);
 
     // Retrieve chi2 and NDF
-    double chi2 = fit_poly->GetChisquare();
-    int ndf = fit_poly->GetNDF();
-    double chi2_ndf = chi2 / ndf;
+    chi2 = fit_poly->GetChisquare();
+    ndf = fit_poly->GetNDF();
+    chi2_ndf = chi2 / ndf;
 
     // Add fit parameters box
     TPaveText *pt = new TPaveText(0.7, 0.7, 0.9, 0.9, "brNDC");
