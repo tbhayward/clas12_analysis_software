@@ -57,7 +57,6 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     h_Mx_nh3->SetLineColor(kBlue);
     h_Mx_carbon->SetLineColor(kRed);
     h_Mx_nh3->Draw();
-    c1->cd(1);
     h_Mx_carbon->Draw("SAME");
 
     // Add legend
@@ -71,6 +70,7 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
 
     // Second panel: ratio of NH3 to Carbon counts for Mx
     c1->cd(2);
+    c1->Update();
     gPad->SetLeftMargin(0.15);
     TGraphErrors* gr_ratio_Mx = new TGraphErrors();
     for (int i = 1; i <= h_Mx_nh3->GetNbinsX(); ++i) {
