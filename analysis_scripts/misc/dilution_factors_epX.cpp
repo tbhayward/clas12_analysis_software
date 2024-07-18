@@ -169,13 +169,12 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     dotted_line->Draw("SAME");
 
     // Add fit constant value and uncertainty
-    double fit_value = fit_const->GetParameter(0);
-    double fit_error = fit_const->GetParError(0);
+    fit_value = fit_const->GetParameter(0);
+    fit_error = fit_const->GetParError(0);
     // Retrieve chi2 and NDF
-    double chi2 = fit_const->GetChisquare();
-    int ndf = fit_const->GetNDF();
-    double chi2_ndf = chi2 / ndf;
-    TLatex latex;
+    chi2 = fit_const->GetChisquare();
+    ndf = fit_const->GetNDF();
+    chi2_ndf = chi2 / ndf;
     latex.SetNDC();
     latex.SetTextSize(0.04);
     latex.DrawLatex(0.20, 0.85, Form("Fit Const, s = %.3f #pm %.3f", fit_value, fit_error));
