@@ -14,6 +14,7 @@
 #include <TLatex.h>
 #include <sstream>
 
+// Function to plot histograms and ratios
 void plotHistogramsAndRatio(TTree* tree_nh3, TTree* tree_carbon, const char* branch_name, const char* title, 
                             double hist_min, double hist_max, double fit_min, double fit_max, 
                             double plot_y_min, double plot_y_max, TCanvas* canvas, int hist_pad, int ratio_pad) {
@@ -115,195 +116,17 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
         return;
     }
 
-    // Create canvas and divide it into four panels
+    // Create canvas and divide it into six panels
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1200, 1200);
     c1->Divide(3, 2);
 
     // Plot Mx histograms and ratio
     plotHistogramsAndRatio(tree_nh3, tree_carbon, "Mx", "M_{x} (GeV)", -2, 3, -2, -0.5, 9, 15, c1, 1, 2);
 
-    // // Create histograms
-    // TH1D *h_xF2_nh3 = new TH1D("h_xF2_nh3", "M_{x} Distribution; M_{x} (GeV); Counts", 100, -2, 3);
-    // TH1D *h_xF2_carbon = new TH1D("h_xF2_carbon", "M_{x} Distribution; M_{x} (GeV); Counts", 100, -2, 3);
-
-    // // Fill the histograms
-    // tree_nh3->Draw("Mx>>h_xF2_nh3");
-    // tree_carbon->Draw("Mx>>h_xF2_carbon");
-
-    // // First panel: plot xF2 histograms
-    // c1->cd(1);
-    // gPad->SetLeftMargin(0.15);
-    // gPad->SetLogy(); // Log scale to better see differences
-    // h_xF2_nh3->SetLineColor(kBlue);
-    // h_xF2_carbon->SetLineColor(kRed);
-    // h_xF2_nh3->Draw();
-    // h_xF2_carbon->Draw("SAME");
-
-    // // Add legend
-    // TLegend *leg = new TLegend(0.75, 0.8, 0.9, 0.9);
-    // leg->AddEntry(h_xF2_nh3, "NH_{3}", "l");
-    // leg->AddEntry(h_xF2_carbon, "C", "l");
-    // leg->Draw();
-
-    // // Remove statboxes
-    // h_xF2_nh3->SetStats(0);
-    // h_xF2_carbon->SetStats(0);
-
-    // // Second panel: ratio of NH3 to Carbon counts
-    // c1->cd(2);
-    // gPad->SetLeftMargin(0.15);
-    // TGraphErrors *gr_ratio = new TGraphErrors();
-    // for (int i = 1; i <= h_xF2_nh3->GetNbinsX(); ++i) {
-    //     double nh3_counts = h_xF2_nh3->GetBinContent(i);
-    //     double c_counts = h_xF2_carbon->GetBinContent(i);
-    //     if (c_counts > 0) {
-    //         double ratio = nh3_counts / c_counts;
-    //         double error = ratio * std::sqrt(1 / nh3_counts + 1 / c_counts);
-    //         gr_ratio->SetPoint(i - 1, h_xF2_nh3->GetBinCenter(i), ratio);
-    //         gr_ratio->SetPointError(i - 1, 0, error);
-    //     }
-    // }
-    // // Set y-axis range from 5 to 15
-    // gr_ratio->GetYaxis()->SetRangeUser(9, 15);
-
-    // // gr_ratio->SetTitle("NH_{3} to Carbon Ratio; x_{F2}; Ratio");
-    // gr_ratio->SetTitle("NH_{3} to Carbon Ratio; M_{x} (GeV); Ratio");
-    // gr_ratio->SetMarkerStyle(20);
-    // gr_ratio->Draw("AP");
-
-    // // Fit the data from -2.5 to -1 to a constant
-    // TF1 *fit_const = new TF1("fit_const", "[0]", -2, -0.5);
-    // gr_ratio->Fit(fit_const, "R");
-    // fit_const->SetLineColor(kRed);
-    // fit_const->Draw("SAME");
-
-    // // Add the dotted-dashed line from -0.5 to 3
-    // TF1 *dotted_line = new TF1("dotted_line", "[0]", -0.5, 3);
-    // dotted_line->SetParameter(0, fit_const->GetParameter(0)); // Use the same constant value as the fit
-    // dotted_line->SetLineColor(kRed);
-    // dotted_line->SetLineStyle(7); // Set line style to dotted-dashed
-    // dotted_line->Draw("SAME");
-
-    // // Add fit constant value and uncertainty
-    // double fit_value = fit_const->GetParameter(0);
-    // double fit_error = fit_const->GetParError(0);
-
-    // // Retrieve chi2 and NDF
-    // double chi2 = fit_const->GetChisquare();
-    // int ndf = fit_const->GetNDF();
-    // double chi2_ndf = chi2 / ndf;
-
-    // TLatex latex;
-    // latex.SetNDC();
-    // latex.SetTextSize(0.04);
-    // latex.DrawLatex(0.20, 0.85, Form("Fit Const, s = %.3f #pm %.3f", fit_value, fit_error));
-    // latex.DrawLatex(0.20, 0.80, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
-
-    // // Third panel: pT histograms scaled by the fit constant with propagated errors
-    // c1->cd(3);
-    // gPad->SetLeftMargin(0.15);
-    // TH1D *h_pT_nh3 = new TH1D("h_pT_nh3", "P_{T} Distribution; P_{T} (GeV); Counts", 100, 0, 1.0);
-    // TH1D *h_pT_carbon = new TH1D("h_pT_carbon", "P_{T} Distribution; P_{T} (GeV); Counts", 100, 0, 1.0);
-    // tree_nh3->Draw("pT>>h_pT_nh3");
-    // tree_carbon->Draw("pT>>h_pT_carbon");
-
-    // double scale_factor = fit_const->GetParameter(0);
-    // double scale_error = fit_const->GetParError(0);
-
-    // TH1D *h_pT_carbon_scaled = (TH1D*)h_pT_carbon->Clone("h_pT_carbon_scaled");
-    // h_pT_carbon_scaled->SetTitle("P_{T} Distribution; P_{T} (GeV); Counts (Scaled)");
-
-    // for (int i = 1; i <= h_pT_carbon->GetNbinsX(); ++i) {
-    //     double bin_content = h_pT_carbon->GetBinContent(i);
-    //     double bin_error = h_pT_carbon->GetBinError(i);
-
-    //     double new_content = bin_content * scale_factor;
-    //     double new_error = new_content * std::sqrt((bin_error / bin_content) * (bin_error / bin_content) + (scale_error / scale_factor) * (scale_error / scale_factor));
-    //     h_pT_carbon_scaled->SetBinContent(i, new_content);
-    //     h_pT_carbon_scaled->SetBinError(i, new_error);
-    // }
-
-    // h_pT_nh3->SetLineColor(kBlue);
-    // h_pT_carbon_scaled->SetLineColor(kRed);
-    // h_pT_nh3->Draw();
-    // h_pT_carbon_scaled->Draw("SAME");
-
-    // // Add legend
-    // TLegend *leg_pT = new TLegend(0.55, 0.8, 0.9, 0.9);
-    // leg_pT->SetTextSize(0.04);
-    // leg_pT->AddEntry(h_pT_nh3, "NH_{3}", "l");
-    // leg_pT->AddEntry(h_pT_carbon_scaled, "s*C", "l");
-    // leg_pT->Draw();
-
-    // // Remove statboxes
-    // h_pT_nh3->SetStats(0);
-    // h_pT_carbon_scaled->SetStats(0);
-
-    // // Fourth panel: (NH3 - Carbon) / NH3 with fit to a third-degree polynomial
-    // c1->cd(4);
-    // gPad->SetLeftMargin(0.15);
-    // TGraphErrors *gr_dilution = new TGraphErrors();
-    // for (int i = 1; i <= h_pT_nh3->GetNbinsX(); ++i) {
-    //     double nh3_counts = h_pT_nh3->GetBinContent(i);
-    //     double nh3_error = h_pT_nh3->GetBinError(i);
-    //     double c_counts = h_pT_carbon_scaled->GetBinContent(i);
-    //     double c_error = h_pT_carbon_scaled->GetBinError(i);
-
-    //     if (nh3_counts > 0) {
-    //         double dilution = (nh3_counts - c_counts) / nh3_counts;
-
-    //         // Propagate the error
-    //         double dilution_error = std::sqrt(
-    //             std::pow((c_counts / (nh3_counts * nh3_counts)) * nh3_error, 2) +
-    //             std::pow(1.0 / nh3_counts * c_error, 2));
-
-    //         gr_dilution->SetPoint(i - 1, h_pT_nh3->GetBinCenter(i), dilution);
-    //         gr_dilution->SetPointError(i - 1, 0, dilution_error);
-    //     }
-    // }
-    // gr_dilution->SetTitle("Dilution Factor; P_{T} (GeV); (NH3 - s*C) / NH3");
-    // gr_dilution->SetMarkerStyle(20);
-    // gr_dilution->Draw("AP");
-
-    // // Set x-axis range from 0 to 1
-    // gr_dilution->GetXaxis()->SetRangeUser(0, 1);
-
-    // // Fit to a third-degree polynomial
-    // TF1 *fit_poly = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2 + [3]*x^3", 0, 1.0);
-    // gr_dilution->Fit(fit_poly, "R");
-    // fit_poly->SetLineColor(kRed);
-    // fit_poly->Draw("SAME");
-
-    // // Retrieve fit parameters and their errors
-    // double p0 = fit_poly->GetParameter(0);
-    // double p0_err = fit_poly->GetParError(0);
-    // double p1 = fit_poly->GetParameter(1);
-    // double p1_err = fit_poly->GetParError(1);
-    // double p2 = fit_poly->GetParameter(2);
-    // double p2_err = fit_poly->GetParError(2);
-    // double p3 = fit_poly->GetParameter(3);
-    // double p3_err = fit_poly->GetParError(3);
-
-    // // Retrieve chi2 and NDF
-    // chi2 = fit_poly->GetChisquare();
-    // ndf = fit_poly->GetNDF();
-    // chi2_ndf = chi2 / ndf;
-
-    // // Add fit parameters box
-    // TPaveText *pt = new TPaveText(0.7, 0.7, 0.9, 0.9, "brNDC");
-    // pt->SetBorderSize(1);
-    // pt->SetFillStyle(1001); // Solid fill style
-    // pt->SetFillColor(kWhite); // White background
-    // pt->AddText(Form("p0 = %.3f +/- %.3f", p0, p0_err));
-    // pt->AddText(Form("p1 = %.3f +/- %.3f", p1, p1_err));
-    // pt->AddText(Form("p2 = %.3f +/- %.3f", p2, p2_err));
-    // pt->AddText(Form("p3 = %.3f +/- %.3f", p3, p3_err));
-    // pt->Draw();
-
-    // // Add chi2/ndf in the top left
-    // latex.SetNDC();
-    // latex.SetTextSize(0.04);
-    // latex.DrawLatex(0.20, 0.85, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
+    // Add more plots here by calling plotHistogramsAndRatio with different branch names and titles
+    // Example:
+    // plotHistogramsAndRatio(tree_nh3, tree_carbon, "xF", "x_{F}", -2.5, 1, -2, -0.5, 5, 15, c1, 3, 4);
+    // plotHistogramsAndRatio(tree_nh3, tree_carbon, "zeta", "zeta", 0, 1, 0, 0.5, 5, 15, c1, 5, 6);
 
     // Save the canvas
     c1->SaveAs("dilution_factors.pdf");
