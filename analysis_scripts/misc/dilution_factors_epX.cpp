@@ -16,8 +16,8 @@
 
 // Function to plot histograms and ratios
 void plotHistogramsAndRatio(TTree* tree_nh3, TTree* tree_carbon, const char* branch_name, const char* title, 
-                            double hist_min, double hist_max, double fit_min, double fit_max, 
-                            double plot_y_min, double plot_y_max, TCanvas* canvas, int hist_pad, int ratio_pad) {
+        double hist_min, double hist_max, double fit_min, double fit_max, 
+        double plot_y_min, double plot_y_max, TCanvas* canvas, int hist_pad, int ratio_pad) {
     // Create histograms
     std::string hist_name_nh3 = std::string(branch_name) + "_nh3";
     std::string hist_name_carbon = std::string(branch_name) + "_carbon";
@@ -29,7 +29,7 @@ void plotHistogramsAndRatio(TTree* tree_nh3, TTree* tree_carbon, const char* bra
     tree_carbon->Draw(Form("%s>>%s", branch_name, hist_name_carbon.c_str()));
 
     // First panel: plot histograms
-    canvas->cd(hist_pad);
+    canvas->cd(1);
     gPad->SetLeftMargin(0.15);
     gPad->SetLogy(); // Log scale to better see differences
     h_nh3->SetLineColor(kBlue);
@@ -48,7 +48,7 @@ void plotHistogramsAndRatio(TTree* tree_nh3, TTree* tree_carbon, const char* bra
     h_carbon->SetStats(0);
 
     // Second panel: ratio of NH3 to Carbon counts
-    canvas->cd(ratio_pad);
+    canvas->cd(2);
     gPad->SetLeftMargin(0.15);
     TGraphErrors* gr_ratio = new TGraphErrors();
     for (int i = 1; i <= h_nh3->GetNbinsX(); ++i) {
@@ -122,10 +122,8 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
 
     // Plot Mx histograms and ratio
     plotHistogramsAndRatio(tree_nh3, tree_carbon, "Mx", "M_{x} (GeV)", -2, 3, -2, -0.5, 9, 15, c1, 1, 2);
-
-    // Add more plots here by calling plotHistogramsAndRatio with different branch names and titles
     plotHistogramsAndRatio(tree_nh3, tree_carbon, "xF", "x_{F}", -2, 1, -2, -1.25, 5, 15, c1, 3, 4);
-    plotHistogramsAndRatio(tree_nh3, tree_carbon, "zeta", "#zeta", 0, 2, 1.25, 2.0, 5, 15, c1, 5, 6);
+    plotHistogramsAndRatio(tree_nh3, tree_carbon, "zeta", "#zeta", 0, 1.5, 1.0, 1.5, 5, 15, c1, 5, 6);
 
     // Save the canvas
     c1->SaveAs("dilution_factors.pdf");
