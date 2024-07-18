@@ -108,10 +108,17 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     // Add fit constant value and uncertainty
     double fit_value = fit_const->GetParameter(0);
     double fit_error = fit_const->GetParError(0);
+
+    // Retrieve chi2 and NDF
+    double chi2 = fit_const->GetChisquare();
+    int ndf = fit_const->GetNDF();
+    double chi2_ndf = chi2 / ndf;
+
     TLatex latex;
     latex.SetNDC();
     latex.SetTextSize(0.04);
     latex.DrawLatex(0.20, 0.85, Form("Fit Const, s = %.3f #pm %.3f", fit_value, fit_error));
+    latex.DrawLatex(0.20, 0.80, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
 
     // Third panel: pT histograms scaled by the fit constant with propagated errors
     c1->cd(3);
