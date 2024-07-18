@@ -37,7 +37,7 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
 
     // Create canvas and divide it into four panels
     TCanvas* c1 = new TCanvas("c1", "Dilution Factor Analysis", 1200, 1200);
-    c1->Divide(2, 2);
+    c1->Divide(2, 1);
 
     //~~~~~~~~~~~~~~~~~~~~//
     // First set of plots: Mx
