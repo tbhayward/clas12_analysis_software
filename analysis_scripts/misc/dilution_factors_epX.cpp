@@ -175,19 +175,19 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     dotted_line_xF->Draw("SAME");
 
     // Add fit constant value and uncertainty
-    double fit_value = fit_const_xF->GetParameter(0);
-    double fit_error = fit_const_xF->GetParError(0);
+    double fit_value_xF = fit_const_xF->GetParameter(0);
+    double fit_error_xF = fit_const_xF->GetParError(0);
 
     // Retrieve chi2 and NDF
-    double chi2 = fit_const_xF->GetChisquare();
+    double chi2_xF = fit_const_xF->GetChisquare();
     int ndf = fit_const_xF->GetNDF();
-    double chi2_ndf = chi2 / ndf;
+    double chi2_ndf_xF = chi2_xF / ndf;
 
     TLatex latex_xF;
     latex_xF.SetNDC();
     latex_xF.SetTextSize(0.04);
-    latex_xF.DrawLatex(0.20, 0.85, Form("Fit Const, s = %.3f #pm %.3f", fit_value, fit_error));
-    latex_xF.DrawLatex(0.20, 0.80, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
+    latex_xF.DrawLatex(0.20, 0.85, Form("Fit Const, s = %.3f #pm %.3f", fit_value_xF, fit_error_xF));
+    latex_xF.DrawLatex(0.20, 0.80, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2_xF, ndf, chi2_ndf_xF));
 
     // Save the canvas
     c1->SaveAs("dilution_factors.pdf");
