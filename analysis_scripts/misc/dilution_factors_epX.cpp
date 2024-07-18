@@ -195,7 +195,7 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
 
 int main(int argc, char** argv) {
     if (argc != 3) {
-        std::cerr << “Usage: “ << argv[0] << “  ” << std::endl;
+        std::cerr << "Usage: " << argv[0] << " " << std::endl;
         return 1;
     }
     dilution_factors_epX(argv[1], argv[2]);
