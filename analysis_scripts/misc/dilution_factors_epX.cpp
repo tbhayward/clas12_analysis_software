@@ -35,12 +35,18 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
         return;
     }
 
-    // Create histograms for Mx
+    // Create histograms for Mx and xF
     TH1D *h_Mx_nh3 = new TH1D("h_Mx_nh3", "M_{x} Distribution; M_{x} (GeV); Counts", 100, -2, 3);
     TH1D *h_Mx_carbon = new TH1D("h_Mx_carbon", "M_{x} Distribution; M_{x} (GeV); Counts", 100, -2, 3);
     // Fill the histograms
     tree_nh3->Draw("Mx>>h_Mx_nh3");
     tree_carbon->Draw("Mx>>h_Mx_carbon");
+    //
+    TH1D *h_xF_nh3 = new TH1D("h_xF_nh3", "x_{F} Distribution; x_{F} (GeV); Counts", 100, -2, 1);
+    TH1D *h_xF_carbon = new TH1D("h_xF_carbon", "x_{F} Distribution; x_{F} (GeV); Counts", 100, -2, 1);
+    // Fill the histograms
+    tree_nh3->Draw("xF>>h_xF_nh3");
+    tree_carbon->Draw("xF>>h_xF_carbon");
 
     // Create canvas and divide it into four panels
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1200, 1200);
@@ -114,6 +120,74 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     latex.SetTextSize(0.04);
     latex.DrawLatex(0.20, 0.85, Form("Fit Const, s = %.3f #pm %.3f", fit_value, fit_error));
     latex.DrawLatex(0.20, 0.80, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
+
+    // Third panel: plot xF histograms
+    c1->cd(1);
+    gPad->SetLeftMargin(0.15);
+    gPad->SetLogy(); // Log scale to better see differences
+    h_xF_nh3->SetLineColor(kBlue);
+    h_xF_carbon->SetLineColor(kRed);
+    h_xF_nh3->Draw();
+    h_xF_carbon->Draw("SAME");
+
+    // Add legend
+    TLegend *leg = new TLegend(0.75, 0.8, 0.9, 0.9);
+    leg->AddEntry(h_xF_nh3, "NH_{3}", "l");
+    leg->AddEntry(h_xF_carbon, "C", "l");
+    leg->Draw();
+
+    // Remove statboxes
+    h_xF_nh3->SetStats(0);
+    h_xF_carbon->SetStats(0);
+
+    // Second panel: ratio of NH3 to Carbon counts
+    c1->cd(2);
+    gPad->SetLeftMargin(0.15);
+    TGraphErrors *gr_ratio_xF = new TGraphErrors();
+    for (int i = 1; i <= h_xF_nh3->GetNbinsX(); ++i) {
+        double nh3_counts = h_xF_nh3->GetBinContent(i);
+        double c_counts = h_xF_carbon->GetBinContent(i);
+        if (c_counts > 0) {
+            double ratio = nh3_counts / c_counts;
+            double error = ratio * std::sqrt(1 / nh3_counts + 1 / c_counts);
+            gr_ratio_xF->SetPoint(i - 1, h_xF_nh3->GetBinCenter(i), ratio);
+            gr_ratio_xF->SetPointError(i - 1, 0, error);
+        }
+    }
+    // Set y-axis range from 5 to 15
+    gr_ratio_xF->GetYaxis()->SetRangeUser(9, 15);
+
+    gr_ratio_xF->SetTitle("NH_{3} to Carbon Ratio; x_{F} (GeV); Ratio");
+    gr_ratio_xF->SetMarkerStyle(20);
+    gr_ratio_xF->Draw("AP");
+
+    // Fit the data from -2.5 to -1 to a constant
+    TF1 *fit_const_xF = new TF1("fit_const", "[0]", -2, -1.0);
+    gr_ratio_xF->Fit(fit_const, "R");
+    fit_const_xF->SetLineColor(kRed);
+    fit_const_xF->Draw("SAME");
+
+    // Add the dotted-dashed line from -0.5 to 3
+    TF1 *dotted_line_xF = new TF1("dotted_line_xF", "[0]", -0.5, 3);
+    dotted_line_xF->SetParameter(0, fit_const_xF->GetParameter(0)); // Use the same constant value as the fit
+    dotted_line_xF->SetLineColor(kRed);
+    dotted_line_xF->SetLineStyle(7); // Set line style to dotted-dashed
+    dotted_line_xF->Draw("SAME");
+
+    // Add fit constant value and uncertainty
+    double fit_value = fit_const_xF->GetParameter(0);
+    double fit_error = fit_const_xF->GetParError(0);
+
+    // Retrieve chi2 and NDF
+    double chi2 = fit_const_xF->GetChisquare();
+    int ndf = fit_const_xF->GetNDF();
+    double chi2_ndf = chi2 / ndf;
+
+    TLatex latex_xF;
+    latex_xF.SetNDC();
+    latex_xF.SetTextSize(0.04);
+    latex_xF.DrawLatex(0.20, 0.85, Form("Fit Const, s = %.3f #pm %.3f", fit_value, fit_error));
+    latex_xF.DrawLatex(0.20, 0.80, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
 
     // Save the canvas
     c1->SaveAs("dilution_factors.pdf");
