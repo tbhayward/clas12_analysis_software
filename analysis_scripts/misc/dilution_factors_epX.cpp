@@ -68,20 +68,20 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     h_Mx_nh3->SetStats(0);
     h_Mx_carbon->SetStats(0);
 
-    // // Second panel: ratio of NH3 to Carbon counts for Mx
-    // c1->cd(2);
-    // gPad->SetLeftMargin(0.15);
-    // TGraphErrors* gr_ratio_Mx = new TGraphErrors();
-    // for (int i = 1; i <= h_Mx_nh3->GetNbinsX(); ++i) {
-    //     double nh3_counts = h_Mx_nh3->GetBinContent(i);
-    //     double c_counts = h_Mx_carbon->GetBinContent(i);
-    //     if (c_counts > 0) {
-    //         double ratio = nh3_counts / c_counts;
-    //         double error = ratio * std::sqrt(1 / nh3_counts + 1 / c_counts);
-    //         gr_ratio_Mx->SetPoint(i - 1, h_Mx_nh3->GetBinCenter(i), ratio);
-    //         gr_ratio_Mx->SetPointError(i - 1, 0, error);
-    //     }
-    // }
+    // Second panel: ratio of NH3 to Carbon counts for Mx
+    c1->cd(2);
+    gPad->SetLeftMargin(0.15);
+    TGraphErrors* gr_ratio_Mx = new TGraphErrors();
+    for (int i = 1; i <= h_Mx_nh3->GetNbinsX(); ++i) {
+        double nh3_counts = h_Mx_nh3->GetBinContent(i);
+        double c_counts = h_Mx_carbon->GetBinContent(i);
+        if (c_counts > 0) {
+            double ratio = nh3_counts / c_counts;
+            double error = ratio * std::sqrt(1 / nh3_counts + 1 / c_counts);
+            gr_ratio_Mx->SetPoint(i - 1, h_Mx_nh3->GetBinCenter(i), ratio);
+            gr_ratio_Mx->SetPointError(i - 1, 0, error);
+        }
+    }
     // gr_ratio_Mx->GetYaxis()->SetRangeUser(9, 15);
     // gr_ratio_Mx->SetTitle("NH_{3} to Carbon Ratio; M_{x} (GeV); Ratio");
     // gr_ratio_Mx->SetMarkerStyle(20);
