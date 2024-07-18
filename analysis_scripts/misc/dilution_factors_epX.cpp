@@ -50,6 +50,12 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     tree_nh3->Draw("Mx>>h_Mx_nh3");
     tree_carbon->Draw("Mx>>h_Mx_carbon");
 
+    // Check if histograms have entries
+    if (h_Mx_nh3->GetEntries() == 0 || h_Mx_carbon->GetEntries() == 0) {
+        std::cerr << "Error: One or both of the histograms have no entries." << std::endl;
+        return;
+    }
+
     // First panel: plot Mx histograms
     c1->cd(1);
     gPad->SetLeftMargin(0.15);
