@@ -124,8 +124,8 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     plotHistogramsAndRatio(tree_nh3, tree_carbon, "Mx", "M_{x} (GeV)", -2, 3, -2, -0.5, 9, 15, c1, 1, 2);
 
     // Add more plots here by calling plotHistogramsAndRatio with different branch names and titles
-    plotHistogramsAndRatio(tree_nh3, tree_carbon, "xF", "x_{F}", -2.5, 1, -2, -0.5, 5, 15, c1, 3, 4);
-    plotHistogramsAndRatio(tree_nh3, tree_carbon, "zeta", "zeta", 0, 1, 0, 0.5, 5, 15, c1, 5, 6);
+    plotHistogramsAndRatio(tree_nh3, tree_carbon, "xF", "x_{F}", -2, 1, -2, -1.25, 5, 15, c1, 3, 4);
+    plotHistogramsAndRatio(tree_nh3, tree_carbon, "zeta", "#zeta", 0, 2, 1.25, 2.0, 5, 15, c1, 5, 6);
 
     // Save the canvas
     c1->SaveAs("dilution_factors.pdf");
