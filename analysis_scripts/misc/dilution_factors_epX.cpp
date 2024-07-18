@@ -224,7 +224,7 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     // Add chi2/ndf in the top left
     latex.SetNDC();
     latex.SetTextSize(0.04);
-    latex.DrawLatex(0.15, 0.85, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
+    latex.DrawLatex(0.20, 0.85, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
 
     // Save the canvas
     c1->SaveAs("dilution_factors.pdf");
