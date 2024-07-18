@@ -3,41 +3,40 @@
 #include <cmath>
 #include <TFile.h>
 #include <TTree.h>
-#include <TH1F.h>
 #include <TH1D.h>
 #include <TCanvas.h>
 #include <TLegend.h>
 #include <TGraphErrors.h>
 #include <TF1.h>
-#include <TPad.h>
-#include <TPaveText.h>
 #include <TLatex.h>
-#include <sstream>
 
-// Function to plot histograms and ratios
-void plotHistogramsAndRatio(TTree* tree_nh3, TTree* tree_carbon, const char* branch_name, const char* title, 
-        double hist_min, double hist_max, double fit_min, double fit_max, 
-        double plot_y_min, double plot_y_max, TCanvas* canvas, int hist_pad, int ratio_pad) {
-    // Create histograms
+// Function to create and fill histograms
+void createAndFillHistograms(TTree* tree_nh3, TTree* tree_carbon, const char* branch_name,
+                             TH1D*& h_nh3, TH1D*& h_carbon, double hist_min, double hist_max) {
     std::string hist_name_nh3 = std::string(branch_name) + "_nh3";
     std::string hist_name_carbon = std::string(branch_name) + "_carbon";
-    TH1D* h_nh3 = new TH1D(hist_name_nh3.c_str(), (title + std::string(" Distribution; ") + title + "; Counts").c_str(), 100, hist_min, hist_max);
-    TH1D* h_carbon = new TH1D(hist_name_carbon.c_str(), (title + std::string(" Distribution; ") + title + "; Counts").c_str(), 100, hist_min, hist_max);
+    h_nh3 = new TH1D(hist_name_nh3.c_str(), (std::string(branch_name) + " Distribution; " + branch_name + "; Counts").c_str(), 100, hist_min, hist_max);
+    h_carbon = new TH1D(hist_name_carbon.c_str(), (std::string(branch_name) + " Distribution; " + branch_name + "; Counts").c_str(), 100, hist_min, hist_max);
 
-    // Fill the histograms
     tree_nh3->Draw(Form("%s>>%s", branch_name, hist_name_nh3.c_str()));
     tree_carbon->Draw(Form("%s>>%s", branch_name, hist_name_carbon.c_str()));
+}
+
+// Function to plot histograms and ratios
+void plotHistogramsAndRatios(TTree* tree_nh3, TTree* tree_carbon, const char* branch_name, const char* title, double hist_min, double hist_max, double fit_min, double fit_max, double plot_y_min, double plot_y_max, TCanvas* canvas, int hist_pad, int ratio_pad) {
+    TH1D* h_nh3 = nullptr;
+    TH1D* h_carbon = nullptr;
+    createAndFillHistograms(tree_nh3, tree_carbon, branch_name, h_nh3, h_carbon, hist_min, hist_max);
 
     // First panel: plot histograms
-    canvas->cd(hist_pad);  // Ensure correct pad is activated
+    canvas->cd(hist_pad);
     gPad->SetLeftMargin(0.15);
-    gPad->SetLogy(); // Log scale to better see differences
+    gPad->SetLogy();
     h_nh3->SetLineColor(kBlue);
     h_carbon->SetLineColor(kRed);
     h_nh3->Draw();
     h_carbon->Draw("SAME");
 
-    // Add legend
     TLegend* leg = new TLegend(0.75, 0.8, 0.9, 0.9);
     leg->AddEntry(h_nh3, "NH_{3}", "l");
     leg->AddEntry(h_carbon, "C", "l");
@@ -48,7 +47,7 @@ void plotHistogramsAndRatio(TTree* tree_nh3, TTree* tree_carbon, const char* bra
     h_carbon->SetStats(0);
 
     // Second panel: ratio of NH3 to Carbon counts
-    canvas->cd(ratio_pad);  // Ensure correct pad is activated
+    canvas->cd(ratio_pad);
     gPad->SetLeftMargin(0.15);
     TGraphErrors* gr_ratio = new TGraphErrors();
     for (int i = 1; i <= h_nh3->GetNbinsX(); ++i) {
@@ -62,7 +61,7 @@ void plotHistogramsAndRatio(TTree* tree_nh3, TTree* tree_carbon, const char* bra
         }
     }
     gr_ratio->GetYaxis()->SetRangeUser(plot_y_min, plot_y_max);
-    gr_ratio->SetTitle((title + std::string(" Ratio; ") + title + "; Ratio").c_str());
+    gr_ratio->SetTitle((std::string(title) + " Ratio; " + branch_name + "; Ratio").c_str());
     gr_ratio->SetMarkerStyle(20);
     gr_ratio->Draw("AP");
 
@@ -93,20 +92,28 @@ void plotHistogramsAndRatio(TTree* tree_nh3, TTree* tree_carbon, const char* bra
     latex.SetTextSize(0.04);
     latex.DrawLatex(0.20, 0.85, Form("Fit Const, s = %.3f #pm %.3f", fit_value, fit_error));
     latex.DrawLatex(0.20, 0.80, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
+
+    // Cleanup
+    delete h_nh3;
+    delete h_carbon;
+    delete gr_ratio;
+    delete fit_const;
+    delete dotted_line;
+    delete leg;
 }
 
 void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     // Open the ROOT files
-    TFile *nh3 = TFile::Open(nh3_file);
-    TFile *carbon = TFile::Open(c_file);
+    TFile* nh3 = TFile::Open(nh3_file);
+    TFile* carbon = TFile::Open(c_file);
     if (!nh3 || nh3->IsZombie() || !carbon || carbon->IsZombie()) {
         std::cerr << "Error opening files!" << std::endl;
         return;
     }
 
     // Get the PhysicsEvents trees
-    TTree *tree_nh3;
-    TTree *tree_carbon;
+    TTree* tree_nh3;
+    TTree* tree_carbon;
     nh3->GetObject("PhysicsEvents", tree_nh3);
     carbon->GetObject("PhysicsEvents", tree_carbon);
     if (!tree_nh3 || !tree_carbon) {
@@ -117,17 +124,19 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     }
 
     // Create canvas and divide it into six panels
-    TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1200, 1200);
+    TCanvas* c1 = new TCanvas("c1", "Dilution Factor Analysis", 1200, 1200);
     c1->Divide(3, 2);
 
     // Plot Mx histograms and ratio
-    plotHistogramsAndRatio(tree_nh3, tree_carbon, "Mx", "M_{x} (GeV)", -2, 3, -2, -0.5, 9, 15, c1, 1, 2);
-    plotHistogramsAndRatio(tree_nh3, tree_carbon, "xF", "x_{F}", -2, 1, -2, -1.25, 5, 15, c1, 3, 4);
-    plotHistogramsAndRatio(tree_nh3, tree_carbon, "zeta", "#zeta", 0, 1.5, 1.0, 1.5, 5, 15, c1, 5, 6);
+    plotHistogramsAndRatios(tree_nh3, tree_carbon, "Mx", "M_{x} (GeV)", -2, 3, -2, -0.5, 9, 15, c1, 1, 2);
+
+    // Plot xF histograms and ratio
+    plotHistogramsAndRatios(tree_nh3, tree_carbon, "xF", "x_{F}", -2, 1, -2, -1.25, 5, 15, c1, 3, 4);
+
+    // Plot zeta histograms and ratio
+    plotHistogramsAndRatios(tree_nh3, tree_carbon, "zeta", "#zeta", 0, 1.5, 1.0, 1.5, 5, 15, c1, 5, 6);
 
     // Save the canvas
-    c1->Modified(); // Ensures the canvas updates correctly
-    c1->Update();   // Ensures the canvas updates correctly
     c1->SaveAs("dilution_factors.pdf");
 
     // Clean up
