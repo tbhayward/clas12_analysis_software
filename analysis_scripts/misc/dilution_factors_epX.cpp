@@ -68,49 +68,49 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     h_Mx_nh3->SetStats(0);
     h_Mx_carbon->SetStats(0);
 
-    // Second panel: ratio of NH3 to Carbon counts for Mx
-    c1->cd(2);
-    gPad->SetLeftMargin(0.15);
-    TGraphErrors* gr_ratio_Mx = new TGraphErrors();
-    for (int i = 1; i <= h_Mx_nh3->GetNbinsX(); ++i) {
-        double nh3_counts = h_Mx_nh3->GetBinContent(i);
-        double c_counts = h_Mx_carbon->GetBinContent(i);
-        if (c_counts > 0) {
-            double ratio = nh3_counts / c_counts;
-            double error = ratio * std::sqrt(1 / nh3_counts + 1 / c_counts);
-            gr_ratio_Mx->SetPoint(i - 1, h_Mx_nh3->GetBinCenter(i), ratio);
-            gr_ratio_Mx->SetPointError(i - 1, 0, error);
-        }
-    }
-    gr_ratio_Mx->GetYaxis()->SetRangeUser(9, 15);
-    gr_ratio_Mx->SetTitle("NH_{3} to Carbon Ratio; M_{x} (GeV); Ratio");
-    gr_ratio_Mx->SetMarkerStyle(20);
-    gr_ratio_Mx->Draw("AP");
+    // // Second panel: ratio of NH3 to Carbon counts for Mx
+    // c1->cd(2);
+    // gPad->SetLeftMargin(0.15);
+    // TGraphErrors* gr_ratio_Mx = new TGraphErrors();
+    // for (int i = 1; i <= h_Mx_nh3->GetNbinsX(); ++i) {
+    //     double nh3_counts = h_Mx_nh3->GetBinContent(i);
+    //     double c_counts = h_Mx_carbon->GetBinContent(i);
+    //     if (c_counts > 0) {
+    //         double ratio = nh3_counts / c_counts;
+    //         double error = ratio * std::sqrt(1 / nh3_counts + 1 / c_counts);
+    //         gr_ratio_Mx->SetPoint(i - 1, h_Mx_nh3->GetBinCenter(i), ratio);
+    //         gr_ratio_Mx->SetPointError(i - 1, 0, error);
+    //     }
+    // }
+    // gr_ratio_Mx->GetYaxis()->SetRangeUser(9, 15);
+    // gr_ratio_Mx->SetTitle("NH_{3} to Carbon Ratio; M_{x} (GeV); Ratio");
+    // gr_ratio_Mx->SetMarkerStyle(20);
+    // gr_ratio_Mx->Draw("AP");
 
-    // Fit the data from -2 to -0.5 to a constant for Mx
-    TF1* fit_const_Mx = new TF1("fit_const_Mx", "[0]", -2, -0.5);
-    gr_ratio_Mx->Fit(fit_const_Mx, "R");
-    fit_const_Mx->SetLineColor(kRed);
-    fit_const_Mx->Draw("SAME");
-    // Add the dotted-dashed line from -0.5 to 3 for Mx
-    TF1* dotted_line_Mx = new TF1("dotted_line_Mx", "[0]", -0.5, 3);
-    dotted_line_Mx->SetParameter(0, fit_const_Mx->GetParameter(0)); // Use the same constant value as the fit
-    dotted_line_Mx->SetLineColor(kRed);
-    dotted_line_Mx->SetLineStyle(7); // Set line style to dotted-dashed
-    dotted_line_Mx->Draw("SAME");
+    // // Fit the data from -2 to -0.5 to a constant for Mx
+    // TF1* fit_const_Mx = new TF1("fit_const_Mx", "[0]", -2, -0.5);
+    // gr_ratio_Mx->Fit(fit_const_Mx, "R");
+    // fit_const_Mx->SetLineColor(kRed);
+    // fit_const_Mx->Draw("SAME");
+    // // Add the dotted-dashed line from -0.5 to 3 for Mx
+    // TF1* dotted_line_Mx = new TF1("dotted_line_Mx", "[0]", -0.5, 3);
+    // dotted_line_Mx->SetParameter(0, fit_const_Mx->GetParameter(0)); // Use the same constant value as the fit
+    // dotted_line_Mx->SetLineColor(kRed);
+    // dotted_line_Mx->SetLineStyle(7); // Set line style to dotted-dashed
+    // dotted_line_Mx->Draw("SAME");
 
-    // Add fit constant value and uncertainty for Mx
-    double fit_value_Mx = fit_const_Mx->GetParameter(0);
-    double fit_error_Mx = fit_const_Mx->GetParError(0);
-    // Retrieve chi2 and NDF for Mx
-    double chi2_Mx = fit_const_Mx->GetChisquare();
-    int ndf_Mx = fit_const_Mx->GetNDF();
-    double chi2_ndf_Mx = chi2_Mx / ndf_Mx;
-    TLatex latex_Mx;
-    latex_Mx.SetNDC();
-    latex_Mx.SetTextSize(0.04);
-    latex_Mx.DrawLatex(0.20, 0.85, Form("Fit Const, s = %.3f #pm %.3f", fit_value_Mx, fit_error_Mx));
-    latex_Mx.DrawLatex(0.20, 0.80, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2_Mx, ndf_Mx, chi2_ndf_Mx));
+    // // Add fit constant value and uncertainty for Mx
+    // double fit_value_Mx = fit_const_Mx->GetParameter(0);
+    // double fit_error_Mx = fit_const_Mx->GetParError(0);
+    // // Retrieve chi2 and NDF for Mx
+    // double chi2_Mx = fit_const_Mx->GetChisquare();
+    // int ndf_Mx = fit_const_Mx->GetNDF();
+    // double chi2_ndf_Mx = chi2_Mx / ndf_Mx;
+    // TLatex latex_Mx;
+    // latex_Mx.SetNDC();
+    // latex_Mx.SetTextSize(0.04);
+    // latex_Mx.DrawLatex(0.20, 0.85, Form("Fit Const, s = %.3f #pm %.3f", fit_value_Mx, fit_error_Mx));
+    // latex_Mx.DrawLatex(0.20, 0.80, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2_Mx, ndf_Mx, chi2_ndf_Mx));
 
     // //~~~~~~~~~~~~~~~~~~~~//
     // // Second set of plots: xF
