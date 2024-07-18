@@ -129,7 +129,7 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     h_xF_carbon->Draw("SAME");
 
     // Add legend
-    TLegend *leg = new TLegend(0.75, 0.8, 0.9, 0.9);
+    *leg = new TLegend(0.75, 0.8, 0.9, 0.9);
     leg->AddEntry(h_xF_nh3, "NH_{3}", "l");
     leg->AddEntry(h_xF_carbon, "C", "l");
     leg->Draw();
