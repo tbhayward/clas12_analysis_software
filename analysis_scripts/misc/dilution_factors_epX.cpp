@@ -35,16 +35,16 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
         return;
     }
 
-    // Create canvas and divide it into four panels
-    TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1200, 1200);
-    c1->Divide(2, 2);
-
     // Create histograms for Mx
     TH1D *h_Mx_nh3 = new TH1D("h_Mx_nh3", "M_{x} Distribution; M_{x} (GeV); Counts", 100, -2, 3);
     TH1D *h_Mx_carbon = new TH1D("h_Mx_carbon", "M_{x} Distribution; M_{x} (GeV); Counts", 100, -2, 3);
     // Fill the histograms
     tree_nh3->Draw("Mx>>h_Mx_nh3");
     tree_carbon->Draw("Mx>>h_Mx_carbon");
+
+    // Create canvas and divide it into four panels
+    TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1200, 1200);
+    c1->Divide(2, 2);
 
     // First panel: plot Mx histograms
     c1->cd(1);
