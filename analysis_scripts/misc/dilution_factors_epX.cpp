@@ -37,7 +37,7 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
 
     // Create canvas and divide it into four panels
     TCanvas* c1 = new TCanvas("c1", "Dilution Factor Analysis", 1200, 1200);
-    c1->Divide(2, 1);
+    c1->Divide(2, 2);
 
     //~~~~~~~~~~~~~~~~~~~~//
     // First set of plots: Mx
@@ -69,7 +69,7 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     h_Mx_carbon->SetStats(0);
 
     // Second panel: ratio of NH3 to Carbon counts for Mx
-    c1->cd(2);
+    c1->cd(3);
     gPad->SetLeftMargin(0.15);
     TGraphErrors* gr_ratio_Mx = new TGraphErrors();
     for (int i = 1; i <= h_Mx_nh3->GetNbinsX(); ++i) {
