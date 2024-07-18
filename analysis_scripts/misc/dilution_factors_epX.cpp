@@ -140,7 +140,7 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     // Second panel: ratio of NH3 to Carbon counts
     c1->cd(2);
     gPad->SetLeftMargin(0.15);
-    TGraphErrors *gr_ratio = new TGraphErrors();
+    *gr_ratio = new TGraphErrors();
     for (int i = 1; i <= h_xF_nh3->GetNbinsX(); ++i) {
         double nh3_counts = h_xF_nh3->GetBinContent(i);
         double c_counts = h_xF_carbon->GetBinContent(i);
