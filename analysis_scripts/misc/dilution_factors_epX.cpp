@@ -58,6 +58,7 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     h_Mx_carbon->SetLineColor(kRed);
     h_Mx_nh3->Draw();
     h_Mx_carbon->Draw("SAME");
+    c1->Update();
 
     // Add legend
     TLegend* leg_Mx = new TLegend(0.75, 0.8, 0.9, 0.9);
