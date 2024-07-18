@@ -82,10 +82,10 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
             gr_ratio_Mx->SetPointError(i - 1, 0, error);
         }
     }
-    // gr_ratio_Mx->GetYaxis()->SetRangeUser(9, 15);
-    // gr_ratio_Mx->SetTitle("NH_{3} to Carbon Ratio; M_{x} (GeV); Ratio");
-    // gr_ratio_Mx->SetMarkerStyle(20);
-    // gr_ratio_Mx->Draw("AP");
+    gr_ratio_Mx->GetYaxis()->SetRangeUser(9, 15);
+    gr_ratio_Mx->SetTitle("NH_{3} to Carbon Ratio; M_{x} (GeV); Ratio");
+    gr_ratio_Mx->SetMarkerStyle(20);
+    gr_ratio_Mx->Draw("AP");
 
     // // Fit the data from -2 to -0.5 to a constant for Mx
     // TF1* fit_const_Mx = new TF1("fit_const_Mx", "[0]", -2, -0.5);
