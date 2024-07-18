@@ -180,11 +180,6 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     latex.DrawLatex(0.20, 0.85, Form("Fit Const, s = %.3f #pm %.3f", fit_value, fit_error));
     latex.DrawLatex(0.20, 0.80, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
 
-    // Create histograms for xF
-    TH1D *h_xF_nh3 = new TH1D("h_xF_nh3", "x_{F} Distribution; x_{F}; Counts", 100, -2.5, 1);
-    TH1D *h_xF_carbon = new TH1D("h_xF_carbon", "x_{F} Distribution; x_{F}; Counts", 100, -2.5, 1);
-  
-
     // Save the canvas
     c1->SaveAs("dilution_factors.pdf");
 
