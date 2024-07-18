@@ -133,7 +133,6 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
 
         double new_content = bin_content * scale_factor;
         double new_error = new_content * std::sqrt((bin_error / bin_content) * (bin_error / bin_content) + (scale_error / scale_factor) * (scale_error / scale_factor));
-        std::cout << bin_error << " " << new_error << std::endl;
         h_pT_carbon_scaled->SetBinContent(i, new_content);
         h_pT_carbon_scaled->SetBinError(i, new_error);
     }
