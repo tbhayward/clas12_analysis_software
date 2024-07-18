@@ -165,14 +165,6 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     gPad->SetLeftMargin(0.15);
     TGraphErrors *gr_dilution = new TGraphErrors();
     for (int i = 1; i <= h_pT_nh3->GetNbinsX(); ++i) {
-        // double nh3_counts = h_pT_nh3->GetBinContent(i);
-        // double c_counts = h_pT_carbon_scaled->GetBinContent(i);
-        // if (nh3_counts > 0) {
-        //     double dilution = (nh3_counts - c_counts) / nh3_counts;
-        //     double error = std::sqrt((c_counts / nh3_counts) * (c_counts / nh3_counts) / nh3_counts + c_counts / (nh3_counts * nh3_counts));
-        //     gr_dilution->SetPoint(i - 1, h_pT_nh3->GetBinCenter(i), dilution);
-        //     gr_dilution->SetPointError(i - 1, 0, error);
-        // }
         double nh3_counts = h_pT_nh3->GetBinContent(i);
         double nh3_error = h_pT_nh3->GetBinError(i);
         double c_counts = h_pT_carbon_scaled->GetBinContent(i);
@@ -213,6 +205,11 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     double p3 = fit_poly->GetParameter(3);
     double p3_err = fit_poly->GetParError(3);
 
+    // Retrieve chi2 and NDF
+    double chi2 = fit_poly->GetChisquare();
+    int ndf = fit_poly->GetNDF();
+    double chi2_ndf = chi2 / ndf;
+
     // Add fit parameters box
     TPaveText *pt = new TPaveText(0.7, 0.7, 0.9, 0.9, "brNDC");
     pt->SetBorderSize(1);
@@ -223,6 +220,12 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     pt->AddText(Form("p2 = %.3f +/- %.3f", p2, p2_err));
     pt->AddText(Form("p3 = %.3f +/- %.3f", p3, p3_err));
     pt->Draw();
+
+    // Add chi2/ndf in the top left
+    TLatex latex;
+    latex.SetNDC();
+    latex.SetTextSize(0.04);
+    latex.DrawLatex(0.15, 0.85, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
 
     // Save the canvas
     c1->SaveAs("dilution_factors.pdf");
