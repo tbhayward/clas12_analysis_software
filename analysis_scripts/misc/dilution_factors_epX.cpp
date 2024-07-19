@@ -103,7 +103,6 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
 
     // Fit the data from -2.5 to -1 to a constant
     TF1 *fit_const = new TF1("fit_const", "[0]", -2, -0.5);
-    minuit.SetPrintLevel(-1);
     gr_ratio->Fit(fit_const, "R");
     fit_const->SetLineColor(kRed);
     fit_const->Draw("SAME");
