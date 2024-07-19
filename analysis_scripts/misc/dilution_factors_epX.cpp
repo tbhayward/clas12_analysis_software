@@ -285,9 +285,8 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     gr_dilution->SetTitle("Dilution Factor; P_{T} (GeV); (NH3 - s*C) / NH3");
     gr_dilution->SetMarkerStyle(20);
     gr_dilution->Draw("AP");
-
-    // Set x-axis range from 0 to 1
     gr_dilution->GetXaxis()->SetRangeUser(0, 1);
+    gr_dilution->GetYaxis()->SetRangeUser(0.05, 0.15);
 
     // Fit to a third-degree polynomial
     TF1 *fit_poly = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2 + [3]*x^3", 0, 1.0);
@@ -325,7 +324,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     TLatex latex;
     latex.SetNDC();
     latex.SetTextSize(0.04);
-    latex.DrawLatex(0.20, 0.85, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
+    latex.DrawLatex(0.20, 0.15, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
 
     // Save the canvas
     c1->SaveAs("output/one_dimensional.pdf");
