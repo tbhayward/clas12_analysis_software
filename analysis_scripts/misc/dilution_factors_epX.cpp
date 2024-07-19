@@ -21,7 +21,7 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
     TFile *carbon = TFile::Open(c_file);
     if (!nh3 || nh3->IsZombie() || !carbon || carbon->IsZombie()) {
         std::cerr << "Error opening files!" << std::endl;
-        break;
+        return std::make_pair(-1, -1);
     }
 
     // Get the PhysicsEvents trees
@@ -33,7 +33,7 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
         std::cerr << "Error: PhysicsEvents tree not found!" << std::endl;
         nh3->Close();
         carbon->Close();
-        break;
+        return std::make_pair(-1, -1);
     }
 
     // Create histograms for Mx and xF
