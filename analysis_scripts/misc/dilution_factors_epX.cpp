@@ -330,6 +330,9 @@ double one_dimensional(const char* nh3_file, const char* c_file,
 
     /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
+    c1->cd(2);
+    gPad->SetLeftMargin(0.15);
+    
     // Third panel: x histograms scaled by the fit constant with propagated errors
     TH1D *h_x_nh3 = 
         new TH1D("h_x_nh3", "x_{B} Distribution; x_{B} (GeV); Counts", 100, 0, 0.6);
@@ -371,8 +374,6 @@ double one_dimensional(const char* nh3_file, const char* c_file,
             gr_dilution_x->SetPointError(i - 1, 0, dilution_error);
         }
     }
-    c1->cd(2);
-    gPad->SetLeftMargin(0.15);
     gr_dilution_x->SetTitle("; x_B; D_{f} = (NH3 - s*C) / NH3");
     gr_dilution_x->SetMarkerStyle(20);
     gr_dilution_x->Draw("AP");
