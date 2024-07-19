@@ -386,14 +386,14 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     fit_poly_x->Draw("SAME");
 
     // Retrieve fit parameters and their errors
-    p0_x = fit_poly->GetParameter(0);
-    p0_err_x = fit_poly->GetParError(0);
-    p1_x = fit_poly->GetParameter(1);
-    p1_err_x = fit_poly->GetParError(1);
-    p2_x = fit_poly->GetParameter(2);
-    p2_err_x = fit_poly->GetParError(2);
-    p3_x = fit_poly->GetParameter(3);
-    p3_err_x = fit_poly->GetParError(3);
+    double p0_x = fit_poly->GetParameter(0);
+    double p0_err_x = fit_poly->GetParError(0);
+    double p1_x = fit_poly->GetParameter(1);
+    double p1_err_x = fit_poly->GetParError(1);
+    double p2_x = fit_poly->GetParameter(2);
+    double p2_err_x = fit_poly->GetParError(2);
+    double p3_x = fit_poly->GetParameter(3);
+    double p3_err_x = fit_poly->GetParError(3);
 
     // Retrieve chi2 and NDF
     chi2 = fit_poly->GetChisquare();
