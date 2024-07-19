@@ -15,7 +15,7 @@
 #include <sstream>
 #include <utility> 
 
-double std::pair<double, double>(const char* nh3_file, const char* c_file) {
+double std::pair<double, double> scale_normalization(const char* nh3_file, const char* c_file) {
     // Open the ROOT files
     TFile *nh3 = TFile::Open(nh3_file);
     TFile *carbon = TFile::Open(c_file);
@@ -297,9 +297,9 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     double p3_err = fit_poly->GetParError(3);
 
     // Retrieve chi2 and NDF
-    chi2 = fit_poly->GetChisquare();
-    ndf = fit_poly->GetNDF();
-    chi2_ndf = chi2 / ndf;
+    double chi2 = fit_poly->GetChisquare();
+    int ndf = fit_poly->GetNDF();
+    double chi2_ndf = chi2 / ndf;
 
     // Add fit parameters box
     TPaveText *pt = new TPaveText(0.7, 0.7, 0.9, 0.9, "brNDC");
@@ -313,6 +313,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     pt->Draw();
 
     // Add chi2/ndf in the top left
+    TLatex latex;
     latex.SetNDC();
     latex.SetTextSize(0.04);
     latex.DrawLatex(0.20, 0.85, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
