@@ -763,6 +763,8 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     double p5_err_Mx = fit_poly_Mx->GetParError(5);
     double p6_Mx = fit_poly_Mx->GetParameter(6);
     double p6_err_Mx = fit_poly_Mx->GetParError(6);
+    double p7_Mx = fit_poly_Mx->GetParameter(7);
+    double p7_err_Mx = fit_poly_Mx->GetParError(7);
 
     // Retrieve chi2 and NDF
     double chi2_Mx = fit_poly_Mx->GetChisquare();
@@ -781,6 +783,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     Mx->AddText(Form("p4 = %.3f +/- %.3f", p4_Mx, p4_err_Mx));
     Mx->AddText(Form("p5 = %.3f +/- %.3f", p5_Mx, p5_err_Mx));
     Mx->AddText(Form("p6 = %.3f +/- %.3f", p6_Mx, p6_err_Mx));
+    Mx->AddText(Form("p7 = %.3f +/- %.3f", p7_Mx, p7_err_Mx));
     Mx->Draw();
 
     // Add chi2/ndf in the top left
@@ -820,7 +823,8 @@ double one_dimensional(const char* nh3_file, const char* c_file,
         "+" << p1_Mx << "*currentVariable+" << p2_Mx << "*std::pow(currentVariable,2)+" <<
         p3_Mx << "*std::pow(currentVariable,3)+" << p4_Mx << 
         "*std::pow(currentVariable,4)+" << p5_Mx << "*std::pow(currentVariable,5)+" <<
-        p6_Mx << "*std::pow(currentVariable,6);" std::endl;
+        p6_Mx << "*std::pow(currentVariable,6)+" << p7_Mx <<
+        "*std::pow(currentVariable,7);" std::endl;
 
     return 0;
 }
