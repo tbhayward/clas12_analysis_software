@@ -332,12 +332,12 @@ double one_dimensional(const char* nh3_file, const char* c_file,
 
     c1->cd(2);
     gPad->SetLeftMargin(0.15);
-    
+
     // Third panel: x histograms scaled by the fit constant with propagated errors
     TH1D *h_x_nh3 = 
-        new TH1D("h_x_nh3", "x_{B} Distribution; x_{B} (GeV); Counts", 100, 0, 0.6);
+        new TH1D("h_x_nh3", "x_{B} Distribution; x_{B} (GeV); Counts", 100, 0.06, 0.6);
     TH1D *h_x_carbon = 
-        new TH1D("h_x_carbon", "x_{B} Distribution; x_{B} (GeV); Counts", 100, 0, 0.6);
+        new TH1D("h_x_carbon", "x_{B} Distribution; x_{B} (GeV); Counts", 100, 0.06, 0.6);
     tree_nh3->Draw("x>>h_x_nh3");
     tree_carbon->Draw("x>>h_x_carbon");
     TH1D *h_x_carbon_scaled = (TH1D*)h_x_carbon->Clone("h_x_carbon_scaled");
@@ -381,7 +381,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     gr_dilution_x->GetYaxis()->SetRangeUser(0.05, 0.15);
 
     // Fit to a third-degree polynomial
-    TF1 *fit_poly_x = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2 + [3]*x^3", 0.05, 0.6);
+    TF1 *fit_poly_x = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2 + [3]*x^3", 0.06, 0.6);
     gr_dilution_x->Fit(fit_poly_x, "RQ");
     fit_poly_x->SetLineColor(kRed);
     fit_poly_x->Draw("SAME");
