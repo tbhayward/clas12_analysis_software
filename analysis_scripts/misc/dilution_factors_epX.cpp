@@ -506,7 +506,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     // Add chi2/ndf in the top left
     latex.SetNDC();
     latex.SetTextSize(0.04);
-    latex.DrawLatex(0.20, 0.15, 
+    latex.DrawLatex(0.35, 0.15, 
         Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2_z, ndf_z, chi2_ndf_z));
 
     /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
@@ -596,7 +596,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     // Add chi2/ndf in the top left
     latex.SetNDC();
     latex.SetTextSize(0.04);
-    latex.DrawLatex(0.20, 0.15, 
+    latex.DrawLatex(0.60, 0.15, 
         Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2_xF, ndf_xF, chi2_ndf_xF));
 
     /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
@@ -691,7 +691,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
 
     /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
-    c1->cd(4);
+    c1->cd(6);
     gPad->SetLeftMargin(0.15);
 
     // Third panel: x histograms scaled by the fit constant with propagated errors
