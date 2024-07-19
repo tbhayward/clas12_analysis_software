@@ -493,15 +493,15 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     double chi2_ndf_z = chi2_z / ndf;
 
     // Add fit parameters box
-    TPaveText *x = new TPaveText(0.15, 0.7, 0.55, 0.9, "brNDC");
-    x->SetBorderSize(1);
-    x->SetFillStyle(1001); // Solid fill style
-    x->SetFillColor(kWhite); // White background
-    x->AddText(Form("p0 = %.3f +/- %.3f", p0_z, p0_err_z));
-    x->AddText(Form("p1 = %.3f +/- %.3f", p1_z, p1_err_z));
-    x->AddText(Form("p2 = %.3f +/- %.3f", p2_z, p2_err_z));
-    x->AddText(Form("p3 = %.3f +/- %.3f", p3_z, p3_err_z));
-    x->Draw();
+    TPaveText *z = new TPaveText(0.15, 0.7, 0.55, 0.9, "brNDC");
+    z->SetBorderSize(1);
+    z->SetFillStyle(1001); // Solid fill style
+    z->SetFillColor(kWhite); // White background
+    z->AddText(Form("p0 = %.3f +/- %.3f", p0_z, p0_err_z));
+    z->AddText(Form("p1 = %.3f +/- %.3f", p1_z, p1_err_z));
+    z->AddText(Form("p2 = %.3f +/- %.3f", p2_z, p2_err_z));
+    z->AddText(Form("p3 = %.3f +/- %.3f", p3_z, p3_err_z));
+    z->Draw();
 
     // Add chi2/ndf in the top left
     latex.SetNDC();
