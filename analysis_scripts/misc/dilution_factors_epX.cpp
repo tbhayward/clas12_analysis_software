@@ -824,7 +824,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
         p3_Mx << "*std::pow(currentVariable,3)+" << p4_Mx << 
         "*std::pow(currentVariable,4)+" << p5_Mx << "*std::pow(currentVariable,5)+" <<
         p6_Mx << "*std::pow(currentVariable,6)+" << p7_Mx <<
-        "*std::pow(currentVariable,7);" std::endl;
+        "*std::pow(currentVariable,7);" << std::endl;
 
     return 0;
 }
