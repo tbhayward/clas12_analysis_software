@@ -509,6 +509,96 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     latex.DrawLatex(0.20, 0.15, 
         Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2_z, ndf_z, chi2_ndf_z));
 
+    /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+
+    c1->cd(4);
+    gPad->SetLeftMargin(0.15);
+
+    // Third panel: x histograms scaled by the fit constant with propagated errors
+    TH1D *h_xF_nh3 = 
+        new TH1D("h_xF_nh3", "z Distribution; z (GeV); Counts", 50, -1, 0.5);
+    TH1D *h_xF_carbon = 
+        new TH1D("h_xF_carbon", "z Distribution; z (GeV); Counts", 50, -1, 0.5);
+    tree_nh3->Draw("xF>>h_xF_nh3","Mx > 1.4");
+    tree_carbon->Draw("xF>>h_xF_carbon","Mx > 1.4");
+    TH1D *h_xF_carbon_scaled = (TH1D*)h_xF_carbon->Clone("h_xF_carbon_scaled");
+    h_xF_carbon_scaled->SetTitle("z Distribution; z; Counts (Scaled)");
+
+    for (int i = 1; i <= h_xF_carbon->GetNbinsX(); ++i) {
+        double bin_content = h_xF_carbon->GetBinContent(i);
+        double bin_error = h_xF_carbon->GetBinError(i);
+
+        double new_content = bin_content * scale_factor;
+        double new_error = 
+            new_content * std::sqrt((bin_error / bin_content) * (bin_error / bin_content) + 
+            (scale_error / scale_factor) * (scale_error / scale_factor));
+        h_xF_carbon_scaled->SetBinContent(i, new_content);
+        h_xF_carbon_scaled->SetBinError(i, new_error);
+    }
+
+    TGraphErrors *gr_dilution_xF = new TGraphErrors();
+    for (int i = 1; i <= h_xF_nh3->GetNbinsX(); ++i) {
+        double nh3_counts = h_xF_nh3->GetBinContent(i);
+        double nh3_error = h_xF_nh3->GetBinError(i);
+        double c_counts = h_xF_carbon_scaled->GetBinContent(i);
+        double c_error = h_xF_carbon_scaled->GetBinError(i);
+
+        if (nh3_counts > 0) {
+            double dilution = (nh3_counts - c_counts) / nh3_counts;
+
+            // Propagate the error
+            double dilution_error = std::sqrt(
+                std::pow((c_counts / (nh3_counts * nh3_counts)) * nh3_error, 2) +
+                std::pow(1.0 / nh3_counts * c_error, 2));
+
+            gr_dilution_xF->SetPoint(i - 1, h_xF_nh3->GetBinCenter(i), dilution);
+            gr_dilution_xF->SetPointError(i - 1, 0, dilution_error);
+        }
+    }
+    gr_dilution_xF->SetTitle("; z; D_{f} = (NH3 - s*C) / NH3");
+    gr_dilution_xF->SetMarkerStyle(20);
+    gr_dilution_xF->Draw("AP");
+    gr_dilution_xF->GetXaxis()->SetRangeUser(0, 0.7);
+    gr_dilution_xF->GetYaxis()->SetRangeUser(0.05, 0.15);
+
+    // Fit to a third-degree polynomial
+    TF1 *fit_poly_xF = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2 + [3]*x^3", -1, 0.5);
+    gr_dilution_xF->Fit(fit_poly_xF, "RQ");
+    fit_poly_xF->SetLineColor(kRed);
+    fit_poly_xF->Draw("SAME");
+
+    // Retrieve fit parameters and their errors
+    double p0_xF = fit_poly_xF->GetParameter(0);
+    double p0_err_xF = fit_poly_xF->GetParError(0);
+    double p1_xF = fit_poly_xF->GetParameter(1);
+    double p1_err_xF = fit_poly_xF->GetParError(1);
+    double p2_xF = fit_poly_xF->GetParameter(2);
+    double p2_err_xF = fit_poly_xF->GetParError(2);
+    double p3_xF = fit_poly_xF->GetParameter(3);
+    double p3_err_xF = fit_poly_xF->GetParError(3);
+
+    // Retrieve chi2 and NDF
+    double chi2_xF = fit_poly_xF->GetChisquare();
+    int ndf_xF = fit_poly_xF->GetNDF();
+    double chi2_ndf_xF = chi2_xF / ndf;
+
+    // Add fit parameters box
+    TPaveText *z = new TPaveText(0.15, 0.7, 0.55, 0.9, "brNDC");
+    z->SetBorderSize(1);
+    z->SetFillStyle(1001); // Solid fill style
+    z->SetFillColor(kWhite); // White background
+    z->AddText(Form("p0 = %.3f +/- %.3f", p0_xF, p0_err_xF));
+    z->AddText(Form("p1 = %.3f +/- %.3f", p1_xF, p1_err_xF));
+    z->AddText(Form("p2 = %.3f +/- %.3f", p2_xF, p2_err_xF));
+    z->AddText(Form("p3 = %.3f +/- %.3f", p3_xF, p3_err_xF));
+    z->Draw();
+
+    // Add chi2/ndf in the top left
+    latex.SetNDC();
+    latex.SetTextSize(0.04);
+    latex.DrawLatex(0.20, 0.15, 
+        Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2_xF, ndf_xF, chi2_ndf_xF));
+
     // Save the canvas
     c1->SaveAs("output/one_dimensional.pdf");
     // Clean up
