@@ -291,7 +291,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     gr_dilution->GetYaxis()->SetRangeUser(0.00, 0.20);
 
     // Fit to a third-degree polynomial
-    TF1 *fit_poly = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2 + [3]*x^3", 0, 1.0);
+    TF1 *fit_poly = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2", 0, 1.0);
     gr_dilution->Fit(fit_poly, "RQ");
     fit_poly->SetLineColor(kRed);
     fit_poly->Draw("SAME");
@@ -303,8 +303,6 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     double p1_err = fit_poly->GetParError(1);
     double p2 = fit_poly->GetParameter(2);
     double p2_err = fit_poly->GetParError(2);
-    double p3 = fit_poly->GetParameter(3);
-    double p3_err = fit_poly->GetParError(3);
 
     // Retrieve chi2 and NDF
     double chi2 = fit_poly->GetChisquare();
@@ -319,7 +317,6 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     pt->AddText(Form("p0 = %.3f +/- %.3f", p0, p0_err));
     pt->AddText(Form("p1 = %.3f +/- %.3f", p1, p1_err));
     pt->AddText(Form("p2 = %.3f +/- %.3f", p2, p2_err));
-    pt->AddText(Form("p3 = %.3f +/- %.3f", p3, p3_err));
     pt->Draw();
 
     // Add chi2/ndf in the top left
@@ -381,7 +378,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     gr_dilution_x->GetYaxis()->SetRangeUser(0.00, 0.20);
 
     // Fit to a third-degree polynomial
-    TF1 *fit_poly_x = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2 + [3]*x^3", 0.06, 0.6);
+    TF1 *fit_poly_x = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2", 0.06, 0.6);
     gr_dilution_x->Fit(fit_poly_x, "RQ");
     fit_poly_x->SetLineColor(kRed);
     fit_poly_x->Draw("SAME");
@@ -393,8 +390,6 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     double p1_err_x = fit_poly_x->GetParError(1);
     double p2_x = fit_poly_x->GetParameter(2);
     double p2_err_x = fit_poly_x->GetParError(2);
-    double p3_x = fit_poly_x->GetParameter(3);
-    double p3_err_x = fit_poly_x->GetParError(3);
 
     // Retrieve chi2 and NDF
     double chi2_x = fit_poly_x->GetChisquare();
@@ -409,7 +404,6 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     x->AddText(Form("p0 = %.3f +/- %.3f", p0_x, p0_err_x));
     x->AddText(Form("p1 = %.3f +/- %.3f", p1_x, p1_err_x));
     x->AddText(Form("p2 = %.3f +/- %.3f", p2_x, p2_err_x));
-    x->AddText(Form("p3 = %.3f +/- %.3f", p3_x, p3_err_x));
     x->Draw();
 
     // Add chi2/ndf in the top left
@@ -743,7 +737,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
 
     // Fit to a third-degree polynomial
     TF1 *fit_poly_Mx = new TF1("fit_poly", 
-        "[0]+[1]*x+[2]*x^2+[3]*x^3+[4]*x^4+[5]*x^5+[6]*x^6+[7]*x^7", 0.0, 3.0);
+        "[0]+[1]*x+[2]*x^2+[3]*x^3+[4]*x^4+[5]*x^5+[6]*x^6+[7]*x^7+[8]*x^8+[9]*x^9", 0.0, 3.0);
     gr_dilution_Mx->Fit(fit_poly_Mx, "RQ");
     fit_poly_Mx->SetLineColor(kRed);
     fit_poly_Mx->Draw("SAME");
@@ -765,6 +759,10 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     double p6_err_Mx = fit_poly_Mx->GetParError(6);
     double p7_Mx = fit_poly_Mx->GetParameter(7);
     double p7_err_Mx = fit_poly_Mx->GetParError(7);
+    double p8_Mx = fit_poly_Mx->GetParameter(8);
+    double p8_err_Mx = fit_poly_Mx->GetParError(8);
+    double p9_Mx = fit_poly_Mx->GetParameter(9);
+    double p9_err_Mx = fit_poly_Mx->GetParError(9);
 
     // Retrieve chi2 and NDF
     double chi2_Mx = fit_poly_Mx->GetChisquare();
@@ -772,7 +770,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     double chi2_ndf_Mx = chi2_Mx / ndf;
 
     // Add fit parameters box
-    TPaveText *Mx = new TPaveText(0.5, 0.7, 0.9, 0.9, "brNDC");
+    TPaveText *Mx = new TPaveText(0.5, 0.6, 0.9, 0.9, "brNDC");
     Mx->SetBorderSize(1);
     Mx->SetFillStyle(1001); // Solid fill style
     Mx->SetFillColor(kWhite); // White background
@@ -784,6 +782,8 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     Mx->AddText(Form("p5 = %.3f +/- %.3f", p5_Mx, p5_err_Mx));
     Mx->AddText(Form("p6 = %.3f +/- %.3f", p6_Mx, p6_err_Mx));
     Mx->AddText(Form("p7 = %.3f +/- %.3f", p7_Mx, p7_err_Mx));
+    Mx->AddText(Form("p8 = %.3f +/- %.3f", p8_Mx, p8_err_Mx));
+    Mx->AddText(Form("p9 = %.3f +/- %.3f", p9_Mx, p9_err_Mx));
     Mx->Draw();
 
     // Add chi2/ndf in the top left
@@ -800,8 +800,8 @@ double one_dimensional(const char* nh3_file, const char* c_file,
 
     std::cout << std::endl << std::endl << std::endl;
     std::cout << "if (prefix == \"x\") { return " << p0_x << 
-        "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2)+" <<
-        p3_x << "*std::pow(currentVariable,3);" << std::endl;
+        "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2);" <<
+        std::endl;
 
     std::cout << "if (prefix == \"z\") { return " << p0_z << 
         "+" << p1_z << "*currentVariable+" << p2_z << "*std::pow(currentVariable,2)+" <<
@@ -812,8 +812,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
         p3_zeta << "*std::pow(currentVariable,3);" << std::endl;
 
     std::cout << "if (prefix == \"PT\") { return " << p0 << 
-        "+" << p1 << "*currentVariable+" << p2 << "*std::pow(currentVariable,2)+" <<
-        p3 << "*std::pow(currentVariable,3);" << std::endl;
+        "+" << p1 << "*currentVariable+" << p2 << "*std::pow(currentVariable,2);" << std::endl;
 
     std::cout << "if (prefix == \"xF\") { return " << p0_xF << 
         "+" << p1_xF << "*currentVariable+" << p2_xF << "*std::pow(currentVariable,2)+" <<
