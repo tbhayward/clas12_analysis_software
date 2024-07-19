@@ -327,8 +327,8 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     latex.SetTextSize(0.04);
     latex.DrawLatex(0.20, 0.15, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
 
-    std::cout << "if if (prefix == \"PT\") { return " << p0 << 
-        "+" << p1 << "*currentVariable+" << p2 << "std::pow(currentVariable,2)" <<
+    std::cout << "if (prefix == \"PT\") { return " << p0 << 
+        "+" << p1 << "*currentVariable" << p2 << "std::pow(currentVariable,2)" <<
         p3 << "*std::pow(currentVariable,3);" << std::endl;
 
     // Save the canvas
