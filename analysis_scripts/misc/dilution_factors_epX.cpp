@@ -209,5 +209,4 @@ int main(int argc, char** argv) {
     }
 
     double fit_constant = scale_normalization(argv[1], argv[2]);
-    return 0;
 }
