@@ -15,7 +15,7 @@
 #include <sstream>
 #include <utility> 
 
-double std::pair<double, double> scale_normalization(const char* nh3_file, const char* c_file) {
+std::pair<double, double> scale_normalization(const char* nh3_file, const char* c_file) {
     // Open the ROOT files
     TFile *nh3 = TFile::Open(nh3_file);
     TFile *carbon = TFile::Open(c_file);
