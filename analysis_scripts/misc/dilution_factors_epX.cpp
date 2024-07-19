@@ -774,11 +774,15 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     Mx->SetBorderSize(1);
     Mx->SetFillStyle(1001); // Solid fill style
     Mx->SetFillColor(kWhite); // White background
-    Mx->AddText(Form("p0 = %.3f +/- %.3f", p0_Mx, p0_err_Mx));
-    Mx->AddText(Form("p1 = %.3f +/- %.3f", p1_Mx, p1_err_Mx));
-    Mx->AddText(Form("p2 = %.3f +/- %.3f", p2_Mx, p2_err_Mx));
-    Mx->AddText(Form("p3 = %.3f +/- %.3f", p3_Mx, p3_err_Mx));
-    Mx->AddText(Form("p4 = %.3f +/- %.3f", p4_Mx, p4_err_Mx));
+    Mx->AddText(Form("amp_{1} = %.3f +/- %.3f", p0_Mx, p0_err_Mx));
+    Mx->AddText(Form("#mu_{1} = %.3f +/- %.3f", p1_Mx, p1_err_Mx));
+    Mx->AddText(Form("#sigma_{1} = %.3f +/- %.3f", p2_Mx, p2_err_Mx));
+    Mx->AddText(Form("amp_{2} = %.3f +/- %.3f", p3_Mx, p3_err_Mx));
+    Mx->AddText(Form("#mu_{2} = %.3f +/- %.3f", p4_Mx, p4_err_Mx));
+    Mx->AddText(Form("#sigma_{2} = %.3f +/- %.3f", p5_Mx, p5_err_Mx));
+    Mx->AddText(Form("amp_{3} = %.3f +/- %.3f", p6_Mx, p6_err_Mx));
+    Mx->AddText(Form("#mu_{3} = %.3f +/- %.3f", p7_Mx, p7_err_Mx));
+    Mx->AddText(Form("#sigma_{3} = %.3f +/- %.3f", p8_Mx, p8_err_Mx));
     Mx->Draw();
 
     // Add chi2/ndf in the top left
