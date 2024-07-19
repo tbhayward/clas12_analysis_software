@@ -331,7 +331,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
     // Third panel: x histograms scaled by the fit constant with propagated errors
-    c1->cd(1);
+    c1->cd(2);
     gPad->SetLeftMargin(0.15);
     TH1D *h_x_nh3 = 
         new TH1D("h_x_nh3", "P_{T} Distribution; P_{T} (GeV); Counts", 100, 0, 1.0);
