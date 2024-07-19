@@ -37,14 +37,18 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
     }
 
     // Create histograms for Mx and xF
-    TH1D *h_Mx_nh3 = new TH1D("h_Mx_nh3", "M_{x} Distribution; M_{x} (GeV); Counts", 100, -2, 3);
-    TH1D *h_Mx_carbon = new TH1D("h_Mx_carbon", "M_{x} Distribution; M_{x} (GeV); Counts", 100, -2, 3);
+    TH1D *h_Mx_nh3 = 
+        new TH1D("h_Mx_nh3", "M_{x} Distribution; M_{x} (GeV); Counts", 100, -2, 3);
+    TH1D *h_Mx_carbon = 
+        new TH1D("h_Mx_carbon", "M_{x} Distribution; M_{x} (GeV); Counts", 100, -2, 3);
     // Fill the histograms
     tree_nh3->Draw("Mx>>h_Mx_nh3");
     tree_carbon->Draw("Mx>>h_Mx_carbon");
     //
-    TH1D *h_xF_nh3 = new TH1D("h_xF_nh3", "x_{F} Distribution; x_{F} (GeV); Counts", 100, -2, 1);
-    TH1D *h_xF_carbon = new TH1D("h_xF_carbon", "x_{F} Distribution; x_{F} (GeV); Counts", 100, -2, 1);
+    TH1D *h_xF_nh3 = 
+        new TH1D("h_xF_nh3", "x_{F} Distribution; x_{F} (GeV); Counts", 100, -2, 1);
+    TH1D *h_xF_carbon = 
+        new TH1D("h_xF_carbon", "x_{F} Distribution; x_{F} (GeV); Counts", 100, -2, 1);
     // Fill the histograms
     tree_nh3->Draw("xF>>h_xF_nh3");
     tree_carbon->Draw("xF>>h_xF_carbon");
@@ -104,7 +108,7 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
 
     // Add the dotted-dashed line from -0.5 to 3
     TF1 *dotted_line = new TF1("dotted_line", "[0]", -0.5, 3);
-    dotted_line->SetParameter(0, fit_const->GetParameter(0)); // Use the same constant value as the fit
+    dotted_line->SetParameter(0, fit_const->GetParameter(0)); 
     dotted_line->SetLineColor(kRed);
     dotted_line->SetLineStyle(7); // Set line style to dotted-dashed
     dotted_line->Draw("SAME");
@@ -174,7 +178,7 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
 
     // Add the dotted-dashed line from -0.5 to 3
     TF1 *dotted_line_xF = new TF1("dotted_line_xF", "[0]", -1, 1);
-    dotted_line_xF->SetParameter(0, fit_const_xF->GetParameter(0)); // Use the same constant value as the fit
+    dotted_line_xF->SetParameter(0, fit_const_xF->GetParameter(0));
     dotted_line_xF->SetLineColor(kRed);
     dotted_line_xF->SetLineStyle(7); // Set line style to dotted-dashed
     dotted_line_xF->Draw("SAME");
@@ -191,8 +195,10 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
     TLatex latex_xF;
     latex_xF.SetNDC();
     latex_xF.SetTextSize(0.04);
-    latex_xF.DrawLatex(0.20, 0.85, Form("Fit Const, s = %.3f #pm %.3f", fit_value_xF, fit_error_xF));
-    latex_xF.DrawLatex(0.20, 0.80, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2_xF, ndf_xF, chi2_ndf_xF));
+    latex_xF.DrawLatex(0.20, 0.85, 
+        Form("Fit Const, s = %.3f #pm %.3f", fit_value_xF, fit_error_xF));
+    latex_xF.DrawLatex(0.20, 0.80, 
+        Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2_xF, ndf_xF, chi2_ndf_xF));
 
     // Save the canvas
     c1->SaveAs("output/scale_constant.pdf");
@@ -208,7 +214,6 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     std::pair<double, double> fit_constant) {
     double scale_factor = fit_constant.first;
     double scale_error = fit_constant.second;
-
 
     // Open the ROOT files
     TFile *nh3 = TFile::Open(nh3_file);
@@ -231,14 +236,16 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     }
 
     // Create canvas and divide it into four panels
-    TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1200, 1200);
+    TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1600, 1200);
     c1->Divide(3, 2);
 
     // Third panel: pT histograms scaled by the fit constant with propagated errors
     c1->cd(1);
     gPad->SetLeftMargin(0.15);
-    TH1D *h_pT_nh3 = new TH1D("h_pT_nh3", "P_{T} Distribution; P_{T} (GeV); Counts", 100, 0, 1.0);
-    TH1D *h_pT_carbon = new TH1D("h_pT_carbon", "P_{T} Distribution; P_{T} (GeV); Counts", 100, 0, 1.0);
+    TH1D *h_pT_nh3 = 
+        new TH1D("h_pT_nh3", "P_{T} Distribution; P_{T} (GeV); Counts", 100, 0, 1.0);
+    TH1D *h_pT_carbon = 
+        new TH1D("h_pT_carbon", "P_{T} Distribution; P_{T} (GeV); Counts", 100, 0, 1.0);
     tree_nh3->Draw("pT>>h_pT_nh3");
     tree_carbon->Draw("pT>>h_pT_carbon");
     TH1D *h_pT_carbon_scaled = (TH1D*)h_pT_carbon->Clone("h_pT_carbon_scaled");
@@ -249,7 +256,9 @@ double one_dimensional(const char* nh3_file, const char* c_file,
         double bin_error = h_pT_carbon->GetBinError(i);
 
         double new_content = bin_content * scale_factor;
-        double new_error = new_content * std::sqrt((bin_error / bin_content) * (bin_error / bin_content) + (scale_error / scale_factor) * (scale_error / scale_factor));
+        double new_error = 
+            new_content * std::sqrt((bin_error / bin_content) * (bin_error / bin_content) + 
+            (scale_error / scale_factor) * (scale_error / scale_factor));
         h_pT_carbon_scaled->SetBinContent(i, new_content);
         h_pT_carbon_scaled->SetBinError(i, new_error);
     }
