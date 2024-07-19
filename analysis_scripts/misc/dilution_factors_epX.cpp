@@ -374,7 +374,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
             gr_dilution_x->SetPointError(i - 1, 0, dilution_error);
         }
     }
-    gr_dilution_x->SetTitle("; x_B; D_{f} = (NH3 - s*C) / NH3");
+    gr_dilution_x->SetTitle("; x_{B}; D_{f} = (NH3 - s*C) / NH3");
     gr_dilution_x->SetMarkerStyle(20);
     gr_dilution_x->Draw("AP");
     gr_dilution_x->GetXaxis()->SetRangeUser(0, 0.6);
@@ -555,7 +555,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
             gr_dilution_xF->SetPointError(i - 1, 0, dilution_error);
         }
     }
-    gr_dilution_xF->SetTitle("; z; D_{f} = (NH3 - s*C) / NH3");
+    gr_dilution_xF->SetTitle("; x_{F}; D_{f} = (NH3 - s*C) / NH3");
     gr_dilution_xF->SetMarkerStyle(20);
     gr_dilution_xF->Draw("AP");
     gr_dilution_xF->GetXaxis()->SetRangeUser(-1, 0.5);
@@ -604,15 +604,15 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     c1->cd(4);
     gPad->SetLeftMargin(0.15);
 
-    // Third panel: x histograms scaled by the fit constant with propagated errors
+    // Third panel: zeta histograms scaled by the fit constant with propagated errors
     TH1D *h_zeta_nh3 = 
-        new TH1D("h_zeta_nh3", "z Distribution; z (GeV); Counts", 50, 0.3, 0.8);
+        new TH1D("h_zeta_nh3", "#zeta Distribution; #zeta (GeV); Counts", 50, 0.3, 0.8);
     TH1D *h_zeta_carbon = 
         new TH1D("h_zeta_carbon", "z Distribution; z (GeV); Counts", 50, 0.3, 0.8);
     tree_nh3->Draw("zeta>>h_zeta_nh3","Mx > 1.4");
     tree_carbon->Draw("zeta>>h_zeta_carbon","Mx > 1.4");
     TH1D *h_zeta_carbon_scaled = (TH1D*)h_zeta_carbon->Clone("h_zeta_carbon_scaled");
-    h_zeta_carbon_scaled->SetTitle("z Distribution; z; Counts (Scaled)");
+    h_zeta_carbon_scaled->SetTitle("#zeta Distribution; #zeta; Counts (Scaled)");
 
     for (int i = 1; i <= h_zeta_carbon->GetNbinsX(); ++i) {
         double bin_content = h_zeta_carbon->GetBinContent(i);
@@ -645,7 +645,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
             gr_dilution_zeta->SetPointError(i - 1, 0, dilution_error);
         }
     }
-    gr_dilution_zeta->SetTitle("; z; D_{f} = (NH3 - s*C) / NH3");
+    gr_dilution_zeta->SetTitle("; #zeta; D_{f} = (NH3 - s*C) / NH3");
     gr_dilution_zeta->SetMarkerStyle(20);
     gr_dilution_zeta->Draw("AP");
     gr_dilution_zeta->GetXaxis()->SetRangeUser(0.3, 0.8);
