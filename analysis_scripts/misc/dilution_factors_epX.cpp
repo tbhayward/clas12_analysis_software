@@ -601,7 +601,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
 
     /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
-    c1->cd(4);
+    c1->cd(3);
     gPad->SetLeftMargin(0.15);
 
     // Third panel: zeta histograms scaled by the fit constant with propagated errors
