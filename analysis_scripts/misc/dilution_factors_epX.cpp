@@ -288,7 +288,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     gr_dilution->SetMarkerStyle(20);
     gr_dilution->Draw("AP");
     gr_dilution->GetXaxis()->SetRangeUser(0, 1);
-    gr_dilution->GetYaxis()->SetRangeUser(0.07, 0.17);
+    gr_dilution->GetYaxis()->SetRangeUser(0.00, 0.20);
 
     // Fit to a third-degree polynomial
     TF1 *fit_poly = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2 + [3]*x^3", 0, 1.0);
@@ -378,7 +378,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     gr_dilution_x->SetMarkerStyle(20);
     gr_dilution_x->Draw("AP");
     gr_dilution_x->GetXaxis()->SetRangeUser(0, 0.6);
-    gr_dilution_x->GetYaxis()->SetRangeUser(0.07, 0.17);
+    gr_dilution_x->GetYaxis()->SetRangeUser(0.00, 0.20);
 
     // Fit to a third-degree polynomial
     TF1 *fit_poly_x = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2 + [3]*x^3", 0.06, 0.6);
@@ -469,7 +469,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     gr_dilution_z->SetMarkerStyle(20);
     gr_dilution_z->Draw("AP");
     gr_dilution_z->GetXaxis()->SetRangeUser(01, 0.75);
-    gr_dilution_z->GetYaxis()->SetRangeUser(0.05, 0.15);
+    gr_dilution_z->GetYaxis()->SetRangeUser(0.00, 0.20);
 
     // Fit to a third-degree polynomial
     TF1 *fit_poly_z = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2 + [3]*x^3", 0.1, 0.75);
@@ -559,7 +559,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     gr_dilution_xF->SetMarkerStyle(20);
     gr_dilution_xF->Draw("AP");
     gr_dilution_xF->GetXaxis()->SetRangeUser(-1, 0.5);
-    gr_dilution_xF->GetYaxis()->SetRangeUser(0.05, 0.20);
+    gr_dilution_xF->GetYaxis()->SetRangeUser(0.00, 0.20);
 
     // Fit to a third-degree polynomial
     TF1 *fit_poly_xF = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2 + [3]*x^3", -1, 0.5);
@@ -596,7 +596,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     // Add chi2/ndf in the top left
     latex.SetNDC();
     latex.SetTextSize(0.04);
-    latex.DrawLatex(0.60, 0.15, 
+    latex.DrawLatex(0.20, 0.45, 
         Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2_xF, ndf_xF, chi2_ndf_xF));
 
     /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
