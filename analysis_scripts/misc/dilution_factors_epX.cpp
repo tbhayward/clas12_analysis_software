@@ -514,15 +514,15 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     c1->cd(5);
     gPad->SetLeftMargin(0.15);
 
-    // Third panel: z histograms scaled by the fit constant with propagated errors
+    // Third panel: x_{F} histograms scaled by the fit constant with propagated errors
     TH1D *h_xF_nh3 = 
-        new TH1D("h_xF_nh3", "z Distribution; z (GeV); Counts", 50, -1, 0.5);
+        new TH1D("h_xF_nh3", "x_{F} Distribution; x_{F} (GeV); Counts", 50, -1, 0.5);
     TH1D *h_xF_carbon = 
-        new TH1D("h_xF_carbon", "z Distribution; z (GeV); Counts", 50, -1, 0.5);
+        new TH1D("h_xF_carbon", "x_{F} Distribution; x_{F} (GeV); Counts", 50, -1, 0.5);
     tree_nh3->Draw("xF>>h_xF_nh3","Mx > 1.4");
     tree_carbon->Draw("xF>>h_xF_carbon","Mx > 1.4");
     TH1D *h_xF_carbon_scaled = (TH1D*)h_xF_carbon->Clone("h_xF_carbon_scaled");
-    h_xF_carbon_scaled->SetTitle("z Distribution; z; Counts (Scaled)");
+    h_xF_carbon_scaled->SetTitle("x_{F} Distribution; x_{F}; Counts (Scaled)");
 
     for (int i = 1; i <= h_xF_carbon->GetNbinsX(); ++i) {
         double bin_content = h_xF_carbon->GetBinContent(i);
@@ -558,8 +558,8 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     gr_dilution_xF->SetTitle("; z; D_{f} = (NH3 - s*C) / NH3");
     gr_dilution_xF->SetMarkerStyle(20);
     gr_dilution_xF->Draw("AP");
-    gr_dilution_xF->GetXaxis()->SetRangeUser(0, 0.7);
-    gr_dilution_xF->GetYaxis()->SetRangeUser(0.05, 0.15);
+    gr_dilution_xF->GetXaxis()->SetRangeUser(-1, 0.5);
+    gr_dilution_xF->GetYaxis()->SetRangeUser(0.05, 0.20);
 
     // Fit to a third-degree polynomial
     TF1 *fit_poly_xF = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2 + [3]*x^3", -1, 0.5);
