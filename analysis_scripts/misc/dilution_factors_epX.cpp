@@ -14,7 +14,7 @@
 #include <TLatex.h>
 #include <sstream>
 
-void dilution_factors_epX(const char* nh3_file, const char* c_file) {
+double scale_normalization(const char* nh3_file, const char* c_file) {
     // Open the ROOT files
     TFile *nh3 = TFile::Open(nh3_file);
     TFile *carbon = TFile::Open(c_file);
@@ -194,10 +194,12 @@ void dilution_factors_epX(const char* nh3_file, const char* c_file) {
     latex_xF.DrawLatex(0.20, 0.80, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2_xF, ndf_xF, chi2_ndf_xF));
 
     // Save the canvas
-    c1->SaveAs("dilution_factors.pdf");
+    c1->SaveAs("output/scale_constant.pdf");
     // Clean up
     nh3->Close();
     carbon->Close();
+
+    return fit_const;
 }
 
 int main(int argc, char** argv) {
@@ -206,6 +208,6 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    dilution_factors_epX(argv[1], argv[2]);
+    fit_constant = scale_normalization(argv[1], argv[2]);
     return 0;
 }
