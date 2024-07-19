@@ -558,7 +558,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     gr_dilution_xF->SetTitle("; x_{F}; D_{f} = (NH3 - s*C) / NH3");
     gr_dilution_xF->SetMarkerStyle(20);
     gr_dilution_xF->Draw("AP");
-    gr_dilution_xF->GetXaxis()->SetRangeUser(-1, 0.5);
+    gr_dilution_xF->GetXaxis()->SetRangeUser(-0.8, 0.5);
     gr_dilution_xF->GetYaxis()->SetRangeUser(0.00, 0.20);
 
     // Fit to a third-degree polynomial
