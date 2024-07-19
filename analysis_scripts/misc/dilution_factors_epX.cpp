@@ -331,12 +331,6 @@ double one_dimensional(const char* nh3_file, const char* c_file,
         "+" << p1 << "*currentVariable+" << p2 << "std::pow(currentVariable,2)" <<
         p3 << "*std::pow(currentVariable,3);" << std::endl;
 
-
-    if (prefix == "PTTFR") {
-    return 0.184491-0.161007*currentVariable+0.298733*std::pow(currentVariable,2)-
-      0.187826*std::pow(currentVariable,3);
-  }
-
     // Save the canvas
     c1->SaveAs("output/one_dimensional.pdf");
     // Clean up
