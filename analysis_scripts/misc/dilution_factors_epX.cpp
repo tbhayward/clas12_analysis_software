@@ -20,7 +20,7 @@ double scale_normalization(const char* nh3_file, const char* c_file) {
     TFile *carbon = TFile::Open(c_file);
     if (!nh3 || nh3->IsZombie() || !carbon || carbon->IsZombie()) {
         std::cerr << "Error opening files!" << std::endl;
-        return;
+        return 0;
     }
 
     // Get the PhysicsEvents trees
@@ -32,7 +32,7 @@ double scale_normalization(const char* nh3_file, const char* c_file) {
         std::cerr << "Error: PhysicsEvents tree not found!" << std::endl;
         nh3->Close();
         carbon->Close();
-        return;
+        return 0;
     }
 
     // Create histograms for Mx and xF
