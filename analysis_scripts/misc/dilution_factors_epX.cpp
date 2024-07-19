@@ -199,7 +199,7 @@ double scale_normalization(const char* nh3_file, const char* c_file) {
     nh3->Close();
     carbon->Close();
 
-    return fit_const;
+    return fit_value;
 }
 
 int main(int argc, char** argv) {
