@@ -424,7 +424,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     nh3->Close();
     carbon->Close();
 
-    std::endl << std::endl << std::endl << std::endl;
+    std::cout << std::endl << std::endl << std::endl;
     std::cout << "if (prefix == \"PT\") { return " << p0 << 
         "+" << p1 << "*currentVariable" << p2 << "std::pow(currentVariable,2)" <<
         p3 << "*std::pow(currentVariable,3);" << std::endl;
