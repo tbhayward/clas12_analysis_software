@@ -742,7 +742,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     gr_dilution_Mx->GetYaxis()->SetRangeUser(0.00, 0.20);
 
     // Fit to a third-degree polynomial
-    TF1 *fit_poly_Mx = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2 + [3]*x^3", 0.0, 3.0);
+    TF1 *fit_poly_Mx = new TF1("fit_poly", "[0]+[1]*x+[2]*x^2+[3]*x^3+[4]*x^4", 0.0, 3.0);
     gr_dilution_Mx->Fit(fit_poly_Mx, "RQ");
     fit_poly_Mx->SetLineColor(kRed);
     fit_poly_Mx->Draw("SAME");
@@ -756,6 +756,8 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     double p2_err_Mx = fit_poly_Mx->GetParError(2);
     double p3_Mx = fit_poly_Mx->GetParameter(3);
     double p3_err_Mx = fit_poly_Mx->GetParError(3);
+    double p4_Mx = fit_poly_Mx->GetParameter(4);
+    double p4_err_Mx = fit_poly_Mx->GetParError(4);
 
     // Retrieve chi2 and NDF
     double chi2_Mx = fit_poly_Mx->GetChisquare();
@@ -763,7 +765,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     double chi2_ndf_Mx = chi2_Mx / ndf;
 
     // Add fit parameters box
-    TPaveText *Mx = new TPaveText(0.15, 0.7, 0.55, 0.9, "brNDC");
+    TPaveText *Mx = new TPaveText(0.5, 0.7, 0.9, 0.9, "brNDC");
     Mx->SetBorderSize(1);
     Mx->SetFillStyle(1001); // Solid fill style
     Mx->SetFillColor(kWhite); // White background
@@ -771,6 +773,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     Mx->AddText(Form("p1 = %.3f +/- %.3f", p1_Mx, p1_err_Mx));
     Mx->AddText(Form("p2 = %.3f +/- %.3f", p2_Mx, p2_err_Mx));
     Mx->AddText(Form("p3 = %.3f +/- %.3f", p3_Mx, p3_err_Mx));
+    Mx->AddText(Form("p4 = %.3f +/- %.3f", p4_Mx, p4_err_Mx));
     Mx->Draw();
 
     // Add chi2/ndf in the top left
