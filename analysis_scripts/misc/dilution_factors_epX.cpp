@@ -284,7 +284,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
             gr_dilution->SetPointError(i - 1, 0, dilution_error);
         }
     }
-    gr_dilution->SetTitle("; P_{T} (GeV); D_f = (NH3 - s*C) / NH3");
+    gr_dilution->SetTitle("; P_{T} (GeV); D_{f} = (NH3 - s*C) / NH3");
     gr_dilution->SetMarkerStyle(20);
     gr_dilution->Draw("AP");
     gr_dilution->GetXaxis()->SetRangeUser(0, 1);
@@ -331,8 +331,6 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
     // Third panel: x histograms scaled by the fit constant with propagated errors
-    c1->cd(2);
-    gPad->SetLeftMargin(0.15);
     TH1D *h_x_nh3 = 
         new TH1D("h_x_nh3", "x_{B} Distribution; x_{B} (GeV); Counts", 100, 0, 0.6);
     TH1D *h_x_carbon = 
@@ -369,11 +367,13 @@ double one_dimensional(const char* nh3_file, const char* c_file,
                 std::pow((c_counts / (nh3_counts * nh3_counts)) * nh3_error, 2) +
                 std::pow(1.0 / nh3_counts * c_error, 2));
 
-            gr_dilution->SetPoint(i - 1, h_x_nh3->GetBinCenter(i), dilution);
-            gr_dilution->SetPointError(i - 1, 0, dilution_error);
+            gr_dilution_x->SetPoint(i - 1, h_x_nh3->GetBinCenter(i), dilution);
+            gr_dilution_x->SetPointError(i - 1, 0, dilution_error);
         }
     }
-    gr_dilution_x->SetTitle("; x_B; D_f = (NH3 - s*C) / NH3");
+    c1->cd(2);
+    gPad->SetLeftMargin(0.15);
+    gr_dilution_x->SetTitle("; x_B; D_{f} = (NH3 - s*C) / NH3");
     gr_dilution_x->SetMarkerStyle(20);
     gr_dilution_x->Draw("AP");
     gr_dilution_x->GetXaxis()->SetRangeUser(0, 1);
