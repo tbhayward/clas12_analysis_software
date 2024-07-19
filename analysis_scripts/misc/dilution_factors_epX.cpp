@@ -248,8 +248,8 @@ double one_dimensional(const char* nh3_file, const char* c_file,
         new TH1D("h_pT_nh3", "P_{T} Distribution; P_{T} (GeV); Counts", 50, 0, 1.0);
     TH1D *h_pT_carbon = 
         new TH1D("h_pT_carbon", "P_{T} Distribution; P_{T} (GeV); Counts", 50, 0, 1.0);
-    tree_nh3->Draw("pT>>h_pT_nh3");
-    tree_carbon->Draw("pT>>h_pT_carbon");
+    tree_nh3->Draw("pT>>h_pT_nh3","Mx > 1.4");
+    tree_carbon->Draw("pT>>h_pT_carbon","Mx > 1.4");
     TH1D *h_pT_carbon_scaled = (TH1D*)h_pT_carbon->Clone("h_pT_carbon_scaled");
     h_pT_carbon_scaled->SetTitle("P_{T} Distribution; P_{T} (GeV); Counts (Scaled)");
 
@@ -338,8 +338,8 @@ double one_dimensional(const char* nh3_file, const char* c_file,
         new TH1D("h_x_nh3", "x_{B} Distribution; x_{B} (GeV); Counts", 50, 0.06, 0.6);
     TH1D *h_x_carbon = 
         new TH1D("h_x_carbon", "x_{B} Distribution; x_{B} (GeV); Counts", 50, 0.06, 0.6);
-    tree_nh3->Draw("x>>h_x_nh3");
-    tree_carbon->Draw("x>>h_x_carbon");
+    tree_nh3->Draw("x>>h_x_nh3","Mx > 1.4");
+    tree_carbon->Draw("x>>h_x_carbon","Mx > 1.4");
     TH1D *h_x_carbon_scaled = (TH1D*)h_x_carbon->Clone("h_x_carbon_scaled");
     h_x_carbon_scaled->SetTitle("x_B Distribution; x_B; Counts (Scaled)");
 
@@ -402,7 +402,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     double chi2_ndf_x = chi2_x / ndf;
 
     // Add fit parameters box
-    TPaveText *x = new TPaveText(0.1, 0.7, 0.5, 0.9, "brNDC");
+    TPaveText *x = new TPaveText(0.15, 0.7, 0.55, 0.9, "brNDC");
     x->SetBorderSize(1);
     x->SetFillStyle(1001); // Solid fill style
     x->SetFillColor(kWhite); // White background
@@ -424,9 +424,14 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     nh3->Close();
     carbon->Close();
 
+    std::endl << std::endl << std::endl << std::endl;
     std::cout << "if (prefix == \"PT\") { return " << p0 << 
         "+" << p1 << "*currentVariable" << p2 << "std::pow(currentVariable,2)" <<
         p3 << "*std::pow(currentVariable,3);" << std::endl;
+
+    std::cout << "if (prefix == \"x\") { return " << p0_x << 
+        "+" << p1_x << "*currentVariable" << p2_x << "std::pow(currentVariable,2)" <<
+        p3_x << "*std::pow(currentVariable,3);" << std::endl;
 
     return 0;
 }
