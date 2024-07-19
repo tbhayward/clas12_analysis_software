@@ -649,7 +649,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     gr_dilution_zeta->SetMarkerStyle(20);
     gr_dilution_zeta->Draw("AP");
     gr_dilution_zeta->GetXaxis()->SetRangeUser(0.3, 0.8);
-    gr_dilution_zeta->GetYaxis()->SetRangeUser(0.05, 0.15);
+    gr_dilution_zeta->GetYaxis()->SetRangeUser(0.00, 0.20);
 
     // Fit to a third-degree polynomial
     TF1 *fit_poly_zeta = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2 + [3]*x^3", 0.3, 0.8);
