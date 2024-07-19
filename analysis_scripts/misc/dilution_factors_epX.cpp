@@ -310,7 +310,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     double chi2_ndf = chi2 / ndf;
 
     // Add fit parameters box
-    TPaveText *pt = new TPaveText(0.7, 0.7, 0.9, 0.9, "brNDC");
+    TPaveText *pt = new TPaveText(0.5, 0.7, 0.9, 0.9, "brNDC");
     pt->SetBorderSize(1);
     pt->SetFillStyle(1001); // Solid fill style
     pt->SetFillColor(kWhite); // White background
