@@ -323,6 +323,8 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     // Clean up
     nh3->Close();
     carbon->Close();
+
+    return 0;
 }
 
 int main(int argc, char** argv) {
