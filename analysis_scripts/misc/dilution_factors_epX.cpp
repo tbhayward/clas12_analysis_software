@@ -737,7 +737,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
 
     // Fit to a third-degree polynomial
     TF1 *fit_poly_Mx = new TF1("fit_poly", 
-        "[0]+[1]*x+[2]*x^2+[3]*x^3+[4]*x^4+[5]*x^5+[6]*x^6+[7]*x^7+[8]*x^8+[9]*x^9", 0.0, 3.0);
+        "[0]+[1]*x+[2]*x^2+[3]*x^3+[4]*x^4+[5]*x^5+[6]*x^6+[7]*x^7+[8]*x^8+[9]*x^9+[10]*x^{10}+[11]*x^{11}+[12]*x^12", 0.0, 3.0);
     gr_dilution_Mx->Fit(fit_poly_Mx, "RQ");
     fit_poly_Mx->SetLineColor(kRed);
     fit_poly_Mx->Draw("SAME");
@@ -763,6 +763,12 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     double p8_err_Mx = fit_poly_Mx->GetParError(8);
     double p9_Mx = fit_poly_Mx->GetParameter(9);
     double p9_err_Mx = fit_poly_Mx->GetParError(9);
+    double p10_Mx = fit_poly_Mx->GetParameter(10);
+    double p10_err_Mx = fit_poly_Mx->GetParError(10);
+    double p11_Mx = fit_poly_Mx->GetParameter(11);
+    double p11_err_Mx = fit_poly_Mx->GetParError(11);
+    double p12_Mx = fit_poly_Mx->GetParameter(12);
+    double p12_err_Mx = fit_poly_Mx->GetParError(12);
 
     // Retrieve chi2 and NDF
     double chi2_Mx = fit_poly_Mx->GetChisquare();
@@ -784,6 +790,8 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     Mx->AddText(Form("p7 = %.3f +/- %.3f", p7_Mx, p7_err_Mx));
     Mx->AddText(Form("p8 = %.3f +/- %.3f", p8_Mx, p8_err_Mx));
     Mx->AddText(Form("p9 = %.3f +/- %.3f", p9_Mx, p9_err_Mx));
+    Mx->AddText(Form("p10 = %.3f +/- %.3f", p10_Mx, p10_err_Mx));
+    Mx->AddText(Form("p11 = %.3f +/- %.3f", p11_Mx, p11_err_Mx));
     Mx->Draw();
 
     // Add chi2/ndf in the top left
