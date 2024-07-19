@@ -288,7 +288,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     gr_dilution->SetMarkerStyle(20);
     gr_dilution->Draw("AP");
     gr_dilution->GetXaxis()->SetRangeUser(0, 1);
-    gr_dilution->GetYaxis()->SetRangeUser(0.05, 0.15);
+    gr_dilution->GetYaxis()->SetRangeUser(0.07, 0.17);
 
     // Fit to a third-degree polynomial
     TF1 *fit_poly = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2 + [3]*x^3", 0, 1.0);
@@ -378,7 +378,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     gr_dilution_x->SetMarkerStyle(20);
     gr_dilution_x->Draw("AP");
     gr_dilution_x->GetXaxis()->SetRangeUser(0, 0.6);
-    gr_dilution_x->GetYaxis()->SetRangeUser(0.05, 0.15);
+    gr_dilution_x->GetYaxis()->SetRangeUser(0.07, 0.17);
 
     // Fit to a third-degree polynomial
     TF1 *fit_poly_x = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2 + [3]*x^3", 0.06, 0.6);
@@ -421,16 +421,16 @@ double one_dimensional(const char* nh3_file, const char* c_file,
 
     /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
-    c1->cd(3);
+    c1->cd(2);
     gPad->SetLeftMargin(0.15);
 
     // Third panel: x histograms scaled by the fit constant with propagated errors
     TH1D *h_z_nh3 = 
-        new TH1D("h_z_nh3", "z Distribution; z (GeV); Counts", 50, 0.06, 0.6);
+        new TH1D("h_z_nh3", "z Distribution; z (GeV); Counts", 50, 0.0, 0.7);
     TH1D *h_z_carbon = 
-        new TH1D("h_z_carbon", "z Distribution; z (GeV); Counts", 50, 0.06, 0.6);
-    tree_nh3->Draw("x>>h_z_nh3","Mx > 1.4");
-    tree_carbon->Draw("x>>h_z_carbon","Mx > 1.4");
+        new TH1D("h_z_carbon", "z Distribution; z (GeV); Counts", 50, 0.00, 0.7);
+    tree_nh3->Draw("z>>h_z_nh3","Mx > 1.4");
+    tree_carbon->Draw("z>>h_z_carbon","Mx > 1.4");
     TH1D *h_z_carbon_scaled = (TH1D*)h_z_carbon->Clone("h_z_carbon_scaled");
     h_z_carbon_scaled->SetTitle("z Distribution; z; Counts (Scaled)");
 
