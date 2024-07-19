@@ -344,6 +344,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
 
     for (int i = 1; i <= h_x_carbon->GetNbinsX(); ++i) {
         double bin_content = h_x_carbon->GetBinContent(i);
+        std::cout<<bin_content<<std::endl;
         double bin_error = h_x_carbon->GetBinError(i);
 
         double new_content = bin_content * scale_factor;
