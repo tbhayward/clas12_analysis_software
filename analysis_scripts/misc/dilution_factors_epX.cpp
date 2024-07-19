@@ -103,7 +103,7 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
 
     // Fit the data from -2.5 to -1 to a constant
     TF1 *fit_const = new TF1("fit_const", "[0]", -2, -0.5);
-    gr_ratio->Fit(fit_const, "R");
+    gr_ratio->Fit(fit_const, "RQ");
     fit_const->SetLineColor(kRed);
     fit_const->Draw("SAME");
 
@@ -173,7 +173,7 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
 
     // Fit the data from -2.5 to -1 to a constant
     TF1 *fit_const_xF = new TF1("fit_const", "[0]", -2, -1.0);
-    gr_ratio_xF->Fit(fit_const_xF, "R");
+    gr_ratio_xF->Fit(fit_const_xF, "RQ");
     fit_const_xF->SetLineColor(kRed);
     fit_const_xF->Draw("SAME");
 
@@ -292,7 +292,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
 
     // Fit to a third-degree polynomial
     TF1 *fit_poly = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2 + [3]*x^3", 0, 1.0);
-    gr_dilution->Fit(fit_poly, "R");
+    gr_dilution->Fit(fit_poly, "RQ");
     fit_poly->SetLineColor(kRed);
     fit_poly->Draw("SAME");
 
