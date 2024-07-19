@@ -511,10 +511,10 @@ double one_dimensional(const char* nh3_file, const char* c_file,
 
     /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
-    c1->cd(4);
+    c1->cd(5);
     gPad->SetLeftMargin(0.15);
 
-    // Third panel: x histograms scaled by the fit constant with propagated errors
+    // Third panel: z histograms scaled by the fit constant with propagated errors
     TH1D *h_xF_nh3 = 
         new TH1D("h_xF_nh3", "z Distribution; z (GeV); Counts", 50, -1, 0.5);
     TH1D *h_xF_carbon = 
