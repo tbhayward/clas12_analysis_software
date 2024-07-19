@@ -755,6 +755,14 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     double p3_err_Mx = fit_poly_Mx->GetParError(3);
     double p4_Mx = fit_poly_Mx->GetParameter(4);
     double p4_err_Mx = fit_poly_Mx->GetParError(4);
+    double p5_Mx = fit_poly_Mx->GetParameter(5);
+    double p5_err_Mx = fit_poly_Mx->GetParError(5);
+    double p6_Mx = fit_poly_Mx->GetParameter(6);
+    double p6_err_Mx = fit_poly_Mx->GetParError(6);
+    double p7_Mx = fit_poly_Mx->GetParameter(7);
+    double p7_err_Mx = fit_poly_Mx->GetParError(7);
+    double p8_Mx = fit_poly_Mx->GetParameter(8);
+    double p8_err_Mx = fit_poly_Mx->GetParError(8);
 
     // Retrieve chi2 and NDF
     double chi2_Mx = fit_poly_Mx->GetChisquare();
@@ -805,15 +813,11 @@ double one_dimensional(const char* nh3_file, const char* c_file,
         "+" << p1_xF << "*currentVariable+" << p2_xF << "*std::pow(currentVariable,2)+" <<
         p3_xF << "*std::pow(currentVariable,3);" << std::endl;
 
-    // std::cout << "if (prefix == \"Mx\") { return " << p0_Mx << 
-    //     "+" << p1_Mx << "*currentVariable+" << p2_Mx << "*std::pow(currentVariable,2)+" <<
-    //     p3_Mx << "*std::pow(currentVariable,3)+" << p4_Mx << 
-    //     "*std::pow(currentVariable,4)+" << p5_Mx << "*std::pow(currentVariable,5)+" <<
-    //     p6_Mx << "*std::pow(currentVariable,6)+" << p7_Mx <<
-    //     "*std::pow(currentVariable,7)+" << p8_Mx << "*std::pow(currentVariable,8)+" <<
-    //     p9_Mx << "*std::pow(currentVariable,9)+" << p10_Mx << 
-    //     "*std::pow(currentVariable,10)+" << p11_Mx << "*std::pow(currentVariable,11)+" <<
-    //     p12_Mx << "*std::pow(currentVariable,12);" << std::endl;
+    std::cout << "if (prefix == \"Mx\") { return " 
+          << p0_Mx << "*exp(-0.5*((currentVariable-" << p1_Mx << ")/" << p2_Mx << ")^2) + " 
+          << p3_Mx << "*exp(-0.5*((currentVariable-" << p4_Mx << ")/" << p5_Mx << ")^2) + " 
+          << p6_Mx << "*exp(-0.5*((currentVariable-" << p7_Mx << ")/" << p8_Mx << ")^2);" 
+          << std::endl;
 
     return 0;
 }
