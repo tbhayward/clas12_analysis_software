@@ -402,14 +402,14 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     chi2_ndf = chi2 / ndf;
 
     // Add fit parameters box
-    TPaveText *x = new TPaveText(0.0, 0.7, 0.4, 0.9, "brNDC");
+    TPaveText *x = new TPaveText(0.2, 0.7, 0.4, 0.9, "brNDC");
     x->SetBorderSize(1);
     x->SetFillStyle(1001); // Solid fill style
     x->SetFillColor(kWhite); // White background
-    x->AddText(Form("p0 = %.3f +/- %.3f", p0, p0_err));
-    x->AddText(Form("p1 = %.3f +/- %.3f", p1, p1_err));
-    x->AddText(Form("p2 = %.3f +/- %.3f", p2, p2_err));
-    x->AddText(Form("p3 = %.3f +/- %.3f", p3, p3_err));
+    x->AddText(Form("p0 = %.3f +/- %.3f", p0_x, p0_err_x));
+    x->AddText(Form("p1 = %.3f +/- %.3f", p1_x, p1_err_x));
+    x->AddText(Form("p2 = %.3f +/- %.3f", p2_x, p2_err_x));
+    x->AddText(Form("p3 = %.3f +/- %.3f", p3_x, p3_err_x));
     x->Draw();
 
     // Add chi2/ndf in the top left
