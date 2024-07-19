@@ -14,6 +14,7 @@
 #include <TLatex.h>
 #include <sstream>
 #include <utility> 
+#include "Math/MinimizerOptions.h"
 
 std::pair<double, double> scale_normalization(const char* nh3_file, const char* c_file) {
     // Open the ROOT files
