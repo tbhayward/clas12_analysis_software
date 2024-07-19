@@ -792,6 +792,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     Mx->AddText(Form("p9 = %.3f +/- %.3f", p9_Mx, p9_err_Mx));
     Mx->AddText(Form("p10 = %.3f +/- %.3f", p10_Mx, p10_err_Mx));
     Mx->AddText(Form("p11 = %.3f +/- %.3f", p11_Mx, p11_err_Mx));
+    Mx->AddText(Form("p12 = %.3f +/- %.3f", p12_Mx, p12_err_Mx));
     Mx->Draw();
 
     // Add chi2/ndf in the top left
@@ -831,7 +832,10 @@ double one_dimensional(const char* nh3_file, const char* c_file,
         p3_Mx << "*std::pow(currentVariable,3)+" << p4_Mx << 
         "*std::pow(currentVariable,4)+" << p5_Mx << "*std::pow(currentVariable,5)+" <<
         p6_Mx << "*std::pow(currentVariable,6)+" << p7_Mx <<
-        "*std::pow(currentVariable,7);" << std::endl;
+        "*std::pow(currentVariable,7)+" << p8_Mx << "*std::pow(currentVariable,8)+" <<
+        p9_Mx << "*std::pow(currentVariable,9)+" << p10_Mx << 
+        "*std::pow(currentVariable,10)" << p11_Mx << "*std::pow(currentVariable,11)" <<
+        p12_Mx << "*std::pow(currentVariable,12);" << std::endl;
 
     return 0;
 }
