@@ -341,7 +341,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     tree_nh3->Draw("x>>h_x_nh3","Mx > 1.4");
     tree_carbon->Draw("x>>h_x_carbon","Mx > 1.4");
     TH1D *h_x_carbon_scaled = (TH1D*)h_x_carbon->Clone("h_x_carbon_scaled");
-    h_x_carbon_scaled->SetTitle("x_B Distribution; x_B; Counts (Scaled)");
+    h_x_carbon_scaled->SetTitle("x_{B} Distribution; x_{B}; Counts (Scaled)");
 
     for (int i = 1; i <= h_x_carbon->GetNbinsX(); ++i) {
         double bin_content = h_x_carbon->GetBinContent(i);
