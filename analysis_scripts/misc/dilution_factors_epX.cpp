@@ -803,15 +803,15 @@ double one_dimensional(const char* nh3_file, const char* c_file,
         "+" << p1_xF << "*currentVariable+" << p2_xF << "*std::pow(currentVariable,2)+" <<
         p3_xF << "*std::pow(currentVariable,3);" << std::endl;
 
-    std::cout << "if (prefix == \"Mx\") { return " << p0_Mx << 
-        "+" << p1_Mx << "*currentVariable+" << p2_Mx << "*std::pow(currentVariable,2)+" <<
-        p3_Mx << "*std::pow(currentVariable,3)+" << p4_Mx << 
-        "*std::pow(currentVariable,4)+" << p5_Mx << "*std::pow(currentVariable,5)+" <<
-        p6_Mx << "*std::pow(currentVariable,6)+" << p7_Mx <<
-        "*std::pow(currentVariable,7)+" << p8_Mx << "*std::pow(currentVariable,8)+" <<
-        p9_Mx << "*std::pow(currentVariable,9)+" << p10_Mx << 
-        "*std::pow(currentVariable,10)+" << p11_Mx << "*std::pow(currentVariable,11)+" <<
-        p12_Mx << "*std::pow(currentVariable,12);" << std::endl;
+    // std::cout << "if (prefix == \"Mx\") { return " << p0_Mx << 
+    //     "+" << p1_Mx << "*currentVariable+" << p2_Mx << "*std::pow(currentVariable,2)+" <<
+    //     p3_Mx << "*std::pow(currentVariable,3)+" << p4_Mx << 
+    //     "*std::pow(currentVariable,4)+" << p5_Mx << "*std::pow(currentVariable,5)+" <<
+    //     p6_Mx << "*std::pow(currentVariable,6)+" << p7_Mx <<
+    //     "*std::pow(currentVariable,7)+" << p8_Mx << "*std::pow(currentVariable,8)+" <<
+    //     p9_Mx << "*std::pow(currentVariable,9)+" << p10_Mx << 
+    //     "*std::pow(currentVariable,10)+" << p11_Mx << "*std::pow(currentVariable,11)+" <<
+    //     p12_Mx << "*std::pow(currentVariable,12);" << std::endl;
 
     return 0;
 }
