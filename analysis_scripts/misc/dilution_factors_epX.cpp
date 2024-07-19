@@ -583,15 +583,15 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     double chi2_ndf_xF = chi2_xF / ndf;
 
     // Add fit parameters box
-    TPaveText *z = new TPaveText(0.15, 0.7, 0.55, 0.9, "brNDC");
-    z->SetBorderSize(1);
-    z->SetFillStyle(1001); // Solid fill style
-    z->SetFillColor(kWhite); // White background
-    z->AddText(Form("p0 = %.3f +/- %.3f", p0_xF, p0_err_xF));
-    z->AddText(Form("p1 = %.3f +/- %.3f", p1_xF, p1_err_xF));
-    z->AddText(Form("p2 = %.3f +/- %.3f", p2_xF, p2_err_xF));
-    z->AddText(Form("p3 = %.3f +/- %.3f", p3_xF, p3_err_xF));
-    z->Draw();
+    TPaveText *xF = new TPaveText(0.15, 0.7, 0.55, 0.9, "brNDC");
+    xF->SetBorderSize(1);
+    xF->SetFillStyle(1001); // Solid fill style
+    xF->SetFillColor(kWhite); // White background
+    xF->AddText(Form("p0 = %.3f +/- %.3f", p0_xF, p0_err_xF));
+    xF->AddText(Form("p1 = %.3f +/- %.3f", p1_xF, p1_err_xF));
+    xF->AddText(Form("p2 = %.3f +/- %.3f", p2_xF, p2_err_xF));
+    xF->AddText(Form("p3 = %.3f +/- %.3f", p3_xF, p3_err_xF));
+    xF->Draw();
 
     // Add chi2/ndf in the top left
     latex.SetNDC();
