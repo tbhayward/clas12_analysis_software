@@ -743,7 +743,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
 
     // Fit to a third-degree polynomial
     TF1 *fit_poly_Mx = new TF1("fit_poly", 
-        "[0]+[1]*x+[2]*x^2+[3]*x^3+[4]*x^4+[5]*x^5+[6]*x^6+*[7]*x^7", 0.0, 3.0);
+        "[0]+[1]*x+[2]*x^2+[3]*x^3+[4]*x^4+[5]*x^5+[6]*x^6+[7]*x^7", 0.0, 3.0);
     gr_dilution_Mx->Fit(fit_poly_Mx, "RQ");
     fit_poly_Mx->SetLineColor(kRed);
     fit_poly_Mx->Draw("SAME");
