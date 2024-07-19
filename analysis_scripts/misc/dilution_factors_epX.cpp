@@ -397,9 +397,9 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     double p3_err_x = fit_poly_x->GetParError(3);
 
     // Retrieve chi2 and NDF
-    double chi2 = fit_poly_x->GetChisquare();
-    double ndf = fit_poly_x->GetNDF();
-    double chi2_ndf = chi2_x / ndf;
+    double chi2_x = fit_poly_x->GetChisquare();
+    int ndf_x = fit_poly_x->GetNDF();
+    double chi2_ndf_x = chi2_x / ndf;
 
     // Add fit parameters box
     TPaveText *x = new TPaveText(0.1, 0.7, 0.5, 0.9, "brNDC");
@@ -415,7 +415,8 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     // Add chi2/ndf in the top left
     latex.SetNDC();
     latex.SetTextSize(0.04);
-    latex.DrawLatex(0.20, 0.15, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
+    latex.DrawLatex(0.20, 0.15, 
+        Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2_x, ndf_x, chi2_ndf_x));
 
     // Save the canvas
     c1->SaveAs("output/one_dimensional.pdf");
