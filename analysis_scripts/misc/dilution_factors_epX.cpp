@@ -493,7 +493,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     double chi2_ndf_z = chi2_z / ndf;
 
     // Add fit parameters box
-    TPaveText *z = new TPaveText(0.15, 0.7, 0.55, 0.9, "brNDC");
+    TPaveText *z = new TPaveText(0.5, 0.7, 0.9, 0.9, "brNDC");
     z->SetBorderSize(1);
     z->SetFillStyle(1001); // Solid fill style
     z->SetFillColor(kWhite); // White background
@@ -583,7 +583,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     double chi2_ndf_xF = chi2_xF / ndf;
 
     // Add fit parameters box
-    TPaveText *xF = new TPaveText(0.15, 0.7, 0.55, 0.9, "brNDC");
+    TPaveText *xF = new TPaveText(0.5, 0.7, 0.9, 0.9, "brNDC");
     xF->SetBorderSize(1);
     xF->SetFillStyle(1001); // Solid fill style
     xF->SetFillColor(kWhite); // White background
@@ -673,7 +673,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     double chi2_ndf_zeta = chi2_zeta / ndf;
 
     // Add fit parameters box
-    TPaveText *zeta = new TPaveText(0.15, 0.7, 0.55, 0.9, "brNDC");
+    TPaveText *zeta = new TPaveText(0.5, 0.7, 0.9, 0.9, "brNDC");
     zeta->SetBorderSize(1);
     zeta->SetFillStyle(1001); // Solid fill style
     zeta->SetFillColor(kWhite); // White background
@@ -689,6 +689,96 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     latex.DrawLatex(0.20, 0.15, 
         Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2_zeta, ndf_zeta, chi2_ndf_zeta));
 
+    /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+
+    c1->cd(4);
+    gPad->SetLeftMargin(0.15);
+
+    // Third panel: x histograms scaled by the fit constant with propagated errors
+    TH1D *h_Mx_nh3 = 
+        new TH1D("h_Mx_nh3", "z Distribution; z (GeV); Counts", 50, 0.0, 3);
+    TH1D *h_Mx_carbon = 
+        new TH1D("h_Mx_carbon", "z Distribution; z (GeV); Counts", 50, 0.0, 3);
+    tree_nh3->Draw("Mx>>h_Mx_nh3");
+    tree_carbon->Draw("Mx>>h_Mx_carbon");
+    TH1D *h_Mx_carbon_scaled = (TH1D*)h_Mx_carbon->Clone("h_Mx_carbon_scaled");
+    h_Mx_carbon_scaled->SetTitle("M_{x} (GeV) Distribution; M_{x} (GeV); Counts (Scaled)");
+
+    for (int i = 1; i <= h_Mx_carbon->GetNbinsX(); ++i) {
+        double bin_content = h_Mx_carbon->GetBinContent(i);
+        double bin_error = h_Mx_carbon->GetBinError(i);
+
+        double new_content = bin_content * scale_factor;
+        double new_error = 
+            new_content * std::sqrt((bin_error / bin_content) * (bin_error / bin_content) + 
+            (scale_error / scale_factor) * (scale_error / scale_factor));
+        h_Mx_carbon_scaled->SetBinContent(i, new_content);
+        h_Mx_carbon_scaled->SetBinError(i, new_error);
+    }
+
+    TGraphErrors *gr_dilution_Mx = new TGraphErrors();
+    for (int i = 1; i <= h_Mx_nh3->GetNbinsX(); ++i) {
+        double nh3_counts = h_Mx_nh3->GetBinContent(i);
+        double nh3_error = h_Mx_nh3->GetBinError(i);
+        double c_counts = h_Mx_carbon_scaled->GetBinContent(i);
+        double c_error = h_Mx_carbon_scaled->GetBinError(i);
+
+        if (nh3_counts > 0) {
+            double dilution = (nh3_counts - c_counts) / nh3_counts;
+
+            // Propagate the error
+            double dilution_error = std::sqrt(
+                std::pow((c_counts / (nh3_counts * nh3_counts)) * nh3_error, 2) +
+                std::pow(1.0 / nh3_counts * c_error, 2));
+
+            gr_dilution_Mx->SetPoint(i - 1, h_Mx_nh3->GetBinCenter(i), dilution);
+            gr_dilution_Mx->SetPointError(i - 1, 0, dilution_error);
+        }
+    }
+    gr_dilution_Mx->SetTitle("; z; D_{f} = (NH3 - s*C) / NH3");
+    gr_dilution_Mx->SetMarkerStyle(20);
+    gr_dilution_Mx->Draw("AP");
+    gr_dilution_Mx->GetXaxis()->SetRangeUser(0.0, 3.0);
+    gr_dilution_Mx->GetYaxis()->SetRangeUser(0.05, 0.15);
+
+    // Fit to a third-degree polynomial
+    TF1 *fit_poly_Mx = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2 + [3]*x^3", 0.0, 3.0);
+    gr_dilution_Mx->Fit(fit_poly_Mx, "RQ");
+    fit_poly_Mx->SetLineColor(kRed);
+    fit_poly_Mx->Draw("SAME");
+
+    // Retrieve fit parameters and their errors
+    double p0_Mx = fit_poly_Mx->GetParameter(0);
+    double p0_err_Mx = fit_poly_Mx->GetParError(0);
+    double p1_Mx = fit_poly_Mx->GetParameter(1);
+    double p1_err_Mx = fit_poly_Mx->GetParError(1);
+    double p2_Mx = fit_poly_Mx->GetParameter(2);
+    double p2_err_Mx = fit_poly_Mx->GetParError(2);
+    double p3_Mx = fit_poly_Mx->GetParameter(3);
+    double p3_err_Mx = fit_poly_Mx->GetParError(3);
+
+    // Retrieve chi2 and NDF
+    double chi2_Mx = fit_poly_Mx->GetChisquare();
+    int ndf_Mx = fit_poly_Mx->GetNDF();
+    double chi2_ndf_Mx = chi2_Mx / ndf;
+
+    // Add fit parameters box
+    TPaveText *Mx = new TPaveText(0.15, 0.7, 0.55, 0.9, "brNDC");
+    Mx->SetBorderSize(1);
+    Mx->SetFillStyle(1001); // Solid fill style
+    Mx->SetFillColor(kWhite); // White background
+    Mx->AddText(Form("p0 = %.3f +/- %.3f", p0_Mx, p0_err_Mx));
+    Mx->AddText(Form("p1 = %.3f +/- %.3f", p1_Mx, p1_err_Mx));
+    Mx->AddText(Form("p2 = %.3f +/- %.3f", p2_Mx, p2_err_Mx));
+    Mx->AddText(Form("p3 = %.3f +/- %.3f", p3_Mx, p3_err_Mx));
+    Mx->Draw();
+
+    // Add chi2/ndf in the top left
+    latex.SetNDC();
+    latex.SetTextSize(0.04);
+    latex.DrawLatex(0.20, 0.15, 
+        Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2_Mx, ndf_Mx, chi2_ndf_Mx));
+
     // Save the canvas
     c1->SaveAs("output/one_dimensional.pdf");
     // Clean up
@@ -696,10 +786,6 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     carbon->Close();
 
     std::cout << std::endl << std::endl << std::endl;
-    std::cout << "if (prefix == \"PT\") { return " << p0 << 
-        "+" << p1 << "*currentVariable+" << p2 << "*std::pow(currentVariable,2)+" <<
-        p3 << "*std::pow(currentVariable,3);" << std::endl;
-
     std::cout << "if (prefix == \"x\") { return " << p0_x << 
         "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2)+" <<
         p3_x << "*std::pow(currentVariable,3);" << std::endl;
@@ -707,6 +793,22 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     std::cout << "if (prefix == \"z\") { return " << p0_z << 
         "+" << p1_z << "*currentVariable+" << p2_z << "*std::pow(currentVariable,2)+" <<
         p3_z << "*std::pow(currentVariable,3);" << std::endl;
+
+    std::cout << "if (prefix == \"zeta\") { return " << p0_zeta << 
+        "+" << p1_zeta << "*currentVariable+" << p2_zeta << "*std::pow(currentVariable,2)+" <<
+        p3_zeta << "*std::pow(currentVariable,3);" << std::endl;
+
+    std::cout << "if (prefix == \"PT\") { return " << p0 << 
+        "+" << p1 << "*currentVariable+" << p2 << "*std::pow(currentVariable,2)+" <<
+        p3 << "*std::pow(currentVariable,3);" << std::endl;
+
+    std::cout << "if (prefix == \"xF\") { return " << p0_xF << 
+        "+" << p1_xF << "*currentVariable+" << p2_xF << "*std::pow(currentVariable,2)+" <<
+        p3_xF << "*std::pow(currentVariable,3);" << std::endl;
+
+    std::cout << "if (prefix == \"Mx\") { return " << p0_Mx << 
+        "+" << p1_Mx << "*currentVariable+" << p2_Mx << "*std::pow(currentVariable,2)+" <<
+        p3_Mx << "*std::pow(currentVariable,3);" << std::endl;
 
     return 0;
 }
