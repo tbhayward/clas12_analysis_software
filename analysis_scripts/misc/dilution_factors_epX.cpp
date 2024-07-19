@@ -245,9 +245,9 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     c1->cd(1);
     gPad->SetLeftMargin(0.15);
     TH1D *h_pT_nh3 = 
-        new TH1D("h_pT_nh3", "P_{T} Distribution; P_{T} (GeV); Counts", 100, 0, 1.0);
+        new TH1D("h_pT_nh3", "P_{T} Distribution; P_{T} (GeV); Counts", 50, 0, 1.0);
     TH1D *h_pT_carbon = 
-        new TH1D("h_pT_carbon", "P_{T} Distribution; P_{T} (GeV); Counts", 100, 0, 1.0);
+        new TH1D("h_pT_carbon", "P_{T} Distribution; P_{T} (GeV); Counts", 50, 0, 1.0);
     tree_nh3->Draw("pT>>h_pT_nh3");
     tree_carbon->Draw("pT>>h_pT_carbon");
     TH1D *h_pT_carbon_scaled = (TH1D*)h_pT_carbon->Clone("h_pT_carbon_scaled");
@@ -335,9 +335,9 @@ double one_dimensional(const char* nh3_file, const char* c_file,
 
     // Third panel: x histograms scaled by the fit constant with propagated errors
     TH1D *h_x_nh3 = 
-        new TH1D("h_x_nh3", "x_{B} Distribution; x_{B} (GeV); Counts", 100, 0.06, 0.6);
+        new TH1D("h_x_nh3", "x_{B} Distribution; x_{B} (GeV); Counts", 50, 0.06, 0.6);
     TH1D *h_x_carbon = 
-        new TH1D("h_x_carbon", "x_{B} Distribution; x_{B} (GeV); Counts", 100, 0.06, 0.6);
+        new TH1D("h_x_carbon", "x_{B} Distribution; x_{B} (GeV); Counts", 50, 0.06, 0.6);
     tree_nh3->Draw("x>>h_x_nh3");
     tree_carbon->Draw("x>>h_x_carbon");
     TH1D *h_x_carbon_scaled = (TH1D*)h_x_carbon->Clone("h_x_carbon_scaled");
@@ -402,7 +402,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     chi2_ndf = chi2 / ndf;
 
     // Add fit parameters box
-    TPaveText *x = new TPaveText(0.5, 0.7, 0.9, 0.9, "brNDC");
+    TPaveText *x = new TPaveText(0.0, 0.7, 0.4, 0.9, "brNDC");
     x->SetBorderSize(1);
     x->SetFillStyle(1001); // Solid fill style
     x->SetFillColor(kWhite); // White background
