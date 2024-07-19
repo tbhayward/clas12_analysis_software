@@ -387,22 +387,22 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     fit_poly_x->Draw("SAME");
 
     // Retrieve fit parameters and their errors
-    double p0_x = fit_poly->GetParameter(0);
-    double p0_err_x = fit_poly->GetParError(0);
-    double p1_x = fit_poly->GetParameter(1);
-    double p1_err_x = fit_poly->GetParError(1);
-    double p2_x = fit_poly->GetParameter(2);
-    double p2_err_x = fit_poly->GetParError(2);
-    double p3_x = fit_poly->GetParameter(3);
-    double p3_err_x = fit_poly->GetParError(3);
+    double p0_x = fit_poly_x->GetParameter(0);
+    double p0_err_x = fit_poly_x->GetParError(0);
+    double p1_x = fit_poly_x->GetParameter(1);
+    double p1_err_x = fit_poly_x->GetParError(1);
+    double p2_x = fit_poly_x->GetParameter(2);
+    double p2_err_x = fit_poly_x->GetParError(2);
+    double p3_x = fit_poly_x->GetParameter(3);
+    double p3_err_x = fit_poly_x->GetParError(3);
 
     // Retrieve chi2 and NDF
-    chi2 = fit_poly->GetChisquare();
-    ndf = fit_poly->GetNDF();
-    chi2_ndf = chi2 / ndf;
+    chi2 = fit_poly_x->GetChisquare();
+    ndf = fit_poly_x->GetNDF();
+    chi2_ndf = chi2_x / ndf;
 
     // Add fit parameters box
-    TPaveText *x = new TPaveText(0.2, 0.7, 0.4, 0.9, "brNDC");
+    TPaveText *x = new TPaveText(0.1, 0.7, 0.5, 0.9, "brNDC");
     x->SetBorderSize(1);
     x->SetFillStyle(1001); // Solid fill style
     x->SetFillColor(kWhite); // White background
