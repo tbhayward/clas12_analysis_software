@@ -397,9 +397,9 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     double p3_err_x = fit_poly_x->GetParError(3);
 
     // Retrieve chi2 and NDF
-    chi2 = fit_poly_x->GetChisquare();
-    ndf = fit_poly_x->GetNDF();
-    chi2_ndf = chi2_x / ndf;
+    double chi2 = fit_poly_x->GetChisquare();
+    double ndf = fit_poly_x->GetNDF();
+    double chi2_ndf = chi2_x / ndf;
 
     // Add fit parameters box
     TPaveText *x = new TPaveText(0.1, 0.7, 0.5, 0.9, "brNDC");
