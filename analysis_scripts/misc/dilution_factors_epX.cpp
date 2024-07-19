@@ -241,8 +241,8 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1600, 1200);
     c1->Divide(3, 2);
 
-    // Third panel: pT histograms scaled by the fit constant with propagated errors
-    c1->cd(1);
+    //pT histograms scaled by the fit constant with propagated errors
+    c1->cd(4);
     gPad->SetLeftMargin(0.15);
     TH1D *h_pT_nh3 = 
         new TH1D("h_pT_nh3", "P_{T} Distribution; P_{T} (GeV); Counts", 50, 0, 1.0);
@@ -330,7 +330,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
 
     /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
-    c1->cd(2);
+    c1->cd(1);
     gPad->SetLeftMargin(0.15);
 
     // Third panel: x histograms scaled by the fit constant with propagated errors
@@ -418,6 +418,97 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     latex.DrawLatex(0.20, 0.15, 
         Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2_x, ndf_x, chi2_ndf_x));
 
+
+    /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+
+    c1->cd(3);
+    gPad->SetLeftMargin(0.15);
+
+    // Third panel: x histograms scaled by the fit constant with propagated errors
+    TH1D *h_z_nh3 = 
+        new TH1D("h_z_nh3", "z Distribution; z (GeV); Counts", 50, 0.06, 0.6);
+    TH1D *h_z_carbon = 
+        new TH1D("h_z_carbon", "z Distribution; z (GeV); Counts", 50, 0.06, 0.6);
+    tree_nh3->Draw("x>>h_z_nh3","Mx > 1.4");
+    tree_carbon->Draw("x>>h_z_carbon","Mx > 1.4");
+    TH1D *h_z_carbon_scaled = (TH1D*)h_z_carbon->Clone("h_z_carbon_scaled");
+    h_z_carbon_scaled->SetTitle("z Distribution; z; Counts (Scaled)");
+
+    for (int i = 1; i <= h_z_carbon->GetNbinsX(); ++i) {
+        double bin_content = h_z_carbon->GetBinContent(i);
+        double bin_error = h_z_carbon->GetBinError(i);
+
+        double new_content = bin_content * scale_factor;
+        double new_error = 
+            new_content * std::sqrt((bin_error / bin_content) * (bin_error / bin_content) + 
+            (scale_error / scale_factor) * (scale_error / scale_factor));
+        h_z_carbon_scaled->SetBinContent(i, new_content);
+        h_z_carbon_scaled->SetBinError(i, new_error);
+    }
+
+    TGraphErrors *gr_dilution_z = new TGraphErrors();
+    for (int i = 1; i <= h_z_nh3->GetNbinsX(); ++i) {
+        double nh3_counts = h_z_nh3->GetBinContent(i);
+        double nh3_error = h_z_nh3->GetBinError(i);
+        double c_counts = h_z_carbon_scaled->GetBinContent(i);
+        double c_error = h_z_carbon_scaled->GetBinError(i);
+
+        if (nh3_counts > 0) {
+            double dilution = (nh3_counts - c_counts) / nh3_counts;
+
+            // Propagate the error
+            double dilution_error = std::sqrt(
+                std::pow((c_counts / (nh3_counts * nh3_counts)) * nh3_error, 2) +
+                std::pow(1.0 / nh3_counts * c_error, 2));
+
+            gr_dilution_z->SetPoint(i - 1, h_z_nh3->GetBinCenter(i), dilution);
+            gr_dilution_z->SetPointError(i - 1, 0, dilution_error);
+        }
+    }
+    gr_dilution_z->SetTitle("; z; D_{f} = (NH3 - s*C) / NH3");
+    gr_dilution_z->SetMarkerStyle(20);
+    gr_dilution_z->Draw("AP");
+    gr_dilution_z->GetXaxis()->SetRangeUser(0, 0.6);
+    gr_dilution_z->GetYaxis()->SetRangeUser(0.05, 0.15);
+
+    // Fit to a third-degree polynomial
+    TF1 *fit_poly_z = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2 + [3]*x^3", 0.06, 0.6);
+    gr_dilution_z->Fit(fit_poly_z, "RQ");
+    fit_poly_z->SetLineColor(kRed);
+    fit_poly_z->Draw("SAME");
+
+    // Retrieve fit parameters and their errors
+    double p0_z = fit_poly_z->GetParameter(0);
+    double p0_err_z = fit_poly_z->GetParError(0);
+    double p1_z = fit_poly_z->GetParameter(1);
+    double p1_err_z = fit_poly_z->GetParError(1);
+    double p2_z = fit_poly_z->GetParameter(2);
+    double p2_err_z = fit_poly_z->GetParError(2);
+    double p3_z = fit_poly_z->GetParameter(3);
+    double p3_err_z = fit_poly_z->GetParError(3);
+
+    // Retrieve chi2 and NDF
+    double chi2_z = fit_poly_z->GetChisquare();
+    int ndf_z = fit_poly_z->GetNDF();
+    double chi2_ndf_z = chi2_z / ndf;
+
+    // Add fit parameters box
+    TPaveText *x = new TPaveText(0.15, 0.7, 0.55, 0.9, "brNDC");
+    x->SetBorderSize(1);
+    x->SetFillStyle(1001); // Solid fill style
+    x->SetFillColor(kWhite); // White background
+    x->AddText(Form("p0 = %.3f +/- %.3f", p0_z, p0_err_z));
+    x->AddText(Form("p1 = %.3f +/- %.3f", p1_z, p1_err_z));
+    x->AddText(Form("p2 = %.3f +/- %.3f", p2_z, p2_err_z));
+    x->AddText(Form("p3 = %.3f +/- %.3f", p3_z, p3_err_z));
+    x->Draw();
+
+    // Add chi2/ndf in the top left
+    latex.SetNDC();
+    latex.SetTextSize(0.04);
+    latex.DrawLatex(0.20, 0.15, 
+        Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2_z, ndf_z, chi2_ndf_z));
+
     // Save the canvas
     c1->SaveAs("output/one_dimensional.pdf");
     // Clean up
@@ -426,12 +517,16 @@ double one_dimensional(const char* nh3_file, const char* c_file,
 
     std::cout << std::endl << std::endl << std::endl;
     std::cout << "if (prefix == \"PT\") { return " << p0 << 
-        "+" << p1 << "*currentVariable" << p2 << "std::pow(currentVariable,2)" <<
+        "+" << p1 << "*currentVariable+" << p2 << "*std::pow(currentVariable,2)+" <<
         p3 << "*std::pow(currentVariable,3);" << std::endl;
 
     std::cout << "if (prefix == \"x\") { return " << p0_x << 
-        "+" << p1_x << "*currentVariable" << p2_x << "std::pow(currentVariable,2)" <<
+        "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2)+" <<
         p3_x << "*std::pow(currentVariable,3);" << std::endl;
+
+    std::cout << "if (prefix == \"z\") { return " << p0_z << 
+        "+" << p1_z << "*currentVariable+" << p2_z << "*std::pow(currentVariable,2)+" <<
+        p3_z << "*std::pow(currentVariable,3);" << std::endl;
 
     return 0;
 }
