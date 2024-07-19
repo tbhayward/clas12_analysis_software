@@ -737,7 +737,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
 
     // Fit to a third-degree polynomial
     TF1 *fit_poly_Mx = new TF1("fit_poly", 
-        "[0]+[1]*x+[2]*x^2+[3]*x^3+[4]*x^4+[5]*x^5+[6]*x^6+[7]*x^7+[8]*x^8+[9]*x^9+[10]*x^{10}+[11]*x^{11}+[12]*x^12", 0.0, 3.0);
+        "[0]+[1]*x+[2]*x^2+[3]*x^3+[4]*x^4+[5]*x^5+[6]*x^6+[7]*x^7+[8]*x^8+[9]*x^9+[10]*x^{10}+[11]*x^{11}+[12]*x^12+[13]*x^13", 0.0, 3.0);
     gr_dilution_Mx->Fit(fit_poly_Mx, "RQ");
     fit_poly_Mx->SetLineColor(kRed);
     fit_poly_Mx->Draw("SAME");
@@ -769,6 +769,8 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     double p11_err_Mx = fit_poly_Mx->GetParError(11);
     double p12_Mx = fit_poly_Mx->GetParameter(12);
     double p12_err_Mx = fit_poly_Mx->GetParError(12);
+    double p13_Mx = fit_poly_Mx->GetParameter(13);
+    double p13_err_Mx = fit_poly_Mx->GetParError(13);
 
     // Retrieve chi2 and NDF
     double chi2_Mx = fit_poly_Mx->GetChisquare();
@@ -834,7 +836,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
         p6_Mx << "*std::pow(currentVariable,6)+" << p7_Mx <<
         "*std::pow(currentVariable,7)+" << p8_Mx << "*std::pow(currentVariable,8)+" <<
         p9_Mx << "*std::pow(currentVariable,9)+" << p10_Mx << 
-        "*std::pow(currentVariable,10)" << p11_Mx << "*std::pow(currentVariable,11)" <<
+        "*std::pow(currentVariable,10)+" << p11_Mx << "*std::pow(currentVariable,11)+" <<
         p12_Mx << "*std::pow(currentVariable,12);" << std::endl;
 
     return 0;
