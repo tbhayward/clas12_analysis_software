@@ -468,7 +468,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     gr_dilution_z->SetTitle("; z; D_{f} = (NH3 - s*C) / NH3");
     gr_dilution_z->SetMarkerStyle(20);
     gr_dilution_z->Draw("AP");
-    gr_dilution_z->GetXaxis()->SetRangeUser(01, 0.75);
+    gr_dilution_z->GetXaxis()->SetRangeUser(0.1, 0.75);
     gr_dilution_z->GetYaxis()->SetRangeUser(0.00, 0.20);
 
     // Fit to a third-degree polynomial
@@ -516,9 +516,9 @@ double one_dimensional(const char* nh3_file, const char* c_file,
 
     // Third panel: x_{F} histograms scaled by the fit constant with propagated errors
     TH1D *h_xF_nh3 = 
-        new TH1D("h_xF_nh3", "x_{F} Distribution; x_{F} (GeV); Counts", 50, -1, 0.5);
+        new TH1D("h_xF_nh3", "x_{F} Distribution; x_{F} (GeV); Counts", 50, -0.8, 0.5);
     TH1D *h_xF_carbon = 
-        new TH1D("h_xF_carbon", "x_{F} Distribution; x_{F} (GeV); Counts", 50, -1, 0.5);
+        new TH1D("h_xF_carbon", "x_{F} Distribution; x_{F} (GeV); Counts", 50, -0.8, 0.5);
     tree_nh3->Draw("xF>>h_xF_nh3","Mx > 1.4");
     tree_carbon->Draw("xF>>h_xF_carbon","Mx > 1.4");
     TH1D *h_xF_carbon_scaled = (TH1D*)h_xF_carbon->Clone("h_xF_carbon_scaled");
@@ -562,7 +562,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     gr_dilution_xF->GetYaxis()->SetRangeUser(0.00, 0.20);
 
     // Fit to a third-degree polynomial
-    TF1 *fit_poly_xF = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2 + [3]*x^3", -1, 0.5);
+    TF1 *fit_poly_xF = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2 + [3]*x^3", -0.8, 0.5);
     gr_dilution_xF->Fit(fit_poly_xF, "RQ");
     fit_poly_xF->SetLineColor(kRed);
     fit_poly_xF->Draw("SAME");
