@@ -205,6 +205,7 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
     // Clean up
     nh3->Close();
     carbon->Close();
+    delete c1;
 
     // Return the fit value and error as a pair
     return std::make_pair(fit_value, fit_error);
@@ -282,7 +283,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
             gr_dilution->SetPointError(i - 1, 0, dilution_error);
         }
     }
-    gr_dilution->SetTitle("Dilution Factor; P_{T} (GeV); (NH3 - s*C) / NH3");
+    gr_dilution->SetTitle("; P_{T} (GeV); D_f = (NH3 - s*C) / NH3");
     gr_dilution->SetMarkerStyle(20);
     gr_dilution->Draw("AP");
     gr_dilution->GetXaxis()->SetRangeUser(0, 1);
@@ -325,6 +326,16 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     latex.SetNDC();
     latex.SetTextSize(0.04);
     latex.DrawLatex(0.20, 0.15, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
+
+    std::cout << "if if (prefix == \"PT\") { return " << p0 << 
+        "+" << p1 << "*currentVariable+" << p2 << "std::pow(currentVariable,2)" <<
+        p3 << "*std::pow(currentVariable,3);" << std::endl;
+
+
+    if (prefix == "PTTFR") {
+    return 0.184491-0.161007*currentVariable+0.298733*std::pow(currentVariable,2)-
+      0.187826*std::pow(currentVariable,3);
+  }
 
     // Save the canvas
     c1->SaveAs("output/one_dimensional.pdf");
