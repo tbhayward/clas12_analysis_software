@@ -599,6 +599,96 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     latex.DrawLatex(0.20, 0.15, 
         Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2_xF, ndf_xF, chi2_ndf_xF));
 
+    /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+
+    c1->cd(4);
+    gPad->SetLeftMargin(0.15);
+
+    // Third panel: x histograms scaled by the fit constant with propagated errors
+    TH1D *h_zeta_nh3 = 
+        new TH1D("h_zeta_nh3", "z Distribution; z (GeV); Counts", 50, 0.3, 0.8);
+    TH1D *h_zeta_carbon = 
+        new TH1D("h_zeta_carbon", "z Distribution; z (GeV); Counts", 50, 0.3, 0.8);
+    tree_nh3->Draw("zeta>>h_zeta_nh3","Mx > 1.4");
+    tree_carbon->Draw("zeta>>h_zeta_carbon","Mx > 1.4");
+    TH1D *h_zeta_carbon_scaled = (TH1D*)h_zeta_carbon->Clone("h_zeta_carbon_scaled");
+    h_zeta_carbon_scaled->SetTitle("z Distribution; z; Counts (Scaled)");
+
+    for (int i = 1; i <= h_zeta_carbon->GetNbinsX(); ++i) {
+        double bin_content = h_zeta_carbon->GetBinContent(i);
+        double bin_error = h_zeta_carbon->GetBinError(i);
+
+        double new_content = bin_content * scale_factor;
+        double new_error = 
+            new_content * std::sqrt((bin_error / bin_content) * (bin_error / bin_content) + 
+            (scale_error / scale_factor) * (scale_error / scale_factor));
+        h_zeta_carbon_scaled->SetBinContent(i, new_content);
+        h_zeta_carbon_scaled->SetBinError(i, new_error);
+    }
+
+    TGraphErrors *gr_dilution_zeta = new TGraphErrors();
+    for (int i = 1; i <= h_zeta_nh3->GetNbinsX(); ++i) {
+        double nh3_counts = h_zeta_nh3->GetBinContent(i);
+        double nh3_error = h_zeta_nh3->GetBinError(i);
+        double c_counts = h_zeta_carbon_scaled->GetBinContent(i);
+        double c_error = h_zeta_carbon_scaled->GetBinError(i);
+
+        if (nh3_counts > 0) {
+            double dilution = (nh3_counts - c_counts) / nh3_counts;
+
+            // Propagate the error
+            double dilution_error = std::sqrt(
+                std::pow((c_counts / (nh3_counts * nh3_counts)) * nh3_error, 2) +
+                std::pow(1.0 / nh3_counts * c_error, 2));
+
+            gr_dilution_zeta->SetPoint(i - 1, h_zeta_nh3->GetBinCenter(i), dilution);
+            gr_dilution_zeta->SetPointError(i - 1, 0, dilution_error);
+        }
+    }
+    gr_dilution_zeta->SetTitle("; z; D_{f} = (NH3 - s*C) / NH3");
+    gr_dilution_zeta->SetMarkerStyle(20);
+    gr_dilution_zeta->Draw("AP");
+    gr_dilution_zeta->GetXaxis()->SetRangeUser(0.3, 0.8);
+    gr_dilution_zeta->GetYaxis()->SetRangeUser(0.05, 0.15);
+
+    // Fit to a third-degree polynomial
+    TF1 *fit_poly_zeta = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2 + [3]*x^3", 0.3, 0.8);
+    gr_dilution_zeta->Fit(fit_poly_zeta, "RQ");
+    fit_poly_zeta->SetLineColor(kRed);
+    fit_poly_zeta->Draw("SAME");
+
+    // Retrieve fit parameters and their errors
+    double p0_zeta = fit_poly_zeta->GetParameter(0);
+    double p0_err_zeta = fit_poly_zeta->GetParError(0);
+    double p1_zeta = fit_poly_zeta->GetParameter(1);
+    double p1_err_zeta = fit_poly_zeta->GetParError(1);
+    double p2_zeta = fit_poly_zeta->GetParameter(2);
+    double p2_err_zeta = fit_poly_zeta->GetParError(2);
+    double p3_zeta = fit_poly_zeta->GetParameter(3);
+    double p3_err_zeta = fit_poly_zeta->GetParError(3);
+
+    // Retrieve chi2 and NDF
+    double chi2_zeta = fit_poly_zeta->GetChisquare();
+    int ndf_zeta = fit_poly_zeta->GetNDF();
+    double chi2_ndf_zeta = chi2_zeta / ndf;
+
+    // Add fit parameters box
+    TPaveText *zeta = new TPaveText(0.15, 0.7, 0.55, 0.9, "brNDC");
+    zeta->SetBorderSize(1);
+    zeta->SetFillStyle(1001); // Solid fill style
+    zeta->SetFillColor(kWhite); // White background
+    zeta->AddText(Form("p0 = %.3f +/- %.3f", p0_zeta, p0_err_zeta));
+    zeta->AddText(Form("p1 = %.3f +/- %.3f", p1_zeta, p1_err_zeta));
+    zeta->AddText(Form("p2 = %.3f +/- %.3f", p2_zeta, p2_err_zeta));
+    zeta->AddText(Form("p3 = %.3f +/- %.3f", p3_zeta, p3_err_zeta));
+    zeta->Draw();
+
+    // Add chi2/ndf in the top left
+    latex.SetNDC();
+    latex.SetTextSize(0.04);
+    latex.DrawLatex(0.20, 0.15, 
+        Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2_zeta, ndf_zeta, chi2_ndf_zeta));
+
     // Save the canvas
     c1->SaveAs("output/one_dimensional.pdf");
     // Clean up
