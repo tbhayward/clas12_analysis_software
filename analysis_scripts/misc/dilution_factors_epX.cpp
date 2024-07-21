@@ -946,8 +946,8 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     carbon->Close();
 
     std::cout << std::endl << std::endl << std::endl;
-    std::cout << "if (prefix == \"Q2y1z1\") { return " << p0_x << 
-        "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" <<
+    std::cout << "if (prefix == \"Q2y1z1\") { return " << p0 << 
+        "+" << p1 << "*currentVariable+" << p2 << "*std::pow(currentVariable,2); }" <<
         std::endl;
 
     return 0;
