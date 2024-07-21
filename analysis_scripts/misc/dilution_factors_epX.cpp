@@ -799,28 +799,28 @@ double one_dimensional(const char* nh3_file, const char* c_file,
 
     std::cout << std::endl << std::endl << std::endl;
     std::cout << "if (prefix == \"x\") { return " << p0_x << 
-        "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2);" <<
+        "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" <<
         std::endl;
 
     std::cout << "if (prefix == \"z\") { return " << p0_z << 
         "+" << p1_z << "*currentVariable+" << p2_z << "*std::pow(currentVariable,2)+" <<
-        p3_z << "*std::pow(currentVariable,3);" << std::endl;
+        p3_z << "*std::pow(currentVariable,3); }" << std::endl;
 
     std::cout << "if (prefix == \"zeta\") { return " << p0_zeta << 
         "+" << p1_zeta << "*currentVariable+" << p2_zeta << "*std::pow(currentVariable,2)+" <<
-        p3_zeta << "*std::pow(currentVariable,3);" << std::endl;
+        p3_zeta << "*std::pow(currentVariable,3); }" << std::endl;
 
     std::cout << "if (prefix == \"PT\") { return " << p0 << 
-        "+" << p1 << "*currentVariable+" << p2 << "*std::pow(currentVariable,2);" << std::endl;
+        "+" << p1 << "*currentVariable+" << p2 << "*std::pow(currentVariable,2); }" << std::endl;
 
     std::cout << "if (prefix == \"xF\") { return " << p0_xF << 
         "+" << p1_xF << "*currentVariable+" << p2_xF << "*std::pow(currentVariable,2)+" <<
-        p3_xF << "*std::pow(currentVariable,3);" << std::endl;
+        p3_xF << "*std::pow(currentVariable,3); }" << std::endl;
 
     std::cout << "if (prefix == \"Mx\") { return " 
           << p0_Mx << "*exp(-0.5*((currentVariable-" << p1_Mx << ")/" << p2_Mx << ")^2) + " 
           << p3_Mx << "*exp(-0.5*((currentVariable-" << p4_Mx << ")/" << p5_Mx << ")^2) + " 
-          << p6_Mx << "*exp(-0.5*((currentVariable-" << p7_Mx << ")/" << p8_Mx << ")^2);" 
+          << p6_Mx << "*exp(-0.5*((currentVariable-" << p7_Mx << ")/" << p8_Mx << ")^2); }" 
           << std::endl;
 
     return 0;
