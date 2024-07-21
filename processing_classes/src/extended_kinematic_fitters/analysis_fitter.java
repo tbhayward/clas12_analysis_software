@@ -976,9 +976,9 @@ public class analysis_fitter extends GenericKinematicFitter {
         
         return true
             && p > 0.50
-            && forward_detector_cut(particle_Index, rec_Bank)
-            && pcal_fiducial_cut(particle_Index, rec_Bank, cal_Bank)
-            && random_photon_cut(particle_Index, rec_Bank)
+//            && forward_detector_cut(particle_Index, rec_Bank)
+//            && pcal_fiducial_cut(particle_Index, rec_Bank, cal_Bank)
+//            && random_photon_cut(particle_Index, rec_Bank)
             && open_angle_cut(lv_e, lv_gamma);
     }
     

@@ -167,7 +167,7 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
     // Set x-axis range
     gr_ratio_xF->GetXaxis()->SetLimits(-2, 1);
 
-    gr_ratio_xF->SetTitle("NH_{3} to Carbon Ratio; x_{F} (GeV); Ratio");
+    gr_ratio_xF->SetTitle("NH_{3} to Carbon Ratio; x_{F}; Ratio");
     gr_ratio_xF->SetMarkerStyle(20);
     gr_ratio_xF->Draw("AP");
 
