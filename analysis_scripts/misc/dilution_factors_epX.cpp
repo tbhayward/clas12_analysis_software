@@ -913,28 +913,28 @@ double multi_dimensional(const char* nh3_file, const char* c_file,
         fit_poly->SetLineColor(kRed);
         fit_poly->Draw("SAME");
 
-        // // Retrieve fit parameters and their errors
-        // double p0 = fit_poly->GetParameter(0);
-        // double p0_err = fit_poly->GetParError(0);
-        // double p1 = fit_poly->GetParameter(1);
-        // double p1_err = fit_poly->GetParError(1);
-        // double p2 = fit_poly->GetParameter(2);
-        // double p2_err = fit_poly->GetParError(2);
+        // Retrieve fit parameters and their errors
+        double p0 = fit_poly->GetParameter(0);
+        double p0_err = fit_poly->GetParError(0);
+        double p1 = fit_poly->GetParameter(1);
+        double p1_err = fit_poly->GetParError(1);
+        double p2 = fit_poly->GetParameter(2);
+        double p2_err = fit_poly->GetParError(2);
 
-        // // Retrieve chi2 and NDF
-        // double chi2 = fit_poly->GetChisquare();
-        // int ndf = fit_poly->GetNDF();
-        // double chi2_ndf = chi2 / ndf;
+        // Retrieve chi2 and NDF
+        double chi2 = fit_poly->GetChisquare();
+        int ndf = fit_poly->GetNDF();
+        double chi2_ndf = chi2 / ndf;
 
-        // // Add fit parameters box
-        // TPaveText *pt = new TPaveText(0.5, 0.7, 0.9, 0.9, "brNDC");
-        // pt->SetBorderSize(1);
-        // pt->SetFillStyle(1001); // Solid fill style
-        // pt->SetFillColor(kWhite); // White background
-        // pt->AddText(Form("p0 = %.3f +/- %.3f", p0, p0_err));
-        // pt->AddText(Form("p1 = %.3f +/- %.3f", p1, p1_err));
-        // pt->AddText(Form("p2 = %.3f +/- %.3f", p2, p2_err));
-        // pt->Draw();
+        // Add fit parameters box
+        TPaveText *pt = new TPaveText(0.5, 0.7, 0.9, 0.9, "brNDC");
+        pt->SetBorderSize(1);
+        pt->SetFillStyle(1001); // Solid fill style
+        pt->SetFillColor(kWhite); // White background
+        pt->AddText(Form("p0 = %.3f +/- %.3f", p0, p0_err));
+        pt->AddText(Form("p1 = %.3f +/- %.3f", p1, p1_err));
+        pt->AddText(Form("p2 = %.3f +/- %.3f", p2, p2_err));
+        pt->Draw();
 
         // // Add chi2/ndf in the top left
         // TLatex latex;
