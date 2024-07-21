@@ -274,7 +274,7 @@ int main(int argc, char *argv[]) {
   cout << "Total neg-neg charge: " << cmm << " (nC). ";
   cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << " (nC)."<< endl << endl;
 
-  // createIntegratedKinematicPlots();
+  createIntegratedKinematicPlots();
   // createIntegratedKinematicPlotsForBinsAndFits();
   // createCorrelationPlotsforrunnum();
   // createCorrelationPlots();
@@ -297,8 +297,8 @@ int main(int argc, char *argv[]) {
       switch (channel) {
         case 0: calculate_inclusive(output_file.c_str(), kinematic_file.c_str(), 
         binNames[i], asymmetry); break;
-        // case 1: performChi2Fits_single_hadron(output_file.c_str(), kinematic_file.c_str(), 
-        // kinematicPlot_file.c_str(), binNames[i], asymmetry); break;
+        case 1: performChi2Fits_single_hadron(output_file.c_str(), kinematic_file.c_str(), 
+        kinematicPlot_file.c_str(), binNames[i], asymmetry); break;
         case 2: performChi2Fits_b2b_dihadron(output_file.c_str(), kinematic_file.c_str(), 
         binNames[i], asymmetry); break;
       }
