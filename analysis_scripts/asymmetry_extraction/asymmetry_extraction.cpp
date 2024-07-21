@@ -274,7 +274,7 @@ int main(int argc, char *argv[]) {
   cout << "Total neg-neg charge: " << cmm << " (nC). ";
   cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << " (nC)."<< endl << endl;
 
-  // createIntegratedKinematicPlots();
+  createIntegratedKinematicPlots();
   // createIntegratedKinematicPlotsForBinsAndFits();
   // createCorrelationPlotsforrunnum();
   // createCorrelationPlots();
@@ -297,8 +297,8 @@ int main(int argc, char *argv[]) {
       switch (channel) {
         case 0: calculate_inclusive(output_file.c_str(), kinematic_file.c_str(), 
         binNames[i], asymmetry); break;
-        case 1: performChi2Fits_single_hadron(output_file.c_str(), kinematic_file.c_str(), 
-        kinematicPlot_file.c_str(), binNames[i], asymmetry); break;
+        // case 1: performChi2Fits_single_hadron(output_file.c_str(), kinematic_file.c_str(), 
+        // kinematicPlot_file.c_str(), binNames[i], asymmetry); break;
         case 2: performChi2Fits_b2b_dihadron(output_file.c_str(), kinematic_file.c_str(), 
         binNames[i], asymmetry); break;
       }
@@ -306,7 +306,7 @@ int main(int argc, char *argv[]) {
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
     switch (channel) {
       case 0: cout << "No MLM fit for inclusive." << endl; break;
-      // case 1: performMLMFits_single_hadron(output_file.c_str(), kinematic_file.c_str(), binNames[i]); break;
+      case 1: performMLMFits_single_hadron(output_file.c_str(), kinematic_file.c_str(), binNames[i]); break;
       case 2: performMLMFits_b2b_dihadron(output_file.c_str(), kinematic_file.c_str(), binNames[i]); break;
       case 3: cout << "No dihadron MLM fit (yet)." << endl; break;
     }
