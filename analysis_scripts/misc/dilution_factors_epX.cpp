@@ -942,10 +942,18 @@ double multi_dimensional(const char* nh3_file, const char* c_file,
         latex.SetTextSize(0.04);
         latex.DrawLatex(0.20, 0.15, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
         
-        // std::cout << std::endl << std::endl << std::endl;
-        // std::cout << "if (prefix == \"Q2y1z1\") { return " << p0 << 
-        // "+" << p1 << "*currentVariable+" << p2 << "*std::pow(currentVariable,2); }" <<
-        // std::endl;
+        std::cout << std::endl << std::endl << std::endl;
+        std::cout << "if (prefix == \"Q2y1z1\") { return " << p0 << 
+        "+" << p1 << "*currentVariable+" << p2 << "*std::pow(currentVariable,2); }" <<
+        std::endl;
+
+        // Delete dynamically allocated objects to avoid memory leaks
+        delete h_pT_nh3;
+        delete h_pT_carbon;
+        delete h_pT_carbon_scaled;
+        delete gr_dilution;
+        delete fit_poly;
+        delete pt;
     }
 
     // Save the canvas
