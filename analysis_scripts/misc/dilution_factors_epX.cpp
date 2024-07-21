@@ -853,7 +853,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
 
     // Create canvas and divide it into four panels
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1600, 1200);
-    c1->Divide(1, 5);
+    c1->Divide(5, 5);
 
     //pT histograms scaled by the fit constant with propagated errors
     c1->cd(1);
@@ -940,7 +940,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     latex.DrawLatex(0.20, 0.15, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
 
     // Save the canvas
-    c1->SaveAs("output/one_dimensional.pdf");
+    c1->SaveAs("output/Q2y1.pdf");
     // Clean up
     nh3->Close();
     carbon->Close();
