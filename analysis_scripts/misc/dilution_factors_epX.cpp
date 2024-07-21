@@ -940,7 +940,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     latex.DrawLatex(0.20, 0.15, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
 
     // Save the canvas
-    c1->SaveAs("output/Q2y1.pdf");
+    c1->SaveAs("output/Q2y1_4.pdf");
     // Clean up
     nh3->Close();
     carbon->Close();
