@@ -827,8 +827,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     return 0;
 }
 
-double multi_dimensional(const char* nh3_file, const char* c_file, 
-    std::pair<double, double> fit_constant) {
+double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<double, double> fit_constant) {
     double scale_factor = fit_constant.first;
     double scale_error = fit_constant.second;
 
@@ -858,20 +857,28 @@ double multi_dimensional(const char* nh3_file, const char* c_file,
 
     for (int i = 0; i < 2; ++i) {
         std::string cuts = "Mx>1.4 && Q2>1.00 && Q2<2.00 && y>0.650 && y<0.750 && z>0.10 && z<0.25";
-        
+
         c1->cd(i+1); // Pads are numbered from 1 to 25
         gPad->SetLeftMargin(0.15);
-        
+
+        // Create unique names for histograms and graphs
+        std::string h_pT_nh3_name = "h_pT_nh3_" + std::to_string(i);
+        std::string h_pT_carbon_name = "h_pT_carbon_" + std::to_string(i);
+        std::string h_pT_carbon_scaled_name = "h_pT_carbon_scaled_" + std::to_string(i);
+        std::string gr_dilution_name = "gr_dilution_" + std::to_string(i);
+        std::string fit_poly_name = "fit_poly_" + std::to_string(i);
+        std::string pave_text_name = "pave_text_" + std::to_string(i);
+
         // Create histograms
-        TH1D *h_pT_nh3 = new TH1D("h_pT_nh3", "P_{T} Distribution; P_{T} (GeV); Counts", 20, 0, 1.0);
-        TH1D *h_pT_carbon = new TH1D("h_pT_carbon", "P_{T} Distribution; P_{T} (GeV); Counts", 20, 0, 1.0);
+        TH1D *h_pT_nh3 = new TH1D(h_pT_nh3_name.c_str(), "P_{T} Distribution; P_{T} (GeV); Counts", 20, 0, 1.0);
+        TH1D *h_pT_carbon = new TH1D(h_pT_carbon_name.c_str(), "P_{T} Distribution; P_{T} (GeV); Counts", 20, 0, 1.0);
 
         // Draw histograms
-        tree_nh3->Draw("pT>>h_pT_nh3", cuts.c_str());
-        tree_carbon->Draw("pT>>h_pT_carbon", cuts.c_str());
+        tree_nh3->Draw(("pT>>" + h_pT_nh3_name).c_str(), cuts.c_str());
+        tree_carbon->Draw(("pT>>" + h_pT_carbon_name).c_str(), cuts.c_str());
 
         // Clone and scale carbon histogram
-        TH1D *h_pT_carbon_scaled = (TH1D*)h_pT_carbon->Clone("h_pT_carbon_scaled");
+        TH1D *h_pT_carbon_scaled = (TH1D*)h_pT_carbon->Clone(h_pT_carbon_scaled_name.c_str());
         h_pT_carbon_scaled->SetTitle("P_{T} Distribution; P_{T} (GeV); Counts (Scaled)");
 
         for (int j = 1; j <= h_pT_carbon->GetNbinsX(); ++j) {
@@ -886,6 +893,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file,
 
         // Create TGraphErrors for dilution factor
         TGraphErrors *gr_dilution = new TGraphErrors();
+        gr_dilution->SetName(gr_dilution_name.c_str());
 
         for (int j = 1; j <= h_pT_nh3->GetNbinsX(); ++j) {
             double nh3_counts = h_pT_nh3->GetBinContent(j);
@@ -908,7 +916,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file,
         gr_dilution->GetYaxis()->SetRangeUser(0.00, 0.20);
 
         // Fit to a polynomial
-        TF1 *fit_poly = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2", 0, 1.0);
+        TF1 *fit_poly = new TF1(fit_poly_name.c_str(), "[0] + [1]*x + [2]*x^2", 0, 1.0);
         gr_dilution->Fit(fit_poly, "RQ");
         fit_poly->SetLineColor(kRed);
         fit_poly->Draw("SAME");
@@ -928,6 +936,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file,
 
         // Add fit parameters box
         TPaveText *pt = new TPaveText(0.5, 0.7, 0.9, 0.9, "brNDC");
+        pt->SetName(pave_text_name.c_str());
         pt->SetBorderSize(1);
         pt->SetFillStyle(1001); // Solid fill style
         pt->SetFillColor(kWhite); // White background
