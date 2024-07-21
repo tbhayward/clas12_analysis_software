@@ -856,7 +856,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file,
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1600, 1200);
     c1->Divide(5, 5);
 
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < 2; ++i) {
         std::string cuts = "Mx>1.4 && Q2>1.00 && Q2<2.00 && y>0.650 && y<0.750 && z>0.10 && z<0.25";
         //pT histograms scaled by the fit constant with propagated errors
         c1->cd(i+1);
@@ -907,11 +907,11 @@ double multi_dimensional(const char* nh3_file, const char* c_file,
         gr_dilution->GetXaxis()->SetRangeUser(0, 1);
         gr_dilution->GetYaxis()->SetRangeUser(0.00, 0.20);
 
-        // // Fit to a third-degree polynomial
-        // TF1 *fit_poly = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2", 0, 1.0);
-        // gr_dilution->Fit(fit_poly, "RQ");
-        // fit_poly->SetLineColor(kRed);
-        // fit_poly->Draw("SAME");
+        // Fit to a third-degree polynomial
+        TF1 *fit_poly = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2", 0, 1.0);
+        gr_dilution->Fit(fit_poly, "RQ");
+        fit_poly->SetLineColor(kRed);
+        fit_poly->Draw("SAME");
 
         // // Retrieve fit parameters and their errors
         // double p0 = fit_poly->GetParameter(0);
@@ -965,6 +965,6 @@ int main(int argc, char** argv) {
     }
 
     std::pair<double, double> fit_constant = scale_normalization(argv[1], argv[2]);
-    one_dimensional(argv[1], argv[2], fit_constant);
+    // one_dimensional(argv[1], argv[2], fit_constant);
     multi_dimensional(argv[1], argv[2], fit_constant);
 }
