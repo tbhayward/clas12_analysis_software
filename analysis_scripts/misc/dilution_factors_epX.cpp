@@ -826,7 +826,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     return 0;
 }
 
-double one_dimensional(const char* nh3_file, const char* c_file, 
+double multi_dimensional(const char* nh3_file, const char* c_file, 
     std::pair<double, double> fit_constant) {
     double scale_factor = fit_constant.first;
     double scale_error = fit_constant.second;
