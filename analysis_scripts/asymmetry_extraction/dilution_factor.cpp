@@ -9,7 +9,7 @@ double dilution_factor(double currentVariable, const std::string& prefix) {
   if (prefix == "zeta") { return 1.11574+-5.33344*currentVariable+9.55552*std::pow(currentVariable,2)+-5.80119*std::pow(currentVariable,3); }
   if (prefix == "PT") { return 0.106575+0.0128819*currentVariable+-0.014333*std::pow(currentVariable,2); }
   if (prefix == "xF") { return 0.11673+-0.0406361*currentVariable+-0.106417*std::pow(currentVariable,2)+0.151004*std::pow(currentVariable,3); }
-  if (prefix == "Mx") { return 0.0366071*exp(-0.5*std::pow((currentVariable-0.769794)/0.0562864),2) + 0.0260418*exp(-0.5*std::pow((currentVariable-1.1057)/0.290501),2) + 0.10761*exp(-0.5*std::pow((currentVariable-1.68863)/1.8129),2); }
+  if (prefix == "Mx") { return 0.0366071*std::exp(-0.5*std::pow((currentVariable-0.769794)/0.0562864,2)) + 0.0260418*std::exp(-0.5*std::pow((currentVariable-1.1057)/0.290501,2)) + 0.10761*std::exp(-0.5*std::pow((currentVariable-1.68863)/1.8129,2)); }
   
   // epX
   if (prefix == "xF") { 
