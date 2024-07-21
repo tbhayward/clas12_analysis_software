@@ -961,7 +961,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         delete h_pT_carbon_scaled;
         delete gr_dilution;
         delete fit_poly;
-        delete pt;
+        // delete pt;
     }
 
     // Save the canvas
