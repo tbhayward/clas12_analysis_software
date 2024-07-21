@@ -818,9 +818,9 @@ double one_dimensional(const char* nh3_file, const char* c_file,
         p3_xF << "*std::pow(currentVariable,3); }" << std::endl;
 
     std::cout << "if (prefix == \"Mx\") { return " 
-          << p0_Mx << "*exp(-0.5*std::pow((currentVariable-" << p1_Mx << ")/" << p2_Mx << "),2) + " 
-          << p3_Mx << "*exp(-0.5*std::pow((currentVariable-" << p4_Mx << ")/" << p5_Mx << "),2) + " 
-          << p6_Mx << "*exp(-0.5*std::pow((currentVariable-" << p7_Mx << ")/" << p8_Mx << "),2); }" 
+          << p0_Mx << "*std::exp(-0.5*std::pow((currentVariable-" << p1_Mx << ")/" << p2_Mx << ",2)) + " 
+          << p3_Mx << "*std::exp(-0.5*std::pow((currentVariable-" << p4_Mx << ")/" << p5_Mx << ",2)) + " 
+          << p6_Mx << "*std::exp(-0.5*std::pow((currentVariable-" << p7_Mx << ")/" << p8_Mx << ",2)); }" 
           << std::endl;
 
     return 0;

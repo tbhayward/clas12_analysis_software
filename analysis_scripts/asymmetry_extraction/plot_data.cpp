@@ -4,6 +4,9 @@
 #include <TH2D.h>
 #include "formatLabelName.h"
 #include "TGraphErrors.h"
+#include <iostream> // For std::fixed
+#include <iomanip>  // For std::setprecision
+#include <sstream>  // For std::ostringstream
 
 extern TTreeReader dataReader;
 extern TTreeReader mcReader;
