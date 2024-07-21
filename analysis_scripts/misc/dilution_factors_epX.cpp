@@ -796,6 +796,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     // Clean up
     nh3->Close();
     carbon->Close();
+    delete c1;
 
     std::cout << std::endl << std::endl << std::endl;
     std::cout << "if (prefix == \"x\") { return " << p0_x << 
@@ -855,6 +856,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file,
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1600, 1200);
     c1->Divide(5, 5);
 
+    string cuts = "Mx>1.4 && Q2>1.00 && Q2<2.00 && y>0.650 && y<0.750 && z>0.10 && z<0.25";
     //pT histograms scaled by the fit constant with propagated errors
     c1->cd(1);
     gPad->SetLeftMargin(0.15);
@@ -862,8 +864,8 @@ double multi_dimensional(const char* nh3_file, const char* c_file,
         new TH1D("h_pT_nh3", "P_{T} Distribution; P_{T} (GeV); Counts", 20, 0, 1.0);
     TH1D *h_pT_carbon = 
         new TH1D("h_pT_carbon", "P_{T} Distribution; P_{T} (GeV); Counts", 20, 0, 1.0);
-    tree_nh3->Draw("pT>>h_pT_nh3","Mx>1.4 && Q2>1.00 && Q2<2.00 && y>0.650 && y<0.750 && z>0.10 && z<0.25");
-    tree_carbon->Draw("pT>>h_pT_carbon","Mx>1.4 && Q2>1.00 && Q2<2.00 && y>0.650 && y<0.750 && z>0.10 && z<0.25");
+    tree_nh3->Draw("pT>>h_pT_nh3",cuts);
+    tree_carbon->Draw("pT>>h_pT_carbon",cuts);
     TH1D *h_pT_carbon_scaled = (TH1D*)h_pT_carbon->Clone("h_pT_carbon_scaled");
     h_pT_carbon_scaled->SetTitle("P_{T} Distribution; P_{T} (GeV); Counts (Scaled)");
 
@@ -944,6 +946,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file,
     // Clean up
     nh3->Close();
     carbon->Close();
+    delete c1;
 
     std::cout << std::endl << std::endl << std::endl;
     std::cout << "if (prefix == \"Q2y1z1\") { return " << p0 << 
