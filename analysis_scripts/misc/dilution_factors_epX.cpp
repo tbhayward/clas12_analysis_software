@@ -827,7 +827,8 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     return 0;
 }
 
-double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<double, double> fit_constant) {
+double multi_dimensional(const char* nh3_file, const char* c_file, 
+    std::pair<double, double> fit_constant) {
     double scale_factor = fit_constant.first;
     double scale_error = fit_constant.second;
 
@@ -851,83 +852,74 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         return 0;
     }
 
-    // Create canvas and divide it into 25 panels (5x5)
+    // Create canvas and divide it into four panels
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1600, 1200);
     c1->Divide(5, 5);
 
-    for (int i = 0; i < 2; ++i) {
+    for (int i = 0; i < 5; ++i) {
         std::string cuts = "Mx>1.4 && Q2>1.00 && Q2<2.00 && y>0.650 && y<0.750 && z>0.10 && z<0.25";
-
-        c1->cd(i+1); // Pads are numbered from 1 to 25
+        //pT histograms scaled by the fit constant with propagated errors
+        c1->cd(i+1);
         gPad->SetLeftMargin(0.15);
-
-        // Create unique names for histograms and graphs
-        std::string h_pT_nh3_name = "h_pT_nh3_" + std::to_string(i);
-        std::string h_pT_carbon_name = "h_pT_carbon_" + std::to_string(i);
-        std::string h_pT_carbon_scaled_name = "h_pT_carbon_scaled_" + std::to_string(i);
-        std::string gr_dilution_name = "gr_dilution_" + std::to_string(i);
-        std::string fit_poly_name = "fit_poly_" + std::to_string(i);
-        std::string pave_text_name = "pave_text_" + std::to_string(i);
-
-        // Create histograms
-        TH1D *h_pT_nh3 = new TH1D(h_pT_nh3_name.c_str(), "P_{T} Distribution; P_{T} (GeV); Counts", 20, 0, 1.0);
-        TH1D *h_pT_carbon = new TH1D(h_pT_carbon_name.c_str(), "P_{T} Distribution; P_{T} (GeV); Counts", 20, 0, 1.0);
-
-        // Draw histograms
-        tree_nh3->Draw(("pT>>" + h_pT_nh3_name).c_str(), cuts.c_str());
-        tree_carbon->Draw(("pT>>" + h_pT_carbon_name).c_str(), cuts.c_str());
-
-        // Clone and scale carbon histogram
-        TH1D *h_pT_carbon_scaled = (TH1D*)h_pT_carbon->Clone(h_pT_carbon_scaled_name.c_str());
+        TH1D *h_pT_nh3 = 
+            new TH1D("h_pT_nh3", "P_{T} Distribution; P_{T} (GeV); Counts", 20, 0, 1.0);
+        TH1D *h_pT_carbon = 
+            new TH1D("h_pT_carbon", "P_{T} Distribution; P_{T} (GeV); Counts", 20, 0, 1.0);
+        tree_nh3->Draw("pT>>h_pT_nh3",cuts.c_str());
+        tree_carbon->Draw("pT>>h_pT_carbon",cuts.c_str());
+        TH1D *h_pT_carbon_scaled = (TH1D*)h_pT_carbon->Clone("h_pT_carbon_scaled");
         h_pT_carbon_scaled->SetTitle("P_{T} Distribution; P_{T} (GeV); Counts (Scaled)");
 
-        for (int j = 1; j <= h_pT_carbon->GetNbinsX(); ++j) {
-            double bin_content = h_pT_carbon->GetBinContent(j);
-            double bin_error = h_pT_carbon->GetBinError(j);
+        for (int i = 1; i <= h_pT_carbon->GetNbinsX(); ++i) {
+            double bin_content = h_pT_carbon->GetBinContent(i);
+            double bin_error = h_pT_carbon->GetBinError(i);
 
             double new_content = bin_content * scale_factor;
-            double new_error = new_content * std::sqrt((bin_error / bin_content) * (bin_error / bin_content) + (scale_error / scale_factor) * (scale_error / scale_factor));
-            h_pT_carbon_scaled->SetBinContent(j, new_content);
-            h_pT_carbon_scaled->SetBinError(j, new_error);
+            double new_error = 
+                new_content * std::sqrt((bin_error / bin_content) * (bin_error / bin_content) + 
+                (scale_error / scale_factor) * (scale_error / scale_factor));
+            h_pT_carbon_scaled->SetBinContent(i, new_content);
+            h_pT_carbon_scaled->SetBinError(i, new_error);
         }
 
-        // Create TGraphErrors for dilution factor
         TGraphErrors *gr_dilution = new TGraphErrors();
-        gr_dilution->SetName(gr_dilution_name.c_str());
-
-        for (int j = 1; j <= h_pT_nh3->GetNbinsX(); ++j) {
-            double nh3_counts = h_pT_nh3->GetBinContent(j);
-            double nh3_error = h_pT_nh3->GetBinError(j);
-            double c_counts = h_pT_carbon_scaled->GetBinContent(j);
-            double c_error = h_pT_carbon_scaled->GetBinError(j);
+        for (int i = 1; i <= h_pT_nh3->GetNbinsX(); ++i) {
+            double nh3_counts = h_pT_nh3->GetBinContent(i);
+            double nh3_error = h_pT_nh3->GetBinError(i);
+            double c_counts = h_pT_carbon_scaled->GetBinContent(i);
+            double c_error = h_pT_carbon_scaled->GetBinError(i);
 
             if (nh3_counts > 0) {
                 double dilution = (nh3_counts - c_counts) / nh3_counts;
-                double dilution_error = std::sqrt(std::pow((c_counts / (nh3_counts * nh3_counts)) * nh3_error, 2) + std::pow(1.0 / nh3_counts * c_error, 2));
-                gr_dilution->SetPoint(j - 1, h_pT_nh3->GetBinCenter(j), dilution);
-                gr_dilution->SetPointError(j - 1, 0, dilution_error);
+
+                // Propagate the error
+                double dilution_error = std::sqrt(
+                    std::pow((c_counts / (nh3_counts * nh3_counts)) * nh3_error, 2) +
+                    std::pow(1.0 / nh3_counts * c_error, 2));
+
+                gr_dilution->SetPoint(i - 1, h_pT_nh3->GetBinCenter(i), dilution);
+                gr_dilution->SetPointError(i - 1, 0, dilution_error);
             }
         }
-
         gr_dilution->SetTitle("; P_{T} (GeV); D_{f} = (NH3 - s*C) / NH3");
         gr_dilution->SetMarkerStyle(20);
         gr_dilution->Draw("AP");
         gr_dilution->GetXaxis()->SetRangeUser(0, 1);
         gr_dilution->GetYaxis()->SetRangeUser(0.00, 0.20);
 
-        // Fit to a polynomial
-        TF1 *fit_poly = new TF1(fit_poly_name.c_str(), "[0] + [1]*x + [2]*x^2", 0, 1.0);
-        gr_dilution->Fit(fit_poly, "RQ");
-        fit_poly->SetLineColor(kRed);
-        fit_poly->Draw("SAME");
+        // // Fit to a third-degree polynomial
+        // TF1 *fit_poly = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2", 0, 1.0);
+        // gr_dilution->Fit(fit_poly, "RQ");
+        // fit_poly->SetLineColor(kRed);
+        // fit_poly->Draw("SAME");
 
-        // Retrieve fit parameters and their errors
-        double p0 = fit_poly->GetParameter(0);
-        double p0_err = fit_poly->GetParError(0);
-        double p1 = fit_poly->GetParameter(1);
-        double p1_err = fit_poly->GetParError(1);
-        double p2 = fit_poly->GetParameter(2);
-        double p2_err = fit_poly->GetParError(2);
+        // // Retrieve fit parameters and their errors
+        // double p0 = fit_poly->GetParameter(0);
+        // double p0_err = fit_poly->GetParError(0);
+        // double p1 = fit_poly->GetParameter(1);
+        // double p1_err = fit_poly->GetParError(1);
+        // double p2 = fit_poly->GetParameter(2);
+        // double p2_err = fit_poly->GetParError(2);
 
         // // Retrieve chi2 and NDF
         // double chi2 = fit_poly->GetChisquare();
@@ -936,7 +928,6 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
 
         // // Add fit parameters box
         // TPaveText *pt = new TPaveText(0.5, 0.7, 0.9, 0.9, "brNDC");
-        // pt->SetName(pave_text_name.c_str());
         // pt->SetBorderSize(1);
         // pt->SetFillStyle(1001); // Solid fill style
         // pt->SetFillColor(kWhite); // White background
@@ -950,23 +941,15 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         // latex.SetNDC();
         // latex.SetTextSize(0.04);
         // latex.DrawLatex(0.20, 0.15, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
-
-        // Print the fit formula
-        std::cout << std::endl << std::endl << std::endl;
-        std::cout << "if (prefix == \"Q2y1z1\") { return " << p0 << "+" << p1 << "*currentVariable+" << p2 << "*std::pow(currentVariable,2); }" << std::endl;
-
-        // Delete dynamically allocated objects to avoid memory leaks
-        delete h_pT_nh3;
-        delete h_pT_carbon;
-        delete h_pT_carbon_scaled;
-        delete gr_dilution;
-        delete fit_poly;
-        // delete pt;
+        
+        // std::cout << std::endl << std::endl << std::endl;
+        // std::cout << "if (prefix == \"Q2y1z1\") { return " << p0 << 
+        // "+" << p1 << "*currentVariable+" << p2 << "*std::pow(currentVariable,2); }" <<
+        // std::endl;
     }
 
     // Save the canvas
     c1->SaveAs("output/Q2y1_4.pdf");
-
     // Clean up
     nh3->Close();
     carbon->Close();
@@ -982,6 +965,6 @@ int main(int argc, char** argv) {
     }
 
     std::pair<double, double> fit_constant = scale_normalization(argv[1], argv[2]);
-    // one_dimensional(argv[1], argv[2], fit_constant);
+    one_dimensional(argv[1], argv[2], fit_constant);
     multi_dimensional(argv[1], argv[2], fit_constant);
 }
