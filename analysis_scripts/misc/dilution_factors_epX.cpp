@@ -871,7 +871,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
     }
 
     // Create canvas and divide it into 25 panels (5x5)
-    TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1600, 1200);
+    TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1600, 1600);
     c1->Divide(5, 5);
 
     for (int j = 0; j < 5; ++j) {
