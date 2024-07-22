@@ -64,30 +64,35 @@ void process_file(const char* input_filename) {
         base_name = base_name.substr(0, dot_pos);
     }
 
-    // Create a TChain to use TTreeReader
-    TChain chain("PhysicsEvents");
-    chain.Add(input_filename);
+    // Create output files and trees for each Q2-y bin
+    std::vector<TFile*> output_files(18);
+    std::vector<TTree*> output_trees(18);
+    for (int i = 0; i < 18; ++i) {
+        std::string output_filename = base_name + "_" + std::to_string(i) + ".root";
+        output_files[i] = TFile::Open(output_filename.c_str(), "RECREATE");
+        output_trees[i] = input_tree->CloneTree(0); // Clone structure, no entries yet
+    }
 
-    TTreeReader reader(&chain);
+    // Create a TTreeReader to read the input tree
+    TTreeReader reader(input_tree);
     TTreeReaderValue<double> Mx(reader, "Mx");
     TTreeReaderValue<double> Q2(reader, "Q2");
     TTreeReaderValue<double> y(reader, "y");
 
-    for (int i = 0; i < 18; ++i) {
-        std::string output_filename = base_name + "_" + std::to_string(i) + ".root";
-        TFile *output_file = TFile::Open(output_filename.c_str(), "RECREATE");
-        TTree *output_tree = input_tree->CloneTree(0);
-
-        while (reader.Next()) {
-            if (*Mx > 1.4) {
-                if (i == 0 || DetermineQ2yBin(*Q2, *y) == i) {
-                    output_tree->Fill();
-                }
+    // Loop over entries and fill the corresponding output trees
+    while (reader.Next()) {
+        if (*Mx > 1.4) {
+            int bin = DetermineQ2yBin(*Q2, *y);
+            if (bin > 0 && bin < 18) {
+                output_trees[bin]->Fill();
             }
         }
+    }
 
-        output_file->Write();
-        output_file->Close();
+    // Write and close the output files
+    for (int i = 0; i < 18; ++i) {
+        output_files[i]->Write();
+        output_files[i]->Close();
     }
 
     input_file->Close();

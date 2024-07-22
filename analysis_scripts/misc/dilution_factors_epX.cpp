@@ -1167,6 +1167,6 @@ int main(int argc, char** argv) {
     }
 
     std::pair<double, double> fit_constant = scale_normalization(argv[1], argv[2]);
-    // one_dimensional(argv[1], argv[2], fit_constant);
+    one_dimensional(argv[1], argv[2], fit_constant);
     multi_dimensional(argv[1], argv[2], fit_constant);
 }
