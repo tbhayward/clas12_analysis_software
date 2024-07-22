@@ -881,32 +881,26 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
     TCanvas *c1 = new TCanvas(canvasName.c_str(), "Dilution Factor Analysis", 1600, 2000);
     c1->Divide(5, 5);
 
-    std::string canvasTitle;
+    std::string y_title;
     std::string y_range;
     switch (k) {
         case 0:
-            canvasTitle = "0.30 < y < 0.45";
+            y_title = "0.30 < y < 0.45";
             y_range = "0.30 < y && y < 0.45";
             break;
         case 1:
-            canvasTitle = "0.45 < y < 0.55";
+            y_title = "0.45 < y < 0.55";
             y_range = "0.45 < y && y < 0.55";
             break;
         case 2:
-            canvasTitle = "0.55 < y < 0.65";
+            y_title = "0.55 < y < 0.65";
             y_range = "0.55 < y && y < 0.65";
             break;
         case 3:
-            canvasTitle = "0.65 < y < 0.75";
+            y_title = "0.65 < y < 0.75";
             y_range = "0.65 < y && y < 0.75";
             break;
     }
-
-    c1->cd();
-    TLatex latex;
-    latex.SetNDC();
-    latex.SetTextSize(0.02);
-    latex.DrawLatex(0.41, 0.99, canvasTitle.c_str());  // Adjusted vertical position
 
     int max_Q2_bin = 5;
     if (k==0) {
@@ -918,9 +912,11 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
     for (int j = 0; j < 1; ++j) {
         std::string Q2_range;
         std::string Q2y_prefix;
+        std::string Q2_title;
         switch (j) {
             case 0:
                 Q2_range = "1.00<Q2 && Q2<2.00";
+                Q2_title = "1<Q^{2}<2";
                 switch (k) {
                     case 0: 
                         Q2y_prefix = "Q2y4";
@@ -938,6 +934,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
                 break;
             case 1:
                 Q2_range = "2.00<Q2 && Q2<3.00";
+                Q2_title = "2<Q^{2}<3";
                 switch (k) {
                     case 0: 
                         Q2y_prefix = "Q2y8";
@@ -955,6 +952,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
                 break;
             case 2:
                 Q2_range = "3.00<Q2 && Q2<4.00";
+                Q2_title = "3<Q^{2}<4";
                 switch (k) {
                     case 0: 
                         Q2y_prefix = "Q2y12";
@@ -972,6 +970,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
                 break;
             case 3:
                 Q2_range = "4.00<Q2 && Q2<5.00";
+                Q2_title = "4<Q^{2}<5";
                 switch (k) {
                     case 1: 
                         Q2y_prefix = "Q2y15";
@@ -986,6 +985,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
                 break;
             case 4:
                 Q2_range = "5.00<Q2 && Q2<7.00";
+                Q2_title = "5<Q^{2}<7";
                 switch (k) {
                     case 2: 
                         Q2y_prefix = "Q2y17";
@@ -999,25 +999,31 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
     for (int i = 0; i < 5; ++i) {
         std::string z_range;
         std::string z_prefix;
+        std::string z_title;
         switch (i) {
             case 0:
                 z_range = "0.10<z && z<0.25";
+                z_title = "0.10<z<0.25";
                 z_prefix = "z1";
                 break;
             case 1:
                 z_range = "0.25<z && z<0.35";
+                z_title = "0.25<z<0.35";
                 z_prefix = "z2";
                 break;
             case 2:
                 z_range = "0.35<z && z<0.45";
+                z_title = "0.35<z<0.45";
                 z_prefix = "z3";
                 break;
             case 3:
                 z_range = "0.45<z && z<0.55";
+                z_title = "0.45<z<0.55";
                 z_prefix = "z4";
                 break;
             case 4:
                 z_range = "0.55<z && z<0.75";
+                z_title = "0.55<z<0.75";
                 z_prefix = "z5";
                 break;
         }
@@ -1077,13 +1083,8 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
             }
         }
 
-        // Concatenate the title strings
-        std::string Q2_reformatted = reformatRange(Q2_range);
-        std::string y_reformatted = reformatRange(y_range);
-        std::string z_reformatted = reformatRange(z_range);
-
         // Use the reformatted strings in the title
-        std::string title = Q2_reformatted + " , " + y_reformatted + " , " + z_reformatted;
+        std::string title = Q2_title + " , " + y_title + " , " + z_title;
         gr_dilution->SetTitle((title + "; P_{T} (GeV); D_{f} = (NH3 - s*C) / NH3").c_str());
         gr_dilution->SetTitle((title + "; P_{T} (GeV); D_{f} = (NH3 - s*C) / NH3").c_str());
         gr_dilution->SetMarkerStyle(20);
