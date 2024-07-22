@@ -856,8 +856,6 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
     // Suppress warnings
     // gErrorIgnoreLevel = kError;
 
-    for (int k = 0; k < 4; ++k) {
-
     // Open the ROOT files
     TFile *nh3 = TFile::Open(nh3_file);
     TFile *carbon = TFile::Open(c_file);
@@ -865,6 +863,8 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         std::cerr << "Error opening files!" << std::endl;
         return 0;
     }
+
+    for (int k = 0; k < 4; ++k) {
 
     // Get the PhysicsEvents trees
     TTree *tree_nh3;
@@ -1146,7 +1146,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
     nh3->Close();
     carbon->Close();
     delete c1;
-    
+
     return 0;
 }
 
