@@ -870,33 +870,120 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         return 0;
     }
 
+    for (int k = 0; i < 2; ++i) {
+
     // Create canvas and divide it into 25 panels (5x5)
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1600, 1600);
     c1->Divide(5, 5);
 
-    for (int j = 0; j < 5; ++j) {
+    std::string canvasTitle;
+    std::string y_range;
+    switch (k) {
+        case 0:
+            canvasTitle = "0.30 < y < 0.45";
+            y_range = "0.30 < y && y < 0.45";
+            break;
+        case 1:
+            canvasTitle = "0.45 < y < 0.55";
+            y_range = "0.45 < y && y < 0.55";
+            break;
+        case 2:
+            canvasTitle = "0.55 < y < 0.65";
+            y_range = "0.55 < y && y < 0.65";
+            break;
+        case 3:
+            canvasTitle = "0.65 < y < 0.75";
+            y_range = "0.65 < y && y < 0.75";
+            break;
+    }
+
+    c1->SetTitle(canvasTitle.c_str());
+
+    int max_Q2_bin = 5;
+    if (k==3) {
+        max_Q2_bin = 4;
+    } else if (k==4) {
+        max_Q2_bin = 3;
+    }
+    for (int j = 0; j < max_Q2_bin; ++j) {
         std::string Q2_range;
         std::string Q2y_prefix;
         switch (j) {
             case 0:
                 Q2_range = "Q2>1.00 && Q2<2.00";
-                Q2y_prefix = "Q2y1";
+                switch (k) {
+                    case 0: 
+                        Q2y_prefix = "Q2y1";
+                        break;
+                    case 1: 
+                        Q2y_prefix = "Q2y2";
+                        break;
+                    case 2: 
+                        Q2y_prefix = "Q2y3";
+                        break;
+                    case 3: 
+                        Q2y_prefix = "Q2y4";
+                        break;
+                }
                 break;
             case 1:
                 Q2_range = "Q2>2.00 && Q2<3.00";
-                Q2y_prefix = "Q2y5";
+                switch (k) {
+                    case 0: 
+                        Q2y_prefix = "Q2y5";
+                        break;
+                    case 1: 
+                        Q2y_prefix = "Q2y6";
+                        break;
+                    case 2: 
+                        Q2y_prefix = "Q2y7";
+                        break;
+                    case 3: 
+                        Q2y_prefix = "Q2y8";
+                        break;
+                }
                 break;
             case 2:
                 Q2_range = "Q2>3.00 && Q2<4.00";
-                Q2y_prefix = "Q2y9";
+                switch (k) {
+                    case 0: 
+                        Q2y_prefix = "Q2y9";
+                        break;
+                    case 1: 
+                        Q2y_prefix = "Q2y10";
+                        break;
+                    case 2: 
+                        Q2y_prefix = "Q2y11";
+                        break;
+                    case 3: 
+                        Q2y_prefix = "Q2y12";
+                        break;
+                }
                 break;
             case 3:
                 Q2_range = "Q2>4.00 && Q2<5.00";
-                Q2y_prefix = "Q2y13";
+                switch (k) {
+                    case 0: 
+                        Q2y_prefix = "Q2y13";
+                        break;
+                    case 1: 
+                        Q2y_prefix = "Q2y14";
+                        break;
+                    case 2: 
+                        Q2y_prefix = "Q2y15";
+                        break;
+                }
                 break;
             case 4:
                 Q2_range = "Q2>5.00 && Q2<7.00";
-                Q2y_prefix = "Q2y16";
+                switch (k) {
+                    case 0: 
+                        Q2y_prefix = "Q2y16";
+                        break;
+                    case 1: 
+                        Q2y_prefix = "Q2y17";
+                        break;
+                }
                 break;
         }
     for (int i = 0; i < 5; ++i) {
@@ -925,7 +1012,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
                 break;
         }
 
-        std::string cuts = "Mx>1.4 && "+Q2_range+"&& y>0.650 && y<0.750 && "+z_range;
+        std::string cuts = "Mx>1.4 && "+Q2_range+y_range+z_range;
         c1->cd(5*j+(i+1)); // Pads are numbered from 1 to 25
         gPad->SetLeftMargin(0.15);
 
@@ -1039,11 +1126,14 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
     }
 
     // Save the canvas
-    c1->SaveAs("output/y_1.pdf");
+    std::string file = "output/" + k + ".pdf";
+    c1->SaveAs(file);
     // Clean up
     nh3->Close();
     carbon->Close();
     delete c1;
+
+    }
 
     return 0;
 }
@@ -1055,6 +1145,6 @@ int main(int argc, char** argv) {
     }
 
     std::pair<double, double> fit_constant = scale_normalization(argv[1], argv[2]);
-    // one_dimensional(argv[1], argv[2], fit_constant);
+    one_dimensional(argv[1], argv[2], fit_constant);
     multi_dimensional(argv[1], argv[2], fit_constant);
 }
