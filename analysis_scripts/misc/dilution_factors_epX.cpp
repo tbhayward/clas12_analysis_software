@@ -960,7 +960,9 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
             }
         }
 
-        gr_dilution->SetTitle(Q2_range+" "+z_range"; P_{T} (GeV); D_{f} = (NH3 - s*C) / NH3");
+        // Concatenate the title strings
+        std::string title = Q2_range + " , " + z_range;
+        gr_dilution->SetTitle((title + "; P_{T} (GeV); D_{f} = (NH3 - s*C) / NH3").c_str());
         gr_dilution->SetMarkerStyle(20);
         gr_dilution->Draw("AP");
         gr_dilution->GetXaxis()->SetRangeUser(0, 1);
