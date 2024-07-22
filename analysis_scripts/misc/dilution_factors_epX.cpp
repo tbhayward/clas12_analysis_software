@@ -921,7 +921,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         std::string Q2y_prefix;
         switch (j) {
             case 0:
-                Q2_range = "Q2>1.00 && Q2<2.00";
+                Q2_range = "1.00<Q2 && Q2<2.00";
                 switch (k) {
                     case 0: 
                         Q2y_prefix = "Q2y4";
@@ -938,7 +938,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
                 }
                 break;
             case 1:
-                Q2_range = "Q2>2.00 && Q2<3.00";
+                Q2_range = "2.00<Q2 && Q2<3.00";
                 switch (k) {
                     case 0: 
                         Q2y_prefix = "Q2y8";
@@ -955,7 +955,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
                 }
                 break;
             case 2:
-                Q2_range = "Q2>3.00 && Q2<4.00";
+                Q2_range = "3.00<Q2 && Q2<4.00";
                 switch (k) {
                     case 0: 
                         Q2y_prefix = "Q2y12";
@@ -972,7 +972,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
                 }
                 break;
             case 3:
-                Q2_range = "Q2>4.00 && Q2<5.00";
+                Q2_range = "4.00<Q2 && Q2<5.00";
                 switch (k) {
                     case 1: 
                         Q2y_prefix = "Q2y15";
@@ -986,7 +986,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
                 }
                 break;
             case 4:
-                Q2_range = "Q2>5.00 && Q2<7.00";
+                Q2_range = "5.00<Q2 && Q2<7.00";
                 switch (k) {
                     case 2: 
                         Q2y_prefix = "Q2y17";
@@ -1002,23 +1002,23 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         std::string z_prefix;
         switch (i) {
             case 0:
-                z_range = "z>0.10 && z<0.25";
+                z_range = "0.10<z && z<0.25";
                 z_prefix = "z1";
                 break;
             case 1:
-                z_range = "z>0.25 && z<0.35";
+                z_range = "0.25<z && z<0.35";
                 z_prefix = "z2";
                 break;
             case 2:
-                z_range = "z>0.35 && z<0.45";
+                z_range = "0.35<z && z<0.45";
                 z_prefix = "z3";
                 break;
             case 3:
-                z_range = "z>0.45 && z<0.55";
+                z_range = "0.45<z && z<0.55";
                 z_prefix = "z4";
                 break;
             case 4:
-                z_range = "z>0.55 && z<0.75";
+                z_range = "0.55<z && z<0.75";
                 z_prefix = "z5";
                 break;
         }
