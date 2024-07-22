@@ -879,7 +879,13 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
 
     std::string canvasName = "c1_" + std::to_string(k);
     TCanvas *c1 = new TCanvas(canvasName.c_str(), "Dilution Factor Analysis", 1600, 2000);
-    c1->Divide(5, 5);
+    if (k==0) {
+        c1->Divide(3, 5);
+    } else if (k==1) {
+        c1->Divide(4, 5);
+    } else {
+        c1->Divide(5, 5);
+    }
 
     std::string y_title;
     std::string y_range;
@@ -1028,7 +1034,6 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         }
 
         std::string cuts = "Mx>1.4 && "+Q2_range+" && "+y_range+" && "+z_range;
-        // std::cout << cuts << std::endl;
         c1->cd(5*j+(i+1)); // Pads are numbered from 1 to 25
         gPad->SetLeftMargin(0.15);
 
