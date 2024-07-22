@@ -870,7 +870,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         return 0;
     }
 
-    for (int k = 0; i < 2; ++i) {
+    for (int k = 0; k < 2; ++k) {
 
     // Create canvas and divide it into 25 panels (5x5)
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1600, 1600);
@@ -1115,7 +1115,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         std::string z_reformatted = reformatRange(z_range);
 
         // Use the reformatted strings in the title
-        std::string title = Q2_reformatted + " , " + z_reformatted;
+        title = Q2_reformatted + " , " + z_reformatted;
         gr_dilution->SetTitle((title + "; P_{T} (GeV); D_{f} = (NH3 - s*C) / NH3").c_str());
 
         // Print the fit formula
@@ -1126,7 +1126,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
     }
 
     // Save the canvas
-    std::string file = "output/" + k + ".pdf";
+    std::string file = "output/" + k.toString() + ".pdf";
     c1->SaveAs(file);
     // Clean up
     nh3->Close();
