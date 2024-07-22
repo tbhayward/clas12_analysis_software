@@ -879,7 +879,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
 
     std::string canvasName = "c1_" + std::to_string(k);
     TCanvas *c1 = new TCanvas(canvasName.c_str(), "Dilution Factor Analysis", 1600, 2000);
-    c1->SetTopMargin(0.25);  // Adjusted top margin
+    c1->SetTopMargin(0.50);  // Adjusted top margin
     c1->Divide(5, 5);
 
     std::string canvasTitle;
