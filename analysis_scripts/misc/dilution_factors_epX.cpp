@@ -855,33 +855,53 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1600, 1200);
     c1->Divide(5, 5);
 
+    for (int j = 0; j < 5; ++j) {
+        std::string Q2_range;
+        std::string Q2y_prefix;
+        switch (j) {
+            case 0:
+                Q2_range = "Q2>1.00 && Q2<2.00";
+                Q2y_prefix = "Q2y1";
+            case 1:
+                Q2_range = "Q2>2.00 && Q2<3.00";
+                Q2y_prefix = "Q2y5";
+            case 2:
+                Q2_range = "Q2>3.00 && Q2<4.00";
+                Q2y_prefix = "Q2y9";
+            case 3:
+                Q2_range = "Q2>4.00 && Q2<5.00";
+                Q2y_prefix = "Q2y13";
+            case 4:
+                Q2_range = "Q2>5.00 && Q2<7.00";
+                Q2y_prefix = "Q2y16";
+        }
     for (int i = 0; i < 5; ++i) {
         std::string z_range;
         std::string z_prefix;
         switch (i) {
             case 0:
                 z_range = "z>0.10 && z<0.25";
-                z_prefix = "Q2y1z1";
+                z_prefix = "z1";
                 break;
             case 1:
                 z_range = "z>0.25 && z<0.35";
-                z_prefix = "Q2y1z2";
+                z_prefix = "z2";
                 break;
             case 2:
                 z_range = "z>0.35 && z<0.45";
-                z_prefix = "Q2y1z3";
+                z_prefix = "z3";
                 break;
             case 3:
                 z_range = "z>0.45 && z<0.55";
-                z_prefix = "Q2y1z4";
+                z_prefix = "z4";
                 break;
             case 4:
                 z_range = "z>0.55 && z<0.75";
-                z_prefix = "Q2y1z5";
+                z_prefix = "z5";
                 break;
         }
 
-        std::string cuts = "Mx>1.4 && Q2>1.00 && Q2<2.00 && y>0.650 && y<0.750 && "+z_range;
+        std::string cuts = "Mx>1.4 && "+Q2_range+"&& y>0.650 && y<0.750 && "+z_range;
         c1->cd(i+1); // Pads are numbered from 1 to 25
         gPad->SetLeftMargin(0.15);
 
@@ -895,9 +915,9 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
 
         // Create histograms
         TH1D *h_pT_nh3 = new 
-            TH1D(h_pT_nh3_name.c_str(), "P_{T} Distribution; P_{T} (GeV); Counts", 12, 0, 1.0);
+            TH1D(h_pT_nh3_name.c_str(), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
         TH1D *h_pT_carbon = new 
-            TH1D(h_pT_carbon_name.c_str(), "P_{T} Distribution; P_{T} (GeV); Counts", 12, 0, 1.0);
+            TH1D(h_pT_carbon_name.c_str(), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
 
         // Draw histograms
         tree_nh3->Draw(("pT>>" + h_pT_nh3_name).c_str(), cuts.c_str());
@@ -942,7 +962,8 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         gr_dilution->GetYaxis()->SetRangeUser(0.00, 0.20);
 
         // Fit to a polynomial
-        TF1 *fit_poly = new TF1(fit_poly_name.c_str(), "[0] + [1]*x + [2]*x^2", 0, 1.0);
+        TF1 *fit_poly = new TF1(fit_poly_name.c_str(), "[0] + [1]*x", 0, 1.0);
+        // TF1 *fit_poly = new TF1(fit_poly_name.c_str(), "[0] + [1]*x + [2]*x^2", 0, 1.0);
         gr_dilution->Fit(fit_poly, "RQ");
         fit_poly->SetLineColor(kRed);
         fit_poly->Draw("SAME");
@@ -952,8 +973,8 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         double p0_err = fit_poly->GetParError(0);
         double p1 = fit_poly->GetParameter(1);
         double p1_err = fit_poly->GetParError(1);
-        double p2 = fit_poly->GetParameter(2);
-        double p2_err = fit_poly->GetParError(2);
+        // double p2 = fit_poly->GetParameter(2);
+        // double p2_err = fit_poly->GetParError(2);
 
         // Retrieve chi2 and NDF
         double chi2 = fit_poly->GetChisquare();
@@ -968,7 +989,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         pt->SetFillColor(kWhite); // White background
         pt->AddText(Form("p0 = %.3f +/- %.3f", p0, p0_err));
         pt->AddText(Form("p1 = %.3f +/- %.3f", p1, p1_err));
-        pt->AddText(Form("p2 = %.3f +/- %.3f", p2, p2_err));
+        // pt->AddText(Form("p2 = %.3f +/- %.3f", p2, p2_err));
         pt->Draw();
 
         // Add chi2/ndf in the top left
@@ -979,7 +1000,9 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
 
         // Print the fit formula
         std::cout << std::endl << std::endl << std::endl;
-        std::cout << "if (prefix == \"" << z_prefix << "\") { return " << p0 << "+" << p1 << "*currentVariable+" << p2 << "*std::pow(currentVariable,2); }" << std::endl;
+        std::cout << "if (prefix == \"" << Q2y_prefix << z_prefix << "\") { return " << p0 << "+" << p1 << "*currentVariable; }" << std::endl;
+        // std::cout << "if (prefix == \"" << z_prefix << "\") { return " << p0 << "+" << p1 << "*currentVariable+" << p2 << "*std::pow(currentVariable,2); }" << std::endl;
+    }
     }
 
     // Save the canvas
