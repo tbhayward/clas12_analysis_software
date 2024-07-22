@@ -17,9 +17,6 @@
 #include "Math/MinimizerOptions.h"
 #include <TError.h> // Include the header for error handling
 
-// Suppress warnings
-gErrorIgnoreLevel = kError; // Suppress all warnings and info messages, only errors will be shown
-
 // Function to reformat the range string
 std::string reformatRange(const std::string &range) {
     std::string formatted;
@@ -853,6 +850,9 @@ double one_dimensional(const char* nh3_file, const char* c_file,
 double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<double, double> fit_constant) {
     double scale_factor = fit_constant.first;
     double scale_error = fit_constant.second;
+
+    // Suppress warnings
+    gErrorIgnoreLevel = kError;
 
     // Open the ROOT files
     TFile *nh3 = TFile::Open(nh3_file);
