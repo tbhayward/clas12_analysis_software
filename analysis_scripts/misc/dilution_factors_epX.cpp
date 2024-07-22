@@ -15,6 +15,10 @@
 #include <sstream>
 #include <utility> 
 #include "Math/MinimizerOptions.h"
+#include <TError.h> // Include the header for error handling
+
+// Suppress warnings
+gErrorIgnoreLevel = kError; // Suppress all warnings and info messages, only errors will be shown
 
 // Function to reformat the range string
 std::string reformatRange(const std::string &range) {
@@ -1012,7 +1016,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
                 break;
         }
 
-        std::string cuts = "Mx>1.4 && "+Q2_range+"&&"+y_range+"&&"+z_range;
+        std::string cuts = "Mx>1.4&&"+Q2_range+"&&"+y_range+"&&"+z_range;
         c1->cd(5*j+(i+1)); // Pads are numbered from 1 to 25
         gPad->SetLeftMargin(0.15);
 
