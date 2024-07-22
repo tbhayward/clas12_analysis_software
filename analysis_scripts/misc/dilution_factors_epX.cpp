@@ -879,8 +879,14 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
 
     std::string canvasName = "c1_" + std::to_string(k);
     TCanvas *c1 = new TCanvas(canvasName.c_str(), "Dilution Factor Analysis", 1600, 2000);
-    c1->SetTopMargin(0.50);  // Adjusted top margin
+    // c1->SetTopMargin(0.25);  // Adjusted top margin
     c1->Divide(5, 5);
+    // Set the margin for each pad
+    for (int padIndex = 1; padIndex <= 25; ++padIndex) {
+        c1->cd(padIndex);
+        gPad->SetTopMargin(0.12);  // Adjust the top margin for each pad
+        gPad->SetBottomMargin(0.12);  // You can also adjust other margins if needed
+    }
 
     std::string canvasTitle;
     std::string y_range;
