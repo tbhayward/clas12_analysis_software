@@ -1023,7 +1023,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
                 break;
         }
 
-        std::string cuts = "// Mx>1.4 && "+Q2_range+" && "+y_range+" && "+z_range;
+        std::string cuts = "Mx>1.4 && "+Q2_range+" && "+y_range+" && "+z_range;
         std::cout << cuts << std::endl;
         c1->cd(5*j+(i+1)); // Pads are numbered from 1 to 25
         gPad->SetLeftMargin(0.15);
