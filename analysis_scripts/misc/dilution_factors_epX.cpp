@@ -25,11 +25,11 @@ std::string reformatRange(const std::string &range) {
     std::string variable;
 
     while (std::getline(ss, token, ' ')) {
-        if (token.find(">") != std::string::npos) {
+        if (token.find(">") != std::string::npos && token.find("<") == std::string::npos) {
             lower_bound = token.substr(0, token.find(">"));
             variable = token.substr(token.find(">") + 1);
         } else if (token.find("<") != std::string::npos && token.find(">") == std::string::npos) {
-            upper_bound = token;
+            upper_bound = token.substr(token.find("<") + 1);
         }
     }
 
@@ -879,14 +879,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
 
     std::string canvasName = "c1_" + std::to_string(k);
     TCanvas *c1 = new TCanvas(canvasName.c_str(), "Dilution Factor Analysis", 1600, 2000);
-    // c1->SetTopMargin(0.25);  // Adjusted top margin
     c1->Divide(5, 5);
-    // Set the margin for each pad
-    for (int padIndex = 1; padIndex <= 25; ++padIndex) {
-        c1->cd(padIndex);
-        gPad->SetTopMargin(0.12);  // Adjust the top margin for each pad
-        gPad->SetBottomMargin(0.12);  // You can also adjust other margins if needed
-    }
 
     std::string canvasTitle;
     std::string y_range;
@@ -1085,7 +1078,13 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         }
 
         // Concatenate the title strings
-        std::string title = Q2_range + " , " + z_range;
+        std::string Q2_reformatted = reformatRange(Q2_range);
+        std::string y_reformatted = reformatRange(y_range);
+        std::string z_reformatted = reformatRange(z_range);
+
+        // Use the reformatted strings in the title
+        std::string title = Q2_reformatted + " , " + y_reformatted + " , " + z_reformatted;
+        gr_dilution->SetTitle((title + "; P_{T} (GeV); D_{f} = (NH3 - s*C) / NH3").c_str());
         gr_dilution->SetTitle((title + "; P_{T} (GeV); D_{f} = (NH3 - s*C) / NH3").c_str());
         gr_dilution->SetMarkerStyle(20);
         // Draw the graph and set axis ranges
@@ -1139,10 +1138,6 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
 
         std::string Q2_reformatted = reformatRange(Q2_range);
         std::string z_reformatted = reformatRange(z_range);
-
-        // Use the reformatted strings in the title
-        title = Q2_reformatted + " , " + z_reformatted;
-        gr_dilution->SetTitle((title + "; P_{T} (GeV); D_{f} = (NH3 - s*C) / NH3").c_str());
 
         // Print the fit formula
         std::cout << "if (prefix == \"" << Q2y_prefix << z_prefix << "\") { return " << p0 << "; }" << std::endl << std::endl;
