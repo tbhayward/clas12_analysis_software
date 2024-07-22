@@ -82,6 +82,10 @@ void process_file(const char* input_filename) {
     // Loop over entries and fill the corresponding output trees
     while (reader.Next()) {
         if (*Mx > 1.4) {
+            // Fill the tree with all events that pass the Mx cut
+            output_trees[0]->Fill();
+
+            // Determine the Q2-y bin and fill the corresponding tree
             int bin = DetermineQ2yBin(*Q2, *y);
             if (bin > 0 && bin < 18) {
                 output_trees[bin]->Fill();
