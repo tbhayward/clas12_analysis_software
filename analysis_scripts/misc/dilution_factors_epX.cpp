@@ -1126,7 +1126,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
     }
 
     // Save the canvas
-    std::string file = "output/" + k.toString() + ".pdf";
+    std::string file = "output/" + std::to_string(k) + ".pdf";
     c1->SaveAs(file);
     // Clean up
     nh3->Close();
