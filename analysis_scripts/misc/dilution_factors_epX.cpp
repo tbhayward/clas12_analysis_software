@@ -856,6 +856,8 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
     // Suppress warnings
     // gErrorIgnoreLevel = kError;
 
+    for (int k = 0; k < 4; ++k) {
+
     // Open the ROOT files
     TFile *nh3 = TFile::Open(nh3_file);
     TFile *carbon = TFile::Open(c_file);
@@ -875,8 +877,6 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         carbon->Close();
         return 0;
     }
-
-    for (int k = 0; k < 4; ++k) {
 
     std::string canvasName = "c1_" + std::to_string(k);
     TCanvas *c1 = new TCanvas(canvasName.c_str(), "Dilution Factor Analysis", 1600, 1600);
@@ -1140,13 +1140,13 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
     // Save the canvas
     std::string file = "output/" + std::to_string(k) + ".pdf";
     c1->SaveAs(file.c_str());
+    }
+
     // Clean up
     nh3->Close();
     carbon->Close();
-    // delete c1;
-
-    }
-
+    delete c1;
+    
     return 0;
 }
 
