@@ -1023,12 +1023,12 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         gPad->SetLeftMargin(0.15);
 
         // Create unique names for histograms and graphs
-        std::string h_pT_nh3_name = "h_pT_nh3_" + std::to_string(j) + std::to_string(i);
-        std::string h_pT_carbon_name = "h_pT_carbon_" + std::to_string(j) + std::to_string(i);
-        std::string h_pT_carbon_scaled_name = "h_pT_carbon_scaled_" + std::to_string(j) + std::to_string(i);
-        std::string gr_dilution_name = "gr_dilution_" + std::to_string(j) + std::to_string(i);
-        std::string fit_poly_name = "fit_poly_" + std::to_string(j) + std::to_string(i);
-        std::string pave_text_name = "pave_text_" + std::to_string(j) + std::to_string(i);
+        std::string h_pT_nh3_name = "h_pT_nh3_" + std::to_string(k) + std::to_string(j) + std::to_string(i);
+        std::string h_pT_carbon_name = "h_pT_carbon_" + std::to_string(k) + std::to_string(j) + std::to_string(i);
+        std::string h_pT_carbon_scaled_name = "h_pT_carbon_scaled_" + std::to_string(k) + std::to_string(j) + std::to_string(i);
+        std::string gr_dilution_name = "gr_dilution_" + std::to_string(k) + std::to_string(j) + std::to_string(i);
+        std::string fit_poly_name = "fit_poly_" + std::to_string(k) + std::to_string(j) + std::to_string(i);
+        std::string pave_text_name = "pave_text_" + std::to_string(k) + std::to_string(j) + std::to_string(i);
 
         // Create histograms
         TH1D *h_pT_nh3 = new 
@@ -1077,6 +1077,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         gr_dilution->SetTitle((title + "; P_{T} (GeV); D_{f} = (NH3 - s*C) / NH3").c_str());
         gr_dilution->SetMarkerStyle(20);
         gr_dilution->Draw("AP");
+        gr_dilution->GetXaxis()->SetLimits(0, 1);
         gr_dilution->GetXaxis()->SetRangeUser(0, 1);
         gr_dilution->GetYaxis()->SetRangeUser(0.00, 0.30);
 
