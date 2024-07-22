@@ -856,28 +856,32 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
     c1->Divide(5, 5);
 
     for (int i = 0; i < 5; ++i) {
-        std::string q2_range;
+        std::string z_range;
+        std::string prefix;
         switch (i) {
             case 0:
-                q2_range = "Q2>1.00 && Q2<2.00";
+                z_range = "z>0.10 && z<0.25";
+                prefix = "Q2y1z1";
                 break;
             case 1:
-                q2_range = "Q2>2.00 && Q2<3.00";
+                z_range = "z>0.10 && z<0.25";
+                prefix = "Q2y1z2";
                 break;
             case 2:
-                q2_range = "Q2>3.00 && Q2<4.00";
+                z_range = "z>0.10 && z<0.25";
+                prefix = "Q2y1z3";
                 break;
             case 3:
-                q2_range = "Q2>4.00 && Q2<5.00";
+                z_range = "z>0.10 && z<0.25";
+                prefix = "Q2y1z4";
                 break;
             case 4:
-                q2_range = "Q2>5.00 && Q2<7.00";
+                z_range = "z>0.10 && z<0.25";
+                prefix = "Q2y1z5";
                 break;
-            default:
-                q2_range = "Q2>1.00 && Q2<2.00"; // default case (should not be needed)
         }
 
-        std::string cuts = "Mx>1.4 && "+q2_range+" && y>0.650 && y<0.750 && z>0.10 && z<0.25";
+        std::string cuts = "Mx>1.4 && Q2>1.00 && Q2<2.00 && y>0.650 && y<0.750 && "+z_range;
         c1->cd(i+1); // Pads are numbered from 1 to 25
         gPad->SetLeftMargin(0.15);
 
@@ -890,8 +894,10 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         std::string pave_text_name = "pave_text_" + std::to_string(i);
 
         // Create histograms
-        TH1D *h_pT_nh3 = new TH1D(h_pT_nh3_name.c_str(), "P_{T} Distribution; P_{T} (GeV); Counts", 20, 0, 1.0);
-        TH1D *h_pT_carbon = new TH1D(h_pT_carbon_name.c_str(), "P_{T} Distribution; P_{T} (GeV); Counts", 20, 0, 1.0);
+        TH1D *h_pT_nh3 = new 
+            TH1D(h_pT_nh3_name.c_str(), "P_{T} Distribution; P_{T} (GeV); Counts", 12, 0, 1.0);
+        TH1D *h_pT_carbon = new 
+            TH1D(h_pT_carbon_name.c_str(), "P_{T} Distribution; P_{T} (GeV); Counts", 12, 0, 1.0);
 
         // Draw histograms
         tree_nh3->Draw(("pT>>" + h_pT_nh3_name).c_str(), cuts.c_str());
@@ -973,7 +979,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
 
         // Print the fit formula
         std::cout << std::endl << std::endl << std::endl;
-        std::cout << "if (prefix == \"Q2y1z1\") { return " << p0 << "+" << p1 << "*currentVariable+" << p2 << "*std::pow(currentVariable,2); }" << std::endl;
+        std::cout << "if (prefix == \"" << prefix << "\"{ return " << p0 << "+" << p1 << "*currentVariable+" << p2 << "*std::pow(currentVariable,2); }" << std::endl;
     }
 
     // Save the canvas
