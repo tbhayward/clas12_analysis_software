@@ -862,18 +862,23 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
             case 0:
                 Q2_range = "Q2>1.00 && Q2<2.00";
                 Q2y_prefix = "Q2y1";
+                break;
             case 1:
                 Q2_range = "Q2>2.00 && Q2<3.00";
                 Q2y_prefix = "Q2y5";
+                break;
             case 2:
                 Q2_range = "Q2>3.00 && Q2<4.00";
                 Q2y_prefix = "Q2y9";
+                break;
             case 3:
                 Q2_range = "Q2>4.00 && Q2<5.00";
                 Q2y_prefix = "Q2y13";
+                break;
             case 4:
                 Q2_range = "Q2>5.00 && Q2<7.00";
                 Q2y_prefix = "Q2y16";
+                break;
         }
     for (int i = 0; i < 5; ++i) {
         std::string z_range;
@@ -955,11 +960,11 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
             }
         }
 
-        gr_dilution->SetTitle("; P_{T} (GeV); D_{f} = (NH3 - s*C) / NH3");
+        gr_dilution->SetTitle(Q2_range+" "+z_range"; P_{T} (GeV); D_{f} = (NH3 - s*C) / NH3");
         gr_dilution->SetMarkerStyle(20);
         gr_dilution->Draw("AP");
         gr_dilution->GetXaxis()->SetRangeUser(0, 1);
-        gr_dilution->GetYaxis()->SetRangeUser(0.00, 0.20);
+        gr_dilution->GetYaxis()->SetRangeUser(0.00, 0.30);
 
         // Fit to a polynomial
         TF1 *fit_poly = new TF1(fit_poly_name.c_str(), "[0] + [1]*x", 0, 1.0);
