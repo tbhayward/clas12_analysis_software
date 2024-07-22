@@ -69,9 +69,9 @@ void process_file(const char* input_filename) {
     chain.Add(input_filename);
 
     TTreeReader reader(&chain);
-    TTreeReaderValue<float> Mx(reader, "Mx");
-    TTreeReaderValue<float> Q2(reader, "Q2");
-    TTreeReaderValue<float> y(reader, "y");
+    TTreeReaderValue<double> Mx(reader, "Mx");
+    TTreeReaderValue<double> Q2(reader, "Q2");
+    TTreeReaderValue<double> y(reader, "y");
 
     for (int i = 0; i < 18; ++i) {
         std::string output_filename = base_name + "_" + std::to_string(i) + ".root";
