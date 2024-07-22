@@ -879,7 +879,8 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
     }
 
     std::string canvasName = "c1_" + std::to_string(k);
-    TCanvas *c1 = new TCanvas(canvasName.c_str(), "Dilution Factor Analysis", 1600, 1600);
+    TCanvas *c1 = new TCanvas(canvasName.c_str(), "Dilution Factor Analysis", 1600, 1800);
+    c1->SetTopMargin(0.15);  // Adjusted top margin
     c1->Divide(5, 5);
 
     std::string canvasTitle;
@@ -903,12 +904,11 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
             break;
     }
 
-    // Add title to the top of the canvas
     c1->cd();
     TLatex latex;
     latex.SetNDC();
     latex.SetTextSize(0.04);
-    latex.DrawLatex(0.5, 0.95, canvasTitle.c_str());
+    latex.DrawLatex(0.5, 0.99, canvasTitle.c_str());  // Adjusted vertical position
 
     int max_Q2_bin = 5;
     if (k==0) {
@@ -1026,7 +1026,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         std::string cuts = "Mx>1.4 && "+Q2_range+" && "+y_range+" && "+z_range;
         std::cout << cuts << std::endl;
         c1->cd(5*j+(i+1)); // Pads are numbered from 1 to 25
-        // gPad->SetLeftMargin(0.15);
+        gPad->SetLeftMargin(0.12);
 
         // Create unique names for histograms and graphs
         std::string h_pT_nh3_name = "h_pT_nh3_" + std::to_string(k) + std::to_string(j) + std::to_string(i);
@@ -1082,10 +1082,17 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         std::string title = Q2_range + " , " + z_range;
         gr_dilution->SetTitle((title + "; P_{T} (GeV); D_{f} = (NH3 - s*C) / NH3").c_str());
         gr_dilution->SetMarkerStyle(20);
+        // Draw the graph and set axis ranges
         gr_dilution->Draw("AP");
         gr_dilution->GetXaxis()->SetLimits(0, 1);
         gr_dilution->GetXaxis()->SetRangeUser(0, 1);
         gr_dilution->GetYaxis()->SetRangeUser(0.00, 0.30);
+
+        // Increase the size of axis labels and titles
+        gr_dilution->GetXaxis()->SetTitleSize(0.05);  // Increase title size
+        gr_dilution->GetYaxis()->SetTitleSize(0.05);  // Increase title size
+        gr_dilution->GetXaxis()->SetLabelSize(0.04);  // Increase label size
+        gr_dilution->GetYaxis()->SetLabelSize(0.04);  // Increase label size
 
         // Fit to a polynomial
         TF1 *fit_poly = new TF1(fit_poly_name.c_str(), "[0]", 0, 1.0);
