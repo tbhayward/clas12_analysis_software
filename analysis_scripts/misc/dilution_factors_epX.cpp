@@ -16,6 +16,25 @@
 #include <utility> 
 #include "Math/MinimizerOptions.h"
 
+// Function to reformat the range string
+std::string reformatRange(const std::string &range) {
+    std::string formatted;
+    std::stringstream ss(range);
+    std::string token;
+    std::string lower_bound, upper_bound;
+
+    while (std::getline(ss, token, ' ')) {
+        if (token.find(">") != std::string::npos) {
+            lower_bound = token.substr(token.find(">") + 1);
+        } else if (token.find("<") != std::string::npos) {
+            upper_bound = token.substr(token.find("<") + 1);
+        }
+    }
+
+    formatted = lower_bound + " < " + range.substr(0, 2) + " < " + upper_bound;
+    return formatted;
+}
+
 std::pair<double, double> scale_normalization(const char* nh3_file, const char* c_file) {
     // Open the ROOT files
     TFile *nh3 = TFile::Open(nh3_file);
@@ -1005,6 +1024,13 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         latex.SetTextSize(0.04);
         latex.DrawLatex(0.20, 0.15, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
 
+        std::string Q2_reformatted = reformatRange(Q2_range);
+        std::string z_reformatted = reformatRange(z_range);
+
+        // Use the reformatted strings in the title
+        std::string title = Q2_reformatted + " , " + z_reformatted;
+        gr_dilution->SetTitle((title + "; P_{T} (GeV); D_{f} = (NH3 - s*C) / NH3").c_str());
+
         // Print the fit formula
         std::cout << std::endl << std::endl << std::endl;
         std::cout << "if (prefix == \"" << Q2y_prefix << z_prefix << "\") { return " << p0 << "+" << p1 << "*currentVariable; }" << std::endl;
@@ -1013,7 +1039,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
     }
 
     // Save the canvas
-    c1->SaveAs("output/Q2y1_4.pdf");
+    c1->SaveAs("output/y_1.pdf");
     // Clean up
     nh3->Close();
     carbon->Close();
