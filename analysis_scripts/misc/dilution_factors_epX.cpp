@@ -17,20 +17,19 @@
 #include "Math/MinimizerOptions.h"
 #include <TError.h> // Include the header for error handling
 
-// Function to reformat the range string
 std::string reformatRange(const std::string &range) {
     std::string formatted;
     std::stringstream ss(range);
     std::string token;
     std::string lower_bound, upper_bound;
-    char variable;
+    std::string variable;
 
     while (std::getline(ss, token, ' ')) {
         if (token.find(">") != std::string::npos) {
-            lower_bound = token.substr(token.find(">") + 1);
-            variable = token[0];
-        } else if (token.find("<") != std::string::npos) {
-            upper_bound = token.substr(token.find("<") + 1);
+            lower_bound = token.substr(0, token.find(">"));
+            variable = token.substr(token.find(">") + 1);
+        } else if (token.find("<") != std::string::npos && token.find(">") == std::string::npos) {
+            upper_bound = token;
         }
     }
 
