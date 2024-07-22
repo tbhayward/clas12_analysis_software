@@ -974,13 +974,13 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
             case 3:
                 Q2_range = "Q2>4.00 && Q2<5.00";
                 switch (k) {
-                    case 0: 
+                    case 1: 
                         Q2y_prefix = "Q2y15";
                         break;
-                    case 1: 
+                    case 2: 
                         Q2y_prefix = "Q2y14";
                         break;
-                    case 2: 
+                    case 3: 
                         Q2y_prefix = "Q2y13";
                         break;
                 }
@@ -988,10 +988,10 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
             case 4:
                 Q2_range = "Q2>5.00 && Q2<7.00";
                 switch (k) {
-                    case 0: 
+                    case 2: 
                         Q2y_prefix = "Q2y17";
                         break;
-                    case 1: 
+                    case 3: 
                         Q2y_prefix = "Q2y16";
                         break;
                 }
