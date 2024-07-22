@@ -80,7 +80,6 @@ void process_file(const char* input_filename) {
 
         while (reader.Next()) {
             if (*Mx > 1.4) {
-                std::cout << DetermineQ2yBin(*Q2, *y) << std::endl;
                 if (i == 0 || DetermineQ2yBin(*Q2, *y) == i) {
                     output_tree->Fill();
                 }
