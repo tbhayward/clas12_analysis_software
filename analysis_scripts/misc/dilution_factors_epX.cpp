@@ -878,8 +878,8 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
     }
 
     std::string canvasName = "c1_" + std::to_string(k);
-    TCanvas *c1 = new TCanvas(canvasName.c_str(), "Dilution Factor Analysis", 1600, 1800);
-    c1->SetTopMargin(0.20);  // Adjusted top margin
+    TCanvas *c1 = new TCanvas(canvasName.c_str(), "Dilution Factor Analysis", 1600, 2000);
+    c1->SetTopMargin(0.25);  // Adjusted top margin
     c1->Divide(5, 5);
 
     std::string canvasTitle;
@@ -906,8 +906,8 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
     c1->cd();
     TLatex latex;
     latex.SetNDC();
-    latex.SetTextSize(0.03);
-    latex.DrawLatex(0.42, 0.99, canvasTitle.c_str());  // Adjusted vertical position
+    latex.SetTextSize(0.02);
+    latex.DrawLatex(0.41, 0.99, canvasTitle.c_str());  // Adjusted vertical position
 
     int max_Q2_bin = 5;
     if (k==0) {
