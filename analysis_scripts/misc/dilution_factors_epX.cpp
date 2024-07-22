@@ -1136,9 +1136,6 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         latex.SetTextSize(0.04);
         latex.DrawLatex(0.20, 0.15, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
 
-        std::string Q2_reformatted = reformatRange(Q2_range);
-        std::string z_reformatted = reformatRange(z_range);
-
         // Print the fit formula
         std::cout << "if (prefix == \"" << Q2y_prefix << z_prefix << "\") { return " << p0 << "; }" << std::endl << std::endl;
         // std::cout << "if (prefix == \"" << z_prefix << "\") { return " << p0 << "+" << p1 << "*currentVariable+" << p2 << "*std::pow(currentVariable,2); }" << std::endl;
