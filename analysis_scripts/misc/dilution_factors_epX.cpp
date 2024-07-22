@@ -885,19 +885,19 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
     std::string y_range;
     switch (k) {
         case 0:
-            y_title = "0.30 < y < 0.45";
+            y_title = "0.30<y<0.45";
             y_range = "0.30 < y && y < 0.45";
             break;
         case 1:
-            y_title = "0.45 < y < 0.55";
+            y_title = "0.45<y<0.55";
             y_range = "0.45 < y && y < 0.55";
             break;
         case 2:
-            y_title = "0.55 < y < 0.65";
+            y_title = "0.55<y<0.65";
             y_range = "0.55 < y && y < 0.65";
             break;
         case 3:
-            y_title = "0.65 < y < 0.75";
+            y_title = "0.65<y<0.75";
             y_range = "0.65 < y && y < 0.75";
             break;
     }
@@ -908,8 +908,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
     } else if (k==1) {
         max_Q2_bin = 4;
     }
-    // for (int j = 0; j < max_Q2_bin; ++j) {
-    for (int j = 0; j < 1; ++j) {
+    for (int j = 0; j < max_Q2_bin; ++j) {
         std::string Q2_range;
         std::string Q2y_prefix;
         std::string Q2_title;
