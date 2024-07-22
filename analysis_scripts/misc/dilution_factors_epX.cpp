@@ -855,9 +855,29 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1600, 1200);
     c1->Divide(5, 5);
 
-    for (int i = 0; i < 2; ++i) {
-        std::string cuts = "Mx>1.4 && Q2>1.00 && Q2<2.00 && y>0.650 && y<0.750 && z>0.10 && z<0.25";
+    for (int i = 0; i < 5; ++i) {
+        std::string q2_range;
+        switch (i) {
+            case 0:
+                q2_range = "Q2>1.00 && Q2<2.00";
+                break;
+            case 1:
+                q2_range = "Q2>2.00 && Q2<3.00";
+                break;
+            case 2:
+                q2_range = "Q2>3.00 && Q2<4.00";
+                break;
+            case 3:
+                q2_range = "Q2>4.00 && Q2<5.00";
+                break;
+            case 4:
+                q2_range = "Q2>5.00 && Q2<7.00";
+                break;
+            default:
+                q2_range = "Q2>1.00 && Q2<2.00"; // default case (should not be needed)
+        }
 
+        std::string cuts = "Mx>1.4 && "+q2_range+" && y>0.650 && y<0.750 && z>0.10 && z<0.25";
         c1->cd(i+1); // Pads are numbered from 1 to 25
         gPad->SetLeftMargin(0.15);
 
