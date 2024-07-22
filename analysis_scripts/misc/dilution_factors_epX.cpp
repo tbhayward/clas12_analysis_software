@@ -23,16 +23,18 @@ std::string reformatRange(const std::string &range) {
     std::stringstream ss(range);
     std::string token;
     std::string lower_bound, upper_bound;
+    char variable;
 
     while (std::getline(ss, token, ' ')) {
         if (token.find(">") != std::string::npos) {
             lower_bound = token.substr(token.find(">") + 1);
+            variable = token[0];
         } else if (token.find("<") != std::string::npos) {
             upper_bound = token.substr(token.find("<") + 1);
         }
     }
 
-    formatted = lower_bound + " < " + range.substr(0, 2) + " < " + upper_bound;
+    formatted = lower_bound + " < " + variable + " < " + upper_bound;
     return formatted;
 }
 
@@ -852,7 +854,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
     double scale_error = fit_constant.second;
 
     // Suppress warnings
-    gErrorIgnoreLevel = kError;
+    // gErrorIgnoreLevel = kError;
 
     // Open the ROOT files
     TFile *nh3 = TFile::Open(nh3_file);
@@ -874,7 +876,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         return 0;
     }
 
-    for (int k = 0; k < 2; ++k) {
+    for (int k = 0; k < 4; ++k) {
 
     // Create canvas and divide it into 25 panels (5x5)
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1600, 1600);
@@ -904,10 +906,10 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
     c1->SetTitle(canvasTitle.c_str());
 
     int max_Q2_bin = 5;
-    if (k==3) {
-        max_Q2_bin = 4;
-    } else if (k==4) {
+    if (k==0) {
         max_Q2_bin = 3;
+    } else if (k==1) {
+        max_Q2_bin = 4;
     }
     for (int j = 0; j < max_Q2_bin; ++j) {
         std::string Q2_range;
@@ -917,16 +919,16 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
                 Q2_range = "Q2>1.00 && Q2<2.00";
                 switch (k) {
                     case 0: 
-                        Q2y_prefix = "Q2y1";
+                        Q2y_prefix = "Q2y4";
                         break;
                     case 1: 
-                        Q2y_prefix = "Q2y2";
-                        break;
-                    case 2: 
                         Q2y_prefix = "Q2y3";
                         break;
+                    case 2: 
+                        Q2y_prefix = "Q2y2";
+                        break;
                     case 3: 
-                        Q2y_prefix = "Q2y4";
+                        Q2y_prefix = "Q2y1";
                         break;
                 }
                 break;
@@ -934,16 +936,16 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
                 Q2_range = "Q2>2.00 && Q2<3.00";
                 switch (k) {
                     case 0: 
-                        Q2y_prefix = "Q2y5";
+                        Q2y_prefix = "Q2y8";
                         break;
                     case 1: 
-                        Q2y_prefix = "Q2y6";
-                        break;
-                    case 2: 
                         Q2y_prefix = "Q2y7";
                         break;
+                    case 2: 
+                        Q2y_prefix = "Q2y6";
+                        break;
                     case 3: 
-                        Q2y_prefix = "Q2y8";
+                        Q2y_prefix = "Q2y5";
                         break;
                 }
                 break;
@@ -951,16 +953,16 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
                 Q2_range = "Q2>3.00 && Q2<4.00";
                 switch (k) {
                     case 0: 
-                        Q2y_prefix = "Q2y9";
+                        Q2y_prefix = "Q2y12";
                         break;
                     case 1: 
-                        Q2y_prefix = "Q2y10";
-                        break;
-                    case 2: 
                         Q2y_prefix = "Q2y11";
                         break;
+                    case 2: 
+                        Q2y_prefix = "Q2y10";
+                        break;
                     case 3: 
-                        Q2y_prefix = "Q2y12";
+                        Q2y_prefix = "Q2y9";
                         break;
                 }
                 break;
@@ -968,13 +970,13 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
                 Q2_range = "Q2>4.00 && Q2<5.00";
                 switch (k) {
                     case 0: 
-                        Q2y_prefix = "Q2y13";
+                        Q2y_prefix = "Q2y15";
                         break;
                     case 1: 
                         Q2y_prefix = "Q2y14";
                         break;
                     case 2: 
-                        Q2y_prefix = "Q2y15";
+                        Q2y_prefix = "Q2y13";
                         break;
                 }
                 break;
@@ -982,10 +984,10 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
                 Q2_range = "Q2>5.00 && Q2<7.00";
                 switch (k) {
                     case 0: 
-                        Q2y_prefix = "Q2y16";
+                        Q2y_prefix = "Q2y17";
                         break;
                     case 1: 
-                        Q2y_prefix = "Q2y17";
+                        Q2y_prefix = "Q2y16";
                         break;
                 }
                 break;
@@ -1123,7 +1125,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         gr_dilution->SetTitle((title + "; P_{T} (GeV); D_{f} = (NH3 - s*C) / NH3").c_str());
 
         // Print the fit formula
-        std::cout << std::endl << std::endl << std::endl;
+        std::cout << std::endl;
         std::cout << "if (prefix == \"" << Q2y_prefix << z_prefix << "\") { return " << p0 << "+" << p1 << "*currentVariable; }" << std::endl;
         // std::cout << "if (prefix == \"" << z_prefix << "\") { return " << p0 << "+" << p1 << "*currentVariable+" << p2 << "*std::pow(currentVariable,2); }" << std::endl;
     }
@@ -1149,6 +1151,6 @@ int main(int argc, char** argv) {
     }
 
     std::pair<double, double> fit_constant = scale_normalization(argv[1], argv[2]);
-    one_dimensional(argv[1], argv[2], fit_constant);
+    // one_dimensional(argv[1], argv[2], fit_constant);
     multi_dimensional(argv[1], argv[2], fit_constant);
 }
