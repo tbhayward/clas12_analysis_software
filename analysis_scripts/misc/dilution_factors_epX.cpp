@@ -876,10 +876,10 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         return 0;
     }
 
-    for (int k = 1; k < 4; ++k) {
+    for (int k = 0; k < 4; ++k) {
 
-    // Create canvas and divide it into 25 panels (5x5)
-    TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1600, 1600);
+    std::string canvasName = "c1_" + std::to_string(k);
+    TCanvas *c1 = new TCanvas(canvasName.c_str(), "Dilution Factor Analysis", 1600, 1600);
     c1->Divide(5, 5);
 
     std::string canvasTitle;
@@ -1026,7 +1026,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         std::string cuts = "Mx>1.4 && "+Q2_range+" && "+y_range+" && "+z_range;
         std::cout << cuts << std::endl;
         c1->cd(5*j+(i+1)); // Pads are numbered from 1 to 25
-        gPad->SetLeftMargin(0.15);
+        // gPad->SetLeftMargin(0.15);
 
         // Create unique names for histograms and graphs
         std::string h_pT_nh3_name = "h_pT_nh3_" + std::to_string(k) + std::to_string(j) + std::to_string(i);
@@ -1088,7 +1088,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         gr_dilution->GetYaxis()->SetRangeUser(0.00, 0.30);
 
         // Fit to a polynomial
-        TF1 *fit_poly = new TF1(fit_poly_name.c_str(), "[0] + [1]*x", 0, 1.0);
+        TF1 *fit_poly = new TF1(fit_poly_name.c_str(), "[0]", 0, 1.0);
         // TF1 *fit_poly = new TF1(fit_poly_name.c_str(), "[0] + [1]*x + [2]*x^2", 0, 1.0);
         gr_dilution->Fit(fit_poly, "RQ");
         fit_poly->SetLineColor(kRed);
@@ -1097,8 +1097,8 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         // Retrieve fit parameters and their errors
         double p0 = fit_poly->GetParameter(0);
         double p0_err = fit_poly->GetParError(0);
-        double p1 = fit_poly->GetParameter(1);
-        double p1_err = fit_poly->GetParError(1);
+        // double p1 = fit_poly->GetParameter(1);
+        // double p1_err = fit_poly->GetParError(1);
         // double p2 = fit_poly->GetParameter(2);
         // double p2_err = fit_poly->GetParError(2);
 
@@ -1114,7 +1114,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         pt->SetFillStyle(1001); // Solid fill style
         pt->SetFillColor(kWhite); // White background
         pt->AddText(Form("p0 = %.3f +/- %.3f", p0, p0_err));
-        pt->AddText(Form("p1 = %.3f +/- %.3f", p1, p1_err));
+        // pt->AddText(Form("p1 = %.3f +/- %.3f", p1, p1_err));
         // pt->AddText(Form("p2 = %.3f +/- %.3f", p2, p2_err));
         pt->Draw();
 
@@ -1132,8 +1132,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         gr_dilution->SetTitle((title + "; P_{T} (GeV); D_{f} = (NH3 - s*C) / NH3").c_str());
 
         // Print the fit formula
-        std::cout << std::endl;
-        std::cout << "if (prefix == \"" << Q2y_prefix << z_prefix << "\") { return " << p0 << "+" << p1 << "*currentVariable; }" << std::endl;
+        std::cout << "if (prefix == \"" << Q2y_prefix << z_prefix << "\") { return " << p0 << "; }" << std::endl << std::endl;
         // std::cout << "if (prefix == \"" << z_prefix << "\") { return " << p0 << "+" << p1 << "*currentVariable+" << p2 << "*std::pow(currentVariable,2); }" << std::endl;
     }
     }
@@ -1144,7 +1143,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
     // Clean up
     nh3->Close();
     carbon->Close();
-    delete c1;
+    // delete c1;
 
     }
 
