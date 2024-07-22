@@ -1145,7 +1145,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
     // Clean up
     nh3->Close();
     carbon->Close();
-    delete c1;
+    // delete c1;
 
     return 0;
 }
