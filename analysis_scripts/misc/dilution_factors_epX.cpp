@@ -902,16 +902,16 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         }
 
         std::string cuts = "Mx>1.4 && "+Q2_range+"&& y>0.650 && y<0.750 && "+z_range;
-        c1->cd(i+1); // Pads are numbered from 1 to 25
+        c1->cd(5*j+(i+1)); // Pads are numbered from 1 to 25
         gPad->SetLeftMargin(0.15);
 
         // Create unique names for histograms and graphs
-        std::string h_pT_nh3_name = "h_pT_nh3_" + std::to_string(i);
-        std::string h_pT_carbon_name = "h_pT_carbon_" + std::to_string(i);
-        std::string h_pT_carbon_scaled_name = "h_pT_carbon_scaled_" + std::to_string(i);
-        std::string gr_dilution_name = "gr_dilution_" + std::to_string(i);
-        std::string fit_poly_name = "fit_poly_" + std::to_string(i);
-        std::string pave_text_name = "pave_text_" + std::to_string(i);
+        std::string h_pT_nh3_name = "h_pT_nh3_" + std::to_string(j) + std::to_string(i);
+        std::string h_pT_carbon_name = "h_pT_carbon_" + std::to_string(j) + std::to_string(i);
+        std::string h_pT_carbon_scaled_name = "h_pT_carbon_scaled_" + std::to_string(j) + std::to_string(i);
+        std::string gr_dilution_name = "gr_dilution_" + std::to_string(j) + std::to_string(i);
+        std::string fit_poly_name = "fit_poly_" + std::to_string(j) + std::to_string(i);
+        std::string pave_text_name = "pave_text_" + std::to_string(j) + std::to_string(i);
 
         // Create histograms
         TH1D *h_pT_nh3 = new 
