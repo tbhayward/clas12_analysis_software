@@ -857,27 +857,27 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
 
     for (int i = 0; i < 5; ++i) {
         std::string z_range;
-        std::string prefix;
+        std::string z_prefix;
         switch (i) {
             case 0:
                 z_range = "z>0.10 && z<0.25";
-                prefix = "Q2y1z1";
+                z_prefix = "Q2y1z1";
                 break;
             case 1:
-                z_range = "z>0.10 && z<0.25";
-                prefix = "Q2y1z2";
+                z_range = "z>0.25 && z<0.35";
+                z_prefix = "Q2y1z2";
                 break;
             case 2:
-                z_range = "z>0.10 && z<0.25";
-                prefix = "Q2y1z3";
+                z_range = "z>0.35 && z<0.45";
+                z_prefix = "Q2y1z3";
                 break;
             case 3:
-                z_range = "z>0.10 && z<0.25";
-                prefix = "Q2y1z4";
+                z_range = "z>0.45 && z<0.55";
+                z_prefix = "Q2y1z4";
                 break;
             case 4:
-                z_range = "z>0.10 && z<0.25";
-                prefix = "Q2y1z5";
+                z_range = "z>0.55 && z<0.75";
+                z_prefix = "Q2y1z5";
                 break;
         }
 
@@ -979,7 +979,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
 
         // Print the fit formula
         std::cout << std::endl << std::endl << std::endl;
-        std::cout << "if (prefix == \"" << prefix << "\"{ return " << p0 << "+" << p1 << "*currentVariable+" << p2 << "*std::pow(currentVariable,2); }" << std::endl;
+        std::cout << "if (prefix == \"" << z_prefix << "\") { return " << p0 << "+" << p1 << "*currentVariable+" << p2 << "*std::pow(currentVariable,2); }" << std::endl;
     }
 
     // Save the canvas
