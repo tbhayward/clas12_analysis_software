@@ -880,7 +880,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
 
     std::string canvasName = "c1_" + std::to_string(k);
     TCanvas *c1 = new TCanvas(canvasName.c_str(), "Dilution Factor Analysis", 1600, 1800);
-    c1->SetTopMargin(0.15);  // Adjusted top margin
+    c1->SetTopMargin(0.20);  // Adjusted top margin
     c1->Divide(5, 5);
 
     std::string canvasTitle;
@@ -907,8 +907,8 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
     c1->cd();
     TLatex latex;
     latex.SetNDC();
-    latex.SetTextSize(0.04);
-    latex.DrawLatex(0.5, 0.99, canvasTitle.c_str());  // Adjusted vertical position
+    latex.SetTextSize(0.03);
+    latex.DrawLatex(0.42, 0.99, canvasTitle.c_str());  // Adjusted vertical position
 
     int max_Q2_bin = 5;
     if (k==0) {
@@ -916,7 +916,8 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
     } else if (k==1) {
         max_Q2_bin = 4;
     }
-    for (int j = 0; j < max_Q2_bin; ++j) {
+    // for (int j = 0; j < max_Q2_bin; ++j) {
+    for (int j = 0; j < 1; ++j) {
         std::string Q2_range;
         std::string Q2y_prefix;
         switch (j) {
@@ -1026,7 +1027,7 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         std::string cuts = "Mx>1.4 && "+Q2_range+" && "+y_range+" && "+z_range;
         std::cout << cuts << std::endl;
         c1->cd(5*j+(i+1)); // Pads are numbered from 1 to 25
-        gPad->SetLeftMargin(0.12);
+        gPad->SetLeftMargin(0.15);
 
         // Create unique names for histograms and graphs
         std::string h_pT_nh3_name = "h_pT_nh3_" + std::to_string(k) + std::to_string(j) + std::to_string(i);
