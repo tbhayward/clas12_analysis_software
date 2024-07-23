@@ -175,8 +175,8 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
     TLatex latex;
     latex.SetNDC();
     latex.SetTextSize(0.04);
-    latex.DrawLatex(0.20, 0.85, Form("Fit Const, s = %.3f #pm %.3f", fit_value, fit_error));
-    latex.DrawLatex(0.20, 0.80, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
+    latex.DrawLatex(0.20, 0.85, Form("Fit Const, s = %.4f #pm %.4f", fit_value, fit_error));
+    latex.DrawLatex(0.20, 0.80, Form("#chi^{2}/NDF = %.3f / %d = %.3f", chi2, ndf, chi2_ndf));
 
     // Third panel: plot xF histograms
     c1->cd(3);
@@ -249,9 +249,9 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
     latex_xF.SetNDC();
     latex_xF.SetTextSize(0.04);
     latex_xF.DrawLatex(0.20, 0.85, 
-        Form("Fit Const, s = %.3f #pm %.3f", fit_value_xF, fit_error_xF));
+        Form("Fit Const, s = %.4f #pm %.4f", fit_value_xF, fit_error_xF));
     latex_xF.DrawLatex(0.20, 0.80, 
-        Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2_xF, ndf_xF, chi2_ndf_xF));
+        Form("#chi^{2}/NDF = %.3f / %d = %.3f", chi2_xF, ndf_xF, chi2_ndf_xF));
 
     // Save the canvas
     c1->SaveAs("output/scale_constant.pdf");
@@ -289,6 +289,10 @@ double one_dimensional(const char* nh3_file, const char* c_file,
         return 0;
     }
 
+    // Normalization factors
+    double norm_carbon = 276562;
+    double norm_nh3 = 1.10031e+06 + 1.05022e+06 + 1.04818e+06 + 1.09549e+06;
+
     // Create canvas and divide it into four panels
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1600, 1200);
     c1->Divide(3, 2);
@@ -304,6 +308,10 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     tree_carbon->Draw("pT>>h_pT_carbon","Mx > 1.4");
     TH1D *h_pT_carbon_scaled = (TH1D*)h_pT_carbon->Clone("h_pT_carbon_scaled");
     h_pT_carbon_scaled->SetTitle("P_{T} Distribution; P_{T} (GeV); Counts (Scaled)");
+
+    // Normalize the histograms manually
+    NormalizeHistogram(h_pT_carbon, norm_carbon);
+    NormalizeHistogram(h_pT_nh3, norm_nh3);
 
     for (int i = 1; i <= h_pT_carbon->GetNbinsX(); ++i) {
         double bin_content = h_pT_carbon->GetBinContent(i);
@@ -1198,6 +1206,6 @@ int main(int argc, char** argv) {
     }
 
     std::pair<double, double> fit_constant = scale_normalization(argv[1], argv[2]);
-    // one_dimensional(argv[1], argv[2], fit_constant);
+    one_dimensional(argv[1], argv[2], fit_constant);
     // multi_dimensional(argv[1], argv[2], fit_constant);
 }
