@@ -936,6 +936,10 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         return 0;
     }
 
+    // Normalization factors
+    double norm_carbon = 276562;
+    double norm_nh3 = 1.10031e+06 + 1.05022e+06 + 1.04818e+06 + 1.09549e+06;
+
     std::string canvasName = "c1_" + std::to_string(k);
     TCanvas *c1 = new TCanvas(canvasName.c_str(), "Dilution Factor Analysis", 1600, 2000);
     if (k==0) {
