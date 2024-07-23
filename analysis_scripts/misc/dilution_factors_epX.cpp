@@ -202,10 +202,10 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
     gPad->SetLeftMargin(0.15);
     TGraphErrors *gr_ratio_xF = new TGraphErrors();
     for (int i = 1; i <= h_xF_nh3->GetNbinsX(); ++i) {
-        double nh3_counts = h_Mx_nh3->GetBinContent(i);
-        double nh3_error = h_Mx_nh3->GetBinError(i);
-        double c_counts = h_Mx_carbon->GetBinContent(i);
-        double c_error = h_Mx_carbon->GetBinError(i);
+        double nh3_counts = h_xF_nh3->GetBinContent(i);
+        double nh3_error = h_xF_nh3->GetBinError(i);
+        double c_counts = h_xF_carbon->GetBinContent(i);
+        double c_error = h_xF_carbon->GetBinError(i);
         if (c_counts > 0) {
             double ratio = nh3_counts / c_counts;
             double error = ratio * std::sqrt(std::pow(nh3_error / nh3_counts, 2) + 
@@ -310,8 +310,8 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     h_pT_carbon_scaled->SetTitle("P_{T} Distribution; P_{T} (GeV); Counts (Scaled)");
 
     // Normalize the histograms manually
-    // NormalizeHistogram(h_pT_carbon, norm_carbon);
-    // NormalizeHistogram(h_pT_nh3, norm_nh3);
+    NormalizeHistogram(h_pT_carbon, norm_carbon);
+    NormalizeHistogram(h_pT_nh3, norm_nh3);
 
     for (int i = 1; i <= h_pT_carbon->GetNbinsX(); ++i) {
         double bin_content = h_pT_carbon->GetBinContent(i);
