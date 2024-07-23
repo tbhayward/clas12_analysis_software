@@ -534,8 +534,8 @@ double one_dimensional(const char* nh3_file, const char* c_file,
         new TH1D("h_xF_nh3", "x_{F} Distribution; x_{F} (GeV); Counts", 50, -0.8, 0.5);
     TH1D *h_xF_carbon = 
         new TH1D("h_xF_carbon", "x_{F} Distribution; x_{F} (GeV); Counts", 50, -0.8, 0.5);
-    tree_nh3->Draw("xF>>h_xF_nh3","Mx > 0");
-    tree_carbon->Draw("xF>>h_xF_carbon","Mx > 0");
+    tree_nh3->Draw("xF>>h_xF_nh3","Mx > 1.4");
+    tree_carbon->Draw("xF>>h_xF_carbon","Mx > 1.4");
     TH1D *h_xF_carbon_scaled = (TH1D*)h_xF_carbon->Clone("h_xF_carbon_scaled");
     h_xF_carbon_scaled->SetTitle("x_{F} Distribution; x_{F}; Counts (Scaled)");
 
