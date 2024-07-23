@@ -24,12 +24,7 @@ void NormalizeHistogram(TH1D* hist, double norm_factor) {
         double error = hist->GetBinError(i);
 
         double new_content = content / norm_factor;
-        // double scale = error/content;
         double new_error = error / norm_factor;
-        std::cout << error << " " << new_error << std::endl;
-        // double new_error = new_error*content/error;
-
-        // (error/content) = (new_error/new_content)
 
         hist->SetBinContent(i, new_content);
         hist->SetBinError(i, new_error);
@@ -137,7 +132,8 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
         double c_counts = h_Mx_carbon->GetBinContent(i);
         if (c_counts > 0) {
             double ratio = nh3_counts / c_counts;
-            double error = ratio * std::sqrt(1 / nh3_counts + 1 / c_counts);
+            double error = ratio * std::sqrt(std::pow(nh3_error / nh3_counts, 2) + 
+                std::pow(c_error / c_counts, 2));
             gr_ratio->SetPoint(i - 1, h_Mx_nh3->GetBinCenter(i), ratio);
             gr_ratio->SetPointError(i - 1, 0, error);
         }
@@ -208,7 +204,8 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
         double c_counts = h_xF_carbon->GetBinContent(i);
         if (c_counts > 0) {
             double ratio = nh3_counts / c_counts;
-            double error = ratio * std::sqrt(1 / nh3_counts + 1 / c_counts);
+            double error = ratio * std::sqrt(std::pow(nh3_error / nh3_counts, 2) + 
+                std::pow(c_error / c_counts, 2));
             gr_ratio_xF->SetPoint(i - 1, h_xF_nh3->GetBinCenter(i), ratio);
             gr_ratio_xF->SetPointError(i - 1, 0, error);
         }
