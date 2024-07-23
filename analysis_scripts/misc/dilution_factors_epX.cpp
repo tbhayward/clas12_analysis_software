@@ -310,8 +310,8 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     h_pT_carbon_scaled->SetTitle("P_{T} Distribution; P_{T} (GeV); Counts (Scaled)");
 
     // Normalize the histograms manually
-    NormalizeHistogram(h_pT_carbon, norm_carbon);
-    NormalizeHistogram(h_pT_nh3, norm_nh3);
+    // NormalizeHistogram(h_pT_carbon, norm_carbon);
+    // NormalizeHistogram(h_pT_nh3, norm_nh3);
 
     for (int i = 1; i <= h_pT_carbon->GetNbinsX(); ++i) {
         double bin_content = h_pT_carbon->GetBinContent(i);
