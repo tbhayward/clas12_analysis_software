@@ -5,7 +5,7 @@
 
 void process_runs() {
     // Open the ROOT file
-    TFile *file = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/rgc_su22_inb_C_epX.root");
+    TFile *file = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/rgc_su22_inb_NH3_epX.root");
 
     // Check if file was opened successfully
     if (!file || file->IsZombie()) {
