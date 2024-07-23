@@ -18,18 +18,21 @@
 #include <TError.h> // Include the header for error handling
 
 // Function to normalize a histogram and its errors manually
-    void NormalizeHistogram(TH1D* hist, double norm_factor) {
-        for (int i = 1; i <= hist->GetNbinsX(); ++i) {
-            double content = hist->GetBinContent(i);
-            double error = hist->GetBinError(i);
+void NormalizeHistogram(TH1D* hist, double norm_factor) {
+    for (int i = 1; i <= hist->GetNbinsX(); ++i) {
+        double content = hist->GetBinContent(i);
+        double error = hist->GetBinError(i);
 
-            double new_content = content / norm_factor;
-            double new_error = error / norm_factor;
+        double new_content = content / norm_factor;
+        // double scale = error/content;
+        double new_error = new_error*content/error;
 
-            hist->SetBinContent(i, new_content);
-            hist->SetBinError(i, new_error);
-        }
+        // (error/content) = (new_error/new_content)
+
+        hist->SetBinContent(i, new_content);
+        hist->SetBinError(i, new_error);
     }
+}
 
 std::string reformatRange(const std::string &range) {
     std::string formatted;
@@ -138,7 +141,7 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
         }
     }
     // Set y-axis range from 5 to 15
-    gr_ratio->GetYaxis()->SetRangeUser(0, 5);
+    gr_ratio->GetYaxis()->SetRangeUser(0, 1);
     // Set x-axis range
     gr_ratio->GetXaxis()->SetLimits(-2, 3);
 
@@ -209,7 +212,7 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
         }
     }
     // Set y-axis range from 5 to 15
-    gr_ratio_xF->GetYaxis()->SetRangeUser(0, 5);
+    gr_ratio_xF->GetYaxis()->SetRangeUser(0, 1);
     // Set x-axis range
     gr_ratio_xF->GetXaxis()->SetLimits(-2, 1);
 
