@@ -400,8 +400,7 @@ public class analysis_fitter extends GenericKinematicFitter {
         fiducial_cuts fiducial_cuts = new fiducial_cuts();
         
         return true
-//            && p > 2.2 // higher cut ultimately enforced when we cut on y < 0.8 or y < 0.75
-//                // this is just to speed up processing
+//            && p > 2.2 // higher cut ultimately enforced when we cut on y, this speeds processing
             && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
             && calorimeter_energy_cut(particle_Index, cal_Bank) 
             && calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)

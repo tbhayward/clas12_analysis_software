@@ -68,12 +68,23 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
     tree_carbon->Draw("Mx>>h_Mx_carbon");
     //
     TH1D *h_xF_nh3 = 
-        new TH1D("h_xF_nh3", "x_{F} Distribution; x_{F} (GeV); Counts", 100, -2, 1);
+        new TH1D("h_xF_nh3", "x_{F} Distribution; x_{F} (GeV); Counts/nC", 100, -2, 1);
     TH1D *h_xF_carbon = 
-        new TH1D("h_xF_carbon", "x_{F} Distribution; x_{F} (GeV); Counts", 100, -2, 1);
+        new TH1D("h_xF_carbon", "x_{F} Distribution; x_{F} (GeV); Counts/nC", 100, -2, 1);
     // Fill the histograms
     tree_nh3->Draw("xF>>h_xF_nh3");
     tree_carbon->Draw("xF>>h_xF_carbon");
+
+    // Normalization factors
+    double norm_carbon = 276562; // (nC)
+    double norm_nh3 = 1.10031e+06 + 1.05022e+06 + 1.04818e+06 + 1.09549e+06; // (nC)
+
+    // Normalize the histograms and their errors
+    h_Mx_carbon->Scale(1.0 / norm_carbon);
+    h_Mx_nh3->Scale(1.0 / norm_nh3);
+
+    h_xF_carbon->Scale(1.0 / norm_carbon);
+    h_xF_nh3->Scale(1.0 / norm_nh3);
 
     // Create canvas and divide it into four panels
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1200, 1200);
@@ -113,7 +124,7 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
         }
     }
     // Set y-axis range from 5 to 15
-    gr_ratio->GetYaxis()->SetRangeUser(9, 15);
+    gr_ratio->GetYaxis()->SetRangeUser(0, 5);
     // Set x-axis range
     gr_ratio->GetXaxis()->SetLimits(-2, 3);
 
@@ -184,7 +195,7 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
         }
     }
     // Set y-axis range from 5 to 15
-    gr_ratio_xF->GetYaxis()->SetRangeUser(9, 15);
+    gr_ratio_xF->GetYaxis()->SetRangeUser(0, 5);
     // Set x-axis range
     gr_ratio_xF->GetXaxis()->SetLimits(-2, 1);
 
@@ -1167,6 +1178,6 @@ int main(int argc, char** argv) {
     }
 
     std::pair<double, double> fit_constant = scale_normalization(argv[1], argv[2]);
-    one_dimensional(argv[1], argv[2], fit_constant);
-    multi_dimensional(argv[1], argv[2], fit_constant);
+    // one_dimensional(argv[1], argv[2], fit_constant);
+    // multi_dimensional(argv[1], argv[2], fit_constant);
 }
