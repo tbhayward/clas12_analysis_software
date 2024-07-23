@@ -25,7 +25,8 @@ void NormalizeHistogram(TH1D* hist, double norm_factor) {
 
         double new_content = content / norm_factor;
         // double scale = error/content;
-        double new_error = new_error*content/error;
+        double new_error = error/norm_factor;
+        // double new_error = new_error*content/error;
 
         // (error/content) = (new_error/new_content)
 
@@ -141,7 +142,7 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
         }
     }
     // Set y-axis range from 5 to 15
-    gr_ratio->GetYaxis()->SetRangeUser(0, 1);
+    gr_ratio->GetYaxis()->SetRangeUser(0, 5);
     // Set x-axis range
     gr_ratio->GetXaxis()->SetLimits(-2, 3);
 
@@ -212,7 +213,7 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
         }
     }
     // Set y-axis range from 5 to 15
-    gr_ratio_xF->GetYaxis()->SetRangeUser(0, 1);
+    gr_ratio_xF->GetYaxis()->SetRangeUser(0, 5);
     // Set x-axis range
     gr_ratio_xF->GetXaxis()->SetLimits(-2, 1);
 
