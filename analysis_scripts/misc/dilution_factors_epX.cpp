@@ -107,7 +107,7 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
     // First panel: plot Mx histograms
     c1->cd(1);
     gPad->SetLeftMargin(0.15);
-    // gPad->SetLogy(); // Log scale to better see differences
+    gPad->SetLogy(); // Log scale to better see differences
     h_Mx_nh3->SetLineColor(kBlue);
     h_Mx_carbon->SetLineColor(kRed);
     h_Mx_nh3->Draw();
@@ -141,7 +141,7 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
         }
     }
     // Set y-axis range from 5 to 15
-    gr_ratio->GetYaxis()->SetRangeUser(0, 5);
+    gr_ratio->GetYaxis()->SetRangeUser(0, 1);
     // Set x-axis range
     gr_ratio->GetXaxis()->SetLimits(-2, 3);
 
@@ -181,7 +181,7 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
     // Third panel: plot xF histograms
     c1->cd(3);
     gPad->SetLeftMargin(0.15);
-    // gPad->SetLogy(); // Log scale to better see differences
+    gPad->SetLogy(); // Log scale to better see differences
     h_xF_nh3->SetLineColor(kBlue);
     h_xF_carbon->SetLineColor(kRed);
     h_xF_nh3->Draw();
@@ -215,7 +215,7 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
         }
     }
     // Set y-axis range from 5 to 15
-    gr_ratio_xF->GetYaxis()->SetRangeUser(0, 5);
+    gr_ratio_xF->GetYaxis()->SetRangeUser(0, 1);
     // Set x-axis range
     gr_ratio_xF->GetXaxis()->SetLimits(-2, 1);
 
