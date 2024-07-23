@@ -25,7 +25,8 @@ void NormalizeHistogram(TH1D* hist, double norm_factor) {
 
         double new_content = content / norm_factor;
         // double scale = error/content;
-        double new_error = error/norm_factor;
+        double new_error = error / norm_factor;
+        std::cout << error << " " << new_error << std::endl;
         // double new_error = new_error*content/error;
 
         // (error/content) = (new_error/new_content)
