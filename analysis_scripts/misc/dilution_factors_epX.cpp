@@ -760,7 +760,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     // TF1 *fit_poly_Mx = new TF1("fit_poly", 
     //     "[0]+[1]*x+[2]*x^2+[3]*x^3+[4]*x^4", 0.0, 3.0);
     TF1 *fit_poly_Mx = new TF1("fit_gauss_sum", "[0]*exp(-0.5*((x-[1])/[2])^2) + [3]*exp(-0.5*((x-[4])/[5])^2) + [6]*exp(-0.5*((x-[7])/[8])^2)", 0.0, 3.0);
-    fit_poly_Mx->SetParameters(0.1, 0.5, 0.1, 0.1, 1.0, 0.1, 0.1, 2.0, 0.1);
+    fit_poly_Mx->SetParameters(0.037, 0.770, 0.056, 0.026, 1.15, 0.29, 0.108, 1.689, 1.813);
     gr_dilution_Mx->Fit(fit_poly_Mx, "RQ");
     fit_poly_Mx->SetLineColor(kRed);
     fit_poly_Mx->Draw("SAME");
