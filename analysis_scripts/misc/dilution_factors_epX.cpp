@@ -492,6 +492,10 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     TH1D *h_z_carbon_scaled = (TH1D*)h_z_carbon->Clone("h_z_carbon_scaled");
     h_z_carbon_scaled->SetTitle("z Distribution; z; Counts (Scaled)");
 
+    // Normalize the histograms manually
+    NormalizeHistogram(h_z_carbon, norm_carbon);
+    NormalizeHistogram(h_z_nh3, norm_nh3);
+
     for (int i = 1; i <= h_z_carbon->GetNbinsX(); ++i) {
         double bin_content = h_z_carbon->GetBinContent(i);
         double bin_error = h_z_carbon->GetBinError(i);
@@ -581,6 +585,10 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     tree_carbon->Draw("xF>>h_xF_carbon","Mx > 1.4");
     TH1D *h_xF_carbon_scaled = (TH1D*)h_xF_carbon->Clone("h_xF_carbon_scaled");
     h_xF_carbon_scaled->SetTitle("x_{F} Distribution; x_{F}; Counts (Scaled)");
+
+    // Normalize the histograms manually
+    NormalizeHistogram(h_xF_carbon, norm_carbon);
+    NormalizeHistogram(h_xF_nh3, norm_nh3);
 
     for (int i = 1; i <= h_xF_carbon->GetNbinsX(); ++i) {
         double bin_content = h_xF_carbon->GetBinContent(i);
@@ -672,6 +680,10 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     TH1D *h_zeta_carbon_scaled = (TH1D*)h_zeta_carbon->Clone("h_zeta_carbon_scaled");
     h_zeta_carbon_scaled->SetTitle("#zeta Distribution; #zeta; Counts (Scaled)");
 
+    // Normalize the histograms manually
+    NormalizeHistogram(h_zeta_carbon, norm_carbon);
+    NormalizeHistogram(h_zeta_nh3, norm_nh3);
+
     for (int i = 1; i <= h_zeta_carbon->GetNbinsX(); ++i) {
         double bin_content = h_zeta_carbon->GetBinContent(i);
         double bin_error = h_zeta_carbon->GetBinError(i);
@@ -761,6 +773,10 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     tree_carbon->Draw("Mx>>h_Mx_carbon");
     TH1D *h_Mx_carbon_scaled = (TH1D*)h_Mx_carbon->Clone("h_Mx_carbon_scaled");
     h_Mx_carbon_scaled->SetTitle("M_{x} (GeV) Distribution; M_{x} (GeV); Counts (Scaled)");
+
+    // Normalize the histograms manually
+    NormalizeHistogram(h_Mx_carbon, norm_carbon);
+    NormalizeHistogram(h_Mx_nh3, norm_nh3);
 
     for (int i = 1; i <= h_Mx_carbon->GetNbinsX(); ++i) {
         double bin_content = h_Mx_carbon->GetBinContent(i);
