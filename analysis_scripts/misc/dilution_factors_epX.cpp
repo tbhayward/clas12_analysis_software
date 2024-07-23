@@ -667,7 +667,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     gr_dilution_zeta->GetYaxis()->SetRangeUser(0.00, 0.20);
 
     // Fit to a third-degree polynomial
-    TF1 *fit_poly_zeta = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2 + [3]*x^3", 0.3, 0.8);
+    TF1 *fit_poly_zeta = new TF1("fit_poly", "[0]+[1]*x+[2]*x^2+[3]*x^3+[4]*x^4", 0.3, 0.8);
     gr_dilution_zeta->Fit(fit_poly_zeta, "RQ");
     fit_poly_zeta->SetLineColor(kRed);
     fit_poly_zeta->Draw("SAME");
@@ -681,6 +681,8 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     double p2_err_zeta = fit_poly_zeta->GetParError(2);
     double p3_zeta = fit_poly_zeta->GetParameter(3);
     double p3_err_zeta = fit_poly_zeta->GetParError(3);
+    double p4_zeta = fit_poly_zeta->GetParameter(4);
+    double p4_err_zeta = fit_poly_zeta->GetParError(4);
 
     // Retrieve chi2 and NDF
     double chi2_zeta = fit_poly_zeta->GetChisquare();
@@ -696,6 +698,7 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     zeta->AddText(Form("p1 = %.3f +/- %.3f", p1_zeta, p1_err_zeta));
     zeta->AddText(Form("p2 = %.3f +/- %.3f", p2_zeta, p2_err_zeta));
     zeta->AddText(Form("p3 = %.3f +/- %.3f", p3_zeta, p3_err_zeta));
+    zeta->AddText(Form("p4 = %.3f +/- %.3f", p4_zeta, p4_err_zeta));
     zeta->Draw();
 
     // Add chi2/ndf in the top left
@@ -830,7 +833,8 @@ double one_dimensional(const char* nh3_file, const char* c_file,
 
     std::cout << "if (prefix == \"zeta\") { return " << p0_zeta << 
         "+" << p1_zeta << "*currentVariable+" << p2_zeta << "*std::pow(currentVariable,2)+" <<
-        p3_zeta << "*std::pow(currentVariable,3); }" << std::endl;
+        p3_zeta << "*std::pow(currentVariable,3)+" << p4_zeta << 
+        "*std::pow(currentVariable,4); }" << std::endl;
 
     std::cout << "if (prefix == \"PT\") { return " << p0 << 
         "+" << p1 << "*currentVariable+" << p2 << "*std::pow(currentVariable,2); }" << std::endl;
