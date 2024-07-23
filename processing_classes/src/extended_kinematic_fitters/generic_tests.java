@@ -52,4 +52,25 @@ public class generic_tests {
         return 0;
     }
     
+    public boolean vertex_cut(int particle_Index, double trigger_electron_vz, 
+            HipoDataBank rec_Bank, HipoDataBank run_Bank) {
+        // pass2 derived vertex cuts
+        int pid = rec_Bank.getInt("pid", particle_Index);
+        float vz = rec_Bank.getFloat("vz", particle_Index);
+        double Delta_vz = trigger_electron_vz - vz;
+        float polarity = run_Bank.getFloat("torus", 0);
+        
+        if (pid == 11) {
+            if (polarity < 0) { return vz > -6 && vz < 1; }
+            if (polarity > 0) { return vz > -7 && vz < 0; }
+        } else if (pid > 0) { // positive hadrons
+            if (polarity < 0) { return Delta_vz > 1.15 - 3*2.44 && Delta_vz < 1.15 + 3*2.44; }
+            if (polarity > 0) { return Delta_vz > -0.86 - 3*2.24 && Delta_vz < -0.86 + 3*2.24; }
+        } else if (pid < 0) { // negative hadrons
+            if (polarity < 0) { return Delta_vz > 0.03 - 3*2.24 && Delta_vz < 0.03 + 3*2.24; }
+            if (polarity > 0) { return Delta_vz > 0.38 - 3*2.55 && Delta_vz < 0.38 + 3*2.55; }
+        }
+        return true;  // track didn't match any pid?
+    }
+    
 }
