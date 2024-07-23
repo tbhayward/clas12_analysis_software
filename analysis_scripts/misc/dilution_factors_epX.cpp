@@ -1110,6 +1110,10 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         TH1D *h_pT_carbon = new 
             TH1D(h_pT_carbon_name.c_str(), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
 
+        // Normalize the histograms manually
+        NormalizeHistogram(h_pT_carbon, norm_carbon);
+        NormalizeHistogram(h_pT_nh3, norm_nh3);
+
         // Draw histograms
         tree_nh3->Draw(("pT>>" + h_pT_nh3_name).c_str(), cuts.c_str());
         tree_carbon->Draw(("pT>>" + h_pT_carbon_name).c_str(), cuts.c_str());
@@ -1227,5 +1231,5 @@ int main(int argc, char** argv) {
 
     std::pair<double, double> fit_constant = scale_normalization(argv[1], argv[2]);
     one_dimensional(argv[1], argv[2], fit_constant);
-    // multi_dimensional(argv[1], argv[2], fit_constant);
+    multi_dimensional(argv[1], argv[2], fit_constant);
 }
