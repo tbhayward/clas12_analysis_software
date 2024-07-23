@@ -73,4 +73,14 @@ public class generic_tests {
         return true;  // track didn't match any pid?
     }
     
+    public boolean theta_cut(int particle_Index, HipoDataBank rec_Bank) {
+        float px = rec_Bank.getFloat("px", particle_Index);
+        float py = rec_Bank.getFloat("py", particle_Index);
+        float pz = rec_Bank.getFloat("pz", particle_Index);
+        double r = Math.pow(px*px + py*py + pz*pz, 0.5);
+        double theta = (180/Math.PI)*Math.acos(pz/r);
+        
+        return true;
+//        return theta>0 && theta<90;
+    }
 }
