@@ -154,11 +154,6 @@ public class analysis_fitter extends GenericKinematicFitter {
 //        double current = chargeSeq.getInterval(timeStamp).getBeamCurrent();
 //    }
     
-    public boolean forward_detector_cut(int particle_Index, HipoDataBank rec_Bank) {
-        int status = rec_Bank.getInt("status", particle_Index);
-        return (Math.abs(status)<4000 || Math.abs(status)>4999) && Math.abs(status)>1999;
-    }
-    
     public boolean highest_e_in_fd_cut(int p_max_index, HipoDataBank rec_Bank) {
         int status = rec_Bank.getInt("status", p_max_index);
         return status<-1999;
@@ -861,22 +856,28 @@ public class analysis_fitter extends GenericKinematicFitter {
     public boolean electron_test(int particle_Index, double p, float vz, double trigger_electron_vz, 
             HipoDataBank rec_Bank, HipoDataBank cal_Bank,  HipoDataBank track_Bank, 
             HipoDataBank traj_Bank, HipoDataBank run_Bank, HipoDataBank cc_Bank) {
+        
+        generic_tests generic_tests = new generic_tests();
+        fiducial_cuts fiducial_cuts = new fiducial_cuts();
+        
         return true
 //            && p > 2.2 // higher cut ultimately enforced when we cut on y < 0.8 or y < 0.75
 //                // this is just to speed up processing
-            && forward_detector_cut(particle_Index, rec_Bank)
+            && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
             && calorimeter_energy_cut(particle_Index, cal_Bank) 
             && calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
             && calorimeter_diagonal_cut(particle_Index, p, cal_Bank)
             && vertex_cut(particle_Index, trigger_electron_vz, rec_Bank, run_Bank)    
             && pcal_fiducial_cut(particle_Index, rec_Bank, cal_Bank)
-            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
-//            && nphe_cut(particle_Index, cc_Bank) // legacy cut used in the analysis note to check the effect
-                ;
+            && fiducial_cuts.pass1_dc_fiducial_cut(particle_Index,rec_Bank,track_Bank,traj_Bank,run_Bank)
+            ;
     }
     
     public boolean pion_test(int particle_Index, int pid, float vz, double trigger_electron_vz, HipoDataBank rec_Bank, 
             HipoDataBank cal_Bank, HipoDataBank track_Bank, HipoDataBank traj_Bank, HipoDataBank run_Bank) {
+        
+        generic_tests generic_tests = new generic_tests();
+        fiducial_cuts fiducial_cuts = new fiducial_cuts();
         
         float px = rec_Bank.getFloat("px", particle_Index);
         float py = rec_Bank.getFloat("py", particle_Index);
@@ -886,17 +887,20 @@ public class analysis_fitter extends GenericKinematicFitter {
         return true
 //            && p > 1.25
 //            && p < 5.00 // this wasn't used in the dihadron publication but was used in the submitted single pion
-            && forward_detector_cut(particle_Index, rec_Bank)
+            && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
             && vertex_cut(particle_Index, trigger_electron_vz, rec_Bank, run_Bank) 
             && hadron_pass2_cut(particle_Index, rec_Bank)
 //            && pion_chi2pid_cut(particle_Index, rec_Bank)
 //            && hadron_chi2pid_cut(particle_Index, rec_Bank)
-            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
+            && fiducial_cuts.pass1_dc_fiducial_cut(particle_Index,rec_Bank,track_Bank,traj_Bank,run_Bank)
               ;
     }
     
     public boolean kaon_test(int particle_Index, int pid, float vz, double trigger_electron_vz, HipoDataBank rec_Bank, 
             HipoDataBank cal_Bank, HipoDataBank track_Bank, HipoDataBank traj_Bank, HipoDataBank run_Bank) {
+        
+        generic_tests generic_tests = new generic_tests();
+        fiducial_cuts fiducial_cuts = new fiducial_cuts();
         
         float px = rec_Bank.getFloat("px", particle_Index);
         float py = rec_Bank.getFloat("py", particle_Index);
@@ -906,17 +910,20 @@ public class analysis_fitter extends GenericKinematicFitter {
         return true
 //            && p > 1.00
 //            && p < 3.5 
-            && forward_detector_cut(particle_Index, rec_Bank)
+            && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
             && vertex_cut(particle_Index, trigger_electron_vz, rec_Bank, run_Bank) 
             && hadron_pass2_cut(particle_Index, rec_Bank)
 //            && hadron_chi2pid_cut(particle_Index, rec_Bank)
-            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
+            && fiducial_cuts.pass1_dc_fiducial_cut(particle_Index,rec_Bank,track_Bank,traj_Bank,run_Bank)
               ;
     }
     
     public boolean proton_test(int particle_Index, int pid, float vz, double trigger_electron_vz, 
             HipoDataBank rec_Bank, HipoDataBank cal_Bank, HipoDataBank track_Bank, 
             HipoDataBank traj_Bank, HipoDataBank run_Bank) {
+        
+        generic_tests generic_tests = new generic_tests();
+        fiducial_cuts fiducial_cuts = new fiducial_cuts();
         
         float px = rec_Bank.getFloat("px", particle_Index);
         float py = rec_Bank.getFloat("py", particle_Index);
@@ -926,8 +933,8 @@ public class analysis_fitter extends GenericKinematicFitter {
         return true
 //            && p > 0.4
             && vertex_cut(particle_Index, trigger_electron_vz, rec_Bank, run_Bank) 
-            && forward_detector_cut(particle_Index, rec_Bank)
-            && dc_fiducial_cut(particle_Index, rec_Bank, track_Bank, traj_Bank, run_Bank)
+            && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
+            && fiducial_cuts.pass1_dc_fiducial_cut(particle_Index,rec_Bank,track_Bank,traj_Bank,run_Bank)
             && hadron_pass2_cut(particle_Index, rec_Bank)
 //            && hadron_chi2pid_cut(particle_Index, rec_Bank)
               ;

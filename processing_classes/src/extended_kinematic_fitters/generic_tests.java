@@ -24,6 +24,11 @@ public class generic_tests {
         return true;
     }
     
+    public boolean forward_detector_cut(int particle_Index, HipoDataBank rec_Bank) {
+        int status = rec_Bank.getInt("status", particle_Index);
+        return (Math.abs(status)<4000 || Math.abs(status)>4999) && Math.abs(status)>1999;
+    }
+    
     public boolean nphe_cut(int particle_Index, HipoDataBank cc_Bank) {
         for (int current_Row = 0; current_Row < cc_Bank.rows(); current_Row++) {
             if (cc_Bank.getInt("pindex", current_Row)==particle_Index) {
