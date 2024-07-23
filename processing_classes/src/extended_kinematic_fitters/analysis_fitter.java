@@ -13,7 +13,7 @@ import org.jlab.io.hipo.HipoDataBank;
 
 import org.jlab.clas.physics.*;
 
-import org.jlab.detector.scalers.DaqScalersSequence;
+//import org.jlab.detector.scalers.DaqScalersSequence;
 
 public class analysis_fitter extends GenericKinematicFitter {
 
@@ -147,14 +147,14 @@ public class analysis_fitter extends GenericKinematicFitter {
     
     ////////////////////////////////////////////////////////////////////////////////////////////////  
     // General cuts to test the validity of the event and particle
-    public boolean banks_test(DataEvent event) {
-        String[] bankNames = 
-            {"RUN::config","REC::Particle","REC::Calorimeter","REC::Track","REC::Traj","REC::Cherenkov"};
-        for (String bankName : bankNames) {
-            if (!event.hasBank(bankName)) { return false; }
-        }
-        return true;
-    }
+//    public boolean banks_test(DataEvent event) {
+//        String[] bankNames = 
+//            {"RUN::config","REC::Particle","REC::Calorimeter","REC::Track","REC::Traj","REC::Cherenkov"};
+//        for (String bankName : bankNames) {
+//            if (!event.hasBank(bankName)) { return false; }
+//        }
+//        return true;
+//    }
     
 //    public boolean current_test(DataEvent event) {
 //        HipoDataBank run_Bank = (HipoDataBank) event.getBank("RUN::config");
@@ -987,7 +987,8 @@ public class analysis_fitter extends GenericKinematicFitter {
     @Override
     public PhysicsEvent getPhysicsEvent(DataEvent event) {
         
-        if (banks_test(event)) {
+        generic_tests generic_tests = new generic_tests();
+        if (generic_tests.banks_test(event)) {
             PhysicsEvent physEvent = new PhysicsEvent();
             // load the hipo banks
             // assumption is we are using trains which would require all of these banks to exist
