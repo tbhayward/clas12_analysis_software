@@ -400,6 +400,10 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     TH1D *h_x_carbon_scaled = (TH1D*)h_x_carbon->Clone("h_x_carbon_scaled");
     h_x_carbon_scaled->SetTitle("x_{B} Distribution; x_{B}; Counts (Scaled)");
 
+    // Normalize the histograms manually
+    NormalizeHistogram(h_x_carbon, norm_carbon);
+    NormalizeHistogram(h_x_nh3, norm_nh3);
+
     for (int i = 1; i <= h_x_carbon->GetNbinsX(); ++i) {
         double bin_content = h_x_carbon->GetBinContent(i);
         double bin_error = h_x_carbon->GetBinError(i);
