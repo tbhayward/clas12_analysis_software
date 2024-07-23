@@ -17,20 +17,6 @@
 #include "Math/MinimizerOptions.h"
 #include <TError.h> // Include the header for error handling
 
-// Function to normalize a histogram and its errors manually
-void NormalizeHistogram(TH1D* hist, double norm_factor) {
-    for (int i = 1; i <= hist->GetNbinsX(); ++i) {
-        double content = hist->GetBinContent(i);
-        double error = hist->GetBinError(i);
-
-        double new_content = content / norm_factor;
-        double new_error = error / norm_factor;
-
-        hist->SetBinContent(i, new_content);
-        hist->SetBinError(i, new_error);
-    }
-}
-
 std::string reformatRange(const std::string &range) {
     std::string formatted;
     std::stringstream ss(range);
@@ -82,23 +68,12 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
     tree_carbon->Draw("Mx>>h_Mx_carbon");
     //
     TH1D *h_xF_nh3 = 
-        new TH1D("h_xF_nh3", "x_{F} Distribution; x_{F} (GeV); Counts/nC", 100, -2, 1);
+        new TH1D("h_xF_nh3", "x_{F} Distribution; x_{F} (GeV); Counts", 100, -2, 1);
     TH1D *h_xF_carbon = 
-        new TH1D("h_xF_carbon", "x_{F} Distribution; x_{F} (GeV); Counts/nC", 100, -2, 1);
+        new TH1D("h_xF_carbon", "x_{F} Distribution; x_{F} (GeV); Counts", 100, -2, 1);
     // Fill the histograms
     tree_nh3->Draw("xF>>h_xF_nh3");
     tree_carbon->Draw("xF>>h_xF_carbon");
-
-    // Normalization factors
-    double norm_carbon = 276562;
-    double norm_nh3 = 1.10031e+06 + 1.05022e+06 + 1.04818e+06 + 1.09549e+06;
-
-    // Normalize the histograms manually
-    NormalizeHistogram(h_Mx_carbon, norm_carbon);
-    NormalizeHistogram(h_Mx_nh3, norm_nh3);
-
-    NormalizeHistogram(h_xF_carbon, norm_carbon);
-    NormalizeHistogram(h_xF_nh3, norm_nh3);
 
     // Create canvas and divide it into four panels
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1200, 1200);
@@ -129,19 +104,16 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
     TGraphErrors *gr_ratio = new TGraphErrors();
     for (int i = 1; i <= h_Mx_nh3->GetNbinsX(); ++i) {
         double nh3_counts = h_Mx_nh3->GetBinContent(i);
-        double nh3_error = h_Mx_nh3->GetBinError(i);
         double c_counts = h_Mx_carbon->GetBinContent(i);
-        double c_error = h_Mx_carbon->GetBinError(i);
         if (c_counts > 0) {
             double ratio = nh3_counts / c_counts;
-            double error = ratio * std::sqrt(std::pow(nh3_error / nh3_counts, 2) + 
-                std::pow(c_error / c_counts, 2));
+            double error = ratio * std::sqrt(1 / nh3_counts + 1 / c_counts);
             gr_ratio->SetPoint(i - 1, h_Mx_nh3->GetBinCenter(i), ratio);
             gr_ratio->SetPointError(i - 1, 0, error);
         }
     }
     // Set y-axis range from 5 to 15
-    gr_ratio->GetYaxis()->SetRangeUser(0.5, 1);
+    gr_ratio->GetYaxis()->SetRangeUser(9, 15);
     // Set x-axis range
     gr_ratio->GetXaxis()->SetLimits(-2, 3);
 
@@ -175,8 +147,8 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
     TLatex latex;
     latex.SetNDC();
     latex.SetTextSize(0.04);
-    latex.DrawLatex(0.20, 0.85, Form("Fit Const, s = %.4f #pm %.4f", fit_value, fit_error));
-    latex.DrawLatex(0.20, 0.80, Form("#chi^{2}/NDF = %.3f / %d = %.3f", chi2, ndf, chi2_ndf));
+    latex.DrawLatex(0.20, 0.85, Form("Fit Const, s = %.3f #pm %.3f", fit_value, fit_error));
+    latex.DrawLatex(0.20, 0.80, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
 
     // Third panel: plot xF histograms
     c1->cd(3);
@@ -203,19 +175,16 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
     TGraphErrors *gr_ratio_xF = new TGraphErrors();
     for (int i = 1; i <= h_xF_nh3->GetNbinsX(); ++i) {
         double nh3_counts = h_xF_nh3->GetBinContent(i);
-        double nh3_error = h_xF_nh3->GetBinError(i);
         double c_counts = h_xF_carbon->GetBinContent(i);
-        double c_error = h_xF_carbon->GetBinError(i);
         if (c_counts > 0) {
             double ratio = nh3_counts / c_counts;
-            double error = ratio * std::sqrt(std::pow(nh3_error / nh3_counts, 2) + 
-                std::pow(c_error / c_counts, 2));
+            double error = ratio * std::sqrt(1 / nh3_counts + 1 / c_counts);
             gr_ratio_xF->SetPoint(i - 1, h_xF_nh3->GetBinCenter(i), ratio);
             gr_ratio_xF->SetPointError(i - 1, 0, error);
         }
     }
     // Set y-axis range from 5 to 15
-    gr_ratio_xF->GetYaxis()->SetRangeUser(0.5, 1);
+    gr_ratio_xF->GetYaxis()->SetRangeUser(9, 15);
     // Set x-axis range
     gr_ratio_xF->GetXaxis()->SetLimits(-2, 1);
 
@@ -249,9 +218,9 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
     latex_xF.SetNDC();
     latex_xF.SetTextSize(0.04);
     latex_xF.DrawLatex(0.20, 0.85, 
-        Form("Fit Const, s = %.4f #pm %.4f", fit_value_xF, fit_error_xF));
+        Form("Fit Const, s = %.3f #pm %.3f", fit_value_xF, fit_error_xF));
     latex_xF.DrawLatex(0.20, 0.80, 
-        Form("#chi^{2}/NDF = %.3f / %d = %.3f", chi2_xF, ndf_xF, chi2_ndf_xF));
+        Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2_xF, ndf_xF, chi2_ndf_xF));
 
     // Save the canvas
     c1->SaveAs("output/scale_constant.pdf");
@@ -289,10 +258,6 @@ double one_dimensional(const char* nh3_file, const char* c_file,
         return 0;
     }
 
-    // Normalization factors
-    double norm_carbon = 276562;
-    double norm_nh3 = 1.10031e+06 + 1.05022e+06 + 1.04818e+06 + 1.09549e+06;
-
     // Create canvas and divide it into four panels
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1600, 1200);
     c1->Divide(3, 2);
@@ -308,10 +273,6 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     tree_carbon->Draw("pT>>h_pT_carbon","Mx > 1.4");
     TH1D *h_pT_carbon_scaled = (TH1D*)h_pT_carbon->Clone("h_pT_carbon_scaled");
     h_pT_carbon_scaled->SetTitle("P_{T} Distribution; P_{T} (GeV); Counts (Scaled)");
-
-    // Normalize the histograms manually
-    NormalizeHistogram(h_pT_carbon, norm_carbon);
-    NormalizeHistogram(h_pT_nh3, norm_nh3);
 
     for (int i = 1; i <= h_pT_carbon->GetNbinsX(); ++i) {
         double bin_content = h_pT_carbon->GetBinContent(i);
@@ -400,10 +361,6 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     TH1D *h_x_carbon_scaled = (TH1D*)h_x_carbon->Clone("h_x_carbon_scaled");
     h_x_carbon_scaled->SetTitle("x_{B} Distribution; x_{B}; Counts (Scaled)");
 
-    // Normalize the histograms manually
-    NormalizeHistogram(h_x_carbon, norm_carbon);
-    NormalizeHistogram(h_x_nh3, norm_nh3);
-
     for (int i = 1; i <= h_x_carbon->GetNbinsX(); ++i) {
         double bin_content = h_x_carbon->GetBinContent(i);
         double bin_error = h_x_carbon->GetBinError(i);
@@ -491,10 +448,6 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     tree_carbon->Draw("z>>h_z_carbon","Mx > 1.4");
     TH1D *h_z_carbon_scaled = (TH1D*)h_z_carbon->Clone("h_z_carbon_scaled");
     h_z_carbon_scaled->SetTitle("z Distribution; z; Counts (Scaled)");
-
-    // Normalize the histograms manually
-    NormalizeHistogram(h_z_carbon, norm_carbon);
-    NormalizeHistogram(h_z_nh3, norm_nh3);
 
     for (int i = 1; i <= h_z_carbon->GetNbinsX(); ++i) {
         double bin_content = h_z_carbon->GetBinContent(i);
@@ -586,10 +539,6 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     TH1D *h_xF_carbon_scaled = (TH1D*)h_xF_carbon->Clone("h_xF_carbon_scaled");
     h_xF_carbon_scaled->SetTitle("x_{F} Distribution; x_{F}; Counts (Scaled)");
 
-    // Normalize the histograms manually
-    NormalizeHistogram(h_xF_carbon, norm_carbon);
-    NormalizeHistogram(h_xF_nh3, norm_nh3);
-
     for (int i = 1; i <= h_xF_carbon->GetNbinsX(); ++i) {
         double bin_content = h_xF_carbon->GetBinContent(i);
         double bin_error = h_xF_carbon->GetBinError(i);
@@ -680,10 +629,6 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     TH1D *h_zeta_carbon_scaled = (TH1D*)h_zeta_carbon->Clone("h_zeta_carbon_scaled");
     h_zeta_carbon_scaled->SetTitle("#zeta Distribution; #zeta; Counts (Scaled)");
 
-    // Normalize the histograms manually
-    NormalizeHistogram(h_zeta_carbon, norm_carbon);
-    NormalizeHistogram(h_zeta_nh3, norm_nh3);
-
     for (int i = 1; i <= h_zeta_carbon->GetNbinsX(); ++i) {
         double bin_content = h_zeta_carbon->GetBinContent(i);
         double bin_error = h_zeta_carbon->GetBinError(i);
@@ -773,10 +718,6 @@ double one_dimensional(const char* nh3_file, const char* c_file,
     tree_carbon->Draw("Mx>>h_Mx_carbon");
     TH1D *h_Mx_carbon_scaled = (TH1D*)h_Mx_carbon->Clone("h_Mx_carbon_scaled");
     h_Mx_carbon_scaled->SetTitle("M_{x} (GeV) Distribution; M_{x} (GeV); Counts (Scaled)");
-
-    // Normalize the histograms manually
-    NormalizeHistogram(h_Mx_carbon, norm_carbon);
-    NormalizeHistogram(h_Mx_nh3, norm_nh3);
 
     for (int i = 1; i <= h_Mx_carbon->GetNbinsX(); ++i) {
         double bin_content = h_Mx_carbon->GetBinContent(i);
@@ -935,10 +876,6 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
         carbon->Close();
         return 0;
     }
-
-    // Normalization factors
-    double norm_carbon = 276562;
-    double norm_nh3 = 1.10031e+06 + 1.05022e+06 + 1.04818e+06 + 1.09549e+06;
 
     std::string canvasName = "c1_" + std::to_string(k);
     TCanvas *c1 = new TCanvas(canvasName.c_str(), "Dilution Factor Analysis", 1600, 2000);
@@ -1113,10 +1050,6 @@ double multi_dimensional(const char* nh3_file, const char* c_file, std::pair<dou
             TH1D(h_pT_nh3_name.c_str(), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
         TH1D *h_pT_carbon = new 
             TH1D(h_pT_carbon_name.c_str(), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
-
-        // Normalize the histograms manually
-        NormalizeHistogram(h_pT_carbon, norm_carbon);
-        NormalizeHistogram(h_pT_nh3, norm_nh3);
 
         // Draw histograms
         tree_nh3->Draw(("pT>>" + h_pT_nh3_name).c_str(), cuts.c_str());
