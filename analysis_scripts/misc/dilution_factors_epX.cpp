@@ -17,6 +17,20 @@
 #include "Math/MinimizerOptions.h"
 #include <TError.h> // Include the header for error handling
 
+// Function to normalize a histogram and its errors manually
+    void NormalizeHistogram(TH1D* hist, double norm_factor) {
+        for (int i = 1; i <= hist->GetNbinsX(); ++i) {
+            double content = hist->GetBinContent(i);
+            double error = hist->GetBinError(i);
+
+            double new_content = content / norm_factor;
+            double new_error = error / norm_factor;
+
+            hist->SetBinContent(i, new_content);
+            hist->SetBinError(i, new_error);
+        }
+    }
+
 std::string reformatRange(const std::string &range) {
     std::string formatted;
     std::stringstream ss(range);
@@ -78,20 +92,6 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
     // Normalization factors
     double norm_carbon = 276562;
     double norm_nh3 = 1.10031e+06 + 1.05022e+06 + 1.04818e+06 + 1.09549e+06;
-
-    // Function to normalize a histogram and its errors manually
-    void NormalizeHistogram(TH1D* hist, double norm_factor) {
-        for (int i = 1; i <= hist->GetNbinsX(); ++i) {
-            double content = hist->GetBinContent(i);
-            double error = hist->GetBinError(i);
-
-            double new_content = content / norm_factor;
-            double new_error = error / norm_factor;
-
-            hist->SetBinContent(i, new_content);
-            hist->SetBinError(i, new_error);
-        }
-    }
 
     // Normalize the histograms manually
     NormalizeHistogram(h_Mx_carbon, norm_carbon);
