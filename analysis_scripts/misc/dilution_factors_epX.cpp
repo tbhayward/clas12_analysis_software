@@ -76,15 +76,29 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
     tree_carbon->Draw("xF>>h_xF_carbon");
 
     // Normalization factors
-    double norm_carbon = 276562; // (nC)
-    double norm_nh3 = 1.10031e+06 + 1.05022e+06 + 1.04818e+06 + 1.09549e+06; // (nC)
+    double norm_carbon = 276562;
+    double norm_nh3 = 1.10031e+06 + 1.05022e+06 + 1.04818e+06 + 1.09549e+06;
 
-    // Normalize the histograms and their errors
-    h_Mx_carbon->Scale(1.0 / norm_carbon);
-    h_Mx_nh3->Scale(1.0 / norm_nh3);
+    // Function to normalize a histogram and its errors manually
+    void NormalizeHistogram(TH1D* hist, double norm_factor) {
+        for (int i = 1; i <= hist->GetNbinsX(); ++i) {
+            double content = hist->GetBinContent(i);
+            double error = hist->GetBinError(i);
 
-    h_xF_carbon->Scale(1.0 / norm_carbon);
-    h_xF_nh3->Scale(1.0 / norm_nh3);
+            double new_content = content / norm_factor;
+            double new_error = error / norm_factor;
+
+            hist->SetBinContent(i, new_content);
+            hist->SetBinError(i, new_error);
+        }
+    }
+
+    // Normalize the histograms manually
+    NormalizeHistogram(h_Mx_carbon, norm_carbon);
+    NormalizeHistogram(h_Mx_nh3, norm_nh3);
+
+    NormalizeHistogram(h_xF_carbon, norm_carbon);
+    NormalizeHistogram(h_xF_nh3, norm_nh3);
 
     // Create canvas and divide it into four panels
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1200, 1200);
