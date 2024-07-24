@@ -125,6 +125,10 @@ int main(int argc, char *argv[]) {
           kinematicCuts = new DihadronKinematicCuts(dataReader);
           mckinematicCuts = new DihadronKinematicCuts(mcReader);
           break;
+      case 4:
+          kinematicCuts = new dvcsKinematicCuts(dataReader);
+          mckinematicCuts = new dvcsKinematicCuts(mcReader);
+          break;
   }
 
   cout << endl << endl;
