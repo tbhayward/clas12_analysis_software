@@ -936,7 +936,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    if (hadron_count == 2 && is_mc == 0) {
+    if (hadron_count == 4 && is_mc == 0) {
         while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             p1_p >> p1_theta >> p1_phi >> vz_p1 >> p2_p >> p2_theta >> p2_phi >> vz_p2 >> 
             Q2 >> W >> Mx >> Mx1 >> Mx2 >> x >> y >> z >> z1 >> z2 >> Mh >> xF >> xF1 >> xF2 >> 

@@ -300,7 +300,7 @@ public static void main(String[] args) {
 		"49:DepA, 50:DepB, 51:DepC, 52:DepV, 53:DepW, 54: Emiss2, 55: theta_gamma_gamma, "+
 		"56: pTmiss, 57: Mxsquared.\n");
 
-		println("Analyzing dvcs");
+		println("Analyzing dvcs.");
 		println("output text file is: $file");
 	}
 
