@@ -138,12 +138,6 @@ public class pid_cuts {
         return a + b * Math.exp(-(p-x0)/c);
     }
     
-    public boolean charged_hadron_chi2pid_cut(int particle_Index, HipoDataBank rec_Bank) {
-        float chi2pid = rec_Bank.getFloat("chi2pid", particle_Index);
-        
-        return Math.abs(chi2pid) < 5;
-    }
-    
     public boolean charged_pion_generic_chi2pid_cut(int particle_Index, HipoDataBank rec_Bank) {
         // pass1 chi2pid id for pions, derived by S. Diehl
         
@@ -170,6 +164,12 @@ public class pid_cuts {
             // Check if chi2pid is within the range
             return chi2pid < upperLimit && chi2pid > -3 * C;
         }
+    }
+    
+    public boolean charged_hadron_chi2pid_cut(int particle_Index, HipoDataBank rec_Bank) {
+        float chi2pid = rec_Bank.getFloat("chi2pid", particle_Index);
+        
+        return Math.abs(chi2pid) < 5;
     }
     
     public boolean charged_hadron_pass2_chi2pid_cut(int particle_Index, HipoDataBank rec_Bank) {

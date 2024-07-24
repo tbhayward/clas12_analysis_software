@@ -15,7 +15,8 @@ import org.jlab.clas.physics.*;
 
 public class fiducial_cuts {
     
-    public boolean pcal_fiducial_cut(int particle_Index, HipoDataBank rec_Bank, HipoDataBank cal_Bank) {
+    public boolean pcal_fiducial_cut(int particle_Index, int strictness, 
+            HipoDataBank rec_Bank, HipoDataBank cal_Bank) {
         // Initialize variables for storing the index and values of the cal bank
         int calIndex = -1;
         int layer = 1;
@@ -42,14 +43,12 @@ public class fiducial_cuts {
             return false;
         }
 
-        // Get the PID from the rec bank
-        int pid = rec_Bank.getInt("pid", particle_Index);
-
-        // Check if the PID is 22 (i.e., a photon) and apply the appropriate cut
-        if (pid == 22) {
-            return lv > 15 && lw > 15; // medium cut for photons
-        } else {
-            return lv > 9 && lw > 9; // "loose cut"
+        // check strictness of cuts
+        switch (strictness) {
+            case 1: return lv > 9 && lw > 9;
+            case 2: return lv > 15 && lw > 15;
+            case 3: return lv > 21 && lw > 21;
+            default: return false;
         }
     }
     
