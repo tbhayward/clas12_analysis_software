@@ -130,7 +130,7 @@ public static void main(String[] args) {
 		        		// supply runnum and boolean for radiative simulation or not
 			        	BeamEnergy Eb = new BeamEnergy(runnum, false);
 			            Dihadrons variables = new Dihadrons(event, research_Event, 
-							p1_int, current_p1, p2_int, current_p2, Eb.Eb());
+							2212, current_p1, 22, current_p2, Eb.Eb());
 			            // this is my class for defining all relevant kinematic variables
 
 			            if (variables.channel_test(variables)) {
