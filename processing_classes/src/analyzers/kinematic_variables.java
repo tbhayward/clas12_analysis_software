@@ -33,6 +33,8 @@ public class kinematic_variables {
             return -1;
     }
     
+    /*~~~~~~~~~~~~~~~~~ DIS ~~~~~~~~~~~~~~~~~*/
+    
     double Q2(LorentzVector lv_e) {
         return -lv_e.mass2();
     }
@@ -68,4 +70,70 @@ public class kinematic_variables {
             2*Math.sqrt(mp*mp + E*E)*Math.sqrt(mp*mp + p*p)*Math.cos(theta);
     }
     
+    /*~~~~~~~~~~~~~~~~~ Exclusivity ~~~~~~~~~~~~~~~~~*/
+    
+    double Emiss0(LorentzVector lv_beam, LorentzVector lv_target, LorentzVector lv_e) {
+        return lv_beam.e() + lv_target.e() - lv_e.e();
+    }
+    
+    double Emiss1(LorentzVector lv_beam, LorentzVector lv_target, LorentzVector lv_e,
+            LorentzVector lv_p) {
+        return lv_beam.e() + lv_target.e() - lv_e.e() - lv_p.e();
+    }
+    
+    double Emiss2(LorentzVector lv_beam, LorentzVector lv_target, LorentzVector lv_e,
+            LorentzVector lv_p1, LorentzVector lv_p2) {
+        return lv_beam.e() + lv_target.e() - lv_e.e() - lv_p1.e() - lv_p2.e();
+    }
+    
+    double Emiss3(LorentzVector lv_beam, LorentzVector lv_target, LorentzVector lv_e,
+            LorentzVector lv_p1, LorentzVector lv_p2, LorentzVector lv_p3) {
+        return lv_beam.e() + lv_target.e() - lv_e.e() - lv_p1.e() - lv_p2.e() - lv_p3.e();
+    }
+    
+    double theta_gamma_gamma(LorentzVector lv_beam, LorentzVector lv_target, LorentzVector lv_e,
+            LorentzVector lv_p, LorentzVector lv_gamma) {
+        
+        // Calculate the missing momentum (expected photon momentum)
+        LorentzVector lv_expected_gamma = new LorentzVector(lv_beam);
+        lv_expected_gamma.sub(lv_e); lv_expected_gamma.sub(lv_p); lv_expected_gamma.add(lv_target);
+
+        // Get the momentum vectors
+        Vector3 p_expected_gamma = lv_expected_gamma.vect();
+        Vector3 p_detected_gamma = lv_gamma.vect();
+        // Calculate the dot product of the two vectors
+        double dot_product = p_expected_gamma.dot(p_detected_gamma);
+        // Calculate the magnitudes of the two vectors
+        double mag_expected_gamma = p_expected_gamma.mag();
+        double mag_detected_gamma = p_detected_gamma.mag();
+        // Calculate the cosine of the angle between the two vectors
+        double cosTheta = dot_product / (mag_expected_gamma * mag_detected_gamma);
+        // Convert the cosine to an angle in radians
+        double theta = Math.acos(cosTheta);
+        // Convert radians to degrees 
+        double theta_degrees = Math.toDegrees(theta);
+
+        return theta_degrees;  // Return the angle in degrees
+    }
+    
+    double pTmiss(LorentzVector lv_beam, LorentzVector lv_target, LorentzVector lv_e, 
+            LorentzVector lv_p, LorentzVector lv_gamma) {
+        // Calculate the initial momentum (beam + target)
+        LorentzVector lv_initial = new LorentzVector(lv_beam);
+        lv_initial.add(lv_target);
+        // Calculate the final momentum (scattered electron + detected proton + detected photon)
+        LorentzVector lv_final = new LorentzVector(lv_e);
+        lv_final.add(lv_p);
+        lv_final.add(lv_gamma);
+        // Calculate the missing momentum (initial - final)
+        LorentzVector lv_missing = new LorentzVector(lv_initial);
+        lv_missing.sub(lv_final);
+        // Extract the transverse components of the missing momentum
+        double pTmiss_x = lv_missing.px();
+        double pTmiss_y = lv_missing.py();
+        // Calculate the magnitude of the transverse missing momentum
+        double pTmiss = Math.sqrt(pTmiss_x * pTmiss_x + pTmiss_y * pTmiss_y);
+
+        return pTmiss;  // Return the missing transverse momentum
+    }
 }

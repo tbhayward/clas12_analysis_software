@@ -21,8 +21,6 @@ public class Hadron {
     protected byte helicity;
     protected int runnum;
     
-    protected double test;
-    
     protected int num_elec, num_piplus, num_piminus, num_kplus, num_kminus, num_protons, num_particles;
     
     // labels are unnumbered if they refer to the dihadron (perhaps a meson) and numbered for individual
@@ -278,7 +276,6 @@ public class Hadron {
     public int num_kplus() { return num_kplus; }
     public int num_kminus() { return num_kminus; }
     public int num_protons() { return num_protons; }
-    public double test() { return test; }
 
     public double Q2() { return ((int) (Q2 * 100000)) / 100000.0; }
     public double W() { return ((int) (W * 100000)) / 100000.0; }
