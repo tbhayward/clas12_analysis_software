@@ -16,7 +16,7 @@ bool DihadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     bool goodEvent = false;
     string property = binNames[currentFits];
 
-    if (property == "rho") {
+    if (property == "dvcsx") {
         goodEvent = true;
     }
 
