@@ -695,7 +695,7 @@ int main(int argc, char *argv[]) {
         tree->Branch("Emiss2", &Emiss2, "Emiss2/D");
         tree->Branch("theta_gamma_gamma", &theta_gamma_gamma, "theta_gamma_gamma/D");
         tree->Branch("pTmiss", &pTmiss, "pTmiss/D");
-        tree->Branch("Mxsquared", &Mxsquared, "Mxsquared/D");
+        tree->Branch("Mxgammasquared", &Mxgammasquared, "Mxgammasquared/D");
     }
 
     // load run infrom from external csv file
