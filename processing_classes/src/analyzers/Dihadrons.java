@@ -119,7 +119,6 @@ public class Dihadrons {
         num_protons = recEvent.countByPid(2212);
         num_particles = num_elec+num_piplus+num_piminus+num_kplus+num_kminus+num_protons;
         
-        
         // Set up Lorentz vectors
         // beam electron
         LorentzVector lv_beam = new LorentzVector();

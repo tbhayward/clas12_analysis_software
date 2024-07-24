@@ -52,12 +52,13 @@ public class generic_tests {
         return 0;
     }
     
-    public boolean vertex_cut(int particle_Index, double trigger_electron_vz, 
-            HipoDataBank rec_Bank, HipoDataBank run_Bank) {
+    public boolean vertex_cut(int particle_Index, HipoDataBank rec_Bank, 
+        HipoDataBank run_Bank) {
         // pass2 derived vertex cuts
         int pid = rec_Bank.getInt("pid", particle_Index);
         float vz = rec_Bank.getFloat("vz", particle_Index);
-        double Delta_vz = trigger_electron_vz - vz;
+        float vz_e = rec_Bank.getFloat("vz", 0);
+        double Delta_vz = vz_e - vz;
         float polarity = run_Bank.getFloat("torus", 0);
         
         if (pid == 11) {
