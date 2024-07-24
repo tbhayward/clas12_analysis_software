@@ -81,6 +81,8 @@ public class Inclusive {
             scattered_electron.pz(), particle_mass(11));
         // hadrons set up below (to allow for iteration over more than two hadrons in an event)
         
+        kinematic_variables kinematic_variables = new kinematic_variables();
+        
         // kinematics of electron
         e_px = lv_e.px(); e_py = lv_e.py(); e_pz = lv_e.pz(); e_p = lv_e.p(); e_e = lv_e.e(); 
         e_theta = scattered_electron.theta();
@@ -89,7 +91,7 @@ public class Inclusive {
                 
         // DIS variables
         LorentzVector lv_q = new LorentzVector(lv_beam); lv_q.sub(lv_e);
-	Q2 = -lv_q.mass2();
+	Q2 = kinematic_variables.Q2(lv_e);
 	nu = lv_beam.e()-lv_e.e();
 	x  = Q2 / (2 * particle_mass(2212) * nu);
 	W  = Math.pow(Math.pow(particle_mass(2212),2)+2*particle_mass(2212)*nu - Q2, 0.5);

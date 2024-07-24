@@ -13,7 +13,6 @@ import org.jlab.io.hipo.HipoDataBank;
 
 import org.jlab.clas.physics.*;
 
-//import org.jlab.detector.scalers.DaqScalersSequence;
 
 public class dvcs_fitter extends GenericKinematicFitter {
 
@@ -65,7 +64,7 @@ public class dvcs_fitter extends GenericKinematicFitter {
             && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank) 
 //            && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
             && fiducial_cuts.pass1_dc_fiducial_cut(particle_Index,rec_Bank,track_Bank,traj_Bank,run_Bank)
-            && pid_cuts.charged_hadron_pass2_chi2pid_cut(particle_Index, rec_Bank)
+//            && pid_cuts.charged_hadron_pass2_chi2pid_cut(particle_Index, rec_Bank)
 //            && charged_hadron_chi2pid_cut(particle_Index, rec_Bank)
               ;
     }
@@ -85,7 +84,7 @@ public class dvcs_fitter extends GenericKinematicFitter {
         lv_gamma.setPxPyPzM(px, py, pz, 0.0);
         
         return true
-            && p > 0.50
+            && p > 2.00
 //            && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
             && fiducial_cuts.pcal_fiducial_cut(particle_Index, 2, rec_Bank, cal_Bank)
             && pid_cuts.beta_cut(particle_Index, rec_Bank)
