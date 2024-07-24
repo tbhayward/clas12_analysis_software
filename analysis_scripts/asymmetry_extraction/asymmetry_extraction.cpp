@@ -96,7 +96,7 @@ int main(int argc, char *argv[]) {
   if (argc >= 4) {
       try {
           channel = std::stoi(argv[3]);
-          if (channel < 0 || channel > 3) {
+          if (channel < 0 || channel > 4) {
               cout << "Invalid channel specified. Defaulting to single hadron." << endl;
               channel = 1;
           }
@@ -127,7 +127,6 @@ int main(int argc, char *argv[]) {
           mckinematicCuts = new DihadronKinematicCuts(mcReader);
           break;
       case 4:
-          cout << "HELLO WORLD WE'RE HERE" << std::endl;
           kinematicCuts = new dvcsKinematicCuts(dataReader);
           mckinematicCuts = new dvcsKinematicCuts(mcReader);
           break;
