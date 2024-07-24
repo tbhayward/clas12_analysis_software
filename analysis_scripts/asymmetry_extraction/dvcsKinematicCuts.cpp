@@ -23,6 +23,14 @@ bool dvcsKinematicCuts::applyCuts(int currentFits, bool isMC) {
         goodEvent = true;
         // goodEvent = *theta_gamma_gamma < 0.6 && *Emiss2 < 0.5 && *pTmiss < 0.125 && 
         //   *Mxgammasquared < 1.25;
+    } else if (property == "dvcst") {
+        goodEvent = true;
+        // goodEvent = *theta_gamma_gamma < 0.6 && *Emiss2 < 0.5 && *pTmiss < 0.125 && 
+        //   *Mxgammasquared < 1.25;
+    } else if (property == "dvcsQ2") {
+        goodEvent = true;
+        // goodEvent = *theta_gamma_gamma < 0.6 && *Emiss2 < 0.5 && *pTmiss < 0.125 && 
+        //   *Mxgammasquared < 1.25;
     } else {
       std::cout << "Property, " << property << ", not detected!" << std::endl;
     }
