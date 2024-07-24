@@ -118,7 +118,6 @@ public static void main(String[] args) {
 		    	qa.OkForAsymmetry(runnum, evnum));
 
 		    if (process_event) {
-		    	println("HELLO WORLD");
 
 		        // get # of particles 
 		        int num_p1 = research_Event.countByPid(2212);
@@ -135,6 +134,7 @@ public static void main(String[] args) {
 			            // this is my class for defining all relevant kinematic variables
 
 			            if (variables.channel_test(variables)) {
+			            	println("HELLO WORLD");
 			                helicity = variables.get_helicity(); // helicity of event
 
 			                // lab kinematics
