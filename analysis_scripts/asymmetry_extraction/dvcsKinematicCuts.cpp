@@ -1,4 +1,4 @@
-#include "B2BDihadronKinematicCuts.h"
+#include "dvcsKinematicCuts.h"
 #include "common_vars.h"
 #include "BaseKinematicCuts.h" // Include BaseKinematicCuts
 #include <string>
