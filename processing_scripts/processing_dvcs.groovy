@@ -118,6 +118,7 @@ public static void main(String[] args) {
 		    	qa.OkForAsymmetry(runnum, evnum));
 
 		    if (process_event) {
+		    	println("HELLO WORLD");
 
 		        // get # of particles 
 		        int num_p1 = research_Event.countByPid(2212);
@@ -296,7 +297,8 @@ public static void main(String[] args) {
 		"24:z1, 25:z2, 26:Mh, 27:xF, 28:xF1, 29:xF2, 30:pT, 31:pT1, 32:pT2, 33:pTpT, "+
 		"34:zeta, 35:zeta1, 36:zeta2, 37:eta, 38:eta1, 39:eta2, 40:Delta_eta, 41:eta1_gN, 42:eta2_gN, "+
 		"43:phi1, 44:phi2, 45:Delta_phi, 46:phih, 47:phiR, 48:theta, "+
-		"49:DepA, 50:DepB, 51:DepC, 52:DepV, 53:DepW\n");
+		"49:DepA, 50:DepB, 51:DepC, 52:DepV, 53:DepW, 54: Emiss2, 55: theta_gamma_gamma, "+
+		"56: pTmiss, 57: Mxsquared.\n");
 
 		println("Analyzing dvcs");
 		println("output text file is: $file");
