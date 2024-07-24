@@ -127,6 +127,7 @@ int main(int argc, char *argv[]) {
           mckinematicCuts = new DihadronKinematicCuts(mcReader);
           break;
       case 4:
+          cout << "HELLO WORLD WE'RE HERE" << std::endl;
           kinematicCuts = new dvcsKinematicCuts(dataReader);
           mckinematicCuts = new dvcsKinematicCuts(mcReader);
           break;
