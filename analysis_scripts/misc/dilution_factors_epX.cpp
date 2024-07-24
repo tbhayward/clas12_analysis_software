@@ -269,8 +269,8 @@ double one_dimensional(const char* nh3_file, const char* c_file,
         new TH1D("h_pT_nh3", "P_{T} Distribution; P_{T} (GeV); Counts", 50, 0, 1.0);
     TH1D *h_pT_carbon = 
         new TH1D("h_pT_carbon", "P_{T} Distribution; P_{T} (GeV); Counts", 50, 0, 1.0);
-    tree_nh3->Draw("pT>>h_pT_nh3","target_pol > 0, Mx > 1.4");
-    tree_carbon->Draw("pT>>h_pT_carbon","target_pol > 0, Mx > 1.4");
+    tree_nh3->Draw("pT>>h_pT_nh3","target_pol > 0 && Mx > 1.4");
+    tree_carbon->Draw("pT>>h_pT_carbon","target_pol > 0 && Mx > 1.4");
     TH1D *h_pT_carbon_scaled = (TH1D*)h_pT_carbon->Clone("h_pT_carbon_scaled");
     h_pT_carbon_scaled->SetTitle("P_{T} Distribution; P_{T} (GeV); Counts (Scaled)");
 
