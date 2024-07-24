@@ -70,7 +70,11 @@ std::string formatLabelName(const std::string& original) {
         {"vz_p", "v_{z_{p}} (cm)"},
         {"vz_p1", "v_{z_{p1}} (cm)"},
         {"vz_p2", "v_{z_{p2}} (cm)"},
-        {"vz_p3", "v_{z_{p3}} (cm)"}
+        {"vz_p3", "v_{z_{p3}} (cm)"},
+        {"Emiss2", "E_{miss} (GeV)"},
+        {"theta_gamma_gamma", "#theta_{#gamma#gamma}"},
+        {"pTmiss", "E_{miss} (GeV)"},
+        {"Emiss2", "{p_{t}}_{miss} (GeV)"}
     };
   
     if (specialLabels.find(original) != specialLabels.end()) {
