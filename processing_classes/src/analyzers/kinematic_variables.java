@@ -18,6 +18,8 @@ public class kinematic_variables {
     double particle_mass (int pid) {
 	if (pid==11||pid==-11) { // electron is pid=11, positron is pid=-11
             return 0.0005109989461;
+        } else if (pid == 22) {
+            return 0; 
         } else if (pid == 111) {
             return 0.1349768;
 	} else if (pid==211||pid==-211) { // pions

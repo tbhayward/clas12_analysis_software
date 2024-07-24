@@ -44,6 +44,11 @@ public class Dihadrons {
     // hep-ex:2101.04842
     protected double theta, phih, phiR, phi1, phi2, Delta_phi;
     
+    // exclusivity
+    protected double Emiss0, Emiss1, Emiss2, Emiss3;
+    protected double theta_gamma_gamma; 
+    protected double pTmiss;
+    
     // depolarization vectors defining the polarization lost during the transfer from beam to 
     // the virtual photon. 
     // in ALU BSAs the twist 2 terms are modified by C/A and the twist 3 terms by W/A
@@ -207,6 +212,10 @@ public class Dihadrons {
         t1 = kinematic_variables.t(lv_p1.p(), lv_p1.theta());
         t2 = kinematic_variables.t(lv_p2.p(), lv_p2.theta());
         tmin = kinematic_variables.tmin(x);
+        
+        Emiss2 = kinematic_variables.Emiss2(lv_beam, lv_target, lv_e, lv_p1, lv_p2);
+        theta_gamma_gamma = kinematic_variables.theta_gamma_gamma(lv_beam, lv_target, lv_e, lv_p1, lv_p2);
+        pTmiss = kinematic_variables.pTmiss(lv_beam, lv_target, lv_e, lv_p1, lv_p2);
         
         // missing mass calculations
         // uncorrected
