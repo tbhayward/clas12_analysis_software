@@ -48,6 +48,7 @@ public class Dihadrons {
     protected double Emiss0, Emiss1, Emiss2, Emiss3;
     protected double theta_gamma_gamma; 
     protected double pTmiss;
+    protected double Mxsquared;
     
     // depolarization vectors defining the polarization lost during the transfer from beam to 
     // the virtual photon. 
@@ -217,12 +218,6 @@ public class Dihadrons {
         theta_gamma_gamma = kinematic_variables.theta_gamma_gamma(lv_beam, lv_target, lv_e, lv_p1, lv_p2);
         pTmiss = kinematic_variables.pTmiss(lv_beam, lv_target, lv_e, lv_p1, lv_p2);
         
-        // missing mass calculations
-        // uncorrected
-        LorentzVector lv_Mx_unc = new LorentzVector(lv_q); lv_Mx_unc.add(lv_target); lv_Mx_unc.sub(lv_p1); 
-        lv_Mx_unc.sub(lv_p2);
-        mass2_unc = lv_Mx_unc.mass2();
-        
         // kinematics of hadrons
         p1_px = lv_p1.px(); p1_py = lv_p1.py(); p1_pz = lv_p1.pz(); p1_p = lv_p1.p(); p1_e = p1.e();
         p1_theta = p1.theta();
@@ -241,12 +236,12 @@ public class Dihadrons {
         
         // missing mass calculations
         LorentzVector lv_Mx = new LorentzVector(lv_q); lv_Mx.add(lv_target); lv_Mx.sub(lv_p1); lv_Mx.sub(lv_p2);
-        Mx = lv_Mx.mass(); mass2 = lv_Mx.mass2(); 
+        Mx = lv_Mx.mass(); Mxsquared = lv_Mx.mass2(); 
         LorentzVector lv_Mx1 = new LorentzVector(lv_q); lv_Mx1.add(lv_target); lv_Mx1.sub(lv_p1); 
         Mx1 = lv_Mx1.mass(); // missing mass with p1 observed
         LorentzVector lv_Mx2 = new LorentzVector(lv_q); lv_Mx2.add(lv_target); lv_Mx2.sub(lv_p2);
         Mx2 = lv_Mx2.mass(); // missing mass with p2 observed
-//        Mx2 = mass2;
+//        Mx2 = Mxsquared;
         
         // boost to gamma*-nucleon center of mass frame
         LorentzVector lv_p_gN = new LorentzVector(lv_p); lv_p_gN.boost(gNBoost);
@@ -678,4 +673,11 @@ public class Dihadrons {
     
     public double gN_angle_p2_X() { return Double.valueOf(Math.round(gN_angle_p2_X*100000))/100000; }// gN_angle_p1_X
     
+    public double Emiss2() { return Double.valueOf(Math.round(Emiss2*100000))/100000; }// returns Emiss2
+    
+    public double theta_gamma_gamma() { return Double.valueOf(Math.round(theta_gamma_gamma*100000))/100000; }// returns theta_gamma_gamma
+    
+    public double pTmiss() { return Double.valueOf(Math.round(pTmiss*100000))/100000; }// returns pTmiss
+    
+    public double Mxsquared() { return Double.valueOf(Math.round(Mxsquared*100000))/100000; }// returns Mxsquared
 }
