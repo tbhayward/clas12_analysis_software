@@ -46,6 +46,8 @@ public static void main(String[] args) {
 	file.delete();
 	BufferedWriter writer = new BufferedWriter(new FileWriter(file));
 
+	println("output_file "+output_file);
+
 	// Set the number of files to process based on the provided 4th argument
 	// use the size of the hipo_list if no argument provided
 	int n_files = args.length < 3 || Integer.parseInt(args[2]) > hipo_list.size()
