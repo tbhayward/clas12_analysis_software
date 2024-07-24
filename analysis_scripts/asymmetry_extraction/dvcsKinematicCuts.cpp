@@ -13,7 +13,7 @@ dvcsKinematicCuts::dvcsKinematicCuts(TTreeReader& reader)
       Emiss2(reader, "Emiss2"), theta_gamma_gamma(reader, "theta_gamma_gamma"),
       pTmiss(reader, "pTmiss"), Mxgammasquared(reader, "Mxgammasquared") {}
 
-bool B2BDihadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
+bool dvcsKinematicCuts::applyCuts(int currentFits, bool isMC) {
     bool goodEvent = false;
     string property = binNames[currentFits];
 
