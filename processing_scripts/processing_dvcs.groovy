@@ -38,7 +38,7 @@ public static void main(String[] args) {
 	(args[0] as File).eachFileRecurse(FileType.FILES) 
 		{ if (it.name.endsWith('.hipo')) hipo_list << it }
 
-	// Set the output file name based on the provided 3rd argument or use the default name
+	// Set the output file name based on the provided 2rd argument or use the default name
 	String output_file = args.length < 2 ? "dvcs_dummy_out.txt" : args[1];
 	if (args.length < 2) 
 	    println("WARNING: Specify an output file name. Set to \"dvcs_dummy_out.txt\".");
