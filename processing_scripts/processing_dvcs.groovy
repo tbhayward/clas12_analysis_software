@@ -206,7 +206,7 @@ public static void main(String[] args) {
 					    	Emiss2 = variables.Emiss2();
 					    	theta_gamma_gamma = variables.theta_gamma_gamma();
 					    	pTmiss = variables.pTmiss();
-					    	Mxsquared = variables.mass2(); // missing mass squared
+					    	Mxsquared = variables.Mxsquared(); // missing mass squared
 
 			                // Use a StringBuilder to append all data in a single call
 			                StringBuilder line = new StringBuilder();
