@@ -298,8 +298,7 @@ public static void main(String[] args) {
 		"43:phi1, 44:phi2, 45:Delta_phi, 46:phih, 47:phiR, 48:theta, "+
 		"49:DepA, 50:DepB, 51:DepC, 52:DepV, 53:DepW\n");
 
-		println("Set p1 PID = $p1_Str");
-		println("Set p2 PID = $p2_Str");
+		println("Analyzing dvcs");
 		println("output text file is: $file");
 	}
 
