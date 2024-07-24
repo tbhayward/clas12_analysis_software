@@ -125,7 +125,6 @@ double getPol(int runnum) {
     else if (runnum >= 11323 && runnum <= 11334) { pol = 0.87135; }
     else if (runnum >= 11335 && runnum <= 11387) { pol = 0.85048; }
     else if (runnum >= 11389 && runnum <= 11571) { pol = 0.84262; }
-    // else if (runnum >= 16000) { pol = 0.83534; } // RGC +/- 0.01440
     else if (runnum >= 16042 && runnum <= 17811) { pol = 0.827; } // RGC +/- 0.01440
   return pol;
 }
@@ -711,12 +710,6 @@ int main(int argc, char *argv[]) {
 
             tree->Fill(); // Fill the tree with the read data
         }
-        // if (infile.fail()) {
-        //     std::cerr << "Stream failed after reading line. Checking for bad bit..." << std::endl;
-        //     if (infile.bad()) std::cerr << "Bad bit set. I/O error while reading." << std::endl;
-        //     else if (infile.eof()) std::cerr << "End of file reached unexpectedly." << std::endl;
-        //     else std::cerr << "Format mismatch or other error." << std::endl;
-        // }
     }
     if (hadron_count == 1 && is_mc == 1) {
         while (infile >> e_p >> mc_e_p >> e_theta >> mc_e_theta >> e_phi >> mc_e_phi >> vz_e >> 

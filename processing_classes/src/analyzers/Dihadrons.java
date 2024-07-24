@@ -29,7 +29,7 @@ public class Dihadrons {
     // labels are unnumbered if they refer to the dihadron (perhaps a meson) and numbered for individual
     // hadrons. Convention is ordered by mass, then charge. For example in pi+pi- pi+ is hadron 1
     // in proton+pi+ the proton is p1, in k+pi- the kaon is p1.
-    protected double Q2, W, gamma, nu, x, y, z, z1, z2;
+    protected double Q2, W, gamma, nu, x, y, t, t1, t2, tmin, z, z1, z2;
     protected double Mx, Mx1, Mx2, Mx3; // Mx is the Mx(ep1p2), Mx1 is Mx(ep1), Mx2 is Mx(ep2), Mx3 is Mx(e)
     protected double Mh, pT, pT1, pT2, xF, xF1, xF2, zeta, zeta1, zeta2;
     protected double eta, eta1, eta2, eta_gN, eta1_gN, eta2_gN;
@@ -110,7 +110,6 @@ public class Dihadrons {
         HipoDataBank configBank = (HipoDataBank) event.getBank("RUN::config");
         
         helicity = eventBank.getByte("helicity", 0);
-//        helicity = eventBank.getByte("helicityRaw", 0);
         runnum = configBank.getInt("run",0); // used for beam energy and polarization
         
         num_elec = recEvent.countByPid(11); // returns number of electrons
@@ -204,6 +203,10 @@ public class Dihadrons {
         LorentzVector lv_p2 = new LorentzVector();
         lv_p2.setPxPyPzM(p2.px(), p2.py(), p2.pz(), p2.mass());
         
+        t = kinematic_variables.t(lv_p.p(), lv_p.theta());
+        t1 = kinematic_variables.t(lv_p1.p(), lv_p1.theta());
+        t2 = kinematic_variables.t(lv_p2.p(), lv_p2.theta());
+        tmin = kinematic_variables.tmin(x);
         
         // missing mass calculations
         // uncorrected
@@ -446,6 +449,14 @@ public class Dihadrons {
     public double x() { return Double.valueOf(Math.round(x*100000))/100000; }// returns x
     
     public double y() { return Double.valueOf(Math.round(y*100000))/100000; }// returns y
+    
+    public double t() { return Double.valueOf(Math.round(t*100000))/100000; }// returns t
+    
+    public double tmin() { return Double.valueOf(Math.round(tmin*100000))/100000; }// returns tmin
+    
+    public double t1() { return Double.valueOf(Math.round(t1*100000))/100000; }// returns t1
+    
+    public double t2() { return Double.valueOf(Math.round(t2*100000))/100000; }// returns t2
     
     public double z() { return Double.valueOf(Math.round(z*100000))/100000; }// returns z
     

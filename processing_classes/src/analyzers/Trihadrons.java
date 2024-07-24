@@ -29,7 +29,7 @@ public class Trihadrons {
     // labels are unnumbered if they refer to the trihadron (perhaps a meson) and numbered for individual
     // hadrons. Convention is ordered by mass, then charge. For example in pi+pi- pi+ is hadron 1
     // in proton+pi+ the proton is p1, in k+pi- the kaon is p1.
-    protected double Q2, W, gamma, nu, x, y, z, z1, z2, z3, z12, z13, z23;
+    protected double Q2, W, gamma, nu, x, y, t, t1, t2, t3, t12, t13, t23, tmin, z, z1, z2, z3, z12, z13, z23;
     protected double Mx, Mx1, Mx2, Mx3, Mx12, Mx13, Mx23; // Mx is the Mx(ep1p2p3), Mx1 is Mx(e[p1]p2p3), etc.
     protected double Mh, Mh12, Mh13, Mh23;
     protected double pT, pT1, pT2, pT3, pT12, pT13, pT23;
@@ -94,7 +94,6 @@ public class Trihadrons {
         HipoDataBank configBank = (HipoDataBank) event.getBank("RUN::config");
         
         helicity = eventBank.getByte("helicity", 0);
-//        helicity = eventBank.getByte("helicityRaw", 0);
         runnum = configBank.getInt("run",0); // used for beam energy and polarization
         
         num_elec = recEvent.countByPid(11); // returns number of electrons
@@ -208,6 +207,14 @@ public class Trihadrons {
         LorentzVector lv_p23 = new LorentzVector();
         lv_p23.setPxPyPzM(dihadron23.px(), dihadron23.py(), dihadron23.pz(), dihadron23.mass());
         
+        t = kinematic_variables.t(lv_p.p(), lv_p.theta());
+        t1 = kinematic_variables.t(lv_p1.p(), lv_p1.theta());
+        t2 = kinematic_variables.t(lv_p2.p(), lv_p2.theta());
+        t3 = kinematic_variables.t(lv_p3.p(), lv_p3.theta());
+        t12 = kinematic_variables.t(lv_p12.p(), lv_p12.theta());
+        t13 = kinematic_variables.t(lv_p13.p(), lv_p13.theta());
+        t23 = kinematic_variables.t(lv_p23.p(), lv_p23.theta());
+        tmin = kinematic_variables.tmin(x);
         
         // kinematics of hadrons
         p1_px = lv_p1.px(); p1_py = lv_p1.py(); p1_pz = lv_p1.pz(); p1_p = lv_p1.p(); p1_e = p1.e();
@@ -227,7 +234,6 @@ public class Trihadrons {
         
         p_px = lv_p.px(); p_py = lv_p.py(); p_pz = lv_p.pz(); p_p = lv_p.p(); p_e = lv_p.e();
 
-        
         z = lv_p.e()/lv_q.e();
         z1 = lv_p1.e()/lv_q.e();
 	z2 = lv_p2.e()/lv_q.e();
@@ -512,6 +518,22 @@ public class Trihadrons {
     public double x() { return Double.valueOf(Math.round(x*100000))/100000; }// returns x
     
     public double y() { return Double.valueOf(Math.round(y*100000))/100000; }// returns y
+    
+    public double t() { return Double.valueOf(Math.round(t*100000))/100000; }// returns t
+    
+    public double tmin() { return Double.valueOf(Math.round(tmin*100000))/100000; }// returns tmin
+    
+    public double t1() { return Double.valueOf(Math.round(t1*100000))/100000; }// returns t1
+    
+    public double t2() { return Double.valueOf(Math.round(t2*100000))/100000; }// returns t2
+    
+    public double t3() { return Double.valueOf(Math.round(t3*100000))/100000; }// returns t3
+    
+    public double t12() { return Double.valueOf(Math.round(t12*100000))/100000; }// returns t12
+    
+    public double t13() { return Double.valueOf(Math.round(t13*100000))/100000; }// returns t13
+    
+    public double t23() { return Double.valueOf(Math.round(t23*100000))/100000; }// returns t23
     
     public double z() { return Double.valueOf(Math.round(z*100000))/100000; }// returns z
     

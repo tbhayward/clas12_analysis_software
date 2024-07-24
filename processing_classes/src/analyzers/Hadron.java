@@ -28,7 +28,7 @@ public class Hadron {
     // labels are unnumbered if they refer to the dihadron (perhaps a meson) and numbered for individual
     // hadrons. Convention is ordered by mass, then charge. For example in pi+pi- pi+ is hadron 1
     // in proton+pi+ the proton is p1, in k+pi- the kaon is p1.
-    protected double Q2, W, gamma, nu, x, y, z;
+    protected double Q2, W, gamma, nu, x, y, z, t, tmin;
     protected double Mx, Mx2; 
     protected double Mh, pT, xF, zeta;
     protected double eta, eta_gN;
@@ -91,7 +91,6 @@ public class Hadron {
         HipoDataBank configBank = (HipoDataBank) event.getBank("RUN::config");
         
         helicity = eventBank.getByte("helicity", 0);
-//        helicity = eventBank.getByte("helicityRaw", 0);
         runnum = configBank.getInt("run",0); // used for beam energy and polarization
 //    
         num_elec = recEvent.countByPid(11); // returns number of electrons
@@ -164,6 +163,8 @@ public class Hadron {
         
         LorentzVector lv_p = new LorentzVector();
         lv_p.setPxPyPzM(hadron.px(), hadron.py(), hadron.pz(), hadron.mass());
+        t = kinematic_variables.t(lv_p.p(), lv_p.theta());
+        tmin = kinematic_variables.tmin(x);
         
         // kinematics of hadrons
         p_px = lv_p.px(); p_py = lv_p.py(); p_pz = lv_p.pz(); p_p = lv_p.p(); p_e = hadron.e(); 
@@ -285,6 +286,8 @@ public class Hadron {
     public double nu() { return ((int) (nu * 100000)) / 100000.0; }
     public double x() { return ((int) (x * 100000)) / 100000.0; }
     public double y() { return ((int) (y * 100000)) / 100000.0; }
+    public double t() { return Double.valueOf(Math.round(t*100000))/100000; }// returns t
+    public double tmin() { return Double.valueOf(Math.round(tmin*100000))/100000; }// returns tmin
     public double z() { return ((int) (z * 100000)) / 100000.0; }
     public double Mx() { return ((int) (Mx * 100000)) / 100000.0; }
     public double Mx2() { return ((int) (Mx2 * 100000)) / 100000.0; }

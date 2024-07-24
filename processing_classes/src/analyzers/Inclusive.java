@@ -26,7 +26,7 @@ public class Inclusive {
     
     protected int num_elec, num_particles;
     
-    protected double Q2, W, gamma, nu, x, y, Mx, Mx2;
+    protected double Q2, W, gamma, nu, x, y, t, tmin, Mx, Mx2;
   
     protected double e_px, e_py, e_pz, e_p, e_e, e_theta, e_phi, vz_e; // electron kinematics
     
@@ -60,7 +60,6 @@ public class Inclusive {
         HipoDataBank configBank = (HipoDataBank) event.getBank("RUN::config");
         
         helicity = eventBank.getByte("helicity", 0);
-//        helicity = eventBank.getByte("helicityRaw", 0);
         runnum = configBank.getInt("run",0); // used for beam energy and polarization
     
         num_elec = recEvent.countByPid(11); // returns number of electrons
@@ -97,6 +96,8 @@ public class Inclusive {
 	W  = kinematic_variables.W(Q2, nu);
 	y = kinematic_variables.y(nu, lv_beam);
         gamma = kinematic_variables.gamma(Q2, x);
+        t = kinematic_variables.t(lv_e.p(), e_theta);
+        tmin = kinematic_variables.tmin(x);
         
         // Depolarization variables
         Depolarization_A = 1/(1+gamma*gamma)*(1-y+y*y/2+y*y*gamma*gamma/4);
@@ -141,6 +142,8 @@ public class Inclusive {
     public double nu() { return Double.valueOf(Math.round(nu*100000))/100000; }// returns nu
     public double x() { return Double.valueOf(Math.round(x*100000))/100000; }// returns x
     public double y() { return Double.valueOf(Math.round(y*100000))/100000; }// returns y
+    public double t() { return Double.valueOf(Math.round(t*100000))/100000; }// returns t
+    public double tmin() { return Double.valueOf(Math.round(tmin*100000))/100000; }// returns t
     public double Mx() { return Double.valueOf(Math.round(Mx*100000))/100000; }// returns Mx(ep1p2)
     public double Mx2() { return ((int) (Mx2 * 100000)) / 100000.0; }
     public double e_px() { return Double.valueOf(Math.round(e_px*100000))/100000; }// returns electron lab frame px
