@@ -6,12 +6,12 @@
 
 using std::string;
 
-B2BDihadronKinematicCuts::B2BDihadronKinematicCuts(TTreeReader& reader)
+dvcsKinematicCuts::dvcsKinematicCuts(TTreeReader& reader)
     : BaseKinematicCuts(reader), // Initialize BaseKinematicCuts
       runnum(reader, "runnum"), Q2(reader, "Q2"), W(reader, "W"), 
-      x(reader, "x"), y(reader, "y"), target_pol(reader, "target_pol"),
+      x(reader, "x"), y(reader, "y"), t1(reader, "t1"), target_pol(reader, "target_pol"),
       Emiss2(reader, "Emiss2"), theta_gamma_gamma(reader, "theta_gamma_gamma"),
-      pTmiss(reader, "pTmiss"), Mxgammasquared(reader, "Mxsquared") {}
+      pTmiss(reader, "pTmiss"), Mxgammasquared(reader, "Mxgammasquared") {}
 
 bool B2BDihadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     bool goodEvent = false;

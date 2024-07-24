@@ -301,8 +301,8 @@ int main(int argc, char *argv[]) {
         kinematicPlot_file.c_str(), binNames[i], asymmetry); break;
         case 2: performChi2Fits_b2b_dihadron(output_file.c_str(), kinematic_file.c_str(), 
         binNames[i], asymmetry); break;
-        // case 4: performChi2Fits_dvcs(output_file.c_str(), kinematic_file.c_str(), 
-        // kinematicPlot_file.c_str(), binNames[i], asymmetry); break;
+        case 4: performChi2Fits_dvcs(output_file.c_str(), kinematic_file.c_str(), 
+        kinematicPlot_file.c_str(), binNames[i], asymmetry); break;
       }
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;

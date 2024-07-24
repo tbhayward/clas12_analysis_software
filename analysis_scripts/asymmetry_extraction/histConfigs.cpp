@@ -175,6 +175,6 @@ std::map<std::string, HistConfig> histConfigs = {
       {"mc_zet2", {100, 0.0, 1}},
       {"Emiss2", {100, 0.0, 2}},
       {"theta_gamma_gamma", {100, 0.0, 3}},
-      {"ptMiss", {100, 0.0, 0.5}},
+      {"pTmiss", {100, 0.0, 0.5}},
       {"Mxgammasquared", {100, 0.0, 4}}
     };

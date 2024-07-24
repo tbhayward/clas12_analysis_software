@@ -9,6 +9,7 @@
 #include "SingleHadronKinematicCuts.h"
 #include "B2BDihadronKinematicCuts.h"
 #include "DihadronKinematicCuts.h"
+#include "dvcsKinematicCuts.h"
 
 extern std::map<std::string, std::vector<double>> bins_map;
 extern std::vector<std::vector<double>> allBins;
