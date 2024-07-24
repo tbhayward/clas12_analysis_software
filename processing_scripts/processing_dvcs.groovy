@@ -266,7 +266,7 @@ public static void main(String[] args) {
 			                    .append(Emiss2).append(" ")
 			                    .append(theta_gamma_gamma).append(" ")
 			                    .append(pTmiss).append(" ")
-			                    .append(Mxsquared).append(" ");
+			                    .append(Mxsquared).append("\n");
 
 			                // Append the line to the batchLines StringBuilder
 			                batchLines.append(line.toString());
