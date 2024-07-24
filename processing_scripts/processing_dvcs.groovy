@@ -133,7 +133,6 @@ public static void main(String[] args) {
 			            Dihadrons variables = new Dihadrons(event, research_Event, 
 							2212, current_p1, 22, current_p2, Eb.Eb());
 			            // this is my class for defining all relevant kinematic variables
-			            println(variables.Q2()+" "+variables.W()+" "+variables.y());
 			            if (variables.channel_test(variables)) {
 
 			                helicity = variables.get_helicity(); // helicity of event
