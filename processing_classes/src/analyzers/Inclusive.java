@@ -90,7 +90,7 @@ public class Inclusive {
                 
         // DIS variables
         LorentzVector lv_q = new LorentzVector(lv_beam); lv_q.sub(lv_e);
-	Q2 = kinematic_variables.Q2(lv_e);
+	Q2 = kinematic_variables.Q2(lv_q);
 	nu = kinematic_variables.nu(lv_beam, lv_e);
 	x  = kinematic_variables.x(Q2, nu);
 	W  = kinematic_variables.W(Q2, nu);
