@@ -122,6 +122,7 @@ public static void main(String[] args) {
 		        // get # of particles 
 		        int num_p1 = research_Event.countByPid(2212);
 		        int num_p2 = research_Event.countByPid(22); 
+		        println(num_p1+" "+num_p2);
 
 		        // cycle over all hadrons
 		        for (int current_p1 = 0; current_p1 < num_p1; current_p1++) { 
@@ -134,7 +135,7 @@ public static void main(String[] args) {
 			            // this is my class for defining all relevant kinematic variables
 
 			            if (variables.channel_test(variables)) {
-			            	println("HELLO WORLD");
+
 			                helicity = variables.get_helicity(); // helicity of event
 
 			                // lab kinematics
