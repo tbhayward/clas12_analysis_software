@@ -48,7 +48,7 @@ public class Dihadrons {
     protected double Emiss0, Emiss1, Emiss2, Emiss3;
     protected double theta_gamma_gamma; 
     protected double pTmiss;
-    protected double Mxsquared;
+    protected double Mxgammasquared;
     
     // depolarization vectors defining the polarization lost during the transfer from beam to 
     // the virtual photon. 
@@ -236,12 +236,13 @@ public class Dihadrons {
         
         // missing mass calculations
         LorentzVector lv_Mx = new LorentzVector(lv_q); lv_Mx.add(lv_target); lv_Mx.sub(lv_p1); lv_Mx.sub(lv_p2);
-        Mx = lv_Mx.mass(); Mxsquared = lv_Mx.mass2(); 
+        Mx = lv_Mx.mass(); 
         LorentzVector lv_Mx1 = new LorentzVector(lv_q); lv_Mx1.add(lv_target); lv_Mx1.sub(lv_p1); 
         Mx1 = lv_Mx1.mass(); // missing mass with p1 observed
         LorentzVector lv_Mx2 = new LorentzVector(lv_q); lv_Mx2.add(lv_target); lv_Mx2.sub(lv_p2);
         Mx2 = lv_Mx2.mass(); // missing mass with p2 observed
-//        Mx2 = Mxsquared;
+        Mxgammasquared = lv_Mx2.mass2(); 
+//        Mx2 = Mxgammasquared;
         
         // boost to gamma*-nucleon center of mass frame
         LorentzVector lv_p_gN = new LorentzVector(lv_p); lv_p_gN.boost(gNBoost);
@@ -679,5 +680,5 @@ public class Dihadrons {
     
     public double pTmiss() { return Double.valueOf(Math.round(pTmiss*100000))/100000; }// returns pTmiss
     
-    public double Mxsquared() { return Double.valueOf(Math.round(Mxsquared*100000))/100000; }// returns Mxsquared
+    public double Mxgammasquared() { return Double.valueOf(Math.round(Mxgammasquared*100000))/100000; }// returns Mxgammasquared
 }
