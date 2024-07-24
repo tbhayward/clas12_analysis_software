@@ -339,6 +339,13 @@ public class analysis_fitter extends GenericKinematicFitter {
                    Particle part = new Particle(pid,fe*px,fe*py,fe*pz,vx,vy,vz);
                    physEvent.addParticle(part);   
                }
+                
+                if (pid==22 && proton_test(particle_Index, pid, vz, vz_e, rec_Bank, cal_Bank, 
+                    track_Bank, traj_Bank, run_Bank)) {
+                   
+                   Particle part = new Particle(pid,px,py,pz,vx,vy,vz);
+                   physEvent.addParticle(part);   
+               }
             }
 
             
