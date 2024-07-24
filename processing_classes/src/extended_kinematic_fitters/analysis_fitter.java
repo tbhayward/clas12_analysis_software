@@ -240,7 +240,7 @@ public class analysis_fitter extends GenericKinematicFitter {
     }
     
     public boolean photon_test(int particle_Index, HipoDataBank rec_Bank, HipoDataBank cal_Bank, 
-            LorentzVector lv_e, LorentzVector lv_gamma) {
+            LorentzVector lv_e) {
         
         generic_tests generic_tests = new generic_tests();
         fiducial_cuts fiducial_cuts = new fiducial_cuts();
@@ -250,13 +250,16 @@ public class analysis_fitter extends GenericKinematicFitter {
         float py = rec_Bank.getFloat("py", particle_Index);
         float pz = rec_Bank.getFloat("pz", particle_Index);
         double p = Math.sqrt(Math.pow(px,2)+Math.pow(py,2)+Math.pow(pz,2));
+        LorentzVector lv_gamma = new LorentzVector();
+        lv_gamma.setPxPyPzM(px, py, pz, 0.0);
         
         return true
             && p > 0.50
 //            && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
-//            && fiducial_cuts.pcal_fiducial_cut(particle_Index, rec_Bank, cal_Bank)
-//            && pid_cuts.beta_cut(particle_Index, rec_Bank)
-            && pid_cuts.e_gamma_open_angle_cut(lv_e, lv_gamma);
+            && fiducial_cuts.pcal_fiducial_cut(particle_Index, rec_Bank, cal_Bank)
+            && pid_cuts.beta_cut(particle_Index, rec_Bank)
+//            && pid_cuts.e_gamma_open_angle_cut(lv_e, lv_gamma)
+            ;
     }
     
     ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -340,8 +343,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                    physEvent.addParticle(part);   
                }
                 
-                if (pid==22 && proton_test(particle_Index, pid, vz, vz_e, rec_Bank, cal_Bank, 
-                    track_Bank, traj_Bank, run_Bank)) {
+                if (pid==22 && photon_test(particle_Index, rec_Bank, cal_Bank, lv_e)) {
                    
                    Particle part = new Particle(pid,px,py,pz,vx,vy,vz);
                    physEvent.addParticle(part);   
