@@ -7,21 +7,19 @@
 
 class dvcsKinematicCuts : public BaseKinematicCuts { // Inherit from BaseKinematicCuts
 public:
-    B2BDihadronKinematicCuts(TTreeReader& reader);
+    dvcsKinematicCuts(TTreeReader& reader);
     bool applyCuts(int currentFits, bool isMC) override; // Override applyCuts method
 
 private:
     TTreeReaderValue<int> runnum;
     TTreeReaderValue<double> Q2;
     TTreeReaderValue<double> W;
-    TTreeReaderValue<double> p1_p;
     TTreeReaderValue<double> x;
+    TTreeReaderValue<double> t1;
     TTreeReaderValue<double> y;
-    TTreeReaderValue<double> z1;
-    TTreeReaderValue<double> xF1;
-    TTreeReaderValue<double> xF2;
-    TTreeReaderValue<double> Mx;
-    TTreeReaderValue<double> Mx1;
-    TTreeReaderValue<double> Mx2;
+    TTreeReaderValue<double> Emiss2;
+    TTreeReaderValue<double> theta_gamma_gamma;
+    TTreeReaderValue<double> pTmiss;
+    TTreeReaderValue<double> Mxgammasquared;
     TTreeReaderValue<double> target_pol;
 };
