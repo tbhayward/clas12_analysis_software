@@ -16,14 +16,10 @@ bool B2BDihadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     bool goodEvent = false;
     string property = binNames[currentFits];
 
+    goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75; // DIS cuts
     if (property == "dvcsx") {
         goodEvent = true;
-    }
-
-    goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75; // DIS cuts
-    // goodEvent = goodEvent && *z1 > 0.2 && *x > 0.05 && *x < 0.70;
-    // goodEvent = goodEvent && *z1 > 0.3 && *x > 0.05 && *x < 0.70 && *p1_p > 1.4;
-    if (property == "b2bchannel") {
+    } else if (property == "b2bchannel") {
       goodEvent = goodEvent;
     } else if (property == "b2bchannelMxStudy") {
       goodEvent = goodEvent; // && *xF1 > 0 && *xF2 < 0 && *z1 > 0.2;
@@ -35,9 +31,7 @@ bool B2BDihadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
       goodEvent = goodEvent && *Mx > 0.95 && *Mx1 > 1.8 && *Mx2 > 1.4;
     } else if (property == "b2bchannelxF2Study") {
       goodEvent = goodEvent && *Mx > 0.95 && *Mx1 > 1.8 && *Mx2 > 1.4;
-    }  
-
-    else if (property == "b2banalysis") {
+    } else if (property == "b2banalysis") {
       goodEvent = goodEvent && *xF1 > 0 && *xF2 < 0 && *z1 > 0.2 && *Mx > 0.95 && 
         *Mx1 > 1.8 && *Mx2 > 1.4;
     } else if (property == "b2banalysisx") {
