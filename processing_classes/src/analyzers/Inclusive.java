@@ -53,6 +53,8 @@ public class Inclusive {
     public Inclusive(DataEvent event, PhysicsEvent recEvent, double Eb) {
         // provide the PDG PID of the two hadrons
         
+        kinematic_variables kinematic_variables = new kinematic_variables();
+        
         // load banks
         HipoDataBank eventBank = (HipoDataBank) event.getBank("REC::Event");
         HipoDataBank configBank = (HipoDataBank) event.getBank("RUN::config");
@@ -67,21 +69,19 @@ public class Inclusive {
         // Set up Lorentz vectors
         // beam electron
         LorentzVector lv_beam = new LorentzVector();
-	lv_beam.setPxPyPzM(0, 0, Math.pow(Eb*Eb-particle_mass(11)*particle_mass(11),0.5), 
-                particle_mass(11));
+	lv_beam.setPxPyPzM(0, 0, Math.pow(Eb*Eb-kinematic_variables.particle_mass(11)*kinematic_variables.particle_mass(11),0.5), 
+                kinematic_variables.particle_mass(11));
         LorentzVector lv_target = new LorentzVector();
         // target, proton for RGA... what mass to use for RGB (deuterium target)?
-	lv_target.setPxPyPzM(0, 0, 0, particle_mass(2212));
+	lv_target.setPxPyPzM(0, 0, 0, kinematic_variables.particle_mass(2212));
         // pull from rec banks for outgoing particles
         // electron
         String electron_index = "[11,0]"; // highest p, kinematic fitter should require FD etc
 	Particle scattered_electron = recEvent.getParticle(electron_index); //
         LorentzVector lv_e = new LorentzVector();
 	lv_e.setPxPyPzM(scattered_electron.px(), scattered_electron.py(), 
-            scattered_electron.pz(), particle_mass(11));
+            scattered_electron.pz(), kinematic_variables.particle_mass(11));
         // hadrons set up below (to allow for iteration over more than two hadrons in an event)
-        
-        kinematic_variables kinematic_variables = new kinematic_variables();
         
         // kinematics of electron
         e_px = lv_e.px(); e_py = lv_e.py(); e_pz = lv_e.pz(); e_p = lv_e.p(); e_e = lv_e.e(); 
@@ -92,11 +92,11 @@ public class Inclusive {
         // DIS variables
         LorentzVector lv_q = new LorentzVector(lv_beam); lv_q.sub(lv_e);
 	Q2 = kinematic_variables.Q2(lv_e);
-	nu = lv_beam.e()-lv_e.e();
-	x  = Q2 / (2 * particle_mass(2212) * nu);
-	W  = Math.pow(Math.pow(particle_mass(2212),2)+2*particle_mass(2212)*nu - Q2, 0.5);
-	y = nu/lv_beam.e();
-        gamma = 2*particle_mass(2212)*x/Math.pow(Q2, 0.5);
+	nu = kinematic_variables.nu(lv_beam, lv_e);
+	x  = kinematic_variables.x(Q2, nu);
+	W  = kinematic_variables.W(Q2, nu);
+	y = kinematic_variables.y(nu, lv_beam);
+        gamma = kinematic_variables.gamma(Q2, x);
         
         // Depolarization variables
         Depolarization_A = 1/(1+gamma*gamma)*(1-y+y*y/2+y*y*gamma*gamma/4);
@@ -161,21 +161,4 @@ public class Inclusive {
     public double vz_e() { return Double.valueOf(Math.round(vz_e*100000))/100000; }// returns electron z vertex
     
     
-    private static double particle_mass (int pid) {
-	if (pid==11||pid==-11) { // electron is pid=11, positron is pid=-11
-            return 0.0005109989461;
-        } else if (pid == 111) {
-            return 0.1349768;
-	} else if (pid==211||pid==-211) { // pions
-            return 0.139570;
-	} else if (pid==321||pid==-321) { // kaons
-            return 0.493677;
-	} else if (pid==2212||pid==-2212) { // protons
-            return 0.938272;
-//            return 1.875;
-	} else if (pid==113) { // rho0
-            return 0.7754;
-        }
-            return -1;
-    }
 }
