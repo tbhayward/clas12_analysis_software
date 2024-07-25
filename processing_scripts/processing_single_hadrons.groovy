@@ -94,11 +94,11 @@ public static void main(String[] args) {
 		println("\n Opening file "+Integer.toString(current_file+1)
 			+" out of "+n_files+".\n"); 
 		
+		println(); println(); println("Hello"); println(batchLines);
+		
 		HipoDataSource reader = new HipoDataSource();
 		reader.open(hipo_list[current_file]); // open next hipo file
 		HipoDataEvent event = reader.getNextEvent(); 
-
-		println(); println(); println("Hello"); println(batchLines);
 
 		while (reader.hasEvent()) {
 		    ++num_events;
