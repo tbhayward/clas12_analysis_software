@@ -22,7 +22,7 @@ bool dvcsKinematicCuts::applyCuts(int currentFits, bool isMC) {
     goodEvent = goodEvent && *theta_gamma_gamma < 0.6 && *Emiss2 < 0.5 &&
         *pTmiss < 0.125 && *Mxgammasquared < 1.25;
     if (property == "dvcsx") {
-        goodEvent = true;
+        // goodEvent = true;
     } else if (property == "dvcst") {
         // goodEvent = true;
     } else if (property == "dvcsQ2") {
