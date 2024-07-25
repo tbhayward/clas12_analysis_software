@@ -34,6 +34,7 @@ void process_runs() {
     Long64_t nentries = tree->GetEntries();
     for (Long64_t i = 0; i < nentries; ++i) {
         tree->GetEntry(i);
+        std::cout << runnum << " " << std::endl;
         unique_runs.insert(runnum);
     }
 
