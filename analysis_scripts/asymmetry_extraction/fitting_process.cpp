@@ -2181,7 +2181,7 @@ void performChi2Fits_b2b_dihadron(const char* output_file, const char* kinematic
   }
 }
 
-/******************** SINGLE HADRON CASE ********************/
+/******************** DVCS CASE ********************/
 
 // Negative log-likelihood function
 void negLogLikelihood_dvcs(Int_t &npar, Double_t *gin, Double_t &f, 
@@ -2868,8 +2868,8 @@ void performChi2Fits_dvcs(const char* output_file, const char* kinematic_file,
         double ALU_offset_error = fitFunction->GetParError(0);
         double ALU_sinphi = fitFunction->GetParameter(1); 
         double ALU_sinphi_error = fitFunction->GetParError(1);
-        ALU_sinphi = (meanDepA/meanDepW)*ALU_sinphi;
-        ALU_sinphi_error = (meanDepA/meanDepW)*ALU_sinphi_error;
+        // ALU_sinphi = (meanDepA/meanDepW)*ALU_sinphi;
+        // ALU_sinphi_error = (meanDepA/meanDepW)*ALU_sinphi_error;
         chi2FitsAStream<<"{"<<meanVariable<<", "<< ALU_offset << ", " << ALU_offset_error <<"}";
         chi2FitsBStream<<"{"<<meanVariable<<", "<< ALU_sinphi << ", " << ALU_sinphi_error <<"}";
         if (i < numBins - 1) {
@@ -2885,10 +2885,10 @@ void performChi2Fits_dvcs(const char* output_file, const char* kinematic_file,
         double AUL_sinphi_error = fitFunction->GetParError(1);
         double AUL_sin2phi = fitFunction->GetParameter(2);
         double AUL_sin2phi_error = fitFunction->GetParError(2);
-        AUL_sinphi = (meanDepA/meanDepV)*AUL_sinphi;
-        AUL_sinphi_error = (meanDepA/meanDepV)*AUL_sinphi_error;
-        AUL_sin2phi = (meanDepA/meanDepB)*AUL_sin2phi;
-        AUL_sin2phi_error = (meanDepA/meanDepB)*AUL_sin2phi_error;
+        // AUL_sinphi = (meanDepA/meanDepV)*AUL_sinphi;
+        // AUL_sinphi_error = (meanDepA/meanDepV)*AUL_sinphi_error;
+        // AUL_sin2phi = (meanDepA/meanDepB)*AUL_sin2phi;
+        // AUL_sin2phi_error = (meanDepA/meanDepB)*AUL_sin2phi_error;
         chi2FitsAStream<<"{"<<meanVariable<<", "<< AUL_offset << ", " << AUL_offset_error <<"}";
         chi2FitsBStream<<"{"<<meanVariable<<", "<< AUL_sinphi << ", " << AUL_sinphi_error <<"}";
         chi2FitsCStream<<"{"<<meanVariable<<", "<< AUL_sin2phi << ", " << AUL_sin2phi_error <<"}";
@@ -2903,10 +2903,10 @@ void performChi2Fits_dvcs(const char* output_file, const char* kinematic_file,
         double ALL_error = fitFunction->GetParError(0);
         double ALL_cosphi = fitFunction->GetParameter(1);
         double ALL_cosphi_error = fitFunction->GetParError(1);
-        ALL = (meanDepA/meanDepC)*ALL;
-        ALL_error = (meanDepA/meanDepC)*ALL_error;
-        ALL_cosphi = (meanDepA/meanDepW)*ALL_cosphi;
-        ALL_cosphi_error = (meanDepA/meanDepW)*ALL_cosphi_error;
+        // ALL = (meanDepA/meanDepC)*ALL;
+        // ALL_error = (meanDepA/meanDepC)*ALL_error;
+        // ALL_cosphi = (meanDepA/meanDepW)*ALL_cosphi;
+        // ALL_cosphi_error = (meanDepA/meanDepW)*ALL_cosphi_error;
         chi2FitsAStream<<"{"<<meanVariable<<", "<< ALL << ", " << ALL_error <<"}";
         chi2FitsBStream<<"{"<<meanVariable<<", "<< ALL_cosphi << ", " << ALL_cosphi_error <<"}";
         if (i < numBins - 1) {
