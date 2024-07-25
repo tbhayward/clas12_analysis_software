@@ -112,8 +112,8 @@ runnum,evnum,helicity,e_p,e_theta,e_phi,vz_e,p_p,p_theta,p_phi,vz_p,Q2,W,Mx,Mx2,
 #
 #epgamma, dvcs
 #dvcsQ2,Q2,1.00,1.50,2.00,2.50,3.00,3.50,4.00,5.00,7.00
-#dvcsx,x,0.06,0.15,0.25,0.35,0.45,0.55,0.65
-#dvcst,t1,-2.0,-1.5,-1.0,-0.5,0.0,0.5
+dvcsx,x,0.06,0.15,0.25,0.35,0.45,0.55,0.65
+dvcst,t1,-2.0,-1.5,-1.0,-0.5,0.0,0.5
 #
 #
 # !!! epX multidimensional binning for publications !!!
@@ -213,9 +213,9 @@ runnum,evnum,helicity,e_p,e_theta,e_phi,vz_e,p_p,p_theta,p_phi,vz_p,Q2,W,Mx,Mx2,
 #Q2y16z4,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #Q2y16z5,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #
-Q2y17z1,pT,0.00, 0.21, 0.34, 0.47#higher bins removed due to limited statistics
-Q2y17z2,pT,0.00, 0.21, 0.34, 0.47, 0.60#higher bins removed due to limited statistics
-Q2y17z3,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
-Q2y17z4,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
-Q2y17z5,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
+#Q2y17z1,pT,0.00, 0.21, 0.34, 0.47#higher bins removed due to limited statistics
+#Q2y17z2,pT,0.00, 0.21, 0.34, 0.47, 0.60#higher bins removed due to limited statistics
+#Q2y17z3,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
+#Q2y17z4,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
+#Q2y17z5,pT,0.00, 0.21, 0.34, 0.47, 0.60, 1.00
 #
