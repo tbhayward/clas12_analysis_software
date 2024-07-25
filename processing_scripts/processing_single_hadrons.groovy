@@ -98,6 +98,8 @@ public static void main(String[] args) {
 		reader.open(hipo_list[current_file]); // open next hipo file
 		HipoDataEvent event = reader.getNextEvent(); 
 
+		println(); println(); println(); println(batchLines);
+
 		while (reader.hasEvent()) {
 		    ++num_events;
 		    if (num_events % 1000000 == 0) { // not necessary, just updates output
@@ -221,6 +223,7 @@ public static void main(String[] args) {
 		reader.close();
 		}
 
+		println(); println(); println(); println(batchLines);
 		// Write any remaining lines in the batchLines StringBuilder to the file
 		if (batchLines.length() > 0) {
 		    file.append(batchLines.toString());
