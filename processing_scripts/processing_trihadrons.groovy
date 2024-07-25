@@ -111,7 +111,7 @@ public static void main(String[] args) {
 	StringBuilder batchLines = new StringBuilder();
 
 	int num_events = 0;
-	int max_lines = 1;
+	int max_lines = 1000;
 	int lineCount = 0;
 	for (current_file in 0..<n_files) {
 		// limit to a certain number of files defined by n_files
@@ -379,6 +379,7 @@ public static void main(String[] args) {
 		    }
 		reader.close();
 		}
+
 
 		println(); println(); println("HELLLOOOOO"); println(batchLines);
 		// Write any remaining lines in the batchLines StringBuilder to the file
