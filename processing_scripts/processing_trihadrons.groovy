@@ -381,7 +381,7 @@ public static void main(String[] args) {
 		reader.close();
 		}
 
-		println(); println(); println(); println(batchLines);
+		println(); println(); println("HELLLOOOOO"); println(batchLines);
 		// Write any remaining lines in the batchLines StringBuilder to the file
 		if (batchLines.length() > 0) {
 		    file.append(batchLines.toString());
