@@ -2579,9 +2579,9 @@ void plotHistogramAndFit_dvcs(TH1D* histogram, TF1* fitFunction, int binIndex,
         fitFunction->GetParameter(i), fitFunction->GetParError(i)), "");
   }
 
-  // Add the chi-squared per degree of freedom to the legend
-  leg->AddEntry((TObject*)0, Form("#chi^{2}/Ndf: %.4f", 
-    fitFunction->GetChisquare() / fitFunction->GetNDF()), "");
+  // // Add the chi-squared per degree of freedom to the legend
+  // leg->AddEntry((TObject*)0, Form("#chi^{2}/Ndf: %.4f", 
+  //   fitFunction->GetChisquare() / fitFunction->GetNDF()), "");
 
   // Draw the legend
   leg->Draw("same");
