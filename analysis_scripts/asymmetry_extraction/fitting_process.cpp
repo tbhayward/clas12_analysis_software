@@ -2380,12 +2380,12 @@ void performMLMFits_dvcs(const char* output_file, const char* kinematic_file,
     // std::vector<double> chi2Result = chi2Fits[key][currentFits];
     // Define the parameters with initial values and limits
     minuit.DefineParameter(0, "ALU_sinphi", 0.0, 0.01, -1, 1);
-    minuit.DefineParameter(1, "AUL_sinphi", 0.0, 0.01, -1, 1);
-    minuit.DefineParameter(2, "AUL_sin2phi", 0.0, 0.01, -1, 1);
-    minuit.DefineParameter(3, "ALL", 0.00, 0.01, -1, 1);
-    minuit.DefineParameter(4, "ALL_cosphi", 0.00, 0.01, -1, 1);
+    minuit.DefineParameter(1, "AUL_sinphi", 0.0, 0.0, -1, 1);
+    minuit.DefineParameter(2, "AUL_sin2phi", 0.0, 0.0, -1, 1);
+    minuit.DefineParameter(3, "ALL", 0.00, 0.0, -1, 1);
+    minuit.DefineParameter(4, "ALL_cosphi", 0.00, 0.0, -1, 1);
     minuit.DefineParameter(5, "AUU_cosphi", 0.00, 0.01, -1, 1);
-    minuit.DefineParameter(6, "AUU_cos2phi", 0.00, 0.01, -1, 1);
+    minuit.DefineParameter(6, "AUU_cos2phi", 0.00, 0.00, -1, 1);
 
     // After defining parameters
     minuit.Migrad(); cout << endl; // First attempt to find the minimum
