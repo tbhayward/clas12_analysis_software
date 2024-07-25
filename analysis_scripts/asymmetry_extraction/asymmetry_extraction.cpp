@@ -316,7 +316,7 @@ int main(int argc, char *argv[]) {
       case 1: performMLMFits_single_hadron(output_file.c_str(), kinematic_file.c_str(), binNames[i]); break;
       case 2: performMLMFits_b2b_dihadron(output_file.c_str(), kinematic_file.c_str(), binNames[i]); break;
       case 3: cout << "No dihadron MLM fit (yet)." << endl; break;
-      case 4: performMLMFits_dvcs(output_file.c_str(), kinematic_file.c_str(), binNames[i]); break;
+      // case 4: performMLMFits_dvcs(output_file.c_str(), kinematic_file.c_str(), binNames[i]); break;
     }
     cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
