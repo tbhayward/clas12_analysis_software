@@ -2775,7 +2775,7 @@ void performChi2Fits_dvcs(const char* output_file, const char* kinematic_file,
 
   // Determine the number of bins
   size_t numBins = allBins[currentFits].size() - 1;
-
+  std::cout << "HELLO WORLD" << std::endl;
   // Loop over each bin
   for (size_t i = 0; i < numBins; ++i) {
     cout << "Beginning chi2 fit for " << binNames[currentFits]
