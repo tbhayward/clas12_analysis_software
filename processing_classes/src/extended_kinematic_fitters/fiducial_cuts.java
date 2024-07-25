@@ -40,7 +40,7 @@ public class fiducial_cuts {
 
         // If no matching row was found, return false
         if (calIndex == -1) {
-            return false;
+            return true; // if no calorimeter hit then the photon is in the forward tagger
         }
 
         // check strictness of cuts
