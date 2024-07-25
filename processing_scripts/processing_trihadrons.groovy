@@ -168,7 +168,6 @@ public static void main(String[] args) {
 				            // this is my class for defining all relevant kinematic variables
 
 				            if (variables.channel_test(variables)) {
-				            	println(batchLines); println(); println(); println();
 				                helicity = variables.get_helicity(); // helicity of event
 
 				                // lab kinematics
