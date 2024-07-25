@@ -126,6 +126,8 @@ public static void main(String[] args) {
 
 		while (reader.hasEvent()) {
 		    ++num_events;
+
+		    println(batchLines); println(); println(); println();
 		    if (num_events % 1000000 == 0) { // not necessary, just updates output
 		        print("processed: " + num_events + " events. ");
 		    }
@@ -366,7 +368,6 @@ public static void main(String[] args) {
 								// Append the line to the batchLines StringBuilder
 								batchLines.append(line.toString());
 								lineCount++; // Increment the line count
-								println(batchLines); println(); println(); println();
 				                // If the line count reaches 1000, write to the file and reset
 				                if (lineCount >= max_lines) {
 				                    file.append(batchLines.toString());
