@@ -126,8 +126,6 @@ public static void main(String[] args) {
 
 		while (reader.hasEvent()) {
 		    ++num_events;
-
-		    println(batchLines); println(); println(); println();
 		    if (num_events % 1000000 == 0) { // not necessary, just updates output
 		        print("processed: " + num_events + " events. ");
 		    }
@@ -170,6 +168,7 @@ public static void main(String[] args) {
 				            // this is my class for defining all relevant kinematic variables
 
 				            if (variables.channel_test(variables)) {
+				            	println(batchLines); println(); println(); println();
 				                helicity = variables.get_helicity(); // helicity of event
 
 				                // lab kinematics
