@@ -17,7 +17,6 @@ void charge_accumulation(TTreeReader& dataReader, const std::vector<RunInfo>& ru
                 // std::cout << run_info.runnum << " " << run_info.positive_charge << + " " << run_info.negative_charge << std::endl;
                 if (run_info.runnum == *runnum) {
                     if (run_info.target_polarization > 0) {
-                        std::cout << *runnum << std::endl;
                         cpp += run_info.positive_charge;
                         cmp += run_info.negative_charge;
                     } else if (run_info.target_polarization < 0) {
