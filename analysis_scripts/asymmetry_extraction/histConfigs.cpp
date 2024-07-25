@@ -289,14 +289,14 @@ std::map<std::string, HistConfig> histConfigs = {
       {"mc_pT2", {100, 0, 1.2}},
       {"pTpT", {100, 0, 1.0}},
       {"mc_pTpT", {100, 0, 1.0}},
-      {"p_theta", {100, 0, TMath::Pi() / 2 }}
-      {"mc_p_theta", {100, 0, TMath::Pi() / 2 }}
-      {"p1_theta", {100, 0, TMath::Pi() / 2 }}
-      {"mc_p1_theta", {100, 0, TMath::Pi() / 2 }}
-      {"p2_theta", {100, 0, TMath::Pi() / 2 }}
-      {"mc_p2_theta", {100, 0, TMath::Pi() / 2 }}
-      {"p3_theta", {100, 0, TMath::Pi() / 2 }}
-      {"mc_p3_theta", {100, 0, TMath::Pi() / 2 }}
+      {"p_theta", {100, 0, TMath::Pi() / 2 }},
+      {"mc_p_theta", {100, 0, TMath::Pi() / 2 }},
+      {"p1_theta", {100, 0, TMath::Pi() / 2 }},
+      {"mc_p1_theta", {100, 0, TMath::Pi() / 2 }},
+      {"p2_theta", {100, 0, TMath::Pi() / 2 }},
+      {"mc_p2_theta", {100, 0, TMath::Pi() / 2 }},
+      {"p3_theta", {100, 0, TMath::Pi() / 2 }},
+      {"mc_p3_theta", {100, 0, TMath::Pi() / 2 }},
       {"Q2", {100, 0, 9}},
       {"mc_Q2", {100, 0, 9}},
       {"runnum", {100, 0, 0}},
