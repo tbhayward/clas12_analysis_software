@@ -98,7 +98,7 @@ public static void main(String[] args) {
 		reader.open(hipo_list[current_file]); // open next hipo file
 		HipoDataEvent event = reader.getNextEvent(); 
 
-		println(); println(); println(); println(batchLines);
+		println(); println(); println("Hello"); println(batchLines);
 
 		while (reader.hasEvent()) {
 		    ++num_events;
