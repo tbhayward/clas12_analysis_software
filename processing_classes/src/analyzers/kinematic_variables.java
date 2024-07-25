@@ -71,7 +71,27 @@ public class kinematic_variables {
         return 2*mp*(E - p) - 2*Math.sqrt(mp*mp + E*E)*Math.sqrt(mp*mp + p*p) +
             2*Math.sqrt(mp*mp + E*E)*Math.sqrt(mp*mp + p*p)*Math.cos(theta);
     }
+ 
+    double Depolarization_A(double gamma, double y) {
+        return 1/(1+gamma*gamma)*(1-y+y*y/2+y*y*gamma*gamma/4);
+    }
     
+    double Depolarization_B(double gamma, double y) {
+        return 1/(1+gamma*gamma)*(1-y-y*y*gamma*gamma/4);
+    }
+    
+    double Depolarization_C(double gamma, double y) {
+        return (y/Math.pow(1+gamma*gamma, 0.5))*(1-y/2);
+    }
+    
+    double Depolarization_V(double gamma, double y) {
+        return (2-y)/(1+gamma*gamma)*Math.pow(1-y-y*y*gamma*gamma/4,0.5);
+    }
+    
+    double Depolarization_W(double gamma, double y) {
+        return y/(Math.pow(1+gamma*gamma, 0.5))*Math.pow(1-y-y*y*gamma*gamma/4,0.5);
+    }
+        
     /*~~~~~~~~~~~~~~~~~ Exclusivity ~~~~~~~~~~~~~~~~~*/
     
     double Emiss0(LorentzVector lv_beam, LorentzVector lv_target, LorentzVector lv_e) {

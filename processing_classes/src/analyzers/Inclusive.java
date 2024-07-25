@@ -100,11 +100,11 @@ public class Inclusive {
         tmin = kinematic_variables.tmin(x);
         
         // Depolarization variables
-        Depolarization_A = 1/(1+gamma*gamma)*(1-y+y*y/2+y*y*gamma*gamma/4);
-        Depolarization_B = 1/(1+gamma*gamma)*(1-y-y*y*gamma*gamma/4);
-        Depolarization_C = (y/Math.pow(1+gamma*gamma, 0.5))*(1-y/2);
-        Depolarization_V = (2-y)/(1+gamma*gamma)*Math.pow(1-y-y*y*gamma*gamma/4,0.5);
-        Depolarization_W = y/(Math.pow(1+gamma*gamma, 0.5))*Math.pow(1-y-y*y*gamma*gamma/4,0.5);
+        Depolarization_A = kinematic_variables.Depolarization_A(gamma, y);
+        Depolarization_B = kinematic_variables.Depolarization_B(gamma, y);
+        Depolarization_C = kinematic_variables.Depolarization_C(gamma, y);
+        Depolarization_V = kinematic_variables.Depolarization_V(gamma, y);
+        Depolarization_W = kinematic_variables.Depolarization_W(gamma, y);
                 
         vz_e = scattered_electron.vz();
         
