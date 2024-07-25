@@ -93,9 +93,7 @@ public static void main(String[] args) {
 		// limit to a certain number of files defined by n_files
 		println("\n Opening file "+Integer.toString(current_file+1)
 			+" out of "+n_files+".\n"); 
-		
-		println(); println(); println("Hello"); println(batchLines);
-		
+
 		HipoDataSource reader = new HipoDataSource();
 		reader.open(hipo_list[current_file]); // open next hipo file
 		HipoDataEvent event = reader.getNextEvent(); 
@@ -223,7 +221,6 @@ public static void main(String[] args) {
 		reader.close();
 		}
 
-		println(); println(); println(); println(batchLines);
 		// Write any remaining lines in the batchLines StringBuilder to the file
 		if (batchLines.length() > 0) {
 		    file.append(batchLines.toString());
