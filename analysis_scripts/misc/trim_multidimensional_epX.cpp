@@ -75,38 +75,39 @@ void process_file(const char* input_filename) {
 
     // Create a TTreeReader to read the input tree
     TTreeReader reader(input_tree);
-    tree->Branch("runnum", &runnum, "runnum/I");
-    tree->Branch("evnum", &evnum, "evnum/I");
-    tree->Branch("helicity", &helicity, "helicity/I");
-    tree->Branch("beam_pol", &beam_pol, "beam_pol/D");
-    tree->Branch("target_pol", &target_pol, "target_pol/D");
-    tree->Branch("e_p", &e_p, "e_p/D");
-    tree->Branch("e_theta", &e_theta, "e_theta/D");
-    tree->Branch("e_phi", &e_phi, "e_phi/D");
-    tree->Branch("vz_e", &vz_e, "vz_e/D");
-    tree->Branch("p_p", &p_p, "p_p/D");
-    tree->Branch("p_theta", &p_theta, "p_theta/D");
-    tree->Branch("p_phi", &p_phi, "p_phi/D");
-    tree->Branch("vz_p", &vz_p, "vz_p/D");
-    tree->Branch("Q2", &Q2, "Q2/D");
-    tree->Branch("W", &W, "W/D");
-    tree->Branch("Mx", &Mx, "Mx/D");
-    tree->Branch("Mx2", &Mx2, "Mx2/D");
-    tree->Branch("x", &x, "x/D");
-    tree->Branch("y", &y, "y/D");
-    tree->Branch("t", &t, "t/D");
-    tree->Branch("tmin", &tmin, "tmin/D");
-    tree->Branch("z", &z, "z/D");
-    tree->Branch("xF", &xF, "xF/D");
-    tree->Branch("pT", &pT, "pT/D");
-    tree->Branch("zeta", &zeta, "zeta/D");
-    tree->Branch("eta", &eta, "eta/D");
-    tree->Branch("phi", &phi, "phi/D");
-    tree->Branch("DepA", &DepA, "DepA/D");
-    tree->Branch("DepB", &DepB, "DepB/D");
-    tree->Branch("DepC", &DepC, "DepC/D");
-    tree->Branch("DepV", &DepV, "DepV/D");
-    tree->Branch("DepW", &DepW, "DepW/D");
+    TTreeReaderValue<int> runnum(reader, "runnum");
+    TTreeReaderValue<int> evnum(reader, "evnum");
+    TTreeReaderValue<int> helicity(reader, "helicity");
+    TTreeReaderValue<double> beam_pol(reader, "beam_pol");
+    TTreeReaderValue<double> target_pol(reader, "target_pol");
+    TTreeReaderValue<double> e_p(reader, "e_p");
+    TTreeReaderValue<double> e_theta(reader, "e_theta");
+    TTreeReaderValue<double> e_phi(reader, "e_phi");
+    TTreeReaderValue<double> vz_e(reader, "vz_e");
+    TTreeReaderValue<double> p_p(reader, "p_p");
+    TTreeReaderValue<double> p_theta(reader, "p_theta");
+    TTreeReaderValue<double> p_phi(reader, "p_phi");
+    TTreeReaderValue<double> vz_p(reader, "vz_p");
+    TTreeReaderValue<double> Q2(reader, "Q2");
+    TTreeReaderValue<double> W(reader, "W");
+    TTreeReaderValue<double> Mx(reader, "Mx");
+    TTreeReaderValue<double> Mx2(reader, "Mx2");
+    TTreeReaderValue<double> x(reader, "x");
+    TTreeReaderValue<double> y(reader, "y");
+    TTreeReaderValue<double> t(reader, "t");
+    TTreeReaderValue<double> tmin(reader, "tmin");
+    TTreeReaderValue<double> z(reader, "z");
+    TTreeReaderValue<double> xF(reader, "xF");
+    TTreeReaderValue<double> pT(reader, "pT");
+    TTreeReaderValue<double> zeta(reader, "zeta");
+    TTreeReaderValue<double> eta(reader, "eta");
+    TTreeReaderValue<double> phi(reader, "phi");
+    TTreeReaderValue<double> DepA(reader, "DepA");
+    TTreeReaderValue<double> DepB(reader, "DepB");
+    TTreeReaderValue<double> DepC(reader, "DepC");
+    TTreeReaderValue<double> DepV(reader, "DepV");
+    TTreeReaderValue<double> DepW(reader, "DepW");
+
 
     // Loop over entries and fill the corresponding output trees
     while (reader.Next()) {
