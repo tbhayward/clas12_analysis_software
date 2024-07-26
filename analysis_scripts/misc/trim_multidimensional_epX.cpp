@@ -87,6 +87,7 @@ void process_file(const char* input_filename) {
 
             // Determine the Q2-y bin and fill the corresponding tree
             int bin = DetermineQ2yBin(*Q2, *y);
+            std::cout << bin << std::endl;
             if (bin > 0 && bin < 18) {
                 output_trees[bin]->Fill();
             }
