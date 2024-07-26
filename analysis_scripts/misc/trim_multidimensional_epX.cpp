@@ -64,82 +64,13 @@ void process_file(const char* input_filename) {
         base_name = base_name.substr(0, dot_pos);
     }
 
-    // Declare variables for branches
-    int runnum_val;
-    int evnum_val;
-    int helicity_val;
-    double beam_pol_val;
-    double target_pol_val;
-    double e_p_val;
-    double e_theta_val;
-    double e_phi_val;
-    double vz_e_val;
-    double p_p_val;
-    double p_theta_val;
-    double p_phi_val;
-    double vz_p_val;
-    double Q2_val;
-    double W_val;
-    double Mx_val;
-    double Mx2_val;
-    double x_val;
-    double y_val;
-    double t_val;
-    double tmin_val;
-    double z_val;
-    double xF_val;
-    double pT_val;
-    double zeta_val;
-    double eta_val;
-    double phi_val;
-    double DepA_val;
-    double DepB_val;
-    double DepC_val;
-    double DepV_val;
-    double DepW_val;
-
     // Create output files and trees for each Q2-y bin
     std::vector<TFile*> output_files(18);
     std::vector<TTree*> output_trees(18);
     for (int i = 0; i < 18; ++i) {
         std::string output_filename = base_name + "_" + std::to_string(i) + ".root";
         output_files[i] = TFile::Open(output_filename.c_str(), "RECREATE");
-        output_trees[i] = new TTree("PhysicsEvents", "PhysicsEvents");
-
-
-        // Create branches for each variable
-        output_trees[i]->Branch("runnum", &runnum_val, "runnum/I");
-        output_trees[i]->Branch("evnum", &evnum_val, "evnum/I");
-        output_trees[i]->Branch("helicity", &helicity_val, "helicity/I");
-        output_trees[i]->Branch("beam_pol", &beam_pol_val, "beam_pol/D");
-        output_trees[i]->Branch("target_pol", &target_pol_val, "target_pol/D");
-        output_trees[i]->Branch("e_p", &e_p_val, "e_p/D");
-        output_trees[i]->Branch("e_theta", &e_theta_val, "e_theta/D");
-        output_trees[i]->Branch("e_phi", &e_phi_val, "e_phi/D");
-        output_trees[i]->Branch("vz_e", &vz_e_val, "vz_e/D");
-        output_trees[i]->Branch("p_p", &p_p_val, "p_p/D");
-        output_trees[i]->Branch("p_theta", &p_theta_val, "p_theta/D");
-        output_trees[i]->Branch("p_phi", &p_phi_val, "p_phi/D");
-        output_trees[i]->Branch("vz_p", &vz_p_val, "vz_p/D");
-        output_trees[i]->Branch("Q2", &Q2_val, "Q2/D");
-        output_trees[i]->Branch("W", &W_val, "W/D");
-        output_trees[i]->Branch("Mx", &Mx_val, "Mx/D");
-        output_trees[i]->Branch("Mx2", &Mx2_val, "Mx2/D");
-        output_trees[i]->Branch("x", &x_val, "x/D");
-        output_trees[i]->Branch("y", &y_val, "y/D");
-        output_trees[i]->Branch("t", &t_val, "t/D");
-        output_trees[i]->Branch("tmin", &tmin_val, "tmin/D");
-        output_trees[i]->Branch("z", &z_val, "z/D");
-        output_trees[i]->Branch("xF", &xF_val, "xF/D");
-        output_trees[i]->Branch("pT", &pT_val, "pT/D");
-        output_trees[i]->Branch("zeta", &zeta_val, "zeta/D");
-        output_trees[i]->Branch("eta", &eta_val, "eta/D");
-        output_trees[i]->Branch("phi", &phi_val, "phi/D");
-        output_trees[i]->Branch("DepA", &DepA_val, "DepA/D");
-        output_trees[i]->Branch("DepB", &DepB_val, "DepB/D");
-        output_trees[i]->Branch("DepC", &DepC_val, "DepC/D");
-        output_trees[i]->Branch("DepV", &DepV_val, "DepV/D");
-        output_trees[i]->Branch("DepW", &DepW_val, "DepW/D");
+        output_trees[i] = input_tree->CloneTree(0); // Clone the structure of the input tree
     }
 
     // Create a TTreeReader to read the input tree
@@ -180,42 +111,8 @@ void process_file(const char* input_filename) {
     // Loop over entries and fill the corresponding output trees
     while (reader.Next()) {
         if (*Mx > 1.4) {
-            // Assign values to variables
-            int runnum_val = *runnum;
-            int evnum_val = *evnum;
-            int helicity_val = *helicity;
-            double beam_pol_val = *beam_pol;
-            double target_pol_val = *target_pol;
-            double e_p_val = *e_p;
-            double e_theta_val = *e_theta;
-            double e_phi_val = *e_phi;
-            double vz_e_val = *vz_e;
-            double p_p_val = *p_p;
-            double p_theta_val = *p_theta;
-            double p_phi_val = *p_phi;
-            double vz_p_val = *vz_p;
-            double Q2_val = *Q2;
-            double W_val = *W;
-            double Mx_val = *Mx;
-            double Mx2_val = *Mx2;
-            double x_val = *x;
-            double y_val = *y;
-            double t_val = *t;
-            double tmin_val = *tmin;
-            double z_val = *z;
-            double xF_val = *xF;
-            double pT_val = *pT;
-            double zeta_val = *zeta;
-            double eta_val = *eta;
-            double phi_val = *phi;
-            double DepA_val = *DepA;
-            double DepB_val = *DepB;
-            double DepC_val = *DepC;
-            double DepV_val = *DepV;
-            double DepW_val = *DepW;
-
             // Determine the Q2-y bin and fill the corresponding tree
-            int bin = DetermineQ2yBin(Q2_val, y_val);
+            int bin = DetermineQ2yBin(*Q2, *y);
             if (bin > 0 && bin < 18) {
                 output_trees[bin]->Fill();
             }
@@ -223,6 +120,7 @@ void process_file(const char* input_filename) {
             output_trees[0]->Fill();
         }
     }
+
     // Write and close the output files
     for (int i = 0; i < 18; ++i) {
         output_files[i]->cd();
