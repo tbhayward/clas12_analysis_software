@@ -75,9 +75,38 @@ void process_file(const char* input_filename) {
 
     // Create a TTreeReader to read the input tree
     TTreeReader reader(input_tree);
-    TTreeReaderValue<double> Mx(reader, "Mx");
-    TTreeReaderValue<double> Q2(reader, "Q2");
-    TTreeReaderValue<double> y(reader, "y");
+    tree->Branch("runnum", &runnum, "runnum/I");
+    tree->Branch("evnum", &evnum, "evnum/I");
+    tree->Branch("helicity", &helicity, "helicity/I");
+    tree->Branch("beam_pol", &beam_pol, "beam_pol/D");
+    tree->Branch("target_pol", &target_pol, "target_pol/D");
+    tree->Branch("e_p", &e_p, "e_p/D");
+    tree->Branch("e_theta", &e_theta, "e_theta/D");
+    tree->Branch("e_phi", &e_phi, "e_phi/D");
+    tree->Branch("vz_e", &vz_e, "vz_e/D");
+    tree->Branch("p_p", &p_p, "p_p/D");
+    tree->Branch("p_theta", &p_theta, "p_theta/D");
+    tree->Branch("p_phi", &p_phi, "p_phi/D");
+    tree->Branch("vz_p", &vz_p, "vz_p/D");
+    tree->Branch("Q2", &Q2, "Q2/D");
+    tree->Branch("W", &W, "W/D");
+    tree->Branch("Mx", &Mx, "Mx/D");
+    tree->Branch("Mx2", &Mx2, "Mx2/D");
+    tree->Branch("x", &x, "x/D");
+    tree->Branch("y", &y, "y/D");
+    tree->Branch("t", &t, "t/D");
+    tree->Branch("tmin", &tmin, "tmin/D");
+    tree->Branch("z", &z, "z/D");
+    tree->Branch("xF", &xF, "xF/D");
+    tree->Branch("pT", &pT, "pT/D");
+    tree->Branch("zeta", &zeta, "zeta/D");
+    tree->Branch("eta", &eta, "eta/D");
+    tree->Branch("phi", &phi, "phi/D");
+    tree->Branch("DepA", &DepA, "DepA/D");
+    tree->Branch("DepB", &DepB, "DepB/D");
+    tree->Branch("DepC", &DepC, "DepC/D");
+    tree->Branch("DepV", &DepV, "DepV/D");
+    tree->Branch("DepW", &DepW, "DepW/D");
 
     // Loop over entries and fill the corresponding output trees
     while (reader.Next()) {
