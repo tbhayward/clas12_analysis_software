@@ -122,8 +122,6 @@ public static void main(String[] args) {
 		reader.open(hipo_list[current_file]); // open next hipo file
 		HipoDataEvent event = reader.getNextEvent(); 
 
-		println(); println(); println(); println(batchLines);
-
 		while (reader.hasEvent()) {
 		    ++num_events;
 		    if (num_events % 1000000 == 0) { // not necessary, just updates output
