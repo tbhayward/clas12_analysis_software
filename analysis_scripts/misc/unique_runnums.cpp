@@ -32,7 +32,7 @@ int main() {
     for (Long64_t i = 0; i < nentries; i++) {
         tree->GetEntry(i);
         unique_runnums.insert(runnum);
-        std::cout << runnum << " ";
+        // std::cout << runnum << " ";
     }
 
     // Print the unique run numbers
