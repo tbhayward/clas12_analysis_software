@@ -5,7 +5,7 @@
 
 int main() {
     // Open the ROOT file
-    TFile *file = TFile::Open("/scratch/thayward/C_test/output.txt");
+    TFile *file = TFile::Open("/scratch/thayward/C_test/output.root");
     if (!file || file->IsZombie()) {
         std::cerr << "Error opening file!" << std::endl;
         return 1;
