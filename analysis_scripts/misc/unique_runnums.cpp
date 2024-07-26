@@ -5,7 +5,7 @@
 
 int main() {
     // Open the ROOT file
-    TFile *file = TFile::Open("/scratch/thayward/C_test/output.root");
+    TFile *file = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eppi+pi-X/rgc_su22_inb_C_eppi+pi-X.root");
     if (!file || file->IsZombie()) {
         std::cerr << "Error opening file!" << std::endl;
         return 1;
