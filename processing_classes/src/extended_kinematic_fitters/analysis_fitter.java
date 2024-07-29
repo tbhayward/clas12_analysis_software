@@ -236,7 +236,7 @@ public class analysis_fitter extends GenericKinematicFitter {
             System.out.print(num_gamma+" ");
             for (int current_p1 = 0; current_p1 < num_gamma; num_gamma++) {
                 for (int current_p2 = 0; current_p2 < num_gamma; num_gamma++) {
-                    System.out.println(current_p1+" "+current_p2);
+                    System.out.print(current_p1+" "+current_p2+" ");
 //                    if (current_p1 == current_p2) { continue; }
                     Particle part = parent_hadron_creation.pi0_check(physEvent, current_p1, current_p2);
                     
@@ -247,6 +247,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                     }
                 }
             }
+            System.out.println(" ");
             
             int num_pip = physEvent.countByPid(211); // number of pi+ in event
             int num_pim = physEvent.countByPid(-211); // number of pi- in event
