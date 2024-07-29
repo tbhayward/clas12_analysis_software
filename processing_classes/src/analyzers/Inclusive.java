@@ -108,11 +108,9 @@ public class Inclusive {
                 
         vz_e = scattered_electron.vz();
         
-        
         // missing mass calculations
-        LorentzVector lv_Mx = new LorentzVector(lv_q); lv_Mx.add(lv_target);  
-        Mx = lv_Mx.mass();  
-        Mx2 = lv_Mx.mass2(); // missing mass squared
+        Mx = kinematic_variables.Mx(lv_q, lv_target);  
+        Mx2 = kinematic_variables.Mx2(lv_q, lv_target);  // missing mass squared
     }
     
     

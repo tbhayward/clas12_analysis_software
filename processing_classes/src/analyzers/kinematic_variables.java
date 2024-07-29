@@ -92,6 +92,44 @@ public class kinematic_variables {
         return y/(Math.pow(1+gamma*gamma, 0.5))*Math.pow(1-y-y*y*gamma*gamma/4,0.5);
     }
         
+    double Mx(LorentzVector lv_q, LorentzVector lv_target) {
+        LorentzVector lv_Mx = new LorentzVector(lv_q); lv_Mx.add(lv_target);  
+        return lv_Mx.mass();
+    }
+    
+    double Mx2(LorentzVector lv_q, LorentzVector lv_target) {
+        LorentzVector lv_Mx = new LorentzVector(lv_q); lv_Mx.add(lv_target);  
+        return lv_Mx.mass2();
+    }
+    
+    double Mx(LorentzVector lv_q, LorentzVector lv_target, LorentzVector lv_p) {
+        LorentzVector lv_Mx = new LorentzVector(lv_q); lv_Mx.add(lv_target); lv_Mx.sub(lv_p);  
+        return lv_Mx.mass();
+    }
+    
+    double Mx2(LorentzVector lv_q, LorentzVector lv_target, LorentzVector lv_p) {
+        LorentzVector lv_Mx = new LorentzVector(lv_q); lv_Mx.add(lv_target); lv_Mx.sub(lv_p);
+        return lv_Mx.mass2();
+    }
+    
+    /*~~~~~~~~~~~~~~~~~ Single Hadron ~~~~~~~~~~~~~~~~~*/
+    double z(LorentzVector lv_p, LorentzVector lv_q) {
+        return lv_p.e()/lv_q.e();
+    }
+    
+    /*~~~~~~~~~~~~~~~~~ Lorentz Boosts ~~~~~~~~~~~~~~~~~*/
+    
+    // boost to gamma*-nucleon center of mass frame
+    LorentzVector lv_boost_gN(LorentzVector lv_target, LorentzVector lv_q, LorentzVector lv_p_gN) {
+        // set up boost to gamma*-nucleon center of mass frame
+        LorentzVector gN = new LorentzVector(lv_q);
+	gN.add(lv_target);
+	Vector3 gNBoost = gN.boostVector();
+	gNBoost.negative();
+        lv_p_gN.boost(gNBoost);
+        return lv_p_gN;
+    }
+    
     /*~~~~~~~~~~~~~~~~~ Exclusivity ~~~~~~~~~~~~~~~~~*/
     
     double Emiss0(LorentzVector lv_beam, LorentzVector lv_target, LorentzVector lv_e) {

@@ -40,7 +40,9 @@ public class fiducial_cuts {
 
         // If no matching row was found, return false
         if (calIndex == -1) {
-            return true; // if no calorimeter hit then the photon is in the forward tagger
+            int pid = rec_Bank.getInt("pid", particle_Index);
+            if (pid == 11) { return false; } // calorimeter hit required for electron identification
+            else { return true; } // neutrals do not require FD, (probably photon in FT)
         }
 
         // check strictness of cuts

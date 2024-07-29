@@ -230,40 +230,36 @@ public class Dihadrons {
         if (p2_phi < 0) { p2_phi = 2*Math.PI + p2_phi; }
         p_px = lv_p.px(); p_py = lv_p.py(); p_pz = lv_p.pz(); p_p = lv_p.p(); p_e = lv_p.e();
 
-        z = lv_p.e()/lv_q.e();
-        z1 = lv_p1.e()/lv_q.e();
-	z2 = lv_p2.e()/lv_q.e();
+        z = kinematic_variables.z(lv_p, lv_q);
+        z1 = kinematic_variables.z(lv_p1, lv_q);
+	z2 = kinematic_variables.z(lv_p2, lv_q);
         
         // missing mass calculations
-        LorentzVector lv_Mx = new LorentzVector(lv_q); lv_Mx.add(lv_target); lv_Mx.sub(lv_p1); lv_Mx.sub(lv_p2);
-        Mx = lv_Mx.mass(); 
-        LorentzVector lv_Mx1 = new LorentzVector(lv_q); lv_Mx1.add(lv_target); lv_Mx1.sub(lv_p1); 
-        Mx1 = lv_Mx1.mass(); // missing mass with p1 observed
-        LorentzVector lv_Mx2 = new LorentzVector(lv_q); lv_Mx2.add(lv_target); lv_Mx2.sub(lv_p2);
-        Mx2 = lv_Mx2.mass(); // missing mass with p2 observed
-        Mxgammasquared = lv_Mx2.mass2(); 
-//        Mx2 = Mxgammasquared;
+        Mx = kinematic_variables.Mx(lv_q, lv_target);
+        Mx1 = kinematic_variables.Mx(lv_q, lv_target, lv_p1);
+        Mx2 = kinematic_variables.Mx(lv_q, lv_target, lv_p2);
+        Mxgammasquared = kinematic_variables.Mx2(lv_q, lv_target, lv_p2);
         
         // boost to gamma*-nucleon center of mass frame
-        LorentzVector lv_p_gN = new LorentzVector(lv_p); lv_p_gN.boost(gNBoost);
-        LorentzVector lv_p1_gN = new LorentzVector(lv_p1); lv_p1_gN.boost(gNBoost);
-        LorentzVector lv_p2_gN = new LorentzVector(lv_p2); lv_p2_gN.boost(gNBoost);
-        LorentzVector lv_e_gN = new LorentzVector(lv_e); lv_e_gN.boost(gNBoost);
-        LorentzVector lv_target_gN = new LorentzVector(lv_target); lv_target_gN.boost(gNBoost);
-        LorentzVector lv_Mx_gN = new LorentzVector(lv_Mx); lv_Mx_gN.boost(gNBoost);
+        LorentzVector lv_p_gN = new LorentzVector(lv_p); 
+        lv_p_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_p_gN);
+        LorentzVector lv_p1_gN = new LorentzVector(lv_p); 
+        lv_p1_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_p1_gN);
+        LorentzVector lv_p2_gN = new LorentzVector(lv_p); 
+        lv_p2_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_p2_gN);
+        LorentzVector lv_e_gN = new LorentzVector(lv_e); 
+        lv_e_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_e_gN);
         Vector3 lv_e_gN_unit = new Vector3();
         lv_e_gN_unit.setMagThetaPhi(1, lv_e_gN.theta(), lv_e_gN.phi());
-        LorentzVector lv_q_gN = new LorentzVector(lv_q); lv_q_gN.boost(gNBoost);
+        LorentzVector lv_target_gN = new LorentzVector(lv_target); 
+        lv_target_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_target_gN);
+        LorentzVector lv_q_gN = new LorentzVector(lv_q); 
+        lv_q_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_q_gN);
         Vector3 lv_q_gN_unit = new Vector3();
         lv_q_gN_unit.setMagThetaPhi(1, lv_q_gN.theta(), lv_q_gN.phi());
-        Vector3 lv_y_gN = new Vector3(); // I guess this isn't really a lorenzvector so the lv name is wrong 
-        lv_y_gN = lv_q_gN.vect().cross(lv_e_gN.vect()); 
         // in gamma*-nucleon frame the z axis is along gamma* and the x axis is in the 
         // e-e' plane in the direction of e. the y axis is then the cross product of these two
-        // calculate open angles between p1.p2, p1.X and p2.X
-        gN_angle_p1_p2 = 180/Math.PI*Math.acos(lv_p1_gN.vect().dot(lv_p2_gN.vect())/(lv_p1_gN.vect().mag()*lv_p2_gN.vect().mag()));
-        gN_angle_p1_X = 180/Math.PI*Math.acos(lv_p1_gN.vect().dot(lv_Mx_gN.vect())/(lv_p1_gN.vect().mag()*lv_Mx_gN.vect().mag()));
-        gN_angle_p2_X = 180/Math.PI*Math.acos(lv_p2_gN.vect().dot(lv_Mx_gN.vect())/(lv_p2_gN.vect().mag()*lv_Mx_gN.vect().mag()));
+        
         
         // boost to Breit infinite momentum frame
         LorentzVector lv_p_Breit = new LorentzVector(lv_p); lv_p_Breit.boost(BreitBoost);

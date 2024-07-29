@@ -170,24 +170,25 @@ public class Hadron {
         p_phi = hadron.phi();
         if (p_phi < 0) { p_phi = 2*Math.PI + p_phi; }
     
-        z = lv_p.e()/lv_q.e();
+        z = kinematic_variables.z(lv_p, lv_q);
         
         // missing mass calculations
-        LorentzVector lv_Mx = new LorentzVector(lv_q); lv_Mx.add(lv_target); lv_Mx.sub(lv_p); 
-        Mx = lv_Mx.mass();
-        Mx2 = lv_Mx.mass2(); // missing mass squared
+        Mx = kinematic_variables.Mx(lv_q, lv_target, lv_p);
+        Mx2 = kinematic_variables.Mx2(lv_q, lv_target, lv_p); // missing mass squared
         
         // boost to gamma*-nucleon center of mass frame
-        LorentzVector lv_p_gN = new LorentzVector(lv_p); lv_p_gN.boost(gNBoost);
-        LorentzVector lv_e_gN = new LorentzVector(lv_e); lv_e_gN.boost(gNBoost);
-        LorentzVector lv_target_gN = new LorentzVector(lv_target); lv_target_gN.boost(gNBoost);
+        LorentzVector lv_p_gN = new LorentzVector(lv_p); 
+        lv_p_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_p_gN);
+        LorentzVector lv_e_gN = new LorentzVector(lv_e); 
+        lv_e_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_e_gN);
         Vector3 lv_e_gN_unit = new Vector3();
         lv_e_gN_unit.setMagThetaPhi(1, lv_e_gN.theta(), lv_e_gN.phi());
-        LorentzVector lv_q_gN = new LorentzVector(lv_q); lv_q_gN.boost(gNBoost);
+        LorentzVector lv_target_gN = new LorentzVector(lv_target); 
+        lv_target_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_target_gN);
+        LorentzVector lv_q_gN = new LorentzVector(lv_q); 
+        lv_q_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_q_gN);
         Vector3 lv_q_gN_unit = new Vector3();
         lv_q_gN_unit.setMagThetaPhi(1, lv_q_gN.theta(), lv_q_gN.phi());
-        Vector3 lv_y_gN = new Vector3(); // I guess this isn't really a lorenzvector so the lv name is wrong 
-        lv_y_gN = lv_q_gN.vect().cross(lv_e_gN.vect()); 
         // in gamma*-nucleon frame the z axis is along gamma* and the x axis is in the 
         // e-e' plane in the direction of e. the y axis is then the cross product of these two
         

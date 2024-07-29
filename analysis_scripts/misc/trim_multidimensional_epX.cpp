@@ -113,7 +113,7 @@ void process_file(const char* input_filename) {
         int random_int = *runnum + *evnum + *helicity;
         double random = *beam_pol + *target_pol + *e_p + *e_theta + *e_phi + 
             *vz_e + *p_p + *p_theta + *p_phi + *vz_p + *Q2 + *W + *Mx + 
-            *Mx2 + *x + *y + *t + *z + *xF + *pT + *zeta + *eta + *phi + *DepA +
+            *Mx2 + *x + *y + *t + *tmin + *z + *xF + *pT + *zeta + *eta + *phi + *DepA +
             *DepB + *DepC + *DepV + *DepW;
         if (*Mx > 1.4) {
             // Determine the Q2-y bin and fill the corresponding tree

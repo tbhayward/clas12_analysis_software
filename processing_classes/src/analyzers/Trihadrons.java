@@ -234,17 +234,18 @@ public class Trihadrons {
         
         p_px = lv_p.px(); p_py = lv_p.py(); p_pz = lv_p.pz(); p_p = lv_p.p(); p_e = lv_p.e();
 
-        z = lv_p.e()/lv_q.e();
-        z1 = lv_p1.e()/lv_q.e();
-	z2 = lv_p2.e()/lv_q.e();
-        z3 = lv_p3.e()/lv_q.e();
-        z12 = lv_p12.e()/lv_q.e();
-        z13 = lv_p13.e()/lv_q.e();
-        z23 = lv_p23.e()/lv_q.e();
+        z = kinematic_variables.z(lv_p, lv_q);
+        z1 = kinematic_variables.z(lv_p1, lv_q);
+	z2 = kinematic_variables.z(lv_p2, lv_q);
+        z3 = kinematic_variables.z(lv_p3, lv_q);
+        z12 = kinematic_variables.z(lv_p12, lv_q);
+        z13 = kinematic_variables.z(lv_p13, lv_q);
+        z23 = kinematic_variables.z(lv_p23, lv_q);
         
         // missing mass calculations
         LorentzVector lv_Mx = new LorentzVector(lv_q); lv_Mx.add(lv_target); lv_Mx.sub(lv_p1); lv_Mx.sub(lv_p2);
-            lv_Mx.sub(lv_p3); Mx = lv_Mx.mass();  // missing mass with all observed
+            lv_Mx.sub(lv_p3); 
+        Mx = lv_Mx.mass();  // missing mass with all observed
         LorentzVector lv_Mx1 = new LorentzVector(lv_q); lv_Mx1.add(lv_target); lv_Mx1.sub(lv_p1); 
         Mx1 = lv_Mx1.mass(); // missing mass with p1 observed
         LorentzVector lv_Mx2 = new LorentzVector(lv_q); lv_Mx2.add(lv_target); lv_Mx2.sub(lv_p2);
@@ -257,25 +258,34 @@ public class Trihadrons {
         Mx13 = lv_Mx13.mass(); // missing mass with p1 and p3 observed
         LorentzVector lv_Mx23 = new LorentzVector(lv_q); lv_Mx23.add(lv_target); lv_Mx23.sub(lv_p2); lv_Mx23.sub(lv_p3);
         Mx23 = lv_Mx23.mass(); // missing mass with p2 and p3 observed
-        
+                
         // boost to gamma*-nucleon center of mass frame
-        LorentzVector lv_p_gN = new LorentzVector(lv_p); lv_p_gN.boost(gNBoost);
-        LorentzVector lv_p1_gN = new LorentzVector(lv_p1); lv_p1_gN.boost(gNBoost);
-        LorentzVector lv_p2_gN = new LorentzVector(lv_p2); lv_p2_gN.boost(gNBoost);
-        LorentzVector lv_p3_gN = new LorentzVector(lv_p3); lv_p3_gN.boost(gNBoost);
-        LorentzVector lv_p12_gN = new LorentzVector(lv_p12); lv_p12_gN.boost(gNBoost);
-        LorentzVector lv_p13_gN = new LorentzVector(lv_p13); lv_p13_gN.boost(gNBoost);
-        LorentzVector lv_p23_gN = new LorentzVector(lv_p23); lv_p23_gN.boost(gNBoost);
-        LorentzVector lv_e_gN = new LorentzVector(lv_e); lv_e_gN.boost(gNBoost);
-        LorentzVector lv_target_gN = new LorentzVector(lv_target); lv_target_gN.boost(gNBoost);
-        LorentzVector lv_Mx_gN = new LorentzVector(lv_Mx); lv_Mx_gN.boost(gNBoost);
+        LorentzVector lv_p_gN = new LorentzVector(lv_p); 
+        lv_p_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_p_gN);
+        LorentzVector lv_p1_gN = new LorentzVector(lv_p); 
+        lv_p1_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_p1_gN);
+        LorentzVector lv_p2_gN = new LorentzVector(lv_p); 
+        lv_p2_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_p2_gN);
+        LorentzVector lv_p3_gN = new LorentzVector(lv_p); 
+        lv_p3_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_p3_gN);
+        LorentzVector lv_p12_gN = new LorentzVector(lv_p); 
+        lv_p12_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_p12_gN);
+        LorentzVector lv_p13_gN = new LorentzVector(lv_p); 
+        lv_p13_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_p13_gN);
+        LorentzVector lv_p23_gN = new LorentzVector(lv_p); 
+        lv_p23_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_p23_gN);
+        LorentzVector lv_e_gN = new LorentzVector(lv_e); 
+        lv_e_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_e_gN);
         Vector3 lv_e_gN_unit = new Vector3();
         lv_e_gN_unit.setMagThetaPhi(1, lv_e_gN.theta(), lv_e_gN.phi());
-        LorentzVector lv_q_gN = new LorentzVector(lv_q); lv_q_gN.boost(gNBoost);
+        LorentzVector lv_target_gN = new LorentzVector(lv_target); 
+        lv_target_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_target_gN);
+        LorentzVector lv_q_gN = new LorentzVector(lv_q); 
+        lv_q_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_q_gN);
         Vector3 lv_q_gN_unit = new Vector3();
         lv_q_gN_unit.setMagThetaPhi(1, lv_q_gN.theta(), lv_q_gN.phi());
-        Vector3 lv_y_gN = new Vector3(); // I guess this isn't really a lorenzvector so the lv name is wrong 
-        lv_y_gN = lv_q_gN.vect().cross(lv_e_gN.vect()); 
+        // in gamma*-nucleon frame the z axis is along gamma* and the x axis is in the 
+        // e-e' plane in the direction of e. the y axis is then the cross product of these two
         
         // boost to Breit infinite momentum frame
         LorentzVector lv_p_Breit = new LorentzVector(lv_p); lv_p_Breit.boost(BreitBoost);
