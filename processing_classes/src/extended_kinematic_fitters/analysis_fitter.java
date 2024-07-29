@@ -232,17 +232,17 @@ public class analysis_fitter extends GenericKinematicFitter {
             
             parent_hadron_creation parent_hadron_creation = new parent_hadron_creation();
             
-//            for (int current_p1 = 0; current_p1 < num_gamma; current_p1++) {
-//                for (int current_p2 = 0; current_p2 < num_gamma; current_p2++) {
-//                    if (current_p1 == current_p2) { continue; }
-//                    Particle part = parent_hadron_creation.pi0_check(physEvent, current_p1, current_p2);
-//                    
-//                    // Check if a valid Particle was returned before adding it to the event
-//                    if (part != null) {
-//                        physEvent.addParticle(part);
-//                    }
-//                }
-//            }
+            for (int current_p1 = 0; current_p1 < num_gamma; current_p1++) {
+                for (int current_p2 = 0; current_p2 < num_gamma; current_p2++) {
+                    if (current_p1 == current_p2) { continue; }
+                    Particle part = parent_hadron_creation.pi0_check(physEvent, current_p1, current_p2);
+                    
+                    // Check if a valid Particle was returned before adding it to the event
+                    if (part != null) {
+                        physEvent.addParticle(part);
+                    }
+                }
+            }
             
             
             int num_pip = physEvent.countByPid(211); // number of pi+ in event
