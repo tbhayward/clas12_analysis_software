@@ -237,7 +237,7 @@ public class analysis_fitter extends GenericKinematicFitter {
             for (int current_p1 = 0; current_p1 < num_gamma; num_gamma++) {
                 for (int current_p2 = 0; current_p2 < num_gamma; num_gamma++) {
                     if (current_p1 == current_p2) { continue; }
-                    System.out.println(num_gamma);
+//                    System.out.println(num_gamma);
                     Particle part = parent_hadron_creation.pi0_check(physEvent, current_p1, current_p2);
                     
                     // Check if a valid Particle was returned before adding it to the event
