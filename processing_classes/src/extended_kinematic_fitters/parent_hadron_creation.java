@@ -5,6 +5,8 @@
 
 package extended_kinematic_fitters;
 
+import org.jlab.clas.pdg.PDGDatabase;
+import org.jlab.clas.pdg.PDGParticle;
 import org.jlab.clas.physics.Particle;
 import org.jlab.clas.physics.PhysicsEvent;
 
@@ -13,6 +15,8 @@ import org.jlab.clas.physics.*;
 public class parent_hadron_creation {
     
     Particle pi0_check(PhysicsEvent physEvent, int current_p1, int current_p2) {
+        PDGParticle particle = PDGDatabase.getParticleById(22);
+        
         Particle gamma_1 = physEvent.getParticle("[22,"+current_p1+"]");
         LorentzVector lv_gamma_1 = new LorentzVector();
         lv_gamma_1.setPxPyPzM(gamma_1.px(), gamma_1.py(), gamma_1.pz(), 0);
