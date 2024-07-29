@@ -134,7 +134,7 @@ public class analysis_fitter extends GenericKinematicFitter {
         return true
             && p > 0.50
 //            && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
-//            && fiducial_cuts.pcal_fiducial_cut(particle_Index, 2, rec_Bank, cal_Bank)
+            && fiducial_cuts.pcal_fiducial_cut(particle_Index, 2, rec_Bank, cal_Bank)
             && pid_cuts.beta_cut(particle_Index, rec_Bank)
 //            && pid_cuts.e_gamma_open_angle_cut(lv_e, lv_gamma)
             ;
@@ -224,7 +224,6 @@ public class analysis_fitter extends GenericKinematicFitter {
                }
                 
                 if (pid==22 && photon_test(particle_Index, rec_Bank, cal_Bank, lv_e)) {
-                   System.out.println("found a photon");
                    Particle part = new Particle(pid,px,py,pz,vx,vy,vz);
                    physEvent.addParticle(part);   
                }
@@ -234,6 +233,7 @@ public class analysis_fitter extends GenericKinematicFitter {
             
             parent_hadron_creation parent_hadron_creation = new parent_hadron_creation();
             
+            System.out.println(num_gamma);
             for (int current_p1 = 0; current_p1 < num_gamma; num_gamma++) {
                 for (int current_p2 = 0; current_p2 < num_gamma; num_gamma++) {
                     if (current_p1 == current_p2) { continue; }
