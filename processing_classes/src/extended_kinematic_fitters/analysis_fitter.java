@@ -244,7 +244,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                     }
                 }
             }
-            System.out.println(" ");
+            
             
             int num_pip = physEvent.countByPid(211); // number of pi+ in event
             int num_pim = physEvent.countByPid(-211); // number of pi- in event
