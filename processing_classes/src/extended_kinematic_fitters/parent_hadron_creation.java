@@ -24,8 +24,6 @@ public class parent_hadron_creation {
             // Add the particle to the database
             PDGDatabase.addParticle(particle);
         }
-        // Verify the particle is added
-        PDGDatabase.show();
         
         Particle gamma_1 = physEvent.getParticle("[22,"+current_p1+"]");
         LorentzVector lv_gamma_1 = new LorentzVector();
