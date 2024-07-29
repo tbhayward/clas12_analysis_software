@@ -16,7 +16,6 @@ import org.jlab.clas.physics.*;
 public class parent_hadron_creation {
     
     Particle pi0_check(PhysicsEvent physEvent, int current_p1, int current_p2) {
-        System.out.println("entering pi0 check");
         Particle gamma_1 = physEvent.getParticle("[22,"+current_p1+"]");
         LorentzVector lv_gamma_1 = new LorentzVector();
         lv_gamma_1.setPxPyPzM(gamma_1.px(), gamma_1.py(), gamma_1.pz(), 0);
