@@ -98,7 +98,6 @@ public static void main(String[] args) {
 
 		while (reader.hasEvent()) {
 		    ++num_events;
-		    println(num_events);
 		    if (num_events % 100000 == 0) { // not necessary, just updates output
 		        print("processed: " + num_events + " events. ");
 		    }
@@ -124,8 +123,7 @@ public static void main(String[] args) {
 		        int num_p1 = research_Event.countByPid(2212);
 		        int num_p2 = research_Event.countByPid(22); 
 
-
-		        // cycle over all hadrons
+		        // cycle over all particle
 		        for (int current_p1 = 0; current_p1 < num_p1; current_p1++) { 
 		        	for (int current_p2 = 0; current_p2 < num_p2; current_p2++) { 
 
