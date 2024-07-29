@@ -35,7 +35,7 @@ public class parent_hadron_creation {
         
         // candidate is in the sideband of the pi0 mass spectrum, assigned to pid == -111 (negative of pi0 pid)
         if (0.22 < lv_pi0_candidate.mass() && lv_pi0_candidate.mass() < 0.45) {
-            Particle part = new Particle(4122, lv_pi0_candidate.px(), lv_pi0_candidate.py(), 
+            Particle part = new Particle(3334, lv_pi0_candidate.px(), lv_pi0_candidate.py(), 
                 lv_pi0_candidate.pz(), 0, 0, 0);
             return part;
         }
