@@ -16,6 +16,7 @@ import org.jlab.clas.physics.*;
 public class parent_hadron_creation {
     
     Particle pi0_check(PhysicsEvent physEvent, int current_p1, int current_p2) {
+        System.out.println("entering pi0 check");
         Particle gamma_1 = physEvent.getParticle("[22,"+current_p1+"]");
         LorentzVector lv_gamma_1 = new LorentzVector();
         lv_gamma_1.setPxPyPzM(gamma_1.px(), gamma_1.py(), gamma_1.pz(), 0);
@@ -25,7 +26,7 @@ public class parent_hadron_creation {
         lv_gamma_2.setPxPyPzM(gamma_2.px(), gamma_2.py(), gamma_2.pz(), 0);
                     
         LorentzVector lv_pi0_candidate = new LorentzVector(lv_gamma_1); lv_pi0_candidate.add(lv_gamma_2);
-        System.out.println(lv_pi0_candidate.mass());
+        
         // candidate is in the mass range for pi0
         if (0.11 < lv_pi0_candidate.mass() && lv_pi0_candidate.mass() < 0.16) {
             Particle part = new Particle(111, lv_pi0_candidate.px(), lv_pi0_candidate.py(), 
