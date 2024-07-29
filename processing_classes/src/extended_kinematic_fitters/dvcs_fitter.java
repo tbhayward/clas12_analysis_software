@@ -161,7 +161,7 @@ public class dvcs_fitter extends GenericKinematicFitter {
                    physEvent.addParticle(part);   
                }
             }
-            
+            System.out.println("Made it passed the first thing");
             int num_gamma = physEvent.countByPid(22); 
             
             for (int current_p1 = 0; current_p1 < num_gamma; num_gamma++) {
