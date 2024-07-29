@@ -233,7 +233,7 @@ public class analysis_fitter extends GenericKinematicFitter {
             
             parent_hadron_creation parent_hadron_creation = new parent_hadron_creation();
             
-            System.out.println(num_gamma);
+            System.out.print(num_gamma+" ");
             for (int current_p1 = 0; current_p1 < num_gamma; num_gamma++) {
                 for (int current_p2 = 0; current_p2 < num_gamma; num_gamma++) {
                     if (current_p1 == current_p2) { continue; }
