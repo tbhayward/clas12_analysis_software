@@ -97,6 +97,14 @@ public class parent_hadron_creation {
     }
     
     Particle rhom_check(PhysicsEvent physEvent, int current_p1, int current_p2) {
+        PDGDatabase PDGDatabase = new PDGDatabase();
+        if (!PDGDatabase.isValidId(-213)) {
+            // Create a new particle
+            PDGParticle particle = new PDGParticle("rho-", -213, 0.7754, 0);
+            // Add the particle to the database
+            PDGDatabase.addParticle(particle);
+        }
+        
         Particle pi_1 = physEvent.getParticle("[-211,"+current_p1+"]");
         LorentzVector lv_pi_1 = new LorentzVector();
         lv_pi_1.setPxPyPzM(pi_1.px(), pi_1.py(), pi_1.pz(), 0);
