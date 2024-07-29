@@ -224,7 +224,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                }
                 
                 if (pid==22 && photon_test(particle_Index, rec_Bank, cal_Bank, lv_e)) {
-                   
+                   System.out.println("found photon");
                    Particle part = new Particle(pid,px,py,pz,vx,vy,vz);
                    physEvent.addParticle(part);   
                }
