@@ -66,7 +66,7 @@ public class parent_hadron_creation {
     }
     
     Particle rhop_check(PhysicsEvent physEvent, int current_p1, int current_p2) {
-        Particle pi_1 = physEvent.getParticle("[213,"+current_p1+"]");
+        Particle pi_1 = physEvent.getParticle("[211,"+current_p1+"]");
         LorentzVector lv_pi_1 = new LorentzVector();
         lv_pi_1.setPxPyPzM(pi_1.px(), pi_1.py(), pi_1.pz(), 0);
                     
@@ -80,6 +80,28 @@ public class parent_hadron_creation {
         if (0.65 < lv_rho_candidate.mass() && lv_rho_candidate.mass() < 0.90) {
             // add rho+ to event
             Particle part = new Particle(213, lv_rho_candidate.px(), lv_rho_candidate.py(), 
+                lv_rho_candidate.pz(), 0, 0, 0);
+            return part;
+        }
+        
+        return null;
+    }
+    
+    Particle rhom_check(PhysicsEvent physEvent, int current_p1, int current_p2) {
+        Particle pi_1 = physEvent.getParticle("[-211,"+current_p1+"]");
+        LorentzVector lv_pi_1 = new LorentzVector();
+        lv_pi_1.setPxPyPzM(pi_1.px(), pi_1.py(), pi_1.pz(), 0);
+                    
+        Particle pi_2 = physEvent.getParticle("[111,"+current_p1+"]");
+        LorentzVector lv_pi_2 = new LorentzVector();
+        lv_pi_2.setPxPyPzM(pi_2.px(), pi_2.py(), pi_2.pz(), 0);
+                    
+        LorentzVector lv_rho_candidate = new LorentzVector(lv_pi_1); lv_rho_candidate.add(lv_pi_2);
+        
+        // candidate is in the mass range for pi0
+        if (0.65 < lv_rho_candidate.mass() && lv_rho_candidate.mass() < 0.90) {
+            // add rho+ to event
+            Particle part = new Particle(-213, lv_rho_candidate.px(), lv_rho_candidate.py(), 
                 lv_rho_candidate.pz(), 0, 0, 0);
             return part;
         }
