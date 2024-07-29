@@ -10,8 +10,6 @@ package analyzers;
  * @author tbhayward
  */
 
-import org.jlab.clas.physics.Particle;
-import org.jlab.clas.physics.PhysicsEvent;
 import org.jlab.io.base.DataEvent;
 import org.jlab.io.hipo.HipoDataBank;
 import org.jlab.clas.physics.*;
