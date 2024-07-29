@@ -234,10 +234,9 @@ public class analysis_fitter extends GenericKinematicFitter {
             parent_hadron_creation parent_hadron_creation = new parent_hadron_creation();
             
             System.out.print(num_gamma+" ");
-            for (int current_p1 = 0; current_p1 < num_gamma; num_gamma++) {
-                for (int current_p2 = 0; current_p2 < num_gamma; num_gamma++) {
-                    System.out.print(current_p1+" "+current_p2+" ");
-//                    if (current_p1 == current_p2) { continue; }
+            for (int current_p1 = 0; current_p1 < num_gamma; current_p1++) {
+                for (int current_p2 = 0; current_p2 < num_gamma; current_p2++) {
+                    if (current_p1 == current_p2) { continue; }
                     Particle part = parent_hadron_creation.pi0_check(physEvent, current_p1, current_p2);
                     
                     // Check if a valid Particle was returned before adding it to the event
@@ -253,8 +252,8 @@ public class analysis_fitter extends GenericKinematicFitter {
             int num_pim = physEvent.countByPid(-211); // number of pi- in event
             int num_pi0 = physEvent.countByPid(111); // number of pi0 in event
             
-            for (int current_p1 = 0; current_p1 < num_pip; num_pip++) {
-                for (int current_p2 = 0; current_p2 < num_pim; num_pim++) {
+            for (int current_p1 = 0; current_p1 < num_pip; current_p1++) {
+                for (int current_p2 = 0; current_p2 < num_pim; current_p2++) {
                     if (current_p1 == current_p2) { continue; }
                     Particle part = parent_hadron_creation.rho0_check(physEvent, current_p1, current_p2);
                     
@@ -265,8 +264,8 @@ public class analysis_fitter extends GenericKinematicFitter {
                 }
             }
             
-            for (int current_p1 = 0; current_p1 < num_pip; num_pip++) {
-                for (int current_p2 = 0; current_p2 < num_pi0; num_pi0++) {
+            for (int current_p1 = 0; current_p1 < num_pip; current_p1++) {
+                for (int current_p2 = 0; current_p2 < num_pi0; current_p2++) {
                     if (current_p1 == current_p2) { continue; }
                     Particle part = parent_hadron_creation.rhop_check(physEvent, current_p1, current_p2);
                     
@@ -277,8 +276,8 @@ public class analysis_fitter extends GenericKinematicFitter {
                 }
             }
             
-            for (int current_p1 = 0; current_p1 < num_pim; num_pim++) {
-                for (int current_p2 = 0; current_p2 < num_pi0; num_pi0++) {
+            for (int current_p1 = 0; current_p1 < num_pim; current_p1++) {
+                for (int current_p2 = 0; current_p2 < num_pi0; current_p2++) {
                     if (current_p1 == current_p2) { continue; }
                     Particle part = parent_hadron_creation.rhom_check(physEvent, current_p1, current_p2);
                     
