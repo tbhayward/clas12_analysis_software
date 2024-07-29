@@ -15,6 +15,8 @@ import org.jlab.clas.physics.*;
 public class parent_hadron_creation {
     
     Particle pi0_check(PhysicsEvent physEvent, int current_p1, int current_p2) {
+        PDGParticle particle = new PDGParticle("pi0background", -111, 0.0);
+        PDGDatabase.addParticle(particle);
         
         Particle gamma_1 = physEvent.getParticle("[22,"+current_p1+"]");
         LorentzVector lv_gamma_1 = new LorentzVector();
@@ -38,8 +40,6 @@ public class parent_hadron_creation {
             Particle part = new Particle(-111, lv_pi0_candidate.px(), lv_pi0_candidate.py(), 
                 lv_pi0_candidate.pz(), 0, 0, 0);
             
-            PDGParticle particle = new PDGParticle("pi0background", -111, 0.0);
-            PDGDatabase.addParticle(particle);
             return part;
         }
         
