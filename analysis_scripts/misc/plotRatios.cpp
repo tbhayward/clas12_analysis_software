@@ -2,6 +2,7 @@
 #include <TTree.h>
 #include <TH1F.h>
 #include <TCanvas.h>
+#include <TLegend.h>
 #include <TString.h>
 #include <TSystem.h>
 #include <iostream>
@@ -48,6 +49,7 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     double p_p1, p_p2, p_p3, p_p4;
     double xF1, xF2, xF3, xF4;
     double p_theta1, p_theta2, p_theta3, p_theta4;
+    double Mx1, Mx2, Mx3, Mx4;
 
     tree1->SetBranchAddress("p_p", &p_p1);
     tree2->SetBranchAddress("p_p", &p_p2);
@@ -64,6 +66,11 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     tree3->SetBranchAddress("p_theta", &p_theta3);
     tree4->SetBranchAddress("p_theta", &p_theta4);
 
+    tree1->SetBranchAddress("Mx", &Mx1);
+    tree2->SetBranchAddress("Mx", &Mx2);
+    tree3->SetBranchAddress("Mx", &Mx3);
+    tree4->SetBranchAddress("Mx", &Mx4);
+
     Long64_t nentries1 = tree1->GetEntries();
     Long64_t nentries2 = tree2->GetEntries();
     Long64_t nentries3 = tree3->GetEntries();
@@ -72,31 +79,39 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     // Fill histograms for the first set of files
     for (Long64_t j = 0; j < nentries1; ++j) {
         tree1->GetEntry(j);
-        h1_p_p->Fill(p_p1);
-        h1_xF->Fill(xF1);
-        h1_p_theta->Fill(p_theta1 * 180.0 / 3.14159);
+        if (Mx1 > 1.4) {
+            h1_p_p->Fill(p_p1);
+            h1_xF->Fill(xF1);
+            h1_p_theta->Fill(p_theta1 * 180.0 / 3.14159);
+        }
     }
 
     for (Long64_t j = 0; j < nentries2; ++j) {
         tree2->GetEntry(j);
-        h2_p_p->Fill(p_p2);
-        h2_xF->Fill(xF2);
-        h2_p_theta->Fill(p_theta2 * 180.0 / 3.14159);
+        if (Mx2 > 1.4) {
+            h2_p_p->Fill(p_p2);
+            h2_xF->Fill(xF2);
+            h2_p_theta->Fill(p_theta2 * 180.0 / 3.14159);
+        }
     }
 
     // Fill histograms for the second set of files
     for (Long64_t j = 0; j < nentries3; ++j) {
         tree3->GetEntry(j);
-        h3_p_p->Fill(p_p3);
-        h3_xF->Fill(xF3);
-        h3_p_theta->Fill(p_theta3 * 180.0 / 3.14159);
+        if (Mx3 > 1.4) {
+            h3_p_p->Fill(p_p3);
+            h3_xF->Fill(xF3);
+            h3_p_theta->Fill(p_theta3 * 180.0 / 3.14159);
+        }
     }
 
     for (Long64_t j = 0; j < nentries4; ++j) {
         tree4->GetEntry(j);
-        h4_p_p->Fill(p_p4);
-        h4_xF->Fill(xF4);
-        h4_p_theta->Fill(p_theta4 * 180.0 / 3.14159);
+        if (Mx4 > 1.4) {
+            h4_p_p->Fill(p_p4);
+            h4_xF->Fill(xF4);
+            h4_p_theta->Fill(p_theta4 * 180.0 / 3.14159);
+        }
     }
 
     // Create ratio histograms
@@ -118,56 +133,35 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     TH1F *ratio_p_theta_2 = (TH1F*)h3_p_theta->Clone("ratio_p_theta_2");
     ratio_p_theta_2->Divide(h4_p_theta);
 
-    // Save the histograms and ratios
+    // Save the ratio histograms
     TCanvas *c = new TCanvas("c", "c", 800, 600);
 
+    // Plot ratios for p_p
     c->cd();
-    h1_p_p->Draw();
-    c->SaveAs("output/h1_p_p.png");
-    h2_p_p->Draw();
-    c->SaveAs("output/h2_p_p.png");
+    ratio_p_p_1->SetLineColor(kRed);
     ratio_p_p_1->Draw();
-    c->SaveAs("output/ratio_p_p_1.png");
+    ratio_p_p_2->SetLineColor(kBlue);
+    ratio_p_p_2->Draw("SAME");
+    c->BuildLegend();
+    c->SaveAs("output/ratio_p_p.png");
 
+    // Plot ratios for xF
     c->cd();
-    h3_p_p->Draw();
-    c->SaveAs("output/h3_p_p.png");
-    h4_p_p->Draw();
-    c->SaveAs("output/h4_p_p.png");
-    ratio_p_p_2->Draw();
-    c->SaveAs("output/ratio_p_p_2.png");
-
-    c->cd();
-    h1_xF->Draw();
-    c->SaveAs("output/h1_xF.png");
-    h2_xF->Draw();
-    c->SaveAs("output/h2_xF.png");
+    ratio_xF_1->SetLineColor(kRed);
     ratio_xF_1->Draw();
-    c->SaveAs("output/ratio_xF_1.png");
+    ratio_xF_2->SetLineColor(kBlue);
+    ratio_xF_2->Draw("SAME");
+    c->BuildLegend();
+    c->SaveAs("output/ratio_xF.png");
 
+    // Plot ratios for p_theta
     c->cd();
-    h3_xF->Draw();
-    c->SaveAs("output/h3_xF.png");
-    h4_xF->Draw();
-    c->SaveAs("output/h4_xF.png");
-    ratio_xF_2->Draw();
-    c->SaveAs("output/ratio_xF_2.png");
-
-    c->cd();
-    h1_p_theta->Draw();
-    c->SaveAs("output/h1_p_theta.png");
-    h2_p_theta->Draw();
-    c->SaveAs("output/h2_p_theta.png");
+    ratio_p_theta_1->SetLineColor(kRed);
     ratio_p_theta_1->Draw();
-    c->SaveAs("output/ratio_p_theta_1.png");
-
-    c->cd();
-    h3_p_theta->Draw();
-    c->SaveAs("output/h3_p_theta.png");
-    h4_p_theta->Draw();
-    c->SaveAs("output/h4_p_theta.png");
-    ratio_p_theta_2->Draw();
-    c->SaveAs("output/ratio_p_theta_2.png");
+    ratio_p_theta_2->SetLineColor(kBlue);
+    ratio_p_theta_2->Draw("SAME");
+    c->BuildLegend();
+    c->SaveAs("output/ratio_p_theta.png");
 
     // Clean up
     delete c;
@@ -194,7 +188,6 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     f2->Close();
     f3->Close();
     f4->Close();
-
     }
 
 int main(int argc, char **argv) {
@@ -205,3 +198,4 @@ int main(int argc, char **argv) {
     plotRatios(argv[1], argv[2], argv[3], argv[4]);
     return 0;
 }
+   
