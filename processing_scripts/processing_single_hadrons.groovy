@@ -20,14 +20,21 @@ import groovy.io.FileType;
 // dilks CLAS QA analysis
 import clasqa.QADB
 
-boolean banks_test(DataEvent event) {
-    String[] bankNames = 
-        {"RUN::config","REC::Event","REC::Particle","REC::Calorimeter",
-        	"REC::Track","REC::Traj","REC::Cherenkov"};
-    for (String bankName : bankNames) {
-        if (!event.hasBank(bankName)) { return false; }
-    }
-    return true;
+public static double phi_calculation (double x, double y) {
+	// tracks are given with Cartesian values and so must be converted to cylindrical
+	double phi = Math.toDegrees(Math.atan2(x,y));
+	phi = phi - 90;
+	if (phi < 0) {
+		phi = 360 + phi;
+	}
+	phi = 360 - phi;
+	return phi;	
+}
+
+public static double theta_calculation (double x, double y, double z) {
+	// convert cartesian coordinates to polar angle
+	double r = Math.pow(Math.pow(x,2)+Math.pow(y,2)+Math.pow(z,2),0.5);
+	return (double) (180/Math.PI)*Math.acos(z/r);
 }
 
 public static void main(String[] args) {

@@ -16,15 +16,22 @@ import groovy.io.FileType
 // dilks CLAS QA analysis
 import clasqa.QADB
 
-// def banks_test = { DataEvent event ->
-//     String[] bankNames = 
-//         ["RUN::config","REC::Event","REC::Particle","REC::Calorimeter",
-//          "REC::Track","REC::Traj","REC::Cherenkov"]
-//     for (String bankName : bankNames) {
-//         if (!event.hasBank(bankName)) { return false }
-//     }
-//     return true
-// }
+public static double phi_calculation (double x, double y) {
+	// tracks are given with Cartesian values and so must be converted to cylindrical
+	double phi = Math.toDegrees(Math.atan2(x,y));
+	phi = phi - 90;
+	if (phi < 0) {
+		phi = 360 + phi;
+	}
+	phi = 360 - phi;
+	return phi;	
+}
+
+public static double theta_calculation (double x, double y, double z) {
+	// convert cartesian coordinates to polar angle
+	double r = Math.pow(Math.pow(x,2)+Math.pow(y,2)+Math.pow(z,2),0.5);
+	return (double) (180/Math.PI)*Math.acos(z/r);
+}
 
 public static void main(String[] args) {
 
@@ -78,6 +85,8 @@ public static void main(String[] args) {
     double particle_vx = -9999; double particle_vy = -9999; double particle_vz = -9999
     double particle_beta = -9999; double particle_chi2pid = -9999
     int particle_status = -9999
+    // derived angles
+    double theta = -9999; double phi = -9999;
 
     // REC::Calorimeter variables
     int cal_sector = -9999
@@ -148,24 +157,50 @@ public static void main(String[] args) {
             if (process_event) {
 
             	event_helicity = event_Bank.getInt('helicity',0);
-                
-                // Use a StringBuilder to append all data in a single call
-                StringBuilder line = new StringBuilder()
-                line.append(config_run).append(" ")
-                    .append(config_event).append(" ")
-                    .append(event_helicity).append(" ")
-                    .append(config_run).append("\n")
 
-                // Append the line to the batchLines StringBuilder
-                batchLines.append(line.toString())
-                lineCount++ // Increment the line count
+                for (int particle_Index = 0; particle_Index < rec_Bank.rows(); particle_Index++) {
 
-                // If the line count reaches 1000, write to the file and reset
-                if (lineCount >= max_lines) {
-                    file.append(batchLines.toString())
-                    batchLines.setLength(0)
-                    lineCount = 0
-                }
+                	particle_pid = rec_Bank.getInt("pid", particle_Index);
+	                particle_px = rec_Bank.getFloat("px", particle_Index);
+	                particle_py = rec_Bank.getFloat("py", particle_Index);
+	                particle_pz = rec_Bank.getFloat("pz", particle_Index);
+	                particle_vx = rec_Bank.getFloat("vx",particle_Index);
+	                particle_vy = rec_Bank.getFloat("vy",particle_Index);
+	                particle_vz = rec_Bank.getFloat("vz",particle_Index);
+	                particle_p = Math.sqrt(particle_px*particle_px+
+	                	particle_py*particle_py+particle_pz*particle_pz);
+	                particle_theta = theta_calculation(particle_px, particle_py, particle_pz);
+	                particle_phi = phi_calculation(particle_px, particle_py);
+
+
+	                // Use a StringBuilder to append all data in a single call
+	                StringBuilder line = new StringBuilder()
+	                line.append(config_run).append(" ")
+	                    .append(config_event).append(" ")
+	                    .append(event_helicity).append(" ")
+	                    .append(particle_pid).append(" ")
+	                    .append(particle_px).append(" ")
+	                    .append(particle_py).append(" ")
+	                    .append(particle_pz).append(" ")
+	                    .append(particle_p).append(" ")
+	                    .append(particle_theta).append(" ")
+	                    .append(particle_phi).append(" ")
+	                    .append(particle_vx).append(" ")
+	                    .append(particle_vy).append(" ")
+	                    .append(particle_vz).append(" ")
+	                    .append(config_run).append("\n")
+
+	                // Append the line to the batchLines StringBuilder
+	                batchLines.append(line.toString())
+	                lineCount++ // Increment the line count
+
+	                // If the line count reaches 1000, write to the file and reset
+	                if (lineCount >= max_lines) {
+	                    file.append(batchLines.toString())
+	                    batchLines.setLength(0)
+	                    lineCount = 0
+	                }
+	            }
             }
             reader.close()
         }
