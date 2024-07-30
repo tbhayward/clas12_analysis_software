@@ -43,10 +43,10 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     TH1F *h3_xF = new TH1F("h3_xF", "xF", nbins, -2, 1);
     TH1F *h4_xF = new TH1F("h4_xF", "xF", nbins, -2, 1);
 
-    TH1F *h1_p_theta = new TH1F("h1_p_theta", "p_theta", nbins, 0, 40);
-    TH1F *h2_p_theta = new TH1F("h2_p_theta", "p_theta", nbins, 0, 40);
-    TH1F *h3_p_theta = new TH1F("h3_p_theta", "p_theta", nbins, 0, 40);
-    TH1F *h4_p_theta = new TH1F("h4_p_theta", "p_theta", nbins, 0, 40);
+    TH1F *h1_p_theta = new TH1F("h1_p_theta", "p_theta", nbins, 0, 80);
+    TH1F *h2_p_theta = new TH1F("h2_p_theta", "p_theta", nbins, 0, 80);
+    TH1F *h3_p_theta = new TH1F("h3_p_theta", "p_theta", nbins, 0, 80);
+    TH1F *h4_p_theta = new TH1F("h4_p_theta", "p_theta", nbins, 0, 80);
 
     TH1F *h1_Mx = new TH1F("h1_Mx", "Mx", nbins, -3, 4);
     TH1F *h2_Mx = new TH1F("h2_Mx", "Mx", nbins, -3, 4);
@@ -179,7 +179,7 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     plotGraph(graph_p_p_1, graph_p_p_2, "p_p", "Ratio (NH3/C)", "output/ratio_p_p.png", 1.4, 2.0);
     plotGraph(graph_xF_1, graph_xF_2, "xF", "Ratio (NH3/C)", "output/ratio_xF.png");
     plotGraph(graph_p_theta_1, graph_p_theta_2, "p_theta (degrees) (NH3/C)", "Ratio", "output/ratio_p_theta.png");
-    plotGraph(graph_Mx_1, graph_Mx_2, "Mx", "Ratio (NH3/C)", "output/ratio_Mx.png");
+    plotGraph(graph_Mx_1, graph_Mx_2, "Mx", "Ratio (NH3/C) ", "output/ratio_Mx.png");
 
     // Clean up
     delete graph_p_p_1;
