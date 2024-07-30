@@ -45,9 +45,9 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     TH1F *h3_p_theta = new TH1F("h3_p_theta", "p_theta", nbins, 0, 35);
     TH1F *h4_p_theta = new TH1F("h4_p_theta", "p_theta", nbins, 0, 35);
 
-    float p_p1, p_p2, p_p3, p_p4;
-    float xF1, xF2, xF3, xF4;
-    float p_theta1, p_theta2, p_theta3, p_theta4;
+    double p_p1, p_p2, p_p3, p_p4;
+    double xF1, xF2, xF3, xF4;
+    double p_theta1, p_theta2, p_theta3, p_theta4;
 
     tree1->SetBranchAddress("p_p", &p_p1);
     tree2->SetBranchAddress("p_p", &p_p2);
