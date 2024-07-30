@@ -60,9 +60,9 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
 
     // Create histograms for Mx and xF
     TH1D *h_Mx_nh3 = 
-        new TH1D("h_Mx_nh3", "M_{x} Distribution; M_{x} (GeV); Counts", 100, -2, 3);
+        new TH1D("h_Mx_nh3", "M_{x} Distribution; M_{x} (GeV); Counts", 20, -2, 3);
     TH1D *h_Mx_carbon = 
-        new TH1D("h_Mx_carbon", "M_{x} Distribution; M_{x} (GeV); Counts", 100, -2, 3);
+        new TH1D("h_Mx_carbon", "M_{x} Distribution; M_{x} (GeV); Counts", 20, -2, 3);
     // Fill the histograms
     tree_nh3->Draw("Mx>>h_Mx_nh3");
     tree_carbon->Draw("Mx>>h_Mx_carbon");
