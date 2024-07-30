@@ -35,7 +35,7 @@ public static double theta_calculation (double x, double y, double z) {
 
 // Define a helper method for formatting doubles
 String formatDouble(double value) {
-    return String.format("%.4f", value)
+    return String.format("%.3f", value)
 }
 
 public static void main(String[] args) {
@@ -179,6 +179,24 @@ public static void main(String[] args) {
 	                particle_phi = phi_calculation(particle_px, particle_py);
 
 
+	                // Calorimeter
+	                for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
+			            // Get the pindex and layer values for the current row
+			            int pindex = cal_Bank.getInt("pindex", current_Row);
+			            if (pindex == particle_Index) {
+			            	cal_sector = cal_Bank.getInt("sector", current_Row);
+				            cal_layer = cal_Bank.getInt("layer", current_Row);
+			                cal_energy = cal_Bank.getFloat("energy", current_Row);
+			                cal_x = cal_Bank.getFloat("x", current_Row);
+			                cal_y = cal_Bank.getFloat("y", current_Row);
+			                cal_z = cal_Bank.getFloat("z", current_Row);
+			                cal_lu = cal_Bank.getFloat("lu", current_Row);
+			                cal_lv = cal_Bank.getFloat("lv", current_Row);
+			                cal_lw = cal_Bank.getFloat("lw", current_Row);
+			                break;
+			            }
+			        }
+
 	                // Use a StringBuilder to append all data in a single call
 					StringBuilder line = new StringBuilder()
 					line.append(config_run).append(" ")
@@ -194,6 +212,14 @@ public static void main(String[] args) {
 					    .append(formatDouble(particle_vx)).append(" ")
 					    .append(formatDouble(particle_vy)).append(" ")
 					    .append(formatDouble(particle_vz)).append(" ")
+					    .append(cal_sector).append(" ")
+					    .append(cal_layer).append(" ")
+					    .append(formatDouble(cal_x)).append(" ")
+					    .append(formatDouble(cal_y)).append(" ")
+					    .append(formatDouble(cal_z)).append(" ")
+					    .append(formatDouble(cal_lu)).append(" ")
+					    .append(formatDouble(cal_lv)).append(" ")
+					    .append(formatDouble(cal_lw)).append(" ")
 					    .append(config_run).append("\n")
 
 	                // Append the line to the batchLines StringBuilder
