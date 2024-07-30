@@ -199,7 +199,7 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
 
 int main(int argc, char **argv) {
     if (argc != 5) {
-        std::cerr << “Usage: “ << argv[0] << “ file1.root file2.root file3.root file4.root” << std::endl;
+        std::cerr << "Usage: " << argv[0] << " file1.root file2.root file3.root file4.root" << std::endl;
         return 1;
     }
     plotRatios(argv[1], argv[2], argv[3], argv[4]);
