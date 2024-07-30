@@ -13,7 +13,7 @@ import org.jlab.clas12.physics.*;
 // filetype for gathering files in directory
 import groovy.io.FileType;
 
-boolean banks_test(DataEvent event) {
+def banks_test(DataEvent event) {
     String[] bankNames = 
         {"RUN::config","REC::Event","REC::Particle","REC::Calorimeter",
         	"REC::Track","REC::Traj","REC::Cherenkov"};
