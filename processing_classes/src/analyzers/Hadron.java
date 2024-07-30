@@ -70,7 +70,7 @@ public class Hadron {
         
         else if (variables.e_p > 12 || variables.p_p > 12 || variables.Q2 > 12 || variables.W > 6 || 
                 variables.z > 2 || variables.zeta > 2 || 
-                variables.Mx < - 4 || variables.pT > 2 || variables.xF < -2 || variables.xF > 2 || 
+                variables.Mx < - 6 || variables.pT > 3 || variables.xF < -3 || variables.xF > 3 || 
                 variables.Depolarization_A > 5 || variables.Depolarization_B > 5 ||
                 variables.Depolarization_C > 5 || variables.Depolarization_V > 5 ||
                 variables.Depolarization_W > 5) 
