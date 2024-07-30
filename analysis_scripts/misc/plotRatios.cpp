@@ -205,6 +205,8 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
 
     // Plot ratios for Mx
     c->cd();
+    ratio_Mx_1->SetMinimum(1.4);
+    ratio_Mx_1->SetMaximum(2.0);
     ratio_Mx_1->SetLineColor(kRed);
     ratio_Mx_1->Draw();
     ratio_Mx_2->SetLineColor(kBlue);
