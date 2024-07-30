@@ -33,6 +33,11 @@ public static double theta_calculation (double x, double y, double z) {
 	return (double) (180/Math.PI)*Math.acos(z/r);
 }
 
+// Define a helper method for formatting doubles
+String formatDouble(double value) {
+    return String.format("%.4f", value)
+}
+
 public static void main(String[] args) {
 
     // Start time
@@ -174,21 +179,21 @@ public static void main(String[] args) {
 
 
 	                // Use a StringBuilder to append all data in a single call
-	                StringBuilder line = new StringBuilder()
-	                line.append(config_run).append(" ")
-	                    .append(config_event).append(" ")
-	                    .append(event_helicity).append(" ")
-	                    .append(particle_pid).append(" ")
-	                    .append(particle_px).append(" ")
-	                    .append(particle_py).append(" ")
-	                    .append(particle_pz).append(" ")
-	                    .append(particle_p).append(" ")
-	                    .append(particle_theta).append(" ")
-	                    .append(particle_phi).append(" ")
-	                    .append(particle_vx).append(" ")
-	                    .append(particle_vy).append(" ")
-	                    .append(particle_vz).append(" ")
-	                    .append(config_run).append("\n")
+					StringBuilder line = new StringBuilder()
+					line.append(config_run).append(" ")
+					    .append(config_event).append(" ")
+					    .append(event_helicity).append(" ")
+					    .append(particle_pid).append(" ")
+					    .append(formatDouble(particle_px)).append(" ")
+					    .append(formatDouble(particle_py)).append(" ")
+					    .append(formatDouble(particle_pz)).append(" ")
+					    .append(formatDouble(particle_p)).append(" ")
+					    .append(formatDouble(particle_theta)).append(" ")
+					    .append(formatDouble(particle_phi)).append(" ")
+					    .append(formatDouble(particle_vx)).append(" ")
+					    .append(formatDouble(particle_vy)).append(" ")
+					    .append(formatDouble(particle_vz)).append(" ")
+					    .append(config_run).append("\n")
 
 	                // Append the line to the batchLines StringBuilder
 	                batchLines.append(line.toString())
