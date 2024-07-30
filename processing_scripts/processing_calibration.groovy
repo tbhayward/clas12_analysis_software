@@ -166,6 +166,7 @@ public static void main(String[] args) {
                 for (int particle_Index = 0; particle_Index < rec_Bank.rows(); particle_Index++) {
 
                 	particle_pid = rec_Bank.getInt("pid", particle_Index);
+                	if (particle_pid == 0) { continue; }
 	                particle_px = rec_Bank.getFloat("px", particle_Index);
 	                particle_py = rec_Bank.getFloat("py", particle_Index);
 	                particle_pz = rec_Bank.getFloat("pz", particle_Index);
