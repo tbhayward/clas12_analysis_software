@@ -21,12 +21,12 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     }
 
     // Get the trees
-    TTree *tree1 = (TTree*)f1->Get("tree");
-    TTree *tree2 = (TTree*)f2->Get("tree");
-    TTree *tree3 = (TTree*)f3->Get("tree");
-    TTree *tree4 = (TTree*)f4->Get("tree");
+    TTree *tree1 = (TTree*)f1->Get("PhysicsEvents");
+    TTree *tree2 = (TTree*)f2->Get("PhysicsEvents");
+    TTree *tree3 = (TTree*)f3->Get("PhysicsEvents");
+    TTree *tree4 = (TTree*)f4->Get("PhysicsEvents");
 
-    if (!tree1) {
+    if (!tree1 || !tree2 || !tree3 || !tree4) {
         std::cerr << "Error: Could not find the tree in one of the files" << std::endl;
         return;
     }
