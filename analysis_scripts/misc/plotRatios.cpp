@@ -43,10 +43,10 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     TH1F *h3_xF = new TH1F("h3_xF", "xF", nbins, -2, 1);
     TH1F *h4_xF = new TH1F("h4_xF", "xF", nbins, -2, 1);
 
-    TH1F *h1_p_theta = new TH1F("h1_p_theta", "p_theta", nbins, 0, 25);
-    TH1F *h2_p_theta = new TH1F("h2_p_theta", "p_theta", nbins, 0, 25);
-    TH1F *h3_p_theta = new TH1F("h3_p_theta", "p_theta", nbins, 0, 25);
-    TH1F *h4_p_theta = new TH1F("h4_p_theta", "p_theta", nbins, 0, 25);
+    TH1F *h1_p_theta = new TH1F("h1_p_theta", "p_theta", nbins, 0, 20);
+    TH1F *h2_p_theta = new TH1F("h2_p_theta", "p_theta", nbins, 0, 20);
+    TH1F *h3_p_theta = new TH1F("h3_p_theta", "p_theta", nbins, 0, 20);
+    TH1F *h4_p_theta = new TH1F("h4_p_theta", "p_theta", nbins, 0, 20);
 
     double p_p1, p_p2, p_p3, p_p4;
     double xF1, xF2, xF3, xF4;
@@ -115,7 +115,7 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
             h4_p_theta->Fill(p_theta4 * 180.0 / 3.14159);
         // }
     }
-    
+
     gStyle->SetOptStat(0);
 
     // Create ratio histograms
@@ -151,6 +151,8 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     ratio_p_p_2->Draw("SAME");
 
     TLegend *legend = new TLegend(0.7, 0.8, 0.9, 0.9);
+    ratio_p_p_1->SetMinimum(1.4);
+    ratio_p_p_1->SetMaximum(2.0);
     legend->AddEntry(ratio_p_p_1, "preliminary", "l");
     legend->AddEntry(ratio_p_p_2, "pass-1", "l");
     legend->Draw();
