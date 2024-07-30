@@ -26,7 +26,7 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     TTree *tree3 = (TTree*)f3->Get("tree");
     TTree *tree4 = (TTree*)f4->Get("tree");
 
-    if (!tree1 || !tree2 || !tree3 || !tree4) {
+    if (!tree1) {
         std::cerr << "Error: Could not find the tree in one of the files" << std::endl;
         return;
     }
