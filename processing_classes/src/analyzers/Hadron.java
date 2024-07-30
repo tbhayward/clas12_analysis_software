@@ -65,7 +65,7 @@ public class Hadron {
 //        else if (variables.z()<0.2 || variables.z() > 0.95) { return false; } 
 //        else if (variables.p_p()<1.25) { return false; } 
 //        else if (variables.Mx()<1.4) { return false; } 
-        else if (variables.p_theta()>0.47) { return false; }
+//        else if (variables.p_theta()>0.47) { return false; }
         
         
         else if (variables.e_p > 12 || variables.p_p > 12 || variables.Q2 > 12 || variables.W > 6 || 
