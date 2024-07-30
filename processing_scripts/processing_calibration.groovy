@@ -146,11 +146,14 @@ public static void main(String[] args) {
                 config_run >= 11571 || qa.OkForAsymmetry(config_run, config_event))
 
             if (process_event) {
+
+            	event_helicity = event_Bank.getInt('helicity',0);
                 
                 // Use a StringBuilder to append all data in a single call
                 StringBuilder line = new StringBuilder()
                 line.append(config_run).append(" ")
                     .append(config_event).append(" ")
+                    .append(event_helicity).append(" ")
                     .append(config_run).append("\n")
 
                 // Append the line to the batchLines StringBuilder
