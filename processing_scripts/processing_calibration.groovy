@@ -130,8 +130,8 @@ public static void main(String[] args) {
             HipoDataBank traj_Bank = (HipoDataBank) event.getBank("REC::Traj")
 
             // collect info for QA
-            config_run = event_Bank.getInt('run', 0)
-            config_event = event_Bank.getInt('event', 0)
+            config_run = run_Bank.getInt('run', 0)
+            config_event = run_Bank.getInt('event', 0)
 
             // do not use the qa if it is MC (runnum = 11) 
             // do not use the qa if the run is from RGC (until QA is produced!)
