@@ -16,7 +16,6 @@ import groovy.io.FileType
 // dilks CLAS QA analysis
 import clasqa.QADB
 
-
 // def banks_test = { DataEvent event ->
 //     String[] bankNames = 
 //         ["RUN::config","REC::Event","REC::Particle","REC::Calorimeter",
@@ -101,6 +100,9 @@ public static void main(String[] args) {
     int traj_detector = -9999; int traj_layer = -9999
     double traj_x = -9999; double traj_y = -9999; double traj_z = -9999
     double traj_edge = -9999
+
+    // setup QA database
+	QADB qa = new QADB();
 
     // create a StringBuilder for accumulating lines
     StringBuilder batchLines = new StringBuilder()
