@@ -193,7 +193,6 @@ public static void main(String[] args) {
 			                cal_lu = cal_Bank.getFloat("lu", current_Row);
 			                cal_lv = cal_Bank.getFloat("lv", current_Row);
 			                cal_lw = cal_Bank.getFloat("lw", current_Row);
-			                break;
 			            }
 			        }
 
