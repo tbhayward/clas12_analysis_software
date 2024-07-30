@@ -124,13 +124,13 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
     gr_ratio->Draw("AP");
 
     // Fit the data from -2.5 to -1 to a constant
-    TF1 *fit_const = new TF1("fit_const", "[0]", -2, -0.5);
+    TF1 *fit_const = new TF1("fit_const", "[0]", -2, -0.0);
     gr_ratio->Fit(fit_const, "RQ");
     fit_const->SetLineColor(kRed);
     fit_const->Draw("SAME");
 
     // Add the dotted-dashed line from -0.5 to 3
-    TF1 *dotted_line = new TF1("dotted_line", "[0]", -0.5, 3);
+    TF1 *dotted_line = new TF1("dotted_line", "[0]", -0.0, 3);
     dotted_line->SetParameter(0, fit_const->GetParameter(0)); 
     dotted_line->SetLineColor(kRed);
     dotted_line->SetLineStyle(7); // Set line style to dotted-dashed
