@@ -25,7 +25,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
             goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.4 && *y < 0.75;
         }
         std::cout << property << " " << (property == "Mx") << " " << *Mx << std::endl;
-        else if (property == "Mx") {
+        if (property == "Mx") {
             goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75;
         }
         else if (property == "PTTFR" || property ==  "xTFR" || property == "zetaTFR" || 
