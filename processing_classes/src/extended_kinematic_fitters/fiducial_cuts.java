@@ -5,13 +5,7 @@
 
 package extended_kinematic_fitters;
 
-import org.jlab.clas.physics.GenericKinematicFitter;
-import org.jlab.clas.physics.Particle;
-import org.jlab.clas.physics.PhysicsEvent;
-import org.jlab.io.base.DataEvent;
 import org.jlab.io.hipo.HipoDataBank;
-
-import org.jlab.clas.physics.*;
 
 public class fiducial_cuts {
     
