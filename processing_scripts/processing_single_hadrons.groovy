@@ -20,6 +20,16 @@ import groovy.io.FileType;
 // dilks CLAS QA analysis
 import clasqa.QADB
 
+boolean banks_test(DataEvent event) {
+    String[] bankNames = 
+        {"RUN::config","REC::Event","REC::Particle","REC::Calorimeter",
+        	"REC::Track","REC::Traj","REC::Cherenkov"};
+    for (String bankName : bankNames) {
+        if (!event.hasBank(bankName)) { return false; }
+    }
+    return true;
+}
+
 public static void main(String[] args) {
 
 	// Start time
@@ -98,9 +108,9 @@ public static void main(String[] args) {
 		reader.open(hipo_list[current_file]); // open next hipo file
 		HipoDataEvent event = reader.getNextEvent(); 
 
-		while (reader.hasEvent()) {
+		while (reader.hasEvent() && banks_test(event)) {
 		    ++num_events;
-		    if (num_events % 1000000 == 0) { // not necessary, just updates output
+		    if (num_events % 500000 == 0) { // not necessary, just updates output
 		        print("processed: " + num_events + " events. ");
 		    }
 

@@ -1,7 +1,7 @@
 /*
  * author Timothy B. Hayward
  * 
- * SIDIS hadron 
+ * DIS
  */
 
 // import CLAS12 physics classes
