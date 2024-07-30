@@ -21,5 +21,5 @@ private:
     TTreeReaderValue<double> theta_gamma_gamma;
     TTreeReaderValue<double> pTmiss;
     TTreeReaderValue<double> Mxgammasquared;
-    TTreeReaderValue<double> target_pol;
+    TTreeReaderValue<double> eta2;
 };

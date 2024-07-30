@@ -6,7 +6,7 @@
 #include <TString.h>
 #include <TSystem.h>
 #include <iostream>
-#include <TLegend.h>
+#include <TGraphErrors.h>
 #include <TStyle.h>
 
 void plotRatios(const char* file1, const char* file2, const char* file3, const char* file4) {
@@ -86,141 +86,111 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     // Fill histograms for the first set of files
     for (Long64_t j = 0; j < nentries1; ++j) {
         tree1->GetEntry(j);
-        // if (Mx1 > 1.4) {
-            h1_p_p->Fill(p_p1);
-            h1_xF->Fill(xF1);
-            h1_p_theta->Fill(p_theta1 * 180.0 / 3.14159);
-        // }
+        h1_p_p->Fill(p_p1);
+        h1_xF->Fill(xF1);
+        h1_p_theta->Fill(p_theta1 * 180.0 / 3.14159);
         h1_Mx->Fill(Mx1); // Always fill Mx histogram
     }
 
     for (Long64_t j = 0; j < nentries2; ++j) {
         tree2->GetEntry(j);
-        // if (Mx2 > 1.4) {
-            h2_p_p->Fill(p_p2);
-            h2_xF->Fill(xF2);
-            h2_p_theta->Fill(p_theta2 * 180.0 / 3.14159);
-        // }
+        h2_p_p->Fill(p_p2);
+        h2_xF->Fill(xF2);
+        h2_p_theta->Fill(p_theta2 * 180.0 / 3.14159);
         h2_Mx->Fill(Mx2); // Always fill Mx histogram
     }
 
     // Fill histograms for the second set of files
     for (Long64_t j = 0; j < nentries3; ++j) {
         tree3->GetEntry(j);
-        // if (Mx3 > 1.4) {
-            h3_p_p->Fill(p_p3);
-            h3_xF->Fill(xF3);
-            h3_p_theta->Fill(p_theta3 * 180.0 / 3.14159);
-        // }
+        h3_p_p->Fill(p_p3);
+        h3_xF->Fill(xF3);
+        h3_p_theta->Fill(p_theta3 * 180.0 / 3.14159);
         h3_Mx->Fill(Mx3); // Always fill Mx histogram
     }
 
     for (Long64_t j = 0; j < nentries4; ++j) {
         tree4->GetEntry(j);
-        // if (Mx4 > 1.4) {
-            h4_p_p->Fill(p_p4);
-            h4_xF->Fill(xF4);
-            h4_p_theta->Fill(p_theta4 * 180.0 / 3.14159);
-        // }
+        h4_p_p->Fill(p_p4);
+        h4_xF->Fill(xF4);
+        h4_p_theta->Fill(p_theta4 * 180.0 / 3.14159);
         h4_Mx->Fill(Mx4); // Always fill Mx histogram
     }
 
     gStyle->SetOptStat(0);
 
-    // Create ratio histograms
-    TH1F *ratio_p_p_1 = (TH1F*)h1_p_p->Clone("ratio_p_p_1");
-    ratio_p_p_1->Divide(h2_p_p);
-    ratio_p_p_1->GetXaxis()->SetTitle("p_p");
+    // Function to create TGraphErrors from ratio histograms
+    auto createRatioGraph = [](TH1F* h1, TH1F* h2) {
+        int n = h1->GetNbinsX();
+        std::vector<double> x, y, ex, ey;
+        for (int i = 1; i <= n; ++i) {
+            double bin1 = h1->GetBinContent(i);
+            double bin2 = h2->GetBinContent(i);
+            double error1 = h1->GetBinError(i);
+            double error2 = h2->GetBinError(i);
+            if (bin2 != 0) {
+                double ratio = bin1 / bin2;
+                double error = ratio * std::sqrt((error1 / bin1) * (error1 / bin1) + (error2 / bin2) * (error2 / bin2));
+                x.push_back(h1->GetBinCenter(i));
+                y.push_back(ratio);
+                ex.push_back(0);
+                ey.push_back(error);
+            }
+        }
+        return new TGraphErrors(x.size(), x.data(), y.data(), ex.data(), ey.data());
+    };
 
-    TH1F *ratio_p_p_2 = (TH1F*)h3_p_p->Clone("ratio_p_p_2");
-    ratio_p_p_2->Divide(h4_p_p);
+    // Create TGraphErrors for each ratio
+    TGraphErrors* graph_p_p_1 = createRatioGraph(h1_p_p, h2_p_p);
+    TGraphErrors* graph_p_p_2 = createRatioGraph(h3_p_p, h4_p_p);
+    TGraphErrors* graph_xF_1 = createRatioGraph(h1_xF, h2_xF);
+    TGraphErrors* graph_xF_2 = createRatioGraph(h3_xF, h4_xF);
+    TGraphErrors* graph_p_theta_1 = createRatioGraph(h1_p_theta, h2_p_theta);
+    TGraphErrors* graph_p_theta_2 = createRatioGraph(h3_p_theta, h4_p_theta);
+    TGraphErrors* graph_Mx_1 = createRatioGraph(h1_Mx, h2_Mx);
+    TGraphErrors* graph_Mx_2 = createRatioGraph(h3_Mx, h4_Mx);
 
-    TH1F *ratio_xF_1 = (TH1F*)h1_xF->Clone("ratio_xF_1");
-    ratio_xF_1->Divide(h2_xF);
-    ratio_xF_1->GetXaxis()->SetTitle("xF");
+    // Function to plot TGraphErrors
+    auto plotGraph = [](TGraphErrors* g1, TGraphErrors* g2, const char* xTitle, const char* yTitle, const char* filename, double yMin = 1.0, double yMax = 3.0) {
+        TCanvas* c = new TCanvas("c", "c", 800, 600);
+        g1->SetLineColor(kRed);
+        g1->SetMarkerColor(kRed);
+        g1->SetMarkerStyle(20);
+        g1->GetXaxis()->SetTitle(xTitle);
+        g1->GetYaxis()->SetTitle(yTitle);
+        g1->GetYaxis()->SetRangeUser(yMin, yMax);
+        g1->Draw("AP");
 
-    TH1F *ratio_xF_2 = (TH1F*)h3_xF->Clone("ratio_xF_2");
-    ratio_xF_2->Divide(h4_xF);
+        g2->SetLineColor(kBlue);
+        g2->SetMarkerColor(kBlue);
+        g2->SetMarkerStyle(21);
+        g2->Draw("P SAME");
 
-    TH1F *ratio_p_theta_1 = (TH1F*)h1_p_theta->Clone("ratio_p_theta_1");
-    ratio_p_theta_1->Divide(h2_p_theta);
-    ratio_p_theta_1->GetXaxis()->SetTitle("p_theta (degrees)");
+        TLegend* legend = new TLegend(0.7, 0.8, 0.9, 0.9);
+        legend->AddEntry(g1, "preliminary", "lp");
+        legend->AddEntry(g2, "pass-1", "lp");
+        legend->Draw();
 
-    TH1F *ratio_p_theta_2 = (TH1F*)h3_p_theta->Clone("ratio_p_theta_2");
-    ratio_p_theta_2->Divide(h4_p_theta);
+        c->SaveAs(filename);
+        delete c;
+    };
 
-    TH1F *ratio_Mx_1 = (TH1F*)h1_Mx->Clone("ratio_Mx_1");
-    ratio_Mx_1->Divide(h2_Mx);
-    ratio_Mx_1->GetXaxis()->SetTitle("Mx");
-
-    TH1F *ratio_Mx_2 = (TH1F*)h3_Mx->Clone("ratio_Mx_2");
-    ratio_Mx_2->Divide(h4_Mx);
-
-    // Save the ratio histograms
-    TCanvas *c = new TCanvas("c", "c", 800, 600);
-
-    // Plot ratios for p_p
-    c->cd();
-    ratio_p_p_1->SetLineColor(kRed);
-    ratio_p_p_1->Draw();
-    ratio_p_p_2->SetLineColor(kBlue);
-    ratio_p_p_2->Draw("SAME");
-
-    TLegend *legend = new TLegend(0.7, 0.8, 0.9, 0.9);
-    ratio_p_p_1->SetMinimum(1.4);
-    ratio_p_p_1->SetMaximum(2.0);
-    legend->AddEntry(ratio_p_p_1, "preliminary", "l");
-    legend->AddEntry(ratio_p_p_2, "pass-1", "l");
-    legend->Draw();
-
-    c->SaveAs("output/ratio_p_p.png");
-
-    // Plot ratios for xF
-    c->cd();
-    ratio_xF_1->SetLineColor(kRed);
-    ratio_xF_1->Draw();
-    ratio_xF_2->SetLineColor(kBlue);
-    ratio_xF_2->Draw("SAME");
-
-    legend->Clear();
-    legend->AddEntry(ratio_xF_1, "preliminary", "l");
-    legend->AddEntry(ratio_xF_2, "pass-1", "l");
-    legend->Draw();
-
-    c->SaveAs("output/ratio_xF.png");
-
-    // Plot ratios for p_theta
-    c->cd();
-    ratio_p_theta_1->SetLineColor(kRed);
-    ratio_p_theta_1->Draw();
-    ratio_p_theta_2->SetLineColor(kBlue);
-    ratio_p_theta_2->Draw("SAME");
-
-    legend->Clear();
-    legend->AddEntry(ratio_p_theta_1, "preliminary", "l");
-    legend->AddEntry(ratio_p_theta_2, "pass-1", "l");
-    legend->Draw();
-
-    c->SaveAs("output/ratio_p_theta.png");
-
-    // Plot ratios for Mx
-    c->cd();
-    ratio_Mx_1->SetMinimum(1.4);
-    ratio_Mx_1->SetMaximum(2.0);
-    ratio_Mx_1->SetLineColor(kRed);
-    ratio_Mx_1->Draw();
-    ratio_Mx_2->SetLineColor(kBlue);
-    ratio_Mx_2->Draw("SAME");
-
-    legend->Clear();
-    legend->AddEntry(ratio_Mx_1, "preliminary", "l");
-    legend->AddEntry(ratio_Mx_2, "pass-1", "l");
-    legend->Draw();
-
-    c->SaveAs("output/ratio_Mx.png");
+    // Plot the graphs
+    plotGraph(graph_p_p_1, graph_p_p_2, "p_p", "Ratio", "output/ratio_p_p.png", 1.4, 2.0);
+    plotGraph(graph_xF_1, graph_xF_2, "xF", "Ratio", "output/ratio_xF.png");
+    plotGraph(graph_p_theta_1, graph_p_theta_2, "p_theta (degrees)", "Ratio", "output/ratio_p_theta.png");
+    plotGraph(graph_Mx_1, graph_Mx_2, "Mx", "Ratio", "output/ratio_Mx.png");
 
     // Clean up
-    delete c;
+    delete graph_p_p_1;
+    delete graph_p_p_2;
+    delete graph_xF_1;
+    delete graph_xF_2;
+    delete graph_p_theta_1;
+    delete graph_p_theta_2;
+    delete graph_Mx_1;
+    delete graph_Mx_2;
+
     delete h1_p_p;
     delete h2_p_p;
     delete h3_p_p;
@@ -233,12 +203,10 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     delete h2_p_theta;
     delete h3_p_theta;
     delete h4_p_theta;
-    delete ratio_p_p_1;
-    delete ratio_p_p_2;
-    delete ratio_xF_1;
-    delete ratio_xF_2;
-    delete ratio_p_theta_1;
-    delete ratio_p_theta_2;
+    delete h1_Mx;
+    delete h2_Mx;
+    delete h3_Mx;
+    delete h4_Mx;
 
     f1->Close();
     f2->Close();
@@ -254,4 +222,3 @@ int main(int argc, char **argv) {
     plotRatios(argv[1], argv[2], argv[3], argv[4]);
     return 0;
 }
-   

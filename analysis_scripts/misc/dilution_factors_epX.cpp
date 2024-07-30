@@ -64,16 +64,16 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
     TH1D *h_Mx_carbon = 
         new TH1D("h_Mx_carbon", "M_{x} Distribution; M_{x} (GeV); Counts", 100, -2, 3);
     // Fill the histograms
-    tree_nh3->Draw("Mx>>h_Mx_nh3","p_theta < 0.47");
-    tree_carbon->Draw("Mx>>h_Mx_carbon","p_theta < 0.47");
+    tree_nh3->Draw("Mx>>h_Mx_nh3");
+    tree_carbon->Draw("Mx>>h_Mx_carbon");
     //
     TH1D *h_xF_nh3 = 
         new TH1D("h_xF_nh3", "x_{F} Distribution; x_{F} (GeV); Counts", 100, -2, 1);
     TH1D *h_xF_carbon = 
         new TH1D("h_xF_carbon", "x_{F} Distribution; x_{F} (GeV); Counts", 100, -2, 1);
     // Fill the histograms
-    tree_nh3->Draw("xF>>h_xF_nh3","p_theta < 0.47");
-    tree_carbon->Draw("xF>>h_xF_carbon","p_theta < 0.47");
+    tree_nh3->Draw("xF>>h_xF_nh3");
+    tree_carbon->Draw("xF>>h_xF_carbon");
 
     // Create canvas and divide it into four panels
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1200, 1200);
@@ -269,8 +269,8 @@ double one_dimensional(const char* nh3_file, const char* c_file,
         new TH1D("h_pT_nh3", "P_{T} Distribution; P_{T} (GeV); Counts", 50, 0, 1.0);
     TH1D *h_pT_carbon = 
         new TH1D("h_pT_carbon", "P_{T} Distribution; P_{T} (GeV); Counts", 50, 0, 1.0);
-    tree_nh3->Draw("pT>>h_pT_nh3","Mx > 1.4 && p_theta < 0.47");
-    tree_carbon->Draw("pT>>h_pT_carbon","Mx > 1.4 && p_theta < 0.47");
+    tree_nh3->Draw("pT>>h_pT_nh3","Mx > 1.4");
+    tree_carbon->Draw("pT>>h_pT_carbon","Mx > 1.4");
     TH1D *h_pT_carbon_scaled = (TH1D*)h_pT_carbon->Clone("h_pT_carbon_scaled");
     h_pT_carbon_scaled->SetTitle("P_{T} Distribution; P_{T} (GeV); Counts (Scaled)");
 
@@ -534,8 +534,8 @@ double one_dimensional(const char* nh3_file, const char* c_file,
         new TH1D("h_xF_nh3", "x_{F} Distribution; x_{F} (GeV); Counts", 50, -0.8, 0.5);
     TH1D *h_xF_carbon = 
         new TH1D("h_xF_carbon", "x_{F} Distribution; x_{F} (GeV); Counts", 50, -0.8, 0.5);
-    tree_nh3->Draw("xF>>h_xF_nh3","Mx > 1.4 && p_theta < 0.47");
-    tree_carbon->Draw("xF>>h_xF_carbon","Mx > 1.4 && p_theta < 0.47");
+    tree_nh3->Draw("xF>>h_xF_nh3","Mx > 1.4");
+    tree_carbon->Draw("xF>>h_xF_carbon","Mx > 1.4");
     TH1D *h_xF_carbon_scaled = (TH1D*)h_xF_carbon->Clone("h_xF_carbon_scaled");
     h_xF_carbon_scaled->SetTitle("x_{F} Distribution; x_{F}; Counts (Scaled)");
 
