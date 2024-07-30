@@ -32,7 +32,7 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
         return;
     }
 
-    const int nbins = 50;
+    const int nbins = 30;
     TH1F *h1_p_p = new TH1F("h1_p_p", "p_p", nbins, 0, 4);
     TH1F *h2_p_p = new TH1F("h2_p_p", "p_p", nbins, 0, 4);
     TH1F *h3_p_p = new TH1F("h3_p_p", "p_p", nbins, 0, 4);
@@ -43,10 +43,15 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     TH1F *h3_xF = new TH1F("h3_xF", "xF", nbins, -2, 1);
     TH1F *h4_xF = new TH1F("h4_xF", "xF", nbins, -2, 1);
 
-    TH1F *h1_p_theta = new TH1F("h1_p_theta", "p_theta", nbins, 0, 20);
-    TH1F *h2_p_theta = new TH1F("h2_p_theta", "p_theta", nbins, 0, 20);
-    TH1F *h3_p_theta = new TH1F("h3_p_theta", "p_theta", nbins, 0, 20);
-    TH1F *h4_p_theta = new TH1F("h4_p_theta", "p_theta", nbins, 0, 20);
+    TH1F *h1_p_theta = new TH1F("h1_p_theta", "p_theta", nbins, 0, 30);
+    TH1F *h2_p_theta = new TH1F("h2_p_theta", "p_theta", nbins, 0, 30);
+    TH1F *h3_p_theta = new TH1F("h3_p_theta", "p_theta", nbins, 0, 30);
+    TH1F *h4_p_theta = new TH1F("h4_p_theta", "p_theta", nbins, 0, 30);
+
+    TH1F *h1_Mx = new TH1F("h1_Mx", "Mx", nbins, -1, 3);
+    TH1F *h2_Mx = new TH1F("h2_Mx", "Mx", nbins, -1, 3);
+    TH1F *h3_Mx = new TH1F("h3_Mx", "Mx", nbins, -1, 3);
+    TH1F *h4_Mx = new TH1F("h4_Mx", "Mx", nbins, -1, 3);
 
     double p_p1, p_p2, p_p3, p_p4;
     double xF1, xF2, xF3, xF4;
@@ -86,6 +91,7 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
             h1_xF->Fill(xF1);
             h1_p_theta->Fill(p_theta1 * 180.0 / 3.14159);
         // }
+        h1_Mx->Fill(Mx1); // Always fill Mx histogram
     }
 
     for (Long64_t j = 0; j < nentries2; ++j) {
@@ -95,6 +101,7 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
             h2_xF->Fill(xF2);
             h2_p_theta->Fill(p_theta2 * 180.0 / 3.14159);
         // }
+        h2_Mx->Fill(Mx2); // Always fill Mx histogram
     }
 
     // Fill histograms for the second set of files
@@ -105,6 +112,7 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
             h3_xF->Fill(xF3);
             h3_p_theta->Fill(p_theta3 * 180.0 / 3.14159);
         // }
+        h3_Mx->Fill(Mx3); // Always fill Mx histogram
     }
 
     for (Long64_t j = 0; j < nentries4; ++j) {
@@ -114,6 +122,7 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
             h4_xF->Fill(xF4);
             h4_p_theta->Fill(p_theta4 * 180.0 / 3.14159);
         // }
+        h4_Mx->Fill(Mx4); // Always fill Mx histogram
     }
 
     gStyle->SetOptStat(0);
@@ -139,6 +148,13 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
 
     TH1F *ratio_p_theta_2 = (TH1F*)h3_p_theta->Clone("ratio_p_theta_2");
     ratio_p_theta_2->Divide(h4_p_theta);
+
+    TH1F *ratio_Mx_1 = (TH1F*)h1_Mx->Clone("ratio_Mx_1");
+    ratio_Mx_1->Divide(h2_Mx);
+    ratio_Mx_1->GetXaxis()->SetTitle("Mx");
+
+    TH1F *ratio_Mx_2 = (TH1F*)h3_Mx->Clone("ratio_Mx_2");
+    ratio_Mx_2->Divide(h4_Mx);
 
     // Save the ratio histograms
     TCanvas *c = new TCanvas("c", "c", 800, 600);
@@ -186,6 +202,20 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     legend->Draw();
 
     c->SaveAs("output/ratio_p_theta.png");
+
+    // Plot ratios for Mx
+    c->cd();
+    ratio_Mx_1->SetLineColor(kRed);
+    ratio_Mx_1->Draw();
+    ratio_Mx_2->SetLineColor(kBlue);
+    ratio_Mx_2->Draw("SAME");
+
+    legend->Clear();
+    legend->AddEntry(ratio_Mx_1, "preliminary", "l");
+    legend->AddEntry(ratio_Mx_2, "pass-1", "l");
+    legend->Draw();
+
+    c->SaveAs("output/ratio_Mx.png");
 
     // Clean up
     delete c;
