@@ -41,10 +41,10 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     TH1F *h3_xF = new TH1F("h3_xF", "xF", nbins, -2, 1);
     TH1F *h4_xF = new TH1F("h4_xF", "xF", nbins, -2, 1);
 
-    TH1F *h1_p_theta = new TH1F("h1_p_theta", "p_theta", nbins, 0, 35);
-    TH1F *h2_p_theta = new TH1F("h2_p_theta", "p_theta", nbins, 0, 35);
-    TH1F *h3_p_theta = new TH1F("h3_p_theta", "p_theta", nbins, 0, 35);
-    TH1F *h4_p_theta = new TH1F("h4_p_theta", "p_theta", nbins, 0, 35);
+    TH1F *h1_p_theta = new TH1F("h1_p_theta", "p_theta", nbins, 0, 25);
+    TH1F *h2_p_theta = new TH1F("h2_p_theta", "p_theta", nbins, 0, 25);
+    TH1F *h3_p_theta = new TH1F("h3_p_theta", "p_theta", nbins, 0, 25);
+    TH1F *h4_p_theta = new TH1F("h4_p_theta", "p_theta", nbins, 0, 25);
 
     double p_p1, p_p2, p_p3, p_p4;
     double xF1, xF2, xF3, xF4;
@@ -79,39 +79,39 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     // Fill histograms for the first set of files
     for (Long64_t j = 0; j < nentries1; ++j) {
         tree1->GetEntry(j);
-        if (Mx1 > 1.4) {
+        // if (Mx1 > 1.4) {
             h1_p_p->Fill(p_p1);
             h1_xF->Fill(xF1);
             h1_p_theta->Fill(p_theta1 * 180.0 / 3.14159);
-        }
+        // }
     }
 
     for (Long64_t j = 0; j < nentries2; ++j) {
         tree2->GetEntry(j);
-        if (Mx2 > 1.4) {
+        // if (Mx2 > 1.4) {
             h2_p_p->Fill(p_p2);
             h2_xF->Fill(xF2);
             h2_p_theta->Fill(p_theta2 * 180.0 / 3.14159);
-        }
+        // }
     }
 
     // Fill histograms for the second set of files
     for (Long64_t j = 0; j < nentries3; ++j) {
         tree3->GetEntry(j);
-        if (Mx3 > 1.4) {
+        // if (Mx3 > 1.4) {
             h3_p_p->Fill(p_p3);
             h3_xF->Fill(xF3);
             h3_p_theta->Fill(p_theta3 * 180.0 / 3.14159);
-        }
+        // }
     }
 
     for (Long64_t j = 0; j < nentries4; ++j) {
         tree4->GetEntry(j);
-        if (Mx4 > 1.4) {
+        // if (Mx4 > 1.4) {
             h4_p_p->Fill(p_p4);
             h4_xF->Fill(xF4);
             h4_p_theta->Fill(p_theta4 * 180.0 / 3.14159);
-        }
+        // }
     }
 
     // Create ratio histograms
