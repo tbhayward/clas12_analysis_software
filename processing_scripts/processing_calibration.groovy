@@ -13,6 +13,10 @@ import org.jlab.clas12.physics.*
 // filetype for gathering files in directory
 import groovy.io.FileType
 
+// dilks CLAS QA analysis
+import clasqa.QADB
+
+
 // def banks_test = { DataEvent event ->
 //     String[] bankNames = 
 //         ["RUN::config","REC::Event","REC::Particle","REC::Calorimeter",
