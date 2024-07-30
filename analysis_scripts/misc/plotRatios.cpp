@@ -6,6 +6,8 @@
 #include <TString.h>
 #include <TSystem.h>
 #include <iostream>
+#include <TLegend.h>
+#include <TStyle.h>
 
 void plotRatios(const char* file1, const char* file2, const char* file3, const char* file4) {
     // Open the ROOT files
@@ -113,22 +115,27 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
             h4_p_theta->Fill(p_theta4 * 180.0 / 3.14159);
         // }
     }
+    
+    gStyle->SetOptStat(0);
 
     // Create ratio histograms
     TH1F *ratio_p_p_1 = (TH1F*)h1_p_p->Clone("ratio_p_p_1");
     ratio_p_p_1->Divide(h2_p_p);
+    ratio_p_p_1->GetXaxis()->SetTitle("p_p");
 
     TH1F *ratio_p_p_2 = (TH1F*)h3_p_p->Clone("ratio_p_p_2");
     ratio_p_p_2->Divide(h4_p_p);
 
     TH1F *ratio_xF_1 = (TH1F*)h1_xF->Clone("ratio_xF_1");
     ratio_xF_1->Divide(h2_xF);
+    ratio_xF_1->GetXaxis()->SetTitle("xF");
 
     TH1F *ratio_xF_2 = (TH1F*)h3_xF->Clone("ratio_xF_2");
     ratio_xF_2->Divide(h4_xF);
 
     TH1F *ratio_p_theta_1 = (TH1F*)h1_p_theta->Clone("ratio_p_theta_1");
     ratio_p_theta_1->Divide(h2_p_theta);
+    ratio_p_theta_1->GetXaxis()->SetTitle("p_theta (degrees)");
 
     TH1F *ratio_p_theta_2 = (TH1F*)h3_p_theta->Clone("ratio_p_theta_2");
     ratio_p_theta_2->Divide(h4_p_theta);
@@ -142,7 +149,12 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     ratio_p_p_1->Draw();
     ratio_p_p_2->SetLineColor(kBlue);
     ratio_p_p_2->Draw("SAME");
-    c->BuildLegend();
+
+    TLegend *legend = new TLegend(0.7, 0.8, 0.9, 0.9);
+    legend->AddEntry(ratio_p_p_1, "preliminary", "l");
+    legend->AddEntry(ratio_p_p_2, "pass-1", "l");
+    legend->Draw();
+
     c->SaveAs("output/ratio_p_p.png");
 
     // Plot ratios for xF
@@ -151,7 +163,12 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     ratio_xF_1->Draw();
     ratio_xF_2->SetLineColor(kBlue);
     ratio_xF_2->Draw("SAME");
-    c->BuildLegend();
+
+    legend->Clear();
+    legend->AddEntry(ratio_xF_1, "preliminary", "l");
+    legend->AddEntry(ratio_xF_2, "pass-1", "l");
+    legend->Draw();
+
     c->SaveAs("output/ratio_xF.png");
 
     // Plot ratios for p_theta
@@ -160,7 +177,12 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     ratio_p_theta_1->Draw();
     ratio_p_theta_2->SetLineColor(kBlue);
     ratio_p_theta_2->Draw("SAME");
-    c->BuildLegend();
+
+    legend->Clear();
+    legend->AddEntry(ratio_p_theta_1, "preliminary", "l");
+    legend->AddEntry(ratio_p_theta_2, "pass-1", "l");
+    legend->Draw();
+
     c->SaveAs("output/ratio_p_theta.png");
 
     // Clean up
