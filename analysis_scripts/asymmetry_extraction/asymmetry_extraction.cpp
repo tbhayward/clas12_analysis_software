@@ -280,8 +280,8 @@ int main(int argc, char *argv[]) {
   cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << " (nC)."<< endl << endl;
 
   createIntegratedKinematicPlots();
-  createIntegratedKinematicPlotsForBinsAndFits();
-  // createCorrelationPlotsforrunnum();
+  // createIntegratedKinematicPlotsForBinsAndFits();
+  createCorrelationPlotsforrunnum();
   // createCorrelationPlots();
   // createMisIDRatePlots();
   currentFits=0;
