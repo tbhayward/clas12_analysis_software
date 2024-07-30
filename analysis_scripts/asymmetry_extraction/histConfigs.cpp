@@ -46,8 +46,8 @@ std::map<std::string, HistConfig> histConfigs = {
       {"mc_eta1_gN", {100, -3, 3}},
       {"eta2_gN", {100, -3, 3}},
       {"mc_eta2_gN", {100, -3, 3}},
-      {"e_theta", {100, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
-      {"mc_e_theta", {100, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
+      {"e_theta", {100, 0, 90}},
+      {"mc_e_theta", {100, 0, 90}},
       {"evnum", {100, 0, 0}},
       {"mc_evnum", {100, 0, 0}},
       {"helicity", {2, -2, 2}},
@@ -109,14 +109,14 @@ std::map<std::string, HistConfig> histConfigs = {
       {"mc_pT2", {100, 0, 1.2}},
       {"pTpT", {100, 0, 1.0}},
       {"mc_pTpT", {100, 0, 1.0}},
-      {"p_theta", {100, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
-      {"mc_p_theta", {100, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
-      {"p1_theta", {100, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
-      {"mc_p1_theta", {100, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
-      {"p2_theta", {100, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
-      {"mc_p2_theta", {100, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
-      {"p3_theta", {100, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
-      {"mc_p3_theta", {100, 0, 2 * TMath::Pi() / 180 * 30}}, // Convert degree to radian
+      {"p_theta", {100, 0, 90}}, 
+      {"mc_p_theta", {100, 0, 90}}, 
+      {"p1_theta", {100, 0, 90}}, 
+      {"mc_p1_theta", {100, 0, 90}}, 
+      {"p2_theta", {100, 0, 90}}, 
+      {"mc_p2_theta", {100, 0, 90}},
+      {"p3_theta", {100, 0, 90}}, 
+      {"mc_p3_theta", {100, 0, 90}}, 
       {"Q2", {100, 0, 9}},
       {"mc_Q2", {100, 0, 9}},
       {"runnum", {100, 0, 0}},

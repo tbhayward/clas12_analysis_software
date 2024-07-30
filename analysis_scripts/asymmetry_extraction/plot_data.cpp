@@ -7,6 +7,7 @@
 #include <iostream> // For std::fixed
 #include <iomanip>  // For std::setprecision
 #include <sstream>  // For std::ostringstream
+#include <cmath>
 
 extern TTreeReader dataReader;
 extern TTreeReader mcReader;
@@ -19,9 +20,18 @@ template<typename T>
 void FillHistogram(TTreeReader& reader, const std::string& branchName, TH1D* hist,
         BaseKinematicCuts& kinematicCuts, int fitIndex, bool isMC) {
     TTreeReaderValue<T> val(reader, branchName.c_str());
+    const double rad_to_deg = 180.0 / M_PI;
     while (reader.Next()) {
         if (kinematicCuts.applyCuts(fitIndex, isMC)) {
-            hist->Fill(*val);
+            if (branchName == "e_theta" || branchName == "p_theta" || branchName == "p1_theta" || 
+                branchName == "p2_theta" || branchName == "p3_theta" || 
+                branchName == "mc_e_theta" || branchName == "mc_p_theta" || 
+                branchName == "mc_p1_theta" || branchName == "mc_p2_theta" || 
+                branchName == "mc_p3_theta") {
+                hist->Fill(*val * rad_to_deg);
+            } else {
+                hist->Fill(*val);
+            }
         }
     }
 }
@@ -32,10 +42,19 @@ void FillHistogramForBins(TTreeReader& reader, const std::string& branchName, TH
       double varMin, double varMax) {
     TTreeReaderValue<T> val(reader, branchName.c_str());
     TTreeReaderValue<double> currentVariable(reader, propertyNames[fitIndex].c_str());
+    const double rad_to_deg = 180.0 / M_PI;
 
     while (reader.Next()) {
         if (kinematicCuts.applyCuts(fitIndex, isMC) && *currentVariable >= varMin && *currentVariable < varMax) {
-            hist->Fill(*val);
+            if (branchName == "e_theta" || branchName == "p_theta" || branchName == "p1_theta" || 
+                branchName == "p2_theta" || branchName == "p3_theta" || 
+                branchName == "mc_e_theta" || branchName == "mc_p_theta" || 
+                branchName == "mc_p1_theta" || branchName == "mc_p2_theta" || 
+                branchName == "mc_p3_theta") {
+                hist->Fill(*val * rad_to_deg);
+            } else {
+                hist->Fill(*val);
+            }
         }
     }
 }
