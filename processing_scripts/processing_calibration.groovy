@@ -151,7 +151,7 @@ public static void main(String[] args) {
                 StringBuilder line = new StringBuilder()
                 line.append(config_run).append(" ")
                     .append(config_event).append(" ")
-                    .append(Depolarization_W).append("\n")
+                    .append(config_run).append("\n")
 
                 // Append the line to the batchLines StringBuilder
                 batchLines.append(line.toString())
