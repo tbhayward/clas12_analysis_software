@@ -18,122 +18,122 @@ import clasqa.QADB
 
 class CalibrationScript {
     // Define instance variables with default values
-    int config_run = -999
-    int config_event = -999
-    int config_trigger = -999
-    double torus = -999
-    double solenoid = -999
+    int config_run = -99
+    int config_event = -99
+    int config_trigger = -99
+    double torus = -99
+    double solenoid = -99
 
     int event_helicity = 0
 
-    int particle_pid = -999
-    double particle_px = -999
-    double particle_py = -999
-    double particle_pz = -999
-    double p = -999;
-    double particle_vx = -999
-    double particle_vy = -999
-    double particle_vz = -999
-    double particle_beta = -999
-    double particle_chi2pid = -999
-    int particle_status = -999
-    double theta = -999
-    double phi = -999
+    int particle_pid = -99
+    double particle_px = -99
+    double particle_py = -99
+    double particle_pz = -99
+    double p = -99;
+    double particle_vx = -99
+    double particle_vy = -99
+    double particle_vz = -99
+    double particle_beta = -99
+    double particle_chi2pid = -99
+    int particle_status = -99
+    double theta = -99
+    double phi = -99
 
-    int cal_sector = -999
-    double cal_energy_1 = -999; double cal_energy_4 = -999; double cal_energy_7 = -999;
-    double cal_x_1 = -999; double cal_x_4 = -999; double cal_x_7 = -999; 
-    double cal_y_1 = -999; double cal_y_4 = -999; double cal_y_7 = -999;
-    double cal_z_1 = -999; double cal_z_4 = -999; double cal_z_7 = -999;
-    double cal_lu_1 = -999; double cal_lu_4 = -999; double cal_lu_7 = -999;
-    double cal_lv_1 = -999; double cal_lv_4 = -999; double cal_lv_7 = -999;
-    double cal_lw_1 = -999; double cal_lw_4 = -999; double cal_lw_7 = -999;
+    int cal_sector = -99
+    double cal_energy_1 = -99; double cal_energy_4 = -99; double cal_energy_7 = -99;
+    double cal_x_1 = -99; double cal_x_4 = -99; double cal_x_7 = -99; 
+    double cal_y_1 = -99; double cal_y_4 = -99; double cal_y_7 = -99;
+    double cal_z_1 = -99; double cal_z_4 = -99; double cal_z_7 = -99;
+    double cal_lu_1 = -99; double cal_lu_4 = -99; double cal_lu_7 = -99;
+    double cal_lv_1 = -99; double cal_lv_4 = -99; double cal_lv_7 = -99;
+    double cal_lw_1 = -99; double cal_lw_4 = -99; double cal_lw_7 = -99;
 
-    int cc_sector = -999
-    double cc_nphe_15 = -999; double cc_nphe_16 = -999; 
+    int cc_sector = -99
+    double cc_nphe_15 = -99; double cc_nphe_16 = -99; 
 
-    int track_sector_5 = -999; // no track_sector_6 because CVT is one sector
-    double track_chi2_5 = -999; double track_chi2_6 = -999; 
-    int track_ndf_5 = -999; int track_ndf_6 = -999; 
+    int track_sector_5 = -99; // no track_sector_6 because CVT is one sector
+    double track_chi2_5 = -99; double track_chi2_6 = -99; 
+    int track_ndf_5 = -99; int track_ndf_6 = -99; 
 
     // these are DC layer 1, 2, 3 
-    double traj_x_6 = -999; double traj_x_18 = -999; double traj_x_36 = -999; 
-    double traj_y_6 = -999; double traj_y_18 = -999; double traj_y_36 = -999;
-    double traj_z_6 = -999; double traj_z_18 = -999; double traj_z_36 = -999; 
-    double traj_edge_6 = -999; double traj_edge_18 = -999; double traj_edge_36 = -999;
+    double traj_x_6 = -99; double traj_x_18 = -99; double traj_x_36 = -99; 
+    double traj_y_6 = -99; double traj_y_18 = -99; double traj_y_36 = -99;
+    double traj_z_6 = -99; double traj_z_18 = -99; double traj_z_36 = -99; 
+    double traj_edge_6 = -99; double traj_edge_18 = -99; double traj_edge_36 = -99;
     // cvt layers
-    double traj_x_1 = -999; double traj_x_3 = -999; double traj_x_5 = -999; double traj_x_7 = -999; 
-    	double traj_x_12 = -999;
-    double traj_y_1 = -999; double traj_y_3 = -999; double traj_y_5 = -999; double traj_y_7 = -999; 
-    	double traj_y_12 = -999; 
-    double traj_z_1 = -999; double traj_z_3 = -999; double traj_z_5 = -999; double traj_z_7 = -999; 
-    	double traj_z_12 = -999; 
-    double traj_edge_1 = -999; double traj_edge_3 = -999; double traj_edge_5 = -999; double traj_edge_7 = -999; 
-    	double traj_edge_12 = -999;
+    double traj_x_1 = -99; double traj_x_3 = -99; double traj_x_5 = -99; double traj_x_7 = -99; 
+    	double traj_x_12 = -99;
+    double traj_y_1 = -99; double traj_y_3 = -99; double traj_y_5 = -99; double traj_y_7 = -99; 
+    	double traj_y_12 = -99; 
+    double traj_z_1 = -99; double traj_z_3 = -99; double traj_z_5 = -99; double traj_z_7 = -99; 
+    	double traj_z_12 = -99; 
+    double traj_edge_1 = -99; double traj_edge_3 = -99; double traj_edge_5 = -99; double traj_edge_7 = -99; 
+    	double traj_edge_12 = -99;
 
     // Method to reset all variables to their default values
     void resetVariables() {
-        // config_run = -999
-        // config_event = -999
-        // config_trigger = -999
-        // torus = -999
-        // solenoid = -999
+        // config_run = -99
+        // config_event = -99
+        // config_trigger = -99
+        // torus = -99
+        // solenoid = -99
 
         // event_helicity = 0
 
-        particle_pid = -999;
-	    particle_px = -999;
-	    particle_py = -999;
-	    particle_pz = -999;
-	    p = -999;
-	    particle_vx = -999;
-	    particle_vy = -999;
-	    particle_vz = -999;
-	    particle_beta = -999;
-	    particle_chi2pid = -999;
-	    particle_status = -999;
-	    theta = -999;
-	    phi = -999;
+        particle_pid = -99;
+	    particle_px = -99;
+	    particle_py = -99;
+	    particle_pz = -99;
+	    p = -99;
+	    particle_vx = -99;
+	    particle_vy = -99;
+	    particle_vz = -99;
+	    particle_beta = -99;
+	    particle_chi2pid = -99;
+	    particle_status = -99;
+	    theta = -99;
+	    phi = -99;
 
-	    cal_sector = -999;
-	    cal_energy_1 = -999; cal_energy_4 = -999; cal_energy_7 = -999;
-	    cal_x_1 = -999; cal_x_4 = -999; cal_x_7 = -999; 
-	    cal_y_1 = -999; cal_y_4 = -999; cal_y_7 = -999;
-	    cal_z_1 = -999; cal_z_4 = -999; cal_z_7 = -999;
-	    cal_lu_1 = -999; cal_lu_4 = -999; cal_lu_7 = -999;
-	    cal_lv_1 = -999; cal_lv_4 = -999; cal_lv_7 = -999;
-	    cal_lw_1 = -999; cal_lw_4 = -999; cal_lw_7 = -999;
+	    cal_sector = -99;
+	    cal_energy_1 = -99; cal_energy_4 = -99; cal_energy_7 = -99;
+	    cal_x_1 = -99; cal_x_4 = -99; cal_x_7 = -99; 
+	    cal_y_1 = -99; cal_y_4 = -99; cal_y_7 = -99;
+	    cal_z_1 = -99; cal_z_4 = -99; cal_z_7 = -99;
+	    cal_lu_1 = -99; cal_lu_4 = -99; cal_lu_7 = -99;
+	    cal_lv_1 = -99; cal_lv_4 = -99; cal_lv_7 = -99;
+	    cal_lw_1 = -99; cal_lw_4 = -99; cal_lw_7 = -99;
 
-	    cc_sector = -999;
-	    cc_nphe_15 = -999; cc_nphe_16 = -999; 
+	    cc_sector = -99;
+	    cc_nphe_15 = -99; cc_nphe_16 = -99; 
 
-	    track_sector_5 = -999; // no track_sector_6 because CVT is one sector
-	    track_chi2_5 = -999; track_chi2_6 = -999; 
-	    track_ndf_5 = -999; track_ndf_6 = -999; 
+	    track_sector_5 = -99; // no track_sector_6 because CVT is one sector
+	    track_chi2_5 = -99; track_chi2_6 = -99; 
+	    track_ndf_5 = -99; track_ndf_6 = -99; 
 
-	    traj_x_6 = -999; traj_x_18 = -999; traj_x_36 = -999; 
-	    traj_y_6 = -999; traj_y_18 = -999; traj_y_36 = -999;
-	    traj_z_6 = -999; traj_z_18 = -999; traj_z_36 = -999; 
-	    traj_edge_6 = -999; traj_edge_18 = -999; traj_edge_36 = -999; 
+	    traj_x_6 = -99; traj_x_18 = -99; traj_x_36 = -99; 
+	    traj_y_6 = -99; traj_y_18 = -99; traj_y_36 = -99;
+	    traj_z_6 = -99; traj_z_18 = -99; traj_z_36 = -99; 
+	    traj_edge_6 = -99; traj_edge_18 = -99; traj_edge_36 = -99; 
 	    // these are DC layer 1, 2, 3 
-	    traj_x_6 = -999; traj_x_18 = -999; traj_x_36 = -999; 
-	    traj_y_6 = -999; traj_y_18 = -999; traj_y_36 = -999;
-	    traj_z_6 = -999; traj_z_18 = -999; traj_z_36 = -999; 
-	    traj_edge_6 = -999; traj_edge_18 = -999; traj_edge_36 = -999;
+	    traj_x_6 = -99; traj_x_18 = -99; traj_x_36 = -99; 
+	    traj_y_6 = -99; traj_y_18 = -99; traj_y_36 = -99;
+	    traj_z_6 = -99; traj_z_18 = -99; traj_z_36 = -99; 
+	    traj_edge_6 = -99; traj_edge_18 = -99; traj_edge_36 = -99;
 	    // cvt layers
-	    traj_x_1 = -999; traj_x_3 = -999; traj_x_5 = -999; traj_x_7 = -999; 
-	    	traj_x_12 = -999;
-	    traj_y_1 = -999; traj_y_3 = -999; traj_y_5 = -999; traj_y_7 = -999; 
-	    	traj_y_12 = -999; 
-	    traj_z_1 = -999; traj_z_3 = -999; traj_z_5 = -999; traj_z_7 = -999; 
-	    	traj_z_12 = -999; 
-	    traj_edge_1 = -999; traj_edge_3 = -999; traj_edge_5 = -999; traj_edge_7 = -999; 
-	    	traj_edge_12 = -999;
+	    traj_x_1 = -99; traj_x_3 = -99; traj_x_5 = -99; traj_x_7 = -99; 
+	    	traj_x_12 = -99;
+	    traj_y_1 = -99; traj_y_3 = -99; traj_y_5 = -99; traj_y_7 = -99; 
+	    	traj_y_12 = -99; 
+	    traj_z_1 = -99; traj_z_3 = -99; traj_z_5 = -99; traj_z_7 = -99; 
+	    	traj_z_12 = -99; 
+	    traj_edge_1 = -99; traj_edge_3 = -99; traj_edge_5 = -99; traj_edge_7 = -99; 
+	    	traj_edge_12 = -99;
     }
 
     // Helper method for formatting doubles
     String formatDouble(double value) {
-    	if (value == -999.0) { return -999; }
+    	if (value == -99.0) { return -99; }
         else { return String.format("%.3f", value) }
     }
 
@@ -374,7 +374,7 @@ class CalibrationScript {
 	                        					break;
 	                        			} 
 		                        		break
-		                        	case 7: // cvt
+		                        	case 5: // cvt
 		                        		switch(layer) {
 		                        			case 1: 
 	                        					traj_x_1 = x; traj_y_1 = y; traj_z_1 = z; traj_edge_1 = edge;
