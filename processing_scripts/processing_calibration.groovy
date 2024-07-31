@@ -222,6 +222,7 @@ class CalibrationScript {
 
                     for (int particle_Index = 0; particle_Index < rec_Bank.rows(); 
                     	particle_Index++) {
+                    	println(particle_Index);
 
                         particle_pid = rec_Bank.getInt("pid", particle_Index);
                         if (particle_pid == 0 || particle_pid == 45) { continue; }
