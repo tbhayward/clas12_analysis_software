@@ -273,6 +273,19 @@ class CalibrationScript {
 	                        }
 	                    }
 
+
+	                    // Track Bank
+	                    for (int current_Row = 0; current_Row < track_Bank.rows(); current_Row++) {
+	                        // Get the pindex and layer values for the current row
+	                        int pindex = track_Bank.getInt("pindex", current_Row);
+	                        if (pindex == particle_Index) {
+	                            track_detector = track_Bank.getInt("detector", current_Row);
+	                            track_sector = track_Bank.getInt("sector", current_Row);
+	                            track_chi2 = track_Bank.getFloat("chi2", current_Row);
+	                            track_ndf = track_Bank.getInt("NDF", current_Row);
+	                        }
+	                    }
+
 	                    // Use a StringBuilder to append all data in a single call
 	                    StringBuilder line = new StringBuilder()
 	                    line.append(config_run).append(" ")
@@ -302,6 +315,10 @@ class CalibrationScript {
 	                        .append(cc_sector).append(" ")
 	                        .append(cc_detector).append(" ")
 	                        .append(formatDouble(cc_nphe)).append(" ")
+	                        .append(track_detector).append(" ")
+	                        .append(track_sector).append(" ")
+	                        .append(formatDouble(track_chi2)).append(" ")
+	                        .append(track_ndf).append(" ")
 	                        .append(config_run).append("\n")
 
 	                    // Append the line to the batchLines StringBuilder
