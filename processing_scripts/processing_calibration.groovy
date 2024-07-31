@@ -52,7 +52,7 @@ class CalibrationScript {
     int cc_sector = -999
     double cc_nphe_15 = -999; double cc_nphe_16 = -999; 
 
-    int track_sector_5 = -999; int track_sector_6 = -999; 
+    int track_sector_5 = -999; // no track_sector_6 because CVT is one sector
     double track_chi2_5 = -999; double track_chi2_6 = -999; 
     int track_ndf_5 = -999; int track_ndf_6 = -999; 
 
@@ -99,7 +99,7 @@ class CalibrationScript {
 	    cc_sector = -999;
 	    cc_nphe_15 = -999; cc_nphe_16 = -999; 
 
-	    track_sector_5 = -999; track_sector_6 = -999; 
+	    track_sector_5 = -999; // no track_sector_6 because CVT is one sector
 	    track_chi2_5 = -999; track_chi2_6 = -999; 
 	    track_ndf_5 = -999; track_ndf_6 = -999; 
 
@@ -322,7 +322,6 @@ class CalibrationScript {
 	                            		track_ndf_5 = ndf;
 	                            		break;
 	                            	case 6:
-	                            		track_sector_6 = sector;
 	                            		track_chi2_6 = chi2;
 	                            		track_ndf_6 = ndf;
 		                            	break
@@ -372,14 +371,12 @@ class CalibrationScript {
 	                        .append(formatDouble(cal_lv_7)).append(" ")
 	                        .append(formatDouble(cal_lw_7)).append(" ")
 
-	                        .append(cc_sector).append(" ")
 	                        .append(formatDouble(cc_nphe_15)).append(" ")
 	                        .append(formatDouble(cc_nphe_16)).append(" ")
 
 	                        .append(track_sector_5).append(" ")
 	                        .append(formatDouble(track_chi2_5)).append(" ")
 	                        .append(track_ndf_5).append(" ")
-	                        .append(track_sector_6).append(" ")
 	                        .append(formatDouble(track_chi2_6)).append(" ")
 	                        .append(track_ndf_6).append(" ")
 
