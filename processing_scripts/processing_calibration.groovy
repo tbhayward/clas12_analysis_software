@@ -118,7 +118,7 @@ class CalibrationScript {
 
     // Helper method for formatting doubles
     String formatDouble(double value) {
-    	if (value == -999) { return -999; }
+    	if (value == -999.0) { return -999; }
         else { return String.format("%.3f", value) }
     }
 
