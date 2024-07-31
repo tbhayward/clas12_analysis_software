@@ -51,6 +51,7 @@ void FillHistogramForBins(TTreeReader& reader, const std::string& branchName, TH
                 branchName == "mc_e_theta" || branchName == "mc_p_theta" || 
                 branchName == "mc_p1_theta" || branchName == "mc_p2_theta" || 
                 branchName == "mc_p3_theta") {
+                std::cout << val << std::endl;
                 hist->Fill(*val * rad_to_deg);
             } else {
                 hist->Fill(*val);
