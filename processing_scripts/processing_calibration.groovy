@@ -56,11 +56,6 @@ class CalibrationScript {
     double track_chi2_5 = -999; double track_chi2_6 = -999; 
     int track_ndf_5 = -999; int track_ndf_6 = -999; 
 
-    int traj_detector = -999;
-    double traj_x_6 = -999; double traj_x_18 = -999; double traj_x_36 = -999; 
-    double traj_y_6 = -999; double traj_y_18 = -999; double traj_y_36 = -999;
-    double traj_z_6 = -999; double traj_z_18 = -999; double traj_z_36 = -999; 
-    double traj_edge_6 = -999; double traj_edge_18 = -999; double traj_edge_36 = -999; 
     // these are DC layer 1, 2, 3 
     double traj_x_6 = -999; double traj_x_18 = -999; double traj_x_36 = -999; 
     double traj_y_6 = -999; double traj_y_18 = -999; double traj_y_36 = -999;
