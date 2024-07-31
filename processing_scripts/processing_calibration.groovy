@@ -71,6 +71,9 @@ class CalibrationScript {
     double traj_edge_1 = -99; double traj_edge_3 = -99; double traj_edge_5 = -99; double traj_edge_7 = -99; 
     	double traj_edge_12 = -99;
 
+    // FT 
+    double energy = -99; double x = -99; double y = -99; double z = -99; double radius = -99;
+
     // Method to reset all variables to their default values
     void resetVariables() {
         // config_run = -99
@@ -129,6 +132,8 @@ class CalibrationScript {
 	    	traj_z_12 = -99; 
 	    traj_edge_1 = -99; traj_edge_3 = -99; traj_edge_5 = -99; traj_edge_7 = -99; 
 	    	traj_edge_12 = -99;
+
+	    energy = -99; x = -99; y = -99; z = -99;  radius = -99;
     }
 
     // Helper method for formatting doubles
