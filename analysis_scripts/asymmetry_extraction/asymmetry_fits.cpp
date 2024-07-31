@@ -44,6 +44,7 @@ double BSA_dvcs(double* x, double* par) {
   double AUU_cosphi = par[2];
   // Retrieve the phi variable from the input x array
   double phi = x[0];
+  std::cout << AUU_cosphi << std::endl;
   // Calculate and return the value of the function for the given phi and parameters 
   return ALU_offset + ALU_sinphi*sin(phi)/(1+AUU_cosphi*cos(phi));
 }
