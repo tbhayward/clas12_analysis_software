@@ -30,6 +30,7 @@ class CalibrationScript {
     double particle_px = -9999
     double particle_py = -9999
     double particle_pz = -9999
+    double p = -9999;
     double particle_vx = -9999
     double particle_vy = -9999
     double particle_vz = -9999
@@ -216,7 +217,7 @@ class CalibrationScript {
 						particle_vx = rec_Bank.getFloat("vx",particle_Index);
 						particle_vy = rec_Bank.getFloat("vy",particle_Index);
 						particle_vz = rec_Bank.getFloat("vz",particle_Index);
-						particle_p = Math.sqrt(particle_px*particle_px+
+						p = Math.sqrt(particle_px*particle_px+
 							particle_py*particle_py+particle_pz*particle_pz);
 						particle_theta = theta_calculation(particle_px, particle_py, particle_pz);
 						particle_phi = phi_calculation(particle_px, particle_py);
