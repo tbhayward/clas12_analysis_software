@@ -52,10 +52,9 @@ class CalibrationScript {
     int cc_sector = -999
     double cc_nphe_15 = -999; double cc_nphe_16 = -999; 
 
-    int track_detector = -999
-    int track_sector = -999
-    double track_chi2 = -999
-    int track_ndf = -999
+    int track_sector_5 = -999; int track_sector_6 = -999; 
+    double track_chi2_5 = -999; double track_chi2_6 = -999; 
+    int track_ndf_5 = -999; int track_ndf_6 = -999; 
 
     int traj_detector = -999
     int traj_layer = -999
@@ -74,44 +73,42 @@ class CalibrationScript {
 
         // event_helicity = 0
 
-        particle_pid = -999
-        particle_px = -999
-        particle_py = -999
-        particle_pz = -999
-        particle_vx = -999
-        particle_vy = -999
-        particle_vz = -999
-        particle_beta = -999
-        particle_chi2pid = -999
-        particle_status = -999
-        theta = -999
-        phi = -999
+        particle_pid = -999;
+	    particle_px = -999;
+	    particle_py = -999;
+	    particle_pz = -999;
+	    p = -999;
+	    particle_vx = -999;
+	    particle_vy = -999;
+	    particle_vz = -999;
+	    particle_beta = -999;
+	    particle_chi2pid = -999;
+	    particle_status = -999;
+	    theta = -999;
+	    phi = -999;
 
-        cal_sector = -999
-        cal_layer = -999
-        cal_energy = -999
-        cal_x = -999
-        cal_y = -999
-        cal_z = -999
-        cal_lu = -999
-        cal_lv = -999
-        cal_lw = -999
+	    cal_sector = -999;
+	    cal_energy_1 = -999; cal_energy_4 = -999; cal_energy_7 = -999;
+	    cal_x_1 = -999; cal_x_4 = -999; cal_x_7 = -999; 
+	    cal_y_1 = -999; cal_y_4 = -999; cal_y_7 = -999;
+	    cal_z_1 = -999; cal_z_4 = -999; cal_z_7 = -999;
+	    cal_lu_1 = -999; cal_lu_4 = -999; cal_lu_7 = -999;
+	    cal_lv_1 = -999; cal_lv_4 = -999; cal_lv_7 = -999;
+	    cal_lw_1 = -999; cal_lw_4 = -999; cal_lw_7 = -999;
 
-        cc_sector = -999
-        cc_detector = -999
-        cc_nphe = -999
+	    cc_sector = -999;
+	    cc_nphe_15 = -999; cc_nphe_16 = -999; 
 
-        track_detector = -999
-        track_sector = -999
-        track_chi2 = -999
-        track_ndf = -999
+	    track_sector_5 = -999; track_sector_6 = -999; 
+	    track_chi2_5 = -999; track_chi2_6 = -999; 
+	    track_ndf_5 = -999; track_ndf_6 = -999; 
 
-        traj_detector = -999
-        traj_layer = -999
-        traj_x = -999
-        traj_y = -999
-        traj_z = -999
-        traj_edge = -999
+	    traj_detector = -999;
+	    traj_layer = -999;
+	    traj_x = -999;
+	    traj_y = -999;
+	    traj_z = -999;
+	    traj_edge = -999;
     }
 
     // Helper method for formatting doubles
@@ -314,10 +311,22 @@ class CalibrationScript {
 	                        // Get the pindex and layer values for the current row
 	                        int pindex = track_Bank.getInt("pindex", current_Row);
 	                        if (pindex == particle_Index) {
-	                            track_detector = track_Bank.getInt("detector", current_Row);
-	                            track_sector = track_Bank.getInt("sector", current_Row);
-	                            track_chi2 = track_Bank.getFloat("chi2", current_Row);
-	                            track_ndf = track_Bank.getInt("NDF", current_Row);
+	                            detector = track_Bank.getInt("detector", current_Row);
+	                            sector = track_Bank.getInt("sector", current_Row);
+	                            chi2 = track_Bank.getFloat("chi2", current_Row);
+	                            ndf = track_Bank.getInt("NDF", current_Row);
+	                            switch(detector) {
+	                            	case 5:
+	                            		track_sector_5 = sector;
+	                            		track_chi2_5 = chi2;
+	                            		track_ndf_5 = ndf;
+	                            		break;
+	                            	case 6:
+	                            		track_sector_6 = sector;
+	                            		track_chi2_6 = chi2;
+	                            		track_ndf_6 = ndf;
+		                            	break
+	                            }
 	                        }
 	                    }
 
@@ -350,15 +359,29 @@ class CalibrationScript {
 	                        .append(formatDouble(cal_lu_1)).append(" ")
 	                        .append(formatDouble(cal_lv_1)).append(" ")
 	                        .append(formatDouble(cal_lw_1)).append(" ")
+	                        .append(formatDouble(cal_x_4)).append(" ")
+	                        .append(formatDouble(cal_y_4)).append(" ")
+	                        .append(formatDouble(cal_z_4)).append(" ")
+	                        .append(formatDouble(cal_lu_4)).append(" ")
+	                        .append(formatDouble(cal_lv_4)).append(" ")
+	                        .append(formatDouble(cal_lw_4)).append(" ")
+	                        .append(formatDouble(cal_x_7)).append(" ")
+	                        .append(formatDouble(cal_y_7)).append(" ")
+	                        .append(formatDouble(cal_z_7)).append(" ")
+	                        .append(formatDouble(cal_lu_7)).append(" ")
+	                        .append(formatDouble(cal_lv_7)).append(" ")
+	                        .append(formatDouble(cal_lw_7)).append(" ")
 
 	                        .append(cc_sector).append(" ")
 	                        .append(formatDouble(cc_nphe_15)).append(" ")
 	                        .append(formatDouble(cc_nphe_16)).append(" ")
 
-	                        .append(track_detector).append(" ")
-	                        .append(track_sector).append(" ")
-	                        .append(formatDouble(track_chi2)).append(" ")
-	                        .append(track_ndf).append(" ")
+	                        .append(track_sector_5).append(" ")
+	                        .append(formatDouble(track_chi2_5)).append(" ")
+	                        .append(track_ndf_5).append(" ")
+	                        .append(track_sector_6).append(" ")
+	                        .append(formatDouble(track_chi2_6)).append(" ")
+	                        .append(track_ndf_6).append(" ")
 
 	                        .append(config_run).append("\n")
 
