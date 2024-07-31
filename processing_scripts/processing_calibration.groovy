@@ -16,7 +16,7 @@ import groovy.io.FileType
 // dilks CLAS QA analysis
 import clasqa.QADB
 
-double traj_edge = -9999
+def traj_edge = -9999
 
 public static double phi_calculation (double x, double y) {
 	// tracks are given with Cartesian values and so must be converted to cylindrical
