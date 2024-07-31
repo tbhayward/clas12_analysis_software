@@ -259,7 +259,7 @@ public class Dihadrons {
         lv_q_gN_unit.setMagThetaPhi(1, lv_q_gN.theta(), lv_q_gN.phi());
         // in gamma*-nucleon frame the z axis is along gamma* and the x axis is in the 
         // e-e' plane in the direction of e. the y axis is then the cross product of these two
-        System.out.println(lv_p_gN.e()+" "+lv_p1_gN.e()+" "+lv_p2_gN.e());
+        System.out.println(lv_p.e()+" "+lv_p1.e()+" "+lv_p2.e());
         
         // boost to Breit infinite momentum frame
         LorentzVector lv_p_Breit = new LorentzVector(lv_p); lv_p_Breit.boost(BreitBoost);
