@@ -102,7 +102,7 @@ public static void main(String[] args) {
 
     // REC::Cherenkov variables
     int cc_sector = -9999
-    double cc_detector = -9999
+    int cc_detector = -9999
     double cc_nphe = -9999
 
     // REC::Track variables
@@ -231,8 +231,8 @@ public static void main(String[] args) {
 					    .append(formatDouble(cal_lu)).append(" ")
 					    .append(formatDouble(cal_lv)).append(" ")
 					    .append(formatDouble(cal_lw)).append(" ")
-					    .append(formatDouble(cc_sector)).append(" ")
-					    .append(formatDouble(cc_detector)).append(" ")
+					    .append(cc_sector).append(" ")
+					    .append(cc_detector).append(" ")
 					    .append(formatDouble(cc_nphe)).append(" ")
 					    .append(config_run).append("\n")
 
