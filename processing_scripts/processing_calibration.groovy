@@ -68,13 +68,13 @@ class CalibrationScript {
 
     // Method to reset all variables to their default values
     void resetVariables() {
-        config_run = -9999
-        config_event = -9999
-        config_trigger = -9999
-        torus = -9999
-        solenoid = -9999
+        // config_run = -9999
+        // config_event = -9999
+        // config_trigger = -9999
+        // torus = -9999
+        // solenoid = -9999
 
-        event_helicity = 0
+        // event_helicity = 0
 
         particle_pid = -9999
         particle_px = -9999
