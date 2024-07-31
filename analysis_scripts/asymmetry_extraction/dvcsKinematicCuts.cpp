@@ -18,7 +18,7 @@ bool dvcsKinematicCuts::applyCuts(int currentFits, bool isMC) {
     bool goodEvent = false;
     string property = binNames[currentFits];
 
-    goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75 && *eta2 < 0; // DIS cuts (and radiative)
+    goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75 && *eta2 < 0; // DIS cuts (and radiative photon in detector)
     goodEvent = goodEvent && *theta_gamma_gamma < 0.6 && *Emiss2 < 0.5 &&
         *pTmiss < 0.125 && *Mxgammasquared < 1.25;
     if (property == "dvcsx") {
