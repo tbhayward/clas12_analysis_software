@@ -309,7 +309,7 @@ public static void main(String[] args) {
 	                resetVariables();
 	            }
             }
-            reader.close()
+            reader.close();
         }
 
         // Write any remaining lines in the batchLines StringBuilder to the file
