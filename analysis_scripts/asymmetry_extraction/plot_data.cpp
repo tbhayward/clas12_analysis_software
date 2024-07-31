@@ -635,10 +635,6 @@ void createCorrelationPlots() {
     }
 }
 
---
-
-What I want to do is make sure that the theta variable can be plotted in terms of degrees instead of radians which is how the variable is in the code. This was done similarly in another place like this:
-
 template<typename T>
 void FillHistogram(TTreeReader& reader, const std::string& branchName, TH1D* hist,
         BaseKinematicCuts& kinematicCuts, int fitIndex, bool isMC) {
