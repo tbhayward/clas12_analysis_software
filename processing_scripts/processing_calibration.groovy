@@ -121,6 +121,23 @@ class CalibrationScript {
         return String.format("%.4f", value)
     }
 
+    // Static method to calculate phi
+	static double phi_calculation(double x, double y) {
+	    double phi = Math.toDegrees(Math.atan2(x, y))
+	    phi = phi - 90
+	    if (phi < 0) {
+	        phi = 360 + phi
+	    }
+	    phi = 360 - phi
+	    return phi
+	}
+
+	// Static method to calculate theta
+	static double theta_calculation(double x, double y, double z) {
+	    double r = Math.sqrt(x * x + y * y + z * z)
+	    return Math.toDegrees(Math.acos(z / r))
+	}
+
     // Method for the main logic
     void run(String[] args) {
         // Start time
@@ -259,9 +276,9 @@ class CalibrationScript {
                         .append(formatDouble(particle_px)).append(" ")
                         .append(formatDouble(particle_py)).append(" ")
                         .append(formatDouble(particle_pz)).append(" ")
-                        .append(formatDouble(particle_p)).append(" ")
-                        .append(formatDouble(particle_theta)).append(" ")
-                        .append(formatDouble(particle_phi)).append(" ")
+                        .append(formatDouble(p)).append(" ")
+                        .append(formatDouble(theta)).append(" ")
+                        .append(formatDouble(phi)).append(" ")
                         .append(formatDouble(particle_vx)).append(" ")
                         .append(formatDouble(particle_vy)).append(" ")
                         .append(formatDouble(particle_vz)).append(" ")
@@ -318,22 +335,6 @@ class CalibrationScript {
     println("Elapsed time: ${elapsedTime} ms")
 }
 
-// Static method to calculate phi
-static double phi_calculation(double x, double y) {
-    double phi = Math.toDegrees(Math.atan2(x, y))
-    phi = phi - 90
-    if (phi < 0) {
-        phi = 360 + phi
-    }
-    phi = 360 - phi
-    return phi
-}
-
-// Static method to calculate theta
-static double theta_calculation(double x, double y, double z) {
-    double r = Math.sqrt(x * x + y * y + z * z)
-    return Math.toDegrees(Math.acos(z / r))
-}
 }
 
 // Create an instance of the script and run it
