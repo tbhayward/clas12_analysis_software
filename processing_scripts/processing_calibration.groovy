@@ -38,6 +38,104 @@ String formatDouble(double value) {
     return String.format("%.3f", value)
 }
 
+// Global variable definitions with default values
+int config_run = -9999
+int config_event = -9999
+int config_trigger = -9999
+double torus = -9999
+double solenoid = -9999
+
+int event_helicity = 0
+
+int particle_pid = -9999
+double particle_px = -9999
+double particle_py = -9999
+double particle_pz = -9999
+double particle_vx = -9999
+double particle_vy = -9999
+double particle_vz = -9999
+double particle_beta = -9999
+double particle_chi2pid = -9999
+int particle_status = -9999
+double theta = -9999
+double phi = -9999
+
+int cal_sector = -9999
+int cal_layer = -9999
+double cal_energy = -9999
+double cal_x = -9999
+double cal_y = -9999
+double cal_z = -9999
+double cal_lu = -9999
+double cal_lv = -9999
+double cal_lw = -9999
+
+int cc_sector = -9999
+int cc_detector = -9999
+double cc_nphe = -9999
+
+int track_detector = -9999
+int track_sector = -9999
+double track_chi2 = -9999
+int track_ndf = -9999
+
+int traj_detector = -9999
+int traj_layer = -9999
+double traj_x = -9999
+double traj_y = -9999
+double traj_z = -9999
+double traj_edge = -9999
+
+// Function to reset all variables to their default values
+def resetVariables() {
+    config_run = -9999
+    config_event = -9999
+    config_trigger = -9999
+    torus = -9999
+    solenoid = -9999
+
+    event_helicity = 0
+
+    particle_pid = -9999
+    particle_px = -9999
+    particle_py = -9999
+    particle_pz = -9999
+    particle_vx = -9999
+    particle_vy = -9999
+    particle_vz = -9999
+    particle_beta = -9999
+    particle_chi2pid = -9999
+    particle_status = -9999
+    theta = -9999
+    phi = -9999
+
+    cal_sector = -9999
+    cal_layer = -9999
+    cal_energy = -9999
+    cal_x = -9999
+    cal_y = -9999
+    cal_z = -9999
+    cal_lu = -9999
+    cal_lv = -9999
+    cal_lw = -9999
+
+    cc_sector = -9999
+    cc_detector = -9999
+    cc_nphe = -9999
+
+    track_detector = -9999
+    track_sector = -9999
+    track_chi2 = -9999
+    track_ndf = -9999
+
+    traj_detector = -9999
+    traj_layer = -9999
+    traj_x = -9999
+    traj_y = -9999
+    traj_z = -9999
+    traj_edge = -9999
+}
+
 public static void main(String[] args) {
 
     // Start time
@@ -75,45 +173,6 @@ public static void main(String[] args) {
     }
 
     // ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
-
-    // RUN::config variables
-    int config_run = -9999; int config_event = -9999; int config_trigger = -9999
-    double torus = -9999; double solenoid = -9999
-    // double is correct, a few runs in RGA are torus 1.06 instead of +1
-
-    // REC::Event variables
-    int event_helicity = 0
-
-    // REC::Particle variables
-    int particle_pid = -9999
-    double particle_px = -9999; double particle_py = -9999; double particle_pz = -9999
-    double particle_vx = -9999; double particle_vy = -9999; double particle_vz = -9999
-    double particle_beta = -9999; double particle_chi2pid = -9999
-    int particle_status = -9999
-    // derived angles
-    double theta = -9999; double phi = -9999;
-
-    // REC::Calorimeter variables
-    int cal_sector = -9999
-    int cal_layer = -9999
-    double cal_energy = -9999
-    double cal_x = -9999; double cal_y = -9999; double cal_z = -9999
-    double cal_lu = -9999; double cal_lv = -9999; double cal_lw = -9999
-
-    // REC::Cherenkov variables
-    int cc_sector = -9999
-    int cc_detector = -9999
-    double cc_nphe = -9999
-
-    // REC::Track variables
-    int track_detector = -9999; int track_sector = -9999
-    double track_chi2 = -9999
-    int track_ndf = -9999
-
-    // REC::Traj variables
-    int traj_detector = -9999; int traj_layer = -9999
-    double traj_x = -9999; double traj_y = -9999; double traj_z = -9999
-    double traj_edge = -9999
 
     // setup QA database
 	QADB qa = new QADB();
@@ -246,6 +305,8 @@ public static void main(String[] args) {
 	                    batchLines.setLength(0)
 	                    lineCount = 0
 	                }
+
+	                resetVariables();
 	            }
             }
             reader.close()
