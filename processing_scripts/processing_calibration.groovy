@@ -333,6 +333,7 @@ class CalibrationScript {
 	                    for (int current_Row = 0; current_Row < traj_Bank.rows(); current_Row++) {
 	                        // Get the pindex and layer values for the current row
 	                        if (track_Bank.getInt("pindex", current_Row) == 9) {println("found one")}
+	                    }
 
 	                    // Use a StringBuilder to append all data in a single call
 	                    StringBuilder line = new StringBuilder()
