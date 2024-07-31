@@ -306,29 +306,29 @@ class CalibrationScript {
 	                    }
 
 
-	                    // Track Bank
-	                    for (int current_Row = 0; current_Row < track_Bank.rows(); current_Row++) {
-	                        // Get the pindex and layer values for the current row
-	                        int pindex = track_Bank.getInt("pindex", current_Row);
-	                        if (pindex == particle_Index) {
-	                            int detector = track_Bank.getInt("detector", current_Row);
-	                            int sector = track_Bank.getInt("sector", current_Row);
-	                            double chi2 = track_Bank.getFloat("chi2", current_Row);
-	                            int ndf = track_Bank.getInt("NDF", current_Row);
-	                            switch(detector) {
-	                            	case 5:
-	                            		track_sector_5 = sector;
-	                            		track_chi2_5 = chi2;
-	                            		track_ndf_5 = ndf;
-	                            		break;
-	                            	case 6:
-	                            		track_sector_6 = sector;
-	                            		track_chi2_6 = chi2;
-	                            		track_ndf_6 = ndf;
-		                            	break
-	                            }
-	                        }
-	                    }
+	                    // // Track Bank
+	                    // for (int current_Row = 0; current_Row < track_Bank.rows(); current_Row++) {
+	                    //     // Get the pindex and layer values for the current row
+	                    //     int pindex = track_Bank.getInt("pindex", current_Row);
+	                    //     if (pindex == particle_Index) {
+	                    //         int detector = track_Bank.getInt("detector", current_Row);
+	                    //         int sector = track_Bank.getInt("sector", current_Row);
+	                    //         double chi2 = track_Bank.getFloat("chi2", current_Row);
+	                    //         int ndf = track_Bank.getInt("NDF", current_Row);
+	                    //         switch(detector) {
+	                    //         	case 5:
+	                    //         		track_sector_5 = sector;
+	                    //         		track_chi2_5 = chi2;
+	                    //         		track_ndf_5 = ndf;
+	                    //         		break;
+	                    //         	case 6:
+	                    //         		track_sector_6 = sector;
+	                    //         		track_chi2_6 = chi2;
+	                    //         		track_ndf_6 = ndf;
+		                //             	break
+	                    //         }
+	                    //     }
+	                    // }
 
 	                    // // Use a StringBuilder to append all data in a single call
 	                    // StringBuilder line = new StringBuilder()
