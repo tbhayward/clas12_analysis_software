@@ -292,7 +292,7 @@ class CalibrationScript {
 	                        int pindex = cc_Bank.getInt("pindex", current_Row);
 	                        if (pindex == particle_Index) {
 	                            cc_sector = cc_Bank.getInt("sector", current_Row);
-	                            double detector = cc_Bank.getInt("detector", current_Row);
+	                            int detector = cc_Bank.getInt("detector", current_Row);
 	                            double nphe = cc_Bank.getFloat("nphe", current_Row);
 	                            switch(detector) {
 	                            	case 15:
