@@ -2243,7 +2243,7 @@ void plotHistogramAndFit_dvcs(TH1D* histogram, TF1* fitFunction, int binIndex,
   graph->GetYaxis()->SetTitleSize(0.05);
 
   // Create the legend
-  TLegend *leg = new TLegend(0.19, 0.675, 0.45, 0.875);  // Adjusted to the upper-left corner
+  TLegend *leg = new TLegend(0.75, 0.75, 0.9, 0.9);  // Adjusted to the upper-right corner
   leg->SetBorderSize(1);
   leg->SetFillColor(0);
   leg->SetTextSize(0.025);  // Reduced text size
