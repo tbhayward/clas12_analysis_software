@@ -2565,7 +2565,7 @@ void performChi2Fits_dvcs(const char* output_file, const char* kinematic_file,
         // ALU_sinphi_error = (meanDepA/meanDepW)*ALU_sinphi_error;
         chi2FitsAStream<<"{"<<meanVariable<<", "<< ALU_offset << ", " << ALU_offset_error <<"}";
         chi2FitsBStream<<"{"<<meanVariable<<", "<< ALU_sinphi << ", " << ALU_sinphi_error <<"}";
-        chi2FitsCStream<<"{"<<meanVariable<<", "<< AUU_sinphi << ", " << AUU_cosphi_error <<"}";
+        chi2FitsCStream<<"{"<<meanVariable<<", "<< AUU_cosphi << ", " << AUU_cosphi_error <<"}";
         if (i < numBins - 1) {
             chi2FitsAStream << ", "; chi2FitsBStream << ", "; 
         }

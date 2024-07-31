@@ -16,6 +16,7 @@ double BSA_inclusive(double* par);
 double BSA_single_hadron(double* x, double* par);
 double BSA_b2b_dihadron(double* x, double* par);
 double BSA_dihadron(double* x,double* par);
+double BSA_dvcs(double* x, double* par);
 double TSA_inclusive(double* par);
 double TSA_single_hadron(double* x, double* par);
 double TSA_b2b_dihadron(double* x, double* par);
