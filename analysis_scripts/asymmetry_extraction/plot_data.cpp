@@ -569,6 +569,10 @@ void createCorrelationPlots() {
         }
     }
 
+    const double rad_to_deg = 180.0 / M_PI; // Conversion factor from radians to degrees
+    const std::vector<std::string> thetaBranches = {"e_theta", "p_theta", "p1_theta", "p2_theta", "p3_theta", 
+                                                    "mc_e_theta", "mc_p_theta", "mc_p1_theta", "mc_p2_theta", "mc_p3_theta"};
+
     // Generate all possible pairs of branches to plot
     for (size_t i = 0; i < branchNames.size(); ++i) {
         for (size_t j = i + 1; j < branchNames.size(); ++j) {
@@ -609,7 +613,18 @@ void createCorrelationPlots() {
             while (dataReader.Next()) {
                 bool passedKinematicCuts = kinematicCuts->applyCuts(0, false);
                 if (passedKinematicCuts) {
-                    hist->Fill(*valX, *valY);
+                    Double_t xValue = *valX;
+                    Double_t yValue = *valY;
+
+                    // Convert theta variables to degrees
+                    if (std::find(thetaBranches.begin(), thetaBranches.end(), branchX) != thetaBranches.end()) {
+                        xValue *= rad_to_deg;
+                    }
+                    if (std::find(thetaBranches.begin(), thetaBranches.end(), branchY) != thetaBranches.end()) {
+                        yValue *= rad_to_deg;
+                    }
+
+                    hist->Fill(xValue, yValue);
                 }
             }
 
