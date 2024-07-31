@@ -240,103 +240,109 @@ class CalibrationScript {
 							particle_py*particle_py+particle_pz*particle_pz);
 						theta = theta_calculation(particle_px, particle_py, particle_pz);
 						phi = phi_calculation(particle_px, particle_py);
-						                    // Calorimeter
-                    for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
-                        // Get the pindex and layer values for the current row
-                        int pindex = cal_Bank.getInt("pindex", current_Row);
-                        if (pindex == particle_Index) {
-                            cal_sector = cal_Bank.getInt("sector", current_Row);
-                            cal_layer = cal_Bank.getInt("layer", current_Row);
-                            cal_energy = cal_Bank.getFloat("energy", current_Row);
-                            cal_x = cal_Bank.getFloat("x", current_Row);
-                            cal_y = cal_Bank.getFloat("y", current_Row);
-                            cal_z = cal_Bank.getFloat("z", current_Row);
-                            cal_lu = cal_Bank.getFloat("lu", current_Row);
-                            cal_lv = cal_Bank.getFloat("lv", current_Row);
-                            cal_lw = cal_Bank.getFloat("lw", current_Row);
-                        }
-                    }
+						particle_beta = rec_Bank.getFloat("beta",particle_Index);
+						particle_chi2pid = rec_Bank.getFloat("chi2pid",particle_Index);
+						particle_status = rec_Bank.getInt("status",particle_Index);
+
+						// Calorimeter
+	                    for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
+	                        // Get the pindex and layer values for the current row
+	                        int pindex = cal_Bank.getInt("pindex", current_Row);
+	                        if (pindex == particle_Index) {
+	                            cal_sector = cal_Bank.getInt("sector", current_Row);
+	                            cal_layer = cal_Bank.getInt("layer", current_Row);
+	                            cal_energy = cal_Bank.getFloat("energy", current_Row);
+	                            cal_x = cal_Bank.getFloat("x", current_Row);
+	                            cal_y = cal_Bank.getFloat("y", current_Row);
+	                            cal_z = cal_Bank.getFloat("z", current_Row);
+	                            cal_lu = cal_Bank.getFloat("lu", current_Row);
+	                            cal_lv = cal_Bank.getFloat("lv", current_Row);
+	                            cal_lw = cal_Bank.getFloat("lw", current_Row);
+	                        }
+	                    }
 
 
-                    // Cherenkov Counter
-                    for (int current_Row = 0; current_Row < cc_Bank.rows(); current_Row++) {
-                        // Get the pindex and layer values for the current row
-                        int pindex = cc_Bank.getInt("pindex", current_Row);
-                        if (pindex == particle_Index) {
-                            cc_sector = cc_Bank.getInt("sector", current_Row);
-                            cc_detector = cc_Bank.getInt("detector", current_Row);
-                            cc_nphe = cc_Bank.getFloat("nphe", current_Row);
-                        }
-                    }
+	                    // Cherenkov Counter
+	                    for (int current_Row = 0; current_Row < cc_Bank.rows(); current_Row++) {
+	                        // Get the pindex and layer values for the current row
+	                        int pindex = cc_Bank.getInt("pindex", current_Row);
+	                        if (pindex == particle_Index) {
+	                            cc_sector = cc_Bank.getInt("sector", current_Row);
+	                            cc_detector = cc_Bank.getInt("detector", current_Row);
+	                            cc_nphe = cc_Bank.getFloat("nphe", current_Row);
+	                        }
+	                    }
 
-                    // Use a StringBuilder to append all data in a single call
-                    StringBuilder line = new StringBuilder()
-                    line.append(config_run).append(" ")
-                        .append(config_event).append(" ")
-                        .append(event_helicity).append(" ")
-                        .append(particle_pid).append(" ")
-                        .append(formatDouble(particle_px)).append(" ")
-                        .append(formatDouble(particle_py)).append(" ")
-                        .append(formatDouble(particle_pz)).append(" ")
-                        .append(formatDouble(p)).append(" ")
-                        .append(formatDouble(theta)).append(" ")
-                        .append(formatDouble(phi)).append(" ")
-                        .append(formatDouble(particle_vx)).append(" ")
-                        .append(formatDouble(particle_vy)).append(" ")
-                        .append(formatDouble(particle_vz)).append(" ")
-                        .append(cal_sector).append(" ")
-                        .append(cal_layer).append(" ")
-                        .append(formatDouble(cal_x)).append(" ")
-                        .append(formatDouble(cal_y)).append(" ")
-                        .append(formatDouble(cal_z)).append(" ")
-                        .append(formatDouble(cal_lu)).append(" ")
-                        .append(formatDouble(cal_lv)).append(" ")
-                        .append(formatDouble(cal_lw)).append(" ")
-                        .append(cc_sector).append(" ")
-                        .append(cc_detector).append(" ")
-                        .append(formatDouble(cc_nphe)).append(" ")
-                        .append(config_run).append("\n")
+	                    // Use a StringBuilder to append all data in a single call
+	                    StringBuilder line = new StringBuilder()
+	                    line.append(config_run).append(" ")
+	                        .append(config_event).append(" ")
+	                        .append(event_helicity).append(" ")
+	                        .append(particle_pid).append(" ")
+	                        .append(formatDouble(particle_px)).append(" ")
+	                        .append(formatDouble(particle_py)).append(" ")
+	                        .append(formatDouble(particle_pz)).append(" ")
+	                        .append(formatDouble(p)).append(" ")
+	                        .append(formatDouble(theta)).append(" ")
+	                        .append(formatDouble(phi)).append(" ")
+	                        .append(formatDouble(particle_vx)).append(" ")
+	                        .append(formatDouble(particle_vy)).append(" ")
+	                        .append(formatDouble(particle_vz)).append(" ")
+	                        .append(formatDouble(particle_beta)).append(" ")
+	                        .append(formatDouble(particle_chi2pid)).append(" ")
+	                        .append(particle_status).append(" ")
+	                        .append(cal_sector).append(" ")
+	                        .append(cal_layer).append(" ")
+	                        .append(formatDouble(cal_x)).append(" ")
+	                        .append(formatDouble(cal_y)).append(" ")
+	                        .append(formatDouble(cal_z)).append(" ")
+	                        .append(formatDouble(cal_lu)).append(" ")
+	                        .append(formatDouble(cal_lv)).append(" ")
+	                        .append(formatDouble(cal_lw)).append(" ")
+	                        .append(cc_sector).append(" ")
+	                        .append(cc_detector).append(" ")
+	                        .append(formatDouble(cc_nphe)).append(" ")
+	                        .append(config_run).append("\n")
 
-                    // Append the line to the batchLines StringBuilder
-                    batchLines.append(line.toString())
-                    lineCount++ // Increment the line count
+	                    // Append the line to the batchLines StringBuilder
+	                    batchLines.append(line.toString())
+	                    lineCount++ // Increment the line count
 
-                    // If the line count reaches 1000, write to the file and reset
-                    if (lineCount >= max_lines) {
-                        file.append(batchLines.toString())
-                        batchLines.setLength(0)
-                        lineCount = 0
-                    }
+	                    // If the line count reaches 1000, write to the file and reset
+	                    if (lineCount >= max_lines) {
+	                        file.append(batchLines.toString())
+	                        batchLines.setLength(0)
+	                        lineCount = 0
+	                    }
 
-                    // Reset variables after processing each particle
-                    resetVariables()
-                }
-            }
-            reader.close()
-        }
+	                    // Reset variables after processing each particle
+	                    resetVariables()
+	                }
+	            }
+            	reader.close()
+	        }
 
-        // Write any remaining lines in the batchLines StringBuilder to the file
-        if (batchLines.length() > 0) {
-            file.append(batchLines.toString())
-            batchLines.setLength(0)
-        }
+	        // Write any remaining lines in the batchLines StringBuilder to the file
+	        if (batchLines.length() > 0) {
+	            file.append(batchLines.toString())
+	            batchLines.setLength(0)
+	        }
 
-        // println("\n1:runnum, 2:evnum, 3:helicity, 4:e_p, 5:e_theta, 6:e_phi, 7:vz_e,"+
-        // "8:Q2, 9:W, 10:Mx, 11: Mx2, 12:x, 13:y, 14: DepA, 15: DepB, 16: DepC, 17: DepV, 18: DepW\n")
+	        // println("\n1:runnum, 2:evnum, 3:helicity, 4:e_p, 5:e_theta, 6:e_phi, 7:vz_e,"+
+	        // "8:Q2, 9:W, 10:Mx, 11: Mx2, 12:x, 13:y, 14: DepA, 15: DepB, 16: DepC, 17: DepV, 18: DepW\n")
 
-        println("output text file is: $file")
-    }
+	        println("output text file is: $file")
+	    }
 
-    writer.close()
+	    writer.close()
 
-    // End time
-    long endTime = System.currentTimeMillis()
-    // Calculate the elapsed time
-    long elapsedTime = endTime - startTime
-    // Print the elapsed time in milliseconds
-    println("Elapsed time: ${elapsedTime} ms")
-}
-
+	    // End time
+	    long endTime = System.currentTimeMillis()
+	    // Calculate the elapsed time
+	    long elapsedTime = endTime - startTime
+	    // Print the elapsed time in milliseconds
+	    println("Elapsed time: ${elapsedTime} ms")
+	}
 }
 
 // Create an instance of the script and run it
