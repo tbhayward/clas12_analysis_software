@@ -262,17 +262,17 @@ public class Trihadrons {
         // boost to gamma*-nucleon center of mass frame
         LorentzVector lv_p_gN = new LorentzVector(lv_p); 
         lv_p_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_p_gN);
-        LorentzVector lv_p1_gN = new LorentzVector(lv_p); 
+        LorentzVector lv_p1_gN = new LorentzVector(lv_p1); 
         lv_p1_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_p1_gN);
-        LorentzVector lv_p2_gN = new LorentzVector(lv_p); 
+        LorentzVector lv_p2_gN = new LorentzVector(lv_p2); 
         lv_p2_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_p2_gN);
-        LorentzVector lv_p3_gN = new LorentzVector(lv_p); 
+        LorentzVector lv_p3_gN = new LorentzVector(lv_p3); 
         lv_p3_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_p3_gN);
-        LorentzVector lv_p12_gN = new LorentzVector(lv_p); 
+        LorentzVector lv_p12_gN = new LorentzVector(lv_p12); 
         lv_p12_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_p12_gN);
-        LorentzVector lv_p13_gN = new LorentzVector(lv_p); 
+        LorentzVector lv_p13_gN = new LorentzVector(lv_p13); 
         lv_p13_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_p13_gN);
-        LorentzVector lv_p23_gN = new LorentzVector(lv_p); 
+        LorentzVector lv_p23_gN = new LorentzVector(lv_p23); 
         lv_p23_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_p23_gN);
         LorentzVector lv_e_gN = new LorentzVector(lv_e); 
         lv_e_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_e_gN);
