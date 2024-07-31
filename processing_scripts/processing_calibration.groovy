@@ -333,7 +333,7 @@ static double theta_calculation(double x, double y, double z) {
     double r = Math.sqrt(x * x + y * y + z * z)
     return Math.toDegrees(Math.acos(z / r))
 }
-
+}
 
 // Create an instance of the script and run it
 def script = new CalibrationScript()
