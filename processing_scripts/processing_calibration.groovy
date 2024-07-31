@@ -118,7 +118,8 @@ class CalibrationScript {
 
     // Helper method for formatting doubles
     String formatDouble(double value) {
-        return String.format("%.3f", value)
+    	if (value == -999) { return -999; }
+        else { return String.format("%.3f", value) }
     }
 
     // Static method to calculate phi
