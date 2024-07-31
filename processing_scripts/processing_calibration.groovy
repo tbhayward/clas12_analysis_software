@@ -311,10 +311,10 @@ class CalibrationScript {
 	                        // Get the pindex and layer values for the current row
 	                        int pindex = track_Bank.getInt("pindex", current_Row);
 	                        if (pindex == particle_Index) {
-	                            detector = track_Bank.getInt("detector", current_Row);
-	                            sector = track_Bank.getInt("sector", current_Row);
-	                            chi2 = track_Bank.getFloat("chi2", current_Row);
-	                            ndf = track_Bank.getInt("NDF", current_Row);
+	                            int detector = track_Bank.getInt("detector", current_Row);
+	                            int sector = track_Bank.getInt("sector", current_Row);
+	                            double chi2 = track_Bank.getFloat("chi2", current_Row);
+	                            int ndf = track_Bank.getInt("NDF", current_Row);
 	                            switch(detector) {
 	                            	case 5:
 	                            		track_sector_5 = sector;
