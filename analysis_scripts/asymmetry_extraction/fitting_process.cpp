@@ -2432,8 +2432,7 @@ void performChi2Fits_dvcs(const char* output_file, const char* kinematic_file,
   meanVariablesStream << "\\begin{tabular}{|c|c|c|c|c|} \\hline" << endl;
   meanVariablesStream << "Bin & $<Q^2>$ & $<W>$ ";
   meanVariablesStream << "& $<x_B>$ & $<y>$ & ";
-  meanVariablesStream << "& $<t>$ & ";
-  meanVariablesStream << "$<t_{\\text{min}}>$\\\\ \\hline" << endl; 
+  meanVariablesStream << "& $<t>$ \\hline" << endl; 
 
   // Initalize string stream to store the kinematics in each bin for use in plotting 
   std::ostringstream meanVariablesPlotStream;
@@ -2568,7 +2567,7 @@ void performChi2Fits_dvcs(const char* output_file, const char* kinematic_file,
         chi2FitsBStream<<"{"<<meanVariable<<", "<< ALU_sinphi << ", " << ALU_sinphi_error <<"}";
         chi2FitsCStream<<"{"<<meanVariable<<", "<< AUU_cosphi << ", " << AUU_cosphi_error <<"}";
         if (i < numBins - 1) {
-            chi2FitsAStream << ", "; chi2FitsBStream << ", "; 
+            chi2FitsAStream << ", "; chi2FitsBStream << ", "; chi2FitsCStream << ", "; 
         }
         break;
       }
@@ -2616,13 +2615,12 @@ void performChi2Fits_dvcs(const char* output_file, const char* kinematic_file,
     // outputs of mean kinematic variables for LaTeX
     meanVariablesStream << std::fixed << std::setprecision(3); // Set precision to 3 digits 
     meanVariablesStream << (i+1) << "~&~" << meanQ2 << "~&~" << meanW << "~&~" << meanx << "~&~";
-    meanVariablesStream << meany << "~&~" << "~&~" << meant; 
+    meanVariablesStream << meany << "~&~" << meant; 
     meanVariablesStream << std::string(" \\\\ \\hline ");
 
     // outputs of mean kinematic variables for plotting
     meanVariablesPlotStream << "{" << meanQ2 << ", " << meanW << ", " << meanx << ", ";
-    meanVariablesPlotStream << meany << ", ";
-    meanVariablesPlotStream << meant << "}";
+    meanVariablesPlotStream << meany << ", "; meanVariablesPlotStream << meant << "}";
     if (i < numBins - 1) {
         meanVariablesPlotStream << ", "; 
     }
