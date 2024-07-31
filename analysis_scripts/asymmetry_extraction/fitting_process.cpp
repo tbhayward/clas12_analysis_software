@@ -2444,7 +2444,7 @@ void performChi2Fits_dvcs(const char* output_file, const char* kinematic_file,
   TF1* fitFunction;
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
-      fitFunction = new TF1("fitFunction", BSA_dvcs, 0, 2*TMath::Pi(), 2);
+      fitFunction = new TF1("fitFunction", BSA_dvcs, 0, 2*TMath::Pi(), 3);
       chi2FitsAStream << prefix << "chi2FitsALUoffset = {";
       chi2FitsBStream << prefix << "chi2FitsALUsinphi = {";
       chi2FitsCStream << prefix << "chi2FitsAUUcosphi = {";
