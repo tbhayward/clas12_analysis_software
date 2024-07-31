@@ -196,6 +196,18 @@ public static void main(String[] args) {
 			            }
 			        }
 
+
+	                // Cherenkov Counter
+	                for (int current_Row = 0; current_Row < cc_Bank.rows(); current_Row++) {
+			            // Get the pindex and layer values for the current row
+			            int pindex = cc_Bank.getInt("pindex", current_Row);
+			            if (pindex == particle_Index) {
+			            	cc_sector = cc_Bank.getInt("sector", current_Row);
+				            cc_layer = cc_Bank.getInt("layer", current_Row);
+			                cc_nphe = cc_Bank.getFloat("energy", current_Row);
+			            }
+			        }
+
 	                // Use a StringBuilder to append all data in a single call
 					StringBuilder line = new StringBuilder()
 					line.append(config_run).append(" ")
@@ -219,6 +231,9 @@ public static void main(String[] args) {
 					    .append(formatDouble(cal_lu)).append(" ")
 					    .append(formatDouble(cal_lv)).append(" ")
 					    .append(formatDouble(cal_lw)).append(" ")
+					    .append(formatDouble(cc_sector)).append(" ")
+					    .append(formatDouble(cc_layer)).append(" ")
+					    .append(formatDouble(cc_nphe)).append(" ")
 					    .append(config_run).append("\n")
 
 	                // Append the line to the batchLines StringBuilder
