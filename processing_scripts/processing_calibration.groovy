@@ -16,6 +16,8 @@ import groovy.io.FileType
 // dilks CLAS QA analysis
 import clasqa.QADB
 
+double traj_edge = -9999
+
 public static double phi_calculation (double x, double y) {
 	// tracks are given with Cartesian values and so must be converted to cylindrical
 	double phi = Math.toDegrees(Math.atan2(x,y));
@@ -113,7 +115,6 @@ public static void main(String[] args) {
     // REC::Traj variables
     int traj_detector = -9999; int traj_layer = -9999
     double traj_x = -9999; double traj_y = -9999; double traj_z = -9999
-    double traj_edge = -9999
 
     // setup QA database
 	QADB qa = new QADB();
