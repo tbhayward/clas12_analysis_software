@@ -191,6 +191,7 @@ class CalibrationScript {
             HipoDataEvent event = reader.getNextEvent()
 
             while (reader.hasEvent()) {
+            	println("hello world");
                 ++num_events
                 if (num_events % 500000 == 0) { // not necessary, just updates output
                     print("processed: " + num_events + " events. ")
@@ -222,7 +223,6 @@ class CalibrationScript {
 
                     for (int particle_Index = 0; particle_Index < rec_Bank.rows(); 
                     	particle_Index++) {
-                    	println(particle_Index);
 
                         particle_pid = rec_Bank.getInt("pid", particle_Index);
                         if (particle_pid == 0 || particle_pid == 45) { continue; }
