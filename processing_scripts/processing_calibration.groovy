@@ -182,7 +182,6 @@ class CalibrationScript {
         int max_lines = 1000
         int lineCount = 0
         for (current_file in 0..<n_files) {
-        	println("hello world");
             // limit to a certain number of files defined by n_files
             println("\n Opening file "+Integer.toString(current_file+1)
                 +" out of "+n_files+".\n")
