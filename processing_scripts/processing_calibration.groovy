@@ -18,107 +18,107 @@ import clasqa.QADB
 
 class CalibrationScript {
     // Define instance variables with default values
-    int config_run = -9999
-    int config_event = -9999
-    int config_trigger = -9999
-    double torus = -9999
-    double solenoid = -9999
+    int config_run = -999
+    int config_event = -999
+    int config_trigger = -999
+    double torus = -999
+    double solenoid = -999
 
     int event_helicity = 0
 
-    int particle_pid = -9999
-    double particle_px = -9999
-    double particle_py = -9999
-    double particle_pz = -9999
-    double p = -9999;
-    double particle_vx = -9999
-    double particle_vy = -9999
-    double particle_vz = -9999
-    double particle_beta = -9999
-    double particle_chi2pid = -9999
-    int particle_status = -9999
-    double theta = -9999
-    double phi = -9999
+    int particle_pid = -999
+    double particle_px = -999
+    double particle_py = -999
+    double particle_pz = -999
+    double p = -999;
+    double particle_vx = -999
+    double particle_vy = -999
+    double particle_vz = -999
+    double particle_beta = -999
+    double particle_chi2pid = -999
+    int particle_status = -999
+    double theta = -999
+    double phi = -999
 
-    int cal_sector = -9999
-    int cal_layer = -9999
-    double cal_energy = -9999
-    double cal_x = -9999
-    double cal_y = -9999
-    double cal_z = -9999
-    double cal_lu = -9999
-    double cal_lv = -9999
-    double cal_lw = -9999
+    int cal_sector = -999
+    int cal_layer = -999
+    double cal_energy = -999
+    double cal_x = -999
+    double cal_y = -999
+    double cal_z = -999
+    double cal_lu = -999
+    double cal_lv = -999
+    double cal_lw = -999
 
-    int cc_sector = -9999
-    int cc_detector = -9999
-    double cc_nphe = -9999
+    int cc_sector = -999
+    int cc_detector = -999
+    double cc_nphe = -999
 
-    int track_detector = -9999
-    int track_sector = -9999
-    double track_chi2 = -9999
-    int track_ndf = -9999
+    int track_detector = -999
+    int track_sector = -999
+    double track_chi2 = -999
+    int track_ndf = -999
 
-    int traj_detector = -9999
-    int traj_layer = -9999
-    double traj_x = -9999
-    double traj_y = -9999
-    double traj_z = -9999
-    double traj_edge = -9999
+    int traj_detector = -999
+    int traj_layer = -999
+    double traj_x = -999
+    double traj_y = -999
+    double traj_z = -999
+    double traj_edge = -999
 
     // Method to reset all variables to their default values
     void resetVariables() {
-        // config_run = -9999
-        // config_event = -9999
-        // config_trigger = -9999
-        // torus = -9999
-        // solenoid = -9999
+        // config_run = -999
+        // config_event = -999
+        // config_trigger = -999
+        // torus = -999
+        // solenoid = -999
 
         // event_helicity = 0
 
-        particle_pid = -9999
-        particle_px = -9999
-        particle_py = -9999
-        particle_pz = -9999
-        particle_vx = -9999
-        particle_vy = -9999
-        particle_vz = -9999
-        particle_beta = -9999
-        particle_chi2pid = -9999
-        particle_status = -9999
-        theta = -9999
-        phi = -9999
+        particle_pid = -999
+        particle_px = -999
+        particle_py = -999
+        particle_pz = -999
+        particle_vx = -999
+        particle_vy = -999
+        particle_vz = -999
+        particle_beta = -999
+        particle_chi2pid = -999
+        particle_status = -999
+        theta = -999
+        phi = -999
 
-        cal_sector = -9999
-        cal_layer = -9999
-        cal_energy = -9999
-        cal_x = -9999
-        cal_y = -9999
-        cal_z = -9999
-        cal_lu = -9999
-        cal_lv = -9999
-        cal_lw = -9999
+        cal_sector = -999
+        cal_layer = -999
+        cal_energy = -999
+        cal_x = -999
+        cal_y = -999
+        cal_z = -999
+        cal_lu = -999
+        cal_lv = -999
+        cal_lw = -999
 
-        cc_sector = -9999
-        cc_detector = -9999
-        cc_nphe = -9999
+        cc_sector = -999
+        cc_detector = -999
+        cc_nphe = -999
 
-        track_detector = -9999
-        track_sector = -9999
-        track_chi2 = -9999
-        track_ndf = -9999
+        track_detector = -999
+        track_sector = -999
+        track_chi2 = -999
+        track_ndf = -999
 
-        traj_detector = -9999
-        traj_layer = -9999
-        traj_x = -9999
-        traj_y = -9999
-        traj_z = -9999
-        traj_edge = -9999
+        traj_detector = -999
+        traj_layer = -999
+        traj_x = -999
+        traj_y = -999
+        traj_z = -999
+        traj_edge = -999
     }
 
     // Helper method for formatting doubles
     String formatDouble(double value) {
-        return String.format("%.4f", value)
+        return String.format("%.3f", value)
     }
 
     // Static method to calculate phi
