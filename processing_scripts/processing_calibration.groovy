@@ -56,12 +56,25 @@ class CalibrationScript {
     double track_chi2_5 = -999; double track_chi2_6 = -999; 
     int track_ndf_5 = -999; int track_ndf_6 = -999; 
 
-    int traj_detector = -999
-    int traj_layer = -999
-    double traj_x = -999
-    double traj_y = -999
-    double traj_z = -999
-    double traj_edge = -999
+    int traj_detector = -999;
+    double traj_x_6 = -999; double traj_x_18 = -999; double traj_x_36 = -999; 
+    double traj_y_6 = -999; double traj_y_18 = -999; double traj_y_36 = -999;
+    double traj_z_6 = -999; double traj_z_18 = -999; double traj_z_36 = -999; 
+    double traj_edge_6 = -999; double traj_edge_18 = -999; double traj_edge_36 = -999; 
+    // these are DC layer 1, 2, 3 
+    double traj_x_6 = -999; double traj_x_18 = -999; double traj_x_36 = -999; 
+    double traj_y_6 = -999; double traj_y_18 = -999; double traj_y_36 = -999;
+    double traj_z_6 = -999; double traj_z_18 = -999; double traj_z_36 = -999; 
+    double traj_edge_6 = -999; double traj_edge_18 = -999; double traj_edge_36 = -999;
+    // cvt layers
+    double traj_x_1 = -999; double traj_x_3 = -999; double traj_x_5 = -999; double traj_x_7 = -999; 
+    	double traj_x_12 = -999;
+    double traj_y_1 = -999; double traj_y_3 = -999; double traj_y_5 = -999; double traj_y_7 = -999; 
+    	double traj_y_12 = -999; 
+    double traj_z_1 = -999; double traj_z_3 = -999; double traj_z_5 = -999; double traj_z_7 = -999; 
+    	double traj_z_12 = -999; 
+    double traj_edge_1 = -999; double traj_edge_3 = -999; double traj_edge_5 = -999; double traj_edge_7 = -999; 
+    	double traj_edge_12 = -999;
 
     // Method to reset all variables to their default values
     void resetVariables() {
@@ -109,6 +122,26 @@ class CalibrationScript {
 	    traj_y = -999;
 	    traj_z = -999;
 	    traj_edge = -999;
+
+	    traj_detector = -999;
+	    traj_x_6 = -999; traj_x_18 = -999; traj_x_36 = -999; 
+	    traj_y_6 = -999; traj_y_18 = -999; traj_y_36 = -999;
+	    traj_z_6 = -999; traj_z_18 = -999; traj_z_36 = -999; 
+	    traj_edge_6 = -999; traj_edge_18 = -999; traj_edge_36 = -999; 
+	    // these are DC layer 1, 2, 3 
+	    traj_x_6 = -999; traj_x_18 = -999; traj_x_36 = -999; 
+	    traj_y_6 = -999; traj_y_18 = -999; traj_y_36 = -999;
+	    traj_z_6 = -999; traj_z_18 = -999; traj_z_36 = -999; 
+	    traj_edge_6 = -999; traj_edge_18 = -999; traj_edge_36 = -999;
+	    // cvt layers
+	    traj_x_1 = -999; traj_x_3 = -999; traj_x_5 = -999; traj_x_7 = -999; 
+	    	traj_x_12 = -999;
+	    traj_y_1 = -999; traj_y_3 = -999; traj_y_5 = -999; traj_y_7 = -999; 
+	    	traj_y_12 = -999; 
+	    traj_z_1 = -999; traj_z_3 = -999; traj_z_5 = -999; traj_z_7 = -999; 
+	    	traj_z_12 = -999; 
+	    traj_edge_1 = -999; traj_edge_3 = -999; traj_edge_5 = -999; traj_edge_7 = -999; 
+	    	traj_edge_12 = -999;
     }
 
     // Helper method for formatting doubles
@@ -332,16 +365,58 @@ class CalibrationScript {
 	                    // Traj Bank
 	                    for (int current_Row = 0; current_Row < traj_Bank.rows(); current_Row++) {
 	                        // Get the pindex and layer values for the current row
-	                        if (traj_Bank.getInt("layer", current_Row) == 9) {println("found one")}
+	                        int pindex = traj_Bank.getInt("pindex", current_Row);
+	                        if (pindex == particle_Index) {
+	                        	int detector = traj_Bank.getInt("detector", current_Row);
+	                        	int layer = traj_Bank.getInt("layer", current_Row);
+	                        	double x = traj_Bank.getFloat("x", current_Row);
+	                        	double y = traj_Bank.getFloat("y", current_Row);
+	                        	double z = traj_Bank.getFloat("z", current_Row);
+	                        	double edge = traj_Bank.getFloat("edge", current_Row);
+	                        	switch(detector) {
+	                        		case 6: // dc
+	                        			switch(layer) {
+	                        				case 6: // region 1
+	                        					traj_x_6 = x; traj_y_6 = y; traj_z_6 = z; traj_edge_6 = edge;
+	                        					break;
+	                        				case 18: // region 2
+	                        					traj_x_18 = x; traj_y_18 = y; traj_z_18 = z; traj_edge_18 = edge;
+	                        					break;
+	                        				case 36: // region 3
+	                        					traj_x_36 = x; traj_y_36 = y; traj_z_36 = z; traj_edge_36 = edge;
+	                        					break;
+	                        			} 
+		                        		break
+		                        	case 7: // cvt
+		                        		switch(layer) {
+		                        			case 1: 
+	                        					traj_x_1 = x; traj_y_1 = y; traj_z_1 = z; traj_edge_1 = edge;
+	                        					break;
+	                        				case 3: 
+	                        					traj_x_3 = x; traj_y_3 = y; traj_z_3 = z; traj_edge_3 = edge;
+	                        					break;
+	                        				case 5: 
+	                        					traj_x_5 = x; traj_y_5 = y; traj_z_5 = z; traj_edge_5 = edge;
+	                        					break;
+	                        				case 7: 
+	                        					traj_x_7 = x; traj_y_7 = y; traj_z_7 = z; traj_edge_7 = edge;
+	                        					break;
+	                        				case 12: 
+	                        					traj_x_12 = x; traj_y_12 = y; traj_z_12 = z; traj_edge_12 = edge;
+	                        					break;
+		                        		}
+	                        	}
+	                        }
 	                    }
 
 	                    // Use a StringBuilder to append all data in a single call
 	                    StringBuilder line = new StringBuilder()
+	                    	// config
 	                    line.append(config_run).append(" ")
 	                        .append(config_event).append(" ")
-
+	                        // event
 	                        .append(event_helicity).append(" ")
-
+	                        // particle
 	                        .append(particle_pid).append(" ")
 	                        .append(formatDouble(particle_px)).append(" ")
 	                        .append(formatDouble(particle_py)).append(" ")
@@ -355,7 +430,7 @@ class CalibrationScript {
 	                        .append(formatDouble(particle_beta)).append(" ")
 	                        .append(formatDouble(particle_chi2pid)).append(" ")
 	                        .append(particle_status).append(" ")
-
+	                        // cal
 	                        .append(cal_sector).append(" ")
 	                        .append(formatDouble(cal_energy_1)).append(" ")
 	                        .append(formatDouble(cal_x_1)).append(" ")
@@ -376,15 +451,49 @@ class CalibrationScript {
 	                        .append(formatDouble(cal_lu_7)).append(" ")
 	                        .append(formatDouble(cal_lv_7)).append(" ")
 	                        .append(formatDouble(cal_lw_7)).append(" ")
-
+	                        // cc
 	                        .append(formatDouble(cc_nphe_15)).append(" ")
 	                        .append(formatDouble(cc_nphe_16)).append(" ")
-
+	                        // track
 	                        .append(track_sector_5).append(" ")
 	                        .append(formatDouble(track_chi2_5)).append(" ")
 	                        .append(track_ndf_5).append(" ")
 	                        .append(formatDouble(track_chi2_6)).append(" ")
 	                        .append(track_ndf_6).append(" ")
+	                        // dc
+	                        .append(traj_x_6).append(" ")
+	                        .append(traj_y_6).append(" ")
+	                        .append(traj_z_6).append(" ")
+	                        .append(traj_edge_6).append(" ")
+	                        .append(traj_x_18).append(" ")
+	                        .append(traj_y_18).append(" ")
+	                        .append(traj_z_18).append(" ")
+	                        .append(traj_edge_18).append(" ")
+	                        .append(traj_x_36).append(" ")
+	                        .append(traj_y_36).append(" ")
+	                        .append(traj_z_36).append(" ")
+	                        .append(traj_edge_36).append(" ")
+	                        // cvt
+	                        .append(traj_x_1).append(" ")
+	                        .append(traj_y_1).append(" ")
+	                        .append(traj_z_1).append(" ")
+	                        .append(traj_edge_1).append(" ")
+	                        .append(traj_x_3).append(" ")
+	                        .append(traj_y_3).append(" ")
+	                        .append(traj_z_3).append(" ")
+	                        .append(traj_edge_3).append(" ")
+	                        .append(traj_x_5).append(" ")
+	                        .append(traj_y_5).append(" ")
+	                        .append(traj_z_5).append(" ")
+	                        .append(traj_edge_5).append(" ")
+	                        .append(traj_x_7).append(" ")
+	                        .append(traj_y_7).append(" ")
+	                        .append(traj_z_7).append(" ")
+	                        .append(traj_edge_7).append(" ")
+	                        .append(traj_x_12).append(" ")
+	                        .append(traj_y_12).append(" ")
+	                        .append(traj_z_12).append(" ")
+	                        .append(traj_edge_12).append(" ")
 
 	                        .append(config_run).append("\n")
 
