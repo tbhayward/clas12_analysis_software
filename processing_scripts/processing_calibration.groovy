@@ -72,7 +72,7 @@ class CalibrationScript {
     	double traj_edge_12 = -99;
 
     // FT 
-    double energy = -99; double x = -99; double y = -99; double z = -99; double radius = -99;
+    double ft_energy = -99; double ft_x = -99; double ft_y = -99; double ft_z = -99; double ft_radius = -99;
 
     // Method to reset all variables to their default values
     void resetVariables() {
@@ -133,7 +133,7 @@ class CalibrationScript {
 	    traj_edge_1 = -99; traj_edge_3 = -99; traj_edge_5 = -99; traj_edge_7 = -99; 
 	    	traj_edge_12 = -99;
 
-	    energy = -99; x = -99; y = -99; z = -99;  radius = -99;
+	    ft_energy = -99; ft_x = -99; ft_y = -99; ft_z = -99;  ft_radius = -99;
     }
 
     // Helper method for formatting doubles
@@ -223,13 +223,13 @@ class CalibrationScript {
                 // get run and event numbers
                 event = reader.getNextEvent()
 
-                HipoDataBank run_Bank = (HipoDataBank) event.getBank("RUN::config")
-                HipoDataBank event_Bank = (HipoDataBank) event.getBank("REC::Event")
-                HipoDataBank rec_Bank = (HipoDataBank) event.getBank("REC::Particle")
-                HipoDataBank cal_Bank = (HipoDataBank) event.getBank("REC::Calorimeter")
-                HipoDataBank cc_Bank = (HipoDataBank) event.getBank("REC::Cherenkov")
-                HipoDataBank track_Bank = (HipoDataBank) event.getBank("REC::Track")
-                HipoDataBank traj_Bank = (HipoDataBank) event.getBank("REC::Traj")
+                HipoDataBank run_Bank = (HipoDataBank) event.getBank("RUN::config");
+                HipoDataBank event_Bank = (HipoDataBank) event.getBank("REC::Event");
+                HipoDataBank rec_Bank = (HipoDataBank) event.getBank("REC::Particle");
+                HipoDataBank cal_Bank = (HipoDataBank) event.getBank("REC::Calorimeter");
+                HipoDataBank cc_Bank = (HipoDataBank) event.getBank("REC::Cherenkov");
+                HipoDataBank track_Bank = (HipoDataBank) event.getBank("REC::Track");
+                HipoDataBank traj_Bank = (HipoDataBank) event.getBank("REC::Traj");
 
                 // collect info for QA
                 config_run = run_Bank.getInt('run', 0)
@@ -401,8 +401,20 @@ class CalibrationScript {
 	                        }
 	                    }
 
+	                    // Forward Tagger
 	                    if (event.hasBank("REC::ForwardTagger")) {
-	                    	println("found FT");
+	                    	HipoDataBank ft_Bank = (HipoDataBank) event.getBank("REC::ForwardTagger");
+	                    	for (int current_Row = 0; current_Row < traj_Bank.rows(); current_Row++) {
+		                        // Get the pindex and layer values for the current row
+		                        int pindex = traj_Bank.getInt("pindex", current_Row);
+		                        if (pindex == particle_Index) {
+		                        	ft_energy = track_Bank.getFloat("energy", current_Row);
+		                        	ft_x = track_Bank.getFloat("x", current_Row);
+		                        	ft_y = track_Bank.getFloat("y", current_Row);
+		                        	ft_z = track_Bank.getFloat("z", current_Row);
+		                        	ft_radius = track_Bank.getFloat("radius", current_Row);
+		                        }
+		                    }
 	                    }
 
 	                    // Use a StringBuilder to append all data in a single call
@@ -490,6 +502,12 @@ class CalibrationScript {
 	                        .append(formatDouble(traj_y_12)).append(" ")
 	                        .append(formatDouble(traj_z_12)).append(" ")
 	                        .append(formatDouble(traj_edge_12)).append(" ")
+	                        // ft
+	                        .append(formatDouble(ft_energy)).append(" ")
+	                        .append(formatDouble(ft_x)).append(" ")
+	                        .append(formatDouble(ft_y)).append(" ")
+	                        .append(formatDouble(ft_z)).append(" ")
+	                        .append(formatDouble(ft_radius)).append(" ")
 
 	                        .append(config_run).append("\n")
 
