@@ -16,238 +16,281 @@ import groovy.io.FileType
 // dilks CLAS QA analysis
 import clasqa.QADB
 
-def traj_edge = -9999
+class CalibrationScript {
+    // Define instance variables with default values
+    int config_run = -9999
+    int config_event = -9999
+    int config_trigger = -9999
+    double torus = -9999
+    double solenoid = -9999
 
-public static double phi_calculation (double x, double y) {
-	// tracks are given with Cartesian values and so must be converted to cylindrical
-	double phi = Math.toDegrees(Math.atan2(x,y));
-	phi = phi - 90;
-	if (phi < 0) {
-		phi = 360 + phi;
-	}
-	phi = 360 - phi;
-	return phi;	
-}
-
-public static double theta_calculation (double x, double y, double z) {
-	// convert cartesian coordinates to polar angle
-	double r = Math.pow(Math.pow(x,2)+Math.pow(y,2)+Math.pow(z,2),0.5);
-	return (double) (180/Math.PI)*Math.acos(z/r);
-}
-
-// Define a helper method for formatting doubles
-String formatDouble(double value) {
-    return String.format("%.3f", value)
-}
-
-public static void main(String[] args) {
-
-    // Start time
-    long startTime = System.currentTimeMillis()
-
-    // ~~~~~~~~~~~~~~~~ set up input parameters ~~~~~~~~~~~~~~~~ //
-
-    // Check if an argument is provided
-    if (!args) {
-        // Print an error message and exit the program if the input directory is not specified
-        println("ERROR: Please enter a hipo file directory as the first argument")
-        System.exit(0)
-    }
-    // If the input directory is provided, iterate through each file recursively
-    def hipo_list = []
-    (args[0] as File).eachFileRecurse(FileType.FILES) { if (it.name.endsWith('.hipo')) hipo_list << it }
-
-    // Set the output file name based on the provided 3rd argument or use the default name
-    String output_file = args.length < 2 ? "inclusive_dummy_out.txt" : args[1]
-    if (args.length < 2) 
-        println("WARNING: Specify an output file name. Set to \"hadron_dummy_out.txt\".")
-    File file = new File(output_file)
-    file.delete()
-    BufferedWriter writer = new BufferedWriter(new FileWriter(file))
-
-    // Set the number of files to process based on the provided 4th argument
-    // use the size of the hipo_list if no argument provided
-    int n_files = args.length < 3 || Integer.parseInt(args[2]) > hipo_list.size()
-        ? hipo_list.size() : Integer.parseInt(args[2])
-    if (args.length < 3 || Integer.parseInt(args[2]) > hipo_list.size()) {
-        // Print warnings and information if the number of files is not specified or too large
-        println("WARNING: Number of files not specified or number too large.")
-        println("Setting # of files to be equal to number of files in the directory.")
-        println("There are $hipo_list.size files.")
-    }
-
-    // ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
-
-    // RUN::config variables
-    int config_run = -9999; int config_event = -9999; int config_trigger = -9999
-    double torus = -9999; double solenoid = -9999
-    // double is correct, a few runs in RGA are torus 1.06 instead of +1
-
-    // REC::Event variables
     int event_helicity = 0
 
-    // REC::Particle variables
     int particle_pid = -9999
-    double particle_px = -9999; double particle_py = -9999; double particle_pz = -9999
-    double particle_vx = -9999; double particle_vy = -9999; double particle_vz = -9999
-    double particle_beta = -9999; double particle_chi2pid = -9999
+    double particle_px = -9999
+    double particle_py = -9999
+    double particle_pz = -9999
+    double particle_vx = -9999
+    double particle_vy = -9999
+    double particle_vz = -9999
+    double particle_beta = -9999
+    double particle_chi2pid = -9999
     int particle_status = -9999
-    // derived angles
-    double theta = -9999; double phi = -9999;
+    double theta = -9999
+    double phi = -9999
 
-    // REC::Calorimeter variables
     int cal_sector = -9999
     int cal_layer = -9999
     double cal_energy = -9999
-    double cal_x = -9999; double cal_y = -9999; double cal_z = -9999
-    double cal_lu = -9999; double cal_lv = -9999; double cal_lw = -9999
+    double cal_x = -9999
+    double cal_y = -9999
+    double cal_z = -9999
+    double cal_lu = -9999
+    double cal_lv = -9999
+    double cal_lw = -9999
 
-    // REC::Cherenkov variables
     int cc_sector = -9999
     int cc_detector = -9999
     double cc_nphe = -9999
 
-    // REC::Track variables
-    int track_detector = -9999; int track_sector = -9999
+    int track_detector = -9999
+    int track_sector = -9999
     double track_chi2 = -9999
     int track_ndf = -9999
 
-    // REC::Traj variables
-    int traj_detector = -9999; int traj_layer = -9999
-    double traj_x = -9999; double traj_y = -9999; double traj_z = -9999
+    int traj_detector = -9999
+    int traj_layer = -9999
+    double traj_x = -9999
+    double traj_y = -9999
+    double traj_z = -9999
+    double traj_edge = -9999
 
-    // setup QA database
-	QADB qa = new QADB();
+    // Method to reset all variables to their default values
+    void resetVariables() {
+        config_run = -9999
+        config_event = -9999
+        config_trigger = -9999
+        torus = -9999
+        solenoid = -9999
 
-    // create a StringBuilder for accumulating lines
-    StringBuilder batchLines = new StringBuilder()
+        event_helicity = 0
 
-    int num_events = 0
-    int max_lines = 1000
-    int lineCount = 0
-    for (current_file in 0..<n_files) {
-        // limit to a certain number of files defined by n_files
-        println("\n Opening file "+Integer.toString(current_file+1)
-            +" out of "+n_files+".\n") 
-        
-        HipoDataSource reader = new HipoDataSource()
-        reader.open(hipo_list[current_file]) // open next hipo file
-        HipoDataEvent event = reader.getNextEvent()
+        particle_pid = -9999
+        particle_px = -9999
+        particle_py = -9999
+        particle_pz = -9999
+        particle_vx = -9999
+        particle_vy = -9999
+        particle_vz = -9999
+        particle_beta = -9999
+        particle_chi2pid = -9999
+        particle_status = -9999
+        theta = -9999
+        phi = -9999
 
-        while (reader.hasEvent()) {
-            ++num_events
-            if (num_events % 500000 == 0) { // not necessary, just updates output
-                print("processed: " + num_events + " events. ")
-            }
-            // get run and event numbers
-            event = reader.getNextEvent()
+        cal_sector = -9999
+        cal_layer = -9999
+        cal_energy = -9999
+        cal_x = -9999
+        cal_y = -9999
+        cal_z = -9999
+        cal_lu = -9999
+        cal_lv = -9999
+        cal_lw = -9999
 
-            HipoDataBank run_Bank = (HipoDataBank) event.getBank("RUN::config")
-            HipoDataBank event_Bank = (HipoDataBank) event.getBank("REC::Event")
-            HipoDataBank rec_Bank = (HipoDataBank) event.getBank("REC::Particle") 
-            HipoDataBank cal_Bank = (HipoDataBank) event.getBank("REC::Calorimeter")
-            HipoDataBank cc_Bank = (HipoDataBank) event.getBank("REC::Cherenkov")
-            HipoDataBank track_Bank = (HipoDataBank) event.getBank("REC::Track")
-            HipoDataBank traj_Bank = (HipoDataBank) event.getBank("REC::Traj")
+        cc_sector = -9999
+        cc_detector = -9999
+        cc_nphe = -9999
 
-            // collect info for QA
-            config_run = run_Bank.getInt('run', 0)
-            config_event = run_Bank.getInt('event', 0)
+        track_detector = -9999
+        track_sector = -9999
+        track_chi2 = -9999
+        track_ndf = -9999
 
-            // do not use the qa if it is MC (runnum = 11) 
-            // do not use the qa if the run is from RGC (until QA is produced!)
-            // boolean process_event = filter.isValid(research_Event)
-            boolean process_event = (config_run == 11 || config_run < 5020 || 
-                config_run >= 11571 || qa.OkForAsymmetry(config_run, config_event))
+        traj_detector = -9999
+        traj_layer = -9999
+        traj_x = -9999
+        traj_y = -9999
+        traj_z = -9999
+        traj_edge = -9999
+    }
 
-            if (process_event) {
+    // Helper method for formatting doubles
+    String formatDouble(double value) {
+        return String.format("%.4f", value)
+    }
 
-            	event_helicity = event_Bank.getInt('helicity',0);
+    // Method for the main logic
+    void run(String[] args) {
+        // Start time
+        long startTime = System.currentTimeMillis()
 
-                for (int particle_Index = 0; particle_Index < rec_Bank.rows(); particle_Index++) {
+        // ~~~~~~~~~~~~~~~~ set up input parameters ~~~~~~~~~~~~~~~~ //
 
-                	particle_pid = rec_Bank.getInt("pid", particle_Index);
-                	if (particle_pid == 0) { continue; }
-	                particle_px = rec_Bank.getFloat("px", particle_Index);
-	                particle_py = rec_Bank.getFloat("py", particle_Index);
-	                particle_pz = rec_Bank.getFloat("pz", particle_Index);
-	                particle_vx = rec_Bank.getFloat("vx",particle_Index);
-	                particle_vy = rec_Bank.getFloat("vy",particle_Index);
-	                particle_vz = rec_Bank.getFloat("vz",particle_Index);
-	                particle_p = Math.sqrt(particle_px*particle_px+
-	                	particle_py*particle_py+particle_pz*particle_pz);
-	                particle_theta = theta_calculation(particle_px, particle_py, particle_pz);
-	                particle_phi = phi_calculation(particle_px, particle_py);
+        // Check if an argument is provided
+        if (!args) {
+            // Print an error message and exit the program if the input directory is not specified
+            println("ERROR: Please enter a hipo file directory as the first argument")
+            System.exit(0)
+        }
+        // If the input directory is provided, iterate through each file recursively
+        def hipo_list = []
+        (args[0] as File).eachFileRecurse(FileType.FILES) { if (it.name.endsWith('.hipo')) hipo_list << it }
+
+        // Set the output file name based on the provided 3rd argument or use the default name
+        String output_file = args.length < 2 ? "inclusive_dummy_out.txt" : args[1]
+        if (args.length < 2)
+            println("WARNING: Specify an output file name. Set to \"hadron_dummy_out.txt\".")
+        File file = new File(output_file)
+        file.delete()
+        BufferedWriter writer = new BufferedWriter(new FileWriter(file))
+
+        // Set the number of files to process based on the provided 4th argument
+        // use the size of the hipo_list if no argument provided
+        int n_files = args.length < 3 || Integer.parseInt(args[2]) > hipo_list.size()
+            ? hipo_list.size() : Integer.parseInt(args[2])
+        if (args.length < 3 || Integer.parseInt(args[2]) > hipo_list.size()) {
+            // Print warnings and information if the number of files is not specified or too large
+            println("WARNING: Number of files not specified or number too large.")
+            println("Setting # of files to be equal to number of files in the directory.")
+            println("There are $hipo_list.size files.")
+        }
+
+        // ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
+
+        // setup QA database
+        QADB qa = new QADB();
+
+        // create a StringBuilder for accumulating lines
+        StringBuilder batchLines = new StringBuilder()
+
+        int num_events = 0
+        int max_lines = 1000
+        int lineCount = 0
+        for (current_file in 0..<n_files) {
+            // limit to a certain number of files defined by n_files
+            println("\n Opening file "+Integer.toString(current_file+1)
+                +" out of "+n_files+".\n")
+
+            HipoDataSource reader = new HipoDataSource()
+            reader.open(hipo_list[current_file]) // open next hipo file
+            HipoDataEvent event = reader.getNextEvent()
+
+            while (reader.hasEvent()) {
+                ++num_events
+                if (num_events % 500000 == 0) { // not necessary, just updates output
+                    print("processed: " + num_events + " events. ")
+                }
+                // get run and event numbers
+                event = reader.getNextEvent()
+
+                HipoDataBank run_Bank = (HipoDataBank) event.getBank("RUN::config")
+                HipoDataBank event_Bank = (HipoDataBank) event.getBank("REC::Event")
+                HipoDataBank rec_Bank = (HipoDataBank) event.getBank("REC::Particle")
+                HipoDataBank cal_Bank = (HipoDataBank) event.getBank("REC::Calorimeter")
+                HipoDataBank cc_Bank = (HipoDataBank) event.getBank("REC::Cherenkov")
+                HipoDataBank track_Bank = (HipoDataBank) event.getBank("REC::Track")
+                HipoDataBank traj_Bank = (HipoDataBank) event.getBank("REC::Traj")
+
+                // collect info for QA
+                config_run = run_Bank.getInt('run', 0)
+                config_event = run_Bank.getInt('event', 0)
+
+                // do not use the qa if it is MC (runnum = 11)
+                // do not use the qa if the run is from RGC (until QA is produced!)
+                // boolean process_event = filter.isValid(research_Event)
+                boolean process_event = (config_run == 11 || config_run < 5020 ||
+                    config_run >= 11571 || qa.OkForAsymmetry(config_run, config_event))
+
+                if (process_event) {
+
+                    event_helicity = event_Bank.getInt('helicity',0);
+
+                    for (int particle_Index = 0; particle_Index < rec_Bank.rows(); particle_Index++) {
+
+                        particle_pid = rec_Bank.getInt("pid", particle_Index);
+                        if (particle_pid == 0) { continue; }
+                        particle_px = rec_Bank.getFloat("px", particle_Index);
+                        particle_py = rec_Bank.getFloat("py", particle_Index);
+                        particle_pz = rec_Bank.getFloat("pz", particle_Index);
+						particle_vx = rec_Bank.getFloat("vx",particle_Index);
+						particle_vy = rec_Bank.getFloat("vy",particle_Index);
+						particle_vz = rec_Bank.getFloat("vz",particle_Index);
+						particle_p = Math.sqrt(particle_px*particle_px+
+							particle_py*particle_py+particle_pz*particle_pz);
+						particle_theta = theta_calculation(particle_px, particle_py, particle_pz);
+						particle_phi = phi_calculation(particle_px, particle_py);
+						                    // Calorimeter
+                    for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
+                        // Get the pindex and layer values for the current row
+                        int pindex = cal_Bank.getInt("pindex", current_Row);
+                        if (pindex == particle_Index) {
+                            cal_sector = cal_Bank.getInt("sector", current_Row);
+                            cal_layer = cal_Bank.getInt("layer", current_Row);
+                            cal_energy = cal_Bank.getFloat("energy", current_Row);
+                            cal_x = cal_Bank.getFloat("x", current_Row);
+                            cal_y = cal_Bank.getFloat("y", current_Row);
+                            cal_z = cal_Bank.getFloat("z", current_Row);
+                            cal_lu = cal_Bank.getFloat("lu", current_Row);
+                            cal_lv = cal_Bank.getFloat("lv", current_Row);
+                            cal_lw = cal_Bank.getFloat("lw", current_Row);
+                        }
+                    }
 
 
-	                // Calorimeter
-	                for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
-			            // Get the pindex and layer values for the current row
-			            int pindex = cal_Bank.getInt("pindex", current_Row);
-			            if (pindex == particle_Index) {
-			            	cal_sector = cal_Bank.getInt("sector", current_Row);
-				            cal_layer = cal_Bank.getInt("layer", current_Row);
-			                cal_energy = cal_Bank.getFloat("energy", current_Row);
-			                cal_x = cal_Bank.getFloat("x", current_Row);
-			                cal_y = cal_Bank.getFloat("y", current_Row);
-			                cal_z = cal_Bank.getFloat("z", current_Row);
-			                cal_lu = cal_Bank.getFloat("lu", current_Row);
-			                cal_lv = cal_Bank.getFloat("lv", current_Row);
-			                cal_lw = cal_Bank.getFloat("lw", current_Row);
-			            }
-			        }
+                    // Cherenkov Counter
+                    for (int current_Row = 0; current_Row < cc_Bank.rows(); current_Row++) {
+                        // Get the pindex and layer values for the current row
+                        int pindex = cc_Bank.getInt("pindex", current_Row);
+                        if (pindex == particle_Index) {
+                            cc_sector = cc_Bank.getInt("sector", current_Row);
+                            cc_detector = cc_Bank.getInt("detector", current_Row);
+                            cc_nphe = cc_Bank.getFloat("nphe", current_Row);
+                        }
+                    }
 
+                    // Use a StringBuilder to append all data in a single call
+                    StringBuilder line = new StringBuilder()
+                    line.append(config_run).append(" ")
+                        .append(config_event).append(" ")
+                        .append(event_helicity).append(" ")
+                        .append(particle_pid).append(" ")
+                        .append(formatDouble(particle_px)).append(" ")
+                        .append(formatDouble(particle_py)).append(" ")
+                        .append(formatDouble(particle_pz)).append(" ")
+                        .append(formatDouble(particle_p)).append(" ")
+                        .append(formatDouble(particle_theta)).append(" ")
+                        .append(formatDouble(particle_phi)).append(" ")
+                        .append(formatDouble(particle_vx)).append(" ")
+                        .append(formatDouble(particle_vy)).append(" ")
+                        .append(formatDouble(particle_vz)).append(" ")
+                        .append(cal_sector).append(" ")
+                        .append(cal_layer).append(" ")
+                        .append(formatDouble(cal_x)).append(" ")
+                        .append(formatDouble(cal_y)).append(" ")
+                        .append(formatDouble(cal_z)).append(" ")
+                        .append(formatDouble(cal_lu)).append(" ")
+                        .append(formatDouble(cal_lv)).append(" ")
+                        .append(formatDouble(cal_lw)).append(" ")
+                        .append(cc_sector).append(" ")
+                        .append(cc_detector).append(" ")
+                        .append(formatDouble(cc_nphe)).append(" ")
+                        .append(config_run).append("\n")
 
-	                // Cherenkov Counter
-	                for (int current_Row = 0; current_Row < cc_Bank.rows(); current_Row++) {
-			            // Get the pindex and layer values for the current row
-			            int pindex = cc_Bank.getInt("pindex", current_Row);
-			            if (pindex == particle_Index) {
-			            	cc_sector = cc_Bank.getInt("sector", current_Row);
-				            cc_detector = cc_Bank.getInt("detector", current_Row);
-			                cc_nphe = cc_Bank.getFloat("nphe", current_Row);
-			            }
-			        }
+                    // Append the line to the batchLines StringBuilder
+                    batchLines.append(line.toString())
+                    lineCount++ // Increment the line count
 
-	                // Use a StringBuilder to append all data in a single call
-					StringBuilder line = new StringBuilder()
-					line.append(config_run).append(" ")
-					    .append(config_event).append(" ")
-					    .append(event_helicity).append(" ")
-					    .append(particle_pid).append(" ")
-					    .append(formatDouble(particle_px)).append(" ")
-					    .append(formatDouble(particle_py)).append(" ")
-					    .append(formatDouble(particle_pz)).append(" ")
-					    .append(formatDouble(particle_p)).append(" ")
-					    .append(formatDouble(particle_theta)).append(" ")
-					    .append(formatDouble(particle_phi)).append(" ")
-					    .append(formatDouble(particle_vx)).append(" ")
-					    .append(formatDouble(particle_vy)).append(" ")
-					    .append(formatDouble(particle_vz)).append(" ")
-					    .append(cal_sector).append(" ")
-					    .append(cal_layer).append(" ")
-					    .append(formatDouble(cal_x)).append(" ")
-					    .append(formatDouble(cal_y)).append(" ")
-					    .append(formatDouble(cal_z)).append(" ")
-					    .append(formatDouble(cal_lu)).append(" ")
-					    .append(formatDouble(cal_lv)).append(" ")
-					    .append(formatDouble(cal_lw)).append(" ")
-					    .append(cc_sector).append(" ")
-					    .append(cc_detector).append(" ")
-					    .append(formatDouble(cc_nphe)).append(" ")
-					    .append(config_run).append("\n")
+                    // If the line count reaches 1000, write to the file and reset
+                    if (lineCount >= max_lines) {
+                        file.append(batchLines.toString())
+                        batchLines.setLength(0)
+                        lineCount = 0
+                    }
 
-	                // Append the line to the batchLines StringBuilder
-	                batchLines.append(line.toString())
-	                lineCount++ // Increment the line count
-
-	                // If the line count reaches 1000, write to the file and reset
-	                if (lineCount >= max_lines) {
-	                    file.append(batchLines.toString())
-	                    batchLines.setLength(0)
-	                    lineCount = 0
-	                }
-	            }
+                    // Reset variables after processing each particle
+                    resetVariables()
+                }
             }
             reader.close()
         }
@@ -273,3 +316,25 @@ public static void main(String[] args) {
     // Print the elapsed time in milliseconds
     println("Elapsed time: ${elapsedTime} ms")
 }
+
+// Static method to calculate phi
+static double phi_calculation(double x, double y) {
+    double phi = Math.toDegrees(Math.atan2(x, y))
+    phi = phi - 90
+    if (phi < 0) {
+        phi = 360 + phi
+    }
+    phi = 360 - phi
+    return phi
+}
+
+// Static method to calculate theta
+static double theta_calculation(double x, double y, double z) {
+    double r = Math.sqrt(x * x + y * y + z * z)
+    return Math.toDegrees(Math.acos(z / r))
+}
+
+
+// Create an instance of the script and run it
+def script = new CalibrationScript()
+script.run(args)
