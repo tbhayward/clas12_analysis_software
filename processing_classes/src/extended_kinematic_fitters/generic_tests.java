@@ -19,9 +19,24 @@ public class generic_tests {
         return true;
     }
     
+//    public boolean forward_detector_cut(int particle_Index, HipoDataBank rec_Bank) {
+//        int status = rec_Bank.getInt("status", particle_Index);
+//        return (Math.abs(status)<4000 || Math.abs(status)>4999) && Math.abs(status)>1999;
+//    }
+    
     public boolean forward_detector_cut(int particle_Index, HipoDataBank rec_Bank) {
         int status = rec_Bank.getInt("status", particle_Index);
-        return (Math.abs(status)<4000 || Math.abs(status)>4999) && Math.abs(status)>1999;
+        return (Math.abs(status)>=2000 && Math.abs(status)<4000);
+    }
+    
+    public boolean central_detector_cut(int particle_Index, HipoDataBank rec_Bank) {
+        int status = rec_Bank.getInt("status", particle_Index);
+        return (Math.abs(status)>=4000 && Math.abs(status)<5000);
+    }
+    
+    public boolean forward_tagger_cut(int particle_Index, HipoDataBank rec_Bank) {
+        int status = rec_Bank.getInt("status", particle_Index);
+        return (Math.abs(status)>=1000 && Math.abs(status)<2000);
     }
     
     public boolean nphe_cut(int particle_Index, HipoDataBank cc_Bank) {
