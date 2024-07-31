@@ -80,7 +80,7 @@ int main(int argc, char *argv[]) {
   // initialize ROOT application for graphics
   TApplication theApp("App", nullptr, nullptr);
   // Set ROOT to batch mode
-  // gROOT->SetBatch(kTRUE);
+  gROOT->SetBatch(kTRUE);
   gStyle->SetOptStat(0);
 
   // Check for correct number of command line arguments
@@ -281,7 +281,7 @@ int main(int argc, char *argv[]) {
 
   createIntegratedKinematicPlots();
   createIntegratedKinematicPlotsForBinsAndFits();
-  createCorrelationPlotsforrunnum();
+  // createCorrelationPlotsforrunnum();
   createCorrelationPlots();
   // createMisIDRatePlots();
   currentFits=0;
