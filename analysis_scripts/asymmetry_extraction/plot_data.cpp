@@ -635,26 +635,6 @@ void createCorrelationPlots() {
     }
 }
 
-template<typename T>
-void FillHistogram(TTreeReader& reader, const std::string& branchName, TH1D* hist,
-        BaseKinematicCuts& kinematicCuts, int fitIndex, bool isMC) {
-    TTreeReaderValue<T> val(reader, branchName.c_str());
-    const double rad_to_deg = 180.0 / M_PI;
-    while (reader.Next()) {
-        if (kinematicCuts.applyCuts(fitIndex, isMC)) {
-            if (branchName == "e_theta" || branchName == "p_theta" || branchName == "p1_theta" || 
-                branchName == "p2_theta" || branchName == "p3_theta" || 
-                branchName == "mc_e_theta" || branchName == "mc_p_theta" || 
-                branchName == "mc_p1_theta" || branchName == "mc_p2_theta" || 
-                branchName == "mc_p3_theta") {
-                hist->Fill(*val * rad_to_deg);
-            } else {
-                hist->Fill(*val);
-            }
-        }
-    }
-}
-
 void createMisIDRatePlots() {
     const std::string outputDir = "output/misid/";
     gStyle->SetOptStat(0); // No histogram statistics
