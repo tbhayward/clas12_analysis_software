@@ -330,74 +330,74 @@ class CalibrationScript {
 	                        }
 	                    }
 
-	                    // Use a StringBuilder to append all data in a single call
-	                    StringBuilder line = new StringBuilder()
-	                    line.append(config_run).append(" ")
-	                        .append(config_event).append(" ")
+	                    // // Use a StringBuilder to append all data in a single call
+	                    // StringBuilder line = new StringBuilder()
+	                    // line.append(config_run).append(" ")
+	                    //     .append(config_event).append(" ")
 
-	                        .append(event_helicity).append(" ")
+	                    //     .append(event_helicity).append(" ")
 
-	                        .append(particle_pid).append(" ")
-	                        .append(formatDouble(particle_px)).append(" ")
-	                        .append(formatDouble(particle_py)).append(" ")
-	                        .append(formatDouble(particle_pz)).append(" ")
-	                        .append(formatDouble(p)).append(" ")
-	                        .append(formatDouble(theta)).append(" ")
-	                        .append(formatDouble(phi)).append(" ")
-	                        .append(formatDouble(particle_vx)).append(" ")
-	                        .append(formatDouble(particle_vy)).append(" ")
-	                        .append(formatDouble(particle_vz)).append(" ")
-	                        .append(formatDouble(particle_beta)).append(" ")
-	                        .append(formatDouble(particle_chi2pid)).append(" ")
-	                        .append(particle_status).append(" ")
+	                    //     .append(particle_pid).append(" ")
+	                    //     .append(formatDouble(particle_px)).append(" ")
+	                    //     .append(formatDouble(particle_py)).append(" ")
+	                    //     .append(formatDouble(particle_pz)).append(" ")
+	                    //     .append(formatDouble(p)).append(" ")
+	                    //     .append(formatDouble(theta)).append(" ")
+	                    //     .append(formatDouble(phi)).append(" ")
+	                    //     .append(formatDouble(particle_vx)).append(" ")
+	                    //     .append(formatDouble(particle_vy)).append(" ")
+	                    //     .append(formatDouble(particle_vz)).append(" ")
+	                    //     .append(formatDouble(particle_beta)).append(" ")
+	                    //     .append(formatDouble(particle_chi2pid)).append(" ")
+	                    //     .append(particle_status).append(" ")
 
-	                        .append(cal_sector).append(" ")
-	                        .append(formatDouble(cal_energy_1)).append(" ")
-	                        .append(formatDouble(cal_x_1)).append(" ")
-	                        .append(formatDouble(cal_y_1)).append(" ")
-	                        .append(formatDouble(cal_z_1)).append(" ")
-	                        .append(formatDouble(cal_lu_1)).append(" ")
-	                        .append(formatDouble(cal_lv_1)).append(" ")
-	                        .append(formatDouble(cal_lw_1)).append(" ")
-	                        .append(formatDouble(cal_x_4)).append(" ")
-	                        .append(formatDouble(cal_y_4)).append(" ")
-	                        .append(formatDouble(cal_z_4)).append(" ")
-	                        .append(formatDouble(cal_lu_4)).append(" ")
-	                        .append(formatDouble(cal_lv_4)).append(" ")
-	                        .append(formatDouble(cal_lw_4)).append(" ")
-	                        .append(formatDouble(cal_x_7)).append(" ")
-	                        .append(formatDouble(cal_y_7)).append(" ")
-	                        .append(formatDouble(cal_z_7)).append(" ")
-	                        .append(formatDouble(cal_lu_7)).append(" ")
-	                        .append(formatDouble(cal_lv_7)).append(" ")
-	                        .append(formatDouble(cal_lw_7)).append(" ")
+	                    //     .append(cal_sector).append(" ")
+	                    //     .append(formatDouble(cal_energy_1)).append(" ")
+	                    //     .append(formatDouble(cal_x_1)).append(" ")
+	                    //     .append(formatDouble(cal_y_1)).append(" ")
+	                    //     .append(formatDouble(cal_z_1)).append(" ")
+	                    //     .append(formatDouble(cal_lu_1)).append(" ")
+	                    //     .append(formatDouble(cal_lv_1)).append(" ")
+	                    //     .append(formatDouble(cal_lw_1)).append(" ")
+	                    //     .append(formatDouble(cal_x_4)).append(" ")
+	                    //     .append(formatDouble(cal_y_4)).append(" ")
+	                    //     .append(formatDouble(cal_z_4)).append(" ")
+	                    //     .append(formatDouble(cal_lu_4)).append(" ")
+	                    //     .append(formatDouble(cal_lv_4)).append(" ")
+	                    //     .append(formatDouble(cal_lw_4)).append(" ")
+	                    //     .append(formatDouble(cal_x_7)).append(" ")
+	                    //     .append(formatDouble(cal_y_7)).append(" ")
+	                    //     .append(formatDouble(cal_z_7)).append(" ")
+	                    //     .append(formatDouble(cal_lu_7)).append(" ")
+	                    //     .append(formatDouble(cal_lv_7)).append(" ")
+	                    //     .append(formatDouble(cal_lw_7)).append(" ")
 
-	                        .append(cc_sector).append(" ")
-	                        .append(formatDouble(cc_nphe_15)).append(" ")
-	                        .append(formatDouble(cc_nphe_16)).append(" ")
+	                    //     .append(cc_sector).append(" ")
+	                    //     .append(formatDouble(cc_nphe_15)).append(" ")
+	                    //     .append(formatDouble(cc_nphe_16)).append(" ")
 
-	                        .append(track_sector_5).append(" ")
-	                        .append(formatDouble(track_chi2_5)).append(" ")
-	                        .append(track_ndf_5).append(" ")
-	                        .append(track_sector_6).append(" ")
-	                        .append(formatDouble(track_chi2_6)).append(" ")
-	                        .append(track_ndf_6).append(" ")
+	                    //     .append(track_sector_5).append(" ")
+	                    //     .append(formatDouble(track_chi2_5)).append(" ")
+	                    //     .append(track_ndf_5).append(" ")
+	                    //     .append(track_sector_6).append(" ")
+	                    //     .append(formatDouble(track_chi2_6)).append(" ")
+	                    //     .append(track_ndf_6).append(" ")
 
-	                        .append(config_run).append("\n")
+	                    //     .append(config_run).append("\n")
 
-	                    // Append the line to the batchLines StringBuilder
-	                    batchLines.append(line.toString())
-	                    lineCount++ // Increment the line count
+	                    // // Append the line to the batchLines StringBuilder
+	                    // batchLines.append(line.toString())
+	                    // lineCount++ // Increment the line count
 
-	                    // If the line count reaches 1000, write to the file and reset
-	                    if (lineCount >= max_lines) {
-	                        file.append(batchLines.toString())
-	                        batchLines.setLength(0)
-	                        lineCount = 0
-	                    }
+	                    // // If the line count reaches 1000, write to the file and reset
+	                    // if (lineCount >= max_lines) {
+	                    //     file.append(batchLines.toString())
+	                    //     batchLines.setLength(0)
+	                    //     lineCount = 0
+	                    // }
 
-	                    // Reset variables after processing each particle
-	                    resetVariables()
+	                    // // Reset variables after processing each particle
+	                    // resetVariables()
 	                }
 	            }
             	reader.close()
