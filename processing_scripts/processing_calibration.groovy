@@ -219,8 +219,8 @@ class CalibrationScript {
 						particle_vz = rec_Bank.getFloat("vz",particle_Index);
 						p = Math.sqrt(particle_px*particle_px+
 							particle_py*particle_py+particle_pz*particle_pz);
-						particle_theta = theta_calculation(particle_px, particle_py, particle_pz);
-						particle_phi = phi_calculation(particle_px, particle_py);
+						theta = theta_calculation(particle_px, particle_py, particle_pz);
+						phi = phi_calculation(particle_px, particle_py);
 						                    // Calorimeter
                     for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
                         // Get the pindex and layer values for the current row
