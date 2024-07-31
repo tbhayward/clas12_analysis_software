@@ -2183,317 +2183,6 @@ void performChi2Fits_b2b_dihadron(const char* output_file, const char* kinematic
 
 /******************** DVCS CASE ********************/
 
-// Negative log-likelihood function
-void negLogLikelihood_dvcs(Int_t &npar, Double_t *gin, Double_t &f, 
-  Double_t *par, Int_t iflag) {
-  // npar: number of parameters
-  // gin: an array of derivatives (if needed)
-  // f: the value of the function
-  // par: an array of the parameter values
-  // iflag: a flag (see TMinuit documentation for details)
-
-  // Extract parameters from the input parameter array
-  double ALU_sinphi = par[0];
-  double AUL_sinphi = par[1];
-  double AUL_sin2phi = par[2];
-  double ALL = par[3];
-  double ALL_cosphi = par[4];
-  double AUU_cosphi = par[5];
-  double AUU_cos2phi = par[6];
-
-  // Initialize variables for counting events (N), positive helicity sum (sum_P), 
-  // and negative helicity sum (sum_N)
-  double N = 0;
-  double NUU = 0; // normalization integral
-  double sum_PP = 0; // positive beam -- positive target
-  double sum_PM = 0; // positive beam -- negative target
-  double sum_MP = 0; // negative beam -- positive target
-  double sum_MM = 0; // negative beam -- negative target
-
-  TTreeReaderValue<int> runnum(dataReader, "runnum");
-  TTreeReaderValue<int> evnum(dataReader, "evnum");
-  TTreeReaderValue<int> helicity(dataReader, "helicity");
-  TTreeReaderValue<double> beam_pol(dataReader, "beam_pol");
-  TTreeReaderValue<double> target_pol(dataReader, "target_pol");
-  TTreeReaderValue<double> phi(dataReader, "phi2"); 
-  // using phi2 for the angle of the photon
-  TTreeReaderValue<double> DepA(dataReader, "DepA");
-  TTreeReaderValue<double> DepB(dataReader, "DepB");
-  TTreeReaderValue<double> DepC(dataReader, "DepC");
-  TTreeReaderValue<double> DepV(dataReader, "DepV");
-  TTreeReaderValue<double> DepW(dataReader, "DepW");
-  TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
-
-  while (dataReader.Next()) {
-    // Apply kinematic cuts (this function will need to be adapted)
-    bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
-    // Check if the currentVariable is within the desired range
-    if (*currentVariable >= allBins[currentFits][currentBin] && 
-          *currentVariable < allBins[currentFits][currentBin + 1] && passedKinematicCuts) {
-
-      // Increment the event count
-      N += 1;
-
-      double Df = dilution_factor(*currentVariable, mlmPrefix); // dilution factor
-      double Pb = *beam_pol;
-      double Pt = std::abs(*target_pol);
-
-      if (*helicity > 0 && *target_pol >= 0) { 
-        sum_PP = sum_PP + log(1 
-          + (*DepV / *DepA)*AUU_cosphi*cos(*phi) + (*DepB / *DepA)*AUU_cos2phi*cos(2 * *phi) // UU 
-          + Pb*((*DepW / *DepA)*ALU_sinphi*sin(*phi)) // BSA
-          + Df*Pt*((*DepV / *DepA)*AUL_sinphi*sin(*phi)+ // TSA
-            (*DepB / *DepA)*AUL_sin2phi*sin(2 * *phi))//TSA
-          + Df*Pb*Pt*((*DepC / *DepA)*ALL + (*DepW / *DepA)*ALL_cosphi*cos(*phi)) ); // DSA
-      } else if (*helicity > 0 && *target_pol < 0) { 
-        sum_PM = sum_PM + log(1 
-          + (*DepV / *DepA)*AUU_cosphi*cos(*phi) + (*DepB / *DepA)*AUU_cos2phi*cos(2 * *phi) // UU
-          + Pb*((*DepW / *DepA)*ALU_sinphi*sin(*phi)) // BSA
-          - Df*Pt*((*DepV / *DepA)*AUL_sinphi*sin(*phi)+ // TSA
-            (*DepB / *DepA)*AUL_sin2phi*sin(2 * *phi)) // TSA
-          - Df*Pb*Pt*((*DepC / *DepA)*ALL + (*DepW / *DepA)*ALL_cosphi*cos(*phi)) ); // DSA
-      } else if (*helicity < 0 && *target_pol >= 0) { 
-        sum_MP = sum_MP + log(1 
-          + (*DepV / *DepA)*AUU_cosphi*cos(*phi) + (*DepB / *DepA)*AUU_cos2phi*cos(2 * *phi) // UU 
-          - Pb*((*DepW / *DepA)*ALU_sinphi*sin(*phi)) // BSA
-          + Df*Pt*((*DepV / *DepA)*AUL_sinphi*sin(*phi)+ // TSA
-            (*DepB / *DepA)*AUL_sin2phi*sin(2 * *phi))//TSA
-          - Df*Pb*Pt*((*DepC / *DepA)*ALL + (*DepW / *DepA)*ALL_cosphi*cos(*phi)) ); // DSA
-      } else if (*helicity < 0 && *target_pol < 0) { 
-        sum_MM = sum_MM + log(1 
-          + (*DepV / *DepA)*AUU_cosphi*cos(*phi) + (*DepB / *DepA)*AUU_cos2phi*cos(2 * *phi) // UU 
-          - Pb*((*DepW / *DepA)*ALU_sinphi*sin(*phi)) // BSA
-          - Df*Pt*((*DepV / *DepA)*AUL_sinphi*sin(*phi)+ // TSA
-            (*DepB / *DepA)*AUL_sin2phi*sin(2 * *phi))//TSA
-          + Df*Pb*Pt*((*DepC / *DepA)*ALL + (*DepW / *DepA)*ALL_cosphi*cos(*phi)) ); // DSA
-      }
-    }
-  }
-  dataReader.Restart();  // Reset the TTreeReader at the end of the function
-  
-  TTreeReaderValue<double> mc_phi(mcReader, "phi2");
-  TTreeReaderValue<double> mc_DepA(mcReader, "DepA");
-  TTreeReaderValue<double> mc_DepB(mcReader, "DepB");
-  TTreeReaderValue<double> mc_DepC(mcReader, "DepC");
-  TTreeReaderValue<double> mc_DepV(mcReader, "DepV");
-  TTreeReaderValue<double> mc_DepW(mcReader, "DepW");
-  TTreeReaderValue<double> mc_currentVariable(mcReader, propertyNames[currentFits].c_str());
-
-  while (mcReader.Next()) {
-    // Apply kinematic cuts (this function will need to be adapted)
-    bool passedKinematicCuts = mckinematicCuts->applyCuts(currentFits, true);
-    // Check if the currentVariable is within the desired range
-    if (*mc_currentVariable >= allBins[currentFits][currentBin] && 
-          *mc_currentVariable < allBins[currentFits][currentBin + 1] && passedKinematicCuts) {
-      NUU+=1+(*mc_DepV / *mc_DepA)*AUU_cosphi*cos(*mc_phi)+
-        (*mc_DepB / *mc_DepA)*AUU_cos2phi*cos(2 * *mc_phi); // UU
-    }
-  }
-  mcReader.Restart();  // Reset the TTreeReader at the end of the function
-
-  // determine min pos or neg beam helicity accumulated charge to scale down higher one
-  double minBeamCharge = std::min({(cpp+cpm),(cmp+cmm)}); 
-  // determine min pos or neg target helicity accumulated charge to scale down higher one
-  double minTargetCharge = std::min({(cpp+cmp),(cpm+cmm)}); 
-  
-  double nll = N * log(NUU) - 
-    minBeamCharge*minTargetCharge/((cpp+cpm)*(cpp+cmp))*sum_PP -
-    minBeamCharge*minTargetCharge/((cpp+cpm)*(cpm+cmm))*sum_PM - 
-    minBeamCharge*minTargetCharge/((cmp+cmm)*(cpp+cmp))*sum_MP - 
-    minBeamCharge*minTargetCharge/((cmp+cmm)*(cpm+cmm))*sum_MM;
-  cout << "On MLM fit " << binNames[currentFits] << " " << currentFits << ", " << nll << endl;
-  cout << "AUU_cosphi = " << AUU_cosphi << ", AUU_cos2phi = " << AUU_cos2phi;
-  cout << ", ALU_sinphi = " << ALU_sinphi;
-  cout << ", AUL_sinphi = " << AUL_sinphi << ", AUL_sin2phi = " << AUL_sin2phi;
-  cout << ", ALL = " << ALL << ", ALL_cosphi = " << ALL_cosphi << "." << endl;
-  // Calculate the negative log-likelihood value and store it in the output variable f
-  f = nll;
-}
-
-void performMLMFits_dvcs(const char* output_file, const char* kinematic_file,
-  const std::string& prefix) {
-  // Read the event data from the input file and store it in the global variable gData
-  mlmPrefix = prefix;
-
-  // Determine the number of bins
-  size_t numBins = allBins[currentFits].size() - 1;
-
-  // Initialize TMinuit
-  double arglist[10]; arglist[0] = 1;
-  int ierflg = 0;
-  TMinuit minuit(7); // parameter numbers
-  minuit.SetPrintLevel(-1);
-  minuit.SetErrorDef(0.5); // error definition for MLE, 1 for chi2
-  // This is due to the fact that −logL = chi2/2. 
-  // The default value of ErrorDef=1 corresponds to one standard deviation for chi2 function.
-  minuit.SetFCN(negLogLikelihood_single_hadron);
-
-  // Declare string streams for storing the MLM fit results
-  std::ostringstream mlmFitsAStream; std::ostringstream mlmFitsBStream; 
-  std::ostringstream mlmFitsCStream; std::ostringstream mlmFitsDStream; 
-  std::ostringstream mlmFitsEStream; std::ostringstream mlmFitsFStream;
-  std::ostringstream mlmFitsGStream; 
-
-  mlmFitsAStream << std::fixed << std::setprecision(9);
-  mlmFitsBStream << std::fixed << std::setprecision(9);
-  mlmFitsCStream << std::fixed << std::setprecision(9);
-  mlmFitsDStream << std::fixed << std::setprecision(9);
-  mlmFitsEStream << std::fixed << std::setprecision(9);
-  mlmFitsFStream << std::fixed << std::setprecision(9);
-  mlmFitsGStream << std::fixed << std::setprecision(9);
-
-  // Initialize the string streams with the output variable names
-  mlmFitsAStream << prefix << "MLMFitsALUsinphi = {";
-  mlmFitsBStream << prefix << "MLMFitsAULsinphi = {";
-  mlmFitsCStream << prefix << "MLMFitsAULsin2phi = {";
-  mlmFitsDStream << prefix << "MLMFitsALL = {";
-  mlmFitsEStream << prefix << "MLMFitsALLcosphi = {";
-  mlmFitsFStream << prefix << "MLMFitsAUUcosphi = {";
-  mlmFitsGStream << prefix << "MLMFitsAUUcos2phi = {";
-
-  // Initialize string streams to store the mean variables for each bin and asymmetries
-  std::ostringstream asymmetryStream;
-  asymmetryStream << "\\begin{table}[h]" << std::endl;
-  asymmetryStream << "\\centering" << std::endl;
-  asymmetryStream << "\\begin{tabular}{|c|c|c|c|c|c|c|c|c|} \\hline" << std::endl;
-  asymmetryStream << "Bin & $<" << prefix << ">$ & $F_{UU}^{\\cos(\\phi)}/F_{UU}$ & ";
-  asymmetryStream << "$F_{UU}^{\\cos(2\\phi)}/F_{UU}$ ";
-  asymmetryStream << "& $F_{LU}^{\\sin(\\phi)}/F_{UU}$ & $F_{UL}^{\\sin(\\phi)}/F_{UU}$ & ";
-  asymmetryStream << "$F_{UL}^{\\sin(2\\phi)}/F_{UU}$ & $F_{LL}/F_{UU}$ &";
-  asymmetryStream << "$F_{LL}^{\\cos(\\phi)}/F_{UU}$ \\\\ \\hline" << std::endl;
-
-  // Iterate through each bin
-  for (size_t i = 0; i < numBins; ++i) {
-    cout << endl << "Beginning MLM fit for " << binNames[currentFits]+1
-      << " bin " << i << ". ";
-    currentBin = i;
-
-    // // Read the chi2 fits into a map
-    // std::map<std::string, std::vector<std::vector<double>>> chi2Fits = 
-    //     readChi2Fits(std::string(output_file));
-
-    // Construct the key based on the prefix and the fit name
-    // For now, let's assume fitName is a string that contains the fit name like "ALUsinphi"
-    // std::string fitName = "ALUsinphi";// Replace this with the logic to determine the fit name
-    // std::string key = std::string(prefix) + "chi2Fits" + fitName; 
-
-    // std::vector<double> chi2Result = chi2Fits[key][currentFits];
-    // Define the parameters with initial values and limits
-    minuit.DefineParameter(0, "ALU_sinphi", 0.0, 0.01, -1, 1);
-    minuit.DefineParameter(1, "AUL_sinphi", 0.0, 0.0, -1, 1);
-    minuit.DefineParameter(2, "AUL_sin2phi", 0.0, 0.0, -1, 1);
-    minuit.DefineParameter(3, "ALL", 0.00, 0.0, -1, 1);
-    minuit.DefineParameter(4, "ALL_cosphi", 0.00, 0.0, -1, 1);
-    minuit.DefineParameter(5, "AUU_cosphi", 0.00, 0.0, -1, 1);
-    minuit.DefineParameter(6, "AUU_cos2phi", 0.00, 0.00, -1, 1);
-
-    // After defining parameters
-    minuit.Migrad(); cout << endl; // First attempt to find the minimum
-
-    // If you decide to use MINImize, replace Migrad with the following lines:
-    // arglist[0] = 500; // Max calls
-    // arglist[1] = 1.;  // Tolerance
-    // minuit.mnexcm("MINImize", arglist, 2, ierflg);
-
-
-    // Extract the fitted parameter values and errors
-    double ALU_sinphi, ALU_sinphi_error; minuit.GetParameter(0, ALU_sinphi, ALU_sinphi_error);
-    double AUL_sinphi, AUL_sinphi_error; minuit.GetParameter(1, AUL_sinphi, AUL_sinphi_error);
-    double AUL_sin2phi, AUL_sin2phi_error; minuit.GetParameter(2, AUL_sin2phi, AUL_sin2phi_error);
-    double ALL, ALL_error; minuit.GetParameter(3, ALL, ALL_error);
-    double ALL_cosphi, ALL_cosphi_error; minuit.GetParameter(4, ALL_cosphi, ALL_cosphi_error);
-    double AUU_cosphi, AUU_cosphi_error; minuit.GetParameter(5, AUU_cosphi, AUU_cosphi_error);
-    double AUU_cos2phi, AUU_cos2phi_error; minuit.GetParameter(6, AUU_cos2phi, AUU_cos2phi_error);
-
-    // Calculate the mean values of the current variable 
-    double sumVariable = 0;
-    double numEvents = 0;
-    TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
-    while (dataReader.Next()) {
-      // Apply kinematic cuts (this function will need to be adapted)
-      bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
-      // Check if the currentVariable is within the desired range
-      if (*currentVariable >= allBins[currentFits][i] && 
-        *currentVariable < allBins[currentFits][i + 1] && passedKinematicCuts) {
-        sumVariable += *currentVariable;
-        numEvents += 1;
-      }
-    }
-    dataReader.Restart();  // Reset the TTreeReader at the end of the function
-    double meanVariable = numEvents > 0 ? sumVariable / numEvents : 0.0;
-
-    // output to text file
-    mlmFitsAStream << "{" << meanVariable << ", " << ALU_sinphi << ", " << ALU_sinphi_error << "}";
-    mlmFitsBStream << "{" << meanVariable << ", " << AUL_sinphi << ", " << AUL_sinphi_error << "}";
-    mlmFitsCStream << "{" << meanVariable << ", " << AUL_sin2phi << ", "<<AUL_sin2phi_error << "}";
-    mlmFitsDStream << "{" << meanVariable << ", " << ALL << ", " << ALL_error << "}";
-    mlmFitsEStream << "{" << meanVariable << ", " << ALL_cosphi << ", "<<ALL_cosphi_error << "}";
-    mlmFitsFStream << "{" << meanVariable << ", " << AUU_cosphi << ", "<<AUU_cosphi_error << "}";
-    mlmFitsGStream << "{" << meanVariable << ", " << AUU_cos2phi << ", "<<AUU_cos2phi_error << "}";
-
-    if (i < numBins - 1) {
-        mlmFitsAStream << ", "; mlmFitsBStream << ", "; mlmFitsCStream << ", ";
-        mlmFitsDStream << ", "; mlmFitsEStream << ", "; mlmFitsFStream << ", "; 
-        mlmFitsGStream << ", ";
-    }
-
-    // outputs of asymmetries for LaTeX tables
-    // Set fixed-point notation and one digit past the decimal
-    asymmetryStream << std::fixed << std::setprecision(2); 
-    asymmetryStream << (i+1) << " & " << meanVariable << " & ";
-    // AUU cosphi
-    asymmetryStream << "$" << 100*AUU_cosphi << "_{" << TMath::Abs(100*0.5*AUU_cosphi) << "}^{";
-    asymmetryStream << 100*AUU_cosphi_error << "}$ &";
-    // AUU cos2phi
-    asymmetryStream << "$" << 100*AUU_cos2phi << "_{" << TMath::Abs(100*0.5*AUU_cos2phi) << "}^{";
-    asymmetryStream << 100*AUU_cos2phi_error << "}$ &";
-    // ALU sinphi
-    asymmetryStream << "$" << 100*ALU_sinphi << "_{" << TMath::Abs(100*0.068*ALU_sinphi) << "}^{";
-    asymmetryStream << 100*ALU_sinphi_error << "}$ &";
-    // AUL sinphi
-    asymmetryStream << "$" << 100*AUL_sinphi << "_{" << TMath::Abs(100*0.092*AUL_sinphi) << "}^{";
-    asymmetryStream << 100*AUL_sinphi_error << "}$ &";
-    // AUL sin2phi
-    asymmetryStream << "$" << 100*AUL_sin2phi << "_{" << TMath::Abs(100*0.092*AUL_sin2phi) << "}^{";
-    asymmetryStream << 100*AUL_sin2phi_error << "}$ &";
-    // ALL 
-    asymmetryStream << "$" << 100*ALL << "_{" << TMath::Abs(100*0.097*ALL) << "}^{";
-    asymmetryStream << 100*ALL_error << "}$ &";
-    // ALL cosphi
-    asymmetryStream << "$" << 100*ALL_cosphi << "_{" << TMath::Abs(100*0.097*ALL_cosphi) << "}^{";
-    asymmetryStream << 100*ALL_cosphi << "}$";
-    asymmetryStream << std::string(" \\\\ \\hline ");
-  }
-  mlmFitsAStream << "};"; mlmFitsBStream << "};"; mlmFitsCStream << "};";
-  mlmFitsDStream << "};"; mlmFitsEStream << "};"; mlmFitsFStream << "};"; 
-  mlmFitsGStream << "};"; 
-
-  std::ofstream outputFile(output_file, std::ios_base::app);
-  outputFile << mlmFitsAStream.str() << std::endl;
-  outputFile << mlmFitsBStream.str() << std::endl;
-  outputFile << mlmFitsCStream.str() << std::endl;
-  outputFile << mlmFitsDStream.str() << std::endl;
-  outputFile << mlmFitsEStream.str() << std::endl;
-  outputFile << mlmFitsFStream.str() << std::endl;
-  outputFile << mlmFitsGStream.str() << std::endl;
-
-  outputFile.close();
-
-  // Finally, close the table
-  asymmetryStream << "\\end{tabular}" << std::endl;
-  asymmetryStream << "\\caption{The mean kinematic value and the final ";
-  asymmetryStream << "extracted structure function ratios for " << prefix;
-  asymmetryStream << ". Asymmetries are given as ";
-  asymmetryStream << "$100{A}_{\\pm100\\Delta\\text{sys}}^";
-  asymmetryStream << "{\\pm100\\Delta\\text{stat}}$.}" << std::endl;
-  asymmetryStream << "\\label{table:kinematics_" << prefix << "}" << std::endl;
-  asymmetryStream << "\\end{table}" << std::endl;
-  asymmetryStream << endl << endl << endl;
-  std::ofstream kinematicFile(kinematic_file, std::ios_base::app);
-  // Write the string stream content to the file
-  kinematicFile << asymmetryStream.str() << std::endl; 
-  kinematicFile.close();
-}
 
 void plotHistogramAndFit_dvcs(TH1D* histogram, TF1* fitFunction, int binIndex, 
   int asymmetryIndex, const std::string& prefix) {
@@ -2647,6 +2336,7 @@ TH1D* createHistogramForBin_dvcs(const char* histName, int binIndex,
   TTreeReaderValue<double> phi(dataReader, "phi2"); 
   // this is phi2 because we're using processing_dihadron to identify proton and photon 
   // (which isn't really a hadron of course)
+  // so phi2 is the dvcs photon angle
   TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
 
   // Counter to limit the number of processed entries
@@ -2753,9 +2443,10 @@ void performChi2Fits_dvcs(const char* output_file, const char* kinematic_file,
   TF1* fitFunction;
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
-      fitFunction = new TF1("fitFunction", BSA_single_hadron, 0, 2*TMath::Pi(), 2);
+      fitFunction = new TF1("fitFunction", BSA_dvcs, 0, 2*TMath::Pi(), 2);
       chi2FitsAStream << prefix << "chi2FitsALUoffset = {";
       chi2FitsBStream << prefix << "chi2FitsALUsinphi = {";
+      chi2FitsCStream << prefix << "chi2FitsAUUcosphi = {";
       break;
     case 1: // target-spin asymmetry
       fitFunction = new TF1("fitFunction", TSA_single_hadron, 0, 2*TMath::Pi(), 3);
@@ -2868,10 +2559,13 @@ void performChi2Fits_dvcs(const char* output_file, const char* kinematic_file,
         double ALU_offset_error = fitFunction->GetParError(0);
         double ALU_sinphi = fitFunction->GetParameter(1); 
         double ALU_sinphi_error = fitFunction->GetParError(1);
+        double AUU_cosphi = fitFunction->GetParameter(2); 
+        double AUU_cosphi_error = fitFunction->GetParError(2);
         // ALU_sinphi = (meanDepA/meanDepW)*ALU_sinphi;
         // ALU_sinphi_error = (meanDepA/meanDepW)*ALU_sinphi_error;
         chi2FitsAStream<<"{"<<meanVariable<<", "<< ALU_offset << ", " << ALU_offset_error <<"}";
         chi2FitsBStream<<"{"<<meanVariable<<", "<< ALU_sinphi << ", " << ALU_sinphi_error <<"}";
+        chi2FitsCStream<<"{"<<meanVariable<<", "<< AUU_sinphi << ", " << AUU_cosphi_error <<"}";
         if (i < numBins - 1) {
             chi2FitsAStream << ", "; chi2FitsBStream << ", "; 
         }
@@ -2938,7 +2632,7 @@ void performChi2Fits_dvcs(const char* output_file, const char* kinematic_file,
   std::ofstream outputFile(output_file, std::ios_base::app);
   outputFile << chi2FitsAStream.str() << std::endl;
   outputFile << chi2FitsBStream.str() << std::endl;
-  if (asymmetry_index==1) { outputFile << chi2FitsCStream.str() << std::endl; }
+  if (asymmetry_index==0 || asymmetry_index==1) { outputFile << chi2FitsCStream.str() << std::endl; }
 
   outputFile.close();
 
