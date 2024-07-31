@@ -224,10 +224,11 @@ class CalibrationScript {
 
                     event_helicity = event_Bank.getInt('helicity',0);
 
-                    for (int particle_Index = 0; particle_Index < rec_Bank.rows(); particle_Index++) {
+                    for (int particle_Index = 0; particle_Index < rec_Bank.rows(); 
+                    	particle_Index++) {
 
                         particle_pid = rec_Bank.getInt("pid", particle_Index);
-                        if (particle_pid == 0) { continue; }
+                        if (particle_pid == 0 || particle_pid == 45) { continue; }
                         particle_px = rec_Bank.getFloat("px", particle_Index);
                         particle_py = rec_Bank.getFloat("py", particle_Index);
                         particle_pz = rec_Bank.getFloat("pz", particle_Index);
