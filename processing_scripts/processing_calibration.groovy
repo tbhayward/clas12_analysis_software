@@ -396,6 +396,10 @@ class CalibrationScript {
 	                        }
 	                    }
 
+	                    if (event.hasBank("REC::ForwardTagger")) {
+	                    	println("found FT");
+	                    }
+
 	                    // Use a StringBuilder to append all data in a single call
 	                    StringBuilder line = new StringBuilder()
 	                    	// config
