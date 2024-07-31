@@ -111,14 +111,6 @@ class CalibrationScript {
 	    track_chi2_5 = -999; track_chi2_6 = -999; 
 	    track_ndf_5 = -999; track_ndf_6 = -999; 
 
-	    traj_detector = -999;
-	    traj_layer = -999;
-	    traj_x = -999;
-	    traj_y = -999;
-	    traj_z = -999;
-	    traj_edge = -999;
-
-	    traj_detector = -999;
 	    traj_x_6 = -999; traj_x_18 = -999; traj_x_36 = -999; 
 	    traj_y_6 = -999; traj_y_18 = -999; traj_y_36 = -999;
 	    traj_z_6 = -999; traj_z_18 = -999; traj_z_36 = -999; 
