@@ -286,24 +286,24 @@ class CalibrationScript {
 						}
 
 
-	                    // // Cherenkov Counter
-	                    // for (int current_Row = 0; current_Row < cc_Bank.rows(); current_Row++) {
-	                    //     // Get the pindex and layer values for the current row
-	                    //     int pindex = cc_Bank.getInt("pindex", current_Row);
-	                    //     if (pindex == particle_Index) {
-	                    //         int cc_sector = cc_Bank.getInt("sector", current_Row);
-	                    //         int detector = cc_Bank.getInt("detector", current_Row);
-	                    //         double nphe = cc_Bank.getFloat("nphe", current_Row);
-	                    //         switch(detector) {
-	                    //         	case 15:
-	                    //         		cc_nphe_15 = nphe;
-	                    //         		break;
-	                    //         	case 16:
-	                    //         		cc_nphe_16 = nphe;
-		                //             	break
-	                    //         }
-	                    //     }
-	                    // }
+	                    // Cherenkov Counter
+	                    for (int current_Row = 0; current_Row < cc_Bank.rows(); current_Row++) {
+	                        // Get the pindex and layer values for the current row
+	                        int pindex = cc_Bank.getInt("pindex", current_Row);
+	                        if (pindex == particle_Index) {
+	                            int cc_sector = cc_Bank.getInt("sector", current_Row);
+	                            int detector = cc_Bank.getInt("detector", current_Row);
+	                            double nphe = cc_Bank.getFloat("nphe", current_Row);
+	                            switch(detector) {
+	                            	case 15:
+	                            		cc_nphe_15 = nphe;
+	                            		break;
+	                            	case 16:
+	                            		cc_nphe_16 = nphe;
+		                            	break
+	                            }
+	                        }
+	                    }
 
 
 	                    // // Track Bank
