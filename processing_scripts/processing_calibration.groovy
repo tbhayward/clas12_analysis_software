@@ -203,7 +203,7 @@ public static void main(String[] args) {
 			            int pindex = cc_Bank.getInt("pindex", current_Row);
 			            if (pindex == particle_Index) {
 			            	cc_sector = cc_Bank.getInt("sector", current_Row);
-				            cc_detector = cc_Bank.getFloat("detector", current_Row);
+				            cc_detector = cc_Bank.getInt("detector", current_Row);
 			                cc_nphe = cc_Bank.getFloat("nphe", current_Row);
 			            }
 			        }
