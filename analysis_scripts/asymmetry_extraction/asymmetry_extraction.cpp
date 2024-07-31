@@ -30,6 +30,7 @@
 #include <TBranch.h>
 #include <cstdio>
 #include <optional> 
+#include <TROOT.h>
 // tbhayward libraries
 #include "common_vars.h"  // Include the common header
 #include "load_bins_from_csv.h"
