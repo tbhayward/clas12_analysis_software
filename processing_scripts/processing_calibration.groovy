@@ -330,12 +330,12 @@ class CalibrationScript {
 	                        }
 	                    }
 
-	                    // // Use a StringBuilder to append all data in a single call
-	                    // StringBuilder line = new StringBuilder()
-	                    // line.append(config_run).append(" ")
-	                    //     .append(config_event).append(" ")
+	                    // Use a StringBuilder to append all data in a single call
+	                    StringBuilder line = new StringBuilder()
+	                    line.append(config_run).append(" ")
+	                        .append(config_event).append(" ")
 
-	                    //     .append(event_helicity).append(" ")
+	                        .append(event_helicity).append(" ")
 
 	                    //     .append(particle_pid).append(" ")
 	                    //     .append(formatDouble(particle_px)).append(" ")
@@ -383,21 +383,21 @@ class CalibrationScript {
 	                    //     .append(formatDouble(track_chi2_6)).append(" ")
 	                    //     .append(track_ndf_6).append(" ")
 
-	                    //     .append(config_run).append("\n")
+	                        .append(config_run).append("\n")
 
-	                    // // Append the line to the batchLines StringBuilder
-	                    // batchLines.append(line.toString())
-	                    // lineCount++ // Increment the line count
+	                    // Append the line to the batchLines StringBuilder
+	                    batchLines.append(line.toString())
+	                    lineCount++ // Increment the line count
 
-	                    // // If the line count reaches 1000, write to the file and reset
-	                    // if (lineCount >= max_lines) {
-	                    //     file.append(batchLines.toString())
-	                    //     batchLines.setLength(0)
-	                    //     lineCount = 0
-	                    // }
+	                    // If the line count reaches 1000, write to the file and reset
+	                    if (lineCount >= max_lines) {
+	                        file.append(batchLines.toString())
+	                        batchLines.setLength(0)
+	                        lineCount = 0
+	                    }
 
-	                    // // Reset variables after processing each particle
-	                    // resetVariables()
+	                    // Reset variables after processing each particle
+	                    resetVariables()
 	                }
 	            }
             	reader.close()
