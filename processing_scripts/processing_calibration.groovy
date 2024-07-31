@@ -240,50 +240,50 @@ class CalibrationScript {
 						particle_status = rec_Bank.getInt("status",particle_Index);
 
 						// Calorimeter
-						// for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
-						//     int pindex = cal_Bank.getInt("pindex", current_Row);
-						//     if (pindex == particle_Index) {
-						//         cal_sector = cal_Bank.getInt("sector", current_Row);
-						//         int layer = cal_Bank.getInt("layer", current_Row);
-						//         float energy = cal_Bank.getFloat("energy", current_Row);
-						//         float x = cal_Bank.getFloat("x", current_Row);
-						//         float y = cal_Bank.getFloat("y", current_Row);
-						//         float z = cal_Bank.getFloat("z", current_Row);
-						//         float lu = cal_Bank.getFloat("lu", current_Row);
-						//         float lv = cal_Bank.getFloat("lv", current_Row);
-						//         float lw = cal_Bank.getFloat("lw", current_Row);
+						for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
+						    int pindex = cal_Bank.getInt("pindex", current_Row);
+						    if (pindex == particle_Index) {
+						        cal_sector = cal_Bank.getInt("sector", current_Row);
+						        int layer = cal_Bank.getInt("layer", current_Row);
+						        float energy = cal_Bank.getFloat("energy", current_Row);
+						        float x = cal_Bank.getFloat("x", current_Row);
+						        float y = cal_Bank.getFloat("y", current_Row);
+						        float z = cal_Bank.getFloat("z", current_Row);
+						        float lu = cal_Bank.getFloat("lu", current_Row);
+						        float lv = cal_Bank.getFloat("lv", current_Row);
+						        float lw = cal_Bank.getFloat("lw", current_Row);
 
-						//         switch (layer) {
-						//             case 1:
-						//                 cal_energy_1 = energy;
-						//                 cal_x_1 = x;
-						//                 cal_y_1 = y;
-						//                 cal_z_1 = z;
-						//                 cal_lu_1 = lu;
-						//                 cal_lv_1 = lv;
-						//                 cal_lw_1 = lw;
-						//                 break;
-						//             case 4:
-						//                 cal_energy_4 = energy;
-						//                 cal_x_4 = x;
-						//                 cal_y_4 = y;
-						//                 cal_z_4 = z;
-						//                 cal_lu_4 = lu;
-						//                 cal_lv_4 = lv;
-						//                 cal_lw_4 = lw;
-						//                 break;
-						//             case 7:
-						//                 cal_energy_7 = energy;
-						//                 cal_x_7 = x;
-						//                 cal_y_7 = y;
-						//                 cal_z_7 = z;
-						//                 cal_lu_7 = lu;
-						//                 cal_lv_7 = lv;
-						//                 cal_lw_7 = lw;
-						//                 break;
-						//         }
-						//     }
-						// }
+						        switch (layer) {
+						            case 1:
+						                cal_energy_1 = energy;
+						                cal_x_1 = x;
+						                cal_y_1 = y;
+						                cal_z_1 = z;
+						                cal_lu_1 = lu;
+						                cal_lv_1 = lv;
+						                cal_lw_1 = lw;
+						                break;
+						            case 4:
+						                cal_energy_4 = energy;
+						                cal_x_4 = x;
+						                cal_y_4 = y;
+						                cal_z_4 = z;
+						                cal_lu_4 = lu;
+						                cal_lv_4 = lv;
+						                cal_lw_4 = lw;
+						                break;
+						            case 7:
+						                cal_energy_7 = energy;
+						                cal_x_7 = x;
+						                cal_y_7 = y;
+						                cal_z_7 = z;
+						                cal_lu_7 = lu;
+						                cal_lv_7 = lv;
+						                cal_lw_7 = lw;
+						                break;
+						        }
+						    }
+						}
 
 
 	                    // // Cherenkov Counter
