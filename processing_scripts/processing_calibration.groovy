@@ -50,8 +50,7 @@ class CalibrationScript {
     double cal_lw_1 = -999; double cal_lw_4 = -999; double cal_lw_7 = -999;
 
     int cc_sector = -999
-    int cc_detector = -999
-    double cc_nphe = -999
+    double cc_nphe_15 = -999; double cc_nphe_16 = -999; 
 
     int track_detector = -999
     int track_sector = -999
@@ -296,8 +295,16 @@ class CalibrationScript {
 	                        int pindex = cc_Bank.getInt("pindex", current_Row);
 	                        if (pindex == particle_Index) {
 	                            cc_sector = cc_Bank.getInt("sector", current_Row);
-	                            cc_detector = cc_Bank.getInt("detector", current_Row);
-	                            cc_nphe = cc_Bank.getFloat("nphe", current_Row);
+	                            double detector = cc_Bank.getInt("detector", current_Row);
+	                            double nphe = cc_Bank.getFloat("nphe", current_Row);
+	                            switch(detector) {
+	                            	case 15:
+	                            		cc_nphe_15 = nphe;
+	                            		break;
+	                            	case 16:
+	                            		cc_nphe_16 = nphe;
+		                            	break
+	                            }
 	                        }
 	                    }
 
@@ -318,7 +325,9 @@ class CalibrationScript {
 	                    StringBuilder line = new StringBuilder()
 	                    line.append(config_run).append(" ")
 	                        .append(config_event).append(" ")
+
 	                        .append(event_helicity).append(" ")
+
 	                        .append(particle_pid).append(" ")
 	                        .append(formatDouble(particle_px)).append(" ")
 	                        .append(formatDouble(particle_py)).append(" ")
@@ -332,6 +341,7 @@ class CalibrationScript {
 	                        .append(formatDouble(particle_beta)).append(" ")
 	                        .append(formatDouble(particle_chi2pid)).append(" ")
 	                        .append(particle_status).append(" ")
+
 	                        .append(cal_sector).append(" ")
 	                        .append(formatDouble(cal_energy_1)).append(" ")
 	                        .append(formatDouble(cal_x_1)).append(" ")
@@ -340,13 +350,16 @@ class CalibrationScript {
 	                        .append(formatDouble(cal_lu_1)).append(" ")
 	                        .append(formatDouble(cal_lv_1)).append(" ")
 	                        .append(formatDouble(cal_lw_1)).append(" ")
+
 	                        .append(cc_sector).append(" ")
-	                        .append(cc_detector).append(" ")
-	                        .append(formatDouble(cc_nphe)).append(" ")
+	                        .append(formatDouble(cc_nphe_15)).append(" ")
+	                        .append(formatDouble(cc_nphe_16)).append(" ")
+
 	                        .append(track_detector).append(" ")
 	                        .append(track_sector).append(" ")
 	                        .append(formatDouble(track_chi2)).append(" ")
 	                        .append(track_ndf).append(" ")
+
 	                        .append(config_run).append("\n")
 
 	                    // Append the line to the batchLines StringBuilder

@@ -399,6 +399,8 @@ public class Dihadrons {
         
         Delta_phi = phi2 - phi1;
         if (Delta_phi < 0) { Delta_phi+=2*Math.PI; }
+        
+        System.out.println(phi1+" "+phi2);
          
     }
     
