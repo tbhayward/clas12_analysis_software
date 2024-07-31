@@ -406,13 +406,13 @@ class CalibrationScript {
 	                    	HipoDataBank ft_Bank = (HipoDataBank) event.getBank("REC::ForwardTagger");
 	                    	for (int current_Row = 0; current_Row < traj_Bank.rows(); current_Row++) {
 		                        // Get the pindex and layer values for the current row
-		                        int pindex = traj_Bank.getInt("pindex", current_Row);
+		                        int pindex = ft_Bank.getInt("pindex", current_Row);
 		                        if (pindex == particle_Index) {
-		                        	ft_energy = track_Bank.getFloat("energy", current_Row);
-		                        	ft_x = track_Bank.getFloat("x", current_Row);
-		                        	ft_y = track_Bank.getFloat("y", current_Row);
-		                        	ft_z = track_Bank.getFloat("z", current_Row);
-		                        	ft_radius = track_Bank.getFloat("radius", current_Row);
+		                        	ft_energy = ft_Bank.getFloat("energy", current_Row);
+		                        	ft_x = ft_Bank.getFloat("x", current_Row);
+		                        	ft_y = ft_Bank.getFloat("y", current_Row);
+		                        	ft_z = ft_Bank.getFloat("z", current_Row);
+		                        	ft_radius = ft_Bank.getFloat("radius", current_Row);
 		                        }
 		                    }
 	                    }
