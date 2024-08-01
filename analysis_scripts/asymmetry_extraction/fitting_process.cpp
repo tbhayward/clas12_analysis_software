@@ -784,7 +784,6 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
   TTreeReaderValue<double> beam_pol(dataReader, "beam_pol");
   TTreeReaderValue<double> target_pol(dataReader, "target_pol");
   TTreeReaderValue<double> phi(dataReader, "phi");
-  // TTreeReaderValue<double> phi(dataReader, "phi2");
   TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
 
   // Counter to limit the number of processed entries
@@ -867,6 +866,7 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
 void performChi2Fits_single_hadron(const char* output_file, const char* kinematic_file,
   const char* kinematicPlot_file, const std::string& prefix, int asymmetry_index) {
 
+  std::cout << "1!!!" << std::endl;
   // Initialize string streams to store the results for each bin
   std::ostringstream chi2FitsAStream, chi2FitsBStream, chi2FitsCStream;
   chi2FitsAStream << std::fixed << std::setprecision(9);
@@ -882,7 +882,7 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
   meanVariablesStream << "& $<x_B>$ & $<y>$ & $<z>$ & $<\\zeta>$ & $<P_T>$ ";
   meanVariablesStream << "& $<x_F>$ & $<t>$ & ";
   meanVariablesStream << "$<t_{\\text{min}}>$\\\\ \\hline" << endl; 
-
+  std::cout << "2!!!" << std::endl;
   // Initalize string stream to store the kinematics in each bin for use in plotting 
   std::ostringstream meanVariablesPlotStream;
   meanVariablesPlotStream << prefix << "Kinematics = {";
@@ -911,10 +911,10 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
       cout << "Invalid asymmetry_index! Using default function form of BSA." << endl;
       fitFunction = new TF1("fitFunction", BSA_single_hadron, 0, 2*TMath::Pi(), 2);
   }
-
+  std::cout << "3!!!" << std::endl;
   // Determine the number of bins
   size_t numBins = allBins[currentFits].size() - 1;
-
+  std::cout << "4!!!" << std::endl;
   // Loop over each bin
   for (size_t i = 0; i < numBins; ++i) {
     cout << "Beginning chi2 fit for " << binNames[currentFits]
