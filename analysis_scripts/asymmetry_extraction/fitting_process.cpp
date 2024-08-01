@@ -924,7 +924,6 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
 
     // Create a histogram for the current bin
     TH1D* hist = createHistogramForBin_single_hadron(histName, i, prefix, asymmetry_index);
-    std::cout << "excited createHistogramForBin_single_hadron!!!" << std::endl;
     // Fit the histogram using the fitFunction and get the fit result
     hist->Fit(fitFunction, "QS");
     plotHistogramAndFit_single_hadron(hist, fitFunction, i, asymmetry_index, prefix);
