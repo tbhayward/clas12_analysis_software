@@ -106,10 +106,6 @@ public class analysis_fitter extends GenericKinematicFitter {
         float pz = rec_Bank.getFloat("pz", particle_Index);
         double p = Math.sqrt(Math.pow(px,2)+Math.pow(py,2)+Math.pow(pz,2));
         
-//        double theta = (180/Math.PI)*Math.acos(pz/p);
-        
-//        System.out.println(rec_Bank.getInt("status", particle_Index)+" "+theta+" "+generic_tests.forward_detector_cut(particle_Index, rec_Bank));
-        
         return true
 //            && p > 0.4
             && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank) 

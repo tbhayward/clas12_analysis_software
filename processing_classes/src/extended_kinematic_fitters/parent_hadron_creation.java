@@ -5,7 +5,6 @@
 
 package extended_kinematic_fitters;
 
-import java.util.HashMap;
 import org.jlab.clas.pdg.PDGDatabase;
 import org.jlab.clas.pdg.PDGParticle;
 import org.jlab.clas.physics.Particle;
