@@ -12,7 +12,7 @@ using namespace std;
 
 // Function to find the root directory of the "clas12_analysis_software" repository
 std::string findPackageRoot() {
-    char cwd[PATH_MAX];
+    char cwd[4096];  // Use a fixed size buffer if PATH_MAX is not defined
     if (getcwd(cwd, sizeof(cwd)) != NULL) {
         std::string currentDir(cwd);
         std::string searchDir = "clas12_analysis_software";
