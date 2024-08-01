@@ -242,7 +242,6 @@ class CalibrationScript {
                     config_run >= 11571 || qa.OkForAsymmetry(config_run, config_event))
 
                 if (process_event) {
-                	++num_events
 
                     event_helicity = event_Bank.getInt('helicity',0);
 
@@ -513,12 +512,12 @@ class CalibrationScript {
 	                    // Append the line to the batchLines StringBuilder
 	                    batchLines.append(line.toString())
 	                    lineCount++ // Increment the line count
-	                    println(lineCount);
 
 	                    // If the line count reaches 1000, write to the file and reset
 	                    if (lineCount >= max_lines) {
 	                        file.append(batchLines.toString())
 	                        batchLines.setLength(0)
+	                        num_events+=lineCount;
 	                        lineCount = 0
 	                    }
 
