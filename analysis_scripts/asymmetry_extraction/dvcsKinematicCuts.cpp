@@ -29,12 +29,18 @@ bool dvcsKinematicCuts::applyCuts(int currentFits, bool isMC) {
         // goodEvent = true;
     } else if (property == "dvcsQ2") {
         // goodEvent = true;
+    } else if (property == "dvcsQ21x1") {
+      goodEvent = goodEvent && *Q2 > 1.0 && *Q2 < 1.4 && *x > 0.00 && *x < 0.13;
+    } else if (property == "dvcsQ21x2") {
+      goodEvent = goodEvent && *Q2 > 1.0 && *Q2 < 1.4 && *x > 0.13 && *x < 0.21;
+    } else if (property == "dvcsQ21x3") {
+      goodEvent = goodEvent && *Q2 > 1.0 && *Q2 < 1.4 && *x > 0.21 && *x < 1.00;
     } else if (property == "dvcsQ22x1") {
-      goodEvent = goodEvent && *Q2 > 1.0 && *Q2 < 1.8 && *x > 0.00 && *x < 0.13;
+      goodEvent = goodEvent && *Q2 > 1.4 && *Q2 < 1.8 && *x > 0.00 && *x < 0.13;
     } else if (property == "dvcsQ22x2") {
-      goodEvent = goodEvent && *Q2 > 1.0 && *Q2 < 1.8 && *x > 0.13 && *x < 0.21;
+      goodEvent = goodEvent && *Q2 > 1.4 && *Q2 < 1.8 && *x > 0.13 && *x < 0.21;
     } else if (property == "dvcsQ22x3") {
-      goodEvent = goodEvent && *Q2 > 1.0 && *Q2 < 1.8 && *x > 0.21 && *x < 1.00;
+      goodEvent = goodEvent && *Q2 > 1.4 && *Q2 < 1.8 && *x > 0.21 && *x < 1.00;
     } else if (property == "dvcsQ23x1") {
       goodEvent = goodEvent && *Q2 > 1.8 && *Q2 < 2.4 && *x > 0.00 && *x < 0.16;
     } else if (property == "dvcsQ23x2") {
@@ -48,9 +54,13 @@ bool dvcsKinematicCuts::applyCuts(int currentFits, bool isMC) {
     } else if (property == "dvcsQ24x3") {
       goodEvent = goodEvent && *Q2 > 2.4 && *Q2 < 3.5 && *x > 0.33 && *x < 1.00;
     } else if (property == "dvcsQ25x1") {
-      goodEvent = goodEvent && *Q2 > 3.5 && *Q2 < 10.00 && *x > 0.00 && *x < 0.33;
+      goodEvent = goodEvent && *Q2 > 3.5 && *Q2 < 5.0 && *x > 0.00 && *x < 0.33;
     } else if (property == "dvcsQ25x2") {
-      goodEvent = goodEvent && *Q2 > 3.5 && *Q2 < 10.00 && *x > 0.33 && *x < 1.00;
+      goodEvent = goodEvent && *Q2 > 3.5 && *Q2 < 5.0 && *x > 0.33 && *x < 1.00;
+    } else if (property == "dvcsQ26x1") {
+      goodEvent = goodEvent && *Q2 > 5.0 && *Q2 < 11.00 && *x > 0.00 && *x < 0.55;
+    } else if (property == "dvcsQ26x1") {
+      goodEvent = goodEvent && *Q2 > 5.0 && *Q2 < 11.00 && *x > 0.55 && *x < 1.00;
     } else {
       std::cout << "Property, " << property << ", not detected!" << std::endl;
     }
