@@ -223,7 +223,7 @@ class CalibrationScript {
             reader.open(hipo_list[current_file]) // open next hipo file
             HipoDataEvent event = reader.getNextEvent()
 
-            while (reader.hasEvent() && banks_test(event)) {
+            while (reader.hasEvent()) {
                 ++num_events
                 if (num_events % 500000 == 0) { // not necessary, just updates output
                     print("processed: " + num_events + " events. ")
@@ -249,7 +249,7 @@ class CalibrationScript {
                 boolean process_event = (config_run == 11 || config_run < 5020 ||
                     config_run >= 11571 || qa.OkForAsymmetry(config_run, config_event))
 
-                if (process_event) {
+                if (process_event && banks_test(event)) {
 
                     event_helicity = event_Bank.getInt('helicity',0);
 
