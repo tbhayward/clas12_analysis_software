@@ -160,11 +160,11 @@ class CalibrationScript {
 	}
 
 	static boolean banks_test(DataEvent event) {
-		return event.hasBank("RUN::config");
-        // return event.hasBank("RUN::config") && event.hasBank("REC::Event") && 
-        // 	event.hasBank("REC::Particle") && event.hasBank("REC::Calorimeter") && 
-        // 	event.hasBank("REC::Track") && event.hasBank("REC::Traj") && 
-        // 	event.hasBank("REC::Cherenkov");
+		// return event.hasBank("RUN::config");
+        return event.hasBank("RUN::config") && event.hasBank("REC::Event") && 
+        	event.hasBank("REC::Particle") && event.hasBank("REC::Calorimeter") && 
+        	event.hasBank("REC::Track") && event.hasBank("REC::Traj") && 
+        	event.hasBank("REC::Cherenkov");
     }
 
     // Method for the main logic
