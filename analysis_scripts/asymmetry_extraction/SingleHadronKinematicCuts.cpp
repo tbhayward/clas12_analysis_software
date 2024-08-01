@@ -224,7 +224,6 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
           goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *z>0.20 && *xF>0;
         }
 
-        std::cout << property << " " << goodEvent << " finished else ifs" << std::endl;
         if (isMC || (*runnum < 16042 || *runnum > 17811)) {
           return goodEvent;
         } else {
