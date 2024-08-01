@@ -9,9 +9,9 @@ variable_names_here
 #
 #
 # EXAMPLES
-epipPT,pT,0,0.5,1.00
+#epipPT,pT,0,0.5,1.00
 #Mh,Mh,0.3,0.6,0.9,1.2
-#PTPT,pTpT,0,0.3,0.7
+PTPT,pTpT,0,0.3,0.7
 #
 #
 #
