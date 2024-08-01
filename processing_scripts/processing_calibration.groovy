@@ -517,7 +517,7 @@ class CalibrationScript {
 	                    if (lineCount >= max_lines) {
 	                        file.append(batchLines.toString())
 	                        batchLines.setLength(0)
-	                        num_events+=lineCount;
+	                        num_events=num_events+lineCount;
 	                        lineCount = 0
 	                    }
 
