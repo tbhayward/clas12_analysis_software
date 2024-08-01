@@ -59,7 +59,7 @@ bool dvcsKinematicCuts::applyCuts(int currentFits, bool isMC) {
       goodEvent = goodEvent && *Q2 > 3.5 && *Q2 < 5.0 && *x > 0.33 && *x < 1.00;
     } else if (property == "dvcsQ26x1") {
       goodEvent = goodEvent && *Q2 > 5.0 && *Q2 < 11.00 && *x > 0.00 && *x < 0.55;
-    } else if (property == "dvcsQ26x1") {
+    } else if (property == "dvcsQ26x2") {
       goodEvent = goodEvent && *Q2 > 5.0 && *Q2 < 11.00 && *x > 0.55 && *x < 1.00;
     } else {
       std::cout << "Property, " << property << ", not detected!" << std::endl;

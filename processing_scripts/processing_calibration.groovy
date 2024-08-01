@@ -184,9 +184,9 @@ class CalibrationScript {
         (args[0] as File).eachFileRecurse(FileType.FILES) { if (it.name.endsWith('.hipo')) hipo_list << it }
 
         // Set the output file name based on the provided 3rd argument or use the default name
-        String output_file = args.length < 2 ? "inclusive_dummy_out.txt" : args[1]
+        String output_file = args.length < 2 ? "calibration_dummy_out.txt" : args[1]
         if (args.length < 2)
-            println("WARNING: Specify an output file name. Set to \"hadron_dummy_out.txt\".")
+            println("WARNING: Specify an output file name. Set to \"calibration_dummy_out.txt\".")
         File file = new File(output_file)
         file.delete()
         BufferedWriter writer = new BufferedWriter(new FileWriter(file))
