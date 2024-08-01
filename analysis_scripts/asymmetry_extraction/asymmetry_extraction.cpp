@@ -237,7 +237,7 @@ int main(int argc, char *argv[]) {
   ofs2.close();
 
   // load bins from external csv file
-  load_bins_from_csv("imports/bins_single_hadron.csv");
+  load_bins_from_csv("imports/bins.csv");
   cout<< endl <<"-- Loaded information from bins.csv. " << endl;
 
   cout<< "Found " << allBins.size() << " sets of bins: " << endl;
@@ -256,16 +256,16 @@ int main(int argc, char *argv[]) {
   }
   cout << endl;
 
-  cout << "Found " << variable_names.size() << " variables: " << endl;
-  for (size_t i = 0; i < variable_names.size(); ++i) {
-    cout << i << ":" << variable_names[i] << std::flush;
-    if (i == variable_names.size() - 1) {
-      // cout << ". ";
-    } else {
-      cout << ", ";
-    }
-  }
-  cout << endl;
+  // cout << "Found " << variable_names.size() << " variables: " << endl;
+  // for (size_t i = 0; i < variable_names.size(); ++i) {
+  //   cout << i << ":" << variable_names[i] << std::flush;
+  //   if (i == variable_names.size() - 1) {
+  //     // cout << ". ";
+  //   } else {
+  //     cout << ", ";
+  //   }
+  // }
+  // cout << endl;
 
   // load run info from external csv file
   load_run_info_from_csv("imports/clas12_run_info.csv");
@@ -280,10 +280,10 @@ int main(int argc, char *argv[]) {
   cout << "Total neg-neg charge: " << cmm << " (nC). ";
   cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << " (nC)."<< endl << endl;
 
-  // createIntegratedKinematicPlots();
-  // createIntegratedKinematicPlotsForBinsAndFits();
-  // createCorrelationPlotsforrunnum();
-  // createCorrelationPlots();
+  createIntegratedKinematicPlots();
+  createIntegratedKinematicPlotsForBinsAndFits();
+  createCorrelationPlotsforrunnum();
+  createCorrelationPlots();
   // createMisIDRatePlots();
   currentFits=0;
   dataReader.Restart(); mcReader.Restart();
@@ -312,13 +312,14 @@ int main(int argc, char *argv[]) {
       }
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    switch (channel) {
-      case 0: cout << "No MLM fit for inclusive." << endl; break;
-      case 1: performMLMFits_single_hadron(output_file.c_str(), kinematic_file.c_str(), binNames[i]); break;
-      case 2: performMLMFits_b2b_dihadron(output_file.c_str(), kinematic_file.c_str(), binNames[i]); break;
-      case 3: cout << "No dihadron MLM fit (yet)." << endl; break;
-      case 4: cout << "No unbinned MLM fit performed for DVCS; the physics is the phi dependence" << endl; break;
-    }
+    cout << "MLM fits disabled by default in main branch. See development/uncomment next lines for MLM." << endl;
+    // switch (channel) {
+    //   case 0: cout << "No MLM fit for inclusive." << endl; break;
+    //   case 1: performMLMFits_single_hadron(output_file.c_str(), kinematic_file.c_str(), binNames[i]); break;
+    //   case 2: performMLMFits_b2b_dihadron(output_file.c_str(), kinematic_file.c_str(), binNames[i]); break;
+    //   case 3: cout << "No dihadron MLM fit (yet)." << endl; break;
+    //   case 4: cout << "No unbinned MLM fit performed for DVCS; the physics is the phi dependence" << endl; break;
+    // }
     cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
     currentFits++;
