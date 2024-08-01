@@ -1,4 +1,7 @@
 #!/bin/csh
+
+source source_file.txt
+
 # Set the first argument to be processing single hadrons if not provided
 if ( $#argv < 1 ) then
     set arg1 = "processing_scripts/processing_single_hadrons.groovy"
