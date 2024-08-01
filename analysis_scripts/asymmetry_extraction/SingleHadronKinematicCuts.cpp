@@ -20,7 +20,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         bool goodEvent = false;
         bool checked = false;
         string property = binNames[currentFits];
-
+        std::cout << "Entered SingleHadronKinematicCuts" << std::endl;
         if (property == "xF" || "x" || "PT") {
             goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.4 && *y < 0.75;
         }
@@ -223,11 +223,6 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
           property == "Q2TFRpim") {
           goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *z>0.20 && *xF>0;
         }
-
-
-        // else if (checked == false) {
-        //   std::cout << "Property, " << property << ", not detected." << std::endl;
-        // }
 
         if (isMC || (*runnum < 16042 || *runnum > 17811)) {
           return goodEvent;
