@@ -790,9 +790,7 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
   while (dataReader.Next()) {
     
     // Apply kinematic cuts (this function will need to be adapted)
-    std::cout << "1!!!!!! " << currentFits << std::endl;
     bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
-    std::cout << "2!!!!!!" << std::endl;
     // bool passedKinematicCuts = true;
     // Check if the currentVariable is within the desired range
     if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
