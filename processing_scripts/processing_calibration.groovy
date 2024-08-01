@@ -417,7 +417,6 @@ class CalibrationScript {
 		                    }
 	                    }
 
-	                    ++num_events
 	                    // Use a StringBuilder to append all data in a single call
 	                    StringBuilder line = new StringBuilder()
 	                    	// config
@@ -518,6 +517,7 @@ class CalibrationScript {
 	                    if (lineCount >= max_lines) {
 	                        file.append(batchLines.toString())
 	                        batchLines.setLength(0)
+	                        num_events+=lineCount;
 	                        lineCount = 0
 	                    }
 
