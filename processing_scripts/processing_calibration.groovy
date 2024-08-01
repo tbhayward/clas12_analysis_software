@@ -136,11 +136,13 @@ class CalibrationScript {
 	    ft_energy = -9999; ft_x = -9999; ft_y = -9999; ft_z = -9999;  ft_radius = -9999;
     }
 
-    // Helper method for formatting doubles
     String formatDouble(double value) {
-    	if (value == -9999.0) { return -9999; }
-        else { return String.format("%.3f", value) }
-    }
+	    if (Double.isNaN(value) || value == -9999.0) {
+	        return "-9999";
+	    } else {
+	        return String.format("%.3f", value);
+	    }
+	}
 
     // Static method to calculate phi
 	static double phi_calculation(double x, double y) {
