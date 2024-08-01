@@ -8,6 +8,14 @@
 
 using namespace std;
 
+// Function to check if a directory exists
+bool directoryExists(const std::string& dirName) {
+    struct stat info;
+    if (stat(dirName.c_str(), &info) != 0)
+        return false; // Cannot access the directory
+    return (info.st_mode & S_IFDIR) != 0;
+}
+
 // Function to calculate the Cartesian components from spherical coordinates
 void sphericalToCartesian(double p, double phi, double theta, double& px, double& py, double& pz) {
     px = p * sin(theta) * cos(phi);
@@ -134,6 +142,13 @@ int main(int argc, char *argv[]) {
     if (argc != 5) {
         cout << "Usage: " << argv[0];
         cout << " <input_text_file> <output_root_file> <hadron_count> <is_mc>" << endl;
+        cout << " <hadron_count> = 0 for inclusive" << endl;
+        cout << " <hadron_count> = 1 for single hadron" << endl;
+        cout << " <hadron_count> = 2 for dihadron" << endl;
+        cout << " <hadron_count> = 3 for trihadron" << endl;
+        cout << " <hadron_count> = 4 for dvcs (epgamma)" << endl;
+        cout << " <hadron_count> = 5 for calibration" << endl;
+        cout << "Should rename <hadron_count> at some point." << endl;
         return 1;
     }
     
@@ -811,10 +826,26 @@ int main(int argc, char *argv[]) {
         tree->Branch("ft_radius", &ft_radius, "ft_radius/D");
     }
 
-    // load run infrom from external csv file
-    string package_location = "/u/home/thayward/clas12_analysis_software/";
-    string csv_location="analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv";
-    load_run_info_from_csv(package_location+csv_location);
+    // // load run infrom from external csv file
+    // string package_location = "/u/home/thayward/clas12_analysis_software/";
+    // string csv_location="analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv";
+    // load_run_info_from_csv(package_location+csv_location);
+
+    // Define the relative CSV path
+    std::string csv_location = "analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv";
+
+    // Check if the script is in a /clas12_analysis_software directory
+    std::string package_location = "./clas12_analysis_software/";
+    if (directoryExists(package_location)) {
+        std::cout << "Running from /clas12_analysis_software directory.\n";
+    } else {
+        std::cerr << "Warning: Not running from /clas12_analysis_software directory.\n"
+                  << "Using relative path for CSV file.\n";
+        package_location = "./";
+    }
+
+    // Load run info from the CSV file
+    load_run_info_from_csv(package_location + csv_location);    
 
     // Loop to read each line from the text file and fill the TTree based on hadron_count
     if (hadron_count == 0 && is_mc == 0) {
