@@ -52,7 +52,7 @@ class CalibrationScript {
     int cc_sector = -9999
     double cc_nphe_15 = -9999; double cc_nphe_16 = -9999; 
 
-    int track_sector_5 = -9999; // no track_sector_6 because CVT is one sector
+    int track_sector_5 = -9999; int track_sector_6 = -9999;
     double track_chi2_5 = -9999; double track_chi2_6 = -9999; 
     int track_ndf_5 = -9999; int track_ndf_6 = -9999; 
 
@@ -110,7 +110,7 @@ class CalibrationScript {
 	    cc_sector = -9999;
 	    cc_nphe_15 = -9999; cc_nphe_16 = -9999; 
 
-	    track_sector_5 = -9999; // no track_sector_6 because CVT is one sector
+	    track_sector_5 = -9999; track_sector_6 = -9999;
 	    track_chi2_5 = -9999; track_chi2_6 = -9999; 
 	    track_ndf_5 = -9999; track_ndf_6 = -9999; 
 
