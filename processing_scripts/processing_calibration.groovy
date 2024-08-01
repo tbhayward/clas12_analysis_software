@@ -249,7 +249,7 @@ class CalibrationScript {
                     	particle_Index++) {
 
                         particle_pid = rec_Bank.getInt("pid", particle_Index);
-                        if (particle_pid == 0 || particle_pid == 45) { continue; }
+                        // if (particle_pid == 0 || particle_pid == 45) { continue; }
                         particle_px = rec_Bank.getFloat("px", particle_Index);
                         particle_py = rec_Bank.getFloat("py", particle_Index);
                         particle_pz = rec_Bank.getFloat("pz", particle_Index);
@@ -536,7 +536,7 @@ class CalibrationScript {
 	        // println("\n1:runnum, 2:evnum, 3:helicity, 4:e_p, 5:e_theta, 6:e_phi, 7:vz_e,"+
 	        // "8:Q2, 9:W, 10:Mx, 11: Mx2, 12:x, 13:y, 14: DepA, 15: DepB, 16: DepC, 17: DepV, 18: DepW\n")
 
-	        println("output text file is: $file")
+	        println("\noutput text file is: $file")
 	    }
 
 	    writer.close()
