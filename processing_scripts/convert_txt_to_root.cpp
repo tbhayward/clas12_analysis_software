@@ -5,6 +5,8 @@
 #include <fstream>
 #include <cmath>
 #include <sstream>
+#include <sys/types.h> // Include sys/types.h for stat
+#include <sys/stat.h>  // Include sys/stat.h for stat structure
 
 using namespace std;
 
