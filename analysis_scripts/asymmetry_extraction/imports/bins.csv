@@ -9,8 +9,8 @@ variable_names_here
 #
 #
 # EXAMPLES
-PT,pT,0,0.5,1.00
-#Mh,Mh,0.3,0.6,0.9,1.2
+#PT,pT,0,0.5,1.00
+Mh,Mh,0.3,0.6,0.9,1.2
 #
 #
 #
