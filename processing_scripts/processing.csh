@@ -33,6 +33,8 @@ else if ($arg1 == "processing_scripts/processing_trihadrons.groovy") then
     set convert_arg3 = 3
 else if ($arg1 == "processing_scripts/processing_dvcs.groovy") then
     set convert_arg3 = 4 # dvcs
+else if ($arg1 == "processing_scripts/processing_calibration.groovy") then
+    set convert_arg3 = 4 # calibration
 endif
 
 # determine if Monte Carlo
@@ -119,6 +121,12 @@ else if ($arg1 == "processing_scripts/processing_trihadrons.groovy") then
     set root_file = "$6.root"
     ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
 else if ($arg1 == "processing_scripts/processing_dvcs.groovy") then
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6"
+    # Run the convert_txt_to_root program
+    set txt_file = "$3.txt"
+    set root_file = "$3.root"
+    ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
+else if ($arg1 == "processing_scripts/processing_calibration.groovy") then
     coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6"
     # Run the convert_txt_to_root program
     set txt_file = "$3.txt"

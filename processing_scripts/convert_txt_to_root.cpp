@@ -187,6 +187,28 @@ int main(int argc, char *argv[]) {
     double mc_phi1, mc_phi2, mc_Delta_phi, mc_phih, mc_phiR, mc_theta;
     int matching_p2_pid, mc_p2_parent;
 
+    // Additional variables for calibration scripts
+    int config_run, config_event, event_helicity;
+    int particle_pid, particle_status;
+    double particle_px, particle_py, particle_pz, p, theta, phi;
+    double particle_vx, particle_vy, particle_vz, particle_beta, particle_chi2pid;
+    int cal_sector;
+    double cal_energy_1, cal_x_1, cal_y_1, cal_z_1, cal_lu_1, cal_lv_1, cal_lw_1;
+    double cal_x_4, cal_y_4, cal_z_4, cal_lu_4, cal_lv_4, cal_lw_4;
+    double cal_x_7, cal_y_7, cal_z_7, cal_lu_7, cal_lv_7, cal_lw_7;
+    double cc_nphe_15, cc_nphe_16;
+    int track_sector_5, track_ndf_5, track_sector_6, track_ndf_6;
+    double track_chi2_5, track_chi2_6;
+    double traj_x_6, traj_y_6, traj_z_6, traj_edge_6;
+    double traj_x_18, traj_y_18, traj_z_18, traj_edge_18;
+    double traj_x_36, traj_y_36, traj_z_36, traj_edge_36;
+    double traj_x_1, traj_y_1, traj_z_1, traj_edge_1;
+    double traj_x_3, traj_y_3, traj_z_3, traj_edge_3;
+    double traj_x_5, traj_y_5, traj_z_5, traj_edge_5;
+    double traj_x_7, traj_y_7, traj_z_7, traj_edge_7;
+    double traj_x_12, traj_y_12, traj_z_12, traj_edge_12;
+    double ft_energy, ft_x, ft_y, ft_z, ft_radius;
+
     // Case for zero hadrons (inclusive)
     if (hadron_count == 0 && is_mc == 0) {
         // Link TTree branches to variables for zero hadrons
@@ -630,7 +652,7 @@ int main(int argc, char *argv[]) {
         tree->Branch("DepV", &DepV, "DepV/D");
         tree->Branch("DepW", &DepW, "DepW/D");
     }
-    // Case for two hadrons (dihadrons)
+    // Case for dvcs (not actually two hadrons)
     else if (hadron_count == 4 && is_mc == 0) { // dvcs, not actually 4 hadrons
         // Link TTree branches to variables for dvcs
         tree->Branch("runnum", &runnum, "runnum/I");
@@ -697,6 +719,97 @@ int main(int argc, char *argv[]) {
         tree->Branch("pTmiss", &pTmiss, "pTmiss/D");
         tree->Branch("Mxgammasquared", &Mxgammasquared, "Mxgammasquared/D");
     }
+    // Case for calibration script (not actually five hadrons)
+    if (hadron_count == 5 && is_mc == 0) {
+        // Link TTree branches to variables for four hadrons
+        tree->Branch("config_run", &config_run, "config_run/I");
+        tree->Branch("config_event", &config_event, "config_event/I");
+        tree->Branch("event_helicity", &event_helicity, "event_helicity/I");
+        tree->Branch("particle_pid", &particle_pid, "particle_pid/I");
+        tree->Branch("particle_status", &particle_status, "particle_status/I");
+        tree->Branch("particle_px", &particle_px, "particle_px/D");
+        tree->Branch("particle_py", &particle_py, "particle_py/D");
+        tree->Branch("particle_pz", &particle_pz, "particle_pz/D");
+        tree->Branch("p", &p, "p/D");
+        tree->Branch("theta", &theta, "theta/D");
+        tree->Branch("phi", &phi, "phi/D");
+        tree->Branch("particle_vx", &particle_vx, "particle_vx/D");
+        tree->Branch("particle_vy", &particle_vy, "particle_vy/D");
+        tree->Branch("particle_vz", &particle_vz, "particle_vz/D");
+        tree->Branch("particle_beta", &particle_beta, "particle_beta/D");
+        tree->Branch("particle_chi2pid", &particle_chi2pid, "particle_chi2pid/D");
+
+        tree->Branch("cal_sector", &cal_sector, "cal_sector/I");
+        tree->Branch("cal_energy_1", &cal_energy_1, "cal_energy_1/D");
+        tree->Branch("cal_x_1", &cal_x_1, "cal_x_1/D");
+        tree->Branch("cal_y_1", &cal_y_1, "cal_y_1/D");
+        tree->Branch("cal_z_1", &cal_z_1, "cal_z_1/D");
+        tree->Branch("cal_lu_1", &cal_lu_1, "cal_lu_1/D");
+        tree->Branch("cal_lv_1", &cal_lv_1, "cal_lv_1/D");
+        tree->Branch("cal_lw_1", &cal_lw_1, "cal_lw_1/D");
+        tree->Branch("cal_x_4", &cal_x_4, "cal_x_4/D");
+        tree->Branch("cal_y_4", &cal_y_4, "cal_y_4/D");
+        tree->Branch("cal_z_4", &cal_z_4, "cal_z_4/D");
+        tree->Branch("cal_lu_4", &cal_lu_4, "cal_lu_4/D");
+        tree->Branch("cal_lv_4", &cal_lv_4, "cal_lv_4/D");
+        tree->Branch("cal_lw_4", &cal_lw_4, "cal_lw_4/D");
+        tree->Branch("cal_x_7", &cal_x_7, "cal_x_7/D");
+        tree->Branch("cal_y_7", &cal_y_7, "cal_y_7/D");
+        tree->Branch("cal_z_7", &cal_z_7, "cal_z_7/D");
+        tree->Branch("cal_lu_7", &cal_lu_7, "cal_lu_7/D");
+        tree->Branch("cal_lv_7", &cal_lv_7, "cal_lv_7/D");
+        tree->Branch("cal_lw_7", &cal_lw_7, "cal_lw_7/D");
+
+        tree->Branch("cc_nphe_15", &cc_nphe_15, "cc_nphe_15/D");
+        tree->Branch("cc_nphe_16", &cc_nphe_16, "cc_nphe_16/D");
+
+        tree->Branch("track_sector_5", &track_sector_5, "track_sector_5/I");
+        tree->Branch("track_chi2_5", &track_chi2_5, "track_chi2_5/D");
+        tree->Branch("track_ndf_5", &track_ndf_5, "track_ndf_5/I");
+        tree->Branch("track_sector_6", &track_sector_6, "track_sector_6/I");
+        tree->Branch("track_chi2_6", &track_chi2_6, "track_chi2_6/D");
+        tree->Branch("track_ndf_6", &track_ndf_6, "track_ndf_6/I");
+
+        tree->Branch("traj_x_6", &traj_x_6, "traj_x_6/D");
+        tree->Branch("traj_y_6", &traj_y_6, "traj_y_6/D");
+        tree->Branch("traj_z_6", &traj_z_6, "traj_z_6/D");
+        tree->Branch("traj_edge_6", &traj_edge_6, "traj_edge_6/D");
+        tree->Branch("traj_x_18", &traj_x_18, "traj_x_18/D");
+        tree->Branch("traj_y_18", &traj_y_18, "traj_y_18/D");
+        tree->Branch("traj_z_18", &traj_z_18, "traj_z_18/D");
+        tree->Branch("traj_edge_18", &traj_edge_18, "traj_edge_18/D");
+        tree->Branch("traj_x_36", &traj_x_36, "traj_x_36/D");
+        tree->Branch("traj_y_36", &traj_y_36, "traj_y_36/D");
+        tree->Branch("traj_z_36", &traj_z_36, "traj_z_36/D");
+        tree->Branch("traj_edge_36", &traj_edge_36, "traj_edge_36/D");
+
+        tree->Branch("traj_x_1", &traj_x_1, "traj_x_1/D");
+        tree->Branch("traj_y_1", &traj_y_1, "traj_y_1/D");
+        tree->Branch("traj_z_1", &traj_z_1, "traj_z_1/D");
+        tree->Branch("traj_edge_1", &traj_edge_1, "traj_edge_1/D");
+        tree->Branch("traj_x_3", &traj_x_3, "traj_x_3/D");
+        tree->Branch("traj_y_3", &traj_y_3, "traj_y_3/D");
+        tree->Branch("traj_z_3", &traj_z_3, "traj_z_3/D");
+        tree->Branch("traj_edge_3", &traj_edge_3, "traj_edge_3/D");
+        tree->Branch("traj_x_5", &traj_x_5, "traj_x_5/D");
+        tree->Branch("traj_y_5", &traj_y_5, "traj_y_5/D");
+        tree->Branch("traj_z_5", &traj_z_5, "traj_z_5/D");
+        tree->Branch("traj_edge_5", &traj_edge_5, "traj_edge_5/D");
+        tree->Branch("traj_x_7", &traj_x_7, "traj_x_7/D");
+        tree->Branch("traj_y_7", &traj_y_7, "traj_y_7/D");
+        tree->Branch("traj_z_7", &traj_z_7, "traj_z_7/D");
+        tree->Branch("traj_edge_7", &traj_edge_7, "traj_edge_7/D");
+        tree->Branch("traj_x_12", &traj_x_12, "traj_x_12/D");
+        tree->Branch("traj_y_12", &traj_y_12, "traj_y_12/D");
+        tree->Branch("traj_z_12", &traj_z_12, "traj_z_12/D");
+        tree->Branch("traj_edge_12", &traj_edge_12, "traj_edge_12/D");
+
+        tree->Branch("ft_energy", &ft_energy, "ft_energy/D");
+        tree->Branch("ft_x", &ft_x, "ft_x/D");
+        tree->Branch("ft_y", &ft_y, "ft_y/D");
+        tree->Branch("ft_z", &ft_z, "ft_z/D");
+        tree->Branch("ft_radius", &ft_radius, "ft_radius/D");
+    }
 
     // load run infrom from external csv file
     string package_location = "/u/home/thayward/clas12_analysis_software/";
@@ -756,11 +869,6 @@ int main(int argc, char *argv[]) {
             p_p >> p_theta >> p_phi >> vz_p >> Q2 >> W >> Mx >> Mx2 >> x >> y >> z >> xF >> 
             pT >> zeta >> eta >> phi >> DepA >> DepB >> DepC >> DepV >> DepW) {
 
-            // helicity = static_cast<int>(helicity_double); // Convert double to int
-            // std::cout << runnum << " " << evnum << " " << helicity << " " << e_p << " " << e_theta << " " << e_phi << " " << vz_e << " " << 
-            // p_p << " " << p_theta << " " << p_phi << " " << vz_p << " " << Q2 << " " << W << " " << Mx << " " << Mx2 << " " << x << " " << y << " " << z << " " << xF << " " << 
-            // pT << " " << zeta << " " << eta << " " << phi << " " << DepA << " " << DepB << " " << DepC << " " << DepV << " " << DepW << std::endl;
-            
             beam_pol = getPol(runnum);
             if (runnum < 16000) { target_pol = 0; }
             else { 
@@ -978,6 +1086,28 @@ int main(int argc, char *argv[]) {
             t1 = gett(p1_p, p1_theta);
             t2 = gett(p2_p, p2_theta); 
             tmin = gettmin(x); 
+
+            tree->Fill(); // Fill the tree with the read data
+        }
+    }
+
+    // calibration script
+    if (hadron_count == 5 && is_mc == 0) {
+        while (infile >> config_run >> config_event >> event_helicity >> particle_pid >>
+                particle_px >> particle_py >> particle_pz >> p >> theta >> phi >> 
+                particle_vx >> particle_vy >> particle_vz >> particle_beta >> 
+                particle_chi2pid >> particle_status >> cal_sector >> cal_energy_1 >> 
+                cal_x_1 >> cal_y_1 >> cal_z_1 >> cal_lu_1 >> cal_lv_1 >> cal_lw_1 >> 
+                cal_x_4 >> cal_y_4 >> cal_z_4 >> cal_lu_4 >> cal_lv_4 >> cal_lw_4 >> 
+                cal_x_7 >> cal_y_7 >> cal_z_7 >> cal_lu_7 >> cal_lv_7 >> cal_lw_7 >> 
+                cc_nphe_15 >> cc_nphe_16 >> track_sector_5 >> track_chi2_5 >> track_ndf_5 >> 
+                track_chi2_6 >> track_ndf_6 >> traj_x_6 >> traj_y_6 >> traj_z_6 >> traj_edge_6 >> 
+                traj_x_18 >> traj_y_18 >> traj_z_18 >> traj_edge_18 >> traj_x_36 >> traj_y_36 >> 
+                traj_z_36 >> traj_edge_36 >> traj_x_1 >> traj_y_1 >> traj_z_1 >> traj_edge_1 >> 
+                traj_x_3 >> traj_y_3 >> traj_z_3 >> traj_edge_3 >> traj_x_5 >> traj_y_5 >> 
+                traj_z_5 >> traj_edge_5 >> traj_x_7 >> traj_y_7 >> traj_z_7 >> traj_edge_7 >> 
+                traj_x_12 >> traj_y_12 >> traj_z_12 >> traj_edge_12 >> ft_energy >> ft_x >> 
+                ft_y >> ft_z >> ft_radius) {
 
             tree->Fill(); // Fill the tree with the read data
         }
