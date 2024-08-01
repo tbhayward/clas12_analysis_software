@@ -513,6 +513,7 @@ class CalibrationScript {
 	                    // Append the line to the batchLines StringBuilder
 	                    batchLines.append(line.toString())
 	                    lineCount++ // Increment the line count
+	                    println(lineCount);
 
 	                    // If the line count reaches 1000, write to the file and reset
 	                    if (lineCount >= max_lines) {
