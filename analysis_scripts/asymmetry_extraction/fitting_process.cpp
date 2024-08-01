@@ -767,7 +767,7 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
   TH1D* histPosNeg = new TH1D(Form("%s_posneg", histName), "", 12, 0, 2 * TMath::Pi());
   TH1D* histNegPos = new TH1D(Form("%s_negpos", histName), "", 12, 0, 2 * TMath::Pi());
   TH1D* histNegNeg = new TH1D(Form("%s_negneg", histName), "", 12, 0, 2 * TMath::Pi());
-  std::cout << "1!!!!!!" << std::endl;
+
   // Initialize variables to store the sums and event counts
   double sumVariable = 0;
   double numEvents = 0;
@@ -777,7 +777,7 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
   double sumTargetNegPol = 0; // sum of the target negative polarization
   int numEventsPosTarget = 0;
   int numEventsNegTarget = 0;
-  std::cout << "2!!!!!!" << std::endl;
+
   TTreeReaderValue<int> runnum(dataReader, "runnum");
   TTreeReaderValue<int> evnum(dataReader, "evnum");
   TTreeReaderValue<int> helicity(dataReader, "helicity");
@@ -788,9 +788,10 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
 
   // Counter to limit the number of processed entries
   while (dataReader.Next()) {
-    std::cout << "3!!!!!!" << std::endl;
+    
     // Apply kinematic cuts (this function will need to be adapted)
     bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
+    std::cout << "1!!!!!!" << std::endl;
     // bool passedKinematicCuts = true;
     // Check if the currentVariable is within the desired range
     if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
