@@ -371,6 +371,7 @@ class CalibrationScript {
 	                        	double x = traj_Bank.getFloat("x", current_Row);
 	                        	double y = traj_Bank.getFloat("y", current_Row);
 	                        	double z = traj_Bank.getFloat("z", current_Row);
+	                        	double edge = 0;
 	                        	// double edge = traj_Bank.getFloat("edge", current_Row);
 	                        	switch(detector) {
 	                        		case 6: // dc
