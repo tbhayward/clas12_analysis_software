@@ -190,7 +190,7 @@ int main(int argc, char *argv[]) {
     // Additional variables for calibration scripts
     int config_run, config_event, event_helicity;
     int particle_pid, particle_status;
-    double particle_px, particle_py, particle_pz, p;
+    double particle_px, particle_py, particle_pz, p; // theta and phi already defined
     double particle_vx, particle_vy, particle_vz, particle_beta, particle_chi2pid;
     int cal_sector;
     double cal_energy_1, cal_x_1, cal_y_1, cal_z_1, cal_lu_1, cal_lv_1, cal_lw_1;
