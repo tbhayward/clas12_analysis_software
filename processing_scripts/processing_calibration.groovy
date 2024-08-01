@@ -546,7 +546,7 @@ class CalibrationScript {
 	    // Calculate the elapsed time
 	    long elapsedTime = endTime - startTime
 	    // Print the elapsed time in milliseconds
-	    println("Elapsed time: ${elapsedTime} ms")
+	    println("Elapsed time: ${elapsedTime} ms. Processed: ${num_events}")
 	}
 }
 
