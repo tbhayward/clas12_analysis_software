@@ -216,7 +216,7 @@ class CalibrationScript {
             HipoDataEvent event = reader.getNextEvent()
 
             while (reader.hasEvent()) {
-                // ++num_events
+                ++num_events
                 if (num_events % 500000 == 0) { // not necessary, just updates output
                     print("processed: " + num_events + " events. ")
                 }
@@ -242,7 +242,7 @@ class CalibrationScript {
                     config_run >= 11571 || qa.OkForAsymmetry(config_run, config_event))
 
                 if (process_event) {
-                	
+
                     event_helicity = event_Bank.getInt('helicity',0);
 
                     for (int particle_Index = 0; particle_Index < rec_Bank.rows(); 
@@ -517,7 +517,6 @@ class CalibrationScript {
 	                    if (lineCount >= max_lines) {
 	                        file.append(batchLines.toString())
 	                        batchLines.setLength(0)
-	                        num_events=num_events+lineCount;
 	                        lineCount = 0
 	                    }
 
