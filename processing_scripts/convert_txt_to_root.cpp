@@ -10,12 +10,26 @@
 
 using namespace std;
 
-// Function to check if a directory exists
-bool directoryExists(const std::string& dirName) {
-    struct stat info;
-    if (stat(dirName.c_str(), &info) != 0)
-        return false; // Cannot access the directory
-    return (info.st_mode & S_IFDIR) != 0;
+// Function to find the root directory of the "clas12_analysis_software" repository
+std::string findPackageRoot() {
+    char cwd[PATH_MAX];
+    if (getcwd(cwd, sizeof(cwd)) != NULL) {
+        std::string currentDir(cwd);
+        std::string searchDir = "clas12_analysis_software";
+
+        // Check if the current directory or its parent directories contain "clas12_analysis_software"
+        size_t found = currentDir.find(searchDir);
+        if (found != std::string::npos) {
+            return currentDir.substr(0, found + searchDir.length()) + "/";
+        } else {
+            std::cerr << "Warning: Unable to locate the 'clas12_analysis_software' directory.\n"
+                      << "Using relative path for CSV file.\n";
+            return "./";  // Default to current directory
+        }
+    } else {
+        std::cerr << "Error: Unable to get current working directory.\n";
+        return "./";
+    }
 }
 
 // Function to calculate the Cartesian components from spherical coordinates
@@ -833,21 +847,13 @@ int main(int argc, char *argv[]) {
     // string csv_location="analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv";
     // load_run_info_from_csv(package_location+csv_location);
 
-    // Define the relative CSV path
+    // Find the root directory of the repository
+    std::string package_location = findPackageRoot();
+    // Define the CSV path relative to the package root
     std::string csv_location = "analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv";
-
-    // Check if the script is in a /clas12_analysis_software directory
-    std::string package_location = "./clas12_analysis_software/";
-    if (directoryExists(package_location)) {
-        std::cout << "Running from /clas12_analysis_software directory.\n";
-    } else {
-        std::cerr << "Warning: Not running from /clas12_analysis_software directory.\n"
-                  << "Using relative path for CSV file.\n";
-        package_location = "./";
-    }
-
     // Load run info from the CSV file
-    load_run_info_from_csv(package_location + csv_location);    
+    load_run_info_from_csv(package_location + csv_location);
+    
 
     // Loop to read each line from the text file and fill the TTree based on hadron_count
     if (hadron_count == 0 && is_mc == 0) {
