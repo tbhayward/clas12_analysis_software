@@ -159,6 +159,15 @@ class CalibrationScript {
 	    return Math.toDegrees(Math.acos(z / r))
 	}
 
+	static boolean banks_test(DataEvent event) {
+        String[] bankNames = 
+            {"RUN::config","REC::Event","REC::Particle","REC::Calorimeter","REC::Track","REC::Traj","REC::Cherenkov"};
+        for (String bankName : bankNames) {
+            if (!event.hasBank(bankName)) { return false; }
+        }
+        return true;
+    }
+
     // Method for the main logic
     void run(String[] args) {
         // Start time
@@ -215,7 +224,7 @@ class CalibrationScript {
             reader.open(hipo_list[current_file]) // open next hipo file
             HipoDataEvent event = reader.getNextEvent()
 
-            while (reader.hasEvent()) {
+            while (reader.hasEvent() && banks_test(event)) {
                 ++num_events
                 if (num_events % 500000 == 0) { // not necessary, just updates output
                     print("processed: " + num_events + " events. ")

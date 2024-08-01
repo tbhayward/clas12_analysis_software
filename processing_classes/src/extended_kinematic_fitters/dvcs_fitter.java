@@ -98,7 +98,6 @@ public class dvcs_fitter extends GenericKinematicFitter {
     public PhysicsEvent getPhysicsEvent(DataEvent event) {
         
         generic_tests generic_tests = new generic_tests();
-        System.out.println(generic_tests.banks_test(event));
         if (generic_tests.banks_test(event)) {
             PhysicsEvent physEvent = new PhysicsEvent();
             // load the hipo banks
