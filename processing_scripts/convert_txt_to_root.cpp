@@ -1148,6 +1148,23 @@ int main(int argc, char *argv[]) {
                 traj_x_12 >> traj_y_12 >> traj_z_12 >> traj_edge_12 >> ft_energy >> ft_x >> 
                 ft_y >> ft_z >> ft_radius) {
 
+            // Print all the variables with a space between them
+            std::cout << config_run << " " << config_event << " " << event_helicity << " " << particle_pid << " "
+                      << particle_px << " " << particle_py << " " << particle_pz << " " << p << " " << theta << " " << phi << " "
+                      << particle_vx << " " << particle_vy << " " << particle_vz << " " << particle_beta << " "
+                      << particle_chi2pid << " " << particle_status << " " << cal_sector << " " << cal_energy_1 << " "
+                      << cal_x_1 << " " << cal_y_1 << " " << cal_z_1 << " " << cal_lu_1 << " " << cal_lv_1 << " " << cal_lw_1 << " "
+                      << cal_x_4 << " " << cal_y_4 << " " << cal_z_4 << " " << cal_lu_4 << " " << cal_lv_4 << " " << cal_lw_4 << " "
+                      << cal_x_7 << " " << cal_y_7 << " " << cal_z_7 << " " << cal_lu_7 << " " << cal_lv_7 << " " << cal_lw_7 << " "
+                      << cc_nphe_15 << " " << cc_nphe_16 << " " << track_sector_5 << " " << track_chi2_5 << " " << track_ndf_5 << " "
+                      << track_chi2_6 << " " << track_ndf_6 << " " << traj_x_6 << " " << traj_y_6 << " " << traj_z_6 << " " << traj_edge_6 << " "
+                      << traj_x_18 << " " << traj_y_18 << " " << traj_z_18 << " " << traj_edge_18 << " " << traj_x_36 << " " << traj_y_36 << " "
+                      << traj_z_36 << " " << traj_edge_36 << " " << traj_x_1 << " " << traj_y_1 << " " << traj_z_1 << " " << traj_edge_1 << " "
+                      << traj_x_3 << " " << traj_y_3 << " " << traj_z_3 << " " << traj_edge_3 << " " << traj_x_5 << " " << traj_y_5 << " "
+                      << traj_z_5 << " " << traj_edge_5 << " " << traj_x_7 << " " << traj_y_7 << " " << traj_z_7 << " " << traj_edge_7 << " "
+                      << traj_x_12 << " " << traj_y_12 << " " << traj_z_12 << " " << traj_edge_12 << " " << ft_energy << " " << ft_x << " "
+                      << ft_y << " " << ft_z << " " << ft_radius << std::endl;
+
             tree->Fill(); // Fill the tree with the read data
         }
     }
