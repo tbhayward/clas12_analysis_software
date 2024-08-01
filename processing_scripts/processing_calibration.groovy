@@ -160,12 +160,10 @@ class CalibrationScript {
 	}
 
 	static boolean banks_test(DataEvent event) {
-        String[] bankNames = 
-            {"RUN::config","REC::Event","REC::Particle","REC::Calorimeter","REC::Track","REC::Traj","REC::Cherenkov"};
-        for (String bankName : bankNames) {
-            if (!event.hasBank(bankName)) { return false; }
-        }
-        return true;
+        return event.hasBank("RUN::config") && event.hasBank("REC::Event") && 
+        	event.hasBank("REC::Particle") && event.hasBank("REC::Calorimeter") && 
+        	event.hasBank("REC::Track") && event.hasBank("REC::Traj") && 
+        	event.hasBank("REC::Cherenkov");
     }
 
     // Method for the main logic
