@@ -356,6 +356,7 @@ class CalibrationScript {
 	                            		track_ndf_5 = ndf;
 	                            		break;
 	                            	case 6:
+	                            		track_sector_6 = sector;
 	                            		track_chi2_6 = chi2;
 	                            		track_ndf_6 = ndf;
 		                            	break
@@ -475,6 +476,7 @@ class CalibrationScript {
 	                        .append(track_sector_5).append(" ")
 	                        .append(formatDouble(track_chi2_5)).append(" ")
 	                        .append(track_ndf_5).append(" ")
+	                        .append(track_sector_6).append(" ")
 	                        .append(formatDouble(track_chi2_6)).append(" ")
 	                        .append(track_ndf_6).append(" ")
 	                        // dc
