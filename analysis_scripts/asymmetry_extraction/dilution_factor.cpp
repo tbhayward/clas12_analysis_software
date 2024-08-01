@@ -4,6 +4,12 @@
 
 double dilution_factor(double currentVariable, const std::string& prefix) {
 
+  // epi+X
+  if (prefix == "epipPT") {
+    return 0.184542-0.0499585*currentVariable+0.163844*std::pow(currentVariable,2)+
+      0.157106*std::pow(currentVariable,3);
+  }
+
   if (prefix == "x") { return 0.086655+0.0332876*currentVariable+0.268944*std::pow(currentVariable,2); }
   if (prefix == "z") { return -0.0728496+1.3191*currentVariable+-2.86053*std::pow(currentVariable,2)+1.96652*std::pow(currentVariable,3); }
   if (prefix == "zeta") { return 1.11574+-5.33344*currentVariable+9.55552*std::pow(currentVariable,2)+-5.80119*std::pow(currentVariable,3); }
