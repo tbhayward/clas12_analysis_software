@@ -242,7 +242,7 @@ class CalibrationScript {
                     config_run >= 11571 || qa.OkForAsymmetry(config_run, config_event))
 
                 if (process_event) {
-
+                	
                     event_helicity = event_Bank.getInt('helicity',0);
 
                     for (int particle_Index = 0; particle_Index < rec_Bank.rows(); 
@@ -417,6 +417,7 @@ class CalibrationScript {
 		                    }
 	                    }
 
+	                    ++num_events
 	                    // Use a StringBuilder to append all data in a single call
 	                    StringBuilder line = new StringBuilder()
 	                    	// config
@@ -517,7 +518,6 @@ class CalibrationScript {
 	                    if (lineCount >= max_lines) {
 	                        file.append(batchLines.toString())
 	                        batchLines.setLength(0)
-	                        num_events+=lineCount;
 	                        lineCount = 0
 	                    }
 
