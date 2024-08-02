@@ -639,88 +639,100 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
         {"cal_x_7", "cal_y_7", "EC_{out}"}
     };
 
-    // Loop over each layer
-    for (const auto& layer : layers) {
-        std::string x_branch = std::get<0>(layer);
-        std::string y_branch = std::get<1>(layer);
-        std::string layer_name = std::get<2>(layer);
+    // Array of particle types (photons and electrons) and their corresponding PIDs
+    std::vector<std::tuple<int, std::string>> particle_types = {
+        {22, "photon"},
+        {11, "electron"}
+    };
 
-        // Restart the TTreeReader to process the data from the beginning
-        dataReader.Restart();
-        if (mcReader) mcReader->Restart();
+    // Loop over each particle type
+    for (const auto& particle_type : particle_types) {
+        int pid = std::get<0>(particle_type);
+        std::string particle_name = std::get<1>(particle_type);
 
-        // Declare TTreeReaderValues for data
-        TTreeReaderValue<double> cal_x(dataReader, x_branch.c_str());
-        TTreeReaderValue<double> cal_y(dataReader, y_branch.c_str());
-        TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+        // Loop over each layer
+        for (const auto& layer : layers) {
+            std::string x_branch = std::get<0>(layer);
+            std::string y_branch = std::get<1>(layer);
+            std::string layer_name = std::get<2>(layer);
 
-        // Declare pointers for MC TTreeReaderValue objects
-        TTreeReaderValue<double>* mc_cal_x = nullptr;
-        TTreeReaderValue<double>* mc_cal_y = nullptr;
-        TTreeReaderValue<int>* mc_particle_pid = nullptr;
+            // Restart the TTreeReader to process the data from the beginning
+            dataReader.Restart();
+            if (mcReader) mcReader->Restart();
 
-        // Initialize MC TTreeReaderValue objects if mcReader is provided
-        if (mcReader) {
-            mc_cal_x = new TTreeReaderValue<double>(*mcReader, x_branch.c_str());
-            mc_cal_y = new TTreeReaderValue<double>(*mcReader, y_branch.c_str());
-            mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
-        }
+            // Declare TTreeReaderValues for data
+            TTreeReaderValue<double> cal_x(dataReader, x_branch.c_str());
+            TTreeReaderValue<double> cal_y(dataReader, y_branch.c_str());
+            TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
 
-        // Define the 2D histogram bins and ranges
-        int nBins = 100;
-        double xMin = -450;
-        double xMax = 450;
-        double yMin = -450;
-        double yMax = 450;
+            // Declare pointers for MC TTreeReaderValue objects
+            TTreeReaderValue<double>* mc_cal_x = nullptr;
+            TTreeReaderValue<double>* mc_cal_y = nullptr;
+            TTreeReaderValue<int>* mc_particle_pid = nullptr;
 
-        // Create histograms for data and MC
-        TH2D* h_data = new TH2D("h_data", ("data " + layer_name + " hit position").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-        h_data->GetXaxis()->SetTitle(("x_{" + layer_name + "}").c_str());
-        h_data->GetYaxis()->SetTitle(("y_{" + layer_name + "}").c_str());
-
-        TH2D* h_mc = nullptr;
-        if (mcReader) {
-            h_mc = new TH2D("h_mc", ("mc " + layer_name + " hit position").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-            h_mc->GetXaxis()->SetTitle(("x_{" + layer_name + "}").c_str());
-            h_mc->GetYaxis()->SetTitle(("y_{" + layer_name + "}").c_str());
-        }
-
-        // Fill the data histograms, applying the cuts
-        while (dataReader.Next()) {
-            if (*particle_pid == 22 && *cal_x != -9999 && *cal_y != -9999) {
-                h_data->Fill(*cal_x, *cal_y);
+            // Initialize MC TTreeReaderValue objects if mcReader is provided
+            if (mcReader) {
+                mc_cal_x = new TTreeReaderValue<double>(*mcReader, x_branch.c_str());
+                mc_cal_y = new TTreeReaderValue<double>(*mcReader, y_branch.c_str());
+                mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
             }
-        }
 
-        // Fill the MC histograms if available, applying the cuts
-        if (mcReader) {
-            while (mcReader->Next()) {
-                if (**mc_particle_pid == 22 && **mc_cal_x != -9999 && **mc_cal_y != -9999) {
-                    h_mc->Fill(**mc_cal_x, **mc_cal_y);
+            // Define the 2D histogram bins and ranges
+            int nBins = 100;
+            double xMin = -450;
+            double xMax = 450;
+            double yMin = -450;
+            double yMax = 450;
+
+            // Create histograms for data and MC
+            TH2D* h_data = new TH2D("h_data", ("data " + layer_name + " hit position (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            h_data->GetXaxis()->SetTitle(("x_{" + layer_name + "}").c_str());
+            h_data->GetYaxis()->SetTitle(("y_{" + layer_name + "}").c_str());
+
+            TH2D* h_mc = nullptr;
+            if (mcReader) {
+                h_mc = new TH2D("h_mc", ("mc " + layer_name + " hit position (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                h_mc->GetXaxis()->SetTitle(("x_{" + layer_name + "}").c_str());
+                h_mc->GetYaxis()->SetTitle(("y_{" + layer_name + "}").c_str());
+            }
+
+            // Fill the data histograms, applying the cuts
+            while (dataReader.Next()) {
+                if (*particle_pid == pid && *cal_x != -9999 && *cal_y != -9999) {
+                    h_data->Fill(*cal_x, *cal_y);
                 }
             }
+
+            // Fill the MC histograms if available, applying the cuts
+            if (mcReader) {
+                while (mcReader->Next()) {
+                    if (**mc_particle_pid == pid && **mc_cal_x != -9999 && **mc_cal_y != -9999) {
+                        h_mc->Fill(**mc_cal_x, **mc_cal_y);
+                    }
+                }
+            }
+
+            // Draw and save the original data plot
+            TCanvas c_data(("c_data_" + layer_name + "_" + particle_name).c_str(), ("c_data_" + layer_name + "_" + particle_name).c_str(), 800, 600);
+            c_data.SetLogz();  // Set the z-axis to a logarithmic scale
+            h_data->Draw("COLZ");
+            c_data.SaveAs(("output/cal_hit_position_data_" + layer_name + "_" + particle_name + ".png").c_str());
+
+            // Draw and save the original MC plot if available
+            if (h_mc) {
+                TCanvas c_mc(("c_mc_" + layer_name + "_" + particle_name).c_str(), ("c_mc_" + layer_name + "_" + particle_name).c_str(), 800, 600);
+                c_mc.SetLogz();  // Set the z-axis to a logarithmic scale
+                h_mc->Draw("COLZ");
+                c_mc.SaveAs(("output/cal_hit_position_mc_" + layer_name + "_" + particle_name + ".png").c_str());
+            }
+
+            // Clean up for this layer and particle type
+            delete h_data;
+            if (h_mc) delete h_mc;
+            if (mc_cal_x) delete mc_cal_x;
+            if (mc_cal_y) delete mc_cal_y;
+            if (mc_particle_pid) delete mc_particle_pid;
         }
-
-        // Draw and save the original data plot
-        TCanvas c_data(("c_data_" + layer_name).c_str(), ("c_data_" + layer_name).c_str(), 800, 600);
-        c_data.SetLogz();  // Set the z-axis to a logarithmic scale
-        h_data->Draw("COLZ");
-        c_data.SaveAs(("output/cal_hit_position_data_" + layer_name + ".png").c_str());
-
-        // Draw and save the original MC plot if available
-        if (h_mc) {
-            TCanvas c_mc(("c_mc_" + layer_name).c_str(), ("c_mc_" + layer_name).c_str(), 800, 600);
-            c_mc.SetLogz();  // Set the z-axis to a logarithmic scale
-            h_mc->Draw("COLZ");
-            c_mc.SaveAs(("output/cal_hit_position_mc_" + layer_name + ".png").c_str());
-        }
-
-        // Clean up for this layer
-        delete h_data;
-        if (h_mc) delete h_mc;
-        if (mc_cal_x) delete mc_cal_x;
-        if (mc_cal_y) delete mc_cal_y;
-        if (mc_particle_pid) delete mc_particle_pid;
     }
 }
 
