@@ -534,7 +534,10 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
 	delete h_data_mean;
 
 	// Declare TTreeReaderValue for ft_radius at the beginning of your function
+	// Declare TTreeReaderValue for ft_radius
 	TTreeReaderValue<double> ft_radius(dataReader, "ft_radius");
+
+	TTreeReaderValue<double>* mc_ft_radius = nullptr;
 	if (mcReader) {
 	    mc_ft_radius = new TTreeReaderValue<double>(*mcReader, "ft_radius");
 	}
