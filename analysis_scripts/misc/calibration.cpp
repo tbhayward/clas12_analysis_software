@@ -774,10 +774,10 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    plot_htcc_nphe(dataReader, mcReader);
-    plot_ltcc_nphe(dataReader, mcReader);
-    // plot_ft_xy_energy(dataReader, mcReader);
-    plot_ft_hit_position(dataReader, mcReader);
+    // plot_htcc_nphe(dataReader, mcReader);
+    // plot_ltcc_nphe(dataReader, mcReader);
+    plot_ft_xy_energy(dataReader, mcReader);
+    // plot_ft_hit_position(dataReader, mcReader);
 
 
     // Close files
