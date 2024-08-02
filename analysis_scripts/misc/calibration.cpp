@@ -22,6 +22,7 @@ int main(int argc, char** argv) {
     
     // Set up TTreeReader for the first file
     TTreeReader dataReader("PhysicsEvents", &dataFile);
+    std::cout << "Read in data tree." << std::endl;
 
     // If a second file is provided, open it and set up a TTreeReader
     TFile* mcFile = nullptr;
@@ -33,6 +34,7 @@ int main(int argc, char** argv) {
             return 1;
         }
         mcReader = new TTreeReader("PhysicsEvents", mcFile);
+        std::cout << "Read in mc tree." << std::endl;
     }
 
 
