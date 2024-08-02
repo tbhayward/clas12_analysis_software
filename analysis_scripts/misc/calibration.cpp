@@ -563,26 +563,26 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
 	    delete mc_cut_legend;
 	}
 
-	// Clean up
-	delete data_legend;
-	delete data_cut_legend;
-	delete h_data_sum;
-	delete h_data_count;
-	delete h_data_mean;
-	delete h_data_cut;
-	delete h_data_masked;
+	// // Clean up
+	// delete data_legend;
+	// delete data_cut_legend;
+	// delete h_data_sum;
+	// delete h_data_count;
+	// delete h_data_mean;
+	// delete h_data_cut;
+	// delete h_data_masked;
 
-	if (mcReader) {
-	    delete mc_legend;
-	    delete mc_ft_x;
-	    delete mc_ft_y;
-	    delete mc_ft_energy;
-	    delete mc_particle_pid;
-	    delete h_mc_sum;
-	    delete h_mc_count;
-	    delete h_mc_mean;
-	    delete h_mc_cut;
-	}
+	// if (mcReader) {
+	//     delete mc_legend;
+	//     delete mc_ft_x;
+	//     delete mc_ft_y;
+	//     delete mc_ft_energy;
+	//     delete mc_particle_pid;
+	//     delete h_mc_sum;
+	//     delete h_mc_count;
+	//     delete h_mc_mean;
+	//     delete h_mc_cut;
+	// }
 }
 
 int main(int argc, char** argv) {
