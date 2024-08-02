@@ -710,25 +710,25 @@ void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
     // Draw and save the original data plot
     TCanvas c_data("c_data", "c_data", 800, 600);
     h_data->Draw("COLZ");
-    c_data.SaveAs("output/ft_hit_position_data.png");
+    c_data.SaveAs("output/calibration/ft/ft_hit_position_data.png");
 
     // Draw and save the original MC plot if available
     if (h_mc) {
         TCanvas c_mc("c_mc", "c_mc", 800, 600);
         h_mc->Draw("COLZ");
-        c_mc.SaveAs("output/ft_hit_position_mc.png");
+        c_mc.SaveAs("output/calibration/ft/ft_hit_position_mc.png");
     }
 
     // Draw and save the cut data plot
     TCanvas c_data_cut("c_data_cut", "c_data_cut", 800, 600);
     h_data_cut->Draw("COLZ");
-    c_data_cut.SaveAs("output/ft_hit_position_cut_data.png");
+    c_data_cut.SaveAs("output/calibration/ft/ft_hit_position_cut_data.png");
 
     // Draw and save the cut MC plot if available
     if (h_mc_cut) {
         TCanvas c_mc_cut("c_mc_cut", "c_mc_cut", 800, 600);
         h_mc_cut->Draw("COLZ");
-        c_mc_cut.SaveAs("output/ft_hit_position_cut_mc.png");
+        c_mc_cut.SaveAs("output/calibration/ft/ft_hit_position_cut_mc.png");
     }
 
     // Clean up
