@@ -333,7 +333,7 @@ void plot_ltcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
 void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     gStyle->SetOptStat(0);
 
-    double min_radius = 8;
+    double min_radius = 9;
 
     // Declare TTreeReaderValue for data
     TTreeReaderValue<double> ft_x(dataReader, "ft_x");
