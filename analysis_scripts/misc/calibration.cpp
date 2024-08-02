@@ -9,6 +9,7 @@
 #include <TGraphErrors.h>
 #include <TLegend.h>
 #include <TF1.h>
+#include <algorithm>
 
 void plot_cc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Set up TTreeReaderValue for cc_nphe_15 in data and MC (if available)
@@ -77,12 +78,24 @@ void plot_cc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         }
     }
 
+    // Determine the maximum Y value for scaling the Y-axis
+    double maxY = *std::max_element(dataY.begin(), dataY.end());
+    if (mcReader) {
+        double maxMCY = *std::max_element(mcY.begin(), mcY.end());
+        maxY = std::max(maxY, maxMCY);
+    }
+
     // Create TGraphErrors for data and MC
     TGraphErrors* grData = new 
     	TGraphErrors(nBins, &dataX[0], &dataY[0], &dataEx[0], &dataEy[0]);
     grData->SetMarkerColor(kBlack);
     grData->SetLineColor(kBlack);
-    grData->SetTitle("cc_nphe_15;nphe;normalized counts");
+    grData->SetTitle("HTCC nphe");
+    grData->GetXaxis()->SetTitle("nphe");
+    grData->GetYaxis()->SetTitle("normalized counts");
+
+    // Set the Y-axis range to accommodate the maximum value
+    grData->SetMaximum(1.15 * maxY);
 
     TGraphErrors* grMC = nullptr;
     if (mcReader) {
@@ -149,7 +162,7 @@ int main(int argc, char** argv) {
     }
 
     //// PLOTS ////
-    
+
     plot_cc_nphe(dataReader, mcReader);
 
 
