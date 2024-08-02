@@ -497,7 +497,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
         mc_legend->AddEntry(h_mc_mean, Form("Mean = %.2f GeV", mc_global_mean), "");
         mc_legend->AddEntry(h_mc_mean, Form("Std Dev = %.2f GeV",mc_global_std_dev), "");
 	mc_legend->Draw();
-	c_mc.SaveAs(“output/ft_xy_energy_mc.png”);
+	c_mc.SaveAs("output/ft_xy_energy_mc.png");
 	delete mc_legend;
 	}
 	// Create and save masked plot for Data
