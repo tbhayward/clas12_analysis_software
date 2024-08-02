@@ -6,13 +6,16 @@
 #include <TH1D.h>
 #include <iostream>
 #include <string>
+#include <TGraphErrors.h>
+#include <TLegend.h>
+#include <TF1.h>
 
 void plot_cc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Set up TTreeReaderValue for cc_nphe_15 in data and MC (if available)
     TTreeReaderValue<double> data_cc_nphe_15(dataReader, "cc_nphe_15");
-    TTreeReaderValue<double> mc_cc_nphe_15;
+    TTreeReaderValue<double>* mc_cc_nphe_15 = nullptr;
     if (mcReader) {
-        mc_cc_nphe_15.SetTree(*mcReader, "cc_nphe_15");
+        mc_cc_nphe_15 = new TTreeReaderValue<double>(*mcReader, "cc_nphe_15");
     }
 
     // Binning for cc_nphe_15
@@ -53,7 +56,7 @@ void plot_cc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Fill the MC arrays if available
     if (mcReader) {
         while (mcReader->Next()) {
-            double value = *mc_cc_nphe_15;
+            double value = **mc_cc_nphe_15;
             if (value != -9999) {
                 int bin = static_cast<int>((value - xMin) / (xMax - xMin) * nBins);
                 if (bin >= 0 && bin < nBins) {
@@ -111,6 +114,7 @@ void plot_cc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     delete grData;
     if (grMC) delete grMC;
     delete legend;
+    if (mc_cc_nphe_15) delete mc_cc_nphe_15;
 }
 
 int main(int argc, char** argv) {
