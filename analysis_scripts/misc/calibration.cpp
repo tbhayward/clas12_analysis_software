@@ -703,12 +703,14 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
 
         // Draw and save the original data plot
         TCanvas c_data(("c_data_" + layer_name).c_str(), ("c_data_" + layer_name).c_str(), 800, 600);
+        c_data.SetLogz();  // Set the z-axis to a logarithmic scale
         h_data->Draw("COLZ");
         c_data.SaveAs(("output/cal_hit_position_data_" + layer_name + ".png").c_str());
 
         // Draw and save the original MC plot if available
         if (h_mc) {
             TCanvas c_mc(("c_mc_" + layer_name).c_str(), ("c_mc_" + layer_name).c_str(), 800, 600);
+            c_mc.SetLogz();  // Set the z-axis to a logarithmic scale
             h_mc->Draw("COLZ");
             c_mc.SaveAs(("output/cal_hit_position_mc_" + layer_name + ".png").c_str());
         }
@@ -763,6 +765,8 @@ int main(int argc, char** argv) {
     if (mcReader) mcReader->Restart();
     // plot_ft_xy_energy(dataReader, mcReader);
     // plot_ft_hit_position(dataReader, mcReader);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
     plot_cal_hit_position(dataReader, mcReader);
 
 
