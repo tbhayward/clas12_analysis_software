@@ -9,6 +9,53 @@ import org.jlab.io.hipo.HipoDataBank;
 
 public class fiducial_cuts {
     
+    public boolean ft_fiducial_cut(int particle_Index, HipoDataBank rec_Bank, 
+                               HipoDataBank ft_Bank) {
+        // Loop through each row of the ft bank
+        for (int current_Row = 0; current_Row < ft_Bank.rows(); current_Row++) {
+            int pindex = ft_Bank.getInt("pindex", current_Row);
+            // Check if the current row matches the particle index and layer we're looking for
+            if (pindex == particle_Index) {
+                double ft_x = ft_Bank.getFloat("x", current_Row);
+                double ft_y = ft_Bank.getFloat("y", current_Row);
+                double radius = Math.sqrt(ft_x * ft_x + ft_y * ft_y);
+
+                // Check if the radius is within the fiducial range
+                if (radius < 8.5 || radius > 15.5) {
+                    return false;
+                }
+
+                // Define the circle cut parameters: radius and center (x, y)
+                double[][] holes = {
+                    {1.60, -8.42, 9.89},   // circle 1
+                    {1.60, -9.89, -5.33},  // circle 2
+                    {2.30, -6.15, -13.00}, // circle 3
+                    {2.00, 3.70, -6.50}    // circle 4
+                };
+
+                // Check if the point falls inside any of the defined holes
+                for (double[] hole : holes) {
+                    double hole_radius = hole[0];
+                    double hole_center_x = hole[1];
+                    double hole_center_y = hole[2];
+
+                    double distance_to_center = Math.sqrt((ft_x - hole_center_x) * (ft_x - hole_center_x) +
+                        (ft_y - hole_center_y) * (ft_y - hole_center_y));
+
+                    if (distance_to_center < hole_radius) {
+                        return false;
+                    }
+                }
+
+                // If all checks are passed, the track is good
+                return true;
+            }
+        }
+
+    // If no matching particle index is found or the track does not meet the criteria
+    return false;
+}
+    
     public boolean pcal_fiducial_cut(int particle_Index, int strictness, 
             HipoDataBank rec_Bank, HipoDataBank cal_Bank) {
         // Initialize variables for storing the index and values of the cal bank

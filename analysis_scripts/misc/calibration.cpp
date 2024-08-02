@@ -336,7 +336,7 @@ bool forward_tagger_fiducial(double ft_x, double ft_y) {
     double radius = sqrt(ft_x * ft_x + ft_y * ft_y);
     
     // Check if the radius is within the fiducial range
-    if (radius < 8 || radius > 15) {
+    if (radius < 8.5 || radius > 15.5) {
         return false;
     }
 
@@ -344,8 +344,8 @@ bool forward_tagger_fiducial(double ft_x, double ft_y) {
     std::vector<std::pair<double, std::pair<double, double>>> holes = {
         {1.60, {-8.42,  9.89}},  // circle 1
         {1.60, {-9.89, -5.33}},  // circle 2
-        {2.30, {-6.15, 13.00}},  // circle 3
-        {2.00, {-6.50,  3.70}}   // circle 4
+        {2.30, {-6.15, -13.00}}, // circle 3
+        {2.00, {3.70,  -6.50}}   // circle 4
     };
 
     // Check if the point falls inside any of the defined holes
@@ -355,7 +355,7 @@ bool forward_tagger_fiducial(double ft_x, double ft_y) {
         double hole_center_y = hole.second.second;
 
         double distance_to_center = sqrt((ft_x - hole_center_x) * (ft_x - hole_center_x) +
-           (ft_y - hole_center_y) * (ft_y - hole_center_y));
+                                         (ft_y - hole_center_y) * (ft_y - hole_center_y));
 
         if (distance_to_center < hole_radius) {
             return false;
@@ -672,37 +672,69 @@ void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
         h_mc->GetYaxis()->SetTitle("y_{FT}");
     }
 
-    // Fill the data histogram, applying the cuts
+    // Create histograms for data and MC with fiducial cuts applied
+    TH2D* h_data_cut = new TH2D("h_data_cut", "data FT hit position (cut)", nBins, xMin, xMax, nBins, yMin, yMax);
+    h_data_cut->GetXaxis()->SetTitle("x_{FT}");
+    h_data_cut->GetYaxis()->SetTitle("y_{FT}");
+
+    TH2D* h_mc_cut = nullptr;
+    if (mcReader) {
+        h_mc_cut = new TH2D("h_mc_cut", "mc FT hit position (cut)", nBins, xMin, xMax, nBins, yMin, yMax);
+        h_mc_cut->GetXaxis()->SetTitle("x_{FT}");
+        h_mc_cut->GetYaxis()->SetTitle("y_{FT}");
+    }
+
+    // Fill the data histograms, applying the cuts
     while (dataReader.Next()) {
         if (*particle_pid == 22 && *ft_x != -9999 && *ft_y != -9999) {
             h_data->Fill(*ft_x, *ft_y);
-        }
-    }
-
-    // Fill the MC histogram if available, applying the cuts
-    if (mcReader) {
-        while (mcReader->Next()) {
-            if (**mc_particle_pid == 22 && **mc_ft_x != -9999 && **mc_ft_y != -9999) {
-                h_mc->Fill(**mc_ft_x, **mc_ft_y);
+            if (forward_tagger_fiducial(*ft_x, *ft_y)) {
+                h_data_cut->Fill(*ft_x, *ft_y);
             }
         }
     }
 
-    // Draw and save the data plot
+    // Fill the MC histograms if available, applying the cuts
+    if (mcReader) {
+        while (mcReader->Next()) {
+            if (**mc_particle_pid == 22 && **mc_ft_x != -9999 && **mc_ft_y != -9999) {
+                h_mc->Fill(**mc_ft_x, **mc_ft_y);
+                if (forward_tagger_fiducial(**mc_ft_x, **mc_ft_y)) {
+                    h_mc_cut->Fill(**mc_ft_x, **mc_ft_y);
+                }
+            }
+        }
+    }
+
+    // Draw and save the original data plot
     TCanvas c_data("c_data", "c_data", 800, 600);
     h_data->Draw("COLZ");
     c_data.SaveAs("output/ft_hit_position_data.png");
 
-    // Draw and save the MC plot if available
+    // Draw and save the original MC plot if available
     if (h_mc) {
         TCanvas c_mc("c_mc", "c_mc", 800, 600);
         h_mc->Draw("COLZ");
         c_mc.SaveAs("output/ft_hit_position_mc.png");
     }
 
+    // Draw and save the cut data plot
+    TCanvas c_data_cut("c_data_cut", "c_data_cut", 800, 600);
+    h_data_cut->Draw("COLZ");
+    c_data_cut.SaveAs("output/ft_hit_position_cut_data.png");
+
+    // Draw and save the cut MC plot if available
+    if (h_mc_cut) {
+        TCanvas c_mc_cut("c_mc_cut", "c_mc_cut", 800, 600);
+        h_mc_cut->Draw("COLZ");
+        c_mc_cut.SaveAs("output/ft_hit_position_cut_mc.png");
+    }
+
     // Clean up
     delete h_data;
+    delete h_data_cut;
     if (h_mc) delete h_mc;
+    if (h_mc_cut) delete h_mc_cut;
     if (mc_ft_x) delete mc_ft_x;
     if (mc_ft_y) delete mc_ft_y;
     if (mc_particle_pid) delete mc_particle_pid;
@@ -745,7 +777,7 @@ int main(int argc, char** argv) {
 
     // plot_htcc_nphe(dataReader, mcReader);
     // plot_ltcc_nphe(dataReader, mcReader);
-    plot_ft_xy_energy(dataReader, mcReader);
+    // plot_ft_xy_energy(dataReader, mcReader);
     plot_ft_hit_position(dataReader, mcReader);
 
 
