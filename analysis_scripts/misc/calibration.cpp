@@ -388,6 +388,10 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
         mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
     }
 
+    // Restart the TTreeReader to process the data from the beginning
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+
     // Define the 2D histogram bins and ranges
     int nBins = 100;
     double xMin = -20;
