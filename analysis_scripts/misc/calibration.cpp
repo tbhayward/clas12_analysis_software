@@ -329,26 +329,33 @@ void plot_ltcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     create_plot("negative", negative_pids);
 }
 
+#include <TH2D.h>
+#include <TLegend.h>
+#include <TBox.h>
+
 void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Restart the TTreeReader to process the data from the beginning
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
 
-    // Set up TTreeReaderValues for ft_x, ft_y, ft_energy, and particle_pid
+    // Set up TTreeReaderValues for ft_x, ft_y, ft_energy, ft_radius, and particle_pid
     TTreeReaderValue<double> ft_x(dataReader, "ft_x");
     TTreeReaderValue<double> ft_y(dataReader, "ft_y");
     TTreeReaderValue<double> ft_energy(dataReader, "ft_energy");
+    TTreeReaderValue<double> ft_radius(dataReader, "ft_radius");
     TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
 
     TTreeReaderValue<double>* mc_ft_x = nullptr;
     TTreeReaderValue<double>* mc_ft_y = nullptr;
     TTreeReaderValue<double>* mc_ft_energy = nullptr;
+    TTreeReaderValue<double>* mc_ft_radius = nullptr;
     TTreeReaderValue<int>* mc_particle_pid = nullptr;
 
     if (mcReader) {
         mc_ft_x = new TTreeReaderValue<double>(*mcReader, "ft_x");
         mc_ft_y = new TTreeReaderValue<double>(*mcReader, "ft_y");
         mc_ft_energy = new TTreeReaderValue<double>(*mcReader, "ft_energy");
+        mc_ft_radius = new TTreeReaderValue<double>(*mcReader, "ft_radius");
         mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
     }
 
@@ -407,109 +414,114 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
             }
         }
 
+        // Compute global mean and standard deviation for MC
+        double mc_global_sum = 0, mc_global_count = 0, mc_sum_sq_diff = 0;
+        for (int i = 1; i <= nBins; i++) {
+            for (int j = 1; j <= nBins; j++) {
+                double mean_value = h_mc_mean->GetBinContent(i, j);
+                if (mean_value > 0) {
+                    mc_global_sum += mean_value;
+                    mc_global_count++;
+                }
+            }
+        }
+        double mc_global_mean = mc_global_sum / mc_global_count;
+        for (int i = 1; i <= nBins; i++) {
+            for (int j = 1; j <= nBins; j++) {
+                double mean_value = h_mc_mean->GetBinContent(i, j);
+                if (mean_value > 0) {
+                    mc_sum_sq_diff += TMath::Power(mean_value - mc_global_mean, 2);
+                }
+            }
+        }
+        double mc_global_std_dev = TMath::Sqrt(mc_sum_sq_diff / mc_global_count);
+
         // Draw and save the MC mean energy plot
         TCanvas c_mc("c_mc", "c_mc", 800, 600);
         h_mc_mean->Draw("COLZ");
+        TLegend* mc_legend = new TLegend(0.7, 0.8, 0.9, 0.9);
+        mc_legend->AddEntry(h_mc_mean, Form("Mean = %.2f GeV", mc_global_mean), "");
+        mc_legend->AddEntry(h_mc_mean, Form("Std Dev = %.2f GeV", mc_global_std_dev), "");
+        mc_legend->Draw();
         c_mc.SaveAs("output/ft_xy_energy_mc.png");
 
+        delete mc_legend;
         delete h_mc_sum;
         delete h_mc_count;
         delete h_mc_mean;
+
+        // Create masked plot for MC
+        TH2D* h_mc_masked = (TH2D*)h_mc_mean->Clone("h_mc_masked");
+        TCanvas c_mc_masked("c_mc_masked", "c_mc_masked", 800, 600);
+        h_mc_masked->Draw("COLZ");
+        for (int i = 1; i <= nBins; i++) {
+            for (int j = 1; j <= nBins; j++) {
+                double mean_value = h_mc_masked->GetBinContent(i, j);
+                if (mean_value < mc_global_mean - 3 * mc_global_std_dev) {
+                    TBox* box = new TBox(h_mc_masked->GetXaxis()->GetBinLowEdge(i), h_mc_masked->GetYaxis()->GetBinLowEdge(j),
+                                         h_mc_masked->GetXaxis()->GetBinUpEdge(i), h_mc_masked->GetYaxis()->GetBinUpEdge(j));
+                    box->SetFillColor(kRed);
+                    box->Draw();
+                }
+            }
+        }
+        c_mc_masked.SaveAs("output/ft_xy_energy_masked_mc.png");
+        delete h_mc_masked;
     }
 
+    // Compute global average and standard deviation for Data
+    double global_sum = 0, global_count = 0, sum_sq_diff = 0;
     for (int i = 1; i <= nBins; i++) {
         for (int j = 1; j <= nBins; j++) {
-            double count = h_data_count->GetBinContent(i, j);
-            if (count > 0) {
-                h_data_mean->SetBinContent(i, j, h_data_sum->GetBinContent(i, j) / count);
+            double mean_value = h_data_mean->GetBinContent(i, j);
+            if (mean_value > 0) {
+                global_sum += mean_value;
+                global_count++;
             }
         }
     }
+    double global_mean = global_sum / global_count;
+    for (int i = 1; i <= nBins; i++) {
+        for (int j = 1; j <= nBins; j++) {
+            double mean_value = h_data_mean->GetBinContent(i, j);
+            if (mean_value > 0) {
+                sum_sq_diff += TMath::Power(mean_value - global_mean, 2);
+            }
+        }
+    }
+    double global_std_dev = TMath::Sqrt(sum_sq_diff / global_count);
 
     // Draw and save the data mean energy plot
     TCanvas c_data("c_data", "c_data", 800, 600);
     h_data_mean->Draw("COLZ");
+    TLegend* data_legend = new TLegend(0.7, 0.8, 0.9, 0.9);
+    data_legend->AddEntry(h_data_mean, Form("Mean = %.2f GeV", global_mean), "");
+    data_legend->AddEntry(h_data_mean, Form("Std Dev = %.2f GeV", global_std_dev), "");
+    data_legend->Draw();
     c_data.SaveAs("output/ft_xy_energy_data.png");
 
-    // Clean up
+    delete data_legend;
     delete h_data_sum;
     delete h_data_count;
     delete h_data_mean;
-}
 
-void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
-    // Restart the TTreeReader to process the data from the beginning
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-
-    // Set up TTreeReaderValues for ft_x, ft_y, and particle_pid
-    TTreeReaderValue<double> ft_x(dataReader, "ft_x");
-    TTreeReaderValue<double> ft_y(dataReader, "ft_y");
-    TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
-
-    TTreeReaderValue<double>* mc_ft_x = nullptr;
-    TTreeReaderValue<double>* mc_ft_y = nullptr;
-    TTreeReaderValue<int>* mc_particle_pid = nullptr;
-
-    if (mcReader) {
-        mc_ft_x = new TTreeReaderValue<double>(*mcReader, "ft_x");
-        mc_ft_y = new TTreeReaderValue<double>(*mcReader, "ft_y");
-        mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
-    }
-
-    // Define the 2D histogram bins and ranges
-    int nBins = 100;
-    double xMin = -20;
-    double xMax = 20;
-    double yMin = -20;
-    double yMax = 20;
-
-    // Create histograms for data and MC
-    TH2D* h_data = new TH2D("h_data", "data FT hit position", nBins, xMin, xMax, nBins, yMin, yMax);
-    h_data->GetXaxis()->SetTitle("x_{FT}");
-    h_data->GetYaxis()->SetTitle("y_{FT}");
-
-    TH2D* h_mc = nullptr;
-    if (mcReader) {
-        h_mc = new TH2D("h_mc", "mc FT hit position", nBins, xMin, xMax, nBins, yMin, yMax);
-        h_mc->GetXaxis()->SetTitle("x_{FT}");
-        h_mc->GetYaxis()->SetTitle("y_{FT}");
-    }
-
-    // Fill the data histogram, applying the cuts
-    while (dataReader.Next()) {
-        if (*particle_pid == 22 && *ft_x != -9999 && *ft_y != -9999) {
-            h_data->Fill(*ft_x, *ft_y);
-        }
-    }
-
-    // Fill the MC histogram if available, applying the cuts
-    if (mcReader) {
-        while (mcReader->Next()) {
-            if (**mc_particle_pid == 22 && **mc_ft_x != -9999 && **mc_ft_y != -9999) {
-                h_mc->Fill(**mc_ft_x, **mc_ft_y);
+    // Create masked plot for Data
+    TH2D* h_data_masked = (TH2D*)h_data_mean->Clone("h_data_masked");
+    TCanvas c_data_masked("c_data_masked", "c_data_masked", 800, 600);
+    h_data_masked->Draw("COLZ");
+    for (int i = 1; i <= nBins; i++) {
+        for (int j = 1; j <= nBins; j++) {
+            double mean_value = h_data_masked->GetBinContent(i, j);
+            if (mean_value < global_mean - 3 * global_std_dev) {
+                TBox* box = new TBox(h_data_masked->GetXaxis()->GetBinLowEdge(i), h_data_masked->GetYaxis()->GetBinLowEdge(j),
+                                     h_data_masked->GetXaxis()->GetBinUpEdge(i), h_data_masked->GetYaxis()->GetBinUpEdge(j));
+                box->SetFillColor(kRed);
+                box->Draw();
             }
         }
     }
-
-    // Draw and save the data plot
-    TCanvas c_data("c_data", "c_data", 800, 600);
-    h_data->Draw("COLZ");
-    c_data.SaveAs("output/ft_hit_position_data.png");
-
-    // Draw and save the MC plot if available
-    if (h_mc) {
-        TCanvas c_mc("c_mc", "c_mc", 800, 600);
-        h_mc->Draw("COLZ");
-        c_mc.SaveAs("output/ft_hit_position_mc.png");
-    }
-
-    // Clean up
-    delete h_data;
-    if (h_mc) delete h_mc;
-    if (mc_ft_x) delete mc_ft_x;
-    if (mc_ft_y) delete mc_ft_y;
-    if (mc_particle_pid) delete mc_particle_pid;
+    c_data_masked.SaveAs("output/ft_xy_energy_masked_data.png");
+    delete h_data_masked;
 }
 
 int main(int argc, char** argv) {
@@ -547,7 +559,7 @@ int main(int argc, char** argv) {
 
     // plot_htcc_nphe(dataReader, mcReader);
     // plot_ltcc_nphe(dataReader, mcReader);
-    plot_ft_hit_position(dataReader, mcReader);
+    // plot_ft_hit_position(dataReader, mcReader);
     plot_ft_xy_energy(dataReader, mcReader);
 
 
