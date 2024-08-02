@@ -856,9 +856,9 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                 // Normalize the ratio histogram
                 if (mean_ratio != 0) h_ratio->Scale(1.0 / mean_ratio);
 
-                // Draw and save the ratio plot
+                // Draw and save the ratio plot with a linear scale and range 0 to 2
                 TCanvas c_ratio(("c_ratio_" + particle_name + "_" + layer_name).c_str(), ("c_ratio_" + particle_name + "_" + layer_name).c_str(), 800, 600);
-                c_ratio.SetLogz();  // Set the z-axis to a logarithmic scale
+                h_ratio->GetZaxis()->SetRangeUser(0, 2); // Set the z-axis range to [0, 2]
                 h_ratio->Draw("COLZ");
                 c_ratio.SaveAs(("output/calibration/cal/" + particle_name + "_ratio_" + layer_name + "_cal_hit_position.png").c_str());
 
