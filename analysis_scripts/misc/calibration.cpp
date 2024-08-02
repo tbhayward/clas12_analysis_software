@@ -138,6 +138,7 @@ void plot_cc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
 
         // Set the Y-axis range to accommodate the maximum value
         grData->SetMaximum(1.15 * maxY);
+        grData->GetXaxis()->SetRangeUser(0, 40);
 
         TGraphErrors* grMC = nullptr;
         if (mcReader) {
