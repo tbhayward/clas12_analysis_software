@@ -633,6 +633,114 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
     }
 }
 
+void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+
+    // Set up TTreeReaderValues for ft_x, ft_y, and particle_pid
+    TTreeReaderValue<double> ft_x(dataReader, "ft_x");
+    TTreeReaderValue<double> ft_y(dataReader, "ft_y");
+    TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+
+    TTreeReaderValue<double>* mc_ft_x = nullptr;
+    TTreeReaderValue<double>* mc_ft_y = nullptr;
+    TTreeReaderValue<int>* mc_particle_pid = nullptr;
+
+    if (mcReader) {
+        mc_ft_x = new TTreeReaderValue<double>(*mcReader, "ft_x");
+        mc_ft_y = new TTreeReaderValue<double>(*mcReader, "ft_y");
+        mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+    }
+
+    // Restart the TTreeReader to process the data from the beginning
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+
+    // Define the 2D histogram bins and ranges
+    int nBins = 100;
+    double xMin = -20;
+    double xMax = 20;
+    double yMin = -20;
+    double yMax = 20;
+
+    // Create histograms for data and MC
+    TH2D* h_data = new TH2D("h_data", "data FT hit position", nBins, xMin, xMax, nBins, yMin, yMax);
+    h_data->GetXaxis()->SetTitle("x_{FT}");
+    h_data->GetYaxis()->SetTitle("y_{FT}");
+
+    TH2D* h_mc = nullptr;
+    if (mcReader) {
+        h_mc = new TH2D("h_mc", "mc FT hit position", nBins, xMin, xMax, nBins, yMin, yMax);
+        h_mc->GetXaxis()->SetTitle("x_{FT}");
+        h_mc->GetYaxis()->SetTitle("y_{FT}");
+    }
+
+    // Create histograms for data and MC with fiducial cuts applied
+    TH2D* h_data_cut = new TH2D("h_data_cut", "data FT hit position (cut)", nBins, xMin, xMax, nBins, yMin, yMax);
+    h_data_cut->GetXaxis()->SetTitle("x_{FT}");
+    h_data_cut->GetYaxis()->SetTitle("y_{FT}");
+
+    TH2D* h_mc_cut = nullptr;
+    if (mcReader) {
+        h_mc_cut = new TH2D("h_mc_cut", "mc FT hit position (cut)", nBins, xMin, xMax, nBins, yMin, yMax);
+        h_mc_cut->GetXaxis()->SetTitle("x_{FT}");
+        h_mc_cut->GetYaxis()->SetTitle("y_{FT}");
+    }
+
+    // Fill the data histograms, applying the cuts
+    while (dataReader.Next()) {
+        if (*particle_pid == 22 && *ft_x != -9999 && *ft_y != -9999) {
+            h_data->Fill(*ft_x, *ft_y);
+            if (forward_tagger_fiducial(*ft_x, *ft_y)) {
+                h_data_cut->Fill(*ft_x, *ft_y);
+            }
+        }
+    }
+
+    // Fill the MC histograms if available, applying the cuts
+    if (mcReader) {
+        while (mcReader->Next()) {
+            if (**mc_particle_pid == 22 && **mc_ft_x != -9999 && **mc_ft_y != -9999) {
+                h_mc->Fill(**mc_ft_x, **mc_ft_y);
+                if (forward_tagger_fiducial(**mc_ft_x, **mc_ft_y)) {
+                    h_mc_cut->Fill(**mc_ft_x, **mc_ft_y);
+                }
+            }
+        }
+    }
+
+    // Draw and save the original data plot
+    TCanvas c_data("c_data", "c_data", 800, 600);
+    h_data->Draw("COLZ");
+    c_data.SaveAs("output/ft_hit_position_data.png");
+
+    // Draw and save the original MC plot if available
+    if (h_mc) {
+        TCanvas c_mc("c_mc", "c_mc", 800, 600);
+        h_mc->Draw("COLZ");
+        c_mc.SaveAs("output/ft_hit_position_mc.png");
+    }
+
+    // Draw and save the cut data plot
+    TCanvas c_data_cut("c_data_cut", "c_data_cut", 800, 600);
+    h_data_cut->Draw("COLZ");
+    c_data_cut.SaveAs("output/ft_hit_position_cut_data.png");
+
+    // Draw and save the cut MC plot if available
+    if (h_mc_cut) {
+        TCanvas c_mc_cut("c_mc_cut", "c_mc_cut", 800, 600);
+        h_mc_cut->Draw("COLZ");
+        c_mc_cut.SaveAs("output/ft_hit_position_cut_mc.png");
+    }
+
+    // Clean up
+    delete h_data;
+    delete h_data_cut;
+    if (h_mc) delete h_mc;
+    if (h_mc_cut) delete h_mc_cut;
+    if (mc_ft_x) delete mc_ft_x;
+    if (mc_ft_y) delete mc_ft_y;
+    if (mc_particle_pid) delete mc_particle_pid;
+}
+
 void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Array of layers and their corresponding names
     std::vector<std::tuple<std::string, std::string, std::string>> layers = {
