@@ -645,6 +645,10 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
         std::string y_branch = std::get<1>(layer);
         std::string layer_name = std::get<2>(layer);
 
+        // Restart the TTreeReader to process the data from the beginning
+        dataReader.Restart();
+        if (mcReader) mcReader->Restart();
+
         // Declare TTreeReaderValues for data
         TTreeReaderValue<double> cal_x(dataReader, x_branch.c_str());
         TTreeReaderValue<double> cal_y(dataReader, y_branch.c_str());
@@ -661,10 +665,6 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             mc_cal_y = new TTreeReaderValue<double>(*mcReader, y_branch.c_str());
             mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
         }
-
-        // Restart the TTreeReader to process the data from the beginning
-        dataReader.Restart();
-        if (mcReader) mcReader->Restart();
 
         // Define the 2D histogram bins and ranges
         int nBins = 100;
