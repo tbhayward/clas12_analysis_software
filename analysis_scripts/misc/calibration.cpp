@@ -12,6 +12,12 @@
 #include <sstream>
 #include <algorithm>
 
+#include <TGraphErrors.h>
+#include <TLegend.h>
+#include <TF1.h>
+#include <sstream>
+#include <algorithm>
+
 void plot_cc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Arrays to store positive and negative track conditions
     std::vector<int> positive_pids = {-11, 211, 321, 2212};
@@ -25,9 +31,10 @@ void plot_cc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
 
     // Function to create a plot based on track charge
     auto create_plot = [&](const std::string& plot_name, const std::vector<int>& pids) {
-        // Set up TTreeReaderValues
+        // Set up TTreeReaderValues before calling Next()
         TTreeReaderValue<double> cc_nphe_15(dataReader, "cc_nphe_15");
         TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+
         TTreeReaderValue<double>* mc_cc_nphe_15 = nullptr;
         TTreeReaderValue<int>* mc_particle_pid = nullptr;
 
