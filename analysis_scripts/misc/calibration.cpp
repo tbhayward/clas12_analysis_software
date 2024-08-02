@@ -526,6 +526,12 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
 	    TH2D* h_mc_masked = (TH2D*)h_mc_mean->Clone("h_mc_masked");
 	    TCanvas c_mc_masked("c_mc_masked", "c_mc_masked", 800, 600);
 	    h_mc_masked->Draw("COLZ");
+
+	    // Reinitialize mc_legend just before drawing if needed
+	    TLegend* mc_masked_legend = new TLegend(0.7, 0.8, 0.9, 0.9);
+	    mc_masked_legend->AddEntry(h_mc_masked, Form("Mean = %.2f GeV", mc_global_mean), "");
+	    mc_masked_legend->AddEntry(h_mc_masked, Form("Std Dev = %.2f GeV", mc_global_std_dev), "");
+
 	    for (int i = 1; i <= nBins; i++) {
 	        for (int j = 1; j <= nBins; j++) {
 	            double mean_value = h_mc_masked->GetBinContent(i, j);
@@ -537,8 +543,11 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
 	            }
 	        }
 	    }
-	    mc_legend->Draw();
+	    mc_masked_legend->Draw();  // Draw the reinitialized legend
 	    c_mc_masked.SaveAs("output/ft_xy_energy_masked_mc.png");
+
+	    // Clean up
+	    delete mc_masked_legend;
 	    delete h_mc_masked;
 	}
 
