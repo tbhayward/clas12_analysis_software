@@ -618,17 +618,17 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
 	    delete h_mc_masked;
 	}
 
-	// Clean up the dynamically allocated memory
-    delete h_data_sum;
-    delete h_data_count;
-    if (mcReader) {
-        delete h_mc_sum;
-        delete h_mc_count;
-        delete mc_ft_x;
-        delete mc_ft_y;
-        delete mc_ft_energy;
-        delete mc_particle_pid;
-    }
+	// // Clean up the dynamically allocated memory
+    // delete h_data_sum;
+    // delete h_data_count;
+    // if (mcReader) {
+    //     delete h_mc_sum;
+    //     delete h_mc_count;
+    //     delete mc_ft_x;
+    //     delete mc_ft_y;
+    //     delete mc_ft_energy;
+    //     delete mc_particle_pid;
+    // }
 }
 
 void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
