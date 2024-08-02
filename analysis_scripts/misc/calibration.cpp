@@ -54,9 +54,9 @@ void plot_cc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         }
 
         // Binning for cc_nphe_15
-        int nBins = 50;
+        int nBins = 100;
         double xMin = 0;
-        double xMax = 50;
+        double xMax = 40;
 
         // Arrays for data
         std::vector<double> dataX(nBins, 0), dataY(nBins, 0);
@@ -128,7 +128,8 @@ void plot_cc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         }
 
         // Create TGraphErrors for data and MC
-        TGraphErrors* grData = new TGraphErrors(nBins, &dataX[0], &dataY[0], &dataEx[0], &dataEy[0]);
+        TGraphErrors* grData = new 
+        	TGraphErrors(nBins, &dataX[0], &dataY[0], &dataEx[0], &dataEy[0]);
         grData->SetMarkerColor(kBlack);
         grData->SetLineColor(kBlack);
         grData->SetTitle(("HTCC nphe - " + plot_name).c_str());
