@@ -488,17 +488,18 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
     data_legend->AddEntry(h_data_mean, Form("Std Dev = %.2f GeV", global_std_dev), "");
     data_legend->Draw();
     c_data.SaveAs("output/ft_xy_energy_data.png");
-
+    
+    TLegend* mc_legend = nullptr;
     // Draw and save the MC mean energy plot
     if (mcReader) {
         TCanvas c_mc("c_mc", "c_mc", 800, 600);
         h_mc_mean->Draw("COLZ");
-        TLegend* mc_legend = new TLegend(0.7, 0.8, 0.9, 0.9);
+        mc_legend = new TLegend(0.7, 0.8, 0.9, 0.9);
         mc_legend->AddEntry(h_mc_mean, Form("Mean = %.2f GeV", mc_global_mean), "");
         mc_legend->AddEntry(h_mc_mean, Form("Std Dev = %.2f GeV",mc_global_std_dev), "");
 	mc_legend->Draw();
 	c_mc.SaveAs("output/ft_xy_energy_mc.png");
-	// delete mc_legend;
+	delete mc_legend;
 	}
 	// Create and save masked plot for Data
 	TH2D* h_data_masked = (TH2D*)h_data_mean->Clone("h_data_masked");
