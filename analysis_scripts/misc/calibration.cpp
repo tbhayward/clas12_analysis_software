@@ -554,15 +554,15 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
     c_data.SaveAs("output/ft_xy_energy_data.png");
 
     // Draw and save the MC mean energy plot
+    TLegend* mc_legend = nullptr;
     if (mcReader) {
         TCanvas c_mc("c_mc", "c_mc", 800, 600);
         h_mc_mean->Draw("COLZ");
-        TLegend* mc_legend = new TLegend(0.7, 0.8, 0.9, 0.9);
+        mc_legend = new TLegend(0.7, 0.8, 0.9, 0.9);
         mc_legend->AddEntry(h_mc_mean, Form("Mean = %.2f GeV", mc_global_mean), "");
         mc_legend->AddEntry(h_mc_mean, Form("Std Dev = %.2f GeV", mc_global_std_dev), "");
         mc_legend->Draw();
         c_mc.SaveAs("output/ft_xy_energy_mc.png");
-        delete mc_legend;
     }
 
     // Create and save masked plot for Data
@@ -573,56 +573,53 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
         for (int j = 1; j <= nBins; j++) {
             double mean_value = h_data_masked->GetBinContent(i, j);
             if (mean_value < global_mean - 1 * global_std_dev && h_data_mean->GetBinContent(i, j) > 0) {
-                TBox* box = new TBox(h_data
+				TBox* box = new TBox(h_data_masked->GetXaxis()->GetBinLowEdge(i), h_data_masked->GetYaxis()->GetBinLowEdge(j),
+				h_data_masked->GetXaxis()->GetBinUpEdge(i), h_data_masked->GetYaxis()->GetBinUpEdge(j));
+				box->SetFillColor(kRed);
+				box->Draw();
+			}
+		}
+	}
+	data_legend->Draw();
+	c_data_masked.SaveAs("output/ft_xy_energy_masked_data.png");
+	// Create and save masked plot for MC
+	if (mcReader) {
+	    TH2D* h_mc_masked = (TH2D*)h_mc_mean->Clone("h_mc_masked");
+	    TCanvas c_mc_masked("c_mc_masked", "c_mc_masked", 800, 600);
+	    h_mc_masked->Draw("COLZ");
+	    for (int i = 1; i <= nBins; i++) {
+	        for (int j = 1; j <= nBins; j++) {
+	            double mean_value = h_mc_masked->GetBinContent(i, j);
+	            if (mean_value < mc_global_mean - 1 * mc_global_std_dev && h_mc_mean->GetBinContent(i, j) > 0) {
+	                TBox* box = new TBox(h_mc_masked->GetXaxis()->GetBinLowEdge(i), h_mc_masked->GetYaxis()->GetBinLowEdge(j),
+	                                     h_mc_masked->GetXaxis()->GetBinUpEdge(i), h_mc_masked->GetYaxis()->GetBinUpEdge(j));
+	                box->SetFillColor(kRed);
+	                box->Draw();
+	            }
+	        }
+	    }
+	    mc_legend->Draw();
+	    c_mc_masked.SaveAs("output/ft_xy_energy_masked_mc.png");
+	    delete h_mc_masked;
+	}
 
-_masked->GetXaxis()->GetBinLowEdge(i), h_data_masked->GetYaxis()->GetBinLowEdge(j),
-                                     h_data_masked->GetXaxis()->GetBinUpEdge(i), h_data_masked->GetYaxis()->GetBinUpEdge(j));
-                box->SetFillColor(kRed);
-                box->Draw();
-            }
-        }
-    }
-    data_legend->Draw();
-    c_data_masked.SaveAs("output/ft_xy_energy_masked_data.png");
+	// Clean up
+	delete data_legend;
+	delete h_data_sum;
+	delete h_data_count;
+	delete h_data_mean;
+	delete h_data_masked;
 
-    // Create and save masked plot for MC
-    if (mcReader) {
-        TH2D* h_mc_masked = (TH2D*)h_mc_mean->Clone("h_mc_masked");
-        TCanvas c_mc_masked("c_mc_masked", "c_mc_masked", 800, 600);
-        h_mc_masked->Draw("COLZ");
-        for (int i = 1; i <= nBins; i++) {
-            for (int j = 1; j <= nBins; j++) {
-                double mean_value = h_mc_masked->GetBinContent(i, j);
-                if (mean_value < mc_global_mean - 1 * mc_global_std_dev && h_mc_mean->GetBinContent(i, j) > 0) {
-                    TBox* box = new TBox(h_mc_masked->GetXaxis()->GetBinLowEdge(i), h_mc_masked->GetYaxis()->GetBinLowEdge(j),
-                                         h_mc_masked->GetXaxis()->GetBinUpEdge(i), h_mc_masked->GetYaxis()->GetBinUpEdge(j));
-                    box->SetFillColor(kRed);
-                    box->Draw();
-                }
-            }
-        }
-        mc_legend->Draw();
-        c_mc_masked.SaveAs("output/ft_xy_energy_masked_mc.png");
-        delete h_mc_masked;
-    }
-
-    // Clean up
-    delete data_legend;
-    delete h_data_sum;
-    delete h_data_count;
-    delete h_data_mean;
-    delete h_data_masked;
-
-    if (mcReader) {
-        delete mc_ft_x;
-        delete mc_ft_y;
-        delete mc_ft_energy;
-        delete mc_particle_pid;
-        delete h_mc_sum;
-        delete h_mc_count;
-        delete h_mc_mean;
-    }
-}
+	if (mcReader) {
+	    delete mc_legend;
+	    delete mc_ft_x;
+	    delete mc_ft_y;
+	    delete mc_ft_energy;
+	    delete mc_particle_pid;
+	    delete h_mc_sum;
+	    delete h_mc_count;
+	    delete h_mc_mean;
+	}
 
 int main(int argc, char** argv) {
     if (argc < 2 || argc > 3) {
