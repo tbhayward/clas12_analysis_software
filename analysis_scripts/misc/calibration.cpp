@@ -533,6 +533,11 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
 	delete h_data_count;
 	delete h_data_mean;
 
+	// Declare TTreeReaderValue for ft_radius at the beginning of your function
+	TTreeReaderValue<double> ft_radius(dataReader, "ft_radius");
+	if (mcReader) {
+	    mc_ft_radius = new TTreeReaderValue<double>(*mcReader, "ft_radius");
+	}
 	double min_radius_cut = 7.5; 
 
 	// Apply the radius cut and create a new set of plots with the cut enforced
