@@ -741,6 +741,8 @@ void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
 
 void plot_cal_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     gStyle->SetOptStat(0);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
 
     // Define the different calorimeter layers
     std::vector<std::string> layers = {"1", "4", "7"};
@@ -1012,8 +1014,6 @@ int main(int argc, char** argv) {
     if (mcReader) mcReader->Restart();
     // plot_ft_xy_energy(dataReader, mcReader);
     // plot_ft_hit_position(dataReader, mcReader);
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
     plot_cal_xy_energy(dataReader, mcReader);
 
 
