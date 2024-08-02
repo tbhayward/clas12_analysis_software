@@ -456,6 +456,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
             }
         }
         c_mc_masked.SaveAs("output/ft_xy_energy_masked_mc.png");
+        mc_legend->Draw();
 
         // Clean up
         delete mc_legend;
