@@ -580,6 +580,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
 	    delete h_mc_mean;
 	    delete h_mc_cut;
 	}
+}
 
 int main(int argc, char** argv) {
     if (argc < 2 || argc > 3) {
