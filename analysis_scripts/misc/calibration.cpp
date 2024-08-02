@@ -160,7 +160,7 @@ void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         legend->Draw();
 
         // Save the plot
-        c.SaveAs(("output/htcc_nphe_" + plot_name + ".png").c_str());
+        c.SaveAs(("output/calibration/cc/htcc_nphe_" + plot_name + ".png").c_str());
 
         // Clean up
         delete grData;
@@ -318,7 +318,7 @@ void plot_ltcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         legend->Draw();
 
         // Save the plot
-        c.SaveAs(("output/ltcc_nphe_" + plot_name + ".png").c_str());
+        c.SaveAs(("output/calibration/cc/ltcc_nphe_" + plot_name + ".png").c_str());
 
         // Clean up
         delete grData;
@@ -518,7 +518,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
     data_legend->AddEntry(h_data_mean, Form("Mean = %.2f GeV", global_mean), "");
     data_legend->AddEntry(h_data_mean, Form("Std Dev = %.2f GeV", global_std_dev), "");
     data_legend->Draw();
-    c_data.SaveAs("output/ft_xy_energy_data.png");
+    c_data.SaveAs("output/calibration/ft/ft_xy_energy_data.png");
 
     // Draw and save the MC mean energy plot
     TLegend* mc_legend = nullptr;
@@ -529,7 +529,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
         mc_legend->AddEntry(h_mc_mean, Form("Mean = %.2f GeV", mc_global_mean), "");
         mc_legend->AddEntry(h_mc_mean, Form("Std Dev = %.2f GeV", mc_global_std_dev), "");
         mc_legend->Draw();
-        c_mc.SaveAs("output/ft_xy_energy_mc.png");
+        c_mc.SaveAs("output/calibration/ft/ft_xy_energy_mc.png");
     }
 
     // Create and save masked plot for Data
@@ -577,7 +577,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
 	}
 
     data_legend->Draw();
-    c_data_masked.SaveAs("output/ft_xy_energy_masked_data.png");
+    c_data_masked.SaveAs("output/calibration/ft/ft_xy_energy_masked_data.png");
 
     // Create and save masked plot for MC
 	if (mcReader) {
@@ -616,7 +616,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
 	    }
 
 	    mc_legend->Draw();
-	    c_mc_masked.SaveAs("output/ft_xy_energy_masked_mc.png");
+	    c_mc_masked.SaveAs("output/calibration/ft/ft_xy_energy_masked_mc.png");
 	    delete h_mc_masked;
 	}
 
@@ -718,14 +718,14 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             TCanvas c_data(("c_data_" + layer_name + "_" + particle_name).c_str(), ("c_data_" + layer_name + "_" + particle_name).c_str(), 800, 600);
             c_data.SetLogz();  // Set the z-axis to a logarithmic scale
             h_data->Draw("COLZ");
-            c_data.SaveAs(("output/cal_hit_position_data_" + layer_name + "_" + particle_name + ".png").c_str());
+            c_data.SaveAs(("output/calibration/cal/cal_hit_position_data_" + layer_name + "_" + particle_name + ".png").c_str());
 
             // Draw and save the original MC plot if available
             if (h_mc) {
                 TCanvas c_mc(("c_mc_" + layer_name + "_" + particle_name).c_str(), ("c_mc_" + layer_name + "_" + particle_name).c_str(), 800, 600);
                 c_mc.SetLogz();  // Set the z-axis to a logarithmic scale
                 h_mc->Draw("COLZ");
-                c_mc.SaveAs(("output/cal_hit_position_mc_" + layer_name + "_" + particle_name + ".png").c_str());
+                c_mc.SaveAs(("output/calibration/cal/cal_hit_position_mc_" + layer_name + "_" + particle_name + ".png").c_str());
             }
 
             // Clean up for this layer and particle type
