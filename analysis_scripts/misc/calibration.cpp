@@ -342,7 +342,13 @@ void plot_ltcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
 
 #include <TH2D.h>
 
+#include <TH2D.h>
+
 void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+    // Restart the TTreeReader to process the data from the beginning
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+
     // Set up TTreeReaderValues for ft_x, ft_y, and particle_pid
     TTreeReaderValue<double> ft_x(dataReader, "ft_x");
     TTreeReaderValue<double> ft_y(dataReader, "ft_y");
@@ -446,8 +452,8 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    plot_htcc_nphe(dataReader, mcReader);
-    plot_ltcc_nphe(dataReader, mcReader);
+    // plot_htcc_nphe(dataReader, mcReader);
+    // plot_ltcc_nphe(dataReader, mcReader);
     plot_ft_hit_position(dataReader, mcReader);
 
 
