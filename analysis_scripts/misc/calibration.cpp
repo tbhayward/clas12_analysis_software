@@ -774,8 +774,11 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    // plot_htcc_nphe(dataReader, mcReader);
-    // plot_ltcc_nphe(dataReader, mcReader);
+    plot_htcc_nphe(dataReader, mcReader);
+    plot_ltcc_nphe(dataReader, mcReader);
+    // Restart readers before the next plot to ensure proper state
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
     plot_ft_xy_energy(dataReader, mcReader);
     // plot_ft_hit_position(dataReader, mcReader);
 
