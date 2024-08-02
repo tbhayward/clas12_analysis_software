@@ -532,6 +532,58 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
 	delete h_data_sum;
 	delete h_data_count;
 	delete h_data_mean;
+
+	double min_radius_cut = 7.5; // Replace this with your determined cut-off radius
+	
+	// Apply the radius cut and create a new set of plots with the cut enforced
+	TH2D* h_data_cut = new TH2D("h_data_cut", "Data FT Energy Cut", nBins, xMin, xMax, nBins, yMin, yMax);
+	TH2D* h_mc_cut = nullptr;
+	if (mcReader) {
+	    h_mc_cut = new TH2D("h_mc_cut", "MC FT Energy Cut", nBins, xMin, xMax, nBins, yMin, yMax);
+	}
+
+	// Fill histograms applying radius cut
+	dataReader.Restart();
+	while (dataReader.Next()) {
+	    if (*particle_pid == 22 && *ft_radius > min_radius_cut && *ft_x != -9999 && *ft_y != -9999) {
+	        h_data_cut->Fill(*ft_x, *ft_y, *ft_energy);
+	    }
+	}
+
+	if (mcReader) {
+	    mcReader->Restart();
+	    while (mcReader->Next()) {
+	        if (**mc_particle_pid == 22 && **mc_ft_radius > min_radius_cut && **mc_ft_x != -9999 && **mc_ft_y != -9999) {
+	            h_mc_cut->Fill(**mc_ft_x, **mc_ft_y, **mc_ft_energy);
+	        }
+	    }
+	}
+
+	// Draw and save the data plot with cut
+	TCanvas c_data_cut("c_data_cut", "c_data_cut", 800, 600);
+	h_data_cut->Draw("COLZ");
+	TLegend* data_cut_legend = new TLegend(0.7, 0.8, 0.9, 0.9);
+	data_cut_legend->AddEntry(h_data_cut, Form("Mean = %.2f GeV", h_data_cut->GetMean(3)), "");
+	data_cut_legend->AddEntry(h_data_cut, Form("Std Dev = %.2f GeV", h_data_cut->GetStdDev(3)), "");
+	data_cut_legend->Draw();
+	c_data_cut.SaveAs("output/ft_xy_energy_cut_data.png");
+
+	if (mcReader) {
+	    // Draw and save the MC plot with cut
+	    TCanvas c_mc_cut("c_mc_cut", "c_mc_cut", 800, 600);
+	    h_mc_cut->Draw("COLZ");
+	    TLegend* mc_cut_legend = new TLegend(0.7, 0.8, 0.9, 0.9);
+	    mc_cut_legend->AddEntry(h_mc_cut, Form("Mean = %.2f GeV", h_mc_cut->GetMean(3)), "");
+	    mc_cut_legend->AddEntry(h_mc_cut, Form("Std Dev = %.2f GeV", h_mc_cut->GetStdDev(3)), "");
+	    mc_cut_legend->Draw();
+	    c_mc_cut.SaveAs("output/ft_xy_energy_cut_mc.png");
+	    delete mc_cut_legend;
+	}
+
+	// Clean up
+	delete data_cut_legend;
+	delete h_data_cut;
+	if (mcReader) delete h_mc_cut;	
 }
 
 int main(int argc, char** argv) {
