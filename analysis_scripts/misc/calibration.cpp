@@ -148,6 +148,10 @@ int main(int argc, char** argv) {
         std::cout << "Read in mc tree." << std::endl;
     }
 
+    //// PLOTS ////
+    
+    plot_cc_nphe(dataReader, mcReader);
+
 
     // Close files
     dataFile.Close();
