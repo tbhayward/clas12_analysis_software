@@ -445,7 +445,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
         for (int i = 1; i <= nBins; i++) {
             for (int j = 1; j <= nBins; j++) {
                 double mean_value = h_mc_masked->GetBinContent(i, j);
-                if (mean_value < mc_global_mean - 3 * mc_global_std_dev) {
+                if (mean_value < mc_global_mean - 2 * mc_global_std_dev) {
                     TBox* box = new TBox(h_mc_masked->GetXaxis()->GetBinLowEdge(i), h_mc_masked->GetYaxis()->GetBinLowEdge(j),
                                          h_mc_masked->GetXaxis()->GetBinUpEdge(i), h_mc_masked->GetYaxis()->GetBinUpEdge(j));
                     box->SetFillColor(kRed);
@@ -509,7 +509,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
 	for (int i = 1; i <= nBins; i++) {
 	    for (int j = 1; j <= nBins; j++) {
 	        double mean_value = h_data_masked->GetBinContent(i, j);
-	        if (mean_value < global_mean - 3 * global_std_dev) {
+	        if (mean_value < global_mean - 2 * global_std_dev) {
 	            TBox* box = new TBox(h_data_masked->GetXaxis()->GetBinLowEdge(i), h_data_masked->GetYaxis()->GetBinLowEdge(j),
 	                                 h_data_masked->GetXaxis()->GetBinUpEdge(i), h_data_masked->GetYaxis()->GetBinUpEdge(j));
 	            box->SetFillColor(kRed);
