@@ -543,70 +543,49 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
 	}
 
     // Draw the circles representing the holes
-	std::vector<std::pair<double, std::pair<double, double>>> holes = {
-	    {1.60, {-8.42,  9.89}},  // circle 1
-	    {1.60, {-9.89, -5.33}},  // circle 2
-	    {2.30, {-6.15, -13.00}},  // circle 3
-	    {2.00, {3.70,  -6.50}},   // circle 4
-	    {8.5, {0,  0}},   // big circle 1
-	    {15.5, {0,  0}},   // big circle 2
-	};
-
-	for (size_t idx = 0; idx < holes.size(); ++idx) {
-	    double hole_radius = holes[idx].first;
-	    double hole_center_x = holes[idx].second.first;
-	    double hole_center_y = holes[idx].second.second;
-
-	    TEllipse* circle = new TEllipse(hole_center_x, hole_center_y, hole_radius, hole_radius);
-	    circle->SetLineColor(kBlack);
-	    circle->SetLineWidth(2);  // Set line width to make it thick
-	    circle->SetFillStyle(0);  // No fill color, only the outline
-	    
-	    // Set dashed line style for the bigger circles
-	    if (idx >= 4) {  // Adjust the index based on the order of your circles
-	        circle->SetLineStyle(2);  // Dashed line style
-	    }
-
-	    circle->Draw("same");
-	}
+	std::vector<std::pair 
 
     data_legend->Draw();
     c_data_masked.SaveAs("output/ft_xy_energy_masked_data.png");
 
     // Create and save masked plot for MC
-    if (mcReader) {
-        TH2D* h_mc_masked = (TH2D*)h_mc_mean->Clone("h_mc_masked");
-        TCanvas c_mc_masked("c_mc_masked", "c_mc_masked", 800, 600);
-        h_mc_masked->Draw("COLZ");
-        for (int i = 1; i <= nBins; i++) {
-            for (int j = 1; j <= nBins; j++) {
-                double mean_value = h_mc_masked->GetBinContent(i, j);
-                if (mean_value < mc_global_mean - 1 * mc_global_std_dev && h_mc_mean->GetBinContent(i, j) > 0) {
-                    TBox* box = new TBox(h_mc_masked->GetXaxis()->GetBinLowEdge(i), h_mc_masked->GetYaxis()->GetBinLowEdge(j),
-                                         h_mc_masked->GetXaxis()->GetBinUpEdge(i), h_mc_masked->GetYaxis()->GetBinUpEdge(j));
-                    box->SetFillColor(kRed);
-                    box->Draw();
-                }
-            }
-        }
+	if (mcReader) {
+	    TH2D* h_mc_masked = (TH2D*)h_mc_mean->Clone("h_mc_masked");
+	    TCanvas c_mc_masked("c_mc_masked", "c_mc_masked", 800, 600);
+	    h_mc_masked->Draw("COLZ");
+	    for (int i = 1; i <= nBins; i++) {
+	        for (int j = 1; j <= nBins; j++) {
+	            double mean_value = h_mc_masked->GetBinContent(i, j);
+	            if (mean_value < mc_global_mean - 1 * mc_global_std_dev && h_mc_mean->GetBinContent(i, j) > 0) {
+	                TBox* box = new TBox(h_mc_masked->GetXaxis()->GetBinLowEdge(i), h_mc_masked->GetYaxis()->GetBinLowEdge(j),
+	                                     h_mc_masked->GetXaxis()->GetBinUpEdge(i), h_mc_masked->GetYaxis()->GetBinUpEdge(j));
+	                box->SetFillColor(kRed);
+	                box->Draw();
+	            }
+	        }
+	    }
 
-        // Draw the circles representing the holes on MC plot
-        for (const auto& hole : holes) {
-            double hole_radius = hole.first;
-            double hole_center_x = hole.second.first;
-            double hole_center_y = hole.second.second;
+	    // Draw the circles representing the holes on MC plot
+	    for (size_t idx = 0; idx < holes.size(); ++idx) {
+	        double hole_radius = holes[idx].first;
+	        double hole_center_x = holes[idx].second.first;
+	        double hole_center_y = holes[idx].second.second;
 
-            TEllipse* circle = new TEllipse(hole_center_x, hole_center_y, hole_radius, hole_radius);
-            circle->SetLineColor(kBlack);
-            circle->SetLineWidth(2);  // Set line width to make it thick
-            circle->SetFillStyle(0);  // No fill color, only the outline
-            circle->Draw("same");
-        }
+	        TEllipse* circle = new TEllipse(hole_center_x, hole_center_y, hole_radius, hole_radius);
+	        circle->SetLineColor(kBlack);
+	        circle->SetLineWidth(2);  // Set line width to make it thick
+	        circle->SetFillStyle(0);  // No fill color, only the outline
+	        
+	        // Make all circles dashed for MC plot
+	        circle->SetLineStyle(2);  // Dashed line style
+	        
+	        circle->Draw("same");
+	    }
 
-        mc_legend->Draw();
-        c_mc_masked.SaveAs("output/ft_xy_energy_masked_mc.png");
-        delete h_mc_masked;
-    }
+	    mc_legend->Draw();
+	    c_mc_masked.SaveAs("output/ft_xy_energy_masked_mc.png");
+	    delete h_mc_masked;
+	}
 
 	// Clean up
 	delete data_legend;
