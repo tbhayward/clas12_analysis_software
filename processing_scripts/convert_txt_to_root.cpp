@@ -842,11 +842,6 @@ int main(int argc, char *argv[]) {
         tree->Branch("ft_radius", &ft_radius, "ft_radius/D");
     }
 
-    // // load run infrom from external csv file
-    // string package_location = "/u/home/thayward/clas12_analysis_software/";
-    // string csv_location="analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv";
-    // load_run_info_from_csv(package_location+csv_location);
-
     // Find the root directory of the repository
     std::string package_location = findPackageRoot();
     // Define the CSV path relative to the package root
