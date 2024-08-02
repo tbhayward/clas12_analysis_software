@@ -369,18 +369,19 @@ bool forward_tagger_fiducial(double ft_x, double ft_y) {
 void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     gStyle->SetOptStat(0);
 
-    // Declare TTreeReaderValue for data
+    // Declare and initialize TTreeReaderValue objects before any Next() or Restart() calls
     TTreeReaderValue<double> ft_x(dataReader, "ft_x");
     TTreeReaderValue<double> ft_y(dataReader, "ft_y");
     TTreeReaderValue<double> ft_energy(dataReader, "ft_energy");
     TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
 
-    // Declare TTreeReaderValue for MC
+    // Declare pointers for MC TTreeReaderValue objects
     TTreeReaderValue<double>* mc_ft_x = nullptr;
     TTreeReaderValue<double>* mc_ft_y = nullptr;
     TTreeReaderValue<double>* mc_ft_energy = nullptr;
     TTreeReaderValue<int>* mc_particle_pid = nullptr;
 
+    // Initialize MC TTreeReaderValue objects if mcReader is provided
     if (mcReader) {
         mc_ft_x = new TTreeReaderValue<double>(*mcReader, "ft_x");
         mc_ft_y = new TTreeReaderValue<double>(*mcReader, "ft_y");
@@ -420,7 +421,6 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
 
     // Fill the MC histograms if available, applying the cuts
     if (mcReader) {
-        mcReader->Restart();
         while (mcReader->Next()) {
             if (**mc_particle_pid == 22 && **mc_ft_x != -9999 && **mc_ft_y != -9999) {
                 h_mc_sum->Fill(**mc_ft_x, **mc_ft_y, **mc_ft_energy);
@@ -618,23 +618,17 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
 	    delete h_mc_masked;
 	}
 
-	// Clean up
-	delete data_legend;
-	delete h_data_sum;
-	delete h_data_count;
-	delete h_data_mean;
-	delete h_data_masked;
-
-	if (mcReader) {
-	    delete mc_legend;
-	    delete mc_ft_x;
-	    delete mc_ft_y;
-	    delete mc_ft_energy;
-	    delete mc_particle_pid;
-	    delete h_mc_sum;
-	    delete h_mc_count;
-	    delete h_mc_mean;
-	}
+	// Clean up the dynamically allocated memory
+    delete h_data_sum;
+    delete h_data_count;
+    if (mcReader) {
+        delete h_mc_sum;
+        delete h_mc_count;
+        delete mc_ft_x;
+        delete mc_ft_y;
+        delete mc_ft_energy;
+        delete mc_particle_pid;
+    }
 }
 
 void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
