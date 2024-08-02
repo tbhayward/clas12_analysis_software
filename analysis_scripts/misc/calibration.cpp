@@ -212,9 +212,9 @@ void plot_ltcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         }
 
         // Binning for cc_nphe_16
-        int nBins = 100;
+        int nBins = 50;
         double xMin = 0;
-        double xMax = 40;
+        double xMax = 20;
 
         // Arrays for data
         std::vector<double> dataX(nBins, 0), dataY(nBins, 0);
