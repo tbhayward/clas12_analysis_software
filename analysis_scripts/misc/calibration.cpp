@@ -826,7 +826,7 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             TCanvas c_data(("c_data_" + layer_name + "_" + particle_name).c_str(), ("c_data_" + layer_name + "_" + particle_name).c_str(), 800, 600);
             c_data.SetLogz();  // Set the z-axis to a logarithmic scale
             h_data->Draw("COLZ");
-            c_data.SaveAs(("output/calibration/cal/data"+particle_name+"_"+layer_name+"_"+cal_hit_position.png").c_str());
+            c_data.SaveAs(("output/calibration/cal/data"+particle_name+"_"+layer_name+"_"+cal_hit_position.png).c_str());
 
             // Draw and save the original MC plot if available
             if (h_mc) {
