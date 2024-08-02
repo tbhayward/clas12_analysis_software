@@ -9,6 +9,7 @@
 #include <TGraphErrors.h>
 #include <TLegend.h>
 #include <TF1.h>
+#include <sstream>
 #include <algorithm>
 
 void plot_cc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
