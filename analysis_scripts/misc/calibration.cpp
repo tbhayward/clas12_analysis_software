@@ -331,10 +331,7 @@ void plot_ltcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
 }
 
 void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
-	gStyle->SetOptStat(0);
-    // Restart the TTreeReader to process the data from the beginning
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
+    gStyle->SetOptStat(0);
 
     // Declare TTreeReaderValue for data
     TTreeReaderValue<double> ft_x(dataReader, "ft_x");
@@ -365,28 +362,40 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
     // Create histograms for data and MC
     TH2D* h_data_sum = new TH2D("h_data_sum", "Data FT Energy Sum", nBins, xMin, xMax, nBins, yMin, yMax);
     TH2D* h_data_count = new TH2D("h_data_count", "Data FT Count", nBins, xMin, xMax, nBins, yMin, yMax);
+    TH2D* h_data_cut = new TH2D("h_data_cut", "Data FT Energy Cut", nBins, xMin, xMax, nBins, yMin, yMax);
 
     TH2D* h_mc_sum = nullptr;
     TH2D* h_mc_count = nullptr;
+    TH2D* h_mc_cut = nullptr;
     if (mcReader) {
         h_mc_sum = new TH2D("h_mc_sum", "MC FT Energy Sum", nBins, xMin, xMax, nBins, yMin, yMax);
         h_mc_count = new TH2D("h_mc_count", "MC FT Count", nBins, xMin, xMax, nBins, yMin, yMax);
+        h_mc_cut = new TH2D("h_mc_cut", "MC FT Energy Cut", nBins, xMin, xMax, nBins, yMin, yMax);
     }
 
     // Fill the data histograms, applying the cuts
     while (dataReader.Next()) {
+        double radius = sqrt((*ft_x) * (*ft_x) + (*ft_y) * (*ft_y));
         if (*particle_pid == 22 && *ft_x != -9999 && *ft_y != -9999) {
             h_data_sum->Fill(*ft_x, *ft_y, *ft_energy);
             h_data_count->Fill(*ft_x, *ft_y);
+            if (radius > 7.5) {
+                h_data_cut->Fill(*ft_x, *ft_y, *ft_energy);
+            }
         }
     }
 
     // Fill the MC histograms if available, applying the cuts
     if (mcReader) {
+        mcReader->Restart();
         while (mcReader->Next()) {
+            double mc_radius = sqrt((**mc_ft_x) * (**mc_ft_x) + (**mc_ft_y) * (**mc_ft_y));
             if (**mc_particle_pid == 22 && **mc_ft_x != -9999 && **mc_ft_y != -9999) {
                 h_mc_sum->Fill(**mc_ft_x, **mc_ft_y, **mc_ft_energy);
                 h_mc_count->Fill(**mc_ft_x, **mc_ft_y);
+                if (mc_radius > 7.5) {
+                    h_mc_cut->Fill(**mc_ft_x, **mc_ft_y, **mc_ft_energy);
+                }
             }
         }
     }
@@ -566,25 +575,25 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
     }
 
 	// Draw and save the data plot with cut
-	TCanvas c_data_cut("c_data_cut", "c_data_cut", 800, 600);
-	h_data_cut->Draw("COLZ");
-	TLegend* data_cut_legend = new TLegend(0.7, 0.8, 0.9, 0.9);
-	data_cut_legend->AddEntry(h_data_cut, Form("Mean = %.2f GeV", h_data_cut->GetMean(3)), "");
-	data_cut_legend->AddEntry(h_data_cut, Form("Std Dev = %.2f GeV", h_data_cut->GetStdDev(3)), "");
-	data_cut_legend->Draw();
-	c_data_cut.SaveAs("output/ft_xy_energy_cut_data.png");
+    TCanvas c_data_cut("c_data_cut", "c_data_cut", 800, 600);
+    h_data_cut->Draw("COLZ");
+    TLegend* data_cut_legend = new TLegend(0.7, 0.8, 0.9, 0.9);
+    data_cut_legend->AddEntry(h_data_cut, Form("Mean = %.2f GeV", h_data_cut->GetMean()), "");
+    data_cut_legend->AddEntry(h_data_cut, Form("Std Dev = %.2f GeV", h_data_cut->GetStdDev()), "");
+    data_cut_legend->Draw();
+    c_data_cut.SaveAs("output/ft_xy_energy_cut_data.png");
 
-	if (mcReader) {
-	    // Draw and save the MC plot with cut
-	    TCanvas c_mc_cut("c_mc_cut", "c_mc_cut", 800, 600);
-	    h_mc_cut->Draw("COLZ");
-	    TLegend* mc_cut_legend = new TLegend(0.7, 0.8, 0.9, 0.9);
-	    mc_cut_legend->AddEntry(h_mc_cut, Form("Mean = %.2f GeV", h_mc_cut->GetMean(3)), "");
-	    mc_cut_legend->AddEntry(h_mc_cut, Form("Std Dev = %.2f GeV", h_mc_cut->GetStdDev(3)), "");
-	    mc_cut_legend->Draw();
-	    c_mc_cut.SaveAs("output/ft_xy_energy_cut_mc.png");
-	    delete mc_cut_legend;
-	}
+    if (mcReader) {
+        // Draw and save the MC plot with cut
+        TCanvas c_mc_cut("c_mc_cut", "c_mc_cut", 800, 600);
+        h_mc_cut->Draw("COLZ");
+        TLegend* mc_cut_legend = new TLegend(0.7, 0.8, 0.9, 0.9);
+        mc_cut_legend->AddEntry(h_mc_cut, Form("Mean = %.2f GeV", h_mc_cut->GetMean()), "");
+        mc_cut_legend->AddEntry(h_mc_cut, Form("Std Dev = %.2f GeV", h_mc_cut->GetStdDev()), "");
+        mc_cut_legend->Draw();
+        c_mc_cut.SaveAs("output/ft_xy_energy_cut_mc.png");
+        delete mc_cut_legend;
+    }
 
 	// Clean up
 	delete data_cut_legend;
