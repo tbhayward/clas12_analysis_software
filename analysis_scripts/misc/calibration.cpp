@@ -631,146 +631,34 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
     }
 }
 
-void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+    // Array of layers and their corresponding names
+    std::vector<std::tuple<std::string, std::string, std::string>> layers = {
+        {"cal_x_1", "cal_y_1", "PCal"},
+        {"cal_x_4", "cal_y_4", "EC_{in}"},
+        {"cal_x_7", "cal_y_7", "EC_{out}"}
+    };
 
-    // Set up TTreeReaderValues for ft_x, ft_y, and particle_pid
-    TTreeReaderValue<double> ft_x(dataReader, "ft_x");
-    TTreeReaderValue<double> ft_y(dataReader, "ft_y");
-    TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+    // Loop over each layer
+    for (const auto& layer : layers) {
+        std::string x_branch = std::get<0>(layer);
+        std::string y_branch = std::get<1>(layer);
+        std::string layer_name = std::get<2>(layer);
 
-    TTreeReaderValue<double>* mc_ft_x = nullptr;
-    TTreeReaderValue<double>* mc_ft_y = nullptr;
-    TTreeReaderValue<int>* mc_particle_pid = nullptr;
-
-    if (mcReader) {
-        mc_ft_x = new TTreeReaderValue<double>(*mcReader, "ft_x");
-        mc_ft_y = new TTreeReaderValue<double>(*mcReader, "ft_y");
-        mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
-    }
-
-    // Restart the TTreeReader to process the data from the beginning
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-
-    // Define the 2D histogram bins and ranges
-    int nBins = 100;
-    double xMin = -20;
-    double xMax = 20;
-    double yMin = -20;
-    double yMax = 20;
-
-    // Create histograms for data and MC
-    TH2D* h_data = new TH2D("h_data", "data FT hit position", nBins, xMin, xMax, nBins, yMin, yMax);
-    h_data->GetXaxis()->SetTitle("x_{FT}");
-    h_data->GetYaxis()->SetTitle("y_{FT}");
-
-    TH2D* h_mc = nullptr;
-    if (mcReader) {
-        h_mc = new TH2D("h_mc", "mc FT hit position", nBins, xMin, xMax, nBins, yMin, yMax);
-        h_mc->GetXaxis()->SetTitle("x_{FT}");
-        h_mc->GetYaxis()->SetTitle("y_{FT}");
-    }
-
-    // Create histograms for data and MC with fiducial cuts applied
-    TH2D* h_data_cut = new TH2D("h_data_cut", "data FT hit position (cut)", nBins, xMin, xMax, nBins, yMin, yMax);
-    h_data_cut->GetXaxis()->SetTitle("x_{FT}");
-    h_data_cut->GetYaxis()->SetTitle("y_{FT}");
-
-    TH2D* h_mc_cut = nullptr;
-    if (mcReader) {
-        h_mc_cut = new TH2D("h_mc_cut", "mc FT hit position (cut)", nBins, xMin, xMax, nBins, yMin, yMax);
-        h_mc_cut->GetXaxis()->SetTitle("x_{FT}");
-        h_mc_cut->GetYaxis()->SetTitle("y_{FT}");
-    }
-
-    // Fill the data histograms, applying the cuts
-    while (dataReader.Next()) {
-        if (*particle_pid == 22 && *ft_x != -9999 && *ft_y != -9999) {
-            h_data->Fill(*ft_x, *ft_y);
-            if (forward_tagger_fiducial(*ft_x, *ft_y)) {
-                h_data_cut->Fill(*ft_x, *ft_y);
-            }
-        }
-    }
-
-    // Fill the MC histograms if available, applying the cuts
-    if (mcReader) {
-        while (mcReader->Next()) {
-            if (**mc_particle_pid == 22 && **mc_ft_x != -9999 && **mc_ft_y != -9999) {
-                h_mc->Fill(**mc_ft_x, **mc_ft_y);
-                if (forward_tagger_fiducial(**mc_ft_x, **mc_ft_y)) {
-                    h_mc_cut->Fill(**mc_ft_x, **mc_ft_y);
-                }
-            }
-        }
-    }
-
-    // Draw and save the original data plot
-    TCanvas c_data("c_data", "c_data", 800, 600);
-    h_data->Draw("COLZ");
-    c_data.SaveAs("output/ft_hit_position_data.png");
-
-    // Draw and save the original MC plot if available
-    if (h_mc) {
-        TCanvas c_mc("c_mc", "c_mc", 800, 600);
-        h_mc->Draw("COLZ");
-        c_mc.SaveAs("output/ft_hit_position_mc.png");
-    }
-
-    // Draw and save the cut data plot
-    TCanvas c_data_cut("c_data_cut", "c_data_cut", 800, 600);
-    h_data_cut->Draw("COLZ");
-    c_data_cut.SaveAs("output/ft_hit_position_cut_data.png");
-
-    // Draw and save the cut MC plot if available
-    if (h_mc_cut) {
-        TCanvas c_mc_cut("c_mc_cut", "c_mc_cut", 800, 600);
-        h_mc_cut->Draw("COLZ");
-        c_mc_cut.SaveAs("output/ft_hit_position_cut_mc.png");
-    }
-
-    // Clean up
-    delete h_data;
-    delete h_data_cut;
-    if (h_mc) delete h_mc;
-    if (h_mc_cut) delete h_mc_cut;
-    if (mc_ft_x) delete mc_ft_x;
-    if (mc_ft_y) delete mc_ft_y;
-    if (mc_particle_pid) delete mc_particle_pid;
-}
-
-void plot_cal_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
-    gStyle->SetOptStat(0);
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-
-    // Define the different calorimeter layers
-    std::vector<std::string> layers = {"1", "4", "7"};
-
-    // Loop over each layer and create the plots
-    for (const std::string& layer : layers) {
-        // Construct variable names dynamically based on layer
-        std::string x_var = "cal_x_" + layer;
-        std::string y_var = "cal_y_" + layer;
-        std::string energy_var = "cal_energy_" + layer;
-
-        // Declare and initialize TTreeReaderValue objects before any Next() or Restart() calls
-        TTreeReaderValue<double> cal_x(dataReader, x_var.c_str());
-        TTreeReaderValue<double> cal_y(dataReader, y_var.c_str());
-        TTreeReaderValue<double> cal_energy(dataReader, energy_var.c_str());
+        // Declare TTreeReaderValues for data
+        TTreeReaderValue<double> cal_x(dataReader, x_branch.c_str());
+        TTreeReaderValue<double> cal_y(dataReader, y_branch.c_str());
         TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
 
         // Declare pointers for MC TTreeReaderValue objects
         TTreeReaderValue<double>* mc_cal_x = nullptr;
         TTreeReaderValue<double>* mc_cal_y = nullptr;
-        TTreeReaderValue<double>* mc_cal_energy = nullptr;
         TTreeReaderValue<int>* mc_particle_pid = nullptr;
 
         // Initialize MC TTreeReaderValue objects if mcReader is provided
         if (mcReader) {
-            mc_cal_x = new TTreeReaderValue<double>(*mcReader, x_var.c_str());
-            mc_cal_y = new TTreeReaderValue<double>(*mcReader, y_var.c_str());
-            mc_cal_energy = new TTreeReaderValue<double>(*mcReader, energy_var.c_str());
+            mc_cal_x = new TTreeReaderValue<double>(*mcReader, x_branch.c_str());
+            mc_cal_y = new TTreeReaderValue<double>(*mcReader, y_branch.c_str());
             mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
         }
 
@@ -786,190 +674,51 @@ void plot_cal_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr
         double yMax = 450;
 
         // Create histograms for data and MC
-        TH2D* h_data_sum = new TH2D(("h_data_sum_" + layer).c_str(), ("Data CAL Energy Sum (Layer " + layer + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-        TH2D* h_data_count = new TH2D(("h_data_count_" + layer).c_str(), ("Data CAL Count (Layer " + layer + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+        TH2D* h_data = new TH2D("h_data", ("data " + layer_name + " hit position").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+        h_data->GetXaxis()->SetTitle(("x_{" + layer_name + "}").c_str());
+        h_data->GetYaxis()->SetTitle(("y_{" + layer_name + "}").c_str());
 
-        TH2D* h_mc_sum = nullptr;
-        TH2D* h_mc_count = nullptr;
+        TH2D* h_mc = nullptr;
         if (mcReader) {
-            h_mc_sum = new TH2D(("h_mc_sum_" + layer).c_str(), ("MC CAL Energy Sum (Layer " + layer + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-            h_mc_count = new TH2D(("h_mc_count_" + layer).c_str(), ("MC CAL Count (Layer " + layer + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            h_mc = new TH2D("h_mc", ("mc " + layer_name + " hit position").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            h_mc->GetXaxis()->SetTitle(("x_{" + layer_name + "}").c_str());
+            h_mc->GetYaxis()->SetTitle(("y_{" + layer_name + "}").c_str());
         }
 
         // Fill the data histograms, applying the cuts
         while (dataReader.Next()) {
-            if (*cal_x != -9999 && *cal_y != -9999) {
-                h_data_sum->Fill(*cal_x, *cal_y, *cal_energy);
-                h_data_count->Fill(*cal_x, *cal_y);
+            if (*particle_pid == 22 && *cal_x != -9999 && *cal_y != -9999) {
+                h_data->Fill(*cal_x, *cal_y);
             }
         }
 
         // Fill the MC histograms if available, applying the cuts
         if (mcReader) {
             while (mcReader->Next()) {
-                if (**mc_cal_x != -9999 && **mc_cal_y != -9999) {
-                    h_mc_sum->Fill(**mc_cal_x, **mc_cal_y, **mc_cal_energy);
-                    h_mc_count->Fill(**mc_cal_x, **mc_cal_y);
+                if (**mc_particle_pid == 22 && **mc_cal_x != -9999 && **mc_cal_y != -9999) {
+                    h_mc->Fill(**mc_cal_x, **mc_cal_y);
                 }
             }
         }
 
-        // Compute the mean energy for each bin (for data)
-        TH2D* h_data_mean = new TH2D(("h_data_mean_" + layer).c_str(), ("Data CAL Energy Mean (Layer " + layer + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-        h_data_mean->GetXaxis()->SetTitle("x_{CAL}");
-        h_data_mean->GetYaxis()->SetTitle("y_{CAL}");
+        // Draw and save the original data plot
+        TCanvas c_data(("c_data_" + layer_name).c_str(), ("c_data_" + layer_name).c_str(), 800, 600);
+        h_data->Draw("COLZ");
+        c_data.SaveAs(("output/cal_hit_position_data_" + layer_name + ".png").c_str());
 
-        for (int i = 1; i <= nBins; i++) {
-            for (int j = 1; j <= nBins; j++) {
-                double count = h_data_count->GetBinContent(i, j);
-                if (count > 0) {
-                    h_data_mean->SetBinContent(i, j, h_data_sum->GetBinContent(i, j) / count);
-                }
-            }
+        // Draw and save the original MC plot if available
+        if (h_mc) {
+            TCanvas c_mc(("c_mc_" + layer_name).c_str(), ("c_mc_" + layer_name).c_str(), 800, 600);
+            h_mc->Draw("COLZ");
+            c_mc.SaveAs(("output/cal_hit_position_mc_" + layer_name + ".png").c_str());
         }
 
-        // Compute the mean energy for each bin (for MC)
-        TH2D* h_mc_mean = nullptr;
-        if (mcReader) {
-            h_mc_mean = new TH2D(("h_mc_mean_" + layer).c_str(), ("MC CAL Energy Mean (Layer " + layer + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-            h_mc_mean->GetXaxis()->SetTitle("x_{CAL}");
-            h_mc_mean->GetYaxis()->SetTitle("y_{CAL}");
-
-            for (int i = 1; i <= nBins; i++) {
-                for (int j = 1; j <= nBins; j++) {
-                    double count = h_mc_count->GetBinContent(i, j);
-                    if (count > 0) {
-                        h_mc_mean->SetBinContent(i, j, h_mc_sum->GetBinContent(i, j) / count);
-                    }
-                }
-            }
-        }
-
-        // Compute global statistics for Data
-        double global_sum = 0, global_count = 0, sum_sq_diff = 0;
-        for (int i = 1; i <= nBins; i++) {
-            for (int j = 1; j <= nBins; j++) {
-                double mean_value = h_data_mean->GetBinContent(i, j);
-                if (mean_value > 0) {
-                    global_sum += mean_value;
-                    global_count++;
-                }
-            }
-        }
-        double global_mean = global_sum / global_count;
-        for (int i = 1; i <= nBins; i++) {
-            for (int j = 1; j <= nBins; j++) {
-                double mean_value = h_data_mean->GetBinContent(i, j);
-                if (mean_value > 0) {
-                    sum_sq_diff += TMath::Power(mean_value - global_mean, 2);
-                }
-            }
-        }
-        double global_std_dev = TMath::Sqrt(sum_sq_diff / global_count);
-
-        // Compute global statistics for MC
-        double mc_global_sum = 0, mc_global_count = 0, mc_sum_sq_diff = 0;
-        double mc_global_mean = 0;
-        double mc_global_std_dev = 0;
-
-        if (mcReader) {
-            for (int i = 1; i <= nBins; i++) {
-                for (int j = 1; j <= nBins; j++) {
-                    double mean_value = h_mc_mean->GetBinContent(i, j);
-                    if (mean_value > 0) {
-                        mc_global_sum += mean_value;
-                        mc_global_count++;
-                    }
-                }
-            }
-            mc_global_mean = mc_global_sum / mc_global_count;
-            for (int i = 1; i <= nBins; i++) {
-                for (int j = 1; j <= nBins; j++) {
-                    double mean_value = h_mc_mean->GetBinContent(i, j);
-                    if (mean_value > 0) {
-                        mc_sum_sq_diff += TMath::Power(mean_value - mc_global_mean, 2);
-                    }
-                }
-            }
-            mc_global_std_dev = TMath::Sqrt(mc_sum_sq_diff / mc_global_count);
-        }
-
-        // Draw and save the data mean energy plot
-        TCanvas c_data(("c_data_" + layer).c_str(), ("c_data_" + layer).c_str(), 800, 600);
-        h_data_mean->Draw("COLZ");
-        TLegend* data_legend = new TLegend(0.7, 0.8, 0.9, 0.9);
-        data_legend->AddEntry(h_data_mean, Form("Mean = %.2f GeV", global_mean), "");
-        data_legend->AddEntry(h_data_mean, Form("Std Dev = %.2f GeV", global_std_dev), "");
-        data_legend->Draw();
-        c_data.SaveAs(("output/cal_xy_energy_data_layer_" + layer + ".png").c_str());
-
-        // Draw and save the MC mean energy plot
-        TLegend* mc_legend = nullptr;
-        if (mcReader) {
-            TCanvas c_mc(("c_mc_" + layer).c_str(), ("c_mc_" + layer).c_str(), 800, 600);
-            h_mc_mean->Draw("COLZ");
-            mc_legend = new
-
- TLegend(0.7, 0.8, 0.9, 0.9);
-            mc_legend->AddEntry(h_mc_mean, Form("Mean = %.2f GeV", mc_global_mean), "");
-            mc_legend->AddEntry(h_mc_mean, Form("Std Dev = %.2f GeV", mc_global_std_dev), "");
-            mc_legend->Draw();
-            c_mc.SaveAs(("output/cal_xy_energy_mc_layer_" + layer + ".png").c_str());
-        }
-
-        // Create and save masked plot for Data
-        TH2D* h_data_masked = (TH2D*)h_data_mean->Clone(("h_data_masked_" + layer).c_str());
-        TCanvas c_data_masked(("c_data_masked_" + layer).c_str(), ("c_data_masked_" + layer).c_str(), 800, 600);
-        h_data_masked->Draw("COLZ");
-        for (int i = 1; i <= nBins; i++) {
-            for (int j = 1; j <= nBins; j++) {
-                double mean_value = h_data_masked->GetBinContent(i, j);
-                if (mean_value < global_mean - 1 * global_std_dev && h_data_mean->GetBinContent(i, j) > 0) {
-                    TBox* box = new TBox(h_data_masked->GetXaxis()->GetBinLowEdge(i), h_data_masked->GetYaxis()->GetBinLowEdge(j),
-                                         h_data_masked->GetXaxis()->GetBinUpEdge(i), h_data_masked->GetYaxis()->GetBinUpEdge(j));
-                    box->SetFillColor(kRed);
-                    box->Draw();
-                }
-            }
-        }
-        data_legend->Draw();
-        c_data_masked.SaveAs(("output/cal_xy_energy_masked_data_layer_" + layer + ".png").c_str());
-
-        // Create and save masked plot for MC
-        if (mcReader) {
-            TH2D* h_mc_masked = (TH2D*)h_mc_mean->Clone(("h_mc_masked_" + layer).c_str());
-            TCanvas c_mc_masked(("c_mc_masked_" + layer).c_str(), ("c_mc_masked_" + layer).c_str(), 800, 600);
-            h_mc_masked->Draw("COLZ");
-            for (int i = 1; i <= nBins; i++) {
-                for (int j = 1; j <= nBins; j++) {
-                    double mean_value = h_mc_masked->GetBinContent(i, j);
-                    if (mean_value < mc_global_mean - 1 * mc_global_std_dev && h_mc_mean->GetBinContent(i, j) > 0) {
-                        TBox* box = new TBox(h_mc_masked->GetXaxis()->GetBinLowEdge(i), h_mc_masked->GetYaxis()->GetBinLowEdge(j),
-                                             h_mc_masked->GetXaxis()->GetBinUpEdge(i), h_mc_masked->GetYaxis()->GetBinUpEdge(j));
-                        box->SetFillColor(kRed);
-                        box->Draw();
-                    }
-                }
-            }
-            mc_legend->Draw();
-            c_mc_masked.SaveAs(("output/cal_xy_energy_masked_mc_layer_" + layer + ".png").c_str());
-            delete h_mc_masked;
-        }
-
-        // Clean up the dynamically allocated memory
-        delete h_data_sum;
-        delete h_data_count;
-        delete h_data_mean;
-        delete h_data_masked;
-        if (mcReader) {
-            delete h_mc_sum;
-            delete h_mc_count;
-            delete h_mc_mean;
-            delete mc_cal_x;
-            delete mc_cal_y;
-            delete mc_cal_energy;
-            delete mc_particle_pid;
-        }
+        // Clean up for this layer
+        delete h_data;
+        if (h_mc) delete h_mc;
+        if (mc_cal_x) delete mc_cal_x;
+        if (mc_cal_y) delete mc_cal_y;
+        if (mc_particle_pid) delete mc_particle_pid;
     }
 }
 
@@ -1014,7 +763,7 @@ int main(int argc, char** argv) {
     if (mcReader) mcReader->Restart();
     // plot_ft_xy_energy(dataReader, mcReader);
     // plot_ft_hit_position(dataReader, mcReader);
-    plot_cal_xy_energy(dataReader, mcReader);
+    plot_cal_hit_position(dataReader, mcReader);
 
 
 
