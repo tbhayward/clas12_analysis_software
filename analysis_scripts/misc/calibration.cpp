@@ -549,7 +549,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
 	// Fill histograms applying radius cut
 	dataReader.Restart();
 	while (dataReader.Next()) {
-		std::cout << ft_radius << std::endl;
+		std::cout << *ft_radius << std::endl;
 	    if (*particle_pid == 22 && *ft_radius > min_radius_cut && *ft_x != -9999 && *ft_y != -9999) {
 	        h_data_cut->Fill(*ft_x, *ft_y, *ft_energy);
 	    }
