@@ -330,6 +330,7 @@ void plot_ltcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
 }
 
 void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+	gStyle->SetOptStat(0);
     // Restart the TTreeReader to process the data from the beginning
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
