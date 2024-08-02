@@ -547,7 +547,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
         {1.60, {-8.42,  9.89}},  // circle 1
         {1.60, {-9.89, -5.33}},  // circle 2
         {2.30, {-6.15, 13.00}},  // circle 3
-        {2.00, {-6.50,  3.70}}   // circle 4
+        {2.00, {3.70,  -6.50}}   // circle 4
     };
 
     for (const auto& hole : holes) {
