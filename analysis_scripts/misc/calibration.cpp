@@ -11,18 +11,7 @@
 #include <TF1.h>
 #include <sstream>
 #include <algorithm>
-
-#include <TGraphErrors.h>
-#include <TLegend.h>
-#include <TF1.h>
-#include <sstream>
-#include <algorithm>
-
-#include <TGraphErrors.h>
-#include <TLegend.h>
-#include <TF1.h>
-#include <sstream>
-#include <algorithm>
+#include <TH2D.h>
 
 void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Arrays to store positive and negative track conditions
@@ -340,9 +329,113 @@ void plot_ltcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     create_plot("negative", negative_pids);
 }
 
-#include <TH2D.h>
+void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+    // Restart the TTreeReader to process the data from the beginning
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
 
-#include <TH2D.h>
+    // Set up TTreeReaderValues for ft_x, ft_y, ft_energy, and particle_pid
+    TTreeReaderValue<double> ft_x(dataReader, "ft_x");
+    TTreeReaderValue<double> ft_y(dataReader, "ft_y");
+    TTreeReaderValue<double> ft_energy(dataReader, "ft_energy");
+    TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+
+    TTreeReaderValue<double>* mc_ft_x = nullptr;
+    TTreeReaderValue<double>* mc_ft_y = nullptr;
+    TTreeReaderValue<double>* mc_ft_energy = nullptr;
+    TTreeReaderValue<int>* mc_particle_pid = nullptr;
+
+    if (mcReader) {
+        mc_ft_x = new TTreeReaderValue<double>(*mcReader, "ft_x");
+        mc_ft_y = new TTreeReaderValue<double>(*mcReader, "ft_y");
+        mc_ft_energy = new TTreeReaderValue<double>(*mcReader, "ft_energy");
+        mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+    }
+
+    // Define the 2D histogram bins and ranges
+    int nBins = 100;
+    double xMin = -20;
+    double xMax = 20;
+    double yMin = -20;
+    double yMax = 20;
+
+    // Create histograms for data and MC
+    TH2D* h_data_sum = new TH2D("h_data_sum", "Data FT Energy Sum", nBins, xMin, xMax, nBins, yMin, yMax);
+    TH2D* h_data_count = new TH2D("h_data_count", "Data FT Count", nBins, xMin, xMax, nBins, yMin, yMax);
+
+    TH2D* h_mc_sum = nullptr;
+    TH2D* h_mc_count = nullptr;
+    if (mcReader) {
+        h_mc_sum = new TH2D("h_mc_sum", "MC FT Energy Sum", nBins, xMin, xMax, nBins, yMin, yMax);
+        h_mc_count = new TH2D("h_mc_count", "MC FT Count", nBins, xMin, xMax, nBins, yMin, yMax);
+    }
+
+    // Fill the data histograms, applying the cuts
+    while (dataReader.Next()) {
+        if (*particle_pid == 22 && *ft_x != -9999 && *ft_y != -9999) {
+            h_data_sum->Fill(*ft_x, *ft_y, *ft_energy);
+            h_data_count->Fill(*ft_x, *ft_y);
+        }
+    }
+
+    // Fill the MC histograms if available, applying the cuts
+    if (mcReader) {
+        while (mcReader->Next()) {
+            if (**mc_particle_pid == 22 && **mc_ft_x != -9999 && **mc_ft_y != -9999) {
+                h_mc_sum->Fill(**mc_ft_x, **mc_ft_y, **mc_ft_energy);
+                h_mc_count->Fill(**mc_ft_x, **mc_ft_y);
+            }
+        }
+    }
+
+    // Compute the mean energy for each bin
+    TH2D* h_data_mean = new TH2D("h_data_mean", "Data FT Energy Mean", nBins, xMin, xMax, nBins, yMin, yMax);
+    h_data_mean->GetXaxis()->SetTitle("x_{FT}");
+    h_data_mean->GetYaxis()->SetTitle("y_{FT}");
+
+    if (mcReader) {
+        TH2D* h_mc_mean = new TH2D("h_mc_mean", "MC FT Energy Mean", nBins, xMin, xMax, nBins, yMin, yMax);
+        h_mc_mean->GetXaxis()->SetTitle("x_{FT}");
+        h_mc_mean->GetYaxis()->SetTitle("y_{FT}");
+
+        for (int i = 1; i <= nBins; i++) {
+            for (int j = 1; j <= nBins; j++) {
+                double count = h_mc_count->GetBinContent(i, j);
+                if (count > 0) {
+                    h_mc_mean->SetBinContent(i, j, h_mc_sum->GetBinContent(i, j) / count);
+                }
+            }
+        }
+
+        // Draw and save the MC mean energy plot
+        TCanvas c_mc("c_mc", "c_mc", 800, 600);
+        h_mc_mean->Draw("COLZ");
+        c_mc.SaveAs("output/ft_xy_energy_mc.png");
+
+        delete h_mc_sum;
+        delete h_mc_count;
+        delete h_mc_mean;
+    }
+
+    for (int i = 1; i <= nBins; i++) {
+        for (int j = 1; j <= nBins; j++) {
+            double count = h_data_count->GetBinContent(i, j);
+            if (count > 0) {
+                h_data_mean->SetBinContent(i, j, h_data_sum->GetBinContent(i, j) / count);
+            }
+        }
+    }
+
+    // Draw and save the data mean energy plot
+    TCanvas c_data("c_data", "c_data", 800, 600);
+    h_data_mean->Draw("COLZ");
+    c_data.SaveAs("output/ft_xy_energy_data.png");
+
+    // Clean up
+    delete h_data_sum;
+    delete h_data_count;
+    delete h_data_mean;
+}
 
 void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Restart the TTreeReader to process the data from the beginning
@@ -455,6 +548,7 @@ int main(int argc, char** argv) {
     // plot_htcc_nphe(dataReader, mcReader);
     // plot_ltcc_nphe(dataReader, mcReader);
     plot_ft_hit_position(dataReader, mcReader);
+    plot_ft_xy_energy(dataReader, mcReader);
 
 
     // Close files
