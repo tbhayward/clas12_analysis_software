@@ -340,21 +340,18 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
     TTreeReaderValue<double> ft_x(dataReader, "ft_x");
     TTreeReaderValue<double> ft_y(dataReader, "ft_y");
     TTreeReaderValue<double> ft_energy(dataReader, "ft_energy");
-    TTreeReaderValue<double> ft_radius(dataReader, "ft_radius");
     TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
 
     // Declare TTreeReaderValue for MC
     TTreeReaderValue<double>* mc_ft_x = nullptr;
     TTreeReaderValue<double>* mc_ft_y = nullptr;
     TTreeReaderValue<double>* mc_ft_energy = nullptr;
-    TTreeReaderValue<double>* mc_ft_radius = nullptr;
     TTreeReaderValue<int>* mc_particle_pid = nullptr;
 
     if (mcReader) {
         mc_ft_x = new TTreeReaderValue<double>(*mcReader, "ft_x");
         mc_ft_y = new TTreeReaderValue<double>(*mcReader, "ft_y");
         mc_ft_energy = new TTreeReaderValue<double>(*mcReader, "ft_energy");
-        mc_ft_radius = new TTreeReaderValue<double>(*mcReader, "ft_radius");
         mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
     }
 
@@ -549,8 +546,8 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
 	// Fill histograms applying radius cut
 	dataReader.Restart();
 	while (dataReader.Next()) {
-		std::cout << *ft_x << " " << *ft_y << " " << *ft_radius << std::endl;
-	    if (*particle_pid == 22 && *ft_radius > min_radius_cut && *ft_x != -9999 && *ft_y != -9999) {
+		double radius = sqrt((*ft_x) * (*ft_x) + (*ft_y) * (*ft_y));
+	    if (*particle_pid == 22 && radius > min_radius_cut && *ft_x != -9999 && *ft_y != -9999) {
 	        h_data_cut->Fill(*ft_x, *ft_y, *ft_energy);
 	    }
 	}
@@ -558,7 +555,8 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
 	if (mcReader) {
 	    mcReader->Restart();
 	    while (mcReader->Next()) {
-	        if (**mc_particle_pid == 22 && **mc_ft_radius > min_radius_cut && **mc_ft_x != -9999 && **mc_ft_y != -9999) {
+	    	double radius = sqrt((*mc_ft_x) * (*mc_ft_x) + (*mc_ft_y) * (*mc_ft_y));
+	        if (**mc_particle_pid == 22 && radius > min_radius_cut && **mc_ft_x != -9999 && **mc_ft_y != -9999) {
 	            h_mc_cut->Fill(**mc_ft_x, **mc_ft_y, **mc_ft_energy);
 	        }
 	    }
