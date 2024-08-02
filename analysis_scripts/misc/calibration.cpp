@@ -600,10 +600,12 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
 	        circle->SetLineColor(kBlack);
 	        circle->SetLineWidth(2);  // Set line width to make it thick
 	        circle->SetFillStyle(0);  // No fill color, only the outline
-	        
-	        // Make all circles dashed for MC plot
-	        circle->SetLineStyle(2);  // Dashed line style
-	        
+
+	        // Apply dashed line style only to the last two circles (the larger ones)
+	        if (idx >= holes.size() - 2) { // Assuming the last two entries in `holes` are the big circles
+	            circle->SetLineStyle(2);  // Dashed line style
+	        }
+
 	        circle->Draw("same");
 	    }
 
