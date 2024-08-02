@@ -634,9 +634,6 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
 }
 
 void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
-    // Restart the TTreeReader to process the data from the beginning
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
 
     // Set up TTreeReaderValues for ft_x, ft_y, and particle_pid
     TTreeReaderValue<double> ft_x(dataReader, "ft_x");
@@ -652,6 +649,10 @@ void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
         mc_ft_y = new TTreeReaderValue<double>(*mcReader, "ft_y");
         mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
     }
+
+    // Restart the TTreeReader to process the data from the beginning
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
 
     // Define the 2D histogram bins and ranges
     int nBins = 100;
