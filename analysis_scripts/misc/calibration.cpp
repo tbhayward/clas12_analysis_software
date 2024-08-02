@@ -543,24 +543,27 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
 	    h_mc_cut = new TH2D("h_mc_cut", "MC FT Energy Cut", nBins, xMin, xMax, nBins, yMin, yMax);
 	}
 
-	// Fill histograms applying radius cut
-	dataReader.Restart();
-	while (dataReader.Next()) {
-		double radius = sqrt((*ft_x) * (*ft_x) + (*ft_y) * (*ft_y));
-	    if (*particle_pid == 22 && radius > min_radius_cut && *ft_x != -9999 && *ft_y != -9999) {
-	        h_data_cut->Fill(*ft_x, *ft_y, *ft_energy);
-	    }
-	}
+	// Fill the data histograms, applying the cuts
+    dataReader.Restart();
+    while (dataReader.Next()) {
+        double radius = sqrt((*ft_x) * (*ft_x) + (*ft_y) * (*ft_y));
+        if (*particle_pid == 22 && *ft_x != -9999 && *ft_y != -9999) {
+            h_data_sum->Fill(*ft_x, *ft_y, *ft_energy);
+            h_data_count->Fill(*ft_x, *ft_y);
+        }
+    }
 
-	if (mcReader) {
-	    mcReader->Restart();
-	    while (mcReader->Next()) {
-	    	double radius = sqrt((*mc_ft_x) * (*mc_ft_x) + (*mc_ft_y) * (*mc_ft_y));
-	        if (**mc_particle_pid == 22 && radius > min_radius_cut && **mc_ft_x != -9999 && **mc_ft_y != -9999) {
-	            h_mc_cut->Fill(**mc_ft_x, **mc_ft_y, **mc_ft_energy);
-	        }
-	    }
-	}
+    // Fill the MC histograms if available, applying the cuts
+    if (mcReader) {
+        mcReader->Restart();
+        while (mcReader->Next()) {
+            double mc_radius = sqrt((**mc_ft_x) * (**mc_ft_x) + (**mc_ft_y) * (**mc_ft_y));
+            if (**mc_particle_pid == 22 && **mc_ft_x != -9999 && **mc_ft_y != -9999) {
+                h_mc_sum->Fill(**mc_ft_x, **mc_ft_y, **mc_ft_energy);
+                h_mc_count->Fill(**mc_ft_x, **mc_ft_y);
+            }
+        }
+    }
 
 	// Draw and save the data plot with cut
 	TCanvas c_data_cut("c_data_cut", "c_data_cut", 800, 600);
