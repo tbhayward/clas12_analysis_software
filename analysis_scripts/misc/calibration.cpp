@@ -32,6 +32,10 @@ void plot_cc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     std::vector<double> mcX(nBins, 0), mcY(nBins, 0);
     std::vector<double> mcEx(nBins, 0), mcEy(nBins, 0);
 
+    // Count the number of valid entries
+    int dataEntries = 0;
+    int mcEntries = 0;
+
     // Fill the data arrays
     while (dataReader.Next()) {
         double value = *data_cc_nphe_15;
@@ -39,6 +43,7 @@ void plot_cc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
             int bin = static_cast<int>((value - xMin) / (xMax - xMin) * nBins);
             if (bin >= 0 && bin < nBins) {
                 dataY[bin]++;
+                dataEntries++;
             }
         }
     }
@@ -62,6 +67,7 @@ void plot_cc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
                 int bin = static_cast<int>((value - xMin) / (xMax - xMin) * nBins);
                 if (bin >= 0 && bin < nBins) {
                     mcY[bin]++;
+                    mcEntries++;
                 }
             }
         }
@@ -86,8 +92,7 @@ void plot_cc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     }
 
     // Create TGraphErrors for data and MC
-    TGraphErrors* grData = new 
-    	TGraphErrors(nBins, &dataX[0], &dataY[0], &dataEx[0], &dataEy[0]);
+    TGraphErrors* grData = new TGraphErrors(nBins, &dataX[0], &dataY[0], &dataEx[0], &dataEy[0]);
     grData->SetMarkerColor(kBlack);
     grData->SetLineColor(kBlack);
     grData->SetTitle("HTCC nphe");
@@ -112,11 +117,14 @@ void plot_cc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         grMC->Draw("P SAME");
     }
 
-    // Create legend
+    // Create legend with entry counts
+    std::ostringstream dataLegend, mcLegend;
+    dataLegend << "Data (" << dataEntries << " tracks)";
     TLegend* legend = new TLegend(0.7, 0.8, 0.9, 0.9);
-    legend->AddEntry(grData, "Data", "pl");
+    legend->AddEntry(grData, dataLegend.str().c_str(), "pl");
     if (grMC) {
-        legend->AddEntry(grMC, "MC", "pl");
+        mcLegend << "MC (" << mcEntries << " tracks)";
+        legend->AddEntry(grMC, mcLegend.str().c_str(), "pl");
     }
     legend->Draw();
 
