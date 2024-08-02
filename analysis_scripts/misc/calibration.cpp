@@ -823,18 +823,18 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             }
 
             // Draw and save the original data plot
-            TCanvas c_data(("c_data_" + layer_name + "_" + particle_name).c_str(), ("c_data_" + layer_name + "_" + particle_name).c_str(), 800, 600);
-            c_data.SetLogz();  // Set the z-axis to a logarithmic scale
-            h_data->Draw("COLZ");
-            c_data.SaveAs(("output/calibration/cal/data"+particle_name+"_"+layer_name+"_"+cal_hit_position.png).c_str());
+			TCanvas c_data(("c_data_" + particle_name + "_" + layer_name).c_str(), ("c_data_" + particle_name + "_" + layer_name).c_str(), 800, 600);
+			c_data.SetLogz();  // Set the z-axis to a logarithmic scale
+			h_data->Draw("COLZ");
+			c_data.SaveAs(("output/calibration/cal/" + particle_name + "_data_" + layer_name + "_cal_hit_position.png").c_str());
 
-            // Draw and save the original MC plot if available
-            if (h_mc) {
-                TCanvas c_mc(("c_mc_" + layer_name + "_" + particle_name).c_str(), ("c_mc_" + layer_name + "_" + particle_name).c_str(), 800, 600);
-                c_mc.SetLogz();  // Set the z-axis to a logarithmic scale
-                h_mc->Draw("COLZ");
-                c_mc.SaveAs(("output/calibration/cal/cal_hit_position_mc_" + layer_name + "_" + particle_name + ".png").c_str());
-            }
+			// Draw and save the original MC plot if available
+			if (h_mc) {
+			    TCanvas c_mc(("c_mc_" + particle_name + "_" + layer_name).c_str(), ("c_mc_" + particle_name + "_" + layer_name).c_str(), 800, 600);
+			    c_mc.SetLogz();  // Set the z-axis to a logarithmic scale
+			    h_mc->Draw("COLZ");
+			    c_mc.SaveAs(("output/calibration/cal/" + particle_name + "_mc_" + layer_name + "_cal_hit_position.png").c_str());
+			}
 
             // Clean up for this layer and particle type
             delete h_data;
