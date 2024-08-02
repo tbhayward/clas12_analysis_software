@@ -333,6 +333,8 @@ void plot_ltcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
 void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     gStyle->SetOptStat(0);
 
+    double min_radius = 7.5;
+
     // Declare TTreeReaderValue for data
     TTreeReaderValue<double> ft_x(dataReader, "ft_x");
     TTreeReaderValue<double> ft_y(dataReader, "ft_y");
@@ -379,7 +381,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
         if (*particle_pid == 22 && *ft_x != -9999 && *ft_y != -9999) {
             h_data_sum->Fill(*ft_x, *ft_y, *ft_energy);
             h_data_count->Fill(*ft_x, *ft_y);
-            if (radius > 7.5) {
+            if (radius > min_radius) {
                 h_data_cut->Fill(*ft_x, *ft_y, *ft_energy);
             }
         }
@@ -393,7 +395,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
             if (**mc_particle_pid == 22 && **mc_ft_x != -9999 && **mc_ft_y != -9999) {
                 h_mc_sum->Fill(**mc_ft_x, **mc_ft_y, **mc_ft_energy);
                 h_mc_count->Fill(**mc_ft_x, **mc_ft_y);
-                if (mc_radius > 7.5) {
+                if (mc_radius > min_radius) {
                     h_mc_cut->Fill(**mc_ft_x, **mc_ft_y, **mc_ft_energy);
                 }
             }
@@ -488,7 +490,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
     data_legend->AddEntry(h_data_mean, Form("Std Dev = %.2f GeV", global_std_dev), "");
     data_legend->Draw();
     c_data.SaveAs("output/ft_xy_energy_data.png");
-    
+
     TLegend* mc_legend = nullptr;
     // Draw and save the MC mean energy plot
     if (mcReader) {
