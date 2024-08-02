@@ -400,13 +400,24 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
         }
     }
 
-    // Compute the mean energy for each bin
+    // Compute the mean energy for each bin (for data)
     TH2D* h_data_mean = new TH2D("h_data_mean", "Data FT Energy Mean", nBins, xMin, xMax, nBins, yMin, yMax);
     h_data_mean->GetXaxis()->SetTitle("x_{FT}");
     h_data_mean->GetYaxis()->SetTitle("y_{FT}");
 
+    for (int i = 1; i <= nBins; i++) {
+        for (int j = 1; j <= nBins; j++) {
+            double count = h_data_count->GetBinContent(i, j);
+            if (count > 0) {
+                h_data_mean->SetBinContent(i, j, h_data_sum->GetBinContent(i, j) / count);
+            }
+        }
+    }
+
+    // Compute the mean energy for each bin (for MC)
+    TH2D* h_mc_mean = nullptr;
     if (mcReader) {
-        TH2D* h_mc_mean = new TH2D("h_mc_mean", "MC FT Energy Mean", nBins, xMin, xMax, nBins, yMin, yMax);
+        h_mc_mean = new TH2D("h_mc_mean", "MC FT Energy Mean", nBins, xMin, xMax, nBins, yMin, yMax);
         h_mc_mean->GetXaxis()->SetTitle("x_{FT}");
         h_mc_mean->GetYaxis()->SetTitle("y_{FT}");
 
@@ -418,75 +429,9 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
                 }
             }
         }
-
-        // Compute global mean and standard deviation for MC
-        double mc_global_sum = 0, mc_global_count = 0, mc_sum_sq_diff = 0;
-        for (int i = 1; i <= nBins; i++) {
-            for (int j = 1; j <= nBins; j++) {
-                double mean_value = h_mc_mean->GetBinContent(i, j);
-                if (mean_value > 0) {
-                    mc_global_sum += mean_value;
-                    mc_global_count++;
-                }
-            }
-        }
-        double mc_global_mean = mc_global_sum / mc_global_count;
-        for (int i = 1; i <= nBins; i++) {
-            for (int j = 1; j <= nBins; j++) {
-                double mean_value = h_mc_mean->GetBinContent(i, j);
-                if (mean_value > 0) {
-                    mc_sum_sq_diff += TMath::Power(mean_value - mc_global_mean, 2);
-                }
-            }
-        }
-        double mc_global_std_dev = TMath::Sqrt(mc_sum_sq_diff / mc_global_count);
-
-        TLegend* mc_legend = new TLegend(0.7, 0.8, 0.9, 0.9);
-		mc_legend->AddEntry(h_mc_mean, Form("Mean = %.2f GeV", mc_global_mean), "");
-		mc_legend->AddEntry(h_mc_mean, Form("Std Dev = %.2f GeV", mc_global_std_dev), "");
-
-		// Draw and save the MC mean energy plot
-		TCanvas c_mc("c_mc", "c_mc", 800, 600);
-		h_mc_mean->Draw("COLZ");
-		mc_legend->Draw();
-		c_mc.SaveAs("output/ft_xy_energy_mc.png");
-
-		// Create masked plot for MC
-		TH2D* h_mc_masked = (TH2D*)h_mc_mean->Clone("h_mc_masked");
-		TCanvas c_mc_masked("c_mc_masked", "c_mc_masked", 800, 600);
-		h_mc_masked->Draw("COLZ");
-		for (int i = 1; i <= nBins; i++) {
-		    for (int j = 1; j <= nBins; j++) {
-		        double mean_value = h_mc_masked->GetBinContent(i, j);
-		        if (mean_value < mc_global_mean - 1 * mc_global_std_dev && h_mc_mean->GetBinContent(i, j) > 0) {
-		            TBox* box = new TBox(h_mc_masked->GetXaxis()->GetBinLowEdge(i), h_mc_masked->GetYaxis()->GetBinLowEdge(j),
-		                                 h_mc_masked->GetXaxis()->GetBinUpEdge(i), h_mc_masked->GetYaxis()->GetBinUpEdge(j));
-		            box->SetFillColor(kRed);
-		            box->Draw();
-		        }
-		    }
-		}
-		mc_legend->Draw();
-		c_mc_masked.SaveAs("output/ft_xy_energy_masked_mc.png");
-
-		// Clean up
-		delete mc_legend;
-		delete h_mc_masked;
-		delete h_mc_sum;
-		delete h_mc_count;
-		delete h_mc_mean;
     }
 
-    for (int i = 1; i <= nBins; i++) {
-        for (int j = 1; j <= nBins; j++) {
-            double count = h_data_count->GetBinContent(i, j);
-            if (count > 0) {
-                h_data_mean->SetBinContent(i, j, h_data_sum->GetBinContent(i, j) / count);
-            }
-        }
-    }
-
-    // Compute global average and standard deviation for Data
+    // Compute global statistics for Data
     double global_sum = 0, global_count = 0, sum_sq_diff = 0;
     for (int i = 1; i <= nBins; i++) {
         for (int j = 1; j <= nBins; j++) {
@@ -503,22 +448,59 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
             double mean_value = h_data_mean->GetBinContent(i, j);
             if (mean_value > 0) {
                 sum_sq_diff += TMath::Power(mean_value - global_mean, 2);
-			}
-		}
+            }
+        }
+    }
+    double global_std_dev = TMath::Sqrt(sum_sq_diff / global_count);
+
+    // Compute global statistics for MC
+    double mc_global_sum = 0, mc_global_count = 0, mc_sum_sq_diff = 0;
+    double mc_global_mean = 0;
+    double mc_global_std_dev = 0;
+
+    if (mcReader) {
+        for (int i = 1; i <= nBins; i++) {
+            for (int j = 1; j <= nBins; j++) {
+                double mean_value = h_mc_mean->GetBinContent(i, j);
+                if (mean_value > 0) {
+                    mc_global_sum += mean_value;
+                    mc_global_count++;
+                }
+            }
+        }
+        mc_global_mean = mc_global_sum / mc_global_count;
+        for (int i = 1; i <= nBins; i++) {
+            for (int j = 1; j <= nBins; j++) {
+                double mean_value = h_mc_mean->GetBinContent(i, j);
+                if (mean_value > 0) {
+                    mc_sum_sq_diff += TMath::Power(mean_value - mc_global_mean, 2);
+                }
+            }
+        }
+        mc_global_std_dev = TMath::Sqrt(mc_sum_sq_diff / mc_global_count);
+    }
+
+    // Draw and save the data mean energy plot
+    TCanvas c_data("c_data", "c_data", 800, 600);
+    h_data_mean->Draw("COLZ");
+    TLegend* data_legend = new TLegend(0.7, 0.8, 0.9, 0.9);
+    data_legend->AddEntry(h_data_mean, Form("Mean = %.2f GeV", global_mean), "");
+    data_legend->AddEntry(h_data_mean, Form("Std Dev = %.2f GeV", global_std_dev), "");
+    data_legend->Draw();
+    c_data.SaveAs("output/ft_xy_energy_data.png");
+
+    // Draw and save the MC mean energy plot
+    if (mcReader) {
+        TCanvas c_mc("c_mc", "c_mc", 800, 600);
+        h_mc_mean->Draw("COLZ");
+        TLegend* mc_legend = new TLegend(0.7, 0.8, 0.9, 0.9);
+        mc_legend->AddEntry(h_mc_mean, Form("Mean = %.2f GeV", mc_global_mean), "");
+        mc_legend->AddEntry(h_mc_mean, Form("Std Dev = %.2f GeV",mc_global_std_dev), “”);
+	mc_legend->Draw();
+	c_mc.SaveAs(“output/ft_xy_energy_mc.png”);
+	delete mc_legend;
 	}
-	double global_std_dev = TMath::Sqrt(sum_sq_diff / global_count);
-	
-	TLegend* data_legend = new TLegend(0.7, 0.8, 0.9, 0.9);
-	data_legend->AddEntry(h_data_mean, Form("Mean = %.2f GeV", global_mean), "");
-	data_legend->AddEntry(h_data_mean, Form("Std Dev = %.2f GeV", global_std_dev), "");
-
-	// Draw and save the data mean energy plot
-	TCanvas c_data("c_data", "c_data", 800, 600);
-	h_data_mean->Draw("COLZ");
-	data_legend->Draw();
-	c_data.SaveAs("output/ft_xy_energy_data.png");
-
-	// Create masked plot for Data
+	// Create and save masked plot for Data
 	TH2D* h_data_masked = (TH2D*)h_data_mean->Clone("h_data_masked");
 	TCanvas c_data_masked("c_data_masked", "c_data_masked", 800, 600);
 	h_data_masked->Draw("COLZ");
@@ -536,70 +518,68 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
 	data_legend->Draw();
 	c_data_masked.SaveAs("output/ft_xy_energy_masked_data.png");
 
+	// Create and save masked plot for MC
+	if (mcReader) {
+	    TH2D* h_mc_masked = (TH2D*)h_mc_mean->Clone("h_mc_masked");
+	    TCanvas c_mc_masked("c_mc_masked", "c_mc_masked", 800, 600);
+	    h_mc_masked->Draw("COLZ");
+	    for (int i = 1; i <= nBins; i++) {
+	        for (int j = 1; j <= nBins; j++) {
+	            double mean_value = h_mc_masked->GetBinContent(i, j);
+	            if (mean_value < mc_global_mean - 1 * mc_global_std_dev && h_mc_mean->GetBinContent(i, j) > 0) {
+	                TBox* box = new TBox(h_mc_masked->GetXaxis()->GetBinLowEdge(i), h_mc_masked->GetYaxis()->GetBinLowEdge(j),
+	                                     h_mc_masked->GetXaxis()->GetBinUpEdge(i), h_mc_masked->GetYaxis()->GetBinUpEdge(j));
+	                box->SetFillColor(kRed);
+	                box->Draw();
+	            }
+	        }
+	    }
+	    mc_legend->Draw();
+	    c_mc_masked.SaveAs("output/ft_xy_energy_masked_mc.png");
+	    delete h_mc_masked;
+	}
+
+	// Draw and save the data plot with cut
+	TCanvas c_data_cut("c_data_cut", "c_data_cut", 800, 600);
+	h_data_cut->Draw("COLZ");
+	TLegend* data_cut_legend = new TLegend(0.7, 0.8, 0.9, 0.9);
+	data_cut_legend->AddEntry(h_data_cut, Form("Mean = %.2f GeV", h_data_cut->GetMean()), "");
+	data_cut_legend->AddEntry(h_data_cut, Form("Std Dev = %.2f GeV", h_data_cut->GetStdDev()), "");
+	data_cut_legend->Draw();
+	c_data_cut.SaveAs("output/ft_xy_energy_cut_data.png");
+
+	// Draw and save the MC plot with cut
+	if (mcReader) {
+	    TCanvas c_mc_cut("c_mc_cut", "c_mc_cut", 800, 600);
+	    h_mc_cut->Draw("COLZ");
+	    TLegend* mc_cut_legend = new TLegend(0.7, 0.8, 0.9, 0.9);
+	    mc_cut_legend->AddEntry(h_mc_cut, Form("Mean = %.2f GeV", h_mc_cut->GetMean()), "");
+	    mc_cut_legend->AddEntry(h_mc_cut, Form("Std Dev = %.2f GeV", h_mc_cut->GetStdDev()), "");
+	    mc_cut_legend->Draw();
+	    c_mc_cut.SaveAs("output/ft_xy_energy_cut_mc.png");
+	    delete mc_cut_legend;
+	}
+
 	// Clean up
 	delete data_legend;
-	delete h_data_masked;
+	delete data_cut_legend;
 	delete h_data_sum;
 	delete h_data_count;
 	delete h_data_mean;
-
-	double min_radius_cut = 7.5; 
-
-	// Apply the radius cut and create a new set of plots with the cut enforced
-	TH2D* h_data_cut = new TH2D("h_data_cut", "Data FT Energy Cut", nBins, xMin, xMax, nBins, yMin, yMax);
-	TH2D* h_mc_cut = nullptr;
-	if (mcReader) {
-	    h_mc_cut = new TH2D("h_mc_cut", "MC FT Energy Cut", nBins, xMin, xMax, nBins, yMin, yMax);
-	}
-
-	// Fill the data histograms, applying the cuts
-    dataReader.Restart();
-    while (dataReader.Next()) {
-        double radius = sqrt((*ft_x) * (*ft_x) + (*ft_y) * (*ft_y));
-        if (*particle_pid == 22 && *ft_x != -9999 && *ft_y != -9999) {
-            h_data_sum->Fill(*ft_x, *ft_y, *ft_energy);
-            h_data_count->Fill(*ft_x, *ft_y);
-        }
-    }
-
-    // Fill the MC histograms if available, applying the cuts
-    if (mcReader) {
-        mcReader->Restart();
-        while (mcReader->Next()) {
-            double mc_radius = sqrt((**mc_ft_x) * (**mc_ft_x) + (**mc_ft_y) * (**mc_ft_y));
-            if (**mc_particle_pid == 22 && **mc_ft_x != -9999 && **mc_ft_y != -9999) {
-                h_mc_sum->Fill(**mc_ft_x, **mc_ft_y, **mc_ft_energy);
-                h_mc_count->Fill(**mc_ft_x, **mc_ft_y);
-            }
-        }
-    }
-
-	// Draw and save the data plot with cut
-    TCanvas c_data_cut("c_data_cut", "c_data_cut", 800, 600);
-    h_data_cut->Draw("COLZ");
-    TLegend* data_cut_legend = new TLegend(0.7, 0.8, 0.9, 0.9);
-    data_cut_legend->AddEntry(h_data_cut, Form("Mean = %.2f GeV", h_data_cut->GetMean()), "");
-    data_cut_legend->AddEntry(h_data_cut, Form("Std Dev = %.2f GeV", h_data_cut->GetStdDev()), "");
-    data_cut_legend->Draw();
-    c_data_cut.SaveAs("output/ft_xy_energy_cut_data.png");
-
-    if (mcReader) {
-        // Draw and save the MC plot with cut
-        TCanvas c_mc_cut("c_mc_cut", "c_mc_cut", 800, 600);
-        h_mc_cut->Draw("COLZ");
-        TLegend* mc_cut_legend = new TLegend(0.7, 0.8, 0.9, 0.9);
-        mc_cut_legend->AddEntry(h_mc_cut, Form("Mean = %.2f GeV", h_mc_cut->GetMean()), "");
-        mc_cut_legend->AddEntry(h_mc_cut, Form("Std Dev = %.2f GeV", h_mc_cut->GetStdDev()), "");
-        mc_cut_legend->Draw();
-        c_mc_cut.SaveAs("output/ft_xy_energy_cut_mc.png");
-        delete mc_cut_legend;
-    }
-
-	// Clean up
-	delete data_cut_legend;
 	delete h_data_cut;
-	if (mcReader) delete h_mc_cut;	
-}
+	delete h_data_masked;
+
+	if (mcReader) {
+	    delete mc_legend;
+	    delete mc_ft_x;
+	    delete mc_ft_y;
+	    delete mc_ft_energy;
+	    delete mc_particle_pid;
+	    delete h_mc_sum;
+	    delete h_mc_count;
+	    delete h_mc_mean;
+	    delete h_mc_cut;
+	}
 
 int main(int argc, char** argv) {
     if (argc < 2 || argc > 3) {
