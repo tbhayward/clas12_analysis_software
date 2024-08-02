@@ -497,12 +497,14 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
 		}
 	}
 	double global_std_dev = TMath::Sqrt(sum_sq_diff / global_count);
-	// Draw and save the data mean energy plot
-	TCanvas c_data("c_data", "c_data", 800, 600);
-	h_data_mean->Draw("COLZ");
+	
 	TLegend* data_legend = new TLegend(0.7, 0.8, 0.9, 0.9);
 	data_legend->AddEntry(h_data_mean, Form("Mean = %.2f GeV", global_mean), "");
 	data_legend->AddEntry(h_data_mean, Form("Std Dev = %.2f GeV", global_std_dev), "");
+
+	// Draw and save the data mean energy plot
+	TCanvas c_data("c_data", "c_data", 800, 600);
+	h_data_mean->Draw("COLZ");
 	data_legend->Draw();
 	c_data.SaveAs("output/ft_xy_energy_data.png");
 
@@ -513,7 +515,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
 	for (int i = 1; i <= nBins; i++) {
 	    for (int j = 1; j <= nBins; j++) {
 	        double mean_value = h_data_masked->GetBinContent(i, j);
-	        if (mean_value < global_mean - 1 * global_std_dev) {
+	        if (mean_value < global_mean - 1 * global_std_dev && h_data_mean->GetBinContent(i, j) > 0) {
 	            TBox* box = new TBox(h_data_masked->GetXaxis()->GetBinLowEdge(i), h_data_masked->GetYaxis()->GetBinLowEdge(j),
 	                                 h_data_masked->GetXaxis()->GetBinUpEdge(i), h_data_masked->GetYaxis()->GetBinUpEdge(j));
 	            box->SetFillColor(kRed);
@@ -521,6 +523,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
 	        }
 	    }
 	}
+	data_legend->Draw();
 	c_data_masked.SaveAs("output/ft_xy_energy_masked_data.png");
 
 	// Clean up
