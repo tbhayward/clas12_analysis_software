@@ -431,39 +431,40 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
         }
         double mc_global_std_dev = TMath::Sqrt(mc_sum_sq_diff / mc_global_count);
 
-        // Draw and save the MC mean energy plot
-        TCanvas c_mc("c_mc", "c_mc", 800, 600);
-        h_mc_mean->Draw("COLZ");
         TLegend* mc_legend = new TLegend(0.7, 0.8, 0.9, 0.9);
-        mc_legend->AddEntry(h_mc_mean, Form("Mean = %.2f GeV", mc_global_mean), "");
-        mc_legend->AddEntry(h_mc_mean, Form("Std Dev = %.2f GeV", mc_global_std_dev), "");
-        mc_legend->Draw();
-        c_mc.SaveAs("output/ft_xy_energy_mc.png");
+		mc_legend->AddEntry(h_mc_mean, Form("Mean = %.2f GeV", mc_global_mean), "");
+		mc_legend->AddEntry(h_mc_mean, Form("Std Dev = %.2f GeV", mc_global_std_dev), "");
 
-        // Create masked plot for MC
-        TH2D* h_mc_masked = (TH2D*)h_mc_mean->Clone("h_mc_masked");
-        TCanvas c_mc_masked("c_mc_masked", "c_mc_masked", 800, 600);
-        h_mc_masked->Draw("COLZ");
-        for (int i = 1; i <= nBins; i++) {
-            for (int j = 1; j <= nBins; j++) {
-                double mean_value = h_mc_masked->GetBinContent(i, j);
-                if (mean_value < mc_global_mean - 1 * mc_global_std_dev) {
-                    TBox* box = new TBox(h_mc_masked->GetXaxis()->GetBinLowEdge(i), h_mc_masked->GetYaxis()->GetBinLowEdge(j),
-                                         h_mc_masked->GetXaxis()->GetBinUpEdge(i), h_mc_masked->GetYaxis()->GetBinUpEdge(j));
-                    box->SetFillColor(kRed);
-                    box->Draw();
-                }
-            }
-        }
-        c_mc_masked.SaveAs("output/ft_xy_energy_masked_mc.png");
-        mc_legend->Draw();
+		// Draw and save the MC mean energy plot
+		TCanvas c_mc("c_mc", "c_mc", 800, 600);
+		h_mc_mean->Draw("COLZ");
+		mc_legend->Draw();
+		c_mc.SaveAs("output/ft_xy_energy_mc.png");
 
-        // Clean up
-        delete mc_legend;
-        delete h_mc_masked;
-        delete h_mc_sum;
-        delete h_mc_count;
-        delete h_mc_mean;
+		// Create masked plot for MC
+		TH2D* h_mc_masked = (TH2D*)h_mc_mean->Clone("h_mc_masked");
+		TCanvas c_mc_masked("c_mc_masked", "c_mc_masked", 800, 600);
+		h_mc_masked->Draw("COLZ");
+		for (int i = 1; i <= nBins; i++) {
+		    for (int j = 1; j <= nBins; j++) {
+		        double mean_value = h_mc_masked->GetBinContent(i, j);
+		        if (mean_value < mc_global_mean - 1 * mc_global_std_dev && h_mc_mean->GetBinContent(i, j) > 0) {
+		            TBox* box = new TBox(h_mc_masked->GetXaxis()->GetBinLowEdge(i), h_mc_masked->GetYaxis()->GetBinLowEdge(j),
+		                                 h_mc_masked->GetXaxis()->GetBinUpEdge(i), h_mc_masked->GetYaxis()->GetBinUpEdge(j));
+		            box->SetFillColor(kRed);
+		            box->Draw();
+		        }
+		    }
+		}
+		mc_legend->Draw();
+		c_mc_masked.SaveAs("output/ft_xy_energy_masked_mc.png");
+
+		// Clean up
+		delete mc_legend;
+		delete h_mc_masked;
+		delete h_mc_sum;
+		delete h_mc_count;
+		delete h_mc_mean;
     }
 
     for (int i = 1; i <= nBins; i++) {
