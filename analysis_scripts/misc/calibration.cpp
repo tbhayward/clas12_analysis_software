@@ -330,79 +330,39 @@ void plot_ltcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     create_plot("negative", negative_pids);
 }
 
-void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
-    // Restart the TTreeReader to process the data from the beginning
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-
-    // Set up TTreeReaderValues for ft_x, ft_y, and particle_pid
-    TTreeReaderValue<double> ft_x(dataReader, "ft_x");
-    TTreeReaderValue<double> ft_y(dataReader, "ft_y");
-    TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
-
-    TTreeReaderValue<double>* mc_ft_x = nullptr;
-    TTreeReaderValue<double>* mc_ft_y = nullptr;
-    TTreeReaderValue<int>* mc_particle_pid = nullptr;
-
-    if (mcReader) {
-        mc_ft_x = new TTreeReaderValue<double>(*mcReader, "ft_x");
-        mc_ft_y = new TTreeReaderValue<double>(*mcReader, "ft_y");
-        mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+bool forward_tagger_fiducial(double ft_x, double ft_y) {
+    // Compute the radius from the origin
+    double radius = sqrt(ft_x * ft_x + ft_y * ft_y);
+    
+    // Check if the radius is within the fiducial range
+    if (radius < 8 || radius > 15) {
+        return false;
     }
 
-    // Define the 2D histogram bins and ranges
-    int nBins = 100;
-    double xMin = -20;
-    double xMax = 20;
-    double yMin = -20;
-    double yMax = 20;
+    // Define the circle cut parameters: radius and center (x, y)
+    std::vector<std::pair<double, std::pair<double, double>>> holes = {
+        {1.60, {-8.42,  9.89}},  // circle 1
+        {1.60, {-9.89, -5.33}},  // circle 2
+        {2.30, {-6.15, 13.00}},  // circle 3
+        {2.00, {-6.50,  3.70}}   // circle 4
+    };
 
-    // Create histograms for data and MC
-    TH2D* h_data = new TH2D("h_data", "data FT hit position", nBins, xMin, xMax, nBins, yMin, yMax);
-    h_data->GetXaxis()->SetTitle("x_{FT}");
-    h_data->GetYaxis()->SetTitle("y_{FT}");
+    // Check if the point falls inside any of the defined holes
+    for (const auto& hole : holes) {
+        double hole_radius = hole.first;
+        double hole_center_x = hole.second.first;
+        double hole_center_y = hole.second.second;
 
-    TH2D* h_mc = nullptr;
-    if (mcReader) {
-        h_mc = new TH2D("h_mc", "mc FT hit position", nBins, xMin, xMax, nBins, yMin, yMax);
-        h_mc->GetXaxis()->SetTitle("x_{FT}");
-        h_mc->GetYaxis()->SetTitle("y_{FT}");
-    }
+        double distance_to_center = sqrt((ft_x - hole_center_x) * (ft_x - hole_center_x) +
+           (ft_y - hole_center_y) * (ft_y - hole_center_y));
 
-    // Fill the data histogram, applying the cuts
-    while (dataReader.Next()) {
-        if (*particle_pid == 22 && *ft_x != -9999 && *ft_y != -9999) {
-            h_data->Fill(*ft_x, *ft_y);
+        if (distance_to_center < hole_radius) {
+            return false;
         }
     }
 
-    // Fill the MC histogram if available, applying the cuts
-    if (mcReader) {
-        while (mcReader->Next()) {
-            if (**mc_particle_pid == 22 && **mc_ft_x != -9999 && **mc_ft_y != -9999) {
-                h_mc->Fill(**mc_ft_x, **mc_ft_y);
-            }
-        }
-    }
-
-    // Draw and save the data plot
-    TCanvas c_data("c_data", "c_data", 800, 600);
-    h_data->Draw("COLZ");
-    c_data.SaveAs("output/ft_hit_position_data.png");
-
-    // Draw and save the MC plot if available
-    if (h_mc) {
-        TCanvas c_mc("c_mc", "c_mc", 800, 600);
-        h_mc->Draw("COLZ");
-        c_mc.SaveAs("output/ft_hit_position_mc.png");
-    }
-
-    // Clean up
-    delete h_data;
-    if (h_mc) delete h_mc;
-    if (mc_ft_x) delete mc_ft_x;
-    if (mc_ft_y) delete mc_ft_y;
-    if (mc_particle_pid) delete mc_particle_pid;
+    // If all checks are passed, the track is good
+    return true;
 }
 
 void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
@@ -580,28 +540,64 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
 			}
 		}
 	}
-	data_legend->Draw();
-	c_data_masked.SaveAs("output/ft_xy_energy_masked_data.png");
-	// Create and save masked plot for MC
-	if (mcReader) {
-	    TH2D* h_mc_masked = (TH2D*)h_mc_mean->Clone("h_mc_masked");
-	    TCanvas c_mc_masked("c_mc_masked", "c_mc_masked", 800, 600);
-	    h_mc_masked->Draw("COLZ");
-	    for (int i = 1; i <= nBins; i++) {
-	        for (int j = 1; j <= nBins; j++) {
-	            double mean_value = h_mc_masked->GetBinContent(i, j);
-	            if (mean_value < mc_global_mean - 1 * mc_global_std_dev && h_mc_mean->GetBinContent(i, j) > 0) {
-	                TBox* box = new TBox(h_mc_masked->GetXaxis()->GetBinLowEdge(i), h_mc_masked->GetYaxis()->GetBinLowEdge(j),
-	                                     h_mc_masked->GetXaxis()->GetBinUpEdge(i), h_mc_masked->GetYaxis()->GetBinUpEdge(j));
-	                box->SetFillColor(kRed);
-	                box->Draw();
-	            }
-	        }
-	    }
-	    mc_legend->Draw();
-	    c_mc_masked.SaveAs("output/ft_xy_energy_masked_mc.png");
-	    delete h_mc_masked;
-	}
+
+    // Draw the circles representing the holes
+    std::vector<std::pair<double, std::pair<double, double>>> holes = {
+        {1.60, {-8.42,  9.89}},  // circle 1
+        {1.60, {-9.89, -5.33}},  // circle 2
+        {2.30, {-6.15, 13.00}},  // circle 3
+        {2.00, {-6.50,  3.70}}   // circle 4
+    };
+
+    for (const auto& hole : holes) {
+        double hole_radius = hole.first;
+        double hole_center_x = hole.second.first;
+        double hole_center_y = hole.second.second;
+
+        TEllipse* circle = new TEllipse(hole_center_x, hole_center_y, hole_radius, hole_radius);
+        circle->SetLineColor(kBlack);
+        circle->SetLineWidth(2);  // Set line width to make it thick
+        circle->SetFillStyle(0);  // No fill color, only the outline
+        circle->Draw("same");
+    }
+
+    data_legend->Draw();
+    c_data_masked.SaveAs("output/ft_xy_energy_masked_data.png");
+
+    // Create and save masked plot for MC
+    if (mcReader) {
+        TH2D* h_mc_masked = (TH2D*)h_mc_mean->Clone("h_mc_masked");
+        TCanvas c_mc_masked("c_mc_masked", "c_mc_masked", 800, 600);
+        h_mc_masked->Draw("COLZ");
+        for (int i = 1; i <= nBins; i++) {
+            for (int j = 1; j <= nBins; j++) {
+                double mean_value = h_mc_masked->GetBinContent(i, j);
+                if (mean_value < mc_global_mean - 1 * mc_global_std_dev && h_mc_mean->GetBinContent(i, j) > 0) {
+                    TBox* box = new TBox(h_mc_masked->GetXaxis()->GetBinLowEdge(i), h_mc_masked->GetYaxis()->GetBinLowEdge(j),
+                                         h_mc_masked->GetXaxis()->GetBinUpEdge(i), h_mc_masked->GetYaxis()->GetBinUpEdge(j));
+                    box->SetFillColor(kRed);
+                    box->Draw();
+                }
+            }
+        }
+
+        // Draw the circles representing the holes on MC plot
+        for (const auto& hole : holes) {
+            double hole_radius = hole.first;
+            double hole_center_x = hole.second.first;
+            double hole_center_y = hole.second.second;
+
+            TEllipse* circle = new TEllipse(hole_center_x, hole_center_y, hole_radius, hole_radius);
+            circle->SetLineColor(kBlack);
+            circle->SetLineWidth(2);  // Set line width to make it thick
+            circle->SetFillStyle(0);  // No fill color, only the outline
+            circle->Draw("same");
+        }
+
+        mc_legend->Draw();
+        c_mc_masked.SaveAs("output/ft_xy_energy_masked_mc.png");
+        delete h_mc_masked;
+    }
 
 	// Clean up
 	delete data_legend;
@@ -621,6 +617,83 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
 	    delete h_mc_mean;
 	}
 }
+
+void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+    // Restart the TTreeReader to process the data from the beginning
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+
+    // Set up TTreeReaderValues for ft_x, ft_y, and particle_pid
+    TTreeReaderValue<double> ft_x(dataReader, "ft_x");
+    TTreeReaderValue<double> ft_y(dataReader, "ft_y");
+    TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+
+    TTreeReaderValue<double>* mc_ft_x = nullptr;
+    TTreeReaderValue<double>* mc_ft_y = nullptr;
+    TTreeReaderValue<int>* mc_particle_pid = nullptr;
+
+    if (mcReader) {
+        mc_ft_x = new TTreeReaderValue<double>(*mcReader, "ft_x");
+        mc_ft_y = new TTreeReaderValue<double>(*mcReader, "ft_y");
+        mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+    }
+
+    // Define the 2D histogram bins and ranges
+    int nBins = 100;
+    double xMin = -20;
+    double xMax = 20;
+    double yMin = -20;
+    double yMax = 20;
+
+    // Create histograms for data and MC
+    TH2D* h_data = new TH2D("h_data", "data FT hit position", nBins, xMin, xMax, nBins, yMin, yMax);
+    h_data->GetXaxis()->SetTitle("x_{FT}");
+    h_data->GetYaxis()->SetTitle("y_{FT}");
+
+    TH2D* h_mc = nullptr;
+    if (mcReader) {
+        h_mc = new TH2D("h_mc", "mc FT hit position", nBins, xMin, xMax, nBins, yMin, yMax);
+        h_mc->GetXaxis()->SetTitle("x_{FT}");
+        h_mc->GetYaxis()->SetTitle("y_{FT}");
+    }
+
+    // Fill the data histogram, applying the cuts
+    while (dataReader.Next()) {
+        if (*particle_pid == 22 && *ft_x != -9999 && *ft_y != -9999) {
+            h_data->Fill(*ft_x, *ft_y);
+        }
+    }
+
+    // Fill the MC histogram if available, applying the cuts
+    if (mcReader) {
+        while (mcReader->Next()) {
+            if (**mc_particle_pid == 22 && **mc_ft_x != -9999 && **mc_ft_y != -9999) {
+                h_mc->Fill(**mc_ft_x, **mc_ft_y);
+            }
+        }
+    }
+
+    // Draw and save the data plot
+    TCanvas c_data("c_data", "c_data", 800, 600);
+    h_data->Draw("COLZ");
+    c_data.SaveAs("output/ft_hit_position_data.png");
+
+    // Draw and save the MC plot if available
+    if (h_mc) {
+        TCanvas c_mc("c_mc", "c_mc", 800, 600);
+        h_mc->Draw("COLZ");
+        c_mc.SaveAs("output/ft_hit_position_mc.png");
+    }
+
+    // Clean up
+    delete h_data;
+    if (h_mc) delete h_mc;
+    if (mc_ft_x) delete mc_ft_x;
+    if (mc_ft_y) delete mc_ft_y;
+    if (mc_particle_pid) delete mc_particle_pid;
+}
+
+
 
 int main(int argc, char** argv) {
     if (argc < 2 || argc > 3) {
