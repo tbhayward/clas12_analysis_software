@@ -336,21 +336,25 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
 
-    // Set up TTreeReaderValues for ft_x, ft_y, ft_energy, and particle_pid
+    // Declare TTreeReaderValue for data
     TTreeReaderValue<double> ft_x(dataReader, "ft_x");
     TTreeReaderValue<double> ft_y(dataReader, "ft_y");
     TTreeReaderValue<double> ft_energy(dataReader, "ft_energy");
+    TTreeReaderValue<double> ft_radius(dataReader, "ft_radius");
     TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
 
+    // Declare TTreeReaderValue for MC
     TTreeReaderValue<double>* mc_ft_x = nullptr;
     TTreeReaderValue<double>* mc_ft_y = nullptr;
     TTreeReaderValue<double>* mc_ft_energy = nullptr;
+    TTreeReaderValue<double>* mc_ft_radius = nullptr;
     TTreeReaderValue<int>* mc_particle_pid = nullptr;
 
     if (mcReader) {
         mc_ft_x = new TTreeReaderValue<double>(*mcReader, "ft_x");
         mc_ft_y = new TTreeReaderValue<double>(*mcReader, "ft_y");
         mc_ft_energy = new TTreeReaderValue<double>(*mcReader, "ft_energy");
+        mc_ft_radius = new TTreeReaderValue<double>(*mcReader, "ft_radius");
         mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
     }
 
@@ -533,14 +537,6 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
 	delete h_data_count;
 	delete h_data_mean;
 
-	// Declare TTreeReaderValue for ft_radius at the beginning of your function
-	// Declare TTreeReaderValue for ft_radius
-	TTreeReaderValue<double> ft_radius(dataReader, "ft_radius");
-
-	TTreeReaderValue<double>* mc_ft_radius = nullptr;
-	if (mcReader) {
-	    mc_ft_radius = new TTreeReaderValue<double>(*mcReader, "ft_radius");
-	}
 	double min_radius_cut = 7.5; 
 
 	// Apply the radius cut and create a new set of plots with the cut enforced
