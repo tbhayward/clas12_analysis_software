@@ -778,12 +778,14 @@ int main(int argc, char *argv[]) {
         tree->Branch("cal_lu_1", &cal_lu_1, "cal_lu_1/D");
         tree->Branch("cal_lv_1", &cal_lv_1, "cal_lv_1/D");
         tree->Branch("cal_lw_1", &cal_lw_1, "cal_lw_1/D");
+        tree->Branch("cal_energy_4", &cal_energy_4, "cal_energy_4/D");
         tree->Branch("cal_x_4", &cal_x_4, "cal_x_4/D");
         tree->Branch("cal_y_4", &cal_y_4, "cal_y_4/D");
         tree->Branch("cal_z_4", &cal_z_4, "cal_z_4/D");
         tree->Branch("cal_lu_4", &cal_lu_4, "cal_lu_4/D");
         tree->Branch("cal_lv_4", &cal_lv_4, "cal_lv_4/D");
         tree->Branch("cal_lw_4", &cal_lw_4, "cal_lw_4/D");
+        tree->Branch("cal_energy_7", &cal_energy_7, "cal_energy_7/D");
         tree->Branch("cal_x_7", &cal_x_7, "cal_x_7/D");
         tree->Branch("cal_y_7", &cal_y_7, "cal_y_7/D");
         tree->Branch("cal_z_7", &cal_z_7, "cal_z_7/D");
@@ -1132,8 +1134,8 @@ int main(int argc, char *argv[]) {
                 particle_vx >> particle_vy >> particle_vz >> particle_beta >> 
                 particle_chi2pid >> particle_status >> cal_sector >> cal_energy_1 >> 
                 cal_x_1 >> cal_y_1 >> cal_z_1 >> cal_lu_1 >> cal_lv_1 >> cal_lw_1 >> 
-                cal_x_4 >> cal_y_4 >> cal_z_4 >> cal_lu_4 >> cal_lv_4 >> cal_lw_4 >> 
-                cal_x_7 >> cal_y_7 >> cal_z_7 >> cal_lu_7 >> cal_lv_7 >> cal_lw_7 >> 
+                cal_energy_4 >> cal_x_4 >> cal_y_4 >> cal_z_4 >> cal_lu_4 >> cal_lv_4 >> cal_lw_4 >> 
+                cal_energy_7 >> cal_x_7 >> cal_y_7 >> cal_z_7 >> cal_lu_7 >> cal_lv_7 >> cal_lw_7 >> 
                 cc_nphe_15 >> cc_nphe_16 >> track_sector_5 >> track_chi2_5 >> track_ndf_5 >> 
                 track_sector_6 >> track_chi2_6 >> track_ndf_6 >> traj_x_6 >> traj_y_6 >> traj_z_6 >> traj_edge_6 >> 
                 traj_x_18 >> traj_y_18 >> traj_z_18 >> traj_edge_18 >> traj_x_36 >> traj_y_36 >> 
