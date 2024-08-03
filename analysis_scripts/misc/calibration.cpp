@@ -889,7 +889,7 @@ struct SectorCutParams {
 
 void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Define the 2D histogram bins and ranges
-    int nBins = 100;
+    int nBins = 50;
     double lwMin = 0;
     double lwMax = 250;
     double lvMin = 0;
