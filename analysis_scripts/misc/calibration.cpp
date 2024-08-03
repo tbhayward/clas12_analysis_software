@@ -913,15 +913,16 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
 					}
 				}
 	            c_mc.SaveAs(("output/calibration/cal/" + particle_name + "_mc_" + layer_name + "_cal_hit_position.png").c_str());
-        }
+	        }
 
-        // Clean up for this layer and particle type
-        delete h_data;
-        if (h_mc) delete h_mc;
-        if (mc_cal_x) delete mc_cal_x;
-        if (mc_cal_y) delete mc_cal_y;
-        if (mc_particle_pid) delete mc_particle_pid;
-    }
+	        // Clean up for this layer and particle type
+	        delete h_data;
+	        if (h_mc) delete h_mc;
+	        if (mc_cal_x) delete mc_cal_x;
+	        if (mc_cal_y) delete mc_cal_y;
+	        if (mc_particle_pid) delete mc_particle_pid;
+	    }
+	}
 }
 
 void create_directories() {
