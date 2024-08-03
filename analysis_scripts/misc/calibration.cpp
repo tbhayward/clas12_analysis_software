@@ -778,7 +778,6 @@ std::pair<double, double> polarToCartesian(double r, double theta_rad) {
     return {r * cos(theta_rad), r * sin(theta_rad)};
 }
 
-// Modified plot_cal_hit_position function
 void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Define the 2D histogram bins and ranges
     int nBins = 100;
@@ -874,34 +873,81 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                         // Draw vertical lines for sector 3
                         TLine* line_left = new TLine(cut.btop, yMin, cut.btop, yMax);
                         line_left->SetLineColor(kRed);
-                        line_left->SetLineWidth(1);
+                        line_left->SetLineWidth(2);
                         line_left->Draw("same");
 
                         TLine* line_right = new TLine(cut.blow, yMin, cut.blow, yMax);
                         line_right->SetLineColor(kRed);
-                        line_right->SetLineWidth(1);
+                        line_right->SetLineWidth(2);
                         line_right->Draw("same");
                     } else {
-                        // General case for other cuts
-                        for (double theta_deg = sectorAngleRanges[cut.sector].first; theta_deg <= sectorAngleRanges[cut.sector].second; theta_deg += 5) {
-                            double theta_rad = theta_deg * TMath::DegToRad();
+                        // General case for other cuts, limit to sector angle range
+                        double theta_min = sectorAngleRanges[cut.sector].first * TMath::DegToRad();
+                        double theta_max = sectorAngleRanges[cut.sector].second * TMath::DegToRad();
 
-                            // Calculate the start and end points based on the sector angles
-                            std::pair<double, double> start = polarToCartesian(450, theta_rad);
-                            std::pair<double, double> end = polarToCartesian(450, theta_rad + TMath::PiOver2());
+                        // Top line
+                        double x1_top = xMin, y1_top = cut.ktop * xMin + cut.btop + 0.25;
+                        double x2_top = xMax, y2_top = cut.ktop * xMax + cut.btop + 0.25;
 
-                            // Top line
-                            TLine* line_top = new TLine(start.first, cut.ktop * start.first + cut.btop + 0.25, end.first, cut.ktop * end.first + cut.btop + 0.25);
-                            line_top->SetLineColor(kRed);
-                            line_top->SetLineWidth(1);
-                            line_top->Draw("same");
+                        double phi1_top = atan2(y1_top, x1_top);
+                        double phi2_top = atan2(y2_top, x2_top);
 
-                            // Bottom line
-                            TLine* line_bottom = new TLine(start.first, cut.klow * start.first + cut.blow - 0.25, end.first, cut.klow * end.first + cut.blow - 0.25);
-                            line_bottom->SetLineColor(kRed);
-                            line_bottom->SetLineWidth(1);
-                            line_bottom->Draw("same");
+                        if (phi1_top < theta_min || phi1_top > theta_max) {
+                            if (phi1_top < theta_min) {
+                                x1_top = xMin;
+                                y1_top = cut.ktop * xMin + cut.btop + 0.25;
+                            } else {
+                                x1_top = xMax;
+                                y1_top = cut.ktop * xMax + cut.btop + 0.25;
+                            }
                         }
+
+                        if (phi2_top < theta_min || phi2_top > theta_max) {
+                            if (phi2_top < theta_min) {
+                                x2_top = xMin;
+                                y2_top = cut.ktop * xMin + cut.btop + 0.25;
+                            } else {
+                                x2_top = xMax;
+                                y2_top = cut.ktop * xMax + cut.btop + 0.25;
+                            }
+                        }
+
+                        TLine* line_top = new TLine(x1_top, y1_top, x2_top, y2_top);
+                        line_top->SetLineColor(kRed);
+                        line_top->SetLineWidth(2);
+                        line_top->Draw("same");
+
+                        // Bottom line
+                        double x1_bottom = xMin, y1_bottom = cut.klow * xMin + cut.blow - 0.25;
+                        double x2_bottom = xMax, y2_bottom = cut.klow * xMax + cut.blow - 0.25;
+
+                        double phi1_bottom = atan2(y1_bottom, x1_bottom);
+                        double phi2_bottom = atan2(y2_bottom, x2_bottom);
+
+                        if (phi1_bottom < theta_min || phi1_bottom > theta_max) {
+                            if (phi1_bottom < theta_min) {
+                                x1_bottom = xMin;
+                                y1_bottom = cut.klow * xMin + cut.blow - 0.25;
+                            } else {
+                                x1_bottom = xMax;
+                                y1_bottom = cut.klow * xMax + cut.blow - 0.25;
+                            }
+                        }
+
+                        if (phi2_bottom < theta_min || phi2_bottom > theta_max) {
+                            if (phi2_bottom < theta_min) {
+                                x2_bottom = xMin;
+                                y2_bottom = cut.klow * xMin + cut.blow - 0.25;
+                            } else {
+                                x2_bottom = xMax;
+                                y2_bottom = cut.klow * xMax + cut.blow - 0.25;
+                            }
+                        }
+
+                        TLine* line_bottom = new TLine(x1_bottom, y1_bottom, x2_bottom, y2_bottom);
+                        line_bottom->SetLineColor(kRed);
+                        line_bottom->SetLineWidth(2);
+                        line_bottom->Draw("same");
                     }
                 }
             }
@@ -920,34 +966,81 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                             // Draw vertical lines for sector 3
                             TLine* line_left = new TLine(cut.btop, yMin, cut.btop, yMax);
                             line_left->SetLineColor(kRed);
-                            line_left->SetLineWidth(1);
+                            line_left->SetLineWidth(2);
                             line_left->Draw("same");
 
                             TLine* line_right = new TLine(cut.blow, yMin, cut.blow, yMax);
                             line_right->SetLineColor(kRed);
-                            line_right->SetLineWidth(1);
+                            line_right->SetLineWidth(2);
                             line_right->Draw("same");
                         } else {
-                            // General case for other cuts
-                            for (double theta_deg = sectorAngleRanges[cut.sector].first; theta_deg <= sectorAngleRanges[cut.sector].second; theta_deg += 5) {
-                                double theta_rad = theta_deg * TMath::DegToRad();
+                            // General case for other cuts, limit to sector angle range
+                            double theta_min = sectorAngleRanges[cut.sector].first * TMath::DegToRad();
+                            double theta_max = sectorAngleRanges[cut.sector].second * TMath::DegToRad();
 
-                                // Calculate the start and end points based on the sector angles
-                                std::pair<double, double> start = polarToCartesian(450, theta_rad);
-                                std::pair<double, double> end = polarToCartesian(450, theta_rad + TMath::PiOver2());
+                            // Top line
+                            double x1_top = xMin, y1_top = cut.ktop * xMin + cut.btop + 0.25;
+                            double x2_top = xMax, y2_top = cut.ktop * xMax + cut.btop + 0.25;
 
-                                // Top line
-                                TLine* line_top = new TLine(start.first, cut.ktop * start.first + cut.btop + 0.25, end.first, cut.ktop * end.first + cut.btop + 0.25);
-                                line_top->SetLineColor(kRed);
-                                line_top->SetLineWidth(1);
-                                line_top->Draw("same");
+                            double phi1_top = atan2(y1_top, x1_top);
+                            double phi2_top = atan2(y2_top, x2_top);
 
-                                // Bottom line
-                                TLine* line_bottom = new TLine(start.first, cut.klow * start.first + cut.blow - 0.25, end.first, cut.klow * end.first + cut.blow - 0.25);
-                                line_bottom->SetLineColor(kRed);
-                                line_bottom->SetLineWidth(1);
-                                line_bottom->Draw("same");
+                            if (phi1_top < theta_min || phi1_top > theta_max) {
+                                if (phi1_top < theta_min) {
+                                    x1_top = xMin;
+                                    y1_top = cut.ktop * xMin + cut.btop + 0.25;
+                                } else {
+                                    x1_top = xMax;
+                                    y1_top = cut.ktop * xMax + cut.btop + 0.25;
+                                }
                             }
+
+                            if (phi2_top < theta_min || phi2_top > theta_max) {
+                                if (phi2_top < theta_min) {
+                                    x2_top = xMin;
+                                    y2_top = cut.ktop * xMin + cut.btop + 0.25;
+                                } else {
+                                    x2_top = xMax;
+                                    y2_top = cut.ktop * xMax + cut.btop + 0.25;
+                                }
+                            }
+
+                            TLine* line_top = new TLine(x1_top, y1_top, x2_top, y2_top);
+                            line_top->SetLineColor(kRed);
+                            line_top->SetLineWidth(2);
+                            line_top->Draw("same");
+
+                            // Bottom line
+                            double x1_bottom = xMin, y1_bottom = cut.klow * xMin + cut.blow - 0.25;
+                            double x2_bottom = xMax, y2_bottom = cut.klow * xMax + cut.blow - 0.25;
+
+                            double phi1_bottom = atan2(y1_bottom, x1_bottom);
+                            double phi2_bottom = atan2(y2_bottom, x2_bottom);
+
+                            if (phi1_bottom < theta_min || phi1_bottom > theta_max) {
+                                if (phi1_bottom < theta_min) {
+                                    x1_bottom = xMin;
+                                    y1_bottom = cut.klow * xMin + cut.blow - 0.25;
+                                } else {
+                                    x1_bottom = xMax;
+                                    y1_bottom = cut.klow * xMax + cut.blow - 0.25;
+                                }
+                            }
+
+                            if (phi2_bottom < theta_min || phi2_bottom > theta_max) {
+                                if (phi2_bottom < theta_min) {
+                                    x2_bottom = xMin;
+                                    y2_bottom = cut.klow * xMin + cut.blow - 0.25;
+                                } else {
+                                    x2_bottom = xMax;
+                                    y2_bottom = cut.klow * xMax + cut.blow - 0.25;
+                                }
+                            }
+
+                            TLine* line_bottom = new TLine(x1_bottom, y1_bottom, x2_bottom, y2_bottom);
+                            line_bottom->SetLineColor(kRed);
+                            line_bottom->SetLineWidth(2);
+                            line_bottom->Draw("same");
                         }
                     }
                 }
