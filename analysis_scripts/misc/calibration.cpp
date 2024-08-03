@@ -874,12 +874,12 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                         // Draw vertical lines for sector 3
                         TLine* line_left = new TLine(cut.btop, yMin, cut.btop, yMax);
                         line_left->SetLineColor(kRed);
-                        line_left->SetLineWidth(2);
+                        line_left->SetLineWidth(1);
                         line_left->Draw("same");
 
                         TLine* line_right = new TLine(cut.blow, yMin, cut.blow, yMax);
                         line_right->SetLineColor(kRed);
-                        line_right->SetLineWidth(2);
+                        line_right->SetLineWidth(1);
                         line_right->Draw("same");
                     } else {
                         // General case for other cuts
@@ -893,13 +893,13 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                             // Top line
                             TLine* line_top = new TLine(start.first, cut.ktop * start.first + cut.btop + 0.25, end.first, cut.ktop * end.first + cut.btop + 0.25);
                             line_top->SetLineColor(kRed);
-                            line_top->SetLineWidth(2);
+                            line_top->SetLineWidth(1);
                             line_top->Draw("same");
 
                             // Bottom line
                             TLine* line_bottom = new TLine(start.first, cut.klow * start.first + cut.blow - 0.25, end.first, cut.klow * end.first + cut.blow - 0.25);
                             line_bottom->SetLineColor(kRed);
-                            line_bottom->SetLineWidth(2);
+                            line_bottom->SetLineWidth(1);
                             line_bottom->Draw("same");
                         }
                     }
@@ -920,12 +920,12 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                             // Draw vertical lines for sector 3
                             TLine* line_left = new TLine(cut.btop, yMin, cut.btop, yMax);
                             line_left->SetLineColor(kRed);
-                            line_left->SetLineWidth(2);
+                            line_left->SetLineWidth(1);
                             line_left->Draw("same");
 
                             TLine* line_right = new TLine(cut.blow, yMin, cut.blow, yMax);
                             line_right->SetLineColor(kRed);
-                            line_right->SetLineWidth(2);
+                            line_right->SetLineWidth(1);
                             line_right->Draw("same");
                         } else {
                             // General case for other cuts
@@ -939,13 +939,13 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                                 // Top line
                                 TLine* line_top = new TLine(start.first, cut.ktop * start.first + cut.btop + 0.25, end.first, cut.ktop * end.first + cut.btop + 0.25);
                                 line_top->SetLineColor(kRed);
-                                line_top->SetLineWidth(2);
+                                line_top->SetLineWidth(1);
                                 line_top->Draw("same");
 
                                 // Bottom line
                                 TLine* line_bottom = new TLine(start.first, cut.klow * start.first + cut.blow - 0.25, end.first, cut.klow * end.first + cut.blow - 0.25);
                                 line_bottom->SetLineColor(kRed);
-                                line_bottom->SetLineWidth(2);
+                                line_bottom->SetLineWidth(1);
                                 line_bottom->Draw("same");
                             }
                         }
