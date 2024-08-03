@@ -1137,9 +1137,7 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
         }
         c_sf_lw_grid.SaveAs(("output/calibration/cal/fiducial/sf_vs_lw_grid_" + particle_name + ".png").c_str());
 
-        TCanvas c_sf_lu
-
-_grid("c_sf_lu_grid", ("Sampling Fraction vs lu (all sectors) - " + particle_name).c_str(), 1800, 1200);
+        TCanvas c_sf_lu_grid("c_sf_lu_grid", ("Sampling Fraction vs lu (all sectors) - " + particle_name).c_str(), 1800, 1200);
         c_sf_lu_grid.Divide(3, 2);
         for (int sector = 1; sector <= 6; ++sector) {
             c_sf_lu_grid.cd(sector);
