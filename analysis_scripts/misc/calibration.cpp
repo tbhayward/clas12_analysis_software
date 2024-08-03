@@ -751,33 +751,6 @@ struct SectorCutParams {
     double blow;
 };
 
-// Define cuts for the relevant sectors
-std::map<std::string, std::vector<SectorCutParams>> sectorCuts = {
-    {"PCal", {
-        {2, 0.5897, 120.7937, 0.5913, 114.3872},  // Sector 2
-        {3, std::numeric_limits<double>::quiet_NaN(), -313.71, std::numeric_limits<double>::quiet_NaN(), -302.38}, // Sector 3
-        {4, -0.568, -232.8, -0.568, -236.3} // Sector 4
-    }},
-    {"EC_{out}", {
-        {5, -0.5841, -252.11, -0.5775, -263.2072} // Sector 5
-    }}
-};
-
-// Define sector angle ranges (in degrees)
-std::map<int, std::pair<double, double>> sectorAngleRanges = {
-    {1, {330, 30}},
-    {2, {30, 90}},
-    {3, {90, 150}},
-    {4, {150, 210}},
-    {5, {210, 270}},
-    {6, {270, 330}}
-};
-
-// Function to convert polar coordinates to Cartesian coordinates
-std::pair<double, double> polarToCartesian(double r, double theta_rad) {
-    return {r * cos(theta_rad), r * sin(theta_rad)};
-}
-
 void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Define the 2D histogram bins and ranges
     int nBins = 100;
@@ -844,14 +817,14 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                 h_mc->GetYaxis()->SetTitle(("y_{" + layer_name + "}").c_str());
             }
 
-            // Fill the data histograms, applying the cuts
+            // Fill the data histograms
             while (dataReader.Next()) {
                 if (*particle_pid == pid && *cal_x != -9999 && *cal_y != -9999) {
                     h_data->Fill(*cal_x, *cal_y);
                 }
             }
 
-            // Fill the MC histograms if available, applying the cuts
+            // Fill the MC histograms if available
             if (mcReader) {
                 while (mcReader->Next()) {
                     if (**mc_particle_pid == pid && **mc_cal_x != -9999 && **mc_cal_y != -9999) {
@@ -864,47 +837,6 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             TCanvas c_data(("c_data_" + particle_name + "_" + layer_name).c_str(), ("c_data_" + particle_name + "_" + layer_name).c_str(), 800, 600);
             c_data.SetLogz();  // Set the z-axis to a logarithmic scale
             h_data->Draw("COLZ");
-
-            // Draw sector-specific cuts
-            auto cuts_it = sectorCuts.find(layer_name);
-            if (cuts_it != sectorCuts.end()) {
-                for (const auto& cut : cuts_it->second) {
-                    if (std::isnan(cut.ktop)) {
-                        // Draw vertical lines for sector 3
-                        double angle_min = sectorAngleRanges[cut.sector].first;
-                        double angle_max = sectorAngleRanges[cut.sector].second;
-
-                        for (double angle = angle_min; angle <= angle_max; angle += 1) {
-                            double x = 450 * std::cos(angle * TMath::DegToRad());
-                            double y1 = yMin;
-                            double y2 = yMax;
-                            if (std::cos(angle * TMath::DegToRad()) < 0) {
-                                y1 = std::max(cut.btop + 0.25, yMin);
-                                y2 = std::min(cut.blow - 0.25, yMax);
-                            }
-                            TLine* line_left = new TLine(x, y1, x, y2);
-                            line_left->SetLineColor(kRed);
-                            line_left->SetLineWidth(2);
-                            line_left->Draw("same");
-                        }
-                    } else {
-                        // General case for other cuts
-                        double angle_min = sectorAngleRanges[cut.sector].first;
-                        double angle_max = sectorAngleRanges[cut.sector].second;
-
-                        for (double angle = angle_min; angle <= angle_max; angle += 1) {
-                            double x = 450 * std::cos(angle * TMath::DegToRad());
-                            double y1 = cut.ktop * x + cut.btop + 0.25;
-                            double y2 = cut.klow * x + cut.blow - 0.25;
-
-                            TLine* line_top = new TLine(x, y1, x, y2);
-                            line_top->SetLineColor(kRed);
-                            line_top->SetLineWidth(2);
-                            line_top->Draw("same");
-                        }
-                    }
-                }
-            }
             c_data.SaveAs(("output/calibration/cal/" + particle_name + "_data_" + layer_name + "_cal_hit_position.png").c_str());
 
             // Draw and save the original MC plot if available
@@ -912,59 +844,19 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                 TCanvas c_mc(("c_mc_" + particle_name + "_" + layer_name).c_str(), ("c_mc_" + particle_name + "_" + layer_name).c_str(), 800, 600);
                 c_mc.SetLogz();  // Set the z-axis to a logarithmic scale
                 h_mc->Draw("COLZ");
+                c_mc.SaveAs(("output/calibration/cal/" + particle_name + "_mc_" + layer_name + "_cal_hit_position.png").c_str());
+            }
 
-                // Draw sector-specific cuts
-                if (cuts_it != sectorCuts.end()) {
-                    for (const auto& cut : cuts_it->second) {
-                        if (std::isnan(cut.ktop)) {
-                            // Draw vertical lines for sector 3
-                            double angle_min = sectorAngleRanges[cut.sector].first;
-                            double angle_max = sectorAngleRanges[cut.sector].second;
-
-                            for (double angle = angle_min; angle <= angle_max; angle += 1) {
-                                double x = 450 * std::cos(angle * TMath::DegToRad());
-                                double y1 = yMin;
-                                double y2 = yMax;
-                                if (std::cos(angle * TMath::DegToRad()) < 0) {
-                                    y1 = std::max(cut.btop + 0.25, yMin);
-                                    y2 = std::min(cut.blow - 0.25, yMax);
-                                }
-                                TLine* line_left = new TLine(x, y1, x, y2);
-                                line_left->SetLineColor(kRed);
-                                line_left->SetLineWidth(2);
-                                line_left->Draw("same");
-                            }
-                        } else {
-                            // General case for other cuts
-                            double angle_min = sectorAngleRanges[cut.sector].first;
-                            double angle_max = sectorAngleRanges[cut.sector].second;
-
-                            for (double angle = angle_min; angle <= angle_max; angle += 1) {
-                                double x = 450 * std::cos(angle * TMath::DegToRad());
-                                double y1 = cut.ktop * x    +   cut.btop + 0.25;
-                                double y2 = cut.klow * x + cut.blow - 0.25;
-                                TLine* line_top = new TLine(x, y1, x, y2);
-                                 line_top->SetLineColor(kRed);
-                                 line_top->SetLineWidth(2);
-                                 line_top->Draw("same");
-                             }
-                         }
-                     }
-                 }
-
-                 c_mc.SaveAs(("output/calibration/cal/" + particle_name + "_mc_" + layer_name + "_cal_hit_position.png").c_str());
-             }
-
-             // Clean up for this layer and particle type
-             delete h_data;
-             if (h_mc) delete h_mc;
-             if (mc_cal_x) delete mc_cal_x;
-             if (mc_cal_y) delete mc_cal_y;
-             if (mc_particle_pid) delete mc_particle_pid;
-             if (mc_cal_sector) delete mc_cal_sector;
-         }
-     }
- }
+            // Clean up for this layer and particle type
+            delete h_data;
+            if (h_mc) delete h_mc;
+            if (mc_cal_x) delete mc_cal_x;
+            if (mc_cal_y) delete mc_cal_y;
+            if (mc_particle_pid) delete mc_particle_pid;
+            if (mc_cal_sector) delete mc_cal_sector;
+        }
+    }
+}
                            
 void create_directories() {
     // Array of directories to check/create
