@@ -1117,6 +1117,7 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
         c_sf_lv_grid.Divide(3, 2);
         for (int sector = 1; sector <= 6; ++sector) {
             c_sf_lv_grid.cd(sector);
+            gPad->SetLeftMargin(0.15);  // Adjust the left margin to add padding
 			graph_data_sf_lv[sector-1]->SetTitle(("Sector " + std::to_string(sector)).c_str());
             graph_data_sf_lv[sector-1]->GetYaxis()->SetRangeUser(0.18, 0.28);
 			graph_data_sf_lv[sector-1]->Draw("AP");
@@ -1134,6 +1135,7 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
         c_sf_lw_grid.Divide(3, 2);
         for (int sector = 1; sector <= 6; ++sector) {
             c_sf_lw_grid.cd(sector);
+            gPad->SetLeftMargin(0.15);  // Adjust the left margin to add padding
 			graph_data_sf_lw[sector-1]->SetTitle(("Sector " + std::to_string(sector)).c_str());
             graph_data_sf_lw[sector-1]->GetYaxis()->SetRangeUser(0.18, 0.28);
 			graph_data_sf_lw[sector-1]->Draw("AP");
@@ -1151,6 +1153,7 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
         c_sf_lu_grid.Divide(3, 2);
         for (int sector = 1; sector <= 6; ++sector) {
             c_sf_lu_grid.cd(sector);
+            gPad->SetLeftMargin(0.15);  // Adjust the left margin to add padding
 			graph_data_sf_lu[sector-1]->SetTitle(("Sector " + std::to_string(sector)).c_str());
             graph_data_sf_lu[sector-1]->GetYaxis()->SetRangeUser(0.18, 0.28);
 			graph_data_sf_lu[sector-1]->Draw("AP");
