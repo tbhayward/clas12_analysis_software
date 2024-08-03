@@ -998,6 +998,7 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
                 h_mc_sf_lw[sector-1] = new TH2D(("h_mc_sf_lw_s" + std::to_string(sector)).c_str(), title_mc_sf_lw.c_str(), nBins_lv_lw_lu, lwMin, lwMax, nBins_sf, sfMin, sfMax);
                 h_mc_sf_lw[sector-1]->GetXaxis()->SetTitle("lw");
                 h_mc_sf_lw[sector-1]->GetYaxis()->SetTitle("Sampling Fraction");
+
                 std::string title_mc_sf_lu = "mc PCal sector " + std::to_string(sector) + " (" + particle_name + ")";
                 h_mc_sf_lu[sector-1] = new TH2D(("h_mc_sf_lu_s" + std::to_string(sector)).c_str(), title_mc_sf_lu.c_str(), nBins_lv_lw_lu, luMin, luMax, nBins_sf, sfMin, sfMax);
                 h_mc_sf_lu[sector-1]->GetXaxis()->SetTitle("lu");
@@ -1143,44 +1144,20 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
         c_sf_lu.Divide(3, 2);
 
         for (int sector = 1; sector <= 6; ++sector) {
+            c_sf_lv.cd(sector);
+            gPad->SetLeftMargin(0.15); // Adjust the left margin
+            gPad->SetRightMargin(0.05); // Adjust the right margin
             TGraphErrors* graph_data_sf_lv = new TGraphErrors(prof_data_sf_lv[sector-1]);
-            TGraphErrors* graph_data_sf_lw = new TGraphErrors(prof_data_sf_lw[sector-1]);
-            TGraphErrors* graph_data_sf_lu = new TGraphErrors(prof_data_sf_lu[sector-1]);
-
             TGraphErrors* graph_mc_sf_lv = nullptr;
-            TGraphErrors* graph_mc_sf_lw = nullptr;
-            TGraphErrors* graph_mc_sf_lu = nullptr;
 
-            if (mcReader) {
-                graph_mc_sf_lv = new TGraphErrors(prof_mc_sf_lv[sector-1]);
-                graph_mc_sf_lw = new TGraphErrors(prof_mc_sf_lw[sector-1]);
-                graph_mc_sf_lu = new TGraphErrors(prof_mc_sf_lu[sector-1]);
-            }
-
-            // Customize colors and draw
             graph_data_sf_lv->SetMarkerColor(kBlack);
             graph_data_sf_lv->SetLineColor(kBlack);
             if (mcReader) {
+                graph_mc_sf_lv = new TGraphErrors(prof_mc_sf_lv[sector-1]);
                 graph_mc_sf_lv->SetMarkerColor(kRed);
                 graph_mc_sf_lv->SetLineColor(kRed);
             }
 
-            graph_data_sf_lw->SetMarkerColor(kBlack);
-            graph_data_sf_lw->SetLineColor(kBlack);
-            if (mcReader) {
-                graph_mc_sf_lw->SetMarkerColor(kRed);
-                graph_mc_sf_lw->SetLineColor(kRed);
-            }
-
-            graph_data_sf_lu->SetMarkerColor(kBlack);
-            graph_data_sf_lu->SetLineColor(kBlack);
-            if (mcReader) {
-                graph_mc_sf_lu->SetMarkerColor(kRed);
-                graph_mc_sf_lu->SetLineColor(kRed);
-            }
-
-            // Draw comparison plots for lv
-            c_sf_lv.cd(sector);
             graph_data_sf_lv->SetTitle(("Sector " + std::to_string(sector)).c_str());
             graph_data_sf_lv->GetXaxis()->SetTitle("lv");
             graph_data_sf_lv->GetYaxis()->SetTitle("Sampling Fraction");
@@ -1192,8 +1169,20 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
             if (mcReader) legend_lv->AddEntry(graph_mc_sf_lv, "MC", "lp");
             legend_lv->Draw();
 
-            // Draw comparison plots for lw
             c_sf_lw.cd(sector);
+            gPad->SetLeftMargin(0.15); // Adjust the left margin
+            gPad->SetRightMargin(0.05); // Adjust the right margin
+            TGraphErrors* graph_data_sf_lw = new TGraphErrors(prof_data_sf_lw[sector-1]);
+            TGraphErrors* graph_mc_sf_lw = nullptr;
+
+            graph_data_sf_lw->SetMarkerColor(kBlack);
+            graph_data_sf_lw->SetLineColor(kBlack);
+            if (mcReader) {
+                graph_mc_sf_lw = new TGraphErrors(prof_mc_sf_lw[sector-1]);
+                graph_mc_sf_lw->SetMarkerColor(kRed);
+                graph_mc_sf_lw->SetLineColor(kRed);
+            }
+
             graph_data_sf_lw->SetTitle(("Sector " + std::to_string(sector)).c_str());
             graph_data_sf_lw->GetXaxis()->SetTitle("lw");
             graph_data_sf_lw->GetYaxis()->SetTitle("Sampling Fraction");
@@ -1205,8 +1194,20 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
             if (mcReader) legend_lw->AddEntry(graph_mc_sf_lw, "MC", "lp");
             legend_lw->Draw();
 
-            // Draw comparison plots for lu
             c_sf_lu.cd(sector);
+            gPad->SetLeftMargin(0.15); // Adjust the left margin
+            gPad->SetRightMargin(0.05); // Adjust the right margin
+            TGraphErrors* graph_data_sf_lu = new TGraphErrors(prof_data_sf_lu[sector-1]);
+            TGraphErrors* graph_mc_sf_lu = nullptr;
+
+            graph_data_sf_lu->SetMarkerColor(kBlack);
+            graph_data_sf_lu->SetLineColor(kBlack);
+            if (mcReader) {
+                graph_mc_sf_lu = new TGraphErrors(prof_mc_sf_lu[sector-1]);
+                graph_mc_sf_lu->SetMarkerColor(kRed);
+                graph_mc_sf_lu->SetLineColor(kRed);
+            }
+
             graph_data_sf_lu->SetTitle(("Sector " + std::to_string(sector)).c_str());
             graph_data_sf_lu->GetXaxis()->SetTitle("lu");
             graph_data_sf_lu->GetYaxis()->SetTitle("Sampling Fraction");
