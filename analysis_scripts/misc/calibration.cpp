@@ -852,7 +852,7 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             c_data_masked.SetLogz();  // Set the z-axis to a logarithmic scale
             h_data->Draw("COLZ");
 
-            if (layer_name == "PCal" && particle_name == "electron") {
+            if (layer_name == "PCal") {
                 TLine* line = new TLine(xMin, 0.5897 * xMin + 120.7937 + 0.25, xMax, 0.5897 * xMax + 120.7937 + 0.25);
                 line->SetLineColor(kRed);
                 line->SetLineWidth(1);
@@ -866,7 +866,7 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                 c_mc_masked.SetLogz();  // Set the z-axis to a logarithmic scale
                 h_mc->Draw("COLZ");
 
-                if (layer_name == "PCal" && particle_name == "electron") {
+                if (layer_name == "PCal") {
                     TLine* line = new TLine(xMin, 0.5897 * xMin + 120.7937 + 0.25, xMax, 0.5897 * xMax + 120.7937 + 0.25);
                     line->SetLineColor(kRed);
                     line->SetLineWidth(1);
