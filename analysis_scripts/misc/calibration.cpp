@@ -939,6 +939,20 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
         TTreeReaderValue<int>* mc_cal_sector = nullptr;
         TTreeReaderValue<int>* mc_particle_pid = nullptr;
 
+        TTreeReaderValue<double> cal_lw_1(dataReader, "cal_lw_1");
+		TTreeReaderValue<double> cal_lv_1(dataReader, "cal_lv_1");
+		TTreeReaderValue<double> cal_lu_1(dataReader, "cal_lu_1");
+
+		TTreeReaderValue<double>* mc_cal_lw_1 = nullptr;
+		TTreeReaderValue<double>* mc_cal_lv_1 = nullptr;
+		TTreeReaderValue<double>* mc_cal_lu_1 = nullptr;
+
+		if (mcReader) {
+		    mc_cal_lw_1 = new TTreeReaderValue<double>(*mcReader, "cal_lw_1");
+		    mc_cal_lv_1 = new TTreeReaderValue<double>(*mcReader, "cal_lv_1");
+		    mc_cal_lu_1 = new TTreeReaderValue<double>(*mcReader, "cal_lu_1");
+		}
+
         if (mcReader) {
             mc_cal_energy_1 = new TTreeReaderValue<double>(*mcReader, "cal_energy_1");
             mc_cal_energy_4 = new TTreeReaderValue<double>(*mcReader, "cal_energy_4");
