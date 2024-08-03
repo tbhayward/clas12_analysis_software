@@ -225,8 +225,8 @@ int main(int argc, char *argv[]) {
     double particle_vx, particle_vy, particle_vz, particle_beta, particle_chi2pid;
     int cal_sector;
     double cal_energy_1, cal_x_1, cal_y_1, cal_z_1, cal_lu_1, cal_lv_1, cal_lw_1;
-    double cal_x_4, cal_y_4, cal_z_4, cal_lu_4, cal_lv_4, cal_lw_4;
-    double cal_x_7, cal_y_7, cal_z_7, cal_lu_7, cal_lv_7, cal_lw_7;
+    double cal_energy_4, cal_x_4, cal_y_4, cal_z_4, cal_lu_4, cal_lv_4, cal_lw_4;
+    double cal_energy_7, cal_x_7, cal_y_7, cal_z_7, cal_lu_7, cal_lv_7, cal_lw_7;
     double cc_nphe_15, cc_nphe_16;
     int track_sector_5, track_ndf_5, track_sector_6, track_ndf_6;
     double track_chi2_5, track_chi2_6;
@@ -1145,6 +1145,7 @@ int main(int argc, char *argv[]) {
                 traj_x_12 >> traj_y_12 >> traj_z_12 >> traj_edge_12 >> ft_energy >> ft_x >> 
                 ft_y >> ft_z >> ft_radius) {
 
+            std::cout << cal_energy_1 << " " << cal_energy_4 << " " << cal_energy_7 << std::endl;
             tree->Fill(); // Fill the tree with the read data
         }
     }
