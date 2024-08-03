@@ -837,15 +837,6 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             TCanvas c_data(("c_data_" + particle_name + "_" + layer_name).c_str(), ("c_data_" + particle_name + "_" + layer_name).c_str(), 800, 600);
             c_data.SetLogz();  // Set the z-axis to a logarithmic scale
             h_data->Draw("COLZ");
-
-            // Add a red line based on the provided cut for sector 2
-            if (layer_name == "PCal" && particle_name == "electron") {
-                TLine* line = new TLine(xMin, 0.5897 * xMin + 120.7937 + 0.25, xMax, 0.5897 * xMax + 120.7937 + 0.25);
-                line->SetLineColor(kRed);
-                line->SetLineWidth(1);
-                line->Draw("same");
-            }
-
             c_data.SaveAs(("output/calibration/cal/" + particle_name + "_data_" + layer_name + "_cal_hit_position.png").c_str());
 
             // Draw and save the original MC plot if available
@@ -853,15 +844,6 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                 TCanvas c_mc(("c_mc_" + particle_name + "_" + layer_name).c_str(), ("c_mc_" + particle_name + "_" + layer_name).c_str(), 800, 600);
                 c_mc.SetLogz();  // Set the z-axis to a logarithmic scale
                 h_mc->Draw("COLZ");
-
-                // Add a red line based on the provided cut for sector 2
-                if (layer_name == "PCal" && particle_name == "electron") {
-                    TLine* line = new TLine(xMin, 0.5897 * xMin + 120.7937 + 0.25, xMax, 0.5897 * xMax + 120.7937 + 0.25);
-                    line->SetLineColor(kRed);
-                    line->SetLineWidth(1);
-                    line->Draw("same");
-                }
-
                 c_mc.SaveAs(("output/calibration/cal/" + particle_name + "_mc_" + layer_name + "_cal_hit_position.png").c_str());
             }
 
