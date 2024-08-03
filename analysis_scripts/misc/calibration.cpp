@@ -743,6 +743,8 @@ void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
 
 #include "TLine.h" // Include this for drawing lines
 
+#include "TLine.h" // Include this for drawing lines
+
 void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Array of layers and their corresponding names
     std::vector<std::tuple<std::string, std::string, std::string>> layers = {
@@ -759,18 +761,19 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
 
     // Sector-specific parameters
     struct SectorCutParams {
+        int sector;
         double ktop, btop, klow, blow;
     };
 
     // Define cuts for the relevant sectors
     std::map<std::string, std::vector<SectorCutParams>> sectorCuts = {
         {"PCal", {
-            {0.5897, 120.7937, 0.5913, 114.3872},  // Sector 2
-            {-313.71, std::numeric_limits<double>::infinity(), -302.38, std::numeric_limits<double>::infinity()}, // Sector 3
-            {-0.568, -232.8, -0.568, -236.3} // Sector 4
+            {2, 0.5897, 120.7937, 0.5913, 114.3872},  // Sector 2
+            {3, -313.71, std::numeric_limits<double>::infinity(), -302.38, std::numeric_limits<double>::infinity()}, // Sector 3
+            {4, -0.568, -232.8, -0.568, -236.3} // Sector 4
         }},
         {"EC_{out}", {
-            {-0.5841, -252.11, -0.5775, -263.2072} // Sector 5
+            {5, -0.5841, -252.11, -0.5775, -263.2072} // Sector 5
         }}
     };
 
@@ -793,17 +796,20 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             TTreeReaderValue<double> cal_x(dataReader, x_branch.c_str());
             TTreeReaderValue<double> cal_y(dataReader, y_branch.c_str());
             TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+            TTreeReaderValue<int> cal_sector(dataReader, "cal_sector");
 
             // Declare pointers for MC TTreeReaderValue objects
             TTreeReaderValue<double>* mc_cal_x = nullptr;
             TTreeReaderValue<double>* mc_cal_y = nullptr;
             TTreeReaderValue<int>* mc_particle_pid = nullptr;
+            TTreeReaderValue<int>* mc_cal_sector = nullptr;
 
             // Initialize MC TTreeReaderValue objects if mcReader is provided
             if (mcReader) {
                 mc_cal_x = new TTreeReaderValue<double>(*mcReader, x_branch.c_str());
                 mc_cal_y = new TTreeReaderValue<double>(*mcReader, y_branch.c_str());
                 mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+                mc_cal_sector = new TTreeReaderValue<int>(*mcReader, "cal_sector");
             }
 
             // Define the 2D histogram bins and ranges
@@ -849,14 +855,16 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             // Draw lines for the relevant sectors in this layer
             if (sectorCuts.find(layer_name) != sectorCuts.end()) {
                 for (const auto& cut : sectorCuts[layer_name]) {
-                    TLine* line_top = new TLine(xMin, cut.ktop * xMin + cut.btop + 0.25, xMax, cut.ktop * xMax + cut.btop + 0.25);
-                    TLine* line_bottom = new TLine(xMin, cut.klow * xMin + cut.blow - 0.25, xMax, cut.klow * xMax + cut.blow - 0.25);
-                    line_top->SetLineColor(kRed);
-                    line_top->SetLineWidth(2);
-                    line_top->Draw("same");
-                    line_bottom->SetLineColor(kRed);
-                    line_bottom->SetLineWidth(2);
-                    line_bottom->Draw("same");
+                    if (*cal_sector == cut.sector) {  // Only draw the lines for the matching sector
+                        TLine* line_top = new TLine(xMin, cut.ktop * xMin + cut.btop + 0.25, xMax, cut.ktop * xMax + cut.btop + 0.25);
+                        TLine* line_bottom = new TLine(xMin, cut.klow * xMin + cut.blow - 0.25, xMax, cut.klow * xMax + cut.blow - 0.25);
+                        line_top->SetLineColor(kRed);
+                        line_top->SetLineWidth(2);
+                        line_top->Draw("same");
+                        line_bottom->SetLineColor(kRed);
+                        line_bottom->SetLineWidth(2);
+                        line_bottom->Draw("same");
+                    }
                 }
             }
 
@@ -871,14 +879,16 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                 // Draw lines for the relevant sectors in this layer
                 if (sectorCuts.find(layer_name) != sectorCuts.end()) {
                     for (const auto& cut : sectorCuts[layer_name]) {
-                        TLine* line_top = new TLine(xMin, cut.ktop * xMin + cut.btop + 0.25, xMax, cut.ktop * xMax + cut.btop + 0.25);
-                        TLine* line_bottom = new TLine(xMin, cut.klow * xMin + cut.blow - 0.25, xMax, cut.klow * xMax + cut.blow - 0.25);
-                        line_top->SetLineColor(kRed);
-                        line_top->SetLineWidth(2);
-                        line_top->Draw("same");
-                        line_bottom->SetLineColor(kRed);
-                        line_bottom->SetLineWidth(2);
-                        line_bottom->Draw("same");
+                        if (**mc_cal_sector == cut.sector) {  // Only draw the lines for the matching sector
+                            TLine* line_top = new TLine(xMin, cut.ktop * xMin + cut.btop + 0.25, xMax, cut.ktop * xMax + cut.btop + 0.25);
+                            TLine* line_bottom = new TLine(xMin, cut.klow * xMin + cut.blow - 0.25, xMax, cut.klow * xMax + cut.blow - 0.25);
+                            line_top->SetLineColor(kRed);
+                            line_top->SetLineWidth(2);
+                            line_top->Draw("same");
+                            line_bottom->SetLineColor(kRed);
+                            line_bottom->SetLineWidth(2);
+                            line_bottom->Draw("same");
+                        }
                     }
                 }
 
@@ -891,8 +901,9 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             if (mc_cal_x) delete mc_cal_x;
             if (mc_cal_y) delete mc_cal_y;
             if (mc_particle_pid) delete mc_particle_pid;
-        }
-    }
+            if (mc_cal_sector) delete mc_cal_sector;
+		}
+	}
 }
 
 void create_directories() {
