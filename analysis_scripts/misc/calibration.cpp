@@ -887,7 +887,7 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
     }
 }
 
-void plot_cal_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Define the 2D histogram bins and ranges
     int nBins = 250;
     double luMin = 0, luMax = 250;
