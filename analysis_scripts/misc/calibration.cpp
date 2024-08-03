@@ -895,12 +895,10 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
     double lvMin = 0;
     double lvMax = 250;
 
-    // Array of layers and their corresponding names and branch names
-    std::vector<std::tuple<std::string, std::string, std::string>> layers = {
-        {"cal_lw_1", "cal_lv_1", "PCal"},
-        {"cal_lw_4", "cal_lv_4", "EC_{in}"},
-        {"cal_lw_7", "cal_lv_7", "EC_{out}"}
-    };
+    // PCal layer and its corresponding branch names
+    std::string lw_branch = "cal_lw_1";
+    std::string lv_branch = "cal_lv_1";
+    std::string layer_name = "PCal";
 
     // Array of particle types (photons and electrons) and their corresponding PIDs
     std::vector<std::tuple<int, std::string>> particle_types = {
@@ -913,112 +911,113 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
         int pid = std::get<0>(particle_type);
         std::string particle_name = std::get<1>(particle_type);
 
-        // Loop over each layer
-        for (const auto& layer : layers) {
-            std::string lw_branch = std::get<0>(layer);
-            std::string lv_branch = std::get<1>(layer);
-            std::string layer_name = std::get<2>(layer);
+        // Restart the TTreeReader to process the data from the beginning
+        dataReader.Restart();
+        if (mcReader) mcReader->Restart();
 
-            // Restart the TTreeReader to process the data from the beginning
-            dataReader.Restart();
-            if (mcReader) mcReader->Restart();
+        // Declare TTreeReaderValues for data and MC
+        TTreeReaderValue<double> cal_lw(dataReader, lw_branch.c_str());
+        TTreeReaderValue<double> cal_lv(dataReader, lv_branch.c_str());
+        TTreeReaderValue<int> cal_sector(dataReader, "cal_sector");
+        TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
 
-            // Declare TTreeReaderValues for data and MC
-            TTreeReaderValue<double> cal_lw(dataReader, lw_branch.c_str());
-            TTreeReaderValue<double> cal_lv(dataReader, lv_branch.c_str());
-            TTreeReaderValue<int> cal_sector(dataReader, "cal_sector");
-            TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+        TTreeReaderValue<double>* mc_cal_lw = nullptr;
+        TTreeReaderValue<double>* mc_cal_lv = nullptr;
+        TTreeReaderValue<int>* mc_cal_sector = nullptr;
+        TTreeReaderValue<int>* mc_particle_pid = nullptr;
 
-            TTreeReaderValue<double>* mc_cal_lw = nullptr;
-            TTreeReaderValue<double>* mc_cal_lv = nullptr;
-            TTreeReaderValue<int>* mc_cal_sector = nullptr;
-            TTreeReaderValue<int>* mc_particle_pid = nullptr;
+        if (mcReader) {
+            mc_cal_lw = new TTreeReaderValue<double>(*mcReader, lw_branch.c_str());
+            mc_cal_lv = new TTreeReaderValue<double>(*mcReader, lv_branch.c_str());
+            mc_cal_sector = new TTreeReaderValue<int>(*mcReader, "cal_sector");
+            mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+        }
+
+        // Create histograms for data and MC for each sector
+        TH2D* h_data[6];
+        TH2D* h_mc[6] = {nullptr};
+
+        for (int sector = 1; sector <= 6; ++sector) {
+            std::string title_data = "data " + layer_name + " sector " + std::to_string(sector) + " (" + particle_name + ")";
+            h_data[sector-1] = new TH2D(("h_data_s" + std::to_string(sector)).c_str(), title_data.c_str(), nBins, lwMin, lwMax, nBins, lvMin, lvMax);
+            h_data[sector-1]->GetXaxis()->SetTitle("lw");
+            h_data[sector-1]->GetYaxis()->SetTitle("lv");
 
             if (mcReader) {
-                mc_cal_lw = new TTreeReaderValue<double>(*mcReader, lw_branch.c_str());
-                mc_cal_lv = new TTreeReaderValue<double>(*mcReader, lv_branch.c_str());
-                mc_cal_sector = new TTreeReaderValue<int>(*mcReader, "cal_sector");
-                mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+                std::string title_mc = "mc " + layer_name + " sector " + std::to_string(sector) + " (" + particle_name + ")";
+                h_mc[sector-1] = new TH2D(("h_mc_s" + std::to_string(sector)).c_str(), title_mc.c_str(), nBins, lwMin, lwMax, nBins, lvMin, lvMax);
+                h_mc[sector-1]->GetXaxis()->SetTitle("lw");
+                h_mc[sector-1]->GetYaxis()->SetTitle("lv");
             }
+        }
 
-            // Create histograms for data and MC for each sector
-            TH2D* h_data[6];
-            TH2D* h_mc[6] = {nullptr};
+        // Fill the data histograms for each sector
+        while (dataReader.Next()) {
+            if (*particle_pid == pid && *cal_lw != -9999 && *cal_lv != -9999) {
+                int sector = *cal_sector;
+                if (sector >= 1 && sector <= 6) {
+                    h_data[sector-1]->Fill(*cal_lw, *cal_lv);
+                }
+            }
+        }
+
+        // Fill the MC histograms for each sector if available
+        if (mcReader) {
+            while (mcReader->Next()) {
+                if (**mc_particle_pid == pid && **mc_cal_lw != -9999 && **mc_cal_lv != -9999) {
+                    int sector = **mc_cal_sector;
+                    if (sector >= 1 && sector <= 6) {
+                        h_mc[sector-1]->Fill(**mc_cal_lw, **mc_cal_lv);
+                    }
+                }
+            }
+        }
+
+        // Create a 2x3 canvas to display the histograms for data
+        TCanvas c_data(("c_data_fiducial_" + layer_name + "_" + particle_name).c_str(), ("Data " + layer_name + " (" + particle_name + ")").c_str(), 1800, 1200);
+        c_data.Divide(3, 2);
+        c_data.SetLogz(); // Set log scale on the z-axis
+
+        for (int sector = 1; sector <= 6; ++sector) {
+            c_data.cd(sector);
+            gPad->SetLeftMargin(0.15);
+            gPad->SetRightMargin(0.15);
+            gPad->SetTopMargin(0.15);
+            gPad->SetBottomMargin(0.15);
+            h_data[sector-1]->Draw("COLZ");
+        }
+
+        c_data.SaveAs(("output/calibration/cal/fiducial/data_fiducial_" + layer_name + "_" + particle_name + ".png").c_str());
+
+        // Create a 2x3 canvas to display the histograms for MC if available
+        if (mcReader) {
+            TCanvas c_mc(("c_mc_fiducial_" + layer_name + "_" + particle_name).c_str(), ("MC " + layer_name + " (" + particle_name + ")").c_str(), 1800, 1200);
+            c_mc.Divide(3, 2);
+            c_mc.SetLogz(); // Set log scale on the z-axis
 
             for (int sector = 1; sector <= 6; ++sector) {
-                std::string title_data = "data " + layer_name + " sector " + std::to_string(sector) + " (" + particle_name + ")";
-                h_data[sector-1] = new TH2D(("h_data_s" + std::to_string(sector)).c_str(), title_data.c_str(), nBins, lwMin, lwMax, nBins, lvMin, lvMax);
-                h_data[sector-1]->GetXaxis()->SetTitle("lw");
-                h_data[sector-1]->GetYaxis()->SetTitle("lv");
-
-                if (mcReader) {
-                    std::string title_mc = "mc " + layer_name + " sector " + std::to_string(sector) + " (" + particle_name + ")";
-                    h_mc[sector-1] = new TH2D(("h_mc_s" + std::to_string(sector)).c_str(), title_mc.c_str(), nBins, lwMin, lwMax, nBins, lvMin, lvMax);
-                    h_mc[sector-1]->GetXaxis()->SetTitle("lw");
-                    h_mc[sector-1]->GetYaxis()->SetTitle("lv");
-                }
+                c_mc.cd(sector);
+                gPad->SetLeftMargin(0.15);
+                gPad->SetRightMargin(0.15);
+                gPad->SetTopMargin(0.15);
+                gPad->SetBottomMargin(0.15);
+                h_mc[sector-1]->Draw("COLZ");
             }
 
-            // Fill the data histograms for each sector
-            while (dataReader.Next()) {
-                if (*particle_pid == pid && *cal_lw != -9999 && *cal_lv != -9999) {
-                    int sector = *cal_sector;
-                    if (sector >= 1 && sector <= 6) {
-                        h_data[sector-1]->Fill(*cal_lw, *cal_lv);
-                    }
-                }
-            }
-
-            // Fill the MC histograms for each sector if available
-            if (mcReader) {
-                while (mcReader->Next()) {
-                    if (**mc_particle_pid == pid && **mc_cal_lw != -9999 && **mc_cal_lv != -9999) {
-                        int sector = **mc_cal_sector;
-                        if (sector >= 1 && sector <= 6) {
-                            h_mc[sector-1]->Fill(**mc_cal_lw, **mc_cal_lv);
-                        }
-                    }
-                }
-            }
-
-            // Create a 2x3 canvas to display the histograms for data
-			TCanvas c_data(("c_data_fiducial_" + layer_name + "_" + particle_name).c_str(), ("Data " + layer_name + " (" + particle_name + ")").c_str(), 1800, 1200);
-			c_data.Divide(3, 2);
-			c_data.SetLogz(); // Set log scale on the z-axis
-
-			for (int sector = 1; sector <= 6; ++sector) {
-			    c_data.cd(sector);
-			    h_data[sector-1]->Draw("COLZ");
-			}
-
-			c_data.SaveAs(("output/calibration/cal/fiducial/data_fiducial_" + layer_name + "_" + particle_name + ".png").c_str());
-
-			// Create a 2x3 canvas to display the histograms for MC if available
-			if (mcReader) {
-			    TCanvas c_mc(("c_mc_fiducial_" + layer_name + "_" + particle_name).c_str(), ("MC " + layer_name + " (" + particle_name + ")").c_str(), 1800, 1200);
-			    c_mc.Divide(3, 2);
-			    c_mc.SetLogz(); // Set log scale on the z-axis
-
-			    for (int sector = 1; sector <= 6; ++sector) {
-			        c_mc.cd(sector);
-			        h_mc[sector-1]->Draw("COLZ");
-			    }
-
-			    c_mc.SaveAs(("output/calibration/cal/fiducial/mc_fiducial_" + layer_name + "_" + particle_name + ".png").c_str());
-			}
-
-            // Clean up for this layer and particle type
-            for (int sector = 0; sector < 6; ++sector) {
-                delete h_data[sector];
-                if (mcReader) {
-                    delete h_mc[sector];
-                }
-            }
-            if (mc_cal_lw) delete mc_cal_lw;
-            if (mc_cal_lv) delete mc_cal_lv;
-            if (mc_cal_sector) delete mc_cal_sector;
-            if (mc_particle_pid) delete mc_particle_pid;
+            c_mc.SaveAs(("output/calibration/cal/fiducial/mc_fiducial_" + layer_name + "_" + particle_name + ".png").c_str());
         }
+
+        // Clean up for this layer and particle type
+        for (int sector = 0; sector < 6; ++sector) {
+            delete h_data[sector];
+            if (mcReader) {
+                delete h_mc[sector];
+            }
+        }
+        if (mc_cal_lw) delete mc_cal_lw;
+        if (mc_cal_lv) delete mc_cal_lv;
+        if (mc_cal_sector) delete mc_cal_sector;
+        if (mc_particle_pid) delete mc_particle_pid;
     }
 }
                            
