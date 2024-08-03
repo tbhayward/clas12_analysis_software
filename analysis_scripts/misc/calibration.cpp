@@ -17,6 +17,7 @@
 #include <TSystem.h>
 #include <iostream>
 #include <TLine.h> 
+#include <TProfile.h>
 
 void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Arrays to store positive and negative track conditions
