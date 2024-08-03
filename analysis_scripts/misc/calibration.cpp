@@ -1085,36 +1085,44 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
 
     for (int sector = 1; sector <= 6; ++sector) {
 	    c_data_lv_lw.cd(sector);
-	    gPad->SetLeftMargin(0.2); // Adjust the left margin
+	    gPad->SetLeftMargin(0.15); // Adjust the left margin
+	    gPad->SetRightMargin(0.15); // Adjust the right margin
 	    h_data_lv_lw[sector-1]->Draw("COLZ");
 
 	    c_data_sf_lv.cd(sector);
-	    gPad->SetLeftMargin(0.2); // Adjust the left margin
+	    gPad->SetLeftMargin(0.15); // Adjust the left margin
+	    gPad->SetRightMargin(0.15); // Adjust the right margin
 	    h_data_sf_lv[sector-1]->Draw("COLZ");
 
 	    c_data_sf_lw.cd(sector);
-	    gPad->SetLeftMargin(0.2); // Adjust the left margin
+	    gPad->SetLeftMargin(0.15); // Adjust the left margin
+	    gPad->SetRightMargin(0.15); // Adjust the right margin
 	    h_data_sf_lw[sector-1]->Draw("COLZ");
 
 	    c_data_sf_lu.cd(sector);
-	    gPad->SetLeftMargin(0.2); // Adjust the left margin
+	    gPad->SetLeftMargin(0.15); // Adjust the left margin
+	    gPad->SetRightMargin(0.15); // Adjust the right margin
 	    h_data_sf_lu[sector-1]->Draw("COLZ");
 
 	    if (mcReader) {
 	        c_mc_lv_lw.cd(sector);
-	        gPad->SetLeftMargin(0.2); // Adjust the left margin
+	        gPad->SetLeftMargin(0.15); // Adjust the left margin
+		    gPad->SetRightMargin(0.15); // Adjust the right margin
 	        h_mc_lv_lw[sector-1]->Draw("COLZ");
 
 	        c_mc_sf_lv.cd(sector);
-	        gPad->SetLeftMargin(0.2); // Adjust the left margin
+	        gPad->SetLeftMargin(0.15); // Adjust the left margin
+		    gPad->SetRightMargin(0.15); // Adjust the right margin
 	        h_mc_sf_lv[sector-1]->Draw("COLZ");
 
 	        c_mc_sf_lw.cd(sector);
-	        gPad->SetLeftMargin(0.2); // Adjust the left margin
+	        gPad->SetLeftMargin(0.15); // Adjust the left margin
+		    gPad->SetRightMargin(0.15); // Adjust the right margin
 	        h_mc_sf_lw[sector-1]->Draw("COLZ");
 
 	        c_mc_sf_lu.cd(sector);
-	        gPad->SetLeftMargin(0.2); // Adjust the left margin
+	        gPad->SetLeftMargin(0.15); // Adjust the left margin
+		    gPad->SetRightMargin(0.15); // Adjust the right margin
 	        h_mc_sf_lu[sector-1]->Draw("COLZ");
 	    }
 	}
