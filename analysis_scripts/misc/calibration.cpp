@@ -869,170 +869,102 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             auto cuts_it = sectorCuts.find(layer_name);
             if (cuts_it != sectorCuts.end()) {
                 for (const auto& cut : cuts_it->second) {
-                    double theta_min = sectorAngleRanges[cut.sector].first * TMath::DegToRad();
-                    double theta_max = sectorAngleRanges[cut.sector].second * TMath::DegToRad();
-
                     if (std::isnan(cut.ktop)) {
                         // Draw vertical lines for sector 3
-                        TLine* line_left = new TLine(cut.btop, yMin, cut.btop, yMax);
-                        line_left->SetLineColor(kRed);
-                        line_left->SetLineWidth(2);
-                        line_left->Draw("same");
+                        double angle_min = sectorAngleRanges[cut.sector].first;
+                        double angle_max = sectorAngleRanges[cut.sector].second;
 
-                        TLine* line_right = new TLine(cut.blow, yMin, cut.blow, yMax);
-                        line_right->SetLineColor(kRed);
-                        line_right->SetLineWidth(2);
-                        line_right->Draw("same");
+                        for (double angle = angle_min; angle <= angle_max; angle += 1) {
+                            double x = 450 * std::cos(angle * TMath::DegToRad());
+                            double y1 = yMin;
+                            double y2 = yMax;
+                            if (std::cos(angle * TMath::DegToRad()) < 0) {
+                                y1 = std::max(cut.btop + 0.25, yMin);
+                                y2 = std::min(cut.blow - 0.25, yMax);
+                            }
+                            TLine* line_left = new TLine(x, y1, x, y2);
+                            line_left->SetLineColor(kRed);
+                            line_left->SetLineWidth(2);
+                            line_left->Draw("same");
+                        }
                     } else {
-                        // General case for other cuts, limit to sector angle range
-                        double x_start = xMin, x_end = xMax;
+                        // General case for other cuts
+                        double angle_min = sectorAngleRanges[cut.sector].first;
+                        double angle_max = sectorAngleRanges[cut.sector].second;
 
-                        double y1_top = cut.ktop * x_start + cut.btop + 0.25;
-                        double y2_top = cut.ktop * x_end + cut.btop + 0.25;
-                        double y1_bottom = cut.klow * x_start + cut.blow - 0.25;
-                        double y2_bottom = cut.klow * x_end + cut.blow - 0.25;
+                        for (double angle = angle_min; angle <= angle_max; angle += 1) {
+                            double x = 450 * std::cos(angle * TMath::DegToRad());
+                            double y1 = cut.ktop * x + cut.btop + 0.25;
+                            double y2 = cut.klow * x + cut.blow - 0.25;
 
-                        double phi1_top = atan2(y1_top, x_start);
-                        double phi2_top = atan2(y2_top, x_end);
-                        double phi1_bottom = atan2(y1_bottom, x_start);
-                        double phi2_bottom = atan2(y2_bottom, x_end);
-
-                        // Adjust the start and end points for the top line within the sector
-                        if (phi1_top < theta_min) {
-                            x_start = xMin;
-                            y1_top = cut.ktop * xMin + cut.btop + 0.25;
-                        }
-                        if (phi2_top > theta_max) {
-                            x_end = xMax;
-                            y2_top = cut.ktop * xMax + cut.btop + 0.25;
-                        }
-
-                        // Draw top line only within sector range
-                        if (phi1_top >= theta_min && phi2_top <= theta_max) {
-                            TLine* line_top = new TLine(x_start, y1_top, x_end, y2_top);
+                            TLine* line_top = new TLine(x, y1, x, y2);
                             line_top->SetLineColor(kRed);
                             line_top->SetLineWidth(2);
                             line_top->Draw("same");
                         }
-
-                        // Adjust the start and end points for the bottom line within the sector
-                        x_start = xMin;  // Reset x_start to the minimum
-                        x_end = xMax;    // Reset x_end to the maximum
-
-                        if (phi1_bottom < theta_min) {
-                            x_start = xMin;
-                            y1_bottom = cut.klow * xMin + cut.blow - 0.25;
-                        }
-                        if (phi2_bottom > theta_max) {
-                            x_end = xMax;
-                            y2_bottom = cut.klow * xMax + cut.blow - 0.25;
-                        }
-
-                        // Draw bottom line only within sector range
-                        if (phi1_bottom >= theta_min && phi2_bottom <= theta_max) {
-                            TLine* line_bottom = new TLine(x_start, y1_bottom, x_end, y2_bottom);
-                            line_bottom->SetLineColor(kRed);
-                            line_bottom->SetLineWidth(2);
-                            line_bottom->Draw("same");
-                        }
                     }
                 }
             }
-
             c_data.SaveAs(("output/calibration/cal/" + particle_name + "_data_" + layer_name + "_cal_hit_position.png").c_str());
 
             // Draw and save the original MC plot if available
             if (h_mc) {
                 TCanvas c_mc(("c_mc_" + particle_name + "_" + layer_name).c_str(), ("c_mc_" + particle_name + "_" + layer_name).c_str(), 800, 600);
                 c_mc.SetLogz();  // Set the z-axis to a logarithmic scale
-                            h_mc->Draw("COLZ");
+                h_mc->Draw("COLZ");
 
-            // Draw sector-specific cuts
-            if (cuts_it != sectorCuts.end()) {
-                for (const auto& cut : cuts_it->second) {
-                    double theta_min = sectorAngleRanges[cut.sector].first * TMath::DegToRad();
-                    double theta_max = sectorAngleRanges[cut.sector].second * TMath::DegToRad();
+                // Draw sector-specific cuts
+                if (cuts_it != sectorCuts.end()) {
+                    for (const auto& cut : cuts_it->second) {
+                        if (std::isnan(cut.ktop)) {
+                            // Draw vertical lines for sector 3
+                            double angle_min = sectorAngleRanges[cut.sector].first;
+                            double angle_max = sectorAngleRanges[cut.sector].second;
 
-                    if (std::isnan(cut.ktop)) {
-                        // Draw vertical lines for sector 3
-                        TLine* line_left = new TLine(cut.btop, yMin, cut.btop, yMax);
-                        line_left->SetLineColor(kRed);
-                        line_left->SetLineWidth(2);
-                        line_left->Draw("same");
+                            for (double angle = angle_min; angle <= angle_max; angle += 1) {
+                                double x = 450 * std::cos(angle * TMath::DegToRad());
+                                double y1 = yMin;
+                                double y2 = yMax;
+                                if (std::cos(angle * TMath::DegToRad()) < 0) {
+                                    y1 = std::max(cut.btop + 0.25, yMin);
+                                    y2 = std::min(cut.blow - 0.25, yMax);
+                                }
+                                TLine* line_left = new TLine(x, y1, x, y2);
+                                line_left->SetLineColor(kRed);
+                                line_left->SetLineWidth(2);
+                                line_left->Draw("same");
+                            }
+                        } else {
+                            // General case for other cuts
+                            double angle_min = sectorAngleRanges[cut.sector].first;
+                            double angle_max = sectorAngleRanges[cut.sector].second;
 
-                        TLine* line_right = new TLine(cut.blow, yMin, cut.blow, yMax);
-                        line_right->SetLineColor(kRed);
-                        line_right->SetLineWidth(2);
-                        line_right->Draw("same");
-                    } else {
-                        // General case for other cuts, limit to sector angle range
-                        double x_start = xMin, x_end = xMax;
+                            for (double angle = angle_min; angle <= angle_max; angle += 1) {
+                                double x = 450 * std::cos(angle * TMath::DegToRad());
+                                double y1 = cut.ktop * x    +   cut.btop + 0.25;
+                                double y2 = cut.klow * x + cut.blow - 0.25;
+                                TLine* line_top = new TLine(x, y1, x, y2);
+                                 line_top->SetLineColor(kRed);
+                                 line_top->SetLineWidth(2);
+                                 line_top->Draw("same");
+                             }
+                         }
+                     }
+                 }
 
-                        double y1_top = cut.ktop * x_start + cut.btop + 0.25;
-                        double y2_top = cut.ktop * x_end + cut.btop + 0.25;
-                        double y1_bottom = cut.klow * x_start + cut.blow - 0.25;
-                        double y2_bottom = cut.klow * x_end + cut.blow - 0.25;
+                 c_mc.SaveAs(("output/calibration/cal/" + particle_name + "_mc_" + layer_name + "_cal_hit_position.png").c_str());
+             }
 
-                        double phi1_top = atan2(y1_top, x_start);
-                        double phi2_top = atan2(y2_top, x_end);
-                        double phi1_bottom = atan2(y1_bottom, x_start);
-                        double phi2_bottom = atan2(y2_bottom, x_end);
-
-                        // Adjust the start and end points for the top line within the sector
-                        if (phi1_top < theta_min) {
-                            x_start = xMin;
-                            y1_top = cut.ktop * xMin + cut.btop + 0.25;
-                        }
-                        if (phi2_top > theta_max) {
-                            x_end = xMax;
-                            y2_top = cut.ktop * xMax + cut.btop + 0.25;
-                        }
-
-                        // Draw top line only within sector range
-                        if (phi1_top >= theta_min && phi2_top <= theta_max) {
-                            TLine* line_top = new TLine(x_start, y1_top, x_end, y2_top);
-                            line_top->SetLineColor(kRed);
-                            line_top->SetLineWidth(2);
-                            line_top->Draw("same");
-                        }
-
-                        // Adjust the start and end points for the bottom line within the sector
-                        x_start = xMin;  // Reset x_start to the minimum
-                        x_end = xMax;    // Reset x_end to the maximum
-
-                        if (phi1_bottom < theta_min) {
-                            x_start = xMin;
-                            y1_bottom = cut.klow * xMin + cut.blow - 0.25;
-                        }
-                        if (phi2_bottom > theta_max) {
-                            x_end = xMax;
-                            y2_bottom = cut.klow * xMax + cut.blow - 0.25;
-                        }
-
-                        // Draw bottom line only within sector range
-                        if (phi1_bottom >= theta_min && phi2_bottom <= theta_max) {
-                            TLine* line_bottom = new TLine(x_start, y1_bottom, x_end, y2_bottom);
-                            line_bottom->SetLineColor(kRed);
-                            line_bottom->SetLineWidth(2);
-                            line_bottom->Draw("same");
-                        }
-                    }
-                }
-            }
-
-            c_mc.SaveAs(("output/calibration/cal/" + particle_name + "_mc_" + layer_name + "_cal_hit_position.png").c_str());
-        }
-
-        // Clean up for this layer and particle type
-        delete h_data;
-        if (h_mc) delete h_mc;
-        if (mc_cal_x) delete mc_cal_x;
-        if (mc_cal_y) delete mc_cal_y;
-        if (mc_particle_pid) delete mc_particle_pid;
-        if (mc_cal_sector) delete mc_cal_sector;
-    }
-}
-}
+             // Clean up for this layer and particle type
+             delete h_data;
+             if (h_mc) delete h_mc;
+             if (mc_cal_x) delete mc_cal_x;
+             if (mc_cal_y) delete mc_cal_y;
+             if (mc_particle_pid) delete mc_particle_pid;
+             if (mc_cal_sector) delete mc_cal_sector;
+         }
+     }
+ }
                            
 void create_directories() {
     // Array of directories to check/create
