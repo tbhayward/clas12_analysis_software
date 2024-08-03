@@ -883,10 +883,10 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                             TLine* line_top = new TLine(xMin, cut.ktop * xMin + cut.btop + 0.25, xMax, cut.ktop * xMax + cut.btop + 0.25);
                             TLine* line_bottom = new TLine(xMin, cut.klow * xMin + cut.blow - 0.25, xMax, cut.klow * xMax + cut.blow - 0.25);
                             line_top->SetLineColor(kRed);
-                            line_top->SetLineWidth(2);
+                            line_top->SetLineWidth(0.5);
                             line_top->Draw("same");
                             line_bottom->SetLineColor(kRed);
-                            line_bottom->SetLineWidth(2);
+                            line_bottom->SetLineWidth(0.5);
                             line_bottom->Draw("same");
                         }
                     }
