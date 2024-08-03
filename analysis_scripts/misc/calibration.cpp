@@ -1003,12 +1003,13 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
                 h_mc_sf_lu[sector-1] = new TH2D(("h_mc_sf_lu_s" + std::to_string(sector)).c_str(), title_mc_sf_lu.c_str(), nBins_lv_lw_lu, luMin, luMax, nBins_sf, sfMin, sfMax);
                 h_mc_sf_lu[sector-1]->GetXaxis()->SetTitle("lu");
                 h_mc_sf_lu[sector-1]->GetYaxis()->SetTitle("Sampling Fraction");
-                }
             }
+        }
         // Create TProfile objects for the sampling fraction vs lv, lw, lu
         TProfile* prof_data_sf_lv = new TProfile("prof_data_sf_lv", "Sampling Fraction vs lv", nBins_lv_lw_lu, lvMin, lvMax, sfMin, sfMax);
         TProfile* prof_data_sf_lw = new TProfile("prof_data_sf_lw", "Sampling Fraction vs lw", nBins_lv_lw_lu, lwMin, lwMax, sfMin, sfMax);
         TProfile* prof_data_sf_lu = new TProfile("prof_data_sf_lu", "Sampling Fraction vs lu", nBins_lv_lw_lu, luMin, luMax, sfMin, sfMax);
+
         TProfile* prof_mc_sf_lv = nullptr;
         TProfile* prof_mc_sf_lw = nullptr;
         TProfile* prof_mc_sf_lu = nullptr;
@@ -1096,142 +1097,204 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
             graph_mc_sf_lu->SetLineColor(kRed);
         }
 
-        // Save the histograms as before
-        TCanvas c_data_lv_lw(("c_data_fiducial_lv_lw_" + particle_name).c_str(), ("Data lv vs lw (" + particle_name + ")").c_str(), 1800, 1200);
-        c_data_lv_lw.Divide(3, 2);
-        c_data_lv_lw.SetLogz(); // Set log scale on the z-axis
-        c_data_lv_lw.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
-
-        TCanvas c_mc_lv_lw(("c_mc_fiducial_lv_lw_" + particle_name).c_str(), ("MC lv vs lw (" + particle_name + ")").c_str(), 1800, 1200);
-        c_mc_lv_lw.Divide(3, 2);
-        c_mc_lv_lw.SetLogz(); // Set log scale on the z-axis
-        c_mc_lv_lw.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
-
-        TCanvas c_data_sf_lv(("c_data_fiducial_sf_lv_" + particle_name).c_str(), ("Data Sampling Fraction vs lv (" + particle_name + ")").c_str(), 1800, 1200);
-        c_data_sf_lv.Divide(3, 2);
-        c_data_sf_lv.SetLogz(); // Set log scale on the z-axis
-        c_data_sf_lv.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
-
-        TCanvas c_mc_sf_lv(("c_mc_fiducial_sf_lv_" + particle_name).c_str(), ("MC Sampling Fraction vs lv (" + particle_name + ")").c_str(), 1800, 1200);
-        c_mc_sf_lv.Divide(3, 2);
-        c_mc_sf_lv.SetLogz(); // Set log scale on the z-axis
-        c_mc_sf_lv.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
-
-        TCanvas c_data_sf_lw(("c_data_fiducial_sf_lw_" + particle_name).c_str(), ("Data Sampling Fraction vs lw (" + particle_name + ")").c_str(), 1800, 1200);
-        c_data_sf_lw.Divide(3, 2);
-        c_data_sf_lw.SetLogz(); // Set log scale on the z-axis
-        c_data_sf_lw.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
-
-        TCanvas c_mc_sf_lw(("c_mc_fiducial_sf_lw_" + particle_name).c_str(), ("MC Sampling Fraction vs lw (" + particle_name + ")").c_str(), 1800, 1200);
-        c_mc_sf_lw.Divide(3, 2);
-        c_mc_sf_lw.SetLogz(); // Set log scale on the z-axis
-        c_mc_sf_lw.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
-
-        TCanvas c_data_sf_lu(("c_data_fiducial_sf_lu_" + particle_name).c_str(), ("Data Sampling Fraction vs lu (" + particle_name + ")").c_str(), 1800, 1200);
-        c_data_sf_lu.Divide(3, 2);
-        c_data_sf_lu.SetLogz(); // Set log scale on the z-axis
-        c_data_sf_lu.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
-        TCanvas c_mc_sf_lu(("c_mc_fiducial_sf_lu_" + particle_name).c_str(), ("MC Sampling Fraction vs lu (" + particle_name + ")").c_str(), 1800, 1200);
-        c_mc_sf_lu.Divide(3, 2);
-        c_mc_sf_lu.SetLogz(); // Set log scale on the z-axis
-        c_mc_sf_lu.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
+        // Create canvases for TGraphErrors and divide them into 2x3 (6 subplots for 6 sectors)
+        TCanvas c_sf_lv("c_sf_lv", ("Sampling Fraction vs lv (" + particle_name + ")").c_str(), 1800, 1200);
+        TCanvas c_sf_lw("c_sf_lw", ("Sampling Fraction vs lw (" + particle_name + ")").c_str(), 1800, 1200);
+        TCanvas c_sf_lu("c_sf_lu", ("Sampling Fraction vs lu (" + particle_name + ")").c_str(), 1800, 1200);
+        c_sf_lv.Divide(3, 2);
+        c_sf_lw.Divide(3, 2);
+        c_sf_lu.Divide(3, 2);
 
         for (int sector = 1; sector <= 6; ++sector) {
-            c_data_lv_lw.cd(sector);
+            // Draw sampling fraction vs lv
+            c_sf_lv.cd(sector);
             gPad->SetLeftMargin(0.15); // Adjust the left margin
             gPad->SetRightMargin(0.15); // Adjust the right margin
-            h_data_lv_lw[sector-1]->Draw("COLZ");
-
-            c_data_sf_lv.cd(sector);
-            gPad->SetLeftMargin(0.15); // Adjust the left margin
-            gPad->SetRightMargin(0.15); // Adjust the right margin
-            h_data_sf_lv[sector-1]->Draw("COLZ");
-
-            c_data_sf_lw.cd(sector);
-            gPad->SetLeftMargin(0.15); // Adjust the left margin
-            gPad->SetRightMargin(0.15); // Adjust the right margin
-            h_data_sf_lw[sector-1]->Draw("COLZ");
-
-            c_data_sf_lu.cd(sector);
-            gPad->SetLeftMargin(0.15); // Adjust the left margin
-            gPad->SetRightMargin(0.15); // Adjust the right margin
-            h_data_sf_lu[sector-1]->Draw("COLZ");
+            TGraphErrors* graph_data_sf_lv_sector = new TGraphErrors(*graph_data_sf_lv);
+            graph_data_sf_lv_sector->SetTitle(("Data vs MC - Sector " + std::to_string(sector)).c_str());
+            graph_data_sf_lv_sector->GetYaxis()->SetRangeUser(0.15, 0.30);
+            graph_data_sf_lv_sector->Draw("AP");
 
             if (mcReader) {
-                c_mc_lv_lw.cd(sector);
-                gPad->SetLeftMargin(0.15); // Adjust the left margin
-                gPad->SetRightMargin(0.15); // Adjust the right margin
-                h_mc_lv_lw[sector-1]->Draw("COLZ");
-
-                c_mc_sf_lv.cd(sector);
-                gPad->SetLeftMargin(0.15); // Adjust the left margin
-                gPad->SetRightMargin(0.15); // Adjust the right margin
-                h_mc_sf_lv[sector-1]->Draw("COLZ");
-
-                c_mc_sf_lw.cd(sector);
-                gPad->SetLeftMargin(0.15); // Adjust the left margin
-                gPad->SetRightMargin(0.15); // Adjust the right margin
-                h_mc_sf_lw[sector-1]->Draw("COLZ");
-
-                c_mc_sf_lu.cd(sector);
-                gPad->SetLeftMargin(0.15); // Adjust the left margin
-                gPad->SetRightMargin(0.15); // Adjust the right margin
-                h_mc_sf_lu[sector-1]->Draw("COLZ");
+                TGraphErrors* graph_mc_sf_lv_sector = new TGraphErrors(*graph_mc_sf_lv);
+                graph_mc_sf_lv_sector->SetTitle(("MC vs Sector " + std::to_string(sector)).c_str());
+                graph_mc_sf_lv_sector->Draw("P same");
             }
-        }
+            c_sf_lv.BuildLegend();
 
-        // Save the canvases
-        c_data_lv_lw.SaveAs(("output/calibration/cal/fiducial/data_fiducial_lv_lw_" + particle_name + ".png").c_str());
-        if (mcReader) c_mc_lv_lw.SaveAs(("output/calibration/cal/fiducial/mc_fiducial_lv_lw_" + particle_name + ".png").c_str());
-
-        c_data_sf_lv.SaveAs(("output/calibration/cal/fiducial/data_fiducial_sf_lv_" + particle_name + ".png").c_str());
-        if (mcReader) c_mc_sf_lv.SaveAs(("output/calibration/cal/fiducial/mc_fiducial_sf_lv_" + particle_name + ".png").c_str());
-
-        c_data_sf_lw.SaveAs(("output/calibration/cal/fiducial/data_fiducial_sf_lw_" + particle_name + ".png").c_str());
-        if (mcReader) c_mc_sf_lw.SaveAs(("output/calibration/cal/fiducial/mc_fiducial_sf_lw_" + particle_name + ".png").c_str());
-
-        c_data_sf_lu.SaveAs(("output/calibration/cal/fiducial/data_fiducial_sf_lu_" + particle_name + ".png").c_str());
-        if (mcReader) c_mc_sf_lu.SaveAs(("output/calibration/cal/fiducial/mc_fiducial_sf_lu_" + particle_name + ".png").c_str());
-
-        // Clean up for this layer and particle type
-        for (int sector = 0; sector < 6; ++sector) {
-            delete h_data_lv_lw[sector];
-            delete h_data_sf_lv[sector];
-            delete h_data_sf_lw[sector];
-            delete h_data_sf_lu[sector];
+            // Draw sampling fraction vs lw
+            c_sf_lw.cd(sector);
+            gPad->SetLeftMargin(0.15); // Adjust the left margin
+            gPad->SetRightMargin(0.15); // Adjust the right margin
+            TGraphErrors* graph_data_sf_lw_sector = new TGraphErrors(*graph_data_sf_lw);
+            graph_data_sf_lw_sector->SetTitle(("Data vs MC - Sector " + std::to_string(sector)).c_str());
+            graph_data_sf_lw_sector->GetYaxis()->SetRangeUser(0.15, 0.30);
+            graph_data_sf_lw_sector->Draw("AP");
 
             if (mcReader) {
-                delete h_mc_lv_lw[sector];
-                delete h_mc_sf_lv[sector];
-                delete h_mc_sf_lw[sector];
-                delete h_mc_sf_lu[sector];
+                TGraphErrors* graph_mc_sf_lw_sector = new TGraphErrors(*graph_mc_sf_lw);
+                graph_mc_sf_lw_sector->SetTitle(("MC vs Sector " + std::to_string(sector)).c_str());
+                graph_mc_sf_lw_sector->Draw("P same");
             }
+            c_sf_lw.BuildLegend();
+
+            // Draw sampling fraction vs lu
+            c_sf_lu.cd(sector);
+            gPad->SetLeftMargin(0.15); // Adjust the left margin
+            gPad->SetRightMargin(0.15); // Adjust the right margin
+            TGraphErrors* graph_data_sf_lu_sector = new TGraphErrors(*graph_data_sf_lu);
+            graph_data_sf_lu_sector->SetTitle(("Data vs MC - Sector " + std::to_string(sector)).c_str());
+            graph_data_sf_lu_sector->GetYaxis()->SetRangeUser(0.15, 0.30);
+            graph_data_sf_lu_sector->Draw("AP");
+                    if (mcReader) {
+            TGraphErrors* graph_mc_sf_lu_sector = new TGraphErrors(*graph_mc_sf_lu);
+            graph_mc_sf_lu_sector->SetTitle(("MC vs Sector " + std::to_string(sector)).c_str());
+            graph_mc_sf_lu_sector->Draw("P same");
         }
+        c_sf_lu.BuildLegend();
+    }
 
-        if (mc_cal_energy_1) delete mc_cal_energy_1;
-        if (mc_cal_energy_4) delete mc_cal_energy_4;
-        if (mc_cal_energy_7) delete mc_cal_energy_7;
-        if (mc_p) delete mc_p;
-        if (mc_cal_sector) delete mc_cal_sector;
-        if (mc_particle_pid) delete mc_particle_pid;
+    // Save the canvases
+    c_sf_lv.SaveAs(("output/calibration/cal/fiducial/sf_vs_lv_" + particle_name + ".png").c_str());
+    c_sf_lw.SaveAs(("output/calibration/cal/fiducial/sf_vs_lw_" + particle_name + ".png").c_str());
+    c_sf_lu.SaveAs(("output/calibration/cal/fiducial/sf_vs_lu_" + particle_name + ".png").c_str());
 
-        // Clean up TProfile and TGraphErrors objects
-        delete prof_data_sf_lv;
-        delete prof_data_sf_lw;
-        delete prof_data_sf_lu;
-        delete graph_data_sf_lv;
-        delete graph_data_sf_lw;
-        delete graph_data_sf_lu;
+    // Save the histograms as before
+    TCanvas c_data_lv_lw(("c_data_fiducial_lv_lw_" + particle_name).c_str(), ("Data lv vs lw (" + particle_name + ")").c_str(), 1800, 1200);
+    c_data_lv_lw.Divide(3, 2);
+    c_data_lv_lw.SetLogz(); // Set log scale on the z-axis
+    c_data_lv_lw.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
+
+    TCanvas c_mc_lv_lw(("c_mc_fiducial_lv_lw_" + particle_name).c_str(), ("MC lv vs lw (" + particle_name + ")").c_str(), 1800, 1200);
+    c_mc_lv_lw.Divide(3, 2);
+    c_mc_lv_lw.SetLogz(); // Set log scale on the z-axis
+    c_mc_lv_lw.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
+
+    TCanvas c_data_sf_lv(("c_data_fiducial_sf_lv_" + particle_name).c_str(), ("Data Sampling Fraction vs lv (" + particle_name + ")").c_str(), 1800, 1200);
+    c_data_sf_lv.Divide(3, 2);
+    c_data_sf_lv.SetLogz(); // Set log scale on the z-axis
+    c_data_sf_lv.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
+
+    TCanvas c_mc_sf_lv(("c_mc_fiducial_sf_lv_" + particle_name).c_str(), ("MC Sampling Fraction vs lv (" + particle_name + ")").c_str(), 1800, 1200);
+    c_mc_sf_lv.Divide(3, 2);
+    c_mc_sf_lv.SetLogz(); // Set log scale on the z-axis
+    c_mc_sf_lv.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
+
+    TCanvas c_data_sf_lw(("c_data_fiducial_sf_lw_" + particle_name).c_str(), ("Data Sampling Fraction vs lw (" + particle_name + ")").c_str(), 1800, 1200);
+    c_data_sf_lw.Divide(3, 2);
+    c_data_sf_lw.SetLogz(); // Set log scale on the z-axis
+    c_data_sf_lw.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
+
+    TCanvas c_mc_sf_lw(("c_mc_fiducial_sf_lw_" + particle_name).c_str(), ("MC Sampling Fraction vs lw (" + particle_name + ")").c_str(), 1800, 1200);
+    c_mc_sf_lw.Divide(3, 2);
+    c_mc_sf_lw.SetLogz(); // Set log scale on the z-axis
+    c_mc_sf_lw.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
+
+    TCanvas c_data_sf_lu(("c_data_fiducial_sf_lu_" + particle_name).c_str(), ("Data Sampling Fraction vs lu (" + particle_name + ")").c_str(), 1800, 1200);
+    c_data_sf_lu.Divide(3, 2);
+    c_data_sf_lu.SetLogz(); // Set log scale on the z-axis
+    c_data_sf_lu.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
+
+    TCanvas c_mc_sf_lu(("c_mc_fiducial_sf_lu_" + particle_name).c_str(), ("MC Sampling Fraction vs lu (" + particle_name + ")").c_str(), 1800, 1200);
+    c_mc_sf_lu.Divide(3, 2);
+    c_mc_sf_lu.SetLogz(); // Set log scale on the z-axis
+    c_mc_sf_lu.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
+
+    for (int sector = 1; sector <= 6; ++sector) {
+        c_data_lv_lw.cd(sector);
+        gPad->SetLeftMargin(0.15); // Adjust the left margin
+        gPad->SetRightMargin(0.15); // Adjust the right margin
+        h_data_lv_lw[sector-1]->Draw("COLZ");
+
+        c_data_sf_lv.cd(sector);
+        gPad->SetLeftMargin(0.15); // Adjust the left margin
+        gPad->SetRightMargin(0.15); // Adjust the right margin
+        h_data_sf_lv[sector-1]->Draw("COLZ");
+
+        c_data_sf_lw.cd(sector);
+        gPad->SetLeftMargin(0.15); // Adjust the left margin
+        gPad->SetRightMargin(0.15); // Adjust the right margin
+        h_data_sf_lw[sector-1]->Draw("COLZ");
+
+        c_data_sf_lu.cd(sector);
+        gPad->SetLeftMargin(0.15); // Adjust the left margin
+        gPad->SetRightMargin(0.15); // Adjust the right margin
+        h_data_sf_lu[sector-1]->Draw("COLZ");
 
         if (mcReader) {
-            delete prof_mc_sf_lv;
-            delete prof_mc_sf_lw;
-            delete prof_mc_sf_lu;
-            delete graph_mc_sf_lv;
-            delete graph_mc_sf_lw;
-            delete graph_mc_sf_lu;
+            c_mc_lv_lw.cd(sector);
+            gPad->SetLeftMargin(0.15); // Adjust the left margin
+            gPad->SetRightMargin(0.15); // Adjust the right margin
+            h_mc_lv_lw[sector-1]->Draw("COLZ");
+
+            c_mc_sf_lv.cd(sector);
+            gPad->SetLeftMargin(0.15); // Adjust the left margin
+            gPad->SetRightMargin(0.15); // Adjust the right margin
+            h_mc_sf_lv[sector-1]->Draw("COLZ");
+
+            c_mc_sf_lw.cd(sector);
+            gPad->SetLeftMargin(0.15); // Adjust the left margin
+            gPad->SetRightMargin(0.15); // Adjust the right margin
+            h_mc_sf_lw[sector-1]->Draw("COLZ");
+
+            c_mc_sf_lu.cd(sector);
+            gPad->SetLeftMargin(0.15); // Adjust the left margin
+            gPad->SetRightMargin(0.15); // Adjust the right margin
+            h_mc_sf_lu[sector-1]->Draw("COLZ");
         }
     }
+
+    // Save the canvases
+    c_data_lv_lw.SaveAs(("output/calibration/cal/fiducial/data_fiducial_lv_lw_" + particle_name + ".png").c_str());
+    if (mcReader) c_mc_lv_lw.SaveAs(("output/calibration/cal/fiducial/mc_fiducial_lv_lw_" + particle_name + ".png").c_str());
+
+    c_data_sf_lv.SaveAs(("output/calibration/cal/fiducial/data_fiducial_sf_lv_" + particle_name + ".png").c_str());
+    if (mcReader) c_mc_sf_lv.SaveAs(("output/calibration/cal/fiducial/mc_fiducial_sf_lv_" + particle_name + ".png").c_str());
+
+    c_data_sf_lw.SaveAs(("output/calibration/cal/fiducial/data_fiducial_sf_lw_" + particle_name + ".png").c_str());
+    if (mcReader) c_mc_sf_lw.SaveAs(("output/calibration/cal/fiducial/mc_fiducial_sf_lw_" + particle_name + ".png").c_str());
+
+    c_data_sf_lu.SaveAs(("output/calibration/cal/fiducial/data_fiducial_sf_lu_" + particle_name + ".png").c_str());
+    if (mcReader) c_mc_sf_lu.SaveAs(("output/calibration/cal/fiducial/mc_fiducial_sf_lu_" + particle_name + ".png").c_str());
+
+    // Clean up for this layer and particle type
+    for (int sector = 0; sector < 6; ++sector) {
+        delete h_data_lv_lw[sector];
+        delete h_data_sf_lv[sector];
+        delete h_data_sf_lw[sector];
+        delete h_data_sf_lu[sector];
+
+        if (mcReader) {
+            delete h_mc_lv_lw[sector];
+            delete h_mc_sf_lv[sector];
+            delete h_mc_sf_lw[sector];
+        delete h_mc_sf_lu[sector];
+    }
+}
+    if (mc_cal_energy_1) delete mc_cal_energy_1;
+    if (mc_cal_energy_4) delete mc_cal_energy_4;
+    if (mc_cal_energy_7) delete mc_cal_energy_7;
+    if (mc_p) delete mc_p;
+    if (mc_cal_sector) delete mc_cal_sector;
+    if (mc_particle_pid) delete mc_particle_pid;
+
+    // Clean up TProfile and TGraphErrors objects
+    delete prof_data_sf_lv;
+    delete prof_data_sf_lw;
+    delete prof_data_sf_lu;
+    delete graph_data_sf_lv;
+    delete graph_data_sf_lw;
+    delete graph_data_sf_lu;
+
+    if (mcReader) {
+        delete prof_mc_sf_lv;
+        delete prof_mc_sf_lw;
+        delete prof_mc_sf_lu;
+        delete graph_mc_sf_lv;
+        delete graph_mc_sf_lw;
+        delete graph_mc_sf_lu;
+    }
+}
 }
                            
 void create_directories() {
