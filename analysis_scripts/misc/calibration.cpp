@@ -889,9 +889,10 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
 
 void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Define the 2D histogram bins and ranges for lv, lw, lu, and sampling fraction
-    int nBins = 250;
-    double lvwMin = 0, lvwMax = 300;
-    double sfMin = 0, sfMax = 0.3; // Sampling fraction range (E/P)
+	int nBins = 300;
+	double lvwMin = 0, lvwMax = 300;
+	double luMin = 0, luMax = 300; // <-- Add this line
+	double sfMin = 0, sfMax = 0.3; // Sampling fraction range (E/P)
 
     // PCal layer branch names
     std::string lu_branch = "cal_lu_1";
