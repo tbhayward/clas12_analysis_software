@@ -741,6 +741,8 @@ void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
     if (mc_particle_pid) delete mc_particle_pid;
 }
 
+#include "TLine.h" // Include this for drawing lines
+
 void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Array of layers and their corresponding names
     std::vector<std::tuple<std::string, std::string, std::string>> layers = {
@@ -753,6 +755,23 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
     std::vector<std::tuple<int, std::string>> particle_types = {
         {22, "photon"},
         {11, "electron"}
+    };
+
+    // Sector-specific parameters
+    struct SectorCutParams {
+        double ktop, btop, klow, blow;
+    };
+
+    // Define cuts for the relevant sectors
+    std::map<std::string, std::vector<SectorCutParams>> sectorCuts = {
+        {"PCal", {
+            {0.5897, 120.7937, 0.5913, 114.3872},  // Sector 2
+            {-313.71, std::numeric_limits<double>::infinity(), -302.38, std::numeric_limits<double>::infinity()}, // Sector 3
+            {-0.568, -232.8, -0.568, -236.3} // Sector 4
+        }},
+        {"EC_{out}", {
+            {-0.5841, -252.11, -0.5775, -263.2072} // Sector 5
+        }}
     };
 
     // Loop over each particle type
@@ -823,47 +842,47 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             }
 
             // Draw and save the original data plot
-			TCanvas c_data(("c_data_" + particle_name + "_" + layer_name).c_str(), ("c_data_" + particle_name + "_" + layer_name).c_str(), 800, 600);
-			c_data.SetLogz();  // Set the z-axis to a logarithmic scale
-			h_data->Draw("COLZ");
-			c_data.SaveAs(("output/calibration/cal/" + particle_name + "_data_" + layer_name + "_cal_hit_position.png").c_str());
+            TCanvas c_data(("c_data_" + particle_name + "_" + layer_name).c_str(), ("c_data_" + particle_name + "_" + layer_name).c_str(), 800, 600);
+            c_data.SetLogz();  // Set the z-axis to a logarithmic scale
+            h_data->Draw("COLZ");
 
-			// Draw and save the original MC plot if available
-			if (h_mc) {
-			    TCanvas c_mc(("c_mc_" + particle_name + "_" + layer_name).c_str(), ("c_mc_" + particle_name + "_" + layer_name).c_str(), 800, 600);
-			    c_mc.SetLogz();  // Set the z-axis to a logarithmic scale
-			    h_mc->Draw("COLZ");
-			    c_mc.SaveAs(("output/calibration/cal/" + particle_name + "_mc_" + layer_name + "_cal_hit_position.png").c_str());
+            // Draw lines for the relevant sectors in this layer
+            if (sectorCuts.find(layer_name) != sectorCuts.end()) {
+                for (const auto& cut : sectorCuts[layer_name]) {
+                    TLine* line_top = new TLine(xMin, cut.ktop * xMin + cut.btop + 0.25, xMax, cut.ktop * xMax + cut.btop + 0.25);
+                    TLine* line_bottom = new TLine(xMin, cut.klow * xMin + cut.blow - 0.25, xMax, cut.klow * xMax + cut.blow - 0.25);
+                    line_top->SetLineColor(kRed);
+                    line_top->SetLineWidth(2);
+                    line_top->Draw("same");
+                    line_bottom->SetLineColor(kRed);
+                    line_bottom->SetLineWidth(2);
+                    line_bottom->Draw("same");
+                }
+            }
 
-                // Create Data/MC ratio plot
-                TH2D* h_ratio = (TH2D*)h_data->Clone(("h_ratio_" + particle_name + "_" + layer_name).c_str());
-                h_ratio->Divide(h_mc);
+            c_data.SaveAs(("output/calibration/cal/" + particle_name + "_data_" + layer_name + "_cal_hit_position.png").c_str());
 
-                // Calculate the mean of the ratio for normalization
-                double mean_ratio = 0;
-                int non_zero_bins = 0;
-                for (int i = 1; i <= h_ratio->GetNbinsX(); i++) {
-                    for (int j = 1; j <= h_ratio->GetNbinsY(); j++) {
-                        double ratio_value = h_ratio->GetBinContent(i, j);
-                        if (ratio_value != 0) {
-                            mean_ratio += ratio_value;
-                            non_zero_bins++;
-                        }
+            // Draw and save the original MC plot if available
+            if (h_mc) {
+                TCanvas c_mc(("c_mc_" + particle_name + "_" + layer_name).c_str(), ("c_mc_" + particle_name + "_" + layer_name).c_str(), 800, 600);
+                c_mc.SetLogz();  // Set the z-axis to a logarithmic scale
+                h_mc->Draw("COLZ");
+
+                // Draw lines for the relevant sectors in this layer
+                if (sectorCuts.find(layer_name) != sectorCuts.end()) {
+                    for (const auto& cut : sectorCuts[layer_name]) {
+                        TLine* line_top = new TLine(xMin, cut.ktop * xMin + cut.btop + 0.25, xMax, cut.ktop * xMax + cut.btop + 0.25);
+                        TLine* line_bottom = new TLine(xMin, cut.klow * xMin + cut.blow - 0.25, xMax, cut.klow * xMax + cut.blow - 0.25);
+                        line_top->SetLineColor(kRed);
+                        line_top->SetLineWidth(2);
+                        line_top->Draw("same");
+                        line_bottom->SetLineColor(kRed);
+                        line_bottom->SetLineWidth(2);
+                        line_bottom->Draw("same");
                     }
                 }
-                if (non_zero_bins > 0) mean_ratio /= non_zero_bins;
 
-                // Normalize the ratio histogram
-                if (mean_ratio != 0) h_ratio->Scale(1.0 / mean_ratio);
-
-                // Draw and save the ratio plot with a linear scale and range 0 to 2
-                TCanvas c_ratio(("c_ratio_" + particle_name + "_" + layer_name).c_str(), ("c_ratio_" + particle_name + "_" + layer_name).c_str(), 800, 600);
-                h_ratio->SetTitle(("Normalized data/MC " + layer_name + " ratio (" + particle_name + ")").c_str()); // Set the plot title
-                h_ratio->GetZaxis()->SetRangeUser(0, 2); // Set the z-axis range to [0, 2]
-                h_ratio->Draw("COLZ");
-                c_ratio.SaveAs(("output/calibration/cal/" + particle_name + "_ratio_" + layer_name + "_cal_hit_position.png").c_str());
-
-                delete h_ratio;
+                c_mc.SaveAs(("output/calibration/cal/" + particle_name + "_mc_" + layer_name + "_cal_hit_position.png").c_str());
             }
 
             // Clean up for this layer and particle type
