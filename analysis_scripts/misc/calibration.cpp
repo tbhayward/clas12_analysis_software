@@ -741,17 +741,41 @@ void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
     if (mc_particle_pid) delete mc_particle_pid;
 }
 
+// Structure to hold sector cut parameters
+struct SectorCutParams {
+    int sector;
+    double ktop;
+    double btop;
+    double klow;
+    double blow;
+};
+
 // Define cuts for the relevant sectors
 std::map<std::string, std::vector<SectorCutParams>> sectorCuts = {
     {"PCal", {
         {2, 0.5897, 120.7937, 0.5913, 114.3872},  // Sector 2
-        {3, -313.71, std::numeric_limits<double>::quiet_NaN(), -302.38, std::numeric_limits<double>::quiet_NaN()}, // Sector 3
+        {3, std::numeric_limits<double>::quiet_NaN(), -313.71, std::numeric_limits<double>::quiet_NaN(), -302.38}, // Sector 3
         {4, -0.568, -232.8, -0.568, -236.3} // Sector 4
     }},
     {"EC_{out}", {
         {5, -0.5841, -252.11, -0.5775, -263.2072} // Sector 5
     }}
 };
+
+// Define sector angle ranges (in degrees)
+std::map<int, std::pair<double, double>> sectorAngleRanges = {
+    {1, {330, 30}},
+    {2, {30, 90}},
+    {3, {90, 150}},
+    {4, {150, 210}},
+    {5, {210, 270}},
+    {6, {270, 330}}
+};
+
+// Function to convert polar coordinates to Cartesian coordinates
+std::pair<double, double> polarToCartesian(double r, double theta_rad) {
+    return {r * cos(theta_rad), r * sin(theta_rad)};
+}
 
 // Modified plot_cal_hit_position function
 void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
@@ -845,14 +869,14 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             auto cuts_it = sectorCuts.find(layer_name);
             if (cuts_it != sectorCuts.end()) {
                 for (const auto& cut : cuts_it->second) {
-                    if (cut.ktop == std::numeric_limits<double>::quiet_NaN()) {
+                    if (std::isnan(cut.ktop)) {
                         // Draw vertical lines for sector 3
                         TLine* line_left = new TLine(cut.btop, yMin, cut.btop, yMax);
                         line_left->SetLineColor(kRed);
                         line_left->SetLineWidth(2);
                         line_left->Draw("same");
 
-                        TLine* line_right = new TLine(cut.klow, yMin, cut.klow, yMax);
+                        TLine* line_right = new TLine(cut.blow, yMin, cut.blow, yMax);
                         line_right->SetLineColor(kRed);
                         line_right->SetLineWidth(2);
                         line_right->Draw("same");
@@ -875,12 +899,11 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                             TLine* line_bottom = new TLine(start.first, cut.klow * start.first + cut.blow - 0.25, end.first, cut.klow * end.first + cut.blow - 0.25);
                             line_bottom->SetLineColor(kRed);
                             line_bottom->SetLineWidth(2);
-                            line_bottom->Draw("same");
+                            line_bottom->Draw(“same”);
                         }
                     }
                 }
             }
-
             c_data.SaveAs(("output/calibration/cal/" + particle_name + "_data_" + layer_name + "_cal_hit_position.png").c_str());
 
             // Draw and save the original MC plot if available
@@ -892,55 +915,56 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                 // Draw sector-specific cuts
                 if (cuts_it != sectorCuts.end()) {
                     for (const auto& cut : cuts_it->second) {
-                        if (cut.ktop == std::numeric_limits<double>::quiet_NaN()) {
+                        if (std::isnan(cut.ktop)) {
                             // Draw vertical lines for sector 3
                             TLine* line_left = new TLine(cut.btop, yMin, cut.btop, yMax);
                             line_left->SetLineColor(kRed);
                             line_left->SetLineWidth(2);
                             line_left->Draw("same");
 
-                            TLine* line_right = new TLine(cut.klow, yMin, cut.klow, yMax);
+                            TLine* line_right = new TLine(cut.blow, yMin, cut.blow, yMax);
                             line_right->SetLineColor(kRed);
-							line_right->SetLineWidth(2);
-							line_right->Draw("same");
-						} else {
-							// General case for other cuts
-							for (double theta_deg = sectorAngleRanges[cut.sector].first; theta_deg <= sectorAngleRanges[cut.sector].second; theta_deg += 5) {
-							double theta_rad = theta_deg * TMath::DegToRad();
-							                            // Calculate the start and end points based on the sector angles
-                            std::pair<double, double> start = polarToCartesian(450, theta_rad);
-                            std::pair<double, double> end = polarToCartesian(450, theta_rad + TMath::PiOver2());
+                            line_right->SetLineWidth(2);
+                            line_right->Draw("same");
+                        } else {
+                            // General case for other cuts
+                            for (double theta_deg = sectorAngleRanges[cut.sector].first; theta_deg <= sectorAngleRanges[cut.sector].second; theta_deg += 5) {
+                                double theta_rad = theta_deg * TMath::DegToRad();
 
-                            // Top line
-                            TLine* line_top = new TLine(start.first, cut.ktop * start.first + cut.btop + 0.25, end.first, cut.ktop * end.first + cut.btop + 0.25);
-                            line_top->SetLineColor(kRed);
-                            line_top->SetLineWidth(2);
-                            line_top->Draw("same");
+                                // Calculate the start and end points based on the sector angles
+                                std::pair<double, double> start = polarToCartesian(450, theta_rad);
+                                std::pair<double, double> end = polarToCartesian(450, theta_rad + TMath::PiOver2());
 
-                            // Bottom line
-                            TLine* line_bottom = new TLine(start.first, cut.klow * start.first + cut.blow - 0.25, end.first, cut.klow * end.first + cut.blow - 0.25);
-                            line_bottom->SetLineColor(kRed);
-                            line_bottom->SetLineWidth(2);
-                            line_bottom->Draw("same");
+                                // Top line
+                                TLine* line_top = new TLine(start.first, cut.ktop * start.first + cut.btop + 0.25, end.first, cut.ktop * end.first + cut.btop + 0.25);
+                                line_top->SetLineColor(kRed);
+                                line_top->SetLineWidth(2);
+                                line_top->Draw("same");
+
+                                // Bottom line
+                                TLine* line_bottom = new TLine(start.first, cut.klow * start.first + cut.blow - 0.25, end.first, cut.klow * end.first + cut.blow - 0.25);
+                                line_bottom->SetLineColor(kRed);
+                                line_bottom->SetLineWidth(2);
+                                line_bottom->Draw("same");
+                            }
                         }
                     }
                 }
+
+                c_mc.SaveAs(("output/calibration/cal/" + particle_name + "_mc_" + layer_name + "_cal_hit_position.png").c_str());
             }
 
-            c_mc.SaveAs(("output/calibration/cal/" + particle_name + "_mc_" + layer_name + "_cal_hit_position.png").c_str());
+            // Clean up for this layer and particle type
+            delete h_data;
+            if (h_mc) delete h_mc;
+            if (mc_cal_x) delete mc_cal_x;
+            if (mc_cal_y) delete mc_cal_y;
+            if (mc_particle_pid) delete mc_particle_pid;
+            if (mc_cal_sector) delete mc_cal_sector;
         }
-
-        // Clean up for this layer and particle type
-        delete h_data;
-        if (h_mc) delete h_mc;
-        if (mc_cal_x) delete mc_cal_x;
-        if (mc_cal_y) delete mc_cal_y;
-        if (mc_particle_pid) delete mc_particle_pid;
-        if (mc_cal_sector) delete mc_cal_sector;
     }
 }
                            
-
 void create_directories() {
     // Array of directories to check/create
     std::vector<std::string> directories = {
