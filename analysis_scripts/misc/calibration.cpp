@@ -1276,6 +1276,30 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
 	    }
 	}
 }
+                           
+void create_directories() {
+    // Array of directories to check/create
+    std::vector<std::string> directories = {
+        "output/calibration/",
+        "output/calibration/ft/",
+        "output/calibration/cal/",
+        "output/calibration/cal/fiducial/",
+        "output/calibration/cc/"
+    };
+
+    // Iterate through each directory and create if it doesn't exist
+    for (const auto& dir : directories) {
+        if (!gSystem->AccessPathName(dir.c_str())) {
+            std::cout << "Directory " << dir << " already exists." << std::endl;
+        } else {
+            if (gSystem->mkdir(dir.c_str(), true) == 0) {
+                std::cout << "Directory " << dir << " created successfully." << std::endl;
+            } else {
+                std::cerr << "Error creating directory " << dir << std::endl;
+            }
+        }
+    }
+}
 
 int main(int argc, char** argv) {
     if (argc < 2 || argc > 3) {
