@@ -741,10 +741,27 @@ void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
     if (mc_particle_pid) delete mc_particle_pid;
 }
 
-#include "TLine.h"
-#include "TMath.h"
+// Define cuts for the relevant sectors
+std::map<std::string, std::vector<SectorCutParams>> sectorCuts = {
+    {"PCal", {
+        {2, 0.5897, 120.7937, 0.5913, 114.3872},  // Sector 2
+        {3, -313.71, std::numeric_limits<double>::quiet_NaN(), -302.38, std::numeric_limits<double>::quiet_NaN()}, // Sector 3
+        {4, -0.568, -232.8, -0.568, -236.3} // Sector 4
+    }},
+    {"EC_{out}", {
+        {5, -0.5841, -252.11, -0.5775, -263.2072} // Sector 5
+    }}
+};
 
+// Modified plot_cal_hit_position function
 void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+    // Define the 2D histogram bins and ranges
+    int nBins = 100;
+    double xMin = -450;
+    double xMax = 450;
+    double yMin = -450;
+    double yMax = 450;
+
     // Array of layers and their corresponding names
     std::vector<std::tuple<std::string, std::string, std::string>> layers = {
         {"cal_x_1", "cal_y_1", "PCal"},
@@ -756,39 +773,6 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
     std::vector<std::tuple<int, std::string>> particle_types = {
         {22, "photon"},
         {11, "electron"}
-    };
-
-    // Sector-specific parameters
-    struct SectorCutParams {
-        int sector;
-        double ktop, btop, klow, blow;
-    };
-
-    // Define cuts for the relevant sectors
-    std::map<std::string, std::vector<SectorCutParams>> sectorCuts = {
-        {"PCal", {
-            {2, 0.5897, 120.7937, 0.5913, 114.3872},  // Sector 2
-            {3, -313.71, std::numeric_limits<double>::infinity(), -302.38, std::numeric_limits<double>::infinity()}, // Sector 3
-            {4, -0.568, -232.8, -0.568, -236.3} // Sector 4
-        }},
-        {"EC_{out}", {
-            {5, -0.5841, -252.11, -0.5775, -263.2072} // Sector 5
-        }}
-    };
-
-    // Function to convert polar angle to Cartesian coordinates
-    auto polarToCartesian = [](double r, double angle) {
-        double x = r * TMath::Cos(angle * TMath::Pi() / 180.0);
-        double y = r * TMath::Sin(angle * TMath::Pi() / 180.0);
-        return std::make_pair(x, y);
-    };
-
-    // Sector boundary angles
-    std::map<int, std::pair<double, double>> sectorBoundaries = {
-        {2, {30, 90}},
-        {3, {90, 150}},
-        {4, {150, 210}},
-        {5, {210, 270}}
     };
 
     // Loop over each particle type
@@ -806,29 +790,23 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             dataReader.Restart();
             if (mcReader) mcReader->Restart();
 
-            // Declare TTreeReaderValues for data
+            // Declare TTreeReaderValues for data and MC
             TTreeReaderValue<double> cal_x(dataReader, x_branch.c_str());
             TTreeReaderValue<double> cal_y(dataReader, y_branch.c_str());
             TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+            TTreeReaderValue<int> cal_sector(dataReader, "cal_sector");
 
-            // Declare pointers for MC TTreeReaderValue objects
             TTreeReaderValue<double>* mc_cal_x = nullptr;
             TTreeReaderValue<double>* mc_cal_y = nullptr;
             TTreeReaderValue<int>* mc_particle_pid = nullptr;
+            TTreeReaderValue<int>* mc_cal_sector = nullptr;
 
-            // Initialize MC TTreeReaderValue objects if mcReader is provided
             if (mcReader) {
                 mc_cal_x = new TTreeReaderValue<double>(*mcReader, x_branch.c_str());
                 mc_cal_y = new TTreeReaderValue<double>(*mcReader, y_branch.c_str());
                 mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+                mc_cal_sector = new TTreeReaderValue<int>(*mcReader, "cal_sector");
             }
-
-            // Define the 2D histogram bins and ranges
-            int nBins = 100;
-            double xMin = -450;
-            double xMax = 450;
-            double yMin = -450;
-            double yMax = 450;
 
             // Create histograms for data and MC
             TH2D* h_data = new TH2D("h_data", ("data " + layer_name + " hit position (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
@@ -863,29 +841,42 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             c_data.SetLogz();  // Set the z-axis to a logarithmic scale
             h_data->Draw("COLZ");
 
-            // Draw lines for the relevant sectors in this layer
-            if (sectorCuts.find(layer_name) != sectorCuts.end()) {
-                for (const auto& cut : sectorCuts[layer_name]) {
-                    if (sectorBoundaries.find(cut.sector) != sectorBoundaries.end()) {
-                        // Get the boundary angles for the sector
-                        double startAngle = sectorBoundaries[cut.sector].first;
-                        double endAngle = sectorBoundaries[cut.sector].second;
+            // Draw sector-specific cuts
+            auto cuts_it = sectorCuts.find(layer_name);
+            if (cuts_it != sectorCuts.end()) {
+                for (const auto& cut : cuts_it->second) {
+                    if (cut.ktop == std::numeric_limits<double>::quiet_NaN()) {
+                        // Draw vertical lines for sector 3
+                        TLine* line_left = new TLine(cut.btop, yMin, cut.btop, yMax);
+                        line_left->SetLineColor(kRed);
+                        line_left->SetLineWidth(2);
+                        line_left->Draw("same");
 
-                        // Convert boundary angles to Cartesian coordinates
-                        auto start = polarToCartesian(xMax, startAngle);
-                        auto end = polarToCartesian(xMax, endAngle);
+                        TLine* line_right = new TLine(cut.klow, yMin, cut.klow, yMax);
+                        line_right->SetLineColor(kRed);
+                        line_right->SetLineWidth(2);
+                        line_right->Draw("same");
+                    } else {
+                        // General case for other cuts
+                        for (double theta_deg = sectorAngleRanges[cut.sector].first; theta_deg <= sectorAngleRanges[cut.sector].second; theta_deg += 5) {
+                            double theta_rad = theta_deg * TMath::DegToRad();
 
-                        // Top line
-                        TLine* line_top = new TLine(start.first, cut.ktop * start.first + cut.btop + 0.25, end.first, cut.ktop * end.first + cut.btop + 0.25);
-                        line_top->SetLineColor(kRed);
-                        line_top->SetLineWidth(2);
-                        line_top->Draw("same");
+                            // Calculate the start and end points based on the sector angles
+                            std::pair<double, double> start = polarToCartesian(450, theta_rad);
+                            std::pair<double, double> end = polarToCartesian(450, theta_rad + TMath::PiOver2());
 
-                        // Bottom line
-                        TLine* line_bottom = new TLine(start.first, cut.klow * start.first + cut.blow - 0.25, end.first, cut.klow * end.first + cut.blow - 0.25);
-                        line_bottom->SetLineColor(kRed);
-                        line_bottom->SetLineWidth(2);
-                        line_bottom->Draw("same");
+                            // Top line
+                            TLine* line_top = new TLine(start.first, cut.ktop * start.first + cut.btop + 0.25, end.first, cut.ktop * end.first + cut.btop + 0.25);
+                            line_top->SetLineColor(kRed);
+                            line_top->SetLineWidth(2);
+                            line_top->Draw("same");
+
+                            // Bottom line
+                            TLine* line_bottom = new TLine(start.first, cut.klow * start.first + cut.blow - 0.25, end.first, cut.klow * end.first + cut.blow - 0.25);
+                            line_bottom->SetLineColor(kRed);
+                            line_bottom->SetLineWidth(2);
+                            line_bottom->Draw("same");
+                        }
                     }
                 }
             }
@@ -898,43 +889,55 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                 c_mc.SetLogz();  // Set the z-axis to a logarithmic scale
                 h_mc->Draw("COLZ");
 
-                // Draw lines for the relevant sectors in this layer
-                if (sectorCuts.find(layer_name) != sectorCuts.end()) {
-                    for (const auto& cut : sectorCuts[layer_name]) {
-                        if (sectorBoundaries.find(cut.sector) != sectorBoundaries.end()) {
-                            // Get the boundary angles for the sector
-                            double startAngle = sectorBoundaries[cut.sector].first;
-                            double endAngle = sectorBoundaries[cut.sector].second;
+                // Draw sector-specific cuts
+                if (cuts_it != sectorCuts.end()) {
+                    for (const auto& cut : cuts_it->second) {
+                        if (cut.ktop == std::numeric_limits<double>::quiet_NaN()) {
+                            // Draw vertical lines for sector 3
+                            TLine* line_left = new TLine(cut.btop, yMin, cut.btop, yMax);
+                            line_left->SetLineColor(kRed);
+                            line_left->SetLineWidth(2);
+                            line_left->Draw("same");
 
-                            // Convert boundary angles to Cartesian coordinates
-                            auto start = polarToCartesian(xMax, startAngle);
-                            auto end = polarToCartesian(xMax, endAngle);
+                            TLine* line_right = new TLine(cut.klow, yMin, cut.klow, yMax);
+                            line_right->SetLineColor(kRed);
+							line_right->SetLineWidth(2);
+							line_right->Draw("same");
+						} else {
+							// General case for other cuts
+							for (double theta_deg = sectorAngleRanges[cut.sector].first; theta_deg <= sectorAngleRanges[cut.sector].second; theta_deg += 5) {
+							double theta_rad = theta_deg * TMath::DegToRad();
+							                            // Calculate the start and end points based on the sector angles
+                            std::pair<double, double> start = polarToCartesian(450, theta_rad);
+                            std::pair<double, double> end = polarToCartesian(450, theta_rad + TMath::PiOver2());
 
                             // Top line
                             TLine* line_top = new TLine(start.first, cut.ktop * start.first + cut.btop + 0.25, end.first, cut.ktop * end.first + cut.btop + 0.25);
                             line_top->SetLineColor(kRed);
                             line_top->SetLineWidth(2);
-							line_top->Draw("same");
-							// Bottom line
-	                        TLine* line_bottom = new TLine(start.first, cut.klow * start.first + cut.blow - 0.25, end.first, cut.klow * end.first + cut.blow - 0.25);
-	                        line_bottom->SetLineColor(kRed);
-	                        line_bottom->SetLineWidth(2);
-	                        line_bottom->Draw("same");
-	                    }
-	                }
-	            }
+                            line_top->Draw("same");
 
-	            c_mc.SaveAs(("output/calibration/cal/" + particle_name + "_mc_" + layer_name + "_cal_hit_position.png").c_str());
-	        }
+                            // Bottom line
+                            TLine* line_bottom = new TLine(start.first, cut.klow * start.first + cut.blow - 0.25, end.first, cut.klow * end.first + cut.blow - 0.25);
+                            line_bottom->SetLineColor(kRed);
+                            line_bottom->SetLineWidth(2);
+                            line_bottom->Draw("same");
+                        }
+                    }
+                }
+            }
 
-	        // Clean up for this layer and particle type
-	        delete h_data;
-	        if (h_mc) delete h_mc;
-	        if (mc_cal_x) delete mc_cal_x;
-	        if (mc_cal_y) delete mc_cal_y;
-	        if (mc_particle_pid) delete mc_particle_pid;
-	    }
-	}
+            c_mc.SaveAs(("output/calibration/cal/" + particle_name + "_mc_" + layer_name + "_cal_hit_position.png").c_str());
+        }
+
+        // Clean up for this layer and particle type
+        delete h_data;
+        if (h_mc) delete h_mc;
+        if (mc_cal_x) delete mc_cal_x;
+        if (mc_cal_y) delete mc_cal_y;
+        if (mc_particle_pid) delete mc_particle_pid;
+        if (mc_cal_sector) delete mc_cal_sector;
+    }
 }
                            
 
