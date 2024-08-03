@@ -895,11 +895,11 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
     double lvMin = 0;
     double lvMax = 300;
 
-    // Array of layers and their corresponding names
-    std::vector<std::tuple<std::string, std::string>> layers = {
-        {"cal_lw_1", "PCal"},
-        {"cal_lw_4", "EC_{in}"},
-        {"cal_lw_7", "EC_{out}"}
+    // Array of layers and their corresponding names and branch names
+    std::vector<std::tuple<std::string, std::string, std::string>> layers = {
+        {"cal_lw_1", "cal_lv_1", "PCal"},
+        {"cal_lw_4", "cal_lv_4", "EC_{in}"},
+        {"cal_lw_7", "cal_lv_7", "EC_{out}"}
     };
 
     // Array of particle types (photons and electrons) and their corresponding PIDs
@@ -916,7 +916,8 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
         // Loop over each layer
         for (const auto& layer : layers) {
             std::string lw_branch = std::get<0>(layer);
-            std::string layer_name = std::get<1>(layer);
+            std::string lv_branch = std::get<1>(layer);
+            std::string layer_name = std::get<2>(layer);
 
             // Restart the TTreeReader to process the data from the beginning
             dataReader.Restart();
@@ -924,7 +925,7 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
 
             // Declare TTreeReaderValues for data and MC
             TTreeReaderValue<double> cal_lw(dataReader, lw_branch.c_str());
-            TTreeReaderValue<double> cal_lv(dataReader, "cal_lv");
+            TTreeReaderValue<double> cal_lv(dataReader, lv_branch.c_str());
             TTreeReaderValue<int> cal_sector(dataReader, "cal_sector");
             TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
 
@@ -935,7 +936,7 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
 
             if (mcReader) {
                 mc_cal_lw = new TTreeReaderValue<double>(*mcReader, lw_branch.c_str());
-                mc_cal_lv = new TTreeReaderValue<double>(*mcReader, "cal_lv");
+                mc_cal_lv = new TTreeReaderValue<double>(*mcReader, lv_branch.c_str());
                 mc_cal_sector = new TTreeReaderValue<int>(*mcReader, "cal_sector");
                 mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
             }
