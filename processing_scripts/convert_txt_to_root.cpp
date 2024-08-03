@@ -1145,7 +1145,6 @@ int main(int argc, char *argv[]) {
                 traj_x_12 >> traj_y_12 >> traj_z_12 >> traj_edge_12 >> ft_energy >> ft_x >> 
                 ft_y >> ft_z >> ft_radius) {
 
-            std::cout << cal_energy_1 << " " << cal_energy_4 << " " << cal_energy_7 << std::endl;
             tree->Fill(); // Fill the tree with the read data
         }
     }
