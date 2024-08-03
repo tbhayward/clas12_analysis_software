@@ -1117,9 +1117,14 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
         c_sf_lv_grid.Divide(3, 2);
         for (int sector = 1; sector <= 6; ++sector) {
             c_sf_lv_grid.cd(sector);
-            graph_data_sf_lv[sector-1]->Draw("AP");
-            if (mcReader) graph_mc_sf_lv[sector-1]->Draw("P same");
-            gPad->BuildLegend();
+			graph_data_sf_lv[sector-1]->SetTitle(("Sector " + std::to_string(sector)).c_str());
+            graph_data_sf_lv[sector-1]->GetYaxis()->SetRangeUser(0.18, 0.28);
+			graph_data_sf_lv[sector-1]->Draw("AP");
+			if (mcReader) graph_mc_sf_lv[sector-1]->Draw("P same");
+            auto legend = new TLegend(0.7, 0.75, 0.9, 0.9);
+			legend->AddEntry(graph_data_sf_lv[sector-1], "data", "pl");
+			if (mcReader) legend->AddEntry(graph_mc_sf_lv[sector-1], "mc", "pl");
+			legend->Draw();
             graph_data_sf_lv[sector-1]->GetXaxis()->SetTitle("lv");
             graph_data_sf_lv[sector-1]->GetYaxis()->SetTitle("Sampling Fraction");
         }
@@ -1129,9 +1134,14 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
         c_sf_lw_grid.Divide(3, 2);
         for (int sector = 1; sector <= 6; ++sector) {
             c_sf_lw_grid.cd(sector);
-            graph_data_sf_lw[sector-1]->Draw("AP");
-            if (mcReader) graph_mc_sf_lw[sector-1]->Draw("P same");
-            gPad->BuildLegend();
+			graph_data_sf_lw[sector-1]->SetTitle(("Sector " + std::to_string(sector)).c_str());
+            graph_data_sf_lw[sector-1]->GetYaxis()->SetRangeUser(0.18, 0.28);
+			graph_data_sf_lw[sector-1]->Draw("AP");
+			if (mcReader) graph_mc_sf_lw[sector-1]->Draw("P same");
+            auto legend = new TLegend(0.7, 0.75, 0.9, 0.9);
+			legend->AddEntry(graph_data_sf_lw[sector-1], "data", "pl");
+			if (mcReader) legend->AddEntry(graph_mc_sf_lv[sector-1], "mc", "pl");
+			legend->Draw();
             graph_data_sf_lw[sector-1]->GetXaxis()->SetTitle("lw");
             graph_data_sf_lw[sector-1]->GetYaxis()->SetTitle("Sampling Fraction");
         }
@@ -1141,9 +1151,14 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
         c_sf_lu_grid.Divide(3, 2);
         for (int sector = 1; sector <= 6; ++sector) {
             c_sf_lu_grid.cd(sector);
-            graph_data_sf_lu[sector-1]->Draw("AP");
-            if (mcReader) graph_mc_sf_lu[sector-1]->Draw("P same");
-            gPad->BuildLegend();
+			graph_data_sf_lu[sector-1]->SetTitle(("Sector " + std::to_string(sector)).c_str());
+            graph_data_sf_lu[sector-1]->GetYaxis()->SetRangeUser(0.18, 0.28);
+			graph_data_sf_lu[sector-1]->Draw("AP");
+			if (mcReader) graph_mc_sf_lu[sector-1]->Draw("P same");
+            auto legend = new TLegend(0.7, 0.75, 0.9, 0.9);
+			legend->AddEntry(graph_data_sf_lu[sector-1], "data", "pl");
+			if (mcReader) legend->AddEntry(graph_mc_sf_lu[sector-1], "mc", "pl");
+			legend->Draw();
             graph_data_sf_lu[sector-1]->GetXaxis()->SetTitle("lu");
             graph_data_sf_lu[sector-1]->GetYaxis()->SetTitle("Sampling Fraction");
         }
