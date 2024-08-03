@@ -899,7 +899,7 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                             TLine* line_bottom = new TLine(start.first, cut.klow * start.first + cut.blow - 0.25, end.first, cut.klow * end.first + cut.blow - 0.25);
                             line_bottom->SetLineColor(kRed);
                             line_bottom->SetLineWidth(2);
-                            line_bottom->Draw(“same”);
+                            line_bottom->Draw("same");
                         }
                     }
                 }
