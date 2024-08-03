@@ -1301,6 +1301,7 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
         delete graph_mc_sf_lu;
     }
 }
+}
                            
 void create_directories() {
     // Array of directories to check/create
