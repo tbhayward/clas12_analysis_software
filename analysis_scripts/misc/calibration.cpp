@@ -1003,13 +1003,12 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
                 h_mc_sf_lu[sector-1] = new TH2D(("h_mc_sf_lu_s" + std::to_string(sector)).c_str(), title_mc_sf_lu.c_str(), nBins_lv_lw_lu, luMin, luMax, nBins_sf, sfMin, sfMax);
                 h_mc_sf_lu[sector-1]->GetXaxis()->SetTitle("lu");
                 h_mc_sf_lu[sector-1]->GetYaxis()->SetTitle("Sampling Fraction");
+                }
             }
-        }
         // Create TProfile objects for the sampling fraction vs lv, lw, lu
         TProfile* prof_data_sf_lv = new TProfile("prof_data_sf_lv", "Sampling Fraction vs lv", nBins_lv_lw_lu, lvMin, lvMax, sfMin, sfMax);
         TProfile* prof_data_sf_lw = new TProfile("prof_data_sf_lw", "Sampling Fraction vs lw", nBins_lv_lw_lu, lwMin, lwMax, sfMin, sfMax);
         TProfile* prof_data_sf_lu = new TProfile("prof_data_sf_lu", "Sampling Fraction vs lu", nBins_lv_lw_lu, luMin, luMax, sfMin, sfMax);
-
         TProfile* prof_mc_sf_lv = nullptr;
         TProfile* prof_mc_sf_lw = nullptr;
         TProfile* prof_mc_sf_lu = nullptr;
@@ -1097,25 +1096,6 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
             graph_mc_sf_lu->SetLineColor(kRed);
         }
 
-        // Create canvases to save the comparison plots
-        TCanvas c_sf_lv("c_sf_lv", "Sampling Fraction vs lv", 800, 600);
-        graph_data_sf_lv->Draw("AP");
-        if (mcReader) graph_mc_sf_lv->Draw("P same");
-        c_sf_lv.BuildLegend();
-        c_sf_lv.SaveAs(("output/calibration/cal/fiducial/sf_vs_lv_" + particle_name + ".png").c_str());
-
-        TCanvas c_sf_lw("c_sf_lw", "Sampling Fraction vs lw", 800, 600);
-        graph_data_sf_lw->Draw("AP");
-        if (mcReader) graph_mc_sf_lw->Draw("P same");
-        c_sf_lw.BuildLegend();
-        c_sf_lw.SaveAs(("output/calibration/cal/fiducial/sf_vs_lw_" + particle_name + ".png").c_str());
-
-        TCanvas c_sf_lu("c_sf_lu", "Sampling Fraction vs lu", 800, 600);
-        graph_data_sf_lu->Draw("AP");
-        if (mcReader) graph_mc_sf_lu->Draw("P same");
-        c_sf_lu.BuildLegend();
-        c_sf_lu.SaveAs(("output/calibration/cal/fiducial/sf_vs_lu_" + particle_name + ".png").c_str());
-
         // Save the histograms as before
         TCanvas c_data_lv_lw(("c_data_fiducial_lv_lw_" + particle_name).c_str(), ("Data lv vs lw (" + particle_name + ")").c_str(), 1800, 1200);
         c_data_lv_lw.Divide(3, 2);
@@ -1151,7 +1131,6 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
         c_data_sf_lu.Divide(3, 2);
         c_data_sf_lu.SetLogz(); // Set log scale on the z-axis
         c_data_sf_lu.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
-
         TCanvas c_mc_sf_lu(("c_mc_fiducial_sf_lu_" + particle_name).c_str(), ("MC Sampling Fraction vs lu (" + particle_name + ")").c_str(), 1800, 1200);
         c_mc_sf_lu.Divide(3, 2);
         c_mc_sf_lu.SetLogz(); // Set log scale on the z-axis
