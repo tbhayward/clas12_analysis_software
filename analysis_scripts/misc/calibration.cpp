@@ -889,7 +889,7 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
 
 void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Define the 2D histogram bins and ranges
-    int nBins_lv_lw_lu = 300;
+    int nBins_lv_lw_lu = 200;
     int nBins_sf = 40;
     double lvMin = 0;
     double lvMax = 300;
@@ -1084,32 +1084,40 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
     c_mc_sf_lu.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
 
     for (int sector = 1; sector <= 6; ++sector) {
-        c_data_lv_lw.cd(sector);
-        h_data_lv_lw[sector-1]->Draw("COLZ");
+	    c_data_lv_lw.cd(sector);
+	    gPad->SetLeftMargin(0.2); // Adjust the left margin
+	    h_data_lv_lw[sector-1]->Draw("COLZ");
 
-        c_data_sf_lv.cd(sector);
-        h_data_sf_lv[sector-1]->Draw("COLZ");
+	    c_data_sf_lv.cd(sector);
+	    gPad->SetLeftMargin(0.2); // Adjust the left margin
+	    h_data_sf_lv[sector-1]->Draw("COLZ");
 
-        c_data_sf_lw.cd(sector);
-        h_data_sf_lw[sector-1]->Draw("COLZ");
+	    c_data_sf_lw.cd(sector);
+	    gPad->SetLeftMargin(0.2); // Adjust the left margin
+	    h_data_sf_lw[sector-1]->Draw("COLZ");
 
-        c_data_sf_lu.cd(sector);
-        h_data_sf_lu[sector-1]->Draw("COLZ");
+	    c_data_sf_lu.cd(sector);
+	    gPad->SetLeftMargin(0.2); // Adjust the left margin
+	    h_data_sf_lu[sector-1]->Draw("COLZ");
 
-        if (mcReader) {
-            c_mc_lv_lw.cd(sector);
-            h_mc_lv_lw[sector-1]->Draw("COLZ");
+	    if (mcReader) {
+	        c_mc_lv_lw.cd(sector);
+	        gPad->SetLeftMargin(0.2); // Adjust the left margin
+	        h_mc_lv_lw[sector-1]->Draw("COLZ");
 
-            c_mc_sf_lv.cd(sector);
-            h_mc_sf_lv[sector-1]->Draw("COLZ");
+	        c_mc_sf_lv.cd(sector);
+	        gPad->SetLeftMargin(0.2); // Adjust the left margin
+	        h_mc_sf_lv[sector-1]->Draw("COLZ");
 
-            c_mc_sf_lw.cd(sector);
-            h_mc_sf_lw[sector-1]->Draw("COLZ");
+	        c_mc_sf_lw.cd(sector);
+	        gPad->SetLeftMargin(0.2); // Adjust the left margin
+	        h_mc_sf_lw[sector-1]->Draw("COLZ");
 
-            c_mc_sf_lu.cd(sector);
-            h_mc_sf_lu[sector-1]->Draw("COLZ");
-        }
-    }
+	        c_mc_sf_lu.cd(sector);
+	        gPad->SetLeftMargin(0.2); // Adjust the left margin
+	        h_mc_sf_lu[sector-1]->Draw("COLZ");
+	    }
+	}
 
     // Save the canvases
     c_data_lv_lw.SaveAs(("output/calibration/cal/fiducial/data_fiducial_lv_lw_" + particle_name + ".png").c_str());
