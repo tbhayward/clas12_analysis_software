@@ -1032,6 +1032,7 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
         if (mc_cal_sector) delete mc_cal_sector;
     }
 }
+}
                            
 void create_directories() {
     // Array of directories to check/create
