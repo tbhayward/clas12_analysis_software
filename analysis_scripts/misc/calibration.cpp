@@ -890,10 +890,10 @@ struct SectorCutParams {
 void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Define the 2D histogram bins and ranges
     int nBins = 100;
-    double lwMin = 0;
-    double lwMax = 300;
-    double lvMin = 0;
-    double lvMax = 300;
+    double lwMin = -600;
+    double lwMax = 600;
+    double lvMin = -600;
+    double lvMax = 600;
 
     // Array of layers and their corresponding names and branch names
     std::vector<std::tuple<std::string, std::string, std::string>> layers = {
