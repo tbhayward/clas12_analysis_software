@@ -1145,6 +1145,7 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
     if (mc_cal_sector) delete mc_cal_sector;
     if (mc_particle_pid) delete mc_particle_pid;
 }
+}
                            
 void create_directories() {
     // Array of directories to check/create
