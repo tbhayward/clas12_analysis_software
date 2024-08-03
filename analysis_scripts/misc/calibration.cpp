@@ -1119,7 +1119,7 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
     if (mcReader) c_mc_sf_lv.SaveAs(("output/calibration/cal/fiducial/mc_fiducial_sf_lv_" + particle_name + ".png").c_str());
 
     c_data_sf_lw.SaveAs(("output/calibration/cal/fiducial/data_fiducial_sf_lw_" + particle_name + ".png").c_str());
-    if (mcReader) c_mc_sf_lw.SaveAs(("output/calibration/cal/fiducial/mc_fiducial_sf_lw_" + particle_name + “.png”).c_str());
+    if (mcReader) c_mc_sf_lw.SaveAs(("output/calibration/cal/fiducial/mc_fiducial_sf_lw_" + particle_name + ".png").c_str());
         c_data_sf_lu.SaveAs(("output/calibration/cal/fiducial/data_fiducial_sf_lu_" + particle_name + ".png").c_str());
     if (mcReader) c_mc_sf_lu.SaveAs(("output/calibration/cal/fiducial/mc_fiducial_sf_lu_" + particle_name + ".png").c_str());
 
