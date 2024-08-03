@@ -997,8 +997,8 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
 
                 std::string title_mc_sf_lu = "mc " + layer_names[1] + " sector " + std::to_string(sector) + " (" + particle_name + ")";
                 h_mc_sf_lu[sector-1] = new TH2D(("h_mc_sf_lu_s" + std::to_string(sector)).c_str(), title_mc_sf_lu.c_str(), nBins_lv_lw_lu, luMin, luMax, nBins_sf, sfMin, sfMax);
-                h_mc_sf_lu[sector-1]->GetXaxis()->SetTitle(“lu”);
-				h_mc_sf_lu[sector-1]->GetYaxis()->SetTitle(“Sampling Fraction”);
+                h_mc_sf_lu[sector-1]->GetXaxis()->SetTitle("lu");
+				h_mc_sf_lu[sector-1]->GetYaxis()->SetTitle("Sampling Fraction");
 			}
 		}
 	    // Fill the histograms for data and MC
