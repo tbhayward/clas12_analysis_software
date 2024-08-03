@@ -791,18 +791,15 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             TTreeReaderValue<double> cal_x(dataReader, x_branch.c_str());
             TTreeReaderValue<double> cal_y(dataReader, y_branch.c_str());
             TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
-            TTreeReaderValue<int> cal_sector(dataReader, "cal_sector");
 
             TTreeReaderValue<double>* mc_cal_x = nullptr;
             TTreeReaderValue<double>* mc_cal_y = nullptr;
             TTreeReaderValue<int>* mc_particle_pid = nullptr;
-            TTreeReaderValue<int>* mc_cal_sector = nullptr;
 
             if (mcReader) {
                 mc_cal_x = new TTreeReaderValue<double>(*mcReader, x_branch.c_str());
                 mc_cal_y = new TTreeReaderValue<double>(*mcReader, y_branch.c_str());
                 mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
-                mc_cal_sector = new TTreeReaderValue<int>(*mcReader, "cal_sector");
             }
 
             // Create histograms for data and MC
@@ -845,6 +842,36 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                 c_mc.SetLogz();  // Set the z-axis to a logarithmic scale
                 h_mc->Draw("COLZ");
                 c_mc.SaveAs(("output/calibration/cal/" + particle_name + "_mc_" + layer_name + "_cal_hit_position.png").c_str());
+
+                // Create Data/MC ratio plot
+                TH2D* h_ratio = (TH2D*)h_data->Clone(("h_ratio_" + particle_name + "_" + layer_name).c_str());
+                h_ratio->Divide(h_mc);
+
+                // Calculate the mean of the ratio for normalization
+                double mean_ratio = 0;
+                int non_zero_bins = 0;
+                for (int i = 1; i <= h_ratio->GetNbinsX(); i++) {
+                    for (int j = 1; j <= h_ratio->GetNbinsY(); j++) {
+                        double ratio_value = h_ratio->GetBinContent(i, j);
+                        if (ratio_value != 0) {
+                            mean_ratio += ratio_value;
+                            non_zero_bins++;
+                        }
+                    }
+                }
+                if (non_zero_bins > 0) mean_ratio /= non_zero_bins;
+
+                // Normalize the ratio histogram
+                if (mean_ratio != 0) h_ratio->Scale(1.0 / mean_ratio);
+
+                // Draw and save the ratio plot with a linear scale and range 0 to 2
+                TCanvas c_ratio(("c_ratio_" + particle_name + "_" + layer_name).c_str(), ("c_ratio_" + particle_name + "_" + layer_name).c_str(), 800, 600);
+                h_ratio->SetTitle(("Normalized data/MC " + layer_name + " ratio (" + particle_name + ")").c_str()); // Set the plot title
+                h_ratio->GetZaxis()->SetRangeUser(0, 2); // Set the z-axis range to [0, 2]
+                h_ratio->Draw("COLZ");
+                c_ratio.SaveAs(("output/calibration/cal/" + particle_name + "_ratio_" + layer_name + "_cal_hit_position.png").c_str());
+
+                delete h_ratio;
             }
 
             // Clean up for this layer and particle type
@@ -853,7 +880,6 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             if (mc_cal_x) delete mc_cal_x;
             if (mc_cal_y) delete mc_cal_y;
             if (mc_particle_pid) delete mc_particle_pid;
-            if (mc_cal_sector) delete mc_cal_sector;
         }
     }
 }
