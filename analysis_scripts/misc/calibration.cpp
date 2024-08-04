@@ -1058,8 +1058,8 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
                 if (sector >= 1 && sector <= 6) {
                     double sampling_fraction = (*cal_energy_1 + *cal_energy_4 + *cal_energy_7) / *p;
                     h_data_lv_lw[sector-1]->Fill(*cal_lw_1, *cal_lv_1);
-                    h_data_lv_lu[sector-1]->Fill(*cal_lw_1, *cal_lu_1);
-                    h_data_lw_lu[sector-1]->Fill(*cal_lw_1, *cal_lu_1);
+                    h_data_lv_lu[sector-1]->Fill(*cal_lu_1, *cal_lv_1);
+                    h_data_lw_lu[sector-1]->Fill(*cal_lu_1, *cal_lw_1);
                     h_data_sf_lv[sector-1]->Fill(*cal_lv_1, sampling_fraction);
                     h_data_sf_lw[sector-1]->Fill(*cal_lw_1, sampling_fraction);
                     h_data_sf_lu[sector-1]->Fill(*cal_lu_1, sampling_fraction);
@@ -1080,8 +1080,8 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
                     if (sector >= 1 && sector <= 6) {
                         double sampling_fraction = (**mc_cal_energy_1 + **mc_cal_energy_4 + **mc_cal_energy_7) / **mc_p;
                         h_mc_lv_lw[sector-1]->Fill(**mc_cal_lw_1, **mc_cal_lv_1);
-                        h_mc_lv_lu[sector-1]->Fill(**mc_cal_lw_1, **mc_cal_lu_1);
-                        h_mc_lw_lu[sector-1]->Fill(**mc_cal_lw_1, **mc_cal_lu_1);
+                        h_mc_lv_lu[sector-1]->Fill(**mc_cal_lu_1, **mc_cal_lv_1);
+                        h_mc_lw_lu[sector-1]->Fill(**mc_cal_lu_1, **mc_cal_lw_1);
                         h_mc_sf_lv[sector-1]->Fill(**mc_cal_lv_1, sampling_fraction);
                         h_mc_sf_lw[sector-1]->Fill(**mc_cal_lw_1, sampling_fraction);
                         h_mc_sf_lu[sector-1]->Fill(**mc_cal_lu_1, sampling_fraction);
