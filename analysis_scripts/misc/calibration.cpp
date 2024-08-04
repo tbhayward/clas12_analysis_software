@@ -1494,9 +1494,9 @@ int main(int argc, char** argv) {
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
     plot_cal_hit_position(dataReader, mcReader);
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_cal_fiducial_determination(dataReader, mcReader);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_cal_fiducial_determination(dataReader, mcReader);
 
 
 
