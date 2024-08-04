@@ -791,7 +791,7 @@ bool pcal_fiducial(double lv, double lw, double lu, int sector, int strictness) 
 
 void plot_pcal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Define the 2D histogram bins and ranges
-    int nBins_lv_lw_lu = 450;
+    int nBins_lv_lw_lu = 100;
     int nBins_sf = 40;
     double min = 60;
     double max = 90;
