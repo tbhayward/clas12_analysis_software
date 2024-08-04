@@ -1325,8 +1325,8 @@ void plot_ecin_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRe
     // Define the 2D histogram bins and ranges
     int nBins_lv_lw_lu = 100;
     int nBins_sf = 40;
-    double min = 0;
-    double max = 450;
+    double min = 54;
+    double max = 112;
     double lvMin = min;
     double lvMax = max;
     double lwMin = min;
