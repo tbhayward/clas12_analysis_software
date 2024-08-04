@@ -743,16 +743,32 @@ void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
     if (mc_particle_pid) delete mc_particle_pid;
 }
 
-bool pcal_fiducial(double lv, double lw, double lu, int sector) {
-    // Common cuts for all sectors
-    if ((lw < 19 || lv < 19) || (lw > 264 || lv > 264) || (lu < 45)) {
-        return false;
+bool pcal_fiducial(double lv, double lw, double lu, int sector, int strictness) {
+    // Apply strictness levels for additional cuts
+    switch (strictness) {
+        case 1:
+            if (lw < 9 || lv < 9 || lu < 19) {
+                return false;
+            }
+            break;
+        case 2:
+            if (lw < 14 || lv < 14 || lu < 29) {
+                return false;
+            }
+            break;
+        case 3:
+            if ((lw < 19 || lv < 19) || (lw > 264 || lv > 264) || (lu < 39)) {
+                return false;
+            }
+            break;
+        default:
+            return false;
     }
 
     // Specific cuts for each sector
     if (sector == 1) {
         if ((lw > 74 && lw < 80) || (lw > 84 && lw < 90) || 
-        	(lw > 212 && lw < 218) || (lw > 224 && lw < 230)) {
+            (lw > 212 && lw < 218) || (lw > 224 && lw < 230)) {
             return false;
         }
     } else if (sector == 2) {
@@ -794,6 +810,9 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
         {11, "electron"}
     };
 
+    // Array of strictness levels
+    std::vector<int> strictness_levels = {0, 1, 2, 3}; // 0 corresponds to no cuts
+
     // Declare TTreeReaderValues for the layer 1 cuts (lv, lw, lu)
     TTreeReaderValue<double> cal_lv_1(dataReader, "cal_lv_1");
     TTreeReaderValue<double> cal_lw_1(dataReader, "cal_lw_1");
@@ -823,106 +842,89 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             std::string y_branch = std::get<1>(layer);
             std::string layer_name = std::get<2>(layer);
 
-            // Restart the TTreeReader to process the data from the beginning
-            dataReader.Restart();
-            if (mcReader) mcReader->Restart();
+            // Loop over each strictness level
+            for (int strictness : strictness_levels) {
+                // Restart the TTreeReader to process the data from the beginning
+                dataReader.Restart();
+                if (mcReader) mcReader->Restart();
 
-            // Declare TTreeReaderValues for data and MC for this layer
-            TTreeReaderValue<double> cal_x(dataReader, x_branch.c_str());
-            TTreeReaderValue<double> cal_y(dataReader, y_branch.c_str());
-            TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+                // Declare TTreeReaderValues for data and MC for this layer
+                TTreeReaderValue<double> cal_x(dataReader, x_branch.c_str());
+                TTreeReaderValue<double> cal_y(dataReader, y_branch.c_str());
+                TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
 
-            TTreeReaderValue<double>* mc_cal_x = nullptr;
-            TTreeReaderValue<double>* mc_cal_y = nullptr;
-            TTreeReaderValue<int>* mc_particle_pid = nullptr;
+                TTreeReaderValue<double>* mc_cal_x = nullptr;
+                TTreeReaderValue<double>* mc_cal_y = nullptr;
+                TTreeReaderValue<int>* mc_particle_pid = nullptr;
 
-            if (mcReader) {
-                mc_cal_x = new TTreeReaderValue<double>(*mcReader, x_branch.c_str());
-                mc_cal_y = new TTreeReaderValue<double>(*mcReader, y_branch.c_str());
-                mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
-            }
-
-            // Create histograms for data and MC
-            TH2D* h_data = new TH2D("h_data", ("data " + layer_name + " hit position (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-            h_data->GetXaxis()->SetTitle(("x_{" + layer_name + "}").c_str());
-            h_data->GetYaxis()->SetTitle(("y_{" + layer_name + "}").c_str());
-
-            TH2D* h_mc = nullptr;
-            if (mcReader) {
-                h_mc = new TH2D("h_mc", ("mc " + layer_name + " hit position (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-                h_mc->GetXaxis()->SetTitle(("x_{" + layer_name + "}").c_str());
-                h_mc->GetYaxis()->SetTitle(("y_{" + layer_name + "}").c_str());
-            }
-
-            // Create histograms for data and MC with fiducial cuts
-            TH2D* h_data_cut = new TH2D("h_data_cut", ("data " + layer_name + " hit position (" + particle_name + ") with fiducial cuts").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-            h_data_cut->GetXaxis()->SetTitle(("x_{" + layer_name + "}").c_str());
-            h_data_cut->GetYaxis()->SetTitle(("y_{" + layer_name + "}").c_str());
-
-            TH2D* h_mc_cut = nullptr;
-            if (mcReader) {
-                h_mc_cut = new TH2D("h_mc_cut", ("mc " + layer_name + " hit position (" + particle_name + ") with fiducial cuts").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-                h_mc_cut->GetXaxis()->SetTitle(("x_{" + layer_name + "}").c_str());
-                h_mc_cut->GetYaxis()->SetTitle(("y_{" + layer_name + "}").c_str());
-            }
-
-            // Fill the data histograms, applying the cuts
-            while (dataReader.Next()) {
-                if (*particle_pid == pid && *cal_x != -9999 && *cal_y != -9999) {
-                    h_data->Fill(*cal_x, *cal_y);
-                    if (pcal_fiducial(*cal_lv_1, *cal_lw_1, *cal_lu_1, *cal_sector)) {
-                        h_data_cut->Fill(*cal_x, *cal_y);
-                    }
+                if (mcReader) {
+                    mc_cal_x = new TTreeReaderValue<double>(*mcReader, x_branch.c_str());
+                    mc_cal_y = new TTreeReaderValue<double>(*mcReader, y_branch.c_str());
+                    mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
                 }
-            }
 
-            // Fill the MC histograms if available, applying the cuts
-            if (mcReader) {
-                while (mcReader->Next()) {
-                    if (**mc_particle_pid == pid && **mc_cal_x != -9999 && **mc_cal_y != -9999) {
-                        h_mc->Fill(**mc_cal_x, **mc_cal_y);
-                        if (pcal_fiducial(**mc_cal_lv_1, **mc_cal_lw_1, **mc_cal_lu_1, **mc_cal_sector)) {
-                            h_mc_cut->Fill(**mc_cal_x, **mc_cal_y);
+                // Create histograms for data and MC
+                std::string strictness_label = (strictness == 0) ? "no_cuts" : "strictness_" + std::to_string(strictness);
+                TH2D* h_data = new TH2D(("h_data_" + strictness_label).c_str(), ("data " + layer_name + " hit position (" + particle_name + ", " + strictness_label + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                h_data->GetXaxis()->SetTitle(("x_{" + layer_name + "}").c_str());
+                h_data->GetYaxis()->SetTitle(("y_{" + layer_name + "}").c_str());
+
+                TH2D* h_mc = nullptr;
+                if (mcReader) {
+                    h_mc = new TH2D(("h_mc_" + strictness_label).c_str(), ("mc " + layer_name + " hit position (" + particle_name + ", " + strictness_label + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                    h_mc->GetXaxis()->SetTitle(("x_{" + layer_name + "}").c_str());
+                    h_mc->GetYaxis()->SetTitle(("y_{" + layer_name + "}").c_str());
+                }
+
+                // Fill the data histograms, applying the cuts based on strictness
+                while (dataReader.Next()) {
+                    if (*particle_pid == pid && *cal_x != -9999 && *cal_y != -9999) {
+                        if (strictness == 0 || pcal_fiducial(*cal_lv_1, *cal_lw_1, *cal_lu_1, *cal_sector, strictness)) {
+                            h_data->Fill(*cal_x, *cal_y);
                         }
                     }
                 }
+
+                // Fill the MC histograms if available, applying the cuts based on strictness
+                if (mcReader) {
+                    while (mcReader->Next()) {
+                        if (**mc_particle_pid == pid && **mc_cal_x != -9999 && **mc_cal_y != -9999) {
+                            if (strictness == 0 || pcal_fiducial(**mc_cal_lv_1, **mc_cal_lw_1, **mc_cal_lu_1, **mc_cal_sector, strictness)) {
+                                h_mc->Fill(**mc_cal_x, **mc_cal_y);
+                            }
+                        }
+                    }
+                }
+
+                // Draw and save the data plot
+                TCanvas c_data(("c_data_" + strictness_label + "_" + particle_name + "_" + layer_name).c_str(), ("c_data_" + particle_name + "_" + layer_name).c_str(), 800, 600);
+                c_data.SetLogz();  // Set the z-axis to a logarithmic scale
+                h_data->Draw("COLZ");
+                c_data.SaveAs(("output/calibration/cal/" + particle_name + "_" + layer_name + "_cal_hit_position_" + strictness_label + ".png").c_str());
+
+                // Draw and save the MC plot if available
+                if (h_mc) {
+                    TCanvas c_mc(("c_mc_" + strictness_label + "_" + particle_name + "_" + layer_name).c_str(), ("c_mc_" + particle_name + "_" + layer_name).c_str(), 800, 600);
+                    c_mc.SetLogz();  // Set the z-axis to a logarithmic scale
+                    h_mc->Draw("COLZ");
+                    c_mc.SaveAs(("output/calibration/cal/" + particle_name + "_" + layer_name + "_cal_hit_position_" + strictness_label + ".png").c_str());
+                }
+
+                // Clean up for this strictness level
+                delete h_data;
+                if (h_mc) delete h_mc;
+                if (mc_cal_x) delete mc_cal_x;
+                if (mc_cal_y) delete mc_cal_y;
+                if (mc_particle_pid) delete mc_particle_pid;
             }
+        }
+    }
 
-            // Draw and save the original data plot
-            TCanvas c_data(("c_data_" + particle_name + "_" + layer_name).c_str(), ("c_data_" + particle_name + "_" + layer_name).c_str(), 800, 600);
-            c_data.SetLogz();  // Set the z-axis to a logarithmic scale
-            h_data->Draw("COLZ");
-            c_data.SaveAs(("output/calibration/cal/" + particle_name + "_data_" + layer_name + "_cal_hit_position.png").c_str());
-
-            // Draw and save the original MC plot if available
-            if (h_mc) {
-                TCanvas c_mc(("c_mc_" + particle_name + "_" + layer_name).c_str(), ("c_mc_" + particle_name + "_" + layer_name).c_str(), 800, 600);
-                c_mc.SetLogz();  // Set the z-axis to a logarithmic scale
-                h_mc->Draw("COLZ");
-                c_mc.SaveAs(("output/calibration/cal/" + particle_name + "_mc_" + layer_name + "_cal_hit_position.png").c_str());
-            }
-
-            // Draw and save the fiducial-cut data plot
-            TCanvas c_data_cut(("c_data_cut_" + particle_name + "_" + layer_name).c_str(), ("c_data_cut_" + particle_name + "_" + layer_name).c_str(), 800, 600);
-            c_data_cut.SetLogz();  // Set the z-axis to a logarithmic scale
-            h_data_cut->Draw("COLZ");
-            c_data_cut.SaveAs(("output/calibration/cal/" + particle_name + "_data_" + layer_name + "_cal_hit_position_cut.png").c_str());
-
-            // Draw and save the fiducial-cut MC plot if available
-            if (h_mc_cut) {
-                TCanvas c_mc_cut(("c_mc_cut_" + particle_name + "_" + layer_name).c_str(), ("c_mc_cut_" + particle_name + "_" + layer_name).c_str(), 800, 600);
-                c_mc_cut.SetLogz();  // Set the z-axis to a logarithmic scale
-                h_mc_cut->Draw("COLZ");
-                c_mc_cut.SaveAs(("output/calibration/cal/" + particle_name + "_mc_" + layer_name + "_cal_hit_position_cut.png").c_str());
-			}
-
-			// Clean up for this layer and particle type
-	        delete h_data;
-	        if (h_mc) delete h_mc;
-	        delete h_data_cut;
-	        if (h_mc_cut) delete h_mc_cut;
-	    }
-	}
+    // Clean up the dynamically allocated memory for layer 1 variables
+    if (mc_cal_lv_1) delete mc_cal_lv_1;
+    if (mc_cal_lw_1) delete mc_cal_lw_1;
+    if (mc_cal_lu_1) delete mc_cal_lu_1;
+    if (mc_cal_sector) delete mc_cal_sector;
 }
 
 void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
