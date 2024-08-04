@@ -791,14 +791,16 @@ bool pcal_fiducial(double lv, double lw, double lu, int sector, int strictness) 
 
 void plot_pcal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Define the 2D histogram bins and ranges
-    int nBins_lv_lw_lu = 150;
+    int nBins_lv_lw_lu = 450;
     int nBins_sf = 40;
-    double lvMin = 0;
-    double lvMax = 450;
-    double lwMin = 0;
-    double lwMax = 450;
-    double luMin = 0;
-    double luMax = 450;
+    double min = 60;
+    double max = 90;
+    double lvMin = min;
+    double lvMax = max;
+    double lwMin = min;
+    double lwMax = max;
+    double luMin = min;
+    double luMax = max;
     double sfMin = 0.15;
     double sfMax = 0.35;
 
@@ -2582,18 +2584,20 @@ int main(int argc, char** argv) {
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
     // plot_ft_hit_position(dataReader, mcReader);
+
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
     // plot_cal_hit_position(dataReader, mcReader);
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_pcal_fiducial_determination(dataReader, mcReader);
+
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_pcal_fiducial_determination(dataReader, mcReader);
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
     // plot_ecin_fiducial_determination(dataReader, mcReader);
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_ecout_fiducial_determination(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_ecout_fiducial_determination(dataReader, mcReader);
 
 
 
