@@ -767,7 +767,7 @@ bool pcal_fiducial(double lv, double lw, double lu, int sector, int strictness) 
 
     // Specific cuts for each sector
     if (sector == 1) {
-        if ((lw > 74 && lw < 80) || (lw > 84 && lw < 90) || 
+        if ((lw > 69 && lw < 96) || 
             (lw > 212 && lw < 218) || (lw > 224 && lw < 230)) {
             return false;
         }
@@ -793,8 +793,8 @@ void plot_pcal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRe
     // Define the 2D histogram bins and ranges
     int nBins_lv_lw_lu = 100;
     int nBins_sf = 40;
-    double min = 65;
-    double max = 95;
+    double min = 200;
+    double max = 240;
     double lvMin = min;
     double lvMax = max;
     double lwMin = min;
