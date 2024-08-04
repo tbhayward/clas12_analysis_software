@@ -913,21 +913,15 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                 TCanvas c_mc_cut(("c_mc_cut_" + particle_name + "_" + layer_name).c_str(), ("c_mc_cut_" + particle_name + "_" + layer_name).c_str(), 800, 600);
                 c_mc_cut.SetLogz();  // Set the z-axis to a logarithmic scale
                 h_mc_cut->Draw("COLZ");
-                c_mc_cut.SaveAs(("output/calibration/cal/" + particle_name + "_mc_" + layer_name + "_cal_hit_position_cut.png").c_str());
-				// Clean up for this layer and particle type
-				delete h_data;
-				if (h_mc) delete h_mc;
-				delete h_data_cut;
-				if (h_mc_cut) delete h_mc_cut;
-				if (mc_cal_x) delete mc_cal_x;
-				if (mc_cal_y) delete mc_cal_y;
-				if (mc_cal_lv_1) delete mc_cal_lv_1;
-				if (mc_cal_lw_1) delete mc_cal_lw_1;
-				if (mc_cal_lu_1) delete mc_cal_lu_1;
-				if (mc_particle_pid) delete mc_particle_pid;
-				if (mc_cal_sector) delete mc_cal_sector;
+                c_mc_cut.SaveAs(("output/calibration/cal/" + particle_name + "mc" + layer_name + "_cal_hit_position_cut.png").c_str());
 			}
-		}
+			
+			// Clean up for this layer and particle type
+	        delete h_data;
+	        if (h_mc) delete h_mc;
+	        delete h_data_cut;
+	        if (h_mc_cut) delete h_mc_cut;
+	    }
 	}
 }
 
