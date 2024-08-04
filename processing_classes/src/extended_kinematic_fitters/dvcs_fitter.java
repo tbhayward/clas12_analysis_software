@@ -83,12 +83,19 @@ public class dvcs_fitter extends GenericKinematicFitter {
         LorentzVector lv_gamma = new LorentzVector();
         lv_gamma.setPxPyPzM(px, py, pz, 0.0);
         
-        return true
-            && p > 2.00
-//            && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
-            && fiducial_cuts.pcal_fiducial_cut(particle_Index, 2, rec_Bank, cal_Bank)
+        boolean passesForwardDetector = generic_tests.forward_detector_cut(particle_Index, rec_Bank);
+        boolean passesForwardTagger = generic_tests.forward_tagger_cut(particle_Index, rec_Bank);
+
+        
+        
+        return true && 
+            p > 0.50
+            && (passesForwardDetector || passesForwardTagger)
+            && (passesForwardDetector 
+                ? fiducial_cuts.pcal_fiducial_cut(particle_Index, 3, rec_Bank, cal_Bank)
+                : fiducial_cuts.forward_tagger_fiducial_cut(particle_Index, rec_Bank, cal_Bank))
             && pid_cuts.beta_cut(particle_Index, rec_Bank)
-//            && pid_cuts.e_gamma_open_angle_cut(lv_e, lv_gamma)
+//          && pid_cuts.e_gamma_open_angle_cut(lv_e, lv_gamma)
             ;
     }
     

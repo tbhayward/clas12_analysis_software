@@ -95,13 +95,6 @@ public class Dihadrons {
 //        else if (variables.xF1()<0.00 || variables.xF2()<0.00) { return false; }
 //        else if (variables.z1()<0.15 || variables.z2()<0.15) { return false; }
 
-//        else if (variables.e_p > 12 || variables.p1_p > 12 || variables.p2_p > 12 || variables.Q2 > 12 || 
-//                variables.W > 6 || variables.z > 2 || variables.zeta > 2 || 
-//                variables.Mx < - 4 || variables.pT > 2 || variables.xF < -2 || variables.xF > 2 || 
-//                variables.Depolarization_A > 5 || variables.Depolarization_B > 5 ||
-//                variables.Depolarization_C > 5 || variables.Depolarization_V > 5 ||
-//                variables.Depolarization_W > 5) 
-//                { return false; }
 	return true;
     }
     

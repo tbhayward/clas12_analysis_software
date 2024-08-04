@@ -9,8 +9,8 @@ import org.jlab.io.hipo.HipoDataBank;
 
 public class fiducial_cuts {
     
-    public boolean ft_fiducial_cut(int particle_Index, HipoDataBank rec_Bank, 
-                               HipoDataBank ft_Bank) {
+    public boolean forward_tagger_fiducial_cut(int particle_Index, HipoDataBank rec_Bank, 
+        HipoDataBank ft_Bank) {
         // Loop through each row of the ft bank
         for (int current_Row = 0; current_Row < ft_Bank.rows(); current_Row++) {
             int pindex = ft_Bank.getInt("pindex", current_Row);
@@ -56,44 +56,128 @@ public class fiducial_cuts {
     return false;
 }
     
-    public boolean pcal_fiducial_cut(int particle_Index, int strictness, 
+public boolean pcal_fiducial_cut(int particle_Index, int strictness, 
             HipoDataBank rec_Bank, HipoDataBank cal_Bank) {
-        // Initialize variables for storing the index and values of the cal bank
-        int calIndex = -1;
-        int layer = 1;
-        float lv = 0.0f;
-        float lw = 0.0f;
+    // Initialize variables for storing the index and values of the cal bank
+    int calIndex = -1;
+    int layer = 1;
+    float lv = 0.0f;
+    float lw = 0.0f;
+    float lu = 0.0f;
+    int sector = 0;
 
-        // Loop through each row of the cal bank
-        for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
-            int pindex = cal_Bank.getInt("pindex", current_Row);
-            int layerRow = cal_Bank.getInt("layer", current_Row);
+    // Loop through each row of the cal bank
+    for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
+        int pindex = cal_Bank.getInt("pindex", current_Row);
+        int layerRow = cal_Bank.getInt("layer", current_Row);
 
-            // Check if the current row matches the particle index and layer we're looking for
-            if (pindex == particle_Index && layerRow == layer) {
-                // Update the variables with the relevant data
-                calIndex = current_Row;
-                lv = cal_Bank.getFloat("lv", calIndex);
-                lw = cal_Bank.getFloat("lw", calIndex);
-                break; // break out of the loop as soon as a matching row is found
-            }
-        }
-
-        // If no matching row was found, return false
-        if (calIndex == -1) {
-            int pid = rec_Bank.getInt("pid", particle_Index);
-            if (pid == 11) { return false; } // calorimeter hit required for electron identification
-            else { return true; } // neutrals do not require FD, (probably photon in FT)
-        }
-
-        // check strictness of cuts
-        switch (strictness) {
-            case 1: return lv > 9 && lw > 9;
-            case 2: return lv > 15 && lw > 15;
-            case 3: return lv > 21 && lw > 21;
-            default: return false;
+        // Check if the current row matches the particle index and layer we're looking for
+        if (pindex == particle_Index && layerRow == layer) {
+            // Update the variables with the relevant data
+            calIndex = current_Row;
+            lv = cal_Bank.getFloat("lv", calIndex);
+            lw = cal_Bank.getFloat("lw", calIndex);
+            lu = cal_Bank.getFloat("lu", calIndex);
+            sector = cal_Bank.getInt("sector", calIndex);
+            break; // break out of the loop as soon as a matching row is found
         }
     }
+
+    // If no matching row was found, return false
+    if (calIndex == -1) {
+        return false;
+    }
+
+    // Apply strictness levels for additional cuts
+    switch (strictness) {
+        case 1:
+            if (lw < 9 || lv < 9) {
+                return false;
+            }
+            break;
+        case 2:
+            if (lw < 14 || lv < 14 || lu < 45) {
+                return false;
+            }
+            break;
+        case 3:
+            if ((lw < 19 || lv < 19) || (lw > 264 || lv > 264) || (lu < 45)) {
+                return false;
+            }
+            break;
+        default:
+            return false;
+    }
+
+    // Sector-specific cuts
+    switch (sector) {
+        case 1:
+            if ((lw > 74 && lw < 80) || (lw > 84 && lw < 90) || (lw > 212 && lw < 218) || 
+                    (lw > 224 && lw < 230)) {
+                return false;
+            }
+            break;
+        case 2:
+            if ((lv > 100 && lv < 118) || (lu > 112 && lu < 118)) {
+                return false;
+            }
+            break;
+        case 4:
+            if (lv > 230 && lv < 242) {
+                return false;
+            }
+            break;
+        case 6:
+            if ((lw > 174 && lw < 180) || (lw > 195 && lw < 201)) {
+                return false;
+            }
+            break;
+        default:
+            break;
+    }
+
+    // If none of the cuts apply, the track is good
+    return true;
+}
+    
+//    public boolean pcal_fiducial_cut(int particle_Index, int strictness, 
+//            HipoDataBank rec_Bank, HipoDataBank cal_Bank) {
+//        // Initialize variables for storing the index and values of the cal bank
+//        int calIndex = -1;
+//        int layer = 1;
+//        float lv = 0.0f;
+//        float lw = 0.0f;
+//
+//        // Loop through each row of the cal bank
+//        for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
+//            int pindex = cal_Bank.getInt("pindex", current_Row);
+//            int layerRow = cal_Bank.getInt("layer", current_Row);
+//
+//            // Check if the current row matches the particle index and layer we're looking for
+//            if (pindex == particle_Index && layerRow == layer) {
+//                // Update the variables with the relevant data
+//                calIndex = current_Row;
+//                lv = cal_Bank.getFloat("lv", calIndex);
+//                lw = cal_Bank.getFloat("lw", calIndex);
+//                break; // break out of the loop as soon as a matching row is found
+//            }
+//        }
+//
+//        // If no matching row was found, return false
+//        if (calIndex == -1) {
+//            int pid = rec_Bank.getInt("pid", particle_Index);
+//            if (pid == 11) { return false; } // calorimeter hit required for electron identification
+//            else { return true; } // neutrals do not require FD, (probably photon in FT)
+//        }
+//
+//        // check strictness of cuts
+//        switch (strictness) {
+//            case 1: return lv > 9 && lw > 9;
+//            case 2: return lv > 15 && lw > 15;
+//            case 3: return lv > 21 && lw > 21;
+//            default: return false;
+//        }
+//    }
     
     public boolean pass1_dc_fiducial_cut(int particle_Index, HipoDataBank rec_Bank, 
     HipoDataBank track_Bank, HipoDataBank traj_Bank, HipoDataBank run_Bank) {

@@ -743,14 +743,35 @@ void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
     if (mc_particle_pid) delete mc_particle_pid;
 }
 
-// Structure to hold sector cut parameters
-struct SectorCutParams {
-    int sector;
-    double ktop;
-    double btop;
-    double klow;
-    double blow;
-};
+bool pcal_fiducial(double lv, double lw, double lu, int sector) {
+    // Common cuts for all sectors
+    if ((lw < 19 || lv < 19) || (lw > 264 || lv > 264) || (lu < 45)) {
+        return false;
+    }
+
+    // Specific cuts for each sector
+    if (sector == 1) {
+        if ((lw > 74 && lw < 80) || (lw > 84 && lw < 90) || 
+        	(lw > 212 && lw < 218) || (lw > 224 && lw < 230)) {
+            return false;
+        }
+    } else if (sector == 2) {
+        if ((lv > 100 && lv < 118) || (lu > 112 && lu < 118)) {
+            return false;
+        }
+    } else if (sector == 4) {
+        if (lv > 230 && lv < 242) {
+            return false;
+        }
+    } else if (sector == 6) {
+        if ((lw > 174 && lw < 180) || (lw > 195 && lw < 201)) {
+            return false;
+        }
+    }
+
+    // If none of the cuts apply, the track is good
+    return true;
+}
 
 void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Define the 2D histogram bins and ranges
@@ -818,10 +839,25 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                 h_mc->GetYaxis()->SetTitle(("y_{" + layer_name + "}").c_str());
             }
 
+            // Create histograms for data and MC with fiducial cuts
+            TH2D* h_data_cut = new TH2D("h_data_cut", ("data " + layer_name + " hit position (" + particle_name + ") with fiducial cuts").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            h_data_cut->GetXaxis()->SetTitle(("x_{" + layer_name + "}").c_str());
+            h_data_cut->GetYaxis()->SetTitle(("y_{" + layer_name + "}").c_str());
+
+            TH2D* h_mc_cut = nullptr;
+            if (mcReader) {
+                h_mc_cut = new TH2D("h_mc_cut", ("mc " + layer_name + " hit position (" + particle_name + ") with fiducial cuts").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                h_mc_cut->GetXaxis()->SetTitle(("x_{" + layer_name + "}").c_str());
+                h_mc_cut->GetYaxis()->SetTitle(("y_{" + layer_name + "}").c_str());
+            }
+
             // Fill the data histograms, applying the cuts
             while (dataReader.Next()) {
                 if (*particle_pid == pid && *cal_x != -9999 && *cal_y != -9999) {
                     h_data->Fill(*cal_x, *cal_y);
+                    if (layer_name == "PCal" && pcal_fiducial(*cal_x, *cal_y, 0, *cal_sector)) {
+                        h_data_cut->Fill(*cal_x, *cal_y);
+                    }
                 }
             }
 
@@ -830,6 +866,9 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                 while (mcReader->Next()) {
                     if (**mc_particle_pid == pid && **mc_cal_x != -9999 && **mc_cal_y != -9999) {
                         h_mc->Fill(**mc_cal_x, **mc_cal_y);
+                        if (layer_name == "PCal" && pcal_fiducial(**mc_cal_x, **mc_cal_y, 0, **mc_cal_sector)) {
+                            h_mc_cut->Fill(**mc_cal_x, **mc_cal_y);
+                        }
                     }
                 }
             }
@@ -848,38 +887,25 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                 c_mc.SaveAs(("output/calibration/cal/" + particle_name + "_mc_" + layer_name + "_cal_hit_position.png").c_str());
             }
 
-            // Create masked plots with red lines
-            TCanvas c_data_masked(("c_data_masked_" + particle_name + "_" + layer_name).c_str(), ("c_data_masked_" + particle_name + "_" + layer_name).c_str(), 800, 600);
-            c_data_masked.SetLogz();  // Set the z-axis to a logarithmic scale
-            h_data->Draw("COLZ");
+            // Draw and save the fiducial-cut data plot
+            TCanvas c_data_cut(("c_data_cut_" + particle_name + "_" + layer_name).c_str(), ("c_data_cut_" + particle_name + "_" + layer_name).c_str(), 800, 600);
+            c_data_cut.SetLogz();  // Set the z-axis to a logarithmic scale
+            h_data_cut->Draw("COLZ");
+            c_data_cut.SaveAs(("output/calibration/cal/" + particle_name + "_data_" + layer_name + "_cal_hit_position_cut.png").c_str());
 
-            if (layer_name == "PCal") {
-                TLine* line = new TLine(xMin, 0.5897 * xMin + 120.7937 + 0.25, xMax, 0.5897 * xMax + 120.7937 + 0.25);
-                line->SetLineColor(kRed);
-                line->SetLineWidth(1);
-                line->Draw("same");
-            }
-
-            c_data_masked.SaveAs(("output/calibration/cal/" + particle_name + "_data_" + layer_name + "_cal_hit_position_masked.png").c_str());
-
-            if (h_mc) {
-                TCanvas c_mc_masked(("c_mc_masked_" + particle_name + "_" + layer_name).c_str(), ("c_mc_masked_" + particle_name + "_" + layer_name).c_str(), 800, 600);
-                c_mc_masked.SetLogz();  // Set the z-axis to a logarithmic scale
-                h_mc->Draw("COLZ");
-
-                if (layer_name == "PCal") {
-                    TLine* line = new TLine(xMin, 0.5897 * xMin + 120.7937 + 0.25, xMax, 0.5897 * xMax + 120.7937 + 0.25);
-                    line->SetLineColor(kRed);
-                    line->SetLineWidth(1);
-                    line->Draw("same");
-                }
-
-                c_mc_masked.SaveAs(("output/calibration/cal/" + particle_name + "_mc_" + layer_name + "_cal_hit_position_masked.png").c_str());
+            // Draw and save the fiducial-cut MC plot if available
+            if (h_mc_cut) {
+                TCanvas c_mc_cut(("c_mc_cut_" + particle_name + "_" + layer_name).c_str(), ("c_mc_cut_" + particle_name + "_" + layer_name).c_str(), 800, 600);
+                c_mc_cut.SetLogz();  // Set the z-axis to a logarithmic scale
+                h_mc_cut->Draw("COLZ");
+                c_mc_cut.SaveAs(("output/calibration/cal/" + particle_name + "_mc_" + layer_name + "_cal_hit_position_cut.png").c_str());
             }
 
             // Clean up for this layer and particle type
             delete h_data;
             if (h_mc) delete h_mc;
+            delete h_data_cut;
+            if (h_mc_cut) delete h_mc_cut;
             if (mc_cal_x) delete mc_cal_x;
             if (mc_cal_y) delete mc_cal_y;
             if (mc_particle_pid) delete mc_particle_pid;
@@ -1456,10 +1482,10 @@ int main(int argc, char** argv) {
     // plot_ft_hit_position(dataReader, mcReader);
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
-    // plot_cal_hit_position(dataReader, mcReader);
+    plot_cal_hit_position(dataReader, mcReader);
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
-    plot_cal_fiducial_determination(dataReader, mcReader);
+    // plot_cal_fiducial_determination(dataReader, mcReader);
 
 
 
