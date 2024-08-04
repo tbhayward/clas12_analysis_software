@@ -890,7 +890,7 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
 
 void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Define the 2D histogram bins and ranges
-    int nBins_lv_lw_lu = 100;
+    int nBins_lv_lw_lu = 200;
     int nBins_sf = 40;
     double lvMin = 0;
     double lvMax = 300;
@@ -955,6 +955,10 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
         // Create histograms for data and MC for each sector and each combination of lv, lw, lu vs sampling fraction
         TH2D* h_data_lv_lw[6];
         TH2D* h_mc_lv_lw[6] = {nullptr};
+        TH2D* h_data_lv_lu[6];
+        TH2D* h_mc_lv_lu[6] = {nullptr};
+        TH2D* h_data_lw_lu[6];
+        TH2D* h_mc_lw_lu[6] = {nullptr};
         TH2D* h_data_sf_lv[6];
         TH2D* h_mc_sf_lv[6] = {nullptr};
         TH2D* h_data_sf_lw[6];
@@ -967,6 +971,16 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
             h_data_lv_lw[sector-1] = new TH2D(("h_data_lv_lw_s" + std::to_string(sector)).c_str(), title_data_lv_lw.c_str(), nBins_lv_lw_lu, lwMin, lwMax, nBins_lv_lw_lu, lvMin, lvMax);
             h_data_lv_lw[sector-1]->GetXaxis()->SetTitle("lw");
             h_data_lv_lw[sector-1]->GetYaxis()->SetTitle("lv");
+
+            std::string title_data_lv_lu = "data PCal sector " + std::to_string(sector) + " (" + particle_name + ")";
+            h_data_lv_lu[sector-1] = new TH2D(("h_data_lv_lu_s" + std::to_string(sector)).c_str(), title_data_lv_lu.c_str(), nBins_lv_lw_lu, lwMin, lwMax, nBins_lv_lw_lu, lvMin, lvMax);
+            h_data_lv_lu[sector-1]->GetXaxis()->SetTitle("lu");
+            h_data_lv_lu[sector-1]->GetYaxis()->SetTitle("lv");
+
+            std::string title_data_lw_lu = "data PCal sector " + std::to_string(sector) + " (" + particle_name + ")";
+            h_data_lw_lu[sector-1] = new TH2D(("h_data_lw_lu_s" + std::to_string(sector)).c_str(), title_data_lw_lu.c_str(), nBins_lv_lw_lu, lwMin, lwMax, nBins_lv_lw_lu, lvMin, lvMax);
+            h_data_lw_lu[sector-1]->GetXaxis()->SetTitle("lu");
+            h_data_lw_lu[sector-1]->GetYaxis()->SetTitle("lw");
 
             std::string title_data_sf_lv = "data PCal sector " + std::to_string(sector) + " (" + particle_name + ")";
             h_data_sf_lv[sector-1] = new TH2D(("h_data_sf_lv_s" + std::to_string(sector)).c_str(), title_data_sf_lv.c_str(), nBins_lv_lw_lu, lvMin, lvMax, nBins_sf, sfMin, sfMax);
@@ -989,6 +1003,16 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
                 h_mc_lv_lw[sector-1]->GetXaxis()->SetTitle("lw");
                 h_mc_lv_lw[sector-1]->GetYaxis()->SetTitle("lv");
 
+                std::string title_mc_lv_lu = "mc PCal sector " + std::to_string(sector) + " (" + particle_name + ")";
+                h_mc_lv_lu[sector-1] = new TH2D(("h_mc_lv_lu_s" + std::to_string(sector)).c_str(), title_mc_lv_lu.c_str(), nBins_lv_lw_lu, lwMin, lwMax, nBins_lv_lw_lu, lvMin, lvMax);
+                h_mc_lv_lu[sector-1]->GetXaxis()->SetTitle("lu");
+                h_mc_lv_lu[sector-1]->GetYaxis()->SetTitle("lv");
+
+                std::string title_mc_lw_lu = "mc PCal sector " + std::to_string(sector) + " (" + particle_name + ")";
+                h_mc_lw_lu[sector-1] = new TH2D(("h_mc_lw_lu_s" + std::to_string(sector)).c_str(), title_mc_lw_lu.c_str(), nBins_lv_lw_lu, lwMin, lwMax, nBins_lv_lw_lu, lvMin, lvMax);
+                h_mc_lw_lu[sector-1]->GetXaxis()->SetTitle("lu");
+                h_mc_lw_lu[sector-1]->GetYaxis()->SetTitle("lw");
+
                 std::string title_mc_sf_lv = "mc PCal sector " + std::to_string(sector) + " (" + particle_name + ")";
                 h_mc_sf_lv[sector-1] = new TH2D(("h_mc_sf_lv_s" + std::to_string(sector)).c_str(), title_mc_sf_lv.c_str(), nBins_lv_lw_lu, lvMin, lvMax, nBins_sf, sfMin, sfMax);
                 h_mc_sf_lv[sector-1]->GetXaxis()->SetTitle("lv");
@@ -1000,9 +1024,7 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
                 h_mc_sf_lw[sector-1]->GetYaxis()->SetTitle("Sampling Fraction");
 
                 std::string title_mc_sf_lu = "mc PCal sector " + std::to_string(sector) + " (" + particle_name + ")";
-                h_mc_sf_lu[sector-1] = new TH2D(("h_mc_sf_lu_s" + std::to_string(sector)).c_str(), title_mc_sf_lu.c_str(),
-
- nBins_lv_lw_lu, luMin, luMax, nBins_sf, sfMin, sfMax);
+                h_mc_sf_lu[sector-1] = new TH2D(("h_mc_sf_lu_s" + std::to_string(sector)).c_str(), title_mc_sf_lu.c_str(),nBins_lv_lw_lu, luMin, luMax, nBins_sf, sfMin, sfMax);
                 h_mc_sf_lu[sector-1]->GetXaxis()->SetTitle("lu");
                 h_mc_sf_lu[sector-1]->GetYaxis()->SetTitle("Sampling Fraction");
             }
@@ -1036,6 +1058,8 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
                 if (sector >= 1 && sector <= 6) {
                     double sampling_fraction = (*cal_energy_1 + *cal_energy_4 + *cal_energy_7) / *p;
                     h_data_lv_lw[sector-1]->Fill(*cal_lw_1, *cal_lv_1);
+                    h_data_lv_lu[sector-1]->Fill(*cal_lw_1, *cal_lu_1);
+                    h_data_lw_lu[sector-1]->Fill(*cal_lw_1, *cal_lu_1);
                     h_data_sf_lv[sector-1]->Fill(*cal_lv_1, sampling_fraction);
                     h_data_sf_lw[sector-1]->Fill(*cal_lw_1, sampling_fraction);
                     h_data_sf_lu[sector-1]->Fill(*cal_lu_1, sampling_fraction);
@@ -1056,6 +1080,8 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
                     if (sector >= 1 && sector <= 6) {
                         double sampling_fraction = (**mc_cal_energy_1 + **mc_cal_energy_4 + **mc_cal_energy_7) / **mc_p;
                         h_mc_lv_lw[sector-1]->Fill(**mc_cal_lw_1, **mc_cal_lv_1);
+                        h_mc_lv_lu[sector-1]->Fill(**mc_cal_lw_1, **mc_cal_lu_1);
+                        h_mc_lw_lu[sector-1]->Fill(**mc_cal_lw_1, **mc_cal_lu_1);
                         h_mc_sf_lv[sector-1]->Fill(**mc_cal_lv_1, sampling_fraction);
                         h_mc_sf_lw[sector-1]->Fill(**mc_cal_lw_1, sampling_fraction);
                         h_mc_sf_lu[sector-1]->Fill(**mc_cal_lu_1, sampling_fraction);
@@ -1173,10 +1199,32 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
         c_data_lv_lw.SetLogz(); // Set log scale on the z-axis
         c_data_lv_lw.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
 
+        // Save the original 2D histograms as before
+        TCanvas c_data_lv_lu(("c_data_fiducial_lv_lu_" + particle_name).c_str(), ("Data lv vs lu (" + particle_name + ")").c_str(), 1800, 1200);
+        c_data_lv_lu.Divide(3, 2);
+        c_data_lv_lu.SetLogz(); // Set log scale on the z-axis
+        c_data_lv_lu.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
+
+        // Save the original 2D histograms as before
+        TCanvas c_data_lw_lu(("c_data_fiducial_lw_lu_" + particle_name).c_str(), ("Data lw vs lu (" + particle_name + ")").c_str(), 1800, 1200);
+        c_data_lw_lu.Divide(3, 2);
+        c_data_lw_lu.SetLogz(); // Set log scale on the z-axis
+        c_data_lw_lu.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
+
         TCanvas c_mc_lv_lw(("c_mc_fiducial_lv_lw_" + particle_name).c_str(), ("MC lv vs lw (" + particle_name + ")").c_str(), 1800, 1200);
         c_mc_lv_lw.Divide(3, 2);
         c_mc_lv_lw.SetLogz(); // Set log scale on the z-axis
         c_mc_lv_lw.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
+
+        TCanvas c_mc_lv_lu(("c_mc_fiducial_lv_lu_" + particle_name).c_str(), ("MC lv vs lu (" + particle_name + ")").c_str(), 1800, 1200);
+        c_mc_lv_lu.Divide(3, 2);
+        c_mc_lv_lu.SetLogz(); // Set log scale on the z-axis
+        c_mc_lv_lu.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
+
+        TCanvas c_mc_lw_lu(("c_mc_fiducial_lw_lu_" + particle_name).c_str(), ("MC lw vs lu (" + particle_name + ")").c_str(), 1800, 1200);
+        c_mc_lw_lu.Divide(3, 2);
+        c_mc_lw_lu.SetLogz(); // Set log scale on the z-axis
+        c_mc_lw_lu.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
 
         TCanvas c_data_sf_lv(("c_data_fiducial_sf_lv_" + particle_name).c_str(), ("Data Sampling Fraction vs lv (" + particle_name + ")").c_str(), 1800, 1200);
         c_data_sf_lv.Divide(3, 2);
@@ -1214,6 +1262,16 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
             gPad->SetRightMargin(0.15); // Adjust the right margin
             h_data_lv_lw[sector-1]->Draw("COLZ");
 
+            c_data_lv_lu.cd(sector);
+            gPad->SetLeftMargin(0.15); // Adjust the left margin
+            gPad->SetRightMargin(0.15); // Adjust the right margin
+            h_data_lv_lu[sector-1]->Draw("COLZ");
+
+            c_data_lw_lu.cd(sector);
+            gPad->SetLeftMargin(0.15); // Adjust the left margin
+            gPad->SetRightMargin(0.15); // Adjust the right margin
+            h_data_lw_lu[sector-1]->Draw("COLZ");
+
             c_data_sf_lv.cd(sector);
             gPad->SetLeftMargin(0.15); // Adjust the left margin
             gPad->SetRightMargin(0.15); // Adjust the right margin
@@ -1235,6 +1293,16 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
                 gPad->SetRightMargin(0.15); // Adjust the right margin
                 h_mc_lv_lw[sector-1]->Draw("COLZ");
 
+                c_mc_lv_lu.cd(sector);
+                gPad->SetLeftMargin(0.15); // Adjust the left margin
+                gPad->SetRightMargin(0.15); // Adjust the right margin
+                h_mc_lv_lu[sector-1]->Draw("COLZ");
+
+                c_mc_lw_lu.cd(sector);
+                gPad->SetLeftMargin(0.15); // Adjust the left margin
+                gPad->SetRightMargin(0.15); // Adjust the right margin
+                h_mc_lw_lu[sector-1]->Draw("COLZ");
+
                 c_mc_sf_lv.cd(sector);
                 gPad->SetLeftMargin(0.15); // Adjust the left margin
                 gPad->SetRightMargin(0.15); // Adjust the right margin
@@ -1255,6 +1323,14 @@ void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRea
         // Save the original canvases
         c_data_lv_lw.SaveAs(("output/calibration/cal/fiducial/data_fiducial_lv_lw_" + particle_name + ".png").c_str());
         if (mcReader) c_mc_lv_lw.SaveAs(("output/calibration/cal/fiducial/mc_fiducial_lv_lw_" + particle_name + ".png").c_str());
+
+        // Save the original canvases
+        c_data_lv_lu.SaveAs(("output/calibration/cal/fiducial/data_fiducial_lv_lu_" + particle_name + ".png").c_str());
+        if (mcReader) c_mc_lv_lu.SaveAs(("output/calibration/cal/fiducial/mc_fiducial_lv_lu_" + particle_name + ".png").c_str());
+
+        // Save the original canvases
+        c_data_lw_lu.SaveAs(("output/calibration/cal/fiducial/data_fiducial_lw_lu_" + particle_name + ".png").c_str());
+        if (mcReader) c_mc_lw_lu.SaveAs(("output/calibration/cal/fiducial/mc_fiducial_lw_lu_" + particle_name + ".png").c_str());
 
         c_data_sf_lv.SaveAs(("output/calibration/cal/fiducial/data_fiducial_sf_lv_" + particle_name + ".png").c_str());
         if (mcReader) c_mc_sf_lv.SaveAs(("output/calibration/cal/fiducial/mc_fiducial_sf_lv_" + particle_name + ".png").c_str());
