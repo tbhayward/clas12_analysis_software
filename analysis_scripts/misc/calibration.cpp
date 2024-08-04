@@ -916,11 +916,11 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                 c_mc_cut.SaveAs(("output/calibration/cal/" + particle_name + "mc" + layer_name + "_cal_hit_position_cut.png").c_str());
 			}
 			
-			// Clean up for this layer and particle type
-	        delete h_data;
-	        if (h_mc) delete h_mc;
-	        delete h_data_cut;
-	        if (h_mc_cut) delete h_mc_cut;
+			// // Clean up for this layer and particle type
+	        // delete h_data;
+	        // if (h_mc) delete h_mc;
+	        // delete h_data_cut;
+	        // if (h_mc_cut) delete h_mc_cut;
 	    }
 	}
 }
