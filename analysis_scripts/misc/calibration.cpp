@@ -964,7 +964,7 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
     delete h_data_2;
     delete h_data_3;
     if (h_mc_0) delete h_mc_0;
-    if (_mc_1) delete h_mc_1;
+    if (h_mc_1) delete h_mc_1;
             if (h_mc_2) delete h_mc_2;
             if (h_mc_3) delete h_mc_3;
             delete c;
