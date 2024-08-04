@@ -890,7 +890,7 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
 
 void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Define the 2D histogram bins and ranges
-    int nBins_lv_lw_lu = 200;
+    int nBins_lv_lw_lu = 100;
     int nBins_sf = 40;
     double lvMin = 0;
     double lvMax = 300;
