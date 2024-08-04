@@ -112,7 +112,7 @@ public boolean pcal_fiducial_cut(int particle_Index, int strictness,
     // Sector-specific cuts
     switch (sector) {
         case 1:
-            if ((lw > 74 && lw < 80) || (lw > 84 && lw < 90) || (lw > 212 && lw < 218) || 
+            if ((lw > 69 && lw < 96) || (lw > 207 && lw < 236) || 
                     (lw > 224 && lw < 230)) {
                 return false;
             }
