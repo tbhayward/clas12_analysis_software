@@ -59,11 +59,16 @@ public class fiducial_cuts {
 public boolean pcal_fiducial_cut(int particle_Index, int strictness, 
             HipoDataBank rec_Bank, HipoDataBank cal_Bank) {
     // Initialize variables for storing the index and values of the cal bank
-    int calIndex = -1;
-    int layer = 1;
-    float lv = 0.0f;
-    float lw = 0.0f;
-    float lu = 0.0f;
+    float lv_1 = 0.0f;
+    float lw_1 = 0.0f;
+    float lu_1 = 0.0f;
+    float lv_4 = 0.0f;
+    float lw_4 = 0.0f;
+    float lu_4 = 0.0f;
+    float lv_7 = 0.0f;
+    float lw_7 = 0.0f;
+    float lu_7 = 0.0f;
+
     int sector = 0;
 
     // Loop through each row of the cal bank
@@ -71,113 +76,112 @@ public boolean pcal_fiducial_cut(int particle_Index, int strictness,
         int pindex = cal_Bank.getInt("pindex", current_Row);
         int layerRow = cal_Bank.getInt("layer", current_Row);
 
-        // Check if the current row matches the particle index and layer we're looking for
-        if (pindex == particle_Index && layerRow == layer) {
-            // Update the variables with the relevant data
-            calIndex = current_Row;
-            lv = cal_Bank.getFloat("lv", calIndex);
-            lw = cal_Bank.getFloat("lw", calIndex);
-            lu = cal_Bank.getFloat("lu", calIndex);
-            sector = cal_Bank.getInt("sector", calIndex);
-            break; // break out of the loop as soon as a matching row is found
+        // Check if the current row matches the particle index
+        if (pindex == particle_Index) {
+            sector = cal_Bank.getInt("sector", current_Row);
+
+            // Extract values based on the layer
+            if (layerRow == 1) {  // PCal (layer 1)
+                lv_1 = cal_Bank.getFloat("lv", current_Row);
+                lw_1 = cal_Bank.getFloat("lw", current_Row);
+                lu_1 = cal_Bank.getFloat("lu", current_Row);
+            } else if (layerRow == 4) {  // ECin (layer 4)
+                lv_4 = cal_Bank.getFloat("lv", current_Row);
+                lw_4 = cal_Bank.getFloat("lw", current_Row);
+                lu_4 = cal_Bank.getFloat("lu", current_Row);
+            } else if (layerRow == 7) {  // ECout (layer 7)
+                lv_7 = cal_Bank.getFloat("lv", current_Row);
+                lw_7 = cal_Bank.getFloat("lw", current_Row);
+                lu_7 = cal_Bank.getFloat("lu", current_Row);
+            }
         }
     }
 
-    // If no matching row was found, return false
-    if (calIndex == -1) {
-        return false;
-    }
-
-    // Apply strictness levels for additional cuts
+    // Apply strictness levels for additional cuts on PCal (layer 1)
     switch (strictness) {
         case 1:
-            if (lw < 9 || lv < 9 || lu < 19) {
-                return false;
-            }
+            if (lw_1 < 9 || lv_1 < 9 || lu_1 < 19) { return false; }
             break;
         case 2:
-            if (lw < 14 || lv < 14 || lu < 29) {
-                return false;
-            }
+            if (lw_1 < 14 || lv_1 < 14 || lu_1 < 29) { return false; }
             break;
         case 3:
-            if ((lw < 19 || lv < 19) || (lu < 39 || lu > 400)) {
-                return false;
-            }
+            if ((lw_1 < 19 || lv_1 < 19) || (lu_1 < 39 || lu_1 > 400)) { return false; }
             break;
         default:
             return false;
     }
 
-    // Sector-specific cuts
+    // Sector-specific cuts for PCal (layer 1)
     switch (sector) {
         case 1:
-            if ((lw > 69 && lw < 96) || (lw > 207 && lw < 236) || 
-                    (lw > 224 && lw < 230)) {
-                return false;
-            }
+            if ((lw_1 > 69 && lw_1 < 96) || (lw_1 > 207 && lw_1 < 236)) { return false; }
             break;
         case 2:
-            if ((lv > 95 && lv < 119) || (lu > 108 && lu < 126)) {
-                return false;
-            }
+            if ((lv_1 > 95 && lv_1 < 119) || (lu_1 > 108 && lu_1 < 126)) { return false; }
             break;
         case 4:
-            if (lv > 224 && lv < 247) {
-                return false;
-            }
+            if (lv_1 > 224 && lv_1 < 247) { return false; }
             break;
         case 6:
-            if ((lw > 169 && lw < 198)) {
-                return false;
-            }
+            if (lw_1 > 169 && lw_1 < 198) { return false; }
             break;
         default:
             break;
+    }
+
+    // Sector-specific cuts for ECin (layer 4)
+    if (sector == 1) {
+        if (lv_4 > 70 && lv_4 < 96) { return false; }
+    }
+
+    // Sector-specific cuts for ECout (layer 7)
+    if (sector == 5) {
+        if (lu_7 > 194 && lu_7 < 222) { return false; }
     }
 
     // If none of the cuts apply, the track is good
     return true;
 }
     
-//    public boolean pcal_fiducial_cut(int particle_Index, int strictness, 
-//            HipoDataBank rec_Bank, HipoDataBank cal_Bank) {
-//        // Initialize variables for storing the index and values of the cal bank
-//        int calIndex = -1;
-//        int layer = 1;
-//        float lv = 0.0f;
-//        float lw = 0.0f;
-//
-//        // Loop through each row of the cal bank
-//        for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
-//            int pindex = cal_Bank.getInt("pindex", current_Row);
-//            int layerRow = cal_Bank.getInt("layer", current_Row);
-//
-//            // Check if the current row matches the particle index and layer we're looking for
-//            if (pindex == particle_Index && layerRow == layer) {
-//                // Update the variables with the relevant data
-//                calIndex = current_Row;
-//                lv = cal_Bank.getFloat("lv", calIndex);
-//                lw = cal_Bank.getFloat("lw", calIndex);
-//                break; // break out of the loop as soon as a matching row is found
-//            }
-//        }
-//
-//        // If no matching row was found, return false
-//        if (calIndex == -1) {
-//            int pid = rec_Bank.getInt("pid", particle_Index);
-//            if (pid == 11) { return false; } // calorimeter hit required for electron identification
-//            else { return true; } // neutrals do not require FD, (probably photon in FT)
-//        }
-//
-//        // check strictness of cuts
-//        switch (strictness) {
-//            case 1: return lv > 9 && lw > 9;
-//            case 2: return lv > 15 && lw > 15;
-//            case 3: return lv > 21 && lw > 21;
-//            default: return false;
-//        }
-//    }
+    public boolean pass1_pcal_fiducial_cut(int particle_Index, int strictness, 
+            HipoDataBank rec_Bank, HipoDataBank cal_Bank) {
+        // Initialize variables for storing the index and values of the cal bank
+        int calIndex = -1;
+        int layer = 1;
+        float lv = 0.0f;
+        float lw = 0.0f;
+
+        // Loop through each row of the cal bank
+        for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
+            int pindex = cal_Bank.getInt("pindex", current_Row);
+            int layerRow = cal_Bank.getInt("layer", current_Row);
+
+            // Check if the current row matches the particle index and layer we're looking for
+            if (pindex == particle_Index && layerRow == layer) {
+                // Update the variables with the relevant data
+                calIndex = current_Row;
+                lv = cal_Bank.getFloat("lv", calIndex);
+                lw = cal_Bank.getFloat("lw", calIndex);
+                break; // break out of the loop as soon as a matching row is found
+            }
+        }
+
+        // If no matching row was found, return false
+        if (calIndex == -1) {
+            int pid = rec_Bank.getInt("pid", particle_Index);
+            if (pid == 11) { return false; } // calorimeter hit required for electron identification
+            else { return true; } // neutrals do not require FD, (probably photon in FT)
+        }
+
+        // check strictness of cuts
+        switch (strictness) {
+            case 1: return lv > 9 && lw > 9;
+            case 2: return lv > 15 && lw > 15;
+            case 3: return lv > 21 && lw > 21;
+            default: return false;
+        }
+    }
     
     public boolean pass1_dc_fiducial_cut(int particle_Index, HipoDataBank rec_Bank, 
     HipoDataBank track_Bank, HipoDataBank traj_Bank, HipoDataBank run_Bank) {
