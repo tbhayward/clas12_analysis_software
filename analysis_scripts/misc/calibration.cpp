@@ -1853,14 +1853,16 @@ void plot_ecin_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRe
 
 void plot_ecout_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Define the 2D histogram bins and ranges
-    int nBins_lv_lw_lu = 150;
+    int nBins_lv_lw_lu = 100;
     int nBins_sf = 40;
-    double lvMin = 0;
-    double lvMax = 450;
-    double lwMin = 0;
-    double lwMax = 450;
-    double luMin = 0;
-    double luMax = 450;
+    double min = 180;
+    double max = 236;
+    double lvMin = min;
+    double lvMax = max;
+    double lwMin = min;
+    double lwMax = max;
+    double luMin = min;
+    double luMax = max;
     double sfMin = 0.15;
     double sfMax = 0.35;
 
