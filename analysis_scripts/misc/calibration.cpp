@@ -2680,12 +2680,12 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_cal_hit_position(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_pcal_fiducial_determination(dataReader, mcReader);
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
-    // plot_ecin_fiducial_determination(dataReader, mcReader);
+    // plot_pcal_fiducial_determination(dataReader, mcReader);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_ecin_fiducial_determination(dataReader, mcReader);
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
     // plot_ecout_fiducial_determination(dataReader, mcReader);
