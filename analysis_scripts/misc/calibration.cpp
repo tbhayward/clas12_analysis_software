@@ -2078,6 +2078,9 @@ int main(int argc, char** argv) {
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
     plot_pcal_fiducial_determination(dataReader, mcReader);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_ecin_fiducial_determination(dataReader, mcReader);
 
 
 
