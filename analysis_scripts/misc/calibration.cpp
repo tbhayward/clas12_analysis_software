@@ -787,6 +787,20 @@ bool pcal_fiducial(double lv_1, double lw_1, double lu_1,
         }
     }
 
+    // Specific cuts for each sector in ECin
+    if (sector == 1) {
+    	if (lv_4 > 70 && lv_4 < 96) {
+    		return false;
+    	}
+    }
+
+    // Specific cuts for each sector in ECout
+    if (sector == 5) {
+    	if (lu_7 > 194 && lu_7 < 222) {
+    		return false;
+    	}
+    }
+
     // If none of the cuts apply, the track is good
     return true;
 }
