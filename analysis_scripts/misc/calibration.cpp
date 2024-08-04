@@ -1159,62 +1159,74 @@ void plot_pcal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRe
 
         for (int sector = 1; sector <= 6; ++sector) {
             c_data_lv_lw.cd(sector);
+            gPad->SetLogz(); // Set log scale on the z-axis
             gPad->SetLeftMargin(0.15); // Adjust the left margin
             gPad->SetRightMargin(0.15); // Adjust the right margin
             h_data_lv_lw[sector-1]->Draw("COLZ");
 
             c_data_lv_lu.cd(sector);
+            gPad->SetLogz(); // Set log scale on the z-axis
             gPad->SetLeftMargin(0.15); // Adjust the left margin
             gPad->SetRightMargin(0.15); // Adjust the right margin
             h_data_lv_lu[sector-1]->Draw("COLZ");
 
             c_data_lw_lu.cd(sector);
+            gPad->SetLogz(); // Set log scale on the z-axis
             gPad->SetLeftMargin(0.15); // Adjust the left margin
             gPad->SetRightMargin(0.15); // Adjust the right margin
             h_data_lw_lu[sector-1]->Draw("COLZ");
 
             c_data_sf_lv.cd(sector);
+            gPad->SetLogz(); // Set log scale on the z-axis
             gPad->SetLeftMargin(0.15); // Adjust the left margin
             gPad->SetRightMargin(0.15); // Adjust the right margin
             h_data_sf_lv[sector-1]->Draw("COLZ");
 
             c_data_sf_lw.cd(sector);
+            gPad->SetLogz(); // Set log scale on the z-axis
             gPad->SetLeftMargin(0.15); // Adjust the left margin
             gPad->SetRightMargin(0.15); // Adjust the right margin
             h_data_sf_lw[sector-1]->Draw("COLZ");
 
             c_data_sf_lu.cd(sector);
+            gPad->SetLogz(); // Set log scale on the z-axis
             gPad->SetLeftMargin(0.15); // Adjust the left margin
             gPad->SetRightMargin(0.15); // Adjust the right margin
             h_data_sf_lu[sector-1]->Draw("COLZ");
 
             if (mcReader) {
                 c_mc_lv_lw.cd(sector);
+                gPad->SetLogz(); // Set log scale on the z-axis
                 gPad->SetLeftMargin(0.15); // Adjust the left margin
                 gPad->SetRightMargin(0.15); // Adjust the right margin
                 h_mc_lv_lw[sector-1]->Draw("COLZ");
 
                 c_mc_lv_lu.cd(sector);
+                gPad->SetLogz(); // Set log scale on the z-axis
                 gPad->SetLeftMargin(0.15); // Adjust the left margin
                 gPad->SetRightMargin(0.15); // Adjust the right margin
                 h_mc_lv_lu[sector-1]->Draw("COLZ");
 
                 c_mc_lw_lu.cd(sector);
+                gPad->SetLogz(); // Set log scale on the z-axis
                 gPad->SetLeftMargin(0.15); // Adjust the left margin
                 gPad->SetRightMargin(0.15); // Adjust the right margin
                 h_mc_lw_lu[sector-1]->Draw("COLZ");
 
                 c_mc_sf_lv.cd(sector);
+                gPad->SetLogz(); // Set log scale on the z-axis
                 gPad->SetLeftMargin(0.15); // Adjust the left margin
                 gPad->SetRightMargin(0.15); // Adjust the right margin
                 h_mc_sf_lv[sector-1]->Draw("COLZ");
 
                 c_mc_sf_lw.cd(sector);
+                gPad->SetLogz(); // Set log scale on the z-axis
                 gPad->SetLeftMargin(0.15); // Adjust the left margin
                 gPad->SetRightMargin(0.15); // Adjust the right margin
                 h_mc_sf_lw[sector-1]->Draw("COLZ");
 
                 c_mc_sf_lu.cd(sector);
+                gPad->SetLogz(); // Set log scale on the z-axis
                 gPad->SetLeftMargin(0.15); // Adjust the left margin
                 gPad->SetRightMargin(0.15); // Adjust the right margin
                 h_mc_sf_lu[sector-1]->Draw("COLZ");
