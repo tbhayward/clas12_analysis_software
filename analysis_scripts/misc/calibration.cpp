@@ -782,10 +782,10 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
     double yMax = 450;
 
     // Array of layers and their corresponding names
-    std::vector<std::tuple<std::string, std::string, std::string>> layers = {
-        {"cal_x_1", "cal_y_1", "PCal"},
-        {"cal_x_4", "cal_y_4", "EC_{in}"},
-        {"cal_x_7", "cal_y_7", "EC_{out}"}
+    std::vector<std::tuple<std::string, std::string, std::string, std::string, std::string>> layers = {
+        {"cal_x_1", "cal_y_1", "cal_lv_1", "cal_lw_1", "PCal"},
+        {"cal_x_4", "cal_y_4", "cal_lv_4", "cal_lw_4", "EC_{in}"},
+        {"cal_x_7", "cal_y_7", "cal_lv_7", "cal_lw_7", "EC_{out}"}
     };
 
     // Array of particle types (photons and electrons) and their corresponding PIDs
@@ -803,7 +803,9 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
         for (const auto& layer : layers) {
             std::string x_branch = std::get<0>(layer);
             std::string y_branch = std::get<1>(layer);
-            std::string layer_name = std::get<2>(layer);
+            std::string lv_branch = std::get<2>(layer);
+            std::string lw_branch = std::get<3>(layer);
+            std::string layer_name = std::get<4>(layer);
 
             // Restart the TTreeReader to process the data from the beginning
             dataReader.Restart();
@@ -812,17 +814,23 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             // Declare TTreeReaderValues for data and MC
             TTreeReaderValue<double> cal_x(dataReader, x_branch.c_str());
             TTreeReaderValue<double> cal_y(dataReader, y_branch.c_str());
+            TTreeReaderValue<double> cal_lv(dataReader, lv_branch.c_str());
+            TTreeReaderValue<double> cal_lw(dataReader, lw_branch.c_str());
             TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
             TTreeReaderValue<int> cal_sector(dataReader, "cal_sector");
 
             TTreeReaderValue<double>* mc_cal_x = nullptr;
             TTreeReaderValue<double>* mc_cal_y = nullptr;
+            TTreeReaderValue<double>* mc_cal_lv = nullptr;
+            TTreeReaderValue<double>* mc_cal_lw = nullptr;
             TTreeReaderValue<int>* mc_particle_pid = nullptr;
             TTreeReaderValue<int>* mc_cal_sector = nullptr;
 
             if (mcReader) {
                 mc_cal_x = new TTreeReaderValue<double>(*mcReader, x_branch.c_str());
                 mc_cal_y = new TTreeReaderValue<double>(*mcReader, y_branch.c_str());
+                mc_cal_lv = new TTreeReaderValue<double>(*mcReader, lv_branch.c_str());
+                mc_cal_lw = new TTreeReaderValue<double>(*mcReader, lw_branch.c_str());
                 mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
                 mc_cal_sector = new TTreeReaderValue<int>(*mcReader, "cal_sector");
             }
@@ -855,7 +863,7 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             while (dataReader.Next()) {
                 if (*particle_pid == pid && *cal_x != -9999 && *cal_y != -9999) {
                     h_data->Fill(*cal_x, *cal_y);
-                    if (layer_name == "PCal" && pcal_fiducial(*cal_x, *cal_y, 0, *cal_sector)) {
+                    if (layer_name == "PCal" && pcal_fiducial(*cal_lv, *cal_lw, 0, *cal_sector)) {
                         h_data_cut->Fill(*cal_x, *cal_y);
                     }
                 }
@@ -866,7 +874,7 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                 while (mcReader->Next()) {
                     if (**mc_particle_pid == pid && **mc_cal_x != -9999 && **mc_cal_y != -9999) {
                         h_mc->Fill(**mc_cal_x, **mc_cal_y);
-                        if (layer_name == "PCal" && pcal_fiducial(**mc_cal_x, **mc_cal_y, 0, **mc_cal_sector)) {
+                        if (layer_name == "PCal" && pcal_fiducial(**mc_cal_lv, **mc_cal_lw, 0, **mc_cal_sector)) {
                             h_mc_cut->Fill(**mc_cal_x, **mc_cal_y);
                         }
                     }
@@ -903,15 +911,17 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
 
             // Clean up for this layer and particle type
             delete h_data;
-            if (h_mc) delete h_mc;
-            delete h_data_cut;
-            if (h_mc_cut) delete h_mc_cut;
-            if (mc_cal_x) delete mc_cal_x;
-            if (mc_cal_y) delete mc_cal_y;
-            if (mc_particle_pid) delete mc_particle_pid;
-            if (mc_cal_sector) delete mc_cal_sector;
-        }
-    }
+	        if (h_mc) delete h_mc;
+	        delete h_data_cut;
+	        if (h_mc_cut) delete h_mc_cut;
+	        if (mc_cal_x) delete mc_cal_x;
+	        if (mc_cal_y) delete mc_cal_y;
+	        if (mc_cal_lv) delete mc_cal_lv;
+	        if (mc_cal_lw) delete mc_cal_lw;
+	        if (mc_particle_pid) delete mc_particle_pid;
+	        if (mc_cal_sector) delete mc_cal_sector;
+	    }
+	}
 }
 
 void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
