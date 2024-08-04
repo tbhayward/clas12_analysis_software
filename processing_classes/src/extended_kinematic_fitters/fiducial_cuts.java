@@ -118,7 +118,7 @@ public boolean pcal_fiducial_cut(int particle_Index, int strictness,
             }
             break;
         case 2:
-            if ((lv > 100 && lv < 118) || (lu > 112 && lu < 118)) {
+            if ((lv > 95 && lv < 119) || (lu > 108 && lu < 126)) {
                 return false;
             }
             break;
