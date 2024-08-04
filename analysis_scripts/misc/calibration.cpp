@@ -909,210 +909,6 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                     }
                 }
             }
-
-            // Fill the MC histograms if available, applying the cuts
-			if (mcReader) {
-				while (mcReader->Next()) {
-					if (**mc_particle_pid == pid && **mc_cal_x != -9999 && **mc_cal_y != -9999) {
-						h_mc_0->Fill(**mc_cal_x, **mc_cal_y); // No cuts
-					if (pcal_fiducial(**mc_cal_lv_1, **mc_cal_lw_1, **mc_cal_lu_1, **mc_cal_sector, 1)) {
-						h_mc_1->Fill(**mc_cal_x, **mc_cal_y);
-					}
-					if (pcal_fiducial(**mc_cal_lv_1, **mc_cal_lw_1, **mc_cal_lu_1, **mc_cal_sector, 2)) {
-						h_mc_2->Fill(**mc_cal_x, **mc_cal_y);
-					}
-					if (pcal_fiducial(**mc_cal_lv_1, **mc_cal_lw_1, **mc_cal_lu_1, **mc_cal_sector, 3)) {
-						h_mc_3->Fill(**mc_cal_x, **mc_cal_y);
-						}
-					}
-				}
-			}
-	        // Draw and save the data plots
-	        TCanvas c_data_0(("c_data_0_" + particle_name + "_" + layer_name).c_str(), ("c_data_" + particle_name + "_" + layer_name).c_str(), 800, 600);
-	        c_data_0.SetLogz();  // Set the z-axis to a logarithmic scale
-	        h_data_0->Draw("COLZ");
-	        c_data_0.SaveAs(("output/calibration/cal/" + particle_name + "_data_" + layer_name + "_cal_hit_position_strictness_0.png").c_str());
-
-	        TCanvas c_data_1(("c_data_1_" + particle_name + "_" + layer_name).c_str(), ("c_data_" + particle_name + "_" + layer_name).c_str(), 800, 600);
-	        c_data_1.SetLogz();  // Set the z-axis to a logarithmic scale
-	        h_data_1->Draw("COLZ");
-	        c_data_1.SaveAs(("output/calibration/cal/" + particle_name + "_data_" + layer_name + "_cal_hit_position_strictness_1.png").c_str());
-
-	        TCanvas c_data_2(("c_data_2_" + particle_name + "_" + layer_name).c_str(), ("c_data_" + particle_name + "_" + layer_name).c_str(), 800, 600);
-	        c_data_2.SetLogz();  // Set the z-axis to a logarithmic scale
-	        h_data_2->Draw("COLZ");
-	        c_data_2.SaveAs(("output/calibration/cal/" + particle_name + "_data_" + layer_name + "_cal_hit_position_strictness_2.png").c_str());
-
-	        TCanvas c_data_3(("c_data_3_" + particle_name + "_" + layer_name).c_str(), ("c_data_" + particle_name + "_" + layer_name).c_str(), 800, 600);
-	        c_data_3.SetLogz();  // Set the z-axis to a logarithmic scale
-	        h_data_3->Draw("COLZ");
-	        c_data_3.SaveAs(("output/calibration/cal/" + particle_name + "_data_" + layer_name + "_cal_hit_position_strictness_3.png").c_str());
-
-	        // Draw and save the MC plots if available
-	        if (mcReader) {
-	            TCanvas c_mc_0(("c_mc_0_" + particle_name + "_" + layer_name).c_str(), ("c_mc_" + particle_name + "_" + layer_name).c_str(), 800, 600);
-	            c_mc_0.SetLogz();  // Set the z-axis to a logarithmic scale
-	            h_mc_0->Draw("COLZ");
-	            c_mc_0.SaveAs(("output/calibration/cal/" + particle_name + "_mc_" + layer_name + "_cal_hit_position_strictness_0.png").c_str());
-
-	            TCanvas c_mc_1(("c_mc_1_" + particle_name + "_" + layer_name).c_str(), ("c_mc_" + particle_name + "_" + layer_name).c_str(), 800, 600);
-	            c_mc_1.SetLogz();  // Set the z-axis to a logarithmic scale
-	            h_mc_1->Draw("COLZ");
-	            c_mc_1.SaveAs(("output/calibration/cal/" + particle_name + "_mc_" + layer_name + "_cal_hit_position_strictness_1.png").c_str());
-
-	            TCanvas c_mc_2(("c_mc_2_" + particle_name + "_" + layer_name).c_str(), ("c_mc_" + particle_name + "_" + layer_name).c_str(), 800, 600);
-	            c_mc_2.SetLogz();  // Set the z-axis to a logarithmic scale
-	            h_mc_2->Draw("COLZ");
-	            c_mc_2.SaveAs(("output/calibration/cal/" + particle_name + "_mc_" + layer_name + "_cal_hit_position_strictness_2.png").c_str());
-
-	            TCanvas c_mc_3(("c_mc_3_" + particle_name + "_" + layer_name).c_str(), ("c_mc_" + particle_name + "_" + layer_name).c_str(), 800, 600);
-	            c_mc_3.SetLogz();  // Set the z-axis to a logarithmic scale
-	            h_mc_3->Draw("COLZ");
-	            c_mc_3.SaveAs(("output/calibration/cal/" + particle_name + "_mc_" + layer_name + "_cal_hit_position_strictness_3.png").c_str());
-	        }
-
-	        // Clean up for this layer and particle type
-	        delete h_data_0;
-	        delete h_data_1;
-	        delete h_data_2;
-	        delete h_data_3;
-	        if (h_mc_0) delete h_mc_0;
-	        if (h_mc_1) delete h_mc_1;
-	        if (h_mc_2) delete h_mc_2;
-	        if (h_mc_3) delete h_mc_3;
-	        if (mc_cal_x) delete mc_cal_x;
-	        if (mc_cal_y) delete mc_cal_y;
-	        if (mc_particle_pid) delete mc_particle_pid;
-	    }
-	}
-
-	// Clean up the dynamically allocated memory for layer 1 variables
-	if (mc_cal_lv_1) delete mc_cal_lv_1;
-	if (mc_cal_lw_1) delete mc_cal_lw_1;
-	if (mc_cal_lu_1) delete mc_cal_lu_1;
-	if (mc_cal_sector) delete mc_cal_sector;
-}
-
-void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
-    // Define the 2D histogram bins and ranges
-    int nBins = 100;
-    double xMin = -450;
-    double xMax = 450;
-    double yMin = -450;
-    double yMax = 450;
-
-    // Array of layers and their corresponding names
-    std::vector<std::tuple<std::string, std::string, std::string>> layers = {
-        {"cal_x_1", "cal_y_1", "PCal"},
-        {"cal_x_4", "cal_y_4", "EC_{in}"},
-        {"cal_x_7", "cal_y_7", "EC_{out}"}
-    };
-
-    // Array of particle types (photons and electrons) and their corresponding PIDs
-    std::vector<std::tuple<int, std::string>> particle_types = {
-        {22, "photon"},
-        {11, "electron"}
-    };
-
-    // Declare TTreeReaderValues for the layer 1 cuts (lv, lw, lu)
-    TTreeReaderValue<double> cal_lv_1(dataReader, "cal_lv_1");
-    TTreeReaderValue<double> cal_lw_1(dataReader, "cal_lw_1");
-    TTreeReaderValue<double> cal_lu_1(dataReader, "cal_lu_1");
-    TTreeReaderValue<int> cal_sector(dataReader, "cal_sector");
-
-    TTreeReaderValue<double>* mc_cal_lv_1 = nullptr;
-    TTreeReaderValue<double>* mc_cal_lw_1 = nullptr;
-    TTreeReaderValue<double>* mc_cal_lu_1 = nullptr;
-    TTreeReaderValue<int>* mc_cal_sector = nullptr;
-
-    if (mcReader) {
-        mc_cal_lv_1 = new TTreeReaderValue<double>(*mcReader, "cal_lv_1");
-        mc_cal_lw_1 = new TTreeReaderValue<double>(*mcReader, "cal_lw_1");
-        mc_cal_lu_1 = new TTreeReaderValue<double>(*mcReader, "cal_lu_1");
-        mc_cal_sector = new TTreeReaderValue<int>(*mcReader, "cal_sector");
-    }
-
-    // Loop over each particle type
-    for (const auto& particle_type : particle_types) {
-        int pid = std::get<0>(particle_type);
-        std::string particle_name = std::get<1>(particle_type);
-
-        // Loop over each layer
-        for (const auto& layer : layers) {
-            std::string x_branch = std::get<0>(layer);
-            std::string y_branch = std::get<1>(layer);
-            std::string layer_name = std::get<2>(layer);
-
-            // Restart the TTreeReader to process the data from the beginning
-            dataReader.Restart();
-            if (mcReader) mcReader->Restart();
-
-            // Declare TTreeReaderValues for data and MC for this layer
-            TTreeReaderValue<double> cal_x(dataReader, x_branch.c_str());
-            TTreeReaderValue<double> cal_y(dataReader, y_branch.c_str());
-            TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
-
-            TTreeReaderValue<double>* mc_cal_x = nullptr;
-            TTreeReaderValue<double>* mc_cal_y = nullptr;
-            TTreeReaderValue<int>* mc_particle_pid = nullptr;
-
-            if (mcReader) {
-                mc_cal_x = new TTreeReaderValue<double>(*mcReader, x_branch.c_str());
-                mc_cal_y = new TTreeReaderValue<double>(*mcReader, y_branch.c_str());
-                mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
-            }
-
-            // Create histograms for data and MC for each strictness level
-            TH2D* h_data_0 = new TH2D("h_data_0", ("data " + layer_name + " hit position (" + particle_name + ", strictness_0)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-            TH2D* h_data_1 = new TH2D("h_data_1", ("data " + layer_name + " hit position (" + particle_name + ", strictness_1)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-            TH2D* h_data_2 = new TH2D("h_data_2", ("data " + layer_name + " hit position (" + particle_name + ", strictness_2)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-            TH2D* h_data_3 = new TH2D("h_data_3", ("data " + layer_name + " hit position (" + particle_name + ", strictness_3)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-
-            h_data_0->GetXaxis()->SetTitle(("x_{" + layer_name + "}").c_str());
-            h_data_0->GetYaxis()->SetTitle(("y_{" + layer_name + "}").c_str());
-            h_data_1->GetXaxis()->SetTitle(("x_{" + layer_name + "}").c_str());
-            h_data_1->GetYaxis()->SetTitle(("y_{" + layer_name + "}").c_str());
-            h_data_2->GetXaxis()->SetTitle(("x_{" + layer_name + "}").c_str());
-            h_data_2->GetYaxis()->SetTitle(("y_{" + layer_name + "}").c_str());
-            h_data_3->GetXaxis()->SetTitle(("x_{" + layer_name + "}").c_str());
-            h_data_3->GetYaxis()->SetTitle(("y_{" + layer_name + "}").c_str());
-
-            TH2D* h_mc_0 = nullptr;
-            TH2D* h_mc_1 = nullptr;
-            TH2D* h_mc_2 = nullptr;
-            TH2D* h_mc_3 = nullptr;
-
-            if (mcReader) {
-                h_mc_0 = new TH2D("h_mc_0", ("mc " + layer_name + " hit position (" + particle_name + ", strictness_0)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-                h_mc_1 = new TH2D("h_mc_1", ("mc " + layer_name + " hit position (" + particle_name + ", strictness_1)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-                h_mc_2 = new TH2D("h_mc_2", ("mc " + layer_name + " hit position (" + particle_name + ", strictness_2)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-                h_mc_3 = new TH2D("h_mc_3", ("mc " + layer_name + " hit position (" + particle_name + ", strictness_3)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-
-                h_mc_0->GetXaxis()->SetTitle(("x_{" + layer_name + "}").c_str());
-                h_mc_0->GetYaxis()->SetTitle(("y_{" + layer_name + "}").c_str());
-                h_mc_1->GetXaxis()->SetTitle(("x_{" + layer_name + "}").c_str());
-                h_mc_1->GetYaxis()->SetTitle(("y_{" + layer_name + "}").c_str());
-                h_mc_2->GetXaxis()->SetTitle(("x_{" + layer_name + "}").c_str());
-                h_mc_2->GetYaxis()->SetTitle(("y_{" + layer_name + "}").c_str());
-                h_mc_3->GetXaxis()->SetTitle(("x_{" + layer_name + "}").c_str());
-                h_mc_3->GetYaxis()->SetTitle(("y_{" + layer_name + "}").c_str());
-            }
-
-            // Fill the data histograms, applying the cuts
-            while (dataReader.Next()) {
-                if (*particle_pid == pid && *cal_x != -9999 && *cal_y != -9999) {
-                    h_data_0->Fill(*cal_x, *cal_y); // No cuts
-                    if (pcal_fiducial(*cal_lv_1, *cal_lw_1, *cal_lu_1, *cal_sector, 1)) {
-                        h_data_1->Fill(*cal_x, *cal_y);
-                    }
-                    if (pcal_fiducial(*cal_lv_1, *cal_lw_1, *cal_lu_1, *cal_sector, 2)) {
-                        h_data_2->Fill(*cal_x, *cal_y);
-                    }
-                    if (pcal_fiducial(*cal_lv_1, *cal_lw_1, *cal_lu_1, *cal_sector, 3)) {
-                        h_data_3->Fill(*cal_x, *cal_y);
-                    }
-                }
-            }
             // Fill the MC histograms if available, applying the cuts
             if (mcReader) {
                 while (mcReader->Next()) {
@@ -1173,6 +969,504 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
     if (mc_cal_lw_1) delete mc_cal_lw_1;
     if (mc_cal_lu_1) delete mc_cal_lu_1;
     if (mc_cal_sector) delete mc_cal_sector;
+}
+
+void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+    // Define the 2D histogram bins and ranges
+    int nBins_lv_lw_lu = 200;
+    int nBins_sf = 40;
+    double lvMin = 0;
+    double lvMax = 300;
+    double lwMin = 0;
+    double lwMax = 300;
+    double luMin = 0;
+    double luMax = 300;
+    double sfMin = 0.15;
+    double sfMax = 0.35;
+
+    // Array of particle types (photons and electrons) and their corresponding PIDs
+    std::vector<std::tuple<int, std::string>> particle_types = {
+        {22, "photon"},
+        {11, "electron"}
+    };
+
+    // Loop over each particle type
+    for (const auto& particle_type : particle_types) {
+        int pid = std::get<0>(particle_type);
+        std::string particle_name = std::get<1>(particle_type);
+
+        // Restart the TTreeReader to process the data from the beginning
+        dataReader.Restart();
+        if (mcReader) mcReader->Restart();
+
+        // Declare TTreeReaderValues for data and MC
+        TTreeReaderValue<double> cal_energy_1(dataReader, "cal_energy_1");
+        TTreeReaderValue<double> cal_energy_4(dataReader, "cal_energy_4");
+        TTreeReaderValue<double> cal_energy_7(dataReader, "cal_energy_7");
+        TTreeReaderValue<double> p(dataReader, "p");
+        TTreeReaderValue<int> cal_sector(dataReader, "cal_sector");
+        TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+
+        TTreeReaderValue<double> cal_lw_1(dataReader, "cal_lw_1");
+        TTreeReaderValue<double> cal_lv_1(dataReader, "cal_lv_1");
+        TTreeReaderValue<double> cal_lu_1(dataReader, "cal_lu_1");
+
+        TTreeReaderValue<double>* mc_cal_energy_1 = nullptr;
+        TTreeReaderValue<double>* mc_cal_energy_4 = nullptr;
+        TTreeReaderValue<double>* mc_cal_energy_7 = nullptr;
+        TTreeReaderValue<double>* mc_p = nullptr;
+        TTreeReaderValue<int>* mc_cal_sector = nullptr;
+        TTreeReaderValue<int>* mc_particle_pid = nullptr;
+
+        TTreeReaderValue<double>* mc_cal_lw_1 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lv_1 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lu_1 = nullptr;
+
+        if (mcReader) {
+            mc_cal_energy_1 = new TTreeReaderValue<double>(*mcReader, "cal_energy_1");
+            mc_cal_energy_4 = new TTreeReaderValue<double>(*mcReader, "cal_energy_4");
+            mc_cal_energy_7 = new TTreeReaderValue<double>(*mcReader, "cal_energy_7");
+            mc_p = new TTreeReaderValue<double>(*mcReader, "p");
+            mc_cal_sector = new TTreeReaderValue<int>(*mcReader, "cal_sector");
+            mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+
+            mc_cal_lw_1 = new TTreeReaderValue<double>(*mcReader, "cal_lw_1");
+            mc_cal_lv_1 = new TTreeReaderValue<double>(*mcReader, "cal_lv_1");
+            mc_cal_lu_1 = new TTreeReaderValue<double>(*mcReader, "cal_lu_1");
+        }
+
+        // Create histograms for data and MC for each sector and each combination of lv, lw, lu vs sampling fraction
+        TH2D* h_data_lv_lw[6];
+        TH2D* h_mc_lv_lw[6] = {nullptr};
+        TH2D* h_data_lv_lu[6];
+        TH2D* h_mc_lv_lu[6] = {nullptr};
+        TH2D* h_data_lw_lu[6];
+        TH2D* h_mc_lw_lu[6] = {nullptr};
+        TH2D* h_data_sf_lv[6];
+        TH2D* h_mc_sf_lv[6] = {nullptr};
+        TH2D* h_data_sf_lw[6];
+        TH2D* h_mc_sf_lw[6] = {nullptr};
+        TH2D* h_data_sf_lu[6];
+        TH2D* h_mc_sf_lu[6] = {nullptr};
+
+        for (int sector = 1; sector <= 6; ++sector) {
+            std::string title_data_lv_lw = "data PCal sector " + std::to_string(sector) + " (" + particle_name + ")";
+            h_data_lv_lw[sector-1] = new TH2D(("h_data_lv_lw_s" + std::to_string(sector)).c_str(), title_data_lv_lw.c_str(), nBins_lv_lw_lu, lwMin, lwMax, nBins_lv_lw_lu, lvMin, lvMax);
+            h_data_lv_lw[sector-1]->GetXaxis()->SetTitle("lw");
+            h_data_lv_lw[sector-1]->GetYaxis()->SetTitle("lv");
+
+            std::string title_data_lv_lu = "data PCal sector " + std::to_string(sector) + " (" + particle_name + ")";
+            h_data_lv_lu[sector-1] = new TH2D(("h_data_lv_lu_s" + std::to_string(sector)).c_str(), title_data_lv_lu.c_str(), nBins_lv_lw_lu, lwMin, lwMax, nBins_lv_lw_lu, lvMin, lvMax);
+            h_data_lv_lu[sector-1]->GetXaxis()->SetTitle("lu");
+            h_data_lv_lu[sector-1]->GetYaxis()->SetTitle("lv");
+
+            std::string title_data_lw_lu = "data PCal sector " + std::to_string(sector) + " (" + particle_name + ")";
+            h_data_lw_lu[sector-1] = new TH2D(("h_data_lw_lu_s" + std::to_string(sector)).c_str(), title_data_lw_lu.c_str(), nBins_lv_lw_lu, lwMin, lwMax, nBins_lv_lw_lu, lvMin, lvMax);
+            h_data_lw_lu[sector-1]->GetXaxis()->SetTitle("lu");
+            h_data_lw_lu[sector-1]->GetYaxis()->SetTitle("lw");
+
+            std::string title_data_sf_lv = "data PCal sector " + std::to_string(sector) + " (" + particle_name + ")";
+            h_data_sf_lv[sector-1] = new TH2D(("h_data_sf_lv_s" + std::to_string(sector)).c_str(), title_data_sf_lv.c_str(), nBins_lv_lw_lu, lvMin, lvMax, nBins_sf, sfMin, sfMax);
+            h_data_sf_lv[sector-1]->GetXaxis()->SetTitle("lv");
+            h_data_sf_lv[sector-1]->GetYaxis()->SetTitle("Sampling Fraction");
+
+            std::string title_data_sf_lw = "data PCal sector " + std::to_string(sector) + " (" + particle_name + ")";
+            h_data_sf_lw[sector-1] = new TH2D(("h_data_sf_lw_s" + std::to_string(sector)).c_str(), title_data_sf_lw.c_str(), nBins_lv_lw_lu, lwMin, lwMax, nBins_sf, sfMin, sfMax);
+            h_data_sf_lw[sector-1]->GetXaxis()->SetTitle("lw");
+            h_data_sf_lw[sector-1]->GetYaxis()->SetTitle("Sampling Fraction");
+
+            std::string title_data_sf_lu = "data PCal sector " + std::to_string(sector) + " (" + particle_name + ")";
+            h_data_sf_lu[sector-1] = new TH2D(("h_data_sf_lu_s" + std::to_string(sector)).c_str(), title_data_sf_lu.c_str(), nBins_lv_lw_lu, luMin, luMax, nBins_sf, sfMin, sfMax);
+            h_data_sf_lu[sector-1]->GetXaxis()->SetTitle("lu");
+            h_data_sf_lu[sector-1]->GetYaxis()->SetTitle("Sampling Fraction");
+
+            if (mcReader) {
+                std::string title_mc_lv_lw = "mc PCal sector " + std::to_string(sector) + " (" + particle_name + ")";
+                h_mc_lv_lw[sector-1] = new TH2D(("h_mc_lv_lw_s" + std::to_string(sector)).c_str(), title_mc_lv_lw.c_str(), nBins_lv_lw_lu, lwMin, lwMax, nBins_lv_lw_lu, lvMin, lvMax);
+                h_mc_lv_lw[sector-1]->GetXaxis()->SetTitle("lw");
+                h_mc_lv_lw[sector-1]->GetYaxis()->SetTitle("lv");
+
+                std::string title_mc_lv_lu = "mc PCal sector " + std::to_string(sector) + " (" + particle_name + ")";
+                h_mc_lv_lu[sector-1] = new TH2D(("h_mc_lv_lu_s" + std::to_string(sector)).c_str(), title_mc_lv_lu.c_str(), nBins_lv_lw_lu, lwMin, lwMax, nBins_lv_lw_lu, lvMin, lvMax);
+                h_mc_lv_lu[sector-1]->GetXaxis()->SetTitle("lu");
+                h_mc_lv_lu[sector-1]->GetYaxis()->SetTitle("lv");
+
+                std::string title_mc_lw_lu = "mc PCal sector " + std::to_string(sector) + " (" + particle_name + ")";
+                h_mc_lw_lu[sector-1] = new TH2D(("h_mc_lw_lu_s" + std::to_string(sector)).c_str(), title_mc_lw_lu.c_str(), nBins_lv_lw_lu, lwMin, lwMax, nBins_lv_lw_lu, lvMin, lvMax);
+                h_mc_lw_lu[sector-1]->GetXaxis()->SetTitle("lu");
+                h_mc_lw_lu[sector-1]->GetYaxis()->SetTitle("lw");
+
+                std::string title_mc_sf_lv = "mc PCal sector " + std::to_string(sector) + " (" + particle_name + ")";
+                h_mc_sf_lv[sector-1] = new TH2D(("h_mc_sf_lv_s" + std::to_string(sector)).c_str(), title_mc_sf_lv.c_str(), nBins_lv_lw_lu, lvMin, lvMax, nBins_sf, sfMin, sfMax);
+                h_mc_sf_lv[sector-1]->GetXaxis()->SetTitle("lv");
+                h_mc_sf_lv[sector-1]->GetYaxis()->SetTitle("Sampling Fraction");
+
+                std::string title_mc_sf_lw = "mc PCal sector " + std::to_string(sector) + " (" + particle_name + ")";
+                h_mc_sf_lw[sector-1] = new TH2D(("h_mc_sf_lw_s" + std::to_string(sector)).c_str(), title_mc_sf_lw.c_str(), nBins_lv_lw_lu, lwMin, lwMax, nBins_sf, sfMin, sfMax);
+                h_mc_sf_lw[sector-1]->GetXaxis()->SetTitle("lw");
+                h_mc_sf_lw[sector-1]->GetYaxis()->SetTitle("Sampling Fraction");
+
+                std::string title_mc_sf_lu = "mc PCal sector " + std::to_string(sector) + " (" + particle_name + ")";
+                h_mc_sf_lu[sector-1] = new TH2D(("h_mc_sf_lu_s" + std::to_string(sector)).c_str(), title_mc_sf_lu.c_str(),nBins_lv_lw_lu, luMin, luMax, nBins_sf, sfMin, sfMax);
+                h_mc_sf_lu[sector-1]->GetXaxis()->SetTitle("lu");
+                h_mc_sf_lu[sector-1]->GetYaxis()->SetTitle("Sampling Fraction");
+            }
+        }
+
+        // Create TProfile objects for the sampling fraction vs lv, lw, lu
+        TProfile* prof_data_sf_lv[6];
+        TProfile* prof_data_sf_lw[6];
+        TProfile* prof_data_sf_lu[6];
+
+        TProfile* prof_mc_sf_lv[6] = {nullptr};
+        TProfile* prof_mc_sf_lw[6] = {nullptr};
+        TProfile* prof_mc_sf_lu[6] = {nullptr};
+
+        for (int sector = 0; sector < 6; ++sector) {
+            prof_data_sf_lv[sector] = new TProfile(("prof_data_sf_lv_s" + std::to_string(sector+1)).c_str(), "Sampling Fraction vs lv", nBins_lv_lw_lu, lvMin, lvMax, sfMin, sfMax);
+            prof_data_sf_lw[sector] = new TProfile(("prof_data_sf_lw_s" + std::to_string(sector+1)).c_str(), "Sampling Fraction vs lw", nBins_lv_lw_lu, lwMin, lwMax, sfMin, sfMax);
+            prof_data_sf_lu[sector] = new TProfile(("prof_data_sf_lu_s" + std::to_string(sector+1)).c_str(), "Sampling Fraction vs lu", nBins_lv_lw_lu, luMin, luMax, sfMin, sfMax);
+
+            if (mcReader) {
+                prof_mc_sf_lv[sector] = new TProfile(("prof_mc_sf_lv_s" + std::to_string(sector+1)).c_str(), "Sampling Fraction vs lv (MC)", nBins_lv_lw_lu, lvMin, lvMax, sfMin, sfMax);
+                prof_mc_sf_lw[sector] = new TProfile(("prof_mc_sf_lw_s" + std::to_string(sector+1)).c_str(), "Sampling Fraction vs lw (MC)", nBins_lv_lw_lu, lwMin, lwMax, sfMin, sfMax);
+                prof_mc_sf_lu[sector] = new TProfile(("prof_mc_sf_lu_s" + std::to_string(sector+1)).c_str(), "Sampling Fraction vs lu (MC)", nBins_lv_lw_lu, luMin, luMax, sfMin, sfMax);
+            }
+        }
+
+        // Fill the histograms and profiles for data
+        while (dataReader.Next()) {
+            if (*particle_pid == pid && *cal_energy_1 != -9999 && *cal_energy_4 != -9999 && *cal_energy_7 != -9999 && *p != -9999) {
+                int sector = *cal_sector;
+                if (sector >= 1 && sector <= 6) {
+                    double sampling_fraction = (*cal_energy_1 + *cal_energy_4 + *cal_energy_7) / *p;
+                    h_data_lv_lw[sector-1]->Fill(*cal_lw_1, *cal_lv_1);
+                    h_data_lv_lu[sector-1]->Fill(*cal_lu_1, *cal_lv_1);
+                    h_data_lw_lu[sector-1]->Fill(*cal_lu_1, *cal_lw_1);
+                    h_data_sf_lv[sector-1]->Fill(*cal_lv_1, sampling_fraction);
+                    h_data_sf_lw[sector-1]->Fill(*cal_lw_1, sampling_fraction);
+                    h_data_sf_lu[sector-1]->Fill(*cal_lu_1, sampling_fraction);
+
+                    // Fill profiles for comparison plots
+                    prof_data_sf_lv[sector-1]->Fill(*cal_lv_1, sampling_fraction);
+                    prof_data_sf_lw[sector-1]->Fill(*cal_lw_1, sampling_fraction);
+                    prof_data_sf_lu[sector-1]->Fill(*cal_lu_1, sampling_fraction);
+                }
+            }
+        }
+
+        // Fill the histograms and profiles for MC
+        if (mcReader) {
+            while (mcReader->Next()) {
+                if (**mc_particle_pid == pid && **mc_cal_energy_1 != -9999 && **mc_cal_energy_4 != -9999 && **mc_cal_energy_7 != -9999 && **mc_p != -9999) {
+                    int sector = **mc_cal_sector;
+                    if (sector >= 1 && sector <= 6) {
+                        double sampling_fraction = (**mc_cal_energy_1 + **mc_cal_energy_4 + **mc_cal_energy_7) / **mc_p;
+                        h_mc_lv_lw[sector-1]->Fill(**mc_cal_lw_1, **mc_cal_lv_1);
+                        h_mc_lv_lu[sector-1]->Fill(**mc_cal_lu_1, **mc_cal_lv_1);
+                        h_mc_lw_lu[sector-1]->Fill(**mc_cal_lu_1, **mc_cal_lw_1);
+                        h_mc_sf_lv[sector-1]->Fill(**mc_cal_lv_1, sampling_fraction);
+                        h_mc_sf_lw[sector-1]->Fill(**mc_cal_lw_1, sampling_fraction);
+                        h_mc_sf_lu[sector-1]->Fill(**mc_cal_lu_1, sampling_fraction);
+
+                        // Fill profiles for comparison plots
+                        prof_mc_sf_lv[sector-1]->Fill(**mc_cal_lv_1, sampling_fraction);
+                        prof_mc_sf_lw[sector-1]->Fill(**mc_cal_lw_1, sampling_fraction);
+                        prof_mc_sf_lu[sector-1]->Fill(**mc_cal_lu_1, sampling_fraction);
+                    }
+                }
+            }
+        }
+
+        // Create TGraphErrors for each sector from TProfile
+        TGraphErrors* graph_data_sf_lv[6];
+        TGraphErrors* graph_data_sf_lw[6];
+        TGraphErrors* graph_data_sf_lu[6];
+
+        TGraphErrors* graph_mc_sf_lv[6] = {nullptr};
+        TGraphErrors* graph_mc_sf_lw[6] = {nullptr};
+        TGraphErrors* graph_mc_sf_lu[6] = {nullptr};
+
+        for (int sector = 0; sector < 6; ++sector) {
+            graph_data_sf_lv[sector] = new TGraphErrors(prof_data_sf_lv[sector]);
+            graph_data_sf_lw[sector] = new TGraphErrors(prof_data_sf_lw[sector]);
+            graph_data_sf_lu[sector] = new TGraphErrors(prof_data_sf_lu[sector]);
+
+            if (mcReader) {
+                graph_mc_sf_lv[sector] = new TGraphErrors(prof_mc_sf_lv[sector]);
+                graph_mc_sf_lw[sector] = new TGraphErrors(prof_mc_sf_lw[sector]);
+                graph_mc_sf_lu[sector] = new TGraphErrors(prof_mc_sf_lu[sector]);
+            }
+
+            // Customize colors
+            graph_data_sf_lv[sector]->SetMarkerColor(kBlack);
+            graph_data_sf_lv[sector]->SetLineColor(kBlack);
+            if (mcReader) {
+                graph_mc_sf_lv[sector]->SetMarkerColor(kRed);
+                graph_mc_sf_lv[sector]->SetLineColor(kRed);
+            }
+
+            graph_data_sf_lw[sector]->SetMarkerColor(kBlack);
+            graph_data_sf_lw[sector]->SetLineColor(kBlack);
+            if (mcReader) {
+                graph_mc_sf_lw[sector]->SetMarkerColor(kRed);
+                graph_mc_sf_lw[sector]->SetLineColor(kRed);
+            }
+
+            graph_data_sf_lu[sector]->SetMarkerColor(kBlack);
+            graph_data_sf_lu[sector]->SetLineColor(kBlack);
+            if (mcReader) {
+                graph_mc_sf_lu[sector]->SetMarkerColor(kRed);
+                graph_mc_sf_lu[sector]->SetLineColor(kRed);
+            }
+        }
+
+        // Create 2x3 grid plots for comparison of sampling fraction vs lv, lw, lu across all sectors
+        TCanvas c_sf_lv_grid("c_sf_lv_grid", ("Sampling Fraction vs lv (all sectors) - " + particle_name).c_str(), 1800, 1200);
+        c_sf_lv_grid.Divide(3, 2);
+        for (int sector = 1; sector <= 6; ++sector) {
+            c_sf_lv_grid.cd(sector);
+            gPad->SetLeftMargin(0.20);  // Adjust the left margin to add padding
+			graph_data_sf_lv[sector-1]->SetTitle(("Sector " + std::to_string(sector)).c_str());
+            graph_data_sf_lv[sector-1]->GetYaxis()->SetRangeUser(0.18, 0.28);
+			graph_data_sf_lv[sector-1]->Draw("AP");
+			if (mcReader) graph_mc_sf_lv[sector-1]->Draw("P same");
+            auto legend = new TLegend(0.7, 0.75, 0.9, 0.9);
+			legend->AddEntry(graph_data_sf_lv[sector-1], "data", "pl");
+			if (mcReader) legend->AddEntry(graph_mc_sf_lv[sector-1], "mc", "pl");
+			legend->Draw();
+            graph_data_sf_lv[sector-1]->GetXaxis()->SetTitle("lv");
+            graph_data_sf_lv[sector-1]->GetYaxis()->SetTitle("Sampling Fraction");
+        }
+        c_sf_lv_grid.SaveAs(("output/calibration/cal/fiducial/sf_vs_lv_grid_" + particle_name + ".png").c_str());
+
+        TCanvas c_sf_lw_grid("c_sf_lw_grid", ("Sampling Fraction vs lw (all sectors) - " + particle_name).c_str(), 1800, 1200);
+        c_sf_lw_grid.Divide(3, 2);
+        for (int sector = 1; sector <= 6; ++sector) {
+            c_sf_lw_grid.cd(sector);
+            gPad->SetLeftMargin(0.20);  // Adjust the left margin to add padding
+			graph_data_sf_lw[sector-1]->SetTitle(("Sector " + std::to_string(sector)).c_str());
+            graph_data_sf_lw[sector-1]->GetYaxis()->SetRangeUser(0.18, 0.28);
+			graph_data_sf_lw[sector-1]->Draw("AP");
+			if (mcReader) graph_mc_sf_lw[sector-1]->Draw("P same");
+            auto legend = new TLegend(0.7, 0.75, 0.9, 0.9);
+			legend->AddEntry(graph_data_sf_lw[sector-1], "data", "pl");
+			if (mcReader) legend->AddEntry(graph_mc_sf_lv[sector-1], "mc", "pl");
+			legend->Draw();
+            graph_data_sf_lw[sector-1]->GetXaxis()->SetTitle("lw");
+            graph_data_sf_lw[sector-1]->GetYaxis()->SetTitle("Sampling Fraction");
+        }
+        c_sf_lw_grid.SaveAs(("output/calibration/cal/fiducial/sf_vs_lw_grid_" + particle_name + ".png").c_str());
+
+        TCanvas c_sf_lu_grid("c_sf_lu_grid", ("Sampling Fraction vs lu (all sectors) - " + particle_name).c_str(), 1800, 1200);
+        c_sf_lu_grid.Divide(3, 2);
+        for (int sector = 1; sector <= 6; ++sector) {
+            c_sf_lu_grid.cd(sector);
+            gPad->SetLeftMargin(0.20);  // Adjust the left margin to add padding
+			graph_data_sf_lu[sector-1]->SetTitle(("Sector " + std::to_string(sector)).c_str());
+            graph_data_sf_lu[sector-1]->GetYaxis()->SetRangeUser(0.18, 0.28);
+			graph_data_sf_lu[sector-1]->Draw("AP");
+			if (mcReader) graph_mc_sf_lu[sector-1]->Draw("P same");
+            auto legend = new TLegend(0.7, 0.75, 0.9, 0.9);
+			legend->AddEntry(graph_data_sf_lu[sector-1], "data", "pl");
+			if (mcReader) legend->AddEntry(graph_mc_sf_lu[sector-1], "mc", "pl");
+			legend->Draw();
+            graph_data_sf_lu[sector-1]->GetXaxis()->SetTitle("lu");
+            graph_data_sf_lu[sector-1]->GetYaxis()->SetTitle("Sampling Fraction");
+        }
+        c_sf_lu_grid.SaveAs(("output/calibration/cal/fiducial/sf_vs_lu_grid_" + particle_name + ".png").c_str());
+
+        // Save the original 2D histograms as before
+        TCanvas c_data_lv_lw(("c_data_fiducial_lv_lw_" + particle_name).c_str(), ("Data lv vs lw (" + particle_name + ")").c_str(), 1800, 1200);
+        c_data_lv_lw.Divide(3, 2);
+        c_data_lv_lw.SetLogz(); // Set log scale on the z-axis
+        c_data_lv_lw.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
+
+        // Save the original 2D histograms as before
+        TCanvas c_data_lv_lu(("c_data_fiducial_lv_lu_" + particle_name).c_str(), ("Data lv vs lu (" + particle_name + ")").c_str(), 1800, 1200);
+        c_data_lv_lu.Divide(3, 2);
+        c_data_lv_lu.SetLogz(); // Set log scale on the z-axis
+        c_data_lv_lu.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
+
+        // Save the original 2D histograms as before
+        TCanvas c_data_lw_lu(("c_data_fiducial_lw_lu_" + particle_name).c_str(), ("Data lw vs lu (" + particle_name + ")").c_str(), 1800, 1200);
+        c_data_lw_lu.Divide(3, 2);
+        c_data_lw_lu.SetLogz(); // Set log scale on the z-axis
+        c_data_lw_lu.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
+
+        TCanvas c_mc_lv_lw(("c_mc_fiducial_lv_lw_" + particle_name).c_str(), ("MC lv vs lw (" + particle_name + ")").c_str(), 1800, 1200);
+        c_mc_lv_lw.Divide(3, 2);
+        c_mc_lv_lw.SetLogz(); // Set log scale on the z-axis
+        c_mc_lv_lw.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
+
+        TCanvas c_mc_lv_lu(("c_mc_fiducial_lv_lu_" + particle_name).c_str(), ("MC lv vs lu (" + particle_name + ")").c_str(), 1800, 1200);
+        c_mc_lv_lu.Divide(3, 2);
+        c_mc_lv_lu.SetLogz(); // Set log scale on the z-axis
+        c_mc_lv_lu.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
+
+        TCanvas c_mc_lw_lu(("c_mc_fiducial_lw_lu_" + particle_name).c_str(), ("MC lw vs lu (" + particle_name + ")").c_str(), 1800, 1200);
+        c_mc_lw_lu.Divide(3, 2);
+        c_mc_lw_lu.SetLogz(); // Set log scale on the z-axis
+        c_mc_lw_lu.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
+
+        TCanvas c_data_sf_lv(("c_data_fiducial_sf_lv_" + particle_name).c_str(), ("Data Sampling Fraction vs lv (" + particle_name + ")").c_str(), 1800, 1200);
+        c_data_sf_lv.Divide(3, 2);
+        c_data_sf_lv.SetLogz(); // Set log scale on the z-axis
+        c_data_sf_lv.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
+
+        TCanvas c_mc_sf_lv(("c_mc_fiducial_sf_lv_" + particle_name).c_str(), ("MC Sampling Fraction vs lv (" + particle_name + ")").c_str(), 1800, 1200);
+        c_mc_sf_lv.Divide(3, 2);
+        c_mc_sf_lv.SetLogz(); // Set log scale on the z-axis
+        c_mc_sf_lv.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
+
+        TCanvas c_data_sf_lw(("c_data_fiducial_sf_lw_" + particle_name).c_str(), ("Data Sampling Fraction vs lw (" + particle_name + ")").c_str(), 1800, 1200);
+        c_data_sf_lw.Divide(3, 2);
+        c_data_sf_lw.SetLogz(); // Set log scale on the z-axis
+        c_data_sf_lw.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
+
+        TCanvas c_mc_sf_lw(("c_mc_fiducial_sf_lw_" + particle_name).c_str(), ("MC Sampling Fraction vs lw (" + particle_name + ")").c_str(), 1800, 1200);
+        c_mc_sf_lw.Divide(3, 2);
+        c_mc_sf_lw.SetLogz(); // Set log scale on the z-axis
+        c_mc_sf_lw.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
+
+        TCanvas c_data_sf_lu(("c_data_fiducial_sf_lu_" + particle_name).c_str(), ("Data Sampling Fraction vs lu (" + particle_name + ")").c_str(), 1800, 1200);
+        c_data_sf_lu.Divide(3, 2);
+        c_data_sf_lu.SetLogz(); // Set log scale on the z-axis
+        c_data_sf_lu.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
+
+        TCanvas c_mc_sf_lu(("c_mc_fiducial_sf_lu_" + particle_name).c_str(), ("MC Sampling Fraction vs lu (" + particle_name + ")").c_str(), 1800, 1200);
+        c_mc_sf_lu.Divide(3, 2);
+        c_mc_sf_lu.SetLogz(); // Set log scale on the z-axis
+        c_mc_sf_lu.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
+
+        for (int sector = 1; sector <= 6; ++sector) {
+            c_data_lv_lw.cd(sector);
+            gPad->SetLeftMargin(0.15); // Adjust the left margin
+            gPad->SetRightMargin(0.15); // Adjust the right margin
+            h_data_lv_lw[sector-1]->Draw("COLZ");
+
+            c_data_lv_lu.cd(sector);
+            gPad->SetLeftMargin(0.15); // Adjust the left margin
+            gPad->SetRightMargin(0.15); // Adjust the right margin
+            h_data_lv_lu[sector-1]->Draw("COLZ");
+
+            c_data_lw_lu.cd(sector);
+            gPad->SetLeftMargin(0.15); // Adjust the left margin
+            gPad->SetRightMargin(0.15); // Adjust the right margin
+            h_data_lw_lu[sector-1]->Draw("COLZ");
+
+            c_data_sf_lv.cd(sector);
+            gPad->SetLeftMargin(0.15); // Adjust the left margin
+            gPad->SetRightMargin(0.15); // Adjust the right margin
+            h_data_sf_lv[sector-1]->Draw("COLZ");
+
+            c_data_sf_lw.cd(sector);
+            gPad->SetLeftMargin(0.15); // Adjust the left margin
+            gPad->SetRightMargin(0.15); // Adjust the right margin
+            h_data_sf_lw[sector-1]->Draw("COLZ");
+
+            c_data_sf_lu.cd(sector);
+            gPad->SetLeftMargin(0.15); // Adjust the left margin
+            gPad->SetRightMargin(0.15); // Adjust the right margin
+            h_data_sf_lu[sector-1]->Draw("COLZ");
+
+            if (mcReader) {
+                c_mc_lv_lw.cd(sector);
+                gPad->SetLeftMargin(0.15); // Adjust the left margin
+                gPad->SetRightMargin(0.15); // Adjust the right margin
+                h_mc_lv_lw[sector-1]->Draw("COLZ");
+
+                c_mc_lv_lu.cd(sector);
+                gPad->SetLeftMargin(0.15); // Adjust the left margin
+                gPad->SetRightMargin(0.15); // Adjust the right margin
+                h_mc_lv_lu[sector-1]->Draw("COLZ");
+
+                c_mc_lw_lu.cd(sector);
+                gPad->SetLeftMargin(0.15); // Adjust the left margin
+                gPad->SetRightMargin(0.15); // Adjust the right margin
+                h_mc_lw_lu[sector-1]->Draw("COLZ");
+
+                c_mc_sf_lv.cd(sector);
+                gPad->SetLeftMargin(0.15); // Adjust the left margin
+                gPad->SetRightMargin(0.15); // Adjust the right margin
+                h_mc_sf_lv[sector-1]->Draw("COLZ");
+
+                c_mc_sf_lw.cd(sector);
+                gPad->SetLeftMargin(0.15); // Adjust the left margin
+                gPad->SetRightMargin(0.15); // Adjust the right margin
+                h_mc_sf_lw[sector-1]->Draw("COLZ");
+
+                c_mc_sf_lu.cd(sector);
+                gPad->SetLeftMargin(0.15); // Adjust the left margin
+                gPad->SetRightMargin(0.15); // Adjust the right margin
+                h_mc_sf_lu[sector-1]->Draw("COLZ");
+            }
+        }
+
+        // Save the original canvases
+        c_data_lv_lw.SaveAs(("output/calibration/cal/fiducial/data_fiducial_lv_lw_" + particle_name + ".png").c_str());
+        if (mcReader) c_mc_lv_lw.SaveAs(("output/calibration/cal/fiducial/mc_fiducial_lv_lw_" + particle_name + ".png").c_str());
+
+        // Save the original canvases
+        c_data_lv_lu.SaveAs(("output/calibration/cal/fiducial/data_fiducial_lv_lu_" + particle_name + ".png").c_str());
+        if (mcReader) c_mc_lv_lu.SaveAs(("output/calibration/cal/fiducial/mc_fiducial_lv_lu_" + particle_name + ".png").c_str());
+
+        // Save the original canvases
+        c_data_lw_lu.SaveAs(("output/calibration/cal/fiducial/data_fiducial_lw_lu_" + particle_name + ".png").c_str());
+        if (mcReader) c_mc_lw_lu.SaveAs(("output/calibration/cal/fiducial/mc_fiducial_lw_lu_" + particle_name + ".png").c_str());
+
+        c_data_sf_lv.SaveAs(("output/calibration/cal/fiducial/data_fiducial_sf_lv_" + particle_name + ".png").c_str());
+        if (mcReader) c_mc_sf_lv.SaveAs(("output/calibration/cal/fiducial/mc_fiducial_sf_lv_" + particle_name + ".png").c_str());
+
+        c_data_sf_lw.SaveAs(("output/calibration/cal/fiducial/data_fiducial_sf_lw_" + particle_name + ".png").c_str());
+        if (mcReader) c_mc_sf_lw.SaveAs(("output/calibration/cal/fiducial/mc_fiducial_sf_lw_" + particle_name + ".png").c_str());
+
+        c_data_sf_lu.SaveAs(("output/calibration/cal/fiducial/data_fiducial_sf_lu_" + particle_name + ".png").c_str());
+        if (mcReader) c_mc_sf_lu.SaveAs(("output/calibration/cal/fiducial/mc_fiducial_sf_lu_" + particle_name + ".png").c_str());
+
+        // Clean up for this layer and particle type
+        for (int sector = 0; sector < 6; ++sector) {
+            delete h_data_lv_lw[sector];
+            delete h_data_sf_lv[sector];
+            delete h_data_sf_lw[sector];
+            delete h_data_sf_lu[sector];
+
+            if (mcReader) {
+                delete h_mc_lv_lw[sector];
+                delete h_mc_sf_lv[sector];
+
+
+                delete h_mc_sf_lw[sector];
+                delete h_mc_sf_lu[sector];
+            }
+        }
+
+        // Clean up TProfile and TGraphErrors objects
+        for (int sector = 0; sector < 6; ++sector) {
+            delete prof_data_sf_lv[sector];
+            delete prof_data_sf_lw[sector];
+            delete prof_data_sf_lu[sector];
+            delete graph_data_sf_lv[sector];
+            delete graph_data_sf_lw[sector];
+            delete graph_data_sf_lu[sector];
+
+            if (mcReader) {
+                delete prof_mc_sf_lv[sector];
+                delete prof_mc_sf_lw[sector];
+                delete prof_mc_sf_lu[sector];
+                delete graph_mc_sf_lv[sector];
+                delete graph_mc_sf_lw[sector];
+                delete graph_mc_sf_lu[sector];
+            }
+        }
+
+        if (mc_cal_energy_1) delete mc_cal_energy_1;
+        if (mc_cal_energy_4) delete mc_cal_energy_4;
+        if (mc_cal_energy_7) delete mc_cal_energy_7;
+        if (mc_p) delete mc_p;
+        if (mc_cal_sector) delete mc_cal_sector;
+        if (mc_particle_pid) delete mc_particle_pid;
+    }
 }
                            
 void create_directories() {
