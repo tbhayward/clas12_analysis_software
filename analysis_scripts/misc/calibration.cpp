@@ -1744,25 +1744,25 @@ void plot_ecin_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRe
         }
 
         // Save the original canvases
-        c_data_lv_lw.SaveAs(("output/calibration/cal/fiducial/ecin//data_fiducial_lv_lw_" + particle_name + ".png").c_str());
+        c_data_lv_lw.SaveAs(("output/calibration/cal/fiducial/ecin/data_fiducial_lv_lw_" + particle_name + ".png").c_str());
         if (mcReader) c_mc_lv_lw.SaveAs(("output/calibration/cal/fiducial/ecin//mc_fiducial_lv_lw_" + particle_name + ".png").c_str());
 
         // Save the original canvases
-        c_data_lv_lu.SaveAs(("output/calibration/cal/fiducial/ecin//data_fiducial_lv_lu_" + particle_name + ".png").c_str());
+        c_data_lv_lu.SaveAs(("output/calibration/cal/fiducial/ecin/data_fiducial_lv_lu_" + particle_name + ".png").c_str());
         if (mcReader) c_mc_lv_lu.SaveAs(("output/calibration/cal/fiducial/ecin//mc_fiducial_lv_lu_" + particle_name + ".png").c_str());
 
         // Save the original canvases
-        c_data_lw_lu.SaveAs(("output/calibration/cal/fiducial/ecin//data_fiducial_lw_lu_" + particle_name + ".png").c_str());
-        if (mcReader) c_mc_lw_lu.SaveAs(("output/calibration/cal/fiducial/ecin//mc_fiducial_lw_lu_" + particle_name + ".png").c_str());
+        c_data_lw_lu.SaveAs(("output/calibration/cal/fiducial/ecin/data_fiducial_lw_lu_" + particle_name + ".png").c_str());
+        if (mcReader) c_mc_lw_lu.SaveAs(("output/calibration/cal/fiducial/ecin/mc_fiducial_lw_lu_" + particle_name + ".png").c_str());
 
-        c_data_sf_lv.SaveAs(("output/calibration/cal/fiducial/ecin//data_fiducial_sf_lv_" + particle_name + ".png").c_str());
-        if (mcReader) c_mc_sf_lv.SaveAs(("output/calibration/cal/fiducial/ecin//mc_fiducial_sf_lv_" + particle_name + ".png").c_str());
+        c_data_sf_lv.SaveAs(("output/calibration/cal/fiducial/ecin/data_fiducial_sf_lv_" + particle_name + ".png").c_str());
+        if (mcReader) c_mc_sf_lv.SaveAs(("output/calibration/cal/fiducial/ecin/mc_fiducial_sf_lv_" + particle_name + ".png").c_str());
 
-        c_data_sf_lw.SaveAs(("output/calibration/cal/fiducial/ecin//data_fiducial_sf_lw_" + particle_name + ".png").c_str());
-        if (mcReader) c_mc_sf_lw.SaveAs(("output/calibration/cal/fiducial/ecin//mc_fiducial_sf_lw_" + particle_name + ".png").c_str());
+        c_data_sf_lw.SaveAs(("output/calibration/cal/fiducial/ecin/data_fiducial_sf_lw_" + particle_name + ".png").c_str());
+        if (mcReader) c_mc_sf_lw.SaveAs(("output/calibration/cal/fiducial/ecin/mc_fiducial_sf_lw_" + particle_name + ".png").c_str());
 
-        c_data_sf_lu.SaveAs(("output/calibration/cal/fiducial/ecin//data_fiducial_sf_lu_" + particle_name + ".png").c_str());
-        if (mcReader) c_mc_sf_lu.SaveAs(("output/calibration/cal/fiducial/ecin//mc_fiducial_sf_lu_" + particle_name + ".png").c_str());
+        c_data_sf_lu.SaveAs(("output/calibration/cal/fiducial/ecin/data_fiducial_sf_lu_" + particle_name + ".png").c_str());
+        if (mcReader) c_mc_sf_lu.SaveAs(("output/calibration/cal/fiducial/ecin/mc_fiducial_sf_lu_" + particle_name + ".png").c_str());
 
         // Clean up for this layer and particle type
         for (int sector = 0; sector < 6; ++sector) {
@@ -2008,7 +2008,7 @@ void create_directories() {
         "output/calibration/ft/",
         "output/calibration/cal/",
         "output/calibration/cal/fiducial/",
-        "output/calibration/cal/fiducial/pca",
+        "output/calibration/cal/fiducial/pcal",
         "output/calibration/cal/fiducial/ecin",
         "output/calibration/cal/fiducial/ecout",
         "output/calibration/cc/"
