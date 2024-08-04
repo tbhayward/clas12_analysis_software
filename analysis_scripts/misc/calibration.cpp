@@ -1335,9 +1335,9 @@ void plot_ecin_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRe
         TTreeReaderValue<int> cal_sector(dataReader, "cal_sector");
         TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
 
-        TTreeReaderValue<double> cal_lw_1(dataReader, "cal_lw_1");
-        TTreeReaderValue<double> cal_lv_1(dataReader, "cal_lv_1");
-        TTreeReaderValue<double> cal_lu_1(dataReader, "cal_lu_1");
+        TTreeReaderValue<double> cal_lw_4(dataReader, "cal_lw_4");
+        TTreeReaderValue<double> cal_lv_4(dataReader, "cal_lv_4");
+        TTreeReaderValue<double> cal_lu_4(dataReader, "cal_lu_4");
 
         TTreeReaderValue<double>* mc_cal_energy_1 = nullptr;
         TTreeReaderValue<double>* mc_cal_energy_4 = nullptr;
@@ -1346,9 +1346,9 @@ void plot_ecin_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRe
         TTreeReaderValue<int>* mc_cal_sector = nullptr;
         TTreeReaderValue<int>* mc_particle_pid = nullptr;
 
-        TTreeReaderValue<double>* mc_cal_lw_1 = nullptr;
-        TTreeReaderValue<double>* mc_cal_lv_1 = nullptr;
-        TTreeReaderValue<double>* mc_cal_lu_1 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lw_4 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lv_4 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lu_4 = nullptr;
 
         if (mcReader) {
             mc_cal_energy_1 = new TTreeReaderValue<double>(*mcReader, "cal_energy_1");
@@ -1358,9 +1358,9 @@ void plot_ecin_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRe
             mc_cal_sector = new TTreeReaderValue<int>(*mcReader, "cal_sector");
             mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
 
-            mc_cal_lw_1 = new TTreeReaderValue<double>(*mcReader, "cal_lw_1");
-            mc_cal_lv_1 = new TTreeReaderValue<double>(*mcReader, "cal_lv_1");
-            mc_cal_lu_1 = new TTreeReaderValue<double>(*mcReader, "cal_lu_1");
+            mc_cal_lw_4 = new TTreeReaderValue<double>(*mcReader, "cal_lw_4");
+            mc_cal_lv_4 = new TTreeReaderValue<double>(*mcReader, "cal_lv_4");
+            mc_cal_lu_4 = new TTreeReaderValue<double>(*mcReader, "cal_lu_4");
         }
 
         // Create histograms for data and MC for each sector and each combination of lv, lw, lu vs sampling fraction
