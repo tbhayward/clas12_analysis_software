@@ -2822,7 +2822,7 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
     if (mc_traj_edge_36) delete mc_traj_edge_36;
 }
 
-void dc_fiducial_cuts_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Define the number of bins for the histograms
     int nBins = 100;
 
