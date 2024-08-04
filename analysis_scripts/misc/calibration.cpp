@@ -2634,7 +2634,7 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
     std::vector<std::tuple<std::string, std::string, std::string, double, double>> regions = {
         {"traj_x_6", "traj_y_6", "region_1", -200, 200},
         {"traj_x_18", "traj_y_18", "region_2", -300, 300},
-        {"traj_x_36", "traj_y_36", "region_3", -400, 400}
+        {"traj_x_36", "traj_y_36", "region_3", -450, 450}
     };
 
     // Array of particle types (photons and electrons) and their corresponding PIDs
@@ -2821,6 +2821,156 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
     if (mc_traj_edge_18) delete mc_traj_edge_18;
     if (mc_traj_edge_36) delete mc_traj_edge_36;
 }
+
+void dc_fiducial_cuts_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+    // Define the number of bins for the histograms
+    int nBins = 100;
+
+    // Array of DC regions and their corresponding variable names
+    std::vector<std::tuple<std::string, std::string, std::string, double, double>> regions = {
+        {"traj_x_6", "traj_y_6", "region_1", -200, 200},
+        {"traj_x_18", "traj_y_18", "region_2", -300, 300},
+        {"traj_x_36", "traj_y_36", "region_3", -450, 450}
+    };
+
+    // Array of particle types (photons and electrons) and their corresponding PIDs
+    std::vector<std::tuple<int, std::string>> particle_types = {
+        {11, "electron"},
+        // {-211, "pim"},
+        // {211, "pip"},
+        // {321, "kp"},
+        // {-321, "km"},
+        {2212, "proton"}
+    };
+
+    // Declare TTreeReaderValues for the DC edge and track variables
+    TTreeReaderValue<double> traj_edge_6(dataReader, "traj_edge_6");
+    TTreeReaderValue<double> traj_edge_18(dataReader, "traj_edge_18");
+    TTreeReaderValue<double> traj_edge_36(dataReader, "traj_edge_36");
+
+    TTreeReaderValue<int> track_sector_6(dataReader, "track_sector_6");
+    TTreeReaderValue<double> track_chi2_6(dataReader, "track_chi2_6");
+    TTreeReaderValue<int> track_ndf_6(dataReader, "track_ndf_6");
+
+    TTreeReaderValue<double>* mc_traj_edge_6 = nullptr;
+    TTreeReaderValue<double>* mc_traj_edge_18 = nullptr;
+    TTreeReaderValue<double>* mc_traj_edge_36 = nullptr;
+    TTreeReaderValue<double>* mc_track_chi2_6 = nullptr;
+
+    if (mcReader) {
+        mc_traj_edge_6 = new TTreeReaderValue<double>(*mcReader, "traj_edge_6");
+        mc_traj_edge_18 = new TTreeReaderValue<double>(*mcReader, "traj_edge_18");
+        mc_traj_edge_36 = new TTreeReaderValue<double>(*mcReader, "traj_edge_36");
+        mc_track_chi2_6 = new TTreeReaderValue<double>(*mcReader, "track_chi2_6");
+    }
+
+    // Loop over each particle type
+    for (const auto& particle_type : particle_types) {
+        int pid = std::get<0>(particle_type);
+        std::string particle_name = std::get<1>(particle_type);
+
+        // Loop over each DC region
+        for (const auto& region : regions) {
+            std::string x_branch = std::get<0>(region);
+            std::string y_branch = std::get<1>(region);
+            std::string region_name = std::get<2>(region);
+            double xMin = std::get<3>(region);
+            double xMax = std::get<4>(region);
+            double yMin = xMin;  // Same as xMin
+            double yMax = xMax;  // Same as xMax
+
+            // Restart the TTreeReader to process the data from the beginning
+            dataReader.Restart();
+            if (mcReader) mcReader->Restart();
+
+            // Declare TTreeReaderValues for data and MC for this region
+            TTreeReaderValue<double> traj_x(dataReader, x_branch.c_str());
+            TTreeReaderValue<double> traj_y(dataReader, y_branch.c_str());
+            TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+
+            TTreeReaderValue<double>* mc_traj_x = nullptr;
+            TTreeReaderValue<double>* mc_traj_y = nullptr;
+            TTreeReaderValue<int>* mc_particle_pid = nullptr;
+
+            if (mcReader) {
+                mc_traj_x = new TTreeReaderValue<double>(*mcReader, x_branch.c_str());
+                mc_traj_y = new TTreeReaderValue<double>(*mcReader, y_branch.c_str());
+                mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+            }
+
+            // Create histograms for data and MC to store sum and counts of chi2 values
+            TH2D* h_data_chi2_sum = new TH2D("h_data_chi2_sum", ("data " + region_name + " mean chi2 (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            TH2D* h_data_chi2_count = new TH2D("h_data_chi2_count", ("data " + region_name + " chi2 count (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+
+            TH2D* h_mc_chi2_sum = nullptr;
+            TH2D* h_mc_chi2_count = nullptr;
+
+            if (mcReader) {
+                h_mc_chi2_sum = new TH2D("h_mc_chi2_sum", ("mc " + region_name + " mean chi2 (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                h_mc_chi2_count = new TH2D("h_mc_chi2_count", ("mc " + region_name + " chi2 count (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            }
+
+            // Fill the data histograms with chi2 sum and counts
+            while (dataReader.Next()) {
+                if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999) {
+                    h_data_chi2_sum->Fill(*traj_x, *traj_y, *track_chi2_6);
+                    h_data_chi2_count->Fill(*traj_x, *traj_y);
+                }
+            }
+
+            // Fill the MC histograms with chi2 sum and counts, if available
+            if (mcReader) {
+                while (mcReader->Next()) {
+                    if (**mc_particle_pid == pid && **mc_traj_x != -9999 && **mc_traj_y != -9999) {
+                        h_mc_chi2_sum->Fill(**mc_traj_x, **mc_traj_y, **mc_track_chi2_6);
+                        h_mc_chi2_count->Fill(**mc_traj_x, **mc_traj_y);
+                    }
+                }
+            }
+
+            // Divide chi2 sum by count to get the mean chi2 in each bin
+            h_data_chi2_sum->Divide(h_data_chi2_count);
+            if (mcReader) {
+                h_mc_chi2_sum->Divide(h_mc_chi2_count);
+            }
+
+            // Create a canvas to hold the 2x3 subplots
+            TCanvas* c = new TCanvas(("c_" + particle_name + "_" + region_name + "_mean_chi2").c_str(), ("c_" + particle_name + "_" + region_name + " mean chi2").c_str(), 1800, 1200);
+            c->Divide(3, 2);
+
+            // Draw the data plots on the top row
+            c->cd(1);
+            gPad->SetLogz();  // Set log scale for the z-axis
+            gPad->SetMargin(0.15, 0.15, 0.1, 0.1); // Increase padding
+            h_data_chi2_sum->Draw("COLZ");
+
+            // Draw the MC plots on the bottom row, if available
+            if (mcReader) {
+                c->cd(4);
+                gPad->SetLogz();  // Set log scale for the z-axis
+                gPad->SetMargin(0.15, 0.15, 0.1, 0.1); // Increase padding
+                h_mc_chi2_sum->Draw("COLZ");
+            }
+
+            // Save the canvas
+            c->SaveAs(("output/calibration/dc/determination/" + particle_name + "_" + region_name + "_mean_chi2.png").c_str());
+
+            // Clean up for this region and particle type
+            delete h_data_chi2_sum;
+            delete h_data_chi2_count;
+            if (h_mc_chi2_sum) delete h_mc_chi2_sum;
+            if (h_mc_chi2_count) delete h_mc_chi2_count;
+            delete c;
+            if (mc_traj_x) delete mc_traj_x;
+            if (mc_traj_y) delete mc_traj_y;
+            if (mc_particle_pid) delete mc_particle_pid;
+            }
+        }
+        // Clean up the dynamically allocated memory for edge variables
+        if (mc_traj_edge_6) delete mc_traj_edge_6;
+        if (mc_traj_edge_18) delete mc_traj_edge_18;
+        if (mc_traj_edge_36) delete mc_traj_edge_36;
+    }
                            
 void create_directories() {
     // Array of directories to check/create
@@ -2835,9 +2985,7 @@ void create_directories() {
         "output/calibration/cc/",
         "output/calibration/dc/",
         "output/calibration/dc/positions/",
-        "output/calibration/dc/r1",
-        "output/calibration/dc/r2",
-        "output/calibration/dc/r3"
+        "output/calibration/dc/determination"
     };
 
     // Iterate through each directory and create if it doesn't exist
@@ -2913,9 +3061,13 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_ecout_fiducial_determination(dataReader, mcReader);
 
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_dc_hit_position(dataReader, mcReader);
+
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
-    plot_dc_hit_position(dataReader, mcReader);
+    dc_fiducial_determination(dataReader, mcReader);
 
 
 
