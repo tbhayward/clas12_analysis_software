@@ -2628,34 +2628,27 @@ bool dc_fiducial(double edge_6, double edge_18, double edge_36,
 }
 
 void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
-    // Define the 2D histogram bins and ranges
-    int nBins = 100;
-    double xMin = -450;
-    double xMax = 450;
-    double yMin = -450;
-    double yMax = 450;
-
     // Array of DC regions and their corresponding variable names
-    std::vector<std::tuple<std::string, std::string, std::string>> regions = {
-        {"traj_x_6", "traj_y_6", "region_1"},
-        {"traj_x_18", "traj_y_18", "region_2"},
-        {"traj_x_36", "traj_y_36", "region_3"}
+    std::vector<std::tuple<std::string, std::string, std::string, double, double>> regions = {
+        {"traj_x_6", "traj_y_6", "region_1", -200, 200},
+        {"traj_x_18", "traj_y_18", "region_2", -300, 300},
+        {"traj_x_36", "traj_y_36", "region_3", -400, 400}
     };
 
-    // Array of particle types (photons and electrons) and their corresponding PIDs
+    // Array of particle types (electrons and protons) and their corresponding PIDs
     std::vector<std::tuple<int, std::string>> particle_types = {
         {11, "electron"},
-        {-211, "pim"},
-        {211, "pip"},
-        {321, "kp"},
-        {-321, "km"},
         {2212, "proton"}
     };
 
-    // Declare TTreeReaderValues for the DC edge variables
+    // Declare TTreeReaderValues for the DC edge and track variables
     TTreeReaderValue<double> traj_edge_6(dataReader, "traj_edge_6");
     TTreeReaderValue<double> traj_edge_18(dataReader, "traj_edge_18");
     TTreeReaderValue<double> traj_edge_36(dataReader, "traj_edge_36");
+
+    TTreeReaderValue<int> track_sector_6(dataReader, "track_sector_6");
+    TTreeReaderValue<double> track_chi2_6(dataReader, "track_chi2_6");
+    TTreeReaderValue<int> track_ndf_6(dataReader, "track_ndf_6");
 
     TTreeReaderValue<double>* mc_traj_edge_6 = nullptr;
     TTreeReaderValue<double>* mc_traj_edge_18 = nullptr;
@@ -2677,6 +2670,10 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
             std::string x_branch = std::get<0>(region);
             std::string y_branch = std::get<1>(region);
             std::string region_name = std::get<2>(region);
+            double xMin = std::get<3>(region);
+            double xMax = std::get<4>(region);
+            double yMin = xMin;  // Same as xMin
+            double yMax = xMax;  // Same as xMax
 
             // Restart the TTreeReader to process the data from the beginning
             dataReader.Restart();
@@ -2737,86 +2734,86 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
             while (dataReader.Next()) {
                 if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999) {
                     h_data_0->Fill(*traj_x, *traj_y); // No cuts
-                if (dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, 1)) {
-                    h_data_1->Fill(*traj_x, *traj_y);
-                }
-                if (dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, 2)) {
-                    h_data_2->Fill(*traj_x, *traj_y);
-                }
-                if (dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, 3)) {
-                    h_data_3->Fill(*traj_x, *traj_y);
-                }
-            }
-        }
-                // Fill the MC histograms if available, applying the cuts
-        if (mcReader) {
-            while (mcReader->Next()) {
-                if (**mc_particle_pid == pid && **mc_traj_x != -9999 && **mc_traj_y != -9999) {
-                    h_mc_0->Fill(**mc_traj_x, **mc_traj_y); // No cuts
-                    if (dc_fiducial(**mc_traj_edge_6, **mc_traj_edge_18, **mc_traj_edge_36, 1)) {
-                        h_mc_1->Fill(**mc_traj_x, **mc_traj_y);
+                    if (dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, 1)) {
+                        h_data_1->Fill(*traj_x, *traj_y);
                     }
-                    if (dc_fiducial(**mc_traj_edge_6, **mc_traj_edge_18, **mc_traj_edge_36, 2)) {
-                        h_mc_2->Fill(**mc_traj_x, **mc_traj_y);
+                    if (dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, 2)) {
+                        h_data_2->Fill(*traj_x, *traj_y);
                     }
-                    if (dc_fiducial(**mc_traj_edge_6, **mc_traj_edge_18, **mc_traj_edge_36, 3)) {
-                        h_mc_3->Fill(**mc_traj_x, **mc_traj_y);
+                    if (dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, 3)) {
+                        h_data_3->Fill(*traj_x, *traj_y);
                     }
                 }
             }
-        }
+            // Fill the MC histograms if available, applying the cuts
+            if (mcReader) {
+                while (mcReader->Next()) {
+                    if (**mc_particle_pid == pid && **mc_traj_x != -9999 && **mc_traj_y != -9999) {
+                        h_mc_0->Fill(**mc_traj_x, **mc_traj_y); // No cuts
+                        if (dc_fiducial(**mc_traj_edge_6, **mc_traj_edge_18, **mc_traj_edge_36, 1)) {
+                            h_mc_1->Fill(**mc_traj_x, **mc_traj_y);
+                        }
+                        if (dc_fiducial(**mc_traj_edge_6, **mc_traj_edge_18, **mc_traj_edge_36, 2)) {
+                            h_mc_2->Fill(**mc_traj_x, **mc_traj_y);
+                        }
+                        if (dc_fiducial(**mc_traj_edge_6, **mc_traj_edge_18, **mc_traj_edge_36, 3)) {
+                            h_mc_3->Fill(**mc_traj_x, **mc_traj_y);
+                        }
+                    }
+                }
+            }
 
-        // Create a canvas to hold the 2x4 subplots
-        TCanvas* c = new TCanvas(("c_" + particle_name + "_" + region_name).c_str(), ("c_" + particle_name + "_" + region_name).c_str(), 1600, 800);
-        c->Divide(4, 2);
+            // Create a canvas to hold the 2x4 subplots
+            TCanvas* c = new TCanvas(("c_" + particle_name + "_" + region_name).c_str(), ("c_" + particle_name + "_" + region_name).c_str(), 1600, 800);
+            c->Divide(4, 2);
 
-        // Draw the data plots on the top row
-        for (int i = 1; i <= 4; ++i) {
-            c->cd(i);
-            gPad->SetLogz();             // Set log scale for the z-axis
-            gPad->SetMargin(0.15, 0.15, 0.1, 0.1); // Increase padding
-            if (i == 1) h_data_0->Draw("COLZ");
-            if (i == 2) h_data_1->Draw("COLZ");
-            if (i == 3) h_data_2->Draw("COLZ");
-            if (i == 4) h_data_3->Draw("COLZ");
-        }
-
-        // Draw the MC plots on the bottom row, if available
-        if (mcReader) {
-            for (int i = 5; i <= 8; ++i) {
+            // Draw the data plots on the top row
+            for (int i = 1; i <= 4; ++i) {
                 c->cd(i);
                 gPad->SetLogz();             // Set log scale for the z-axis
                 gPad->SetMargin(0.15, 0.15, 0.1, 0.1); // Increase padding
-                if (i == 5) h_mc_0->Draw("COLZ");
-                if (i == 6) h_mc_1->Draw("COLZ");
-                if (i == 7) h_mc_2->Draw("COLZ");
-                if (i == 8) h_mc_3->Draw("COLZ");
+                if (i == 1) h_data_0->Draw("COLZ");
+                if (i == 2) h_data_1->Draw("COLZ");
+                if (i == 3) h_data_2->Draw("COLZ");
+                if (i == 4) h_data_3->Draw("COLZ");
             }
+
+            // Draw the MC plots on the bottom row, if available
+            if (mcReader) {
+                for (int i = 5; i <= 8; ++i) {
+                    c->cd(i);
+                    gPad->SetLogz();             // Set log scale for the z-axis
+                    gPad->SetMargin(0.15, 0.15, 0.1, 0.1); // Increase padding
+                    if (i == 5) h_mc_0->Draw("COLZ");
+                    if (i == 6) h_mc_1->Draw("COLZ");
+                    if (i == 7) h_mc_2->Draw("COLZ");
+                    if (i == 8) h_mc_3->Draw("COLZ");
+                }
+            }
+
+            // Save the canvas
+            c->SaveAs(("output/calibration/dc/positions/" + particle_name + "_" + region_name + "_dc_hit_position.png").c_str());
+
+            // Clean up for this region and particle type
+            delete h_data_0;
+            delete h_data_1;
+            delete h_data_2;
+            delete h_data_3;
+            if (h_mc_0) delete h_mc_0;
+            if (h_mc_1) delete h_mc_1;
+            if (h_mc_2) delete h_mc_2;
+            if (h_mc_3) delete h_mc_3;
+            delete c;
+            if (mc_traj_x) delete mc_traj_x;
+            if (mc_traj_y) delete mc_traj_y;
+            if (mc_particle_pid) delete mc_particle_pid;
         }
-
-        // Save the canvas
-        c->SaveAs(("output/calibration/dc/" + particle_name + "_" + region_name + "_dc_hit_position.png").c_str());
-
-        // Clean up for this region and particle type
-        delete h_data_0;
-        delete h_data_1;
-        delete h_data_2;
-        delete h_data_3;
-        if (h_mc_0) delete h_mc_0;
-        if (h_mc_1) delete h_mc_1;
-        if (h_mc_2) delete h_mc_2;
-        if (h_mc_3) delete h_mc_3;
-        delete c;
-        if (mc_traj_x) delete mc_traj_x;
-        if (mc_traj_y) delete mc_traj_y;
-        if (mc_particle_pid) delete mc_particle_pid;
     }
-}
 
-// Clean up the dynamically allocated memory for edge variables
-if (mc_traj_edge_6) delete mc_traj_edge_6;
-if (mc_traj_edge_18) delete mc_traj_edge_18;
-if (mc_traj_edge_36) delete mc_traj_edge_36;
+    // Clean up the dynamically allocated memory for edge variables
+    if (mc_traj_edge_6) delete mc_traj_edge_6;
+    if (mc_traj_edge_18) delete mc_traj_edge_18;
+    if (mc_traj_edge_36) delete mc_traj_edge_36;
 }
                            
 void create_directories() {
@@ -2831,6 +2828,7 @@ void create_directories() {
         "output/calibration/cal/fiducial/ecout",
         "output/calibration/cc/",
         "output/calibration/dc/",
+        "output/calibration/dc/positions/",
         "output/calibration/dc/r1",
         "output/calibration/dc/r2",
         "output/calibration/dc/r3"
