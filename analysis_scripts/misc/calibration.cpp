@@ -793,8 +793,10 @@ void plot_pcal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRe
     // Define the 2D histogram bins and ranges
     int nBins_lv_lw_lu = 100;
     int nBins_sf = 40;
-    double min = 65;
-    double max = 95;
+    // double min = 65;
+    // double max = 95;
+    double min = 0;
+    double max = 10;
     double lvMin = min;
     double lvMax = max;
     double lwMin = min;
