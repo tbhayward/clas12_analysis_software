@@ -757,7 +757,7 @@ bool pcal_fiducial(double lv, double lw, double lu, int sector, int strictness) 
             }
             break;
         case 3:
-            if ((lw < 19 || lv < 19) || (lw > 264 || lv > 264) || (lu < 39)) {
+            if ((lw < 19 || lv < 19) || (lu < 39 || lu > 400)) {
                 return false;
             }
             break;
@@ -789,9 +789,9 @@ bool pcal_fiducial(double lv, double lw, double lu, int sector, int strictness) 
     return true;
 }
 
-void plot_cal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+void plot_pcal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Define the 2D histogram bins and ranges
-    int nBins_lv_lw_lu = 200;
+    int nBins_lv_lw_lu = 150;
     int nBins_sf = 40;
     double lvMin = 0;
     double lvMax = 450;
@@ -1549,7 +1549,7 @@ int main(int argc, char** argv) {
     // plot_ft_hit_position(dataReader, mcReader);
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
-    plot_cal_hit_position(dataReader, mcReader);
+    plot_pcal_hit_position(dataReader, mcReader);
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
     plot_cal_fiducial_determination(dataReader, mcReader);
