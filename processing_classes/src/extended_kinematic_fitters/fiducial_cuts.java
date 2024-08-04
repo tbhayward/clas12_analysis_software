@@ -128,7 +128,7 @@ public boolean pcal_fiducial_cut(int particle_Index, int strictness,
             }
             break;
         case 6:
-            if ((lw > 174 && lw < 180) || (lw > 195 && lw < 201)) {
+            if ((lw > 169 && lw < 198)) {
                 return false;
             }
             break;

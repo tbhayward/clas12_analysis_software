@@ -743,21 +743,24 @@ void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
     if (mc_particle_pid) delete mc_particle_pid;
 }
 
-bool pcal_fiducial(double lv, double lw, double lu, int sector, int strictness) {
+bool pcal_fiducial(double lv_1, double lw_1, double lu_1,
+	double lv_4, double lw_4, double lu_4,
+	double lv_7, double lw_7, double lu_7,
+	int sector, int strictness) {
     // Apply strictness levels for additional cuts
     switch (strictness) {
         case 1:
-            if (lw < 9 || lv < 9 || lu < 19) {
+            if (lw_1 < 9 || lv_1 < 9 || lu_1 < 19) {
                 return false;
             }
             break;
         case 2:
-            if (lw < 14 || lv < 14 || lu < 29) {
+            if (lw_1 < 14 || lv_1 < 14 || lu_1 < 29) {
                 return false;
             }
             break;
         case 3:
-            if ((lw < 19 || lv < 19) || (lu < 39 || lu > 400)) {
+            if ((lw_1 < 19 || lv_1 < 19) || (lu_1 < 39 || lu_1 > 400)) {
                 return false;
             }
             break;
@@ -765,21 +768,21 @@ bool pcal_fiducial(double lv, double lw, double lu, int sector, int strictness) 
             return false;
     }
 
-    // Specific cuts for each sector
+    // Specific cuts for each sector in PCal
     if (sector == 1) {
-        if ((lw > 69 && lw < 96) || (lw > 207 && lw < 236)) {
+        if ((lw_1 > 69 && lw_1 < 96) || (lw_1 > 207 && lw_1 < 236)) {
             return false;
         }
     } else if (sector == 2) {
-        if ((lv > 95 && lv < 119) || (lu > 108 && lu < 126)) {
+        if ((lv_1 > 95 && lv_1 < 119) || (lu_1 > 108 && lu_1 < 126)) {
             return false;
         }
     } else if (sector == 4) {
-        if (lv > 224 && lv < 247) {
+        if (lv_1 > 224 && lv_1 < 247) {
             return false;
         }
     } else if (sector == 6) {
-        if ((lw > 174 && lw < 180) || (lw > 195 && lw < 201)) {
+        if ((lw_1 > 169 && lw_1 < 198)) {
             return false;
         }
     }
@@ -792,8 +795,8 @@ void plot_pcal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRe
     // Define the 2D histogram bins and ranges
     int nBins_lv_lw_lu = 100;
     int nBins_sf = 40;
-    double min = 150;
-    double max = 220;
+    double min = 0;
+    double max = 450;
     double lvMin = min;
     double lvMax = max;
     double lwMin = min;
@@ -829,6 +832,12 @@ void plot_pcal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRe
         TTreeReaderValue<double> cal_lw_1(dataReader, "cal_lw_1");
         TTreeReaderValue<double> cal_lv_1(dataReader, "cal_lv_1");
         TTreeReaderValue<double> cal_lu_1(dataReader, "cal_lu_1");
+        TTreeReaderValue<double> cal_lw_4(dataReader, "cal_lw_4");
+        TTreeReaderValue<double> cal_lv_4(dataReader, "cal_lv_4");
+        TTreeReaderValue<double> cal_lu_4(dataReader, "cal_lu_4");
+        TTreeReaderValue<double> cal_lw_7(dataReader, "cal_lw_7");
+        TTreeReaderValue<double> cal_lv_7(dataReader, "cal_lv_7");
+        TTreeReaderValue<double> cal_lu_7(dataReader, "cal_lu_7");
 
         TTreeReaderValue<double>* mc_cal_energy_1 = nullptr;
         TTreeReaderValue<double>* mc_cal_energy_4 = nullptr;
@@ -840,6 +849,12 @@ void plot_pcal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRe
         TTreeReaderValue<double>* mc_cal_lw_1 = nullptr;
         TTreeReaderValue<double>* mc_cal_lv_1 = nullptr;
         TTreeReaderValue<double>* mc_cal_lu_1 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lw_4 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lv_4 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lu_4 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lw_7 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lv_7 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lu_7 = nullptr;
 
         if (mcReader) {
             mc_cal_energy_1 = new TTreeReaderValue<double>(*mcReader, "cal_energy_1");
@@ -852,6 +867,12 @@ void plot_pcal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRe
             mc_cal_lw_1 = new TTreeReaderValue<double>(*mcReader, "cal_lw_1");
             mc_cal_lv_1 = new TTreeReaderValue<double>(*mcReader, "cal_lv_1");
             mc_cal_lu_1 = new TTreeReaderValue<double>(*mcReader, "cal_lu_1");
+            mc_cal_lw_4 = new TTreeReaderValue<double>(*mcReader, "cal_lw_4");
+            mc_cal_lv_4 = new TTreeReaderValue<double>(*mcReader, "cal_lv_4");
+            mc_cal_lu_4 = new TTreeReaderValue<double>(*mcReader, "cal_lu_4");
+            mc_cal_lw_7 = new TTreeReaderValue<double>(*mcReader, "cal_lw_7");
+            mc_cal_lv_7 = new TTreeReaderValue<double>(*mcReader, "cal_lv_7");
+            mc_cal_lu_7 = new TTreeReaderValue<double>(*mcReader, "cal_lu_7");
         }
 
         // Create histograms for data and MC for each sector and each combination of lv, lw, lu vs sampling fraction
@@ -1336,9 +1357,15 @@ void plot_ecin_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRe
         TTreeReaderValue<int> cal_sector(dataReader, "cal_sector");
         TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
 
+        TTreeReaderValue<double> cal_lw_1(dataReader, "cal_lw_1");
+        TTreeReaderValue<double> cal_lv_1(dataReader, "cal_lv_1");
+        TTreeReaderValue<double> cal_lu_1(dataReader, "cal_lu_1");
         TTreeReaderValue<double> cal_lw_4(dataReader, "cal_lw_4");
         TTreeReaderValue<double> cal_lv_4(dataReader, "cal_lv_4");
         TTreeReaderValue<double> cal_lu_4(dataReader, "cal_lu_4");
+        TTreeReaderValue<double> cal_lw_7(dataReader, "cal_lw_7");
+        TTreeReaderValue<double> cal_lv_7(dataReader, "cal_lv_7");
+        TTreeReaderValue<double> cal_lu_7(dataReader, "cal_lu_7");
 
         TTreeReaderValue<double>* mc_cal_energy_1 = nullptr;
         TTreeReaderValue<double>* mc_cal_energy_4 = nullptr;
@@ -1347,9 +1374,15 @@ void plot_ecin_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRe
         TTreeReaderValue<int>* mc_cal_sector = nullptr;
         TTreeReaderValue<int>* mc_particle_pid = nullptr;
 
+        TTreeReaderValue<double>* mc_cal_lw_1 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lv_1 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lu_1 = nullptr;
         TTreeReaderValue<double>* mc_cal_lw_4 = nullptr;
         TTreeReaderValue<double>* mc_cal_lv_4 = nullptr;
         TTreeReaderValue<double>* mc_cal_lu_4 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lw_7 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lv_7 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lu_7 = nullptr;
 
         if (mcReader) {
             mc_cal_energy_1 = new TTreeReaderValue<double>(*mcReader, "cal_energy_1");
@@ -1359,9 +1392,15 @@ void plot_ecin_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRe
             mc_cal_sector = new TTreeReaderValue<int>(*mcReader, "cal_sector");
             mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
 
+            mc_cal_lw_1 = new TTreeReaderValue<double>(*mcReader, "cal_lw_1");
+            mc_cal_lv_1 = new TTreeReaderValue<double>(*mcReader, "cal_lv_1");
+            mc_cal_lu_1 = new TTreeReaderValue<double>(*mcReader, "cal_lu_1");
             mc_cal_lw_4 = new TTreeReaderValue<double>(*mcReader, "cal_lw_4");
             mc_cal_lv_4 = new TTreeReaderValue<double>(*mcReader, "cal_lv_4");
             mc_cal_lu_4 = new TTreeReaderValue<double>(*mcReader, "cal_lu_4");
+            mc_cal_lw_7 = new TTreeReaderValue<double>(*mcReader, "cal_lw_7");
+            mc_cal_lv_7 = new TTreeReaderValue<double>(*mcReader, "cal_lv_7");
+            mc_cal_lu_7 = new TTreeReaderValue<double>(*mcReader, "cal_lu_7");
         }
 
         // Create histograms for data and MC for each sector and each combination of lv, lw, lu vs sampling fraction
@@ -1846,6 +1885,12 @@ void plot_ecout_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcR
         TTreeReaderValue<int> cal_sector(dataReader, "cal_sector");
         TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
 
+        TTreeReaderValue<double> cal_lw_1(dataReader, "cal_lw_1");
+        TTreeReaderValue<double> cal_lv_1(dataReader, "cal_lv_1");
+        TTreeReaderValue<double> cal_lu_1(dataReader, "cal_lu_1");
+        TTreeReaderValue<double> cal_lw_4(dataReader, "cal_lw_4");
+        TTreeReaderValue<double> cal_lv_4(dataReader, "cal_lv_4");
+        TTreeReaderValue<double> cal_lu_4(dataReader, "cal_lu_4");
         TTreeReaderValue<double> cal_lw_7(dataReader, "cal_lw_7");
         TTreeReaderValue<double> cal_lv_7(dataReader, "cal_lv_7");
         TTreeReaderValue<double> cal_lu_7(dataReader, "cal_lu_7");
@@ -1857,6 +1902,12 @@ void plot_ecout_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcR
         TTreeReaderValue<int>* mc_cal_sector = nullptr;
         TTreeReaderValue<int>* mc_particle_pid = nullptr;
 
+        TTreeReaderValue<double>* mc_cal_lw_1 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lv_1 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lu_1 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lw_4 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lv_4 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lu_4 = nullptr;
         TTreeReaderValue<double>* mc_cal_lw_7 = nullptr;
         TTreeReaderValue<double>* mc_cal_lv_7 = nullptr;
         TTreeReaderValue<double>* mc_cal_lu_7 = nullptr;
@@ -1869,6 +1920,12 @@ void plot_ecout_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcR
             mc_cal_sector = new TTreeReaderValue<int>(*mcReader, "cal_sector");
             mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
 
+            mc_cal_lw_1 = new TTreeReaderValue<double>(*mcReader, "cal_lw_1");
+            mc_cal_lv_1 = new TTreeReaderValue<double>(*mcReader, "cal_lv_1");
+            mc_cal_lu_1 = new TTreeReaderValue<double>(*mcReader, "cal_lu_1");
+            mc_cal_lw_4 = new TTreeReaderValue<double>(*mcReader, "cal_lw_4");
+            mc_cal_lv_4 = new TTreeReaderValue<double>(*mcReader, "cal_lv_4");
+            mc_cal_lu_4 = new TTreeReaderValue<double>(*mcReader, "cal_lu_4");
             mc_cal_lw_7 = new TTreeReaderValue<double>(*mcReader, "cal_lw_7");
             mc_cal_lv_7 = new TTreeReaderValue<double>(*mcReader, "cal_lv_7");
             mc_cal_lu_7 = new TTreeReaderValue<double>(*mcReader, "cal_lu_7");
@@ -2345,17 +2402,35 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
     TTreeReaderValue<double> cal_lv_1(dataReader, "cal_lv_1");
     TTreeReaderValue<double> cal_lw_1(dataReader, "cal_lw_1");
     TTreeReaderValue<double> cal_lu_1(dataReader, "cal_lu_1");
+    TTreeReaderValue<double> cal_lv_4(dataReader, "cal_lv_4");
+    TTreeReaderValue<double> cal_lw_4(dataReader, "cal_lw_4");
+    TTreeReaderValue<double> cal_lu_4(dataReader, "cal_lu_4");
+    TTreeReaderValue<double> cal_lv_7(dataReader, "cal_lv_7");
+    TTreeReaderValue<double> cal_lw_7(dataReader, "cal_lw_7");
+    TTreeReaderValue<double> cal_lu_7(dataReader, "cal_lu_7");
     TTreeReaderValue<int> cal_sector(dataReader, "cal_sector");
 
     TTreeReaderValue<double>* mc_cal_lv_1 = nullptr;
     TTreeReaderValue<double>* mc_cal_lw_1 = nullptr;
     TTreeReaderValue<double>* mc_cal_lu_1 = nullptr;
+    TTreeReaderValue<double>* mc_cal_lv_4 = nullptr;
+    TTreeReaderValue<double>* mc_cal_lw_4 = nullptr;
+    TTreeReaderValue<double>* mc_cal_lu_4 = nullptr;
+    TTreeReaderValue<double>* mc_cal_lv_7 = nullptr;
+    TTreeReaderValue<double>* mc_cal_lw_7 = nullptr;
+    TTreeReaderValue<double>* mc_cal_lu_7 = nullptr;
     TTreeReaderValue<int>* mc_cal_sector = nullptr;
 
     if (mcReader) {
         mc_cal_lv_1 = new TTreeReaderValue<double>(*mcReader, "cal_lv_1");
         mc_cal_lw_1 = new TTreeReaderValue<double>(*mcReader, "cal_lw_1");
         mc_cal_lu_1 = new TTreeReaderValue<double>(*mcReader, "cal_lu_1");
+        mc_cal_lv_4 = new TTreeReaderValue<double>(*mcReader, "cal_lv_4");
+        mc_cal_lw_4 = new TTreeReaderValue<double>(*mcReader, "cal_lw_4");
+        mc_cal_lu_4 = new TTreeReaderValue<double>(*mcReader, "cal_lu_4");
+        mc_cal_lv_7 = new TTreeReaderValue<double>(*mcReader, "cal_lv_7");
+        mc_cal_lw_7 = new TTreeReaderValue<double>(*mcReader, "cal_lw_7");
+        mc_cal_lu_7 = new TTreeReaderValue<double>(*mcReader, "cal_lu_7");
         mc_cal_sector = new TTreeReaderValue<int>(*mcReader, "cal_sector");
     }
 
@@ -2429,13 +2504,19 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             while (dataReader.Next()) {
                 if (*particle_pid == pid && *cal_x != -9999 && *cal_y != -9999) {
                     h_data_0->Fill(*cal_x, *cal_y); // No cuts
-                    if (pcal_fiducial(*cal_lv_1, *cal_lw_1, *cal_lu_1, *cal_sector, 1)) {
+                    if (pcal_fiducial(*cal_lv_1, *cal_lw_1, *cal_lu_1, 
+                    	*cal_lv_4, *cal_lw_4, *cal_lu_4, 
+                    	*cal_lv_7, *cal_lw_7, *cal_lu_7, *cal_sector, 1)) {
                         h_data_1->Fill(*cal_x, *cal_y);
                     }
-                    if (pcal_fiducial(*cal_lv_1, *cal_lw_1, *cal_lu_1, *cal_sector, 2)) {
+                    if (pcal_fiducial(*cal_lv_1, *cal_lw_1, *cal_lu_1, 
+                    	*cal_lv_4, *cal_lw_4, *cal_lu_4, 
+                    	*cal_lv_7, *cal_lw_7, *cal_lu_7, *cal_sector, 2)) {
                         h_data_2->Fill(*cal_x, *cal_y);
                     }
-                    if (pcal_fiducial(*cal_lv_1, *cal_lw_1, *cal_lu_1, *cal_sector, 3)) {
+                    if (pcal_fiducial(*cal_lv_1, *cal_lw_1, *cal_lu_1, 
+                    	*cal_lv_4, *cal_lw_4, *cal_lu_4, 
+                    	*cal_lv_7, *cal_lw_7, *cal_lu_7, *cal_sector, 3)) {
                         h_data_3->Fill(*cal_x, *cal_y);
                     }
                 }
@@ -2446,13 +2527,22 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                 while (mcReader->Next()) {
                 if (**mc_particle_pid == pid && **mc_cal_x != -9999 && **mc_cal_y != -9999) {
                     h_mc_0->Fill(**mc_cal_x, **mc_cal_y); // No cuts
-                if (pcal_fiducial(**mc_cal_lv_1, **mc_cal_lw_1, **mc_cal_lu_1, **mc_cal_sector, 1)) {
+                if (pcal_fiducial(**mc_cal_lv_1, **mc_cal_lw_1, **mc_cal_lu_1, 
+                	**mc_cal_lv_4, **mc_cal_lw_4, **mc_cal_lu_4, 
+                	**mc_cal_lv_7, **mc_cal_lw_7, **mc_cal_lu_7, 
+                	**mc_cal_sector, 1)) {
                     h_mc_1->Fill(**mc_cal_x, **mc_cal_y);
                 }
-                if (pcal_fiducial(**mc_cal_lv_1, **mc_cal_lw_1, **mc_cal_lu_1, **mc_cal_sector, 2)) {
+                if (pcal_fiducial(**mc_cal_lv_1, **mc_cal_lw_1, **mc_cal_lu_1, 
+                	**mc_cal_lv_4, **mc_cal_lw_4, **mc_cal_lu_4, 
+                	**mc_cal_lv_7, **mc_cal_lw_7, **mc_cal_lu_7, 
+                	**mc_cal_sector, 2)) {
                     h_mc_2->Fill(**mc_cal_x, **mc_cal_y);
                 }
-                if (pcal_fiducial(**mc_cal_lv_1, **mc_cal_lw_1, **mc_cal_lu_1, **mc_cal_sector, 3)) {
+                if (pcal_fiducial(**mc_cal_lv_1, **mc_cal_lw_1, **mc_cal_lu_1, 
+                	**mc_cal_lv_4, **mc_cal_lw_4, **mc_cal_lu_4, 
+                	**mc_cal_lv_7, **mc_cal_lw_7, **mc_cal_lu_7, 
+                	**mc_cal_sector, 3)) {
                     h_mc_3->Fill(**mc_cal_x, **mc_cal_y);
                 }
             }
