@@ -123,7 +123,7 @@ public boolean pcal_fiducial_cut(int particle_Index, int strictness,
             }
             break;
         case 4:
-            if (lv > 230 && lv < 242) {
+            if (lv > 224 && lv < 247) {
                 return false;
             }
             break;
