@@ -2619,6 +2619,201 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
     if (mc_cal_lu_1) delete mc_cal_lu_1;
     if (mc_cal_sector) delete mc_cal_sector;
 }
+
+bool dc_fiducial(double edge_6, double edge_18, double edge_36, 
+	int strictness) {
+
+    // If none of the cuts apply, the track is good
+    return true;
+}
+
+void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+    // Define the 2D histogram bins and ranges
+    int nBins = 100;
+    double xMin = -450;
+    double xMax = 450;
+    double yMin = -450;
+    double yMax = 450;
+
+    // Array of DC regions and their corresponding variable names
+    std::vector<std::tuple<std::string, std::string, std::string>> regions = {
+        {"traj_x_6", "traj_y_6", "region_1"},
+        {"traj_x_18", "traj_y_18", "region_2"},
+        {"traj_x_36", "traj_y_36", "region_3"}
+    };
+
+    // Array of particle types (photons and electrons) and their corresponding PIDs
+    std::vector<std::tuple<int, std::string>> particle_types = {
+        {22, "photon"},
+        {11, "electron"}
+    };
+
+    // Declare TTreeReaderValues for the DC edge variables
+    TTreeReaderValue<double> traj_edge_6(dataReader, "traj_edge_6");
+    TTreeReaderValue<double> traj_edge_18(dataReader, "traj_edge_18");
+    TTreeReaderValue<double> traj_edge_36(dataReader, "traj_edge_36");
+
+    TTreeReaderValue<double>* mc_traj_edge_6 = nullptr;
+    TTreeReaderValue<double>* mc_traj_edge_18 = nullptr;
+    TTreeReaderValue<double>* mc_traj_edge_36 = nullptr;
+
+    if (mcReader) {
+        mc_traj_edge_6 = new TTreeReaderValue<double>(*mcReader, "traj_edge_6");
+        mc_traj_edge_18 = new TTreeReaderValue<double>(*mcReader, "traj_edge_18");
+        mc_traj_edge_36 = new TTreeReaderValue<double>(*mcReader, "traj_edge_36");
+    }
+
+    // Loop over each particle type
+    for (const auto& particle_type : particle_types) {
+        int pid = std::get<0>(particle_type);
+        std::string particle_name = std::get<1>(particle_type);
+
+        // Loop over each DC region
+        for (const auto& region : regions) {
+            std::string x_branch = std::get<0>(region);
+            std::string y_branch = std::get<1>(region);
+            std::string region_name = std::get<2>(region);
+
+            // Restart the TTreeReader to process the data from the beginning
+            dataReader.Restart();
+            if (mcReader) mcReader->Restart();
+
+            // Declare TTreeReaderValues for data and MC for this region
+            TTreeReaderValue<double> traj_x(dataReader, x_branch.c_str());
+            TTreeReaderValue<double> traj_y(dataReader, y_branch.c_str());
+            TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+
+            TTreeReaderValue<double>* mc_traj_x = nullptr;
+            TTreeReaderValue<double>* mc_traj_y = nullptr;
+            TTreeReaderValue<int>* mc_particle_pid = nullptr;
+
+            if (mcReader) {
+                mc_traj_x = new TTreeReaderValue<double>(*mcReader, x_branch.c_str());
+                mc_traj_y = new TTreeReaderValue<double>(*mcReader, y_branch.c_str());
+                mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+            }
+
+            // Create histograms for data and MC for each strictness level
+            TH2D* h_data_0 = new TH2D("h_data_0", ("data " + region_name + " hit position (" + particle_name + ", strictness_0)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            TH2D* h_data_1 = new TH2D("h_data_1", ("data " + region_name + " hit position (" + particle_name + ", strictness_1)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            TH2D* h_data_2 = new TH2D("h_data_2", ("data " + region_name + " hit position (" + particle_name + ", strictness_2)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            TH2D* h_data_3 = new TH2D("h_data_3", ("data " + region_name + " hit position (" + particle_name + ", strictness_3)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+
+            h_data_0->GetXaxis()->SetTitle(("x_{" + region_name + "}").c_str());
+            h_data_0->GetYaxis()->SetTitle(("y_{" + region_name + "}").c_str());
+            h_data_1->GetXaxis()->SetTitle(("x_{" + region_name + "}").c_str());
+            h_data_1->GetYaxis()->SetTitle(("y_{" + region_name + "}").c_str());
+            h_data_2->GetXaxis()->SetTitle(("x_{" + region_name + "}").c_str());
+            h_data_2->GetYaxis()->SetTitle(("y_{" + region_name + "}").c_str());
+            h_data_3->GetXaxis()->SetTitle(("x_{" + region_name + "}").c_str());
+            h_data_3->GetYaxis()->SetTitle(("y_{" + region_name + "}").c_str());
+
+            TH2D* h_mc_0 = nullptr;
+            TH2D* h_mc_1 = nullptr;
+            TH2D* h_mc_2 = nullptr;
+            TH2D* h_mc_3 = nullptr;
+
+            if (mcReader) {
+                h_mc_0 = new TH2D("h_mc_0", ("mc " + region_name + " hit position (" + particle_name + ", strictness_0)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                h_mc_1 = new TH2D("h_mc_1", ("mc " + region_name + " hit position (" + particle_name + ", strictness_1)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                h_mc_2 = new TH2D("h_mc_2", ("mc " + region_name + " hit position (" + particle_name + ", strictness_2)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                h_mc_3 = new TH2D("h_mc_3", ("mc " + region_name + " hit position (" + particle_name + ", strictness_3)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+
+                h_mc_0->GetXaxis()->SetTitle(("x_{" + region_name + "}").c_str());
+                h_mc_0->GetYaxis()->SetTitle(("y_{" + region_name + "}").c_str());
+                h_mc_1->GetXaxis()->SetTitle(("x_{" + region_name + "}").c_str());
+                h_mc_1->GetYaxis()->SetTitle(("y_{" + region_name + "}").c_str());
+                h_mc_2->GetXaxis()->SetTitle(("x_{" + region_name + "}").c_str());
+                h_mc_2->GetYaxis()->SetTitle(("y_{" + region_name + "}").c_str());
+                h_mc_3->GetXaxis()->SetTitle(("x_{" + region_name + "}").c_str());
+                h_mc_3->GetYaxis()->SetTitle(("y_{" + region_name + "}").c_str());
+            }
+
+            // Fill the data histograms, applying the cuts
+            while (dataReader.Next()) {
+                if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999) {
+                    h_data_0->Fill(*traj_x, *traj_y); // No cuts
+                if (dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, 1)) {
+                    h_data_1->Fill(*traj_x, *traj_y);
+                }
+                if (dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, 2)) {
+                    h_data_2->Fill(*traj_x, *traj_y);
+                }
+                if (dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, 3)) {
+                    h_data_3->Fill(*traj_x, *traj_y);
+                }
+            }
+        }
+                // Fill the MC histograms if available, applying the cuts
+        if (mcReader) {
+            while (mcReader->Next()) {
+                if (**mc_particle_pid == pid && **mc_traj_x != -9999 && **mc_traj_y != -9999) {
+                    h_mc_0->Fill(**mc_traj_x, **mc_traj_y); // No cuts
+                    if (dc_fiducial(**mc_traj_edge_6, **mc_traj_edge_18, **mc_traj_edge_36, 1)) {
+                        h_mc_1->Fill(**mc_traj_x, **mc_traj_y);
+                    }
+                    if (dc_fiducial(**mc_traj_edge_6, **mc_traj_edge_18, **mc_traj_edge_36, 2)) {
+                        h_mc_2->Fill(**mc_traj_x, **mc_traj_y);
+                    }
+                    if (dc_fiducial(**mc_traj_edge_6, **mc_traj_edge_18, **mc_traj_edge_36, 3)) {
+                        h_mc_3->Fill(**mc_traj_x, **mc_traj_y);
+                    }
+                }
+            }
+        }
+
+        // Create a canvas to hold the 2x4 subplots
+        TCanvas* c = new TCanvas(("c_" + particle_name + "_" + region_name).c_str(), ("c_" + particle_name + "_" + region_name).c_str(), 1600, 800);
+        c->Divide(4, 2);
+
+        // Draw the data plots on the top row
+        for (int i = 1; i <= 4; ++i) {
+            c->cd(i);
+            gPad->SetLogz();             // Set log scale for the z-axis
+            gPad->SetMargin(0.15, 0.15, 0.1, 0.1); // Increase padding
+            if (i == 1) h_data_0->Draw("COLZ");
+            if (i == 2) h_data_1->Draw("COLZ");
+            if (i == 3) h_data_2->Draw("COLZ");
+            if (i == 4) h_data_3->Draw("COLZ");
+        }
+
+        // Draw the MC plots on the bottom row, if available
+        if (mcReader) {
+            for (int i = 5; i <= 8; ++i) {
+                c->cd(i);
+                gPad->SetLogz();             // Set log scale for the z-axis
+                gPad->SetMargin(0.15, 0.15, 0.1, 0.1); // Increase padding
+                if (i == 5) h_mc_0->Draw("COLZ");
+                if (i == 6) h_mc_1->Draw("COLZ");
+                if (i == 7) h_mc_2->Draw("COLZ");
+                if (i == 8) h_mc_3->Draw("COLZ");
+            }
+        }
+
+        // Save the canvas
+        c->SaveAs(("output/calibration/dc/" + particle_name + "_" + region_name + "_dc_hit_position.png").c_str());
+
+        // Clean up for this region and particle type
+        delete h_data_0;
+        delete h_data_1;
+        delete h_data_2;
+        delete h_data_3;
+        if (h_mc_0) delete h_mc_0;
+        if (h_mc_1) delete h_mc_1;
+        if (h_mc_2) delete h_mc_2;
+        if (h_mc_3) delete h_mc_3;
+        delete c;
+        if (mc_traj_x) delete mc_traj_x;
+        if (mc_traj_y) delete mc_traj_y;
+        if (mc_particle_pid) delete mc_particle_pid;
+    }
+}
+
+// Clean up the dynamically allocated memory for edge variables
+if (mc_traj_edge_6) delete mc_traj_edge_6;
+if (mc_traj_edge_18) delete mc_traj_edge_18;
+if (mc_traj_edge_36) delete mc_traj_edge_36;
+}
                            
 void create_directories() {
     // Array of directories to check/create
@@ -2630,7 +2825,11 @@ void create_directories() {
         "output/calibration/cal/fiducial/pcal",
         "output/calibration/cal/fiducial/ecin",
         "output/calibration/cal/fiducial/ecout",
-        "output/calibration/cc/"
+        "output/calibration/cc/",
+        "output/calibration/dc/",
+        "output/calibration/dc/r1",
+        "output/calibration/dc/r2",
+        "output/calibration/dc/r3"
     };
 
     // Iterate through each directory and create if it doesn't exist
@@ -2692,19 +2891,23 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_ft_hit_position(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_cal_hit_position(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_cal_hit_position(dataReader, mcReader);
+
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_pcal_fiducial_determination(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_ecin_fiducial_determination(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_ecout_fiducial_determination(dataReader, mcReader);
 
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
-    plot_pcal_fiducial_determination(dataReader, mcReader);
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_ecin_fiducial_determination(dataReader, mcReader);
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_ecout_fiducial_determination(dataReader, mcReader);
+    plot_dc_hit_position(dataReader, mcReader);
 
 
 
