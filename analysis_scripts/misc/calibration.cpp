@@ -909,52 +909,62 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                     }
                 }
             }
+
             // Fill the MC histograms if available, applying the cuts
             if (mcReader) {
                 while (mcReader->Next()) {
-                    if (**mc_particle_pid == pid && **mc_cal_x != -9999 && **mc_cal_y != -9999) {
-                        h_mc_0->Fill(**mc_cal_x, **mc_cal_y); // No cuts
-                        if (pcal_fiducial(**mc_cal_lv_1, **mc_cal_lw_1, **mc_cal_lu_1, **mc_cal_sector, 1)) {
-                            h_mc_1->Fill(**mc_cal_x, **mc_cal_y);
-                        }
-                        if (pcal_fiducial(**mc_cal_lv_1, **mc_cal_lw_1, **mc_cal_lu_1, **mc_cal_sector, 2)) {
-                            h_mc_2->Fill(**mc_cal_x, **mc_cal_y);
-                        }
-                        if (pcal_fiducial(**mc_cal_lv_1, **mc_cal_lw_1, **mc_cal_lu_1, **mc_cal_sector, 3)) {
-                            h_mc_3->Fill(**mc_cal_x, **mc_cal_y);
-                        }
-                    }
+                if (**mc_particle_pid == pid && **mc_cal_x != -9999 && **mc_cal_y != -9999) {
+                    h_mc_0->Fill(**mc_cal_x, **mc_cal_y); // No cuts
+                if (pcal_fiducial(**mc_cal_lv_1, **mc_cal_lw_1, **mc_cal_lu_1, **mc_cal_sector, 1)) {
+                    h_mc_1->Fill(**mc_cal_x, **mc_cal_y);
+                }
+                if (pcal_fiducial(**mc_cal_lv_1, **mc_cal_lw_1, **mc_cal_lu_1, **mc_cal_sector, 2)) {
+                    h_mc_2->Fill(**mc_cal_x, **mc_cal_y);
+                }
+                if (pcal_fiducial(**mc_cal_lv_1, **mc_cal_lw_1, **mc_cal_lu_1, **mc_cal_sector, 3)) {
+                    h_mc_3->Fill(**mc_cal_x, **mc_cal_y);
                 }
             }
+        }
+    }
+    // Create a canvas to hold the 2x4 subplots
+    TCanvas* c = new TCanvas(("c_" + particle_name + "_" + layer_name).c_str(), ("c_" + particle_name + "_" + layer_name).c_str(), 1600, 800);
+    c->Divide(4, 2);
 
-            // Create a canvas to hold the 2x4 subplots
-            TCanvas* c = new TCanvas(("c_" + particle_name + "_" + layer_name).c_str(), ("c_" + particle_name + "_" + layer_name).c_str(), 1600, 800);
-            c->Divide(4, 2);
+    // Draw the data plots on the top row
+    for (int i = 1; i <= 4; ++i) {
+        c->cd(i);
+        gPad->SetLogz();             // Set log scale for the z-axis
+        gPad->SetMargin(0.15, 0.15, 0.1, 0.1); // Increase padding
+        if (i == 1) h_data_0->Draw("COLZ");
+        if (i == 2) h_data_1->Draw("COLZ");
+        if (i == 3) h_data_2->Draw("COLZ");
+        if (i == 4) h_data_3->Draw("COLZ");
+    }
 
-            // Draw the data plots on the top row
-            c->cd(1); h_data_0->Draw("COLZ");
-            c->cd(2); h_data_1->Draw("COLZ");
-            c->cd(3); h_data_2->Draw("COLZ");
-            c->cd(4); h_data_3->Draw("COLZ");
+    // Draw the MC plots on the bottom row, if available
+    if (mcReader) {
+        for (int i = 5; i <= 8; ++i) {
+            c->cd(i);
+            gPad->SetLogz();             // Set log scale for the z-axis
+            gPad->SetMargin(0.15, 0.15, 0.1, 0.1); // Increase padding
+            if (i == 5) h_mc_0->Draw("COLZ");
+            if (i == 6) h_mc_1->Draw("COLZ");
+            if (i == 7) h_mc_2->Draw("COLZ");
+            if (i == 8) h_mc_3->Draw("COLZ");
+        }
+    }
 
-            // Draw the MC plots on the bottom row, if available
-            if (mcReader) {
-                c->cd(5); h_mc_0->Draw("COLZ");
-                c->cd(6); h_mc_1->Draw("COLZ");
-                c->cd(7); h_mc_2->Draw("COLZ");
-                c->cd(8); h_mc_3->Draw("COLZ");
-            }
+    // Save the canvas
+    c->SaveAs(("output/calibration/cal/" + particle_name + "_" + layer_name + "_cal_hit_position.png").c_str());
 
-            // Save the canvas
-            c->SaveAs(("output/calibration/cal/" + particle_name + "_" + layer_name + "_cal_hit_position.png").c_str());
-
-            // Clean up for this layer and particle type
-            delete h_data_0;
-            delete h_data_1;
-            delete h_data_2;
-            delete h_data_3;
-            if (h_mc_0) delete h_mc_0;
-            if (h_mc_1) delete h_mc_1;
+    // Clean up for this layer and particle type
+    delete h_data_0;
+    delete h_data_1;
+    delete h_data_2;
+    delete h_data_3;
+    if (h_mc_0) delete h_mc_0;
+    if (_mc_1) delete h_mc_1;
             if (h_mc_2) delete h_mc_2;
             if (h_mc_3) delete h_mc_3;
             delete c;
