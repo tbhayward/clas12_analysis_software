@@ -2628,6 +2628,8 @@ bool dc_fiducial(double edge_6, double edge_18, double edge_36,
 }
 
 void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+     // Define the number of bins for the histograms
+    int nBins = 100;
     // Array of DC regions and their corresponding variable names
     std::vector<std::tuple<std::string, std::string, std::string, double, double>> regions = {
         {"traj_x_6", "traj_y_6", "region_1", -200, 200},
@@ -2635,9 +2637,13 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
         {"traj_x_36", "traj_y_36", "region_3", -400, 400}
     };
 
-    // Array of particle types (electrons and protons) and their corresponding PIDs
+    // Array of particle types (photons and electrons) and their corresponding PIDs
     std::vector<std::tuple<int, std::string>> particle_types = {
         {11, "electron"},
+        // {-211, "pim"},
+        // {211, "pip"},
+        // {321, "kp"},
+        // {-321, "km"},
         {2212, "proton"}
     };
 
