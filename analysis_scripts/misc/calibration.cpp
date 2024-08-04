@@ -1321,12 +1321,12 @@ void plot_pcal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRe
     }
 }
 
-void plot_pcal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+void plot_ecin_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Define the 2D histogram bins and ranges
     int nBins_lv_lw_lu = 100;
     int nBins_sf = 40;
-    double min = 55;
-    double max = 112;
+    double min = 0;
+    double max = 450;
     double lvMin = min;
     double lvMax = max;
     double lwMin = min;
@@ -2680,9 +2680,9 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_cal_hit_position(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_pcal_fiducial_determination(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_pcal_fiducial_determination(dataReader, mcReader);
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
     plot_ecin_fiducial_determination(dataReader, mcReader);
