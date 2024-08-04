@@ -796,7 +796,7 @@ void plot_pcal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRe
     // double min = 65;
     // double max = 95;
     double min = 0;
-    double max = 10;
+    double max = 20;
     double lvMin = min;
     double lvMax = max;
     double lwMin = min;
