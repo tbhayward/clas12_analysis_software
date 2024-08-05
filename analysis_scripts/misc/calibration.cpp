@@ -2948,11 +2948,11 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         // c->SaveAs(("output/calibration/dc/determination/" + particle_name + "_chi2.png").c_str());
 
         // Clean up the dynamically allocated memory for edge variables
-        if (mc_traj_edge_6) delete mc_traj_edge_6;
-        if (mc_traj_edge_18) delete mc_traj_edge_18;
-        if (mc_traj_edge_36) delete mc_traj_edge_36;
+        // if (mc_traj_edge_6) delete mc_traj_edge_6;
+        // if (mc_traj_edge_18) delete mc_traj_edge_18;
+        // if (mc_traj_edge_36) delete mc_traj_edge_36;
 
-        delete c;
+        // delete c;
     }
 }
                            
