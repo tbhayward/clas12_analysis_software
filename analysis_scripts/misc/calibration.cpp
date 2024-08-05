@@ -2826,9 +2826,9 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
 void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     int nBins = 100;
     std::vector<std::tuple<std::string, std::string, std::string, double, double>> regions = {
-        {"traj_x_6", "traj_y_6", "region_{1}", -200, 200},
-        {"traj_x_18", "traj_y_18", "region_{2}", -300, 300},
-        {"traj_x_36", "traj_y_36", "region_{3}", -450, 450}
+        {"traj_x_6", "traj_y_6", "region 1", -200, 200},
+        {"traj_x_18", "traj_y_18", "region 2", -300, 300},
+        {"traj_x_36", "traj_y_36", "region 3", -450, 450}
     };
 
     std::vector<std::tuple<int, std::string>> particle_types = {
@@ -2950,13 +2950,15 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
             c->cd(pad);
             gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-            gPad->SetLogz(); // Set log scale for z-axis
+            gPad->SetLogz();  // Set log scale for the z-axis
+            h_data_sum->SetStats(false);  // Disable stat box
             h_data_sum->Draw("COLZ");
 
             if (mcReader) {
                 c->cd(pad + 3);
                 gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-                gPad->SetLogz(); // Set log scale for z-axis
+                gPad->SetLogz();  // Set log scale for the z-axis
+                h_mc_sum->SetStats(false);  // Disable stat box
                 h_mc_sum->Draw("COLZ");
             }
 
@@ -2974,17 +2976,17 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         c->SaveAs(("output/calibration/dc/determination/chi2_per_ndf_" + particle_name + ".png").c_str());
 
         for (auto& hist : histograms) {
-	        delete hist;
-	    }
+            delete hist;
+        }
 
-	    delete c;
-	}
+        delete c;
+    }
 
-	if (mc_traj_edge_6) delete mc_traj_edge_6;
-	if (mc_traj_edge_18) delete mc_traj_edge_18;
-	if (mc_traj_edge_36) delete mc_traj_edge_36;
-	if (mc_track_chi2_6) delete mc_track_chi2_6;
-	if (mc_track_ndf_6) delete mc_track_ndf_6;
+    if (mc_traj_edge_6) delete mc_traj_edge_6;
+    if (mc_traj_edge_18) delete mc_traj_edge_18;
+    if (mc_traj_edge_36) delete mc_traj_edge_36;
+    if (mc_track_chi2_6) delete mc_track_chi2_6;
+    if (mc_track_ndf_6) delete mc_track_ndf_6;
 }
                            
 void create_directories() {
