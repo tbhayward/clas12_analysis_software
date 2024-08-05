@@ -2923,10 +2923,29 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 }
             }
 
-            // Divide sum histograms by count histograms to get mean chi2/ndf
-            h_data_sum->Divide(h_data_count);
+            // Correct way to calculate mean chi2/ndf: only divide where count > 0
+            for (int i = 1; i <= h_data_sum->GetNbinsX(); ++i) {
+                for (int j = 1; j <= h_data_sum->GetNbinsY(); ++j) {
+                    double count = h_data_count->GetBinContent(i, j);
+                    if (count > 0) {
+                        h_data_sum->SetBinContent(i, j, h_data_sum->GetBinContent(i, j) / count);
+                    } else {
+                        h_data_sum->SetBinContent(i, j, 0); // Handle empty bins
+                    }
+                }
+            }
+
             if (mcReader) {
-                h_mc_sum->Divide(h_mc_count);
+                for (int i = 1; i <= h_mc_sum->GetNbinsX(); ++i) {
+                    for (int j = 1; j <= h_mc_sum->GetNbinsY(); ++j) {
+                        double count = h_mc_count->GetBinContent(i, j);
+                        if (count > 0) {
+                            h_mc_sum->SetBinContent(i, j, h_mc_sum->GetBinContent(i, j) / count);
+                        } else {
+                            h_mc_sum->SetBinContent(i, j, 0); // Handle empty bins
+                        }
+                    }
+                }
             }
 
             c->cd(pad);
@@ -2949,34 +2968,27 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
             ++pad;
 
-            // Print mean and std for data
-            double mean_data = h_data_sum->GetMean();
-            double std_data = h_data_sum->GetStdDev();
-            std::cout << "Data (" << particle_name << ", " << region_name << "): Mean #chi^{2}/ndf = " << mean_data << ", StdDev = " << std_data << std::endl;
+            // Print mean and stddev for this region and particle
+			std::cout << "Data (" << particle_name << ", " << region_name << "): Mean #chi^{2}/ndf = " << h_data_sum->GetMean() << ", StdDev = " << h_data_sum->GetStdDev() << std::endl;
+			if (mcReader) {
+			std::cout << "MC (" << particle_name << ", " << region_name << "): Mean #chi^{2}/ndf = " << h_mc_sum->GetMean() << ", StdDev = " << h_mc_sum->GetStdDev() << std::endl;
+		}
+	}
+	c->SaveAs(("output/calibration/dc/determination/chi2_per_ndf_" + particle_name + ".png").c_str());
 
-            // Print mean and std for MC, if available
-            if (mcReader) {
-                double mean_mc = h_mc_sum->GetMean();
-                double std_mc = h_mc_sum->GetStdDev();
-                std::cout << "MC (" << particle_name << ", " << region_name << "): Mean #chi^{2}/ndf = " << mean_mc << ", StdDev = " << std_mc << std::endl;
-            }
-        }
-
-        c->SaveAs(("output/calibration/dc/determination/chi2_per_ndf_" + particle_name + ".png").c_str());
-
-        // Now delete histograms after saving the canvas
-        for (auto& hist : histograms) {
-            delete hist;
-        }
-
-        delete c;
+    for (auto& hist : histograms) {
+        delete hist;
     }
 
-    if (mc_traj_edge_6) delete mc_traj_edge_6;
-    if (mc_traj_edge_18) delete mc_traj_edge_18;
-	if (mc_traj_edge_36) delete mc_traj_edge_36;
-	if (mc_track_chi2_6) delete mc_track_chi2_6;
-	if (mc_track_ndf_6) delete mc_track_ndf_6;
+    delete c;
+}
+
+if (mc_traj_edge_6) delete mc_traj_edge_6;
+if (mc_traj_edge_18) delete mc_traj_edge_18;
+if (mc_traj_edge_36) delete mc_traj_edge_36;
+if (mc_track_chi2_6) delete mc_track_chi2_6;
+if (mc_track_ndf_6) delete mc_track_ndf_6;
+
 }
                            
 void create_directories() {
