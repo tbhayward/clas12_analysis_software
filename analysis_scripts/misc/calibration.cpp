@@ -2866,6 +2866,8 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         c->Divide(3, 2);
 
         int pad = 1;
+        std::vector<TH2D*> histograms;  // Store histograms to delete them later
+
         for (const auto& region : regions) {
             std::string x_branch = std::get<0>(region);
             std::string y_branch = std::get<1>(region);
@@ -2927,16 +2929,22 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 h_mc->Draw("COLZ");
             }
 
-            // delete h_data;
-            // if (h_mc) delete h_mc;
-            // if (mc_traj_x) delete mc_traj_x;
-            // if (mc_traj_y) delete mc_traj_y;
-            // if (mc_particle_pid) delete mc_particle_pid;
+            histograms.push_back(h_data);
+            if (h_mc) histograms.push_back(h_mc);
+            if (mc_traj_x) delete mc_traj_x;
+            if (mc_traj_y) delete mc_traj_y;
+            if (mc_particle_pid) delete mc_particle_pid;
 
             ++pad;
         }
 
         c->SaveAs(("output/calibration/dc/positions/" + particle_name + "_hit_positions.png").c_str());
+
+        // Now delete histograms after saving the canvas
+        for (auto& hist : histograms) {
+            delete hist;
+        }
+
         delete c;
     }
 
