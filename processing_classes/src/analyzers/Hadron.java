@@ -61,20 +61,20 @@ public class Hadron {
         if (variables.Q2()<1.00) { return false; } 
         if (variables.W()<2) { return false; } 
 //        if (variables.xF()<0.0) { return false; } 
-        else if (variables.y()>0.75) { return false; } 
+//        else if (variables.y()>0.75) { return false; } 
 //        else if (variables.z()<0.2 || variables.z() > 0.95) { return false; } 
 //        else if (variables.p_p()<1.25) { return false; } 
 //        else if (variables.Mx()<1.4) { return false; } 
 //        else if (variables.p_theta()>0.47) { return false; }
-        
-        
-        else if (variables.e_p > 12 || variables.p_p > 12 || variables.Q2 > 12 || variables.W > 6 || 
-                variables.z > 2 || variables.zeta > 2 || 
-                variables.Mx < - 6 || variables.pT > 3 || variables.xF < -3 || variables.xF > 3 || 
-                variables.Depolarization_A > 5 || variables.Depolarization_B > 5 ||
-                variables.Depolarization_C > 5 || variables.Depolarization_V > 5 ||
-                variables.Depolarization_W > 5) 
-                { return false; }
+//        
+//        
+//        else if (variables.e_p > 12 || variables.p_p > 12 || variables.Q2 > 12 || variables.W > 6 || 
+//                variables.z > 2 || variables.zeta > 2 || 
+//                variables.Mx < - 6 || variables.pT > 3 || variables.xF < -3 || variables.xF > 3 || 
+//                variables.Depolarization_A > 5 || variables.Depolarization_B > 5 ||
+//                variables.Depolarization_C > 5 || variables.Depolarization_V > 5 ||
+//                variables.Depolarization_W > 5) 
+//                { return false; }
 	return true;
     }
     
