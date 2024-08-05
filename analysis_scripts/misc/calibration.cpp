@@ -2989,6 +2989,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             std::string particle_name = std::get<1>(particle_type);
 
             for (const auto& region : regions) {
+            	int pad = 1;
                 std::string x_branch = std::get<0>(region);
                 std::string y_branch = std::get<1>(region);
                 std::string region_name = std::get<2>(region);
@@ -2998,8 +2999,8 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 double yMax = xMax;
 
                 TCanvas* c = new TCanvas(("c_" + particle_name + "_chi2_ndf_sector_" + std::to_string(sector)).c_str(), 
-                                         (particle_name + " #chi^{2}/ndf - " + region_name + " - Sector " + std::to_string(sector)).c_str(), 
-                                         1800, 1200);
+                 (particle_name + " #chi^{2}/ndf - " + region_name + " - Sector " + std::to_string(sector)).c_str(), 
+                 1800, 1200);
                 c->Divide(3, 2);
 
                 std::vector<TH2D*> histograms;  // Store histograms to delete them later
