@@ -2871,6 +2871,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         std::vector<TH2D*> histograms;  // Store histograms to delete them later
 
         for (const auto& region : regions) {
+        	std::cout << "Starting regions" << std::endl;
             std::string x_branch = std::get<0>(region);
             std::string y_branch = std::get<1>(region);
             std::string region_name = std::get<2>(region);
@@ -2909,7 +2910,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                         "", nBins, xMin, xMax, nBins, yMin, yMax);
                 }
             }
-            std::cout << "Before dataReader restart" << std::endl;
+
             dataReader.Restart();
             if (mcReader) mcReader->Restart();
 
