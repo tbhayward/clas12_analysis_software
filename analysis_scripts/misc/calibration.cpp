@@ -3062,6 +3062,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             if (mc_particle_pid) delete mc_particle_pid;
 
             ++pad;
+            std::cout << "ARRIVED AT END OF INNER LOOP" << std::endl;
         }
 
         c->SaveAs(("output/calibration/dc/determination/chi2_per_ndf_" + particle_name + ".png").c_str());
