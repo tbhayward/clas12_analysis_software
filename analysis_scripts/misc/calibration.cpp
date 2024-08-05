@@ -2950,11 +2950,13 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
             c->cd(pad);
             gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+            gPad->SetLogz(); // Set log scale for z-axis
             h_data_sum->Draw("COLZ");
 
             if (mcReader) {
                 c->cd(pad + 3);
                 gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+                gPad->SetLogz(); // Set log scale for z-axis
                 h_mc_sum->Draw("COLZ");
             }
 
@@ -2967,28 +2969,22 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             if (mc_particle_pid) delete mc_particle_pid;
 
             ++pad;
+        }
 
-            // Print mean and stddev for this region and particle
-			std::cout << "Data (" << particle_name << ", " << region_name << "): Mean #chi^{2}/ndf = " << h_data_sum->GetMean() << ", StdDev = " << h_data_sum->GetStdDev() << std::endl;
-			if (mcReader) {
-			std::cout << "MC (" << particle_name << ", " << region_name << "): Mean #chi^{2}/ndf = " << h_mc_sum->GetMean() << ", StdDev = " << h_mc_sum->GetStdDev() << std::endl;
-		}
+        c->SaveAs(("output/calibration/dc/determination/chi2_per_ndf_" + particle_name + ".png").c_str());
+
+        for (auto& hist : histograms) {
+	        delete hist;
+	    }
+
+	    delete c;
 	}
-	c->SaveAs(("output/calibration/dc/determination/chi2_per_ndf_" + particle_name + ".png").c_str());
 
-    for (auto& hist : histograms) {
-        delete hist;
-    }
-
-    delete c;
-}
-
-if (mc_traj_edge_6) delete mc_traj_edge_6;
-if (mc_traj_edge_18) delete mc_traj_edge_18;
-if (mc_traj_edge_36) delete mc_traj_edge_36;
-if (mc_track_chi2_6) delete mc_track_chi2_6;
-if (mc_track_ndf_6) delete mc_track_ndf_6;
-
+	if (mc_traj_edge_6) delete mc_traj_edge_6;
+	if (mc_traj_edge_18) delete mc_traj_edge_18;
+	if (mc_traj_edge_36) delete mc_traj_edge_36;
+	if (mc_track_chi2_6) delete mc_track_chi2_6;
+	if (mc_track_ndf_6) delete mc_track_ndf_6;
 }
                            
 void create_directories() {
