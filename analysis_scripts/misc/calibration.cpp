@@ -2836,16 +2836,43 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         {2212, "proton"}
     };
 
-    // Original Plots
+    // Declare TTreeReaderValues outside the loops
+    TTreeReaderValue<double> traj_edge_6(dataReader, "traj_edge_6");
+    TTreeReaderValue<double> traj_edge_18(dataReader, "traj_edge_18");
+    TTreeReaderValue<double> traj_edge_36(dataReader, "traj_edge_36");
+
+    TTreeReaderValue<int> track_sector_6(dataReader, "track_sector_6");
+    TTreeReaderValue<double> track_chi2_6(dataReader, "track_chi2_6");
+    TTreeReaderValue<int> track_ndf_6(dataReader, "track_ndf_6");
+    TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+
+    // MC-related TTreeReaderValues
+    TTreeReaderValue<double>* mc_traj_edge_6 = nullptr;
+    TTreeReaderValue<double>* mc_traj_edge_18 = nullptr;
+    TTreeReaderValue<double>* mc_traj_edge_36 = nullptr;
+    TTreeReaderValue<double>* mc_track_chi2_6 = nullptr;
+    TTreeReaderValue<int>* mc_track_ndf_6 = nullptr;
+    TTreeReaderValue<int>* mc_track_sector_6 = nullptr;
+    TTreeReaderValue<int>* mc_particle_pid = nullptr;
+
+    if (mcReader) {
+        mc_traj_edge_6 = new TTreeReaderValue<double>(*mcReader, "traj_edge_6");
+        mc_traj_edge_18 = new TTreeReaderValue<double>(*mcReader, "traj_edge_18");
+        mc_traj_edge_36 = new TTreeReaderValue<double>(*mcReader, "traj_edge_36");
+        mc_track_chi2_6 = new TTreeReaderValue<double>(*mcReader, "track_chi2_6");
+        mc_track_ndf_6 = new TTreeReaderValue<int>(*mcReader, "track_ndf_6");
+        mc_track_sector_6 = new TTreeReaderValue<int>(*mcReader, "track_sector_6");
+        mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+    }
+
     for (const auto& particle_type : particle_types) {
         int pid = std::get<0>(particle_type);
         std::string particle_name = std::get<1>(particle_type);
 
         TCanvas* c = new TCanvas(("c_" + particle_name + "_chi2_ndf").c_str(), ("c_" + particle_name + " #chi^{2}/ndf").c_str(), 1800, 1200);
         c->Divide(3, 2);
-        int pad = 1;
 
-        // Declare histograms
+        int pad = 1;
         std::vector<TH2D*> histograms;  // Store histograms to delete them later
 
         for (const auto& region : regions) {
@@ -2862,16 +2889,13 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
             TTreeReaderValue<double> traj_x(dataReader, x_branch.c_str());
             TTreeReaderValue<double> traj_y(dataReader, y_branch.c_str());
-            TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
 
             TTreeReaderValue<double>* mc_traj_x = nullptr;
             TTreeReaderValue<double>* mc_traj_y = nullptr;
-            TTreeReaderValue<int>* mc_particle_pid = nullptr;
 
             if (mcReader) {
                 mc_traj_x = new TTreeReaderValue<double>(*mcReader, x_branch.c_str());
                 mc_traj_y = new TTreeReaderValue<double>(*mcReader, y_branch.c_str());
-                mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
             }
 
             TH2D* h_data_sum = new TH2D(("h_data_sum_" + region_name).c_str(), ("data " + region_name + " #chi^{2}/ndf (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
@@ -2886,6 +2910,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             }
 
             while (dataReader.Next()) {
+                int sector = *track_sector_6 - 1;  // Adjust sector to be 0-based index
                 if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999 && *track_ndf_6 > 0) {
                     double chi2_ndf = *track_chi2_6 / *track_ndf_6;
                     h_data_sum->Fill(*traj_x, *traj_y, chi2_ndf);
@@ -2895,6 +2920,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
             if (mcReader) {
                 while (mcReader->Next()) {
+                    int sector = **mc_track_sector_6 - 1;  // Adjust sector to be 0-based index
                     if (**mc_particle_pid == pid && **mc_traj_x != -9999 && **mc_traj_y != -9999 && **mc_track_ndf_6 > 0) {
                         double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
                         h_mc_sum->Fill(**mc_traj_x, **mc_traj_y, mc_chi2_ndf);
@@ -2928,19 +2954,17 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 }
             }
 
-            // Draw data histogram
             c->cd(pad);
             gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-            gPad->SetLogz();
+            gPad->SetLogz();  // Set log scale for the z-axis
             h_data_sum->SetStats(false);
+            // Disable stat box
             h_data_sum->Draw("COLZ");
-
-            // Draw MC histogram
             if (mcReader) {
                 c->cd(pad + 3);
                 gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-                gPad->SetLogz();
-                h_mc_sum->SetStats(false);
+                gPad->SetLogz();  // Set log scale for the z-axis
+                h_mc_sum->SetStats(false);  // Disable stat box
                 h_mc_sum->Draw("COLZ");
             }
 
@@ -2948,14 +2972,15 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             histograms.push_back(h_data_count);
             if (h_mc_sum) histograms.push_back(h_mc_sum);
             if (h_mc_count) histograms.push_back(h_mc_count);
+            if (mc_traj_x) delete mc_traj_x;
+            if (mc_traj_y) delete mc_traj_y;
+            if (mc_particle_pid) delete mc_particle_pid;
 
             ++pad;
         }
 
-        // Save original canvas
         c->SaveAs(("output/calibration/dc/determination/chi2_per_ndf_" + particle_name + ".png").c_str());
 
-        // Clean up histograms
         for (auto& hist : histograms) {
             delete hist;
         }
@@ -2963,134 +2988,6 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         delete c;
     }
 
-    // New Sector-Specific Plots
-    for (const auto& particle_type : particle_types) {
-        int pid = std::get<0>(particle_type);
-        std::string particle_name = std::get<1>(particle_type);
-
-        for (const auto& region : regions) {
-            std::string region_name = std::get<2>(region);
-            double xMin = std::get<3>(region);
-            double xMax = std::get<4>(region);
-            double yMin = xMin;
-            double yMax = xMax;
-
-            // Create a new canvas for each region and particle type
-            TCanvas* c_sector = new TCanvas(("c_sector_" + particle_name + "_" + region_name).c_str(), ("c_sector_" + particle_name + " " + region_name + " #chi^{2}/ndf by Sector").c_str(), 1800, 1200);
-            c_sector->Divide(3, 2);
-            int pad = 1;
-
-            // Declare sector histograms
-            std::vector<TH2D*> h_data_sector_sum(6);
-            std::vector<TH2D*> h_data_sector_count(6);
-            std::vector<TH2D*> h_mc_sector_sum(6);
-            std::vector<TH2D*> h_mc_sector_count(6);
-
-            for (int sector = 0; sector < 6; ++sector) {
-                h_data_sector_sum[sector] = new TH2D(("h_data_sector_sum_" + region_name + "sector" + std::to_string(sector + 1)).c_str(), ("data " + region_name + " #chi^{2}/ndf (Sector " + std::to_string(sector + 1) + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-                h_data_sector_count[sector] = new TH2D(("h_data_sector_count_" + region_name + "sector" + std::to_string(sector + 1)).c_str(), "", nBins, xMin, xMax, nBins, yMin, yMax);
-                if (mcReader) {
-                    h_mc_sector_sum[sector] = new TH2D(("h_mc_sector_sum_" + region_name + "_sector_" + std::to_string(sector + 1)).c_str(), ("mc " + region_name + " #chi^{2}/ndf (Sector " + std::to_string(sector + 1) + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-                    h_mc_sector_count[sector] = new TH2D(("h_mc_sector_count_" + region_name + "_sector_" + std::to_string(sector + 1)).c_str(), "", nBins, xMin, xMax, nBins, yMin, yMax);
-                }
-            }
-
-            // Fill data histograms by sector
-            dataReader.Restart();
-            while (dataReader.Next()) {
-                int sector = *track_sector_6 - 1;  // Adjust sector to be 0-based index
-                if (*particle_pid == pid && sector >= 0 && sector < 6) {
-                    TTreeReaderValue<double> traj_x(dataReader, std::get<0>(region).c_str());
-                    TTreeReaderValue<double> traj_y(dataReader, std::get<1>(region).c_str());
-
-                    if (*traj_x != -9999 && *traj_y != -9999 && *track_ndf_6 > 0) {
-                        double chi2_ndf = *track_chi2_6 / *track_ndf_6;
-                        h_data_sector_sum[sector]->Fill(*traj_x, *traj_y, chi2_ndf);
-                        h_data_sector_count[sector]->Fill(*traj_x, *traj_y);
-                    }
-                }
-            }
-
-            // Fill MC histograms by sector
-            if (mcReader) {
-                mcReader->Restart();
-                while (mcReader->Next()) {
-                    int sector = **mc_track_sector_6 - 1;  // Adjust sector to be 0-based index
-                    if (**mc_particle_pid == pid && sector >= 0 && sector < 6) {
-                        TTreeReaderValue<double> mc_traj_x(*mcReader, std::get<0>(region).c_str());
-                        TTreeReaderValue<double> mc_traj_y(*mcReader, std::get<1>(region).c_str());
-
-                        if (*mc_traj_x != -9999 && *mc_traj_y != -9999 && **mc_track_ndf_6 > 0) {
-                            double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
-                            h_mc_sector_sum[sector]->Fill(*mc_traj_x, *mc_traj_y, mc_chi2_ndf);
-                            h_mc_sector_count[sector]->Fill(*mc_traj_x, *mc_traj_y);
-                        }
-                    }
-                }
-            }
-
-            // Calculate mean chi2/ndf for data and MC by sector
-            for (int sector = 0; sector < 6; ++sector) {
-                for (int x = 1; x <= h_data_sector_sum[sector]->GetNbinsX(); ++x) {
-                    for (int y = 1; y <= h_data_sector_sum[sector]->GetNbinsY(); ++y) {
-                        double count = h_data_sector_count[sector]->GetBinContent(x, y);
-                        if (count > 0) {
-                            h_data_sector_sum[sector]->SetBinContent(x, y, h_data_sector_sum[sector]->GetBinContent(x, y) / count);
-                        } else {
-                            h_data_sector_sum[sector]->SetBinContent(x, y, 0); // Handle empty bins
-                        }
-                    }
-                }
-
-                if (mcReader) {
-                    for (int x = 1; x <= h_mc_sector_sum[sector]->GetNbinsX(); ++x) {
-                        for (int y = 1; y <= h_mc_sector_sum[sector]->GetNbinsY(); ++y) {
-                            double count = h_mc_sector_count[sector]->GetBinContent(x, y);
-                            if (count > 0) {
-                                h_mc_sector_sum[sector]->SetBinContent(x, y, h_mc_sector_sum[sector]->GetBinContent(x, y) / count);
-                            } else {
-                                h_mc_sector_sum[sector]->SetBinContent(x, y, 0); // Handle empty bins
-                            }
-                        }
-                    }
-                }
-
-                // Draw sector histograms
-                c_sector->cd(pad);
-                gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-                gPad->SetLogz();
-                h_data_sector_sum[sector]->SetStats(false);
-                h_data_sector_sum[sector]->Draw("COLZ");
-
-                if (mcReader) {
-                    c_sector->cd(pad + 3);
-                    gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-                    gPad->SetLogz();
-                    h_mc_sector_sum[sector]->SetStats(false);
-                    h_mc_sector_sum[sector]->Draw("COLZ");
-                }
-
-                ++pad;
-            }
-
-            // Save sector canvas
-            c_sector->SaveAs(("output/calibration/dc/determination/chi2_per_ndf_" + particle_name + "_" + region_name + "_sectors.png").c_str());
-
-            // Clean up histograms
-            for (int sector = 0; sector < 6; ++sector) {
-                delete h_data_sector_sum[sector];
-                delete h_data_sector_count[sector];
-                if (mcReader) {
-                    delete h_mc_sector_sum[sector];
-                    delete h_mc_sector_count[sector];
-                }
-            }
-
-            delete c_sector;
-        }
-    }
-
-    // Cleanup for dynamically allocated TTreeReaderValues
     if (mc_traj_edge_6) delete mc_traj_edge_6;
     if (mc_traj_edge_18) delete mc_traj_edge_18;
     if (mc_traj_edge_36) delete mc_traj_edge_36;
