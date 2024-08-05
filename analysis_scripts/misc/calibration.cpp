@@ -2851,11 +2851,15 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
     TTreeReaderValue<double>* mc_traj_edge_6 = nullptr;
     TTreeReaderValue<double>* mc_traj_edge_18 = nullptr;
     TTreeReaderValue<double>* mc_traj_edge_36 = nullptr;
+    TTreeReaderValue<double>* mc_track_chi2_6 = nullptr;
+    TTreeReaderValue<int>* mc_track_ndf_6 = nullptr;
 
     if (mcReader) {
         mc_traj_edge_6 = new TTreeReaderValue<double>(*mcReader, "traj_edge_6");
         mc_traj_edge_18 = new TTreeReaderValue<double>(*mcReader, "traj_edge_18");
         mc_traj_edge_36 = new TTreeReaderValue<double>(*mcReader, "traj_edge_36");
+        mc_track_chi2_6 = new TTreeReaderValue<double>(*mcReader, "track_chi2_6");
+        mc_track_ndf_6 = new TTreeReaderValue<int>(*mcReader, "track_ndf_6");
     }
 
     // Loop over each particle type
@@ -2924,17 +2928,16 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                     }
                 }
             }
-
-            // Draw the data plot on the top row
+              // Draw the data plot on the top row
             c->cd(pad);
             gPad->SetMargin(0.15, 0.15, 0.1, 0.1); // Increase padding
             h_data->Draw("COLZ");
 
             // Draw the MC plot on the bottom row, if available
             if (mcReader) {
-                c->cd(pad + 3);
-                gPad->SetMargin(0.15, 0.15, 0.1, 0.1); // Increase padding
-                h_mc->Draw("COLZ");
+              c->cd(pad + 3);
+              gPad->SetMargin(0.15, 0.15, 0.1, 0.1); // Increase padding
+              h_mc->Draw("COLZ");
             }
 
             // Clean up for this region
@@ -2945,19 +2948,16 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             if (mc_particle_pid) delete mc_particle_pid;
 
             ++pad;
+            }
+            // Save the canvas
+            c->SaveAs(("output/calibration/dc/positions/" + particle_name + "_hit_positions.png").c_str());
+            // Clean up the dynamically allocated memory for edge variables
+            if (mc_traj_edge_6) delete mc_traj_edge_6;
+            if (mc_traj_edge_18) delete mc_traj_edge_18;
+            if (mc_traj_edge_36) delete mc_traj_edge_36;
+            delete c;
         }
-
-        // Save the canvas
-        c->SaveAs(("output/calibration/dc/positions/" + particle_name + "_hit_positions.png").c_str());
-
-        // Clean up the dynamically allocated memory for edge variables
-        if (mc_traj_edge_6) delete mc_traj_edge_6;
-        if (mc_traj_edge_18) delete mc_traj_edge_18;
-        if (mc_traj_edge_36) delete mc_traj_edge_36;
-
-        delete c;
     }
-}
                            
 void create_directories() {
     // Array of directories to check/create
