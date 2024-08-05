@@ -2847,7 +2847,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
     TTreeReaderValue<double>* mc_traj_edge_6 = nullptr;
     TTreeReaderValue<double>* mc_traj_edge_18 = nullptr;
     TTreeReaderValue<double>* mc_traj_edge_36 = nullptr;
-    TTreeReaderValue<double>* mc_track_sector_6 = nullptr;
+    TTreeReaderValue<int>* mc_track_sector_6 = nullptr;
     TTreeReaderValue<double>* mc_track_chi2_6 = nullptr;
     TTreeReaderValue<int>* mc_track_ndf_6 = nullptr;
 
