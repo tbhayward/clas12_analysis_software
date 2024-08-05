@@ -2998,6 +2998,17 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             if (mc_particle_pid) delete mc_particle_pid;
 
             ++pad;
+
+            // Don't forget to delete the histograms and canvas after use to avoid memory leaks
+		    for (int sector = 0; sector < 6; ++sector) {
+		        delete h_data_sum_sector[sector];
+		        delete h_data_count_sector[sector];
+		        if (mcReader) {
+		            delete h_mc_sum_sector[sector];
+		            delete h_mc_count_sector[sector];
+		        }
+		    }
+		    delete c_region; // Delete the canvas after saving it
         }
 
         c->SaveAs(("output/calibration/dc/determination/chi2_per_ndf_" + particle_name + ".png").c_str());
