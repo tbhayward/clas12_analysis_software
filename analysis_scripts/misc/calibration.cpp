@@ -2935,22 +2935,40 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             }
 
             while (dataReader.Next()) {
-                if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999 && *track_ndf_6 > 0) {
-                    double chi2_ndf = *track_chi2_6 / *track_ndf_6;
-                    h_data_sum->Fill(*traj_x, *traj_y, chi2_ndf);
-                    h_data_count->Fill(*traj_x, *traj_y);
-                }
-            }
+			    if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999 && *track_ndf_6 > 0) {
+			        double chi2_ndf = *track_chi2_6 / *track_ndf_6;
 
-            if (mcReader) {
-                while (mcReader->Next()) {
-                    if (**mc_particle_pid == pid && **mc_traj_x != -9999 && **mc_traj_y != -9999 && **mc_track_ndf_6 > 0) {
-                        double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
-                        h_mc_sum->Fill(**mc_traj_x, **mc_traj_y, mc_chi2_ndf);
-                        h_mc_count->Fill(**mc_traj_x, **mc_traj_y);
-                    }
-                }
-            }
+			        // Fill the original histograms
+			        h_data_sum->Fill(*traj_x, *traj_y, chi2_ndf);
+			        h_data_count->Fill(*traj_x, *traj_y);
+
+			        // Fill the sector-specific histograms
+			        int sector = *track_sector_6 - 1; // Adjust sector to be 0-based index (0 to 5)
+			        if (sector >= 0 && sector < 6) {
+			            h_data_sum_sector[sector]->Fill(*traj_x, *traj_y, chi2_ndf);
+			            h_data_count_sector[sector]->Fill(*traj_x, *traj_y);
+			        }
+			    }
+			}
+
+			if (mcReader) {
+			    while (mcReader->Next()) {
+			        if (**mc_particle_pid == pid && **mc_traj_x != -9999 && **mc_traj_y != -9999 && **mc_track_ndf_6 > 0) {
+			            double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
+
+			            // Fill the original histograms
+			            h_mc_sum->Fill(**mc_traj_x, **mc_traj_y, mc_chi2_ndf);
+			            h_mc_count->Fill(**mc_traj_x, **mc_traj_y);
+
+			            // Fill the sector-specific histograms
+			            int sector = **mc_track_sector_6 - 1; // Adjust sector to be 0-based index (0 to 5)
+			            if (sector >= 0 && sector < 6) {
+			                h_mc_sum_sector[sector]->Fill(**mc_traj_x, **mc_traj_y, mc_chi2_ndf);
+			                h_mc_count_sector[sector]->Fill(**mc_traj_x, **mc_traj_y);
+			            }
+			        }
+			    }
+			}
 
             // Correct way to calculate mean chi2/ndf: only divide where count > 0
             for (int i = 1; i <= h_data_sum->GetNbinsX(); ++i) {
