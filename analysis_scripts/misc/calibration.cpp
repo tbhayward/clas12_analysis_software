@@ -2973,29 +2973,58 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 			}
 
             // Correct way to calculate mean chi2/ndf: only divide where count > 0
-            for (int i = 1; i <= h_data_sum->GetNbinsX(); ++i) {
-                for (int j = 1; j <= h_data_sum->GetNbinsY(); ++j) {
-                    double count = h_data_count->GetBinContent(i, j);
-                    if (count > 0) {
-                        h_data_sum->SetBinContent(i, j, h_data_sum->GetBinContent(i, j) / count);
-                    } else {
-                        h_data_sum->SetBinContent(i, j, 0); // Handle empty bins
-                    }
-                }
-            }
+			for (int i = 1; i <= h_data_sum->GetNbinsX(); ++i) {
+			    for (int j = 1; j <= h_data_sum->GetNbinsY(); ++j) {
+			        double count = h_data_count->GetBinContent(i, j);
+			        if (count > 0) {
+			            h_data_sum->SetBinContent(i, j, h_data_sum->GetBinContent(i, j) / count);
+			        } else {
+			            h_data_sum->SetBinContent(i, j, 0); // Handle empty bins
+			        }
+			    }
+			}
 
-            if (mcReader) {
-                for (int i = 1; i <= h_mc_sum->GetNbinsX(); ++i) {
-                    for (int j = 1; j <= h_mc_sum->GetNbinsY(); ++j) {
-                        double count = h_mc_count->GetBinContent(i, j);
-                        if (count > 0) {
-                            h_mc_sum->SetBinContent(i, j, h_mc_sum->GetBinContent(i, j) / count);
-                        } else {
-                            h_mc_sum->SetBinContent(i, j, 0); // Handle empty bins
-                        }
-                    }
-                }
-            }
+			if (mcReader) {
+			    for (int i = 1; i <= h_mc_sum->GetNbinsX(); ++i) {
+			        for (int j = 1; j <= h_mc_sum->GetNbinsY(); ++j) {
+			            double count = h_mc_count->GetBinContent(i, j);
+			            if (count > 0) {
+			                h_mc_sum->SetBinContent(i, j, h_mc_sum->GetBinContent(i, j) / count);
+			            } else {
+			                h_mc_sum->SetBinContent(i, j, 0); // Handle empty bins
+			            }
+			        }
+			    }
+			}
+
+			// New functionality for sector-specific histograms
+			for (int sector = 0; sector < 6; ++sector) {
+			    // For data
+			    for (int i = 1; i <= h_data_sum_sector[sector]->GetNbinsX(); ++i) {
+			        for (int j = 1; j <= h_data_sum_sector[sector]->GetNbinsY(); ++j) {
+			            double count = h_data_count_sector[sector]->GetBinContent(i, j);
+			            if (count > 0) {
+			                h_data_sum_sector[sector]->SetBinContent(i, j, h_data_sum_sector[sector]->GetBinContent(i, j) / count);
+			            } else {
+			                h_data_sum_sector[sector]->SetBinContent(i, j, 0); // Handle empty bins
+			            }
+			        }
+			    }
+
+			    // For MC (if present)
+			    if (mcReader) {
+			        for (int i = 1; i <= h_mc_sum_sector[sector]->GetNbinsX(); ++i) {
+			            for (int j = 1; j <= h_mc_sum_sector[sector]->GetNbinsY(); ++j) {
+			                double count = h_mc_count_sector[sector]->GetBinContent(i, j);
+			                if (count > 0) {
+			                    h_mc_sum_sector[sector]->SetBinContent(i, j, h_mc_sum_sector[sector]->GetBinContent(i, j) / count);
+			                } else {
+			                    h_mc_sum_sector[sector]->SetBinContent(i, j, 0); // Handle empty bins
+			                }
+			            }
+			        }
+			    }
+			}
 
             c->cd(pad);
             gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
