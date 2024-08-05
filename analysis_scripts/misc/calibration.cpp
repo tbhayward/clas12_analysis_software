@@ -2910,7 +2910,6 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             while (dataReader.Next()) {
                 if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999 && *track_ndf_6 > 0) {
                     double chi2_ndf = *track_chi2_6 / *track_ndf_6;
-                    std::cout << chi2_ndf << std::endl;
                     h_data_chi2ndf_sum->Fill(*traj_x, *traj_y, chi2_ndf);
                     h_data_chi2ndf_count->Fill(*traj_x, *traj_y);
                 }
@@ -2921,7 +2920,6 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 while (mcReader->Next()) {
                     if (**mc_particle_pid == pid && **mc_traj_x != -9999 && **mc_traj_y != -9999 && **mc_track_ndf_6 > 0) {
                         double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
-                        std::cout << mc_chi2_ndf << std::endl;
                         h_mc_chi2ndf_sum->Fill(**mc_traj_x, **mc_traj_y, mc_chi2_ndf);
                         h_mc_chi2ndf_count->Fill(**mc_traj_x, **mc_traj_y);
                     }
