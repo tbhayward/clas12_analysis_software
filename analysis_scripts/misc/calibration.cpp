@@ -2870,7 +2870,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         int pad = 1;
         std::vector<TH2D*> histograms;  // Store histograms to delete them later
 
-        for (const auto& region : regions) {
+        for (int region = 0; region < 3; region++) {
         	std::cout << "Starting regions" << std::endl;
             std::string x_branch = std::get<0>(region);
             std::string y_branch = std::get<1>(region);
