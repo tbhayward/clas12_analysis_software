@@ -2874,6 +2874,8 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
         // Loop over each DC region
         int pad = 1;
+        std::vector<TH2D*> histograms_to_clean_up;
+
         for (const auto& region : regions) {
             std::string x_branch = std::get<0>(region);
             std::string y_branch = std::get<1>(region);
@@ -2914,6 +2916,11 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 h_mc_count = new TH2D(("h_mc_count_" + region_name).c_str(), ("mc " + region_name + " count (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
             }
 
+            histograms_to_clean_up.push_back(h_data_chi2ndf_sum);
+            histograms_to_clean_up.push_back(h_data_count);
+            if (h_mc_chi2ndf_sum) histograms_to_clean_up.push_back(h_mc_chi2ndf_sum);
+            if (h_mc_count) histograms_to_clean_up.push_back(h_mc_count);
+
             // Fill the data histograms
             while (dataReader.Next()) {
                 if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999 && *track_ndf_6 > 0) {
@@ -2951,26 +2958,23 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 gPad->SetMargin(0.15, 0.15, 0.1, 0.1); // Increase padding
                 h_mc_chi2ndf_sum->Draw("COLZ");
             }
-
             ++pad;
-
-            // Clean up for this region
-            delete h_data_chi2ndf_sum;
-            delete h_data_count;
-            if (h_mc_chi2ndf_sum) delete h_mc_chi2ndf_sum;
-            if (h_mc_count) delete h_mc_count;
-            if (mc_traj_x) delete mc_traj_x;
-            if (mc_traj_y) delete mc_traj_y;
-            if (mc_particle_pid) delete mc_particle_pid;
         }
 
         // Save the canvas
         c->SaveAs(("output/calibration/dc/determination/chi2_per_ndf_" + particle_name + ".png").c_str());
 
+        // Cleanup histograms after saving canvas
+        for (auto& hist : histograms_to_clean_up) {
+            delete hist;
+        }
+
         // Clean up the dynamically allocated memory for edge variables
         if (mc_traj_edge_6) delete mc_traj_edge_6;
         if (mc_traj_edge_18) delete mc_traj_edge_18;
         if (mc_traj_edge_36) delete mc_traj_edge_36;
+        if (mc_track_chi2_6) delete mc_track_chi2_6;
+        if (mc_track_ndf_6) delete mc_track_ndf_6;
 
         delete c;
     }
