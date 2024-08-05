@@ -41,7 +41,7 @@ public class analysis_fitter extends GenericKinematicFitter {
             && pid_cuts.calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
             && pid_cuts.calorimeter_diagonal_cut(particle_Index, p, cal_Bank)
             && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)    
-            && fiducial_cuts.pcal_fiducial_cut(particle_Index, 1, rec_Bank, cal_Bank)
+            && fiducial_cuts.pcal_fiducial_cut(particle_Index, 2, rec_Bank, cal_Bank)
             && fiducial_cuts.pass1_dc_fiducial_cut(particle_Index,rec_Bank,track_Bank,traj_Bank,run_Bank)
             ;
     }
@@ -139,7 +139,7 @@ public class analysis_fitter extends GenericKinematicFitter {
             p > 0.50
             && (passesForwardDetector || passesForwardTagger)
             && (passesForwardDetector 
-                ? fiducial_cuts.pcal_fiducial_cut(particle_Index, 1, rec_Bank, cal_Bank)
+                ? fiducial_cuts.pcal_fiducial_cut(particle_Index, 3, rec_Bank, cal_Bank)
                 : fiducial_cuts.forward_tagger_fiducial_cut(particle_Index, rec_Bank, cal_Bank))
             && pid_cuts.beta_cut(particle_Index, rec_Bank)
 //          && pid_cuts.e_gamma_open_angle_cut(lv_e, lv_gamma)

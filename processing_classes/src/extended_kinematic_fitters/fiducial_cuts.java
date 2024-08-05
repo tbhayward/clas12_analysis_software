@@ -112,32 +112,34 @@ public boolean pcal_fiducial_cut(int particle_Index, int strictness,
             return false;
     }
 
-    // Sector-specific cuts for PCal (layer 1)
-    switch (sector) {
-        case 1:
-            if ((lw_1 > 69 && lw_1 < 96) || (lw_1 > 207 && lw_1 < 236)) { return false; }
-            break;
-        case 2:
-            if ((lv_1 > 95 && lv_1 < 119) || (lu_1 > 108 && lu_1 < 126)) { return false; }
-            break;
-        case 4:
-            if (lv_1 > 224 && lv_1 < 247) { return false; }
-            break;
-        case 6:
-            if (lw_1 > 169 && lw_1 < 198) { return false; }
-            break;
-        default:
-            break;
-    }
+    if (strictness > 1) {
+        // Sector-specific cuts for PCal (layer 1)
+        switch (sector) {
+            case 1:
+                if ((lw_1 > 69 && lw_1 < 96) || (lw_1 > 207 && lw_1 < 236)) { return false; }
+                break;
+            case 2:
+                if ((lv_1 > 95 && lv_1 < 119) || (lu_1 > 108 && lu_1 < 126)) { return false; }
+                break;
+            case 4:
+                if (lv_1 > 224 && lv_1 < 247) { return false; }
+                break;
+            case 6:
+                if (lw_1 > 169 && lw_1 < 198) { return false; }
+                break;
+            default:
+                break;
+        }
 
-    // Sector-specific cuts for ECin (layer 4)
-    if (sector == 1) {
-        if (lv_4 > 70 && lv_4 < 96) { return false; }
-    }
+        // Sector-specific cuts for ECin (layer 4)
+        if (sector == 1) {
+            if (lv_4 > 70 && lv_4 < 96) { return false; }
+        }
 
-    // Sector-specific cuts for ECout (layer 7)
-    if (sector == 5) {
-        if (lu_7 > 194 && lu_7 < 222) { return false; }
+        // Sector-specific cuts for ECout (layer 7)
+        if (sector == 5) {
+            if (lu_7 > 194 && lu_7 < 222) { return false; }
+        }
     }
 
     // If none of the cuts apply, the track is good
