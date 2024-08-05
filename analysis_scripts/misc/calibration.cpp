@@ -2894,49 +2894,51 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
             }
 
-            // Histograms for sum and count of chi2/ndf values
-            TH2D* h_data_chi2ndf_sum = new TH2D(("h_data_chi2ndf_sum_" + region_name).c_str(), ("data " + region_name + " chi2/ndf (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-            TH2D* h_data_chi2ndf_count = new TH2D(("h_data_chi2ndf_count_" + region_name).c_str(), ("data " + region_name + " chi2/ndf count (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            TH2D* h_data = new TH2D(("h_data_" + region_name).c_str(), ("data " + region_name + " hit position (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            h_data->GetXaxis()->SetTitle(("x_{" + region_name + "}").c_str());
+            h_data->GetYaxis()->SetTitle(("y_{" + region_name + "}").c_str());
 
-            TH2D* h_mc_chi2ndf_sum = nullptr;
-            TH2D* h_mc_chi2ndf_count = nullptr;
-
+            TH2D* h_mc = nullptr;
             if (mcReader) {
-                h_mc_chi2ndf_sum = new TH2D(("h_mc_chi2ndf_sum_" + region_name).c_str(), ("mc " + region_name + " chi2/ndf (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-                h_mc_chi2ndf_count = new TH2D(("h_mc_chi2ndf_count_" + region_name).c_str(), ("mc " + region_name + " chi2/ndf count (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                h_mc = new TH2D(("h_mc_" + region_name).c_str(), ("mc " + region_name + " hit position (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                h_mc->GetXaxis()->SetTitle(("x_{" + region_name + "}").c_str());
+                h_mc->GetYaxis()->SetTitle(("y_{" + region_name + "}").c_str());
             }
 
-            // Fill the data histograms with chi2/ndf sum and counts
             while (dataReader.Next()) {
-                if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999 && *track_ndf_6 > 0) {
-                    double chi2_ndf = *track_chi2_6 / *track_ndf_6;
-                    h_data_chi2ndf_sum->Fill(*traj_x, *traj_y, chi2_ndf);
-                    h_data_chi2ndf_count->Fill(*traj_x, *traj_y);
+                if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999) {
+                    h_data->Fill(*traj_x, *traj_y);
                 }
             }
 
-            // Fill the MC histograms with chi2/ndf sum and counts, if available
             if (mcReader) {
                 while (mcReader->Next()) {
-                    if (**mc_particle_pid == pid && **mc_traj_x != -9999 && **mc_traj_y != -9999 && **mc_track_ndf_6 > 0) {
-                        double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
-                        h_mc_chi2ndf_sum->Fill(**mc_traj_x, **mc_traj_y, mc_chi2_ndf);
-                        h_mc_chi2ndf_count->Fill(**mc_traj_x, **mc_traj_y);
+                    if (**mc_particle_pid == pid && **mc_traj_x != -9999 && **mc_traj_y != -9999) {
+                        h_mc->Fill(**mc_traj_x, **mc_traj_y);
                     }
                 }
             }
 
-            // Store histograms to delete them later
-            histograms.push_back(h_data_chi2ndf_sum);
-            histograms.push_back(h_data_chi2ndf_count);
-            if (h_mc_chi2ndf_sum) histograms.push_back(h_mc_chi2ndf_sum);
-            if (h_mc_chi2ndf_count) histograms.push_back(h_mc_chi2ndf_count);
+            c->cd(pad);
+            gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+            h_data->Draw("COLZ");
 
-            // Increment pad for plotting
+            if (mcReader) {
+                c->cd(pad + 3);
+                gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+                h_mc->Draw("COLZ");
+            }
+
+            histograms.push_back(h_data);
+            if (h_mc) histograms.push_back(h_mc);
+            if (mc_traj_x) delete mc_traj_x;
+            if (mc_traj_y) delete mc_traj_y;
+            if (mc_particle_pid) delete mc_particle_pid;
+
             ++pad;
         }
 
-        c->SaveAs(("output/calibration/dc/determination/chi2_per_ndf_" + particle_name + ".png").c_str());
+        c->SaveAs(("output/calibration/dc/positions/" + particle_name + "_hit_positions.png").c_str());
 
         // Now delete histograms after saving the canvas
         for (auto& hist : histograms) {
