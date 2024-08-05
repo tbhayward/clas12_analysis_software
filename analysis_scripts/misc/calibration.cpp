@@ -2907,6 +2907,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
             // Fill the data histograms with chi2/ndf sum and counts
             while (dataReader.Next()) {
+            	std::cout << *track_chi2_6 << " " << *track_ndf_6 << std::endl;
                 if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999 && *track_ndf_6 > 0) {
                     double chi2_ndf = *track_chi2_6 / *track_ndf_6;
                     h_data_sum->Fill(*traj_x, *traj_y, chi2_ndf);
