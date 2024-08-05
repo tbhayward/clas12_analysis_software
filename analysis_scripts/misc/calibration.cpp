@@ -2936,10 +2936,11 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             if (mcReader) {
                 h_mc_sum = new TH2D(("h_mc_sum_" + region_name).c_str(), ("mc " + region_name + " #chi^{2}/ndf (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
                 h_mc_count = new TH2D(("h_mc_count_" + region_name).c_str(), ("mc " + region_name + " #chi^{2}/ndf count (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-                while (dataReader.Next()) {
+            }
+
+            while (dataReader.Next()) {
                 if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999 && *track_ndf_6 > 0) {
                     double chi2_ndf = *track_chi2_6 / *track_ndf_6;
-
                     h_data_sum->Fill(*traj_x, *traj_y, chi2_ndf);
                     h_data_count->Fill(*traj_x, *traj_y);
 
@@ -3006,7 +3007,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
                 if (mcReader) {
                     for (int i = 1; i <= h_mc_sum_sector[sector]->GetNbinsX(); ++i) {
-                        for (int j = 1; j <= h_mc_sum_sector[sector]->GetNbinsY(); ++j) {
+                        for (int j = 1; i <= h_mc_sum_sector[sector]->GetNbinsY(); ++j) {
                             double count = h_mc_count_sector[sector]->GetBinContent(i, j);
                             if (count > 0) {
                                 h_mc_sum_sector[sector]->SetBinContent(i, j, h_mc_sum_sector[sector]->GetBinContent(i, j) / count);
@@ -3078,7 +3079,6 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
     if (mc_traj_edge_36) delete mc_traj_edge_36;
     if (mc_track_chi2_6) delete mc_track_chi2_6;
     if (mc_track_ndf_6) delete mc_track_ndf_6;
-}
 }
                            
 void create_directories() {
