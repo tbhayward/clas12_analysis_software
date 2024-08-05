@@ -2869,6 +2869,14 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         std::vector<TH2D*> histograms;  // Store histograms to delete them later
 
         for (const auto& region : regions) {
+        	std::string x_branch = std::get<0>(region);
+            std::string y_branch = std::get<1>(region);
+            std::string region_name = std::get<2>(region);
+            double xMin = std::get<3>(region);
+            double xMax = std::get<4>(region);
+            double yMin = xMin;
+            double yMax = xMax;
+            
         	TCanvas* c_region = new TCanvas(("c_" + particle_name + "_region" + region + "_chi2_ndf").c_str(), ("c_" + particle_name + " #chi^{2}/ndf").c_str(), 1800, 1200);
         	c_region->Divide(3,2);
         	// Declare vectors to store histograms for the six sectors
@@ -2895,14 +2903,6 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 						"", nBins, std::get<3>(region), std::get<4>(region), nBins, std::get<3>(region), std::get<4>(region));
 		        }
 		    }
-
-            std::string x_branch = std::get<0>(region);
-            std::string y_branch = std::get<1>(region);
-            std::string region_name = std::get<2>(region);
-            double xMin = std::get<3>(region);
-            double xMax = std::get<4>(region);
-            double yMin = xMin;
-            double yMax = xMax;
 
             dataReader.Restart();
             if (mcReader) mcReader->Restart();
