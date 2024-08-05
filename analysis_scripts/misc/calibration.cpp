@@ -2836,7 +2836,6 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         {2212, "proton"}
     };
 
-    // Arrays to store sector histograms
     std::vector<TH2D*> h_data_sum[6], h_data_count[6];
     std::vector<TH2D*> h_mc_sum[6], h_mc_count[6];
 
@@ -2847,12 +2846,15 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
     TTreeReaderValue<int> track_sector_6(dataReader, "track_sector_6");
     TTreeReaderValue<double> track_chi2_6(dataReader, "track_chi2_6");
     TTreeReaderValue<int> track_ndf_6(dataReader, "track_ndf_6");
+    TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
 
     TTreeReaderValue<double>* mc_traj_edge_6 = nullptr;
     TTreeReaderValue<double>* mc_traj_edge_18 = nullptr;
     TTreeReaderValue<double>* mc_traj_edge_36 = nullptr;
     TTreeReaderValue<double>* mc_track_chi2_6 = nullptr;
     TTreeReaderValue<int>* mc_track_ndf_6 = nullptr;
+    TTreeReaderValue<int>* mc_track_sector_6 = nullptr;
+    TTreeReaderValue<int>* mc_particle_pid = nullptr;
 
     if (mcReader) {
         mc_traj_edge_6 = new TTreeReaderValue<double>(*mcReader, "traj_edge_6");
@@ -2860,6 +2862,8 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         mc_traj_edge_36 = new TTreeReaderValue<double>(*mcReader, "traj_edge_36");
         mc_track_chi2_6 = new TTreeReaderValue<double>(*mcReader, "track_chi2_6");
         mc_track_ndf_6 = new TTreeReaderValue<int>(*mcReader, "track_ndf_6");
+        mc_track_sector_6 = new TTreeReaderValue<int>(*mcReader, "track_sector_6");
+        mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
     }
 
     for (const auto& particle_type : particle_types) {
@@ -2867,7 +2871,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         std::string particle_name = std::get<1>(particle_type);
 
         TCanvas* c = new TCanvas(("c_" + particle_name + "_chi2_ndf").c_str(), ("c_" + particle_name + " #chi^{2}/ndf").c_str(), 1800, 1200);
-        c->Divide(3, 2);
+        int pad = 1;
 
         // Initialize histograms for each region and sector
         for (int sector = 0; sector < 6; ++sector) {
@@ -2952,58 +2956,59 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                     for (int x = 1; x <= h_mc_sum[sector][i]->GetNbinsX(); ++x) {
                         for (int y = 1; y <= h_mc_sum[sector][i]->GetNbinsY(); ++y) {
                             double count = h_mc_count[sector][i]->GetBinContent(x, y);
-                        if (count > 0) {
-                            h_mc_sum[sector][i]->SetBinContent(x, y, h_mc_sum[sector][i]->GetBinContent(x, y) / count);
-                        } else {
-                            h_mc_sum[sector][i]->SetBinContent(x, y, 0);
+                            if (count > 0) {
+                                h_mc_sum[sector][i]->SetBinContent(x, y, h_mc_sum[sector][i]->GetBinContent(x, y) / count);
+                            } else {
+                                h_mc_sum[sector][i]->SetBinContent(x, y, 0);
+                            }
                         }
                     }
                 }
             }
         }
-    }
-        // Draw and save sector histograms
-    for (int sector = 0; sector < 6; ++sector) {
-        for (int i = 0; i < regions.size(); ++i) {
-            c->cd(pad);
-            gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-            gPad->SetLogz();
-            h_data_sum[sector][i]->SetStats(false);
-            h_data_sum[sector][i]->Draw("COLZ");
 
-            if (mcReader) {
-                c->cd(pad + 3);
+        // Draw and save sector histograms
+        for (int sector = 0; sector < 6; ++sector) {
+            for (int i = 0; i < regions.size(); ++i) {
+                c->cd(pad);
                 gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
                 gPad->SetLogz();
-                h_mc_sum[sector][i]->SetStats(false);
-                h_mc_sum[sector][i]->Draw("COLZ");
+                h_data_sum[sector][i]->SetStats(false);
+                h_data_sum[sector][i]->Draw("COLZ");
+
+                if (mcReader) {
+                    c->cd(pad + 3);
+                    gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+                    gPad->SetLogz();
+                    h_mc_sum[sector][i]->SetStats(false);
+                    h_mc_sum[sector][i]->Draw("COLZ");
+                }
+
+                pad += 1;
+
+                // Save each sector plot individually
+                c->SaveAs(("output/calibration/dc/determination/sector_" + std::to_string(sector + 1) + "_chi2_per_ndf_" + particle_name + ".png").c_str());
             }
-
-            ++pad;
-
-            // Save each sector plot individually
-            c->SaveAs(("output/calibration/dc/determination/sector_" + std::to_string(sector + 1) + "_chi2_per_ndf_" + particle_name + ".png").c_str());
         }
+
+        // Clean up histograms
+        for (int sector = 0; sector < 6; ++sector) {
+            for (auto& hist : h_data_sum[sector]) delete hist;
+            for (auto& hist : h_data_count[sector]) delete hist;
+            if (mcReader) {
+                for (auto& hist : h_mc_sum[sector]) delete hist;
+                for (auto& hist : h_mc_count[sector]) delete hist;
+            }
+        }
+
+        delete c;
     }
 
-    // Clean up histograms
-    for (int sector = 0; sector < 6; ++sector) {
-        for (auto& hist : h_data_sum[sector]) delete hist;
-        for (auto& hist : h_data_count[sector]) delete hist;
-        if (mcReader) {
-            for (auto& hist : h_mc_sum[sector]) delete hist;
-            for (auto& hist : h_mc_count[sector]) delete hist;
-        }
-    }
-
-    delete c;
-}
-
-if (mc_traj_edge_6) delete mc_traj_edge_6;
-if (mc_traj_edge_18) delete mc_traj_edge_18;
-if (mc_traj_edge_36) delete mc_traj_edge_36;
-if (mc_track_chi2_6) delete mc_track_chi2_6;
-if (mc_track_ndf_6) delete mc_track_ndf_6;
+    if (mc_traj_edge_6) delete mc_traj_edge_6;
+    if (mc_traj_edge_18) delete mc_traj_edge_18;
+    if (mc_traj_edge_36) delete mc_traj_edge_36;
+    if (mc_track_chi2_6) delete mc_track_chi2_6;
+    if (mc_track_ndf_6) delete mc_track_ndf_6;
 }
                            
 void create_directories() {
