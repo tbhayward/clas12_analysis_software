@@ -181,10 +181,14 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     };
 
     // Plot the graphs
-    plotGraph(graph_p_p_1, graph_p_p_2, "p_p", "Ratio (NH3/C)", "output/ratio_p_p.png", 1.4, 2.0);
-    plotGraph(graph_xF_1, graph_xF_2, "xF", "Ratio (NH3/C)", "output/ratio_xF.png");
-    plotGraph(graph_p_theta_1, graph_p_theta_2, "p_theta (degrees) (NH3/C)", "Ratio", "output/ratio_p_theta.png");
-    plotGraph(graph_Mx_1, graph_Mx_2, "Mx", "Ratio (NH3/C) ", "output/ratio_Mx.png");
+    // plotGraph(graph_p_p_1, graph_p_p_2, "p_p", "Ratio (NH3/C)", "output/ratio_p_p.png", 1.4, 2.0);
+    // plotGraph(graph_xF_1, graph_xF_2, "xF", "Ratio (NH3/C)", "output/ratio_xF.png");
+    // plotGraph(graph_p_theta_1, graph_p_theta_2, "p_theta (degrees) (NH3/C)", "Ratio", "output/ratio_p_theta.png");
+    // plotGraph(graph_Mx_1, graph_Mx_2, "Mx", "Ratio (NH3/C) ", "output/ratio_Mx.png");
+    plotGraph(graph_p_p_1, graph_p_p_2, "p_p", "Ratio (AI/noAI) (NH3)", "output/ratio_p_p.png", 1.4, 2.0);
+    plotGraph(graph_xF_1, graph_xF_2, "xF", "Ratio (AI/noAI) (NH3)", "output/ratio_xF.png");
+    plotGraph(graph_p_theta_1, graph_p_theta_2, "p_theta (degrees) (NH3/C)", "Ratio (AI/noAI) (NH3)", "output/ratio_p_theta.png");
+    plotGraph(graph_Mx_1, graph_Mx_2, "Mx", "Ratio (AI/noAI) (NH3)", "output/ratio_Mx.png");
 
     // Clean up
     delete graph_p_p_1;
