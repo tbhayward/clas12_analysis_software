@@ -2858,6 +2858,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         mc_track_ndf_6 = new TTreeReaderValue<int>(*mcReader, "track_ndf_6");
     }
 
+    // Original plots
     for (const auto& particle_type : particle_types) {
         int pid = std::get<0>(particle_type);
         std::string particle_name = std::get<1>(particle_type);
@@ -2894,14 +2895,14 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
             }
 
-            TH2D* h_data_sum = new TH2D(("h_data_sum_" + region_name).c_str(), ("data " + region_name + " #chi^{2}/ndf sum (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            TH2D* h_data_sum = new TH2D(("h_data_sum_" + region_name).c_str(), ("data " + region_name + " #chi^{2}/ndf (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
             TH2D* h_data_count = new TH2D(("h_data_count_" + region_name).c_str(), ("data " + region_name + " #chi^{2}/ndf count (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
 
             TH2D* h_mc_sum = nullptr;
             TH2D* h_mc_count = nullptr;
 
             if (mcReader) {
-                h_mc_sum = new TH2D(("h_mc_sum_" + region_name).c_str(), ("mc " + region_name + " #chi^{2}/ndf sum (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                h_mc_sum = new TH2D(("h_mc_sum_" + region_name).c_str(), ("mc " + region_name + " #chi^{2}/ndf (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
                 h_mc_count = new TH2D(("h_mc_count_" + region_name).c_str(), ("mc " + region_name + " #chi^{2}/ndf count (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
             }
 
@@ -2937,7 +2938,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
             if (mcReader) {
                 for (int i = 1; i <= h_mc_sum->GetNbinsX(); ++i) {
-                    for (int j = 1; j <= h_mc_sum->GetNbinsY(); ++j) {
+                    for (int j = 1; i <= h_mc_sum->GetNbinsY(); ++j) {
                         double count = h_mc_count->GetBinContent(i, j);
                         if (count > 0) {
                             h_mc_sum->SetBinContent(i, j, h_mc_sum->GetBinContent(i, j) / count);
@@ -2974,12 +2975,149 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         }
 
         c->SaveAs(("output/calibration/dc/determination/chi2_per_ndf_" + particle_name + ".png").c_str());
-
         for (auto& hist : histograms) {
             delete hist;
         }
 
         delete c;
+    }
+
+    // Plots separated by sectors
+    for (int sector = 1; sector <= 6; ++sector) {
+        for (const auto& particle_type : particle_types) {
+            int pid = std::get<0>(particle_type);
+            std::string particle_name = std::get<1>(particle_type);
+
+            for (const auto& region : regions) {
+                std::string x_branch = std::get<0>(region);
+                std::string y_branch = std::get<1>(region);
+                std::string region_name = std::get<2>(region);
+                double xMin = std::get<3>(region);
+                double xMax = std::get<4>(region);
+                double yMin = xMin;
+                double yMax = xMax;
+
+                TCanvas* c = new TCanvas(("c_" + particle_name + "_chi2_ndf_sector_" + std::to_string(sector)).c_str(), 
+                                         (particle_name + " #chi^{2}/ndf - " + region_name + " - Sector " + std::to_string(sector)).c_str(), 
+                                         1800, 1200);
+                c->Divide(3, 2);
+
+                std::vector<TH2D*> histograms;  // Store histograms to delete them later
+
+                dataReader.Restart();
+                if (mcReader) mcReader->Restart();
+
+                TTreeReaderValue<double> traj_x(dataReader, x_branch.c_str());
+                TTreeReaderValue<double> traj_y(dataReader, y_branch.c_str());
+                TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+
+                TTreeReaderValue<double>* mc_traj_x = nullptr;
+                TTreeReaderValue<double>* mc_traj_y = nullptr;
+                TTreeReaderValue<int>* mc_particle_pid = nullptr;
+
+                if (mcReader) {
+                    mc_traj_x = new TTreeReaderValue<double>(*mcReader, x_branch.c_str());
+                    mc_traj_y = new TTreeReaderValue<double>(*mcReader, y_branch.c_str());
+                    mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+                }
+
+                TH2D* h_data_sum = new TH2D(("h_data_sum_" + region_name + "_sector_" + std::to_string(sector)).c_str(), 
+                                            ("data " + region_name + " #chi^{2}/ndf (" + particle_name + " - Sector " + std::to_string(sector) + ")").c_str(), 
+                                            nBins, xMin, xMax, nBins, yMin, yMax);
+                TH2D* h_data_count = new TH2D(("h_data_count_" + region_name + "_sector_" + std::to_string(sector)).c_str(), 
+                                              ("data " + region_name + " #chi^{2}/ndf count (" + particle_name + " - Sector " + std::to_string(sector) + ")").c_str(), 
+                                              nBins, xMin, xMax, nBins, yMin, yMax);
+
+                TH2D* h_mc_sum = nullptr;
+                TH2D* h_mc_count = nullptr;
+
+                if (mcReader) {
+                    h_mc_sum = new TH2D(("h_mc_sum_" + region_name + "_sector_" + std::to_string(sector)).c_str(), 
+                                        ("mc " + region_name + " #chi^{2}/ndf (" + particle_name + " - Sector " + std::to_string(sector) + ")").c_str(), 
+                                        nBins, xMin, xMax, nBins, yMin, yMax);
+                    h_mc_count = new TH2D(("h_mc_count_" + region_name + "_sector_" + std::to_string(sector)).c_str(), 
+                                          ("mc " + region_name + " #chi^{2}/ndf count (" + particle_name + " - Sector " + std::to_string(sector) + ")").c_str(), 
+                                          nBins, xMin, xMax, nBins, yMin, yMax);
+                }
+
+                while (dataReader.Next()) {
+                    if (*particle_pid == pid && *track_sector_6 == sector && *traj_x != -9999 && *traj_y != -9999 && *track_ndf_6 > 0) {
+                        double chi2_ndf = *track_chi2_6 / *track_ndf_6;
+                        h_data_sum->Fill(*traj_x, *traj_y, chi2_ndf);
+                        h_data_count->Fill(*traj_x, *traj_y);
+                    }
+                }
+
+                if (mcReader) {
+                    while (mcReader->Next()) {
+                        if (**mc_particle_pid == pid && **mc_traj_x != -9999 && **mc_traj_y != -9999 && **mc_track_ndf_6 > 0) {
+                            double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
+                            h_mc_sum->Fill(**mc_traj_x, **mc_traj_y, mc_chi2_ndf);
+                            h_mc_count->Fill(**mc_traj_x, **mc_traj_y);
+                        }
+                    }
+                }
+
+                // Correct way to calculate mean chi2/ndf: only divide where count > 0
+                for (int i = 1; i <= h_data_sum->GetNbinsX(); ++i) {
+                    for (int j = 1; j <= h_data_sum->GetNbinsY(); ++j) {
+                        double count = h_data_count->GetBinContent(i, j);
+                        if (count > 0) {
+                            h_data_sum->SetBinContent(i, j, h_data_sum->GetBinContent(i, j) / count);
+                        } else {
+                            h_data_sum->SetBinContent(i, j, 0); // Handle empty bins
+                        }
+                    }
+                }
+
+                if (mcReader) {
+                    for (int i = 1; i <= h_mc_sum->GetNbinsX(); ++i) {
+                        for (int j = 1; j <= h_mc_sum->GetNbinsY(); ++j) {
+                            double count = h_mc_count->GetBinContent(i, j);
+                            if (count > 0) {
+                                h_mc_sum->SetBinContent(i, j, h_mc_sum->GetBinContent(i, j) / count);
+                            } else {
+                                h_mc_sum->SetBinContent(i, j, 0); // Handle empty bins
+                            }
+                        }
+                    }
+                }
+
+                c->cd(pad);
+                gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+                gPad->SetLogz();  // Set log scale for the z-axis
+                h_data_sum->SetStats(false);  // Disable stat box
+                h_data_sum->Draw("COLZ");
+
+                if (mcReader) {
+                    c->cd(pad + 3);
+                    gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+                    gPad->SetLogz();  // Set log scale for the z-axis
+                    h_mc_sum->SetStats(false);  // Disable stat box
+                    h_mc_sum->Draw("COLZ");
+                }
+
+                histograms.push_back(h_data_sum);
+                histograms.push_back(h_data_count);
+                if (h_mc_sum) histograms.push_back(h_mc_sum);
+                if (h_mc_count) histograms.push_back(h_mc_count);
+                if (mc_traj_x) delete mc_traj_x;
+                if (mc_traj_y) delete mc_traj_y;
+                if (mc_particle_pid) delete mc_particle_pid;
+
+                ++pad;
+
+                // Save the canvas
+                c->SaveAs(("output/calibration/dc/determination/chi2_per_ndf_" + particle_name + "_region_" + region_name + "_sector_" + std::to_string(sector) + ".png").c_str());
+
+                // Cleanup
+                for (auto& hist : histograms) {
+                    delete hist;
+                }
+
+                delete c;
+            }
+        }
     }
 
     if (mc_traj_edge_6) delete mc_traj_edge_6;
