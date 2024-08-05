@@ -2952,27 +2952,28 @@ void dc_fiducial_cuts_determination(TTreeReader& dataReader, TTreeReader* mcRead
                 gPad->SetMargin(0.15, 0.15, 0.1, 0.1); // Increase padding
                 h_mc_chi2ndf_sum->Draw("COLZ");
             }
-                    // Clean up for this region
-        delete h_data_chi2ndf_sum;
-        delete h_data_chi2ndf_count;
-        if (h_mc_chi2ndf_sum) delete h_mc_chi2ndf_sum;
-        if (h_mc_chi2ndf_count) delete h_mc_chi2ndf_count;
-        if (mc_traj_x) delete mc_traj_x;
-        if (mc_traj_y) delete mc_traj_y;
-        if (mc_particle_pid) delete mc_particle_pid;
+            // Clean up for this region
+            delete h_data_chi2ndf_sum;
+            delete h_data_chi2ndf_count;
+            if (h_mc_chi2ndf_sum) delete h_mc_chi2ndf_sum;
+            if (h_mc_chi2ndf_count) delete h_mc_chi2ndf_count;
+            if (mc_traj_x) delete mc_traj_x;
+            if (mc_traj_y) delete mc_traj_y;
+            if (mc_particle_pid) delete mc_particle_pid;
 
-        ++pad;
+            ++pad;
+        }
+
+        // Save the canvas
+        c->SaveAs(("output/calibration/dc/determination/" + particle_name + "_mean_chi2_ndf.png").c_str());
+
+        // Clean up the dynamically allocated memory for edge variables
+        if (mc_traj_edge_6) delete mc_traj_edge_6;
+        if (mc_traj_edge_18) delete mc_traj_edge_18;
+        if (mc_traj_edge_36) delete mc_traj_edge_36;
+
+        delete c;
     }
-
-    // Save the canvas
-    c->SaveAs(("output/calibration/dc/determination/" + particle_name + "_mean_chi2_ndf.png").c_str());
-
-    // Clean up the dynamically allocated memory for edge variables
-    if (mc_traj_edge_6) delete mc_traj_edge_6;
-    if (mc_traj_edge_18) delete mc_traj_edge_18;
-    if (mc_traj_edge_36) delete mc_traj_edge_36;
-
-    delete c;
 }
                            
 void create_directories() {
