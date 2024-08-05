@@ -2984,11 +2984,14 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
     // Plots separated by sectors
     for (int sector = 1; sector <= 6; ++sector) {
+    	std::cout << sector << std::endl;
         for (const auto& particle_type : particle_types) {
+        	std::cout << particle_type >> std::endl;
             int pid = std::get<0>(particle_type);
             std::string particle_name = std::get<1>(particle_type);
 
             for (const auto& region : regions) {
+            	std::cout << region << std::endl;
             	int pad = 1;
                 std::string x_branch = std::get<0>(region);
                 std::string y_branch = std::get<1>(region);
@@ -3034,11 +3037,11 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
                 if (mcReader) {
                     h_mc_sum = new TH2D(("h_mc_sum_" + region_name + "_sector_" + std::to_string(sector)).c_str(), 
-                                        ("mc " + region_name + " #chi^{2}/ndf (" + particle_name + " - Sector " + std::to_string(sector) + ")").c_str(), 
-                                        nBins, xMin, xMax, nBins, yMin, yMax);
+                        ("mc " + region_name + " #chi^{2}/ndf (" + particle_name + " - Sector " + std::to_string(sector) + ")").c_str(), 
+                        nBins, xMin, xMax, nBins, yMin, yMax);
                     h_mc_count = new TH2D(("h_mc_count_" + region_name + "_sector_" + std::to_string(sector)).c_str(), 
-                                          ("mc " + region_name + " #chi^{2}/ndf count (" + particle_name + " - Sector " + std::to_string(sector) + ")").c_str(), 
-                                          nBins, xMin, xMax, nBins, yMin, yMax);
+						("mc " + region_name + " #chi^{2}/ndf count (" + particle_name + " - Sector " + std::to_string(sector) + ")").c_str(), 
+						nBins, xMin, xMax, nBins, yMin, yMax);
                 }
 
                 while (dataReader.Next()) {
