@@ -2870,87 +2870,87 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
         // Loop over each DC region
         int pad = 1;
-        // for (const auto& region : regions) {
-        //     std::string x_branch = std::get<0>(region);
-        //     std::string y_branch = std::get<1>(region);
-        //     std::string region_name = std::get<2>(region);
-        //     double xMin = std::get<3>(region);
-        //     double xMax = std::get<4>(region);
-        //     double yMin = xMin;  // Same as xMin
-        //     double yMax = xMax;  // Same as xMax
+        for (const auto& region : regions) {
+            std::string x_branch = std::get<0>(region);
+            std::string y_branch = std::get<1>(region);
+            std::string region_name = std::get<2>(region);
+            double xMin = std::get<3>(region);
+            double xMax = std::get<4>(region);
+            double yMin = xMin;  // Same as xMin
+            double yMax = xMax;  // Same as xMax
 
-        //     // Restart the TTreeReader to process the data from the beginning
-        //     dataReader.Restart();
-        //     if (mcReader) mcReader->Restart();
+            // Restart the TTreeReader to process the data from the beginning
+            dataReader.Restart();
+            if (mcReader) mcReader->Restart();
 
-        //     // Declare TTreeReaderValues for data and MC for this region
-        //     TTreeReaderValue<double> traj_x(dataReader, x_branch.c_str());
-        //     TTreeReaderValue<double> traj_y(dataReader, y_branch.c_str());
-        //     TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+            // Declare TTreeReaderValues for data and MC for this region
+            TTreeReaderValue<double> traj_x(dataReader, x_branch.c_str());
+            TTreeReaderValue<double> traj_y(dataReader, y_branch.c_str());
+            TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
 
-        //     TTreeReaderValue<double>* mc_traj_x = nullptr;
-        //     TTreeReaderValue<double>* mc_traj_y = nullptr;
-        //     TTreeReaderValue<int>* mc_particle_pid = nullptr;
+            TTreeReaderValue<double>* mc_traj_x = nullptr;
+            TTreeReaderValue<double>* mc_traj_y = nullptr;
+            TTreeReaderValue<int>* mc_particle_pid = nullptr;
 
-        //     if (mcReader) {
-        //         mc_traj_x = new TTreeReaderValue<double>(*mcReader, x_branch.c_str());
-        //         mc_traj_y = new TTreeReaderValue<double>(*mcReader, y_branch.c_str());
-        //         mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
-        //     }
+            if (mcReader) {
+                mc_traj_x = new TTreeReaderValue<double>(*mcReader, x_branch.c_str());
+                mc_traj_y = new TTreeReaderValue<double>(*mcReader, y_branch.c_str());
+                mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+            }
 
-        //     // Create histograms for data and MC to store chi2 values
-        //     TH2D* h_data_chi2_sum = new TH2D("h_data_chi2_sum", ("data " + region_name + " chi2 (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            // Create histograms for data and MC to store chi2 values
+            TH2D* h_data_chi2_sum = new TH2D("h_data_chi2_sum", ("data " + region_name + " chi2 (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
 
-        //     TH2D* h_mc_chi2_sum = nullptr;
-        //     if (mcReader) {
-        //         h_mc_chi2_sum = new TH2D("h_mc_chi2_sum", ("mc " + region_name + " chi2 (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-        //     }
+            TH2D* h_mc_chi2_sum = nullptr;
+            if (mcReader) {
+                h_mc_chi2_sum = new TH2D("h_mc_chi2_sum", ("mc " + region_name + " chi2 (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            }
 
-        //     // Fill the data histograms with chi2 values
-        //     while (dataReader.Next()) {
-        //         if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999) {
-        //             h_data_chi2_sum->Fill(*traj_x, *traj_y, *track_chi2_6);
-        //         }
-        //     }
+            // Fill the data histograms with chi2 values
+            while (dataReader.Next()) {
+                if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999) {
+                    h_data_chi2_sum->Fill(*traj_x, *traj_y, *track_chi2_6);
+                }
+            }
 
-        //     // Fill the MC histograms with chi2 values, if available
-        //     if (mcReader) {
-        //         while (mcReader->Next()) {
-        //             if (**mc_particle_pid == pid && **mc_traj_x != -9999 && **mc_traj_y != -9999) {
-        //                 h_mc_chi2_sum->Fill(**mc_traj_x, **mc_traj_y, **mc_track_chi2_6);
-        //             }
-        //         }
-        //     }
+            // Fill the MC histograms with chi2 values, if available
+            if (mcReader) {
+                while (mcReader->Next()) {
+                    if (**mc_particle_pid == pid && **mc_traj_x != -9999 && **mc_traj_y != -9999) {
+                        h_mc_chi2_sum->Fill(**mc_traj_x, **mc_traj_y, **mc_track_chi2_6);
+                    }
+                }
+            }
 
-        //     // Draw the data plot on the top row
-        //     c->cd(pad);
-        //     gPad->SetMargin(0.15, 0.15, 0.1, 0.1); // Increase padding
-        //     h_data_chi2_sum->Draw("COLZ");
+            // Draw the data plot on the top row
+            c->cd(pad);
+            gPad->SetMargin(0.15, 0.15, 0.1, 0.1); // Increase padding
+            h_data_chi2_sum->Draw("COLZ");
 
-        //     // Draw the MC plot on the bottom row, if available
-        //     if (mcReader) {
-        //         c->cd(pad + 3);
-        //         gPad->SetMargin(0.15, 0.15, 0.1, 0.1); // Increase padding
-        //         h_mc_chi2_sum->Draw("COLZ");
-        //     }
+            // Draw the MC plot on the bottom row, if available
+            if (mcReader) {
+                c->cd(pad + 3);
+                gPad->SetMargin(0.15, 0.15, 0.1, 0.1); // Increase padding
+                h_mc_chi2_sum->Draw("COLZ");
+            }
 
-        //     // Clean up for this region
-        //     delete h_data_chi2_sum;
-        //     if (h_mc_chi2_sum) delete h_mc_chi2_sum;
-        //     if (mc_traj_x) delete mc_traj_x;
-        //     if (mc_traj_y) delete mc_traj_y;
-        //     if (mc_particle_pid) delete mc_particle_pid;
+            // Clean up for this region
+            delete h_data_chi2_sum;
+            if (h_mc_chi2_sum) delete h_mc_chi2_sum;
+            if (mc_traj_x) delete mc_traj_x;
+            if (mc_traj_y) delete mc_traj_y;
+            if (mc_particle_pid) delete mc_particle_pid;
 
-        //     ++pad;
-        // }
+            ++pad;
+        }
 
         // // Save the canvas
         // c->SaveAs(("output/calibration/dc/determination/" + particle_name + "_chi2.png").c_str());
 
-        // // Clean up the dynamically allocated memory for edge variables
-        // if (mc_traj_edge_6) delete mc_traj_edge_6;
-        // if (mc_traj_edge_18) delete mc_traj_edge_18;
-        // if (mc_traj_edge_36) delete mc_traj_edge_36;
+        // Clean up the dynamically allocated memory for edge variables
+        if (mc_traj_edge_6) delete mc_traj_edge_6;
+        if (mc_traj_edge_18) delete mc_traj_edge_18;
+        if (mc_traj_edge_36) delete mc_traj_edge_36;
 
         delete c;
     }
