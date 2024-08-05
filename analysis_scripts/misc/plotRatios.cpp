@@ -171,6 +171,11 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
         legend->AddEntry(g2, "pass-1", "lp");
         legend->Draw();
 
+        g1->Draw("AP");
+        g2->Draw("P SAME");
+        g1->GetYaxis()->SetRangeUser(1, 3); // Enforce the range again
+        c->Update(); // Update the canvas after setting the range
+
         c->SaveAs(filename);
         delete c;
     };
