@@ -2986,7 +2986,6 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
     for (int sector = 1; sector <= 6; ++sector) {
     	std::cout << sector << std::endl;
         for (const auto& particle_type : particle_types) {
-        	std::cout << particle_type >> std::endl;
             int pid = std::get<0>(particle_type);
             std::string particle_name = std::get<1>(particle_type);
 
