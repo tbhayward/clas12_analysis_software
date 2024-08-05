@@ -56,7 +56,7 @@ public class parent_hadron_creation {
         LorentzVector lv_pi_1 = new LorentzVector();
         lv_pi_1.setPxPyPzM(pi_1.px(), pi_1.py(), pi_1.pz(), 0);
                     
-        Particle pi_2 = physEvent.getParticle("[-211,"+current_p1+"]");
+        Particle pi_2 = physEvent.getParticle("[-211,"+current_p2+"]");
         LorentzVector lv_pi_2 = new LorentzVector();
         lv_pi_2.setPxPyPzM(pi_2.px(), pi_2.py(), pi_2.pz(), 0);
                     
@@ -78,7 +78,7 @@ public class parent_hadron_creation {
         LorentzVector lv_pi_1 = new LorentzVector();
         lv_pi_1.setPxPyPzM(pi_1.px(), pi_1.py(), pi_1.pz(), 0);
                     
-        Particle pi_2 = physEvent.getParticle("[111,"+current_p1+"]");
+        Particle pi_2 = physEvent.getParticle("[111,"+current_p2+"]");
         LorentzVector lv_pi_2 = new LorentzVector();
         lv_pi_2.setPxPyPzM(pi_2.px(), pi_2.py(), pi_2.pz(), 0);
                     
@@ -108,7 +108,7 @@ public class parent_hadron_creation {
         LorentzVector lv_pi_1 = new LorentzVector();
         lv_pi_1.setPxPyPzM(pi_1.px(), pi_1.py(), pi_1.pz(), 0);
                     
-        Particle pi_2 = physEvent.getParticle("[111,"+current_p1+"]");
+        Particle pi_2 = physEvent.getParticle("[111,"+current_p2+"]");
         LorentzVector lv_pi_2 = new LorentzVector();
         lv_pi_2.setPxPyPzM(pi_2.px(), pi_2.py(), pi_2.pz(), 0);
                     
