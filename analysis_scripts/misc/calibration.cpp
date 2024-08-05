@@ -2846,20 +2846,17 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
     TTreeReaderValue<int> track_sector_6(dataReader, "track_sector_6");
     TTreeReaderValue<double> track_chi2_6(dataReader, "track_chi2_6");
-    TTreeReaderValue<int> track_ndf_6(dataReader, "track_ndf_6");
 
     TTreeReaderValue<double>* mc_traj_edge_6 = nullptr;
     TTreeReaderValue<double>* mc_traj_edge_18 = nullptr;
     TTreeReaderValue<double>* mc_traj_edge_36 = nullptr;
     TTreeReaderValue<double>* mc_track_chi2_6 = nullptr;
-    TTreeReaderValue<int>* mc_track_ndf_6 = nullptr;
 
     if (mcReader) {
         mc_traj_edge_6 = new TTreeReaderValue<double>(*mcReader, "traj_edge_6");
         mc_traj_edge_18 = new TTreeReaderValue<double>(*mcReader, "traj_edge_18");
         mc_traj_edge_36 = new TTreeReaderValue<double>(*mcReader, "traj_edge_36");
         mc_track_chi2_6 = new TTreeReaderValue<double>(*mcReader, "track_chi2_6");
-        mc_track_ndf_6 = new TTreeReaderValue<int>(*mcReader, "track_ndf_6");
     }
 
     // Loop over each particle type
@@ -2868,7 +2865,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         std::string particle_name = std::get<1>(particle_type);
 
         // Create a canvas to hold the 2x3 subplots
-        TCanvas* c = new TCanvas(("c_" + particle_name + "_mean_chi2_ndf").c_str(), ("c_" + particle_name + " mean chi2/ndf").c_str(), 1800, 1200);
+        TCanvas* c = new TCanvas(("c_" + particle_name + "_chi2").c_str(), ("c_" + particle_name + " chi2").c_str(), 1800, 1200);
         c->Divide(3, 2);
 
         // Loop over each DC region
@@ -2901,62 +2898,45 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
             }
 
-            // Create histograms for data and MC to store sum and counts of chi2/ndf values
-            TH2D* h_data_chi2ndf_sum = new TH2D("h_data_chi2ndf_sum", ("data " + region_name + " mean chi2/ndf (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-            TH2D* h_data_chi2ndf_count = new TH2D("h_data_chi2ndf_count", ("data " + region_name + " chi2/ndf count (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            // Create histograms for data and MC to store chi2 values
+            TH2D* h_data_chi2_sum = new TH2D("h_data_chi2_sum", ("data " + region_name + " chi2 (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
 
-            TH2D* h_mc_chi2ndf_sum = nullptr;
-            TH2D* h_mc_chi2ndf_count = nullptr;
-
+            TH2D* h_mc_chi2_sum = nullptr;
             if (mcReader) {
-                h_mc_chi2ndf_sum = new TH2D("h_mc_chi2ndf_sum", ("mc " + region_name + " mean chi2/ndf (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-                h_mc_chi2ndf_count = new TH2D("h_mc_chi2ndf_count", ("mc " + region_name + " chi2/ndf count (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                h_mc_chi2_sum = new TH2D("h_mc_chi2_sum", ("mc " + region_name + " chi2 (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
             }
 
-            // Fill the data histograms with chi2/ndf sum and counts
+            // Fill the data histograms with chi2 values
             while (dataReader.Next()) {
-                if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999 && *track_ndf_6 > 0) {
-                    double chi2_ndf = *track_chi2_6 / *track_ndf_6;
-                    h_data_chi2ndf_sum->Fill(*traj_x, *traj_y, chi2_ndf);
-                    h_data_chi2ndf_count->Fill(*traj_x, *traj_y);
+                if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999) {
+                    h_data_chi2_sum->Fill(*traj_x, *traj_y, *track_chi2_6);
                 }
             }
 
-            // Fill the MC histograms with chi2/ndf sum and counts, if available
+            // Fill the MC histograms with chi2 values, if available
             if (mcReader) {
                 while (mcReader->Next()) {
-                    if (**mc_particle_pid == pid && **mc_traj_x != -9999 && **mc_traj_y != -9999 && **mc_track_ndf_6 > 0) {
-                        double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
-                        h_mc_chi2ndf_sum->Fill(**mc_traj_x, **mc_traj_y, mc_chi2_ndf);
-                        h_mc_chi2ndf_count->Fill(**mc_traj_x, **mc_traj_y);
+                    if (**mc_particle_pid == pid && **mc_traj_x != -9999 && **mc_traj_y != -9999) {
+                        h_mc_chi2_sum->Fill(**mc_traj_x, **mc_traj_y, **mc_track_chi2_6);
                     }
                 }
             }
 
-            // Divide chi2/ndf sum by count to get the mean chi2/ndf in each bin
-            h_data_chi2ndf_sum->Divide(h_data_chi2ndf_count);
-            if (mcReader) {
-                h_mc_chi2ndf_sum->Divide(h_mc_chi2ndf_count);
-            }
-
             // Draw the data plot on the top row
             c->cd(pad);
-            gPad->SetLogz();  // Set log scale for the z-axis
             gPad->SetMargin(0.15, 0.15, 0.1, 0.1); // Increase padding
-            h_data_chi2ndf_sum->Draw("COLZ");
+            h_data_chi2_sum->Draw("COLZ");
 
             // Draw the MC plot on the bottom row, if available
             if (mcReader) {
                 c->cd(pad + 3);
-                gPad->SetLogz();  // Set log scale for the z-axis
                 gPad->SetMargin(0.15, 0.15, 0.1, 0.1); // Increase padding
-                h_mc_chi2ndf_sum->Draw("COLZ");
+                h_mc_chi2_sum->Draw("COLZ");
             }
+
             // Clean up for this region
-            delete h_data_chi2ndf_sum;
-            delete h_data_chi2ndf_count;
-            if (h_mc_chi2ndf_sum) delete h_mc_chi2ndf_sum;
-            if (h_mc_chi2ndf_count) delete h_mc_chi2ndf_count;
+            delete h_data_chi2_sum;
+            if (h_mc_chi2_sum) delete h_mc_chi2_sum;
             if (mc_traj_x) delete mc_traj_x;
             if (mc_traj_y) delete mc_traj_y;
             if (mc_particle_pid) delete mc_particle_pid;
@@ -2965,7 +2945,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         }
 
         // Save the canvas
-        c->SaveAs(("output/calibration/dc/determination/" + particle_name + "_mean_chi2_ndf.png").c_str());
+        c->SaveAs(("output/calibration/dc/determination/" + particle_name + "_chi2.png").c_str());
 
         // Clean up the dynamically allocated memory for edge variables
         if (mc_traj_edge_6) delete mc_traj_edge_6;
