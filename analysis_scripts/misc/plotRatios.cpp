@@ -43,10 +43,10 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     TH1F *h3_xF = new TH1F("h3_xF", "xF", nbins, -2, 1);
     TH1F *h4_xF = new TH1F("h4_xF", "xF", nbins, -2, 1);
 
-    TH1F *h1_p_theta = new TH1F("h1_p_theta", "p_theta", nbins, 0, 80);
-    TH1F *h2_p_theta = new TH1F("h2_p_theta", "p_theta", nbins, 0, 80);
-    TH1F *h3_p_theta = new TH1F("h3_p_theta", "p_theta", nbins, 0, 80);
-    TH1F *h4_p_theta = new TH1F("h4_p_theta", "p_theta", nbins, 0, 80);
+    TH1F *h1_p_theta = new TH1F("h1_p_theta", "p_theta", nbins, 0, 40);
+    TH1F *h2_p_theta = new TH1F("h2_p_theta", "p_theta", nbins, 0, 40);
+    TH1F *h3_p_theta = new TH1F("h3_p_theta", "p_theta", nbins, 0, 40);
+    TH1F *h4_p_theta = new TH1F("h4_p_theta", "p_theta", nbins, 0, 40);
 
     TH1F *h1_Mx = new TH1F("h1_Mx", "Mx", nbins, -3, 4);
     TH1F *h2_Mx = new TH1F("h2_Mx", "Mx", nbins, -3, 4);
@@ -168,12 +168,12 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
 
         g1->Draw("AP");
         g2->Draw("P SAME");
-        g1->GetYaxis()->SetRangeUser(0, 1.5); // Enforce the range again
+        g1->GetYaxis()->SetRangeUser(0, 2); // Enforce the range again
         c->Update(); // Update the canvas after setting the range
 
         TLegend* legend = new TLegend(0.7, 0.8, 0.9, 0.9);
-        legend->AddEntry(g1, "preliminary", "lp");
-        legend->AddEntry(g2, "pass-1", "lp");
+        legend->AddEntry(g1, "NH3", "lp");
+        legend->AddEntry(g2, "C", "lp");
         legend->Draw();
 
         c->SaveAs(filename);
