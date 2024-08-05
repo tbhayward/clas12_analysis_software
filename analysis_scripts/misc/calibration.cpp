@@ -2918,7 +2918,6 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                     if (**mc_particle_pid == pid && **mc_traj_x != -9999 && **mc_traj_y != -9999 && **mc_track_ndf_6 > 0) {
                         double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
                         h_mc_sum->Fill(**mc_traj_x, **mc_traj_y, mc_chi2_ndf);
-                        std::cout << mc_chi2_ndf << std::endl;
                         h_mc_count->Fill(**mc_traj_x, **mc_traj_y);
                     }
                 }
