@@ -140,33 +140,25 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
         return new TGraphErrors(x.size(), x.data(), y.data(), ex.data(), ey.data());
     };
 
-    // Function to find the maximum y-value in a TGraphErrors
-    auto findMaxYValue = [](TGraphErrors* graph) {
-        double maxY = 0;
-        for (int i = 0; i < graph->GetN(); ++i) {
-            double y;
-            graph->GetPoint(i, 0, y);
-            if (y > maxY) {
-                maxY = y;
-            }
-        }
-        return maxY;
-    };
+    // Create TGraphErrors for each ratio
+    TGraphErrors* graph_p_p_1 = createRatioGraph(h1_p_p, h2_p_p);
+    TGraphErrors* graph_p_p_2 = createRatioGraph(h3_p_p, h4_p_p);
+    TGraphErrors* graph_xF_1 = createRatioGraph(h1_xF, h2_xF);
+    TGraphErrors* graph_xF_2 = createRatioGraph(h3_xF, h4_xF);
+    TGraphErrors* graph_p_theta_1 = createRatioGraph(h1_p_theta, h2_p_theta);
+    TGraphErrors* graph_p_theta_2 = createRatioGraph(h3_p_theta, h4_p_theta);
+    TGraphErrors* graph_Mx_1 = createRatioGraph(h1_Mx, h2_Mx);
+    TGraphErrors* graph_Mx_2 = createRatioGraph(h3_Mx, h4_Mx);
 
-    // Function to plot TGraphErrors with adjusted y-axis range
-    auto plotGraph = [](TGraphErrors* g1, TGraphErrors* g2, const char* xTitle, const char* yTitle, const char* filename) {
-        // Find the maximum y-value in both graphs
-        double maxY1 = findMaxYValue(g1);
-        double maxY2 = findMaxYValue(g2);
-        double maxY = std::max(maxY1, maxY2) * 1.2;
-
+    // Function to plot TGraphErrors
+    auto plotGraph = [](TGraphErrors* g1, TGraphErrors* g2, const char* xTitle, const char* yTitle, const char* filename, double yMin = 1.0, double yMax = 3.0) {
         TCanvas* c = new TCanvas("c", "c", 800, 600);
         g1->SetLineColor(kRed);
         g1->SetMarkerColor(kRed);
         g1->SetMarkerStyle(20);
         g1->GetXaxis()->SetTitle(xTitle);
         g1->GetYaxis()->SetTitle(yTitle);
-        g1->GetYaxis()->SetRangeUser(1.0, maxY); // Set y-axis range from 1 to 1.2 times the maximum y-value
+        g1->GetYaxis()->SetRangeUser(yMin, yMax);
         g1->Draw("AP");
 
         g2->SetLineColor(kBlue);
@@ -182,14 +174,6 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
         c->SaveAs(filename);
         delete c;
     };
-
-    // Example usage:
-    // Create TGraphErrors for each ratio
-    TGraphErrors* graph_p_p_1 = createRatioGraph(h1_p_p, h2_p_p);
-    TGraphErrors* graph_p_p_2 = createRatioGraph(h3_p_p, h4_p_p);
-
-    // Plot the graphs
-    plotGraph(graph_p_p_1, graph_p_p_2, "X Axis Title", "Y Axis Title", "output_file.png");
 
     // Plot the graphs
     plotGraph(graph_p_p_1, graph_p_p_2, "p_p", "Ratio (NH3/C)", "output/ratio_p_p.png", 1.4, 2.0);
