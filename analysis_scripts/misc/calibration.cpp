@@ -2925,10 +2925,33 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 }
             }
 
+            // Calculate the mean chi2/ndf by dividing sum by count
+            TH2D* h_data_mean = (TH2D*)h_data_sum->Clone(("h_data_mean_" + region_name).c_str());
+            h_data_mean->Divide(h_data_count);
+
+            TH2D* h_mc_mean = nullptr;
+            if (mcReader) {
+                h_mc_mean = (TH2D*)h_mc_sum->Clone(("h_mc_mean_" + region_name).c_str());
+                h_mc_mean->Divide(h_mc_count);
+            }
+
+            // Draw the mean chi2/ndf histograms
+            c->cd(pad);
+            gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+            h_data_mean->Draw("COLZ");
+
+            if (mcReader) {
+                c->cd(pad + 3);
+                gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+                h_mc_mean->Draw("COLZ");
+            }
+
             histograms.push_back(h_data_sum);
             histograms.push_back(h_data_count);
+            histograms.push_back(h_data_mean);
             if (h_mc_sum) histograms.push_back(h_mc_sum);
             if (h_mc_count) histograms.push_back(h_mc_count);
+            if (h_mc_mean) histograms.push_back(h_mc_mean);
 
             if (mc_traj_x) delete mc_traj_x;
             if (mc_traj_y) delete mc_traj_y;
@@ -2937,7 +2960,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             ++pad;
         }
 
-        c->SaveAs(("output/calibration/dc/determination/" + particle_name + "_chi2_ndf.png").c_str());
+        c->SaveAs(("output/calibration/dc/determination/chi2_per_ndf_" + particle_name + ".png").c_str());
 
         // Now delete histograms after saving the canvas
         for (auto& hist : histograms) {
