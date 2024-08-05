@@ -2927,11 +2927,11 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 h_mc->Draw("COLZ");
             }
 
-            delete h_data;
-            if (h_mc) delete h_mc;
-            if (mc_traj_x) delete mc_traj_x;
-            if (mc_traj_y) delete mc_traj_y;
-            if (mc_particle_pid) delete mc_particle_pid;
+            // delete h_data;
+            // if (h_mc) delete h_mc;
+            // if (mc_traj_x) delete mc_traj_x;
+            // if (mc_traj_y) delete mc_traj_y;
+            // if (mc_particle_pid) delete mc_particle_pid;
 
             ++pad;
         }
