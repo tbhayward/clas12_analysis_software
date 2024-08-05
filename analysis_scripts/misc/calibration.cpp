@@ -2862,7 +2862,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         int pid = std::get<0>(particle_type);
         std::string particle_name = std::get<1>(particle_type);
 
-        TCanvas* c = new TCanvas(("c_" + particle_name + "_hit_positions").c_str(), ("c_" + particle_name + " hit positions").c_str(), 1800, 1200);
+        TCanvas* c = new TCanvas(("c_" + particle_name + "_chi2_per_ndf").c_str(), ("c_" + particle_name + " chi2/ndf").c_str(), 1800, 1200);
         c->Divide(3, 2);
 
         int pad = 1;
@@ -2905,6 +2905,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 h_mc_chi2ndf_count = new TH2D(("h_mc_chi2ndf_count_" + region_name).c_str(), ("mc " + region_name + " chi2/ndf count (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
             }
 
+            // Fill the data histograms with chi2/ndf sum and counts
             while (dataReader.Next()) {
                 if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999 && *track_ndf_6 > 0) {
                     double chi2_ndf = *track_chi2_6 / *track_ndf_6;
@@ -2913,6 +2914,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 }
             }
 
+            // Fill the MC histograms with chi2/ndf sum and counts, if available
             if (mcReader) {
                 while (mcReader->Next()) {
                     if (**mc_particle_pid == pid && **mc_traj_x != -9999 && **mc_traj_y != -9999 && **mc_track_ndf_6 > 0) {
@@ -2931,6 +2933,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             ++pad;
         }
 
+        // Save the canvas (no plots drawn yet)
         c->SaveAs(("output/calibration/dc/determination/chi2_per_ndf_" + particle_name + ".png").c_str());
 
         // Now delete histograms after saving the canvas
