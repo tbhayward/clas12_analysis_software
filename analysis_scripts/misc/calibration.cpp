@@ -2869,6 +2869,33 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         std::vector<TH2D*> histograms;  // Store histograms to delete them later
 
         for (const auto& region : regions) {
+        	TCanvas* c_region = new TCanvas(("c_" + particle_name + "_region" + region + "_chi2_ndf").c_str(), ("c_" + particle_name + " #chi^{2}/ndf").c_str(), 1800, 1200);
+        	c_region->Divide(3,2);
+        	// Declare vectors to store histograms for the six sectors
+		    std::vector<TH2D*> h_data_sum_sector(6);
+		    std::vector<TH2D*> h_data_count_sector(6);
+		    std::vector<TH2D*> h_mc_sum_sector(6);
+		    std::vector<TH2D*> h_mc_count_sector(6);
+
+		    // Initialize the histograms for each sector
+		    for (int sector = 0; sector < 6; ++sector) {
+		        h_data_sum_sector[sector] = new TH2D(("h_data_sum_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(), 
+					("data " + region_name + " sector " + std::to_string(sector + 1) + " #chi^{2}/ndf (" + particle_name + ")").c_str(),
+					nBins, std::get<3>(region), std::get<4>(region), nBins, std::get<3>(region), std::get<4>(region));
+		                                             
+		        h_data_count_sector[sector] = new TH2D(("h_data_count_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(), 
+					"", nBins, std::get<3>(region), std::get<4>(region), nBins, std::get<3>(region), std::get<4>(region));
+
+		        if (mcReader) {
+		            h_mc_sum_sector[sector] = new TH2D(("h_mc_sum_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
+						("mc " + region_name + " sector " + std::to_string(sector + 1) + " #chi^{2}/ndf (" + particle_name + ")").c_str(),
+						nBins, std::get<3>(region), std::get<4>(region), nBins, std::get<3>(region), std::get<4>(region));
+		                                               
+		            h_mc_count_sector[sector] = new TH2D(("h_mc_count_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(), 
+						"", nBins, std::get<3>(region), std::get<4>(region), nBins, std::get<3>(region), std::get<4>(region));
+		        }
+		    }
+
             std::string x_branch = std::get<0>(region);
             std::string y_branch = std::get<1>(region);
             std::string region_name = std::get<2>(region);
