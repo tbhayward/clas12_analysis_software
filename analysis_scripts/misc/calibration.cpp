@@ -2855,7 +2855,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         mc_traj_edge_6 = new TTreeReaderValue<double>(*mcReader, "traj_edge_6");
         mc_traj_edge_18 = new TTreeReaderValue<double>(*mcReader, "traj_edge_18");
         mc_traj_edge_36 = new TTreeReaderValue<double>(*mcReader, "traj_edge_36");
-        mc_track_chi2_6 = new TTreeReaderValue<double>(*mcReader, "track_sector_6");
+        mc_track_chi2_6 = new TTreeReaderValue<int>(*mcReader, "track_sector_6");
         mc_track_chi2_6 = new TTreeReaderValue<double>(*mcReader, "track_chi2_6");
         mc_track_ndf_6 = new TTreeReaderValue<int>(*mcReader, "track_ndf_6");
     }
