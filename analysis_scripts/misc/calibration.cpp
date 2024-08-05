@@ -2836,9 +2836,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         {2212, "proton"}
     };
 
-    std::vector<TH2D*> h_data_sum[6], h_data_count[6];
-    std::vector<TH2D*> h_mc_sum[6], h_mc_count[6];
-
+    // Declare TTreeReaderValues outside the loops
     TTreeReaderValue<double> traj_edge_6(dataReader, "traj_edge_6");
     TTreeReaderValue<double> traj_edge_18(dataReader, "traj_edge_18");
     TTreeReaderValue<double> traj_edge_36(dataReader, "traj_edge_36");
@@ -2848,6 +2846,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
     TTreeReaderValue<int> track_ndf_6(dataReader, "track_ndf_6");
     TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
 
+    // MC-related TTreeReaderValues
     TTreeReaderValue<double>* mc_traj_edge_6 = nullptr;
     TTreeReaderValue<double>* mc_traj_edge_18 = nullptr;
     TTreeReaderValue<double>* mc_traj_edge_36 = nullptr;
@@ -2874,6 +2873,8 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         int pad = 1;
 
         // Initialize histograms for each region and sector
+        std::vector<TH2D*> h_data_sum[6], h_data_count[6];
+        std::vector<TH2D*> h_mc_sum[6], h_mc_count[6];
         for (int sector = 0; sector < 6; ++sector) {
             for (const auto& region : regions) {
                 std::string region_name = std::get<2>(region);
@@ -2922,17 +2923,14 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                     for (int i = 0; i < regions.size(); ++i) {
                         std::string x_branch = std::get<0>(regions[i]);
                         std::string y_branch = std::get<1>(regions[i]);
-                        TTreeReaderValue<double>* mc_traj_x = new TTreeReaderValue<double>(*mcReader, x_branch.c_str());
-                        TTreeReaderValue<double>* mc_traj_y = new TTreeReaderValue<double>(*mcReader, y_branch.c_str());
+                        TTreeReaderValue<double> mc_traj_x(*mcReader, x_branch.c_str());
+                        TTreeReaderValue<double> mc_traj_y(*mcReader, y_branch.c_str());
 
-                        if (**mc_traj_x != -9999 && **mc_traj_y != -9999 && **mc_track_ndf_6 > 0) {
+                        if (*mc_traj_x != -9999 && *mc_traj_y != -9999 && **mc_track_ndf_6 > 0) {
                             double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
-                            h_mc_sum[sector][i]->Fill(**mc_traj_x, **mc_traj_y, mc_chi2_ndf);
-                            h_mc_count[sector][i]->Fill(**mc_traj_x, **mc_traj_y);
+                            h_mc_sum[sector][i]->Fill(*mc_traj_x, *mc_traj_y, mc_chi2_ndf);
+                            h_mc_count[sector][i]->Fill(*mc_traj_x, *mc_traj_y);
                         }
-
-                        delete mc_traj_x;
-                        delete mc_traj_y;
                     }
                 }
             }
@@ -2951,7 +2949,6 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                         }
                     }
                 }
-
                 if (mcReader) {
                     for (int x = 1; x <= h_mc_sum[sector][i]->GetNbinsX(); ++x) {
                         for (int y = 1; y <= h_mc_sum[sector][i]->GetNbinsY(); ++y) {
@@ -3004,11 +3001,14 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         delete c;
     }
 
+    // Cleanup for dynamically allocated TTreeReaderValues
     if (mc_traj_edge_6) delete mc_traj_edge_6;
     if (mc_traj_edge_18) delete mc_traj_edge_18;
     if (mc_traj_edge_36) delete mc_traj_edge_36;
     if (mc_track_chi2_6) delete mc_track_chi2_6;
     if (mc_track_ndf_6) delete mc_track_ndf_6;
+    if (mc_track_sector_6) delete mc_track_sector_6;
+    if (mc_particle_pid) delete mc_particle_pid;
 }
                            
 void create_directories() {
