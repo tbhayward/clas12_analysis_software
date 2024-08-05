@@ -2822,7 +2822,7 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
     if (mc_traj_edge_36) delete mc_traj_edge_36;
 }
 
-void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+void plot_dc_hit_position_no_cuts(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Define the number of bins for the histograms
     int nBins = 100;
 
@@ -2846,17 +2846,16 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
     TTreeReaderValue<int> track_sector_6(dataReader, "track_sector_6");
     TTreeReaderValue<double> track_chi2_6(dataReader, "track_chi2_6");
+    TTreeReaderValue<int> track_ndf_6(dataReader, "track_ndf_6");
 
     TTreeReaderValue<double>* mc_traj_edge_6 = nullptr;
     TTreeReaderValue<double>* mc_traj_edge_18 = nullptr;
     TTreeReaderValue<double>* mc_traj_edge_36 = nullptr;
-    TTreeReaderValue<double>* mc_track_chi2_6 = nullptr;
 
     if (mcReader) {
         mc_traj_edge_6 = new TTreeReaderValue<double>(*mcReader, "traj_edge_6");
         mc_traj_edge_18 = new TTreeReaderValue<double>(*mcReader, "traj_edge_18");
         mc_traj_edge_36 = new TTreeReaderValue<double>(*mcReader, "traj_edge_36");
-        mc_track_chi2_6 = new TTreeReaderValue<double>(*mcReader, "track_chi2_6");
     }
 
     // Loop over each particle type
@@ -2865,7 +2864,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         std::string particle_name = std::get<1>(particle_type);
 
         // Create a canvas to hold the 2x3 subplots
-        TCanvas* c = new TCanvas(("c_" + particle_name + "_chi2").c_str(), ("c_" + particle_name + " chi2").c_str(), 1800, 1200);
+        TCanvas* c = new TCanvas(("c_" + particle_name + "_hit_positions").c_str(), ("c_" + particle_name + " hit positions").c_str(), 1800, 1200);
         c->Divide(3, 2);
 
         // Loop over each DC region
@@ -2898,26 +2897,30 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
             }
 
-            // Create histograms for data and MC to store chi2 values
-            TH2D* h_data_chi2_sum = new TH2D("h_data_chi2_sum", ("data " + region_name + " chi2 (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            // Create histograms for data and MC for each region
+            TH2D* h_data = new TH2D(("h_data_" + region_name).c_str(), ("data " + region_name + " hit position (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            h_data->GetXaxis()->SetTitle(("x_{" + region_name + "}").c_str());
+            h_data->GetYaxis()->SetTitle(("y_{" + region_name + "}").c_str());
 
-            TH2D* h_mc_chi2_sum = nullptr;
+            TH2D* h_mc = nullptr;
             if (mcReader) {
-                h_mc_chi2_sum = new TH2D("h_mc_chi2_sum", ("mc " + region_name + " chi2 (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                h_mc = new TH2D(("h_mc_" + region_name).c_str(), ("mc " + region_name + " hit position (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                h_mc->GetXaxis()->SetTitle(("x_{" + region_name + "}").c_str());
+                h_mc->GetYaxis()->SetTitle(("y_{" + region_name + "}").c_str());
             }
 
-            // Fill the data histograms with chi2 values
+            // Fill the data histograms
             while (dataReader.Next()) {
                 if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999) {
-                    h_data_chi2_sum->Fill(*traj_x, *traj_y, *track_chi2_6);
+                    h_data->Fill(*traj_x, *traj_y);
                 }
             }
 
-            // Fill the MC histograms with chi2 values, if available
+            // Fill the MC histograms if available
             if (mcReader) {
                 while (mcReader->Next()) {
                     if (**mc_particle_pid == pid && **mc_traj_x != -9999 && **mc_traj_y != -9999) {
-                        h_mc_chi2_sum->Fill(**mc_traj_x, **mc_traj_y, **mc_track_chi2_6);
+                        h_mc->Fill(**mc_traj_x, **mc_traj_y);
                     }
                 }
             }
@@ -2925,18 +2928,18 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             // Draw the data plot on the top row
             c->cd(pad);
             gPad->SetMargin(0.15, 0.15, 0.1, 0.1); // Increase padding
-            h_data_chi2_sum->Draw("COLZ");
+            h_data->Draw("COLZ");
 
             // Draw the MC plot on the bottom row, if available
             if (mcReader) {
                 c->cd(pad + 3);
                 gPad->SetMargin(0.15, 0.15, 0.1, 0.1); // Increase padding
-                h_mc_chi2_sum->Draw("COLZ");
+                h_mc->Draw("COLZ");
             }
 
             // Clean up for this region
-            delete h_data_chi2_sum;
-            if (h_mc_chi2_sum) delete h_mc_chi2_sum;
+            delete h_data;
+            if (h_mc) delete h_mc;
             if (mc_traj_x) delete mc_traj_x;
             if (mc_traj_y) delete mc_traj_y;
             if (mc_particle_pid) delete mc_particle_pid;
@@ -2945,14 +2948,14 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         }
 
         // Save the canvas
-        c->SaveAs(("output/calibration/dc/determination/" + particle_name + "_chi2.png").c_str());
+        c->SaveAs(("output/calibration/dc/positions/" + particle_name + "_hit_positions.png").c_str());
 
         // Clean up the dynamically allocated memory for edge variables
-        // if (mc_traj_edge_6) delete mc_traj_edge_6;
-        // if (mc_traj_edge_18) delete mc_traj_edge_18;
-        // if (mc_traj_edge_36) delete mc_traj_edge_36;
+        if (mc_traj_edge_6) delete mc_traj_edge_6;
+        if (mc_traj_edge_18) delete mc_traj_edge_18;
+        if (mc_traj_edge_36) delete mc_traj_edge_36;
 
-        // delete c;
+        delete c;
     }
 }
                            
