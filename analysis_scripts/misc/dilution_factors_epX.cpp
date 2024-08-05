@@ -60,17 +60,17 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
 
     // Create histograms for Mx and xF
     TH1D *h_Mx_nh3 = 
-        new TH1D("h_Mx_nh3", "M_{x} Distribution; M_{x} (GeV); Counts", 50, -3, 3);
+        new TH1D("h_Mx_nh3", "M_{x} Distribution; M_{x} (GeV); Counts", 50, -4, 3);
     TH1D *h_Mx_carbon = 
-        new TH1D("h_Mx_carbon", "M_{x} Distribution; M_{x} (GeV); Counts", 50, -3, 3);
+        new TH1D("h_Mx_carbon", "M_{x} Distribution; M_{x} (GeV); Counts", 50, -4, 3);
     // Fill the histograms
     tree_nh3->Draw("Mx>>h_Mx_nh3");
     tree_carbon->Draw("Mx>>h_Mx_carbon");
     //
     TH1D *h_xF_nh3 = 
-        new TH1D("h_xF_nh3", "x_{F} Distribution; x_{F} (GeV); Counts", 50, -3, 1);
+        new TH1D("h_xF_nh3", "x_{F} Distribution; x_{F} (GeV); Counts", 50, -4, 1);
     TH1D *h_xF_carbon = 
-        new TH1D("h_xF_carbon", "x_{F} Distribution; x_{F} (GeV); Counts", 50, -3, 1);
+        new TH1D("h_xF_carbon", "x_{F} Distribution; x_{F} (GeV); Counts", 50, -4, 1);
     // Fill the histograms
     tree_nh3->Draw("xF>>h_xF_nh3");
     tree_carbon->Draw("xF>>h_xF_carbon");
@@ -116,7 +116,7 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
     gr_ratio->GetYaxis()->SetRangeUser(1, 3);
     // gr_ratio->GetYaxis()->SetRangeUser(1, 2);
     // Set x-axis range
-    gr_ratio->GetXaxis()->SetLimits(-3, 3);
+    gr_ratio->GetXaxis()->SetLimits(-4, 3);
 
     // gr_ratio->SetTitle("NH_{3} to Carbon Ratio; x_{F2}; Ratio");
     gr_ratio->SetTitle("NH_{3} to Carbon Ratio; M_{x} (GeV); Ratio");
@@ -124,13 +124,13 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
     gr_ratio->Draw("AP");
 
     // Fit the data from -2.5 to -1 to a constant
-    TF1 *fit_const = new TF1("fit_const", "[0]", -3, -1);
+    TF1 *fit_const = new TF1("fit_const", "[0]", -4, -2);
     gr_ratio->Fit(fit_const, "RQ");
     fit_const->SetLineColor(kRed);
     fit_const->Draw("SAME");
 
     // Add the dotted-dashed line from -0.5 to 3
-    TF1 *dotted_line = new TF1("dotted_line", "[0]", -1, 3);
+    TF1 *dotted_line = new TF1("dotted_line", "[0]", -2, 3);
     dotted_line->SetParameter(0, fit_const->GetParameter(0)); 
     dotted_line->SetLineColor(kRed);
     dotted_line->SetLineStyle(7); // Set line style to dotted-dashed
@@ -194,7 +194,7 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
     gr_ratio_xF->Draw("AP");
 
     // Fit the data from -2.5 to -1 to a constant
-    TF1 *fit_const_xF = new TF1("fit_const", "[0]", -3, -1.5);
+    TF1 *fit_const_xF = new TF1("fit_const", "[0]", -4, -1.5);
     gr_ratio_xF->Fit(fit_const_xF, "RQ");
     fit_const_xF->SetLineColor(kRed);
     fit_const_xF->Draw("SAME");
