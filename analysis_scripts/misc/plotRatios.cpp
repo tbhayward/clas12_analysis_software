@@ -32,7 +32,7 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
         return;
     }
 
-    const int nbins = 30;
+    const int nbins = 15;
     TH1F *h1_p_p = new TH1F("h1_p_p", "p_p", nbins, 0, 4);
     TH1F *h2_p_p = new TH1F("h2_p_p", "p_p", nbins, 0, 4);
     TH1F *h3_p_p = new TH1F("h3_p_p", "p_p", nbins, 0, 4);
