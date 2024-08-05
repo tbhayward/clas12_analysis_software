@@ -2909,7 +2909,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                         "", nBins, xMin, xMax, nBins, yMin, yMax);
                 }
             }
-
+            std::cout << "Before dataReader restart" << std::endl;
             dataReader.Restart();
             if (mcReader) mcReader->Restart();
 
@@ -3017,7 +3017,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                     }
                 }
             }
-            std::cout << "Before saving" << std::endl;
+            
             // Draw and save the sector histograms for data
             for (int sector = 0; sector < 6; ++sector) {
                 c_region->cd(sector + 1);  // Select the pad corresponding to the sector
@@ -3039,7 +3039,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 }
                 c_mc_region->SaveAs(("output/calibration/dc/determination/mc_chi2_per_ndf_" + particle_name + "_" + region_name + ".png").c_str());
             }
-            std::cout << "After saving" << std::endl;
+
             // Cleanup
             delete c_region;
             if (c_mc_region) delete c_mc_region;
