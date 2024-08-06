@@ -3470,44 +3470,257 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
             c_mc_beta_bins_neg->SaveAs("output/calibration/cvt/chi2pid/mc_beta_vs_p_binned_neg_cd.png");
         }
 
-        // Clean up
-        delete c;
-        delete c_data_2D;
-        delete c_data_pos_neg_beta;
-        delete c_data_beta_bins_pos;
-        delete c_data_beta_bins_neg;
+        void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+    int nBins = 100;
+    double chi2pidMin = -10, chi2pidMax = 10;
+    double pMin = 0, pMax = 8;
+    double betaMin = 0.1, betaMax = 0.8;
+    std::vector<double> pBins = {0, 0.33, 0.67, 1.00, 1.33, 1.67, 2.00, 2.33, 2.67, 3.00, 3.5, 4, 4.5, 5, 6, 7, 8};
+
+    std::vector<std::tuple<int, std::string>> particle_types = {
+        {211, "#pi^{+}"}, {321, "k^{+}"}, {2212, "p"},
+        {-211, "#pi^{-}"}, {-321, "k^{-}"}, {-2212, "pbar"}
+    };
+
+    // Define histograms for data and MC
+    std::vector<TH1D*> h_data(particle_types.size());
+    std::vector<TH1D*> h_mc(particle_types.size());
+    std::vector<TH2D*> h_data_chi2pid_vs_p(particle_types.size());
+    std::vector<TH2D*> h_mc_chi2pid_vs_p(particle_types.size());
+    TH2D* h_data_beta_vs_p_pos = new TH2D("h_data_beta_vs_p_pos", "#beta vs p: Positive Tracks", nBins, pMin, pMax, nBins, betaMin, betaMax);
+    TH2D* h_data_beta_vs_p_neg = new TH2D("h_data_beta_vs_p_neg", "#beta vs p: Negative Tracks", nBins, pMin, pMax, nBins, betaMin, betaMax);
+    TH2D* h_mc_beta_vs_p_pos = nullptr;
+    TH2D* h_mc_beta_vs_p_neg = nullptr;
+
+    if (mcReader) {
+        h_mc_beta_vs_p_pos = new TH2D("h_mc_beta_vs_p_pos", "MC #beta vs p: Positive Tracks", nBins, pMin, pMax, nBins, betaMin, betaMax);
+        h_mc_beta_vs_p_neg = new TH2D("h_mc_beta_vs_p_neg", "MC #beta vs p: Negative Tracks", nBins, pMin, pMax, nBins, betaMin, betaMax);
+    }
+
+    // Prepare histograms for momentum bins
+    std::vector<TH1D*> h_data_beta_bins_pos(pBins.size() - 1);
+    std::vector<TH1D*> h_data_beta_bins_neg(pBins.size() - 1);
+    std::vector<TH1D*> h_mc_beta_bins_pos(pBins.size() - 1);
+    std::vector<TH1D*> h_mc_beta_bins_neg(pBins.size() - 1);
+
+    for (size_t i = 0; i < pBins.size() - 1; ++i) {
+        h_data_beta_bins_pos[i] = new TH1D(("h_data_beta_pos_bin_" + std::to_string(i)).c_str(),
+                                           (Form("#beta: %.2f < p < %.2f", pBins[i], pBins[i + 1])).c_str(),
+                                           nBins, betaMin, betaMax);
+        h_data_beta_bins_pos[i]->GetXaxis()->SetTitle("#beta");
+        h_data_beta_bins_pos[i]->GetYaxis()->SetTitle("Normalized Counts");
+        h_data_beta_bins_pos[i]->SetStats(false);
+
+        h_data_beta_bins_neg[i] = new TH1D(("h_data_beta_neg_bin_" + std::to_string(i)).c_str(),
+                                           (Form("#beta: %.2f < p < %.2f", pBins[i], pBins[i + 1])).c_str(),
+                                           nBins, betaMin, betaMax);
+        h_data_beta_bins_neg[i]->GetXaxis()->SetTitle("#beta");
+        h_data_beta_bins_neg[i]->GetYaxis()->SetTitle("Normalized Counts");
+        h_data_beta_bins_neg[i]->SetStats(false);
 
         if (mcReader) {
-            delete c_mc_2D;
-            delete c_mc_pos_neg_beta;
-            delete c_mc_beta_bins_pos;
-            delete c_mc_beta_bins_neg;
+            h_mc_beta_bins_pos[i] = new TH1D(("h_mc_beta_pos_bin_" + std::to_string(i)).c_str(),
+                                             (Form("#beta: %.2f < p < %.2f", pBins[i], pBins[i + 1])).c_str(),
+                                             nBins, betaMin, betaMax);
+            h_mc_beta_bins_pos[i]->GetXaxis()->SetTitle("#beta");
+            h_mc_beta_bins_pos[i]->GetYaxis()->SetTitle("Normalized Counts");
+            h_mc_beta_bins_pos[i]->SetLineColor(kRed);
+            h_mc_beta_bins_pos[i]->SetStats(false);
+
+            h_mc_beta_bins_neg[i] = new TH1D(("h_mc_beta_neg_bin_" + std::to_string(i)).c_str(),
+                                             (Form("#beta: %.2f < p < %.2f", pBins[i], pBins[i + 1])).c_str(),
+                                             nBins, betaMin, betaMax);
+            h_mc_beta_bins_neg[i]->GetXaxis()->SetTitle("#beta");
+            h_mc_beta_bins_neg[i]->GetYaxis()->SetTitle("Normalized Counts");
+            h_mc_beta_bins_neg[i]->SetLineColor(kRed);
+            h_mc_beta_bins_neg[i]->SetStats(false);
+        }
+    }
+
+    // Fill histograms for data and MC
+    // Note: Adapt this section based on the previous code to fill histograms
+    while (dataReader.Next()) {
+        int pid = *particle_pid;
+        double chi2pid = *particle_chi2pid;
+        double p = *momentum;
+        double beta = *particle_beta;
+
+        if (pid == 211 || pid == 321 || pid == 2212) {
+            h_data_beta_vs_p_pos->Fill(p, beta);
+            for (size_t i = 0; i < pBins.size() - 1; ++i) {
+                if (p >= pBins[i] && p < pBins[i + 1]) {
+                    h_data_beta_bins_pos[i]->Fill(beta);
+                    break;
+                }
+            }
+        } else if (pid == -211 || pid == -321 || pid == -2212) {
+            h_data_beta_vs_p_neg->Fill(p, beta);
+            for (size_t i = 0; i < pBins.size() - 1; ++i) {
+                if (p >= pBins[i] && p < pBins[i + 1]) {
+                    h_data_beta_bins_neg[i]->Fill(beta);
+                    break;
+                }
+            }
         }
 
         for (size_t i = 0; i < particle_types.size(); ++i) {
-            delete h_data[i];
-            delete h_data_chi2pid_vs_p[i];
-            if (mcReader) {
-                delete h_mc[i];
-                delete h_mc_chi2pid_vs_p[i];
+            if (pid == std::get<0>(particle_types[i])) {
+                h_data[i]->Fill(chi2pid);
+                h_data_chi2pid_vs_p[i]->Fill(p, chi2pid);
+                break;
             }
         }
-
-        for (size_t bin = 0; bin < pBins.size() - 1; ++bin) {
-            delete h_data_beta_bins_pos[bin];
-            delete h_data_beta_bins_neg[bin];
-            if (mcReader) {
-                delete h_mc_beta_bins_pos[bin];
-                delete h_mc_beta_bins_neg[bin];
-            }
-        }
-
-        if (mc_particle_chi2pid) delete mc_particle_chi2pid;
-        if (mc_particle_p) delete mc_particle_p;
-        if (mc_particle_beta) delete mc_particle_beta;
-        if (mc_track_sector_6) delete mc_track_sector_6;
-        if (mc_particle_pid) delete mc_particle_pid;
     }
+
+    if (mcReader) {
+        while (mcReader->Next()) {
+            int pid = **mc_particle_pid;
+            double chi2pid = **mc_particle_chi2pid;
+            double p = **mc_momentum;
+            double beta = **mc_particle_beta;
+
+            if (pid == 211 || pid == 321 || pid == 2212) {
+                h_mc_beta_vs_p_pos->Fill(p, beta);
+                for (size_t i = 0; i < pBins.size() - 1; ++i) {
+                    if (p >= pBins[i] && p < pBins[i + 1]) {
+                        h_mc_beta_bins_pos[i]->Fill(beta);
+                        break;
+                    }
+                }
+            } else if (pid == -211 || pid == -321 || pid == -2212) {
+                h_mc_beta_vs_p_neg->Fill(p, beta);
+                for (size_t i = 0; i < pBins.size() - 1; ++i) {
+                    if (p >= pBins[i] && p < pBins[i + 1]) {
+                        h_mc_beta_bins_neg[i]->Fill(beta);
+                        break;
+                    }
+                }
+            }
+
+            for (size_t i = 0; i < particle_types.size(); ++i) {
+                if (pid == std::get<0>(particle_types[i])) {
+                    h_mc[i]->Fill(chi2pid);
+                    h_mc_chi2pid_vs_p[i]->Fill(p, chi2pid);
+                    break;
+                }
+            }
+        }
+    }
+
+    // Normalize beta histograms for momentum bins and find max_y for each bin
+    for (size_t bin = 0; bin < pBins.size() - 1; ++bin) {
+        double max_y_bin = 0;
+
+        h_data_beta_bins_pos[bin]->Scale(1.0 / h_data_beta_bins_pos[bin]->Integral());
+        h_data_beta_bins_neg[bin]->Scale(1.0 / h_data_beta_bins_neg[bin]->Integral());
+
+        if (h_data_beta_bins_pos[bin]->GetMaximum() > max_y_bin) max_y_bin = h_data_beta_bins_pos[bin]->GetMaximum();
+        if (h_data_beta_bins_neg[bin]->GetMaximum() > max_y_bin) max_y_bin = h_data_beta_bins_neg[bin]->GetMaximum();
+
+        if (mcReader) {
+            h_mc_beta_bins_pos[bin]->Scale(1.0 / h_mc_beta_bins_pos[bin]->Integral());
+            h_mc_beta_bins_neg[bin]->Scale(1.0 / h_mc_beta_bins_neg[bin]->Integral());
+            if (h_mc_beta_bins_pos[bin]->GetMaximum() > max_y_bin) max_y_bin = h_mc_beta_bins_pos[bin]->GetMaximum();
+            if (h_mc_beta_bins_neg[bin]->GetMaximum() > max_y_bin) max_y_bin = h_mc_beta_bins_neg[bin]->GetMaximum();
+        }
+
+        h_data_beta_bins_pos[bin]->GetYaxis()->SetRangeUser(0, 1.2 * max_y_bin);
+        h_data_beta_bins_neg[bin]->GetYaxis()->SetRangeUser(0, 1.2 * max_y_bin);
+
+        if (mcReader) {
+            h_mc_beta_bins_pos[bin]->GetYaxis()->SetRangeUser(0, 1.2 * max_y_bin);
+            h_mc_beta_bins_neg[bin]->GetYaxis()->SetRangeUser(0, 1.2 * max_y_bin);
+        }
+    }
+
+    // Drawing 4x4 canvas for positive tracks
+    TCanvas* c_beta_bins_pos = new TCanvas("c_beta_bins_pos", "Beta Distribution in Momentum Bins: Positive Tracks", 2400, 2400);
+    c_beta_bins_pos->Divide(4, 4);
+
+    for (size_t bin = 0; bin < pBins.size() - 1; ++bin) {
+        c_beta_bins_pos->cd(bin + 1);
+        gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+
+        h_data_beta_bins_pos[bin]->Draw("HIST");
+        if (mcReader) h_mc_beta_bins_pos[bin]->Draw("HIST SAME");
+
+        TLegend* legend = new TLegend(0.65, 0.75, 0.9, 0.9);
+        legend->AddEntry(h_data_beta_bins_pos[bin], "Data", "l");
+        if (mcReader) legend->AddEntry(h_mc_beta_bins_pos[bin], "MC", "l");
+        legend->Draw();
+    }
+
+    // Drawing 4x4 canvas for negative tracks
+    TCanvas* c_beta_bins_neg = new TCanvas("c_beta_bins_neg", "Beta Distribution in Momentum Bins: Negative Tracks", 2400, 2400);
+    c_beta_bins_neg->Divide(4, 4);
+
+    for (size_t bin = 0; bin < pBins.size() - 1; ++bin) {
+        c_beta_bins_neg->cd(bin + 1);
+        gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+
+        h_data_beta_bins_neg[bin]->Draw("HIST");
+        if (mcReader) h_mc_beta_bins_neg[bin]->Draw("HIST SAME");
+
+        TLegend* legend = new TLegend(0.65, 0.75, 0.9, 0.9);
+        legend->AddEntry(h_data_beta_bins_neg[bin], "Data", "l");
+        if (mcReader) legend->AddEntry(h_mc_beta_bins_neg[bin], "MC", "l");
+        legend->Draw();
+    }
+
+    // Save the 4x4 canvases
+    c_beta_bins_pos->SaveAs("output/calibration/cvt/chi2pid/beta_vs_p_binned_pos_cd.png");
+    c_beta_bins_neg->SaveAs("output/calibration/cvt/chi2pid/beta_vs_p_binned_neg_cd.png");
+
+    // Clean up
+    delete c_beta_bins_pos;
+    delete c_beta_bins_neg;
+
+    // Deletion of histograms should happen after use
+    for (size_t bin = 0; bin < pBins.size() - 1; ++bin) {
+        delete h_data_beta_bins_pos[bin];
+        delete h_data_beta_bins_neg[bin];
+        if (mcReader) {
+            delete h_mc_beta_bins_pos[bin];
+            delete h_mc_beta_bins_neg[bin];
+        }
+    }
+    delete c;
+    delete c_data_2D;
+    delete c_data_pos_neg_beta;
+    delete c_data_beta_bins_pos;
+    delete c_data_beta_bins_neg;
+
+    if (mcReader) {
+        delete c_mc_2D;
+        delete c_mc_pos_neg_beta;
+        delete c_mc_beta_bins_pos;
+        delete c_mc_beta_bins_neg;
+    }
+
+    for (size_t i = 0; i < particle_types.size(); ++i) {
+        delete h_data[i];
+        delete h_data_chi2pid_vs_p[i];
+        if (mcReader) {
+            delete h_mc[i];
+            delete h_mc_chi2pid_vs_p[i];
+        }
+    }
+
+    for (size_t bin = 0; bin < pBins.size() - 1; ++bin) {
+        delete h_data_beta_bins_pos[bin];
+        delete h_data_beta_bins_neg[bin];
+        if (mcReader) {
+            delete h_mc_beta_bins_pos[bin];
+            delete h_mc_beta_bins_neg[bin];
+        }
+    }
+
+    if (mc_particle_chi2pid) delete mc_particle_chi2pid;
+    if (mc_particle_p) delete mc_particle_p;
+    if (mc_particle_beta) delete mc_particle_beta;
+    if (mc_track_sector_6) delete mc_track_sector_6;
+    if (mc_particle_pid) delete mc_particle_pid;
+}
                            
 void create_directories() {
     // Array of directories to check/create
