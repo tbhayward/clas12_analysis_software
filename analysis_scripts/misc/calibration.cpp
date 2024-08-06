@@ -3117,18 +3117,31 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
     }
 
-    TCanvas* c = new TCanvas("c_chi2pid_cd", "chi2pid in CD", 1800, 1200);
-    c->Divide(3, 2);
+    TCanvas* c_data = new TCanvas("c_data_chi2pid_cd", "chi2pid in CD (Data)", 1800, 1200);
+    c_data->Divide(3, 2);
     gPad->SetLeftMargin(0.15);  // Add padding to the left
 
-    TCanvas* c2D = new TCanvas("c2D_chi2pid_vs_p_cd", "chi2pid vs p in CD", 1800, 1200);
-    c2D->Divide(3, 2);
+    TCanvas* c_data_2D = new TCanvas("c_data_2D_chi2pid_vs_p_cd", "chi2pid vs p in CD (Data)", 1800, 1200);
+    c_data_2D->Divide(3, 2);
     gPad->SetLeftMargin(0.15);  // Add padding to the left
+
+    TCanvas* c_mc = nullptr;
+    TCanvas* c_mc_2D = nullptr;
+
+    if (mcReader) {
+        c_mc = new TCanvas("c_mc_chi2pid_cd", "chi2pid in CD (MC)", 1800, 1200);
+        c_mc->Divide(3, 2);
+        gPad->SetLeftMargin(0.15);  // Add padding to the left
+
+        c_mc_2D = new TCanvas("c_mc_2D_chi2pid_vs_p_cd", "chi2pid vs p in CD (MC)", 1800, 1200);
+        c_mc_2D->Divide(3, 2);
+        gPad->SetLeftMargin(0.15);  // Add padding to the left
+    }
 
     // Declare vectors to store histograms
     std::vector<TH1D*> h_data(6);
-    std::vector<TH1D*> h_mc(6);
     std::vector<TH2D*> h_data_chi2pid_vs_p(6);
+    std::vector<TH1D*> h_mc(6);
     std::vector<TH2D*> h_mc_chi2pid_vs_p(6);
 
     // Initialize histograms for each particle type
@@ -3207,76 +3220,70 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
 
     max_value *= 1.2;  // Scale the maximum value by 1.2 for better visualization
 
-    // Draw 1D histograms on the canvas
+    // Draw data histograms on the canvas
     for (size_t i = 0; i < particle_types.size(); ++i) {
-        c->cd(i + 1);
+        c_data->cd(i + 1);
         gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
         h_data[i]->SetMaximum(max_value);
         h_data[i]->Draw("HIST");
-        if (mcReader) {
-            h_mc[i]->SetMaximum(max_value);
-            h_mc[i]->Draw("HIST SAME");
-        }
 
         // Add legend
         TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);  // Position the legend on the right
         legend->AddEntry(h_data[i], "Data", "l");
-        if (mcReader) {
-            legend->AddEntry(h_mc[i], "MC", "l");
-        }
         legend->Draw();
     }
 
-    // Draw 2D histograms on the new canvas
+    // Draw MC histograms on the canvas (if applicable)
+    if (mcReader) {
+        for (size_t i = 0; i < particle_types.size(); ++i) {
+            c_mc->cd(i + 1);
+            gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+            h_mc[i]->SetMaximum(max_value);
+            h_mc[i]->Draw("HIST");
+            // Add legend
+            TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);  // Position the legend on the right
+            legend->AddEntry(h_mc[i], "MC", "l");
+            legend->Draw();
+        }
+    }
+
+    // Draw data 2D histograms on the canvas
     for (size_t i = 0; i < particle_types.size(); ++i) {
-        c2D->cd(i + 1);
+        c_data_2D->cd(i + 1);
         gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
         gPad->SetLogz();  // Set log scale for the z-axis
         h_data_chi2pid_vs_p[i]->Draw("COLZ");
     }
+
+    // Draw MC 2D histograms on the canvas (if applicable)
     if (mcReader) {
         for (size_t i = 0; i < particle_types.size(); ++i) {
-            c2D->cd(i + 1);
+            c_mc_2D->cd(i + 1);
             gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
             gPad->SetLogz();  // Set log scale for the z-axis
-            h_mc_chi2pid_vs_p[i]->Draw("COLZ SAME");
+            h_mc_chi2pid_vs_p[i]->Draw("COLZ");
         }
     }
 
     // Save the canvases
-    c->SaveAs("output/calibration/cvt/chi2pid/chi2pid_cd.png");
-    c2D->SaveAs("output/calibration/cvt/chi2pid/chi2pid_vs_p_cd.png");
+    c_data->SaveAs("output/calibration/cvt/chi2pid/chi2pid_cd.png");
+    c_data_2D->SaveAs("output/calibration/cvt/chi2pid/chi2pid_vs_p_cd.png");
 
-    // Clean up
-    delete c;
-    delete c2D;
-    for (auto& hist : h_data) delete hist;
-    for (auto& hist : h_mc) delete hist;
-    for (auto& hist : h_data_chi2pid_vs_p) delete hist;
-    for (auto& hist : h_mc_chi2pid_vs_p) delete hist;
-    if (mc_particle_chi2pid) delete mc_particle_chi2pid;
-    if (mc_particle_p) delete mc_particle_p;
-    if (mc_track_sector_6) delete mc_track_sector_6;
-    if (mc_particle_pid) delete mc_particle_pid;
     if (mcReader) {
-        for (size_t i = 0; i < particle_types.size(); ++i) {
-            c2D->cd(i + 1);
-            gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-            gPad->SetLogz();  // Set log scale for the z-axis
-            h_mc_chi2pid_vs_p[i]->Draw("COLZ SAME");
-        }
+        c_mc->SaveAs("output/calibration/cvt/chi2pid/mc_chi2pid_cd.png");
+        c_mc_2D->SaveAs("output/calibration/cvt/chi2pid/mc_chi2pid_vs_p_cd.png");
     }
 
-    // Save the canvases
-    c->SaveAs("output/calibration/cvt/chi2pid/chi2pid_cd.png");
-    c2D->SaveAs("output/calibration/cvt/chi2pid/chi2pid_vs_p_cd.png");
-
     // Clean up
-    delete c;
-    delete c2D;
+    delete c_data;
+    delete c_data_2D;
+    if (mcReader) {
+        delete c_mc;
+        delete c_mc_2D;
+    }
     for (auto& hist : h_data) delete hist;
-    for (auto& hist : h_mc) delete hist;
     for (auto& hist : h_data_chi2pid_vs_p) delete hist;
+    for (auto& hist : h_mc) delete hist;
     for (auto& hist : h_mc_chi2pid_vs_p) delete hist;
     if (mc_particle_chi2pid) delete mc_particle_chi2pid;
     if (mc_particle_p) delete mc_particle_p;
