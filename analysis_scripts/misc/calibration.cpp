@@ -3157,6 +3157,27 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         }
     }
 
+    // Normalize histograms and determine the max value for y-axis scaling
+    double max_val = 0;
+    for (size_t i = 0; i < particle_types.size(); ++i) {
+        h_data[i]->Scale(1.0 / h_data[i]->Integral());
+        if (mcReader) {
+            h_mc[i]->Scale(1.0 / h_mc[i]->Integral());
+        }
+
+        double data_max = h_data[i]->GetMaximum();
+        double mc_max = mcReader ? h_mc[i]->GetMaximum() : 0;
+        max_val = std::max(max_val, std::max(data_max, mc_max));
+    }
+
+    // Set y-axis range for all histograms
+    for (size_t i = 0; i < particle_types.size(); ++i) {
+        h_data[i]->SetMaximum(1.2 * max_val);
+        if (mcReader) {
+            h_mc[i]->SetMaximum(1.2 * max_val);
+        }
+    }
+
     // Draw histograms on canvas
     for (size_t i = 0; i < particle_types.size(); ++i) {
         c->cd(i + 1);
