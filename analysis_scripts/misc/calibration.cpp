@@ -3100,6 +3100,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         {-2212, "pbar"}
     };
 
+    // Initialize readers for data and MC
     TTreeReaderValue<double> particle_chi2pid(dataReader, "particle_chi2pid");
     TTreeReaderValue<double> particle_p(dataReader, "p");
     TTreeReaderValue<int> track_sector_6(dataReader, "track_sector_6");
@@ -3117,14 +3118,17 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
     }
 
+    // 1D Histograms canvas
     TCanvas* c = new TCanvas("c_chi2pid_cd", "chi2pid in CD", 1800, 1200);
     c->Divide(3, 2);
     gPad->SetLeftMargin(0.15);  // Add padding to the left
 
+    // 2D Histograms canvas for data
     TCanvas* c_data_2D = new TCanvas("c_data_2D_chi2pid_vs_p_cd", "chi2pid vs p in CD (Data)", 1800, 1200);
     c_data_2D->Divide(3, 2);
     gPad->SetLeftMargin(0.15);  // Add padding to the left
 
+    // 2D Histograms canvas for MC (if applicable)
     TCanvas* c_mc_2D = nullptr;
     if (mcReader) {
         c_mc_2D = new TCanvas("c_mc_2D_chi2pid_vs_p_cd", "chi2pid vs p in CD (MC)", 1800, 1200);
@@ -3132,11 +3136,46 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         gPad->SetLeftMargin(0.15);  // Add padding to the left
     }
 
-    // Declare vectors to store histograms
+    // Initialize histograms for each particle type
     std::vector<TH1D*> h_data(6);
     std::vector<TH1D*> h_mc(6);
     std::vector<TH2D*> h_data_chi2pid_vs_p(6);
     std::vector<TH2D*> h_mc_chi2pid_vs_p(6);
+
+    // Additional 1x2 canvases for positive and negative tracks
+    TCanvas* c_data_pos_neg = new TCanvas("c_data_pos_neg_chi2pid_vs_p_cd", "chi2pid vs p (Data)", 1800, 600);
+    c_data_pos_neg->Divide(2, 1);
+    TCanvas* c_mc_pos_neg = nullptr;
+    if (mcReader) {
+        c_mc_pos_neg = new TCanvas("c_mc_pos_neg_chi2pid_vs_p_cd", "chi2pid vs p (MC)", 1800, 600);
+        c_mc_pos_neg->Divide(2, 1);
+    }
+
+    // Initialize histograms for combined positive and negative tracks
+    TH2D* h_data_chi2pid_vs_p_pos = new TH2D("h_data_chi2pid_vs_p_pos", "chi2pid vs p (Data, Positive Tracks)", nBins, pMin, pMax, nBins, chi2pidMin, chi2pidMax);
+    h_data_chi2pid_vs_p_pos->GetXaxis()->SetTitle("p (GeV)");
+    h_data_chi2pid_vs_p_pos->GetYaxis()->SetTitle("chi2pid");
+    h_data_chi2pid_vs_p_pos->SetStats(false);
+
+    TH2D* h_data_chi2pid_vs_p_neg = new TH2D("h_data_chi2pid_vs_p_neg", "chi2pid vs p (Data, Negative Tracks)", nBins, pMin, pMax, nBins, chi2pidMin, chi2pidMax);
+    h_data_chi2pid_vs_p_neg->GetXaxis()->SetTitle("p (GeV)");
+    h_data_chi2pid_vs_p_neg->GetYaxis()->SetTitle("chi2pid");
+    h_data_chi2pid_vs_p_neg->SetStats(false);
+
+    TH2D* h_mc_chi2pid_vs_p_pos = nullptr;
+    TH2D* h_mc_chi2pid_vs_p_neg = nullptr;
+
+    if (mcReader) {
+        h_mc_chi2pid_vs_p_pos = new TH2D("h_mc_chi2pid_vs_p_pos", "chi2pid vs p (MC, Positive Tracks)", nBins, pMin, pMax, nBins, chi2pidMin, chi2pidMax);
+        h_mc_chi2pid_vs_p_pos->GetXaxis()->SetTitle("p (GeV)");
+        h_mc_chi2pid_vs_p_pos->GetYaxis()->SetTitle("chi2pid");
+        h_mc_chi2pid_vs_p_pos->SetStats(false);
+
+        h_mc_chi2pid_vs_p_neg = new TH2D("h_mc_chi2pid_vs_p_neg", "chi2pid vs p (MC, Negative Tracks)", nBins, pMin, pMax, nBins, chi2pidMin, chi2pidMax);
+        h_mc_chi2pid_vs_p_neg->GetXaxis()->SetTitle("p (GeV)");
+        h_mc_chi2pid_vs_p_neg->GetYaxis()->SetTitle("chi2pid");
+        h_mc_chi2pid_vs_p_neg->SetStats(false);
+    }
 
     // Initialize histograms for each particle type
     for (size_t i = 0; i < particle_types.size(); ++i) {
@@ -3172,66 +3211,71 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         }
     }
 
-    // Fill data histograms
+    // Fill histograms for data
     while (dataReader.Next()) {
-        if (*track_sector_6 != -9999 && *particle_chi2pid != -9999) {
+        if (*track_sector_6 != -9999) {  // CD check
             for (size_t i = 0; i < particle_types.size(); ++i) {
                 if (*particle_pid == std::get<0>(particle_types[i])) {
                     h_data[i]->Fill(*particle_chi2pid);
                     h_data_chi2pid_vs_p[i]->Fill(*particle_p, *particle_chi2pid);
-                }
-            }
-        }
-    }
-
-    // Fill MC histograms
-    if (mcReader) {
-        while (mcReader->Next()) {
-            if (**mc_track_sector_6 != -9999 && **mc_particle_chi2pid != -9999) {
-                for (size_t i = 0; i < particle_types.size(); ++i) {
-                    if (**mc_particle_pid == std::get<0>(particle_types[i])) {
-                        h_mc[i]->Fill(**mc_particle_chi2pid);
-                        h_mc_chi2pid_vs_p[i]->Fill(**mc_particle_p, **mc_particle_chi2pid);
+                    if (*particle_pid > 0) {
+                        h_data_chi2pid_vs_p_pos->Fill(*particle_p, *particle_chi2pid);
+                    } else {
+                        h_data_chi2pid_vs_p_neg->Fill(*particle_p, *particle_chi2pid);
                     }
                 }
             }
         }
     }
 
-    // Normalize histograms and find the maximum value
-    double max_value = 0;
-    for (size_t i = 0; i < particle_types.size(); ++i) {
-        h_data[i]->Scale(1.0 / h_data[i]->Integral());
-        if (h_data[i]->GetMaximum() > max_value) {
-            max_value = h_data[i]->GetMaximum();
-        }
-
-        if (mcReader) {
-            h_mc[i]->Scale(1.0 / h_mc[i]->Integral());
-            if (h_mc[i]->GetMaximum() > max_value) {
-                max_value = h_mc[i]->GetMaximum();
+    // Fill histograms for MC (if applicable)
+    if (mcReader) {
+        while (mcReader->Next()) {
+            if (**mc_track_sector_6 != -9999) {  // CD check
+                for (size_t i = 0; i < particle_types.size(); ++i) {
+                    if (**mc_particle_pid == std::get<0>(particle_types[i])) {
+                        h_mc[i]->Fill(**mc_particle_chi2pid);
+                        h_mc_chi2pid_vs_p[i]->Fill(**mc_particle_p, **mc_particle_chi2pid);
+                        if (**mc_particle_pid > 0) {
+                            h_mc_chi2pid_vs_p_pos->Fill(**mc_particle_p, **mc_particle_chi2pid);
+                        } else {
+                            h_mc_chi2pid_vs_p_neg->Fill(**mc_particle_p, **mc_particle_chi2pid);
+                        }
+                    }
+                }
             }
         }
     }
 
-    max_value *= 1.2;  // Scale the maximum value by 1.2 for better visualization
-
-    // Draw 1D histograms for data and MC on the same canvas
+    // Normalize 1D histograms and set y-axis range
+    double max_y = 0;
     for (size_t i = 0; i < particle_types.size(); ++i) {
-        c->cd(i + 1);
-        gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-        h_data[i]->SetMaximum(max_value);
-        h_data[i]->Draw("HIST");
+        h_data[i]->Scale(1.0 / h_data[i]->Integral());
+        if (h_data[i]->GetMaximum() > max_y) max_y = h_data[i]->GetMaximum();
 
         if (mcReader) {
-            h_mc[i]->SetMaximum(max_value);
-            h_mc[i]->Draw("HIST SAME");
+            h_mc[i]->Scale(1.0 / h_mc[i]->Integral());
+            if (h_mc[i]->GetMaximum() > max_y) max_y = h_mc[i]->GetMaximum();
         }
+    }
+
+    // Update y-axis range to be 1.2 times the maximum value
+    for (size_t i = 0; i < particle_types.size(); ++i) {
+        h_data[i]->SetMaximum(1.2 * max_y);
+        if (mcReader) h_mc[i]->SetMaximum(1.2 * max_y);
+    }
+
+    // Draw 1D histograms on the same canvas for each particle type
+    for (size_t i = 0; i < particle_types.size(); ++i) {
+        c->cd(i + 1);
+        gPad->SetLeftMargin(0.15);  // Add padding to the left
+        h_data[i]->Draw("HIST");
+        if (mcReader) h_mc[i]->Draw("HIST SAME");
 
         // Add legend
-        TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);  // Position the legend on the right
-        legend->AddEntry(h_data[i], "Data", "l");
-        if (mcReader) legend->AddEntry(h_mc[i], "MC", "l");
+        TLegend* legend = new TLegend(0.7, 0.8, 0.9, 0.9);
+        legend->AddEntry(h_data[i], "data", "l");
+        if (mcReader) legend->AddEntry(h_mc[i], "mc", "l");
         legend->Draw();
     }
 
@@ -3253,7 +3297,34 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         }
     }
 
-    // Save the canvases
+    // Draw and save the positive and negative track canvases
+    c_data_pos_neg->cd(1);
+    gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+    gPad->SetLogz();
+    h_data_chi2pid_vs_p_pos->Draw("COLZ");
+
+    c_data_pos_neg->cd(2);
+    gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+    gPad->SetLogz();
+    h_data_chi2pid_vs_p_neg->Draw("COLZ");
+
+    c_data_pos_neg->SaveAs("output/calibration/cvt/chi2pid/chi2pid_vs_p_pos_neg_cd.png");
+
+    if (mcReader) {
+        c_mc_pos_neg->cd(1);
+        gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+        gPad->SetLogz();
+        h_mc_chi2pid_vs_p_pos->Draw("COLZ");
+
+        c_mc_pos_neg->cd(2);
+        gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+        gPad->SetLogz();
+        h_mc_chi2pid_vs_p_neg->Draw("COLZ");
+
+        c_mc_pos_neg->SaveAs("output/calibration/cvt/chi2pid/mc_chi2pid_vs_p_pos_neg_cd.png");
+    }
+
+    // Save the other canvases
     c->SaveAs("output/calibration/cvt/chi2pid/chi2pid_cd.png");
     c_data_2D->SaveAs("output/calibration/cvt/chi2pid/chi2pid_vs_p_cd.png");
 
@@ -3265,13 +3336,21 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     delete c;
     delete c_data_2D;
     if (mcReader) delete c_mc_2D;
+    delete c_data_pos_neg;
+    if (mcReader) delete c_mc_pos_neg;
 
     for (auto& hist : h_data) delete hist;
     for (auto& hist : h_data_chi2pid_vs_p) delete hist;
+    delete h_data_chi2pid_vs_p_pos;
+    delete h_data_chi2pid_vs_p_neg;
+
     if (mcReader) {
         for (auto& hist : h_mc) delete hist;
         for (auto& hist : h_mc_chi2pid_vs_p) delete hist;
+        delete h_mc_chi2pid_vs_p_pos;
+        delete h_mc_chi2pid_vs_p_neg;
     }
+
     if (mc_particle_chi2pid) delete mc_particle_chi2pid;
     if (mc_particle_p) delete mc_particle_p;
     if (mc_track_sector_6) delete mc_track_sector_6;
