@@ -3082,6 +3082,77 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
     if (mc_track_ndf_6) delete mc_track_ndf_6;
 }
 }
+
+void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+    int nBins = 100;
+    double xMin = -5;
+    double xMax = 5;
+
+    TTreeReaderValue<double> particle_chi2pid(dataReader, "particle_chi2pid");
+    TTreeReaderValue<int> track_sector_6(dataReader, "track_sector_6");
+    TTreeReaderValue<double> track_chi2_6(dataReader, "track_chi2_6");
+    TTreeReaderValue<int> track_ndf_6(dataReader, "track_ndf_6");
+
+    TTreeReaderValue<double>* mc_particle_chi2pid = nullptr;
+    TTreeReaderValue<int>* mc_track_sector_6 = nullptr;
+    TTreeReaderValue<double>* mc_track_chi2_6 = nullptr;
+    TTreeReaderValue<int>* mc_track_ndf_6 = nullptr;
+
+    if (mcReader) {
+        mc_particle_chi2pid = new TTreeReaderValue<double>(*mcReader, "particle_chi2pid");
+        mc_track_sector_6 = new TTreeReaderValue<int>(*mcReader, "track_sector_6");
+        mc_track_chi2_6 = new TTreeReaderValue<double>(*mcReader, "track_chi2_6");
+        mc_track_ndf_6 = new TTreeReaderValue<int>(*mcReader, "track_ndf_6");
+    }
+
+    TH1D* h_data_chi2pid = new TH1D("h_data_chi2pid", "chi2pid", nBins, xMin, xMax);
+    TH1D* h_mc_chi2pid = nullptr;
+    if (mcReader) {
+        h_mc_chi2pid = new TH1D("h_mc_chi2pid", "chi2pid", nBins, xMin, xMax);
+        h_mc_chi2pid->SetLineColor(kRed);
+    }
+
+    // Loop over data entries
+    while (dataReader.Next()) {
+        if (*track_sector_6 != -9999 && *track_chi2_6 != -9999 && *track_ndf_6 != -9999) {
+            h_data_chi2pid->Fill(*particle_chi2pid);
+        }
+    }
+
+    // Loop over MC entries if provided
+    if (mcReader) {
+        while (mcReader->Next()) {
+            if (**mc_track_sector_6 != -9999 && **mc_track_chi2_6 != -9999 && **mc_track_ndf_6 != -9999) {
+                h_mc_chi2pid->Fill(**mc_particle_chi2pid);
+            }
+        }
+    }
+
+    // Create canvas and draw histograms
+    TCanvas* c = new TCanvas("c_chi2pid_cd", "chi2pid", 800, 600);
+    h_data_chi2pid->SetStats(false); // Disable stat box
+    h_data_chi2pid->Draw();
+
+    if (mcReader) {
+        h_mc_chi2pid->Draw("SAME");
+        TLegend* legend = new TLegend(0.7, 0.8, 0.9, 0.9);
+        legend->AddEntry(h_data_chi2pid, "data", "l");
+        legend->AddEntry(h_mc_chi2pid, "mc", "l");
+        legend->Draw();
+    }
+
+    // Save the canvas
+    c->SaveAs("output/calibration/cvt/chi2pid/chi2pid_cd.png");
+
+    // Cleanup
+    delete h_data_chi2pid;
+    if (h_mc_chi2pid) delete h_mc_chi2pid;
+    delete c;
+    if (mc_particle_chi2pid) delete mc_particle_chi2pid;
+    if (mc_track_sector_6) delete mc_track_sector_6;
+    if (mc_track_chi2_6) delete mc_track_chi2_6;
+    if (mc_track_ndf_6) delete mc_track_ndf_6;
+}
                            
 void create_directories() {
     // Array of directories to check/create
@@ -3096,7 +3167,8 @@ void create_directories() {
         "output/calibration/cc/",
         "output/calibration/dc/",
         "output/calibration/dc/positions/",
-        "output/calibration/dc/determination"
+        "output/calibration/dc/determination",
+        "output/calibration/cvt/chi2pid"
     };
 
     // Iterate through each directory and create if it doesn't exist
@@ -3176,9 +3248,13 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_dc_hit_position(dataReader, mcReader);
 
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // dc_fiducial_determination(dataReader, mcReader);
+
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
-    dc_fiducial_determination(dataReader, mcReader);
+    plot_chi2pid_cd(dataReader, mcReader);
 
 
 
