@@ -123,7 +123,7 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
     gr_ratio->Draw("AP");
 
     // Fit the data from -2.5 to -1 to a constant
-    TF1 *fit_const = new TF1("fit_const", "[0]", -4, -2);
+    TF1 *fit_const = new TF1("fit_const", "[0]", -4, -1);
     gr_ratio->Fit(fit_const, "RQ");
     fit_const->SetLineColor(kRed);
     fit_const->Draw("SAME");
@@ -193,7 +193,7 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
     gr_ratio_xF->Draw("AP");
 
     // Fit the data from -2.5 to -1 to a constant
-    TF1 *fit_const_xF = new TF1("fit_const", "[0]", -3, -1.5);
+    TF1 *fit_const_xF = new TF1("fit_const", "[0]", -2, -1);
     gr_ratio_xF->Fit(fit_const_xF, "RQ");
     fit_const_xF->SetLineColor(kRed);
     fit_const_xF->Draw("SAME");
