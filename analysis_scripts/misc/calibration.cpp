@@ -3103,17 +3103,20 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Initialize readers for data and MC
     TTreeReaderValue<double> particle_chi2pid(dataReader, "particle_chi2pid");
     TTreeReaderValue<double> particle_p(dataReader, "p");
+    TTreeReaderValue<double> particle_beta(dataReader, "particle_beta");  // Beta variable
     TTreeReaderValue<int> track_sector_6(dataReader, "track_sector_6");
     TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
 
     TTreeReaderValue<double>* mc_particle_chi2pid = nullptr;
     TTreeReaderValue<double>* mc_particle_p = nullptr;
+    TTreeReaderValue<double>* mc_particle_beta = nullptr;  // MC Beta variable
     TTreeReaderValue<int>* mc_track_sector_6 = nullptr;
     TTreeReaderValue<int>* mc_particle_pid = nullptr;
 
     if (mcReader) {
         mc_particle_chi2pid = new TTreeReaderValue<double>(*mcReader, "particle_chi2pid");
         mc_particle_p = new TTreeReaderValue<double>(*mcReader, "p");
+        mc_particle_beta = new TTreeReaderValue<double>(*mcReader, "particle_beta");
         mc_track_sector_6 = new TTreeReaderValue<int>(*mcReader, "track_sector_6");
         mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
     }
@@ -3124,16 +3127,51 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     gPad->SetLeftMargin(0.15);  // Add padding to the left
 
     // 2D Histograms canvas for data
-    TCanvas* c_data_2D = new TCanvas("c_data_2D_chi2pid_vs_p_cd", "chi2pid vs p in CD (Data)", 1800, 1200);
+    TCanvas* c_data_2D = new TCanvas("c_data_2D_chi2pid_vs_p_cd", "chi2pid vs p in CD", 1800, 1200);
     c_data_2D->Divide(3, 2);
     gPad->SetLeftMargin(0.15);  // Add padding to the left
 
     // 2D Histograms canvas for MC (if applicable)
     TCanvas* c_mc_2D = nullptr;
     if (mcReader) {
-        c_mc_2D = new TCanvas("c_mc_2D_chi2pid_vs_p_cd", "chi2pid vs p in CD (MC)", 1800, 1200);
+        c_mc_2D = new TCanvas("c_mc_2D_chi2pid_vs_p_cd", "chi2pid vs p in CD", 1800, 1200);
         c_mc_2D->Divide(3, 2);
         gPad->SetLeftMargin(0.15);  // Add padding to the left
+    }
+
+    // Additional 1x2 canvases for positive and negative tracks for particle_beta vs. p
+    TCanvas* c_data_pos_neg_beta = new TCanvas("c_data_pos_neg_beta_vs_p_cd", "#beta vs p (Data)", 1800, 600);
+    c_data_pos_neg_beta->Divide(2, 1);
+    TCanvas* c_mc_pos_neg_beta = nullptr;
+    if (mcReader) {
+        c_mc_pos_neg_beta = new TCanvas("c_mc_pos_neg_beta_vs_p_cd", "#beta vs p (MC)", 1800, 600);
+        c_mc_pos_neg_beta->Divide(2, 1);
+    }
+
+    // Initialize histograms for combined positive and negative tracks
+    TH2D* h_data_beta_vs_p_pos = new TH2D("h_data_beta_vs_p_pos", "#beta vs p (Positive Tracks)", nBins, pMin, pMax, nBins, 0, 1.2);
+    h_data_beta_vs_p_pos->GetXaxis()->SetTitle("p (GeV)");
+    h_data_beta_vs_p_pos->GetYaxis()->SetTitle("#beta");
+    h_data_beta_vs_p_pos->SetStats(false);
+
+    TH2D* h_data_beta_vs_p_neg = new TH2D("h_data_beta_vs_p_neg", "#beta vs p (Negative Tracks)", nBins, pMin, pMax, nBins, 0, 1.2);
+    h_data_beta_vs_p_neg->GetXaxis()->SetTitle("p (GeV)");
+    h_data_beta_vs_p_neg->GetYaxis()->SetTitle("#beta");
+    h_data_beta_vs_p_neg->SetStats(false);
+
+    TH2D* h_mc_beta_vs_p_pos = nullptr;
+    TH2D* h_mc_beta_vs_p_neg = nullptr;
+
+    if (mcReader) {
+        h_mc_beta_vs_p_pos = new TH2D("h_mc_beta_vs_p_pos", "#beta vs p (Positive Tracks)", nBins, pMin, pMax, nBins, 0, 1.2);
+        h_mc_beta_vs_p_pos->GetXaxis()->SetTitle("p (GeV)");
+        h_mc_beta_vs_p_pos->GetYaxis()->SetTitle("#beta");
+        h_mc_beta_vs_p_pos->SetStats(false);
+
+        h_mc_beta_vs_p_neg = new TH2D("h_mc_beta_vs_p_neg", "#beta vs p (Negative Tracks)", nBins, pMin, pMax, nBins, 0, 1.2);
+        h_mc_beta_vs_p_neg->GetXaxis()->SetTitle("p (GeV)");
+        h_mc_beta_vs_p_neg->GetYaxis()->SetTitle("#beta");
+        h_mc_beta_vs_p_neg->SetStats(false);
     }
 
     // Initialize histograms for each particle type
@@ -3141,41 +3179,6 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     std::vector<TH1D*> h_mc(6);
     std::vector<TH2D*> h_data_chi2pid_vs_p(6);
     std::vector<TH2D*> h_mc_chi2pid_vs_p(6);
-
-    // Additional 1x2 canvases for positive and negative tracks
-    TCanvas* c_data_pos_neg = new TCanvas("c_data_pos_neg_chi2pid_vs_p_cd", "chi2pid vs p (Data)", 1800, 600);
-    c_data_pos_neg->Divide(2, 1);
-    TCanvas* c_mc_pos_neg = nullptr;
-    if (mcReader) {
-        c_mc_pos_neg = new TCanvas("c_mc_pos_neg_chi2pid_vs_p_cd", "chi2pid vs p (MC)", 1800, 600);
-        c_mc_pos_neg->Divide(2, 1);
-    }
-
-    // Initialize histograms for combined positive and negative tracks
-    TH2D* h_data_chi2pid_vs_p_pos = new TH2D("h_data_chi2pid_vs_p_pos", "chi2pid vs p (Data, Positive Tracks)", nBins, pMin, pMax, nBins, chi2pidMin, chi2pidMax);
-    h_data_chi2pid_vs_p_pos->GetXaxis()->SetTitle("p (GeV)");
-    h_data_chi2pid_vs_p_pos->GetYaxis()->SetTitle("chi2pid");
-    h_data_chi2pid_vs_p_pos->SetStats(false);
-
-    TH2D* h_data_chi2pid_vs_p_neg = new TH2D("h_data_chi2pid_vs_p_neg", "chi2pid vs p (Data, Negative Tracks)", nBins, pMin, pMax, nBins, chi2pidMin, chi2pidMax);
-    h_data_chi2pid_vs_p_neg->GetXaxis()->SetTitle("p (GeV)");
-    h_data_chi2pid_vs_p_neg->GetYaxis()->SetTitle("chi2pid");
-    h_data_chi2pid_vs_p_neg->SetStats(false);
-
-    TH2D* h_mc_chi2pid_vs_p_pos = nullptr;
-    TH2D* h_mc_chi2pid_vs_p_neg = nullptr;
-
-    if (mcReader) {
-        h_mc_chi2pid_vs_p_pos = new TH2D("h_mc_chi2pid_vs_p_pos", "chi2pid vs p (MC, Positive Tracks)", nBins, pMin, pMax, nBins, chi2pidMin, chi2pidMax);
-        h_mc_chi2pid_vs_p_pos->GetXaxis()->SetTitle("p (GeV)");
-        h_mc_chi2pid_vs_p_pos->GetYaxis()->SetTitle("chi2pid");
-        h_mc_chi2pid_vs_p_pos->SetStats(false);
-
-        h_mc_chi2pid_vs_p_neg = new TH2D("h_mc_chi2pid_vs_p_neg", "chi2pid vs p (MC, Negative Tracks)", nBins, pMin, pMax, nBins, chi2pidMin, chi2pidMax);
-        h_mc_chi2pid_vs_p_neg->GetXaxis()->SetTitle("p (GeV)");
-        h_mc_chi2pid_vs_p_neg->GetYaxis()->SetTitle("chi2pid");
-        h_mc_chi2pid_vs_p_neg->SetStats(false);
-    }
 
     // Initialize histograms for each particle type
     for (size_t i = 0; i < particle_types.size(); ++i) {
@@ -3195,7 +3198,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         }
 
         hname = "h_data_chi2pid_vs_p_" + std::get<1>(particle_types[i]);
-        h_data_chi2pid_vs_p[i] = new TH2D(hname.c_str(), ("chi2pid vs p (Data): " + std::get<1>(particle_types[i])).c_str(),
+        h_data_chi2pid_vs_p[i] = new TH2D(hname.c_str(), ("chi2pid vs p: " + std::get<1>(particle_types[i])).c_str(),
                                           nBins, pMin, pMax, nBins, chi2pidMin, chi2pidMax);
         h_data_chi2pid_vs_p[i]->GetXaxis()->SetTitle("p (GeV)");
         h_data_chi2pid_vs_p[i]->GetYaxis()->SetTitle("chi2pid");
@@ -3203,7 +3206,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
 
         if (mcReader) {
             hname = "h_mc_chi2pid_vs_p_" + std::get<1>(particle_types[i]);
-            h_mc_chi2pid_vs_p[i] = new TH2D(hname.c_str(), ("chi2pid vs p (MC): " + std::get<1>(particle_types[i])).c_str(),
+            h_mc_chi2pid_vs_p[i] = new TH2D(hname.c_str(), ("chi2pid vs p: " + std::get<1>(particle_types[i])).c_str(),
                                             nBins, pMin, pMax, nBins, chi2pidMin, chi2pidMax);
             h_mc_chi2pid_vs_p[i]->GetXaxis()->SetTitle("p (GeV)");
             h_mc_chi2pid_vs_p[i]->GetYaxis()->SetTitle("chi2pid");
@@ -3217,17 +3220,16 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
             for (size_t i = 0; i < particle_types.size(); ++i) {
                 if (*particle_pid == std::get<0>(particle_types[i])) {
                     h_data[i]->Fill(*particle_chi2pid);
-                    h_data_chi2pid_vs_p[i]->Fill(*particle_p, *particle_chi2pid);
-                    if (*particle_pid > 0) {
-                        h_data_chi2pid_vs_p_pos->Fill(*particle_p, *particle_chi2pid);
-                    } else {
-                        h_data_chi2pid_vs_p_neg->Fill(*particle_p, *particle_chi2pid);
+                        h_data_chi2pid_vs_p[i]->Fill(*particle_p, *particle_chi2pid);
+                        if (*particle_pid > 0) {
+                            h_data_beta_vs_p_pos->Fill(*particle_p, *particle_beta);
+                        } else {
+                            h_data_beta_vs_p_neg->Fill(*particle_p, *particle_beta);
                     }
                 }
             }
         }
     }
-
     // Fill histograms for MC (if applicable)
     if (mcReader) {
         while (mcReader->Next()) {
@@ -3237,9 +3239,9 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
                         h_mc[i]->Fill(**mc_particle_chi2pid);
                         h_mc_chi2pid_vs_p[i]->Fill(**mc_particle_p, **mc_particle_chi2pid);
                         if (**mc_particle_pid > 0) {
-                            h_mc_chi2pid_vs_p_pos->Fill(**mc_particle_p, **mc_particle_chi2pid);
+                            h_mc_beta_vs_p_pos->Fill(**mc_particle_p, **mc_particle_beta);
                         } else {
-                            h_mc_chi2pid_vs_p_neg->Fill(**mc_particle_p, **mc_particle_chi2pid);
+                            h_mc_beta_vs_p_neg->Fill(**mc_particle_p, **mc_particle_beta);
                         }
                     }
                 }
@@ -3297,31 +3299,31 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         }
     }
 
-    // Draw and save the positive and negative track canvases
-    c_data_pos_neg->cd(1);
+    // Draw and save the positive and negative track canvases for beta vs. momentum
+    c_data_pos_neg_beta->cd(1);
     gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
     gPad->SetLogz();
-    h_data_chi2pid_vs_p_pos->Draw("COLZ");
+    h_data_beta_vs_p_pos->Draw("COLZ");
 
-    c_data_pos_neg->cd(2);
+    c_data_pos_neg_beta->cd(2);
     gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
     gPad->SetLogz();
-    h_data_chi2pid_vs_p_neg->Draw("COLZ");
+    h_data_beta_vs_p_neg->Draw("COLZ");
 
-    c_data_pos_neg->SaveAs("output/calibration/cvt/chi2pid/chi2pid_vs_p_pos_neg_cd.png");
+    c_data_pos_neg_beta->SaveAs("output/calibration/cvt/chi2pid/beta_vs_p_pos_neg_cd.png");
 
     if (mcReader) {
-        c_mc_pos_neg->cd(1);
+        c_mc_pos_neg_beta->cd(1);
         gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
         gPad->SetLogz();
-        h_mc_chi2pid_vs_p_pos->Draw("COLZ");
+        h_mc_beta_vs_p_pos->Draw("COLZ");
 
-        c_mc_pos_neg->cd(2);
+        c_mc_pos_neg_beta->cd(2);
         gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
         gPad->SetLogz();
-        h_mc_chi2pid_vs_p_neg->Draw("COLZ");
+        h_mc_beta_vs_p_neg->Draw("COLZ");
 
-        c_mc_pos_neg->SaveAs("output/calibration/cvt/chi2pid/mc_chi2pid_vs_p_pos_neg_cd.png");
+        c_mc_pos_neg_beta->SaveAs("output/calibration/cvt/chi2pid/mc_beta_vs_p_pos_neg_cd.png");
     }
 
     // Save the other canvases
@@ -3336,23 +3338,24 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     delete c;
     delete c_data_2D;
     if (mcReader) delete c_mc_2D;
-    delete c_data_pos_neg;
-    if (mcReader) delete c_mc_pos_neg;
+    delete c_data_pos_neg_beta;
+    if (mcReader) delete c_mc_pos_neg_beta;
 
     for (auto& hist : h_data) delete hist;
     for (auto& hist : h_data_chi2pid_vs_p) delete hist;
-    delete h_data_chi2pid_vs_p_pos;
-    delete h_data_chi2pid_vs_p_neg;
+    delete h_data_beta_vs_p_pos;
+    delete h_data_beta_vs_p_neg;
 
     if (mcReader) {
         for (auto& hist : h_mc) delete hist;
         for (auto& hist : h_mc_chi2pid_vs_p) delete hist;
-        delete h_mc_chi2pid_vs_p_pos;
-        delete h_mc_chi2pid_vs_p_neg;
+        delete h_mc_beta_vs_p_pos;
+        delete h_mc_beta_vs_p_neg;
     }
 
     if (mc_particle_chi2pid) delete mc_particle_chi2pid;
     if (mc_particle_p) delete mc_particle_p;
+    if (mc_particle_beta) delete mc_particle_beta;
     if (mc_track_sector_6) delete mc_track_sector_6;
     if (mc_particle_pid) delete mc_particle_pid;
 }
