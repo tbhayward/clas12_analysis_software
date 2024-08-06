@@ -3124,12 +3124,16 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         std::string hname = "h_data_" + std::get<1>(particle_types[i]);
         h_data[i] = new TH1D(hname.c_str(), ("Data: " + std::get<1>(particle_types[i])).c_str(), nBins, xMin, xMax);
         h_data[i]->GetXaxis()->SetTitle("chi2pid");
+        h_data[i]->GetYaxis()->SetTitle("Normalized Counts");
+        h_data[i]->SetStats(false);  // Hide the stat box
 
         if (mcReader) {
             hname = "h_mc_" + std::get<1>(particle_types[i]);
             h_mc[i] = new TH1D(hname.c_str(), ("MC: " + std::get<1>(particle_types[i])).c_str(), nBins, xMin, xMax);
             h_mc[i]->GetXaxis()->SetTitle("chi2pid");
+            h_mc[i]->GetYaxis()->SetTitle("Normalized Counts");
             h_mc[i]->SetLineColor(kRed);
+            h_mc[i]->SetStats(false);  // Hide the stat box
         }
     }
 
@@ -3157,38 +3161,36 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         }
     }
 
-    // Normalize histograms and determine the max value for y-axis scaling
-    double max_val = 0;
+    // Normalize histograms and find the maximum value
+    double max_value = 0;
     for (size_t i = 0; i < particle_types.size(); ++i) {
         h_data[i]->Scale(1.0 / h_data[i]->Integral());
+        if (h_data[i]->GetMaximum() > max_value) {
+            max_value = h_data[i]->GetMaximum();
+        }
+
         if (mcReader) {
             h_mc[i]->Scale(1.0 / h_mc[i]->Integral());
-        }
-
-        double data_max = h_data[i]->GetMaximum();
-        double mc_max = mcReader ? h_mc[i]->GetMaximum() : 0;
-        max_val = std::max(max_val, std::max(data_max, mc_max));
-    }
-
-    // Set y-axis range for all histograms
-    for (size_t i = 0; i < particle_types.size(); ++i) {
-        h_data[i]->SetMaximum(1.2 * max_val);
-        if (mcReader) {
-            h_mc[i]->SetMaximum(1.2 * max_val);
+            if (h_mc[i]->GetMaximum() > max_value) {
+                max_value = h_mc[i]->GetMaximum();
+            }
         }
     }
 
-    // Draw histograms on canvas
+    max_value *= 1.2;  // Scale the maximum value by 1.2 for better visualization
+
+    // Draw histograms on the canvas
     for (size_t i = 0; i < particle_types.size(); ++i) {
         c->cd(i + 1);
-        gPad->SetMargin(0.15, 0.05, 0.15, 0.1);
-        h_data[i]->Draw();
+        h_data[i]->SetMaximum(max_value);
+        h_data[i]->Draw("HIST");
         if (mcReader) {
-            h_mc[i]->Draw("SAME");
+            h_mc[i]->SetMaximum(max_value);
+            h_mc[i]->Draw("HIST SAME");
         }
 
-        // Add legend to each subplot
-        TLegend* legend = new TLegend(0.15, 0.75, 0.35, 0.85);  // Adjusted position to top left
+        // Add legend
+        TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);  // Position the legend on the right
         legend->AddEntry(h_data[i], "Data", "l");
         if (mcReader) {
             legend->AddEntry(h_mc[i], "MC", "l");
@@ -3196,22 +3198,15 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         legend->Draw();
     }
 
-    // Save the canvas
     c->SaveAs("output/calibration/cvt/chi2pid/chi2pid_cd.png");
 
-    // Cleanup
+    // Clean up
+    for (auto& hist : h_data) delete hist;
+    for (auto& hist : h_mc) delete hist;
     delete c;
-    for (auto& hist : h_data) {
-        delete hist;
-    }
-    if (mcReader) {
-        for (auto& hist : h_mc) {
-            delete hist;
-        }
-        delete mc_particle_chi2pid;
-        delete mc_track_sector_6;
-        delete mc_particle_pid;
-    }
+    if (mc_particle_chi2pid) delete mc_particle_chi2pid;
+    if (mc_track_sector_6) delete mc_track_sector_6;
+    if (mc_particle_pid) delete mc_particle_pid;
 }
                            
 void create_directories() {
