@@ -43,10 +43,10 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     TH1F *h3_xF = new TH1F("h3_xF", "xF", nbins, -2, 1);
     TH1F *h4_xF = new TH1F("h4_xF", "xF", nbins, -2, 1);
 
-    TH1F *h1_p_theta = new TH1F("h1_p_theta", "p_theta", nbins, 0, 40);
-    TH1F *h2_p_theta = new TH1F("h2_p_theta", "p_theta", nbins, 0, 40);
-    TH1F *h3_p_theta = new TH1F("h3_p_theta", "p_theta", nbins, 0, 40);
-    TH1F *h4_p_theta = new TH1F("h4_p_theta", "p_theta", nbins, 0, 40);
+    TH1F *h1_p_theta = new TH1F("h1_p_theta", "p_theta", nbins, 0, 90);
+    TH1F *h2_p_theta = new TH1F("h2_p_theta", "p_theta", nbins, 0, 90);
+    TH1F *h3_p_theta = new TH1F("h3_p_theta", "p_theta", nbins, 0, 90);
+    TH1F *h4_p_theta = new TH1F("h4_p_theta", "p_theta", nbins, 0, 90);
 
     TH1F *h1_Mx = new TH1F("h1_Mx", "Mx", nbins, -3, 4);
     TH1F *h2_Mx = new TH1F("h2_Mx", "Mx", nbins, -3, 4);
