@@ -3085,73 +3085,111 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
 void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     int nBins = 100;
-    double xMin = -5;
-    double xMax = 5;
+    double xMin = -10;
+    double xMax = 10;
+
+    // Particle types to analyze
+    std::vector<std::tuple<int, std::string>> particle_types = {
+        {211, "#pi^{+}"},
+        {321, "k^{+}"},
+        {2212, "p"},
+        {-211, "#pi^{-}"},
+        {-321, "k^{-}"},
+        {-2212, "pbar"}
+    };
 
     TTreeReaderValue<double> particle_chi2pid(dataReader, "particle_chi2pid");
     TTreeReaderValue<int> track_sector_6(dataReader, "track_sector_6");
-    TTreeReaderValue<double> track_chi2_6(dataReader, "track_chi2_6");
-    TTreeReaderValue<int> track_ndf_6(dataReader, "track_ndf_6");
+    TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
 
     TTreeReaderValue<double>* mc_particle_chi2pid = nullptr;
     TTreeReaderValue<int>* mc_track_sector_6 = nullptr;
-    TTreeReaderValue<double>* mc_track_chi2_6 = nullptr;
-    TTreeReaderValue<int>* mc_track_ndf_6 = nullptr;
+    TTreeReaderValue<int>* mc_particle_pid = nullptr;
 
     if (mcReader) {
         mc_particle_chi2pid = new TTreeReaderValue<double>(*mcReader, "particle_chi2pid");
         mc_track_sector_6 = new TTreeReaderValue<int>(*mcReader, "track_sector_6");
-        mc_track_chi2_6 = new TTreeReaderValue<double>(*mcReader, "track_chi2_6");
-        mc_track_ndf_6 = new TTreeReaderValue<int>(*mcReader, "track_ndf_6");
+        mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
     }
 
-    TH1D* h_data_chi2pid = new TH1D("h_data_chi2pid", "chi2pid", nBins, xMin, xMax);
-    TH1D* h_mc_chi2pid = nullptr;
-    if (mcReader) {
-        h_mc_chi2pid = new TH1D("h_mc_chi2pid", "chi2pid", nBins, xMin, xMax);
-        h_mc_chi2pid->SetLineColor(kRed);
-    }
+    TCanvas* c = new TCanvas("c_chi2pid_cd", "chi2pid in CD", 1800, 1200);
+    c->Divide(3, 2);
 
-    // Loop over data entries
-    while (dataReader.Next()) {
-        if (*track_sector_6 != -9999 && *track_chi2_6 != -9999 && *track_ndf_6 != -9999) {
-            h_data_chi2pid->Fill(*particle_chi2pid);
+    // Declare vectors to store histograms
+    std::vector<TH1D*> h_data(6);
+    std::vector<TH1D*> h_mc(6);
+
+    // Initialize histograms for each particle type
+    for (size_t i = 0; i < particle_types.size(); ++i) {
+        std::string hname = "h_data_" + std::get<1>(particle_types[i]);
+        h_data[i] = new TH1D(hname.c_str(), ("Data: " + std::get<1>(particle_types[i])).c_str(), nBins, xMin, xMax);
+        h_data[i]->GetXaxis()->SetTitle("chi2pid");
+
+        if (mcReader) {
+            hname = "h_mc_" + std::get<1>(particle_types[i]);
+            h_mc[i] = new TH1D(hname.c_str(), ("MC: " + std::get<1>(particle_types[i])).c_str(), nBins, xMin, xMax);
+            h_mc[i]->GetXaxis()->SetTitle("chi2pid");
+            h_mc[i]->SetLineColor(kRed);
         }
     }
 
-    // Loop over MC entries if provided
-    if (mcReader) {
-        while (mcReader->Next()) {
-            if (**mc_track_sector_6 != -9999 && **mc_track_chi2_6 != -9999 && **mc_track_ndf_6 != -9999) {
-                h_mc_chi2pid->Fill(**mc_particle_chi2pid);
+    // Fill data histograms
+    while (dataReader.Next()) {
+        if (*track_sector_6 != -9999 && *particle_chi2pid != -9999) {
+            for (size_t i = 0; i < particle_types.size(); ++i) {
+                if (*particle_pid == std::get<0>(particle_types[i])) {
+                    h_data[i]->Fill(*particle_chi2pid);
+                }
             }
         }
     }
 
-    // Create canvas and draw histograms
-    TCanvas* c = new TCanvas("c_chi2pid_cd", "chi2pid", 800, 600);
-    h_data_chi2pid->SetStats(false); // Disable stat box
-    h_data_chi2pid->Draw();
-
+    // Fill MC histograms
     if (mcReader) {
-        h_mc_chi2pid->Draw("SAME");
-        TLegend* legend = new TLegend(0.7, 0.8, 0.9, 0.9);
-        legend->AddEntry(h_data_chi2pid, "data", "l");
-        legend->AddEntry(h_mc_chi2pid, "mc", "l");
-        legend->Draw();
+        while (mcReader->Next()) {
+            if (**mc_track_sector_6 != -9999 && **mc_particle_chi2pid != -9999) {
+                for (size_t i = 0; i < particle_types.size(); ++i) {
+                    if (**mc_particle_pid == std::get<0>(particle_types[i])) {
+                        h_mc[i]->Fill(**mc_particle_chi2pid);
+                    }
+                }
+            }
+        }
     }
+
+    // Draw histograms on canvas
+    for (size_t i = 0; i < particle_types.size(); ++i) {
+        c->cd(i + 1);
+        h_data[i]->Draw();
+        if (mcReader) {
+            h_mc[i]->Draw("SAME");
+        }
+    }
+
+    // Add legend
+    TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);
+    legend->AddEntry(h_data[0], "Data", "l");
+    if (mcReader) {
+        legend->AddEntry(h_mc[0], "MC", "l");
+    }
+    legend->Draw();
 
     // Save the canvas
     c->SaveAs("output/calibration/cvt/chi2pid/chi2pid_cd.png");
 
     // Cleanup
-    delete h_data_chi2pid;
-    if (h_mc_chi2pid) delete h_mc_chi2pid;
     delete c;
-    if (mc_particle_chi2pid) delete mc_particle_chi2pid;
-    if (mc_track_sector_6) delete mc_track_sector_6;
-    if (mc_track_chi2_6) delete mc_track_chi2_6;
-    if (mc_track_ndf_6) delete mc_track_ndf_6;
+    for (auto& hist : h_data) {
+        delete hist;
+    }
+    if (mcReader) {
+        for (auto& hist : h_mc) {
+            delete hist;
+        }
+        delete mc_particle_chi2pid;
+        delete mc_track_sector_6;
+        delete mc_particle_pid;
+    }
 }
                            
 void create_directories() {
