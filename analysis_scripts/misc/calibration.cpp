@@ -3180,14 +3180,14 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Initialize histograms for each particle type
     for (size_t i = 0; i < particle_types.size(); ++i) {
         std::string hname = "h_data_" + std::get<1>(particle_types[i]);
-        h_data[i] = new TH1D(hname.c_str(), ("Data: " + std::get<1>(particle_types[i])).c_str(), nBins, chi2pidMin, chi2pidMax);
+        h_data[i] = new TH1D(hname.c_str(), (std::get<1>(particle_types[i])).c_str(), nBins, chi2pidMin, chi2pidMax);
         h_data[i]->GetXaxis()->SetTitle("chi2pid");
         h_data[i]->GetYaxis()->SetTitle("Normalized Counts");
         h_data[i]->SetStats(false);  // Hide the stat box
 
         if (mcReader) {
             hname = "h_mc_" + std::get<1>(particle_types[i]);
-            h_mc[i] = new TH1D(hname.c_str(), ("MC: " + std::get<1>(particle_types[i])).c_str(), nBins, chi2pidMin, chi2pidMax);
+            h_mc[i] = new TH1D(hname.c_str(), (std::get<1>(particle_types[i])).c_str(), nBins, chi2pidMin, chi2pidMax);
             h_mc[i]->GetXaxis()->SetTitle("chi2pid");
             h_mc[i]->GetYaxis()->SetTitle("Normalized Counts");
             h_mc[i]->SetLineColor(kRed);
