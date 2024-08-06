@@ -3181,19 +3181,20 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Draw histograms on canvas
     for (size_t i = 0; i < particle_types.size(); ++i) {
         c->cd(i + 1);
+        gPad->SetMargin(0.15, 0.05, 0.15, 0.1);
         h_data[i]->Draw();
         if (mcReader) {
             h_mc[i]->Draw("SAME");
         }
-    }
 
-    // Add legend
-    TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);
-    legend->AddEntry(h_data[0], "Data", "l");
-    if (mcReader) {
-        legend->AddEntry(h_mc[0], "MC", "l");
+        // Add legend to each subplot
+        TLegend* legend = new TLegend(0.15, 0.75, 0.35, 0.85);  // Adjusted position to top left
+        legend->AddEntry(h_data[i], "Data", "l");
+        if (mcReader) {
+            legend->AddEntry(h_mc[i], "MC", "l");
+        }
+        legend->Draw();
     }
-    legend->Draw();
 
     // Save the canvas
     c->SaveAs("output/calibration/cvt/chi2pid/chi2pid_cd.png");
