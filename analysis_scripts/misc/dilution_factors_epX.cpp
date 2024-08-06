@@ -113,7 +113,7 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
         }
     }
     // Set y-axis range from 5 to 15
-    gr_ratio->GetYaxis()->SetRangeUser(9, 15);
+    gr_ratio->GetYaxis()->SetRangeUser(1, 3);
     // Set x-axis range
     gr_ratio->GetXaxis()->SetLimits(-4, 3);
 
@@ -184,7 +184,7 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
         }
     }
     // Set y-axis range from 5 to 15
-    gr_ratio_xF->GetYaxis()->SetRangeUser(9, 15);
+    gr_ratio_xF->GetYaxis()->SetRangeUser(1, 3);
     // Set x-axis range
     gr_ratio_xF->GetXaxis()->SetLimits(-3, 1);
 
