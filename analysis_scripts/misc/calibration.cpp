@@ -3083,7 +3083,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 }
 }
 
-void plot_chi2pid_cd_and_momentum(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     int nBins = 100;
     double xMin = -10;
     double xMax = 10;
