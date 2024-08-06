@@ -3088,7 +3088,9 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     double chi2pidMin = -10;
     double chi2pidMax = 10;
     double pMin = 0;
-    double pMax = 7;
+    double pMax = 8;  // Updated maximum momentum value
+    double betaMax = 1.4;  // Updated maximum beta value
+    std::vector<double> pBins = {0, 0.33, 0.67, 1.00, 1.33, 1.67, 2.00, 2.33, 2.67, 3.00, 3.5, 4, 4.5, 5, 6, 7, 8};
 
     // Particle types to analyze
     std::vector<std::tuple<int, std::string>> particle_types = {
@@ -3149,12 +3151,12 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     }
 
     // Initialize histograms for combined positive and negative tracks
-    TH2D* h_data_beta_vs_p_pos = new TH2D("h_data_beta_vs_p_pos", "#beta vs p (Positive Tracks)", nBins, pMin, pMax, nBins, 0, 1.2);
+    TH2D* h_data_beta_vs_p_pos = new TH2D("h_data_beta_vs_p_pos", "#beta vs p (Positive Tracks)", nBins, pMin, pMax, nBins, 0, betaMax);
     h_data_beta_vs_p_pos->GetXaxis()->SetTitle("p (GeV)");
     h_data_beta_vs_p_pos->GetYaxis()->SetTitle("#beta");
     h_data_beta_vs_p_pos->SetStats(false);
 
-    TH2D* h_data_beta_vs_p_neg = new TH2D("h_data_beta_vs_p_neg", "#beta vs p (Negative Tracks)", nBins, pMin, pMax, nBins, 0, 1.2);
+    TH2D* h_data_beta_vs_p_neg = new TH2D("h_data_beta_vs_p_neg", "#beta vs p (Negative Tracks)", nBins, pMin, pMax, nBins, 0, betaMax);
     h_data_beta_vs_p_neg->GetXaxis()->SetTitle("p (GeV)");
     h_data_beta_vs_p_neg->GetYaxis()->SetTitle("#beta");
     h_data_beta_vs_p_neg->SetStats(false);
@@ -3163,12 +3165,12 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     TH2D* h_mc_beta_vs_p_neg = nullptr;
 
     if (mcReader) {
-        h_mc_beta_vs_p_pos = new TH2D("h_mc_beta_vs_p_pos", "#beta vs p (Positive Tracks)", nBins, pMin, pMax, nBins, 0, 1.2);
+        h_mc_beta_vs_p_pos = new TH2D("h_mc_beta_vs_p_pos", "#beta vs p (Positive Tracks)", nBins, pMin, pMax, nBins, 0, betaMax);
         h_mc_beta_vs_p_pos->GetXaxis()->SetTitle("p (GeV)");
         h_mc_beta_vs_p_pos->GetYaxis()->SetTitle("#beta");
         h_mc_beta_vs_p_pos->SetStats(false);
 
-        h_mc_beta_vs_p_neg = new TH2D("h_mc_beta_vs_p_neg", "#beta vs p (Negative Tracks)", nBins, pMin, pMax, nBins, 0, 1.2);
+        h_mc_beta_vs_p_neg = new TH2D("h_mc_beta_vs_p_neg", "#beta vs p (Negative Tracks)", nBins, pMin, pMax, nBins, 0, betaMax);
         h_mc_beta_vs_p_neg->GetXaxis()->SetTitle("p (GeV)");
         h_mc_beta_vs_p_neg->GetYaxis()->SetTitle("#beta");
         h_mc_beta_vs_p_neg->SetStats(false);
@@ -3180,7 +3182,12 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     std::vector<TH2D*> h_data_chi2pid_vs_p(6);
     std::vector<TH2D*> h_mc_chi2pid_vs_p(6);
 
-    // Initialize histograms for each particle type
+    // Initialize histograms for beta distributions in momentum bins (4x4 canvases)
+    std::vector<TH1D*> h_data_beta_bins_pos(pBins.size() - 1);
+    std::vector<TH1D*> h_data_beta_bins_neg(pBins.size() - 1);
+    std::vector<TH1D*> h_mc_beta_bins_pos(pBins.size() - 1);
+    std::vector<TH1D*> h_mc_beta_bins_neg(pBins.size() - 1);
+
     for (size_t i = 0; i < particle_types.size(); ++i) {
         std::string hname = "h_data_" + std::get<1>(particle_types[i]);
         h_data[i] = new TH1D(hname.c_str(), (std::get<1>(particle_types[i])).c_str(), nBins, chi2pidMin, chi2pidMax);
@@ -3203,7 +3210,6 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         h_data_chi2pid_vs_p[i]->GetXaxis()->SetTitle("p (GeV)");
         h_data_chi2pid_vs_p[i]->GetYaxis()->SetTitle("chi2pid");
         h_data_chi2pid_vs_p[i]->SetStats(false);  // Hide the stat box
-
         if (mcReader) {
             hname = "h_mc_chi2pid_vs_p_" + std::get<1>(particle_types[i]);
             h_mc_chi2pid_vs_p[i] = new TH2D(hname.c_str(), ("chi2pid vs p: " + std::get<1>(particle_types[i])).c_str(),
@@ -3214,22 +3220,70 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         }
     }
 
+    // Create the 1D histograms for each momentum bin
+    for (size_t i = 0; i < pBins.size() - 1; ++i) {
+        h_data_beta_bins_pos[i] = new TH1D(("h_data_beta_pos_bin_" + std::to_string(i)).c_str(),
+                                           ("#beta: " + std::to_string(pBins[i]) + " < p < " + std::to_string(pBins[i + 1])).c_str(),
+                                           nBins, 0, betaMax);
+        h_data_beta_bins_pos[i]->GetXaxis()->SetTitle("#beta");
+        h_data_beta_bins_pos[i]->GetYaxis()->SetTitle("Normalized Counts");
+        h_data_beta_bins_pos[i]->SetStats(false);
+
+        h_data_beta_bins_neg[i] = new TH1D(("h_data_beta_neg_bin_" + std::to_string(i)).c_str(),
+                                           ("#beta: " + std::to_string(pBins[i]) + " < p < " + std::to_string(pBins[i + 1])).c_str(),
+                                           nBins, 0, betaMax);
+        h_data_beta_bins_neg[i]->GetXaxis()->SetTitle("#beta");
+        h_data_beta_bins_neg[i]->GetYaxis()->SetTitle("Normalized Counts");
+        h_data_beta_bins_neg[i]->SetStats(false);
+
+        if (mcReader) {
+            h_mc_beta_bins_pos[i] = new TH1D(("h_mc_beta_pos_bin_" + std::to_string(i)).c_str(),
+                                             ("#beta: " + std::to_string(pBins[i]) + " < p < " + std::to_string(pBins[i + 1])).c_str(),
+                                             nBins, 0, betaMax);
+            h_mc_beta_bins_pos[i]->GetXaxis()->SetTitle("#beta");
+            h_mc_beta_bins_pos[i]->GetYaxis()->SetTitle("Normalized Counts");
+            h_mc_beta_bins_pos[i]->SetLineColor(kRed);
+            h_mc_beta_bins_pos[i]->SetStats(false);
+
+            h_mc_beta_bins_neg[i] = new TH1D(("h_mc_beta_neg_bin_" + std::to_string(i)).c_str(),
+                                             ("#beta: " + std::to_string(pBins[i]) + " < p < " + std::to_string(pBins[i + 1])).c_str(),
+                                             nBins, 0, betaMax);
+            h_mc_beta_bins_neg[i]->GetXaxis()->SetTitle("#beta");
+            h_mc_beta_bins_neg[i]->GetYaxis()->SetTitle("Normalized Counts");
+            h_mc_beta_bins_neg[i]->SetLineColor(kRed);
+            h_mc_beta_bins_neg[i]->SetStats(false);
+        }
+    }
+
     // Fill histograms for data
     while (dataReader.Next()) {
         if (*track_sector_6 != -9999) {  // CD check
             for (size_t i = 0; i < particle_types.size(); ++i) {
                 if (*particle_pid == std::get<0>(particle_types[i])) {
                     h_data[i]->Fill(*particle_chi2pid);
-                        h_data_chi2pid_vs_p[i]->Fill(*particle_p, *particle_chi2pid);
-                        if (*particle_pid > 0) {
-                            h_data_beta_vs_p_pos->Fill(*particle_p, *particle_beta);
-                        } else {
-                            h_data_beta_vs_p_neg->Fill(*particle_p, *particle_beta);
+                    h_data_chi2pid_vs_p[i]->Fill(*particle_p, *particle_chi2pid);
+                    if (*particle_pid > 0) {
+                        h_data_beta_vs_p_pos->Fill(*particle_p, *particle_beta);
+                        for (size_t bin = 0; bin < pBins.size() - 1; ++bin) {
+                            if (*particle_p >= pBins[bin] && *particle_p < pBins[bin + 1]) {
+                                h_data_beta_bins_pos[bin]->Fill(*particle_beta);
+                                break;
+                            }
+                        }
+                    } else {
+                        h_data_beta_vs_p_neg->Fill(*particle_p, *particle_beta);
+                        for (size_t bin = 0; bin < pBins.size() - 1; ++bin) {
+                            if (*particle_p >= pBins[bin] && *particle_p < pBins[bin + 1]) {
+                                h_data_beta_bins_neg[bin]->Fill(*particle_beta);
+                                break;
+                            }
+                        }
                     }
                 }
             }
         }
     }
+
     // Fill histograms for MC (if applicable)
     if (mcReader) {
         while (mcReader->Next()) {
@@ -3240,8 +3294,20 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
                         h_mc_chi2pid_vs_p[i]->Fill(**mc_particle_p, **mc_particle_chi2pid);
                         if (**mc_particle_pid > 0) {
                             h_mc_beta_vs_p_pos->Fill(**mc_particle_p, **mc_particle_beta);
+                            for (size_t bin = 0; bin < pBins.size() - 1; ++bin) {
+                                if (**mc_particle_p >= pBins[bin] && **mc_particle_p < pBins[bin + 1]) {
+                                    h_mc_beta_bins_pos[bin]->Fill(**mc_particle_beta);
+                                    break;
+                                }
+                            }
                         } else {
                             h_mc_beta_vs_p_neg->Fill(**mc_particle_p, **mc_particle_beta);
+                            for (size_t bin = 0; bin < pBins.size() - 1; ++bin) {
+                                if (**mc_particle_p >= pBins[bin] && **mc_particle_p < pBins[bin + 1]) {
+                                    h_mc_beta_bins_neg[bin]->Fill(**mc_particle_beta);
+                                    break;
+                                }
+                            }
                         }
                     }
                 }
@@ -3267,6 +3333,33 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         if (mcReader) h_mc[i]->SetMaximum(1.2 * max_y);
     }
 
+    // Normalize beta histograms for momentum bins and find max_y for each bin
+    for (size_t bin = 0; bin < pBins.size() - 1; ++bin) {
+        double max_y_bin = 0;
+
+        h_data_beta_bins_pos[bin]->Scale(1.0 / h_data_beta_bins_pos[bin]->Integral());
+        h_data_beta_bins_neg[bin]->Scale(1.0 / h_data_beta_bins_neg[bin]->Integral());
+
+        if (h_data_beta_bins_pos[bin]->GetMaximum() > max_y_bin) max_y_bin = h_data_beta_bins_pos[bin]->GetMaximum();
+        if (h_data_beta_bins_neg[bin]->GetMaximum() > max_y_bin) max_y_bin = h_data_beta_bins_neg[bin]->GetMaximum();
+
+        if (mcReader) {
+            h_mc_beta_bins_pos[bin]->Scale(1.0 / h_mc_beta_bins_pos[bin]->Integral());
+            h_mc_beta_bins_neg[bin]->Scale(1.0 / h_mc_beta_bins_neg[bin]->Integral());
+
+            if (h_mc_beta_bins_pos[bin]->GetMaximum() > max_y_bin) max_y_bin = h_mc_beta_bins_pos[bin]->GetMaximum();
+            if (h_mc_beta_bins_neg[bin]->GetMaximum() > max_y_bin) max_y_bin = h_mc_beta_bins_neg[bin]->GetMaximum();
+        }
+
+        h_data_beta_bins_pos[bin]->SetMaximum(1.2 * max_y_bin);
+        h_data_beta_bins_neg[bin]->SetMaximum(1.2 * max_y_bin);
+
+        if (mcReader) {
+            h_mc_beta_bins_pos[bin]->SetMaximum(1.2 * max_y_bin);
+            h_mc_beta_bins_neg[bin]->SetMaximum(1.2 * max_y_bin);
+        }
+    }
+
     // Draw 1D histograms on the same canvas for each particle type
     for (size_t i = 0; i < particle_types.size(); ++i) {
         c->cd(i + 1);
@@ -3274,91 +3367,147 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         h_data[i]->Draw("HIST");
         if (mcReader) h_mc[i]->Draw("HIST SAME");
 
-        // Add legend
-        TLegend* legend = new TLegend(0.7, 0.8, 0.9, 0.9);
-        legend->AddEntry(h_data[i], "data", "l");
-        if (mcReader) legend->AddEntry(h_mc[i], "mc", "l");
-        legend->Draw();
-    }
-
-    // Draw 2D histograms for data
-    for (size_t i = 0; i < particle_types.size(); ++i) {
-        c_data_2D->cd(i + 1);
-        gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-        gPad->SetLogz();  // Set log scale for the z-axis
-        h_data_chi2pid_vs_p[i]->Draw("COLZ");
-    }
-
-    // Draw 2D histograms for MC (if applicable)
-    if (mcReader) {
-        for (size_t i = 0; i < particle_types.size(); ++i) {
-            c_mc_2D->cd(i + 1);
-            gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-            gPad->SetLogz();  // Set log scale for the z-axis
-            h_mc_chi2pid_vs_p[i]->Draw("COLZ");
+            TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);
+            legend->AddEntry(h_data[i], "Data", "l");
+            if (mcReader) legend->AddEntry(h_mc[i], "MC", "l");
+            legend->Draw();
         }
-    }
 
-    // Draw and save the positive and negative track canvases for beta vs. momentum
-    c_data_pos_neg_beta->cd(1);
-    gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-    gPad->SetLogz();
-    h_data_beta_vs_p_pos->Draw("COLZ");
+        // Draw 2D histograms for data
+        for (size_t i = 0; i < particle_types.size(); ++i) {
+            c_data_2D->cd(i + 1);
+            gPad->SetLeftMargin(0.15);  // Add padding to the left
+            gPad->SetLogz();  // Set log scale for z-axis
+            h_data_chi2pid_vs_p[i]->Draw("COLZ");
+        }
 
-    c_data_pos_neg_beta->cd(2);
-    gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-    gPad->SetLogz();
-    h_data_beta_vs_p_neg->Draw("COLZ");
+        // Draw 2D histograms for MC (if applicable)
+        if (mcReader) {
+            for (size_t i = 0; i < particle_types.size(); ++i) {
+                c_mc_2D->cd(i + 1);
+                gPad->SetLeftMargin(0.15);  // Add padding to the left
+                gPad->SetLogz();  // Set log scale for z-axis
+                h_mc_chi2pid_vs_p[i]->Draw("COLZ");
+            }
+        }
 
-    c_data_pos_neg_beta->SaveAs("output/calibration/cvt/chi2pid/beta_vs_p_pos_neg_cd.png");
-
-    if (mcReader) {
-        c_mc_pos_neg_beta->cd(1);
-        gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+        // Draw the combined beta vs p histograms
+        c_data_pos_neg_beta->cd(1);
+        gPad->SetLeftMargin(0.15);
         gPad->SetLogz();
-        h_mc_beta_vs_p_pos->Draw("COLZ");
+        h_data_beta_vs_p_pos->Draw("COLZ");
 
-        c_mc_pos_neg_beta->cd(2);
-        gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+        c_data_pos_neg_beta->cd(2);
+        gPad->SetLeftMargin(0.15);
         gPad->SetLogz();
-        h_mc_beta_vs_p_neg->Draw("COLZ");
+        h_data_beta_vs_p_neg->Draw("COLZ");
 
-        c_mc_pos_neg_beta->SaveAs("output/calibration/cvt/chi2pid/mc_beta_vs_p_pos_neg_cd.png");
+        if (mcReader) {
+            c_mc_pos_neg_beta->cd(1);
+            gPad->SetLeftMargin(0.15);
+            gPad->SetLogz();
+            h_mc_beta_vs_p_pos->Draw("COLZ");
+
+            c_mc_pos_neg_beta->cd(2);
+            gPad->SetLeftMargin(0.15);
+            gPad->SetLogz();
+            h_mc_beta_vs_p_neg->Draw("COLZ");
+        }
+
+        // Save the canvases
+        c->SaveAs("output/calibration/cvt/chi2pid/chi2pid_cd.png");
+        c_data_2D->SaveAs("output/calibration/cvt/chi2pid/chi2pid_vs_p_cd.png");
+        c_data_pos_neg_beta->SaveAs("output/calibration/cvt/chi2pid/beta_vs_p_cd.png");
+
+        if (mcReader) {
+            c_mc_2D->SaveAs("output/calibration/cvt/chi2pid/mc_chi2pid_vs_p_cd.png");
+            c_mc_pos_neg_beta->SaveAs("output/calibration/cvt/chi2pid/mc_beta_vs_p_cd.png");
+        }
+
+        // Create 4x4 canvases for beta vs p momentum bin histograms
+        TCanvas* c_data_beta_bins_pos = new TCanvas("c_data_beta_bins_pos", "Beta vs p Binned (Positive Tracks)", 1800, 1800);
+        c_data_beta_bins_pos->Divide(4, 4);
+        TCanvas* c_data_beta_bins_neg = new TCanvas("c_data_beta_bins_neg", "Beta vs p Binned (Negative Tracks)", 1800, 1800);
+        c_data_beta_bins_neg->Divide(4, 4);
+
+        TCanvas* c_mc_beta_bins_pos = nullptr;
+        TCanvas* c_mc_beta_bins_neg = nullptr;
+
+        if (mcReader) {
+            c_mc_beta_bins_pos = new TCanvas("c_mc_beta_bins_pos", "MC Beta vs p Binned (Positive Tracks)", 1800, 1800);
+            c_mc_beta_bins_pos->Divide(4, 4);
+            c_mc_beta_bins_neg = new TCanvas("c_mc_beta_bins_neg", "MC Beta vs p Binned (Negative Tracks)", 1800, 1800);
+            c_mc_beta_bins_neg->Divide(4, 4);
+        }
+
+        // Fill 4x4 canvases for beta bins
+        for (size_t bin = 0; bin < pBins.size() - 1; ++bin) {
+            c_data_beta_bins_pos->cd(bin + 1);
+            gPad->SetLeftMargin(0.15);
+            h_data_beta_bins_pos[bin]->Draw("HIST");
+
+            c_data_beta_bins_neg->cd(bin + 1);
+            gPad->SetLeftMargin(0.15);
+            h_data_beta_bins_neg[bin]->Draw("HIST");
+
+            if (mcReader) {
+                c_mc_beta_bins_pos->cd(bin + 1);
+                gPad->SetLeftMargin(0.15);
+                h_mc_beta_bins_pos[bin]->Draw("HIST");
+
+                c_mc_beta_bins_neg->cd(bin + 1);
+                gPad->SetLeftMargin(0.15);
+                h_mc_beta_bins_neg[bin]->Draw("HIST");
+            }
+        }
+
+        // Save the 4x4 canvases
+        c_data_beta_bins_pos->SaveAs("output/calibration/cvt/chi2pid/beta_vs_p_binned_pos_cd.png");
+        c_data_beta_bins_neg->SaveAs("output/calibration/cvt/chi2pid/beta_vs_p_binned_neg_cd.png");
+
+        if (mcReader) {
+            c_mc_beta_bins_pos->SaveAs("output/calibration/cvt/chi2pid/mc_beta_vs_p_binned_pos_cd.png");
+            c_mc_beta_bins_neg->SaveAs("output/calibration/cvt/chi2pid/mc_beta_vs_p_binned_neg_cd.png");
+        }
+
+        // Clean up
+        delete c;
+        delete c_data_2D;
+        delete c_data_pos_neg_beta;
+        delete c_data_beta_bins_pos;
+        delete c_data_beta_bins_neg;
+
+        if (mcReader) {
+            delete c_mc_2D;
+            delete c_mc_pos_neg_beta;
+            delete c_mc_beta_bins_pos;
+            delete c_mc_beta_bins_neg;
+        }
+
+        for (size_t i = 0; i < particle_types.size(); ++i) {
+            delete h_data[i];
+            delete h_data_chi2pid_vs_p[i];
+            if (mcReader) {
+                delete h_mc[i];
+                delete h_mc_chi2pid_vs_p[i];
+            }
+        }
+
+        for (size_t bin = 0; bin < pBins.size() - 1; ++bin) {
+            delete h_data_beta_bins_pos[bin];
+            delete h_data_beta_bins_neg[bin];
+            if (mcReader) {
+                delete h_mc_beta_bins_pos[bin];
+                delete h_mc_beta_bins_neg[bin];
+            }
+        }
+
+        if (mc_particle_chi2pid) delete mc_particle_chi2pid;
+        if (mc_particle_p) delete mc_particle_p;
+        if (mc_particle_beta) delete mc_particle_beta;
+        if (mc_track_sector_6) delete mc_track_sector_6;
+        if (mc_particle_pid) delete mc_particle_pid;
     }
-
-    // Save the other canvases
-    c->SaveAs("output/calibration/cvt/chi2pid/chi2pid_cd.png");
-    c_data_2D->SaveAs("output/calibration/cvt/chi2pid/chi2pid_vs_p_cd.png");
-
-    if (mcReader) {
-        c_mc_2D->SaveAs("output/calibration/cvt/chi2pid/mc_chi2pid_vs_p_cd.png");
-    }
-
-    // Clean up
-    delete c;
-    delete c_data_2D;
-    if (mcReader) delete c_mc_2D;
-    delete c_data_pos_neg_beta;
-    if (mcReader) delete c_mc_pos_neg_beta;
-
-    for (auto& hist : h_data) delete hist;
-    for (auto& hist : h_data_chi2pid_vs_p) delete hist;
-    delete h_data_beta_vs_p_pos;
-    delete h_data_beta_vs_p_neg;
-
-    if (mcReader) {
-        for (auto& hist : h_mc) delete hist;
-        for (auto& hist : h_mc_chi2pid_vs_p) delete hist;
-        delete h_mc_beta_vs_p_pos;
-        delete h_mc_beta_vs_p_neg;
-    }
-
-    if (mc_particle_chi2pid) delete mc_particle_chi2pid;
-    if (mc_particle_p) delete mc_particle_p;
-    if (mc_particle_beta) delete mc_particle_beta;
-    if (mc_track_sector_6) delete mc_track_sector_6;
-    if (mc_particle_pid) delete mc_particle_pid;
-}
                            
 void create_directories() {
     // Array of directories to check/create
