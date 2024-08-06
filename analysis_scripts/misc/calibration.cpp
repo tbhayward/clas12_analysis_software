@@ -3083,7 +3083,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 }
 }
 
-void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+void plot_chi2pid_cd_and_momentum(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     int nBins = 100;
     double xMin = -10;
     double xMax = 10;
@@ -3099,25 +3099,31 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     };
 
     TTreeReaderValue<double> particle_chi2pid(dataReader, "particle_chi2pid");
+    TTreeReaderValue<double> particle_p(dataReader, "p");
     TTreeReaderValue<int> track_sector_6(dataReader, "track_sector_6");
     TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
 
     TTreeReaderValue<double>* mc_particle_chi2pid = nullptr;
+    TTreeReaderValue<double>* mc_particle_p = nullptr;
     TTreeReaderValue<int>* mc_track_sector_6 = nullptr;
     TTreeReaderValue<int>* mc_particle_pid = nullptr;
 
     if (mcReader) {
         mc_particle_chi2pid = new TTreeReaderValue<double>(*mcReader, "particle_chi2pid");
+        mc_particle_p = new TTreeReaderValue<double>(*mcReader, "p");
         mc_track_sector_6 = new TTreeReaderValue<int>(*mcReader, "track_sector_6");
         mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
     }
 
     TCanvas* c = new TCanvas("c_chi2pid_cd", "chi2pid in CD", 1800, 1200);
     c->Divide(3, 2);
+    gPad->SetLeftMargin(0.15);  // Add padding to the left
 
     // Declare vectors to store histograms
     std::vector<TH1D*> h_data(6);
     std::vector<TH1D*> h_mc(6);
+    std::vector<TH2D*> h_data_momentum_vs_chi2pid(6);
+    std::vector<TH2D*> h_mc_momentum_vs_chi2pid(6);
 
     // Initialize histograms for each particle type
     for (size_t i = 0; i < particle_types.size(); ++i) {
@@ -3127,6 +3133,12 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         h_data[i]->GetYaxis()->SetTitle("Normalized Counts");
         h_data[i]->SetStats(false);  // Hide the stat box
 
+        hname = "h_data_momentum_vs_chi2pid_" + std::get<1>(particle_types[i]);
+        h_data_momentum_vs_chi2pid[i] = new TH2D(hname.c_str(), ("Momentum vs chi2pid (Data): " + std::get<1>(particle_types[i])).c_str(),
+                                                 nBins, xMin, xMax, nBins, 0, 10);
+        h_data_momentum_vs_chi2pid[i]->GetXaxis()->SetTitle("chi2pid");
+        h_data_momentum_vs_chi2pid[i]->GetYaxis()->SetTitle("Momentum [GeV/c]");
+
         if (mcReader) {
             hname = "h_mc_" + std::get<1>(particle_types[i]);
             h_mc[i] = new TH1D(hname.c_str(), ("MC: " + std::get<1>(particle_types[i])).c_str(), nBins, xMin, xMax);
@@ -3134,6 +3146,12 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
             h_mc[i]->GetYaxis()->SetTitle("Normalized Counts");
             h_mc[i]->SetLineColor(kRed);
             h_mc[i]->SetStats(false);  // Hide the stat box
+
+            hname = "h_mc_momentum_vs_chi2pid_" + std::get<1>(particle_types[i]);
+            h_mc_momentum_vs_chi2pid[i] = new TH2D(hname.c_str(), ("Momentum vs chi2pid (MC): " + std::get<1>(particle_types[i])).c_str(),
+                                                   nBins, xMin, xMax, nBins, 0, 10);
+            h_mc_momentum_vs_chi2pid[i]->GetXaxis()->SetTitle("chi2pid");
+            h_mc_momentum_vs_chi2pid[i]->GetYaxis()->SetTitle("Momentum [GeV/c]");
         }
     }
 
@@ -3143,6 +3161,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
             for (size_t i = 0; i < particle_types.size(); ++i) {
                 if (*particle_pid == std::get<0>(particle_types[i])) {
                     h_data[i]->Fill(*particle_chi2pid);
+                    h_data_momentum_vs_chi2pid[i]->Fill(*particle_chi2pid, *particle_p);
                 }
             }
         }
@@ -3155,6 +3174,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
                 for (size_t i = 0; i < particle_types.size(); ++i) {
                     if (**mc_particle_pid == std::get<0>(particle_types[i])) {
                         h_mc[i]->Fill(**mc_particle_chi2pid);
+                        h_mc_momentum_vs_chi2pid[i]->Fill(**mc_particle_chi2pid, **mc_particle_p);
                     }
                 }
             }
@@ -3182,6 +3202,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Draw histograms on the canvas
     for (size_t i = 0; i < particle_types.size(); ++i) {
         c->cd(i + 1);
+        gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
         h_data[i]->SetMaximum(max_value);
         h_data[i]->Draw("HIST");
         if (mcReader) {
@@ -3200,11 +3221,28 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
 
     c->SaveAs("output/calibration/cvt/chi2pid/chi2pid_cd.png");
 
+    // Save 2D histograms
+    for (size_t i = 0; i < particle_types.size(); ++i) {
+        TCanvas* c2D = new TCanvas(("c2D_" + std::get<1>(particle_types[i])).c_str(), ("Momentum vs chi2pid: " + std::get<1>(particle_types[i])).c_str(), 800, 600);
+        h_data_momentum_vs_chi2pid[i]->Draw("COLZ");
+        c2D->SaveAs(("output/calibration/cvt/chi2pid/p_vs_chi2pid_" + std::get<1>(particle_types[i]) + "_data.png").c_str());
+        delete c2D;
+
+        if (mcReader) {
+            TCanvas* c2D_mc = new TCanvas(("c2D_mc_" + std::get<1>(particle_types[i])).c_str(), ("Momentum vs chi2pid (MC): " + std::get<1>(particle_types[i])).c_str(), 800, 600);
+            h_mc_momentum_vs_chi2pid[i]->Draw("COLZ");
+            c2D_mc->SaveAs(("output/calibration/cvt/chi2pid/p_vs_chi2pid_" + std::get<1>(particle_types[i]) + "_mc.png").c_str());
+            delete c2D_mc;
+        }
+    }
     // Clean up
     for (auto& hist : h_data) delete hist;
     for (auto& hist : h_mc) delete hist;
+    for (auto& hist : h_data_momentum_vs_chi2pid) delete hist;
+    for (auto& hist : h_mc_momentum_vs_chi2pid) delete hist;
     delete c;
     if (mc_particle_chi2pid) delete mc_particle_chi2pid;
+    if (mc_particle_p) delete mc_particle_p;
     if (mc_track_sector_6) delete mc_track_sector_6;
     if (mc_particle_pid) delete mc_particle_pid;
 }
