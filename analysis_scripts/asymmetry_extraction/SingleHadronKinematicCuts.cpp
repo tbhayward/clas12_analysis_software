@@ -25,10 +25,10 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         if (property == "epipPT") {
             goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.5 && *y < 0.75;
         }
-        else if (property == "xF" || "x" || "PT") {
+        if (property == "xF" || "x" || "PT") {
             goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.4 && *y < 0.75;
         }
-        else if (property == "Mx") {
+        if (property == "Mx") {
             std::cout << "We in" << std::endl;
             goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75;
         }
