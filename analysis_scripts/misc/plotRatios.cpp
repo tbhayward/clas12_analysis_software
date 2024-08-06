@@ -175,8 +175,8 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
         TLegend* legend = new TLegend(0.7, 0.8, 0.9, 0.9);
         // legend->AddEntry(g1, "NH3", "lp");
         // legend->AddEntry(g2, "C", "lp");
-        legend->AddEntry(g1, "pass-1 no AI", "lp");
-        legend->AddEntry(g2, "preliminary", "lp");
+        legend->AddEntry(g1, "pass-1 AI", "lp");
+        legend->AddEntry(g2, "pass-1 no AI", "lp");
         legend->Draw();
 
         c->SaveAs(filename);
