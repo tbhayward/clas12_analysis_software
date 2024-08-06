@@ -119,7 +119,7 @@ public class analysis_fitter extends GenericKinematicFitter {
         return true
 //            && p > 0.4
             && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank) 
-            && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
+//            && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
             && (passesForwardDetector 
                 ? fiducial_cuts.pass1_dc_fiducial_cut(particle_Index,rec_Bank,track_Bank,traj_Bank,run_Bank)
                 : true)
