@@ -3085,8 +3085,10 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
 void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     int nBins = 100;
-    double xMin = -10;
-    double xMax = 10;
+    double chi2pidMin = -10;
+    double chi2pidMax = 10;
+    double pMin = 0;
+    double pMax = 7;
 
     // Particle types to analyze
     std::vector<std::tuple<int, std::string>> particle_types = {
@@ -3119,39 +3121,45 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     c->Divide(3, 2);
     gPad->SetLeftMargin(0.15);  // Add padding to the left
 
+    TCanvas* c2D = new TCanvas("c2D_chi2pid_vs_p_cd", "chi2pid vs p in CD", 1800, 1200);
+    c2D->Divide(3, 2);
+    gPad->SetLeftMargin(0.15);  // Add padding to the left
+
     // Declare vectors to store histograms
     std::vector<TH1D*> h_data(6);
     std::vector<TH1D*> h_mc(6);
-    std::vector<TH2D*> h_data_momentum_vs_chi2pid(6);
-    std::vector<TH2D*> h_mc_momentum_vs_chi2pid(6);
+    std::vector<TH2D*> h_data_chi2pid_vs_p(6);
+    std::vector<TH2D*> h_mc_chi2pid_vs_p(6);
 
     // Initialize histograms for each particle type
     for (size_t i = 0; i < particle_types.size(); ++i) {
         std::string hname = "h_data_" + std::get<1>(particle_types[i]);
-        h_data[i] = new TH1D(hname.c_str(), ("Data: " + std::get<1>(particle_types[i])).c_str(), nBins, xMin, xMax);
+        h_data[i] = new TH1D(hname.c_str(), ("Data: " + std::get<1>(particle_types[i])).c_str(), nBins, chi2pidMin, chi2pidMax);
         h_data[i]->GetXaxis()->SetTitle("chi2pid");
         h_data[i]->GetYaxis()->SetTitle("Normalized Counts");
         h_data[i]->SetStats(false);  // Hide the stat box
 
-        hname = "h_data_momentum_vs_chi2pid_" + std::get<1>(particle_types[i]);
-        h_data_momentum_vs_chi2pid[i] = new TH2D(hname.c_str(), ("Momentum vs chi2pid (Data): " + std::get<1>(particle_types[i])).c_str(),
-                                                 nBins, xMin, xMax, nBins, 0, 10);
-        h_data_momentum_vs_chi2pid[i]->GetXaxis()->SetTitle("chi2pid");
-        h_data_momentum_vs_chi2pid[i]->GetYaxis()->SetTitle("Momentum [GeV/c]");
+        hname = "h_data_chi2pid_vs_p_" + std::get<1>(particle_types[i]);
+        h_data_chi2pid_vs_p[i] = new TH2D(hname.c_str(), ("chi2pid vs p (Data): " + std::get<1>(particle_types[i])).c_str(),
+                                          nBins, pMin, pMax, nBins, chi2pidMin, chi2pidMax);
+        h_data_chi2pid_vs_p[i]->GetXaxis()->SetTitle("p (GeV)");
+        h_data_chi2pid_vs_p[i]->GetYaxis()->SetTitle("chi2pid");
+        h_data_chi2pid_vs_p[i]->SetStats(false);  // Hide the stat box
 
         if (mcReader) {
             hname = "h_mc_" + std::get<1>(particle_types[i]);
-            h_mc[i] = new TH1D(hname.c_str(), ("MC: " + std::get<1>(particle_types[i])).c_str(), nBins, xMin, xMax);
+            h_mc[i] = new TH1D(hname.c_str(), ("MC: " + std::get<1>(particle_types[i])).c_str(), nBins, chi2pidMin, chi2pidMax);
             h_mc[i]->GetXaxis()->SetTitle("chi2pid");
             h_mc[i]->GetYaxis()->SetTitle("Normalized Counts");
             h_mc[i]->SetLineColor(kRed);
             h_mc[i]->SetStats(false);  // Hide the stat box
 
-            hname = "h_mc_momentum_vs_chi2pid_" + std::get<1>(particle_types[i]);
-            h_mc_momentum_vs_chi2pid[i] = new TH2D(hname.c_str(), ("Momentum vs chi2pid (MC): " + std::get<1>(particle_types[i])).c_str(),
-                                                   nBins, xMin, xMax, nBins, 0, 10);
-            h_mc_momentum_vs_chi2pid[i]->GetXaxis()->SetTitle("chi2pid");
-            h_mc_momentum_vs_chi2pid[i]->GetYaxis()->SetTitle("Momentum [GeV/c]");
+            hname = "h_mc_chi2pid_vs_p_" + std::get<1>(particle_types[i]);
+            h_mc_chi2pid_vs_p[i] = new TH2D(hname.c_str(), ("chi2pid vs p (MC): " + std::get<1>(particle_types[i])).c_str(),
+                                            nBins, pMin, pMax, nBins, chi2pidMin, chi2pidMax);
+            h_mc_chi2pid_vs_p[i]->GetXaxis()->SetTitle("p (GeV)");
+            h_mc_chi2pid_vs_p[i]->GetYaxis()->SetTitle("chi2pid");
+            h_mc_chi2pid_vs_p[i]->SetStats(false);  // Hide the stat box
         }
     }
 
@@ -3161,7 +3169,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
             for (size_t i = 0; i < particle_types.size(); ++i) {
                 if (*particle_pid == std::get<0>(particle_types[i])) {
                     h_data[i]->Fill(*particle_chi2pid);
-                    h_data_momentum_vs_chi2pid[i]->Fill(*particle_chi2pid, *particle_p);
+                    h_data_chi2pid_vs_p[i]->Fill(*particle_p, *particle_chi2pid);
                 }
             }
         }
@@ -3174,7 +3182,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
                 for (size_t i = 0; i < particle_types.size(); ++i) {
                     if (**mc_particle_pid == std::get<0>(particle_types[i])) {
                         h_mc[i]->Fill(**mc_particle_chi2pid);
-                        h_mc_momentum_vs_chi2pid[i]->Fill(**mc_particle_chi2pid, **mc_particle_p);
+                        h_mc_chi2pid_vs_p[i]->Fill(**mc_particle_p, **mc_particle_chi2pid);
                     }
                 }
             }
@@ -3199,7 +3207,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
 
     max_value *= 1.2;  // Scale the maximum value by 1.2 for better visualization
 
-    // Draw histograms on the canvas
+    // Draw 1D histograms on the canvas
     for (size_t i = 0; i < particle_types.size(); ++i) {
         c->cd(i + 1);
         gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
@@ -3219,28 +3227,57 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         legend->Draw();
     }
 
-    c->SaveAs("output/calibration/cvt/chi2pid/chi2pid_cd.png");
-
-    // Save 2D histograms
+    // Draw 2D histograms on the new canvas
     for (size_t i = 0; i < particle_types.size(); ++i) {
-        TCanvas* c2D = new TCanvas(("c2D_" + std::get<1>(particle_types[i])).c_str(), ("Momentum vs chi2pid: " + std::get<1>(particle_types[i])).c_str(), 800, 600);
-        h_data_momentum_vs_chi2pid[i]->Draw("COLZ");
-        c2D->SaveAs(("output/calibration/cvt/chi2pid/p_vs_chi2pid_" + std::get<1>(particle_types[i]) + "_data.png").c_str());
-        delete c2D;
-
-        if (mcReader) {
-            TCanvas* c2D_mc = new TCanvas(("c2D_mc_" + std::get<1>(particle_types[i])).c_str(), ("Momentum vs chi2pid (MC): " + std::get<1>(particle_types[i])).c_str(), 800, 600);
-            h_mc_momentum_vs_chi2pid[i]->Draw("COLZ");
-            c2D_mc->SaveAs(("output/calibration/cvt/chi2pid/p_vs_chi2pid_" + std::get<1>(particle_types[i]) + "_mc.png").c_str());
-            delete c2D_mc;
+        c2D->cd(i + 1);
+        gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+        gPad->SetLogz();  // Set log scale for the z-axis
+        h_data_chi2pid_vs_p[i]->Draw("COLZ");
+    }
+    if (mcReader) {
+        for (size_t i = 0; i < particle_types.size(); ++i) {
+            c2D->cd(i + 1);
+            gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+            gPad->SetLogz();  // Set log scale for the z-axis
+            h_mc_chi2pid_vs_p[i]->Draw("COLZ SAME");
         }
     }
+
+    // Save the canvases
+    c->SaveAs("output/calibration/cvt/chi2pid/chi2pid_cd.png");
+    c2D->SaveAs("output/calibration/cvt/chi2pid/chi2pid_vs_p_cd.png");
+
     // Clean up
+    delete c;
+    delete c2D;
     for (auto& hist : h_data) delete hist;
     for (auto& hist : h_mc) delete hist;
-    for (auto& hist : h_data_momentum_vs_chi2pid) delete hist;
-    for (auto& hist : h_mc_momentum_vs_chi2pid) delete hist;
+    for (auto& hist : h_data_chi2pid_vs_p) delete hist;
+    for (auto& hist : h_mc_chi2pid_vs_p) delete hist;
+    if (mc_particle_chi2pid) delete mc_particle_chi2pid;
+    if (mc_particle_p) delete mc_particle_p;
+    if (mc_track_sector_6) delete mc_track_sector_6;
+    if (mc_particle_pid) delete mc_particle_pid;
+    if (mcReader) {
+        for (size_t i = 0; i < particle_types.size(); ++i) {
+            c2D->cd(i + 1);
+            gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+            gPad->SetLogz();  // Set log scale for the z-axis
+            h_mc_chi2pid_vs_p[i]->Draw("COLZ SAME");
+        }
+    }
+
+    // Save the canvases
+    c->SaveAs("output/calibration/cvt/chi2pid/chi2pid_cd.png");
+    c2D->SaveAs("output/calibration/cvt/chi2pid/chi2pid_vs_p_cd.png");
+
+    // Clean up
     delete c;
+    delete c2D;
+    for (auto& hist : h_data) delete hist;
+    for (auto& hist : h_mc) delete hist;
+    for (auto& hist : h_data_chi2pid_vs_p) delete hist;
+    for (auto& hist : h_mc_chi2pid_vs_p) delete hist;
     if (mc_particle_chi2pid) delete mc_particle_chi2pid;
     if (mc_particle_p) delete mc_particle_p;
     if (mc_track_sector_6) delete mc_track_sector_6;
