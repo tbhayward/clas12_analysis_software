@@ -113,8 +113,7 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
         }
     }
     // Set y-axis range from 5 to 15
-    gr_ratio->GetYaxis()->SetRangeUser(1, 3);
-    // gr_ratio->GetYaxis()->SetRangeUser(1, 2);
+    gr_ratio->GetYaxis()->SetRangeUser(9, 15);
     // Set x-axis range
     gr_ratio->GetXaxis()->SetLimits(-4, 3);
 
@@ -185,7 +184,7 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
         }
     }
     // Set y-axis range from 5 to 15
-    gr_ratio_xF->GetYaxis()->SetRangeUser(1, 3);
+    gr_ratio_xF->GetYaxis()->SetRangeUser(9, 15);
     // Set x-axis range
     gr_ratio_xF->GetXaxis()->SetLimits(-3, 1);
 
@@ -194,7 +193,7 @@ std::pair<double, double> scale_normalization(const char* nh3_file, const char* 
     gr_ratio_xF->Draw("AP");
 
     // Fit the data from -2.5 to -1 to a constant
-    TF1 *fit_const_xF = new TF1("fit_const", "[0]", -4, -1.5);
+    TF1 *fit_const_xF = new TF1("fit_const", "[0]", -3, -1.5);
     gr_ratio_xF->Fit(fit_const_xF, "RQ");
     fit_const_xF->SetLineColor(kRed);
     fit_const_xF->Draw("SAME");
