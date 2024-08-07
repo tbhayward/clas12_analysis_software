@@ -34,11 +34,10 @@ def calculate_total_charge(filename):
             run_number = int(row[0])
             charge = float(row[1])
 
-            if current_section == 'Helium Bath' and run_number in [16194, 16186]:
-                # Exclude run 16194 and 16186 from Helium Bath
-                continue
-            elif run_number == 16194:
+            if run_number == 16194:
                 charges['ET'] += charge
+            elif current_section == 'Helium Bath' and run_number not in [16194, 16186]:
+                charges['Helium Bath'] += charge
             elif current_section:
                 charges[current_section] += charge
 
