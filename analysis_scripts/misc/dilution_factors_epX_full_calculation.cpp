@@ -113,7 +113,8 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
 
     TGraphErrors *gr_dilution = new TGraphErrors();
     double s = 11.306;       // scale factor for carbon counts
-    double s_error = 0.110;  // uncertainty in the scale factor
+    // double s_error = 0.110;  // uncertainty in the scale factor
+    double s_error = 0.0;  // uncertainty in the scale factor
     for (int i = 1; i <= n_bins; ++i) {
         double nA = h_nh3->GetBinContent(i);
         double nA_error = h_nh3->GetBinError(i);
