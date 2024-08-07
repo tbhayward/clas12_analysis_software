@@ -122,7 +122,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
 
         double new_content = bin_content * s;
         double new_error = new_content * std::sqrt((bin_error / bin_content) * (bin_error / bin_content) + 
-                                                    (s_error / s) * (s_error / s));
+            (s_error / s) * (s_error / s));
         h_c_scaled->SetBinContent(i, new_content);
         h_c_scaled->SetBinError(i, new_error);
     }
@@ -211,13 +211,13 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     c1->Divide(3, 1);
 
     // Fit and plot for x-Bjorken
-    auto fit_x = fit_and_plot_dilution("x", "x_{B} (GeV)", 0.06, 0.6, 50, nh3, c, ch, he, empty, c1, 1);
+    auto fit_x = fit_and_plot_dilution("x", "x_{B} (GeV)", 0.06, 0.6, 10, nh3, c, ch, he, empty, c1, 1);
 
     // Fit and plot for transverse momentum
-    auto fit_pT = fit_and_plot_dilution("pT", "P_{T} (GeV)", 0, 1.0, 50, nh3, c, ch, he, empty, c1, 2);
+    auto fit_pT = fit_and_plot_dilution("pT", "P_{T} (GeV)", 0, 1.0, 10, nh3, c, ch, he, empty, c1, 2);
 
     // Fit and plot for x-Feynman
-    auto fit_xF = fit_and_plot_dilution("xF", "x_{F} (GeV)", -0.8, 0.5, 50, nh3, c, ch, he, empty, c1, 3);
+    auto fit_xF = fit_and_plot_dilution("xF", "x_{F} (GeV)", -0.8, 0.5, 10, nh3, c, ch, he, empty, c1, 3);
 
     // Save the canvas as a PNG file
     c1->SaveAs("output/one_dimensional.png");
