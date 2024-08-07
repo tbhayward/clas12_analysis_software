@@ -8,7 +8,7 @@
 #include <TF1.h>
 #include <iostream>
 
-void plot_dilution_factor(const char* variable_name, const char* x_title, const char* y_title, double x_min, double x_max, int n_bins, TCanvas* canvas, int pad) {
+void plot_dilution_factor(const char* variable_name, const char* x_title, double x_min, double x_max, int n_bins, TCanvas* canvas, int pad) {
     // Create a dummy histogram for the X axis range
     TH1D *h_dummy = new TH1D(Form("h_%s_dummy", variable_name), "", n_bins, x_min, x_max);
     
@@ -24,11 +24,11 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, const 
     // Draw on the canvas
     canvas->cd(pad);
     gPad->SetLeftMargin(0.15);
-    gr_dilution->SetTitle(Form(";%s;%s", x_title, y_title));
+    gr_dilution->SetTitle(Form(";%s;D_{f}", x_title));
     gr_dilution->SetMarkerStyle(20);
     gr_dilution->Draw("AP");
     gr_dilution->GetXaxis()->SetRangeUser(x_min, x_max);
-    gr_dilution->GetYaxis()->SetRangeUser(0.00, 0.20);
+    gr_dilution->GetYaxis()->SetRangeUser(0.1, 0.3);
 
     // Fit to a third-degree polynomial (optional)
     TF1 *fit_poly = new TF1("fit_poly", "[0] + [1]*x + [2]*x^2", x_min, x_max);
@@ -59,13 +59,13 @@ void one_dimensional(TFile* nh3, TFile* c, TFile* ch, TFile* he, TFile* empty) {
     c1->Divide(3, 1);
 
     // Plot for x-Bjorken
-    plot_dilution_factor("x", "x_{B} (GeV)", "D_{f} = (NH3 - s*C) / NH3", 0.06, 0.6, 50, c1, 1);
+    plot_dilution_factor("x", "x_{B} (GeV)", 0.06, 0.6, 50, c1, 1);
 
     // Plot for transverse momentum
-    plot_dilution_factor("pT", "P_{T} (GeV)", "D_{f} = (NH3 - s*C) / NH3", 0, 1.0, 50, c1, 2);
+    plot_dilution_factor("pT", "P_{T} (GeV)", 0, 1.0, 50, c1, 2);
 
     // Plot for x-Feynman
-    plot_dilution_factor("xF", "x_{F} (GeV)", "D_{f} = (NH3 - s*C) / NH3", -0.8, 0.5, 50, c1, 3);
+    plot_dilution_factor("xF", "x_{F} (GeV)", -0.8, 0.5, 50, c1, 3);
 
     // Save the canvas as a PNG file
     c1->SaveAs("output/one_dimensional_placeholder.png");
