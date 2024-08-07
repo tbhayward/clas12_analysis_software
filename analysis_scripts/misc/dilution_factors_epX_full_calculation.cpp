@@ -131,6 +131,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     double chi2 = fit_func->GetChisquare();
     int ndf = fit_func->GetNDF();
     double error_scale_factor = sqrt(chi2 / ndf);
+    std::cout << error_scale_factor << " " << std::endl;
     
     for (int i = 0; i < gr_dilution->GetN(); ++i) {
         double x, y;
