@@ -3453,10 +3453,10 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
                 h_mc_beta_bins_pos[bin]->Draw("HIST SAME");
             }
             TLegend* legend_pos = new TLegend(0.7, 0.7, 0.9, 0.9);
-            // legend_pos->AddEntry(h_data_beta_bins_pos[bin], "Data", "l");
-            // if (mcReader) legend_pos->AddEntry(h_mc_beta_bins_pos[bin], "MC", "l");
-            legend_pos->AddEntry(h_data_beta_bins_pos[bin], "NH_{3} pass-1", "l");
-            if (mcReader) legend_pos->AddEntry(h_mc_beta_bins_pos[bin], "C pass-1", "l");
+            legend_pos->AddEntry(h_data_beta_bins_pos[bin], "Data", "l");
+            if (mcReader) legend_pos->AddEntry(h_mc_beta_bins_pos[bin], "MC", "l");
+            // legend_pos->AddEntry(h_data_beta_bins_pos[bin], "NH_{3} pass-1", "l");
+            // if (mcReader) legend_pos->AddEntry(h_mc_beta_bins_pos[bin], "C pass-1", "l");
             legend_pos->Draw();
 
             c_data_beta_bins_neg->cd(bin + 1);

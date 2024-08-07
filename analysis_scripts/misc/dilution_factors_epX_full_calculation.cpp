@@ -123,15 +123,30 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     gr_dilution->GetXaxis()->SetRangeUser(x_min, x_max);
     gr_dilution->GetYaxis()->SetRangeUser(0.10, 0.30);
 
-    // Fit and plot
+    // Initial fit
     TF1 *fit_func = new TF1("fit_func", "[0] + [1]*x + [2]*x^2", x_min, x_max);
+    gr_dilution->Fit(fit_func, "RQ");
+
+    // Scale errors by sqrt(chi2/ndf)
+    double chi2 = fit_func->GetChisquare();
+    int ndf = fit_func->GetNDF();
+    double error_scale_factor = sqrt(chi2 / ndf);
+    
+    for (int i = 0; i < gr_dilution->GetN(); ++i) {
+        double x, y;
+        gr_dilution->GetPoint(i, x, y);
+        double original_error = gr_dilution->GetErrorY(i);
+        gr_dilution->SetPointError(i, 0, original_error * error_scale_factor);
+    }
+
+    // Refit with scaled errors
     gr_dilution->Fit(fit_func, "RQ");
     fit_func->SetLineColor(kRed);
     fit_func->Draw("SAME");
 
     // Print fit parameters and chi2/ndf
-    double chi2 = fit_func->GetChisquare();
-    int ndf = fit_func->GetNDF();
+    chi2 = fit_func->GetChisquare();
+    ndf = fit_func->GetNDF();
     TLatex latex;
     latex.SetNDC();
     latex.SetTextSize(0.04);
