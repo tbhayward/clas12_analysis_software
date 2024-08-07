@@ -10,8 +10,6 @@
 #include <iostream>
 #include <cmath>
 #include <utility>
-#include <map>
-#include <string>
 
 // Constants for the dilution factor calculation
 const double L_C = 1.5;
@@ -82,9 +80,8 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     gr_dilution->GetXaxis()->SetRangeUser(x_min, x_max);
     gr_dilution->GetYaxis()->SetRangeUser(0.10, 0.30);
 
-    // Fit to a third-degree polynomial with p0 initialized to 0.2
-    TF1* fit_func = new TF1("fit_func", "[0] + [1]*x + [2]*x^2 + [3]*x^3", x_min, x_max);
-    fit_func->SetParameter(0, 0.2); // Initial guess for p0
+    // Fit to a fourth-degree polynomial
+    TF1* fit_func = new TF1("fit_func", "[0] + [1]*x + [2]*x^2 + [3]*x^3 + [4]*x^4", x_min, x_max);
     gr_dilution->Fit(fit_func, "RQ");
     fit_func->SetLineColor(kRed);
     fit_func->Draw("SAME");
@@ -94,10 +91,11 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     double p1 = fit_func->GetParameter(1);
     double p2 = fit_func->GetParameter(2);
     double p3 = fit_func->GetParameter(3);
+    double p4 = fit_func->GetParameter(4);
 
     // Store the fit result in the map
-    fit_results[variable_name] = Form("%f+%f*currentVariable+%f*std::pow(currentVariable,2)+%f*std::pow(currentVariable,3)", 
-                                      p0, p1, p2, p3);
+    fit_results[variable_name] = Form("%f+%f*currentVariable+%f*std::pow(currentVariable,2)+%f*std::pow(currentVariable,3)+%f*std::pow(currentVariable,4)", 
+                                      p0, p1, p2, p3, p4);
 
     // Optional: Add chi2/ndf in the top left
     double chi2 = fit_func->GetChisquare();
@@ -113,6 +111,18 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     delete h_ch;
     delete h_he;
     delete h_empty;
+}
+
+std::pair<TF1*, TGraphErrors*> fit_and_plot_dilution(const char* variable_name, const char* x_title, double x_min, double x_max, int n_bins, 
+                          TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad) {
+    // Call the plotting function
+    plot_dilution_factor(variable_name, x_title, x_min, x_max, n_bins, nh3, c, ch, he, empty, canvas, pad);
+    
+    // Return the fit function and graph
+    TF1* fit_func = (TF1*)gROOT->FindObject("fit_func");
+    TGraphErrors* gr_dilution = (TGraphErrors*)gROOT->FindObject("gr_dilution");
+    
+    return std::make_pair(fit_func, gr_dilution);
 }
 
 void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_file, TFile* empty_file) {
@@ -160,7 +170,7 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
 
 int main(int argc, char** argv) {
     if (argc != 6) {
-        std::cerr << "Usage: " << argv[0] << "     " << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <NH3 ROOT file> <Carbon ROOT file> <CH2 ROOT file> <Helium ROOT file> <Empty ROOT file>" << std::endl;
         return 1;
     }
 
