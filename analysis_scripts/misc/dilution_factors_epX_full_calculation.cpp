@@ -86,22 +86,26 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     delete h_empty;
 }
 
-void one_dimensional(TFile* nh3, TFile* c, TFile* ch, TFile* he, TFile* empty) {
+void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_file, TFile* empty_file) {
+    // Get the PhysicsEvents trees
+    TTree* nh3 = (TTree*)nh3_file->Get("PhysicsEvents");
+    TTree* c = (TTree*)c_file->Get("PhysicsEvents");
+    TTree* ch = (TTree*)ch_file->Get("PhysicsEvents");
+    TTree* he = (TTree*)he_file->Get("PhysicsEvents");
+    TTree* empty = (TTree*)empty_file->Get("PhysicsEvents");
+
     // Create a canvas and divide it into 1 row and 3 columns
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1600, 600);
     c1->Divide(3, 1);
 
     // Plot for x-Bjorken
-    plot_dilution_factor("x", "x_{B} (GeV)", 0.06, 0.6, 50, nh3->Get("PhysicsEvents"), c->Get("PhysicsEvents"), 
-                         ch->Get("PhysicsEvents"), he->Get("PhysicsEvents"), empty->Get("PhysicsEvents"), c1, 1);
+    plot_dilution_factor("x", "x_{B} (GeV)", 0.06, 0.6, 50, nh3, c, ch, he, empty, c1, 1);
 
     // Plot for transverse momentum
-    plot_dilution_factor("pT", "P_{T} (GeV)", 0, 1.0, 50, nh3->Get("PhysicsEvents"), c->Get("PhysicsEvents"), 
-                         ch->Get("PhysicsEvents"), he->Get("PhysicsEvents"), empty->Get("PhysicsEvents"), c1, 2);
+    plot_dilution_factor("pT", "P_{T} (GeV)", 0, 1.0, 50, nh3, c, ch, he, empty, c1, 2);
 
     // Plot for x-Feynman
-    plot_dilution_factor("xF", "x_{F} (GeV)", -0.8, 0.5, 50, nh3->Get("PhysicsEvents"), c->Get("PhysicsEvents"), 
-                         ch->Get("PhysicsEvents"), he->Get("PhysicsEvents"), empty->Get("PhysicsEvents"), c1, 3);
+    plot_dilution_factor("xF", "x_{F} (GeV)", -0.8, 0.5, 50, nh3, c, ch, he, empty, c1, 3);
 
     // Save the canvas as a PNG file
     c1->SaveAs("output/one_dimensional.png");
