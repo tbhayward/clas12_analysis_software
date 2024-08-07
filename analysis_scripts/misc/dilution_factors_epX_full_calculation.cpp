@@ -95,7 +95,7 @@ double calculate_simple_error(double nh3_counts, double c_counts, double s_error
 }
 
 void plot_dilution_factor(const char* variable_name, const char* x_title, double x_min, double x_max, int n_bins, 
-                          TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad, double s_error) {
+                          TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad) {
     canvas->cd(pad);
     gPad->SetLeftMargin(0.15);
 
