@@ -10,6 +10,8 @@
 #include <iostream>
 #include <cmath>
 #include <utility>
+#include <map>
+#include <string>
 
 // Constants for the dilution factor calculation
 const double L_C = 1.5;
@@ -113,18 +115,6 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     delete h_empty;
 }
 
-std::pair<TF1*, TGraphErrors*> fit_and_plot_dilution(const char* variable_name, const char* x_title, double x_min, double x_max, int n_bins, 
-                          TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad) {
-    // Call the plotting function
-    plot_dilution_factor(variable_name, x_title, x_min, x_max, n_bins, nh3, c, ch, he, empty, canvas, pad);
-    
-    // Return the fit function and graph
-    TF1* fit_func = (TF1*)gROOT->FindObject("fit_func");
-    TGraphErrors* gr_dilution = (TGraphErrors*)gROOT->FindObject("gr_dilution");
-    
-    return std::make_pair(fit_func, gr_dilution);
-}
-
 void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_file, TFile* empty_file) {
     // Get the PhysicsEvents trees
     TTree* nh3_tree = (TTree*)nh3_file->Get("PhysicsEvents");
@@ -170,7 +160,7 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
 
 int main(int argc, char** argv) {
     if (argc != 6) {
-        std::cerr << "Usage: " << argv[0] << " <NH3 ROOT file> <Carbon ROOT file> <CH2 ROOT file> <Helium ROOT file> <Empty ROOT file>" << std::endl;
+        std::cerr << "Usage: " << argv[0] << "     " << std::endl;
         return 1;
     }
 
