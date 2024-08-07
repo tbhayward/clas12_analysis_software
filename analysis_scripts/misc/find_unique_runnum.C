@@ -28,8 +28,9 @@ void find_unique_runnum(TString file1, TString file2) {
         return;
     }
 
-    // Set up a set to store unique runnum values
-    std::set<int> uniqueRunnums;
+    // Set up sets to store unique runnum values for each file
+    std::set<int> uniqueRunnums1;
+    std::set<int> uniqueRunnums2;
 
     // Variable to hold the "runnum" value
     int runnum;
@@ -39,7 +40,7 @@ void find_unique_runnum(TString file1, TString file2) {
     Long64_t nEntries1 = tree1->GetEntries();
     for (Long64_t i = 0; i < nEntries1; i++) {
         tree1->GetEntry(i);
-        uniqueRunnums.insert(runnum);
+        uniqueRunnums1.insert(runnum);
     }
 
     // Process the second tree
@@ -47,12 +48,18 @@ void find_unique_runnum(TString file1, TString file2) {
     Long64_t nEntries2 = tree2->GetEntries();
     for (Long64_t i = 0; i < nEntries2; i++) {
         tree2->GetEntry(i);
-        uniqueRunnums.insert(runnum);
+        uniqueRunnums2.insert(runnum);
     }
 
-    // Print out the unique runnum values
-    std::cout << "Unique runnum values:" << std::endl;
-    for (const auto& r : uniqueRunnums) {
+    // Print out the unique runnum values for file A
+    std::cout << "Unique runnum values in file A (" << file1 << "):" << std::endl;
+    for (const auto& r : uniqueRunnums1) {
+        std::cout << r << std::endl;
+    }
+
+    // Print out the unique runnum values for file B
+    std::cout << "Unique runnum values in file B (" << file2 << "):" << std::endl;
+    for (const auto& r : uniqueRunnums2) {
         std::cout << r << std::endl;
     }
 
