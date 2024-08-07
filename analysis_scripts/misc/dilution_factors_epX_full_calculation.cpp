@@ -138,7 +138,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         double nMT = h_he->GetBinContent(i);
         double nf = h_empty->GetBinContent(i);
 
-        double dilution = calculate_dilution_factor(nA, nC_scaled, nCH, nMT, nf);
+        double dilution = calculate_dilution_factor(nA, nC, nCH, nMT, nf);
         double error = calculate_simple_error(nA, nA_error, nC_scaled, nC_scaled_error);
 
         gr_dilution->SetPoint(i - 1, h_nh3->GetBinCenter(i), dilution);
