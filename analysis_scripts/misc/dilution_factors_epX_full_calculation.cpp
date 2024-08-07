@@ -85,6 +85,17 @@ double calculate_dilution_error(double nA, double nC, double nCH, double nMT, do
     return sigma_df;
 }
 
+double calculate_simple_dilution_error(double nh3_counts, double c_counts, double nh3_error, double c_error, double s, double s_error) {
+    // Propagate the error: error = sqrt((c / nh3^2) * (error_nh3)^2 + (1 / nh3) * (error_c)^2)
+    double dilution_error = sqrt(
+        pow((c_counts / (nh3_counts * nh3_counts)) * nh3_error, 2) +
+        pow((1.0 / nh3_counts) * c_error, 2) +
+        pow((c_counts / nh3_counts) * s_error, 2)
+    );
+
+    return dilution_error;
+}
+
 void plot_dilution_factor(const char* variable_name, const char* x_title, double x_min, double x_max, int n_bins, 
                           TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad) {
     canvas->cd(pad);
@@ -104,17 +115,18 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
 
     TGraphErrors *gr_dilution = new TGraphErrors();
     for (int i = 1; i <= n_bins; ++i) {
-        double nA = h_nh3->GetBinContent(i);
-        double nC = h_c->GetBinContent(i);
-        double nCH = h_ch->GetBinContent(i);
-        double nMT = h_he->GetBinContent(i);
-        double nf = h_empty->GetBinContent(i);
+        double nh3_counts = h_nh3->GetBinContent(i);
+        double nh3_error = h_nh3->GetBinError(i);
+        double c_counts = h_c->GetBinContent(i);
+        double c_error = h_c->GetBinError(i);
 
-        double dilution = calculate_dilution_factor(nA, nC, nCH, nMT, nf);
-        double error = 0.01*dilution; calculate_dilution_error(nA, nC, nCH, nMT, nf);
+        if (nh3_counts > 0) {
+            double dilution = (nh3_counts - s * c_counts) / nh3_counts;
+            double dilution_error = calculate_simple_dilution_error(nh3_counts, c_counts, nh3_error, c_error, s, s_error);
 
-        gr_dilution->SetPoint(i - 1, h_nh3->GetBinCenter(i), dilution);
-        gr_dilution->SetPointError(i - 1, 0, error);
+            gr_dilution->SetPoint(i - 1, h_nh3->GetBinCenter(i), dilution);
+            gr_dilution->SetPointError(i - 1, 0, dilution_error);
+        }
     }
 
     gr_dilution->SetTitle(Form(";%s;D_{f}", x_title));
