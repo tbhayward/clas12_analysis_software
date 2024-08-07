@@ -82,8 +82,9 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     gr_dilution->GetXaxis()->SetRangeUser(x_min, x_max);
     gr_dilution->GetYaxis()->SetRangeUser(0.10, 0.30);
 
-    // Fit to a fourth-degree polynomial
-    TF1* fit_func = new TF1("fit_func", "[0] + [1]*x + [2]*x^2 + [3]*x^3 + [4]*x^4", x_min, x_max);
+    // Fit to a third-degree polynomial with p0 initialized to 0.2
+    TF1* fit_func = new TF1("fit_func", "[0] + [1]*x + [2]*x^2 + [3]*x^3", x_min, x_max);
+    fit_func->SetParameter(0, 0.2); // Initial guess for p0
     gr_dilution->Fit(fit_func, "RQ");
     fit_func->SetLineColor(kRed);
     fit_func->Draw("SAME");
@@ -93,11 +94,10 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     double p1 = fit_func->GetParameter(1);
     double p2 = fit_func->GetParameter(2);
     double p3 = fit_func->GetParameter(3);
-    double p4 = fit_func->GetParameter(4);
 
     // Store the fit result in the map
-    fit_results[variable_name] = Form("%f+%f*currentVariable+%f*std::pow(currentVariable,2)+%f*std::pow(currentVariable,3)+%f*std::pow(currentVariable,4)", 
-                                      p0, p1, p2, p3, p4);
+    fit_results[variable_name] = Form("%f+%f*currentVariable+%f*std::pow(currentVariable,2)+%f*std::pow(currentVariable,3)", 
+                                      p0, p1, p2, p3);
 
     // Optional: Add chi2/ndf in the top left
     double chi2 = fit_func->GetChisquare();
