@@ -27,6 +27,7 @@ const double xCH = 0.09614;
 const double xHe = 0.33822;
 const double xf = 0.23918;
 
+
 double calculate_dilution_factor(double nA, double nC, double nCH, double nMT, double nf) {
     return (23.0 * (-nMT * xA + nA * xHe) * 
             (-0.511667 * nMT * xC * xCH * xf + 
@@ -85,8 +86,16 @@ double calculate_dilution_error(double nA, double nC, double nCH, double nMT, do
     return sigma_df;
 }
 
+double calculate_simple_error(double nh3_counts, double c_counts, double s_error) {
+    // Propagate the error using the simplified method
+    double dilution_error = sqrt(
+        pow((c_counts / nh3_counts), 2) + pow(s_error, 2)
+    );
+    return dilution_error;
+}
+
 void plot_dilution_factor(const char* variable_name, const char* x_title, double x_min, double x_max, int n_bins, 
-                          TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad) {
+                          TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad, double s_error) {
     canvas->cd(pad);
     gPad->SetLeftMargin(0.15);
 
@@ -103,6 +112,8 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     empty->Draw(Form("%s>>h_%s_empty", variable_name, variable_name));
 
     TGraphErrors *gr_dilution = new TGraphErrors();
+    double s = 11.306;       // scale factor for carbon counts
+    double s_error = 0.110;  // uncertainty in the scale factor
     for (int i = 1; i <= n_bins; ++i) {
         double nA = h_nh3->GetBinContent(i);
         double nC = h_c->GetBinContent(i);
@@ -111,7 +122,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         double nf = h_empty->GetBinContent(i);
 
         double dilution = calculate_dilution_factor(nA, nC, nCH, nMT, nf);
-        double error = calculate_dilution_error(nA, nC, nCH, nMT, nf);
+        double error = calculate_simple_error(nA, nC, s_error);
 
         gr_dilution->SetPoint(i - 1, h_nh3->GetBinCenter(i), dilution);
         gr_dilution->SetPointError(i - 1, 0, error);
