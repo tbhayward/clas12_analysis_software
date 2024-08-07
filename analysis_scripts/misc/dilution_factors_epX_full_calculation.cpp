@@ -88,9 +88,9 @@ double calculate_dilution_error(double nA, double nC, double nCH, double nMT, do
 
 double calculate_simple_error(double nh3_counts, double c_counts, double s_error) {
     // Propagate the error using the simplified method
-    double dilution_error = sqrt(
-        pow((c_counts / nh3_counts), 2) + pow(s_error, 2)
-    );
+    double dilution_error = std::sqrt(
+                std::pow((c_counts / (nh3_counts * nh3_counts)) * nh3_error, 2) +
+                std::pow(1.0 / nh3_counts * c_error, 2));
     return dilution_error;
 }
 
