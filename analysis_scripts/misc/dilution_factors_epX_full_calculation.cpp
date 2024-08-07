@@ -116,13 +116,15 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     double s_error = 0.110;  // uncertainty in the scale factor
     for (int i = 1; i <= n_bins; ++i) {
         double nA = h_nh3->GetBinContent(i);
+        double nA_error = h_nh3->GetBinError(i);
         double nC = h_c->GetBinContent(i);
+        double nC_error = h_c->GetBinError(i);
         double nCH = h_ch->GetBinContent(i);
         double nMT = h_he->GetBinContent(i);
         double nf = h_empty->GetBinContent(i);
 
         double dilution = calculate_dilution_factor(nA, nC, nCH, nMT, nf);
-        double error = calculate_simple_error(nA, nC, s_error);
+        double error = calculate_simple_error(nA, nA_error, nC * s, nC_error * s, s_error);
 
         gr_dilution->SetPoint(i - 1, h_nh3->GetBinCenter(i), dilution);
         gr_dilution->SetPointError(i - 1, 0, error);
