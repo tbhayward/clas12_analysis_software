@@ -86,7 +86,7 @@ double calculate_dilution_error(double nA, double nC, double nCH, double nMT, do
     return sigma_df;
 }
 
-double calculate_simple_error(double nh3_counts, double nh3_error, double c_counts, double c_error, double s_error) {
+double calculate_simple_error(double nh3_counts, double nh3_error, double c_counts, double c_error) {
     // Propagate the error using the simplified method
     double dilution_error = std::sqrt(
                 std::pow((c_counts / (nh3_counts * nh3_counts)) * nh3_error, 2) +
@@ -111,21 +111,35 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     he->Draw(Form("%s>>h_%s_he", variable_name, variable_name));
     empty->Draw(Form("%s>>h_%s_empty", variable_name, variable_name));
 
-    TGraphErrors *gr_dilution = new TGraphErrors();
+    // Scale carbon counts and update their errors
     double s = 11.306;       // scale factor for carbon counts
     double s_error = 0.110;  // uncertainty in the scale factor
-    // double s_error = 0.0;  // uncertainty in the scale factor
+    TH1D *h_c_scaled = (TH1D*)h_c->Clone(Form("h_%s_c_scaled", variable_name));
+    for (int i = 1; i <= h_c->GetNbinsX(); ++i) {
+        double bin_content = h_c->GetBinContent(i);
+        double bin_error = h_c->GetBinError(i);
+
+        double new_content = bin_content * s;
+        double new_error = new_content * std::sqrt((bin_error / bin_content) * (bin_error / bin_content) + 
+                                                    (s_error / s) * (s_error / s));
+        h_c_scaled->SetBinContent(i, new_content);
+        h_c_scaled->SetBinError(i, new_error);
+    }
+
+    // Calculate dilution factor and its error
+    TGraphErrors *gr_dilution = new TGraphErrors();
     for (int i = 1; i <= n_bins; ++i) {
         double nA = h_nh3->GetBinContent(i);
         double nA_error = h_nh3->GetBinError(i);
-        double nC = h_c->GetBinContent(i);
-        double nC_error = h_c->GetBinError(i);
+        double nC_scaled = h_c_scaled->GetBinContent(i);
+        double nC_scaled_error = h_c_scaled->GetBinError(i);
+
         double nCH = h_ch->GetBinContent(i);
         double nMT = h_he->GetBinContent(i);
         double nf = h_empty->GetBinContent(i);
 
-        double dilution = calculate_dilution_factor(nA, nC, nCH, nMT, nf);
-        double error = calculate_simple_error(nA, nA_error, nC * s, nC_error * s, s_error);
+        double dilution = calculate_dilution_factor(nA, nC_scaled, nCH, nMT, nf);
+        double error = calculate_simple_error(nA, nA_error, nC_scaled, nC_scaled_error);
 
         gr_dilution->SetPoint(i - 1, h_nh3->GetBinCenter(i), dilution);
         gr_dilution->SetPointError(i - 1, 0, error);
@@ -167,6 +181,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     delete h_ch;
     delete h_he;
     delete h_empty;
+    delete h_c_scaled;
 }
 
 std::pair<TF1*, TGraphErrors*> fit_and_plot_dilution(const char* variable_name, const char* x_title, double x_min, double x_max, int n_bins, 
