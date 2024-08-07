@@ -125,7 +125,14 @@ std::pair<TF1*, TGraphErrors*> fit_and_plot_dilution(const char* variable_name, 
     return std::make_pair(fit_func, gr_dilution);
 }
 
-void one_dimensional(TFile* nh3, TFile* c, TFile* ch, TFile* he, TFile* empty) {
+void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_file, TFile* empty_file) {
+    // Get the PhysicsEvents trees
+    TTree* nh3_tree = (TTree*)nh3_file->Get("PhysicsEvents");
+    TTree* c_tree = (TTree*)c_file->Get("PhysicsEvents");
+    TTree* ch_tree = (TTree*)ch_file->Get("PhysicsEvents");
+    TTree* he_tree = (TTree*)he_file->Get("PhysicsEvents");
+    TTree* empty_tree = (TTree*)empty_file->Get("PhysicsEvents");
+
     // Create a canvas and divide it into 1 row and 3 columns
     TCanvas* c1 = new TCanvas("c1", "Dilution Factor Analysis", 1600, 600);
     c1->Divide(3, 1);
@@ -134,13 +141,13 @@ void one_dimensional(TFile* nh3, TFile* c, TFile* ch, TFile* he, TFile* empty) {
     std::map<std::string, std::string> fit_results;
 
     // Plot for x-Bjorken
-    plot_dilution_factor("x", "x_{B} (GeV)", 0.06, 0.6, 50, nh3, c, ch, he, empty, c1, 1, fit_results);
+    plot_dilution_factor("x", "x_{B} (GeV)", 0.06, 0.6, 50, nh3_tree, c_tree, ch_tree, he_tree, empty_tree, c1, 1, fit_results);
 
     // Plot for transverse momentum
-    plot_dilution_factor("pT", "P_{T} (GeV)", 0, 1.0, 50, nh3, c, ch, he, empty, c1, 2, fit_results);
+    plot_dilution_factor("pT", "P_{T} (GeV)", 0, 1.0, 50, nh3_tree, c_tree, ch_tree, he_tree, empty_tree, c1, 2, fit_results);
 
     // Plot for x-Feynman
-    plot_dilution_factor("xF", "x_{F} (GeV)", -0.8, 0.5, 50, nh3, c, ch, he, empty, c1, 3, fit_results);
+    plot_dilution_factor("xF", "x_{F} (GeV)", -0.8, 0.5, 50, nh3_tree, c_tree, ch_tree, he_tree, empty_tree, c1, 3, fit_results);
 
     // Save the canvas as a PNG file
     c1->SaveAs("output/one_dimensional_placeholder.png");
