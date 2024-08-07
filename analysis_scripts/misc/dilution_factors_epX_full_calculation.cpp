@@ -8,6 +8,7 @@
 #include <TF1.h>
 #include <iostream>
 #include <cmath>
+#include <utility>
 
 // Constants for the dilution factor calculation
 const double L_C = 1.5;
@@ -76,7 +77,29 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     gr_dilution->GetXaxis()->SetRangeUser(x_min, x_max);
     gr_dilution->GetYaxis()->SetRangeUser(0.10, 0.30);
 
-    // Optional: Add additional fits or customizations here
+    // Fit and plot
+    TF1 *fit_func = new TF1("fit_func", "[0] + [1]*x + [2]*x^2", x_min, x_max);
+    gr_dilution->Fit(fit_func, "RQ");
+    fit_func->SetLineColor(kRed);
+    fit_func->Draw("SAME");
+
+    // Print fit parameters and chi2/ndf
+    double chi2 = fit_func->GetChisquare();
+    int ndf = fit_func->GetNDF();
+    TLatex latex;
+    latex.SetNDC();
+    latex.SetTextSize(0.04);
+    latex.DrawLatex(0.20, 0.15, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2 / ndf));
+
+    // Add fit parameters box
+    TPaveText *pt = new TPaveText(0.5, 0.7, 0.9, 0.9, "brNDC");
+    pt->SetBorderSize(1);
+    pt->SetFillStyle(1001);
+    pt->SetFillColor(kWhite);
+    pt->AddText(Form("p0 = %.3f +/- %.3f", fit_func->GetParameter(0), fit_func->GetParError(0)));
+    pt->AddText(Form("p1 = %.3f +/- %.3f", fit_func->GetParameter(1), fit_func->GetParError(1)));
+    pt->AddText(Form("p2 = %.3f +/- %.3f", fit_func->GetParameter(2), fit_func->GetParError(2)));
+    pt->Draw();
 
     // Clean up histograms
     delete h_nh3;
@@ -84,6 +107,18 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     delete h_ch;
     delete h_he;
     delete h_empty;
+}
+
+std::pair<TF1*, TGraphErrors*> fit_and_plot_dilution(const char* variable_name, const char* x_title, double x_min, double x_max, int n_bins, 
+                          TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad) {
+    // Call the plotting function
+    plot_dilution_factor(variable_name, x_title, x_min, x_max, n_bins, nh3, c, ch, he, empty, canvas, pad);
+    
+    // Return the fit function and graph
+    TF1* fit_func = (TF1*)gROOT->FindObject("fit_func");
+    TGraphErrors* gr_dilution = (TGraphErrors*)gROOT->FindObject("gr_dilution");
+    
+    return std::make_pair(fit_func, gr_dilution);
 }
 
 void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_file, TFile* empty_file) {
@@ -98,22 +133,26 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1600, 600);
     c1->Divide(3, 1);
 
-    // Plot for x-Bjorken
-    plot_dilution_factor("x", "x_{B} (GeV)", 0.06, 0.6, 50, nh3, c, ch, he, empty, c1, 1);
+    // Fit and plot for x-Bjorken
+    auto fit_x = fit_and_plot_dilution("x", "x_{B} (GeV)", 0.06, 0.6, 50, nh3, c, ch, he, empty, c1, 1);
 
-    // Plot for transverse momentum
-    plot_dilution_factor("pT", "P_{T} (GeV)", 0, 1.0, 50, nh3, c, ch, he, empty, c1, 2);
+    // Fit and plot for transverse momentum
+    auto fit_pT = fit_and_plot_dilution("pT", "P_{T} (GeV)", 0, 1.0, 50, nh3, c, ch, he, empty, c1, 2);
 
-    // Plot for x-Feynman
-    plot_dilution_factor("xF", "x_{F} (GeV)", -0.8, 0.5, 50, nh3, c, ch, he, empty, c1, 3);
+    // Fit and plot for x-Feynman
+    auto fit_xF = fit_and_plot_dilution("xF", "x_{F} (GeV)", -0.8, 0.5, 50, nh3, c, ch, he, empty, c1, 3);
 
     // Save the canvas as a PNG file
     c1->SaveAs("output/one_dimensional.png");
 
+    // Print the fit functions for each variable
+    std::cout << "Fit for x_Bjorken: " << fit_x.first->GetExpFormula("p") << std::endl;
+    std::cout << "Fit for P_T: " << fit_pT.first->GetExpFormula("p") << std::endl;
+    std::cout << "Fit for x_Feynman: " << fit_xF.first->GetExpFormula("p") << std::endl;
+
     // Clean up
     delete c1;
 }
-
 
 int main(int argc, char** argv) {
     if (argc != 6) {
