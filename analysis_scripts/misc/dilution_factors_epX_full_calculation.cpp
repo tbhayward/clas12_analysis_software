@@ -86,7 +86,7 @@ double calculate_dilution_error(double nA, double nC, double nCH, double nMT, do
     return sigma_df;
 }
 
-double calculate_simple_error(double nh3_counts, double c_counts, double s_error) {
+double calculate_simple_error(double nh3_counts, double nh3_error, double c_counts, double c_error, double s_error) {
     // Propagate the error using the simplified method
     double dilution_error = std::sqrt(
                 std::pow((c_counts / (nh3_counts * nh3_counts)) * nh3_error, 2) +
