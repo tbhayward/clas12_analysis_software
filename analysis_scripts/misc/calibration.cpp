@@ -3370,8 +3370,10 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
             TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);
             // legend->AddEntry(h_data[i], "Data", "l");
             // if (mcReader) legend->AddEntry(h_mc[i], "MC", "l");
-            legend->AddEntry(h_data[i], "NH_{3}", "l");
-            if (mcReader) legend->AddEntry(h_mc[i], "C", "l");
+            // legend->AddEntry(h_data[i], "NH_{3}", "l");
+            // if (mcReader) legend->AddEntry(h_mc[i], "C", "l");
+            legend->AddEntry(h_data[i], "NH_{3} pass-1", "l");
+            if (mcReader) legend->AddEntry(h_mc[i], "NH_{3} preliminary", "l");
             legend->Draw();
         }
 
