@@ -54,8 +54,8 @@ if __name__ == '__main__':
     charges, total_charge, fractions = calculate_total_charge(filename)
     
     print(f"Total accumulated charge: {total_charge} nC")
-    print(f"Total accumulated charge for NH3: {charges['NH3']} nC ({fractions['NH3']:.2%} of total)")
-    print(f"Total accumulated charge for Carbon: {charges['C']} nC ({fractions['C']:.2%} of total)")
-    print(f"Total accumulated charge for CH2: {charges['CH2']} nC ({fractions['CH2']:.2%} of total)")
-    print(f"Total accumulated charge for Helium Bath: {charges['Helium Bath']} nC ({fractions['Helium Bath']:.2%} of total)")
-    print(f"Total accumulated charge for Empty Target (run 16194): {charges['Empty Target']} nC ({fractions['Empty Target']:.2%} of total)")
+    print(f"Total accumulated charge for NH3: {charges['NH3']} nC ({fractions['NH3']:.3%} of total)")
+    print(f"Total accumulated charge for Carbon: {charges['C']} nC ({fractions['C']:.3%} of total)")
+    print(f"Total accumulated charge for CH2: {charges['CH2']} nC ({fractions['CH2']:.3%} of total)")
+    print(f"Total accumulated charge for Helium Bath: {charges['Helium Bath']} nC ({fractions['Helium Bath']:.3%} of total)")
+    print(f"Total accumulated charge for Empty Target (run 16194): {charges['Empty Target']} nC ({fractions['Empty Target']:.3%} of total)")
