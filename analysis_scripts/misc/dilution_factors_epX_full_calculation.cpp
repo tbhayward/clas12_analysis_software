@@ -6,6 +6,7 @@
 #include <TLatex.h>
 #include <TPaveText.h>
 #include <TF1.h>
+#include <TROOT.h>
 #include <iostream>
 #include <cmath>
 #include <utility>
