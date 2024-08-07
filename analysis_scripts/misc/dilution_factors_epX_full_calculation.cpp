@@ -114,6 +114,8 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     empty->Draw(Form("%s>>h_%s_empty", variable_name, variable_name));
 
     TGraphErrors *gr_dilution = new TGraphErrors();
+    const double s = 11.306;
+    const double s_error = 0.110;
     for (int i = 1; i <= n_bins; ++i) {
         double nh3_counts = h_nh3->GetBinContent(i);
         double nh3_error = h_nh3->GetBinError(i);
