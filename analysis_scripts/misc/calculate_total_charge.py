@@ -33,10 +33,17 @@ def calculate_total_charge(filename):
             run_number = int(row[0])
             charge = float(row[1])
 
-            if current_section:
+            if current_section == 'Empty Target' and run_number == 16194:
+                charges[current_section] += charge
+            elif current_section == 'Empty Target' and run_number == 16186:
+                continue
+            elif current_section:
                 charges[current_section] += charge
 
-    return charges
+    total_charge = sum(charges.values())
+    fractions = {key: (value / total_charge) for key, value in charges.items()}
+
+    return charges, total_charge, fractions
 
 if __name__ == '__main__':
     if len(sys.argv) != 2:
@@ -44,10 +51,11 @@ if __name__ == '__main__':
         sys.exit(1)
 
     filename = sys.argv[1]
-    charges = calculate_total_charge(filename)
+    charges, total_charge, fractions = calculate_total_charge(filename)
     
-    print(f"Total accumulated charge for NH3: {charges['NH3']} nC")
-    print(f"Total accumulated charge for Carbon: {charges['C']} nC")
-    print(f"Total accumulated charge for CH2: {charges['CH2']} nC")
-    print(f"Total accumulated charge for Helium Bath: {charges['Helium Bath']} nC")
-    print(f"Total accumulated charge for Empty Target: {charges['Empty Target']} nC")
+    print(f"Total accumulated charge: {total_charge} nC")
+    print(f"Total accumulated charge for NH3: {charges['NH3']} nC ({fractions['NH3']:.2%} of total)")
+    print(f"Total accumulated charge for Carbon: {charges['C']} nC ({fractions['C']:.2%} of total)")
+    print(f"Total accumulated charge for CH2: {charges['CH2']} nC ({fractions['CH2']:.2%} of total)")
+    print(f"Total accumulated charge for Helium Bath: {charges['Helium Bath']} nC ({fractions['Helium Bath']:.2%} of total)")
+    print(f"Total accumulated charge for Empty Target (run 16194): {charges['Empty Target']} nC ({fractions['Empty Target']:.2%} of total)")
