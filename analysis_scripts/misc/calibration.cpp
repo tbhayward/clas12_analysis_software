@@ -3368,12 +3368,12 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         if (mcReader) h_mc[i]->Draw("HIST SAME");
 
             TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);
-            // legend->AddEntry(h_data[i], "Data", "l");
-            // if (mcReader) legend->AddEntry(h_mc[i], "MC", "l");
+            legend->AddEntry(h_data[i], "Data", "l");
+            if (mcReader) legend->AddEntry(h_mc[i], "MC", "l");
             // legend->AddEntry(h_data[i], "NH_{3}", "l");
             // if (mcReader) legend->AddEntry(h_mc[i], "C", "l");
-            legend->AddEntry(h_data[i], "NH_{3} pass-1", "l");
-            if (mcReader) legend->AddEntry(h_mc[i], "NH_{3} preliminary", "l");
+            // legend->AddEntry(h_data[i], "NH_{3} pass-1", "l");
+            // if (mcReader) legend->AddEntry(h_mc[i], "NH_{3} preliminary", "l");
             legend->Draw();
         }
 
@@ -3453,7 +3453,8 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
                 h_mc_beta_bins_pos[bin]->Draw("HIST SAME");
             }
             TLegend* legend_pos = new TLegend(0.7, 0.7, 0.9, 0.9);
-            legend_pos->AddEntry(h_data_beta_bins_pos[bin], "Data", "l");
+            // legend_pos->AddEntry(h_data_beta_bins_pos[bin], "Data", "l");
+            egend_pos->AddEntry(h_data_beta_bins_pos[bin], "pass-1", "l");
             if (mcReader) legend_pos->AddEntry(h_mc_beta_bins_pos[bin], "MC", "l");
             legend_pos->Draw();
 
