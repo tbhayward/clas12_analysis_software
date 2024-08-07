@@ -10,6 +10,13 @@ def calculate_total_charge(filename):
         'Empty Target': 0
     }
 
+    # Placeholder run lists for "NH3 abridged" and "C abridged"
+    nh3_abridged_runs = {16096, 16102, 16103, 16106, 16107, 16112, 16113, 16116, 16117, 16122, 16292, 16293, 16297, 16697, 16702}
+    c_abridged_runs = {16096, 16102, 16103, 16106, 16107, 16112, 16113, 16116, 16117, 16122, 16292, 16293, 16297, 16697, 16702}
+
+    nh3_abridged_charge = 0
+    c_abridged_charge = 0
+
     current_section = None
 
     with open(filename, 'r') as file:
@@ -40,10 +47,16 @@ def calculate_total_charge(filename):
             elif current_section:
                 charges[current_section] += charge
 
+            # Track the charge for the "NH3 abridged" and "C abridged" runs
+            if run_number in nh3_abridged_runs:
+                nh3_abridged_charge += charge
+            if run_number in c_abridged_runs:
+                c_abridged_charge += charge
+
     total_charge = sum(charges.values())
     fractions = {key: (value / total_charge) for key, value in charges.items()}
 
-    return charges, total_charge, fractions
+    return charges, total_charge, fractions, nh3_abridged_charge, c_abridged_charge
 
 if __name__ == '__main__':
     if len(sys.argv) != 2:
@@ -51,11 +64,14 @@ if __name__ == '__main__':
         sys.exit(1)
 
     filename = sys.argv[1]
-    charges, total_charge, fractions = calculate_total_charge(filename)
+    charges, total_charge, fractions, nh3_abridged_charge, c_abridged_charge = calculate_total_charge(filename)
     
-    print(f"Total accumulated charge: {total_charge} nC")
-    print(f"Total accumulated charge for NH3: {charges['NH3']} nC ({fractions['NH3']:.3%} of total)")
-    print(f"Total accumulated charge for Carbon: {charges['C']} nC ({fractions['C']:.3%} of total)")
-    print(f"Total accumulated charge for CH2: {charges['CH2']} nC ({fractions['CH2']:.3%} of total)")
-    print(f"Total accumulated charge for Helium Bath: {charges['Helium Bath']} nC ({fractions['Helium Bath']:.3%} of total)")
-    print(f"Total accumulated charge for Empty Target (run 16194): {charges['Empty Target']} nC ({fractions['Empty Target']:.3%} of total)")
+    print(f"Total accumulated charge: {total_charge} nC\n")
+    print(f"Total accumulated charge for NH3: {charges['NH3']} nC ({fractions['NH3']:.3%} of total)\n")
+    print(f"Total accumulated charge for Carbon: {charges['C']} nC ({fractions['C']:.3%} of total)\n")
+    print(f"Total accumulated charge for CH2: {charges['CH2']} nC ({fractions['CH2']:.3%} of total)\n")
+    print(f"Total accumulated charge for Helium Bath: {charges['Helium Bath']} nC ({fractions['Helium Bath']:.3%} of total)\n")
+    print(f"Total accumulated charge for Empty Target (run 16194): {charges['Empty Target']} nC ({fractions['Empty Target']:.3%} of total)\n\n\n")
+    
+    print(f"Total accumulated charge for NH3 abridged runs: {nh3_abridged_charge} nC\n")
+    print(f"Total accumulated charge for C abridged runs: {c_abridged_charge} nC")
