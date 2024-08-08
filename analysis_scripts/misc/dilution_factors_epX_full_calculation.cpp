@@ -114,7 +114,6 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     empty->Draw(Form("%s>>h_%s_empty", variable_name, variable_name));
 
     // Scale carbon counts and update their errors
-    // double s = 11.306;       // scale factor for carbon counts
     double s = 1;       // scale factor for carbon counts
     double s_error = 0.110;  // uncertainty in the scale factor
     TH1D *h_c_scaled = (TH1D*)h_c->Clone(Form("h_%s_c_scaled", variable_name));
@@ -144,12 +143,21 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         double dilution = calculate_dilution_factor(nA, nC_scaled, nCH, nMT, nf);
         double error = calculate_simple_error(nA, nA_error, nC_scaled, nC_scaled_error);
 
-        gr_dilution->SetPoint(i - 1, h_nh3->GetBinCenter(i), dilution);
+        // For integrated plot, set the point at the center of the plot range
+        double x_position = skip_fit ? (x_min + x_max) / 2 : h_nh3->GetBinCenter(i);
+
+        gr_dilution->SetPoint(i - 1, x_position, dilution);
         gr_dilution->SetPointError(i - 1, 0, error);
     }
 
     gr_dilution->SetTitle(Form(";%s;D_{f}", x_title));
     gr_dilution->SetMarkerStyle(20);
+
+    // Customizing the integrated plot
+    if (skip_fit) {
+        gr_dilution->GetXaxis()->SetTickLength(0); // Remove x-axis ticks
+    }
+    
     gr_dilution->Draw("AP");
     gr_dilution->GetXaxis()->SetRangeUser(x_min, x_max);
     gr_dilution->GetYaxis()->SetRangeUser(0.10, 0.30);
@@ -174,9 +182,19 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         pt->SetBorderSize(1);
         pt->SetFillStyle(1001);
         pt->SetFillColor(kWhite);
+        pt->SetTextSize(0.04); // Decrease the font size
         pt->AddText(Form("p0 = %.3f +/- %.3f", fit_func->GetParameter(0), fit_func->GetParError(0)));
         pt->AddText(Form("p1 = %.3f +/- %.3f", fit_func->GetParameter(1), fit_func->GetParError(1)));
         pt->AddText(Form("p2 = %.3f +/- %.3f", fit_func->GetParameter(2), fit_func->GetParError(2)));
+        pt->Draw();
+    } else {
+        // For integrated plot, display the value in the top right corner
+        TPaveText *pt = new TPaveText(0.5, 0.7, 0.9, 0.9, "brNDC");
+        pt->SetBorderSize(1);
+        pt->SetFillStyle(1001);
+        pt->SetFillColor(kWhite);
+        pt->SetTextSize(0.04); // Decrease the font size
+        pt->AddText(Form("p0 = %.3f +/- %.3f", gr_dilution->GetY()[0], gr_dilution->GetErrorY(0)));
         pt->Draw();
     }
 
