@@ -152,7 +152,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         double x_position = skip_fit ? (x_min + x_max) / 2 : h_nh3->GetBinCenter(i);
 
         gr_dilution->SetPoint(i - 1, x_position, dilution);
-        gr_dilution->SetPointError(i - 1, 0, error);
+        gr_dilution->SetPointError(i - 1, 0, 100*error);
     }
 
     gr_dilution->SetTitle(Form(";%s;D_{f}", x_title));
