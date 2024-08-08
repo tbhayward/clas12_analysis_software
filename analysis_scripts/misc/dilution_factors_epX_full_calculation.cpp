@@ -114,9 +114,9 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     empty->Draw(Form("%s>>h_%s_empty", variable_name, variable_name));
 
     // Scale carbon counts and update their errors
-    // double s = 1;       // scale factor for carbon counts
-    double s = 11.306;  // Uncomment when using full statistics
-    double s_error = 0.0;  // uncertainty in the scale factor
+    double s = 1;       // scale factor for carbon counts
+    // double s = 11.306;  // Uncomment when using full statistics
+    double s_error = 0.110;  // uncertainty in the scale factor
     TH1D *h_c_scaled = (TH1D*)h_c->Clone(Form("h_%s_c_scaled", variable_name));
     for (int i = 1; i <= h_c->GetNbinsX(); ++i) {
         double bin_content = h_c->GetBinContent(i);
@@ -134,8 +134,6 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     for (int i = 1; i <= n_bins; ++i) {
         double nA = h_nh3->GetBinContent(i);
         double nA_error = h_nh3->GetBinError(i);
-        double nC = h_c->GetBinContent(i);
-        double nC_error = h_c->GetBinContent(i);
         double nC_scaled = h_c_scaled->GetBinContent(i);
         double nC_scaled_error = h_c_scaled->GetBinError(i);
 
@@ -143,14 +141,8 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         double nMT = h_he->GetBinContent(i);
         double nf = h_empty->GetBinContent(i);
 
-        double dilution = calculate_dilution_factor(nA, nC, nCH, nMT, nf);
-        // double error = 100 * calculate_simple_error(nA, nA_error, nC, nC_error);
-
-        double original_error = calculate_simple_error(nA, nA_error, nC, nC_error);
-        double error = 100 * original_error;
-
-        // Debugging output
-        std::cout << "Bin " << i << " - Original Error: " << original_error << " Scaled Error: " << error << std::endl;
+        double dilution = calculate_dilution_factor(nA, nC_scaled, nCH, nMT, nf);
+        double error = calculate_simple_error(nA, nA_error, nC_scaled, nC_scaled_error);
 
         // For integrated plot, set the point at the center of the plot range
         double x_position = skip_fit ? (x_min + x_max) / 2 : h_nh3->GetBinCenter(i);
@@ -255,32 +247,16 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     // Fit and plot for x-Feynman
     auto fit_xF = fit_and_plot_dilution("xF", "x_{F} (GeV)", -0.8, 0.5, 25, nh3, c, ch, he, empty, c1, 4);
 
-    // Prepare to print the fit functions for each variable
-    std::cout << std::endl << std::endl << std::endl;
+    // Save the canvas as a PNG file
+    c1->SaveAs("output/one_dimensional.png");
 
-    if (fit_x.first) {
-        double p0_x = fit_x.first->GetParameter(0);
-        double p1_x = fit_x.first->GetParameter(1);
-        double p2_x = fit_x.first->GetParameter(2);
-        std::cout << "if (prefix == \"x\") { return " << p0_x << 
-            "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
+    // Print the fit functions for each variable
+    if (fit_integrated.second && fit_integrated.second->GetN() > 0) {
+        std::cout << "Integrated Dilution Factor: " << fit_integrated.second->GetY()[0] << " +/- " << fit_integrated.second->GetErrorY(0) << std::endl;
     }
-
-    if (fit_pT.first) {
-        double p0_PT = fit_pT.first->GetParameter(0);
-        double p1_PT = fit_pT.first->GetParameter(1);
-        double p2_PT = fit_pT.first->GetParameter(2);
-        std::cout << "if (prefix == \"PT\") { return " << p0_PT << 
-            "+" << p1_PT << "*currentVariable+" << p2_PT << "*std::pow(currentVariable,2); }" << std::endl;
-    }
-
-    if (fit_xF.first) {
-        double p0_xF = fit_xF.first->GetParameter(0);
-        double p1_xF = fit_xF.first->GetParameter(1);
-        double p2_xF = fit_xF.first->GetParameter(2);
-        std::cout << "if (prefix == \"xF\") { return " << p0_xF << 
-            "+" << p1_xF << "*currentVariable+" << p2_xF << "*std::pow(currentVariable,2); }" << std::endl;
-    }
+    std::cout << "Fit for x_Bjorken: " << (fit_x.first ? fit_x.first->GetExpFormula("p") : "No fit") << std::endl;
+    std::cout << "Fit for P_T: " << (fit_pT.first ? fit_pT.first->GetExpFormula("p") : "No fit") << std::endl;
+    std::cout << "Fit for x_Feynman: " << (fit_xF.first ? fit_xF.first->GetExpFormula("p") : "No fit") << std::endl;
 
     // Clean up
     delete c1;
