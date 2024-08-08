@@ -10,6 +10,7 @@
 #include <iostream>
 #include <cmath>
 #include <utility>
+#include <vector>
 
 // Constants for the dilution factor calculation
 const double L_C = 1.5;
@@ -455,6 +456,7 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
                 TH1D *h_pT_ch = new TH1D(Form("h_pT_ch_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
                 TH1D *h_pT_he = new TH1D(Form("h_pT_he_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
                 TH1D *h_pT_empty = new TH1D(Form("h_pT_empty_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
+
                 // Draw histograms
                 tree_nh3->Draw(Form("pT>>h_pT_nh3_%d%d%d", k, j, i), cuts.c_str());
                 tree_carbon->Draw(Form("pT>>h_pT_c_%d%d%d", k, j, i), cuts.c_str());
@@ -502,18 +504,27 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
                 std::cout << "Fit result: p0 = " << fit_func->GetParameter(0)
                           << " +/- " << fit_func->GetParError(0) << std::endl;
 
-                // Cleanup for this iteration
+                // Store the objects in vectors for later cleanup
+                dilution_graphs.push_back(gr_dilution);
+                fit_functions.push_back(fit_func);
+
+                // Cleanup the histograms after each iteration
                 delete h_pT_nh3;
                 delete h_pT_c;
                 delete h_pT_ch;
                 delete h_pT_he;
                 delete h_pT_empty;
-                delete gr_dilution;
-                delete fit_func;
             }
         }
+
         // Save the canvas after all pads are filled
         c1->SaveAs(Form("output/multidimensional_ybin_%d.png", k));
+
+        // Clean up the dynamically allocated objects
+        for (auto graph : dilution_graphs) delete graph;
+        for (auto func : fit_functions) delete func;
+
+        // Clean up the canvas
         delete c1;
     }
 
