@@ -509,6 +509,25 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
                 int ndf = fit_func->GetNDF();
                 double chi2_ndf = chi2 / ndf;
 
+                // Calculate chi2/ndf scaling factor
+                double chi2_scale_factor = std::sqrt(chi2_ndf);
+
+                // Rescale the errors
+                for (int i = 0; i < gr_dilution->GetN(); ++i) {
+                    double x, y;
+                    gr_dilution->GetPoint(i, x, y);
+                    gr_dilution->SetPointError(i, 0, gr_dilution->GetErrorY(i) * chi2_scale_factor);
+                }
+
+                // Refit with scaled errors
+                gr_dilution->Fit(fit_func, "RQ");
+                fit_func->Draw("SAME");
+
+                // Retrieve updated chi2 and NDF
+                chi2 = fit_func->GetChisquare();
+                ndf = fit_func->GetNDF();
+                chi2_ndf = chi2 / ndf;
+
                 // Add fit parameters and chi-squared box
                 TPaveText *pt = new TPaveText(0.5, 0.7, 0.9, 0.9, "brNDC");
                 pt->SetBorderSize(1);
@@ -523,6 +542,8 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
                 latex.SetTextSize(0.04);
                 latex.DrawLatex(0.20, 0.15, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
 
+                // Print the fit formula for the current bin
+                std::cout << "if (prefix == \"" << Q2y_prefix << z_prefix << "\") { return " << p0 << "; }" << std::endl << std::endl;
                 // Print the fit formula for the current bin
                 std::cout << "if (prefix == \"" << Q2y_prefix << z_prefix << "\") { return " << p0 << "; }" << std::endl << std::endl;
 
