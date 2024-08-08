@@ -159,7 +159,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         gr_dilution->GetXaxis()->SetRangeUser(0, 1);  // Set x-axis range manually
         gr_dilution->GetXaxis()->SetLabelSize(0);     // Remove x-axis labels
         gr_dilution->GetXaxis()->SetTickLength(0);    // Remove x-axis ticks
-        gr_dilution->SetTitle("Integrated;Integrated;D_{f}");
+        gr_dilution->SetTitle(";Integrated;D_{f}");
     }
     
     gr_dilution->Draw("AP");
