@@ -151,7 +151,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
 
     // Fit and plot (skip fit for the integrated version)
     if (!skip_fit) {
-        TF1 *fit_func = new TF1("fit_func", "[0] + [1]*x + [2]*x^2", x_min, x_max);
+        TF1 *fit_func = new TF1("fit_func", "[0] + [1]*x + [2]*x^2 + [3]*x^3", x_min, x_max);
         gr_dilution->Fit(fit_func, "RQ");
         fit_func->SetLineColor(kRed);
 
@@ -188,6 +188,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         pt->AddText(Form("p0 = %.3f +/- %.3f", fit_func->GetParameter(0), fit_func->GetParError(0)));
         pt->AddText(Form("p1 = %.3f +/- %.3f", fit_func->GetParameter(1), fit_func->GetParError(1)));
         pt->AddText(Form("p2 = %.3f +/- %.3f", fit_func->GetParameter(2), fit_func->GetParError(2)));
+        pt->AddText(Form("p3 = %.3f +/- %.3f", fit_func->GetParameter(3), fit_func->GetParError(3)));
         pt->Draw();
     } else {
         // For integrated plot, scale errors by the average scale factor from other fits
