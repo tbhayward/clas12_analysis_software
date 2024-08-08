@@ -544,8 +544,6 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
 
                 // Print the fit formula for the current bin
                 std::cout << "if (prefix == \"" << Q2y_prefix << z_prefix << "\") { return " << p0 << "; }" << std::endl << std::endl;
-                // Print the fit formula for the current bin
-                std::cout << "if (prefix == \"" << Q2y_prefix << z_prefix << "\") { return " << p0 << "; }" << std::endl << std::endl;
 
                 // Store the objects in vectors for later cleanup
                 dilution_graphs.push_back(gr_dilution);
