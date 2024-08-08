@@ -88,7 +88,7 @@ double calculate_dilution_error(double nA, double nC, double nCH, double nMT, do
 
 double calculate_new_dilution_error(double nA, double nC, double nCH, double nMT, double nf) {
     double term1 = 0.734694 * nA * nC * pow((nA - nMT), 2) * 
-                   pow((2.77556e-17 * nC - 0.554976 * nCH - 0.0373109 * nf + 0.592287 * nMT), 2);
+                   pow((-0.554976 * nCH - 0.0373109 * nf + 0.592287 * nMT), 2);
 
     double term2 = 0.456108 * nA * pow((nA - nMT), 2) * 
                    pow((0.704358 * nC + 0.295642 * nf - nMT), 2) * nMT;
@@ -102,7 +102,7 @@ double calculate_new_dilution_error(double nA, double nC, double nCH, double nMT
     double term5 = 0.022405 * nA * nMT * 
                    pow((0.778288 * pow(nC, 2) + 4.76701 * pow(nCH, 2) - 1.45518 * nCH * nf + 0.0177374 * pow(nf, 2) + 
                         nC * (-4.99401 * nCH + 0.317598 * nf - 0.271825 * nMT) + 
-                        nA * (3.39167 * nC - 4.51192 * nCH + 1.12025 * nf - 1.11022e-16 * nMT) + 
+                        nA * (3.39167 * nC - 4.51192 * nCH + 1.12025 * nf) + 
                         1.42708 * nCH * nMT - 0.0181513 * nf * nMT - 0.568553 * pow(nMT, 2)), 2);
 
     double denominator = pow(nA, 3) * 
@@ -171,8 +171,8 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         double nf = h_empty->GetBinContent(i);
 
         double dilution = calculate_dilution_factor(nA, nC, nCH, nMT, nf);
-        double error = calculate_dilution_error(nA, nC, nCH, nMT, nf);
-        // double error = calculate_new_dilution_error(nA, nC, nCH, nMT, nf);
+        // double error = calculate_dilution_error(nA, nC, nCH, nMT, nf);
+        double error = calculate_new_dilution_error(nA, nC, nCH, nMT, nf);
         // double error = calculate_simple_error(nA, nA_error, nC_scaled, nC_scaled_error);
 
         // For integrated plot, set the point at the center of the plot range
