@@ -466,7 +466,6 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
                 tree_ch->Draw(Form("pT>>h_pT_ch_%d%d%d", k, j, i), cuts.c_str());
                 tree_he->Draw(Form("pT>>h_pT_he_%d%d%d", k, j, i), cuts.c_str());
                 tree_empty->Draw(Form("pT>>h_pT_empty_%d%d%d", k, j, i), cuts.c_str());
-
                 // Inside your loop after creating the histograms
                 int n_bins = h_pT_nh3->GetNbinsX();
                 TGraphErrors *gr_dilution = new TGraphErrors(n_bins);
@@ -493,7 +492,7 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
 
                 // Draw the TGraphErrors on the canvas
                 gr_dilution->SetMarkerStyle(20);
-                gr_dilution->SetTitle("Dilution Factor vs P_{T};P_{T} (GeV);Dilution Factor");
+                gr_dilution->SetTitle("Dilution Factor vs P_{T};P_{T} (GeV);D_{f}");
                 gr_dilution->GetYaxis()->SetRangeUser(0.00, 0.30); // Set the y-axis range
                 gr_dilution->Draw("AP");
 
@@ -503,9 +502,29 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
                 fit_func->SetLineColor(kRed);
                 fit_func->Draw("SAME");
 
-                // Optionally print the fit result (if desired for debugging or output)
-                std::cout << "Fit result: p0 = " << fit_func->GetParameter(0)
-                          << " +/- " << fit_func->GetParError(0) << std::endl;
+                // Retrieve fit parameters and chi-squared
+                double p0 = fit_func->GetParameter(0);
+                double p0_err = fit_func->GetParError(0);
+                double chi2 = fit_func->GetChisquare();
+                int ndf = fit_func->GetNDF();
+                double chi2_ndf = chi2 / ndf;
+
+                // Add fit parameters and chi-squared box
+                TPaveText *pt = new TPaveText(0.5, 0.7, 0.9, 0.9, "brNDC");
+                pt->SetBorderSize(1);
+                pt->SetFillStyle(1001); // Solid fill style
+                pt->SetFillColor(kWhite); // White background
+                pt->AddText(Form("p0 = %.3f +/- %.3f", p0, p0_err));
+                pt->Draw();
+
+                // Add chi2/ndf in the top left
+                TLatex latex;
+                latex.SetNDC();
+                latex.SetTextSize(0.04);
+                latex.DrawLatex(0.20, 0.15, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
+
+                // Print the fit formula for the current bin
+                std::cout << "if (prefix == \"" << Q2y_prefix << z_prefix << "\") { return " << p0 << "; }" << std::endl << std::endl;
 
                 // Store the objects in vectors for later cleanup
                 dilution_graphs.push_back(gr_dilution);
