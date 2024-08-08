@@ -312,7 +312,7 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
             std::cerr << "Error: PhysicsEvents tree not found!" << std::endl;
             return 0;
         }
-
+        std::cout << "Declaring canvas here for k = " << k << std::endl;
         std::string canvasName = "c1_" + std::to_string(k);
         TCanvas *c1 = new TCanvas(canvasName.c_str(), "Dilution Factor Analysis", 1600, 2000);
         if (k == 0) {
@@ -592,6 +592,7 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
         for (auto func : fit_functions) delete func;
 
         // Clean up the canvas
+        std::cout << "Deleting canvas here for k = " << k << std::endl;
         delete c1;
     }
 
