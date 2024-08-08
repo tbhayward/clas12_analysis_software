@@ -204,7 +204,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         pt->SetFillStyle(1001);
         pt->SetFillColor(kWhite);
         pt->SetTextSize(0.035); // Decrease the font size
-        pt->AddText(Form("p0 = %.3f +/- %.3f", gr_dilution->GetY()[0], gr_dilution->GetErrorY(0)));
+        pt->AddText(Form("p0 = %.4f +/- %.4f", gr_dilution->GetY()[0], gr_dilution->GetErrorY(0)));
         pt->Draw();
     }
 
