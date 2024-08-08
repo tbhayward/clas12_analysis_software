@@ -171,7 +171,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         double nf = h_empty->GetBinContent(i);
 
         double dilution = calculate_dilution_factor(nA, nC, nCH, nMT, nf);
-        double error = calculate_dilution_error(nA, nC, nCH, nMT, nf);
+        double error = calculate_new_dilution_error(nA, nC, nCH, nMT, nf);
         // double error = calculate_simple_error(nA, nA_error, nC_scaled, nC_scaled_error);
 
         // For integrated plot, set the point at the center of the plot range
