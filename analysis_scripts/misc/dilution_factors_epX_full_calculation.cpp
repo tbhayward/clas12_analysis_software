@@ -114,8 +114,8 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     empty->Draw(Form("%s>>h_%s_empty", variable_name, variable_name));
 
     // Scale carbon counts and update their errors
-    double s = 1;       // scale factor for carbon counts
-    // double s = 11.306;  // Uncomment when using full statistics
+    // double s = 1;       // scale factor for carbon counts
+    double s = 11.306;  // Uncomment when using full statistics
     double s_error = 0.110;  // uncertainty in the scale factor
     TH1D *h_c_scaled = (TH1D*)h_c->Clone(Form("h_%s_c_scaled", variable_name));
     for (int i = 1; i <= h_c->GetNbinsX(); ++i) {
