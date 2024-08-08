@@ -274,6 +274,26 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     delete c1;
 }
 
+std::vector<TH1D*> create_and_draw_histograms(TTree* tree_nh3, TTree* tree_carbon, TTree* tree_ch, TTree* tree_he, TTree* tree_empty, const std::string& cuts, int k, int j, int i) {
+    // Create histograms for different targets
+    TH1D *h_pT_nh3 = new TH1D(Form("h_pT_nh3_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
+    TH1D *h_pT_c = new TH1D(Form("h_pT_c_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
+    TH1D *h_pT_ch = new TH1D(Form("h_pT_ch_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
+    TH1D *h_pT_he = new TH1D(Form("h_pT_he_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
+    TH1D *h_pT_empty = new TH1D(Form("h_pT_empty_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
+
+    // Draw histograms
+    tree_nh3->Draw(Form("pT>>h_pT_nh3_%d%d%d", k, j, i), cuts.c_str());
+    tree_carbon->Draw(Form("pT>>h_pT_c_%d%d%d", k, j, i), cuts.c_str());
+    tree_ch->Draw(Form("pT>>h_pT_ch_%d%d%d", k, j, i), cuts.c_str());
+    tree_he->Draw(Form("pT>>h_pT_he_%d%d%d", k, j, i), cuts.c_str());
+    tree_empty->Draw(Form("pT>>h_pT_empty_%d%d%d", k, j, i), cuts.c_str());
+
+    // Store histograms in a vector
+    std::vector<TH1D*> histograms = {h_pT_nh3, h_pT_c, h_pT_ch, h_pT_he, h_pT_empty};
+    return histograms;
+}
+
 double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile* empty) {
     for (int k = 0; k < 4; ++k) {
         // Get the PhysicsEvents trees
@@ -453,20 +473,17 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
                 c1->cd(5 * j + (i + 1)); // Pads are numbered from 1 to 25
                 gPad->SetLeftMargin(0.15);
 
-                // Create histograms for different targets
-                TH1D *h_pT_nh3 = new TH1D(Form("h_pT_nh3_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
-                TH1D *h_pT_c = new TH1D(Form("h_pT_c_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
-                TH1D *h_pT_ch = new TH1D(Form("h_pT_ch_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
-                TH1D *h_pT_he = new TH1D(Form("h_pT_he_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
-                TH1D *h_pT_empty = new TH1D(Form("h_pT_empty_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
+                // Call the function to create and draw histograms
+                std::vector<TH1D*> histograms = create_and_draw_histograms(tree_nh3, tree_carbon, tree_ch, tree_he, tree_empty, cuts, k, j, i);
+                
+                // Now you can access the histograms using the vector
+                TH1D *h_pT_nh3 = histograms[0];
+                TH1D *h_pT_c = histograms[1];
+                TH1D *h_pT_ch = histograms[2];
+                TH1D *h_pT_he = histograms[3];
+                TH1D *h_pT_empty = histograms[4];
 
-                // Draw histograms
-                tree_nh3->Draw(Form("pT>>h_pT_nh3_%d%d%d", k, j, i), cuts.c_str());
-                tree_carbon->Draw(Form("pT>>h_pT_c_%d%d%d", k, j, i), cuts.c_str());
-                tree_ch->Draw(Form("pT>>h_pT_ch_%d%d%d", k, j, i), cuts.c_str());
-                tree_he->Draw(Form("pT>>h_pT_he_%d%d%d", k, j, i), cuts.c_str());
-                tree_empty->Draw(Form("pT>>h_pT_empty_%d%d%d", k, j, i), cuts.c_str());
-                // Inside your loop after creating the histograms
+                // Inside loop after creating the histograms
                 int n_bins = h_pT_nh3->GetNbinsX();
                 TGraphErrors *gr_dilution = new TGraphErrors(n_bins);
 
@@ -498,7 +515,7 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
                 // Draw the TGraphErrors on the canvas
                 gr_dilution->Draw("AP");
                 gr_dilution->GetXaxis()->SetLimits(0, 1);
-                gr_dilution->GetYaxis()->SetRangeUser(0.10, 0.30); // Set the y-axis range from 0.1 to 0.3
+                gr_dilution->GetYaxis()->SetRangeUser(0.00, 0.50); // Set the y-axis range from 0.0 to 0.5
 
                 // Increase the size of axis labels and titles
                 gr_dilution->GetXaxis()->SetTitleSize(0.05);  // Increase title size
