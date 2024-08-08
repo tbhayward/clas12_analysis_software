@@ -211,12 +211,31 @@ std::pair<TF1*, TGraphErrors*> fit_and_plot_dilution(const char* variable_name, 
 TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad, bool skip_fit = false) {
     // Call the plotting function
     plot_dilution_factor(variable_name, x_title, x_min, x_max, n_bins, nh3, c, ch, he, empty, canvas, pad, skip_fit);
+
     // Return the fit function and graph
     TF1* fit_func = nullptr;
     TGraphErrors* gr_dilution = (TGraphErrors*)gPad->GetPrimitive("gr_dilution");
 
+    // Adjustments for the integrated plot
+    if (skip_fit && gr_dilution) {
+        gr_dilution->GetXaxis()->SetRangeUser(0, 1);  // Set x-axis range manually
+        gr_dilution->GetXaxis()->SetLabelSize(0);     // Remove x-axis labels
+        gr_dilution->SetTitle("Integrated;Integrated;D_{f}");
+    }
+
+    // Retrieve the fit function if it's not skipped
     if (!skip_fit) {
         fit_func = (TF1*)gPad->GetPrimitive("fit_func");
+
+        // Adjust legend size and position if fit_func is found
+        if (fit_func) {
+            TPaveText* pt = (TPaveText*)gPad->FindObject("title");
+            if (pt) {
+                pt->SetTextSize(0.035);  // Decrease legend text size
+                pt->SetX1NDC(0.55);      // Adjust the left edge of the legend box
+                pt->Draw();
+            }
+        }
     }
 
     return std::make_pair(fit_func, gr_dilution);
