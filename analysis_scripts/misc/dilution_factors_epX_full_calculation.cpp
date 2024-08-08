@@ -301,10 +301,6 @@ void multi_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he
             c1->Divide(5, 5);
         }
         
-        // Arrays to store graphs and fits
-        std::vector<TGraphErrors*> graphs;
-        std::vector<TF1*> fits;
-        
         for (int j = 0; j < n_Q2_bins; ++j) {
             for (int i_z = 0; i_z < n_z_bins; ++i_z) {
                 std::string y_range = Form("y > %.2f && y < %.2f", y_bins[k].first, y_bins[k].second);
@@ -376,23 +372,20 @@ void multi_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he
                 pt->AddText(Form("p0 = %.3f +/- %.3f", fit_func->GetParameter(0), fit_func->GetParError(0)));
                 pt->AddText(Form("p1 = %.3f +/- %.3f", fit_func->GetParameter(1), fit_func->GetParError(1)));
                 pt->Draw();
-                // Store graph and fit to avoid deletion
-                graphs.push_back(gr_dilution);
-                fits.push_back(fit_func);
+
+                // Print fit parameters in the desired format
+                std::string Q2y_prefix = Form("Q2y%d", k * n_Q2_bins + j + 1);
+                std::string z_prefix = Form("z%d", i_z + 1);
+                double p0 = fit_func->GetParameter(0);
+                double p1 = fit_func->GetParameter(1);
+                std::cout << “if (prefix == " " << Q2y_prefix << z_prefix << " ") { return " " << p0 << " + " << p1 << "*currentVariable; }" << std::endl;
             }
         }
-
         // Save the canvas
-        c1->SaveAs(Form("output/multidimensional_ybin_%d.png", k));
+        c1->SaveAs(Form("output/multidimensional_ybin_%d.pdf", k));
 
         // Clean up
         delete c1;
-        for (auto graph : graphs) {
-            delete graph;
-        }
-        for (auto fit : fits) {
-            delete fit;
-        }
     }
 }
 
