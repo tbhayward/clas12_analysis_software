@@ -490,11 +490,21 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
                     gr_dilution->SetPointError(bin - 1, 0, dilution_error);
                 }
 
-                // Draw the TGraphErrors on the canvas
+                // Use the reformatted strings in the title
+                std::string title = Q2_title + " , " + y_title + " , " + z_title;
+                gr_dilution->SetTitle((title + "; P_{T} (GeV); D_{f}").c_str());
                 gr_dilution->SetMarkerStyle(20);
-                gr_dilution->SetTitle("Dilution Factor vs P_{T};P_{T} (GeV);D_{f}");
-                gr_dilution->GetYaxis()->SetRangeUser(0.00, 0.30); // Set the y-axis range
+
+                // Draw the TGraphErrors on the canvas
                 gr_dilution->Draw("AP");
+                gr_dilution->GetXaxis()->SetLimits(0, 1);
+                gr_dilution->GetYaxis()->SetRangeUser(0.10, 0.30); // Set the y-axis range from 0.1 to 0.3
+
+                // Increase the size of axis labels and titles
+                gr_dilution->GetXaxis()->SetTitleSize(0.05);  // Increase title size
+                gr_dilution->GetYaxis()->SetTitleSize(0.05);  // Increase title size
+                gr_dilution->GetXaxis()->SetLabelSize(0.04);  // Increase label size
+                gr_dilution->GetYaxis()->SetLabelSize(0.04);  // Increase label size
 
                 // Fit the dilution factor to a constant function
                 TF1 *fit_func = new TF1("fit_func", "[0]", 0, 1.0); // Constant fit
