@@ -96,9 +96,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     empty->Draw(Form("%s>>h_%s_empty", variable_name, variable_name));
 
     // Scale carbon counts and update their errors
-    // double s = 1;       // scale factor for carbon counts
     double s = 11.306;  // Uncomment when using full statistics
-    // double s_error = 0.110;  // uncertainty in the scale factor
     double s_error = 0.0;  // uncertainty in the scale factor
     TH1D *h_c_scaled = (TH1D*)h_c->Clone(Form("h_%s_c_scaled", variable_name));
     for (int i = 1; i <= h_c->GetNbinsX(); ++i) {
@@ -127,7 +125,6 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
 
         double dilution = calculate_dilution_factor(nA, nC, nCH, nMT, nf);
         double error = calculate_dilution_error(nA/xA, nC/xC, nCH/xCH, nMT/xHe, nf/xf);
-        // double error = calculate_simple_error(nA, nA_error, nC_scaled, nC_scaled_error);
 
         // For integrated plot, set the point at the center of the plot range
         double x_position = skip_fit ? (x_min + x_max) / 2 : h_nh3->GetBinCenter(i);
@@ -150,16 +147,33 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     gr_dilution->Draw("AP");
     gr_dilution->GetYaxis()->SetRangeUser(0.10, 0.30);
 
+    double chi2_scale_factor = 1.0;
+
     // Fit and plot (skip fit for the integrated version)
     if (!skip_fit) {
         TF1 *fit_func = new TF1("fit_func", "[0] + [1]*x + [2]*x^2", x_min, x_max);
         gr_dilution->Fit(fit_func, "RQ");
         fit_func->SetLineColor(kRed);
+
+        // Calculate chi2/ndf scaling factor
+        double chi2 = fit_func->GetChisquare();
+        int ndf = fit_func->GetNDF();
+        chi2_scale_factor = std::sqrt(chi2 / ndf);
+        
+        // Rescale the errors
+        for (int i = 0; i < gr_dilution->GetN(); ++i) {
+            double x, y;
+            gr_dilution->GetPoint(i, x, y);
+            gr_dilution->SetPointError(i, 0, gr_dilution->GetErrorY(i) * chi2_scale_factor);
+        }
+
+        // Refit with scaled errors
+        gr_dilution->Fit(fit_func, "RQ");
         fit_func->Draw("SAME");
 
         // Print fit parameters and chi2/ndf
-        double chi2 = fit_func->GetChisquare();
-        int ndf = fit_func->GetNDF();
+        chi2 = fit_func->GetChisquare();
+        ndf = fit_func->GetNDF();
         TLatex latex;
         latex.SetNDC();
         latex.SetTextSize(0.035); // Decrease the font size
@@ -176,6 +190,14 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         pt->AddText(Form("p2 = %.3f +/- %.3f", fit_func->GetParameter(2), fit_func->GetParError(2)));
         pt->Draw();
     } else {
+        // For integrated plot, scale errors by the average scale factor from other fits
+        double avg_scale_factor = chi2_scale_factor;
+        for (int i = 0; i < gr_dilution->GetN(); ++i) {
+            double x, y;
+            gr_dilution->GetPoint(i, x, y);
+            gr_dilution->SetPointError(i, 0, gr_dilution->GetErrorY(i) * avg_scale_factor);
+        }
+
         // For integrated plot, display the value in the top right corner
         TPaveText *pt = new TPaveText(0.55, 0.7, 0.9, 0.9, "brNDC");
         pt->SetBorderSize(1);
