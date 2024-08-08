@@ -134,6 +134,8 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     for (int i = 1; i <= n_bins; ++i) {
         double nA = h_nh3->GetBinContent(i);
         double nA_error = h_nh3->GetBinError(i);
+        double nC = h_c->GetBinContent(i);
+        double nA_error = h_nh3->GetBinError(i);
         double nC_scaled = h_c_scaled->GetBinContent(i);
         double nC_scaled_error = h_c_scaled->GetBinError(i);
 
