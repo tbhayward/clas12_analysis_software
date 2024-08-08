@@ -274,6 +274,26 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     delete c1;
 }
 
+std::vector<TH1D*> create_and_draw_histograms(TTree* tree_nh3, TTree* tree_carbon, TTree* tree_ch, TTree* tree_he, TTree* tree_empty, const std::string& cuts, int k, int j, int i) {
+    // Create histograms for different targets
+    TH1D *h_pT_nh3 = new TH1D(Form("h_pT_nh3_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
+    TH1D *h_pT_c = new TH1D(Form("h_pT_c_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
+    TH1D *h_pT_ch = new TH1D(Form("h_pT_ch_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
+    TH1D *h_pT_he = new TH1D(Form("h_pT_he_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
+    TH1D *h_pT_empty = new TH1D(Form("h_pT_empty_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
+
+    // Draw histograms
+    tree_nh3->Draw(Form("pT>>h_pT_nh3_%d%d%d", k, j, i), cuts.c_str());
+    tree_carbon->Draw(Form("pT>>h_pT_c_%d%d%d", k, j, i), cuts.c_str());
+    tree_ch->Draw(Form("pT>>h_pT_ch_%d%d%d", k, j, i), cuts.c_str());
+    tree_he->Draw(Form("pT>>h_pT_he_%d%d%d", k, j, i), cuts.c_str());
+    tree_empty->Draw(Form("pT>>h_pT_empty_%d%d%d", k, j, i), cuts.c_str());
+
+    // Store histograms in a vector
+    std::vector<TH1D*> histograms = {h_pT_nh3, h_pT_c, h_pT_ch, h_pT_he, h_pT_empty};
+    return histograms;
+}
+
 double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile* empty) {
     for (int k = 0; k < 4; ++k) {
         // Get the PhysicsEvents trees
