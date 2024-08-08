@@ -21,11 +21,11 @@ const double rho_CH = 1.0 / 14;
 const double rho_A = 0.92 / 17;
 
 // Fractional charge values
-const double xA = 0.23895;
-const double xC = 0.08751;
-const double xCH = 0.09614;
-const double xHe = 0.33822;
-const double xf = 0.23918;
+const double xA = 0.71526;
+const double xC = 0.07111;
+const double xCH = 0.03049;
+const double xHe = 0.10728;
+const double xf = 0.07586;
 
 
 double calculate_dilution_factor(double nA, double nC, double nCH, double nMT, double nf) {
@@ -114,8 +114,8 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     empty->Draw(Form("%s>>h_%s_empty", variable_name, variable_name));
 
     // Scale carbon counts and update their errors
-    double s = 1;       // scale factor for carbon counts
-    // double s = 11.306;  // Uncomment when using full statistics
+    // double s = 1;       // scale factor for carbon counts
+    double s = 11.306;  // Uncomment when using full statistics
     double s_error = 0.110;  // uncertainty in the scale factor
     TH1D *h_c_scaled = (TH1D*)h_c->Clone(Form("h_%s_c_scaled", variable_name));
     for (int i = 1; i <= h_c->GetNbinsX(); ++i) {
@@ -141,7 +141,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         double nMT = h_he->GetBinContent(i);
         double nf = h_empty->GetBinContent(i);
 
-        double dilution = calculate_dilution_factor(nA, nC_scaled, nCH, nMT, nf);
+        double dilution = calculate_dilution_factor(nA, nC, nCH, nMT, nf);
         double error = calculate_simple_error(nA, nA_error, nC_scaled, nC_scaled_error);
 
         // For integrated plot, set the point at the center of the plot range
