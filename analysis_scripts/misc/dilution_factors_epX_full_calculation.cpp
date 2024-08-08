@@ -587,6 +587,7 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
         // Save the canvas after all pads are filled
         c1->SaveAs(Form("output/multidimensional_ybin_%d.png", k));
 
+        std::cout << "Before the deletion" << std::endl;
         // Clean up the dynamically allocated objects
         for (auto graph : dilution_graphs) delete graph;
         for (auto func : fit_functions) delete func;
