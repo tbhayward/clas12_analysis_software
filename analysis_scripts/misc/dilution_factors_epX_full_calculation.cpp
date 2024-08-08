@@ -287,13 +287,12 @@ void multi_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he
     std::pair<double, double> Q2_bins[n_Q2_bins] = { {1.00, 2.00}, {2.00, 3.00}, {3.00, 4.00}, {4.00, 5.00}, {5.00, 7.00} };
     std::pair<double, double> z_bins[n_z_bins] = { {0.10, 0.25}, {0.25, 0.35}, {0.35, 0.45}, {0.45, 0.55}, {0.55, 0.75} };
 
-    // Loop over y bins to create separate canvases for each y bin range
+    // Loop over y, Q2, and z bins
     for (int k = 0; k < n_y_bins; ++k) {
-        // Create a new canvas for each y bin
-        std::string canvasName = "c1_" + std::to_string(k);
-        TCanvas *c1 = new TCanvas(canvasName.c_str(), "Dilution Factor Analysis", 1600, 2000);
-
-        // Divide the canvas into the appropriate number of pads based on the y bin index
+        // Create canvas
+        TCanvas *c1 = new TCanvas(Form("c1_ybin_%d", k), "Dilution Factor Analysis", 1600, 2000);
+        
+        // Determine the division of the canvas based on k
         if (k == 0) {
             c1->Divide(3, 5);
         } else if (k == 1) {
@@ -301,16 +300,14 @@ void multi_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he
         } else {
             c1->Divide(5, 5);
         }
-
-        // Loop over Q2 and z bins to fill the canvas pads
+        
+        // Arrays to store graphs and fits
+        std::vector<TGraphErrors*> graphs;
+        std::vector<TF1*> fits;
+        
         for (int j = 0; j < n_Q2_bins; ++j) {
             for (int i_z = 0; i_z < n_z_bins; ++i_z) {
-                // Activate the appropriate pad
-                c1->cd(j * n_z_bins + i_z + 1);
-                gPad->SetLeftMargin(0.15);
-
-                // Define the cuts for this specific y, Q2, and z bin
-                std::string y_range = Form("0.30 < y && y < %.2f", y_bins[k].second);
+                std::string y_range = Form("y > %.2f && y < %.2f", y_bins[k].first, y_bins[k].second);
                 std::string Q2_range = Form("Q2 > %.2f && Q2 < %.2f", Q2_bins[j].first, Q2_bins[j].second);
                 std::string z_range = Form("z > %.2f && z < %.2f", z_bins[i_z].first, z_bins[i_z].second);
                 std::string cuts = Form("Mx > 1.4 && %s && %s && %s", Q2_range.c_str(), y_range.c_str(), z_range.c_str());
@@ -351,10 +348,13 @@ void multi_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he
                 std::string title = Form("y: %.2f-%.2f, Q^{2}: %.2f-%.2f, z: %.2f-%.2f", y_bins[k].first, y_bins[k].second, Q2_bins[j].first, Q2_bins[j].second, z_bins[i_z].first, z_bins[i_z].second);
                 gr_dilution->SetTitle((title + "; P_{T} (GeV); D_{f}").c_str());
                 gr_dilution->SetMarkerStyle(20);
+                
+                // Draw on the canvas pad
+                c1->cd(5*j + (i_z + 1));
                 gr_dilution->Draw("AP");
                 gr_dilution->GetYaxis()->SetRangeUser(0.00, 0.30);
 
-                // Fit to a constant plus linear term (no quadratic term)
+                // Fit to a constant plus linear term
                 TF1 *fit_func = new TF1(Form("fit_func_%d%d%d", k, j, i_z), "[0] + [1]*x", 0, 1.0);
                 gr_dilution->Fit(fit_func, "RQ");
                 fit_func->SetLineColor(kRed);
@@ -376,22 +376,23 @@ void multi_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he
                 pt->AddText(Form("p0 = %.3f +/- %.3f", fit_func->GetParameter(0), fit_func->GetParError(0)));
                 pt->AddText(Form("p1 = %.3f +/- %.3f", fit_func->GetParameter(1), fit_func->GetParError(1)));
                 pt->Draw();
-                // Clean up histograms
-                delete h_pT_nh3;
-                delete h_pT_c;
-                delete h_pT_ch;
-                delete h_pT_he;
-                delete h_pT_empty;
-                delete gr_dilution;
-                delete fit_func;
+                // Store graph and fit to avoid deletion
+                graphs.push_back(gr_dilution);
+                fits.push_back(fit_func);
             }
         }
 
-        // Save the canvas after all pads are filled
+        // Save the canvas
         c1->SaveAs(Form("output/multidimensional_ybin_%d.png", k));
 
-        // Clean up the canvas
+        // Clean up
         delete c1;
+        for (auto graph : graphs) {
+            delete graph;
+        }
+        for (auto fit : fits) {
+            delete fit;
+        }
     }
 }
 
