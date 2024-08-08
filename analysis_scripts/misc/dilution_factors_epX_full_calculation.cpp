@@ -144,8 +144,9 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         double nf = h_empty->GetBinContent(i);
 
         double dilution = calculate_dilution_factor(nA, nC, nCH, nMT, nf);
-        // double error = calculate_dilution_error(nA, nC, nCH, nMT, nf);
-        double error = calculate_simple_error(nA, nA_error, nC, nC_error);
+        double error = calculate_dilution_error(nA, nC, nCH, nMT, nf);
+        double error_simple = calculate_simple_error(nA, nA_error, nC, nC_error);
+        std::cout << error << " " << error_simple << std::endl;
 
         // For integrated plot, set the point at the center of the plot range
         double x_position = skip_fit ? (x_min + x_max) / 2 : h_nh3->GetBinCenter(i);
