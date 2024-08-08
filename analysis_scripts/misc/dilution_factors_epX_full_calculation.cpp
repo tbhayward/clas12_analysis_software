@@ -95,29 +95,11 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     he->Draw(Form("%s>>h_%s_he", variable_name, variable_name));
     empty->Draw(Form("%s>>h_%s_empty", variable_name, variable_name));
 
-    // Scale carbon counts and update their errors
-    double s = 11.306;  // Uncomment when using full statistics
-    double s_error = 0.0;  // uncertainty in the scale factor
-    TH1D *h_c_scaled = (TH1D*)h_c->Clone(Form("h_%s_c_scaled", variable_name));
-    for (int i = 1; i <= h_c->GetNbinsX(); ++i) {
-        double bin_content = h_c->GetBinContent(i);
-        double bin_error = h_c->GetBinError(i);
-
-        double new_content = bin_content * s;
-        double new_error = new_content * std::sqrt((bin_error / bin_content) * (bin_error / bin_content) + 
-            (s_error / s) * (s_error / s));
-        h_c_scaled->SetBinContent(i, new_content);
-        h_c_scaled->SetBinError(i, new_error);
-    }
-
     // Calculate dilution factor and its error
     TGraphErrors *gr_dilution = new TGraphErrors();
     for (int i = 1; i <= n_bins; ++i) {
         double nA = h_nh3->GetBinContent(i);
-        double nA_error = h_nh3->GetBinError(i);
         double nC = h_c->GetBinContent(i);
-        double nC_scaled = h_c_scaled->GetBinContent(i);
-        double nC_scaled_error = h_c_scaled->GetBinError(i);
 
         double nCH = h_ch->GetBinContent(i);
         double nMT = h_he->GetBinContent(i);
@@ -289,6 +271,107 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     delete c1;
 }
 
+void multi_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_file, TFile* empty_file) {
+    // Get the PhysicsEvents trees
+    TTree* nh3 = (TTree*)nh3_file->Get("PhysicsEvents");
+    TTree* c = (TTree*)c_file->Get("PhysicsEvents");
+    TTree* ch = (TTree*)ch_file->Get("PhysicsEvents");
+    TTree* he = (TTree*)he_file->Get("PhysicsEvents");
+    TTree* empty = (TTree*)empty_file->Get("PhysicsEvents");
+
+    const int n_y_bins = 4;
+    const int n_Q2_bins = 5;
+    const int n_z_bins = 5;
+
+    // Define bin ranges and labels for y, Q2, and z
+    std::pair<double, double> y_bins[n_y_bins] = { {0.30, 0.45}, {0.45, 0.55}, {0.55, 0.65}, {0.65, 0.75} };
+    std::pair<double, double> Q2_bins[n_Q2_bins] = { {1.00, 2.00}, {2.00, 3.00}, {3.00, 4.00}, {4.00, 5.00}, {5.00, 7.00} };
+    std::pair<double, double> z_bins[n_z_bins] = { {0.10, 0.25}, {0.25, 0.35}, {0.35, 0.45}, {0.45, 0.55}, {0.55, 0.75} };
+
+    // Loop over y, Q2, and z bins
+    for (int k = 0; k < n_y_bins; ++k) {
+        for (int j = 0; j < n_Q2_bins; ++j) {
+            for (int i = 0; i < n_z_bins; ++i) {
+                std::string y_range = Form("0.30 < y && y < %.2f", y_bins[k].second);
+                std::string Q2_range = Form("Q2 > %.2f && Q2 < %.2f", Q2_bins[j].first, Q2_bins[j].second);
+                std::string z_range = Form("z > %.2f && z < %.2f", z_bins[i].first, z_bins[i].second);
+
+                std::string cuts = Form("Mx > 1.4 && %s && %s && %s", Q2_range.c_str(), y_range.c_str(), z_range.c_str());
+
+                // Create canvas and pad
+                TCanvas *c1 = new TCanvas(Form("c1_%d%d%d", k, j, i), "Dilution Factor Analysis", 800, 600);
+                gPad->SetLeftMargin(0.15);
+
+                // Create histograms
+                TH1D *h_pT_nh3 = new TH1D(Form("h_pT_nh3_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
+                TH1D *h_pT_c = new TH1D(Form("h_pT_c_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
+
+                // Draw histograms
+                nh3->Draw(Form("pT>>h_pT_nh3_%d%d%d", k, j, i), cuts.c_str());
+                c->Draw(Form("pT>>h_pT_c_%d%d%d", k, j, i), cuts.c_str());
+
+                // Create TGraphErrors for dilution factor
+                TGraphErrors *gr_dilution = new TGraphErrors();
+                for (int bin = 1; bin <= h_pT_nh3->GetNbinsX(); ++bin) {
+                    double nh3_counts = h_pT_nh3->GetBinContent(bin);
+                    double nh3_error = h_pT_nh3->GetBinError(bin);
+                    double c_counts = h_pT_c->GetBinContent(bin);
+                    double c_error = h_pT_c->GetBinError(bin);
+
+                    double dilution = calculate_dilution_factor(nh3_counts, c_counts, ch_counts, he_counts, nf_counts);
+                    double error = calculate_dilution_error(nh3_counts/xA, c_counts/xC, ch_counts/xCH, he_counts/xHe, nf_counts/xf);
+                    if (nh3_counts > 0) {
+                        gr_dilution->SetPoint(bin - 1, h_pT_nh3->GetBinCenter(bin), dilution);
+                        gr_dilution->SetPointError(bin - 1, 0, error);
+                    }
+                }
+
+                // Set graph title and labels
+                std::string title = Form("y: %.2f-%.2f, Q^{2}: %.2f-%.2f, z: %.2f-%.2f", y_bins[k].first, y_bins[k].second, Q2_bins[j].first, Q2_bins[j].second, z_bins[i].first, z_bins[i].second);
+                gr_dilution->SetTitle((title + "; P_{T} (GeV); D_{f}").c_str());
+                gr_dilution->SetMarkerStyle(20);
+                gr_dilution->Draw("AP");
+                gr_dilution->GetYaxis()->SetRangeUser(0.00, 0.30);
+
+                // Fit to a polynomial
+                TF1 *fit_func = new TF1(Form("fit_func_%d%d%d", k, j, i), "[0] + [1]*x + [2]*x^2", 0, 1.0);
+                gr_dilution->Fit(fit_func, "RQ");
+                fit_func->SetLineColor(kRed);
+                fit_func->Draw("SAME");
+
+                // Add chi2/ndf and fit parameters to the plot
+                double chi2 = fit_func->GetChisquare();
+                int ndf = fit_func->GetNDF();
+                double chi2_ndf = chi2 / ndf;
+                TLatex latex;
+                latex.SetNDC();
+                latex.SetTextSize(0.04);
+                latex.DrawLatex(0.20, 0.15, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
+
+                TPaveText *pt = new TPaveText(0.55, 0.7, 0.9, 0.9, "brNDC");
+                pt->SetBorderSize(1);
+                pt->SetFillStyle(1001);
+                pt->SetFillColor(kWhite);
+                pt->AddText(Form("p0 = %.3f +/- %.3f", fit_func->GetParameter(0), fit_func->GetParError(0)));
+                pt->AddText(Form("p1 = %.3f +/- %.3f", fit_func->GetParameter(1), fit_func->GetParError(1)));
+                pt->AddText(Form("p2 = %.3f +/- %.3f", fit_func->GetParameter(2), fit_func->GetParError(2)));
+                pt->Draw();
+
+                // Save the canvas
+                c1->SaveAs(Form("output/multidimensional_%d%d%d.png", k, j, i));
+
+                // Clean up
+                delete h_pT_nh3;
+                delete h_pT_c;
+                delete h_pT_c_scaled;
+                delete gr_dilution;
+                delete fit_func;
+                delete c1;
+            }
+        }
+    }
+}
+
 int main(int argc, char** argv) {
     if (argc != 6) {
         std::cerr << "Usage: " << argv[0] << " <NH3 ROOT file> <Carbon ROOT file> <CH2 ROOT file> <Helium ROOT file> <Empty ROOT file>" << std::endl;
@@ -315,6 +398,7 @@ int main(int argc, char** argv) {
 
     // Call the one-dimensional function
     one_dimensional(nh3, c, ch, he, empty);
+    multi_dimensional(nh3, c, ch, he, empty);
 
     // Safely close the ROOT files
     nh3->Close();
