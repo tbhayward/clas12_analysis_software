@@ -104,7 +104,6 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     TH1D *h_ch = new TH1D(Form("h_%s_ch", variable_name), "", n_bins, x_min, x_max);
     TH1D *h_he = new TH1D(Form("h_%s_he", variable_name), "", n_bins, x_min, x_max);
     TH1D *h_empty = new TH1D(Form("h_%s_empty", variable_name), "", n_bins, x_min, x_max);
-
     nh3->Draw(Form("%s>>h_%s_nh3", variable_name, variable_name));
     c->Draw(Form("%s>>h_%s_c", variable_name, variable_name));
     ch->Draw(Form("%s>>h_%s_ch", variable_name, variable_name));
@@ -186,15 +185,14 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     delete h_c_scaled;
 }
 
-std::pair<TF1*, TGraphErrors*> fit_and_plot_dilution(const char* variable_name, const char* x_title, double x_min, double x_max, int n_bins, 
-                          TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad, bool skip_fit = false) {
+std::pair<TF1*, TGraphErrors*> fit_and_plot_dilution(const char* variable_name, const char* x_title, double x_min, double x_max, int n_bins,
+TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad, bool skip_fit = false) {
     // Call the plotting function
     plot_dilution_factor(variable_name, x_title, x_min, x_max, n_bins, nh3, c, ch, he, empty, canvas, pad, skip_fit);
-    
     // Return the fit function and graph
     TF1* fit_func = (TF1*)gROOT->FindObject("fit_func");
     TGraphErrors* gr_dilution = (TGraphErrors*)gROOT->FindObject("gr_dilution");
-    
+
     return std::make_pair(fit_func, gr_dilution);
 }
 
@@ -205,7 +203,6 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     TTree* ch = (TTree*)ch_file->Get("PhysicsEvents");
     TTree* he = (TTree*)he_file->Get("PhysicsEvents");
     TTree* empty = (TTree*)empty_file->Get("PhysicsEvents");
-
     // Create a canvas and divide it into 2 rows and 2 columns
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1600, 1200);
     c1->Divide(2, 2);
@@ -227,50 +224,6 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
 
     // Print the fit functions for each variable
     std::cout << "Integrated Dilution Factor: " << fit_integrated.second->GetY()[0] << " +/- " << fit_integrated.second->GetErrorY(0) << std::endl;
-    std::cout << "Fit for x_Bjorken: " << fit_x.first->GetExpFormula("p") << std::endl;
-    std::cout << "Fit for P_T: " << fit_pT.first->GetExpFormula("p") << std::endl;
-    std::cout << "Fit for x_Feynman: " << fit_xF.first->GetExpFormula("p") << std::endl;
-    // Clean up
-    delete c1;
-}
-
-std::pair<TF1*, TGraphErrors*> fit_and_plot_dilution(const char* variable_name, const char* x_title, double x_min, double x_max, int n_bins, 
-                          TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad) {
-    // Call the plotting function
-    plot_dilution_factor(variable_name, x_title, x_min, x_max, n_bins, nh3, c, ch, he, empty, canvas, pad);
-    
-    // Return the fit function and graph
-    TF1* fit_func = (TF1*)gROOT->FindObject("fit_func");
-    TGraphErrors* gr_dilution = (TGraphErrors*)gROOT->FindObject("gr_dilution");
-    
-    return std::make_pair(fit_func, gr_dilution);
-}
-
-void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_file, TFile* empty_file) {
-    // Get the PhysicsEvents trees
-    TTree* nh3 = (TTree*)nh3_file->Get("PhysicsEvents");
-    TTree* c = (TTree*)c_file->Get("PhysicsEvents");
-    TTree* ch = (TTree*)ch_file->Get("PhysicsEvents");
-    TTree* he = (TTree*)he_file->Get("PhysicsEvents");
-    TTree* empty = (TTree*)empty_file->Get("PhysicsEvents");
-
-    // Create a canvas and divide it into 1 row and 3 columns
-    TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1600, 600);
-    c1->Divide(3, 1);
-
-    // Fit and plot for x-Bjorken
-    auto fit_x = fit_and_plot_dilution("x", "x_{B} (GeV)", 0.06, 0.6, 25, nh3, c, ch, he, empty, c1, 1);
-
-    // Fit and plot for transverse momentum
-    auto fit_pT = fit_and_plot_dilution("pT", "P_{T} (GeV)", 0, 1.0, 25, nh3, c, ch, he, empty, c1, 2);
-
-    // Fit and plot for x-Feynman
-    auto fit_xF = fit_and_plot_dilution("xF", "x_{F} (GeV)", -0.8, 0.5, 25, nh3, c, ch, he, empty, c1, 3);
-
-    // Save the canvas as a PNG file
-    c1->SaveAs("output/one_dimensional.png");
-
-    // Print the fit functions for each variable
     std::cout << "Fit for x_Bjorken: " << fit_x.first->GetExpFormula("p") << std::endl;
     std::cout << "Fit for P_T: " << fit_pT.first->GetExpFormula("p") << std::endl;
     std::cout << "Fit for x_Feynman: " << fit_xF.first->GetExpFormula("p") << std::endl;
