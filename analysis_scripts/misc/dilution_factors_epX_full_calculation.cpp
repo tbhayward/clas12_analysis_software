@@ -378,7 +378,8 @@ void multi_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he
                 std::string z_prefix = Form("z%d", i_z + 1);
                 double p0 = fit_func->GetParameter(0);
                 double p1 = fit_func->GetParameter(1);
-                std::cout << “if (prefix == " " << Q2y_prefix << z_prefix << " ") { return " " << p0 << " + " << p1 << "*currentVariable; }" << std::endl;
+
+                std::cout << "if (prefix == \"" << Q2y_prefix << z_prefix << "\") { return " << p0 << " + " << p1 << "*currentVariable; }" << std::endl;
             }
         }
         // Save the canvas
