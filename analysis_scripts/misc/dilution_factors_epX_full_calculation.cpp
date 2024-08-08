@@ -99,11 +99,14 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     canvas->cd(pad);
     gPad->SetLeftMargin(0.15);
 
+    // Create histograms for data
     TH1D *h_nh3 = new TH1D(Form("h_%s_nh3", variable_name), "", n_bins, x_min, x_max);
     TH1D *h_c = new TH1D(Form("h_%s_c", variable_name), "", n_bins, x_min, x_max);
     TH1D *h_ch = new TH1D(Form("h_%s_ch", variable_name), "", n_bins, x_min, x_max);
     TH1D *h_he = new TH1D(Form("h_%s_he", variable_name), "", n_bins, x_min, x_max);
     TH1D *h_empty = new TH1D(Form("h_%s_empty", variable_name), "", n_bins, x_min, x_max);
+
+    // Fill histograms with data
     nh3->Draw(Form("%s>>h_%s_nh3", variable_name, variable_name));
     c->Draw(Form("%s>>h_%s_c", variable_name, variable_name));
     ch->Draw(Form("%s>>h_%s_ch", variable_name, variable_name));
@@ -189,19 +192,15 @@ std::pair<TF1*, TGraphErrors*> fit_and_plot_dilution(const char* variable_name, 
 TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad, bool skip_fit = false) {
     // Call the plotting function
     plot_dilution_factor(variable_name, x_title, x_min, x_max, n_bins, nh3, c, ch, he, empty, canvas, pad, skip_fit);
+    // Return the fit function and graph
+    TF1* fit_func = nullptr;
+    TGraphErrors* gr_dilution = (TGraphErrors*)gPad->GetPrimitive("gr_dilution");
 
-    // Retrieve the graph
-    TGraphErrors* gr_dilution = (TGraphErrors*)gROOT->FindObject("gr_dilution");
-
-    // If the graph is empty or the integrated version, skip fitting
-    if (gr_dilution && gr_dilution->GetN() > 0 && !skip_fit) {
-        TF1* fit_func = new TF1("fit_func", "[0] + [1]*x + [2]*x^2", x_min, x_max);
-        gr_dilution->Fit(fit_func, "RQ");
-        return std::make_pair(fit_func, gr_dilution);
+    if (!skip_fit) {
+        fit_func = (TF1*)gPad->GetPrimitive("fit_func");
     }
 
-    // For the integrated version, skip fitting and return a nullptr for TF1
-    return std::make_pair(nullptr, gr_dilution);
+    return std::make_pair(fit_func, gr_dilution);
 }
 
 void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_file, TFile* empty_file) {
@@ -211,7 +210,6 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     TTree* ch = (TTree*)ch_file->Get("PhysicsEvents");
     TTree* he = (TTree*)he_file->Get("PhysicsEvents");
     TTree* empty = (TTree*)empty_file->Get("PhysicsEvents");
-
     // Create a canvas and divide it into 2 rows and 2 columns
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1600, 1200);
     c1->Divide(2, 2);
@@ -224,20 +222,19 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
 
     // Fit and plot for transverse momentum
     auto fit_pT = fit_and_plot_dilution("pT", "P_{T} (GeV)", 0, 1.0, 25, nh3, c, ch, he, empty, c1, 3);
-
     // Fit and plot for x-Feynman
     auto fit_xF = fit_and_plot_dilution("xF", "x_{F} (GeV)", -0.8, 0.5, 25, nh3, c, ch, he, empty, c1, 4);
 
     // Save the canvas as a PNG file
     c1->SaveAs("output/one_dimensional.png");
 
-    // Print the fit functions for each variable, check for nullptr for the integrated one
+    // Print the fit functions for each variable
     if (fit_integrated.second && fit_integrated.second->GetN() > 0) {
         std::cout << "Integrated Dilution Factor: " << fit_integrated.second->GetY()[0] << " +/- " << fit_integrated.second->GetErrorY(0) << std::endl;
     }
-    std::cout << "Fit for x_Bjorken: " << (fit_x.first ? fit_x.first->GetExpFormula("p") : "No fit available") << std::endl;
-    std::cout << "Fit for P_T: " << (fit_pT.first ? fit_pT.first->GetExpFormula("p") : "No fit available") << std::endl;
-    std::cout << "Fit for x_Feynman: " << (fit_xF.first ? fit_xF.first->GetExpFormula("p") : "No fit available") << std::endl;
+    std::cout << "Fit for x_Bjorken: " << (fit_x.first ? fit_x.first->GetExpFormula("p") : "No fit") << std::endl;
+    std::cout << "Fit for P_T: " << (fit_pT.first ? fit_pT.first->GetExpFormula("p") : "No fit") << std::endl;
+    std::cout << "Fit for x_Feynman: " << (fit_xF.first ? fit_xF.first->GetExpFormula("p") : "No fit") << std::endl;
 
     // Clean up
     delete c1;
