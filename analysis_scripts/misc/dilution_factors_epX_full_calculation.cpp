@@ -476,35 +476,6 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
 
                     // Calculate the dilution factor
                     double dilution = calculate_dilution_factor(nA, nC, nCH, nMT, nf);
-                    double dilution_error = calculate_dilution_error(nA/xA, nC/xC, nCH/xCH, nMT/xHe, nf/xf);
-
-                    // Get the bin center
-                    double x_position = h_pT_nh3->GetBinCenter(bin);
-
-                    // Set the dilution factor point and error in the TGraphErrors
-                    gr_dilution->SetPoint(bin - 1, x_position, dilution);
-                    gr_dilution->SetPointError(bin - 1, 0, dilution_error);
-                }
-
-                // Draw the TGraphErrors on the canvas
-                gr_dilution->SetMarkerStyle(20);
-                gr_dilution->SetTitle("Dilution Factor vs P_{T};P_{T} (GeV);Dilution Factor");
-                gr_dilution->Draw("AP");
-
-                // Inside your loop after creating the histograms
-                int n_bins = h_pT_nh3->GetNbinsX();
-                TGraphErrors *gr_dilution = new TGraphErrors(n_bins);
-
-                for (int bin = 1; bin <= n_bins; ++bin) {
-                    // Get bin contents for each target type
-                    double nA = h_pT_nh3->GetBinContent(bin);
-                    double nC = h_pT_c->GetBinContent(bin);
-                    double nCH = h_pT_ch->GetBinContent(bin);
-                    double nMT = h_pT_he->GetBinContent(bin);
-                    double nf = h_pT_empty->GetBinContent(bin);
-
-                    // Calculate the dilution factor
-                    double dilution = calculate_dilution_factor(nA, nC, nCH, nMT, nf);
                     double dilution_error = calculate_dilution_error(nA / xA, nC / xC, nCH / xCH, nMT / xHe, nf / xf);
 
                     // Get the bin center
