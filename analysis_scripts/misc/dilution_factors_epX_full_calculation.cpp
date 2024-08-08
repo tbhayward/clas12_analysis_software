@@ -112,7 +112,7 @@ double calculate_new_dilution_error(double nA, double nC, double nCH, double nMT
 
 
     std::cout << term1 << " " << term2 << " " << term3 << " " << term4 << " " << term5 << " " << denominator << std::endl;
-    std::cout << term1 + term2 + term3 + term4 + term5 << " " << denominator << std::endl << std::endl;
+    std::cout << pow(term1 + term2 + term3 + term4 + term5,0.5) << " " << denominator << std::endl << std::endl;
     return sigma_df;
     // return term1;
 }
