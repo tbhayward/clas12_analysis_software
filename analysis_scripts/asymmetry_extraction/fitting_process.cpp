@@ -785,7 +785,7 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
   TTreeReaderValue<double> target_pol(dataReader, "target_pol");
   TTreeReaderValue<double> phi(dataReader, "phi");
   TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
-
+  std::cout << "starting while loop" << std::endl;
   // Counter to limit the number of processed entries
   while (dataReader.Next()) {
     
@@ -924,7 +924,7 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
 
     // Create a histogram for the current bin
     TH1D* hist = createHistogramForBin_single_hadron(histName, i, prefix, asymmetry_index);
-    std::cout << "MADE IT TO HERE" << std::endl;
+    std::cout << "MADE IT PASSED createHistogramForBin_single_hadron" << std::endl;
     // Fit the histogram using the fitFunction and get the fit result
     hist->Fit(fitFunction, "QS");
     plotHistogramAndFit_single_hadron(hist, fitFunction, i, asymmetry_index, prefix);
