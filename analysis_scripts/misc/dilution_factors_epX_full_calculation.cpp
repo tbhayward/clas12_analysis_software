@@ -253,13 +253,32 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     // Save the canvas as a PNG file
     c1->SaveAs("output/one_dimensional.png");
 
-    // Print the fit functions for each variable
-    if (fit_integrated.second && fit_integrated.second->GetN() > 0) {
-        std::cout << "Integrated Dilution Factor: " << fit_integrated.second->GetY()[0] << " +/- " << fit_integrated.second->GetErrorY(0) << std::endl;
+    // Prepare to print the fit functions for each variable
+    std::cout << std::endl << std::endl << std::endl;
+
+    if (fit_x.first) {
+        double p0_x = fit_x.first->GetParameter(0);
+        double p1_x = fit_x.first->GetParameter(1);
+        double p2_x = fit_x.first->GetParameter(2);
+        std::cout << "if (prefix == \"x\") { return " << p0_x << 
+            "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
     }
-    std::cout << "Fit for x_Bjorken: " << (fit_x.first ? fit_x.first->GetExpFormula("p") : "No fit") << std::endl;
-    std::cout << "Fit for P_T: " << (fit_pT.first ? fit_pT.first->GetExpFormula("p") : "No fit") << std::endl;
-    std::cout << "Fit for x_Feynman: " << (fit_xF.first ? fit_xF.first->GetExpFormula("p") : "No fit") << std::endl;
+
+    if (fit_pT.first) {
+        double p0_PT = fit_pT.first->GetParameter(0);
+        double p1_PT = fit_pT.first->GetParameter(1);
+        double p2_PT = fit_pT.first->GetParameter(2);
+        std::cout << "if (prefix == \"PT\") { return " << p0_PT << 
+            "+" << p1_PT << "*currentVariable+" << p2_PT << "*std::pow(currentVariable,2); }" << std::endl;
+    }
+
+    if (fit_xF.first) {
+        double p0_xF = fit_xF.first->GetParameter(0);
+        double p1_xF = fit_xF.first->GetParameter(1);
+        double p2_xF = fit_xF.first->GetParameter(2);
+        std::cout << "if (prefix == \"xF\") { return " << p0_xF << 
+            "+" << p1_xF << "*currentVariable+" << p2_xF << "*std::pow(currentVariable,2); }" << std::endl;
+    }
 
     // Clean up
     delete c1;
