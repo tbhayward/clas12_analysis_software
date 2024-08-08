@@ -175,7 +175,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
 
         double dilution = calculate_dilution_factor(nA, nC, nCH, nMT, nf);
         // double error = calculate_dilution_error(nA, nC, nCH, nMT, nf);
-        double error = 0.001*calculate_new_dilution_error(nA/1000000, nC/1000000, nCH/1000000, nMT/1000000, nf/1000000);
+        double error = 0.000001*calculate_new_dilution_error(nA/1000000, nC/1000000, nCH/1000000, nMT/1000000, nf/1000000);
         std::cout << error << " " << 0.001*error << std::endl;
         // double error = calculate_simple_error(nA, nA_error, nC_scaled, nC_scaled_error);
 
