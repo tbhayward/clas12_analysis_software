@@ -291,54 +291,58 @@ void multi_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he
     // Loop over y, Q2, and z bins
     for (int k = 0; k < n_y_bins; ++k) {
         for (int j = 0; j < n_Q2_bins; ++j) {
-            for (int i = 0; i < n_z_bins; ++i) {
+            for (int i_z = 0; i_z < n_z_bins; ++i_z) {
                 std::string y_range = Form("0.30 < y && y < %.2f", y_bins[k].second);
                 std::string Q2_range = Form("Q2 > %.2f && Q2 < %.2f", Q2_bins[j].first, Q2_bins[j].second);
-                std::string z_range = Form("z > %.2f && z < %.2f", z_bins[i].first, z_bins[i].second);
+                std::string z_range = Form("z > %.2f && z < %.2f", z_bins[i_z].first, z_bins[i_z].second);
 
                 std::string cuts = Form("Mx > 1.4 && %s && %s && %s", Q2_range.c_str(), y_range.c_str(), z_range.c_str());
 
                 // Create canvas and pad
-                TCanvas *c1 = new TCanvas(Form("c1_%d%d%d", k, j, i), "Dilution Factor Analysis", 800, 600);
+                TCanvas *c1 = new TCanvas(Form("c1_%d%d%d", k, j, i_z), "Dilution Factor Analysis", 800, 600);
                 gPad->SetLeftMargin(0.15);
 
                 // Create histograms
-                TH1D *h_pT_nh3 = new TH1D(Form("h_pT_nh3_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
-                TH1D *h_pT_c = new TH1D(Form("h_pT_c_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
+                TH1D *h_pT_nh3 = new TH1D(Form("h_pT_nh3_%d%d%d", k, j, i_z), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
+                TH1D *h_pT_c = new TH1D(Form("h_pT_c_%d%d%d", k, j, i_z), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
+                TH1D *h_pT_ch = new TH1D(Form("h_pT_ch_%d%d%d", k, j, i_z), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
+                TH1D *h_pT_he = new TH1D(Form("h_pT_he_%d%d%d", k, j, i_z), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
+                TH1D *h_pT_empty = new TH1D(Form("h_pT_empty_%d%d%d", k, j, i_z), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
 
                 // Draw histograms
-                nh3->Draw(Form("pT>>h_pT_nh3_%d%d%d", k, j, i), cuts.c_str());
-                c->Draw(Form("pT>>h_pT_c_%d%d%d", k, j, i), cuts.c_str());
+                nh3->Draw(Form("pT>>h_pT_nh3_%d%d%d", k, j, i_z), cuts.c_str());
+                c->Draw(Form("pT>>h_pT_c_%d%d%d", k, j, i_z), cuts.c_str());
+                ch->Draw(Form("pT>>h_pT_ch_%d%d%d", k, j, i_z), cuts.c_str());
+                he->Draw(Form("pT>>h_pT_he_%d%d%d", k, j, i_z), cuts.c_str());
+                empty->Draw(Form("pT>>h_pT_empty_%d%d%d", k, j, i_z), cuts.c_str());
 
                 // Calculate dilution factor and its error
                 TGraphErrors *gr_dilution = new TGraphErrors();
-                for (int i = 1; i <= n_bins; ++i) {
-                    double nA = h_pT_nh3->GetBinContent(i);
-                    double nC = h_pT_c->GetBinContent(i);
-
-                    double nCH = h_pT_ch->GetBinContent(i);
-                    double nMT = h_pT_he->GetBinContent(i);
-                    double nf = h_pT_empty->GetBinContent(i);
+                int n_bins = h_pT_nh3->GetNbinsX();
+                for (int bin = 1; bin <= n_bins; ++bin) {
+                    double nA = h_pT_nh3->GetBinContent(bin);
+                    double nC = h_pT_c->GetBinContent(bin);
+                    double nCH = h_pT_ch->GetBinContent(bin);
+                    double nMT = h_pT_he->GetBinContent(bin);
+                    double nf = h_pT_empty->GetBinContent(bin);
 
                     double dilution = calculate_dilution_factor(nA, nC, nCH, nMT, nf);
                     double error = calculate_dilution_error(nA/xA, nC/xC, nCH/xCH, nMT/xHe, nf/xf);
 
-                    // For integrated plot, set the point at the center of the plot range
-                    double x_position = skip_fit ? (x_min + x_max) / 2 : h_nh3->GetBinCenter(i);
-
-                    gr_dilution->SetPoint(i - 1, x_position, dilution);
-                    gr_dilution->SetPointError(i - 1, 0, error);
+                    double x_position = h_pT_nh3->GetBinCenter(bin);
+                    gr_dilution->SetPoint(bin - 1, x_position, dilution);
+                    gr_dilution->SetPointError(bin - 1, 0, error);
                 }
 
                 // Set graph title and labels
-                std::string title = Form("y: %.2f-%.2f, Q^{2}: %.2f-%.2f, z: %.2f-%.2f", y_bins[k].first, y_bins[k].second, Q2_bins[j].first, Q2_bins[j].second, z_bins[i].first, z_bins[i].second);
+                std::string title = Form("y: %.2f-%.2f, Q^{2}: %.2f-%.2f, z: %.2f-%.2f", y_bins[k].first, y_bins[k].second, Q2_bins[j].first, Q2_bins[j].second, z_bins[i_z].first, z_bins[i_z].second);
                 gr_dilution->SetTitle((title + "; P_{T} (GeV); D_{f}").c_str());
                 gr_dilution->SetMarkerStyle(20);
                 gr_dilution->Draw("AP");
                 gr_dilution->GetYaxis()->SetRangeUser(0.00, 0.30);
 
                 // Fit to a polynomial
-                TF1 *fit_func = new TF1(Form("fit_func_%d%d%d", k, j, i), "[0] + [1]*x + [2]*x^2", 0, 1.0);
+                TF1 *fit_func = new TF1(Form("fit_func_%d%d%d", k, j, i_z), "[0] + [1]*x + [2]*x^2", 0, 1.0);
                 gr_dilution->Fit(fit_func, "RQ");
                 fit_func->SetLineColor(kRed);
                 fit_func->Draw("SAME");
@@ -360,14 +364,15 @@ void multi_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he
                 pt->AddText(Form("p1 = %.3f +/- %.3f", fit_func->GetParameter(1), fit_func->GetParError(1)));
                 pt->AddText(Form("p2 = %.3f +/- %.3f", fit_func->GetParameter(2), fit_func->GetParError(2)));
                 pt->Draw();
-
                 // Save the canvas
-                c1->SaveAs(Form("output/multidimensional_%d%d%d.png", k, j, i));
+                c1->SaveAs(Form("output/multidimensional_%d%d%d.png", k, j, i_z));
 
                 // Clean up
                 delete h_pT_nh3;
                 delete h_pT_c;
-                delete h_pT_c_scaled;
+                delete h_pT_ch;
+                delete h_pT_he;
+                delete h_pT_empty;
                 delete gr_dilution;
                 delete fit_func;
                 delete c1;
