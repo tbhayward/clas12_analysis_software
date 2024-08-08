@@ -271,23 +271,6 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
 }
 
 double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile* empty) {
-    // Open the ROOT files
-    *nh3 = TFile::Open(nh3_file);
-    *carbon = TFile::Open(c_file);
-    *ch = TFile::Open(ch_file);
-    *he = TFile::Open(he_file);
-    *empty = TFile::Open(empty_file);
-
-    if (!nh3 || nh3->IsZombie() || !carbon || carbon->IsZombie() || !ch || ch->IsZombie() || !he || he->IsZombie() || !empty || empty->IsZombie()) {
-        std::cerr << "Error opening files!" << std::endl;
-        if (nh3) nh3->Close();
-        if (carbon) carbon->Close();
-        if (ch) ch->Close();
-        if (he) he->Close();
-        if (empty) empty->Close();
-        return 0;
-    }
-
     for (int k = 0; k < 4; ++k) {
         // Get the PhysicsEvents trees
         TTree *tree_nh3;
@@ -303,11 +286,6 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
 
         if (!tree_nh3 || !tree_carbon || !tree_ch || !tree_he || !tree_empty) {
             std::cerr << "Error: PhysicsEvents tree not found!" << std::endl;
-            nh3->Close();
-            carbon->Close();
-            ch->Close();
-            he->Close();
-            empty->Close();
             return 0;
         }
 
