@@ -116,7 +116,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     // Scale carbon counts and update their errors
     // double s = 1;       // scale factor for carbon counts
     double s = 11.306;  // Uncomment when using full statistics
-    double s_error = 0.0;  // uncertainty in the scale factor
+    double s_error = 0.113;  // uncertainty in the scale factor
     TH1D *h_c_scaled = (TH1D*)h_c->Clone(Form("h_%s_c_scaled", variable_name));
     for (int i = 1; i <= h_c->GetNbinsX(); ++i) {
         double bin_content = h_c->GetBinContent(i);
@@ -151,8 +151,8 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         // For integrated plot, set the point at the center of the plot range
         double x_position = skip_fit ? (x_min + x_max) / 2 : h_nh3->GetBinCenter(i);
 
-        gr_dilution->SetPoint(i - 1, x_position, 1000000*dilution);
-        gr_dilution->SetPointError(i - 1, 0, 100*error);
+        gr_dilution->SetPoint(i - 1, x_position, dilution);
+        gr_dilution->SetPointError(i - 1, 0, error);
     }
 
     gr_dilution->SetTitle(Form(";%s;D_{f}", x_title));
