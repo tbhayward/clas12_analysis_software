@@ -476,7 +476,7 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
 
                     // Calculate the dilution factor
                     double dilution = calculate_dilution_factor(nA, nC, nCH, nMT, nf);
-                    double dilution_error = calculate_dilution_error(nA, nC, nCH, nMT, nf);
+                    double dilution_error = calculate_dilution_error(nA/xA, nC/xC, nCH/xCH, nMT/xHe, nf/xf);
 
                     // Get the bin center
                     double x_position = h_pT_nh3->GetBinCenter(bin);
