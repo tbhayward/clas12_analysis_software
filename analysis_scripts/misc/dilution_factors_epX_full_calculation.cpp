@@ -28,6 +28,9 @@ const double xCH = 0.03049;
 const double xHe = 0.10728;
 const double xf = 0.07586;
 
+// Declare vectors to store the dynamically allocated objects
+std::vector<TGraphErrors*> dilution_graphs;
+std::vector<TF1*> fit_functions;
 
 double calculate_dilution_factor(double nA, double nC, double nCH, double nMT, double nf) {
     return (23.0 * (-nMT * xA + nA * xHe) * 
