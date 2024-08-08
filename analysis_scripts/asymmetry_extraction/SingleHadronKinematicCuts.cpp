@@ -21,9 +21,6 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         bool checked = false;
         string property = binNames[currentFits];
 
-        if (property == "epipPT") {
-            goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.5 && *y < 0.75;
-        }
         if (property == "xF" || "x" || "PT") {
             goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.4 && *y < 0.75;
         }

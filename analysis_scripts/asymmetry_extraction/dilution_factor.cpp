@@ -11,97 +11,178 @@ double dilution_factor(double currentVariable, const std::string& prefix) {
   }
 
   if (prefix == "x") { return 0.143882+0.0753706*currentVariable+0.654032*std::pow(currentVariable,2); }
-  if (prefix == "PT") { return 0.199431+-0.223368*currentVariable+0.644003*std::pow(currentVariable,2); }
-  if (prefix == "xF") { return 0.195272+-0.0135855*currentVariable+-0.0736621*std::pow(currentVariable,2); }
+  if (prefix == "PT") { return 0.199431-0.223368*currentVariable+0.644003*std::pow(currentVariable,2); }
+  if (prefix == "xF") { return 0.195272-0.0135855*currentVariable-0.0736621*std::pow(currentVariable,2); }
   if (prefix == "z") { return -0.0728496+1.3191*currentVariable+-2.86053*std::pow(currentVariable,2)+1.96652*std::pow(currentVariable,3); }
   if (prefix == "zeta") { return 1.11574+-5.33344*currentVariable+9.55552*std::pow(currentVariable,2)+-5.80119*std::pow(currentVariable,3); }
   if (prefix == "Mx") { return 0.0366071*std::exp(-0.5*std::pow((currentVariable-0.769794)/0.0562864,2)) + 0.0260418*std::exp(-0.5*std::pow((currentVariable-1.1057)/0.290501,2)) + 0.10761*std::exp(-0.5*std::pow((currentVariable-1.68863)/1.8129,2)); }
   
-  if (prefix == "Q2y4z1") { return 0.0667422; }
-  if (prefix == "Q2y4z2") { return 0.131855; }
-  if (prefix == "Q2y4z3") { return 0.136825; }
-  if (prefix == "Q2y4z4") { return 0.135157; }
-  if (prefix == "Q2y4z5") { return 0.149875; }
-  if (prefix == "Q2y8z1") { return 0.013595; }
-  if (prefix == "Q2y8z2") { return 0.109565; }
-  if (prefix == "Q2y8z3") { return 0.139691; }
-  if (prefix == "Q2y8z4") { return 0.136057; }
-  if (prefix == "Q2y8z5") { return 0.134013; }
+
+  if (prefix == "Q2y4z1") { return 0.242197; }
+
+  if (prefix == "Q2y4z2") { return 0.135962; }
+
+  if (prefix == "Q2y4z3") { return 0.158756; }
+
+  if (prefix == "Q2y4z4") { return 0.14849; }
+
+  if (prefix == "Q2y4z5") { return 0.156161; }
+
+  if (prefix == "Q2y8z1") { return 0.294189; }
+
+  if (prefix == "Q2y8z2") { return 0.18422; }
+
+  if (prefix == "Q2y8z3") { return 0.213911; }
+
+  if (prefix == "Q2y8z4") { return 0.22171; }
+
+  if (prefix == "Q2y8z5") { return 0.228514; }
+
   if (prefix == "Q2y12z1") { return 0; }
-  if (prefix == "Q2y12z2") { return 0.174856; }
-  if (prefix == "Q2y12z3") { return 0.165048; }
-  if (prefix == "Q2y12z4") { return 0.140834; }
-  if (prefix == "Q2y12z5") { return 0.150643; }
-  if (prefix == "Q2y3z1") { return 0.0984995; }
-  if (prefix == "Q2y3z2") { return 0.123269; }
-  if (prefix == "Q2y3z3") { return 0.123317; }
-  if (prefix == "Q2y3z4") { return 0.1172; }
-  if (prefix == "Q2y3z5") { return 0.112746; }
-  if (prefix == "Q2y7z1") { return 0.0845784; }
-  if (prefix == "Q2y7z2") { return 0.115614; }
-  if (prefix == "Q2y7z3") { return 0.120013; }
-  if (prefix == "Q2y7z4") { return 0.112607; }
-  if (prefix == "Q2y7z5") { return 0.0991583; }
-  if (prefix == "Q2y11z1") { return 0.0950531; }
-  if (prefix == "Q2y11z2") { return 0.131137; }
-  if (prefix == "Q2y11z3") { return 0.14558; }
-  if (prefix == "Q2y11z4") { return 0.13086; }
-  if (prefix == "Q2y11z5") { return 0.102845; }
-  if (prefix == "Q2y15z1") { return 0.0517377; }
-  if (prefix == "Q2y15z2") { return 0.125339; }
-  if (prefix == "Q2y15z3") { return 0.158101; }
-  if (prefix == "Q2y15z4") { return 0.150249; }
-  if (prefix == "Q2y15z5") { return 0.115582; }
-  if (prefix == "Q2y2z1") { return 0.0995716; }
-  if (prefix == "Q2y2z2") { return 0.117411; }
-  if (prefix == "Q2y2z3") { return 0.102522; }
-  if (prefix == "Q2y2z4") { return 0.0972157; }
-  if (prefix == "Q2y2z5") { return 0.0732962; }
-  if (prefix == "Q2y6z1") { return 0.0896362; }
-  if (prefix == "Q2y6z2") { return 0.111472; }
-  if (prefix == "Q2y6z3") { return 0.103157; }
-  if (prefix == "Q2y6z4") { return 0.0850751; }
-  if (prefix == "Q2y6z5") { return 0.0729225; }
-  if (prefix == "Q2y10z1") { return 0.104736; }
-  if (prefix == "Q2y10z2") { return 0.127091; }
-  if (prefix == "Q2y10z3") { return 0.119057; }
-  if (prefix == "Q2y10z4") { return 0.0845961; }
-  if (prefix == "Q2y10z5") { return 0.0584329; }
-  if (prefix == "Q2y14z1") { return 0.107384; }
-  if (prefix == "Q2y14z2") { return 0.132264; }
-  if (prefix == "Q2y14z3") { return 0.142461; }
-  if (prefix == "Q2y14z4") { return 0.127831; }
-  if (prefix == "Q2y14z5") { return 0.107375; }
-  if (prefix == "Q2y17z1") { return 0.114428; }
-  if (prefix == "Q2y17z2") { return 0.157584; }
-  if (prefix == "Q2y17z3") { return 0.167516; }
-  if (prefix == "Q2y17z4") { return 0.193292; }
-  if (prefix == "Q2y17z5") { return 0.114817; }
-  if (prefix == "Q2y1z1") { return 0.0890598; }
-  if (prefix == "Q2y1z2") { return 0.101465; }
-  if (prefix == "Q2y1z3") { return 0.0787156; }
-  if (prefix == "Q2y1z4") { return 0.0692479; }
-  if (prefix == "Q2y1z5") { return 0.0368427; }
-  if (prefix == "Q2y5z1") { return 0.0880512; }
-  if (prefix == "Q2y5z2") { return 0.101888; }
-  if (prefix == "Q2y5z3") { return 0.0848115; }
-  if (prefix == "Q2y5z4") { return 0.0736795; }
-  if (prefix == "Q2y5z5") { return 0.0198957; }
-  if (prefix == "Q2y9z1") { return 0.0979945; }
-  if (prefix == "Q2y9z2") { return 0.112202; }
-  if (prefix == "Q2y9z3") { return 0.0881914; }
-  if (prefix == "Q2y9z4") { return 0.0896477; }
-  if (prefix == "Q2y9z5") { return 0.0489943; }
-  if (prefix == "Q2y13z1") { return 0.112754; }
-  if (prefix == "Q2y13z2") { return 0.136534; }
-  if (prefix == "Q2y13z3") { return 0.122508; }
-  if (prefix == "Q2y13z4") { return 0.131878; }
-  if (prefix == "Q2y13z5") { return 0.123804; }
-  if (prefix == "Q2y16z1") { return 0.127336; }
-  if (prefix == "Q2y16z2") { return 0.158212; }
-  if (prefix == "Q2y16z3") { return 0.153284; }
-  if (prefix == "Q2y16z4") { return 0.108524; }
-  if (prefix == "Q2y16z5") { return 0.145373; }
+
+  if (prefix == "Q2y12z2") { return 0.246862; }
+
+  if (prefix == "Q2y12z3") { return 0.251256; }
+
+  if (prefix == "Q2y12z4") { return 0.232663; }
+
+  if (prefix == "Q2y12z5") { return 0.210134; }
+  if (prefix == "Q2y3z1") { return 0.13002; }
+
+  if (prefix == "Q2y3z2") { return 0.159932; }
+
+  if (prefix == "Q2y3z3") { return 0.161149; }
+
+  if (prefix == "Q2y3z4") { return 0.146144; }
+
+  if (prefix == "Q2y3z5") { return 0.175958; }
+
+  if (prefix == "Q2y7z1") { return 0.155728; }
+
+  if (prefix == "Q2y7z2") { return 0.201032; }
+
+  if (prefix == "Q2y7z3") { return 0.206787; }
+
+  if (prefix == "Q2y7z4") { return 0.205502; }
+
+  if (prefix == "Q2y7z5") { return 0.190105; }
+
+  if (prefix == "Q2y11z1") { return 0.163101; }
+
+  if (prefix == "Q2y11z2") { return 0.216486; }
+
+  if (prefix == "Q2y11z3") { return 0.227377; }
+
+  if (prefix == "Q2y11z4") { return 0.226683; }
+
+  if (prefix == "Q2y11z5") { return 0.242188; }
+
+  if (prefix == "Q2y15z1") { return 0.185026; }
+
+  if (prefix == "Q2y15z2") { return 0.232319; }
+
+  if (prefix == "Q2y15z3") { return 0.251985; }
+
+  if (prefix == "Q2y15z4") { return 0.247976; }
+
+  if (prefix == "Q2y15z5") { return 0.273208; }
+
+  if (prefix == "Q2y2z1") { return 0.148595; }
+
+  if (prefix == "Q2y2z2") { return 0.175807; }
+
+  if (prefix == "Q2y2z3") { return 0.160963; }
+
+  if (prefix == "Q2y2z4") { return 0.144791; }
+
+  if (prefix == "Q2y2z5") { return 0.18984; }
+
+  if (prefix == "Q2y6z1") { return 0.171444; }
+
+  if (prefix == "Q2y6z2") { return 0.198539; }
+
+  if (prefix == "Q2y6z3") { return 0.190327; }
+
+  if (prefix == "Q2y6z4") { return 0.190697; }
+
+  if (prefix == "Q2y6z5") { return 0.170989; }
+
+  if (prefix == "Q2y10z1") { return 0.193468; }
+
+  if (prefix == "Q2y10z2") { return 0.214237; }
+
+  if (prefix == "Q2y10z3") { return 0.214983; }
+
+  if (prefix == "Q2y10z4") { return 0.184261; }
+
+  if (prefix == "Q2y10z5") { return 0.216189; }
+
+  if (prefix == "Q2y14z1") { return 0.184706; }
+
+  if (prefix == "Q2y14z2") { return 0.208434; }
+
+  if (prefix == "Q2y14z3") { return 0.230743; }
+
+  if (prefix == "Q2y14z4") { return 0.252315; }
+
+  if (prefix == "Q2y14z5") { return 0.246462; }
+
+  if (prefix == "Q2y17z1") { return 0.215869; }
+
+  if (prefix == "Q2y17z2") { return 0.238701; }
+
+  if (prefix == "Q2y17z3") { return 0.262723; }
+
+  if (prefix == "Q2y17z4") { return 0.268868; }
+
+  if (prefix == "Q2y17z5") { return 0.37505; }
+  if (prefix == "Q2y1z1") { return 0.165969; }
+
+  if (prefix == "Q2y1z2") { return 0.180655; }
+
+  if (prefix == "Q2y1z3") { return 0.166592; }
+
+  if (prefix == "Q2y1z4") { return 0.224066; }
+
+  if (prefix == "Q2y1z5") { return 0.171837; }
+
+  if (prefix == "Q2y5z1") { return 0.178628; }
+
+  if (prefix == "Q2y5z2") { return 0.196224; }
+
+  if (prefix == "Q2y5z3") { return 0.179131; }
+
+  if (prefix == "Q2y5z4") { return 0.193116; }
+
+  if (prefix == "Q2y5z5") { return 0.24764; }
+
+  if (prefix == "Q2y9z1") { return 0.18516; }
+
+  if (prefix == "Q2y9z2") { return 0.196564; }
+
+  if (prefix == "Q2y9z3") { return 0.177837; }
+
+  if (prefix == "Q2y9z4") { return 0.214407; }
+
+  if (prefix == "Q2y9z5") { return 0.296948; }
+
+  if (prefix == "Q2y13z1") { return 0.19919; }
+
+  if (prefix == "Q2y13z2") { return 0.228949; }
+
+  if (prefix == "Q2y13z3") { return 0.219792; }
+
+  if (prefix == "Q2y13z4") { return 0.201572; }
+
+  if (prefix == "Q2y13z5") { return 0.421139; }
+
+  if (prefix == "Q2y16z1") { return 0.208276; }
+
+  if (prefix == "Q2y16z2") { return 0.248289; }
+
+  if (prefix == "Q2y16z3") { return 0.237183; }
+
+  if (prefix == "Q2y16z4") { return 0.150532; }
 
   // epX
   if (prefix == "xF") { 
