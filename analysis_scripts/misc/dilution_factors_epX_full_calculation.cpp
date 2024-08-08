@@ -175,7 +175,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
 
         double dilution = calculate_dilution_factor(nA, nC, nCH, nMT, nf);
         // double error = calculate_dilution_error(nA, nC, nCH, nMT, nf);
-        double error = (1/1000)*calculate_new_dilution_error(nA/1000000, nC/1000000, nCH/1000000, nMT/1000000, nf/1000000);
+        double error = 0.001*calculate_new_dilution_error(nA/1000000, nC/1000000, nCH/1000000, nMT/1000000, nf/1000000);
         // double error = calculate_simple_error(nA, nA_error, nC_scaled, nC_scaled_error);
 
         // For integrated plot, set the point at the center of the plot range
@@ -201,7 +201,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
 
     // Fit and plot (skip fit for the integrated version)
     if (!skip_fit) {
-        TF1 *fit_func = new TF1("fit_func", "[0] + [1]*x + [2]*x^2 + [3]*x^3", x_min, x_max);
+        TF1 *fit_func = new TF1("fit_func", "[0] + [1]*x + [2]*x^2", x_min, x_max);
         gr_dilution->Fit(fit_func, "RQ");
         fit_func->SetLineColor(kRed);
         fit_func->Draw("SAME");
@@ -223,7 +223,6 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         pt->AddText(Form("p0 = %.3f +/- %.3f", fit_func->GetParameter(0), fit_func->GetParError(0)));
         pt->AddText(Form("p1 = %.3f +/- %.3f", fit_func->GetParameter(1), fit_func->GetParError(1)));
         pt->AddText(Form("p2 = %.3f +/- %.3f", fit_func->GetParameter(2), fit_func->GetParError(2)));
-        pt->AddText(Form("p3 = %.3f +/- %.3f", fit_func->GetParameter(3), fit_func->GetParError(3)));
         pt->Draw();
     } else {
         // For integrated plot, display the value in the top right corner
