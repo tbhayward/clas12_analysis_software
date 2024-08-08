@@ -272,11 +272,11 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
 
 double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile* empty) {
     // Open the ROOT files
-    TFile *nh3 = TFile::Open(nh3_file);
-    TFile *carbon = TFile::Open(c_file);
-    TFile *ch = TFile::Open(ch_file);
-    TFile *he = TFile::Open(he_file);
-    TFile *empty = TFile::Open(empty_file);
+    *nh3 = TFile::Open(nh3_file);
+    *carbon = TFile::Open(c_file);
+    *ch = TFile::Open(ch_file);
+    *he = TFile::Open(he_file);
+    *empty = TFile::Open(empty_file);
 
     if (!nh3 || nh3->IsZombie() || !carbon || carbon->IsZombie() || !ch || ch->IsZombie() || !he || he->IsZombie() || !empty || empty->IsZombie()) {
         std::cerr << "Error opening files!" << std::endl;
