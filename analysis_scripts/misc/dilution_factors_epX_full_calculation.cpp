@@ -589,8 +589,8 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
 
         std::cout << "Before the deletion" << std::endl;
         // Clean up the dynamically allocated objects
-        for (auto graph : dilution_graphs) delete graph;
-        for (auto func : fit_functions) delete func;
+        // for (auto graph : dilution_graphs) delete graph;
+        // for (auto func : fit_functions) delete func;
 
         // Clean up the canvas
         std::cout << "Deleting canvas here for k = " << k << std::endl;
