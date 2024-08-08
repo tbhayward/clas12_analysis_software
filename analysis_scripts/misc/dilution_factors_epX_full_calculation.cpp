@@ -531,18 +531,14 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
                 std::cout << "Fit result: p0 = " << fit_func->GetParameter(0)
                           << " +/- " << fit_func->GetParError(0) << std::endl;
 
-                // Cleanup the fit function
-                delete fit_func;
-
                 // Cleanup for this iteration
                 delete h_pT_nh3;
                 delete h_pT_c;
                 delete h_pT_ch;
                 delete h_pT_he;
                 delete h_pT_empty;
-
-                // After the inner loops
-                
+                delete gr_dilution;
+                delete fit_func;
             }
         }
         // Save the canvas after all pads are filled
