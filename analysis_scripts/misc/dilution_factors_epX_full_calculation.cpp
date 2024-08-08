@@ -108,7 +108,7 @@ double calculate_new_dilution_error(double nA, double nC, double nCH, double nMT
     double denominator = pow(nA, 3) * 
                          pow((0.135913 * nC - 0.713541 * nCH + 0.00907563 * nf + 0.568553 * nMT), 4);
 
-    double sigma_df = 0.713541 * 0.01 * sqrt((term1 + term2 + term3 + term4 + term5 )/ denominator);
+    double sigma_df = 0.713541 * sqrt((term1 + term2 + term3 + term4 + term5 )/ denominator);
 
     return sigma_df;
 }
@@ -173,7 +173,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         double dilution = calculate_dilution_factor(nA, nC, nCH, nMT, nf);
         // double error = calculate_dilution_error(nA, nC, nCH, nMT, nf);
         // double error = calculate_new_dilution_error(nA/1000000, nC/1000000, nCH/1000000, nMT/1000000, nf/1000000);
-        double error = calculate_new_dilution_error(nA/10000, nC/10000, nCH/10000, nMT/10000, nf/10000);
+        double error = calculate_new_dilution_error(nA, nC, nCH, nMT, nf);
         // double error = calculate_simple_error(nA, nA_error, nC_scaled, nC_scaled_error);
 
         // For integrated plot, set the point at the center of the plot range
