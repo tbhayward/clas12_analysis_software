@@ -270,7 +270,7 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     delete c1;
 }
 
-double multi_dimensional(const char* nh3_file, const char* c_file, const char* ch_file, const char* he_file, const char* empty_file) {
+double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile* empty) {
     // Open the ROOT files
     TFile *nh3 = TFile::Open(nh3_file);
     TFile *carbon = TFile::Open(c_file);
