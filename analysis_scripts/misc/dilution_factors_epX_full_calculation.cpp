@@ -445,7 +445,7 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
                         break;
                 }
 
-                std::string cuts = "Mx>1.4 && " + Q2_range + " && " + y_range + " && " + z_range;
+                std::string cuts = Q2_range + " && " + y_range + " && " + z_range;
                 c1->cd(5 * j + (i + 1)); // Pads are numbered from 1 to 25
                 gPad->SetLeftMargin(0.15);
 
