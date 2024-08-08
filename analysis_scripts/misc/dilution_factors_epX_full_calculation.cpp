@@ -111,8 +111,8 @@ double calculate_new_dilution_error(double nA, double nC, double nCH, double nMT
     double sigma_df = 0.713541 * sqrt(term1 + term2 + term3 + term4 + term5 / denominator);
 
 
-    // std::cout << term1 << " " << term2 << " " << term3 << " " << term4 << " " << term5 << " " << denominator << std::endl;
-    // std::cout << 0.713541*pow((term1 + term2 + term3 + term4 + term5)/denominator,0.5) << std::endl << std::endl;
+    std::cout << term1 << " " << term2 << " " << term3 << " " << term4 << " " << term5 << " " << denominator << std::endl;
+    std::cout << 0.713541*pow((term1 + term2 + term3 + term4 + term5)/denominator,0.5) << std::endl << std::endl;
     return sigma_df;
 }
 
@@ -175,7 +175,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
 
         double dilution = calculate_dilution_factor(nA, nC, nCH, nMT, nf);
         // double error = calculate_dilution_error(nA, nC, nCH, nMT, nf);
-        double error = calculate_new_dilution_error(nA, nC, nCH, nMT, nf);
+        double error = calculate_new_dilution_error(nA/1000000, nC/1000000, nCH/1000000, nMT/1000000, nf/1000000);
         std::cout << error << std::endl;
         // double error = calculate_simple_error(nA, nA_error, nC_scaled, nC_scaled_error);
 
