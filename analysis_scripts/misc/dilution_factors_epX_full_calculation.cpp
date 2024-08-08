@@ -95,7 +95,7 @@ double calculate_simple_error(double nh3_counts, double nh3_error, double c_coun
 }
 
 void plot_dilution_factor(const char* variable_name, const char* x_title, double x_min, double x_max, int n_bins, 
-                          TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad) {
+                          TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad, bool skip_fit = false) {
     canvas->cd(pad);
     gPad->SetLeftMargin(0.15);
 
@@ -113,8 +113,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
 
     // Scale carbon counts and update their errors
     double s = 11.306;       // scale factor for carbon counts
-    // double s_error = 0.110;  // uncertainty in the scale factor
-    double s_error = 0.0;  // uncertainty in the scale factor
+    double s_error = 0.110;  // uncertainty in the scale factor
     TH1D *h_c_scaled = (TH1D*)h_c->Clone(Form("h_%s_c_scaled", variable_name));
     for (int i = 1; i <= h_c->GetNbinsX(); ++i) {
         double bin_content = h_c->GetBinContent(i);
@@ -132,7 +131,6 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     for (int i = 1; i <= n_bins; ++i) {
         double nA = h_nh3->GetBinContent(i);
         double nA_error = h_nh3->GetBinError(i);
-        double nC = h_c->GetBinContent(i);
         double nC_scaled = h_c_scaled->GetBinContent(i);
         double nC_scaled_error = h_c_scaled->GetBinError(i);
 
@@ -140,7 +138,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         double nMT = h_he->GetBinContent(i);
         double nf = h_empty->GetBinContent(i);
 
-        double dilution = calculate_dilution_factor(nA, nC, nCH, nMT, nf);
+        double dilution = calculate_dilution_factor(nA, nC_scaled, nCH, nMT, nf);
         double error = calculate_simple_error(nA, nA_error, nC_scaled, nC_scaled_error);
 
         gr_dilution->SetPoint(i - 1, h_nh3->GetBinCenter(i), dilution);
@@ -153,29 +151,31 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     gr_dilution->GetXaxis()->SetRangeUser(x_min, x_max);
     gr_dilution->GetYaxis()->SetRangeUser(0.10, 0.30);
 
-    // Fit and plot
-    TF1 *fit_func = new TF1("fit_func", "[0] + [1]*x + [2]*x^2", x_min, x_max);
-    gr_dilution->Fit(fit_func, "RQ");
-    fit_func->SetLineColor(kRed);
-    fit_func->Draw("SAME");
+    // Fit and plot (skip fit for the integrated version)
+    if (!skip_fit) {
+        TF1 *fit_func = new TF1("fit_func", "[0] + [1]*x + [2]*x^2", x_min, x_max);
+        gr_dilution->Fit(fit_func, "RQ");
+        fit_func->SetLineColor(kRed);
+        fit_func->Draw("SAME");
 
-    // Print fit parameters and chi2/ndf
-    double chi2 = fit_func->GetChisquare();
-    int ndf = fit_func->GetNDF();
-    TLatex latex;
-    latex.SetNDC();
-    latex.SetTextSize(0.04);
-    latex.DrawLatex(0.20, 0.15, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2 / ndf));
+        // Print fit parameters and chi2/ndf
+        double chi2 = fit_func->GetChisquare();
+        int ndf = fit_func->GetNDF();
+        TLatex latex;
+        latex.SetNDC();
+        latex.SetTextSize(0.04);
+        latex.DrawLatex(0.20, 0.15, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2 / ndf));
 
-    // Add fit parameters box
-    TPaveText *pt = new TPaveText(0.5, 0.7, 0.9, 0.9, "brNDC");
-    pt->SetBorderSize(1);
-    pt->SetFillStyle(1001);
-    pt->SetFillColor(kWhite);
-    pt->AddText(Form("p0 = %.3f +/- %.3f", fit_func->GetParameter(0), fit_func->GetParError(0)));
-    pt->AddText(Form("p1 = %.3f +/- %.3f", fit_func->GetParameter(1), fit_func->GetParError(1)));
-    pt->AddText(Form("p2 = %.3f +/- %.3f", fit_func->GetParameter(2), fit_func->GetParError(2)));
-    pt->Draw();
+        // Add fit parameters box
+        TPaveText *pt = new TPaveText(0.5, 0.7, 0.9, 0.9, "brNDC");
+        pt->SetBorderSize(1);
+        pt->SetFillStyle(1001);
+        pt->SetFillColor(kWhite);
+        pt->AddText(Form("p0 = %.3f +/- %.3f", fit_func->GetParameter(0), fit_func->GetParError(0)));
+        pt->AddText(Form("p1 = %.3f +/- %.3f", fit_func->GetParameter(1), fit_func->GetParError(1)));
+        pt->AddText(Form("p2 = %.3f +/- %.3f", fit_func->GetParameter(2), fit_func->GetParError(2)));
+        pt->Draw();
+    }
 
     // Clean up histograms
     delete h_nh3;
@@ -184,6 +184,54 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     delete h_he;
     delete h_empty;
     delete h_c_scaled;
+}
+
+std::pair<TF1*, TGraphErrors*> fit_and_plot_dilution(const char* variable_name, const char* x_title, double x_min, double x_max, int n_bins, 
+                          TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad, bool skip_fit = false) {
+    // Call the plotting function
+    plot_dilution_factor(variable_name, x_title, x_min, x_max, n_bins, nh3, c, ch, he, empty, canvas, pad, skip_fit);
+    
+    // Return the fit function and graph
+    TF1* fit_func = (TF1*)gROOT->FindObject("fit_func");
+    TGraphErrors* gr_dilution = (TGraphErrors*)gROOT->FindObject("gr_dilution");
+    
+    return std::make_pair(fit_func, gr_dilution);
+}
+
+void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_file, TFile* empty_file) {
+    // Get the PhysicsEvents trees
+    TTree* nh3 = (TTree*)nh3_file->Get("PhysicsEvents");
+    TTree* c = (TTree*)c_file->Get("PhysicsEvents");
+    TTree* ch = (TTree*)ch_file->Get("PhysicsEvents");
+    TTree* he = (TTree*)he_file->Get("PhysicsEvents");
+    TTree* empty = (TTree*)empty_file->Get("PhysicsEvents");
+
+    // Create a canvas and divide it into 2 rows and 2 columns
+    TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1600, 1200);
+    c1->Divide(2, 2);
+
+    // Integrated version (single bin)
+    auto fit_integrated = fit_and_plot_dilution("x", "", 0.0, 1.0, 1, nh3, c, ch, he, empty, c1, 1, true);
+
+    // Fit and plot for x-Bjorken
+    auto fit_x = fit_and_plot_dilution("x", "x_{B} (GeV)", 0.06, 0.6, 25, nh3, c, ch, he, empty, c1, 2);
+
+    // Fit and plot for transverse momentum
+    auto fit_pT = fit_and_plot_dilution("pT", "P_{T} (GeV)", 0, 1.0, 25, nh3, c, ch, he, empty, c1, 3);
+
+    // Fit and plot for x-Feynman
+    auto fit_xF = fit_and_plot_dilution("xF", "x_{F} (GeV)", -0.8, 0.5, 25, nh3, c, ch, he, empty, c1, 4);
+
+    // Save the canvas as a PNG file
+    c1->SaveAs("output/one_dimensional.png");
+
+    // Print the fit functions for each variable
+    std::cout << "Integrated Dilution Factor: " << fit_integrated.second->GetY()[0] << " +/- " << fit_integrated.second->GetErrorY(0) << std::endl;
+    std::cout << "Fit for x_Bjorken: " << fit_x.first->GetExpFormula("p") << std::endl;
+    std::cout << "Fit for P_T: " << fit_pT.first->GetExpFormula("p") << std::endl;
+    std::cout << "Fit for x_Feynman: " << fit_xF.first->GetExpFormula("p") << std::endl;
+    // Clean up
+    delete c1;
 }
 
 std::pair<TF1*, TGraphErrors*> fit_and_plot_dilution(const char* variable_name, const char* x_title, double x_min, double x_max, int n_bins, 
@@ -211,13 +259,13 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     c1->Divide(3, 1);
 
     // Fit and plot for x-Bjorken
-    auto fit_x = fit_and_plot_dilution("x", "x_{B} (GeV)", 0.06, 0.6, 10, nh3, c, ch, he, empty, c1, 1);
+    auto fit_x = fit_and_plot_dilution("x", "x_{B} (GeV)", 0.06, 0.6, 25, nh3, c, ch, he, empty, c1, 1);
 
     // Fit and plot for transverse momentum
-    auto fit_pT = fit_and_plot_dilution("pT", "P_{T} (GeV)", 0, 1.0, 10, nh3, c, ch, he, empty, c1, 2);
+    auto fit_pT = fit_and_plot_dilution("pT", "P_{T} (GeV)", 0, 1.0, 25, nh3, c, ch, he, empty, c1, 2);
 
     // Fit and plot for x-Feynman
-    auto fit_xF = fit_and_plot_dilution("xF", "x_{F} (GeV)", -0.8, 0.5, 10, nh3, c, ch, he, empty, c1, 3);
+    auto fit_xF = fit_and_plot_dilution("xF", "x_{F} (GeV)", -0.8, 0.5, 25, nh3, c, ch, he, empty, c1, 3);
 
     // Save the canvas as a PNG file
     c1->SaveAs("output/one_dimensional.png");
