@@ -310,20 +310,22 @@ void multi_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he
                 nh3->Draw(Form("pT>>h_pT_nh3_%d%d%d", k, j, i), cuts.c_str());
                 c->Draw(Form("pT>>h_pT_c_%d%d%d", k, j, i), cuts.c_str());
 
-                // Create TGraphErrors for dilution factor
-                TGraphErrors *gr_dilution = new TGraphErrors();
-                for (int bin = 1; bin <= h_pT_nh3->GetNbinsX(); ++bin) {
-                    double nh3_counts = h_pT_nh3->GetBinContent(bin);
-                    double nh3_error = h_pT_nh3->GetBinError(bin);
-                    double c_counts = h_pT_c->GetBinContent(bin);
-                    double c_error = h_pT_c->GetBinError(bin);
+                for (int i = 1; i <= n_bins; ++i) {
+                    double nA = h_pT_nh3->GetBinContent(i);
+                    double nC = h_pT_c->GetBinContent(i);
 
-                    double dilution = calculate_dilution_factor(nh3_counts, c_counts, ch_counts, he_counts, nf_counts);
-                    double error = calculate_dilution_error(nh3_counts/xA, c_counts/xC, ch_counts/xCH, he_counts/xHe, nf_counts/xf);
-                    if (nh3_counts > 0) {
-                        gr_dilution->SetPoint(bin - 1, h_pT_nh3->GetBinCenter(bin), dilution);
-                        gr_dilution->SetPointError(bin - 1, 0, error);
-                    }
+                    double nCH = h_pT_ch->GetBinContent(i);
+                    double nMT = h_pT_he->GetBinContent(i);
+                    double nf = h_pT_empty->GetBinContent(i);
+
+                    double dilution = calculate_dilution_factor(nA, nC, nCH, nMT, nf);
+                    double error = calculate_dilution_error(nA/xA, nC/xC, nCH/xCH, nMT/xHe, nf/xf);
+
+                    // For integrated plot, set the point at the center of the plot range
+                    double x_position = skip_fit ? (x_min + x_max) / 2 : h_nh3->GetBinCenter(i);
+
+                    gr_dilution->SetPoint(i - 1, x_position, dilution);
+                    gr_dilution->SetPointError(i - 1, 0, error);
                 }
 
                 // Set graph title and labels
