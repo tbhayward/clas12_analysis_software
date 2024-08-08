@@ -500,12 +500,6 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
 
                 // After the inner loops
                 
-                // Cleanup the histograms after each iteration
-                delete h_pT_nh3;
-                delete h_pT_c;
-                delete h_pT_ch;
-                delete h_pT_he;
-                delete h_pT_empty;
             }
         }
         // Save the canvas after all pads are filled
