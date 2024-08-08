@@ -197,7 +197,6 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     delete h_ch;
     delete h_he;
     delete h_empty;
-    delete h_c_scaled;
 }
 
 std::pair<TF1*, TGraphErrors*> fit_and_plot_dilution(const char* variable_name, const char* x_title, double x_min, double x_max, int n_bins,
