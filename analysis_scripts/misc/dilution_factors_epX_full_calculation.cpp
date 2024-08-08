@@ -310,6 +310,8 @@ void multi_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he
                 nh3->Draw(Form("pT>>h_pT_nh3_%d%d%d", k, j, i), cuts.c_str());
                 c->Draw(Form("pT>>h_pT_c_%d%d%d", k, j, i), cuts.c_str());
 
+                // Calculate dilution factor and its error
+                TGraphErrors *gr_dilution = new TGraphErrors();
                 for (int i = 1; i <= n_bins; ++i) {
                     double nA = h_pT_nh3->GetBinContent(i);
                     double nC = h_pT_c->GetBinContent(i);
