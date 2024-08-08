@@ -189,11 +189,19 @@ std::pair<TF1*, TGraphErrors*> fit_and_plot_dilution(const char* variable_name, 
 TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad, bool skip_fit = false) {
     // Call the plotting function
     plot_dilution_factor(variable_name, x_title, x_min, x_max, n_bins, nh3, c, ch, he, empty, canvas, pad, skip_fit);
-    // Return the fit function and graph
-    TF1* fit_func = (TF1*)gROOT->FindObject("fit_func");
+
+    // Retrieve the graph
     TGraphErrors* gr_dilution = (TGraphErrors*)gROOT->FindObject("gr_dilution");
 
-    return std::make_pair(fit_func, gr_dilution);
+    // If the graph is empty or the integrated version, skip fitting
+    if (gr_dilution && gr_dilution->GetN() > 0 && !skip_fit) {
+        TF1* fit_func = new TF1("fit_func", "[0] + [1]*x + [2]*x^2", x_min, x_max);
+        gr_dilution->Fit(fit_func, "RQ");
+        return std::make_pair(fit_func, gr_dilution);
+    }
+
+    // For the integrated version, skip fitting and return a nullptr for TF1
+    return std::make_pair(nullptr, gr_dilution);
 }
 
 void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_file, TFile* empty_file) {
@@ -203,6 +211,7 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     TTree* ch = (TTree*)ch_file->Get("PhysicsEvents");
     TTree* he = (TTree*)he_file->Get("PhysicsEvents");
     TTree* empty = (TTree*)empty_file->Get("PhysicsEvents");
+
     // Create a canvas and divide it into 2 rows and 2 columns
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1600, 1200);
     c1->Divide(2, 2);
@@ -222,11 +231,13 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     // Save the canvas as a PNG file
     c1->SaveAs("output/one_dimensional.png");
 
-    // Print the fit functions for each variable
-    std::cout << "Integrated Dilution Factor: " << fit_integrated.second->GetY()[0] << " +/- " << fit_integrated.second->GetErrorY(0) << std::endl;
-    std::cout << "Fit for x_Bjorken: " << fit_x.first->GetExpFormula("p") << std::endl;
-    std::cout << "Fit for P_T: " << fit_pT.first->GetExpFormula("p") << std::endl;
-    std::cout << "Fit for x_Feynman: " << fit_xF.first->GetExpFormula("p") << std::endl;
+    // Print the fit functions for each variable, check for nullptr for the integrated one
+    if (fit_integrated.second && fit_integrated.second->GetN() > 0) {
+        std::cout << "Integrated Dilution Factor: " << fit_integrated.second->GetY()[0] << " +/- " << fit_integrated.second->GetErrorY(0) << std::endl;
+    }
+    std::cout << "Fit for x_Bjorken: " << (fit_x.first ? fit_x.first->GetExpFormula("p") : "No fit available") << std::endl;
+    std::cout << "Fit for P_T: " << (fit_pT.first ? fit_pT.first->GetExpFormula("p") : "No fit available") << std::endl;
+    std::cout << "Fit for x_Feynman: " << (fit_xF.first ? fit_xF.first->GetExpFormula("p") : "No fit available") << std::endl;
 
     // Clean up
     delete c1;
