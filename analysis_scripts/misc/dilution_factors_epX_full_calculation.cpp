@@ -111,7 +111,7 @@ double calculate_new_dilution_error(double nA, double nC, double nCH, double nMT
     double sigma_df = 0.713541 * sqrt(term1 + term2 + term3 + term4 + term5) / denominator;
 
 
-    std::cout << term1 << " " << term2 << " " << term3 << " " << term4 << " " << term5 << " " << term6 << std::endl;
+    std::cout << term1 << " " << term2 << " " << term3 << " " << term4 << " " << term5 << " " << denominator << std::endl;
     return sigma_df;
     // return term1;
 }
