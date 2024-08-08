@@ -87,52 +87,28 @@ double calculate_dilution_factor(double nA, double nC, double nCH, double nMT, d
 // }
 
 double calculate_new_dilution_error(double nA, double nC, double nCH, double nMT, double nf) {
-    // double term1 = 0.734694 * nA * nC * pow((nA - nMT), 2) * 
-    //                pow((2.77556e-17 * nC - 0.554976 * nCH - 0.0373109 * nf + 0.592287 * nMT), 2);
+    double term1 = 0.734694 * nA * nC * pow((nA - nMT), 2) * 
+                   pow((- 0.554976 * nCH - 0.0373109 * nf + 0.592287 * nMT), 2);
 
-    // double term2 = 0.456108 * nA * pow((nA - nMT), 2) * 
-    //                pow((0.704358 * nC + 0.295642 * nf - nMT), 2) * nMT;
+    double term2 = 0.456108 * nA * pow((nA - nMT), 2) * 
+                   pow((0.704358 * nC + 0.295642 * nf - nMT), 2) * nMT;
 
-    // double term3 = 0.0281176 * nA * nf * pow((nA - nMT), 2) * 
-    //                pow((0.190722 * nC - 1.19072 * nCH + nMT), 2);
+    double term3 = 0.0281176 * nA * nf * pow((nA - nMT), 2) * 
+                   pow((0.190722 * nC - 1.19072 * nCH + nMT), 2);
 
-    // double term4 = 0.0135714 * pow((nC - 1.16667 * nCH + 0.341297 * nf - 0.17463 * nMT), 2) * 
-    //                pow(nMT, 2) * pow((nC - 5.25 * nCH + 0.0667755 * nf + 4.18322 * nMT), 2);
+    double term4 = 0.0135714 * pow((nC - 1.16667 * nCH + 0.341297 * nf - 0.17463 * nMT), 2) * 
+                   pow(nMT, 2) * pow((nC - 5.25 * nCH + 0.0667755 * nf + 4.18322 * nMT), 2);
 
-    // double term5 = 0.022405 * nA * nMT * 
-    //                pow((0.778288 * pow(nC, 2) + 4.76701 * pow(nCH, 2) - 1.45518 * nCH * nf + 0.0177374 * pow(nf, 2) + 
-    //                     nC * (-4.99401 * nCH + 0.317598 * nf - 0.271825 * nMT) + 
-    //                     nA * (3.39167 * nC - 4.51192 * nCH + 1.12025 * nf - 1.11022e-16 * nMT) + 
-    //                     1.42708 * nCH * nMT - 0.0181513 * nf * nMT - 0.568553 * pow(nMT, 2)), 2);
+    double term5 = 0.022405 * nA * nMT * 
+                   pow((0.778288 * pow(nC, 2) + 4.76701 * pow(nCH, 2) - 1.45518 * nCH * nf + 0.0177374 * pow(nf, 2) + 
+                        nC * (-4.99401 * nCH + 0.317598 * nf - 0.271825 * nMT) + 
+                        nA * (3.39167 * nC - 4.51192 * nCH + 1.12025 * nf) + 
+                        1.42708 * nCH * nMT - 0.0181513 * nf * nMT - 0.568553 * pow(nMT, 2)), 2);
 
-    // double denominator = pow(nA, 3) * 
-    //                      pow((0.135913 * nC - 0.713541 * nCH + 0.00907563 * nf + 0.568553 * nMT), 4);
+    double denominator = pow(nA, 3) * 
+                         pow((0.135913 * nC - 0.713541 * nCH + 0.00907563 * nf + 0.568553 * nMT), 4);
 
-    // double sigma_df = 0.713541 * 0.001 * sqrt((term1 + term2 + term3 + term4 + term5 )/ denominator);
-
-    double term1 = 0.734694 * nA*1e6 * nC*1e6 * pow((nA*1e6 - nMT*1e6), 2) * 
-                   pow((2.77556e-17 * nC*1e6 - 0.554976 * nCH*1e6 - 0.0373109 * nf*1e6 + 0.592287 * nMT*1e6), 2);
-
-    double term2 = 0.456108 * nA*1e6 * pow((nA*1e6 - nMT*1e6), 2) * 
-                   pow((0.704358 * nC*1e6 + 0.295642 * nf*1e6 - nMT*1e6), 2) * nMT;
-
-    double term3 = 0.0281176 * nA*1e6 * nf*1e6 * pow((nA*1e6 - nMT*1e6), 2) * 
-                   pow((0.190722 * nC*1e6 - 1.19072 * nCH*1e6 + nMT*1e6), 2);
-
-    double term4 = 0.0135714 * pow((nC*1e6 - 1.16667 * nCH*1e6 + 0.341297 * nf*1e6 - 0.17463 * nMT*1e6), 2) * 
-                   pow(nMT*1e6, 2) * pow((nC*1e6 - 5.25 * nCH*1e6 + 0.0667755 * nf*1e6 + 4.18322 * nMT*1e6), 2);
-
-    double term5 = 0.022405 * nA*1e6 * nMT*1e6 * 
-                   pow((0.778288 * pow(nC*1e6, 2) + 4.76701 * pow(nCH*1e6, 2) - 1.45518 * nCH*1e6 * nf*1e6 + 0.0177374 * pow(nf*1e6, 2) + 
-                        nC*1e6 * (-4.99401 * nCH*1e6 + 0.317598 * nf*1e6 - 0.271825 * nMT*1e6) + 
-                        nA*1e6 * (3.39167 * nC*1e6 - 4.51192 * nCH*1e6 + 1.12025 * nf*1e6 - 1.11022e-16 * nMT*1e6) + 
-                        1.42708 * nCH*1e6 * nMT*1e6 - 0.0181513 * nf*1e6 * nMT*1e6 - 0.568553 * pow(nMT*1e6, 2)), 2);
-
-    double denominator = pow(nA*1e6, 3) * 
-                         pow((0.135913 * nC*1e6 - 0.713541 * nCH*1e6 + 0.00907563 * nf*1e6 + 0.568553 * nMT*1e6), 4);
-
-    double sigma_df = 0.713541 * sqrt((term1 + term2 + term3 + term4 + term5 )/ denominator);
-
+    double sigma_df = 0.713541 * 0.1 * sqrt((term1 + term2 + term3 + term4 + term5 )/ denominator);
 
     return sigma_df;
 }
@@ -196,7 +172,8 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
 
         double dilution = calculate_dilution_factor(nA, nC, nCH, nMT, nf);
         // double error = calculate_dilution_error(nA, nC, nCH, nMT, nf);
-        double error = calculate_new_dilution_error(nA/1000000, nC/1000000, nCH/1000000, nMT/1000000, nf/1000000);
+        // double error = calculate_new_dilution_error(nA/1000000, nC/1000000, nCH/1000000, nMT/1000000, nf/1000000);
+        double error = calculate_new_dilution_error(nA/10000, nC/10000, nCH/10000, nMT/10000, nf/10000);
         // double error = calculate_simple_error(nA, nA_error, nC_scaled, nC_scaled_error);
 
         // For integrated plot, set the point at the center of the plot range
