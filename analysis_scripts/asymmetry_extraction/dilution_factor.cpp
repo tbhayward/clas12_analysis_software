@@ -5,6 +5,8 @@
 
 double dilution_factor(double currentVariable, const std::string& prefix) {
 
+  TRandom3 rand_gen;
+  
   // epi+X
   if (prefix == "epipPT") {
     return 0.184542-0.0499585*currentVariable+0.163844*std::pow(currentVariable,2)+
