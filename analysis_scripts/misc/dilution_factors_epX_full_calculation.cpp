@@ -41,8 +41,8 @@ std::vector<TGraphErrors*> dilution_graphs;
 std::vector<TF1*> fit_functions;
 
 // Function to create and normalize histograms
-TH1D* create_normalized_histogram(TTree* tree, const char* branch, const char* hist_name, double total_charge) {
-    TH1D* hist = new TH1D(hist_name, "", 100, 0, 1);
+TH1D* create_normalized_histogram(TTree* tree, const char* branch, const char* hist_name, double total_charge, double min_range, double max_range) {
+    TH1D* hist = new TH1D(hist_name, "", 100, min_range, max_range);
     tree->Draw(Form("%s>>%s", branch, hist_name));
     hist->Scale(1.0 / total_charge);
     return hist;
@@ -67,18 +67,14 @@ TGraphErrors* create_tgrapherrors(TH1D* hist, int color, int marker_style) {
 
 void plot_dilution_kinematics(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile* empty) {
     // Branches to plot
-    std::vector<std::string> branches = {"e_p", "e_theta", "p_p", "p_theta", "Q2", "xB", "pT", "z"};
+    std::vector<std::string> branches = {"e_p", "e_theta*180.0/3.14159", "p_p", "p_theta*180.0/3.14159", "Q2", "x", "pT", "xF"};
     std::vector<std::string> x_labels = {
         "e_{p} (GeV)", "e_{#theta} (degrees)", "p_{p} (GeV)", "p_{#theta} (degrees)", 
-        "Q^{2} (GeV^{2})", "x_{B}", "P_{T} (GeV)", "z"
+        "Q^{2} (GeV^{2})", "x_{B}", "P_{T} (GeV)", "x_{F}"
     };
-
-    // Total accumulated charge
-    const double nc_A = 4459870.328370002;
-    const double nc_C = 443417.18516000017;
-    const double nc_CH = 190126.82700000002;
-    const double nc_He = 668899.295;
-    const double nc_ET = 473020.06;
+    std::vector<std::pair<double, double>> ranges = {
+        {0, 10}, {0, 90}, {0, 10}, {0, 90}, {0, 10}, {0, 1}, {0, 2}, {-1, 1}
+    };
 
     // Get the PhysicsEvents trees
     TTree *tree_nh3;
@@ -103,47 +99,25 @@ void plot_dilution_kinematics(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, T
 
     // Loop over the branches and plot them
     for (size_t i = 0; i < branches.size(); ++i) {
-        c1->cd(i + 1);
+        c1->cd(i + 1)->SetLeftMargin(0.15); // Add padding to the left
 
         // Create histograms for each target type
-        TH1D* h_nh3 = new TH1D(Form("h_nh3_%zu", i), "", 100, 0, 0);  // Define the range properly
-        TH1D* h_carbon = new TH1D(Form("h_carbon_%zu", i), "", 100, 0, 0);
-        TH1D* h_ch = new TH1D(Form("h_ch_%zu", i), "", 100, 0, 0);
-        TH1D* h_he = new TH1D(Form("h_he_%zu", i), "", 100, 0, 0);
-        TH1D* h_empty = new TH1D(Form("h_empty_%zu", i), "", 100, 0, 0);
-
-        // Draw the branch into the histograms
-        tree_nh3->Draw(Form("%s>>h_nh3_%zu", branches[i].c_str(), i));
-        tree_carbon->Draw(Form("%s>>h_carbon_%zu", branches[i].c_str(), i));
-        tree_ch->Draw(Form("%s>>h_ch_%zu", branches[i].c_str(), i));
-        tree_he->Draw(Form("%s>>h_he_%zu", branches[i].c_str(), i));
-        tree_empty->Draw(Form("%s>>h_empty_%zu", branches[i].c_str(), i));
-
-        // Normalize the histograms to the total accumulated charge
-        h_nh3->Scale(1.0 / nc_A);
-        h_carbon->Scale(1.0 / nc_C);
-        h_ch->Scale(1.0 / nc_CH);
-        h_he->Scale(1.0 / nc_He);
-        h_empty->Scale(1.0 / nc_ET);
+        TH1D* h_nh3 = create_normalized_histogram(tree_nh3, branches[i].c_str(), Form("h_nh3_%zu", i), nc_A, ranges[i].first, ranges[i].second);
+        TH1D* h_carbon = create_normalized_histogram(tree_carbon, branches[i].c_str(), Form("h_carbon_%zu", i), nc_C, ranges[i].first, ranges[i].second);
+        TH1D* h_ch = create_normalized_histogram(tree_ch, branches[i].c_str(), Form("h_ch_%zu", i), nc_CH, ranges[i].first, ranges[i].second);
+        TH1D* h_he = create_normalized_histogram(tree_he, branches[i].c_str(), Form("h_he_%zu", i), nc_He, ranges[i].first, ranges[i].second);
+        TH1D* h_empty = create_normalized_histogram(tree_empty, branches[i].c_str(), Form("h_empty_%zu", i), nc_ET, ranges[i].first, ranges[i].second);
 
         // Create TGraphErrors for each histogram
-        TGraphErrors* gr_nh3 = new TGraphErrors(h_nh3);
-        TGraphErrors* gr_carbon = new TGraphErrors(h_carbon);
-        TGraphErrors* gr_ch = new TGraphErrors(h_ch);
-        TGraphErrors* gr_he = new TGraphErrors(h_he);
-        TGraphErrors* gr_empty = new TGraphErrors(h_empty);
+        TGraphErrors* gr_nh3 = create_tgrapherrors(h_nh3, kRed, 20);
+        TGraphErrors* gr_carbon = create_tgrapherrors(h_carbon, kBlue, 21);
+        TGraphErrors* gr_ch = create_tgrapherrors(h_ch, kGreen, 22);
+        TGraphErrors* gr_he = create_tgrapherrors(h_he, kMagenta, 23);
+        TGraphErrors* gr_empty = create_tgrapherrors(h_empty, kCyan, 24);
 
-        // Set colors and markers
-        gr_nh3->SetMarkerStyle(20);
-        gr_nh3->SetMarkerColor(kRed);
-        gr_carbon->SetMarkerStyle(21);
-        gr_carbon->SetMarkerColor(kBlue);
-        gr_ch->SetMarkerStyle(22);
-        gr_ch->SetMarkerColor(kGreen);
-        gr_he->SetMarkerStyle(23);
-        gr_he->SetMarkerColor(kMagenta);
-        gr_empty->SetMarkerStyle(24);
-        gr_empty->SetMarkerColor(kCyan);
+        // Determine the y-axis range
+        double max_y = std::max({h_nh3->GetMaximum(), h_carbon->GetMaximum(), h_ch->GetMaximum(), h_he->GetMaximum(), h_empty->GetMaximum()});
+        gr_nh3->GetYaxis()->SetRangeUser(0, max_y * 1.1);
 
         // Draw the graphs
         gr_nh3->Draw("AP");
@@ -154,7 +128,7 @@ void plot_dilution_kinematics(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, T
 
         // Set axis labels
         gr_nh3->GetXaxis()->SetTitle(x_labels[i].c_str());
-        gr_nh3->GetYaxis()->SetTitle("Normalized Counts");
+        gr_nh3->GetYaxis()->SetTitle("Counts/nC");
 
         // Create legend
         TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);
@@ -164,7 +138,21 @@ void plot_dilution_kinematics(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, T
         legend->AddEntry(gr_he, "He", "P");
         legend->AddEntry(gr_empty, "Empty", "P");
         legend->Draw();
+
+        // Clean up histograms
+        delete h_nh3;
+        delete h_carbon;
+        delete h_ch;
+        delete h_he;
+        delete h_empty;
     }
+
+    // Add a global title to the canvas
+    c1->cd();
+    TLatex title;
+    title.SetNDC();
+    title.SetTextSize(0.04);
+    title.DrawLatex(0.5, 0.95, "epX, Q^{2} > 1 GeV^{2}, W > 2, y < 0.75, M_{x} > 1.4 GeV");
 
     // Save the canvas
     c1->SaveAs("output/dilution_kinematics.png");
