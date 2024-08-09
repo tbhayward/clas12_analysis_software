@@ -28,9 +28,107 @@ const double xCH = 0.03049;
 const double xHe = 0.10728;
 const double xf = 0.07586;
 
+// Total accumulated charge
+const double nc_A = 4459870.328370002;
+const double nc_C = 443417.18516000017;
+const double nc_CH = 190126.82700000002;
+const double nc_He = 668899.295;
+const double nc_ET = 473020.06;
+
 // Declare vectors to store the dynamically allocated objects
 std::vector<TGraphErrors*> dilution_graphs;
 std::vector<TF1*> fit_functions;
+
+// Function to create and normalize histograms
+TH1D* create_normalized_histogram(TTree* tree, const char* branch, const char* hist_name, double total_charge) {
+    TH1D* hist = new TH1D(hist_name, "", 100, 0, 1);
+    tree->Draw(Form("%s>>%s", branch, hist_name));
+    hist->Scale(1.0 / total_charge);
+    return hist;
+}
+
+// Function to create a TGraphErrors from a histogram
+TGraphErrors* create_tgrapherrors(TH1D* hist, int color, int marker_style) {
+    int n_bins = hist->GetNbinsX();
+    TGraphErrors* graph = new TGraphErrors(n_bins);
+    graph->SetMarkerColor(color);
+    graph->SetMarkerStyle(marker_style);
+    for (int i = 1; i <= n_bins; ++i) {
+        double x = hist->GetBinCenter(i);
+        double y = hist->GetBinContent(i);
+        double ex = 0;
+        double ey = hist->GetBinError(i);
+        graph->SetPoint(i - 1, x, y);
+        graph->SetPointError(i - 1, ex, ey);
+    }
+    return graph;
+}
+
+void plot_dilution_kinematics(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile* empty) {
+    // Get the PhysicsEvents trees
+    TTree* tree_nh3 = (TTree*)nh3->Get("PhysicsEvents");
+    TTree* tree_carbon = (TTree*)carbon->Get("PhysicsEvents");
+    TTree* tree_ch = (TTree*)ch->Get("PhysicsEvents");
+    TTree* tree_he = (TTree*)he->Get("PhysicsEvents");
+    TTree* tree_empty = (TTree*)empty->Get("PhysicsEvents");
+
+    // Create the canvas and divide it into 2x4 pads
+    TCanvas* c1 = new TCanvas("c1", "Dilution Kinematics", 1600, 1200);
+    c1->Divide(4, 2);
+
+    // Define the branches to be plotted
+    const char* branches[8] = {"e_p", "e_theta * 180.0 / TMath::Pi()", "p_p", "p_theta * 180.0 / TMath::Pi()", "Q2", "xB", "pT", "xF"};
+    const char* labels[8] = {"e_{p} (GeV)", "e_{#theta} (deg)", "p_{p} (GeV)", "p_{#theta} (deg)", "Q^{2} (GeV^{2})", "x_{B}", "P_{T} (GeV)", "x_{F}"};
+
+    // Colors and marker styles for different targets
+    int colors[5] = {kBlack, kRed, kBlue, kGreen, kMagenta};
+    int marker_styles[5] = {20, 21, 22, 23, 24};
+
+    // Loop over the branches
+    for (int i = 0; i < 8; ++i) {
+        c1->cd(i + 1);
+
+        // Create histograms and normalize them
+        TH1D* hist_nh3 = create_normalized_histogram(tree_nh3, branches[i], Form("hist_nh3_%d", i), nc_A);
+        TH1D* hist_carbon = create_normalized_histogram(tree_carbon, branches[i], Form("hist_carbon_%d", i), nc_C);
+        TH1D* hist_ch = create_normalized_histogram(tree_ch, branches[i], Form("hist_ch_%d", i), nc_CH);
+        TH1D* hist_he = create_normalized_histogram(tree_he, branches[i], Form("hist_he_%d", i), nc_He);
+        TH1D* hist_empty = create_normalized_histogram(tree_empty, branches[i], Form("hist_empty_%d", i), nc_ET);
+
+        // Create TGraphErrors from histograms
+        TGraphErrors* gr_nh3 = create_tgrapherrors(hist_nh3, colors[0], marker_styles[0]);
+        TGraphErrors* gr_carbon = create_tgrapherrors(hist_carbon, colors[1], marker_styles[1]);
+        TGraphErrors* gr_ch = create_tgrapherrors(hist_ch, colors[2], marker_styles[2]);
+        TGraphErrors* gr_he = create_tgrapherrors(hist_he, colors[3], marker_styles[3]);
+        TGraphErrors* gr_empty = create_tgrapherrors(hist_empty, colors[4], marker_styles[4]);
+
+        // Draw the TGraphErrors
+        gr_nh3->Draw("AP");
+        gr_carbon->Draw("P SAME");
+        gr_ch->Draw("P SAME");
+        gr_he->Draw("P SAME");
+        gr_empty->Draw("P SAME");
+
+        // Set axis labels
+        gr_nh3->GetXaxis()->SetTitle(labels[i]);
+        gr_nh3->GetYaxis()->SetTitle("Normalized Yield");
+
+        // Add a legend
+        TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);
+        legend->AddEntry(gr_nh3, "NH3", "P");
+        legend->AddEntry(gr_carbon, "C", "P");
+        legend->AddEntry(gr_ch, "CH", "P");
+        legend->AddEntry(gr_he, "He", "P");
+        legend->AddEntry(gr_empty, "Empty", "P");
+        legend->Draw();
+    }
+
+    // Save the canvas
+    c1->SaveAs("output/dilution_kinematics.png");
+
+    // Clean up
+    delete c1;
+}
 
 double calculate_dilution_factor(double nA, double nC, double nCH, double nMT, double nf) {
     return (23.0 * (-nMT * xA + nA * xHe) * 
@@ -628,9 +726,11 @@ int main(int argc, char** argv) {
         return 2;
     }
 
+    // Call the plot_dilution_kinematics function
+    plot_dilution_kinematics(nh3, c, ch, he, empty);
     // Call the one-dimensional function
     // one_dimensional(nh3, c, ch, he, empty);
-    multi_dimensional(nh3, c, ch, he, empty);
+    // multi_dimensional(nh3, c, ch, he, empty);
 
     // Safely close the ROOT files
     nh3->Close();
