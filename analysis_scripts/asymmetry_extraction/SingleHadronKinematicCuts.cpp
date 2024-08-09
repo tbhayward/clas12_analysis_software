@@ -24,6 +24,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
 
 
         if (property == "xF" || "x" || "PT") {
+            std::cout << "made it into the check" << std::endl;
             goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.4 && *y < 0.75;
         }
         if (property == "Mx") {
