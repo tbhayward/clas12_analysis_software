@@ -11,179 +11,179 @@ double dilution_factor(double currentVariable, const std::string& prefix) {
       0.157106*std::pow(currentVariable,3);
   }
 
-  if (prefix == "x") { return 0.143882+0.0753706*currentVariable+0.654032*std::pow(currentVariable,2); }
-  if (prefix == "PT") { return 0.199431-0.223368*currentVariable+0.644003*std::pow(currentVariable,2); }
-  if (prefix == "xF") { return 0.195272-0.0135855*currentVariable-0.0736621*std::pow(currentVariable,2); }
-  if (prefix == "z") { return -0.0728496+1.3191*currentVariable+-2.86053*std::pow(currentVariable,2)+1.96652*std::pow(currentVariable,3); }
-  if (prefix == "zeta") { return 1.11574+-5.33344*currentVariable+9.55552*std::pow(currentVariable,2)+-5.80119*std::pow(currentVariable,3); }
-  if (prefix == "Mx") { return 0.0366071*std::exp(-0.5*std::pow((currentVariable-0.769794)/0.0562864,2)) + 0.0260418*std::exp(-0.5*std::pow((currentVariable-1.1057)/0.290501,2)) + 0.10761*std::exp(-0.5*std::pow((currentVariable-1.68863)/1.8129,2)); }
-  
+  if (prefix == "x") { double sigma = 0.001; return 0.143882+0.0753706*currentVariable+0.654032*std::pow(currentVariable,2) + rand_gen.Gaus(0, sigma); }
+  if (prefix == "PT") { double sigma = 0.001; return 0.199431-0.223368*currentVariable+0.644003*std::pow(currentVariable,2) + rand_gen.Gaus(0, sigma); }
+  if (prefix == "xF") { double sigma = 0.001; return 0.195272-0.0135855*currentVariable-0.0736621*std::pow(currentVariable,2) + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y4z1") { return 0.242197; }
+  if (prefix == "Q2y4z1") { double sigma = 0.0413275; return 0.242197 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y4z2") { return 0.135962; }
+  if (prefix == "Q2y4z2") { double sigma = 0.00377823; return 0.135962 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y4z3") { return 0.158756; }
+  if (prefix == "Q2y4z3") { double sigma = 0.00844362; return 0.158756 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y4z4") { return 0.14849; }
+  if (prefix == "Q2y4z4") { double sigma = 0.00862382; return 0.14849 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y4z5") { return 0.156161; }
+  if (prefix == "Q2y4z5") { double sigma = 0.00981565; return 0.156161 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y8z1") { return 0.294189; }
+  if (prefix == "Q2y8z1") { double sigma = 0.0379279; return 0.294189 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y8z2") { return 0.18422; }
+  if (prefix == "Q2y8z2") { double sigma = 0.00327553; return 0.18422 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y8z3") { return 0.213911; }
+  if (prefix == "Q2y8z3") { double sigma = 0.00349915; return 0.213911 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y8z4") { return 0.22171; }
+  if (prefix == "Q2y8z4") { double sigma = 0.00850302; return 0.22171 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y8z5") { return 0.228514; }
+  if (prefix == "Q2y8z5") { double sigma = 0.00999568; return 0.228514 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y12z1") { return 0; }
+  if (prefix == "Q2y12z1") { double sigma = -nan; return 0 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y12z2") { return 0.246862; }
+  if (prefix == "Q2y12z2") { double sigma = 0.0135898; return 0.246862 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y12z3") { return 0.251256; }
+  if (prefix == "Q2y12z3") { double sigma = 0.00992952; return 0.251256 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y12z4") { return 0.232663; }
+  if (prefix == "Q2y12z4") { double sigma = 0.00620339; return 0.232663 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y12z5") { return 0.210134; }
-  if (prefix == "Q2y3z1") { return 0.13002; }
+  if (prefix == "Q2y12z5") { double sigma = 0.0150385; return 0.210134 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y3z2") { return 0.159932; }
+  if (prefix == "Q2y3z1") { double sigma = 0.00694702; return 0.13002 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y3z3") { return 0.161149; }
+  if (prefix == "Q2y3z2") { double sigma = 0.00590863; return 0.159932 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y3z4") { return 0.146144; }
+  if (prefix == "Q2y3z3") { double sigma = 0.00580286; return 0.161149 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y3z5") { return 0.175958; }
+  if (prefix == "Q2y3z4") { double sigma = 0.00968058; return 0.146144 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y7z1") { return 0.155728; }
+  if (prefix == "Q2y3z5") { double sigma = 0.0228311; return 0.175958 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y7z2") { return 0.201032; }
+  if (prefix == "Q2y7z1") { double sigma = 0.00501468; return 0.155728 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y7z3") { return 0.206787; }
+  if (prefix == "Q2y7z2") { double sigma = 0.00451093; return 0.201032 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y7z4") { return 0.205502; }
+  if (prefix == "Q2y7z3") { double sigma = 0.0042392; return 0.206787 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y7z5") { return 0.190105; }
+  if (prefix == "Q2y7z4") { double sigma = 0.00502108; return 0.205502 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y11z1") { return 0.163101; }
+  if (prefix == "Q2y7z5") { double sigma = 0.00998189; return 0.190105 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y11z2") { return 0.216486; }
+  if (prefix == "Q2y11z1") { double sigma = 0.0113599; return 0.163101 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y11z3") { return 0.227377; }
+  if (prefix == "Q2y11z2") { double sigma = 0.00368236; return 0.216486 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y11z4") { return 0.226683; }
+  if (prefix == "Q2y11z3") { double sigma = 0.00531377; return 0.227377 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y11z5") { return 0.242188; }
+  if (prefix == "Q2y11z4") { double sigma = 0.00659144; return 0.226683 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y15z1") { return 0.185026; }
+  if (prefix == "Q2y11z5") { double sigma = 0.00756681; return 0.242188 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y15z2") { return 0.232319; }
+  if (prefix == "Q2y15z1") { double sigma = 0.0209033; return 0.185026 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y15z3") { return 0.251985; }
+  if (prefix == "Q2y15z2") { double sigma = 0.0052656; return 0.232319 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y15z4") { return 0.247976; }
+  if (prefix == "Q2y15z3") { double sigma = 0.012072; return 0.251985 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y15z5") { return 0.273208; }
+  if (prefix == "Q2y15z4") { double sigma = 0.0117963; return 0.247976 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y2z1") { return 0.148595; }
+  if (prefix == "Q2y15z5") { double sigma = 0.0443307; return 0.273208 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y2z2") { return 0.175807; }
+  if (prefix == "Q2y2z1") { double sigma = 0.00736045; return 0.148595 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y2z3") { return 0.160963; }
+  if (prefix == "Q2y2z2") { double sigma = 0.00387207; return 0.175807 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y2z4") { return 0.144791; }
+  if (prefix == "Q2y2z3") { double sigma = 0.00398186; return 0.160963 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y2z5") { return 0.18984; }
+  if (prefix == "Q2y2z4") { double sigma = 0.0140496; return 0.144791 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y6z1") { return 0.171444; }
+  if (prefix == "Q2y2z5") { double sigma = 0.0292463; return 0.18984 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y6z2") { return 0.198539; }
+  if (prefix == "Q2y6z1") { double sigma = 0.00718851; return 0.171444 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y6z3") { return 0.190327; }
+  if (prefix == "Q2y6z2") { double sigma = 0.00281353; return 0.198539 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y6z4") { return 0.190697; }
+  if (prefix == "Q2y6z3") { double sigma = 0.00359738; return 0.190327 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y6z5") { return 0.170989; }
+  if (prefix == "Q2y6z4") { double sigma = 0.00860447; return 0.190697 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y10z1") { return 0.193468; }
+  if (prefix == "Q2y6z5") { double sigma = 0.022291; return 0.170989 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y10z2") { return 0.214237; }
+  if (prefix == "Q2y10z1") { double sigma = 0.00397289; return 0.193468 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y10z3") { return 0.214983; }
+  if (prefix == "Q2y10z2") { double sigma = 0.0024578; return 0.214237 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y10z4") { return 0.184261; }
+  if (prefix == "Q2y10z3") { double sigma = 0.00494081; return 0.214983 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y10z5") { return 0.216189; }
+  if (prefix == "Q2y10z4") { double sigma = 0.0114092; return 0.184261 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y14z1") { return 0.184706; }
+  if (prefix == "Q2y10z5") { double sigma = 0.0414947; return 0.216189 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y14z2") { return 0.208434; }
+  if (prefix == "Q2y14z1") { double sigma = 0.00738746; return 0.184706 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y14z3") { return 0.230743; }
+  if (prefix == "Q2y14z2") { double sigma = 0.00366386; return 0.208434 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y14z4") { return 0.252315; }
+  if (prefix == "Q2y14z3") { double sigma = 0.00967299; return 0.230743 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y14z5") { return 0.246462; }
+  if (prefix == "Q2y14z4") { double sigma = 0.0176664; return 0.252315 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y17z1") { return 0.215869; }
+  if (prefix == "Q2y14z5") { double sigma = 0.0413178; return 0.246462 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y17z2") { return 0.238701; }
+  if (prefix == "Q2y17z1") { double sigma = 0.0254881; return 0.215869 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y17z3") { return 0.262723; }
+  if (prefix == "Q2y17z2") { double sigma = 0.00560271; return 0.238701 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y17z4") { return 0.268868; }
+  if (prefix == "Q2y17z3") { double sigma = 0.00965464; return 0.262723 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y17z5") { return 0.37505; }
-  if (prefix == "Q2y1z1") { return 0.165969; }
+  if (prefix == "Q2y17z4") { double sigma = 0.0158283; return 0.268868 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y1z2") { return 0.180655; }
+  if (prefix == "Q2y17z5") { double sigma = 0.0549176; return 0.37505 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y1z3") { return 0.166592; }
+  if (prefix == "Q2y1z1") { double sigma = 0.00571837; return 0.165969 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y1z4") { return 0.224066; }
+  if (prefix == "Q2y1z2") { double sigma = 0.00399325; return 0.180655 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y1z5") { return 0.171837; }
+  if (prefix == "Q2y1z3") { double sigma = 0.009156; return 0.166592 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y5z1") { return 0.178628; }
+  if (prefix == "Q2y1z4") { double sigma = 0.0255769; return 0.224066 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y5z2") { return 0.196224; }
+  if (prefix == "Q2y1z5") { double sigma = 0.0419718; return 0.171837 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y5z3") { return 0.179131; }
+  if (prefix == "Q2y5z1") { double sigma = 0.00662353; return 0.178628 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y5z4") { return 0.193116; }
+  if (prefix == "Q2y5z2") { double sigma = 0.00454322; return 0.196224 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y5z5") { return 0.24764; }
+  if (prefix == "Q2y5z3") { double sigma = 0.00739584; return 0.179131 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y9z1") { return 0.18516; }
+  if (prefix == "Q2y5z4") { double sigma = 0.0282124; return 0.193116 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y9z2") { return 0.196564; }
+  if (prefix == "Q2y5z5") { double sigma = 0.0344613; return 0.24764 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y9z3") { return 0.177837; }
+  if (prefix == "Q2y9z1") { double sigma = 0.00563494; return 0.18516 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y9z4") { return 0.214407; }
+  if (prefix == "Q2y9z2") { double sigma = 0.00740232; return 0.196564 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y9z5") { return 0.296948; }
+  if (prefix == "Q2y9z3") { double sigma = 0.00915024; return 0.177837 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y13z1") { return 0.19919; }
+  if (prefix == "Q2y9z4") { double sigma = 0.0290215; return 0.214407 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y13z2") { return 0.228949; }
+  if (prefix == "Q2y9z5") { double sigma = 0.0353604; return 0.296948 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y13z3") { return 0.219792; }
+  if (prefix == "Q2y13z1") { double sigma = 0.00720393; return 0.19919 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y13z4") { return 0.201572; }
+  if (prefix == "Q2y13z2") { double sigma = 0.00606249; return 0.228949 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y13z5") { return 0.421139; }
+  if (prefix == "Q2y13z3") { double sigma = 0.0146543; return 0.219792 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y16z1") { return 0.208276; }
+  if (prefix == "Q2y13z4") { double sigma = 0.0235241; return 0.201572 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y16z2") { return 0.248289; }
+  if (prefix == "Q2y13z5") { double sigma = 0.0417879; return 0.421139 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y16z3") { return 0.237183; }
+  if (prefix == "Q2y16z1") { double sigma = 0.0102113; return 0.208276 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y16z4") { return 0.150532; }
+  if (prefix == "Q2y16z2") { double sigma = 0.00648511; return 0.248289 + rand_gen.Gaus(0, sigma); }
+
+  if (prefix == "Q2y16z3") { double sigma = 0.0116444; return 0.237183 + rand_gen.Gaus(0, sigma); }
+
+  if (prefix == "Q2y16z4") { double sigma = 0.0392161; return 0.150532 + rand_gen.Gaus(0, sigma); }
+
+  if (prefix == "Q2y16z5") { double sigma = 0.0566743; return 0.343884 + rand_gen.Gaus(0, sigma); }
 
   // epX
   if (prefix == "xF") { 
