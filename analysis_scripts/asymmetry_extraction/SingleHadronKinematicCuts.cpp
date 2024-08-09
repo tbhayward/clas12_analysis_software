@@ -19,8 +19,8 @@ SingleHadronKinematicCuts::SingleHadronKinematicCuts(TTreeReader& reader)
 bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         bool goodEvent = false;
         bool checked = false;
-        std::cout << property << " checking the property" << std::endl;
         string property = binNames[currentFits];
+        std::cout << property << " checking the property" << std::endl;
 
         if (property == "epipPT") {
             goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.5 && *y < 0.75;
