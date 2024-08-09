@@ -36,6 +36,13 @@ const double nc_CH = 190126.82700000002;
 const double nc_He = 668899.295;
 const double nc_ET = 473020.06;
 
+// Total accumulated charge
+const double nc_A = 4459870.328370002;
+const double nc_C = 443417.18516000017;
+const double nc_CH = 190126.82700000002;
+const double nc_He = 668899.295;
+const double nc_ET = 473020.06;
+
 // Declare vectors to store the dynamically allocated objects
 std::vector<TGraphErrors*> dilution_graphs;
 std::vector<TF1*> fit_functions;
@@ -73,7 +80,7 @@ void plot_dilution_kinematics(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, T
         "Q^{2} (GeV^{2})", "x_{B}", "P_{T} (GeV)", "x_{F}"
     };
     std::vector<std::pair<double, double>> ranges = {
-        {0, 10}, {0, 90}, {0, 10}, {0, 90}, {0, 10}, {0, 1}, {0, 2}, {-1, 1}
+        {2, 8}, {0, 45}, {0, 4}, {0, 60}, {1, 8}, {0, 0.6}, {0, 1.2}, {-1, 1}
     };
 
     // Get the PhysicsEvents trees
@@ -130,6 +137,9 @@ void plot_dilution_kinematics(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, T
         gr_nh3->GetXaxis()->SetTitle(x_labels[i].c_str());
         gr_nh3->GetYaxis()->SetTitle("Counts/nC");
 
+        // Remove the default title
+        gr_nh3->SetTitle("");
+
         // Create legend
         TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);
         legend->AddEntry(gr_nh3, "NH3", "P");
@@ -147,11 +157,12 @@ void plot_dilution_kinematics(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, T
         delete h_empty;
     }
 
-    // Add a global title to the canvas
+    // Add a global title to the canvas and center it
     c1->cd();
     TLatex title;
     title.SetNDC();
     title.SetTextSize(0.04);
+    title.SetTextAlign(22);  // Center alignment
     title.DrawLatex(0.5, 0.95, "epX, Q^{2} > 1 GeV^{2}, W > 2, y < 0.75, M_{x} > 1.4 GeV");
 
     // Save the canvas
