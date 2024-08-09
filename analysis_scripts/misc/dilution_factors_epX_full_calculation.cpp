@@ -11,6 +11,7 @@
 #include <cmath>
 #include <utility>
 #include <vector>
+#include <TLegend.h>
 
 // Constants for the dilution factor calculation
 const double L_C = 1.5;
