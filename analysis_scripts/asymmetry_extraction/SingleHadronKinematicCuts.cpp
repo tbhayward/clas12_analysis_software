@@ -27,14 +27,6 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         if (property == "Mx") {
             goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75;
         }
-        else if (property == "PTTFR" || property ==  "xTFR" || property == "zetaTFR" || 
-          property == "Q2TFR" || property ==  "x") {
-          goodEvent = *Q2>1 && *W>2 && *Mx>1.4 && *y<0.75 && *xF<0;
-        }
-        else if (property == "PTCFR" || property == "xCFR" || property == "zetaCFR" ||
-          property == "Q2CFR") {
-          goodEvent = *Q2>1 && *W>2 && *Mx>1.4 && *y<0.75 && *xF>0.3;
-        } 
 
         // multidimensional analysis checks
         else if (*Q2>1 && *W>2 && *Mx>1.4  && *y<0.75) {
