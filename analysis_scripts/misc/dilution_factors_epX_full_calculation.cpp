@@ -36,13 +36,6 @@ const double nc_CH = 190126.82700000002;
 const double nc_He = 668899.295;
 const double nc_ET = 473020.06;
 
-// Total accumulated charge
-const double nc_A = 4459870.328370002;
-const double nc_C = 443417.18516000017;
-const double nc_CH = 190126.82700000002;
-const double nc_He = 668899.295;
-const double nc_ET = 473020.06;
-
 // Declare vectors to store the dynamically allocated objects
 std::vector<TGraphErrors*> dilution_graphs;
 std::vector<TF1*> fit_functions;
