@@ -31,7 +31,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         }
 
         // multidimensional analysis checks
-        else if (*Q2>1 && *W>2 && *Mx>1.4  && *y<0.75 && !checked) {
+        if (*Q2>1 && *W>2 && *Mx>1.4  && *y<0.75 && !checked) {
           checked = true;
           size_t pos = property.find("z");
           std::string prez = property.substr(0, pos);
