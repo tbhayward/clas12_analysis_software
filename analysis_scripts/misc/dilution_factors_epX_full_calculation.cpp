@@ -66,44 +66,86 @@ TGraphErrors* create_tgrapherrors(TH1D* hist, int color, int marker_style) {
 }
 
 void plot_dilution_kinematics(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile* empty) {
-    // Get the PhysicsEvents trees
-    TTree* tree_nh3 = (TTree*)nh3->Get("PhysicsEvents");
-    TTree* tree_carbon = (TTree*)carbon->Get("PhysicsEvents");
-    TTree* tree_ch = (TTree*)ch->Get("PhysicsEvents");
-    TTree* tree_he = (TTree*)he->Get("PhysicsEvents");
-    TTree* tree_empty = (TTree*)empty->Get("PhysicsEvents");
+    // Branches to plot
+    std::vector<std::string> branches = {"e_p", "e_theta", "p_p", "p_theta", "Q2", "xB", "pT", "z"};
+    std::vector<std::string> x_labels = {
+        "e_{p} (GeV)", "e_{#theta} (degrees)", "p_{p} (GeV)", "p_{#theta} (degrees)", 
+        "Q^{2} (GeV^{2})", "x_{B}", "P_{T} (GeV)", "z"
+    };
 
-    // Create the canvas and divide it into 2x4 pads
-    TCanvas* c1 = new TCanvas("c1", "Dilution Kinematics", 1600, 1200);
+    // Total accumulated charge
+    const double nc_A = 4459870.328370002;
+    const double nc_C = 443417.18516000017;
+    const double nc_CH = 190126.82700000002;
+    const double nc_He = 668899.295;
+    const double nc_ET = 473020.06;
+
+    // Get the PhysicsEvents trees
+    TTree *tree_nh3;
+    TTree *tree_carbon;
+    TTree *tree_ch;
+    TTree *tree_he;
+    TTree *tree_empty;
+    nh3->GetObject("PhysicsEvents", tree_nh3);
+    carbon->GetObject("PhysicsEvents", tree_carbon);
+    ch->GetObject("PhysicsEvents", tree_ch);
+    he->GetObject("PhysicsEvents", tree_he);
+    empty->GetObject("PhysicsEvents", tree_empty);
+
+    if (!tree_nh3 || !tree_carbon || !tree_ch || !tree_he || !tree_empty) {
+        std::cerr << "Error: PhysicsEvents tree not found!" << std::endl;
+        return;
+    }
+
+    // Create a 2x4 canvas
+    TCanvas* c1 = new TCanvas("c1", "Dilution Kinematics", 1600, 800);
     c1->Divide(4, 2);
 
-    // Define the branches to be plotted
-    const char* branches[8] = {"e_p", "e_theta * 180.0 / TMath::Pi()", "p_p", "p_theta * 180.0 / TMath::Pi()", "Q2", "xB", "pT", "xF"};
-    const char* labels[8] = {"e_{p} (GeV)", "e_{#theta} (deg)", "p_{p} (GeV)", "p_{#theta} (deg)", "Q^{2} (GeV^{2})", "x_{B}", "P_{T} (GeV)", "x_{F}"};
-
-    // Colors and marker styles for different targets
-    int colors[5] = {kBlack, kRed, kBlue, kGreen, kMagenta};
-    int marker_styles[5] = {20, 21, 22, 23, 24};
-
-    // Loop over the branches
-    for (int i = 0; i < 8; ++i) {
+    // Loop over the branches and plot them
+    for (size_t i = 0; i < branches.size(); ++i) {
         c1->cd(i + 1);
 
-        // Create histograms and normalize them
-        TH1D* hist_nh3 = create_normalized_histogram(tree_nh3, branches[i], Form("hist_nh3_%d", i), nc_A);
-        TH1D* hist_carbon = create_normalized_histogram(tree_carbon, branches[i], Form("hist_carbon_%d", i), nc_C);
-        TH1D* hist_ch = create_normalized_histogram(tree_ch, branches[i], Form("hist_ch_%d", i), nc_CH);
-        TH1D* hist_he = create_normalized_histogram(tree_he, branches[i], Form("hist_he_%d", i), nc_He);
-        TH1D* hist_empty = create_normalized_histogram(tree_empty, branches[i], Form("hist_empty_%d", i), nc_ET);
+        // Create histograms for each target type
+        TH1D* h_nh3 = new TH1D(Form("h_nh3_%zu", i), "", 100, 0, 0);  // Define the range properly
+        TH1D* h_carbon = new TH1D(Form("h_carbon_%zu", i), "", 100, 0, 0);
+        TH1D* h_ch = new TH1D(Form("h_ch_%zu", i), "", 100, 0, 0);
+        TH1D* h_he = new TH1D(Form("h_he_%zu", i), "", 100, 0, 0);
+        TH1D* h_empty = new TH1D(Form("h_empty_%zu", i), "", 100, 0, 0);
 
-        // Create TGraphErrors from histograms
-        TGraphErrors* gr_nh3 = create_tgrapherrors(hist_nh3, colors[0], marker_styles[0]);
-        TGraphErrors* gr_carbon = create_tgrapherrors(hist_carbon, colors[1], marker_styles[1]);
-        TGraphErrors* gr_ch = create_tgrapherrors(hist_ch, colors[2], marker_styles[2]);
-        TGraphErrors* gr_he = create_tgrapherrors(hist_he, colors[3], marker_styles[3]);
-        TGraphErrors* gr_empty = create_tgrapherrors(hist_empty, colors[4], marker_styles[4]);
+        // Draw the branch into the histograms
+        tree_nh3->Draw(Form("%s>>h_nh3_%zu", branches[i].c_str(), i));
+        tree_carbon->Draw(Form("%s>>h_carbon_%zu", branches[i].c_str(), i));
+        tree_ch->Draw(Form("%s>>h_ch_%zu", branches[i].c_str(), i));
+        tree_he->Draw(Form("%s>>h_he_%zu", branches[i].c_str(), i));
+        tree_empty->Draw(Form("%s>>h_empty_%zu", branches[i].c_str(), i));
 
-        // Draw the TGraphErrors
+        // Normalize the histograms to the total accumulated charge
+        h_nh3->Scale(1.0 / nc_A);
+        h_carbon->Scale(1.0 / nc_C);
+        h_ch->Scale(1.0 / nc_CH);
+        h_he->Scale(1.0 / nc_He);
+        h_empty->Scale(1.0 / nc_ET);
+
+        // Create TGraphErrors for each histogram
+        TGraphErrors* gr_nh3 = new TGraphErrors(h_nh3);
+        TGraphErrors* gr_carbon = new TGraphErrors(h_carbon);
+        TGraphErrors* gr_ch = new TGraphErrors(h_ch);
+        TGraphErrors* gr_he = new TGraphErrors(h_he);
+        TGraphErrors* gr_empty = new TGraphErrors(h_empty);
+
+        // Set colors and markers
+        gr_nh3->SetMarkerStyle(20);
+        gr_nh3->SetMarkerColor(kRed);
+        gr_carbon->SetMarkerStyle(21);
+        gr_carbon->SetMarkerColor(kBlue);
+        gr_ch->SetMarkerStyle(22);
+        gr_ch->SetMarkerColor(kGreen);
+        gr_he->SetMarkerStyle(23);
+        gr_he->SetMarkerColor(kMagenta);
+        gr_empty->SetMarkerStyle(24);
+        gr_empty->SetMarkerColor(kCyan);
+
+        // Draw the graphs
         gr_nh3->Draw("AP");
         gr_carbon->Draw("P SAME");
         gr_ch->Draw("P SAME");
@@ -111,10 +153,10 @@ void plot_dilution_kinematics(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, T
         gr_empty->Draw("P SAME");
 
         // Set axis labels
-        gr_nh3->GetXaxis()->SetTitle(labels[i]);
-        gr_nh3->GetYaxis()->SetTitle("Normalized Yield");
+        gr_nh3->GetXaxis()->SetTitle(x_labels[i].c_str());
+        gr_nh3->GetYaxis()->SetTitle("Normalized Counts");
 
-        // Add a legend
+        // Create legend
         TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);
         legend->AddEntry(gr_nh3, "NH3", "P");
         legend->AddEntry(gr_carbon, "C", "P");
