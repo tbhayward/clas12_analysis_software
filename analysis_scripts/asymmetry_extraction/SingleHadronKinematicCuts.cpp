@@ -23,13 +23,15 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
 
         if (property == "xF" || "x" || "PT") {
             goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.4 && *y < 0.75;
+            checked = true;
         }
         if (property == "Mx") {
             goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75;
+            checked = true;
         }
 
         // multidimensional analysis checks
-        else if (*Q2>1 && *W>2 && *Mx>1.4  && *y<0.75) {
+        else if (*Q2>1 && *W>2 && *Mx>1.4  && *y<0.75 && !checked) {
           checked = true;
           size_t pos = property.find("z");
           std::string prez = property.substr(0, pos);
