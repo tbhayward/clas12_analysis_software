@@ -1,6 +1,7 @@
 #include "dilution_factor.h"
 #include <cmath>
 #include <iostream>
+#include <TRandom3.h>
 
 double dilution_factor(double currentVariable, const std::string& prefix) {
 

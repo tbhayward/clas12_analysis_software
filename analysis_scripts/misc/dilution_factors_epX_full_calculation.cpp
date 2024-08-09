@@ -685,6 +685,9 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
                 chi2 = fit_func->GetChisquare();
                 ndf = fit_func->GetNDF();
                 chi2_ndf = chi2 / ndf;
+                // Retrieve fit parameters and chi-squared
+                p0 = fit_func->GetParameter(0);
+                p0_err = fit_func->GetParError(0);
 
                 // Add fit parameters and chi-squared box
                 TPaveText *pt = new TPaveText(0.5, 0.7, 0.9, 0.9, "brNDC");
@@ -700,9 +703,10 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
                 latex.SetTextSize(0.04);
                 latex.DrawLatex(0.20, 0.15, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
 
-                // Print the fit formula for the current bin
-                std::cout << "if (prefix == \"" << Q2y_prefix << z_prefix << "\") { return " << p0 << "; }" << std::endl << std::endl;
-
+                // Generate the return statement with random Gaussian variation
+                std::cout << "if (prefix == \"" << Q2y_prefix << z_prefix << "\") {"
+                          << " double sigma = " << p0_err << ";"
+                          << " return " << p0 << " + rand_gen.Gaus(0, sigma); }" << std::endl << std::endl;
                 // Store the objects in vectors for later cleanup
                 dilution_graphs.push_back(gr_dilution);
                 fit_functions.push_back(fit_func);
