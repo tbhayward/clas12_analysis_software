@@ -156,7 +156,7 @@ void plot_dilution_kinematics(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, T
     title.SetNDC();
     title.SetTextSize(0.04);
     title.SetTextAlign(22);  // Center alignment
-    title.DrawLatex(0.5, 0.98, "epX, Q^{2} > 1 GeV^{2}, W > 2, y < 0.75, M_{x} > 1.4 GeV");
+    title.DrawLatex(0.5, 0.97, "epX, Q^{2} > 1 GeV^{2}, W > 2, y < 0.75, M_{x} > 1.4 GeV");
 
     // Save the canvas
     c1->SaveAs("output/dilution_kinematics.png");
