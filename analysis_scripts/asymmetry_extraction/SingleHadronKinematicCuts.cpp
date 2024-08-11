@@ -26,7 +26,8 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
             goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.4 && *y < 0.75;
         } else if (property == "Mx") {
             goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75;
-        } else if (*Q2>1 && *W>2 && *Mx>1.4  && *y<0.75) {
+        } 
+        if (*Q2>1 && *W>2 && *Mx>1.4  && *y<0.75) {
           goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.4 && *y < 0.75;
           size_t pos = property.find("z");
           std::string prez = property.substr(0, pos);
