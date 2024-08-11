@@ -51,6 +51,7 @@
 #include "plot_data.h"
 #include "modifyTree.h"
 #include "fitting_process.h"
+#include "setup_directories.h"
 
 // Using namespace declaration
 using namespace std;
@@ -279,6 +280,8 @@ int main(int argc, char *argv[]) {
   cout << "Total neg-pos charge: " << cmp << " (nC). ";
   cout << "Total neg-neg charge: " << cmm << " (nC). ";
   cout << "Total unpolarized (carbon) charge: " << total_charge_carbon << " (nC)."<< endl << endl;
+
+  setup_directories();
 
   // createIntegratedKinematicPlots();
   // createIntegratedKinematicPlotsForBinsAndFits();
