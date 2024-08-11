@@ -49,7 +49,6 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
             // Assuming goodEvent might be true, let's adjust for y ranges
             if ((prez == "Q2y1" || prez == "Q2y5" || prez == "Q2y9" || prez == "Q2y13" || prez == "Q2y16")) {
                 goodEvent = *y > 0.65 && *y <= 0.75;
-                std::cout << property << " " << prez << std::endl;
             } else if ((prez == "Q2y2" || prez == "Q2y6" || prez == "Q2y10" || prez == "Q2y14" || prez == "Q2y17")) {
                 goodEvent = *y > 0.55 && *y <= 0.65;
             } else if ((prez == "Q2y3" || prez == "Q2y7" || prez == "Q2y11" || prez == "Q2y15")) {
@@ -57,7 +56,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
             } else if ((prez == "Q2y4" || prez == "Q2y8" || prez == "Q2y12")) {
                 goodEvent = *y > 0.30 && *y <= 0.45;
             }
-
+            std::cout << property << " " << prez << " " << postz << std::endl;
             if (goodEvent) {
               // Corrected z bin checks
               if (postz == "z1") {
