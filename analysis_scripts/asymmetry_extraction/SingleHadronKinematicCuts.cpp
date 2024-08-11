@@ -51,11 +51,11 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
                 goodEvent = *y > 0.65 && *y <= 0.75;
                 std::cout << property << " " << prez << std::endl;
             } else if ((prez == "Q2y2" || prez == "Q2y6" || prez == "Q2y10" || prez == "Q2y14" || prez == "Q2y17")) {
-                goodEvent = && *y > 0.55 && *y <= 0.65;
+                goodEvent = *y > 0.55 && *y <= 0.65;
             } else if ((prez == "Q2y3" || prez == "Q2y7" || prez == "Q2y11" || prez == "Q2y15")) {
-                goodEvent = && *y > 0.45 && *y <= 0.55;
+                goodEvent = *y > 0.45 && *y <= 0.55;
             } else if ((prez == "Q2y4" || prez == "Q2y8" || prez == "Q2y12")) {
-                goodEvent = && *y > 0.30 && *y <= 0.45;
+                goodEvent = *y > 0.30 && *y <= 0.45;
             }
 
             if (goodEvent) {
