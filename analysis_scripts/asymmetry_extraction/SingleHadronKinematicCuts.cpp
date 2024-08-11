@@ -60,7 +60,6 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
               // Corrected z bin checks
               if (postz == "z1") {
                   goodEvent = goodEvent && *z > 0.10 && *z <= 0.25;
-                  std::cout << property << " " << prez << " " << postz << " " << goodEvent << std::endl;
               } else if (postz == "z2") {
                   goodEvent = goodEvent && *z > 0.25 && *z <= 0.35;
               } else if (postz == "z3") {
