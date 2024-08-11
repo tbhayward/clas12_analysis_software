@@ -726,7 +726,7 @@ void plotHistogramAndFit_single_hadron(TH1D* histogram, TF1* fitFunction, int bi
   leg->Draw("same");
 
   // Create the filename for the PNG
-  string filename = "output/individual_chi2_fits" + prefix + "_" + 
+  string filename = "output/individual_chi2_fits/" + prefix + "_" + 
     fileNameSuffix + "_" + std::to_string(binIndex) + ".png";
   
   // Determine the variable range for the specified bin
@@ -2276,7 +2276,7 @@ void plotHistogramAndFit_dvcs(TH1D* histogram, TF1* fitFunction, int binIndex,
   leg->Draw("same");
 
   // Create the filename for the PNG
-  string filename = "output/individual_chi2_fits" + prefix + "_" + 
+  string filename = "output/individual_chi2_fits/" + prefix + "_" + 
     fileNameSuffix + "_" + std::to_string(binIndex) + ".png";
   
   // Determine the variable range for the specified bin
