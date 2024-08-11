@@ -20,7 +20,6 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         bool goodEvent = false;
         bool checked = false;
         string property = binNames[currentFits];
-        std::cout << property << std::endl;
 
         if (property == "xF" || "x" || "PT") {
             goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.4 && *y < 0.75;
@@ -28,48 +27,49 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
             goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75;
         } 
         if (*Q2>1 && *W>2 && *Mx>1.4  && *y<0.75) {
-          goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.4 && *y < 0.75;
           size_t pos = property.find("z");
           std::string prez = property.substr(0, pos);
-          std::string postz = property.substr(pos); // Skip "z" itself
-          std::cout << postz << std::endl;
+          std::string postz = property.substr(pos); 
 
           // Corrected conditional checks for prez
           if (prez == "Q2y1" || prez == "Q2y2" || prez == "Q2y3"  || prez == "Q2y4") {
-              goodEvent = *Q2 > 1 && *Q2 <= 2;
+            goodEvent = *Q2 > 1 && *Q2 <= 2;
           } else if (prez == "Q2y5" || prez == "Q2y6" || prez == "Q2y7"  || prez == "Q2y8") {
-              goodEvent = *Q2 > 2 && *Q2 <= 3;
+            goodEvent = *Q2 > 2 && *Q2 <= 3;
           } else if (prez == "Q2y9" || prez == "Q2y10" || prez == "Q2y11"  || prez == "Q2y12") {
-              goodEvent = *Q2 > 3 && *Q2 <= 4;
+            goodEvent = *Q2 > 3 && *Q2 <= 4;
           } else if (prez == "Q2y13" || prez == "Q2y14" || prez == "Q2y15") {
-              goodEvent = *Q2 > 4 && *Q2 <= 5;
+            goodEvent = *Q2 > 4 && *Q2 <= 5;
           } else if (prez == "Q2y16" || prez == "Q2y17") {
-              goodEvent = *Q2 > 5 && *Q2 <= 7;
+            goodEvent = *Q2 > 5 && *Q2 <= 7;
+          } else {
+            goodEvent = false;
           }
           if (goodEvent) {
             // Assuming goodEvent might be true, let's adjust for y ranges
             if ((prez == "Q2y1" || prez == "Q2y5" || prez == "Q2y9" || prez == "Q2y13" || prez == "Q2y16")) {
                 goodEvent = *y > 0.65 && *y <= 0.75;
+                std::cout << property << " " << prez << std::endl;
             } else if ((prez == "Q2y2" || prez == "Q2y6" || prez == "Q2y10" || prez == "Q2y14" || prez == "Q2y17")) {
-                goodEvent = *y > 0.55 && *y <= 0.65;
+                goodEvent = && *y > 0.55 && *y <= 0.65;
             } else if ((prez == "Q2y3" || prez == "Q2y7" || prez == "Q2y11" || prez == "Q2y15")) {
-                goodEvent = *y > 0.45 && *y <= 0.55;
+                goodEvent = && *y > 0.45 && *y <= 0.55;
             } else if ((prez == "Q2y4" || prez == "Q2y8" || prez == "Q2y12")) {
-                goodEvent = *y > 0.30 && *y <= 0.45;
+                goodEvent = && *y > 0.30 && *y <= 0.45;
             }
 
             if (goodEvent) {
               // Corrected z bin checks
               if (postz == "z1") {
-                  goodEvent = *z > 0.10 && *z <= 0.25;
+                  goodEvent = goodEvent && *z > 0.10 && *z <= 0.25;
               } else if (postz == "z2") {
-                  goodEvent = *z > 0.25 && *z <= 0.35;
+                  goodEvent = goodEvent && *z > 0.25 && *z <= 0.35;
               } else if (postz == "z3") {
-                  goodEvent = *z > 0.35 && *z <= 0.45;
+                  goodEvent = goodEvent && *z > 0.35 && *z <= 0.45;
               } else if (postz == "z4") {
-                  goodEvent = *z > 0.45 && *z <= 0.55;
+                  goodEvent = goodEvent && *z > 0.45 && *z <= 0.55;
               } else if (postz == "z5") {
-                  goodEvent = *z > 0.55 && *z <= 0.75;
+                  goodEvent = goodEvent && *z > 0.55 && *z <= 0.75;
               }
             }
           }
