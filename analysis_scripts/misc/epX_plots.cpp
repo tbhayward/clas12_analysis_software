@@ -378,17 +378,18 @@ void plotQ2yz_pT(
     TCanvas *c = new TCanvas("c", "Q2-y-z Dependence", 1800, 1600);
     c->Divide(5, 4);  // 4 rows (y bins) by 5 columns (Q2 bins)
 
-    // Prefixes for Q2 ranges (top two rows)
+    // Prefixes for Q2 ranges (top three rows)
     std::vector<std::vector<std::string>> Q2_prefixes = {
         {"Q2y1", "Q2y5", "Q2y9", "Q2y13", "Q2y16"},  // Top row
-        {"Q2y2", "Q2y6", "Q2y10", "Q2y14", "Q2y17"}  // Second row
+        {"Q2y2", "Q2y6", "Q2y10", "Q2y14", "Q2y17"}, // Second row
+        {"Q2y3", "Q2y7", "Q2y11", "Q2y15"}           // Third row (only 4 columns)
     };
     std::vector<std::string> z_prefixes = {"z1", "z2", "z3", "z4", "z5"};
     std::vector<int> colors = {kBlack, kRed, kGreen, kBlue, kMagenta};
 
     // Loop over each row
     for (size_t row = 0; row < Q2_prefixes.size(); ++row) {
-        // Loop over each Q2 bin (5 columns per row)
+        // Loop over each Q2 bin (5 columns per row, 4 for third row)
         for (size_t q2Index = 0; q2Index < Q2_prefixes[row].size(); ++q2Index) {
             c->cd(row * 5 + q2Index + 1); // Go to the correct pad
             gPad->SetLeftMargin(0.18); // Adjust left margin for y-axis visibility
@@ -459,8 +460,8 @@ int main(int argc, char *argv[]) {
     // plotDependence(asymmetryData, "PT", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PT_dependence_plots.png");
     // plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots.png");
 
-    // Plot PT and xF dependence comparison
-    plotComparison(asymmetryData, "output/epX_plots/PT_xF_dependence_comparison.png");
+    // // Plot PT and xF dependence comparison
+    // plotComparison(asymmetryData, "output/epX_plots/PT_xF_dependence_comparison.png");
 
     // Plot Q2-y-z dependence
     plotQ2yz_pT(asymmetryData, "output/epX_plots/Q2yz_dependence_plots.png");
