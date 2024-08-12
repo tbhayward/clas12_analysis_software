@@ -382,7 +382,8 @@ void plotQ2yz_pT(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
     const std::string &outputFileName) {
     
-    TCanvas *c = new TCanvas("c", "Q2-y-z Dependence", 1800, 1600);
+    // Increase canvas width to accommodate larger left margin
+    TCanvas *c = new TCanvas("c", "Q2-y-z Dependence", 1900, 1600); // Increased width
     c->Divide(5, 4, 0, 0);  // 4 rows by 5 columns, no spacing
 
     // Prefixes for Q2 ranges (including placeholders)
@@ -409,7 +410,7 @@ void plotQ2yz_pT(
             if (q2Index != 0) {
                 gPad->SetLeftMargin(0.001); // No left margin for non-leftmost plots
             } else {
-                gPad->SetLeftMargin(0.25); // Increase left margin for leftmost plots to avoid clipping
+                gPad->SetLeftMargin(0.25); // Adequate left margin for leftmost plots
             }
 
             if (row != Q2_prefixes.size() - 1) {
@@ -453,7 +454,6 @@ void plotQ2yz_pT(
             // Loop over each z bin
             for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
                 std::string key = Q2_prefixes[row][q2Index] + z_prefixes[zIndex] + "chi2FitsALUsinphi";
-                // std::string key = Q2_prefixes[row][q2Index] + z_prefixes[zIndex] + "chi2FitsALL";
                 auto it = asymmetryData.find(key);
 
                 if (it == asymmetryData.end()) {
