@@ -166,6 +166,7 @@ void plotDependence(
                     sysUncertainty = y[j] * 0.101;
                 } else if (suffixes[i] == "ALL" || suffixes[i] == "ALLcosphi") {
                     if (!offsetValues.empty()) {
+                        std::cout << offsetValues[j] << std::endl;
                         sysUncertainty = std::sqrt(std::pow(0.029, 2) + std::pow(0.101, 2) + std::pow(offsetValues[j], 2));
                     }
                 }
