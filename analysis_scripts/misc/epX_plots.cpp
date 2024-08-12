@@ -234,8 +234,7 @@ void plotDependence(
 
 void plotComparison(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
-    const std::string &outputFileName
-) {
+    const std::string &outputFileName) {
     // Create a 1x2 canvas
     TCanvas *c = new TCanvas("c", "PT and xF Dependence Comparison", 1200, 600);
     c->Divide(2, 1); // 1 row, 2 columns
@@ -372,6 +371,63 @@ void plotComparison(
     }
 }
 
+void plotQ2yz(
+    const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
+    const std::string &outputFileName
+) {
+    TCanvas *c = new TCanvas("c", "Q2-y-z Dependence", 1800, 1600);
+    c->Divide(5, 4);  // 4 rows (y bins) by 5 columns (Q2 bins)
+
+    // Define the binning structure
+    std::vector<std::string> Q2_prefixes = {"Q2y1", "Q2y5", "Q2y9", "Q2y13", "Q2y16",
+                                            "Q2y2", "Q2y6", "Q2y10", "Q2y14", "Q2y17",
+                                            "Q2y3", "Q2y7", "Q2y11", "Q2y15",
+                                            "Q2y4", "Q2y8", "Q2y12"};
+    std::vector<std::string> z_prefixes = {"z1", "z2", "z3", "z4", "z5"};
+    std::vector<int> colors = {kBlack, kRed, kGreen, kBlue, kMagenta};
+    int numPads = 20;
+
+    // Iterate through each pad (4 rows x 5 columns)
+    for (int pad = 1; pad <= numPads; ++pad) {
+        c->cd(pad);
+
+        // Retrieve the correct Q2_prefix based on pad number
+        std::string Q2_prefix = Q2_prefixes[pad - 1];
+
+        // Create the graph for each z bin
+        for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
+            std::string key = Q2_prefix + z_prefixes[zIndex] + "chi2FitsALUsinphi";  // Modify the suffix as needed
+            auto it = asymmetryData.find(key);
+            if (it != asymmetryData.end()) {
+                const auto &data = it->second;
+
+                std::vector<double> x, y, yErr;
+                for (const auto &entry : data) {
+                    x.push_back(entry[0]);
+                    y.push_back(entry[1]);
+                    yErr.push_back(entry[2]);
+                }
+
+                TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
+
+                // Set up axis labels and ranges only for the first graph in the pad
+                if (zIndex == 0) {
+                    setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.0, 1.2}, {-0.15, 0.15});
+                    graph->Draw("AP");
+                } else {
+                    graph->Draw("P SAME");
+                }
+            }
+        }
+    }
+
+    // Save the canvas as a PNG file
+    gSystem->Exec("mkdir -p output/epX_plots");
+    c->SaveAs(outputFileName.c_str());
+    delete c;
+}
+
+
 int main(int argc, char *argv[]) {
     if (argc != 3) {
         std::cerr << "Usage: " << argv[0] << " <asymmetries.txt> <kinematicPlots.txt>\n";
@@ -401,6 +457,9 @@ int main(int argc, char *argv[]) {
 
     // Plot PT and xF dependence comparison
     plotComparison(asymmetryData, "output/epX_plots/PT_xF_dependence_comparison.png");
+
+    // Plot Q2-y-z dependence
+    plotQ2yZ(asymmetryData, "output/epX_plots/Q2yz_dependence_plots.png");
 
     return 0;
 }
