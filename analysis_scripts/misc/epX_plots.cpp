@@ -233,8 +233,7 @@ void plotDependence(
 
 void plotComparison(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
-    const std::string &outputFileName
-) {
+    const std::string &outputFileName) {
     // Create a 1x2 canvas
     TCanvas *c = new TCanvas("c", "PT and xF Dependence Comparison", 1200, 600);
     c->Divide(2, 1); // 1 row, 2 columns
@@ -329,8 +328,8 @@ void plotComparison(
         delete c;
         delete legend;
     } else {
-        if (itPT == nullptr) std::cerr << "Error: No NH3 PT data found for key " << keyPT << "\n";
-        if (itXF == nullptr) std::cerr << "Error: No NH3 xF data found for key " << keyXF << "\n";
+        if (itPT == asymmetryData.end()) std::cerr << "Error: No NH3 PT data found for key " << keyPT << "\n";
+        if (itXF == asymmetryData.end()) std::cerr << "Error: No NH3 xF data found for key " << keyXF << "\n";
     }
 }
 
