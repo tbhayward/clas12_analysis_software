@@ -119,12 +119,12 @@ void plotDependence(
     c->Divide(3, 2); // 2 rows, 3 columns
 
     // Define the suffixes for the asymmetries we want to plot
-    std::vector<std::string> suffixes = {"ALUsinphi", "AULoffset", "AULsinphi", "AULsin2phi", "ALL", "ALLcosphi"};
+    std::vector<std::string> suffixes = {"ALUsinphi", "AULsinphi", "AULsin2phi", "AULoffset", "ALL", "ALLcosphi"};
     std::vector<std::string> yLabels = {
         "F_{LU}^{sin#phi}/F_{UU}",
-        "A_{UL} offset",
         "F_{UL}^{sin#phi}/F_{UU}",
         "F_{UL}^{sin(2#phi)}/F_{UU}",
+        "A_{UL} offset",
         "F_{LL}/F_{UU}",
         "F_{LL}^{cos#phi}/F_{UU}"
     };
