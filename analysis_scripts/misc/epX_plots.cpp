@@ -153,7 +153,6 @@ void plotDependence(
 
             // Set x-axis and y-axis ranges
             graph->GetXaxis()->SetLimits(0.0, 0.6);
-            graph->GetHistogram()->GetXaxis()->SetRangeUser(0.0, 0.6);
             if (keys[i] == "xchi2FitsALL") {
                 graph->GetYaxis()->SetRangeUser(-0.1, 0.6);
             } else {
