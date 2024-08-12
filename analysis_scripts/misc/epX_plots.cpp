@@ -393,8 +393,12 @@ void plotQ2yz_pT(
         // Loop over each Q2 bin (5 columns per row, 4 for third row)
         for (size_t q2Index = 0; q2Index < Q2_prefixes[row].size(); ++q2Index) {
             c->cd(row * 5 + q2Index + 1); // Go to the correct pad
-            gPad->SetLeftMargin(0.18); // Adjust left margin for y-axis visibility
-            gPad->SetBottomMargin(0.15); // Adjust bottom margin for x-axis labels
+            
+            // Set margins for tight grid-like layout
+            gPad->SetLeftMargin(q2Index == 0 ? 0.18 : 0.02); // Wider left margin for the first column
+            gPad->SetRightMargin(0.02);
+            gPad->SetTopMargin(0.02);
+            gPad->SetBottomMargin(row == Q2_prefixes.size() - 1 ? 0.15 : 0.02); // Wider bottom margin for the last row
 
             bool firstGraphDrawn = false; // To check if we've drawn the first graph
             // Loop over each z bin
@@ -420,6 +424,17 @@ void plotQ2yz_pT(
 
                 if (!firstGraphDrawn) {
                     setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.0, 1.0}, {-0.1, 0.1});
+
+                    // Remove labels if not on the bottom row or left column
+                    if (row != Q2_prefixes.size() - 1) {
+                        graph->GetXaxis()->SetLabelSize(0);
+                        graph->GetXaxis()->SetTitleSize(0);
+                    }
+                    if (q2Index != 0) {
+                        graph->GetYaxis()->SetLabelSize(0);
+                        graph->GetYaxis()->SetTitleSize(0);
+                    }
+                    
                     graph->Draw("AP");
                     firstGraphDrawn = true;
                 } else {
