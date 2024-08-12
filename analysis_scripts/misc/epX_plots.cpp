@@ -156,11 +156,11 @@ void plotDependence(
             graph->GetYaxis()->SetTitle(yLabels[i].c_str());
 
             // Set x-axis and y-axis ranges
-            graph->GetXaxis()->SetLimits(0.0, 0.6);
+            graph->GetXaxis()->SetLimits(0.06, 0.6);
             if (suffixes[i] == "ALL") {
                 graph->GetYaxis()->SetRangeUser(-0.1, 0.6);
             } else {
-                graph->GetYaxis()->SetRangeUser(-0.15, 0.15);
+                graph->GetYaxis()->SetRangeUser(-0.1, 0.1);
             }
 
             // Customize the graph
@@ -209,8 +209,8 @@ int main(int argc, char *argv[]) {
     std::map<std::string, std::vector<std::vector<double>>> kinematicData = readKinematics(kinematicFile);
 
     // // Print out the parsed data
-    // std::cout << "Asymmetry Data:\n";
-    // printData(asymmetryData);
+    std::cout << "Asymmetry Data:\n";
+    printData(asymmetryData);
 
     // std::cout << "\nKinematic Data:\n";
     // printData(kinematicData);
