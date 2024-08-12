@@ -436,7 +436,7 @@ void plotQ2yz_pT(
                 TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
 
                 if (!firstGraphDrawn) {
-                    setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.0, 1.0}, {-0.1, 0.1});
+                    setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.1, 0.9}, {-0.1, 0.1});
 
                     // Hide Y-axis labels for non-leftmost plots
                     if (q2Index != 0) {
@@ -449,6 +449,11 @@ void plotQ2yz_pT(
                         graph->GetXaxis()->SetTitleOffset(999);
                     }
 
+                    // For the second and third plots in the bottom row, remove the "0" label
+                    if (row == Q2_prefixes.size() - 1 && (q2Index == 1 || q2Index == 2)) {
+                        graph->GetXaxis()->SetNdivisions(505);  // Customize the number of divisions (5 major, 5 minor)
+                    }
+
                     graph->Draw("AP");
                     firstGraphDrawn = true;
                 } else {
@@ -457,7 +462,7 @@ void plotQ2yz_pT(
             }
 
             // Draw the dashed gray line at y = 0
-            TLine *line = new TLine(0.0, 0.0, 1.0, 0.0);
+            TLine *line = new TLine(0.1, 0.0, 0.9, 0.0);
             line->SetLineColor(kGray + 2);
             line->SetLineStyle(7);
             line->Draw("same");
