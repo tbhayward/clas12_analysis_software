@@ -407,9 +407,36 @@ void plotQ2yz_pT(
                 gPad->SetBottomMargin(0.15); // Adequate bottom margin for bottom row
             }
 
-            // If it's an "EMPTY" placeholder, just draw an empty frame
+            // Handle empty placeholders
             if (Q2_prefixes[row][q2Index] == "EMPTY") {
-                gPad->DrawFrame(0, 0, 1, 1);  // Draw an empty frame
+                TGraph *dummyGraph = new TGraph();  // Create a dummy graph to set axis labels and ranges
+                dummyGraph->SetPoint(0, 0.1, -0.09);
+                dummyGraph->SetPoint(1, 0.9, 0.09);
+                setAxisLabelsAndRanges(dummyGraph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.1, 0.9}, {-0.09, 0.09});
+                dummyGraph->Draw("AP");
+
+                // Apply to empty plots as well
+                dummyGraph->GetXaxis()->SetNdivisions(505);
+
+                // Hide Y-axis labels for non-leftmost plots
+                if (q2Index != 0) {
+                    dummyGraph->GetYaxis()->SetLabelOffset(999);
+                    dummyGraph->GetYaxis()->SetTitleOffset(999);
+                }
+
+                // Hide X-axis labels for non-bottom row plots
+                if (row != Q2_prefixes.size() - 1) {
+                    dummyGraph->GetXaxis()->SetLabelOffset(999);
+                    dummyGraph->GetXaxis()->SetTitleOffset(999);
+                }
+
+                // Draw the dashed gray line at y = 0
+                TLine *line = new TLine(0.1, 0.0, 0.9, 0.0);
+                line->SetLineColor(kGray + 2);
+                line->SetLineStyle(7);
+                line->Draw("same");
+
+                delete dummyGraph;  // Clean up the dummy graph
                 continue;
             }
 
@@ -436,7 +463,7 @@ void plotQ2yz_pT(
                 TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
 
                 if (!firstGraphDrawn) {
-                    setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.01, 0.9}, {-0.09, 0.09});
+                    setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.1, 0.9}, {-0.09, 0.09});
 
                     // Apply to all plots
                     graph->GetXaxis()->SetNdivisions(505);  // Customize the number of divisions (5 major, 5 minor)
@@ -460,7 +487,7 @@ void plotQ2yz_pT(
             }
 
             // Draw the dashed gray line at y = 0
-            TLine *line = new TLine(0.0, 0.0, 0.9, 0.0);
+            TLine *line = new TLine(0.1, 0.0, 0.9, 0.0);
             line->SetLineColor(kGray + 2);
             line->SetLineStyle(7);
             line->Draw("same");
