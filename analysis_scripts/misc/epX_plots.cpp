@@ -438,6 +438,9 @@ void plotQ2yz_pT(
                 if (!firstGraphDrawn) {
                     setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.1, 0.9}, {-0.1, 0.1});
 
+                    // Apply to all plots
+                    graph->GetXaxis()->SetNdivisions(505);  // Customize the number of divisions (5 major, 5 minor)
+
                     // Hide Y-axis labels for non-leftmost plots
                     if (q2Index != 0) {
                         graph->GetYaxis()->SetLabelOffset(999);
@@ -447,11 +450,6 @@ void plotQ2yz_pT(
                     if (row != Q2_prefixes.size() - 1) {
                         graph->GetXaxis()->SetLabelOffset(999);
                         graph->GetXaxis()->SetTitleOffset(999);
-                    }
-
-                    // For the second and third plots in the bottom row, remove the "0" label
-                    if (row == Q2_prefixes.size() - 1 && (q2Index == 1 || q2Index == 2)) {
-                        graph->GetXaxis()->SetNdivisions(505);  // Customize the number of divisions (5 major, 5 minor)
                     }
 
                     graph->Draw("AP");
