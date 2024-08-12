@@ -375,81 +375,86 @@ void plotQ2yz_pT(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
     const std::string &outputFileName
 ) {
-    TCanvas *c = new TCanvas("c", "Q2, y, z Dependence", 2000, 1600);
-    c->Divide(5, 4);
+    TCanvas *c = new TCanvas("c", "Q2-y-z Dependence", 1800, 1600);
+    c->Divide(5, 4);  // 4 rows (y bins) by 5 columns (Q2 bins)
 
-    // Adjust pad margins and other settings
-    for (int i = 1; i <= 20; ++i) {
-        c->cd(i);
-        gPad->SetTopMargin(0);
-        gPad->SetRightMargin(0);
-        gPad->SetBottomMargin(0);
-        gPad->SetLeftMargin(0);
+    // Prefixes for Q2 ranges (top three rows)
+    std::vector<std::vector<std::string>> Q2_prefixes = {
+        {"Q2y1", "Q2y5", "Q2y9", "Q2y13", "Q2y16"},  // Top row
+        {"Q2y2", "Q2y6", "Q2y10", "Q2y14", "Q2y17"}, // Second row
+        {"Q2y3", "Q2y7", "Q2y11", "Q2y15"},          // Third row (only 4 columns)
+        {"Q2y4", "Q2y8", "Q2y12"}                    // Fourth row (only 3 columns)
+    };
+    std::vector<std::string> z_prefixes = {"z1", "z2", "z3", "z4", "z5"};
+    std::vector<int> colors = {kBlack, kRed, kGreen, kBlue, kMagenta};
 
-        // Adjusting axis settings for inner plots
-        TGraphErrors *graph = nullptr;
-        if (i == 1 || i == 6 || i == 11 || i == 16) {
-            gPad->SetLeftMargin(0.15);
-            if (i >= 16) {
-                gPad->SetBottomMargin(0.15);
-            }
-        }
-        if (i >= 16) {
-            gPad->SetBottomMargin(0.15);
-        }
+    // Adjust canvas margins to ensure plots are touching
+    for (int i = 0; i < c->GetListOfPrimitives()->GetSize(); ++i) {
+        c->cd(i+1);
+        gPad->SetLeftMargin(0.0);
+        gPad->SetRightMargin(0.0);
+        gPad->SetTopMargin(0.0);
+        gPad->SetBottomMargin(0.0);
+        gPad->SetTicks(1, 1);
     }
 
-    std::vector<std::string> Q2yPrefixes = {"Q2y1", "Q2y5", "Q2y9", "Q2y13", "Q2y16", "Q2y2", "Q2y6", "Q2y10", "Q2y14", "Q2y17", "Q2y3", "Q2y7", "Q2y11", "Q2y15", "", "Q2y4", "Q2y8", "Q2y12", "", ""};
-    std::vector<int> colors = {kBlack, kRed, kGreen + 2, kBlue, kMagenta};
+    // Loop over each row
+    for (size_t row = 0; row < Q2_prefixes.size(); ++row) {
+        // Loop over each Q2 bin (5 columns per row, 4 for third row)
+        for (size_t q2Index = 0; q2Index < Q2_prefixes[row].size(); ++q2Index) {
+            c->cd(row * 5 + q2Index + 1); // Go to the correct pad
+            
+            // Set specific margins for axis labels and titles
+            if (q2Index == 0) gPad->SetLeftMargin(0.18);  // Wider left margin for the first column
+            if (row == Q2_prefixes.size() - 1) gPad->SetBottomMargin(0.18); // Wider bottom margin for the last row
 
-    for (int i = 0; i < Q2yPrefixes.size(); ++i) {
-        if (Q2yPrefixes[i].empty()) continue;
+            bool firstGraphDrawn = false; // To check if we've drawn the first graph
 
-        c->cd(i + 1);
-        gPad->SetTicks(1, 1);  // Ensure ticks are visible on shared axes
+            // Loop over each z bin
+            for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
+                std::string key = Q2_prefixes[row][q2Index] + z_prefixes[zIndex] + "chi2FitsALUsinphi";
+                auto it = asymmetryData.find(key);
 
-        bool dataFound = false;
+                if (it == asymmetryData.end()) {
+                    std::cerr << "Warning: No data found for key " << key << std::endl;
+                    continue; // Skip if no data is found for this key
+                }
 
-        for (int zIndex = 1; zIndex <= 5; ++zIndex) {
-            std::string key = Q2yPrefixes[i] + "z" + std::to_string(zIndex) + "chi2FitsALUsinphi";
-            auto it = asymmetryData.find(key);
-
-            if (it != asymmetryData.end()) {
-                dataFound = true;
                 const auto &data = it->second;
-
                 std::vector<double> x, y, yErr;
+
                 for (const auto &entry : data) {
                     x.push_back(entry[0]);
                     y.push_back(entry[1]);
                     yErr.push_back(entry[2]);
                 }
 
-                TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex - 1]);
-                if (i == 1 || i == 6 || i == 11 || i == 16) {
-                    setAxisLabelsAndRanges(graph, "", "F_{LU}^{sin#phi}/F_{UU}", {0.0, 1.0}, {-0.1, 0.1});
-                } else {
-                    setAxisLabelsAndRanges(graph, "", "", {0.0, 1.0}, {-0.1, 0.1});
-                }
+                TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
 
-                if (i >= 16) {
-                    graph->GetXaxis()->SetTitle("P_{T} (GeV)");
-                }
+                if (!firstGraphDrawn) {
+                    setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.0, 1.0}, {-0.1, 0.1});
 
-                if (i == 1 || i == 6 || i == 11 || i == 16) {
-                    graph->Draw(i == 1 ? "AP" : "P SAME");
+                    // Remove labels if not on the bottom row or left column
+                    if (row != Q2_prefixes.size() - 1) {
+                        graph->GetXaxis()->SetLabelSize(0);
+                        graph->GetXaxis()->SetTitleSize(0);
+                    }
+                    if (q2Index != 0) {
+                        graph->GetYaxis()->SetLabelSize(0);
+                        graph->GetYaxis()->SetTitleSize(0);
+                    }
+
+                    graph->Draw("AP");
+                    gPad->RedrawAxis();
+                    firstGraphDrawn = true;
                 } else {
                     graph->Draw("P SAME");
                 }
             }
         }
-
-        if (!dataFound) {
-            std::cout << "Warning: No data found for prefix " << Q2yPrefixes[i] << std::endl;
-        }
     }
 
-    // Save the canvas
+    // Save the canvas as a PNG file
     gSystem->Exec("mkdir -p output/epX_plots");
     c->SaveAs(outputFileName.c_str());
 
