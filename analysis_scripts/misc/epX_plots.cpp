@@ -320,7 +320,7 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
     TCanvas *c = new TCanvas("c", "Q2, y, z Dependence", 1600, 1600);
 
     // Partition the canvas
-    CanvasPartition(c, Nx, Ny, 0.15, 0.05, 0.15, 0.05);
+    CanvasPartition(c, Nx, Ny, 0.05, 0.05, 0.05, 0.05);
 
     std::vector<std::string> Q2yPrefixes = {"Q2y1", "Q2y5", "Q2y9", "Q2y13", "Q2y16", 
                                             "Q2y2", "Q2y6", "Q2y10", "Q2y14", "Q2y17", 
