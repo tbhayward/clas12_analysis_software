@@ -500,12 +500,27 @@ void plotQ2yz_pT(
 
     // Add a legend in the last subplot (bottom right corner)
     c->cd(20); // Go to the last pad
-    TLegend *legend = new TLegend(0.7, 0.7, 0.9, 0.9);
-    legend->AddEntry((TObject*)0, "0.10 < z < 0.25", "");
-    legend->AddEntry((TObject*)0, "0.25 < z < 0.35", "");
-    legend->AddEntry((TObject*)0, "0.35 < z < 0.45", "");
-    legend->AddEntry((TObject*)0, "0.45 < z < 0.55", "");
-    legend->AddEntry((TObject*)0, "0.55 < z < 0.75", "");
+    TLegend *legend = new TLegend(0.5, 0.5, 0.9, 0.9); // Larger legend box
+
+    // Add color-coded entries for the z-bins
+    legend->AddEntry((TObject*)nullptr, "0.10 < z < 0.25", "");
+    legend->AddEntry((TObject*)nullptr, "0.25 < z < 0.35", "");
+    legend->AddEntry((TObject*)nullptr, "0.35 < z < 0.45", "");
+    legend->AddEntry((TObject*)nullptr, "0.45 < z < 0.55", "");
+    legend->AddEntry((TObject*)nullptr, "0.55 < z < 0.75", "");
+
+    // Set the color for each legend entry
+    legend->SetTextSize(0.04); // Adjust text size if needed
+    legend->SetFillColor(0); // Make background transparent
+    legend->SetLineColor(0); // Remove border
+
+    // Adding color-coded markers for each z-bin
+    legend->AddEntry((TObject*)nullptr, "#pi^{+} (data)", "P")->SetMarkerColor(kBlack);
+    legend->AddEntry((TObject*)nullptr, "#pi^{+} (MC)", "P")->SetMarkerColor(kRed);
+    legend->AddEntry((TObject*)nullptr, "k^{+} (data)", "P")->SetMarkerColor(kGreen);
+    legend->AddEntry((TObject*)nullptr, "k^{+} (MC)", "P")->SetMarkerColor(kBlue);
+    legend->AddEntry((TObject*)nullptr, "p (data)", "P")->SetMarkerColor(kMagenta);
+
     legend->Draw();
 
     // Save the canvas as a PNG file
