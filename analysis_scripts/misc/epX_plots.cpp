@@ -409,7 +409,7 @@ void plotQ2yz_pT(
 
             // Handle empty placeholders
             if (Q2_prefixes[row][q2Index] == "EMPTY") {
-                TGraph *dummyGraph = new TGraph();  // Create a dummy graph to set axis labels and ranges
+                TGraphErrors *dummyGraph = new TGraphErrors();  // Create a dummy graph to set axis labels and ranges
                 dummyGraph->SetPoint(0, 0.1, -0.09);
                 dummyGraph->SetPoint(1, 0.9, 0.09);
                 setAxisLabelsAndRanges(dummyGraph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.1, 0.9}, {-0.09, 0.09});
