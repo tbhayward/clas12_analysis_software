@@ -437,12 +437,12 @@ void plotQ2yz_pT(
                 }
             }
             
-            // // Fix the right margin for the rightmost plots to ensure the vertical axis is shown
-            // if (q2Index == Q2_prefixes[row].size() - 1) {
-            //     gPad->SetRightMargin(0.15);
-            // } else {
-            //     gPad->SetRightMargin(0.01);  // Ensure other plots have minimal right margin
-            // }
+            // Fix the right margin for the rightmost plots to ensure the vertical axis is shown
+            if (q2Index == Q2_prefixes[row].size() - 1) {
+                gPad->SetRightMargin(0.15);
+            } else {
+                gPad->SetRightMargin(0.01);  // Ensure other plots have minimal right margin
+            }
         }
     }
 
