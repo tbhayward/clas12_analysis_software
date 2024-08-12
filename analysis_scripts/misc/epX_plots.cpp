@@ -388,19 +388,28 @@ void plotQ2yz_pT(
     std::vector<std::string> z_prefixes = {"z1", "z2", "z3", "z4", "z5"};
     std::vector<int> colors = {kBlack, kRed, kGreen, kBlue, kMagenta};
 
+    // Adjust canvas margins to ensure plots are touching
+    for (int i = 0; i < c->GetListOfPrimitives()->GetSize(); ++i) {
+        c->cd(i+1);
+        gPad->SetLeftMargin(0.0);
+        gPad->SetRightMargin(0.0);
+        gPad->SetTopMargin(0.0);
+        gPad->SetBottomMargin(0.0);
+        gPad->SetTicks(1, 1);
+    }
+
     // Loop over each row
     for (size_t row = 0; row < Q2_prefixes.size(); ++row) {
         // Loop over each Q2 bin (5 columns per row, 4 for third row)
         for (size_t q2Index = 0; q2Index < Q2_prefixes[row].size(); ++q2Index) {
             c->cd(row * 5 + q2Index + 1); // Go to the correct pad
             
-            // Set margins for tight grid-like layout
-            gPad->SetLeftMargin(q2Index == 0 ? 0.18 : 0.02); // Wider left margin for the first column
-            gPad->SetRightMargin(0.02);
-            gPad->SetTopMargin(0.02);
-            gPad->SetBottomMargin(row == Q2_prefixes.size() - 1 ? 0.15 : 0.02); // Wider bottom margin for the last row
+            // Set specific margins for axis labels and titles
+            if (q2Index == 0) gPad->SetLeftMargin(0.18);  // Wider left margin for the first column
+            if (row == Q2_prefixes.size() - 1) gPad->SetBottomMargin(0.18); // Wider bottom margin for the last row
 
             bool firstGraphDrawn = false; // To check if we've drawn the first graph
+
             // Loop over each z bin
             for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
                 std::string key = Q2_prefixes[row][q2Index] + z_prefixes[zIndex] + "chi2FitsALUsinphi";
@@ -434,8 +443,9 @@ void plotQ2yz_pT(
                         graph->GetYaxis()->SetLabelSize(0);
                         graph->GetYaxis()->SetTitleSize(0);
                     }
-                    
+
                     graph->Draw("AP");
+                    gPad->RedrawAxis();
                     firstGraphDrawn = true;
                 } else {
                     graph->Draw("P SAME");
