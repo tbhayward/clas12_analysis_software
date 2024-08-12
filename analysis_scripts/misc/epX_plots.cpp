@@ -161,13 +161,16 @@ void plotDependence(
                 // Determine systematic uncertainty based on the suffix
                 double sysUncertainty = 0.0;
                 if (suffixes[i] == "ALUsinphi") {
-                    sysUncertainty = y[j] * 0.029;
+                    sysUncertainty = y[j] * 0.029;  // 2.9% of the current y-value
                 } else if (suffixes[i] == "AULsinphi" || suffixes[i] == "AULsin2phi") {
-                    sysUncertainty = y[j] * 0.101;
+                    sysUncertainty = y[j] * 0.101;  // 10.1% of the current y-value
                 } else if (suffixes[i] == "ALL" || suffixes[i] == "ALLcosphi") {
                     if (!offsetValues.empty()) {
-                        std::cout << offsetValues[j] << std::endl;
-                        sysUncertainty = std::sqrt(std::pow(0.029, 2) + std::pow(0.101, 2) + std::pow(offsetValues[j], 2));
+                        sysUncertainty = std::sqrt(
+                            std::pow(y[j] * 0.029, 2) +  // 2.9% of the current y-value
+                            std::pow(y[j] * 0.101, 2) +  // 10.1% of the current y-value
+                            std::pow(offsetValues[j], 2) // FULsinphioffset value
+                        );
                     }
                 }
 
