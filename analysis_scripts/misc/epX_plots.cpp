@@ -170,8 +170,8 @@ void plotDependence(
             TGraphErrors *graphComb = new TGraphErrors(x.size(), x.data(), y.data(), nullptr, yCombErr.data());
             graphComb->SetMarkerStyle(20);  // Circle points
             graphComb->SetMarkerSize(0.8);  // Smaller marker size
-            graphComb->SetMarkerColor(kGray-7);  // Light red color
-            graphComb->SetLineColor(kGray-7);  // Light red color
+            graphComb->SetMarkerColor(kRed-7);  // Light red color
+            graphComb->SetLineColor(kRed-7);  // Light red color
 
             // Set x-axis and y-axis ranges based on the specified limits
             graphComb->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
