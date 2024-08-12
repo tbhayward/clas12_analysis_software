@@ -371,7 +371,7 @@ void plotComparison(
     }
 }
 
-void plotQ2yz(
+void plotQ2yz_pT(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
     const std::string &outputFileName
 ) {
@@ -380,6 +380,8 @@ void plotQ2yz(
 
     // Focusing only on the first subplot for now
     c->cd(1); // Focus on the first pad only
+    gPad->SetLeftMargin(0.18); // Adding left margin for y-axis visibility
+    gPad->SetBottomMargin(0.15); // Adding bottom margin for x-axis labels
 
     std::string Q2_prefix = "Q2y1";
     std::vector<std::string> z_prefixes = {"z1", "z2", "z3", "z4", "z5"};
@@ -401,9 +403,15 @@ void plotQ2yz(
 
             TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
 
+            // Print out the data being plotted
+            std::cout << "Plotting " << key << " with color index " << colors[zIndex] << "\n";
+            for (size_t i = 0; i < x.size(); ++i) {
+                std::cout << "x: " << x[i] << ", y: " << y[i] << ", yErr: " << yErr[i] << "\n";
+            }
+
             // Set up axis labels and ranges only for the first graph in the pad
             if (zIndex == 0) {
-                setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.0, 1.2}, {-0.15, 0.15});
+                setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.0, 1.0}, {-0.15, 0.15});
                 graph->Draw("AP");
             } else {
                 graph->Draw("P SAME");
@@ -418,7 +426,6 @@ void plotQ2yz(
     c->SaveAs(outputFileName.c_str());
     delete c;
 }
-
 
 
 int main(int argc, char *argv[]) {
@@ -452,7 +459,7 @@ int main(int argc, char *argv[]) {
     plotComparison(asymmetryData, "output/epX_plots/PT_xF_dependence_comparison.png");
 
     // Plot Q2-y-z dependence
-    plotQ2yz(asymmetryData, "output/epX_plots/Q2yz_dependence_plots.png");
+    plotQ2yz_pT(asymmetryData, "output/epX_plots/Q2yz_dependence_plots.png");
 
     return 0;
 }
