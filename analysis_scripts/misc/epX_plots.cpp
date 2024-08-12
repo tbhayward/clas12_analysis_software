@@ -123,19 +123,10 @@ void plotDependence(
     std::vector<std::string> yLabels = {
         "F_{LU}^{sin#phi}/F_{UU}",
         "F_{UL}^{sin#phi}/F_{UU}",
-        "F_{UL}^{sin(2#phi)}/F_{UU}",
+        "F_{UL}^{sin(2#phi}/F_{UU}",
         "F_{LL}/F_{UU}",
         "F_{LL}^{cos#phi}/F_{UU}"
     };
-
-    // Extract FULsinphioffset values for calculating systematic uncertainties for FLL and FLLcosphi
-    std::string offsetKey = prefix + "chi2FitsAULoffset";
-    std::vector<double> offsetValues;
-    if (asymmetryData.find(offsetKey) != asymmetryData.end()) {
-        for (const auto &entry : asymmetryData.at(offsetKey)) {
-            offsetValues.push_back(entry[1]);  // Assuming offset is the y-value
-        }
-    }
 
     // Plot each asymmetry in its respective subplot
     for (size_t i = 0; i < suffixes.size(); ++i) {
@@ -151,8 +142,8 @@ void plotDependence(
         if (it != asymmetryData.end()) {
             const auto &data = it->second;
 
-            // Create vectors to hold x, y, y error, and combined uncertainties
-            std::vector<double> x, y, yStatErr, ySysErr, yCombErr;
+            // Create vectors to hold x, y, y error (statistical), and combined uncertainties
+            std::vector<double> x, y, yStatErr, yCombErr;
             for (size_t j = 0; j < data.size(); ++j) {
                 x.push_back(data[j][0]);
                 y.push_back(data[j][1]);
@@ -165,56 +156,52 @@ void plotDependence(
                 } else if (suffixes[i] == "AULsinphi" || suffixes[i] == "AULsin2phi") {
                     sysUncertainty = y[j] * 0.101;  // 10.1% of the current y-value
                 } else if (suffixes[i] == "ALL" || suffixes[i] == "ALLcosphi") {
-                    if (!offsetValues.empty()) {
-                        sysUncertainty = std::sqrt(
-                            std::pow(y[j] * 0.029, 2) +  // 2.9% of the current y-value
-                            std::pow(y[j] * 0.101, 2)   // 10.1% of the current y-value
-                        );
-                    }
+                    sysUncertainty = std::sqrt(
+                        std::pow(y[j] * 0.029, 2) +  // 2.9% of the current y-value
+                        std::pow(y[j] * 0.101, 2)   // 10.1% of the current y-value
+                    );
                 }
-
-                ySysErr.push_back(sysUncertainty);
 
                 // Combine statistical and systematic uncertainties in quadrature
                 yCombErr.push_back(std::sqrt(std::pow(yStatErr[j], 2) + std::pow(sysUncertainty, 2)));
             }
 
-            // Create TGraphErrors for the combined uncertainties (statistical + systematic)
-            TGraphErrors *graphComb = new TGraphErrors(x.size(), x.data(), y.data(), nullptr, yCombErr.data());
-            graphComb->SetTitle("");
-            graphComb->GetXaxis()->SetTitle(xLabel.c_str());
-            graphComb->GetYaxis()->SetTitle(yLabels[i].c_str());
+            // Create TGraphErrors for the statistical uncertainties
+            TGraphErrors *graphStat = new TGraphErrors(x.size(), x.data(), y.data(), nullptr, yStatErr.data());
+            graphStat->SetTitle("");
+            graphStat->GetXaxis()->SetTitle(xLabel.c_str());
+            graphStat->GetYaxis()->SetTitle(yLabels[i].c_str());
 
             // Set x-axis and y-axis ranges
-            graphComb->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
-            graphComb->GetXaxis()->SetRangeUser(xLimits.first, xLimits.second);
+            graphStat->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
+            graphStat->GetXaxis()->SetRangeUser(xLimits.first, xLimits.second);
             if (suffixes[i] == "ALL") {
-                graphComb->GetYaxis()->SetRangeUser(-0.1, 0.6);
+                graphStat->GetYaxis()->SetRangeUser(-0.1, 0.6);
             } else {
-                graphComb->GetYaxis()->SetRangeUser(-0.15, 0.15);
+                graphStat->GetYaxis()->SetRangeUser(-0.15, 0.15);
             }
 
-            // Customize the graph for combined uncertainties
-            graphComb->SetMarkerStyle(20);  // Circle points
-            graphComb->SetMarkerSize(0.8);  // Smaller marker size
-            graphComb->SetMarkerColor(kBlack);
-            graphComb->SetLineColor(kBlack);
+            // Customize the graph for statistical uncertainties
+            graphStat->SetMarkerStyle(20);  // Circle points
+            graphStat->SetMarkerSize(0.8);  // Smaller marker size
+            graphStat->SetMarkerColor(kBlack);
+            graphStat->SetLineColor(kBlack);
 
-            // Draw combined uncertainties
-            graphComb->Draw("AP");
+            // Draw statistical uncertainties
+            graphStat->Draw("AP");
 
-            // Create TGraphErrors for the systematic uncertainties only
-            TGraphErrors *graphSys = new TGraphErrors(x.size(), x.data(), y.data(), nullptr, ySysErr.data());
-            graphSys->SetMarkerSize(0.8);
-            graphSys->SetMarkerColor(kRed-7);  // Light red color
-            graphSys->SetLineColor(kRed-7);  // Light red color
-            graphSys->SetFillColor(kRed-7);  // Light red color for fill
+            // Create TGraphErrors for the combined (stat + sys) uncertainties
+            TGraphErrors *graphComb = new TGraphErrors(x.size(), x.data(), y.data(), nullptr, yCombErr.data());
+            graphComb->SetMarkerSize(0.8);
+            graphComb->SetMarkerColor(kRed-7);  // Light red color
+            graphComb->SetLineColor(kRed-7);  // Light red color
+            graphComb->SetFillColor(kRed-7);  // Light red color for fill
 
-            // Draw systematic uncertainties on top, without markers
-            graphSys->Draw("E2 SAME");
+            // Draw combined uncertainties (statistical + systematic) on top, without markers
+            graphComb->Draw("E2 SAME");
 
             // Draw a faint dashed gray horizontal line at y=0
-            TLine *line = new TLine(graphComb->GetXaxis()->GetXmin(), 0, graphComb->GetXaxis()->GetXmax(), 0);
+            TLine *line = new TLine(graphStat->GetXaxis()->GetXmin(), 0, graphStat->GetXaxis()->GetXmax(), 0);
             line->SetLineColor(kGray+2);
             line->SetLineStyle(7);  // Dashed line
             line->Draw();
@@ -254,7 +241,7 @@ int main(int argc, char *argv[]) {
     // Call the plotting function for different dependencies
     plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots.png");
     plotDependence(asymmetryData, "PT", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PT_dependence_plots.png");
-    plotDependence(asymmetryData, "xF", "x_{F}", {-1.0, 1.0}, "output/epX_plots/xF_dependence_plots.png");
+    plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.8}, "output/epX_plots/xF_dependence_plots.png");
 
     return 0;
 }
