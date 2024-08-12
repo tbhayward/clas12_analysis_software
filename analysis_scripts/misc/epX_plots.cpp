@@ -12,6 +12,15 @@
 #include <TLine.h>
 #include <TStyle.h>
 #include <TLegend.h>
+#include <TCanvas.h>
+#include <TGraphErrors.h>
+#include <TLegend.h>
+#include <TLine.h>
+#include <TAxis.h>
+#include <TSystem.h>
+#include <vector>
+#include <string>
+#include <map>
 
 // Global variables for systematic uncertainties
 const double LU_SYS_UNCERTAINTY = 0.029;
@@ -120,8 +129,7 @@ TGraphErrors* createTGraphErrors(
     const std::vector<double> &yErr,
     const int markerStyle, 
     const double markerSize, 
-    const int color
-) {
+    const int color) {
     TGraphErrors *graph = new TGraphErrors(x.size(), x.data(), y.data(), nullptr, yErr.data());
     graph->SetMarkerStyle(markerStyle);
     graph->SetMarkerSize(markerSize);
@@ -136,8 +144,7 @@ void setAxisLabelsAndRanges(
     const std::string &xLabel, 
     const std::string &yLabel, 
     const std::pair<double, double> &xLimits, 
-    const std::pair<double, double> &yLimits
-) {
+    const std::pair<double, double> &yLimits) {
     graph->GetXaxis()->SetTitle(xLabel.c_str());
     graph->GetYaxis()->SetTitle(yLabel.c_str());
     graph->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
@@ -374,6 +381,7 @@ void plotComparison(
 void plotQ2yz_pT(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
     const std::string &outputFileName) {
+    
     TCanvas *c = new TCanvas("c", "Q2-y-z Dependence", 1800, 1600);
     c->Divide(5, 4, 0, 0);  // 4 rows by 5 columns, no spacing
 
@@ -386,6 +394,9 @@ void plotQ2yz_pT(
     };
     std::vector<std::string> z_prefixes = {"z1", "z2", "z3", "z4", "z5"};
     std::vector<int> colors = {kBlack, kRed, kGreen, kBlue, kMagenta};
+
+    // Vector to hold the sample graphs for the legend
+    std::vector<TGraph*> sampleGraphs;
 
     // Loop over each row
     for (size_t row = 0; row < Q2_prefixes.size(); ++row) {
@@ -466,6 +477,11 @@ void plotQ2yz_pT(
 
                 TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
 
+                // Store the first graph of each z-bin for the legend
+                if (q2Index == 0 && row == 0) {
+                    sampleGraphs.push_back(graph);
+                }
+
                 if (!firstGraphDrawn) {
                     setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.1, 0.9}, {-0.09, 0.09});
 
@@ -503,34 +519,13 @@ void plotQ2yz_pT(
     TLegend *legend = new TLegend(0.5, 0.5, 0.9, 0.9); // Larger legend box
 
     // Add color-coded entries for the z-bins
-    legend->AddEntry((TObject*)nullptr, "0.10 < z < 0.25", "");
-    legend->AddEntry((TObject*)nullptr, "0.25 < z < 0.35", "");
-    legend->AddEntry((TObject*)nullptr, "0.35 < z < 0.45", "");
-    legend->AddEntry((TObject*)nullptr, "0.45 < z < 0.55", "");
-    legend->AddEntry((TObject*)nullptr, "0.55 < z < 0.75", "");
+    for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
+        legend->AddEntry(sampleGraphs[zIndex], Form("%s (%.2f < z < %.2f)", z_prefixes[zIndex].c_str(), 0.10 + 0.15 * zIndex, 0.25 + 0.10 * zIndex), "P");
+    }
 
-    // Set the color for each legend entry
     legend->SetTextSize(0.04); // Adjust text size if needed
     legend->SetFillColor(0); // Make background transparent
     legend->SetLineColor(0); // Remove border
-
-    // Adding color-coded markers for each z-bin
-    TLegendEntry* entry;
-
-    entry = legend->AddEntry((TObject*)nullptr, "#pi^{+} (data)", "P");
-    entry->SetMarkerColor(kBlack);
-
-    entry = legend->AddEntry((TObject*)nullptr, "#pi^{+} (MC)", "P");
-    entry->SetMarkerColor(kRed);
-
-    entry = legend->AddEntry((TObject*)nullptr, "k^{+} (data)", "P");
-    entry->SetMarkerColor(kGreen);
-
-    entry = legend->AddEntry((TObject*)nullptr, "k^{+} (MC)", "P");
-    entry->SetMarkerColor(kBlue);
-
-    entry = legend->AddEntry((TObject*)nullptr, "p (data)", "P");
-    entry->SetMarkerColor(kMagenta);
 
     legend->Draw();
 
@@ -540,6 +535,9 @@ void plotQ2yz_pT(
 
     // Clean up
     delete c;
+    for (auto graph : sampleGraphs) {
+        delete graph;
+    }
 }
 
 int main(int argc, char *argv[]) {
