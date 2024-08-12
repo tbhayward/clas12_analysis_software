@@ -5,13 +5,6 @@
 #include <map>
 #include <sstream>
 #include <algorithm> // For std::remove
-#include <TCanvas.h>
-#include <TGraphErrors.h>
-#include <TLegend.h>
-#include <TAxis.h>
-#include <TStyle.h>
-#include <TFile.h>
-#include <TSystem.h>
 
 // Function to read arrays directly from the kinematic file
 std::map<std::string, std::vector<std::vector<double>>> readKinematics(const std::string &filename) {
@@ -91,6 +84,22 @@ std::map<std::string, std::vector<std::vector<double>>> readAsymmetries(const st
     return asymmetryData;
 }
 
+// Function to print the data for verification
+void printData(const std::map<std::string, std::vector<std::vector<double>>> &data) {
+    for (const auto &entry : data) {
+        std::cout << entry.first << " = {\n";
+        for (const auto &vec : entry.second) {
+            std::cout << "  {";
+            for (size_t i = 0; i < vec.size(); ++i) {
+                std::cout << vec[i];
+                if (i < vec.size() - 1) std::cout << ", ";
+            }
+            std::cout << "},\n";
+        }
+        std::cout << "};\n";
+    }
+}
+
 // Function to create and save x-dependence plots
 void plotXDependence(const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData) {
     // Create a 2x3 canvas
@@ -164,12 +173,12 @@ int main(int argc, char *argv[]) {
     // Read the kinematic data from the file
     std::map<std::string, std::vector<std::vector<double>>> kinematicData = readKinematics(kinematicFile);
 
-    // Print out the parsed data for verification
-    std::cout << "Asymmetry Data:\n";
-    printData(asymmetryData);
+    // // Print out the parsed data
+    // std::cout << "Asymmetry Data:\n";
+    // printData(asymmetryData);
 
-    std::cout << "\nKinematic Data:\n";
-    printData(kinematicData);
+    // std::cout << "\nKinematic Data:\n";
+    // printData(kinematicData);
 
     // Call the plotting function
     plotXDependence(asymmetryData);
