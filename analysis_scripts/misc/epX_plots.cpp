@@ -173,7 +173,9 @@ void plotDependence(
             graphComb->SetMarkerColor(kRed-7);  // Light red color
             graphComb->SetLineColor(kRed-7);  // Light red color
 
-            // Set x-axis and y-axis ranges based on the specified limits
+            // Set x-axis and y-axis labels and ranges
+            graphComb->GetXaxis()->SetTitle(xLabel.c_str());
+            graphComb->GetYaxis()->SetTitle(yLabels[i].c_str());
             graphComb->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
             graphComb->GetXaxis()->SetRangeUser(xLimits.first, xLimits.second);
             if (suffixes[i] == "ALL") {
@@ -191,6 +193,17 @@ void plotDependence(
             graphStat->SetMarkerSize(0.8);  // Smaller marker size
             graphStat->SetMarkerColor(kBlack);
             graphStat->SetLineColor(kBlack);
+
+            // Set x-axis and y-axis labels and ranges for the statistical graph too
+            graphStat->GetXaxis()->SetTitle(xLabel.c_str());
+            graphStat->GetYaxis()->SetTitle(yLabels[i].c_str());
+            graphStat->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
+            graphStat->GetXaxis()->SetRangeUser(xLimits.first, xLimits.second);
+            if (suffixes[i] == "ALL") {
+                graphStat->GetYaxis()->SetRangeUser(-0.1, 0.6);
+            } else {
+                graphStat->GetYaxis()->SetRangeUser(-0.15, 0.15);
+            }
 
             // Redraw the statistical uncertainties on top
             graphStat->Draw("P SAME");
