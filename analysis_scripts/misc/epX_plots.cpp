@@ -238,145 +238,6 @@ void plotDependence(
     delete c;
 }
 
-void plotComparison(
-    const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
-    const std::string &outputFileName) {
-    // Create a 1x2 canvas
-    TCanvas *c = new TCanvas("c", "PT and xF Dependence Comparison", 1200, 600);
-    c->Divide(2, 1); // 1 row, 2 columns
-
-    // Define the H2 PT dependence data
-    std::vector<std::vector<double>> H2DataPT = {
-        {0.067870, -0.004157, 0.001025}, {0.155431, -0.007453, 0.000539},
-        {0.251797, -0.011001, 0.000442}, {0.349481, -0.016850, 0.000421},
-        {0.448136, -0.024485, 0.000449}, {0.547082, -0.033942, 0.000525},
-        {0.646201, -0.047847, 0.000661}, {0.745191, -0.058604, 0.000889},
-        {0.844268, -0.073812, 0.001278}, {0.943535, -0.074605, 0.001973},
-        {1.042894, -0.086452, 0.003307}, {1.142434, -0.074708, 0.006179},
-        {1.242379, -0.066435, 0.013280}
-    };
-
-    // Define the H2 xF dependence data
-    std::vector<std::vector<double>> H2DataXF = {
-        {-0.75, -0.002333, 0.007808}, {-0.65, -0.001810, 0.001441},
-        {-0.55, -0.017523, 0.000810}, {-0.45, -0.024326, 0.000588},
-        {-0.35, -0.027394, 0.000502}, {-0.25, -0.026728, 0.000479},
-        {-0.15, -0.024592, 0.000488}, {-0.05, -0.018854, 0.000524},
-        {0.05, -0.012483, 0.000597}, {0.15, -0.002537, 0.000723},
-        {0.25, 0.009889, 0.000929}, {0.35, 0.022082, 0.001272},
-        {0.45, 0.030298, 0.001874}, {0.55, 0.041041, 0.003080},
-        {0.65, 0.048530, 0.006303}, {0.75, 0.102060, 0.026785}
-    };
-
-    // Define the keys for the NH3 data
-    std::string suffix = "ALUsinphi";
-    std::string keyPT = "PTchi2Fits" + suffix;
-    std::string keyXF = "xFchi2Fits" + suffix;
-
-    // Check if the keys exist in the map for NH3 data
-    auto itPT = asymmetryData.find(keyPT);
-    auto itXF = asymmetryData.find(keyXF);
-
-    if (itPT != asymmetryData.end() && itXF != asymmetryData.end()) {
-        const auto &NH3DataPT = itPT->second;
-        const auto &NH3DataXF = itXF->second;
-
-        // Create vectors for NH3 PT data
-        std::vector<double> xNH3PT, yNH3PT, yErrNH3PT;
-        for (const auto &entry : NH3DataPT) {
-            xNH3PT.push_back(entry[0]);
-            yNH3PT.push_back(entry[1]);
-            yErrNH3PT.push_back(entry[2]);
-        }
-
-        // Create vectors for NH3 xF data
-        std::vector<double> xNH3XF, yNH3XF, yErrNH3XF;
-        for (const auto &entry : NH3DataXF) {
-            xNH3XF.push_back(entry[0]);
-            yNH3XF.push_back(entry[1]);
-            yErrNH3XF.push_back(entry[2]);
-        }
-
-        // Create vectors for H2 PT data
-        std::vector<double> xH2PT, yH2PT, yErrH2PT;
-        for (const auto &entry : H2DataPT) {
-            xH2PT.push_back(entry[0]);
-            yH2PT.push_back(entry[1]);
-            yErrH2PT.push_back(entry[2]);
-        }
-
-        // Create vectors for H2 xF data
-        std::vector<double> xH2XF, yH2XF, yErrH2XF;
-        for (const auto &entry : H2DataXF) {
-            xH2XF.push_back(entry[0]);
-            yH2XF.push_back(entry[1]);
-            yErrH2XF.push_back(entry[2]);
-        }
-
-        // Create the NH3 PT TGraphErrors
-        TGraphErrors *graphNH3PT = createTGraphErrors(xNH3PT, yNH3PT, yErrNH3PT, 20, 0.8, kRed);
-        setAxisLabelsAndRanges(graphNH3PT, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.0, 1.2}, {-0.1, 0.1});
-
-        // Create the H2 PT TGraphErrors
-        TGraphErrors *graphH2PT = createTGraphErrors(xH2PT, yH2PT, yErrH2PT, 21, 0.8, kBlue);
-
-        // Create the NH3 xF TGraphErrors
-        TGraphErrors *graphNH3XF = createTGraphErrors(xNH3XF, yNH3XF, yErrNH3XF, 20, 0.8, kRed);
-        setAxisLabelsAndRanges(graphNH3XF, "x_{F}", "F_{LU}^{sin#phi}/F_{UU}", {-0.8, 0.8}, {-0.1, 0.1});
-
-        // Create the H2 xF TGraphErrors
-        TGraphErrors *graphH2XF = createTGraphErrors(xH2XF, yH2XF, yErrH2XF, 21, 0.8, kBlue);
-
-        // Plot PT dependence in the first pad
-        c->cd(1);
-        graphNH3PT->Draw("AP");
-        graphH2PT->Draw("P SAME");
-
-        // Add horizontal line at y=0
-        TLine *linePT = new TLine(0, 0, 1.2, 0);
-        linePT->SetLineColor(kGray + 2);
-        linePT->SetLineStyle(2);
-        linePT->Draw("same");
-
-        // Add legend to the first pad
-        TLegend *legendPT = new TLegend(0.7, 0.8, 0.9, 0.9);
-        legendPT->AddEntry(graphNH3PT, "NH_{3}", "p");
-        legendPT->AddEntry(graphH2PT, "H_{2}", "p");
-        legendPT->Draw();
-
-        // Plot xF dependence in the second pad
-        c->cd(2);
-        graphNH3XF->Draw("AP");
-        graphH2XF->Draw("P SAME");
-
-        // Add horizontal line at y=0
-        TLine *lineXF = new TLine(-0.8, 0, 0.8, 0);
-        lineXF->SetLineColor(kGray + 2);
-        lineXF->SetLineStyle(2);
-        lineXF->Draw("same");
-
-        // Add legend to the second pad
-        TLegend *legendXF = new TLegend(0.7, 0.8, 0.9, 0.9);
-        legendXF->AddEntry(graphNH3XF, "NH_{3}", "p");
-        legendXF->AddEntry(graphH2XF, "H_{2}", "p");
-        legendXF->Draw();
-
-        // Save the canvas as a PNG file
-        gSystem->Exec("mkdir -p output/epX_plots");
-        c->SaveAs(outputFileName.c_str());
-
-        // Clean up
-        delete c;
-        delete legendPT;
-        delete legendXF;
-        delete linePT;
-        delete lineXF;
-    } else {
-        if (itPT == asymmetryData.end()) std::cerr << "Error: No NH3 PT data found for key " << keyPT << "\n";
-        if (itXF == asymmetryData.end()) std::cerr << "Error: No NH3 xF data found for key " << keyXF << "\n";
-    }
-}
-
 // Function to partition the canvas
 void CanvasPartition(TCanvas *C, const Int_t Nx = 2, const Int_t Ny = 2,
                      Float_t lMargin = 0.15, Float_t rMargin = 0.05,
@@ -471,6 +332,9 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
         if (Q2yPrefixes[i].empty()) continue;
 
         c->cd(i + 1);
+        gPad->SetFillStyle(4000);
+        gPad->SetFrameFillStyle(4000);
+
         bool dataFound = false;
 
         for (int zIndex = 1; zIndex <= 5; ++zIndex) {
@@ -501,7 +365,7 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
                     graph->GetXaxis()->SetTitleOffset(999);
                 }
 
-                graph->Draw(i == 1 ? "AP" : "P SAME");
+                graph->Draw(zIndex == 1 ? "AP" : "P SAME");
             }
         }
 
