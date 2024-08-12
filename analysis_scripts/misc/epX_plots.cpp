@@ -173,6 +173,18 @@ void plotDependence(
             graphComb->SetMarkerColor(kRed-7);  // Light red color
             graphComb->SetLineColor(kRed-7);  // Light red color
 
+            // Set x-axis and y-axis ranges based on the specified limits
+            graphComb->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
+            graphComb->GetXaxis()->SetRangeUser(xLimits.first, xLimits.second);
+            if (suffixes[i] == "ALL") {
+                graphComb->GetYaxis()->SetRangeUser(-0.1, 0.6);
+            } else {
+                graphComb->GetYaxis()->SetRangeUser(-0.15, 0.15);
+            }
+
+            // Draw combined uncertainties (statistical + systematic)
+            graphComb->Draw("AP");
+
             // Create TGraphErrors for the statistical uncertainties
             TGraphErrors *graphStat = new TGraphErrors(x.size(), x.data(), y.data(), nullptr, yStatErr.data());
             graphStat->SetMarkerStyle(20);  // Circle points
@@ -180,23 +192,11 @@ void plotDependence(
             graphStat->SetMarkerColor(kBlack);
             graphStat->SetLineColor(kBlack);
 
-            // Set x-axis and y-axis ranges based on the statistical uncertainties graph
-            graphStat->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
-            graphStat->GetXaxis()->SetRangeUser(xLimits.first, xLimits.second);
-            if (suffixes[i] == "ALL") {
-                graphStat->GetYaxis()->SetRangeUser(-0.1, 0.6);
-            } else {
-                graphStat->GetYaxis()->SetRangeUser(-0.15, 0.15);
-            }
-
-            // Draw combined uncertainties (statistical + systematic) first
-            graphComb->Draw("AP");
-
             // Redraw the statistical uncertainties on top
             graphStat->Draw("P SAME");
 
             // Draw a faint dashed gray horizontal line at y=0
-            TLine *line = new TLine(graphStat->GetXaxis()->GetXmin(), 0, graphStat->GetXaxis()->GetXmax(), 0);
+            TLine *line = new TLine(xLimits.first, 0, xLimits.second, 0);
             line->SetLineColor(kGray+2);
             line->SetLineStyle(7);  // Dashed line
             line->Draw();
