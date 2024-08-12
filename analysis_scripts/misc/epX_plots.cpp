@@ -520,7 +520,7 @@ void plotQ2yz_pT(
 
     // Add a legend in the last subplot (bottom right corner)
     c->cd(20); // Go to the last pad
-    TLegend *legend = new TLegend(0.1, 0.1, 0.9, 0.9); // Larger legend box
+    TLegend *legend = new TLegend(0.1, 0.2, 0.9, 0.9); // Larger legend box
 
     // Add color-coded entries for the z-bins
     for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
