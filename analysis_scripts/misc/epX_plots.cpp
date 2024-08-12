@@ -379,8 +379,7 @@ void plotComparison(
     }
 }
 
-void plotQ2yz_pT(
-    const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
+void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
     const std::string &outputFileName) {
     
     TCanvas *c = new TCanvas("c", "Q2-y-z Dependence", 1800, 1600);
@@ -468,13 +467,12 @@ void plotQ2yz_pT(
                 continue; // Skip to next iteration
             }
 
-            // Add Q^2 labels for the top row
+            // Create and set the graph title for the top row
+            TGraphErrors* graph = nullptr;
             if (row == 0) {
-                TLatex *latex = new TLatex(0.5, 0.95, topRowLabels[q2Index].c_str());
-                latex->SetNDC();
-                latex->SetTextSize(0.05);
-                latex->SetTextAlign(23);
-                latex->Draw();
+                graph = new TGraphErrors();
+                graph->SetTitle(topRowLabels[q2Index].c_str());
+                sampleGraphs.push_back(graph); // Store the graph for legend entries
             }
 
             // Loop over each z bin
@@ -496,11 +494,11 @@ void plotQ2yz_pT(
                     yErr.push_back(entry[2]);
                 }
 
-                TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
-
-                // Store the first graph of each z-bin for the legend
-                if (q2Index == 0 && row == 0) {
-                    sampleGraphs.push_back(graph);
+                if (!graph) {
+                    graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
+                } else {
+                    TGraphErrors* newGraph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
+                    newGraph->Draw("P SAME");
                 }
 
                 if (!firstGraphDrawn) {
@@ -522,8 +520,6 @@ void plotQ2yz_pT(
 
                     graph->Draw("AP");
                     firstGraphDrawn = true;
-                } else {
-                    graph->Draw("P SAME");
                 }
             }
 
@@ -545,11 +541,11 @@ void plotQ2yz_pT(
     for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
         legend->AddEntry(sampleGraphs[zIndex], Form("%s (%.2f < z < %.2f)", z_prefixes[zIndex].c_str(), 0.10 + 0.15 * zIndex, 0.25 + 0.10 * zIndex), "P");
     }
-    legend->SetTextSize(0.05); // Increase text size
+    legend->SetTextSize(0.05);
+    // Increase text size
     legend->SetFillColor(0); // Make background transparent
     legend->SetLineColor(0); // Remove border
     legend->Draw();
-
     // Save the canvas as a PNG file
     gSystem->Exec("mkdir -p output/epX_plots");
     c->SaveAs(outputFileName.c_str());
