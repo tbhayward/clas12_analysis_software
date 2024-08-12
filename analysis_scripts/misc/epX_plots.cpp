@@ -188,6 +188,12 @@ void plotDependence(
                     graphComb->GetYaxis()->SetRangeUser(-0.15, 0.15);
                 }
 
+                // Adjust axis label and title sizes
+                graphComb->GetXaxis()->SetLabelSize(0.04);
+                graphComb->GetXaxis()->SetTitleSize(0.045);
+                graphComb->GetYaxis()->SetLabelSize(0.04);
+                graphComb->GetYaxis()->SetTitleSize(0.045);
+
                 // Draw combined uncertainties (statistical + systematic)
                 graphComb->Draw("AP");
             }
@@ -212,6 +218,12 @@ void plotDependence(
             } else {
                 graphStat->GetYaxis()->SetRangeUser(-0.15, 0.15);
             }
+
+            // Adjust axis label and title sizes for statistical graph
+            graphStat->GetXaxis()->SetLabelSize(0.04);
+            graphStat->GetXaxis()->SetTitleSize(0.045);
+            graphStat->GetYaxis()->SetLabelSize(0.04);
+            graphStat->GetYaxis()->SetTitleSize(0.045);
 
             // Draw the statistical uncertainties on top if not AULoffset
             if (suffixes[i] != "AULoffset") {
