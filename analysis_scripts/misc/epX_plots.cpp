@@ -246,7 +246,6 @@ void CanvasPartition(TCanvas *C, const Int_t Nx = 2, const Int_t Ny = 2,
 
     Float_t vSpacing = 0.0;
     Float_t vStep  = (1. - bMargin - tMargin - (Ny - 1) * vSpacing) / Ny;
-
     Float_t hSpacing = 0.0;
     Float_t hStep  = (1. - lMargin - rMargin - (Nx - 1) * hSpacing) / Nx;
 
@@ -315,7 +314,6 @@ void CanvasPartition(TCanvas *C, const Int_t Nx = 2, const Int_t Ny = 2,
 }
 
 void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData, const std::string &outputFileName) {
-    // Number of columns and rows
     const Int_t Nx = 5;
     const Int_t Ny = 4;
 
@@ -324,61 +322,61 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
     // Partition the canvas
     CanvasPartition(c, Nx, Ny, 0.15, 0.05, 0.15, 0.05);
 
-    // Define Q2y prefixes and colors
     std::vector<std::string> Q2yPrefixes = {"Q2y1", "Q2y5", "Q2y9", "Q2y13", "Q2y16", "Q2y2", "Q2y6", "Q2y10", "Q2y14", "Q2y17", "Q2y3", "Q2y7", "Q2y11", "Q2y15", "", "Q2y4", "Q2y8", "Q2y12", "", ""};
     std::vector<int> colors = {kBlack, kRed, kGreen + 2, kBlue, kMagenta};
 
-    for (int i = 0; i < Q2yPrefixes.size(); ++i) {
-        if (Q2yPrefixes[i].empty()) continue;
+    for (int i = 0; i < Nx; ++i) {
+        for (int j = 0; j < Ny; ++j) {
+            int index = i + j * Nx;
+            if (Q2yPrefixes[index].empty()) continue;
 
-        c->cd(i + 1);
-        gPad->SetFillStyle(4000);
-        gPad->SetFrameFillStyle(4000);
+            c->cd(index + 1);
+            gPad->SetFillStyle(4000);
+            gPad->SetFrameFillStyle(4000);
 
-        bool dataFound = false;
+            bool dataFound = false;
 
-        for (int zIndex = 1; zIndex <= 5; ++zIndex) {
-            std::string key = Q2yPrefixes[i] + "z" + std::to_string(zIndex) + "chi2FitsALUsinphi";
-            auto it = asymmetryData.find(key);
+            for (int zIndex = 1; zIndex <= 5; ++zIndex) {
+                std::string key = Q2yPrefixes[index] + "z" + std::to_string(zIndex) + "chi2FitsALUsinphi";
+                auto it = asymmetryData.find(key);
 
-            if (it != asymmetryData.end()) {
-                dataFound = true;
-                const auto &data = it->second;
+                if (it != asymmetryData.end()) {
+                    dataFound = true;
+                    const auto &data = it->second;
 
-                std::vector<double> x, y, yErr;
-                for (const auto &entry : data) {
-                    x.push_back(entry[0]);
-                    y.push_back(entry[1]);
-                    yErr.push_back(entry[2]);
+                    std::vector<double> x, y, yErr;
+                    for (const auto &entry : data) {
+                        x.push_back(entry[0]);
+                        y.push_back(entry[1]);
+                        yErr.push_back(entry[2]);
+                    }
+
+                    TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex - 1]);
+                    setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.0, 1.0}, {-0.1, 0.1});
+
+                    // Hide X and Y axis labels for inner plots
+                    if (i != 0) { // Not the first column
+                        graph->GetYaxis()->SetLabelOffset(999);
+                        graph->GetYaxis()->SetTitleOffset(999);
+                    }
+                    if (j != Ny - 1) { // Not the last row
+                        graph->GetXaxis()->SetLabelOffset(999);
+                        graph->GetXaxis()->SetTitleOffset(999);
+                    }
+
+                    graph->Draw(zIndex == 1 ? "AP" : "P SAME");
                 }
-
-                TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex - 1]);
-                setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.0, 1.0}, {-0.1, 0.1});
-
-                // Hide X and Y axis labels for inner plots
-                if (i % Nx != 0) { // Not the first column
-                    graph->GetYaxis()->SetLabelOffset(999);
-                    graph->GetYaxis()->SetTitleOffset(999);
-                }
-                if (i < Nx * (Ny - 1)) { // Not the last row
-                    graph->GetXaxis()->SetLabelOffset(999);
-                    graph->GetXaxis()->SetTitleOffset(999);
-                }
-
-                graph->Draw(zIndex == 1 ? "AP" : "P SAME");
             }
-        }
 
-        if (!dataFound) {
-            std::cout << "Warning: No data found for prefix " << Q2yPrefixes[i] << std::endl;
+            if (!dataFound) {
+                std::cout << "Warning: No data found for prefix " << Q2yPrefixes[index] << std::endl;
+            }
         }
     }
 
-    // Save the canvas
     gSystem->Exec("mkdir -p output/epX_plots");
     c->SaveAs(outputFileName.c_str());
 
-    // Clean up
     delete c;
 }
 
