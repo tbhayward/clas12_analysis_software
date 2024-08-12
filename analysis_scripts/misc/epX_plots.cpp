@@ -367,8 +367,8 @@ void plotComparison(
         delete linePT;
         delete lineXF;
     } else {
-        if (itPT == asymmetryData.end()) std::cerr << “Error: No NH3 PT data found for key “ << keyPT << “\n”;
-        if (itXF == asymmetryData.end()) std::cerr << “Error: No NH3 xF data found for key “ << keyXF << “\n”;
+        if (itPT == asymmetryData.end()) std::cerr << "Error: No NH3 PT data found for key " << keyPT << "\n";
+        if (itXF == asymmetryData.end()) std::cerr << "Error: No NH3 xF data found for key " << keyXF << "\n";
     }
 }
 
