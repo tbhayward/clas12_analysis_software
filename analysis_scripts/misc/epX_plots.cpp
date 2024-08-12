@@ -149,13 +149,20 @@ void plotXDependence(const std::map<std::string, std::vector<std::vector<double>
             if (keys[i] == "xchi2FitsALL") {
                 graph->GetYaxis()->SetRangeUser(-0.2, 0.6);
             } else {
-                graph->GetYaxis()->SetRangeUser(-0.2, 0.2);
+                graph->GetYaxis()->SetRangeUser(-0.15, 0.15);
             }
 
             // Customize the graph
             graph->SetMarkerStyle(20);  // Circle points
+            graph->SetMarkerSize(0.8);  // Smaller marker size
             graph->SetMarkerColor(kBlack);
             graph->SetLineColor(kBlack);
+
+            // Increase the font size of x and y labels
+            graph->GetXaxis()->SetLabelSize(0.04);
+            graph->GetXaxis()->SetTitleSize(0.05);
+            graph->GetYaxis()->SetLabelSize(0.04);
+            graph->GetYaxis()->SetTitleSize(0.05);
 
             graph->Draw("AP");
 
