@@ -456,7 +456,7 @@ void plotQ2yz_pT(
                 }
             }
             
-            gPad->SetRightMargin(0.05); // Ensure consistent right margin
+            // gPad->SetRightMargin(0.05); // Ensure consistent right margin
         }
     }
 
