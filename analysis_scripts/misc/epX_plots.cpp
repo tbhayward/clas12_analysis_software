@@ -392,8 +392,8 @@ void plotQ2yz_pT(
         {"Q2y3", "Q2y7", "Q2y11", "Q2y15", "EMPTY"}, // Third row (filling with "EMPTY")
         {"Q2y4", "Q2y8", "Q2y12", "EMPTY", "EMPTY"}  // Fourth row (filling with "EMPTY")
     };
-    std::vector<std::string> z_prefixes = {"z1", "z2", "z3", "z4", "z5"};
-    std::vector<int> colors = {kBlack, kRed, kGreen, kBlue, kMagenta};
+    std::vector<std::string> z_prefixes = {"z1", "z2", "z3", "z4"}; // Updated to only include up to z4
+    std::vector<int> colors = {kBlack, kRed, kGreen, kBlue}; // Updated to match z_prefixes
 
     // Vector to hold the sample graphs for the legend
     std::vector<TGraph*> sampleGraphs;
@@ -445,14 +445,6 @@ void plotQ2yz_pT(
                 if (row != Q2_prefixes.size() - 1) {
                     dummyGraph->GetXaxis()->SetLabelOffset(999);
                     dummyGraph->GetXaxis()->SetTitleOffset(999);
-                }
-
-                // Draw the dashed gray line at y = 0
-                if (!(row == 3 && q2Index == 4)) {  // Don't draw in the last subplot (where legend is)
-                    TLine *line = new TLine(0.1, 0.0, 0.9, 0.0);
-                    line->SetLineColor(kGray + 2);
-                    line->SetLineStyle(7);
-                    line->Draw("same");
                 }
 
                 continue; // Skip to next iteration
@@ -510,7 +502,7 @@ void plotQ2yz_pT(
             }
 
             // Draw the dashed gray line at y = 0
-            if (!(row == 3 && q2Index == 4)) {  // Don't draw in the last subplot (where legend is)
+            if (row != 3 || (q2Index != 3 && q2Index != 4)) {  // Don't draw in the last two subplots
                 TLine *line = new TLine(0.15, 0.0, 0.95, 0.0);
                 line->SetLineColor(kGray + 2);
                 line->SetLineStyle(7);
