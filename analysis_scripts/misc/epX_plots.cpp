@@ -109,6 +109,7 @@ void printData(const std::map<std::string, std::vector<std::vector<double>>> &da
 
 void plotDependence(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
+    const std::string &prefix, 
     const std::string &xLabel, 
     const std::string &outputFileName
 ) {
@@ -116,8 +117,8 @@ void plotDependence(
     TCanvas *c = new TCanvas("c", "Dependence Plots", 1200, 800);
     c->Divide(3, 2);
 
-    // Define the keys for the asymmetries we want to plot
-    std::vector<std::string> keys = {"xchi2FitsALUsinphi", "xchi2FitsAULsinphi", "xchi2FitsAULsin2phi", "xchi2FitsALL", "xchi2FitsALLcosphi"};
+    // Define the suffixes for the asymmetries we want to plot
+    std::vector<std::string> suffixes = {"ALUsinphi", "AULsinphi", "AULsin2phi", "ALL", "ALLcosphi"};
     std::vector<std::string> yLabels = {
         "F_{LU}^{sin#phi}/F_{UU}",
         "F_{UL}^{sin#phi}/F_{UU}",
@@ -127,13 +128,16 @@ void plotDependence(
     };
 
     // Plot each asymmetry in its respective subplot
-    for (size_t i = 0; i < keys.size(); ++i) {
+    for (size_t i = 0; i < suffixes.size(); ++i) {
         c->cd(i + 1);
         gPad->SetLeftMargin(0.18);  // Increase left margin for Y-axis label
         gPad->SetBottomMargin(0.15);  // Increase bottom margin for X-axis label
 
+        // Construct the key by combining prefix and suffix
+        std::string key = prefix + "chi2Fits" + suffixes[i];
+
         // Check if the key exists in the map
-        auto it = asymmetryData.find(keys[i]);
+        auto it = asymmetryData.find(key);
         if (it != asymmetryData.end()) {
             const auto &data = it->second;
 
@@ -153,7 +157,7 @@ void plotDependence(
 
             // Set x-axis and y-axis ranges
             graph->GetXaxis()->SetLimits(0.0, 0.6);
-            if (keys[i] == "xchi2FitsALL") {
+            if (suffixes[i] == "ALL") {
                 graph->GetYaxis()->SetRangeUser(-0.1, 0.6);
             } else {
                 graph->GetYaxis()->SetRangeUser(-0.15, 0.15);
@@ -212,9 +216,9 @@ int main(int argc, char *argv[]) {
     // printData(kinematicData);
 
     // Call the plotting function for different dependencies
-    plotDependence(asymmetryData, "x_{B}", "output/epX_plots/x_dependence_plots.png");
-    plotDependence(asymmetryData, "P_{T} (GeV)", "output/epX_plots/PT_dependence_plots.png");
-    plotDependence(asymmetryData, "x_{F}", "output/epX_plots/xF_dependence_plots.png");
+    plotDependence(asymmetryData, "x", "x_{B}", "output/epX_plots/x_dependence_plots.png");
+    plotDependence(asymmetryData, "PT", "P_{T} (GeV)", "output/epX_plots/PT_dependence_plots.png");
+    plotDependence(asymmetryData, "xF", "x_{F}", "output/epX_plots/xF_dependence_plots.png");
 
     return 0;
 }
