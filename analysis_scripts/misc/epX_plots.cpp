@@ -436,7 +436,7 @@ void plotQ2yz_pT(
                 TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
 
                 if (!firstGraphDrawn) {
-                    setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.1, 0.9}, {-0.1, 0.1});
+                    setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.0, 0.9}, {-0.1, 0.09});
 
                     // Apply to all plots
                     graph->GetXaxis()->SetNdivisions(505);  // Customize the number of divisions (5 major, 5 minor)
