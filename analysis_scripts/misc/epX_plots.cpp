@@ -448,10 +448,12 @@ void plotQ2yz_pT(
                 }
 
                 // Draw the dashed gray line at y = 0
-                TLine *line = new TLine(0.1, 0.0, 0.9, 0.0);
-                line->SetLineColor(kGray + 2);
-                line->SetLineStyle(7);
-                line->Draw("same");
+                if (!(row == 3 && q2Index == 4)) {  // Don't draw in the last subplot (where legend is)
+                    TLine *line = new TLine(0.1, 0.0, 0.9, 0.0);
+                    line->SetLineColor(kGray + 2);
+                    line->SetLineStyle(7);
+                    line->Draw("same");
+                }
 
                 continue; // Skip to next iteration
             }
@@ -507,26 +509,27 @@ void plotQ2yz_pT(
             }
 
             // Draw the dashed gray line at y = 0
-            TLine *line = new TLine(0.1, 0.0, 0.9, 0.0);
-            line->SetLineColor(kGray + 2);
-            line->SetLineStyle(7);
-            line->Draw("same");
+            if (!(row == 3 && q2Index == 4)) {  // Don't draw in the last subplot (where legend is)
+                TLine *line = new TLine(0.1, 0.0, 0.9, 0.0);
+                line->SetLineColor(kGray + 2);
+                line->SetLineStyle(7);
+                line->Draw("same");
+            }
         }
     }
 
     // Add a legend in the last subplot (bottom right corner)
     c->cd(20); // Go to the last pad
-    TLegend *legend = new TLegend(0.5, 0.5, 0.9, 0.9); // Larger legend box
+    TLegend *legend = new TLegend(0.1, 0.1, 0.9, 0.9); // Larger legend box
 
     // Add color-coded entries for the z-bins
     for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
         legend->AddEntry(sampleGraphs[zIndex], Form("%s (%.2f < z < %.2f)", z_prefixes[zIndex].c_str(), 0.10 + 0.15 * zIndex, 0.25 + 0.10 * zIndex), "P");
     }
 
-    legend->SetTextSize(0.04); // Adjust text size if needed
+    legend->SetTextSize(0.05); // Increase text size
     legend->SetFillColor(0); // Make background transparent
     legend->SetLineColor(0); // Remove border
-
     legend->Draw();
 
     // Save the canvas as a PNG file
