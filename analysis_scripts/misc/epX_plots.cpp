@@ -409,7 +409,7 @@ void plotQ2yz_pT(
             if (q2Index != 0) {
                 gPad->SetLeftMargin(0.001); // No left margin for non-leftmost plots
             } else {
-                gPad->SetLeftMargin(0.18); // Adequate left margin for leftmost plots
+                gPad->SetLeftMargin(0.25); // Increase left margin for leftmost plots to avoid clipping
             }
 
             if (row != Q2_prefixes.size() - 1) {
@@ -430,13 +430,6 @@ void plotQ2yz_pT(
                 TGraphErrors *dummyGraph = createTGraphErrors(dummyX, dummyY, dummyYErr, 20, 0.8, kWhite); // No visible point
 
                 setAxisLabelsAndRanges(dummyGraph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.1, 0.9}, {-0.09, 0.09});
-                
-                // Increase the size of the labels and titles
-                dummyGraph->GetXaxis()->SetLabelSize(0.05); 
-                dummyGraph->GetYaxis()->SetLabelSize(0.05); 
-                dummyGraph->GetXaxis()->SetTitleSize(0.06); 
-                dummyGraph->GetYaxis()->SetTitleSize(0.06); 
-
                 dummyGraph->Draw("AP");
 
                 // Apply to all plots
@@ -541,6 +534,7 @@ void plotQ2yz_pT(
     // Save the canvas as a PNG file
     gSystem->Exec("mkdir -p output/epX_plots");
     c->SaveAs(outputFileName.c_str());
+
     // Clean up
     delete c;
     for (auto graph : sampleGraphs) {
