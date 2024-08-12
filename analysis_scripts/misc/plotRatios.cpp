@@ -53,15 +53,16 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     TH1F *h3_Mx = new TH1F("h3_Mx", "Mx", nbins, -3, 4);
     TH1F *h4_Mx = new TH1F("h4_Mx", "Mx", nbins, -3, 4);
 
-    TH1F *h1_vz_p = new TH1F("h1_vz_p", "vz_p", 50, -15, 15);
-    TH1F *h2_vz_p = new TH1F("h2_vz_p", "vz_p", 50, -15, 15);
-    TH1F *h3_vz_p = new TH1F("h3_vz_p", "vz_p", 50, -15, 15);
-    TH1F *h4_vz_p = new TH1F("h4_vz_p", "vz_p", 50, -15, 15);
+    int nbins2 = 75;
+    TH1F *h1_vz_p = new TH1F("h1_vz_p", "vz_p", nbins2, -10, 5);
+    TH1F *h2_vz_p = new TH1F("h2_vz_p", "vz_p", nbins2, -10, 5);
+    TH1F *h3_vz_p = new TH1F("h3_vz_p", "vz_p", nbins2, -10, 5);
+    TH1F *h4_vz_p = new TH1F("h4_vz_p", "vz_p", nbins2, -10, 5);
 
-    TH1F *h1_p_phi = new TH1F("h1_p_phi", "p_phi", 50, 0, 360);
-    TH1F *h2_p_phi = new TH1F("h2_p_phi", "p_phi", 50, 0, 360);
-    TH1F *h3_p_phi = new TH1F("h3_p_phi", "p_phi", 50, 0, 360);
-    TH1F *h4_p_phi = new TH1F("h4_p_phi", "p_phi", 50, 0, 360);
+    TH1F *h1_p_phi = new TH1F("h1_p_phi", "p_phi", nbins2, 0, 360);
+    TH1F *h2_p_phi = new TH1F("h2_p_phi", "p_phi", nbins2, 0, 360);
+    TH1F *h3_p_phi = new TH1F("h3_p_phi", "p_phi", nbins2, 0, 360);
+    TH1F *h4_p_phi = new TH1F("h4_p_phi", "p_phi", nbins2, 0, 360);
 
     double p_p1, p_p2, p_p3, p_p4;
     double xF1, xF2, xF3, xF4;
