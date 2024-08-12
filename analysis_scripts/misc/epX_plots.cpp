@@ -444,25 +444,6 @@ int main(int argc, char *argv[]) {
     // Read the asymmetry data from the file
     std::map<std::string, std::vector<std::vector<double>>> asymmetryData = readAsymmetries(asymmetryFile);
 
-    // Plot Q2-y-z dependence for the full top row
-    plotQ2yz_pT(asymmetryData, "output/epX_plots/Q2yZ_dependence_top_row.png");
-
-    return 0;
-}
-
-
-int main(int argc, char *argv[]) {
-    if (argc != 3) {
-        std::cerr << "Usage: " << argv[0] << " <asymmetries.txt> <kinematicPlots.txt>\n";
-        return 1;
-    }
-
-    std::string asymmetryFile = argv[1];
-    std::string kinematicFile = argv[2];
-
-    // Read the asymmetry data from the file
-    std::map<std::string, std::vector<std::vector<double>>> asymmetryData = readAsymmetries(asymmetryFile);
-
     // Read the kinematic data from the file
     std::map<std::string, std::vector<std::vector<double>>> kinematicData = readKinematics(kinematicFile);
 
