@@ -142,45 +142,52 @@ void plotDependence(
         if (it != asymmetryData.end()) {
             const auto &data = it->second;
 
-            // Create vectors to hold x, y, and y error
-            std::vector<double> x, y, yErr;
+            // Create vectors to hold x, y, y error, and systematic error
+            std::vector<double> x, y, yErr, ySysErr;
             for (const auto &entry : data) {
                 x.push_back(entry[0]);
                 y.push_back(entry[1]);
                 yErr.push_back(entry[2]);
+                ySysErr.push_back(entry[1] * 0.12);  // 12% systematic uncertainty
             }
 
-            // Create TGraphErrors and plot
-            TGraphErrors *graph = new TGraphErrors(x.size(), x.data(), y.data(), nullptr, yErr.data());
-            graph->SetTitle("");
-            graph->GetXaxis()->SetTitle(xLabel.c_str());
-            graph->GetYaxis()->SetTitle(yLabels[i].c_str());
+            // Create TGraphErrors for the statistical uncertainties
+            TGraphErrors *graphStat = new TGraphErrors(x.size(), x.data(), y.data(), nullptr, yErr.data());
+            graphStat->SetTitle("");
+            graphStat->GetXaxis()->SetTitle(xLabel.c_str());
+            graphStat->GetYaxis()->SetTitle(yLabels[i].c_str());
 
             // Set x-axis and y-axis ranges
-            graph->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
-            graph->GetXaxis()->SetRangeUser(xLimits.first, xLimits.second);
+            graphStat->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
+            graphStat->GetXaxis()->SetRangeUser(xLimits.first, xLimits.second);
             if (suffixes[i] == "ALL") {
-                graph->GetYaxis()->SetRangeUser(-0.1, 0.6);
+                graphStat->GetYaxis()->SetRangeUser(-0.1, 0.6);
             } else {
-                graph->GetYaxis()->SetRangeUser(-0.15, 0.15);
+                graphStat->GetYaxis()->SetRangeUser(-0.15, 0.15);
             }
 
-            // Customize the graph
-            graph->SetMarkerStyle(20);  // Circle points
-            graph->SetMarkerSize(0.8);  // Smaller marker size
-            graph->SetMarkerColor(kBlack);
-            graph->SetLineColor(kBlack);
+            // Customize the graph for statistical uncertainties
+            graphStat->SetMarkerStyle(20);  // Circle points
+            graphStat->SetMarkerSize(0.8);  // Smaller marker size
+            graphStat->SetMarkerColor(kBlack);
+            graphStat->SetLineColor(kBlack);
 
-            // Increase the font size of x and y labels
-            graph->GetXaxis()->SetLabelSize(0.04);
-            graph->GetXaxis()->SetTitleSize(0.05);
-            graph->GetYaxis()->SetLabelSize(0.04);
-            graph->GetYaxis()->SetTitleSize(0.05);
+            // Draw statistical uncertainties
+            graphStat->Draw("AP");
 
-            graph->Draw("AP");
+            // Create TGraphErrors for the systematic uncertainties
+            TGraphErrors *graphSys = new TGraphErrors(x.size(), x.data(), y.data(), nullptr, ySysErr.data());
+            graphSys->SetMarkerStyle(20);  // Circle points
+            graphSys->SetMarkerSize(0.8);
+            graphSys->SetMarkerColor(kRed-7);  // Light red color
+            graphSys->SetLineColor(kRed-7);  // Light red color
+            graphSys->SetFillColor(kRed-7);  // Light red color for fill
+
+            // Draw systematic uncertainties on top
+            graphSys->Draw("P");
 
             // Draw a faint dashed gray horizontal line at y=0
-            TLine *line = new TLine(graph->GetXaxis()->GetXmin(), 0, graph->GetXaxis()->GetXmax(), 0);
+            TLine *line = new TLine(graphStat->GetXaxis()->GetXmin(), 0, graphStat->GetXaxis()->GetXmax(), 0);
             line->SetLineColor(kGray+2);
             line->SetLineStyle(7);  // Dashed line
             line->Draw();
