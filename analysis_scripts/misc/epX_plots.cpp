@@ -4,7 +4,12 @@
 #include <vector>
 #include <map>
 #include <sstream>
-#include <algorithm> // For std::remove
+#include <algorithm> 
+#include <TCanvas.h>
+#include <TGraphErrors.h>
+#include <TSystem.h>
+#include <TAxis.h>
+
 
 // Function to read arrays directly from the kinematic file
 std::map<std::string, std::vector<std::vector<double>>> readKinematics(const std::string &filename) {
