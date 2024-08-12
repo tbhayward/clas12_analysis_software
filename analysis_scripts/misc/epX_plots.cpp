@@ -4,6 +4,7 @@
 #include <vector>
 #include <map>
 #include <sstream>
+#include <algorithm> // For std::remove
 
 // Function to read arrays directly from the file
 std::map<std::string, std::vector<std::vector<double>>> readKinematics(const std::string &filename) {
@@ -22,13 +23,13 @@ std::map<std::string, std::vector<std::vector<double>>> readKinematics(const std
             dataStr.erase(std::remove(dataStr.begin(), dataStr.end(), '}'), dataStr.end());
             dataStr.erase(std::remove(dataStr.begin(), dataStr.end(), ';'), dataStr.end());
 
-            // Split dataStr into individual data points
+            // Split dataStr into individual rows of data
             std::vector<std::vector<double>> values;
             std::stringstream ss(dataStr);
             std::string rowStr;
             while (std::getline(ss, rowStr, ',')) {
-                std::stringstream rowStream(rowStr);
                 std::vector<double> row;
+                std::stringstream rowStream(rowStr);
                 std::string value;
                 while (std::getline(rowStream, value, ',')) {
                     row.push_back(std::stod(value));
