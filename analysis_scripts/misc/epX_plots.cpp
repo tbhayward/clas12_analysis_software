@@ -395,6 +395,15 @@ void plotQ2yz_pT(
     std::vector<std::string> z_prefixes = {"z1", "z2", "z3", "z4", "z5"};
     std::vector<int> colors = {kBlack, kRed, kGreen, kBlue, kMagenta};
 
+    // Labels for the top row of plots
+    std::vector<std::string> topRowLabels = {
+        "1.0 < Q^{2} (GeV^{2}) < 2.0",
+        "2.0 < Q^{2} (GeV^{2}) < 3.0",
+        "3.0 < Q^{2} (GeV^{2}) < 4.0",
+        "4.0 < Q^{2} (GeV^{2}) < 5.0",
+        "5.0 < Q^{2} (GeV^{2}) < 7.0"
+    };
+
     // Vector to hold the sample graphs for the legend
     std::vector<TGraph*> sampleGraphs;
 
@@ -456,6 +465,15 @@ void plotQ2yz_pT(
                 }
 
                 continue; // Skip to next iteration
+            }
+
+            // Add Q^2 labels for the top row
+            if (row == 0) {
+                TLatex *latex = new TLatex(0.5, 0.95, topRowLabels[q2Index].c_str());
+                latex->SetNDC();
+                latex->SetTextSize(0.05);
+                latex->SetTextAlign(23);
+                latex->Draw();
             }
 
             // Loop over each z bin
@@ -520,13 +538,12 @@ void plotQ2yz_pT(
 
     // Add a legend in the last subplot (bottom right corner)
     c->cd(20); // Go to the last pad
-    TLegend *legend = new TLegend(0.1, 0.1, 0.9, 0.9); // Larger legend box
+    TLegend *legend = new TLegend(0.1, 0.2, 0.9, 0.9); // Larger legend box
 
     // Add color-coded entries for the z-bins
     for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
         legend->AddEntry(sampleGraphs[zIndex], Form("%s (%.2f < z < %.2f)", z_prefixes[zIndex].c_str(), 0.10 + 0.15 * zIndex, 0.25 + 0.10 * zIndex), "P");
     }
-
     legend->SetTextSize(0.05); // Increase text size
     legend->SetFillColor(0); // Make background transparent
     legend->SetLineColor(0); // Remove border
