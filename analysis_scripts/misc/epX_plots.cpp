@@ -116,16 +116,17 @@ void plotDependence(
 ) {
     // Create a 2x3 canvas
     TCanvas *c = new TCanvas("c", "Dependence Plots", 1200, 800);
-    c->Divide(3, 2);
+    c->Divide(3, 2); // 2 rows, 3 columns
 
     // Define the suffixes for the asymmetries we want to plot
-    std::vector<std::string> suffixes = {"ALUsinphi", "AULsinphi", "AULsin2phi", "ALL", "ALLcosphi"};
+    std::vector<std::string> suffixes = {"ALUsinphi", "AULsinphi", "AULsin2phi", "ALL", "ALLcosphi", "AULoffset"};
     std::vector<std::string> yLabels = {
         "F_{LU}^{sin#phi}/F_{UU}",
         "F_{UL}^{sin#phi}/F_{UU}",
         "F_{UL}^{sin(2#phi)}/F_{UU}",
         "F_{LL}/F_{UU}",
-        "F_{LL}^{cos#phi}/F_{UU}"
+        "F_{LL}^{cos#phi}/F_{UU}",
+        "A_{UL} offset"
     };
 
     // Plot each asymmetry in its respective subplot
@@ -166,29 +167,34 @@ void plotDependence(
                 yCombErr.push_back(std::sqrt(std::pow(yStatErr[j], 2) + std::pow(sysUncertainty, 2)));
             }
 
-            // Create TGraphErrors for the combined (stat + sys) uncertainties
-            TGraphErrors *graphComb = new TGraphErrors(x.size(), x.data(), y.data(), nullptr, yCombErr.data());
-            graphComb->SetMarkerStyle(20);  // Circle points
-            graphComb->SetMarkerSize(0.8);  // Smaller marker size
-            graphComb->SetMarkerColor(kRed-7);  // Light red color
-            graphComb->SetLineColor(kRed-7);  // Light red color
+            // Create TGraphErrors for the combined (stat + sys) uncertainties if it's not AULoffset
+            TGraphErrors *graphComb = nullptr;
+            if (suffixes[i] != "AULoffset") {
+                graphComb = new TGraphErrors(x.size(), x.data(), y.data(), nullptr, yCombErr.data());
+                graphComb->SetTitle("");  // Remove the "Graph" title
+                graphComb->SetMarkerStyle(20);  // Circle points
+                graphComb->SetMarkerSize(0.8);  // Smaller marker size
+                graphComb->SetMarkerColor(kRed-7);  // Light red color
+                graphComb->SetLineColor(kRed-7);  // Light red color
 
-            // Set x-axis and y-axis labels and ranges
-            graphComb->GetXaxis()->SetTitle(xLabel.c_str());
-            graphComb->GetYaxis()->SetTitle(yLabels[i].c_str());
-            graphComb->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
-            graphComb->GetXaxis()->SetRangeUser(xLimits.first, xLimits.second);
-            if (suffixes[i] == "ALL") {
-                graphComb->GetYaxis()->SetRangeUser(-0.1, 0.6);
-            } else {
-                graphComb->GetYaxis()->SetRangeUser(-0.15, 0.15);
+                // Set x-axis and y-axis labels and ranges
+                graphComb->GetXaxis()->SetTitle(xLabel.c_str());
+                graphComb->GetYaxis()->SetTitle(yLabels[i].c_str());
+                graphComb->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
+                graphComb->GetXaxis()->SetRangeUser(xLimits.first, xLimits.second);
+                if (suffixes[i] == "ALL") {
+                    graphComb->GetYaxis()->SetRangeUser(-0.1, 0.6);
+                } else {
+                    graphComb->GetYaxis()->SetRangeUser(-0.15, 0.15);
+                }
+
+                // Draw combined uncertainties (statistical + systematic)
+                graphComb->Draw("AP");
             }
-
-            // Draw combined uncertainties (statistical + systematic)
-            graphComb->Draw("AP");
 
             // Create TGraphErrors for the statistical uncertainties
             TGraphErrors *graphStat = new TGraphErrors(x.size(), x.data(), y.data(), nullptr, yStatErr.data());
+            graphStat->SetTitle("");  // Remove the "Graph" title
             graphStat->SetMarkerStyle(20);  // Circle points
             graphStat->SetMarkerSize(0.8);  // Smaller marker size
             graphStat->SetMarkerColor(kBlack);
@@ -201,12 +207,18 @@ void plotDependence(
             graphStat->GetXaxis()->SetRangeUser(xLimits.first, xLimits.second);
             if (suffixes[i] == "ALL") {
                 graphStat->GetYaxis()->SetRangeUser(-0.1, 0.6);
+            } else if (suffixes[i] == "AULoffset") {
+                graphStat->GetYaxis()->SetRangeUser(-0.15, 0.15);
             } else {
                 graphStat->GetYaxis()->SetRangeUser(-0.15, 0.15);
             }
 
-            // Redraw the statistical uncertainties on top
-            graphStat->Draw("P SAME");
+            // Draw the statistical uncertainties on top if not AULoffset
+            if (suffixes[i] != "AULoffset") {
+                graphStat->Draw("P SAME");
+            } else {
+                graphStat->Draw("AP");  // Draw this one alone
+            }
 
             // Draw a faint dashed gray horizontal line at y=0
             TLine *line = new TLine(xLimits.first, 0, xLimits.second, 0);
