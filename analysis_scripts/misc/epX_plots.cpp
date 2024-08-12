@@ -515,11 +515,22 @@ void plotQ2yz_pT(
     legend->SetLineColor(0); // Remove border
 
     // Adding color-coded markers for each z-bin
-    legend->AddEntry((TObject*)nullptr, "#pi^{+} (data)", "P")->SetMarkerColor(kBlack);
-    legend->AddEntry((TObject*)nullptr, "#pi^{+} (MC)", "P")->SetMarkerColor(kRed);
-    legend->AddEntry((TObject*)nullptr, "k^{+} (data)", "P")->SetMarkerColor(kGreen);
-    legend->AddEntry((TObject*)nullptr, "k^{+} (MC)", "P")->SetMarkerColor(kBlue);
-    legend->AddEntry((TObject*)nullptr, "p (data)", "P")->SetMarkerColor(kMagenta);
+    TLegendEntry* entry;
+
+    entry = legend->AddEntry((TObject*)nullptr, "#pi^{+} (data)", "P");
+    entry->SetMarkerColor(kBlack);
+
+    entry = legend->AddEntry((TObject*)nullptr, "#pi^{+} (MC)", "P");
+    entry->SetMarkerColor(kRed);
+
+    entry = legend->AddEntry((TObject*)nullptr, "k^{+} (data)", "P");
+    entry->SetMarkerColor(kGreen);
+
+    entry = legend->AddEntry((TObject*)nullptr, "k^{+} (MC)", "P");
+    entry->SetMarkerColor(kBlue);
+
+    entry = legend->AddEntry((TObject*)nullptr, "p (data)", "P");
+    entry->SetMarkerColor(kMagenta);
 
     legend->Draw();
 
