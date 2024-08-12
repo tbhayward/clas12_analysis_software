@@ -378,53 +378,76 @@ void plotQ2yz_pT(
     TCanvas *c = new TCanvas("c", "Q2-y-z Dependence", 1800, 1600);
     c->Divide(5, 4);  // 4 rows (y bins) by 5 columns (Q2 bins)
 
-    // Focusing only on the first subplot for now
-    c->cd(1); // Focus on the first pad only
-    gPad->SetLeftMargin(0.18); // Adding left margin for y-axis visibility
-    gPad->SetBottomMargin(0.15); // Adding bottom margin for x-axis labels
-
-    std::string Q2_prefix = "Q2y1";
+    // Prefixes for Q2 ranges (top row)
+    std::vector<std::string> Q2_prefixes = {"Q2y1", "Q2y5", "Q2y9", "Q2y13", "Q2y16"};
     std::vector<std::string> z_prefixes = {"z1", "z2", "z3", "z4", "z5"};
     std::vector<int> colors = {kBlack, kRed, kGreen, kBlue, kMagenta};
 
-    // Create the graph for each z bin for the first subplot only
-    for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
-        std::string key = Q2_prefix + z_prefixes[zIndex] + "chi2FitsALUsinphi";  // Modify the suffix as needed
-        auto it = asymmetryData.find(key);
-        if (it != asymmetryData.end()) {
-            const auto &data = it->second;
+    // Loop over each Q2 bin (top row of the canvas)
+    for (size_t q2Index = 0; q2Index < Q2_prefixes.size(); ++q2Index) {
+        c->cd(q2Index + 1); // Go to the next pad
+        gPad->SetLeftMargin(0.18); // Adjust left margin for y-axis visibility
+        gPad->SetBottomMargin(0.15); // Adjust bottom margin for x-axis labels
 
-            std::vector<double> x, y, yErr;
-            for (const auto &entry : data) {
-                x.push_back(entry[0]);
-                y.push_back(entry[1]);
-                yErr.push_back(entry[2]);
-            }
+        // Loop over each z bin
+        for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
+            std::string key = Q2_prefixes[q2Index] + z_prefixes[zIndex] + "chi2FitsALUsinphi";  // Modify the suffix as needed
+            auto it = asymmetryData.find(key);
+            if (it != asymmetryData.end()) {
+                const auto &data = it->second;
 
-            TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
+                std::vector<double> x, y, yErr;
+                for (const auto &entry : data) {
+                    x.push_back(entry[0]);
+                    y.push_back(entry[1]);
+                    yErr.push_back(entry[2]);
+                }
 
-            // Print out the data being plotted
-            std::cout << "Plotting " << key << " with color index " << colors[zIndex] << "\n";
-            for (size_t i = 0; i < x.size(); ++i) {
-                std::cout << "x: " << x[i] << ", y: " << y[i] << ", yErr: " << yErr[i] << "\n";
-            }
+                TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
 
-            // Set up axis labels and ranges only for the first graph in the pad
-            if (zIndex == 0) {
-                setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.0, 1.0}, {-0.15, 0.15});
-                graph->Draw("AP");
+                // Print out the data being plotted for debugging
+                std::cout << "Plotting " << key << " with color index " << colors[zIndex] << "\n";
+                for (size_t i = 0; i < x.size(); ++i) {
+                    std::cout << "x: " << x[i] << ", y: " << y[i] << ", yErr: " << yErr[i] << "\n";
+                }
+
+                // Set up axis labels and ranges only for the first graph in each pad
+                if (zIndex == 0) {
+                    setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.0, 1.0}, {-0.15, 0.15});
+                    graph->Draw("AP");
+                } else {
+                    graph->Draw("P SAME");
+                }
             } else {
-                graph->Draw("P SAME");
+                std::cerr << "Warning: No data found for key " << key << std::endl;
             }
-        } else {
-            std::cerr << "Warning: No data found for key " << key << std::endl;
         }
     }
 
-    // Save the canvas as a PNG file
+    // Save the canvas as a PNG file before cleanup
     gSystem->Exec("mkdir -p output/epX_plots");
     c->SaveAs(outputFileName.c_str());
+
+    // Clean up
     delete c;
+}
+
+int main(int argc, char *argv[]) {
+    if (argc != 3) {
+        std::cerr << "Usage: " << argv[0] << " <asymmetries.txt> <kinematicPlots.txt>\n";
+        return 1;
+    }
+
+    std::string asymmetryFile = argv[1];
+    std::string kinematicFile = argv[2];
+
+    // Read the asymmetry data from the file
+    std::map<std::string, std::vector<std::vector<double>>> asymmetryData = readAsymmetries(asymmetryFile);
+
+    // Plot Q2-y-z dependence for the full top row
+    plotQ2yz_pT(asymmetryData, "output/epX_plots/Q2yZ_dependence_top_row.png");
+
+    return 0;
 }
 
 
