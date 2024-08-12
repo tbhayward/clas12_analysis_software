@@ -327,16 +327,34 @@ void plotComparison(
         graphNH3PT->Draw("AP");
         graphH2PT->Draw("P SAME");
 
+        // Add horizontal line at y=0
+        TLine *linePT = new TLine(0, 0, 1.2, 0);
+        linePT->SetLineColor(kGray + 2);
+        linePT->SetLineStyle(2);
+        linePT->Draw("same");
+
+        // Add legend to the first pad
+        TLegend *legendPT = new TLegend(0.7, 0.8, 0.9, 0.9);
+        legendPT->AddEntry(graphNH3PT, "NH_{3}", "p");
+        legendPT->AddEntry(graphH2PT, "H_{2}", "p");
+        legendPT->Draw();
+
         // Plot xF dependence in the second pad
         c->cd(2);
         graphNH3XF->Draw("AP");
         graphH2XF->Draw("P SAME");
 
+        // Add horizontal line at y=0
+        TLine *lineXF = new TLine(-0.8, 0, 0.8, 0);
+        lineXF->SetLineColor(kGray + 2);
+        lineXF->SetLineStyle(2);
+        lineXF->Draw("same");
+
         // Add legend to the second pad
-        TLegend *legend = new TLegend(0.15, 0.75, 0.35, 0.85);
-        legend->AddEntry(graphNH3PT, "NH_{3}", "p");
-        legend->AddEntry(graphH2PT, "H_{2}", "p");
-        legend->Draw();
+        TLegend *legendXF = new TLegend(0.7, 0.8, 0.9, 0.9);
+        legendXF->AddEntry(graphNH3XF, "NH_{3}", "p");
+        legendXF->AddEntry(graphH2XF, "H_{2}", "p");
+        legendXF->Draw();
 
         // Save the canvas as a PNG file
         gSystem->Exec("mkdir -p output/epX_plots");
@@ -344,10 +362,13 @@ void plotComparison(
 
         // Clean up
         delete c;
-        delete legend;
+        delete legendPT;
+        delete legendXF;
+        delete linePT;
+        delete lineXF;
     } else {
-        if (itPT == asymmetryData.end()) std::cerr << "Error: No NH3 PT data found for key " << keyPT << "\n";
-        if (itXF == asymmetryData.end()) std::cerr << "Error: No NH3 xF data found for key " << keyXF << "\n";
+        if (itPT == asymmetryData.end()) std::cerr << “Error: No NH3 PT data found for key “ << keyPT << “\n”;
+        if (itXF == asymmetryData.end()) std::cerr << “Error: No NH3 xF data found for key “ << keyXF << “\n”;
     }
 }
 
