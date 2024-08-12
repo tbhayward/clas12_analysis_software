@@ -173,9 +173,6 @@ void plotDependence(
             graphComb->SetMarkerColor(kRed-7);  // Light red color
             graphComb->SetLineColor(kRed-7);  // Light red color
 
-            // Draw combined uncertainties (statistical + systematic) first
-            graphComb->Draw("AP");
-
             // Create TGraphErrors for the statistical uncertainties
             TGraphErrors *graphStat = new TGraphErrors(x.size(), x.data(), y.data(), nullptr, yStatErr.data());
             graphStat->SetMarkerStyle(20);  // Circle points
@@ -183,7 +180,19 @@ void plotDependence(
             graphStat->SetMarkerColor(kBlack);
             graphStat->SetLineColor(kBlack);
 
-            // Draw statistical uncertainties on top of the combined uncertainties
+            // Set x-axis and y-axis ranges based on the statistical uncertainties graph
+            graphStat->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
+            graphStat->GetXaxis()->SetRangeUser(xLimits.first, xLimits.second);
+            if (suffixes[i] == "ALL") {
+                graphStat->GetYaxis()->SetRangeUser(-0.1, 0.6);
+            } else {
+                graphStat->GetYaxis()->SetRangeUser(-0.15, 0.15);
+            }
+
+            // Draw combined uncertainties (statistical + systematic) first
+            graphComb->Draw("AP");
+
+            // Redraw the statistical uncertainties on top
             graphStat->Draw("P SAME");
 
             // Draw a faint dashed gray horizontal line at y=0
