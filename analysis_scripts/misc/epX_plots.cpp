@@ -123,7 +123,7 @@ void plotDependence(
     std::vector<std::string> yLabels = {
         "F_{LU}^{sin#phi}/F_{UU}",
         "F_{UL}^{sin#phi}/F_{UU}",
-        "F_{UL}^{sin(2#phi}/F_{UU}",
+        "F_{UL}^{sin(2#phi)}/F_{UU}",
         "F_{LL}/F_{UU}",
         "F_{LL}^{cos#phi}/F_{UU}"
     };
@@ -166,39 +166,25 @@ void plotDependence(
                 yCombErr.push_back(std::sqrt(std::pow(yStatErr[j], 2) + std::pow(sysUncertainty, 2)));
             }
 
+            // Create TGraphErrors for the combined (stat + sys) uncertainties
+            TGraphErrors *graphComb = new TGraphErrors(x.size(), x.data(), y.data(), nullptr, yCombErr.data());
+            graphComb->SetMarkerStyle(20);  // Circle points
+            graphComb->SetMarkerSize(0.8);  // Smaller marker size
+            graphComb->SetMarkerColor(kRed-7);  // Light red color
+            graphComb->SetLineColor(kRed-7);  // Light red color
+
+            // Draw combined uncertainties (statistical + systematic) first
+            graphComb->Draw("AP");
+
             // Create TGraphErrors for the statistical uncertainties
             TGraphErrors *graphStat = new TGraphErrors(x.size(), x.data(), y.data(), nullptr, yStatErr.data());
-            graphStat->SetTitle("");
-            graphStat->GetXaxis()->SetTitle(xLabel.c_str());
-            graphStat->GetYaxis()->SetTitle(yLabels[i].c_str());
-
-            // Set x-axis and y-axis ranges
-            graphStat->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
-            graphStat->GetXaxis()->SetRangeUser(xLimits.first, xLimits.second);
-            if (suffixes[i] == "ALL") {
-                graphStat->GetYaxis()->SetRangeUser(-0.1, 0.6);
-            } else {
-                graphStat->GetYaxis()->SetRangeUser(-0.15, 0.15);
-            }
-
-            // Customize the graph for statistical uncertainties
             graphStat->SetMarkerStyle(20);  // Circle points
             graphStat->SetMarkerSize(0.8);  // Smaller marker size
             graphStat->SetMarkerColor(kBlack);
             graphStat->SetLineColor(kBlack);
 
-            // Draw statistical uncertainties
-            graphStat->Draw("AP");
-
-            // Create TGraphErrors for the combined (stat + sys) uncertainties
-            TGraphErrors *graphComb = new TGraphErrors(x.size(), x.data(), y.data(), nullptr, yCombErr.data());
-            graphComb->SetMarkerSize(0.8);
-            graphComb->SetMarkerColor(kRed-7);  // Light red color
-            graphComb->SetLineColor(kRed-7);  // Light red color
-            graphComb->SetFillColor(kRed-7);  // Light red color for fill
-
-            // Draw combined uncertainties (statistical + systematic) on top, without markers
-            graphComb->Draw("E2 SAME");
+            // Draw statistical uncertainties on top of the combined uncertainties
+            graphStat->Draw("P SAME");
 
             // Draw a faint dashed gray horizontal line at y=0
             TLine *line = new TLine(graphStat->GetXaxis()->GetXmin(), 0, graphStat->GetXaxis()->GetXmax(), 0);
