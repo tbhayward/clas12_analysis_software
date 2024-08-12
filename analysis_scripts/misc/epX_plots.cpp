@@ -9,6 +9,8 @@
 #include <TGraphErrors.h>
 #include <TSystem.h>
 #include <TAxis.h>
+#include <TLine.h>
+#include <TStyle.h>
 
 
 // Function to read arrays directly from the kinematic file
@@ -105,7 +107,6 @@ void printData(const std::map<std::string, std::vector<std::vector<double>>> &da
     }
 }
 
-// Function to create and save x-dependence plots
 void plotXDependence(const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData) {
     // Create a 2x3 canvas
     TCanvas *c = new TCanvas("c", "x Dependence Plots", 1200, 800);
@@ -123,7 +124,7 @@ void plotXDependence(const std::map<std::string, std::vector<std::vector<double>
 
     // Plot each asymmetry in its respective subplot
     for (size_t i = 0; i < keys.size(); ++i) {
-        c->cd(i + 1);
+        c->cd(i + 1)->SetLeftMargin(0.15);  // Add extra padding space on the left side
 
         // Check if the key exists in the map
         auto it = asymmetryData.find(keys[i]);
@@ -151,7 +152,18 @@ void plotXDependence(const std::map<std::string, std::vector<std::vector<double>
                 graph->GetYaxis()->SetRangeUser(-0.2, 0.2);
             }
 
+            // Customize the graph
+            graph->SetMarkerStyle(20);  // Circle points
+            graph->SetMarkerColor(kBlack);
+            graph->SetLineColor(kBlack);
+
             graph->Draw("AP");
+
+            // Draw a faint dashed gray horizontal line at y=0
+            TLine *line = new TLine(graph->GetXaxis()->GetXmin(), 0, graph->GetXaxis()->GetXmax(), 0);
+            line->SetLineColor(kGray+2);
+            line->SetLineStyle(7);  // Dashed line
+            line->Draw();
         }
     }
 
