@@ -373,10 +373,9 @@ void plotComparison(
 
 void plotQ2yz_pT(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
-    const std::string &outputFileName
-) {
+    const std::string &outputFileName) {
     TCanvas *c = new TCanvas("c", "Q2-y-z Dependence", 1800, 1600);
-    c->Divide(5, 4, 0, 0);  // 4 rows (y bins) by 5 columns (Q2 bins)
+    c->Divide(5, 4, 0, 0);  // 4 rows by 5 columns, no spacing
 
     // Prefixes for Q2 ranges (top three rows)
     std::vector<std::vector<std::string>> Q2_prefixes = {
@@ -392,9 +391,8 @@ void plotQ2yz_pT(
     for (size_t row = 0; row < Q2_prefixes.size(); ++row) {
         // Loop over each Q2 bin (5 columns per row, 4 for third row)
         for (size_t q2Index = 0; q2Index < Q2_prefixes[row].size(); ++q2Index) {
-            c->cd(row * 5 + q2Index + 1); // Go to the correct pad
-            gPad->SetLeftMargin(0.18); // Adjust left margin for y-axis visibility
-            gPad->SetBottomMargin(0.15); // Adjust bottom margin for x-axis labels
+            int padIndex = row * 5 + q2Index + 1;
+            c->cd(padIndex); // Go to the correct pad
 
             bool firstGraphDrawn = false; // To check if we've drawn the first graph
             // Loop over each z bin
@@ -420,6 +418,18 @@ void plotQ2yz_pT(
 
                 if (!firstGraphDrawn) {
                     setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.0, 1.0}, {-0.1, 0.1});
+
+                    // Hide Y-axis labels for non-leftmost plots
+                    if (q2Index != 0) {
+                        graph->GetYaxis()->SetLabelOffset(999);
+                        graph->GetYaxis()->SetTitleOffset(999);
+                    }
+                    // Hide X-axis labels for non-bottom row plots
+                    if (row != Q2_prefixes.size() - 1) {
+                        graph->GetXaxis()->SetLabelOffset(999);
+                        graph->GetXaxis()->SetTitleOffset(999);
+                    }
+
                     graph->Draw("AP");
                     firstGraphDrawn = true;
                 } else {
