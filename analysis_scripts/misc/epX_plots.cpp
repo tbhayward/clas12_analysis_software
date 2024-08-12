@@ -12,6 +12,12 @@
 #include <TLine.h>
 #include <TStyle.h>
 #include <TLegend.h>
+#include <TCanvas.h>
+#include <TPad.h>
+#include <TH1F.h>
+#include <TStyle.h>
+#include <TGraphErrors.h>
+#include <TText.h>
 
 // Global variables for systematic uncertainties
 const double LU_SYS_UNCERTAINTY = 0.029;
@@ -371,90 +377,140 @@ void plotComparison(
     }
 }
 
-void plotQ2yz_pT(
-    const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
-    const std::string &outputFileName
-) {
-    TCanvas *c = new TCanvas("c", "Q2-y-z Dependence", 1800, 1600);
-    c->Divide(5, 4);  // 4 rows (y bins) by 5 columns (Q2 bins)
+// Function to partition the canvas
+void CanvasPartition(TCanvas *C, const Int_t Nx = 2, const Int_t Ny = 2,
+                     Float_t lMargin = 0.15, Float_t rMargin = 0.05,
+                     Float_t bMargin = 0.15, Float_t tMargin = 0.05) {
+    if (!C) return;
 
-    // Prefixes for Q2 ranges (top three rows)
-    std::vector<std::vector<std::string>> Q2_prefixes = {
-        {"Q2y1", "Q2y5", "Q2y9", "Q2y13", "Q2y16"},  // Top row
-        {"Q2y2", "Q2y6", "Q2y10", "Q2y14", "Q2y17"}, // Second row
-        {"Q2y3", "Q2y7", "Q2y11", "Q2y15"},          // Third row (only 4 columns)
-        {"Q2y4", "Q2y8", "Q2y12"}                    // Fourth row (only 3 columns)
-    };
-    std::vector<std::string> z_prefixes = {"z1", "z2", "z3", "z4", "z5"};
-    std::vector<int> colors = {kBlack, kRed, kGreen, kBlue, kMagenta};
+    Float_t vSpacing = 0.0;
+    Float_t vStep  = (1. - bMargin - tMargin - (Ny - 1) * vSpacing) / Ny;
 
-    // Adjust canvas margins to ensure plots are touching
-    for (int i = 0; i < c->GetListOfPrimitives()->GetSize(); ++i) {
-        c->cd(i+1);
-        gPad->SetLeftMargin(0.0);
-        gPad->SetRightMargin(0.0);
-        gPad->SetTopMargin(0.0);
-        gPad->SetBottomMargin(0.0);
-        gPad->SetTicks(1, 1);
+    Float_t hSpacing = 0.0;
+    Float_t hStep  = (1. - lMargin - rMargin - (Nx - 1) * hSpacing) / Nx;
+
+    Float_t vposd, vposu, vmard, vmaru, vfactor;
+    Float_t hposl, hposr, hmarl, hmarr, hfactor;
+
+    for (Int_t i = 0; i < Nx; i++) {
+        if (i == 0) {
+            hposl = 0.0;
+            hposr = lMargin + hStep;
+            hfactor = hposr - hposl;
+            hmarl = lMargin / hfactor;
+            hmarr = 0.0;
+        } else if (i == Nx - 1) {
+            hposl = hposr + hSpacing;
+            hposr = hposl + hStep + rMargin;
+            hfactor = hposr - hposl;
+            hmarl = 0.0;
+            hmarr = rMargin / hfactor;
+        } else {
+            hposl = hposr + hSpacing;
+            hposr = hposl + hStep;
+            hfactor = hposr - hposl;
+            hmarl = 0.0;
+            hmarr = 0.0;
+        }
+
+        for (Int_t j = 0; j < Ny; j++) {
+            if (j == 0) {
+                vposd = 0.0;
+                vposu = bMargin + vStep;
+                vfactor = vposu - vposd;
+                vmard = bMargin / vfactor;
+                vmaru = 0.0;
+            } else if (j == Ny - 1) {
+                vposd = vposu + vSpacing;
+                vposu = vposd + vStep + tMargin;
+                vfactor = vposu - vposd;
+                vmard = 0.0;
+                vmaru = tMargin / vfactor;
+            } else {
+                vposd = vposu + vSpacing;
+                vposu = vposd + vStep;
+                vfactor = vposu - vposd;
+                vmard = 0.0;
+                vmaru = 0.0;
+            }
+
+            C->cd(0);
+            auto name = TString::Format("pad_%d_%d", i, j);
+            auto pad = (TPad*) C->FindObject(name.Data());
+            if (pad) delete pad;
+            pad = new TPad(name.Data(), "", hposl, vposd, hposr, vposu);
+            pad->SetLeftMargin(hmarl);
+            pad->SetRightMargin(hmarr);
+            pad->SetBottomMargin(vmard);
+            pad->SetTopMargin(vmaru);
+
+            pad->SetFrameBorderMode(0);
+            pad->SetBorderMode(0);
+            pad->SetBorderSize(0);
+
+            pad->Draw();
+        }
     }
+}
 
-    // Loop over each row
-    for (size_t row = 0; row < Q2_prefixes.size(); ++row) {
-        // Loop over each Q2 bin (5 columns per row, 4 for third row)
-        for (size_t q2Index = 0; q2Index < Q2_prefixes[row].size(); ++q2Index) {
-            c->cd(row * 5 + q2Index + 1); // Go to the correct pad
-            
-            // Set specific margins for axis labels and titles
-            if (q2Index == 0) gPad->SetLeftMargin(0.18);  // Wider left margin for the first column
-            if (row == Q2_prefixes.size() - 1) gPad->SetBottomMargin(0.18); // Wider bottom margin for the last row
+void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData, const std::string &outputFileName) {
+    // Number of columns and rows
+    const Int_t Nx = 5;
+    const Int_t Ny = 4;
 
-            bool firstGraphDrawn = false; // To check if we've drawn the first graph
+    TCanvas *c = new TCanvas("c", "Q2, y, z Dependence", 1600, 1600);
 
-            // Loop over each z bin
-            for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
-                std::string key = Q2_prefixes[row][q2Index] + z_prefixes[zIndex] + "chi2FitsALUsinphi";
-                auto it = asymmetryData.find(key);
+    // Partition the canvas
+    CanvasPartition(c, Nx, Ny, 0.15, 0.05, 0.15, 0.05);
 
-                if (it == asymmetryData.end()) {
-                    std::cerr << "Warning: No data found for key " << key << std::endl;
-                    continue; // Skip if no data is found for this key
-                }
+    // Define Q2y prefixes and colors
+    std::vector<std::string> Q2yPrefixes = {"Q2y1", "Q2y5", "Q2y9", "Q2y13", "Q2y16", "Q2y2", "Q2y6", "Q2y10", "Q2y14", "Q2y17", "Q2y3", "Q2y7", "Q2y11", "Q2y15", "", "Q2y4", "Q2y8", "Q2y12", "", ""};
+    std::vector<int> colors = {kBlack, kRed, kGreen + 2, kBlue, kMagenta};
 
+    for (int i = 0; i < Q2yPrefixes.size(); ++i) {
+        if (Q2yPrefixes[i].empty()) continue;
+
+        c->cd(i + 1);
+        bool dataFound = false;
+
+        for (int zIndex = 1; zIndex <= 5; ++zIndex) {
+            std::string key = Q2yPrefixes[i] + "z" + std::to_string(zIndex) + "chi2FitsALUsinphi";
+            auto it = asymmetryData.find(key);
+
+            if (it != asymmetryData.end()) {
+                dataFound = true;
                 const auto &data = it->second;
-                std::vector<double> x, y, yErr;
 
+                std::vector<double> x, y, yErr;
                 for (const auto &entry : data) {
                     x.push_back(entry[0]);
                     y.push_back(entry[1]);
                     yErr.push_back(entry[2]);
                 }
 
-                TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
+                TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex - 1]);
+                setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.0, 1.0}, {-0.1, 0.1});
 
-                if (!firstGraphDrawn) {
-                    setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.0, 1.0}, {-0.1, 0.1});
-
-                    // Remove labels if not on the bottom row or left column
-                    if (row != Q2_prefixes.size() - 1) {
-                        graph->GetXaxis()->SetLabelSize(0);
-                        graph->GetXaxis()->SetTitleSize(0);
-                    }
-                    if (q2Index != 0) {
-                        graph->GetYaxis()->SetLabelSize(0);
-                        graph->GetYaxis()->SetTitleSize(0);
-                    }
-
-                    graph->Draw("AP");
-                    gPad->RedrawAxis();
-                    firstGraphDrawn = true;
-                } else {
-                    graph->Draw("P SAME");
+                // Hide X and Y axis labels for inner plots
+                if (i % Nx != 0) { // Not the first column
+                    graph->GetYaxis()->SetLabelOffset(999);
+                    graph->GetYaxis()->SetTitleOffset(999);
                 }
+                if (i < Nx * (Ny - 1)) { // Not the last row
+                    graph->GetXaxis()->SetLabelOffset(999);
+                    graph->GetXaxis()->SetTitleOffset(999);
+                }
+
+                graph->Draw(i == 1 ? "AP" : "P SAME");
             }
+        }
+
+        if (!dataFound) {
+            std::cout << "Warning: No data found for prefix " << Q2yPrefixes[i] << std::endl;
         }
     }
 
-    // Save the canvas as a PNG file
+    // Save the canvas
     gSystem->Exec("mkdir -p output/epX_plots");
     c->SaveAs(outputFileName.c_str());
 
