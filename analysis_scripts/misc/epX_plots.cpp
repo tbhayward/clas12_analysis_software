@@ -107,9 +107,13 @@ void printData(const std::map<std::string, std::vector<std::vector<double>>> &da
     }
 }
 
-void plotXDependence(const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData) {
+void plotDependence(
+    const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
+    const std::string &xLabel, 
+    const std::string &outputFileName
+) {
     // Create a 2x3 canvas
-    TCanvas *c = new TCanvas("c", "x Dependence Plots", 1200, 800);
+    TCanvas *c = new TCanvas("c", "Dependence Plots", 1200, 800);
     c->Divide(3, 2);
 
     // Define the keys for the asymmetries we want to plot
@@ -144,12 +148,14 @@ void plotXDependence(const std::map<std::string, std::vector<std::vector<double>
             // Create TGraphErrors and plot
             TGraphErrors *graph = new TGraphErrors(x.size(), x.data(), y.data(), nullptr, yErr.data());
             graph->SetTitle("");
-            graph->GetXaxis()->SetTitle("x_{B}");
+            graph->GetXaxis()->SetTitle(xLabel.c_str());
             graph->GetYaxis()->SetTitle(yLabels[i].c_str());
 
-            // Set y-axis range
+            // Set x-axis and y-axis ranges
+            graph->GetXaxis()->SetLimits(0.0, 0.6);
+            graph->GetHistogram()->GetXaxis()->SetRangeUser(0.0, 0.6);
             if (keys[i] == "xchi2FitsALL") {
-                graph->GetYaxis()->SetRangeUser(-0.2, 0.6);
+                graph->GetYaxis()->SetRangeUser(-0.1, 0.6);
             } else {
                 graph->GetYaxis()->SetRangeUser(-0.15, 0.15);
             }
@@ -178,7 +184,7 @@ void plotXDependence(const std::map<std::string, std::vector<std::vector<double>
 
     // Save the canvas as a PNG file
     gSystem->Exec("mkdir -p output/epX_plots");
-    c->SaveAs("output/epX_plots/x_dependence_plots.png");
+    c->SaveAs(outputFileName.c_str());
 
     // Clean up
     delete c;
@@ -206,8 +212,10 @@ int main(int argc, char *argv[]) {
     // std::cout << "\nKinematic Data:\n";
     // printData(kinematicData);
 
-    // Call the plotting function
-    plotXDependence(asymmetryData);
+    // Call the plotting function for different dependencies
+    plotDependence(asymmetryData, "x_{B}", "output/epX_plots/x_dependence_plots.png");
+    plotDependence(asymmetryData, "P_{T} (GeV)", "output/epX_plots/PT_dependence_plots.png");
+    plotDependence(asymmetryData, "x_{F}", "output/epX_plots/xF_dependence_plots.png");
 
     return 0;
 }
