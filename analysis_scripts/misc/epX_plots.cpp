@@ -111,6 +111,7 @@ void plotDependence(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
     const std::string &prefix, 
     const std::string &xLabel, 
+    const std::pair<double, double> &xLimits, 
     const std::string &outputFileName
 ) {
     // Create a 2x3 canvas
@@ -156,11 +157,12 @@ void plotDependence(
             graph->GetYaxis()->SetTitle(yLabels[i].c_str());
 
             // Set x-axis and y-axis ranges
-            graph->GetXaxis()->SetLimits(0.06, 0.6);
+            graph->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
+            graph->GetHistogram()->GetXaxis()->SetRangeUser(xLimits.first, xLimits.second);
             if (suffixes[i] == "ALL") {
                 graph->GetYaxis()->SetRangeUser(-0.1, 0.6);
             } else {
-                graph->GetYaxis()->SetRangeUser(-0.1, 0.1);
+                graph->GetYaxis()->SetRangeUser(-0.15, 0.15);
             }
 
             // Customize the graph
@@ -216,9 +218,9 @@ int main(int argc, char *argv[]) {
     // printData(kinematicData);
 
     // Call the plotting function for different dependencies
-    plotDependence(asymmetryData, "x", "x_{B}", "output/epX_plots/x_dependence_plots.png");
-    plotDependence(asymmetryData, "PT", "P_{T} (GeV)", "output/epX_plots/PT_dependence_plots.png");
-    plotDependence(asymmetryData, "xF", "x_{F}", "output/epX_plots/xF_dependence_plots.png");
+    plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots.png");
+    plotDependence(asymmetryData, "PT", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PT_dependence_plots.png");
+    plotDependence(asymmetryData, "xF", "x_{F}", {-1.0, 1.0}, "output/epX_plots/xF_dependence_plots.png");
 
     return 0;
 }
