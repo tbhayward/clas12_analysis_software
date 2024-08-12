@@ -407,15 +407,21 @@ void plotQ2yz_pT(
                 gPad->SetBottomMargin(0.15); // Adequate bottom margin for bottom row
             }
 
+            bool firstGraphDrawn = false; // To check if we've drawn the first graph
+
             // Handle empty placeholders
             if (Q2_prefixes[row][q2Index] == "EMPTY") {
-                TGraphErrors *dummyGraph = new TGraphErrors();  // Create a dummy graph to set axis labels and ranges
-                dummyGraph->SetPoint(0, 0.1, -0.09);
-                dummyGraph->SetPoint(1, 0.9, 0.09);
+                // Create a dummy graph with a point outside the axis range
+                std::vector<double> dummyX = {-9999};
+                std::vector<double> dummyY = {0};
+                std::vector<double> dummyYErr = {0};
+
+                TGraphErrors *dummyGraph = createTGraphErrors(dummyX, dummyY, dummyYErr, 20, 0.8, kWhite); // No visible point
+
                 setAxisLabelsAndRanges(dummyGraph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.1, 0.9}, {-0.09, 0.09});
                 dummyGraph->Draw("AP");
 
-                // Apply to empty plots as well
+                // Apply to all plots
                 dummyGraph->GetXaxis()->SetNdivisions(505);
 
                 // Hide Y-axis labels for non-leftmost plots
@@ -436,11 +442,9 @@ void plotQ2yz_pT(
                 line->SetLineStyle(7);
                 line->Draw("same");
 
-                delete dummyGraph;  // Clean up the dummy graph
-                continue;
+                continue; // Skip to next iteration
             }
 
-            bool firstGraphDrawn = false; // To check if we've drawn the first graph
             // Loop over each z bin
             for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
                 std::string key = Q2_prefixes[row][q2Index] + z_prefixes[zIndex] + "chi2FitsALUsinphi";
