@@ -377,7 +377,7 @@ void plotQ2yz_pT(
     TCanvas *c = new TCanvas("c", "Q2-y-z Dependence", 1800, 1600);
     c->Divide(5, 4, 0, 0);  // 4 rows by 5 columns, no spacing
 
-    // Prefixes for Q2 ranges (top three rows)
+    // Prefixes for Q2 ranges (including placeholders)
     std::vector<std::vector<std::string>> Q2_prefixes = {
         {"Q2y1", "Q2y5", "Q2y9", "Q2y13", "Q2y16"},  // Top row
         {"Q2y2", "Q2y6", "Q2y10", "Q2y14", "Q2y17"}, // Second row
@@ -393,6 +393,19 @@ void plotQ2yz_pT(
         for (size_t q2Index = 0; q2Index < Q2_prefixes[row].size(); ++q2Index) {
             int padIndex = row * 5 + q2Index + 1;
             c->cd(padIndex); // Go to the correct pad
+
+            // Set margins
+            if (q2Index != 0) {
+                gPad->SetLeftMargin(0.001); // No left margin for non-leftmost plots
+            } else {
+                gPad->SetLeftMargin(0.18); // Adequate left margin for leftmost plots
+            }
+
+            if (row != Q2_prefixes.size() - 1) {
+                gPad->SetBottomMargin(0.001); // No bottom margin for non-bottom plots
+            } else {
+                gPad->SetBottomMargin(0.15); // Adequate bottom margin for bottom row
+            }
 
             // If it's an "EMPTY" placeholder, just draw an empty frame
             if (Q2_prefixes[row][q2Index] == "EMPTY") {
