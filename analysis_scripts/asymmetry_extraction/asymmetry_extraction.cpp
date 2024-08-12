@@ -283,10 +283,10 @@ int main(int argc, char *argv[]) {
 
   setup_directories();
 
-  // createIntegratedKinematicPlots();
+  createIntegratedKinematicPlots();
   // createIntegratedKinematicPlotsForBinsAndFits();
-  // createCorrelationPlotsforrunnum();
-  // createCorrelationPlots();
+  createCorrelationPlotsforrunnum();
+  createCorrelationPlots();
   // createMisIDRatePlots();
   currentFits=0;
   dataReader.Restart(); mcReader.Restart();
