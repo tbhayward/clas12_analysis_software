@@ -382,7 +382,8 @@ void plotQ2yz_pT(
     std::vector<std::vector<std::string>> Q2_prefixes = {
         {"Q2y1", "Q2y5", "Q2y9", "Q2y13", "Q2y16"},  // Top row
         {"Q2y2", "Q2y6", "Q2y10", "Q2y14", "Q2y17"}, // Second row
-        {"Q2y3", "Q2y7", "Q2y11", "Q2y15"}           // Third row (only 4 columns)
+        {"Q2y3", "Q2y7", "Q2y11", "Q2y15"},          // Third row (only 4 columns)
+        {"Q2y4", "Q2y8", "Q2y12"}                    // Fourth row (only 3 columns)
     };
     std::vector<std::string> z_prefixes = {"z1", "z2", "z3", "z4", "z5"};
     std::vector<int> colors = {kBlack, kRed, kGreen, kBlue, kMagenta};
@@ -395,37 +396,40 @@ void plotQ2yz_pT(
             gPad->SetLeftMargin(0.18); // Adjust left margin for y-axis visibility
             gPad->SetBottomMargin(0.15); // Adjust bottom margin for x-axis labels
 
+            bool firstGraphDrawn = false; // To check if we've drawn the first graph
             // Loop over each z bin
             for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
-                std::string key = Q2_prefixes[row][q2Index] + z_prefixes[zIndex] + "chi2FitsALUsinphi";  // Modify the suffix as needed
+                std::string key = Q2_prefixes[row][q2Index] + z_prefixes[zIndex] + "chi2FitsALUsinphi";
                 auto it = asymmetryData.find(key);
-                if (it != asymmetryData.end()) {
-                    const auto &data = it->second;
 
-                    std::vector<double> x, y, yErr;
-                    for (const auto &entry : data) {
-                        x.push_back(entry[0]);
-                        y.push_back(entry[1]);
-                        yErr.push_back(entry[2]);
-                    }
-
-                    TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
-
-                    // Set up axis labels and ranges only for the first graph in each pad
-                    if (zIndex == 0) {
-                        setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.0, 1.0}, {-0.1, 0.1});
-                        graph->Draw("AP");
-                    } else {
-                        graph->Draw("P SAME");
-                    }
-                } else {
+                if (it == asymmetryData.end()) {
                     std::cerr << "Warning: No data found for key " << key << std::endl;
+                    continue; // Skip if no data is found for this key
+                }
+
+                const auto &data = it->second;
+                std::vector<double> x, y, yErr;
+
+                for (const auto &entry : data) {
+                    x.push_back(entry[0]);
+                    y.push_back(entry[1]);
+                    yErr.push_back(entry[2]);
+                }
+
+                TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
+
+                if (!firstGraphDrawn) {
+                    setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.0, 1.0}, {-0.1, 0.1});
+                    graph->Draw("AP");
+                    firstGraphDrawn = true;
+                } else {
+                    graph->Draw("P SAME");
                 }
             }
         }
     }
 
-    // Save the canvas as a PNG file before cleanup
+    // Save the canvas as a PNG file
     gSystem->Exec("mkdir -p output/epX_plots");
     c->SaveAs(outputFileName.c_str());
 
