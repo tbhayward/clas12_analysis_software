@@ -376,7 +376,7 @@ void plotQ2yz_pT(
     const std::string &outputFileName
 ) {
     TCanvas *c = new TCanvas("c", "Q2-y-z Dependence", 1800, 1600);
-    c->Divide(5, 4);  // 4 rows (y bins) by 5 columns (Q2 bins)
+    c->Divide(5, 4, 0, 0);  // 4 rows (y bins) by 5 columns (Q2 bins)
 
     // Prefixes for Q2 ranges (top three rows)
     std::vector<std::vector<std::string>> Q2_prefixes = {
