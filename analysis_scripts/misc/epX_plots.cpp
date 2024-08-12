@@ -12,6 +12,12 @@
 #include <TLine.h>
 #include <TStyle.h>
 
+// Global variables for systematic uncertainties
+const double LU_SYS_UNCERTAINTY = 0.029;
+const double UL_SYS_UNCERTAINTY = 0.101;
+const double LL_SYS_UNCERTAINTY_LU_COMPONENT = LU_SYS_UNCERTAINTY;
+const double LL_SYS_UNCERTAINTY_UL_COMPONENT = UL_SYS_UNCERTAINTY;
+
 
 // Function to read arrays directly from the kinematic file
 std::map<std::string, std::vector<std::vector<double>>> readKinematics(const std::string &filename) {
@@ -107,6 +113,57 @@ void printData(const std::map<std::string, std::vector<std::vector<double>>> &da
     }
 }
 
+TGraphErrors* createTGraphErrors(
+    const std::vector<double> &x, 
+    const std::vector<double> &y, 
+    const std::vector<double> &yErr,
+    const int markerStyle, 
+    const double markerSize, 
+    const int color
+) {
+    TGraphErrors *graph = new TGraphErrors(x.size(), x.data(), y.data(), nullptr, yErr.data());
+    graph->SetMarkerStyle(markerStyle);
+    graph->SetMarkerSize(markerSize);
+    graph->SetMarkerColor(color);
+    graph->SetLineColor(color);
+    graph->SetTitle("");
+    return graph;
+}
+
+void setAxisLabelsAndRanges(
+    TGraphErrors *graph, 
+    const std::string &xLabel, 
+    const std::string &yLabel, 
+    const std::pair<double, double> &xLimits, 
+    const std::pair<double, double> &yLimits
+) {
+    graph->GetXaxis()->SetTitle(xLabel.c_str());
+    graph->GetYaxis()->SetTitle(yLabel.c_str());
+    graph->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
+    graph->GetXaxis()->SetRangeUser(xLimits.first, xLimits.second);
+    graph->GetYaxis()->SetRangeUser(yLimits.first, yLimits.second);
+
+    // Adjust axis label and title sizes
+    graph->GetXaxis()->SetLabelSize(0.04);
+    graph->GetXaxis()->SetTitleSize(0.045);
+    graph->GetYaxis()->SetLabelSize(0.04);
+    graph->GetYaxis()->SetTitleSize(0.045);
+}
+
+double computeSystematicUncertainty(const std::string &suffix, double yValue) {
+    if (suffix == "ALUsinphi") {
+        return yValue * LU_SYS_UNCERTAINTY;  // LU systematic uncertainty
+    } else if (suffix == "AULsinphi" || suffix == "AULsin2phi") {
+        return yValue * UL_SYS_UNCERTAINTY;  // UL systematic uncertainty
+    } else if (suffix == "ALL" || suffix == "ALLcosphi") {
+        return std::sqrt(
+            std::pow(yValue * LL_SYS_UNCERTAINTY_LU_COMPONENT, 2) +  // LU component
+            std::pow(yValue * LL_SYS_UNCERTAINTY_UL_COMPONENT, 2)    // UL component
+        );
+    }
+    return 0.0;
+}
+
 void plotDependence(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
     const std::string &prefix, 
@@ -114,11 +171,9 @@ void plotDependence(
     const std::pair<double, double> &xLimits, 
     const std::string &outputFileName
 ) {
-    // Create a 2x3 canvas
     TCanvas *c = new TCanvas("c", "Dependence Plots", 1200, 800);
-    c->Divide(3, 2); // 2 rows, 3 columns
+    c->Divide(3, 2);
 
-    // Define the suffixes for the asymmetries we want to plot
     std::vector<std::string> suffixes = {"ALUsinphi", "AULsinphi", "AULsin2phi", "AULoffset", "ALL", "ALLcosphi"};
     std::vector<std::string> yLabels = {
         "F_{LU}^{sin#phi}/F_{UU}",
@@ -129,122 +184,51 @@ void plotDependence(
         "F_{LL}^{cos#phi}/F_{UU}"
     };
 
-    // Plot each asymmetry in its respective subplot
     for (size_t i = 0; i < suffixes.size(); ++i) {
         c->cd(i + 1);
-        gPad->SetLeftMargin(0.18);  // Increase left margin for Y-axis label
-        gPad->SetBottomMargin(0.15);  // Increase bottom margin for X-axis label
+        gPad->SetLeftMargin(0.18);
+        gPad->SetBottomMargin(0.15);
 
-        // Construct the key by combining prefix and suffix
         std::string key = prefix + "chi2Fits" + suffixes[i];
-
-        // Check if the key exists in the map
         auto it = asymmetryData.find(key);
         if (it != asymmetryData.end()) {
             const auto &data = it->second;
 
-            // Create vectors to hold x, y, y error (statistical), and combined uncertainties
             std::vector<double> x, y, yStatErr, yCombErr;
-            for (size_t j = 0; j < data.size(); ++j) {
-                x.push_back(data[j][0]);
-                y.push_back(data[j][1]);
-                yStatErr.push_back(data[j][2]);
+            for (const auto &entry : data) {
+                x.push_back(entry[0]);
+                y.push_back(entry[1]);
+                yStatErr.push_back(entry[2]);
 
-                // Determine systematic uncertainty based on the suffix
-                double sysUncertainty = 0.0;
-                if (suffixes[i] == "ALUsinphi") {
-                    sysUncertainty = y[j] * 0.029;  // 2.9% of the current y-value
-                } else if (suffixes[i] == "AULsinphi" || suffixes[i] == "AULsin2phi") {
-                    sysUncertainty = y[j] * 0.101;  // 10.1% of the current y-value
-                } else if (suffixes[i] == "ALL" || suffixes[i] == "ALLcosphi") {
-                    sysUncertainty = std::sqrt(
-                        std::pow(y[j] * 0.029, 2) +  // 2.9% of the current y-value
-                        std::pow(y[j] * 0.101, 2)   // 10.1% of the current y-value
-                    );
-                }
-
-                // Combine statistical and systematic uncertainties in quadrature
-                yCombErr.push_back(std::sqrt(std::pow(yStatErr[j], 2) + std::pow(sysUncertainty, 2)));
+                double sysUncertainty = computeSystematicUncertainty(suffixes[i], y.back());
+                yCombErr.push_back(std::sqrt(std::pow(yStatErr.back(), 2) + std::pow(sysUncertainty, 2)));
             }
 
-            // Create TGraphErrors for the combined (stat + sys) uncertainties if it's not AULoffset
             TGraphErrors *graphComb = nullptr;
             if (suffixes[i] != "AULoffset") {
-                graphComb = new TGraphErrors(x.size(), x.data(), y.data(), nullptr, yCombErr.data());
-                graphComb->SetTitle("");  // Remove the "Graph" title
-                graphComb->SetMarkerStyle(20);  // Circle points
-                graphComb->SetMarkerSize(0.8);  // Smaller marker size
-                graphComb->SetMarkerColor(kRed-7);  // Light red color
-                graphComb->SetLineColor(kRed-7);  // Light red color
-
-                // Set x-axis and y-axis labels and ranges
-                graphComb->GetXaxis()->SetTitle(xLabel.c_str());
-                graphComb->GetYaxis()->SetTitle(yLabels[i].c_str());
-                graphComb->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
-                graphComb->GetXaxis()->SetRangeUser(xLimits.first, xLimits.second);
-                if (suffixes[i] == "ALL") {
-                    graphComb->GetYaxis()->SetRangeUser(-0.1, 0.6);
-                } else {
-                    graphComb->GetYaxis()->SetRangeUser(-0.15, 0.15);
-                }
-
-                // Adjust axis label and title sizes
-                graphComb->GetXaxis()->SetLabelSize(0.04);
-                graphComb->GetXaxis()->SetTitleSize(0.045);
-                graphComb->GetYaxis()->SetLabelSize(0.04);
-                graphComb->GetYaxis()->SetTitleSize(0.045);
-
-                // Draw combined uncertainties (statistical + systematic)
+                graphComb = createTGraphErrors(x, y, yCombErr, 20, 0.8, kRed-7);
+                setAxisLabelsAndRanges(graphComb, xLabel, yLabels[i], xLimits, (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.6) : std::make_pair(-0.15, 0.15));
                 graphComb->Draw("AP");
             }
 
-            // Create TGraphErrors for the statistical uncertainties
-            TGraphErrors *graphStat = new TGraphErrors(x.size(), x.data(), y.data(), nullptr, yStatErr.data());
-            graphStat->SetTitle("");  // Remove the "Graph" title
-            graphStat->SetMarkerStyle(20);  // Circle points
-            graphStat->SetMarkerSize(0.8);  // Smaller marker size
-            graphStat->SetMarkerColor(kBlack);
-            graphStat->SetLineColor(kBlack);
+            TGraphErrors *graphStat = createTGraphErrors(x, y, yStatErr, 20, 0.8, kBlack);
+            setAxisLabelsAndRanges(graphStat, xLabel, yLabels[i], xLimits, (suffixes[i] == "AULoffset") ? std::make_pair(-0.2, 0.2) : (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.6) : std::make_pair(-0.15, 0.15));
 
-            // Set x-axis and y-axis labels and ranges for the statistical graph too
-            graphStat->GetXaxis()->SetTitle(xLabel.c_str());
-            graphStat->GetYaxis()->SetTitle(yLabels[i].c_str());
-            graphStat->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
-            graphStat->GetXaxis()->SetRangeUser(xLimits.first, xLimits.second);
-            if (suffixes[i] == "ALL") {
-                graphStat->GetYaxis()->SetRangeUser(-0.1, 0.6);
-            } else if (suffixes[i] == "AULoffset") {
-                graphStat->GetYaxis()->SetRangeUser(-0.2, 0.2);
-            } else {
-                graphStat->GetYaxis()->SetRangeUser(-0.15, 0.15);
-            }
-
-            // Adjust axis label and title sizes for statistical graph
-            graphStat->GetXaxis()->SetLabelSize(0.04);
-            graphStat->GetXaxis()->SetTitleSize(0.045);
-            graphStat->GetYaxis()->SetLabelSize(0.04);
-            graphStat->GetYaxis()->SetTitleSize(0.045);
-
-            // Draw the statistical uncertainties on top if not AULoffset
             if (suffixes[i] != "AULoffset") {
                 graphStat->Draw("P SAME");
             } else {
-                graphStat->Draw("AP");  // Draw this one alone
+                graphStat->Draw("AP");
             }
 
-            // Draw a faint dashed gray horizontal line at y=0
             TLine *line = new TLine(xLimits.first, 0, xLimits.second, 0);
             line->SetLineColor(kGray+2);
-            line->SetLineStyle(7);  // Dashed line
+            line->SetLineStyle(7);
             line->Draw();
         }
     }
 
-    // Save the canvas as a PNG file
     gSystem->Exec("mkdir -p output/epX_plots");
     c->SaveAs(outputFileName.c_str());
-
-    // Clean up
     delete c;
 }
 
