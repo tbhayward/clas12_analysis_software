@@ -381,23 +381,29 @@ void plotQ2yz_pT(
     std::vector<std::vector<std::string>> Q2_prefixes = {
         {"Q2y1", "Q2y5", "Q2y9", "Q2y13", "Q2y16"},  // Top row
         {"Q2y2", "Q2y6", "Q2y10", "Q2y14", "Q2y17"}, // Second row
-        {"Q2y3", "Q2y7", "Q2y11", "Q2y15"},          // Third row (only 4 columns)
-        {"Q2y4", "Q2y8", "Q2y12"}                    // Fourth row (only 3 columns)
+        {"Q2y3", "Q2y7", "Q2y11", "Q2y15", "EMPTY"}, // Third row (filling with "EMPTY")
+        {"Q2y4", "Q2y8", "Q2y12", "EMPTY", "EMPTY"}  // Fourth row (filling with "EMPTY")
     };
     std::vector<std::string> z_prefixes = {"z1", "z2", "z3", "z4", "z5"};
     std::vector<int> colors = {kBlack, kRed, kGreen, kBlue, kMagenta};
 
     // Loop over each row
     for (size_t row = 0; row < Q2_prefixes.size(); ++row) {
-        // Loop over each Q2 bin (5 columns per row, 4 for third row)
+        // Loop over each Q2 bin (5 columns per row)
         for (size_t q2Index = 0; q2Index < Q2_prefixes[row].size(); ++q2Index) {
             int padIndex = row * 5 + q2Index + 1;
             c->cd(padIndex); // Go to the correct pad
 
+            // If it's an "EMPTY" placeholder, just draw an empty frame
+            if (Q2_prefixes[row][q2Index] == "EMPTY") {
+                gPad->DrawFrame(0, 0, 1, 1);  // Draw an empty frame
+                continue;
+            }
+
             bool firstGraphDrawn = false; // To check if we've drawn the first graph
             // Loop over each z bin
             for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
-                std::string key = Q2_prefixes[row][q2Index] + z_prefixes[zIndex] + "chi2FitsAULsinphi";
+                std::string key = Q2_prefixes[row][q2Index] + z_prefixes[zIndex] + "chi2FitsALUsinphi";
                 auto it = asymmetryData.find(key);
 
                 if (it == asymmetryData.end()) {
@@ -437,8 +443,7 @@ void plotQ2yz_pT(
                 }
             }
             
-            // Ensure consistent right margin for all plots, even those with fewer subplots
-            gPad->SetRightMargin(0.05);
+            gPad->SetRightMargin(0.05); // Ensure consistent right margin
         }
     }
 
