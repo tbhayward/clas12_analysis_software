@@ -11,6 +11,7 @@
 #include <TAxis.h>
 #include <TLine.h>
 #include <TStyle.h>
+#include <TLegend.h>
 
 // Global variables for systematic uncertainties
 const double LU_SYS_UNCERTAINTY = 0.029;
@@ -233,7 +234,8 @@ void plotDependence(
 
 void plotComparison(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
-    const std::string &outputFileName) {
+    const std::string &outputFileName
+) {
     // Create a 1x2 canvas
     TCanvas *c = new TCanvas("c", "PT and xF Dependence Comparison", 1200, 600);
     c->Divide(2, 1); // 1 row, 2 columns
@@ -290,19 +292,35 @@ void plotComparison(
             yErrNH3XF.push_back(entry[2]);
         }
 
+        // Create vectors for H2 PT data
+        std::vector<double> xH2PT, yH2PT, yErrH2PT;
+        for (const auto &entry : H2DataPT) {
+            xH2PT.push_back(entry[0]);
+            yH2PT.push_back(entry[1]);
+            yErrH2PT.push_back(entry[2]);
+        }
+
+        // Create vectors for H2 xF data
+        std::vector<double> xH2XF, yH2XF, yErrH2XF;
+        for (const auto &entry : H2DataXF) {
+            xH2XF.push_back(entry[0]);
+            yH2XF.push_back(entry[1]);
+            yErrH2XF.push_back(entry[2]);
+        }
+
         // Create the NH3 PT TGraphErrors
         TGraphErrors *graphNH3PT = createTGraphErrors(xNH3PT, yNH3PT, yErrNH3PT, 20, 0.8, kRed);
         setAxisLabelsAndRanges(graphNH3PT, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.0, 1.2}, {-0.1, 0.1});
 
         // Create the H2 PT TGraphErrors
-        TGraphErrors *graphH2PT = createTGraphErrors(H2DataPT, 21, kBlue);
+        TGraphErrors *graphH2PT = createTGraphErrors(xH2PT, yH2PT, yErrH2PT, 21, 0.8, kBlue);
 
         // Create the NH3 xF TGraphErrors
         TGraphErrors *graphNH3XF = createTGraphErrors(xNH3XF, yNH3XF, yErrNH3XF, 20, 0.8, kRed);
         setAxisLabelsAndRanges(graphNH3XF, "x_{F}", "F_{LU}^{sin#phi}/F_{UU}", {-0.8, 0.8}, {-0.1, 0.1});
 
         // Create the H2 xF TGraphErrors
-        TGraphErrors *graphH2XF = createTGraphErrors(H2DataXF, 21, kBlue);
+        TGraphErrors *graphH2XF = createTGraphErrors(xH2XF, yH2XF, yErrH2XF, 21, 0.8, kBlue);
 
         // Plot PT dependence in the first pad
         c->cd(1);
