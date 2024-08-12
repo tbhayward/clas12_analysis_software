@@ -510,7 +510,7 @@ void plotQ2yz_pT(
 
             // Draw the dashed gray line at y = 0
             if (!(row == 3 && q2Index == 4)) {  // Don't draw in the last subplot (where legend is)
-                TLine *line = new TLine(0.1, 0.0, 0.9, 0.0);
+                TLine *line = new TLine(0.15, 0.0, 0.95, 0.0);
                 line->SetLineColor(kGray + 2);
                 line->SetLineStyle(7);
                 line->Draw("same");
