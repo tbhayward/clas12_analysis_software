@@ -119,14 +119,14 @@ void plotDependence(
     c->Divide(3, 2); // 2 rows, 3 columns
 
     // Define the suffixes for the asymmetries we want to plot
-    std::vector<std::string> suffixes = {"ALUsinphi", "AULsinphi", "AULsin2phi", "ALL", "ALLcosphi", "AULoffset"};
+    std::vector<std::string> suffixes = {"ALUsinphi", "AULoffset", "AULsinphi", "AULsin2phi", "ALL", "ALLcosphi"};
     std::vector<std::string> yLabels = {
         "F_{LU}^{sin#phi}/F_{UU}",
+        "A_{UL} offset",
         "F_{UL}^{sin#phi}/F_{UU}",
         "F_{UL}^{sin(2#phi)}/F_{UU}",
         "F_{LL}/F_{UU}",
-        "F_{LL}^{cos#phi}/F_{UU}",
-        "A_{UL} offset"
+        "F_{LL}^{cos#phi}/F_{UU}"
     };
 
     // Plot each asymmetry in its respective subplot
@@ -261,7 +261,7 @@ int main(int argc, char *argv[]) {
     // Call the plotting function for different dependencies
     plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots.png");
     plotDependence(asymmetryData, "PT", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PT_dependence_plots.png");
-    plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.8}, "output/epX_plots/xF_dependence_plots.png");
+    plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots.png");
 
     return 0;
 }
