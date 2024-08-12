@@ -53,10 +53,22 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     TH1F *h3_Mx = new TH1F("h3_Mx", "Mx", nbins, -3, 4);
     TH1F *h4_Mx = new TH1F("h4_Mx", "Mx", nbins, -3, 4);
 
+    TH1F *h1_vz_p = new TH1F("h1_vz_p", "vz_p", nbins, -15, 15);
+    TH1F *h2_vz_p = new TH1F("h2_vz_p", "vz_p", nbins, -15, 15);
+    TH1F *h3_vz_p = new TH1F("h3_vz_p", "vz_p", nbins, -15, 15);
+    TH1F *h4_vz_p = new TH1F("h4_vz_p", "vz_p", nbins, -15, 15);
+
+    TH1F *h1_p_phi = new TH1F("h1_p_phi", "p_phi", nbins, 0, 360);
+    TH1F *h2_p_phi = new TH1F("h2_p_phi", "p_phi", nbins, 0, 360);
+    TH1F *h3_p_phi = new TH1F("h3_p_phi", "p_phi", nbins, 0, 360);
+    TH1F *h4_p_phi = new TH1F("h4_p_phi", "p_phi", nbins, 0, 360);
+
     double p_p1, p_p2, p_p3, p_p4;
     double xF1, xF2, xF3, xF4;
     double p_theta1, p_theta2, p_theta3, p_theta4;
     double Mx1, Mx2, Mx3, Mx4;
+    double vz_p1, vz_p2, vz_p3, vz_p4;
+    double p_phi1, p_phi2, p_phi3, p_phi4;
 
     tree1->SetBranchAddress("p_p", &p_p1);
     tree2->SetBranchAddress("p_p", &p_p2);
@@ -78,6 +90,16 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     tree3->SetBranchAddress("Mx", &Mx3);
     tree4->SetBranchAddress("Mx", &Mx4);
 
+    tree1->SetBranchAddress("vz_p", &vz_p1);
+    tree2->SetBranchAddress("vz_p", &vz_p2);
+    tree3->SetBranchAddress("vz_p", &vz_p3);
+    tree4->SetBranchAddress("vz_p", &vz_p4);
+
+    tree1->SetBranchAddress("p_phi", &p_phi1);
+    tree2->SetBranchAddress("p_phi", &p_phi2);
+    tree3->SetBranchAddress("p_phi", &p_phi3);
+    tree4->SetBranchAddress("p_phi", &p_phi4);
+
     Long64_t nentries1 = tree1->GetEntries();
     Long64_t nentries2 = tree2->GetEntries();
     Long64_t nentries3 = tree3->GetEntries();
@@ -90,6 +112,10 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
         h1_xF->Fill(xF1);
         h1_p_theta->Fill(p_theta1 * 180.0 / 3.14159);
         h1_Mx->Fill(Mx1); // Always fill Mx histogram
+        if (p_theta1 * 180.0 / 3.14159 > 45.0) {
+            h1_vz_p->Fill(vz_p1);
+            h1_p_phi->Fill(p_phi1 * 180.0 / 3.14159);
+        }
     }
 
     for (Long64_t j = 0; j < nentries2; ++j) {
@@ -98,6 +124,10 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
         h2_xF->Fill(xF2);
         h2_p_theta->Fill(p_theta2 * 180.0 / 3.14159);
         h2_Mx->Fill(Mx2); // Always fill Mx histogram
+        if (p_theta2 * 180.0 / 3.14159 > 45.0) {
+            h2_vz_p->Fill(vz_p2);
+            h2_p_phi->Fill(p_phi2 * 180.0 / 3.14159);
+        }
     }
 
     // Fill histograms for the second set of files
@@ -107,6 +137,10 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
         h3_xF->Fill(xF3);
         h3_p_theta->Fill(p_theta3 * 180.0 / 3.14159);
         h3_Mx->Fill(Mx3); // Always fill Mx histogram
+        if (p_theta3 * 180.0 / 3.14159 > 45.0) {
+            h3_vz_p->Fill(vz_p3);
+            h3_p_phi->Fill(p_phi3 * 180.0 / 3.14159);
+        }
     }
 
     for (Long64_t j = 0; j < nentries4; ++j) {
@@ -115,7 +149,12 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
         h4_xF->Fill(xF4);
         h4_p_theta->Fill(p_theta4 * 180.0 / 3.14159);
         h4_Mx->Fill(Mx4); // Always fill Mx histogram
+        if (p_theta4 * 180.0 / 3.14159 > 45.0) {
+            h4_vz_p->Fill(vz_p4);
+            h4_p_phi->Fill(p_phi4 * 180.0 / 3.14159);
+        }
     }
+
 
     gStyle->SetOptStat(0);
 
@@ -149,6 +188,10 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     TGraphErrors* graph_p_theta_2 = createRatioGraph(h3_p_theta, h4_p_theta);
     TGraphErrors* graph_Mx_1 = createRatioGraph(h1_Mx, h2_Mx);
     TGraphErrors* graph_Mx_2 = createRatioGraph(h3_Mx, h4_Mx);
+    TGraphErrors* graph_vz_p_1 = createRatioGraph(h1_vz_p, h2_vz_p);
+    TGraphErrors* graph_vz_p_2 = createRatioGraph(h3_vz_p, h4_vz_p);
+    TGraphErrors* graph_p_phi_1 = createRatioGraph(h1_p_phi, h2_p_phi);
+    TGraphErrors* graph_p_phi_2 = createRatioGraph(h3_p_phi, h4_p_phi);
 
     // Function to plot TGraphErrors
     auto plotGraph = [](TGraphErrors* g1, TGraphErrors* g2, const char* xTitle, const char* yTitle, const char* filename, double yMin = 1.0, double yMax = 3.0) {
@@ -188,6 +231,8 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     plotGraph(graph_xF_1, graph_xF_2, "xF", "Ratio (NH3/C)", "output/ratio_xF.png");
     plotGraph(graph_p_theta_1, graph_p_theta_2, "p_theta (degrees) (NH3/C)", "Ratio", "output/ratio_p_theta.png");
     plotGraph(graph_Mx_1, graph_Mx_2, "Mx", "Ratio (NH3/C) ", "output/ratio_Mx.png");
+    plotGraph(graph_vz_p_1, graph_vz_p_2, "vz_p", "Ratio (NH3/C)", "output/ratio_vz_p.png");
+    plotGraph(graph_p_phi_1, graph_p_phi_2, "p_phi (degrees)", "Ratio (NH3/C)", "output/ratio_p_phi.png");
     // plotGraph(graph_p_p_1, graph_p_p_2, "p_p", "Ratio (AI/noAI) (NH3)", "output/ratio_p_p.png", 1.4, 2.0);
     // plotGraph(graph_xF_1, graph_xF_2, "xF", "Ratio (AI/noAI) (NH3)", "output/ratio_xF.png");
     // plotGraph(graph_p_theta_1, graph_p_theta_2, "p_theta (degrees) (NH3/C)", "Ratio (AI/noAI) (NH3)", "output/ratio_p_theta.png");
@@ -223,6 +268,20 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     delete h2_Mx;
     delete h3_Mx;
     delete h4_Mx;
+
+    delete graph_vz_p_1;
+    delete graph_vz_p_2;
+    delete graph_p_phi_1;
+    delete graph_p_phi_2;
+
+    delete h1_vz_p;
+    delete h2_vz_p;
+    delete h3_vz_p;
+    delete h4_vz_p;
+    delete h1_p_phi;
+    delete h2_p_phi;
+    delete h3_p_phi;
+    delete h4_p_phi;
 
     f1->Close();
     f2->Close();
