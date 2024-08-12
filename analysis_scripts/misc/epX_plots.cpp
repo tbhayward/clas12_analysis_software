@@ -158,7 +158,7 @@ void plotDependence(
 
             // Set x-axis and y-axis ranges
             graph->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
-            graph->GetHistogram()->GetXaxis()->SetRangeUser(xLimits.first, xLimits.second);
+            graph->GetXaxis()->SetRangeUser(xLimits.first, xLimits.second);
             if (suffixes[i] == "ALL") {
                 graph->GetYaxis()->SetRangeUser(-0.1, 0.6);
             } else {
