@@ -18,26 +18,24 @@ std::map<std::string, std::vector<std::vector<double>>> readKinematics(const std
             std::string key = line.substr(0, pos - 1);
             std::string dataStr = line.substr(pos + 1);
 
-            // Remove curly braces and semicolon from the data string
+            // Remove unnecessary characters from the data string
             dataStr.erase(std::remove(dataStr.begin(), dataStr.end(), '{'), dataStr.end());
             dataStr.erase(std::remove(dataStr.begin(), dataStr.end(), '}'), dataStr.end());
             dataStr.erase(std::remove(dataStr.begin(), dataStr.end(), ';'), dataStr.end());
 
-            // Split dataStr into individual rows of data
+            // Split dataStr into individual numbers
             std::vector<std::vector<double>> values;
             std::stringstream ss(dataStr);
-            std::string rowStr;
-            while (std::getline(ss, rowStr, '}')) {
-                rowStr.erase(std::remove(rowStr.begin(), rowStr.end(), '{'), rowStr.end());
-                rowStr.erase(std::remove(rowStr.begin(), rowStr.end(), ','), rowStr.end());
-
-                std::stringstream rowStream(rowStr);
-                std::string value;
-                std::vector<double> row;
-                while (std::getline(rowStream, value, ',')) {
-                    row.push_back(std::stod(value));
+            std::string num;
+            std::vector<double> tempVec;
+            while (std::getline(ss, num, ',')) {
+                if (!num.empty()) {
+                    tempVec.push_back(std::stod(num));
                 }
-                if (!row.empty()) values.push_back(row);
+                if (tempVec.size() == 9) { // Assuming each kinematic entry has 9 values
+                    values.push_back(tempVec);
+                    tempVec.clear();
+                }
             }
 
             kinematicData[key] = values;
@@ -59,26 +57,24 @@ std::map<std::string, std::vector<std::vector<double>>> readAsymmetries(const st
             std::string key = line.substr(0, pos - 1);
             std::string dataStr = line.substr(pos + 1);
 
-            // Remove curly braces and semicolon from the data string
+            // Remove unnecessary characters from the data string
             dataStr.erase(std::remove(dataStr.begin(), dataStr.end(), '{'), dataStr.end());
             dataStr.erase(std::remove(dataStr.begin(), dataStr.end(), '}'), dataStr.end());
             dataStr.erase(std::remove(dataStr.begin(), dataStr.end(), ';'), dataStr.end());
 
-            // Split dataStr into individual rows of data
+            // Split dataStr into individual numbers
             std::vector<std::vector<double>> values;
             std::stringstream ss(dataStr);
-            std::string rowStr;
-            while (std::getline(ss, rowStr, '}')) {
-                rowStr.erase(std::remove(rowStr.begin(), rowStr.end(), '{'), rowStr.end());
-                rowStr.erase(std::remove(rowStr.begin(), rowStr.end(), ','), rowStr.end());
-
-                std::stringstream rowStream(rowStr);
-                std::string value;
-                std::vector<double> row;
-                while (std::getline(rowStream, value, ',')) {
-                    row.push_back(std::stod(value));
+            std::string num;
+            std::vector<double> tempVec;
+            while (std::getline(ss, num, ',')) {
+                if (!num.empty()) {
+                    tempVec.push_back(std::stod(num));
                 }
-                if (!row.empty()) values.push_back(row);
+                if (tempVec.size() == 3) { // Assuming each asymmetry entry has 3 values
+                    values.push_back(tempVec);
+                    tempVec.clear();
+                }
             }
 
             asymmetryData[key] = values;
