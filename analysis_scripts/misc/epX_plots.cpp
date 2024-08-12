@@ -397,7 +397,7 @@ void plotQ2yz_pT(
             bool firstGraphDrawn = false; // To check if we've drawn the first graph
             // Loop over each z bin
             for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
-                std::string key = Q2_prefixes[row][q2Index] + z_prefixes[zIndex] + "chi2FitsALUsinphi";
+                std::string key = Q2_prefixes[row][q2Index] + z_prefixes[zIndex] + "chi2FitsAULsinphi";
                 auto it = asymmetryData.find(key);
 
                 if (it == asymmetryData.end()) {
