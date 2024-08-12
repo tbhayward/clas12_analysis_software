@@ -452,8 +452,8 @@ void plotQ2yz_pT(
 
             // Loop over each z bin
             for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
-                // std::string key = Q2_prefixes[row][q2Index] + z_prefixes[zIndex] + "chi2FitsALUsinphi";
-                std::string key = Q2_prefixes[row][q2Index] + z_prefixes[zIndex] + "chi2FitsALL";
+                std::string key = Q2_prefixes[row][q2Index] + z_prefixes[zIndex] + "chi2FitsALUsinphi";
+                // std::string key = Q2_prefixes[row][q2Index] + z_prefixes[zIndex] + "chi2FitsALL";
                 auto it = asymmetryData.find(key);
 
                 if (it == asymmetryData.end()) {
@@ -478,7 +478,7 @@ void plotQ2yz_pT(
                 }
 
                 if (!firstGraphDrawn) {
-                    setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.1, 0.9}, {-0.19, 0.59});
+                    setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.1, 0.9}, {-0.09, 0.09});
 
                     // Apply to all plots
                     graph->GetXaxis()->SetNdivisions(505);  // Customize the number of divisions (5 major, 5 minor)
