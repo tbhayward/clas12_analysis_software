@@ -460,7 +460,7 @@ void plotQ2yz_pT(
             }
 
             // Draw the dashed gray line at y = 0
-            TLine *line = new TLine(0.1, 0.0, 0.9, 0.0);
+            TLine *line = new TLine(0.0, 0.0, 0.9, 0.0);
             line->SetLineColor(kGray + 2);
             line->SetLineStyle(7);
             line->Draw("same");
