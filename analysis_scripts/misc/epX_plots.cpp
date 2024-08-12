@@ -208,7 +208,7 @@ void plotDependence(
             if (suffixes[i] == "ALL") {
                 graphStat->GetYaxis()->SetRangeUser(-0.1, 0.6);
             } else if (suffixes[i] == "AULoffset") {
-                graphStat->GetYaxis()->SetRangeUser(-0.15, 0.15);
+                graphStat->GetYaxis()->SetRangeUser(-0.2, 0.2);
             } else {
                 graphStat->GetYaxis()->SetRangeUser(-0.15, 0.15);
             }
