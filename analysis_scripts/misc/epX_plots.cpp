@@ -322,7 +322,10 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
     // Partition the canvas
     CanvasPartition(c, Nx, Ny, 0.15, 0.05, 0.15, 0.05);
 
-    std::vector<std::string> Q2yPrefixes = {"Q2y1", "Q2y5", "Q2y9", "Q2y13", "Q2y16", "Q2y2", "Q2y6", "Q2y10", "Q2y14", "Q2y17", "Q2y3", "Q2y7", "Q2y11", "Q2y15", "", "Q2y4", "Q2y8", "Q2y12", "", ""};
+    std::vector<std::string> Q2yPrefixes = {"Q2y1", "Q2y5", "Q2y9", "Q2y13", "Q2y16", 
+                                            "Q2y2", "Q2y6", "Q2y10", "Q2y14", "Q2y17", 
+                                            "Q2y3", "Q2y7", "Q2y11", "Q2y15", "", 
+                                            "Q2y4", "Q2y8", "Q2y12", "", ""};
     std::vector<int> colors = {kBlack, kRed, kGreen + 2, kBlue, kMagenta};
 
     for (int i = 0; i < Nx; ++i) {
