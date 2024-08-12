@@ -389,7 +389,7 @@ void plotQ2yz_pT(
 
     // Create the graph for each z bin for the first subplot only
     for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
-        std::string key = Q2_prefix + z_prefixes[zIndex] + "chi2FitsAULsinphi";  // Modify the suffix as needed
+        std::string key = Q2_prefix + z_prefixes[zIndex] + "chi2FitsALUsinphi";  // Modify the suffix as needed
         auto it = asymmetryData.find(key);
         if (it != asymmetryData.end()) {
             const auto &data = it->second;
