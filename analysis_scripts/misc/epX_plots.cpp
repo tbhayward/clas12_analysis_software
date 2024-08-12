@@ -21,6 +21,7 @@
 #include <vector>
 #include <string>
 #include <map>
+#include <TLatex.h>
 
 // Global variables for systematic uncertainties
 const double LU_SYS_UNCERTAINTY = 0.029;
