@@ -328,8 +328,8 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
                                             "Q2y4", "Q2y8", "Q2y12", "", ""};
     std::vector<int> colors = {kBlack, kRed, kGreen + 2, kBlue, kMagenta};
 
-    for (int i = 0; i < Nx; ++i) {
-        for (int j = 0; j < Ny; ++j) {
+    for (int j = 0; j < Ny; ++j) {
+        for (int i = 0; i < Nx; ++i) {
             int index = i + j * Nx;
             if (Q2yPrefixes[index].empty()) continue;
 
