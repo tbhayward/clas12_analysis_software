@@ -378,48 +378,48 @@ void plotQ2yz_pT(
     TCanvas *c = new TCanvas("c", "Q2-y-z Dependence", 1800, 1600);
     c->Divide(5, 4);  // 4 rows (y bins) by 5 columns (Q2 bins)
 
-    // Prefixes for Q2 ranges (top row)
-    std::vector<std::string> Q2_prefixes = {"Q2y1", "Q2y5", "Q2y9", "Q2y13", "Q2y16"};
+    // Prefixes for Q2 ranges (top two rows)
+    std::vector<std::vector<std::string>> Q2_prefixes = {
+        {"Q2y1", "Q2y5", "Q2y9", "Q2y13", "Q2y16"},  // Top row
+        {"Q2y2", "Q2y6", "Q2y10", "Q2y14", "Q2y17"}  // Second row
+    };
     std::vector<std::string> z_prefixes = {"z1", "z2", "z3", "z4", "z5"};
     std::vector<int> colors = {kBlack, kRed, kGreen, kBlue, kMagenta};
 
-    // Loop over each Q2 bin (top row of the canvas)
-    for (size_t q2Index = 0; q2Index < Q2_prefixes.size(); ++q2Index) {
-        c->cd(q2Index + 1); // Go to the next pad
-        gPad->SetLeftMargin(0.18); // Adjust left margin for y-axis visibility
-        gPad->SetBottomMargin(0.15); // Adjust bottom margin for x-axis labels
+    // Loop over each row
+    for (size_t row = 0; row < Q2_prefixes.size(); ++row) {
+        // Loop over each Q2 bin (5 columns per row)
+        for (size_t q2Index = 0; q2Index < Q2_prefixes[row].size(); ++q2Index) {
+            c->cd(row * 5 + q2Index + 1); // Go to the correct pad
+            gPad->SetLeftMargin(0.18); // Adjust left margin for y-axis visibility
+            gPad->SetBottomMargin(0.15); // Adjust bottom margin for x-axis labels
 
-        // Loop over each z bin
-        for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
-            std::string key = Q2_prefixes[q2Index] + z_prefixes[zIndex] + "chi2FitsALUsinphi";  // Modify the suffix as needed
-            auto it = asymmetryData.find(key);
-            if (it != asymmetryData.end()) {
-                const auto &data = it->second;
+            // Loop over each z bin
+            for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
+                std::string key = Q2_prefixes[row][q2Index] + z_prefixes[zIndex] + "chi2FitsALUsinphi";  // Modify the suffix as needed
+                auto it = asymmetryData.find(key);
+                if (it != asymmetryData.end()) {
+                    const auto &data = it->second;
 
-                std::vector<double> x, y, yErr;
-                for (const auto &entry : data) {
-                    x.push_back(entry[0]);
-                    y.push_back(entry[1]);
-                    yErr.push_back(entry[2]);
-                }
+                    std::vector<double> x, y, yErr;
+                    for (const auto &entry : data) {
+                        x.push_back(entry[0]);
+                        y.push_back(entry[1]);
+                        yErr.push_back(entry[2]);
+                    }
 
-                TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
+                    TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
 
-                // Print out the data being plotted for debugging
-                std::cout << "Plotting " << key << " with color index " << colors[zIndex] << "\n";
-                for (size_t i = 0; i < x.size(); ++i) {
-                    std::cout << "x: " << x[i] << ", y: " << y[i] << ", yErr: " << yErr[i] << "\n";
-                }
-
-                // Set up axis labels and ranges only for the first graph in each pad
-                if (zIndex == 0) {
-                    setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.0, 1.0}, {-0.15, 0.15});
-                    graph->Draw("AP");
+                    // Set up axis labels and ranges only for the first graph in each pad
+                    if (zIndex == 0) {
+                        setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.0, 1.0}, {-0.1, 0.1});
+                        graph->Draw("AP");
+                    } else {
+                        graph->Draw("P SAME");
+                    }
                 } else {
-                    graph->Draw("P SAME");
+                    std::cerr << "Warning: No data found for key " << key << std::endl;
                 }
-            } else {
-                std::cerr << "Warning: No data found for key " << key << std::endl;
             }
         }
     }
