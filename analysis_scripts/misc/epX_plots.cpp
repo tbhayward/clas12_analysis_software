@@ -168,8 +168,7 @@ void plotDependence(
                     if (!offsetValues.empty()) {
                         sysUncertainty = std::sqrt(
                             std::pow(y[j] * 0.029, 2) +  // 2.9% of the current y-value
-                            std::pow(y[j] * 0.101, 2) +  // 10.1% of the current y-value
-                            std::pow(y[j] * offsetValues[j], 2) // FULsinphioffset value
+                            std::pow(y[j] * 0.101, 2)   // 10.1% of the current y-value
                         );
                     }
                 }
