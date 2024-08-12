@@ -498,6 +498,16 @@ void plotQ2yz_pT(
         }
     }
 
+    // Add a legend in the last subplot (bottom right corner)
+    c->cd(20); // Go to the last pad
+    TLegend *legend = new TLegend(0.7, 0.7, 0.9, 0.9);
+    legend->AddEntry((TObject*)0, "0.10 < z < 0.25", "");
+    legend->AddEntry((TObject*)0, "0.25 < z < 0.35", "");
+    legend->AddEntry((TObject*)0, "0.35 < z < 0.45", "");
+    legend->AddEntry((TObject*)0, "0.45 < z < 0.55", "");
+    legend->AddEntry((TObject*)0, "0.55 < z < 0.75", "");
+    legend->Draw();
+
     // Save the canvas as a PNG file
     gSystem->Exec("mkdir -p output/epX_plots");
     c->SaveAs(outputFileName.c_str());
