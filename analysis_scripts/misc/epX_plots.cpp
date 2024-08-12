@@ -441,7 +441,7 @@ void plotQ2yz_pT(
             if (q2Index == Q2_prefixes[row].size() - 1) {
                 gPad->SetRightMargin(0.12);
             } else {
-                gPad->SetRightMargin(0.012);  // Ensure other plots have minimal right margin
+                gPad->SetRightMargin(0.12);  // Ensure other plots have minimal right margin
             }
         }
     }
