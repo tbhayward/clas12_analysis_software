@@ -382,8 +382,7 @@ void plotQ2yz_pT(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
     const std::string &outputFileName) {
     
-    // Increase canvas width to accommodate larger left margin
-    TCanvas *c = new TCanvas("c", "Q2-y-z Dependence", 1900, 1600); // Increased width
+    TCanvas *c = new TCanvas("c", "Q2-y-z Dependence", 1800, 1600);
     c->Divide(5, 4, 0, 0);  // 4 rows by 5 columns, no spacing
 
     // Prefixes for Q2 ranges (including placeholders)
@@ -410,7 +409,7 @@ void plotQ2yz_pT(
             if (q2Index != 0) {
                 gPad->SetLeftMargin(0.001); // No left margin for non-leftmost plots
             } else {
-                gPad->SetLeftMargin(0.15); // Adequate left margin for leftmost plots
+                gPad->SetLeftMargin(0.18); // Adequate left margin for leftmost plots
             }
 
             if (row != Q2_prefixes.size() - 1) {
@@ -480,11 +479,11 @@ void plotQ2yz_pT(
                 if (!firstGraphDrawn) {
                     setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.1, 0.9}, {-0.09, 0.09});
 
-                    // Increase the size of the labels and titles
-                    graph->GetXaxis()->SetLabelSize(0.05); 
-                    graph->GetYaxis()->SetLabelSize(0.05); 
-                    graph->GetXaxis()->SetTitleSize(0.06); 
-                    graph->GetYaxis()->SetTitleSize(0.06); 
+                    // Regular font sizes
+                    graph->GetXaxis()->SetLabelSize(0.04); 
+                    graph->GetYaxis()->SetLabelSize(0.04); 
+                    graph->GetXaxis()->SetTitleSize(0.05); 
+                    graph->GetYaxis()->SetTitleSize(0.05); 
 
                     // Apply to all plots
                     graph->GetXaxis()->SetNdivisions(505);  // Customize the number of divisions (5 major, 5 minor)
