@@ -124,7 +124,9 @@ void plotXDependence(const std::map<std::string, std::vector<std::vector<double>
 
     // Plot each asymmetry in its respective subplot
     for (size_t i = 0; i < keys.size(); ++i) {
-        c->cd(i + 1)->SetLeftMargin(0.15);  // Add extra padding space on the left side
+        c->cd(i + 1);
+        gPad->SetLeftMargin(0.18);  // Increase left margin for Y-axis label
+        gPad->SetBottomMargin(0.15);  // Increase bottom margin for X-axis label
 
         // Check if the key exists in the map
         auto it = asymmetryData.find(keys[i]);
