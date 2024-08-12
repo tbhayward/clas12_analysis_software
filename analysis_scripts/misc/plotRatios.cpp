@@ -176,7 +176,7 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
         // legend->AddEntry(g1, "NH3", "lp");
         // legend->AddEntry(g2, "C", "lp");
         legend->AddEntry(g1, "pass-1", "lp");
-        legend->AddEntry(g2, "pass-1 preliminary", "lp");
+        legend->AddEntry(g2, "preliminary", "lp");
         legend->Draw();
 
         c->SaveAs(filename);
