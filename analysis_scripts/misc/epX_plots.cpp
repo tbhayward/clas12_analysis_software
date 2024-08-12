@@ -430,6 +430,13 @@ void plotQ2yz_pT(
                 TGraphErrors *dummyGraph = createTGraphErrors(dummyX, dummyY, dummyYErr, 20, 0.8, kWhite); // No visible point
 
                 setAxisLabelsAndRanges(dummyGraph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.1, 0.9}, {-0.09, 0.09});
+                
+                // Increase the size of the labels and titles
+                dummyGraph->GetXaxis()->SetLabelSize(0.05); 
+                dummyGraph->GetYaxis()->SetLabelSize(0.05); 
+                dummyGraph->GetXaxis()->SetTitleSize(0.06); 
+                dummyGraph->GetYaxis()->SetTitleSize(0.06); 
+
                 dummyGraph->Draw("AP");
 
                 // Apply to all plots
@@ -480,6 +487,12 @@ void plotQ2yz_pT(
                 if (!firstGraphDrawn) {
                     setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.1, 0.9}, {-0.09, 0.09});
 
+                    // Increase the size of the labels and titles
+                    graph->GetXaxis()->SetLabelSize(0.05); 
+                    graph->GetYaxis()->SetLabelSize(0.05); 
+                    graph->GetXaxis()->SetTitleSize(0.06); 
+                    graph->GetYaxis()->SetTitleSize(0.06); 
+
                     // Apply to all plots
                     graph->GetXaxis()->SetNdivisions(505);  // Customize the number of divisions (5 major, 5 minor)
 
@@ -528,7 +541,6 @@ void plotQ2yz_pT(
     // Save the canvas as a PNG file
     gSystem->Exec("mkdir -p output/epX_plots");
     c->SaveAs(outputFileName.c_str());
-
     // Clean up
     delete c;
     for (auto graph : sampleGraphs) {
