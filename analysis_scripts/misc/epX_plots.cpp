@@ -5,6 +5,13 @@
 #include <map>
 #include <sstream>
 #include <algorithm> // For std::remove
+#include <TCanvas.h>
+#include <TGraphErrors.h>
+#include <TLegend.h>
+#include <TAxis.h>
+#include <TStyle.h>
+#include <TFile.h>
+#include <TSystem.h>
 
 // Function to read arrays directly from the kinematic file
 std::map<std::string, std::vector<std::vector<double>>> readKinematics(const std::string &filename) {
@@ -84,20 +91,62 @@ std::map<std::string, std::vector<std::vector<double>>> readAsymmetries(const st
     return asymmetryData;
 }
 
-// Function to print the data for verification
-void printData(const std::map<std::string, std::vector<std::vector<double>>> &data) {
-    for (const auto &entry : data) {
-        std::cout << entry.first << " = {\n";
-        for (const auto &vec : entry.second) {
-            std::cout << "  {";
-            for (size_t i = 0; i < vec.size(); ++i) {
-                std::cout << vec[i];
-                if (i < vec.size() - 1) std::cout << ", ";
+// Function to create and save x-dependence plots
+void plotXDependence(const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData) {
+    // Create a 2x3 canvas
+    TCanvas *c = new TCanvas("c", "x Dependence Plots", 1200, 800);
+    c->Divide(3, 2);
+
+    // Define the keys for the asymmetries we want to plot
+    std::vector<std::string> keys = {"xchi2FitsALUsinphi", "xchi2FitsAULsinphi", "xchi2FitsAULsin2phi", "xchi2FitsALL", "xchi2FitsALLcosphi"};
+    std::vector<std::string> yLabels = {
+        "F_{LU}^{sin#phi}/F_{UU}",
+        "F_{UL}^{sin#phi}/F_{UU}",
+        "F_{UL}^{sin(2#phi)}/F_{UU}",
+        "F_{LL}/F_{UU}",
+        "F_{LL}^{cos#phi}/F_{UU}"
+    };
+
+    // Plot each asymmetry in its respective subplot
+    for (size_t i = 0; i < keys.size(); ++i) {
+        c->cd(i + 1);
+
+        // Check if the key exists in the map
+        auto it = asymmetryData.find(keys[i]);
+        if (it != asymmetryData.end()) {
+            const auto &data = it->second;
+
+            // Create vectors to hold x, y, and y error
+            std::vector<double> x, y, yErr;
+            for (const auto &entry : data) {
+                x.push_back(entry[0]);
+                y.push_back(entry[1]);
+                yErr.push_back(entry[2]);
             }
-            std::cout << "},\n";
+
+            // Create TGraphErrors and plot
+            TGraphErrors *graph = new TGraphErrors(x.size(), x.data(), y.data(), nullptr, yErr.data());
+            graph->SetTitle("");
+            graph->GetXaxis()->SetTitle("x_{B}");
+            graph->GetYaxis()->SetTitle(yLabels[i].c_str());
+
+            // Set y-axis range
+            if (keys[i] == "xchi2FitsALL") {
+                graph->GetYaxis()->SetRangeUser(-0.2, 0.6);
+            } else {
+                graph->GetYaxis()->SetRangeUser(-0.2, 0.2);
+            }
+
+            graph->Draw("AP");
         }
-        std::cout << "};\n";
     }
+
+    // Save the canvas as a PNG file
+    gSystem->Exec("mkdir -p output/epX_plots");
+    c->SaveAs("output/epX_plots/x_dependence_plots.png");
+
+    // Clean up
+    delete c;
 }
 
 int main(int argc, char *argv[]) {
@@ -115,12 +164,15 @@ int main(int argc, char *argv[]) {
     // Read the kinematic data from the file
     std::map<std::string, std::vector<std::vector<double>>> kinematicData = readKinematics(kinematicFile);
 
-    // Print out the parsed data
+    // Print out the parsed data for verification
     std::cout << "Asymmetry Data:\n";
     printData(asymmetryData);
 
     std::cout << "\nKinematic Data:\n";
     printData(kinematicData);
+
+    // Call the plotting function
+    plotXDependence(asymmetryData);
 
     return 0;
 }
