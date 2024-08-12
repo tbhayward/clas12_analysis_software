@@ -455,8 +455,12 @@ void plotQ2yz_pT(
                     graph->Draw("P SAME");
                 }
             }
-            
-            // gPad->SetRightMargin(0.05); // Ensure consistent right margin
+
+            // Draw the dashed gray line at y = 0
+            TLine *line = new TLine(0.0, 0.0, 1.0, 0.0);
+            line->SetLineColor(kGray + 2);
+            line->SetLineStyle(7);
+            line->Draw("same");
         }
     }
 
