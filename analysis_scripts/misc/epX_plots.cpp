@@ -380,33 +380,28 @@ void plotComparison(
     }
 }
 
-// Function to set up the canvas
+// Function to set up the canvas with an additional row for titles
 TCanvas* setupCanvas(int width, int height, int cols, int rows) {
     TCanvas *c = new TCanvas("c", "Q2-y-z Dependence", width, height);
-    c->Divide(cols, rows, 0, 0);  // 4 rows by 5 columns, no spacing
+    c->Divide(cols, rows + 1, 0, 0);  // Extra row for titles
     return c;
 }
 
-// Function to handle empty placeholders
-void drawEmptyPlot(TGraphErrors* dummyGraph, int q2Index, int row, int totalRows) {
-    dummyGraph->Draw("AP");
-    dummyGraph->GetXaxis()->SetNdivisions(505);
-
-    // Hide Y-axis labels for non-leftmost plots
-    if (q2Index != 0) {
-        dummyGraph->GetYaxis()->SetLabelOffset(999);
-        dummyGraph->GetYaxis()->SetTitleOffset(999);
-    }
-
-    // Hide X-axis labels for non-bottom row plots and specific bottom right subplots
-    if (row != totalRows - 1 || (row == 3 && (q2Index == 3 || q2Index == 4))) {
-        dummyGraph->GetXaxis()->SetLabelOffset(999);
-        dummyGraph->GetXaxis()->SetTitleOffset(999);
+// Function to add titles to the top row
+void addTopRowTitles(TCanvas* c, const std::vector<std::string>& titles) {
+    for (size_t i = 0; i < titles.size(); ++i) {
+        c->cd(i + 1);  // Select the pad in the title row
+        gPad->SetBottomMargin(0.2);  // Increase bottom margin to position text higher
+        TLatex latex;
+        latex.SetNDC();  // Use Normalized Device Coordinates
+        latex.SetTextAlign(22);  // Center alignment
+        latex.SetTextSize(0.05);  // Set text size
+        latex.DrawLatex(0.5, 0.2, titles[i].c_str());  // Draw text at the top center of the pad
     }
 }
 
-// Function to create and draw data plots with titles
-void drawDataPlot(TGraphErrors* graph, int q2Index, int row, int totalRows, bool firstGraphDrawn, const std::string& title = "") {
+// Function to create and draw data plots
+void drawDataPlot(TGraphErrors* graph, int q2Index, int row, int totalRows, bool firstGraphDrawn) {
     if (!firstGraphDrawn) {
         // Draw the plot first
         setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.1, 0.9}, {-0.09, 0.09});
@@ -433,15 +428,6 @@ void drawDataPlot(TGraphErrors* graph, int q2Index, int row, int totalRows, bool
         }
 
         graph->Draw("AP");
-
-        // Add title above the plot
-        if (!title.empty()) {
-            TLatex latex;
-            latex.SetNDC();
-            latex.SetTextAlign(22);  // Center alignment
-            latex.SetTextSize(0.05); // Adjust text size as needed
-            latex.DrawLatex(0.5, 0.92, title.c_str());  // Positioned within pad, but above the plot
-        }
     } else {
         graph->Draw("P SAME");
     }
@@ -489,9 +475,10 @@ void plotQ2yz_pT(
 
     std::vector<TGraph*> sampleGraphs;
 
+    // Skip the first row (reserved for titles)
     for (size_t row = 0; row < Q2_prefixes.size(); ++row) {
         for (size_t q2Index = 0; q2Index < Q2_prefixes[row].size(); ++q2Index) {
-            int padIndex = row * 5 + q2Index + 1;
+            int padIndex = (row + 1) * 5 + q2Index + 1;
             c->cd(padIndex);
 
             if (q2Index != 0) {
@@ -544,9 +531,7 @@ void plotQ2yz_pT(
                     sampleGraphs.push_back(graph);
                 }
 
-                // Adding the title only for the top row
-                std::string title = (row == 0) ? topRowTitles[q2Index] : "";
-                drawDataPlot(graph, q2Index, row, Q2_prefixes.size(), firstGraphDrawn, title);
+                drawDataPlot(graph, q2Index, row, Q2_prefixes.size(), firstGraphDrawn);
                 firstGraphDrawn = true;
             }
 
@@ -559,6 +544,7 @@ void plotQ2yz_pT(
         }
     }
 
+    addTopRowTitles(c, topRowTitles);  // Add the top row titles
     addLegend(sampleGraphs, c, z_prefixes);
 
     gSystem->Exec("mkdir -p output/epX_plots");
