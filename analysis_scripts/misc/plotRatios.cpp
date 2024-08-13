@@ -139,7 +139,7 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
         h3_p_theta->Fill(p_theta3 * 180.0 / 3.14159);
         h3_Mx->Fill(Mx3); // Always fill Mx histogram
         if (p_theta3 * 180.0 / 3.14159 > 45.0) {
-            h3_vz_p->Fill(vz_p3-3.2);
+            h3_vz_p->Fill(vz_p3);
             h3_p_phi->Fill(p_phi3 * 180.0 / 3.14159);
         }
     }
@@ -151,7 +151,7 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
         h4_p_theta->Fill(p_theta4 * 180.0 / 3.14159);
         h4_Mx->Fill(Mx4); // Always fill Mx histogram
         if (p_theta4 * 180.0 / 3.14159 > 45.0) {
-            h4_vz_p->Fill(vz_p4-3.2);
+            h4_vz_p->Fill(vz_p4);
             h4_p_phi->Fill(p_phi4 * 180.0 / 3.14159);
         }
     }
