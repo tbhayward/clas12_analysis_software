@@ -860,10 +860,10 @@ void plotQ2Dependence(
     std::vector<int> colors = {kBlack, kRed, kBlue, kGreen};
     std::vector<std::string> vectorNames = {"z1pT2y1", "z2pT2y1", "z1pT2y2", "z2pT2y2"};
     std::vector<std::string> legendLabels = {
-        "z1pT2y1", 
-        "z2pT2y1", 
-        "z1pT2y2", 
-        "z2pT2y2"
+        "0.65<y<0.75, 0.10 < z < 0.25, 0.21<P_{T}<0.34", 
+        "0.65<y<0.75, 0.25 < z < 0.35, 0.21<P_{T}<0.34", 
+        "0.55<y<0.65, 0.10 < z < 0.25, 0.21<P_{T}<0.34", 
+        "0.55<y<0.65, 0.25 < z < 0.35, 0.21<P_{T}<0.34"
     };
 
     // Create a canvas with 1 row and 3 columns
@@ -905,6 +905,12 @@ void plotQ2Dependence(
         // Loop through each vector set to plot them on the same canvas
         for (size_t j = 0; j < vectorNames.size(); ++j) {
             const std::string &vectorName = vectorNames[j];
+            
+            // Skip z2pT2y1 and z2pT2y2 for the doubleratio plot
+            if (i == 2 && (vectorName == "z2pT2y1" || vectorName == "z2pT2y2")) {
+                continue;
+            }
+
             const auto &data = allVectors.at(vectorName).at(suffixes[i]);
 
             std::vector<double> x, y, yErr;
