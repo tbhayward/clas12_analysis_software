@@ -154,7 +154,7 @@ std::map<std::string, std::vector<std::vector<double>>> readAsymmetries(const st
 void extractAndPrintQ2Dependence(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
     const std::map<std::string, std::vector<std::vector<double>>> &kinematicData) {
-    
+
     // Vectors to hold the Q², asymmetry values, and errors for different sets
     std::vector<std::vector<double>> z1pT2y1, z2pT2y1, z1pT2y2, z2pT2y2;
 
@@ -163,13 +163,21 @@ void extractAndPrintQ2Dependence(
         "ALUsinphi", "AULoffset", "AULsinphi", "AULsin2phi", "ALL", "ALLcosphi", "doubleratio"
     };
 
+    // Prefixes for the points you want to extract
+    std::vector<std::string> prefixes = {
+        "Q2y1z1", "Q2y5z1", "Q2y9z1", "Q2y13z1", "Q2y16z1", // z1pT2y1
+        "Q2y1z2", "Q2y5z2", "Q2y9z2", "Q2y13z2", "Q2y16z2", // z2pT2y1
+        "Q2y2z1", "Q2y6z1", "Q2y10z1", "Q2y14z1", "Q2y17z1", // z1pT2y2
+        "Q2y2z2", "Q2y6z2", "Q2y10z2", "Q2y14z2", "Q2y17z2"  // z2pT2y2
+    };
+
     // Helper lambda to extract a point
     auto extractPoint = [&](const std::string &prefix, int pointIndex, const std::string &fitType) {
         std::vector<double> result;
 
         // Get the kinematic data
-        if (kinematicData.find(prefix) != kinematicData.end()) {
-            const auto &kinDataVec = kinematicData.at(prefix);
+        if (kinematicData.find(prefix + "Kinematics") != kinematicData.end()) {
+            const auto &kinDataVec = kinematicData.at(prefix + "Kinematics");
             double Q2 = kinDataVec[pointIndex][0]; // Q² value
             result.push_back(Q2);
         } else {
@@ -192,40 +200,27 @@ void extractAndPrintQ2Dependence(
         return result;
     };
 
-    // Extract points for z1pT2y1
-    for (const auto &fitType : fitTypes) {
-        z1pT2y1.push_back(extractPoint("Q2y1z1", 1, fitType));
-        z1pT2y1.push_back(extractPoint("Q2y5z1", 1, fitType));
-        z1pT2y1.push_back(extractPoint("Q2y9z1", 1, fitType));
-        z1pT2y1.push_back(extractPoint("Q2y13z1", 1, fitType));
-        z1pT2y1.push_back(extractPoint("Q2y16z1", 1, fitType));
-    }
+    // Extract points for each combination of prefix and fit type
+    for (size_t i = 0; i < prefixes.size(); ++i) {
+        const std::string &prefix = prefixes[i];
+        std::vector<std::vector<double>> *targetVector = nullptr;
 
-    // Extract points for z2pT2y1
-    for (const auto &fitType : fitTypes) {
-        z2pT2y1.push_back(extractPoint("Q2y1z2", 1, fitType));
-        z2pT2y1.push_back(extractPoint("Q2y5z2", 1, fitType));
-        z2pT2y1.push_back(extractPoint("Q2y9z2", 1, fitType));
-        z2pT2y1.push_back(extractPoint("Q2y13z2", 1, fitType));
-        z2pT2y1.push_back(extractPoint("Q2y16z2", 1, fitType));
-    }
+        if (i < 5) {
+            targetVector = &z1pT2y1;
+        } else if (i < 10) {
+            targetVector = &z2pT2y1;
+        } else if (i < 15) {
+            targetVector = &z1pT2y2;
+        } else {
+            targetVector = &z2pT2y2;
+        }
 
-    // Extract points for z1pT2y2
-    for (const auto &fitType : fitTypes) {
-        z1pT2y2.push_back(extractPoint("Q2y2z1", 1, fitType));
-        z1pT2y2.push_back(extractPoint("Q2y6z1", 1, fitType));
-        z1pT2y2.push_back(extractPoint("Q2y10z1", 1, fitType));
-        z1pT2y2.push_back(extractPoint("Q2y14z1", 1, fitType));
-        z1pT2y2.push_back(extractPoint("Q2y17z1", 1, fitType));
-    }
-
-    // Extract points for z2pT2y2
-    for (const auto &fitType : fitTypes) {
-        z2pT2y2.push_back(extractPoint("Q2y2z2", 1, fitType));
-        z2pT2y2.push_back(extractPoint("Q2y6z2", 1, fitType));
-        z2pT2y2.push_back(extractPoint("Q2y10z2", 1, fitType));
-        z2pT2y2.push_back(extractPoint("Q2y14z2", 1, fitType));
-        z2pT2y2.push_back(extractPoint("Q2y17z2", 1, fitType));
+        for (const auto &fitType : fitTypes) {
+            std::vector<double> point = extractPoint(prefix, 1, fitType); // Use the 2nd point (index 1)
+            if (!point.empty()) {
+                targetVector->push_back(point);
+            }
+        }
     }
 
     // Helper lambda to print vectors
