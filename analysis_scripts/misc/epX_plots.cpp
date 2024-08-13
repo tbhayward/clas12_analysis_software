@@ -509,8 +509,7 @@ void addCanvasSideLabels(TCanvas* c, const std::vector<std::string>& y_ranges) {
     }
 }
 
-void plotQ2yz_pT(
-    const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData) {
+void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData) {
 
     double maxError = 0.0275; // Threshold for maximum allowed error bar size
 
@@ -526,22 +525,20 @@ void plotQ2yz_pT(
         "output/epX_plots/Q2yz_pT_ALLcosphi.png"
     };
 
-    std::vector<TCanvas*> canvases(fitTypes.size(), nullptr);
-    std::vector<std::vector<TGraph*>> sampleGraphs(fitTypes.size());
-
+    // Loop over each fit type and generate the corresponding plot
     for (size_t fitIndex = 0; fitIndex < fitTypes.size(); ++fitIndex) {
-        canvases[fitIndex] = new TCanvas(("c_" + fitTypes[fitIndex]).c_str(), ("Q2-y-z Dependence - " + fitTypes[fitIndex]).c_str(), 2400, 1600);
-        canvases[fitIndex]->Divide(5, 4, 0, 0);  // 4 rows by 5 columns, no spacing
+        // Setup canvas for this fit type
+        TCanvas *c = setupCanvas(2400, 1600, 5, 4);
 
+        // Define the prefixes and colors
         std::vector<std::vector<std::string>> Q2_prefixes = {
             {"Q2y1", "Q2y5", "Q2y9", "Q2y13", "Q2y16"},
             {"Q2y2", "Q2y6", "Q2y10", "Q2y14", "Q2y17"},
             {"Q2y3", "Q2y7", "Q2y11", "Q2y15", "EMPTY"},
             {"Q2y4", "Q2y8", "Q2y12", "EMPTY", "EMPTY"}
         };
-
         std::vector<std::string> z_prefixes = {"z1", "z2", "z3", "z4", "z5"};
-        std::vector<int> colors = {kBlack, kRed, kGreen, kBlue, kMagenta}; // Add color for z5
+        std::vector<int> colors = {kBlack, kRed, kGreen, kBlue, kMagenta}; // Colors for z ranges
 
         std::vector<std::string> topRowTitles = {
             "1.0 < Q^{2} (GeV^{2}) < 2.0",
@@ -558,17 +555,20 @@ void plotQ2yz_pT(
             "0.30 < y < 0.45"
         };
 
+        std::vector<TGraph*> sampleGraphs; // Store sample graphs for the legend
+
+        // Loop through each Q2 prefix and corresponding z prefixes
         for (size_t row = 0; row < Q2_prefixes.size(); ++row) {
             for (size_t q2Index = 0; q2Index < Q2_prefixes[row].size(); ++q2Index) {
                 int padIndex = row * 5 + q2Index + 1;
-                canvases[fitIndex]->cd(padIndex);
+                c->cd(padIndex); // Move to the appropriate pad in the canvas
 
+                // Adjust margins
                 if (q2Index != 0) {
                     gPad->SetLeftMargin(0.001);
                 } else {
                     gPad->SetLeftMargin(0.18);
                 }
-
                 if (row != Q2_prefixes.size() - 1) {
                     gPad->SetBottomMargin(0.001);
                 } else {
@@ -576,8 +576,9 @@ void plotQ2yz_pT(
                 }
 
                 bool firstGraphDrawn = false;
-                bool anyGraphDrawn = false; // Track if any graph was drawn for this pad
+                bool anyGraphDrawn = false;
 
+                // Loop through z prefixes
                 for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
                     std::string key = Q2_prefixes[row][q2Index] + z_prefixes[zIndex] + "chi2Fits" + fitTypes[fitIndex];
                     auto it = asymmetryData.find(key);
@@ -589,7 +590,7 @@ void plotQ2yz_pT(
 
                     const auto &data = it->second;
 
-                    // Filter the data to remove points with large error bars
+                    // Filter data by error
                     auto filteredData = filterDataByError(data, maxError);
 
                     // Skip this z-bin if all points are filtered out
@@ -606,7 +607,7 @@ void plotQ2yz_pT(
                     TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
 
                     if (q2Index == 0 && row == 0) {
-                        sampleGraphs[fitIndex].push_back(graph);
+                        sampleGraphs.push_back(graph); // Add to sampleGraphs for legend
                     }
 
                     std::string title = (row == 0) ? topRowTitles[q2Index] : "";
@@ -615,23 +616,17 @@ void plotQ2yz_pT(
                     anyGraphDrawn = true;
                 }
 
-                if (!anyGraphDrawn) { // If no graph was drawn, plot an empty placeholder graph
+                if (!anyGraphDrawn) {
+                    // Handle empty plot scenario
                     std::vector<double> dummyX = {-9999};
                     std::vector<double> dummyY = {0};
                     std::vector<double> dummyYErr = {0};
 
                     TGraphErrors *dummyGraph = createTGraphErrors(dummyX, dummyY, dummyYErr, 20, 0.8, kWhite);
-                    setAxisLabelsAndRanges(dummyGraph, "P_{T} (GeV)", yLabels[fitIndex], {0.1, 0.9}, {-0.09, 0.09});
-                    dummyGraph->Draw("AP");
-
-                    // Hide X-axis labels for the bottom right and second to last plot
-                    if (row == 3 && (q2Index == 3 || q2Index == 4)) {
-                        dummyGraph->GetXaxis()->SetLabelOffset(999);
-                        dummyGraph->GetXaxis()->SetTitleOffset(999);
-                    }
+                    drawEmptyPlot(dummyGraph, q2Index, row, Q2_prefixes.size());
                 }
 
-                // Skip drawing the horizontal line for the third row, fifth column plot (padIndex = 15)
+                // Draw horizontal line except in certain positions
                 if (!(row == 2 && q2Index == 4) && (row != 3 || (q2Index != 3 && q2Index != 4))) {
                     TLine *line = new TLine(0.15, 0.0, 0.95, 0.0);
                     line->SetLineColor(kGray + 2);
@@ -641,19 +636,19 @@ void plotQ2yz_pT(
             }
         }
 
-        // Add the right column titles for y ranges
-        addCanvasSideLabels(canvases[fitIndex], yRanges);
+        // Add y-range labels on the right-hand side
+        addCanvasSideLabels(c, yRanges);
 
-        addLegend(sampleGraphs[fitIndex], canvases[fitIndex]);
+        // Add legend to the canvas
+        addLegend(sampleGraphs, c);
 
+        // Save the canvas to file
         gSystem->Exec("mkdir -p output/epX_plots");
-        canvases[fitIndex]->SaveAs(outputFiles[fitIndex].c_str());
-    }
+        c->SaveAs(outputFiles[fitIndex].c_str());
 
-    // Clean up allocated resources after all plotting is done
-    for (size_t i = 0; i < canvases.size(); ++i) {
-        delete canvases[i];
-        for (auto graph : sampleGraphs[i]) {
+        // Clean up objects
+        delete c;
+        for (auto graph : sampleGraphs) {
             delete graph;
         }
     }
