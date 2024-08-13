@@ -53,12 +53,12 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     TH1F *h3_Mx = new TH1F("h3_Mx", "Mx", nbins, -3, 4);
     TH1F *h4_Mx = new TH1F("h4_Mx", "Mx", nbins, -3, 4);
 
-    TH1F *h1_vz_p = new TH1F("h1_vz_p", "vz_p", nbins, -8, 2);
-    TH1F *h2_vz_p = new TH1F("h2_vz_p", "vz_p", nbins, -8, 2);
-    TH1F *h3_vz_p = new TH1F("h3_vz_p", "vz_p", nbins, -8, 2);
-    TH1F *h4_vz_p = new TH1F("h4_vz_p", "vz_p", nbins, -8, 2);
-
     int nbins2 = 150;
+    TH1F *h1_vz_p = new TH1F("h1_vz_p", "vz_p", nbins2, -8, 2);
+    TH1F *h2_vz_p = new TH1F("h2_vz_p", "vz_p", nbins2, -8, 2);
+    TH1F *h3_vz_p = new TH1F("h3_vz_p", "vz_p", nbins2, -8, 2);
+    TH1F *h4_vz_p = new TH1F("h4_vz_p", "vz_p", nbins2, -8, 2);
+
     TH1F *h1_p_phi = new TH1F("h1_p_phi", "p_phi", nbins2, 0, 360);
     TH1F *h2_p_phi = new TH1F("h2_p_phi", "p_phi", nbins2, 0, 360);
     TH1F *h3_p_phi = new TH1F("h3_p_phi", "p_phi", nbins2, 0, 360);
@@ -273,10 +273,10 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
 
     // Create and customize the legend
     TLegend* legend_vz_p = new TLegend(0.7, 0.8, 0.9, 0.9);
-    legend_vz_p->AddEntry(h1_vz_p, "File 1 (NH3)", "l");
-    legend_vz_p->AddEntry(h2_vz_p, "File 2 (C)", "l");
-    legend_vz_p->AddEntry(h3_vz_p, "File 3 (NH3)", "l");
-    legend_vz_p->AddEntry(h4_vz_p, "File 4 (C)", "l");
+    legend_vz_p->AddEntry(h1_vz_p, "pass-1 NH_{3}", "l");
+    legend_vz_p->AddEntry(h2_vz_p, "pass-1 C", "l");
+    legend_vz_p->AddEntry(h3_vz_p, "preliminary NH_{3}", "l");
+    legend_vz_p->AddEntry(h4_vz_p, "preliminary C", "l");
     legend_vz_p->Draw();
 
     // Save the canvas as an image
