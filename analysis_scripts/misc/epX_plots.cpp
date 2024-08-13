@@ -404,9 +404,14 @@ void drawEmptyPlot(TGraphErrors* dummyGraph, int q2Index, int row, int totalRows
     }
 }
 
-// Function to create and draw data plots
-void drawDataPlot(TGraphErrors* graph, int q2Index, int row, int totalRows, bool firstGraphDrawn) {
+// Function to create and draw data plots with titles
+void drawDataPlot(TGraphErrors* graph, int q2Index, int row, int totalRows, bool firstGraphDrawn, const std::string& title = "") {
     if (!firstGraphDrawn) {
+        // Set the title if provided (only for the first graph to avoid overwriting)
+        if (!title.empty()) {
+            graph->SetTitle(title.c_str());
+        }
+
         setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.1, 0.9}, {-0.09, 0.09});
         graph->GetXaxis()->SetLabelFont(42); // 42 is bold Helvetica
         graph->GetYaxis()->SetLabelFont(42);
@@ -451,17 +456,7 @@ void addLegend(std::vector<TGraph*>& sampleGraphs, TCanvas* c, const std::vector
     legend->Draw();
 }
 
-void addTopRowTitles(TCanvas* c, const std::vector<std::string>& titles) {
-    for (size_t i = 0; i < titles.size(); ++i) {
-        c->cd(i + 1);  // Select the pad
-        TText *text = new TText(0.5, 0.93, titles[i].c_str());  // Adjust y-position slightly down
-        text->SetTextAlign(22);  // Center alignment
-        text->SetTextSize(0.05);  // Set text size
-        text->Draw();
-        gPad->RedrawAxis();  // Redraw axis to ensure text is on top
-    }
-}
-
+// Main plotting function
 void plotQ2yz_pT(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
     const std::string &outputFileName) {
@@ -543,7 +538,9 @@ void plotQ2yz_pT(
                     sampleGraphs.push_back(graph);
                 }
 
-                drawDataPlot(graph, q2Index, row, Q2_prefixes.size(), firstGraphDrawn);
+                // Adding the title only for the top row
+                std::string title = (row == 0) ? topRowTitles[q2Index] : "";
+                drawDataPlot(graph, q2Index, row, Q2_prefixes.size(), firstGraphDrawn, title);
                 firstGraphDrawn = true;
             }
 
@@ -557,7 +554,6 @@ void plotQ2yz_pT(
     }
 
     addLegend(sampleGraphs, c, z_prefixes);
-    addTopRowTitles(c, topRowTitles);  // Add the top row titles
 
     gSystem->Exec("mkdir -p output/epX_plots");
     c->SaveAs(outputFileName.c_str());
