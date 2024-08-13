@@ -381,9 +381,9 @@ void plotComparison(
 void plotQ2yz_pT(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
     const std::string &outputFileName) {
-    
+
     TCanvas *c = new TCanvas("c", "Q2-y-z Dependence", 2400, 1600);
-    c->Divide(5, 4);  // 4 rows by 5 columns, no spacing
+    c->Divide(5, 4, 0, 0);  // 4 rows by 5 columns, no spacing
 
     // Prefixes for Q2 ranges (including placeholders)
     std::vector<std::vector<std::string>> Q2_prefixes = {
@@ -409,7 +409,7 @@ void plotQ2yz_pT(
             if (q2Index != 0) {
                 gPad->SetLeftMargin(0.001); // No left margin for non-leftmost plots
             } else {
-                gPad->SetLeftMargin(0.18); // Adequate left margin for leftmost plots
+                gPad->SetLeftMargin(0.12); // Adequate left margin for leftmost plots
             }
 
             if (row != Q2_prefixes.size() - 1) {
@@ -478,6 +478,12 @@ void plotQ2yz_pT(
 
                 if (!firstGraphDrawn) {
                     setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.1, 0.9}, {-0.09, 0.09});
+
+                    // Set bold font for labels and titles
+                    graph->GetXaxis()->SetLabelFont(42); // 42 is bold Helvetica
+                    graph->GetYaxis()->SetLabelFont(42);
+                    graph->GetXaxis()->SetTitleFont(42);
+                    graph->GetYaxis()->SetTitleFont(42);
 
                     // Regular font sizes
                     graph->GetXaxis()->SetLabelSize(0.04); 
