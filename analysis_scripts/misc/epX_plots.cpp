@@ -500,7 +500,7 @@ void addCanvasSideLabels(TCanvas* c, const std::vector<std::string>& y_ranges) {
     TLatex latex;
     latex.SetNDC();  // Use Normalized Device Coordinates
     latex.SetTextAlign(22);  // Centered alignment
-    latex.SetTextSize(0.04);  // Adjust text size
+    latex.SetTextSize(0.02);  // Adjust text size
     latex.SetTextAngle(90);  // Rotate text vertically
 
     // Position and draw each y-range label
