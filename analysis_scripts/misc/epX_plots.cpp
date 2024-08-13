@@ -451,18 +451,17 @@ void addLegend(std::vector<TGraph*>& sampleGraphs, TCanvas* c, const std::vector
     legend->Draw();
 }
 
-// Function to add titles to the top row
 void addTopRowTitles(TCanvas* c, const std::vector<std::string>& titles) {
     for (size_t i = 0; i < titles.size(); ++i) {
         c->cd(i + 1);  // Select the pad
-        TText *text = new TText(0.5, 0.95, titles[i].c_str());  // Positioning text (centered, near top)
+        TText *text = new TText(0.5, 0.93, titles[i].c_str());  // Adjust y-position slightly down
         text->SetTextAlign(22);  // Center alignment
         text->SetTextSize(0.05);  // Set text size
         text->Draw();
+        gPad->RedrawAxis();  // Redraw axis to ensure text is on top
     }
 }
 
-// Main plotting function
 void plotQ2yz_pT(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
     const std::string &outputFileName) {
