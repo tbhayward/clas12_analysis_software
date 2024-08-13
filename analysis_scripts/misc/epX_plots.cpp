@@ -653,8 +653,8 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
                 if (!anyGraphDrawn) {
                     // Handle empty plot scenario
                     std::vector<double> dummyX = {-9999};
-                    std::vector dummyY = {0};
-                    std::vector dummyYErr = {0};
+                    std::vector<double> dummyY = {0};
+                    std::vector<double> dummyYErr = {0};
                     TGraphErrors *dummyGraph = createTGraphErrors(dummyX, dummyY, dummyYErr, 20, 0.8, kWhite);
                     setAxisLabelsAndRanges(dummyGraph, "P_{T} (GeV)", yLabels[fitIndex], {0.1, 0.9}, yRange);
                     drawEmptyPlot(dummyGraph, q2Index, row, Q2_prefixes.size());
