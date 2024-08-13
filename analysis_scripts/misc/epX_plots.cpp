@@ -453,6 +453,24 @@ void addLegend(std::vector<TGraph*>& sampleGraphs, TCanvas* c, const std::vector
     legend->Draw();
 }
 
+// Function to handle empty placeholders
+void drawEmptyPlot(TGraphErrors* dummyGraph, int q2Index, int row, int totalRows) {
+    dummyGraph->Draw("AP");
+    dummyGraph->GetXaxis()->SetNdivisions(505);
+
+    // Hide Y-axis labels for non-leftmost plots
+    if (q2Index != 0) {
+        dummyGraph->GetYaxis()->SetLabelOffset(999);
+        dummyGraph->GetYaxis()->SetTitleOffset(999);
+    }
+
+    // Hide X-axis labels for non-bottom row plots and specific bottom right subplots
+    if (row != totalRows - 1 || (row == 3 && (q2Index == 3 || q2Index == 4))) {
+        dummyGraph->GetXaxis()->SetLabelOffset(999);
+        dummyGraph->GetXaxis()->SetTitleOffset(999);
+    }
+}
+
 // Main plotting function
 void plotQ2yz_pT(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
