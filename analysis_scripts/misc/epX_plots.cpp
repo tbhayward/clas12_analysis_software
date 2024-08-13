@@ -644,7 +644,6 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
                     auto it = asymmetryData.find(key);
 
                     if (it == asymmetryData.end()) {
-                        std::cerr << "Warning: No data found for key " << key << std::endl;
                         continue;
                     }
 
