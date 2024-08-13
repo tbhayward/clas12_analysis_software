@@ -390,7 +390,6 @@ TCanvas *setupCanvas(int width, int height, int cols, int rows) {
     return c;
 }
 
-
 // Function to create and draw data plots with titles above the plot area
 void drawDataPlotWithTitle(TGraphErrors* graph, int q2Index, int row, bool firstGraphDrawn, const std::string& title = "") {
     if (!firstGraphDrawn) {
@@ -430,7 +429,7 @@ void drawDataPlotWithTitle(TGraphErrors* graph, int q2Index, int row, bool first
             TLatex latex;
             latex.SetNDC();  // Use Normalized Device Coordinates
             latex.SetTextAlign(22);  // Center alignment
-            latex.SetTextSize(0.06); // Adjust text size as needed
+            latex.SetTextSize(0.08); // Adjust text size as needed
             latex.DrawLatex(0.5, 0.90, title.c_str());  // Positioned above the plot inside the pad
         }
     } else {
