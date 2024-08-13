@@ -555,7 +555,7 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
             "0.30 < y < 0.45"
         };
 
-        // std::vector<TGraph*> sampleGraphs; // Store sample graphs for the legend
+        std::vector<TGraph*> sampleGraphs; // Store sample graphs for the legend
 
         // Loop through each Q2 prefix and corresponding z prefixes
         for (size_t row = 0; row < Q2_prefixes.size(); ++row) {
@@ -606,9 +606,9 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
 
                     TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
 
-                    // if (q2Index == 0 && row == 0) {
-                    //     sampleGraphs.push_back(graph); // Add to sampleGraphs for legend
-                    // }
+                    if (q2Index == 0 && row == 0) {
+                        sampleGraphs.push_back(graph); // Add to sampleGraphs for legend
+                    }
 
                     std::string title = (row == 0) ? topRowTitles[q2Index] : "";
                     drawDataPlotWithTitle(graph, q2Index, row, firstGraphDrawn, title);
@@ -639,8 +639,8 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
         // Add y-range labels on the right-hand side
         addCanvasSideLabels(c, yRanges);
 
-        // // Add legend to the canvas
-        // addLegend(sampleGraphs, c);
+        // Add legend to the canvas
+        addLegend(sampleGraphs, c);
 
         // Save the canvas to file
         gSystem->Exec("mkdir -p output/epX_plots");
