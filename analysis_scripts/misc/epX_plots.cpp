@@ -524,16 +524,16 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
     };
 
     // Define different maxError thresholds for each fit type
-    std::vector<double> maxErrors = {0.0275, 0.03, 0.025, 0.028, 0.027, 0.03}; // Customize these values as needed
+    std::vector<double> maxErrors = {0.0275, 0.01, 0.0275, 0.0275, 0.0275, 0.0275}; // Customize these values as needed
 
     // Define different y-axis ranges for each fit type
     std::vector<std::pair<double, double>> yRangesPerPlot = {
-        {-0.09, 0.09}, // For ALUsinphi
-        {-0.1, 0.1},   // For AULoffset
-        {-0.08, 0.08}, // For AULsinphi
-        {-0.12, 0.12}, // For AULsin2phi
-        {-0.07, 0.07}, // For ALL
-        {-0.1, 0.1}    // For ALLcosphi
+        {-0.099, 0.099}, // For ALUsinphi
+        {-0.149, 0.049},   // For AULoffset
+        {-0.099, 0.099}, // For AULsinphi
+        {-0.099, 0.099}, // For AULsin2phi
+        {-0.199, 0.599}, // For ALL
+        {-0.199, 0.199}    // For ALLcosphi
     };
 
     // Define the legend once before the loop
