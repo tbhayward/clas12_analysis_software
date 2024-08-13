@@ -607,7 +607,7 @@ void plotQ2yz_pT(
         }
     }
 
-    addLegend(sampleGraphs, c, z_prefixes);
+    addLegend(sampleGraphs, c);
 
     gSystem->Exec("mkdir -p output/epX_plots");
     c->SaveAs(outputFileName.c_str());
