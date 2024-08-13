@@ -439,17 +439,27 @@ void drawDataPlotWithTitle(TGraphErrors* graph, int q2Index, int row, bool first
 }
 
 // Function to add the legend
-void addLegend(std::vector<TGraph*>& sampleGraphs, TCanvas* c, const std::vector<std::string>& z_prefixes) {
+void addLegend(std::vector<TGraph*>& sampleGraphs, TCanvas* c) {
     c->cd(20); // Go to the last pad
-    TLegend *legend = new TLegend(0.225, 0.225, 0.9, 0.9); // Slightly move up the legend box
+    TLegend *legend = new TLegend(0.225, 0.225, 0.9, 0.9); // Adjust position and size of the legend box
 
-    for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
-        legend->AddEntry(sampleGraphs[zIndex], Form("%s (%.2f < z < %.2f)", z_prefixes[zIndex].c_str(), 0.10 + 0.15 * zIndex, 0.25 + 0.10 * zIndex), "P");
+    // Define the z ranges explicitly
+    std::vector<std::string> zRanges = {
+        "0.10 < z < 0.25",
+        "0.25 < z < 0.35",
+        "0.35 < z < 0.45",
+        "0.45 < z < 0.55",
+        "0.55 < z < 0.75"
+    };
+
+    // Add each z range to the legend
+    for (size_t zIndex = 0; zIndex < zRanges.size(); ++zIndex) {
+        legend->AddEntry(sampleGraphs[zIndex], zRanges[zIndex].c_str(), "P");
     }
 
     legend->SetTextSize(0.05); // Adjust text size if needed
     legend->SetFillColor(0); // Make background transparent
-    legend->SetLineColor(1); // Remove border
+    legend->SetLineColor(1); // Add border
     legend->Draw();
 }
 
