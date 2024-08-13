@@ -441,7 +441,7 @@ void drawDataPlotWithTitle(TGraphErrors* graph, int q2Index, int row, bool first
 // Function to add the legend
 void addLegend(std::vector<TGraph*>& sampleGraphs, TCanvas* c, const std::vector<std::string>& z_prefixes) {
     c->cd(20); // Go to the last pad
-    TLegend *legend = new TLegend(0.1, 0.15, 0.9, 0.9); // Slightly move up the legend box
+    TLegend *legend = new TLegend(0.15, 0.20, 0.9, 0.9); // Slightly move up the legend box
 
     for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
         legend->AddEntry(sampleGraphs[zIndex], Form("%s (%.2f < z < %.2f)", z_prefixes[zIndex].c_str(), 0.10 + 0.15 * zIndex, 0.25 + 0.10 * zIndex), "P");
