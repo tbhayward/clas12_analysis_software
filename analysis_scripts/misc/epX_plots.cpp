@@ -150,8 +150,9 @@ std::map<std::string, std::vector<std::vector<double>>> readAsymmetries(const st
     return asymmetryData;
 }
 
-// Function to extract and print Q² dependence vectors
-void extractAndPrintQ2Dependence(
+// Function to extract and return Q² dependence vectors
+std::map<std::string, std::map<std::string, std::vector<std::vector<double>>>>
+extractQ2Dependence(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
     const std::map<std::string, std::vector<std::vector<double>>> &kinematicData) {
 
@@ -217,29 +218,7 @@ void extractAndPrintQ2Dependence(
         }
     }
 
-    // Helper lambda to print vectors
-    auto printVector = [](const std::string &name, const std::vector<std::vector<double>> &vec) {
-        std::cout << "Vector: " << name << std::endl;
-        for (const auto &entry : vec) {
-            if (entry.size() == 3) {
-                std::cout << "Q²: " << entry[0] << ", Asymmetry: " << entry[1] << ", Error: " << entry[2] << std::endl;
-            }
-        }
-        std::cout << std::endl;
-    };
-
-    // Print all vectors
-    for (const auto &vecGroup : allVectors) {
-        const std::string &vectorName = vecGroup.first;
-        const std::map<std::string, std::vector<std::vector<double>>> &fitTypeMap = vecGroup.second;
-
-        for (const auto &fitTypeData : fitTypeMap) {
-            const std::string &fitType = fitTypeData.first;
-            const std::vector<std::vector<double>> &dataVector = fitTypeData.second;
-
-            printVector(vectorName + " (" + fitType + ")", dataVector);
-        }
-    }
+    return allVectors;
 }
 
 // Function to print the data for verification
@@ -889,8 +868,8 @@ int main(int argc, char *argv[]) {
     // Read the kinematic data from the file
     std::map<std::string, std::vector<std::vector<double>>> kinematicData = readKinematics(kinematicFile);
 
-    // Extract and print Q² dependence vectors
-    extractAndPrintQ2Dependence(asymmetryData, kinematicData);
+    // Extract Q² dependence vectors
+    auto allVectors = extractQ2Dependence(asymmetryData, kinematicData);
 
     // // Print out the parsed data
     // std::cout << "Asymmetry Data:\n";
