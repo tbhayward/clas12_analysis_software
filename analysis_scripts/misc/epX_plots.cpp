@@ -514,6 +514,7 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
 
     double maxError = 0.0275; // Threshold for maximum allowed error bar size
 
+    // Create a new canvas for each plot
     TCanvas *c = new TCanvas("c", "Q2-y-z Dependence", 2400, 1600);
     c->Divide(5, 4, 0, 0);  // 4 rows by 5 columns, no spacing
 
@@ -634,11 +635,13 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
     gSystem->Exec("mkdir -p output/epX_plots");
     c->SaveAs(outputFileName.c_str());
 
+    // Cleanup
     delete c;
     for (auto graph : sampleGraphs) {
         delete graph;
     }
 }
+
 
 int main(int argc, char *argv[]) {
     if (argc != 3) {
