@@ -533,7 +533,6 @@ void addCanvasSideLabels(TCanvas* c, const std::vector<std::string>& y_ranges) {
 }
 
 void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData) {
-    // Fit types, corresponding y-axis labels, and output file names
     std::vector<std::string> fitTypes = {"ALUsinphi", "AULoffset", "AULsinphi", "AULsin2phi", "ALL", "ALLcosphi"};
     std::vector<std::string> yLabels = {"F_{LU}^{sin#phi}/F_{UU}", "A_{UL}^{offset}", "A_{UL}^{sin#phi}", "A_{UL}^{sin2#phi}", "A_{LL}", "A_{LL}^{cos#phi}"};
     std::vector<std::string> outputFiles = {
@@ -545,21 +544,18 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
         "output/epX_plots/Q2yz_pT_ALLcosphi.png"
     };
 
-    // Define different maxError thresholds for each fit type
-    std::vector<double> maxErrors = {0.0275, 0.01, 0.0275, 0.0275, 0.0275, 0.0275}; // Customize these values as needed
+    std::vector<double> maxErrors = {0.0275, 0.01, 0.0275, 0.0275, 0.0275, 0.0275}; 
 
-    // Define different y-axis ranges for each fit type
     std::vector<std::pair<double, double>> yRangesPerPlot = {
-        {-0.099, 0.099}, // For ALUsinphi
-        {-0.149, 0.049}, // For AULoffset
-        {-0.099, 0.099}, // For AULsinphi
-        {-0.099, 0.099}, // For AULsin2phi
-        {-0.199, 0.599}, // For ALL
-        {-0.199, 0.199}  // For ALLcosphi
+        {-0.099, 0.099}, 
+        {-0.149, 0.049}, 
+        {-0.099, 0.099}, 
+        {-0.099, 0.099}, 
+        {-0.199, 0.599}, 
+        {-0.199, 0.199}  
     };
 
-    // Define the legend once before the loop
-    TLegend *legend = new TLegend(0.225, 0.225, 0.9, 0.9); // Adjust position and size of the legend box
+    TLegend *legend = new TLegend(0.225, 0.225, 0.9, 0.9); 
     std::vector<std::string> zRanges = {
         "0.10 < z < 0.25",
         "0.25 < z < 0.35",
@@ -567,27 +563,23 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
         "0.45 < z < 0.55",
         "0.55 < z < 0.75"
     };
-    std::vector<int> colors = {kBlack, kRed, kGreen, kBlue, kMagenta}; // Colors for z ranges
+    std::vector<int> colors = {kBlack, kRed, kGreen, kBlue, kMagenta}; 
 
-    // Add entries to the legend
     for (size_t zIndex = 0; zIndex < zRanges.size(); ++zIndex) {
         TGraph *dummyGraph = new TGraph();
         dummyGraph->SetMarkerColor(colors[zIndex]);
-        dummyGraph->SetMarkerStyle(20); // Style of the marker
-        dummyGraph->SetMarkerSize(1.5); // Size of the marker to make it more visible
+        dummyGraph->SetMarkerStyle(20);
+        dummyGraph->SetMarkerSize(1.5);
         legend->AddEntry(dummyGraph, zRanges[zIndex].c_str(), "P");
 
-        // Cast to TLegendEntry to set the text color
         TLegendEntry *entry = (TLegendEntry*)legend->GetListOfPrimitives()->Last();
         entry->SetTextColor(colors[zIndex]);
     }
-    legend->SetTextSize(0.05); // Adjust text size if needed
-    legend->SetFillColor(0);   // Make background transparent
-    legend->SetLineColor(1);   // Add border
+    legend->SetTextSize(0.05); 
+    legend->SetFillColor(0);   
+    legend->SetLineColor(1);   
 
-    // Loop over each fit type and generate the corresponding plot
     for (size_t fitIndex = 0; fitIndex < fitTypes.size(); ++fitIndex) {
-        // Setup canvas for this fit type
         TCanvas *c = setupCanvas(2400, 1600, 5, 4);
 
         std::vector<std::vector<std::string>> Q2_prefixes = {
@@ -613,17 +605,14 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
             "0.30 < y < 0.45"
         };
 
-        // Get the specific maxError and y-axis range for this fit type
         double maxError = maxErrors[fitIndex];
         std::pair<double, double> yRange = yRangesPerPlot[fitIndex];
 
-        // Loop through each Q2 prefix and corresponding z prefixes
         for (size_t row = 0; row < Q2_prefixes.size(); ++row) {
             for (size_t q2Index = 0; q2Index < Q2_prefixes[row].size(); ++q2Index) {
                 int padIndex = row * 5 + q2Index + 1;
-                c->cd(padIndex); // Move to the appropriate pad in the canvas
+                c->cd(padIndex); 
 
-                // Adjust margins
                 if (q2Index != 0) {
                     gPad->SetLeftMargin(0.001);
                 } else {
@@ -638,7 +627,6 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
                 bool firstGraphDrawn = false;
                 bool anyGraphDrawn = false;
 
-                // Loop through z prefixes
                 for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
                     std::string key = Q2_prefixes[row][q2Index] + z_prefixes[zIndex] + "chi2Fits" + fitTypes[fitIndex];
                     auto it = asymmetryData.find(key);
@@ -649,10 +637,8 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
 
                     const auto &data = it->second;
 
-                    // Filter data by error
                     auto filteredData = filterDataByError(data, maxError);
 
-                    // Skip this z-bin if all points are filtered out
                     if (filteredData.empty()) continue;
 
                     std::vector<double> x, y, yErr;
@@ -665,10 +651,9 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
 
                     TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
 
-                    // Set the custom y-axis range here using the new function
-                    setCustomAxisLabelsAndRanges(graph, "P_{T} (GeV)", yLabels[fitIndex], {0.1, 0.9}, yRange);
-                    
-                    // Draw the graph
+                    // Set the y-axis range directly
+                    graph->GetYaxis()->SetRangeUser(yRange.first, yRange.second);
+
                     std::string title = (row == 0) ? topRowTitles[q2Index] : "";
                     drawDataPlotWithTitle(graph, q2Index, row, firstGraphDrawn, title);
                     firstGraphDrawn = true;
@@ -676,7 +661,6 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
                 }
 
                 if (!anyGraphDrawn) {
-                    // Handle empty plot scenario
                     std::vector<double> dummyX = {-9999};
                     std::vector<double> dummyY = {0};
                     std::vector<double> dummyYErr = {0};
@@ -684,7 +668,7 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
                     setCustomAxisLabelsAndRanges(dummyGraph, "P_{T} (GeV)", yLabels[fitIndex], {0.1, 0.9}, yRange);
                     drawEmptyPlot(dummyGraph, q2Index, row, Q2_prefixes.size());
                 }
-                // Draw horizontal line except in certain positions
+
                 if (!(row == 2 && q2Index == 4) && (row != 3 || (q2Index != 3 && q2Index != 4))) {
                     TLine *line = new TLine(0.15, 0.0, 0.95, 0.0);
                     line->SetLineColor(kGray + 2);
@@ -694,22 +678,16 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
             }
         }
 
-        // Add y-range labels on the right-hand side
         addCanvasSideLabels(c, yRanges);
 
-        // Add legend to the canvas
-        c->cd(20); // Navigate to the pad where the legend will be drawn
+        c->cd(20);
         legend->Draw();
 
-        // Save the canvas to file
         gSystem->Exec("mkdir -p output/epX_plots");
         c->SaveAs(outputFiles[fitIndex].c_str());
-
-        // Clean up canvas
         delete c;
     }
 
-    // Clean up legend
     delete legend;
 }
 
