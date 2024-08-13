@@ -65,6 +65,13 @@ std::map<std::string, std::vector<std::vector<double>>> readKinematics(const std
             }
 
             kinematicData[key] = values;
+
+            // Automatically add 'doubleratio' kinematic data if the key is 'ALL'
+            if (key.find("ALL") != std::string::npos) {
+                std::string doubleRatioKey = key;
+                doubleRatioKey.replace(doubleRatioKey.find("ALL"), 3, "doubleratio"); // Replace 'ALL' with 'doubleratio'
+                kinematicData[doubleRatioKey] = values; // Copy the same values
+            }
         }
     }
 
@@ -578,28 +585,38 @@ void addCanvasTopLabels(TCanvas* c, const std::vector<std::string>& q2_ranges) {
 
 void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData) {
     // Fit types, corresponding y-axis labels, and output file names
-    std::vector<std::string> fitTypes = {"ALUsinphi", "AULoffset", "AULsinphi", "AULsin2phi", "ALL", "ALLcosphi"};
-    std::vector<std::string> yLabels = {"F_{LU}^{sin#phi}/F_{UU}", "A_{UL}^{offset}", "F_{UL}^{sin#phi}/F_{UU}", "F_{UL}^{sin2#phi}/F_{UU}", "F_{LL}/F_{UU}", "F_{LL}^{cos#phi}/F_{UU}"};
+    std::vector<std::string> fitTypes = {"ALUsinphi", "AULoffset", "AULsinphi", "AULsin2phi", "ALL", "ALLcosphi", "doubleratio"};
+    std::vector<std::string> yLabels = {
+        "F_{LU}^{sin#phi}/F_{UU}",
+        "A_{UL}^{offset}",
+        "F_{UL}^{sin#phi}/F_{UU}",
+        "F_{UL}^{sin2#phi}/F_{UU}",
+        "F_{LL}/F_{UU}",
+        "F_{LL}^{cos#phi}/F_{UU}",
+        "F_{LU}^{sin#phi}/F_{LL}"
+    };
     std::vector<std::string> outputFiles = {
         "output/epX_plots/Q2yz_pT_ALUsinphi.png",
         "output/epX_plots/Q2yz_pT_AULoffset.png",
         "output/epX_plots/Q2yz_pT_AULsinphi.png",
         "output/epX_plots/Q2yz_pT_AULsin2phi.png",
         "output/epX_plots/Q2yz_pT_ALL.png",
-        "output/epX_plots/Q2yz_pT_ALLcosphi.png"
+        "output/epX_plots/Q2yz_pT_ALLcosphi.png",
+        "output/epX_plots/Q2yz_pT_doubleratio.png"
     };
 
     // Define different maxError thresholds for each fit type
-    std::vector<double> maxErrors = {0.0275, 0.05, 0.0275, 0.05, 0.075, 0.05}; // Customize these values as needed
+    std::vector<double> maxErrors = {0.0275, 0.05, 0.0275, 0.05, 0.075, 0.05, 0.10}; // Add threshold for doubleratio
 
     // Define different y-axis ranges for each fit type
     std::vector<std::pair<double, double>> yRangesPerPlot = {
-        {-0.09, 0.09}, // For ALUsinphi
-        {-0.199, 0.049}, // For AULoffset
-        {-0.099, 0.099}, // For AULsinphi
-        {-0.099, 0.099}, // For AULsin2phi
-        {-0.199, 0.599}, // For ALL
-        {-0.199, 0.199}  // For ALLcosphi
+        {-0.09, 0.09},  // ALUsinphi
+        {-0.199, 0.049},  // AULoffset
+        {-0.099, 0.099},  // AULsinphi
+        {-0.099, 0.099},  // AULsin2phi
+        {-0.199, 0.599},  // ALL
+        {-0.199, 0.199},  // ALLcosphi
+        {-0.99, 0.99}     // doubleratio
     };
 
     // Define the legend once before the loop
@@ -726,7 +743,7 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
                     // Handle empty plot scenario
                     std::vector<double> dummyX = {-9999};
                     std::vector<double> dummyY = {0};
-                    std::vector<double>  dummyYErr = {0};
+                    std::vector<double> dummyYErr = {0};
                     TGraphErrors *dummyGraph = createTGraphErrors(dummyX, dummyY, dummyYErr, 20, 0.8, kWhite);
                     setCustomAxisLabelsAndRanges(dummyGraph, "P_{T} (GeV)", yLabels[fitIndex], {0.1, 0.9}, yRange);
                     drawEmptyPlot(dummyGraph, q2Index, row, Q2_prefixes.size());
@@ -740,7 +757,6 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
                 }
             }
         }
-
         // Add y-range labels on the right-hand side
         addCanvasSideLabels(c, yRanges);
 
