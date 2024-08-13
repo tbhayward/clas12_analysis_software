@@ -447,7 +447,7 @@ void addLegend(std::vector<TGraph*>& sampleGraphs, TCanvas* c, const std::vector
         legend->AddEntry(sampleGraphs[zIndex], Form("%s (%.2f < z < %.2f)", z_prefixes[zIndex].c_str(), 0.10 + 0.15 * zIndex, 0.25 + 0.10 * zIndex), "P");
     }
 
-    legend->SetTextSize(0.06); // Adjust text size if needed
+    legend->SetTextSize(0.05); // Adjust text size if needed
     legend->SetFillColor(0); // Make background transparent
     legend->SetLineColor(1); // Remove border
     legend->Draw();
@@ -592,17 +592,22 @@ void plotQ2yz_pT(
                 TGraphErrors *dummyGraph = createTGraphErrors(dummyX, dummyY, dummyYErr, 20, 0.8, kWhite);
                 setAxisLabelsAndRanges(dummyGraph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.1, 0.9}, {-0.09, 0.09});
                 dummyGraph->Draw("AP");
+
+                // Hide X-axis labels for the bottom right and second to last plot
+                if (row == 3 && (q2Index == 3 || q2Index == 4)) {
+                    dummyGraph->GetXaxis()->SetLabelOffset(999);
+                    dummyGraph->GetXaxis()->SetTitleOffset(999);
+                }
             }
 
             if (row != 3 || (q2Index != 3 && q2Index != 4)) {
                 TLine *line = new TLine(0.15, 0.0, 0.95, 0.0);
                 line->SetLineColor(kGray + 2);
                 line->SetLineStyle(7);
-                line->Draw("same");
+                line->Draw(“same”);
             }
         }
     }
-
     addLegend(sampleGraphs, c, z_prefixes);
 
     gSystem->Exec("mkdir -p output/epX_plots");
