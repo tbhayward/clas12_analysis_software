@@ -540,17 +540,30 @@ void drawEmptyPlot(TGraphErrors* dummyGraph, int q2Index, int row, int totalRows
     }
 }
 
-// Function to filter out data points with large error bars
+// // Function to filter out data points with large error bars
+// std::vector<std::vector<double>> filterDataByError(const std::vector<std::vector<double>>& data, double maxError) {
+//     std::vector<std::vector<double>> filteredData;
+
+//     for (const auto& entry : data) {
+//         double yError = entry[2]; // Assuming the error is stored in the third element of each entry
+//         if (yError <= maxError) {
+//             filteredData.push_back(entry); // Include only if error is below threshold
+//         }
+//     }
+
+//     return filteredData;
+// }
+
 std::vector<std::vector<double>> filterDataByError(const std::vector<std::vector<double>>& data, double maxError) {
     std::vector<std::vector<double>> filteredData;
-
     for (const auto& entry : data) {
-        double yError = entry[2]; // Assuming the error is stored in the third element of each entry
-        if (yError <= maxError) {
-            filteredData.push_back(entry); // Include only if error is below threshold
+        // Assume entry[2] is the error value
+        double errorValue = entry[2];
+        std::cout << "Checking error: " << errorValue << " against maxError: " << maxError << std::endl;
+        if (errorValue <= maxError) {
+            filteredData.push_back(entry);
         }
     }
-
     return filteredData;
 }
 
@@ -606,7 +619,7 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
     };
 
     // Define different maxError thresholds for each fit type
-    std::vector<double> maxErrors = {0.0275, 0.05, 0.0275, 0.05, 0.00075, 0.05, 0.000275}; // Add threshold for doubleratio
+    std::vector<double> maxErrors = {0.0275, 0.05, 0.0275, 0.05, 0.075, 0.05, 0.000275}; // Add threshold for doubleratio
 
     // Define different y-axis ranges for each fit type
     std::vector<std::pair<double, double>> yRangesPerPlot = {
@@ -794,9 +807,9 @@ int main(int argc, char *argv[]) {
     // Read the kinematic data from the file
     std::map<std::string, std::vector<std::vector<double>>> kinematicData = readKinematics(kinematicFile);
 
-    // Print out the parsed data
-    std::cout << "Asymmetry Data:\n";
-    printData(asymmetryData);
+    // // Print out the parsed data
+    // std::cout << "Asymmetry Data:\n";
+    // printData(asymmetryData);
 
     // std::cout << "\nKinematic Data:\n";
     // printData(kinematicData);
