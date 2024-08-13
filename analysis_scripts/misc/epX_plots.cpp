@@ -635,11 +635,11 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
     gSystem->Exec("mkdir -p output/epX_plots");
     c->SaveAs(outputFileName.c_str());
 
-    // Cleanup
-    delete c;
-    for (auto graph : sampleGraphs) {
-        delete graph;
-    }
+    // // Cleanup
+    // delete c;
+    // for (auto graph : sampleGraphs) {
+    //     delete graph;
+    // }
 }
 
 
