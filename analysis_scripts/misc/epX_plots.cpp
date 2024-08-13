@@ -390,7 +390,6 @@ TCanvas *setupCanvas(int width, int height, int cols, int rows) {
     return c;
 }
 
-
 // Function to create and draw data plots with titles above the plot area
 void drawDataPlotWithTitle(TGraphErrors* graph, int q2Index, int row, bool firstGraphDrawn, const std::string& title = "") {
     if (!firstGraphDrawn) {
@@ -510,9 +509,8 @@ void addCanvasSideLabels(TCanvas* c, const std::vector<std::string>& y_ranges) {
     }
 }
 
-void plotQ2yz_pT(
-    const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
-    const std::string &outputFileName) {
+void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
+                 const std::string &fitType, const std::string &outputFileName, const std::string &yAxisLabel) {
 
     double maxError = 0.0275; // Threshold for maximum allowed error bar size
 
@@ -567,12 +565,11 @@ void plotQ2yz_pT(
             bool anyGraphDrawn = false; // Track if any graph was drawn for this pad
 
             for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
-                std::string key = Q2_prefixes[row][q2Index] + z_prefixes[zIndex] + "chi2FitsALUsinphi";
+                std::string key = Q2_prefixes[row][q2Index] + z_prefixes[zIndex] + "chi2Fits" + fitType;
                 auto it = asymmetryData.find(key);
 
                 if (it == asymmetryData.end()) {
-                    std::cerr << "Warning: No data found for key " << key << std::endl;
-                    continue;
+                    continue; // Skip missing keys without warnings
                 }
 
                 const auto &data = it->second;
@@ -609,7 +606,7 @@ void plotQ2yz_pT(
                 std::vector<double> dummyYErr = {0};
 
                 TGraphErrors *dummyGraph = createTGraphErrors(dummyX, dummyY, dummyYErr, 20, 0.8, kWhite);
-                setAxisLabelsAndRanges(dummyGraph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.1, 0.9}, {-0.09, 0.09});
+                setAxisLabelsAndRanges(dummyGraph, "P_{T} (GeV)", yAxisLabel.c_str(), {0.1, 0.9}, {-0.09, 0.09});
                 dummyGraph->Draw("AP");
 
                 // Hide X-axis labels for the bottom right and second to last plot
@@ -673,8 +670,17 @@ int main(int argc, char *argv[]) {
     // // Plot PT and xF dependence comparison
     // plotComparison(asymmetryData, "output/epX_plots/PT_xF_dependence_comparison.png");
 
-    // Plot Q2-y-z dependence
-    plotQ2yz_pT(asymmetryData, "output/epX_plots/Q2yz_dependence_plots.png");
+    // Loop over the different fit types
+    std::vector<std::string> fitTypes = {"ALUsinphi", "AULoffset"};
+    std::vector<std::string> yAxisLabels = {"F_{LU}^{sin#phi}/F_{UU}", "A_{UL}^{offset}"};
+
+    for (size_t i = 0; i < fitTypes.size(); ++i) {
+        std::string fitType = fitTypes[i];
+        std::string yAxisLabel = yAxisLabels[i];
+        std::string outputFileName = "Q2yz_pT_" + fitType + ".png";
+        
+        plotQ2yz_pT(asymmetryData, fitType, outputFileName, yAxisLabel);
+    }
 
     return 0;
 }
