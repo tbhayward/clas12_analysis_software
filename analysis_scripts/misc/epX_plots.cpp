@@ -396,7 +396,7 @@ void drawDataPlotWithTitle(TGraphErrors* graph, int q2Index, int row, bool first
     if (!firstGraphDrawn) {
         // Adjust the pad's top margin to create space for the title
         if (row == 0) {
-            gPad->SetTopMargin(0.1);  // Increase top margin for the top row
+            gPad->SetTopMargin(0.0);  // Increase top margin for the top row
         }
 
         // Draw the plot
@@ -430,8 +430,8 @@ void drawDataPlotWithTitle(TGraphErrors* graph, int q2Index, int row, bool first
             TLatex latex;
             latex.SetNDC();  // Use Normalized Device Coordinates
             latex.SetTextAlign(22);  // Center alignment
-            latex.SetTextSize(0.05); // Adjust text size as needed
-            latex.DrawLatex(0.5, 0.93, title.c_str());  // Positioned above the plot inside the pad
+            latex.SetTextSize(0.06); // Adjust text size as needed
+            latex.DrawLatex(0.5, 0.90, title.c_str());  // Positioned above the plot inside the pad
         }
     } else {
         graph->Draw("P SAME");
