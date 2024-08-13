@@ -855,6 +855,9 @@ int main(int argc, char *argv[]) {
     // Read the kinematic data from the file
     std::map<std::string, std::vector<std::vector<double>>> kinematicData = readKinematics(kinematicFile);
 
+    // Organize and print the data
+    organizeAndPrintKinematicAsymmetryData(asymmetryData, kinematicData);
+
     // // Print out the parsed data
     // std::cout << "Asymmetry Data:\n";
     // printData(asymmetryData);
