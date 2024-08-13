@@ -133,8 +133,10 @@ std::map<std::string, std::vector<std::vector<double>>> readAsymmetries(const st
                 for (size_t i = 0; i < alusData.size(); ++i) {
                     double xValue = alusData[i][0];
                     double ratioValue = alusData[i][1] / allData[i][1];
-                    double error = ratioValue * std::sqrt(std::pow(alusData[i][2] / alusData[i][1], 2) + std::pow(allData[i][2] / allData[i][1], 2));
-                    // double error = (1/std::pow(allData[i][1],4))*std::sqrt(std::pow(alusData[i][1]*allData[i][2],2)+std::pow(allData[i][1]*alusData[i][2],2));
+                    double error = std::abs(ratioValue) * std::sqrt(
+                        std::pow(alusData[i][2] / alusData[i][1], 2) + 
+                        std::pow(allData[i][2] / allData[i][1], 2)
+                    );
                     doubleratioData.push_back({xValue, ratioValue, error});
                 }
 
@@ -540,30 +542,17 @@ void drawEmptyPlot(TGraphErrors* dummyGraph, int q2Index, int row, int totalRows
     }
 }
 
-// // Function to filter out data points with large error bars
-// std::vector<std::vector<double>> filterDataByError(const std::vector<std::vector<double>>& data, double maxError) {
-//     std::vector<std::vector<double>> filteredData;
-
-//     for (const auto& entry : data) {
-//         double yError = entry[2]; // Assuming the error is stored in the third element of each entry
-//         if (yError <= maxError) {
-//             filteredData.push_back(entry); // Include only if error is below threshold
-//         }
-//     }
-
-//     return filteredData;
-// }
-
+// Function to filter out data points with large error bars
 std::vector<std::vector<double>> filterDataByError(const std::vector<std::vector<double>>& data, double maxError) {
     std::vector<std::vector<double>> filteredData;
+
     for (const auto& entry : data) {
-        // Assume entry[2] is the error value
-        double errorValue = entry[2];
-        std::cout << "Checking error: " << errorValue << " against maxError: " << maxError << std::endl;
-        if (errorValue <= maxError) {
-            filteredData.push_back(entry);
+        double yError = entry[2]; // Assuming the error is stored in the third element of each entry
+        if (yError <= maxError) {
+            filteredData.push_back(entry); // Include only if error is below threshold
         }
     }
+
     return filteredData;
 }
 
@@ -619,7 +608,7 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
     };
 
     // Define different maxError thresholds for each fit type
-    std::vector<double> maxErrors = {0.0275, 0.05, 0.0275, 0.05, 0.075, 0.05, 0.000275}; // Add threshold for doubleratio
+    std::vector<double> maxErrors = {0.0275, 0.05, 0.0275, 0.05, 0.075, 0.05, 0.05}; // Add threshold for doubleratio
 
     // Define different y-axis ranges for each fit type
     std::vector<std::pair<double, double>> yRangesPerPlot = {
