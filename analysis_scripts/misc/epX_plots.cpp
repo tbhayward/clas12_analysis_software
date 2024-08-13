@@ -505,6 +505,12 @@ void plotQ2yz_pT(
                         graph->GetXaxis()->SetTitleOffset(999);
                     }
 
+                    // Hide X-axis labels for the last two plots in the bottom row
+                    if (row == 3 && (q2Index == 3 || q2Index == 4)) {
+                        graph->GetXaxis()->SetLabelOffset(999);
+                        graph->GetXaxis()->SetTitleOffset(999);
+                    }
+
                     graph->Draw("AP");
                     firstGraphDrawn = true;
                 } else {
