@@ -502,13 +502,14 @@ void addRightColumnTitles(TCanvas* c, const std::vector<std::string>& y_ranges) 
         c->cd(padIndex);  // Select the appropriate pad
 
         // Set margins to position the text inside the pad
-        gPad->SetRightMargin(0.25);  // Increase right margin to make room for the label
+        gPad->SetRightMargin(0.1);  // Increase right margin slightly to make room for the label
 
         TLatex latex;
         latex.SetNDC();  // Use Normalized Device Coordinates
         latex.SetTextAlign(32);  // Align right (3) and vertically centered (2)
         latex.SetTextSize(0.05);  // Set text size
-        latex.DrawLatex(1.0, 0.5, y_ranges[i].c_str());  // Draw text at the right center of the pad
+        latex.SetTextAngle(90);  // Rotate the text to be vertical (90 degrees)
+        latex.DrawLatex(1.03, 0.5, y_ranges[i].c_str());  // Position text slightly outside the plot area
     }
 }
 
