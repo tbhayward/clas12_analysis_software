@@ -510,135 +510,152 @@ void addCanvasSideLabels(TCanvas* c, const std::vector<std::string>& y_ranges) {
 }
 
 void plotQ2yz_pT(
-    const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
-    const std::string &outputFileName) {
+    const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData) {
 
     double maxError = 0.0275; // Threshold for maximum allowed error bar size
 
-    TCanvas *c = new TCanvas("c", "Q2-y-z Dependence", 2400, 1600);
-    c->Divide(5, 4, 0, 0);  // 4 rows by 5 columns, no spacing
-
-    std::vector<std::vector<std::string>> Q2_prefixes = {
-        {"Q2y1", "Q2y5", "Q2y9", "Q2y13", "Q2y16"},
-        {"Q2y2", "Q2y6", "Q2y10", "Q2y14", "Q2y17"},
-        {"Q2y3", "Q2y7", "Q2y11", "Q2y15", "EMPTY"},
-        {"Q2y4", "Q2y8", "Q2y12", "EMPTY", "EMPTY"}
+    // Fit types, corresponding y-axis labels, and output file names
+    std::vector<std::string> fitTypes = {"ALUsinphi", "AULoffset", "AULsinphi", "AULsin2phi", "ALL", "ALLcosphi"};
+    std::vector<std::string> yLabels = {"F_{LU}^{sin#phi}/F_{UU}", "A_{UL}^{offset}", "A_{UL}^{sin#phi}", "A_{UL}^{sin2#phi}", "A_{LL}", "A_{LL}^{cos#phi}"};
+    std::vector<std::string> outputFiles = {
+        "output/epX_plots/Q2yz_pT_ALUsinphi.png",
+        "output/epX_plots/Q2yz_pT_AULoffset.png",
+        "output/epX_plots/Q2yz_pT_AULsinphi.png",
+        "output/epX_plots/Q2yz_pT_AULsin2phi.png",
+        "output/epX_plots/Q2yz_pT_ALL.png",
+        "output/epX_plots/Q2yz_pT_ALLcosphi.png"
     };
 
-    std::vector<std::string> z_prefixes = {"z1", "z2", "z3", "z4", "z5"};
-    std::vector<int> colors = {kBlack, kRed, kGreen, kBlue, kMagenta}; // Add color for z5
+    std::vector<TCanvas*> canvases(fitTypes.size(), nullptr);
+    std::vector<std::vector<TGraph*>> sampleGraphs(fitTypes.size());
 
-    std::vector<std::string> topRowTitles = {
-        "1.0 < Q^{2} (GeV^{2}) < 2.0",
-        "2.0 < Q^{2} (GeV^{2}) < 3.0",
-        "3.0 < Q^{2} (GeV^{2}) < 4.0",
-        "4.0 < Q^{2} (GeV^{2}) < 5.0",
-        "5.0 < Q^{2} (GeV^{2}) < 7.0"
-    };
+    for (size_t fitIndex = 0; fitIndex < fitTypes.size(); ++fitIndex) {
+        canvases[fitIndex] = new TCanvas(("c_" + fitTypes[fitIndex]).c_str(), ("Q2-y-z Dependence - " + fitTypes[fitIndex]).c_str(), 2400, 1600);
+        canvases[fitIndex]->Divide(5, 4, 0, 0);  // 4 rows by 5 columns, no spacing
 
-    std::vector<std::string> yRanges = {
-        "0.65 < y < 0.75",
-        "0.55 < y < 0.65",
-        "0.45 < y < 0.55",
-        "0.30 < y < 0.45"
-    };
+        std::vector<std::vector<std::string>> Q2_prefixes = {
+            {"Q2y1", "Q2y5", "Q2y9", "Q2y13", "Q2y16"},
+            {"Q2y2", "Q2y6", "Q2y10", "Q2y14", "Q2y17"},
+            {"Q2y3", "Q2y7", "Q2y11", "Q2y15", "EMPTY"},
+            {"Q2y4", "Q2y8", "Q2y12", "EMPTY", "EMPTY"}
+        };
 
-    std::vector<TGraph*> sampleGraphs;
+        std::vector<std::string> z_prefixes = {"z1", "z2", "z3", "z4", "z5"};
+        std::vector<int> colors = {kBlack, kRed, kGreen, kBlue, kMagenta}; // Add color for z5
 
-    for (size_t row = 0; row < Q2_prefixes.size(); ++row) {
-        for (size_t q2Index = 0; q2Index < Q2_prefixes[row].size(); ++q2Index) {
-            int padIndex = row * 5 + q2Index + 1;
-            c->cd(padIndex);
+        std::vector<std::string> topRowTitles = {
+            "1.0 < Q^{2} (GeV^{2}) < 2.0",
+            "2.0 < Q^{2} (GeV^{2}) < 3.0",
+            "3.0 < Q^{2} (GeV^{2}) < 4.0",
+            "4.0 < Q^{2} (GeV^{2}) < 5.0",
+            "5.0 < Q^{2} (GeV^{2}) < 7.0"
+        };
 
-            if (q2Index != 0) {
-                gPad->SetLeftMargin(0.001);
-            } else {
-                gPad->SetLeftMargin(0.18);
-            }
+        std::vector<std::string> yRanges = {
+            "0.65 < y < 0.75",
+            "0.55 < y < 0.65",
+            "0.45 < y < 0.55",
+            "0.30 < y < 0.45"
+        };
 
-            if (row != Q2_prefixes.size() - 1) {
-                gPad->SetBottomMargin(0.001);
-            } else {
-                gPad->SetBottomMargin(0.15);
-            }
+        for (size_t row = 0; row < Q2_prefixes.size(); ++row) {
+            for (size_t q2Index = 0; q2Index < Q2_prefixes[row].size(); ++q2Index) {
+                int padIndex = row * 5 + q2Index + 1;
+                canvases[fitIndex]->cd(padIndex);
 
-            bool firstGraphDrawn = false;
-            bool anyGraphDrawn = false; // Track if any graph was drawn for this pad
-
-            for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
-                std::string key = Q2_prefixes[row][q2Index] + z_prefixes[zIndex] + "chi2FitsALUsinphi";
-                auto it = asymmetryData.find(key);
-
-                if (it == asymmetryData.end()) {
-                    std::cerr << "Warning: No data found for key " << key << std::endl;
-                    continue;
+                if (q2Index != 0) {
+                    gPad->SetLeftMargin(0.001);
+                } else {
+                    gPad->SetLeftMargin(0.18);
                 }
 
-                const auto &data = it->second;
-
-                // Filter the data to remove points with large error bars
-                auto filteredData = filterDataByError(data, maxError);
-
-                // Skip this z-bin if all points are filtered out
-                if (filteredData.empty()) continue;
-
-                std::vector<double> x, y, yErr;
-
-                for (const auto &entry : filteredData) {
-                    x.push_back(entry[0]);
-                    y.push_back(entry[1]);
-                    yErr.push_back(entry[2]);
+                if (row != Q2_prefixes.size() - 1) {
+                    gPad->SetBottomMargin(0.001);
+                } else {
+                    gPad->SetBottomMargin(0.15);
                 }
 
-                TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
+                bool firstGraphDrawn = false;
+                bool anyGraphDrawn = false; // Track if any graph was drawn for this pad
 
-                if (q2Index == 0 && row == 0) {
-                    sampleGraphs.push_back(graph);
+                for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
+                    std::string key = Q2_prefixes[row][q2Index] + z_prefixes[zIndex] + "chi2Fits" + fitTypes[fitIndex];
+                    auto it = asymmetryData.find(key);
+
+                    if (it == asymmetryData.end()) {
+                        std::cerr << "Warning: No data found for key " << key << std::endl;
+                        continue;
+                    }
+
+                    const auto &data = it->second;
+
+                    // Filter the data to remove points with large error bars
+                    auto filteredData = filterDataByError(data, maxError);
+
+                    // Skip this z-bin if all points are filtered out
+                    if (filteredData.empty()) continue;
+
+                    std::vector<double> x, y, yErr;
+
+                    for (const auto &entry : filteredData) {
+                        x.push_back(entry[0]);
+                        y.push_back(entry[1]);
+                        yErr.push_back(entry[2]);
+                    }
+
+                    TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
+
+                    if (q2Index == 0 && row == 0) {
+                        sampleGraphs[fitIndex].push_back(graph);
+                    }
+
+                    std::string title = (row == 0) ? topRowTitles[q2Index] : "";
+                    drawDataPlotWithTitle(graph, q2Index, row, firstGraphDrawn, title);
+                    firstGraphDrawn = true;
+                    anyGraphDrawn = true;
                 }
 
-                std::string title = (row == 0) ? topRowTitles[q2Index] : "";
-                drawDataPlotWithTitle(graph, q2Index, row, firstGraphDrawn, title);
-                firstGraphDrawn = true;
-                anyGraphDrawn = true;
-            }
+                if (!anyGraphDrawn) { // If no graph was drawn, plot an empty placeholder graph
+                    std::vector<double> dummyX = {-9999};
+                    std::vector<double> dummyY = {0};
+                    std::vector<double> dummyYErr = {0};
 
-            if (!anyGraphDrawn) { // If no graph was drawn, plot an empty placeholder graph
-                std::vector<double> dummyX = {-9999};
-                std::vector<double> dummyY = {0};
-                std::vector<double> dummyYErr = {0};
+                    TGraphErrors *dummyGraph = createTGraphErrors(dummyX, dummyY, dummyYErr, 20, 0.8, kWhite);
+                    setAxisLabelsAndRanges(dummyGraph, "P_{T} (GeV)", yLabels[fitIndex], {0.1, 0.9}, {-0.09, 0.09});
+                    dummyGraph->Draw("AP");
 
-                TGraphErrors *dummyGraph = createTGraphErrors(dummyX, dummyY, dummyYErr, 20, 0.8, kWhite);
-                setAxisLabelsAndRanges(dummyGraph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.1, 0.9}, {-0.09, 0.09});
-                dummyGraph->Draw("AP");
-
-                // Hide X-axis labels for the bottom right and second to last plot
-                if (row == 3 && (q2Index == 3 || q2Index == 4)) {
-                    dummyGraph->GetXaxis()->SetLabelOffset(999);
-                    dummyGraph->GetXaxis()->SetTitleOffset(999);
+                    // Hide X-axis labels for the bottom right and second to last plot
+                    if (row == 3 && (q2Index == 3 || q2Index == 4)) {
+                        dummyGraph->GetXaxis()->SetLabelOffset(999);
+                        dummyGraph->GetXaxis()->SetTitleOffset(999);
+                    }
                 }
-            }
 
-            // Skip drawing the horizontal line for the third row, fifth column plot (padIndex = 15)
-            if (!(row == 2 && q2Index == 4) && (row != 3 || (q2Index != 3 && q2Index != 4))) {
-                TLine *line = new TLine(0.15, 0.0, 0.95, 0.0);
-                line->SetLineColor(kGray + 2);
-                line->SetLineStyle(7);
-                line->Draw("same");
+                // Skip drawing the horizontal line for the third row, fifth column plot (padIndex = 15)
+                if (!(row == 2 && q2Index == 4) && (row != 3 || (q2Index != 3 && q2Index != 4))) {
+                    TLine *line = new TLine(0.15, 0.0, 0.95, 0.0);
+                    line->SetLineColor(kGray + 2);
+                    line->SetLineStyle(7);
+                    line->Draw("same");
+                }
             }
         }
+
+        // Add the right column titles for y ranges
+        addCanvasSideLabels(canvases[fitIndex], yRanges);
+
+        addLegend(sampleGraphs[fitIndex], canvases[fitIndex]);
+
+        gSystem->Exec("mkdir -p output/epX_plots");
+        canvases[fitIndex]->SaveAs(outputFiles[fitIndex].c_str());
     }
 
-    // Add the right column titles for y ranges
-    addCanvasSideLabels(c, yRanges);
-
-    addLegend(sampleGraphs, c);
-
-    gSystem->Exec("mkdir -p output/epX_plots");
-    c->SaveAs(outputFileName.c_str());
-
-    delete c;
-    for (auto graph : sampleGraphs) {
-        delete graph;
+    // Clean up allocated resources after all plotting is done
+    for (size_t i = 0; i < canvases.size(); ++i) {
+        delete canvases[i];
+        for (auto graph : sampleGraphs[i]) {
+            delete graph;
+        }
     }
 }
 
@@ -673,7 +690,7 @@ int main(int argc, char *argv[]) {
     // plotComparison(asymmetryData, "output/epX_plots/PT_xF_dependence_comparison.png");
 
     // Plot Q2-y-z dependence
-    plotQ2yz_pT(asymmetryData, "output/epX_plots/Q2yz_dependence_plots.png");
+    plotQ2yz_pT(asymmetryData);
 
     return 0;
 }
