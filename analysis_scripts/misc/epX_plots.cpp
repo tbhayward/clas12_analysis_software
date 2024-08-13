@@ -853,6 +853,78 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
     delete legend;
 }
 
+void plotQ2Dependence(
+    const std::map<std::string, std::map<std::string, std::vector<std::vector<double>>>> &allVectors) {
+
+    // Colors for different vector sets
+    std::vector<int> colors = {kBlack, kRed, kBlue, kGreen};
+    std::vector<std::string> vectorNames = {"z1pT2y1", "z2pT2y1", "z1pT2y2", "z2pT2y2"};
+
+    // Create a canvas with 1 row and 3 columns
+    TCanvas *c = new TCanvas("c", "Q2 Dependence Plots", 2400, 800);
+    c->Divide(3, 1);
+
+    // Define the suffixes, y-axis labels, and ranges for each plot
+    std::vector<std::string> suffixes = {"ALUsinphi", "ALL", "doubleratio"};
+    std::vector<std::string> yLabels = {
+        "F_{LU}^{sin#phi}/F_{UU}",
+        "F_{LL}/F_{UU}",
+        "F_{LU}^{sin#phi}/F_{LL}"
+    };
+    std::vector<std::pair<double, double>> yRanges = {
+        {-0.09, 0.09},  // ALUsinphi
+        {-0.199, 0.599},  // ALL
+        {-0.09, 0.09}     // doubleratio
+    };
+    
+    std::string xLabel = "Q^{2} (GeV^{2})";
+    std::pair<double, double> xLimits = {1.0, 7.0};
+
+    // Loop through each suffix to create each plot
+    for (size_t i = 0; i < suffixes.size(); ++i) {
+        c->cd(i + 1); // Go to the i-th pad
+        gPad->SetLeftMargin(0.18);
+        gPad->SetBottomMargin(0.15);
+
+        // Loop through each vector set to plot them on the same canvas
+        for (size_t j = 0; j < vectorNames.size(); ++j) {
+            const std::string &vectorName = vectorNames[j];
+            const auto &data = allVectors.at(vectorName).at(suffixes[i]);
+
+            std::vector<double> x, y, yErr;
+            for (const auto &point : data) {
+                x.push_back(point[0]);     // Q² value
+                y.push_back(point[1]);     // Asymmetry value
+                yErr.push_back(point[2]);  // Asymmetry error
+            }
+
+            // Create a TGraphErrors and set axis labels and ranges
+            TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[j]);
+            setAxisLabelsAndRanges(graph, xLabel, yLabels[i], xLimits, yRanges[i]);
+
+            // Draw the graph
+            if (j == 0) {
+                graph->Draw("AP");
+            } else {
+                graph->Draw("P SAME");
+            }
+
+            // Draw a horizontal line at y = 0
+            TLine *line = new TLine(xLimits.first, 0, xLimits.second, 0);
+            line->SetLineColor(kGray+2);
+            line->SetLineStyle(7);
+            line->Draw("same");
+        }
+    }
+
+    // Save the canvas to a file
+    gSystem->Exec("mkdir -p output/epX_plots");
+    c->SaveAs("output/epX_plots/Q2_dependence.png");
+
+    // Clean up
+    delete c;
+}
+
 int main(int argc, char *argv[]) {
     if (argc != 3) {
         std::cerr << "Usage: " << argv[0] << " <asymmetries.txt> <kinematicPlots.txt>\n";
@@ -867,9 +939,6 @@ int main(int argc, char *argv[]) {
 
     // Read the kinematic data from the file
     std::map<std::string, std::vector<std::vector<double>>> kinematicData = readKinematics(kinematicFile);
-
-    // Extract Q² dependence vectors
-    auto allVectors = extractQ2Dependence(asymmetryData, kinematicData);
 
     // // Print out the parsed data
     // std::cout << "Asymmetry Data:\n";
@@ -887,6 +956,11 @@ int main(int argc, char *argv[]) {
     // plotComparison(asymmetryData, "output/epX_plots/PT_xF_dependence_comparison.png");
     // Plot Q2-y-z dependence
     // plotQ2yz_pT(asymmetryData);
+
+    // Extract Q² dependence vectors
+    auto allVectors = extractQ2Dependence(asymmetryData, kinematicData);
+
+    plotQ2Dependence(allVectors);
 
     return 0;
 }
