@@ -275,8 +275,8 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     TLegend* legend_vz_p = new TLegend(0.7, 0.8, 0.9, 0.9);
     legend_vz_p->AddEntry(h1_vz_p, "pass-1 NH_{3}", "l");
     legend_vz_p->AddEntry(h2_vz_p, "pass-1 C", "l");
-    legend_vz_p->AddEntry(h3_vz_p, "preliminary NH_{3}", "l");
-    legend_vz_p->AddEntry(h4_vz_p, "preliminary C", "l");
+    legend_vz_p->AddEntry(h3_vz_p, "preliminary NH_{3} (v_{z}-3.2cm)", "l");
+    legend_vz_p->AddEntry(h4_vz_p, "preliminary C (v_{z}-3.2cm)", "l");
     legend_vz_p->Draw();
 
     // Save the canvas as an image
