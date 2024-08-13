@@ -665,15 +665,17 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
 
                     TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
 
-                    // Draw the graph
-                    graph->Draw("AP");
-
-                    // Set the custom y-axis range here using the new function
+                    // Set the custom y-axis range here
                     setCustomAxisLabelsAndRanges(graph, "P_{T} (GeV)", yLabels[fitIndex], {0.1, 0.9}, yRange);
-                    gPad->Update();  // Ensure the pad updates with the new axis range
-                    graph->Draw("AP SAME");  // Re-draw the graph
+                    
+                    // Draw the graph
+                    if (!firstGraphDrawn) {
+                        graph->Draw("AP");
+                        firstGraphDrawn = true;
+                    } else {
+                        graph->Draw("P SAME");
+                    }
 
-                    firstGraphDrawn = true;
                     anyGraphDrawn = true;
                 }
 
@@ -681,12 +683,10 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
                     // Handle empty plot scenario
                     std::vector<double> dummyX = {-9999};
                     std::vector<double> dummyY = {0};
-                    std::vector<double> dummyYErr = {0};
+                    std::vector dummyYErr = {0};
                     TGraphErrors *dummyGraph = createTGraphErrors(dummyX, dummyY, dummyYErr, 20, 0.8, kWhite);
                     setCustomAxisLabelsAndRanges(dummyGraph, "P_{T} (GeV)", yLabels[fitIndex], {0.1, 0.9}, yRange);
-                    dummyGraph->Draw("AP");
-                    gPad->Update();  // Ensure the pad updates with the new axis range
-                    dummyGraph->Draw("AP SAME");  // Re-draw the graph
+                    drawEmptyPlot(dummyGraph, q2Index, row, Q2_prefixes.size());
                 }
                 // Draw horizontal line except in certain positions
                 if (!(row == 2 && q2Index == 4) && (row != 3 || (q2Index != 3 && q2Index != 4))) {
