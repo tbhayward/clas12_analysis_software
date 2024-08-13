@@ -545,7 +545,7 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
         legend->AddEntry(dummyGraph, zRanges[zIndex].c_str(), "P");
 
         // Cast to TLegendEntry to set the text color
-        TLegendEntry *entry = legend->GetListOfPrimitives()->Last();
+        TLegendEntry *entry = (TLegendEntry*)legend->GetListOfPrimitives()->Last();
         entry->SetTextColor(colors[zIndex]);
     }
     legend->SetTextSize(0.05); // Adjust text size if needed
