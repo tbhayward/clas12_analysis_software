@@ -495,6 +495,23 @@ std::vector<std::vector<double>> filterDataByError(const std::vector<std::vector
     return filteredData;
 }
 
+// Function to add y-range titles to the right side of each row
+void addRightColumnTitles(TCanvas* c, const std::vector<std::string>& y_ranges) {
+    for (size_t i = 0; i < y_ranges.size(); ++i) {
+        int padIndex = (i + 1) * 5;  // Select the pad on the far right of each row
+        c->cd(padIndex);  // Select the appropriate pad
+
+        // Set margins to position the text inside the pad
+        gPad->SetRightMargin(0.25);  // Increase right margin to make room for the label
+
+        TLatex latex;
+        latex.SetNDC();  // Use Normalized Device Coordinates
+        latex.SetTextAlign(32);  // Align right (3) and vertically centered (2)
+        latex.SetTextSize(0.05);  // Set text size
+        latex.DrawLatex(1.0, 0.5, y_ranges[i].c_str());  // Draw text at the right center of the pad
+    }
+}
+
 void plotQ2yz_pT(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
     const std::string &outputFileName) {
@@ -520,6 +537,13 @@ void plotQ2yz_pT(
         "3.0 < Q^{2} (GeV^{2}) < 4.0",
         "4.0 < Q^{2} (GeV^{2}) < 5.0",
         "5.0 < Q^{2} (GeV^{2}) < 7.0"
+    };
+
+    std::vector<std::string> yRanges = {
+        "0.65 < y < 0.75",
+        "0.55 < y < 0.65",
+        "0.45 < y < 0.55",
+        "0.30 < y < 0.45"
     };
 
     std::vector<TGraph*> sampleGraphs;
@@ -606,6 +630,9 @@ void plotQ2yz_pT(
             }
         }
     }
+
+    // Add the right column titles for y ranges
+    addRightColumnTitles(c, yRanges);
 
     addLegend(sampleGraphs, c);
 
