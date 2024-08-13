@@ -150,62 +150,85 @@ std::map<std::string, std::vector<std::vector<double>>> readAsymmetries(const st
     return asymmetryData;
 }
 
-// Function to organize data by pT, z, and y bins and print the vectors
-void organizeAndPrintKinematicAsymmetryData(
+void extractAndPrintQ2Dependence(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
     const std::map<std::string, std::vector<std::vector<double>>> &kinematicData) {
-    // Container to store the organized data by pT, z, y bins
-    std::map<std::string, std::vector<std::vector<double>>> organizedData;
+    
+    // Vectors to hold the Q², asymmetry values, and errors
+    std::vector<std::vector<double>> z1pT2y1, z2pT2y1, z1pT2y2, z2pT2y2;
 
-    // Iterate through the kinematic data
-    for (const auto &kinDataPair : kinematicData) {
-        const std::string &key = kinDataPair.first;
-        const std::vector<std::vector<double>> &kinDataVec = kinDataPair.second;
+    // Helper lambda to extract a point
+    auto extractPoint = [&](const std::string &prefix, int pointIndex) {
+        std::vector<double> result;
+        // Get the kinematic data
+        if (kinematicData.find(prefix) != kinematicData.end()) {
+            const auto &kinDataVec = kinematicData.at(prefix);
+            double Q2 = kinDataVec[pointIndex][0]; // Q² value
+            result.push_back(Q2);
+        } else {
+            std::cerr << "Kinematic data for " << prefix << " not found.\n";
+            return result;
+        }
 
-        // Extract the bin indices from the key (e.g., Q2y11z2)
-        std::string zBin = key.substr(key.find("z"), 2); // e.g., "z1"
-        std::string yBin = key.substr(key.find("y"), 2); // e.g., "y2"
+        // Get the asymmetry data
+        std::string chi2Fits = prefix + "chi2FitsALUsinphi"; // Assuming ALUsinphi for now, modify as needed
+        if (asymmetryData.find(chi2Fits) != asymmetryData.end()) {
+            const auto &asymDataVec = asymmetryData.at(chi2Fits);
+            double asyValue = asymDataVec[pointIndex][1]; // asymmetry value
+            double asyErr = asymDataVec[pointIndex][2];   // asymmetry error
+            result.push_back(asyValue);
+            result.push_back(asyErr);
+        } else {
+            std::cerr << "Asymmetry data for " << chi2Fits << " not found.\n";
+        }
 
-        // Iterate through each kinematic entry
-        for (size_t i = 0; i < kinDataVec.size(); ++i) {
-            double pT = kinDataVec[i][6]; // pT value
-            double Q2 = kinDataVec[i][0]; // Q2 value
+        return result;
+    };
 
-            // Create the new key for the bin: "pTz1y2", etc.
-            std::string newKey = "pT" + zBin + yBin;
+    // Extract points for z1pT2y1
+    z1pT2y1.push_back(extractPoint("Q2y1z1", 1));
+    z1pT2y1.push_back(extractPoint("Q2y5z1", 1));
+    z1pT2y1.push_back(extractPoint("Q2y9z1", 1));
+    z1pT2y1.push_back(extractPoint("Q2y13z1", 1));
+    z1pT2y1.push_back(extractPoint("Q2y16z1", 1));
 
-            // Find corresponding asymmetry data for the Q2, y, z bin
-            std::string asymmetryKey = key + "chi2FitsALUsinphi"; // Asymmetry key for this bin
+    // Extract points for z2pT2y1
+    z2pT2y1.push_back(extractPoint("Q2y1z2", 1));
+    z2pT2y1.push_back(extractPoint("Q2y5z2", 1));
+    z2pT2y1.push_back(extractPoint("Q2y9z2", 1));
+    z2pT2y1.push_back(extractPoint("Q2y13z2", 1));
+    z2pT2y1.push_back(extractPoint("Q2y16z2", 1));
 
-            // Assuming asymmetryData has the same structure and matches the kinematic data
-            if (asymmetryData.find(asymmetryKey) != asymmetryData.end()) {
-                const auto &asymDataVec = asymmetryData.at(asymmetryKey);
+    // Extract points for z1pT2y2
+    z1pT2y2.push_back(extractPoint("Q2y2z1", 1));
+    z1pT2y2.push_back(extractPoint("Q2y6z1", 1));
+    z1pT2y2.push_back(extractPoint("Q2y10z1", 1));
+    z1pT2y2.push_back(extractPoint("Q2y14z1", 1));
+    z1pT2y2.push_back(extractPoint("Q2y17z1", 1));
 
-                if (i < asymDataVec.size()) {
-                    const std::vector<double> &asymData = asymDataVec[i];
-                    double xValue = asymData[0]; // x value (which is pT)
-                    double yValue = asymData[1]; // asymmetry value
-                    double yErr = asymData[2];   // asymmetry error
+    // Extract points for z2pT2y2
+    z2pT2y2.push_back(extractPoint("Q2y2z2", 1));
+    z2pT2y2.push_back(extractPoint("Q2y6z2", 1));
+    z2pT2y2.push_back(extractPoint("Q2y10z2", 1));
+    z2pT2y2.push_back(extractPoint("Q2y14z2", 1));
+    z2pT2y2.push_back(extractPoint("Q2y17z2", 1));
 
-                    // Store the (Q2, yValue, yErr) in the new bin
-                    organizedData[newKey].push_back({Q2, yValue, yErr});
-                }
+    // Helper lambda to print vectors
+    auto printVector = [](const std::string &name, const std::vector<std::vector<double>> &vec) {
+        std::cout << "Vector: " << name << std::endl;
+        for (const auto &entry : vec) {
+            if (entry.size() == 3) {
+                std::cout << "Q²: " << entry[0] << ", Asymmetry: " << entry[1] << ", Error: " << entry[2] << std::endl;
             }
         }
-    }
-
-    // Print the organized data
-    for (const auto &dataPair : organizedData) {
-        const std::string &binKey = dataPair.first;
-        const std::vector<std::vector<double>> &dataVec = dataPair.second;
-
-        std::cout << "Data for bin: " << binKey << std::endl;
-        std::cout << "Q2, Asymmetry, Error" << std::endl;
-        for (const auto &entry : dataVec) {
-            std::cout << entry[0] << ", " << entry[1] << ", " << entry[2] << std::endl;
-        }
         std::cout << std::endl;
-    }
+    };
+
+    // Print the vectors
+    printVector("z1pT2y1", z1pT2y1);
+    printVector("z2pT2y1", z2pT2y1);
+    printVector("z1pT2y2", z1pT2y2);
+    printVector("z2pT2y2", z2pT2y2);
 }
 
 // Function to print the data for verification
@@ -855,8 +878,8 @@ int main(int argc, char *argv[]) {
     // Read the kinematic data from the file
     std::map<std::string, std::vector<std::vector<double>>> kinematicData = readKinematics(kinematicFile);
 
-    // Organize and print the data
-    organizeAndPrintKinematicAsymmetryData(asymmetryData, kinematicData);
+    // Extract and print Q² dependence vectors
+    extractAndPrintQ2Dependence(asymmetryData, kinematicData);
 
     // // Print out the parsed data
     // std::cout << "Asymmetry Data:\n";
