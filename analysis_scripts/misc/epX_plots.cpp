@@ -532,6 +532,20 @@ void addCanvasSideLabels(TCanvas* c, const std::vector<std::string>& y_ranges) {
     }
 }
 
+void addCanvasTopLabels(TCanvas* c, const std::vector<std::string>& q2_ranges) {
+    c->cd(); // Switch to the entire canvas
+    TLatex latex;
+    latex.SetNDC();  // Use Normalized Device Coordinates
+    latex.SetTextAlign(22);  // Centered alignment
+    latex.SetTextSize(0.02);  // Adjust text size
+
+    // Position and draw each Q² label
+    for (size_t i = 0; i < q2_ranges.size(); ++i) {
+        double xPos = 0.1 + i * 0.2;  // Adjust the 0.1 and 0.2 to space the labels evenly
+        latex.DrawLatex(xPos, 0.96, q2_ranges[i].c_str());  // Position text above the plots
+    }
+}
+
 void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData) {
     // Fit types, corresponding y-axis labels, and output file names
     std::vector<std::string> fitTypes = {"ALUsinphi", "AULoffset", "AULsinphi", "AULsin2phi", "ALL", "ALLcosphi"};
@@ -656,7 +670,6 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
                     if (filteredData.empty()) continue;
 
                     std::vector<double> x, y, yErr;
-
                     for (const auto &entry : filteredData) {
                         x.push_back(entry[0]);
                         y.push_back(entry[1]);
@@ -700,6 +713,9 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
 
         // Add y-range labels on the right-hand side
         addCanvasSideLabels(c, yRanges);
+
+        // Add Q² labels at the top
+        addCanvasTopLabels(c, topRowTitles);
 
         // Add legend to the canvas
         c->cd(20); // Navigate to the pad where the legend will be drawn
