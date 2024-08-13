@@ -618,7 +618,7 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
         {-0.099, 0.099},  // AULsin2phi
         {-0.199, 0.599},  // ALL
         {-0.199, 0.199},  // ALLcosphi
-        {-0.09, 0.09}     // doubleratio
+        {-0.19, 0.19}     // doubleratio
     };
 
     // Define the legend once before the loop
