@@ -380,9 +380,9 @@ void plotComparison(
     }
 }
 
-// Function to set up the canvas with an additional row for titles
-TCanvas* setupCanvas(int width, int height, int cols, int rows) {
-    TCanvas *c = new TCanvas("c", "Q2-y-z Dependence", width, height);
+TCanvas *setupCanvas(int width, int height, int cols, int rows) {
+    // Adjust the height to reduce the empty space
+    TCanvas *c = new TCanvas("c", "Q2-y-z Dependence", width, height - 200);  // Decrease height by 200
     c->Divide(cols, rows + 1, 0, 0);  // Extra row for titles
     return c;
 }
