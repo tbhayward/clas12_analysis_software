@@ -535,7 +535,14 @@ void addCanvasSideLabels(TCanvas* c, const std::vector<std::string>& y_ranges) {
 void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData) {
     // Fit types, corresponding y-axis labels, and output file names
     std::vector<std::string> fitTypes = {"ALUsinphi", "AULoffset", "AULsinphi", "AULsin2phi", "ALL", "ALLcosphi"};
-    std::vector<std::string> yLabels = {"F_{LU}^{sin#phi}/F_{UU}", "A_{UL}^{offset}", "A_{UL}^{sin#phi}", "A_{UL}^{sin2#phi}", "A_{LL}", "A_{LL}^{cos#phi}"};
+    std::vector<std::string> yLabels = {
+        "F_{LU}^{sin#phi}/F_{UU}", 
+        "A_{UL}^{offset}", 
+        "A_{UL}^{sin#phi}", 
+        "A_{UL}^{sin2#phi}", 
+        "A_{LL}", 
+        "A_{LL}^{cos#phi}"
+    };
     std::vector<std::string> outputFiles = {
         "output/epX_plots/Q2yz_pT_ALUsinphi.png",
         "output/epX_plots/Q2yz_pT_AULoffset.png",
@@ -550,18 +557,26 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
 
     // Define different y-axis ranges for each fit type
     std::vector<std::pair<double, double>> yRangesPerPlot = {
-        {-0.099, 0.099}, {-0.149, 0.049}, {-0.099, 0.099}, 
-        {-0.099, 0.099}, {-0.199, 0.599}, {-0.199, 0.199}
+        {-0.099, 0.099}, 
+        {-0.149, 0.049}, 
+        {-0.099, 0.099}, 
+        {-0.099, 0.099}, 
+        {-0.199, 0.599}, 
+        {-0.199, 0.199}
     };
 
     // Define the legend once before the loop
     TLegend *legend = new TLegend(0.225, 0.225, 0.9, 0.9);
     std::vector<std::string> zRanges = {
-        "0.10 < z < 0.25", "0.25 < z < 0.35", "0.35 < z < 0.45",
-        "0.45 < z < 0.55", "0.55 < z < 0.75"
+        "0.10 < z < 0.25",
+        "0.25 < z < 0.35",
+        "0.35 < z < 0.45",
+        "0.45 < z < 0.55",
+        "0.55 < z < 0.75"
     };
     std::vector<int> colors = {kBlack, kRed, kGreen, kBlue, kMagenta};
 
+    // Add entries to the legend
     for (size_t zIndex = 0; zIndex < zRanges.size(); ++zIndex) {
         TGraph *dummyGraph = new TGraph();
         dummyGraph->SetMarkerColor(colors[zIndex]);
@@ -585,13 +600,17 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
         };
         std::vector<std::string> z_prefixes = {"z1", "z2", "z3", "z4", "z5"};
         std::vector<std::string> topRowTitles = {
-            "1.0 < Q^{2} (GeV^{2}) < 2.0", "2.0 < Q^{2} (GeV^{2}) < 3.0",
-            "3.0 < Q^{2} (GeV^{2}) < 4.0", "4.0 < Q^{2} (GeV^{2}) < 5.0",
+            "1.0 < Q^{2} (GeV^{2}) < 2.0", 
+            "2.0 < Q^{2} (GeV^{2}) < 3.0", 
+            "3.0 < Q^{2} (GeV^{2}) < 4.0", 
+            "4.0 < Q^{2} (GeV^{2}) < 5.0", 
             "5.0 < Q^{2} (GeV^{2}) < 7.0"
         };
         std::vector<std::string> yRanges = {
-            "0.65 < y < 0.75", "0.55 < y < 0.65", 
-            "0.45 < y < 0.55", "0.30 < y < 0.45"
+            "0.65 < y < 0.75",
+            "0.55 < y < 0.65",
+            "0.45 < y < 0.55",
+            "0.30 < y < 0.45"
         };
 
         double maxError = maxErrors[fitIndex];
@@ -640,9 +659,14 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
 
                     TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
 
-                    // Set y-axis range and force update
+                    // Set y-axis range explicitly
                     graph->GetYaxis()->SetRangeUser(yRange.first, yRange.second);
+                    
+                    // Debugging output to check y-axis range
+                    std::cout << "Setting y-axis range for " << fitTypes[fitIndex] 
+                              << " to (" << yRange.first << ", " << yRange.second << ")" << std::endl;
 
+                    // Draw the graph
                     std::string title = (row == 0) ? topRowTitles[q2Index] : "";
                     drawDataPlotWithTitle(graph, q2Index, row, firstGraphDrawn, title);
                     firstGraphDrawn = true;
@@ -666,10 +690,9 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
                 }
             }
         }
-
         addCanvasSideLabels(c, yRanges);
 
-        c->cd(20); 
+        c->cd(20);
         legend->Draw();
 
         gSystem->Exec("mkdir -p output/epX_plots");
