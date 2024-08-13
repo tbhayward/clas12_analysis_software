@@ -430,8 +430,8 @@ void drawDataPlotWithTitle(TGraphErrors* graph, int q2Index, int row, bool first
             TLatex latex;
             latex.SetNDC();  // Use Normalized Device Coordinates
             latex.SetTextAlign(22);  // Center alignment
-            latex.SetTextSize(0.05); // Adjust text size as needed
-            latex.DrawLatex(0.5, 0.93, title.c_str());  // Positioned above the plot inside the pad
+            latex.SetTextSize(0.06); // Adjust text size as needed
+            latex.DrawLatex(0.5, 0.95, title.c_str());  // Positioned above the plot inside the pad
         }
     } else {
         graph->Draw("P SAME");
