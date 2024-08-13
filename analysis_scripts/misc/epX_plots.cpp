@@ -16,6 +16,7 @@
 #include <TGraphErrors.h>
 #include <TLegend.h>
 #include <TLine.h>
+#include <TLegendEntry.h>
 #include <TAxis.h>
 #include <TSystem.h>
 #include <vector>
