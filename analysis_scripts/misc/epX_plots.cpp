@@ -435,8 +435,9 @@ void drawDataPlot(TGraphErrors* graph, int q2Index, int row, int totalRows, bool
 
         // Add title above the plot
         if (!title.empty()) {
-            // Create and configure the TText object for the title
-            TText *t = new TText(0.5, 1.03, title.c_str());  // Position it slightly above the plot
+            // Adjust the y-coordinate to place the title above the plot
+            TText *t = new TText(0.5, 1.05, title.c_str());  // Position it slightly above the plot
+            t->SetNDC();  // Use Normalized Device Coordinates (NDC) so position is relative to the pad
             t->SetTextAlign(22);  // Center alignment
             t->SetTextSize(0.05); // Adjust text size as needed
             t->Draw();
