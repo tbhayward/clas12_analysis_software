@@ -243,6 +243,51 @@ void plotRatios(const char* file1, const char* file2, const char* file3, const c
     // plotGraph(graph_p_theta_1, graph_p_theta_2, "p_theta (no AI/ preliminary) (C)", "Ratio (AI/noAI) (NH3)", "output/ratio_p_theta.png");
     // plotGraph(graph_Mx_1, graph_Mx_2, "Mx", "Ratio (no AI/ preliminary) (C)", "output/ratio_Mx.png");
 
+
+
+    // Create a new canvas for plotting the vz_p histograms
+    TCanvas* c_vz_p = new TCanvas("c_vz_p", "vz_p comparison", 800, 600);
+
+    // Set colors and styles for histograms
+    h1_vz_p->SetLineColor(kRed);
+    h1_vz_p->SetLineStyle(1);
+    h1_vz_p->SetLineWidth(2);
+
+    h2_vz_p->SetLineColor(kBlue);
+    h2_vz_p->SetLineStyle(2);
+    h2_vz_p->SetLineWidth(2);
+
+    h3_vz_p->SetLineColor(kGreen);
+    h3_vz_p->SetLineStyle(3);
+    h3_vz_p->SetLineWidth(2);
+
+    h4_vz_p->SetLineColor(kMagenta);
+    h4_vz_p->SetLineStyle(4);
+    h4_vz_p->SetLineWidth(2);
+
+    // Draw histograms on the same canvas
+    h1_vz_p->Draw("HIST");
+    h2_vz_p->Draw("HIST SAME");
+    h3_vz_p->Draw("HIST SAME");
+    h4_vz_p->Draw("HIST SAME");
+
+    // Create and customize the legend
+    TLegend* legend_vz_p = new TLegend(0.7, 0.8, 0.9, 0.9);
+    legend_vz_p->AddEntry(h1_vz_p, "File 1 (NH3)", "l");
+    legend_vz_p->AddEntry(h2_vz_p, "File 2 (C)", "l");
+    legend_vz_p->AddEntry(h3_vz_p, "File 3 (NH3)", "l");
+    legend_vz_p->AddEntry(h4_vz_p, "File 4 (C)", "l");
+    legend_vz_p->Draw();
+
+    // Save the canvas as an image
+    c_vz_p->SaveAs("output/histogram_vz_p_comparison.png");
+
+    // Cleanup the canvas
+    delete c_vz_p;
+    delete legend_vz_p;
+
+
+
     // Clean up
     delete graph_p_p_1;
     delete graph_p_p_2;
