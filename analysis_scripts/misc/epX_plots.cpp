@@ -500,13 +500,8 @@ void plotQ2yz_pT(
                         graph->GetYaxis()->SetTitleOffset(999);
                     }
                     // Hide X-axis labels for non-bottom row plots
-                    if (row != Q2_prefixes.size() - 1) {
-                        graph->GetXaxis()->SetLabelOffset(999);
-                        graph->GetXaxis()->SetTitleOffset(999);
-                    }
-
-                    // Hide X-axis labels for the last two plots in the bottom row
-                    if (row == 3 && (q2Index == 3 || q2Index == 4)) {
+                    if (row != Q2_prefixes.size() - 1 || (row == 3 && (q2Index == 3 || q2Index == 4))) {
+                        std::cout << "Removing x-axis labels for padIndex: " << padIndex << std::endl;
                         graph->GetXaxis()->SetLabelOffset(999);
                         graph->GetXaxis()->SetTitleOffset(999);
                     }
