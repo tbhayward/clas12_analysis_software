@@ -514,7 +514,7 @@ void plotQ2yz_pT(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
     const std::string &outputFileName) {
 
-    double maxError = 0.03; // Threshold for maximum allowed error bar size
+    double maxError = 0.0275; // Threshold for maximum allowed error bar size
 
     TCanvas *c = new TCanvas("c", "Q2-y-z Dependence", 2400, 1600);
     c->Divide(5, 4, 0, 0);  // 4 rows by 5 columns, no spacing
