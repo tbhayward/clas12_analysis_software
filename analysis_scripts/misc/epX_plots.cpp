@@ -616,7 +616,7 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
         {-0.099, 0.099},  // AULsin2phi
         {-0.199, 0.599},  // ALL
         {-0.199, 0.199},  // ALLcosphi
-        {-0.99, 0.99}     // doubleratio
+        {-0.09, 0.09}     // doubleratio
     };
 
     // Define the legend once before the loop
@@ -801,13 +801,13 @@ int main(int argc, char *argv[]) {
     // std::cout << "\nKinematic Data:\n";
     // printData(kinematicData);
 
-    // Call the plotting function for different dependencies
-    plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots.png");
-    plotDependence(asymmetryData, "PT", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PT_dependence_plots.png");
-    plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots.png");
+    // // Call the plotting function for different dependencies
+    // plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots.png");
+    // plotDependence(asymmetryData, "PT", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PT_dependence_plots.png");
+    // plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots.png");
 
-    // Plot PT and xF dependence comparison
-    plotComparison(asymmetryData, "output/epX_plots/PT_xF_dependence_comparison.png");
+    // // Plot PT and xF dependence comparison
+    // plotComparison(asymmetryData, "output/epX_plots/PT_xF_dependence_comparison.png");
     // Plot Q2-y-z dependence
     plotQ2yz_pT(asymmetryData);
 
