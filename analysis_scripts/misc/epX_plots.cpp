@@ -511,8 +511,6 @@ void addCanvasSideLabels(TCanvas* c, const std::vector<std::string>& y_ranges) {
 }
 
 void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData) {
-    double maxError = 0.0275; // Threshold for maximum allowed error bar size
-
     // Fit types, corresponding y-axis labels, and output file names
     std::vector<std::string> fitTypes = {"ALUsinphi", "AULoffset", "AULsinphi", "AULsin2phi", "ALL", "ALLcosphi"};
     std::vector<std::string> yLabels = {"F_{LU}^{sin#phi}/F_{UU}", "A_{UL}^{offset}", "A_{UL}^{sin#phi}", "A_{UL}^{sin2#phi}", "A_{LL}", "A_{LL}^{cos#phi}"};
@@ -523,6 +521,19 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
         "output/epX_plots/Q2yz_pT_AULsin2phi.png",
         "output/epX_plots/Q2yz_pT_ALL.png",
         "output/epX_plots/Q2yz_pT_ALLcosphi.png"
+    };
+
+    // Define different maxError thresholds for each fit type
+    std::vector<double> maxErrors = {0.0275, 0.03, 0.025, 0.028, 0.027, 0.03}; // Customize these values as needed
+
+    // Define different y-axis ranges for each fit type
+    std::vector<std::pair<double, double>> yRangesPerPlot = {
+        {-0.09, 0.09}, // For ALUsinphi
+        {-0.1, 0.1},   // For AULoffset
+        {-0.08, 0.08}, // For AULsinphi
+        {-0.12, 0.12}, // For AULsin2phi
+        {-0.07, 0.07}, // For ALL
+        {-0.1, 0.1}    // For ALLcosphi
     };
 
     // Define the legend once before the loop
@@ -579,6 +590,10 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
             "0.45 < y < 0.55",
             "0.30 < y < 0.45"
         };
+
+        // Get the specific maxError and y-axis range for this fit type
+        double maxError = maxErrors[fitIndex];
+        std::pair<double, double> yRange = yRangesPerPlot[fitIndex];
 
         // Loop through each Q2 prefix and corresponding z prefixes
         for (size_t row = 0; row < Q2_prefixes.size(); ++row) {
@@ -638,10 +653,10 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
                 if (!anyGraphDrawn) {
                     // Handle empty plot scenario
                     std::vector<double> dummyX = {-9999};
-                    std::vector<double> dummyY = {0};
-                    std::vector<double> dummyYErr = {0};
-
+                    std::vector dummyY = {0};
+                    std::vector dummyYErr = {0};
                     TGraphErrors *dummyGraph = createTGraphErrors(dummyX, dummyY, dummyYErr, 20, 0.8, kWhite);
+                    setAxisLabelsAndRanges(dummyGraph, "P_{T} (GeV)", yLabels[fitIndex], {0.1, 0.9}, yRange);
                     drawEmptyPlot(dummyGraph, q2Index, row, Q2_prefixes.size());
                 }
 
@@ -658,15 +673,15 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
         // Add y-range labels on the right-hand side
         addCanvasSideLabels(c, yRanges);
 
-        // Add legend to the last pad
-        c->cd(20); // Go to the last pad
+        // Add legend to the canvas
+        c->cd(20); // Navigate to the pad where the legend will be drawn
         legend->Draw();
 
         // Save the canvas to file
         gSystem->Exec("mkdir -p output/epX_plots");
         c->SaveAs(outputFiles[fitIndex].c_str());
 
-        // Clean up objects
+        // Clean up canvas
         delete c;
     }
 
