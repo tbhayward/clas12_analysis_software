@@ -155,21 +155,21 @@ void extractAndPrintQ2Dependence(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
     const std::map<std::string, std::vector<std::vector<double>>> &kinematicData) {
 
-    // Vectors to hold the Q², asymmetry values, and errors for different sets
-    std::vector<std::vector<double>> z1pT2y1, z2pT2y1, z1pT2y2, z2pT2y2;
-
     // Define the fit types we're interested in
     std::vector<std::string> fitTypes = {
         "ALUsinphi", "AULoffset", "AULsinphi", "AULsin2phi", "ALL", "ALLcosphi", "doubleratio"
     };
 
-    // Prefixes for the points you want to extract
-    std::vector<std::string> prefixes = {
-        "Q2y1z1", "Q2y5z1", "Q2y9z1", "Q2y13z1", "Q2y16z1", // z1pT2y1
-        "Q2y1z2", "Q2y5z2", "Q2y9z2", "Q2y13z2", "Q2y16z2", // z2pT2y1
-        "Q2y2z1", "Q2y6z1", "Q2y10z1", "Q2y14z1", "Q2y17z1", // z1pT2y2
-        "Q2y2z2", "Q2y6z2", "Q2y10z2", "Q2y14z2", "Q2y17z2"  // z2pT2y2
+    // Define the binning structure (prefixes) for each of the cases
+    std::map<std::string, std::vector<std::string>> binPrefixes = {
+        {"z1pT2y1", {"Q2y1z1", "Q2y5z1", "Q2y9z1", "Q2y13z1", "Q2y16z1"}},
+        {"z2pT2y1", {"Q2y1z2", "Q2y5z2", "Q2y9z2", "Q2y13z2", "Q2y16z2"}},
+        {"z1pT2y2", {"Q2y2z1", "Q2y6z1", "Q2y10z1", "Q2y14z1", "Q2y17z1"}},
+        {"z2pT2y2", {"Q2y2z2", "Q2y6z2", "Q2y10z2", "Q2y14z2", "Q2y17z2"}}
     };
+
+    // Container to store all vectors
+    std::map<std::string, std::map<std::string, std::vector<std::vector<double>>>> allVectors;
 
     // Helper lambda to extract a point
     auto extractPoint = [&](const std::string &prefix, int pointIndex, const std::string &fitType) {
@@ -201,25 +201,19 @@ void extractAndPrintQ2Dependence(
     };
 
     // Extract points for each combination of prefix and fit type
-    for (size_t i = 0; i < prefixes.size(); ++i) {
-        const std::string &prefix = prefixes[i];
-        std::vector<std::vector<double>> *targetVector = nullptr;
-
-        if (i < 5) {
-            targetVector = &z1pT2y1;
-        } else if (i < 10) {
-            targetVector = &z2pT2y1;
-        } else if (i < 15) {
-            targetVector = &z1pT2y2;
-        } else {
-            targetVector = &z2pT2y2;
-        }
+    for (const auto &binPrefix : binPrefixes) {
+        const std::string &vectorName = binPrefix.first;
+        const std::vector<std::string> &prefixes = binPrefix.second;
 
         for (const auto &fitType : fitTypes) {
-            std::vector<double> point = extractPoint(prefix, 1, fitType); // Use the 2nd point (index 1)
-            if (!point.empty()) {
-                targetVector->push_back(point);
+            std::vector<std::vector<double>> dataVector;
+            for (const std::string &prefix : prefixes) {
+                std::vector<double> point = extractPoint(prefix, 1, fitType); // Use the 2nd point (index 1)
+                if (!point.empty()) {
+                    dataVector.push_back(point);
+                }
             }
+            allVectors[vectorName][fitType] = dataVector;
         }
     }
 
@@ -234,11 +228,18 @@ void extractAndPrintQ2Dependence(
         std::cout << std::endl;
     };
 
-    // Print the vectors
-    printVector("z1pT2y1", z1pT2y1);
-    printVector("z2pT2y1", z2pT2y1);
-    printVector("z1pT2y2", z1pT2y2);
-    printVector("z2pT2y2", z2pT2y2);
+    // Print all vectors
+    for (const auto &vecGroup : allVectors) {
+        const std::string &vectorName = vecGroup.first;
+        const std::map<std::string, std::vector<std::vector<double>>> &fitTypeMap = vecGroup.second;
+
+        for (const auto &fitTypeData : fitTypeMap) {
+            const std::string &fitType = fitTypeData.first;
+            const std::vector<std::vector<double>> &dataVector = fitTypeData.second;
+
+            printVector(vectorName + " (" + fitType + ")", dataVector);
+        }
+    }
 }
 
 // Function to print the data for verification
