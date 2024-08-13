@@ -161,6 +161,28 @@ void setAxisLabelsAndRanges(
     graph->GetYaxis()->SetTitleSize(0.045);
 }
 
+void setCustomAxisLabelsAndRanges(
+    TGraphErrors *graph, 
+    const std::string &xLabel, 
+    const std::string &yLabel, 
+    const std::pair<double, double> &xLimits, 
+    const std::pair<double, double> &yLimits) {
+    
+    graph->GetXaxis()->SetTitle(xLabel.c_str());
+    graph->GetYaxis()->SetTitle(yLabel.c_str());
+    graph->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
+    graph->GetXaxis()->SetRangeUser(xLimits.first, xLimits.second);
+    
+    // Set custom y-axis range
+    graph->GetYaxis()->SetRangeUser(yLimits.first, yLimits.second);
+
+    // Adjust axis label and title sizes
+    graph->GetXaxis()->SetLabelSize(0.04);
+    graph->GetXaxis()->SetTitleSize(0.045);
+    graph->GetYaxis()->SetLabelSize(0.04);
+    graph->GetYaxis()->SetTitleSize(0.045);
+}
+
 double computeSystematicUncertainty(const std::string &suffix, double yValue) {
     if (suffix == "ALUsinphi") {
         return yValue * LU_SYS_UNCERTAINTY;  // LU systematic uncertainty
@@ -529,11 +551,11 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
     // Define different y-axis ranges for each fit type
     std::vector<std::pair<double, double>> yRangesPerPlot = {
         {-0.099, 0.099}, // For ALUsinphi
-        {-0.149, 0.049},   // For AULoffset
+        {-0.149, 0.049}, // For AULoffset
         {-0.099, 0.099}, // For AULsinphi
         {-0.099, 0.099}, // For AULsin2phi
         {-0.199, 0.599}, // For ALL
-        {-0.199, 0.199}    // For ALLcosphi
+        {-0.199, 0.199}  // For ALLcosphi
     };
 
     // Define the legend once before the loop
@@ -560,8 +582,8 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
         entry->SetTextColor(colors[zIndex]);
     }
     legend->SetTextSize(0.05); // Adjust text size if needed
-    legend->SetFillColor(0); // Make background transparent
-    legend->SetLineColor(1); // Add border
+    legend->SetFillColor(0);   // Make background transparent
+    legend->SetLineColor(1);   // Add border
 
     // Loop over each fit type and generate the corresponding plot
     for (size_t fitIndex = 0; fitIndex < fitTypes.size(); ++fitIndex) {
@@ -644,9 +666,10 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
 
                     TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
 
-                    // Set the custom y-axis range here
-                    graph->GetYaxis()->SetRangeUser(yRange.first, yRange.second);
-
+                    // Set the custom y-axis range here using the new function
+                    setCustomAxisLabelsAndRanges(graph, "P_{T} (GeV)", yLabels[fitIndex], {0.1, 0.9}, yRange);
+                    
+                    // Draw the graph
                     std::string title = (row == 0) ? topRowTitles[q2Index] : "";
                     drawDataPlotWithTitle(graph, q2Index, row, firstGraphDrawn, title);
                     firstGraphDrawn = true;
@@ -659,10 +682,9 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
                     std::vector<double> dummyY = {0};
                     std::vector<double> dummyYErr = {0};
                     TGraphErrors *dummyGraph = createTGraphErrors(dummyX, dummyY, dummyYErr, 20, 0.8, kWhite);
-                    setAxisLabelsAndRanges(dummyGraph, "P_{T} (GeV)", yLabels[fitIndex], {0.1, 0.9}, yRange);
+                    setCustomAxisLabelsAndRanges(dummyGraph, "P_{T} (GeV)", yLabels[fitIndex], {0.1, 0.9}, yRange);
                     drawEmptyPlot(dummyGraph, q2Index, row, Q2_prefixes.size());
                 }
-
                 // Draw horizontal line except in certain positions
                 if (!(row == 2 && q2Index == 4) && (row != 3 || (q2Index != 3 && q2Index != 4))) {
                     TLine *line = new TLine(0.15, 0.0, 0.95, 0.0);
