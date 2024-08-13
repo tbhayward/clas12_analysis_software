@@ -396,7 +396,7 @@ void drawDataPlotWithTitle(TGraphErrors* graph, int q2Index, int row, bool first
     if (!firstGraphDrawn) {
         // Adjust the pad's top margin to create space for the title
         if (row == 0) {
-            gPad->SetTopMargin(0.25);  // Increase top margin for the top row
+            gPad->SetTopMargin(0.2);  // Increase top margin for the top row
         }
 
         // Draw the plot
