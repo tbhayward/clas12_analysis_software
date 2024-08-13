@@ -447,9 +447,9 @@ void addLegend(std::vector<TGraph*>& sampleGraphs, TCanvas* c, const std::vector
         legend->AddEntry(sampleGraphs[zIndex], Form("%s (%.2f < z < %.2f)", z_prefixes[zIndex].c_str(), 0.10 + 0.15 * zIndex, 0.25 + 0.10 * zIndex), "P");
     }
 
-    legend->SetTextSize(0.04); // Adjust text size if needed
+    legend->SetTextSize(0.06); // Adjust text size if needed
     legend->SetFillColor(0); // Make background transparent
-    legend->SetLineColor(0); // Remove border
+    legend->SetLineColor(1); // Remove border
     legend->Draw();
 }
 
