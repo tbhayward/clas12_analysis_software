@@ -407,12 +407,7 @@ void drawEmptyPlot(TGraphErrors* dummyGraph, int q2Index, int row, int totalRows
 // Function to create and draw data plots with titles
 void drawDataPlot(TGraphErrors* graph, int q2Index, int row, int totalRows, bool firstGraphDrawn, const std::string& title = "") {
     if (!firstGraphDrawn) {
-        // Set the title if provided (only for the first graph to avoid overwriting)
-        if (!title.empty()) {
-            graph->SetTitle(title.c_str());
-            graph->GetHistogram()->SetTitleOffset(1.5); // Adjust title offset to move it above the plot
-        }
-
+        // Draw the plot first
         setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.1, 0.9}, {-0.09, 0.09});
         graph->GetXaxis()->SetLabelFont(42); // 42 is bold Helvetica
         graph->GetYaxis()->SetLabelFont(42);
@@ -420,8 +415,8 @@ void drawDataPlot(TGraphErrors* graph, int q2Index, int row, int totalRows, bool
         graph->GetYaxis()->SetTitleFont(42);
         graph->GetXaxis()->SetLabelSize(0.05); 
         graph->GetYaxis()->SetLabelSize(0.05); 
-        graph->GetXaxis()->SetTitleSize(0.08); 
-        graph->GetYaxis()->SetTitleSize(0.08); 
+        graph->GetXaxis()->SetTitleSize(0.06); 
+        graph->GetYaxis()->SetTitleSize(0.06); 
         graph->GetXaxis()->SetNdivisions(505);
 
         // Hide Y-axis labels for non-leftmost plots
@@ -437,6 +432,14 @@ void drawDataPlot(TGraphErrors* graph, int q2Index, int row, int totalRows, bool
         }
 
         graph->Draw("AP");
+
+        // Add title above the plot
+        if (!title.empty()) {
+            TText *t = new TText(0.5, 0.95, title.c_str());
+            t->SetTextAlign(22);  // Center alignment
+            t->SetTextSize(0.05); // Adjust text size as needed
+            t->Draw();
+        }
     } else {
         graph->Draw("P SAME");
     }
