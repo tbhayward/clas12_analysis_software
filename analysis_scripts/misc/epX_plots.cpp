@@ -652,7 +652,8 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
                     TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
 
                     // Set the y-axis range directly
-                    graph->GetYaxis()->SetRangeUser(yRange.first, yRange.second);
+                    // graph->GetYaxis()->SetRangeUser(yRange.first, yRange.second);
+                    graph->GetYaxis()->SetRangeUser(-0.2, 0.2);
 
                     std::string title = (row == 0) ? topRowTitles[q2Index] : "";
                     drawDataPlotWithTitle(graph, q2Index, row, firstGraphDrawn, title);
