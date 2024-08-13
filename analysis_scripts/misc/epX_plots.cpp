@@ -653,7 +653,6 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
 
                     // Set the y-axis range directly
                     // graph->GetYaxis()->SetRangeUser(yRange.first, yRange.second);
-                    graph->GetYaxis()->SetRangeUser(-0.2, 0.2);
 
                     std::string title = (row == 0) ? topRowTitles[q2Index] : "";
                     drawDataPlotWithTitle(graph, q2Index, row, firstGraphDrawn, title);
@@ -692,6 +691,31 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
     delete legend;
 }
 
+void testYAxisRange() {
+    TCanvas *c = new TCanvas("c", "Test Canvas", 800, 600);
+    std::vector<double> x = {1, 2, 3, 4, 5};
+    std::vector<double> y = {0.1, 0.2, 0.3, 0.4, 0.5};
+    std::vector<double> yErr = {0.01, 0.02, 0.01, 0.03, 0.02};
+
+    TGraphErrors *graph = new TGraphErrors(x.size(), x.data(), y.data(), 0, yErr.data());
+    graph->SetMarkerStyle(20);
+    graph->SetMarkerSize(1.2);
+    graph->SetMarkerColor(kRed);
+
+    // Set custom y-axis range
+    graph->GetYaxis()->SetRangeUser(-0.1, 0.6);
+    
+    // Alternative methods to set axis range
+    graph->GetYaxis()->SetMinimum(-0.1);
+    graph->GetYaxis()->SetMaximum(0.6);
+
+    graph->Draw("AP");
+
+    // Force canvas to apply changes
+    c->Update();
+    c->SaveAs("testYAxisRange.png");
+}
+
 int main(int argc, char *argv[]) {
     if (argc != 3) {
         std::cerr << "Usage: " << argv[0] << " <asymmetries.txt> <kinematicPlots.txt>\n";
@@ -721,7 +745,7 @@ int main(int argc, char *argv[]) {
 
     // // Plot PT and xF dependence comparison
     // plotComparison(asymmetryData, "output/epX_plots/PT_xF_dependence_comparison.png");
-
+    testYAxisRange();
     // Plot Q2-y-z dependence
     plotQ2yz_pT(asymmetryData);
 
