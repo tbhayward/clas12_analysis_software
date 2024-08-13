@@ -378,86 +378,135 @@ void plotComparison(
     }
 }
 
+// Function to set up the canvas
+TCanvas* setupCanvas(int width, int height, int cols, int rows) {
+    TCanvas *c = new TCanvas("c", "Q2-y-z Dependence", width, height);
+    c->Divide(cols, rows, 0, 0);  // 4 rows by 5 columns, no spacing
+    return c;
+}
+
+// Function to handle empty placeholders
+void drawEmptyPlot(TGraphErrors* dummyGraph, int q2Index, int row, int totalRows) {
+    dummyGraph->Draw("AP");
+    dummyGraph->GetXaxis()->SetNdivisions(505);
+
+    // Hide Y-axis labels for non-leftmost plots
+    if (q2Index != 0) {
+        dummyGraph->GetYaxis()->SetLabelOffset(999);
+        dummyGraph->GetYaxis()->SetTitleOffset(999);
+    }
+
+    // Hide X-axis labels for non-bottom row plots and specific bottom right subplots
+    if (row != totalRows - 1 || (row == 3 && (q2Index == 3 || q2Index == 4))) {
+        dummyGraph->GetXaxis()->SetLabelOffset(999);
+        dummyGraph->GetXaxis()->SetTitleOffset(999);
+    }
+}
+
+// Function to create and draw data plots
+void drawDataPlot(TGraphErrors* graph, int q2Index, int row, int totalRows, bool firstGraphDrawn) {
+    if (!firstGraphDrawn) {
+        setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.1, 0.9}, {-0.09, 0.09});
+        graph->GetXaxis()->SetLabelFont(42); // 42 is bold Helvetica
+        graph->GetYaxis()->SetLabelFont(42);
+        graph->GetXaxis()->SetTitleFont(42);
+        graph->GetYaxis()->SetTitleFont(42);
+        graph->GetXaxis()->SetLabelSize(0.05); 
+        graph->GetYaxis()->SetLabelSize(0.05); 
+        graph->GetXaxis()->SetTitleSize(0.06); 
+        graph->GetYaxis()->SetTitleSize(0.06); 
+        graph->GetXaxis()->SetNdivisions(505);
+
+        // Hide Y-axis labels for non-leftmost plots
+        if (q2Index != 0) {
+            graph->GetYaxis()->SetLabelOffset(999);
+            graph->GetYaxis()->SetTitleOffset(999);
+        }
+
+        // Hide X-axis labels for non-bottom row plots and specific bottom right subplots
+        if (row != totalRows - 1 || (row == 3 && (q2Index == 3 || q2Index == 4))) {
+            graph->GetXaxis()->SetLabelOffset(999);
+            graph->GetXaxis()->SetTitleOffset(999);
+        }
+
+        graph->Draw("AP");
+    } else {
+        graph->Draw("P SAME");
+    }
+}
+
+// Function to add the legend
+void addLegend(std::vector<TGraph*>& sampleGraphs, TCanvas* c, const std::vector<std::string>& z_prefixes) {
+    c->cd(20); // Go to the last pad
+    TLegend *legend = new TLegend(0.1, 0.2, 0.9, 0.9); // Larger legend box
+
+    for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
+        legend->AddEntry(sampleGraphs[zIndex], Form("%s (%.2f < z < %.2f)", z_prefixes[zIndex].c_str(), 0.10 + 0.15 * zIndex, 0.25 + 0.10 * zIndex), "P");
+    }
+
+    legend->SetTextSize(0.05); // Increase text size
+    legend->SetFillColor(0); // Make background transparent
+    legend->SetLineColor(0); // Remove border
+    legend->Draw();
+}
+
+// Main plotting function
 void plotQ2yz_pT(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
     const std::string &outputFileName) {
 
-    TCanvas *c = new TCanvas("c", "Q2-y-z Dependence", 2400, 1600);
-    c->Divide(5, 4, 0, 0);  // 4 rows by 5 columns, no spacing
+    TCanvas *c = setupCanvas(2400, 1600, 5, 4);
 
-    // Prefixes for Q2 ranges (including placeholders)
     std::vector<std::vector<std::string>> Q2_prefixes = {
-        {"Q2y1", "Q2y5", "Q2y9", "Q2y13", "Q2y16"},  // Top row
-        {"Q2y2", "Q2y6", "Q2y10", "Q2y14", "Q2y17"}, // Second row
-        {"Q2y3", "Q2y7", "Q2y11", "Q2y15", "EMPTY"}, // Third row (filling with "EMPTY")
-        {"Q2y4", "Q2y8", "Q2y12", "EMPTY", "EMPTY"}  // Fourth row (filling with "EMPTY")
+        {"Q2y1", "Q2y5", "Q2y9", "Q2y13", "Q2y16"},
+        {"Q2y2", "Q2y6", "Q2y10", "Q2y14", "Q2y17"},
+        {"Q2y3", "Q2y7", "Q2y11", "Q2y15", "EMPTY"},
+        {"Q2y4", "Q2y8", "Q2y12", "EMPTY", "EMPTY"}
     };
-    std::vector<std::string> z_prefixes = {"z1", "z2", "z3", "z4"}; // Updated to only include up to z4
-    std::vector<int> colors = {kBlack, kRed, kGreen, kBlue}; // Updated to match z_prefixes
 
-    // Vector to hold the sample graphs for the legend
+    std::vector<std::string> z_prefixes = {"z1", "z2", "z3", "z4"};
+    std::vector<int> colors = {kBlack, kRed, kGreen, kBlue};
+
     std::vector<TGraph*> sampleGraphs;
 
-    // Loop over each row
     for (size_t row = 0; row < Q2_prefixes.size(); ++row) {
-        // Loop over each Q2 bin (5 columns per row)
         for (size_t q2Index = 0; q2Index < Q2_prefixes[row].size(); ++q2Index) {
             int padIndex = row * 5 + q2Index + 1;
-            c->cd(padIndex); // Go to the correct pad
+            c->cd(padIndex);
 
-            // Set margins
             if (q2Index != 0) {
-                gPad->SetLeftMargin(0.001); // No left margin for non-leftmost plots
+                gPad->SetLeftMargin(0.001);
             } else {
-                gPad->SetLeftMargin(0.18); // Adequate left margin for leftmost plots
+                gPad->SetLeftMargin(0.18);
             }
 
             if (row != Q2_prefixes.size() - 1) {
-                gPad->SetBottomMargin(0.001); // No bottom margin for non-bottom plots
+                gPad->SetBottomMargin(0.001);
             } else {
-                gPad->SetBottomMargin(0.15); // Adequate bottom margin for bottom row
+                gPad->SetBottomMargin(0.15);
             }
 
-            bool firstGraphDrawn = false; // To check if we've drawn the first graph
+            bool firstGraphDrawn = false;
 
-            // Handle empty placeholders
             if (Q2_prefixes[row][q2Index] == "EMPTY") {
-                // Create a dummy graph with a point outside the axis range
                 std::vector<double> dummyX = {-9999};
                 std::vector<double> dummyY = {0};
                 std::vector<double> dummyYErr = {0};
 
-                TGraphErrors *dummyGraph = createTGraphErrors(dummyX, dummyY, dummyYErr, 20, 0.8, kWhite); // No visible point
-
+                TGraphErrors *dummyGraph = createTGraphErrors(dummyX, dummyY, dummyYErr, 20, 0.8, kWhite);
                 setAxisLabelsAndRanges(dummyGraph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.1, 0.9}, {-0.09, 0.09});
-                dummyGraph->Draw("AP");
+                drawEmptyPlot(dummyGraph, q2Index, row, Q2_prefixes.size());
 
-                // Apply to all plots
-                dummyGraph->GetXaxis()->SetNdivisions(505);
-
-                // Hide Y-axis labels for non-leftmost plots
-                if (q2Index != 0) {
-                    dummyGraph->GetYaxis()->SetLabelOffset(999);
-                    dummyGraph->GetYaxis()->SetTitleOffset(999);
-                }
-
-                // Hide X-axis labels for non-bottom row plots
-                if (row != Q2_prefixes.size() - 1 || (row == 3 && (q2Index == 3 || q2Index == 4))) {
-                    dummyGraph->GetXaxis()->SetLabelOffset(999);
-                    dummyGraph->GetXaxis()->SetTitleOffset(999);
-                }
-
-                continue; // Skip to next iteration
+                continue;
             }
 
-            // Loop over each z bin
             for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
                 std::string key = Q2_prefixes[row][q2Index] + z_prefixes[zIndex] + "chi2FitsALUsinphi";
                 auto it = asymmetryData.find(key);
 
                 if (it == asymmetryData.end()) {
                     std::cerr << "Warning: No data found for key " << key << std::endl;
-                    continue; // Skip if no data is found for this key
+                    continue;
                 }
 
                 const auto &data = it->second;
@@ -471,49 +520,15 @@ void plotQ2yz_pT(
 
                 TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
 
-                // Store the first graph of each z-bin for the legend
                 if (q2Index == 0 && row == 0) {
                     sampleGraphs.push_back(graph);
                 }
 
-                if (!firstGraphDrawn) {
-                    setAxisLabelsAndRanges(graph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.1, 0.9}, {-0.09, 0.09});
-
-                    // Set bold font for labels and titles
-                    graph->GetXaxis()->SetLabelFont(42); // 42 is bold Helvetica
-                    graph->GetYaxis()->SetLabelFont(42);
-                    graph->GetXaxis()->SetTitleFont(42);
-                    graph->GetYaxis()->SetTitleFont(42);
-
-                    // Regular font sizes
-                    graph->GetXaxis()->SetLabelSize(0.05); 
-                    graph->GetYaxis()->SetLabelSize(0.05); 
-                    graph->GetXaxis()->SetTitleSize(0.06); 
-                    graph->GetYaxis()->SetTitleSize(0.06); 
-
-                    // Apply to all plots
-                    graph->GetXaxis()->SetNdivisions(505);  // Customize the number of divisions (5 major, 5 minor)
-
-                    // Hide Y-axis labels for non-leftmost plots
-                    if (q2Index != 0) {
-                        graph->GetYaxis()->SetLabelOffset(999);
-                        graph->GetYaxis()->SetTitleOffset(999);
-                    }
-                    // Hide X-axis labels for non-bottom row plots and specific bottom right subplots
-                    if (row != Q2_prefixes.size() - 1 || (row == 3 && (q2Index == 3 || q2Index == 4))) {
-                        graph->GetXaxis()->SetLabelOffset(999);
-                        graph->GetXaxis()->SetTitleOffset(999);
-                    }
-
-                    graph->Draw("AP");
-                    firstGraphDrawn = true;
-                } else {
-                    graph->Draw("P SAME");
-                }
+                drawDataPlot(graph, q2Index, row, Q2_prefixes.size(), firstGraphDrawn);
+                firstGraphDrawn = true;
             }
 
-            // Draw the dashed gray line at y = 0
-            if (row != 3 || (q2Index != 3 && q2Index != 4)) {  // Don't draw in the last two subplots
+            if (row != 3 || (q2Index != 3 && q2Index != 4)) {
                 TLine *line = new TLine(0.15, 0.0, 0.95, 0.0);
                 line->SetLineColor(kGray + 2);
                 line->SetLineStyle(7);
@@ -522,25 +537,11 @@ void plotQ2yz_pT(
         }
     }
 
-    // Add a legend in the last subplot (bottom right corner)
-    c->cd(20); // Go to the last pad
-    TLegend *legend = new TLegend(0.1, 0.2, 0.9, 0.9); // Larger legend box
+    addLegend(sampleGraphs, c, z_prefixes);
 
-    // Add color-coded entries for the z-bins
-    for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
-        legend->AddEntry(sampleGraphs[zIndex], Form("%s (%.2f < z < %.2f)", z_prefixes[zIndex].c_str(), 0.10 + 0.15 * zIndex, 0.25 + 0.10 * zIndex), "P");
-    }
-
-    legend->SetTextSize(0.05); // Increase text size
-    legend->SetFillColor(0); // Make background transparent
-    legend->SetLineColor(0); // Remove border
-    legend->Draw();
-
-    // Save the canvas as a PNG file
     gSystem->Exec("mkdir -p output/epX_plots");
     c->SaveAs(outputFileName.c_str());
 
-    // Clean up
     delete c;
     for (auto graph : sampleGraphs) {
         delete graph;
