@@ -71,7 +71,6 @@ std::map<std::string, std::vector<std::vector<double>>> readKinematics(const std
     return kinematicData;
 }
 
-// Function to read asymmetry fits directly from the file
 std::map<std::string, std::vector<std::vector<double>>> readAsymmetries(const std::string &filename) {
     std::map<std::string, std::vector<std::vector<double>>> asymmetryData;
     std::ifstream file(filename);
@@ -104,6 +103,36 @@ std::map<std::string, std::vector<std::vector<double>>> readAsymmetries(const st
             }
 
             asymmetryData[key] = values;
+        }
+    }
+
+    // Now, calculate the doubleratio fits
+    std::string alusKeyPrefix = "ALUsinphi";
+    std::string allKeyPrefix = "ALL";
+    for (const auto &entry : asymmetryData) {
+        // Check if this is an ALUsinphi entry
+        if (entry.first.find(alusKeyPrefix) != std::string::npos) {
+            std::string baseKey = entry.first.substr(0, entry.first.find(alusKeyPrefix));
+            std::string alusKey = baseKey + alusKeyPrefix;
+            std::string allKey = baseKey + allKeyPrefix;
+
+            // Ensure both ALUsinphi and ALL exist for this bin
+            if (asymmetryData.find(alusKey) != asymmetryData.end() && asymmetryData.find(allKey) != asymmetryData.end()) {
+                const auto &alusData = asymmetryData[alusKey];
+                const auto &allData = asymmetryData[allKey];
+
+                // Prepare the doubleratio data
+                std::vector<std::vector<double>> doubleratioData;
+                for (size_t i = 0; i < alusData.size(); ++i) {
+                    double xValue = alusData[i][0];
+                    double ratioValue = alusData[i][1] / allData[i][1];
+                    double error = ratioValue * std::sqrt(std::pow(alusData[i][2] / alusData[i][1], 2) + std::pow(allData[i][2] / allData[i][1], 2));
+                    doubleratioData.push_back({xValue, ratioValue, error});
+                }
+
+                // Store the doubleratio data
+                asymmetryData[baseKey + "doubleratio"] = doubleratioData;
+            }
         }
     }
 
@@ -748,9 +777,9 @@ int main(int argc, char *argv[]) {
     // Read the kinematic data from the file
     std::map<std::string, std::vector<std::vector<double>>> kinematicData = readKinematics(kinematicFile);
 
-    // // Print out the parsed data
-    // std::cout << "Asymmetry Data:\n";
-    // printData(asymmetryData);
+    // Print out the parsed data
+    std::cout << "Asymmetry Data:\n";
+    printData(asymmetryData);
 
     // std::cout << "\nKinematic Data:\n";
     // printData(kinematicData);
