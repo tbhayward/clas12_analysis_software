@@ -435,12 +435,11 @@ void drawDataPlot(TGraphErrors* graph, int q2Index, int row, int totalRows, bool
 
         // Add title above the plot
         if (!title.empty()) {
-            // Adjust the y-coordinate to place the title above the plot
-            TText *t = new TText(0.5, 1.05, title.c_str());  // Position it slightly above the plot
-            t->SetNDC();  // Use Normalized Device Coordinates (NDC) so position is relative to the pad
+            TText *t = new TText(0.5, 1.08, title.c_str());  // Slightly above the plot
+            t->SetNDC();  // Use Normalized Device Coordinates
             t->SetTextAlign(22);  // Center alignment
             t->SetTextSize(0.05); // Adjust text size as needed
-            t->Draw();
+            t->Draw("same");
         }
     } else {
         graph->Draw("P SAME");
