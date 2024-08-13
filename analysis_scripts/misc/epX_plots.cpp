@@ -150,6 +150,64 @@ std::map<std::string, std::vector<std::vector<double>>> readAsymmetries(const st
     return asymmetryData;
 }
 
+// Function to organize data by pT, z, and y bins and print the vectors
+void organizeAndPrintKinematicAsymmetryData(
+    const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
+    const std::map<std::string, std::vector<std::vector<double>>> &kinematicData) {
+    // Container to store the organized data by pT, z, y bins
+    std::map<std::string, std::vector<std::vector<double>>> organizedData;
+
+    // Iterate through the kinematic data
+    for (const auto &kinDataPair : kinematicData) {
+        const std::string &key = kinDataPair.first;
+        const std::vector<std::vector<double>> &kinDataVec = kinDataPair.second;
+
+        // Extract the bin indices from the key (e.g., Q2y11z2)
+        std::string zBin = key.substr(key.find("z"), 2); // e.g., "z1"
+        std::string yBin = key.substr(key.find("y"), 2); // e.g., "y2"
+
+        // Iterate through each kinematic entry
+        for (size_t i = 0; i < kinDataVec.size(); ++i) {
+            double pT = kinDataVec[i][6]; // pT value
+            double Q2 = kinDataVec[i][0]; // Q2 value
+
+            // Create the new key for the bin: "pTz1y2", etc.
+            std::string newKey = "pT" + zBin + yBin;
+
+            // Find corresponding asymmetry data for the Q2, y, z bin
+            std::string asymmetryKey = key + "chi2FitsALUsinphi"; // Asymmetry key for this bin
+
+            // Assuming asymmetryData has the same structure and matches the kinematic data
+            if (asymmetryData.find(asymmetryKey) != asymmetryData.end()) {
+                const auto &asymDataVec = asymmetryData.at(asymmetryKey);
+
+                if (i < asymDataVec.size()) {
+                    const std::vector<double> &asymData = asymDataVec[i];
+                    double xValue = asymData[0]; // x value (which is pT)
+                    double yValue = asymData[1]; // asymmetry value
+                    double yErr = asymData[2];   // asymmetry error
+
+                    // Store the (Q2, yValue, yErr) in the new bin
+                    organizedData[newKey].push_back({Q2, yValue, yErr});
+                }
+            }
+        }
+    }
+
+    // Print the organized data
+    for (const auto &dataPair : organizedData) {
+        const std::string &binKey = dataPair.first;
+        const std::vector<std::vector<double>> &dataVec = dataPair.second;
+
+        std::cout << "Data for bin: " << binKey << std::endl;
+        std::cout << "Q2, Asymmetry, Error" << std::endl;
+        for (const auto &entry : dataVec) {
+            std::cout << entry[0] << ", " << entry[1] << ", " << entry[2] << std::endl;
+        }
+        std::cout << std::endl;
+    }
+}
+
 // Function to print the data for verification
 void printData(const std::map<std::string, std::vector<std::vector<double>>> &data) {
     for (const auto &entry : data) {
