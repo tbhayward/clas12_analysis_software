@@ -535,7 +535,7 @@ void addCanvasSideLabels(TCanvas* c, const std::vector<std::string>& y_ranges) {
 void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData) {
     // Fit types, corresponding y-axis labels, and output file names
     std::vector<std::string> fitTypes = {"ALUsinphi", "AULoffset", "AULsinphi", "AULsin2phi", "ALL", "ALLcosphi"};
-    std::vector<std::string> yLabels = {"F_{LU}^{sin#phi}/F_{UU}", "A_{UL}^{offset}", "A_{UL}^{sin#phi}", "A_{UL}^{sin2#phi}", "A_{LL}", "A_{LL}^{cos#phi}"};
+    std::vector<std::string> yLabels = {"F_{LU}^{sin#phi}/F_{UU}", "A_{UL}^{offset}", "F_{UL}^{sin#phi}/F_{UU}", "F_{UL}^{sin2#phi}/F_{UU}", "F_{LL}/F_{UU}", "F_{LL}^{cos#phi}/F_{UU}"};
     std::vector<std::string> outputFiles = {
         "output/epX_plots/Q2yz_pT_ALUsinphi.png",
         "output/epX_plots/Q2yz_pT_AULoffset.png",
@@ -546,7 +546,7 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
     };
 
     // Define different maxError thresholds for each fit type
-    std::vector<double> maxErrors = {0.0275, 0.01, 0.0275, 0.0275, 0.0275, 0.0275}; // Customize these values as needed
+    std::vector<double> maxErrors = {0.0275, 0.01, 0.0275, 0.0275, 0.075, 0.0275}; // Customize these values as needed
 
     // Define different y-axis ranges for each fit type
     std::vector<std::pair<double, double>> yRangesPerPlot = {
@@ -683,7 +683,7 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
                     // Handle empty plot scenario
                     std::vector<double> dummyX = {-9999};
                     std::vector<double> dummyY = {0};
-                    std::vector<double> dummyYErr = {0};
+                    std::vector<double>  dummyYErr = {0};
                     TGraphErrors *dummyGraph = createTGraphErrors(dummyX, dummyY, dummyYErr, 20, 0.8, kWhite);
                     setCustomAxisLabelsAndRanges(dummyGraph, "P_{T} (GeV)", yLabels[fitIndex], {0.1, 0.9}, yRange);
                     drawEmptyPlot(dummyGraph, q2Index, row, Q2_prefixes.size());
