@@ -532,25 +532,6 @@ void plotQ2yz_pT(
             }
 
             bool firstGraphDrawn = false;
-
-            if (Q2_prefixes[row][q2Index] == "EMPTY") {
-                std::vector<double> dummyX = {-9999};
-                std::vector<double> dummyY = {0};
-                std::vector<double> dummyYErr = {0};
-
-                TGraphErrors *dummyGraph = createTGraphErrors(dummyX, dummyY, dummyYErr, 20, 0.8, kWhite);
-                setAxisLabelsAndRanges(dummyGraph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.1, 0.9}, {-0.09, 0.09});
-                dummyGraph->Draw("AP");
-
-                // Hide X-axis labels for the bottom right and second to last plot
-                if (row == 3 && (q2Index == 3 || q2Index == 4)) {
-                    dummyGraph->GetXaxis()->SetLabelOffset(999);
-                    dummyGraph->GetXaxis()->SetTitleOffset(999);
-                }
-
-                continue;
-            }
-
             bool anyGraphDrawn = false; // Track if any graph was drawn for this pad
 
             for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
@@ -598,12 +579,15 @@ void plotQ2yz_pT(
                 TGraphErrors *dummyGraph = createTGraphErrors(dummyX, dummyY, dummyYErr, 20, 0.8, kWhite);
                 setAxisLabelsAndRanges(dummyGraph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.1, 0.9}, {-0.09, 0.09});
                 dummyGraph->Draw("AP");
+            }
 
-                // Hide X-axis labels for the bottom right and second to last plot
-                if (row == 3 && (q2Index == 3 || q2Index == 4)) {
-                    dummyGraph->GetXaxis()->SetLabelOffset(999);
-                    dummyGraph->GetXaxis()->SetTitleOffset(999);
-                }
+            // Hide X-axis labels for the bottom right and second to last plot
+            if (row == 3 && (q2Index == 3 || q2Index == 4)) {
+                gPad->Modified();
+                gPad->Update();
+
+                dummyGraph->GetXaxis()->SetLabelOffset(999);
+                dummyGraph->GetXaxis()->SetTitleOffset(999);
             }
 
             if (row != 3 || (q2Index != 3 && q2Index != 4)) {
