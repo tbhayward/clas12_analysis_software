@@ -441,13 +441,13 @@ void drawDataPlotWithTitle(TGraphErrors* graph, int q2Index, int row, bool first
 // Function to add the legend
 void addLegend(std::vector<TGraph*>& sampleGraphs, TCanvas* c, const std::vector<std::string>& z_prefixes) {
     c->cd(20); // Go to the last pad
-    TLegend *legend = new TLegend(0.1, 0.2, 0.9, 0.9); // Larger legend box
+    TLegend *legend = new TLegend(0.1, 0.1, 0.9, 0.9); // Adjusted for larger legend box to accommodate more entries
 
     for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
         legend->AddEntry(sampleGraphs[zIndex], Form("%s (%.2f < z < %.2f)", z_prefixes[zIndex].c_str(), 0.10 + 0.15 * zIndex, 0.25 + 0.10 * zIndex), "P");
     }
 
-    legend->SetTextSize(0.05); // Increase text size
+    legend->SetTextSize(0.04); // Adjust text size if needed
     legend->SetFillColor(0); // Make background transparent
     legend->SetLineColor(0); // Remove border
     legend->Draw();
@@ -471,7 +471,6 @@ void drawEmptyPlot(TGraphErrors* dummyGraph, int q2Index, int row, int totalRows
     }
 }
 
-// Main plotting function
 void plotQ2yz_pT(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
     const std::string &outputFileName) {
@@ -486,8 +485,9 @@ void plotQ2yz_pT(
         {"Q2y4", "Q2y8", "Q2y12", "EMPTY", "EMPTY"}
     };
 
-    std::vector<std::string> z_prefixes = {"z1", "z2", "z3", "z4"};
-    std::vector<int> colors = {kBlack, kRed, kGreen, kBlue};
+    // Include z5
+    std::vector<std::string> z_prefixes = {"z1", "z2", "z3", "z4", "z5"};
+    std::vector<int> colors = {kBlack, kRed, kGreen, kBlue, kMagenta}; // Add color for z5
 
     std::vector<std::string> topRowTitles = {
         "1.0 < Q^{2} (GeV^{2}) < 2.0",
