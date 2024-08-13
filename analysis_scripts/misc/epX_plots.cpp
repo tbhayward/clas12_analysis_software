@@ -604,7 +604,7 @@ void plotQ2yz_pT(
                 TLine *line = new TLine(0.15, 0.0, 0.95, 0.0);
                 line->SetLineColor(kGray + 2);
                 line->SetLineStyle(7);
-                line->Draw(“same”);
+                line->Draw("same");
             }
         }
     }
