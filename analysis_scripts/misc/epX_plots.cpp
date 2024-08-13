@@ -537,12 +537,12 @@ void addCanvasTopLabels(TCanvas* c, const std::vector<std::string>& q2_ranges) {
     TLatex latex;
     latex.SetNDC();  // Use Normalized Device Coordinates
     latex.SetTextAlign(22);  // Centered alignment
-    latex.SetTextSize(0.02);  // Adjust text size
+    latex.SetTextSize(0.015);  // Adjust text size
 
     // Position and draw each Q² label
     for (size_t i = 0; i < q2_ranges.size(); ++i) {
         double xPos = 0.1 + i * 0.2;  // Adjust the 0.1 and 0.2 to space the labels evenly
-        latex.DrawLatex(xPos, 0.96, q2_ranges[i].c_str());  // Position text above the plots
+        latex.DrawLatex(xPos, 0.99, q2_ranges[i].c_str());  // Position text above the plots
     }
 }
 
