@@ -587,7 +587,8 @@ void plotQ2yz_pT(
                 }
             }
 
-            if (row != 3 || (q2Index != 3 && q2Index != 4)) {
+            // Skip drawing the horizontal line for the third row, fifth column plot (padIndex = 15)
+            if (!(row == 2 && q2Index == 4) && (row != 3 || (q2Index != 3 && q2Index != 4))) {
                 TLine *line = new TLine(0.15, 0.0, 0.95, 0.0);
                 line->SetLineColor(kGray + 2);
                 line->SetLineStyle(7);
