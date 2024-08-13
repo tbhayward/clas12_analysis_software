@@ -450,6 +450,17 @@ void addLegend(std::vector<TGraph*>& sampleGraphs, TCanvas* c, const std::vector
     legend->Draw();
 }
 
+// Function to add titles to the top row
+void addTopRowTitles(TCanvas* c, const std::vector<std::string>& titles) {
+    for (size_t i = 0; i < titles.size(); ++i) {
+        c->cd(i + 1);  // Select the pad
+        TText *text = new TText(0.5, 0.95, titles[i].c_str());  // Positioning text (centered, near top)
+        text->SetTextAlign(22);  // Center alignment
+        text->SetTextSize(0.05);  // Set text size
+        text->Draw();
+    }
+}
+
 // Main plotting function
 void plotQ2yz_pT(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
@@ -466,6 +477,14 @@ void plotQ2yz_pT(
 
     std::vector<std::string> z_prefixes = {"z1", "z2", "z3", "z4"};
     std::vector<int> colors = {kBlack, kRed, kGreen, kBlue};
+
+    std::vector<std::string> topRowTitles = {
+        "1.0 < Q^{2} (GeV^{2}) < 2.0",
+        "2.0 < Q^{2} (GeV^{2}) < 3.0",
+        "3.0 < Q^{2} (GeV^{2}) < 4.0",
+        "4.0 < Q^{2} (GeV^{2}) < 5.0",
+        "5.0 < Q^{2} (GeV^{2}) < 7.0"
+    };
 
     std::vector<TGraph*> sampleGraphs;
 
@@ -538,6 +557,7 @@ void plotQ2yz_pT(
     }
 
     addLegend(sampleGraphs, c, z_prefixes);
+    addTopRowTitles(c, topRowTitles);  // Add the top row titles
 
     gSystem->Exec("mkdir -p output/epX_plots");
     c->SaveAs(outputFileName.c_str());
