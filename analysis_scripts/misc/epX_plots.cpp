@@ -409,7 +409,7 @@ void plotQ2yz_pT(
             if (q2Index != 0) {
                 gPad->SetLeftMargin(0.001); // No left margin for non-leftmost plots
             } else {
-                gPad->SetLeftMargin(0.12); // Adequate left margin for leftmost plots
+                gPad->SetLeftMargin(0.15); // Adequate left margin for leftmost plots
             }
 
             if (row != Q2_prefixes.size() - 1) {
@@ -486,10 +486,10 @@ void plotQ2yz_pT(
                     graph->GetYaxis()->SetTitleFont(42);
 
                     // Regular font sizes
-                    graph->GetXaxis()->SetLabelSize(0.04); 
-                    graph->GetYaxis()->SetLabelSize(0.04); 
-                    graph->GetXaxis()->SetTitleSize(0.05); 
-                    graph->GetYaxis()->SetTitleSize(0.05); 
+                    graph->GetXaxis()->SetLabelSize(0.05); 
+                    graph->GetYaxis()->SetLabelSize(0.05); 
+                    graph->GetXaxis()->SetTitleSize(0.06); 
+                    graph->GetYaxis()->SetTitleSize(0.06); 
 
                     // Apply to all plots
                     graph->GetXaxis()->SetNdivisions(505);  // Customize the number of divisions (5 major, 5 minor)
