@@ -495,21 +495,18 @@ std::vector<std::vector<double>> filterDataByError(const std::vector<std::vector
     return filteredData;
 }
 
-// Function to add y-range titles to the right side of each row
-void addRightColumnTitles(TCanvas* c, const std::vector<std::string>& y_ranges) {
+void addCanvasSideLabels(TCanvas* c, const std::vector<std::string>& y_ranges) {
+    c->cd(); // Switch to the entire canvas
+    TLatex latex;
+    latex.SetNDC();  // Use Normalized Device Coordinates
+    latex.SetTextAlign(22);  // Centered alignment
+    latex.SetTextSize(0.04);  // Adjust text size
+    latex.SetTextAngle(90);  // Rotate text vertically
+
+    // Position and draw each y-range label
     for (size_t i = 0; i < y_ranges.size(); ++i) {
-        int padIndex = (i + 1) * 5;  // Select the pad on the far right of each row
-        c->cd(padIndex);  // Select the appropriate pad
-
-        // Set margins to position the text inside the pad
-        gPad->SetRightMargin(0.25);  // Increase right margin to make room for the label
-
-        TLatex latex;
-        latex.SetNDC();  // Use Normalized Device Coordinates
-        latex.SetTextAlign(32);  // Align right (3) and vertically centered (2)
-        latex.SetTextSize(0.05);  // Set text size
-        latex.SetTextAngle(90);  // Rotate the text to be vertical (90 degrees)
-        latex.DrawLatex(0.95, 0.5, y_ranges[i].c_str());  // Draw text within the plot area
+        double yPos = 1.0 - (i + 0.5) * (1.0 / y_ranges.size());
+        latex.DrawLatex(0.98, yPos, y_ranges[i].c_str());  // Position text to the right of the plots
     }
 }
 
@@ -633,7 +630,7 @@ void plotQ2yz_pT(
     }
 
     // Add the right column titles for y ranges
-    addRightColumnTitles(c, yRanges);
+    addCanvasSideLabels(c, yRanges);
 
     addLegend(sampleGraphs, c);
 
