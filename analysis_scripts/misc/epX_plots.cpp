@@ -126,7 +126,8 @@ std::map<std::string, std::vector<std::vector<double>>> readAsymmetries(const st
                 for (size_t i = 0; i < alusData.size(); ++i) {
                     double xValue = alusData[i][0];
                     double ratioValue = alusData[i][1] / allData[i][1];
-                    double error = ratioValue * std::sqrt(std::pow(alusData[i][2] / alusData[i][1], 2) + std::pow(allData[i][2] / allData[i][1], 2));
+                    // double error = ratioValue * std::sqrt(std::pow(alusData[i][2] / alusData[i][1], 2) + std::pow(allData[i][2] / allData[i][1], 2));
+                    double error = (1/std::pow(allData[i][1],4))*std::sqrt(std::pow(alusData[i][1]*allData[i][2],2)+std::pow(allData[i][1]*alusData[i][2],2));
                     doubleratioData.push_back({xValue, ratioValue, error});
                 }
 
