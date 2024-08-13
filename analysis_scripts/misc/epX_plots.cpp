@@ -441,7 +441,7 @@ void drawDataPlotWithTitle(TGraphErrors* graph, int q2Index, int row, bool first
 // Function to add the legend
 void addLegend(std::vector<TGraph*>& sampleGraphs, TCanvas* c, const std::vector<std::string>& z_prefixes) {
     c->cd(20); // Go to the last pad
-    TLegend *legend = new TLegend(0.1, 0.1, 0.9, 0.9); // Adjusted for larger legend box to accommodate more entries
+    TLegend *legend = new TLegend(0.1, 0.15, 0.9, 0.9); // Slightly move up the legend box
 
     for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
         legend->AddEntry(sampleGraphs[zIndex], Form("%s (%.2f < z < %.2f)", z_prefixes[zIndex].c_str(), 0.10 + 0.15 * zIndex, 0.25 + 0.10 * zIndex), "P");
@@ -471,9 +471,25 @@ void drawEmptyPlot(TGraphErrors* dummyGraph, int q2Index, int row, int totalRows
     }
 }
 
+// Function to filter out data points with large error bars
+std::vector<std::vector<double>> filterDataByError(const std::vector<std::vector<double>>& data, double maxError) {
+    std::vector<std::vector<double>> filteredData;
+
+    for (const auto& entry : data) {
+        double yError = entry[2]; // Assuming the error is stored in the third element of each entry
+        if (yError <= maxError) {
+            filteredData.push_back(entry); // Include only if error is below threshold
+        }
+    }
+
+    return filteredData;
+}
+
 void plotQ2yz_pT(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
     const std::string &outputFileName) {
+
+    double maxError = 0.03; // Threshold for maximum allowed error bar size
 
     TCanvas *c = new TCanvas("c", "Q2-y-z Dependence", 2400, 1600);
     c->Divide(5, 4, 0, 0);  // 4 rows by 5 columns, no spacing
@@ -485,7 +501,6 @@ void plotQ2yz_pT(
         {"Q2y4", "Q2y8", "Q2y12", "EMPTY", "EMPTY"}
     };
 
-    // Include z5
     std::vector<std::string> z_prefixes = {"z1", "z2", "z3", "z4", "z5"};
     std::vector<int> colors = {kBlack, kRed, kGreen, kBlue, kMagenta}; // Add color for z5
 
@@ -540,9 +555,13 @@ void plotQ2yz_pT(
                 }
 
                 const auto &data = it->second;
+
+                // Filter the data to remove points with large error bars
+                auto filteredData = filterDataByError(data, maxError);
+
                 std::vector<double> x, y, yErr;
 
-                for (const auto &entry : data) {
+                for (const auto &entry : filteredData) {
                     x.push_back(entry[0]);
                     y.push_back(entry[1]);
                     yErr.push_back(entry[2]);
