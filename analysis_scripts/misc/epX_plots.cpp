@@ -409,7 +409,7 @@ void plotQ2yz_pT(
             if (q2Index != 0) {
                 gPad->SetLeftMargin(0.001); // No left margin for non-leftmost plots
             } else {
-                gPad->SetLeftMargin(0.16); // Adequate left margin for leftmost plots
+                gPad->SetLeftMargin(0.18); // Adequate left margin for leftmost plots
             }
 
             if (row != Q2_prefixes.size() - 1) {
