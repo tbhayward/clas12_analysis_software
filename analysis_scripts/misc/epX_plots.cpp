@@ -540,10 +540,12 @@ void plotQ2yz_pT(
 
                 TGraphErrors *dummyGraph = createTGraphErrors(dummyX, dummyY, dummyYErr, 20, 0.8, kWhite);
                 setAxisLabelsAndRanges(dummyGraph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.1, 0.9}, {-0.09, 0.09});
-                drawEmptyPlot(dummyGraph, q2Index, row, Q2_prefixes.size());
+                dummyGraph->Draw("AP");
 
                 continue;
             }
+
+            bool anyGraphDrawn = false; // Track if any graph was drawn for this pad
 
             for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
                 std::string key = Q2_prefixes[row][q2Index] + z_prefixes[zIndex] + "chi2FitsALUsinphi";
@@ -558,6 +560,9 @@ void plotQ2yz_pT(
 
                 // Filter the data to remove points with large error bars
                 auto filteredData = filterDataByError(data, maxError);
+
+                // Skip this z-bin if all points are filtered out
+                if (filteredData.empty()) continue;
 
                 std::vector<double> x, y, yErr;
 
@@ -576,6 +581,17 @@ void plotQ2yz_pT(
                 std::string title = (row == 0) ? topRowTitles[q2Index] : "";
                 drawDataPlotWithTitle(graph, q2Index, row, firstGraphDrawn, title);
                 firstGraphDrawn = true;
+                anyGraphDrawn = true;
+            }
+
+            if (!anyGraphDrawn) { // If no graph was drawn, plot an empty placeholder graph
+                std::vector<double> dummyX = {-9999};
+                std::vector<double> dummyY = {0};
+                std::vector<double> dummyYErr = {0};
+
+                TGraphErrors *dummyGraph = createTGraphErrors(dummyX, dummyY, dummyYErr, 20, 0.8, kWhite);
+                setAxisLabelsAndRanges(dummyGraph, "P_{T} (GeV)", "F_{LU}^{sin#phi}/F_{UU}", {0.1, 0.9}, {-0.09, 0.09});
+                dummyGraph->Draw("AP");
             }
 
             if (row != 3 || (q2Index != 3 && q2Index != 4)) {
