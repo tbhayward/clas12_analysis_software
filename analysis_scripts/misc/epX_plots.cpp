@@ -21,6 +21,7 @@
 #include <vector>
 #include <string>
 #include <map>
+#include <TLatex.h>
 #include <TText.h>  // Add this include for TText
 
 // Global variables for systematic uncertainties
