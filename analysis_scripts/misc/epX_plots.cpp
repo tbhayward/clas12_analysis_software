@@ -138,6 +138,7 @@ std::map<std::string, std::vector<std::vector<double>>> readAsymmetries(const st
                         std::pow(allData[i][2] / allData[i][1], 2)
                     );
                     doubleratioData.push_back({xValue, ratioValue, error});
+                    ratioValue=-ratioValue;
                 }
 
                 // Store the doubleratio data
@@ -595,7 +596,7 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
         "F_{UL}^{sin2#phi}/F_{UU}",
         "F_{LL}/F_{UU}",
         "F_{LL}^{cos#phi}/F_{UU}",
-        "F_{LU}^{sin#phi}/F_{LL}"
+        "-F_{LU}^{sin#phi}/F_{LL}"
     };
     std::vector<std::string> outputFiles = {
         "output/epX_plots/Q2yz_pT_ALUsinphi.png",
