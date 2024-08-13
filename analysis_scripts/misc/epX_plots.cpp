@@ -510,7 +510,6 @@ void addCanvasSideLabels(TCanvas* c, const std::vector<std::string>& y_ranges) {
 }
 
 void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData) {
-
     double maxError = 0.0275; // Threshold for maximum allowed error bar size
 
     // Fit types, corresponding y-axis labels, and output file names
@@ -525,10 +524,15 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
         "output/epX_plots/Q2yz_pT_ALLcosphi.png"
     };
 
+    // Store all canvases for later use in creating the legend
+    std::vector<TCanvas*> canvases;
+    std::vector<TGraph*> sampleGraphs; // Store sample graphs for the legend
+
     // Loop over each fit type and generate the corresponding plot
     for (size_t fitIndex = 0; fitIndex < fitTypes.size(); ++fitIndex) {
         // Setup canvas for this fit type
         TCanvas *c = setupCanvas(2400, 1600, 5, 4);
+        canvases.push_back(c); // Store the canvas for later
 
         // Define the prefixes and colors
         std::vector<std::vector<std::string>> Q2_prefixes = {
@@ -554,8 +558,6 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
             "0.45 < y < 0.55",
             "0.30 < y < 0.45"
         };
-
-        // std::vector<TGraph*> sampleGraphs; // Store sample graphs for the legend
 
         // Loop through each Q2 prefix and corresponding z prefixes
         for (size_t row = 0; row < Q2_prefixes.size(); ++row) {
@@ -606,9 +608,9 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
 
                     TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
 
-                    // if (q2Index == 0 && row == 0) {
-                    //     sampleGraphs.push_back(graph); // Add to sampleGraphs for legend
-                    // }
+                    if (fitIndex == 0 && q2Index == 0 && row == 0) {
+                        sampleGraphs.push_back(graph); // Add to sampleGraphs for legend
+                    }
 
                     std::string title = (row == 0) ? topRowTitles[q2Index] : "";
                     drawDataPlotWithTitle(graph, q2Index, row, firstGraphDrawn, title);
@@ -639,19 +641,28 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
         // Add y-range labels on the right-hand side
         addCanvasSideLabels(c, yRanges);
 
-        // // Add legend to the canvas
-        // addLegend(sampleGraphs, c);
-
         // Save the canvas to file
         gSystem->Exec("mkdir -p output/epX_plots");
         c->SaveAs(outputFiles[fitIndex].c_str());
 
-        // // Clean up objects
+        // Comment out deletion for now
         // delete c;
-        // for (auto graph : sampleGraphs) {
-        //     delete graph;
-        // }
     }
+
+    // Create a separate canvas for the legend
+    TCanvas *legendCanvas = new TCanvas("legendCanvas", "Legend", 2400, 1600);
+    addLegend(sampleGraphs, legendCanvas);
+    legendCanvas->SaveAs("output/epX_plots/legend.png");
+
+    // Comment out deletion for now
+    // Clean up objects
+    // delete legendCanvas;
+    // for (auto& c : canvases) {
+    //     delete c;
+    // }
+    // for (auto& graph : sampleGraphs) {
+    //     delete graph;
+    // }
 }
 
 int main(int argc, char *argv[]) {
