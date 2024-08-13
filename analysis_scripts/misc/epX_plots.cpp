@@ -150,16 +150,23 @@ std::map<std::string, std::vector<std::vector<double>>> readAsymmetries(const st
     return asymmetryData;
 }
 
+// Function to extract and print Q² dependence vectors
 void extractAndPrintQ2Dependence(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
     const std::map<std::string, std::vector<std::vector<double>>> &kinematicData) {
     
-    // Vectors to hold the Q², asymmetry values, and errors
+    // Vectors to hold the Q², asymmetry values, and errors for different sets
     std::vector<std::vector<double>> z1pT2y1, z2pT2y1, z1pT2y2, z2pT2y2;
 
+    // Define the fit types we're interested in
+    std::vector<std::string> fitTypes = {
+        "ALUsinphi", "AULoffset", "AULsinphi", "AULsin2phi", "ALL", "ALLcosphi", "doubleratio"
+    };
+
     // Helper lambda to extract a point
-    auto extractPoint = [&](const std::string &prefix, int pointIndex) {
+    auto extractPoint = [&](const std::string &prefix, int pointIndex, const std::string &fitType) {
         std::vector<double> result;
+
         // Get the kinematic data
         if (kinematicData.find(prefix) != kinematicData.end()) {
             const auto &kinDataVec = kinematicData.at(prefix);
@@ -171,7 +178,7 @@ void extractAndPrintQ2Dependence(
         }
 
         // Get the asymmetry data
-        std::string chi2Fits = prefix + "chi2FitsALUsinphi"; // Assuming ALUsinphi for now, modify as needed
+        std::string chi2Fits = prefix + "chi2Fits" + fitType;
         if (asymmetryData.find(chi2Fits) != asymmetryData.end()) {
             const auto &asymDataVec = asymmetryData.at(chi2Fits);
             double asyValue = asymDataVec[pointIndex][1]; // asymmetry value
@@ -186,32 +193,40 @@ void extractAndPrintQ2Dependence(
     };
 
     // Extract points for z1pT2y1
-    z1pT2y1.push_back(extractPoint("Q2y1z1", 1));
-    z1pT2y1.push_back(extractPoint("Q2y5z1", 1));
-    z1pT2y1.push_back(extractPoint("Q2y9z1", 1));
-    z1pT2y1.push_back(extractPoint("Q2y13z1", 1));
-    z1pT2y1.push_back(extractPoint("Q2y16z1", 1));
+    for (const auto &fitType : fitTypes) {
+        z1pT2y1.push_back(extractPoint("Q2y1z1", 1, fitType));
+        z1pT2y1.push_back(extractPoint("Q2y5z1", 1, fitType));
+        z1pT2y1.push_back(extractPoint("Q2y9z1", 1, fitType));
+        z1pT2y1.push_back(extractPoint("Q2y13z1", 1, fitType));
+        z1pT2y1.push_back(extractPoint("Q2y16z1", 1, fitType));
+    }
 
     // Extract points for z2pT2y1
-    z2pT2y1.push_back(extractPoint("Q2y1z2", 1));
-    z2pT2y1.push_back(extractPoint("Q2y5z2", 1));
-    z2pT2y1.push_back(extractPoint("Q2y9z2", 1));
-    z2pT2y1.push_back(extractPoint("Q2y13z2", 1));
-    z2pT2y1.push_back(extractPoint("Q2y16z2", 1));
+    for (const auto &fitType : fitTypes) {
+        z2pT2y1.push_back(extractPoint("Q2y1z2", 1, fitType));
+        z2pT2y1.push_back(extractPoint("Q2y5z2", 1, fitType));
+        z2pT2y1.push_back(extractPoint("Q2y9z2", 1, fitType));
+        z2pT2y1.push_back(extractPoint("Q2y13z2", 1, fitType));
+        z2pT2y1.push_back(extractPoint("Q2y16z2", 1, fitType));
+    }
 
     // Extract points for z1pT2y2
-    z1pT2y2.push_back(extractPoint("Q2y2z1", 1));
-    z1pT2y2.push_back(extractPoint("Q2y6z1", 1));
-    z1pT2y2.push_back(extractPoint("Q2y10z1", 1));
-    z1pT2y2.push_back(extractPoint("Q2y14z1", 1));
-    z1pT2y2.push_back(extractPoint("Q2y17z1", 1));
+    for (const auto &fitType : fitTypes) {
+        z1pT2y2.push_back(extractPoint("Q2y2z1", 1, fitType));
+        z1pT2y2.push_back(extractPoint("Q2y6z1", 1, fitType));
+        z1pT2y2.push_back(extractPoint("Q2y10z1", 1, fitType));
+        z1pT2y2.push_back(extractPoint("Q2y14z1", 1, fitType));
+        z1pT2y2.push_back(extractPoint("Q2y17z1", 1, fitType));
+    }
 
     // Extract points for z2pT2y2
-    z2pT2y2.push_back(extractPoint("Q2y2z2", 1));
-    z2pT2y2.push_back(extractPoint("Q2y6z2", 1));
-    z2pT2y2.push_back(extractPoint("Q2y10z2", 1));
-    z2pT2y2.push_back(extractPoint("Q2y14z2", 1));
-    z2pT2y2.push_back(extractPoint("Q2y17z2", 1));
+    for (const auto &fitType : fitTypes) {
+        z2pT2y2.push_back(extractPoint("Q2y2z2", 1, fitType));
+        z2pT2y2.push_back(extractPoint("Q2y6z2", 1, fitType));
+        z2pT2y2.push_back(extractPoint("Q2y10z2", 1, fitType));
+        z2pT2y2.push_back(extractPoint("Q2y14z2", 1, fitType));
+        z2pT2y2.push_back(extractPoint("Q2y17z2", 1, fitType));
+    }
 
     // Helper lambda to print vectors
     auto printVector = [](const std::string &name, const std::vector<std::vector<double>> &vec) {
@@ -229,6 +244,23 @@ void extractAndPrintQ2Dependence(
     printVector("z2pT2y1", z2pT2y1);
     printVector("z1pT2y2", z1pT2y2);
     printVector("z2pT2y2", z2pT2y2);
+}
+
+int main() {
+    // Replace these with your file paths
+    std::string asymmetryFile = "asymmetry_data.txt";
+    std::string kinematicFile = "kinematic_data.txt";
+
+    // Read the asymmetry data from the file
+    std::map<std::string, std::vector<std::vector<double>>> asymmetryData = readAsymmetries(asymmetryFile);
+
+    // Read the kinematic data from the file
+    std::map<std::string, std::vector<std::vector<double>>> kinematicData = readKinematics(kinematicFile);
+
+    // Extract and print Q² dependence vectors
+    extractAndPrintQ2Dependence(asymmetryData, kinematicData);
+
+    return 0;
 }
 
 // Function to print the data for verification
@@ -896,7 +928,7 @@ int main(int argc, char *argv[]) {
     // // Plot PT and xF dependence comparison
     // plotComparison(asymmetryData, "output/epX_plots/PT_xF_dependence_comparison.png");
     // Plot Q2-y-z dependence
-    plotQ2yz_pT(asymmetryData);
+    // plotQ2yz_pT(asymmetryData);
 
     return 0;
 }
