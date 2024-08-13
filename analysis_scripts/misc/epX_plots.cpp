@@ -616,79 +616,36 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
         double maxError = maxErrors[fitIndex];
         std::pair<double, double> yRange = yRangesPerPlot[fitIndex];
 
-        for (size_t row = 0; row < Q2_prefixes.size(); ++row) {
-            for (size_t q2Index = 0; q2Index < Q2_prefixes[row].size(); ++q2Index) {
-                int padIndex = row * 5 + q2Index + 1;
-                c->cd(padIndex);
+        for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
+            std::string key = Q2_prefixes[row][q2Index] + z_prefixes[zIndex] + "chi2Fits" + fitTypes[fitIndex];
+            auto it = asymmetryData.find(key);
 
-                if (q2Index != 0) {
-                    gPad->SetLeftMargin(0.001);
-                } else {
-                    gPad->SetLeftMargin(0.18);
-                }
-                if (row != Q2_prefixes.size() - 1) {
-                    gPad->SetBottomMargin(0.001);
-                } else {
-                    gPad->SetBottomMargin(0.15);
-                }
-
-                bool firstGraphDrawn = false;
-                bool anyGraphDrawn = false;
-
-                for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
-                    std::string key = Q2_prefixes[row][q2Index] + z_prefixes[zIndex] + "chi2Fits" + fitTypes[fitIndex];
-                    auto it = asymmetryData.find(key);
-
-                    if (it == asymmetryData.end()) {
-                        continue;
-                    }
-
-                    const auto &data = it->second;
-
-                    auto filteredData = filterDataByError(data, maxError);
-
-                    if (filteredData.empty()) continue;
-
-                    std::vector<double> x, y, yErr;
-
-                    for (const auto &entry : filteredData) {
-                        x.push_back(entry[0]);
-                        y.push_back(entry[1]);
-                        yErr.push_back(entry[2]);
-                    }
-
-                    TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
-
-                    // Set y-axis range explicitly
-                    graph->GetYaxis()->SetRangeUser(yRange.first, yRange.second);
-                    
-                    // Debugging output to check y-axis range
-                    std::cout << "Setting y-axis range for " << fitTypes[fitIndex] 
-                              << " to (" << yRange.first << ", " << yRange.second << ")" << std::endl;
-
-                    // Draw the graph
-                    std::string title = (row == 0) ? topRowTitles[q2Index] : "";
-                    drawDataPlotWithTitle(graph, q2Index, row, firstGraphDrawn, title);
-                    firstGraphDrawn = true;
-                    anyGraphDrawn = true;
-                }
-
-                if (!anyGraphDrawn) {
-                    std::vector<double> dummyX = {-9999};
-                    std::vector<double> dummyY = {0};
-                    std::vector<double> dummyYErr = {0};
-                    TGraphErrors *dummyGraph = createTGraphErrors(dummyX, dummyY, dummyYErr, 20, 0.8, kWhite);
-                    setCustomAxisLabelsAndRanges(dummyGraph, "P_{T} (GeV)", yLabels[fitIndex], {0.1, 0.9}, yRange);
-                    drawEmptyPlot(dummyGraph, q2Index, row, Q2_prefixes.size());
-                }
-
-                if (!(row == 2 && q2Index == 4) && (row != 3 || (q2Index != 3 && q2Index != 4))) {
-                    TLine *line = new TLine(0.15, 0.0, 0.95, 0.0);
-                    line->SetLineColor(kGray + 2);
-                    line->SetLineStyle(7);
-                    line->Draw("same");
-                }
+            if (it == asymmetryData.end()) {
+                continue;
             }
+
+            const auto &data = it->second;
+
+            auto filteredData = filterDataByError(data, maxError);
+
+            if (filteredData.empty()) continue;
+
+            std::vector<double> x, y, yErr;
+
+            for (const auto &entry : filteredData) {
+                x.push_back(entry[0]);
+                y.push_back(entry[1]);
+                yErr.push_back(entry[2]);
+            }
+
+            TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
+
+            graph->Draw("AP");
+            graph->GetYaxis()->SetRangeUser(yRange.first, yRange.second);
+            gPad->Update(); // Force the pad to update its display
+
+            firstGraphDrawn = true;
+            anyGraphDrawn = true;
         }
         addCanvasSideLabels(c, yRanges);
 
