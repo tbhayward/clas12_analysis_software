@@ -246,23 +246,6 @@ void extractAndPrintQ2Dependence(
     printVector("z2pT2y2", z2pT2y2);
 }
 
-int main() {
-    // Replace these with your file paths
-    std::string asymmetryFile = "asymmetry_data.txt";
-    std::string kinematicFile = "kinematic_data.txt";
-
-    // Read the asymmetry data from the file
-    std::map<std::string, std::vector<std::vector<double>>> asymmetryData = readAsymmetries(asymmetryFile);
-
-    // Read the kinematic data from the file
-    std::map<std::string, std::vector<std::vector<double>>> kinematicData = readKinematics(kinematicFile);
-
-    // Extract and print Q² dependence vectors
-    extractAndPrintQ2Dependence(asymmetryData, kinematicData);
-
-    return 0;
-}
-
 // Function to print the data for verification
 void printData(const std::map<std::string, std::vector<std::vector<double>>> &data) {
     for (const auto &entry : data) {
