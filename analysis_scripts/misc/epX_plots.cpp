@@ -859,6 +859,12 @@ void plotQ2Dependence(
     // Colors for different vector sets
     std::vector<int> colors = {kBlack, kRed, kBlue, kGreen};
     std::vector<std::string> vectorNames = {"z1pT2y1", "z2pT2y1", "z1pT2y2", "z2pT2y2"};
+    std::vector<std::string> legendLabels = {
+        "z1pT2y1", 
+        "z2pT2y1", 
+        "z1pT2y2", 
+        "z2pT2y2"
+    };
 
     // Create a canvas with 1 row and 3 columns
     TCanvas *c = new TCanvas("c", "Q2 Dependence Plots", 2400, 800);
@@ -869,12 +875,12 @@ void plotQ2Dependence(
     std::vector<std::string> yLabels = {
         "F_{LU}^{sin#phi}/F_{UU}",
         "F_{LL}/F_{UU}",
-        "F_{LU}^{sin#phi}/F_{LL}"
+        "-F_{LU}^{sin#phi}/F_{LL}"
     };
     std::vector<std::pair<double, double>> yRanges = {
-        {-0.09, 0.09},  // ALUsinphi
+        {-0.099, 0.019},  // ALUsinphi
         {-0.199, 0.599},  // ALL
-        {-0.09, 0.09}     // doubleratio
+        {-0.019, 0.099}   // doubleratio
     };
     
     std::string xLabel = "Q^{2} (GeV^{2})";
@@ -885,6 +891,16 @@ void plotQ2Dependence(
         c->cd(i + 1); // Go to the i-th pad
         gPad->SetLeftMargin(0.18);
         gPad->SetBottomMargin(0.15);
+
+        // Create a legend for each plot
+        TLegend *legend = new TLegend(
+            (i == 0) ? 0.7 : 0.6, // Top right for ALUsinphi, bottom right for others
+            (i == 0) ? 0.8 : 0.2, 
+            0.9, 
+            (i == 0) ? 0.9 : 0.4
+        );
+        legend->SetTextSize(0.04);
+        legend->SetBorderSize(1);
 
         // Loop through each vector set to plot them on the same canvas
         for (size_t j = 0; j < vectorNames.size(); ++j) {
@@ -909,12 +925,18 @@ void plotQ2Dependence(
                 graph->Draw("P SAME");
             }
 
+            // Add the graph to the legend
+            legend->AddEntry(graph, legendLabels[j].c_str(), "P");
+
             // Draw a horizontal line at y = 0
             TLine *line = new TLine(xLimits.first, 0, xLimits.second, 0);
             line->SetLineColor(kGray+2);
             line->SetLineStyle(7);
             line->Draw("same");
         }
+
+        // Draw the legend on the current pad
+        legend->Draw();
     }
 
     // Save the canvas to a file
@@ -924,6 +946,7 @@ void plotQ2Dependence(
     // Clean up
     delete c;
 }
+
 
 int main(int argc, char *argv[]) {
     if (argc != 3) {
