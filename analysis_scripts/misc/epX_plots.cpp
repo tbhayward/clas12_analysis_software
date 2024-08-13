@@ -539,7 +539,10 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
     for (size_t zIndex = 0; zIndex < zRanges.size(); ++zIndex) {
         TGraph *dummyGraph = new TGraph();
         dummyGraph->SetMarkerColor(colors[zIndex]);
+        dummyGraph->SetMarkerStyle(20); // Style of the marker
+        dummyGraph->SetMarkerSize(1.5); // Size of the marker to make it more visible
         legend->AddEntry(dummyGraph, zRanges[zIndex].c_str(), "P");
+        legend->GetListOfPrimitives()->Last()->SetTextColor(colors[zIndex]); // Set text color to match the marker
     }
     legend->SetTextSize(0.05); // Adjust text size if needed
     legend->SetFillColor(0); // Make background transparent
