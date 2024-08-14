@@ -2845,19 +2845,6 @@ void normalize_histogram(TH2D* h_sum, TH2D* h_count) {
     }
 }
 
-void normalize_histogram(TH2D* h_sum, TH2D* h_count) {
-    for (int i = 1; i <= h_sum->GetNbinsX(); ++i) {
-        for (int j = 1; j <= h_sum->GetNbinsY(); ++j) {
-            double count = h_count->GetBinContent(i, j);
-            if (count > 0) {
-                h_sum->SetBinContent(i, j, h_sum->GetBinContent(i, j) / count);
-            } else {
-                h_sum->SetBinContent(i, j, 0);
-            }
-        }
-    }
-}
-
 void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     int nBins = 100;
     std::vector<std::tuple<std::string, std::string, std::string, double, double>> regions = {
