@@ -2878,6 +2878,7 @@ void draw_and_save_sector_histograms(TCanvas* canvas, std::vector<TH2D*>& histog
         gPad->SetLogz();  // Set log scale for the z-axis
         histograms[sector]->SetStats(false);  // Disable stat box
         histograms[sector]->SetMaximum(max_value);  // Set the same max value for z-axis
+        // histograms[sector]->Draw("COLZ");
         histograms[sector]->Draw("COLZ");
     }
     canvas->SaveAs(output_file.c_str());
@@ -2898,7 +2899,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
     std::vector<std::tuple<std::string, std::string, std::string, double, double, double, double>> regions = {
         {"traj_x_6", "traj_y_6", "region_1", 18, 160, -80, 80},
         {"traj_x_18", "traj_y_18", "region_2", 30, 240, -125, 125},
-        {"traj_x_36", "traj_y_36", "region_3", 40, 400, -200, 200} 
+        {"traj_x_36", "traj_y_36", "region_3", 30, 400, -200, 200} 
     };
 
     std::vector<std::tuple<int, std::string>> particle_types = {
