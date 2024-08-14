@@ -100,7 +100,7 @@ public boolean pcal_fiducial_cut(int particle_Index, int strictness,
     // Apply strictness levels for additional cuts on PCal (layer 1)
     switch (strictness) {
         case 1:
-            if (lw_1 < 9 || lv_1 < 9 || lu_1 < 19) { return false; }
+            if (lw_1 < 9 || lv_1 < 9 || lu_1 < 14) { return false; }
             break;
         case 2:
             if (lw_1 < 14 || lv_1 < 14 || lu_1 < 29) { return false; }

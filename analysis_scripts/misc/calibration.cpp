@@ -751,7 +751,7 @@ bool pcal_fiducial(double lv_1, double lw_1, double lu_1,
     // Apply strictness levels for additional cuts
     switch (strictness) {
         case 1:
-            if (lw_1 < 9 || lv_1 < 9 || lu_1 < 19) {
+            if (lw_1 < 9 || lv_1 < 9 || lu_1 < 14) {
                 return false;
             }
             break;
