@@ -893,10 +893,10 @@ void plotQ2Dependence(
         gPad->SetBottomMargin(0.15);
 
         // Adjusting legend position and font size
-        double legendX1 = (i == 0) ? 0.60 : 0.45; // x1 position for legends (shifted left)
-        double legendY1 = (i == 0) ? 0.75 : 0.15; // y1 position for legends
-        double legendX2 = (i == 0) ? 0.85 : 0.70; // x2 position for legends
-        double legendY2 = (i == 0) ? 0.88 : 0.38; // y2 position for legends
+        double legendX1 = 0.18;  // Lower left corner X
+        double legendY1 = 0.15;  // Lower left corner Y
+        double legendX2 = 0.48;  // Upper right corner X
+        double legendY2 = 0.35;  // Upper right corner Y
         TLegend *legend = new TLegend(legendX1, legendY1, legendX2, legendY2);
         legend->SetTextSize(0.035); // Adjusted text size (decreased slightly)
         legend->SetBorderSize(1);
