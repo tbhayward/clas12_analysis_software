@@ -2882,19 +2882,27 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         {2212, "proton"}
     };
 
-    TTreeReaderValue<double>* mc_traj_edge_6 = nullptr;
-    TTreeReaderValue<double>* mc_traj_edge_18 = nullptr;
-    TTreeReaderValue<double>* mc_traj_edge_36 = nullptr;
-
-    if (mcReader) {
-        mc_traj_edge_6 = new TTreeReaderValue<double>(*mcReader, "traj_edge_6");
-        mc_traj_edge_18 = new TTreeReaderValue<double>(*mcReader, "traj_edge_18");
-        mc_traj_edge_36 = new TTreeReaderValue<double>(*mcReader, "traj_edge_36");
-    }
-
     for (const auto& particle_type : particle_types) {
         int pid = std::get<0>(particle_type);
         std::string particle_name = std::get<1>(particle_type);
+
+        // Declare TTreeReaderValue objects outside loops
+        TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+        TTreeReaderValue<int> track_sector(dataReader, "track_sector_6");
+        TTreeReaderValue<double> track_chi2(dataReader, "track_chi2_6");
+        TTreeReaderValue<int> track_ndf(dataReader, "track_ndf_6");
+
+        TTreeReaderValue<int>* mc_particle_pid = nullptr;
+        TTreeReaderValue<int>* mc_track_sector = nullptr;
+        TTreeReaderValue<double>* mc_track_chi2 = nullptr;
+        TTreeReaderValue<int>* mc_track_ndf = nullptr;
+
+        if (mcReader) {
+            mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+            mc_track_sector = new TTreeReaderValue<int>(*mcReader, "track_sector_6");
+            mc_track_chi2 = new TTreeReaderValue<double>(*mcReader, "track_chi2_6");
+            mc_track_ndf = new TTreeReaderValue<int>(*mcReader, "track_ndf_6");
+        }
 
         for (const auto& region : regions) {
             std::string x_branch = std::get<0>(region);
@@ -2904,6 +2912,17 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             double xMax = std::get<4>(region);
             double yMin = xMin;
             double yMax = xMax;
+
+            TTreeReaderValue<double> traj_x(dataReader, x_branch.c_str());
+            TTreeReaderValue<double> traj_y(dataReader, y_branch.c_str());
+
+            TTreeReaderValue<double>* mc_traj_x = nullptr;
+            TTreeReaderValue<double>* mc_traj_y = nullptr;
+
+            if (mcReader) {
+                mc_traj_x = new TTreeReaderValue<double>(*mcReader, x_branch.c_str());
+                mc_traj_y = new TTreeReaderValue<double>(*mcReader, y_branch.c_str());
+            }
 
             TCanvas* c_region = new TCanvas(("c_" + particle_name + "_" + region_name + "_chi2_ndf").c_str(), ("c_" + particle_name + " #chi^{2}/ndf").c_str(), 1800, 1200);
             c_region->Divide(3, 2);
@@ -2934,30 +2953,6 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                     h_mc_count_sector[sector] = new TH2D(("h_mc_count_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
                         "", nBins, xMin, xMax, nBins, yMin, yMax);
                 }
-            }
-
-            // Declare TTreeReaderValue objects before starting the loop
-            TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
-            TTreeReaderValue<double> traj_x(dataReader, x_branch.c_str());
-            TTreeReaderValue<double> traj_y(dataReader, y_branch.c_str());
-            TTreeReaderValue<int> track_sector(dataReader, "track_sector_6");
-            TTreeReaderValue<double> track_chi2(dataReader, "track_chi2_6");
-            TTreeReaderValue<int> track_ndf(dataReader, "track_ndf_6");
-
-            TTreeReaderValue<int>* mc_particle_pid = nullptr;
-            TTreeReaderValue<double>* mc_traj_x = nullptr;
-            TTreeReaderValue<double>* mc_traj_y = nullptr;
-            TTreeReaderValue<int>* mc_track_sector = nullptr;
-            TTreeReaderValue<double>* mc_track_chi2 = nullptr;
-            TTreeReaderValue<int>* mc_track_ndf = nullptr;
-
-            if (mcReader) {
-                mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
-                mc_traj_x = new TTreeReaderValue<double>(*mcReader, x_branch.c_str());
-                mc_traj_y = new TTreeReaderValue<double>(*mcReader, y_branch.c_str());
-                mc_track_sector = new TTreeReaderValue<int>(*mcReader, "track_sector_6");
-                mc_track_chi2 = new TTreeReaderValue<double>(*mcReader, "track_chi2_6");
-                mc_track_ndf = new TTreeReaderValue<int>(*mcReader, "track_ndf_6");
             }
 
             // Fill histograms for data
