@@ -2861,11 +2861,23 @@ std::vector<TH2D*> create_histograms_for_sector(const std::string& region_name, 
 }
 
 void draw_and_save_sector_histograms(TCanvas* canvas, std::vector<TH2D*>& histograms, const std::string& output_file) {
+    double max_value = 0;
+
+    // Find the maximum z-axis value across all histograms
+    for (const auto& hist : histograms) {
+        double hist_max = hist->GetMaximum();
+        if (hist_max > max_value) {
+            max_value = hist_max;
+        }
+    }
+
+    // Set the maximum for each histogram and draw
     for (int sector = 0; sector < 6; ++sector) {
         canvas->cd(sector + 1);  // Select the pad corresponding to the sector
         gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
         gPad->SetLogz();  // Set log scale for the z-axis
         histograms[sector]->SetStats(false);  // Disable stat box
+        histograms[sector]->SetMaximum(max_value);  // Set the same max value for z-axis
         histograms[sector]->Draw("COLZ");
     }
     canvas->SaveAs(output_file.c_str());
