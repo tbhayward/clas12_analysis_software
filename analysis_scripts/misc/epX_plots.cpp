@@ -895,10 +895,10 @@ void plotQ2Dependence(
         // Adjusting legend position and font size
         double legendX1 = 0.18;  // Lower left corner X
         double legendY1 = 0.15;  // Lower left corner Y
-        double legendX2 = 0.48;  // Upper right corner X
+        double legendX2 = 0.80;  // Upper right corner X
         double legendY2 = 0.35;  // Upper right corner Y
         TLegend *legend = new TLegend(legendX1, legendY1, legendX2, legendY2);
-        legend->SetTextSize(0.035); // Adjusted text size (decreased slightly)
+        legend->SetTextSize(0.02 5); // Adjusted text size (decreased slightly)
         legend->SetBorderSize(1);
 
         // Loop through each vector set to plot them on the same canvas
@@ -950,7 +950,7 @@ void plotQ2Dependence(
 
     // Clean up
     delete c;
-}
+} 
 
 
 int main(int argc, char *argv[]) {
