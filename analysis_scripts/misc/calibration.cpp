@@ -2845,19 +2845,6 @@ void normalize_histogram(TH2D* sum_hist, TH2D* count_hist) {
     }
 }
 
-void fill_histograms(TTreeReader& reader, TTreeReaderValue<int>& particle_pid, TTreeReaderValue<double>& traj_x, TTreeReaderValue<double>& traj_y, TTreeReaderValue<int>& track_sector, TTreeReaderValue<double>& track_chi2, TTreeReaderValue<int>& track_ndf, int pid, std::vector<TH2D*>& sum_sector, std::vector<TH2D*>& count_sector) {
-    while (reader.Next()) {
-        if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999 && *track_ndf > 0) {
-            double chi2_ndf = *track_chi2 / *track_ndf;
-            int sector = *track_sector - 1;
-            if (sector >= 0 && sector < 6) {
-                sum_sector[sector]->Fill(*traj_x, *traj_y, chi2_ndf);
-                count_sector[sector]->Fill(*traj_x, *traj_y);
-            }
-        }
-    }
-}
-
 void draw_and_save_histograms(TCanvas* canvas, std::vector<TH2D*>& histograms, const std::string& output_name) {
     for (int sector = 0; sector < 6; ++sector) {
         canvas->cd(sector + 1);
@@ -2962,7 +2949,18 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             }
 
             // Fill histograms for data
-            fill_histograms(dataReader, particle_pid, traj_x, traj_y, track_sector, track_chi2, track_ndf, pid, h_data_sum_sector, h_data_count_sector);
+            while (dataReader.Next()) {
+                if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999 && *track_ndf > 0) {
+                    double chi2_ndf = *track_chi2 / *track_ndf;
+
+                    for (int sector = 0; sector < 6; ++sector) {
+                        if (*track_sector == sector + 1) {
+                            h_data_sum_sector[sector]->Fill(*traj_x, *traj_y, chi2_ndf);
+                            h_data_count_sector[sector]->Fill(*traj_x, *traj_y);
+                        }
+                    }
+                }
+            }
 
             // Normalize data histograms
             for (int sector = 0; sector < 6; ++sector) {
@@ -2974,7 +2972,18 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
             // If MC is provided, fill, normalize, and draw MC histograms
             if (mcReader) {
-                fill_histograms(*mcReader, *mc_particle_pid, *mc_traj_x, *mc_traj_y, *mc_track_sector, *mc_track_chi2, *mc_track_ndf, pid, h_mc_sum_sector, h_mc_count_sector);
+                while (mcReader->Next()) {
+                    if (**mc_particle_pid == pid && **mc_traj_x != -9999 && **mc_traj_y != -9999 && **mc_track_ndf > 0) {
+                        double mc_chi2_ndf = **mc_track_chi2 / **mc_track_ndf;
+
+                        for (int sector = 0; sector < 6; ++sector) {
+                            if (**mc_track_sector == sector + 1) {
+                                h_mc_sum_sector[sector]->Fill(**mc_traj_x, **mc_traj_y, mc_chi2_ndf);
+                                h_mc_count_sector[sector]->Fill(**mc_traj_x, **mc_traj_y);
+                            }
+                        }
+                    }
+                }
 
                 for (int sector = 0; sector < 6; ++sector) {
                     normalize_histogram(h_mc_sum_sector[sector], h_mc_count_sector[sector]);
@@ -3003,7 +3012,6 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         if (mc_traj_edge_6) delete mc_traj_edge_6;
         if (mc_traj_edge_18) delete mc_traj_edge_18;
         if (mc_traj_edge_36) delete mc_traj_edge_36;
-
         if (mc_particle_pid) delete mc_particle_pid;
         if (mc_track_sector) delete mc_track_sector;
         if (mc_track_chi2) delete mc_track_chi2;
