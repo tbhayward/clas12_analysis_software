@@ -2632,7 +2632,7 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
 
 bool dc_fiducial(double edge_6, double edge_18, double edge_36, 
 	int strictness) {
-
+    std::cout << edge_6 << std::endl;
     return edge_6 > 100;
     // If none of the cuts apply, the track is good
     // return true;
