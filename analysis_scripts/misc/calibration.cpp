@@ -2919,6 +2919,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             double yMax = std::get<6>(region);
             std::string edge_branch = std::get<7>(region);
 
+            // Create histograms for data and MC
             auto h_data_sum_sector = create_histograms_for_sector(region_name, particle_name, nBins, xMin, xMax, yMin, yMax, false);
             auto h_data_count_sector = create_histograms_for_sector(region_name, particle_name, nBins, xMin, xMax, yMin, yMax, false);
 
@@ -2933,6 +2934,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 c_mc_region->Divide(3, 2);
             }
 
+            // Restart readers
             dataReader.Restart();
             if (mcReader) mcReader->Restart();
 
@@ -2942,6 +2944,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             TTreeReaderValue<int> track_sector_6(dataReader, "track_sector_6");
             TTreeReaderValue<double> track_chi2_6(dataReader, "track_chi2_6");
             TTreeReaderValue<int> track_ndf_6(dataReader, "track_ndf_6");
+            TTreeReaderValue<double> traj_edge(dataReader, edge_branch.c_str());
 
             TTreeReaderValue<double>* mc_traj_x = nullptr;
             TTreeReaderValue<double>* mc_traj_y = nullptr;
@@ -2949,6 +2952,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             TTreeReaderValue<int>* mc_track_sector_6 = nullptr;
             TTreeReaderValue<double>* mc_track_chi2_6 = nullptr;
             TTreeReaderValue<int>* mc_track_ndf_6 = nullptr;
+            TTreeReaderValue<double>* mc_traj_edge = nullptr;
 
             if (mcReader) {
                 mc_traj_x = new TTreeReaderValue<double>(*mcReader, x_branch.c_str());
@@ -2957,8 +2961,10 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 mc_track_sector_6 = new TTreeReaderValue<int>(*mcReader, "track_sector_6");
                 mc_track_chi2_6 = new TTreeReaderValue<double>(*mcReader, "track_chi2_6");
                 mc_track_ndf_6 = new TTreeReaderValue<int>(*mcReader, "track_ndf_6");
+                mc_traj_edge = new TTreeReaderValue<double>(*mcReader, edge_branch.c_str());
             }
 
+            // Fill data histograms
             while (dataReader.Next()) {
                 if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999 && *track_ndf_6 > 0) {
                     double chi2_ndf = *track_chi2_6 / *track_ndf_6;
@@ -2974,6 +2980,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 }
             }
 
+            // Fill MC histograms
             if (mcReader) {
                 while (mcReader->Next()) {
                     if (**mc_particle_pid == pid && **mc_traj_x != -9999 && **mc_traj_y != -9999 && **mc_track_ndf_6 > 0) {
@@ -2991,6 +2998,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 }
             }
 
+            // Normalize and save histograms
             for (int sector = 0; sector < 6; ++sector) {
                 normalize_histogram(h_data_sum_sector[sector], h_data_count_sector[sector]);
 
@@ -3005,6 +3013,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 draw_and_save_sector_histograms(c_mc_region, h_mc_sum_sector, "output/calibration/dc/determination/mc_chi2_per_ndf_" + particle_name + "_" + region_name + ".png");
             }
 
+            // Cleanup
             delete c_region;
             if (c_mc_region) delete c_mc_region;
 
@@ -3016,33 +3025,22 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 for (auto& hist : h_mc_count_sector) delete hist;
             }
 
-            if (mc_traj_x) delete mc_traj_x;
-            if (mc_traj_y) delete mc_traj_y;
-            if (mc_particle_pid) delete mc_particle_pid;
-            if (mc_track_sector_6) delete mc_track_sector_6;
-            if (mc_track_chi2_6) delete mc_track_chi2_6;
-            if (mc_track_ndf_6) delete mc_track_ndf_6;
-
             auto h_data_edge_sector = create_histograms_for_sector(region_name, particle_name, nBins, 0, xMax, 0, yMax, false);
             auto h_mc_edge_sector = create_histograms_for_sector(region_name, particle_name, nBins, 0, xMax, 0, yMax, true);
 
             TCanvas* c_edge = new TCanvas(("c_" + particle_name + "_" + region_name + "_edge").c_str(), ("c_" + particle_name + " chi^{2}/ndf vs traj_edge").c_str(), 1800, 1200);
             c_edge->Divide(3, 2);
 
-            TTreeReaderValue<double> traj_edge(dataReader, edge_branch.c_str());
-
-            TTreeReaderValue<double>* mc_traj_edge = nullptr;
-            if (mcReader) {
-                mc_traj_edge = new TTreeReaderValue<double>(*mcReader, edge_branch.c_str());
-            }
+            dataReader.Restart();
+            if (mcReader) mcReader->Restart();
 
             while (dataReader.Next()) {
                 if (*particle_pid == pid && *traj_edge != -9999 && *track_ndf_6 > 0) {
                     double chi2_ndf = *track_chi2_6 / *track_ndf_6;
                     h_data_edge_sector[*track_sector_6 - 1]->Fill(*traj_edge, chi2_ndf);
-                    }
                 }
-                if (mcReader) {
+            }
+            if (mcReader) {
                 while (mcReader->Next()) {
                     if (**mc_particle_pid == pid && **mc_traj_edge != -9999 && **mc_track_ndf_6 > 0) {
                         double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
