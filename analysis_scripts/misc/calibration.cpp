@@ -2870,6 +2870,25 @@ void draw_and_save_sector_histograms(TCanvas* canvas, std::vector<TH2D*>& histog
     canvas->SaveAs(output_file.c_str());
 }
 
+void rotate_sector(double& x, double& y, int sector) {
+    double r = std::sqrt(x * x + y * y);
+    double phi = std::atan2(y, x) * (180.0 / M_PI); // Convert to degrees
+
+    // Rotate the sectors to align with sector 1
+    if (sector == 2) phi -= 60;
+    else if (sector == 3) phi -= 120;
+    else if (sector == 4) phi += 180; // Equivalent to -180 in this context
+    else if (sector == 5) phi += 120;
+    else if (sector == 6) phi += 60;
+
+    // Convert back to radians for cos and sin functions
+    phi *= (M_PI / 180.0);
+
+    // Convert back to Cartesian coordinates
+    x = r * std::cos(phi);
+    y = r * std::sin(phi);
+}
+
 void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     int nBins = 100;
     std::vector<std::tuple<std::string, std::string, std::string, double, double>> regions = {
@@ -2922,65 +2941,59 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             double yMin = xMin;
             double yMax = xMax;
 
-            TCanvas* c_region = new TCanvas(("c_" + particle_name + "_" + region_name + "_chi2_ndf").c_str(), ("c_" + particle_name + " #chi^{2}/ndf").c_str(), 1800, 1200);
-            c_region->Divide(3,2);
-            TCanvas* c_mc_region = nullptr;
-            if (mcReader) {
-                c_mc_region = new TCanvas(("c_mc_" + particle_name + "_" + region_name + "_chi2_ndf").c_str(), ("MC " + particle_name + " #chi^{2}/ndf").c_str(), 1800, 1200);
-                c_mc_region->Divide(3,2);
-            }
+            // Create histograms for data and MC
+            auto h_data_sum_sector = create_histograms_for_sector(region_name, particle_name, nBins, xMin, xMax, yMin, yMax, false);
+            auto h_mc_sum_sector = create_histograms_for_sector(region_name, particle_name, nBins, xMin, xMax, yMin, yMax, true);
 
-            // Create histograms for data sectors
-            std::vector<TH2D*> h_data_sum_sector = create_histograms_for_sector(region_name, particle_name, nBins, xMin, xMax, yMin, yMax, false);
-            std::vector<TH2D*> h_data_count_sector = create_histograms_for_sector(region_name, particle_name, nBins, xMin, xMax, yMin, yMax, false);
-
-            // Create histograms for MC sectors (if applicable)
-            std::vector<TH2D*> h_mc_sum_sector;
-            std::vector<TH2D*> h_mc_count_sector;
-            if (mcReader) {
-                h_mc_sum_sector = create_histograms_for_sector(region_name, particle_name, nBins, xMin, xMax, yMin, yMax, true);
-                h_mc_count_sector = create_histograms_for_sector(region_name, particle_name, nBins, xMin, xMax, yMin, yMax, true);
-            }
-
+            // Restart readers
             dataReader.Restart();
             if (mcReader) mcReader->Restart();
 
             TTreeReaderValue<double> traj_x(dataReader, x_branch.c_str());
             TTreeReaderValue<double> traj_y(dataReader, y_branch.c_str());
             TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+            TTreeReaderValue<int> track_sector_6(dataReader, "track_sector_6");
 
             TTreeReaderValue<double>* mc_traj_x = nullptr;
             TTreeReaderValue<double>* mc_traj_y = nullptr;
             TTreeReaderValue<int>* mc_particle_pid = nullptr;
+            TTreeReaderValue<int>* mc_track_sector_6 = nullptr;
 
             if (mcReader) {
                 mc_traj_x = new TTreeReaderValue<double>(*mcReader, x_branch.c_str());
                 mc_traj_y = new TTreeReaderValue<double>(*mcReader, y_branch.c_str());
                 mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+                mc_track_sector_6 = new TTreeReaderValue<int>(*mcReader, "track_sector_6");
             }
 
             while (dataReader.Next()) {
                 if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999 && *track_ndf_6 > 0) {
+                    double x = *traj_x;
+                    double y = *traj_y;
+                    int sector = *track_sector_6;
+
+                    // Rotate sector to align with sector 1
+                    rotate_sector(x, y, sector);
+
                     double chi2_ndf = *track_chi2_6 / *track_ndf_6;
 
-                    int sector = *track_sector_6 - 1;
-                    if (sector >= 0 && sector < 6) {
-                        h_data_sum_sector[sector]->Fill(*traj_x, *traj_y, chi2_ndf);
-                        h_data_count_sector[sector]->Fill(*traj_x, *traj_y);
-                    }
+                    h_data_sum_sector[sector - 1]->Fill(x, y, chi2_ndf);
                 }
             }
 
             if (mcReader) {
                 while (mcReader->Next()) {
                     if (**mc_particle_pid == pid && **mc_traj_x != -9999 && **mc_traj_y != -9999 && **mc_track_ndf_6 > 0) {
+                        double x = **mc_traj_x;
+                        double y = **mc_traj_y;
+                        int sector = **mc_track_sector_6;
+
+                        // Rotate sector to align with sector 1
+                        rotate_sector(x, y, sector);
+
                         double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
 
-                        int sector = **mc_track_sector_6 - 1;
-                        if (sector >= 0 && sector < 6) {
-                            h_mc_sum_sector[sector]->Fill(**mc_traj_x, **mc_traj_y, mc_chi2_ndf);
-                            h_mc_count_sector[sector]->Fill(**mc_traj_x, **mc_traj_y);
-                        }
+                        h_mc_sum_sector[sector - 1]->Fill(x, y, mc_chi2_ndf);
                     }
                 }
             }
