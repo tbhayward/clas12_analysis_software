@@ -770,34 +770,43 @@ bool pcal_fiducial(double lv_1, double lw_1, double lu_1,
     }
 
     // Specific cuts for each sector in PCal
-    if (sector == 1) {
-        if ((lw_1 > 69 && lw_1 < 96) || (lw_1 > 207 && lw_1 < 236)) {
-            return false;
-        }
-    } else if (sector == 2) {
-        if ((lv_1 > 95 && lv_1 < 119) || (lu_1 > 108 && lu_1 < 126)) {
-            return false;
-        }
-    } else if (sector == 4) {
-        if (lv_1 > 224 && lv_1 < 247) {
-            return false;
-        }
-    } else if (sector == 6) {
-        if ((lw_1 > 169 && lw_1 < 198)) {
-            return false;
-        }
-    }
+    // RGA only so far (not RGC)
+    // if (sector == 1) {
+    //     if ((lw_1 > 69 && lw_1 < 96) || (lw_1 > 207 && lw_1 < 236)) {
+    //         return false;
+    //     }
+    // } else if (sector == 2) {
+    //     if ((lv_1 > 95 && lv_1 < 119) || (lu_1 > 108 && lu_1 < 126)) {
+    //         return false;
+    //     }
+    // } else if (sector == 4) {
+    //     if (lv_1 > 224 && lv_1 < 247) {
+    //         return false;
+    //     }
+    // } else if (sector == 6) {
+    //     if ((lw_1 > 169 && lw_1 < 198)) {
+    //         return false;
+    //     }
+    // }
 
     // Specific cuts for each sector in ECin
+    // RGA and RGC
     if (sector == 1) {
-    	if (lv_4 > 70 && lv_4 < 96) {
+    	if (lv_4 > 72 && lv_4 < 94) {
     		return false;
     	}
     }
 
     // Specific cuts for each sector in ECout
+    // RGC only so far (not RGA)
+    if (sector == 2) {
+        if (lw_7 > 68 && lw_7 < 84) {
+            return false;
+        }
+    }
+    // RGA and RGC
     if (sector == 5) {
-    	if (lu_7 > 194 && lu_7 < 222) {
+    	if (lu_7 > 200 && lu_7 < 220) {
     		return false;
     	}
     }

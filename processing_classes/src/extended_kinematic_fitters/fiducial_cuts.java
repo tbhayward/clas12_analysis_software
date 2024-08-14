@@ -133,12 +133,12 @@ public boolean pcal_fiducial_cut(int particle_Index, int strictness,
 
         // Sector-specific cuts for ECin (layer 4)
         if (sector == 1) {
-            if (lv_4 > 70 && lv_4 < 96) { return false; }
+            if (lv_4 > 72 && lv_4 < 94) { return false; }
         }
 
         // Sector-specific cuts for ECout (layer 7)
         if (sector == 5) {
-            if (lu_7 > 194 && lu_7 < 222) { return false; }
+            if (lu_7 > 200 && lu_7 < 220) { return false; }
         }
     }
 
