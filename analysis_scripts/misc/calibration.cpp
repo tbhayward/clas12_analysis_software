@@ -2752,6 +2752,7 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
                 if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999) {
                     h_data_0->Fill(*traj_x, *traj_y); // No cuts
                     if (dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, 1)) {
+                        std::cout<< dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, 1) << std::endl;
                         h_data_1->Fill(*traj_x, *traj_y);
                     }
                     if (dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, 2)) {
