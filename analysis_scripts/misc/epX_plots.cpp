@@ -982,7 +982,7 @@ int main(int argc, char *argv[]) {
 
     // Plot PT and xF dependence comparison
     plotComparison(asymmetryData, "output/epX_plots/PT_xF_dependence_comparison.png");
-    Plot Q2-y-z dependence
+    // Plot Q2-y-z dependence
     plotQ2yz_pT(asymmetryData);
 
     // Extract Q² dependence vectors
