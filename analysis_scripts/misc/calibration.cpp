@@ -2854,6 +2854,7 @@ std::vector<TH2D*> create_histograms_for_sector(const std::string& region_name, 
             ((isMC ? "mc " : "data ") + region_name + " sector " + std::to_string(sector + 1) + " #chi^{2}/ndf (" + particle_name + ")").c_str(),
             nBins, xMin, xMax, nBins, yMin, yMax
         );
+        histograms[sector]->SetDirectory(0);  // Detach histogram from current ROOT directory
     }
 
     return histograms;
