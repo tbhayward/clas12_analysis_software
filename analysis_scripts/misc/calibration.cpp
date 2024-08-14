@@ -2637,6 +2637,20 @@ bool dc_fiducial(double edge_6, double edge_18, double edge_36,
     return true;
 }
 
+// Helper function to trim whitespace from the start and end of a string
+std::string trim(const std::string& str) {
+    std::string result = str;
+    // Trim leading whitespace
+    result.erase(result.begin(), std::find_if(result.begin(), result.end(), [](unsigned char ch) {
+        return !std::isspace(ch);
+    }));
+    // Trim trailing whitespace
+    result.erase(std::find_if(result.rbegin(), result.rend(), [](unsigned char ch) {
+        return !std::isspace(ch);
+    }).base(), result.end());
+    return result;
+}
+
 void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
      // Define the number of bins for the histograms
     int nBins = 100;
@@ -2685,7 +2699,7 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
         for (const auto& region : regions) {
             std::string x_branch = std::get<0>(region);
             std::string y_branch = std::get<1>(region);
-            std::string region_name = std::get<2>(region);
+            std::string region_name = trim(std::get<2>(region));  // Trim the region name
             double xMin = std::get<3>(region);
             double xMax = std::get<4>(region);
             double yMin = xMin;  // Same as xMin
