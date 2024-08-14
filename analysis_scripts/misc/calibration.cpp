@@ -2633,8 +2633,9 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
 bool dc_fiducial(double edge_6, double edge_18, double edge_36, 
 	int strictness) {
 
+    return edge_6 > 5;
     // If none of the cuts apply, the track is good
-    return true;
+    // return true;
 }
 
 void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
@@ -2896,7 +2897,7 @@ std::pair<double, double> rotate_coordinates(double x, double y, int sector) {
 void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     int nBins = 100;
     std::vector<std::tuple<std::string, std::string, std::string, double, double, double, double>> regions = {
-        {"traj_x_6", "traj_y_6", "region_1", 18, 160, -80, 80},
+        {"traj_x_6", "traj_y_6", "region_1", 15, 160, -80, 80},
         {"traj_x_18", "traj_y_18", "region_2", 30, 240, -125, 125},
         {"traj_x_36", "traj_y_36", "region_3", 30, 400, -200, 200} 
     };
@@ -3559,13 +3560,13 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_cal_hit_position(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    dc_fiducial_determination(dataReader, mcReader);
-
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
-    // plot_dc_hit_position(dataReader, mcReader);
+    // dc_fiducial_determination(dataReader, mcReader);
+
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_dc_hit_position(dataReader, mcReader);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
