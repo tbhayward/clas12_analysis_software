@@ -2878,8 +2878,8 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         int pid = std::get<0>(particle_type);
         std::string particle_name = std::get<1>(particle_type);
 
-        TCanvas* c = new TCanvas(("c_" + particle_name + "_chi2_ndf").c_str(), ("c_" + particle_name + " #chi^{2}/ndf").c_str(), 1800, 1200);
-        c->Divide(3, 2);
+        // TCanvas* c = new TCanvas(("c_" + particle_name + "_chi2_ndf").c_str(), ("c_" + particle_name + " #chi^{2}/ndf").c_str(), 1800, 1200);
+        // c->Divide(3, 2);
 
         int pad = 1;
         std::vector<TH2D*> histograms;  // Store histograms to delete them later
@@ -3080,7 +3080,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             std::cout << "Ending regions" << std::endl;
         }
 
-        c->SaveAs(("output/calibration/dc/determination/chi2_per_ndf_" + particle_name + ".png").c_str());
+        // c->SaveAs(("output/calibration/dc/determination/chi2_per_ndf_" + particle_name + ".png").c_str());
 
         dataReader.Restart();
         if (mcReader) mcReader->Restart();
@@ -3089,7 +3089,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             delete hist;
         }
 
-        delete c;
+        // delete c;
     }
 
     if (mc_traj_edge_6) delete mc_traj_edge_6;
