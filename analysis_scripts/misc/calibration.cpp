@@ -2845,14 +2845,10 @@ void normalize_histogram(TH2D* sum_hist, TH2D* count_hist) {
     }
 }
 
-void fill_histograms(TTreeReader& reader, TTreeReaderValue<int>& particle_pid, TTreeReaderValue<double>& traj_x, TTreeReaderValue<double>& traj_y, TTreeReaderValue<int>& track_sector, TTreeReaderValue<double>& track_chi2, TTreeReaderValue<int>& track_ndf, int pid, TH2D* sum_hist, TH2D* count_hist, std::vector<TH2D*>& sum_sector, std::vector<TH2D*>& count_sector) {
+void fill_histograms(TTreeReader& reader, TTreeReaderValue<int>& particle_pid, TTreeReaderValue<double>& traj_x, TTreeReaderValue<double>& traj_y, TTreeReaderValue<int>& track_sector, TTreeReaderValue<double>& track_chi2, TTreeReaderValue<int>& track_ndf, int pid, std::vector<TH2D*>& sum_sector, std::vector<TH2D*>& count_sector) {
     while (reader.Next()) {
         if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999 && *track_ndf > 0) {
             double chi2_ndf = *track_chi2 / *track_ndf;
-
-            sum_hist->Fill(*traj_x, *traj_y, chi2_ndf);
-            count_hist->Fill(*traj_x, *traj_y);
-
             int sector = *track_sector - 1;
             if (sector >= 0 && sector < 6) {
                 sum_sector[sector]->Fill(*traj_x, *traj_y, chi2_ndf);
@@ -2966,6 +2962,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
             // Fill histograms for data
             fill_histograms(dataReader, particle_pid, traj_x, traj_y, track_sector, track_chi2, track_ndf, pid, h_data_sum_sector, h_data_count_sector);
+
             // Normalize data histograms
             for (int sector = 0; sector < 6; ++sector) {
                 normalize_histogram(h_data_sum_sector[sector], h_data_count_sector[sector]);
@@ -2997,7 +2994,6 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                     delete h_mc_count_sector[sector];
                 }
             }
-
             if (mc_particle_pid) delete mc_particle_pid;
             if (mc_traj_x) delete mc_traj_x;
             if (mc_traj_y) delete mc_traj_y;
