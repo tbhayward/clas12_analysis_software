@@ -2832,6 +2832,32 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
     if (mc_traj_edge_36) delete mc_traj_edge_36;
 }
 
+void normalize_histogram(TH2D* h_sum, TH2D* h_count) {
+    for (int i = 1; i <= h_sum->GetNbinsX(); ++i) {
+        for (int j = 1; j <= h_sum->GetNbinsY(); ++j) {
+            double count = h_count->GetBinContent(i, j);
+            if (count > 0) {
+                h_sum->SetBinContent(i, j, h_sum->GetBinContent(i, j) / count);
+            } else {
+                h_sum->SetBinContent(i, j, 0);
+            }
+        }
+    }
+}
+
+void normalize_histogram(TH2D* h_sum, TH2D* h_count) {
+    for (int i = 1; i <= h_sum->GetNbinsX(); ++i) {
+        for (int j = 1; j <= h_sum->GetNbinsY(); ++j) {
+            double count = h_count->GetBinContent(i, j);
+            if (count > 0) {
+                h_sum->SetBinContent(i, j, h_sum->GetBinContent(i, j) / count);
+            } else {
+                h_sum->SetBinContent(i, j, 0);
+            }
+        }
+    }
+}
+
 void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     int nBins = 100;
     std::vector<std::tuple<std::string, std::string, std::string, double, double>> regions = {
@@ -2956,7 +2982,6 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                     }
                 }
             }
-
             if (mcReader) {
                 while (mcReader->Next()) {
                     if (**mc_particle_pid == pid && **mc_traj_x != -9999 && **mc_traj_y != -9999 && **mc_track_ndf_6 > 0) {
@@ -2974,56 +2999,24 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 }
             }
 
-            for (int i = 1; i <= h_data_sum->GetNbinsX(); ++i) {
-                for (int j = 1; j <= h_data_sum->GetNbinsY(); ++j) {
-                    double count = h_data_count->GetBinContent(i, j);
-                    if (count > 0) {
-                        h_data_sum->SetBinContent(i, j, h_data_sum->GetBinContent(i, j) / count);
-                    } else {
-                        h_data_sum->SetBinContent(i, j, 0);
-                    }
-                }
-            }
+            // Normalize the data histogram
+            normalize_histogram(h_data_sum, h_data_count);
 
+            // Normalize the MC histogram (if applicable)
             if (mcReader) {
-                for (int i = 1; i <= h_mc_sum->GetNbinsX(); ++i) {
-                    for (int j = 1; j <= h_mc_sum->GetNbinsY(); ++j) {
-                        double count = h_mc_count->GetBinContent(i, j);
-                        if (count > 0) {
-                            h_mc_sum->SetBinContent(i, j, h_mc_sum->GetBinContent(i, j) / count);
-                        } else {
-                            h_mc_sum->SetBinContent(i, j, 0);
-                        }
-                    }
-                }
+                normalize_histogram(h_mc_sum, h_mc_count);
             }
 
             for (int sector = 0; sector < 6; ++sector) {
-                for (int i = 1; i <= h_data_sum_sector[sector]->GetNbinsX(); ++i) {
-                    for (int j = 1; j <= h_data_sum_sector[sector]->GetNbinsY(); ++j) {
-                        double count = h_data_count_sector[sector]->GetBinContent(i, j);
-                        if (count > 0) {
-                            h_data_sum_sector[sector]->SetBinContent(i, j, h_data_sum_sector[sector]->GetBinContent(i, j) / count);
-                        } else {
-                            h_data_sum_sector[sector]->SetBinContent(i, j, 0);
-                        }
-                    }
-                }
+                // Normalize the sector data histogram
+                normalize_histogram(h_data_sum_sector[sector], h_data_count_sector[sector]);
 
+                // Normalize the sector MC histogram (if applicable)
                 if (mcReader) {
-                    for (int i = 1; i <= h_mc_sum_sector[sector]->GetNbinsX(); ++i) {
-                        for (int j = 1; j <= h_mc_sum_sector[sector]->GetNbinsY(); ++j) {
-                            double count = h_mc_count_sector[sector]->GetBinContent(i, j);
-                            if (count > 0) {
-                                h_mc_sum_sector[sector]->SetBinContent(i, j, h_mc_sum_sector[sector]->GetBinContent(i, j) / count);
-                            } else {
-                                h_mc_sum_sector[sector]->SetBinContent(i, j, 0);
-                            }
-                        }
-                    }
+                    normalize_histogram(h_mc_sum_sector[sector], h_mc_count_sector[sector]);
                 }
             }
-            
+
             // Draw and save the sector histograms for data
             for (int sector = 0; sector < 6; ++sector) {
                 c_region->cd(sector + 1);  // Select the pad corresponding to the sector
