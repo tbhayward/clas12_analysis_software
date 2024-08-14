@@ -905,8 +905,8 @@ void plotQ2Dependence(
         for (size_t j = 0; j < vectorNames.size(); ++j) {
             const std::string &vectorName = vectorNames[j];
             
-            // For the doubleratio plot, only plot z1pT2y1 and z2pT2y1
-            if (i == 2 && (vectorName == "z1pT2y2" || vectorName == "z2pT2y2")) {
+            // Skip z2pT2y1 and z2pT2y2 for the doubleratio plot
+            if (i == 2 && (vectorName == "z2pT2y1" || vectorName == "z2pT2y2")) {
                 continue;
             }
 
@@ -950,7 +950,7 @@ void plotQ2Dependence(
 
     // Clean up
     delete c;
-}
+} 
 
 
 int main(int argc, char *argv[]) {
