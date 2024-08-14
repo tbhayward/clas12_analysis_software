@@ -892,14 +892,13 @@ void plotQ2Dependence(
         gPad->SetLeftMargin(0.18);
         gPad->SetBottomMargin(0.15);
 
-        // Create a legend for each plot
-        TLegend *legend = new TLegend(
-            (i == 0) ? 0.7 : 0.6, // Top right for ALUsinphi, bottom right for others
-            (i == 0) ? 0.8 : 0.2, 
-            0.9, 
-            (i == 0) ? 0.9 : 0.4
-        );
-        legend->SetTextSize(0.04);
+        // Adjusting legend position and font size
+        double legendX1 = (i == 0) ? 0.60 : 0.45; // x1 position for legends (shifted left)
+        double legendY1 = (i == 0) ? 0.75 : 0.15; // y1 position for legends
+        double legendX2 = (i == 0) ? 0.85 : 0.70; // x2 position for legends
+        double legendY2 = (i == 0) ? 0.88 : 0.38; // y2 position for legends
+        TLegend *legend = new TLegend(legendX1, legendY1, legendX2, legendY2);
+        legend->SetTextSize(0.035); // Adjusted text size (decreased slightly)
         legend->SetBorderSize(1);
 
         // Loop through each vector set to plot them on the same canvas
