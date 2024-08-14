@@ -895,7 +895,7 @@ void plotQ2Dependence(
         // Adjusting legend position and font size
         double legendX1 = 0.18;  // Lower left corner X
         double legendY1 = 0.15;  // Lower left corner Y
-        double legendX2 = 0.68;  // Upper right corner X
+        double legendX2 = 0.80;  // Upper right corner X
         double legendY2 = 0.35;  // Upper right corner Y
         TLegend *legend = new TLegend(legendX1, legendY1, legendX2, legendY2);
         legend->SetTextSize(0.025); // Adjusted text size (decreased slightly)
@@ -905,8 +905,8 @@ void plotQ2Dependence(
         for (size_t j = 0; j < vectorNames.size(); ++j) {
             const std::string &vectorName = vectorNames[j];
             
-            // Skip z2pT2y1 and z2pT2y2 for the doubleratio plot
-            if (i == 2 && (vectorName == "z2pT2y1" || vectorName == "z2pT2y2")) {
+            // For the doubleratio plot, only plot z1pT2y1 and z2pT2y1
+            if (i == 2 && (vectorName == "z1pT2y2" || vectorName == "z2pT2y2")) {
                 continue;
             }
 
@@ -950,7 +950,7 @@ void plotQ2Dependence(
 
     // Clean up
     delete c;
-} 
+}
 
 
 int main(int argc, char *argv[]) {
