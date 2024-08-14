@@ -2850,7 +2850,7 @@ std::vector<TH2D*> create_histograms_for_sector(const std::string& region_name, 
 
     for (int sector = 0; sector < 6; ++sector) {
         histograms[sector] = new TH2D(
-            (isMC ? "h_mc_sum_" : "h_data_sum_") + region_name + "_sector" + std::to_string(sector + 1),
+            (isMC ? "h_mc_sum_" : "h_data_sum_") + region_name + "_sector" + std::to_string(sector + 1).c_str(),
             (isMC ? "mc " : "data ") + region_name + " sector " + std::to_string(sector + 1) + " #chi^{2}/ndf (" + particle_name + ")",
             nBins, xMin, xMax, nBins, yMin, yMax
         );
