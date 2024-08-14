@@ -2875,7 +2875,7 @@ void draw_and_save_sector_histograms(TCanvas* canvas, std::vector<TH2D*>& histog
     for (int sector = 0; sector < 6; ++sector) {
         canvas->cd(sector + 1);  // Select the pad corresponding to the sector
         gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-        // gPad->SetLogz();  // Set log scale for the z-axis
+        gPad->SetLogz();  // Set log scale for the z-axis
         histograms[sector]->SetStats(false);  // Disable stat box
         histograms[sector]->SetMaximum(max_value);  // Set the same max value for z-axis
         histograms[sector]->Draw("COLZ");
