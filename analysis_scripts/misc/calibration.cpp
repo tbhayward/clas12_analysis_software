@@ -2647,7 +2647,6 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
         {"traj_x_18", "traj_y_18", "region_2", -300, 300},
         {"traj_x_36", "traj_y_36", "region_3", -450, 450}
     };
-
     // Array of particle types (photons and electrons) and their corresponding PIDs
     std::vector<std::tuple<int, std::string>> particle_types = {
         {11, "electron"},
@@ -2746,7 +2745,7 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
                 h_mc_3->GetXaxis()->SetTitle(("x_{" + region_name + "}").c_str());
                 h_mc_3->GetYaxis()->SetTitle(("y_{" + region_name + "}").c_str());
             }
-            std::cout << "HELLO WE'RE HERE" << std::endl;
+
             // Fill the data histograms, applying the cuts
             while (dataReader.Next()) {
                 if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999) {
@@ -3560,13 +3559,13 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_cal_hit_position(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    dc_fiducial_determination(dataReader, mcReader);
-
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
-    // plot_dc_hit_position(dataReader, mcReader);
+    // dc_fiducial_determination(dataReader, mcReader);
+
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_dc_hit_position(dataReader, mcReader);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
