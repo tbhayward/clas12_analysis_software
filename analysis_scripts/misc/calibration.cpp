@@ -3588,7 +3588,7 @@ int main(int argc, char** argv) {
     // plot_ltcc_nphe(dataReader, mcReader);
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
-    
+
     // plot_ft_xy_energy(dataReader, mcReader);
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
@@ -3596,17 +3596,17 @@ int main(int argc, char** argv) {
 
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
-    plot_cal_hit_position(dataReader, mcReader);
+    plot_pcal_fiducial_determination(dataReader, mcReader);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_ecin_fiducial_determination(dataReader, mcReader);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_ecout_fiducial_determination(dataReader, mcReader);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
-    // plot_pcal_fiducial_determination(dataReader, mcReader);
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_ecin_fiducial_determination(dataReader, mcReader);
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_ecout_fiducial_determination(dataReader, mcReader);
+    // plot_cal_hit_position(dataReader, mcReader);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
