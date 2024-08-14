@@ -2882,10 +2882,10 @@ std::pair<double, double> rotate_coordinates(double x, double y, int sector) {
 
 void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     int nBins = 100;
-    std::vector<std::tuple<std::string, std::string, std::string, double, double>> regions = {
-        {"traj_x_6", "traj_y_6", "region_1", 0, 200},
-        {"traj_x_18", "traj_y_18", "region_2", 0, 300},
-        {"traj_x_36", "traj_y_36", "region_3", 0, 450}
+    std::vector<std::tuple<std::string, std::string, std::string, double, double, double, double>> regions = {
+        {"traj_x_6", "traj_y_6", "region_1", 0, 200, -200, 200},   // xMin = 0, yMin and yMax unchanged
+        {"traj_x_18", "traj_y_18", "region_2", 0, 300, -300, 300}, // xMin = 0, yMin and yMax unchanged
+        {"traj_x_36", "traj_y_36", "region_3", 0, 450, -450, 450}  // xMin = 0, yMin and yMax unchanged
     };
 
     std::vector<std::tuple<int, std::string>> particle_types = {
@@ -2903,8 +2903,8 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             std::string region_name = std::get<2>(region);
             double xMin = std::get<3>(region);
             double xMax = std::get<4>(region);
-            double yMin = xMin;
-            double yMax = xMax;
+            double yMin = std::get<5>(region);
+            double yMax = std::get<6>(region);
 
             // Create histograms for data and MC
             auto h_data_sum_sector = create_histograms_for_sector(region_name, particle_name, nBins, xMin, xMax, yMin, yMax, false);
@@ -2957,8 +2957,11 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                     double traj_x_rot = rotated_coords.first;
                     double traj_y_rot = rotated_coords.second;
 
-                    h_data_sum_sector[*track_sector_6 - 1]->Fill(traj_x_rot, traj_y_rot, chi2_ndf);
-                    h_data_count_sector[*track_sector_6 - 1]->Fill(traj_x_rot, traj_y_rot);
+                    // Only fill histograms if the rotated x-coordinate is positive
+                    if (traj_x_rot >= 0) {
+                        h_data_sum_sector[*track_sector_6 - 1]->Fill(traj_x_rot, traj_y_rot, chi2_ndf);
+                        h_data_count_sector[*track_sector_6 - 1]->Fill(traj_x_rot, traj_y_rot);
+                    }
                 }
             }
 
@@ -2972,8 +2975,11 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                         double mc_traj_x_rot = rotated_coords.first;
                         double mc_traj_y_rot = rotated_coords.second;
 
-                        h_mc_sum_sector[**mc_track_sector_6 - 1]->Fill(mc_traj_x_rot, mc_traj_y_rot, mc_chi2_ndf);
-                        h_mc_count_sector[**mc_track_sector_6 - 1]->Fill(mc_traj_x_rot, mc_traj_y_rot);
+                        // Only fill histograms if the rotated x-coordinate is positive
+                        if (mc_traj_x_rot >= 0) {
+                            h_mc_sum_sector[**mc_track_sector_6 - 1]->Fill(mc_traj_x_rot, mc_traj_y_rot, mc_chi2_ndf);
+                            h_mc_count_sector[**mc_track_sector_6 - 1]->Fill(mc_traj_x_rot, mc_traj_y_rot);
+                        }
                     }
                 }
             }
