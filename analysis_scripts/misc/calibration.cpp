@@ -2883,8 +2883,8 @@ std::pair<double, double> rotate_coordinates(double x, double y, int sector) {
 void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     int nBins = 100;
     std::vector<std::tuple<std::string, std::string, std::string, double, double, double, double>> regions = {
-        {"traj_x_6", "traj_y_6", "region_1", 0, 150, -80, 80 }
-        {"traj_x_18", "traj_y_18", "region_2", 0, 250, -150, 150}
+        {"traj_x_6", "traj_y_6", "region_1", 0, 150, -80, 80},
+        {"traj_x_18", "traj_y_18", "region_2", 0, 250, -150, 150},
         {"traj_x_36", "traj_y_36", "region_3", 0, 400, -200, 200} 
     };
 
