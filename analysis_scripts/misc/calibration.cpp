@@ -2879,7 +2879,7 @@ void draw_and_save_sector_histograms(TCanvas* canvas, std::vector<TH2D*>& histog
         histograms[sector]->SetStats(false);  // Disable stat box
         histograms[sector]->SetMaximum(max_value);  // Set the same max value for z-axis
         // histograms[sector]->Draw("COLZ");
-        histograms[sector]->Draw("COLZ");
+        histograms[sector]->Draw("");
     }
     canvas->SaveAs(output_file.c_str());
 }
