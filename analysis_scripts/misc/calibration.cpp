@@ -2633,7 +2633,7 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
 bool dc_fiducial(double edge_6, double edge_18, double edge_36, 
 	int strictness) {
 
-    return edge_6 > 5;
+    return edge_6 > 10;
     // If none of the cuts apply, the track is good
     // return true;
 }
@@ -3560,13 +3560,13 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_cal_hit_position(dataReader, mcReader);
 
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // dc_fiducial_determination(dataReader, mcReader);
-
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
-    plot_dc_hit_position(dataReader, mcReader);
+    dc_fiducial_determination(dataReader, mcReader);
+
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_dc_hit_position(dataReader, mcReader);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
