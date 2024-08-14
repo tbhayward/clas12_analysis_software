@@ -2840,13 +2840,8 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         {"traj_x_36", "traj_y_36", "region 3", -450, 450}
     };
 
-    // Array of particle types (photons and electrons) and their corresponding PIDs
     std::vector<std::tuple<int, std::string>> particle_types = {
         {11, "electron"},
-        // {-211, "pim"},
-        // {211, "pip"},
-        // {321, "kp"},
-        // {-321, "km"},
         {2212, "proton"}
     };
 
@@ -2878,14 +2873,9 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         int pid = std::get<0>(particle_type);
         std::string particle_name = std::get<1>(particle_type);
 
-        // TCanvas* c = new TCanvas(("c_" + particle_name + "_chi2_ndf").c_str(), ("c_" + particle_name + " #chi^{2}/ndf").c_str(), 1800, 1200);
-        // c->Divide(3, 2);
-
-        int pad = 1;
         std::vector<TH2D*> histograms;  // Store histograms to delete them later
 
         for (const auto& region : regions) {
-        	std::cout << "Starting regions" << std::endl;
             std::string x_branch = std::get<0>(region);
             std::string y_branch = std::get<1>(region);
             std::string region_name = std::get<2>(region);
@@ -2951,7 +2941,8 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             if (mcReader) {
                 h_mc_sum = new TH2D(("h_mc_sum_" + region_name).c_str(), ("mc " + region_name + " #chi^{2}/ndf (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
                 h_mc_count = new TH2D(("h_mc_count_" + region_name).c_str(), ("mc " + region_name + " #chi^{2}/ndf count (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-                while (dataReader.Next()) {
+            }
+            while (dataReader.Next()) {
                 if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999 && *track_ndf_6 > 0) {
                     double chi2_ndf = *track_chi2_6 / *track_ndf_6;
 
@@ -3072,15 +3063,11 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             histograms.push_back(h_data_count);
             if (h_mc_sum) histograms.push_back(h_mc_sum);
             if (h_mc_count) histograms.push_back(h_mc_count);
+
             if (mc_traj_x) delete mc_traj_x;
             if (mc_traj_y) delete mc_traj_y;
             if (mc_particle_pid) delete mc_particle_pid;
-
-            ++pad;
-            std::cout << "Ending regions" << std::endl;
         }
-
-        // c->SaveAs(("output/calibration/dc/determination/chi2_per_ndf_" + particle_name + ".png").c_str());
 
         dataReader.Restart();
         if (mcReader) mcReader->Restart();
@@ -3088,8 +3075,6 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         for (auto& hist : histograms) {
             delete hist;
         }
-
-        // delete c;
     }
 
     if (mc_traj_edge_6) delete mc_traj_edge_6;
@@ -3097,7 +3082,6 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
     if (mc_traj_edge_36) delete mc_traj_edge_36;
     if (mc_track_chi2_6) delete mc_track_chi2_6;
     if (mc_track_ndf_6) delete mc_track_ndf_6;
-}
 }
 
 void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
