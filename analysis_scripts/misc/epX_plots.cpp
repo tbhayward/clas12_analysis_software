@@ -857,7 +857,7 @@ void plotQ2Dependence(
     const std::map<std::string, std::map<std::string, std::vector<std::vector<double>>>> &allVectors) {
 
     // Colors for different vector sets, avoiding black for better visibility
-    std::vector<int> colors = {kRed, kBlue, kBlack, kMagenta}; 
+    std::vector<int> colors = {kRed, kBlue, kBlack, kGreen}; 
     std::vector<std::string> vectorNames = {"z1pT2y1", "z2pT2y1", "z1pT2y2", "z2pT2y2"};
     std::vector<std::string> legendLabels = {
         "0.65<y<0.75, 0.10<z<0.25, 0.21<P_{T}<0.34", 
