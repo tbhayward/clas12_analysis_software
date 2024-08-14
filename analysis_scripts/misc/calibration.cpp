@@ -2650,10 +2650,10 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
     // Array of particle types (photons and electrons) and their corresponding PIDs
     std::vector<std::tuple<int, std::string>> particle_types = {
         {11, "electron"},
-        {-211, "pim"},
-        {211, "pip"},
-        {321, "kp"},
-        {-321, "km"},
+        // {-211, "pim"},
+        // {211, "pip"},
+        // {321, "kp"},
+        // {-321, "km"},
         {2212, "proton"}
     };
 
@@ -2840,8 +2840,13 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         {"traj_x_36", "traj_y_36", "region 3", -450, 450}
     };
 
+    // Array of particle types (photons and electrons) and their corresponding PIDs
     std::vector<std::tuple<int, std::string>> particle_types = {
         {11, "electron"},
+        // {-211, "pim"},
+        // {211, "pip"},
+        // {321, "kp"},
+        // {-321, "km"},
         {2212, "proton"}
     };
 
@@ -3619,11 +3624,11 @@ int main(int argc, char** argv) {
 
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
-    plot_dc_hit_position(dataReader, mcReader);
+    dc_fiducial_determination(dataReader, mcReader);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
-    // dc_fiducial_determination(dataReader, mcReader);
+    // plot_dc_hit_position(dataReader, mcReader);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
