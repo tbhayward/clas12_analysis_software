@@ -2848,15 +2848,12 @@ void normalize_histogram(TH2D* h_sum, TH2D* h_count) {
 std::vector<TH2D*> create_histograms_for_sector(const std::string& region_name, const std::string& particle_name, int nBins, double xMin, double xMax, double yMin, double yMax, bool isMC) {
     std::vector<TH2D*> histograms(6);
 
-    for (int sector = 0; sector < 6; ++sector) {
-        std::string hist_name = (isMC ? "h_mc_sum_" : "h_data_sum_") + region_name + "_sector" + std::to_string(sector + 1);
-        TH2D* existing_hist = static_cast<TH2D*>(gDirectory->Get(hist_name.c_str()));
-        if (existing_hist) {
-            delete existing_hist;
-        }
+    std::string hist_prefix = (isMC ? "h_mc_sum_" : "h_data_sum_") + region_name + "_sector";
+    gDirectory->Delete((hist_prefix + "*").c_str());
 
+    for (int sector = 0; sector < 6; ++sector) {
         histograms[sector] = new TH2D(
-            hist_name.c_str(),
+            (hist_prefix + std::to_string(sector + 1)).c_str(),
             ((isMC ? "mc " : "data ") + region_name + " sector " + std::to_string(sector + 1) + " #chi^{2}/ndf (" + particle_name + ")").c_str(),
             nBins, xMin, xMax, nBins, yMin, yMax
         );
