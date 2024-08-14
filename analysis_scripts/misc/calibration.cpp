@@ -2896,12 +2896,18 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         TTreeReaderValue<int>* mc_track_sector = nullptr;
         TTreeReaderValue<double>* mc_track_chi2 = nullptr;
         TTreeReaderValue<int>* mc_track_ndf = nullptr;
+        TTreeReaderValue<double>* mc_traj_edge_6 = nullptr;
+        TTreeReaderValue<double>* mc_traj_edge_18 = nullptr;
+        TTreeReaderValue<double>* mc_traj_edge_36 = nullptr;
 
         if (mcReader) {
             mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
             mc_track_sector = new TTreeReaderValue<int>(*mcReader, "track_sector_6");
             mc_track_chi2 = new TTreeReaderValue<double>(*mcReader, "track_chi2_6");
             mc_track_ndf = new TTreeReaderValue<int>(*mcReader, "track_ndf_6");
+            mc_traj_edge_6 = new TTreeReaderValue<double>(*mcReader, "traj_edge_6");
+            mc_traj_edge_18 = new TTreeReaderValue<double>(*mcReader, "traj_edge_18");
+            mc_traj_edge_36 = new TTreeReaderValue<double>(*mcReader, "traj_edge_36");
         }
 
         for (const auto& region : regions) {
@@ -2989,21 +2995,20 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                     delete h_mc_count_sector[sector];
                 }
             }
-            if (mc_particle_pid) delete mc_particle_pid;
+
             if (mc_traj_x) delete mc_traj_x;
             if (mc_traj_y) delete mc_traj_y;
-            if (mc_track_sector) delete mc_track_sector;
-            if (mc_track_chi2) delete mc_track_chi2;
-            if (mc_track_ndf) delete mc_track_ndf;
         }
 
-        dataReader.Restart();
-        if (mcReader) mcReader->Restart();
-    }
+        if (mc_traj_edge_6) delete mc_traj_edge_6;
+        if (mc_traj_edge_18) delete mc_traj_edge_18;
+        if (mc_traj_edge_36) delete mc_traj_edge_36;
 
-    if (mc_traj_edge_6) delete mc_traj_edge_6;
-    if (mc_traj_edge_18) delete mc_traj_edge_18;
-    if (mc_traj_edge_36) delete mc_traj_edge_36;
+        if (mc_particle_pid) delete mc_particle_pid;
+        if (mc_track_sector) delete mc_track_sector;
+        if (mc_track_chi2) delete mc_track_chi2;
+        if (mc_track_ndf) delete mc_track_ndf;
+    }
 }
 
 void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
