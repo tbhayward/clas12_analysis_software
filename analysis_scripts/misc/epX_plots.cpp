@@ -856,14 +856,14 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
 void plotQ2Dependence(
     const std::map<std::string, std::map<std::string, std::vector<std::vector<double>>>> &allVectors) {
 
-    // Colors for different vector sets
-    std::vector<int> colors = {kBlack, kRed, kBlue, kGreen};
+    // Colors for different vector sets, avoiding black for better visibility
+    std::vector<int> colors = {kRed, kBlue, kGreen, kMagenta}; 
     std::vector<std::string> vectorNames = {"z1pT2y1", "z2pT2y1", "z1pT2y2", "z2pT2y2"};
     std::vector<std::string> legendLabels = {
-        "0.65<y<0.75, 0.10<z<0.25, 0.21<PT<0.34", 
-        "0.65<y<0.75, 0.25<z<0.35, 0.21<PT<0.34", 
-        "0.55<y<0.65, 0.10<z<0.25, 0.21<PT<0.34", 
-        "0.55<y<0.65, 0.25<z<0.35, 0.21<PT<0.34"
+        "0.65<y<0.75, 0.10<z<0.25, 0.21<P_{T}<0.34", 
+        "0.65<y<0.75, 0.25<z<0.35, 0.21<P_{T}<0.34", 
+        "0.55<y<0.65, 0.10<z<0.25, 0.21<P_{T}<0.34", 
+        "0.55<y<0.65, 0.25<z<0.35, 0.21<P_{T}<0.34"
     };
 
     // Create a canvas with 1 row and 3 columns
