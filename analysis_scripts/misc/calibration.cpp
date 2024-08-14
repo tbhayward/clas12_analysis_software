@@ -2897,8 +2897,8 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
     int nBins = 100;
     std::vector<std::tuple<std::string, std::string, std::string, double, double, double, double>> regions = {
         {"traj_x_6", "traj_y_6", "region_1", 18, 160, -80, 80},
-        {"traj_x_18", "traj_y_18", "region_2", 30, 240, -150, 150},
-        {"traj_x_36", "traj_y_36", "region_3", 50, 400, -200, 200} 
+        {"traj_x_18", "traj_y_18", "region_2", 30, 240, -125, 125},
+        {"traj_x_36", "traj_y_36", "region_3", 40, 400, -200, 200} 
     };
 
     std::vector<std::tuple<int, std::string>> particle_types = {
