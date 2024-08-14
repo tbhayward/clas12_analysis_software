@@ -2832,27 +2832,20 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
     if (mc_traj_edge_36) delete mc_traj_edge_36;
 }
 
-void normalize_histogram(TH2D* h_sum, TH2D* h_count) {
-    for (int i = 1; i <= h_sum->GetNbinsX(); ++i) {
-        for (int j = 1; j <= h_sum->GetNbinsY(); ++j) {
-            double count = h_count->GetBinContent(i, j);
+void normalize_histogram(TH2D* sum_hist, TH2D* count_hist) {
+    for (int i = 1; i <= sum_hist->GetNbinsX(); ++i) {
+        for (int j = 1; j <= sum_hist->GetNbinsY(); ++j) {
+            double count = count_hist->GetBinContent(i, j);
             if (count > 0) {
-                h_sum->SetBinContent(i, j, h_sum->GetBinContent(i, j) / count);
+                sum_hist->SetBinContent(i, j, sum_hist->GetBinContent(i, j) / count);
             } else {
-                h_sum->SetBinContent(i, j, 0);
+                sum_hist->SetBinContent(i, j, 0);
             }
         }
     }
 }
 
-void fill_histograms(TTreeReader& reader, int pid, TH2D* sum_hist, TH2D* count_hist, std::vector<TH2D*>& sum_sector, std::vector<TH2D*>& count_sector, const std::string& x_branch, const std::string& y_branch) {
-    TTreeReaderValue<int> particle_pid(reader, "particle_pid");
-    TTreeReaderValue<double> traj_x(reader, x_branch.c_str());
-    TTreeReaderValue<double> traj_y(reader, y_branch.c_str());
-    TTreeReaderValue<int> track_sector(reader, "track_sector_6");
-    TTreeReaderValue<double> track_chi2(reader, "track_chi2_6");
-    TTreeReaderValue<int> track_ndf(reader, "track_ndf_6");
-
+void fill_histograms(TTreeReader& reader, TTreeReaderValue<int>& particle_pid, TTreeReaderValue<double>& traj_x, TTreeReaderValue<double>& traj_y, TTreeReaderValue<int>& track_sector, TTreeReaderValue<double>& track_chi2, TTreeReaderValue<int>& track_ndf, int pid, TH2D* sum_hist, TH2D* count_hist, std::vector<TH2D*>& sum_sector, std::vector<TH2D*>& count_sector) {
     while (reader.Next()) {
         if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999 && *track_ndf > 0) {
             double chi2_ndf = *track_chi2 / *track_ndf;
@@ -2947,11 +2940,33 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 }
             }
 
-            // Fill histograms for data
-            fill_histograms(dataReader, pid, h_data_sum_sector[0], h_data_count_sector[0], h_data_sum_sector, h_data_count_sector, x_branch, y_branch);
+            // Declare TTreeReaderValue objects before starting the loop
+            TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+            TTreeReaderValue<double> traj_x(dataReader, x_branch.c_str());
+            TTreeReaderValue<double> traj_y(dataReader, y_branch.c_str());
+            TTreeReaderValue<int> track_sector(dataReader, "track_sector_6");
+            TTreeReaderValue<double> track_chi2(dataReader, "track_chi2_6");
+            TTreeReaderValue<int> track_ndf(dataReader, "track_ndf_6");
 
-            // Normalize histograms for data
-            normalize_histogram(h_data_sum_sector[0], h_data_count_sector[0]);
+            TTreeReaderValue<int>* mc_particle_pid = nullptr;
+            TTreeReaderValue<double>* mc_traj_x = nullptr;
+            TTreeReaderValue<double>* mc_traj_y = nullptr;
+            TTreeReaderValue<int>* mc_track_sector = nullptr;
+            TTreeReaderValue<double>* mc_track_chi2 = nullptr;
+            TTreeReaderValue<int>* mc_track_ndf = nullptr;
+
+            if (mcReader) {
+                mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+                mc_traj_x = new TTreeReaderValue<double>(*mcReader, x_branch.c_str());
+                mc_traj_y = new TTreeReaderValue<double>(*mcReader, y_branch.c_str());
+                mc_track_sector = new TTreeReaderValue<int>(*mcReader, "track_sector_6");
+                mc_track_chi2 = new TTreeReaderValue<double>(*mcReader, "track_chi2_6");
+                mc_track_ndf = new TTreeReaderValue<int>(*mcReader, "track_ndf_6");
+            }
+
+            // Fill histograms for data
+            fill_histograms(dataReader, particle_pid, traj_x, traj_y, track_sector, track_chi2, track_ndf, pid, h_data_sum_sector, h_data_count_sector);
+            // Normalize data histograms
             for (int sector = 0; sector < 6; ++sector) {
                 normalize_histogram(h_data_sum_sector[sector], h_data_count_sector[sector]);
             }
@@ -2959,24 +2974,19 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             // Draw and save data histograms
             draw_and_save_histograms(c_region, h_data_sum_sector, "output/calibration/dc/determination/chi2_per_ndf_" + particle_name + "_" + region_name + ".png");
 
+            // If MC is provided, fill, normalize, and draw MC histograms
             if (mcReader) {
-                // Fill histograms for MC
-                fill_histograms(*mcReader, pid, h_mc_sum_sector[0], h_mc_count_sector[0], h_mc_sum_sector, h_mc_count_sector, x_branch, y_branch);
+                fill_histograms(*mcReader, *mc_particle_pid, *mc_traj_x, *mc_traj_y, *mc_track_sector, *mc_track_chi2, *mc_track_ndf, pid, h_mc_sum_sector, h_mc_count_sector);
 
-                // Normalize histograms for MC
-                normalize_histogram(h_mc_sum_sector[0], h_mc_count_sector[0]);
                 for (int sector = 0; sector < 6; ++sector) {
                     normalize_histogram(h_mc_sum_sector[sector], h_mc_count_sector[sector]);
                 }
 
-                // Draw and save MC histograms
                 draw_and_save_histograms(c_mc_region, h_mc_sum_sector, "output/calibration/dc/determination/mc_chi2_per_ndf_" + particle_name + "_" + region_name + ".png");
             }
 
             // Cleanup
-            delete
-
- c_region;
+            delete c_region;
             if (c_mc_region) delete c_mc_region;
 
             for (int sector = 0; sector < 6; ++sector) {
@@ -2987,6 +2997,13 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                     delete h_mc_count_sector[sector];
                 }
             }
+
+            if (mc_particle_pid) delete mc_particle_pid;
+            if (mc_traj_x) delete mc_traj_x;
+            if (mc_traj_y) delete mc_traj_y;
+            if (mc_track_sector) delete mc_track_sector;
+            if (mc_track_chi2) delete mc_track_chi2;
+            if (mc_track_ndf) delete mc_track_ndf;
         }
 
         dataReader.Restart();
