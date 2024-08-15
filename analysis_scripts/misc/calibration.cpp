@@ -3961,6 +3961,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
 
         // Convert theta to degrees for both data and MC
         double theta_in_degrees = *theta * (180.0 / M_PI);
+        std::cout << theta_in_degrees << std::endl;
         double mc_theta_in_degrees = mcReader ? (**mc_theta * (180.0 / M_PI)) : 0;
 
         // Create and fill histograms for theta_CVT vs theta and phi_CVT vs theta_CVT
