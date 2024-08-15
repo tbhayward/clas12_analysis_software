@@ -3811,6 +3811,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
             if (*particle_pid == pid && *track_chi2_6 != -9999 && *track_ndf_6 != -9999) {
                 double chi2_ndf = *track_chi2_6 / *track_ndf_6;
                 for (int i = 0; i < 5; ++i) {
+                    std::cout << *traj_edges[i] << std::endl;
                     if (*traj_edges[i] != -9999) {
                         h_sum_chi2_ndf[i]->Fill(*traj_edges[i], chi2_ndf);
                         h_count_chi2_ndf[i]->Fill(*traj_edges[i]);
@@ -3826,7 +3827,6 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
                 if (**mc_particle_pid == pid && **mc_track_chi2_6 != -9999 && **mc_track_ndf_6 != -9999) {
                     double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
                     for (int i = 0; i < 5; ++i) {
-                        std::cout << **mc_traj_edges[i] << std::endl;
                         if (**mc_traj_edges[i] != -9999) {
                             h_sum_chi2_ndf_mc[i]->Fill(**mc_traj_edges[i], mc_chi2_ndf);
                             h_count_chi2_ndf_mc[i]->Fill(**mc_traj_edges[i]);
