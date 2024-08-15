@@ -3932,7 +3932,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                     double mc_theta_CVT_value = calculate_theta(**mc_traj_x_12, **mc_traj_y_12, **mc_traj_z_12);
                     double mc_phi_CVT_value = calculate_phi(**mc_traj_x_12, **mc_traj_y_12);
 
-                    h_theta_vs_theta_mc_before->Fill(mc_theta_CVT_value, mc_theta);
+                    h_theta_vs_theta_mc_before->Fill(mc_theta_CVT_value, *mc_theta);
                     h_phi_vs_theta_CVT_mc_before->Fill(mc_phi_CVT_value, mc_theta_CVT_value);
 
                     if (cvt_fiducial(**mc_traj_edge_1, **mc_traj_edge_3, **mc_traj_edge_5, **mc_traj_edge_7, **mc_traj_edge_12, pid)) {
