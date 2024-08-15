@@ -2903,18 +2903,9 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         {"traj_x_36", "traj_y_36", "region_3", 30, 400, -200, 200, "traj_edge_36", 30}
     };
 
-    // // Array of particle types (photons and electrons) and their corresponding PIDs
-    // std::vector<std::tuple<int, std::string>> particle_types = {
-    //     {11, "electron"},
-    //     // {-211, "pim"},
-    //     // {211, "pip"},
-    //     // {321, "kp"},
-    //     // {-321, "km"},
-    //     {2212, "proton"}
-    // };
     // Array of particle types (photons and electrons) and their corresponding PIDs
     std::vector<std::tuple<int, std::string>> particle_types = {
-        // {11, "electron"},
+        {11, "electron"},
         // {-211, "pim"},
         // {211, "pip"},
         // {321, "kp"},
@@ -2963,6 +2954,9 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             TTreeReaderValue<double> track_chi2_6(dataReader, "track_chi2_6");
             TTreeReaderValue<int> track_ndf_6(dataReader, "track_ndf_6");
             TTreeReaderValue<double> traj_edge(dataReader, edge_branch.c_str());
+            TTreeReaderValue<double> traj_edge_6(dataReader, "traj_edge_6");
+            TTreeReaderValue<double> traj_edge_18(dataReader, "traj_edge_18");
+            TTreeReaderValue<double> traj_edge_36(dataReader, "traj_edge_36");
             TTreeReaderValue<double> track_theta(dataReader, "theta");
 
             TTreeReaderValue<double>* mc_traj_x = nullptr;
@@ -2972,6 +2966,9 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             TTreeReaderValue<double>* mc_track_chi2_6 = nullptr;
             TTreeReaderValue<int>* mc_track_ndf_6 = nullptr;
             TTreeReaderValue<double>* mc_traj_edge = nullptr;
+            TTreeReaderValue<double>* mc_traj_edge_6 = nullptr;
+            TTreeReaderValue<double>* mc_traj_edge_18 = nullptr;
+            TTreeReaderValue<double>* mc_traj_edge_36 = nullptr;
             TTreeReaderValue<double>* mc_track_theta = nullptr;
 
             if (mcReader) {
@@ -2982,6 +2979,9 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 mc_track_chi2_6 = new TTreeReaderValue<double>(*mcReader, "track_chi2_6");
                 mc_track_ndf_6 = new TTreeReaderValue<int>(*mcReader, "track_ndf_6");
                 mc_traj_edge = new TTreeReaderValue<double>(*mcReader, edge_branch.c_str());
+                mc_traj_edge_6 = new TTreeReaderValue<double>(*mcReader, "traj_edge_6");
+                mc_traj_edge_18 = new TTreeReaderValue<double>(*mcReader, "traj_edge_18");
+                mc_traj_edge_36 = new TTreeReaderValue<double>(*mcReader, "traj_edge_36");
                 mc_track_theta = new TTreeReaderValue<double>(*mcReader, "theta");
             }
 
@@ -3185,17 +3185,14 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 }
             }
 
-            // Restart readers at the start of each loop
-            dataReader.Restart();
-            if (mcReader) mcReader->Restart();
-
             // Fill the histograms with fiducial cuts applied
             for (int particle_idx = 0; particle_idx < num_particles; ++particle_idx) {
                 int pid = std::get<0>(particle_types[particle_idx]);
 
+                dataReader.Restart();
                 while (dataReader.Next()) {
-                    if (*particle_pid == pid && *track_ndf_6 > 0 &&
-                        dc_fiducial(*traj_edge, *traj_edge, *traj_edge, pid)) {
+                    if (*particle_pid == pid && *track_ndf_6 > 0 && 
+                        dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, pid)) {
                         double chi2_ndf = *track_chi2_6 / *track_ndf_6;
                         h2_chi2_vs_theta_data[particle_idx]->Fill(*track_theta, chi2_ndf);
                     }
@@ -3204,8 +3201,8 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 if (mcReader) {
                     mcReader->Restart();
                     while (mcReader->Next()) {
-                        if (**mc_particle_pid == pid && **mc_track_ndf_6 > 0 &&
-                            dc_fiducial(**mc_traj_edge, **mc_traj_edge, **mc_traj_edge, pid)) {
+                        if (**mc_particle_pid == pid && **mc_track_ndf_6 > 0 && 
+                            dc_fiducial(**mc_traj_edge_6, **mc_traj_edge_18, **mc_traj_edge_36, pid)) {
                             double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
                             h2_chi2_vs_theta_mc[particle_idx]->Fill(**mc_track_theta, mc_chi2_ndf);
                         }
