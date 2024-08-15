@@ -2662,7 +2662,6 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
     TTreeReaderValue<double> traj_edge_6(dataReader, "traj_edge_6");
     TTreeReaderValue<double> traj_edge_18(dataReader, "traj_edge_18");
     TTreeReaderValue<double> traj_edge_36(dataReader, "traj_edge_36");
-
     TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
 
     TTreeReaderValue<double>* mc_traj_edge_6 = nullptr;
@@ -2680,6 +2679,21 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
     for (const auto& particle_type : particle_types) {
         int pid = std::get<0>(particle_type);
         std::string particle_name = std::get<1>(particle_type);
+
+        // Declare TTreeReaderValues for traj_x and traj_y here for each region
+        std::vector<TTreeReaderValue<double>*> traj_x(3), traj_y(3);
+        for (int region_idx = 0; region_idx < 3; ++region_idx) {
+            traj_x[region_idx] = new TTreeReaderValue<double>(dataReader, std::get<0>(regions[region_idx]).c_str());
+            traj_y[region_idx] = new TTreeReaderValue<double>(dataReader, std::get<1>(regions[region_idx]).c_str());
+        }
+
+        std::vector<TTreeReaderValue<double>*> mc_traj_x(3), mc_traj_y(3);
+        if (mcReader) {
+            for (int region_idx = 0; region_idx < 3; ++region_idx) {
+                mc_traj_x[region_idx] = new TTreeReaderValue<double>(*mcReader, std::get<0>(regions[region_idx]).c_str());
+                mc_traj_y[region_idx] = new TTreeReaderValue<double>(*mcReader, std::get<1>(regions[region_idx]).c_str());
+            }
+        }
 
         // Create a canvas for data
         TCanvas* c_data = new TCanvas(("c_data_" + particle_name).c_str(), ("Data DC Hit Position (" + particle_name + ")").c_str(), 1800, 1200);
@@ -2716,15 +2730,10 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
         while (dataReader.Next()) {
             if (*particle_pid == pid) {
                 for (int region_idx = 0; region_idx < 3; ++region_idx) {
-                    std::string x_branch = std::get<0>(regions[region_idx]);
-                    std::string y_branch = std::get<1>(regions[region_idx]);
-                    TTreeReaderValue<double> traj_x(dataReader, x_branch.c_str());
-                    TTreeReaderValue<double> traj_y(dataReader, y_branch.c_str());
-
-                    if (*traj_x != -9999 && *traj_y != -9999) {
-                        h_data_before[region_idx]->Fill(*traj_x, *traj_y);
+                    if (*traj_x[region_idx] != -9999 && *traj_y[region_idx] != -9999) {
+                        h_data_before[region_idx]->Fill(**traj_x[region_idx], **traj_y[region_idx]);
                         if (dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, pid)) {
-                            h_data_after[region_idx]->Fill(*traj_x, *traj_y);
+                            h_data_after[region_idx]->Fill(**traj_x[region_idx], **traj_y[region_idx]);
                         }
                     }
                 }
@@ -2737,19 +2746,12 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
             while (mcReader->Next()) {
                 if (**mc_particle_pid == pid) {
                     for (int region_idx = 0; region_idx < 3; ++region_idx) {
-                        std::string x_branch = std::get<0>(regions[region_idx]);
-                        std::string y_branch = std::get<1>(regions[region_idx]);
-                        TTreeReaderValue<double>* mc_traj_x = new TTreeReaderValue<double>(*mcReader, x_branch.c_str());
-                        TTreeReaderValue<double>* mc_traj_y = new TTreeReaderValue<double>(*mcReader, y_branch.c_str());
-
-                        if (**mc_traj_x != -9999 && **mc_traj_y != -9999) {
-                            h_mc_before[region_idx]->Fill(**mc_traj_x, **mc_traj_y);
+                        if (**mc_traj_x[region_idx] != -9999 && **mc_traj_y[region_idx] != -9999) {
+                            h_mc_before[region_idx]->Fill(**mc_traj_x[region_idx], **mc_traj_y[region_idx]);
                             if (dc_fiducial(**mc_traj_edge_6, **mc_traj_edge_18, **mc_traj_edge_36, pid)) {
-                                h_mc_after[region_idx]->Fill(**mc_traj_x, **mc_traj_y);
+                                h_mc_after[region_idx]->Fill(**mc_traj_x[region_idx], **mc_traj_y[region_idx]);
                             }
                         }
-                        delete mc_traj_x;
-                        delete mc_traj_y;
                     }
                 }
             }
@@ -2782,7 +2784,6 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
             gPad->SetLogz();
             gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
             h_data_before[region_idx]->Draw("COLZ");
-
             c_data->cd(region_idx + 4);
             gPad->SetLogz();
             gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
@@ -2816,6 +2817,16 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
         }
         delete c_data;
         if (mcReader) delete c_mc;
+
+        // Clean up dynamically allocated TTreeReaderValues for traj_x and traj_y
+        for (int region_idx = 0; region_idx < 3; ++region_idx) {
+            delete traj_x[region_idx];
+            delete traj_y[region_idx];
+            if (mcReader) {
+                delete mc_traj_x[region_idx];
+                delete mc_traj_y[region_idx];
+            }
+        }
     }
 
     // Clean up the dynamically allocated memory for edge variables
