@@ -2904,8 +2904,8 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         {11, "electron"},
         {-211, "pim"},
         {211, "pip"},
-        // {321, "kp"},
-        // {-321, "km"},
+        {321, "kp"},
+        {-321, "km"},
         {2212, "proton"}
     };
 
