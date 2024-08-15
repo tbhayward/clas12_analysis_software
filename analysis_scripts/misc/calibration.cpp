@@ -3723,7 +3723,7 @@ bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7,
     return true;
 }
 
-void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+        void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     int nBins = 100;
 
     std::vector<std::tuple<std::string, std::string, std::string, double, double>> layers = {
@@ -3858,16 +3858,16 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                 }
             }
         }
+
         // Fill the MC histograms if available
         if (mcReader) {
             mcReader->Restart();
             while (mcReader->Next()) {
                 if (**mc_particle_pid == pid) {
                     for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
-                        double mc_traj_x_value = **mc_traj_x[layer_idx];
-                        double mc_traj_y_value = **mc_traj_y[layer_idx];
-
-                        if (mc_traj_x_value != -9999 && mc_traj_y_value != -9999) {
+                    double mc_traj_x_value = **mc_traj_x[layer_idx];
+                    double mc_traj_y_value = **mc_traj_y[layer_idx];
+                    if (mc_traj_x_value != -9999 && mc_traj_y_value != -9999) {
                             h_mc_before[layer_idx]->Fill(mc_traj_x_value, mc_traj_y_value);
                             if (cvt_fiducial(**mc_traj_edge_1, **mc_traj_edge_3, **mc_traj_edge_5, **mc_traj_edge_7, **mc_traj_edge_12, pid)) {
                                 h_mc_after[layer_idx]->Fill(mc_traj_x_value, mc_traj_y_value);
@@ -3931,6 +3931,8 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
 
         // Convert theta to degrees for both data and MC
         std::vector<double> theta_in_degrees_data, theta_in_degrees_mc;
+        std::vector<double> theta_CVT_data, phi_CVT_data;
+        std::vector<double> theta_CVT_mc, phi_CVT_mc;
 
         // Calculate theta_CVT and phi_CVT for data
         dataReader.Restart();
@@ -4001,7 +4003,6 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             h_phi_vs_theta_CVT_mc_before = new TH2D("h_phi_vs_theta_CVT_mc_before", ("#phi_{CVT} vs #theta_{CVT} Before Cuts (MC, " + particle_latex + ")").c_str(), nBins, 0, 360, nBins, 0, 180);
             h_phi_vs_theta_CVT_mc_before->GetXaxis()->SetTitle("#phi_{CVT}");
             h_phi_vs_theta_CVT_mc_before->GetYaxis()->SetTitle("#theta_{CVT}");
-
             h_theta_vs_theta_mc_after = new TH2D("h_theta_vs_theta_mc_after", ("#theta_{CVT} vs #theta After Cuts (MC, " + particle_latex + ")").c_str(), nBins, 0, 180, nBins, 0, 180);
             h_theta_vs_theta_mc_after->GetXaxis()->SetTitle("#theta");
             h_theta_vs_theta_mc_after->GetYaxis()->SetTitle("#theta_{CVT}");
