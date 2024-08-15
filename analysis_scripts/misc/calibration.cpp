@@ -3822,6 +3822,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                     if (traj_x_value != -9999 && traj_y_value != -9999) {
                         h_data_before[layer_idx]->Fill(traj_x_value, traj_y_value);
                         if (cvt_fiducial(*traj_edge_1, *traj_edge_3, *traj_edge_5, *traj_edge_7, *traj_edge_12, pid)) {
+                            std::cout << *traj_edge_1 << " " *traj_edge_3 << " " << *traj_edge_5 << " " << *traj_edge_7 << " " << *traj_edge_12 << std::endl;
                             h_data_after[layer_idx]->Fill(traj_x_value, traj_y_value);
                         }
                     }
