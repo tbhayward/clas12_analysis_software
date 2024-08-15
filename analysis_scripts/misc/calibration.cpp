@@ -3897,9 +3897,6 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             }
         }
 
-        // Create and fill histograms for theta_CVT vs theta and theta_CVT vs phi_CVT
-        TH2D* h_theta 
-
         // Create canvases for theta_CVT vs theta and phi_CVT vs theta_CVT plots (data and MC)
         TCanvas* c_theta_vs_theta_data = new TCanvas(("c_theta_vs_theta_data_" + particle_name).c_str(), ("#theta_{CVT} vs #theta and #phi_{CVT} vs #theta_{CVT} (Data, " + particle_name + ")").c_str(), 1200, 1200);
         c_theta_vs_theta_data->Divide(2, 2);
