@@ -3732,14 +3732,14 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         {"traj_edge_3", "layer_3", 0, 3},
         {"traj_edge_5", "layer_5", 0, 3},
         {"traj_edge_7", "layer_7", 0, 15},
-        {"traj_edge_12", "layer_12", 0, 15}
+        {"traj_edge_12", "layer_12", 0, 17}
     };
 
-    std::vector<std::tuple<int, std::string>> particle_types = {
-        {211, "pip"},
-        {-211, "pim"},
-        {321, "kp"},
-        {-321, "km"},
+    std::vector<std::tuple<int, std::string>>  particle_types = {
+        {211, "#pi^{+}"},
+        {-211, "#pi^{-}"},
+        {321, "k^{+}"},
+        {-321, "k^{-}"},
         {2212, "proton"}
     };
 
@@ -3810,6 +3810,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         while (dataReader.Next()) {
             if (*particle_pid == pid) {
                 double chi2_ndf = *track_chi2_6 / *track_ndf_6;
+                std::cout << chi2_ndf << std::endl;
                 for (int i = 0; i < 5; ++i) {
                     if (*traj_edges[i] != -9999) {
                         h_sum_chi2_ndf[i]->Fill(*traj_edges[i], chi2_ndf);
