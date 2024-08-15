@@ -2893,7 +2893,7 @@ std::pair<double, double> rotate_coordinates(double x, double y, int sector) {
 }
 
 void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
-    int nBins = 100;
+    int nBins = 50;
     std::vector<std::tuple<std::string, std::string, std::string, double, double, double, double, std::string, double>> regions = {
         {"traj_x_6", "traj_y_6", "region_1", 15, 160, -80, 80, "traj_edge_6", 50},
         {"traj_x_18", "traj_y_18", "region_2", 30, 240, -125, 125, "traj_edge_18", 80},
@@ -2902,10 +2902,10 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
     std::vector<std::tuple<int, std::string>> particle_types = {
         {11, "electron"},
-        {-211, "pim"},
-        {211, "pip"},
-        {321, "kp"},
-        {-321, "km"},
+        {-211, "#pi^{-}"},
+        {211, "#pi^{+}"},
+        {321, "k^{+}"},
+        {-321, "k^{-}"},
         {2212, "proton"}
     };
 
@@ -3107,14 +3107,16 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
                 gPad->SetLogy();  // Add this line to set the y-axis to log scale
                 h_sum_chi2_ndf_sector[sector]->SetStats(false);
-                h_sum_chi2_ndf_sector[sector]->SetMaximum(max_value);
+                // h_sum_chi2_ndf_sector[sector]->SetMaximum(max_value);
+                h_sum_chi2_ndf_sector[sector]->SetMaximum(1e3);
                 h_sum_chi2_ndf_sector[sector]->SetMinimum(10);
                 h_sum_chi2_ndf_sector[sector]->SetLineColor(kBlack);
                 h_sum_chi2_ndf_sector[sector]->Draw("E");
 
                 if (mcReader) {
                     h_sum_chi2_ndf_mc_sector[sector]->SetStats(false);
-                    h_sum_chi2_ndf_mc_sector[sector]->SetMaximum(max_value);
+                    // h_sum_chi2_ndf_mc_sector[sector]->SetMaximum(max_value);
+                    h_sum_chi2_ndf_mc_sector[sector]->SetMaximum(1e3);
                     h_sum_chi2_ndf_mc_sector[sector]->SetMinimum(10);
                     h_sum_chi2_ndf_mc_sector[sector]->SetLineColor(kRed);
                     h_sum_chi2_ndf_mc_sector[sector]->Draw("E SAME");
