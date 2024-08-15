@@ -2720,12 +2720,12 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
             double yMin = xMin;
             double yMax = xMax;
 
-            h_data_before[region_idx] = new TH2D(("h_data_before_" + region_name).c_str(), ("Data " + region_name + " Before Cuts").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-            h_data_after[region_idx] = new TH2D(("h_data_after_" + region_name).c_str(), ("Data " + region_name + " After Cuts").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            h_data_before[region_idx] = new TH2D(("h_data_before_" + region_name).c_str(), ("Data " + region_name + " Before Cuts (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            h_data_after[region_idx] = new TH2D(("h_data_after_" + region_name).c_str(), ("Data " + region_name + " After Cuts (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
 
             if (mcReader) {
-                h_mc_before[region_idx] = new TH2D(("h_mc_before_" + region_name).c_str(), ("MC " + region_name + " Before Cuts").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-                h_mc_after[region_idx] = new TH2D(("h_mc_after_" + region_name).c_str(), ("MC " + region_name + " After Cuts").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                h_mc_before[region_idx] = new TH2D(("h_mc_before_" + region_name).c_str(), ("MC " + region_name + " Before Cuts (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                h_mc_after[region_idx] = new TH2D(("h_mc_after_" + region_name).c_str(), ("MC " + region_name + " After Cuts (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
             }
         }
 
