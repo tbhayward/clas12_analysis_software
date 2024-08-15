@@ -3943,7 +3943,7 @@ bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7,
                     double phi_CVT_value = calculate_phi(*traj_x_12, *traj_y_12);
                     theta_CVT_data.push_back(theta_CVT_value);
                     phi_CVT_data.push_back(phi_CVT_value);
-                    theta_in_degrees_data.push_back((*theta) * (180.0 / M_PI));
+                    theta_in_degrees_data.push_back((*theta));
                 }
             }
         }
@@ -3958,7 +3958,7 @@ bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7,
                         double mc_phi_CVT_value = calculate_phi(**mc_traj_x_12, **mc_traj_y_12);
                         theta_CVT_mc.push_back(mc_theta_CVT_value);
                         phi_CVT_mc.push_back(mc_phi_CVT_value);
-                        theta_in_degrees_mc.push_back((**mc_theta) * (180.0 / M_PI));
+                        theta_in_degrees_mc.push_back((**mc_theta));
                     }
                 }
             }
