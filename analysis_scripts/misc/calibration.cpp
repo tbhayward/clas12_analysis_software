@@ -2906,10 +2906,10 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
     // Array of particle types (photons and electrons) and their corresponding PIDs
     std::vector<std::tuple<int, std::string>> particle_types = {
         {11, "electron"},
-        {-211, "pim"},
-        {211, "pip"},
-        {321, "kp"},
-        {-321, "km"},
+        // {-211, "pim"},
+        // {211, "pip"},
+        // {321, "kp"},
+        // {-321, "km"},
         {2212, "proton"}
     };
 
@@ -3152,7 +3152,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
             // -- Add New Section for Mean chi2/ndf vs Theta Plots -- //
             int num_particles = particle_types.size();
-            TCanvas* c_theta = new TCanvas("c_theta", "Mean chi2/ndf vs Theta", 1800, 600 * num_particles);
+            TCanvas* c_theta = new TCanvas("c_theta", "Mean chi2/ndf vs Theta", 1800 * num_particles, 1200);
             c_theta->Divide(num_particles, 2);
 
             std::vector<TH2D*> h2_chi2_vs_theta_data(num_particles);
@@ -3176,13 +3176,14 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 }
             }
 
-            // Fill the histograms
+            // Fill the histograms with fiducial cuts applied
             for (int particle_idx = 0; particle_idx < num_particles; ++particle_idx) {
                 int pid = std::get<0>(particle_types[particle_idx]);
 
                 dataReader.Restart();
                 while (dataReader.Next()) {
-                    if (*particle_pid == pid && *track_ndf_6 > 0) {
+                    if (*particle_pid == pid && *track_ndf_6 > 0 && 
+                        dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, pid)) {
                         double chi2_ndf = *track_chi2_6 / *track_ndf_6;
                         h2_chi2_vs_theta_data[particle_idx]->Fill(*track_theta, chi2_ndf);
                     }
@@ -3191,7 +3192,8 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 if (mcReader) {
                     mcReader->Restart();
                     while (mcReader->Next()) {
-                        if (**mc_particle_pid == pid && **mc_track_ndf_6 > 0) {
+                        if (**mc_particle_pid == pid && **mc_track_ndf_6 > 0 && 
+                            dc_fiducial(**mc_traj_edge_6, **mc_traj_edge_18, **mc_traj_edge_36, pid)) {
                             double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
                             h2_chi2_vs_theta_mc[particle_idx]->Fill(**mc_track_theta, mc_chi2_ndf);
                         }
@@ -3222,7 +3224,8 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 }
             }
 
-            c_theta->SaveAs("output/calibration/dc/determination/mean_chi2_per_ndf_vs_theta_all_particles.png");
+            // Save as PDF instead of PNG
+            c_theta->SaveAs("output/calibration/dc/determination/mean_chi2_per_ndf_vs_theta_all_particles.pdf");
 
             // Cleanup
             for (int particle_idx = 0; particle_idx < num_particles; ++particle_idx) {
