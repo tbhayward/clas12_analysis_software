@@ -3742,11 +3742,25 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
     };
 
     // Declare TTreeReaderValues for CVT layer 12 variables and theta
+    TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+    TTreeReaderValue<double> theta(dataReader, "theta");
+
     TTreeReaderValue<double> traj_x_12(dataReader, "traj_x_12");
     TTreeReaderValue<double> traj_y_12(dataReader, "traj_y_12");
     TTreeReaderValue<double> traj_z_12(dataReader, "traj_z_12");
-    TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
-    TTreeReaderValue<double> theta(dataReader, "theta");
+
+    std::vector<TTreeReaderValue<double>> traj_x, traj_y;
+    std::vector<TTreeReaderValue<double>*> mc_traj_x, mc_traj_y;
+
+    for (const auto& layer : layers) {
+        traj_x.emplace_back(dataReader, std::get<0>(layer).c_str());
+        traj_y.emplace_back(dataReader, std::get<1>(layer).c_str());
+
+        if (mcReader) {
+            mc_traj_x.push_back(new TTreeReaderValue<double>(*mcReader, std::get<0>(layer).c_str()));
+            mc_traj_y.push_back(new TTreeReaderValue<double>(*mcReader, std::get<1>(layer).c_str()));
+        }
+    }
 
     TTreeReaderValue<double>* mc_traj_x_12 = nullptr;
     TTreeReaderValue<double>* mc_traj_y_12 = nullptr;
@@ -3762,7 +3776,27 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
         mc_theta = new TTreeReaderValue<double>(*mcReader, "theta");
     }
 
-    // Create the main loop over particle types
+    // Declare TTreeReaderValues for the CVT edge variables
+    TTreeReaderValue<double> traj_edge_1(dataReader, "traj_edge_1");
+    TTreeReaderValue<double> traj_edge_3(dataReader, "traj_edge_3");
+    TTreeReaderValue<double> traj_edge_5(dataReader, "traj_edge_5");
+    TTreeReaderValue<double> traj_edge_7(dataReader, "traj_edge_7");
+    TTreeReaderValue<double> traj_edge_12(dataReader, "traj_edge_12");
+
+    TTreeReaderValue<double>* mc_traj_edge_1 = nullptr;
+    TTreeReaderValue<double>* mc_traj_edge_3 = nullptr;
+    TTreeReaderValue<double>* mc_traj_edge_5 = nullptr;
+    TTreeReaderValue<double>* mc_traj_edge_7 = nullptr;
+    TTreeReaderValue<double>* mc_traj_edge_12 = nullptr;
+
+    if (mcReader) {
+        mc_traj_edge_1 = new TTreeReaderValue<double>(*mcReader, "traj_edge_1");
+        mc_traj_edge_3 = new TTreeReaderValue<double>(*mcReader, "traj_edge_3");
+        mc_traj_edge_5 = new TTreeReaderValue<double>(*mcReader, "traj_edge_5");
+        mc_traj_edge_7 = new TTreeReaderValue<double>(*mcReader, "traj_edge_7");
+        mc_traj_edge_12 = new TTreeReaderValue<double>(*mcReader, "traj_edge_12");
+    }
+
     for (const auto& particle_type : particle_types) {
         int pid = std::get<0>(particle_type);
         std::string particle_name = std::get<1>(particle_type);
@@ -3996,6 +4030,18 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
     if (mc_traj_z_12) delete mc_traj_z_12;
     if (mc_particle_pid) delete mc_particle_pid;
     if (mc_theta) delete mc_theta;
+
+    for (auto& ptr : mc_traj_x) {
+        delete ptr;
+    }
+    for (auto& ptr : mc_traj_y) {
+        delete ptr;
+    }
+    if (mc_traj_edge_1) delete mc_traj_edge_1;
+    if (mc_traj_edge_3) delete mc_traj_edge_3;
+    if (mc_traj_edge_5) delete mc_traj_edge_5;
+    if (mc_traj_edge_7) delete mc_traj_edge_7;
+    if (mc_traj_edge_12) delete mc_traj_edge_12;
 }
                            
 void create_directories() {
