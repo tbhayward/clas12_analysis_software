@@ -3747,7 +3747,6 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
     TTreeReaderValue<double> traj_x_12(dataReader, "traj_x_12");
     TTreeReaderValue<double> traj_y_12(dataReader, "traj_y_12");
     TTreeReaderValue<double> traj_z_12(dataReader, "traj_z_12");
-
     std::vector<TTreeReaderValue<double>> traj_x, traj_y;
     std::vector<TTreeReaderValue<double>*> mc_traj_x, mc_traj_y;
 
@@ -3822,21 +3821,11 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             double yMax = xMax;
 
             h_data_before[layer_idx] = new TH2D(("h_data_before_" + layer_name).c_str(), ("Data " + layer_name + " Before Cuts (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-            h_data_before[layer_idx]->GetXaxis()->SetTitle("x");
-            h_data_before[layer_idx]->GetYaxis()->SetTitle("y");
-
             h_data_after[layer_idx] = new TH2D(("h_data_after_" + layer_name).c_str(), ("Data " + layer_name + " After Cuts (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-            h_data_after[layer_idx]->GetXaxis()->SetTitle("x");
-            h_data_after[layer_idx]->GetYaxis()->SetTitle("y");
 
             if (mcReader) {
                 h_mc_before[layer_idx] = new TH2D(("h_mc_before_" + layer_name).c_str(), ("MC " + layer_name + " Before Cuts (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-                h_mc_before[layer_idx]->GetXaxis()->SetTitle("x");
-                h_mc_before[layer_idx]->GetYaxis()->SetTitle("y");
-
                 h_mc_after[layer_idx] = new TH2D(("h_mc_after_" + layer_name).c_str(), ("MC " + layer_name + " After Cuts (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-                h_mc_after[layer_idx]->GetXaxis()->SetTitle("x");
-                h_mc_after[layer_idx]->GetYaxis()->SetTitle("y");
             }
         }
 
@@ -3870,14 +3859,15 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                         if (mc_traj_x_value != -9999 && mc_traj_y_value != -9999) {
                             h_mc_before[layer_idx]->Fill(mc_traj_x_value, mc_traj_y_value);
                             if (cvt_fiducial(**mc_traj_edge_1, **mc_traj_edge_3, **mc_traj_edge_5, **mc_traj_edge_7, **mc_traj_edge_12, pid)) {
-                            h_mc_after[layer_idx]->Fill(mc_traj_x_value, mc_traj_y_value);
+                                h_mc_after[layer_idx]->Fill(mc_traj_x_value, mc_traj_y_value);
+                            }
                         }
                     }
                 }
             }
         }
-    }
-    // Calculate theta_CVT and phi_CVT for data and MC
+
+        // Calculate theta_CVT and phi_CVT for data and MC
     std::vector<double> theta_CVT_data, phi_CVT_data;
     std::vector<double> theta_CVT_mc, phi_CVT_mc;
 
