@@ -2649,10 +2649,10 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
     // Array of particle types (photons and electrons) and their corresponding PIDs
     std::vector<std::tuple<int, std::string>> particle_types = {
         {11, "electron"},
-        // {-211, "pim"},
-        // {211, "pip"},
-        // {321, "kp"},
-        // {-321, "km"},
+        {-211, "pim"},
+        {211, "pip"},
+        {321, "kp"},
+        {-321, "km"},
         {2212, "proton"}
     };
 
@@ -2902,6 +2902,10 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
     std::vector<std::tuple<int, std::string>> particle_types = {
         {11, "electron"},
+        {-211, "pim"},
+        {211, "pip"},
+        {321, "kp"},
+        {-321, "km"},
         {2212, "proton"}
     };
 
