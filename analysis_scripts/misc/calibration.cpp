@@ -3710,11 +3710,11 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
     int nBins = 100;
 
     std::vector<std::tuple<std::string, std::string, std::string, double, double>> layers = {
-        {"traj_x_1", "traj_y_1", "layer_1", -40, 40},
-        {"traj_x_3", "traj_y_3", "layer_3", -40, 40},
-        {"traj_x_5", "traj_y_5", "layer_5", -40, 40},
-        {"traj_x_7", "traj_y_7", "layer_7", -40, 40},
-        {"traj_x_12", "traj_y_12", "layer_12", -40, 40}
+        {"traj_x_1", "traj_y_1", "layer_1", -25, 25},
+        {"traj_x_3", "traj_y_3", "layer_3", -25, 25},
+        {"traj_x_5", "traj_y_5", "layer_5", -25, 25},
+        {"traj_x_7", "traj_y_7", "layer_7", -25, 25},
+        {"traj_x_12", "traj_y_12", "layer_12", -25, 25}
     };
 
     std::vector<std::tuple<int, std::string>> particle_types = {
