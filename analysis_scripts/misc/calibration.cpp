@@ -3805,25 +3805,33 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
             }
         }
 
-        // Check the values before filling
+        // Fill data histograms
         dataReader.Restart();
         while (dataReader.Next()) {
-            if (*particle_pid == pid && *traj_edge != -9999 && *track_ndf_6 > 0) {
+            if (*particle_pid == pid && *track_chi2_6 != -9999 && *track_ndf_6 != -9999) {
                 double chi2_ndf = *track_chi2_6 / *track_ndf_6;
-                std::cout << "Filling data: chi2/ndf = " << chi2_ndf << ", edge = " << *traj_edge << std::endl;
-                h_sum_chi2_ndf_sector[layer_idx]->Fill(*traj_edge, chi2_ndf);
-                h_count_chi2_ndf_sector[layer_idx]->Fill(*traj_edge);
+                for (int i = 0; i < 5; ++i) {
+                    if (*traj_edges[i] != -9999) {
+                        h_sum_chi2_ndf[i]->Fill(*traj_edges[i], chi2_ndf);
+                        h_count_chi2_ndf[i]->Fill(*traj_edges[i]);
+                    }
+                }
             }
         }
 
+        // Fill MC histograms if available
         if (mcReader) {
             mcReader->Restart();
             while (mcReader->Next()) {
-                if (**mc_particle_pid == pid && **mc_traj_edge != -9999 && **mc_track_ndf_6 > 0) {
+                if (**mc_particle_pid == pid && **mc_track_chi2_6 != -9999 && **mc_track_ndf_6 != -9999) {
                     double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
-                    std::cout << "Filling MC: chi2/ndf = " << mc_chi2_ndf << ", edge = " << **mc_traj_edge << std::endl;
-                    h_sum_chi2_ndf_mc_sector[layer_idx]->Fill(**mc_traj_edge, mc_chi2_ndf);
-                    h_count_chi2_ndf_mc_sector[layer_idx]->Fill(**mc_traj_edge);
+                    std::cout << mc_chi2_ndf << std::endl;
+                    for (int i = 0; i < 5; ++i) {
+                        if (**mc_traj_edges[i] != -9999) {
+                            h_sum_chi2_ndf_mc[i]->Fill(**mc_traj_edges[i], mc_chi2_ndf);
+                            h_count_chi2_ndf_mc[i]->Fill(**mc_traj_edges[i]);
+                        }
+                    }
                 }
             }
         }
