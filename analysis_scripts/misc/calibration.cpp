@@ -3904,6 +3904,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             if (*particle_pid == pid) {
                 double theta_CVT_value = calculate_theta(*traj_x_12, *traj_y_12, *traj_z_12);
                 double phi_CVT_value = calculate_phi(*traj_x_12, *traj_y_12);
+                std::cout << *theta << std::endl;
                 double theta_in_degrees = (*theta) * (180.0 / M_PI);
 
                 h_theta_vs_theta_data_before->Fill(theta_CVT_value, theta_in_degrees);
