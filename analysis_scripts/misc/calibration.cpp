@@ -3101,6 +3101,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             for (int sector = 0; sector < 6; ++sector) {
                 c_edge->cd(sector + 1);
                 gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+                gPad->SetLogy();  // Add this line to set the y-axis to log scale
                 h_sum_chi2_ndf_sector[sector]->SetStats(false);
                 h_sum_chi2_ndf_sector[sector]->SetMaximum(max_value);
                 h_sum_chi2_ndf_sector[sector]->SetLineColor(kBlack);
