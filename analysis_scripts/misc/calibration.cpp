@@ -3743,6 +3743,22 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         {2212, "proton"}
     };
 
+    // Declare TTreeReaderValues for data
+    TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+    TTreeReaderValue<double> track_chi2_6(dataReader, "track_chi2_6");
+    TTreeReaderValue<int> track_ndf_6(dataReader, "track_ndf_6");
+
+    // Declare TTreeReaderValues for MC (if mcReader is provided)
+    TTreeReaderValue<int>* mc_particle_pid = nullptr;
+    TTreeReaderValue<double>* mc_track_chi2_6 = nullptr;
+    TTreeReaderValue<int>* mc_track_ndf_6 = nullptr;
+
+    if (mcReader) {
+        mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+        mc_track_chi2_6 = new TTreeReaderValue<double>(*mcReader, "track_chi2_6");
+        mc_track_ndf_6 = new TTreeReaderValue<int>(*mcReader, "track_ndf_6");
+    }
+
     for (const auto& particle_type : particle_types) {
         int pid = std::get<0>(particle_type);
         std::string particle_name = std::get<1>(particle_type);
@@ -3860,6 +3876,13 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
                 delete h_count_chi2_ndf_mc[i];
             }
         }
+    }
+
+    // Clean up dynamically allocated memory for MC TTreeReaderValues
+    if (mcReader) {
+        delete mc_particle_pid;
+        delete mc_track_chi2_6;
+        delete mc_track_ndf_6;
     }
 }
 
