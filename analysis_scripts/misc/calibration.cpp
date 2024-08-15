@@ -3965,19 +3965,19 @@ bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7,
         }
 
         // Create and fill histograms for theta_CVT vs theta and phi_CVT vs theta_CVT
-        TH2D* h_theta_vs_theta_data_before = new TH2D("h_theta_vs_theta_data_before", ("#theta_{CVT} vs #theta Before Cuts (Data, " + particle_latex + ")").c_str(), nBins, 30, 150, nBins, 30, 150);
+        TH2D* h_theta_vs_theta_data_before = new TH2D("h_theta_vs_theta_data_before", ("#theta_{CVT} vs #theta Before Cuts (Data, " + particle_latex + ")").c_str(), nBins, 25, 150, nBins, 30, 150);
         h_theta_vs_theta_data_before->GetXaxis()->SetTitle("#theta");
         h_theta_vs_theta_data_before->GetYaxis()->SetTitle("#theta_{CVT}");
 
-        TH2D* h_phi_vs_theta_CVT_data_before = new TH2D("h_phi_vs_theta_CVT_data_before", ("#phi_{CVT} vs #theta_{CVT} Before Cuts (Data, " + particle_latex + ")").c_str(), nBins, 0, 360, nBins, 30, 150);
+        TH2D* h_phi_vs_theta_CVT_data_before = new TH2D("h_phi_vs_theta_CVT_data_before", ("#phi_{CVT} vs #theta_{CVT} Before Cuts (Data, " + particle_latex + ")").c_str(), nBins, 0, 360, nBins, 25, 150);
         h_phi_vs_theta_CVT_data_before->GetXaxis()->SetTitle("#phi_{CVT}");
         h_phi_vs_theta_CVT_data_before->GetYaxis()->SetTitle("#theta_{CVT}");
 
-        TH2D* h_theta_vs_theta_data_after = new TH2D("h_theta_vs_theta_data_after", ("#theta_{CVT} vs #theta After Cuts (Data, " + particle_latex + ")").c_str(), nBins, 30, 150, nBins, 30, 150);
+        TH2D* h_theta_vs_theta_data_after = new TH2D("h_theta_vs_theta_data_after", ("#theta_{CVT} vs #theta After Cuts (Data, " + particle_latex + ")").c_str(), nBins, 25, 150, nBins, 30, 150);
         h_theta_vs_theta_data_after->GetXaxis()->SetTitle("#theta");
         h_theta_vs_theta_data_after->GetYaxis()->SetTitle("#theta_{CVT}");
 
-        TH2D* h_phi_vs_theta_CVT_data_after = new TH2D("h_phi_vs_theta_CVT_data_after", ("#phi_{CVT} vs #theta_{CVT} After Cuts (Data, " + particle_latex + ")").c_str(), nBins, 0, 360, nBins, 30, 150);
+        TH2D* h_phi_vs_theta_CVT_data_after = new TH2D("h_phi_vs_theta_CVT_data_after", ("#phi_{CVT} vs #theta_{CVT} After Cuts (Data, " + particle_latex + ")").c_str(), nBins, 0, 360, nBins, 25, 150);
         h_phi_vs_theta_CVT_data_after->GetXaxis()->SetTitle("#phi_{CVT}");
         h_phi_vs_theta_CVT_data_after->GetYaxis()->SetTitle("#theta_{CVT}");
 
@@ -3996,19 +3996,19 @@ bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7,
         TH2D* h_phi_vs_theta_CVT_mc_after = nullptr;
 
         if (mcReader) {
-            h_theta_vs_theta_mc_before = new TH2D("h_theta_vs_theta_mc_before", ("#theta_{CVT} vs #theta Before Cuts (MC, " + particle_latex + ")").c_str(), nBins, 30, 150, nBins, 30, 150);
+            h_theta_vs_theta_mc_before = new TH2D("h_theta_vs_theta_mc_before", ("#theta_{CVT} vs #theta Before Cuts (MC, " + particle_latex + ")").c_str(), nBins, 25, 150, nBins, 30, 150);
             h_theta_vs_theta_mc_before->GetXaxis()->SetTitle("#theta");
             h_theta_vs_theta_mc_before->GetYaxis()->SetTitle("#theta_{CVT}");
 
-            h_phi_vs_theta_CVT_mc_before = new TH2D("h_phi_vs_theta_CVT_mc_before", ("#phi_{CVT} vs #theta_{CVT} Before Cuts (MC, " + particle_latex + ")").c_str(), nBins, 0, 360, nBins, 30, 150);
+            h_phi_vs_theta_CVT_mc_before = new TH2D("h_phi_vs_theta_CVT_mc_before", ("#phi_{CVT} vs #theta_{CVT} Before Cuts (MC, " + particle_latex + ")").c_str(), nBins, 0, 360, nBins, 25, 150);
             h_phi_vs_theta_CVT_mc_before->GetXaxis()->SetTitle("#phi_{CVT}");
             h_phi_vs_theta_CVT_mc_before->GetYaxis()->SetTitle("#theta_{CVT}");
 
-            h_theta_vs_theta_mc_after = new TH2D("h_theta_vs_theta_mc_after", ("#theta_{CVT} vs #theta After Cuts (MC, " + particle_latex + ")").c_str(), nBins, 30, 150, nBins, 30, 150);
+            h_theta_vs_theta_mc_after = new TH2D("h_theta_vs_theta_mc_after", ("#theta_{CVT} vs #theta After Cuts (MC, " + particle_latex + ")").c_str(), nBins, 25, 150, nBins, 30, 150);
             h_theta_vs_theta_mc_after->GetXaxis()->SetTitle("#theta");
             h_theta_vs_theta_mc_after->GetYaxis()->SetTitle("#theta_{CVT}");
 
-            h_phi_vs_theta_CVT_mc_after = new TH2D("h_phi_vs_theta_CVT_mc_after", ("#phi_{CVT} vs #theta_{CVT} After Cuts (MC, " + particle_latex + ")").c_str(), nBins, 0, 360, nBins, 30, 150);
+            h_phi_vs_theta_CVT_mc_after = new TH2D("h_phi_vs_theta_CVT_mc_after", ("#phi_{CVT} vs #theta_{CVT} After Cuts (MC, " + particle_latex + ")").c_str(), nBins, 0, 360, nBins, 25, 150);
             h_phi_vs_theta_CVT_mc_after->GetXaxis()->SetTitle("#phi_{CVT}");
             h_phi_vs_theta_CVT_mc_after->GetYaxis()->SetTitle("#theta_{CVT}");
 
