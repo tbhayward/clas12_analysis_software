@@ -3161,6 +3161,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
             // Count the number of non-kaon particles
             int num_valid_particles = 0;
+            int num_particles = particle_types.size();
             for (int particle_idx = 0; particle_idx < num_particles; ++particle_idx) {
                 int pid = std::get<0>(particle_types[particle_idx]);
                 if (pid != 321 && pid != -321) {
@@ -3176,7 +3177,6 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             std::vector<TH2D*> h2_chi2_vs_theta_mc(num_valid_particles);
 
             int valid_particle_idx = 0;
-            int num_particles = particle_types.size();
             for (int particle_idx = 0; particle_idx < num_particles; ++particle_idx) {
                 int pid = std::get<0>(particle_types[particle_idx]);
 
