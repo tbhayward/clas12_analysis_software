@@ -3700,10 +3700,10 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     }
 
 
-bool cvt_fiducial(double edge_1, double edge_5, double edge_7, double edge_12, 
-    int pid) {
-
-    return true; // not a charged hadron track? wrong pid?
+bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7, 
+    double edge_12, int pid) {
+    // Dummy function, always returns true
+    return true;
 }
 
 void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
