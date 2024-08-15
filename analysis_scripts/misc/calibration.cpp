@@ -3864,9 +3864,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
         // Create and fill histograms for theta_CVT vs theta and theta_CVT vs phi_CVT
         TH2D* h_theta_vs_theta_data_before = new TH2D("h_theta_vs_theta_data_before", ("#theta_{CVT} vs #theta Before Cuts (Data, " + particle_name + ")").c_str(), nBins, 0, 180, nBins, 0, 180);
         TH2D* h_theta_vs_phi_data_before = new TH2D("h_theta_vs_phi_data_before", ("#theta_{CVT} vs #phi_{CVT} Before Cuts (Data, " + particle_name + ")").c_str(), nBins, 0, 360, nBins, 0, 180);
-        TH2D* h_theta_vs_theta_data_after = new TH2D("h_theta_vs
-
-_theta_data_after", ("#theta_{CVT} vs #theta After Cuts (Data, " + particle_name + ")").c_str(), nBins, 0, 180, nBins, 0, 180);
+        TH2D* h_theta_vs_theta_data_after = new TH2D("h_theta_vs_theta_data_after", ("#theta_{CVT} vs #theta After Cuts (Data, " + particle_name + ")").c_str(), nBins, 0, 180, nBins, 0, 180);
         TH2D* h_theta_vs_phi_data_after = new TH2D("h_theta_vs_phi_data_after", ("#theta_{CVT} vs #phi_{CVT} After Cuts (Data, " + particle_name + ")").c_str(), nBins, 0, 360, nBins, 0, 180);
 
         for (size_t i = 0; i < theta_CVT_data.size(); ++i) {
