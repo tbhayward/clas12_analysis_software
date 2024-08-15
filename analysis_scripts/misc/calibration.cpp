@@ -3214,18 +3214,18 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
             c_theta->SaveAs(("output/calibration/dc/determination/mean_chi2_per_ndf_vs_theta_" + particle_name + ".png").c_str());
 
-            // Cleanup
-            for (int region_idx = 0; region_idx < 3; ++region_idx) {
-                delete h2_chi2_vs_theta_data[region_idx];
-                if (mcReader) delete h2_chi2_vs_theta_mc[region_idx];
-            }
+            // // Cleanup
+            // for (int region_idx = 0; region_idx < 3; ++region_idx) {
+            //     delete h2_chi2_vs_theta_data[region_idx];
+            //     if (mcReader) delete h2_chi2_vs_theta_mc[region_idx];
+            // }
 
-            // Cleanup for the 2D histograms of chi2/ndf vs theta
-            delete c_theta;
-            for (int region_idx = 0; region_idx < 3; ++region_idx) {
-                delete h2_chi2_vs_theta_data[region_idx];
-                if (mcReader) delete h2_chi2_vs_theta_mc[region_idx];
-            }
+            // // Cleanup for the 2D histograms of chi2/ndf vs theta
+            // delete c_theta;
+            // for (int region_idx = 0; region_idx < 3; ++region_idx) {
+            //     delete h2_chi2_vs_theta_data[region_idx];
+            //     if (mcReader) delete h2_chi2_vs_theta_mc[region_idx];
+            // }
         }
 
         dataReader.Restart();
