@@ -3744,11 +3744,10 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
     // Declare TTreeReaderValues for CVT layer 12 variables and theta
     TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
     TTreeReaderValue<double> theta(dataReader, "theta");
-
+    std::cout << theta << std::endl;
     TTreeReaderValue<double> traj_x_12(dataReader, "traj_x_12");
     TTreeReaderValue<double> traj_y_12(dataReader, "traj_y_12");
     TTreeReaderValue<double> traj_z_12(dataReader, "traj_z_12");
-
     std::vector<TTreeReaderValue<double>> traj_x, traj_y;
     std::vector<TTreeReaderValue<double>*> mc_traj_x, mc_traj_y;
 
@@ -3903,7 +3902,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
 
         for (size_t i = 0; i < theta_CVT_data.size(); ++i) {
             double theta_in_degrees = *theta * (180.0 / M_PI);
-            std::cout << theta_in_degrees << std::endl;
+            // std::cout << theta_in_degrees << std::endl;
             h_theta_vs_theta_data_before->Fill(theta_in_degrees, theta_CVT_data[i]);
             h_phi_vs_theta_CVT_data_before->Fill(phi_CVT_data[i], theta_CVT_data[i]);
             if (cvt_fiducial(*traj_edge_1, *traj_edge_3, *traj_edge_5, *traj_edge_7, *traj_edge_12, pid)) {
