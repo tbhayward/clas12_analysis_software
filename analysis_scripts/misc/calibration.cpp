@@ -3793,7 +3793,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         while (dataReader.Next()) {
             if (*particle_pid == pid && *track_ndf_6 > 0) {
                 double chi2_ndf = *track_chi2_6 / *track_ndf_6;
-
+                std::cout << *traj_edge_1 << std::endl;
                 if (*traj_edge_1 != -9999) {
                     h_sum_chi2_ndf_1->Fill(*traj_edge_1, chi2_ndf);
                     h_count_chi2_ndf_1->Fill(*traj_edge_1);
@@ -3848,7 +3848,6 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
             while (mcReader->Next()) {
                 if (**mc_particle_pid == pid && **mc_track_ndf_6 > 0) {
                     double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
-                    std::cout << **mc_traj_edge_1 << std::endl;
                     if (**mc_traj_edge_1 != -9999) {
                         h_sum_chi2_ndf_mc_1->Fill(**mc_traj_edge_1, mc_chi2_ndf);
                         h_count_chi2_ndf_mc_1->Fill(**mc_traj_edge_1);
