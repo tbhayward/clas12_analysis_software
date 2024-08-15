@@ -3719,9 +3719,9 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
 
     std::vector<std::tuple<int, std::string, std::string>> particle_types = {
         {211, "pip", "#pi^{+}"},
-        {-211, "pim", "#pi^{-}"},
-        {321, "kp", "k^{+}"},
-        {-321, "km", "k^{-}"},
+        // {-211, "pim", "#pi^{-}"},
+        // {321, "kp", "k^{+}"},
+        // {-321, "km", "k^{-}"},
         {2212, "proton", "proton"}
     };
 
@@ -3901,20 +3901,187 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             c_mc->SaveAs(("output/calibration/cvt/positions/mc_" + particle_name + "_cvt_hit_position.png").c_str());
         }
 
-        // Cleanup
-        for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
-            delete h_data_before[layer_idx];
-            delete h_data_after[layer_idx];
-            if (mcReader) {
-                delete h_mc_before[layer_idx];
-                delete h_mc_after[layer_idx];
+        // Calculate theta_CVT and phi_CVT for data and MC
+    std::vector<double> theta_CVT_data, phi_CVT_data;
+    std::vector<double> theta_CVT_mc, phi_CVT_mc;
+
+    dataReader.Restart();
+    while (dataReader.Next()) {
+        if (*particle_pid == pid) {
+            if (*traj_x_12 != -9999 && *traj_y_12 != -9999 && *traj_z_12 != -9999) {
+                double theta_CVT_value = calculate_theta(*traj_x_12, *traj_y_12, *traj_z_12);
+                double phi_CVT_value = calculate_phi(*traj_x_12, *traj_y_12);
+                theta_CVT_data.push_back(theta_CVT_value);
+                phi_CVT_data.push_back(phi_CVT_value);
             }
         }
-        delete c_data;
-        if (mcReader) delete c_mc;
+    }
+
+    if (mcReader) {
+        mcReader->Restart();
+        while (mcReader->Next()) {
+            if (**mc_particle_pid == pid) {
+                if (**mc_traj_x_12 != -9999 && **mc_traj_y_12 != -9999 && **mc_traj_z_12 != -9999) {
+                    double mc_theta_CVT_value = calculate_theta(**mc_traj_x_12, **mc_traj_y_12, **mc_traj_z_12);
+                    double mc_phi_CVT_value = calculate_phi(**mc_traj_x_12, **mc_traj_y_12);
+                    theta_CVT_mc.push_back(mc_theta_CVT_value);
+                    phi_CVT_mc.push_back(mc_phi_CVT_value);
+                }
+            }
+        }
+    }
+
+    // Create and fill histograms for theta_CVT vs theta and phi_CVT vs theta_CVT
+    TH2D* h_theta_vs_theta_data_before = new TH2D("h_theta_vs_theta_data_before", ("#theta_{CVT} vs #theta Before Cuts (Data, " + particle_name + ")").c_str(), nBins, 0, 180, nBins, 0, 180);
+    h_theta_vs_theta_data_before->GetXaxis()->SetTitle("#theta");
+    h_theta_vs_theta_data_before->GetYaxis()->SetTitle("#theta_{CVT}");
+
+    TH2D* h_phi_vs_theta_CVT_data_before = new TH2D("h_phi_vs_theta_CVT_data_before", ("#phi_{CVT} vs #theta_{CVT} Before Cuts (Data, " + particle_name + ")").c_str(), nBins, 0, 360, nBins, 0, 180);
+    h_phi_vs_theta_CVT_data_before->GetXaxis()->SetTitle("#phi_{CVT}");
+    h_phi_vs_theta_CVT_data_before->GetYaxis()->SetTitle("#theta_{CVT}");
+
+    TH2D* h_theta_vs_theta_data_after = new TH2D("h_theta_vs_theta_data_after", ("#theta_{CVT} vs #theta After Cuts (Data, " + particle_name + ")").c_str(), nBins, 0, 180, nBins, 0, 180);
+    h_theta_vs_theta_data_after->GetXaxis()->SetTitle("#theta");
+    h_theta_vs_theta_data_after->GetYaxis()->SetTitle("#theta_{CVT}");
+
+    TH2D* h_phi_vs_theta_CVT_data_after = new TH2D("h_phi_vs_theta_CVT_data_after", ("#phi_{CVT} vs #theta_{CVT} After Cuts (Data, " + particle_name + ")").c_str(), nBins, 0, 360, nBins, 0, 180);
+    h_phi_vs_theta_CVT_data_after->GetXaxis()->SetTitle("#phi_{CVT}");
+    h_phi_vs_theta_CVT_data_after->GetYaxis()->SetTitle("#theta_{CVT}");
+
+    for (size_t i = 0; i < theta_CVT_data.size(); ++i) {
+        h_theta_vs_theta_data_before->Fill(*theta, theta_CVT_data[i]);
+        h_phi_vs_theta_CVT_data_before->Fill(phi_CVT_data[i], theta_CVT_data[i]);
+        if (cvt_fiducial(*traj_edge_1, *traj_edge_3, *traj_edge_5, *traj_edge_7, *traj_edge_12, pid)) {
+            h_theta_vs_theta_data_after->Fill(*theta, theta_CVT_data[i]);
+            h_phi_vs_theta_CVT_data_after->Fill(phi_CVT_data[i], theta_CVT_data[i]);
+        }
+    }
+
+    TH2D* h_theta_vs_theta_mc_before = nullptr;
+    TH2D* h_phi_vs_theta_CVT_mc_before = nullptr;
+    TH2D* h_theta_vs_theta_mc_after = nullptr;
+    TH2D* h_phi_vs_theta_CVT_mc_after = nullptr;
+
+    if (mcReader) {
+        h_theta_vs_theta_mc_before = new TH2D("h_theta_vs_theta_mc_before", ("#theta_{CVT} vs #theta Before Cuts (MC, " + particle_name + ")").c_str(), nBins, 0, 180, nBins, 0, 180);
+        h_theta_vs_theta_mc_before->GetXaxis()->SetTitle("#theta");
+        h_theta_vs_theta_mc_before->GetYaxis()->SetTitle("#theta_{CVT}");
+
+        h_phi_vs_theta_CVT_mc_before = new TH2D("h_phi_vs_theta_CVT_mc_before", ("#phi_{CVT} vs #theta_{CVT} Before Cuts (MC, " + particle_name + ")").c_str(), nBins, 0, 360, nBins, 0, 180);
+        h_phi_vs_theta_CVT_mc_before->GetXaxis()->SetTitle("#phi_{CVT}");
+        h_phi_vs_theta_CVT_mc_before->GetYaxis()->SetTitle("#theta_{CVT}");
+
+        h_theta_vs_theta_mc_after = new TH2D("h_theta_vs_theta_mc_after", ("#theta_{CVT} vs #theta After Cuts (MC, " + particle_name + ")").c_str(), nBins, 0, 180, nBins, 0, 180);
+        h_theta_vs_theta_mc_after->GetXaxis()->SetTitle("#theta");
+        h_theta_vs_theta_mc_after->GetYaxis()->SetTitle("#theta_{CVT}");
+
+        h_phi_vs_theta_CVT_mc_after = new TH2D("h_phi_vs_theta_CVT_mc_after", ("#phi_{CVT} vs #theta_{CVT} After Cuts (MC, " + particle_name + ")").c_str(), nBins, 0, 360, nBins, 0, 180);
+        h_phi_vs_theta_CVT_mc_after->GetXaxis()->SetTitle("#phi_{CVT}");
+        h_phi_vs_theta_CVT_mc_after->GetYaxis()->SetTitle("#theta_{CVT}");
+
+        for (size_t i = 0; i < theta_CVT_mc.size(); ++i) {
+            h_theta_vs_theta_mc_before->Fill(**mc_theta, theta_CVT_mc[i]);
+            h_phi_vs_theta_CVT_mc_before->Fill(phi_CVT_mc[i], theta_CVT_mc[i]);
+            if (cvt_fiducial(**mc_traj_edge_1, **mc_traj_edge_3, **mc_traj_edge_5, **mc_traj_edge_7, **mc_traj_edge_12, pid)) {
+                h_theta_vs_theta_mc_after->Fill(**mc_theta, theta_CVT_mc[i]);
+                h_phi_vs_theta_CVT_mc_after->Fill(phi_CVT_mc[i], theta_CVT_mc[i]);
+            }
+        }
+    }
+
+    // Create canvases for theta_CVT vs theta and phi_CVT vs theta_CVT plots (data and MC)
+    TCanvas* c_theta_vs_theta_data = new TCanvas(("c_theta_vs_theta_data_" + particle_name).c_str(), ("#theta_{CVT} vs #theta and #phi_{CVT} vs #theta_{CVT} (Data, " + particle_name + ")").c_str(), 1200, 1200);
+    c_theta_vs_theta_data->Divide(2, 2);
+
+    TCanvas* c_theta_vs_theta_mc = nullptr;
+    if (mcReader) {
+        c_theta_vs_theta_mc = new TCanvas(("c_theta_vs_theta_mc_" + particle_name).c_str(), ("#theta_{CVT} vs #theta and #phi_{CVT} vs #theta_{CVT} (MC, " + particle_name + ")").c_str(), 1200, 1200);
+        c_theta_vs_theta_mc->Divide(2, 2);
+    }
+
+    // Draw and save the CVT hit position canvases (data and MC)
+    for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
+        c_data->cd(layer_idx + 1);
+        gPad->SetLogz();
+        gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+            c_data->cd(layer_idx + 6);
+            gPad->SetLogz();
+            gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+            h_data_after[layer_idx]->Draw("COLZ");
+
+            if (mcReader) {
+                c_mc->cd(layer_idx + 1);
+                gPad->SetLogz();
+                gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+                h_mc_before[layer_idx]->Draw("COLZ");
+
+                c_mc->cd(layer_idx + 6);
+                gPad->SetLogz();
+                gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+                h_mc_after[layer_idx]->Draw("COLZ");
+            }
+        }
+
+        c_data->SaveAs(("output/calibration/cvt/positions/data_" + particle_name + "_cvt_hit_position.png").c_str());
+
+        if (mcReader) {
+            c_mc->SaveAs(("output/calibration/cvt/positions/mc_" + particle_name + "_cvt_hit_position.png").c_str());
+        }
+
+        // Draw and save the theta_CVT vs theta and phi_CVT vs theta_CVT canvases (data and MC)
+        c_theta_vs_theta_data->cd(1);
+        h_theta_vs_theta_data_before->Draw("COLZ");
+        c_theta_vs_theta_data->cd(2);
+        h_phi_vs_theta_CVT_data_before->Draw("COLZ");
+        c_theta_vs_theta_data->cd(3);
+        h_theta_vs_theta_data_after->Draw("COLZ");
+        c_theta_vs_theta_data->cd(4);
+        h_phi_vs_theta_CVT_data_after->Draw("COLZ");
+
+        c_theta_vs_theta_data->SaveAs(("output/calibration/cvt/positions/theta_vs_theta_data_" + particle_name + ".png").c_str());
+
+        if (mcReader) {
+            c_theta_vs_theta_mc->cd(1);
+            h_theta_vs_theta_mc_before->Draw("COLZ");
+            c_theta_vs_theta_mc->cd(2);
+            h_phi_vs_theta_CVT_mc_before->Draw("COLZ");
+            c_theta_vs_theta_mc->cd(3);
+            h_theta_vs_theta_mc_after->Draw("COLZ");
+            c_theta_vs_theta_mc->cd(4);
+            h_phi_vs_theta_CVT_mc_after->Draw("COLZ");
+
+            c_theta_vs_theta_mc->SaveAs(("output/calibration/cvt/positions/theta_vs_theta_mc_" + particle_name + ".png").c_str());
+        }
+
+        // Clean up
+        delete h_theta_vs_theta_data_before;
+        delete h_phi_vs_theta_CVT_data_before;
+        delete h_theta_vs_theta_data_after;
+        delete h_phi_vs_theta_CVT_data_after;
+
+        if (mcReader) {
+            delete h_theta_vs_theta_mc_before;
+            delete h_phi_vs_theta_CVT_mc_before;
+            delete h_theta_vs_theta_mc_after;
+            delete h_phi_vs_theta_CVT_mc_after;
+            delete c_theta_vs_theta_mc;
+        }
+        delete c_theta_vs_theta_data;
     }
 
     // Clean up the dynamically allocated memory for edge variables
+    if (mc_traj_x_12) delete mc_traj_x_12;
+    if (mc_traj_y_12) delete mc_traj_y_12;
+    if (mc_traj_z_12) delete mc_traj_z_12;
+    if (mc_particle_pid) delete mc_particle_pid;
+    if (mc_theta) delete mc_theta;
+
+    for (auto& ptr : mc_traj_x) {
+        delete ptr;
+    }
+    for (auto& ptr : mc_traj_y) {
+        delete ptr;
+    }
     if (mc_traj_edge_1) delete mc_traj_edge_1;
     if (mc_traj_edge_3) delete mc_traj_edge_3;
     if (mc_traj_edge_5) delete mc_traj_edge_5;
