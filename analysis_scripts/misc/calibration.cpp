@@ -3713,7 +3713,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
         {"traj_x_1", "traj_y_1", "layer_1", -10, 10},
         {"traj_x_3", "traj_y_3", "layer_3", -12, 12},
         {"traj_x_5", "traj_y_5", "layer_5", -15, 15},
-        {"traj_x_7", "traj_y_7", "layer_7", -20, 20},
+        {"traj_x_7", "traj_y_7", "layer_7", -17.5, 17.5},
         {"traj_x_12", "traj_y_12", "layer_12", -25, 25}
     };
 
