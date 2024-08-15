@@ -4033,24 +4033,38 @@ bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7,
 
         // Draw and save the theta_CVT vs theta and phi_CVT vs theta_CVT canvases (data and MC)
         c_theta_vs_theta_data->cd(1);
+        gPad->SetMargin(0.2, 0.05, 0.1, 0.1);  // Increase left margin to 0.2, decrease right margin
         h_theta_vs_theta_data_before->Draw("COLZ");
+
         c_theta_vs_theta_data->cd(2);
+        gPad->SetMargin(0.2, 0.05, 0.1, 0.1);  // Increase left margin to 0.2, decrease right margin
         h_phi_vs_theta_CVT_data_before->Draw("COLZ");
+
         c_theta_vs_theta_data->cd(3);
+        gPad->SetMargin(0.2, 0.05, 0.1, 0.1);  // Increase left margin to 0.2, decrease right margin
         h_theta_vs_theta_data_after->Draw("COLZ");
+
         c_theta_vs_theta_data->cd(4);
+        gPad->SetMargin(0.2, 0.05, 0.1, 0.1);  // Increase left margin to 0.2, decrease right margin
         h_phi_vs_theta_CVT_data_after->Draw("COLZ");
 
         c_theta_vs_theta_data->SaveAs(("output/calibration/cvt/positions/theta_vs_theta_data_" + particle_name + ".png").c_str());
 
         if (mcReader) {
             c_theta_vs_theta_mc->cd(1);
+            gPad->SetMargin(0.2, 0.05, 0.1, 0.1);  // Increase left margin to 0.2, decrease right margin
             h_theta_vs_theta_mc_before->Draw("COLZ");
+
             c_theta_vs_theta_mc->cd(2);
+            gPad->SetMargin(0.2, 0.05, 0.1, 0.1);  // Increase left margin to 0.2, decrease right margin
             h_phi_vs_theta_CVT_mc_before->Draw("COLZ");
+
             c_theta_vs_theta_mc->cd(3);
+            gPad->SetMargin(0.2, 0.05, 0.1, 0.1);  // Increase left margin to 0.2, decrease right margin
             h_theta_vs_theta_mc_after->Draw("COLZ");
+
             c_theta_vs_theta_mc->cd(4);
+            gPad->SetMargin(0.2, 0.05, 0.1, 0.1);  // Increase left margin to 0.2, decrease right margin
             h_phi_vs_theta_CVT_mc_after->Draw("COLZ");
 
             c_theta_vs_theta_mc->SaveAs(("output/calibration/cvt/positions/theta_vs_theta_mc_" + particle_name + ".png").c_str());
