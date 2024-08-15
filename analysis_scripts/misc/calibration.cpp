@@ -3728,11 +3728,11 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
 
     // Define CVT layers
     std::vector<std::tuple<std::string, std::string, double, double>> layers = {
-        {"traj_edge_1", "layer_1", 0, 30},
-        {"traj_edge_3", "layer_3", 0, 30},
-        {"traj_edge_5", "layer_5", 0, 30},
-        {"traj_edge_7", "layer_7", 0, 30},
-        {"traj_edge_12", "layer_12", 0, 30}
+        {"traj_edge_1", "layer_1", 0, 3},
+        {"traj_edge_3", "layer_3", 0, 3},
+        {"traj_edge_5", "layer_5", 0, 3},
+        {"traj_edge_7", "layer_7", 0, 15},
+        {"traj_edge_12", "layer_12", 0, 15}
     };
 
     std::vector<std::tuple<int, std::string>> particle_types = {
