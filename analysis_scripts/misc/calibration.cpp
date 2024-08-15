@@ -3852,9 +3852,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
         // Find the maximum value across all histograms for consistent scaling
         double max_value_data = 0, max_value_mc = 0;
         for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
-            max_value_data = std::max(max_value_data, h_data_before[layer
-
-_idx]->GetMaximum());
+            max_value_data = std::max(max_value_data, h_data_before[layer_idx]->GetMaximum());
             max_value_data = std::max(max_value_data, h_data_after[layer_idx]->GetMaximum());
             if (mcReader) {
                 max_value_mc = std::max(max_value_mc, h_mc_before[layer_idx]->GetMaximum());
