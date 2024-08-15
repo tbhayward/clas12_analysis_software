@@ -3904,10 +3904,8 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             if (*particle_pid == pid) {
                 double theta_CVT_value = calculate_theta(*traj_x_12, *traj_y_12, *traj_z_12);
                 double phi_CVT_value = calculate_phi(*traj_x_12, *traj_y_12);
-                std::cout << *theta << std::endl;
-                double theta_in_degrees = (*theta) * (180.0 / M_PI);
 
-                h_theta_vs_theta_data_before->Fill(theta_CVT_value, theta_in_degrees);
+                h_theta_vs_theta_data_before->Fill(theta_CVT_value, *theta);
                 h_phi_vs_theta_CVT_data_before->Fill(phi_CVT_value, theta_CVT_value);
 
                 if (cvt_fiducial(*traj_edge_1, *traj_edge_3, *traj_edge_5, *traj_edge_7, *traj_edge_12, pid)) {
@@ -3933,9 +3931,8 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                 if (**mc_particle_pid == pid) {
                     double mc_theta_CVT_value = calculate_theta(**mc_traj_x_12, **mc_traj_y_12, **mc_traj_z_12);
                     double mc_phi_CVT_value = calculate_phi(**mc_traj_x_12, **mc_traj_y_12);
-                    double mc_theta_in_degrees = (**mc_theta) * (180.0 / M_PI);
 
-                    h_theta_vs_theta_mc_before->Fill(mc_theta_CVT_value, mc_theta_in_degrees);
+                    h_theta_vs_theta_mc_before->Fill(mc_theta_CVT_value, mc_theta);
                     h_phi_vs_theta_CVT_mc_before->Fill(mc_phi_CVT_value, mc_theta_CVT_value);
 
                     if (cvt_fiducial(**mc_traj_edge_1, **mc_traj_edge_3, **mc_traj_edge_5, **mc_traj_edge_7, **mc_traj_edge_12, pid)) {
