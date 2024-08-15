@@ -3873,7 +3873,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
 
         dataReader.Restart();
         while (dataReader.Next()) {
-            if (*particle_pid == pid && *traj_x_12 != -9999 && *traj_y_12 != -9999 && *traj_z_12 != -9999 && ) {
+            if (*particle_pid == pid && *traj_x_12 != -9999 && *traj_y_12 != -9999 && *traj_z_12 != -9999) {
                 double theta_CVT_value = calculate_theta(*traj_x_12, *traj_y_12, *traj_z_12);
                 double phi_CVT_value = calculate_phi(*traj_x_12, *traj_y_12);
                 theta_CVT_data.push_back(theta_CVT_value);
@@ -3884,7 +3884,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
         if (mcReader) {
             mcReader->Restart();
             while (mcReader->Next()) {
-                if (**mc_particle_pid == pid && *mc_traj_x_12 != -9999 && *mc_traj_y_12 != -9999 && *mc_traj_z_12 != -9999 && ) {
+                if (**mc_particle_pid == pid && *mc_traj_x_12 != -9999 && *mc_traj_y_12 != -9999 && *mc_traj_z_12 != -9999) {
                     double mc_theta_CVT_value = calculate_theta(**mc_traj_x_12, **mc_traj_y_12, **mc_traj_z_12);
                     double mc_phi_CVT_value = calculate_phi(**mc_traj_x_12, **mc_traj_y_12);
                     theta_CVT_mc.push_back(mc_theta_CVT_value);
