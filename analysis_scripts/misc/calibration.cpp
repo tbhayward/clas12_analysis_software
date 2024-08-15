@@ -3698,6 +3698,219 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         if (mc_track_sector_6) delete mc_track_sector_6;
         if (mc_particle_pid) delete mc_particle_pid;
     }
+
+
+bool cvt_fiducial(double edge_1, double edge_5, double edge_7, double edge_12, 
+    int pid) {
+
+    return true; // not a charged hadron track? wrong pid?
+}
+
+void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+    int nBins = 100;
+
+    std::vector<std::tuple<std::string, std::string, std::string, double, double>> layers = {
+        {"traj_x_1", "traj_y_1", "layer_1", -100, 100},
+        {"traj_x_3", "traj_y_3", "layer_3", -100, 100},
+        {"traj_x_5", "traj_y_5", "layer_5", -100, 100},
+        {"traj_x_7", "traj_y_7", "layer_7", -100, 100},
+        {"traj_x_12", "traj_y_12", "layer_12", -100, 100}
+    };
+
+    std::vector<std::tuple<int, std::string>> particle_types = {
+        {211, "pip"},
+        {-211, "pim"},
+        {321, "kp"},
+        {-321, "km"},
+        {2212, "proton"}
+    };
+
+    // Declare TTreeReaderValues for the CVT edge and track variables
+    TTreeReaderValue<double> traj_edge_1(dataReader, "traj_edge_1");
+    TTreeReaderValue<double> traj_edge_3(dataReader, "traj_edge_3");
+    TTreeReaderValue<double> traj_edge_5(dataReader, "traj_edge_5");
+    TTreeReaderValue<double> traj_edge_7(dataReader, "traj_edge_7");
+    TTreeReaderValue<double> traj_edge_12(dataReader, "traj_edge_12");
+
+    TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+
+    TTreeReaderValue<double>* mc_traj_edge_1 = nullptr;
+    TTreeReaderValue<double>* mc_traj_edge_3 = nullptr;
+    TTreeReaderValue<double>* mc_traj_edge_5 = nullptr;
+    TTreeReaderValue<double>* mc_traj_edge_7 = nullptr;
+    TTreeReaderValue<double>* mc_traj_edge_12 = nullptr;
+    TTreeReaderValue<int>* mc_particle_pid = nullptr;
+
+    if (mcReader) {
+        mc_traj_edge_1 = new TTreeReaderValue<double>(*mcReader, "traj_edge_1");
+        mc_traj_edge_3 = new TTreeReaderValue<double>(*mcReader, "traj_edge_3");
+        mc_traj_edge_5 = new TTreeReaderValue<double>(*mcReader, "traj_edge_5");
+        mc_traj_edge_7 = new TTreeReaderValue<double>(*mcReader, "traj_edge_7");
+        mc_traj_edge_12 = new TTreeReaderValue<double>(*mcReader, "traj_edge_12");
+        mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+    }
+
+    // Declare TTreeReaderValues for trajectory x and y coordinates
+    std::vector<TTreeReaderValue<double>> traj_x;
+    std::vector<TTreeReaderValue<double>> traj_y;
+
+    std::vector<TTreeReaderValue<double>*> mc_traj_x;
+    std::vector<TTreeReaderValue<double>*> mc_traj_y;
+
+    // Initialize TTreeReaderValues for each layer
+    for (const auto& layer : layers) {
+        traj_x.emplace_back(dataReader, std::get<0>(layer).c_str());
+        traj_y.emplace_back(dataReader, std::get<1>(layer).c_str());
+
+        if (mcReader) {
+            mc_traj_x.push_back(new TTreeReaderValue<double>(*mcReader, std::get<0>(layer).c_str()));
+            mc_traj_y.push_back(new TTreeReaderValue<double>(*mcReader, std::get<1>(layer).c_str()));
+        }
+    }
+
+    for (const auto& particle_type : particle_types) {
+        int pid = std::get<0>(particle_type);
+        std::string particle_name = std::get<1>(particle_type);
+
+        // Create a canvas for data
+        TCanvas* c_data = new TCanvas(("c_data_" + particle_name).c_str(), ("Data CVT Hit Position (" + particle_name + ")").c_str(), 1800, 1200);
+        c_data->Divide(5, 2);
+
+        TCanvas* c_mc = nullptr;
+        if (mcReader) {
+            c_mc = new TCanvas(("c_mc_" + particle_name).c_str(), ("MC CVT Hit Position (" + particle_name + ")").c_str(), 1800, 1200);
+            c_mc->Divide(5, 2);
+        }
+
+        // Create histograms for data and MC
+        std::vector<TH2D*> h_data_before(5), h_data_after(5);
+        std::vector<TH2D*> h_mc_before(5), h_mc_after(5);
+
+        for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
+            std::string layer_name = std::get<2>(layers[layer_idx]);
+            double xMin = std::get<3>(layers[layer_idx]);
+            double xMax = std::get<4>(layers[layer_idx]);
+            double yMin = xMin;
+            double yMax = xMax;
+
+            h_data_before[layer_idx] = new TH2D(("h_data_before_" + layer_name).c_str(), ("Data " + layer_name + " Before Cuts (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            h_data_after[layer_idx] = new TH2D(("h_data_after_" + layer_name).c_str(), ("Data " + layer_name + " After Cuts (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+
+            if (mcReader) {
+                h_mc_before[layer_idx] = new TH2D(("h_mc_before_" + layer_name).c_str(), ("MC " + layer_name + " Before Cuts (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                h_mc_after[layer_idx] = new TH2D(("h_mc_after_" + layer_name).c_str(), ("MC " + layer_name + " After Cuts (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            }
+        }
+
+        // Fill the data histograms
+        dataReader.Restart();
+        while (dataReader.Next()) {
+            if (*particle_pid == pid) {
+                for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
+                    double traj_x_value = *traj_x[layer_idx];
+                    double traj_y_value = *traj_y[layer_idx];
+
+                    if (traj_x_value != -9999 && traj_y_value != -9999) {
+                        h_data_before[layer_idx]->Fill(traj_x_value, traj_y_value);
+                        if (cvt_fiducial(*traj_edge_1, *traj_edge_3, *traj_edge_5, *traj_edge_7, *traj_edge_12, pid)) {
+                            h_data_after[layer_idx]->Fill(traj_x_value, traj_y_value);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fill the MC histograms if available
+        if (mcReader) {
+            mcReader->Restart();
+            while (mcReader->Next()) {
+                if (**mc_particle_pid == pid) {
+                    for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
+                        double mc_traj_x_value = **mc_traj_x[layer_idx];
+                        double mc_traj_y_value = **mc_traj_y[layer_idx];
+
+                        if (mc_traj_x_value != -9999 && mc_traj_y_value != -9999) {
+                            h_mc_before[layer_idx]->Fill(mc_traj_x_value, mc_traj_y_value);
+                            if (cvt_fiducial(**mc_traj_edge_1, **mc_traj_edge_3, **mc_traj_edge_5, **mc_traj_edge_7, **mc_traj_edge_12, pid)) {
+                                h_mc_after[layer_idx]->Fill(mc_traj_x_value, mc_traj_y_value);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Find the maximum value across all histograms for consistent scaling
+        double max_value_data = 0, max_value_mc = 0;
+        for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
+            max_value_data = std::max(max_value_data, h_data_before[layer_idx]->GetMaximum());
+            max_value_data = std::max(max_value_data, h_data_after[layer_idx]->GetMaximum());
+            if (mcReader) {
+                max_value_mc = std::max(max_value_mc, h_mc_before[layer_idx]->GetMaximum());
+                max_value_mc = std::max(max_value_mc, h_mc_after[layer_idx]->GetMaximum());
+            }
+        }
+
+        // Set the maximum for each histogram to ensure consistent scaling
+        for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
+            h_data_before[layer_idx]->SetMaximum(max_value_data * 1.1);
+            h_data_after[layer_idx]->SetMaximum(max_value_data * 1.1);
+            if (mcReader) {
+                h_mc_before[layer_idx]->SetMaximum(max_value_mc * 1.1);
+                h_mc_after[layer_idx]->SetMaximum(max_value_mc * 1.1);
+            }
+        }
+
+        // Draw and save the data canvas
+        for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
+            c_data->cd(layer_idx + 1);
+            gPad->SetLogz();
+            gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+            h_data_before[layer_idx]->Draw("COLZ");
+
+            c_data->cd(layer_idx + 6);
+            gPad->SetLogz();
+            gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+            h_data_after[layer_idx]->Draw("COLZ");
+        }
+        c_data->SaveAs(("output/calibration/cvt/positions/data_" + particle_name + "_cvt_hit_position.png").c_str());
+
+        // Draw and save the MC canvas if available
+        if (mcReader) {
+            for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
+                c_mc->cd(layer_idx + 1);
+                gPad->SetLogz();
+                gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+                h_mc_before[layer_idx]->Draw("COLZ");
+
+                c_mc->cd(layer_idx + 6);
+                gPad->SetLogz();
+                gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+                h_mc_after[layer_idx]->Draw("COLZ");
+            }
+            c_mc->SaveAs(("output/calibration/cvt/positions/mc_" + particle_name + "_cvt_hit_position.png").c_str());
+        }
+
+        // Cleanup
+        for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
+            delete h_data_before[layer_idx];
+            delete h_data_after[layer_idx];
+            if (mcReader) {
+                delete h_mc_before[layer_idx];
+                delete h_mc_after[layer_idx];
+            }
+        }
+        delete c_data;
+        if (mcReader) delete c_mc;
+    }
+
+    // Clean up the dynamically allocated memory for edge variables
+    if (mc_traj_edge_1) delete mc_traj_edge_1;
+    if (mc_traj_edge_3) delete mc_traj_edge_3;
+    if (mc_traj_edge_5) delete mc_traj_edge_5;
+    if (mc_traj_edge_7) delete mc_traj_edge_7;
+    if (mc_traj_edge_12) delete mc_traj_edge_12;
+}
                            
 void create_directories() {
     // Array of directories to check/create
@@ -3713,7 +3926,9 @@ void create_directories() {
         "output/calibration/dc/",
         "output/calibration/dc/positions/",
         "output/calibration/dc/determination",
-        "output/calibration/cvt/chi2pid"
+        "output/calibration/cvt/chi2pid",
+        "output/calibration/cvt/determination",
+        "output/calibration/cvt/positions"
     };
 
     // Iterate through each directory and create if it doesn't exist
@@ -3790,13 +4005,17 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_cal_hit_position(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    dc_fiducial_determination(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // dc_fiducial_determination(dataReader, mcReader);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
     // plot_dc_hit_position(dataReader, mcReader);
+
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_cvt_hit_position(dataReader, mcReader);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
