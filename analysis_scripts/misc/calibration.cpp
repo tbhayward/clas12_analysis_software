@@ -3710,10 +3710,10 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
     int nBins = 100;
 
     std::vector<std::tuple<std::string, std::string, std::string, double, double>> layers = {
-        {"traj_x_1", "traj_y_1", "layer_1", -25, 25},
-        {"traj_x_3", "traj_y_3", "layer_3", -25, 25},
-        {"traj_x_5", "traj_y_5", "layer_5", -25, 25},
-        {"traj_x_7", "traj_y_7", "layer_7", -25, 25},
+        {"traj_x_1", "traj_y_1", "layer_1", -10, 10},
+        {"traj_x_3", "traj_y_3", "layer_3", -12, 12},
+        {"traj_x_5", "traj_y_5", "layer_5", -15, 15},
+        {"traj_x_7", "traj_y_7", "layer_7", -20, 20},
         {"traj_x_12", "traj_y_12", "layer_12", -25, 25}
     };
 
@@ -3822,7 +3822,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                     if (traj_x_value != -9999 && traj_y_value != -9999) {
                         h_data_before[layer_idx]->Fill(traj_x_value, traj_y_value);
                         if (cvt_fiducial(*traj_edge_1, *traj_edge_3, *traj_edge_5, *traj_edge_7, *traj_edge_12, pid)) {
-                            std::cout << *traj_edge_1 << " " << *traj_edge_3 << " " << *traj_edge_5 << " " << *traj_edge_7 << " " << *traj_edge_12 << std::endl;
+                            // std::cout << *traj_edge_1 << " " << *traj_edge_3 << " " << *traj_edge_5 << " " << *traj_edge_7 << " " << *traj_edge_12 << std::endl;
                             h_data_after[layer_idx]->Fill(traj_x_value, traj_y_value);
                         }
                     }
