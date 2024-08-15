@@ -2641,15 +2641,17 @@ bool dc_fiducial(double edge_6, double edge_18, double edge_36,
 }
 
 void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
-     // Define the number of bins for the histograms
+    // Define the number of bins for the histograms
     int nBins = 100;
+
     // Array of DC regions and their corresponding variable names
     std::vector<std::tuple<std::string, std::string, std::string, double, double>> regions = {
         {"traj_x_6", "traj_y_6", "region_1", -200, 200},
         {"traj_x_18", "traj_y_18", "region_2", -300, 300},
         {"traj_x_36", "traj_y_36", "region_3", -450, 450}
     };
-    // Array of particle types (photons and electrons) and their corresponding PIDs
+
+    // Array of particle types and their corresponding PIDs
     std::vector<std::tuple<int, std::string>> particle_types = {
         {11, "electron"},
         {-211, "pim"},
@@ -2712,115 +2714,85 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
                 mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
             }
 
-            // Create histograms for data and MC for each strictness level
-            TH2D* h_data_0 = new TH2D("h_data_0", ("data " + region_name + " hit position (" + particle_name + ", strictness_0)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-            TH2D* h_data_1 = new TH2D("h_data_1", ("data " + region_name + " hit position (" + particle_name + ", strictness_1)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-            TH2D* h_data_2 = new TH2D("h_data_2", ("data " + region_name + " hit position (" + particle_name + ", strictness_2)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-            TH2D* h_data_3 = new TH2D("h_data_3", ("data " + region_name + " hit position (" + particle_name + ", strictness_3)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            // Create histograms for data and MC before and after fiducial cuts
+            TH2D* h_data_before = new TH2D("h_data_before", ("data " + region_name + " hit position (" + particle_name + " before cuts)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            TH2D* h_data_after = new TH2D("h_data_after", ("data " + region_name + " hit position (" + particle_name + " after cuts)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
 
-            h_data_0->GetXaxis()->SetTitle(("x_{" + region_name + "}").c_str());
-            h_data_0->GetYaxis()->SetTitle(("y_{" + region_name + "}").c_str());
-            h_data_1->GetXaxis()->SetTitle(("x_{" + region_name + "}").c_str());
-            h_data_1->GetYaxis()->SetTitle(("y_{" + region_name + "}").c_str());
-            h_data_2->GetXaxis()->SetTitle(("x_{" + region_name + "}").c_str());
-            h_data_2->GetYaxis()->SetTitle(("y_{" + region_name + "}").c_str());
-            h_data_3->GetXaxis()->SetTitle(("x_{" + region_name + "}").c_str());
-            h_data_3->GetYaxis()->SetTitle(("y_{" + region_name + "}").c_str());
+            h_data_before->GetXaxis()->SetTitle(("x_{" + region_name + "}").c_str());
+            h_data_before->GetYaxis()->SetTitle(("y_{" + region_name + "}").c_str());
+            h_data_after->GetXaxis()->SetTitle(("x_{" + region_name + "}").c_str());
+            h_data_after->GetYaxis()->SetTitle(("y_{" + region_name + "}").c_str());
 
-            TH2D* h_mc_0 = nullptr;
-            TH2D* h_mc_1 = nullptr;
-            TH2D* h_mc_2 = nullptr;
-            TH2D* h_mc_3 = nullptr;
+            TH2D* h_mc_before = nullptr;
+            TH2D* h_mc_after = nullptr;
 
             if (mcReader) {
-                h_mc_0 = new TH2D("h_mc_0", ("mc " + region_name + " hit position (" + particle_name + ", strictness_0)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-                h_mc_1 = new TH2D("h_mc_1", ("mc " + region_name + " hit position (" + particle_name + ", strictness_1)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-                h_mc_2 = new TH2D("h_mc_2", ("mc " + region_name + " hit position (" + particle_name + ", strictness_2)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-                h_mc_3 = new TH2D("h_mc_3", ("mc " + region_name + " hit position (" + particle_name + ", strictness_3)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                h_mc_before = new TH2D("h_mc_before", ("mc " + region_name + " hit position (" + particle_name + " before cuts)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                h_mc_after = new TH2D("h_mc_after", ("mc " + region_name + " hit position (" + particle_name + " after cuts)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
 
-                h_mc_0->GetXaxis()->SetTitle(("x_{" + region_name + "}").c_str());
-                h_mc_0->GetYaxis()->SetTitle(("y_{" + region_name + "}").c_str());
-                h_mc_1->GetXaxis()->SetTitle(("x_{" + region_name + "}").c_str());
-                h_mc_1->GetYaxis()->SetTitle(("y_{" + region_name + "}").c_str());
-                h_mc_2->GetXaxis()->SetTitle(("x_{" + region_name + "}").c_str());
-                h_mc_2->GetYaxis()->SetTitle(("y_{" + region_name + "}").c_str());
-                h_mc_3->GetXaxis()->SetTitle(("x_{" + region_name + "}").c_str());
-                h_mc_3->GetYaxis()->SetTitle(("y_{" + region_name + "}").c_str());
+                h_mc_before->GetXaxis()->SetTitle(("x_{" + region_name + "}").c_str());
+                h_mc_before->GetYaxis()->SetTitle(("y_{" + region_name + "}").c_str());
+                h_mc_after->GetXaxis()->SetTitle(("x_{" + region_name + "}").c_str());
+                h_mc_after->GetYaxis()->SetTitle(("y_{" + region_name + "}").c_str());
             }
 
             // Fill the data histograms, applying the cuts
             while (dataReader.Next()) {
                 if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999) {
-                    h_data_0->Fill(*traj_x, *traj_y); // No cuts
-                    if (dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, 1)) {
-                        h_data_1->Fill(*traj_x, *traj_y);
-                    }
-                    if (dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, 2)) {
-                        h_data_2->Fill(*traj_x, *traj_y);
-                    }
-                    if (dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, 3)) {
-                        h_data_3->Fill(*traj_x, *traj_y);
+                    h_data_before->Fill(*traj_x, *traj_y); // Before cuts
+                    if (dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, pid)) {
+                        h_data_after->Fill(*traj_x, *traj_y); // After cuts
                     }
                 }
             }
+
             // Fill the MC histograms if available, applying the cuts
             if (mcReader) {
                 while (mcReader->Next()) {
                     if (**mc_particle_pid == pid && **mc_traj_x != -9999 && **mc_traj_y != -9999) {
-                        h_mc_0->Fill(**mc_traj_x, **mc_traj_y); // No cuts
-                        if (dc_fiducial(**mc_traj_edge_6, **mc_traj_edge_18, **mc_traj_edge_36, 1)) {
-                            h_mc_1->Fill(**mc_traj_x, **mc_traj_y);
-                        }
-                        if (dc_fiducial(**mc_traj_edge_6, **mc_traj_edge_18, **mc_traj_edge_36, 2)) {
-                            h_mc_2->Fill(**mc_traj_x, **mc_traj_y);
-                        }
-                        if (dc_fiducial(**mc_traj_edge_6, **mc_traj_edge_18, **mc_traj_edge_36, 3)) {
-                            h_mc_3->Fill(**mc_traj_x, **mc_traj_y);
+                        h_mc_before->Fill(**mc_traj_x, **mc_traj_y); // Before cuts
+                        if (dc_fiducial(**mc_traj_edge_6, **mc_traj_edge_18, **mc_traj_edge_36, pid)) {
+                            h_mc_after->Fill(**mc_traj_x, **mc_traj_y); // After cuts
                         }
                     }
                 }
             }
 
-            // Create a canvas to hold the 2x4 subplots
-            TCanvas* c = new TCanvas(("c_" + particle_name + "_" + region_name).c_str(), ("c_" + particle_name + "_" + region_name).c_str(), 1600, 800);
-            c->Divide(4, 2);
+            // Create a canvas to hold the 2x2 subplots
+            TCanvas* c = new TCanvas(("c_" + particle_name + "_" + region_name).c_str(), ("c_" + particle_name + "_" + region_name).c_str(), 1600, 1600);
+            c->Divide(2, 2);
 
             // Draw the data plots on the top row
-            for (int i = 1; i <= 4; ++i) {
-                c->cd(i);
-                gPad->SetLogz();             // Set log scale for the z-axis
-                gPad->SetMargin(0.15, 0.15, 0.1, 0.1); // Increase padding
-                if (i == 1) h_data_0->Draw("COLZ");
-                if (i == 2) h_data_1->Draw("COLZ");
-                if (i == 3) h_data_2->Draw("COLZ");
-                if (i == 4) h_data_3->Draw("COLZ");
-            }
+            c->cd(1);
+            gPad->SetLogz();             // Set log scale for the z-axis
+            gPad->SetMargin(0.15, 0.15, 0.1, 0.1); // Increase padding
+            h_data_before->Draw("COLZ");
+
+            c->cd(2);
+            gPad->SetLogz();             // Set log scale for the z-axis
+            gPad->SetMargin(0.15, 0.15, 0.1, 0.1); // Increase padding
+            h_data_after->Draw("COLZ");
 
             // Draw the MC plots on the bottom row, if available
             if (mcReader) {
-                for (int i = 5; i <= 8; ++i) {
-                    c->cd(i);
-                    gPad->SetLogz();             // Set log scale for the z-axis
-                    gPad->SetMargin(0.15, 0.15, 0.1, 0.1); // Increase padding
-                    if (i == 5) h_mc_0->Draw("COLZ");
-                    if (i == 6) h_mc_1->Draw("COLZ");
-                    if (i == 7) h_mc_2->Draw("COLZ");
-                    if (i == 8) h_mc_3->Draw("COLZ");
-                }
-            }
+                c->cd(3);
+                gPad->SetLogz();             // Set log scale for the z-axis
+                gPad->SetMargin(0.15, 0.15, 0.1, 0.1); // Increase padding
+                h_mc_before->Draw("COLZ");
 
+                c->cd(4);
+                gPad->SetLogz();             // Set log scale for the z-axis
+                gPad->SetMargin(0.15, 0.15, 0.1, 0.1); // Increase padding
+                h_mc_after->Draw("COLZ");
+            }
             // Save the canvas
             c->SaveAs(("output/calibration/dc/positions/" + particle_name + "_" + region_name + "_dc_hit_position.png").c_str());
 
             // Clean up for this region and particle type
-            delete h_data_0;
-            delete h_data_1;
-            delete h_data_2;
-            delete h_data_3;
-            if (h_mc_0) delete h_mc_0;
-            if (h_mc_1) delete h_mc_1;
-            if (h_mc_2) delete h_mc_2;
-            if (h_mc_3) delete h_mc_3;
+            delete h_data_before;
+            delete h_data_after;
+            if (h_mc_before) delete h_mc_before;
+            if (h_mc_after) delete h_mc_after;
             delete c;
             if (mc_traj_x) delete mc_traj_x;
             if (mc_traj_y) delete mc_traj_y;
@@ -3785,13 +3757,13 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_cal_hit_position(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    dc_fiducial_determination(dataReader, mcReader);
-
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
-    // plot_dc_hit_position(dataReader, mcReader);
+    // dc_fiducial_determination(dataReader, mcReader);
+
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_dc_hit_position(dataReader, mcReader);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
