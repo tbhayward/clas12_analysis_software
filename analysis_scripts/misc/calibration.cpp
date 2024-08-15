@@ -3726,16 +3726,41 @@ bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7,
 void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     int nBins = 100;
 
-    // Define CVT layers
-    std::vector<std::tuple<std::string, std::string, double, double>> layers = {
-        {"traj_edge_1", "layer_1", 0, 3},
-        {"traj_edge_3", "layer_3", 0, 3},
-        {"traj_edge_5", "layer_5", 0, 3},
-        {"traj_edge_7", "layer_7", 0, 15},
-        {"traj_edge_12", "layer_12", 0, 17}
-    };
+    // Define TTreeReaderValues for each CVT layer for data
+    TTreeReaderValue<double> traj_edge_1(dataReader, "traj_edge_1");
+    TTreeReaderValue<double> traj_edge_3(dataReader, "traj_edge_3");
+    TTreeReaderValue<double> traj_edge_5(dataReader, "traj_edge_5");
+    TTreeReaderValue<double> traj_edge_7(dataReader, "traj_edge_7");
+    TTreeReaderValue<double> traj_edge_12(dataReader, "traj_edge_12");
 
-    std::vector<std::tuple<int, std::string>>  particle_types = {
+    TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+    TTreeReaderValue<double> track_chi2_6(dataReader, "track_chi2_6");
+    TTreeReaderValue<int> track_ndf_6(dataReader, "track_ndf_6");
+
+    // Define TTreeReaderValues for each CVT layer for MC (if available)
+    TTreeReaderValue<double>* mc_traj_edge_1 = nullptr;
+    TTreeReaderValue<double>* mc_traj_edge_3 = nullptr;
+    TTreeReaderValue<double>* mc_traj_edge_5 = nullptr;
+    TTreeReaderValue<double>* mc_traj_edge_7 = nullptr;
+    TTreeReaderValue<double>* mc_traj_edge_12 = nullptr;
+
+    TTreeReaderValue<int>* mc_particle_pid = nullptr;
+    TTreeReaderValue<double>* mc_track_chi2_6 = nullptr;
+    TTreeReaderValue<int>* mc_track_ndf_6 = nullptr;
+
+    if (mcReader) {
+        mc_traj_edge_1 = new TTreeReaderValue<double>(*mcReader, "traj_edge_1");
+        mc_traj_edge_3 = new TTreeReaderValue<double>(*mcReader, "traj_edge_3");
+        mc_traj_edge_5 = new TTreeReaderValue<double>(*mcReader, "traj_edge_5");
+        mc_traj_edge_7 = new TTreeReaderValue<double>(*mcReader, "traj_edge_7");
+        mc_traj_edge_12 = new TTreeReaderValue<double>(*mcReader, "traj_edge_12");
+
+        mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+        mc_track_chi2_6 = new TTreeReaderValue<double>(*mcReader, "track_chi2_6");
+        mc_track_ndf_6 = new TTreeReaderValue<int>(*mcReader, "track_ndf_6");
+    }
+
+    std::vector<std::tuple<int, std::string>> particle_types = {
         {211, "#pi^{+}"},
         {-211, "#pi^{-}"},
         {321, "k^{+}"},
@@ -3743,155 +3768,219 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         {2212, "proton"}
     };
 
-    // Declare TTreeReaderValues for data
-    TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
-    TTreeReaderValue<double> track_chi2_6(dataReader, "track_chi2_6");
-    TTreeReaderValue<int> track_ndf_6(dataReader, "track_ndf_6");
-
-    std::vector<TTreeReaderValue<double>> traj_edges;
-    for (const auto& layer : layers) {
-        traj_edges.emplace_back(dataReader, std::get<0>(layer).c_str());
-    }
-
-    // Declare TTreeReaderValues for MC (if mcReader is provided)
-    TTreeReaderValue<int>* mc_particle_pid = nullptr;
-    TTreeReaderValue<double>* mc_track_chi2_6 = nullptr;
-    TTreeReaderValue<int>* mc_track_ndf_6 = nullptr;
-    std::vector<TTreeReaderValue<double>*> mc_traj_edges;
-
-    if (mcReader) {
-        mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
-        mc_track_chi2_6 = new TTreeReaderValue<double>(*mcReader, "track_chi2_6");
-        mc_track_ndf_6 = new TTreeReaderValue<int>(*mcReader, "track_ndf_6");
-
-        for (const auto& layer : layers) {
-            mc_traj_edges.push_back(new TTreeReaderValue<double>(*mcReader, std::get<0>(layer).c_str()));
-        }
-    }
-
     for (const auto& particle_type : particle_types) {
         int pid = std::get<0>(particle_type);
         std::string particle_name = std::get<1>(particle_type);
 
         // Create histograms for each layer
-        std::vector<TH1D*> h_sum_chi2_ndf(5);
-        std::vector<TH1D*> h_count_chi2_ndf(5);
-        std::vector<TH1D*> h_sum_chi2_ndf_mc(5);
-        std::vector<TH1D*> h_count_chi2_ndf_mc(5);
+        TH1D* h_sum_chi2_ndf_1 = new TH1D(("h_sum_chi2_ndf_layer1_" + particle_name).c_str(), (particle_name + " - layer_1").c_str(), nBins, 0, 3);
+        TH1D* h_count_chi2_ndf_1 = new TH1D(("h_count_chi2_ndf_layer1_" + particle_name).c_str(), "", nBins, 0, 3);
 
-        for (int i = 0; i < 5; ++i) {
-            std::string layer_name = std::get<1>(layers[i]);
-            double xMin = std::get<2>(layers[i]);
-            double xMax = std::get<3>(layers[i]);
+        TH1D* h_sum_chi2_ndf_3 = new TH1D(("h_sum_chi2_ndf_layer3_" + particle_name).c_str(), (particle_name + " - layer_3").c_str(), nBins, 0, 3);
+        TH1D* h_count_chi2_ndf_3 = new TH1D(("h_count_chi2_ndf_layer3_" + particle_name).c_str(), "", nBins, 0, 3);
 
-            h_sum_chi2_ndf[i] = new TH1D(("h_sum_chi2_ndf_" + layer_name + "_" + particle_name).c_str(),
-                                         (particle_name + " - " + layer_name).c_str(),
-                                         nBins, xMin, xMax);
-            h_sum_chi2_ndf[i]->GetXaxis()->SetTitle("edge");
-            h_sum_chi2_ndf[i]->GetYaxis()->SetTitle("<chi2/ndf>");
+        TH1D* h_sum_chi2_ndf_5 = new TH1D(("h_sum_chi2_ndf_layer5_" + particle_name).c_str(), (particle_name + " - layer_5").c_str(), nBins, 0, 3);
+        TH1D* h_count_chi2_ndf_5 = new TH1D(("h_count_chi2_ndf_layer5_" + particle_name).c_str(), "", nBins, 0, 3);
 
-            h_count_chi2_ndf[i] = new TH1D(("h_count_chi2_ndf_" + layer_name + "_" + particle_name).c_str(),
-                                           "", nBins, xMin, xMax);
+        TH1D* h_sum_chi2_ndf_7 = new TH1D(("h_sum_chi2_ndf_layer7_" + particle_name).c_str(), (particle_name + " - layer_7").c_str(), nBins, 0, 15);
+        TH1D* h_count_chi2_ndf_7 = new TH1D(("h_count_chi2_ndf_layer7_" + particle_name).c_str(), "", nBins, 0, 15);
 
-            if (mcReader) {
-                h_sum_chi2_ndf_mc[i] = new TH1D(("h_sum_chi2_ndf_mc_" + layer_name + "_" + particle_name).c_str(),
-                                                (particle_name + " - " + layer_name + " (MC)").c_str(),
-                                                nBins, xMin, xMax);
-                h_sum_chi2_ndf_mc[i]->GetXaxis()->SetTitle("edge");
-                h_sum_chi2_ndf_mc[i]->GetYaxis()->SetTitle("<chi2/ndf>");
-
-                h_count_chi2_ndf_mc[i] = new TH1D(("h_count_chi2_ndf_mc_" + layer_name + "_" + particle_name).c_str(),
-                                                  "", nBins, xMin, xMax);
-            }
-        }
+        TH1D* h_sum_chi2_ndf_12 = new TH1D(("h_sum_chi2_ndf_layer12_" + particle_name).c_str(), (particle_name + " - layer_12").c_str(), nBins, 0, 17);
+        TH1D* h_count_chi2_ndf_12 = new TH1D(("h_count_chi2_ndf_layer12_" + particle_name).c_str(), "", nBins, 0, 17);
 
         // Fill data histograms
         dataReader.Restart();
         while (dataReader.Next()) {
-            if (*particle_pid == pid && *track_chi2_6 != -9999 && *track_ndf_6 != -9999) {
+            if (*particle_pid == pid && *track_ndf_6 > 0) {
                 double chi2_ndf = *track_chi2_6 / *track_ndf_6;
-                for (int i = 0; i < 5; ++i) {
-                    std::cout << *traj_edges[i] << std::endl;
-                    if (*traj_edges[i] != -9999) {
-                        h_sum_chi2_ndf[i]->Fill(*traj_edges[i], chi2_ndf);
-                        h_count_chi2_ndf[i]->Fill(*traj_edges[i]);
-                    }
+
+                if (*traj_edge_1 != -9999) {
+                    h_sum_chi2_ndf_1->Fill(*traj_edge_1, chi2_ndf);
+                    h_count_chi2_ndf_1->Fill(*traj_edge_1);
+                }
+                if (*traj_edge_3 != -9999) {
+                    h_sum_chi2_ndf_3->Fill(*traj_edge_3, chi2_ndf);
+                    h_count_chi2_ndf_3->Fill(*traj_edge_3);
+                }
+                if (*traj_edge_5 != -9999) {
+                    h_sum_chi2_ndf_5->Fill(*traj_edge_5, chi2_ndf);
+                    h_count_chi2_ndf_5->Fill(*traj_edge_5);
+                }
+                if (*traj_edge_7 != -9999) {
+                    h_sum_chi2_ndf_7->Fill(*traj_edge_7, chi2_ndf);
+                    h_count_chi2_ndf_7->Fill(*traj_edge_7);
+                }
+                if (*traj_edge_12 != -9999) {
+                    h_sum_chi2_ndf_12->Fill(*traj_edge_12, chi2_ndf);
+                    h_count_chi2_ndf_12->Fill(*traj_edge_12);
                 }
             }
         }
 
-        // Fill MC histograms if available
+        // Fill MC histograms
+        TH1D* h_sum_chi2_ndf_mc_1 = nullptr;
+        TH1D* h_count_chi2_ndf_mc_1 = nullptr;
+        TH1D* h_sum_chi2_ndf_mc_3 = nullptr;
+        TH1D* h_count_chi2_ndf_mc_3 = nullptr;
+        TH1D* h_sum_chi2_ndf_mc_5 = nullptr;
+        TH1D* h_count_chi2_ndf_mc_5 = nullptr;
+        TH1D* h_sum_chi2_ndf_mc_7 = nullptr;
+        TH1D* h_count_chi2_ndf_mc_7 = nullptr;
+        TH1D* h_sum_chi2_ndf_mc_12 = nullptr;
+        TH1D* h_count_chi2_ndf_mc_12 = nullptr;
+
         if (mcReader) {
+            h_sum_chi2_ndf_mc_1 = new TH1D(("h_sum_chi2_ndf_mc_layer1_" + particle_name).c_str(), (particle_name + " - MC - layer_1").c_str(), nBins, 0, 3);
+            h_count_chi2_ndf_mc_1 = new TH1D(("h_count_chi2_ndf_mc_layer1_" + particle_name).c_str(), "", nBins, 0, 3);
+
+            h_sum_chi2_ndf_mc_3 = new TH1D(("h_sum_chi2_ndf_mc_layer3_" + particle_name).c_str(), (particle_name + " - MC - layer_3").c_str(), nBins, 0, 3);
+            h_count_chi2_ndf_mc_3 = new TH1D(("h_count_chi2_ndf_mc_layer3_" + particle_name).c_str(), "", nBins, 0, 3);
+
+            h_sum_chi2_ndf_mc_5 = new TH1D(("h_sum_chi2_ndf_mc_layer5_" + particle_name).c_str(), (particle_name + " - MC - layer_5").c_str(), nBins, 0, 3);
+            h_count_chi2_ndf_mc_5 = new TH1D(("h_count_chi2_ndf_mc_layer5_" + particle_name).c_str(), "", nBins, 0, 3);
+            h_sum_chi2_ndf_mc_7 = new TH1D(("h_sum_chi2_ndf_mc_layer7_" + particle_name).c_str(), (particle_name + " - MC - layer_7").c_str(), nBins, 0, 15);
+            h_count_chi2_ndf_mc_7 = new TH1D(("h_count_chi2_ndf_mc_layer7_" + particle_name).c_str(), "", nBins, 0, 15);
+
+            h_sum_chi2_ndf_mc_12 = new TH1D(("h_sum_chi2_ndf_mc_layer12_" + particle_name).c_str(), (particle_name + " - MC - layer_12").c_str(), nBins, 0, 17);
+            h_count_chi2_ndf_mc_12 = new TH1D(("h_count_chi2_ndf_mc_layer12_" + particle_name).c_str(), "", nBins, 0, 17);
+
             mcReader->Restart();
             while (mcReader->Next()) {
-                if (**mc_particle_pid == pid && **mc_track_chi2_6 != -9999 && **mc_track_ndf_6 != -9999) {
+                if (**mc_particle_pid == pid && **mc_track_ndf_6 > 0) {
                     double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
-                    for (int i = 0; i < 5; ++i) {
-                        if (**mc_traj_edges[i] != -9999) {
-                            h_sum_chi2_ndf_mc[i]->Fill(**mc_traj_edges[i], mc_chi2_ndf);
-                            h_count_chi2_ndf_mc[i]->Fill(**mc_traj_edges[i]);
-                        }
+
+                    if (**mc_traj_edge_1 != -9999) {
+                        h_sum_chi2_ndf_mc_1->Fill(**mc_traj_edge_1, mc_chi2_ndf);
+                        h_count_chi2_ndf_mc_1->Fill(**mc_traj_edge_1);
+                    }
+                    if (**mc_traj_edge_3 != -9999) {
+                        h_sum_chi2_ndf_mc_3->Fill(**mc_traj_edge_3, mc_chi2_ndf);
+                        h_count_chi2_ndf_mc_3->Fill(**mc_traj_edge_3);
+                    }
+                    if (**mc_traj_edge_5 != -9999) {
+                        h_sum_chi2_ndf_mc_5->Fill(**mc_traj_edge_5, mc_chi2_ndf);
+                        h_count_chi2_ndf_mc_5->Fill(**mc_traj_edge_5);
+                    }
+                    if (**mc_traj_edge_7 != -9999) {
+                        h_sum_chi2_ndf_mc_7->Fill(**mc_traj_edge_7, mc_chi2_ndf);
+                        h_count_chi2_ndf_mc_7->Fill(**mc_traj_edge_7);
+                    }
+                    if (**mc_traj_edge_12 != -9999) {
+                        h_sum_chi2_ndf_mc_12->Fill(**mc_traj_edge_12, mc_chi2_ndf);
+                        h_count_chi2_ndf_mc_12->Fill(**mc_traj_edge_12);
                     }
                 }
             }
         }
 
         // Normalize histograms
-        for (int i = 0; i < 5; ++i) {
-            h_sum_chi2_ndf[i]->Divide(h_count_chi2_ndf[i]);
-            if (mcReader) {
-                h_sum_chi2_ndf_mc[i]->Divide(h_count_chi2_ndf_mc[i]);
-            }
+        h_sum_chi2_ndf_1->Divide(h_count_chi2_ndf_1);
+        h_sum_chi2_ndf_3->Divide(h_count_chi2_ndf_3);
+        h_sum_chi2_ndf_5->Divide(h_count_chi2_ndf_5);
+        h_sum_chi2_ndf_7->Divide(h_count_chi2_ndf_7);
+        h_sum_chi2_ndf_12->Divide(h_count_chi2_ndf_12);
+
+        if (mcReader) {
+            h_sum_chi2_ndf_mc_1->Divide(h_count_chi2_ndf_mc_1);
+            h_sum_chi2_ndf_mc_3->Divide(h_count_chi2_ndf_mc_3);
+            h_sum_chi2_ndf_mc_5->Divide(h_count_chi2_ndf_mc_5);
+            h_sum_chi2_ndf_mc_7->Divide(h_count_chi2_ndf_mc_7);
+            h_sum_chi2_ndf_mc_12->Divide(h_count_chi2_ndf_mc_12);
         }
 
-        // Create a canvas
-        TCanvas* c_edge = new TCanvas(("c_edge_" + particle_name).c_str(),
-                                      ("Mean chi2/ndf vs edge for " + particle_name).c_str(), 1800, 1200);
-        c_edge->Divide(3, 2);
+        // Plot results
+        TCanvas* c_layer = new TCanvas(("c_" + particle_name).c_str(), ("Mean chi2/ndf vs edge for " + particle_name).c_str(), 1800, 1200);
+        c_layer->Divide(3, 2);
 
-        for (int i = 0; i < 5; ++i) {
-            c_edge->cd(i + 1);
-            gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-            h_sum_chi2_ndf[i]->SetStats(false);
-            h_sum_chi2_ndf[i]->SetLineColor(kBlack);
-            h_sum_chi2_ndf[i]->Draw("E");
-
-            if (mcReader) {
-                h_sum_chi2_ndf_mc[i]->SetStats(false);
-                h_sum_chi2_ndf_mc[i]->SetLineColor(kRed);
-                h_sum_chi2_ndf_mc[i]->Draw("E SAME");
-            }
-
-            TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);
-            legend->AddEntry(h_sum_chi2_ndf[i], "Data", "l");
-            if (mcReader) legend->AddEntry(h_sum_chi2_ndf_mc[i], "MC", "l");
-            legend->Draw();
+        c_layer->cd(1);
+        h_sum_chi2_ndf_1->SetLineColor(kBlack);
+        h_sum_chi2_ndf_1->Draw("E");
+        if (mcReader) {
+            h_sum_chi2_ndf_mc_1->SetLineColor(kRed);
+            h_sum_chi2_ndf_mc_1->Draw("E SAME");
         }
 
-        // Save the canvas with an empty sixth subplot
-        c_edge->cd(6); // Empty subplot
-        c_edge->SaveAs(("output/calibration/cvt/determination/mean_chi2_per_ndf_vs_edge_" + particle_name + ".png").c_str());
-
-        // Cleanup
-        delete c_edge;
-        for (int i = 0; i < 5; ++i) {
-            delete h_sum_chi2_ndf[i];
-            delete h_count_chi2_ndf[i];
-            if (mcReader) {
-                delete h_sum_chi2_ndf_mc[i];
-                delete h_count_chi2_ndf_mc[i];
-            }
+        c_layer->cd(2);
+        h_sum_chi2_ndf_3->SetLineColor(kBlack);
+        h_sum_chi2_ndf_3->Draw("E");
+        if (mcReader) {
+            h_sum_chi2_ndf_mc_3->SetLineColor(kRed);
+            h_sum_chi2_ndf_mc_3->Draw("E SAME");
         }
+
+        c_layer->cd(3);
+        h_sum_chi2_ndf_5->SetLineColor(kBlack);
+        h_sum_chi2_ndf_5->Draw("E");
+        if (mcReader) {
+            h_sum_chi2_ndf_mc_5->SetLineColor(kRed);
+            h_sum_chi2_ndf_mc_5->Draw("E SAME");
+        }
+
+        c_layer->cd(4);
+        h_sum_chi2_ndf_7->SetLineColor(kBlack);
+        h_sum_chi2_ndf_7->Draw("E");
+        if (mcReader) {
+            h_sum_chi2_ndf_mc_7->SetLineColor(kRed);
+            h_sum_chi2_ndf_mc_7->Draw("E SAME");
+        }
+
+        c_layer->cd(5);
+        h_sum_chi2_ndf_12->SetLineColor(kBlack);
+        h_sum_chi2_ndf_12->Draw("E");
+        if (mcReader) {
+            h_sum_chi2_ndf_mc_12->SetLineColor(kRed);
+            h_sum_chi2_ndf_mc_12->Draw("E SAME");
+        }
+
+        c_layer->cd(6);
+        auto legend = new TLegend(0.7, 0.7, 0.9, 0.9);
+        legend->AddEntry(h_sum_chi2_ndf_1, "Data", "l");
+        if (mcReader) {
+            legend->AddEntry(h_sum_chi2_ndf_mc_1, "MC", "l");
+        }
+        legend->Draw();
+
+        c_layer->SaveAs(("output/calibration/cvt/mean_chi2_per_ndf_vs_edge_" + particle_name + ".png").c_str());
+
+        // Clean up
+        delete h_sum_chi2_ndf_1;
+        delete h_count_chi2_ndf_1;
+        delete h_sum_chi2_ndf_3;
+        delete h_count_chi2_ndf_3;
+        delete h_sum_chi2_ndf_5;
+        delete h_count_chi2_ndf_5;
+        delete h_sum_chi2_ndf_7;
+        delete h_count_chi2_ndf_7;
+        delete h_sum_chi2_ndf_12;
+        delete h_count_chi2_ndf_12;
+
+        if (mcReader) {
+            delete h_sum_chi2_ndf_mc_1;
+            delete h_count_chi2_ndf_mc_1;
+            delete h_sum_chi2_ndf_mc_3;
+            delete h_count_chi2_ndf_mc_3;
+            delete h_sum_chi2_ndf_mc_5;
+            delete h_count_chi2_ndf_mc_5;
+            delete h_sum_chi2_ndf_mc_7;
+            delete h_count_chi2_ndf_mc_7;
+            delete h_sum_chi2_ndf_mc_12;
+            delete h_count_chi2_ndf_mc_12;
+        }
+
+        delete c_layer;
     }
 
-    // Clean up dynamically allocated memory for MC TTreeReaderValues
+    // Clean up dynamically allocated memory for MC
     if (mcReader) {
+        delete mc_traj_edge_1;
+        delete mc_traj_edge_3;
+        delete mc_traj_edge_5;
+        delete mc_traj_edge_7;
+        delete mc_traj_edge_12;
+
         delete mc_particle_pid;
         delete mc_track_chi2_6;
         delete mc_track_ndf_6;
-        for (auto& mc_traj_edge : mc_traj_edges) {
-            delete mc_traj_edge;
-        }
     }
 }
 
