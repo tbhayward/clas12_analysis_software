@@ -3832,7 +3832,6 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
         // Fill the data histograms
         dataReader.Restart();
         while (dataReader.Next()) {
-            std::cout << *theta << std::endl;
             if (*particle_pid == pid) {
                 for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
                     double traj_x_value = *traj_x[layer_idx];
@@ -3894,20 +3893,26 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             }
         }
 
-        // Create and fill histograms for theta_CVT vs theta and theta_CVT vs phi_CVT
+        // Create and fill histograms for theta_CVT vs theta and phi_CVT vs theta_CVT
         TH2D* h_theta_vs_theta_data_before = new TH2D("h_theta_vs_theta_data_before", ("#theta_{CVT} vs #theta Before Cuts (Data, " + particle_name + ")").c_str(), nBins, 0, 180, nBins, 0, 180);
         TH2D* h_phi_vs_theta_CVT_data_before = new TH2D("h_phi_vs_theta_CVT_data_before", ("#phi_{CVT} vs #theta_{CVT} Before Cuts (Data, " + particle_name + ")").c_str(), nBins, 0, 360, nBins, 0, 180);
         TH2D* h_theta_vs_theta_data_after = new TH2D("h_theta_vs_theta_data_after", ("#theta_{CVT} vs #theta After Cuts (Data, " + particle_name + ")").c_str(), nBins, 0, 180, nBins, 0, 180);
         TH2D* h_phi_vs_theta_CVT_data_after = new TH2D("h_phi_vs_theta_CVT_data_after", ("#phi_{CVT} vs #theta_{CVT} After Cuts (Data, " + particle_name + ")").c_str(), nBins, 0, 360, nBins, 0, 180);
 
-        for (size_t i = 0; i < theta_CVT_data.size(); ++i) {
-            double theta_in_degrees = *theta * (180.0 / M_PI);
-            // std::cout << theta_in_degrees << std::endl;
-            h_theta_vs_theta_data_before->Fill(theta_in_degrees, theta_CVT_data[i]);
-            h_phi_vs_theta_CVT_data_before->Fill(phi_CVT_data[i], theta_CVT_data[i]);
-            if (cvt_fiducial(*traj_edge_1, *traj_edge_3, *traj_edge_5, *traj_edge_7, *traj_edge_12, pid)) {
-                h_theta_vs_theta_data_after->Fill(theta_in_degrees, theta_CVT_data[i]);
-                h_phi_vs_theta_CVT_data_after->Fill(phi_CVT_data[i], theta_CVT_data[i]);
+        dataReader.Restart();
+        while (dataReader.Next()) {
+            if (*particle_pid == pid) {
+                double theta_CVT_value = calculate_theta(*traj_x_12, *traj_y_12, *traj_z_12);
+                double phi_CVT_value = calculate_phi(*traj_x_12, *traj_y_12);
+                double theta_in_degrees = (*theta) * (180.0 / M_PI);
+
+                h_theta_vs_theta_data_before->Fill(theta_CVT_value, theta_in_degrees);
+                h_phi_vs_theta_CVT_data_before->Fill(phi_CVT_value, theta_CVT_value);
+
+                if (cvt_fiducial(*traj_edge_1, *traj_edge_3, *traj_edge_5, *traj_edge_7, *traj_edge_12, pid)) {
+                    h_theta_vs_theta_data_after->Fill(theta_CVT_value, theta_in_degrees);
+                    h_phi_vs_theta_CVT_data_after->Fill(phi_CVT_value, theta_CVT_value);
+                }
             }
         }
 
@@ -3922,13 +3927,20 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             h_theta_vs_theta_mc_after = new TH2D("h_theta_vs_theta_mc_after", ("#theta_{CVT} vs #theta After Cuts (MC, " + particle_name + ")").c_str(), nBins, 0, 180, nBins, 0, 180);
             h_phi_vs_theta_CVT_mc_after = new TH2D("h_phi_vs_theta_CVT_mc_after", ("#phi_{CVT} vs #theta_{CVT} After Cuts (MC, " + particle_name + ")").c_str(), nBins, 0, 360, nBins, 0, 180);
 
-            for (size_t i = 0; i < theta_CVT_mc.size(); ++i) {
-                double mc_theta_in_degrees = **mc_theta * (180.0 / M_PI);
-                h_theta_vs_theta_mc_before->Fill(mc_theta_in_degrees, theta_CVT_mc[i]);
-                h_phi_vs_theta_CVT_mc_before->Fill(phi_CVT_mc[i], theta_CVT_mc[i]);
-                if (cvt_fiducial(**mc_traj_edge_1, **mc_traj_edge_3, **mc_traj_edge_5, **mc_traj_edge_7, **mc_traj_edge_12, pid)) {
-                    h_theta_vs_theta_mc_after->Fill(mc_theta_in_degrees, theta_CVT_mc[i]);
-                    h_phi_vs_theta_CVT_mc_after->Fill(phi_CVT_mc[i], theta_CVT_mc[i]);
+            mcReader->Restart();
+            while (mcReader->Next()) {
+                if (**mc_particle_pid == pid) {
+                    double mc_theta_CVT_value = calculate_theta(**mc_traj_x_12, **mc_traj_y_12, **mc_traj_z_12);
+                    double mc_phi_CVT_value = calculate_phi(**mc_traj_x_12, **mc_traj_y_12);
+                    double mc_theta_in_degrees = (**mc_theta) * (180.0 / M_PI);
+
+                    h_theta_vs_theta_mc_before->Fill(mc_theta_CVT_value, mc_theta_in_degrees);
+                    h_phi_vs_theta_CVT_mc_before->Fill(mc_phi_CVT_value, mc_theta_CVT_value);
+
+                    if (cvt_fiducial(**mc_traj_edge_1, **mc_traj_edge_3, **mc_traj_edge_5, **mc_traj_edge_7, **mc_traj_edge_12, pid)) {
+                        h_theta_vs_theta_mc_after->Fill(mc_theta_CVT_value, mc_theta_in_degrees);
+                        h_phi_vs_theta_CVT_mc_after->Fill(mc_phi_CVT_value, mc_theta_CVT_value);
+                    }
                 }
             }
         }
