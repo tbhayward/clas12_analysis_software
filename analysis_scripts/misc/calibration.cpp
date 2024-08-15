@@ -3025,55 +3025,75 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 for (auto& hist : h_mc_count_sector) delete hist;
             }
 
-            auto h_data_edge_sector = create_histograms_for_sector(region_name, particle_name, nBins, 0, xMax, 0, yMax, false);
-            auto h_mc_edge_sector = create_histograms_for_sector(region_name, particle_name, nBins, 0, xMax, 0, yMax, true);
+            // New: Mean chi2/ndf vs traj_edge plots
+            auto h_data_edge_sum = new TH1D(("h_data_edge_sum_" + region_name).c_str(), ("Mean chi2/ndf vs " + edge_branch + " (Data)").c_str(), nBins, 0, 80);
+            auto h_data_edge_count = new TH1D(("h_data_edge_count_" + region_name).c_str(), ("Count vs " + edge_branch + " (Data)").c_str(), nBins, 0, 80);
 
-            TCanvas* c_edge = new TCanvas(("c_" + particle_name + "_" + region_name + "_edge").c_str(), ("c_" + particle_name + " chi^{2}/ndf vs traj_edge").c_str(), 1800, 1200);
-            c_edge->Divide(3, 2);
+            auto h_mc_edge_sum = new TH1D(("h_mc_edge_sum_" + region_name).c_str(), ("Mean chi2/ndf vs " + edge_branch + " (MC)").c_str(), nBins, 0, 80);
+            auto h_mc_edge_count = new TH1D(("h_mc_edge_count_" + region_name).c_str(), ("Count vs " + edge_branch + " (MC)").c_str(), nBins, 0, 80);
 
+            // Fill data and MC histograms for traj_edge vs chi2/ndf
             dataReader.Restart();
             if (mcReader) mcReader->Restart();
-
             while (dataReader.Next()) {
                 if (*particle_pid == pid && *traj_edge != -9999 && *track_ndf_6 > 0) {
                     double chi2_ndf = *track_chi2_6 / *track_ndf_6;
-                    h_data_edge_sector[*track_sector_6 - 1]->Fill(*traj_edge, chi2_ndf);
+                    h_data_edge_sum->Fill(*traj_edge, chi2_ndf);
+                    h_data_edge_count->Fill(*traj_edge);
                 }
             }
+
             if (mcReader) {
                 while (mcReader->Next()) {
                     if (**mc_particle_pid == pid && **mc_traj_edge != -9999 && **mc_track_ndf_6 > 0) {
                         double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
-                        h_mc_edge_sector[**mc_track_sector_6 - 1]->Fill(**mc_traj_edge, mc_chi2_ndf);
+                        h_mc_edge_sum->Fill(**mc_traj_edge, mc_chi2_ndf);
+                        h_mc_edge_count->Fill(**mc_traj_edge);
                     }
                 }
             }
 
-            for (int sector = 0; sector < 6; ++sector) {
-                c_edge->cd(sector + 1);
-                gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-                h_data_edge_sector[sector]->SetStats(false);
-                h_data_edge_sector[sector]->SetLineColor(kBlack);
-                h_data_edge_sector[sector]->Draw("COLZ");
-
-                if (mcReader) {
-                    h_mc_edge_sector[sector]->SetStats(false);
-                    h_mc_edge_sector[sector]->SetLineColor(kRed);
-                    h_mc_edge_sector[sector]->Draw("COLZ SAME");
+            // Normalize histograms to get mean chi2/ndf per traj_edge bin
+            for (int i = 1; i <= h_data_edge_sum->GetNbinsX(); ++i) {
+                double count = h_data_edge_count->GetBinContent(i);
+                if (count > 0) {
+                    h_data_edge_sum->SetBinContent(i, h_data_edge_sum->GetBinContent(i) / count);
                 }
-
-                TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);
-                legend->AddEntry(h_data_edge_sector[sector], "Data", "l");
-                if (mcReader) legend->AddEntry(h_mc_edge_sector[sector], "MC", "l");
-                legend->Draw();
             }
 
-            c_edge->SaveAs(("output/calibration/dc/determination/chi2_per_ndf_vs_traj_edge_" + particle_name + "_" + region_name + ".png").c_str());
-
-            delete c_edge;
-            for (auto& hist : h_data_edge_sector) delete hist;
             if (mcReader) {
-                for (auto& hist : h_mc_edge_sector) delete hist;
+                for (int i = 1; i <= h_mc_edge_sum->GetNbinsX(); ++i) {
+                    double count = h_mc_edge_count->GetBinContent(i);
+                    if (count > 0) {
+                        h_mc_edge_sum->SetBinContent(i, h_mc_edge_sum->GetBinContent(i) / count);
+                    }
+                }
+            }
+
+            // Plot and save the results
+            TCanvas* c_edge = new TCanvas(("c_edge_" + particle_name + "_" + region_name).c_str(), ("Mean chi2/ndf vs traj_edge for " + region_name).c_str(), 800, 600);
+            h_data_edge_sum->SetLineColor(kBlack);
+            h_data_edge_sum->Draw("HIST");
+
+            if (mcReader) {
+                h_mc_edge_sum->SetLineColor(kRed);
+                h_mc_edge_sum->Draw("HIST SAME");
+            }
+
+            TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);
+            legend->AddEntry(h_data_edge_sum, "Data", "l");
+            if (mcReader) legend->AddEntry(h_mc_edge_sum, "MC", "l");
+            legend->Draw();
+
+            c_edge->SaveAs(("output/calibration/dc/determination/mean_chi2_per_ndf_vs_traj_edge_" + particle_name + "_" + region_name + ".png").c_str());
+
+            // Cleanup
+            delete c_edge;
+            delete h_data_edge_sum;
+            delete h_data_edge_count;
+            if (mcReader) {
+                delete h_mc_edge_sum;
+                delete h_mc_edge_count;
             }
 
             if (mc_traj_edge) delete mc_traj_edge;
