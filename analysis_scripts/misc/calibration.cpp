@@ -2964,7 +2964,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 mc_traj_edge = new TTreeReaderValue<double>(*mcReader, edge_branch.c_str());
             }
 
-            // Fill data histograms
+            // Fill data histograms for the rotated hit positions
             while (dataReader.Next()) {
                 if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999 && *track_ndf_6 > 0) {
                     double chi2_ndf = *track_chi2_6 / *track_ndf_6;
@@ -2980,7 +2980,6 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 }
             }
 
-            // Fill MC histograms
             if (mcReader) {
                 while (mcReader->Next()) {
                     if (**mc_particle_pid == pid && **mc_traj_x != -9999 && **mc_traj_y != -9999 && **mc_track_ndf_6 > 0) {
@@ -2998,7 +2997,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 }
             }
 
-            // Normalize and save histograms
+            // Normalize and save rotated hit position histograms
             for (int sector = 0; sector < 6; ++sector) {
                 normalize_histogram(h_data_sum_sector[sector], h_data_count_sector[sector]);
 
@@ -3013,7 +3012,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 draw_and_save_sector_histograms(c_mc_region, h_mc_sum_sector, "output/calibration/dc/determination/mc_chi2_per_ndf_" + particle_name + "_" + region_name + ".png");
             }
 
-            // Cleanup
+            // Cleanup for the rotated hit position histograms
             delete c_region;
             if (c_mc_region) delete c_mc_region;
 
@@ -3025,64 +3024,83 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 for (auto& hist : h_mc_count_sector) delete hist;
             }
 
-            // New: Mean chi2/ndf vs traj_edge plots
-            auto h_data_edge_sector = new TH2D(("h_data_edge_sector_" + region_name).c_str(), ("Mean chi2/ndf vs traj_edge (Data) - " + region_name).c_str(), nBins, 0, 80, nBins, 0, 1.1);
-            auto h_mc_edge_sector = new TH2D(("h_mc_edge_sector_" + region_name).c_str(), ("Mean chi2/ndf vs traj_edge (MC) - " + region_name).c_str(), nBins, 0, 80, nBins, 0, 1.1);
+            // Now, calculate and plot mean chi2/ndf as a function of traj_edge for each sector
+            std::vector<TH1D*> h_mean_chi2_ndf_sector(6);
+            std::vector<TH1D*> h_mean_chi2_ndf_mc_sector(6);
 
-            double max_value = 0;
-
-            // Fill data and MC histograms for traj_edge vs chi2/ndf
+            for (int sector = 0; sector < 6; ++sector) {
+                h_mean_chi2_ndf_sector[sector] = new TH1D(("h_mean_chi2_ndf_sector_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
+                                                          ("Mean chi2/ndf vs traj_edge - Data - Sector " + std::to_string(sector + 1)).c_str(),
+                                                          nBins, 0, 80);
+                if (mcReader) {
+                    h_mean_chi2_ndf_mc_sector[sector] = new TH1D(("h_mean_chi2_ndf_mc_sector" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
+                    ("Mean chi2/ndf vs traj_edge - MC - Sector " + std::to_string(sector + 1)).c_str(),
+                    nBins, 0, 80);
+                }
+            }
+            // Fill histograms for data
             dataReader.Restart();
-            if (mcReader) mcReader->Restart();
-
             while (dataReader.Next()) {
                 if (*particle_pid == pid && *traj_edge != -9999 && *track_ndf_6 > 0) {
                     double chi2_ndf = *track_chi2_6 / *track_ndf_6;
-                    h_data_edge_sector->Fill(*traj_edge, chi2_ndf);
-                    if (chi2_ndf > max_value) max_value = chi2_ndf;
+                    h_mean_chi2_ndf_sector[*track_sector_6 - 1]->Fill(*traj_edge, chi2_ndf);
                 }
             }
+
+            // Fill histograms for MC
             if (mcReader) {
+                mcReader->Restart();
                 while (mcReader->Next()) {
                     if (**mc_particle_pid == pid && **mc_traj_edge != -9999 && **mc_track_ndf_6 > 0) {
                         double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
-                        h_mc_edge_sector->Fill(**mc_traj_edge, mc_chi2_ndf);
-                        if (mc_chi2_ndf > max_value) max_value = mc_chi2_ndf;
+                        h_mean_chi2_ndf_mc_sector[**mc_track_sector_6 - 1]->Fill(**mc_traj_edge, mc_chi2_ndf);
                     }
                 }
             }
 
-            h_data_edge_sector->SetMaximum(1.1 * max_value);
-            if (mcReader) h_mc_edge_sector->SetMaximum(1.1 * max_value);
+            // Normalize and save the mean chi2/ndf vs traj_edge plots
+            double max_value = 0;
+            for (int sector = 0; sector < 6; ++sector) {
+                if (h_mean_chi2_ndf_sector[sector]->GetMaximum() > max_value) {
+                    max_value = h_mean_chi2_ndf_sector[sector]->GetMaximum();
+                }
+                if (mcReader && h_mean_chi2_ndf_mc_sector[sector]->GetMaximum() > max_value) {
+                    max_value = h_mean_chi2_ndf_mc_sector[sector]->GetMaximum();
+                }
+            }
+            max_value *= 1.1; // Add 10% margin to max value
 
-            // Plot on single canvas with six sectors
             TCanvas* c_edge = new TCanvas(("c_edge_" + particle_name + "_" + region_name).c_str(), ("Mean chi2/ndf vs traj_edge for " + particle_name + " in " + region_name).c_str(), 1800, 1200);
             c_edge->Divide(3, 2);
 
-            for (int sector = 1; sector <= 6; ++sector) {
-                c_edge->cd(sector);
+            for (int sector = 0; sector < 6; ++sector) {
+                c_edge->cd(sector + 1);
                 gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-                gPad->SetGrid();
-                h_data_edge_sector->SetStats(false);
-                h_mc_edge_sector->SetStats(false);
-                h_data_edge_sector->SetLineColor(kBlack);
-                h_mc_edge_sector->SetLineColor(kRed);
+                h_mean_chi2_ndf_sector[sector]->SetStats(false);
+                h_mean_chi2_ndf_sector[sector]->SetMaximum(max_value);
+                h_mean_chi2_ndf_sector[sector]->SetLineColor(kBlack);
+                h_mean_chi2_ndf_sector[sector]->Draw("E");
 
-                h_data_edge_sector->Draw("COLZ");
-                if (mcReader) h_mc_edge_sector->Draw("COLZ SAME");
+                if (mcReader) {
+                    h_mean_chi2_ndf_mc_sector[sector]->SetStats(false);
+                    h_mean_chi2_ndf_mc_sector[sector]->SetLineColor(kRed);
+                    h_mean_chi2_ndf_mc_sector[sector]->Draw("E SAME");
+                }
 
                 TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);
-                legend->AddEntry(h_data_edge_sector, "Data", "l");
-                if (mcReader) legend->AddEntry(h_mc_edge_sector, "MC", "l");
+                legend->AddEntry(h_mean_chi2_ndf_sector[sector], "Data", "l");
+                if (mcReader) legend->AddEntry(h_mean_chi2_ndf_mc_sector[sector], "MC", "l");
                 legend->Draw();
             }
 
             c_edge->SaveAs(("output/calibration/dc/determination/mean_chi2_per_ndf_vs_traj_edge_" + particle_name + "_" + region_name + ".png").c_str());
 
-            // Cleanup
+            // Cleanup for mean chi2/ndf vs traj_edge histograms
             delete c_edge;
-            delete h_data_edge_sector;
-            delete h_mc_edge_sector;
+            for (auto& hist : h_mean_chi2_ndf_sector) delete hist;
+            if (mcReader) {
+                for (auto& hist : h_mean_chi2_ndf_mc_sector) delete hist;
+            }
 
             if (mc_traj_edge) delete mc_traj_edge;
         }
