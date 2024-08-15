@@ -3750,6 +3750,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
     TTreeReaderValue<double> traj_edge_12(dataReader, "traj_edge_12");
 
     TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+    TTreeReaderValue<int> theta(dataReader, "theta");
 
     TTreeReaderValue<double> traj_x_12(dataReader, "traj_x_12");
     TTreeReaderValue<double> traj_y_12(dataReader, "traj_y_12");
@@ -3761,6 +3762,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
     TTreeReaderValue<double>* mc_traj_edge_7 = nullptr;
     TTreeReaderValue<double>* mc_traj_edge_12 = nullptr;
     TTreeReaderValue<int>* mc_particle_pid = nullptr;
+    TTreeReaderValue<int>* mc_theta = nullptr;
     TTreeReaderValue<double>* mc_traj_x_12 = nullptr;
     TTreeReaderValue<double>* mc_traj_y_12 = nullptr;
     TTreeReaderValue<double>* mc_traj_z_12 = nullptr;
@@ -3772,6 +3774,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
         mc_traj_edge_7 = new TTreeReaderValue<double>(*mcReader, "traj_edge_7");
         mc_traj_edge_12 = new TTreeReaderValue<double>(*mcReader, "traj_edge_12");
         mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+        mc_theta = new TTreeReaderValue<int>(*mcReader, "theta");
         mc_traj_x_12 = new TTreeReaderValue<double>(*mcReader, "traj_x_12");
         mc_traj_y_12 = new TTreeReaderValue<double>(*mcReader, "traj_y_12");
         mc_traj_z_12 = new TTreeReaderValue<double>(*mcReader, "traj_z_12");
@@ -3944,7 +3947,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
 
         if (mcReader) {
             mcReader->Restart();
-            while (mcReader.Next()) {
+            while (mcReader->Next()) {
                 if (**mc_particle_pid == pid) {
                     if (**mc_traj_x_12 != -9999 && **mc_traj_y_12 != -9999 && **mc_traj_z_12 != -9999) {
                         double mc_theta_CVT_value = calculate_theta(**mc_traj_x_12, **mc_traj_y_12, **mc_traj_z_12);
