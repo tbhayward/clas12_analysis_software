@@ -3104,12 +3104,14 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 gPad->SetLogy();  // Add this line to set the y-axis to log scale
                 h_sum_chi2_ndf_sector[sector]->SetStats(false);
                 h_sum_chi2_ndf_sector[sector]->SetMaximum(max_value);
+                h_sum_chi2_ndf_sector[sector]->SetMinimum(10);
                 h_sum_chi2_ndf_sector[sector]->SetLineColor(kBlack);
                 h_sum_chi2_ndf_sector[sector]->Draw("E");
 
                 if (mcReader) {
                     h_sum_chi2_ndf_mc_sector[sector]->SetStats(false);
                     h_sum_chi2_ndf_mc_sector[sector]->SetMaximum(max_value);
+                    h_sum_chi2_ndf_mc_sector[sector]->SetMinimum(10);
                     h_sum_chi2_ndf_mc_sector[sector]->SetLineColor(kRed);
                     h_sum_chi2_ndf_mc_sector[sector]->Draw("E SAME");
                 }
