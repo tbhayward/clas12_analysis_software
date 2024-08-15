@@ -2894,10 +2894,10 @@ std::pair<double, double> rotate_coordinates(double x, double y, int sector) {
 
 void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     int nBins = 100;
-    std::vector<std::tuple<std::string, std::string, std::string, double, double, double, double, std::string>> regions = {
-        {"traj_x_6", "traj_y_6", "region_1", 15, 160, -80, 80, "traj_edge_6"},
-        {"traj_x_18", "traj_y_18", "region_2", 30, 240, -125, 125, "traj_edge_18"},
-        {"traj_x_36", "traj_y_36", "region_3", 30, 400, -200, 200, "traj_edge_36"}
+    std::vector<std::tuple<std::string, std::string, std::string, double, double, double, double, std::string, double>> regions = {
+        {"traj_x_6", "traj_y_6", "region_1", 15, 160, -80, 80, "traj_edge_6", 50},
+        {"traj_x_18", "traj_y_18", "region_2", 30, 240, -125, 125, "traj_edge_18", 80},
+        {"traj_x_36", "traj_y_36", "region_3", 30, 400, -200, 200, "traj_edge_36", 110}
     };
 
     std::vector<std::tuple<int, std::string>> particle_types = {
@@ -2918,6 +2918,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             double yMin = std::get<5>(region);
             double yMax = std::get<6>(region);
             std::string edge_branch = std::get<7>(region);
+            double edge_max = std::get<8>(region);
 
             // Create histograms for data and MC
             auto h_data_sum_sector = create_histograms_for_sector(region_name, particle_name, nBins, xMin, xMax, yMin, yMax, false);
@@ -3031,19 +3032,23 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             std::vector<TH1D*> h_count_chi2_ndf_mc_sector(6);
 
             for (int sector = 0; sector < 6; ++sector) {
-                h_sum_chi2_ndf_sector[sector] = new TH1D(("h_sum_chi2_ndf_sector_" + region_name + "sector" + std::to_string(sector + 1)).c_str(),
-                ("Sum chi2/ndf vs traj_edge - Sector " + std::to_string(sector + 1)).c_str(),
-                nBins, 0, 80);
-                h_count_chi2_ndf_sector[sector] = new TH1D(("h_count_chi2_ndf_sector" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
-                ("Count of chi2/ndf vs traj_edge - Sector " + std::to_string(sector + 1)).c_str(),
-                nBins, 0, 80);
+                h_sum_chi2_ndf_sector[sector] = new TH1D(("h_sum_chi2_ndf_sector_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
+                                                         (particle_name + " in " + region_name + " - Sector " + std::to_string(sector + 1)).c_str(),
+                                                         nBins, 0, edge_max);
+                h_sum_chi2_ndf_sector[sector]->GetXaxis()->SetTitle("edge");
+                h_sum_chi2_ndf_sector[sector]->GetYaxis()->SetTitle("<chi2/ndf>");
+                h_count_chi2_ndf_sector[sector] = new TH1D(("h_count_chi2_ndf_sector_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
+                                                       "", nBins, 0, edge_max);
+
                 if (mcReader) {
                     h_sum_chi2_ndf_mc_sector[sector] = new TH1D(("h_sum_chi2_ndf_mc_sector_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
-                                                                ("Sum chi2/ndf vs traj_edge - MC - Sector " + std::to_string(sector + 1)).c_str(),
-                                                                nBins, 0, 80);
+                                                                (particle_name + " in " + region_name + " - MC - Sector " + std::to_string(sector + 1)).c_str(),
+                                                                nBins, 0, edge_max);
+                    h_sum_chi2_ndf_mc_sector[sector]->GetXaxis()->SetTitle("edge");
+                    h_sum_chi2_ndf_mc_sector[sector]->GetYaxis()->SetTitle("<chi2/ndf>");
+
                     h_count_chi2_ndf_mc_sector[sector] = new TH1D(("h_count_chi2_ndf_mc_sector_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
-                                                                  ("Count of chi2/ndf vs traj_edge - MC - Sector " + std::to_string(sector + 1)).c_str(),
-                                                                  nBins, 0, 80);
+                                                                  "", nBins, 0, edge_max);
                 }
             }
 
