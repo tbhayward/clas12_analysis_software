@@ -2903,9 +2903,18 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         {"traj_x_36", "traj_y_36", "region_3", 30, 400, -200, 200, "traj_edge_36", 30}
     };
 
+    // // Array of particle types (photons and electrons) and their corresponding PIDs
+    // std::vector<std::tuple<int, std::string>> particle_types = {
+    //     {11, "electron"},
+    //     // {-211, "pim"},
+    //     // {211, "pip"},
+    //     // {321, "kp"},
+    //     // {-321, "km"},
+    //     {2212, "proton"}
+    // };
     // Array of particle types (photons and electrons) and their corresponding PIDs
     std::vector<std::tuple<int, std::string>> particle_types = {
-        {11, "electron"},
+        // {11, "electron"},
         // {-211, "pim"},
         // {211, "pip"},
         // {321, "kp"},
@@ -3183,7 +3192,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 dataReader.Restart();
                 while (dataReader.Next()) {
                     if (*particle_pid == pid && *track_ndf_6 > 0 && 
-                        dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, pid)) {
+                        dc_fiducial(*traj_edge, *traj_edge, *traj_edge, pid)) {  // Use *traj_edge for all three regions
                         double chi2_ndf = *track_chi2_6 / *track_ndf_6;
                         h2_chi2_vs_theta_data[particle_idx]->Fill(*track_theta, chi2_ndf);
                     }
@@ -3193,7 +3202,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                     mcReader->Restart();
                     while (mcReader->Next()) {
                         if (**mc_particle_pid == pid && **mc_track_ndf_6 > 0 && 
-                            dc_fiducial(**mc_traj_edge_6, **mc_traj_edge_18, **mc_traj_edge_36, pid)) {
+                            dc_fiducial(**mc_traj_edge, **mc_traj_edge, **mc_traj_edge, pid)) {  // Use **mc_traj_edge for all three regions
                             double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
                             h2_chi2_vs_theta_mc[particle_idx]->Fill(**mc_track_theta, mc_chi2_ndf);
                         }
