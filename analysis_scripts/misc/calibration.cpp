@@ -2658,22 +2658,23 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
         {2212, "proton"}
     };
 
+    // Declare TTreeReaderValues for the DC edge and track variables
     TTreeReaderValue<double> traj_edge_6(dataReader, "traj_edge_6");
     TTreeReaderValue<double> traj_edge_18(dataReader, "traj_edge_18");
     TTreeReaderValue<double> traj_edge_36(dataReader, "traj_edge_36");
 
-    TTreeReaderValue<int> track_sector_6(dataReader, "track_sector_6");
-    TTreeReaderValue<double> track_chi2_6(dataReader, "track_chi2_6");
-    TTreeReaderValue<int> track_ndf_6(dataReader, "track_ndf_6");
+    TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
 
     TTreeReaderValue<double>* mc_traj_edge_6 = nullptr;
     TTreeReaderValue<double>* mc_traj_edge_18 = nullptr;
     TTreeReaderValue<double>* mc_traj_edge_36 = nullptr;
+    TTreeReaderValue<int>* mc_particle_pid = nullptr;
 
     if (mcReader) {
         mc_traj_edge_6 = new TTreeReaderValue<double>(*mcReader, "traj_edge_6");
         mc_traj_edge_18 = new TTreeReaderValue<double>(*mcReader, "traj_edge_18");
         mc_traj_edge_36 = new TTreeReaderValue<double>(*mcReader, "traj_edge_36");
+        mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
     }
 
     for (const auto& particle_type : particle_types) {
