@@ -3717,12 +3717,12 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
         {"traj_x_12", "traj_y_12", "layer_12", -25, 25}
     };
 
-    std::vector<std::tuple<int, std::string>> particle_types = {
-        {211, "pip"},
-        {-211, "pim"},
-        {321, "kp"},
-        {-321, "km"},
-        {2212, "proton"}
+    std::vector<std::tuple<int, std::string, std::string>> particle_types = {
+        {211, "pip", "#pi^{+}"},
+        {-211, "pim", "#pi^{-}"},
+        {321, "kp", "k^{+}"},
+        {-321, "km", "k^{-}"},
+        {2212, "proton", "proton"}
     };
 
     // Declare TTreeReaderValues for the CVT edge and track variables
@@ -3771,14 +3771,15 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
     for (const auto& particle_type : particle_types) {
         int pid = std::get<0>(particle_type);
         std::string particle_name = std::get<1>(particle_type);
+        std::string particle_latex = std::get<2>(particle_type);
 
         // Create a canvas for data
-        TCanvas* c_data = new TCanvas(("c_data_" + particle_name).c_str(), ("Data CVT Hit Position (" + particle_name + ")").c_str(), 1800, 1200);
+        TCanvas* c_data = new TCanvas(("c_data_" + particle_name).c_str(), ("Data CVT Hit Position (" + particle_latex + ")").c_str(), 1800, 1200);
         c_data->Divide(5, 2);
 
         TCanvas* c_mc = nullptr;
         if (mcReader) {
-            c_mc = new TCanvas(("c_mc_" + particle_name).c_str(), ("MC CVT Hit Position (" + particle_name + ")").c_str(), 1800, 1200);
+            c_mc = new TCanvas(("c_mc_" + particle_name).c_str(), ("MC CVT Hit Position (" + particle_latex + ")").c_str(), 1800, 1200);
             c_mc->Divide(5, 2);
         }
 
@@ -3793,12 +3794,20 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             double yMin = xMin;
             double yMax = xMax;
 
-            h_data_before[layer_idx] = new TH2D(("h_data_before_" + layer_name).c_str(), ("Data " + layer_name + " Before Cuts (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-            h_data_after[layer_idx] = new TH2D(("h_data_after_" + layer_name).c_str(), ("Data " + layer_name + " After Cuts (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            h_data_before[layer_idx] = new TH2D(("h_data_before_" + layer_name).c_str(), ("Data " + layer_name + " Before Cuts (" + particle_latex + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            h_data_after[layer_idx] = new TH2D(("h_data_after_" + layer_name).c_str(), ("Data " + layer_name + " After Cuts (" + particle_latex + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            h_data_before[layer_idx]->GetXaxis()->SetTitle("x");
+            h_data_before[layer_idx]->GetYaxis()->SetTitle("y");
+            h_data_after[layer_idx]->GetXaxis()->SetTitle("x");
+            h_data_after[layer_idx]->GetYaxis()->SetTitle("y");
 
             if (mcReader) {
-                h_mc_before[layer_idx] = new TH2D(("h_mc_before_" + layer_name).c_str(), ("MC " + layer_name + " Before Cuts (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-                h_mc_after[layer_idx] = new TH2D(("h_mc_after_" + layer_name).c_str(), ("MC " + layer_name + " After Cuts (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                h_mc_before[layer_idx] = new TH2D(("h_mc_before_" + layer_name).c_str(), ("MC " + layer_name + " Before Cuts (" + particle_latex + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                h_mc_after[layer_idx] = new TH2D(("h_mc_after_" + layer_name).c_str(), ("MC " + layer_name + " After Cuts (" + particle_latex + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                h_mc_before[layer_idx]->GetXaxis()->SetTitle("x");
+                h_mc_before[layer_idx]->GetYaxis()->SetTitle("y");
+                h_mc_after[layer_idx]->GetXaxis()->SetTitle("x");
+                h_mc_after[layer_idx]->GetYaxis()->SetTitle("y");
             }
         }
 
@@ -3813,7 +3822,6 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                     if (traj_x_value != -9999 && traj_y_value != -9999) {
                         h_data_before[layer_idx]->Fill(traj_x_value, traj_y_value);
                         if (cvt_fiducial(*traj_edge_1, *traj_edge_3, *traj_edge_5, *traj_edge_7, *traj_edge_12, pid)) {
-                            std::cout << *traj_edge_1 << " " *traj_edge_3 << " " << *traj_edge_5 << " " << *traj_edge_7 << " " << *traj_edge_12 << std::endl;
                             h_data_after[layer_idx]->Fill(traj_x_value, traj_y_value);
                         }
                     }
@@ -3844,7 +3852,9 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
         // Find the maximum value across all histograms for consistent scaling
         double max_value_data = 0, max_value_mc = 0;
         for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
-            max_value_data = std::max(max_value_data, h_data_before[layer_idx]->GetMaximum());
+            max_value_data = std::max(max_value_data, h_data_before[layer
+
+_idx]->GetMaximum());
             max_value_data = std::max(max_value_data, h_data_after[layer_idx]->GetMaximum());
             if (mcReader) {
                 max_value_mc = std::max(max_value_mc, h_mc_before[layer_idx]->GetMaximum());
