@@ -3897,15 +3897,10 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             }
         }
 
-        // Create canvases for theta_CVT vs theta and phi_CVT vs theta_CVT plots (data and MC)
-        TCanvas* c_theta_vs_theta_data = new TCanvas(("c_theta_vs_theta_data_" + particle_name).c_str(), ("#theta_{CVT} vs #theta and #phi_{CVT} vs #theta_{CVT} (Data, " + particle_name + ")").c_str(), 1200, 1200);
-        c_theta_vs_theta_data->Divide(2, 2);
-
-        TCanvas* c_theta_vs_theta_mc = nullptr;
-        if (mcReader) {
-            c_theta_vs_theta_mc = new TCanvas(("c_theta_vs_theta_mc_" + particle_name).c_str(), ("#theta_{CVT} vs #theta and #phi_{CVT} vs #theta_{CVT} (MC, " + particle_name + ")").c_str(), 1200, 1200);
-            c_theta_vs_theta_mc->Divide(2, 2);
-        }
+        // Create and fill histograms for theta_CVT vs theta and phi_CVT vs theta_CVT
+        TH2D* h_theta_vs_theta_data_before = new TH2D("h_theta_vs_theta_data_before", ("#theta_{CVT} vs #theta Before Cuts (Data, " + particle_name + ")").c_str(), nBins, 0, 180, nBins, 0, 180);
+        TH2D* h_phi_vs_theta_CVT_data_before = new TH2D("h_phi_vs_theta_CVT_data_before", ("#phi_{CVT} vs #theta_{CVT} Before Cuts (Data, " + particle_name + ")").c_str(), nBins, 0, 360, nBins, 0, 180);
+        TH2D* h_theta_vs_theta_data_after = new TH2D("h_theta_vs_theta_data_after", ("#theta_{CVT} vs #theta After Cuts (Data, " + particle_name + ")").c_str
 
         // Draw and save the theta_CVT vs theta and phi_CVT vs theta_CVT canvases (data and MC)
         c_theta_vs_theta_data->cd(1);
