@@ -3723,7 +3723,147 @@ bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7,
     return true;
 }
 
-        void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+    int nBins = 100;
+
+    // Define CVT layers
+    std::vector<std::tuple<std::string, std::string, double, double>> layers = {
+        {"traj_edge_1", "layer_1", 0, 30},
+        {"traj_edge_3", "layer_3", 0, 30},
+        {"traj_edge_5", "layer_5", 0, 30},
+        {"traj_edge_7", "layer_7", 0, 30},
+        {"traj_edge_12", "layer_12", 0, 30}
+    };
+
+    std::vector<std::tuple<int, std::string>> particle_types = {
+        {211, "pip"},
+        {-211, "pim"},
+        {321, "kp"},
+        {-321, "km"},
+        {2212, "proton"}
+    };
+
+    for (const auto& particle_type : particle_types) {
+        int pid = std::get<0>(particle_type);
+        std::string particle_name = std::get<1>(particle_type);
+
+        // Create histograms for each layer
+        std::vector<TH1D*> h_sum_chi2_ndf(5);
+        std::vector<TH1D*> h_count_chi2_ndf(5);
+        std::vector<TH1D*> h_sum_chi2_ndf_mc(5);
+        std::vector<TH1D*> h_count_chi2_ndf_mc(5);
+
+        for (int i = 0; i < 5; ++i) {
+            std::string edge_var = std::get<0>(layers[i]);
+            std::string layer_name = std::get<1>(layers[i]);
+            double xMin = std::get<2>(layers[i]);
+            double xMax = std::get<3>(layers[i]);
+
+            h_sum_chi2_ndf[i] = new TH1D(("h_sum_chi2_ndf_" + layer_name + "_" + particle_name).c_str(),
+                                         (particle_name + " - " + layer_name).c_str(),
+                                         nBins, xMin, xMax);
+            h_sum_chi2_ndf[i]->GetXaxis()->SetTitle("edge");
+            h_sum_chi2_ndf[i]->GetYaxis()->SetTitle("<chi2/ndf>");
+
+            h_count_chi2_ndf[i] = new TH1D(("h_count_chi2_ndf_" + layer_name + "_" + particle_name).c_str(),
+                                           "", nBins, xMin, xMax);
+
+            if (mcReader) {
+                h_sum_chi2_ndf_mc[i] = new TH1D(("h_sum_chi2_ndf_mc_" + layer_name + "_" + particle_name).c_str(),
+                                                (particle_name + " - " + layer_name + " (MC)").c_str(),
+                                                nBins, xMin, xMax);
+                h_sum_chi2_ndf_mc[i]->GetXaxis()->SetTitle("edge");
+                h_sum_chi2_ndf_mc[i]->GetYaxis()->SetTitle("<chi2/ndf>");
+
+                h_count_chi2_ndf_mc[i] = new TH1D(("h_count_chi2_ndf_mc_" + layer_name + "_" + particle_name).c_str(),
+                                                  "", nBins, xMin, xMax);
+            }
+        }
+
+        // Restart readers
+        dataReader.Restart();
+        if (mcReader) mcReader->Restart();
+
+        // Fill data histograms
+        while (dataReader.Next()) {
+            if (*particle_pid == pid) {
+                double chi2_ndf = *track_chi2_6 / *track_ndf_6;
+                for (int i = 0; i < 5; ++i) {
+                    TTreeReaderValue<double> traj_edge(dataReader, std::get<0>(layers[i]).c_str());
+                    if (*traj_edge != -9999) {
+                        h_sum_chi2_ndf[i]->Fill(*traj_edge, chi2_ndf);
+                        h_count_chi2_ndf[i]->Fill(*traj_edge);
+                    }
+                }
+            }
+        }
+
+        // Fill MC histograms if available
+        if (mcReader) {
+            while (mcReader->Next()) {
+                if (**mc_particle_pid == pid) {
+                    double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
+                    for (int i = 0; i < 5; ++i) {
+                        TTreeReaderValue<double> mc_traj_edge(*mcReader, std::get<0>(layers[i]).c_str());
+                        if (**mc_traj_edge != -9999) {
+                            h_sum_chi2_ndf_mc[i]->Fill(**mc_traj_edge, mc_chi2_ndf);
+                            h_count_chi2_ndf_mc[i]->Fill(**mc_traj_edge);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Normalize histograms
+        for (int i = 0; i < 5; ++i) {
+            h_sum_chi2_ndf[i]->Divide(h_count_chi2_ndf[i]);
+            if (mcReader) {
+                h_sum_chi2_ndf_mc[i]->Divide(h_count_chi2_ndf_mc[i]);
+            }
+        }
+
+        // Create a canvas
+        TCanvas* c_edge = new TCanvas(("c_edge_" + particle_name).c_str(),
+                                      ("Mean chi2/ndf vs edge for " + particle_name).c_str(), 1800, 1200);
+        c_edge->Divide(3, 2);
+
+        for (int i = 0; i < 5; ++i) {
+            c_edge->cd(i + 1);
+            gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+            h_sum_chi2_ndf[i]->SetStats(false);
+            h_sum_chi2_ndf[i]->SetLineColor(kBlack);
+            h_sum_chi2_ndf[i]->Draw("E");
+
+            if (mcReader) {
+                h_sum_chi2_ndf_mc[i]->SetStats(false);
+                h_sum_chi2_ndf_mc[i]->SetLineColor(kRed);
+                h_sum_chi2_ndf_mc[i]->Draw("E SAME");
+            }
+
+            TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);
+            legend->AddEntry(h_sum_chi2_ndf[i], "Data", "l");
+            if (mcReader) legend->AddEntry(h_sum_chi2_ndf_mc[i], "MC", "l");
+            legend->Draw();
+        }
+
+        // Save the canvas with an empty sixth subplot
+        c_edge->cd(6); // Empty subplot
+        c_edge->SaveAs(("output/calibration/cvt/determination/mean_chi2_per_ndf_vs_edge_" + particle_name + ".png").c_str());
+
+        // Cleanup
+        delete c_edge;
+        for (int i = 0; i < 5; ++i) {
+            delete h_sum_chi2_ndf[i];
+            delete h_count_chi2_ndf[i];
+            if (mcReader) {
+                delete h_sum_chi2_ndf_mc[i];
+                delete h_count_chi2_ndf_mc[i];
+            }
+        }
+    }
+}
+
+void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     int nBins = 100;
 
     std::vector<std::tuple<std::string, std::string, std::string, double, double>> layers = {
@@ -4203,9 +4343,13 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_dc_hit_position(dataReader, mcReader);
 
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_cvt_hit_position(dataReader, mcReader);
+
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
-    plot_cvt_hit_position(dataReader, mcReader);
+    cvt_fiducial_determination(dataReader, mcReader);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
