@@ -2713,7 +2713,7 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
 
         // Fill the data histograms
         dataReader.Restart();
-        while (dataReader.Next()) {
+        while (dataReader->Next()) {
             if (*particle_pid == pid) {
                 for (int region_idx = 0; region_idx < 3; ++region_idx) {
                     std::string x_branch = std::get<0>(regions[region_idx]);
@@ -2734,7 +2734,7 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
         // Fill the MC histograms if available
         if (mcReader) {
             mcReader->Restart();
-            while (mcReader.Next()) {
+            while (mcReader->Next()) {
                 if (**mc_particle_pid == pid) {
                     for (int region_idx = 0; region_idx < 3; ++region_idx) {
                         std::string x_branch = std::get<0>(regions[region_idx]);
