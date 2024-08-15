@@ -3166,22 +3166,24 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 }
             }
 
-            // Fill the histograms
-            dataReader.Restart();
-            while (dataReader.Next()) {
-                if (*particle_pid == pid && *track_ndf_6 > 0) {
-                    double chi2_ndf = *track_chi2_6 / *track_ndf_6;
-                    h2_chi2_vs_theta_data[region_idx]->Fill(*track_theta, chi2_ndf);
-                }
-            }
-
-            if (mcReader) {
-                mcReader->Restart();
-                while (mcReader->Next()) {
-                    if (**mc_particle_pid == pid && **mc_track_ndf_6 > 0) {
-                        double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
-                        h2_chi2_vs_theta_mc[region_idx]->Fill(**mc_track_theta, mc_chi2_ndf);
+            for (int region_idx = 0; region_idx < 3; ++region_idx) {
+                while (dataReader.Next()) {
+                    if (*particle_pid == pid && *track_ndf_6 > 0) {
+                        double chi2_ndf = *track_chi2_6 / *track_ndf_6;
+                        h2_chi2_vs_theta_data[region_idx]->Fill(*track_theta, chi2_ndf);
                     }
+                }
+                dataReader.Restart();
+            }
+            if (mcReader) {
+                for (int region_idx = 0; region_idx < 3; ++region_idx) {
+                    while (mcReader->Next()) {
+                        if (**mc_particle_pid == pid && **mc_track_ndf_6 > 0) {
+                            double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
+                            h2_chi2_vs_theta_mc[region_idx]->Fill(**mc_track_theta, mc_chi2_ndf);
+                        }
+                    }
+                    mcReader->Restart();
                 }
             }
             // Draw and save the 2D histograms of chi2/ndf vs theta
