@@ -3701,7 +3701,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
 
 
 bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7, 
-    double edge_12, int pid) {
+     double edge_12, int pid) {
     // Dummy function, always returns true
     return true;
 }
@@ -3710,11 +3710,11 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
     int nBins = 100;
 
     std::vector<std::tuple<std::string, std::string, std::string, double, double>> layers = {
-        {"traj_x_1", "traj_y_1", "layer_1", -100, 100},
-        {"traj_x_3", "traj_y_3", "layer_3", -100, 100},
-        {"traj_x_5", "traj_y_5", "layer_5", -100, 100},
-        {"traj_x_7", "traj_y_7", "layer_7", -100, 100},
-        {"traj_x_12", "traj_y_12", "layer_12", -100, 100}
+        {"traj_x_1", "traj_y_1", "layer_1", -40, 40},
+        {"traj_x_3", "traj_y_3", "layer_3", -40, 40},
+        {"traj_x_5", "traj_y_5", "layer_5", -40, 40},
+        {"traj_x_7", "traj_y_7", "layer_7", -40, 40},
+        {"traj_x_12", "traj_y_12", "layer_12", -40, 40}
     };
 
     std::vector<std::tuple<int, std::string>> particle_types = {
