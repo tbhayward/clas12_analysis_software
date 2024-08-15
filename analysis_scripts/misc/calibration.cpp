@@ -3744,7 +3744,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
     // Declare TTreeReaderValues for CVT layer 12 variables and theta
     TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
     TTreeReaderValue<double> theta(dataReader, "theta");
-    std::cout << theta << std::endl;
+    std::cout << *theta << std::endl;
     TTreeReaderValue<double> traj_x_12(dataReader, "traj_x_12");
     TTreeReaderValue<double> traj_y_12(dataReader, "traj_y_12");
     TTreeReaderValue<double> traj_z_12(dataReader, "traj_z_12");
