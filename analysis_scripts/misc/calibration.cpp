@@ -3185,6 +3185,9 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 }
             }
 
+            // Restart readers at the start of each loop
+            dataReader.Restart();
+            if (mcReader) mcReader->Restart();
             // Fill the histograms with fiducial cuts applied
             for (int particle_idx = 0; particle_idx < num_particles; ++particle_idx) {
                 int pid = std::get<0>(particle_types[particle_idx]);
