@@ -3188,14 +3188,14 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             // Restart readers at the start of each loop
             dataReader.Restart();
             if (mcReader) mcReader->Restart();
+
             // Fill the histograms with fiducial cuts applied
             for (int particle_idx = 0; particle_idx < num_particles; ++particle_idx) {
                 int pid = std::get<0>(particle_types[particle_idx]);
 
-                dataReader.Restart();
                 while (dataReader.Next()) {
-                    if (*particle_pid == pid && *track_ndf_6 > 0 && 
-                        dc_fiducial(*traj_edge, *traj_edge, *traj_edge, pid)) {  // Use *traj_edge for all three regions
+                    if (*particle_pid == pid && *track_ndf_6 > 0 &&
+                        dc_fiducial(*traj_edge, *traj_edge, *traj_edge, pid)) {
                         double chi2_ndf = *track_chi2_6 / *track_ndf_6;
                         h2_chi2_vs_theta_data[particle_idx]->Fill(*track_theta, chi2_ndf);
                     }
@@ -3204,8 +3204,8 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 if (mcReader) {
                     mcReader->Restart();
                     while (mcReader->Next()) {
-                        if (**mc_particle_pid == pid && **mc_track_ndf_6 > 0 && 
-                            dc_fiducial(**mc_traj_edge, **mc_traj_edge, **mc_traj_edge, pid)) {  // Use **mc_traj_edge for all three regions
+                        if (**mc_particle_pid == pid && **mc_track_ndf_6 > 0 &&
+                            dc_fiducial(**mc_traj_edge, **mc_traj_edge, **mc_traj_edge, pid)) {
                             double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
                             h2_chi2_vs_theta_mc[particle_idx]->Fill(**mc_track_theta, mc_chi2_ndf);
                         }
