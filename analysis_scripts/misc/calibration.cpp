@@ -3025,25 +3025,35 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             }
 
             // Now, calculate and plot mean chi2/ndf as a function of traj_edge for each sector
-            std::vector<TH1D*> h_mean_chi2_ndf_sector(6);
-            std::vector<TH1D*> h_mean_chi2_ndf_mc_sector(6);
+            std::vector<TH1D*> h_sum_chi2_ndf_sector(6);
+            std::vector<TH1D*> h_count_chi2_ndf_sector(6);
+            std::vector<TH1D*> h_sum_chi2_ndf_mc_sector(6);
+            std::vector<TH1D*> h_count_chi2_ndf_mc_sector(6);
 
             for (int sector = 0; sector < 6; ++sector) {
-                h_mean_chi2_ndf_sector[sector] = new TH1D(("h_mean_chi2_ndf_sector_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
-                                                          ("Mean chi2/ndf vs traj_edge - Data - Sector " + std::to_string(sector + 1)).c_str(),
-                                                          nBins, 0, 80);
+                h_sum_chi2_ndf_sector[sector] = new TH1D(("h_sum_chi2_ndf_sector_" + region_name + "sector" + std::to_string(sector + 1)).c_str(),
+                ("Sum chi2/ndf vs traj_edge - Sector " + std::to_string(sector + 1)).c_str(),
+                nBins, 0, 80);
+                h_count_chi2_ndf_sector[sector] = new TH1D(("h_count_chi2_ndf_sector" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
+                ("Count of chi2/ndf vs traj_edge - Sector " + std::to_string(sector + 1)).c_str(),
+                nBins, 0, 80);
                 if (mcReader) {
-                    h_mean_chi2_ndf_mc_sector[sector] = new TH1D(("h_mean_chi2_ndf_mc_sector" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
-                    ("Mean chi2/ndf vs traj_edge - MC - Sector " + std::to_string(sector + 1)).c_str(),
-                    nBins, 0, 80);
+                    h_sum_chi2_ndf_mc_sector[sector] = new TH1D(("h_sum_chi2_ndf_mc_sector_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
+                                                                ("Sum chi2/ndf vs traj_edge - MC - Sector " + std::to_string(sector + 1)).c_str(),
+                                                                nBins, 0, 80);
+                    h_count_chi2_ndf_mc_sector[sector] = new TH1D(("h_count_chi2_ndf_mc_sector_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
+                                                                  ("Count of chi2/ndf vs traj_edge - MC - Sector " + std::to_string(sector + 1)).c_str(),
+                                                                  nBins, 0, 80);
                 }
             }
+
             // Fill histograms for data
             dataReader.Restart();
             while (dataReader.Next()) {
                 if (*particle_pid == pid && *traj_edge != -9999 && *track_ndf_6 > 0) {
                     double chi2_ndf = *track_chi2_6 / *track_ndf_6;
-                    h_mean_chi2_ndf_sector[*track_sector_6 - 1]->Fill(*traj_edge, chi2_ndf);
+                    h_sum_chi2_ndf_sector[*track_sector_6 - 1]->Fill(*traj_edge, chi2_ndf);
+                    h_count_chi2_ndf_sector[*track_sector_6 - 1]->Fill(*traj_edge);
                 }
             }
 
@@ -3053,43 +3063,54 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 while (mcReader->Next()) {
                     if (**mc_particle_pid == pid && **mc_traj_edge != -9999 && **mc_track_ndf_6 > 0) {
                         double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
-                        h_mean_chi2_ndf_mc_sector[**mc_track_sector_6 - 1]->Fill(**mc_traj_edge, mc_chi2_ndf);
+                        h_sum_chi2_ndf_mc_sector[**mc_track_sector_6 - 1]->Fill(**mc_traj_edge, mc_chi2_ndf);
+                        h_count_chi2_ndf_mc_sector[**mc_track_sector_6 - 1]->Fill(**mc_traj_edge);
                     }
                 }
             }
 
-            // Normalize and save the mean chi2/ndf vs traj_edge plots
+            // Normalize the histograms to get the mean chi2/ndf per bin of traj_edge
+            for (int sector = 0; sector < 6; ++sector) {
+                h_sum_chi2_ndf_sector[sector]->Divide(h_count_chi2_ndf_sector[sector]);
+                if (mcReader) {
+                    h_sum_chi2_ndf_mc_sector[sector]->Divide(h_count_chi2_ndf_mc_sector[sector]);
+                }
+            }
+
+            // Find the max y-value for setting axis limits
             double max_value = 0;
             for (int sector = 0; sector < 6; ++sector) {
-                if (h_mean_chi2_ndf_sector[sector]->GetMaximum() > max_value) {
-                    max_value = h_mean_chi2_ndf_sector[sector]->GetMaximum();
+                if (h_sum_chi2_ndf_sector[sector]->GetMaximum() > max_value) {
+                    max_value = h_sum_chi2_ndf_sector[sector]->GetMaximum();
                 }
-                if (mcReader && h_mean_chi2_ndf_mc_sector[sector]->GetMaximum() > max_value) {
-                    max_value = h_mean_chi2_ndf_mc_sector[sector]->GetMaximum();
+                if (mcReader && h_sum_chi2_ndf_mc_sector[sector]->GetMaximum() > max_value) {
+                    max_value = h_sum_chi2_ndf_mc_sector[sector]->GetMaximum();
                 }
             }
             max_value *= 1.1; // Add 10% margin to max value
 
+            // Draw and save the mean chi2/ndf vs traj_edge plots
             TCanvas* c_edge = new TCanvas(("c_edge_" + particle_name + "_" + region_name).c_str(), ("Mean chi2/ndf vs traj_edge for " + particle_name + " in " + region_name).c_str(), 1800, 1200);
             c_edge->Divide(3, 2);
 
             for (int sector = 0; sector < 6; ++sector) {
                 c_edge->cd(sector + 1);
                 gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-                h_mean_chi2_ndf_sector[sector]->SetStats(false);
-                h_mean_chi2_ndf_sector[sector]->SetMaximum(max_value);
-                h_mean_chi2_ndf_sector[sector]->SetLineColor(kBlack);
-                h_mean_chi2_ndf_sector[sector]->Draw("E");
+                h_sum_chi2_ndf_sector[sector]->SetStats(false);
+                h_sum_chi2_ndf_sector[sector]->SetMaximum(max_value);
+                h_sum_chi2_ndf_sector[sector]->SetLineColor(kBlack);
+                h_sum_chi2_ndf_sector[sector]->Draw("E");
 
                 if (mcReader) {
-                    h_mean_chi2_ndf_mc_sector[sector]->SetStats(false);
-                    h_mean_chi2_ndf_mc_sector[sector]->SetLineColor(kRed);
-                    h_mean_chi2_ndf_mc_sector[sector]->Draw("E SAME");
+                    h_sum_chi2_ndf_mc_sector[sector]->SetStats(false);
+                    h_sum_chi2_ndf_mc_sector[sector]->SetMaximum(max_value);
+                    h_sum_chi2_ndf_mc_sector[sector]->SetLineColor(kRed);
+                    h_sum_chi2_ndf_mc_sector[sector]->Draw("E SAME");
                 }
 
                 TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);
-                legend->AddEntry(h_mean_chi2_ndf_sector[sector], "Data", "l");
-                if (mcReader) legend->AddEntry(h_mean_chi2_ndf_mc_sector[sector], "MC", "l");
+                legend->AddEntry(h_sum_chi2_ndf_sector[sector], "Data", "l");
+                if (mcReader) legend->AddEntry(h_sum_chi2_ndf_mc_sector[sector], "MC", "l");
                 legend->Draw();
             }
 
@@ -3097,9 +3118,12 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
             // Cleanup for mean chi2/ndf vs traj_edge histograms
             delete c_edge;
-            for (auto& hist : h_mean_chi2_ndf_sector) delete hist;
+            for (auto& hist : h_sum_chi2_ndf_sector) delete hist;
+            for (auto& hist : h_count_chi2_ndf_sector) delete hist;
+
             if (mcReader) {
-                for (auto& hist : h_mean_chi2_ndf_mc_sector) delete hist;
+                for (auto& hist : h_sum_chi2_ndf_mc_sector) delete hist;
+                for (auto& hist : h_count_chi2_ndf_mc_sector) delete hist;
             }
 
             if (mc_traj_edge) delete mc_traj_edge;
