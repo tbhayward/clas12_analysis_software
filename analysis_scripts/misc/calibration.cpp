@@ -2730,10 +2730,13 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
         while (dataReader.Next()) {
             if (*particle_pid == pid) {
                 for (int region_idx = 0; region_idx < 3; ++region_idx) {
-                    if (*traj_x[region_idx] != -9999 && *traj_y[region_idx] != -9999) {
-                        h_data_before[region_idx]->Fill(**traj_x[region_idx], **traj_y[region_idx]);
+                    double traj_x_value = **traj_x[region_idx];
+                    double traj_y_value = **traj_y[region_idx];
+                    
+                    if (traj_x_value != -9999 && traj_y_value != -9999) {
+                        h_data_before[region_idx]->Fill(traj_x_value, traj_y_value);
                         if (dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, pid)) {
-                            h_data_after[region_idx]->Fill(**traj_x[region_idx], **traj_y[region_idx]);
+                            h_data_after[region_idx]->Fill(traj_x_value, traj_y_value);
                         }
                     }
                 }
@@ -2746,10 +2749,13 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
             while (mcReader->Next()) {
                 if (**mc_particle_pid == pid) {
                     for (int region_idx = 0; region_idx < 3; ++region_idx) {
-                        if (**mc_traj_x[region_idx] != -9999 && **mc_traj_y[region_idx] != -9999) {
-                            h_mc_before[region_idx]->Fill(**mc_traj_x[region_idx], **mc_traj_y[region_idx]);
+                        double mc_traj_x_value = **mc_traj_x[region_idx];
+                        double mc_traj_y_value = **mc_traj_y[region_idx];
+                        
+                        if (mc_traj_x_value != -9999 && mc_traj_y_value != -9999) {
+                            h_mc_before[region_idx]->Fill(mc_traj_x_value, mc_traj_y_value);
                             if (dc_fiducial(**mc_traj_edge_6, **mc_traj_edge_18, **mc_traj_edge_36, pid)) {
-                                h_mc_after[region_idx]->Fill(**mc_traj_x[region_idx], **mc_traj_y[region_idx]);
+                                h_mc_after[region_idx]->Fill(mc_traj_x_value, mc_traj_y_value);
                             }
                         }
                     }
