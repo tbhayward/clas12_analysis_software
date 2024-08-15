@@ -2812,27 +2812,27 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
             c_mc->SaveAs(("output/calibration/dc/positions/mc_" + particle_name + "_dc_hit_position.png").c_str());
         }
 
-        // Cleanup
-        for (int region_idx = 0; region_idx < 3; ++region_idx) {
-            delete h_data_before[region_idx];
-            delete h_data_after[region_idx];
-            if (mcReader) {
-                delete h_mc_before[region_idx];
-                delete h_mc_after[region_idx];
-            }
-        }
-        delete c_data;
-        if (mcReader) delete c_mc;
+        // // Cleanup
+        // for (int region_idx = 0; region_idx < 3; ++region_idx) {
+        //     delete h_data_before[region_idx];
+        //     delete h_data_after[region_idx];
+        //     if (mcReader) {
+        //         delete h_mc_before[region_idx];
+        //         delete h_mc_after[region_idx];
+        //     }
+        // }
+        // delete c_data;
+        // if (mcReader) delete c_mc;
 
-        // Clean up dynamically allocated TTreeReaderValues for traj_x and traj_y
-        for (int region_idx = 0; region_idx < 3; ++region_idx) {
-            delete traj_x[region_idx];
-            delete traj_y[region_idx];
-            if (mcReader) {
-                delete mc_traj_x[region_idx];
-                delete mc_traj_y[region_idx];
-            }
-        }
+        // // Clean up dynamically allocated TTreeReaderValues for traj_x and traj_y
+        // for (int region_idx = 0; region_idx < 3; ++region_idx) {
+        //     delete traj_x[region_idx];
+        //     delete traj_y[region_idx];
+        //     if (mcReader) {
+        //         delete mc_traj_x[region_idx];
+        //         delete mc_traj_y[region_idx];
+        //     }
+        // }
     }
 
     // Clean up the dynamically allocated memory for edge variables
