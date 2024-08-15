@@ -2631,10 +2631,13 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
 }
 
 bool dc_fiducial(double edge_6, double edge_18, double edge_36, 
-	int strictness) {
-    // return edge_6 > 10;
-    // If none of the cuts apply, the track is good
-    return true;
+	int pid) {
+    if (pid == 11 || pid == -11) {
+        return edge_6 > 5 && edge_18 > 5 && edge_36 > 10;
+    } else if (pid == 211 || pid == -211 || pid == 321 || pid == -321 || pid == 2212 || pid == -2212) {
+        return edge_6 > 3 && edge_18 > 3 && edge_36 > 7;
+    } 
+    return false; // not a charged track? wrong pid?
 }
 
 void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
@@ -2902,10 +2905,6 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
     std::vector<std::tuple<int, std::string>> particle_types = {
         {11, "electron"},
-        {-211, "pim"},
-        {211, "pip"},
-        {321, "kp"},
-        {-321, "km"},
         {2212, "proton"}
     };
 
@@ -2950,6 +2949,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             TTreeReaderValue<double> track_chi2_6(dataReader, "track_chi2_6");
             TTreeReaderValue<int> track_ndf_6(dataReader, "track_ndf_6");
             TTreeReaderValue<double> traj_edge(dataReader, edge_branch.c_str());
+            TTreeReaderValue<double> track_theta(dataReader, "theta");
 
             TTreeReaderValue<double>* mc_traj_x = nullptr;
             TTreeReaderValue<double>* mc_traj_y = nullptr;
@@ -2958,6 +2958,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             TTreeReaderValue<double>* mc_track_chi2_6 = nullptr;
             TTreeReaderValue<int>* mc_track_ndf_6 = nullptr;
             TTreeReaderValue<double>* mc_traj_edge = nullptr;
+            TTreeReaderValue<double>* mc_track_theta = nullptr;
 
             if (mcReader) {
                 mc_traj_x = new TTreeReaderValue<double>(*mcReader, x_branch.c_str());
@@ -2967,6 +2968,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 mc_track_chi2_6 = new TTreeReaderValue<double>(*mcReader, "track_chi2_6");
                 mc_track_ndf_6 = new TTreeReaderValue<int>(*mcReader, "track_ndf_6");
                 mc_traj_edge = new TTreeReaderValue<double>(*mcReader, edge_branch.c_str());
+                mc_track_theta = new TTreeReaderValue<double>(*mcReader, "theta");
             }
 
             // Fill data histograms for the rotated hit positions
@@ -3034,7 +3036,6 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             std::vector<TH1D*> h_count_chi2_ndf_sector(6);
             std::vector<TH1D*> h_sum_chi2_ndf_mc_sector(6);
             std::vector<TH1D*> h_count_chi2_ndf_mc_sector(6);
-
             for (int sector = 0; sector < 6; ++sector) {
                 h_sum_chi2_ndf_sector[sector] = new TH1D(("h_sum_chi2_ndf_sector_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
                                                          (particle_name + " in " + region_name + " - Sector " + std::to_string(sector + 1)).c_str(),
@@ -3143,6 +3144,74 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             }
 
             if (mc_traj_edge) delete mc_traj_edge;
+
+            // -- Add New Section for Mean chi2/ndf vs Theta Plots -- //
+            // Creating histograms for chi2/ndf vs theta for each region and particle type
+            TH2D* h2_chi2_vs_theta_data[3];
+            TH2D* h2_chi2_vs_theta_mc[3];
+
+            for (int region_idx = 0; region_idx < 3; ++region_idx) {
+                h2_chi2_vs_theta_data[region_idx] = new TH2D(
+                    ("h2_chi2_vs_theta_data_" + region_name + "_" + particle_name).c_str(),
+                    (particle_name + " in " + region_name + " (Data)").c_str(),
+                    nBins, 0, 50, nBins, 0, 100
+                );
+
+                if (mcReader) {
+                    h2_chi2_vs_theta_mc[region_idx] = new TH2D(
+                        ("h2_chi2_vs_theta_mc_" + region_name + "_" + particle_name).c_str(),
+                        (particle_name + " in " + region_name + " (MC)").c_str(),
+                        nBins, 0, 50, nBins, 0, 100
+                    );
+                }
+            }
+
+            // Fill the histograms
+            dataReader.Restart();
+            while (dataReader.Next()) {
+                if (*particle_pid == pid && *track_ndf_6 > 0) {
+                    double chi2_ndf = *track_chi2_6 / *track_ndf_6;
+                    h2_chi2_vs_theta_data[region_idx]->Fill(*track_theta, chi2_ndf);
+                }
+            }
+
+            if (mcReader) {
+                mcReader->Restart();
+                while (mcReader->Next()) {
+                    if (**mc_particle_pid == pid && **mc_track_ndf_6 > 0) {
+                        double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
+                        h2_chi2_vs_theta_mc[region_idx]->Fill(**mc_track_theta, mc_chi2_ndf);
+                    }
+                }
+            }
+            // Draw and save the 2D histograms of chi2/ndf vs theta
+            TCanvas* c_theta = new TCanvas(("c_theta_" + particle_name).c_str(), ("Mean chi2/ndf vs Theta for " + particle_name).c_str(), 1800, 1200);
+            c_theta->Divide(3, 2);
+
+            for (int region_idx = 0; region_idx < 3; ++region_idx) {
+                c_theta->cd(region_idx + 1);
+                h2_chi2_vs_theta_data[region_idx]->SetStats(false);
+                h2_chi2_vs_theta_data[region_idx]->GetXaxis()->SetTitle("Theta (degrees)");
+                h2_chi2_vs_theta_data[region_idx]->GetYaxis()->SetTitle("<chi2/ndf>");
+                h2_chi2_vs_theta_data[region_idx]->Draw("COLZ");
+
+                if (mcReader) {
+                    c_theta->cd(region_idx + 4); // Second row for MC
+                    h2_chi2_vs_theta_mc[region_idx]->SetStats(false);
+                    h2_chi2_vs_theta_mc[region_idx]->GetXaxis()->SetTitle("Theta (degrees)");
+                    h2_chi2_vs_theta_mc[region_idx]->GetYaxis()->SetTitle("<chi2/ndf>");
+                    h2_chi2_vs_theta_mc[region_idx]->Draw("COLZ");
+                }
+            }
+
+            c_theta->SaveAs(("output/calibration/dc/determination/mean_chi2_per_ndf_vs_theta_" + particle_name + ".png").c_str());
+
+            // Cleanup for the 2D histograms of chi2/ndf vs theta
+            delete c_theta;
+            for (int region_idx = 0; region_idx < 3; ++region_idx) {
+                delete h2_chi2_vs_theta_data[region_idx];
+                if (mcReader) delete h2_chi2_vs_theta_mc[region_idx];
+            }
         }
 
         dataReader.Restart();
