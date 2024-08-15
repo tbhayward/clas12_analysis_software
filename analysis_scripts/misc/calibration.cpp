@@ -2902,10 +2902,10 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
     std::vector<std::tuple<int, std::string>> particle_types = {
         {11, "electron"},
-        {-211, "#pi^{-}"},
-        {211, "#pi^{+}"},
-        {321, "k^{+}"},
-        {-321, "k^{-}"},
+        {-211, "pim"},
+        {211, "pip"},
+        {321, "kp"},
+        {-321, "km"},
         {2212, "proton"}
     };
 
@@ -3105,8 +3105,9 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             for (int sector = 0; sector < 6; ++sector) {
                 c_edge->cd(sector + 1);
                 gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-                gPad->SetLogy();  // Add this line to set the y-axis to log scale
+                gPad->SetLogy();  
                 h_sum_chi2_ndf_sector[sector]->SetStats(false);
+                h_sum_chi2_ndf_sector[sector]->SetAxisRange(0, 30, "X"); 
                 // h_sum_chi2_ndf_sector[sector]->SetMaximum(max_value);
                 h_sum_chi2_ndf_sector[sector]->SetMaximum(1e3);
                 h_sum_chi2_ndf_sector[sector]->SetMinimum(10);
@@ -3115,6 +3116,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
                 if (mcReader) {
                     h_sum_chi2_ndf_mc_sector[sector]->SetStats(false);
+                    h_sum_chi2_ndf_mc_sector[sector]->SetAxisRange(0, 30, "X"); 
                     // h_sum_chi2_ndf_mc_sector[sector]->SetMaximum(max_value);
                     h_sum_chi2_ndf_mc_sector[sector]->SetMaximum(1e3);
                     h_sum_chi2_ndf_mc_sector[sector]->SetMinimum(10);
