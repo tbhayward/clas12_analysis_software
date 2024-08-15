@@ -3808,7 +3808,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         // Fill data histograms
         dataReader.Restart();
         while (dataReader.Next()) {
-            if (*particle_pid == pid) {
+            if (*particle_pid == pid && *track_chi2_6 != -9999 && *track_ndf_6 != -9999) {
                 double chi2_ndf = *track_chi2_6 / *track_ndf_6;
                 std::cout << chi2_ndf << std::endl;
                 for (int i = 0; i < 5; ++i) {
@@ -3824,7 +3824,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         if (mcReader) {
             mcReader->Restart();
             while (mcReader->Next()) {
-                if (**mc_particle_pid == pid) {
+                if (**mc_particle_pid == pid && **mc_track_chi2_6 != -9999 && **mc_track_ndf_6 != -9999) {
                     double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
                     for (int i = 0; i < 5; ++i) {
                         if (**mc_traj_edges[i] != -9999) {
