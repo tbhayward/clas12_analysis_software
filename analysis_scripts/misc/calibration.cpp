@@ -3821,9 +3821,9 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
                     double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
                     for (int i = 0; i < 5; ++i) {
                         TTreeReaderValue<double> mc_traj_edge(*mcReader, std::get<0>(layers[i]).c_str());
-                        if (**mc_traj_edge != -9999) {
-                            h_sum_chi2_ndf_mc[i]->Fill(**mc_traj_edge, mc_chi2_ndf);
-                            h_count_chi2_ndf_mc[i]->Fill(**mc_traj_edge);
+                        if (*mc_traj_edge != -9999) {
+                            h_sum_chi2_ndf_mc[i]->Fill(*mc_traj_edge, mc_chi2_ndf);
+                            h_count_chi2_ndf_mc[i]->Fill(*mc_traj_edge);
                         }
                     }
                 }
