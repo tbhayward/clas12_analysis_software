@@ -3234,7 +3234,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 gPad->SetRightMargin(0.2);  // Adjust the right margin
                 gPad->SetLogz();  // Set log scale for the z-axis
                 h2_chi2_vs_theta_data[valid_particle_idx]->SetStats(false);
-                h2_chi2_vs_theta_data[valid_particle_idx]->GetXaxis()->SetTitle("Theta (degrees)");
+                h2_chi2_vs_theta_data[valid_particle_idx]->GetXaxis()->SetTitle("#theta (degrees)");
                 h2_chi2_vs_theta_data[valid_particle_idx]->GetYaxis()->SetTitle("<chi2/ndf>");
                 h2_chi2_vs_theta_data[valid_particle_idx]->Draw("COLZ");
 
@@ -3244,7 +3244,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                     gPad->SetRightMargin(0.2);  // Adjust the right margin
                     gPad->SetLogz();  // Set log scale for the z-axis
                     h2_chi2_vs_theta_mc[valid_particle_idx]->SetStats(false);
-                    h2_chi2_vs_theta_mc[valid_particle_idx]->GetXaxis()->SetTitle("Theta (degrees)");
+                    h2_chi2_vs_theta_mc[valid_particle_idx]->GetXaxis()->SetTitle("#theta (degrees)");
                     h2_chi2_vs_theta_mc[valid_particle_idx]->GetYaxis()->SetTitle("<chi2/ndf>");
                     h2_chi2_vs_theta_mc[valid_particle_idx]->Draw("COLZ");
                 }
@@ -3253,7 +3253,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             }
 
             // Save as PDF instead of PNG
-            c_theta->SaveAs("output/calibration/dc/determination/mean_chi2_per_ndf_vs_theta_all_particles.pdf");
+            c_theta->SaveAs("output/calibration/dc/determination/mean_chi2_per_ndf_vs_theta_all_particles.png");
 
             // Cleanup
             for (int particle_idx = 0; particle_idx < num_valid_particles; ++particle_idx) {
