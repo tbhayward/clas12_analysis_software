@@ -3720,7 +3720,8 @@ double calculate_theta(double x, double y, double z) {
 bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7, 
      double edge_12, int pid) {
     // Dummy function, always returns true
-    return true;
+    return edge_1 > 0 && edge_3 > 0 && edge_5 > 0 && edge_7 > 0 && edge_12 > 0;
+    // return true;
 }
 
 void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
@@ -4527,9 +4528,9 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_dc_hit_position(dataReader, mcReader);
 
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_cvt_hit_position(dataReader, mcReader);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_cvt_hit_position(dataReader, mcReader);
 
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
