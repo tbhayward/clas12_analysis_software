@@ -4483,9 +4483,9 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_dc_hit_position(dataReader, mcReader);
 
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_cvt_hit_position(dataReader, mcReader);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_cvt_hit_position(dataReader, mcReader);
 
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
