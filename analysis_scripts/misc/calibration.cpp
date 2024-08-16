@@ -3732,16 +3732,44 @@ bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7,
 void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     int nBins = 20;
 
-    // Define CVT layers and edges
-    std::vector<std::tuple<TTreeReaderValue<double>, std::string, double, double>> layers = {
-        {TTreeReaderValue<double>(dataReader, "traj_edge_1"), "layer_1", -2, 2},
-        {TTreeReaderValue<double>(dataReader, "traj_edge_3"), "layer_3", -2, 2},
-        {TTreeReaderValue<double>(dataReader, "traj_edge_5"), "layer_5", -2, 2},
-        {TTreeReaderValue<double>(dataReader, "traj_edge_7"), "layer_7", -2, 15},
-        {TTreeReaderValue<double>(dataReader, "traj_edge_12"), "layer_12", -2, 25}
+    // Define CVT layers and edges for data
+    std::vector<std::tuple<TTreeReaderValue<double>*, std::string, double, double>> layers = {
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_1"), "layer_1", -2, 2},
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_3"), "layer_3", -2, 2},
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_5"), "layer_5", -2, 2},
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_7"), "layer_7", -2, 15},
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_12"), "layer_12", -2, 25}
     };
 
-    // Particle types and corresponding PIDs
+    // Define CVT layers and edges for MC if available
+    std::vector<std::tuple<TTreeReaderValue<double>*, std::string, double, double>> mc_layers;
+    if (mcReader) {
+        mc_layers = {
+            {new TTreeReaderValue<double>(*mcReader, "traj_edge_1"), "layer_1", -2, 2},
+            {new TTreeReaderValue<double>(*mcReader, "traj_edge_3"), "layer_3", -2, 2},
+            {new TTreeReaderValue<double>(*mcReader, "traj_edge_5"), "layer_5", -2, 2},
+            {new TTreeReaderValue<double>(*mcReader, "traj_edge_7"), "layer_7", -2, 15},
+            {new TTreeReaderValue<double>(*mcReader, "traj_edge_12"), "layer_12", -2, 25}
+        };
+    }
+
+    // Define particle PID and track variables for data
+    TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+    TTreeReaderValue<double> track_chi2_5(dataReader, "track_chi2_5");
+    TTreeReaderValue<int> track_ndf_5(dataReader, "track_ndf_5");
+
+    // Define particle PID and track variables for MC if available
+    TTreeReaderValue<int>* mc_particle_pid = nullptr;
+    TTreeReaderValue<double>* mc_track_chi2_5 = nullptr;
+    TTreeReaderValue<int>* mc_track_ndf_5 = nullptr;
+
+    if (mcReader) {
+        mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+        mc_track_chi2_5 = new TTreeReaderValue<double>(*mcReader, "track_chi2_5");
+        mc_track_ndf_5 = new TTreeReaderValue<int>(*mcReader, "track_ndf_5");
+    }
+
+    // Array of particle types and their corresponding PIDs
     std::vector<std::tuple<int, std::string>> particle_types = {
         {211, "pip"},
         {2212, "proton"}
@@ -3778,7 +3806,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
                 double chi2_ndf = *track_chi2_5 / *track_ndf_5;
 
                 for (size_t i = 0; i < layers.size(); ++i) {
-                    double traj_edge = *std::get<0>(layers[i]);
+                    double traj_edge = **std::get<0>(layers[i]);
 
                     if (traj_edge != -9999) {
                         int bin = h_sum_chi2_ndf[i]->FindBin(traj_edge) - 1;
@@ -3795,8 +3823,8 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
                 if (**mc_particle_pid == pid && **mc_track_ndf_5 > 0 && **mc_track_chi2_5 < 10000) {
                     double mc_chi2_ndf = **mc_track_chi2_5 / **mc_track_ndf_5;
 
-                    for (size_t i = 0; i < layers.size(); ++i) {
-                        double traj_edge = **std::get<0>(layers[i]);
+                    for (size_t i = 0; i < mc_layers.size(); ++i) {
+                        double traj_edge = **std::get<0>(mc_layers[i]);
 
                         if (traj_edge != -9999) {
                             h_sum_chi2_ndf_mc[i]->Fill(traj_edge, mc_chi2_ndf);
@@ -3851,10 +3879,9 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
             if (mcReader) {
                 legend->AddEntry(h_sum_chi2_ndf_mc[i], "MC", "l");
             }
-            legend->Draw();
-        }
-
-        c_layer->SaveAs(("output/calibration/cvt/determination/median_chi2_per_ndf_vs_edge_" + particle_name + ".png").c_str());
+                legend->Draw();
+            }
+            c_layer->SaveAs(("output/calibration/cvt/determination/median_chi2_per_ndf_vs_edge_" + particle_name + ".png").c_str());
 
         // Clean up
         for (auto hist : h_sum_chi2_ndf) delete hist;
@@ -3868,15 +3895,18 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
 
     // Clean up dynamically allocated memory for MC
     if (mcReader) {
-        delete mc_traj_edge_1;
-        delete mc_traj_edge_3;
-        delete mc_traj_edge_5;
-        delete mc_traj_edge_7;
-        delete mc_traj_edge_12;
+        for (auto& mc_layer : mc_layers) {
+            delete std::get<0>(mc_layer);
+        }
 
         delete mc_particle_pid;
         delete mc_track_chi2_5;
         delete mc_track_ndf_5;
+    }
+
+    // Clean up dynamically allocated memory for data
+    for (auto& layer : layers) {
+        delete std::get<0>(layer);
     }
 }
 
