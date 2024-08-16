@@ -3873,12 +3873,28 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
             }
         }
 
+        // Print the bin contents before normalization
+        std::cout << "Values in h_sum_chi2_ndf_1 before normalization:" << std::endl;
+        for (int bin = 1; bin <= h_sum_chi2_ndf_1->GetNbinsX(); ++bin) {
+            double binContent = h_sum_chi2_ndf_1->GetBinContent(bin);
+            double binEdge = h_sum_chi2_ndf_1->GetBinLowEdge(bin);
+            std::cout << "Bin " << bin << " (Edge: " << binEdge << "): " << binContent << std::endl;
+        }
+
         // Normalize histograms
         h_sum_chi2_ndf_1->Divide(h_count_chi2_ndf_1);
         h_sum_chi2_ndf_3->Divide(h_count_chi2_ndf_3);
         h_sum_chi2_ndf_5->Divide(h_count_chi2_ndf_5);
         h_sum_chi2_ndf_7->Divide(h_count_chi2_ndf_7);
         h_sum_chi2_ndf_12->Divide(h_count_chi2_ndf_12);
+
+        // Print the bin contents after normalization
+        std::cout << "Values in h_sum_chi2_ndf_1 after normalization:" << std::endl;
+        for (int bin = 1; bin <= h_sum_chi2_ndf_1->GetNbinsX(); ++bin) {
+            double binContent = h_sum_chi2_ndf_1->GetBinContent(bin);
+            double binEdge = h_sum_chi2_ndf_1->GetBinLowEdge(bin);
+            std::cout << "Bin " << bin << " (Edge: " << binEdge << "): " << binContent << std::endl;
+        }
 
         if (mcReader) {
             h_sum_chi2_ndf_mc_1->Divide(h_count_chi2_ndf_mc_1);
