@@ -36,6 +36,18 @@ public class pid_cuts {
     
     public boolean calorimeter_sampling_fraction_cut(int particle_Index, double p, HipoDataBank run_Bank, 
             HipoDataBank cal_Bank) {
+        double cal_energy = 0;
+        for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
+            if (cal_Bank.getInt("pindex", current_Row)==particle_Index)  {
+                cal_energy+= cal_Bank.getFloat("energy", current_Row);
+            }
+        }
+        
+        return cal_energy/p > 0.2;
+    }
+    
+    public boolean pass_1_calorimeter_sampling_fraction_cut(int particle_Index, double p, HipoDataBank run_Bank, 
+            HipoDataBank cal_Bank) {
         double scale = 3.5; // how many std away from mean to cut on
         int sector = -1;
         double cal_energy = 0;
@@ -134,7 +146,7 @@ public class pid_cuts {
         return a + b * Math.exp(-(p-x0)/c);
     }
     
-    public boolean charged_pion_generic_chi2pid_cut(int particle_Index, HipoDataBank rec_Bank) {
+    public boolean pass_1_pion_generic_chi2pid_cut(int particle_Index, HipoDataBank rec_Bank) {
         // pass1 chi2pid id for pions, derived by S. Diehl
         
         // Retrieve values from the data bank
