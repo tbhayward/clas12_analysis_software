@@ -3952,7 +3952,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         for (size_t i = 0; i < layers.size(); ++i) {
             c_layer_data->cd(i + 1);
             gPad->SetLogz();  // Set the z-axis to log scale
-            gPad->SetMargin(0.2, 0.1, 0.2, 0.1);  // Adjust margins: left, right, bottom, top
+            gPad->SetMargin(0.2, 0.15, 0.2, 0.1);  // Adjust margins: left, right, bottom, top
             h_chi2_vs_edge_data[i]->GetXaxis()->SetTitle("edge (cm)");
             h_chi2_vs_edge_data[i]->GetYaxis()->SetTitle("#chi^{2}/ndf");
             h_chi2_vs_edge_data[i]->Draw("COLZ");
@@ -3969,7 +3969,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
             for (size_t i = 0; i < mc_layers.size(); ++i) {
                 c_layer_mc->cd(i + 1);
                 gPad->SetLogz();  // Set the z-axis to log scale
-                gPad->SetMargin(0.2, 0.1, 0.2, 0.1);  // Adjust margins: left, right, bottom, top
+                gPad->SetMargin(0.2, 0.15, 0.2, 0.1);  // Adjust margins: left, right, bottom, top
                 h_chi2_vs_edge_mc[i]->GetXaxis()->SetTitle("edge (cm)");
                 h_chi2_vs_edge_mc[i]->GetYaxis()->SetTitle("#chi^{2}/ndf");
                 h_chi2_vs_edge_mc[i]->Draw("COLZ");
