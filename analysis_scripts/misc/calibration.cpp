@@ -3722,7 +3722,7 @@ double calculate_theta(double x, double y, double z) {
 bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7, 
      double edge_12) {
     // Dummy function, always returns true
-    return edge_1 > 0 && edge_3 > 0 && edge_5 > 0 && edge_7 > 0 && edge_12 > 0;
+    return edge_1 > 0 && edge_3 > 0 && edge_5 > 0 && edge_7 > -2 && edge_12 > -5;
     return true;
 }
 
