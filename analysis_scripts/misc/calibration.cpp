@@ -3720,7 +3720,7 @@ double calculate_theta(double x, double y, double z) {
 }
 
 bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7, 
-     double edge_12, int pid) {
+     double edge_12) {
     // Dummy function, always returns true
     return edge_1 > 0 && edge_3 > 0 && edge_5 > 0 && edge_7 > 0 && edge_12 > 0;
     return true;
@@ -4131,7 +4131,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
 
                     if (traj_x_value != -9999 && traj_y_value != -9999) {
                         h_data_before[layer_idx]->Fill(traj_x_value, traj_y_value);
-                        if (cvt_fiducial(*traj_edge_1, *traj_edge_3, *traj_edge_5, *traj_edge_7, *traj_edge_12, pid)) {
+                        if (cvt_fiducial(*traj_edge_1, *traj_edge_3, *traj_edge_5, *traj_edge_7, *traj_edge_12)) {
                             h_data_after[layer_idx]->Fill(traj_x_value, traj_y_value);
                         }
                     }
@@ -4149,7 +4149,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                     double mc_traj_y_value = **mc_traj_y[layer_idx];
                     if (mc_traj_x_value != -9999 && mc_traj_y_value != -9999) {
                             h_mc_before[layer_idx]->Fill(mc_traj_x_value, mc_traj_y_value);
-                            if (cvt_fiducial(**mc_traj_edge_1, **mc_traj_edge_3, **mc_traj_edge_5, **mc_traj_edge_7, **mc_traj_edge_12, pid)) {
+                            if (cvt_fiducial(**mc_traj_edge_1, **mc_traj_edge_3, **mc_traj_edge_5, **mc_traj_edge_7, **mc_traj_edge_12)) {
                                 h_mc_after[layer_idx]->Fill(mc_traj_x_value, mc_traj_y_value);
                             }
                         }
@@ -4264,7 +4264,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
         for (size_t i = 0; i < theta_CVT_data.size(); ++i) {
             h_theta_vs_theta_data_before->Fill(theta_in_degrees_data[i], theta_CVT_data[i]);
             h_phi_vs_theta_CVT_data_before->Fill(phi_CVT_data[i], theta_CVT_data[i]);
-            if (cvt_fiducial(*traj_edge_1, *traj_edge_3, *traj_edge_5, *traj_edge_7, *traj_edge_12, pid)) {
+            if (cvt_fiducial(*traj_edge_1, *traj_edge_3, *traj_edge_5, *traj_edge_7, *traj_edge_12)) {
                 h_theta_vs_theta_data_after->Fill(theta_in_degrees_data[i], theta_CVT_data[i]);
                 h_phi_vs_theta_CVT_data_after->Fill(phi_CVT_data[i], theta_CVT_data[i]);
             }
@@ -4295,7 +4295,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             for (size_t i = 0; i < theta_CVT_mc.size(); ++i) {
                 h_theta_vs_theta_mc_before->Fill(theta_in_degrees_mc[i], theta_CVT_mc[i]);
                 h_phi_vs_theta_CVT_mc_before->Fill(phi_CVT_mc[i], theta_CVT_mc[i]);
-                if (cvt_fiducial(**mc_traj_edge_1, **mc_traj_edge_3, **mc_traj_edge_5, **mc_traj_edge_7, **mc_traj_edge_12, pid)) {
+                if (cvt_fiducial(**mc_traj_edge_1, **mc_traj_edge_3, **mc_traj_edge_5, **mc_traj_edge_7, **mc_traj_edge_12)) {
                     h_theta_vs_theta_mc_after->Fill(theta_in_degrees_mc[i], theta_CVT_mc[i]);
                     h_phi_vs_theta_CVT_mc_after->Fill(phi_CVT_mc[i], theta_CVT_mc[i]);
                 }
@@ -4483,13 +4483,13 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_dc_hit_position(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_cvt_hit_position(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // cvt_fiducial_determination(dataReader, mcReader);
 
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
-    cvt_fiducial_determination(dataReader, mcReader);
+    plot_cvt_hit_position(dataReader, mcReader);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();

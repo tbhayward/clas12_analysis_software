@@ -55,7 +55,10 @@ public class fiducial_cuts {
         return false;
     }
 
-    public boolean pcal_fiducial_cut(int particle_Index, int strictness, HipoDataBank rec_Bank, HipoDataBank cal_Bank) {
+    public boolean pcal_fiducial_cut(int particle_Index, int strictness, HipoDataBank run_Bank,
+            HipoDataBank rec_Bank, HipoDataBank cal_Bank) {
+        int runnum = run_Bank.getInt("run", 0);
+
         // Initialize variables for storing the index and values of the cal bank
         float lv_1 = 0.0f;
         float lw_1 = 0.0f;
@@ -116,16 +119,23 @@ public class fiducial_cuts {
                 return false;
         }
 
-        if (strictness > 1) {
-            // Sector-specific cuts for PCal (layer 1)
+        // always cut out bad PMT strips (usually already removed from data but enforced here for MC matching)
+        if (runnum >= 3030 && runnum <= 6783) {
+            // RGA, RGK, RGB Sp19
             switch (sector) {
                 case 1:
                     if ((lw_1 > 69 && lw_1 < 96) || (lw_1 > 207 && lw_1 < 236)) {
                         return false;
                     }
+                    if (lv_4 > 72 && lv_4 < 94) {
+                        return false;
+                    }
                     break;
                 case 2:
                     if ((lv_1 > 95 && lv_1 < 119) || (lu_1 > 108 && lu_1 < 126)) {
+                        return false;
+                    }
+                    if (lw_7 > 68 && lw_7 < 84) { // ECin
                         return false;
                     }
                     break;
@@ -142,22 +152,23 @@ public class fiducial_cuts {
                 default:
                     break;
             }
+        }
 
-            // Sector-specific cuts for ECin (layer 4)
-            if (sector == 1) {
-                if (lv_4 > 72 && lv_4 < 94) {
-                    return false;
-                }
-            }
-
-//        // Sector-specific cuts for ECout (layer 7)
-//        if (sector == 2) {
-//            if (lw_7 > 68 && lw_7 < 84) { return false; }
-//        }
-            if (sector == 5) {
-                if (lu_7 > 200 && lu_7 < 220) {
-                    return false;
-                }
+        // RGC
+        if ((runnum >= 16042 && runnum <= 17811) || runnum == 11) { // assumption working with RGC MC
+            switch (sector) {
+                case 1:
+                    if (lv_4 > 72 && lv_4 < 94) {
+                        return false;
+                    }
+                case 2:
+                    if (lw_7 > 68 && lw_7 < 84) {
+                        return false;
+                    }
+                case 5:
+                    if (lu_7 > 200 && lu_7 < 220) {
+                        return false;
+                    }
             }
         }
 
@@ -222,7 +233,7 @@ public class fiducial_cuts {
             if (traj_Bank.getInt("detector", current_Row) != 6) { // detector = 6 is DC 
                 continue;
             }
-            
+
             if (particle_Index == traj_Bank.getInt("pindex", current_Row)) {
                 if (traj_Bank.getInt("layer", current_Row) == 6) {
                     edge_1 = traj_Bank.getInt("edge", current_Row);
@@ -240,7 +251,7 @@ public class fiducial_cuts {
         }
         return false; // no pid match?
     }
-    
+
     public boolean pass1_dc_fiducial_cut(int particle_Index, HipoDataBank rec_Bank,
             HipoDataBank track_Bank, HipoDataBank traj_Bank, HipoDataBank run_Bank) {
         // trajectory crosses  (layers: 6 = DC region 1 start,  18 = DC region 2 center,  

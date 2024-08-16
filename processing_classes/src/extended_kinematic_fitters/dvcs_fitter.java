@@ -41,7 +41,7 @@ public class dvcs_fitter extends GenericKinematicFitter {
             && pid_cuts.calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
             && pid_cuts.calorimeter_diagonal_cut(particle_Index, p, cal_Bank)
             && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)    
-            && fiducial_cuts.pcal_fiducial_cut(particle_Index, 2, rec_Bank, cal_Bank)
+            && fiducial_cuts.pcal_fiducial_cut(particle_Index, 2, run_Bank, rec_Bank, cal_Bank)
             && fiducial_cuts.pass1_dc_fiducial_cut(particle_Index,rec_Bank,track_Bank,traj_Bank,run_Bank)
             ;
     }
@@ -69,7 +69,7 @@ public class dvcs_fitter extends GenericKinematicFitter {
               ;
     }
     
-    public boolean photon_test(int particle_Index, HipoDataBank rec_Bank, HipoDataBank cal_Bank, 
+    public boolean photon_test(int particle_Index, HipoDataBank run_Bank, HipoDataBank rec_Bank, HipoDataBank cal_Bank, 
             LorentzVector lv_e) {
         
         generic_tests generic_tests = new generic_tests();
@@ -92,7 +92,7 @@ public class dvcs_fitter extends GenericKinematicFitter {
             p > 0.50
             && (passesForwardDetector || passesForwardTagger)
             && (passesForwardDetector 
-                ? fiducial_cuts.pcal_fiducial_cut(particle_Index, 3, rec_Bank, cal_Bank)
+                ? fiducial_cuts.pcal_fiducial_cut(particle_Index, 3, run_Bank, rec_Bank, cal_Bank)
                 : fiducial_cuts.forward_tagger_fiducial_cut(particle_Index, rec_Bank, cal_Bank))
             && pid_cuts.beta_cut(particle_Index, rec_Bank)
 //          && pid_cuts.e_gamma_open_angle_cut(lv_e, lv_gamma)
@@ -162,7 +162,7 @@ public class dvcs_fitter extends GenericKinematicFitter {
                    physEvent.addParticle(part);   
                }
                 
-                if (pid==22 && photon_test(particle_Index, rec_Bank, cal_Bank, lv_e)) {
+                if (pid==22 && photon_test(particle_Index, run_Bank, rec_Bank, cal_Bank, lv_e)) {
                    
                    Particle part = new Particle(pid,px,py,pz,vx,vy,vz);
                    physEvent.addParticle(part);   
