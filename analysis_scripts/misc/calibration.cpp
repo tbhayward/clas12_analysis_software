@@ -3839,7 +3839,7 @@ void plot_chi2_ndf_vs_phi_CVT_2D(TTreeReader& dataReader, TTreeReader* mcReader,
 
 void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     int nBinsX = 50;  // Number of bins for edge
-    int nBinsY = 50;  // Number of bins for chi2/ndf
+    int nBinsY = 100;  // Number of bins for chi2/ndf
 
     // Define CVT layers and edges for data
     std::vector<std::tuple<TTreeReaderValue<double>*, std::string, double, double>> layers = {
@@ -3897,7 +3897,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
             double xMin = std::get<2>(layer);
             double xMax = std::get<3>(layer);
             double yMin = 0;
-            double yMax = 10;  // This can be adjusted depending on your expected range of chi2/ndf
+            double yMax = 100;  // This can be adjusted depending on your expected range of chi2/ndf
 
             h_chi2_vs_edge_data.push_back(new TH2D(("h_chi2_vs_edge_data_" + layer_name + "_" + particle_name).c_str(), (particle_name + " - " + layer_name).c_str(), nBinsX, xMin, xMax, nBinsY, yMin, yMax));
 
