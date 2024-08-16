@@ -3857,16 +3857,42 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         TCanvas* c_layer = new TCanvas(("c_" + particle_name).c_str(), ("Median chi2/ndf vs edge for " + particle_name).c_str(), 1800, 1200);
         c_layer->Divide(3, 2);
 
+        // Find the maximum median value across all layers for data and MC
+        double max_median = 0;
+        for (size_t i = 0; i < layers.size(); ++i) {
+            double max_data = h_sum_chi2_ndf[i]->GetMaximum();
+            double max_mc = mcReader ? h_sum_chi2_ndf_mc[i]->GetMaximum() : 0;
+            max_median = std::max({max_median, max_data, max_mc});
+        }
+
+        // Set the y-axis range dynamically and update y-axis labels
+        for (size_t i = 0; i < layers.size(); ++i) {
+            h_sum_chi2_ndf[i]->SetMinimum(0);
+            h_sum_chi2_ndf[i]->SetMaximum(1.2 * max_median);
+            h_sum_chi2_ndf[i]->GetYaxis()->SetTitle("median chi2/ndf");
+
+            if (mcReader) {
+                h_sum_chi2_ndf_mc[i]->SetMinimum(0);
+                h_sum_chi2_ndf_mc[i]->SetMaximum(1.2 * max_median);
+                h_sum_chi2_ndf_mc[i]->GetYaxis()->SetTitle("median chi2/ndf");
+            }
+        }
+
+        // Plot results with updated y-axis settings
         for (size_t i = 0; i < layers.size(); ++i) {
             c_layer->cd(i + 1);
             h_sum_chi2_ndf[i]->SetStats(false);
-            h_sum_chi2_ndf[i]->SetLineColor(kBlack);
-            h_sum_chi2_ndf[i]->Draw("E");
+            h_sum_chi2_ndf[i]->SetMarkerStyle(20);
+            h_sum_chi2_ndf[i]->SetMarkerSize(1.2);
+            h_sum_chi2_ndf[i]->SetLineWidth(2);
+            h_sum_chi2_ndf[i]->Draw("P");
 
             if (mcReader) {
                 h_sum_chi2_ndf_mc[i]->SetStats(false);
-                h_sum_chi2_ndf_mc[i]->SetLineColor(kRed);
-                h_sum_chi2_ndf_mc[i]->Draw("E SAME");
+                h_sum_chi2_ndf_mc[i]->SetMarkerStyle(20);
+                h_sum_chi2_ndf_mc[i]->SetMarkerSize(1.2);
+                h_sum_chi2_ndf_mc[i]->SetLineWidth(2);
+                h_sum_chi2_ndf_mc[i]->Draw("P SAME");
             }
             auto legend = new TLegend(0.7, 0.7, 0.9, 0.9);
             legend->AddEntry(h_sum_chi2_ndf[i], "Data", "l");
