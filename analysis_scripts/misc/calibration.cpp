@@ -3720,8 +3720,8 @@ double calculate_theta(double x, double y, double z) {
 bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7, 
      double edge_12, int pid) {
     // Dummy function, always returns true
-    return edge_1 > 0 && edge_3 > 0 && edge_5 > 0 && edge_7 > 0 && edge_12 > 2;
-    // return true;
+    // return edge_1 > 0 && edge_3 > 0 && edge_5 > 0 && edge_7 > 0 && edge_12 > 0;
+    return true;
 }
 
 void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
@@ -4061,7 +4061,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
 
     std::vector<std::tuple<int, std::string, std::string>> particle_types = {
         {211, "pip", "#pi^{+}"},
-        // {-211, "pim", "#pi^{-}"},
+        {-211, "pim", "#pi^{-}"},
         // {321, "kp", "k^{+}"},
         // {-321, "km", "k^{-}"},
         {2212, "proton", "proton"}
