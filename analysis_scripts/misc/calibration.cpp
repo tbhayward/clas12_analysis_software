@@ -3795,6 +3795,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
                 double chi2_ndf = *track_chi2_5 / *track_ndf_5;
 
                 if (*traj_edge_1 != -9999) {
+                    std::cout << *traj_edge_1 << std::endl;
                     h_sum_chi2_ndf_1->Fill(*traj_edge_1, chi2_ndf);
                     h_count_chi2_ndf_1->Fill(*traj_edge_1);
                 }
