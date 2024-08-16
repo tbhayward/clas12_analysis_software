@@ -4145,9 +4145,9 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             while (mcReader->Next()) {
                 if (**mc_particle_pid == pid) {
                     for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
-                    double mc_traj_x_value = **mc_traj_x[layer_idx];
-                    double mc_traj_y_value = **mc_traj_y[layer_idx];
-                    if (mc_traj_x_value != -9999 && mc_traj_y_value != -9999) {
+                        double mc_traj_x_value = **mc_traj_x[layer_idx];
+                        double mc_traj_y_value = **mc_traj_y[layer_idx];
+                        if (mc_traj_x_value != -9999 && mc_traj_y_value != -9999) {
                             h_mc_before[layer_idx]->Fill(mc_traj_x_value, mc_traj_y_value);
                             if (cvt_fiducial(**mc_traj_edge_1, **mc_traj_edge_3, **mc_traj_edge_5, **mc_traj_edge_7, **mc_traj_edge_12)) {
                                 h_mc_after[layer_idx]->Fill(mc_traj_x_value, mc_traj_y_value);
@@ -4157,7 +4157,6 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                 }
             }
         }
-
         // Find the maximum value across all histograms for consistent scaling
         double max_value_data = 0, max_value_mc = 0;
         for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
@@ -4212,7 +4211,9 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
         // Convert theta to degrees for both data and MC
         std::vector<double> theta_in_degrees_data, theta_in_degrees_mc;
         std::vector<double> theta_CVT_data, phi_CVT_data;
+        std::vector<double> traj_edge_1_data, traj_edge_3_data, traj_edge_5_data, traj_edge_7_data, traj_edge_12_data;
         std::vector<double> theta_CVT_mc, phi_CVT_mc;
+        std::vector<double> traj_edge_1_mc, traj_edge_3_mc, traj_edge_5_mc, traj_edge_7_mc, traj_edge_12_mc;
 
         // Calculate theta_CVT and phi_CVT for data
         dataReader.Restart();
@@ -4221,9 +4222,18 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                 if (*traj_x_12 != -9999 && *traj_y_12 != -9999 && *traj_z_12 != -9999) {
                     double theta_CVT_value = calculate_theta(*traj_x_12, *traj_y_12, *traj_z_12);
                     double phi_CVT_value = calculate_phi(*traj_x_12, *traj_y_12);
+
+                    // Store the CVT angles and corresponding edge values
                     theta_CVT_data.push_back(theta_CVT_value);
                     phi_CVT_data.push_back(phi_CVT_value);
-                    theta_in_degrees_data.push_back((*theta));
+                    theta_in_degrees_data.push_back(*theta);
+
+                    // Store the corresponding edge values
+                    traj_edge_1_data.push_back(*traj_edge_1);
+                    traj_edge_3_data.push_back(*traj_edge_3);
+                    traj_edge_5_data.push_back(*traj_edge_5);
+                    traj_edge_7_data.push_back(*traj_edge_7);
+                    traj_edge_12_data.push_back(*traj_edge_12);
                 }
             }
         }
@@ -4236,9 +4246,18 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                     if (**mc_traj_x_12 != -9999 && **mc_traj_y_12 != -9999 && **mc_traj_z_12 != -9999) {
                         double mc_theta_CVT_value = calculate_theta(**mc_traj_x_12, **mc_traj_y_12, **mc_traj_z_12);
                         double mc_phi_CVT_value = calculate_phi(**mc_traj_x_12, **mc_traj_y_12);
+
+                        // Store the CVT angles and corresponding edge values
                         theta_CVT_mc.push_back(mc_theta_CVT_value);
                         phi_CVT_mc.push_back(mc_phi_CVT_value);
-                        theta_in_degrees_mc.push_back((**mc_theta));
+                        theta_in_degrees_mc.push_back(**mc_theta);
+
+                        // Store the corresponding edge values
+                        traj_edge_1_mc.push_back(**mc_traj_edge_1);
+                        traj_edge_3_mc.push_back(**mc_traj_edge_3);
+                        traj_edge_5_mc.push_back(**mc_traj_edge_5);
+                        traj_edge_7_mc.push_back(**mc_traj_edge_7);
+                        traj_edge_12_mc.push_back(**mc_traj_edge_12);
                     }
                 }
             }
@@ -4261,12 +4280,15 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
         h_phi_vs_theta_CVT_data_after->GetXaxis()->SetTitle("#phi_{CVT}");
         h_phi_vs_theta_CVT_data_after->GetYaxis()->SetTitle("#theta_{CVT}");
 
+        // Fill histograms using stored values for data
         for (size_t i = 0; i < theta_CVT_data.size(); ++i) {
             h_theta_vs_theta_data_before->Fill(theta_in_degrees_data[i], theta_CVT_data[i]);
             h_phi_vs_theta_CVT_data_before->Fill(phi_CVT_data[i], theta_CVT_data[i]);
-            if (cvt_fiducial(*traj_edge_1, *traj_edge_3, *traj_edge_5, *traj_edge_7, *traj_edge_12)) {
+
+            // Apply fiducial cut based on stored edge values
+            if (cvt_fiducial(traj_edge_1_data[i], traj_edge_3_data[i], traj_edge_5_data[i], traj_edge_7_data[i], traj_edge_12_data[i])) {
                 h_theta_vs_theta_data_after->Fill(theta_in_degrees_data[i], theta_CVT_data[i]);
-                h_phi_vs_theta_CVT_data_after->Fill(phi_CVT_data[i], theta_CVT_data[i]);
+                    h_phi_vs_theta_CVT_data_after->Fill(phi_CVT_data[i], theta_CVT_data[i]);
             }
         }
 
@@ -4275,6 +4297,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
         TH2D* h_theta_vs_theta_mc_after = nullptr;
         TH2D* h_phi_vs_theta_CVT_mc_after = nullptr;
 
+        // Create and fill histograms using stored values for MC
         if (mcReader) {
             h_theta_vs_theta_mc_before = new TH2D("h_theta_vs_theta_mc_before", ("#theta_{CVT} vs #theta Before Cuts (MC, " + particle_latex + ")").c_str(), nBins, 25, 150, nBins, 30, 150);
             h_theta_vs_theta_mc_before->GetXaxis()->SetTitle("#theta");
@@ -4295,7 +4318,9 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             for (size_t i = 0; i < theta_CVT_mc.size(); ++i) {
                 h_theta_vs_theta_mc_before->Fill(theta_in_degrees_mc[i], theta_CVT_mc[i]);
                 h_phi_vs_theta_CVT_mc_before->Fill(phi_CVT_mc[i], theta_CVT_mc[i]);
-                if (cvt_fiducial(**mc_traj_edge_1, **mc_traj_edge_3, **mc_traj_edge_5, **mc_traj_edge_7, **mc_traj_edge_12)) {
+
+                // Apply fiducial cut based on stored edge values
+                if (cvt_fiducial(traj_edge_1_mc[i], traj_edge_3_mc[i], traj_edge_5_mc[i], traj_edge_7_mc[i], traj_edge_12_mc[i])) {
                     h_theta_vs_theta_mc_after->Fill(theta_in_degrees_mc[i], theta_CVT_mc[i]);
                     h_phi_vs_theta_CVT_mc_after->Fill(phi_CVT_mc[i], theta_CVT_mc[i]);
                 }
@@ -4314,38 +4339,38 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
 
         // Draw and save the theta_CVT vs theta and phi_CVT vs theta_CVT canvases (data and MC)
         c_theta_vs_theta_data->cd(1);
-        gPad->SetMargin(0.2, 0.05, 0.1, 0.1);  // Increase left margin to 0.2, decrease right margin
+        gPad->SetMargin(0.2, 0.05, 0.1, 0.1);
         h_theta_vs_theta_data_before->Draw("COLZ");
 
         c_theta_vs_theta_data->cd(2);
-        gPad->SetMargin(0.2, 0.05, 0.1, 0.1);  // Increase left margin to 0.2, decrease right margin
+        gPad->SetMargin(0.2, 0.05, 0.1, 0.1);
         h_phi_vs_theta_CVT_data_before->Draw("COLZ");
 
         c_theta_vs_theta_data->cd(3);
-        gPad->SetMargin(0.2, 0.05, 0.1, 0.1);  // Increase left margin to 0.2, decrease right margin
+        gPad->SetMargin(0.2, 0.05, 0.1, 0.1);
         h_theta_vs_theta_data_after->Draw("COLZ");
 
         c_theta_vs_theta_data->cd(4);
-        gPad->SetMargin(0.2, 0.05, 0.1, 0.1);  // Increase left margin to 0.2, decrease right margin
+        gPad->SetMargin(0.2, 0.05, 0.1, 0.1);
         h_phi_vs_theta_CVT_data_after->Draw("COLZ");
 
         c_theta_vs_theta_data->SaveAs(("output/calibration/cvt/positions/theta_vs_theta_data_" + particle_name + ".png").c_str());
 
         if (mcReader) {
             c_theta_vs_theta_mc->cd(1);
-            gPad->SetMargin(0.2, 0.05, 0.1, 0.1);  // Increase left margin to 0.2, decrease right margin
+            gPad->SetMargin(0.2, 0.05, 0.1, 0.1);
             h_theta_vs_theta_mc_before->Draw("COLZ");
 
             c_theta_vs_theta_mc->cd(2);
-            gPad->SetMargin(0.2, 0.05, 0.1, 0.1);  // Increase left margin to 0.2, decrease right margin
+            gPad->SetMargin(0.2, 0.05, 0.1, 0.1);
             h_phi_vs_theta_CVT_mc_before->Draw("COLZ");
 
             c_theta_vs_theta_mc->cd(3);
-            gPad->SetMargin(0.2, 0.05, 0.1, 0.1);  // Increase left margin to 0.2, decrease right margin
+            gPad->SetMargin(0.2, 0.05, 0.1, 0.1);
             h_theta_vs_theta_mc_after->Draw("COLZ");
 
             c_theta_vs_theta_mc->cd(4);
-            gPad->SetMargin(0.2, 0.05, 0.1, 0.1);  // Increase left margin to 0.2, decrease right margin
+            gPad->SetMargin(0.2, 0.05, 0.1, 0.1);
             h_phi_vs_theta_CVT_mc_after->Draw("COLZ");
 
             c_theta_vs_theta_mc->SaveAs(("output/calibration/cvt/positions/theta_vs_theta_mc_" + particle_name + ".png").c_str());
@@ -4366,7 +4391,6 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
         }
         delete c_theta_vs_theta_data;
     }
-
     // Clean up the dynamically allocated memory for edge variables
     if (mc_traj_edge_1) delete mc_traj_edge_1;
     if (mc_traj_edge_3) delete mc_traj_edge_3;
