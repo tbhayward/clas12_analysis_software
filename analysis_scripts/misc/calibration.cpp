@@ -3892,46 +3892,61 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         c_layer->Divide(3, 2);
 
         c_layer->cd(1);
+        gPad->SetLogy();
+        h_sum_chi2_ndf_1->SetStats(false);
         h_sum_chi2_ndf_1->SetLineColor(kBlack);
         h_sum_chi2_ndf_1->Draw("E");
         if (mcReader) {
+            h_sum_chi2_ndf_mc_1->SetStats(false);
             h_sum_chi2_ndf_mc_1->SetLineColor(kRed);
             h_sum_chi2_ndf_mc_1->Draw("E SAME");
         }
 
         c_layer->cd(2);
+        gPad->SetLogy();
+        h_sum_chi2_ndf_3->SetStats(false);
         h_sum_chi2_ndf_3->SetLineColor(kBlack);
         h_sum_chi2_ndf_3->Draw("E");
         if (mcReader) {
+            h_sum_chi2_ndf_mc_3->SetStats(false);
             h_sum_chi2_ndf_mc_3->SetLineColor(kRed);
             h_sum_chi2_ndf_mc_3->Draw("E SAME");
         }
 
         c_layer->cd(3);
+        gPad->SetLogy();
+        h_sum_chi2_ndf_5->SetStats(false);
         h_sum_chi2_ndf_5->SetLineColor(kBlack);
         h_sum_chi2_ndf_5->Draw("E");
         if (mcReader) {
+            h_sum_chi2_ndf_mc_5->SetStats(false);
             h_sum_chi2_ndf_mc_5->SetLineColor(kRed);
             h_sum_chi2_ndf_mc_5->Draw("E SAME");
         }
 
         c_layer->cd(4);
+        gPad->SetLogy();
+        h_sum_chi2_ndf_7->SetStats(false);
         h_sum_chi2_ndf_7->SetLineColor(kBlack);
         h_sum_chi2_ndf_7->Draw("E");
         if (mcReader) {
+            h_sum_chi2_ndf_mc_7->SetStats(false);
             h_sum_chi2_ndf_mc_7->SetLineColor(kRed);
             h_sum_chi2_ndf_mc_7->Draw("E SAME");
         }
 
         c_layer->cd(5);
+        gPad->SetLogy();
+        h_sum_chi2_ndf_12->SetStats(false);
         h_sum_chi2_ndf_12->SetLineColor(kBlack);
         h_sum_chi2_ndf_12->Draw("E");
         if (mcReader) {
+            h_sum_chi2_ndf_mc_12->SetStats(false);
             h_sum_chi2_ndf_mc_12->SetLineColor(kRed);
             h_sum_chi2_ndf_mc_12->Draw("E SAME");
         }
 
-        c_layer->cd(6);
+        c_layer->cd(1);  // Move the legend to the first subplot
         auto legend = new TLegend(0.7, 0.7, 0.9, 0.9);
         legend->AddEntry(h_sum_chi2_ndf_1, "Data", "l");
         if (mcReader) {
