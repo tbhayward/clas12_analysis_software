@@ -3724,7 +3724,7 @@ bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7,
 }
 
 void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
-    int nBins = 100;
+    int nBins = 20;
 
     // Define TTreeReaderValues for each CVT layer for data
     TTreeReaderValue<double> traj_edge_1(dataReader, "traj_edge_1");
@@ -3830,19 +3830,19 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         TH1D* h_count_chi2_ndf_mc_12 = nullptr;
 
         if (mcReader) {
-            h_sum_chi2_ndf_mc_1 = new TH1D(("h_sum_chi2_ndf_mc_layer1_" + particle_name).c_str(), (particle_name + " - MC - layer_1").c_str(), nBins, 0, 3);
-            h_count_chi2_ndf_mc_1 = new TH1D(("h_count_chi2_ndf_mc_layer1_" + particle_name).c_str(), "", nBins, 0, 3);
+            h_sum_chi2_ndf_mc_1 = new TH1D(("h_sum_chi2_ndf_mc_layer1_" + particle_name).c_str(), (particle_name + " - MC - layer_1").c_str(), nBins, 0, 2);
+            h_count_chi2_ndf_mc_1 = new TH1D(("h_count_chi2_ndf_mc_layer1_" + particle_name).c_str(), "", nBins, 0, 2);
 
-            h_sum_chi2_ndf_mc_3 = new TH1D(("h_sum_chi2_ndf_mc_layer3_" + particle_name).c_str(), (particle_name + " - MC - layer_3").c_str(), nBins, 0, 3);
-            h_count_chi2_ndf_mc_3 = new TH1D(("h_count_chi2_ndf_mc_layer3_" + particle_name).c_str(), "", nBins, 0, 3);
+            h_sum_chi2_ndf_mc_3 = new TH1D(("h_sum_chi2_ndf_mc_layer3_" + particle_name).c_str(), (particle_name + " - MC - layer_3").c_str(), nBins, 0, 2);
+            h_count_chi2_ndf_mc_3 = new TH1D(("h_count_chi2_ndf_mc_layer3_" + particle_name).c_str(), "", nBins, 0, 2);
 
-            h_sum_chi2_ndf_mc_5 = new TH1D(("h_sum_chi2_ndf_mc_layer5_" + particle_name).c_str(), (particle_name + " - MC - layer_5").c_str(), nBins, 0, 3);
-            h_count_chi2_ndf_mc_5 = new TH1D(("h_count_chi2_ndf_mc_layer5_" + particle_name).c_str(), "", nBins, 0, 3);
-            h_sum_chi2_ndf_mc_7 = new TH1D(("h_sum_chi2_ndf_mc_layer7_" + particle_name).c_str(), (particle_name + " - MC - layer_7").c_str(), nBins, 0, 15);
-            h_count_chi2_ndf_mc_7 = new TH1D(("h_count_chi2_ndf_mc_layer7_" + particle_name).c_str(), "", nBins, 0, 15);
+            h_sum_chi2_ndf_mc_5 = new TH1D(("h_sum_chi2_ndf_mc_layer5_" + particle_name).c_str(), (particle_name + " - MC - layer_5").c_str(), nBins, 0, 2);
+            h_count_chi2_ndf_mc_5 = new TH1D(("h_count_chi2_ndf_mc_layer5_" + particle_name).c_str(), "", nBins, 0, 2);
+            h_sum_chi2_ndf_mc_7 = new TH1D(("h_sum_chi2_ndf_mc_layer7_" + particle_name).c_str(), (particle_name + " - MC - layer_7").c_str(), nBins, 0, 12);
+            h_count_chi2_ndf_mc_7 = new TH1D(("h_count_chi2_ndf_mc_layer7_" + particle_name).c_str(), "", nBins, 0, 12);
 
-            h_sum_chi2_ndf_mc_12 = new TH1D(("h_sum_chi2_ndf_mc_layer12_" + particle_name).c_str(), (particle_name + " - MC - layer_12").c_str(), nBins, 0, 17);
-            h_count_chi2_ndf_mc_12 = new TH1D(("h_count_chi2_ndf_mc_layer12_" + particle_name).c_str(), "", nBins, 0, 17);
+            h_sum_chi2_ndf_mc_12 = new TH1D(("h_sum_chi2_ndf_mc_layer12_" + particle_name).c_str(), (particle_name + " - MC - layer_12").c_str(), nBins, 0, 15);
+            h_count_chi2_ndf_mc_12 = new TH1D(("h_count_chi2_ndf_mc_layer12_" + particle_name).c_str(), "", nBins, 0, 15);
 
             mcReader->Restart();
             while (mcReader->Next()) {
