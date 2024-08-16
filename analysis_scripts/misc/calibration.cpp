@@ -3978,8 +3978,8 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         delete mc_traj_edge_12;
 
         delete mc_particle_pid;
-        delete mc_track_chi2_6;
-        delete mc_track_ndf_6;
+        delete mc_track_chi2_5;
+        delete mc_track_ndf_5;
     }
 }
 
