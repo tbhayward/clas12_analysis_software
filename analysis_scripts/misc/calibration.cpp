@@ -3791,7 +3791,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         // Fill data histograms
         dataReader.Restart();
         while (dataReader.Next()) {
-            if (*traj_edge_1 != -9999) {
+            if (*track_ndf_6 != -9999) {
                 std::cout << "PID: " << *particle_pid << ", NDF: " << *track_ndf_6 << std::endl;
             std::cout << "traj_edge_1: " << *traj_edge_1 << ", traj_edge_3: " << *traj_edge_3
                           << ", traj_edge_5: " << *traj_edge_5 << ", traj_edge_7: " << *traj_edge_7
