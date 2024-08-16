@@ -3870,8 +3870,9 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
             c_layer_data->cd(i + 1);
             h_median_chi2_ndf_data[i]->SetStats(false);
             h_median_chi2_ndf_data[i]->SetLineColor(kBlack);
-            h_median_chi2_ndf_data[i]->SetMarkerSize(15.5);
-            h_median_chi2_ndf_data[i]->Draw("P0");
+            h_median_chi2_ndf_data[i]->SetMarkerStyle(20);  // Set the marker style, e.g., full circle
+            h_median_chi2_ndf_data[i]->SetMarkerSize(1.5);  // Adjust the size to 1.5 (increase or decrease as needed)
+            h_median_chi2_ndf_data[i]->Draw("P");
         }
 
         c_layer_data->SaveAs(("output/calibration/cvt/determination/median_chi2_per_ndf_vs_edge_data_" + particle_name + ".png").c_str());
@@ -3884,8 +3885,9 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
                 c_layer_mc->cd(i + 1);
                 h_median_chi2_ndf_mc[i]->SetStats(false);
                 h_median_chi2_ndf_mc[i]->SetLineColor(kRed);
-                h_median_chi2_ndf_mc[i]->SetMarkerSize(15.5);
-                h_median_chi2_ndf_mc[i]->Draw("P0 SAME");
+                h_median_chi2_ndf_mc[i]->SetMarkerStyle(20);  // Set the marker style, e.g., full circle
+                h_median_chi2_ndf_mc[i]->SetMarkerSize(1.5);  // Adjust the size to 1.5 (increase or decrease as needed)
+                h_median_chi2_ndf_mc[i]->Draw("P");
             }
 
             c_layer_mc->SaveAs(("output/calibration/cvt/determination/median_chi2_per_ndf_vs_edge_mc_" + particle_name + ".png").c_str());
