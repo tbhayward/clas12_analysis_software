@@ -3775,6 +3775,8 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         {2212, "proton"}
     };
 
+    plot_chi2_ndf_vs_phi_CVT_2D(dataReader, mcReader, particle_types);
+
     for (const auto& particle_type : particle_types) {
         int pid = std::get<0>(particle_type);
         std::string particle_name = std::get<1>(particle_type);
@@ -4054,8 +4056,6 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
         // {-321, "km", "k^{-}"},
         {2212, "proton", "proton"}
     };
-
-    plot_chi2_ndf_vs_phi_CVT_2D(dataReader, mcReader, particle_types);
 
     // Declare TTreeReaderValues for the CVT edge and track variables
     TTreeReaderValue<double> traj_edge_1(dataReader, "traj_edge_1");
