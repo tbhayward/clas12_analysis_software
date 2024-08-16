@@ -3870,7 +3870,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
             c_layer_data->cd(i + 1);
             h_median_chi2_ndf_data[i]->SetStats(false);
             h_median_chi2_ndf_data[i]->SetLineColor(kBlack);
-            h_median_chi2_ndf_data[i]->SetMarkerSize(1.5);
+            h_median_chi2_ndf_data[i]->SetMarkerSize(15.5);
             h_median_chi2_ndf_data[i]->Draw("P0");
         }
 
@@ -3884,7 +3884,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
                 c_layer_mc->cd(i + 1);
                 h_median_chi2_ndf_mc[i]->SetStats(false);
                 h_median_chi2_ndf_mc[i]->SetLineColor(kRed);
-                h_median_chi2_ndf_mc[i]->SetMarkerSize(1.5);
+                h_median_chi2_ndf_mc[i]->SetMarkerSize(15.5);
                 h_median_chi2_ndf_mc[i]->Draw("P0 SAME");
             }
 
