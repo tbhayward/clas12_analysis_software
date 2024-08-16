@@ -3770,27 +3770,10 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         int pid = std::get<0>(particle_type);
         std::string particle_name = std::get<1>(particle_type);
 
-        // Create histograms for each layer
-        std::vector<TH1D*> h_sum_chi2_ndf;
-        std::vector<TH1D*> h_sum_chi2_ndf_mc;
+        std::vector<std::vector<std::vector<double>>> data_chi2_ndf_values(layers.size(), std::vector<std::vector<double>>(nBins));
+        std::vector<std::vector<std::vector<double>>> mc_chi2_ndf_values(layers.size(), std::vector<std::vector<double>>(nBins));
 
-        for (size_t i = 0; i < layers.size(); ++i) {
-            h_sum_chi2_ndf.push_back(new TH1D(
-                ("h_sum_chi2_ndf_" + particle_name + "_" + std::get<0>(layers[i])).c_str(),
-                (particle_name + " - " + std::get<0>(layers[i])).c_str(),
-                nBins, std::get<1>(layers[i]), std::get<2>(layers[i])
-            ));
-            if (mcReader) {
-                h_sum_chi2_ndf_mc.push_back(new TH1D(
-                    ("h_sum_chi2_ndf_mc_" + particle_name + "_" + std::get<0>(layers[i])).c_str(),
-                    (particle_name + " - MC - " + std::get<0>(layers[i])).c_str(),
-                    nBins, std::get<1>(layers[i]), std::get<2>(layers[i])
-                ));
-            }
-        }
-
-        // Fill data histograms
-        std::vector<std::vector<double>> chi2_values(layers.size());
+        // Fill data values
         dataReader.Restart();
         while (dataReader.Next()) {
             if (*particle_pid == pid && *track_ndf_5 > 0 && *track_chi2_5 < 1000) {
@@ -3798,15 +3781,16 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
                 for (size_t i = 0; i < layers.size(); ++i) {
                     double traj_edge = **traj_edges[i];
                     if (traj_edge != -9999) {
-                        h_sum_chi2_ndf[i]->Fill(traj_edge, chi2_ndf);
-                        chi2_values[i].push_back(chi2_ndf);
+                        int bin = (traj_edge - std::get<1>(layers[i])) / (std::get<2>(layers[i]) - std::get<1>(layers[i])) * nBins;
+                        if (bin >= 0 && bin < nBins) {
+                            data_chi2_ndf_values[i][bin].push_back(chi2_ndf);
+                        }
                     }
                 }
             }
         }
 
-        // Fill MC histograms
-        std::vector<std::vector<double>> chi2_values_mc(layers.size());
+        // Fill MC values
         if (mcReader) {
             mcReader->Restart();
             while (mcReader->Next()) {
@@ -3815,92 +3799,104 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
                     for (size_t i = 0; i < layers.size(); ++i) {
                         double traj_edge = **mc_traj_edges[i];
                         if (traj_edge != -9999) {
-                            h_sum_chi2_ndf_mc[i]->Fill(traj_edge, mc_chi2_ndf);
-                            chi2_values_mc[i].push_back(mc_chi2_ndf);
+                            int bin = (traj_edge - std::get<1>(layers[i])) / (std::get<2>(layers[i]) - std::get<1>(layers[i])) * nBins;
+                            if (bin >= 0 && bin < nBins) {
+                                mc_chi2_ndf_values[i][bin].push_back(mc_chi2_ndf);
+                            }
                         }
                     }
                 }
             }
         }
 
-        // Determine y-axis range based on the maximum median value
-        double max_median_data = 0;
-        double max_median_mc = 0;
-        for (size_t i = 0; i < layers.size(); ++i) {
-            if (!chi2_values[i].empty()) {
-                std::nth_element(chi2_values[i].begin(), chi2_values[i].begin() + chi2_values[i].size() / 2, chi2_values[i].end());
-                double median_data = chi2_values[i][chi2_values[i].size() / 2];
-                max_median_data = std::max(max_median_data, median_data);
-            }
-            if (mcReader && !chi2_values_mc[i].empty()) {
-                std::nth_element(chi2_values_mc[i].begin(), chi2_values_mc[i].begin() + chi2_values_mc[i].size() / 2, chi2_values_mc[i].end());
-                double median_mc = chi2_values_mc[i][chi2_values_mc[i].size() / 2];
-                max_median_mc = std::max(max_median_mc, median_mc);
-            }
+        // Prepare to plot results
+        TCanvas* c_layer_data = new TCanvas(("c_data_" + particle_name).c_str(), ("Median chi2/ndf vs edge for " + particle_name + " (Data)").c_str(), 1800, 1200);
+        c_layer_data->Divide(3, 2);
+
+        TCanvas* c_layer_mc = nullptr;
+        if (mcReader) {
+            c_layer_mc = new TCanvas(("c_mc_" + particle_name).c_str(), ("Median chi2/ndf vs edge for " + particle_name + " (MC)").c_str(), 1800, 1200);
+            c_layer_mc->Divide(3, 2);
         }
 
-        // Set axis labels and dynamic y-axis range
+        // Plot data and MC
         for (size_t i = 0; i < layers.size(); ++i) {
-            h_sum_chi2_ndf[i]->SetMinimum(0);
-            // h_sum_chi2_ndf[i]->SetMaximum(1.15 * max_median_data);
-            h_sum_chi2_ndf[i]->GetYaxis()->SetTitle("median chi2/ndf");
+            std::string layer_name = std::get<0>(layers[i]);
+            TH1D* h_median_chi2_ndf_data = new TH1D(("h_median_chi2_ndf_data_" + layer_name).c_str(), (particle_name + " - " + layer_name).c_str(), nBins, std::get<1>(layers[i]), std::get<2>(layers[i]));
+            TH1D* h_median_chi2_ndf_mc = nullptr;
 
             if (mcReader) {
-                h_sum_chi2_ndf_mc[i]->SetMinimum(0);
-                // h_sum_chi2_ndf_mc[i]->SetMaximum(1.15 * max_median_mc);
-                h_sum_chi2_ndf_mc[i]->GetYaxis()->SetTitle("median chi2/ndf");
+                h_median_chi2_ndf_mc = new TH1D(("h_median_chi2_ndf_mc_" + layer_name).c_str(), (particle_name + " - MC - " + layer_name).c_str(), nBins, std::get<1>(layers[i]), std::get<2>(layers[i]));
+            }
+
+            double max_median_value = 0;
+
+            for (int bin = 0; bin < nBins; ++bin) {
+                if (!data_chi2_ndf_values[i][bin].empty()) {
+                    std::sort(data_chi2_ndf_values[i][bin].begin(), data_chi2_ndf_values[i][bin].end());
+                    double median_data = data_chi2_ndf_values[i][bin][data_chi2_ndf_values[i][bin].size() / 2];
+                    h_median_chi2_ndf_data->SetBinContent(bin + 1, median_data);
+                    max_median_value = std::max(max_median_value, median_data);
+                }
+
+                if (mcReader && !mc_chi2_ndf_values[i][bin].empty()) {
+                    std::sort(mc_chi2_ndf_values[i][bin].begin(), mc_chi2_ndf_values[i][bin].end());
+                    double median_mc = mc_chi2_ndf_values[i][bin][mc_chi2_ndf_values[i][bin].size() / 2];
+                    h_median_chi2_ndf_mc->SetBinContent(bin + 1, median_mc);
+                    max_median_value = std::max(max_median_value, median_mc);
+                }
+            }
+
+            h_median_chi2_ndf_data->SetMinimum(0);
+            h_median_chi2_ndf_data->SetMaximum(1.15 * max_median_value);
+            h_median_chi2_ndf_data->GetXaxis()->SetTitle("edge (cm)");
+            h_median_chi2_ndf_data->GetYaxis()->SetTitle("median chi2/ndf");
+
+            if (mcReader) {
+                h_median_chi2_ndf_mc->SetMinimum(0);
+                h_median_chi2_ndf_mc->SetMaximum(1.15 * max_median_value);
+                h_median_chi2_ndf_mc->GetXaxis()->SetTitle("edge (cm)");
+                h_median_chi2_ndf_mc->GetYaxis()->SetTitle("median chi2/ndf");
+            }
+
+            c_layer_data->cd(i + 1);
+            h_median_chi2_ndf_data->SetLineColor(kBlack);
+            h_median_chi2_ndf_data->Draw("E");
+
+            if (mcReader) {
+                c_layer_mc->cd(i + 1);
+                h_median_chi2_ndf_mc->SetLineColor(kRed);
+                h_median_chi2_ndf_mc->Draw("E");
+            }
+
+            delete h_median_chi2_ndf_data;
+            if (mcReader) {
+                delete h_median_chi2_ndf_mc;
             }
         }
 
-        // Plot results for data
-        TCanvas* c_data = new TCanvas(("c_data_" + particle_name).c_str(), ("Median chi2/ndf vs edge for " + particle_name + " (Data)").c_str(), 1800, 1200);
-        c_data->Divide(3, 2);
-        for (size_t i = 0; i < layers.size(); ++i) {
-            c_data->cd(i + 1);
-            h_sum_chi2_ndf[i]->SetStats(false);
-            h_sum_chi2_ndf[i]->SetLineColor(kBlack);
-            h_sum_chi2_ndf[i]->Draw("P");
-        }
-        c_data->SaveAs(("output/calibration/cvt/determination/median_chi2_per_ndf_vs_edge_" + particle_name + "_data.png").c_str());
-        delete c_data;
+        c_layer_data->SaveAs(("output/calibration/cvt/determination/median_chi2_per_ndf_vs_edge_data_" + particle_name + ".png").c_str());
 
-        // Plot results for MC (if available)
         if (mcReader) {
-            TCanvas* c_mc = new TCanvas(("c_mc_" + particle_name).c_str(), ("Median chi2/ndf vs edge for " + particle_name + " (MC)").c_str(), 1800, 1200);
-            c_mc->Divide(3, 2);
-            for (size_t i = 0; i < layers.size(); ++i) {
-                c_mc->cd(i + 1);
-                h_sum_chi2_ndf_mc[i]->SetStats(false);
-                h_sum_chi2_ndf_mc[i]->SetLineColor(kRed);
-                h_sum_chi2_ndf_mc[i]->Draw("P");
-            }
-            c_mc->SaveAs(("output/calibration/cvt/determination/median_chi2_per_ndf_vs_edge_" + particle_name + "_mc.png").c_str());
-            delete c_mc;
+            c_layer_mc->SaveAs(("output/calibration/cvt/determination/median_chi2_per_ndf_vs_edge_mc_" + particle_name + ".png").c_str());
+            delete c_layer_mc;
         }
-
-        // Clean up
-        for (auto& hist : h_sum_chi2_ndf ) {
-            delete hist;
-        }
-        if (mcReader) {
-            for (auto& hist_mc : h_sum_chi2_ndf_mc) {
-                delete hist_mc;
-            }
-        }
+        delete c_layer_data;
     }
+
     // Clean up dynamically allocated memory for MC
     if (mcReader) {
+        for (auto ptr : mc_traj_edges) {
+            delete ptr;
+        }
         delete mc_particle_pid;
         delete mc_track_chi2_5;
         delete mc_track_ndf_5;
-        for (auto& mc_edge : mc_traj_edges) {
-            delete mc_edge;
-        }
     }
 
-    // Clean up dynamically allocated memory for data
-    for (auto& edge : traj_edges) {
-        delete edge;
+    // Clean up dynamically allocated memory for Data
+    for (auto ptr : traj_edges) {
+        delete ptr;
     }
 }
 
