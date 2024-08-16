@@ -3768,10 +3768,10 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
 
     // Array of particle types (photons and electrons) and their corresponding PIDs
     std::vector<std::tuple<int, std::string>> particle_types = {
-        {-211, "pim"},
-        {211, "pip"},
-        {321, "kp"},
-        {-321, "km"},
+        {-211, "#pi^{-}"},
+        {211, "#pi^{+}"},
+        {321, "k^{+}"},
+        {-321, "k^{-}"},
         {2212, "proton"}
     };
 
@@ -3868,6 +3868,8 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         // Plot data results
         TCanvas* c_layer_data = new TCanvas(("c_data_" + particle_name).c_str(), ("Median chi2/ndf vs edge for " + particle_name + " (Data)").c_str(), 1800, 1200);
         c_layer_data->Divide(3, 2);
+        // Set the left margin to create more space for y-axis labels
+        c_layer_data->SetLeftMargin(0.15);
 
         for (size_t i = 0; i < layers.size(); ++i) {
             c_layer_data->cd(i + 1);
@@ -3884,6 +3886,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         if (mcReader) {
             TCanvas* c_layer_mc = new TCanvas(("c_mc_" + particle_name).c_str(), ("Median chi2/ndf vs edge for " + particle_name + " (MC)").c_str(), 1800, 1200);
             c_layer_mc->Divide(3, 2);
+            c_layer_mc->SetLeftMargin(0.15);
             for (size_t i = 0; i < mc_layers.size(); ++i) {
                 c_layer_mc->cd(i + 1);
                 h_median_chi2_ndf_mc[i]->SetStats(false);
