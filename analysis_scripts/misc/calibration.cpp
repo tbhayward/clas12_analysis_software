@@ -3726,9 +3726,6 @@ bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7,
     return true;
 }
 
-#include <vector>
-#include <algorithm> // For std::sort
-
 void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     int nBins = 20;
 
@@ -3780,7 +3777,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         std::string particle_name = std::get<1>(particle_type);
 
         std::vector<TH1D*> h_sum_chi2_ndf, h_count_chi2_ndf, h_sum_chi2_ndf_mc, h_count_chi2_ndf_mc;
-        std::vector<std::vector<std::vector<double>>> bin_values(layers.size());
+        std::vector<std::vector<std::vector<double>>> bin_values(layers.size(), std::vector<std::vector<double>>(nBins));
 
         // Initialize histograms
         for (const auto& layer : layers) {
@@ -3795,8 +3792,6 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
                 h_sum_chi2_ndf_mc.push_back(new TH1D(("h_sum_chi2_ndf_mc_" + layer_name + "_" + particle_name).c_str(), (particle_name + " - MC - " + layer_name).c_str(), nBins, xMin, xMax));
                 h_count_chi2_ndf_mc.push_back(new TH1D(("h_count_chi2_ndf_mc_" + layer_name + "_" + particle_name).c_str(), "", nBins, xMin, xMax));
             }
-
-            bin_values.push_back(std::vector<std::vector<double>>(nBins));
         }
 
         // Fill data histograms
@@ -3873,15 +3868,15 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
                 h_sum_chi2_ndf_mc[i]->SetLineColor(kRed);
                 h_sum_chi2_ndf_mc[i]->Draw("E SAME");
             }
-
             auto legend = new TLegend(0.7, 0.7, 0.9, 0.9);
             legend->AddEntry(h_sum_chi2_ndf[i], "Data", "l");
             if (mcReader) {
                 legend->AddEntry(h_sum_chi2_ndf_mc[i], "MC", "l");
             }
-                legend->Draw();
-            }
-            c_layer->SaveAs(("output/calibration/cvt/determination/median_chi2_per_ndf_vs_edge_" + particle_name + ".png").c_str());
+            legend->Draw();
+        }
+
+        c_layer->SaveAs(("output/calibration/cvt/determination/median_chi2_per_ndf_vs_edge_" + particle_name + ".png").c_str());
 
         // Clean up
         for (auto hist : h_sum_chi2_ndf) delete hist;
