@@ -3815,7 +3815,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         if (mcReader) {
             mcReader->Restart();
             while (mcReader->Next()) {
-                if (**mc_particle_pid == pid && **mc_track_ndf_5 > 0 && **mc_track_chi2_5 < 10000) {
+                if (**mc_particle_pid == pid && **mc_track_ndf_5 > 0 && **mc_track_chi2_5 < 1000) {
                     double mc_chi2_ndf = **mc_track_chi2_5 / **mc_track_ndf_5;
 
                     for (size_t i = 0; i < mc_layers.size(); ++i) {
