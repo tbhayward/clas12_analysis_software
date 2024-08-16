@@ -3783,11 +3783,11 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         TH1D* h_sum_chi2_ndf_5 = new TH1D(("h_sum_chi2_ndf_layer5_" + particle_name).c_str(), (particle_name + " - layer_5").c_str(), nBins, -2, 2);
         TH1D* h_count_chi2_ndf_5 = new TH1D(("h_count_chi2_ndf_layer5_" + particle_name).c_str(), "", nBins, -2, 2);
 
-        TH1D* h_sum_chi2_ndf_7 = new TH1D(("h_sum_chi2_ndf_layer7_" + particle_name).c_str(), (particle_name + " - layer_7").c_str(), nBins, 0, 15);
-        TH1D* h_count_chi2_ndf_7 = new TH1D(("h_count_chi2_ndf_layer7_" + particle_name).c_str(), "", nBins, 0, 15);
+        TH1D* h_sum_chi2_ndf_7 = new TH1D(("h_sum_chi2_ndf_layer7_" + particle_name).c_str(), (particle_name + " - layer_7").c_str(), nBins, -2, 15);
+        TH1D* h_count_chi2_ndf_7 = new TH1D(("h_count_chi2_ndf_layer7_" + particle_name).c_str(), "", nBins, -2, 15);
 
-        TH1D* h_sum_chi2_ndf_12 = new TH1D(("h_sum_chi2_ndf_layer12_" + particle_name).c_str(), (particle_name + " - layer_12").c_str(), nBins, 0, 25);
-        TH1D* h_count_chi2_ndf_12 = new TH1D(("h_count_chi2_ndf_layer12_" + particle_name).c_str(), "", nBins, 0, 25);
+        TH1D* h_sum_chi2_ndf_12 = new TH1D(("h_sum_chi2_ndf_layer12_" + particle_name).c_str(), (particle_name + " - layer_12").c_str(), nBins, -2, 25);
+        TH1D* h_count_chi2_ndf_12 = new TH1D(("h_count_chi2_ndf_layer12_" + particle_name).c_str(), "", nBins, -2, 25);
 
         // Fill data histograms
         dataReader.Restart();
