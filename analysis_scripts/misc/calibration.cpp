@@ -3947,7 +3947,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
 
         for (size_t i = 0; i < layers.size(); ++i) {
             c_layer_data->cd(i + 1);
-            gPad->SetLogy();  // Set the y-axis to log scale
+            gPad->SetLogz();  // Set the y-axis to log scale
             h_chi2_vs_edge_data[i]->Draw("COLZ");
         }
 
@@ -3961,7 +3961,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
 
             for (size_t i = 0; i < mc_layers.size(); ++i) {
                 c_layer_mc->cd(i + 1);
-                gPad->SetLogy();  // Set the y-axis to log scale
+                gPad->SetLogz();  // Set the y-axis to log scale
                 h_chi2_vs_edge_mc[i]->Draw("COLZ");
             }
 
