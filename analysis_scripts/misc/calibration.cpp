@@ -3785,10 +3785,7 @@ void plot_chi2_ndf_vs_phi_CVT_2D(TTreeReader& dataReader, TTreeReader* mcReader,
                     double phi_CVT = calculate_phi(*traj_x_12, *traj_y_12);
                     double theta_CVT = calculate_theta(*traj_x_12, *traj_y_12, *traj_z_12);
 
-                    // Check if the track is from the central detector (theta_CVT range)
-                    if (theta_CVT > 30 && theta_CVT < 150) {
-                        h_chi2_vs_phi_CVT_data->Fill(phi_CVT, chi2_ndf);
-                    }
+                    h_chi2_vs_phi_CVT_data->Fill(phi_CVT, chi2_ndf);
                 }
             }
         }
@@ -3804,10 +3801,7 @@ void plot_chi2_ndf_vs_phi_CVT_2D(TTreeReader& dataReader, TTreeReader* mcReader,
                         double mc_phi_CVT = calculate_phi(**mc_traj_x_12, **mc_traj_y_12);
                         double mc_theta_CVT = calculate_theta(**mc_traj_x_12, **mc_traj_y_12, **mc_traj_z_12);
 
-                        // Check if the track is from the central detector (theta_CVT range)
-                        if (mc_theta_CVT > 30 && mc_theta_CVT < 150) {
-                            h_chi2_vs_phi_CVT_mc->Fill(mc_phi_CVT, mc_chi2_ndf);
-                        }
+                        h_chi2_vs_phi_CVT_mc->Fill(mc_phi_CVT, mc_chi2_ndf);
                     }
                 }
             }
