@@ -3726,6 +3726,117 @@ bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7,
     return true;
 }
 
+void plot_chi2_ndf_vs_phi_CVT_2D(TTreeReader& dataReader, TTreeReader* mcReader, const std::vector<std::tuple<int, std::string, std::string>>& particle_types) {
+    int nBinsPhi = 36;  // 10-degree bins for phi_CVT
+    int nBinsChi2 = 100; // Bins for chi2/ndf
+
+    // Declare necessary TTreeReaderValues
+    TTreeReaderValue<double> theta(dataReader, "theta");
+    TTreeReaderValue<double> traj_x_12(dataReader, "traj_x_12");
+    TTreeReaderValue<double> traj_y_12(dataReader, "traj_y_12");
+    TTreeReaderValue<double> traj_z_12(dataReader, "traj_z_12");
+    TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+
+    TTreeReaderValue<double>* mc_theta = nullptr;
+    TTreeReaderValue<double>* mc_traj_x_12 = nullptr;
+    TTreeReaderValue<double>* mc_traj_y_12 = nullptr;
+    TTreeReaderValue<double>* mc_traj_z_12 = nullptr;
+    TTreeReaderValue<int>* mc_particle_pid = nullptr;
+
+    if (mcReader) {
+        mc_theta = new TTreeReaderValue<double>(*mcReader, "theta");
+        mc_traj_x_12 = new TTreeReaderValue<double>(*mcReader, "traj_x_12");
+        mc_traj_y_12 = new TTreeReaderValue<double>(*mcReader, "traj_y_12");
+        mc_traj_z_12 = new TTreeReaderValue<double>(*mcReader, "traj_z_12");
+        mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+    }
+
+    for (const auto& particle_type : particle_types) {
+        int pid = std::get<0>(particle_type);
+        std::string particle_name = std::get<1>(particle_type);
+        std::string particle_latex = std::get<2>(particle_type);
+
+        // Create 2D histograms for chi2/ndf vs phi_CVT for data and MC
+        TH2D* h_chi2_ndf_vs_phi_CVT_data = new TH2D(("h_chi2_ndf_vs_phi_CVT_data_" + particle_name).c_str(),
+            ("#chi^{2}/ndf vs #phi_{CVT} (Data, " + particle_latex + ")").c_str(),
+            nBinsPhi, 0, 360, nBinsChi2, 0, 10); // Adjust y-axis range as needed
+
+        TH2D* h_chi2_ndf_vs_phi_CVT_mc = nullptr;
+
+        if (mcReader) {
+            h_chi2_ndf_vs_phi_CVT_mc = new TH2D(("h_chi2_ndf_vs_phi_CVT_mc_" + particle_name).c_str(),
+                ("#chi^{2}/ndf vs #phi_{CVT} (MC, " + particle_latex + ")").c_str(),
+                nBinsPhi, 0, 360, nBinsChi2, 0, 10); // Adjust y-axis range as needed
+        }
+
+        // Fill data histogram
+        dataReader.Restart();
+        while (dataReader.Next()) {
+            if (*particle_pid == pid) {
+                double phi_CVT = calculate_phi(*traj_x_12, *traj_y_12);
+                double chi2_ndf = *theta; // or whatever your chi2/ndf calculation is based on
+
+                h_chi2_ndf_vs_phi_CVT_data->Fill(phi_CVT, chi2_ndf);
+            }
+        }
+
+        // Fill MC histogram
+        if (mcReader) {
+            mcReader->Restart();
+            while (mcReader->Next()) {
+                if (**mc_particle_pid == pid) {
+                    double mc_phi_CVT = calculate_phi(**mc_traj_x_12, **mc_traj_y_12);
+                    double mc_chi2_ndf = **mc_theta; // or whatever your chi2/ndf calculation is based on
+
+                    h_chi2_ndf_vs_phi_CVT_mc->Fill(mc_phi_CVT, mc_chi2_ndf);
+                }
+            }
+        }
+
+        // Set axis labels
+        h_chi2_ndf_vs_phi_CVT_data->GetXaxis()->SetTitle("#phi_{CVT} (degrees)");
+        h_chi2_ndf_vs_phi_CVT_data->GetYaxis()->SetTitle("#chi^{2}/ndf");
+
+        if (mcReader) {
+            h_chi2_ndf_vs_phi_CVT_mc->GetXaxis()->SetTitle("#phi_{CVT} (degrees)");
+            h_chi2_ndf_vs_phi_CVT_mc->GetYaxis()->SetTitle("#chi^{2}/ndf");
+        }
+
+        // Create canvases for data and MC
+        TCanvas* c_data = new TCanvas(("c_data_phi_CVT_" + particle_name).c_str(), ("#phi_{CVT} vs #chi^{2}/ndf (Data, " + particle_latex + ")").c_str(), 800, 600);
+        h_chi2_ndf_vs_phi_CVT_data->Draw("COLZ");
+
+        TCanvas* c_mc = nullptr;
+        if (mcReader) {
+            c_mc = new TCanvas(("c_mc_phi_CVT_" + particle_name).c_str(), ("#phi_{CVT} vs #chi^{2}/ndf (MC, " + particle_latex + ")").c_str(), 800, 600);
+            h_chi2_ndf_vs_phi_CVT_mc->Draw("COLZ");
+        }
+
+        // Save canvases
+        c_data->SaveAs(("output/calibration/cvt/phi_CVT_vs_chi2ndf_data_" + particle_name + ".png").c_str());
+        if (mcReader) {
+            c_mc->SaveAs(("output/calibration/cvt/phi_CVT_vs_chi2ndf_mc_" + particle_name + ".png").c_str());
+            delete c_mc;
+        }
+
+        // Clean up
+        delete h_chi2_ndf_vs_phi_CVT_data;
+        if (mcReader) {
+            delete h_chi2_ndf_vs_phi_CVT_mc;
+        }
+        delete c_data;
+    }
+
+    // Clean up dynamically allocated memory
+    if (mcReader) {
+        delete mc_theta;
+        delete mc_traj_x_12;
+        delete mc_traj_y_12;
+        delete mc_traj_z_12;
+        delete mc_particle_pid;
+    }
+}
+
 void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     int nBins = 50;
 
@@ -3924,117 +4035,6 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
     // Clean up dynamically allocated memory for data
     for (auto& layer : layers) {
         delete std::get<0>(layer);
-    }
-}
-
-void plot_chi2_ndf_vs_phi_CVT_2D(TTreeReader& dataReader, TTreeReader* mcReader, const std::vector<std::tuple<int, std::string, std::string>>& particle_types) {
-    int nBinsPhi = 36;  // 10-degree bins for phi_CVT
-    int nBinsChi2 = 100; // Bins for chi2/ndf
-
-    // Declare necessary TTreeReaderValues
-    TTreeReaderValue<double> theta(dataReader, "theta");
-    TTreeReaderValue<double> traj_x_12(dataReader, "traj_x_12");
-    TTreeReaderValue<double> traj_y_12(dataReader, "traj_y_12");
-    TTreeReaderValue<double> traj_z_12(dataReader, "traj_z_12");
-    TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
-
-    TTreeReaderValue<double>* mc_theta = nullptr;
-    TTreeReaderValue<double>* mc_traj_x_12 = nullptr;
-    TTreeReaderValue<double>* mc_traj_y_12 = nullptr;
-    TTreeReaderValue<double>* mc_traj_z_12 = nullptr;
-    TTreeReaderValue<int>* mc_particle_pid = nullptr;
-
-    if (mcReader) {
-        mc_theta = new TTreeReaderValue<double>(*mcReader, "theta");
-        mc_traj_x_12 = new TTreeReaderValue<double>(*mcReader, "traj_x_12");
-        mc_traj_y_12 = new TTreeReaderValue<double>(*mcReader, "traj_y_12");
-        mc_traj_z_12 = new TTreeReaderValue<double>(*mcReader, "traj_z_12");
-        mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
-    }
-
-    for (const auto& particle_type : particle_types) {
-        int pid = std::get<0>(particle_type);
-        std::string particle_name = std::get<1>(particle_type);
-        std::string particle_latex = std::get<2>(particle_type);
-
-        // Create 2D histograms for chi2/ndf vs phi_CVT for data and MC
-        TH2D* h_chi2_ndf_vs_phi_CVT_data = new TH2D(("h_chi2_ndf_vs_phi_CVT_data_" + particle_name).c_str(),
-            ("#chi^{2}/ndf vs #phi_{CVT} (Data, " + particle_latex + ")").c_str(),
-            nBinsPhi, 0, 360, nBinsChi2, 0, 10); // Adjust y-axis range as needed
-
-        TH2D* h_chi2_ndf_vs_phi_CVT_mc = nullptr;
-
-        if (mcReader) {
-            h_chi2_ndf_vs_phi_CVT_mc = new TH2D(("h_chi2_ndf_vs_phi_CVT_mc_" + particle_name).c_str(),
-                ("#chi^{2}/ndf vs #phi_{CVT} (MC, " + particle_latex + ")").c_str(),
-                nBinsPhi, 0, 360, nBinsChi2, 0, 10); // Adjust y-axis range as needed
-        }
-
-        // Fill data histogram
-        dataReader.Restart();
-        while (dataReader.Next()) {
-            if (*particle_pid == pid) {
-                double phi_CVT = calculate_phi(*traj_x_12, *traj_y_12);
-                double chi2_ndf = *theta; // or whatever your chi2/ndf calculation is based on
-
-                h_chi2_ndf_vs_phi_CVT_data->Fill(phi_CVT, chi2_ndf);
-            }
-        }
-
-        // Fill MC histogram
-        if (mcReader) {
-            mcReader->Restart();
-            while (mcReader->Next()) {
-                if (**mc_particle_pid == pid) {
-                    double mc_phi_CVT = calculate_phi(**mc_traj_x_12, **mc_traj_y_12);
-                    double mc_chi2_ndf = **mc_theta; // or whatever your chi2/ndf calculation is based on
-
-                    h_chi2_ndf_vs_phi_CVT_mc->Fill(mc_phi_CVT, mc_chi2_ndf);
-                }
-            }
-        }
-
-        // Set axis labels
-        h_chi2_ndf_vs_phi_CVT_data->GetXaxis()->SetTitle("#phi_{CVT} (degrees)");
-        h_chi2_ndf_vs_phi_CVT_data->GetYaxis()->SetTitle("#chi^{2}/ndf");
-
-        if (mcReader) {
-            h_chi2_ndf_vs_phi_CVT_mc->GetXaxis()->SetTitle("#phi_{CVT} (degrees)");
-            h_chi2_ndf_vs_phi_CVT_mc->GetYaxis()->SetTitle("#chi^{2}/ndf");
-        }
-
-        // Create canvases for data and MC
-        TCanvas* c_data = new TCanvas(("c_data_phi_CVT_" + particle_name).c_str(), ("#phi_{CVT} vs #chi^{2}/ndf (Data, " + particle_latex + ")").c_str(), 800, 600);
-        h_chi2_ndf_vs_phi_CVT_data->Draw("COLZ");
-
-        TCanvas* c_mc = nullptr;
-        if (mcReader) {
-            c_mc = new TCanvas(("c_mc_phi_CVT_" + particle_name).c_str(), ("#phi_{CVT} vs #chi^{2}/ndf (MC, " + particle_latex + ")").c_str(), 800, 600);
-            h_chi2_ndf_vs_phi_CVT_mc->Draw("COLZ");
-        }
-
-        // Save canvases
-        c_data->SaveAs(("output/calibration/cvt/phi_CVT_vs_chi2ndf_data_" + particle_name + ".png").c_str());
-        if (mcReader) {
-            c_mc->SaveAs(("output/calibration/cvt/phi_CVT_vs_chi2ndf_mc_" + particle_name + ".png").c_str());
-            delete c_mc;
-        }
-
-        // Clean up
-        delete h_chi2_ndf_vs_phi_CVT_data;
-        if (mcReader) {
-            delete h_chi2_ndf_vs_phi_CVT_mc;
-        }
-        delete c_data;
-    }
-
-    // Clean up dynamically allocated memory
-    if (mcReader) {
-        delete mc_theta;
-        delete mc_traj_x_12;
-        delete mc_traj_y_12;
-        delete mc_traj_z_12;
-        delete mc_particle_pid;
     }
 }
 
