@@ -3762,7 +3762,7 @@ void plot_chi2_ndf_vs_phi_CVT_2D(TTreeReader& dataReader, TTreeReader* mcReader,
         // Create histograms for chi2/ndf vs phi_CVT for data and MC
         TH2D* h_chi2_vs_phi_CVT_data = new TH2D(("h_chi2_vs_phi_CVT_data_" + particle_name).c_str(), 
                                                 ("#chi^{2}/ndf vs #phi_{CVT} (Data, " + particle_latex + ")").c_str(), 
-                                                nBins, 0, 360, nBins, 0, 10);
+                                                nBins, 0, 360, nBins, 0, 100);
         h_chi2_vs_phi_CVT_data->GetXaxis()->SetTitle("#phi_{CVT}");
         h_chi2_vs_phi_CVT_data->GetYaxis()->SetTitle("#chi^{2}/ndf");
 
@@ -3770,7 +3770,7 @@ void plot_chi2_ndf_vs_phi_CVT_2D(TTreeReader& dataReader, TTreeReader* mcReader,
         if (mcReader) {
             h_chi2_vs_phi_CVT_mc = new TH2D(("h_chi2_vs_phi_CVT_mc_" + particle_name).c_str(), 
                                             ("#chi^{2}/ndf vs #phi_{CVT} (MC, " + particle_latex + ")").c_str(), 
-                                            nBins, 0, 360, nBins, 0, 10);
+                                            nBins, 0, 360, nBins, 0, 100);
             h_chi2_vs_phi_CVT_mc->GetXaxis()->SetTitle("#phi_{CVT}");
             h_chi2_vs_phi_CVT_mc->GetYaxis()->SetTitle("#chi^{2}/ndf");
         }
