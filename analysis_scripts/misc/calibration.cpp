@@ -3887,6 +3887,38 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
             h_sum_chi2_ndf_mc_12->Divide(h_count_chi2_ndf_mc_12);
         }
 
+        h_sum_chi2_ndf_1->SetMinimum(0);
+        h_sum_chi2_ndf_1->SetMaximum(1e7);
+
+        h_sum_chi2_ndf_3->SetMinimum(0);
+        h_sum_chi2_ndf_3->SetMaximum(1e7);
+
+        h_sum_chi2_ndf_5->SetMinimum(0);
+        h_sum_chi2_ndf_5->SetMaximum(1e7);
+
+        h_sum_chi2_ndf_7->SetMinimum(0);
+        h_sum_chi2_ndf_7->SetMaximum(1e7);
+
+        h_sum_chi2_ndf_12->SetMinimum(0);
+        h_sum_chi2_ndf_12->SetMaximum(1e7);
+
+        if (mcReader) {
+            h_sum_chi2_ndf_mc_1->SetMinimum(0);
+            h_sum_chi2_ndf_mc_1->SetMaximum(1e7);
+
+            h_sum_chi2_ndf_mc_3->SetMinimum(0);
+            h_sum_chi2_ndf_mc_3->SetMaximum(1e7);
+
+            h_sum_chi2_ndf_mc_5->SetMinimum(0);
+            h_sum_chi2_ndf_mc_5->SetMaximum(1e7);
+
+            h_sum_chi2_ndf_mc_7->SetMinimum(0);
+            h_sum_chi2_ndf_mc_7->SetMaximum(1e7);
+
+            h_sum_chi2_ndf_mc_12->SetMinimum(0);
+            h_sum_chi2_ndf_mc_12->SetMaximum(1e7);
+        }
+
         // Plot results
         TCanvas* c_layer = new TCanvas(("c_" + particle_name).c_str(), ("Mean chi2/ndf vs edge for " + particle_name).c_str(), 1800, 1200);
         c_layer->Divide(3, 2);
