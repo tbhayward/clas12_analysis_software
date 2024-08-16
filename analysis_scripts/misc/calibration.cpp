@@ -3722,7 +3722,7 @@ double calculate_theta(double x, double y, double z) {
 bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7, 
      double edge_12, int pid) {
     // Dummy function, always returns true
-    // return edge_1 > 0 && edge_3 > 0 && edge_5 > 0 && edge_7 > 0 && edge_12 > 0;
+    return edge_1 > 0 && edge_3 > 0 && edge_5 > 0 && edge_7 > 0 && edge_12 > 0;
     return true;
 }
 
@@ -3847,7 +3847,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         {new TTreeReaderValue<double>(dataReader, "traj_edge_3"), "layer_3", -2, 2.2},
         {new TTreeReaderValue<double>(dataReader, "traj_edge_5"), "layer_5", -2, 2.2},
         {new TTreeReaderValue<double>(dataReader, "traj_edge_7"), "layer_7", -5, 15},
-        {new TTreeReaderValue<double>(dataReader, "traj_edge_12"), "layer_12", -9, 25}
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_12"), "layer_12", -10, 25}
     };
 
     // Define CVT layers and edges for MC if available
@@ -3858,7 +3858,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
             {new TTreeReaderValue<double>(*mcReader, "traj_edge_3"), "layer_3", -2, 2.2},
             {new TTreeReaderValue<double>(*mcReader, "traj_edge_5"), "layer_5", -2, 2.2},
             {new TTreeReaderValue<double>(*mcReader, "traj_edge_7"), "layer_7", -5, 15},
-            {new TTreeReaderValue<double>(*mcReader, "traj_edge_12"), "layer_12", -9, 25}
+            {new TTreeReaderValue<double>(*mcReader, "traj_edge_12"), "layer_12", -10, 25}
         };
     }
 
@@ -4016,9 +4016,9 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
 
     std::vector<std::tuple<int, std::string, std::string>> particle_types = {
         {211, "pip", "#pi^{+}"},
-        // {-211, "pim", "#pi^{-}"},
-        // {321, "kp", "k^{+}"},
-        // {-321, "km", "k^{-}"},
+        {-211, "pim", "#pi^{-}"},
+        {321, "kp", "k^{+}"},
+        {-321, "km", "k^{-}"},
         {2212, "proton", "proton"}
     };
 
