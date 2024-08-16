@@ -3842,12 +3842,12 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         // Set axis labels and dynamic y-axis range
         for (size_t i = 0; i < layers.size(); ++i) {
             h_sum_chi2_ndf[i]->SetMinimum(0);
-            h_sum_chi2_ndf[i]->SetMaximum(1.15 * max_median_data);
+            // h_sum_chi2_ndf[i]->SetMaximum(1.15 * max_median_data);
             h_sum_chi2_ndf[i]->GetYaxis()->SetTitle("median chi2/ndf");
 
             if (mcReader) {
                 h_sum_chi2_ndf_mc[i]->SetMinimum(0);
-                h_sum_chi2_ndf_mc[i]->SetMaximum(1.15 * max_median_mc);
+                // h_sum_chi2_ndf_mc[i]->SetMaximum(1.15 * max_median_mc);
                 h_sum_chi2_ndf_mc[i]->GetYaxis()->SetTitle("median chi2/ndf");
             }
         }
