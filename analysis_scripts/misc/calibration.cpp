@@ -3783,7 +3783,7 @@ void plot_chi2_ndf_vs_phi_CVT_2D(TTreeReader& dataReader, TTreeReader* mcReader,
 
                 if (*traj_x_12 != -9999 && *traj_y_12 != -9999 && *traj_z_12 != -9999) {
                     double phi_CVT = calculate_phi(*traj_x_12, *traj_y_12);
-                    double theta_CVT = calculate_theta(*traj_x_12, *traj_y_12, *traj_z_12);
+                    // double theta_CVT = calculate_theta(*traj_x_12, *traj_y_12, *traj_z_12);
 
                     h_chi2_vs_phi_CVT_data->Fill(phi_CVT, chi2_ndf);
                 }
@@ -3799,7 +3799,7 @@ void plot_chi2_ndf_vs_phi_CVT_2D(TTreeReader& dataReader, TTreeReader* mcReader,
 
                     if (**mc_traj_x_12 != -9999 && **mc_traj_y_12 != -9999 && **mc_traj_z_12 != -9999) {
                         double mc_phi_CVT = calculate_phi(**mc_traj_x_12, **mc_traj_y_12);
-                        double mc_theta_CVT = calculate_theta(**mc_traj_x_12, **mc_traj_y_12, **mc_traj_z_12);
+                        // double mc_theta_CVT = calculate_theta(**mc_traj_x_12, **mc_traj_y_12, **mc_traj_z_12);
 
                         h_chi2_vs_phi_CVT_mc->Fill(mc_phi_CVT, mc_chi2_ndf);
                     }
@@ -3809,12 +3809,14 @@ void plot_chi2_ndf_vs_phi_CVT_2D(TTreeReader& dataReader, TTreeReader* mcReader,
 
         // Save the histograms
         TCanvas* c_data = new TCanvas(("c_chi2_vs_phi_CVT_data_" + particle_name).c_str(), ("#chi^{2}/ndf vs #phi_{CVT} (Data, " + particle_latex + ")").c_str(), 800, 600);
+        gPad->SetLogy();  // Set the y-axis to log scale
         h_chi2_vs_phi_CVT_data->Draw("COLZ");
         c_data->SaveAs(("output/calibration/cvt/determination/chi2_vs_phi_CVT_data_" + particle_name + ".png").c_str());
         delete c_data;
 
         if (mcReader) {
             TCanvas* c_mc = new TCanvas(("c_chi2_vs_phi_CVT_mc_" + particle_name).c_str(), ("#chi^{2}/ndf vs #phi_{CVT} (MC, " + particle_latex + ")").c_str(), 800, 600);
+            gPad->SetLogy();  // Set the y-axis to log scale
             h_chi2_vs_phi_CVT_mc->Draw("COLZ");
             c_mc->SaveAs(("output/calibration/cvt/determination/chi2_vs_phi_CVT_mc_" + particle_name + ".png").c_str());
             delete c_mc;
