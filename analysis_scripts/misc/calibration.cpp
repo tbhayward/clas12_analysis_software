@@ -3891,6 +3891,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
     for (const auto& particle_type : particle_types) {
         int pid = std::get<0>(particle_type);
         std::string particle_name = std::get<1>(particle_type);
+        std::string particle_latex = std::get<2>(particle_type);
 
         std::vector<TH2D*> h_chi2_vs_edge_data, h_chi2_vs_edge_mc;
 
@@ -3902,10 +3903,10 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
             double yMin = 0;
             double yMax = 100;  // This can be adjusted depending on your expected range of chi2/ndf
 
-            h_chi2_vs_edge_data.push_back(new TH2D(("h_chi2_vs_edge_data_" + layer_name + "_" + particle_name).c_str(), (particle_name + " - " + layer_name).c_str(), nBinsX, xMin, xMax, nBinsY, yMin, yMax));
+            h_chi2_vs_edge_data.push_back(new TH2D(("h_chi2_vs_edge_data_" + layer_name + "_" + particle_name).c_str(), (particle_latex + " - " + layer_name).c_str(), nBinsX, xMin, xMax, nBinsY, yMin, yMax));
 
             if (mcReader) {
-                h_chi2_vs_edge_mc.push_back(new TH2D(("h_chi2_vs_edge_mc_" + layer_name + "_" + particle_name).c_str(), (particle_name + " - MC - " + layer_name).c_str(), nBinsX, xMin, xMax, nBinsY, yMin, yMax));
+                h_chi2_vs_edge_mc.push_back(new TH2D(("h_chi2_vs_edge_mc_" + layer_name + "_" + particle_name).c_str(), (particle_latex + " - MC - " + layer_name).c_str(), nBinsX, xMin, xMax, nBinsY, yMin, yMax));
             }
         }
 
@@ -3944,13 +3945,16 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         }
 
         // Plot data results
-        TCanvas* c_layer_data = new TCanvas(("c_data_" + particle_name).c_str(), ("chi2/ndf vs edge for " + particle_name + " (Data)").c_str(), 1800, 1200);
+        TCanvas* c_layer_data = new TCanvas(("c_data_" + particle_name).c_str(), ("#chi^{2}/ndf vs edge for " + particle_latex + " (Data)").c_str(), 1800, 1200);
         c_layer_data->Divide(3, 2);
-        c_layer_data->SetLeftMargin(0.15);
+        c_layer_data->SetLeftMargin(0.2);  // Increase left margin for better y-axis label visibility
 
         for (size_t i = 0; i < layers.size(); ++i) {
             c_layer_data->cd(i + 1);
-            gPad->SetLogz();  // Set the y-axis to log scale
+            gPad->SetLogz();  // Set the z-axis to log scale
+            gPad->SetMargin(0.2, 0.1, 0.2, 0.1);  // Adjust margins: left, right, bottom, top
+            h_chi2_vs_edge_data[i]->GetXaxis()->SetTitle("edge (cm)");
+            h_chi2_vs_edge_data[i]->GetYaxis()->SetTitle("#chi^{2}/ndf");
             h_chi2_vs_edge_data[i]->Draw("COLZ");
         }
 
@@ -3958,20 +3962,22 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
 
         // Plot MC results
         if (mcReader) {
-            TCanvas* c_layer_mc = new TCanvas(("c_mc_" + particle_name).c_str(), ("chi2/ndf vs edge for " + particle_name + " (MC)").c_str(), 1800, 1200);
+            TCanvas* c_layer_mc = new TCanvas(("c_mc_" + particle_name).c_str(), ("#chi^{2}/ndf vs edge for " + particle_latex + " (MC)").c_str(), 1800, 1200);
             c_layer_mc->Divide(3, 2);
-            c_layer_mc->SetLeftMargin(0.15);
+            c_layer_mc->SetLeftMargin(0.2);  // Increase left margin for better y-axis label visibility
 
             for (size_t i = 0; i < mc_layers.size(); ++i) {
                 c_layer_mc->cd(i + 1);
-                gPad->SetLogz();  // Set the y-axis to log scale
+                gPad->SetLogz();  // Set the z-axis to log scale
+                gPad->SetMargin(0.2, 0.1, 0.2, 0.1);  // Adjust margins: left, right, bottom, top
+                h_chi2_vs_edge_mc[i]->GetXaxis()->SetTitle("edge (cm)");
+                h_chi2_vs_edge_mc[i]->GetYaxis()->SetTitle("#chi^{2}/ndf");
                 h_chi2_vs_edge_mc[i]->Draw("COLZ");
             }
 
             c_layer_mc->SaveAs(("output/calibration/cvt/determination/chi2_per_ndf_vs_edge_mc_" + particle_name + ".png").c_str());
             delete c_layer_mc;
         }
-
         // Clean up
         for (auto hist : h_chi2_vs_edge_data) delete hist;
         if (mcReader) {
