@@ -3761,10 +3761,10 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
     }
 
     std::vector<std::tuple<int, std::string>> particle_types = {
-        {211, "#pi^{+}"},
-        {-211, "#pi^{-}"},
-        {321, "k^{+}"},
-        {-321, "k^{-}"},
+        // {211, "#pi^{+}"},
+        // {-211, "#pi^{-}"},
+        // {321, "k^{+}"},
+        // {-321, "k^{-}"},
         {2212, "proton"}
     };
 
