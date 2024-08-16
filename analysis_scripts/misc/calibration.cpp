@@ -3776,21 +3776,19 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         int pid = std::get<0>(particle_type);
         std::string particle_name = std::get<1>(particle_type);
 
-        std::vector<TH1D*> h_sum_chi2_ndf, h_count_chi2_ndf, h_sum_chi2_ndf_mc, h_count_chi2_ndf_mc;
+        std::vector<TH1D*> h_median_chi2_ndf_data, h_median_chi2_ndf_mc;
         std::vector<std::vector<std::vector<double>>> bin_values(layers.size(), std::vector<std::vector<double>>(nBins));
 
-        // Initialize histograms
+        // Initialize histograms for data and MC
         for (const auto& layer : layers) {
             std::string layer_name = std::get<1>(layer);
             double xMin = std::get<2>(layer);
             double xMax = std::get<3>(layer);
 
-            h_sum_chi2_ndf.push_back(new TH1D(("h_sum_chi2_ndf_" + layer_name + "_" + particle_name).c_str(), (particle_name + " - " + layer_name).c_str(), nBins, xMin, xMax));
-            h_count_chi2_ndf.push_back(new TH1D(("h_count_chi2_ndf_" + layer_name + "_" + particle_name).c_str(), "", nBins, xMin, xMax));
+            h_median_chi2_ndf_data.push_back(new TH1D(("h_median_chi2_ndf_data_" + layer_name + "_" + particle_name).c_str(), (particle_name + " - " + layer_name).c_str(), nBins, xMin, xMax));
 
             if (mcReader) {
-                h_sum_chi2_ndf_mc.push_back(new TH1D(("h_sum_chi2_ndf_mc_" + layer_name + "_" + particle_name).c_str(), (particle_name + " - MC - " + layer_name).c_str(), nBins, xMin, xMax));
-                h_count_chi2_ndf_mc.push_back(new TH1D(("h_count_chi2_ndf_mc_" + layer_name + "_" + particle_name).c_str(), "", nBins, xMin, xMax));
+                h_median_chi2_ndf_mc.push_back(new TH1D(("h_median_chi2_ndf_mc_" + layer_name + "_" + particle_name).c_str(), (particle_name + " - MC - " + layer_name).c_str(), nBins, xMin, xMax));
             }
         }
 
@@ -3804,7 +3802,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
                     double traj_edge = **std::get<0>(layers[i]);
 
                     if (traj_edge != -9999) {
-                        int bin = h_sum_chi2_ndf[i]->FindBin(traj_edge) - 1;
+                        int bin = h_median_chi2_ndf_data[i]->FindBin(traj_edge) - 1;
                         if (bin >= 0 && bin < nBins) bin_values[i][bin].push_back(chi2_ndf);
                     }
                 }
@@ -3822,8 +3820,8 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
                         double traj_edge = **std::get<0>(mc_layers[i]);
 
                         if (traj_edge != -9999) {
-                            h_sum_chi2_ndf_mc[i]->Fill(traj_edge, mc_chi2_ndf);
-                            h_count_chi2_ndf_mc[i]->Fill(traj_edge);
+                            int bin = h_median_chi2_ndf_mc[i]->FindBin(traj_edge) - 1;
+                            if (bin >= 0 && bin < nBins) bin_values[i][bin].push_back(mc_chi2_ndf);
                         }
                     }
                 }
@@ -3832,60 +3830,72 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
 
         // Calculate the median for each bin and set y-axis dynamically
         for (size_t i = 0; i < layers.size(); ++i) {
+            double max_median_value = 0;
+
             for (int bin = 0; bin < nBins; ++bin) {
                 if (!bin_values[i][bin].empty()) {
                     std::sort(bin_values[i][bin].begin(), bin_values[i][bin].end());
                     double median = bin_values[i][bin][bin_values[i][bin].size() / 2];
-                    h_sum_chi2_ndf[i]->SetBinContent(bin + 1, median);
+                    h_median_chi2_ndf_data[i]->SetBinContent(bin + 1, median);
+                    max_median_value = std::max(max_median_value, median);
                 }
             }
 
-            h_sum_chi2_ndf[i]->SetMinimum(0);
-            h_sum_chi2_ndf[i]->SetMaximum(h_sum_chi2_ndf[i]->GetMaximum() * 1.1);
-            h_sum_chi2_ndf[i]->GetXaxis()->SetTitle("edge (cm)");
-            h_sum_chi2_ndf[i]->GetYaxis()->SetTitle("<chi2/ndf>");
+            h_median_chi2_ndf_data[i]->SetMinimum(0);
+            h_median_chi2_ndf_data[i]->SetMaximum(max_median_value * 1.15);
+            h_median_chi2_ndf_data[i]->GetXaxis()->SetTitle("edge (cm)");
+            h_median_chi2_ndf_data[i]->GetYaxis()->SetTitle("median #chi^{2}/ndf");
 
             if (mcReader) {
-                h_sum_chi2_ndf_mc[i]->SetMinimum(0);
-                h_sum_chi2_ndf_mc[i]->SetMaximum(h_sum_chi2_ndf_mc[i]->GetMaximum() * 1.1);
-                h_sum_chi2_ndf_mc[i]->GetXaxis()->SetTitle("edge (cm)");
-                h_sum_chi2_ndf_mc[i]->GetYaxis()->SetTitle("<chi2/ndf>");
+                for (int bin = 0; bin < nBins; ++bin) {
+                    if (!bin_values[i][bin].empty()) {
+                        double median = bin_values[i][bin][bin_values[i][bin].size() / 2];
+                        h_median_chi2_ndf_mc[i]->SetBinContent(bin + 1, median);
+                        max_median_value = std::max(max_median_value, median);
+                    }
+                }
+
+                h_median_chi2_ndf_mc[i]->SetMinimum(0);
+                h_median_chi2_ndf_mc[i]->SetMaximum(max_median_value * 1.15);
+                h_median_chi2_ndf_mc[i]->GetXaxis()->SetTitle("edge (cm)");
+                h_median_chi2_ndf_mc[i]->GetYaxis()->SetTitle("median #chi^{2}/ndf");
             }
         }
 
-        // Plot results
-        TCanvas* c_layer = new TCanvas(("c_" + particle_name).c_str(), ("Median chi2/ndf vs edge for " + particle_name).c_str(), 1800, 1200);
-        c_layer->Divide(3, 2);
+        // Plot data results
+        TCanvas* c_layer_data = new TCanvas(("c_data_" + particle_name).c_str(), ("Median chi2/ndf vs edge for " + particle_name + " (Data)").c_str(), 1800, 1200);
+        c_layer_data->Divide(3, 2);
 
         for (size_t i = 0; i < layers.size(); ++i) {
-            c_layer->cd(i + 1);
-            h_sum_chi2_ndf[i]->SetStats(false);
-            h_sum_chi2_ndf[i]->SetLineColor(kBlack);
-            h_sum_chi2_ndf[i]->Draw("E");
-
-            if (mcReader) {
-                h_sum_chi2_ndf_mc[i]->SetStats(false);
-                h_sum_chi2_ndf_mc[i]->SetLineColor(kRed);
-                h_sum_chi2_ndf_mc[i]->Draw("E SAME");
-            }
-            auto legend = new TLegend(0.7, 0.7, 0.9, 0.9);
-            legend->AddEntry(h_sum_chi2_ndf[i], "Data", "l");
-            if (mcReader) {
-                legend->AddEntry(h_sum_chi2_ndf_mc[i], "MC", "l");
-            }
-            legend->Draw();
+            c_layer_data->cd(i + 1);
+            h_median_chi2_ndf_data[i]->SetStats(false);
+            h_median_chi2_ndf_data[i]->SetLineColor(kBlack);
+            h_median_chi2_ndf_data[i]->Draw("HIST");
         }
 
-        c_layer->SaveAs(("output/calibration/cvt/determination/median_chi2_per_ndf_vs_edge_" + particle_name + ".png").c_str());
+        c_layer_data->SaveAs(("output/calibration/cvt/determination/median_chi2_per_ndf_vs_edge_data_" + particle_name + ".png").c_str());
+
+        // Plot MC results
+        if (mcReader) {
+            TCanvas* c_layer_mc = new TCanvas(("c_mc_" + particle_name).c_str(), ("Median chi2/ndf vs edge for " + particle_name + " (MC)").c_str(), 1800, 1200);
+            c_layer_mc->Divide(3, 2);
+            for (size_t i = 0; i < mc_layers.size(); ++i) {
+                c_layer_mc->cd(i + 1);
+                h_median_chi2_ndf_mc[i]->SetStats(false);
+                h_median_chi2_ndf_mc[i]->SetLineColor(kRed);
+                h_median_chi2_ndf_mc[i]->Draw("HIST");
+            }
+
+            c_layer_mc->SaveAs(("output/calibration/cvt/determination/median_chi2_per_ndf_vs_edge_mc_" + particle_name + ".png").c_str());
+            delete c_layer_mc;
+        }
 
         // Clean up
-        for (auto hist : h_sum_chi2_ndf) delete hist;
-        for (auto hist : h_count_chi2_ndf) delete hist;
+        for (auto hist : h_median_chi2_ndf_data) delete hist;
         if (mcReader) {
-            for (auto hist : h_sum_chi2_ndf_mc) delete hist;
-            for (auto hist : h_count_chi2_ndf_mc) delete hist;
+            for (auto hist : h_median_chi2_ndf_mc) delete hist;
         }
-        delete c_layer;
+        delete c_layer_data;
     }
 
     // Clean up dynamically allocated memory for MC
