@@ -223,6 +223,35 @@ public class fiducial_cuts {
         }
     }
 
+    public boolean cvt_fiducial_cut(int particle_Index, HipoDataBank rec_Bank, HipoDataBank traj_Bank) {
+        double edge_1 = 1;
+        double edge_3 = 1;
+        double edge_5 = 1;
+        double edge_7 = 1;
+        double edge_12 = 1;
+
+        for (int current_Row = 0; current_Row < traj_Bank.rows(); current_Row++) {
+            if (traj_Bank.getInt("detector", current_Row) != 5) { // detector = 5 is CVT 
+                continue;
+            }
+            
+            if (particle_Index == traj_Bank.getInt("pindex", current_Row)) {
+                if (traj_Bank.getInt("layer", current_Row) == 1) {
+                    edge_1 = traj_Bank.getInt("edge", current_Row);
+                } else if (traj_Bank.getInt("layer", current_Row) == 3) {
+                    edge_3 = traj_Bank.getInt("edge", current_Row);
+                } else if (traj_Bank.getInt("layer", current_Row) == 5) {
+                    edge_5 = traj_Bank.getInt("edge", current_Row);
+                } else if (traj_Bank.getInt("layer", current_Row) == 7) {
+                    edge_7 = traj_Bank.getInt("edge", current_Row);
+                } else if (traj_Bank.getInt("layer", current_Row) == 12) {
+                    edge_12 = traj_Bank.getInt("edge", current_Row);
+                }
+            }
+        }
+        return edge_1 > 0 && edge_3 > 0 && edge_5 > 0 && edge_7 > -2 && edge_12 > -5;
+    }
+
     public boolean dc_fiducial_cut(int particle_Index, HipoDataBank rec_Bank, HipoDataBank traj_Bank) {
         int pid = rec_Bank.getInt("pid", particle_Index); // different cuts for leptons and hadrons
         double edge_1 = 0; // region 1 edge value
