@@ -3843,9 +3843,9 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
 
     // Define CVT layers and edges for data
     std::vector<std::tuple<TTreeReaderValue<double>*, std::string, double, double>> layers = {
-        {new TTreeReaderValue<double>(dataReader, "traj_edge_1"), "layer_1", -2, 2},
-        {new TTreeReaderValue<double>(dataReader, "traj_edge_3"), "layer_3", -2, 2},
-        {new TTreeReaderValue<double>(dataReader, "traj_edge_5"), "layer_5", -2, 2},
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_1"), "layer_1", -2, 2.2},
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_3"), "layer_3", -2, 2.2},
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_5"), "layer_5", -2, 2.2},
         {new TTreeReaderValue<double>(dataReader, "traj_edge_7"), "layer_7", -2, 15},
         {new TTreeReaderValue<double>(dataReader, "traj_edge_12"), "layer_12", -4, 25}
     };
@@ -3854,9 +3854,9 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
     std::vector<std::tuple<TTreeReaderValue<double>*, std::string, double, double>> mc_layers;
     if (mcReader) {
         mc_layers = {
-            {new TTreeReaderValue<double>(*mcReader, "traj_edge_1"), "layer_1", -2, 2},
-            {new TTreeReaderValue<double>(*mcReader, "traj_edge_3"), "layer_3", -2, 2},
-            {new TTreeReaderValue<double>(*mcReader, "traj_edge_5"), "layer_5", -2, 2},
+            {new TTreeReaderValue<double>(*mcReader, "traj_edge_1"), "layer_1", -2, 2.2},
+            {new TTreeReaderValue<double>(*mcReader, "traj_edge_3"), "layer_3", -2, 2.2},
+            {new TTreeReaderValue<double>(*mcReader, "traj_edge_5"), "layer_5", -2, 2.2},
             {new TTreeReaderValue<double>(*mcReader, "traj_edge_7"), "layer_7", -2, 15},
             {new TTreeReaderValue<double>(*mcReader, "traj_edge_12"), "layer_12", -4, 25}
         };
