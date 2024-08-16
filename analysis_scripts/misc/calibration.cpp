@@ -3781,8 +3781,8 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         TH1D* h_sum_chi2_ndf_7 = new TH1D(("h_sum_chi2_ndf_layer7_" + particle_name).c_str(), (particle_name + " - layer_7").c_str(), nBins, 0, 15);
         TH1D* h_count_chi2_ndf_7 = new TH1D(("h_count_chi2_ndf_layer7_" + particle_name).c_str(), "", nBins, 0, 15);
 
-        TH1D* h_sum_chi2_ndf_12 = new TH1D(("h_sum_chi2_ndf_layer12_" + particle_name).c_str(), (particle_name + " - layer_12").c_str(), nBins, 0, 17);
-        TH1D* h_count_chi2_ndf_12 = new TH1D(("h_count_chi2_ndf_layer12_" + particle_name).c_str(), "", nBins, 0, 17);
+        TH1D* h_sum_chi2_ndf_12 = new TH1D(("h_sum_chi2_ndf_layer12_" + particle_name).c_str(), (particle_name + " - layer_12").c_str(), nBins, 0, 20);
+        TH1D* h_count_chi2_ndf_12 = new TH1D(("h_count_chi2_ndf_layer12_" + particle_name).c_str(), "", nBins, 0, 20);
 
         // Fill data histograms
         dataReader.Restart();
@@ -3835,8 +3835,8 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
             h_sum_chi2_ndf_mc_7 = new TH1D(("h_sum_chi2_ndf_mc_layer7_" + particle_name).c_str(), (particle_name + " - MC - layer_7").c_str(), nBins, 0, 15);
             h_count_chi2_ndf_mc_7 = new TH1D(("h_count_chi2_ndf_mc_layer7_" + particle_name).c_str(), "", nBins, 0, 15);
 
-            h_sum_chi2_ndf_mc_12 = new TH1D(("h_sum_chi2_ndf_mc_layer12_" + particle_name).c_str(), (particle_name + " - MC - layer_12").c_str(), nBins, 0, 17);
-            h_count_chi2_ndf_mc_12 = new TH1D(("h_count_chi2_ndf_mc_layer12_" + particle_name).c_str(), "", nBins, 0, 17);
+            h_sum_chi2_ndf_mc_12 = new TH1D(("h_sum_chi2_ndf_mc_layer12_" + particle_name).c_str(), (particle_name + " - MC - layer_12").c_str(), nBins, 0, 20);
+            h_count_chi2_ndf_mc_12 = new TH1D(("h_count_chi2_ndf_mc_layer12_" + particle_name).c_str(), "", nBins, 0, 20);
 
             mcReader->Restart();
             while (mcReader->Next()) {
