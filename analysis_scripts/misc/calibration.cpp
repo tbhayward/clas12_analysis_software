@@ -3762,10 +3762,10 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
 
     // Array of particle types (photons and electrons) and their corresponding PIDs
     std::vector<std::tuple<int, std::string>> particle_types = {
-        {-211, "pim"},
-        {211, "pip"},
-        {321, "kp"},
-        {-321, "km"},
+        // {-211, "pim"},
+        // {211, "pip"},
+        // {321, "kp"},
+        // {-321, "km"},
         {2212, "proton"}
     };
 
@@ -3774,14 +3774,14 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         std::string particle_name = std::get<1>(particle_type);
 
         // Create histograms for each layer
-        TH1D* h_sum_chi2_ndf_1 = new TH1D(("h_sum_chi2_ndf_layer1_" + particle_name).c_str(), (particle_name + " - layer_1").c_str(), nBins, 0, 2);
-        TH1D* h_count_chi2_ndf_1 = new TH1D(("h_count_chi2_ndf_layer1_" + particle_name).c_str(), "", nBins, 0, 2);
+        TH1D* h_sum_chi2_ndf_1 = new TH1D(("h_sum_chi2_ndf_layer1_" + particle_name).c_str(), (particle_name + " - layer_1").c_str(), nBins, -2, 2);
+        TH1D* h_count_chi2_ndf_1 = new TH1D(("h_count_chi2_ndf_layer1_" + particle_name).c_str(), "", nBins, -2, 2);
 
-        TH1D* h_sum_chi2_ndf_3 = new TH1D(("h_sum_chi2_ndf_layer3_" + particle_name).c_str(), (particle_name + " - layer_3").c_str(), nBins, 0, 2);
-        TH1D* h_count_chi2_ndf_3 = new TH1D(("h_count_chi2_ndf_layer3_" + particle_name).c_str(), "", nBins, 0, 2);
+        TH1D* h_sum_chi2_ndf_3 = new TH1D(("h_sum_chi2_ndf_layer3_" + particle_name).c_str(), (particle_name + " - layer_3").c_str(), nBins, -2, 2);
+        TH1D* h_count_chi2_ndf_3 = new TH1D(("h_count_chi2_ndf_layer3_" + particle_name).c_str(), "", nBins, -2, 2);
 
-        TH1D* h_sum_chi2_ndf_5 = new TH1D(("h_sum_chi2_ndf_layer5_" + particle_name).c_str(), (particle_name + " - layer_5").c_str(), nBins, 0, 2);
-        TH1D* h_count_chi2_ndf_5 = new TH1D(("h_count_chi2_ndf_layer5_" + particle_name).c_str(), "", nBins, 0, 2);
+        TH1D* h_sum_chi2_ndf_5 = new TH1D(("h_sum_chi2_ndf_layer5_" + particle_name).c_str(), (particle_name + " - layer_5").c_str(), nBins, -2, 2);
+        TH1D* h_count_chi2_ndf_5 = new TH1D(("h_count_chi2_ndf_layer5_" + particle_name).c_str(), "", nBins, -2, 2);
 
         TH1D* h_sum_chi2_ndf_7 = new TH1D(("h_sum_chi2_ndf_layer7_" + particle_name).c_str(), (particle_name + " - layer_7").c_str(), nBins, 0, 15);
         TH1D* h_count_chi2_ndf_7 = new TH1D(("h_count_chi2_ndf_layer7_" + particle_name).c_str(), "", nBins, 0, 15);
