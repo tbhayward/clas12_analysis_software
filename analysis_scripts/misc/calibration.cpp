@@ -19,7 +19,9 @@
 #include <TLine.h> 
 #include <TProfile.h>
 #include <iostream>
-#include <cmath> // Include cmath for M_PI
+#include <cmath> 
+#include <vector>
+#include <algorithm>
 
 void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Arrays to store positive and negative track conditions
@@ -3724,49 +3726,24 @@ bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7,
     return true;
 }
 
+#include <vector>
+#include <algorithm> // For std::sort
+
 void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     int nBins = 20;
 
-    // Define TTreeReaderValues for each CVT layer for data
-    TTreeReaderValue<double> traj_edge_1(dataReader, "traj_edge_1");
-    TTreeReaderValue<double> traj_edge_3(dataReader, "traj_edge_3");
-    TTreeReaderValue<double> traj_edge_5(dataReader, "traj_edge_5");
-    TTreeReaderValue<double> traj_edge_7(dataReader, "traj_edge_7");
-    TTreeReaderValue<double> traj_edge_12(dataReader, "traj_edge_12");
+    // Define CVT layers and edges
+    std::vector<std::tuple<TTreeReaderValue<double>, std::string, double, double>> layers = {
+        {TTreeReaderValue<double>(dataReader, "traj_edge_1"), "layer_1", -2, 2},
+        {TTreeReaderValue<double>(dataReader, "traj_edge_3"), "layer_3", -2, 2},
+        {TTreeReaderValue<double>(dataReader, "traj_edge_5"), "layer_5", -2, 2},
+        {TTreeReaderValue<double>(dataReader, "traj_edge_7"), "layer_7", -2, 15},
+        {TTreeReaderValue<double>(dataReader, "traj_edge_12"), "layer_12", -2, 25}
+    };
 
-    TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
-    TTreeReaderValue<double> track_chi2_5(dataReader, "track_chi2_5");
-    TTreeReaderValue<int> track_ndf_5(dataReader, "track_ndf_5");
-
-    // Define TTreeReaderValues for each CVT layer for MC (if available)
-    TTreeReaderValue<double>* mc_traj_edge_1 = nullptr;
-    TTreeReaderValue<double>* mc_traj_edge_3 = nullptr;
-    TTreeReaderValue<double>* mc_traj_edge_5 = nullptr;
-    TTreeReaderValue<double>* mc_traj_edge_7 = nullptr;
-    TTreeReaderValue<double>* mc_traj_edge_12 = nullptr;
-
-    TTreeReaderValue<int>* mc_particle_pid = nullptr;
-    TTreeReaderValue<double>* mc_track_chi2_5 = nullptr;
-    TTreeReaderValue<int>* mc_track_ndf_5 = nullptr;
-
-    if (mcReader) {
-        mc_traj_edge_1 = new TTreeReaderValue<double>(*mcReader, "traj_edge_1");
-        mc_traj_edge_3 = new TTreeReaderValue<double>(*mcReader, "traj_edge_3");
-        mc_traj_edge_5 = new TTreeReaderValue<double>(*mcReader, "traj_edge_5");
-        mc_traj_edge_7 = new TTreeReaderValue<double>(*mcReader, "traj_edge_7");
-        mc_traj_edge_12 = new TTreeReaderValue<double>(*mcReader, "traj_edge_12");
-
-        mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
-        mc_track_chi2_5 = new TTreeReaderValue<double>(*mcReader, "track_chi2_5");
-        mc_track_ndf_5 = new TTreeReaderValue<int>(*mcReader, "track_ndf_5");
-    }
-
-    // Array of particle types (photons and electrons) and their corresponding PIDs
+    // Particle types and corresponding PIDs
     std::vector<std::tuple<int, std::string>> particle_types = {
-        // {-211, "pim"},
-        // {211, "pip"},
-        // {321, "kp"},
-        // {-321, "km"},
+        {211, "pip"},
         {2212, "proton"}
     };
 
@@ -3774,263 +3751,118 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         int pid = std::get<0>(particle_type);
         std::string particle_name = std::get<1>(particle_type);
 
-        // Create histograms for each layer
-        TH1D* h_sum_chi2_ndf_1 = new TH1D(("h_sum_chi2_ndf_layer1_" + particle_name).c_str(), (particle_name + " - layer_1").c_str(), nBins, -2, 2);
-        TH1D* h_count_chi2_ndf_1 = new TH1D(("h_count_chi2_ndf_layer1_" + particle_name).c_str(), "", nBins, -2, 2);
+        std::vector<TH1D*> h_sum_chi2_ndf, h_count_chi2_ndf, h_sum_chi2_ndf_mc, h_count_chi2_ndf_mc;
+        std::vector<std::vector<std::vector<double>>> bin_values(layers.size());
 
-        TH1D* h_sum_chi2_ndf_3 = new TH1D(("h_sum_chi2_ndf_layer3_" + particle_name).c_str(), (particle_name + " - layer_3").c_str(), nBins, -2, 2);
-        TH1D* h_count_chi2_ndf_3 = new TH1D(("h_count_chi2_ndf_layer3_" + particle_name).c_str(), "", nBins, -2, 2);
+        // Initialize histograms
+        for (const auto& layer : layers) {
+            std::string layer_name = std::get<1>(layer);
+            double xMin = std::get<2>(layer);
+            double xMax = std::get<3>(layer);
 
-        TH1D* h_sum_chi2_ndf_5 = new TH1D(("h_sum_chi2_ndf_layer5_" + particle_name).c_str(), (particle_name + " - layer_5").c_str(), nBins, -2, 2);
-        TH1D* h_count_chi2_ndf_5 = new TH1D(("h_count_chi2_ndf_layer5_" + particle_name).c_str(), "", nBins, -2, 2);
+            h_sum_chi2_ndf.push_back(new TH1D(("h_sum_chi2_ndf_" + layer_name + "_" + particle_name).c_str(), (particle_name + " - " + layer_name).c_str(), nBins, xMin, xMax));
+            h_count_chi2_ndf.push_back(new TH1D(("h_count_chi2_ndf_" + layer_name + "_" + particle_name).c_str(), "", nBins, xMin, xMax));
 
-        TH1D* h_sum_chi2_ndf_7 = new TH1D(("h_sum_chi2_ndf_layer7_" + particle_name).c_str(), (particle_name + " - layer_7").c_str(), nBins, -2, 15);
-        TH1D* h_count_chi2_ndf_7 = new TH1D(("h_count_chi2_ndf_layer7_" + particle_name).c_str(), "", nBins, -2, 15);
+            if (mcReader) {
+                h_sum_chi2_ndf_mc.push_back(new TH1D(("h_sum_chi2_ndf_mc_" + layer_name + "_" + particle_name).c_str(), (particle_name + " - MC - " + layer_name).c_str(), nBins, xMin, xMax));
+                h_count_chi2_ndf_mc.push_back(new TH1D(("h_count_chi2_ndf_mc_" + layer_name + "_" + particle_name).c_str(), "", nBins, xMin, xMax));
+            }
 
-        TH1D* h_sum_chi2_ndf_12 = new TH1D(("h_sum_chi2_ndf_layer12_" + particle_name).c_str(), (particle_name + " - layer_12").c_str(), nBins, -2, 25);
-        TH1D* h_count_chi2_ndf_12 = new TH1D(("h_count_chi2_ndf_layer12_" + particle_name).c_str(), "", nBins, -2, 25);
+            bin_values.push_back(std::vector<std::vector<double>>(nBins));
+        }
 
         // Fill data histograms
         dataReader.Restart();
         while (dataReader.Next()) {
             if (*particle_pid == pid && *track_ndf_5 > 0 && *track_chi2_5 < 1000) {
                 double chi2_ndf = *track_chi2_5 / *track_ndf_5;
-                if (*traj_edge_1 != -9999) {
-                    h_sum_chi2_ndf_1->Fill(*traj_edge_1, chi2_ndf);
-                    h_count_chi2_ndf_1->Fill(*traj_edge_1);
-                }
-                if (*traj_edge_3 != -9999) {
-                    h_sum_chi2_ndf_3->Fill(*traj_edge_3, chi2_ndf);
-                    h_count_chi2_ndf_3->Fill(*traj_edge_3);
-                }
-                if (*traj_edge_5 != -9999) {
-                    h_sum_chi2_ndf_5->Fill(*traj_edge_5, chi2_ndf);
-                    h_count_chi2_ndf_5->Fill(*traj_edge_5);
-                }
-                if (*traj_edge_7 != -9999) {
-                    h_sum_chi2_ndf_7->Fill(*traj_edge_7, chi2_ndf);
-                    h_count_chi2_ndf_7->Fill(*traj_edge_7);
-                }
-                if (*traj_edge_12 != -9999) {
-                    h_sum_chi2_ndf_12->Fill(*traj_edge_12, chi2_ndf);
-                    h_count_chi2_ndf_12->Fill(*traj_edge_12);
+
+                for (size_t i = 0; i < layers.size(); ++i) {
+                    double traj_edge = *std::get<0>(layers[i]);
+
+                    if (traj_edge != -9999) {
+                        int bin = h_sum_chi2_ndf[i]->FindBin(traj_edge) - 1;
+                        if (bin >= 0 && bin < nBins) bin_values[i][bin].push_back(chi2_ndf);
+                    }
                 }
             }
         }
 
         // Fill MC histograms
-        TH1D* h_sum_chi2_ndf_mc_1 = nullptr;
-        TH1D* h_count_chi2_ndf_mc_1 = nullptr;
-        TH1D* h_sum_chi2_ndf_mc_3 = nullptr;
-        TH1D* h_count_chi2_ndf_mc_3 = nullptr;
-        TH1D* h_sum_chi2_ndf_mc_5 = nullptr;
-        TH1D* h_count_chi2_ndf_mc_5 = nullptr;
-        TH1D* h_sum_chi2_ndf_mc_7 = nullptr;
-        TH1D* h_count_chi2_ndf_mc_7 = nullptr;
-        TH1D* h_sum_chi2_ndf_mc_12 = nullptr;
-        TH1D* h_count_chi2_ndf_mc_12 = nullptr;
-
         if (mcReader) {
-            h_sum_chi2_ndf_mc_1 = new TH1D(("h_sum_chi2_ndf_mc_layer1_" + particle_name).c_str(), (particle_name + " - MC - layer_1").c_str(), nBins, 0, 2);
-            h_count_chi2_ndf_mc_1 = new TH1D(("h_count_chi2_ndf_mc_layer1_" + particle_name).c_str(), "", nBins, 0, 2);
-
-            h_sum_chi2_ndf_mc_3 = new TH1D(("h_sum_chi2_ndf_mc_layer3_" + particle_name).c_str(), (particle_name + " - MC - layer_3").c_str(), nBins, 0, 2);
-            h_count_chi2_ndf_mc_3 = new TH1D(("h_count_chi2_ndf_mc_layer3_" + particle_name).c_str(), "", nBins, 0, 2);
-            h_sum_chi2_ndf_mc_5 = new TH1D(("h_sum_chi2_ndf_mc_layer5_" + particle_name).c_str(), (particle_name + " - MC - layer_5").c_str(), nBins, 0, 2);
-            h_count_chi2_ndf_mc_5 = new TH1D(("h_count_chi2_ndf_mc_layer5_" + particle_name).c_str(), "", nBins, 0, 2);
-            h_sum_chi2_ndf_mc_7 = new TH1D(("h_sum_chi2_ndf_mc_layer7_" + particle_name).c_str(), (particle_name + " - MC - layer_7").c_str(), nBins, 0, 15);
-            h_count_chi2_ndf_mc_7 = new TH1D(("h_count_chi2_ndf_mc_layer7_" + particle_name).c_str(), "", nBins, 0, 15);
-
-            h_sum_chi2_ndf_mc_12 = new TH1D(("h_sum_chi2_ndf_mc_layer12_" + particle_name).c_str(), (particle_name + " - MC - layer_12").c_str(), nBins, 0, 25);
-            h_count_chi2_ndf_mc_12 = new TH1D(("h_count_chi2_ndf_mc_layer12_" + particle_name).c_str(), "", nBins, 0, 25);
-
             mcReader->Restart();
             while (mcReader->Next()) {
                 if (**mc_particle_pid == pid && **mc_track_ndf_5 > 0 && **mc_track_chi2_5 < 10000) {
                     double mc_chi2_ndf = **mc_track_chi2_5 / **mc_track_ndf_5;
-                    if (**mc_traj_edge_1 != -9999) {
-                        h_sum_chi2_ndf_mc_1->Fill(**mc_traj_edge_1, mc_chi2_ndf);
-                        h_count_chi2_ndf_mc_1->Fill(**mc_traj_edge_1);
-                    }
-                    if (**mc_traj_edge_3 != -9999) {
-                        h_sum_chi2_ndf_mc_3->Fill(**mc_traj_edge_3, mc_chi2_ndf);
-                        h_count_chi2_ndf_mc_3->Fill(**mc_traj_edge_3);
-                    }
-                    if (**mc_traj_edge_5 != -9999) {
-                        h_sum_chi2_ndf_mc_5->Fill(**mc_traj_edge_5, mc_chi2_ndf);
-                        h_count_chi2_ndf_mc_5->Fill(**mc_traj_edge_5);
-                    }
-                    if (**mc_traj_edge_7 != -9999) {
-                        h_sum_chi2_ndf_mc_7->Fill(**mc_traj_edge_7, mc_chi2_ndf);
-                        h_count_chi2_ndf_mc_7->Fill(**mc_traj_edge_7);
-                    }
-                    if (**mc_traj_edge_12 != -9999) {
-                        h_sum_chi2_ndf_mc_12->Fill(**mc_traj_edge_12, mc_chi2_ndf);
-                        h_count_chi2_ndf_mc_12->Fill(**mc_traj_edge_12);
+
+                    for (size_t i = 0; i < layers.size(); ++i) {
+                        double traj_edge = **std::get<0>(layers[i]);
+
+                        if (traj_edge != -9999) {
+                            h_sum_chi2_ndf_mc[i]->Fill(traj_edge, mc_chi2_ndf);
+                            h_count_chi2_ndf_mc[i]->Fill(traj_edge);
+                        }
                     }
                 }
             }
         }
 
-        // Normalize histograms
-        h_sum_chi2_ndf_1->Divide(h_count_chi2_ndf_1);
-        h_sum_chi2_ndf_3->Divide(h_count_chi2_ndf_3);
-        h_sum_chi2_ndf_5->Divide(h_count_chi2_ndf_5);
-        h_sum_chi2_ndf_7->Divide(h_count_chi2_ndf_7);
-        h_sum_chi2_ndf_12->Divide(h_count_chi2_ndf_12);
+        // Calculate the median for each bin and set y-axis dynamically
+        for (size_t i = 0; i < layers.size(); ++i) {
+            for (int bin = 0; bin < nBins; ++bin) {
+                if (!bin_values[i][bin].empty()) {
+                    std::sort(bin_values[i][bin].begin(), bin_values[i][bin].end());
+                    double median = bin_values[i][bin][bin_values[i][bin].size() / 2];
+                    h_sum_chi2_ndf[i]->SetBinContent(bin + 1, median);
+                }
+            }
 
-        if (mcReader) {
-            h_sum_chi2_ndf_mc_1->Divide(h_count_chi2_ndf_mc_1);
-            h_sum_chi2_ndf_mc_3->Divide(h_count_chi2_ndf_mc_3);
-            h_sum_chi2_ndf_mc_5->Divide(h_count_chi2_ndf_mc_5);
-            h_sum_chi2_ndf_mc_7->Divide(h_count_chi2_ndf_mc_7);
-            h_sum_chi2_ndf_mc_12->Divide(h_count_chi2_ndf_mc_12);
-        }
+            h_sum_chi2_ndf[i]->SetMinimum(0);
+            h_sum_chi2_ndf[i]->SetMaximum(h_sum_chi2_ndf[i]->GetMaximum() * 1.1);
+            h_sum_chi2_ndf[i]->GetXaxis()->SetTitle("edge (cm)");
+            h_sum_chi2_ndf[i]->GetYaxis()->SetTitle("<chi2/ndf>");
 
-        // Set axis labels and y-axis range
-        h_sum_chi2_ndf_1->SetMinimum(0);
-        h_sum_chi2_ndf_1->SetMaximum(20);
-        h_sum_chi2_ndf_1->GetXaxis()->SetTitle("edge (cm)");
-        h_sum_chi2_ndf_1->GetYaxis()->SetTitle("<chi2/ndf>");
-
-        h_sum_chi2_ndf_3->SetMinimum(0);
-        h_sum_chi2_ndf_3->SetMaximum(20);
-        h_sum_chi2_ndf_3->GetXaxis()->SetTitle("edge (cm)");
-        h_sum_chi2_ndf_3->GetYaxis()->SetTitle("<chi2/ndf>");
-
-        h_sum_chi2_ndf_5->SetMinimum(0);
-        h_sum_chi2_ndf_5->SetMaximum(20);
-        h_sum_chi2_ndf_5->GetXaxis()->SetTitle("edge (cm)");
-        h_sum_chi2_ndf_5->GetYaxis()->SetTitle("<chi2/ndf>");
-
-        h_sum_chi2_ndf_7->SetMinimum(0);
-        h_sum_chi2_ndf_7->SetMaximum(20);
-        h_sum_chi2_ndf_7->GetXaxis()->SetTitle("edge (cm)");
-        h_sum_chi2_ndf_7->GetYaxis()->SetTitle("<chi2/ndf>");
-
-        h_sum_chi2_ndf_12->SetMinimum(0);
-        h_sum_chi2_ndf_12->SetMaximum(20);
-        h_sum_chi2_ndf_12->GetXaxis()->SetTitle("edge (cm)");
-        h_sum_chi2_ndf_12->GetYaxis()->SetTitle("<chi2/ndf>");
-
-        if (mcReader) {
-            h_sum_chi2_ndf_mc_1->SetMinimum(0);
-            h_sum_chi2_ndf_mc_1->SetMaximum(20);
-            h_sum_chi2_ndf_mc_1->GetXaxis()->SetTitle("edge (cm)");
-            h_sum_chi2_ndf_mc_1->GetYaxis()->SetTitle("<chi2/ndf>");
-
-            h_sum_chi2_ndf_mc_3->SetMinimum(0);
-            h_sum_chi2_ndf_mc_3->SetMaximum(20);
-            h_sum_chi2_ndf_mc_3->GetXaxis()->SetTitle("edge (cm)");
-            h_sum_chi2_ndf_mc_3->GetYaxis()->SetTitle("<chi2/ndf>");
-
-            h_sum_chi2_ndf_mc_5->SetMinimum(0);
-            h_sum_chi2_ndf_mc_5->SetMaximum(20);
-            h_sum_chi2_ndf_mc_5->GetXaxis()->SetTitle("edge (cm)");
-            h_sum_chi2_ndf_mc_5->GetYaxis()->SetTitle("<chi2/ndf>");
-
-            h_sum_chi2_ndf_mc_7->SetMinimum(0);
-            h_sum_chi2_ndf_mc_7->SetMaximum(20);
-            h_sum_chi2_ndf_mc_7->GetXaxis()->SetTitle("edge (cm)");
-            h_sum_chi2_ndf_mc_7->GetYaxis()->SetTitle("<chi2/ndf>");
-
-            h_sum_chi2_ndf_mc_12->SetMinimum(0);
-            h_sum_chi2_ndf_mc_12->SetMaximum(20);
-            h_sum_chi2_ndf_mc_12->GetXaxis()->SetTitle("edge (cm)");
-            h_sum_chi2_ndf_mc_12->GetYaxis()->SetTitle("<chi2/ndf>");
+            if (mcReader) {
+                h_sum_chi2_ndf_mc[i]->SetMinimum(0);
+                h_sum_chi2_ndf_mc[i]->SetMaximum(h_sum_chi2_ndf_mc[i]->GetMaximum() * 1.1);
+                h_sum_chi2_ndf_mc[i]->GetXaxis()->SetTitle("edge (cm)");
+                h_sum_chi2_ndf_mc[i]->GetYaxis()->SetTitle("<chi2/ndf>");
+            }
         }
 
         // Plot results
-        TCanvas* c_layer = new TCanvas(("c_" + particle_name).c_str(), ("Mean chi2/ndf vs edge for " + particle_name).c_str(), 1800, 1200);
+        TCanvas* c_layer = new TCanvas(("c_" + particle_name).c_str(), ("Median chi2/ndf vs edge for " + particle_name).c_str(), 1800, 1200);
         c_layer->Divide(3, 2);
 
-        c_layer->cd(1);
-        h_sum_chi2_ndf_1->SetStats(false);
-        h_sum_chi2_ndf_1->SetLineColor(kBlack);
-        h_sum_chi2_ndf_1->Draw("E");
-        if (mcReader) {
-            h_sum_chi2_ndf_mc_1->SetStats(false);
-            h_sum_chi2_ndf_mc_1->SetLineColor(kRed);
-            h_sum_chi2_ndf_mc_1->Draw("E SAME");
-        }
+        for (size_t i = 0; i < layers.size(); ++i) {
+            c_layer->cd(i + 1);
+            h_sum_chi2_ndf[i]->SetStats(false);
+            h_sum_chi2_ndf[i]->SetLineColor(kBlack);
+            h_sum_chi2_ndf[i]->Draw("E");
 
-        c_layer->cd(2);
-        h_sum_chi2_ndf_3->SetStats(false);
-        h_sum_chi2_ndf_3->SetLineColor(kBlack);
-        h_sum_chi2_ndf_3->Draw("E");
-        if (mcReader) {
-            h_sum_chi2_ndf_mc_3->SetStats(false);
-            h_sum_chi2_ndf_mc_3->SetLineColor(kRed);
-            h_sum_chi2_ndf_mc_3->Draw("E SAME");
-        }
-
-        c_layer->cd(3);
-        h_sum_chi2_ndf_5->SetStats(false);
-        h_sum_chi2_ndf_5->SetLineColor(kBlack);
-        h_sum_chi2_ndf_5->Draw("E");
-        if (mcReader) {
-            h_sum_chi2_ndf_mc_5->SetStats(false);
-            h_sum_chi2_ndf_mc_5->SetLineColor(kRed);
-            h_sum_chi2_ndf_mc_5->Draw("E SAME");
-        }
-
-        c_layer->cd(4);
-        h_sum_chi2_ndf_7->SetStats(false);
-        h_sum_chi2_ndf_7->SetLineColor(kBlack);
-        h_sum_chi2_ndf_7->Draw("E");
-        if (mcReader) {
-            h_sum_chi2_ndf_mc_7->SetStats(false);
-            h_sum_chi2_ndf_mc_7->SetLineColor(kRed);
-            h_sum_chi2_ndf_mc_7->Draw("E SAME");
-        }
-
-        c_layer->cd(5);
-        h_sum_chi2_ndf_12->SetStats(false);
-        h_sum_chi2_ndf_12->SetLineColor(kBlack);
-        h_sum_chi2_ndf_12->Draw("E");
-        if (mcReader) {
-            h_sum_chi2_ndf_mc_12->SetStats(false);
-            h_sum_chi2_ndf_mc_12->SetLineColor(kRed);
-            h_sum_chi2_ndf_mc_12->Draw("E SAME");
-        }
-
-        for (int i = 1; i <= 5; ++i) {
-            c_layer->cd(i);
-            auto legend = new TLegend(0.7, 0.7, 0.9, 0.9);
-            legend->AddEntry(h_sum_chi2_ndf_1, "Data", "l");
             if (mcReader) {
-                legend->AddEntry(h_sum_chi2_ndf_mc_1, "MC", "l");
+                h_sum_chi2_ndf_mc[i]->SetStats(false);
+                h_sum_chi2_ndf_mc[i]->SetLineColor(kRed);
+                h_sum_chi2_ndf_mc[i]->Draw("E SAME");
+            }
+
+            auto legend = new TLegend(0.7, 0.7, 0.9, 0.9);
+            legend->AddEntry(h_sum_chi2_ndf[i], "Data", "l");
+            if (mcReader) {
+                legend->AddEntry(h_sum_chi2_ndf_mc[i], "MC", "l");
             }
             legend->Draw();
         }
 
-        c_layer->SaveAs(("output/calibration/cvt/determination/mean_chi2_per_ndf_vs_edge_" + particle_name + ".png").c_str());
+        c_layer->SaveAs(("output/calibration/cvt/determination/median_chi2_per_ndf_vs_edge_" + particle_name + ".png").c_str());
 
         // Clean up
-        delete h_sum_chi2_ndf_1;
-        delete h_count_chi2_ndf_1;
-        delete h_sum_chi2_ndf_3;
-        delete h_count_chi2_ndf_3;
-        delete h_sum_chi2_ndf_5;
-        delete h_count_chi2_ndf_5;
-        delete h_sum_chi2_ndf_7;
-        delete h_count_chi2_ndf_7;
-        delete h_sum_chi2_ndf_12;
-        delete h_count_chi2_ndf_12;
-
+        for (auto hist : h_sum_chi2_ndf) delete hist;
+        for (auto hist : h_count_chi2_ndf) delete hist;
         if (mcReader) {
-            delete h_sum_chi2_ndf_mc_1;
-            delete h_count_chi2_ndf_mc_1;
-            delete h_sum_chi2_ndf_mc_3;
-            delete h_count_chi2_ndf_mc_3;
-            delete h_sum_chi2_ndf_mc_5;
-            delete h_count_chi2_ndf_mc_5;
-            delete h_sum_chi2_ndf_mc_7;
-            delete h_count_chi2_ndf_mc_7;
-            delete h_sum_chi2_ndf_mc_12;
-            delete h_count_chi2_ndf_mc_12;
+            for (auto hist : h_sum_chi2_ndf_mc) delete hist;
+            for (auto hist : h_count_chi2_ndf_mc) delete hist;
         }
-
         delete c_layer;
     }
 
@@ -4061,7 +3893,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
 
     std::vector<std::tuple<int, std::string, std::string>> particle_types = {
         {211, "pip", "#pi^{+}"},
-        {-211, "pim", "#pi^{-}"},
+        // {-211, "pim", "#pi^{-}"},
         // {321, "kp", "k^{+}"},
         // {-321, "km", "k^{-}"},
         {2212, "proton", "proton"}
@@ -4528,9 +4360,9 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_dc_hit_position(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_cvt_hit_position(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_cvt_hit_position(dataReader, mcReader);
 
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
