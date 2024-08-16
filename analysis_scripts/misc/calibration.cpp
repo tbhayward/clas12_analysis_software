@@ -3787,7 +3787,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         // Fill data histograms
         dataReader.Restart();
         while (dataReader.Next()) {
-            if (*particle_pid == pid && *track_ndf_5 > 0 && *track_chi2_5 < 1000) {
+            if (*particle_pid == pid && *track_ndf_5 > 0 && *track_chi2_5 < 10000) {
                 double chi2_ndf = *track_chi2_5 / *track_ndf_5;
                 if (*traj_edge_1 != -9999) {
                     h_sum_chi2_ndf_1->Fill(*traj_edge_1, chi2_ndf);
@@ -3840,7 +3840,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
 
             mcReader->Restart();
             while (mcReader->Next()) {
-                if (**mc_particle_pid == pid && **mc_track_ndf_5 > 0 && **mc_track_chi2_5 < 1000) {
+                if (**mc_particle_pid == pid && **mc_track_ndf_5 > 0 && **mc_track_chi2_5 < 10000) {
                     double mc_chi2_ndf = **mc_track_chi2_5 / **mc_track_ndf_5;
                     if (**mc_traj_edge_1 != -9999) {
                         h_sum_chi2_ndf_mc_1->Fill(**mc_traj_edge_1, mc_chi2_ndf);
