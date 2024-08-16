@@ -3883,53 +3883,53 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
 
         // Set axis labels and y-axis range
         h_sum_chi2_ndf_1->SetMinimum(0);
-        h_sum_chi2_ndf_1->SetMaximum(100);
+        h_sum_chi2_ndf_1->SetMaximum(20);
         h_sum_chi2_ndf_1->GetXaxis()->SetTitle("edge (cm)");
         h_sum_chi2_ndf_1->GetYaxis()->SetTitle("<chi2/ndf>");
 
         h_sum_chi2_ndf_3->SetMinimum(0);
-        h_sum_chi2_ndf_3->SetMaximum(100);
+        h_sum_chi2_ndf_3->SetMaximum(20);
         h_sum_chi2_ndf_3->GetXaxis()->SetTitle("edge (cm)");
         h_sum_chi2_ndf_3->GetYaxis()->SetTitle("<chi2/ndf>");
 
         h_sum_chi2_ndf_5->SetMinimum(0);
-        h_sum_chi2_ndf_5->SetMaximum(100);
+        h_sum_chi2_ndf_5->SetMaximum(20);
         h_sum_chi2_ndf_5->GetXaxis()->SetTitle("edge (cm)");
         h_sum_chi2_ndf_5->GetYaxis()->SetTitle("<chi2/ndf>");
 
         h_sum_chi2_ndf_7->SetMinimum(0);
-        h_sum_chi2_ndf_7->SetMaximum(100);
+        h_sum_chi2_ndf_7->SetMaximum(20);
         h_sum_chi2_ndf_7->GetXaxis()->SetTitle("edge (cm)");
         h_sum_chi2_ndf_7->GetYaxis()->SetTitle("<chi2/ndf>");
 
         h_sum_chi2_ndf_12->SetMinimum(0);
-        h_sum_chi2_ndf_12->SetMaximum(100);
+        h_sum_chi2_ndf_12->SetMaximum(20);
         h_sum_chi2_ndf_12->GetXaxis()->SetTitle("edge (cm)");
         h_sum_chi2_ndf_12->GetYaxis()->SetTitle("<chi2/ndf>");
 
         if (mcReader) {
             h_sum_chi2_ndf_mc_1->SetMinimum(0);
-            h_sum_chi2_ndf_mc_1->SetMaximum(100);
+            h_sum_chi2_ndf_mc_1->SetMaximum(20);
             h_sum_chi2_ndf_mc_1->GetXaxis()->SetTitle("edge (cm)");
             h_sum_chi2_ndf_mc_1->GetYaxis()->SetTitle("<chi2/ndf>");
 
             h_sum_chi2_ndf_mc_3->SetMinimum(0);
-            h_sum_chi2_ndf_mc_3->SetMaximum(100);
+            h_sum_chi2_ndf_mc_3->SetMaximum(20);
             h_sum_chi2_ndf_mc_3->GetXaxis()->SetTitle("edge (cm)");
             h_sum_chi2_ndf_mc_3->GetYaxis()->SetTitle("<chi2/ndf>");
 
             h_sum_chi2_ndf_mc_5->SetMinimum(0);
-            h_sum_chi2_ndf_mc_5->SetMaximum(100);
+            h_sum_chi2_ndf_mc_5->SetMaximum(20);
             h_sum_chi2_ndf_mc_5->GetXaxis()->SetTitle("edge (cm)");
             h_sum_chi2_ndf_mc_5->GetYaxis()->SetTitle("<chi2/ndf>");
 
             h_sum_chi2_ndf_mc_7->SetMinimum(0);
-            h_sum_chi2_ndf_mc_7->SetMaximum(100);
+            h_sum_chi2_ndf_mc_7->SetMaximum(20);
             h_sum_chi2_ndf_mc_7->GetXaxis()->SetTitle("edge (cm)");
             h_sum_chi2_ndf_mc_7->GetYaxis()->SetTitle("<chi2/ndf>");
 
             h_sum_chi2_ndf_mc_12->SetMinimum(0);
-            h_sum_chi2_ndf_mc_12->SetMaximum(100);
+            h_sum_chi2_ndf_mc_12->SetMaximum(20);
             h_sum_chi2_ndf_mc_12->GetXaxis()->SetTitle("edge (cm)");
             h_sum_chi2_ndf_mc_12->GetYaxis()->SetTitle("<chi2/ndf>");
         }
