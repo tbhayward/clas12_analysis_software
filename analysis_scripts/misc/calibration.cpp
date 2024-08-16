@@ -3760,7 +3760,12 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         mc_track_ndf_5 = new TTreeReaderValue<int>(*mcReader, "track_ndf_5");
     }
 
+    // Array of particle types (photons and electrons) and their corresponding PIDs
     std::vector<std::tuple<int, std::string>> particle_types = {
+        {-211, "pim"},
+        {211, "pip"},
+        {321, "kp"},
+        {-321, "km"},
         {2212, "proton"}
     };
 
@@ -3787,7 +3792,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         // Fill data histograms
         dataReader.Restart();
         while (dataReader.Next()) {
-            if (*particle_pid == pid && *track_ndf_5 > 0 && *track_chi2_5 < 10000) {
+            if (*particle_pid == pid && *track_ndf_5 > 0 && *track_chi2_5 < 1000) {
                 double chi2_ndf = *track_chi2_5 / *track_ndf_5;
                 if (*traj_edge_1 != -9999) {
                     h_sum_chi2_ndf_1->Fill(*traj_edge_1, chi2_ndf);
