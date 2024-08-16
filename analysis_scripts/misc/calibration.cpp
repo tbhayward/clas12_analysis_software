@@ -3761,10 +3761,6 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
     }
 
     std::vector<std::tuple<int, std::string>> particle_types = {
-        // {211, "#pi^{+}"},
-        // {-211, "#pi^{-}"},
-        // {321, "k^{+}"},
-        // {-321, "k^{-}"},
         {2212, "proton"}
     };
 
@@ -3834,7 +3830,6 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
 
             h_sum_chi2_ndf_mc_3 = new TH1D(("h_sum_chi2_ndf_mc_layer3_" + particle_name).c_str(), (particle_name + " - MC - layer_3").c_str(), nBins, 0, 2);
             h_count_chi2_ndf_mc_3 = new TH1D(("h_count_chi2_ndf_mc_layer3_" + particle_name).c_str(), "", nBins, 0, 2);
-
             h_sum_chi2_ndf_mc_5 = new TH1D(("h_sum_chi2_ndf_mc_layer5_" + particle_name).c_str(), (particle_name + " - MC - layer_5").c_str(), nBins, 0, 2);
             h_count_chi2_ndf_mc_5 = new TH1D(("h_count_chi2_ndf_mc_layer5_" + particle_name).c_str(), "", nBins, 0, 2);
             h_sum_chi2_ndf_mc_7 = new TH1D(("h_sum_chi2_ndf_mc_layer7_" + particle_name).c_str(), (particle_name + " - MC - layer_7").c_str(), nBins, 0, 12);
@@ -3886,12 +3881,64 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
             h_sum_chi2_ndf_mc_12->Divide(h_count_chi2_ndf_mc_12);
         }
 
+        // Set axis labels and y-axis range
+        h_sum_chi2_ndf_1->SetMinimum(0);
+        h_sum_chi2_ndf_1->SetMaximum(100);
+        h_sum_chi2_ndf_1->GetXaxis()->SetTitle("edge (cm)");
+        h_sum_chi2_ndf_1->GetYaxis()->SetTitle("<chi2/ndf>");
+
+        h_sum_chi2_ndf_3->SetMinimum(0);
+        h_sum_chi2_ndf_3->SetMaximum(100);
+        h_sum_chi2_ndf_3->GetXaxis()->SetTitle("edge (cm)");
+        h_sum_chi2_ndf_3->GetYaxis()->SetTitle("<chi2/ndf>");
+
+        h_sum_chi2_ndf_5->SetMinimum(0);
+        h_sum_chi2_ndf_5->SetMaximum(100);
+        h_sum_chi2_ndf_5->GetXaxis()->SetTitle("edge (cm)");
+        h_sum_chi2_ndf_5->GetYaxis()->SetTitle("<chi2/ndf>");
+
+        h_sum_chi2_ndf_7->SetMinimum(0);
+        h_sum_chi2_ndf_7->SetMaximum(100);
+        h_sum_chi2_ndf_7->GetXaxis()->SetTitle("edge (cm)");
+        h_sum_chi2_ndf_7->GetYaxis()->SetTitle("<chi2/ndf>");
+
+        h_sum_chi2_ndf_12->SetMinimum(0);
+        h_sum_chi2_ndf_12->SetMaximum(100);
+        h_sum_chi2_ndf_12->GetXaxis()->SetTitle("edge (cm)");
+        h_sum_chi2_ndf_12->GetYaxis()->SetTitle("<chi2/ndf>");
+
+        if (mcReader) {
+            h_sum_chi2_ndf_mc_1->SetMinimum(0);
+            h_sum_chi2_ndf_mc_1->SetMaximum(100);
+            h_sum_chi2_ndf_mc_1->GetXaxis()->SetTitle("edge (cm)");
+            h_sum_chi2_ndf_mc_1->GetYaxis()->SetTitle("<chi2/ndf>");
+
+            h_sum_chi2_ndf_mc_3->SetMinimum(0);
+            h_sum_chi2_ndf_mc_3->SetMaximum(100);
+            h_sum_chi2_ndf_mc_3->GetXaxis()->SetTitle("edge (cm)");
+            h_sum_chi2_ndf_mc_3->GetYaxis()->SetTitle("<chi2/ndf>");
+
+            h_sum_chi2_ndf_mc_5->SetMinimum(0);
+            h_sum_chi2_ndf_mc_5->SetMaximum(100);
+            h_sum_chi2_ndf_mc_5->GetXaxis()->SetTitle("edge (cm)");
+            h_sum_chi2_ndf_mc_5->GetYaxis()->SetTitle("<chi2/ndf>");
+
+            h_sum_chi2_ndf_mc_7->SetMinimum(0);
+            h_sum_chi2_ndf_mc_7->SetMaximum(100);
+            h_sum_chi2_ndf_mc_7->GetXaxis()->SetTitle("edge (cm)");
+            h_sum_chi2_ndf_mc_7->GetYaxis()->SetTitle("<chi2/ndf>");
+
+            h_sum_chi2_ndf_mc_12->SetMinimum(0);
+            h_sum_chi2_ndf_mc_12->SetMaximum(100);
+            h_sum_chi2_ndf_mc_12->GetXaxis()->SetTitle("edge (cm)");
+            h_sum_chi2_ndf_mc_12->GetYaxis()->SetTitle("<chi2/ndf>");
+        }
+
         // Plot results
         TCanvas* c_layer = new TCanvas(("c_" + particle_name).c_str(), ("Mean chi2/ndf vs edge for " + particle_name).c_str(), 1800, 1200);
         c_layer->Divide(3, 2);
 
         c_layer->cd(1);
-        gPad->SetLogy();
         h_sum_chi2_ndf_1->SetStats(false);
         h_sum_chi2_ndf_1->SetLineColor(kBlack);
         h_sum_chi2_ndf_1->Draw("E");
@@ -3902,7 +3949,6 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         }
 
         c_layer->cd(2);
-        gPad->SetLogy();
         h_sum_chi2_ndf_3->SetStats(false);
         h_sum_chi2_ndf_3->SetLineColor(kBlack);
         h_sum_chi2_ndf_3->Draw("E");
@@ -3913,7 +3959,6 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         }
 
         c_layer->cd(3);
-        gPad->SetLogy();
         h_sum_chi2_ndf_5->SetStats(false);
         h_sum_chi2_ndf_5->SetLineColor(kBlack);
         h_sum_chi2_ndf_5->Draw("E");
@@ -3924,7 +3969,6 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         }
 
         c_layer->cd(4);
-        gPad->SetLogy();
         h_sum_chi2_ndf_7->SetStats(false);
         h_sum_chi2_ndf_7->SetLineColor(kBlack);
         h_sum_chi2_ndf_7->Draw("E");
@@ -3935,7 +3979,6 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         }
 
         c_layer->cd(5);
-        gPad->SetLogy();
         h_sum_chi2_ndf_12->SetStats(false);
         h_sum_chi2_ndf_12->SetLineColor(kBlack);
         h_sum_chi2_ndf_12->Draw("E");
@@ -3945,13 +3988,15 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
             h_sum_chi2_ndf_mc_12->Draw("E SAME");
         }
 
-        c_layer->cd(1);  // Move the legend to the first subplot
-        auto legend = new TLegend(0.7, 0.7, 0.9, 0.9);
-        legend->AddEntry(h_sum_chi2_ndf_1, "Data", "l");
-        if (mcReader) {
-            legend->AddEntry(h_sum_chi2_ndf_mc_1, "MC", "l");
+        for (int i = 1; i <= 5; ++i) {
+            c_layer->cd(i);
+            auto legend = new TLegend(0.7, 0.7, 0.9, 0.9);
+            legend->AddEntry(h_sum_chi2_ndf_1, "Data", "l");
+            if (mcReader) {
+                legend->AddEntry(h_sum_chi2_ndf_mc_1, "MC", "l");
+            }
+            legend->Draw();
         }
-        legend->Draw();
 
         c_layer->SaveAs(("output/calibration/cvt/determination/mean_chi2_per_ndf_vs_edge_" + particle_name + ".png").c_str());
 
