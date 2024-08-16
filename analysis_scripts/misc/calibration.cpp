@@ -3727,7 +3727,7 @@ bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7,
 }
 
 void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
-    int nBins = 20;
+    int nBins = 50;
 
     // Define CVT layers and edges for data
     std::vector<std::tuple<TTreeReaderValue<double>*, std::string, double, double>> layers = {
