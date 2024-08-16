@@ -3846,8 +3846,8 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         {new TTreeReaderValue<double>(dataReader, "traj_edge_1"), "layer_1", -2, 2.2},
         {new TTreeReaderValue<double>(dataReader, "traj_edge_3"), "layer_3", -2, 2.2},
         {new TTreeReaderValue<double>(dataReader, "traj_edge_5"), "layer_5", -2, 2.2},
-        {new TTreeReaderValue<double>(dataReader, "traj_edge_7"), "layer_7", -3, 15},
-        {new TTreeReaderValue<double>(dataReader, "traj_edge_12"), "layer_12", -5, 25}
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_7"), "layer_7", -4, 15},
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_12"), "layer_12", -6, 25}
     };
 
     // Define CVT layers and edges for MC if available
@@ -3857,8 +3857,8 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
             {new TTreeReaderValue<double>(*mcReader, "traj_edge_1"), "layer_1", -2, 2.2},
             {new TTreeReaderValue<double>(*mcReader, "traj_edge_3"), "layer_3", -2, 2.2},
             {new TTreeReaderValue<double>(*mcReader, "traj_edge_5"), "layer_5", -2, 2.2},
-            {new TTreeReaderValue<double>(*mcReader, "traj_edge_7"), "layer_7", -3, 15},
-            {new TTreeReaderValue<double>(*mcReader, "traj_edge_12"), "layer_12", -5, 25}
+            {new TTreeReaderValue<double>(*mcReader, "traj_edge_7"), "layer_7", -4, 15},
+            {new TTreeReaderValue<double>(*mcReader, "traj_edge_12"), "layer_12", -6, 25}
         };
     }
 
@@ -3880,6 +3880,9 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
 
     std::vector<std::tuple<int, std::string, std::string>> particle_types = {
         {211, "pip", "#pi^{+}"},
+        {-211, "pim", "#pi^{-}"},
+        {321, "kp", "k^{+}"},
+        {-321, "km", "k^{-}"},
         {2212, "proton", "proton"}
     };
 
