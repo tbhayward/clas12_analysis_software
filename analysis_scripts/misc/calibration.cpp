@@ -3877,13 +3877,9 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         mc_track_ndf_5 = new TTreeReaderValue<int>(*mcReader, "track_ndf_5");
     }
 
-    // Array of particle types (photons and electrons) and their corresponding PIDs
-    std::vector<std::tuple<int, std::string>> particle_types = {
-        {-211, "#pi^{-}"},
-        {211, "#pi^{+}"},
-        {321, "k^{+}"},
-        {-321, "k^{-}"},
-        {2212, "proton"}
+    std::vector<std::tuple<int, std::string, std::string>> particle_types = {
+        {211, "pip", "#pi^{+}"},
+        {2212, "proton", "proton"}
     };
 
     plot_chi2_ndf_vs_phi_CVT_2D(dataReader, mcReader, particle_types);
