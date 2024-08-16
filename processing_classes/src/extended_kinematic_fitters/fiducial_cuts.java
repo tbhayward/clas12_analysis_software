@@ -237,15 +237,15 @@ public class fiducial_cuts {
             
             if (particle_Index == traj_Bank.getInt("pindex", current_Row)) {
                 if (traj_Bank.getInt("layer", current_Row) == 1) {
-                    edge_1 = traj_Bank.getInt("edge", current_Row);
+                    edge_1 = traj_Bank.getFloat("edge", current_Row);
                 } else if (traj_Bank.getInt("layer", current_Row) == 3) {
-                    edge_3 = traj_Bank.getInt("edge", current_Row);
+                    edge_3 = traj_Bank.getFloat("edge", current_Row);
                 } else if (traj_Bank.getInt("layer", current_Row) == 5) {
-                    edge_5 = traj_Bank.getInt("edge", current_Row);
+                    edge_5 = traj_Bank.getFloat("edge", current_Row);
                 } else if (traj_Bank.getInt("layer", current_Row) == 7) {
-                    edge_7 = traj_Bank.getInt("edge", current_Row);
+                    edge_7 = traj_Bank.getFloat("edge", current_Row);
                 } else if (traj_Bank.getInt("layer", current_Row) == 12) {
-                    edge_12 = traj_Bank.getInt("edge", current_Row);
+                    edge_12 = traj_Bank.getFloat("edge", current_Row);
                 }
             }
         }
@@ -265,11 +265,11 @@ public class fiducial_cuts {
 
             if (particle_Index == traj_Bank.getInt("pindex", current_Row)) {
                 if (traj_Bank.getInt("layer", current_Row) == 6) {
-                    edge_1 = traj_Bank.getInt("edge", current_Row);
+                    edge_1 = traj_Bank.getFloat("edge", current_Row);
                 } else if (traj_Bank.getInt("layer", current_Row) == 18) {
-                    edge_2 = traj_Bank.getInt("edge", current_Row);
+                    edge_2 = traj_Bank.getFloat("edge", current_Row);
                 } else if (traj_Bank.getInt("layer", current_Row) == 36) {
-                    edge_3 = traj_Bank.getInt("edge", current_Row);
+                    edge_3 = traj_Bank.getFloat("edge", current_Row);
                 }
             }
         }
