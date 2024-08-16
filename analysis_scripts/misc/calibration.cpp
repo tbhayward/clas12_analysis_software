@@ -3809,14 +3809,14 @@ void plot_chi2_ndf_vs_phi_CVT_2D(TTreeReader& dataReader, TTreeReader* mcReader,
 
         // Save the histograms
         TCanvas* c_data = new TCanvas(("c_chi2_vs_phi_CVT_data_" + particle_name).c_str(), ("#chi^{2}/ndf vs #phi_{CVT} (Data, " + particle_latex + ")").c_str(), 800, 600);
-        gPad->SetLogy();  // Set the y-axis to log scale
+        gPad->SetLogz();  // Set the y-axis to log scale
         h_chi2_vs_phi_CVT_data->Draw("COLZ");
         c_data->SaveAs(("output/calibration/cvt/determination/chi2_vs_phi_CVT_data_" + particle_name + ".png").c_str());
         delete c_data;
 
         if (mcReader) {
             TCanvas* c_mc = new TCanvas(("c_chi2_vs_phi_CVT_mc_" + particle_name).c_str(), ("#chi^{2}/ndf vs #phi_{CVT} (MC, " + particle_latex + ")").c_str(), 800, 600);
-            gPad->SetLogy();  // Set the y-axis to log scale
+            gPad->SetLogz();  // Set the y-axis to log scale
             h_chi2_vs_phi_CVT_mc->Draw("COLZ");
             c_mc->SaveAs(("output/calibration/cvt/determination/chi2_vs_phi_CVT_mc_" + particle_name + ".png").c_str());
             delete c_mc;
