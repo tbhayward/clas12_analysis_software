@@ -3727,7 +3727,7 @@ bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7,
 }
 
 void plot_chi2_ndf_vs_phi_CVT_2D(TTreeReader& dataReader, TTreeReader* mcReader, const std::vector<std::tuple<int, std::string, std::string>>& particle_types) {
-    int nBins = 50;
+    int nBins = 100;
 
     // Declare TTreeReaderValues for trajectory and track variables for data
     TTreeReaderValue<double> traj_x_12(dataReader, "traj_x_12");
