@@ -421,7 +421,7 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     std::cout << std::endl << std::endl;
 
     // Integrated version (single bin)
-    auto fit_integrated = plot_dilution_factor("x", "", 0.0, 1.0, 1, nh3, c, ch, he, empty, c1, 1, true, false, "original");
+    plot_dilution_factor("x", "", 0.0, 1.0, 1, nh3, c, ch, he, empty, c1, 1, true, false, "original");
 
     // Loop over variables
     for (int var = 0; var < 0; ++var) {
