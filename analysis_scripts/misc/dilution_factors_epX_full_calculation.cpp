@@ -214,7 +214,7 @@ double calculate_simple_error(double nh3_counts, double nh3_error, double c_coun
 }
 
 void plot_dilution_factor(const char* variable_name, const char* x_title, double x_min, double x_max, int n_bins, 
-                          TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad, bool skip_fit = false, bool isMx) {
+                          TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad, bool skip_fit = false, bool isMx = false) {
     canvas->cd(pad);
     gPad->SetLeftMargin(0.15);
 
@@ -350,7 +350,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
 }
 
 std::pair<TF1*, TGraphErrors*> fit_and_plot_dilution(const char* variable_name, const char* x_title, double x_min, double x_max, int n_bins,
-TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad, bool skip_fit = false, bool isMx) {
+TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad, bool skip_fit = false, bool isMx = false) {
     // Call the plotting function
     plot_dilution_factor(variable_name, x_title, x_min, x_max, n_bins, nh3, c, ch, he, empty, canvas, pad, skip_fit, isMx);
     // Return the fit function and graph
