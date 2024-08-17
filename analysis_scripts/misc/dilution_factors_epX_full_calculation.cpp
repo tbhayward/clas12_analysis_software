@@ -340,9 +340,9 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
             // Fill histograms with the new cuts
             nh3->Draw(Form("%s>>h_%s_nh3_0_1_35", variable_name, variable_name), cuts_Mx_0_1_35.c_str());
             c->Draw(Form("%s>>h_%s_c_0_1_35", variable_name, variable_name), cuts_Mx_0_1_35.c_str());
-            ch->Draw(Form(”%s>>h_%s_ch_0_1_35”, variable_name, variable_name), cuts_Mx_0_1_35.c_str());
-            he->Draw(Form(”%s>>h_%s_he_0_1_35”, variable_name, variable_name), cuts_Mx_0_1_35.c_str());
-            empty->Draw(Form(”%s>>h_%s_empty_0_1_35”, variable_name, variable_name), cuts_Mx_0_1_35.c_str());
+            ch->Draw(Form("%s>>h_%s_ch_0_1_35", variable_name, variable_name), cuts_Mx_0_1_35.c_str());
+            he->Draw(Form("%s>>h_%s_he_0_1_35", variable_name, variable_name), cuts_Mx_0_1_35.c_str());
+            empty->Draw(Form("%s>>h_%s_empty_0_1_35", variable_name, variable_name), cuts_Mx_0_1_35.c_str());
 
             TF1 *fit_func_0_1_35 = new TF1("fit_func_0_1_35", "[0] + [1]*x + [2]*x^2 + [3]*x^3", x_min, x_max);
             h_nh3_0_1_35->Add(h_c_0_1_35);
