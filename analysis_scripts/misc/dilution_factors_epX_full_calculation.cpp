@@ -284,26 +284,26 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     if (!skip_fit) {
         TF1 *fit_func;
         if (isMx) {
-            // Use a sum of three Gaussians for Mx fit
-            fit_func = new TF1("fit_func", 
-                "[0]*exp(-0.5*((x-[1])/[2])^2) + [3]*exp(-0.5*((x-[4])/[5])^2) + [6]*exp(-0.5*((x-[7])/[8])^2)", 
+            // Two Gaussians + Quadratic Polynomial Background
+            fit_func = new TF1("fit_func",
+                "[0]*exp(-0.5*((x-[1])/[2])^2) + "  // Gaussian 1
+                "[3]*exp(-0.5*((x-[4])/[5])^2) + "  // Gaussian 2
+                "[6] + [7]*x + [8]*x^2",            // Quadratic Polynomial
                 x_min, x_max);
 
             // Initial guesses
-            fit_func->SetParameters(1, 0.135, 0.02, 0.5, 0.770, 0.1, 0.3, 1.275, 0.15);
+            fit_func->SetParameters(1, 0.135, 0.02, 0.5, 0.770, 0.1, 0.1, 0.0, 0.0);
 
-            // Set parameter limits
-            // fit_func->SetParLimits(0, 0.0, 1.0); // Amplitude 1 must be positive
-            // fit_func->SetParLimits(1, 0.135 - 0.015, 0.135 + 0.015); // pi0 mass limits in GeV
-            // fit_func->SetParLimits(2, 0, 0.3); // pi0 sigma limits in GeV
+            // Set parameter limits for Gaussians
+            fit_func->SetParLimits(0, 0.0, 10.0); // Amplitude 1 must be positive
+            fit_func->SetParLimits(1, 0.135 - 0.015, 0.135 + 0.015); // pi0 mass limits in GeV
+            fit_func->SetParLimits(2, 0, 0.3); // pi0 sigma limits in GeV
 
-            // fit_func->SetParLimits(3, 0.0, 1.0); // Amplitude 2 must be positive
-            fit_func->SetParLimits(4, 0.770 - 0.02, 0.770 + 0.02); // rho0 mass limits in GeV
-            // fit_func->SetParLimits(5, 0, 0.15); // rho0 sigma limits in GeV
+            fit_func->SetParLimits(3, 0.0, 10.0); // Amplitude 2 must be positive
+            fit_func->SetParLimits(4, 0.770 - 0.015, 0.770 + 0.015); // rho0 mass limits in GeV
+            fit_func->SetParLimits(5, 0, 0.15); // rho0 sigma limits in GeV
 
-            // fit_func->SetParLimits(6, 0.0, 100.0); // Amplitude 3 must be positive
-            // fit_func->SetParLimits(7, 1.275 - 0.015, 1.275 + 0.015); // f2 mass limits in GeV
-            // fit_func->SetParLimits(8, 0, 0.3); // f2 sigma limits in GeV
+            // The coefficients of the polynomial are left unconstrained for now
         } else {
             // Use a cubic polynomial fit for other variables
             fit_func = new TF1("fit_func", "[0] + [1]*x + [2]*x^2 + [3]*x^3", x_min, x_max);
@@ -351,11 +351,16 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
 
         // Add text for the parameters based on the fit function used
         if (isMx) {
-            for (int p = 0; p < 9; p += 3) {
+            for (int p = 0; p < 6; p += 3) { // Adjust the loop to iterate over two Gaussians
                 pt->AddText(Form("Amp%d = %.3f +/- %.3f", p/3+1, fit_func->GetParameter(p), fit_func->GetParError(p)));
                 pt->AddText(Form("Mean%d = %.3f +/- %.3f", p/3+1, fit_func->GetParameter(p+1), fit_func->GetParError(p+1)));
                 pt->AddText(Form("Sigma%d = %.3f +/- %.3f", p/3+1, fit_func->GetParameter(p+2), fit_func->GetParError(p+2)));
             }
+            
+            // Add the polynomial coefficients
+            pt->AddText(Form("Const = %.3f +/- %.3f", fit_func->GetParameter(6), fit_func->GetParError(6)));
+            pt->AddText(Form("Linear = %.3f +/- %.3f", fit_func->GetParameter(7), fit_func->GetParError(7)));
+            pt->AddText(Form("Quadratic = %.3f +/- %.3f", fit_func->GetParameter(8), fit_func->GetParError(8)));
         } else {
             for (int p = 0; p < fit_func->GetNpar(); ++p) {
                 pt->AddText(Form("p%d = %.3f +/- %.3f", p, fit_func->GetParameter(p), fit_func->GetParError(p)));
@@ -509,17 +514,18 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
         double mean2 = fit_Mx.first->GetParameter(4);
         double sigma2 = fit_Mx.first->GetParameter(5);
 
-        double amp3 = fit_Mx.first->GetParameter(6);
-        double mean3 = fit_Mx.first->GetParameter(7);
-        double sigma3 = fit_Mx.first->GetParameter(8);
+        double constTerm = fit_Mx.first->GetParameter(6);
+        double linearTerm = fit_Mx.first->GetParameter(7);
+        double quadTerm = fit_Mx.first->GetParameter(8);
 
         std::cout << "if (prefix == \"Mx\") {"
                   << " return " << amp1 << "*exp(-0.5*std::pow((currentVariable - " << mean1 
                   << ") / " << sigma1 << ", 2)) + "
                   << amp2 << "*exp(-0.5*std::pow((currentVariable - " << mean2 
                   << ") / " << sigma2 << ", 2)) + "
-                  << amp3 << "*exp(-0.5*std::pow((currentVariable - " << mean3 
-                  << ") / " << sigma3 << ", 2)); }" 
+                  << constTerm << " + "
+                  << linearTerm << "*currentVariable + "
+                  << quadTerm << "*std::pow(currentVariable, 2); }"
                   << std::endl;
     }
 
