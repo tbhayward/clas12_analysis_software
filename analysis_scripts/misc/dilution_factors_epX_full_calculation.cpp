@@ -213,8 +213,9 @@ double calculate_simple_error(double nh3_counts, double nh3_error, double c_coun
     return dilution_error;
 }
 
-std::array<TF1*, 3> fit_and_plot_dilution(const char* variable_name, const char* x_title, double x_min, double x_max, int n_bins,
-                                          TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad, bool isMx = false) {
+// Function to plot and fit dilution factor for three regions: original, exclusive, and all
+std::array<TF1*, 3> fit_and_plot_dilution_multi(const char* variable_name, const char* x_title, double x_min, double x_max, int n_bins,
+                                                TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad, bool isMx = false) {
     std::array<TF1*, 3> fit_funcs = {nullptr, nullptr, nullptr};
     std::string regions[3] = {"original", "exclusive", "all"};
 
@@ -297,8 +298,9 @@ std::array<TF1*, 3> fit_and_plot_dilution(const char* variable_name, const char*
     return fit_funcs;
 }
 
-std::pair<TF1*, TGraphErrors*> fit_and_plot_dilution(const char* variable_name, const char* x_title, double x_min, double x_max, int n_bins,
-TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad, bool skip_fit = false, bool isMx = false) {
+// Function to plot and fit dilution factor for a single region
+std::pair<TF1*, TGraphErrors*> fit_and_plot_dilution_single(const char* variable_name, const char* x_title, double x_min, double x_max, int n_bins,
+                                                            TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad, bool skip_fit = false, bool isMx = false) {
     // Call the plotting function
     plot_dilution_factor(variable_name, x_title, x_min, x_max, n_bins, nh3, c, ch, he, empty, canvas, pad, skip_fit, isMx);
     // Return the fit function and graph
@@ -311,6 +313,7 @@ TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int p
     return std::make_pair(fit_func, gr_dilution);
 }
 
+// Updated one_dimensional function
 void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_file, TFile* empty_file) {
     // Get the PhysicsEvents trees
     TTree* nh3 = (TTree*)nh3_file->Get("PhysicsEvents");
@@ -327,7 +330,7 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     std::cout << std::endl << std::endl;
 
     // Integrated version (single bin)
-    auto fit_integrated = fit_and_plot_dilution("x", "", 0.0, 1.0, 1, nh3, c, ch, he, empty, c1, 1, true);
+    auto fit_integrated = fit_and_plot_dilution_single("x", "", 0.0, 1.0, 1, nh3, c, ch, he, empty, c1, 1, true);
 
     // Loop over variables
     for (int var = 0; var < 1; ++var) {
@@ -365,8 +368,9 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
             x_title = "x_{F}";
             x_min = -0.8; x_max = 0.5; n_bins = 25;
         }
+
         // Fit and plot for each region on the same pad
-        auto fit_results = fit_and_plot_dilution(variable_name, x_title, x_min, x_max, n_bins, nh3, c, ch, he, empty, c1, var + 2);
+        auto fit_results = fit_and_plot_dilution_multi(variable_name, x_title, x_min, x_max, n_bins, nh3, c, ch, he, empty, c1, var + 2);
 
         for (int region = 0; region < 3; ++region) {
             if (fit_results[region]) {
@@ -381,19 +385,19 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
 
     // Fit and plot for Mx separately
     c1->cd(9);
-    auto fit_Mx = fit_and_plot_dilution("Mx", "M_{x} (GeV)", 0 , 2.75, 50, nh3, c, ch, he, empty, c1, 9, false, true);
-    if (fit_Mx[0]) {
-        double amp1 = fit_Mx[0]->GetParameter(0);
-        double mean1 = fit_Mx[0]->GetParameter(1);
-        double sigma1 = fit_Mx[0]->GetParameter(2);
+    auto fit_Mx = fit_and_plot_dilution_single("Mx", "M_{x} (GeV)", 0 , 2.75, 50, nh3, c, ch, he, empty, c1, 9, false, true);
+    if (fit_Mx.first) {
+        double amp1 = fit_Mx.first->GetParameter(0);
+        double mean1 = fit_Mx.first->GetParameter(1);
+        double sigma1 = fit_Mx.first->GetParameter(2);
 
-        double amp2 = fit_Mx[0]->GetParameter(3);
-        double mean2 = fit_Mx[0]->GetParameter(4);
-        double sigma2 = fit_Mx[0]->GetParameter(5);
+        double amp2 = fit_Mx.first->GetParameter(3);
+        double mean2 = fit_Mx.first->GetParameter(4);
+        double sigma2 = fit_Mx.first->GetParameter(5);
 
-        double constTerm = fit_Mx[0]->GetParameter(6);
-        double linearTerm = fit_Mx[0]->GetParameter(7);
-        double quadTerm = fit_Mx[0]->GetParameter(8);
+        double constTerm = fit_Mx.first->GetParameter(6);
+        double linearTerm = fit_Mx.first->GetParameter(7);
+        double quadTerm = fit_Mx.first->GetParameter(8);
 
         std::cout << "if (prefix == \"Mx\") {"
                   << " return " << amp1 << "*exp(-0.5*std::pow((currentVariable - " << mean1 
