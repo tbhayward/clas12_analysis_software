@@ -353,10 +353,17 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
 }
 
 std::array<TF1*, 3> fit_and_plot_dilution(const char* variable_name, const char* x_title, double x_min, double x_max, int n_bins,
-TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad, bool isMx = false) {
+                                          TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad, bool isMx = false) {
     std::array<TF1*, 3> fit_funcs = {nullptr, nullptr, nullptr};
     std::string regions[3] = {"original", "exclusive", "all"};
-    for (int region = 0; region < 3; ++region) {
+
+    // Draw the original data first
+    canvas->cd(pad);
+    plot_dilution_factor(variable_name, x_title, x_min, x_max, n_bins, nh3, c, ch, he, empty, canvas, pad, false, isMx, regions[0]);
+    fit_funcs[0] = (TF1*)gPad->GetPrimitive("fit_func");
+
+    // Now draw the other regions on top
+    for (int region = 1; region < 3; ++region) {
         plot_dilution_factor(variable_name, x_title, x_min, x_max, n_bins, nh3, c, ch, he, empty, canvas, pad, false, isMx, regions[region]);
         fit_funcs[region] = (TF1*)gPad->GetPrimitive("fit_func");
     }
