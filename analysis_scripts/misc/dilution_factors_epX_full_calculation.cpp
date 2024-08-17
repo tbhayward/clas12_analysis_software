@@ -284,16 +284,19 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     if (!skip_fit) {
         TF1 *fit_func;
         if (isMx) {
-            // Use a sum of three Gaussians for Mx fit
-            fit_func = new TF1("fit_func", "[0]*exp(-0.5*((x-[1])/[2])^2) + [3]*exp(-0.5*((x-[4])/[5])^2) + [6]*exp(-0.5*((x-[7])/[8])^2)", x_min, x_max);
-            fit_func->SetParameters(1, 1.2, 0.2, 0.5, 2.5, 0.3, 0.3, 1.8, 0.4); // Initial guesses
+            // Use a sum of four Gaussians for Mx fit
+            fit_func = new TF1("fit_func", 
+                               "[0]*exp(-0.5*((x-[1])/[2])^2) + [3]*exp(-0.5*((x-[4])/[5])^2) + [6]*exp(-0.5*((x-[7])/[8])^2) + [9]*exp(-0.5*((x-[10])/[11])^2)", 
+                               x_min, x_max);
+            fit_func->SetParameters(1, 0.135, 0.02, 0.5, 0.770, 0.1, 0.3, 1.275, 0.15, 0.2, 1.7, 0.2); // Initial guesses
         } else {
             // Use a cubic polynomial fit for other variables
             fit_func = new TF1("fit_func", "[0] + [1]*x + [2]*x^2 + [3]*x^3", x_min, x_max);
         }
 
         gr_dilution->Fit(fit_func, "RQ");
-        fit_func->SetLineColor(kRed);
+        fit_func->SetLineColor(kBlack);
+        fit_func->SetLineStyle(2); // Dashed line
 
         // Calculate chi2/ndf scaling factor
         double chi2 = fit_func->GetChisquare();
@@ -304,23 +307,26 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         for (int i = 0; i < gr_dilution->GetN(); ++i) {
             double x, y;
             gr_dilution->GetPoint(i, x, y);
-            gr_dilution->SetPointError(i, 0, gr_dilution->GetErrorY(i) * chi2_scale_factor);
+            gr_dilution->SetPointError(i - 1, 0, gr_dilution->GetErrorY(i) * chi2_scale_factor);
         }
 
         // Refit with scaled errors
         gr_dilution->Fit(fit_func, "RQ");
         fit_func->Draw("SAME");
 
-        // Print fit parameters and chi2/ndf
-        chi2 = fit_func->GetChisquare();
-        ndf = fit_func->GetNDF();
+        // Commented out chi2/ndf printing
+        /*
+        // Print chi2/ndf information
         TLatex latex;
         latex.SetNDC();
         latex.SetTextSize(0.035); // Decrease the font size
         latex.DrawLatex(0.20, 0.15, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2 / ndf));
+        */
 
         // Add fit parameters box
-        TPaveText *pt = new TPaveText(0.55, 0.7, 0.9, 0.9, "brNDC");
+        double box_y1 = 0.7;
+        double box_y2 = (isMx) ? 0.9 + 0.1 : 0.9; // Increase vertical size if isMx
+        TPaveText *pt = new TPaveText(0.55, box_y1, 0.9, box_y2, "brNDC");
         pt->SetBorderSize(1);
         pt->SetFillStyle(1001);
         pt->SetFillColor(kWhite);
@@ -328,7 +334,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
 
         // Add text for the parameters based on the fit function used
         if (isMx) {
-            for (int p = 0; p < 9; p += 3) {
+            for (int p = 0; p < 12; p += 3) {
                 pt->AddText(Form("Amp%d = %.3f +/- %.3f", p/3+1, fit_func->GetParameter(p), fit_func->GetParError(p)));
                 pt->AddText(Form("Mean%d = %.3f +/- %.3f", p/3+1, fit_func->GetParameter(p+1), fit_func->GetParError(p+1)));
                 pt->AddText(Form("Sigma%d = %.3f +/- %.3f", p/3+1, fit_func->GetParameter(p+2), fit_func->GetParError(p+2)));
@@ -356,6 +362,15 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         pt->AddText(Form("p0 = %.4f +/- %.4f", gr_dilution->GetY()[0], gr_dilution->GetErrorY(0)));
         pt->Draw();
     }
+    // Add a title to the plot with phase space parameters
+    TLatex title;
+    title.SetNDC();
+    title.SetTextSize(0.045);
+    if (isMx) {
+        title.DrawLatex(0.15, 0.92, "Q^{2} > 1.0 GeV^{2}, W > 2 GeV, y < 0.75, M_{x} > 0 GeV");
+    } else {
+        title.DrawLatex(0.15, 0.92, "Q^{2} > 1.0 GeV^{2}, W > 2 GeV, y < 0.75, M_{x} > 1.35 GeV");
+    }
 
     // Clean up histograms
     delete h_nh3;
@@ -372,7 +387,6 @@ TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int p
     // Return the fit function and graph
     TF1* fit_func = nullptr;
     TGraphErrors* gr_dilution = (TGraphErrors*)gPad->GetPrimitive("gr_dilution");
-
     if (!skip_fit) {
         fit_func = (TF1*)gPad->GetPrimitive("fit_func");
     }
@@ -387,44 +401,18 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     TTree* ch = (TTree*)ch_file->Get("PhysicsEvents");
     TTree* he = (TTree*)he_file->Get("PhysicsEvents");
     TTree* empty = (TTree*)empty_file->Get("PhysicsEvents");
-    // Create a canvas and divide it into 2 rows and 2 columns
+    // Create a canvas and divide it into 3 rows and 3 columns
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1600, 1200);
     c1->Divide(3, 3);
+
+    // Prepare to print the fit functions for each variable
+    std::cout << std::endl << std::endl;
 
     // Integrated version (single bin)
     auto fit_integrated = fit_and_plot_dilution("x", "", 0.0, 1.0, 1, nh3, c, ch, he, empty, c1, 1, true, false);
 
     // Fit and plot for Q2
     auto fit_Q2 = fit_and_plot_dilution("Q2", "Q^{2} (GeV)", 1, 9, 25, nh3, c, ch, he, empty, c1, 2, false, false);
-
-    // Fit and plot for x-Bjorken
-    auto fit_x = fit_and_plot_dilution("x", "x_{B} (GeV)", 0.06, 0.6, 25, nh3, c, ch, he, empty, c1, 3, false, false);
-
-    // Fit and plot for y
-    auto fit_y = fit_and_plot_dilution("y", "y", 0.3, 0.75, 25, nh3, c, ch, he, empty, c1, 4, false, false);
-
-    // Fit and plot for z
-    auto fit_z = fit_and_plot_dilution("z", "z", 0.06, 0.8, 25, nh3, c, ch, he, empty, c1, 5, false, false);
-
-    // Fit and plot for zeta
-    auto fit_zeta = fit_and_plot_dilution("zeta", "#zeta", 0.08, 0.7, 25, nh3, c, ch, he, empty, c1, 6, false, false);
-
-    // Fit and plot for transverse momentum
-    auto fit_pT = fit_and_plot_dilution("pT", "P_{T} (GeV)", 0, 1.0, 25, nh3, c, ch, he, empty, c1, 7, false, false);
-    
-    // Fit and plot for x-Feynman
-    auto fit_xF = fit_and_plot_dilution("xF", "x_{F}", -0.8, 0.5, 25, nh3, c, ch, he, empty, c1, 8, false, false);
-
-    // Fit and plot for Mx
-    auto fit_Mx = fit_and_plot_dilution("Mx", "M_{x} (GeV)", 0, 3.5, 25, nh3, c, ch, he, empty, c1, 9, false, true);
-
-
-    // Save the canvas as a PNG file
-    c1->SaveAs("output/one_dimensional.png");
-
-    // Prepare to print the fit functions for each variable
-    std::cout << std::endl << std::endl << std::endl;
-
     if (fit_Q2.first) {
         double p0_x = fit_Q2.first->GetParameter(0);
         double p1_x = fit_Q2.first->GetParameter(1);
@@ -433,6 +421,8 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
             "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
     }
 
+    // Fit and plot for x-Bjorken
+    auto fit_x = fit_and_plot_dilution("x", "x_{B} (GeV)", 0.06, 0.6, 25, nh3, c, ch, he, empty, c1, 3, false, false);
     if (fit_x.first) {
         double p0_x = fit_x.first->GetParameter(0);
         double p1_x = fit_x.first->GetParameter(1);
@@ -441,6 +431,8 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
             "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
     }
 
+    // Fit and plot for y
+    auto fit_y = fit_and_plot_dilution("y", "y", 0.3, 0.75, 25, nh3, c, ch, he, empty, c1, 4, false, false);
     if (fit_y.first) {
         double p0_x = fit_y.first->GetParameter(0);
         double p1_x = fit_y.first->GetParameter(1);
@@ -449,6 +441,8 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
             "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
     }
 
+    // Fit and plot for z
+    auto fit_z = fit_and_plot_dilution("z", "z", 0.06, 0.8, 25, nh3, c, ch, he, empty, c1, 5, false, false);
     if (fit_z.first) {
         double p0_x = fit_z.first->GetParameter(0);
         double p1_x = fit_z.first->GetParameter(1);
@@ -457,6 +451,8 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
             "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
     }
 
+    // Fit and plot for zeta
+    auto fit_zeta = fit_and_plot_dilution("zeta", "#zeta", 0.08, 0.7, 25, nh3, c, ch, he, empty, c1, 6, false, false);
     if (fit_zeta.first) {
         double p0_x = fit_zeta.first->GetParameter(0);
         double p1_x = fit_zeta.first->GetParameter(1);
@@ -465,6 +461,8 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
             "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
     }
 
+    // Fit and plot for transverse momentum
+    auto fit_pT = fit_and_plot_dilution("pT", "P_{T} (GeV)", 0, 1.0, 25, nh3, c, ch, he, empty, c1, 7, false, false);
     if (fit_pT.first) {
         double p0_PT = fit_pT.first->GetParameter(0);
         double p1_PT = fit_pT.first->GetParameter(1);
@@ -473,14 +471,18 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
             "+" << p1_PT << "*currentVariable+" << p2_PT << "*std::pow(currentVariable,2); }" << std::endl;
     }
 
+    // Fit and plot for x-Feynman
+    auto fit_xF = fit_and_plot_dilution("xF", "x_{F}", -0.8, 0.5, 25, nh3, c, ch, he, empty, c1, 8, false, false);
     if (fit_xF.first) {
         double p0_xF = fit_xF.first->GetParameter(0);
         double p1_xF = fit_xF.first->GetParameter(1);
         double p2_xF = fit_xF.first->GetParameter(2);
-        std::cout << "if (prefix == \"xF\") { return " << p0_xF << 
-            "+" << p1_xF << "*currentVariable+" << p2_xF << "*std::pow(currentVariable,2); }" << std::endl;
+        std::cout << "if (prefix == \"xF\") { return " << p0_xF <<
+        "+" << p1_xF << "*currentVariable+" << p2_xF << "*std::pow(currentVariable,2); }" << std::endl;
     }
 
+    // Fit and plot for Mx
+    auto fit_Mx = fit_and_plot_dilution("Mx", "M_{x} (GeV)", 0, 3.5, 25, nh3, c, ch, he, empty, c1, 9, false, true);
     if (fit_Mx.first) {
         double amp1 = fit_Mx.first->GetParameter(0);
         double mean1 = fit_Mx.first->GetParameter(1);
@@ -494,15 +496,24 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
         double mean3 = fit_Mx.first->GetParameter(7);
         double sigma3 = fit_Mx.first->GetParameter(8);
 
+        double amp4 = fit_Mx.first->GetParameter(9);
+        double mean4 = fit_Mx.first->GetParameter(10);
+        double sigma4 = fit_Mx.first->GetParameter(11);
+
         std::cout << "if (prefix == \"Mx\") {"
                   << " return " << amp1 << "*exp(-0.5*std::pow((currentVariable - " << mean1 
                   << ") / " << sigma1 << ", 2)) + "
                   << amp2 << "*exp(-0.5*std::pow((currentVariable - " << mean2 
                   << ") / " << sigma2 << ", 2)) + "
                   << amp3 << "*exp(-0.5*std::pow((currentVariable - " << mean3 
-                  << ") / " << sigma3 << ", 2)); }" 
+                  << ") / " << sigma3 << ", 2)) + "
+                  << amp4 << "*exp(-0.5*std::pow((currentVariable - " << mean4 
+                  << ") / " << sigma4 << ", 2)); }" 
                   << std::endl;
     }
+
+    // Save the canvas as a PNG file
+    c1->SaveAs("output/one_dimensional.png");
 
     // Clean up
     delete c1;
