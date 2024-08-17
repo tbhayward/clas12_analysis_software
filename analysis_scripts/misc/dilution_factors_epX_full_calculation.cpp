@@ -275,8 +275,17 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         gr_dilution->GetXaxis()->SetTickLength(0);    // Remove x-axis ticks
         gr_dilution->SetTitle(";Integrated;D_{f}");
     }
-    
-    gr_dilution->Draw("AP");
+
+    // Draw the data points only if the region is "original"
+    if (region == "original") {
+        gr_dilution->SetMarkerColor(kBlack);
+        gr_dilution->SetLineColor(kBlack);
+        gr_dilution->Draw("AP");
+    } else {
+        gr_dilution->Draw("P");  // Only draw points for "exclusive" and "all"
+    }
+
+    // Adjust the range for the y-axis
     gr_dilution->GetYaxis()->SetRangeUser(0.10, 0.40);
 
     double chi2_scale_factor = 1.0;
@@ -289,7 +298,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
             fit_func = new TF1("fit_func",
                 "[0]*exp(-0.5*((x-[1])/[2])^2) + "  // Gaussian 1
                 "[3]*exp(-0.5*((x-[4])/[5])^2) + "  // Gaussian 2
-                "[6] + [7]*x + [8]*x^2 + [9]*x^3",            // Quadratic Polynomial
+                "[6] + [7]*x + [8]*x^2 + [9]*x^3",  // Quadratic Polynomial
                 x_min, x_max);
 
             // Initial guesses
@@ -307,75 +316,35 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         }
 
         gr_dilution->Fit(fit_func, "RQ");
-        fit_func->SetLineColor(kBlack);
-        fit_func->SetLineStyle(2); // Dashed line
 
-        // Calculate chi2/ndf scaling factor
-        double chi2 = fit_func->GetChisquare();
-        int ndf = fit_func->GetNDF();
-        chi2_scale_factor = std::sqrt(chi2 / ndf);
-        
-        // Rescale the errors
-        for (int i = 0; i < gr_dilution->GetN(); ++i) {
-            double x, y;
-            gr_dilution->GetPoint(i, x, y);
-            gr_dilution->SetPointError(i, 0, gr_dilution->GetErrorY(i) * chi2_scale_factor);
+        // Set the fit function color based on the region
+        if (region == "exclusive") {
+            fit_func->SetLineColor(kRed);
+        } else if (region == "all") {
+            fit_func->SetLineColor(kBlue);
+        } else {
+            fit_func->SetLineColor(kBlack);
         }
-
-        // Refit with scaled errors
-        gr_dilution->Fit(fit_func, "RQ");
+        fit_func->SetLineStyle(2); // Dashed line
         fit_func->Draw("SAME");
 
         // Add fit parameters box
-        double box_x1 = (isMx) ? 0.45 : 0.55;
-        double box_y1 = (isMx) ? 0.50 : 0.7; // Slightly lower start position for Mx plot
-        double box_y2 = (isMx) ? 0.9 : 0.9; // Increase vertical size more for Mx plot, but within plot limits
-        TPaveText *pt = new TPaveText(box_x1, box_y1, 0.9, box_y2, "brNDC");
-        pt->SetBorderSize(1);
-        pt->SetFillStyle(1001);
-        pt->SetFillColor(kWhite);
-        pt->SetTextSize(0.035); // Decrease the font size
+        if (region != "original") {
+            double box_x1 = (isMx) ? 0.45 : 0.55;
+            double box_y1 = (isMx) ? 0.50 : 0.7; // Slightly lower start position for Mx plot
+            double box_y2 = (isMx) ? 0.9 : 0.9; // Increase vertical size more for Mx plot, but within plot limits
+            TPaveText *pt = new TPaveText(box_x1, box_y1, 0.9, box_y2, "brNDC");
+            pt->SetBorderSize(1);
+            pt->SetFillStyle(1001);
+            pt->SetFillColor(kWhite);
+            pt->SetTextSize(0.035); // Decrease the font size
 
-        // Add text for the parameters based on the fit function used
-        if (isMx) {
-            for (int p = 0; p < 6; p += 3) { // Adjust the loop to iterate over two Gaussians
-                pt->AddText(Form("Amp%d = %.3f +/- %.3f", p/3+1, fit_func->GetParameter(p), fit_func->GetParError(p)));
-                if (p == 0) {
-                    pt->AddText(Form("#pi^{0} mass (GeV) = %.3f +/- %.3f", fit_func->GetParameter(p+1), fit_func->GetParError(p+1)));
-                    pt->AddText(Form("#sigma#pi^{0} mass (GeV) = %.3f +/- %.3f", fit_func->GetParameter(p+2), fit_func->GetParError(p+2)));
-                } else if (p == 3) {
-                    pt->AddText(Form("#rho^{0} mass (GeV) = %.3f +/- %.3f", fit_func->GetParameter(p+1), fit_func->GetParError(p+1)));
-                    pt->AddText(Form("#sigma#rho^{0} mass (GeV) = %.3f +/- %.3f", fit_func->GetParameter(p+2), fit_func->GetParError(p+2)));
-                }
-            }
-            
-            // Add the polynomial coefficients
-            pt->AddText(Form("Const = %.3f +/- %.3f", fit_func->GetParameter(6), fit_func->GetParError(6)));
-            pt->AddText(Form("Linear = %.3f +/- %.3f", fit_func->GetParameter(7), fit_func->GetParError(7)));
-            pt->AddText(Form("Quadratic = %.3f +/- %.3f", fit_func->GetParameter(8), fit_func->GetParError(8)));
-        } else {
             for (int p = 0; p < fit_func->GetNpar(); ++p) {
                 pt->AddText(Form("p%d = %.3f +/- %.3f", p, fit_func->GetParameter(p), fit_func->GetParError(p)));
             }
+            pt->Draw();
+            }
         }
-        pt->Draw();
-    } else {
-        // For integrated plot, scale errors by the average scale factor from other fits
-        double avg_scale_factor = chi2_scale_factor;
-        for (int i = 0; i < gr_dilution->GetN(); ++i) {
-            double x, y;
-            gr_dilution->GetPoint(i, x, y);
-            gr_dilution->SetPointError(i, 0, gr_dilution->GetErrorY(i) * avg_scale_factor);
-        }
-        // For integrated plot, display the value in the top right corner
-        TPaveText *pt = new TPaveText(0.55, 0.7, 0.9, 0.9, "brNDC");
-        pt->SetBorderSize(1);
-        pt->SetFillStyle(1001);
-        pt->SetFillColor(kWhite);
-        pt->SetTextSize(0.035); // Decrease the font size
-        pt->AddText(Form("p0 = %.4f +/- %.4f", gr_dilution->GetY()[0], gr_dilution->GetErrorY(0)));
-        pt->Draw();
-    }
     // Add a title to the plot with phase space parameters
     TLatex title;
     title.SetNDC();
