@@ -301,9 +301,9 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
             fit_func->SetParLimits(4, 0.770 - 0.015, 0.770 + 0.015); // rho0 mass limits in GeV
             fit_func->SetParLimits(5, 0, 0.15); // rho0 sigma limits in GeV
 
-            fit_func->SetParLimits(6, 0.0, 100.0); // Amplitude 3 must be positive
-            fit_func->SetParLimits(7, 1.275 - 0.015, 1.275 + 0.015); // f2 mass limits in GeV
-            fit_func->SetParLimits(8, 0, 0.3); // f2 sigma limits in GeV
+            // fit_func->SetParLimits(6, 0.0, 100.0); // Amplitude 3 must be positive
+            // fit_func->SetParLimits(7, 1.275 - 0.015, 1.275 + 0.015); // f2 mass limits in GeV
+            // fit_func->SetParLimits(8, 0, 0.3); // f2 sigma limits in GeV
         } else {
             // Use a cubic polynomial fit for other variables
             fit_func = new TF1("fit_func", "[0] + [1]*x + [2]*x^2 + [3]*x^3", x_min, x_max);
@@ -425,8 +425,8 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     // Prepare to print the fit functions for each variable
     std::cout << std::endl << std::endl;
 
-    // Integrated version (single bin)
-    auto fit_integrated = fit_and_plot_dilution("x", "", 0.0, 1.0, 1, nh3, c, ch, he, empty, c1, 1, true, false);
+    // // Integrated version (single bin)
+    // auto fit_integrated = fit_and_plot_dilution("x", "", 0.0, 1.0, 1, nh3, c, ch, he, empty, c1, 1, true, false);
 
     // // Fit and plot for Q2
     // auto fit_Q2 = fit_and_plot_dilution("Q2", "Q^{2} (GeV)", 1, 9, 25, nh3, c, ch, he, empty, c1, 2, false, false);
