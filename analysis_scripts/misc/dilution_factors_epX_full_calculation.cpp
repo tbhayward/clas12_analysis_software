@@ -288,7 +288,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
             fit_func = new TF1("fit_func",
                 "[0]*exp(-0.5*((x-[1])/[2])^2) + "  // Gaussian 1
                 "[3]*exp(-0.5*((x-[4])/[5])^2) + "  // Gaussian 2
-                "[6] + [7]*x + [8]*x^2 + [9]*x^3",            // Quadratic Polynomial
+                "[6] + [7]*x + [8]*x^2 + [9]*x^3 + [10]*x^4",            // Quadratic Polynomial
                 x_min, x_max);
 
             // Initial guesses
