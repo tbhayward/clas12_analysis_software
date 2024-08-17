@@ -421,10 +421,10 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     std::cout << std::endl << std::endl;
 
     // Integrated version (single bin)
-    plot_dilution_factor("x", "", 0.0, 1.0, 1, nh3, c, ch, he, empty, c1, 1, true, false, "original");
+    // plot_dilution_factor("x", "", 0.0, 1.0, 1, nh3, c, ch, he, empty, c1, 1, true, false, "original");
 
     // Loop over variables
-    for (int var = 0; var < 0; ++var) {
+    for (int var = 0; var < 1; ++var) {
         const char* variable_name;
         const char* x_title;
         double x_min, x_max;
