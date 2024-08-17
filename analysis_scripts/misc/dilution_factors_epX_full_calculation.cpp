@@ -214,23 +214,36 @@ double calculate_simple_error(double nh3_counts, double nh3_error, double c_coun
 }
 
 void plot_dilution_factor(const char* variable_name, const char* x_title, double x_min, double x_max, int n_bins, 
-                          TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad, bool skip_fit = false) {
+                          TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad, bool skip_fit = false, bool isMx) {
     canvas->cd(pad);
     gPad->SetLeftMargin(0.15);
 
-    // Create histograms for data
+    // Define the base cuts for vz
+    std::string vz_cuts = "-10 < vz_e && vz_e < 1 && -10 < vz_p && vz_p < 1";
+
+    // Define the combined cuts based on the value of isMx
+    std::string combined_cuts;
+    if (isMx) {
+        // Only apply vz cuts if isMx is true
+        combined_cuts = vz_cuts;
+    } else {
+        // Apply both Mx and vz cuts if isMx is false
+        combined_cuts = "Mx > 1.35 && " + vz_cuts;
+    }
+
+    // Create histograms for data using the appropriate cuts
     TH1D *h_nh3 = new TH1D(Form("h_%s_nh3", variable_name), "", n_bins, x_min, x_max);
     TH1D *h_c = new TH1D(Form("h_%s_c", variable_name), "", n_bins, x_min, x_max);
     TH1D *h_ch = new TH1D(Form("h_%s_ch", variable_name), "", n_bins, x_min, x_max);
     TH1D *h_he = new TH1D(Form("h_%s_he", variable_name), "", n_bins, x_min, x_max);
     TH1D *h_empty = new TH1D(Form("h_%s_empty", variable_name), "", n_bins, x_min, x_max);
 
-    // Fill histograms with data
-    nh3->Draw(Form("%s>>h_%s_nh3", variable_name, variable_name));
-    c->Draw(Form("%s>>h_%s_c", variable_name, variable_name));
-    ch->Draw(Form("%s>>h_%s_ch", variable_name, variable_name));
-    he->Draw(Form("%s>>h_%s_he", variable_name, variable_name));
-    empty->Draw(Form("%s>>h_%s_empty", variable_name, variable_name));
+    // Draw the histograms with the appropriate cuts
+    tree_nh3->Draw(Form("%s>>h_%s_nh3", variable_name, variable_name), combined_cuts.c_str());
+    tree_carbon->Draw(Form("%s>>h_%s_c", variable_name, variable_name), combined_cuts.c_str());
+    tree_ch->Draw(Form("%s>>h_%s_ch", variable_name, variable_name), combined_cuts.c_str());
+    tree_he->Draw(Form("%s>>h_%s_he", variable_name, variable_name), combined_cuts.c_str());
+    tree_empty->Draw(Form("%s>>h_%s_empty", variable_name, variable_name), combined_cuts.c_str());
 
     // Calculate dilution factor and its error
     TGraphErrors *gr_dilution = new TGraphErrors();
@@ -337,9 +350,9 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
 }
 
 std::pair<TF1*, TGraphErrors*> fit_and_plot_dilution(const char* variable_name, const char* x_title, double x_min, double x_max, int n_bins,
-TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad, bool skip_fit = false) {
+TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad, bool skip_fit = false, bool isMx) {
     // Call the plotting function
-    plot_dilution_factor(variable_name, x_title, x_min, x_max, n_bins, nh3, c, ch, he, empty, canvas, pad, skip_fit);
+    plot_dilution_factor(variable_name, x_title, x_min, x_max, n_bins, nh3, c, ch, he, empty, canvas, pad, skip_fit, isMx);
     // Return the fit function and graph
     TF1* fit_func = nullptr;
     TGraphErrors* gr_dilution = (TGraphErrors*)gPad->GetPrimitive("gr_dilution");
@@ -363,15 +376,15 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     c1->Divide(2, 2);
 
     // Integrated version (single bin)
-    auto fit_integrated = fit_and_plot_dilution("x", "", 0.0, 1.0, 1, nh3, c, ch, he, empty, c1, 1, true);
+    auto fit_integrated = fit_and_plot_dilution("x", "", 0.0, 1.0, 1, nh3, c, ch, he, empty, c1, 1, true, false);
 
     // Fit and plot for x-Bjorken
-    auto fit_x = fit_and_plot_dilution("x", "x_{B} (GeV)", 0.06, 0.6, 25, nh3, c, ch, he, empty, c1, 2);
+    auto fit_x = fit_and_plot_dilution("x", "x_{B} (GeV)", 0.06, 0.6, 25, nh3, c, ch, he, empty, c1, 2, false);
 
     // Fit and plot for transverse momentum
-    auto fit_pT = fit_and_plot_dilution("pT", "P_{T} (GeV)", 0, 1.0, 25, nh3, c, ch, he, empty, c1, 3);
+    auto fit_pT = fit_and_plot_dilution("pT", "P_{T} (GeV)", 0, 1.0, 25, nh3, c, ch, he, empty, c1, 3, false);
     // Fit and plot for x-Feynman
-    auto fit_xF = fit_and_plot_dilution("xF", "x_{F} (GeV)", -0.8, 0.5, 25, nh3, c, ch, he, empty, c1, 4);
+    auto fit_xF = fit_and_plot_dilution("xF", "x_{F} (GeV)", -0.8, 0.5, 25, nh3, c, ch, he, empty, c1, 4, false);
 
     // Save the canvas as a PNG file
     c1->SaveAs("output/one_dimensional.png");
@@ -768,7 +781,7 @@ int main(int argc, char** argv) {
     // Call the plot_dilution_kinematics function
     // plot_dilution_kinematics(nh3, c, ch, he, empty);
     // Call the one-dimensional function
-    // one_dimensional(nh3, c, ch, he, empty);
+    one_dimensional(nh3, c, ch, he, empty);
     multi_dimensional(nh3, c, ch, he, empty);
 
     // Safely close the ROOT files
