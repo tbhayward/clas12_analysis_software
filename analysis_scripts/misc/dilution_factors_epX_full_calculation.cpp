@@ -433,6 +433,22 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
             "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
     }
 
+    if (fit_z.first) {
+        double p0_x = fit_z.first->GetParameter(0);
+        double p1_x = fit_z.first->GetParameter(1);
+        double p2_x = fit_z.first->GetParameter(2);
+        std::cout << "if (prefix == \"z\") { return " << p0_x << 
+            "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
+    }
+
+    if (fit_zeta.first) {
+        double p0_x = fit_zeta.first->GetParameter(0);
+        double p1_x = fit_zeta.first->GetParameter(1);
+        double p2_x = fit_zeta.first->GetParameter(2);
+        std::cout << "if (prefix == \"z\") { return " << p0_x << 
+            "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
+    }
+
     if (fit_pT.first) {
         double p0_PT = fit_pT.first->GetParameter(0);
         double p1_PT = fit_pT.first->GetParameter(1);
@@ -445,6 +461,14 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
         double p0_xF = fit_xF.first->GetParameter(0);
         double p1_xF = fit_xF.first->GetParameter(1);
         double p2_xF = fit_xF.first->GetParameter(2);
+        std::cout << "if (prefix == \"xF\") { return " << p0_xF << 
+            "+" << p1_xF << "*currentVariable+" << p2_xF << "*std::pow(currentVariable,2); }" << std::endl;
+    }
+
+    if (fit_Mx.first) {
+        double p0_xF = fit_Mx.first->GetParameter(0);
+        double p1_xF = fit_Mx.first->GetParameter(1);
+        double p2_xF = fit_Mx.first->GetParameter(2);
         std::cout << "if (prefix == \"xF\") { return " << p0_xF << 
             "+" << p1_xF << "*currentVariable+" << p2_xF << "*std::pow(currentVariable,2); }" << std::endl;
     }
