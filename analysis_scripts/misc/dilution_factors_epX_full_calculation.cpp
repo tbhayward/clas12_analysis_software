@@ -482,11 +482,26 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     }
 
     if (fit_Mx.first) {
-        double p0_xF = fit_Mx.first->GetParameter(0);
-        double p1_xF = fit_Mx.first->GetParameter(1);
-        double p2_xF = fit_Mx.first->GetParameter(2);
-        std::cout << "if (prefix == \"xF\") { return " << p0_xF << 
-            "+" << p1_xF << "*currentVariable+" << p2_xF << "*std::pow(currentVariable,2); }" << std::endl;
+        double amp1 = fit_Mx.first->GetParameter(0);
+        double mean1 = fit_Mx.first->GetParameter(1);
+        double sigma1 = fit_Mx.first->GetParameter(2);
+
+        double amp2 = fit_Mx.first->GetParameter(3);
+        double mean2 = fit_Mx.first->GetParameter(4);
+        double sigma2 = fit_Mx.first->GetParameter(5);
+
+        double amp3 = fit_Mx.first->GetParameter(6);
+        double mean3 = fit_Mx.first->GetParameter(7);
+        double sigma3 = fit_Mx.first->GetParameter(8);
+
+        std::cout << "if (prefix == \"Mx\") {"
+                  << " return " << amp1 << "*exp(-0.5*std::pow((currentVariable - " << mean1 
+                  << ") / " << sigma1 << ", 2)) + "
+                  << amp2 << "*exp(-0.5*std::pow((currentVariable - " << mean2 
+                  << ") / " << sigma2 << ", 2)) + "
+                  << amp3 << "*exp(-0.5*std::pow((currentVariable - " << mean3 
+                  << ") / " << sigma3 << ", 2)); }" 
+                  << std::endl;
     }
 
     // Clean up
