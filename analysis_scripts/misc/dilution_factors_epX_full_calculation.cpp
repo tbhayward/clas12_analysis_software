@@ -225,7 +225,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     std::string combined_cuts;
     if (isMx) {
         // Apply vz cuts and Mx > 0 if isMx is true
-        combined_cuts = "Mx > 0 && " + vz_cuts;
+        combined_cuts = "Mx > -1 && " + vz_cuts;
     } else {
         // Apply both Mx > 1.35 and vz cuts if isMx is false
         combined_cuts = "Mx > 1.35 && " + vz_cuts;
@@ -288,7 +288,9 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
             fit_func = new TF1("fit_func", "[0]*exp(-0.5*((x-[1])/[2])^2) + [3]*exp(-0.5*((x-[4])/[5])^2) + [6]*exp(-0.5*((x-[7])/[8])^2)", x_min, x_max);
             fit_func->SetParameters(1, 0.135, 0.02, 0.5, 0.770, 0.1, 0.3, 1.275, 0.15); // Initial guesses
             fit_func->SetParLimits(1, 0.135 - 0.015, 0.135 + 0.015); // pi0 mass limits in GeV
+            fit_func->SetParLimits(2, 0, 0.3); // pi0 sigma limits in GeV
             fit_func->SetParLimits(4, 0.770 - 0.015, 0.770 + 0.015); // rho0 mass limits in GeV
+            fit_func->SetParLimits(5, 0, 0.15); // pi0 sigma limits in GeV
         } else {
             // Use a cubic polynomial fit for other variables
             fit_func = new TF1("fit_func", "[0] + [1]*x + [2]*x^2 + [3]*x^3", x_min, x_max);
@@ -325,9 +327,10 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
 
         // Add fit parameters box
         // Add fit parameters box
-        double box_y1 = (isMx) ? 0.65 : 0.7; // Slightly lower start position for Mx plot
-        double box_y2 = (isMx) ? 0.95 : 0.9; // Increase vertical size more for Mx plot, but within plot limits
-        TPaveText *pt = new TPaveText(0.55, box_y1, 0.9, box_y2, "brNDC");
+        double box_x1 = (isMx) ? 0.45 : 0.55;
+        double box_y1 = (isMx) ? 0.50 : 0.7; // Slightly lower start position for Mx plot
+        double box_y2 = (isMx) ? 0.9 : 0.9; // Increase vertical size more for Mx plot, but within plot limits
+        TPaveText *pt = new TPaveText(box_x1, box_y1, 0.9, box_y2, "brNDC");
         pt->SetBorderSize(1);
         pt->SetFillStyle(1001);
         pt->SetFillColor(kWhite);
@@ -453,7 +456,7 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     }
 
     // Fit and plot for zeta
-    auto fit_zeta = fit_and_plot_dilution("zeta", "#zeta", 0.08, 0.7, 25, nh3, c, ch, he, empty, c1, 6, false, false);
+    auto fit_zeta = fit_and_plot_dilution("zeta", "#zeta", 0.3, 0.7, 25, nh3, c, ch, he, empty, c1, 6, false, false);
     if (fit_zeta.first) {
         double p0_x = fit_zeta.first->GetParameter(0);
         double p1_x = fit_zeta.first->GetParameter(1);
@@ -483,7 +486,7 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     }
 
     // Fit and plot for Mx
-    auto fit_Mx = fit_and_plot_dilution("Mx", "M_{x} (GeV)", -0.5, 3.5, 50, nh3, c, ch, he, empty, c1, 9, false, true);
+    auto fit_Mx = fit_and_plot_dilution("Mx", "M_{x} (GeV)", -1.0, 3.0, 50, nh3, c, ch, he, empty, c1, 9, false, true);
     if (fit_Mx.first) {
         double amp1 = fit_Mx.first->GetParameter(0);
         double mean1 = fit_Mx.first->GetParameter(1);
