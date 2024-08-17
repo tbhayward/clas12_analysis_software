@@ -276,7 +276,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     }
     
     gr_dilution->Draw("AP");
-    gr_dilution->GetYaxis()->SetRangeUser(0.10, 0.35);
+    gr_dilution->GetYaxis()->SetRangeUser(0.10, 0.40);
 
     double chi2_scale_factor = 1.0;
 
@@ -310,7 +310,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         for (int i = 0; i < gr_dilution->GetN(); ++i) {
             double x, y;
             gr_dilution->GetPoint(i, x, y);
-            gr_dilution->SetPointError(i - 1, 0, gr_dilution->GetErrorY(i) * chi2_scale_factor);
+            gr_dilution->SetPointError(i, 0, gr_dilution->GetErrorY(i) * chi2_scale_factor);
         }
 
         // Refit with scaled errors
@@ -485,7 +485,7 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     }
 
     // Fit and plot for Mx
-    auto fit_Mx = fit_and_plot_dilution("Mx", "M_{x} (GeV)", 0, 3.5, 25, nh3, c, ch, he, empty, c1, 9, false, true);
+    auto fit_Mx = fit_and_plot_dilution("Mx", "M_{x} (GeV)", 0, 3.5, 75, nh3, c, ch, he, empty, c1, 9, false, true);
     if (fit_Mx.first) {
         double amp1 = fit_Mx.first->GetParameter(0);
         double mean1 = fit_Mx.first->GetParameter(1);
