@@ -294,14 +294,14 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
             // Initial guesses
             fit_func->SetParameters(1, 0.135, 0.02, 0.5, 0.770, 0.1, 0.1, 0.0, 0.0);
 
-            // Set parameter limits for Gaussians
-            fit_func->SetParLimits(0, 0.0, 10.0); // Amplitude 1 must be positive
-            fit_func->SetParLimits(1, 0.135 - 0.015, 0.135 + 0.015); // pi0 mass limits in GeV
-            fit_func->SetParLimits(2, 0, 0.3); // pi0 sigma limits in GeV
+            // // Set parameter limits for Gaussians
+            // fit_func->SetParLimits(0, 0.0, 10.0); // Amplitude 1 must be positive
+            // fit_func->SetParLimits(1, 0.135 - 0.015, 0.135 + 0.015); // pi0 mass limits in GeV
+            // fit_func->SetParLimits(2, 0, 0.3); // pi0 sigma limits in GeV
 
-            fit_func->SetParLimits(3, 0.0, 10.0); // Amplitude 2 must be positive
-            fit_func->SetParLimits(4, 0.770 - 0.015, 0.770 + 0.015); // rho0 mass limits in GeV
-            fit_func->SetParLimits(5, 0, 0.15); // rho0 sigma limits in GeV
+            // fit_func->SetParLimits(3, 0.0, 10.0); // Amplitude 2 must be positive
+            // fit_func->SetParLimits(4, 0.770 - 0.015, 0.770 + 0.015); // rho0 mass limits in GeV
+            // fit_func->SetParLimits(5, 0, 0.15); // rho0 sigma limits in GeV
 
             // The coefficients of the polynomial are left unconstrained for now
         } else {
@@ -904,7 +904,7 @@ int main(int argc, char** argv) {
     // plot_dilution_kinematics(nh3, c, ch, he, empty);
     // Call the one-dimensional function
     one_dimensional(nh3, c, ch, he, empty);
-    multi_dimensional(nh3, c, ch, he, empty);
+    // multi_dimensional(nh3, c, ch, he, empty);
 
     // Safely close the ROOT files
     nh3->Close();
