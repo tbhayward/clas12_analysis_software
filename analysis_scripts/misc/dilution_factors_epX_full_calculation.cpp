@@ -276,7 +276,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     }
     
     gr_dilution->Draw("AP");
-    gr_dilution->GetYaxis()->SetRangeUser(0.10, 0.30);
+    gr_dilution->GetYaxis()->SetRangeUser(0.10, 0.35);
 
     double chi2_scale_factor = 1.0;
 
@@ -416,7 +416,7 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     auto fit_xF = fit_and_plot_dilution("xF", "x_{F}", -0.8, 0.5, 25, nh3, c, ch, he, empty, c1, 8, false, false);
 
     // Fit and plot for Mx
-    auto fit_Mx = fit_and_plot_dilution("Mx", "M_{x} (GeV)", 0, 3.5, 25, nh3, c, ch, he, empty, c1, 9, false, false);
+    auto fit_Mx = fit_and_plot_dilution("Mx", "M_{x} (GeV)", 0, 3.5, 25, nh3, c, ch, he, empty, c1, 9, false, true);
 
 
     // Save the canvas as a PNG file
