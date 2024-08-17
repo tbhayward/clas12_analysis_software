@@ -373,24 +373,35 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     TTree* empty = (TTree*)empty_file->Get("PhysicsEvents");
     // Create a canvas and divide it into 2 rows and 2 columns
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1600, 1200);
-    c1->Divide(2, 3);
+    c1->Divide(3, 3);
 
     // Integrated version (single bin)
     auto fit_integrated = fit_and_plot_dilution("x", "", 0.0, 1.0, 1, nh3, c, ch, he, empty, c1, 1, true, false);
 
+    // Fit and plot for Q2
+    auto fit_Q2 = fit_and_plot_dilution("Q2", "Q^{2} (GeV)", 1, 9, 25, nh3, c, ch, he, empty, c1, 2, false, false);
+
     // Fit and plot for x-Bjorken
-    auto fit_x = fit_and_plot_dilution("x", "x_{B} (GeV)", 0.06, 0.6, 25, nh3, c, ch, he, empty, c1, 2, false, false);
+    auto fit_x = fit_and_plot_dilution("x", "x_{B} (GeV)", 0.06, 0.6, 25, nh3, c, ch, he, empty, c1, 3, false, false);
+
+    // Fit and plot for y
+    auto fit_y = fit_and_plot_dilution("y", "y", 0.3, 0.75, 25, nh3, c, ch, he, empty, c1, 4, false, false);
+
+    // Fit and plot for z
+    auto fit_z = fit_and_plot_dilution("z", "z", 0.06, 0.8, 25, nh3, c, ch, he, empty, c1, 5, false, false);
+
+    // Fit and plot for zeta
+    auto fit_zeta = fit_and_plot_dilution("zeta", "#zeta", 0.08, 0.7, 25, nh3, c, ch, he, empty, c1, 6, false, false);
 
     // Fit and plot for transverse momentum
-    auto fit_pT = fit_and_plot_dilution("pT", "P_{T} (GeV)", 0, 1.0, 25, nh3, c, ch, he, empty, c1, 3, false, false);
+    auto fit_pT = fit_and_plot_dilution("pT", "P_{T} (GeV)", 0, 1.0, 25, nh3, c, ch, he, empty, c1, 7, false, false);
+    
     // Fit and plot for x-Feynman
-    auto fit_xF = fit_and_plot_dilution("xF", "x_{F} (GeV)", -0.8, 0.5, 25, nh3, c, ch, he, empty, c1, 4, false, false);
+    auto fit_xF = fit_and_plot_dilution("xF", "x_{F}", -0.8, 0.5, 25, nh3, c, ch, he, empty, c1, 8, false, false);
 
-    // Fit and plot for x-Bjorken
-    auto fit_Q2 = fit_and_plot_dilution("Q2", "Q^{2} (GeV)", 1, 9, 25, nh3, c, ch, he, empty, c1, 5, false, false);
+    // Fit and plot for Mx
+    auto fit_Mx = fit_and_plot_dilution("Mx", "Mx", 1.35, 3.0, 25, nh3, c, ch, he, empty, c1, 9, false, false);
 
-    // Fit and plot for x-Bjorken
-    auto fit_y = fit_and_plot_dilution("y", "y", 0.22, 0.75, 25, nh3, c, ch, he, empty, c1, 6, false, false);
 
     // Save the canvas as a PNG file
     c1->SaveAs("output/one_dimensional.png");
@@ -398,11 +409,27 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     // Prepare to print the fit functions for each variable
     std::cout << std::endl << std::endl << std::endl;
 
+    if (fit_Q2.first) {
+        double p0_x = fit_Q2.first->GetParameter(0);
+        double p1_x = fit_Q2.first->GetParameter(1);
+        double p2_x = fit_Q2.first->GetParameter(2);
+        std::cout << "if (prefix == \"Q2\") { return " << p0_x << 
+            "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
+    }
+
     if (fit_x.first) {
         double p0_x = fit_x.first->GetParameter(0);
         double p1_x = fit_x.first->GetParameter(1);
         double p2_x = fit_x.first->GetParameter(2);
         std::cout << "if (prefix == \"x\") { return " << p0_x << 
+            "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
+    }
+
+    if (fit_y.first) {
+        double p0_x = fit_y.first->GetParameter(0);
+        double p1_x = fit_y.first->GetParameter(1);
+        double p2_x = fit_y.first->GetParameter(2);
+        std::cout << "if (prefix == \"y\") { return " << p0_x << 
             "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
     }
 
