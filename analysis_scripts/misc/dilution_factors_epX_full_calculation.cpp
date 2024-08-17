@@ -239,11 +239,11 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     TH1D *h_empty = new TH1D(Form("h_%s_empty", variable_name), "", n_bins, x_min, x_max);
 
     // Draw the histograms with the appropriate cuts
-    tree_nh3->Draw(Form("%s>>h_%s_nh3", variable_name, variable_name), combined_cuts.c_str());
-    tree_carbon->Draw(Form("%s>>h_%s_c", variable_name, variable_name), combined_cuts.c_str());
-    tree_ch->Draw(Form("%s>>h_%s_ch", variable_name, variable_name), combined_cuts.c_str());
-    tree_he->Draw(Form("%s>>h_%s_he", variable_name, variable_name), combined_cuts.c_str());
-    tree_empty->Draw(Form("%s>>h_%s_empty", variable_name, variable_name), combined_cuts.c_str());
+    nh3->Draw(Form("%s>>h_%s_nh3", variable_name, variable_name), combined_cuts.c_str());
+    carbon->Draw(Form("%s>>h_%s_c", variable_name, variable_name), combined_cuts.c_str());
+    ch->Draw(Form("%s>>h_%s_ch", variable_name, variable_name), combined_cuts.c_str());
+    he->Draw(Form("%s>>h_%s_he", variable_name, variable_name), combined_cuts.c_str());
+    empty->Draw(Form("%s>>h_%s_empty", variable_name, variable_name), combined_cuts.c_str());
 
     // Calculate dilution factor and its error
     TGraphErrors *gr_dilution = new TGraphErrors();
