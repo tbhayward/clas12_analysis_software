@@ -225,7 +225,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     std::string combined_cuts;
     if (isMx) {
         // Apply vz cuts and Mx > 0 if isMx is true
-        combined_cuts = "Mx > -1 && " + vz_cuts;
+        combined_cuts = "Mx > -0.3 && " + vz_cuts;
     } else {
         // Apply both Mx > 1.35 and vz cuts if isMx is false
         combined_cuts = "Mx > 1.35 && " + vz_cuts;
@@ -486,7 +486,7 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     }
 
     // Fit and plot for Mx
-    auto fit_Mx = fit_and_plot_dilution("Mx", "M_{x} (GeV)", -1.0, 3.0, 50, nh3, c, ch, he, empty, c1, 9, false, true);
+    auto fit_Mx = fit_and_plot_dilution("Mx", "M_{x} (GeV)", -0.3, 3.0, 50, nh3, c, ch, he, empty, c1, 9, false, true);
     if (fit_Mx.first) {
         double amp1 = fit_Mx.first->GetParameter(0);
         double mean1 = fit_Mx.first->GetParameter(1);
