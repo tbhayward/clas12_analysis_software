@@ -233,14 +233,14 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     }
 
     // Create histograms for data using the appropriate cuts
-    TH1D *h_nh3 = new TH1D(Form("h_%s_nh3_%s", variable_name, "original"), "", n_bins, x_min, x_max);
+    TH1D *h_nh3 = new TH1D(Form("h_%s_nh3_%s", variable_name, region.c_str()), "", n_bins, x_min, x_max);
     TH1D *h_c = new TH1D(Form("h_%s_c_%s", variable_name, region.c_str()), "", n_bins, x_min, x_max);
     TH1D *h_ch = new TH1D(Form("h_%s_ch_%s", variable_name, region.c_str()), "", n_bins, x_min, x_max);
     TH1D *h_he = new TH1D(Form("h_%s_he_%s", variable_name, region.c_str()), "", n_bins, x_min, x_max);
     TH1D *h_empty = new TH1D(Form("h_%s_empty_%s", variable_name, region.c_str()), "", n_bins, x_min, x_max);
 
-    // Draw the histograms with the appropriate cuts for the original region first
-    nh3->Draw(Form("%s>>h_%s_nh3_%s", variable_name, variable_name, "original"), combined_cuts.c_str());
+    // Draw the histograms with the appropriate cuts
+    nh3->Draw(Form("%s>>h_%s_nh3_%s", variable_name, variable_name, region.c_str()), combined_cuts.c_str());
     c->Draw(Form("%s>>h_%s_c_%s", variable_name, variable_name, region.c_str()), combined_cuts.c_str());
     ch->Draw(Form("%s>>h_%s_ch_%s", variable_name, variable_name, region.c_str()), combined_cuts.c_str());
     he->Draw(Form("%s>>h_%s_he_%s", variable_name, variable_name, region.c_str()), combined_cuts.c_str());
@@ -276,10 +276,17 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         gr_dilution->SetTitle(";Integrated;D_{f}");
     }
 
-    // Draw the original data in black
-    gr_dilution->Draw("AP");
+    // Always draw the original data in black
+    if (region == "original") {
+        gr_dilution->Draw("AP");
+    } else {
+        // Add the plot on top without clearing the pad
+        gr_dilution->Draw("P SAME");
+    }
 
-    // Ensure the fit is drawn if applicable
+    double chi2_scale_factor = 1.0;
+
+    // Fit and plot (skip fit for the integrated version)
     if (!skip_fit) {
         TF1 *fit_func;
         if (isMx) {
@@ -302,7 +309,20 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
 
         gr_dilution->Fit(fit_func, "RQ");
 
-        // Draw the fit functions in the appropriate colors
+        // Apply the chi2 scaling factor to errors
+        double chi2 = fit_func->GetChisquare();
+        int ndf = fit_func->GetNDF();
+        chi2_scale_factor = std::sqrt(chi2 / ndf);
+        for (int i = 0; i < gr_dilution->GetN(); ++i) {
+            double x, y;
+            gr_dilution->GetPoint(i, x, y);
+            gr_dilution->SetPointError(i, 0, gr_dilution->GetErrorY(i) * chi2_scale_factor);
+        }
+
+        // Refit with scaled errors
+        gr_dilution->Fit(fit_func, "RQ");
+
+        // Set the color of the fit line based on the region
         if (region == "original") {
             fit_func->SetLineColor(kBlack);
         } else if (region == "exclusive") {
@@ -313,9 +333,6 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         fit_func->SetLineStyle(2); // Dashed line
         fit_func->Draw("SAME");
     }
-
-    // Ensure the plots are updated
-    gPad->Update();
 
     // Add a title to the plot with phase space parameters
     TLatex title;
