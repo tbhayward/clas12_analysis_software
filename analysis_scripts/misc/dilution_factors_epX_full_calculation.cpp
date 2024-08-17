@@ -373,7 +373,7 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     TTree* empty = (TTree*)empty_file->Get("PhysicsEvents");
     // Create a canvas and divide it into 2 rows and 2 columns
     TCanvas *c1 = new TCanvas("c1", "Dilution Factor Analysis", 1600, 1200);
-    c1->Divide(2, 2);
+    c1->Divide(2, 3);
 
     // Integrated version (single bin)
     auto fit_integrated = fit_and_plot_dilution("x", "", 0.0, 1.0, 1, nh3, c, ch, he, empty, c1, 1, true, false);
@@ -385,6 +385,12 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     auto fit_pT = fit_and_plot_dilution("pT", "P_{T} (GeV)", 0, 1.0, 25, nh3, c, ch, he, empty, c1, 3, false, false);
     // Fit and plot for x-Feynman
     auto fit_xF = fit_and_plot_dilution("xF", "x_{F} (GeV)", -0.8, 0.5, 25, nh3, c, ch, he, empty, c1, 4, false, false);
+
+    // Fit and plot for x-Bjorken
+    auto fit_Q2 = fit_and_plot_dilution("Q2", "Q^{2} (GeV)", 1, 9, 25, nh3, c, ch, he, empty, c1, 5, false, false);
+
+    // Fit and plot for x-Bjorken
+    auto fit_y = fit_and_plot_dilution("y", "y", 0.22, 0.75, 25, nh3, c, ch, he, empty, c1, 6, false, false);
 
     // Save the canvas as a PNG file
     c1->SaveAs("output/one_dimensional.png");
@@ -428,12 +434,18 @@ std::vector<TH1D*> create_and_draw_histograms(TTree* tree_nh3, TTree* tree_carbo
     TH1D *h_pT_he = new TH1D(Form("h_pT_he_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
     TH1D *h_pT_empty = new TH1D(Form("h_pT_empty_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
 
-    // Draw histograms
-    tree_nh3->Draw(Form("pT>>h_pT_nh3_%d%d%d", k, j, i), cuts.c_str());
-    tree_carbon->Draw(Form("pT>>h_pT_c_%d%d%d", k, j, i), cuts.c_str());
-    tree_ch->Draw(Form("pT>>h_pT_ch_%d%d%d", k, j, i), cuts.c_str());
-    tree_he->Draw(Form("pT>>h_pT_he_%d%d%d", k, j, i), cuts.c_str());
-    tree_empty->Draw(Form("pT>>h_pT_empty_%d%d%d", k, j, i), cuts.c_str());
+    // Define the additional cuts
+    std::string additional_cuts = "Mx > 1.35 && -10 < vz_e && vz_e < 1 && -10 < vz_p && vz_p < 1";
+
+    // Combine the existing cuts with the additional cuts
+    std::string combined_cuts = cuts + " && " + additional_cuts;
+
+    // Draw histograms with the combined cuts
+    tree_nh3->Draw(Form("pT>>h_pT_nh3_%d%d%d", k, j, i), combined_cuts.c_str());
+    tree_carbon->Draw(Form("pT>>h_pT_c_%d%d%d", k, j, i), combined_cuts.c_str());
+    tree_ch->Draw(Form("pT>>h_pT_ch_%d%d%d", k, j, i), combined_cuts.c_str());
+    tree_he->Draw(Form("pT>>h_pT_he_%d%d%d", k, j, i), combined_cuts.c_str());
+    tree_empty->Draw(Form("pT>>h_pT_empty_%d%d%d", k, j, i), combined_cuts.c_str());
 
     // Store histograms in a vector
     std::vector<TH1D*> histograms = {h_pT_nh3, h_pT_c, h_pT_ch, h_pT_he, h_pT_empty};
