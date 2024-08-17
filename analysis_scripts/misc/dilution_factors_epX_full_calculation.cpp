@@ -362,10 +362,16 @@ std::array<TF1*, 3> fit_and_plot_dilution(const char* variable_name, const char*
     plot_dilution_factor(variable_name, x_title, x_min, x_max, n_bins, nh3, c, ch, he, empty, canvas, pad, false, isMx, regions[0]);
     fit_funcs[0] = (TF1*)gPad->GetPrimitive("fit_func");
 
-    // Now draw the other regions on top
+    // Now draw the other regions on top using the "same" option
     for (int region = 1; region < 3; ++region) {
         plot_dilution_factor(variable_name, x_title, x_min, x_max, n_bins, nh3, c, ch, he, empty, canvas, pad, false, isMx, regions[region]);
+
+        // Get the fit function for this region
         fit_funcs[region] = (TF1*)gPad->GetPrimitive("fit_func");
+
+        // Draw the fit on the same canvas
+        fit_funcs[region]->SetLineColor(region == 1 ? kRed : kBlue); // Set color
+        fit_funcs[region]->Draw("SAME");
     }
 
     return fit_funcs;
