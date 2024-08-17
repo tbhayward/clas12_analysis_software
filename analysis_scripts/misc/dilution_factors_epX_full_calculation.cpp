@@ -288,20 +288,17 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
             fit_func = new TF1("fit_func",
                 "[0]*exp(-0.5*((x-[1])/[2])^2) + "  // Gaussian 1
                 "[3]*exp(-0.5*((x-[4])/[5])^2) + "  // Gaussian 2
-                "[6] + [7]*x + [8]*x^2 + [9]*x^3",            // Quadratic Polynomial
+                "[6] + [7]*x + [8]*x^2 + [9]*x^3",  // Quadratic Polynomial
                 x_min, x_max);
 
             // Initial guesses
             fit_func->SetParameters(0.05, 0.135, 0.02, 0.5, 0.770, 0.1, 0.1, 0.2, 0.0, 0.0);
 
-            // // Set parameter limits for Gaussians
+            // Set parameter limits for Gaussians
             fit_func->SetParLimits(0, 0.0, 0.25); // Amplitude 1 must be positive
             fit_func->SetParLimits(1, 0.135 - 0.015, 0.135 + 0.015); // pi0 mass limits in GeV
-            // fit_func->SetParLimits(2, 0, 0.3); // pi0 sigma limits in GeV
-
             fit_func->SetParLimits(3, 0.0, 0.25); // Amplitude 2 must be positive
             fit_func->SetParLimits(4, 0.770 - 0.015, 0.770 + 0.015); // rho0 mass limits in GeV
-            // fit_func->SetParLimits(5, 0, 0.15); // rho0 sigma limits in GeV
 
             // The coefficients of the polynomial are left unconstrained for now
         } else {
@@ -329,16 +326,41 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         gr_dilution->Fit(fit_func, "RQ");
         fit_func->Draw("SAME");
 
-        // Commented out chi2/ndf printing
-        /*
-        // Print chi2/ndf information
-        TLatex latex;
-        latex.SetNDC();
-        latex.SetTextSize(0.035); // Decrease the font size
-        latex.DrawLatex(0.20, 0.15, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2 / ndf));
-        */
+        // Additional fit for 0 < Mx < 1.35
+        std::string cuts_Mx_0_1_35 = "Mx > 0 && Mx < 1.35 && " + vz_cuts;
+        TH1D* h_nh3_0_1_35 = new TH1D(Form("h_%s_nh3_0_1_35", variable_name), "", n_bins, x_min, x_max);
+        nh3->Draw(Form("%s>>h_%s_nh3_0_1_35", variable_name, variable_name), cuts_Mx_0_1_35.c_str());
+        TF1 *fit_func_0_1_35 = new TF1("fit_func_0_1_35", "[0] + [1]*x + [2]*x^2 + [3]*x^3", x_min, x_max);
+        h_nh3_0_1_35->Fit(fit_func_0_1_35, "RQ");
+        double chi2_0_1_35 = fit_func_0_1_35->GetChisquare();
+        int ndf_0_1_35 = fit_func_0_1_35->GetNDF();
+        double chi2_scale_factor_0_1_35 = std::sqrt(chi2_0_1_35 / ndf_0_1_35);
+        for (int i = 0; i < h_nh3_0_1_35->GetNbinsX(); ++i) {
+            fit_func_0_1_35->SetParError(i, fit_func_0_1_35->GetParError(i) * chi2_scale_factor_0_1_35);
+        }
+        fit_func_0_1_35->SetLineColor(kRed);
+        fit_func_0_1_35->SetLineStyle(2); // Dashed line
+        fit_func_0_1_35->Draw("SAME");
+        // Additional fit for Mx > 0
+        std::string cuts_Mx_gt_0 = "Mx > 0 && " + vz_cuts;
+        TH1D* h_nh3_gt_0 = new TH1D(Form("h_%s_nh3_gt_0", variable_name), "", n_bins, x_min, x_max);
+        nh3->Draw(Form("%s>>h_%s_nh3_gt_0", variable_name, variable_name), cuts_Mx_gt_0.c_str());
+        TF1 *fit_func_gt_0 = new TF1("fit_func_gt_0", "[0] + [1]*x + [2]*x^2 + [3]*x^3", x_min, x_max);
+        h_nh3_gt_0->Fit(fit_func_gt_0, "RQ");
+        double chi2_gt_0 = fit_func_gt_0->GetChisquare();
+        int ndf_gt_0 = fit_func_gt_0->GetNDF();
+        double chi2_scale_factor_gt_0 = std::sqrt(chi2_gt_0 / ndf_gt_0);
+        for (int i = 0; i < h_nh3_gt_0->GetNbinsX(); ++i) {
+            fit_func_gt_0->SetParError(i, fit_func_gt_0->GetParError(i) * chi2_scale_factor_gt_0);
+        }
+        fit_func_gt_0->SetLineColor(kBlue);
+        fit_func_gt_0->SetLineStyle(2); // Dashed line
+        fit_func_gt_0->Draw("SAME");
 
-        // Add fit parameters box
+        // Clean up histograms
+        delete h_nh3_0_1_35;
+        delete h_nh3_gt_0;
+
         // Add fit parameters box
         double box_x1 = (isMx) ? 0.45 : 0.55;
         double box_y1 = (isMx) ? 0.50 : 0.7; // Slightly lower start position for Mx plot
@@ -407,6 +429,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     delete h_he;
     delete h_empty;
 }
+
 
 std::pair<TF1*, TGraphErrors*> fit_and_plot_dilution(const char* variable_name, const char* x_title, double x_min, double x_max, int n_bins,
 TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad, bool skip_fit = false, bool isMx = false) {
