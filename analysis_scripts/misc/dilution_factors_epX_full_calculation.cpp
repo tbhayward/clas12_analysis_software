@@ -285,13 +285,10 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         TF1 *fit_func;
         if (isMx) {
             // Use a sum of four Gaussians for Mx fit
-            fit_func = new TF1("fit_func", 
-                               "[0]*exp(-0.5*((x-[1])/[2])^2) + [3]*exp(-0.5*((x-[4])/[5])^2) + [6]*exp(-0.5*((x-[7])/[8])^2) + [9]*exp(-0.5*((x-[10])/[11])^2)", 
-                               x_min, x_max);
-            fit_func->SetParameters(1, 0.135, 0.02, 0.5, 0.770, 0.1, 0.3, 1.275, 0.15, 0.2);
-            fit_func->SetParameter(9, 1.7);
-            fit_func->SetParameter(10, 0.2);
-            fit_func->SetParameter(11, 0.2);
+            fit_func = new TF1("fit_func", "[0]*exp(-0.5*((x-[1])/[2])^2) + [3]*exp(-0.5*((x-[4])/[5])^2) + [6]*exp(-0.5*((x-[7])/[8])^2)", x_min, x_max);
+            fit_func->SetParameters(1, 0.135, 0.02, 0.5, 0.770, 0.1, 0.3, 1.275, 0.15); // Initial guesses
+            fit_func->SetParLimits(1, 0.135 - 0.015, 0.135 + 0.015); // pi0 mass limits in GeV
+            fit_func->SetParLimits(4, 0.770 - 0.015, 0.770 + 0.015); // rho0 mass limits in GeV
         } else {
             // Use a cubic polynomial fit for other variables
             fit_func = new TF1("fit_func", "[0] + [1]*x + [2]*x^2 + [3]*x^3", x_min, x_max);
@@ -338,7 +335,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
 
         // Add text for the parameters based on the fit function used
         if (isMx) {
-            for (int p = 0; p < 12; p += 3) {
+            for (int p = 0; p < 9; p += 3) {
                 pt->AddText(Form("Amp%d = %.3f +/- %.3f", p/3+1, fit_func->GetParameter(p), fit_func->GetParError(p)));
                 pt->AddText(Form("Mean%d = %.3f +/- %.3f", p/3+1, fit_func->GetParameter(p+1), fit_func->GetParError(p+1)));
                 pt->AddText(Form("Sigma%d = %.3f +/- %.3f", p/3+1, fit_func->GetParameter(p+2), fit_func->GetParError(p+2)));
@@ -486,7 +483,7 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     }
 
     // Fit and plot for Mx
-    auto fit_Mx = fit_and_plot_dilution("Mx", "M_{x} (GeV)", 0, 3.5, 75, nh3, c, ch, he, empty, c1, 9, false, true);
+    auto fit_Mx = fit_and_plot_dilution("Mx", "M_{x} (GeV)", -0.5, 3.5, 50, nh3, c, ch, he, empty, c1, 9, false, true);
     if (fit_Mx.first) {
         double amp1 = fit_Mx.first->GetParameter(0);
         double mean1 = fit_Mx.first->GetParameter(1);
@@ -500,19 +497,13 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
         double mean3 = fit_Mx.first->GetParameter(7);
         double sigma3 = fit_Mx.first->GetParameter(8);
 
-        double amp4 = fit_Mx.first->GetParameter(9);
-        double mean4 = fit_Mx.first->GetParameter(10);
-        double sigma4 = fit_Mx.first->GetParameter(11);
-
         std::cout << "if (prefix == \"Mx\") {"
                   << " return " << amp1 << "*exp(-0.5*std::pow((currentVariable - " << mean1 
                   << ") / " << sigma1 << ", 2)) + "
                   << amp2 << "*exp(-0.5*std::pow((currentVariable - " << mean2 
                   << ") / " << sigma2 << ", 2)) + "
                   << amp3 << "*exp(-0.5*std::pow((currentVariable - " << mean3 
-                  << ") / " << sigma3 << ", 2)) + "
-                  << amp4 << "*exp(-0.5*std::pow((currentVariable - " << mean4 
-                  << ") / " << sigma4 << ", 2)); }" 
+                  << ") / " << sigma3 << ", 2)); }" 
                   << std::endl;
     }
 
