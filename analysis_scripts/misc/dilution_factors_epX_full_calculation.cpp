@@ -297,6 +297,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
             // Set parameter limits for Gaussians
             fit_func->SetParLimits(0, 0.0, 0.25); // Amplitude 1 must be positive
             fit_func->SetParLimits(1, 0.135 - 0.015, 0.135 + 0.015); // pi0 mass limits in GeV
+
             fit_func->SetParLimits(3, 0.0, 0.25); // Amplitude 2 must be positive
             fit_func->SetParLimits(4, 0.770 - 0.015, 0.770 + 0.015); // rho0 mass limits in GeV
 
@@ -326,40 +327,73 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         gr_dilution->Fit(fit_func, "RQ");
         fit_func->Draw("SAME");
 
-        // Additional fit for 0 < Mx < 1.35
-        std::string cuts_Mx_0_1_35 = "Mx > 0 && Mx < 1.35 && " + vz_cuts;
-        TH1D* h_nh3_0_1_35 = new TH1D(Form("h_%s_nh3_0_1_35", variable_name), "", n_bins, x_min, x_max);
-        nh3->Draw(Form("%s>>h_%s_nh3_0_1_35", variable_name, variable_name), cuts_Mx_0_1_35.c_str());
-        TF1 *fit_func_0_1_35 = new TF1("fit_func_0_1_35", "[0] + [1]*x + [2]*x^2 + [3]*x^3", x_min, x_max);
-        h_nh3_0_1_35->Fit(fit_func_0_1_35, "RQ");
-        double chi2_0_1_35 = fit_func_0_1_35->GetChisquare();
-        int ndf_0_1_35 = fit_func_0_1_35->GetNDF();
-        double chi2_scale_factor_0_1_35 = std::sqrt(chi2_0_1_35 / ndf_0_1_35);
-        for (int i = 0; i < h_nh3_0_1_35->GetNbinsX(); ++i) {
-            fit_func_0_1_35->SetParError(i, fit_func_0_1_35->GetParError(i) * chi2_scale_factor_0_1_35);
-        }
-        fit_func_0_1_35->SetLineColor(kRed);
-        fit_func_0_1_35->SetLineStyle(2); // Dashed line
-        fit_func_0_1_35->Draw("SAME");
-        // Additional fit for Mx > 0
-        std::string cuts_Mx_gt_0 = "Mx > 0 && " + vz_cuts;
-        TH1D* h_nh3_gt_0 = new TH1D(Form("h_%s_nh3_gt_0", variable_name), "", n_bins, x_min, x_max);
-        nh3->Draw(Form("%s>>h_%s_nh3_gt_0", variable_name, variable_name), cuts_Mx_gt_0.c_str());
-        TF1 *fit_func_gt_0 = new TF1("fit_func_gt_0", "[0] + [1]*x + [2]*x^2 + [3]*x^3", x_min, x_max);
-        h_nh3_gt_0->Fit(fit_func_gt_0, "RQ");
-        double chi2_gt_0 = fit_func_gt_0->GetChisquare();
-        int ndf_gt_0 = fit_func_gt_0->GetNDF();
-        double chi2_scale_factor_gt_0 = std::sqrt(chi2_gt_0 / ndf_gt_0);
-        for (int i = 0; i < h_nh3_gt_0->GetNbinsX(); ++i) {
-            fit_func_gt_0->SetParError(i, fit_func_gt_0->GetParError(i) * chi2_scale_factor_gt_0);
-        }
-        fit_func_gt_0->SetLineColor(kBlue);
-        fit_func_gt_0->SetLineStyle(2); // Dashed line
-        fit_func_gt_0->Draw("SAME");
 
-        // Clean up histograms
-        delete h_nh3_0_1_35;
-        delete h_nh3_gt_0;
+        if (!skip_fit && !isMx) {
+            // Additional fit for 0 < Mx < 1.35
+            std::string cuts_Mx_0_1_35 = "Mx > 0 && Mx < 1.35 && " + vz_cuts;
+            TH1D *h_nh3_0_1_35 = new TH1D(Form("h_%s_nh3_0_1_35", variable_name), "", n_bins, x_min, x_max);
+            TH1D *h_c_0_1_35 = new TH1D(Form("h_%s_c_0_1_35", variable_name), "", n_bins, x_min, x_max);
+            TH1D *h_ch_0_1_35 = new TH1D(Form("h_%s_ch_0_1_35", variable_name), "", n_bins, x_min, x_max);
+            TH1D *h_he_0_1_35 = new TH1D(Form("h_%s_he_0_1_35", variable_name), "", n_bins, x_min, x_max);
+            TH1D *h_empty_0_1_35 = new TH1D(Form("h_%s_empty_0_1_35", variable_name), "", n_bins, x_min, x_max);
+
+            // Fill histograms with the new cuts
+            nh3->Draw(Form("%s>>h_%s_nh3_0_1_35", variable_name, variable_name), cuts_Mx_0_1_35.c_str());
+            c->Draw(Form("%s>>h_%s_c_0_1_35", variable_name, variable_name), cuts_Mx_0_1_35.c_str());
+            ch->Draw(Form(”%s>>h_%s_ch_0_1_35”, variable_name, variable_name), cuts_Mx_0_1_35.c_str());
+            he->Draw(Form(”%s>>h_%s_he_0_1_35”, variable_name, variable_name), cuts_Mx_0_1_35.c_str());
+            empty->Draw(Form(”%s>>h_%s_empty_0_1_35”, variable_name, variable_name), cuts_Mx_0_1_35.c_str());
+
+            TF1 *fit_func_0_1_35 = new TF1("fit_func_0_1_35", "[0] + [1]*x + [2]*x^2 + [3]*x^3", x_min, x_max);
+            h_nh3_0_1_35->Add(h_c_0_1_35);
+            h_nh3_0_1_35->Add(h_ch_0_1_35);
+            h_nh3_0_1_35->Add(h_he_0_1_35);
+            h_nh3_0_1_35->Add(h_empty_0_1_35);
+            h_nh3_0_1_35->Fit(fit_func_0_1_35, "RQ");
+
+            fit_func_0_1_35->SetLineColor(kRed);
+            fit_func_0_1_35->SetLineStyle(2); // Dashed line
+            fit_func_0_1_35->Draw("SAME");
+
+            // Additional fit for Mx > 0
+            std::string cuts_Mx_gt_0 = "Mx > 0 && " + vz_cuts;
+            TH1D *h_nh3_gt_0 = new TH1D(Form("h_%s_nh3_gt_0", variable_name), "", n_bins, x_min, x_max);
+            TH1D *h_c_gt_0 = new TH1D(Form("h_%s_c_gt_0", variable_name), "", n_bins, x_min, x_max);
+            TH1D *h_ch_gt_0 = new TH1D(Form("h_%s_ch_gt_0", variable_name), "", n_bins, x_min, x_max);
+            TH1D *h_he_gt_0 = new TH1D(Form("h_%s_he_gt_0", variable_name), "", n_bins, x_min, x_max);
+            TH1D *h_empty_gt_0 = new TH1D(Form("h_%s_empty_gt_0", variable_name), "", n_bins, x_min, x_max);
+
+            // Fill histograms with the new cuts
+            nh3->Draw(Form("%s>>h_%s_nh3_gt_0", variable_name, variable_name), cuts_Mx_gt_0.c_str());
+            c->Draw(Form("%s>>h_%s_c_gt_0", variable_name, variable_name), cuts_Mx_gt_0.c_str());
+            ch->Draw(Form("%s>>h_%s_ch_gt_0", variable_name, variable_name), cuts_Mx_gt_0.c_str());
+            he->Draw(Form("%s>>h_%s_he_gt_0", variable_name, variable_name), cuts_Mx_gt_0.c_str());
+            empty->Draw(Form("%s>>h_%s_empty_gt_0", variable_name, variable_name), cuts_Mx_gt_0.c_str());
+
+            TF1 *fit_func_gt_0 = new TF1("fit_func_gt_0", "[0] + [1]*x + [2]*x^2 + [3]*x^3", x_min, x_max);
+            h_nh3_gt_0->Add(h_c_gt_0);
+            h_nh3_gt_0->Add(h_ch_gt_0);
+            h_nh3_gt_0->Add(h_he_gt_0);
+            h_nh3_gt_0->Add(h_empty_gt_0);
+            h_nh3_gt_0->Fit(fit_func_gt_0, "RQ");
+
+            fit_func_gt_0->SetLineColor(kBlue);
+            fit_func_gt_0->SetLineStyle(2); // Dashed line
+            fit_func_gt_0->Draw("SAME");
+
+            // Clean up histograms
+            delete h_nh3_0_1_35;
+            delete h_c_0_1_35;
+            delete h_ch_0_1_35;
+            delete h_he_0_1_35;
+            delete h_empty_0_1_35;
+
+            delete h_nh3_gt_0;
+            delete h_c_gt_0;
+            delete h_ch_gt_0;
+            delete h_he_gt_0;
+            delete h_empty_gt_0;
+        }
 
         // Add fit parameters box
         double box_x1 = (isMx) ? 0.45 : 0.55;
@@ -412,6 +446,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         pt->AddText(Form("p0 = %.4f +/- %.4f", gr_dilution->GetY()[0], gr_dilution->GetErrorY(0)));
         pt->Draw();
     }
+
     // Add a title to the plot with phase space parameters
     TLatex title;
     title.SetNDC();
@@ -429,7 +464,6 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     delete h_he;
     delete h_empty;
 }
-
 
 std::pair<TF1*, TGraphErrors*> fit_and_plot_dilution(const char* variable_name, const char* x_title, double x_min, double x_max, int n_bins,
 TTree* nh3, TTree* c, TTree* ch, TTree* he, TTree* empty, TCanvas* canvas, int pad, bool skip_fit = false, bool isMx = false) {
