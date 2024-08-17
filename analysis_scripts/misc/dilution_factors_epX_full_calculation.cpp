@@ -233,14 +233,14 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     }
 
     // Create histograms for data using the appropriate cuts
-    TH1D *h_nh3 = new TH1D(Form("h_%s_nh3_%s", variable_name, region.c_str()), "", n_bins, x_min, x_max);
+    TH1D *h_nh3 = new TH1D(Form("h_%s_nh3_%s", variable_name, "original"), "", n_bins, x_min, x_max);
     TH1D *h_c = new TH1D(Form("h_%s_c_%s", variable_name, region.c_str()), "", n_bins, x_min, x_max);
     TH1D *h_ch = new TH1D(Form("h_%s_ch_%s", variable_name, region.c_str()), "", n_bins, x_min, x_max);
     TH1D *h_he = new TH1D(Form("h_%s_he_%s", variable_name, region.c_str()), "", n_bins, x_min, x_max);
     TH1D *h_empty = new TH1D(Form("h_%s_empty_%s", variable_name, region.c_str()), "", n_bins, x_min, x_max);
 
-    // Draw the histograms with the appropriate cuts
-    nh3->Draw(Form("%s>>h_%s_nh3_%s", variable_name, variable_name, region.c_str()), combined_cuts.c_str());
+    // Draw the histograms with the appropriate cuts for the original region first
+    nh3->Draw(Form("%s>>h_%s_nh3_%s", variable_name, variable_name, "original"), combined_cuts.c_str());
     c->Draw(Form("%s>>h_%s_c_%s", variable_name, variable_name, region.c_str()), combined_cuts.c_str());
     ch->Draw(Form("%s>>h_%s_ch_%s", variable_name, variable_name, region.c_str()), combined_cuts.c_str());
     he->Draw(Form("%s>>h_%s_he_%s", variable_name, variable_name, region.c_str()), combined_cuts.c_str());
@@ -276,21 +276,10 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         gr_dilution->SetTitle(";Integrated;D_{f}");
     }
 
-    // Draw the data points only if the region is "original"
-    if (region == "original") {
-        gr_dilution->SetMarkerColor(kBlack);
-        gr_dilution->SetLineColor(kBlack);
-        gr_dilution->Draw("AP");
-    } else {
-        gr_dilution->Draw("P");  // Only draw points for "exclusive" and "all"
-    }
+    // Draw the original data in black
+    gr_dilution->Draw("AP");
 
-    // Adjust the range for the y-axis
-    gr_dilution->GetYaxis()->SetRangeUser(0.10, 0.40);
-
-    double chi2_scale_factor = 1.0;
-
-    // Fit and plot (skip fit for the integrated version)
+    // Ensure the fit is drawn if applicable
     if (!skip_fit) {
         TF1 *fit_func;
         if (isMx) {
@@ -301,15 +290,11 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
                 "[6] + [7]*x + [8]*x^2 + [9]*x^3",  // Quadratic Polynomial
                 x_min, x_max);
 
-            // Initial guesses
             fit_func->SetParameters(0.05, 0.135, 0.02, 0.5, 0.770, 0.1, 0.1, 0.2, 0.0, 0.0);
-
-            // Set parameter limits for Gaussians
-            fit_func->SetParLimits(0, 0.0, 0.25); // Amplitude 1 must be positive
-            fit_func->SetParLimits(1, 0.135 - 0.015, 0.135 + 0.015); // pi0 mass limits in GeV
-
-            fit_func->SetParLimits(3, 0.0, 0.25); // Amplitude 2 must be positive
-            fit_func->SetParLimits(4, 0.770 - 0.015, 0.770 + 0.015); // rho0 mass limits in GeV
+            fit_func->SetParLimits(0, 0.0, 0.25);
+            fit_func->SetParLimits(1, 0.135 - 0.015, 0.135 + 0.015);
+            fit_func->SetParLimits(3, 0.0, 0.25);
+            fit_func->SetParLimits(4, 0.770 - 0.015, 0.770 + 0.015);
         } else {
             // Use a cubic polynomial fit for other variables
             fit_func = new TF1("fit_func", "[0] + [1]*x + [2]*x^2 + [3]*x^3", x_min, x_max);
@@ -317,34 +302,21 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
 
         gr_dilution->Fit(fit_func, "RQ");
 
-        // Set the fit function color based on the region
-        if (region == "exclusive") {
+        // Draw the fit functions in the appropriate colors
+        if (region == "original") {
+            fit_func->SetLineColor(kBlack);
+        } else if (region == "exclusive") {
             fit_func->SetLineColor(kRed);
         } else if (region == "all") {
             fit_func->SetLineColor(kBlue);
-        } else {
-            fit_func->SetLineColor(kBlack);
         }
         fit_func->SetLineStyle(2); // Dashed line
         fit_func->Draw("SAME");
+    }
 
-        // Add fit parameters box
-        if (region != "original") {
-            double box_x1 = (isMx) ? 0.45 : 0.55;
-            double box_y1 = (isMx) ? 0.50 : 0.7; // Slightly lower start position for Mx plot
-            double box_y2 = (isMx) ? 0.9 : 0.9; // Increase vertical size more for Mx plot, but within plot limits
-            TPaveText *pt = new TPaveText(box_x1, box_y1, 0.9, box_y2, "brNDC");
-            pt->SetBorderSize(1);
-            pt->SetFillStyle(1001);
-            pt->SetFillColor(kWhite);
-            pt->SetTextSize(0.035); // Decrease the font size
+    // Ensure the plots are updated
+    gPad->Update();
 
-            for (int p = 0; p < fit_func->GetNpar(); ++p) {
-                pt->AddText(Form("p%d = %.3f +/- %.3f", p, fit_func->GetParameter(p), fit_func->GetParError(p)));
-            }
-            pt->Draw();
-            }
-        }
     // Add a title to the plot with phase space parameters
     TLatex title;
     title.SetNDC();
