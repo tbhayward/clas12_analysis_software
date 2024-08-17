@@ -284,13 +284,26 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     if (!skip_fit) {
         TF1 *fit_func;
         if (isMx) {
-            // Use a sum of four Gaussians for Mx fit
-            fit_func = new TF1("fit_func", "[0]*exp(-0.5*((x-[1])/[2])^2) + [3]*exp(-0.5*((x-[4])/[5])^2) + [6]*exp(-0.5*((x-[7])/[8])^2)", x_min, x_max);
-            fit_func->SetParameters(1, 0.135, 0.02, 0.5, 0.770, 0.1, 0.3, 1.275, 0.15); // Initial guesses
+            // Use a sum of three Gaussians for Mx fit
+            fit_func = new TF1("fit_func", 
+                "[0]*exp(-0.5*((x-[1])/[2])^2) + [3]*exp(-0.5*((x-[4])/[5])^2) + [6]*exp(-0.5*((x-[7])/[8])^2)", 
+                x_min, x_max);
+
+            // Initial guesses
+            fit_func->SetParameters(1, 0.135, 0.02, 0.5, 0.770, 0.1, 0.3, 1.275, 0.15);
+
+            // Set parameter limits
+            fit_func->SetParLimits(0, 0.0, 100.0); // Amplitude 1 must be positive
             fit_func->SetParLimits(1, 0.135 - 0.015, 0.135 + 0.015); // pi0 mass limits in GeV
             fit_func->SetParLimits(2, 0, 0.3); // pi0 sigma limits in GeV
+
+            fit_func->SetParLimits(3, 0.0, 100.0); // Amplitude 2 must be positive
             fit_func->SetParLimits(4, 0.770 - 0.015, 0.770 + 0.015); // rho0 mass limits in GeV
-            fit_func->SetParLimits(5, 0, 0.15); // pi0 sigma limits in GeV
+            fit_func->SetParLimits(5, 0, 0.15); // rho0 sigma limits in GeV
+
+            fit_func->SetParLimits(6, 0.0, 100.0); // Amplitude 3 must be positive
+            fit_func->SetParLimits(7, 1.275 - 0.015, 1.275 + 0.015); // f2 mass limits in GeV
+            fit_func->SetParLimits(8, 0, 0.3); // f2 sigma limits in GeV
         } else {
             // Use a cubic polynomial fit for other variables
             fit_func = new TF1("fit_func", "[0] + [1]*x + [2]*x^2 + [3]*x^3", x_min, x_max);
