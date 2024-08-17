@@ -292,7 +292,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
                 x_min, x_max);
 
             // Initial guesses
-            fit_func->SetParameters(1, 0.135, 0.02, 0.5, 0.770, 0.1, 0.1, 0.0, 0.0, 0.0);
+            fit_func->SetParameters(0.05, 0.135, 0.02, 0.5, 0.770, 0.1, 0.1, 0.2, 0.0, 0.0, 0.0, 0.0);
 
             // // Set parameter limits for Gaussians
             fit_func->SetParLimits(0, 0.0, 10.0); // Amplitude 1 must be positive
