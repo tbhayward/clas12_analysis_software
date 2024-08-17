@@ -351,16 +351,37 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
 
         // Add text for the parameters based on the fit function used
         if (isMx) {
-            for (int p = 0; p < 6; p += 3) { // Adjust the loop to iterate over two Gaussians
-                pt->AddText(Form("Amp%d = %.3f +/- %.3f", p/3+1, fit_func->GetParameter(p), fit_func->GetParError(p)));
-                pt->AddText(Form("Mean%d = %.3f +/- %.3f", p/3+1, fit_func->GetParameter(p+1), fit_func->GetParError(p+1)));
-                pt->AddText(Form("Sigma%d = %.3f +/- %.3f", p/3+1, fit_func->GetParameter(p+2), fit_func->GetParError(p+2)));
+            // Two Gaussians + Quadratic Polynomial Background
+            fit_func = new TF1("fit_func",
+                "[0]*exp(-0.5*((x-[1])/[2])^2) + "  // Gaussian 1
+                "[3]*exp(-0.5*((x-[4])/[5])^2) + "  // Gaussian 2
+                "[6] + [7]*x + [8]*x^2 + [9]*x^3",  // Cubic Polynomial
+                x_min, x_max);
+
+            // Initial guesses
+            fit_func->SetParameters(0.05, 0.135, 0.02, 0.5, 0.770, 0.1, 0.1, 0.2, 0.0, 0.0);
+
+            // Set parameter limits for Gaussians
+            fit_func->SetParLimits(0, 0.0, 0.25); // Amplitude 1 must be positive
+            fit_func->SetParLimits(1, 0.135 - 0.015, 0.135 + 0.015); // pi0 mass limits in GeV
+            // fit_func->SetParLimits(2, 0, 0.3); // pi0 sigma limits in GeV
+
+            fit_func->SetParLimits(3, 0.0, 0.25); // Amplitude 2 must be positive
+            fit_func->SetParLimits(4, 0.770 - 0.015, 0.770 + 0.015); // rho0 mass limits in GeV
+            // fit_func->SetParLimits(5, 0, 0.15); // rho0 sigma limits in GeV
+
+            // The coefficients of the polynomial are left unconstrained for now
+
+            // Update the legend to include #pi^{0} and #rho^{0} masses and sigmas
+            for (int p = 0; p < 6; p += 3) {
+                if (p == 0) {
+                    pt->AddText(Form("#pi^{0} mass (GeV) = %.3f +/- %.3f", fit_func->GetParameter(p+1), fit_func->GetParError(p+1)));
+                    pt->AddText(Form("#sigma_{#pi^{0}} = %.3f +/- %.3f", fit_func->GetParameter(p+2), fit_func->GetParError(p+2)));
+                } else if (p == 3) {
+                    pt->AddText(Form("#rho^{0} mass (GeV) = %.3f +/- %.3f", fit_func->GetParameter(p+1), fit_func->GetParError(p+1)));
+                    pt->AddText(Form("#sigma_{#rho^{0}} = %.3f +/- %.3f", fit_func->GetParameter(p+2), fit_func->GetParError(p+2)));
+                }
             }
-            
-            // Add the polynomial coefficients
-            pt->AddText(Form("Const = %.3f +/- %.3f", fit_func->GetParameter(6), fit_func->GetParError(6)));
-            pt->AddText(Form("Linear = %.3f +/- %.3f", fit_func->GetParameter(7), fit_func->GetParError(7)));
-            pt->AddText(Form("Quadratic = %.3f +/- %.3f", fit_func->GetParameter(8), fit_func->GetParError(8)));
         } else {
             for (int p = 0; p < fit_func->GetNpar(); ++p) {
                 pt->AddText(Form("p%d = %.3f +/- %.3f", p, fit_func->GetParameter(p), fit_func->GetParError(p)));
