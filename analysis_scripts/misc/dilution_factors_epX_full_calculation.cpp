@@ -421,10 +421,10 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     std::cout << std::endl << std::endl;
 
     // Integrated version (single bin)
-    auto fit_integrated = fit_and_plot_dilution("x", "", 0.0, 1.0, 1, nh3, c, ch, he, empty, c1, 1, true);
+    auto fit_integrated = fit_and_plot_dilution("x", "", 0.0, 1.0, 1, nh3, c, ch, he, empty, c1, 1, true, false, "original");
 
     // Loop over variables
-    for (int var = 0; var < 1; ++var) {
+    for (int var = 0; var < 0; ++var) {
         const char* variable_name;
         const char* x_title;
         double x_min, x_max;
@@ -474,31 +474,31 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
         }
     }
 
-    // Fit and plot for Mx separately
-    c1->cd(9);
-    auto fit_Mx = fit_and_plot_dilution("Mx", "M_{x} (GeV)", 0 , 2.75, 50, nh3, c, ch, he, empty, c1, 9, true);
-    if (fit_Mx[0]) {
-        double amp1 = fit_Mx[0]->GetParameter(0);
-        double mean1 = fit_Mx[0]->GetParameter(1);
-        double sigma1 = fit_Mx[0]->GetParameter(2);
-        double amp2 = fit_Mx[0]->GetParameter(3);
-        double mean2 = fit_Mx[0]->GetParameter(4);
-        double sigma2 = fit_Mx[0]->GetParameter(5);
+    // // Fit and plot for Mx separately
+    // c1->cd(9);
+    // auto fit_Mx = fit_and_plot_dilution("Mx", "M_{x} (GeV)", 0 , 2.75, 50, nh3, c, ch, he, empty, c1, 9, true);
+    // if (fit_Mx[0]) {
+    //     double amp1 = fit_Mx[0]->GetParameter(0);
+    //     double mean1 = fit_Mx[0]->GetParameter(1);
+    //     double sigma1 = fit_Mx[0]->GetParameter(2);
+    //     double amp2 = fit_Mx[0]->GetParameter(3);
+    //     double mean2 = fit_Mx[0]->GetParameter(4);
+    //     double sigma2 = fit_Mx[0]->GetParameter(5);
 
-        double constTerm = fit_Mx[0]->GetParameter(6);
-        double linearTerm = fit_Mx[0]->GetParameter(7);
-        double quadTerm = fit_Mx[0]->GetParameter(8);
+    //     double constTerm = fit_Mx[0]->GetParameter(6);
+    //     double linearTerm = fit_Mx[0]->GetParameter(7);
+    //     double quadTerm = fit_Mx[0]->GetParameter(8);
 
-        std::cout << "if (prefix == \"Mx\") {"
-                  << " return " << amp1 << "*exp(-0.5*std::pow((currentVariable - " << mean1 
-                  << ") / " << sigma1 << ", 2)) + "
-                  << amp2 << "*exp(-0.5*std::pow((currentVariable - " << mean2 
-                  << ") / " << sigma2 << ", 2)) + "
-                  << constTerm << " + "
-                  << linearTerm << "*currentVariable + "
-                  << quadTerm << "*std::pow(currentVariable, 2); }"
-                  << std::endl;
-    }
+    //     std::cout << "if (prefix == \"Mx\") {"
+    //               << " return " << amp1 << "*exp(-0.5*std::pow((currentVariable - " << mean1 
+    //               << ") / " << sigma1 << ", 2)) + "
+    //               << amp2 << "*exp(-0.5*std::pow((currentVariable - " << mean2 
+    //               << ") / " << sigma2 << ", 2)) + "
+    //               << constTerm << " + "
+    //               << linearTerm << "*currentVariable + "
+    //               << quadTerm << "*std::pow(currentVariable, 2); }"
+    //               << std::endl;
+    // }
 
     // Save the canvas as a PNG file
     c1->SaveAs("output/one_dimensional.png");
