@@ -288,7 +288,10 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
             fit_func = new TF1("fit_func", 
                                "[0]*exp(-0.5*((x-[1])/[2])^2) + [3]*exp(-0.5*((x-[4])/[5])^2) + [6]*exp(-0.5*((x-[7])/[8])^2) + [9]*exp(-0.5*((x-[10])/[11])^2)", 
                                x_min, x_max);
-            fit_func->SetParameters(1, 0.135, 0.02, 0.5, 0.770, 0.1, 0.3, 1.275, 0.15, 0.2, 1.7, 0.2); // Initial guesses
+            fit_func->SetParameters(1, 0.135, 0.02, 0.5, 0.770, 0.1, 0.3, 1.275, 0.15, 0.2);
+            fit_func->SetParameter(9, 1.7);
+            fit_func->SetParameter(10, 0.2);
+            fit_func->SetParameter(11, 0.2);
         } else {
             // Use a cubic polynomial fit for other variables
             fit_func = new TF1("fit_func", "[0] + [1]*x + [2]*x^2 + [3]*x^3", x_min, x_max);
