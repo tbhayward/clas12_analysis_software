@@ -298,7 +298,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
             // fit_func->SetParLimits(2, 0, 0.3); // pi0 sigma limits in GeV
 
             // fit_func->SetParLimits(3, 0.0, 1.0); // Amplitude 2 must be positive
-            // fit_func->SetParLimits(4, 0.770 - 0.015, 0.770 + 0.015); // rho0 mass limits in GeV
+            fit_func->SetParLimits(4, 0.770 - 0.02, 0.770 + 0.02); // rho0 mass limits in GeV
             // fit_func->SetParLimits(5, 0, 0.15); // rho0 sigma limits in GeV
 
             // fit_func->SetParLimits(6, 0.0, 100.0); // Amplitude 3 must be positive
