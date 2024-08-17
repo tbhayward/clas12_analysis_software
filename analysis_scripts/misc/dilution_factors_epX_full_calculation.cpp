@@ -240,7 +240,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
 
     // Draw the histograms with the appropriate cuts
     nh3->Draw(Form("%s>>h_%s_nh3", variable_name, variable_name), combined_cuts.c_str());
-    carbon->Draw(Form("%s>>h_%s_c", variable_name, variable_name), combined_cuts.c_str());
+    c->Draw(Form("%s>>h_%s_c", variable_name, variable_name), combined_cuts.c_str());
     ch->Draw(Form("%s>>h_%s_ch", variable_name, variable_name), combined_cuts.c_str());
     he->Draw(Form("%s>>h_%s_he", variable_name, variable_name), combined_cuts.c_str());
     empty->Draw(Form("%s>>h_%s_empty", variable_name, variable_name), combined_cuts.c_str());
@@ -376,7 +376,7 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     c1->Divide(2, 2);
 
     // Integrated version (single bin)
-    auto fit_integrated = fit_and_plot_dilution("x", "", 0.0, 1.0, 1, nh3, c, ch, he, empty, c1, 1, true, false);
+    auto fit_integrated = fit_and_plot_dilution("x", "", 0.0, 1.0, 1, nh3, c, ch, he, empty, c1, 1, false);
 
     // Fit and plot for x-Bjorken
     auto fit_x = fit_and_plot_dilution("x", "x_{B} (GeV)", 0.06, 0.6, 25, nh3, c, ch, he, empty, c1, 2, false);
