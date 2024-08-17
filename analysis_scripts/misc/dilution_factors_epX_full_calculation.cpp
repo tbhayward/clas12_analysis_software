@@ -288,18 +288,18 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
             fit_func = new TF1("fit_func",
                 "[0]*exp(-0.5*((x-[1])/[2])^2) + "  // Gaussian 1
                 "[3]*exp(-0.5*((x-[4])/[5])^2) + "  // Gaussian 2
-                "[6] + [7]*x + [8]*x^2 + [9]*x^3 + [10]*x^4",            // Quadratic Polynomial
+                "[6] + [7]*x + [8]*x^2 + [9]*x^3",            // Quadratic Polynomial
                 x_min, x_max);
 
             // Initial guesses
-            fit_func->SetParameters(0.05, 0.135, 0.02, 0.5, 0.770, 0.1, 0.1, 0.2, 0.0, 0.0, 0.0, 0.0);
+            fit_func->SetParameters(0.05, 0.135, 0.02, 0.5, 0.770, 0.1, 0.1, 0.2, 0.0, 0.0);
 
             // // Set parameter limits for Gaussians
-            fit_func->SetParLimits(0, 0.0, 10.0); // Amplitude 1 must be positive
+            fit_func->SetParLimits(0, 0.0, 1.0); // Amplitude 1 must be positive
             // fit_func->SetParLimits(1, 0.135 - 0.015, 0.135 + 0.015); // pi0 mass limits in GeV
             // fit_func->SetParLimits(2, 0, 0.3); // pi0 sigma limits in GeV
 
-            fit_func->SetParLimits(3, 0.0, 10.0); // Amplitude 2 must be positive
+            fit_func->SetParLimits(3, 0.0, 1.0); // Amplitude 2 must be positive
             // fit_func->SetParLimits(4, 0.770 - 0.015, 0.770 + 0.015); // rho0 mass limits in GeV
             // fit_func->SetParLimits(5, 0, 0.15); // rho0 sigma limits in GeV
 
