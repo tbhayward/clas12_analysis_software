@@ -327,8 +327,9 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         */
 
         // Add fit parameters box
-        double box_y1 = 0.7;
-        double box_y2 = (isMx) ? 0.9 + 0.1 : 0.9; // Increase vertical size if isMx
+        // Add fit parameters box
+        double box_y1 = (isMx) ? 0.65 : 0.7; // Slightly lower start position for Mx plot
+        double box_y2 = (isMx) ? 0.95 : 0.9; // Increase vertical size more for Mx plot, but within plot limits
         TPaveText *pt = new TPaveText(0.55, box_y1, 0.9, box_y2, "brNDC");
         pt->SetBorderSize(1);
         pt->SetFillStyle(1001);
