@@ -224,10 +224,10 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     // Define the combined cuts based on the value of isMx
     std::string combined_cuts;
     if (isMx) {
-        // Only apply vz cuts if isMx is true
-        combined_cuts = vz_cuts;
+        // Apply vz cuts and Mx > 0 if isMx is true
+        combined_cuts = "Mx > 0 && " + vz_cuts;
     } else {
-        // Apply both Mx and vz cuts if isMx is false
+        // Apply both Mx > 1.35 and vz cuts if isMx is false
         combined_cuts = "Mx > 1.35 && " + vz_cuts;
     }
 
@@ -250,7 +250,6 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     for (int i = 1; i <= n_bins; ++i) {
         double nA = h_nh3->GetBinContent(i);
         double nC = h_c->GetBinContent(i);
-
         double nCH = h_ch->GetBinContent(i);
         double nMT = h_he->GetBinContent(i);
         double nf = h_empty->GetBinContent(i);
@@ -283,7 +282,16 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
 
     // Fit and plot (skip fit for the integrated version)
     if (!skip_fit) {
-        TF1 *fit_func = new TF1("fit_func", "[0] + [1]*x + [2]*x^2 + [3]*x^3", x_min, x_max);
+        TF1 *fit_func;
+        if (isMx) {
+            // Use a sum of three Gaussians for Mx fit
+            fit_func = new TF1("fit_func", "[0]*exp(-0.5*((x-[1])/[2])^2) + [3]*exp(-0.5*((x-[4])/[5])^2) + [6]*exp(-0.5*((x-[7])/[8])^2)", x_min, x_max);
+            fit_func->SetParameters(1, 1.2, 0.2, 0.5, 2.5, 0.3, 0.3, 1.8, 0.4); // Initial guesses
+        } else {
+            // Use a cubic polynomial fit for other variables
+            fit_func = new TF1("fit_func", "[0] + [1]*x + [2]*x^2 + [3]*x^3", x_min, x_max);
+        }
+
         gr_dilution->Fit(fit_func, "RQ");
         fit_func->SetLineColor(kRed);
 
@@ -317,10 +325,19 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         pt->SetFillStyle(1001);
         pt->SetFillColor(kWhite);
         pt->SetTextSize(0.035); // Decrease the font size
-        pt->AddText(Form("p0 = %.3f +/- %.3f", fit_func->GetParameter(0), fit_func->GetParError(0)));
-        pt->AddText(Form("p1 = %.3f +/- %.3f", fit_func->GetParameter(1), fit_func->GetParError(1)));
-        pt->AddText(Form("p2 = %.3f +/- %.3f", fit_func->GetParameter(2), fit_func->GetParError(2)));
-        pt->AddText(Form("p3 = %.3f +/- %.3f", fit_func->GetParameter(3), fit_func->GetParError(3)));
+
+        // Add text for the parameters based on the fit function used
+        if (isMx) {
+            for (int p = 0; p < 9; p += 3) {
+                pt->AddText(Form("Amp%d = %.3f +/- %.3f", p/3+1, fit_func->GetParameter(p), fit_func->GetParError(p)));
+                pt->AddText(Form("Mean%d = %.3f +/- %.3f", p/3+1, fit_func->GetParameter(p+1), fit_func->GetParError(p+1)));
+                pt->AddText(Form("Sigma%d = %.3f +/- %.3f", p/3+1, fit_func->GetParameter(p+2), fit_func->GetParError(p+2)));
+            }
+        } else {
+            for (int p = 0; p < fit_func->GetNpar(); ++p) {
+                pt->AddText(Form("p%d = %.3f +/- %.3f", p, fit_func->GetParameter(p), fit_func->GetParError(p)));
+            }
+        }
         pt->Draw();
     } else {
         // For integrated plot, scale errors by the average scale factor from other fits
@@ -330,7 +347,6 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
             gr_dilution->GetPoint(i, x, y);
             gr_dilution->SetPointError(i, 0, gr_dilution->GetErrorY(i) * avg_scale_factor);
         }
-
         // For integrated plot, display the value in the top right corner
         TPaveText *pt = new TPaveText(0.55, 0.7, 0.9, 0.9, "brNDC");
         pt->SetBorderSize(1);
@@ -400,7 +416,7 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     auto fit_xF = fit_and_plot_dilution("xF", "x_{F}", -0.8, 0.5, 25, nh3, c, ch, he, empty, c1, 8, false, false);
 
     // Fit and plot for Mx
-    auto fit_Mx = fit_and_plot_dilution("Mx", "Mx", 1.35, 3.0, 25, nh3, c, ch, he, empty, c1, 9, false, false);
+    auto fit_Mx = fit_and_plot_dilution("Mx", "M_{x} (GeV)", 0, 3.5, 25, nh3, c, ch, he, empty, c1, 9, false, false);
 
 
     // Save the canvas as a PNG file
