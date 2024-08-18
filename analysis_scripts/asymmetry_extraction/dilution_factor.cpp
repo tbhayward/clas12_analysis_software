@@ -42,8 +42,6 @@ double dilution_factor(double currentVariable, const std::string& prefix) {
 
   if (prefix == "Q2y8z5") { double sigma = 0.006145; return 0.239521 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2y12z1") { double sigma = -nan; return 0 + rand_gen.Gaus(0, sigma); }
-
   if (prefix == "Q2y12z2") { double sigma = 0.0101037; return 0.242016 + rand_gen.Gaus(0, sigma); }
 
   if (prefix == "Q2y12z3") { double sigma = 0.00766527; return 0.249692 + rand_gen.Gaus(0, sigma); }
