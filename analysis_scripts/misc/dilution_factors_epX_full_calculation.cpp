@@ -584,7 +584,7 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     auto fit_integrated = fit_and_plot_dilution("x", "", 0.0, 1.0, 1, nh3, c, ch, he, empty, c1, 1, true, false);
 
     // Fit and plot for Q2
-    auto fit_Q2 = fit_and_plot_dilution("Q2", "Q^{2} (GeV)", 1, 9, 25, nh3, c, ch, he, empty, c1, 2, false, false);
+    auto fit_Q2 = fit_and_plot_dilution("Q2", "Q^{2} (GeV^{2})", 1, 9, 25, nh3, c, ch, he, empty, c1, 2, false, false);
     if (fit_Q2.first) {
         double p0_x = fit_Q2.first->GetParameter(0);
         double p1_x = fit_Q2.first->GetParameter(1);
@@ -1054,7 +1054,7 @@ int main(int argc, char** argv) {
     // plot_dilution_kinematics(nh3, c, ch, he, empty);
     // Call the one-dimensional function
     one_dimensional(nh3, c, ch, he, empty);
-    // multi_dimensional(nh3, c, ch, he, empty);
+    multi_dimensional(nh3, c, ch, he, empty);
 
     // Safely close the ROOT files
     nh3->Close();
