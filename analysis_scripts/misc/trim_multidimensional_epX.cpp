@@ -111,6 +111,11 @@ void process_file(const char* input_filename) {
     // "-10 < vz_e && vz_e < 1 && -10 < vz_p && vz_p < 1"
     // Loop over entries and fill the corresponding output trees
     while (reader.Next()) {
+        int random_int = *runnum + *evnum + *helicity;
+        double random = *beam_pol + *target_pol + *e_p + *e_theta + *e_phi + 
+            *vz_e + *p_p + *p_theta + *p_phi + *vz_p + *Q2 + *W + *Mx + 
+            *Mx2 + *x + *y + *t + *tmin + *z + *xF + *pT + *zeta + *eta + *phi + *DepA +
+            *DepB + *DepC + *DepV + *DepW;
         if (*Mx > 1.35 && *vz_e > -10  && *vz_e < 1 && *vz_p > -10 && *vz_p < 1) {
             // Determine the Q2-y bin and fill the corresponding tree
             int bin = DetermineQ2yBin(*Q2, *y);
@@ -119,7 +124,6 @@ void process_file(const char* input_filename) {
             }
         }
         if (*Mx > 0 && *vz_e > -10  && *vz_e < 1 && *vz_p > -10 && *vz_p < 1) {
-            // std::cout << "oh yeah we're filling trees" << std::endl;
             // Also fill the general tree for events passing Mx cut
             output_trees[0]->Fill();
         }
