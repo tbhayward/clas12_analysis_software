@@ -13,6 +13,7 @@ double dilution_factor(double currentVariable, const std::string& prefix) {
       0.157106*std::pow(currentVariable,3);
   }
 
+  if (prefix == "runnum") { return 0.1886;}
   if (prefix == "Q2") { return 0.0586566+0.0924459*currentVariable+-0.0191629*std::pow(currentVariable,2); }
   if (prefix == "x") { return 0.131499+0.274516*currentVariable+-0.119065*std::pow(currentVariable,2); }
   if (prefix == "y") { return 0.0274489+1.00838*currentVariable+-1.88842*std::pow(currentVariable,2); }
