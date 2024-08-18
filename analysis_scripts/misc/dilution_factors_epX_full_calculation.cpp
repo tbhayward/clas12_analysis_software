@@ -230,7 +230,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         // Apply both Mx > 1.35 and vz cuts if isMx is false
         // combined_cuts = "Mx > 1.35 && " + vz_cuts;
         // combined_cuts = "Mx > 0 && " + vz_cuts;
-        combined_cuts = "Mx < 1.35 && " + vz_cuts;
+        combined_cuts = "Mx < 1.35 && Mx > 0 " + vz_cuts;
     }
 
     // Define the combined cuts based on the value of isMx
@@ -631,7 +631,7 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
         double p0_x = fit_zeta.first->GetParameter(0);
         double p1_x = fit_zeta.first->GetParameter(1);
         double p2_x = fit_zeta.first->GetParameter(2);
-        std::cout << "if (prefix == \"z\") { return " << p0_x << 
+        std::cout << "if (prefix == \"zeta\") { return " << p0_x << 
             "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
     }
 
