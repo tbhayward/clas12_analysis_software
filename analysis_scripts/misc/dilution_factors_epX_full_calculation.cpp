@@ -281,8 +281,6 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     he->Draw(Form("%s>>h_%s_he_exclusive", variable_name, variable_name), combined_cuts_exclusive.c_str());
     empty->Draw(Form("%s>>h_%s_empty_exclusive", variable_name, variable_name), combined_cuts_exclusive.c_str());
 
-    std::cout << "Histograms filled" << std::endl;
-
     // Calculate dilution factor and its error
     TGraphErrors *gr_dilution = new TGraphErrors();
     TGraphErrors *gr_dilution_all = new TGraphErrors();
@@ -327,8 +325,6 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         gr_dilution_exclusive->SetPoint(i - 1, x_position, dilution_exclusive);
         gr_dilution_exclusive->SetPointError(i - 1, 0, error_exclusive);
     }
-
-    std::cout << "Dilutions calculated" << std::endl;
 
     gr_dilution->SetTitle(Form(";%s;D_{f}", x_title));
     gr_dilution->SetMarkerStyle(20);
@@ -385,16 +381,16 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         fit_func->SetLineColor(kBlack);
         fit_func->SetLineStyle(2); // Dashed line
 
-        std::cout << "Fits defined" << std::endl;
-
         if (!isMx) {
             gr_dilution_all->Fit(fit_func_all, "RQ");
             fit_func_all->SetLineColor(kBlue);
             fit_func_all->SetLineStyle(2); // Dashed line
+            fit_func_all->SetLineWidth(1); // Set thinner line
 
             gr_dilution_exclusive->Fit(fit_func_exclusive, "RQ");
             fit_func_exclusive->SetLineColor(kRed);
             fit_func_exclusive->SetLineStyle(2); // Dashed line
+            fit_func_exclusive->SetLineWidth(1); // Set thinner line
         }
 
         // Calculate chi2/ndf scaling factor
@@ -416,8 +412,6 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
             ndf_exclusive = fit_func_exclusive->GetNDF();
             chi2_scale_factor_exclusive = std::sqrt(chi2_exclusive / ndf_exclusive);
         }
-
-        std::cout << "chi2s calculated" << std::endl;
         
         // Rescale the errors
         for (int i = 0; i < gr_dilution->GetN(); ++i) {
@@ -440,8 +434,6 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
             }
         }
 
-        std::cout << "Errors rescaled" << std::endl;
-
         // Refit with scaled errors
         gr_dilution->Fit(fit_func, "RQ");
         fit_func->Draw("SAME");
@@ -462,6 +454,20 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         latex.SetTextSize(0.035); // Decrease the font size
         latex.DrawLatex(0.20, 0.15, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2 / ndf));
         */
+
+        // Add red note "0 < M_{x} < 1.35 (GeV)"
+        TLatex latex_red;
+        latex_red.SetNDC();
+        latex_red.SetTextSize(0.035); // Adjust the font size if needed
+        latex_red.SetTextColor(kRed); // Set the text color to red
+        latex_red.DrawLatex(0.15, 0.85, "0 < M_{x} < 1.35 (GeV)");
+
+        // Add blue note "0 < M_{x} (GeV)" just below the red one
+        TLatex latex_blue;
+        latex_blue.SetNDC();
+        latex_blue.SetTextSize(0.035); // Adjust the font size if needed
+        latex_blue.SetTextColor(kBlue); // Set the text color to blue
+        latex_blue.DrawLatex(0.15, 0.80, "0 < M_{x} (GeV)");
 
         // Add fit parameters box
         double box_x1 = (isMx) ? 0.45 : 0.55;
@@ -585,65 +591,65 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
             "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
     }
 
-    // // Fit and plot for x-Bjorken
-    // auto fit_x = fit_and_plot_dilution("x", "x_{B} (GeV)", 0.06, 0.6, 25, nh3, c, ch, he, empty, c1, 3, false, false);
-    // if (fit_x.first) {
-    //     double p0_x = fit_x.first->GetParameter(0);
-    //     double p1_x = fit_x.first->GetParameter(1);
-    //     double p2_x = fit_x.first->GetParameter(2);
-    //     std::cout << "if (prefix == \"x\") { return " << p0_x << 
-    //         "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
-    // }
+    // Fit and plot for x-Bjorken
+    auto fit_x = fit_and_plot_dilution("x", "x_{B} (GeV)", 0.06, 0.6, 25, nh3, c, ch, he, empty, c1, 3, false, false);
+    if (fit_x.first) {
+        double p0_x = fit_x.first->GetParameter(0);
+        double p1_x = fit_x.first->GetParameter(1);
+        double p2_x = fit_x.first->GetParameter(2);
+        std::cout << "if (prefix == \"x\") { return " << p0_x << 
+            "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
+    }
 
-    // // Fit and plot for y
-    // auto fit_y = fit_and_plot_dilution("y", "y", 0.3, 0.75, 25, nh3, c, ch, he, empty, c1, 4, false, false);
-    // if (fit_y.first) {
-    //     double p0_x = fit_y.first->GetParameter(0);
-    //     double p1_x = fit_y.first->GetParameter(1);
-    //     double p2_x = fit_y.first->GetParameter(2);
-    //     std::cout << "if (prefix == \"y\") { return " << p0_x << 
-    //         "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
-    // }
+    // Fit and plot for y
+    auto fit_y = fit_and_plot_dilution("y", "y", 0.3, 0.75, 25, nh3, c, ch, he, empty, c1, 4, false, false);
+    if (fit_y.first) {
+        double p0_x = fit_y.first->GetParameter(0);
+        double p1_x = fit_y.first->GetParameter(1);
+        double p2_x = fit_y.first->GetParameter(2);
+        std::cout << "if (prefix == \"y\") { return " << p0_x << 
+            "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
+    }
 
-    // // Fit and plot for z
-    // auto fit_z = fit_and_plot_dilution("z", "z", 0.06, 0.8, 25, nh3, c, ch, he, empty, c1, 5, false, false);
-    // if (fit_z.first) {
-    //     double p0_x = fit_z.first->GetParameter(0);
-    //     double p1_x = fit_z.first->GetParameter(1);
-    //     double p2_x = fit_z.first->GetParameter(2);
-    //     std::cout << "if (prefix == \"z\") { return " << p0_x << 
-    //         "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
-    // }
+    // Fit and plot for z
+    auto fit_z = fit_and_plot_dilution("z", "z", 0.06, 0.8, 25, nh3, c, ch, he, empty, c1, 5, false, false);
+    if (fit_z.first) {
+        double p0_x = fit_z.first->GetParameter(0);
+        double p1_x = fit_z.first->GetParameter(1);
+        double p2_x = fit_z.first->GetParameter(2);
+        std::cout << "if (prefix == \"z\") { return " << p0_x << 
+            "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
+    }
 
-    // // Fit and plot for zeta
-    // auto fit_zeta = fit_and_plot_dilution("zeta", "#zeta", 0.3, 0.7, 25, nh3, c, ch, he, empty, c1, 6, false, false);
-    // if (fit_zeta.first) {
-    //     double p0_x = fit_zeta.first->GetParameter(0);
-    //     double p1_x = fit_zeta.first->GetParameter(1);
-    //     double p2_x = fit_zeta.first->GetParameter(2);
-    //     std::cout << "if (prefix == \"z\") { return " << p0_x << 
-    //         "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
-    // }
+    // Fit and plot for zeta
+    auto fit_zeta = fit_and_plot_dilution("zeta", "#zeta", 0.3, 0.7, 25, nh3, c, ch, he, empty, c1, 6, false, false);
+    if (fit_zeta.first) {
+        double p0_x = fit_zeta.first->GetParameter(0);
+        double p1_x = fit_zeta.first->GetParameter(1);
+        double p2_x = fit_zeta.first->GetParameter(2);
+        std::cout << "if (prefix == \"z\") { return " << p0_x << 
+            "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
+    }
 
-    // // Fit and plot for transverse momentum
-    // auto fit_pT = fit_and_plot_dilution("pT", "P_{T} (GeV)", 0, 1.0, 25, nh3, c, ch, he, empty, c1, 7, false, false);
-    // if (fit_pT.first) {
-    //     double p0_PT = fit_pT.first->GetParameter(0);
-    //     double p1_PT = fit_pT.first->GetParameter(1);
-    //     double p2_PT = fit_pT.first->GetParameter(2);
-    //     std::cout << "if (prefix == \"PT\") { return " << p0_PT << 
-    //         "+" << p1_PT << "*currentVariable+" << p2_PT << "*std::pow(currentVariable,2); }" << std::endl;
-    // }
+    // Fit and plot for transverse momentum
+    auto fit_pT = fit_and_plot_dilution("pT", "P_{T} (GeV)", 0, 1.0, 25, nh3, c, ch, he, empty, c1, 7, false, false);
+    if (fit_pT.first) {
+        double p0_PT = fit_pT.first->GetParameter(0);
+        double p1_PT = fit_pT.first->GetParameter(1);
+        double p2_PT = fit_pT.first->GetParameter(2);
+        std::cout << "if (prefix == \"PT\") { return " << p0_PT << 
+            "+" << p1_PT << "*currentVariable+" << p2_PT << "*std::pow(currentVariable,2); }" << std::endl;
+    }
 
-    // // Fit and plot for x-Feynman
-    // auto fit_xF = fit_and_plot_dilution("xF", "x_{F}", -0.8, 0.5, 25, nh3, c, ch, he, empty, c1, 8, false, false);
-    // if (fit_xF.first) {
-    //     double p0_xF = fit_xF.first->GetParameter(0);
-    //     double p1_xF = fit_xF.first->GetParameter(1);
-    //     double p2_xF = fit_xF.first->GetParameter(2);
-    //     std::cout << "if (prefix == \"xF\") { return " << p0_xF <<
-    //     "+" << p1_xF << "*currentVariable+" << p2_xF << "*std::pow(currentVariable,2); }" << std::endl;
-    // }
+    // Fit and plot for x-Feynman
+    auto fit_xF = fit_and_plot_dilution("xF", "x_{F}", -0.8, 0.5, 25, nh3, c, ch, he, empty, c1, 8, false, false);
+    if (fit_xF.first) {
+        double p0_xF = fit_xF.first->GetParameter(0);
+        double p1_xF = fit_xF.first->GetParameter(1);
+        double p2_xF = fit_xF.first->GetParameter(2);
+        std::cout << "if (prefix == \"xF\") { return " << p0_xF <<
+        "+" << p1_xF << "*currentVariable+" << p2_xF << "*std::pow(currentVariable,2); }" << std::endl;
+    }
 
     // Fit and plot for Mx
     auto fit_Mx = fit_and_plot_dilution("Mx", "M_{x} (GeV)", 0 , 2.75, 50, nh3, c, ch, he, empty, c1, 9, false, true);
@@ -1046,7 +1052,7 @@ int main(int argc, char** argv) {
     // plot_dilution_kinematics(nh3, c, ch, he, empty);
     // Call the one-dimensional function
     one_dimensional(nh3, c, ch, he, empty);
-    // multi_dimensional(nh3, c, ch, he, empty);
+    multi_dimensional(nh3, c, ch, he, empty);
 
     // Safely close the ROOT files
     nh3->Close();
