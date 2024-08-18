@@ -281,6 +281,8 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     he->Draw(Form("%s>>h_%s_he_exclusive", variable_name, variable_name), combined_cuts_exclusive.c_str());
     empty->Draw(Form("%s>>h_%s_empty_exclusive", variable_name, variable_name), combined_cuts_exclusive.c_str());
 
+    std::cout << "Histograms filled" << std::endl;
+
     // Calculate dilution factor and its error
     TGraphErrors *gr_dilution = new TGraphErrors();
     TGraphErrors *gr_dilution_all = new TGraphErrors();
@@ -326,6 +328,8 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         gr_dilution_exclusive->SetPointError(i - 1, 0, error_exclusive);
     }
 
+    std::cout << "Dilutions calculated" << std::endl;
+
     gr_dilution->SetTitle(Form(";%s;D_{f}", x_title));
     gr_dilution->SetMarkerStyle(20);
 
@@ -347,8 +351,6 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     // Fit and plot (skip fit for the integrated version)
     if (!skip_fit) {
         TF1 *fit_func;
-        TF1 *fit_func_all;
-        TF1 *fit_func_exclusive;
         if (isMx) {
             // Two Gaussians + Quadratic Polynomial Background
             fit_func = new TF1("fit_func",
@@ -373,6 +375,8 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         } else {
             // Use a cubic polynomial fit for other variables
             fit_func = new TF1("fit_func", "[0] + [1]*x + [2]*x^2 + [3]*x^3", x_min, x_max);
+            TF1 *fit_func_all;
+            TF1 *fit_func_exclusive;
             fit_func_all = new TF1("fit_func_all", "[0] + [1]*x + [2]*x^2 + [3]*x^3", x_min, x_max);
             fit_func_exclusive = new TF1("fit_func_exclusive", "[0] + [1]*x + [2]*x^2 + [3]*x^3", x_min, x_max);
         }
@@ -381,28 +385,39 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         fit_func->SetLineColor(kBlack);
         fit_func->SetLineStyle(2); // Dashed line
 
-        gr_dilution_all->Fit(fit_func_all, "RQ");
-        fit_func_all->SetLineColor(kBlue);
-        fit_func_all->SetLineStyle(2); // Dashed line
+        std::cout << "Fits defined" << std::endl;
 
-        gr_dilution_exclusive->Fit(fit_func_exclusive, "RQ");
-        fit_func_exclusive->SetLineColor(kRed);
-        fit_func_exclusive->SetLineStyle(2); // Dashed line
+        if (!isMx) {
+            gr_dilution_all->Fit(fit_func_all, "RQ");
+            fit_func_all->SetLineColor(kBlue);
+            fit_func_all->SetLineStyle(2); // Dashed line
+
+            gr_dilution_exclusive->Fit(fit_func_exclusive, "RQ");
+            fit_func_exclusive->SetLineColor(kRed);
+            fit_func_exclusive->SetLineStyle(2); // Dashed line
+        }
 
         // Calculate chi2/ndf scaling factor
         double chi2 = fit_func->GetChisquare();
         int ndf = fit_func->GetNDF();
         chi2_scale_factor = std::sqrt(chi2 / ndf);
 
-        // Calculate chi2/ndf scaling factor
-        double chi2_all = fit_func_all->GetChisquare();
-        int ndf_all = fit_func_all->GetNDF();
-        chi2_scale_factor_all = std::sqrt(chi2_all / ndf_all);
+        double chi2_all; int ndf_all;
+        double chi2_exclusive; int ndf_exclusive;
 
-        // Calculate chi2/ndf scaling factor
-        double chi2_exclusive = fit_func_exclusive->GetChisquare();
-        int ndf_exclusive = fit_func_exclusive->GetNDF();
-        chi2_scale_factor_exclusive = std::sqrt(chi2_exclusive / ndf_exclusive);
+        if (!isMx) {
+            // Calculate chi2/ndf scaling factor
+            chi2_all = fit_func_all->GetChisquare();
+            ndf_all = fit_func_all->GetNDF();
+            chi2_scale_factor_all = std::sqrt(chi2_all / ndf_all);
+
+            // Calculate chi2/ndf scaling factor
+            chi2_exclusive = fit_func_exclusive->GetChisquare();
+            ndf_exclusive = fit_func_exclusive->GetNDF();
+            chi2_scale_factor_exclusive = std::sqrt(chi2_exclusive / ndf_exclusive);
+        }
+
+        std::cout << "chi2s calculated" << std::endl;
         
         // Rescale the errors
         for (int i = 0; i < gr_dilution->GetN(); ++i) {
@@ -411,27 +426,33 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
             gr_dilution->SetPointError(i, 0, gr_dilution->GetErrorY(i) * chi2_scale_factor);
         }
 
-        for (int i = 0; i < gr_dilution_all->GetN(); ++i) {
-            double x, y;
-            gr_dilution_all->GetPoint(i, x, y);
-            gr_dilution_all->SetPointError(i, 0, gr_dilution_all->GetErrorY(i) * chi2_scale_factor_all);
+        if (!isMx) {
+            for (int i = 0; i < gr_dilution_all->GetN(); ++i) {
+                double x, y;
+                gr_dilution_all->GetPoint(i, x, y);
+                gr_dilution_all->SetPointError(i, 0, gr_dilution_all->GetErrorY(i) * chi2_scale_factor_all);
+            }
+
+            for (int i = 0; i < gr_dilution_exclusive->GetN(); ++i) {
+                double x, y;
+                gr_dilution_exclusive->GetPoint(i, x, y);
+                gr_dilution_exclusive->SetPointError(i, 0, gr_dilution_exclusive->GetErrorY(i) * chi2_scale_factor);
+            }
         }
 
-        for (int i = 0; i < gr_dilution_exclusive->GetN(); ++i) {
-            double x, y;
-            gr_dilution_exclusive->GetPoint(i, x, y);
-            gr_dilution_exclusive->SetPointError(i, 0, gr_dilution_exclusive->GetErrorY(i) * chi2_scale_factor);
-        }
+        std::cout << "Errors rescaled" << std::endl;
 
         // Refit with scaled errors
         gr_dilution->Fit(fit_func, "RQ");
         fit_func->Draw("SAME");
 
-        gr_dilution_all->Fit(fit_func, "RQ");
-        fit_func_all->Draw("SAME");
+        if (!isMx) {
+            gr_dilution_all->Fit(fit_func, "RQ");
+            fit_func_all->Draw("SAME");
 
-        gr_dilution_exclusive->Fit(fit_func, "RQ");
-        fit_func_exclusive->Draw("SAME");
+            gr_dilution_exclusive->Fit(fit_func, "RQ");
+            fit_func_exclusive->Draw("SAME");
+        }
 
         // Commented out chi2/ndf printing
         /*
@@ -442,7 +463,6 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         latex.DrawLatex(0.20, 0.15, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2 / ndf));
         */
 
-        // Add fit parameters box
         // Add fit parameters box
         double box_x1 = (isMx) ? 0.45 : 0.55;
         double box_y1 = (isMx) ? 0.50 : 0.7; // Slightly lower start position for Mx plot
@@ -510,6 +530,18 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     delete h_ch;
     delete h_he;
     delete h_empty;
+
+    delete h_nh3_all;
+    delete h_c_all;
+    delete h_ch_all;
+    delete h_he_all;
+    delete h_empty_all;
+
+    delete h_nh3_exclusive;
+    delete h_c_exclusive;
+    delete h_ch_exclusive;
+    delete h_he_exclusive;
+    delete h_empty_exclusive;
 }
 
 std::pair<TF1*, TGraphErrors*> fit_and_plot_dilution(const char* variable_name, const char* x_title, double x_min, double x_max, int n_bins,
