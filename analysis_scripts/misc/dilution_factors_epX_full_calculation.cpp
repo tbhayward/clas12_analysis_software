@@ -351,6 +351,8 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     // Fit and plot (skip fit for the integrated version)
     if (!skip_fit) {
         TF1 *fit_func;
+        TF1 *fit_func_all;
+        TF1 *fit_func_exclusive;
         if (isMx) {
             // Two Gaussians + Quadratic Polynomial Background
             fit_func = new TF1("fit_func",
@@ -375,8 +377,6 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         } else {
             // Use a cubic polynomial fit for other variables
             fit_func = new TF1("fit_func", "[0] + [1]*x + [2]*x^2 + [3]*x^3", x_min, x_max);
-            TF1 *fit_func_all;
-            TF1 *fit_func_exclusive;
             fit_func_all = new TF1("fit_func_all", "[0] + [1]*x + [2]*x^2 + [3]*x^3", x_min, x_max);
             fit_func_exclusive = new TF1("fit_func_exclusive", "[0] + [1]*x + [2]*x^2 + [3]*x^3", x_min, x_max);
         }
