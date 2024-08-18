@@ -230,7 +230,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         // Apply both Mx > 1.35 and vz cuts if isMx is false
         // combined_cuts = "Mx > 1.35 && " + vz_cuts;
         // combined_cuts = "Mx > 0 && " + vz_cuts;
-        combined_cuts = "Mx < 1.35 && Mx > 0 " + vz_cuts;
+        combined_cuts = "Mx < 1.35 && Mx > 0 && " + vz_cuts;
     }
 
     // Define the combined cuts based on the value of isMx
