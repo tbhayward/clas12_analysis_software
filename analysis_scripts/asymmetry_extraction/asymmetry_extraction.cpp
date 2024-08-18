@@ -285,8 +285,8 @@ int main(int argc, char *argv[]) {
 
   createIntegratedKinematicPlots();
   // createIntegratedKinematicPlotsForBinsAndFits();
-  // createCorrelationPlotsforrunnum();
-  // createCorrelationPlots();
+  createCorrelationPlotsforrunnum();
+  createCorrelationPlots();
   // createMisIDRatePlots();
   currentFits=0;
   dataReader.Restart(); mcReader.Restart();
