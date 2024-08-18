@@ -9,8 +9,9 @@ using std::string;
 SingleHadronKinematicCuts::SingleHadronKinematicCuts(TTreeReader& reader)
     : BaseKinematicCuts(reader), // Call to the BaseKinematicCuts constructor
       runnum(reader, "runnum"), 
-      e_theta(reader, "e_theta"), e_phi(reader, "e_phi"),
+      e_theta(reader, "e_theta"), e_phi(reader, "e_phi"), vz_e(reader, "vz)e"),
       p_p(reader, "p_p"), p_theta(reader, "p_theta"), p_phi(reader, "p_phi"), 
+      vz_p(reader, "vz_p"), 
       Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), x(reader, "x"), 
       y(reader, "y"), z(reader, "z"), pT(reader, "pT"), xF(reader, "xF"),
       phi(reader, "phi"), 
@@ -22,12 +23,28 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         string property = binNames[currentFits];
 
         if (property == "xF" || property == "x" || property == "PT") {
-            goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.35 && *y < 0.75;
+            goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1;
+            goodEvent = goodEvent && *Q2 > 1 && *W > 2 && *Mx > 1.35 && *y < 0.75;
             checked = true;
         } else if (property == "Mx") {
-            goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75;
+            goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1;
+            goodEvent = goodEvent && *Q2 > 1 && *W > 2 && *y < 0.75;
+            checked = true;
+        }
+
+        if (property == "xFall" || property == "xall" || property == "PTall") {
+            goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1;
+            goodEvent = goodEvent && *Q2 > 1 && *W > 2 && *Mx > 0 && *y < 0.75;
             checked = true;
         } 
+
+        if (property == "xFexclusive" || property == "xexclusive" || property == "PTexclusive") {
+            goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1;
+            goodEvent = goodEvent && *Q2 > 1 && *W > 2 && *Mx < 1.35 && *y < 0.75;
+            checked = true;
+        } 
+
+
         if (*Q2 > 1 && *W > 2 && *Mx > 1.4 && *y < 0.75 && !checked) {
           size_t pos = property.find("z");
           std::string prez = property.substr(0, pos);
