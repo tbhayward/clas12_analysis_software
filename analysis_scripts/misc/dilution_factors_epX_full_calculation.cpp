@@ -341,6 +341,8 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     gr_dilution->GetYaxis()->SetRangeUser(0.10, 0.40);
 
     double chi2_scale_factor = 1.0;
+    double chi2_scale_factor_all = 1.0;
+    double chi2_scale_factor_exclusive = 1.0;
 
     // Fit and plot (skip fit for the integrated version)
     if (!skip_fit) {
