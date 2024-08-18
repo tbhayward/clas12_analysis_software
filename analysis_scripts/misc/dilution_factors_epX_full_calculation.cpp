@@ -385,12 +385,12 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
             gr_dilution_all->Fit(fit_func_all, "RQ");
             fit_func_all->SetLineColor(kBlue);
             fit_func_all->SetLineStyle(2); // Dashed line
-            fit_func_all->SetLineWidth(1); // Set thinner line
+            // fit_func_all->SetLineWidth(1); // Set thinner line
 
             gr_dilution_exclusive->Fit(fit_func_exclusive, "RQ");
             fit_func_exclusive->SetLineColor(kRed);
             fit_func_exclusive->SetLineStyle(2); // Dashed line
-            fit_func_exclusive->SetLineWidth(1); // Set thinner line
+            // fit_func_exclusive->SetLineWidth(1); // Set thinner line
         }
 
         // Calculate chi2/ndf scaling factor
@@ -455,19 +455,21 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         latex.DrawLatex(0.20, 0.15, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2 / ndf));
         */
 
-        // Add red note "0 < M_{x} < 1.35 (GeV)"
-        TLatex latex_red;
-        latex_red.SetNDC();
-        latex_red.SetTextSize(0.035); // Adjust the font size if needed
-        latex_red.SetTextColor(kRed); // Set the text color to red
-        latex_red.DrawLatex(0.15, 0.85, "0 < M_{x} < 1.35 (GeV)");
+        if (!isMx) {
+            // Add red note "0 < M_{x} < 1.35 (GeV)"
+            TLatex latex_red;
+            latex_red.SetNDC();
+            latex_red.SetTextSize(0.035); // Adjust the font size if needed
+            latex_red.SetTextColor(kRed); // Set the text color to red
+            latex_red.DrawLatex(0.25, 0.85, "0 < M_{x} < 1.35 (GeV)");
 
-        // Add blue note "0 < M_{x} (GeV)" just below the red one
-        TLatex latex_blue;
-        latex_blue.SetNDC();
-        latex_blue.SetTextSize(0.035); // Adjust the font size if needed
-        latex_blue.SetTextColor(kBlue); // Set the text color to blue
-        latex_blue.DrawLatex(0.15, 0.80, "0 < M_{x} (GeV)");
+            // Add blue note "0 < M_{x} (GeV)" just below the red one
+            TLatex latex_blue;
+            latex_blue.SetNDC();
+            latex_blue.SetTextSize(0.035); // Adjust the font size if needed
+            latex_blue.SetTextColor(kBlue); // Set the text color to blue
+            latex_blue.DrawLatex(0.25, 0.80, "0 < M_{x} (GeV)");
+        }
 
         // Add fit parameters box
         double box_x1 = (isMx) ? 0.45 : 0.55;
@@ -1052,7 +1054,7 @@ int main(int argc, char** argv) {
     // plot_dilution_kinematics(nh3, c, ch, he, empty);
     // Call the one-dimensional function
     one_dimensional(nh3, c, ch, he, empty);
-    multi_dimensional(nh3, c, ch, he, empty);
+    // multi_dimensional(nh3, c, ch, he, empty);
 
     // Safely close the ROOT files
     nh3->Close();
