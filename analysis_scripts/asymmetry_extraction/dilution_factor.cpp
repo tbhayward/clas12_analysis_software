@@ -30,13 +30,13 @@ double dilution_factor(double currentVariable, const std::string& prefix) {
   if (prefix == "PTall") { return 0.220514+-0.383728*currentVariable+0.963806*std::pow(currentVariable,2); }
   if (prefix == "xFall") { return 0.212954+0.00845444*currentVariable+-0.110603*std::pow(currentVariable,2); }
 
-  if (prefix == "Q2exclusive") { return 0.0521295+0.0796005*currentVariable+-0.0177309*std::pow(currentVariable,2); }
-  if (prefix == "xexclusive") { return 0.264011+-1.30467*currentVariable+4.18724*std::pow(currentVariable,2); }
-  if (prefix == "yexclusive") { return 0.150116+0.408602*currentVariable+-1.45407*std::pow(currentVariable,2); }
-  if (prefix == "zexclusive") { return 0.182248+-0.620117*currentVariable+2.30754*std::pow(currentVariable,2); }
-  if (prefix == "zexclusive") { return 0.247713+0.439843*currentVariable+-1.03804*std::pow(currentVariable,2); }
-  if (prefix == "PTexclusive") { return 0.278859+-0.816334*currentVariable+1.43762*std::pow(currentVariable,2); }
-  if (prefix == "xFexclusive") { return 0.244904+-0.00501728*currentVariable+-0.261032*std::pow(currentVariable,2); }
+  if (prefix == "Q2exclusive") { return 0.0785674+0.082314*currentVariable+-0.0156957*std::pow(currentVariable,2); }
+  if (prefix == "xexclusive") { return 0.353541+-1.88346*currentVariable+5.97796*std::pow(currentVariable,2); }
+  if (prefix == "yexclusive") { return 0.0605892+1.32055*currentVariable+-3.43166*std::pow(currentVariable,2); }
+  if (prefix == "zexclusive") { return 0.179395+-0.196159*currentVariable+1.13571*std::pow(currentVariable,2); }
+  if (prefix == "zetaexclusive") { return 0.20643+0.755261*currentVariable+-1.76453*std::pow(currentVariable,2); }
+  if (prefix == "PTexclusive") { return 0.25699+-0.69242*currentVariable+1.62295*std::pow(currentVariable,2); }
+  if (prefix == "xFexclusive") { return 0.245947+-0.00360302*currentVariable+-0.259858*std::pow(currentVariable,2); }
 
   if (prefix == "Q2y4z1") { double sigma = 0.0300989; return 0.183729 + rand_gen.Gaus(0, sigma); }
 

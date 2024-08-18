@@ -119,6 +119,7 @@ void process_file(const char* input_filename) {
             }
         }
         if (*Mx > 0 && *vz_e > -10  && *vz_e < 1 && *vz_p > -10 && *vz_p < 1) {
+            std::cout << "oh yeah we're filling trees" << std::endl;
             // Also fill the general tree for events passing Mx cut
             output_trees[0]->Fill();
         }
