@@ -461,14 +461,14 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
             latex_red.SetNDC();
             latex_red.SetTextSize(0.035); // Adjust the font size if needed
             latex_red.SetTextColor(kRed); // Set the text color to red
-            latex_red.DrawLatex(0.25, 0.85, "0 < M_{x} < 1.35 (GeV)");
+            latex_red.DrawLatex(0.2, 0.85, "0 < M_{x} (GeV) < 1.35");
 
             // Add blue note "0 < M_{x} (GeV)" just below the red one
             TLatex latex_blue;
             latex_blue.SetNDC();
             latex_blue.SetTextSize(0.035); // Adjust the font size if needed
             latex_blue.SetTextColor(kBlue); // Set the text color to blue
-            latex_blue.DrawLatex(0.25, 0.80, "0 < M_{x} (GeV)");
+            latex_blue.DrawLatex(0.2, 0.80, "0 < M_{x} (GeV)");
         }
 
         // Add fit parameters box
@@ -581,7 +581,7 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     std::cout << std::endl << std::endl;
 
     // Integrated version (single bin)
-    // auto fit_integrated = fit_and_plot_dilution("x", "", 0.0, 1.0, 1, nh3, c, ch, he, empty, c1, 1, true, false);
+    auto fit_integrated = fit_and_plot_dilution("x", "", 0.0, 1.0, 1, nh3, c, ch, he, empty, c1, 1, true, false);
 
     // Fit and plot for Q2
     auto fit_Q2 = fit_and_plot_dilution("Q2", "Q^{2} (GeV)", 1, 9, 25, nh3, c, ch, he, empty, c1, 2, false, false);
