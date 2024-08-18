@@ -22,6 +22,14 @@ double dilution_factor(double currentVariable, const std::string& prefix) {
   if (prefix == "xF") { return 0.199983+-0.0058117*currentVariable+-0.0425802*std::pow(currentVariable,2); }
   if (prefix == "Mx") { return 0.139383*exp(-0.5*std::pow((currentVariable - 0.120003) / 0.23574, 2)) + 0.0289296*exp(-0.5*std::pow((currentVariable - 0.785) / -0.0542062, 2)) + 0.0892425 + 0.189842*currentVariable + -0.106771*std::pow(currentVariable, 2); }
 
+  if (prefix == "Q2all") { return 0.0689422+0.0852592*currentVariable+-0.0164221*std::pow(currentVariable,2); }
+  if (prefix == "xall") { return 0.199414+-0.378936*currentVariable+1.66681*std::pow(currentVariable,2); }
+  if (prefix == "yall") { return 0.250511+-0.0183546*currentVariable+-0.420675*std::pow(currentVariable,2); }
+  if (prefix == "zall") { return 0.113135+0.396486*currentVariable+-0.458994*std::pow(currentVariable,2); }
+  if (prefix == "zall") { return 1.17118+-4.89658*currentVariable+8.43833*std::pow(currentVariable,2); }
+  if (prefix == "PTall") { return 0.220514+-0.383728*currentVariable+0.963806*std::pow(currentVariable,2); }
+  if (prefix == "xFall") { return 0.212954+0.00845444*currentVariable+-0.110603*std::pow(currentVariable,2); }
+
   if (prefix == "Q2y4z1") { double sigma = 0.0300989; return 0.183729 + rand_gen.Gaus(0, sigma); }
 
   if (prefix == "Q2y4z2") { double sigma = 0.00959404; return 0.155779 + rand_gen.Gaus(0, sigma); }

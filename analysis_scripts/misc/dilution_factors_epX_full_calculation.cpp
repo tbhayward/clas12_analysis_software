@@ -156,7 +156,7 @@ void plot_dilution_kinematics(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, T
     title.SetNDC();
     title.SetTextSize(0.04);
     title.SetTextAlign(22);  // Center alignment
-    title.DrawLatex(0.5, 0.97, "epX, Q^{2} > 1 GeV^{2}, W > 2, y < 0.75, M_{x} > 1.4 GeV");
+    title.DrawLatex(0.5, 0.97, "epX, Q^{2} > 1 GeV^{2}, W > 2, y < 0.75, M_{x} > 1.35 GeV");
 
     // Save the canvas
     c1->SaveAs("output/dilution_kinematics.png");
@@ -229,8 +229,8 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     } else {
         // Apply both Mx > 1.35 and vz cuts if isMx is false
         // combined_cuts = "Mx > 1.35 && " + vz_cuts;
-        combined_cuts = "Mx > 0 && " + vz_cuts;
-        // combined_cuts = "Mx < 1.35 && " + vz_cuts;
+        // combined_cuts = "Mx > 0 && " + vz_cuts;
+        combined_cuts = "Mx < 1.35 && " + vz_cuts;
     }
 
     // Define the combined cuts based on the value of isMx
