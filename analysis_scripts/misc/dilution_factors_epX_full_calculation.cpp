@@ -247,18 +247,18 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     TH1D *h_empty = new TH1D(Form("h_%s_empty", variable_name), "", n_bins, x_min, x_max);
 
     // Create histograms for data using the appropriate cuts
-    TH1D *h_nh3_all = new TH1D(Form("h_%s_nh3", variable_name), "", n_bins, x_min, x_max);
-    TH1D *h_c_all = new TH1D(Form("h_%s_c", variable_name), "", n_bins, x_min, x_max);
-    TH1D *h_ch_all = new TH1D(Form("h_%s_ch", variable_name), "", n_bins, x_min, x_max);
-    TH1D *h_he_all = new TH1D(Form("h_%s_he", variable_name), "", n_bins, x_min, x_max);
-    TH1D *h_empty_all = new TH1D(Form("h_%s_empty", variable_name), "", n_bins, x_min, x_max);
+    TH1D *h_nh3_all = new TH1D(Form("h_%s_nh3_all", variable_name), "", n_bins, x_min, x_max);
+    TH1D *h_c_all = new TH1D(Form("h_%s_c_all", variable_name), "", n_bins, x_min, x_max);
+    TH1D *h_ch_all = new TH1D(Form("h_%s_ch_all", variable_name), "", n_bins, x_min, x_max);
+    TH1D *h_he_all = new TH1D(Form("h_%s_he_all", variable_name), "", n_bins, x_min, x_max);
+    TH1D *h_empty_all = new TH1D(Form("h_%s_empty_all", variable_name), "", n_bins, x_min, x_max);
 
     // Create histograms for data using the appropriate cuts
-    TH1D *h_nh3_exclusive = new TH1D(Form("h_%s_nh3", variable_name), "", n_bins, x_min, x_max);
-    TH1D *h_c_exclusive = new TH1D(Form("h_%s_c", variable_name), "", n_bins, x_min, x_max);
-    TH1D *h_ch_exclusive = new TH1D(Form("h_%s_ch", variable_name), "", n_bins, x_min, x_max);
-    TH1D *h_he_exclusive = new TH1D(Form("h_%s_he", variable_name), "", n_bins, x_min, x_max);
-    TH1D *h_empty_exclusive = new TH1D(Form("h_%s_empty", variable_name), "", n_bins, x_min, x_max);
+    TH1D *h_nh3_exclusive = new TH1D(Form("h_%s_nh3_exclusive", variable_name), "", n_bins, x_min, x_max);
+    TH1D *h_c_exclusive = new TH1D(Form("h_%s_c_exclusive", variable_name), "", n_bins, x_min, x_max);
+    TH1D *h_ch_exclusive = new TH1D(Form("h_%s_ch_exclusive", variable_name), "", n_bins, x_min, x_max);
+    TH1D *h_he_exclusive = new TH1D(Form("h_%s_he_exclusive", variable_name), "", n_bins, x_min, x_max);
+    TH1D *h_empty_exclusive = new TH1D(Form("h_%s_empty_exclusive", variable_name), "", n_bins, x_min, x_max);
 
     // Draw the histograms with the appropriate cuts
     nh3->Draw(Form("%s>>h_%s_nh3", variable_name, variable_name), combined_cuts.c_str());
@@ -541,7 +541,7 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     std::cout << std::endl << std::endl;
 
     // Integrated version (single bin)
-    auto fit_integrated = fit_and_plot_dilution("x", "", 0.0, 1.0, 1, nh3, c, ch, he, empty, c1, 1, true, false);
+    // auto fit_integrated = fit_and_plot_dilution("x", "", 0.0, 1.0, 1, nh3, c, ch, he, empty, c1, 1, true, false);
 
     // Fit and plot for Q2
     auto fit_Q2 = fit_and_plot_dilution("Q2", "Q^{2} (GeV)", 1, 9, 25, nh3, c, ch, he, empty, c1, 2, false, false);
@@ -553,91 +553,91 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
             "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
     }
 
-    // Fit and plot for x-Bjorken
-    auto fit_x = fit_and_plot_dilution("x", "x_{B} (GeV)", 0.06, 0.6, 25, nh3, c, ch, he, empty, c1, 3, false, false);
-    if (fit_x.first) {
-        double p0_x = fit_x.first->GetParameter(0);
-        double p1_x = fit_x.first->GetParameter(1);
-        double p2_x = fit_x.first->GetParameter(2);
-        std::cout << "if (prefix == \"x\") { return " << p0_x << 
-            "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
-    }
+    // // Fit and plot for x-Bjorken
+    // auto fit_x = fit_and_plot_dilution("x", "x_{B} (GeV)", 0.06, 0.6, 25, nh3, c, ch, he, empty, c1, 3, false, false);
+    // if (fit_x.first) {
+    //     double p0_x = fit_x.first->GetParameter(0);
+    //     double p1_x = fit_x.first->GetParameter(1);
+    //     double p2_x = fit_x.first->GetParameter(2);
+    //     std::cout << "if (prefix == \"x\") { return " << p0_x << 
+    //         "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
+    // }
 
-    // Fit and plot for y
-    auto fit_y = fit_and_plot_dilution("y", "y", 0.3, 0.75, 25, nh3, c, ch, he, empty, c1, 4, false, false);
-    if (fit_y.first) {
-        double p0_x = fit_y.first->GetParameter(0);
-        double p1_x = fit_y.first->GetParameter(1);
-        double p2_x = fit_y.first->GetParameter(2);
-        std::cout << "if (prefix == \"y\") { return " << p0_x << 
-            "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
-    }
+    // // Fit and plot for y
+    // auto fit_y = fit_and_plot_dilution("y", "y", 0.3, 0.75, 25, nh3, c, ch, he, empty, c1, 4, false, false);
+    // if (fit_y.first) {
+    //     double p0_x = fit_y.first->GetParameter(0);
+    //     double p1_x = fit_y.first->GetParameter(1);
+    //     double p2_x = fit_y.first->GetParameter(2);
+    //     std::cout << "if (prefix == \"y\") { return " << p0_x << 
+    //         "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
+    // }
 
-    // Fit and plot for z
-    auto fit_z = fit_and_plot_dilution("z", "z", 0.06, 0.8, 25, nh3, c, ch, he, empty, c1, 5, false, false);
-    if (fit_z.first) {
-        double p0_x = fit_z.first->GetParameter(0);
-        double p1_x = fit_z.first->GetParameter(1);
-        double p2_x = fit_z.first->GetParameter(2);
-        std::cout << "if (prefix == \"z\") { return " << p0_x << 
-            "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
-    }
+    // // Fit and plot for z
+    // auto fit_z = fit_and_plot_dilution("z", "z", 0.06, 0.8, 25, nh3, c, ch, he, empty, c1, 5, false, false);
+    // if (fit_z.first) {
+    //     double p0_x = fit_z.first->GetParameter(0);
+    //     double p1_x = fit_z.first->GetParameter(1);
+    //     double p2_x = fit_z.first->GetParameter(2);
+    //     std::cout << "if (prefix == \"z\") { return " << p0_x << 
+    //         "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
+    // }
 
-    // Fit and plot for zeta
-    auto fit_zeta = fit_and_plot_dilution("zeta", "#zeta", 0.3, 0.7, 25, nh3, c, ch, he, empty, c1, 6, false, false);
-    if (fit_zeta.first) {
-        double p0_x = fit_zeta.first->GetParameter(0);
-        double p1_x = fit_zeta.first->GetParameter(1);
-        double p2_x = fit_zeta.first->GetParameter(2);
-        std::cout << "if (prefix == \"z\") { return " << p0_x << 
-            "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
-    }
+    // // Fit and plot for zeta
+    // auto fit_zeta = fit_and_plot_dilution("zeta", "#zeta", 0.3, 0.7, 25, nh3, c, ch, he, empty, c1, 6, false, false);
+    // if (fit_zeta.first) {
+    //     double p0_x = fit_zeta.first->GetParameter(0);
+    //     double p1_x = fit_zeta.first->GetParameter(1);
+    //     double p2_x = fit_zeta.first->GetParameter(2);
+    //     std::cout << "if (prefix == \"z\") { return " << p0_x << 
+    //         "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
+    // }
 
-    // Fit and plot for transverse momentum
-    auto fit_pT = fit_and_plot_dilution("pT", "P_{T} (GeV)", 0, 1.0, 25, nh3, c, ch, he, empty, c1, 7, false, false);
-    if (fit_pT.first) {
-        double p0_PT = fit_pT.first->GetParameter(0);
-        double p1_PT = fit_pT.first->GetParameter(1);
-        double p2_PT = fit_pT.first->GetParameter(2);
-        std::cout << "if (prefix == \"PT\") { return " << p0_PT << 
-            "+" << p1_PT << "*currentVariable+" << p2_PT << "*std::pow(currentVariable,2); }" << std::endl;
-    }
+    // // Fit and plot for transverse momentum
+    // auto fit_pT = fit_and_plot_dilution("pT", "P_{T} (GeV)", 0, 1.0, 25, nh3, c, ch, he, empty, c1, 7, false, false);
+    // if (fit_pT.first) {
+    //     double p0_PT = fit_pT.first->GetParameter(0);
+    //     double p1_PT = fit_pT.first->GetParameter(1);
+    //     double p2_PT = fit_pT.first->GetParameter(2);
+    //     std::cout << "if (prefix == \"PT\") { return " << p0_PT << 
+    //         "+" << p1_PT << "*currentVariable+" << p2_PT << "*std::pow(currentVariable,2); }" << std::endl;
+    // }
 
-    // Fit and plot for x-Feynman
-    auto fit_xF = fit_and_plot_dilution("xF", "x_{F}", -0.8, 0.5, 25, nh3, c, ch, he, empty, c1, 8, false, false);
-    if (fit_xF.first) {
-        double p0_xF = fit_xF.first->GetParameter(0);
-        double p1_xF = fit_xF.first->GetParameter(1);
-        double p2_xF = fit_xF.first->GetParameter(2);
-        std::cout << "if (prefix == \"xF\") { return " << p0_xF <<
-        "+" << p1_xF << "*currentVariable+" << p2_xF << "*std::pow(currentVariable,2); }" << std::endl;
-    }
+    // // Fit and plot for x-Feynman
+    // auto fit_xF = fit_and_plot_dilution("xF", "x_{F}", -0.8, 0.5, 25, nh3, c, ch, he, empty, c1, 8, false, false);
+    // if (fit_xF.first) {
+    //     double p0_xF = fit_xF.first->GetParameter(0);
+    //     double p1_xF = fit_xF.first->GetParameter(1);
+    //     double p2_xF = fit_xF.first->GetParameter(2);
+    //     std::cout << "if (prefix == \"xF\") { return " << p0_xF <<
+    //     "+" << p1_xF << "*currentVariable+" << p2_xF << "*std::pow(currentVariable,2); }" << std::endl;
+    // }
 
-    // Fit and plot for Mx
-    auto fit_Mx = fit_and_plot_dilution("Mx", "M_{x} (GeV)", 0 , 2.75, 50, nh3, c, ch, he, empty, c1, 9, false, true);
-    if (fit_Mx.first) {
-        double amp1 = fit_Mx.first->GetParameter(0);
-        double mean1 = fit_Mx.first->GetParameter(1);
-        double sigma1 = fit_Mx.first->GetParameter(2);
+    // // Fit and plot for Mx
+    // auto fit_Mx = fit_and_plot_dilution("Mx", "M_{x} (GeV)", 0 , 2.75, 50, nh3, c, ch, he, empty, c1, 9, false, true);
+    // if (fit_Mx.first) {
+    //     double amp1 = fit_Mx.first->GetParameter(0);
+    //     double mean1 = fit_Mx.first->GetParameter(1);
+    //     double sigma1 = fit_Mx.first->GetParameter(2);
 
-        double amp2 = fit_Mx.first->GetParameter(3);
-        double mean2 = fit_Mx.first->GetParameter(4);
-        double sigma2 = fit_Mx.first->GetParameter(5);
+    //     double amp2 = fit_Mx.first->GetParameter(3);
+    //     double mean2 = fit_Mx.first->GetParameter(4);
+    //     double sigma2 = fit_Mx.first->GetParameter(5);
 
-        double constTerm = fit_Mx.first->GetParameter(6);
-        double linearTerm = fit_Mx.first->GetParameter(7);
-        double quadTerm = fit_Mx.first->GetParameter(8);
+    //     double constTerm = fit_Mx.first->GetParameter(6);
+    //     double linearTerm = fit_Mx.first->GetParameter(7);
+    //     double quadTerm = fit_Mx.first->GetParameter(8);
 
-        std::cout << "if (prefix == \"Mx\") {"
-                  << " return " << amp1 << "*exp(-0.5*std::pow((currentVariable - " << mean1 
-                  << ") / " << sigma1 << ", 2)) + "
-                  << amp2 << "*exp(-0.5*std::pow((currentVariable - " << mean2 
-                  << ") / " << sigma2 << ", 2)) + "
-                  << constTerm << " + "
-                  << linearTerm << "*currentVariable + "
-                  << quadTerm << "*std::pow(currentVariable, 2); }"
-                  << std::endl;
-    }
+    //     std::cout << "if (prefix == \"Mx\") {"
+    //               << " return " << amp1 << "*exp(-0.5*std::pow((currentVariable - " << mean1 
+    //               << ") / " << sigma1 << ", 2)) + "
+    //               << amp2 << "*exp(-0.5*std::pow((currentVariable - " << mean2 
+    //               << ") / " << sigma2 << ", 2)) + "
+    //               << constTerm << " + "
+    //               << linearTerm << "*currentVariable + "
+    //               << quadTerm << "*std::pow(currentVariable, 2); }"
+    //               << std::endl;
+    // }
 
     // Save the canvas as a PNG file
     c1->SaveAs("output/one_dimensional.png");
