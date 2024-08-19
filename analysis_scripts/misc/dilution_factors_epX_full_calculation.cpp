@@ -984,11 +984,11 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
                 pt->AddText(Form("p0 = %.3f +/- %.3f", p0, p0_err));
                 pt->Draw();
 
-                // Add chi2/ndf in the top left
-                TLatex latex;
-                latex.SetNDC();
-                latex.SetTextSize(0.04);
-                latex.DrawLatex(0.20, 0.15, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
+                // // Add chi2/ndf in the top left
+                // TLatex latex;
+                // latex.SetNDC();
+                // latex.SetTextSize(0.04);
+                // latex.DrawLatex(0.20, 0.15, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
 
                 // Generate the return statement with random Gaussian variation
                 std::cout << "if (prefix == \"" << Q2y_prefix << z_prefix << "\") {"
