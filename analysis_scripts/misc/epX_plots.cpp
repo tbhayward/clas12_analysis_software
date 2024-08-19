@@ -345,7 +345,7 @@ void plotDependence(
                 y.push_back(entry[1]);
                 yStatErr.push_back(entry[2]);
 
-                double sysUncertainty = computeSystematicUncertainty(suffixes[i], y.back());
+                double sysUncertainty = 0; //computeSystematicUncertainty(suffixes[i], y.back());
                 yCombErr.push_back(std::sqrt(std::pow(yStatErr.back(), 2) + std::pow(sysUncertainty, 2)));
             }
 
