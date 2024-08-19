@@ -558,12 +558,11 @@ void plotTargetPolarizationDependence(
         }
     }
 
-    // Create fit functions for positive and negative polarization data
-    TF1 *fitFuncPos = new TF1("fitFuncPos", "[0]", 0, posXValues.size());
+    TF1 *fitFuncPos = new TF1("fitFuncPos", "[0]", 0, xValues.size());
     fitFuncPos->SetLineColor(kRed);
     fitFuncPos->SetLineStyle(2);  // Dashed line
 
-    TF1 *fitFuncNeg = new TF1("fitFuncNeg", "[0]", 0, negXValues.size());
+    TF1 *fitFuncNeg = new TF1("fitFuncNeg", "[0]", 0, xValues.size());
     fitFuncNeg->SetLineColor(kBlue);
     fitFuncNeg->SetLineStyle(2);  // Dashed line
 
