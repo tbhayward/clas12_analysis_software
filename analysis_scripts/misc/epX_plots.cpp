@@ -28,6 +28,8 @@
 #include <TMarker.h>  
 #include <TPaveText.h>
 
+std::vector<std::tuple<int, double, double>> targetPolarizationData = {{{16137, 0.7677, 0.0184}, {16138, 0.7226, 0.0179}, {16144, 0.7484, 0.0217}, {16145, 0.789, 0.0223}, {16146, 0.7063, 0.025}, {16148, 0.7459, 0.0219}, {16156, -0.6508, 0.0519}, {16157, -0.7146, 0.0293}, {16158, -0.7163, 0.0321}, {16164, -0.645, 0.1282}, {16166, -0.779, 0.0375}, {16167, -0.7985, 0.0265}, {16168, -0.779, 0.0788}, {16169, -0.7351, 0.0531}, {16170, -0.674, 0.0211}, {16178, -0.7082, 0.0247}, {16211, 0.8711, 0.0239}, {16213, 0.92, 0.028}, {16214, 0.8096, 0.0231}, {16221, 0.8168, 0.023}, {16222, 0.808, 0.0217}, {16223, 0.7966, 0.0209}, {16224, 0.7067, 0.0682}, {16225, 0.7696, 0.0327}, {16226, 0.893, 0.0365}, {16228, 0.8948, 0.0284}, {16231, -0.7252, 0.0271}, {16232, -0.731, 0.0209}, {16233, -0.7518, 0.0205}, {16234, -0.9052, 0.0398}, {16235, -0.6254, 0.0528}, {16236, -0.6591, 0.0337}, {16238, -0.5733, 0.0488}, {16243, -0.7715, 0.0244}, {16244, -0.7191, 0.0267}, {16245, -0.7029, 0.0196}, {16246, -0.6532, 0.0195}, {16248, -0.6896, 0.0205}, {16249, -0.6618, 0.0394}, {16250, -0.6346, 0.0446}, {16251, -0.8599, 0.0379}, {16252, -0.7241, 0.0331}, {16253, -0.8366, 0.0242}, {16256, -0.6868, 0.0203}, {16257, -0.696, 0.0202}, {16259, -0.6676, 0.0206}, {16260, -0.7266, 0.0254}, {16318, 0.7732, 0.023}, {16320, 0.7917, 0.0216}, {16321, 0.749, 0.0223}, {16322, 0.7914, 0.0285}, {16323, 0.8742, 0.0365}, {16325, 0.677, 0.0643}, {16326, 0.8518, 0.0455}, {16327, 0.7927, 0.0209}, {16328, 0.766, 0.0213}, {16329, 0.7746, 0.0204}, {16330, 0.78, 0.02}, {16331, 0.7265, 0.0293}, {16332, 0.7157, 0.0687}, {16333, 0.7987, 0.0435}, {16335, -0.7002, 0.0214}, {16336, -0.7016, 0.0266}, {16337, -0.6994, 0.0295}, {16338, -0.7127, 0.0222}, {16339, -0.8082, 0.0361}, {16341, -0.6767, 0.0208}, {16343, -0.7024, 0.0213}, {16345, -0.5727, 0.0329}, {16346, -0.7184, 0.0203}, {16348, -0.7732, 0.0211}, {16350, -0.7161, 0.0206}, {16352, -0.7331, 0.0212}, {16353, -0.6895, 0.0199}, {16354, -0.7316, 0.0209}, {16355, -0.7127, 0.0207}, {16356, -0.6927, 0.0208}, {16357, -0.6967, 0.024}, {16658, 0.3326, 0.0276}, {16659, 0.4347, 0.0257}, {16660, 0.642, 0.0311}, {16664, 0.5856, 0.0562}, {16665, 0.5405, 0.0184}, {16666, 0.5042, 0.0249}, {16671, 0.6526, 0.0205}, {16672, 0.5568, 0.0198}, {16673, 0.5191, 0.0473}, {16674, 0.629, 0.0326}, {16675, 0.5129, 0.0194}, {16676, 0.5079, 0.0182}, {16678, 0.5775, 0.0284}, {16679, 0.5236, 0.0271}, {16681, 0.6906, 0.0195}, {16682, 0.7089, 0.0202}, {16683, 0.578, 0.0188}, {16685, 0.5514, 0.0393}, {16686, 0.6273, 0.0238}, {16687, 0.5774, 0.1147}, {16688, 0.6294, 0.0189}, {16689, 0.8544, 0.0351}, {16690, 0.6241, 0.0491}, {16692, 0.6865, 0.0211}, {16693, 0.7503, 0.0204}, {16695, 0.2715, 0.0911}, {16709, 0.6617, 0.0334}, {16710, 0.8414, 0.0314}, {16711, 0.7551, 0.0205}, {16712, 0.7663, 0.0204}, {16713, 0.7704, 0.0204}, {16715, 0.7103, 0.0247}, {16716, 0.7885, 0.0268}, {16717, 0.7316, 0.0216}, {16718, 0.6173, 0.0345}, {16719, 0.6784, 0.0205}, {16720, 0.7184, 0.0251}, {16721, -0.4516, 0.068}, {16722, -0.7295, 0.048}, {16723, -0.7011, 0.0219}, {16726, -0.6371, 0.0188}, {16727, -0.6975, 0.0211}, {16728, -0.6279, 0.0195}, {16729, -0.6943, 0.0388}, {16730, -0.6534, 0.0236}, {16731, -0.7173, 0.0276}, {16732, -0.6901, 0.0244}, {16733, -0.7308, 0.0484}, {16734, -0.5724, 0.0968}, {16736, -0.6599, 0.02}, {16738, -0.6721, 0.0239}, {16743, -0.7407, 0.0215}, {16744, -0.6661, 0.0191}, {16746, -0.6751, 0.0196}, {16747, -0.6623, 0.0193}, {16748, -0.6544, 0.0198}, {16749, -0.6525, 0.0438}, {16750, -0.7157, 0.0201}, {16751, -0.6532, 0.0378}, {16752, -0.6773, 0.0301}, {16753, -0.8703, 0.0337}, {16754, -0.6698, 0.0194}, {16755, -0.6767, 0.0195}, {16756, -0.6443, 0.0377}, {16757, -0.6146, 0.0191}, {16759, -0.6446, 0.0187}, {16761, -0.6492, 0.0206}, {16762, -0.6736, 0.0198}, {16763, -0.6451, 0.0244}, {16765, -0.6837, 0.0212}, {16766, -0.6931, 0.0298}, {16767, 0.8475, 0.0223}, {16768, 0.7774, 0.0212}, {16769, 0.7328, 0.0272}, {16770, 0.7803, 0.0219}, {16771, 0.7577, 0.0204}, {16772, 0.7756, 0.022}}};
+
 // Global variables for systematic uncertainties
 const double LU_SYS_UNCERTAINTY = 0.029;
 const double UL_SYS_UNCERTAINTY = 0.101;
@@ -512,6 +514,167 @@ void plotRunnumDependence(
     // Clean up
     delete c;
     delete fitFunc;
+}
+
+void plotTargetPolarization(
+    const std::vector<std::tuple<int, double, double>> &polarizationData,
+    const std::string &xLabel,
+    const std::string &outputFileName) {
+
+    // Create a canvas with 1 row and 2 columns
+    TCanvas *c = new TCanvas("c", "Target Polarization Plots", 1600, 800);
+    c->Divide(2, 1);
+
+    // Prepare data vectors for the left and right plots
+    std::vector<double> runNumbers, xValues, polarizations, errors;
+    std::vector<double> posRunNumbers, posXValues, posPolarizations, posErrors;
+    std::vector<double> negRunNumbers, negXValues, negPolarizations, negErrors;
+    std::vector<double> posOutlierX, posOutlierY, posOutlierErrors;
+    std::vector<double> negOutlierX, negOutlierY, negOutlierErrors;
+
+    for (size_t i = 0; i < polarizationData.size(); ++i) {
+        int runNum = std::get<0>(polarizationData[i]);
+        double polValue = std::get<1>(polarizationData[i]);
+        double polError = std::get<2>(polarizationData[i]);
+
+        runNumbers.push_back(runNum);
+        xValues.push_back(i + 1);
+        polarizations.push_back(polValue);
+        errors.push_back(polError);
+
+        if (polValue >= 0) {
+            posRunNumbers.push_back(runNum);
+            posXValues.push_back(i + 1);
+            posPolarizations.push_back(polValue);
+            posErrors.push_back(polError);
+        } else {
+            negRunNumbers.push_back(runNum);
+            negXValues.push_back(i + 1);
+            negPolarizations.push_back(polValue);
+            negErrors.push_back(polError);
+        }
+    }
+
+    // Fit function for positive and negative polarizations
+    TF1 *fitFuncPos = nullptr;
+    TF1 *fitFuncNeg = nullptr;
+    double muPos = 0, sigmaPos = 0, chi2NdfPos = 0;
+    double muNeg = 0, sigmaNeg = 0, chi2NdfNeg = 0;
+
+    if (!posPolarizations.empty()) {
+        fitFuncPos = new TF1("fitFuncPos", "[0]", posXValues.front(), posXValues.back());
+        fitFuncPos->SetLineColor(kRed);
+        fitFuncPos->SetLineStyle(2);
+
+        TGraphErrors *graphPos = new TGraphErrors(posXValues.size(), posXValues.data(), posPolarizations.data(), nullptr, posErrors.data());
+        graphPos->Fit(fitFuncPos, "Q");  // Silent mode fit
+        muPos = fitFuncPos->GetParameter(0);
+        sigmaPos = fitFuncPos->GetParError(0);
+        chi2NdfPos = fitFuncPos->GetChisquare() / fitFuncPos->GetNDF();
+    }
+
+    if (!negPolarizations.empty()) {
+        fitFuncNeg = new TF1("fitFuncNeg", "[0]", negXValues.front(), negXValues.back());
+        fitFuncNeg->SetLineColor(kBlue);
+        fitFuncNeg->SetLineStyle(2);
+
+        TGraphErrors *graphNeg = new TGraphErrors(negXValues.size(), negPolarizations.data(), nullptr, negErrors.data());
+        graphNeg->Fit(fitFuncNeg, "Q");  // Silent mode fit
+        muNeg = fitFuncNeg->GetParameter(0);
+        sigmaNeg = fitFuncNeg->GetParError(0);
+        chi2NdfNeg = fitFuncNeg->GetChisquare() / fitFuncNeg->GetNDF();
+    }
+
+    // Identify outliers based on 2.5σ criterion
+    for (size_t i = 0; i < polarizations.size(); ++i) {
+        if (polarizations[i] >= 0 && fitFuncPos) {
+            if (std::abs(polarizations[i] - muPos) > 2.5 * errors[i]) {
+                std::cout << "Positive Outlier found: Run Number " << runNumbers[i] << " " << (std::abs(polarizations[i] - muPos)) / errors[i] << std::endl;
+                posOutlierX.push_back(xValues[i]);
+                posOutlierY.push_back(polarizations[i]);
+                posOutlierErrors.push_back(errors[i]);
+            }
+        } else if (polarizations[i] < 0 && fitFuncNeg) {
+            if (std::abs(polarizations[i] - muNeg) > 2.5 * errors[i]) {
+                std::cout << "Negative Outlier found: Run Number " << runNumbers[i] << " " << (std::abs(polarizations[i] - muNeg)) / errors[i] << std::endl;
+                negOutlierX.push_back(xValues[i]);
+                negOutlierY.push_back(polarizations[i]);
+                negOutlierErrors.push_back(errors[i]);
+            }
+        }
+    }
+
+    // Draw the left plot: Original run numbers
+    c->cd(1);
+    gPad->SetLeftMargin(0.18);
+    gPad->SetBottomMargin(0.15);
+
+    TGraphErrors *graphRunnum = createTGraphErrors(runNumbers, polarizations, errors, 20, 0.8, kBlack);
+    setAxisLabelsAndRanges(graphRunnum, xLabel, "Target Polarization", {16135, 16774}, {-1.0, 1.0});
+    graphRunnum->Draw("AP");
+
+    // Draw the fitted constant line on the left plot
+    if (fitFuncPos) fitFuncPos->Draw("same");
+    if (fitFuncNeg) fitFuncNeg->Draw("same");
+
+    // Draw the right plot: Run index (1, 2, 3, ...)
+    c->cd(2);
+    gPad->SetLeftMargin(0.18);
+    gPad->SetBottomMargin(0.15);
+
+    // Separate graphs for regular points and outliers
+    TGraphErrors *graphRegular = createTGraphErrors(xValues, polarizations, errors, 20, 0.8, kBlack);
+    TGraphErrors *graphPosOutliers = nullptr;
+    TGraphErrors *graphNegOutliers = nullptr;
+    if (!posOutlierX.empty()) {
+        graphPosOutliers = createTGraphErrors(posOutlierX, posOutlierY, posOutlierErrors, 20, 0.8, kRed);
+    }
+    if (!negOutlierX.empty()) {
+        graphNegOutliers = createTGraphErrors(negOutlierX, negOutlierY, negOutlierErrors, 20, 0.8, kBlue);
+    }
+
+    // Set axis labels and ranges
+    setAxisLabelsAndRanges(graphRegular, "run index", "Target Polarization", {0, static_cast<double>(xValues.size()) + 1}, {-1.0, 1.0});
+    graphRegular->Draw("AP");
+
+    // Draw the fitted constant line on the right plot
+    if (fitFuncPos) fitFuncPos->Draw("same");
+    if (fitFuncNeg) fitFuncNeg->Draw("same");
+
+    // Draw outliers on the right plot
+    if (graphPosOutliers) {
+        graphPosOutliers->Draw("P SAME");
+    }
+    if (graphNegOutliers) {
+        graphNegOutliers->Draw("P SAME");
+    }
+
+    // Create and draw text boxes in the top right and top left corners
+    for (int i = 1; i <= 2; ++i) {
+        c->cd(i);
+
+        TLatex *textPos = new TLatex();
+        textPos->SetNDC();
+        textPos->SetTextSize(0.0275);
+        textPos->DrawLatex(0.7, 0.85, Form("#mu_{+} = %.4g", muPos));
+        textPos->DrawLatex(0.7, 0.80, Form("#sigma_{+} = %.4g", sigmaPos));
+        textPos->DrawLatex(0.7, 0.75, Form("#chi^{2}/ndf_{+} = %.4g", chi2NdfPos));
+
+        TLatex *textNeg = new TLatex();
+        textNeg->SetNDC();
+        textNeg->SetTextSize(0.0275);
+        textNeg->DrawLatex(0.15, 0.85, Form("#mu_{-} = %.4g", muNeg));
+        textNeg->DrawLatex(0.15, 0.80, Form("#sigma_{-} = %.4g", sigmaNeg));
+        textNeg->DrawLatex(0.15, 0.75, Form("#chi^{2}/ndf_{-} = %.4g", chi2NdfNeg));
+    }
+    // Save the canvas to a file
+    gSystem->Exec("mkdir -p output/epX_plots");
+    c->SaveAs(outputFileName.c_str());
+
+    // Clean up
+    delete c;
+    if (fitFuncPos) delete fitFuncPos;
+    if (fitFuncNeg) delete fitFuncNeg;
 }
 
 void plotComparison(
@@ -1136,6 +1299,8 @@ int main(int argc, char *argv[]) {
     // // Extract Q² dependence vectors
     // auto allVectors = extractQ2Dependence(asymmetryData, kinematicData);
     // plotQ2Dependence(allVectors);
+
+    plotTargetPolarization(targetPolarizationData, "run number", "output/epX_plots/target_polarization_dependence.png");
 
     return 0;
 }
