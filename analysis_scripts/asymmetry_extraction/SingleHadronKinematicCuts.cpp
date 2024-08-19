@@ -28,7 +28,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
             checked = true;
         } else if (property == "Mx") {
             goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *runnum != 16317 || *runnum != 16742;
-            goodEvent = goodEvent && *Q2 > 1 && *W > 2 && *y < 0.75;
+            goodEvent = goodEvent && *Q2 > 1 && *W > 2 && *y < 0.75 && *Mx > 0;
             checked = true;
         }
 
