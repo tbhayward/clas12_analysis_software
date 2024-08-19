@@ -394,6 +394,8 @@ void plotRunnumDependence(
 
     // Prepare data vectors for the left and right plots
     std::vector<double> runNumbers, xValues, asymmetries, errors;
+    std::vector<double> outlierX, outlierY, outlierErrors; // For outliers
+
     std::string key = prefix + "chi2Fits" + suffix;
     auto it = asymmetryData.find(key);
     if (it != asymmetryData.end()) {
@@ -435,31 +437,36 @@ void plotRunnumDependence(
     gPad->SetLeftMargin(0.18);
     gPad->SetBottomMargin(0.15);
 
-    setAxisLabelsAndRanges(graphIndex, "run index", yLabel, {0, static_cast<double>(xValues.size()) + 1}, yLimits);
-    graphIndex->Draw("AP");
-
-    // Draw the fitted constant line on the right plot
-    fitFunc->Draw("same");
-
-    // Identify outliers and plot points with 2.5 sigma threshold
+    // Separate out outliers for the right plot
     for (size_t i = 0; i < asymmetries.size(); ++i) {
         if (std::abs(asymmetries[i] - mu) > 2.5 * errors[i]) {
             // Print outliers
             std::cout << "Outlier found: Run Number " << runNumbers[i] << std::endl;
 
-            // Plot the outlier in red on both plots
-            c->cd(1);
-            TMarker *marker1 = new TMarker(runNumbers[i], asymmetries[i], 20);
-            marker1->SetMarkerColor(kRed);
-            marker1->SetMarkerSize(0.8);
-            marker1->Draw("same");
-
-            c->cd(2);
-            TMarker *marker2 = new TMarker(xValues[i], asymmetries[i], 20);
-            marker2->SetMarkerColor(kRed);
-            marker2->SetMarkerSize(0.8);
-            marker2->Draw("same");
+            // Store outlier values
+            outlierX.push_back(xValues[i]);
+            outlierY.push_back(asymmetries[i]);
+            outlierErrors.push_back(errors[i]);
         }
+    }
+
+    // Create two TGraphErrors: one for regular points, one for outliers
+    TGraphErrors *graphRegular = createTGraphErrors(xValues, asymmetries, errors, 20, 0.8, kBlack);
+    TGraphErrors *graphOutliers = nullptr;
+    if (!outlierX.empty()) {
+        graphOutliers = createTGraphErrors(outlierX, outlierY, outlierErrors, 20, 0.8, kRed);
+    }
+
+    // Set axis labels and ranges
+    setAxisLabelsAndRanges(graphRegular, "run index", yLabel, {0, static_cast<double>(xValues.size()) + 1}, yLimits);
+    graphRegular->Draw("AP");
+
+    // Draw the fitted constant line on the right plot
+    fitFunc->Draw("same");
+
+    // Draw outliers on the right plot
+    if (graphOutliers) {
+        graphOutliers->Draw("P SAME");
     }
 
     // Create and draw a text box in the top right corner with mu, sigma, and chi2/ndf
