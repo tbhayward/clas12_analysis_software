@@ -990,8 +990,7 @@ int main(int argc, char *argv[]) {
 
     // // Extract Q² dependence vectors
     // auto allVectors = extractQ2Dependence(asymmetryData, kinematicData);
-
-    plotQ2Dependence(allVectors);
+    // plotQ2Dependence(allVectors);
 
     return 0;
 }
