@@ -11,7 +11,7 @@ def calculate_total_charge(filename):
     }
 
     # Define the runs to skip
-    skipped_runs = {16317, 16742}
+    skipped_runs = {}
 
     current_section = None
     run_data = []  # List to store run, target_pol, target_pol_sigma
