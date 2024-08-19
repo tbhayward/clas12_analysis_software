@@ -1300,7 +1300,7 @@ int main(int argc, char *argv[]) {
     // auto allVectors = extractQ2Dependence(asymmetryData, kinematicData);
     // plotQ2Dependence(allVectors);
 
-    plotTargetPolarization(targetPolarizationData, "run number", "output/epX_plots/target_polarization_dependence.png");
+    plotTargetPolarizationDependence(targetPolarizationData, "run number", "output/epX_plots/target_polarization_dependence.png");
 
     return 0;
 }
