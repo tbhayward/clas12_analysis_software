@@ -784,8 +784,8 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
   TTreeReaderValue<double> beam_pol(dataReader, "beam_pol");
   TTreeReaderValue<double> target_pol(dataReader, "target_pol");
   TTreeReaderValue<double> phi(dataReader, "phi");
-  // TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
-  TTreeReaderValue<int> currentVariable(dataReader, propertyNames[currentFits].c_str());
+  TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
+  // TTreeReaderValue<int> currentVariable(dataReader, propertyNames[currentFits].c_str());
   // Counter to limit the number of processed entries
   while (dataReader.Next()) {
     
@@ -959,8 +959,8 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
     TTreeReaderValue<double> DepC(dataReader, "DepC");
     TTreeReaderValue<double> DepV(dataReader, "DepV");
     TTreeReaderValue<double> DepW(dataReader, "DepW");
-    // TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
-    TTreeReaderValue<int> currentVariable(dataReader, propertyNames[currentFits].c_str());
+    TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
+    // TTreeReaderValue<int> currentVariable(dataReader, propertyNames[currentFits].c_str());
 
     // Determine the variable range for the specified bin
     double varMin = allBins[currentFits][i];
