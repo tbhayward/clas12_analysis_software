@@ -381,7 +381,7 @@ void plotRunnumDependence(
     const std::string &prefix, 
     const std::string &xLabel, 
     const std::string &outputFileName) {
-    
+
     // Create a canvas with 1 row and 2 columns
     TCanvas *c = new TCanvas("c", "Run Number Dependence Plots", 1600, 800);
     c->Divide(2, 1);
@@ -390,7 +390,7 @@ void plotRunnumDependence(
     std::string suffix = "ALUsinphi";
     std::string yLabel = "F_{LU}^{sin#phi}/F_{UU}";
     std::pair<double, double> yLimits = {-0.06, 0.06};
-    
+
     // Prepare data vectors for the left and right plots
     std::vector<double> runNumbers, xValues, asymmetries, errors;
     std::string key = prefix + "chi2Fits" + suffix;
@@ -404,8 +404,29 @@ void plotRunnumDependence(
             errors.push_back(data[i][2]);      // Asymmetry errors
         }
     }
-    
-    // Left plot: Original run numbers
+
+    // Create a fit function (constant fit)
+    TF1 *fitFunc = new TF1("fitFunc", "[0]", xValues.front(), xValues.back());
+    fitFunc->SetLineColor(kRed);
+    fitFunc->SetLineStyle(2);  // Dashed line
+
+    // Fit the data to a constant and retrieve the fit parameters
+    TGraphErrors *graphIndex = new TGraphErrors(xValues.size(), xValues.data(), asymmetries.data(), nullptr, errors.data());
+    graphIndex->Fit(fitFunc, "Q");  // Silent mode fit
+    double mu = fitFunc->GetParameter(0);
+    double sigma = fitFunc->GetParError(0);
+    double chi2Ndf = fitFunc->GetChisquare() / fitFunc->GetNDF();
+
+    // Identify outliers and plot points
+    std::vector<int> outlierIndices;
+    for (size_t i = 0; i < asymmetries.size(); ++i) {
+        if (std::abs(asymmetries[i] - mu) > 3 * errors[i]) {
+            outlierIndices.push_back(i);
+            std::cout << "Outlier found: Run Number " << runNumbers[i] << std::endl;
+        }
+    }
+
+    // Draw the left plot: Original run numbers
     c->cd(1);
     gPad->SetLeftMargin(0.18);
     gPad->SetBottomMargin(0.15);
@@ -414,46 +435,46 @@ void plotRunnumDependence(
     setAxisLabelsAndRanges(graphRunnum, xLabel, yLabel, {16135, 16774}, yLimits);
     graphRunnum->Draw("AP");
 
-    // Right plot: Run index (1, 2, 3, ...)
+    // Draw the fitted constant line
+    fitFunc->Draw("same");
+
+    // Draw outliers in red
+    for (int index : outlierIndices) {
+        TMarker *marker = new TMarker(runNumbers[index], asymmetries[index], 20);
+        marker->SetMarkerColor(kRed);
+        marker->SetMarkerSize(0.8);
+        marker->Draw("same");
+    }
+
+    // Draw the right plot: Run index (1, 2, 3, ...)
     c->cd(2);
     gPad->SetLeftMargin(0.18);
     gPad->SetBottomMargin(0.15);
 
-    TGraphErrors *graphIndex = createTGraphErrors(xValues, asymmetries, errors, 20, 0.8, kBlack);
     setAxisLabelsAndRanges(graphIndex, "run index", yLabel, {0, static_cast<double>(xValues.size()) + 1}, yLimits);
     graphIndex->Draw("AP");
 
-    // Fit to a constant
-    TF1 *fitFunc = new TF1("fitFunc", "[0]", xValues.front(), xValues.back());
-    graphIndex->Fit(fitFunc, "Q");
+    // Draw the fitted constant line
+    fitFunc->Draw("same");
 
-    double mu = fitFunc->GetParameter(0);
-    double sigma = fitFunc->GetParError(0);
-
-    // Draw the fit line and 3-sigma band on both plots
-    for (int i = 1; i <= 2; ++i) {
-        c->cd(i);
-
-        // Fit line
-        TLine *fitLine = new TLine(gPad->GetUxmin(), mu, gPad->GetUxmax(), mu);
-        fitLine->SetLineColor(kRed);
-        fitLine->SetLineStyle(2); // Dashed line
-        fitLine->Draw("same");
-
-        // 3-sigma band
-        TBox *band = new TBox(gPad->GetUxmin(), mu - 3 * sigma, gPad->GetUxmax(), mu + 3 * sigma);
-        band->SetFillColorAlpha(kRed, 0.3); // Low opacity red
-        band->Draw("same");
+    // Draw outliers in red
+    for (int index : outlierIndices) {
+        TMarker *marker = new TMarker(xValues[index], asymmetries[index], 20);
+        marker->SetMarkerColor(kRed);
+        marker->SetMarkerSize(0.8);
+        marker->Draw("same");
     }
 
-    // Create and draw the legend
+    // Create and draw a text box in the top right corner with mu, sigma, and chi2/ndf
     for (int i = 1; i <= 2; ++i) {
         c->cd(i);
 
-        TLegend *legend = new TLegend(0.6, 0.8, 0.9, 0.9); // Top right corner
-        legend->AddEntry(static_cast<TObject*>(fitFunc), Form("#mu = %.3g, #sigma = %.3g", mu, sigma), "L");
-        legend->SetTextSize(0.03);
-        legend->Draw("same");
+        TLatex *text = new TLatex();
+        text->SetNDC();
+        text->SetTextSize(0.04);
+        text->DrawLatex(0.6, 0.85, Form("#mu = %.3g", mu));
+        text->DrawLatex(0.6, 0.8, Form("#sigma = %.3g", sigma));
+        text->DrawLatex(0.6, 0.75, Form("#chi^{2}/ndf = %.3g", chi2Ndf));
     }
 
     // Save the canvas to a file
