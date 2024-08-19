@@ -418,10 +418,10 @@ void plotRunnumDependence(
     double sigma = fitFunc->GetParError(0);
     double chi2Ndf = fitFunc->GetChisquare() / fitFunc->GetNDF();
 
-    // Identify outliers and plot points
+    // Identify outliers and plot points with 2.5 sigma threshold
     std::vector<int> outlierIndices;
     for (size_t i = 0; i < asymmetries.size(); ++i) {
-        if (std::abs(asymmetries[i] - mu) > 3 * errors[i]) {
+        if (std::abs(asymmetries[i] - mu) > 2.5 * errors[i]) {
             outlierIndices.push_back(i);
             std::cout << "Outlier found: Run Number " << runNumbers[i] << std::endl;
         }
@@ -436,14 +436,14 @@ void plotRunnumDependence(
     setAxisLabelsAndRanges(graphRunnum, xLabel, yLabel, {16135, 16774}, yLimits);
     graphRunnum->Draw("AP");
 
-    // Draw the fitted constant line
+    // Draw the fitted constant line on the left plot
     fitFunc->Draw("same");
 
     // Draw outliers in red
     for (int index : outlierIndices) {
         TMarker *marker = new TMarker(runNumbers[index], asymmetries[index], 20);
         marker->SetMarkerColor(kRed);
-        marker->SetMarkerSize(0.8);
+        marker->SetMarkerSize(0.7);
         marker->Draw("same");
     }
 
@@ -455,14 +455,14 @@ void plotRunnumDependence(
     setAxisLabelsAndRanges(graphIndex, "run index", yLabel, {0, static_cast<double>(xValues.size()) + 1}, yLimits);
     graphIndex->Draw("AP");
 
-    // Draw the fitted constant line
+    // Draw the fitted constant line on the right plot
     fitFunc->Draw("same");
 
     // Draw outliers in red
     for (int index : outlierIndices) {
         TMarker *marker = new TMarker(xValues[index], asymmetries[index], 20);
         marker->SetMarkerColor(kRed);
-        marker->SetMarkerSize(0.8);
+        marker->SetMarkerSize(0.7);
         marker->Draw("same");
     }
 
@@ -472,10 +472,10 @@ void plotRunnumDependence(
 
         TLatex *text = new TLatex();
         text->SetNDC();
-        text->SetTextSize(0.04);
-        text->DrawLatex(0.6, 0.85, Form("#mu = %.3g", mu));
-        text->DrawLatex(0.6, 0.8, Form("#sigma = %.3g", sigma));
-        text->DrawLatex(0.6, 0.75, Form("#chi^{2}/ndf = %.3g", chi2Ndf));
+        text->SetTextSize(0.035);
+        text->DrawLatex(0.62, 0.85, Form("#mu = %.4g", mu));
+        text->DrawLatex(0.62, 0.80, Form("#sigma = %.4g", sigma));
+        text->DrawLatex(0.62, 0.75, Form("#chi^{2}/ndf = %.4g", chi2Ndf));
     }
 
     // Save the canvas to a file
