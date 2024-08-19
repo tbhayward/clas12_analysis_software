@@ -475,10 +475,10 @@ void plotRunnumDependence(
 
         TLatex *text = new TLatex();
         text->SetNDC();
-        text->SetTextSize(0.025);
-        text->DrawLatex(0.75, 0.85, Form("#mu = %.4g", mu));
-        text->DrawLatex(0.75, 0.80, Form("#sigma = %.4g", sigma));
-        text->DrawLatex(0.75, 0.75, Form("#chi^{2}/ndf = %.4g", chi2Ndf));
+        text->SetTextSize(0.0275);
+        text->DrawLatex(0.7, 0.85, Form("#mu = %.4g", mu));
+        text->DrawLatex(0.7, 0.80, Form("#sigma = %.4g", sigma));
+        text->DrawLatex(0.7, 0.75, Form("#chi^{2}/ndf = %.4g", chi2Ndf));
     }
 
     // Save the canvas to a file
