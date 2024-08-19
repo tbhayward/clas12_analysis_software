@@ -441,7 +441,7 @@ void plotRunnumDependence(
     for (size_t i = 0; i < asymmetries.size(); ++i) {
         if (std::abs(asymmetries[i] - mu) > 2.5 * errors[i]) {
             // Print outliers
-            std::cout << "Outlier found: Run Number " << runNumbers[i] << " " << (std::abs(asymmetries[i] - mu)) << std::endl;
+            std::cout << "Outlier found: Run Number " << runNumbers[i] << " " << (std::abs(asymmetries[i] - mu))/errors[i] << std::endl;
 
             // Store outlier values
             outlierX.push_back(xValues[i]);
