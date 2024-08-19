@@ -11,7 +11,8 @@ def calculate_total_charge(filename):
     }
 
     # Define the runs to skip
-    skipped_runs = {16317, 16742}
+    # skipped_runs = {16317, 16742}
+    skipped_runs = {3284729834729}
 
     nh3_abridged_charge = 0
     c_abridged_charge = 0
