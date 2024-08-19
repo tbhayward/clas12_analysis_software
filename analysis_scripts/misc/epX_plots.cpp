@@ -517,7 +517,7 @@ void plotRunnumDependence(
 }
 
 void plotTargetPolarizationDependence(
-    const std::vector<std::vector<double>> &targetPolarizationData, 
+    const std::vector<std::tuple<int, double, double>> &targetPolarizationData, 
     const std::string &xLabel, 
     const std::string &outputFileName) {
 
@@ -535,24 +535,25 @@ void plotTargetPolarizationDependence(
     std::vector<double> negPolarizations, negErrors, negXValues, negRunNumbers;
 
     // Separate the target polarization data into positive and negative values
-    for (size_t i = 0; i < targetPolarizationData.size(); ++i) {
-        double runNumber = targetPolarizationData[i][0];
-        double polarization = targetPolarizationData[i][1];
-        double error = targetPolarizationData[i][2];
+    for (const auto &entry : targetPolarizationData) {
+        int runNumber;
+        double polarization, error;
+        std::tie(runNumber, polarization, error) = entry;
+
         runNumbers.push_back(runNumber);
-        xValues.push_back(i + 1);  // Sequential run index
+        xValues.push_back(runNumbers.size());  // Sequential run index
         polarizations.push_back(polarization);
         errors.push_back(error);
 
         if (polarization > 0) {
             posPolarizations.push_back(polarization);
             posErrors.push_back(error);
-            posXValues.push_back(i + 1);
+            posXValues.push_back(xValues.back());
             posRunNumbers.push_back(runNumber);
         } else {
             negPolarizations.push_back(polarization);
             negErrors.push_back(error);
-            negXValues.push_back(i + 1);
+            negXValues.push_back(xValues.back());
             negRunNumbers.push_back(runNumber);
         }
     }
