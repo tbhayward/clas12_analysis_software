@@ -516,93 +516,70 @@ void plotRunnumDependence(
     delete fitFunc;
 }
 
-void plotTargetPolarization(
-    const std::vector<std::tuple<int, double, double>> &polarizationData,
-    const std::string &xLabel,
+void plotTargetPolarizationDependence(
+    const std::vector<std::vector<double>> &targetPolarizationData, 
+    const std::string &xLabel, 
     const std::string &outputFileName) {
 
     // Create a canvas with 1 row and 2 columns
-    TCanvas *c = new TCanvas("c", "Target Polarization Plots", 1600, 800);
+    TCanvas *c = new TCanvas("c", "Target Polarization Dependence Plots", 1600, 800);
     c->Divide(2, 1);
+
+    // Define y-axis label and limits
+    std::string yLabel = "Target Polarization";
+    std::pair<double, double> yLimits = {-1.0, 1.0};
 
     // Prepare data vectors for the left and right plots
     std::vector<double> runNumbers, xValues, polarizations, errors;
-    std::vector<double> posRunNumbers, posXValues, posPolarizations, posErrors;
-    std::vector<double> negRunNumbers, negXValues, negPolarizations, negErrors;
-    std::vector<double> posOutlierX, posOutlierY, posOutlierErrors;
-    std::vector<double> negOutlierX, negOutlierY, negOutlierErrors;
+    std::vector<double> posPolarizations, posErrors, posXValues, posRunNumbers;
+    std::vector<double> negPolarizations, negErrors, negXValues, negRunNumbers;
 
-    for (size_t i = 0; i < polarizationData.size(); ++i) {
-        int runNum = std::get<0>(polarizationData[i]);
-        double polValue = std::get<1>(polarizationData[i]);
-        double polError = std::get<2>(polarizationData[i]);
+    // Separate the target polarization data into positive and negative values
+    for (size_t i = 0; i < targetPolarizationData.size(); ++i) {
+        double runNumber = targetPolarizationData[i][0];
+        double polarization = targetPolarizationData[i][1];
+        double error = targetPolarizationData[i][2];
+        runNumbers.push_back(runNumber);
+        xValues.push_back(i + 1);  // Sequential run index
+        polarizations.push_back(polarization);
+        errors.push_back(error);
 
-        runNumbers.push_back(runNum);
-        xValues.push_back(i + 1);
-        polarizations.push_back(polValue);
-        errors.push_back(polError);
-
-        if (polValue >= 0) {
-            posRunNumbers.push_back(runNum);
+        if (polarization > 0) {
+            posPolarizations.push_back(polarization);
+            posErrors.push_back(error);
             posXValues.push_back(i + 1);
-            posPolarizations.push_back(polValue);
-            posErrors.push_back(polError);
+            posRunNumbers.push_back(runNumber);
         } else {
-            negRunNumbers.push_back(runNum);
+            negPolarizations.push_back(polarization);
+            negErrors.push_back(error);
             negXValues.push_back(i + 1);
-            negPolarizations.push_back(polValue);
-            negErrors.push_back(polError);
+            negRunNumbers.push_back(runNumber);
         }
     }
 
-    // Fit function for positive and negative polarizations
-    TF1 *fitFuncPos = nullptr;
-    TF1 *fitFuncNeg = nullptr;
-    double muPos = 0, sigmaPos = 0, chi2NdfPos = 0;
-    double muNeg = 0, sigmaNeg = 0, chi2NdfNeg = 0;
+    // Create fit functions for positive and negative polarization data
+    TF1 *fitFuncPos = new TF1("fitFuncPos", "[0]", 0, posXValues.size());
+    fitFuncPos->SetLineColor(kRed);
+    fitFuncPos->SetLineStyle(2);  // Dashed line
 
-    if (!posPolarizations.empty()) {
-        fitFuncPos = new TF1("fitFuncPos", "[0]", posXValues.front(), posXValues.back());
-        fitFuncPos->SetLineColor(kRed);
-        fitFuncPos->SetLineStyle(2);
+    TF1 *fitFuncNeg = new TF1("fitFuncNeg", "[0]", 0, negXValues.size());
+    fitFuncNeg->SetLineColor(kBlue);
+    fitFuncNeg->SetLineStyle(2);  // Dashed line
 
-        TGraphErrors *graphPos = new TGraphErrors(posXValues.size(), posXValues.data(), posPolarizations.data(), nullptr, posErrors.data());
-        graphPos->Fit(fitFuncPos, "Q");  // Silent mode fit
-        muPos = fitFuncPos->GetParameter(0);
-        sigmaPos = fitFuncPos->GetParError(0);
-        chi2NdfPos = fitFuncPos->GetChisquare() / fitFuncPos->GetNDF();
-    }
+    // Perform the fits
+    TGraphErrors *graphPos = new TGraphErrors(posXValues.size(), posXValues.data(), posPolarizations.data(), nullptr, posErrors.data());
+    TGraphErrors *graphNeg = new TGraphErrors(negXValues.size(), negXValues.data(), negPolarizations.data(), nullptr, negErrors.data());
 
-    if (!negPolarizations.empty()) {
-        fitFuncNeg = new TF1("fitFuncNeg", "[0]", negXValues.front(), negXValues.back());
-        fitFuncNeg->SetLineColor(kBlue);
-        fitFuncNeg->SetLineStyle(2);
+    graphPos->Fit(fitFuncPos, "Q");  // Silent mode fit
+    graphNeg->Fit(fitFuncNeg, "Q");  // Silent mode fit
 
-        TGraphErrors *graphNeg = new TGraphErrors(negXValues.size(), negPolarizations.data(), nullptr, negErrors.data());
-        graphNeg->Fit(fitFuncNeg, "Q");  // Silent mode fit
-        muNeg = fitFuncNeg->GetParameter(0);
-        sigmaNeg = fitFuncNeg->GetParError(0);
-        chi2NdfNeg = fitFuncNeg->GetChisquare() / fitFuncNeg->GetNDF();
-    }
+    double muPos = fitFuncPos->GetParameter(0);
+    double sigmaPos = fitFuncPos->GetParError(0);
+    double chi2NdfPos = fitFuncPos->GetChisquare() / fitFuncPos->GetNDF();
 
-    // Identify outliers based on 2.5σ criterion
-    for (size_t i = 0; i < polarizations.size(); ++i) {
-        if (polarizations[i] >= 0 && fitFuncPos) {
-            if (std::abs(polarizations[i] - muPos) > 2.5 * errors[i]) {
-                std::cout << "Positive Outlier found: Run Number " << runNumbers[i] << " " << (std::abs(polarizations[i] - muPos)) / errors[i] << std::endl;
-                posOutlierX.push_back(xValues[i]);
-                posOutlierY.push_back(polarizations[i]);
-                posOutlierErrors.push_back(errors[i]);
-            }
-        } else if (polarizations[i] < 0 && fitFuncNeg) {
-            if (std::abs(polarizations[i] - muNeg) > 2.5 * errors[i]) {
-                std::cout << "Negative Outlier found: Run Number " << runNumbers[i] << " " << (std::abs(polarizations[i] - muNeg)) / errors[i] << std::endl;
-                negOutlierX.push_back(xValues[i]);
-                negOutlierY.push_back(polarizations[i]);
-                negOutlierErrors.push_back(errors[i]);
-            }
-        }
-    }
+    double muNeg = fitFuncNeg->GetParameter(0);
+    double sigmaNeg = fitFuncNeg->GetParError(0);
+    double chi2NdfNeg = fitFuncNeg->GetChisquare() / fitFuncNeg->GetNDF();
 
     // Draw the left plot: Original run numbers
     c->cd(1);
@@ -610,36 +587,64 @@ void plotTargetPolarization(
     gPad->SetBottomMargin(0.15);
 
     TGraphErrors *graphRunnum = createTGraphErrors(runNumbers, polarizations, errors, 20, 0.8, kBlack);
-    setAxisLabelsAndRanges(graphRunnum, xLabel, "Target Polarization", {16135, 16774}, {-1.0, 1.0});
+    setAxisLabelsAndRanges(graphRunnum, xLabel, yLabel, {16135, 16774}, yLimits);
     graphRunnum->Draw("AP");
 
-    // Draw the fitted constant line on the left plot
-    if (fitFuncPos) fitFuncPos->Draw("same");
-    if (fitFuncNeg) fitFuncNeg->Draw("same");
+    // Draw the fitted constant lines
+    fitFuncPos->Draw("same");
+    fitFuncNeg->Draw("same");
 
     // Draw the right plot: Run index (1, 2, 3, ...)
     c->cd(2);
     gPad->SetLeftMargin(0.18);
     gPad->SetBottomMargin(0.15);
 
-    // Separate graphs for regular points and outliers
-    TGraphErrors *graphRegular = createTGraphErrors(xValues, polarizations, errors, 20, 0.8, kBlack);
+    // Prepare outlier vectors for the right plot
+    std::vector<double> outlierPosX, outlierPosY, outlierPosErrors;
+    std::vector<double> outlierNegX, outlierNegY, outlierNegErrors;
+
+    for (size_t i = 0; i < polarizations.size(); ++i) {
+        double polarization = polarizations[i];
+        double error = errors[i];
+
+        if (polarization > 0) {
+            if (std::abs(polarization - muPos) > 5.0 * error) {
+                outlierPosX.push_back(xValues[i]);
+                outlierPosY.push_back(polarization);
+                outlierPosErrors.push_back(error);
+                std::cout << "Outlier (Positive) found: Run Number " << runNumbers[i] << ", Deviation: " << std::abs(polarization - muPos) / error << std::endl;
+            }
+        } else {
+            if (std::abs(polarization - muNeg) > 5.0 * error) {
+                outlierNegX.push_back(xValues[i]);
+                outlierNegY.push_back(polarization);
+                outlierNegErrors.push_back(error);
+                std::cout << "Outlier (Negative) found: Run Number " << runNumbers[i] << ", Deviation: " << std::abs(polarization - muNeg) / error << std::endl;
+            }
+        }
+    }
+
+    // Create TGraphErrors for outliers
     TGraphErrors *graphPosOutliers = nullptr;
     TGraphErrors *graphNegOutliers = nullptr;
-    if (!posOutlierX.empty()) {
-        graphPosOutliers = createTGraphErrors(posOutlierX, posOutlierY, posOutlierErrors, 20, 0.8, kRed);
+    if (!outlierPosX.empty()) {
+        graphPosOutliers = createTGraphErrors(outlierPosX, outlierPosY, outlierPosErrors, 20, 0.8, kRed);
     }
-    if (!negOutlierX.empty()) {
-        graphNegOutliers = createTGraphErrors(negOutlierX, negOutlierY, negOutlierErrors, 20, 0.8, kBlue);
+    if (!outlierNegX.empty()) {
+        graphNegOutliers = createTGraphErrors(outlierNegX, outlierNegY, outlierNegErrors, 20, 0.8, kBlue);
     }
 
-    // Set axis labels and ranges
-    setAxisLabelsAndRanges(graphRegular, "run index", "Target Polarization", {0, static_cast<double>(xValues.size()) + 1}, {-1.0, 1.0});
-    graphRegular->Draw("AP");
+    // Draw the positive and negative polarization data
+    TGraphErrors *graphRegularPos = createTGraphErrors(posXValues, posPolarizations, posErrors, 20, 0.8, kBlack);
+    TGraphErrors *graphRegularNeg = createTGraphErrors(negXValues, negPolarizations, negErrors, 21, 0.8, kBlack);
 
-    // Draw the fitted constant line on the right plot
-    if (fitFuncPos) fitFuncPos->Draw("same");
-    if (fitFuncNeg) fitFuncNeg->Draw("same");
+    setAxisLabelsAndRanges(graphRegularPos, "run index", yLabel, {0, static_cast<double>(xValues.size()) + 1}, yLimits);
+    graphRegularPos->Draw("AP");
+    graphRegularNeg->Draw("P SAME");
+
+    // Draw the fitted constant lines on the right plot
+    fitFuncPos->Draw("same");
+    fitFuncNeg->Draw("same");
 
     // Draw outliers on the right plot
     if (graphPosOutliers) {
@@ -649,32 +654,27 @@ void plotTargetPolarization(
         graphNegOutliers->Draw("P SAME");
     }
 
-    // Create and draw text boxes in the top right and top left corners
-    for (int i = 1; i <= 2; ++i) {
-        c->cd(i);
+    // Create and draw text box in the top right for positive polarization
+    TLatex *text = new TLatex();
+    text->SetNDC();
+    text->SetTextSize(0.0275);
+    text->DrawLatex(0.6, 0.8, Form("#mu_{+} = %.4g", muPos));
+    text->DrawLatex(0.6, 0.75, Form("#sigma_{+} = %.4g", sigmaPos));
+    text->DrawLatex(0.6, 0.7, Form("#chi^{2}/ndf_{+} = %.4g", chi2NdfPos));
 
-        TLatex *textPos = new TLatex();
-        textPos->SetNDC();
-        textPos->SetTextSize(0.0275);
-        textPos->DrawLatex(0.7, 0.85, Form("#mu_{+} = %.4g", muPos));
-        textPos->DrawLatex(0.7, 0.80, Form("#sigma_{+} = %.4g", sigmaPos));
-        textPos->DrawLatex(0.7, 0.75, Form("#chi^{2}/ndf_{+} = %.4g", chi2NdfPos));
+    // Move text box to the left for negative polarization
+    text->DrawLatex(0.1, 0.8, Form("#mu_{-} = %.4g", muNeg));
+    text->DrawLatex(0.1, 0.75, Form("#sigma_{-} = %.4g", sigmaNeg));
+    text->DrawLatex(0.1, 0.7, Form("#chi^{2}/ndf_{-} = %.4g", chi2NdfNeg));
 
-        TLatex *textNeg = new TLatex();
-        textNeg->SetNDC();
-        textNeg->SetTextSize(0.0275);
-        textNeg->DrawLatex(0.15, 0.85, Form("#mu_{-} = %.4g", muNeg));
-        textNeg->DrawLatex(0.15, 0.80, Form("#sigma_{-} = %.4g", sigmaNeg));
-        textNeg->DrawLatex(0.15, 0.75, Form("#chi^{2}/ndf_{-} = %.4g", chi2NdfNeg));
-    }
     // Save the canvas to a file
     gSystem->Exec("mkdir -p output/epX_plots");
     c->SaveAs(outputFileName.c_str());
 
     // Clean up
     delete c;
-    if (fitFuncPos) delete fitFuncPos;
-    if (fitFuncNeg) delete fitFuncNeg;
+    delete fitFuncPos;
+    delete fitFuncNeg;
 }
 
 void plotComparison(
