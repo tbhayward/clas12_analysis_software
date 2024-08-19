@@ -23,29 +23,30 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         string property = binNames[currentFits];
 
         if (property == "xF" || property == "x" || property == "PT" || property == "runnum") {
-            goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1;
+            goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *runnum != 16317 || *runnum != 16742;
             goodEvent = goodEvent && *Q2 > 1 && *W > 2 && *Mx > 1.35 && *y < 0.75;
             checked = true;
         } else if (property == "Mx") {
-            goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1;
+            goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *runnum != 16317 || *runnum != 16742;
             goodEvent = goodEvent && *Q2 > 1 && *W > 2 && *y < 0.75;
             checked = true;
         }
 
         if (property == "xFall" || property == "xall" || property == "PTall") {
-            goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1;
+            goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *runnum != 16317 || *runnum != 16742;
             goodEvent = goodEvent && *Q2 > 1 && *W > 2 && *Mx > 0 && *y < 0.75;
             checked = true;
         } 
 
         if (property == "xFexclusive" || property == "xexclusive" || property == "PTexclusive") {
-            goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1;
+            goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *runnum != 16317 || *runnum != 16742;
             goodEvent = goodEvent && *Q2 > 1 && *W > 2 && *Mx > 0 && *Mx < 1.35 && *y < 0.75;
             checked = true;
         } 
 
 
         if (*Q2 > 1 && *W > 2 && *Mx > 1.4 && *y < 0.75 && !checked) {
+          goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *runnum != 16317 || *runnum != 16742;
           size_t pos = property.find("z");
           std::string prez = property.substr(0, pos);
           std::string postz = property.substr(pos);
