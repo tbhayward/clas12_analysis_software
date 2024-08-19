@@ -30,7 +30,7 @@ const double xHe = 0.10728;
 const double xf = 0.07586;
 
 // Total accumulated charge
-const double nc_A = 4459870.328370002;
+const double nc_A = 4459870.328370002 - 6709.1 - 10170.208; // 16317 and 16742 removed from run list
 const double nc_C = 443417.18516000017;
 const double nc_CH = 190126.82700000002;
 const double nc_He = 668899.295;

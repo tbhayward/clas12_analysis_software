@@ -10,9 +10,8 @@ def calculate_total_charge(filename):
         'Empty Target': 0
     }
 
-    # Placeholder run lists for "NH3 abridged" and "C abridged"
-    nh3_abridged_runs = {16138, 16146,16232,16236,16248,16250,16328,16352,16356,16659,16674,16681,16710,16721,16747}
-    c_abridged_runs = {16096, 16102, 16103, 16106, 16107, 16112, 16113, 16116, 16117, 16122, 16292, 16293, 16297, 16697, 16702}
+    # Define the runs to skip
+    skipped_runs = {16317, 16742}
 
     nh3_abridged_charge = 0
     c_abridged_charge = 0
@@ -40,6 +39,10 @@ def calculate_total_charge(filename):
             run_number = int(row[0])
             charge = float(row[1])
 
+            # Skip the specified runs
+            if run_number in skipped_runs:
+                continue
+
             if current_section == 'Empty Target' and run_number == 16194:
                 charges[current_section] += charge
             elif current_section == 'Empty Target' and run_number == 16186:
@@ -48,9 +51,9 @@ def calculate_total_charge(filename):
                 charges[current_section] += charge
 
             # Track the charge for the "NH3 abridged" and "C abridged" runs
-            if run_number in nh3_abridged_runs:
+            if run_number in nh3_abridged_charge:
                 nh3_abridged_charge += charge
-            if run_number in c_abridged_runs:
+            if run_number in c_abridged_charge:
                 c_abridged_charge += charge
 
     # Total charge using the abridged NH3 and C values
