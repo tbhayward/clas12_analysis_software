@@ -36,7 +36,7 @@ def calculate_total_charge(filename):
                 continue
             
             run_number = int(row[0])
-            charge = float(row[1])
+            charge = float(row[2]+row[3])
 
             # Skip the specified runs
             if run_number in skipped_runs:
