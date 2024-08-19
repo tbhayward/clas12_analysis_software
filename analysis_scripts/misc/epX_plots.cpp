@@ -441,7 +441,7 @@ void plotRunnumDependence(
     for (size_t i = 0; i < asymmetries.size(); ++i) {
         if (std::abs(asymmetries[i] - mu) > 2.5 * errors[i]) {
             // Print outliers
-            std::cout << "Outlier found: Run Number " << runNumbers[i] << std::endl;
+            std::cout << "Outlier found: Run Number " << runNumbers[i] << " " << (std::abs(asymmetries[i] - mu)) << std::endl;
 
             // Store outlier values
             outlierX.push_back(xValues[i]);
@@ -475,10 +475,10 @@ void plotRunnumDependence(
 
         TLatex *text = new TLatex();
         text->SetNDC();
-        text->SetTextSize(0.035);
-        text->DrawLatex(0.62, 0.85, Form("#mu = %.4g", mu));
-        text->DrawLatex(0.62, 0.80, Form("#sigma = %.4g", sigma));
-        text->DrawLatex(0.62, 0.75, Form("#chi^{2}/ndf = %.4g", chi2Ndf));
+        text->SetTextSize(0.03);
+        text->DrawLatex(0.7, 0.85, Form("#mu = %.4g", mu));
+        text->DrawLatex(0.7, 0.80, Form("#sigma = %.4g", sigma));
+        text->DrawLatex(0.7, 0.75, Form("#chi^{2}/ndf = %.4g", chi2Ndf));
     }
 
     // Save the canvas to a file
