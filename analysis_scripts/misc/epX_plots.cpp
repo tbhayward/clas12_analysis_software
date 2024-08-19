@@ -350,12 +350,12 @@ void plotDependence(
             TGraphErrors *graphComb = nullptr;
             if (suffixes[i] != "AULoffset") {
                 graphComb = createTGraphErrors(x, y, yCombErr, 20, 0.8, kRed-7);
-                setAxisLabelsAndRanges(graphComb, xLabel, yLabels[i], xLimits, (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.7) : std::make_pair(-0.15, 0.15));
+                setAxisLabelsAndRanges(graphComb, xLabel, yLabels[i], xLimits, (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.7) : std::make_pair(-0.1, 0.1));
                 graphComb->Draw("AP");
             }
 
             TGraphErrors *graphStat = createTGraphErrors(x, y, yStatErr, 20, 0.8, kBlack);
-            setAxisLabelsAndRanges(graphStat, xLabel, yLabels[i], xLimits, (suffixes[i] == "AULoffset") ? std::make_pair(-0.1, 0.1) : (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.6) : std::make_pair(-0.15, 0.15));
+            setAxisLabelsAndRanges(graphStat, xLabel, yLabels[i], xLimits, (suffixes[i] == "AULoffset") ? std::make_pair(-0.2, 0.2) : (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.6) : std::make_pair(-0.1, 0.1));
 
             if (suffixes[i] != "AULoffset") {
                 graphStat->Draw("P SAME");
