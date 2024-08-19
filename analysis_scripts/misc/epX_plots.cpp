@@ -350,12 +350,12 @@ void plotDependence(
             TGraphErrors *graphComb = nullptr;
             if (suffixes[i] != "AULoffset") {
                 graphComb = createTGraphErrors(x, y, yCombErr, 20, 0.8, kRed-7);
-                setAxisLabelsAndRanges(graphComb, xLabel, yLabels[i], xLimits, (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.6) : std::make_pair(-0.15, 0.15));
+                setAxisLabelsAndRanges(graphComb, xLabel, yLabels[i], xLimits, (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.7) : std::make_pair(-0.15, 0.15));
                 graphComb->Draw("AP");
             }
 
             TGraphErrors *graphStat = createTGraphErrors(x, y, yStatErr, 20, 0.8, kBlack);
-            setAxisLabelsAndRanges(graphStat, xLabel, yLabels[i], xLimits, (suffixes[i] == "AULoffset") ? std::make_pair(-0.2, 0.2) : (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.6) : std::make_pair(-0.15, 0.15));
+            setAxisLabelsAndRanges(graphStat, xLabel, yLabels[i], xLimits, (suffixes[i] == "AULoffset") ? std::make_pair(-0.1, 0.1) : (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.6) : std::make_pair(-0.15, 0.15));
 
             if (suffixes[i] != "AULoffset") {
                 graphStat->Draw("P SAME");
@@ -983,13 +983,13 @@ int main(int argc, char *argv[]) {
     plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots.png");
     plotDependence(asymmetryData, "xFall", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xFall_dependence_plots.png");
 
-    // Plot PT and xF dependence comparison
-    plotComparison(asymmetryData, "output/epX_plots/PT_xF_dependence_comparison.png");
-    // Plot Q2-y-z dependence
-    plotQ2yz_pT(asymmetryData);
+    // // Plot PT and xF dependence comparison
+    // plotComparison(asymmetryData, "output/epX_plots/PT_xF_dependence_comparison.png");
+    // // Plot Q2-y-z dependence
+    // plotQ2yz_pT(asymmetryData);
 
-    // Extract Q² dependence vectors
-    auto allVectors = extractQ2Dependence(asymmetryData, kinematicData);
+    // // Extract Q² dependence vectors
+    // auto allVectors = extractQ2Dependence(asymmetryData, kinematicData);
 
     plotQ2Dependence(allVectors);
 
