@@ -45,6 +45,9 @@ public class Inclusive {
         if (variables.runnum == 16317 || variables.runnum == 16742 || variables.runnum == 16306) {
             return false;
         }
+        if (variables.runnum >= 16658 && variables.runnum <= 16695) {
+            return false;
+        }
         if (variables.Q2() < 1) {
             return false;
         }
