@@ -379,7 +379,7 @@ void plotDependence(
                 }
 
                 // Add the text box for labels only if the extraPrefix is provided
-                TPaveText *text = new TPaveText(0.7, 0.7, 0.9, 0.9, "NDC");
+                TPaveText *text = new TPaveText(0.65, 0.7, 0.9, 0.9, "NDC");
                 if (suffixes[i] == "ALL") {
                     text->SetX1NDC(0.15);  // Move to top left for "F_{LL}/F_{UU}" plot
                     text->SetX2NDC(0.35);

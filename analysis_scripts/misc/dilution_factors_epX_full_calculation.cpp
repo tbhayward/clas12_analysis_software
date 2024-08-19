@@ -23,14 +23,14 @@ const double rho_CH = 1.0 / 14;
 const double rho_A = 0.92 / 17;
 
 // Fractional charge values
-const double xA = 0.71526;
-const double xC = 0.07111;
-const double xCH = 0.03049;
-const double xHe = 0.10728;
-const double xf = 0.07586;
+const double xA = 0.71448;
+const double xC = 0.07131;
+const double xCH = 0.03057;
+const double xHe = 0.10757;
+const double xf = 0.07607;
 
 // Total accumulated charge
-const double nc_A = 4459870.328370002 - 6709.1 - 10170.208; // 16317 and 16742 removed from run list
+const double nc_A = 4442991.020370001; // 16317 and 16742 removed from run list
 const double nc_C = 443417.18516000017;
 const double nc_CH = 190126.82700000002;
 const double nc_He = 668899.295;
@@ -219,7 +219,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     gPad->SetLeftMargin(0.15);
 
     // Define the base cuts for vz
-    std::string vz_cuts = "-10 < vz_e && vz_e < 1 && -10 < vz_p && vz_p < 1";
+    std::string vz_cuts = "-10 < vz_e && vz_e < 1 && -10 < vz_p && vz_p < 1 && runnum != 16317 && runnum != 16742";
 
     // Define the combined cuts based on the value of isMx
     std::string combined_cuts;
@@ -229,8 +229,8 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     } else {
         // Apply both Mx > 1.35 and vz cuts if isMx is false
         // combined_cuts = "Mx > 1.35 && " + vz_cuts;
-        // combined_cuts = "Mx > 0 && " + vz_cuts;
-        combined_cuts = "Mx < 1.35 && Mx > 0 && " + vz_cuts;
+        combined_cuts = "Mx > 0 && " + vz_cuts;
+        // combined_cuts = "Mx < 1.35 && Mx > 0 && " + vz_cuts;
     }
 
     // Define the combined cuts based on the value of isMx
@@ -697,7 +697,7 @@ std::vector<TH1D*> create_and_draw_histograms(TTree* tree_nh3, TTree* tree_carbo
     TH1D *h_pT_empty = new TH1D(Form("h_pT_empty_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
 
     // Define the additional cuts
-    std::string additional_cuts = "Mx > 1.35 && -10 < vz_e && vz_e < 1 && -10 < vz_p && vz_p < 1";
+    std::string additional_cuts = "Mx > 1.35 && -10 < vz_e && vz_e < 1 && -10 < vz_p && vz_p < 1 && runnum != 16317 && runnum != 16742";
 
     // Combine the existing cuts with the additional cuts
     std::string combined_cuts = cuts + " && " + additional_cuts;
