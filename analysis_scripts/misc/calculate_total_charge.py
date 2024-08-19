@@ -19,17 +19,10 @@ def calculate_total_charge(filename):
     with open(filename, 'r') as file:
         reader = csv.reader(file)
         for row in reader:
+            # Skip comments
             if row[0].startswith('#'):
                 if 'NH3' in row[0]:
                     current_section = 'NH3'
-                elif 'Carbon Runs' in row[0]:
-                    current_section = 'C'
-                elif 'CH2' in row[0]:
-                    current_section = 'CH2'
-                elif 'Helium Bath' in row[0]:
-                    current_section = 'Helium Bath'
-                elif 'Empty Target' in row[0]:
-                    current_section = 'Empty Target'
                 else:
                     current_section = None
                 continue
@@ -41,18 +34,26 @@ def calculate_total_charge(filename):
             if run_number in skipped_runs:
                 continue
 
-            if current_section == 'Empty Target' and run_number == 16194:
-                charges[current_section] += charge
+            # Only accumulate charge and collect polarization data in the NH3 section
+            if current_section == 'NH3':
+                charges['NH3'] += charge
+
+                # Extract target polarization and its uncertainty (assumed to be in 5th and 6th columns)
+                try:
+                    target_pol = float(row[4])
+                    target_pol_sigma = float(row[5])
+                    run_data.append((run_number, target_pol, target_pol_sigma))
+                except IndexError:
+                    # Handle rows with missing columns
+                    print(f"Skipping run {run_number} due to missing data in the row.")
+                    continue
+
+            elif current_section == 'Empty Target' and run_number == 16194:
+                charges['Empty Target'] += charge
             elif current_section == 'Empty Target' and run_number == 16186:
                 continue
             elif current_section:
                 charges[current_section] += charge
-
-            # Extract target polarization and its uncertainty (assumed to be in 5th and 6th columns)
-            if row[0].startswith('#'):
-                target_pol = float(row[4])
-                target_pol_sigma = float(row[5])
-                run_data.append((run_number, target_pol, target_pol_sigma))
 
     # Calculate the total charge
     total_charge = sum(charges.values())
