@@ -91,7 +91,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
               }
           }
 
-          goodEvent = prezGood && yGood && zGood;
+          goodEvent = goodEvent && prezGood && yGood && zGood;
       }
 
 

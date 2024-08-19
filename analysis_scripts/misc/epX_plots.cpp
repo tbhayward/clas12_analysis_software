@@ -315,7 +315,8 @@ void plotDependence(
     const std::string &prefix, 
     const std::string &xLabel, 
     const std::pair<double, double> &xLimits, 
-    const std::string &outputFileName) {
+    const std::string &outputFileName,
+    const std::string &extraPrefix = "") {  // Optional extra prefix
     TCanvas *c = new TCanvas("c", "Dependence Plots", 1200, 800);
     c->Divide(3, 2);
 
@@ -345,30 +346,55 @@ void plotDependence(
                 y.push_back(entry[1]);
                 yStatErr.push_back(entry[2]);
 
-                double sysUncertainty = 0; //computeSystematicUncertainty(suffixes[i], y.back());
+                double sysUncertainty = 0;  // Optionally calculate systematic uncertainty
                 yCombErr.push_back(std::sqrt(std::pow(yStatErr.back(), 2) + std::pow(sysUncertainty, 2)));
             }
 
-            TGraphErrors *graphComb = nullptr;
-            if (suffixes[i] != "AULoffset") {
-                graphComb = createTGraphErrors(x, y, yCombErr, 20, 0.8, kRed-7);
-                setAxisLabelsAndRanges(graphComb, xLabel, yLabels[i], xLimits, (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.8) : std::make_pair(-0.08, 0.08));
-                graphComb->Draw("AP");
-            }
-
             TGraphErrors *graphStat = createTGraphErrors(x, y, yStatErr, 20, 0.8, kBlack);
-            setAxisLabelsAndRanges(graphStat, xLabel, yLabels[i], xLimits, (suffixes[i] == "AULoffset") ? std::make_pair(-0.2, 0.2) : (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.8) : std::make_pair(-0.08, 0.08));
+            setAxisLabelsAndRanges(graphStat, xLabel, yLabels[i], xLimits, (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.8) : std::make_pair(-0.08, 0.08));
+            graphStat->Draw("AP");
 
-            if (suffixes[i] != "AULoffset") {
-                graphStat->Draw("P SAME");
-            } else {
-                graphStat->Draw("AP");
+            // Draw the second dataset if the extra prefix is provided
+            if (!extraPrefix.empty()) {
+                std::string extraKey = extraPrefix + "chi2Fits" + suffixes[i];
+                auto extraIt = asymmetryData.find(extraKey);
+                if (extraIt != asymmetryData.end()) {
+                    const auto &extraData = extraIt->second;
+
+                    std::vector<double> extraX, extraY, extraYStatErr, extraYCombErr;
+                    for (const auto &entry : extraData) {
+                        extraX.push_back(entry[0]);
+                        extraY.push_back(entry[1]);
+                        extraYStatErr.push_back(entry[2]);
+
+                        double extraSysUncertainty = 0;  // Optionally calculate systematic uncertainty
+                        extraYCombErr.push_back(std::sqrt(std::pow(extraYStatErr.back(), 2) + std::pow(extraSysUncertainty, 2)));
+                    }
+
+                    TGraphErrors *extraGraphStat = createTGraphErrors(extraX, extraY, extraYStatErr, 20, 0.8, kRed);
+                    extraGraphStat->Draw("P SAME");
+                }
             }
 
             TLine *line = new TLine(xLimits.first, 0, xLimits.second, 0);
             line->SetLineColor(kGray+2);
             line->SetLineStyle(7);
             line->Draw();
+
+            // Add the text box for labels
+            TPaveText *text = new TPaveText(0.7, 0.7, 0.9, 0.9, "NDC");  // Default to top right
+            if (suffixes[i] == "ALL") {
+                text->SetX1NDC(0.15);  // Move to top left for "ALL" plot
+                text->SetX2NDC(0.35);
+            }
+            text->SetTextAlign(13);
+            text->SetBorderSize(0);
+            text->SetFillColor(0);
+            text->AddText("#font[42]{M_{x} > 1.35 GeV}");  // Black text line
+            if (!extraPrefix.empty()) {
+                text->AddText("#font[42]{#color[2]{M_{x} > 0 GeV}}");  // Red text line
+            }
+            text->Draw();
         }
     }
 
@@ -1092,14 +1118,17 @@ int main(int argc, char *argv[]) {
 
     // Call the plotting function for different dependencies
     plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots.png");
-    plotDependence(asymmetryData, "xall", "x_{B}", {0.06, 0.6}, "output/epX_plots/xall_dependence_plots.png");
+    plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots.png", "xall");
+    // plotDependence(asymmetryData, "xall", "x_{B}", {0.06, 0.6}, "output/epX_plots/xall_dependence_plots.png");
     plotDependence(asymmetryData, "PT", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PT_dependence_plots.png");
-    plotDependence(asymmetryData, "PTall", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PTall_dependence_plots.png");
+    plotDependence(asymmetryData, "PT", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PT_dependence_plots.png", "PTall");
+    // plotDependence(asymmetryData, "PTall", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PTall_dependence_plots.png");
     plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots.png");
-    plotDependence(asymmetryData, "xFall", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xFall_dependence_plots.png");
+    plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots.png", "xFall");
+    // plotDependence(asymmetryData, "xFall", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xFall_dependence_plots.png");
     plotDependence(asymmetryData, "Mx", "M_{x} (GeV)", {0, 3}, "output/epX_plots/Mx_dependence_plots.png");
     // plotDependence(asymmetryData, "runnum", "run number", {16135, 16774}, "output/epX_plots/runnum_dependence_plots.png");
-    plotRunnumDependence(asymmetryData, "runnum", "run number", "output/epX_plots/runnum_dependence_plots.png");
+    // plotRunnumDependence(asymmetryData, "runnum", "run number", "output/epX_plots/runnum_dependence_plots.png");
 
     // // Plot PT and xF dependence comparison
     // plotComparison(asymmetryData, "output/epX_plots/PT_xF_dependence_comparison.png");
