@@ -979,7 +979,9 @@ int main(int argc, char *argv[]) {
     plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots.png");
     plotDependence(asymmetryData, "xall", "x_{B}", {0.06, 0.6}, "output/epX_plots/xall_dependence_plots.png");
     plotDependence(asymmetryData, "PT", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PT_dependence_plots.png");
+    plotDependence(asymmetryData, "PTall", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PTall_dependence_plots.png");
     plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots.png");
+    plotDependence(asymmetryData, "xFall", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xFall_dependence_plots.png");
 
     // Plot PT and xF dependence comparison
     plotComparison(asymmetryData, "output/epX_plots/PT_xF_dependence_comparison.png");
