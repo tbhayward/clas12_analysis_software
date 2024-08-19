@@ -977,7 +977,7 @@ int main(int argc, char *argv[]) {
 
     // Call the plotting function for different dependencies
     plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots.png");
-    plotDependence(asymmetryData, "xall", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots.png");
+    plotDependence(asymmetryData, "xall", "x_{B}", {0.06, 0.6}, "output/epX_plots/xall_dependence_plots.png");
     plotDependence(asymmetryData, "PT", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PT_dependence_plots.png");
     plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots.png");
 
