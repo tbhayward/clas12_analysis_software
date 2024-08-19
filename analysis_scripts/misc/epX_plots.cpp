@@ -23,7 +23,8 @@
 #include <string>
 #include <map>
 #include <TLatex.h>
-#include <TText.h>  // Add this include for TText
+#include <TText.h>  
+#include <TF1.h>          
 
 // Global variables for systematic uncertainties
 const double LU_SYS_UNCERTAINTY = 0.029;
@@ -450,7 +451,7 @@ void plotRunnumDependence(
         c->cd(i);
 
         TLegend *legend = new TLegend(0.6, 0.8, 0.9, 0.9); // Top right corner
-        legend->AddEntry(fitFunc, Form("#mu = %.3g, #sigma = %.3g", mu, sigma), "L");
+        legend->AddEntry(static_cast<TObject*>(fitFunc), Form("#mu = %.3g, #sigma = %.3g", mu, sigma), "L");
         legend->SetTextSize(0.03);
         legend->Draw("same");
     }
