@@ -1274,7 +1274,7 @@ int main(int argc, char *argv[]) {
     // std::cout << "Asymmetry Data:\n";
     // printData(asymmetryData);
 
-    // std::cout << "\nKinematic Data:\n";
+    // std::cout << "\nKinematic Data:\n"; 
     // printData(kinematicData);
 
     // Call the plotting function for different dependencies
