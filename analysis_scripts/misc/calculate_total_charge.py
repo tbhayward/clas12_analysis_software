@@ -49,9 +49,10 @@ def calculate_total_charge(filename):
                 charges[current_section] += charge
 
             # Extract target polarization and its uncertainty (assumed to be in 5th and 6th columns)
-            target_pol = float(row[4])
-            target_pol_sigma = float(row[5])
-            run_data.append((run_number, target_pol, target_pol_sigma))
+            if row[0].startswith('#'):
+                target_pol = float(row[4])
+                target_pol_sigma = float(row[5])
+                run_data.append((run_number, target_pol, target_pol_sigma))
 
     # Calculate the total charge
     total_charge = sum(charges.values())
