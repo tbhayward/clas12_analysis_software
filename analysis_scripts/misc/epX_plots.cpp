@@ -418,15 +418,6 @@ void plotRunnumDependence(
     double sigma = fitFunc->GetParError(0);
     double chi2Ndf = fitFunc->GetChisquare() / fitFunc->GetNDF();
 
-    // Identify outliers and plot points with 2.5 sigma threshold
-    std::vector<int> outlierIndices;
-    for (size_t i = 0; i < asymmetries.size(); ++i) {
-        if (std::abs(asymmetries[i] - mu) > 2.5 * errors[i]) {
-            outlierIndices.push_back(i);
-            std::cout << "Outlier found: Run Number " << runNumbers[i] << std::endl;
-        }
-    }
-
     // Draw the left plot: Original run numbers
     c->cd(1);
     gPad->SetLeftMargin(0.18);
@@ -439,14 +430,6 @@ void plotRunnumDependence(
     // Draw the fitted constant line on the left plot
     fitFunc->Draw("same");
 
-    // Draw outliers in red
-    for (int index : outlierIndices) {
-        TMarker *marker = new TMarker(runNumbers[index], asymmetries[index], 20);
-        marker->SetMarkerColor(kRed);
-        marker->SetMarkerSize(0.7);
-        marker->Draw("same");
-    }
-
     // Draw the right plot: Run index (1, 2, 3, ...)
     c->cd(2);
     gPad->SetLeftMargin(0.18);
@@ -458,12 +441,25 @@ void plotRunnumDependence(
     // Draw the fitted constant line on the right plot
     fitFunc->Draw("same");
 
-    // Draw outliers in red
-    for (int index : outlierIndices) {
-        TMarker *marker = new TMarker(xValues[index], asymmetries[index], 20);
-        marker->SetMarkerColor(kRed);
-        marker->SetMarkerSize(0.7);
-        marker->Draw("same");
+    // Identify outliers and plot points with 2.5 sigma threshold
+    for (size_t i = 0; i < asymmetries.size(); ++i) {
+        if (std::abs(asymmetries[i] - mu) > 2.5 * errors[i]) {
+            // Print outliers
+            std::cout << "Outlier found: Run Number " << runNumbers[i] << std::endl;
+
+            // Plot the outlier in red on both plots
+            c->cd(1);
+            TMarker *marker1 = new TMarker(runNumbers[i], asymmetries[i], 20);
+            marker1->SetMarkerColor(kRed);
+            marker1->SetMarkerSize(0.8);
+            marker1->Draw("same");
+
+            c->cd(2);
+            TMarker *marker2 = new TMarker(xValues[i], asymmetries[i], 20);
+            marker2->SetMarkerColor(kRed);
+            marker2->SetMarkerSize(0.8);
+            marker2->Draw("same");
+        }
     }
 
     // Create and draw a text box in the top right corner with mu, sigma, and chi2/ndf
