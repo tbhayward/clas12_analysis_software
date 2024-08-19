@@ -377,27 +377,22 @@ void plotDependence(
                     TGraphErrors *extraGraphStat = createTGraphErrors(extraX, extraY, extraYStatErr, 20, 0.8, kRed);
                     extraGraphStat->Draw("P SAME");
                 }
-            }
 
-            TLine *line = new TLine(xLimits.first, 0, xLimits.second, 0);
-            line->SetLineColor(kGray+2);
-            line->SetLineStyle(7);
-            line->Draw();
-
-            // Add the text box for labels
-            TPaveText *text = new TPaveText(0.7, 0.7, 0.9, 0.9, "NDC");  // Default to top right
-            if (suffixes[i] == "ALL") {
-                text->SetX1NDC(0.15);  // Move to top left for "F_{LL}/F_{UU}" plot
-                text->SetX2NDC(0.35);
-            }
-            text->SetTextAlign(13);
-            text->SetBorderSize(1);  // Set border size to 1 for a black border
-            text->SetFillColor(0);
-            text->AddText("#font[42]{M_{x} > 1.35 GeV}");  // Black text line
-            if (!extraPrefix.empty()) {
+                // Add the text box for labels only if the extraPrefix is provided
+                TPaveText *text = new TPaveText(0.7, 0.7, 0.9, 0.9, "NDC");
+                if (suffixes[i] == "ALL") {
+                    text->SetX1NDC(0.15);  // Move to top left for "F_{LL}/F_{UU}" plot
+                    text->SetX2NDC(0.35);
+                    text->SetY1NDC(0.75);  // Ensure it's at the top left
+                    text->SetY2NDC(0.9);
+                }
+                text->SetTextAlign(13);
+                text->SetBorderSize(1);  // Set border size to 1 for a black border
+                text->SetFillColor(0);
+                text->AddText("#font[42]{M_{x} > 1.35 GeV}");  // Black text line
                 text->AddText("#font[42]{#color[2]{M_{x} > 0 GeV}}");  // Red text line
+                text->Draw();
             }
-            text->Draw();
         }
     }
 
