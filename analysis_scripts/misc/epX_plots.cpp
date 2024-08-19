@@ -375,6 +375,80 @@ void plotDependence(
     delete c;
 }
 
+void plotRunnumDependence(
+    const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
+    const std::string &prefix, 
+    const std::string &xLabel, 
+    const std::string &outputFileName) {
+
+    // Create a canvas with 1 row and 2 columns
+    TCanvas *c = new TCanvas("c", "Run Number Dependence Plots", 1200, 600);
+    c->Divide(2, 1);
+
+    // Y-axis label and range (same for both plots)
+    std::string yLabel = "F_{LU}^{sin#phi}/F_{UU}";
+    std::pair<double, double> yLimits = {-0.06, 0.06};
+    
+    // Key to access the ALUsinphi data
+    std::string key = prefix + "chi2FitsALUsinphi";
+
+    // Ensure the key exists in the data
+    auto it = asymmetryData.find(key);
+    if (it != asymmetryData.end()) {
+        const auto &data = it->second;
+
+        // Create vectors to store the x, y, and error values for both plots
+        std::vector<double> xOriginal, xSequential, y, yStatErr;
+
+        // Loop through the data to extract the original x values, y values, and errors
+        for (size_t i = 0; i < data.size(); ++i) {
+            xOriginal.push_back(data[i][0]);    // Original run numbers
+            xSequential.push_back(i + 1);       // Sequential numbers (1, 2, 3, ...)
+            y.push_back(data[i][1]);            // Asymmetry value
+            yStatErr.push_back(data[i][2]);     // Asymmetry error
+        }
+
+        // Set x-axis limits for both plots
+        std::pair<double, double> xLimitsOriginal = {16135, 16774}; // Left plot (original run numbers)
+        std::pair<double, double> xLimitsSequential = {0, 160};     // Right plot (sequential numbers)
+
+        // Create the left plot with original run numbers
+        c->cd(1);
+        gPad->SetLeftMargin(0.18);
+        gPad->SetBottomMargin(0.15);
+        TGraphErrors *graphOriginal = createTGraphErrors(xOriginal, y, yStatErr, 20, 0.8, kBlack);
+        setAxisLabelsAndRanges(graphOriginal, xLabel, yLabel, xLimitsOriginal, yLimits);
+        graphOriginal->Draw("AP");
+
+        TLine *lineOriginal = new TLine(xLimitsOriginal.first, 0, xLimitsOriginal.second, 0);
+        lineOriginal->SetLineColor(kGray + 2);
+        lineOriginal->SetLineStyle(7);
+        lineOriginal->Draw("same");
+
+        // Create the right plot with sequential run numbers
+        c->cd(2);
+        gPad->SetLeftMargin(0.18);
+        gPad->SetBottomMargin(0.15);
+        TGraphErrors *graphSequential = createTGraphErrors(xSequential, y, yStatErr, 20, 0.8, kBlack);
+        setAxisLabelsAndRanges(graphSequential, "Run Index", yLabel, xLimitsSequential, yLimits);
+        graphSequential->Draw("AP");
+
+        TLine *lineSequential = new TLine(xLimitsSequential.first, 0, xLimitsSequential.second, 0);
+        lineSequential->SetLineColor(kGray + 2);
+        lineSequential->SetLineStyle(7);
+        lineSequential->Draw("same");
+    } else {
+        std::cerr << "Error: Key " << key << " not found in asymmetry data." << std::endl;
+    }
+
+    // Save the canvas to a file
+    gSystem->Exec("mkdir -p output/epX_plots");
+    c->SaveAs(outputFileName.c_str());
+
+    // Clean up
+    delete c;
+}
+
 void plotComparison(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
     const std::string &outputFileName) {
@@ -983,7 +1057,8 @@ int main(int argc, char *argv[]) {
     plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots.png");
     plotDependence(asymmetryData, "xFall", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xFall_dependence_plots.png");
     plotDependence(asymmetryData, "Mx", "M_{x} (GeV)", {0, 3}, "output/epX_plots/Mx_dependence_plots.png");
-    plotDependence(asymmetryData, "runnum", "run number", {16135, 16774}, "output/epX_plots/runnum_dependence_plots.png");
+    // plotDependence(asymmetryData, "runnum", "run number", {16135, 16774}, "output/epX_plots/runnum_dependence_plots.png");
+    plotRunnumDependence(asymmetryData, "runnum", "run number", "output/epX_plots/runnum_dependence_plots.png");
 
     // // Plot PT and xF dependence comparison
     // plotComparison(asymmetryData, "output/epX_plots/PT_xF_dependence_comparison.png");
