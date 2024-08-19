@@ -637,7 +637,7 @@ void plotTargetPolarizationDependence(
 
     // Draw the positive and negative polarization data
     TGraphErrors *graphRegularPos = createTGraphErrors(posXValues, posPolarizations, posErrors, 20, 0.8, kBlack);
-    TGraphErrors *graphRegularNeg = createTGraphErrors(negXValues, negPolarizations, negErrors, 21, 0.8, kBlack);
+    TGraphErrors *graphRegularNeg = createTGraphErrors(negXValues, negPolarizations, negErrors, 20, 0.8, kBlack);
 
     setAxisLabelsAndRanges(graphRegularPos, "run index", yLabel, {0, static_cast<double>(xValues.size()) + 1}, yLimits);
     graphRegularPos->Draw("AP");
