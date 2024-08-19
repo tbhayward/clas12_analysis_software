@@ -352,10 +352,12 @@ void plotDependence(
             }
 
             TGraphErrors *graphStat = createTGraphErrors(x, y, yStatErr, 20, 0.8, kBlack);
-            setAxisLabelsAndRanges(graphStat, xLabel, yLabels[i], xLimits, (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.8) : std::make_pair(-0.08, 0.08));
+            setAxisLabelsAndRanges(graphStat, xLabel, yLabels[i], xLimits, 
+                                   (suffixes[i] == "AULoffset") ? std::make_pair(-0.2, 0.2) : 
+                                   (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.8) : std::make_pair(-0.08, 0.08));
             graphStat->Draw("AP");
 
-            // Draw the second dataset if the extra prefix is provided
+            // Draw the second dataset if the extraPrefix is provided
             if (!extraPrefix.empty()) {
                 std::string extraKey = extraPrefix + "chi2Fits" + suffixes[i];
                 auto extraIt = asymmetryData.find(extraKey);
@@ -385,11 +387,11 @@ void plotDependence(
             // Add the text box for labels
             TPaveText *text = new TPaveText(0.7, 0.7, 0.9, 0.9, "NDC");  // Default to top right
             if (suffixes[i] == "ALL") {
-                text->SetX1NDC(0.15);  // Move to top left for "ALL" plot
+                text->SetX1NDC(0.15);  // Move to top left for "F_{LL}/F_{UU}" plot
                 text->SetX2NDC(0.35);
             }
             text->SetTextAlign(13);
-            text->SetBorderSize(0);
+            text->SetBorderSize(1);  // Set border size to 1 for a black border
             text->SetFillColor(0);
             text->AddText("#font[42]{M_{x} > 1.35 GeV}");  // Black text line
             if (!extraPrefix.empty()) {
