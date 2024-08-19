@@ -439,7 +439,7 @@ void plotRunnumDependence(
 
     // Separate out outliers for the right plot
     for (size_t i = 0; i < asymmetries.size(); ++i) {
-        if (std::abs(asymmetries[i] - mu) > 2.0 * errors[i]) {
+        if (std::abs(asymmetries[i] - mu) > 2.5 * errors[i]) {
             // Print outliers
             std::cout << "Outlier found: Run Number " << runNumbers[i] << " " << (std::abs(asymmetries[i] - mu))/errors[i] << std::endl;
 
