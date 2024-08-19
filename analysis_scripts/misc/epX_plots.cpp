@@ -26,6 +26,7 @@
 #include <TText.h>  
 #include <TF1.h>        
 #include <TMarker.h>  
+#include <TPaveText.h>
 
 // Global variables for systematic uncertainties
 const double LU_SYS_UNCERTAINTY = 0.029;
