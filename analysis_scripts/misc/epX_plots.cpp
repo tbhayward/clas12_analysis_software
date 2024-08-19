@@ -664,9 +664,9 @@ void plotTargetPolarizationDependence(
     text->DrawLatex(0.7, 0.6, Form("#chi^{2}/ndf_{+} = %.4g", chi2NdfPos));
 
     // Move text box to the left for negative polarization
-    text->DrawLatex(0.25, 0.45, Form("#mu_{-} = %.4g", muNeg));
-    text->DrawLatex(0.25, 0.4, Form("#sigma_{-} = %.4g", sigmaNeg));
-    text->DrawLatex(0.25, 0.35, Form("#chi^{2}/ndf_{-} = %.4g", chi2NdfNeg));
+    text->DrawLatex(0.225, 0.45, Form("#mu_{-} = %.4g", muNeg));
+    text->DrawLatex(0.225, 0.4, Form("#sigma_{-} = %.4g", sigmaNeg));
+    text->DrawLatex(0.225, 0.35, Form("#chi^{2}/ndf_{-} = %.4g", chi2NdfNeg));
 
     // Save the canvas to a file
     gSystem->Exec("mkdir -p output/epX_plots");
