@@ -23,13 +23,13 @@ double dilution_factor(double currentVariable, const std::string& prefix) {
   if (prefix == "xF") { return 0.199983+-0.0058117*currentVariable+-0.0425802*std::pow(currentVariable,2); }
   if (prefix == "Mx") { return 0.139383*exp(-0.5*std::pow((currentVariable - 0.120003) / 0.23574, 2)) + 0.0289296*exp(-0.5*std::pow((currentVariable - 0.785) / -0.0542062, 2)) + 0.0892425 + 0.189842*currentVariable + -0.106771*std::pow(currentVariable, 2); }
 
-  if (prefix == "Q2") { return 0.069162+0.0852323*currentVariable+-0.016417*std::pow(currentVariable,2); }
-  if (prefix == "xall") { return 0.199592+-0.378803*currentVariable+1.66622*std::pow(currentVariable,2); }
-  if (prefix == "yall") { return 0.25066+-0.0182866*currentVariable+-0.42064*std::pow(currentVariable,2); }
-  if (prefix == "zall") { return 0.113339+0.396386*currentVariable+-0.458942*std::pow(currentVariable,2); }
-  if (prefix == "zetaall") { return 1.17109+-4.89527*currentVariable+8.4361*std::pow(currentVariable,2); }
-  if (prefix == "PTall") { return 0.220685+-0.38361*currentVariable+0.96351*std::pow(currentVariable,2); }
-  if (prefix == "xFall") { return 0.213126+0.0084475*currentVariable+-0.110573*std::pow(currentVariable,2); }
+  if (prefix == "Q2all") { return 0.0756166+0.084845*currentVariable+-0.0163104*std::pow(currentVariable,2); }
+  if (prefix == "xall") { return 0.203144+-0.362312*currentVariable+1.64139*std::pow(currentVariable,2); }
+  if (prefix == "yall") { return 0.26201+-0.0383504*currentVariable+-0.390395*std::pow(currentVariable,2); }
+  if (prefix == "zall") { return 0.116095+0.413281*currentVariable+-0.479925*std::pow(currentVariable,2); }
+  if (prefix == "zetaall") { return 1.21156+-5.09334*currentVariable+8.81791*std::pow(currentVariable,2); }
+  if (prefix == "PTall") { return 0.228164+-0.386966*currentVariable+0.963299*std::pow(currentVariable,2); }
+  if (prefix == "xFall") { return 0.220114+0.0117653*currentVariable+-0.107717*std::pow(currentVariable,2); }
 
   if (prefix == "Q2exclusive") { return 0.0785674+0.082314*currentVariable+-0.0156957*std::pow(currentVariable,2); }
   if (prefix == "xexclusive") { return 0.353541+-1.88346*currentVariable+5.97796*std::pow(currentVariable,2); }
