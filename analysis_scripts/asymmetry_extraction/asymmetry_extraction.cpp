@@ -316,14 +316,14 @@ int main(int argc, char *argv[]) {
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
     cout << "MLM fits disabled by default in main branch. See development/uncomment next lines for MLM." << endl;
-    switch (channel) {
+    // switch (channel) {
     //   case 0: cout << "No MLM fit for inclusive." << endl; break;
     //   case 1: performMLMFits_single_hadron(output_file.c_str(), kinematic_file.c_str(), binNames[i]); break;
     //   case 2: performMLMFits_b2b_dihadron(output_file.c_str(), kinematic_file.c_str(), binNames[i]); break;
     //   case 3: cout << "No dihadron MLM fit (yet)." << endl; break;
     //   case 4: cout << "No unbinned MLM fit performed for DVCS; the physics is the phi dependence" << endl; break;
     // }
-    // cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
+    cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
     currentFits++;
   }
