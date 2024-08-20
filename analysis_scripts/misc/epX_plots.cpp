@@ -1291,10 +1291,10 @@ int main(int argc, char *argv[]) {
     // plotDependence(asymmetryData, "runnum", "run number", {16135, 16774}, "output/epX_plots/runnum_dependence_plots.png");
     // plotRunnumDependence(asymmetryData, "runnum", "run number", "output/epX_plots/runnum_dependence_plots.png");
 
-    // // Plot PT and xF dependence comparison
-    // plotComparison(asymmetryData, "output/epX_plots/PT_xF_dependence_comparison.png");
-    // // Plot Q2-y-z dependence
-    // plotQ2yz_pT(asymmetryData);
+    // Plot PT and xF dependence comparison
+    plotComparison(asymmetryData, "output/epX_plots/PT_xF_dependence_comparison.png");
+    // Plot Q2-y-z dependence
+    plotQ2yz_pT(asymmetryData);
 
     // Extract Q² dependence vectors
     auto allVectors = extractQ2Dependence(asymmetryData, kinematicData);
