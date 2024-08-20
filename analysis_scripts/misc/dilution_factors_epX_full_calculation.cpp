@@ -23,18 +23,18 @@ const double rho_CH = 1.0 / 14;
 const double rho_A = 0.92 / 17;
 
 // Fractional charge values
-const double xA = 0.71448;
-const double xC = 0.07131;
-const double xCH = 0.03057;
-const double xHe = 0.10757;
-const double xf = 0.07607;
+const double xA = 0.71297;
+const double xC = 0.08399;
+const double xCH = 0.03600;
+const double xHe = 0.07535;
+const double xf = 0.09168;
 
 // Total accumulated charge
-const double nc_A = 4442991.020370001; // 16317 and 16742 removed from run list
-const double nc_C = 443417.18516000017;
-const double nc_CH = 190126.82700000002;
-const double nc_He = 668899.295;
-const double nc_ET = 473020.06;
+const double nc_A = 3599616.7128999997; // 16317 and 16742 removed from run list
+const double nc_C = 424018.35203;
+const double nc_CH = 181775.30390000003;
+const double nc_He = 380446.68830000004;
+const double nc_ET = 462880.79;
 
 // Declare vectors to store the dynamically allocated objects
 std::vector<TGraphErrors*> dilution_graphs;
