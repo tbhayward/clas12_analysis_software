@@ -385,7 +385,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
 
         if (!isMx) {
             gr_dilution_all->Fit(fit_func_all, "RQ");
-            fit_func_all->SetLineColor(kBlue);
+            fit_func_all->SetLineColor(kRed);
             fit_func_all->SetLineStyle(2); // Dashed line
             // fit_func_all->SetLineWidth(1); // Set thinner line
 
@@ -444,8 +444,8 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
             gr_dilution_all->Fit(fit_func, "RQ");
             fit_func_all->Draw("SAME");
 
-            gr_dilution_exclusive->Fit(fit_func, "RQ");
-            fit_func_exclusive->Draw("SAME");
+            // gr_dilution_exclusive->Fit(fit_func, "RQ");
+            // fit_func_exclusive->Draw("SAME");
         }
 
         // Commented out chi2/ndf printing
@@ -459,17 +459,17 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
 
         if (!isMx) {
             // Add red note "0 < M_{x} < 1.35 (GeV)"
-            TLatex latex_red;
-            latex_red.SetNDC();
-            latex_red.SetTextSize(0.035); // Adjust the font size if needed
-            latex_red.SetTextColor(kRed); // Set the text color to red
-            latex_red.DrawLatex(0.2, 0.85, "0.55 < M_{x} (GeV) < 1.35");
+            // TLatex latex_red;
+            // latex_red.SetNDC();
+            // latex_red.SetTextSize(0.035); // Adjust the font size if needed
+            // latex_red.SetTextColor(kRed); // Set the text color to red
+            // latex_red.DrawLatex(0.2, 0.85, "0.55 < M_{x} (GeV) < 1.35");
 
             // Add blue note "0 < M_{x} (GeV)" just below the red one
             TLatex latex_blue;
             latex_blue.SetNDC();
             latex_blue.SetTextSize(0.035); // Adjust the font size if needed
-            latex_blue.SetTextColor(kBlue); // Set the text color to blue
+            latex_blue.SetTextColor(kRed); // Set the text color to blue
             latex_blue.DrawLatex(0.2, 0.80, "0.55 < M_{x} (GeV)");
         }
 
