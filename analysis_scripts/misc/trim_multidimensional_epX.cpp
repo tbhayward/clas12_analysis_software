@@ -50,36 +50,35 @@ int DetermineQ2xBin(float Q2, float x) {
 
     // Bins 2-4: 0.1 < x < 0.14
     if (x > 0.1 && x < 0.14) {
-        if (Q2 < 1.40) return 2;
-        if (Q2 >= 1.40 && Q2 < 1.70) return 3;
+        if (Q2 < 1.50) return 2;
+        if (Q2 >= 1.50 && Q2 < 1.70) return 3;
         if (Q2 >= 1.70) return 4;
     }
 
     // Bins 5-8: 0.14 < x < 0.21
     if (x > 0.14 && x < 0.21) {
-        if (Q2 < 1.40) return 5;
-        if (Q2 >= 1.40 && Q2 < 1.70) return 6;
+        if (Q2 < 1.50) return 5;
+        if (Q2 >= 1.50 && Q2 < 1.70) return 6;
         if (Q2 >= 1.70 && Q2 < 2.00) return 7;
         if (Q2 >= 2.00) return 8;
     }
 
     // Bins 9-12: 0.21 < x < 0.30
     if (x > 0.21 && x < 0.30) {
-        if (Q2 < 1.70) return 9;
-        if (Q2 >= 1.70 && Q2 < 2.00) return 10;
-        if (Q2 >= 2.00 && Q2 < 2.30) return 11;
-        if (Q2 >= 2.30) return 12;
+        if (Q2 < 2.20) return 9;
+        if (Q2 >= 2.20 && Q2 < 2.60) return 10;
+        if (Q2 >= 2.60) return 11;
     }
 
     // Bins 13-14: 0.30 < x < 0.42
     if (x > 0.30 && x < 0.42) {
-        if (Q2 < 2.30) return 13;
-        if (Q2 >= 2.30) return 14;
+        if (Q2 < 3.20) return 12;
+        if (Q2 >= 3.20) return 13;
     }
 
     // Bin 15: x > 0.42
     if (x >= 0.42) {
-        return 15;
+        return 14;
     }
 
     // If no conditions are met, return 0
@@ -111,7 +110,7 @@ void process_file(const char* input_filename) {
     // Create output files and trees for each Q2-y bin
     std::vector<TFile*> output_files(18);
     std::vector<TTree*> output_trees(18);
-    for (int i = 0; i < 18; ++i) {
+    for (int i = 0; i < 16; ++i) {
         std::string output_filename = base_name + "_" + std::to_string(i) + ".root";
         output_files[i] = TFile::Open(output_filename.c_str(), "RECREATE");
         output_trees[i] = input_tree->CloneTree(0); // Clone the structure of the input tree
