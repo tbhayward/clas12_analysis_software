@@ -110,7 +110,7 @@ void process_file(const char* input_filename) {
     // Create output files and trees for each Q2-y bin
     std::vector<TFile*> output_files(18);
     std::vector<TTree*> output_trees(18);
-    for (int i = 0; i < 16; ++i) {
+    for (int i = 0; i < 15; ++i) {
         std::string output_filename = base_name + "_" + std::to_string(i) + ".root";
         output_files[i] = TFile::Open(output_filename.c_str(), "RECREATE");
         output_trees[i] = input_tree->CloneTree(0); // Clone the structure of the input tree
@@ -165,7 +165,7 @@ void process_file(const char* input_filename) {
         if (*Mx > 1.35) {
             // Determine the Q2-y bin and fill the corresponding tree
             int bin = DetermineQ2xBin(*Q2, *x);
-            if (bin > 0 && bin <= 15) {
+            if (bin > 0 && bin <= 14) {
                 output_trees[bin]->Fill();
             }
         }
@@ -174,7 +174,7 @@ void process_file(const char* input_filename) {
     }
 
     // Write and close the output files
-    for (int i = 0; i < 16; ++i) {
+    for (int i = 0; i < 15; ++i) {
         output_files[i]->cd();
         output_trees[i]->Write();
         output_files[i]->Close();

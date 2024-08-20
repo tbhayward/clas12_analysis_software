@@ -228,18 +228,18 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         combined_cuts = "Mx > 0 && " + vz_cuts;
     } else {
         // Apply both Mx > 1.35 and vz cuts if isMx is false
-        combined_cuts = "Mx > 1.35 && " + vz_cuts;
-        // combined_cuts = "Mx > 0 && " + vz_cuts;
+        // combined_cuts = "Mx > 1.35 && " + vz_cuts;
+        combined_cuts = "Mx > 0.55 && " + vz_cuts;
         // combined_cuts = "Mx < 1.35 && Mx > 0 && " + vz_cuts;
     }
 
     // Define the combined cuts based on the value of isMx
     std::string combined_cuts_exclusive;
-    combined_cuts_exclusive = "Mx> 0 && Mx < 1.35 && " + vz_cuts;
+    combined_cuts_exclusive = "Mx> 0.55 && Mx < 1.35 && " + vz_cuts;
 
     // Define the combined cuts based on the value of isMx
     std::string combined_cuts_all;
-    combined_cuts_all = "Mx> 0 && " + vz_cuts;
+    combined_cuts_all = "Mx> 0.55 && " + vz_cuts;
 
     // Create histograms for data using the appropriate cuts
     TH1D *h_nh3 = new TH1D(Form("h_%s_nh3", variable_name), "", n_bins, x_min, x_max);
