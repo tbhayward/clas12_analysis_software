@@ -470,7 +470,7 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
             latex_blue.SetNDC();
             latex_blue.SetTextSize(0.035); // Adjust the font size if needed
             latex_blue.SetTextColor(kRed); // Set the text color to blue
-            latex_blue.DrawLatex(0.2, 0.80, "0.55 < M_{x} (GeV)");
+            latex_blue.DrawLatex(0.2, 0.85, "M_{x} > 0.55 GeV");
         }
 
         // Add fit parameters box
@@ -715,6 +715,8 @@ std::vector<TH1D*> create_and_draw_histograms(TTree* tree_nh3, TTree* tree_carbo
 }
 
 double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile* empty) {
+    int canvasIndex = 0;  // To keep track of the canvas number across x bins
+
     for (int k = 0; k < 14; ++k) {  // 14 Q2-x bins
         // Get the PhysicsEvents trees
         TTree *tree_nh3;
@@ -732,9 +734,10 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
             std::cerr << "Error: PhysicsEvents tree not found!" << std::endl;
             return 0;
         }
-        std::string canvasName = "c1_" + std::to_string(k);
-        TCanvas *c1 = new TCanvas(canvasName.c_str(), "Dilution Factor Analysis", 1600, 2000);
-        c1->Divide(4, 4);  // 4x4 grid to accommodate all z and Q2 bins
+
+        // Create the canvas with the necessary grid layout
+        TCanvas *c1 = nullptr;
+        int padIndex = 1;
 
         std::string x_title, x_range;
         switch (k) {
@@ -822,7 +825,20 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
             }
 
             std::string cuts = x_range + " && " + z_range;
-            c1->cd(i + 1);  // Adjust pad assignment as necessary
+
+            // Check if a new canvas is needed
+            if (!c1 || padIndex > 16) {
+                if (c1) {
+                    c1->SaveAs(Form("output/multidimensional_xbin_%d.png", canvasIndex));
+                    delete c1;
+                    ++canvasIndex;
+                }
+                c1 = new TCanvas(Form("c%d", canvasIndex), "Dilution Factor Analysis", 1600, 2000);
+                c1->Divide(4, 4);  // Reset padIndex to 1
+                padIndex = 1;
+            }
+
+            c1->cd(padIndex++);  // Move to the next pad
             gPad->SetLeftMargin(0.15);
 
             // Call the function to create and draw histograms
@@ -859,10 +875,9 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
             }
 
             // Use the reformatted strings in the title
-            std::string title = x_title + " , " + z_title;
+            std::string title = "Bin: Q2x" + std::to_string(k + 1) + z_prefix + " | " + x_title + " , " + z_title;
             gr_dilution->SetTitle((title + "; P_{T} (GeV); D_{f}").c_str());
             gr_dilution->SetMarkerStyle(20);
-
             // Draw the TGraphErrors on the canvas
             gr_dilution->Draw("AP");
             gr_dilution->GetXaxis()->SetLimits(0, 1);
@@ -872,6 +887,7 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
             gr_dilution->GetYaxis()->SetTitleSize(0.05);  // Increase title size
             gr_dilution->GetXaxis()->SetLabelSize(0.04);  // Increase label size
             gr_dilution->GetYaxis()->SetLabelSize(0.04);  // Increase label size
+
             // Fit the dilution factor to a constant function
             TF1 *fit_func = new TF1("fit_func", "[0]", 0, 1.0);  // Constant fit
             gr_dilution->Fit(fit_func, "RQ");
@@ -932,11 +948,12 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
             delete h_pT_empty;
         }
 
-        // Save the canvas after all pads are filled
-        c1->SaveAs(Form("output/multidimensional_xbin_%d.png", k));
-
-        // Clean up the canvas
-        delete c1;
+        // Final save and cleanup for the last canvas
+        if (c1) {
+            c1->SaveAs(Form("output/multidimensional_xbin_%d.png", canvasIndex));
+            delete c1;
+            ++canvasIndex;
+        }
     }
 
     // Close the files
@@ -974,9 +991,9 @@ int main(int argc, char** argv) {
     }
 
     // Call the plot_dilution_kinematics function
-    plot_dilution_kinematics(nh3, c, ch, he, empty);
+    // plot_dilution_kinematics(nh3, c, ch, he, empty);
     // Call the one-dimensional function
-    one_dimensional(nh3, c, ch, he, empty);
+    // one_dimensional(nh3, c, ch, he, empty);
     multi_dimensional(nh3, c, ch, he, empty);
 
     // Safely close the ROOT files
