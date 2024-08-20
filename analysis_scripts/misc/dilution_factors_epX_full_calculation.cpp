@@ -688,13 +688,13 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     delete c1;
 }
 
-std::vector<TH1D*> create_and_draw_histograms(TTree* tree_nh3, TTree* tree_carbon, TTree* tree_ch, TTree* tree_he, TTree* tree_empty, const std::string& cuts, int k, int j, int i) {
+std::vector<TH1D*> create_and_draw_histograms(TTree* tree_nh3, TTree* tree_carbon, TTree* tree_ch, TTree* tree_he, TTree* tree_empty, const std::string& cuts, int k, int i) {
     // Create histograms for different targets
-    TH1D *h_pT_nh3 = new TH1D(Form("h_pT_nh3_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
-    TH1D *h_pT_c = new TH1D(Form("h_pT_c_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
-    TH1D *h_pT_ch = new TH1D(Form("h_pT_ch_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
-    TH1D *h_pT_he = new TH1D(Form("h_pT_he_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
-    TH1D *h_pT_empty = new TH1D(Form("h_pT_empty_%d%d%d", k, j, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
+    TH1D *h_pT_nh3 = new TH1D(Form("h_pT_nh3_%d%d", k, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
+    TH1D *h_pT_c = new TH1D(Form("h_pT_c_%d%d", k, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
+    TH1D *h_pT_ch = new TH1D(Form("h_pT_ch_%d%d", k, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
+    TH1D *h_pT_he = new TH1D(Form("h_pT_he_%d%d", k, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
+    TH1D *h_pT_empty = new TH1D(Form("h_pT_empty_%d%d", k, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
 
     // Define the additional cuts
     std::string additional_cuts = "Mx > 1.35 && -10 < vz_e && vz_e < 1 && -10 < vz_p && vz_p < 1 && runnum != 16317 && runnum != 16742";
@@ -703,11 +703,11 @@ std::vector<TH1D*> create_and_draw_histograms(TTree* tree_nh3, TTree* tree_carbo
     std::string combined_cuts = cuts + " && " + additional_cuts;
 
     // Draw histograms with the combined cuts
-    tree_nh3->Draw(Form("pT>>h_pT_nh3_%d%d%d", k, j, i), combined_cuts.c_str());
-    tree_carbon->Draw(Form("pT>>h_pT_c_%d%d%d", k, j, i), combined_cuts.c_str());
-    tree_ch->Draw(Form("pT>>h_pT_ch_%d%d%d", k, j, i), combined_cuts.c_str());
-    tree_he->Draw(Form("pT>>h_pT_he_%d%d%d", k, j, i), combined_cuts.c_str());
-    tree_empty->Draw(Form("pT>>h_pT_empty_%d%d%d", k, j, i), combined_cuts.c_str());
+    tree_nh3->Draw(Form("pT>>h_pT_nh3_%d%d", k, i), combined_cuts.c_str());
+    tree_carbon->Draw(Form("pT>>h_pT_c_%d%d", k, i), combined_cuts.c_str());
+    tree_ch->Draw(Form("pT>>h_pT_ch_%d%d", k, i), combined_cuts.c_str());
+    tree_he->Draw(Form("pT>>h_pT_he_%d%d", k, i), combined_cuts.c_str());
+    tree_empty->Draw(Form("pT>>h_pT_empty_%d%d", k, i), combined_cuts.c_str());
 
     // Store histograms in a vector
     std::vector<TH1D*> histograms = {h_pT_nh3, h_pT_c, h_pT_ch, h_pT_he, h_pT_empty};
@@ -715,7 +715,7 @@ std::vector<TH1D*> create_and_draw_histograms(TTree* tree_nh3, TTree* tree_carbo
 }
 
 double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile* empty) {
-    for (int k = 0; k < 15; ++k) {
+    for (int k = 0; k < 14; ++k) {  // 14 Q2-x bins
         // Get the PhysicsEvents trees
         TTree *tree_nh3;
         TTree *tree_carbon;
@@ -734,7 +734,7 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
         }
         std::string canvasName = "c1_" + std::to_string(k);
         TCanvas *c1 = new TCanvas(canvasName.c_str(), "Dilution Factor Analysis", 1600, 2000);
-        c1->Divide(4, 4); // 4x4 grid to accommodate all \( z \) and \( Q^2 \) bins
+        c1->Divide(4, 4);  // 4x4 grid to accommodate all z and Q2 bins
 
         std::string x_title, x_range;
         switch (k) {
@@ -826,7 +826,7 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
             gPad->SetLeftMargin(0.15);
 
             // Call the function to create and draw histograms
-            std::vector<TH1D*> histograms = create_and_draw_histograms(tree_nh3, tree_carbon, tree_ch, tree_he, tree_empty, cuts, k, j, i);
+            std::vector<TH1D*> histograms = create_and_draw_histograms(tree_nh3, tree_carbon, tree_ch, tree_he, tree_empty, cuts, k, i);
             
             // Access the histograms using the vector
             TH1D *h_pT_nh3 = histograms[0];
@@ -872,7 +872,6 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
             gr_dilution->GetYaxis()->SetTitleSize(0.05);  // Increase title size
             gr_dilution->GetXaxis()->SetLabelSize(0.04);  // Increase label size
             gr_dilution->GetYaxis()->SetLabelSize(0.04);  // Increase label size
-
             // Fit the dilution factor to a constant function
             TF1 *fit_func = new TF1("fit_func", "[0]", 0, 1.0);  // Constant fit
             gr_dilution->Fit(fit_func, "RQ");
@@ -890,10 +889,10 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
             double chi2_scale_factor = std::sqrt(chi2_ndf);
 
             // Rescale the errors
-            for (int i = 0; i < gr_dilution->GetN(); ++i) {
+            for (int bin = 0; bin < gr_dilution->GetN(); ++bin) {
                 double x, y;
-                gr_dilution->GetPoint(i, x, y);
-                gr_dilution->SetPointError(i, 0, gr_dilution->GetErrorY(i) * chi2_scale_factor);
+                gr_dilution->GetPoint(bin, x, y);
+                gr_dilution->SetPointError(bin, 0, gr_dilution->GetErrorY(bin) * chi2_scale_factor);
             }
 
             // Refit with scaled errors
