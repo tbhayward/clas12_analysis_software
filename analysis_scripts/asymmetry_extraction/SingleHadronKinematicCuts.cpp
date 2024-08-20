@@ -23,30 +23,28 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         string property = binNames[currentFits];
 
         if (property == "xF" || property == "x" || property == "PT" || property == "runnum") {
-            goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *runnum != 16317 || *runnum != 16742;
-            goodEvent = goodEvent && *Q2 > 1 && *W > 2 && *Mx > 1.35 && *y < 0.75;
+            goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1;
+            goodEvent = goodEvent && (*Q2 > 1 && *W > 2 && *Mx > 1.35 && *y < 0.75);
             checked = true;
         } else if (property == "Mx") {
-            goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *runnum != 16317 || *runnum != 16742;
-            goodEvent = goodEvent && *Q2 > 1 && *W > 2 && *y < 0.75 && *Mx > 0;
+            goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1;
+            goodEvent = goodEvent && (*Q2 > 1 && *W > 2 && *y < 0.75 && *Mx > 0);
             checked = true;
         }
-
         if (property == "xFall" || property == "xall" || property == "PTall") {
-            goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *runnum != 16317 || *runnum != 16742;
-            goodEvent = goodEvent && *Q2 > 1 && *W > 2 && *Mx > 0 && *y < 0.75;
+            goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1;
+            goodEvent = goodEvent && (*Q2 > 1 && *W > 2 && *Mx > 0 && *y < 0.75);
             checked = true;
         } 
-
         if (property == "xFexclusive" || property == "xexclusive" || property == "PTexclusive") {
-            goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *runnum != 16317 || *runnum != 16742;
-            goodEvent = goodEvent && *Q2 > 1 && *W > 2 && *Mx > 0 && *Mx < 1.35 && *y < 0.75;
+            goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1;
+            goodEvent = goodEvent && (*Q2 > 1 && *W > 2 && *Mx > 0 && *Mx < 1.35 && *y < 0.75);
             checked = true;
         } 
 
 
-        if (*Q2 > 1 && *W > 2 && *Mx > 1.4 && *y < 0.75 && !checked) {
-          goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *runnum != 16317 || *runnum != 16742;
+        if (*Q2 > 1 && *W > 2 && *Mx > 1.35 && *y < 0.75 && !checked) {
+          goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1;
           size_t pos = property.find("z");
           std::string prez = property.substr(0, pos);
           std::string postz = property.substr(pos);
@@ -95,150 +93,11 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
       }
 
 
-        //
-        // epi+X
-        else if (property == "xpip") { 
-            goodEvent = *Q2>1 && *W>2 && *y<0.75 && *z>0.20;
-        }
-        else if (property == "PTTFRpip" || property ==  "xTFRpip" || property == "zTFRpip" || 
-          property == "Q2TFRpip") {
-          goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *z>0.20 && *xF<0;
-        }
-        else if (property == "PTCFRpip" || property == "xCFRpip" || property == "zCFRpip" ||
-          property == "Q2CFRpip") {
-          goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *z>0.20 && *xF>0;
-        } 
-
-        else if (property == "UURCQ2y1z1") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.65 && *y<0.75 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.15 && *z<0.20;
-        } else if (property == "UURCQ2y1z2") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.65 && *y<0.75 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.20 && *z<0.24;
-        } else if (property == "UURCQ2y1z3") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.65 && *y<0.75 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.24 && *z<0.29;
-        } else if (property == "UURCQ2y1z4") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.65 && *y<0.75 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.29 && *z<0.40;
-        } else if (property == "UURCQ2y1z5") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.65 && *y<0.75 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.40 && *z<0.73;
-        }
-
-        else if (property == "UURCQ2y2z1") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.55 && *y<0.65 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.18 && *z<0.23;
-        } else if (property == "UURCQ2y2z2") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.55 && *y<0.65 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.23 && *z<0.26;
-        } else if (property == "UURCQ2y2z3") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.55 && *y<0.65 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.26 && *z<0.31;
-        } else if (property == "UURCQ2y2z4") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.55 && *y<0.65 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.31 && *z<0.38;
-        } else if (property == "UURCQ2y2z5") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.55 && *y<0.65 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.38 && *z<0.50;
-        } else if (property == "UURCQ2y2z6") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.55 && *y<0.65 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.50 && *z<0.74;
-        }
-
-        else if (property == "UURCQ2y4z1") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.30 && *y<0.45 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.26 && *z<0.32;
-        } else if (property == "UURCQ2y4z2") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.30 && *y<0.45 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.32 && *z<0.37;
-        } else if (property == "UURCQ2y4z3") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.30 && *y<0.45 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.37 && *z<0.43;
-        } else if (property == "UURCQ2y4z4") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.30 && *y<0.45 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.43 && *z<0.50;
-        } else if (property == "UURCQ2y4z5") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.30 && *y<0.45 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.50 && *z<0.60;
-        } else if (property == "UURCQ2y4z6") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.30 && *y<0.45 && *Q2 > 2.000 && *Q2 <= 2.423 && *z>0.60 && *z<0.71;
-        } 
-
-        else if (property == "UURCQ2y5z1") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.30 && *y<0.45 && *Q2 > 2.423 && *Q2 <= 2.987 && *z>0.15 && *z<0.19;
-        } else if (property == "UURCQ2y5z2") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.30 && *y<0.45 && *Q2 > 2.423 && *Q2 <= 2.987 && *z>0.19 && *z<0.24;
-        } else if (property == "UURCQ2y5z3") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.30 && *y<0.45 && *Q2 > 2.423 && *Q2 <= 2.987 && *z>0.24 && *z<0.29;
-        } else if (property == "UURCQ2y5z4") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.30 && *y<0.45 && *Q2 > 2.423 && *Q2 <= 2.987 && *z>0.29 && *z<0.38;
-        } else if (property == "UURCQ2y5z5") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.30 && *y<0.45 && *Q2 > 2.423 && *Q2 <= 2.987 && *z>0.38 && *z<0.50;
-        } else if (property == "UURCQ2y5z6") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.30 && *y<0.45 && *Q2 > 2.423 && *Q2 <= 2.987 && *z>0.50 && *z<0.73;
-        } 
-
-        else if (property == "UURCQ2y16z1") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.65 && *y<0.75 && *Q2 > 5.384 && *Q2 <= 9.896 && *z>0.15 && *z<0.20;
-        } else if (property == "UURCQ2y16z2") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.65 && *y<0.75 && *Q2 > 5.384 && *Q2 <= 9.896 && *z>0.20 && *z<0.25;
-        } else if (property == "UURCQ2y16z3") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.65 && *y<0.75 && *Q2 > 5.384 && *Q2 <= 9.896 && *z>0.25 && *z<0.32;
-        } else if (property == "UURCQ2y16z4") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.65 && *y<0.75 && *Q2 > 5.384 && *Q2 <= 9.896 && *z>0.32 && *z<0.41;
-        } else if (property == "UURCQ2y16z5") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.65 && *y<0.75 && *Q2 > 5.384 && *Q2 <= 9.896 && *z>0.41 && *z<0.71;
-        }
-
-        else if (property == "UURCQ2y17z1") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.55 && *y<0.65 && *Q2 > 5.384 && *Q2 <= 7.922 && *z>0.18 && *z<0.23;
-        } else if (property == "UURCQ2y17z2") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.55 && *y<0.65 && *Q2 > 5.384 && *Q2 <= 7.922 && *z>0.23 && *z<0.30;
-        } else if (property == "UURCQ2y17z3") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.55 && *y<0.65 && *Q2 > 5.384 && *Q2 <= 7.922 && *z>0.30 && *z<0.38;
-        } else if (property == "UURCQ2y17z4") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.55 && *y<0.65 && *Q2 > 5.384 && *Q2 <= 7.922 && *z>0.38 && *z<0.48;
-        } else if (property == "UURCQ2y17z5") {
-          goodEvent = *Q2>1 && *W>2 && *y<0.75 && *xF>0 && *Mx>1.5 && *p_p > 1.25 &&
-            *y>0.55 && *y<0.65 && *Q2 > 5.384 && *Q2 <= 7.922 && *z>0.48 && *z<0.72;
-        }
-
-        //
-        // epi-X
-        else if (property == "xpim") { 
-          goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *z>0.20 && *xF>0;
-        }
-        else if (property == "PTTFRpim" || property ==  "xTFRpim" || property == "zTFRpim" || 
-          property == "Q2TFRpim") {
-          goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *z>0.20 && *xF<0;
-        }
-        else if (property == "PTCFRpim" || property == "xCFRpim" || property == "zCFRpim" ||
-          property == "Q2TFRpim") {
-          goodEvent = *Q2>1 && *W>2 && *Mx>1.5 && *y<0.75 && *z>0.20 && *xF>0;
-        }
-
-        if (isMC || (*runnum < 16042 || *runnum > 17811)) {
-          return goodEvent;
-        } else {
-          // return goodEvent && *target_pol!=0;
-          return goodEvent;
-        }
-        return false;
+      if (isMC || (*runnum < 16042 || *runnum > 17811)) {
+        return goodEvent;
+      } else {
+        // return goodEvent && *target_pol!=0;
+        return goodEvent;
+      }
+      return false;
     }

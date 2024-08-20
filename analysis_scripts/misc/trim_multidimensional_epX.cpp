@@ -6,40 +6,84 @@
 #include <iostream>
 #include <string>
 
-int DetermineQ2yBin(float Q2, float y) {
-    // Q2-y Bins 1-4
-    if (Q2 > 1.000 && Q2 <= 2.000) {
-        if (y > 0.650 && y <= 0.750) return 1;
-        if (y > 0.550 && y <= 0.650) return 2;
-        if (y > 0.450 && y <= 0.550) return 3;
-        if (y > 0.300 && y <= 0.450) return 4;
+// int DetermineQ2yBin(float Q2, float y) {
+//     // Q2-y Bins 1-4
+//     if (Q2 > 1.000 && Q2 <= 2.000) {
+//         if (y > 0.650 && y <= 0.750) return 1;
+//         if (y > 0.550 && y <= 0.650) return 2;
+//         if (y > 0.450 && y <= 0.550) return 3;
+//         if (y > 0.300 && y <= 0.450) return 4;
+//     }
+//     // Q2-y Bins 5-8
+//     else if (Q2 > 2.000 && Q2 <= 3.000) {
+//         if (y > 0.650 && y <= 0.750) return 5;
+//         if (y > 0.550 && y <= 0.650) return 6;
+//         if (y > 0.450 && y <= 0.550) return 7;
+//         if (y > 0.300 && y <= 0.450) return 8;
+//     }
+//     // Q2-y Bins 9-12
+//     else if (Q2 > 3.000 && Q2 <= 4.000) {
+//         if (y > 0.650 && y <= 0.750) return 9;
+//         if (y > 0.550 && y <= 0.650) return 10;
+//         if (y > 0.450 && y <= 0.550) return 11;
+//         if (y > 0.300 && y <= 0.450) return 12;
+//     }
+//     // Q2-y Bins 13-15
+//     else if (Q2 > 4.000 && Q2 <= 5.000) {
+//         if (y > 0.650 && y <= 0.750) return 13;
+//         if (y > 0.550 && y <= 0.650) return 14;
+//         if (y > 0.450 && y <= 0.550) return 15;
+//     }
+//     // Q2-y Bins 16-17
+//     else if (Q2 > 5.000 && Q2 <= 7.000) {
+//         if (y > 0.650 && y <= 0.750) return 16;
+//         if (y > 0.550 && y <= 0.650) return 17;
+//     }
+//     return 0;
+// }
+
+int DetermineQ2xBin(float Q2, float x) {
+    // Bin 1: x < 0.1
+    if (x < 0.1) {
+        return 1;
     }
-    // Q2-y Bins 5-8
-    else if (Q2 > 2.000 && Q2 <= 3.000) {
-        if (y > 0.650 && y <= 0.750) return 5;
-        if (y > 0.550 && y <= 0.650) return 6;
-        if (y > 0.450 && y <= 0.550) return 7;
-        if (y > 0.300 && y <= 0.450) return 8;
+
+    // Bins 2-4: 0.1 < x < 0.14
+    if (x > 0.1 && x < 0.14) {
+        if (Q2 < 1.40) return 2;
+        if (Q2 >= 1.40 && Q2 < 1.70) return 3;
+        if (Q2 >= 1.70) return 4;
     }
-    // Q2-y Bins 9-12
-    else if (Q2 > 3.000 && Q2 <= 4.000) {
-        if (y > 0.650 && y <= 0.750) return 9;
-        if (y > 0.550 && y <= 0.650) return 10;
-        if (y > 0.450 && y <= 0.550) return 11;
-        if (y > 0.300 && y <= 0.450) return 12;
+
+    // Bins 5-8: 0.14 < x < 0.21
+    if (x > 0.14 && x < 0.21) {
+        if (Q2 < 1.40) return 5;
+        if (Q2 >= 1.40 && Q2 < 1.70) return 6;
+        if (Q2 >= 1.70 && Q2 < 2.00) return 7;
+        if (Q2 >= 2.00) return 8;
     }
-    // Q2-y Bins 13-15
-    else if (Q2 > 4.000 && Q2 <= 5.000) {
-        if (y > 0.650 && y <= 0.750) return 13;
-        if (y > 0.550 && y <= 0.650) return 14;
-        if (y > 0.450 && y <= 0.550) return 15;
+
+    // Bins 9-12: 0.21 < x < 0.30
+    if (x > 0.21 && x < 0.30) {
+        if (Q2 < 1.70) return 9;
+        if (Q2 >= 1.70 && Q2 < 2.00) return 10;
+        if (Q2 >= 2.00 && Q2 < 2.30) return 11;
+        if (Q2 >= 2.30) return 12;
     }
-    // Q2-y Bins 16-17
-    else if (Q2 > 5.000 && Q2 <= 7.000) {
-        if (y > 0.650 && y <= 0.750) return 16;
-        if (y > 0.550 && y <= 0.650) return 17;
+
+    // Bins 13-14: 0.30 < x < 0.42
+    if (x > 0.30 && x < 0.42) {
+        if (Q2 < 2.30) return 13;
+        if (Q2 >= 2.30) return 14;
     }
-    return 0;
+
+    // Bin 15: x > 0.42
+    if (x >= 0.42) {
+        return 15;
+    }
+
+    // If no conditions are met, return 0
+    return -2;
 }
 
 void process_file(const char* input_filename) {
@@ -116,25 +160,22 @@ void process_file(const char* input_filename) {
             *vz_e + *p_p + *p_theta + *p_phi + *vz_p + *Q2 + *W + *Mx + 
             *Mx2 + *x + *y + *t + *tmin + *z + *xF + *pT + *zeta + *eta + *phi + *DepA +
             *DepB + *DepC + *DepV + *DepW;
-        if (*Mx > 1.35 && *vz_e > -10  && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 
-                && *runnum !=16317 && *runnum != 16742 && *runnum != 16213 &&
-                *runnum != 16234 && *runnum != 16753 && (*runnum < 16658 || *runnum > 16695)) {
+        if (*Mx > 0 && *vz_e > -10  && *vz_e < 1 && *vz_p > -10 && *vz_p < 1) {
+            continue;
+        }
+        if (*Mx > 1.35) {
             // Determine the Q2-y bin and fill the corresponding tree
-            int bin = DetermineQ2yBin(*Q2, *y);
-            if (bin > 0 && bin < 18) {
+            int bin = DetermineQ2xBin(*Q2, *x);
+            if (bin > 0 && bin <= 15) {
                 output_trees[bin]->Fill();
             }
         }
-        if (*Mx > 0 && *vz_e > -10  && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 
-                && *runnum !=16317 && *runnum != 16742 && *runnum != 16213 &&
-                *runnum != 16234 && *runnum != 16753 && (*runnum < 16658 || *runnum > 16695)) {
-            // Also fill the general tree for events passing Mx cut
-            output_trees[0]->Fill();
-        }
+        // Also fill the general tree for one dimensional dependencies
+        output_trees[0]->Fill();
     }
 
     // Write and close the output files
-    for (int i = 0; i < 18; ++i) {
+    for (int i = 0; i < 16; ++i) {
         output_files[i]->cd();
         output_trees[i]->Write();
         output_files[i]->Close();
