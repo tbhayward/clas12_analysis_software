@@ -1287,20 +1287,20 @@ int main(int argc, char *argv[]) {
     plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots.png");
     plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots_comparison.png", "xFall");
     // plotDependence(asymmetryData, "xFall", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xFall_dependence_plots.png");
-    plotDependence(asymmetryData, "Mx", "M_{x} (GeV)", {0, 3}, "output/epX_plots/Mx_dependence_plots.png");
+    // plotDependence(asymmetryData, "Mx", "M_{x} (GeV)", {0, 3}, "output/epX_plots/Mx_dependence_plots.png");
     // plotDependence(asymmetryData, "runnum", "run number", {16135, 16774}, "output/epX_plots/runnum_dependence_plots.png");
     // plotRunnumDependence(asymmetryData, "runnum", "run number", "output/epX_plots/runnum_dependence_plots.png");
 
-    // Plot PT and xF dependence comparison
-    plotComparison(asymmetryData, "output/epX_plots/PT_xF_dependence_comparison.png");
-    // Plot Q2-y-z dependence
-    plotQ2yz_pT(asymmetryData);
+    // // Plot PT and xF dependence comparison
+    // plotComparison(asymmetryData, "output/epX_plots/PT_xF_dependence_comparison.png");
+    // // Plot Q2-y-z dependence
+    // plotQ2yz_pT(asymmetryData);
 
-    // Extract Q² dependence vectors
-    auto allVectors = extractQ2Dependence(asymmetryData, kinematicData);
-    plotQ2Dependence(allVectors);
+    // // Extract Q² dependence vectors
+    // auto allVectors = extractQ2Dependence(asymmetryData, kinematicData);
+    // plotQ2Dependence(allVectors);
 
-    plotTargetPolarizationDependence(targetPolarizationData, "run number", "output/epX_plots/target_polarization_dependence.png");
+    // plotTargetPolarizationDependence(targetPolarizationData, "run number", "output/epX_plots/target_polarization_dependence.png");
 
     return 0;
 }
