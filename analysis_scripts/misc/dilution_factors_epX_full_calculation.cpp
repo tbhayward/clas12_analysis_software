@@ -228,8 +228,8 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         combined_cuts = "Mx > 0 && " + vz_cuts;
     } else {
         // Apply both Mx > 1.35 and vz cuts if isMx is false
-        // combined_cuts = "Mx > 1.35 && " + vz_cuts;
-        combined_cuts = "Mx > 0.55 && " + vz_cuts;
+        combined_cuts = "Mx > 1.35 && " + vz_cuts;
+        // combined_cuts = "Mx > 0.55 && " + vz_cuts;
         // combined_cuts = "Mx < 1.35 && Mx > 0 && " + vz_cuts;
     }
 
@@ -715,7 +715,7 @@ std::vector<TH1D*> create_and_draw_histograms(TTree* tree_nh3, TTree* tree_carbo
 }
 
 double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile* empty) {
-    for (int k = 0; k < 4; ++k) {
+    for (int k = 0; k < 15; ++k) {
         // Get the PhysicsEvents trees
         TTree *tree_nh3;
         TTree *tree_carbon;
@@ -734,285 +734,207 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
         }
         std::string canvasName = "c1_" + std::to_string(k);
         TCanvas *c1 = new TCanvas(canvasName.c_str(), "Dilution Factor Analysis", 1600, 2000);
-        if (k == 0) {
-            c1->Divide(3, 5);
-        } else if (k == 1) {
-            c1->Divide(4, 5);
-        } else {
-            c1->Divide(5, 5);
-        }
+        c1->Divide(4, 4); // 4x4 grid to accommodate all \( z \) and \( Q^2 \) bins
 
-        std::string y_title;
-        std::string y_range;
+        std::string x_title, x_range;
         switch (k) {
             case 0:
-                y_title = "0.30<y<0.45";
-                y_range = "0.30 < y && y < 0.45";
+                x_title = "x < 0.1";
+                x_range = "x < 0.1";
                 break;
             case 1:
-                y_title = "0.45<y<0.55";
-                y_range = "0.45 < y && y < 0.55";
+                x_title = "0.1 < x < 0.14";
+                x_range = "x > 0.1 && x < 0.14 && Q2 < 1.50";
                 break;
             case 2:
-                y_title = "0.55<y<0.65";
-                y_range = "0.55 < y && y < 0.65";
+                x_title = "0.1 < x < 0.14";
+                x_range = "x > 0.1 && x < 0.14 && Q2 >= 1.50 && Q2 < 1.70";
                 break;
             case 3:
-                y_title = "0.65<y<0.75";
-                y_range = "0.65 < y && y < 0.75";
+                x_title = "0.1 < x < 0.14";
+                x_range = "x > 0.1 && x < 0.14 && Q2 >= 1.70";
+                break;
+            case 4:
+                x_title = "0.14 < x < 0.21";
+                x_range = "x > 0.14 && x < 0.21 && Q2 < 1.50";
+                break;
+            case 5:
+                x_title = "0.14 < x < 0.21";
+                x_range = "x > 0.14 && x < 0.21 && Q2 >= 1.50 && Q2 < 1.70";
+                break;
+            case 6:
+                x_title = "0.14 < x < 0.21";
+                x_range = "x > 0.14 && x < 0.21 && Q2 >= 1.70 && Q2 < 2.00";
+                break;
+            case 7:
+                x_title = "0.14 < x < 0.21";
+                x_range = "x > 0.14 && x < 0.21 && Q2 >= 2.00";
+                break;
+            case 8:
+                x_title = "0.21 < x < 0.30";
+                x_range = "x > 0.21 && x < 0.30 && Q2 < 2.20";
+                break;
+            case 9:
+                x_title = "0.21 < x < 0.30";
+                x_range = "x > 0.21 && x < 0.30 && Q2 >= 2.20 && Q2 < 2.60";
+                break;
+            case 10:
+                x_title = "0.21 < x < 0.30";
+                x_range = "x > 0.21 && x < 0.30 && Q2 >= 2.60";
+                break;
+            case 11:
+                x_title = "0.30 < x < 0.42";
+                x_range = "x > 0.30 && x < 0.42 && Q2 < 3.20";
+                break;
+            case 12:
+                x_title = "0.30 < x < 0.42";
+                x_range = "x > 0.30 && x < 0.42 && Q2 >= 3.20";
+                break;
+            case 13:
+                x_title = "x > 0.42";
+                x_range = "x >= 0.42";
                 break;
         }
 
-        int max_Q2_bin = 5;
-        if (k == 0) {
-            max_Q2_bin = 3;
-        } else if (k == 1) {
-            max_Q2_bin = 4;
-        }
-        for (int j = 0; j < max_Q2_bin; ++j) {
-            std::string Q2_range;
-            std::string Q2y_prefix;
-            std::string Q2_title;
-            switch (j) {
+        for (int i = 0; i < 4; ++i) {  // Loop over z bins
+            std::string z_range, z_title, z_prefix;
+            switch (i) {
                 case 0:
-                    Q2_range = "1.00<Q2 && Q2<2.00";
-                    Q2_title = "1<Q^{2}<2";
-                    switch (k) {
-                        case 0: 
-                            Q2y_prefix = "Q2y4";
-                            break;
-                        case 1: 
-                            Q2y_prefix = "Q2y3";
-                            break;
-                        case 2: 
-                            Q2y_prefix = "Q2y2";
-                            break;
-                        case 3: 
-                            Q2y_prefix = "Q2y1";
-                            break;
-                    }
+                    z_range = "0 < z && z <= 0.19";
+                    z_title = "0 < z <= 0.19";
+                    z_prefix = "z1";
                     break;
                 case 1:
-                    Q2_range = "2.00<Q2 && Q2<3.00";
-                    Q2_title = "2<Q^{2}<3";
-                    switch (k) {
-                        case 0: 
-                            Q2y_prefix = "Q2y8";
-                            break;
-                        case 1: 
-                            Q2y_prefix = "Q2y7";
-                            break;
-                        case 2: 
-                            Q2y_prefix = "Q2y6";
-                            break;
-                        case 3: 
-                            Q2y_prefix = "Q2y5";
-                            break;
-                    }
+                    z_range = "0.19 < z && z <= 0.30";
+                    z_title = "0.19 < z <= 0.30";
+                    z_prefix = "z2";
                     break;
                 case 2:
-                    Q2_range = "3.00<Q2 && Q2<4.00";
-                    Q2_title = "3<Q^{2}<4";
-                    switch (k) {
-                        case 0: 
-                            Q2y_prefix = "Q2y12";
-                            break;
-                        case 1: 
-                            Q2y_prefix = "Q2y11";
-                            break;
-                        case 2: 
-                            Q2y_prefix = "Q2y10";
-                            break;
-                        case 3: 
-                            Q2y_prefix = "Q2y9";
-                            break;
-                    }
+                    z_range = "0.30 < z && z <= 0.42";
+                    z_title = "0.30 < z <= 0.42";
+                    z_prefix = "z3";
                     break;
                 case 3:
-                    Q2_range = "4.00<Q2 && Q2<5.00";
-                    Q2_title = "4<Q^{2}<5";
-                    switch (k) {
-                        case 1: 
-                            Q2y_prefix = "Q2y15";
-                            break;
-                        case 2: 
-                            Q2y_prefix = "Q2y14";
-                            break;
-                        case 3: 
-                            Q2y_prefix = "Q2y13";
-                            break;
-                    }
-                    break;
-                case 4:
-                    Q2_range = "5.00<Q2 && Q2<7.00";
-                    Q2_title = "5<Q^{2}<7";
-                    switch (k) {
-                        case 2: 
-                            Q2y_prefix = "Q2y17";
-                            break;
-                        case 3: 
-                            Q2y_prefix = "Q2y16";
-                            break;
-                    }
+                    z_range = "0.42 < z && z <= 1.00";
+                    z_title = "0.42 < z <= 1.00";
+                    z_prefix = "z4";
                     break;
             }
-            for (int i = 0; i < 5; ++i) {
-                std::string z_range;
-                std::string z_prefix;
-                std::string z_title;
-                switch (i) {
-                    case 0:
-                        z_range = "0.10<z && z<0.25";
-                        z_title = "0.10<z<0.25";
-                        z_prefix = "z1";
-                        break;
-                    case 1:
-                        z_range = "0.25<z && z<0.35";
-                        z_title = "0.25<z<0.35";
-                        z_prefix = "z2";
-                        break;
-                    case 2:
-                        z_range = "0.35<z && z<0.45";
-                        z_title = "0.35<z<0.45";
-                        z_prefix = "z3";
-                        break;
-                    case 3:
-                        z_range = "0.45<z && z<0.55";
-                        z_title = "0.45<z<0.55";
-                        z_prefix = "z4";
-                        break;
-                    case 4:
-                        z_range = "0.55<z && z<0.75";
-                        z_title = "0.55<z<0.75";
-                        z_prefix = "z5";
-                        break;
-                }
 
-                std::string cuts = Q2_range + " && " + y_range + " && " + z_range;
-                c1->cd(5 * j + (i + 1)); // Pads are numbered from 1 to 25
-                gPad->SetLeftMargin(0.15);
+            std::string cuts = x_range + " && " + z_range;
+            c1->cd(i + 1);  // Adjust pad assignment as necessary
+            gPad->SetLeftMargin(0.15);
 
-                // Call the function to create and draw histograms
-                std::vector<TH1D*> histograms = create_and_draw_histograms(tree_nh3, tree_carbon, tree_ch, tree_he, tree_empty, cuts, k, j, i);
-                
-                // Now you can access the histograms using the vector
-                TH1D *h_pT_nh3 = histograms[0];
-                TH1D *h_pT_c = histograms[1];
-                TH1D *h_pT_ch = histograms[2];
-                TH1D *h_pT_he = histograms[3];
-                TH1D *h_pT_empty = histograms[4];
+            // Call the function to create and draw histograms
+            std::vector<TH1D*> histograms = create_and_draw_histograms(tree_nh3, tree_carbon, tree_ch, tree_he, tree_empty, cuts, k, j, i);
+            
+            // Access the histograms using the vector
+            TH1D *h_pT_nh3 = histograms[0];
+            TH1D *h_pT_c = histograms[1];
+            TH1D *h_pT_ch = histograms[2];
+            TH1D *h_pT_he = histograms[3];
+            TH1D *h_pT_empty = histograms[4];
 
-                // Inside loop after creating the histograms
-                int n_bins = h_pT_nh3->GetNbinsX();
-                TGraphErrors *gr_dilution = new TGraphErrors(n_bins);
+            // Inside loop after creating the histograms
+            int n_bins = h_pT_nh3->GetNbinsX();
+            TGraphErrors *gr_dilution = new TGraphErrors(n_bins);
 
-                for (int bin = 1; bin <= n_bins; ++bin) {
-                    //Get bin contents for each target type
-                    double nA = h_pT_nh3->GetBinContent(bin);
-                    double nC = h_pT_c->GetBinContent(bin);
-                    double nCH = h_pT_ch->GetBinContent(bin);
-                    double nMT = h_pT_he->GetBinContent(bin);
-                    double nf = h_pT_empty->GetBinContent(bin);
-                    // Calculate the dilution factor
-                    double dilution = calculate_dilution_factor(nA, nC, nCH, nMT, nf);
-                    double dilution_error = calculate_dilution_error(nA / xA, nC / xC, nCH / xCH, nMT / xHe, nf / xf);
+            for (int bin = 1; bin <= n_bins; ++bin) {
+                // Get bin contents for each target type
+                double nA = h_pT_nh3->GetBinContent(bin);
+                double nC = h_pT_c->GetBinContent(bin);
+                double nCH = h_pT_ch->GetBinContent(bin);
+                double nMT = h_pT_he->GetBinContent(bin);
+                double nf = h_pT_empty->GetBinContent(bin);
+                // Calculate the dilution factor
+                double dilution = calculate_dilution_factor(nA, nC, nCH, nMT, nf);
+                double dilution_error = calculate_dilution_error(nA / xA, nC / xC, nCH / xCH, nMT / xHe, nf / xf);
 
-                    // Get the bin center
-                    double x_position = h_pT_nh3->GetBinCenter(bin);
+                // Get the bin center
+                double x_position = h_pT_nh3->GetBinCenter(bin);
 
-                    // Set the dilution factor point and error in the TGraphErrors
-                    gr_dilution->SetPoint(bin - 1, x_position, dilution);
-                    gr_dilution->SetPointError(bin - 1, 0, dilution_error);
-                }
-
-                // Use the reformatted strings in the title
-                std::string title = Q2_title + " , " + y_title + " , " + z_title;
-                gr_dilution->SetTitle((title + "; P_{T} (GeV); D_{f}").c_str());
-                gr_dilution->SetMarkerStyle(20);
-
-                // Draw the TGraphErrors on the canvas
-                gr_dilution->Draw("AP");
-                gr_dilution->GetXaxis()->SetLimits(0, 1);
-                gr_dilution->GetYaxis()->SetRangeUser(0.00, 0.50); // Set the y-axis range from 0.0 to 0.5
-
-                // Increase the size of axis labels and titles
-                gr_dilution->GetXaxis()->SetTitleSize(0.05);  // Increase title size
-                gr_dilution->GetYaxis()->SetTitleSize(0.05);  // Increase title size
-                gr_dilution->GetXaxis()->SetLabelSize(0.04);  // Increase label size
-                gr_dilution->GetYaxis()->SetLabelSize(0.04);  // Increase label size
-
-                // Fit the dilution factor to a constant function
-                TF1 *fit_func = new TF1("fit_func", "[0]", 0, 1.0); // Constant fit
-                gr_dilution->Fit(fit_func, "RQ");
-                fit_func->SetLineColor(kRed);
-                fit_func->Draw("SAME");
-
-                // Retrieve fit parameters and chi-squared
-                double p0 = fit_func->GetParameter(0);
-                double p0_err = fit_func->GetParError(0);
-                double chi2 = fit_func->GetChisquare();
-                int ndf = fit_func->GetNDF();
-                double chi2_ndf = chi2 / ndf;
-
-                // Calculate chi2/ndf scaling factor
-                double chi2_scale_factor = std::sqrt(chi2_ndf);
-
-                // Rescale the errors
-                for (int i = 0; i < gr_dilution->GetN(); ++i) {
-                    double x, y;
-                    gr_dilution->GetPoint(i, x, y);
-                    gr_dilution->SetPointError(i, 0, gr_dilution->GetErrorY(i) * chi2_scale_factor);
-                }
-
-                // Refit with scaled errors
-                gr_dilution->Fit(fit_func, "RQ");
-                fit_func->Draw("SAME");
-
-                // Retrieve updated chi2 and NDF
-                chi2 = fit_func->GetChisquare();
-                ndf = fit_func->GetNDF();
-                chi2_ndf = chi2 / ndf;
-                // Retrieve fit parameters and chi-squared
-                p0 = fit_func->GetParameter(0);
-                p0_err = fit_func->GetParError(0);
-
-                // Add fit parameters and chi-squared box
-                TPaveText *pt = new TPaveText(0.5, 0.7, 0.9, 0.9, "brNDC");
-                pt->SetBorderSize(1);
-                pt->SetFillStyle(1001); // Solid fill style
-                pt->SetFillColor(kWhite); // White background
-                pt->AddText(Form("p0 = %.3f +/- %.3f", p0, p0_err));
-                pt->Draw();
-
-                // // Add chi2/ndf in the top left
-                // TLatex latex;
-                // latex.SetNDC();
-                // latex.SetTextSize(0.04);
-                // latex.DrawLatex(0.20, 0.15, Form("#chi^{2}/NDF = %.2f / %d = %.2f", chi2, ndf, chi2_ndf));
-
-                // Generate the return statement with random Gaussian variation
-                std::cout << "if (prefix == \"" << Q2y_prefix << z_prefix << "\") {"
-                          << " double sigma = " << p0_err << ";"
-                          << " return " << p0 << " + rand_gen.Gaus(0, sigma); }" << std::endl << std::endl;
-                // Store the objects in vectors for later cleanup
-                dilution_graphs.push_back(gr_dilution);
-                fit_functions.push_back(fit_func);
-
-                // Cleanup the histograms after each iteration
-                delete h_pT_nh3;
-                delete h_pT_c;
-                delete h_pT_ch;
-                delete h_pT_he;
-                delete h_pT_empty;
+                // Set the dilution factor point and error in the TGraphErrors
+                gr_dilution->SetPoint(bin - 1, x_position, dilution);
+                gr_dilution->SetPointError(bin - 1, 0, dilution_error);
             }
+
+            // Use the reformatted strings in the title
+            std::string title = x_title + " , " + z_title;
+            gr_dilution->SetTitle((title + "; P_{T} (GeV); D_{f}").c_str());
+            gr_dilution->SetMarkerStyle(20);
+
+            // Draw the TGraphErrors on the canvas
+            gr_dilution->Draw("AP");
+            gr_dilution->GetXaxis()->SetLimits(0, 1);
+            gr_dilution->GetYaxis()->SetRangeUser(0.00, 0.50);  // Set the y-axis range from 0.0 to 0.5
+            // Increase the size of axis labels and titles
+            gr_dilution->GetXaxis()->SetTitleSize(0.05);  // Increase title size
+            gr_dilution->GetYaxis()->SetTitleSize(0.05);  // Increase title size
+            gr_dilution->GetXaxis()->SetLabelSize(0.04);  // Increase label size
+            gr_dilution->GetYaxis()->SetLabelSize(0.04);  // Increase label size
+
+            // Fit the dilution factor to a constant function
+            TF1 *fit_func = new TF1("fit_func", "[0]", 0, 1.0);  // Constant fit
+            gr_dilution->Fit(fit_func, "RQ");
+            fit_func->SetLineColor(kRed);
+            fit_func->Draw("SAME");
+
+            // Retrieve fit parameters and chi-squared
+            double p0 = fit_func->GetParameter(0);
+            double p0_err = fit_func->GetParError(0);
+            double chi2 = fit_func->GetChisquare();
+            int ndf = fit_func->GetNDF();
+            double chi2_ndf = chi2 / ndf;
+
+            // Calculate chi2/ndf scaling factor
+            double chi2_scale_factor = std::sqrt(chi2_ndf);
+
+            // Rescale the errors
+            for (int i = 0; i < gr_dilution->GetN(); ++i) {
+                double x, y;
+                gr_dilution->GetPoint(i, x, y);
+                gr_dilution->SetPointError(i, 0, gr_dilution->GetErrorY(i) * chi2_scale_factor);
+            }
+
+            // Refit with scaled errors
+            gr_dilution->Fit(fit_func, "RQ");
+            fit_func->Draw("SAME");
+
+            // Retrieve updated chi2 and NDF
+            chi2 = fit_func->GetChisquare();
+            ndf = fit_func->GetNDF();
+            chi2_ndf = chi2 / ndf;
+
+            // Retrieve fit parameters and chi-squared
+            p0 = fit_func->GetParameter(0);
+            p0_err = fit_func->GetParError(0);
+
+            // Add fit parameters and chi-squared box
+            TPaveText *pt = new TPaveText(0.5, 0.7, 0.9, 0.9, "brNDC");
+            pt->SetBorderSize(1);
+            pt->SetFillStyle(1001);  // Solid fill style
+            pt->SetFillColor(kWhite);  // White background
+            pt->AddText(Form("p0 = %.3f +/- %.3f", p0, p0_err));
+            pt->Draw();
+
+            // Generate the return statement with random Gaussian variation
+            std::cout << "if (prefix == \"" << "Q2x" << k + 1 << z_prefix << "\") {"
+                      << " double sigma = " << p0_err << ";"
+                      << " return " << p0 << " + rand_gen.Gaus(0, sigma); }" << std::endl << std::endl;
+            // Store the objects in vectors for later cleanup
+            dilution_graphs.push_back(gr_dilution);
+            fit_functions.push_back(fit_func);
+
+            // Cleanup the histograms after each iteration
+            delete h_pT_nh3;
+            delete h_pT_c;
+            delete h_pT_ch;
+            delete h_pT_he;
+            delete h_pT_empty;
         }
 
         // Save the canvas after all pads are filled
-        c1->SaveAs(Form("output/multidimensional_ybin_%d.png", k));
-
-        // Clean up the dynamically allocated objects
-        // for (auto graph : dilution_graphs) delete graph;
-        // for (auto func : fit_functions) delete func;
+        c1->SaveAs(Form("output/multidimensional_xbin_%d.png", k));
 
         // Clean up the canvas
         delete c1;
@@ -1053,9 +975,9 @@ int main(int argc, char** argv) {
     }
 
     // Call the plot_dilution_kinematics function
-    plot_dilution_kinematics(nh3, c, ch, he, empty);
+    // plot_dilution_kinematics(nh3, c, ch, he, empty);
     // Call the one-dimensional function
-    one_dimensional(nh3, c, ch, he, empty);
+    // one_dimensional(nh3, c, ch, he, empty);
     multi_dimensional(nh3, c, ch, he, empty);
 
     // Safely close the ROOT files
