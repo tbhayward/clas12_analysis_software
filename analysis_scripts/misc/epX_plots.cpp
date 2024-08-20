@@ -1296,9 +1296,9 @@ int main(int argc, char *argv[]) {
     // // Plot Q2-y-z dependence
     // plotQ2yz_pT(asymmetryData);
 
-    // // Extract Q² dependence vectors
-    // auto allVectors = extractQ2Dependence(asymmetryData, kinematicData);
-    // plotQ2Dependence(allVectors);
+    // Extract Q² dependence vectors
+    auto allVectors = extractQ2Dependence(asymmetryData, kinematicData);
+    plotQ2Dependence(allVectors);
 
     plotTargetPolarizationDependence(targetPolarizationData, "run number", "output/epX_plots/target_polarization_dependence.png");
 
