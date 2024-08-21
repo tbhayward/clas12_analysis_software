@@ -336,8 +336,6 @@ double dilution_factor(double currentVariable, const std::string& prefix) {
 
   if (prefix == "Q2x8z4") { double sigma = 0.00854078; return 0.198004 + rand_gen.Gaus(0, sigma); }
 
-  // if (prefix == "Q2x9z1") { double sigma = -nan; return 0 + rand_gen.Gaus(0, sigma); }
-
   if (prefix == "Q2x9z2") { double sigma = 0.00738543; return 0.184486 + rand_gen.Gaus(0, sigma); }
 
   if (prefix == "Q2x9z3") { double sigma = 0.00710463; return 0.195825 + rand_gen.Gaus(0, sigma); }
@@ -360,8 +358,6 @@ double dilution_factor(double currentVariable, const std::string& prefix) {
 
   if (prefix == "Q2x11z4") { double sigma = 0.00615722; return 0.208119 + rand_gen.Gaus(0, sigma); }
 
-  // if (prefix == "Q2x12z1") { double sigma = -nan; return 0 + rand_gen.Gaus(0, sigma); }
-
   if (prefix == "Q2x12z2") { double sigma = 0.009042; return 0.207689 + rand_gen.Gaus(0, sigma); }
 
   if (prefix == "Q2x12z3") { double sigma = 0.00594662; return 0.223018 + rand_gen.Gaus(0, sigma); }
@@ -378,12 +374,11 @@ double dilution_factor(double currentVariable, const std::string& prefix) {
 
   if (prefix == "Q2x14z1") { double sigma = 0.0253505; return 0.115816 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2x14z2") { double sigma = 0.0122949; return 0.246262 + rand_gen.Gaus(0, sigma); }
+  if (prefix == "Q2x14z2") { double sigma = 0.0123555; return 0.246474 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2x14z3") { double sigma = 0.00710029; return 0.266595 + rand_gen.Gaus(0, sigma); }
+  if (prefix == "Q2x14z3") { double sigma = 0.00707888; return 0.266938 + rand_gen.Gaus(0, sigma); }
 
-  if (prefix == "Q2x14z4") { double sigma = 0.00473232; return 0.261203 + rand_gen.Gaus(0, sigma); }
-
+  if (prefix == "Q2x14z4") { double sigma = 0.00480178; return 0.261037 + rand_gen.Gaus(0, sigma); }
   // // epX
   // if (prefix == "xF") { 
   //   return 0.186121-0.0263337*currentVariable-0.175587*std::pow(currentVariable,2)+
