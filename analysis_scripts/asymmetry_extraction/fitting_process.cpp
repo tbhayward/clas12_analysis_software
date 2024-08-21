@@ -250,9 +250,9 @@ void calculate_inclusive(const char* output_file, const char* kinematic_file,
     switch (asymmetry_index) {
       case 0: {// beam-spin asymmetry
         // Get the fitted parameters and their errors
-        double ALU_offset = asymmetry_value_calculation(meanVariable, *Q2, *x, *z, *pT, prefix, 
+        double ALU_offset = asymmetry_value_calculation(meanVariable, *Q2, *x, z, pT, prefix, 
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
-        double ALU_offset_error = asymmetry_error_calculation(meanVariable, *Q2, *z, *z, *pT,
+        double ALU_offset_error = asymmetry_error_calculation(meanVariable, *Q2, *x, z, pT,
           prefix, npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
         ALU_offset = (meanDepA/meanDepW)*ALU_offset;
         ALU_offset_error = (meanDepA/meanDepW)*ALU_offset_error;
@@ -264,9 +264,9 @@ void calculate_inclusive(const char* output_file, const char* kinematic_file,
       }
       case 1: {// target-spin asymmetry
         // Get the fitted parameters and their errors
-        double AUL_offset = asymmetry_value_calculation(meanVariable, *Q2, *x, *z, *pT, prefix, 
+        double AUL_offset = asymmetry_value_calculation(meanVariable, *Q2, *x, z, pT, prefix, 
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
-        double AUL_offset_error = asymmetry_error_calculation(meanVariable, *Q2, *x, *z, *pT,
+        double AUL_offset_error = asymmetry_error_calculation(meanVariable, *Q2, *x, z, pT,
           prefix, npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
         AUL_offset = (meanDepA/meanDepV)*AUL_offset;
         AUL_offset_error = (meanDepA/meanDepV)*AUL_offset_error;
@@ -278,9 +278,9 @@ void calculate_inclusive(const char* output_file, const char* kinematic_file,
       }
       case 2: {// double-spin asymmetry
         // Get the fitted parameters and their errors
-        double ALL = asymmetry_value_calculation(meanVariable, *Q2, *x, *z, *pT, prefix, 
+        double ALL = asymmetry_value_calculation(meanVariable, *Q2, *x, z, pT, prefix, 
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
-        double ALL_error = asymmetry_error_calculation(meanVariable, *Q2, *x, *z, *pT, prefix, 
+        double ALL_error = asymmetry_error_calculation(meanVariable, *Q2, *x, z, pT, prefix, 
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
         ALL = -(meanDepA/meanDepC)*ALL;
         ALL_error = (meanDepA/meanDepC)*ALL_error;
@@ -1178,6 +1178,10 @@ void negLogLikelihood_b2b_dihadron(Int_t &npar, Double_t *gin, Double_t &f,
   TTreeReaderValue<int> helicity(dataReader, "helicity");
   TTreeReaderValue<double> beam_pol(dataReader, "beam_pol");
   TTreeReaderValue<double> target_pol(dataReader, "target_pol");
+  TTreeReaderValue<double> Q2(dataReader, "Q2");
+  TTreeReaderValue<double> x(dataReader, "x");
+  TTreeReaderValue<double> z(dataReader, "z");
+  TTreeReaderValue<double> pT(dataReader, "pT");
   TTreeReaderValue<double> phi1(dataReader, "phi1");
   TTreeReaderValue<double> phi2(dataReader, "phi2");
   TTreeReaderValue<double> DepA(dataReader, "DepA");
@@ -1197,7 +1201,7 @@ void negLogLikelihood_b2b_dihadron(Int_t &npar, Double_t *gin, Double_t &f,
       // Increment the event count
       N += 1;
 
-      double Df = dilution_factor(*currentVariable, mlmPrefix); // dilution factor
+      double Df = dilution_factor(*Q2, *x, *z, *pT, mlmPrefix); // dilution factor
       double Pb = *beam_pol;
       double Pt = std::abs(*target_pol);
 
