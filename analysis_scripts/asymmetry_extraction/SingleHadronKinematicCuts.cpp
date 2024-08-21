@@ -31,7 +31,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         }
         if (property == "xFall" || property == "xall" || property == "PTall") {
             goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *Q2 > 1 && *W > 2 && *Mx > 0 && *y < 0.75;
-            std::cout << *vz_e << " " << *vz_p << " " << *Q2 << " " << *W << " " << *Mx << " " << *y << " " << goodEvent << std::endl;
+            std::cout << (*vz_e > -10) << " " << *vz_p << " " << *Q2 << " " << *W << " " << *Mx << " " << *y << " " << goodEvent << std::endl;
             return goodEvent;
         } 
         if (property == "xFexclusive" || property == "xexclusive" || property == "PTexclusive") {
