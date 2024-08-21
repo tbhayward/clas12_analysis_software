@@ -229,8 +229,8 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         combined_cuts = "Mx > 0 && " + vz_cuts;
     } else {
         // Apply both Mx > 1.35 and vz cuts if isMx is false
-        // combined_cuts = "Mx > 1.35 && " + vz_cuts;
-        combined_cuts = "Mx > 0.55 && " + vz_cuts;
+        combined_cuts = "Mx > 1.35 && " + vz_cuts;
+        // combined_cuts = "Mx > 0.55 && " + vz_cuts;
         // combined_cuts = "Mx < 1.35 && Mx > 0 && " + vz_cuts;
     }
 
@@ -1127,9 +1127,9 @@ int main(int argc, char** argv) {
     }
 
     // Call the plot_dilution_kinematics function
-    plot_dilution_kinematics(nh3, c, ch, he, empty);
+    // plot_dilution_kinematics(nh3, c, ch, he, empty);
     // Call the one-dimensional function
-    one_dimensional(nh3, c, ch, he, empty);
+    // one_dimensional(nh3, c, ch, he, empty);
     // multi_dimensional(nh3, c, ch, he, empty);
 
     // Safely close the ROOT files
