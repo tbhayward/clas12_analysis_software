@@ -380,20 +380,40 @@ void plotDependence(
                     extraGraphStat->Draw("P SAME");
                 }
 
-                // Add the text box for labels only if the extraPrefix is provided
-                TPaveText *text = new TPaveText(0.65, 0.7, 0.9, 0.9, "NDC");
-                if (suffixes[i] == "ALL") {
-                    text->SetX1NDC(0.15);  // Move to top left for "F_{LL}/F_{UU}" plot
-                    text->SetX2NDC(0.35);
-                    text->SetY1NDC(0.75);  // Ensure it's at the top left
-                    text->SetY2NDC(0.9);
+                // // Add the text box for labels only if the extraPrefix is provided
+                // TPaveText *text = new TPaveText(0.65, 0.7, 0.9, 0.9, "NDC");
+                // if (suffixes[i] == "ALL") {
+                //     text->SetX1NDC(0.15);  // Move to top left for "F_{LL}/F_{UU}" plot
+                //     text->SetX2NDC(0.35);
+                //     text->SetY1NDC(0.75);  // Ensure it's at the top left
+                //     text->SetY2NDC(0.9);
+                // }
+                // text->SetTextAlign(13);
+                // text->SetBorderSize(1);  // Set border size to 1 for a black border
+                // text->SetFillColor(0);
+                // text->AddText("#font[42]{M_{x} > 1.35 GeV}");  // Black text line
+                // text->AddText("#font[42]{#color[2]{M_{x} > 0.55 GeV}}");  // Red text line
+                // text->Draw();
+
+                if (i==4) {
+                    // Add the text box for labels only if the extraPrefix is provided
+                    TPaveText *text = new TPaveText(0.15, 0.35, 0.75, 0.9, "NDC");
+                    text->SetTextAlign(13);
+                    text->SetBorderSize(1);  // Set border size to 1 for a black border
+                    text->SetFillColor(0);
+                    text->AddText("#font[42]{M_{x} > 1.35 GeV}");  // Black text line
+                    text->AddText("#font[42]{#color[2]{M_{x} > 0.55 GeV}}");  // Red text line
+                    text->Draw();
+                } else {
+                    // Add the text box for labels only if the extraPrefix is provided
+                    TPaveText *text = new TPaveText(0.65, 0.7, 0.9, 0.9, "NDC");
+                    text->SetTextAlign(13);
+                    text->SetBorderSize(1);  // Set border size to 1 for a black border
+                    text->SetFillColor(0);
+                    text->AddText("#font[42]{M_{x} > 1.35 GeV}");  // Black text line
+                    text->AddText("#font[42]{#color[2]{M_{x} > 0.55 GeV}}");  // Red text line
+                    text->Draw();
                 }
-                text->SetTextAlign(13);
-                text->SetBorderSize(1);  // Set border size to 1 for a black border
-                text->SetFillColor(0);
-                text->AddText("#font[42]{M_{x} > 1.35 GeV}");  // Black text line
-                text->AddText("#font[42]{#color[2]{M_{x} > 0.55 GeV}}");  // Red text line
-                text->Draw();
             }
         }
     }
