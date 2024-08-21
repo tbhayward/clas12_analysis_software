@@ -715,189 +715,204 @@ std::vector<TH1D*> create_and_draw_histograms(TTree* tree_nh3, TTree* tree_carbo
 }
 
 double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile* empty) {
-    // Grouping of Q2x bins into canvases
-    std::vector<std::vector<int>> binGroups = {
-        {0},                       // Q2x1
-        {1, 2, 3},                 // Q2x2, Q2x3, Q2x4
-        {4, 5, 6, 7},              // Q2x5, Q2x6, Q2x7, Q2x8
-        {8, 9, 10},                // Q2x9, Q2x10, Q2x11
-        {11, 12},                  // Q2x12, Q2x13
-        {13}                       // Q2x14
+    // Get the PhysicsEvents trees
+    TTree *tree_nh3;
+    TTree *tree_carbon;
+    TTree *tree_ch;
+    TTree *tree_he;
+    TTree *tree_empty;
+    nh3->GetObject("PhysicsEvents", tree_nh3);
+    carbon->GetObject("PhysicsEvents", tree_carbon);
+    ch->GetObject("PhysicsEvents", tree_ch);
+    he->GetObject("PhysicsEvents", tree_he);
+    empty->GetObject("PhysicsEvents", tree_empty);
+
+    if (!tree_nh3 || !tree_carbon || !tree_ch || !tree_he || !tree_empty) {
+        std::cerr << "Error: PhysicsEvents tree not found!" << std::endl;
+        return 0;
+    }
+
+    // Q2-x bin information
+    struct BinInfo {
+        std::string x_title;
+        std::string x_range;
+        std::string q2_range;
     };
 
-    std::vector<std::string> x_titles = {
-        "x < 0.1",
-        "0.1 < x < 0.14", "0.1 < x < 0.14", "0.1 < x < 0.14",
-        "0.14 < x < 0.21", "0.14 < x < 0.21", "0.14 < x < 0.21", "0.14 < x < 0.21",
-        "0.21 < x < 0.30", "0.21 < x < 0.30", "0.21 < x < 0.30",
-        "0.30 < x < 0.42", "0.30 < x < 0.42",
-        "x > 0.42"
+    std::vector<BinInfo> bins = {
+        {"x < 0.1", "x < 0.1", "Q2 > 0"},
+        {"0.1 < x < 0.14", "x > 0.1 && x < 0.14 && Q2 < 1.50", "Q2 < 1.50"},
+        {"0.1 < x < 0.14", "x > 0.1 && x < 0.14 && Q2 >= 1.50 && Q2 < 1.70", "1.50 <= Q2 < 1.70"},
+        {"0.1 < x < 0.14", "x > 0.1 && x < 0.14 && Q2 >= 1.70", "Q2 >= 1.70"},
+        {"0.14 < x < 0.21", "x > 0.14 && x < 0.21 && Q2 < 1.50", "Q2 < 1.50"},
+        {"0.14 < x < 0.21", "x > 0.14 && x < 0.21 && Q2 >= 1.50 && Q2 < 1.70", "1.50 <= Q2 < 1.70"},
+        {"0.14 < x < 0.21", "x > 0.14 && x < 0.21 && Q2 >= 1.70 && Q2 < 2.00", "1.70 <= Q2 < 2.00"},
+        {"0.14 < x < 0.21", "x > 0.14 && x < 0.21 && Q2 >= 2.00", "Q2 >= 2.00"},
+        {"0.21 < x < 0.30", "x > 0.21 && x < 0.30 && Q2 < 2.20", "Q2 < 2.20"},
+        {"0.21 < x < 0.30", "x > 0.21 && x < 0.30 && Q2 >= 2.20 && Q2 < 2.60", "2.20 <= Q2 < 2.60"},
+        {"0.21 < x < 0.30", "x > 0.21 && x < 0.30 && Q2 >= 2.60", "Q2 >= 2.60"},
+        {"0.30 < x < 0.42", "x > 0.30 && x < 0.42 && Q2 < 3.20", "Q2 < 3.20"},
+        {"0.30 < x < 0.42", "x > 0.30 && x < 0.42 && Q2 >= 3.20", "Q2 >= 3.20"},
+        {"x > 0.42", "x >= 0.42", "Q2 > 0"}
     };
 
-    std::vector<std::string> Q2_ranges = {
-        "Q2 < 1.50",
-        "Q2 < 1.50", "1.50 < Q2 < 1.70", "Q2 > 1.70",
-        "Q2 < 1.50", "1.50 < Q2 < 1.70", "1.70 < Q2 < 2.00", "Q2 > 2.00",
-        "Q2 < 2.20", "2.20 < Q2 < 2.60", "Q2 > 2.60",
-        "Q2 < 3.20", "Q2 > 3.20",
-        "Q2 > 3.20"
+    // Define z bins
+    std::vector<std::string> z_ranges = {
+        "0 < z && z <= 0.19",
+        "0.19 < z && z <= 0.30",
+        "0.30 < z && z <= 0.42",
+        "0.42 < z && z <= 1.00"
     };
 
+    std::vector<std::string> z_titles = {
+        "0 < z <= 0.19",
+        "0.19 < z <= 0.30",
+        "0.30 < z <= 0.42",
+        "0.42 < z <= 1.00"
+    };
+
+    std::vector<std::string> z_prefixes = {
+        "z1", "z2", "z3", "z4"
+    };
+
+    // Create canvases based on grouped x bins
     int canvasIndex = 0;
+    TCanvas *c1 = nullptr;
+    int padIndex = 1;
 
-    for (const auto& binGroup : binGroups) {
-        int numRows = (binGroup.size() + 3) / 4;  // Number of rows needed (4 columns)
-        TCanvas *c1 = new TCanvas(Form("c%d", canvasIndex), "Dilution Factor Analysis", 1600, 2000);
-        c1->Divide(4, numRows);  // Adjust based on number of Q2x bins in the group
+    for (size_t k = 0; k < bins.size(); ++k) {
+        if (k == 0 || k == 1 || k == 4 || k == 8 || k == 11 || k == 13) {
+            // Determine the number of rows needed
+            int nRows = 1;
+            if (k == 1 || k == 4) nRows = 4;
+            else if (k == 8) nRows = 3;
+            else if (k == 11) nRows = 2;
 
-        int padIndex = 1;
-
-        for (int k : binGroup) {  // Loop over Q2x bins in the group
-            std::string x_title = x_titles[k];
-            std::string Q2_range = Q2_ranges[k];
-
-            for (int i = 0; i < 4; ++i) {  // Loop over z bins
-                std::string z_range, z_title, z_prefix;
-                switch (i) {
-                    case 0:
-                        z_range = "0 < z && z <= 0.19";
-                        z_title = "0 < z <= 0.19";
-                        z_prefix = "z1";
-                        break;
-                    case 1:
-                        z_range = "0.19 < z && z <= 0.30";
-                        z_title = "0.19 < z <= 0.30";
-                        z_prefix = "z2";
-                        break;
-                    case 2:
-                        z_range = "0.30 < z && z <= 0.42";
-                        z_title = "0.30 < z <= 0.42";
-                        z_prefix = "z3";
-                        break;
-                    case 3:
-                        z_range = "0.42 < z && z <= 1.00";
-                        z_title = "0.42 < z <= 1.00";
-                        z_prefix = "z4";
-                        break;
-                }
-
-                std::string cuts = x_titles[k] + " && " + Q2_ranges[k] + " && " + z_range;
-
-                c1->cd(padIndex++);  // Move to the next pad
-                gPad->SetLeftMargin(0.15);
-
-                // Call the function to create and draw histograms
-                std::vector<TH1D*> histograms = create_and_draw_histograms(tree_nh3, tree_carbon, tree_ch, tree_he, tree_empty, cuts, k, i);
-                
-                // Access the histograms using the vector
-                TH1D *h_pT_nh3 = histograms[0];
-                TH1D *h_pT_c = histograms[1];
-                TH1D *h_pT_ch = histograms[2];
-                TH1D *h_pT_he = histograms[3];
-                TH1D *h_pT_empty = histograms[4];
-
-                // Inside loop after creating the histograms
-                int n_bins = h_pT_nh3->GetNbinsX();
-                TGraphErrors *gr_dilution = new TGraphErrors(n_bins);
-
-                for (int bin = 1; bin <= n_bins; ++bin) {
-                    // Get bin contents for each target type
-                    double nA = h_pT_nh3->GetBinContent(bin);
-                    double nC = h_pT_c->GetBinContent(bin);
-                    double nCH = h_pT_ch->GetBinContent(bin);
-                    double nMT = h_pT_he->GetBinContent(bin);
-                    double nf = h_pT_empty->GetBinContent(bin);
-                    // Calculate the dilution factor
-                    double dilution = calculate_dilution_factor(nA, nC, nCH, nMT, nf);
-                    double dilution_error = calculate_dilution_error(nA / xA, nC / xC, nCH / xCH, nMT / xHe, nf / xf);
-
-                    // Get the bin center
-                    double x_position = h_pT_nh3->GetBinCenter(bin);
-
-                    // Set the dilution factor point and error in the TGraphErrors
-                    gr_dilution->SetPoint(bin - 1, x_position, dilution);
-                    gr_dilution->SetPointError(bin - 1, 0, dilution_error);
-                }
-
-                // Use the reformatted strings in the title
-                std::string title = "Bin: Q2x" + std::to_string(k + 1) + z_prefix + " | " + x_title + " , " + Q2_range + " , " + z_title;
-                gr_dilution->SetTitle((title + "; P_{T} (GeV); D_{f}").c_str());
-                gr_dilution->SetMarkerStyle(20);
-
-                // Draw the TGraphErrors on the canvas
-                gr_dilution->Draw("AP");
-                gr_dilution->GetXaxis()->SetLimits(0, 1);
-                gr_dilution->GetYaxis()->SetRangeUser(0.00, 0.50);  // Set the y-axis range from 0.0 to 0.5
-                // Increase the size of axis labels and titles
-                gr_dilution->GetXaxis()->SetTitleSize(0.05);  // Increase title size
-                gr_dilution->GetYaxis()->SetTitleSize(0.05);  // Increase title size
-                gr_dilution->GetXaxis()->SetLabelSize(0.04);  // Increase label size
-                gr_dilution->GetYaxis()->SetLabelSize(0.04);  // Increase label size
-
-                // Fit the dilution factor to a constant function
-                TF1 *fit_func = new TF1("fit_func", "[0]", 0, 1.0);  // Constant fit
-                gr_dilution->Fit(fit_func, "RQ");
-                fit_func->SetLineColor(kRed);
-                fit_func->Draw("SAME");
-
-                // Retrieve fit parameters and chi-squared
-                double p0 = fit_func->GetParameter(0);
-                double p0_err = fit_func->GetParError(0);
-                double chi2 = fit_func->GetChisquare();
-                int ndf = fit_func->GetNDF();
-                double chi2_ndf = chi2 / ndf;
-
-                // Calculate chi2/ndf scaling factor
-                double chi2_scale_factor = std::sqrt(chi2_ndf);
-
-                // Rescale the errors
-                for (int bin = 0; bin < gr_dilution->GetN(); ++bin) {
-                    double x, y;
-                    gr_dilution->GetPoint(bin, x, y);
-                    gr_dilution->SetPointError(bin, 0, gr_dilution->GetErrorY(bin) * chi2_scale_factor);
-                }
-                // Refit with scaled errors
-                gr_dilution->Fit(fit_func, "RQ");
-                fit_func->Draw("SAME");
-
-                // Retrieve updated chi2 and NDF
-                chi2 = fit_func->GetChisquare();
-                ndf = fit_func->GetNDF();
-                chi2_ndf = chi2 / ndf;
-
-                // Retrieve fit parameters and chi-squared
-                p0 = fit_func->GetParameter(0);
-                p0_err = fit_func->GetParError(0);
-
-                // Add fit parameters and chi-squared box
-                TPaveText *pt = new TPaveText(0.5, 0.7, 0.9, 0.9, "brNDC");
-                pt->SetBorderSize(1);
-                pt->SetFillStyle(1001);  // Solid fill style
-                pt->SetFillColor(kWhite);  // White background
-                pt->AddText(Form("p0 = %.3f +/- %.3f", p0, p0_err));
-                pt->Draw();
-
-                // Generate the return statement with random Gaussian variation
-                std::cout << "if (prefix == \"" << "Q2x" << k + 1 << z_prefix << "\") {"
-                          << " double sigma = " << p0_err << ";"
-                          << " return " << p0 << " + rand_gen.Gaus(0, sigma); }" << std::endl << std::endl;
-                // Store the objects in vectors for later cleanup
-                dilution_graphs.push_back(gr_dilution);
-                fit_functions.push_back(fit_func);
-
-                // Cleanup the histograms after each iteration
-                delete h_pT_nh3;
-                delete h_pT_c;
-                delete h_pT_ch;
-                delete h_pT_he;
-                delete h_pT_empty;
-            }
+            // Create a new canvas
+            c1 = new TCanvas(Form("c1_%d", canvasIndex), "Dilution Factor Analysis", 1600, 400 * nRows);
+            c1->Divide(4, nRows);  // 4 columns, dynamic rows
+            padIndex = 1;
+            canvasIndex++;
         }
 
-        // Final save and cleanup for the current canvas
-        c1->SaveAs(Form("output/multidimensional_xgroup_%d.png", canvasIndex));
+        // Loop over z bins
+        for (size_t i = 0; i < z_ranges.size(); ++i) {
+            std::string cuts = bins[k].x_range + " && " + z_ranges[i];
+            c1->cd(padIndex++);
+            gPad->SetLeftMargin(0.15);
+
+            // Call the function to create and draw histograms
+            std::vector<TH1D*> histograms = create_and_draw_histograms(tree_nh3, tree_carbon, tree_ch, tree_he, tree_empty, cuts, k, i);
+            
+            // Access the histograms using the vector
+            TH1D *h_pT_nh3 = histograms[0];
+            TH1D *h_pT_c = histograms[1];
+            TH1D *h_pT_ch = histograms[2];
+            TH1D *h_pT_he = histograms[3];
+            TH1D *h_pT_empty = histograms[4];
+
+            // Inside loop after creating the histograms
+            int n_bins = h_pT_nh3->GetNbinsX();
+            TGraphErrors *gr_dilution = new TGraphErrors(n_bins);
+
+            for (int bin = 1; bin <= n_bins; ++bin) {
+                // Get bin contents for each target type
+                double nA = h_pT_nh3->GetBinContent(bin);
+                double nC = h_pT_c->GetBinContent(bin);
+                double nCH = h_pT_ch->GetBinContent(bin);
+                double nMT = h_pT_he->GetBinContent(bin);
+                double nf = h_pT_empty->GetBinContent(bin);
+                // Calculate the dilution factor
+                double dilution = calculate_dilution_factor(nA, nC, nCH, nMT, nf);
+                double dilution_error = calculate_dilution_error(nA / xA, nC / xC, nCH / xCH, nMT / xHe, nf / xf);
+
+                // Get the bin center
+                double x_position = h_pT_nh3->GetBinCenter(bin);
+
+                // Set the dilution factor point and error in the TGraphErrors
+                gr_dilution->SetPoint(bin - 1, x_position, dilution);
+                gr_dilution->SetPointError(bin - 1, 0, dilution_error);
+            }
+
+            // Use the reformatted strings in the title
+            std::string title = Form("Q2x%d (%s), %s, %s", k + 1, bins[k].q2_range.c_str(), bins[k].x_title.c_str(), z_titles[i].c_str());
+            gr_dilution->SetTitle((title + "; P_{T} (GeV); D_{f}").c_str());
+            gr_dilution->SetMarkerStyle(20);
+
+            // Draw the TGraphErrors on the canvas
+            gr_dilution->Draw("AP");
+            gr_dilution->GetXaxis()->SetLimits(0, 1);
+            gr_dilution->GetYaxis()->SetRangeUser(0.00, 0.50);  // Set the y-axis range from 0.0 to 0.5
+            // Increase the size of axis labels and titles
+            gr_dilution->GetXaxis()->SetTitleSize(0.05);  // Increase title size
+            gr_dilution->GetYaxis()->SetTitleSize(0.05);  // Increase title size
+            gr_dilution->GetXaxis()->SetLabelSize(0.04);  // Increase label size
+            gr_dilution->GetYaxis()->SetLabelSize(0.04);  // Increase label size
+            // Fit the dilution factor to a constant function
+            TF1 *fit_func = new TF1("fit_func", "[0]", 0, 1.0);  // Constant fit
+            gr_dilution->Fit(fit_func, "RQ");
+            fit_func->SetLineColor(kRed);
+            fit_func->Draw("SAME");
+            // Retrieve fit parameters and chi-squared
+            double p0 = fit_func->GetParameter(0);
+            double p0_err = fit_func->GetParError(0);
+            double chi2 = fit_func->GetChisquare();
+            int ndf = fit_func->GetNDF();
+            double chi2_ndf = chi2 / ndf;
+
+            // Calculate chi2/ndf scaling factor
+            double chi2_scale_factor = std::sqrt(chi2_ndf);
+
+            // Rescale the errors
+            for (int bin = 0; bin < gr_dilution->GetN(); ++bin) {
+                double x, y;
+                gr_dilution->GetPoint(bin, x, y);
+                gr_dilution->SetPointError(bin, 0, gr_dilution->GetErrorY(bin) * chi2_scale_factor);
+            }
+
+            // Refit with scaled errors
+            gr_dilution->Fit(fit_func, "RQ");
+            fit_func->Draw("SAME");
+
+            // Retrieve updated chi2 and NDF
+            chi2 = fit_func->GetChisquare();
+            ndf = fit_func->GetNDF();
+            chi2_ndf = chi2 / ndf;
+
+            // Retrieve fit parameters and chi-squared
+            p0 = fit_func->GetParameter(0);
+            p0_err = fit_func->GetParError(0);
+
+            // Add fit parameters and chi-squared box
+            TPaveText *pt = new TPaveText(0.5, 0.7, 0.9, 0.9, "brNDC");
+            pt->SetBorderSize(1);
+            pt->SetFillStyle(1001);  // Solid fill style
+            pt->SetFillColor(kWhite);  // White background
+            pt->AddText(Form("p0 = %.3f +/- %.3f", p0, p0_err));
+            pt->Draw();
+
+            // Generate the return statement with random Gaussian variation
+            std::cout << "if (prefix == \"" << "Q2x" << k + 1 << z_prefixes[i] << "\") {"
+                      << " double sigma = " << p0_err << ";"
+                      << " return " << p0 << " + rand_gen.Gaus(0, sigma); }" << std::endl << std::endl;
+
+            // Store the objects in vectors for later cleanup
+            dilution_graphs.push_back(gr_dilution);
+            fit_functions.push_back(fit_func);
+
+            // Cleanup the histograms after each iteration
+            delete h_pT_nh3;
+            delete h_pT_c;
+            delete h_pT_ch;
+            delete h_pT_he;
+            delete h_pT_empty;
+        }
+
+        // Save the canvas after all pads are filled
+        c1->SaveAs(Form("output/multidimensional_xbin_%d.png", canvasIndex - 1));
+
+        // Clean up the canvas
         delete c1;
-        ++canvasIndex;
     }
 
     // Close the files
@@ -937,7 +952,7 @@ int main(int argc, char** argv) {
     // Call the plot_dilution_kinematics function
     // plot_dilution_kinematics(nh3, c, ch, he, empty);
     // Call the one-dimensional function
-    // one_dimensional(nh3, c, ch, he, empty);
+    one_dimensional(nh3, c, ch, he, empty);
     multi_dimensional(nh3, c, ch, he, empty);
 
     // Safely close the ROOT files
