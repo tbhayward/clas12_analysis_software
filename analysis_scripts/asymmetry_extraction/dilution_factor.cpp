@@ -30,13 +30,13 @@ double dilution_factor(double currentVariable, const std::string& prefix) {
   // if (prefix == "PTall") { return 0.208315+-0.221463*currentVariable+0.651064*std::pow(currentVariable,2); }
   // if (prefix == "xFall") { return 0.207138+-0.00265586*currentVariable+-0.0427432*std::pow(currentVariable,2); }
 
-  if (prefix == "Q2all") { return 0.0515679+0.100782*currentVariable+-0.019643*std::pow(currentVariable,2); }
-  if (prefix == "xall") { return 0.163076+-0.0361384*currentVariable+0.804483*std::pow(currentVariable,2); }
-  if (prefix == "yall") { return 0.310092+-0.304066*currentVariable+0.135163*std::pow(currentVariable,2); }
-  if (prefix == "zall") { return 0.0757085+0.687572*currentVariable+-1.05333*std::pow(currentVariable,2); }
-  if (prefix == "zetaall") { return 1.26316+-5.40117*currentVariable+9.42118*std::pow(currentVariable,2); }
-  if (prefix == "PTall") { return 0.216951+-0.274862*currentVariable+0.730387*std::pow(currentVariable,2); }
-  if (prefix == "xFall") { return 0.219074+0.00890221*currentVariable+-0.0921533*std::pow(currentVariable,2); }
+  if (prefix == "Q2all") { return 0.042234+0.11043*currentVariable+-0.0225887*std::pow(currentVariable,2); }
+  if (prefix == "xall") { return 0.163228+-0.0367291*currentVariable+0.804498*std::pow(currentVariable,2); }
+  if (prefix == "yall") { return 0.320777+-0.365915*currentVariable+0.246253*std::pow(currentVariable,2); }
+  if (prefix == "zall") { return 0.0751743+0.693025*currentVariable+-1.06889*std::pow(currentVariable,2); }
+  if (prefix == "zetaall") { return 1.2463+-5.31976*currentVariable+9.29149*std::pow(currentVariable,2); }
+  if (prefix == "PTall") { return 0.216343+-0.273528*currentVariable+0.729059*std::pow(currentVariable,2); }
+  if (prefix == "xFall") { return 0.218748+0.0086161*currentVariable+-0.0906104*std::pow(currentVariable,2); }
 
   if (prefix == "Q2x1z1") { double sigma = 0.00941327; return 0.149075 + rand_gen.Gaus(0, sigma); }
 
