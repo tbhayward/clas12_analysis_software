@@ -500,12 +500,6 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     delete h_ch_all;
     delete h_he_all;
     delete h_empty_all;
-
-    delete h_nh3_exclusive;
-    delete h_c_exclusive;
-    delete h_ch_exclusive;
-    delete h_he_exclusive;
-    delete h_empty_exclusive;
 }
 
 std::pair<TF1*, TGraphErrors*> fit_and_plot_dilution(const char* variable_name, const char* x_title, double x_min, double x_max, int n_bins,
