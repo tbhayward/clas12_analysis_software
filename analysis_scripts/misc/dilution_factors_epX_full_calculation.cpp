@@ -220,8 +220,8 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
 
     // Define the base cuts for vz
     // std::string vz_cuts = "-10 < vz_e && vz_e < 1 && -10 < vz_p && vz_p < 1 && runnum != 16317 && runnum != 16742";
-    // std::string vz_cuts = "x > 0.06 && x < 0.60 && pT > 0 && pT < 1.2 && xF > -1 && xF < 1 && -10 < vz_e && vz_e < 1 && -10 < vz_p && vz_p < 1 && runnum != 16317 && runnum != 16742";
-    std::string vz_cuts = "x > 0.14 && x < 0.21 && pT > 0 && pT < 1.2 && xF > -1 && xF < 1 && -10 < vz_e && vz_e < 1 && -10 < vz_p && vz_p < 1 && runnum != 16317 && runnum != 16742";
+    std::string vz_cuts = "x > 0.06 && x < 0.60 && pT > 0 && pT < 1.2 && xF > -1 && xF < 1 && -10 < vz_e && vz_e < 1 && -10 < vz_p && vz_p < 1 && runnum != 16317 && runnum != 16742";
+    // std::string vz_cuts = "x > 0.14 && x < 0.21 && pT > 0 && pT < 1.2 && xF > -1 && xF < 1 && -10 < vz_e && vz_e < 1 && -10 < vz_p && vz_p < 1 && runnum != 16317 && runnum != 16742";
     // std::string vz_cuts = "z > 0.19 && z < 0.30 && pT > 0 && pT < 1.2 && xF > -1 && xF < 1 && -10 < vz_e && vz_e < 1 && -10 < vz_p && vz_p < 1 && runnum != 16317 && runnum != 16742";
 
 
@@ -485,16 +485,16 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     TLatex title;
     title.SetNDC();
     if (isMx) {
-        // title.SetTextSize(0.045);
-        // title.DrawLatex(0.15, 0.92, "Q^{2} > 1.0 GeV^{2}, W > 2 GeV, y < 0.75, M_{x} > 0 GeV");
+        title.SetTextSize(0.045);
+        title.DrawLatex(0.15, 0.92, "Q^{2} > 1.0 GeV^{2}, W > 2 GeV, y < 0.75, M_{x} > 0 GeV");
         title.SetTextSize(0.035);
-        title.DrawLatex(0.15, 0.92, "Q^{2} > 1.0 GeV^{2}, W > 2 GeV, y < 0.75, M_{x} > 0 GeV, 0.14 < x_{B} < 0.21");
+        // title.DrawLatex(0.15, 0.92, "Q^{2} > 1.0 GeV^{2}, W > 2 GeV, y < 0.75, M_{x} > 0 GeV, 0.14 < x_{B} < 0.21");
         // title.DrawLatex(0.15, 0.92, "Q^{2} > 1.0 GeV^{2}, W > 2 GeV, y < 0.75, M_{x} > 0 GeV, 0.19 < z < 0.30");
     } else {
-        // title.SetTextSize(0.045);
-        // title.DrawLatex(0.15, 0.92, "Q^{2} > 1.0 GeV^{2}, W > 2 GeV, y < 0.75, M_{x} > 1.35 GeV");
-        title.SetTextSize(0.035);
-        title.DrawLatex(0.15, 0.92, "Q^{2} > 1.0 GeV^{2}, W > 2 GeV, y < 0.75, M_{x} > 1.35 GeV, 0.14 < x_{B} < 0.21");
+        title.SetTextSize(0.045);
+        title.DrawLatex(0.15, 0.92, "Q^{2} > 1.0 GeV^{2}, W > 2 GeV, y < 0.75, M_{x} > 1.35 GeV");
+        // title.SetTextSize(0.035);
+        // title.DrawLatex(0.15, 0.92, "Q^{2} > 1.0 GeV^{2}, W > 2 GeV, y < 0.75, M_{x} > 1.35 GeV, 0.14 < x_{B} < 0.21");
         // title.DrawLatex(0.15, 0.92, "Q^{2} > 1.0 GeV^{2}, W > 2 GeV, y < 0.75, M_{x} > 1.35 GeV, 0.19 < z < 0.30");
     }
 
