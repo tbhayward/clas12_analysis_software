@@ -159,6 +159,118 @@ double dilution_factor(double currentVariable, const std::string& prefix) {
     return gauss1 + gauss2 + poly;
   }
 
+  if (prefix == "Q2all") {
+    double p0 = 0.042234;
+    double p1 = 0.11043;
+    double p2 = -0.0225887;
+    double p3 = 0.00159672;
+    double p0_err = 0.0166364;
+    double p1_err = 0.0154501;
+    double p2_err = 0.00437267;
+    double p3_err = 0.000377922;
+    double central_value = p0 + p1 * currentVariable + 
+                           p2 * std::pow(currentVariable, 2) + 
+                           p3 * std::pow(currentVariable, 3);
+    double uncertainty = std::sqrt(0.0166364* 0.0166364 + 0.0154501* 0.0154501 * std::pow(currentVariable, 2) + 0.00437267* 0.00437267 * std::pow(currentVariable, 4) + 0.000377922* 0.000377922 * std::pow(currentVariable, 6));
+    double result = rand_gen.Gaus(central_value, uncertainty);
+    return result;
+  }
+  if (prefix == "xall") {
+    double p0 = 0.163228;
+    double p1 = -0.0367291;
+    double p2 = 0.804498;
+    double p3 = -0.621569;
+    double p0_err = 0.0102424;
+    double p1_err = 0.116196;
+    double p2_err = 0.401017;
+    double p3_err = 0.425727;
+    double central_value = p0 + p1 * currentVariable + 
+                           p2 * std::pow(currentVariable, 2) + 
+                           p3 * std::pow(currentVariable, 3);
+    double uncertainty = std::sqrt(0.0102424* 0.0102424 + 0.116196* 0.116196 * std::pow(currentVariable, 2) + 0.401017* 0.401017 * std::pow(currentVariable, 4) + 0.425727* 0.425727 * std::pow(currentVariable, 6));
+    double result = rand_gen.Gaus(central_value, uncertainty);
+    return result;
+  }
+  if (prefix == "yall") {
+    double p0 = 0.320777;
+    double p1 = -0.365915;
+    double p2 = 0.246253;
+    double p3 = 0.00109763;
+    double p0_err = 0.0410817;
+    double p1_err = 0.243585;
+    double p2_err = 0.466392;
+    double p3_err = 0.28929;
+    double central_value = p0 + p1 * currentVariable + 
+                           p2 * std::pow(currentVariable, 2) + 
+                           p3 * std::pow(currentVariable, 3);
+    double uncertainty = std::sqrt(0.0410817* 0.0410817 + 0.243585* 0.243585 * std::pow(currentVariable, 2) + 0.466392* 0.466392 * std::pow(currentVariable, 4) + 0.28929* 0.28929 * std::pow(currentVariable, 6));
+    double result = rand_gen.Gaus(central_value, uncertainty);
+    return result;
+  }
+  if (prefix == "zall") {
+    double p0 = 0.0751743;
+    double p1 = 0.693025;
+    double p2 = -1.06889;
+    double p3 = 0.590062;
+    double p0_err = 0.0128945;
+    double p1_err = 0.111959;
+    double p2_err = 0.293561;
+    double p3_err = 0.234875;
+    double central_value = p0 + p1 * currentVariable + 
+                           p2 * std::pow(currentVariable, 2) + 
+                           p3 * std::pow(currentVariable, 3);
+    double uncertainty = std::sqrt(0.0128945* 0.0128945 + 0.111959* 0.111959 * std::pow(currentVariable, 2) + 0.293561* 0.293561 * std::pow(currentVariable, 4) + 0.234875* 0.234875 * std::pow(currentVariable, 6));
+    double result = rand_gen.Gaus(central_value, uncertainty);
+    return result;
+  }
+  if (prefix == "zetaall") {
+    double p0 = 1.2463;
+    double p1 = -5.31976;
+    double p2 = 9.29149;
+    double p3 = -5.56437;
+    double p0_err = 0.219781;
+    double p1_err = 1.22643;
+    double p2_err = 2.25747;
+    double p3_err = 1.37042;
+    double central_value = p0 + p1 * currentVariable + 
+                           p2 * std::pow(currentVariable, 2) + 
+                           p3 * std::pow(currentVariable, 3);
+    double uncertainty = std::sqrt(0.219781* 0.219781 + 1.22643* 1.22643 * std::pow(currentVariable, 2) + 2.25747* 2.25747 * std::pow(currentVariable, 4) + 1.37042* 1.37042 * std::pow(currentVariable, 6));
+    double result = rand_gen.Gaus(central_value, uncertainty);
+    return result;
+  }
+  if (prefix == "PTall") {
+    double p0 = 0.216343;
+    double p1 = -0.273528;
+    double p2 = 0.729059;
+    double p3 = -0.48757;
+    double p0_err = 0.00567176;
+    double p1_err = 0.0421257;
+    double p2_err = 0.0940832;
+    double p3_err = 0.0631752;
+    double central_value = p0 + p1 * currentVariable + 
+                           p2 * std::pow(currentVariable, 2) + 
+                           p3 * std::pow(currentVariable, 3);
+    double uncertainty = std::sqrt(0.00567176* 0.00567176 + 0.0421257* 0.0421257 * std::pow(currentVariable, 2) + 0.0940832* 0.0940832 * std::pow(currentVariable, 4) + 0.0631752* 0.0631752 * std::pow(currentVariable, 6));
+    double result = rand_gen.Gaus(central_value, uncertainty);
+    return result;
+  }
+  if (prefix == "xFall") {
+    double p0 = 0.218748;
+    double p1 = 0.0086161;
+    double p2 = -0.0906104;
+    double p3 = 0.00809141;
+    double p0_err = 0.0011874;
+    double p1_err = 0.00500779;
+    double p2_err = 0.0192647;
+    double p3_err = 0.0234072;
+    double central_value = p0 + p1 * currentVariable + 
+                           p2 * std::pow(currentVariable, 2) + 
+                           p3 * std::pow(currentVariable, 3);
+    double uncertainty = std::sqrt(0.0011874* 0.0011874 + 0.00500779* 0.00500779 * std::pow(currentVariable, 2) + 0.0192647* 0.0192647 * std::pow(currentVariable, 4) + 0.0234072* 0.0234072 * std::pow(currentVariable, 6));
+    double result = rand_gen.Gaus(central_value, uncertainty);
+    return result;
+  }
 
 
   if (prefix == "Q2x1z1") { double sigma = 0.00941327; return 0.149075 + rand_gen.Gaus(0, sigma); }
