@@ -1784,6 +1784,7 @@ TH2D* createHistogramForBin_b2b_dihadron(const char* histName, int binIndex,
   TTreeReaderValue<int> helicity(dataReader, "helicity");
   TTreeReaderValue<double> beam_pol(dataReader, "beam_pol");
   TTreeReaderValue<double> target_pol(dataReader, "target_pol");
+  TTreeReaderValue<double> x(dataReader, "x");
   TTreeReaderValue<double> phi1(dataReader, "phi1");
   TTreeReaderValue<double> phi2(dataReader, "phi2");
   TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
