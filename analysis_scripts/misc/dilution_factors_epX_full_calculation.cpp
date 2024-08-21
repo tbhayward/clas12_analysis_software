@@ -1130,7 +1130,7 @@ int main(int argc, char** argv) {
     // plot_dilution_kinematics(nh3, c, ch, he, empty);
     // Call the one-dimensional function
     // one_dimensional(nh3, c, ch, he, empty);
-    // multi_dimensional(nh3, c, ch, he, empty);
+    multi_dimensional(nh3, c, ch, he, empty);
 
     // Safely close the ROOT files
     nh3->Close();
