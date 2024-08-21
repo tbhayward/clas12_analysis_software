@@ -776,8 +776,7 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
     };
 
     // Create canvases based on grouped x bins
-    int canvasIndex = 0;
-    TCanvas *c1 = nullptr;
+    std::vector<TCanvas*> canvases;
     int padIndex = 1;
 
     for (size_t k = 0; k < bins.size(); ++k) {
@@ -789,16 +788,16 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
             else if (k == 11) nRows = 2;
 
             // Create a new canvas
-            c1 = new TCanvas(Form("c1_%d", canvasIndex), "Dilution Factor Analysis", 1600, 400 * nRows);
+            TCanvas* c1 = new TCanvas(Form("c1_%zu", canvases.size()), "Dilution Factor Analysis", 1600, 400 * nRows);
             c1->Divide(4, nRows);  // 4 columns, dynamic rows
+            canvases.push_back(c1);
             padIndex = 1;
-            canvasIndex++;
         }
 
         // Loop over z bins
         for (size_t i = 0; i < z_ranges.size(); ++i) {
             std::string cuts = bins[k].x_range + " && " + z_ranges[i];
-            c1->cd(padIndex++);
+            canvases.back()->cd(padIndex++);
             gPad->SetLeftMargin(0.15);
 
             // Call the function to create and draw histograms
@@ -900,13 +899,17 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
             dilution_graphs.push_back(gr_dilution);
             fit_functions.push_back(fit_func);
         }
-
-        // Save the canvas after all pads are filled
-        c1->SaveAs(Form("output/multidimensional_xbin_%d.png", canvasIndex - 1));
-
-        // Clean up the canvas
-        delete c1;
     }
+
+    // Save the canvases after all processing is complete
+    for (size_t i = 0; i < canvases.size(); ++i) {
+        canvases[i]->SaveAs(Form("output/multidimensional_xbin_%zu.png", i));
+        delete canvases[i];
+    }
+
+    // Clean up the histograms and fit functions
+    for (auto graph : dilution_graphs) delete graph;
+    for (auto func : fit_functions) delete func;
 
     // Close the files
     nh3->Close();
