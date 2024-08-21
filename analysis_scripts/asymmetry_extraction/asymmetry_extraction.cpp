@@ -174,27 +174,27 @@ int main(int argc, char *argv[]) {
   // Counters for events in range
   data_count = 0;
   mc_count = 0;
-  // Loop over data tree
-  Long64_t nEntriesData = data->GetEntries();
-  for (Long64_t i = 0; i < nEntriesData; ++i) {
-    data->GetEntry(i);
-    if (e_theta_data > min_theta && e_theta_data < max_theta) {
-      ++data_count;
-    }
-  }
-  // Loop over mc tree
-  Long64_t nEntriesMC = mc->GetEntries();
-  for (Long64_t i = 0; i < nEntriesMC; ++i) {
-    mc->GetEntry(i);
-    if (e_theta_mc > min_theta && e_theta_mc < max_theta) {
-      ++mc_count;
-    }
-  }
-  // Print the results
-  std::cout << "Number of events in range (12 < e_theta < 20 degrees) ";
-  std::cout << "to be used as normalization," << std::endl;
-  std::cout << "Data: " << data_count << std::endl;
-  std::cout << "MC: " << mc_count << std::endl;
+  // // Loop over data tree
+  // Long64_t nEntriesData = data->GetEntries();
+  // for (Long64_t i = 0; i < nEntriesData; ++i) {
+  //   data->GetEntry(i);
+  //   if (e_theta_data > min_theta && e_theta_data < max_theta) {
+  //     ++data_count;
+  //   }
+  // }
+  // // Loop over mc tree
+  // Long64_t nEntriesMC = mc->GetEntries();
+  // for (Long64_t i = 0; i < nEntriesMC; ++i) {
+  //   mc->GetEntry(i);
+  //   if (e_theta_mc > min_theta && e_theta_mc < max_theta) {
+  //     ++mc_count;
+  //   }
+  // }
+  // // Print the results
+  // std::cout << "Number of events in range (12 < e_theta < 20 degrees) ";
+  // std::cout << "to be used as normalization," << std::endl;
+  // std::cout << "Data: " << data_count << std::endl;
+  // std::cout << "MC: " << mc_count << std::endl;
 
   dataReader.SetTree(data);  // Initialize the global variable
   mcReader.SetTree(mc);  // Initialize the global variable
@@ -256,17 +256,6 @@ int main(int argc, char *argv[]) {
     else { cout << ", "; }
   }
   cout << endl;
-
-  // cout << "Found " << variable_names.size() << " variables: " << endl;
-  // for (size_t i = 0; i < variable_names.size(); ++i) {
-  //   cout << i << ":" << variable_names[i] << std::flush;
-  //   if (i == variable_names.size() - 1) {
-  //     // cout << ". ";
-  //   } else {
-  //     cout << ", ";
-  //   }
-  // }
-  // cout << endl;
 
   // load run info from external csv file
   load_run_info_from_csv("imports/clas12_run_info.csv");
