@@ -162,7 +162,7 @@ void process_file(const char* input_filename) {
         if (*Mx < 0.55 && *vz_e < -10  && *vz_e > 1 && *vz_p < -10 && *vz_p > 1) {
             continue;
         }
-        if (*x < 0.06 || *x > 0.6 || *pT > 0 || *pT < 1.2 || *xF < -1 || *xF > 1) {
+        if (*x < 0.06 || *x > 0.6 || *pT < 0 || *pT > 1.2 || *xF < -1 || *xF > 1) {
             continue;
         }
         if (*Mx > 1.35) {
