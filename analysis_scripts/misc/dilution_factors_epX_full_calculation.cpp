@@ -907,8 +907,8 @@ int main(int argc, char** argv) {
     // Call the plot_dilution_kinematics function
     // plot_dilution_kinematics(nh3, c, ch, he, empty);
     // Call the one-dimensional function
-    one_dimensional(nh3, c, ch, he, empty);
-    // multi_dimensional(nh3, c, ch, he, empty);
+    // one_dimensional(nh3, c, ch, he, empty);
+    multi_dimensional(nh3, c, ch, he, empty);
 
     // Safely close the ROOT files
     nh3->Close();
