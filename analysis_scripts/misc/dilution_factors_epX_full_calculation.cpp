@@ -878,7 +878,7 @@ std::vector<TH1D*> create_and_draw_histograms(TTree* tree_nh3, TTree* tree_carbo
     TH1D *h_pT_empty = new TH1D(Form("h_pT_empty_%d%d", k, i), "P_{T} Distribution; P_{T} (GeV); Counts", 9, 0, 1.0);
 
     // Define the additional cuts
-    std::string additional_cuts = "Mx > 1.35 && -10 < vz_e && vz_e < 1 && -10 < vz_p && vz_p < 1 && runnum != 16317 && runnum != 16742";
+    std::string additional_cuts = "x > 0.06 && x < 0.60 && pT > 0 && pT < 1.2 && xF > -1 && xF < 1 && Mx > 1.35 && -10 < vz_e && vz_e < 1 && -10 < vz_p && vz_p < 1 && runnum != 16317 && runnum != 16742";
 
     // Combine the existing cuts with the additional cuts
     std::string combined_cuts = cuts + " && " + additional_cuts;
