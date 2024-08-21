@@ -219,7 +219,8 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     gPad->SetLeftMargin(0.15);
 
     // Define the base cuts for vz
-    std::string vz_cuts = "-10 < vz_e && vz_e < 1 && -10 < vz_p && vz_p < 1 && runnum != 16317 && runnum != 16742";
+    // std::string vz_cuts = "-10 < vz_e && vz_e < 1 && -10 < vz_p && vz_p < 1 && runnum != 16317 && runnum != 16742";
+    std::string vz_cuts = "x > 0.06 && x < 0.60 && pT > 0 && pT < 1.2 && xF > -1 && xF < 1 && -10 < vz_e && vz_e < 1 && -10 < vz_p && vz_p < 1 && runnum != 16317 && runnum != 16742";
 
     // Define the combined cuts based on the value of isMx
     std::string combined_cuts;
