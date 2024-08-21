@@ -13,30 +13,153 @@ double dilution_factor(double currentVariable, const std::string& prefix) {
       0.157106*std::pow(currentVariable,3);
   }
 
-  if (prefix == "runnum") { return 0.1949;}
-  if (prefix == "Q2") { return 0.0588289+0.0990336*currentVariable+-0.0213364*std::pow(currentVariable,2); }
-  if (prefix == "x") { return 0.136288+0.283353*currentVariable+-0.125745*std::pow(currentVariable,2); }
-  if (prefix == "y") { return 0.0534692+0.916586*currentVariable+-1.73992*std::pow(currentVariable,2); }
-  if (prefix == "z") { return 0.0119851+1.34778*currentVariable+-2.99383*std::pow(currentVariable,2); }
-  if (prefix == "zeta") { return 0.849162+-2.95586*currentVariable+4.58654*std::pow(currentVariable,2); }
-  if (prefix == "PT") { return 0.208234+-0.222063*currentVariable+0.652242*std::pow(currentVariable,2); }
-  if (prefix == "xF") { return 0.206961+-0.0028204*currentVariable+-0.0428585*std::pow(currentVariable,2); }
-  if (prefix == "Mx") { return 0.136851*exp(-0.5*std::pow((currentVariable - 0.12) / 0.235624, 2)) + 0.0280814*exp(-0.5*std::pow((currentVariable - 0.785) / -0.0544159, 2)) + 0.0970699 + 0.185273*currentVariable + -0.103331*std::pow(currentVariable, 2); }
-  // if (prefix == "Q2all") { return 0.0662175+0.0912281*currentVariable+-0.0188005*std::pow(currentVariable,2); }
-  // if (prefix == "xall") { return 0.136311+0.283958*currentVariable+-0.125658*std::pow(currentVariable,2); }
-  // if (prefix == "yall") { return 0.0541015+0.913993*currentVariable+-1.73469*std::pow(currentVariable,2); }
-  // if (prefix == "zall") { return 0.0116813+1.35182*currentVariable+-3.00502*std::pow(currentVariable,2); }
-  // if (prefix == "zetaall") { return 0.817679+-2.78097*currentVariable+4.26881*std::pow(currentVariable,2); }
-  // if (prefix == "PTall") { return 0.208315+-0.221463*currentVariable+0.651064*std::pow(currentVariable,2); }
-  // if (prefix == "xFall") { return 0.207138+-0.00265586*currentVariable+-0.0427432*std::pow(currentVariable,2); }
+  // if (prefix == "Q2") { return 0.0588289+0.0990336*currentVariable+-0.0213364*std::pow(currentVariable,2); }
+  // if (prefix == "x") { return 0.136288+0.283353*currentVariable+-0.125745*std::pow(currentVariable,2); }
+  // if (prefix == "y") { return 0.0534692+0.916586*currentVariable+-1.73992*std::pow(currentVariable,2); }
+  // if (prefix == "z") { return 0.0119851+1.34778*currentVariable+-2.99383*std::pow(currentVariable,2); }
+  // if (prefix == "zeta") { return 0.849162+-2.95586*currentVariable+4.58654*std::pow(currentVariable,2); }
+  // if (prefix == "PT") { return 0.208234+-0.222063*currentVariable+0.652242*std::pow(currentVariable,2); }
+  // if (prefix == "xF") { return 0.206961+-0.0028204*currentVariable+-0.0428585*std::pow(currentVariable,2); }
+  // if (prefix == "Mx") { return 0.136851*exp(-0.5*std::pow((currentVariable - 0.12) / 0.235624, 2)) + 0.0280814*exp(-0.5*std::pow((currentVariable - 0.785) / -0.0544159, 2)) + 0.0970699 + 0.185273*currentVariable + -0.103331*std::pow(currentVariable, 2); }
 
-  if (prefix == "Q2all") { return 0.042234+0.11043*currentVariable+-0.0225887*std::pow(currentVariable,2); }
-  if (prefix == "xall") { return 0.163228+-0.0367291*currentVariable+0.804498*std::pow(currentVariable,2); }
-  if (prefix == "yall") { return 0.320777+-0.365915*currentVariable+0.246253*std::pow(currentVariable,2); }
-  if (prefix == "zall") { return 0.0751743+0.693025*currentVariable+-1.06889*std::pow(currentVariable,2); }
-  if (prefix == "zetaall") { return 1.2463+-5.31976*currentVariable+9.29149*std::pow(currentVariable,2); }
-  if (prefix == "PTall") { return 0.216343+-0.273528*currentVariable+0.729059*std::pow(currentVariable,2); }
-  if (prefix == "xFall") { return 0.218748+0.0086161*currentVariable+-0.0906104*std::pow(currentVariable,2); }
+  // if (prefix == "Q2all") { return 0.042234+0.11043*currentVariable+-0.0225887*std::pow(currentVariable,2); }
+  // if (prefix == "xall") { return 0.163228+-0.0367291*currentVariable+0.804498*std::pow(currentVariable,2); }
+  // if (prefix == "yall") { return 0.320777+-0.365915*currentVariable+0.246253*std::pow(currentVariable,2); }
+  // if (prefix == "zall") { return 0.0751743+0.693025*currentVariable+-1.06889*std::pow(currentVariable,2); }
+  // if (prefix == "zetaall") { return 1.2463+-5.31976*currentVariable+9.29149*std::pow(currentVariable,2); }
+  // if (prefix == "PTall") { return 0.216343+-0.273528*currentVariable+0.729059*std::pow(currentVariable,2); }
+  // if (prefix == "xFall") { return 0.218748+0.0086161*currentVariable+-0.0906104*std::pow(currentVariable,2); }
+
+  if (prefix == "Q2") {
+    double p0 = 0.0588289;
+    double p1 = 0.0990336;
+    double p2 = -0.0213364;
+    double p3 = 0.00167213;
+    double p0_err = 0.0183319;
+    double p1_err = 0.0172302;
+    double p2_err = 0.00492875;
+    double p3_err = 0.000430101;
+    double central_value = p0 + p1 * currentVariable + 
+                           p2 * std::pow(currentVariable, 2) + 
+                           p3 * std::pow(currentVariable, 3);
+    double uncertainty = std::sqrt(0.0183319* 0.0183319 + 0.0172302* 0.0172302 * std::pow(currentVariable, 2) + 0.00492875* 0.00492875 * std::pow(currentVariable, 4) + 0.000430101* 0.000430101 * std::pow(currentVariable, 6));
+    double result = rand_gen.Gaus(central_value, uncertainty);
+    return result;
+  }
+  if (prefix == "x") {
+    double p0 = 0.136288;
+    double p1 = 0.283353;
+    double p2 = -0.125745;
+    double p3 = 0.212206;
+    double p0_err = 0.0133012;
+    double p1_err = 0.162195;
+    double p2_err = 0.607058;
+    double p3_err = 0.701473;
+    double central_value = p0 + p1 * currentVariable + 
+                           p2 * std::pow(currentVariable, 2) + 
+                           p3 * std::pow(currentVariable, 3);
+    double uncertainty = std::sqrt(0.0133012* 0.0133012 + 0.162195* 0.162195 * std::pow(currentVariable, 2) + 0.607058* 0.607058 * std::pow(currentVariable, 4) + 0.701473* 0.701473 * std::pow(currentVariable, 6));
+    double result = rand_gen.Gaus(central_value, uncertainty);
+    return result;
+  }
+  if (prefix == "y") {
+    double p0 = 0.0534692;
+    double p1 = 0.916586;
+    double p2 = -1.73992;
+    double p3 = 1.00709;
+    double p0_err = 0.113619;
+    double p1_err = 0.624366;
+    double p2_err = 1.12157;
+    double p3_err = 0.659314;
+    double central_value = p0 + p1 * currentVariable + 
+                           p2 * std::pow(currentVariable, 2) + 
+                           p3 * std::pow(currentVariable, 3);
+    double uncertainty = std::sqrt(0.113619* 0.113619 + 0.624366* 0.624366 * std::pow(currentVariable, 2) + 1.12157* 1.12157 * std::pow(currentVariable, 4) + 0.659314* 0.659314 * std::pow(currentVariable, 6));
+    double result = rand_gen.Gaus(central_value, uncertainty);
+    return result;
+  }
+  if (prefix == "z") {
+    double p0 = 0.0119851;
+    double p1 = 1.34778;
+    double p2 = -2.99383;
+    double p3 = 2.176;
+    double p0_err = 0.0157019;
+    double p1_err = 0.144574;
+    double p2_err = 0.411366;
+    double p3_err = 0.364181;
+    double central_value = p0 + p1 * currentVariable + 
+                           p2 * std::pow(currentVariable, 2) + 
+                           p3 * std::pow(currentVariable, 3);
+    double uncertainty = std::sqrt(0.0157019* 0.0157019 + 0.144574* 0.144574 * std::pow(currentVariable, 2) + 0.411366* 0.411366 * std::pow(currentVariable, 4) + 0.364181* 0.364181 * std::pow(currentVariable, 6));
+    double result = rand_gen.Gaus(central_value, uncertainty);
+    return result;
+  }
+  if (prefix == "zeta") {
+    double p0 = 0.849162;
+    double p1 = -2.95586;
+    double p2 = 4.58654;
+    double p3 = -2.5085;
+    double p0_err = 0.294276;
+    double p1_err = 1.65841;
+    double p2_err = 3.08362;
+    double p3_err = 1.89114;
+    double central_value = p0 + p1 * currentVariable + 
+                           p2 * std::pow(currentVariable, 2) + 
+                           p3 * std::pow(currentVariable, 3);
+    double uncertainty = std::sqrt(0.294276* 0.294276 + 1.65841* 1.65841 * std::pow(currentVariable, 2) + 3.08362* 3.08362 * std::pow(currentVariable, 4) + 1.89114* 1.89114 * std::pow(currentVariable, 6));
+    double result = rand_gen.Gaus(central_value, uncertainty);
+    return result;
+  }
+  if (prefix == "PT") {
+    double p0 = 0.208234;
+    double p1 = -0.222063;
+    double p2 = 0.652242;
+    double p3 = -0.478728;
+    double p0_err = 0.00607506;
+    double p1_err = 0.0468951;
+    double p2_err = 0.107988;
+    double p3_err = 0.0745258;
+    double central_value = p0 + p1 * currentVariable + 
+                           p2 * std::pow(currentVariable, 2) + 
+                           p3 * std::pow(currentVariable, 3);
+    double uncertainty = std::sqrt(0.00607506* 0.00607506 + 0.0468951* 0.0468951 * std::pow(currentVariable, 2) + 0.107988* 0.107988 * std::pow(currentVariable, 4) + 0.0745258* 0.0745258 * std::pow(currentVariable, 6));
+    double result = rand_gen.Gaus(central_value, uncertainty);
+    return result;
+  }
+  if (prefix == "xF") {
+    double p0 = 0.206961;
+    double p1 = -0.0028204;
+    double p2 = -0.0428585;
+    double p3 = 0.123092;
+    double p0_err = 0.0014299;
+    double p1_err = 0.00711853;
+    double p2_err = 0.0309251;
+    double p3_err = 0.0425113;
+    double central_value = p0 + p1 * currentVariable + 
+                           p2 * std::pow(currentVariable, 2) + 
+                           p3 * std::pow(currentVariable, 3);
+    double uncertainty = std::sqrt(0.0014299* 0.0014299 + 0.00711853* 0.00711853 * std::pow(currentVariable, 2) + 0.0309251* 0.0309251 * std::pow(currentVariable, 4) + 0.0425113* 0.0425113 * std::pow(currentVariable, 6));
+    double result = rand_gen.Gaus(central_value, uncertainty);
+    return result;
+  }
+  Info in <ROOT::Math::ParameterSettings>: lower/upper bounds outside current parameter value. The value will be set to (low+up)/2 
+  if (prefix == "Mx") {
+    double amp1 = 0.136851 + rand_gen.Gaus(0, 0.0205586);
+    double mean1 = 0.12 + rand_gen.Gaus(0, 0.0296479);
+    double sigma1 = 0.235624 + rand_gen.Gaus(0, 0.0126034);
+    double amp2 = 0.0280814 + rand_gen.Gaus(0, 0.00494047);
+    double mean2 = 0.785 + rand_gen.Gaus(0, 0.0237513);
+    double sigma2 = -0.0544159 + rand_gen.Gaus(0, 0.0101243);
+    double constTerm = 0.0970699 + rand_gen.Gaus(0, 0.0287095);
+    double linearTerm = 0.185273 + rand_gen.Gaus(0, 0.0545798);
+    double quadTerm = -0.103331 + rand_gen.Gaus(0, 0.0334958);
+    double gauss1 = amp1 * exp(-0.5 * std::pow((currentVariable - mean1) / sigma1, 2));
+    double gauss2 = amp2 * exp(-0.5 * std::pow((currentVariable - mean2) / sigma2, 2));
+    double poly = constTerm + linearTerm * currentVariable + quadTerm * std::pow(currentVariable, 2);
+    return gauss1 + gauss2 + poly;
+  }
+
+
 
   if (prefix == "Q2x1z1") { double sigma = 0.00941327; return 0.149075 + rand_gen.Gaus(0, sigma); }
 
