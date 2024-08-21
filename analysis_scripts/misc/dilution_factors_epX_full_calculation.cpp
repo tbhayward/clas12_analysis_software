@@ -229,8 +229,8 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         combined_cuts = "Mx > 0 && " + vz_cuts;
     } else {
         // Apply both Mx > 1.35 and vz cuts if isMx is false
-        // combined_cuts = "Mx > 1.35 && " + vz_cuts;
-        combined_cuts = "Mx > 0.55 && " + vz_cuts;
+        combined_cuts = "Mx > 1.35 && " + vz_cuts;
+        // combined_cuts = "Mx > 0.55 && " + vz_cuts;
         // combined_cuts = "Mx < 1.35 && Mx > 0 && " + vz_cuts;
     }
 
@@ -536,71 +536,281 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
     // Fit and plot for Q2
     auto fit_Q2 = fit_and_plot_dilution("Q2", "Q^{2} (GeV^{2})", 1, 9, 25, nh3, c, ch, he, empty, c1, 2, false, false);
     if (fit_Q2.first) {
-        double p0_x = fit_Q2.first->GetParameter(0);
-        double p1_x = fit_Q2.first->GetParameter(1);
-        double p2_x = fit_Q2.first->GetParameter(2);
-        std::cout << "if (prefix == \"Q2\") { return " << p0_x << 
-            "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
+        double p0 = fit_Q2.first->GetParameter(0);
+        double p1 = fit_Q2.first->GetParameter(1);
+        double p2 = fit_Q2.first->GetParameter(2);
+        double p3 = fit_Q2.first->GetParameter(3);
+
+        double p0_err = fit_Q2.first->GetParError(0);
+        double p1_err = fit_Q2.first->GetParError(1);
+        double p2_err = fit_Q2.first->GetParError(2);
+        double p3_err = fit_Q2.first->GetParError(3);
+
+        std::cout << "if (prefix == \"Q2\") {" << std::endl;
+        std::cout << "  double p0 = " << p0 << ";" << std::endl;
+        std::cout << "  double p1 = " << p1 << ";" << std::endl;
+        std::cout << "  double p2 = " << p2 << ";" << std::endl;
+        std::cout << "  double p3 = " << p3 << ";" << std::endl;
+
+        std::cout << "  double p0_err = " << p0_err << ";" << std::endl;
+        std::cout << "  double p1_err = " << p1_err << ";" << std::endl;
+        std::cout << "  double p2_err = " << p2_err << ";" << std::endl;
+        std::cout << "  double p3_err = " << p3_err << ";" << std::endl;
+
+        std::cout << "  double central_value = p0 + p1 * currentVariable + " << std::endl;
+        std::cout << "                         p2 * std::pow(currentVariable, 2) + " << std::endl;
+        std::cout << "                         p3 * std::pow(currentVariable, 3);" << std::endl;
+
+        // Calculate the uncertainty at the current variable's value
+        std::cout << "  double uncertainty = std::sqrt(" << p0_err << "* " << p0_err << " + "
+                                                << p1_err << "* " << p1_err << " * std::pow(currentVariable, 2) + "
+                                                << p2_err << "* " << p2_err << " * std::pow(currentVariable, 4) + "
+                                                << p3_err << "* " << p3_err << " * std::pow(currentVariable, 6));" << std::endl;
+
+        // Generate a random value using a Gaussian distribution centered at the central value
+        std::cout << "  double result = rand_gen.Gaus(central_value, uncertainty);" << std::endl;
+        std::cout << "  return result;" << std::endl;
+        std::cout << "}" << std::endl;
     }
 
     // Fit and plot for x-Bjorken
     auto fit_x = fit_and_plot_dilution("x", "x_{B} (GeV)", 0.06, 0.6, 25, nh3, c, ch, he, empty, c1, 3, false, false);
     if (fit_x.first) {
-        double p0_x = fit_x.first->GetParameter(0);
-        double p1_x = fit_x.first->GetParameter(1);
-        double p2_x = fit_x.first->GetParameter(2);
-        std::cout << "if (prefix == \"x\") { return " << p0_x << 
-            "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
+        double p0 = fit_x.first->GetParameter(0);
+        double p1 = fit_x.first->GetParameter(1);
+        double p2 = fit_x.first->GetParameter(2);
+        double p3 = fit_x.first->GetParameter(3);
+
+        double p0_err = fit_x.first->GetParError(0);
+        double p1_err = fit_x.first->GetParError(1);
+        double p2_err = fit_x.first->GetParError(2);
+        double p3_err = fit_x.first->GetParError(3);
+
+        std::cout << "if (prefix == \"x\") {" << std::endl;
+        std::cout << "  double p0 = " << p0 << ";" << std::endl;
+        std::cout << "  double p1 = " << p1 << ";" << std::endl;
+        std::cout << "  double p2 = " << p2 << ";" << std::endl;
+        std::cout << "  double p3 = " << p3 << ";" << std::endl;
+
+        std::cout << "  double p0_err = " << p0_err << ";" << std::endl;
+        std::cout << "  double p1_err = " << p1_err << ";" << std::endl;
+        std::cout << "  double p2_err = " << p2_err << ";" << std::endl;
+        std::cout << "  double p3_err = " << p3_err << ";" << std::endl;
+
+        std::cout << "  double central_value = p0 + p1 * currentVariable + " << std::endl;
+        std::cout << "                         p2 * std::pow(currentVariable, 2) + " << std::endl;
+        std::cout << "                         p3 * std::pow(currentVariable, 3);" << std::endl;
+
+        // Calculate the uncertainty at the current variable's value
+        std::cout << "  double uncertainty = std::sqrt(" << p0_err << "* " << p0_err << " + "
+                                                << p1_err << "* " << p1_err << " * std::pow(currentVariable, 2) + "
+                                                << p2_err << "* " << p2_err << " * std::pow(currentVariable, 4) + "
+                                                << p3_err << "* " << p3_err << " * std::pow(currentVariable, 6));" << std::endl;
+
+        // Generate a random value using a Gaussian distribution centered at the central value
+        std::cout << "  double result = rand_gen.Gaus(central_value, uncertainty);" << std::endl;
+        std::cout << "  return result;" << std::endl;
+        std::cout << "}" << std::endl;
     }
 
     // Fit and plot for y
     auto fit_y = fit_and_plot_dilution("y", "y", 0.3, 0.75, 25, nh3, c, ch, he, empty, c1, 4, false, false);
     if (fit_y.first) {
-        double p0_x = fit_y.first->GetParameter(0);
-        double p1_x = fit_y.first->GetParameter(1);
-        double p2_x = fit_y.first->GetParameter(2);
-        std::cout << "if (prefix == \"y\") { return " << p0_x << 
-            "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
+        double p0 = fit_y.first->GetParameter(0);
+        double p1 = fit_y.first->GetParameter(1);
+        double p2 = fit_y.first->GetParameter(2);
+        double p3 = fit_y.first->GetParameter(3);
+
+        double p0_err = fit_y.first->GetParError(0);
+        double p1_err = fit_y.first->GetParError(1);
+        double p2_err = fit_y.first->GetParError(2);
+        double p3_err = fit_y.first->GetParError(3);
+
+        std::cout << "if (prefix == \"y\") {" << std::endl;
+        std::cout << "  double p0 = " << p0 << ";" << std::endl;
+        std::cout << "  double p1 = " << p1 << ";" << std::endl;
+        std::cout << "  double p2 = " << p2 << ";" << std::endl;
+        std::cout << "  double p3 = " << p3 << ";" << std::endl;
+
+        std::cout << "  double p0_err = " << p0_err << ";" << std::endl;
+        std::cout << "  double p1_err = " << p1_err << ";" << std::endl;
+        std::cout << "  double p2_err = " << p2_err << ";" << std::endl;
+        std::cout << "  double p3_err = " << p3_err << ";" << std::endl;
+
+        std::cout << "  double central_value = p0 + p1 * currentVariable + " << std::endl;
+        std::cout << "                         p2 * std::pow(currentVariable, 2) + " << std::endl;
+        std::cout << "                         p3 * std::pow(currentVariable, 3);" << std::endl;
+
+        // Calculate the uncertainty at the current variable's value
+        std::cout << "  double uncertainty = std::sqrt(" << p0_err << "* " << p0_err << " + "
+                                                << p1_err << "* " << p1_err << " * std::pow(currentVariable, 2) + "
+                                                << p2_err << "* " << p2_err << " * std::pow(currentVariable, 4) + "
+                                                << p3_err << "* " << p3_err << " * std::pow(currentVariable, 6));" << std::endl;
+
+        // Generate a random value using a Gaussian distribution centered at the central value
+        std::cout << "  double result = rand_gen.Gaus(central_value, uncertainty);" << std::endl;
+        std::cout << "  return result;" << std::endl;
+        std::cout << "}" << std::endl;
     }
 
     // Fit and plot for z
     auto fit_z = fit_and_plot_dilution("z", "z", 0.06, 0.8, 25, nh3, c, ch, he, empty, c1, 5, false, false);
     if (fit_z.first) {
-        double p0_x = fit_z.first->GetParameter(0);
-        double p1_x = fit_z.first->GetParameter(1);
-        double p2_x = fit_z.first->GetParameter(2);
-        std::cout << "if (prefix == \"z\") { return " << p0_x << 
-            "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
+        double p0 = fit_z.first->GetParameter(0);
+        double p1 = fit_z.first->GetParameter(1);
+        double p2 = fit_z.first->GetParameter(2);
+        double p3 = fit_z.first->GetParameter(3);
+
+        double p0_err = fit_z.first->GetParError(0);
+        double p1_err = fit_z.first->GetParError(1);
+        double p2_err = fit_z.first->GetParError(2);
+        double p3_err = fit_z.first->GetParError(3);
+
+        std::cout << "if (prefix == \"z\") {" << std::endl;
+        std::cout << "  double p0 = " << p0 << ";" << std::endl;
+        std::cout << "  double p1 = " << p1 << ";" << std::endl;
+        std::cout << "  double p2 = " << p2 << ";" << std::endl;
+        std::cout << "  double p3 = " << p3 << ";" << std::endl;
+
+        std::cout << "  double p0_err = " << p0_err << ";" << std::endl;
+        std::cout << "  double p1_err = " << p1_err << ";" << std::endl;
+        std::cout << "  double p2_err = " << p2_err << ";" << std::endl;
+        std::cout << "  double p3_err = " << p3_err << ";" << std::endl;
+
+        std::cout << "  double central_value = p0 + p1 * currentVariable + " << std::endl;
+        std::cout << "                         p2 * std::pow(currentVariable, 2) + " << std::endl;
+        std::cout << "                         p3 * std::pow(currentVariable, 3);" << std::endl;
+
+        // Calculate the uncertainty at the current variable's value
+        std::cout << "  double uncertainty = std::sqrt(" << p0_err << "* " << p0_err << " + "
+                                                << p1_err << "* " << p1_err << " * std::pow(currentVariable, 2) + "
+                                                << p2_err << "* " << p2_err << " * std::pow(currentVariable, 4) + "
+                                                << p3_err << "* " << p3_err << " * std::pow(currentVariable, 6));" << std::endl;
+
+        // Generate a random value using a Gaussian distribution centered at the central value
+        std::cout << "  double result = rand_gen.Gaus(central_value, uncertainty);" << std::endl;
+        std::cout << "  return result;" << std::endl;
+        std::cout << "}" << std::endl;
     }
 
     // Fit and plot for zeta
     auto fit_zeta = fit_and_plot_dilution("zeta", "#zeta", 0.3, 0.7, 25, nh3, c, ch, he, empty, c1, 6, false, false);
     if (fit_zeta.first) {
-        double p0_x = fit_zeta.first->GetParameter(0);
-        double p1_x = fit_zeta.first->GetParameter(1);
-        double p2_x = fit_zeta.first->GetParameter(2);
-        std::cout << "if (prefix == \"zeta\") { return " << p0_x << 
-            "+" << p1_x << "*currentVariable+" << p2_x << "*std::pow(currentVariable,2); }" << std::endl;
+        double p0 = fit_zeta.first->GetParameter(0);
+        double p1 = fit_zeta.first->GetParameter(1);
+        double p2 = fit_zeta.first->GetParameter(2);
+        double p3 = fit_zeta.first->GetParameter(3);
+
+        double p0_err = fit_zeta.first->GetParError(0);
+        double p1_err = fit_zeta.first->GetParError(1);
+        double p2_err = fit_zeta.first->GetParError(2);
+        double p3_err = fit_zeta.first->GetParError(3);
+
+        std::cout << "if (prefix == \"zeta\") {" << std::endl;
+        std::cout << "  double p0 = " << p0 << ";" << std::endl;
+        std::cout << "  double p1 = " << p1 << ";" << std::endl;
+        std::cout << "  double p2 = " << p2 << ";" << std::endl;
+        std::cout << "  double p3 = " << p3 << ";" << std::endl;
+
+        std::cout << "  double p0_err = " << p0_err << ";" << std::endl;
+        std::cout << "  double p1_err = " << p1_err << ";" << std::endl;
+        std::cout << "  double p2_err = " << p2_err << ";" << std::endl;
+        std::cout << "  double p3_err = " << p3_err << ";" << std::endl;
+
+        std::cout << "  double central_value = p0 + p1 * currentVariable + " << std::endl;
+        std::cout << "                         p2 * std::pow(currentVariable, 2) + " << std::endl;
+        std::cout << "                         p3 * std::pow(currentVariable, 3);" << std::endl;
+
+        // Calculate the uncertainty at the current variable's value
+        std::cout << "  double uncertainty = std::sqrt(" << p0_err << "* " << p0_err << " + "
+                                                << p1_err << "* " << p1_err << " * std::pow(currentVariable, 2) + "
+                                                << p2_err << "* " << p2_err << " * std::pow(currentVariable, 4) + "
+                                                << p3_err << "* " << p3_err << " * std::pow(currentVariable, 6));" << std::endl;
+
+        // Generate a random value using a Gaussian distribution centered at the central value
+        std::cout << "  double result = rand_gen.Gaus(central_value, uncertainty);" << std::endl;
+        std::cout << "  return result;" << std::endl;
+        std::cout << "}" << std::endl;
     }
 
     // Fit and plot for transverse momentum
     auto fit_pT = fit_and_plot_dilution("pT", "P_{T} (GeV)", 0, 1.0, 25, nh3, c, ch, he, empty, c1, 7, false, false);
     if (fit_pT.first) {
-        double p0_PT = fit_pT.first->GetParameter(0);
-        double p1_PT = fit_pT.first->GetParameter(1);
-        double p2_PT = fit_pT.first->GetParameter(2);
-        std::cout << "if (prefix == \"PT\") { return " << p0_PT << 
-            "+" << p1_PT << "*currentVariable+" << p2_PT << "*std::pow(currentVariable,2); }" << std::endl;
+        double p0 = fit_pT.first->GetParameter(0);
+        double p1 = fit_pT.first->GetParameter(1);
+        double p2 = fit_pT.first->GetParameter(2);
+        double p3 = fit_pT.first->GetParameter(3);
+
+        double p0_err = fit_pT.first->GetParError(0);
+        double p1_err = fit_pT.first->GetParError(1);
+        double p2_err = fit_pT.first->GetParError(2);
+        double p3_err = fit_pT.first->GetParError(3);
+
+        std::cout << "if (prefix == \"PT\") {" << std::endl;
+        std::cout << "  double p0 = " << p0 << ";" << std::endl;
+        std::cout << "  double p1 = " << p1 << ";" << std::endl;
+        std::cout << "  double p2 = " << p2 << ";" << std::endl;
+        std::cout << "  double p3 = " << p3 << ";" << std::endl;
+
+        std::cout << "  double p0_err = " << p0_err << ";" << std::endl;
+        std::cout << "  double p1_err = " << p1_err << ";" << std::endl;
+        std::cout << "  double p2_err = " << p2_err << ";" << std::endl;
+        std::cout << "  double p3_err = " << p3_err << ";" << std::endl;
+
+        std::cout << "  double central_value = p0 + p1 * currentVariable + " << std::endl;
+        std::cout << "                         p2 * std::pow(currentVariable, 2) + " << std::endl;
+        std::cout << "                         p3 * std::pow(currentVariable, 3);" << std::endl;
+
+        // Calculate the uncertainty at the current variable's value
+        std::cout << "  double uncertainty = std::sqrt(" << p0_err << "* " << p0_err << " + "
+                                                << p1_err << "* " << p1_err << " * std::pow(currentVariable, 2) + "
+                                                << p2_err << "* " << p2_err << " * std::pow(currentVariable, 4) + "
+                                                << p3_err << "* " << p3_err << " * std::pow(currentVariable, 6));" << std::endl;
+
+        // Generate a random value using a Gaussian distribution centered at the central value
+        std::cout << "  double result = rand_gen.Gaus(central_value, uncertainty);" << std::endl;
+        std::cout << "  return result;" << std::endl;
+        std::cout << "}" << std::endl;
     }
 
     // Fit and plot for x-Feynman
     auto fit_xF = fit_and_plot_dilution("xF", "x_{F}", -0.8, 0.5, 25, nh3, c, ch, he, empty, c1, 8, false, false);
     if (fit_xF.first) {
-        double p0_xF = fit_xF.first->GetParameter(0);
-        double p1_xF = fit_xF.first->GetParameter(1);
-        double p2_xF = fit_xF.first->GetParameter(2);
-        std::cout << "if (prefix == \"xF\") { return " << p0_xF <<
-        "+" << p1_xF << "*currentVariable+" << p2_xF << "*std::pow(currentVariable,2); }" << std::endl;
+        double p0 = fit_xF.first->GetParameter(0);
+        double p1 = fit_xF.first->GetParameter(1);
+        double p2 = fit_xF.first->GetParameter(2);
+        double p3 = fit_xF.first->GetParameter(3);
+
+        double p0_err = fit_xF.first->GetParError(0);
+        double p1_err = fit_xF.first->GetParError(1);
+        double p2_err = fit_xF.first->GetParError(2);
+        double p3_err = fit_xF.first->GetParError(3);
+
+        std::cout << "if (prefix == \"xF\") {" << std::endl;
+        std::cout << "  double p0 = " << p0 << ";" << std::endl;
+        std::cout << "  double p1 = " << p1 << ";" << std::endl;
+        std::cout << "  double p2 = " << p2 << ";" << std::endl;
+        std::cout << "  double p3 = " << p3 << ";" << std::endl;
+
+        std::cout << "  double p0_err = " << p0_err << ";" << std::endl;
+        std::cout << "  double p1_err = " << p1_err << ";" << std::endl;
+        std::cout << "  double p2_err = " << p2_err << ";" << std::endl;
+        std::cout << "  double p3_err = " << p3_err << ";" << std::endl;
+
+        std::cout << "  double central_value = p0 + p1 * currentVariable + " << std::endl;
+        std::cout << "                         p2 * std::pow(currentVariable, 2) + " << std::endl;
+        std::cout << "                         p3 * std::pow(currentVariable, 3);" << std::endl;
+
+        // Calculate the uncertainty at the current variable's value
+        std::cout << "  double uncertainty = std::sqrt(" << p0_err << "* " << p0_err << " + "
+                                                << p1_err << "* " << p1_err << " * std::pow(currentVariable, 2) + "
+                                                << p2_err << "* " << p2_err << " * std::pow(currentVariable, 4) + "
+                                                << p3_err << "* " << p3_err << " * std::pow(currentVariable, 6));" << std::endl;
+
+        // Generate a random value using a Gaussian distribution centered at the central value
+        std::cout << "  double result = rand_gen.Gaus(central_value, uncertainty);" << std::endl;
+        std::cout << "  return result;" << std::endl;
+        std::cout << "}" << std::endl;
     }
 
     // Fit and plot for Mx
@@ -618,15 +828,38 @@ void one_dimensional(TFile* nh3_file, TFile* c_file, TFile* ch_file, TFile* he_f
         double linearTerm = fit_Mx.first->GetParameter(7);
         double quadTerm = fit_Mx.first->GetParameter(8);
 
-        std::cout << "if (prefix == \"Mx\") {"
-                  << " return " << amp1 << "*exp(-0.5*std::pow((currentVariable - " << mean1 
-                  << ") / " << sigma1 << ", 2)) + "
-                  << amp2 << "*exp(-0.5*std::pow((currentVariable - " << mean2 
-                  << ") / " << sigma2 << ", 2)) + "
-                  << constTerm << " + "
-                  << linearTerm << "*currentVariable + "
-                  << quadTerm << "*std::pow(currentVariable, 2); }"
-                  << std::endl;
+        double amp1_err = fit_Mx.first->GetParError(0);
+        double mean1_err = fit_Mx.first->GetParError(1);
+        double sigma1_err = fit_Mx.first->GetParError(2);
+
+        double amp2_err = fit_Mx.first->GetParError(3);
+        double mean2_err = fit_Mx.first->GetParError(4);
+        double sigma2_err = fit_Mx.first->GetParError(5);
+
+        double constTerm_err = fit_Mx.first->GetParError(6);
+        double linearTerm_err = fit_Mx.first->GetParError(7);
+        double quadTerm_err = fit_Mx.first->GetParError(8);
+
+        std::cout << "if (prefix == \"Mx\") {" << std::endl;
+        std::cout << "  double amp1 = " << amp1 << " + rand_gen.Gaus(0, " << amp1_err << ");" << std::endl;
+        std::cout << "  double mean1 = " << mean1 << " + rand_gen.Gaus(0, " << mean1_err << ");" << std::endl;
+        std::cout << "  double sigma1 = " << sigma1 << " + rand_gen.Gaus(0, " << sigma1_err << ");" << std::endl;
+
+        std::cout << "  double amp2 = " << amp2 << " + rand_gen.Gaus(0, " << amp2_err << ");" << std::endl;
+        std::cout << "  double mean2 = " << mean2 << " + rand_gen.Gaus(0, " << mean2_err << ");" << std::endl;
+        std::cout << "  double sigma2 = " << sigma2 << " + rand_gen.Gaus(0, " << sigma2_err << ");" << std::endl;
+
+        std::cout << "  double constTerm = " << constTerm << " + rand_gen.Gaus(0, " << constTerm_err << ");" << std::endl;
+        std::cout << "  double linearTerm = " << linearTerm << " + rand_gen.Gaus(0, " << linearTerm_err << ");" << std::endl;
+        std::cout << "  double quadTerm = " << quadTerm << " + rand_gen.Gaus(0, " << quadTerm_err << ");" << std::endl;
+
+        std::cout << "  double gauss1 = amp1 * exp(-0.5 * std::pow((currentVariable - mean1) / sigma1, 2));" << std::endl;
+        std::cout << "  double gauss2 = amp2 * exp(-0.5 * std::pow((currentVariable - mean2) / sigma2, 2));" << std::endl;
+
+        std::cout << "  double poly = constTerm + linearTerm * currentVariable + quadTerm * std::pow(currentVariable, 2);" << std::endl;
+
+        std::cout << "  return gauss1 + gauss2 + poly;" << std::endl;
+        std::cout << "}" << std::endl;
     }
 
     // Save the canvas as a PNG file
