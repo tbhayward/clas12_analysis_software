@@ -24,20 +24,20 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
 
         if (property == "xF" || property == "x" || property == "PT" || property == "runnum") {
             goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1;
-            return goodEvent && (*Q2 > 1 && *W > 2 && *Mx > 1.35 && *y < 0.75);
+            return goodEvent && *Q2 > 1 && *W > 2 && *Mx > 1.35 && *y < 0.75;
         } else if (property == "Mx") {
             goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1;
-            return goodEvent && (*Q2 > 1 && *W > 2 && *y < 0.75 && *Mx > 0);
+            return goodEvent && *Q2 > 1 && *W > 2 && *y < 0.75 && *Mx > 0;
         }
         if (property == "xFall" || property == "xall" || property == "PTall") {
             goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1;
             std::cout << goodEvent << std::endl;
             std::cout << goodEvent && (*Q2 > 1 && *W > 2 && *Mx > 0 && *y < 0.75) << std::endl;
-            return goodEvent && (*Q2 > 1 && *W > 2 && *Mx > 0 && *y < 0.75);
+            return goodEvent && *Q2 > 1 && *W > 2 && *Mx > 0 && *y < 0.75;
         } 
         if (property == "xFexclusive" || property == "xexclusive" || property == "PTexclusive") {
             goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1;
-            return goodEvent && (*Q2 > 1 && *W > 2 && *Mx > 0 && *Mx < 1.35 && *y < 0.75);
+            return goodEvent && *Q2 > 1 && *W > 2 && *Mx > 0 && *Mx < 1.35 && *y < 0.75;
         } 
 
         if (*Q2 > 1 && *W > 2 && *Mx > 1.35 && *y < 0.75 && !checked) {
