@@ -14,15 +14,14 @@ double dilution_factor(double currentVariable, const std::string& prefix) {
   }
 
   if (prefix == "runnum") { return 0.1949;}
-  if (prefix == "Q2") { return 0.0662175+0.0912281*currentVariable+-0.0188005*std::pow(currentVariable,2); }
-  if (prefix == "x") { return 0.136311+0.283958*currentVariable+-0.125658*std::pow(currentVariable,2); }
-  if (prefix == "y") { return 0.0541015+0.913993*currentVariable+-1.73469*std::pow(currentVariable,2); }
-  if (prefix == "z") { return 0.0116813+1.35182*currentVariable+-3.00502*std::pow(currentVariable,2); }
-  if (prefix == "zeta") { return 0.817679+-2.78097*currentVariable+4.26881*std::pow(currentVariable,2); }
-  if (prefix == "PT") { return 0.208315+-0.221463*currentVariable+0.651064*std::pow(currentVariable,2); }
-  if (prefix == "xF") { return 0.207138+-0.00265586*currentVariable+-0.0427432*std::pow(currentVariable,2); }
-  if (prefix == "Mx") { return 0.135672*exp(-0.5*std::pow((currentVariable - 0.12) / 0.234466, 2)) + 0.0278955*exp(-0.5*std::pow((currentVariable - 0.785) / -0.0544874, 2)) + 0.0978352 + 0.186203*currentVariable + -0.104758*std::pow(currentVariable, 2); }
-  
+  if (prefix == "Q2") { return 0.0588289+0.0990336*currentVariable+-0.0213364*std::pow(currentVariable,2); }
+  if (prefix == "x") { return 0.136288+0.283353*currentVariable+-0.125745*std::pow(currentVariable,2); }
+  if (prefix == "y") { return 0.0534692+0.916586*currentVariable+-1.73992*std::pow(currentVariable,2); }
+  if (prefix == "z") { return 0.0119851+1.34778*currentVariable+-2.99383*std::pow(currentVariable,2); }
+  if (prefix == "zeta") { return 0.849162+-2.95586*currentVariable+4.58654*std::pow(currentVariable,2); }
+  if (prefix == "PT") { return 0.208234+-0.222063*currentVariable+0.652242*std::pow(currentVariable,2); }
+  if (prefix == "xF") { return 0.206961+-0.0028204*currentVariable+-0.0428585*std::pow(currentVariable,2); }
+  if (prefix == "Mx") { return 0.136851*exp(-0.5*std::pow((currentVariable - 0.12) / 0.235624, 2)) + 0.0280814*exp(-0.5*std::pow((currentVariable - 0.785) / -0.0544159, 2)) + 0.0970699 + 0.185273*currentVariable + -0.103331*std::pow(currentVariable, 2); }
   // if (prefix == "Q2all") { return 0.0662175+0.0912281*currentVariable+-0.0188005*std::pow(currentVariable,2); }
   // if (prefix == "xall") { return 0.136311+0.283958*currentVariable+-0.125658*std::pow(currentVariable,2); }
   // if (prefix == "yall") { return 0.0541015+0.913993*currentVariable+-1.73469*std::pow(currentVariable,2); }

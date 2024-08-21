@@ -229,14 +229,10 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         combined_cuts = "Mx > 0 && " + vz_cuts;
     } else {
         // Apply both Mx > 1.35 and vz cuts if isMx is false
-        combined_cuts = "Mx > 1.35 && " + vz_cuts;
-        // combined_cuts = "Mx > 0.55 && " + vz_cuts;
+        // combined_cuts = "Mx > 1.35 && " + vz_cuts;
+        combined_cuts = "Mx > 0.55 && " + vz_cuts;
         // combined_cuts = "Mx < 1.35 && Mx > 0 && " + vz_cuts;
     }
-
-    // Define the combined cuts based on the value of isMx
-    std::string combined_cuts_exclusive;
-    combined_cuts_exclusive = "Mx> 0.55 && Mx < 1.35 && " + vz_cuts;
 
     // Define the combined cuts based on the value of isMx
     std::string combined_cuts_all;
@@ -256,13 +252,6 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     TH1D *h_he_all = new TH1D(Form("h_%s_he_all", variable_name), "", n_bins, x_min, x_max);
     TH1D *h_empty_all = new TH1D(Form("h_%s_empty_all", variable_name), "", n_bins, x_min, x_max);
 
-    // Create histograms for data using the appropriate cuts
-    TH1D *h_nh3_exclusive = new TH1D(Form("h_%s_nh3_exclusive", variable_name), "", n_bins, x_min, x_max);
-    TH1D *h_c_exclusive = new TH1D(Form("h_%s_c_exclusive", variable_name), "", n_bins, x_min, x_max);
-    TH1D *h_ch_exclusive = new TH1D(Form("h_%s_ch_exclusive", variable_name), "", n_bins, x_min, x_max);
-    TH1D *h_he_exclusive = new TH1D(Form("h_%s_he_exclusive", variable_name), "", n_bins, x_min, x_max);
-    TH1D *h_empty_exclusive = new TH1D(Form("h_%s_empty_exclusive", variable_name), "", n_bins, x_min, x_max);
-
     // Draw the histograms with the appropriate cuts
     nh3->Draw(Form("%s>>h_%s_nh3", variable_name, variable_name), combined_cuts.c_str());
     c->Draw(Form("%s>>h_%s_c", variable_name, variable_name), combined_cuts.c_str());
@@ -277,17 +266,9 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     he->Draw(Form("%s>>h_%s_he_all", variable_name, variable_name), combined_cuts_all.c_str());
     empty->Draw(Form("%s>>h_%s_empty_all", variable_name, variable_name), combined_cuts_all.c_str());
 
-    // Draw the histograms with the appropriate cuts
-    nh3->Draw(Form("%s>>h_%s_nh3_exclusive", variable_name, variable_name), combined_cuts_exclusive.c_str());
-    c->Draw(Form("%s>>h_%s_c_exclusive", variable_name, variable_name), combined_cuts_exclusive.c_str());
-    ch->Draw(Form("%s>>h_%s_ch_exclusive", variable_name, variable_name), combined_cuts_exclusive.c_str());
-    he->Draw(Form("%s>>h_%s_he_exclusive", variable_name, variable_name), combined_cuts_exclusive.c_str());
-    empty->Draw(Form("%s>>h_%s_empty_exclusive", variable_name, variable_name), combined_cuts_exclusive.c_str());
-
     // Calculate dilution factor and its error
     TGraphErrors *gr_dilution = new TGraphErrors();
     TGraphErrors *gr_dilution_all = new TGraphErrors();
-    TGraphErrors *gr_dilution_exclusive = new TGraphErrors();
     for (int i = 1; i <= n_bins; ++i) {
         double nA = h_nh3->GetBinContent(i);
         double nC = h_c->GetBinContent(i);
@@ -301,20 +282,11 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         double nMT_all = h_he_all->GetBinContent(i);
         double nf_all = h_empty_all->GetBinContent(i);
 
-        double nA_exclusive = h_nh3_exclusive->GetBinContent(i);
-        double nC_exclusive = h_c_exclusive->GetBinContent(i);
-        double nCH_exclusive = h_ch_exclusive->GetBinContent(i);
-        double nMT_exclusive = h_he_exclusive->GetBinContent(i);
-        double nf_exclusive = h_empty_exclusive->GetBinContent(i);
-
         double dilution = calculate_dilution_factor(nA, nC, nCH, nMT, nf);
         double error = calculate_dilution_error(nA/xA, nC/xC, nCH/xCH, nMT/xHe, nf/xf);
 
         double dilution_all = calculate_dilution_factor(nA_all, nC_all, nCH_all, nMT_all, nf_all);
         double error_all = calculate_dilution_error(nA_all/xA, nC_all/xC, nCH_all/xCH, nMT_all/xHe, nf_all/xf);
-
-        double dilution_exclusive = calculate_dilution_factor(nA_exclusive, nC_exclusive, nCH_exclusive, nMT_exclusive, nf_exclusive);
-        double error_exclusive = calculate_dilution_error(nA_exclusive/xA, nC_exclusive/xC, nCH_exclusive/xCH, nMT_exclusive/xHe, nf_exclusive/xf);
 
         // For integrated plot, set the point at the center of the plot range
         double x_position = skip_fit ? (x_min + x_max) / 2 : h_nh3->GetBinCenter(i);
@@ -325,8 +297,6 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         gr_dilution_all->SetPoint(i - 1, x_position, dilution_all);
         gr_dilution_all->SetPointError(i - 1, 0, error_all);
 
-        gr_dilution_exclusive->SetPoint(i - 1, x_position, dilution_exclusive);
-        gr_dilution_exclusive->SetPointError(i - 1, 0, error_exclusive);
     }
 
     gr_dilution->SetTitle(Form(";%s;D_{f}", x_title));
@@ -389,11 +359,6 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
             fit_func_all->SetLineColor(kRed);
             fit_func_all->SetLineStyle(2); // Dashed line
             // fit_func_all->SetLineWidth(1); // Set thinner line
-
-            gr_dilution_exclusive->Fit(fit_func_exclusive, "RQ");
-            fit_func_exclusive->SetLineColor(kRed);
-            fit_func_exclusive->SetLineStyle(2); // Dashed line
-            // fit_func_exclusive->SetLineWidth(1); // Set thinner line
         }
 
         // Calculate chi2/ndf scaling factor
@@ -402,18 +367,12 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
         chi2_scale_factor = std::sqrt(chi2 / ndf);
 
         double chi2_all; int ndf_all;
-        double chi2_exclusive; int ndf_exclusive;
 
         if (!isMx) {
             // Calculate chi2/ndf scaling factor
             chi2_all = fit_func_all->GetChisquare();
             ndf_all = fit_func_all->GetNDF();
             chi2_scale_factor_all = std::sqrt(chi2_all / ndf_all);
-
-            // Calculate chi2/ndf scaling factor
-            chi2_exclusive = fit_func_exclusive->GetChisquare();
-            ndf_exclusive = fit_func_exclusive->GetNDF();
-            chi2_scale_factor_exclusive = std::sqrt(chi2_exclusive / ndf_exclusive);
         }
         
         // Rescale the errors
@@ -428,12 +387,6 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
                 double x, y;
                 gr_dilution_all->GetPoint(i, x, y);
                 gr_dilution_all->SetPointError(i, 0, gr_dilution_all->GetErrorY(i) * chi2_scale_factor_all);
-            }
-
-            for (int i = 0; i < gr_dilution_exclusive->GetN(); ++i) {
-                double x, y;
-                gr_dilution_exclusive->GetPoint(i, x, y);
-                gr_dilution_exclusive->SetPointError(i, 0, gr_dilution_exclusive->GetErrorY(i) * chi2_scale_factor);
             }
         }
 
