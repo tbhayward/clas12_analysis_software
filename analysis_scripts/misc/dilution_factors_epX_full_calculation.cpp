@@ -783,8 +783,8 @@ double multi_dimensional(TFile* nh3, TFile* carbon, TFile* ch, TFile* he, TFile*
         if (k == 0 || k == 1 || k == 4 || k == 8 || k == 11 || k == 13) {
             // Determine the number of rows needed
             int nRows = 1;
-            if (k == 1 || k == 4) nRows = 4;
-            else if (k == 8) nRows = 3;
+            if (k == 4) nRows = 4;
+            else if (k == 1 || k == 8) nRows = 3;
             else if (k == 11) nRows = 2;
 
             // Create a new canvas
