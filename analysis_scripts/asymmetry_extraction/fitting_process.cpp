@@ -357,6 +357,10 @@ void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f,
   TTreeReaderValue<double> beam_pol(dataReader, "beam_pol");
   TTreeReaderValue<double> target_pol(dataReader, "target_pol");
   TTreeReaderValue<double> phi(dataReader, "phi");
+  TTreeReaderValue<double> Q2(dataReader, "Q2");
+  TTreeReaderValue<double> x(dataReader, "x");
+  TTreeReaderValue<double> z(dataReader, "z");
+  TTreeReaderValue<double> pT(dataReader, "pT");
   TTreeReaderValue<double> DepA(dataReader, "DepA");
   TTreeReaderValue<double> DepB(dataReader, "DepB");
   TTreeReaderValue<double> DepC(dataReader, "DepC");
@@ -374,7 +378,7 @@ void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f,
       // Increment the event count
       N += 1;
 
-      double Df = dilution_factor(*currentVariable, mlmPrefix); // dilution factor
+      double Df = dilution_factor(*Q2, *x, *z, *pT, mlmPrefix); // dilution factor
       double Pb = *beam_pol;
       double Pt = std::abs(*target_pol);
 
