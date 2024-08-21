@@ -108,8 +108,62 @@ double standard_4D_bin(const std::string& prefix, TRandom3& rand_gen) {
 
 // Function to handle "all" 4D bins
 double all_4D_bin(const std::string& prefix, TRandom3& rand_gen) {
-    if (prefix == "Q2x1z1") { double sigma = 0.0123456; return 0.123456 + rand_gen.Gaus(0, sigma); }
-    if (prefix == "Q2x1z2") { double sigma = 0.0145678; return 0.145678 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x1z1") { double sigma = 0.00605839; return 0.155159 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x1z2") { double sigma = 0.0114199; return 0.162345 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x1z3") { double sigma = 0.0229451; return 0.141929 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x1z4") { double sigma = 0.0706254; return 0.193779 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x2z1") { double sigma = 0.00777971; return 0.141097 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x2z2") { double sigma = 0.00418801; return 0.154698 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x2z3") { double sigma = 0.0125466; return 0.163666 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x2z4") { double sigma = 0.00772607; return 0.184739 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x3z1") { double sigma = 0.00974397; return 0.159763 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x3z2") { double sigma = 0.00482159; return 0.181613 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x3z3") { double sigma = 0.0104169; return 0.17696 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x3z4") { double sigma = 0.0159506; return 0.159225 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x4z1") { double sigma = 0.010796; return 0.176207 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x4z2") { double sigma = 0.00377173; return 0.186207 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x4z3") { double sigma = 0.011068; return 0.182736 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x4z4") { double sigma = 0.0219368; return 0.179033 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x5z1") { double sigma = 0.0745799; return -0.350343 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x5z2") { double sigma = 0.00789993; return 0.145501 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x5z3") { double sigma = 0.00919176; return 0.170492 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x5z4") { double sigma = 0.0109478; return 0.162116 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x6z1") { double sigma = 0.0119796; return 0.132066 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x6z2") { double sigma = 0.0097453; return 0.154933 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x6z3") { double sigma = 0.00447712; return 0.163281 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x6z4") { double sigma = 0.0115794; return 0.141084 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x7z1") { double sigma = 0.00676214; return 0.159903 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x7z2") { double sigma = 0.00559864; return 0.178464 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x7z3") { double sigma = 0.00494866; return 0.190381 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x7z4") { double sigma = 0.00856305; return 0.186127 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x8z1") { double sigma = 0.00868431; return 0.167778 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x8z2") { double sigma = 0.00477905; return 0.19976 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x8z3") { double sigma = 0.00384218; return 0.193412 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x8z4") { double sigma = 0.00864392; return 0.198854 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x9z1") { double sigma = 0.00352234; return 0.642937 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x9z2") { double sigma = 0.00695415; return 0.160286 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x9z3") { double sigma = 0.00523981; return 0.189993 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x9z4") { double sigma = 0.00359572; return 0.195792 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x10z1") { double sigma = 0.0107447; return 0.0953792 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x10z2") { double sigma = 0.00715086; return 0.188898 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x10z3") { double sigma = 0.00379621; return 0.213629 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x10z4") { double sigma = 0.00235743; return 0.22532 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x11z1") { double sigma = 0.00845343; return 0.154706 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x11z2") { double sigma = 0.004971; return 0.202401 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x11z3") { double sigma = 0.00310727; return 0.214032 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x11z4") { double sigma = 0.00553573; return 0.207434 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x12z1") { double sigma = 0.0441062; return 0.474793 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x12z2") { double sigma = 0.00725349; return 0.19032 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x12z3") { double sigma = 0.00550076; return 0.215437 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x12z4") { double sigma = 0.00249019; return 0.23778 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x13z1") { double sigma = 0.00689496; return 0.158315 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x13z2") { double sigma = 0.00543748; return 0.209127 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x13z3") { double sigma = 0.00247169; return 0.241163 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x13z4") { double sigma = 0.00526123; return 0.24177 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x14z1") { double sigma = 0.0187079; return 0.177287 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x14z2") { double sigma = 0.00516877; return 0.219458 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x14z3") { double sigma = 0.00504537; return 0.254474 + rand_gen.Gaus(0, sigma); }
+    if (prefix == "Q2x14z4") { double sigma = 0.00352633; return 0.278812 + rand_gen.Gaus(0, sigma); }
     // Additional "all" 4D cases go here...
     return 0.19;  // Fallback value
 }
