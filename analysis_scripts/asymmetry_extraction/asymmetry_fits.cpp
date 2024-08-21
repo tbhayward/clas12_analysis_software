@@ -270,10 +270,11 @@ double DSA_dihadron(double* x, double* par) {
 
 /******** VALUE CALCULATIONS ********/
 
-double asymmetry_value_calculation(double currentVariable, double xB, const std::string& prefix, 
-  double Npp, double Npm, double Nmp, double Nmm, double meanPol, double Ptp, double Ptm, 
+double asymmetry_value_calculation(double currentVariable, double Q2, double xB, double z, 
+  double pT, const std::string& prefix, double Npp, double Npm, double Nmp, double Nmm,
+  double meanPol, double Ptp, double Ptm, 
   int asymmetry_index) {
-  double Df = dilution_factor(xB, prefix); // dilution factor
+  double Df = dilution_factor(Q2, xB, z, pT, prefix); // dilution factor
   // return the asymmetry value 
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
@@ -288,10 +289,11 @@ double asymmetry_value_calculation(double currentVariable, double xB, const std:
   }
 }
 
-double asymmetry_error_calculation(double currentVariable, double xB, const std::string& prefix, 
-  double Npp, double Npm, double Nmp, double Nmm, double meanPol, double Ptp, double Ptm, 
+double asymmetry_error_calculation(double currentVariable, double Q2, double xB, double z, 
+  double pT, const std::string& prefix, double Npp, double Npm, double Nmp, double Nmm,
+  double meanPol, double Ptp, double Ptm, 
   int asymmetry_index) {
-  double Df = dilution_factor(xB, prefix); // dilution factor
+  double Df = dilution_factor(Q2, xB, z, pT, prefix); // dilution factor
   // return the asymmetry error 
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
