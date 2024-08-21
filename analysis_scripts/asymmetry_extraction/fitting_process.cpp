@@ -248,9 +248,9 @@ void calculate_inclusive(const char* output_file, const char* kinematic_file,
     switch (asymmetry_index) {
       case 0: {// beam-spin asymmetry
         // Get the fitted parameters and their errors
-        double ALU_offset = asymmetry_value_calculation(meanVariable, prefix, 
+        double ALU_offset = asymmetry_value_calculation(meanVariable, *x, prefix, 
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
-        double ALU_offset_error = asymmetry_error_calculation(meanVariable, prefix, 
+        double ALU_offset_error = asymmetry_error_calculation(meanVariable, *x, prefix, 
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
         ALU_offset = (meanDepA/meanDepW)*ALU_offset;
         ALU_offset_error = (meanDepA/meanDepW)*ALU_offset_error;
@@ -262,9 +262,9 @@ void calculate_inclusive(const char* output_file, const char* kinematic_file,
       }
       case 1: {// target-spin asymmetry
         // Get the fitted parameters and their errors
-        double AUL_offset = asymmetry_value_calculation(meanVariable, prefix, 
+        double AUL_offset = asymmetry_value_calculation(meanVariable, *x, prefix, 
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
-        double AUL_offset_error = asymmetry_error_calculation(meanVariable, prefix, 
+        double AUL_offset_error = asymmetry_error_calculation(meanVariable, *x, prefix, 
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
         AUL_offset = (meanDepA/meanDepV)*AUL_offset;
         AUL_offset_error = (meanDepA/meanDepV)*AUL_offset_error;
@@ -276,9 +276,9 @@ void calculate_inclusive(const char* output_file, const char* kinematic_file,
       }
       case 2: {// double-spin asymmetry
         // Get the fitted parameters and their errors
-        double ALL = asymmetry_value_calculation(meanVariable, prefix, 
+        double ALL = asymmetry_value_calculation(meanVariable, *x, prefix, 
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
-        double ALL_error = asymmetry_error_calculation(meanVariable, prefix, 
+        double ALL_error = asymmetry_error_calculation(meanVariable, *x, prefix, 
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
         ALL = -(meanDepA/meanDepC)*ALL;
         ALL_error = (meanDepA/meanDepC)*ALL_error;
@@ -843,9 +843,9 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
     double Nmm = histNegNeg->GetBinContent(iBin)/cmm;
 
     // Calculate the asymmetry and error for the current bin
-    double asymmetry = asymmetry_value_calculation(meanVariable, prefix, Npp, Npm, Nmp, Nmm, 
+    double asymmetry = asymmetry_value_calculation(meanVariable, *x, prefix, Npp, Npm, Nmp, Nmm, 
       meanPol, Ptp, Ptm, asymmetry_index);
-    double error = asymmetry_error_calculation(meanVariable, prefix, Npp, Npm, Nmp, Nmm, meanPol, 
+    double error = asymmetry_error_calculation(meanVariable, *x, prefix, Npp, Npm, Nmp, Nmm, meanPol, 
       Ptp, Ptm, asymmetry_index);
 
     // Fill the asymmetry histogram with the calculated values
@@ -1842,9 +1842,9 @@ TH2D* createHistogramForBin_b2b_dihadron(const char* histName, int binIndex,
       double Npm = histPosNeg->GetBinContent(iBinX, iBinY) / cpp;
       double Nmp = histNegPos->GetBinContent(iBinX, iBinY) / cpp;
       double Nmm = histNegNeg->GetBinContent(iBinX, iBinY) / cpp;
-      double asymmetry = asymmetry_value_calculation(meanVariable, prefix, Npp, Npm, Nmp, Nmm, 
+      double asymmetry = asymmetry_value_calculation(meanVariable, *x, prefix, Npp, Npm, Nmp, Nmm, 
       meanPol, Ptp, Ptm, asymmetry_index);
-      double error = asymmetry_error_calculation(meanVariable, prefix, Npp, Npm, Nmp, Nmm, meanPol, 
+      double error = asymmetry_error_calculation(meanVariable, *x, prefix, Npp, Npm, Nmp, Nmm, meanPol, 
         Ptp, Ptm, asymmetry_index);
 
       histAsymmetry->SetBinContent(iBinX, iBinY, asymmetry);
@@ -2334,6 +2334,7 @@ TH1D* createHistogramForBin_dvcs(const char* histName, int binIndex,
   TTreeReaderValue<int> helicity(dataReader, "helicity");
   TTreeReaderValue<double> beam_pol(dataReader, "beam_pol");
   TTreeReaderValue<double> target_pol(dataReader, "target_pol");
+  TTreeReaderValue<double> x(dataReader, "x");
   TTreeReaderValue<double> phi(dataReader, "phi2"); 
   // this is phi2 because we're using processing_dihadron to identify proton and photon 
   // (which isn't really a hadron of course)
@@ -2396,9 +2397,9 @@ TH1D* createHistogramForBin_dvcs(const char* histName, int binIndex,
     double Nmm = histNegNeg->GetBinContent(iBin)/cmm;
 
     // Calculate the asymmetry and error for the current bin
-    double asymmetry = asymmetry_value_calculation(meanVariable, prefix, Npp, Npm, Nmp, Nmm, 
+    double asymmetry = asymmetry_value_calculation(meanVariable, *x, prefix, Npp, Npm, Nmp, Nmm, 
       meanPol, Ptp, Ptm, asymmetry_index);
-    double error = asymmetry_error_calculation(meanVariable, prefix, Npp, Npm, Nmp, Nmm, meanPol, 
+    double error = asymmetry_error_calculation(meanVariable, *x, prefix, Npp, Npm, Nmp, Nmm, meanPol, 
       Ptp, Ptm, asymmetry_index);
 
     // Fill the asymmetry histogram with the calculated values
