@@ -14,12 +14,12 @@ double dilution_factor(double currentVariable, const std::string& prefix) {
   }
 
   if (prefix == "Q2") { return 0.0588289+0.0990336*currentVariable+-0.0213364*std::pow(currentVariable,2); }
-  if (prefix == "x") { return 0.20; }//return 0.136288+0.283353*currentVariable+-0.125745*std::pow(currentVariable,2); }
+  if (prefix == "x") { return 0.136288+0.283353*currentVariable+-0.125745*std::pow(currentVariable,2); }
   if (prefix == "y") { return 0.0534692+0.916586*currentVariable+-1.73992*std::pow(currentVariable,2); }
   if (prefix == "z") { return 0.0119851+1.34778*currentVariable+-2.99383*std::pow(currentVariable,2); }
   if (prefix == "zeta") { return 0.849162+-2.95586*currentVariable+4.58654*std::pow(currentVariable,2); }
   if (prefix == "PT") { return 0.208234+-0.222063*currentVariable+0.652242*std::pow(currentVariable,2); }
-  if (prefix == "xF") { return 0.20; }// return 0.206961+-0.0028204*currentVariable+-0.0428585*std::pow(currentVariable,2); }
+  if (prefix == "xF") { return 0.206961+-0.0028204*currentVariable+-0.0428585*std::pow(currentVariable,2); }
   if (prefix == "Mx") { return 0.136851*exp(-0.5*std::pow((currentVariable - 0.12) / 0.235624, 2)) + 0.0280814*exp(-0.5*std::pow((currentVariable - 0.785) / -0.0544159, 2)) + 0.0970699 + 0.185273*currentVariable + -0.103331*std::pow(currentVariable, 2); }
 
   // if (prefix == "Q2") { return 0.042234+0.11043*currentVariable+-0.0225887*std::pow(currentVariable,2); }

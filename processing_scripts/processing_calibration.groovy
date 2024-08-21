@@ -40,6 +40,20 @@ class CalibrationScript {
     double theta = -9999
     double phi = -9999
 
+    int mc_particle_pid = -9999
+    double mc_particle_px = -9999
+    double mc_particle_py = -9999
+    double mc_particle_pz = -9999
+    double mc_p = -9999;
+    double mc_particle_vx = -9999
+    double mc_particle_vy = -9999
+    double mc_particle_vz = -9999
+    double mc_particle_beta = -9999
+    double mc_particle_chi2pid = -9999
+    int mc_particle_status = -9999
+    double mc_theta = -9999
+    double mc_phi = -9999
+
     int cal_sector = -9999
     double cal_energy_1 = -9999; double cal_energy_4 = -9999; double cal_energy_7 = -9999;
     double cal_x_1 = -9999; double cal_x_4 = -9999; double cal_x_7 = -9999; 

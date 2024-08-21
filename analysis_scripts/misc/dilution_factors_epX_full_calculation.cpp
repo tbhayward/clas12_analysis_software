@@ -220,7 +220,9 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
 
     // Define the base cuts for vz
     // std::string vz_cuts = "-10 < vz_e && vz_e < 1 && -10 < vz_p && vz_p < 1 && runnum != 16317 && runnum != 16742";
-    std::string vz_cuts = "x > 0.06 && x < 0.60 && pT > 0 && pT < 1.2 && xF > -1 && xF < 1 && -10 < vz_e && vz_e < 1 && -10 < vz_p && vz_p < 1 && runnum != 16317 && runnum != 16742";
+    // std::string vz_cuts = "x > 0.06 && x < 0.60 && pT > 0 && pT < 1.2 && xF > -1 && xF < 1 && -10 < vz_e && vz_e < 1 && -10 < vz_p && vz_p < 1 && runnum != 16317 && runnum != 16742";
+    std::string vz_cuts = "x > 0.14 && x < 0.21 && pT > 0 && pT < 1.2 && xF > -1 && xF < 1 && -10 < vz_e && vz_e < 1 && -10 < vz_p && vz_p < 1 && runnum != 16317 && runnum != 16742";
+
 
     // Define the combined cuts based on the value of isMx
     std::string combined_cuts;
@@ -483,9 +485,11 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     title.SetNDC();
     title.SetTextSize(0.045);
     if (isMx) {
-        title.DrawLatex(0.15, 0.92, "Q^{2} > 1.0 GeV^{2}, W > 2 GeV, y < 0.75, M_{x} > 0 GeV");
+        // title.DrawLatex(0.15, 0.92, "Q^{2} > 1.0 GeV^{2}, W > 2 GeV, y < 0.75, M_{x} > 0 GeV");
+        title.DrawLatex(0.15, 0.92, "Q^{2} > 1.0 GeV^{2}, W > 2 GeV, y < 0.75, M_{x} > 0 GeV, 0.14 < x_B < 0.21");
     } else {
-        title.DrawLatex(0.15, 0.92, "Q^{2} > 1.0 GeV^{2}, W > 2 GeV, y < 0.75, M_{x} > 1.35 GeV");
+        // title.DrawLatex(0.15, 0.92, "Q^{2} > 1.0 GeV^{2}, W > 2 GeV, y < 0.75, M_{x} > 1.35 GeV");
+        title.DrawLatex(0.15, 0.92, "Q^{2} > 1.0 GeV^{2}, W > 2 GeV, y < 0.75, M_{x} > 1.35 GeV, 0.14 < x_B < 0.21");
     }
 
     // Clean up histograms
@@ -646,7 +650,7 @@ std::vector<TH1D*> create_and_draw_histograms(TTree* tree_nh3, TTree* tree_carbo
 
     // Define the additional cuts
     std::string additional_cuts = "x > 0.06 && x < 0.60 && pT > 0 && pT < 1.2 && xF > -1 && xF < 1 && Mx > 1.35 && -10 < vz_e && vz_e < 1 && -10 < vz_p && vz_p < 1 && runnum != 16317 && runnum != 16742";
-    
+
     // Combine the existing cuts with the additional cuts
     std::string combined_cuts = cuts + " && " + additional_cuts;
 
@@ -894,7 +898,7 @@ int main(int argc, char** argv) {
     }
 
     // Call the plot_dilution_kinematics function
-    plot_dilution_kinematics(nh3, c, ch, he, empty);
+    // plot_dilution_kinematics(nh3, c, ch, he, empty);
     // Call the one-dimensional function
     one_dimensional(nh3, c, ch, he, empty);
     // multi_dimensional(nh3, c, ch, he, empty);
