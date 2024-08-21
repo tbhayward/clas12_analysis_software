@@ -483,12 +483,15 @@ void plot_dilution_factor(const char* variable_name, const char* x_title, double
     // Add a title to the plot with phase space parameters
     TLatex title;
     title.SetNDC();
-    title.SetTextSize(0.045);
     if (isMx) {
+        // title.SetTextSize(0.045);
         // title.DrawLatex(0.15, 0.92, "Q^{2} > 1.0 GeV^{2}, W > 2 GeV, y < 0.75, M_{x} > 0 GeV");
+        title.SetTextSize(0.030);
         title.DrawLatex(0.15, 0.92, "Q^{2} > 1.0 GeV^{2}, W > 2 GeV, y < 0.75, M_{x} > 0 GeV, 0.14 < x_B < 0.21");
     } else {
+        // title.SetTextSize(0.045);
         // title.DrawLatex(0.15, 0.92, "Q^{2} > 1.0 GeV^{2}, W > 2 GeV, y < 0.75, M_{x} > 1.35 GeV");
+        title.SetTextSize(0.030);
         title.DrawLatex(0.15, 0.92, "Q^{2} > 1.0 GeV^{2}, W > 2 GeV, y < 0.75, M_{x} > 1.35 GeV, 0.14 < x_B < 0.21");
     }
 
