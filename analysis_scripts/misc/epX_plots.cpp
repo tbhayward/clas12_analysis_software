@@ -392,7 +392,7 @@ void plotDependence(
                 text->SetBorderSize(1);  // Set border size to 1 for a black border
                 text->SetFillColor(0);
                 text->AddText("#font[42]{M_{x} > 1.35 GeV}");  // Black text line
-                text->AddText("#font[42]{#color[2]{M_{x} > 0 GeV}}");  // Red text line
+                text->AddText("#font[42]{#color[2]{M_{x} > 0.55 GeV}}");  // Red text line
                 text->Draw();
             }
         }
