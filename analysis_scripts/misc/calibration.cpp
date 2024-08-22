@@ -4456,7 +4456,7 @@ void energy_loss_distributions(TTreeReader& mcReader) {
     while (mcReader.Next()) {
         double delta_p = *mc_p - *p;
 
-        std::cout >> track_sector_5 >> " " >> track_sector_6 >> std::endl;
+        std::cout >> *track_sector_5 >> " " >> *track_sector_6 >> std::endl;
 
         // Check if the track is FD or CD
         if (is_fd_track(*track_sector_5)) {
