@@ -4610,7 +4610,7 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
 
         // Check if the current particle type is one of interest
         if (histograms.find(*pid) != histograms.end()) { 
-            bool above_curve = is_above_curve(double p, double delta_p)
+            bool above_curve = is_above_curve(p, delta_p)
 
             if (is_fd_track(*track_sector_6)) {
                 if (dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) {
