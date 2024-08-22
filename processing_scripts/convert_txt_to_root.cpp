@@ -1141,6 +1141,7 @@ int main(int argc, char *argv[]) {
 
     // calibration script
     if (hadron_count == 5 && is_mc == 0) {
+        std::cout << mc_matching_pid << " " << mc_parent_pid << std::endl;
         while (infile >> config_run >> config_event >> event_helicity >> particle_pid >>
                 particle_px >> particle_py >> particle_pz >> p >> theta >> phi >> 
                 particle_vx >> particle_vy >> particle_vz >> particle_beta >> 
