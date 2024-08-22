@@ -47,8 +47,8 @@ class CalibrationScript {
     double mc_p = -9999;
     double mc_theta = -9999
     double mc_phi = -9999
-    double mc_matching_pid = -9999
-    double mc_parent_pid = -9999
+    int mc_matching_pid = -9999
+    int mc_parent_pid = -9999
 
     int cal_sector = -9999
     double cal_energy_1 = -9999; double cal_energy_4 = -9999; double cal_energy_7 = -9999;
