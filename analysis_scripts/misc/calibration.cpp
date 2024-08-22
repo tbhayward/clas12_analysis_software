@@ -21,6 +21,7 @@
 #include <iostream>
 #include <cmath> 
 #include <vector>
+#include <TLatex.h>
 #include <algorithm>
 
 void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
