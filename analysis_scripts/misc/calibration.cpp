@@ -4485,7 +4485,7 @@ void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset
     TLatex latex;
     latex.SetTextSize(0.04);
     latex.SetTextAlign(13);  // Align at top left
-    latex.DrawLatexNDC(0.47, 0.97, (dataset).c_str());
+    latex.DrawLatexNDC(0.45, 0.97, (dataset).c_str());
 
     // Increase margins to prevent axis labels from being clipped
     c->cd(1);
@@ -4493,9 +4493,8 @@ void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset
     gPad->SetLogz();
     h_fd->Draw("COLZ");
     gPad->Update();  // Force the pad to update and draw Z axis
-
     c->cd(2);
-    gPad->SetMargin(0.15, 0.05, 0.15, 0.1);  // Left, right, bottom, top margins
+    gPad->SetMargin(0.15, 0.15, 0.1, 0.1);  // Left, right, bottom, top margins
     gPad->SetLogz();
     h_cd->Draw("COLZ");
     gPad->Update();  // Force the pad to update and draw Z axis
