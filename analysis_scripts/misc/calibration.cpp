@@ -4539,7 +4539,7 @@ void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset
 
 // Function to check if a track is above or below the curve
 bool is_above_curve(double p, double delta_p) {
-    return (delta_p > 0.0125 / pow(p, 1.05));
+    return (delta_p > 0.0118 / pow(p, 1.05));
     // 0.0125/pow(x, 1.05)
 }
 
@@ -4646,7 +4646,7 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         TF1* pass1_curve = new TF1("pass1 curve", "0.088/pow(x, 1.5)", 0.1, std::get<2>(particle_types[pid]));
         pass1_curve->SetLineColor(kRed);
         pass1_curve->SetLineWidth(4);
-        TF1* pass2_curve = new TF1("pass2 curve", "0.0125/pow(x, 1.05)", 0.1, std::get<2>(particle_types[pid]));
+        TF1* pass2_curve = new TF1("pass2 curve", "0.0118/pow(x, 1.05)", 0.1, std::get<2>(particle_types[pid]));
         pass2_curve->SetLineColor(kBlack);
         pass2_curve->SetLineWidth(4);
 
