@@ -172,6 +172,10 @@ double all_4D_bin(const std::string& prefix, TRandom3& rand_gen) {
 double dilution_factor(double Q2, double x, double z, double pT, const std::string& prefix) {
     TRandom3 rand_gen;
 
+    if (prefix == "x") { return 0.136288+0.283353*x+-0.125745*std::pow(x,2); }
+    if (prefix == "xF") { return 0.136288+0.283353*x+-0.125745*std::pow(x,2); }
+    if (prefix == "PT") { return 0.136288+0.283353*x+-0.125745*std::pow(x,2); }
+
     // Determine if the prefix is a one-dimensional case
     bool isAllPrefix = (prefix.find("all") != std::string::npos);
     std::string basePrefix = isAllPrefix ? prefix.substr(0, prefix.size() - 3) : prefix;
