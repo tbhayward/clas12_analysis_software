@@ -4454,7 +4454,7 @@ void process_and_save_histograms(const std::map<int, std::pair<std::string, std:
         item.second.second.second->Draw("COLZ");
         gPad->Update();
 
-        c->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/energy_loss_distributions" + particle_name + "_" + suffix + ".png").c_str());
+        c->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/energy_loss_distributions_" + particle_name + "_" + suffix + ".png").c_str());
 
         delete c;
     }
@@ -4486,10 +4486,10 @@ void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset
         histograms_p[pid] = std::make_pair(particle_name, create_histograms(particle_name, "p (GeV)", xMin, xMax, -0.05, 0.10, "#Delta p (GeV)"));
 
         // Create histograms for Delta theta
-        histograms_theta[pid] = std::make_pair(particle_name, create_histograms(particle_name, "theta", xMin, xMax, 0.0, 40.0, "#Delta #theta (degrees)"));
+        histograms_theta[pid] = std::make_pair(particle_name, create_histograms(particle_name, "theta", 0, 90, -12, 12, "#Delta #theta (degrees)"));
 
         // Create histograms for Delta phi
-        histograms_phi[pid] = std::make_pair(particle_name, create_histograms(particle_name, "phi", 0.0, 360.0, 0.0, 360.0, "#Delta #phi (degrees)"));
+        histograms_phi[pid] = std::make_pair(particle_name, create_histograms(particle_name, "phi", 0.0, 360.0, -12, 12, "#Delta #phi (degrees)"));
     }
 
     gStyle->SetPalette(kRainBow);
