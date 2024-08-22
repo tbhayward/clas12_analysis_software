@@ -4480,8 +4480,8 @@ void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset
         double xMin = std::get<1>(particle.second);
         double xMax = std::get<2>(particle.second);
 
-        TH2D* h_fd = new TH2D(("h_fd_" + particle_name).c_str(), ("(FD), " + particle_name).c_str(), 50, xMin, xMax, 50, -0.05, 0.10);
-        TH2D* h_cd = new TH2D(("h_cd_" + particle_name).c_str(), ("(CD), " + particle_name).c_str(), 50, xMin, xMax, 50, -0.05, 0.10);
+        TH2D* h_fd = new TH2D(("h_fd_" + particle_name).c_str(), ("(FD), " + particle_name).c_str(), 100, xMin, xMax, 100, -0.05, 0.10);
+        TH2D* h_cd = new TH2D(("h_cd_" + particle_name).c_str(), ("(CD), " + particle_name).c_str(), 100, xMin, xMax, 100, -0.05, 0.10);
 
         h_fd->GetXaxis()->SetTitle("p (GeV)");
         h_fd->GetYaxis()->SetTitle("#Delta p (GeV)");
