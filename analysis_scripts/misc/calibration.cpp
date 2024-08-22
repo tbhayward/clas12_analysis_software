@@ -4417,8 +4417,7 @@ bool is_cd_track(double track_sector_6) {
 }
 
 // Function to create energy loss distributions
-void energy_loss_distributions(TTreeReader& mcReader) {
-    std::cout << "HELLO WORLD" << std::endl;
+void energy_loss_distributions(TTreeReader* mcReader) {
     // Define 2D histograms for FD and CD
     int nBinsX = 50, nBinsY = 50;
     double xMin = 0, xMax = 2;
@@ -4454,8 +4453,8 @@ void energy_loss_distributions(TTreeReader& mcReader) {
     TTreeReaderValue<double> edge_12(mcReader, "traj_edge_12");
 
     // Loop over events
-    while (mcReader.Next()) {
-        double delta_p = *mc_p - *p;
+    while (mcReader->Next()) {
+        double delta_p = **mc_p - **p;
         std::cout << delta_p << std::endl;
 
         // Check if the track is FD or CD
