@@ -4439,7 +4439,7 @@ void energy_loss_distributions(TTreeReader& mcReader) {
     // Set up TTreeReaderValues for necessary branches
     TTreeReaderValue<double> mc_p(mcReader, "mc_p");
     TTreeReaderValue<double> p(mcReader, "p");
-    TTreeReaderValue<int> pid(mcReader, "pid");
+    TTreeReaderValue<int> pid(mcReader, "particle_pid");
     TTreeReaderValue<double> track_sector_5(mcReader, "track_sector_5");
     TTreeReaderValue<double> track_sector_6(mcReader, "track_sector_6");
 
