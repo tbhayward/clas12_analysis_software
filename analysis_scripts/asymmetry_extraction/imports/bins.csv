@@ -14,8 +14,8 @@ variable_names_here
 #xFall,xF,-1.00,-0.30,0.20,1.00
 #
 # epX
-x,x,0.00,1.00
-#xall,x,0.00,1.00
+#x,x,0.00,1.00
+xall,x,0.00,1.00
 #PT,pT,0,2.00;
 #PTall,pT,0,2.00;
 #xF,xF,-1.00,1.00
