@@ -4555,31 +4555,40 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         {2212, {"p", 0.0, 3.0}}
     };
 
-    // Create histograms for each particle type and each case
-    std::map<int, std::pair<std::string, std::array<TH2D*, 6>>> histograms;
+    // Create histograms for each particle type
+    std::map<int, std::vector<TH2D*>> histograms;
     for (const auto& particle : particle_types) {
         int pid = particle.first;
         const std::string& particle_name = std::get<0>(particle.second);
         double xMin = std::get<1>(particle.second);
         double xMax = std::get<2>(particle.second);
 
-        // Create histograms
         histograms[pid] = {
-            particle_name, {
-                new TH2D(("h_fd_dp_above_" + particle_name).c_str(), ("#Delta p vs p, Above (FD), " + particle_name).c_str(), 100, xMin, xMax, 100, -0.05, 0.10),
-                new TH2D(("h_fd_dp_below_" + particle_name).c_str(), ("#Delta p vs p, Below (FD), " + particle_name).c_str(), 100, xMin, xMax, 100, -0.05, 0.10),
-                new TH2D(("h_fd_theta_dc_above_" + particle_name).c_str(), ("#theta_{DC1} vs p, Above (FD), " + particle_name).c_str(), 100, xMin, xMax, 100, 0.0, 180.0),
-                new TH2D(("h_fd_theta_dc_below_" + particle_name).c_str(), ("#theta_{DC1} vs p, Below (FD), " + particle_name).c_str(), 100, xMin, xMax, 100, 0.0, 180.0),
-                new TH2D(("h_fd_theta_above_" + particle_name).c_str(), ("#theta vs p, Above (FD), " + particle_name).c_str(), 100, xMin, xMax, 100, 0.0, 180.0),
-                new TH2D(("h_fd_theta_below_" + particle_name).c_str(), ("#theta vs p, Below (FD), " + particle_name).c_str(), 100, xMin, xMax, 100, 0.0, 180.0)
-            }
+            new TH2D(("h_above_deltap_" + particle_name).c_str(), ("(Above), " + particle_name).c_str(), 100, xMin, xMax, 100, -0.05, 0.10),
+            new TH2D(("h_above_thetadc1_" + particle_name).c_str(), ("(Above), " + particle_name).c_str(), 100, xMin, xMax, 100, 0, 40),  // Adjusted to 0-40 degrees
+            new TH2D(("h_above_theta_" + particle_name).c_str(), ("(Above), " + particle_name).c_str(), 100, xMin, xMax, 100, 0, 40),  // Adjusted to 0-40 degrees
+            new TH2D(("h_below_deltap_" + particle_name).c_str(), ("(Below), " + particle_name).c_str(), 100, xMin, xMax, 100, -0.05, 0.10),
+            new TH2D(("h_below_thetadc1_" + particle_name).c_str(), ("(Below), " + particle_name).c_str(), 100, xMin, xMax, 100, 0, 40),  // Adjusted to 0-40 degrees
+            new TH2D(("h_below_theta_" + particle_name).c_str(), ("(Below), " + particle_name).c_str(), 100, xMin, xMax, 100, 0, 40)  // Adjusted to 0-40 degrees
         };
+
+        // Set axis labels
+        histograms[pid][0]->GetXaxis()->SetTitle("p (GeV)"); histograms[pid][0]->GetYaxis()->SetTitle("#Delta p (GeV)");
+        histograms[pid][1]->GetXaxis()->SetTitle("p (GeV)"); histograms[pid][1]->GetYaxis()->SetTitle("#theta_{DC_{region 1}} (degrees)");
+        histograms[pid][2]->GetXaxis()->SetTitle("p (GeV)"); histograms[pid][2]->GetYaxis()->SetTitle("#theta (degrees)");
+        histograms[pid][3]->GetXaxis()->SetTitle("p (GeV)"); histograms[pid][3]->GetYaxis()->SetTitle("#Delta p (GeV)");
+        histograms[pid][4]->GetXaxis()->SetTitle("p (GeV)"); histograms[pid][4]->GetYaxis()->SetTitle("#theta_{DC_{region 1}} (degrees)");
+        histograms[pid][5]->GetXaxis()->SetTitle("p (GeV)"); histograms[pid][5]->GetYaxis()->SetTitle("#theta (degrees)");
+
+        for (auto& hist : histograms[pid]) {
+            hist->SetStats(false);
+        }
     }
 
     gStyle->SetPalette(kRainBow);
     gStyle->SetOptStat(0);
 
-    // Declare and initialize TTreeReaderValues before looping through events
+    // Set up TTreeReaderValues for necessary branches
     TTreeReaderValue<double> mc_p(mcReader, "mc_p");
     TTreeReaderValue<double> p(mcReader, "p");
     TTreeReaderValue<double> traj_x_6(mcReader, "traj_x_6");
@@ -4587,7 +4596,6 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
     TTreeReaderValue<double> traj_z_6(mcReader, "traj_z_6");
     TTreeReaderValue<double> theta(mcReader, "theta");
     TTreeReaderValue<int> pid(mcReader, "particle_pid");
-    TTreeReaderValue<int> track_sector_5(mcReader, "track_sector_5");
     TTreeReaderValue<int> track_sector_6(mcReader, "track_sector_6");
 
     // Edge variables for FD fiducial cuts
@@ -4602,13 +4610,13 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
 
         // Check if the current particle type is one of interest
         if (histograms.find(*pid) != histograms.end()) {
+            bool above_curve = (delta_p > 0.088 / pow(*p, 1.5));
+
             if (is_fd_track(*track_sector_6)) {
                 if (dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) {
-                    bool above_curve = is_above_curve(*p, delta_p);
-
-                    int index_above = above_curve ? 0 : 1;
-                    int index_below = above_curve ? 2 : 3;
-                    int index_theta = above_curve ? 4 : 5;
+                    int index_above = above_curve ? 0 : 3;
+                    int index_below = above_curve ? 1 : 4;
+                    int index_theta = above_curve ? 2 : 5;
 
                     // Fill histograms
                     histograms[*pid].second[index_above]->Fill(*p, delta_p);
@@ -4619,34 +4627,59 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         }
     }
 
-    // Save histograms to a 2x3 canvas for each particle
+    // Save the histograms for each particle type
     for (const auto& entry : histograms) {
-        const std::string& particle_name = entry.second.first;
-        auto& hists = entry.second.second;
+        int pid = entry.first;
+        const std::string& particle_name = std::get<0>(particle_types[pid]);
 
-        // Create a 2x3 canvas
-        TCanvas* c = new TCanvas(("c_fd_" + particle_name).c_str(), ("FD Energy Loss: " + dataset + ", " + particle_name).c_str(), 1800, 1200);
+        // Create a canvas with 2x3 subplots
+        TCanvas* c = new TCanvas(("c_fd_" + particle_name).c_str(), ("FD Energy Loss Distributions: " + dataset + ", " + particle_name).c_str(), 1800, 1200);
         c->Divide(3, 2);
 
+        // Move the LaTeX title up to avoid clipping
         TLatex latex;
         latex.SetTextSize(0.04);
-        latex.SetTextAlign(13);
-        latex.DrawLatexNDC(0.4, 0.97, (dataset + ", " + particle_name).c_str());
+        latex.SetTextAlign(13);  // Align at top left
+        latex.DrawLatexNDC(0.3, 0.96, (dataset + ", " + particle_name).c_str());
 
-        // Fill the canvas
-        for (int i = 0; i < 6; ++i) {
-            c->cd(i + 1);
-            gPad->SetMargin(0.15, 0.15, 0.10, 0.1);
-            gPad->SetLogz();
-            hists[i]->Draw("COLZ");
-        }
+        // Plot histograms in the correct order
+        c->cd(1);
+        gPad->SetMargin(0.15, 0.05, 0.10, 0.1);  // Left, right, bottom, top margins
+        gPad->SetLogz();
+        entry.second[0]->Draw("COLZ");
+
+        c->cd(2);
+        gPad->SetMargin(0.15, 0.05, 0.10, 0.1);
+        gPad->SetLogz();
+        entry.second[1]->Draw("COLZ");
+
+        c->cd(3);
+        gPad->SetMargin(0.15, 0.05, 0.10, 0.1);
+        gPad->SetLogz();
+        entry.second[2]->Draw("COLZ");
+
+        c->cd(4);
+        gPad->SetMargin(0.15, 0.05, 0.10, 0.1);
+        gPad->SetLogz();
+        entry.second[3]->Draw("COLZ");
+        c->cd(5);
+        gPad->SetMargin(0.15, 0.05, 0.10, 0.1);
+        gPad->SetLogz();
+        entry.second[4]->Draw("COLZ");
+
+        c->cd(6);
+        gPad->SetMargin(0.15, 0.05, 0.10, 0.1);
+        gPad->SetLogz();
+        entry.second[5]->Draw("COLZ");
 
         // Save the canvas
         c->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/fd_energy_loss_distributions_" + particle_name + ".png").c_str());
 
         // Clean up
         delete c;
-        for (auto hist : hists) delete hist;
+        for (auto& hist : entry.second) {
+            delete hist;
+        }
     }
 }
 
