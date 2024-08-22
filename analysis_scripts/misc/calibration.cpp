@@ -4539,9 +4539,8 @@ void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset
 
 // Function to check if a track is above or below the curve
 bool is_above_curve(double p, double delta_p) {
-    return (delta_p > 0.088 / pow(p, 1.5));
-    // double curve_value = 0.088 / pow(p, 1.5);
-    // return delta_p > curve_value;
+    double curve_value = 0.088 / pow(p, 1.5);
+    return delta_p > curve_value;
 }
 
 // Main FD-specific function
@@ -4610,8 +4609,8 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         double theta_dc_1 = calculate_theta(*traj_x_6, *traj_y_6, *traj_z_6);
 
         // Check if the current particle type is one of interest
-        if (histograms.find(*pid) != histograms.end()) { 
-            bool above_curve = is_above_curve(*p, delta_p);
+        if (histograms.find(*pid) != histograms.end()) {
+            bool above_curve = (delta_p > 0.088 / pow(*p, 1.5));
 
             if (is_fd_track(*track_sector_6)) {
                 if (dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) {
@@ -4641,7 +4640,7 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         TLatex latex;
         latex.SetTextSize(0.04);
         latex.SetTextAlign(11);  // Align at top left
-        latex.DrawLatexNDC(0.43, 0.50, (dataset + ", " + particle_name).c_str());
+        latex.DrawLatexNDC(0.43, 0.45, (dataset + ", " + particle_name).c_str());
 
         // Plot histograms in the correct order
         c->cd(1);
