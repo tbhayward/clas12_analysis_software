@@ -4430,11 +4430,11 @@ void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset
     h_fd->GetYaxis()->SetTitle("#Delta p (GeV)");
     h_cd->GetXaxis()->SetTitle("p (GeV)");
     h_cd->GetYaxis()->SetTitle("#Delta p (GeV)");
-
+    
     // Remove stat boxes
     h_fd->SetStats(false);
     h_cd->SetStats(false);
-
+    
     // Set rainbow color palette
     gStyle->SetPalette(kRainBow);
 
@@ -4476,6 +4476,12 @@ void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset
     // Create a canvas with 1x2 subplots
     TCanvas* c = new TCanvas("c", ("Energy Loss Distributions: " + dataset).c_str(), 1600, 800);
     c->Divide(2, 1);
+
+    // Add a title to the canvas
+    TLatex latex;
+    latex.SetTextSize(0.04);
+    latex.SetTextAlign(13);  // Align at top left
+    latex.DrawLatexNDC(0.5, 0.95, ("Energy Loss Distributions: " + dataset).c_str());
 
     // Increase margins to prevent axis labels from being clipped
     c->cd(1);
