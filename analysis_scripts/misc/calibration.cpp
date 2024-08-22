@@ -773,24 +773,24 @@ bool pcal_fiducial(double lv_1, double lw_1, double lu_1,
     }
 
     // Specific cuts for each sector in PCal
-    // RGA only so far (not RGC)
-    // if (sector == 1) {
-    //     if ((lw_1 > 69 && lw_1 < 96) || (lw_1 > 207 && lw_1 < 236)) {
-    //         return false;
-    //     }
-    // } else if (sector == 2) {
-    //     if ((lv_1 > 95 && lv_1 < 119) || (lu_1 > 108 && lu_1 < 126)) {
-    //         return false;
-    //     }
-    // } else if (sector == 4) {
-    //     if (lv_1 > 224 && lv_1 < 247) {
-    //         return false;
-    //     }
-    // } else if (sector == 6) {
-    //     if ((lw_1 > 169 && lw_1 < 198)) {
-    //         return false;
-    //     }
-    // }
+    // RGA only (not RGC)
+    if (sector == 1) {
+        if ((lw_1 > 69 && lw_1 < 96) || (lw_1 > 207 && lw_1 < 236)) {
+            return false;
+        }
+    } else if (sector == 2) {
+        if ((lv_1 > 95 && lv_1 < 119) || (lu_1 > 108 && lu_1 < 126)) {
+            return false;
+        }
+    } else if (sector == 4) {
+        if (lv_1 > 224 && lv_1 < 247) {
+            return false;
+        }
+    } else if (sector == 6) {
+        if ((lw_1 > 169 && lw_1 < 198)) {
+            return false;
+        }
+    }
 
     // Specific cuts for each sector in ECin
     // RGA and RGC
@@ -800,13 +800,13 @@ bool pcal_fiducial(double lv_1, double lw_1, double lu_1,
     	}
     }
 
-    // Specific cuts for each sector in ECout
-    // RGC only so far (not RGA)
-    if (sector == 2) {
-        if (lw_7 > 68 && lw_7 < 84) {
-            return false;
-        }
-    }
+    // // Specific cuts for each sector in ECout
+    // // RGC only so far (not RGA)
+    // if (sector == 2) {
+    //     if (lw_7 > 68 && lw_7 < 84) {
+    //         return false;
+    //     }
+    // }
     // RGA and RGC
     if (sector == 5) {
     	if (lu_7 > 200 && lu_7 < 220) {
@@ -4405,6 +4405,98 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
         delete ptr;
     }
 }
+
+// Helper function to check if a track is FD
+bool is_fd_track(double track_sector_5) {
+    return track_sector_5 != -9999;
+}
+
+// Helper function to check if a track is CD
+bool is_cd_track(double track_sector_6) {
+    return track_sector_6 != -9999;
+}
+
+// Function to create energy loss distributions
+void energy_loss_distributions(TTreeReader& mcReader) {
+    // Define 2D histograms for FD and CD
+    int nBinsX = 50, nBinsY = 50;
+    double xMin = 0, xMax = 2;
+    double yMin = -0.05, yMax = 0.10;
+
+    TH2D* h_fd = new TH2D("h_fd", "(FD)", nBinsX, xMin, xMax, nBinsY, yMin, yMax);
+    TH2D* h_cd = new TH2D("h_cd", "(CD)", nBinsX, xMin, xMax, nBinsY, yMin, yMax);
+
+    // Set axis labels
+    h_fd->GetXaxis()->SetTitle("p (GeV)");
+    h_fd->GetYaxis()->SetTitle("#Delta p (GeV)");
+    h_cd->GetXaxis()->SetTitle("p (GeV)");
+    h_cd->GetYaxis()->SetTitle("#Delta p (GeV)");
+
+    // Set rainbow color palette
+    gStyle->SetPalette(kRainBow);
+
+    // Set up TTreeReaderValues for necessary branches
+    TTreeReaderValue<double> mc_p(mcReader, "mc_p");
+    TTreeReaderValue<double> p(mcReader, "p");
+    TTreeReaderValue<int> pid(mcReader, "mc_matching_pid");
+    TTreeReaderValue<double> track_sector_5(mcReader, "track_sector_5");
+    TTreeReaderValue<double> track_sector_6(mcReader, "track_sector_6");
+
+    // Edge variables for FD and CD fiducial cuts
+    TTreeReaderValue<double> edge_6(mcReader, "traj_edge_6");
+    TTreeReaderValue<double> edge_18(mcReader, "traj_edge_18");
+    TTreeReaderValue<double> edge_36(mcReader, "traj_edge_36");
+    TTreeReaderValue<double> edge_1(mcReader, "traj_edge_1");
+    TTreeReaderValue<double> edge_3(mcReader, "traj_edge_3");
+    TTreeReaderValue<double> edge_5(mcReader, "traj_edge_5");
+    TTreeReaderValue<double> edge_7(mcReader, "traj_edge_7");
+    TTreeReaderValue<double> edge_12(mcReader, "traj_edge_12");
+
+    // Loop over events
+    while (mcReader.Next()) {
+        double delta_p = *mc_p - *p;
+
+        // Check if the track is FD or CD
+        if (is_fd_track(*track_sector_5)) {
+            // Apply FD fiducial cuts
+            if (dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) {
+                h_fd->Fill(*p, delta_p);
+            }
+        } else if (is_cd_track(*track_sector_6)) {
+            // Apply CD fiducial cuts
+            if (cvt_fiducial(*edge_1, *edge_3, *edge_5, *edge_7, *edge_12)) {
+                h_cd->Fill(*p, delta_p);
+            }
+        }
+    }
+
+    // Create a canvas with 1x2 subplots
+    TCanvas* c = new TCanvas("c", "Energy Loss Distributions", 1600, 800);
+    c->Divide(2, 1);
+
+    // Plot FD
+    c->cd(1);
+    gPad->SetLogz();
+    h_fd->Draw("COLZ");
+
+    // Plot CD
+    c->cd(2);
+    gPad->SetLogz();
+    h_cd->Draw("COLZ");
+
+    // Save the canvas
+    c->SaveAs("output/calibration/energy_loss/distributions/energy_loss_distributions.png");
+
+    // Clean up
+    delete h_fd;
+    delete h_cd;
+    delete c;
+}
+
+// Main function to call energy_loss_distributions
+void energy_loss(TTreeReader& mcReader) {
+    energy_loss_distributions(mcReader);
+}
                            
 void create_directories() {
     // Array of directories to check/create
@@ -4422,7 +4514,9 @@ void create_directories() {
         "output/calibration/dc/determination",
         "output/calibration/cvt/chi2pid",
         "output/calibration/cvt/determination",
-        "output/calibration/cvt/positions"
+        "output/calibration/cvt/positions",
+        "output/calibration/energy_loss/",
+        "output/calibration/energy_loss/distributions/"
     };
 
     // Iterate through each directory and create if it doesn't exist
@@ -4485,41 +4579,43 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_ft_hit_position(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_pcal_fiducial_determination(dataReader, mcReader);
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_ecin_fiducial_determination(dataReader, mcReader);
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_ecout_fiducial_determination(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_pcal_fiducial_determination(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_ecin_fiducial_determination(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_ecout_fiducial_determination(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_cal_hit_position(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_cal_hit_position(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    dc_fiducial_determination(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // dc_fiducial_determination(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_dc_hit_position(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_dc_hit_position(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    cvt_fiducial_determination(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // cvt_fiducial_determination(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_cvt_hit_position(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_cvt_hit_position(dataReader, mcReader);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
     // plot_chi2pid_cd(dataReader, mcReader);
 
-
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    if (mcReader) energy_loss(mcReader)    
 
     // Close files
     dataFile.Close();
