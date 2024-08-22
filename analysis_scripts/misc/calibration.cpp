@@ -4416,7 +4416,6 @@ bool is_cd_track(double track_sector_6) {
     return track_sector_6 != -9999;
 }
 
-// Function to create energy loss distributions
 void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset) {
     // Define 2D histograms for FD and CD
     int nBinsX = 50, nBinsY = 50;
@@ -4431,6 +4430,10 @@ void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset
     h_fd->GetYaxis()->SetTitle("#Delta p (GeV)");
     h_cd->GetXaxis()->SetTitle("p (GeV)");
     h_cd->GetYaxis()->SetTitle("#Delta p (GeV)");
+
+    // Remove stat boxes
+    h_fd->SetStats(false);
+    h_cd->SetStats(false);
 
     // Set rainbow color palette
     gStyle->SetPalette(kRainBow);
@@ -4471,22 +4474,22 @@ void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset
     }
 
     // Create a canvas with 1x2 subplots
-    TCanvas* c = new TCanvas("c", ("Energy Loss Distributions (" + dataset + ")").c_str(), 1600, 800);
+    TCanvas* c = new TCanvas("c", ("Energy Loss Distributions: " + dataset).c_str(), 1600, 800);
     c->Divide(2, 1);
 
-    // Plot FD
+    // Increase margins to prevent axis labels from being clipped
     c->cd(1);
+    gPad->SetMargin(0.15, 0.05, 0.15, 0.1);  // Left, right, bottom, top margins
     gPad->SetLogz();
     h_fd->Draw("COLZ");
 
-    // Plot CD
     c->cd(2);
+    gPad->SetMargin(0.15, 0.05, 0.15, 0.1);  // Left, right, bottom, top margins
     gPad->SetLogz();
     h_cd->Draw("COLZ");
 
     // Save the canvas
-    std::string output_dir = "output/calibration/energy_loss/" + dataset + "/distributions/";
-    c->SaveAs((output_dir + "energy_loss_distributions.png").c_str());
+    c->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/energy_loss_distributions.png").c_str());
 
     // Clean up
     delete h_fd;
