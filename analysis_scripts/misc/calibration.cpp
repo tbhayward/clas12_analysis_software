@@ -4640,36 +4640,36 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         TLatex latex;
         latex.SetTextSize(0.04);
         latex.SetTextAlign(13);  // Align at top left
-        latex.DrawLatexNDC(0.3, 0.96, (dataset + ", " + particle_name).c_str());
+        latex.DrawLatexNDC(0.47, 0.98, (dataset + ", " + particle_name).c_str());
 
         // Plot histograms in the correct order
         c->cd(1);
-        gPad->SetMargin(0.15, 0.05, 0.10, 0.1);  // Left, right, bottom, top margins
+        gPad->SetMargin(0.15, 0.05, 0.15, 0.1);  // Left, right, bottom, top margins
         gPad->SetLogz();
         entry.second[0]->Draw("COLZ");
 
         c->cd(2);
-        gPad->SetMargin(0.15, 0.05, 0.10, 0.1);
+        gPad->SetMargin(0.15, 0.05, 0.15, 0.1);
         gPad->SetLogz();
         entry.second[1]->Draw("COLZ");
 
         c->cd(3);
-        gPad->SetMargin(0.15, 0.05, 0.10, 0.1);
+        gPad->SetMargin(0.15, 0.05, 0.15, 0.1);
         gPad->SetLogz();
         entry.second[2]->Draw("COLZ");
 
         c->cd(4);
-        gPad->SetMargin(0.15, 0.05, 0.10, 0.1);
+        gPad->SetMargin(0.15, 0.05, 0.15, 0.1);
         gPad->SetLogz();
         entry.second[3]->Draw("COLZ");
 
         c->cd(5);
-        gPad->SetMargin(0.15, 0.05, 0.10, 0.1);
+        gPad->SetMargin(0.15, 0.05, 0.15, 0.1);
         gPad->SetLogz();
         entry.second[4]->Draw("COLZ");
 
         c->cd(6);
-        gPad->SetMargin(0.15, 0.05, 0.10, 0.1);
+        gPad->SetMargin(0.15, 0.05, 0.15, 0.1);
         gPad->SetLogz();
         entry.second[5]->Draw("COLZ");
 
@@ -4686,7 +4686,7 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
 
 // Main function to call both energy loss distribution functions
 void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
-    energy_loss_distributions(mcReader, dataset);
+    // energy_loss_distributions(mcReader, dataset);
     // Restart the mcReader to reset its state before the next use
     mcReader.Restart();
     energy_loss_fd_distributions(mcReader, dataset);
