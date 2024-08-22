@@ -4652,7 +4652,9 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
 
 // Main function to call both energy loss distribution functions
 void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
-    // energy_loss_distributions(mcReader, dataset);
+    energy_loss_distributions(mcReader, dataset);
+    // Restart the mcReader to reset its state before the next use
+    mcReader.Restart();
     energy_loss_fd_distributions(mcReader, dataset);
 }
                            
