@@ -294,6 +294,7 @@ class CalibrationScript {
 						particle_status = rec_Bank.getInt("status",particle_Index);
 
 						if (event.hasBank("MC::Particle") && event.hasBank("MC::Lund")) {
+							HipoDataBank lundBank = (HipoDataBank) event.getBank("MC::Lund");
 							int mc_parent_index = 0;
 							int scale = 2; // could fine tune
 							for (int current_part = 0; current_part < lundBank.rows(); current_part++) {
