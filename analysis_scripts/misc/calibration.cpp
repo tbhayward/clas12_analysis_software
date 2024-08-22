@@ -4456,15 +4456,15 @@ void energy_loss_distributions(TTreeReader& mcReader) {
     while (mcReader.Next()) {
         double delta_p = *mc_p - *p;
 
-        std::cout << *track_sector_5 << " " << *track_sector_6 << std::endl;
+        // std::cout << *track_sector_5 << " " << *track_sector_6 << std::endl;
 
         // Check if the track is FD or CD
-        if (is_fd_track(*track_sector_5)) {
+        if (is_fd_track(*track_sector_6)) {
             // Apply FD fiducial cuts
             if (dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) {
                 h_fd->Fill(*p, delta_p);
             }
-        } else if (is_cd_track(*track_sector_6)) {
+        } else if (is_cd_track(*track_sector_5)) {
             // Apply CD fiducial cuts
             if (cvt_fiducial(*edge_1, *edge_3, *edge_5, *edge_7, *edge_12)) {
                 h_cd->Fill(*p, delta_p);
