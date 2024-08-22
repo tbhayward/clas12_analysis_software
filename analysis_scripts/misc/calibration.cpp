@@ -4650,7 +4650,7 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         pass2_curve->SetLineColor(kBlack);
         pass2_curve->SetLineWidth(4);
 
-        TF1* pass1_curve_region1 = new TF1("pass1_curve_region1", "-53.1468 + 79.6131*pow(x,2)", 0.1, std::get<2>(particle_types[pid]));
+        TF1* pass1_curve_region1 = new TF1("pass1_curve_region1", "-53.1468 + 79.6131*pow(x-0.3,2)", 0.1, std::get<2>(particle_types[pid]));
         pass1_curve_region1->SetLineColor(kRed);
         pass1_curve_region1->SetLineWidth(4);
 
