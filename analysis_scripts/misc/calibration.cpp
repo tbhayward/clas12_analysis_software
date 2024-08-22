@@ -4439,8 +4439,8 @@ void energy_loss_distributions(TTreeReader mcReader) {
     TTreeReaderValue<double> mc_p(mcReader, "mc_p");
     TTreeReaderValue<double> p(mcReader, "p");
     TTreeReaderValue<int> pid(mcReader, "particle_pid");
-    TTreeReaderValue<double> track_sector_5(mcReader, "track_sector_5");
-    TTreeReaderValue<double> track_sector_6(mcReader, "track_sector_6");
+    TTreeReaderValue<int> track_sector_5(mcReader, "track_sector_5");
+    TTreeReaderValue<int> track_sector_6(mcReader, "track_sector_6");
 
     // Edge variables for FD and CD fiducial cuts
     TTreeReaderValue<double> edge_6(mcReader, "traj_edge_6");
