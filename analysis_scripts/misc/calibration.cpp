@@ -4454,7 +4454,7 @@ void process_and_save_histograms(const std::map<int, std::pair<std::string, std:
         item.second.second.second->Draw("COLZ");
         gPad->Update();
 
-        c->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/" + suffix + "_" + particle_name + ".png").c_str());
+        c->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/energy_loss_distributions" + particle_name + "_" + suffix ".png").c_str());
 
         delete c;
     }
@@ -4519,8 +4519,12 @@ void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset
     // Loop over events
     while (mcReader.Next()) {
         double delta_p = *mc_p - *p;
-        double delta_theta = *mc_theta - *theta;
-        double delta_phi = *mc_phi - *phi;
+        double theta_deg = *theta*180/3.14159;
+        double phi_deg = *phi*180/3.14159;
+        double mc_theta_deg = *mc_theta*180/3.14159;
+        double mc_phi_deg = *mc_phi*180/3.14159;
+        double delta_theta = mc_theta_deg - theta_deg;
+        double delta_phi = mc_phi_deg - phi_deg;
 
         // Check if the current particle type is one of interest
         if (histograms_p.find(*pid) != histograms_p.end()) {
