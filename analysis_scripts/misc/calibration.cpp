@@ -4650,7 +4650,7 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         gPad->SetLogz();
         entry.second[0]->Draw("COLZ");
         curve->SetLineColor(kBlack);
-        curve->SetLineWidth(2);
+        curve->SetLineWidth(4);
         curve->Draw("same");
 
         c->cd(2);
