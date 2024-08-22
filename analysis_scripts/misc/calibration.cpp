@@ -4462,24 +4462,26 @@ void fill_and_save_histograms(const std::map<int, std::pair<std::string, std::pa
 
 // Main energy loss distribution function
 void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset) {
-    // Particle types and their corresponding LaTeX names
-    std::map<int, std::string> particle_types = {
-        {11, "e^{-}"},
-        {211, "#pi^{+}"},
-        {-211, "#pi^{-}"},
-        {321, "k^{+}"},
-        {-321, "k^{-}"},
-        {2212, "p"}
+    // Particle types and their corresponding LaTeX names and x-axis ranges
+    std::map<int, std::tuple<std::string, double, double>> particle_types = {
+        {11, {"e^{-}", 0.0, 7.0}},
+        {211, {"#pi^{+}", 0.0, 5.0}},
+        {-211, {"#pi^{-}", 0.0, 5.0}},
+        {321, {"k^{+}", 0.0, 5.0}},
+        {-321, {"k^{-}", 0.0, 5.0}},
+        {2212, {"p", 0.0, 3.0}}
     };
 
     // Create histograms for each particle type
     std::map<int, std::pair<std::string, std::pair<TH2D*, TH2D*>>> histograms;
     for (const auto& particle : particle_types) {
         int pid = particle.first;
-        std::string particle_name = particle.second;
+        const std::string& particle_name = std::get<0>(particle.second);
+        double xMin = std::get<1>(particle.second);
+        double xMax = std::get<2>(particle.second);
 
-        TH2D* h_fd = new TH2D(("h_fd_" + particle_name).c_str(), ("(FD), " + particle_name).c_str(), 50, 0, 2, 50, -0.05, 0.10);
-        TH2D* h_cd = new TH2D(("h_cd_" + particle_name).c_str(), ("(CD), " + particle_name).c_str(), 50, 0, 2, 50, -0.05, 0.10);
+        TH2D* h_fd = new TH2D(("h_fd_" + particle_name).c_str(), ("(FD), " + particle_name).c_str(), 50, xMin, xMax, 50, -0.05, 0.10);
+        TH2D* h_cd = new TH2D(("h_cd_" + particle_name).c_str(), ("(CD), " + particle_name).c_str(), 50, xMin, xMax, 50, -0.05, 0.10);
 
         h_fd->GetXaxis()->SetTitle("p (GeV)");
         h_fd->GetYaxis()->SetTitle("#Delta p (GeV)");
