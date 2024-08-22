@@ -4689,7 +4689,8 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
 
         // Clean up
         delete c;
-        delete curve;
+        delete pass1_curve;
+        delete pass2_curve;
         for (auto& hist : entry.second) {
             delete hist;
         }
