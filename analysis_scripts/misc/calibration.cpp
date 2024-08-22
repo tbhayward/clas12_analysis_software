@@ -4643,15 +4643,19 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
 
         // Define the curve function
         TF1* curve = new TF1("curve", "0.088/pow(x, 1.5)", 0.1, std::get<2>(particle_types[pid]));
+        curve->SetLineColor(kRed);
+        curve->SetLineWidth(4);
+        TF1* curve2 = new TF1("curve2", "0.040/pow(x, 1.5)", 0.1, std::get<2>(particle_types[pid]));
+        curve2->SetLineColor(kBlack);
+        curve2->SetLineWidth(4);
 
         // Plot histograms and curve in the correct order
         c->cd(1);
         gPad->SetMargin(0.15, 0.05, 0.20, 0.1);  // Left, right, bottom, top margins
         gPad->SetLogz();
         entry.second[0]->Draw("COLZ");
-        curve->SetLineColor(kBlack);
-        curve->SetLineWidth(4);
         curve->Draw("same");
+        curve2->Draw("same");
 
         c->cd(2);
         gPad->SetMargin(0.15, 0.05, 0.20, 0.1);
@@ -4668,6 +4672,7 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         gPad->SetLogz();
         entry.second[3]->Draw("COLZ");
         curve->Draw("same");
+        curve2->Draw("same");
 
         c->cd(5);
         gPad->SetMargin(0.15, 0.05, 0.1, 0.1);
