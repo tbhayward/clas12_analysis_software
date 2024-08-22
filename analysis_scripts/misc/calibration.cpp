@@ -4640,7 +4640,7 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         TLatex latex;
         latex.SetTextSize(0.04);
         latex.SetTextAlign(11);  // Align at top left
-        latex.DrawLatexNDC(0.45, 0.99, (dataset + ", " + particle_name).c_str());
+        latex.DrawLatexNDC(0.43, 0.45, (dataset + ", " + particle_name).c_str());
 
         // Plot histograms in the correct order
         c->cd(1);
