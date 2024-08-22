@@ -4489,7 +4489,7 @@ void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset
 
     // Increase margins to prevent axis labels from being clipped
     c->cd(1);
-    gPad->SetMargin(0.15, 0.05, 0.15, 0.1);  // Left, right, bottom, top margins
+    gPad->SetMargin(0.15, 0.15, 0.10, 0.1);  // Left, right, bottom, top margins
     gPad->SetLogz();
     h_fd->Draw("COLZ");
     gPad->Update();  // Force the pad to update and draw Z axis
