@@ -4417,7 +4417,7 @@ bool is_cd_track(double track_sector_6) {
 }
 
 // Function to create energy loss distributions
-void energy_loss_distributions(TTreeReader& mcReader) {
+void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset) {
     // Define 2D histograms for FD and CD
     int nBinsX = 50, nBinsY = 50;
     double xMin = 0, xMax = 2;
@@ -4456,8 +4456,6 @@ void energy_loss_distributions(TTreeReader& mcReader) {
     while (mcReader.Next()) {
         double delta_p = *mc_p - *p;
 
-        // std::cout << *track_sector_5 << " " << *track_sector_6 << std::endl;
-
         // Check if the track is FD or CD
         if (is_fd_track(*track_sector_6)) {
             // Apply FD fiducial cuts
@@ -4473,7 +4471,7 @@ void energy_loss_distributions(TTreeReader& mcReader) {
     }
 
     // Create a canvas with 1x2 subplots
-    TCanvas* c = new TCanvas("c", "Energy Loss Distributions", 1600, 800);
+    TCanvas* c = new TCanvas("c", ("Energy Loss Distributions (" + dataset + ")").c_str(), 1600, 800);
     c->Divide(2, 1);
 
     // Plot FD
@@ -4487,7 +4485,8 @@ void energy_loss_distributions(TTreeReader& mcReader) {
     h_cd->Draw("COLZ");
 
     // Save the canvas
-    c->SaveAs("output/calibration/energy_loss/rga_fa18_inb/distributions/energy_loss_distributions.png");
+    std::string output_dir = "output/calibration/energy_loss/" + dataset + "/distributions/";
+    c->SaveAs((output_dir + "energy_loss_distributions.png").c_str());
 
     // Clean up
     delete h_fd;
@@ -4496,8 +4495,8 @@ void energy_loss_distributions(TTreeReader& mcReader) {
 }
 
 // Main function to call energy_loss_distributions
-void energy_loss(TTreeReader& mcReader) {
-    energy_loss_distributions(mcReader);
+void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
+    energy_loss_distributions(mcReader, dataset);
 }
                            
 void create_directories() {
@@ -4624,7 +4623,7 @@ int main(int argc, char** argv) {
 
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
-    if (mcReader) energy_loss(*mcReader);   
+    if (mcReader) energy_loss(*mcReader, "rga_fa18_inb");  
 
     // Close files
     dataFile.Close();
