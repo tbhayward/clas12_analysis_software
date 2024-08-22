@@ -224,8 +224,7 @@ int main(int argc, char *argv[]) {
     int particle_pid, particle_status;
     double particle_px, particle_py, particle_pz, p; // theta and phi already defined
     double particle_vx, particle_vy, particle_vz, particle_beta, particle_chi2pid;
-    double mc_particle_px, mc_particle_py, mc_particle_pz, mc_p; // mc_theta and mc_phi already defined
-    int mc_matching_pid, mc_parent_pid;
+    double mc_particle_px, mc_particle_py, mc_particle_pz, mc_p, mc_matching_pid, mc_parent_pid; // mc_theta and mc_phi already defined
     int cal_sector;
     double cal_energy_1, cal_x_1, cal_y_1, cal_z_1, cal_lu_1, cal_lv_1, cal_lw_1;
     double cal_energy_4, cal_x_4, cal_y_4, cal_z_4, cal_lu_4, cal_lv_4, cal_lw_4;
@@ -780,8 +779,8 @@ int main(int argc, char *argv[]) {
         tree->Branch("mc_theta", &mc_theta, "mc_theta/D");
         tree->Branch("mc_phi", &mc_phi, "mc_phi/D");
         tree->Branch("mc_phi", &mc_phi, "mc_phi/D");
-        tree->Branch("mc_matching_pid", &mc_matching_pid, "mc_matching_pid/I");
-        tree->Branch("mc_parent_pid", &mc_parent_pid, "mc_parent_pid/I");
+        tree->Branch("mc_matching_pid", &mc_matching_pid, "mc_matching_pid/D");
+        tree->Branch("mc_parent_pid", &mc_parent_pid, "mc_parent_pid/D");
 
         tree->Branch("cal_sector", &cal_sector, "cal_sector/I");
         tree->Branch("cal_energy_1", &cal_energy_1, "cal_energy_1/D");
