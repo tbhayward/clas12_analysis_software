@@ -4532,14 +4532,14 @@ void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset
             if (is_fd_track(*track_sector_6)) {
                 if (dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) {
                     histograms_p[*pid].second.first->Fill(*p, delta_p);  // FD
-                    histograms_theta[*pid].second.first->Fill(*p, delta_theta);  // FD
-                    histograms_phi[*pid].second.first->Fill(*p, delta_phi);  // FD
+                    histograms_theta[*pid].second.first->Fill(theta_deg, delta_theta);  // FD
+                    histograms_phi[*pid].second.first->Fill(phi_deg, delta_phi);  // FD
                 }
             } else if (is_cd_track(*track_sector_5)) {
                 if (cvt_fiducial(*edge_1, *edge_3, *edge_5, *edge_7, *edge_12)) {
                     histograms_p[*pid].second.second->Fill(*p, delta_p);  // CD
-                    histograms_theta[*pid].second.second->Fill(*p, delta_theta);  // CD
-                    histograms_phi[*pid].second.second->Fill(*p, delta_phi);  // CD
+                    histograms_theta[*pid].second.second->Fill(theta_deg, delta_theta);  // CD
+                    histograms_phi[*pid].second.second->Fill(phi_deg, delta_phi);  // CD
                 }
             }
         }
