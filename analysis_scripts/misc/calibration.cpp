@@ -4579,7 +4579,7 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
     gStyle->SetPalette(kRainBow);
     gStyle->SetOptStat(0);
 
-    // Set up TTreeReaderValues for necessary branches
+    // Declare and initialize TTreeReaderValues before looping through events
     TTreeReaderValue<double> mc_p(mcReader, "mc_p");
     TTreeReaderValue<double> p(mcReader, "p");
     TTreeReaderValue<double> traj_x_6(mcReader, "traj_x_6");
