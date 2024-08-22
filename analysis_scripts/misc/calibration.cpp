@@ -4537,9 +4537,123 @@ void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset
     fill_and_save_histograms(histograms, dataset);
 }
 
-// Main function to call energy_loss_distributions
+// Function to check if a track is above or below the curve
+bool is_above_curve(double p, double delta_p) {
+    double curve_value = 0.088 / pow(p, 1.5);
+    return delta_p > curve_value;
+}
+
+// Main FD-specific function
+void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& dataset) {
+    // Particle types and their corresponding LaTeX names and x-axis ranges
+    std::map<int, std::tuple<std::string, double, double>> particle_types = {
+        {11, {"e^{-}", 0.0, 7.0}},
+        {211, {"#pi^{+}", 0.0, 5.0}},
+        {-211, {"#pi^{-}", 0.0, 5.0}},
+        {321, {"k^{+}", 0.0, 5.0}},
+        {-321, {"k^{-}", 0.0, 5.0}},
+        {2212, {"p", 0.0, 3.0}}
+    };
+
+    // Create histograms for each particle type and each case
+    std::map<int, std::pair<std::string, std::array<TH2D*, 6>>> histograms;
+    for (const auto& particle : particle_types) {
+        int pid = particle.first;
+        const std::string& particle_name = std::get<0>(particle.second);
+        double xMin = std::get<1>(particle.second);
+        double xMax = std::get<2>(particle.second);
+
+        // Create histograms
+        histograms[pid] = {
+            particle_name, {
+                new TH2D(("h_fd_dp_above_" + particle_name).c_str(), ("#Delta p vs p, Above (FD), " + particle_name).c_str(), 100, xMin, xMax, 100, -0.05, 0.10),
+                new TH2D(("h_fd_dp_below_" + particle_name).c_str(), ("#Delta p vs p, Below (FD), " + particle_name).c_str(), 100, xMin, xMax, 100, -0.05, 0.10),
+                new TH2D(("h_fd_theta_dc_above_" + particle_name).c_str(), ("#theta_{DC1} vs p, Above (FD), " + particle_name).c_str(), 100, xMin, xMax, 100, 0.0, 180.0),
+                new TH2D(("h_fd_theta_dc_below_" + particle_name).c_str(), ("#theta_{DC1} vs p, Below (FD), " + particle_name).c_str(), 100, xMin, xMax, 100, 0.0, 180.0),
+                new TH2D(("h_fd_theta_above_" + particle_name).c_str(), ("#theta vs p, Above (FD), " + particle_name).c_str(), 100, xMin, xMax, 100, 0.0, 180.0),
+                new TH2D(("h_fd_theta_below_" + particle_name).c_str(), ("#theta vs p, Below (FD), " + particle_name).c_str(), 100, xMin, xMax, 100, 0.0, 180.0)
+            }
+        };
+    }
+
+    gStyle->SetPalette(kRainBow);
+    gStyle->SetOptStat(0);
+
+    // Set up TTreeReaderValues for necessary branches
+    TTreeReaderValue<double> mc_p(mcReader, "mc_p");
+    TTreeReaderValue<double> p(mcReader, "p");
+    TTreeReaderValue<double> traj_x_6(mcReader, "traj_x_6");
+    TTreeReaderValue<double> traj_y_6(mcReader, "traj_y_6");
+    TTreeReaderValue<double> traj_z_6(mcReader, "traj_z_6");
+    TTreeReaderValue<double> theta(mcReader, "theta");
+    TTreeReaderValue<int> pid(mcReader, "particle_pid");
+    TTreeReaderValue<int> track_sector_5(mcReader, "track_sector_5");
+    TTreeReaderValue<int> track_sector_6(mcReader, "track_sector_6");
+
+    // Edge variables for FD fiducial cuts
+    TTreeReaderValue<double> edge_6(mcReader, "traj_edge_6");
+    TTreeReaderValue<double> edge_18(mcReader, "traj_edge_18");
+    TTreeReaderValue<double> edge_36(mcReader, "traj_edge_36");
+
+    // Loop over events
+    while (mcReader.Next()) {
+        double delta_p = *mc_p - *p;
+        double theta_dc_1 = calculate_theta(*traj_x_6, *traj_y_6, *traj_z_6);
+
+        // Check if the current particle type is one of interest
+        if (histograms.find(*pid) != histograms.end()) {
+            if (is_fd_track(*track_sector_6)) {
+                if (dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) {
+                    bool above_curve = is_above_curve(*p, delta_p);
+
+                    int index_above = above_curve ? 0 : 1;
+                    int index_below = above_curve ? 2 : 3;
+                    int index_theta = above_curve ? 4 : 5;
+
+                    // Fill histograms
+                    histograms[*pid].second[index_above]->Fill(*p, delta_p);
+                    histograms[*pid].second[index_below]->Fill(*p, theta_dc_1);
+                    histograms[*pid].second[index_theta]->Fill(*p, *theta);
+                }
+            }
+        }
+    }
+
+    // Save histograms to a 2x3 canvas for each particle
+    for (const auto& entry : histograms) {
+        const std::string& particle_name = entry.second.first;
+        auto& hists = entry.second.second;
+
+        // Create a 2x3 canvas
+        TCanvas* c = new TCanvas(("c_fd_" + particle_name).c_str(), ("FD Energy Loss: " + dataset + ", " + particle_name).c_str(), 1800, 1200);
+        c->Divide(3, 2);
+
+        TLatex latex;
+        latex.SetTextSize(0.04);
+        latex.SetTextAlign(13);
+        latex.DrawLatexNDC(0.4, 0.97, (dataset + ", " + particle_name).c_str());
+
+        // Fill the canvas
+        for (int i = 0; i < 6; ++i) {
+            c->cd(i + 1);
+            gPad->SetMargin(0.15, 0.15, 0.10, 0.1);
+            gPad->SetLogz();
+            hists[i]->Draw("COLZ");
+        }
+
+        // Save the canvas
+        c->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/fd_energy_loss_distributions_" + particle_name + ".png").c_str());
+
+        // Clean up
+        delete c;
+        for (auto hist : hists) delete hist;
+    }
+}
+
+// Main function to call both energy loss distribution functions
 void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     energy_loss_distributions(mcReader, dataset);
+    energy_loss_fd_distributions(mcReader, dataset);
 }
                            
 void create_directories() {
@@ -4567,7 +4681,7 @@ void create_directories() {
         "output/calibration/energy_loss/rga_fa18_inb/distributions/",
         "output/calibration/energy_loss/rga_fa18_out/distributions/",
         "output/calibration/energy_loss/rga_sp19_inb/distributions/",
-        "output/calibration/energy_loss/rgc_su22_inb/distributions/",
+        "output/calibration/energy_loss/rgc_su22_inb/distributions/"
     };
 
     // Iterate through each directory and create if it doesn't exist
