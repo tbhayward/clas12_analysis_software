@@ -4421,8 +4421,8 @@ bool is_cd_track(double track_sector_6) {
 }
 
 std::pair<TH2D*, TH2D*> create_histograms(const std::string& particle_name, const std::string& variable_name, double xMin, double xMax, double yMin, double yMax, const std::string& yLabel) {
-    TH2D* h_fd = new TH2D(("h_fd_" + particle_name + "_" + variable_name).c_str(), ("(FD), " + particle_name + ", " + variable_name).c_str(), 50, xMin, xMax, 50, yMin, yMax);
-    TH2D* h_cd = new TH2D(("h_cd_" + particle_name + "_" + variable_name).c_str(), ("(CD), " + particle_name + ", " + variable_name).c_str(), 50, xMin, xMax, 50, yMin, yMax);
+    TH2D* h_fd = new TH2D(("h_fd_" + particle_name + "_" + variable_name).c_str(), ("(FD), " + particle_name + ", " + variable_name).c_str(), 100, xMin, xMax, 100, yMin, yMax);
+    TH2D* h_cd = new TH2D(("h_cd_" + particle_name + "_" + variable_name).c_str(), ("(CD), " + particle_name + ", " + variable_name).c_str(), 100, xMin, xMax, 100, yMin, yMax);
 
     h_fd->GetXaxis()->SetTitle(variable_name.c_str());
     h_fd->GetYaxis()->SetTitle(yLabel.c_str());
