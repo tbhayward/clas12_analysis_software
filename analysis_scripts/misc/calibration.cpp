@@ -4482,7 +4482,7 @@ void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset
     TLatex latex;
     latex.SetTextSize(0.04);
     latex.SetTextAlign(13);  // Align at top left
-    latex.DrawLatexNDC(0.5, 0.90, ("Energy Loss Distributions: " + dataset).c_str());
+    latex.DrawLatexNDC(0.5, 0.95, (dataset).c_str());
 
     // Increase margins to prevent axis labels from being clipped
     c->cd(1);
