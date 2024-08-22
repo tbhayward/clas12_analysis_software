@@ -22,6 +22,9 @@
 #include <cmath> 
 #include <vector>
 #include <TLatex.h>
+#include <map>
+#include <vector>
+#include <string>
 #include <algorithm>
 
 void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
@@ -4417,30 +4420,80 @@ bool is_cd_track(double track_sector_6) {
     return track_sector_6 != -9999;
 }
 
-#include <TLatex.h>  // Include TLatex header
+// Helper function to fill and save histograms for each particle type
+void fill_and_save_histograms(const std::map<int, std::pair<std::string, std::pair<TH2D*, TH2D*>>>& histograms, const std::string& dataset) {
+    for (const auto& entry : histograms) {
+        int pid = entry.first;
+        const std::string& particle_name = entry.second.first;
+        TH2D* h_fd = entry.second.second.first;
+        TH2D* h_cd = entry.second.second.second;
 
+        // Create a canvas with 1x2 subplots
+        TCanvas* c = new TCanvas(("c_" + particle_name).c_str(), ("Energy Loss Distributions: " + dataset + ", " + particle_name).c_str(), 1600, 800);
+        c->Divide(2, 1);
+
+        // Add a title to the canvas
+        TLatex latex;
+        latex.SetTextSize(0.04);
+        latex.SetTextAlign(13);  // Align at top left
+        latex.DrawLatexNDC(0.45, 0.97, (dataset + ", " + particle_name).c_str());
+
+        // Plot FD
+        c->cd(1);
+        gPad->SetMargin(0.15, 0.15, 0.10, 0.1);  // Left, right, bottom, top margins
+        gPad->SetLogz();
+        h_fd->Draw("COLZ");
+
+        // Plot CD
+        c->cd(2);
+        gPad->SetMargin(0.15, 0.15, 0.10, 0.1);  // Left, right, bottom, top margins
+        gPad->SetLogz();
+        h_cd->Draw("COLZ");
+
+        // Save the canvas
+        c->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/energy_loss_distributions_" + particle_name + ".png").c_str());
+
+        // Clean up
+        delete c;
+        delete h_fd;
+        delete h_cd;
+    }
+}
+
+// Main energy loss distribution function
 void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset) {
-    // Define 2D histograms for FD and CD
-    int nBinsX = 50, nBinsY = 50;
-    double xMin = 0, xMax = 2;
-    double yMin = -0.05, yMax = 0.10;
+    // Particle types and their corresponding LaTeX names
+    std::map<int, std::string> particle_types = {
+        {11, "e^{-}"},
+        {211, "#pi^{+}"},
+        {-211, "#pi^{-}"},
+        {321, "k^{+}"},
+        {-321, "k^{-}"},
+        {2212, "p"}
+    };
 
-    TH2D* h_fd = new TH2D("h_fd", "(FD)", nBinsX, xMin, xMax, nBinsY, yMin, yMax);
-    TH2D* h_cd = new TH2D("h_cd", "(CD)", nBinsX, xMin, xMax, nBinsY, yMin, yMax);
+    // Create histograms for each particle type
+    std::map<int, std::pair<std::string, std::pair<TH2D*, TH2D*>>> histograms;
+    for (const auto& particle : particle_types) {
+        int pid = particle.first;
+        std::string particle_name = particle.second;
 
-    // Set axis labels
-    h_fd->GetXaxis()->SetTitle("p (GeV)");
-    h_fd->GetYaxis()->SetTitle("#Delta p (GeV)");
-    h_cd->GetXaxis()->SetTitle("p (GeV)");
-    h_cd->GetYaxis()->SetTitle("#Delta p (GeV)");
-    
-    // Remove stat boxes
-    h_fd->SetStats(false);
-    h_cd->SetStats(false);
-    
-    // Set rainbow color palette
+        TH2D* h_fd = new TH2D(("h_fd_" + particle_name).c_str(), ("(FD), " + particle_name).c_str(), 50, 0, 2, 50, -0.05, 0.10);
+        TH2D* h_cd = new TH2D(("h_cd_" + particle_name).c_str(), ("(CD), " + particle_name).c_str(), 50, 0, 2, 50, -0.05, 0.10);
+
+        h_fd->GetXaxis()->SetTitle("p (GeV)");
+        h_fd->GetYaxis()->SetTitle("#Delta p (GeV)");
+        h_fd->SetStats(false);
+
+        h_cd->GetXaxis()->SetTitle("p (GeV)");
+        h_cd->GetYaxis()->SetTitle("#Delta p (GeV)");
+        h_cd->SetStats(false);
+
+        histograms[pid] = std::make_pair(particle_name, std::make_pair(h_fd, h_cd));
+    }
+
     gStyle->SetPalette(kRainBow);
-    gStyle->SetOptStat(0);  // Ensure no stat box is shown
+    gStyle->SetOptStat(0);
 
     // Set up TTreeReaderValues for necessary branches
     TTreeReaderValue<double> mc_p(mcReader, "mc_p");
@@ -4463,49 +4516,23 @@ void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset
     while (mcReader.Next()) {
         double delta_p = *mc_p - *p;
 
-        // Check if the track is FD or CD
-        if (is_fd_track(*track_sector_6)) {
-            // Apply FD fiducial cuts
-            if (dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) {
-                h_fd->Fill(*p, delta_p);
-            }
-        } else if (is_cd_track(*track_sector_5)) {
-            // Apply CD fiducial cuts
-            if (cvt_fiducial(*edge_1, *edge_3, *edge_5, *edge_7, *edge_12)) {
-                h_cd->Fill(*p, delta_p);
+        // Check if the current particle type is one of interest
+        if (histograms.find(*pid) != histograms.end()) {
+            // Check if the track is FD or CD and fill the appropriate histogram
+            if (is_fd_track(*track_sector_6)) {
+                if (dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) {
+                    histograms[*pid].second.first->Fill(*p, delta_p);  // FD
+                }
+            } else if (is_cd_track(*track_sector_5)) {
+                if (cvt_fiducial(*edge_1, *edge_3, *edge_5, *edge_7, *edge_12)) {
+                    histograms[*pid].second.second->Fill(*p, delta_p);  // CD
+                }
             }
         }
     }
 
-    // Create a canvas with 1x2 subplots
-    TCanvas* c = new TCanvas("c", ("Energy Loss Distributions: " + dataset).c_str(), 1600, 800);
-    c->Divide(2, 1);
-
-    // Add a title to the canvas
-    TLatex latex;
-    latex.SetTextSize(0.04);
-    latex.SetTextAlign(13);  // Align at top left
-    latex.DrawLatexNDC(0.45, 0.97, (dataset).c_str());
-
-    // Increase margins to prevent axis labels from being clipped
-    c->cd(1);
-    gPad->SetMargin(0.15, 0.15, 0.10, 0.1);  // Left, right, bottom, top margins
-    gPad->SetLogz();
-    h_fd->Draw("COLZ");
-    gPad->Update();  // Force the pad to update and draw Z axis
-    c->cd(2);
-    gPad->SetMargin(0.15, 0.15, 0.1, 0.1);  // Left, right, bottom, top margins
-    gPad->SetLogz();
-    h_cd->Draw("COLZ");
-    gPad->Update();  // Force the pad to update and draw Z axis
-
-    // Save the canvas
-    c->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/energy_loss_distributions.png").c_str());
-
-    // Clean up
-    delete h_fd;
-    delete h_cd;
-    delete c;
+    // Save the histograms
+    fill_and_save_histograms(histograms, dataset);
 }
 
 // Main function to call energy_loss_distributions
