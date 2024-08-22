@@ -4650,6 +4650,11 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         pass2_curve->SetLineColor(kBlack);
         pass2_curve->SetLineWidth(4);
 
+        TF1* pass1_curve_region1 = new TF1("pass1 curve region 1", "−53.1468 + 79.6131*pow(x-0.3,0.05739)", 0.1, std::get<2>(particle_types[pid]));
+        pass1_curve_region1->SetLineColor(kRed);
+        pass1_curve_region1->SetLineWidth(4);
+
+
         // Plot histograms and curve in the correct order
         c->cd(1);
         gPad->SetMargin(0.15, 0.05, 0.20, 0.1);  // Left, right, bottom, top margins
@@ -4662,6 +4667,7 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         gPad->SetMargin(0.15, 0.05, 0.20, 0.1);
         gPad->SetLogz();
         entry.second[1]->Draw("COLZ");
+        pass1_curve_region1->Draw("same");
 
         c->cd(3);
         gPad->SetMargin(0.15, 0.05, 0.20, 0.1);
@@ -4679,6 +4685,7 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         gPad->SetMargin(0.15, 0.05, 0.1, 0.1);
         gPad->SetLogz();
         entry.second[4]->Draw("COLZ");
+        pass1_curve_region1->Draw("same");
 
         c->cd(6);
         gPad->SetMargin(0.15, 0.05, 0.1, 0.1);
