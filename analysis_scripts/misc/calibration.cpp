@@ -4420,16 +4420,16 @@ bool is_cd_track(double track_sector_6) {
     return track_sector_6 != -9999;
 }
 
-std::pair<TH2D*, TH2D*> create_histograms(const std::string& particle_name, const std::string& variable_name, double xMin, double xMax, double yMin, double yMax) {
+std::pair<TH2D*, TH2D*> create_histograms(const std::string& particle_name, const std::string& variable_name, double xMin, double xMax, double yMin, double yMax, const std::string& yLabel) {
     TH2D* h_fd = new TH2D(("h_fd_" + particle_name + "_" + variable_name).c_str(), ("(FD), " + particle_name + ", " + variable_name).c_str(), 50, xMin, xMax, 50, yMin, yMax);
     TH2D* h_cd = new TH2D(("h_cd_" + particle_name + "_" + variable_name).c_str(), ("(CD), " + particle_name + ", " + variable_name).c_str(), 50, xMin, xMax, 50, yMin, yMax);
 
     h_fd->GetXaxis()->SetTitle(variable_name.c_str());
-    h_fd->GetYaxis()->SetTitle("#Delta " + variable_name + " (degrees)");
+    h_fd->GetYaxis()->SetTitle(yLabel.c_str());  // Convert to const char*
     h_fd->SetStats(false);
 
     h_cd->GetXaxis()->SetTitle(variable_name.c_str());
-    h_cd->GetYaxis()->SetTitle("#Delta " + variable_name + " (degrees)");
+    h_cd->GetYaxis()->SetTitle(yLabel.c_str());  // Convert to const char*
     h_cd->SetStats(false);
 
     return std::make_pair(h_fd, h_cd);
@@ -4458,16 +4458,14 @@ void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset
         double xMax = std::get<2>(particle.second);
 
         // Create histograms for Delta p
-        histograms_p[pid] = std::make_pair(particle_name, create_histograms(particle_name, "p (GeV)", xMin, xMax, -0.05, 0.10));
+        histograms_p[pid] = std::make_pair(particle_name, create_histograms(particle_name, "p (GeV)", xMin, xMax, -0.05, 0.10, "#Delta p (GeV)"));
 
         // Create histograms for Delta theta
-        histograms_theta[pid] = std::make_pair(particle_name, create_histograms(particle_name, "theta", xMin, xMax, 0.0, 40.0)); // FD
-        histograms_theta[pid].second.second->SetYTitle("theta (degrees)"); // Adjust CD range
-        histograms_theta[pid].second.second->SetMinimum(20.0);
-        histograms_theta[pid].second.second->SetMaximum(90.0);
+        histograms_theta[pid] = std::make_pair(particle_name, create_histograms(particle_name, "theta", xMin, xMax, 0.0, 40.0, "#Delta #theta (degrees)")); // FD
+        histograms_theta[pid].second.second->GetYaxis()->SetTitle("#Delta #theta (degrees)");  // Adjust CD range
 
         // Create histograms for Delta phi
-        histograms_phi[pid] = std::make_pair(particle_name, create_histograms(particle_name, "phi", 0.0, 360.0, 0.0, 360.0));
+        histograms_phi[pid] = std::make_pair(particle_name, create_histograms(particle_name, "phi", 0.0, 360.0, 0.0, 360.0, "#Delta #phi (degrees)"));
     }
 
     gStyle->SetPalette(kRainBow);
@@ -4520,9 +4518,9 @@ void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset
     }
 
     // Save the histograms for each variable
-    fill_and_save_histograms(histograms_p, dataset + "_p");
-    fill_and_save_histograms(histograms_theta, dataset + "_theta");
-    fill_and_save_histograms(histograms_phi, dataset + "_phi");
+    draw_and_save_sector_histograms(histograms_p, dataset + "_p");
+    draw_and_save_sector_histograms(histograms_theta, dataset + "_theta");
+    draw_and_save_sector_histograms(histograms_phi, dataset + "_phi");
 }
 
 // Main function to call energy_loss_distributions
