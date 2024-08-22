@@ -4486,7 +4486,7 @@ void energy_loss_distributions(TTreeReader& mcReader) {
     h_cd->Draw("COLZ");
 
     // Save the canvas
-    c->SaveAs("output/calibration/energy_loss/distributions/energy_loss_distributions.png");
+    c->SaveAs("output/calibration/energy_loss/rga_fa18_inb/distributions/energy_loss_distributions.png");
 
     // Clean up
     delete h_fd;
@@ -4517,7 +4517,14 @@ void create_directories() {
         "output/calibration/cvt/determination",
         "output/calibration/cvt/positions",
         "output/calibration/energy_loss/",
-        "output/calibration/energy_loss/distributions/"
+        "output/calibration/energy_loss/rga_fa18_inb/",
+        "output/calibration/energy_loss/rga_fa18_out/",
+        "output/calibration/energy_loss/rga_sp19_inb/",
+        "output/calibration/energy_loss/rgc_su22_inb/",
+        "output/calibration/energy_loss/rga_fa18_inb/distributions/",
+        "output/calibration/energy_loss/rga_fa18_out/distributions/",
+        "output/calibration/energy_loss/rga_sp19_inb/distributions/",
+        "output/calibration/energy_loss/rgc_su22_inb/distributions/",
     };
 
     // Iterate through each directory and create if it doesn't exist

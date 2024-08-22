@@ -1158,7 +1158,6 @@ int main(int argc, char *argv[]) {
                 traj_z_5 >> traj_edge_5 >> traj_x_7 >> traj_y_7 >> traj_z_7 >> traj_edge_7 >> 
                 traj_x_12 >> traj_y_12 >> traj_z_12 >> traj_edge_12 >> ft_energy >> ft_x >> 
                 ft_y >> ft_z >> ft_radius) {
-            std::cout << mc_matching_pid << " " << mc_parent_pid << std::endl;
             tree->Fill(); // Fill the tree with the read data
         }
     }
