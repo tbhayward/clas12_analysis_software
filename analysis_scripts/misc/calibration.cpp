@@ -4614,14 +4614,14 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
 
             if (is_fd_track(*track_sector_6)) {
                 if (dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) {
-                    int index_above = above_curve ? 0 : 3;
-                    int index_below = above_curve ? 1 : 4;
+                    int index_deltap = above_curve ? 0 : 3;
+                    int index_thetadc1 = above_curve ? 1 : 4;
                     int index_theta = above_curve ? 2 : 5;
 
                     // Fill histograms
-                    histograms[*pid].second[index_above]->Fill(*p, delta_p);
-                    histograms[*pid].second[index_below]->Fill(*p, theta_dc_1);
-                    histograms[*pid].second[index_theta]->Fill(*p, *theta);
+                    histograms[*pid][index_deltap]->Fill(*p, delta_p);
+                    histograms[*pid][index_thetadc1]->Fill(*p, theta_dc_1);
+                    histograms[*pid][index_theta]->Fill(*p, *theta);
                 }
             }
         }
@@ -4662,6 +4662,7 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         gPad->SetMargin(0.15, 0.05, 0.10, 0.1);
         gPad->SetLogz();
         entry.second[3]->Draw("COLZ");
+
         c->cd(5);
         gPad->SetMargin(0.15, 0.05, 0.10, 0.1);
         gPad->SetLogz();
