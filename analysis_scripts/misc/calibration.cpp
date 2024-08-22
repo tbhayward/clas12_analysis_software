@@ -4530,6 +4530,7 @@ void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset
         if (histograms_p.find(*pid) != histograms_p.end()) {
             // Check if the track is FD or CD and fill the appropriate histogram
             if (is_fd_track(*track_sector_6)) {
+                std::cout << delta_theta << " " << delta_phi << std::endl;
                 if (dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) {
                     histograms_p[*pid].second.first->Fill(*p, delta_p);  // FD
                     histograms_theta[*pid].second.first->Fill(theta_deg, delta_theta);  // FD
