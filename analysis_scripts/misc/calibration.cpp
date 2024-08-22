@@ -4436,7 +4436,7 @@ void fill_and_save_histograms(const std::map<int, std::pair<std::string, std::pa
         TLatex latex;
         latex.SetTextSize(0.04);
         latex.SetTextAlign(13);  // Align at top left
-        latex.DrawLatexNDC(0.45, 0.97, (dataset + ", " + particle_name).c_str());
+        latex.DrawLatexNDC(0.43, 0.97, (dataset + ", " + particle_name).c_str());
 
         // Plot FD
         c->cd(1);
