@@ -4642,20 +4642,20 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         latex.DrawLatexNDC(0.43, 0.53, (dataset + ", " + particle_name).c_str());
 
         // Define the curve function
-        TF1* curve = new TF1("curve", "0.088/pow(x, 1.5)", 0.1, std::get<2>(particle_types[pid]));
-        curve->SetLineColor(kRed);
-        curve->SetLineWidth(4);
-        TF1* curve2 = new TF1("curve2", "0.015/pow(x, 1.05)", 0.1, std::get<2>(particle_types[pid]));
-        curve2->SetLineColor(kBlack);
-        curve2->SetLineWidth(4);
+        TF1* pass1_curve = new TF1("pass1 curve", "0.088/pow(x, 1.5)", 0.1, std::get<2>(particle_types[pid]));
+        pass1_curve->SetLineColor(kRed);
+        pass1_curve->SetLineWidth(4);
+        TF1* pass2_curve = new TF1("pass2 curve", "0.0125/pow(x, 1.05)", 0.1, std::get<2>(particle_types[pid]));
+        pass2_curve->SetLineColor(kBlack);
+        pass2_curve->SetLineWidth(4);
 
         // Plot histograms and curve in the correct order
         c->cd(1);
         gPad->SetMargin(0.15, 0.05, 0.20, 0.1);  // Left, right, bottom, top margins
         gPad->SetLogz();
         entry.second[0]->Draw("COLZ");
-        curve->Draw("same");
-        curve2->Draw("same");
+        pass1_curve->Draw("same");
+        pass2_curve->Draw("same");
 
         c->cd(2);
         gPad->SetMargin(0.15, 0.05, 0.20, 0.1);
@@ -4671,8 +4671,8 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         gPad->SetMargin(0.15, 0.05, 0.1, 0.1);
         gPad->SetLogz();
         entry.second[3]->Draw("COLZ");
-        curve->Draw("same");
-        curve2->Draw("same");
+        pass1_curve->Draw("same");
+        pass2_curve->Draw("same");
 
         c->cd(5);
         gPad->SetMargin(0.15, 0.05, 0.1, 0.1);
