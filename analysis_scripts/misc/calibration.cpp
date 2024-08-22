@@ -4615,7 +4615,7 @@ int main(int argc, char** argv) {
 
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
-    if (mcReader) energy_loss(mcReader)    
+    if (mcReader) energy_loss(*mcReader);   
 
     // Close files
     dataFile.Close();
