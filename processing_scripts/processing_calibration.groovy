@@ -45,14 +45,10 @@ class CalibrationScript {
     double mc_particle_py = -9999
     double mc_particle_pz = -9999
     double mc_p = -9999;
-    double mc_particle_vx = -9999
-    double mc_particle_vy = -9999
-    double mc_particle_vz = -9999
-    double mc_particle_beta = -9999
-    double mc_particle_chi2pid = -9999
-    int mc_particle_status = -9999
     double mc_theta = -9999
     double mc_phi = -9999
+    double mc_matching_pid = -9999
+    double mc_parent_pid = -9999
 
     int cal_sector = -9999
     double cal_energy_1 = -9999; double cal_energy_4 = -9999; double cal_energy_7 = -9999;
@@ -111,6 +107,15 @@ class CalibrationScript {
 	    particle_status = -9999;
 	    theta = -9999;
 	    phi = -9999;
+
+	    mc_particle_px = -9999
+	    mc_particle_py = -9999
+	    mc_particle_pz = -9999
+	    mc_p = -9999;
+	    mc_theta = -9999
+	    mc_phi = -9999
+	    mc_matching_pid = -9999;
+	    mc_parent_pid = -9999;
 
 	    cal_sector = -9999;
 	    cal_energy_1 = -9999; cal_energy_4 = -9999; cal_energy_7 = -9999;
@@ -268,6 +273,7 @@ class CalibrationScript {
 
                     event_helicity = event_Bank.getInt('helicity',0);
 
+
                     for (int particle_Index = 0; particle_Index < rec_Bank.rows(); 
                     	particle_Index++) {
 
@@ -286,6 +292,36 @@ class CalibrationScript {
 						particle_beta = rec_Bank.getFloat("beta",particle_Index);
 						particle_chi2pid = rec_Bank.getFloat("chi2pid",particle_Index);
 						particle_status = rec_Bank.getInt("status",particle_Index);
+
+						if (event.hasBank("MC::Particle") && event.hasBank("MC::Lund")) {
+							int mc_parent_index = 0;
+							int scale = 2; // could fine tune
+							for (int current_part = 0; current_part < lundBank.rows(); current_part++) {
+								if (mc_matching_pid != -9999) { continue; }
+								int pid = lundBank.getInt("pid", current_part);
+								double mc_particle_px_test = lundBank.getFloat("px", current_part);
+								double mc_particle_py_test = lundBank.getFloat("py", current_part);
+								double mc_particle_pz_test = lundBank.getFloat("pz", current_part);
+
+								double mc_phi_test = phi_calculation(mc_particle_px_test, mc_particle_py_test);
+								double mc_theta_test = theta_calculation(mc_particle_px_test, mc_particle_py_test, mc_particle_pz_test);
+
+								boolean matching_p1 = Math.abs(phi - mc_phi_test) < scale*3.0 && 
+									Math.abs(theta - mc_theta_test) < scale*1.0;
+								if (matching_p1) {
+									mc_matching_pid = pid;
+									mc_parent_index = lundBank.getInt("parent", current_part)-1;
+									mc_particle_px = mc_particle_px_test;
+									mc_particle_py = mc_particle_py_test;
+									mc_particle_pz = mc_particle_pz_test;
+									mc_p = Math.sqrt(mc_particle_px*mc_particle_px+
+										mc_particle_py*mc_particle_py+mc_particle_pz*mc_particle_pz);
+									mc_phi = mc_phi_test;
+									mc_theta = mc_theta_test;
+								}
+							}
+							mc_parent_pid = lundBank.getInt("pid", mc_parent_index);
+	                    }
 
 						// Calorimeter
 						for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {

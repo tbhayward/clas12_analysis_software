@@ -224,6 +224,7 @@ int main(int argc, char *argv[]) {
     int particle_pid, particle_status;
     double particle_px, particle_py, particle_pz, p; // theta and phi already defined
     double particle_vx, particle_vy, particle_vz, particle_beta, particle_chi2pid;
+    double mc_px, mc_py, mc_pz, mc_p, mc_phi, mc_theta, mc_matching_pid, mc_parent_pid;
     int cal_sector;
     double cal_energy_1, cal_x_1, cal_y_1, cal_z_1, cal_lu_1, cal_lv_1, cal_lw_1;
     double cal_energy_4, cal_x_4, cal_y_4, cal_z_4, cal_lu_4, cal_lv_4, cal_lw_4;
@@ -771,6 +772,16 @@ int main(int argc, char *argv[]) {
         tree->Branch("particle_beta", &particle_beta, "particle_beta/D");
         tree->Branch("particle_chi2pid", &particle_chi2pid, "particle_chi2pid/D");
 
+        tree->Branch("mc_particle_px", &mc_particle_px, "mc_particle_px/D");
+        tree->Branch("mc_particle_py", &mc_particle_py, "mc_particle_py/D");
+        tree->Branch("mc_particle_pz", &mc_particle_pz, "mc_particle_pz/D");
+        tree->Branch("mc_p", &mc_p, "mc_p/D");
+        tree->Branch("mc_theta", &mc_theta, "mc_theta/D");
+        tree->Branch("mc_phi", &mc_phi, "mc_phi/D");
+        tree->Branch("mc_phi", &mc_phi, "mc_phi/D");
+        tree->Branch("mc_matching_pid", &mc_matching_pid, "mc_matching_pid/D");
+        tree->Branch("mc_parent_pid", &mc_parent_pid, "mc_parent_pid/D");
+
         tree->Branch("cal_sector", &cal_sector, "cal_sector/I");
         tree->Branch("cal_energy_1", &cal_energy_1, "cal_energy_1/D");
         tree->Branch("cal_x_1", &cal_x_1, "cal_x_1/D");
@@ -1133,8 +1144,9 @@ int main(int argc, char *argv[]) {
         while (infile >> config_run >> config_event >> event_helicity >> particle_pid >>
                 particle_px >> particle_py >> particle_pz >> p >> theta >> phi >> 
                 particle_vx >> particle_vy >> particle_vz >> particle_beta >> 
-                particle_chi2pid >> particle_status >> cal_sector >> cal_energy_1 >> 
-                cal_x_1 >> cal_y_1 >> cal_z_1 >> cal_lu_1 >> cal_lv_1 >> cal_lw_1 >> 
+                particle_chi2pid >> particle_status >> mc_particle_px >> mc_particle_py >> 
+                mc_particle_pz >> mc_p >> mc_theta >> mc_phi >> mc_matching_pid >> mc_parent_pid >> 
+                cal_sector >> cal_energy_1 >> cal_x_1 >> cal_y_1 >> cal_z_1 >> cal_lu_1 >> cal_lv_1 >> cal_lw_1 >> 
                 cal_energy_4 >> cal_x_4 >> cal_y_4 >> cal_z_4 >> cal_lu_4 >> cal_lv_4 >> cal_lw_4 >> 
                 cal_energy_7 >> cal_x_7 >> cal_y_7 >> cal_z_7 >> cal_lu_7 >> cal_lv_7 >> cal_lw_7 >> 
                 cc_nphe_15 >> cc_nphe_16 >> track_sector_5 >> track_chi2_5 >> track_ndf_5 >> 
