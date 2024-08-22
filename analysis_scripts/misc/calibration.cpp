@@ -4454,7 +4454,7 @@ void process_and_save_histograms(const std::map<int, std::pair<std::string, std:
         item.second.second.second->Draw("COLZ");
         gPad->Update();
 
-        c->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/energy_loss_distributions" + particle_name + "_" + suffix ".png").c_str());
+        c->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/energy_loss_distributions" + particle_name + "_" + suffix + ".png").c_str());
 
         delete c;
     }
