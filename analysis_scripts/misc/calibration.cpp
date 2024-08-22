@@ -4539,10 +4539,10 @@ void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset
 
 // Function to check if a track is above or below the curve
 bool is_above_curve(double p, double delta_p) {
-    double curve_value = 0.088 / pow(p, 1.5);
-    return delta_p > curve_value;
+    return (delta_p > 0.088 / pow(p, 1.5));
 }
 
+// Main FD-specific function
 // Main FD-specific function
 void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& dataset) {
     // Particle types and their corresponding LaTeX names and x-axis ranges
@@ -4609,8 +4609,8 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         double theta_dc_1 = calculate_theta(*traj_x_6, *traj_y_6, *traj_z_6);
 
         // Check if the current particle type is one of interest
-        if (histograms.find(*pid) != histograms.end()) {
-            bool above_curve = (delta_p > 0.088 / pow(*p, 1.5));
+        if (histograms.find(*pid) != histograms.end()) { 
+            bool above_curve = is_above_curve(*p, delta_p);
 
             if (is_fd_track(*track_sector_6)) {
                 if (dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) {
@@ -4640,13 +4640,19 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         TLatex latex;
         latex.SetTextSize(0.04);
         latex.SetTextAlign(11);  // Align at top left
-        latex.DrawLatexNDC(0.43, 0.45, (dataset + ", " + particle_name).c_str());
+        latex.DrawLatexNDC(0.43, 0.53, (dataset + ", " + particle_name).c_str());
 
         // Plot histograms in the correct order
         c->cd(1);
         gPad->SetMargin(0.15, 0.05, 0.20, 0.1);  // Left, right, bottom, top margins
         gPad->SetLogz();
         entry.second[0]->Draw("COLZ");
+
+        // Add the thick black line corresponding to Delta p = 0.088 / p^1.5
+        TLine* line_above = new TLine(0, 0.088, 7.0, 0.088 / pow(7.0, 1.5));
+        line_above->SetLineColor(kBlack);
+        line_above->SetLineWidth(3);
+        line_above->Draw("same");
 
         c->cd(2);
         gPad->SetMargin(0.15, 0.05, 0.20, 0.1);
@@ -4663,6 +4669,11 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         gPad->SetLogz();
         entry.second[3]->Draw("COLZ");
 
+        // Add the thick black line corresponding to Delta p = 0.088 / p^1.5 for below curve
+        TLine* line_below = new TLine(0, 0.088, 7.0, 0.088 / pow(7.0, 1.5));
+        line_below->SetLineColor(kBlack);
+        line_below->SetLineWidth(3);
+        line_below->Draw("same");
         c->cd(5);
         gPad->SetMargin(0.15, 0.05, 0.1, 0.1);
         gPad->SetLogz();
@@ -4678,6 +4689,8 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
 
         // Clean up
         delete c;
+        delete line_above;
+        delete line_below;
         for (auto& hist : entry.second) {
             delete hist;
         }
