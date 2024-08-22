@@ -4653,14 +4653,6 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         TF1* pass1_curve_region1 = new TF1("pass1_curve_region1", "[0] + [1]*TMath::Power(x-[2],[3])", 0.1, std::get<2>(particle_types[pid]));
         pass1_curve_region1->SetParameters(-53.1468, 79.6131, 0.3, 0.05739);pass1_curve_region1->SetLineColor(kRed);
         pass1_curve_region1->SetLineWidth(4);
-        std::cout << "Value at 0.5: " << pass1_curve_region1->Eval(0.5) << std::endl;
-        std::cout << "Value at 1.0: " << pass1_curve_region1->Eval(1.0) << std::endl;
-        std::cout << "Value at 2.0: " << pass1_curve_region1->Eval(2.0) << std::endl;
-
-
-        TCanvas* c_test = new TCanvas("c_test", "Test Curve", 800, 600);
-        pass1_curve_region1->Draw();
-        c_test->SaveAs("curve_test.png");
 
         // Plot histograms and curve in the correct order
         c->cd(1);
@@ -4675,6 +4667,10 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         gPad->SetLogz();
         entry.second[1]->Draw("COLZ");
         pass1_curve_region1->Draw("same");
+        TLine* line = new TLine(0.1, pass1_curve_region1->Eval(0.1), 3.0, pass1_curve_region1->Eval(3.0));
+        line->SetLineColor(kRed);
+        line->SetLineWidth(4);
+        line->Draw("same");
 
         c->cd(3);
         gPad->SetMargin(0.15, 0.05, 0.20, 0.1);
@@ -4693,6 +4689,10 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         gPad->SetLogz();
         entry.second[4]->Draw("COLZ");
         pass1_curve_region1->Draw("same");
+        TLine* line = new TLine(0.1, pass1_curve_region1->Eval(0.1), 3.0, pass1_curve_region1->Eval(3.0));
+        line->SetLineColor(kRed);
+        line->SetLineWidth(4);
+        line->Draw("same");
 
         c->cd(6);
         gPad->SetMargin(0.15, 0.05, 0.1, 0.1);
