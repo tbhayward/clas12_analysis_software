@@ -4650,14 +4650,12 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         pass2_curve->SetLineColor(kBlack);
         pass2_curve->SetLineWidth(4);
 
-        auto curve_function = [](double* x, double* params) {
-            double p = x[0];
-            return -53.1468 + 79.6131 * pow(p - 0.3, 0.05739);
-        };
-        TF1* pass1_curve_region1 = new TF1("pass1_curve_region1", curve_function, 0.1, std::get<2>(particle_types[pid]), 0);
-        // TF1* pass1_curve_region1 = new TF1("pass1_curve_region1", "-53.1468 + 79.6131*pow(x-0.3,0.05739)", 0.1, std::get<2>(particle_types[pid]));
-        pass1_curve_region1->SetLineColor(kRed);
+        TF1* pass1_curve_region1 = new TF1("pass1_curve_region1", "[0] + [1]*TMath::Power(x-[2],[3])", 0.1, std::get<2>(particle_types[pid]));
+        pass1_curve_region1->SetParameters(-53.1468, 79.6131, 0.3, 0.05739);pass1_curve_region1->SetLineColor(kRed);
         pass1_curve_region1->SetLineWidth(4);
+        std::cout << "Value at 0.5: " << pass1_curve_region1->Eval(0.5) << std::endl;
+        std::cout << "Value at 1.0: " << pass1_curve_region1->Eval(1.0) << std::endl;
+        std::cout << "Value at 2.0: " << pass1_curve_region1->Eval(2.0) << std::endl;
 
 
         // Plot histograms and curve in the correct order
