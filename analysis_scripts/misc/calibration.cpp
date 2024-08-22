@@ -4564,12 +4564,12 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         double xMax = std::get<2>(particle.second);
 
         histograms[pid] = {
-            new TH2D(("h_above_deltap_" + particle_name).c_str(), ("(Above), " + particle_name).c_str(), 100, xMin, xMax, 100, -0.05, 0.10),
-            new TH2D(("h_above_thetadc1_" + particle_name).c_str(), ("(Above), " + particle_name).c_str(), 100, xMin, xMax, 100, 0, 40),  // Adjusted to 0-40 degrees
-            new TH2D(("h_above_theta_" + particle_name).c_str(), ("(Above), " + particle_name).c_str(), 100, xMin, xMax, 100, 0, 40),  // Adjusted to 0-40 degrees
-            new TH2D(("h_below_deltap_" + particle_name).c_str(), ("(Below), " + particle_name).c_str(), 100, xMin, xMax, 100, -0.05, 0.10),
-            new TH2D(("h_below_thetadc1_" + particle_name).c_str(), ("(Below), " + particle_name).c_str(), 100, xMin, xMax, 100, 0, 40),  // Adjusted to 0-40 degrees
-            new TH2D(("h_below_theta_" + particle_name).c_str(), ("(Below), " + particle_name).c_str(), 100, xMin, xMax, 100, 0, 40)  // Adjusted to 0-40 degrees
+            new TH2D(("h_above_deltap_" + particle_name).c_str(), ("(Above), " + particle_name).c_str(), 75, xMin, xMax, 75, -0.05, 0.10),
+            new TH2D(("h_above_thetadc1_" + particle_name).c_str(), ("(Above), " + particle_name).c_str(), 75, xMin, xMax, 75, 0, 40),  // Adjusted to 0-40 degrees
+            new TH2D(("h_above_theta_" + particle_name).c_str(), ("(Above), " + particle_name).c_str(), 75, xMin, xMax, 75, 0, 40),  // Adjusted to 0-40 degrees
+            new TH2D(("h_below_deltap_" + particle_name).c_str(), ("(Below), " + particle_name).c_str(), 75, xMin, xMax, 75, -0.05, 0.10),
+            new TH2D(("h_below_thetadc1_" + particle_name).c_str(), ("(Below), " + particle_name).c_str(), 75, xMin, xMax, 75, 0, 40),  // Adjusted to 0-40 degrees
+            new TH2D(("h_below_theta_" + particle_name).c_str(), ("(Below), " + particle_name).c_str(), 75, xMin, xMax, 75, 0, 40)  // Adjusted to 0-40 degrees
         };
 
         // Set axis labels
