@@ -4658,6 +4658,10 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         std::cout << "Value at 2.0: " << pass1_curve_region1->Eval(2.0) << std::endl;
 
 
+        TCanvas* c_test = new TCanvas("c_test", "Test Curve", 800, 600);
+        pass1_curve_region1->Draw();
+        c_test->SaveAs("curve_test.png");
+
         // Plot histograms and curve in the correct order
         c->cd(1);
         gPad->SetMargin(0.15, 0.05, 0.20, 0.1);  // Left, right, bottom, top margins
