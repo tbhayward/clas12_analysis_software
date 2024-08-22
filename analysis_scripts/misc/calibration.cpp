@@ -4417,6 +4417,8 @@ bool is_cd_track(double track_sector_6) {
     return track_sector_6 != -9999;
 }
 
+#include <TLatex.h>  // Include TLatex header
+
 void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset) {
     // Define 2D histograms for FD and CD
     int nBinsX = 50, nBinsY = 50;
@@ -4438,6 +4440,7 @@ void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset
     
     // Set rainbow color palette
     gStyle->SetPalette(kRainBow);
+    gStyle->SetOptStat(0);  // Ensure no stat box is shown
 
     // Set up TTreeReaderValues for necessary branches
     TTreeReaderValue<double> mc_p(mcReader, "mc_p");
@@ -4482,18 +4485,20 @@ void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset
     TLatex latex;
     latex.SetTextSize(0.04);
     latex.SetTextAlign(13);  // Align at top left
-    latex.DrawLatexNDC(0.5, 0.95, (dataset).c_str());
+    latex.DrawLatexNDC(0.47, 0.97, (dataset).c_str());
 
     // Increase margins to prevent axis labels from being clipped
     c->cd(1);
     gPad->SetMargin(0.15, 0.05, 0.15, 0.1);  // Left, right, bottom, top margins
     gPad->SetLogz();
     h_fd->Draw("COLZ");
+    gPad->Update();  // Force the pad to update and draw Z axis
 
     c->cd(2);
     gPad->SetMargin(0.15, 0.05, 0.15, 0.1);  // Left, right, bottom, top margins
     gPad->SetLogz();
     h_cd->Draw("COLZ");
+    gPad->Update();  // Force the pad to update and draw Z axis
 
     // Save the canvas
     c->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/energy_loss_distributions.png").c_str());
