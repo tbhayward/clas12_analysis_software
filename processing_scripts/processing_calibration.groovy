@@ -498,6 +498,15 @@ class CalibrationScript {
 	                        .append(formatDouble(particle_beta)).append(" ")
 	                        .append(formatDouble(particle_chi2pid)).append(" ")
 	                        .append(particle_status).append(" ")
+	                        // mc
+	                        .append(mc_particle_px).append(" ")
+	                        .append(mc_particle_py).append(" ")
+	                        .append(mc_particle_pz).append(" ")
+	                        .append(mc_p).append(" ")
+	                        .append(mc_theta).append(" ")
+	                        .append(mc_phi).append(" ")
+	                        .append(mc_matching_pid).append(" ")
+	                        .append(mc_parent_pid).append(" ")
 	                        // cal
 	                        .append(cal_sector).append(" ")
 	                        .append(formatDouble(cal_energy_1)).append(" ")
