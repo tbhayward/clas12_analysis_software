@@ -172,13 +172,13 @@ double all_4D_bin(const std::string& prefix, TRandom3& rand_gen) {
 double dilution_factor(double Q2, double x, double z, double pT, const std::string& prefix) {
     TRandom3 rand_gen;
 
-    if (prefix == "x") { return 0.136288+0.283353*x+-0.125745*std::pow(x,2); }
-    if (prefix == "xF") { return 0.136288+0.283353*x+-0.125745*std::pow(x,2); }
-    if (prefix == "PT") { return 0.136288+0.283353*x+-0.125745*std::pow(x,2); }
+    // if (prefix == "x") { return 0.136288+0.283353*x+-0.125745*std::pow(x,2); }
+    // if (prefix == "xF") { return 0.136288+0.283353*x+-0.125745*std::pow(x,2); }
+    // if (prefix == "PT") { return 0.136288+0.283353*x+-0.125745*std::pow(x,2); }
 
-    if (prefix == "xall") { return 0.163228+-0.0367291*x+0.804498*std::pow(x,2); }
-    if (prefix == "xFall") { return 0.163228+-0.0367291*x+0.804498*std::pow(x,2); }
-    if (prefix == "PTall") { return 0.163228+-0.0367291*x+0.804498*std::pow(x,2); }
+    // if (prefix == "xall") { return 0.163228+-0.0367291*x+0.804498*std::pow(x,2); }
+    // if (prefix == "xFall") { return 0.163228+-0.0367291*x+0.804498*std::pow(x,2); }
+    // if (prefix == "PTall") { return 0.163228+-0.0367291*x+0.804498*std::pow(x,2); }
 
     // Determine if the prefix is a one-dimensional case
     bool isAllPrefix = (prefix.find("all") != std::string::npos);
