@@ -54,7 +54,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
             while (reader.Next()) {
                 // if (*currentVariable >= varMin && *currentVariable < varMax && kinematicCuts->applyCuts(currentFits, false)) {
                 if (*currentVariable >= varMin && *currentVariable < varMax) {
-                    std::cout << *currentVariable << std::endl;
+                    // std::cout << *currentVariable << std::endl;
                     hist->Fill(*currentVariable);
                     sumCurrentVariable += *currentVariable;
                     ++count;
