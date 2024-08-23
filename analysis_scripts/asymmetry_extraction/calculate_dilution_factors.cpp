@@ -32,6 +32,33 @@ const double xCH = 0.03600;
 const double xHe = 0.07535;
 const double xf = 0.09168;
 
+double calculate_dilution_error(double nA, double nC, double nCH, double nMT, double nf) {
+    double term1 = 0.734694 * nA * nC * pow((nA - nMT), 2) * 
+                   pow((- 0.554976 * nCH - 0.0373109 * nf + 0.592287 * nMT), 2);
+
+    double term2 = 0.456108 * nA * pow((nA - nMT), 2) * 
+                   pow((0.704358 * nC + 0.295642 * nf - nMT), 2) * nMT;
+
+    double term3 = 0.0281176 * nA * nf * pow((nA - nMT), 2) * 
+                   pow((0.190722 * nC - 1.19072 * nCH + nMT), 2);
+
+    double term4 = 0.0135714 * pow((nC - 1.16667 * nCH + 0.341297 * nf - 0.17463 * nMT), 2) * 
+                   pow(nMT, 2) * pow((nC - 5.25 * nCH + 0.0667755 * nf + 4.18322 * nMT), 2);
+
+    double term5 = 0.022405 * nA * nMT * 
+                   pow((0.778288 * pow(nC, 2) + 4.76701 * pow(nCH, 2) - 1.45518 * nCH * nf + 0.0177374 * pow(nf, 2) + 
+                        nC * (-4.99401 * nCH + 0.317598 * nf - 0.271825 * nMT) + 
+                        nA * (3.39167 * nC - 4.51192 * nCH + 1.12025 * nf) + 
+                        1.42708 * nCH * nMT - 0.0181513 * nf * nMT - 0.568553 * pow(nMT, 2)), 2);
+
+    double denominator = pow(nA, 3) * 
+                         pow((0.135913 * nC - 0.713541 * nCH + 0.00907563 * nf + 0.568553 * nMT), 4);
+
+    double sigma_df = 0.713541 * sqrt((term1 + term2 + term3 + term4 + term5 )/ denominator);
+
+    return sigma_df;
+}
+
 std::vector<std::pair<double, double>> calculate_dilution_factors() {
 
     // Load ROOT files and trees
@@ -164,16 +191,12 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
                             78.6217 * nCH * xC * xf * xHe + 
                             14.9756 * nC * xCH * xf * xHe));
         // Calculate error for this bin
-        double error = TMath::Sqrt((TMath::Power(nA, 2) / (xA * xA)) + 
-                                   (TMath::Power(nC, 2) / (xC * xC)) + 
-                                   (TMath::Power(nCH, 2) / (xCH * xCH)) + 
-                                   (TMath::Power(nMT, 2) / (xHe * xHe)) + 
-                                   (TMath::Power(nf, 2) / (xf * xf)));
-        std::cout << dilution << " " << error << std::endl;
+        double error = calculate_dilution_error(nA, nC, nCH, nMT, nf);
 
         // Add the dilution factor and error to the TGraphErrors
         gr_dilution->SetPoint(binIndex, meanCurrentVariable, dilution);
         gr_dilution->SetPointError(binIndex, 0, error);
+        std::cout << dilution << " " << error << std::endl;
 
         // Store the original dilution and error for now
         dilutionResults.emplace_back(dilution, error);
