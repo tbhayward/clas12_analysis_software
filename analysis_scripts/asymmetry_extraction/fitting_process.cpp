@@ -1765,9 +1765,9 @@ void performMLMFits_b2b_dihadron(const char* output_file, const char* kinematic_
   kinematicFile.close();
 }
 
-TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex, 
-    const std::string& prefix, int asymmetry_index, 
-    const std::pair<double, double>& dilutionFactor);
+TH2D* createHistogramForBin_b2b_dihadron(const char* histName, int binIndex, 
+  const std::string& prefix, int asymmetry_index, 
+  const std::pair<double, double>& dilutionFactor) {
 
   // Determine the variable range for the specified bin
   double varMin = allBins[currentFits][binIndex];
