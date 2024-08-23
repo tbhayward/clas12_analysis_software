@@ -188,8 +188,6 @@ void calculate_inclusive(const char* output_file, const char* kinematic_file,
     TTreeReaderValue<double> Q2(dataReader, "Q2");
     TTreeReaderValue<double> W(dataReader, "W");
     TTreeReaderValue<double> x(dataReader, "x");
-    double z = 0.2;
-    double pT = 0.3;
     TTreeReaderValue<double> y(dataReader, "y");
     TTreeReaderValue<double> t(dataReader, "t");
     TTreeReaderValue<double> tmin(dataReader, "tmin");
@@ -250,9 +248,9 @@ void calculate_inclusive(const char* output_file, const char* kinematic_file,
     switch (asymmetry_index) {
       case 0: {// beam-spin asymmetry
         // Get the fitted parameters and their errors
-        double ALU_offset = asymmetry_value_calculation(meanVariable, *Q2, *x, z, pT, prefix, 
-          npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
-        double ALU_offset_error = asymmetry_error_calculation(meanVariable, *Q2, *x, z, pT,
+        double ALU_offset = asymmetry_value_calculation(meanVariable, dilutionFactors[i], 
+          prefix, npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
+        double ALU_offset_error = asymmetry_error_calculation(meanVariable, dilutionFactors[i],
           prefix, npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
         ALU_offset = (meanDepA/meanDepW)*ALU_offset;
         ALU_offset_error = (meanDepA/meanDepW)*ALU_offset_error;
@@ -264,9 +262,9 @@ void calculate_inclusive(const char* output_file, const char* kinematic_file,
       }
       case 1: {// target-spin asymmetry
         // Get the fitted parameters and their errors
-        double AUL_offset = asymmetry_value_calculation(meanVariable, *Q2, *x, z, pT, prefix, 
-          npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
-        double AUL_offset_error = asymmetry_error_calculation(meanVariable, *Q2, *x, z, pT,
+        double AUL_offset = asymmetry_value_calculation(meanVariable, dilutionFactors[i], 
+          prefix, npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
+        double AUL_offset_error = asymmetry_error_calculation(meanVariable, dilutionFactors[i],
           prefix, npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
         AUL_offset = (meanDepA/meanDepV)*AUL_offset;
         AUL_offset_error = (meanDepA/meanDepV)*AUL_offset_error;
@@ -278,9 +276,9 @@ void calculate_inclusive(const char* output_file, const char* kinematic_file,
       }
       case 2: {// double-spin asymmetry
         // Get the fitted parameters and their errors
-        double ALL = asymmetry_value_calculation(meanVariable, *Q2, *x, z, pT, prefix, 
+        double ALL = asymmetry_value_calculation(meanVariable, dilutionFactors[i], prefix, 
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
-        double ALL_error = asymmetry_error_calculation(meanVariable, *Q2, *x, z, pT, prefix, 
+        double ALL_error = asymmetry_error_calculation(meanVariable, dilutionFactors[i], prefix, 
           npp, npm, nmp, nmm, meanPol, Ptp, Ptm, asymmetry_index);
         ALL = -(meanDepA/meanDepC)*ALL;
         ALL_error = (meanDepA/meanDepC)*ALL_error;
@@ -762,7 +760,7 @@ void plotHistogramAndFit_single_hadron(TH1D* histogram, TF1* fitFunction, int bi
 }
 
 TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex, 
-  const std::string& prefix, int asymmetry_index) {
+  const std::string& prefix, int asymmetry_index, const std::vector<std::pair<double, double>>& dilutionFactors) {
 
   // Determine the variable range for the specified bin
   double varMin = allBins[currentFits][binIndex];
@@ -796,7 +794,6 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
   TTreeReaderValue<double> phi(dataReader, "phi");
   TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
   // TTreeReaderValue<int> currentVariable(dataReader, propertyNames[currentFits].c_str());
-  // Counter to limit the number of processed entries
   while (dataReader.Next()) {
     
     // Apply kinematic cuts (this function will need to be adapted)
@@ -853,9 +850,9 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
     double Nmm = histNegNeg->GetBinContent(iBin)/cmm;
 
     // Calculate the asymmetry and error for the current bin
-    double asymmetry = asymmetry_value_calculation(meanVariable, *Q2, *x, *z, *pT, prefix, 
+    double asymmetry = asymmetry_value_calculation(meanVariable, dilutionFactors[i], prefix, 
       Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
-    double error = asymmetry_error_calculation(meanVariable, *Q2, *x, *z, *pT, prefix, 
+    double error = asymmetry_error_calculation(meanVariable, dilutionFactors[i], prefix, 
       Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
 
     // Fill the asymmetry histogram with the calculated values
@@ -874,7 +871,8 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
 }
 
 void performChi2Fits_single_hadron(const char* output_file, const char* kinematic_file,
-  const char* kinematicPlot_file, const std::string& prefix, int asymmetry_index) {
+  const char* kinematicPlot_file, const std::string& prefix, int asymmetry_index, 
+  const std::vector<std::pair<double, double>>& dilutionFactors) {
 
   // Initialize string streams to store the results for each bin
   std::ostringstream chi2FitsAStream, chi2FitsBStream, chi2FitsCStream;
@@ -933,7 +931,8 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
     snprintf(histName, sizeof(histName), "hist_%zu", i);
 
     // Create a histogram for the current bin
-    TH1D* hist = createHistogramForBin_single_hadron(histName, i, prefix, asymmetry_index);
+    TH1D* hist = createHistogramForBin_single_hadron(histName, i, prefix, asymmetry_index, 
+      dilutionFactors[i]);
     // Fit the histogram using the fitFunction and get the fit result
     hist->Fit(fitFunction, "QS");
     plotHistogramAndFit_single_hadron(hist, fitFunction, i, asymmetry_index, prefix);
@@ -1766,7 +1765,8 @@ void performMLMFits_b2b_dihadron(const char* output_file, const char* kinematic_
 }
 
 TH2D* createHistogramForBin_b2b_dihadron(const char* histName, int binIndex, 
-  const std::string& prefix, int asymmetry_index) {
+  const std::string& prefix, int asymmetry_index, 
+  const std::vector<std::pair<double, double>>& dilutionFactors) {
 
   // Determine the variable range for the specified bin
   double varMin = allBins[currentFits][binIndex];
@@ -1860,9 +1860,9 @@ TH2D* createHistogramForBin_b2b_dihadron(const char* histName, int binIndex,
       double Npm = histPosNeg->GetBinContent(iBinX, iBinY) / cpp;
       double Nmp = histNegPos->GetBinContent(iBinX, iBinY) / cpp;
       double Nmm = histNegNeg->GetBinContent(iBinX, iBinY) / cpp;
-      double asymmetry = asymmetry_value_calculation(meanVariable, *Q2, *x, *z, *pT, prefix, 
+      double asymmetry = asymmetry_value_calculation(meanVariable, dilutionFactors[i], prefix, 
         Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
-      double error = asymmetry_error_calculation(meanVariable, *Q2, *x, *z, *pT, prefix, 
+      double error = asymmetry_error_calculation(meanVariable, dilutionFactors[i], prefix, 
         Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
 
       histAsymmetry->SetBinContent(iBinX, iBinY, asymmetry);
@@ -1881,7 +1881,8 @@ TH2D* createHistogramForBin_b2b_dihadron(const char* histName, int binIndex,
 }
 
 void performChi2Fits_b2b_dihadron(const char* output_file, const char* kinematic_file,
-  const std::string& prefix, int asymmetry_index) {
+  const std::string& prefix, int asymmetry_index, 
+  const std::vector<std::pair<double, double>>& dilutionFactors) {
 
   // Initialize string streams for results and mean variables
   std::ostringstream chi2FitsStreams[8]; // For maximum 8 parameters (TSA case)
@@ -1941,7 +1942,7 @@ void performChi2Fits_b2b_dihadron(const char* output_file, const char* kinematic
     snprintf(histName, sizeof(histName), "hist_%zu", i);
 
     // Create a histogram for the current bin
-    TH2D* hist = createHistogramForBin_b2b_dihadron(histName, i, prefix, asymmetry_index);
+    TH2D* hist = createHistogramForBin_b2b_dihadron(histName, i, prefix, asymmetry_index, dilutionFactors);
     // Fit the histogram using the fitFunction and get the fit result
     hist->Fit(fitFunction, "QS");
     // not plotting function here for 2D dihadron cases
@@ -2418,9 +2419,9 @@ TH1D* createHistogramForBin_dvcs(const char* histName, int binIndex,
     double Nmm = histNegNeg->GetBinContent(iBin)/cmm;
 
     // Calculate the asymmetry and error for the current bin
-    double asymmetry = asymmetry_value_calculation(meanVariable, *Q2, *x, *z, *pT, prefix, 
+    double asymmetry = asymmetry_value_calculation(meanVariable, dilutionFactors[iBin], prefix, 
       Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
-    double error = asymmetry_error_calculation(meanVariable, *Q2, *x, *z, *pT, prefix, 
+    double error = asymmetry_error_calculation(meanVariable, dilutionFactors[iBin], prefix, 
       Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
 
     // Fill the asymmetry histogram with the calculated values
@@ -2439,7 +2440,8 @@ TH1D* createHistogramForBin_dvcs(const char* histName, int binIndex,
 }
 
 void performChi2Fits_dvcs(const char* output_file, const char* kinematic_file,
-  const char* kinematicPlot_file, const std::string& prefix, int asymmetry_index) {
+  const char* kinematicPlot_file, const std::string& prefix, int asymmetry_index,
+  const std::vector<std::pair<double, double>>& dilutionFactors) {
 
   // Initialize string streams to store the results for each bin
   std::ostringstream chi2FitsAStream, chi2FitsBStream, chi2FitsCStream;
@@ -2496,7 +2498,7 @@ void performChi2Fits_dvcs(const char* output_file, const char* kinematic_file,
     snprintf(histName, sizeof(histName), "hist_%zu", i);
 
     // Create a histogram for the current bin
-    TH1D* hist = createHistogramForBin_dvcs(histName, i, prefix, asymmetry_index);
+    TH1D* hist = createHistogramForBin_dvcs(histName, i, prefix, asymmetry_index, dilutionFactors);
     // Fit the histogram using the fitFunction and get the fit result
     hist->Fit(fitFunction, "QS");
     plotHistogramAndFit_dvcs(hist, fitFunction, i, asymmetry_index, prefix);
