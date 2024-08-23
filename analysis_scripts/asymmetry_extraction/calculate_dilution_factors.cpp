@@ -218,10 +218,10 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     int ndf = fitFunc->GetNDF();
     double scaleFactor = TMath::Sqrt(chi2 / ndf);
 
-    // Scale the errors by sqrt(chi2/ndf)
-    for (size_t binIndex = 0; binIndex < dilutionResults.size(); ++binIndex) {
-        dilutionResults[binIndex].second *= scaleFactor;  // Scale the error
-    }
+    // // Scale the errors by sqrt(chi2/ndf)
+    // for (size_t binIndex = 0; binIndex < dilutionResults.size(); ++binIndex) {
+    //     dilutionResults[binIndex].second *= scaleFactor;  // Scale the error
+    // }
 
     // Clean up
     delete gr_dilution;
