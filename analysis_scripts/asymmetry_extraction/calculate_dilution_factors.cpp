@@ -32,9 +32,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     TGraphErrors* gr_dilution = new TGraphErrors();
 
     // Loop over each bin
-    std::cout << "Entering bins" << std::endl;
     for (size_t binIndex = 0; binIndex < allBins[currentFits].size() - 1; ++binIndex) {
-        std::cout << "Made it in" << std::endl;
         double varMin = allBins[currentFits][binIndex];
         double varMax = allBins[currentFits][binIndex + 1];
 
@@ -48,6 +46,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
         double sumCurrentVariable = 0.0;
         int count = 0;
 
+        std::cout << varMin << " " << varMax << std::endl;
         // Helper function to fill histograms based on kinematic cuts and track mean
         auto fill_histogram = [&](TTree* tree, TH1D* hist) {
             TTreeReader reader(tree);
