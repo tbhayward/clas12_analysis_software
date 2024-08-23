@@ -130,7 +130,8 @@ std::tuple<int, int, int, int, double, double, double> getInclusiveCounts(int bi
 }
 
 void calculate_inclusive(const char* output_file, const char* kinematic_file,
-  const std::string& prefix, int asymmetry_index) {
+  const std::string& prefix, int asymmetry_index,
+  const std::vector<std::pair<double, double>>& dilutionFactors) {
 
   // Initialize string streams to store the results for each bin
   std::ostringstream chi2FitsAStream; 
@@ -850,9 +851,9 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
     double Nmm = histNegNeg->GetBinContent(iBin)/cmm;
 
     // Calculate the asymmetry and error for the current bin
-    double asymmetry = asymmetry_value_calculation(meanVariable, dilutionFactors[i], prefix, 
+    double asymmetry = asymmetry_value_calculation(meanVariable, dilutionFactors[iBin], prefix, 
       Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
-    double error = asymmetry_error_calculation(meanVariable, dilutionFactors[i], prefix, 
+    double error = asymmetry_error_calculation(meanVariable, dilutionFactors[iBin], prefix, 
       Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
 
     // Fill the asymmetry histogram with the calculated values
@@ -1860,9 +1861,9 @@ TH2D* createHistogramForBin_b2b_dihadron(const char* histName, int binIndex,
       double Npm = histPosNeg->GetBinContent(iBinX, iBinY) / cpp;
       double Nmp = histNegPos->GetBinContent(iBinX, iBinY) / cpp;
       double Nmm = histNegNeg->GetBinContent(iBinX, iBinY) / cpp;
-      double asymmetry = asymmetry_value_calculation(meanVariable, dilutionFactors[i], prefix, 
+      double asymmetry = asymmetry_value_calculation(meanVariable, dilutionFactors[iBinX], prefix, 
         Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
-      double error = asymmetry_error_calculation(meanVariable, dilutionFactors[i], prefix, 
+      double error = asymmetry_error_calculation(meanVariable, dilutionFactors[iBinX], prefix, 
         Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
 
       histAsymmetry->SetBinContent(iBinX, iBinY, asymmetry);
