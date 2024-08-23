@@ -38,7 +38,7 @@ void performChi2Fits_b2b_dihadron(const char* output_file, const char* kinematic
 void negLogLikelihood_dvcs(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag);
 void performMLMFits_dvcs(const char* output_file, const char* kinematic_file, const std::string& prefix, const std::vector<std::pair<double, double>>& dilutionFactors);
 void plotHistogramAndFit_dvcs(TH1D* histogram, TF1* fitFunction, int binIndex, int asymmetryIndex, const std::string& prefix);
-TH1D* createHistogramForBin_dvcs(const char* histName, int binIndex, const std::string& prefix, int asymmetry_index, , const std::vector<std::pair<double, double>>& dilutionFactors);
+TH1D* createHistogramForBin_dvcs(const char* histName, int binIndex, const std::string& prefix, int asymmetry_index, const std::vector<std::pair<double, double>>& dilutionFactors);
 void performChi2Fits_dvcs(const char* output_file, const char* kinematic_file, const char* kinematicPlot_file, const std::string& prefix, int asymmetry_index, const std::vector<std::pair<double, double>>& dilutionFactors);
 
 #endif // FITTING_PROCESS_H
