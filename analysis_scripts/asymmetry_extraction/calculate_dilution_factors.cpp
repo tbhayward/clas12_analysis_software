@@ -133,6 +133,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
                     ++count;
                 }
             }
+            reader.Restart();
         };
 
         fill_histogram(nh3Reader, h_nh3, nh3Cuts);
