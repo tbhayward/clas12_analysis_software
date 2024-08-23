@@ -71,6 +71,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
 
             while (reader.Next()) {
                 bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
+                std::cout << passedKinematicCuts << std::endl;
                 if (*currentVariable >= varMin && *currentVariable < varMax && kinematicCuts->applyCuts(currentFits, false)) {
                 // if (*currentVariable >= varMin && *currentVariable < varMax) {
                     // std::cout << *currentVariable << std::endl;
