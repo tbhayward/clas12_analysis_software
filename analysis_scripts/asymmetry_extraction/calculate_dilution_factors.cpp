@@ -56,6 +56,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
                     hist->Fill(*currentVariable);
                     sumCurrentVariable += *currentVariable;
                     ++count;
+                    std::cout << *currentVariable << std::endl;
                 }
             }
         };
