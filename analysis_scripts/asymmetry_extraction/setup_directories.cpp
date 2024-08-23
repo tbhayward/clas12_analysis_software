@@ -15,7 +15,8 @@ void setup_directories() {
         "output/individual_chi2_fits",
         "output/structure_function",
         "output/misid_plots",
-        "output/dependence_plots"
+        "output/dependence_plots",
+        "output/dilution_factor_plots"
     };
 
     for (const auto& dir : directories) {

@@ -36,6 +36,7 @@
 #include "load_bins_from_csv.h"
 #include "load_run_info_from_csv.h"
 #include "dilution_factor.h"
+#include "dilution_factor_calc.h"
 #include "asymmetry_fits.h"
 #include "BaseKinematicCuts.h"
 #include "KinematicCuts.h"
@@ -162,39 +163,6 @@ int main(int argc, char *argv[]) {
     cout << "-- Trees successfully extracted from ROOT files." << endl << endl;
   }
 
-  // Define variables to hold the tree values
-  double e_theta_data;
-  double e_theta_mc;
-  // Set branch addresses
-  data->SetBranchAddress("e_theta", &e_theta_data);
-  mc->SetBranchAddress("e_theta", &e_theta_mc);
-  // Convert angle range from degrees to radians
-  double min_theta = 12 * TMath::DegToRad();
-  double max_theta = 20 * TMath::DegToRad();
-  // Counters for events in range
-  data_count = 0;
-  mc_count = 0;
-  // // Loop over data tree
-  // Long64_t nEntriesData = data->GetEntries();
-  // for (Long64_t i = 0; i < nEntriesData; ++i) {
-  //   data->GetEntry(i);
-  //   if (e_theta_data > min_theta && e_theta_data < max_theta) {
-  //     ++data_count;
-  //   }
-  // }
-  // // Loop over mc tree
-  // Long64_t nEntriesMC = mc->GetEntries();
-  // for (Long64_t i = 0; i < nEntriesMC; ++i) {
-  //   mc->GetEntry(i);
-  //   if (e_theta_mc > min_theta && e_theta_mc < max_theta) {
-  //     ++mc_count;
-  //   }
-  // }
-  // // Print the results
-  // std::cout << "Number of events in range (12 < e_theta < 20 degrees) ";
-  // std::cout << "to be used as normalization," << std::endl;
-  // std::cout << "Data: " << data_count << std::endl;
-  // std::cout << "MC: " << mc_count << std::endl;
 
   dataReader.SetTree(data);  // Initialize the global variable
   mcReader.SetTree(mc);  // Initialize the global variable
@@ -282,38 +250,51 @@ int main(int argc, char *argv[]) {
 
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
-    for (int asymmetry = 0; asymmetry < 3; ++asymmetry){
-      if (asymmetry > 0 && cpp == 1) {
-        cout << "Skipping TSA and DSA for unpolarized target data." << endl;
-        continue;
-      }
-      switch (asymmetry) {
-        case 0: cout << "    Beginning chi2 BSA." << endl; break;
-        case 1: cout << "    Beginning chi2 TSA." << endl; break;
-        case 2: cout << "    Beginning chi2 DSA." << endl; break;
-      }
-      switch (channel) {
-        case 0: calculate_inclusive(output_file.c_str(), kinematic_file.c_str(), 
-        binNames[i], asymmetry); break;
-        case 1: performChi2Fits_single_hadron(output_file.c_str(), kinematic_file.c_str(), 
-        kinematicPlot_file.c_str(), binNames[i], asymmetry); break;
-        case 2: performChi2Fits_b2b_dihadron(output_file.c_str(), kinematic_file.c_str(), 
-        binNames[i], asymmetry); break;
-        case 4: performChi2Fits_dvcs(output_file.c_str(), kinematic_file.c_str(), 
-        kinematicPlot_file.c_str(), binNames[i], asymmetry); break;
-      }
+
+    // Calculate the dilution factors for the current bin
+    auto dilutionFactors = calculate_dilution_factors();
+
+    // Print out the dilution factors and their uncertainties
+    cout << "Dilution Factors for Bin Set " << i + 1 << ":" << endl;
+    for (size_t j = 0; j < dilutionFactors.size(); ++j) {
+        cout << "Bin " << j + 1 << ": "
+             << "Dilution Factor = " << dilutionFactors[j].first
+             << ", Uncertainty = " << dilutionFactors[j].second
+             << endl;
     }
-    cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
-    cout << "MLM fits disabled by default in main branch. See development/uncomment next lines for MLM." << endl;
-    // switch (channel) {
-    //   case 0: cout << "No MLM fit for inclusive." << endl; break;
-    //   case 1: performMLMFits_single_hadron(output_file.c_str(), kinematic_file.c_str(), binNames[i]); break;
-    //   case 2: performMLMFits_b2b_dihadron(output_file.c_str(), kinematic_file.c_str(), binNames[i]); break;
-    //   case 3: cout << "No dihadron MLM fit (yet)." << endl; break;
-    //   case 4: cout << "No unbinned MLM fit performed for DVCS; the physics is the phi dependence" << endl; break;
+
+    // for (int asymmetry = 0; asymmetry < 3; ++asymmetry) {
+    //     if (asymmetry > 0 && cpp == 1) {
+    //         cout << "Skipping TSA and DSA for unpolarized target data." << endl;
+    //         continue;
+    //     }
+    //     switch (asymmetry) {
+    //         case 0: cout << "    Beginning chi2 BSA." << endl; break;
+    //         case 1: cout << "    Beginning chi2 TSA." << endl; break;
+    //         case 2: cout << "    Beginning chi2 DSA." << endl; break;
+    //     }
+    //     switch (channel) {
+    //         case 0: calculate_inclusive(output_file.c_str(), kinematic_file.c_str(), 
+    //         binNames[i], asymmetry); break;
+    //         case 1: performChi2Fits_single_hadron(output_file.c_str(), kinematic_file.c_str(), 
+    //         kinematicPlot_file.c_str(), binNames[i], asymmetry, dilutionFactors); break;
+    //         case 2: performChi2Fits_b2b_dihadron(output_file.c_str(), kinematic_file.c_str(), 
+    //         binNames[i], asymmetry, dilutionFactors); break;
+    //         case 4: performChi2Fits_dvcs(output_file.c_str(), kinematic_file.c_str(), 
+    //         kinematicPlot_file.c_str(), binNames[i], asymmetry, dilutionFactors); break;
+    //     }
     // }
-    cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
-    cout << endl << endl;
+    // cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
+    // cout << "MLM fits disabled by default in main branch. See development/uncomment next lines for MLM." << endl;
+    // // switch (channel) {
+    // //   case 0: cout << "No MLM fit for inclusive." << endl; break;
+    // //   case 1: performMLMFits_single_hadron(output_file.c_str(), kinematic_file.c_str(), binNames[i], dilutionFactors); break;
+    // //   case 2: performMLMFits_b2b_dihadron(output_file.c_str(), kinematic_file.c_str(), binNames[i], dilutionFactors); break;
+    // //   case 3: cout << "No dihadron MLM fit (yet)." << endl; break;
+    // //   case 4: cout << "No unbinned MLM fit performed for DVCS; the physics is the phi dependence" << endl; break;
+    // // }
+    // cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
+    // cout << endl << endl;
     currentFits++;
   }
 
