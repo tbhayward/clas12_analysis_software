@@ -68,10 +68,16 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
         auto fill_histogram = [&](TTree* tree, TH1D* hist) {
             TTreeReader reader(tree);
             TTreeReaderValue<double> currentVariable(reader, propertyNames[currentFits].c_str());
+            TTreeReaderValue<double> vz_e(reader, "vz_e");
+            TTreeReaderValue<double> vz_p(reader, "vz_p");
+            TTreeReaderValue<double> Q2(reader, "Q2");
+            TTreeReaderValue<double> W(reader, "W");
+            TTreeReaderValue<double> Mx(reader, "Mx");
+            TTreeReaderValue<double> y(reader, "y");
 
             while (reader.Next()) {
                 bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
-                std::cout << passedKinematicCuts << " " << *vz_e << " " << *vz_e << " " << *vz_p << " " << *vz_p << " " << *Q2 << " " << *W << " " << *Mx << " " << *y << std::endl;
+                std::cout << passedKinematicCuts << " " << *vz_e << " " << *vz_p << " " << *Q2 << " " << *W << " " << *Mx << " " << *y << std::endl;
                 // std::cout << passedKinematicCuts << std::endl;
                 if (*currentVariable >= varMin && *currentVariable < varMax && kinematicCuts->applyCuts(currentFits, false)) {
                 // if (*currentVariable >= varMin && *currentVariable < varMax) {
