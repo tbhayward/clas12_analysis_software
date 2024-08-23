@@ -1,10 +1,28 @@
-#include "calculate_dilution_factors.h"
-#include "common_vars.h" 
 #include <TGraphErrors.h>
 #include <TF1.h>
 #include <TMath.h>
 #include <TFile.h>
 #include <TH1D.h>
+// tbhayward libraries
+#include "common_vars.h"  // Include the common header
+#include "load_bins_from_csv.h"
+#include "load_run_info_from_csv.h"
+#include "dilution_factor.h"
+#include "calculate_dilution_factors.h"
+#include "asymmetry_fits.h"
+#include "BaseKinematicCuts.h"
+#include "KinematicCuts.h"
+#include "InclusiveKinematicCuts.h"
+#include "SingleHadronKinematicCuts.h"
+#include "B2BDihadronKinematicCuts.h"
+#include "DihadronKinematicCuts.h"
+#include "formatLabelName.h"
+#include "readChi2Fits.h"
+#include "histConfigs.h"
+#include "charge_accumulation.h"
+#include "plot_data.h"
+#include "modifyTree.h"
+#include "fitting_process.h" // Include your header file
 
 // Fractional charge values
 const double xA = 0.71297;
@@ -52,8 +70,9 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
             TTreeReaderValue<double> currentVariable(reader, propertyNames[currentFits].c_str());
 
             while (reader.Next()) {
-                // if (*currentVariable >= varMin && *currentVariable < varMax && kinematicCuts->applyCuts(currentFits, false)) {
-                if (*currentVariable >= varMin && *currentVariable < varMax) {
+                bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
+                if (*currentVariable >= varMin && *currentVariable < varMax && kinematicCuts->applyCuts(currentFits, false)) {
+                // if (*currentVariable >= varMin && *currentVariable < varMax) {
                     // std::cout << *currentVariable << std::endl;
                     hist->Fill(*currentVariable);
                     sumCurrentVariable += *currentVariable;
