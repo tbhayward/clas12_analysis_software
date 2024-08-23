@@ -52,7 +52,8 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
             TTreeReaderValue<double> currentVariable(reader, propertyNames[currentFits].c_str());
 
             while (reader.Next()) {
-                if (*currentVariable >= varMin && *currentVariable < varMax && kinematicCuts->applyCuts(currentFits, false)) {
+                // if (*currentVariable >= varMin && *currentVariable < varMax && kinematicCuts->applyCuts(currentFits, false)) {
+                if (*currentVariable >= varMin && *currentVariable < varMax) {
                     std::cout << *currentVariable << std::endl;
                     hist->Fill(*currentVariable);
                     sumCurrentVariable += *currentVariable;
