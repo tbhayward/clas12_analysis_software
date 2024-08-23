@@ -1862,9 +1862,9 @@ TH2D* createHistogramForBin_b2b_dihadron(const char* histName, int binIndex,
       double Npm = histPosNeg->GetBinContent(iBinX, iBinY) / cpp;
       double Nmp = histNegPos->GetBinContent(iBinX, iBinY) / cpp;
       double Nmm = histNegNeg->GetBinContent(iBinX, iBinY) / cpp;
-      double asymmetry = asymmetry_value_calculation(meanVariable, dilutionFactors[iBinx], prefix, 
+      double asymmetry = asymmetry_value_calculation(meanVariable, dilutionFactors, prefix, 
         Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
-      double error = asymmetry_error_calculation(meanVariable, dilutionFactors[iBinx], prefix, 
+      double error = asymmetry_error_calculation(meanVariable, dilutionFactors, prefix, 
         Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
 
       histAsymmetry->SetBinContent(iBinX, iBinY, asymmetry);
@@ -1944,7 +1944,7 @@ void performChi2Fits_b2b_dihadron(const char* output_file, const char* kinematic
     snprintf(histName, sizeof(histName), "hist_%zu", i);
 
     // Create a histogram for the current bin
-    TH2D* hist = createHistogramForBin_b2b_dihadron(histName, i, prefix, asymmetry_index, dilutionFactors);
+    TH2D* hist = createHistogramForBin_b2b_dihadron(histName, i, prefix, asymmetry_index, dilutionFactors[i]);
     // Fit the histogram using the fitFunction and get the fit result
     hist->Fit(fitFunction, "QS");
     // not plotting function here for 2D dihadron cases
