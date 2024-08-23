@@ -43,10 +43,9 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
         TH1D *h_he = new TH1D("h_he", "", 1, varMin, varMax);
         TH1D *h_empty = new TH1D("h_empty", "", 1, varMin, varMax);
 
-        double sumCurrentVariable = 0.0;
+        TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
         int count = 0;
 
-        std::cout << varMin << " " << varMax << std::endl;
         // Helper function to fill histograms based on kinematic cuts and track mean
         auto fill_histogram = [&](TTree* tree, TH1D* hist) {
             TTreeReader reader(tree);
@@ -57,6 +56,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
                     hist->Fill(*currentVariable);
                     sumCurrentVariable += *currentVariable;
                     ++count;
+                    std::cout << *currentVariable << std::endl;
                 }
             }
         };
