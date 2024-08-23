@@ -2326,7 +2326,8 @@ void plotHistogramAndFit_dvcs(TH1D* histogram, TF1* fitFunction, int binIndex,
 }
 
 TH1D* createHistogramForBin_dvcs(const char* histName, int binIndex, 
-  const std::string& prefix, int asymmetry_index) {
+  const std::string& prefix, int asymmetry_index, 
+  const std::vector<std::pair<double, double>>& dilutionFactors) {
 
   // Determine the variable range for the specified bin
   double varMin = allBins[currentFits][binIndex];
