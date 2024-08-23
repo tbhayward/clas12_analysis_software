@@ -36,7 +36,7 @@
 #include "load_bins_from_csv.h"
 #include "load_run_info_from_csv.h"
 #include "dilution_factor.h"
-#include "dilution_factor_calc.h"
+#include "calculate_dilution_factors.h"
 #include "asymmetry_fits.h"
 #include "BaseKinematicCuts.h"
 #include "KinematicCuts.h"
