@@ -1862,9 +1862,9 @@ TH2D* createHistogramForBin_b2b_dihadron(const char* histName, int binIndex,
       double Npm = histPosNeg->GetBinContent(iBinX, iBinY) / cpp;
       double Nmp = histNegPos->GetBinContent(iBinX, iBinY) / cpp;
       double Nmm = histNegNeg->GetBinContent(iBinX, iBinY) / cpp;
-      double asymmetry = asymmetry_value_calculation(meanVariable, dilutionFactors, prefix, 
+      double asymmetry = asymmetry_value_calculation(meanVariable, dilutionFactors[iBinx], prefix, 
         Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
-      double error = asymmetry_error_calculation(meanVariable, dilutionFactors, prefix, 
+      double error = asymmetry_error_calculation(meanVariable, dilutionFactors[iBinx], prefix, 
         Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
 
       histAsymmetry->SetBinContent(iBinX, iBinY, asymmetry);
