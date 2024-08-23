@@ -1,9 +1,10 @@
 #include "calculate_dilution_factors.h"
-#include "common_vars.h"  // Include the global variables
+#include "common_vars.h" 
 #include <TGraphErrors.h>
 #include <TF1.h>
 #include <TMath.h>
 #include <TFile.h>
+#include <TH1D.h>
 
 // Fractional charge values
 const double xA = 0.71297;
