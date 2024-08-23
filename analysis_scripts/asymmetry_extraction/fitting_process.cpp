@@ -761,7 +761,8 @@ void plotHistogramAndFit_single_hadron(TH1D* histogram, TF1* fitFunction, int bi
 }
 
 TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex, 
-  const std::string& prefix, int asymmetry_index, const std::vector<std::pair<double, double>>& dilutionFactors) {
+  const std::string& prefix, int asymmetry_index, 
+  const std::vector<std::pair<double, double>>& dilutionFactors) {
 
   // Determine the variable range for the specified bin
   double varMin = allBins[currentFits][binIndex];
@@ -1767,7 +1768,7 @@ void performMLMFits_b2b_dihadron(const char* output_file, const char* kinematic_
 
 TH2D* createHistogramForBin_b2b_dihadron(const char* histName, int binIndex, 
   const std::string& prefix, int asymmetry_index, 
-  const std::pair<double, double>& dilutionFactor) {
+  const std::pair<double, double>& dilutionFactors) {
 
   // Determine the variable range for the specified bin
   double varMin = allBins[currentFits][binIndex];
