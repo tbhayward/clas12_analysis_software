@@ -5,12 +5,14 @@
 #include <cmath>
 #include <iostream>
 
-double asymmetry_value_calculation(double currentVariable, double Q2, double xB, 
-  double z, double pT, const std::string& prefix, double Npp, double Npm, double Nmp, 
-  double Nmm, double meanPol, double Ptp, double Ptm, int asymmetry_index);
-double asymmetry_error_calculation(double currentVariable, double Q2, double xB, 
-  double z, double pT, const std::string& prefix, double Npp, double Npm, double Nmp, 
-  double Nmm, double meanPol, double Ptp, double Ptm, int asymmetry_index);
+double asymmetry_value_calculation(double currentVariable, 
+  const std::pair<double, double>& dilutionFactor, const std::string& prefix, 
+  double Npp, double Npm, double Nmp, double Nmm, double meanPol, 
+  double Ptp, double Ptm, int asymmetry_index);
+double asymmetry_error_calculation(double currentVariable, 
+  const std::pair<double, double>& dilutionFactor, const std::string& prefix, 
+  double Npp, double Npm, double Nmp, double Nmm, double meanPol, 
+  double Ptp, double Ptm, int asymmetry_index);
 double Legendre_P(int ell, int m, float theta);
 double BSA_inclusive(double* par);
 double BSA_single_hadron(double* x, double* par);
