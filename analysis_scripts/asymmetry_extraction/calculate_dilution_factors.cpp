@@ -16,6 +16,7 @@
 #include "SingleHadronKinematicCuts.h"
 #include "B2BDihadronKinematicCuts.h"
 #include "DihadronKinematicCuts.h"
+#include "dvcsKinematicCuts.h"
 #include "formatLabelName.h"
 #include "readChi2Fits.h"
 #include "histConfigs.h"
@@ -46,6 +47,62 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     TTree* he = (TTree*)heFile->Get("PhysicsEvents");
     TTree* empty = (TTree*)emptyFile->Get("PhysicsEvents");
 
+    // Create local TTreeReader objects for each tree
+    TTreeReader nh3Reader(nh3);
+    TTreeReader cReader(c);
+    TTreeReader chReader(ch);
+    TTreeReader heReader(he);
+    TTreeReader emptyReader(empty);
+
+    // Pointers for local kinematic cuts, dynamically allocated based on the channel
+    BaseKinematicCuts* nh3Cuts = nullptr;
+    BaseKinematicCuts* cCuts = nullptr;
+    BaseKinematicCuts* chCuts = nullptr;
+    BaseKinematicCuts* heCuts = nullptr;
+    BaseKinematicCuts* emptyCuts = nullptr;
+
+    // Allocate the appropriate kinematic cuts based on the channel
+    switch (channel) {
+        case 0:
+            nh3Cuts = new InclusiveKinematicCuts(nh3Reader);
+            cCuts = new InclusiveKinematicCuts(cReader);
+            chCuts = new InclusiveKinematicCuts(chReader);
+            heCuts = new InclusiveKinematicCuts(heReader);
+            emptyCuts = new InclusiveKinematicCuts(emptyReader);
+            break;
+        case 1:
+            nh3Cuts = new SingleHadronKinematicCuts(nh3Reader);
+            cCuts = new SingleHadronKinematicCuts(cReader);
+            chCuts = new SingleHadronKinematicCuts(chReader);
+            heCuts = new SingleHadronKinematicCuts(heReader);
+            emptyCuts = new SingleHadronKinematicCuts(emptyReader);
+            break;
+        case 2:
+            nh3Cuts = new B2BDihadronKinematicCuts(nh3Reader);
+            cCuts = new B2BDihadronKinematicCuts(cReader);
+            chCuts = new B2BDihadronKinematicCuts(chReader);
+            heCuts = new B2BDihadronKinematicCuts(heReader);
+            emptyCuts = new B2BDihadronKinematicCuts(emptyReader);
+            break;
+        case 3:
+            nh3Cuts = new DihadronKinematicCuts(nh3Reader);
+            cCuts = new DihadronKinematicCuts(cReader);
+            chCuts = new DihadronKinematicCuts(chReader);
+            heCuts = new DihadronKinematicCuts(heReader);
+            emptyCuts = new DihadronKinematicCuts(emptyReader);
+            break;
+        case 4:
+            nh3Cuts = new dvcsKinematicCuts(nh3Reader);
+            cCuts = new dvcsKinematicCuts(cReader);
+            chCuts = new dvcsKinematicCuts(chReader);
+            heCuts = new dvcsKinematicCuts(heReader);
+            emptyCuts = new dvcsKinematicCuts(emptyReader);
+            break;
+        default:
+            std::cerr << "Invalid channel specified." << std::endl;
+            return {}; // Return an empty vector to indicate failure
+    }
+
     std::vector<std::pair<double, double>> dilutionResults;
     TGraphErrors* gr_dilution = new TGraphErrors();
 
@@ -65,24 +122,12 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
         int count = 0;
 
         // Helper function to fill histograms based on kinematic cuts and track mean
-        auto fill_histogram = [&](TTree* tree, TH1D* hist) {
-            TTreeReader reader(tree);
+        auto fill_histogram = [&](TTreeReader& reader, TH1D* hist, BaseKinematicCuts* cuts) {
             TTreeReaderValue<double> currentVariable(reader, propertyNames[currentFits].c_str());
-            TTreeReaderValue<double> vz_e(reader, "vz_e");
-            TTreeReaderValue<double> vz_p(reader, "vz_p");
-            TTreeReaderValue<double> Q2(reader, "Q2");
-            TTreeReaderValue<double> W(reader, "W");
-            TTreeReaderValue<double> Mx(reader, "Mx");
-            TTreeReaderValue<double> y(reader, "y");
 
             while (reader.Next()) {
-                bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
-                std::cout << *vz_e << " " << (*vz_e>-10) << std::endl << std::endl;
-                // std::cout << passedKinematicCuts << " " << *vz_e << " " << *vz_p << " " << *Q2 << " " << *W << " " << *Mx << " " << *y << std::endl;
-                // std::cout << passedKinematicCuts << std::endl;
-                if (*currentVariable >= varMin && *currentVariable < varMax && kinematicCuts->applyCuts(currentFits, false)) {
-                // if (*currentVariable >= varMin && *currentVariable < varMax) {
-                    // std::cout << *currentVariable << std::endl;
+                bool passedKinematicCuts = cuts->applyCuts(currentFits, false);
+                if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
                     hist->Fill(*currentVariable);
                     sumCurrentVariable += *currentVariable;
                     ++count;
@@ -90,11 +135,11 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
             }
         };
 
-        fill_histogram(nh3, h_nh3);
-        fill_histogram(c, h_c);
-        fill_histogram(ch, h_ch);
-        fill_histogram(he, h_he);
-        fill_histogram(empty, h_empty);
+        fill_histogram(nh3Reader, h_nh3, nh3Cuts);
+        fill_histogram(cReader, h_c, cCuts);
+        fill_histogram(chReader, h_ch, chCuts);
+        fill_histogram(heReader, h_he, heCuts);
+        fill_histogram(emptyReader, h_empty, emptyCuts);
 
         // Calculate the mean value of currentVariable in this bin
         double meanCurrentVariable = (count > 0) ? (sumCurrentVariable / count) : (varMin + varMax) / 2.0;
@@ -117,8 +162,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
                             1.0 * nf * xC * xCH * xHe - 
                             78.6217 * nCH * xC * xf * xHe + 
                             14.9756 * nC * xCH * xf * xHe));
-
-        // Calculate error for this bin
+      // Calculate error for this bin
         double error = TMath::Sqrt((TMath::Power(nA, 2) / (xA * xA)) + 
                                    (TMath::Power(nC, 2) / (xC * xC)) + 
                                    (TMath::Power(nCH, 2) / (xCH * xCH)) + 
@@ -158,18 +202,18 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     delete gr_dilution;
     delete fitFunc;
 
-    // Close the ROOT files
-    nh3File->Close();
-    cFile->Close();
-    chFile->Close();
-    heFile->Close();
-    emptyFile->Close();
+    // Clean up dynamically allocated kinematic cuts
+    delete nh3Cuts;
+    delete cCuts;
+    delete chCuts;
+    delete heCuts;
+    delete emptyCuts;
 
-    delete nh3File;
-    delete cFile;
-    delete chFile;
-    delete heFile;
-    delete emptyFile;
+    // Close and delete ROOT files
+    nh3File->Close(); delete nh3File;
+    cFile->Close(); delete cFile;
+    chFile->Close(); delete chFile;
+    heFile->Close(); delete heFile;
+    emptyFile->Close(); delete emptyFile;
 
     return dilutionResults;
-}
