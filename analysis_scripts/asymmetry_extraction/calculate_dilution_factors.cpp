@@ -162,12 +162,13 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
                             1.0 * nf * xC * xCH * xHe - 
                             78.6217 * nCH * xC * xf * xHe + 
                             14.9756 * nC * xCH * xf * xHe));
-      // Calculate error for this bin
+        // Calculate error for this bin
         double error = TMath::Sqrt((TMath::Power(nA, 2) / (xA * xA)) + 
                                    (TMath::Power(nC, 2) / (xC * xC)) + 
                                    (TMath::Power(nCH, 2) / (xCH * xCH)) + 
                                    (TMath::Power(nMT, 2) / (xHe * xHe)) + 
                                    (TMath::Power(nf, 2) / (xf * xf)));
+        std::cout << dilution << " " << error << std::endl;
 
         // Add the dilution factor and error to the TGraphErrors
         gr_dilution->SetPoint(binIndex, meanCurrentVariable, dilution);
