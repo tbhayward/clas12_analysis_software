@@ -762,7 +762,7 @@ void plotHistogramAndFit_single_hadron(TH1D* histogram, TF1* fitFunction, int bi
 
 TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex, 
   const std::string& prefix, int asymmetry_index, 
-  const std::vector<std::pair<double, double>>& dilutionFactors) {
+  const std::pair<double, double>& dilutionFactor) {
 
   // Determine the variable range for the specified bin
   double varMin = allBins[currentFits][binIndex];
