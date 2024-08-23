@@ -196,7 +196,6 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
         // Add the dilution factor and error to the TGraphErrors
         gr_dilution->SetPoint(binIndex, meanCurrentVariable, dilution);
         gr_dilution->SetPointError(binIndex, 0, error);
-        std::cout << dilution << " " << error << std::endl;
 
         // Store the original dilution and error for now
         dilutionResults.emplace_back(dilution, error);
