@@ -297,7 +297,7 @@ double asymmetry_error_calculation(double currentVariable, const std::pair<doubl
   int asymmetry_index) {
   // double Df = dilution_factor(Q2, xB, z, pT, prefix); // dilution factor
   double Df = dilutionFactor.first;
-  // double sigmaDf = dilutionFactor.second;
+  double sigmaDf = dilutionFactor.second;
   double sigmaPb = 0.015;
   double sigmaPtp = 0.025;
   double sigmaPtm = 0.025;
