@@ -293,7 +293,7 @@ double asymmetry_value_calculation(double currentVariable, const std::pair<doubl
 
 double asymmetry_error_calculation(double currentVariable, const std::pair<double, double>& dilutionFactor, 
   const std::string& prefix, double npp, double npm, double nmp, double nmm,
-  double meanPol, double Ptp, double Ptm, 
+  double Pb, double Ptp, double Ptm, 
   int asymmetry_index) {
   // double Df = dilution_factor(Q2, xB, z, pT, prefix); // dilution factor
   double Df = dilutionFactor.first;
