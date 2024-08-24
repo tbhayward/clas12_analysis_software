@@ -292,7 +292,7 @@ double asymmetry_value_calculation(double currentVariable, const std::pair<doubl
 }
 
 double asymmetry_error_calculation(double currentVariable, const std::pair<double, double>& dilutionFactor, 
-  const std::string& prefix, double Npp, double Npm, double Nmp, double Nmm,
+  const std::string& prefix, double npp, double npm, double nmp, double nmm,
   double meanPol, double Ptp, double Ptm, 
   int asymmetry_index) {
   // double Df = dilution_factor(Q2, xB, z, pT, prefix); // dilution factor
@@ -343,77 +343,77 @@ double asymmetry_error_calculation(double currentVariable, const std::pair<doubl
               2 * nmm * npp * pow(Pb, 2) * pow(Ptm, 2) * pow(sigmaPtp, 2))))) /
     pow((cmm * cpm * (cpp * nmp + cmp * npp) * Pb * Ptm + cmp * cpp * (cpm * nmm + cmm * npm) * Pb * Ptp), 4));
     case 1: // target-spin asymmetry
-      return (1 / Df) * std::sqrt(
-        (((cmp*cpm*cpp*Nmm*std::pow(Nmp+Npp,2)+cmm*cmp*cpp*Npm*std::pow(Nmp+Npp,2)+
-        cmm*cpm*std::pow(Nmm+Npm,2)*(cpp*Nmp+cmp*Npp))*std::pow(Ptm+Ptp,2))) /
-        (cmm*cmp*cpm*cpp*std::pow((Nmp+Npp)*Ptm+(Nmm+Npm)*Ptp,4)));
-    //   return sqrt(
-    // (pow(cmm, 2) * pow(cmp, 2) * pow(cpm, 2) * pow(cpp, 4) * pow(Df, 2) * nmp * 
-    //  pow((cpm * nmm + cmm * npm), 2) * pow((Ptm + Ptp), 2) +
-    //  pow(cmm, 2) * pow(cmp, 4) * pow(cpm, 2) * pow(cpp, 2) * pow(Df, 2) * 
-    //  pow((cpm * nmm + cmm * npm), 2) * npp * pow((Ptm + Ptp), 2) +
-    //  pow(cmm, 2) * pow(cmp, 2) * pow(cpm, 4) * pow(cpp, 2) * pow(Df, 2) * 
-    //  nmm * pow((cpp * nmp + cmp * npp), 2) * pow((Ptm + Ptp), 2) +
-    //  pow(cmm, 4) * pow(cmp, 2) * pow(cpm, 2) * pow(cpp, 2) * pow(Df, 2) * 
-    //  npm * pow((cpp * nmp + cmp * npp), 2) * pow((Ptm + Ptp), 2) +
-    //  pow((cmm * cpm * cpp * nmp - cmp * cpp * (cpm * nmm + cmm * npm) + 
-    //       cmm * cmp * cpm * npp), 2) * 
-    //  pow((cmm * cpm * (cpp * nmp + cmp * npp) * Ptm + 
-    //       cmp * cpp * (cpm * nmm + cmm * npm) * Ptp), 2) * pow(sigmaDf, 2) +
-    //  pow(cmm, 2) * pow(cpm, 2) * pow(Df, 2) * pow((cpp * nmp + cmp * npp), 2) * 
-    //  pow((cmm * cpm * cpp * nmp - cmp * cpp * (cpm * nmm + cmm * npm) + 
-    //       cmm * cmp * cpm * npp), 2) * pow(sigmaPtm, 2) +
-    //  pow(cmp, 2) * pow(cpp, 2) * pow(Df, 2) * pow((cpm * nmm + cmm * npm), 2) * 
-    //  pow((cmm * cpm * cpp * nmp - cmp * cpp * (cpm * nmm + cmm * npm) + 
-    //       cmm * cmp * cpm * npp), 2) * pow(sigmaPtp, 2)) /
-    // (pow(Df, 4) * pow((cmm * cpm * (cpp * nmp + cmp * npp) * Ptm + 
-    //                    cmp * cpp * (cpm * nmm + cmm * npm) * Ptp), 4)));
+      // return (1 / Df) * std::sqrt(
+      //   (((cmp*cpm*cpp*Nmm*std::pow(Nmp+Npp,2)+cmm*cmp*cpp*Npm*std::pow(Nmp+Npp,2)+
+      //   cmm*cpm*std::pow(Nmm+Npm,2)*(cpp*Nmp+cmp*Npp))*std::pow(Ptm+Ptp,2))) /
+      //   (cmm*cmp*cpm*cpp*std::pow((Nmp+Npp)*Ptm+(Nmm+Npm)*Ptp,4)));
+      return sqrt(
+    (pow(cmm, 2) * pow(cmp, 2) * pow(cpm, 2) * pow(cpp, 4) * pow(Df, 2) * nmp * 
+     pow((cpm * nmm + cmm * npm), 2) * pow((Ptm + Ptp), 2) +
+     pow(cmm, 2) * pow(cmp, 4) * pow(cpm, 2) * pow(cpp, 2) * pow(Df, 2) * 
+     pow((cpm * nmm + cmm * npm), 2) * npp * pow((Ptm + Ptp), 2) +
+     pow(cmm, 2) * pow(cmp, 2) * pow(cpm, 4) * pow(cpp, 2) * pow(Df, 2) * 
+     nmm * pow((cpp * nmp + cmp * npp), 2) * pow((Ptm + Ptp), 2) +
+     pow(cmm, 4) * pow(cmp, 2) * pow(cpm, 2) * pow(cpp, 2) * pow(Df, 2) * 
+     npm * pow((cpp * nmp + cmp * npp), 2) * pow((Ptm + Ptp), 2) +
+     pow((cmm * cpm * cpp * nmp - cmp * cpp * (cpm * nmm + cmm * npm) + 
+          cmm * cmp * cpm * npp), 2) * 
+     pow((cmm * cpm * (cpp * nmp + cmp * npp) * Ptm + 
+          cmp * cpp * (cpm * nmm + cmm * npm) * Ptp), 2) * pow(sigmaDf, 2) +
+     pow(cmm, 2) * pow(cpm, 2) * pow(Df, 2) * pow((cpp * nmp + cmp * npp), 2) * 
+     pow((cmm * cpm * cpp * nmp - cmp * cpp * (cpm * nmm + cmm * npm) + 
+          cmm * cmp * cpm * npp), 2) * pow(sigmaPtm, 2) +
+     pow(cmp, 2) * pow(cpp, 2) * pow(Df, 2) * pow((cpm * nmm + cmm * npm), 2) * 
+     pow((cmm * cpm * cpp * nmp - cmp * cpp * (cpm * nmm + cmm * npm) + 
+          cmm * cmp * cpm * npp), 2) * pow(sigmaPtp, 2)) /
+    (pow(Df, 4) * pow((cmm * cpm * (cpp * nmp + cmp * npp) * Ptm + 
+                       cmp * cpp * (cpm * nmm + cmm * npm) * Ptp), 4)));
     case 2: // double-spin asymmetry
-      return (1 / (Df*meanPol)) * std::sqrt(
-        (cmp*cpm*cpp*Nmm*std::pow((Nmp+Npp)*Ptm+(Nmp+2*Npm-Npp)*Ptp,2) + 
-        cmm*cmp*cpp*Npm*std::pow(Nmp*(Ptm-Ptp)+2*Nmm*Ptp+Npp*(Ptm+Ptp),2) +
-        cmm*cpm*(cmp*Npp*std::pow((-Nmm+2*Nmp+Npm)*Ptm+(Nmm+Npm)*Ptp,2) +
-        cpp*Nmp*std::pow((Nmm-Npm+2*Npp)*Ptm+(Nmm+Npm)*Ptp,2))) / 
-        (cmm*cmp*cpm*cpp*std::pow((Nmp+Npp)*Ptm+(Nmm+Npm)*Ptp,4)));
-    //   return sqrt(
-    // (pow(cmp, 2) * pow(cpp, 2) * pow(Df, 2) * npm * pow(Pb, 2) * 
-    //  pow((cmm * pow(cpm, 2) * (cpp * nmp + cmp * npp) * Ptm + 
-    //       cmp * pow(cpm, 2) * cpp * nmm * Ptp + 
-    //       pow(cmm, 2) * (cmp * cpp * nmm - cpm * cpp * nmp + 
-    //       cmp * cpm * npp) * Ptp), 2) +
-    //  pow(cmm, 2) * pow(cmp, 2) * pow(cpm, 2) * pow(cpp, 2) * pow(Df, 2) * 
-    //  npp * pow(Pb, 2) * pow((cmp * cpm * (npm * Ptm + nmm * Ptp) + 
-    //       cmm * (-cmp * nmm * Ptm + 2 * cpm * nmp * Ptm + 
-    //       cmp * npm * Ptp)), 2) +
-    //  pow(cmm, 2) * pow(cmp, 2) * pow(cpm, 2) * pow(cpp, 2) * pow(Df, 2) * 
-    //  nmp * pow(Pb, 2) * pow((cpm * cpp * (-npm * Ptm + nmm * Ptp) + 
-    //       cmm * (cpp * nmm * Ptm + 2 * cpm * npp * Ptm + 
-    //       cpp * npm * Ptp)), 2) +
-    //  pow(cmp, 2) * pow(cpp, 2) * pow(Df, 2) * nmm * pow(Pb, 2) * 
-    //  pow((cmp * pow(cpm, 2) * cpp * npm * Ptp + 
-    //       cmm * pow(cpm, 2) * (cpp * nmp - cmp * npp) * Ptp + 
-    //       pow(cmm, 2) * (cpm * (cpp * nmp + cmp * npp) * Ptm + 
-    //       cmp * cpp * npm * Ptp)), 2) +
-    //  pow((cmp * cpm * cpp * npm - cmm * (cmp * cpp * nmm - 
-    //       cpm * cpp * nmp + cmp * cpm * npp)), 2) * 
-    //  pow(Pb, 2) * pow((cmm * cpm * (cpp * nmp + cmp * npp) * Ptm + 
-    //       cmp * cpp * (cpm * nmm + cmm * npm) * Ptp), 2) * pow(sigmaDf, 2) +
-    //  pow(Df, 2) * pow((cmp * cpm * cpp * npm - 
-    //       cmm * (cmp * cpp * nmm - cpm * cpp * nmp + 
-    //       cmp * cpm * npp)), 2) * 
-    //  pow((cmm * cpm * (cpp * nmp + cmp * npp) * Ptm + 
-    //       cmp * cpp * (cpm * nmm + cmm * npm) * Ptp), 2) * pow(sigmaPb, 2) +
-    //  pow(cmm, 2) * pow(cpm, 2) * pow(Df, 2) * pow((cpp * nmp + cmp * npp), 2) * 
-    //  pow((cmp * cpm * cpp * npm - 
-    //       cmm * (cmp * cpp * nmm - cpm * cpp * nmp + 
-    //       cmp * cpm * npp)), 2) * pow(Pb, 2) * pow(sigmaPtm, 2) +
-    //  pow(cmp, 2) * pow(cpp, 2) * pow(Df, 2) * pow((cpm * nmm + cmm * npm), 2) * 
-    //  pow((cmp * cpm * cpp * npm - 
-    //       cmm * (cmp * cpp * nmm - cpm * cpp * nmp + 
-    //       cmp * cpm * npp)), 2) * pow(Pb, 2) * pow(sigmaPtp, 2)) /
-    // (pow(Df, 4) * pow(Pb, 4) * 
-    //  pow((cmm * cpm * (cpp * nmp + cmp * npp) * Ptm + 
-    //       cmp * cpp * (cpm * nmm + cmm * npm) * Ptp), 4)));
+      // return (1 / (Df*meanPol)) * std::sqrt(
+      //   (cmp*cpm*cpp*Nmm*std::pow((Nmp+Npp)*Ptm+(Nmp+2*Npm-Npp)*Ptp,2) + 
+      //   cmm*cmp*cpp*Npm*std::pow(Nmp*(Ptm-Ptp)+2*Nmm*Ptp+Npp*(Ptm+Ptp),2) +
+      //   cmm*cpm*(cmp*Npp*std::pow((-Nmm+2*Nmp+Npm)*Ptm+(Nmm+Npm)*Ptp,2) +
+      //   cpp*Nmp*std::pow((Nmm-Npm+2*Npp)*Ptm+(Nmm+Npm)*Ptp,2))) / 
+      //   (cmm*cmp*cpm*cpp*std::pow((Nmp+Npp)*Ptm+(Nmm+Npm)*Ptp,4)));
+      return sqrt(
+    (pow(cmp, 2) * pow(cpp, 2) * pow(Df, 2) * npm * pow(Pb, 2) * 
+     pow((cmm * pow(cpm, 2) * (cpp * nmp + cmp * npp) * Ptm + 
+          cmp * pow(cpm, 2) * cpp * nmm * Ptp + 
+          pow(cmm, 2) * (cmp * cpp * nmm - cpm * cpp * nmp + 
+          cmp * cpm * npp) * Ptp), 2) +
+     pow(cmm, 2) * pow(cmp, 2) * pow(cpm, 2) * pow(cpp, 2) * pow(Df, 2) * 
+     npp * pow(Pb, 2) * pow((cmp * cpm * (npm * Ptm + nmm * Ptp) + 
+          cmm * (-cmp * nmm * Ptm + 2 * cpm * nmp * Ptm + 
+          cmp * npm * Ptp)), 2) +
+     pow(cmm, 2) * pow(cmp, 2) * pow(cpm, 2) * pow(cpp, 2) * pow(Df, 2) * 
+     nmp * pow(Pb, 2) * pow((cpm * cpp * (-npm * Ptm + nmm * Ptp) + 
+          cmm * (cpp * nmm * Ptm + 2 * cpm * npp * Ptm + 
+          cpp * npm * Ptp)), 2) +
+     pow(cmp, 2) * pow(cpp, 2) * pow(Df, 2) * nmm * pow(Pb, 2) * 
+     pow((cmp * pow(cpm, 2) * cpp * npm * Ptp + 
+          cmm * pow(cpm, 2) * (cpp * nmp - cmp * npp) * Ptp + 
+          pow(cmm, 2) * (cpm * (cpp * nmp + cmp * npp) * Ptm + 
+          cmp * cpp * npm * Ptp)), 2) +
+     pow((cmp * cpm * cpp * npm - cmm * (cmp * cpp * nmm - 
+          cpm * cpp * nmp + cmp * cpm * npp)), 2) * 
+     pow(Pb, 2) * pow((cmm * cpm * (cpp * nmp + cmp * npp) * Ptm + 
+          cmp * cpp * (cpm * nmm + cmm * npm) * Ptp), 2) * pow(sigmaDf, 2) +
+     pow(Df, 2) * pow((cmp * cpm * cpp * npm - 
+          cmm * (cmp * cpp * nmm - cpm * cpp * nmp + 
+          cmp * cpm * npp)), 2) * 
+     pow((cmm * cpm * (cpp * nmp + cmp * npp) * Ptm + 
+          cmp * cpp * (cpm * nmm + cmm * npm) * Ptp), 2) * pow(sigmaPb, 2) +
+     pow(cmm, 2) * pow(cpm, 2) * pow(Df, 2) * pow((cpp * nmp + cmp * npp), 2) * 
+     pow((cmp * cpm * cpp * npm - 
+          cmm * (cmp * cpp * nmm - cpm * cpp * nmp + 
+          cmp * cpm * npp)), 2) * pow(Pb, 2) * pow(sigmaPtm, 2) +
+     pow(cmp, 2) * pow(cpp, 2) * pow(Df, 2) * pow((cpm * nmm + cmm * npm), 2) * 
+     pow((cmp * cpm * cpp * npm - 
+          cmm * (cmp * cpp * nmm - cpm * cpp * nmp + 
+          cmp * cpm * npp)), 2) * pow(Pb, 2) * pow(sigmaPtp, 2)) /
+    (pow(Df, 4) * pow(Pb, 4) * 
+     pow((cmm * cpm * (cpp * nmp + cmp * npp) * Ptm + 
+          cmp * cpp * (cpm * nmm + cmm * npm) * Ptp), 4)));
     default:
       std::cout << "Invalid asymmetry_index!" << std::endl;
       return 0;
