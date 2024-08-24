@@ -253,6 +253,7 @@ int main(int argc, char *argv[]) {
 
     // Calculate the dilution factors for the current bin
     // auto dilutionFactors = calculate_dilution_factors();
+    const std::vector<std::pair<double, double>>& dilutionFactors
     dilutionFactors = { {0.19, 0.003} };
 
     // Print out the dilution factors and their uncertainties
