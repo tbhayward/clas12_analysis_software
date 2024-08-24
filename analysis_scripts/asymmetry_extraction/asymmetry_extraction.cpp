@@ -252,9 +252,7 @@ int main(int argc, char *argv[]) {
     cout << "-- Beginning kinematic fits." << endl;
 
     // Calculate the dilution factors for the current bin
-    // auto dilutionFactors = calculate_dilution_factors();
-    std::vector<std::pair<double, double>> vec = { {0.19, 0.003} };
-    std::vector<std::pair<double, double>>& dilutionFactors = vec;
+    auto dilutionFactors = calculate_dilution_factors();
 
     // Print out the dilution factors and their uncertainties
     cout << "Dilution Factors for Bin Set " << i + 1 << ":" << endl;
