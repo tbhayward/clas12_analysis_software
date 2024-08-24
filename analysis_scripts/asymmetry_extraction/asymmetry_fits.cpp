@@ -301,6 +301,8 @@ double asymmetry_error_calculation(double currentVariable, const std::pair<doubl
   double sigmaPb = 0.015;
   double sigmaPtp = 0.025;
   double sigmaPtm = 0.025;
+
+  Df = 1; sigmaDf = 0;
   // return the asymmetry error 
 
   switch (asymmetry_index) {
