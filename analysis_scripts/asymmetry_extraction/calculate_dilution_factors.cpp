@@ -224,9 +224,9 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     HistConfig config = histConfigs.find(prefix) != histConfigs.end() ? histConfigs[prefix] : HistConfig{100, 0, 1};
 
     // Create a canvas for plotting
-    TCanvas* c = new TCanvas("c_dilution", "Dilution Factor Plot", 800, 600);
-    c->SetLeftMargin(0.15);
-    c->SetBottomMargin(0.15);
+    TCanvas* canvas = new TCanvas("c_dilution", "Dilution Factor Plot", 800, 600);
+    canvas->SetLeftMargin(0.15);
+    canvas->SetBottomMargin(0.15);
 
     // Configure the graph
     gr_dilution->SetTitle("");
@@ -246,9 +246,10 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     // Save the canvas to a file
     std::string outputDir = "output/dilution_factor_plots/";
     std::string outputFileName = outputDir + "df_" + prefix + ".png";
-    c->SaveAs(outputFileName.c_str());
+    canvas->SaveAs(outputFileName.c_str());
 
     // Clean up
+    delete canvas;
     delete gr_dilution;
     delete fitFunc;
 
