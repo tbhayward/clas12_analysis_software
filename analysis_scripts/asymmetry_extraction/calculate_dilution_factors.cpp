@@ -243,6 +243,11 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     gr_dilution->SetMarkerColor(kBlack);
     gr_dilution->Draw("AP");
 
+    // Save the canvas to a file
+    std::string outputDir = "output/dilution_factor_plots/";
+    std::string outputFileName = outputDir + "df_" + prefix + ".png";
+    c->SaveAs(outputFileName.c_str());
+
     // Clean up
     delete gr_dilution;
     delete fitFunc;
