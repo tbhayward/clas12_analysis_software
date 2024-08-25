@@ -215,12 +215,33 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     // Calculate the chi2/ndf
     double chi2 = fitFunc->GetChisquare();
     int ndf = fitFunc->GetNDF();
-    double scaleFactor = TMath::Sqrt(chi2 / ndf);
 
-    // // Scale the errors by sqrt(chi2/ndf)
-    // for (size_t binIndex = 0; binIndex < dilutionResults.size(); ++binIndex) {
-    //     dilutionResults[binIndex].second *= scaleFactor;  // Scale the error
-    // }
+    // Now plot the TGraphErrors
+    // Get the prefix from propertyNames
+    std::string prefix = propertyNames[currentFits];
+
+    // Retrieve the HistConfig for the current prefix
+    HistConfig config = histConfigs.find(prefix) != histConfigs.end() ? histConfigs[prefix] : HistConfig{100, 0, 1};
+
+    // Create a canvas for plotting
+    TCanvas* c = new TCanvas("c_dilution", "Dilution Factor Plot", 800, 600);
+    c->SetLeftMargin(0.15);
+    c->SetBottomMargin(0.15);
+
+    // Configure the graph
+    gr_dilution->SetTitle("");
+    gr_dilution->GetXaxis()->SetTitle(formatLabelName(prefix).c_str());
+    gr_dilution->GetXaxis()->SetLimits(config.xMin, config.xMax);
+    gr_dilution->GetXaxis()->SetTitleSize(0.05);
+    gr_dilution->GetYaxis()->SetTitle("D_{f}");
+    gr_dilution->GetYaxis()->SetTitleSize(0.05);
+    gr_dilution->GetYaxis()->SetTitleOffset(1.6);
+    gr_dilution->GetYaxis()->SetRangeUser(0.0, 0.4);
+
+    // Draw the graph with error bars
+    gr_dilution->SetMarkerStyle(20);
+    gr_dilution->SetMarkerColor(kBlack);
+    gr_dilution->Draw("AP");
 
     // Clean up
     delete gr_dilution;
