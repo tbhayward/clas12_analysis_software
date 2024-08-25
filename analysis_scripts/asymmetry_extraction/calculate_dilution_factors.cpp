@@ -210,7 +210,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
 
     // Fit the TGraphErrors to a cubic polynomial
     TF1* fitFunc = new TF1("fitFunc", "[0] + [1]*x + [2]*x^2 + [3]*x^3", allBins[currentFits].front(), allBins[currentFits].back());
-    gr_dilution->Fit(fitFunc, "Q");
+    gr_dilution->Fit(fitFunc, "QN");
 
     // Calculate the chi2/ndf
     double chi2 = fitFunc->GetChisquare();
