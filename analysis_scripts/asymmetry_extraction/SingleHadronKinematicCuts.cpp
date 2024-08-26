@@ -36,16 +36,16 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
       goodEvent = goodEvent && *x > 0.06 && *x < 0.60 && *pT > 0 && *pT < 1.2 && *xF > -1 && *xF < 1;
       return goodEvent;
     } 
-    if (property == "Q2") {
+    if (property == "Q2multi1") {
       goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *Q2 > 1 && *W > 2 && *Mx > 1.35 && *y < 0.75;
       goodEvent = goodEvent && *x > 0.06 && *x < 0.60 && *pT > 0 && *pT < 1.2 && *xF > -1 && *xF < 1;
-      goodEvent = goodEvent && *x > 0.12 && *x < 0.22;
+      goodEvent = goodEvent && *x > 0.12 && *x < 0.22 && *pT > 0.2 && *pT < 0.6 && *z > 0.15 && *z < 0.25;
       return goodEvent;
     }
     if (property == "Q2multi2") {
       goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *Q2 > 1 && *W > 2 && *Mx > 1.35 && *y < 0.75;
       goodEvent = goodEvent && *x > 0.06 && *x < 0.60 && *pT > 0 && *pT < 1.2 && *xF > -1 && *xF < 1;
-      goodEvent = goodEvent && *x > 0.22 && *x < 0.32;
+      goodEvent = goodEvent && *x > 0.22 && *x < 0.32 && *pT > 0.2 && *pT < 0.6 && *z > 0.15 && *z < 0.25;
       return goodEvent;
     }
 
