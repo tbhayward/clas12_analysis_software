@@ -22,7 +22,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     bool checked = false;
     string property = binNames[currentFits];
 
-    if (property == "xF" || property == "Q2" || property == "x" || property == "z" || property == "PT" || property == "runnum") {
+    if (property == "xF" || property == "x" || property == "z" || property == "PT" || property == "runnum") {
       goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *Q2 > 1 && *W > 2 && *Mx > 1.35 && *y < 0.75;
       goodEvent = goodEvent && *x > 0.06 && *x < 0.60 && *pT > 0 && *pT < 1.2 && *xF > -1 && *xF < 1;
       return goodEvent;
@@ -36,7 +36,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
       goodEvent = goodEvent && *x > 0.06 && *x < 0.60 && *pT > 0 && *pT < 1.2 && *xF > -1 && *xF < 1;
       return goodEvent;
     } 
-    if (property == "Q2multi1") {
+    if (property == "Q2") {
       goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *Q2 > 1 && *W > 2 && *Mx > 1.35 && *y < 0.75;
       goodEvent = goodEvent && *x > 0.06 && *x < 0.60 && *pT > 0 && *pT < 1.2 && *xF > -1 && *xF < 1;
       // goodEvent = goodEvent && *x > 0.12 && *x < 0.22;
