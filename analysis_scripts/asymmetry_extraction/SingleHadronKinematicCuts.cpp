@@ -22,25 +22,30 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     bool checked = false;
     string property = binNames[currentFits];
 
-    if (property == "xF" || property == "x" || property == "PT" || property == "runnum") {
-        goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *Q2 > 1 && *W > 2 && *Mx > 1.35 && *y < 0.75;
-        goodEvent = goodEvent && *x > 0.06 && *x < 0.60 && *pT > 0 && *pT < 1.2 && *xF > -1 && *xF < 1;
-        return goodEvent;
+    if (property == "xF" || property == "x" || property == "z" || property == "PT" || property == "runnum") {
+      goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *Q2 > 1 && *W > 2 && *Mx > 1.35 && *y < 0.75;
+      goodEvent = goodEvent && *x > 0.06 && *x < 0.60 && *pT > 0 && *pT < 1.2 && *xF > -1 && *xF < 1;
+      return goodEvent;
     } else if (property == "Mx") {
-        goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *Q2 > 1 && *W > 2 && *y < 0.75 && *Mx > 0;
-        goodEvent = goodEvent && *x > 0.06 && *x < 0.60 && *pT > 0 && *pT < 1.2 && *xF > -1 && *xF < 1;
-        return goodEvent;
+      goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *Q2 > 1 && *W > 2 && *y < 0.75 && *Mx > 0;
+      goodEvent = goodEvent && *x > 0.06 && *x < 0.60 && *pT > 0 && *pT < 1.2 && *xF > -1 && *xF < 1;
+      return goodEvent;
     }
-    if (property == "xFall" || property == "xall" || property == "PTall") {
-        goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *Q2 > 1 && *W > 2 && *Mx > 0 && *y < 0.75;
-        goodEvent = goodEvent && *x > 0.06 && *x < 0.60 && *pT > 0 && *pT < 1.2 && *xF > -1 && *xF < 1;
-        return goodEvent;
+    if (property == "xFall" || property == "xall" || property == "zall" || property == "PTall") {
+      goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *Q2 > 1 && *W > 2 && *Mx > 0 && *y < 0.75;
+      goodEvent = goodEvent && *x > 0.06 && *x < 0.60 && *pT > 0 && *pT < 1.2 && *xF > -1 && *xF < 1;
+      return goodEvent;
     } 
-    if (property == "xFexclusive" || property == "xexclusive" || property == "PTexclusive") {
-        goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *Q2 > 1 && *W > 2 && *Mx > 0 && *Mx < 1.35 && *y < 0.75;
-        goodEvent = goodEvent && *x > 0.06 && *x < 0.60 && *pT > 0 && *pT < 1.2 && *xF > -1 && *xF < 1;
-        return goodEvent;
-    } 
+    if (property == "Q2multi1") {
+      goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *Q2 > 1 && *W > 2 && *Mx > 1.35 && *y < 0.75;
+      goodEvent = goodEvent && *x > 0.06 && *x < 0.60 && *pT > 0 && *pT < 1.2 && *xF > -1 && *xF < 1;
+      goodEvent = goodEvent && *x > 0.12 && *x < 0.22;
+    }
+    if (property == "Q2multi2") {
+      goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *Q2 > 1 && *W > 2 && *Mx > 1.35 && *y < 0.75;
+      goodEvent = goodEvent && *x > 0.06 && *x < 0.60 && *pT > 0 && *pT < 1.2 && *xF > -1 && *xF < 1;
+      goodEvent = goodEvent && *x > 0.22 && *x < 0.32;
+    }
 
     if (*Q2 > 1 && *W > 2 && *Mx > 1.35 && *y < 0.75 && !checked) {
       goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1;

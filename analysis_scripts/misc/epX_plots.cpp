@@ -1255,7 +1255,7 @@ int main(int argc, char *argv[]) {
     // // Plot Q2-y-z dependence
     // plotQ2yz_pT(asymmetryData);
     // Plot Q2-xb-z dependence
-    plotQ2xz_pT(asymmetryData);
+    // plotQ2xz_pT(asymmetryData);
 
     // // Extract Q² dependence vectors
     // auto allVectors = extractQ2Dependence(asymmetryData, kinematicData);
