@@ -245,7 +245,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
 
     // Save the canvas to a file
     std::string outputDir = "output/dilution_factor_plots/";
-    std::string outputFileName = outputDir + "df_" + propertyNames[currentFits] + "_" + prefix + ".png";
+    std::string outputFileName = outputDir + "df_" + binNames[currentFits] + "_" + prefix + ".png";
     canvas->SaveAs(outputFileName.c_str());
 
     // Clean up
