@@ -950,18 +950,18 @@ std::vector<std::vector<double>> filterDataByError(const std::vector<std::vector
     return filteredData;
 }
 
-void addCanvasSideLabels(TCanvas* c, const std::vector<std::string>& y_ranges) {
+
+void addCanvasSideLabels(TCanvas* c, const std::vector<std::string>& x_ranges) {
     c->cd(); // Switch to the entire canvas
     TLatex latex;
     latex.SetNDC();  // Use Normalized Device Coordinates
-    latex.SetTextAlign(22);  // Centered alignment
-    latex.SetTextSize(0.015);  // Adjust text size
-    latex.SetTextAngle(270);  // Rotate text vertically
-
-    // Position and draw each y-range label
-    for (size_t i = 0; i < y_ranges.size(); ++i) {
-        double yPos = 1.0 - (i + 0.5) * (1.0 / y_ranges.size());
-        latex.DrawLatex(0.99, yPos, y_ranges[i].c_str());  // Position text to the right of the plots
+    latex.SetTextAlign(32);  // Align text to the right (right-justified)
+    latex.SetTextSize(0.02);  // Adjust text size (increased slightly for better visibility)
+    
+    // Position and draw each x-range label on the right side of the canvas
+    for (size_t i = 0; i < x_ranges.size(); ++i) {
+        double yPos = 1.0 - (i + 0.5) * (1.0 / x_ranges.size());
+        latex.DrawLatex(0.98, yPos, x_ranges[i].c_str());  // Position text on the right side, near the edge
     }
 }
 
@@ -979,7 +979,8 @@ void addCanvasTopLabels(TCanvas* c, const std::vector<std::string>& q2_ranges) {
     }
 }
 
-void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData) {
+
+void plotQ2xz_pT(const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData) {
     // Fit types, corresponding y-axis labels, and output file names
     std::vector<std::string> fitTypes = {"ALUsinphi", "AULoffset", "AULsinphi", "AULsin2phi", "ALL", "ALLcosphi", "doubleratio"};
     std::vector<std::string> yLabels = {
@@ -992,137 +993,86 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
         "-F_{LU}^{sin#phi}/F_{LL}"
     };
     std::vector<std::string> outputFiles = {
-        "output/epX_plots/Q2yz_pT_ALUsinphi.png",
-        "output/epX_plots/Q2yz_pT_AULoffset.png",
-        "output/epX_plots/Q2yz_pT_AULsinphi.png",
-        "output/epX_plots/Q2yz_pT_AULsin2phi.png",
-        "output/epX_plots/Q2yz_pT_ALL.png",
-        "output/epX_plots/Q2yz_pT_ALLcosphi.png",
-        "output/epX_plots/Q2yz_pT_doubleratio.png"
+        "output/epX_plots/Q2xz_pT_ALUsinphi.png",
+        "output/epX_plots/Q2xz_pT_AULoffset.png", 
+        "output/epX_plots/Q2xz_pT_AULsinphi.png", 
+        "output/epX_plots/Q2xz_pT_AULsin2phi.png", 
+        "output/epX_plots/Q2xz_pT_ALL.png", 
+        "output/epX_plots/Q2xz_pT_ALLcosphi.png", 
+        "output/epX_plots/Q2xz_pT_doubleratio.png"
     };
 
-    // Define different maxError thresholds for each fit type
-    std::vector<double> maxErrors = {0.0275, 0.05, 0.0275, 0.05, 0.075, 0.05, 0.05}; // Add threshold for doubleratio
+    // Colors for the z bins
+    std::vector<int> colors = {kBlack, kRed, kBlue};
 
-    // Define different y-axis ranges for each fit type
-    std::vector<std::pair<double, double>> yRangesPerPlot = {
-        {-0.09, 0.09},  // ALUsinphi
-        {-0.199, 0.049},  // AULoffset
-        {-0.099, 0.099},  // AULsinphi
-        {-0.099, 0.099},  // AULsin2phi
-        {-0.199, 0.599},  // ALL
-        {-0.199, 0.199},  // ALLcosphi
-        {-0.249, 0.249}     // doubleratio
+    // X-axis ranges for the right column labels
+    std::vector<std::string> xRanges = {
+        "0.10 < x_{B} < 0.14",
+        "0.14 < x_{B} < 0.21",
+        "0.21 < x_{B} < 0.30",
+        "0.30 < x_{B} < 0.42"
     };
 
-    // Define the legend once before the loop
-    TLegend *legend = new TLegend(0.225, 0.225, 0.9, 0.9); // Adjust position and size of the legend box
+    // Legend labels for z bins
     std::vector<std::string> zRanges = {
-        "0.10 < z < 0.25",
-        "0.25 < z < 0.35",
-        "0.35 < z < 0.45",
-        "0.45 < z < 0.55",
-        "0.55 < z < 0.75"
+        "0.00 < z < 0.19",
+        "0.19 < z < 0.30",
+        "0.30 < z < 0.42"
     };
-    std::vector<int> colors = {kBlack, kRed, kGreen, kBlue, kMagenta}; // Colors for z ranges
 
-    // Add entries to the legend
-    for (size_t zIndex = 0; zIndex < zRanges.size(); ++zIndex) {
-        TGraph *dummyGraph = new TGraph();
-        dummyGraph->SetMarkerColor(colors[zIndex]);
-        dummyGraph->SetMarkerStyle(20); // Style of the marker
-        dummyGraph->SetMarkerSize(1.5); // Size of the marker to make it more visible
-        legend->AddEntry(dummyGraph, zRanges[zIndex].c_str(), "P");
-
-        // Cast to TLegendEntry to set the text color
-        TLegendEntry *entry = (TLegendEntry*)legend->GetListOfPrimitives()->Last();
-        entry->SetTextColor(colors[zIndex]);
-    }
-    legend->SetTextSize(0.05); // Adjust text size if needed
-    legend->SetFillColor(0);   // Make background transparent
-    legend->SetLineColor(1);   // Add border
+    // Layout for the 4x4 grid
+    std::vector<std::string> Q2xBins = {
+        "Q2x2", "Q2x3", "Q2x4", "",
+        "Q2x5", "Q2x6", "Q2x7", "Q2x8",
+        "", "Q2x9", "Q2x10", "Q2x11",
+        "", "Q2x12", "Q2x13", ""
+    };
 
     // Loop over each fit type and generate the corresponding plot
     for (size_t fitIndex = 0; fitIndex < fitTypes.size(); ++fitIndex) {
         // Setup canvas for this fit type
-        TCanvas *c = setupCanvas(2400, 1600, 5, 4);
+        TCanvas *c = new TCanvas("c", "Q2-xB-z-PT Dependence", 2400, 2400);
+        c->Divide(4, 4);  // 4 columns x 4 rows = 16 sub-pads
 
-        std::vector<std::vector<std::string>> Q2_prefixes = {
-            {"Q2y1", "Q2y5", "Q2y9", "Q2y13", "Q2y16"},
-            {"Q2y2", "Q2y6", "Q2y10", "Q2y14", "Q2y17"},
-            {"Q2y3", "Q2y7", "Q2y11", "Q2y15", "EMPTY"},
-            {"Q2y4", "Q2y8", "Q2y12", "EMPTY", "EMPTY"}
-        };
-        std::vector<std::string> z_prefixes = {"z1", "z2", "z3", "z4", "z5"};
+        // Loop through each position in the grid (1 to 16)
+        for (size_t gridIndex = 0; gridIndex < Q2xBins.size(); ++gridIndex) {
+            c->cd(gridIndex + 1);  // Navigate to the correct pad
 
-        std::vector<std::string> topRowTitles = {
-            "1.0 < Q^{2} (GeV^{2}) < 2.0",
-            "2.0 < Q^{2} (GeV^{2}) < 3.0",
-            "3.0 < Q^{2} (GeV^{2}) < 4.0",
-            "4.0 < Q^{2} (GeV^{2}) < 5.0",
-            "5.0 < Q^{2} (GeV^{2}) < 7.0"
-        };
+            // Adjust margins
+            if (gridIndex % 4 != 0) {
+                gPad->SetLeftMargin(0.001);
+            } else {
+                gPad->SetLeftMargin(0.18);
+            }
+            if (gridIndex < 12) {
+                gPad->SetBottomMargin(0.001);
+            } else {
+                gPad->SetBottomMargin(0.15);
+            }
 
-        std::vector<std::string> yRanges = {
-            "0.65 < y < 0.75",
-            "0.55 < y < 0.65",
-            "0.45 < y < 0.55",
-            "0.30 < y < 0.45"
-        };
+            if (Q2xBins[gridIndex].empty()) continue; // Skip empty subplots
 
-        // Get the specific maxError and y-axis range for this fit type
-        double maxError = maxErrors[fitIndex];
-        std::pair<double, double> yRange = yRangesPerPlot[fitIndex];
+            bool firstGraphDrawn = false;
 
-        // Loop through each Q2 prefix and corresponding z prefixes
-        for (size_t row = 0; row < Q2_prefixes.size(); ++row) {
-            for (size_t q2Index = 0; q2Index < Q2_prefixes[row].size(); ++q2Index) {
-                int padIndex = row * 5 + q2Index + 1;
-                c->cd(padIndex); // Move to the appropriate pad in the canvas
+            // Loop through each z bin and plot on the same sub-pad
+            for (size_t zIndex = 0; zIndex < 3; ++zIndex) { // Skip the 4th z bin
+                std::string key = Q2xBins[gridIndex] + "z" + std::to_string(zIndex + 1) + "chi2Fits" + fitTypes[fitIndex];
+                auto it = asymmetryData.find(key);
 
-                // Adjust margins
-                if (q2Index != 0) {
-                    gPad->SetLeftMargin(0.001);
-                } else {
-                    gPad->SetLeftMargin(0.18);
-                }
-                if (row != Q2_prefixes.size() - 1) {
-                    gPad->SetBottomMargin(0.001);
-                } else {
-                    gPad->SetBottomMargin(0.15);
-                }
-
-                bool firstGraphDrawn = false;
-                bool anyGraphDrawn = false;
-
-                // Loop through z prefixes
-                for (size_t zIndex = 0; zIndex < z_prefixes.size(); ++zIndex) {
-                    std::string key = Q2_prefixes[row][q2Index] + z_prefixes[zIndex] + "chi2Fits" + fitTypes[fitIndex];
-                    auto it = asymmetryData.find(key);
-
-                    if (it == asymmetryData.end()) {
-                        continue;
-                    }
-
+                if (it != asymmetryData.end()) {
                     const auto &data = it->second;
 
-                    // Filter data by error
-                    auto filteredData = filterDataByError(data, maxError);
-
-                    // Skip this z-bin if all points are filtered out
-                    if (filteredData.empty()) continue;
-
                     std::vector<double> x, y, yErr;
-                    for (const auto &entry : filteredData) {
-                        x.push_back(entry[0]);
-                        y.push_back(entry[1]);
-                        yErr.push_back(entry[2]);
+                    for (const auto &entry : data) {
+                        x.push_back(entry[0]);     // PT value
+                        y.push_back(entry[1]);     // Asymmetry value
+                        yErr.push_back(entry[2]);  // Asymmetry error
                     }
 
                     TGraphErrors *graph = createTGraphErrors(x, y, yErr, 20, 0.8, colors[zIndex]);
 
-                    // Set the custom y-axis range here
-                    setCustomAxisLabelsAndRanges(graph, "P_{T} (GeV)", yLabels[fitIndex], {0.1, 0.9}, yRange);
+                    // Set axis labels and ranges
+                    setAxisLabelsAndRanges(graph, "P_{T} (GeV)", yLabels[fitIndex], {0.0, 1.2}, {-0.1, 0.1});
                     
                     // Draw the graph
                     if (!firstGraphDrawn) {
@@ -1131,48 +1081,37 @@ void plotQ2yz_pT(const std::map<std::string, std::vector<std::vector<double>>> &
                     } else {
                         graph->Draw("P SAME");
                     }
-
-                    anyGraphDrawn = true;
-                }
-
-                if (!anyGraphDrawn) {
-                    // Handle empty plot scenario
-                    std::vector<double> dummyX = {-9999};
-                    std::vector<double> dummyY = {0};
-                    std::vector<double> dummyYErr = {0};
-                    TGraphErrors *dummyGraph = createTGraphErrors(dummyX, dummyY, dummyYErr, 20, 0.8, kWhite);
-                    setCustomAxisLabelsAndRanges(dummyGraph, "P_{T} (GeV)", yLabels[fitIndex], {0.1, 0.9}, yRange);
-                    drawEmptyPlot(dummyGraph, q2Index, row, Q2_prefixes.size());
-                }
-                // Draw horizontal line except in certain positions
-                if (!(row == 2 && q2Index == 4) && (row != 3 || (q2Index != 3 && q2Index != 4))) {
-                    TLine *line = new TLine(0.15, 0.0, 0.95, 0.0);
-                    line->SetLineColor(kGray + 2);
-                    line->SetLineStyle(7);
-                    line->Draw("same");
                 }
             }
+
+            // Draw a horizontal line at y = 0
+            TLine *line = new TLine(0.0, 0, 1.2, 0);
+            line->SetLineColor(kGray + 2);
+            line->SetLineStyle(2);  // Dashed line
+            line->Draw("same");
         }
-        // Add y-range labels on the right-hand side
-        addCanvasSideLabels(c, yRanges);
 
-        // Add Q² labels at the top
-        addCanvasTopLabels(c, topRowTitles);
+        // Add the xB ranges as labels on the right column
+        addCanvasSideLabels(c, xRanges);
 
-        // Add legend to the canvas
-        c->cd(20); // Navigate to the pad where the legend will be drawn
+        // Add legend in the last subplot (position 16)
+        c->cd(16);
+        TLegend *legend = new TLegend(0.1, 0.2, 0.9, 0.8);
+        legend->SetTextSize(0.05); // Adjust text size if needed
+        legend->SetFillColor(0);   // Make background transparent
+        legend->SetLineColor(1);   // Add border
+        for (size_t zIndex = 0; zIndex < zRanges.size(); ++zIndex) {
+            legend->AddEntry((TObject*)nullptr, zRanges[zIndex].c_str(), "");
+        }
         legend->Draw();
 
         // Save the canvas to file
         gSystem->Exec("mkdir -p output/epX_plots");
         c->SaveAs(outputFiles[fitIndex].c_str());
 
-        // Clean up canvas
+        // Clean up
         delete c;
     }
-
-    // Clean up legend
-    delete legend;
 }
 
 void plotQ2Dependence(
@@ -1297,24 +1236,26 @@ int main(int argc, char *argv[]) {
     // std::cout << "\nKinematic Data:\n"; 
     // printData(kinematicData);
 
-    // Call the plotting function for different dependencies
-    plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots.png");
-    plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots_comparison.png", "xall");
-    // plotDependence(asymmetryData, "xall", "x_{B}", {0.06, 0.6}, "output/epX_plots/xall_dependence_plots.png");
-    plotDependence(asymmetryData, "PT", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PT_dependence_plots.png");
-    plotDependence(asymmetryData, "PT", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PT_dependence_plots_comparison.png", "PTall");
-    // plotDependence(asymmetryData, "PTall", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PTall_dependence_plots.png");
-    plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots.png");
-    plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots_comparison.png", "xFall");
-    // plotDependence(asymmetryData, "xFall", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xFall_dependence_plots.png");
-    // plotDependence(asymmetryData, "Mx", "M_{x} (GeV)", {0, 3}, "output/epX_plots/Mx_dependence_plots.png");
-    // plotDependence(asymmetryData, "runnum", "run number", {16135, 16774}, "output/epX_plots/runnum_dependence_plots.png");
-    // plotRunnumDependence(asymmetryData, "runnum", "run number", "output/epX_plots/runnum_dependence_plots.png");
+    // // Call the plotting function for different dependencies
+    // plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots.png");
+    // plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots_comparison.png", "xall");
+    // // plotDependence(asymmetryData, "xall", "x_{B}", {0.06, 0.6}, "output/epX_plots/xall_dependence_plots.png");
+    // plotDependence(asymmetryData, "PT", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PT_dependence_plots.png");
+    // plotDependence(asymmetryData, "PT", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PT_dependence_plots_comparison.png", "PTall");
+    // // plotDependence(asymmetryData, "PTall", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PTall_dependence_plots.png");
+    // plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots.png");
+    // plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots_comparison.png", "xFall");
+    // // plotDependence(asymmetryData, "xFall", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xFall_dependence_plots.png");
+    // // plotDependence(asymmetryData, "Mx", "M_{x} (GeV)", {0, 3}, "output/epX_plots/Mx_dependence_plots.png");
+    // // plotDependence(asymmetryData, "runnum", "run number", {16135, 16774}, "output/epX_plots/runnum_dependence_plots.png");
+    // // plotRunnumDependence(asymmetryData, "runnum", "run number", "output/epX_plots/runnum_dependence_plots.png");
 
-    // Plot PT and xF dependence comparison
-    plotComparison(asymmetryData, "output/epX_plots/PT_xF_dependence_comparison.png");
+    // // Plot PT and xF dependence comparison
+    // plotComparison(asymmetryData, "output/epX_plots/PT_xF_dependence_comparison.png");
     // // Plot Q2-y-z dependence
     // plotQ2yz_pT(asymmetryData);
+    // Plot Q2-xb-z dependence
+    plotQ2xz_pT(asymmetryData);
 
     // // Extract Q² dependence vectors
     // auto allVectors = extractQ2Dependence(asymmetryData, kinematicData);
