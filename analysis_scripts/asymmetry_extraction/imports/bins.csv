@@ -34,15 +34,15 @@ variable_names_here
 #
 #
 # !!! epX multidimensional binning for publications !!!
-Q2x1z1,pT,0.00,0.25,0.50,0.75#last bin removed due to being empty,1.20
-Q2x1z2,pT,0.00,0.25,0.50,0.75,1.20
-Q2x1z3,pT,0.00,0.25,0.50,0.75,1.20
-Q2x1z4,pT,0.00,0.25,0.50,0.75,1.20
+#Q2x1z1,pT,0.00,0.25,0.50,0.75#last bin removed due to being empty,1.20
+#Q2x1z2,pT,0.00,0.25,0.50,0.75,1.20
+#Q2x1z3,pT,0.00,0.25,0.50,0.75,1.20
+#Q2x1z4,pT,0.00,0.25,0.50,0.75,1.20
 #
-#Q2x2z1,pT,0.00,0.25,0.50,0.75#last bin removed due to being empty,1.20
-#Q2x2z2,pT,0.00,0.25,0.50,0.75,1.20
-#Q2x2z3,pT,0.00,0.25,0.50,0.75,1.20
-#Q2x2z4,pT,0.00,0.25,0.50,0.75,1.20
+Q2x2z1,pT,0.00,0.25,0.50,0.75#last bin removed due to being empty,1.20
+Q2x2z2,pT,0.00,0.25,0.50,0.75,1.20
+Q2x2z3,pT,0.00,0.25,0.50,0.75,1.20
+Q2x2z4,pT,0.00,0.25,0.50,0.75,1.20
 #
 #Q2x3z1,pT,0.00,0.25,0.50,0.75#last bin removed due to being empty,1.20
 #Q2x3z2,pT,0.00,0.25,0.50,0.75,1.20
