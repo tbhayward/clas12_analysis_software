@@ -359,6 +359,12 @@ void plotDependence(
                                    (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.8) : std::make_pair(-0.08, 0.08));
             graphStat->Draw("AP");
 
+            // Add the dashed gray line at y = 0
+            TLine *line = new TLine(xLimits.first, 0, xLimits.second, 0);
+            line->SetLineColor(kGray+2);
+            line->SetLineStyle(7);  // Dashed line
+            line->Draw("same");
+
             // Draw the second dataset if the extraPrefix is provided
             if (!extraPrefix.empty()) {
                 std::string extraKey = extraPrefix + "chi2Fits" + suffixes[i];
