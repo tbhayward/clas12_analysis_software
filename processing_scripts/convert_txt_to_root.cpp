@@ -131,7 +131,7 @@ double gett(double p, double theta) {
 
 // function to get the polarization value
 double getPol(int runnum) {
-  double pol = 0.86; 
+  double pol = 0.83; 
     if (runnum == 11 ) { pol = 0.86; } // runnum == 11 indicates Monte Carlo in CLAS12
     else if (runnum >= 5032 && runnum < 5333) { pol = 0.8592; } 
     else if (runnum >= 5333 && runnum <= 5666) { pol = 0.8922; }
