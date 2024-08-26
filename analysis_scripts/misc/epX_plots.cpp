@@ -492,7 +492,7 @@ void plotDependence(
                     extraGraphStat->Draw("P SAME");
                 }
 
-                if (i == 3) {  // Previously subplot 5, now subplot 4 (ALL)
+                if (i == 3 || i == 4) {  
                     // Add the text box for labels only if the extraPrefix is provided
                     TPaveText *text = new TPaveText(0.18, 0.7, 0.43, 0.9, "NDC");
                     text->SetTextAlign(13);
