@@ -3,7 +3,7 @@
 
 // SIDIS
 std::map<std::string, HistConfig> histConfigs = {
-      {"runnum", {10000, 4000, 6000}},
+      {"runnum", {638, 16135, 16773}},
       {"Delta_eta", {100, -3, 3}},
       {"mc_Delta_eta", {100, -3, 3}},
       {"Delta_phi", {100, 0, 2*TMath::Pi()}},
