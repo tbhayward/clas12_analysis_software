@@ -313,6 +313,107 @@ double computeSystematicUncertainty(const std::string &suffix, double yValue) {
     return 0.0;
 }
 
+// void plotDependence(
+//     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
+//     const std::string &prefix, 
+//     const std::string &xLabel, 
+//     const std::pair<double, double> &xLimits, 
+//     const std::string &outputFileName,
+//     const std::string &extraPrefix = "") {  // Optional extra prefix
+//     TCanvas *c = new TCanvas("c", "Dependence Plots", 1200, 800);
+//     c->Divide(3, 2);
+
+//     std::vector<std::string> suffixes = {"ALUsinphi", "AULsinphi", "AULsin2phi", "AULoffset", "ALL", "ALLcosphi"};
+//     std::vector<std::string> yLabels = {
+//         "F_{LU}^{sin#phi}/F_{UU}",
+//         "F_{UL}^{sin#phi}/F_{UU}",
+//         "F_{UL}^{sin(2#phi)}/F_{UU}",
+//         "A_{UL} offset",
+//         "F_{LL}/F_{UU}",
+//         "F_{LL}^{cos#phi}/F_{UU}"
+//     };
+
+//     for (size_t i = 0; i < suffixes.size(); ++i) {
+//         c->cd(i + 1);
+//         gPad->SetLeftMargin(0.18);
+//         gPad->SetBottomMargin(0.15);
+
+//         std::string key = prefix + "chi2Fits" + suffixes[i];
+//         auto it = asymmetryData.find(key);
+//         if (it != asymmetryData.end()) {
+//             const auto &data = it->second;
+
+//             std::vector<double> x, y, yStatErr, yCombErr;
+//             for (const auto &entry : data) {
+//                 x.push_back(entry[0]);
+//                 y.push_back(entry[1]);
+//                 yStatErr.push_back(entry[2]);
+
+//                 double sysUncertainty = 0;  // Optionally calculate systematic uncertainty
+//                 yCombErr.push_back(std::sqrt(std::pow(yStatErr.back(), 2) + std::pow(sysUncertainty, 2)));
+//             }
+
+//             TGraphErrors *graphStat = createTGraphErrors(x, y, yStatErr, 20, 0.8, kBlack);
+//             setAxisLabelsAndRanges(graphStat, xLabel, yLabels[i], xLimits, 
+//                                    (suffixes[i] == "AULoffset") ? std::make_pair(-0.2, 0.2) : 
+//                                    (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.8) : std::make_pair(-0.08, 0.08));
+//             graphStat->Draw("AP");
+
+//             // Add the dashed gray line at y = 0
+//             TLine *line = new TLine(xLimits.first, 0, xLimits.second, 0);
+//             line->SetLineColor(kGray+2);
+//             line->SetLineStyle(7);  // Dashed line
+//             line->Draw("same");
+
+//             // Draw the second dataset if the extraPrefix is provided
+//             if (!extraPrefix.empty()) {
+//                 std::string extraKey = extraPrefix + "chi2Fits" + suffixes[i];
+//                 auto extraIt = asymmetryData.find(extraKey);
+//                 if (extraIt != asymmetryData.end()) {
+//                     const auto &extraData = extraIt->second;
+
+//                     std::vector<double> extraX, extraY, extraYStatErr, extraYCombErr;
+//                     for (const auto &entry : extraData) {
+//                         extraX.push_back(entry[0]);
+//                         extraY.push_back(entry[1]);
+//                         extraYStatErr.push_back(entry[2]);
+
+//                         double extraSysUncertainty = 0;  // Optionally calculate systematic uncertainty
+//                         extraYCombErr.push_back(std::sqrt(std::pow(extraYStatErr.back(), 2) + std::pow(extraSysUncertainty, 2)));
+//                     }
+
+//                     TGraphErrors *extraGraphStat = createTGraphErrors(extraX, extraY, extraYStatErr, 20, 0.8, kRed);
+//                     extraGraphStat->Draw("P SAME");
+//                 }
+
+//                 if (i==4) {
+//                     // Add the text box for labels only if the extraPrefix is provided
+//                     TPaveText *text = new TPaveText(0.18, 0.7, 0.43, 0.9, "NDC");
+//                     text->SetTextAlign(13);
+//                     text->SetBorderSize(1);  // Set border size to 1 for a black border
+//                     text->SetFillColor(0);
+//                     text->AddText("#font[42]{M_{x} > 1.35 GeV}");  // Black text line
+//                     text->AddText("#font[42]{#color[2]{M_{x} > 0.55 GeV}}");  // Red text line
+//                     text->Draw();
+//                 } else {
+//                     // Add the text box for labels only if the extraPrefix is provided
+//                     TPaveText *text = new TPaveText(0.65, 0.7, 0.9, 0.9, "NDC");
+//                     text->SetTextAlign(13);
+//                     text->SetBorderSize(1);  // Set border size to 1 for a black border
+//                     text->SetFillColor(0);
+//                     text->AddText("#font[42]{M_{x} > 1.35 GeV}");  // Black text line
+//                     text->AddText("#font[42]{#color[2]{M_{x} > 0.55 GeV}}");  // Red text line
+//                     text->Draw();
+//                 }
+//             }
+//         }
+//     }
+
+//     gSystem->Exec("mkdir -p output/epX_plots");
+//     c->SaveAs(outputFileName.c_str());
+//     delete c;
+// }
+
 void plotDependence(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
     const std::string &prefix, 
@@ -323,16 +424,20 @@ void plotDependence(
     TCanvas *c = new TCanvas("c", "Dependence Plots", 1200, 800);
     c->Divide(3, 2);
 
-    std::vector<std::string> suffixes = {"ALUsinphi", "AULsinphi", "AULsin2phi", "AULoffset", "ALL", "ALLcosphi"};
+    // Updated list of suffixes (removing AULoffset and adding doubleratio)
+    std::vector<std::string> suffixes = {"ALUsinphi", "AULsinphi", "AULsin2phi", "ALL", "doubleratio", "ALLcosphi"};
+    
+    // Corresponding y-axis labels
     std::vector<std::string> yLabels = {
         "F_{LU}^{sin#phi}/F_{UU}",
         "F_{UL}^{sin#phi}/F_{UU}",
         "F_{UL}^{sin(2#phi)}/F_{UU}",
-        "A_{UL} offset",
         "F_{LL}/F_{UU}",
+        "-F_{LU}^{sin#phi}/F_{LL}",  // yLabel for doubleratio
         "F_{LL}^{cos#phi}/F_{UU}"
     };
 
+    // Updated loop to accommodate the new plot order
     for (size_t i = 0; i < suffixes.size(); ++i) {
         c->cd(i + 1);
         gPad->SetLeftMargin(0.18);
@@ -355,8 +460,9 @@ void plotDependence(
 
             TGraphErrors *graphStat = createTGraphErrors(x, y, yStatErr, 20, 0.8, kBlack);
             setAxisLabelsAndRanges(graphStat, xLabel, yLabels[i], xLimits, 
-                                   (suffixes[i] == "AULoffset") ? std::make_pair(-0.2, 0.2) : 
-                                   (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.8) : std::make_pair(-0.08, 0.08));
+                                   (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.8) :
+                                   (suffixes[i] == "doubleratio") ? std::make_pair(-0.08, 0.08) :
+                                   std::make_pair(-0.08, 0.08));  // Adjusted y-axis range for doubleratio
             graphStat->Draw("AP");
 
             // Add the dashed gray line at y = 0
@@ -386,7 +492,7 @@ void plotDependence(
                     extraGraphStat->Draw("P SAME");
                 }
 
-                if (i==4) {
+                if (i == 3) {  // Previously subplot 5, now subplot 4 (ALL)
                     // Add the text box for labels only if the extraPrefix is provided
                     TPaveText *text = new TPaveText(0.18, 0.7, 0.43, 0.9, "NDC");
                     text->SetTextAlign(13);
