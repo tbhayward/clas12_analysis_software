@@ -119,13 +119,13 @@ if __name__ == '__main__':
     print(f"Total accumulated charge for Helium Bath: {charges['Helium Bath']} nC ({fractions['Helium Bath']:.3%} of total)")
     print(f"Total accumulated charge for Empty Target (run 16194): {charges['Empty Target']} nC ({fractions['Empty Target']:.3%} of total)\n")
 
-    print(f"Total accumulated charge for NH3 with positive polarization: {total_charge_pos_pol} nC ({fractions_pos_pol['NH3']:.3%} of total positive)")
+    print(f"Total accumulated charge for NH3 with positive polarization: {charges_pos_pol['NH3']} nC ({fractions_pos_pol['NH3']:.3%} of total positive)")
     print(f"Total accumulated charge for Carbon with positive polarization: {charges_pos_pol['C']} nC ({fractions_pos_pol['C']:.3%} of total positive)")
     print(f"Total accumulated charge for CH2 with positive polarization: {charges_pos_pol['CH2']} nC ({fractions_pos_pol['CH2']:.3%} of total positive)")
     print(f"Total accumulated charge for Helium Bath with positive polarization: {charges_pos_pol['Helium Bath']} nC ({fractions_pos_pol['Helium Bath']:.3%} of total positive)")
     print(f"Total accumulated charge for Empty Target with positive polarization (run 16194): {charges_pos_pol['Empty Target']} nC ({fractions_pos_pol['Empty Target']:.3%} of total positive)\n")
 
-    print(f"Total accumulated charge for NH3 with negative polarization: {total_charge_neg_pol} nC ({fractions_neg_pol['NH3']:.3%} of total negative)")
+    print(f"Total accumulated charge for NH3 with negative polarization: {charges_neg_pol['NH3']} nC ({fractions_neg_pol['NH3']:.3%} of total negative)")
     print(f"Total accumulated charge for Carbon with negative polarization: {charges_neg_pol['C']} nC ({fractions_neg_pol['C']:.3%} of total negative)")
     print(f"Total accumulated charge for CH2 with negative polarization: {charges_neg_pol['CH2']} nC ({fractions_neg_pol['CH2']:.3%} of total negative)")
     print(f"Total accumulated charge for Helium Bath with negative polarization: {charges_neg_pol['Helium Bath']} nC ({fractions_neg_pol['Helium Bath']:.3%} of total negative)")
