@@ -875,8 +875,8 @@ void plotMultipleQ2multiDependence(
         bool firstGraphDrawn = false;
 
         // Create a legend in the top right
-        TLegend *legend = new TLegend(0.35, 0.7, 0.9, 0.9);  // Adjust position and size
-        legend->SetTextSize(0.04);  // Adjust text size
+        TLegend *legend = new TLegend(0.3, 0.7, 0.9, 0.9);  // Adjust position and size
+        legend->SetTextSize(0.025);  // Adjust text size
         legend->SetBorderSize(0);  // No border
         legend->SetFillStyle(0);   // No background
 
