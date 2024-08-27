@@ -90,4 +90,4 @@ if __name__ == '__main__':
 
     # Generate and print the list of runs with target polarization and uncertainty for NH3 only
     run_data_list = ", ".join([f"{{{run}, {pol}, {sigma}}}" for run, pol, sigma in run_data])
-    print(f"Run data for C++/Mathematica: {{{run_data_list}}}")
+    # print(f"Run data for C++/Mathematica: {{{run_data_list}}}")
