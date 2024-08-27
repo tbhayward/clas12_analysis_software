@@ -859,6 +859,13 @@ void plotMultipleQ2multiDependence(
     std::vector<int> colors = {kRed, kBlue, kGreen};  // Updated colors
     std::vector<int> markers = {20, 21, 22};  // Circle, Square, Triangle markers
 
+    // Text labels for the legend
+    std::vector<std::string> legendLabels = {
+        "(0.12 < x < 0.15), 0.16 < z < 0.22, 0.30 < P_{T} < 0.50, M_{x} > 0.95", 
+        "(0.15 < x < 0.18), 0.16 < z < 0.22, 0.30 < P_{T} < 0.50, M_{x} > 0.95", 
+        "(0.18 < x < 0.21), 0.16 < z < 0.22, 0.30 < P_{T} < 0.50, M_{x} > 0.95"
+    };
+
     // Updated loop to accommodate the new plot order
     for (size_t i = 0; i < suffixes.size(); ++i) {
         c->cd(i + 1);
@@ -866,6 +873,12 @@ void plotMultipleQ2multiDependence(
         gPad->SetBottomMargin(0.15);
 
         bool firstGraphDrawn = false;
+
+        // Create a legend in the top right
+        TLegend *legend = new TLegend(0.35, 0.7, 0.9, 0.9);  // Adjust position and size
+        legend->SetTextSize(0.04);  // Adjust text size
+        legend->SetBorderSize(0);  // No border
+        legend->SetFillStyle(0);   // No background
 
         for (size_t p = 0; p < prefixes.size(); ++p) {
             std::string key = prefixes[p] + "chi2Fits" + suffixes[i];
@@ -897,6 +910,9 @@ void plotMultipleQ2multiDependence(
                 } else {
                     graphStat->Draw("P SAME");
                 }
+
+                // Add each entry to the legend with the corresponding color and label
+                legend->AddEntry(graphStat, legendLabels[p].c_str(), "p");
             }
         }
 
@@ -906,49 +922,9 @@ void plotMultipleQ2multiDependence(
         line->SetLineStyle(7);  // Dashed line
         line->Draw("same");
 
-        // Add a title to each plot
-        TLatex latex;
-        latex.SetNDC();  // Use Normalized Device Coordinates
-        latex.SetTextAlign(22);  // Center alignment
-        latex.SetTextSize(0.035);  // Adjust text size
-        latex.DrawLatex(0.5, 0.88, "0.16 < z < 0.22, 0.30 < P_{T} < 0.50, M_{x} > 0.95");
+        // Draw the legend in the current subplot
+        legend->Draw();
     }
-
-    // Add a color-coded title at the top of the canvas
-    c->cd(0);  // Switch to the entire canvas
-
-    TLatex latex;
-    latex.SetNDC();  // Use Normalized Device Coordinates
-    latex.SetTextAlign(22);  // Center alignment
-    latex.SetTextSize(0.04);  // Adjust text size
-
-    // Coordinates and text parts (adjust x positions and add color codes)
-    double xPos = 0.5;  // Center the title horizontally
-    double yPos = 0.96;  // Position near the top of the canvas
-    latex.SetTextColor(colors[0]);
-    latex.DrawLatex(xPos, yPos, "(0.12 < x < 0.15), ");
-    
-    xPos += 0.07;  // Shift to the right
-    latex.SetTextColor(colors[1]);
-    latex.DrawLatex(xPos, yPos, "(0.15 < x < 0.18), ");
-    
-    xPos += 0.07;  // Shift to the right
-    latex.SetTextColor(colors[2]);
-    latex.DrawLatex(xPos, yPos, "(0.18 < x < 0.21), ");
-
-    xPos += 0.07;  // Shift to the right
-    latex.SetTextColor(kBlack);  // Reset color to black
-    latex.DrawLatex(xPos, yPos, "0.16 < z < 0.22, 0.30 < P_{T} < 0.50");
-
-    // Add a box around the legend and adjust its position
-    c->cd(0);
-    TLegend *legend = new TLegend(0.3, 0.75, 0.6, 0.85);  // Adjusted legend position to be more left
-    legend->SetBorderSize(1);  // Set border around the legend
-    legend->SetFillColor(0);   // Transparent background
-    legend->AddEntry((TObject*)nullptr, "Data Set 1", "P")->SetTextColor(colors[0]);
-    legend->AddEntry((TObject*)nullptr, "Data Set 2", "P")->SetTextColor(colors[1]);
-    legend->AddEntry((TObject*)nullptr, "Data Set 3", "P")->SetTextColor(colors[2]);
-    legend->Draw();
 
     gSystem->Exec("mkdir -p output/epX_plots");
     c->SaveAs(outputFileName.c_str());
