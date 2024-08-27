@@ -24,7 +24,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
 
     if (property == "solenoidStudy" ) {
       goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *Q2 > 1 && *W > 2 && *y < 0.75;
-      goodEvent = goodEvent *xF > -1 && *xF < 1 && p_theta > 40*3.14159/180;
+      goodEvent = goodEvent *xF > -1 && *xF < 1 && *p_theta > 40*3.14159/180;
       return goodEvent;
     }
     if (property == "xF" || property == "x" || property == "z" || property == "PT" || property == "runnum") {
