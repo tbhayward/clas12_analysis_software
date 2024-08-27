@@ -38,6 +38,13 @@ const double xCH_split = 0.055;
 const double xHe_split = 0.115;
 const double xf_split = 0.140;
 
+struct DilutionFactors {
+    double df_aligned;
+    double sigma_df_aligned;
+    double df_unaligned;
+    double sigma_df_unaligned;
+};
+
 double calculate_dilution_error(double nA, double nC, double nCH, double nMT, double nf) {
     double term1 = 0.734694 * nA * nC * pow((nA - nMT), 2) * 
                    pow((- 0.554976 * nCH - 0.0373109 * nf + 0.592287 * nMT), 2);
@@ -65,7 +72,7 @@ double calculate_dilution_error(double nA, double nC, double nCH, double nMT, do
     return sigma_df;
 }
 
-std::vector<std::pair<double, double>> calculate_dilution_factors() {
+DilutionFactors calculate_dilution_factors() {
 
     // Load ROOT files and trees
     TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/cphi2024_epX/data/processed_data/dilution/rgc_su22_inb_NH3_epX.root");
@@ -86,6 +93,10 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     TTreeReader chReader(ch);
     TTreeReader heReader(he);
     TTreeReader emptyReader(empty);
+
+    // Read helicity and target polarization
+    TTreeReaderValue<int> helicity(nh3Reader, "helicity");
+    TTreeReaderValue<double> target_pol(nh3Reader, "target_pol");
 
     // Pointers for local kinematic cuts, dynamically allocated based on the channel
     BaseKinematicCuts* nh3Cuts = nullptr;
@@ -133,155 +144,142 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
             break;
         default:
             std::cerr << "Invalid channel specified." << std::endl;
-            return {}; // Return an empty vector to indicate failure
+            return {};
     }
 
-    std::vector<std::pair<double, double>> dilutionResults;
-    TGraphErrors* gr_dilution = new TGraphErrors();
+    // Separate histograms for aligned and unaligned cases
+    TH1D* h_aligned = new TH1D("h_aligned", "", 1, varMin, varMax);
+    TH1D* h_unaligned = new TH1D("h_unaligned", "", 1, varMin, varMax);
 
     // Loop over each bin
     for (size_t binIndex = 0; binIndex < allBins[currentFits].size() - 1; ++binIndex) {
         double varMin = allBins[currentFits][binIndex];
         double varMax = allBins[currentFits][binIndex + 1];
 
-        // Create histograms for each target type
-        TH1D *h_nh3 = new TH1D("h_nh3", "", 1, varMin, varMax);
-        TH1D *h_c = new TH1D("h_c", "", 1, varMin, varMax);
-        TH1D *h_ch = new TH1D("h_ch", "", 1, varMin, varMax);
-        TH1D *h_he = new TH1D("h_he", "", 1, varMin, varMax);
-        TH1D *h_empty = new TH1D("h_empty", "", 1, varMin, varMax);
+        // Reset histograms for each bin
+        h_aligned->Reset();
+        h_unaligned->Reset();
 
         double sumCurrentVariable = 0.0;
         int count = 0;
 
-        // Helper function to fill histograms based on kinematic cuts and track mean
-        auto fill_histogram = [&](TTreeReader& reader, TH1D* hist, BaseKinematicCuts* cuts) {
+        // Helper function to fill histograms based on kinematic cuts and alignment
+        auto fill_histogram = [&](TTreeReader& reader, TH1D* hist_aligned, TH1D* hist_unaligned, BaseKinematicCuts* cuts) {
             TTreeReaderValue<double> currentVariable(reader, propertyNames[currentFits].c_str());
 
             while (reader.Next()) {
                 bool passedKinematicCuts = cuts->applyCuts(currentFits, false);
                 if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
-                    hist->Fill(*currentVariable);
                     sumCurrentVariable += *currentVariable;
                     ++count;
+                    // Determine if aligned or unaligned
+                    if ((*helicity > 0 && *target_pol > 0) || (*helicity < 0 && *target_pol < 0)) {
+                        hist_aligned->Fill(*currentVariable);
+                    } else {
+                        hist_unaligned->Fill(*currentVariable);
+                    }
                 }
             }
             reader.Restart();
         };
 
-        fill_histogram(nh3Reader, h_nh3, nh3Cuts);
-        fill_histogram(cReader, h_c, cCuts);
-        fill_histogram(chReader, h_ch, chCuts);
-        fill_histogram(heReader, h_he, heCuts);
-        fill_histogram(emptyReader, h_empty, emptyCuts);
+        fill_histogram(nh3Reader, h_aligned, h_unaligned, nh3Cuts);
+        fill_histogram(cReader, h_aligned, h_unaligned, cCuts);
+        fill_histogram(chReader, h_aligned, h_unaligned, chCuts);
+        fill_histogram(heReader, h_aligned, h_unaligned, heCuts);
+        fill_histogram(emptyReader, h_aligned, h_unaligned, emptyCuts);
 
         // Calculate the mean value of currentVariable in this bin
         double meanCurrentVariable = (count > 0) ? (sumCurrentVariable / count) : (varMin + varMax) / 2.0;
+        // Retrieve bin contents for aligned case
+        double nA_aligned = h_aligned->GetBinContent(1);
+        double nC_aligned = h_aligned->GetBinContent(1);
+        double nCH_aligned = h_aligned->GetBinContent(1);
+        double nMT_aligned = h_aligned->GetBinContent(1);
+        double nf_aligned = h_aligned->GetBinContent(1);
 
-        // Retrieve bin contents
-        double nA = h_nh3->GetBinContent(1);
-        double nC = h_c->GetBinContent(1);
-        double nCH = h_ch->GetBinContent(1);
-        double nMT = h_he->GetBinContent(1);
-        double nf = h_empty->GetBinContent(1);
+        // Retrieve bin contents for unaligned case
+        double nA_unaligned = h_unaligned->GetBinContent(1);
+        double nC_unaligned = h_unaligned->GetBinContent(1);
+        double nCH_unaligned = h_unaligned->GetBinContent(1);
+        double nMT_unaligned = h_unaligned->GetBinContent(1);
+        double nf_unaligned = h_unaligned->GetBinContent(1);
 
-        // Calculate dilution factor for this bin
-        double dilution = (23.0 * (-nMT * xA + nA * xHe) * 
-                           (-0.511667 * nMT * xC * xCH * xf + 
-                            (1.0 * nf * xC * xCH - 
-                             3.41833 * nCH * xC * xf + 
-                             2.93 * nC * xCH * xf) * xHe)) / 
-                          (nA * xHe * 
-                           (62.6461 * nMT * xC * xCH * xf + 
-                            1.0 * nf * xC * xCH * xHe - 
-                            78.6217 * nCH * xC * xf * xHe + 
-                            14.9756 * nC * xCH * xf * xHe));
-        // Calculate error for this bin
-        double error = calculate_dilution_error(nA, nC, nCH, nMT, nf);
+        // Calculate dilution factors for both cases
+        double dilution_aligned = (23.0 * (-nMT_aligned * xA_split + nA_aligned * xHe_split) * 
+                                   (-0.511667 * nMT_aligned * xC_split * xCH_split * xf_split + 
+                                    (1.0 * nf_aligned * xC_split * xCH_split - 
+                                     3.41833 * nCH_aligned * xC_split * xf_split + 
+                                     2.93 * nC_aligned * xCH_split * xf_split) * xHe_split)) / 
+                                  (nA_aligned * xHe_split * 
+                                   (62.6461 * nMT_aligned * xC_split * xCH_split * xf_split + 
+                                    1.0 * nf_aligned * xC_split * xCH_split * xHe_split - 
+                                    78.6217 * nCH_aligned * xC_split * xf_split * xHe_split + 
+                                    14.9756 * nC_aligned * xCH_split * xf_split * xHe_split));
+        double error_aligned = calculate_dilution_error(nA_aligned, nC_aligned, nCH_aligned, nMT_aligned, nf_aligned);
 
-        // Add the dilution factor and error to the TGraphErrors
-        gr_dilution->SetPoint(binIndex, meanCurrentVariable, dilution);
-        gr_dilution->SetPointError(binIndex, 0, error);
+        double dilution_unaligned = (23.0 * (-nMT_unaligned * xA_split + nA_unaligned * xHe_split) * 
+                                     (-0.511667 * nMT_unaligned * xC_split * xCH_split * xf_split + 
+                                      (1.0 * nf_unaligned * xC_split * xCH_split - 
+                                       3.41833 * nCH_unaligned * xC_split * xf_split + 
+                                       2.93 * nC_unaligned * xCH_split * xf_split) * xHe_split)) / 
+                                    (nA_unaligned * xHe_split * 
+                                     (62.6461 * nMT_unaligned * xC_split * xCH_split * xf_split + 
+                                      1.0 * nf_unaligned * xC_split * xCH_split * xHe_split - 
+                                      78.6217 * nCH_unaligned * xC_split * xf_split * xHe_split + 
+                                      14.9756 * nC_unaligned * xCH_split * xf_split * xHe_split));
+        double error_unaligned = calculate_dilution_error(nA_unaligned, nC_unaligned, nCH_unaligned, nMT_unaligned, nf_unaligned);
 
-        // Store the original dilution and error for now
-        dilutionResults.emplace_back(dilution, error);
+        // Plot the TGraphErrors for aligned and unaligned
+        TGraphErrors* gr_aligned = new TGraphErrors();
+        TGraphErrors* gr_unaligned = new TGraphErrors();
 
-        // Clean up histograms
-        delete h_nh3;
-        delete h_c;
-        delete h_ch;
-        delete h_he;
-        delete h_empty;
+        gr_aligned->SetPoint(binIndex, meanCurrentVariable, dilution_aligned);
+        gr_aligned->SetPointError(binIndex, 0, error_aligned);
+        gr_aligned->SetMarkerStyle(20);
+        gr_aligned->SetMarkerColor(kBlue);
+
+        gr_unaligned->SetPoint(binIndex, meanCurrentVariable, dilution_unaligned);
+        gr_unaligned->SetPointError(binIndex, 0, error_unaligned);
+        gr_unaligned->SetMarkerStyle(20);
+        gr_unaligned->SetMarkerColor(kRed);
+
+        // Create a canvas for plotting
+        TCanvas* canvas = new TCanvas("c_dilution", "Dilution Factor Plot", 800, 600);
+        canvas->SetLeftMargin(0.15);
+        canvas->SetBottomMargin(0.15);
+
+        // Configure and draw the graphs
+        gr_aligned->SetTitle("");
+        gr_aligned->GetXaxis()->SetTitle(formatLabelName(prefix).c_str());
+        gr_aligned->GetXaxis()->SetLimits(config.xMin, config.xMax);
+        gr_aligned->GetXaxis()->SetTitleSize(0.05);
+        gr_aligned->GetYaxis()->SetTitle("D_{f}");
+        gr_aligned->GetYaxis()->SetTitleSize(0.05);
+        gr_aligned->GetYaxis()->SetTitleOffset(1.6);
+        gr_aligned->GetYaxis()->SetRangeUser(0.0, 0.4);
+        gr_aligned->Draw("AP");
+
+        gr_unaligned->Draw("P same");
+
+        // Add legend
+        TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);
+        legend->AddEntry(gr_aligned, "Aligned", "p");
+        legend->AddEntry(gr_unaligned, "Unaligned", "p");
+        legend->Draw();
+
+        // Save the canvas to a file
+        std::string outputDir = "output/dilution_factor_plots/";
+        std::string outputFileName = outputDir + "df_" + binNames[currentFits] + "_" + prefix + ".png";
+        canvas->SaveAs(outputFileName.c_str());
+
+        // Clean up
+        delete gr_aligned;
+        delete gr_unaligned;
+        delete legend;
+        delete canvas;
     }
 
-    // Fit the TGraphErrors to a cubic polynomial
-    TF1* fitFunc = new TF1("fitFunc", "[0] + [1]*x + [2]*x^2 + [3]*x^3", allBins[currentFits].front(), allBins[currentFits].back());
-    gr_dilution->Fit(fitFunc, "QN");
-
-    // Calculate the chi2/ndf
-    double chi2 = fitFunc->GetChisquare();
-    int ndf = fitFunc->GetNDF();
-    double scalingFactor = std::sqrt(chi2 / ndf);
-
-    // // Loop over all points in gr_dilution and scale the errors
-    // int nPoints = gr_dilution->GetN();
-    // for (int i = 0; i < nPoints; ++i) {
-    //     double x, y;
-    //     gr_dilution->GetPoint(i, x, y);
-    //     double ey = gr_dilution->GetErrorY(i);
-    //     gr_dilution->SetPointError(i, gr_dilution->GetErrorX(i), ey * scalingFactor);
-    // }
-
-    // Now plot the TGraphErrors
-    // Get the prefix from propertyNames
-    std::string prefix = propertyNames[currentFits];
-
-    // Retrieve the HistConfig for the current prefix
-    HistConfig config = histConfigs.find(prefix) != histConfigs.end() ? histConfigs[prefix] : HistConfig{100, 0, 1};
-
-    // Create a canvas for plotting
-    TCanvas* canvas = new TCanvas("c_dilution", "Dilution Factor Plot", 800, 600);
-    canvas->SetLeftMargin(0.15);
-    canvas->SetBottomMargin(0.15);
-
-    // Configure the graph
-    gr_dilution->SetTitle("");
-    gr_dilution->GetXaxis()->SetTitle(formatLabelName(prefix).c_str());
-    gr_dilution->GetXaxis()->SetLimits(config.xMin, config.xMax);
-    gr_dilution->GetXaxis()->SetTitleSize(0.05);
-    gr_dilution->GetYaxis()->SetTitle("D_{f}");
-    gr_dilution->GetYaxis()->SetTitleSize(0.05);
-    gr_dilution->GetYaxis()->SetTitleOffset(1.6);
-    gr_dilution->GetYaxis()->SetRangeUser(0.0, 0.4);
-
-    // Draw the graph with error bars
-    gr_dilution->SetMarkerStyle(20);
-    gr_dilution->SetMarkerColor(kBlack);
-    gr_dilution->Draw("AP");
-
-    // Save the canvas to a file
-    std::string outputDir = "output/dilution_factor_plots/";
-    std::string outputFileName = outputDir + "df_" + binNames[currentFits] + "_" + prefix + ".png";
-    canvas->SaveAs(outputFileName.c_str());
-
-    // Clean up
-    delete canvas;
-    delete gr_dilution;
-    delete fitFunc;
-
-    // Clean up dynamically allocated kinematic cuts
-    delete nh3Cuts;
-    delete cCuts;
-    delete chCuts;
-    delete heCuts;
-    delete emptyCuts;
-
-    // Close and delete ROOT files
-    nh3File->Close(); delete nh3File;
-    cFile->Close(); delete cFile;
-    chFile->Close(); delete chFile;
-    heFile->Close(); delete heFile;
-    emptyFile->Close(); delete emptyFile;
-
-    return dilutionResults;
+    // Return all four values
+    return DilutionFactors{dilution_aligned, error_aligned, dilution_unaligned, error_unaligned};
 }
