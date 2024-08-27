@@ -865,7 +865,9 @@ void plotMultipleQ2multiDependence(
         "(0.15 < x < 0.18)", 
         "(0.18 < x < 0.21)"
     };
-    // 0.16 < z < 0.22, 0.30 < P_{T} < 0.50, M_{x} > 0.95
+
+    // Title to add to each subplot
+    std::string plotTitle = "0.16 < z < 0.22, 0.30 < P_{T} < 0.50, M_{x} > 0.95";
 
     // Updated loop to accommodate the new plot order
     for (size_t i = 0; i < suffixes.size(); ++i) {
@@ -875,11 +877,11 @@ void plotMultipleQ2multiDependence(
 
         bool firstGraphDrawn = false;
 
-        // Create a legend in the top right
+        // Create a legend in the top right with a border and background
         TLegend *legend = new TLegend(0.6, 0.7, 0.9, 0.9);  // Adjust position and size
         legend->SetTextSize(0.025);  // Adjust text size
-        legend->SetBorderSize(0);  // No border
-        legend->SetFillStyle(0);   // No background
+        legend->SetBorderSize(1);  // Set border size
+        legend->SetFillStyle(1001);   // Solid white background
 
         for (size_t p = 0; p < prefixes.size(); ++p) {
             std::string key = prefixes[p] + "chi2Fits" + suffixes[i];
@@ -925,6 +927,13 @@ void plotMultipleQ2multiDependence(
 
         // Draw the legend in the current subplot
         legend->Draw();
+
+        // Add a title to each subplot
+        TLatex *latex = new TLatex();
+        latex->SetNDC();
+        latex->SetTextSize(0.035);
+        latex->SetTextAlign(22);  // Centered text alignment
+        latex->DrawLatex(0.5, 0.93, plotTitle.c_str());  // Adjust position and size
     }
 
     gSystem->Exec("mkdir -p output/epX_plots");
