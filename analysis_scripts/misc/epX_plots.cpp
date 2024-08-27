@@ -915,7 +915,8 @@ void plotMultipleQ2multiDependence(
                 }
 
                 // Add each entry to the legend with the corresponding color and label
-                legend->AddEntry(graphStat, legendLabels[p].c_str(), "p");
+                TLegendEntry* legendEntry = legend->AddEntry(graphStat, legendLabels[p].c_str(), "p");
+                legendEntry->SetTextColor(colors[p]);  // Set the text color to match the graph color
             }
         }
 
