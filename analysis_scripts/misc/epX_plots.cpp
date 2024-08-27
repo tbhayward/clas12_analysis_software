@@ -856,8 +856,8 @@ void plotMultipleQ2multiDependence(
     };
 
     // Colors and marker styles for each prefix
-    std::vector<int> colors = {kBlack, kRed, kBlue};
-    std::vector<int> markers = {20, 21, 22};  // Different marker styles for distinction
+    std::vector<int> colors = {kRed, kBlue, kGreen};  // Updated colors
+    std::vector<int> markers = {20, 21, 22};  // Circle, Square, Triangle markers
 
     // Updated loop to accommodate the new plot order
     for (size_t i = 0; i < suffixes.size(); ++i) {
@@ -883,7 +883,9 @@ void plotMultipleQ2multiDependence(
                     yCombErr.push_back(std::sqrt(std::pow(yStatErr.back(), 2) + std::pow(sysUncertainty, 2)));
                 }
 
-                TGraphErrors *graphStat = createTGraphErrors(x, y, yStatErr, markers[p], 0.8, colors[p]);
+                TGraphErrors *graphStat = createTGraphErrors(x, y, yStatErr, markers[p], 1.0, colors[p]);  // Adjusted marker size to 1.0
+                graphStat->SetLineWidth(1);  // Ensure the line is centered properly
+                
                 setAxisLabelsAndRanges(graphStat, xLabel, yLabels[i], xLimits, 
                                        (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.8) :
                                        (suffixes[i] == "doubleratio") ? std::make_pair(-0.02, 0.6) :
@@ -904,6 +906,32 @@ void plotMultipleQ2multiDependence(
         line->SetLineStyle(7);  // Dashed line
         line->Draw("same");
     }
+
+    // Add a color-coded title at the top of the canvas
+    c->cd(0);  // Switch to the entire canvas
+
+    TLatex latex;
+    latex.SetNDC();  // Use Normalized Device Coordinates
+    latex.SetTextAlign(22);  // Center alignment
+    latex.SetTextSize(0.04);  // Adjust text size
+
+    // Coordinates and text parts (adjust x positions and add color codes)
+    double xPos = 0.5;  // Center the title horizontally
+    double yPos = 0.96;  // Position near the top of the canvas
+    latex.SetTextColor(colors[0]);
+    latex.DrawLatex(xPos, yPos, "(0.12 < x < 0.15), ");
+    
+    xPos += 0.07;  // Shift to the right
+    latex.SetTextColor(colors[1]);
+    latex.DrawLatex(xPos, yPos, "(0.15 < x < 0.18), ");
+    
+    xPos += 0.07;  // Shift to the right
+    latex.SetTextColor(colors[2]);
+    latex.DrawLatex(xPos, yPos, "(0.18 < x < 0.21), ");
+
+    xPos += 0.07;  // Shift to the right
+    latex.SetTextColor(kBlack);  // Reset color to black
+    latex.DrawLatex(xPos, yPos, "0.16 < z < 0.22, 0.30 < P_{T} < 0.50");
 
     gSystem->Exec("mkdir -p output/epX_plots");
     c->SaveAs(outputFileName.c_str());
