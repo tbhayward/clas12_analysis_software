@@ -359,7 +359,7 @@ void plotDependence(
 
             TGraphErrors *graphStat = createTGraphErrors(x, y, yStatErr, 20, 0.8, kBlack);
             setAxisLabelsAndRanges(graphStat, xLabel, yLabels[i], xLimits, 
-                                   (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.8) :
+                                   (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.5) :
                                    (suffixes[i] == "doubleratio") ? std::make_pair(-0.02, 0.3) :
                                    std::make_pair(-0.06, 0.06));  // Adjusted y-axis range for doubleratio
             graphStat->Draw("AP");
