@@ -903,8 +903,8 @@ void plotMultipleQ2multiDependence(
                 graphStat->SetLineWidth(1);  // Ensure the line is centered properly
                 
                 setAxisLabelsAndRanges(graphStat, xLabel, yLabels[i], xLimits, 
-                                       (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.8) :
-                                       (suffixes[i] == "doubleratio") ? std::make_pair(-0.02, 0.6) :
+                                       (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.4) :
+                                       (suffixes[i] == "doubleratio") ? std::make_pair(-0.02, 0.3) :
                                        std::make_pair(-0.06, 0.06));  // Adjusted y-axis range for doubleratio
                 
                 if (!firstGraphDrawn) {
