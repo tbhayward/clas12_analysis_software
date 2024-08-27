@@ -120,7 +120,7 @@ std::pair<double, double> calculate_dilution_and_error(double nA, double nC, dou
                         78.6217 * nCH * xC * xf * xHe + 
                         14.9756 * nC * xCH * xf * xHe));
     
-    double error = calculate_dilution_error(nA, nC, nCH, nMT, nf);
+    double error = calculate_dilution_error(nA, nC, nCH, nMT, nf, xA, xC, xCH, xHe, xf);
     
     return std::make_pair(dilution, error);
 }
