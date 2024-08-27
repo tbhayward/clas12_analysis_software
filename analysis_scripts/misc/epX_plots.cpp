@@ -832,6 +832,84 @@ void plotComparison(
     }
 }
 
+void plotMultipleQ2multiDependence(
+    const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
+    const std::vector<std::string> &prefixes,  // List of prefixes
+    const std::string &xLabel, 
+    const std::pair<double, double> &xLimits, 
+    const std::string &outputFileName) {
+
+    TCanvas *c = new TCanvas("c", "Q2multi Dependence Plots", 1200, 800);
+    c->Divide(3, 2);
+
+    // Updated list of suffixes (removing AULoffset and adding doubleratio)
+    std::vector<std::string> suffixes = {"ALUsinphi", "AULsinphi", "AULsin2phi", "ALL", "doubleratio", "ALLcosphi"};
+    
+    // Corresponding y-axis labels
+    std::vector<std::string> yLabels = {
+        "F_{LU}^{sin#phi}/F_{UU}",
+        "F_{UL}^{sin#phi}/F_{UU}",
+        "F_{UL}^{sin(2#phi)}/F_{UU}",
+        "F_{LL}/F_{UU}",
+        "-F_{LU}^{sin#phi}/F_{LL}",  // yLabel for doubleratio
+        "F_{LL}^{cos#phi}/F_{UU}"
+    };
+
+    // Colors and marker styles for each prefix
+    std::vector<int> colors = {kBlack, kRed, kBlue};
+    std::vector<int> markers = {20, 21, 22};  // Different marker styles for distinction
+
+    // Updated loop to accommodate the new plot order
+    for (size_t i = 0; i < suffixes.size(); ++i) {
+        c->cd(i + 1);
+        gPad->SetLeftMargin(0.18);
+        gPad->SetBottomMargin(0.15);
+
+        bool firstGraphDrawn = false;
+
+        for (size_t p = 0; p < prefixes.size(); ++p) {
+            std::string key = prefixes[p] + "chi2Fits" + suffixes[i];
+            auto it = asymmetryData.find(key);
+            if (it != asymmetryData.end()) {
+                const auto &data = it->second;
+
+                std::vector<double> x, y, yStatErr, yCombErr;
+                for (const auto &entry : data) {
+                    x.push_back(entry[0]);
+                    y.push_back(entry[1]);
+                    yStatErr.push_back(entry[2]);
+
+                    double sysUncertainty = 0;  // Optionally calculate systematic uncertainty
+                    yCombErr.push_back(std::sqrt(std::pow(yStatErr.back(), 2) + std::pow(sysUncertainty, 2)));
+                }
+
+                TGraphErrors *graphStat = createTGraphErrors(x, y, yStatErr, markers[p], 0.8, colors[p]);
+                setAxisLabelsAndRanges(graphStat, xLabel, yLabels[i], xLimits, 
+                                       (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.8) :
+                                       (suffixes[i] == "doubleratio") ? std::make_pair(-0.02, 0.6) :
+                                       std::make_pair(-0.06, 0.06));  // Adjusted y-axis range for doubleratio
+                
+                if (!firstGraphDrawn) {
+                    graphStat->Draw("AP");
+                    firstGraphDrawn = true;
+                } else {
+                    graphStat->Draw("P SAME");
+                }
+            }
+        }
+
+        // Add the dashed gray line at y = 0
+        TLine *line = new TLine(xLimits.first, 0, xLimits.second, 0);
+        line->SetLineColor(kGray+2);
+        line->SetLineStyle(7);  // Dashed line
+        line->Draw("same");
+    }
+
+    gSystem->Exec("mkdir -p output/epX_plots");
+    c->SaveAs(outputFileName.c_str());
+    delete c;
+}
+
 int main(int argc, char *argv[]) {
     if (argc != 3) {
         std::cerr << "Usage: " << argv[0] << " <asymmetries.txt> <kinematicPlots.txt>\n";
@@ -866,6 +944,9 @@ int main(int argc, char *argv[]) {
     plotDependence(asymmetryData, "Q2multi1", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi1_dependence_plots.png");
     plotDependence(asymmetryData, "Q2multi2", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi2_dependence_plots.png");
     plotDependence(asymmetryData, "Q2multi3", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi3_dependence_plots.png");
+
+    std::vector<std::string> prefixes = {"Q2multi1", "Q2multi2", "Q2multi3"};
+        plotMultipleQ2multiDependence(asymmetryData, prefixes, "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi_dependence_plots.png");
 
     // // plotRunnumDependence(asymmetryData, "runnum", "run number", "output/epX_plots/runnum_dependence_plots.png");
 
