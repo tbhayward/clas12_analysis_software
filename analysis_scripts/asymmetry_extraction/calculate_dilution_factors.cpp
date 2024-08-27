@@ -163,7 +163,8 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
             int count = 0;
 
             // Helper function to fill histograms based on kinematic cuts and track mean
-            auto fill_histogram = [&](TTreeReader& reader, TH1D* hist, TH1D* hist_aligned, TH1D* hist_unaligned, BaseKinematicCuts* cuts) {
+            auto fill_histogram = [&](TTreeReader& reader, TH1D* hist, TH1D* hist_aligned, TH1D* hist_unaligned, BaseKinematicCuts* cuts, 
+                bool is_nh3) {
                 TTreeReaderValue<double> currentVariable(reader, propertyNames[currentFits].c_str());
 
                 while (reader.Next()) {
@@ -173,21 +174,25 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
                         sumCurrentVariable += *currentVariable;
                         ++count;
 
-                        if ((*helicity > 0 && *target_pol > 0) || (*helicity < 0 && *target_pol < 0)) {
-                            hist_aligned->Fill(*currentVariable);
-                        } else {
-                            hist_unaligned->Fill(*currentVariable);
+                        // Only fill the aligned and unaligned histograms if this is the NH3 reader
+                        if (is_nh3) {
+                            if ((*helicity > 0 && *target_pol > 0) || (*helicity < 0 && *target_pol < 0)) {
+                                hist_aligned->Fill(*currentVariable);
+                            } else {
+                                hist_unaligned->Fill(*currentVariable);
+                            }
                         }
                     }
                 }
                 reader.Restart();
             };
 
-            fill_histogram(nh3Reader, h_nh3, h_nh3_aligned, h_nh3_unaligned, nh3Cuts);
-            fill_histogram(cReader, h_c, h_nh3_aligned, h_nh3_unaligned, cCuts);
-            fill_histogram(chReader, h_ch, h_nh3_aligned, h_nh3_unaligned, chCuts);
-            fill_histogram(heReader, h_he, h_nh3_aligned, h_nh3_unaligned, heCuts);
-            fill_histogram(emptyReader, h_empty, h_nh3_aligned, h_nh3_unaligned, emptyCuts);
+            // Call fill_histogram for each target type
+            fill_histogram(nh3Reader, h_nh3, h_nh3_aligned, h_nh3_unaligned, nh3Cuts, true);  // NH3 data
+            fill_histogram(cReader, h_c, nullptr, nullptr, cCuts, false);                      // Carbon data
+            fill_histogram(chReader, h_ch, nullptr, nullptr, chCuts, false);                   // CH2 data
+            fill_histogram(heReader, h_he, nullptr, nullptr, heCuts, false);                   // Helium data
+            fill_histogram(emptyReader, h_empty, nullptr, nullptr, emptyCuts, false);  
 
             // Calculate the mean value of currentVariable in this bin
             double meanCurrentVariable = (count > 0) ? (sumCurrentVariable / count) : (varMin + varMax) / 2.0;
