@@ -41,11 +41,11 @@ def calculate_total_charge(filename):
                     current_section = 'NH3'
                 elif 'Carbon' in row[0]:
                     current_section = 'C'
-                elif 'CH2' in row[0]]:
+                elif 'CH2' in row[0]:
                     current_section = 'CH2'
-                elif 'Helium Bath' in row[0]]:
+                elif 'Helium Bath' in row[0]:
                     current_section = 'Helium Bath'
-                elif 'Empty Target' in row[0]]:
+                elif 'Empty Target' in row[0]:
                     current_section = 'Empty Target'
                 else:
                     current_section = None
