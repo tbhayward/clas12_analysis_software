@@ -361,7 +361,7 @@ void plotDependence(
             setAxisLabelsAndRanges(graphStat, xLabel, yLabels[i], xLimits, 
                                    (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.8) :
                                    (suffixes[i] == "doubleratio") ? std::make_pair(-0.02, 0.2) :
-                                   std::make_pair(-0.06, 0.06));  // Adjusted y-axis range for doubleratio
+                                   std::make_pair(-0.1, 0.1));  // Adjusted y-axis range for doubleratio
             graphStat->Draw("AP");
 
             // Add the dashed gray line at y = 0
@@ -863,9 +863,9 @@ int main(int argc, char *argv[]) {
     plotDependence(asymmetryData, "PT", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PT_dependence_plots_comparison.png", "PTall");
     plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots.png");
     plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots_comparison.png", "xFall");
-    plotDependence(asymmetryData, "Q2multi1", "Q^{2} (GeV^{2})", {1, 6}, "output/epX_plots/Q2multi1_dependence_plots.png");
-    plotDependence(asymmetryData, "Q2multi2", "Q^{2} (GeV^{2})", {1, 6}, "output/epX_plots/Q2multi2_dependence_plots.png");
-    plotDependence(asymmetryData, "Q2multi3", "Q^{2} (GeV^{2})", {1, 6}, "output/epX_plots/Q2multi3_dependence_plots.png");
+    plotDependence(asymmetryData, "Q2multi1", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi1_dependence_plots.png");
+    plotDependence(asymmetryData, "Q2multi2", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi2_dependence_plots.png");
+    plotDependence(asymmetryData, "Q2multi3", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi3_dependence_plots.png");
 
     // // plotRunnumDependence(asymmetryData, "runnum", "run number", "output/epX_plots/runnum_dependence_plots.png");
 
