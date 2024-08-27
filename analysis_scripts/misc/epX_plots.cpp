@@ -861,10 +861,11 @@ void plotMultipleQ2multiDependence(
 
     // Text labels for the legend
     std::vector<std::string> legendLabels = {
-        "(0.12 < x < 0.15), 0.16 < z < 0.22, 0.30 < P_{T} < 0.50, M_{x} > 0.95", 
-        "(0.15 < x < 0.18), 0.16 < z < 0.22, 0.30 < P_{T} < 0.50, M_{x} > 0.95", 
-        "(0.18 < x < 0.21), 0.16 < z < 0.22, 0.30 < P_{T} < 0.50, M_{x} > 0.95"
+        "(0.12 < x < 0.15)", 
+        "(0.15 < x < 0.18)", 
+        "(0.18 < x < 0.21)"
     };
+    // 0.16 < z < 0.22, 0.30 < P_{T} < 0.50, M_{x} > 0.95
 
     // Updated loop to accommodate the new plot order
     for (size_t i = 0; i < suffixes.size(); ++i) {
