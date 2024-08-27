@@ -934,7 +934,7 @@ void plotMultipleQ2multiDependence(
         latex->SetNDC();
         latex->SetTextSize(0.035);
         latex->SetTextAlign(22);  // Centered text alignment
-        latex->DrawLatex(0.525, 0.93, plotTitle.c_str());  // Adjust position and size
+        latex->DrawLatex(0.535, 0.93, plotTitle.c_str());  // Adjust position and size
     }
 
     gSystem->Exec("mkdir -p output/epX_plots");
