@@ -102,7 +102,7 @@ def calculate_total_charge(filename):
     fractions_pos_pol = {key: charges_pos_pol[key] / total_charge_pos_pol if total_charge_pos_pol > 0 else 0 for key in charges_pos_pol}
     fractions_neg_pol = {key: charges_neg_pol[key] / total_charge_neg_pol if total_charge_neg_pol > 0 else 0 for key in charges_neg_pol}
 
-    return charges, total_charge, fractions, run_data, total_charge_pos_pol, total_charge_neg_pol, fractions_pos_pol, fractions_neg_pol
+    return charges, total_charge, fractions, run_data, charges_pos_pol, total_charge_pos_pol, fractions_pos_pol, charges_neg_pol, total_charge_neg_pol, fractions_neg_pol
 
 if __name__ == '__main__':
     if len(sys.argv) != 2:
@@ -110,7 +110,7 @@ if __name__ == '__main__':
         sys.exit(1)
 
     filename = sys.argv[1]
-    charges, total_charge, fractions, run_data, total_charge_pos_pol, total_charge_neg_pol, fractions_pos_pol, fractions_neg_pol = calculate_total_charge(filename)
+    charges, total_charge, fractions, run_data, charges_pos_pol, total_charge_pos_pol, fractions_pos_pol, charges_neg_pol, total_charge_neg_pol, fractions_neg_pol = calculate_total_charge(filename)
     
     print(f"Total accumulated charge: {total_charge} nC\n")
     print(f"Total accumulated charge for NH3: {charges['NH3']} nC ({fractions['NH3']:.3%} of total)")
