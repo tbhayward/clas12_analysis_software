@@ -65,6 +65,24 @@ double calculate_dilution_error(double nA, double nC, double nCH, double nMT, do
     return sigma_df;
 }
 
+std::pair<double, double> calculate_dilution_and_error(double nA, double nC, double nCH, double nMT, double nf, 
+                                                       double xA, double xC, double xCH, double xHe, double xf) {
+    double dilution = (23.0 * (-nMT * xA + nA * xHe) * 
+                       (-0.511667 * nMT * xC * xCH * xf + 
+                        (1.0 * nf * xC * xCH - 
+                         3.41833 * nCH * xC * xf + 
+                         2.93 * nC * xCH * xf) * xHe)) / 
+                      (nA * xHe * 
+                       (62.6461 * nMT * xC * xCH * xf + 
+                        1.0 * nf * xC * xCH * xHe - 
+                        78.6217 * nCH * xC * xf * xHe + 
+                        14.9756 * nC * xCH * xf * xHe));
+    
+    double error = calculate_dilution_error(nA, nC, nCH, nMT, nf);
+    
+    return std::make_pair(dilution, error);
+}
+
 std::vector<std::pair<double, double>> calculate_dilution_factors() {
 
     // Load ROOT files and trees
@@ -207,19 +225,8 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
             double nA_aligned = h_nh3_aligned->GetBinContent(1);
             double nA_unaligned = h_nh3_unaligned->GetBinContent(1);
 
-            // Calculate dilution factor for this bin
-            double dilution = (23.0 * (-nMT * xA + nA * xHe) * 
-                               (-0.511667 * nMT * xC * xCH * xf + 
-                                (1.0 * nf * xC * xCH - 
-                                 3.41833 * nCH * xC * xf + 
-                                 2.93 * nC * xCH * xf) * xHe)) / 
-                              (nA * xHe * 
-                               (62.6461 * nMT * xC * xCH * xf + 
-                                1.0 * nf * xC * xCH * xHe - 
-                                78.6217 * nCH * xC * xf * xHe + 
-                                14.9756 * nC * xCH * xf * xHe));
-            // Calculate error for this bin
-            double error = calculate_dilution_error(nA, nC, nCH, nMT, nf);
+            /// Calculate dilution factors for the general case
+            auto [dilution, error] = calculate_dilution_and_error(nA, nC, nCH, nMT, nf, xA, xC, xCH, xHe, xf);
 
             // Add the dilution factor and error to the TGraphErrors
             gr_dilution->SetPoint(binIndex, meanCurrentVariable, dilution);
@@ -228,30 +235,9 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
             // Store the original dilution and error for now
             dilutionResults.emplace_back(dilution, error);
 
-            // Calculate dilution factors for aligned and unaligned
-            double dilution_aligned = (23.0 * (-nMT * xA_split + nA_aligned * xHe_split) * 
-                                       (-0.511667 * nMT * xC_split * xCH_split * xf_split + 
-                                        (1.0 * nf * xC_split * xCH_split - 
-                                         3.41833 * nCH * xC_split * xf_split + 
-                                         2.93 * nC * xCH_split * xf_split) * xHe_split)) / 
-                                      (nA_aligned * xHe_split * 
-                                       (62.6461 * nMT * xC_split * xCH_split * xf_split + 
-                                        1.0 * nf * xC_split * xCH_split * xHe_split - 
-                                        78.6217 * nCH * xC_split * xf_split * xHe_split + 
-                                        14.9756 * nC * xCH_split * xf_split * xHe_split));
-            double error_aligned = calculate_dilution_error(nA_aligned, nC, nCH, nMT, nf);
-
-            double dilution_unaligned = (23.0 * (-nMT * xA_split + nA_unaligned * xHe_split) * 
-                                         (-0.511667 * nMT * xC_split * xCH_split * xf_split + 
-                                          (1.0 * nf * xC_split * xCH_split - 
-                                           3.41833 * nCH * xC_split * xf_split + 
-                                           2.93 * nC * xCH_split * xf_split) * xHe_split)) / 
-                                        (nA_unaligned * xHe_split * 
-                                         (62.6461 * nMT * xC_split * xCH_split * xf_split + 
-                                          1.0 * nf * xC_split * xCH_split * xHe_split - 
-                                          78.6217 * nCH * xC_split * xf_split * xHe_split + 
-                                          14.9756 * nC * xCH_split * xf_split * xHe_split));
-            double error_unaligned = calculate_dilution_error(nA_unaligned, nC, nCH, nMT, nf);
+            // Calculate dilution factors for aligned and unaligned cases
+            auto [dilution_aligned, error_aligned] = calculate_dilution_and_error(nA_aligned, nC, nCH, nMT, nf, xA_split, xC_split, xCH_split, xHe_split, xf_split);
+            auto [dilution_unaligned, error_unaligned] = calculate_dilution_and_error(nA_unaligned, nC, nCH, nMT, nf, xA_split, xC_split, xCH_split, xHe_split, xf_split);
 
             // Add aligned and unaligned dilution factors to the graphs
             gr_aligned->SetPoint(binIndex, meanCurrentVariable, dilution_aligned);
