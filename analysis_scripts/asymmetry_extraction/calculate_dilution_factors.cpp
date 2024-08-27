@@ -32,6 +32,12 @@ const double xCH = 0.03600;
 const double xHe = 0.07535;
 const double xf = 0.09168;
 
+const double xA_split = 0.563;
+const double xC_split = 0.128;
+const double xCH_split = 0.055;
+const double xHe_split = 0.115;
+const double xf_split = 0.140;
+
 double calculate_dilution_error(double nA, double nC, double nCH, double nMT, double nf) {
     double term1 = 0.734694 * nA * nC * pow((nA - nMT), 2) * 
                    pow((- 0.554976 * nCH - 0.0373109 * nf + 0.592287 * nMT), 2);
