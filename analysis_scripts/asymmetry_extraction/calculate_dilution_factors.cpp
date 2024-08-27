@@ -217,14 +217,14 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     int ndf = fitFunc->GetNDF();
     double scalingFactor = std::sqrt(chi2 / ndf);
 
-    // Loop over all points in gr_dilution and scale the errors
-    int nPoints = gr_dilution->GetN();
-    for (int i = 0; i < nPoints; ++i) {
-        double x, y;
-        gr_dilution->GetPoint(i, x, y);
-        double ey = gr_dilution->GetErrorY(i);
-        gr_dilution->SetPointError(i, gr_dilution->GetErrorX(i), ey * scalingFactor);
-    }
+    // // Loop over all points in gr_dilution and scale the errors
+    // int nPoints = gr_dilution->GetN();
+    // for (int i = 0; i < nPoints; ++i) {
+    //     double x, y;
+    //     gr_dilution->GetPoint(i, x, y);
+    //     double ey = gr_dilution->GetErrorY(i);
+    //     gr_dilution->SetPointError(i, gr_dilution->GetErrorX(i), ey * scalingFactor);
+    // }
 
     // Now plot the TGraphErrors
     // Get the prefix from propertyNames
