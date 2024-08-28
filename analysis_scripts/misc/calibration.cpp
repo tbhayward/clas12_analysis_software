@@ -4555,7 +4555,7 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         // {-211, {"#pi^{-}", 0.0, 5.0}},
         // {321, {"k^{+}", 0.0, 5.0}},
         // {-321, {"k^{-}", 0.0, 5.0}},
-        {2212, {"p", 0.0, 3.0}}
+        {2212, {"p", 0.0, 4.0}}
     };
 
     // Create histograms for each particle type
@@ -4644,7 +4644,7 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         TLatex latex;
         latex.SetTextSize(0.04);
         latex.SetTextAlign(11);  // Align at top left
-        latex.DrawLatexNDC(0.42, 0.5, (dataset + ", " + particle_name).c_str());
+        latex.DrawLatexNDC(0.42, 0.525, (dataset + ", " + particle_name).c_str());
 
         // Define the curve function
         TF1* pass1_curve = new TF1("pass1 curve", "0.088/pow(x, 1.5)", 0.1, std::get<2>(particle_types[pid]));
@@ -4713,7 +4713,12 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
 void energy_loss_fd_distributions_theta_dc(TTreeReader& mcReader, const std::string& dataset) {
     // Particle types and their corresponding LaTeX names and x-axis ranges
     std::map<int, std::tuple<std::string, double, double>> particle_types = {
-        {2212, {"p", 0.0, 3.0}}
+        // {11, {"e^{-}", 0.0, 7.0}},
+        // {211, {"#pi^{+}", 0.0, 5.0}},
+        // {-211, {"#pi^{-}", 0.0, 5.0}},
+        // {321, {"k^{+}", 0.0, 5.0}},
+        // {-321, {"k^{-}", 0.0, 5.0}},
+        {2212, {"p", 0.0, 4.0}}
     };
 
     // Create histograms for each particle type
@@ -4800,7 +4805,7 @@ void energy_loss_fd_distributions_theta_dc(TTreeReader& mcReader, const std::str
         TLatex latex;
         latex.SetTextSize(0.04);
         latex.SetTextAlign(11);  // Align at top left
-        latex.DrawLatexNDC(0.42, 0.5, (dataset + ", " + particle_name).c_str());
+        latex.DrawLatexNDC(0.42, 0.525, (dataset + ", " + particle_name).c_str());
 
         // Define the curve function
         TF1* pass1_curve = new TF1("pass1 curve", "0.088/pow(x, 1.5)", 0.1, std::get<2>(particle_types[pid]));
