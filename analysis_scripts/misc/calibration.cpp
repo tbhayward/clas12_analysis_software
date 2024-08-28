@@ -5046,6 +5046,34 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
         pt_B->SetFillColor(0);
         pt_B->Draw();
 
+        // Print out the functional form of A(theta) in LaTeX format
+        std::cout << "A_p(\\theta) = ";
+        for (int i = 0; i <= 4; ++i) {
+            double coeff = fit_A->GetParameter(i);
+            if (i == 0) {
+                std::cout << Form("%.4f", coeff);
+            } else if (i == 1) {
+                std::cout << Form(" %+.4f\\theta", coeff);
+            } else {
+                std::cout << Form(" %+.4f\\theta^%d", coeff, i);
+            }
+        }
+        std::cout << std::endl;
+
+        // Print out the functional form of B(theta) in LaTeX format
+        std::cout << "B_p(\\theta) = ";
+        for (int i = 0; i <= 4; ++i) {
+            double coeff = fit_B->GetParameter(i);
+            if (i == 0) {
+                std::cout << Form("%.4f", coeff);
+            } else if (i == 1) {
+                std::cout << Form(" %+.4f\\theta", coeff);
+            } else {
+                std::cout << Form(" %+.4f\\theta^%d", coeff, i);
+            }
+        }
+        std::cout << std::endl;
+
         // Save the fit parameters canvas
         c_fit_params->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/fit_params_" + particle_name + ".png").c_str());
 
