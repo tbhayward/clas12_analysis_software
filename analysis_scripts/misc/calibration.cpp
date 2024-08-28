@@ -4924,9 +4924,8 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
     TTreeReaderValue<int> pid(mcReader, "particle_pid");
 
     // Loop over events
-    // for (int i = 0; i < 1e7; ++i) {
-    //     mcReader.Next();
-    while (mcReader.Next()) {
+    for (int i = 0; i < 1e7; ++i) {
+        mcReader.Next();
         double delta_p = *mc_p - *p;
         double theta_dc_1 = calculate_theta(*traj_x_6, *traj_y_6, *traj_z_6);
 
@@ -4950,6 +4949,10 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
         c_deltap->Divide(5, 2);  // 10 subplots
 
         std::vector<TF1*> fit_deltap(theta_bins.size());
+        std::vector<double> A_values(theta_bins.size());
+        std::vector<double> A_errors(theta_bins.size());
+        std::vector<double> B_values(theta_bins.size());
+        std::vector<double> B_errors(theta_bins.size());
 
         for (size_t i = 0; i < theta_bins.size(); ++i) {
             // Ensure we are drawing on the correct pad
@@ -4964,6 +4967,12 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
             fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x", 0.3, std::get<2>(particle_types[pid]));
             prof_deltap->Fit(fit_deltap[i], "Q"); // Silent fit
 
+            // Store the fit parameters
+            A_values[i] = fit_deltap[i]->GetParameter(0);
+            A_errors[i] = fit_deltap[i]->GetParError(0);
+            B_values[i] = fit_deltap[i]->GetParameter(1);
+            B_errors[i] = fit_deltap[i]->GetParError(1);
+
             histograms[pid][i]->Draw("COLZ");
             prof_deltap->Draw("same");  // Draw the profile to show the fit line
             fit_deltap[i]->Draw("same");  // Draw the fit on top of the profile
@@ -4972,12 +4981,44 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
         // Save the canvas
         c_deltap->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_p_distributions_" + particle_name + ".png").c_str());
 
+        // Create a new canvas for the fitted parameters
+        TCanvas* c_fit_params = new TCanvas(("c_fit_params_" + particle_name).c_str(), ("Fit Parameters: " + dataset + ", " + particle_name).c_str(), 1600, 800);
+        c_fit_params->Divide(2, 1);  // 1 row, 2 columns
+
+        // Plot A(#theta)
+        c_fit_params->cd(1);
+        TGraphErrors* graph_A = new TGraphErrors(theta_bins.size());
+        for (size_t i = 0; i < theta_bins.size(); ++i) {
+            double theta_midpoint = 0.5 * (theta_bins[i].first + theta_bins[i].second);
+            graph_A->SetPoint(i, theta_midpoint, A_values[i]);
+            graph_A->SetPointError(i, 0.0, A_errors[i]);
+        }
+        graph_A->SetTitle("A(#theta);#theta (degrees);A(#theta) (GeV)");
+        graph_A->Draw("AP");
+
+        // Plot B(#theta)
+        c_fit_params->cd(2);
+        TGraphErrors* graph_B = new TGraphErrors(theta_bins.size());
+        for (size_t i = 0; i < theta_bins.size(); ++i) {
+            double theta_midpoint = 0.5 * (theta_bins[i].first + theta_bins[i].second);
+            graph_B->SetPoint(i, theta_midpoint, B_values[i]);
+            graph_B->SetPointError(i, 0.0, B_errors[i]);
+        }
+        graph_B->SetTitle("B(#theta);#theta (degrees);B(#theta) (GeV^{2})");
+        graph_B->Draw("AP");
+
+        // Save the fit parameters canvas
+        c_fit_params->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/fit_params_" + particle_name + ".png").c_str());
+
         // Clean up memory
         for (size_t i = 0; i < theta_bins.size(); ++i) {
             delete fit_deltap[i];
             delete histograms[pid][i];
         }
+        delete graph_A;
+        delete graph_B;
         delete c_deltap;
+        delete c_fit_params;
     }
 }
 
