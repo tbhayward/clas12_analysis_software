@@ -4974,7 +4974,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     std::cout << std::endl;
 
     // Save the fit parameters canvas
-    c_fit_params->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/fit_params_" + particle_name + ".png").c_str());
+    c_fit_params->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/fit_params_" + prefix + "_" + particle_name + ".png").c_str());
 
     // Clean up memory
     delete graph_A;
