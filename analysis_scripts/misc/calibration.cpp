@@ -4994,7 +4994,7 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
             graph_A->SetPointError(i, 0.0, A_errors[i]);
         }
         graph_A->SetTitle("A(#theta);#theta (degrees);A(#theta) (GeV)");
-        graph_A->GetYaxis()->SetRangeUser(-0.05, 0.01);  // Set y-axis range
+        graph_A->GetYaxis()->SetRangeUser(-0.01, 0.01);  // Set y-axis range
         graph_A->GetXaxis()->SetTitleOffset(1.2);
         graph_A->GetYaxis()->SetTitleOffset(1.5);
         graph_A->SetMarkerStyle(20);  // Set marker style to a filled circle
