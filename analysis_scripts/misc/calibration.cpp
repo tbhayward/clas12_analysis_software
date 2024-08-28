@@ -5162,8 +5162,9 @@ void energy_loss_distributions_delta_theta(TTreeReader& mcReader, const std::str
     TTreeReaderValue<int> pid(mcReader, "particle_pid");
 
     // Loop over events
-    for (int i = 0; i < 1e7; ++i) {
-        mcReader.Next();
+    // for (int i = 0; i < 1e7; ++i) {
+        // mcReader.Next();
+    while (mcReader.Next()) {
         double delta_theta = *mc_theta - *theta;
         double theta_dc_1 = calculate_theta(*traj_x_6, *traj_y_6, *traj_z_6);
 
