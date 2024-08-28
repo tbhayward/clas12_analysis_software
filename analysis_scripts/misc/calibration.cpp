@@ -5040,8 +5040,9 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
     TTreeReaderValue<int> pid(mcReader, "particle_pid");
 
     // Loop over events
-    for (int i = 0; i < 1e7; ++i) {
-        mcReader.Next();
+    // for (int i = 0; i < 1e7; ++i) {
+    //     mcReader.Next();
+    while (mcReader.Next()) {
         double delta_p = *mc_p - *p;
         double theta_dc_1 = calculate_theta(*traj_x_6, *traj_y_6, *traj_z_6);
 
@@ -5140,7 +5141,7 @@ void energy_loss_distributions_delta_theta(TTreeReader& mcReader, const std::str
 
             // Set axis labels
             histograms[pid][i]->GetXaxis()->SetTitle("p (GeV)");
-            histograms[pid][i]->GetYaxis()->SetTitle("#Deltap");
+            histograms[pid][i]->GetYaxis()->SetTitle("#Delta#theta");
 
             histograms[pid][i]->SetStats(false);
             histograms[pid][i]->GetXaxis()->SetLabelSize(0.04); // Increase font size for axes labels
@@ -5263,7 +5264,7 @@ void energy_loss_distributions_delta_phi(TTreeReader& mcReader, const std::strin
 
             // Set axis labels
             histograms[pid][i]->GetXaxis()->SetTitle("p (GeV)");
-            histograms[pid][i]->GetYaxis()->SetTitle("#Deltap");
+            histograms[pid][i]->GetYaxis()->SetTitle("#Delta#phi");
 
             histograms[pid][i]->SetStats(false);
             histograms[pid][i]->GetXaxis()->SetLabelSize(0.04); // Increase font size for axes labels
@@ -5369,8 +5370,8 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     mcReader.Restart();
     energy_loss_distributions_delta_p(mcReader, dataset);
 
-    // mcReader.Restart();
-    // energy_loss_distributions_delta_theta(mcReader, dataset);
+    mcReader.Restart();
+    energy_loss_distributions_delta_theta(mcReader, dataset);
 
     mcReader.Restart();
     energy_loss_distributions_delta_phi(mcReader, dataset);
