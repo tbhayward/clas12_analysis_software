@@ -4604,7 +4604,7 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
     TTreeReaderValue<double> edge_36(mcReader, "traj_edge_36");
 
     // Loop over events
-    for (int i = 0; i < 1e6; ++i) {
+    for (int i = 0; i < 1e7; ++i) {
         mcReader.Next();
     // while (mcReader.Next()) {
         double delta_p = *mc_p - *p;
@@ -4653,7 +4653,7 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         pass2_curve->SetLineWidth(4);
 
         // Define the new curve based on the provided formula
-        TF1* new_curve_region1 = new TF1("new_curve_region1", "-53.1468 + 79.6131*pow(x-0.3,0.05739)", 0.31, std::get<2>(particle_types[pid]));
+        TF1* new_curve_region1 = new TF1("new_curve_region1", "-53.1468 + 79.6131*pow(x-0.3,0.05739)", 0.30, std::get<2>(particle_types[pid]));
         new_curve_region1->SetLineColor(kBlue);
         new_curve_region1->SetLineWidth(4);
 
