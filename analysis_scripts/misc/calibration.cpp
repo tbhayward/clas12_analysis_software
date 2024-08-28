@@ -4911,9 +4911,12 @@ void energy_loss_distributions_binned(TTreeReader& mcReader, const std::string& 
                 75, xMin, xMax, 75, -5.0, 5.0));
 
             // Set axis labels
-            histograms[pid][0][i]->GetXaxis()->SetTitle("p (GeV)"); histograms[pid][0][i]->GetYaxis()->SetTitle("#Deltap");
-            histograms[pid][1][i]->GetXaxis()->SetTitle("p (GeV)"); histograms[pid][1][i]->GetYaxis()->SetTitle("#Delta#theta");
-            histograms[pid][2][i]->GetXaxis()->SetTitle("p (GeV)"); histograms[pid][2][i]->GetYaxis()->SetTitle("#Delta#phi");
+            histograms[pid][0][i]->GetXaxis()->SetTitle("p (GeV)");
+            histograms[pid][0][i]->GetYaxis()->SetTitle("#Deltap");
+            histograms[pid][1][i]->GetXaxis()->SetTitle("p (GeV)");
+            histograms[pid][1][i]->GetYaxis()->SetTitle("#Delta#theta");
+            histograms[pid][2][i]->GetXaxis()->SetTitle("p (GeV)");
+            histograms[pid][2][i]->GetYaxis()->SetTitle("#Delta#phi");
 
             for (int j = 0; j < 3; ++j) {
                 histograms[pid][j][i]->SetStats(false);
@@ -4960,80 +4963,67 @@ void energy_loss_distributions_binned(TTreeReader& mcReader, const std::string& 
         }
     }
 
-    // Save the histograms into three canvases
-    for (const auto& entry : histograms) {
-        int pid = entry.first;
-        const std::string& particle_name = std::get<0>(particle_types[pid]);
+    // Create canvases to hold the distributions
+    TCanvas* c_deltap = new TCanvas(("c_deltap_" + std::to_string(particle_types[2212])).c_str(), "Delta p Distributions", 2000, 1200);
+    TCanvas* c_deltatheta = new TCanvas(("c_deltatheta_" + std::to_string(particle_types[2212])).c_str(), "Delta theta Distributions", 2000, 1200);
+    TCanvas* c_deltaphi = new TCanvas(("c_deltaphi_" + std::to_string(particle_types[2212])).c_str(), "Delta phi Distributions", 2000, 1200);
+    
+    c_deltap->Divide(5, 2);
+    c_deltatheta->Divide(5, 2);
+    c_deltaphi->Divide(5, 2);
 
-        TCanvas* c_deltap = new TCanvas(("c_deltap_" + particle_name).c_str(), ("Delta p Distributions: " + dataset + ", " + particle_name).c_str(), 2000, 1200);
-        c_deltap->Divide(5, 2);  // 10 subplots
+    // Create a vector to hold all the fits
+    std::vector<TF1*> fits;
 
-        TCanvas* c_deltatheta = new TCanvas(("c_deltatheta_" + particle_name).c_str(), ("Delta theta Distributions: " + dataset + ", " + particle_name).c_str(), 2000, 1200);
-        c_deltatheta->Divide(5, 2);
+    // Draw histograms and perform fits
+    for (size_t i = 0; i < theta_bins.size(); ++i) {
+        // Create profile histograms
+        TProfile* prof_deltap = histograms[2212][0][i]->ProfileX();
+        TProfile* prof_deltatheta = histograms[2212][1][i]->ProfileX();
+        TProfile* prof_deltaphi = histograms[2212][2][i]->ProfileX();
 
-        TCanvas* c_deltaphi = new TCanvas(("c_deltaphi_" + particle_name).c_str(), ("Delta phi Distributions: " + dataset + ", " + particle_name).c_str(), 2000, 1200);
-        c_deltaphi->Divide(5, 2);
+        // Fit the profiles with appropriate functions
+        TF1* fit_deltap = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x", 0.3, std::get<2>(particle_types[2212]));
+        prof_deltap->Fit(fit_deltap, "Q");  // Silent fit
+        fits.push_back(fit_deltap);
 
-        std::vector<TF1*> fit_deltap(theta_bins.size());
-        // std::vector<TF1*> fit_deltatheta(theta_bins.size());
-        // std::vector<TF1*> fit_deltaphi(theta_bins.size());
+        TF1* fit_deltatheta = new TF1(("fit_deltatheta_" + std::to_string(i)).c_str(), "[0] + [1]/pow(x,2)", 0.3, std::get<2>(particle_types[2212]));
+        prof_deltatheta->Fit(fit_deltatheta, "Q");
+        fits.push_back(fit_deltatheta);
 
-        for (size_t i = 0; i < theta_bins.size(); ++i) {
-            // Create profile histograms
-            TProfile* prof_deltap = histograms[pid][0][i]->ProfileX();
-            TProfile* prof_deltatheta = histograms[pid][1][i]->ProfileX();
-            TProfile* prof_deltaphi = histograms[pid][2][i]->ProfileX();
+        TF1* fit_deltaphi = new TF1(("fit_deltaphi_" + std::to_string(i)).c_str(), "[0] + [1]/pow(x,2)", 0.3, std::get<2>(particle_types[2212]));
+        prof_deltaphi->Fit(fit_deltaphi, "Q");
+        fits.push_back(fit_deltaphi);
 
-            // Fit the profiles with appropriate functions
-            fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x", 0.3, std::get<2>(particle_types[pid]));
-            prof_deltap->Fit(fit_deltap[i], "Q"); // Silent fit
+        // Draw histograms, profiles, and fits
+        c_deltap->cd(i + 1);
+        histograms[2212][0][i]->Draw("COLZ");
+        prof_deltap->Draw("same");
+        fit_deltap->Draw("same");
 
-            // fit_deltatheta[i] = new TF1(("fit_deltatheta_" + std::to_string(i)).c_str(), "[0] + [1]/x", 0.3, std::get<2>(particle_types[pid]));
-            // prof_deltatheta->Fit(fit_deltatheta[i], "Q");
+        c_deltatheta->cd(i + 1);
+        histograms[2212][1][i]->Draw("COLZ");
+        prof_deltatheta->Draw("same");
+        fit_deltatheta->Draw("same");
 
-            // fit_deltaphi[i] = new TF1(("fit_deltaphi_" + std::to_string(i)).c_str(), "[0] + [1]/x", 0.3, std::get<2>(particle_types[pid]));
-            // prof_deltaphi->Fit(fit_deltaphi[i], "Q");
+        c_deltaphi->cd(i + 1);
+        histograms[2212][2][i]->Draw("COLZ");
+        prof_deltaphi->Draw("same");
+        fit_deltaphi->Draw("same");
+    }
 
-            c_deltap->cd(i + 1);
-            gPad->SetMargin(0.15, 0.15, 0.20, 0.1);  // Left, right, bottom, top margins
-            gPad->SetLogz();
-            histograms[pid][0][i]->Draw("COLZ");
-            prof_deltap->Draw("same");  // Draw the profile to show the fit line
-            // fit_deltap[i]->Draw("same");  // Draw the fit on top of the profile
+    // Save the canvases
+    c_deltap->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_p_distributions_p.png").c_str());
+    c_deltatheta->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_theta_distributions_p.png").c_str());
+    c_deltaphi->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_phi_distributions_p.png").c_str());
 
-            c_deltatheta->cd(i + 1);
-            gPad->SetMargin(0.15, 0.15, 0.20, 0.1);
-            gPad->SetLogz();
-            histograms[pid][1][i]->Draw("COLZ");
-            prof_deltatheta->Draw("same");
-            // fit_deltatheta[i]->Draw("same");
+    // Clean up
+    delete c_deltap;
+    delete c_deltatheta;
+    delete c_deltaphi;
 
-            c_deltaphi->cd(i + 1);
-            gPad->SetMargin(0.15, 0.15, 0.20, 0.1);
-            gPad->SetLogz();
-            histograms[pid][2][i]->Draw("COLZ");
-            prof_deltaphi->Draw("same");
-            // fit_deltaphi[i]->Draw("same");
-        }
-
-        // Save the canvases
-        c_deltap->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_p_distributions_" + particle_name + ".png").c_str());
-        c_deltatheta->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_theta_distributions_" + particle_name + ".png").c_str());
-        c_deltaphi->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_phi_distributions_" + particle_name + ".png").c_str());
-
-        // // Clean up
-        // delete c_deltap;
-        // delete c_deltatheta;
-        // delete c_deltaphi;
-
-        // for (int j = 0; j < 3; ++j) {
-        //     for (size_t i = 0; i < theta_bins.size(); ++i) {
-        //         delete histograms[pid][j][i];
-        //         delete fit_deltap[i];
-        //         delete fit_deltatheta[i];
-        //         delete fit_deltaphi[i];
-        //     }
-        // }
+    for (auto& fit : fits) {
+        delete fit;
     }
 }
 
