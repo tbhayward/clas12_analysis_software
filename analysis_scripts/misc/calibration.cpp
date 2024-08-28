@@ -4975,14 +4975,14 @@ void energy_loss_distributions_binned(TTreeReader& mcReader, const std::string& 
         c_deltaphi->Divide(5, 2);
 
         std::vector<TF1*> fit_deltap(theta_bins.size());
-        std::vector<TF1*> fit_deltatheta(theta_bins.size());
-        std::vector<TF1*> fit_deltaphi(theta_bins.size());
+        // std::vector<TF1*> fit_deltatheta(theta_bins.size());
+        // std::vector<TF1*> fit_deltaphi(theta_bins.size());
 
         for (size_t i = 0; i < theta_bins.size(); ++i) {
             // Create profile histograms
             TProfile* prof_deltap = histograms[pid][0][i]->ProfileX();
-            TProfile* prof_deltatheta = histograms[pid][1][i]->ProfileX();
-            TProfile* prof_deltaphi = histograms[pid][2][i]->ProfileX();
+            // TProfile* prof_deltatheta = histograms[pid][1][i]->ProfileX();
+            // TProfile* prof_deltaphi = histograms[pid][2][i]->ProfileX();
 
             // Fit the profiles with appropriate functions
             fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x", 0.3, std::get<2>(particle_types[pid]));
