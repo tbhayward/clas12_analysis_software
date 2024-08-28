@@ -4995,9 +4995,8 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
         }
         graph_A->SetTitle("A(#theta);#theta (degrees);A(#theta) (GeV)");
         graph_A->GetYaxis()->SetRangeUser(-0.01, 0.01);  // Set y-axis range
-        graph_A->GetXaxis()->SetTitleOffset(1.2);
-        graph_A->GetYaxis()->SetTitleOffset(1.5);
         graph_A->SetMarkerStyle(20);  // Set marker style to a filled circle
+        gPad->SetLeftMargin(0.2);  // Increase left margin
         graph_A->Draw("AP");
 
         // Plot B(#theta)
@@ -5010,9 +5009,8 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
         }
         graph_B->SetTitle("B(#theta);#theta (degrees);B(#theta) (GeV^{2})");
         graph_B->GetYaxis()->SetRangeUser(0.00, 0.03);  // Set y-axis range
-        graph_B->GetXaxis()->SetTitleOffset(1.2);
-        graph_B->GetYaxis()->SetTitleOffset(1.5);
         graph_B->SetMarkerStyle(20);  // Set marker style to a filled circle
+        gPad->SetLeftMargin(0.2);  // Increase left margin
         graph_B->Draw("AP");
 
         // Save the fit parameters canvas
