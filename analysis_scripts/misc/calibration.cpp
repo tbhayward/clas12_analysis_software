@@ -4917,6 +4917,8 @@ void energy_loss_distributions_binned(TTreeReader& mcReader, const std::string& 
 
             for (int j = 0; j < 3; ++j) {
                 histograms[pid][j][i]->SetStats(false);
+                histograms[pid][j][i]->GetXaxis()->SetLabelSize(0.04); // Increase font size for axes labels
+                histograms[pid][j][i]->GetYaxis()->SetLabelSize(0.04);
             }
         }
     }
@@ -4990,19 +4992,31 @@ void energy_loss_distributions_binned(TTreeReader& mcReader, const std::string& 
             gPad->SetMargin(0.15, 0.15, 0.20, 0.1);  // Left, right, bottom, top margins
             gPad->SetLogz();
             histograms[pid][0][i]->Draw("COLZ");
+            prof_deltap->Draw("same");
             fit_deltap->Draw("same");
 
             c_deltatheta->cd(i + 1);
             gPad->SetMargin(0.15, 0.15, 0.20, 0.1);
             gPad->SetLogz();
             histograms[pid][1][i]->Draw("COLZ");
+            prof_deltatheta->Draw("same");
             fit_deltatheta->Draw("same");
+
             c_deltaphi->cd(i + 1);
             gPad->SetMargin(0.15, 0.15, 0.20, 0.1);
             gPad->SetLogz();
             histograms[pid][2][i]->Draw("COLZ");
+            prof_deltaphi->Draw("same");
             fit_deltaphi->Draw("same");
+        }
 
+        // Save the canvases
+        c_deltap->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_p_distributions_" + particle_name + ".png").c_str());
+        c_deltatheta->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_theta_distributions_" + particle_name + ".png").c_str());
+        c_deltaphi->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_phi_distributions_" + particle_name + ".png").c_str());
+
+        // Now delete the profiles and fits
+        for (size_t i = 0; i < theta_bins.size(); ++i) {
             delete prof_deltap;
             delete prof_deltatheta;
             delete prof_deltaphi;
@@ -5011,16 +5025,7 @@ void energy_loss_distributions_binned(TTreeReader& mcReader, const std::string& 
             delete fit_deltaphi;
         }
 
-        // Save the canvases
-        c_deltap->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_p_distributions_" + particle_name + ".png").c_str());
-        c_deltatheta->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_theta_distributions_" + particle_name + ".png").c_str());
-        c_deltaphi->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_phi_distributions_" + particle_name + ".png").c_str());
-
-        // Clean up
-        delete c_deltap;
-        delete c_deltatheta;
-        delete c_deltaphi;
-
+        // Clean up histograms
         for (int j = 0; j < 3; ++j) {
             for (size_t i = 0; i < theta_bins.size(); ++i) {
                 delete histograms[pid][j][i];
