@@ -4539,7 +4539,7 @@ void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset
 
 // Function to check if a track is above or below the curve
 bool is_above_curve(double p, double delta_p) {
-    return (delta_p > 0.0118 / pow(p, 1.05));
+    return (delta_p > 0.01 / pow(p, 0.9));
 }
 
 // Main FD-specific function
