@@ -4981,8 +4981,8 @@ void energy_loss_distributions_binned(TTreeReader& mcReader, const std::string& 
         for (size_t i = 0; i < theta_bins.size(); ++i) {
             // Create profile histograms
             TProfile* prof_deltap = histograms[pid][0][i]->ProfileX();
-            // TProfile* prof_deltatheta = histograms[pid][1][i]->ProfileX();
-            // TProfile* prof_deltaphi = histograms[pid][2][i]->ProfileX();
+            TProfile* prof_deltatheta = histograms[pid][1][i]->ProfileX();
+            TProfile* prof_deltaphi = histograms[pid][2][i]->ProfileX();
 
             // Fit the profiles with appropriate functions
             // fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x", 0.3, std::get<2>(particle_types[pid]));
@@ -5005,14 +5005,14 @@ void energy_loss_distributions_binned(TTreeReader& mcReader, const std::string& 
             gPad->SetMargin(0.15, 0.15, 0.20, 0.1);
             gPad->SetLogz();
             histograms[pid][1][i]->Draw("COLZ");
-            // prof_deltatheta->Draw("same");
+            prof_deltatheta->Draw("same");
             // fit_deltatheta[i]->Draw("same");
 
             c_deltaphi->cd(i + 1);
             gPad->SetMargin(0.15, 0.15, 0.20, 0.1);
             gPad->SetLogz();
             histograms[pid][2][i]->Draw("COLZ");
-            // prof_deltaphi->Draw("same");
+            prof_deltaphi->Draw("same");
             // fit_deltaphi[i]->Draw("same");
         }
 
