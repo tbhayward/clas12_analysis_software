@@ -5194,7 +5194,7 @@ void energy_loss_distributions_delta_theta(TTreeReader& mcReader, const std::str
 
         for (size_t i = 0; i < theta_bins.size(); ++i) {
             // Ensure we are drawing on the correct pad
-            c_deltap->cd(i + 1);
+            c_deltatheta->cd(i + 1);
             gPad->SetMargin(0.15, 0.15, 0.20, 0.1);  // Left, right, bottom, top margins
             gPad->SetLogz();
 
@@ -5216,7 +5216,7 @@ void energy_loss_distributions_delta_theta(TTreeReader& mcReader, const std::str
         }
 
         // Save the canvas
-        c_deltap->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_theta_distributions_" + particle_name + ".png").c_str());
+        c_deltatheta->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_theta_distributions_" + particle_name + ".png").c_str());
 
         // Use the new modular function for the fitted parameters
         plot_and_fit_parameters(theta_bins, A_values, A_errors, B_values, B_errors, particle_name, dataset, "#theta");
