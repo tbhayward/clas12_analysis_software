@@ -4539,7 +4539,7 @@ void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset
 
 // Function to check if a track is above or below the curve
 bool is_above_curve(double p, double delta_p) {
-    return (delta_p > 0.01 / pow(p, 0.9));
+    return (delta_p > 0.011 / pow(p, 1.05));
 }
 
 // Main FD-specific function
@@ -4646,13 +4646,13 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         TF1* pass1_curve = new TF1("pass1 curve", "0.088/pow(x, 1.5)", 0.1, std::get<2>(particle_types[pid]));
         pass1_curve->SetLineColor(kRed);
         pass1_curve->SetLineWidth(4);
-        TF1* pass2_curve = new TF1("pass2 curve", "0.0118/pow(x, 1.05)", 0.1, std::get<2>(particle_types[pid]));
+        TF1* pass2_curve = new TF1("pass2 curve", "0.011/pow(x, 1.05)", 0.1, std::get<2>(particle_types[pid]));
         pass2_curve->SetLineColor(kBlack);
         pass2_curve->SetLineWidth(4);
 
         // Define the new curve based on the provided formula
-        TF1* new_curve_region1 = new TF1("new_curve_region1", "-53.1468 -5.00 + 79.6131*pow(x-0.3,0.05739)", 0.30, std::get<2>(particle_types[pid]));
-        new_curve_region1->SetLineColor(kBlue);
+        TF1* new_curve_region1 = new TF1("new_curve_region1", "-53.1468 + 79.6131*pow(x-0.3,0.05739)", 0.30, std::get<2>(particle_types[pid]));
+        new_curve_region1->SetLineColor(kRed);
         new_curve_region1->SetLineWidth(4);
         new_curve_region1->SetNpx(5000);  // Increase the number of points along the curve
 
