@@ -4974,7 +4974,7 @@ void energy_loss_distributions_binned(TTreeReader& mcReader, const std::string& 
         TCanvas* c_deltaphi = new TCanvas(("c_deltaphi_" + particle_name).c_str(), ("Delta phi Distributions: " + dataset + ", " + particle_name).c_str(), 2000, 1200);
         c_deltaphi->Divide(5, 2);
 
-        // std::vector<TF1*> fit_deltap(theta_bins.size());
+        std::vector<TF1*> fit_deltap(theta_bins.size());
         // std::vector<TF1*> fit_deltatheta(theta_bins.size());
         // std::vector<TF1*> fit_deltaphi(theta_bins.size());
 
