@@ -4664,7 +4664,6 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         gPad->SetMargin(0.15, 0.1, 0.20, 0.1);
         gPad->SetLogz();
         entry.second[1]->Draw("COLZ");
-        pass1_curve_region1->Draw("same");
 
         c->cd(3);
         gPad->SetMargin(0.15, 0.1, 0.20, 0.1);
