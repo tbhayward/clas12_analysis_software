@@ -4988,11 +4988,11 @@ void energy_loss_distributions_binned(TTreeReader& mcReader, const std::string& 
             fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x", 0.3, std::get<2>(particle_types[pid]));
             prof_deltap->Fit(fit_deltap[i], "Q"); // Silent fit
 
-            fit_deltatheta[i] = new TF1(("fit_deltatheta_" + std::to_string(i)).c_str(), "[0] + [1]/x", 0.3, std::get<2>(particle_types[pid]));
-            prof_deltatheta->Fit(fit_deltatheta[i], "Q");
+            // fit_deltatheta[i] = new TF1(("fit_deltatheta_" + std::to_string(i)).c_str(), "[0] + [1]/x", 0.3, std::get<2>(particle_types[pid]));
+            // prof_deltatheta->Fit(fit_deltatheta[i], "Q");
 
-            fit_deltaphi[i] = new TF1(("fit_deltaphi_" + std::to_string(i)).c_str(), "[0] + [1]/x", 0.3, std::get<2>(particle_types[pid]));
-            prof_deltaphi->Fit(fit_deltaphi[i], "Q");
+            // fit_deltaphi[i] = new TF1(("fit_deltaphi_" + std::to_string(i)).c_str(), "[0] + [1]/x", 0.3, std::get<2>(particle_types[pid]));
+            // prof_deltaphi->Fit(fit_deltaphi[i], "Q");
 
             c_deltap->cd(i + 1);
             gPad->SetMargin(0.15, 0.15, 0.20, 0.1);  // Left, right, bottom, top margins
@@ -5005,15 +5005,15 @@ void energy_loss_distributions_binned(TTreeReader& mcReader, const std::string& 
             gPad->SetMargin(0.15, 0.15, 0.20, 0.1);
             gPad->SetLogz();
             histograms[pid][1][i]->Draw("COLZ");
-            prof_deltatheta->Draw("same");
-            fit_deltatheta[i]->Draw("same");
+            // prof_deltatheta->Draw("same");
+            // fit_deltatheta[i]->Draw("same");
 
             c_deltaphi->cd(i + 1);
             gPad->SetMargin(0.15, 0.15, 0.20, 0.1);
             gPad->SetLogz();
             histograms[pid][2][i]->Draw("COLZ");
-            prof_deltaphi->Draw("same");
-            fit_deltaphi[i]->Draw("same");
+            // prof_deltaphi->Draw("same");
+            // fit_deltaphi[i]->Draw("same");
         }
 
         // Save the canvases
