@@ -4604,7 +4604,7 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
     TTreeReaderValue<double> edge_36(mcReader, "traj_edge_36");
 
     // Loop over events
-    for (int i = 0; i < 1e6; ++i) {
+    for (int i = 0; i < 1e7; ++i) {
         mcReader.Next();
     // while (mcReader.Next()) {
         double delta_p = *mc_p - *p;
