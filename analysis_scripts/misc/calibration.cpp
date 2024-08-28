@@ -4994,6 +4994,10 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
             graph_A->SetPointError(i, 0.0, A_errors[i]);
         }
         graph_A->SetTitle("A(#theta);#theta (degrees);A(#theta) (GeV)");
+        graph_A->GetYaxis()->SetRangeUser(-0.05, 0.01);  // Set y-axis range
+        graph_A->GetXaxis()->SetTitleOffset(1.2);
+        graph_A->GetYaxis()->SetTitleOffset(1.5);
+        graph_A->SetMarkerStyle(20);  // Set marker style to a filled circle
         graph_A->Draw("AP");
 
         // Plot B(#theta)
@@ -5005,11 +5009,14 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
             graph_B->SetPointError(i, 0.0, B_errors[i]);
         }
         graph_B->SetTitle("B(#theta);#theta (degrees);B(#theta) (GeV^{2})");
+        graph_B->GetYaxis()->SetRangeUser(0.00, 0.03);  // Set y-axis range
+        graph_B->GetXaxis()->SetTitleOffset(1.2);
+        graph_B->GetYaxis()->SetTitleOffset(1.5);
+        graph_B->SetMarkerStyle(20);  // Set marker style to a filled circle
         graph_B->Draw("AP");
 
         // Save the fit parameters canvas
         c_fit_params->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/fit_params_" + particle_name + ".png").c_str());
-
         // Clean up memory
         for (size_t i = 0; i < theta_bins.size(); ++i) {
             delete fit_deltap[i];
