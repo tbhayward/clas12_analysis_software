@@ -4893,7 +4893,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
         graph_A->SetPoint(i, theta_midpoint, A_values[i]);
         graph_A->SetPointError(i, 0.0, A_errors[i]);
     }
-    graph_A->SetTitle(("A(" + prefix + "(#theta));#theta (degrees);A(" + prefix + "(#theta)) (GeV)").c_str());
+    graph_A->SetTitle(("A_" + prefix + "#Delta" + prefix + ";;A_" + prefix + "(#theta) (GeV)").c_str());
     graph_A->GetYaxis()->SetRangeUser(-0.01, 0.01);  // Set y-axis range
     graph_A->SetMarkerStyle(20);  // Set marker style to a filled circle
     gPad->SetLeftMargin(0.2);  // Increase left margin
@@ -4923,7 +4923,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
         graph_B->SetPoint(i, theta_midpoint, B_values[i]);
         graph_B->SetPointError(i, 0.0, B_errors[i]);
     }
-    graph_B->SetTitle(("B(" + prefix + "(#theta));#theta (degrees);B(" + prefix + "(#theta)) (GeV^{2})").c_str());
+    graph_B->SetTitle(("B_" + prefix + "#Delta" + prefix + ";#theta (degrees);B_" + prefix + "(#theta) (GeV^{2})").c_str());
     graph_B->GetYaxis()->SetRangeUser(0.00, 0.03);  // Set y-axis range
     graph_B->SetMarkerStyle(20);  // Set marker style to a filled circle
     gPad->SetLeftMargin(0.2);  // Increase left margin
@@ -5097,7 +5097,7 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
         c_deltap->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_p_distributions_" + particle_name + ".png").c_str());
 
         // Use the new modular function for the fitted parameters
-        plot_and_fit_parameters(theta_bins, A_values, A_errors, B_values, B_errors, particle_name, dataset, "_p");
+        plot_and_fit_parameters(theta_bins, A_values, A_errors, B_values, B_errors, particle_name, dataset, "p");
 
         // Clean up memory
         for (size_t i = 0; i < theta_bins.size(); ++i) {
