@@ -4873,11 +4873,6 @@ void energy_loss_fd_distributions_theta_dc(TTreeReader& mcReader, const std::str
 void energy_loss_distributions_binned(TTreeReader& mcReader, const std::string& dataset) {
     // Particle types and their corresponding LaTeX names and x-axis ranges
     std::map<int, std::tuple<std::string, double, double>> particle_types = {
-        // {11, {"e^{-}", 0.0, 7.0}},
-        // {211, {"#pi^{+}", 0.0, 5.0}},
-        // {-211, {"#pi^{-}", 0.0, 5.0}},
-        // {321, {"k^{+}", 0.0, 5.0}},
-        // {-321, {"k^{-}", 0.0, 5.0}},
         {2212, {"p", 0.0, 4.0}}
     };
 
@@ -4976,20 +4971,44 @@ void energy_loss_distributions_binned(TTreeReader& mcReader, const std::string& 
         c_deltaphi->Divide(5, 2);
 
         for (size_t i = 0; i < theta_bins.size(); ++i) {
+            // Create profile histograms
+            TProfile* prof_deltap = histograms[pid][0][i]->ProfileX();
+            TProfile* prof_deltatheta = histograms[pid][1][i]->ProfileX();
+            TProfile* prof_deltaphi = histograms[pid][2][i]->ProfileX();
+
+            // Fit the profiles with appropriate functions
+            TF1* fit_deltap = new TF1("fit_deltap", "[0] + [1]/x", 0.1, std::get<2>(particle_types[pid]));
+            prof_deltap->Fit(fit_deltap, "Q"); // Silent fit
+
+            TF1* fit_deltatheta = new TF1("fit_deltatheta", "[0] + [1]/x", 0.1, std::get<2>(particle_types[pid]));
+            prof_deltatheta->Fit(fit_deltatheta, "Q");
+
+            TF1* fit_deltaphi = new TF1("fit_deltaphi", "[0] + [1]/x", 0.1, std::get<2>(particle_types[pid]));
+            prof_deltaphi->Fit(fit_deltaphi, "Q");
+
             c_deltap->cd(i + 1);
             gPad->SetMargin(0.15, 0.15, 0.20, 0.1);  // Left, right, bottom, top margins
             gPad->SetLogz();
             histograms[pid][0][i]->Draw("COLZ");
+            fit_deltap->Draw("same");
 
             c_deltatheta->cd(i + 1);
             gPad->SetMargin(0.15, 0.15, 0.20, 0.1);
             gPad->SetLogz();
             histograms[pid][1][i]->Draw("COLZ");
-
+            fit_deltatheta->Draw("same");
             c_deltaphi->cd(i + 1);
             gPad->SetMargin(0.15, 0.15, 0.20, 0.1);
             gPad->SetLogz();
             histograms[pid][2][i]->Draw("COLZ");
+            fit_deltaphi->Draw("same");
+
+            delete prof_deltap;
+            delete prof_deltatheta;
+            delete prof_deltaphi;
+            delete fit_deltap;
+            delete fit_deltatheta;
+            delete fit_deltaphi;
         }
 
         // Save the canvases
