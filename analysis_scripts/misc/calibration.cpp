@@ -4642,7 +4642,7 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         TLatex latex;
         latex.SetTextSize(0.04);
         latex.SetTextAlign(11);  // Align at top left
-        latex.DrawLatexNDC(0.43, 0.53, (dataset + ", " + particle_name).c_str());
+        latex.DrawLatexNDC(0.43, 0.525, (dataset + ", " + particle_name).c_str());
 
         // Define the curve function
         TF1* pass1_curve = new TF1("pass1 curve", "0.088/pow(x, 1.5)", 0.1, std::get<2>(particle_types[pid]));
@@ -4652,52 +4652,40 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         pass2_curve->SetLineColor(kBlack);
         pass2_curve->SetLineWidth(4);
 
-        TF1* pass1_curve_region1 = new TF1("pass1_curve_region1", "[0] + [1]*TMath::Power(x-[2],[3])", 0.1, std::get<2>(particle_types[pid]));
-        pass1_curve_region1->SetParameters(-53.1468, 79.6131, 0.3, 0.05739);pass1_curve_region1->SetLineColor(kRed);
-        pass1_curve_region1->SetLineWidth(4);
-
         // Plot histograms and curve in the correct order
         c->cd(1);
-        gPad->SetMargin(0.15, 0.05, 0.20, 0.1);  // Left, right, bottom, top margins
+        gPad->SetMargin(0.15, 0.1, 0.20, 0.1);  // Left, right, bottom, top margins
         gPad->SetLogz();
         entry.second[0]->Draw("COLZ");
         pass1_curve->Draw("same");
         pass2_curve->Draw("same");
 
         c->cd(2);
-        gPad->SetMargin(0.15, 0.05, 0.20, 0.1);
+        gPad->SetMargin(0.15, 0.1, 0.20, 0.1);
         gPad->SetLogz();
         entry.second[1]->Draw("COLZ");
         pass1_curve_region1->Draw("same");
-        TLine* line = new TLine(0.1, pass1_curve_region1->Eval(0.1), 3.0, pass1_curve_region1->Eval(3.0));
-        line->SetLineColor(kRed);
-        line->SetLineWidth(4);
-        line->Draw("same");
 
         c->cd(3);
-        gPad->SetMargin(0.15, 0.05, 0.20, 0.1);
+        gPad->SetMargin(0.15, 0.1, 0.20, 0.1);
         gPad->SetLogz();
         entry.second[2]->Draw("COLZ");
 
         c->cd(4);
-        gPad->SetMargin(0.15, 0.05, 0.1, 0.1);
+        gPad->SetMargin(0.15, 0.1, 0.1, 0.1);
         gPad->SetLogz();
         entry.second[3]->Draw("COLZ");
         pass1_curve->Draw("same");
         pass2_curve->Draw("same");
 
         c->cd(5);
-        gPad->SetMargin(0.15, 0.05, 0.1, 0.1);
+        gPad->SetMargin(0.15, 0.1, 0.1, 0.1);
         gPad->SetLogz();
         entry.second[4]->Draw("COLZ");
         pass1_curve_region1->Draw("same");
-        TLine* line2 = new TLine(0.1, pass1_curve_region1->Eval(0.1), 3.0, pass1_curve_region1->Eval(3.0));
-        line2->SetLineColor(kRed);
-        line2->SetLineWidth(4);
-        line2->Draw("same");
 
         c->cd(6);
-        gPad->SetMargin(0.15, 0.05, 0.1, 0.1);
+        gPad->SetMargin(0.15, 0.1, 0.1, 0.1);
         gPad->SetLogz();
         entry.second[5]->Draw("COLZ");
 
@@ -4716,7 +4704,7 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
 
 // Main function to call both energy loss distribution functions
 void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
-    energy_loss_distributions(mcReader, dataset);
+    // energy_loss_distributions(mcReader, dataset);
     // Restart the mcReader to reset its state before the next use
     mcReader.Restart();
     energy_loss_fd_distributions(mcReader, dataset);
