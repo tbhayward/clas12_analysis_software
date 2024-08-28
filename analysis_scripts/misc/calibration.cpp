@@ -4604,16 +4604,15 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
     TTreeReaderValue<double> edge_36(mcReader, "traj_edge_36");
 
     // Loop over events
-    for (int i = 0; i < 1e7; ++i) {
-        mcReader.Next();
-    // while (mcReader.Next()) {
+    // for (int i = 0; i < 1e7; ++i) {
+    //     mcReader.Next();
+    while (mcReader.Next()) {
         double delta_p = *mc_p - *p;
         double theta_dc_1 = calculate_theta(*traj_x_6, *traj_y_6, *traj_z_6);
 
         // Check if the current particle type is one of interest
         if (histograms.find(*pid) != histograms.end()) { 
-            // bool above_curve = is_above_curve(*p, delta_p); 
-            bool above_curve = true;
+            bool above_curve = is_above_curve(*p, delta_p);
 
             if (is_fd_track(*track_sector_6)) {
                 if (dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) {
