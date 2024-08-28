@@ -5006,12 +5006,12 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
         fit_A->Draw("same");
 
         // Add fit results and chi2/ndf to the plot
-        TPaveText* pt_A = new TPaveText(0.5, 0.75, 0.9, 0.9, "NDC");
-        pt_A->AddText(Form("p0 = %.4f", fit_A->GetParameter(0)));
-        pt_A->AddText(Form("p1 = %.4f", fit_A->GetParameter(1)));
-        pt_A->AddText(Form("p2 = %.4f", fit_A->GetParameter(2)));
-        pt_A->AddText(Form("p3 = %.4f", fit_A->GetParameter(3)));
-        pt_A->AddText(Form("p4 = %.4f", fit_A->GetParameter(4)));
+        TPaveText* pt_A = new TPaveText(0.7, 0.75, 0.9, 0.9, "NDC");
+        pt_A->AddText(Form("p0 = %.5f", fit_A->GetParameter(0)));
+        pt_A->AddText(Form("p1 = %.5f", fit_A->GetParameter(1)));
+        pt_A->AddText(Form("p2 = %.5f", fit_A->GetParameter(2)));
+        pt_A->AddText(Form("p3 = %.5f", fit_A->GetParameter(3)));
+        pt_A->AddText(Form("p4 = %.5f", fit_A->GetParameter(4)));
         pt_A->AddText(Form("#chi^{2}/ndf = %.2f", fit_A->GetChisquare() / fit_A->GetNDF()));
         pt_A->SetBorderSize(1);
         pt_A->SetFillColor(0);
@@ -5037,12 +5037,12 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
         fit_B->Draw("same");
 
         // Add fit results and chi2/ndf to the plot
-        TPaveText* pt_B = new TPaveText(0.5, 0.75, 0.9, 0.9, "NDC");
-        pt_B->AddText(Form("p0 = %.4f", fit_B->GetParameter(0)));
-        pt_B->AddText(Form("p1 = %.4f", fit_B->GetParameter(1)));
-        pt_B->AddText(Form("p2 = %.4f", fit_B->GetParameter(2)));
-        pt_B->AddText(Form("p3 = %.4f", fit_B->GetParameter(3)));
-        pt_B->AddText(Form("p4 = %.4f", fit_B->GetParameter(4)));
+        TPaveText* pt_B = new TPaveText(0.7, 0.75, 0.9, 0.9, "NDC");
+        pt_B->AddText(Form("p0 = %.5f", fit_B->GetParameter(0)));
+        pt_B->AddText(Form("p1 = %.5f", fit_B->GetParameter(1)));
+        pt_B->AddText(Form("p2 = %.5f", fit_B->GetParameter(2)));
+        pt_B->AddText(Form("p3 = %.5f", fit_B->GetParameter(3)));
+        pt_B->AddText(Form("p4 = %.5f", fit_B->GetParameter(4)));
         pt_B->AddText(Form("#chi^{2}/ndf = %.2f", fit_B->GetChisquare() / fit_B->GetNDF()));
         pt_B->SetBorderSize(1);
         pt_B->SetFillColor(0);
