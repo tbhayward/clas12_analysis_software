@@ -5184,7 +5184,7 @@ void energy_loss_distributions_delta_theta(TTreeReader& mcReader, const std::str
         const std::string& particle_name = std::get<0>(particle_types[pid]);
 
         TCanvas* c_deltatheta = new TCanvas(("c_deltatheta_" + particle_name).c_str(), ("Delta #theta Distributions: " + dataset + ", " + particle_name).c_str(), 2000, 1200);
-        c_deltap->Divide(5, 2);  // 10 subplots
+        c_deltatheta->Divide(5, 2);  // 10 subplots
 
         std::vector<TF1*> fit_deltatheta(theta_bins.size());
         std::vector<double> A_values(theta_bins.size());
