@@ -4871,6 +4871,121 @@ void energy_loss_fd_distributions_theta_dc(TTreeReader& mcReader, const std::str
     }
 }
 
+void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta_bins,
+                             const std::vector<double>& A_values,
+                             const std::vector<double>& A_errors,
+                             const std::vector<double>& B_values,
+                             const std::vector<double>& B_errors,
+                             const std::string& particle_name,
+                             const std::string& dataset,
+                             const std::string& prefix) {
+    // Create a new canvas for the fitted parameters
+    TCanvas* c_fit_params = new TCanvas(("c_fit_params_" + particle_name).c_str(), 
+                                        ("Fit Parameters: " + dataset + ", " + particle_name).c_str(), 
+                                        1600, 800);
+    c_fit_params->Divide(2, 1);  // 1 row, 2 columns
+
+    // Plot A(#theta)
+    c_fit_params->cd(1);
+    TGraphErrors* graph_A = new TGraphErrors(theta_bins.size());
+    for (size_t i = 0; i < theta_bins.size(); ++i) {
+        double theta_midpoint = 0.5 * (theta_bins[i].first + theta_bins[i].second);
+        graph_A->SetPoint(i, theta_midpoint, A_values[i]);
+        graph_A->SetPointError(i, 0.0, A_errors[i]);
+    }
+    graph_A->SetTitle(("A(" + prefix + "(#theta));#theta (degrees);A(" + prefix + "(#theta)) (GeV)").c_str());
+    graph_A->GetYaxis()->SetRangeUser(-0.01, 0.01);  // Set y-axis range
+    graph_A->SetMarkerStyle(20);  // Set marker style to a filled circle
+    gPad->SetLeftMargin(0.2);  // Increase left margin
+    graph_A->Draw("AP");
+
+    // Fit A(#theta) to a 4th order polynomial
+    TF1* fit_A = new TF1("fit_A", "pol4", theta_bins.front().first, theta_bins.back().second);
+    graph_A->Fit(fit_A, "Q");  // Silent fit
+    fit_A->Draw("same");
+
+    // Add fit results and chi2/ndf to the plot
+    TPaveText* pt_A = new TPaveText(0.7, 0.75, 0.9, 0.9, "NDC");
+    pt_A->AddText(Form("p0 = %.6f", fit_A->GetParameter(0)));
+    pt_A->AddText(Form("p1 = %.6f", fit_A->GetParameter(1)));
+    pt_A->AddText(Form("p2 = %.6f", fit_A->GetParameter(2)));
+    pt_A->AddText(Form("p3 = %.6f", fit_A->GetParameter(3)));
+    pt_A->AddText(Form("#chi^{2}/ndf = %.3f", fit_A->GetChisquare() / fit_A->GetNDF()));
+    pt_A->SetBorderSize(1);
+    pt_A->SetFillColor(0);
+    pt_A->Draw();
+
+    // Plot B(#theta)
+    c_fit_params->cd(2);
+    TGraphErrors* graph_B = new TGraphErrors(theta_bins.size());
+    for (size_t i = 0; i < theta_bins.size(); ++i) {
+        double theta_midpoint = 0.5 * (theta_bins[i].first + theta_bins[i].second);
+        graph_B->SetPoint(i, theta_midpoint, B_values[i]);
+        graph_B->SetPointError(i, 0.0, B_errors[i]);
+    }
+    graph_B->SetTitle(("B(" + prefix + "(#theta));#theta (degrees);B(" + prefix + "(#theta)) (GeV^{2})").c_str());
+    graph_B->GetYaxis()->SetRangeUser(0.00, 0.03);  // Set y-axis range
+    graph_B->SetMarkerStyle(20);  // Set marker style to a filled circle
+    gPad->SetLeftMargin(0.2);  // Increase left margin
+    graph_B->Draw("AP");
+
+    // Fit B(#theta) to a 4th order polynomial
+    TF1* fit_B = new TF1("fit_B", "pol4", theta_bins.front().first, theta_bins.back().second);
+    graph_B->Fit(fit_B, "Q");  // Silent fit
+    fit_B->Draw("same");
+
+    // Add fit results and chi2/ndf to the plot
+    TPaveText* pt_B = new TPaveText(0.7, 0.75, 0.9, 0.9, "NDC");
+    pt_B->AddText(Form("p0 = %.6f", fit_B->GetParameter(0)));
+    pt_B->AddText(Form("p1 = %.6f", fit_B->GetParameter(1)));
+    pt_B->AddText(Form("p2 = %.6f", fit_B->GetParameter(2)));
+    pt_B->AddText(Form("p3 = %.6f", fit_B->GetParameter(3)));
+    pt_B->AddText(Form("#chi^{2}/ndf = %.3f", fit_B->GetChisquare() / fit_B->GetNDF()));
+    pt_B->SetBorderSize(1);
+    pt_B->SetFillColor(0);
+    pt_B->Draw();
+
+    // Print out the functional form of A(theta) in LaTeX format
+    std::cout << "A" << prefix << "(\\theta) = ";
+    for (int i = 0; i <= 3; ++i) {
+        double coeff = fit_A->GetParameter(i);
+        if (i == 0) {
+            std::cout << Form("%.6f", coeff);
+        } else if (i == 1) {
+            std::cout << Form(" %+.6f\\theta", coeff);
+        } else {
+            std::cout << Form(" %+.6f\\theta^%d", coeff, i);
+        }
+    }
+    std::cout << std::endl;
+
+    // Print out the functional form of B(theta) in LaTeX format
+    std::cout << "B" << prefix << "(\\theta) = ";
+    for (int i = 0; i <= 3; ++i) {
+        double coeff = fit_B->GetParameter(i);
+        if (i == 0) {
+            std::cout << Form("%.6f", coeff);
+        } else if (i == 1) {
+            std::cout << Form(" %+.6f\\theta", coeff);
+        } else {
+            std::cout << Form(" %+.6f\\theta^%d", coeff, i);
+        }
+    }
+    std::cout << std::endl;
+
+    // Save the fit parameters canvas
+    c_fit_params->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/fit_params_" + particle_name + ".png").c_str());
+
+    // Clean up memory
+    delete graph_A;
+    delete graph_B;
+    delete fit_A;
+    delete fit_B;
+    delete pt_A;
+    delete pt_B;
+    delete c_fit_params;
+}
+
 void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string& dataset) {
     // Particle types and their corresponding LaTeX names and x-axis ranges
     std::map<int, std::tuple<std::string, double, double>> particle_types = {
@@ -4946,8 +5061,8 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
         int pid = entry.first;
         const std::string& particle_name = std::get<0>(particle_types[pid]);
 
-        TCanvas* c_deltap = new TCanvas(("c_deltap_" + particle_name).c_str(), ("Delta p Distributions: " + dataset + ", " + particle_name).c_str(), 2400, 1600);
-        c_deltap->Divide(5, 2);  // 12 subplots (4x3)
+        TCanvas* c_deltap = new TCanvas(("c_deltap_" + particle_name).c_str(), ("Delta p Distributions: " + dataset + ", " + particle_name).c_str(), 2000, 1200);
+        c_deltap->Divide(5, 2);  // 10 subplots
 
         std::vector<TF1*> fit_deltap(theta_bins.size());
         std::vector<double> A_values(theta_bins.size());
@@ -4973,7 +5088,6 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
             A_errors[i] = fit_deltap[i]->GetParError(0);
             B_values[i] = fit_deltap[i]->GetParameter(1);
             B_errors[i] = fit_deltap[i]->GetParError(1);
-
             histograms[pid][i]->Draw("COLZ");
             prof_deltap->Draw("same");  // Draw the profile to show the fit line
             fit_deltap[i]->Draw("same");  // Draw the fit on top of the profile
@@ -4982,114 +5096,15 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
         // Save the canvas
         c_deltap->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_p_distributions_" + particle_name + ".png").c_str());
 
-        // Create a new canvas for the fitted parameters
-        TCanvas* c_fit_params = new TCanvas(("c_fit_params_" + particle_name).c_str(), ("Fit Parameters: " + dataset + ", " + particle_name).c_str(), 1600, 800);
-        c_fit_params->Divide(2, 1);  // 1 row, 2 columns
-
-        // Plot A(#theta)
-        c_fit_params->cd(1);
-        TGraphErrors* graph_A = new TGraphErrors(theta_bins.size());
-        for (size_t i = 0; i < theta_bins.size(); ++i) {
-            double theta_midpoint = 0.5 * (theta_bins[i].first + theta_bins[i].second);
-            graph_A->SetPoint(i, theta_midpoint, A_values[i]);
-            graph_A->SetPointError(i, 0.0, A_errors[i]);
-        }
-        graph_A->SetTitle("A(#theta);#theta (degrees);A(#theta) (GeV)");
-        graph_A->GetYaxis()->SetRangeUser(-0.01, 0.01);  // Set y-axis range
-        graph_A->SetMarkerStyle(20);  // Set marker style to a filled circle
-        gPad->SetLeftMargin(0.2);  // Increase left margin
-        graph_A->Draw("AP");
-
-        // Fit A(#theta) to a 4th order polynomial
-        TF1* fit_A = new TF1("fit_A", "pol4", theta_bins.front().first, theta_bins.back().second);
-        graph_A->Fit(fit_A, "Q");  // Silent fit
-        fit_A->Draw("same");
-
-        // Add fit results and chi2/ndf to the plot
-        TPaveText* pt_A = new TPaveText(0.7, 0.75, 0.9, 0.9, "NDC");
-        pt_A->AddText(Form("p0 = %.6f", fit_A->GetParameter(0)));
-        pt_A->AddText(Form("p1 = %.6f", fit_A->GetParameter(1)));
-        pt_A->AddText(Form("p2 = %.6f", fit_A->GetParameter(2)));
-        pt_A->AddText(Form("p3 = %.6f", fit_A->GetParameter(3)));
-        pt_A->AddText(Form("#chi^{2}/ndf = %.3f", fit_A->GetChisquare() / fit_A->GetNDF()));
-        pt_A->SetBorderSize(1);
-        pt_A->SetFillColor(0);
-        pt_A->Draw();
-
-        // Plot B(#theta)
-        c_fit_params->cd(2);
-        TGraphErrors* graph_B = new TGraphErrors(theta_bins.size());
-        for (size_t i = 0; i < theta_bins.size(); ++i) {
-            double theta_midpoint = 0.5 * (theta_bins[i].first + theta_bins[i].second);
-            graph_B->SetPoint(i, theta_midpoint, B_values[i]);
-            graph_B->SetPointError(i, 0.0, B_errors[i]);
-        }
-        graph_B->SetTitle("B(#theta);#theta (degrees);B(#theta) (GeV^{2})");
-        graph_B->GetYaxis()->SetRangeUser(0.00, 0.03);  // Set y-axis range
-        graph_B->SetMarkerStyle(20);  // Set marker style to a filled circle
-        gPad->SetLeftMargin(0.2);  // Increase left margin
-        graph_B->Draw("AP");
-
-        // Fit B(#theta) to a 4th order polynomial
-        TF1* fit_B = new TF1("fit_B", "pol4", theta_bins.front().first, theta_bins.back().second);
-        graph_B->Fit(fit_B, "Q");  // Silent fit
-        fit_B->Draw("same");
-
-        // Add fit results and chi2/ndf to the plot
-        TPaveText* pt_B = new TPaveText(0.7, 0.75, 0.9, 0.9, "NDC");
-        pt_B->AddText(Form("p0 = %.6f", fit_B->GetParameter(0)));
-        pt_B->AddText(Form("p1 = %.6f", fit_B->GetParameter(1)));
-        pt_B->AddText(Form("p2 = %.6f", fit_B->GetParameter(2)));
-        pt_B->AddText(Form("p3 = %.6f", fit_B->GetParameter(3)));
-        pt_B->AddText(Form("#chi^{2}/ndf = %.3f", fit_B->GetChisquare() / fit_B->GetNDF()));
-        pt_B->SetBorderSize(1);
-        pt_B->SetFillColor(0);
-        pt_B->Draw();
-
-        // Print out the functional form of A(theta) in LaTeX format
-        std::cout << "A_p(\\theta) = ";
-        for (int i = 0; i <= 3; ++i) {
-            double coeff = fit_A->GetParameter(i);
-            if (i == 0) {
-                std::cout << Form("%.6f", coeff);
-            } else if (i == 1) {
-                std::cout << Form(" %+.6f\\theta", coeff);
-            } else {
-                std::cout << Form(" %+.6f\\theta^%d", coeff, i);
-            }
-        }
-        std::cout << std::endl;
-
-        // Print out the functional form of B(theta) in LaTeX format
-        std::cout << "B_p(\\theta) = ";
-        for (int i = 0; i <= 3; ++i) {
-            double coeff = fit_B->GetParameter(i);
-            if (i == 0) {
-                std::cout << Form("%.6f", coeff);
-            } else if (i == 1) {
-                std::cout << Form(" %+.6f\\theta", coeff);
-            } else {
-                std::cout << Form(" %+.6f\\theta^%d", coeff, i);
-            }
-        }
-        std::cout << std::endl;
-
-        // Save the fit parameters canvas
-        c_fit_params->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/fit_params_" + particle_name + ".png").c_str());
+        // Use the new modular function for the fitted parameters
+        plot_and_fit_parameters(theta_bins, A_values, A_errors, B_values, B_errors, particle_name, dataset, "_p");
 
         // Clean up memory
         for (size_t i = 0; i < theta_bins.size(); ++i) {
             delete fit_deltap[i];
             delete histograms[pid][i];
         }
-        delete graph_A;
-        delete graph_B;
-        delete fit_A;
-        delete fit_B;
-        delete pt_A;
-        delete pt_B;
         delete c_deltap;
-        delete c_fit_params;
     }
 }
 
