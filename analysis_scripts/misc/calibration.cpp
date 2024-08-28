@@ -4902,23 +4902,23 @@ void energy_loss_distributions_binned(TTreeReader& mcReader, const std::string& 
 
             histograms[pid][0].push_back(new TH2D(
                 ("h_deltap_" + particle_name + "_bin" + std::to_string(i)).c_str(),
-                (bin_label + ", #Delta p vs p").c_str(),
+                bin_label.c_str(),
                 75, xMin, xMax, 75, -0.05, 0.05));
 
             histograms[pid][1].push_back(new TH2D(
                 ("h_deltatheta_" + particle_name + "_bin" + std::to_string(i)).c_str(),
-                (bin_label + ", #Delta #theta vs p").c_str(),
+                bin_label.c_str(),
                 75, xMin, xMax, 75, -1.0, 1.0));
 
             histograms[pid][2].push_back(new TH2D(
                 ("h_deltaphi_" + particle_name + "_bin" + std::to_string(i)).c_str(),
-                (bin_label + ", #Delta #phi vs p").c_str(),
+                bin_label.c_str(),
                 75, xMin, xMax, 75, -5.0, 5.0));
 
             // Set axis labels
-            histograms[pid][0][i]->GetXaxis()->SetTitle("p (GeV)"); histograms[pid][0][i]->GetYaxis()->SetTitle("#Delta p (GeV)");
-            histograms[pid][1][i]->GetXaxis()->SetTitle("p (GeV)"); histograms[pid][1][i]->GetYaxis()->SetTitle("#Delta #theta");
-            histograms[pid][2][i]->GetXaxis()->SetTitle("p (GeV)"); histograms[pid][2][i]->GetYaxis()->SetTitle("#Delta #phi");
+            histograms[pid][0][i]->GetXaxis()->SetTitle("p (GeV)"); histograms[pid][0][i]->GetYaxis()->SetTitle("#Deltap");
+            histograms[pid][1][i]->GetXaxis()->SetTitle("p (GeV)"); histograms[pid][1][i]->GetYaxis()->SetTitle("#Delta#theta");
+            histograms[pid][2][i]->GetXaxis()->SetTitle("p (GeV)"); histograms[pid][2][i]->GetYaxis()->SetTitle("#Delta#phi");
 
             for (int j = 0; j < 3; ++j) {
                 histograms[pid][j][i]->SetStats(false);
@@ -4936,6 +4936,9 @@ void energy_loss_distributions_binned(TTreeReader& mcReader, const std::string& 
     TTreeReaderValue<double> theta(mcReader, "theta");
     TTreeReaderValue<double> mc_phi(mcReader, "mc_phi");
     TTreeReaderValue<double> phi(mcReader, "phi");
+    TTreeReaderValue<double> traj_x_6(mcReader, "traj_x_6");
+    TTreeReaderValue<double> traj_y_6(mcReader, "traj_y_6");
+    TTreeReaderValue<double> traj_z_6(mcReader, "traj_z_6");
     TTreeReaderValue<int> pid(mcReader, "particle_pid");
 
     // Loop over events
@@ -4943,9 +4946,10 @@ void energy_loss_distributions_binned(TTreeReader& mcReader, const std::string& 
         double delta_p = *mc_p - *p;
         double delta_theta = *mc_theta - *theta;
         double delta_phi = *mc_phi - *phi;
+        double theta_dc_1 = calculate_theta(*traj_x_6, *traj_y_6, *traj_z_6);
 
-        // Check if the current particle type is one of interest
-        if (histograms.find(*pid) != histograms.end()) {
+        // Check if the current particle type is one of interest and if the track is below the curve
+        if (histograms.find(*pid) != histograms.end() && !is_above_theta_dc_curve(*p, theta_dc_1)) {
             for (size_t i = 0; i < theta_bins.size(); ++i) {
                 if (*theta >= theta_bins[i].first && *theta < theta_bins[i].second) {
                     histograms[*pid][0][i]->Fill(*p, delta_p);
