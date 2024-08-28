@@ -5136,7 +5136,7 @@ void energy_loss_distributions_delta_theta(TTreeReader& mcReader, const std::str
             histograms[pid][i] = new TH2D(
                 ("h_deltap_" + particle_name + "_bin" + std::to_string(i)).c_str(),
                 bin_label.c_str(),
-                75, xMin, xMax, 75, -0.05, 0.05);
+                75, xMin, xMax, 75, -1, 1);
 
             // Set axis labels
             histograms[pid][i]->GetXaxis()->SetTitle("p (GeV)");
