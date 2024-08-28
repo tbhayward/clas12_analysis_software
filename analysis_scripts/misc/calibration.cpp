@@ -4944,7 +4944,6 @@ void energy_loss_distributions_binned(TTreeReader& mcReader, const std::string& 
     // Loop over events
     for (int i = 0; i < 1e7; ++i) {
         mcReader.Next();
-    // while (mcReader.Next()) {
         double delta_p = *mc_p - *p;
         double delta_theta = *mc_theta - *theta;
         double delta_phi = *mc_phi - *phi;
@@ -4969,14 +4968,14 @@ void energy_loss_distributions_binned(TTreeReader& mcReader, const std::string& 
         canvas->Divide(5, 2);
 
         for (size_t i = 0; i < theta_bins.size(); ++i) {
-            TProfile* profile = histograms[pid][j][i]->ProfileX();
+            TProfile* profile = histograms[*pid][j][i]->ProfileX();
 
             // Fit the profiles with appropriate functions
             TF1* fit_function;
             if (j == 0) {
-                fit_function = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x", 0.3, std::get<2>(particle_types[pid]));
+                fit_function = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x", 0.3, std::get<2>(particle_types[*pid]));
             } else {
-                fit_function = new TF1(("fit_deltatheta_phi_" + std::to_string(i)).c_str(), "[0] + [1]/pow(x,2)", 0.3, std::get<2>(particle_types[pid]));
+                fit_function = new TF1(("fit_deltatheta_phi_" + std::to_string(i)).c_str(), "[0] + [1]/pow(x,2)", 0.3, std::get<2>(particle_types[*pid]));
             }
 
             profile->Fit(fit_function, "Q"); // Silent fit
@@ -4984,7 +4983,7 @@ void energy_loss_distributions_binned(TTreeReader& mcReader, const std::string& 
             canvas->cd(i + 1);
             gPad->SetMargin(0.15, 0.15, 0.20, 0.1);
             gPad->SetLogz();
-            histograms[pid][j][i]->Draw("COLZ");
+            histograms[*pid][j][i]->Draw("COLZ");
             profile->Draw("same");
             fit_function->Draw("same");
 
@@ -4993,11 +4992,11 @@ void energy_loss_distributions_binned(TTreeReader& mcReader, const std::string& 
 
         // Save each canvas after processing
         if (j == 0) {
-            canvas->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_p_distributions_" + std::to_string(pid) + ".png").c_str());
+            canvas->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_p_distributions_" + std::to_string(*pid) + ".png").c_str());
         } else if (j == 1) {
-            canvas->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_theta_distributions_" + std::to_string(pid) + ".png").c_str());
+            canvas->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_theta_distributions_" + std::to_string(*pid) + ".png").c_str());
         } else if (j == 2) {
-            canvas->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_phi_distributions_" + std::to_string(pid) + ".png").c_str());
+            canvas->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_phi_distributions_" + std::to_string(*pid) + ".png").c_str());
         }
 
         // Clean up for each canvas
