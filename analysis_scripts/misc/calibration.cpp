@@ -5203,7 +5203,7 @@ void energy_loss_distributions_delta_theta(TTreeReader& mcReader, const std::str
             TProfile* prof_deltatheta = histograms[pid][i]->ProfileX();
 
             // Fit the profiles with appropriate functions
-            fit_deltatheta[i] = new TF1(("fit_deltatheta_" + std::to_string(i)).c_str(), "[0] + [1]/x^2", 0.3, std::get<2>(particle_types[pid]));
+            fit_deltatheta[i] = new TF1(("fit_deltatheta_" + std::to_string(i)).c_str(), "[0] + [1]*exp([2]*x)", 0.3, std::get<2>(particle_types[pid]));
             prof_deltatheta->Fit(fit_deltatheta[i], "Q"); // Silent fit
 
             // Store the fit parameters
