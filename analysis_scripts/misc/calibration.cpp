@@ -4654,36 +4654,36 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
 
         // Plot histograms and curve in the correct order
         c->cd(1);
-        gPad->SetMargin(0.15, 0.1, 0.20, 0.1);  // Left, right, bottom, top margins
+        gPad->SetMargin(0.15, 0.15, 0.20, 0.1);  // Left, right, bottom, top margins
         gPad->SetLogz();
         entry.second[0]->Draw("COLZ");
         pass1_curve->Draw("same");
         pass2_curve->Draw("same");
 
         c->cd(2);
-        gPad->SetMargin(0.15, 0.1, 0.20, 0.1);
+        gPad->SetMargin(0.15, 0.15, 0.20, 0.1);
         gPad->SetLogz();
         entry.second[1]->Draw("COLZ");
 
         c->cd(3);
-        gPad->SetMargin(0.15, 0.1, 0.20, 0.1);
+        gPad->SetMargin(0.15, 0.15, 0.20, 0.1);
         gPad->SetLogz();
         entry.second[2]->Draw("COLZ");
 
         c->cd(4);
-        gPad->SetMargin(0.15, 0.1, 0.1, 0.1);
+        gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
         gPad->SetLogz();
         entry.second[3]->Draw("COLZ");
         pass1_curve->Draw("same");
         pass2_curve->Draw("same");
 
         c->cd(5);
-        gPad->SetMargin(0.15, 0.1, 0.1, 0.1);
+        gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
         gPad->SetLogz();
         entry.second[4]->Draw("COLZ");
 
         c->cd(6);
-        gPad->SetMargin(0.15, 0.1, 0.1, 0.1);
+        gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
         gPad->SetLogz();
         entry.second[5]->Draw("COLZ");
 
