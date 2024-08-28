@@ -4985,8 +4985,8 @@ void energy_loss_distributions_binned(TTreeReader& mcReader, const std::string& 
             TProfile* prof_deltaphi = histograms[pid][2][i]->ProfileX();
 
             // Fit the profiles with appropriate functions
-            fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x", 0.3, std::get<2>(particle_types[pid]));
-            prof_deltap->Fit(fit_deltap[i], "Q"); // Silent fit
+            // fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x", 0.3, std::get<2>(particle_types[pid]));
+            // prof_deltap->Fit(fit_deltap[i], "Q"); // Silent fit
 
             // fit_deltatheta[i] = new TF1(("fit_deltatheta_" + std::to_string(i)).c_str(), "[0] + [1]/x", 0.3, std::get<2>(particle_types[pid]));
             // prof_deltatheta->Fit(fit_deltatheta[i], "Q");
