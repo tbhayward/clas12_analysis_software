@@ -5001,7 +5001,7 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
         graph_A->Draw("AP");
 
         // Fit A(#theta) to a 4th order polynomial
-        TF1* fit_A = new TF1("fit_A", "pol3", theta_bins.front().first, theta_bins.back().second);
+        TF1* fit_A = new TF1("fit_A", "pol4", theta_bins.front().first, theta_bins.back().second);
         graph_A->Fit(fit_A, "Q");  // Silent fit
         fit_A->Draw("same");
 
@@ -5031,7 +5031,7 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
         graph_B->Draw("AP");
 
         // Fit B(#theta) to a 4th order polynomial
-        TF1* fit_B = new TF1("fit_B", "pol3", theta_bins.front().first, theta_bins.back().second);
+        TF1* fit_B = new TF1("fit_B", "pol4", theta_bins.front().first, theta_bins.back().second);
         graph_B->Fit(fit_B, "Q");  // Silent fit
         fit_B->Draw("same");
 
