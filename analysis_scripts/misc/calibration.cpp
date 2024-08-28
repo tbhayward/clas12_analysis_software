@@ -4604,7 +4604,7 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
     TTreeReaderValue<double> edge_36(mcReader, "traj_edge_36");
 
     // Loop over events
-    for (int i = 0; i < 1e5; ++i) {
+    for (int i = 0; i < 1e6; ++i) {
         mcReader.Next();
     // while (mcReader.Next()) {
         double delta_p = *mc_p - *p;
@@ -4642,13 +4642,20 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         TLatex latex;
         latex.SetTextSize(0.04);
         latex.SetTextAlign(11);  // Align at top left
-        latex.DrawLatexNDC(0.42, 0.515, (dataset + ", " + particle_name).c_str());
+        latex.DrawLatexNDC(0.42, 0.5, (dataset + ", " + particle_name).c_str());
 
-        // Define the curve function for the theta_DC,region1
-        TF1* theta_dc_curve = new TF1("theta_dc_curve", "[0] + [1]*TMath::Power(x-[2],[3])", 0.3, std::get<2>(particle_types[pid]));
-        theta_dc_curve->SetParameters(-53.1468, 79.6131, 0.3, 0.05739);
-        theta_dc_curve->SetLineColor(kBlue);
-        theta_dc_curve->SetLineWidth(4);
+        // Define the curve function
+        TF1* pass1_curve = new TF1("pass1 curve", "0.088/pow(x, 1.5)", 0.1, std::get<2>(particle_types[pid]));
+        pass1_curve->SetLineColor(kRed);
+        pass1_curve->SetLineWidth(4);
+        TF1* pass2_curve = new TF1("pass2 curve", "0.0118/pow(x, 1.05)", 0.1, std::get<2>(particle_types[pid]));
+        pass2_curve->SetLineColor(kBlack);
+        pass2_curve->SetLineWidth(4);
+
+        // Define the new curve based on the provided formula
+        TF1* new_curve_region1 = new TF1("new_curve_region1", "-53.1468 + 79.6131*pow(x-0.3,0.05739)", 0.31, std::get<2>(particle_types[pid]));
+        new_curve_region1->SetLineColor(kBlue);
+        new_curve_region1->SetLineWidth(4);
 
         // Plot histograms and curve in the correct order
         c->cd(1);
@@ -4662,7 +4669,7 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         gPad->SetMargin(0.15, 0.15, 0.20, 0.1);
         gPad->SetLogz();
         entry.second[1]->Draw("COLZ");
-        theta_dc_curve->Draw("same");  // Draw the curve on subplot 2
+        new_curve_region1->Draw("same");
 
         c->cd(3);
         gPad->SetMargin(0.15, 0.15, 0.20, 0.1);
@@ -4680,10 +4687,10 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
         gPad->SetLogz();
         entry.second[4]->Draw("COLZ");
-        theta_dc_curve->Draw("same");  // Draw the curve on subplot 5
+        new_curve_region1->Draw("same");
 
         c->cd(6);
-        gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+        gPad->SetMargin(0.15, 0.15 , 0.1, 0.1);
         gPad->SetLogz();
         entry.second[5]->Draw("COLZ");
 
