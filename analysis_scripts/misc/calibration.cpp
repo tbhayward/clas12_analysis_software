@@ -4951,6 +4951,11 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
         std::vector<TF1*> fit_deltap(theta_bins.size());
 
         for (size_t i = 0; i < theta_bins.size(); ++i) {
+            // Ensure we are drawing on the correct pad
+            c_deltap->cd(i + 1);
+            gPad->SetMargin(0.15, 0.15, 0.20, 0.1);  // Left, right, bottom, top margins
+            gPad->SetLogz();
+
             // Create profile histograms
             TProfile* prof_deltap = histograms[pid][i]->ProfileX();
 
@@ -4958,9 +4963,6 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
             fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x", 0.3, std::get<2>(particle_types[pid]));
             prof_deltap->Fit(fit_deltap[i], "Q"); // Silent fit
 
-            c_deltap->cd(i + 1);
-            gPad->SetMargin(0.15, 0.15, 0.20, 0.1);  // Left, right, bottom, top margins
-            gPad->SetLogz();
             histograms[pid][i]->Draw("COLZ");
             prof_deltap->Draw("same");  // Draw the profile to show the fit line
             fit_deltap[i]->Draw("same");  // Draw the fit on top of the profile
