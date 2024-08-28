@@ -4876,10 +4876,11 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
         {2212, {"p", 0.0, 4.0}}
     };
 
-    // Define theta bins
+    // Define theta bins (updated to 12 bins)
     std::vector<std::pair<double, double>> theta_bins = {
         {5.0, 7.5}, {7.5, 10.0}, {10.0, 12.5}, {12.5, 15.0}, {15.0, 17.5},
-        {17.5, 20.0}, {20.0, 22.5}, {22.5, 25.0}, {25.0, 27.5}, {27.5, 30.0}
+        {17.5, 20.0}, {20.0, 22.5}, {22.5, 25.0}, {25.0, 27.5}, {27.5, 30.0},
+        {30.0, 32.5}, {32.5, 35.0}
     };
 
     // Create histograms for each particle type and theta bin
@@ -4945,8 +4946,8 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
         int pid = entry.first;
         const std::string& particle_name = std::get<0>(particle_types[pid]);
 
-        TCanvas* c_deltap = new TCanvas(("c_deltap_" + particle_name).c_str(), ("Delta p Distributions: " + dataset + ", " + particle_name).c_str(), 2000, 1200);
-        c_deltap->Divide(5, 2);  // 10 subplots
+        TCanvas* c_deltap = new TCanvas(("c_deltap_" + particle_name).c_str(), ("Delta p Distributions: " + dataset + ", " + particle_name).c_str(), 2400, 1600);
+        c_deltap->Divide(4, 3);  // 12 subplots (4x3)
 
         std::vector<TF1*> fit_deltap(theta_bins.size());
         std::vector<double> A_values(theta_bins.size());
@@ -4999,6 +5000,21 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
         gPad->SetLeftMargin(0.2);  // Increase left margin
         graph_A->Draw("AP");
 
+        // Fit A(#theta) to a 4th order polynomial
+        TF1* fit_A = new TF1("fit_A", "pol4", theta_bins.front().first, theta_bins.back().second);
+        graph_A->Fit(fit_A, "Q");  // Silent fit
+        fit_A->Draw("same");
+
+        // Add fit results and chi2/ndf to the plot
+        TPaveText* pt_A = new TPaveText(0.5, 0.8, 0.9, 0.9, "NDC");
+        pt_A->AddText(Form("Fit: %.4f + %.4f x + %.4fx^{2} + %.4fx^{3} + %.4fx^{4}",
+        fit_A->GetParameter(0), fit_A->GetParameter(1),
+        fit_A->GetParameter(2), fit_A->GetParameter(3),
+        fit_A->GetParameter(4)));
+        pt_A->AddText(Form("#chi^{2}/ndf = %.2f", fit_A->GetChisquare() / fit_A->GetNDF()));
+        pt_A->SetBorderSize(1);
+        pt_A->SetFillColor(0);
+        pt_A->Draw();
         // Plot B(#theta)
         c_fit_params->cd(2);
         TGraphErrors* graph_B = new TGraphErrors(theta_bins.size());
@@ -5013,8 +5029,25 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
         gPad->SetLeftMargin(0.2);  // Increase left margin
         graph_B->Draw("AP");
 
+        // Fit B(#theta) to a 4th order polynomial
+        TF1* fit_B = new TF1("fit_B", "pol4", theta_bins.front().first, theta_bins.back().second);
+        graph_B->Fit(fit_B, "Q");  // Silent fit
+        fit_B->Draw("same");
+
+        // Add fit results and chi2/ndf to the plot
+        TPaveText* pt_B = new TPaveText(0.5, 0.8, 0.9, 0.9, "NDC");
+        pt_B->AddText(Form("Fit: %.4f + %.4f*x + %.4f*x^{2} + %.4f*x^{3} + %.4f*x^{4}", 
+                           fit_B->GetParameter(0), fit_B->GetParameter(1), 
+                           fit_B->GetParameter(2), fit_B->GetParameter(3), 
+                           fit_B->GetParameter(4)));
+        pt_B->AddText(Form("#chi^{2}/ndf = %.2f", fit_B->GetChisquare() / fit_B->GetNDF()));
+        pt_B->SetBorderSize(1);
+        pt_B->SetFillColor(0);
+        pt_B->Draw();
+
         // Save the fit parameters canvas
         c_fit_params->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/fit_params_" + particle_name + ".png").c_str());
+
         // Clean up memory
         for (size_t i = 0; i < theta_bins.size(); ++i) {
             delete fit_deltap[i];
@@ -5022,6 +5055,10 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
         }
         delete graph_A;
         delete graph_B;
+        delete fit_A;
+        delete fit_B;
+        delete pt_A;
+        delete pt_B;
         delete c_deltap;
         delete c_fit_params;
     }
