@@ -22,11 +22,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     bool checked = false;
     string property = binNames[currentFits];
 
-    if (property == "solenoid") {
-      goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *Q2 > 1 && *W > 2 && *y < 0.75;
-      goodEvent && *runnum != 17178 && *x > 0.06 && *x < 0.60 && *pT > 0 && *pT < 1.2 && *xF > -1 && *xF < 1;
-      return goodEvent;
-    }
+
     if (property == "xF" || property == "x" || property == "z" || property == "PT" || property == "runnum") {
       goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *Q2 > 1 && *W > 2 && *Mx > 1.35 && *y < 0.75;
       goodEvent = goodEvent && *x > 0.06 && *x < 0.60 && *pT > 0 && *pT < 1.2 && *xF > -1 && *xF < 1;
