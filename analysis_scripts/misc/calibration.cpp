@@ -4464,11 +4464,11 @@ void fill_and_save_histograms(const std::map<int, std::pair<std::string, std::pa
 void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset) {
     // Particle types and their corresponding LaTeX names and x-axis ranges
     std::map<int, std::tuple<std::string, double, double>> particle_types = {
-        {11, {"e^{-}", 0.0, 7.0}},
-        {211, {"#pi^{+}", 0.0, 5.0}},
-        {-211, {"#pi^{-}", 0.0, 5.0}},
-        {321, {"k^{+}", 0.0, 5.0}},
-        {-321, {"k^{-}", 0.0, 5.0}},
+        // {11, {"e^{-}", 0.0, 7.0}},
+        // {211, {"#pi^{+}", 0.0, 5.0}},
+        // {-211, {"#pi^{-}", 0.0, 5.0}},
+        // {321, {"k^{+}", 0.0, 5.0}},
+        // {-321, {"k^{-}", 0.0, 5.0}},
         {2212, {"p", 0.0, 3.0}}
     };
 
@@ -4547,11 +4547,11 @@ bool is_above_curve(double p, double delta_p) {
 void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& dataset) {
     // Particle types and their corresponding LaTeX names and x-axis ranges
     std::map<int, std::tuple<std::string, double, double>> particle_types = {
-        {11, {"e^{-}", 0.0, 7.0}},
-        {211, {"#pi^{+}", 0.0, 5.0}},
-        {-211, {"#pi^{-}", 0.0, 5.0}},
-        {321, {"k^{+}", 0.0, 5.0}},
-        {-321, {"k^{-}", 0.0, 5.0}},
+        // {11, {"e^{-}", 0.0, 7.0}},
+        // {211, {"#pi^{+}", 0.0, 5.0}},
+        // {-211, {"#pi^{-}", 0.0, 5.0}},
+        // {321, {"k^{+}", 0.0, 5.0}},
+        // {-321, {"k^{-}", 0.0, 5.0}},
         {2212, {"p", 0.0, 3.0}}
     };
 
