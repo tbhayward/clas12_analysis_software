@@ -4939,7 +4939,7 @@ void energy_loss_distributions_binned(TTreeReader& mcReader, const std::string& 
     TTreeReaderValue<int> pid(mcReader, "particle_pid");
 
     // Loop over events
-    for (int i = 0; i < 1e7; ++i) {
+    for (int i = 0; i < 1e8; ++i) {
         mcReader.Next();
     // while (mcReader.Next()) {
         double delta_p = *mc_p - *p;
@@ -4988,10 +4988,10 @@ void energy_loss_distributions_binned(TTreeReader& mcReader, const std::string& 
             fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x", 0.3, std::get<2>(particle_types[pid]));
             prof_deltap->Fit(fit_deltap[i], "Q"); // Silent fit
 
-            fit_deltatheta[i] = new TF1(("fit_deltatheta_" + std::to_string(i)).c_str(), "[0]", 0.3, std::get<2>(particle_types[pid]));
+            fit_deltatheta[i] = new TF1(("fit_deltatheta_" + std::to_string(i)).c_str(), "[0] + [1]*x^2", 0.3, std::get<2>(particle_types[pid]));
             prof_deltatheta->Fit(fit_deltatheta[i], "Q");
 
-            fit_deltaphi[i] = new TF1(("fit_deltaphi_" + std::to_string(i)).c_str(), "[0]", 0.3, std::get<2>(particle_types[pid]));
+            fit_deltaphi[i] = new TF1(("fit_deltaphi_" + std::to_string(i)).c_str(), "[0] + [1]*x^2", 0.3, std::get<2>(particle_types[pid]));
             prof_deltaphi->Fit(fit_deltaphi[i], "Q");
 
             c_deltap->cd(i + 1);
