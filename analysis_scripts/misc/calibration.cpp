@@ -4764,7 +4764,7 @@ void create_directories() {
 int main(int argc, char** argv) {
     if (argc < 2 || argc > 3) {
         std::cerr << "Usage: " << argv[0] << 
-            " <data_file.root> [<mc_file.root>]" << std::endl;
+        	" <data_file.root> [<mc_file.root>]" << std::endl;
         return 1;
     }
 
@@ -4778,20 +4778,9 @@ int main(int argc, char** argv) {
         return 1;
     }
     
-    // Get the original TTree
-    TTree* originalTree = (TTree*)dataFile.Get("PhysicsEvents");
-    if (!originalTree) {
-        std::cerr << "Error: PhysicsEvents tree not found in data file!" << std::endl;
-        return 1;
-    }
-
-    int n_entries = 10000000;
-    // Create a new TTree with only the first 10 million entries
-    TTree* subsetTree = originalTree->CopyTree("", "", n_entries);
-
-    // Set up TTreeReader for the subset tree
-    TTreeReader dataReader(subsetTree);
-    std::cout << "\nRead in data tree (first 10 million entries)." << std::endl;
+    // Set up TTreeReader for the first file
+    TTreeReader dataReader("PhysicsEvents", &dataFile);
+    std::cout << "\nRead in data tree." << std::endl;
 
     // If a second file is provided, open it and set up a TTreeReader
     TFile* mcFile = nullptr;
@@ -4802,17 +4791,8 @@ int main(int argc, char** argv) {
             std::cerr << "Error opening MC file!" << std::endl;
             return 1;
         }
-        
-        TTree* mcTree = (TTree*)mcFile->Get("PhysicsEvents");
-        if (!mcTree) {
-            std::cerr << "Error: PhysicsEvents tree not found in MC file!" << std::endl;
-            return 1;
-        }
-        
-        // Create a subset tree for MC if needed
-        TTree* subsetMCTree = mcTree->CopyTree("", "", n_entries);
-        mcReader = new TTreeReader(subsetMCTree);
-        std::cout << "Read in mc tree (first 10 million entries)." << std::endl;
+        mcReader = new TTreeReader("PhysicsEvents", mcFile);
+        std::cout << "Read in mc tree." << std::endl;
     }
 
     //// PLOTS ////
