@@ -4944,6 +4944,7 @@ void energy_loss_distributions_binned(TTreeReader& mcReader, const std::string& 
     // Loop over events
     for (int i = 0; i < 1e7; ++i) {
         mcReader.Next();
+        if (!(*pid)) continue;  // Ensure pid is valid
         double delta_p = *mc_p - *p;
         double delta_theta = *mc_theta - *theta;
         double delta_phi = *mc_phi - *phi;
@@ -4968,6 +4969,8 @@ void energy_loss_distributions_binned(TTreeReader& mcReader, const std::string& 
         canvas->Divide(5, 2);
 
         for (size_t i = 0; i < theta_bins.size(); ++i) {
+            if (!histograms[*pid][j][i]) continue;  // Ensure the histogram exists
+
             TProfile* profile = histograms[*pid][j][i]->ProfileX();
 
             // Fit the profiles with appropriate functions
