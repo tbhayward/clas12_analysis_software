@@ -4604,9 +4604,9 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
     TTreeReaderValue<double> edge_36(mcReader, "traj_edge_36");
 
     // Loop over events
-    // for (int i = 0; i < 1e7; ++i) {
-    //     mcReader.Next();
-    while (mcReader.Next()) {
+    for (int i = 0; i < 1e5; ++i) {
+        mcReader.Next();
+    // while (mcReader.Next()) {
         double delta_p = *mc_p - *p;
         double theta_dc_1 = calculate_theta(*traj_x_6, *traj_y_6, *traj_z_6);
 
@@ -4645,7 +4645,7 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         latex.DrawLatexNDC(0.42, 0.515, (dataset + ", " + particle_name).c_str());
 
         // Define the curve function for the theta_DC,region1
-        TF1* theta_dc_curve = new TF1("theta_dc_curve", "[0] + [1]*TMath::Power(x-[2],[3])", 0.1, std::get<2>(particle_types[pid]));
+        TF1* theta_dc_curve = new TF1("theta_dc_curve", "[0] + [1]*TMath::Power(x-[2],[3])", 0.3, std::get<2>(particle_types[pid]));
         theta_dc_curve->SetParameters(-53.1468, 79.6131, 0.3, 0.05739);
         theta_dc_curve->SetLineColor(kBlue);
         theta_dc_curve->SetLineWidth(4);
@@ -4689,7 +4689,7 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
 
         // Save the canvas
         c->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/fd_energy_loss_distributions_" + particle_name + ".png").c_str());
-        
+
         // Clean up
         delete c;
         delete pass1_curve;
