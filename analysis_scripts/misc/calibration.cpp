@@ -5320,7 +5320,7 @@ void energy_loss_distributions_delta_phi(TTreeReader& mcReader, const std::strin
 
         for (size_t i = 0; i < theta_bins.size(); ++i) {
             // Ensure we are drawing on the correct pad
-            c_deltatheta->cd(i + 1);
+            c_deltaphi->cd(i + 1);
             gPad->SetMargin(0.15, 0.15, 0.20, 0.1);  // Left, right, bottom, top margins
             gPad->SetLogz();
 
@@ -5342,7 +5342,7 @@ void energy_loss_distributions_delta_phi(TTreeReader& mcReader, const std::strin
         }
 
         // Save the canvas
-        c_deltatheta->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_phi_distributions_" + particle_name + ".png").c_str());
+        c_deltaphi->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_phi_distributions_" + particle_name + ".png").c_str());
 
         // Use the new modular function for the fitted parameters
         plot_and_fit_parameters(theta_bins, A_values, A_errors, B_values, B_errors, particle_name, dataset, "#phi");
