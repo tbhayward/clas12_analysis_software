@@ -4604,9 +4604,9 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
     TTreeReaderValue<double> edge_36(mcReader, "traj_edge_36");
 
     // Loop over events
-    // for (int i = 0; i < 1e7; ++i) {
-    //     mcReader.Next();
-    while (mcReader.Next()) {
+    for (int i = 0; i < 1e7; ++i) {
+        mcReader.Next();
+    // while (mcReader.Next()) {
         double delta_p = *mc_p - *p;
         double theta_dc_1 = calculate_theta(*traj_x_6, *traj_y_6, *traj_z_6);
 
@@ -4656,6 +4656,7 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         TF1* new_curve_region1 = new TF1("new_curve_region1", "-53.1468 + 79.6131*pow(x-0.3,0.05739)", 0.30, std::get<2>(particle_types[pid]));
         new_curve_region1->SetLineColor(kBlue);
         new_curve_region1->SetLineWidth(4);
+        new_curve_region1->SetNpx(1000);  // Increase the number of points along the curve
 
         // Plot histograms and curve in the correct order
         c->cd(1);
