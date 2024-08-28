@@ -4537,9 +4537,13 @@ void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset
     fill_and_save_histograms(histograms, dataset);
 }
 
-// Function to check if a track is above or below the curve
-bool is_above_curve(double p, double delta_p) {
+bool is_above_deltap_curve(double p, double delta_p) {
     return (delta_p > 0.011 / pow(p, 1.05));
+}
+
+bool is_above_theta_dc_curve(double p, double theta_dc_1) {
+    double curve_value = -53.1468 + 79.6131 * pow(p - 0.3, 0.05739);
+    return (theta_dc_1 > curve_value);
 }
 
 // Main FD-specific function
@@ -4706,12 +4710,169 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
     }
 }
 
+void energy_loss_fd_distributions_theta_dc(TTreeReader& mcReader, const std::string& dataset) {
+    // Particle types and their corresponding LaTeX names and x-axis ranges
+    std::map<int, std::tuple<std::string, double, double>> particle_types = {
+        {2212, {"p", 0.0, 3.0}}
+    };
+
+    // Create histograms for each particle type
+    std::map<int, std::vector<TH2D*>> histograms;
+    for (const auto& particle : particle_types) {
+        int pid = particle.first;
+        const std::string& particle_name = std::get<0>(particle.second);
+        double xMin = std::get<1>(particle.second);
+        double xMax = std::get<2>(particle.second);
+
+        histograms[pid] = {
+            new TH2D(("h_above_deltap_" + particle_name).c_str(), ("(Above), " + particle_name).c_str(), 75, xMin, xMax, 75, -0.05, 0.10),
+            new TH2D(("h_above_thetadc1_" + particle_name).c_str(), ("(Above), " + particle_name).c_str(), 75, xMin, xMax, 75, 0, 40),  
+            new TH2D(("h_above_theta_" + particle_name).c_str(), ("(Above), " + particle_name).c_str(), 75, xMin, xMax, 75, 0, 40),  
+            new TH2D(("h_below_deltap_" + particle_name).c_str(), ("(Below), " + particle_name).c_str(), 75, xMin, xMax, 75, -0.05, 0.10),
+            new TH2D(("h_below_thetadc1_" + particle_name).c_str(), ("(Below), " + particle_name).c_str(), 75, xMin, xMax, 75, 0, 40),  
+            new TH2D(("h_below_theta_" + particle_name).c_str(), ("(Below), " + particle_name).c_str(), 75, xMin, xMax, 75, 0, 40)  
+        };
+
+        // Set axis labels
+        histograms[pid][0]->GetXaxis()->SetTitle("p (GeV)"); histograms[pid][0]->GetYaxis()->SetTitle("#Delta p (GeV)");
+        histograms[pid][1]->GetXaxis()->SetTitle("p (GeV)"); histograms[pid][1]->GetYaxis()->SetTitle("#theta_{DC_{region 1}} (degrees)");
+        histograms[pid][2]->GetXaxis()->SetTitle("p (GeV)"); histograms[pid][2]->GetYaxis()->SetTitle("#theta (degrees)");
+        histograms[pid][3]->GetXaxis()->SetTitle("p (GeV)"); histograms[pid][3]->GetYaxis()->SetTitle("#Delta p (GeV)");
+        histograms[pid][4]->GetXaxis()->SetTitle("p (GeV)"); histograms[pid][4]->GetYaxis()->SetTitle("#theta_{DC_{region 1}} (degrees)");
+        histograms[pid][5]->GetXaxis()->SetTitle("p (GeV)"); histograms[pid][5]->GetYaxis()->SetTitle("#theta (degrees)");
+
+        for (auto& hist : histograms[pid]) {
+            hist->SetStats(false);
+        }
+    }
+
+    gStyle->SetPalette(kRainBow);
+    gStyle->SetOptStat(0);
+
+    // Set up TTreeReaderValues for necessary branches
+    TTreeReaderValue<double> mc_p(mcReader, "mc_p");
+    TTreeReaderValue<double> p(mcReader, "p");
+    TTreeReaderValue<double> traj_x_6(mcReader, "traj_x_6");
+    TTreeReaderValue<double> traj_y_6(mcReader, "traj_y_6");
+    TTreeReaderValue<double> traj_z_6(mcReader, "traj_z_6");
+    TTreeReaderValue<double> theta(mcReader, "theta");
+    TTreeReaderValue<int> pid(mcReader, "particle_pid");
+    TTreeReaderValue<int> track_sector_6(mcReader, "track_sector_6");
+
+    // Edge variables for FD fiducial cuts
+    TTreeReaderValue<double> edge_6(mcReader, "traj_edge_6");
+    TTreeReaderValue<double> edge_18(mcReader, "traj_edge_18");
+    TTreeReaderValue<double> edge_36(mcReader, "traj_edge_36");
+
+    // Loop over events
+    while (mcReader.Next()) {
+        double delta_p = *mc_p - *p;
+        double theta_dc_1 = calculate_theta(*traj_x_6, *traj_y_6, *traj_z_6);
+
+        // Check if the current particle type is one of interest
+        if (histograms.find(*pid) != histograms.end()) { 
+            bool above_curve = is_above_theta_dc_curve(*p, theta_dc_1);
+
+            if (is_fd_track(*track_sector_6)) {
+                if (dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) {
+                    int index_deltap = above_curve ? 0 : 3;
+                    int index_thetadc1 = above_curve ? 1 : 4;
+                    int index_theta = above_curve ? 2 : 5;
+
+                    // Fill histograms
+                    histograms[*pid][index_deltap]->Fill(*p, delta_p);
+                    histograms[*pid][index_thetadc1]->Fill(*p, theta_dc_1);
+                    histograms[*pid][index_theta]->Fill(*p, *theta);
+                }
+            }
+        }
+    }
+
+    for (const auto& entry : histograms) {
+        int pid = entry.first;
+        const std::string& particle_name = std::get<0>(particle_types[pid]);
+
+        // Create a canvas with 2x3 subplots
+        TCanvas* c = new TCanvas(("c_fd_" + particle_name).c_str(), ("FD Energy Loss Distributions (theta DC cut): " + dataset + ", " + particle_name).c_str(), 1800, 1200);
+        c->Divide(3, 2);
+
+        // Move the LaTeX title up to avoid clipping
+        TLatex latex;
+        latex.SetTextSize(0.04);
+        latex.SetTextAlign(11);  // Align at top left
+        latex.DrawLatexNDC(0.42, 0.5, (dataset + ", " + particle_name).c_str());
+
+        // Define the curve function
+        TF1* pass1_curve = new TF1("pass1 curve", "0.088/pow(x, 1.5)", 0.1, std::get<2>(particle_types[pid]));
+        pass1_curve->SetLineColor(kRed);
+        pass1_curve->SetLineWidth(4);
+        TF1* pass2_curve = new TF1("pass2 curve", "0.011/pow(x, 1.05)", 0.1, std::get<2>(particle_types[pid]));
+        pass2_curve->SetLineColor(kBlack);
+        pass2_curve->SetLineWidth(4);
+
+        // Define the new curve based on the provided formula
+        TF1* new_curve_region1 = new TF1("new_curve_region1", "-53.1468 + 79.6131*pow(x-0.3,0.05739)", 0.30, std::get<2>(particle_types[pid]));
+        new_curve_region1->SetLineColor(kRed);
+        new_curve_region1->SetLineWidth(4);
+        new_curve_region1->SetNpx(5000);  // Increase the number of points along the curve
+
+        // Plot histograms and curve in the correct order
+        c->cd(1);
+        gPad->SetMargin(0.15, 0.15, 0.20, 0.1);  // Left, right, bottom, top margins
+        gPad->SetLogz();
+        entry.second[0]->Draw("COLZ");
+        pass1_curve->Draw("same");
+        pass2_curve->Draw("same");
+
+        c->cd(2);
+        gPad->SetMargin(0.15, 0.15, 0.20, 0.1);
+        gPad->SetLogz();
+        entry.second[1]->Draw("COLZ");
+        new_curve_region1->Draw("same");
+        c->cd(3);
+        gPad->SetMargin(0.15, 0.15, 0.20, 0.1);
+        gPad->SetLogz();
+        entry.second[2]->Draw("COLZ");
+
+        c->cd(4);
+        gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+        gPad->SetLogz();
+        entry.second[3]->Draw("COLZ");
+        pass1_curve->Draw("same");
+        pass2_curve->Draw("same");
+
+        c->cd(5);
+        gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+        gPad->SetLogz();
+        entry.second[4]->Draw("COLZ");
+        new_curve_region1->Draw("same");
+
+        c->cd(6);
+        gPad->SetMargin(0.15, 0.15 , 0.1, 0.1);
+        gPad->SetLogz();
+        entry.second[5]->Draw("COLZ");
+
+        // Save the canvas
+        c->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/fd_energy_loss_distributions_theta_dc_" + particle_name + ".png").c_str());
+
+        // Clean up
+        delete c;
+        delete pass1_curve;
+        delete pass2_curve;
+        for (auto& hist : entry.second) {
+            delete hist;
+        }
+    }
+}
+
 // Main function to call both energy loss distribution functions
 void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     // energy_loss_distributions(mcReader, dataset);
     // Restart the mcReader to reset its state before the next use
     mcReader.Restart();
     energy_loss_fd_distributions(mcReader, dataset);
+    mcReader.Restart();
+    energy_loss_fd_distributions_theta_dc(mcReader, dataset);
 }
                            
 void create_directories() {
