@@ -4540,7 +4540,6 @@ void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset
 // Function to check if a track is above or below the curve
 bool is_above_curve(double p, double delta_p) {
     return (delta_p > 0.0118 / pow(p, 1.05));
-    // 0.0125/pow(x, 1.05)
 }
 
 // Main FD-specific function
@@ -4612,7 +4611,7 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
 
         // Check if the current particle type is one of interest
         if (histograms.find(*pid) != histograms.end()) { 
-            bool above_curve = is_above_curve(*p, delta_p);
+            bool above_curve = true; //is_above_curve(*p, delta_p);
 
             if (is_fd_track(*track_sector_6)) {
                 if (dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) {
@@ -4652,7 +4651,7 @@ void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& data
         pass2_curve->SetLineWidth(4);
 
         // Define the new curve based on the provided formula
-        TF1* new_curve_region1 = new TF1("new_curve_region1", "-53.1468 + 79.6131*pow(x-0.3,0.05739)", 0.30, std::get<2>(particle_types[pid]));
+        TF1* new_curve_region1 = new TF1("new_curve_region1", "-53.1468 -5.00 + 79.6131*pow(x-0.3,0.05739)", 0.30, std::get<2>(particle_types[pid]));
         new_curve_region1->SetLineColor(kBlue);
         new_curve_region1->SetLineWidth(4);
         new_curve_region1->SetNpx(5000);  // Increase the number of points along the curve
