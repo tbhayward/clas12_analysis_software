@@ -5052,7 +5052,7 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
         // Check if the current particle type is one of interest and if the track is below the curve
         if (histograms.find(*pid) != histograms.end() && !is_above_theta_dc_curve(*p, theta_dc_1)) {
             for (size_t i = 0; i < theta_bins.size(); ++i) {
-                if (*theta >= theta_bins[i].first && *theta < theta_bins[i].second) {
+                if (*theta_dc_1 >= theta_bins[i].first && *theta_dc_1 < theta_bins[i].second) {
                     histograms[*pid][i]->Fill(*p, delta_p);
                     break;
                 }
