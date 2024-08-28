@@ -5051,11 +5051,11 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
         for (int i = 0; i <= 4; ++i) {
             double coeff = fit_A->GetParameter(i);
             if (i == 0) {
-                std::cout << Form("%.4f", coeff);
+                std::cout << Form("%.5f", coeff);
             } else if (i == 1) {
-                std::cout << Form(" %+.4f\\theta", coeff);
+                std::cout << Form(" %+.5f\\theta", coeff);
             } else {
-                std::cout << Form(" %+.4f\\theta^%d", coeff, i);
+                std::cout << Form(" %+.5f\\theta^%d", coeff, i);
             }
         }
         std::cout << std::endl;
@@ -5065,11 +5065,11 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
         for (int i = 0; i <= 4; ++i) {
             double coeff = fit_B->GetParameter(i);
             if (i == 0) {
-                std::cout << Form("%.4f", coeff);
+                std::cout << Form("%.5f", coeff);
             } else if (i == 1) {
-                std::cout << Form(" %+.4f\\theta", coeff);
+                std::cout << Form(" %+.5f\\theta", coeff);
             } else {
-                std::cout << Form(" %+.4f\\theta^%d", coeff, i);
+                std::cout << Form(" %+.5f\\theta^%d", coeff, i);
             }
         }
         std::cout << std::endl;
