@@ -4994,8 +4994,11 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
 
     // Define theta bins
     std::vector<std::pair<double, double>> theta_bins = {
-        {5.0, 7.5}, {7.5, 10.0}, {10.0, 12.5}, {12.5, 15.0}, {15.0, 17.5},
-        {17.5, 20.0}, {20.0, 22.5}, {22.5, 25.0}, {25.0, 27.5}, {27.5, 30.0}
+        {5.0, 6.6667}, {6.6667, 8.3333}, {8.3333, 10.0},
+        {10.0, 11.6667}, {11.6667, 13.3333}, {13.3333, 15.0},
+        {15.0, 16.6667}, {16.6667, 18.3333}, {18.3333, 20.0},
+        {20.0, 21.6667}, {21.6667, 23.3333}, {23.3333, 25.0},
+        {25.0, 26.6667}, {26.6667, 28.3333}, {28.3333, 30.0}
     };
 
     // Create histograms for each particle type and theta bin
@@ -5063,7 +5066,7 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
         const std::string& particle_name = std::get<0>(particle_types[pid]);
 
         TCanvas* c_deltap = new TCanvas(("c_deltap_" + particle_name).c_str(), ("Delta p Distributions: " + dataset + ", " + particle_name).c_str(), 2000, 1200);
-        c_deltap->Divide(5, 2);  // 10 subplots
+        c_deltap->Divide(5, 3);  // 10 subplots
 
         std::vector<TF1*> fit_deltap(theta_bins.size());
         std::vector<double> A_values(theta_bins.size());
@@ -5081,7 +5084,7 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
             TProfile* prof_deltap = histograms[pid][i]->ProfileX();
 
             // Fit the profiles with appropriate functions
-            fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x", 0.3, std::get<2>(particle_types[pid]));
+            fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]*x + [2]*x^2", 0.3, std::get<2>(particle_types[pid]));
             prof_deltap->Fit(fit_deltap[i], "Q"); // Silent fit
 
             // Store the fit parameters
@@ -5370,11 +5373,11 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     mcReader.Restart();
     energy_loss_distributions_delta_p(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_distributions_delta_theta(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_distributions_delta_theta(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_distributions_delta_phi(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_distributions_delta_phi(mcReader, dataset);
 }
                            
 void create_directories() {
