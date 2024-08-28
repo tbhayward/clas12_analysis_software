@@ -5007,11 +5007,11 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
 
         // Add fit results and chi2/ndf to the plot
         TPaveText* pt_A = new TPaveText(0.7, 0.75, 0.9, 0.9, "NDC");
-        pt_A->AddText(Form("p0 = %.5f", fit_A->GetParameter(0)));
-        pt_A->AddText(Form("p1 = %.5f", fit_A->GetParameter(1)));
-        pt_A->AddText(Form("p2 = %.5f", fit_A->GetParameter(2)));
-        pt_A->AddText(Form("p3 = %.5f", fit_A->GetParameter(3)));
-        pt_A->AddText(Form("#chi^{2}/ndf = %.2f", fit_A->GetChisquare() / fit_A->GetNDF()));
+        pt_A->AddText(Form("p0 = %.6f", fit_A->GetParameter(0)));
+        pt_A->AddText(Form("p1 = %.6f", fit_A->GetParameter(1)));
+        pt_A->AddText(Form("p2 = %.6f", fit_A->GetParameter(2)));
+        pt_A->AddText(Form("p3 = %.6f", fit_A->GetParameter(3)));
+        pt_A->AddText(Form("#chi^{2}/ndf = %.3f", fit_A->GetChisquare() / fit_A->GetNDF()));
         pt_A->SetBorderSize(1);
         pt_A->SetFillColor(0);
         pt_A->Draw();
@@ -5037,39 +5037,39 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
 
         // Add fit results and chi2/ndf to the plot
         TPaveText* pt_B = new TPaveText(0.7, 0.75, 0.9, 0.9, "NDC");
-        pt_B->AddText(Form("p0 = %.5f", fit_B->GetParameter(0)));
-        pt_B->AddText(Form("p1 = %.5f", fit_B->GetParameter(1)));
-        pt_B->AddText(Form("p2 = %.5f", fit_B->GetParameter(2)));
-        pt_B->AddText(Form("p3 = %.5f", fit_B->GetParameter(3)));
-        pt_B->AddText(Form("#chi^{2}/ndf = %.2f", fit_B->GetChisquare() / fit_B->GetNDF()));
+        pt_B->AddText(Form("p0 = %.6f", fit_B->GetParameter(0)));
+        pt_B->AddText(Form("p1 = %.6f", fit_B->GetParameter(1)));
+        pt_B->AddText(Form("p2 = %.6f", fit_B->GetParameter(2)));
+        pt_B->AddText(Form("p3 = %.6f", fit_B->GetParameter(3)));
+        pt_B->AddText(Form("#chi^{2}/ndf = %.3f", fit_B->GetChisquare() / fit_B->GetNDF()));
         pt_B->SetBorderSize(1);
         pt_B->SetFillColor(0);
         pt_B->Draw();
 
         // Print out the functional form of A(theta) in LaTeX format
         std::cout << "A_p(\\theta) = ";
-        for (int i = 0; i <= 4; ++i) {
+        for (int i = 0; i <= 3; ++i) {
             double coeff = fit_A->GetParameter(i);
             if (i == 0) {
-                std::cout << Form("%.5f", coeff);
+                std::cout << Form("%.6f", coeff);
             } else if (i == 1) {
-                std::cout << Form(" %+.5f\\theta", coeff);
+                std::cout << Form(" %+.6f\\theta", coeff);
             } else {
-                std::cout << Form(" %+.5f\\theta^%d", coeff, i);
+                std::cout << Form(" %+.6f\\theta^%d", coeff, i);
             }
         }
         std::cout << std::endl;
 
         // Print out the functional form of B(theta) in LaTeX format
         std::cout << "B_p(\\theta) = ";
-        for (int i = 0; i <= 4; ++i) {
+        for (int i = 0; i <= 3; ++i) {
             double coeff = fit_B->GetParameter(i);
             if (i == 0) {
-                std::cout << Form("%.5f", coeff);
+                std::cout << Form("%.6f", coeff);
             } else if (i == 1) {
-                std::cout << Form(" %+.5f\\theta", coeff);
+                std::cout << Form(" %+.6f\\theta", coeff);
             } else {
-                std::cout << Form(" %+.5f\\theta^%d", coeff, i);
+                std::cout << Form(" %+.6f\\theta^%d", coeff, i);
             }
         }
         std::cout << std::endl;
