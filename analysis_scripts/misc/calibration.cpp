@@ -5094,6 +5094,7 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
     gStyle->SetOptStat(0);
 
     // Set up TTreeReaderValues for necessary branches
+    TTreeReaderValue<double> track_sector_6(mcReader, "track_sector_6");
     TTreeReaderValue<double> mc_p(mcReader, "mc_p");
     TTreeReaderValue<double> p(mcReader, "p");
     TTreeReaderValue<double> mc_theta(mcReader, "mc_theta");
@@ -5109,7 +5110,7 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
     while (mcReader.Next()) {
         double delta_p = *mc_p - *p;
         double theta_dc_1 = calculate_theta(*traj_x_6, *traj_y_6, *traj_z_6);
-        std::cout << theta_dc_1 << " " << *traj_x_6 << std::endl;
+        std::cout << *track_sector_6 << " " << theta_dc_1 << " " << *traj_x_6 << std::endl;
 
         // Check if the current particle type is one of interest and if the track is below the curve
         // if (histograms.find(*pid) != histograms.end() && !is_above_theta_dc_curve(*p, theta_dc_1)) {
