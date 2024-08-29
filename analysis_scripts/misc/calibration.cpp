@@ -5535,7 +5535,7 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
 
     if (dataset == "rga_fa18_inb" && region == "FD") {
         // A_p, B_p, C_p
-        A_p = 0.010524 - 0.000298 * theta - 0.000095 * theta * theta;
+        A_p = 0.0105238 - 0.0002981 * theta - 0.0000004 * theta * theta;
         B_p = -0.003907 - 0.001493 * theta + 0.000113 * theta * theta;
         C_p = 0.009056 - 0.000007 * theta - 0.000021 * theta * theta;
 
@@ -5707,11 +5707,11 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     mcReader.Restart();
     energy_loss_distributions_delta_p(mcReader, dataset);
 
-    // mcReader.Restart();
-    // energy_loss_distributions_delta_theta(mcReader, dataset);
+    mcReader.Restart();
+    energy_loss_distributions_delta_theta(mcReader, dataset);
 
-    // mcReader.Restart();
-    // energy_loss_distributions_delta_phi(mcReader, dataset);
+    mcReader.Restart();
+    energy_loss_distributions_delta_phi(mcReader, dataset);
 
     mcReader.Restart();
     plot_energy_loss_corrections(mcReader, dataset);
