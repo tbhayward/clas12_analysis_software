@@ -5042,24 +5042,14 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
     };
 
     // // Define theta bins
-    // std::vector<std::pair<double, double>> theta_bins = {
-    //     {5.0, 6.2105}, {6.2105, 7.4211}, {7.4211, 8.6316},
-    //     {8.6316, 9.8421}, {9.8421, 11.0526}, {11.0526, 12.2632},
-    //     {12.2632, 13.4737}, {13.4737, 14.6842}, {14.6842, 15.8947},
-    //     {15.8947, 17.1053}, {17.1053, 18.3158}, {18.3158, 19.5263},
-    //     {19.5263, 20.7368}, {20.7368, 21.9474}, {21.9474, 23.1579},
-    //     {23.1579, 24.3684}, {24.3684, 25.5789}, {25.5789, 26.7895},
-    //     {26.7895, 28.0},    {28.0, 35.0}
-    // };
-    // Define theta bins
     std::vector<std::pair<double, double>> theta_bins = {
-        {5.0, 6.75}, {6.75, 8.5}, {8.5, 10.25},
-        {10.25, 12.0}, {12.0, 13.75}, {13.75, 15.5},
-        {15.5, 17.25}, {17.25, 19.0}, {19.0, 20.75},
-        {20.75, 22.5}, {22.5, 24.25}, {24.25, 26.0},
-        {26.0, 27.75}, {27.75, 29.5}, {29.5, 31.25},
-        {31.25, 33.0}, {33.0, 34.75}, {34.75, 36.5},
-        {36.5, 38.25}, {38.25, 40.0}
+        {5.0, 7.1053}, {7.1053, 9.2105}, {9.2105, 11.3158},
+        {11.3158, 13.4211}, {13.4211, 15.5263}, {15.5263, 17.6316},
+        {17.6316, 19.7368}, {19.7368, 21.8421}, {21.8421, 23.9474},
+        {23.9474, 26.0526}, {26.0526, 28.1579}, {28.1579, 30.2632},
+        {30.2632, 32.3684}, {32.3684, 34.4737}, {34.4737, 36.5789},
+        {36.5789, 38.6842}, {38.6842, 40.7895}, {40.7895, 42.8947},
+        {42.8947, 45.0},    {45.0, 45.0}
     };
 
     // Create histograms for each particle type and theta bin
@@ -5113,8 +5103,8 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
         double theta_dc_1 = calculate_theta(*traj_x_6, *traj_y_6, *traj_z_6);
 
         // Check if the current particle type is one of interest and if the track is below the curve
-        if (histograms.find(*pid) != histograms.end() && !is_above_theta_dc_curve(*p, theta_dc_1)) {
-        // if (histograms.find(*pid) != histograms.end() ) {
+        // if (histograms.find(*pid) != histograms.end() && !is_above_theta_dc_curve(*p, theta_dc_1)) {
+        if (histograms.find(*pid) != histograms.end() ) {
             for (size_t i = 0; i < theta_bins.size(); ++i) {
                 if (*theta >= theta_bins[i].first && *theta < theta_bins[i].second) {
                     histograms[*pid][i]->Fill(*p, delta_p);
