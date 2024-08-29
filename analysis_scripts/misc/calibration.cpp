@@ -5743,7 +5743,7 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
             histograms[pid][i] = new TH2D(
                 ("h_deltap_" + particle_name + "_bin" + std::to_string(i)).c_str(),
                 bin_label.c_str(),
-                75, xMin, xMax, 75, -0.5, 0.5);
+                50, xMin, xMax, 50, -0.4, 0.4);
 
             // Set axis labels
             histograms[pid][i]->GetXaxis()->SetTitle("p (GeV)");
@@ -6450,8 +6450,8 @@ void plot_energy_loss_corrections_fd(TTreeReader& mcReader, const std::string& d
 
 // Main function to call both energy loss distribution functions
 void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
-    // energy_loss_distributions(mcReader, dataset);
-    // Restart the mcReader to reset its state before the next use
+    energy_loss_distributions(mcReader, dataset);
+    
     // mcReader.Restart();
     // energy_loss_fd_distributions(mcReader, dataset);
 
@@ -6470,8 +6470,8 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     // mcReader.Restart();
     // plot_energy_loss_corrections_fd(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_distributions_delta_p_cd(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_distributions_delta_p_cd(mcReader, dataset);
 }
                            
 void create_directories() {
