@@ -5067,14 +5067,14 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
 
     // // Define theta bins
     std::vector<std::pair<double, double>> theta_bins = {
-        {5.0, 6.4583}, {6.4583, 7.9167}, {7.9167, 9.3750},
-        {9.3750, 10.8333}, {10.8333, 12.2917}, {12.2917, 13.7500},
-        {13.7500, 15.2083}, {15.2083, 16.6667}, {16.6667, 18.1250},
-        {18.1250, 19.5833}, {19.5833, 21.0417}, {21.0417, 22.5000},
-        {22.5000, 23.9583}, {23.9583, 25.4167}, {25.4167, 26.8750},
-        {26.8750, 28.3333}, {28.3333, 29.7917}, {29.7917, 31.2500},
-        {31.2500, 32.7083}, {32.7083, 34.1667}, {34.1667, 35.6250},
-        {35.6250, 37.0833}, {37.0833, 38.5417}, {38.5417, 40.0}
+        {5.0, 6.3043}, {6.3043, 7.6087}, {7.6087, 8.9130},
+        {8.9130, 10.2174}, {10.2174, 11.5217}, {11.5217, 12.8261},
+        {12.8261, 14.1304}, {14.1304, 15.4348}, {15.4348, 16.7391},
+        {16.7391, 18.0435}, {18.0435, 19.3478}, {19.3478, 20.6522},
+        {20.6522, 21.9565}, {21.9565, 23.2609}, {23.2609, 24.5652},
+        {24.5652, 25.8696}, {25.8696, 27.1739}, {27.1739, 28.4783},
+        {28.4783, 29.7826}, {29.7826, 31.0870}, {31.0870, 32.3913},
+        {32.3913, 33.6957}, {33.6957, 35.0}, {35.0, 42.0}
     };
 
     // Create histograms for each particle type and theta bin
@@ -5214,15 +5214,15 @@ void energy_loss_distributions_delta_theta(TTreeReader& mcReader, const std::str
     };
 
     // // Define theta bins
-    std::vector<std::pair<double, double>> theta_bins = {
-        {5.0, 6.4583}, {6.4583, 7.9167}, {7.9167, 9.3750},
-        {9.3750, 10.8333}, {10.8333, 12.2917}, {12.2917, 13.7500},
-        {13.7500, 15.2083}, {15.2083, 16.6667}, {16.6667, 18.1250},
-        {18.1250, 19.5833}, {19.5833, 21.0417}, {21.0417, 22.5000},
-        {22.5000, 23.9583}, {23.9583, 25.4167}, {25.4167, 26.8750},
-        {26.8750, 28.3333}, {28.3333, 29.7917}, {29.7917, 31.2500},
-        {31.2500, 32.7083}, {32.7083, 34.1667}, {34.1667, 35.6250},
-        {35.6250, 37.0833}, {37.0833, 38.5417}, {38.5417, 40.0}
+    std::std::vector<std::pair<double, double>> theta_bins = {
+        {5.0, 6.3043}, {6.3043, 7.6087}, {7.6087, 8.9130},
+        {8.9130, 10.2174}, {10.2174, 11.5217}, {11.5217, 12.8261},
+        {12.8261, 14.1304}, {14.1304, 15.4348}, {15.4348, 16.7391},
+        {16.7391, 18.0435}, {18.0435, 19.3478}, {19.3478, 20.6522},
+        {20.6522, 21.9565}, {21.9565, 23.2609}, {23.2609, 24.5652},
+        {24.5652, 25.8696}, {25.8696, 27.1739}, {27.1739, 28.4783},
+        {28.4783, 29.7826}, {29.7826, 31.0870}, {31.0870, 32.3913},
+        {32.3913, 33.6957}, {33.6957, 35.0}, {35.0, 42.0}
     };
 
     // Create histograms for each particle type and theta bin
@@ -5239,13 +5239,13 @@ void energy_loss_distributions_delta_theta(TTreeReader& mcReader, const std::str
             std::string bin_label = TString::Format("#theta [%.1f, %.1f]", theta_bins[i].first, theta_bins[i].second).Data();
 
             histograms[pid][i] = new TH2D(
-                ("h_deltap_" + particle_name + "_bin" + std::to_string(i)).c_str(),
+                ("h_deltatheta_" + particle_name + "_bin" + std::to_string(i)).c_str(),
                 bin_label.c_str(),
                 75, xMin, xMax, 75, -1, 1);
 
             // Set axis labels
             histograms[pid][i]->GetXaxis()->SetTitle("p (GeV)");
-            histograms[pid][i]->GetYaxis()->SetTitle("#Deltap");
+            histograms[pid][i]->GetYaxis()->SetTitle("#Delta#theta");
 
             histograms[pid][i]->SetStats(false);
             histograms[pid][i]->GetXaxis()->SetLabelSize(0.04); // Increase font size for axes labels
@@ -5356,6 +5356,157 @@ void energy_loss_distributions_delta_theta(TTreeReader& mcReader, const std::str
     }
 }
 
+void energy_loss_distributions_delta_phi(TTreeReader& mcReader, const std::string& dataset) {
+    // Particle types and their corresponding LaTeX names and x-axis ranges
+    std::map<int, std::tuple<std::string, double, double>> particle_types = {
+        {2212, {"p", 0.0, 4.0}}
+    };
+
+    // // Define theta bins
+    std::vector<std::pair<double, double>> theta_bins = {
+        {5.0, 6.3043}, {6.3043, 7.6087}, {7.6087, 8.9130},
+        {8.9130, 10.2174}, {10.2174, 11.5217}, {11.5217, 12.8261},
+        {12.8261, 14.1304}, {14.1304, 15.4348}, {15.4348, 16.7391},
+        {16.7391, 18.0435}, {18.0435, 19.3478}, {19.3478, 20.6522},
+        {20.6522, 21.9565}, {21.9565, 23.2609}, {23.2609, 24.5652},
+        {24.5652, 25.8696}, {25.8696, 27.1739}, {27.1739, 28.4783},
+        {28.4783, 29.7826}, {29.7826, 31.0870}, {31.0870, 32.3913},
+        {32.3913, 33.6957}, {33.6957, 35.0}, {35.0, 42.0}
+    };
+
+    // Create histograms for each particle type and theta bin
+    std::map<int, std::vector<TH2D*>> histograms;
+    for (const auto& particle : particle_types) {
+        int pid = particle.first;
+        const std::string& particle_name = std::get<0>(particle.second);
+        double xMin = std::get<1>(particle.second);
+        double xMax = std::get<2>(particle.second);
+
+        histograms[pid].resize(theta_bins.size());
+
+        for (size_t i = 0; i < theta_bins.size(); ++i) {
+            std::string bin_label = TString::Format("#theta [%.1f, %.1f]", theta_bins[i].first, theta_bins[i].second).Data();
+
+            histograms[pid][i] = new TH2D(
+                ("h_deltaphi_" + particle_name + "_bin" + std::to_string(i)).c_str(),
+                bin_label.c_str(),
+                75, xMin, xMax, 75, -1, 1);
+
+            // Set axis labels
+            histograms[pid][i]->GetXaxis()->SetTitle("p (GeV)");
+            histograms[pid][i]->GetYaxis()->SetTitle("#Deltaphi");
+
+            histograms[pid][i]->SetStats(false);
+            histograms[pid][i]->GetXaxis()->SetLabelSize(0.04); // Increase font size for axes labels
+            histograms[pid][i]->GetYaxis()->SetLabelSize(0.04);
+        }
+    }
+
+    gStyle->SetPalette(kRainBow);
+    gStyle->SetOptStat(0);
+
+    // Set up TTreeReaderValues for necessary branches
+    TTreeReaderValue<int> track_sector_6(mcReader, "track_sector_6");
+    TTreeReaderValue<double> mc_p(mcReader, "mc_p");
+    TTreeReaderValue<double> p(mcReader, "p");
+    TTreeReaderValue<double> mc_theta(mcReader, "mc_theta");
+    TTreeReaderValue<double> theta(mcReader, "theta");
+    TTreeReaderValue<double> mc_phi(mcReader, "mc_phi");
+    TTreeReaderValue<double> phi(mcReader, "phi");
+    TTreeReaderValue<double> traj_x_6(mcReader, "traj_x_6");
+    TTreeReaderValue<double> traj_y_6(mcReader, "traj_y_6");
+    TTreeReaderValue<double> traj_z_6(mcReader, "traj_z_6");
+    TTreeReaderValue<int> pid(mcReader, "particle_pid");
+
+    // Edge variables for FD fiducial cuts
+    TTreeReaderValue<double> edge_6(mcReader, "traj_edge_6");
+    TTreeReaderValue<double> edge_18(mcReader, "traj_edge_18");
+    TTreeReaderValue<double> edge_36(mcReader, "traj_edge_36");
+
+    // Loop over events
+    // for (int i = 0; i < 1e7; ++i) {
+    //     mcReader.Next();
+    while (mcReader.Next()) {
+        if (!is_fd_track(*track_sector_6)) continue;
+        if (!dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) continue;
+        double delta_phi = *mc_phi - *phi;
+        double theta_dc_1 = calculate_theta(*traj_x_6, *traj_y_6, *traj_z_6);
+
+        // Check if the current particle type is one of interest and if the track is below the curve
+        // if (histograms.find(*pid) != histograms.end() && !is_above_theta_dc_curve(*p, theta_dc_1)) {
+        if (histograms.find(*pid) != histograms.end() ) {
+            for (size_t i = 0; i < theta_bins.size(); ++i) {
+                if (*theta >= theta_bins[i].first && *theta < theta_bins[i].second) {
+                    histograms[*pid][i]->Fill(*p, delta_phi);
+                    break;
+                }
+            }
+        }
+    }
+
+    // Save the histograms into a canvas
+    for (const auto& entry : histograms) {
+        int pid = entry.first;
+        const std::string& particle_name = std::get<0>(particle_types[pid]);
+
+        TCanvas* c_deltaphi = new TCanvas(("c_deltaphi_" + particle_name).c_str(), ("Delta #phi Distributions: " + dataset + ", " + particle_name).c_str(), 2000, 1200);
+        c_deltaphi->Divide(6, 4);  // 20 subplots
+
+        std::vector<TF1*> fit_deltaphi(theta_bins.size());
+        std::vector<double> A_values(theta_bins.size());
+        std::vector<double> A_errors(theta_bins.size());
+        std::vector<double> B_values(theta_bins.size());
+        std::vector<double> B_errors(theta_bins.size());
+        std::vector<double> C_values(theta_bins.size());
+        std::vector<double> C_errors(theta_bins.size());
+
+        for (size_t i = 0; i < theta_bins.size(); ++i) {
+            // Ensure we are drawing on the correct pad
+            c_deltaphi->cd(i + 1);
+            gPad->SetMargin(0.15, 0.15, 0.20, 0.1);  // Left, right, bottom, top margins
+            gPad->SetLogz();
+
+            // Create profile histograms
+            TProfile* prof_deltaphi = histograms[pid][i]->ProfileX();
+
+            // Set the range of the profile to start from 0.5
+            prof_deltaphi->GetXaxis()->SetRangeUser(0.5, std::get<2>(particle_types[pid]));
+
+            // Fit the profiles with appropriate functions
+            fit_deltaphi[i] = new TF1(("fit_deltaphi_" + std::to_string(i)).c_str(), "[0] + [1]/x + [2]/x^2", 0.5, std::get<2>(particle_types[pid]));
+            prof_deltaphi->Fit(fit_deltaphi[i], "Q"); // Silent fit
+
+            // Set the range of the fit function for plotting
+            fit_deltaphi[i]->SetRange(0.5, std::get<2>(particle_types[pid]));
+
+            // Store the fit parameters
+            A_values[i] = fit_deltaphi[i]->GetParameter(0);
+            A_errors[i] = fit_deltaphi[i]->GetParError(0);
+            B_values[i] = fit_deltaphi[i]->GetParameter(1);
+            B_errors[i] = fit_deltaphi[i]->GetParError(1);
+            C_values[i] = fit_deltaphi[i]->GetParameter(2);
+            C_errors[i] = fit_deltaphi[i]->GetParError(2);
+
+            histograms[pid][i]->Draw("COLZ");
+            prof_deltaphi->Draw("same");  // Draw the profile to show the fit line
+            fit_deltaphi[i]->Draw("same");  // Draw the fit on top of the profile
+        }
+
+        // Save the canvas
+        c_deltaphi->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_phi_distributions_" + particle_name + ".png").c_str());
+
+        // Use the new modular function for the fitted parameters
+        plot_and_fit_parameters(theta_bins, A_values, A_errors, B_values, B_errors, C_values, C_errors, particle_name, dataset, "#phi");
+
+        // Clean up memory
+        for (size_t i = 0; i < theta_bins.size(); ++i) {
+            delete fit_deltaphi[i];
+            delete histograms[pid][i];
+        }
+        delete c_deltaphi;
+    }
+}
+
 
 
 // Main function to call both energy loss distribution functions
@@ -5374,8 +5525,8 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     mcReader.Restart();
     energy_loss_distributions_delta_theta(mcReader, dataset);
 
-    // mcReader.Restart();
-    // energy_loss_distributions_delta_phi(mcReader, dataset);
+    mcReader.Restart();
+    energy_loss_distributions_delta_phi(mcReader, dataset);
 }
                            
 void create_directories() {
