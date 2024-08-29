@@ -5700,7 +5700,7 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
             for (size_t i = 0; i < theta_bins.size(); ++i) {
                 if (*theta >= theta_bins[i].first && *theta < theta_bins[i].second) {
                     histograms_before_p[*pid][i]->Fill(*p, *mc_p - *p);
-                    histograms_before_theta[*pid][i]->Fill(p, *mc_theta - *theta);
+                    histograms_before_theta[*pid][i]->Fill(*p, *mc_theta - *theta);
                     histograms_before_phi[*pid][i]->Fill(*p, *mc_phi - *phi);
                     break;
                 }
