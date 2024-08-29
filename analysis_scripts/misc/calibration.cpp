@@ -4896,7 +4896,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
         graph_A->SetPointError(i, 0.0, A_errors[i]);
     }
     graph_A->SetTitle(("A_{" + prefix + "}, #Delta" + prefix + ";#theta (degrees);A_{" + prefix + "}(#theta) (GeV)").c_str());
-    graph_A->GetYaxis()->SetRangeUser(-0.05, 0.01);  // Set y-axis range
+    graph_A->GetYaxis()->SetRangeUser(-0.01, 0.01);  // Set y-axis range
     graph_A->SetMarkerStyle(20);  // Set marker style to a filled circle
     gPad->SetLeftMargin(0.2);  // Increase left margin
     graph_A->Draw("AP");
@@ -5136,7 +5136,7 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
             TProfile* prof_deltap = histograms[pid][i]->ProfileX();
 
             // Fit the profiles with appropriate functions
-            fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x", 0.5, std::get<2>(particle_types[pid]));
+            fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x + [2]*x", 0.5, std::get<2>(particle_types[pid]));
             prof_deltap->Fit(fit_deltap[i], "Q"); // Silent fit
 
             // Store the fit parameters
