@@ -4921,6 +4921,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     pt_A->AddText(Form("p1 = %.6f", fit_A->GetParameter(1)));
     pt_A->AddText(Form("p2 = %.6f", fit_A->GetParameter(2)));
     pt_A->AddText(Form("p3 = %.6f", fit_A->GetParameter(3)));
+    pt_A->AddText(Form("p3 = %.6f", fit_A->GetParameter(4)));
     pt_A->AddText(Form("#chi^{2}/ndf = %.3f", fit_A->GetChisquare() / fit_A->GetNDF()));
     pt_A->SetBorderSize(1);
     pt_A->SetFillColor(0);
