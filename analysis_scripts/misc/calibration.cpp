@@ -5555,8 +5555,7 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
     }
     // std::cout << p << " " << theta << " " << A_p << " " << B_p << " " << C_p << " ";
     // Apply corrections
-    // p += A_p + B_p / p + C_p / (p * p);
-    p += 0.01;
+    p += A_p + B_p / p + C_p / (p * p);
     // std::cout << p << std::endl;
     theta += A_theta + B_theta / theta + C_theta / (theta * theta);
     phi += A_phi + B_phi / phi + C_phi / (phi * phi);
