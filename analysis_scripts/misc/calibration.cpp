@@ -4896,8 +4896,15 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
         graph_A->SetPointError(i, 0.0, A_errors[i]);
     }
     graph_A->SetTitle(("A_{" + prefix + "}, #Delta" + prefix + ";#theta (degrees);A_{" + prefix + "}(#theta) (GeV)").c_str());
-    graph_A->GetYaxis()->SetRangeUser(-0.02, 0.02);  // Set y-axis range
-    graph_A->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+    
+    if (prefix == "p") {
+        graph_A->GetYaxis()->SetRangeUser(-0.02, 0.02);  // Set y-axis range
+        graph_A->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+    } else {
+        graph_A->GetYaxis()->SetRangeUser(-0.1, 0.1);  // Set y-axis range
+        graph_A->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+    }
+    
     graph_A->SetMarkerStyle(20);  // Set marker style to a filled circle
     gPad->SetLeftMargin(0.2);  // Increase left margin
     graph_A->Draw("AP");
@@ -4927,8 +4934,13 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
         graph_B->SetPointError(i, 0.0, B_errors[i]);
     }
     graph_B->SetTitle(("B_{" + prefix + "}, #Delta" + prefix + ";#theta (degrees);B_{" + prefix + "}(#theta) (GeV^{2})").c_str());
-    graph_B->GetYaxis()->SetRangeUser(-0.02, 0.02);  // Set y-axis range
-    graph_B->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+    if (prefix == "p") {
+        graph_B->GetYaxis()->SetRangeUser(-0.02, 0.02);  // Set y-axis range
+        graph_B->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+    } else {
+        graph_B->GetYaxis()->SetRangeUser(-0.1, 0.1);  // Set y-axis range
+        graph_B->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+    }
     graph_B->SetMarkerStyle(20);  // Set marker style to a filled circle
     gPad->SetLeftMargin(0.2);  // Increase left margin
     graph_B->Draw("AP");
@@ -4958,8 +4970,13 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
         graph_C->SetPointError(i, 0.0, C_errors[i]);
     }
     graph_C->SetTitle(("C_{" + prefix + "}, #Delta" + prefix + ";#theta (degrees);C_{" + prefix + "}(#theta) (GeV^{3})").c_str());
-    graph_C->GetYaxis()->SetRangeUser(-0.02, 0.02);  // Set y-axis range
-    graph_C->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+    if (prefix == "p") {
+        graph_B->GetYaxis()->SetRangeUser(-0.02, 0.02);  // Set y-axis range
+        graph_B->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+    } else {
+        graph_B->GetYaxis()->SetRangeUser(-0.1, 0.1);  // Set y-axis range
+        graph_B->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+    }
     graph_C->SetMarkerStyle(20);  // Set marker style to a filled circle
     gPad->SetLeftMargin(0.2);  // Increase left margin
     graph_C->Draw("AP");
@@ -5101,7 +5118,7 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
     // for (int i = 0; i < 1e7; ++i) {
     //     mcReader.Next();
     while (mcReader.Next()) {
-        if (*track_sector_6 == -9999) continue;
+        if (!is_fd_track(*track_sector_6)) continue;
         double delta_p = *mc_p - *p;
         double theta_dc_1 = calculate_theta(*traj_x_6, *traj_y_6, *traj_z_6);
 
