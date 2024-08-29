@@ -4913,7 +4913,6 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     // Fit A(#theta) to a 2nd order polynomial
     TF1* fit_A = new TF1("fit_A", "[0]+[1]*x+[2]*x*x", theta_bins.front().first, theta_bins.back().second);
     graph_A->Fit(fit_A, "Q");  // Silent fit
-    std::cout << "Parameter: " << fit_A->GetParameter(0) << std::endl;
     fit_A->Draw("same");
 
     // Add fit results and chi2/ndf to the plot
@@ -5001,7 +5000,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
 
     // Print out the functional form of A(theta) in LaTeX format
     std::cout << "A_" << prefix << "(\\theta) = ";
-    for (int i = 0; i <= 3; ++i) {
+    for (int i = 0; i <= 2; ++i) {
         double coeff = fit_A->GetParameter(i);
         if (i == 0) {
             std::cout << Form("%.6f", coeff);
@@ -5015,7 +5014,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
 
     // Print out the functional form of B(theta) in LaTeX format
     std::cout << "B_" << prefix << "(\\theta) = ";
-    for (int i = 0; i <= 3; ++i) {
+    for (int i = 0; i <= 2; ++i) {
         double coeff = fit_B->GetParameter(i);
         if (i == 0) {
             std::cout << Form("%.6f", coeff);
@@ -5029,7 +5028,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
 
     // Print out the functional form of C(theta) in LaTeX format
     std::cout << "C_" << prefix << "(\\theta) = ";
-    for (int i = 0; i <= 3; ++i) {
+    for (int i = 0; i <= 2; ++i) {
         double coeff = fit_C->GetParameter(i);
         if (i == 0) {
             std::cout << Form("%.6f", coeff);
