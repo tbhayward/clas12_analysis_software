@@ -313,11 +313,10 @@ public class Dihadrons {
         lv_p1_COM.boost(pCOMBoost);
         LorentzVector lv_p2_COM = new LorentzVector(lv_p2);
         lv_p2_COM.boost(pCOMBoost);
-        double theta2 = Math.acos(lv_p1_COM.vect().dot(lv_p_gN.vect()) / 
-                (lv_p1_COM.vect().mag()*lv_p_gN.vect().mag()));
+//        theta = Math.acos(lv_p1_COM.vect().dot(lv_p_gN.vect()) / 
+//                (lv_p1_COM.vect().mag()*lv_p_gN.vect().mag()));
         theta = Math.acos(lv_p1_COM.vect().dot(lv_p.vect())
                 / (lv_p1_COM.vect().mag() * lv_p.vect().mag()));
-        System.out.println(theta2+" "+theta);
 
         LorentzVector lv_p_boost_rho = new LorentzVector();
         lv_p_boost_rho.setPxPyPzM(lv_p.px(), lv_p.py(), lv_p.pz(), kinematic_variables.particle_mass(113));
