@@ -5666,12 +5666,12 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
 
         for (size_t i = 0; i < theta_bins.size(); ++i) {
             c_p->cd(i + 1);  // Top row for "before"
-            gPad->SetMargin(0.18, 0.05, 0.15, 0.1);  // Extra padding for the left margin
+            gPad->SetMargin(0.18, 0.15, 0.15, 0.1);  // Extra padding for the left margin
             gPad->SetLogz();  // Set log scale for counts
             histograms_before[pid][i]->Draw("COLZ");
             
             c_p->cd(i + 7);  // Bottom row for "after"
-            gPad->SetMargin(0.18, 0.05, 0.15, 0.1);  // Extra padding for the left margin
+            gPad->SetMargin(0.18, 0.15, 0.15, 0.1);  // Extra padding for the left margin
             gPad->SetLogz();  // Set log scale for counts
             histograms_after[pid][i]->Draw("COLZ");
         }
