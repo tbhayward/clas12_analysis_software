@@ -5630,7 +5630,7 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
         mcReader.Next();
     // while (mcReader.Next()) {
         // Check if the track passes the required cuts
-        if (pid != 2212 || !is_fd_track(*track_sector_6) || !dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) continue;
+        if (*pid != 2212 || !is_fd_track(*track_sector_6) || !dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) continue;
 
         double p_corr = *p, theta_corr = *theta, phi_corr = *phi;
 
