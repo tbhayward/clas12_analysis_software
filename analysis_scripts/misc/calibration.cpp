@@ -5196,8 +5196,8 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
         c_deltap->cd();  // Switch to the main canvas (not any specific pad)
         TLatex latex;
         latex.SetNDC();  // Use normalized coordinates (0,0) to (1,1)
-        latex.SetTextSize(0.05);  // Set the text size
-        latex.DrawLatex(0.5, 0.5, (dataset + ", FD").c_str());  // Add text in the center
+        latex.SetTextSize(0.035);  // Set the text size
+        latex.DrawLatex(0.425, 0.5, (dataset + ", FD").c_str());  // Add text in the center
 
         // Save the canvas
         c_deltap->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_p_distributions_" + particle_name + ".png").c_str());
@@ -5352,8 +5352,8 @@ void energy_loss_distributions_delta_theta(TTreeReader& mcReader, const std::str
         c_deltatheta->cd();  // Switch to the main canvas (not any specific pad)
         TLatex latex;
         latex.SetNDC();  // Use normalized coordinates (0,0) to (1,1)
-        latex.SetTextSize(0.05);  // Set the text size
-        latex.DrawLatex(0.5, 0.5, (dataset + ", FD").c_str());  // Add text in the center
+        latex.SetTextSize(0.035);  // Set the text size
+        latex.DrawLatex(0.425, 0.5, (dataset + ", FD").c_str());  // Add text in the center
 
         // Save the canvas
         c_deltatheta->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_theta_distributions_" + particle_name + ".png").c_str());
@@ -5510,8 +5510,8 @@ void energy_loss_distributions_delta_phi(TTreeReader& mcReader, const std::strin
         c_deltaphi->cd();  // Switch to the main canvas (not any specific pad)
         TLatex latex;
         latex.SetNDC();  // Use normalized coordinates (0,0) to (1,1)
-        latex.SetTextSize(0.05);  // Set the text size
-        latex.DrawLatex(0.5, 0.5, (dataset + ", FD").c_str());  // Add text in the center
+        latex.SetTextSize(0.035);  // Set the text size
+        latex.DrawLatex(0.425, 0.5, (dataset + ", FD").c_str());  // Add text in the center
 
         // Save the canvas
         c_deltaphi->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_phi_distributions_" + particle_name + ".png").c_str());
