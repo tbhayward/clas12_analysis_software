@@ -4912,6 +4912,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
 
     // Fit A(#theta) to a 4th order polynomial
     TF1* fit_A = new TF1("fit_A", "[0]+[1]*x+[2]*x*x+[3]*x*x*x", theta_bins.front().first, theta_bins.back().second);
+    std::cout << fit_A->GetParameter(0) << std::endl;
     graph_A->Fit(fit_A, "Q");  // Silent fit
     fit_A->Draw("same");
 
