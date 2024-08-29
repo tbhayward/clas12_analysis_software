@@ -5107,7 +5107,8 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
     // Loop over events
     // for (int i = 0; i < 1e7; ++i) {
     //     mcReader.Next();
-    while (mcReader.Next() && *track_sector_6 != -9999) {
+    while (mcReader.Next()) {
+        if (*track_sector_6 == -9999) continue;
         double delta_p = *mc_p - *p;
         double theta_dc_1 = calculate_theta(*traj_x_6, *traj_y_6, *traj_z_6);
         std::cout << *track_sector_6 << " " << theta_dc_1 << " " << *traj_x_6 << std::endl;
