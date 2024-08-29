@@ -5678,8 +5678,8 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
     TTreeReaderValue<double> mc_theta(mcReader, "mc_theta");
     TTreeReaderValue<double> theta(mcReader, "theta");
     TTreeReaderValue<double> mc_phi(mcReader, "mc_phi");
-    TTreeReaderValue phi(mcReader, "phi");
-    TTreeReaderValue pid(mcReader, "particle_pid");
+    TTreeReaderValue<double> phi(mcReader, "phi");
+    TTreeReaderValue<int> pid(mcReader, "particle_pid");
     // Edge variables for FD fiducial cuts
     TTreeReaderValue<double> edge_6(mcReader, "traj_edge_6");
     TTreeReaderValue<double> edge_18(mcReader, "traj_edge_18");
