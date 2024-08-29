@@ -4901,7 +4901,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
         graph_A->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
         graph_A->SetTitle(("A_{" + prefix + "}, #Delta" + prefix + ";#theta (degrees);A_{" + prefix + "}(#theta) (GeV)").c_str());
     } else {
-        graph_A->GetYaxis()->SetRangeUser(-0.1, 0.1);  // Set y-axis range
+        graph_A->GetYaxis()->SetRangeUser(-0.3, 0.3);  // Set y-axis range
         graph_A->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
         graph_A->SetTitle(("A_{" + prefix + "}, #Delta" + prefix + ";#theta (degrees);A_{" + prefix + "}(#theta)").c_str());
     }
@@ -4940,7 +4940,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
         graph_B->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
         graph_B->SetTitle(("B_{" + prefix + "}, #Delta" + prefix + ";#theta (degrees);B_{" + prefix + "}(#theta) (GeV^{2})").c_str());
     } else {
-        graph_B->GetYaxis()->SetRangeUser(-0.1, 0.1);  // Set y-axis range
+        graph_B->GetYaxis()->SetRangeUser(-0.3, 0.3);  // Set y-axis range
         graph_B->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
         graph_B->SetTitle(("B_{" + prefix + "}, #Delta" + prefix + ";#theta (degrees);B_{" + prefix + "}(#theta)").c_str());
     }
@@ -5173,6 +5173,9 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
             fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x + [2]/x^2", 0.5, std::get<2>(particle_types[pid]));
             prof_deltap->Fit(fit_deltap[i], "Q"); // Silent fit
 
+            // Set the range of the fit function for plotting
+            fit_deltap[i]->SetRange(0.5, std::get<2>(particle_types[pid]));
+
             // Store the fit parameters
             A_values[i] = fit_deltap[i]->GetParameter(0);
             A_errors[i] = fit_deltap[i]->GetParError(0);
@@ -5180,9 +5183,10 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
             B_errors[i] = fit_deltap[i]->GetParError(1);
             C_values[i] = fit_deltap[i]->GetParameter(2);
             C_errors[i] = fit_deltap[i]->GetParError(2);
+
             histograms[pid][i]->Draw("COLZ");
             prof_deltap->Draw("same");  // Draw the profile to show the fit line
-            // Draw the fit only from 0.5 onwards
+            fit_deltap[i]->Draw("same");  // Draw the fit on top of the profile
         }
 
         // Save the canvas
@@ -5314,6 +5318,9 @@ void energy_loss_distributions_delta_theta(TTreeReader& mcReader, const std::str
             fit_deltatheta[i] = new TF1(("fit_deltatheta_" + std::to_string(i)).c_str(), "[0] + [1]/x + [2]/x^2", 0.5, std::get<2>(particle_types[pid]));
             prof_deltatheta->Fit(fit_deltatheta[i], "Q"); // Silent fit
 
+            // Set the range of the fit function for plotting
+            fit_deltatheta[i]->SetRange(0.5, std::get<2>(particle_types[pid]));
+
             // Store the fit parameters
             A_values[i] = fit_deltatheta[i]->GetParameter(0);
             A_errors[i] = fit_deltatheta[i]->GetParError(0);
@@ -5321,9 +5328,10 @@ void energy_loss_distributions_delta_theta(TTreeReader& mcReader, const std::str
             B_errors[i] = fit_deltatheta[i]->GetParError(1);
             C_values[i] = fit_deltatheta[i]->GetParameter(2);
             C_errors[i] = fit_deltatheta[i]->GetParError(2);
+
             histograms[pid][i]->Draw("COLZ");
             prof_deltatheta->Draw("same");  // Draw the profile to show the fit line
-            // Draw the fit only from 0.5 onwards
+            fit_deltatheta[i]->Draw("same");  // Draw the fit on top of the profile
         }
 
         // Save the canvas
