@@ -5552,10 +5552,8 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
 
     // Apply corrections
     p += A_p + B_p / p + C_p / (p * p);
-    std::cout << theta << " " << phi << std::endl;
     theta += A_theta + B_theta / theta + C_theta / (theta * theta);
     phi += A_phi + B_phi / phi + C_phi / (phi * phi);
-    std::cout << theta << " " << phi << std::endl;
 }
 
 void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& dataset) {
