@@ -5620,9 +5620,9 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
             histograms_before_theta[pid][i] = new TH2D(
                 ("h_theta_before_" + particle_name + "_bin" + std::to_string(i)).c_str(),
                 bin_label_before_theta.c_str(),
-                75, xMin, xMax, 75, -0.05, 0.05
+                75, xMin, xMax, 75, -1, 1
             );
-            histograms_before_theta[pid][i]->GetXaxis()->SetTitle("theta (degrees)");
+            histograms_before_theta[pid][i]->GetXaxis()->SetTitle("p (GeV)");
             histograms_before_theta[pid][i]->GetYaxis()->SetTitle("#Delta theta");
             histograms_before_theta[pid][i]->GetXaxis()->SetTitleSize(0.05);
             histograms_before_theta[pid][i]->GetYaxis()->SetTitleSize(0.05);
@@ -5632,9 +5632,9 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
             histograms_after_theta[pid][i] = new TH2D(
                 ("h_theta_after_" + particle_name + "_bin" + std::to_string(i)).c_str(),
                 bin_label_after_theta.c_str(),
-                75, xMin, xMax, 75, -0.05, 0.05
+                75, xMin, xMax, 75, -1, 1
             );
-            histograms_after_theta[pid][i]->GetXaxis()->SetTitle("theta (degrees)");
+            histograms_after_theta[pid][i]->GetXaxis()->SetTitle("p (GeV)");
             histograms_after_theta[pid][i]->GetYaxis()->SetTitle("#Delta theta");
             histograms_after_theta[pid][i]->GetXaxis()->SetTitleSize(0.05);
             histograms_after_theta[pid][i]->GetYaxis()->SetTitleSize(0.05);
@@ -5644,10 +5644,10 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
             histograms_before_phi[pid][i] = new TH2D(
                 ("h_phi_before_" + particle_name + "_bin" + std::to_string(i)).c_str(),
                 bin_label_before_phi.c_str(),
-                75, xMin, xMax, 75, -0.05, 0.05
+                75, xMin, xMax, 75, -1, 1
             );
-            histograms_before_phi[pid][i]->GetXaxis()->SetTitle("phi (degrees)");
-            histograms_before_phi[pid][i]->GetYaxis()->SetTitle("#Delta phi");
+            histograms_before_phi[pid][i]->GetXaxis()->SetTitle("p (GeV)");
+            histograms_before_phi[pid][i]->GetYaxis()->SetTitle("#Delta #phi");
             histograms_before_phi[pid][i]->GetXaxis()->SetTitleSize(0.05);
             histograms_before_phi[pid][i]->GetYaxis()->SetTitleSize(0.05);
             histograms_before_phi[pid][i]->GetXaxis()->SetLabelSize(0.045);
@@ -5656,10 +5656,10 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
             histograms_after_phi[pid][i] = new TH2D(
                 ("h_phi_after_" + particle_name + "_bin" + std::to_string(i)).c_str(),
                 bin_label_after_phi.c_str(),
-                75, xMin, xMax, 75, -0.05, 0.05
+                75, xMin, xMax, 75, -1, 1
             );
-            histograms_after_phi[pid][i]->GetXaxis()->SetTitle("phi (degrees)");
-            histograms_after_phi[pid][i]->GetYaxis()->SetTitle("#Delta phi");
+            histograms_after_phi[pid][i]->GetXaxis()->SetTitle("p (GeV)");
+            histograms_after_phi[pid][i]->GetYaxis()->SetTitle("#Delta #phi");
             histograms_after_phi[pid][i]->GetXaxis()->SetTitleSize(0.05);
             histograms_after_phi[pid][i]->GetYaxis()->SetTitleSize(0.05);
             histograms_after_phi[pid][i]->GetXaxis()->SetLabelSize(0.045);
@@ -5700,8 +5700,8 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
             for (size_t i = 0; i < theta_bins.size(); ++i) {
                 if (*theta >= theta_bins[i].first && *theta < theta_bins[i].second) {
                     histograms_before_p[*pid][i]->Fill(*p, *mc_p - *p);
-                    histograms_before_theta[*pid][i]->Fill(*theta, *mc_theta - *theta);
-                    histograms_before_phi[*pid][i]->Fill(*phi, *mc_phi - *phi);
+                    histograms_before_theta[*pid][i]->Fill(p, *mc_theta - *theta);
+                    histograms_before_phi[*pid][i]->Fill(*p, *mc_phi - *phi);
                     break;
                 }
             }
@@ -5713,8 +5713,8 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
             for (size_t i = 0; i < theta_bins.size(); ++i) {
                 if (theta_corr >= theta_bins[i].first && theta_corr < theta_bins[i].second) {
                     histograms_after_p[*pid][i]->Fill(p_corr, *mc_p - p_corr);
-                    histograms_after_theta[*pid][i]->Fill(theta_corr, *mc_theta - theta_corr);
-                    histograms_after_phi[*pid][i]->Fill(phi_corr, *mc_phi - phi_corr);
+                    histograms_after_theta[*pid][i]->Fill(p_corr, *mc_theta - theta_corr);
+                    histograms_after_phi[*pid][i]->Fill(p_corr, *mc_phi - phi_corr);
                     break;
                 }
             }
