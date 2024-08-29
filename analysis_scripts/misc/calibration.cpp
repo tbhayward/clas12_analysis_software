@@ -5017,11 +5017,11 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     for (int i = 0; i <= 2; ++i) {
         double coeff = fit_B->GetParameter(i);
         if (i == 0) {
-            std::cout << Form("%.7f", coeff);
+            std::cout << Form("%.8f", coeff);
         } else if (i == 1) {
-            std::cout << Form(" %+.7f\\theta", coeff);
+            std::cout << Form(" %+.8f\\theta", coeff);
         } else {
-            std::cout << Form(" %+.7f\\theta^%d", coeff, i);
+            std::cout << Form(" %+.8f\\theta^%d", coeff, i);
         }
     }
     std::cout << std::endl;
@@ -5031,11 +5031,11 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     for (int i = 0; i <= 2; ++i) {
         double coeff = fit_C->GetParameter(i);
         if (i == 0) {
-            std::cout << Form("%.7f", coeff);
+            std::cout << Form("%.8f", coeff);
         } else if (i == 1) {
-            std::cout << Form(" %+.7f\\theta", coeff);
+            std::cout << Form(" %+.8f\\theta", coeff);
         } else {
-            std::cout << Form(" %+.7f\\theta^%d", coeff, i);
+            std::cout << Form(" %+.8f\\theta^%d", coeff, i);
         }
     }
     std::cout << std::endl;
