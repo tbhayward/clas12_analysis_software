@@ -4901,7 +4901,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
         graph_A->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
         graph_A->SetTitle(("A_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);A_{" + prefix + "}(#theta) (GeV)").c_str());
     } else {
-        graph_A->GetYaxis()->SetRangeUser(-0.4, 0.4);  // Set y-axis range
+        graph_A->GetYaxis()->SetRangeUser(-0.5, 0.5);  // Set y-axis range
         graph_A->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
         graph_A->SetTitle(("A_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);A_{" + prefix + "}(#theta)").c_str());
     }
@@ -4939,7 +4939,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
         graph_B->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
         graph_B->SetTitle(("B_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);B_{" + prefix + "}(#theta) (GeV^{2})").c_str());
     } else {
-        graph_B->GetYaxis()->SetRangeUser(-0.4, 0.4);  // Set y-axis range
+        graph_B->GetYaxis()->SetRangeUser(-0.5, 0.5);  // Set y-axis range
         graph_B->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
         graph_B->SetTitle(("B_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);B_{" + prefix + "}(#theta)").c_str());
     }
@@ -4975,7 +4975,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
         graph_C->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
         graph_C->SetTitle(("C_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);C_{" + prefix + "}(#theta) (GeV^{3})").c_str());
     } else {
-        graph_C->GetYaxis()->SetRangeUser(-0.4, 0.4);  // Set y-axis range
+        graph_C->GetYaxis()->SetRangeUser(-0.5, 0.5);  // Set y-axis range
         graph_C->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
         graph_C->SetTitle(("C_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);C_{" + prefix + "}(#theta)").c_str());
     }
@@ -5536,18 +5536,18 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
     if (dataset == "rga_fa18_inb" && region == "FD") {
         // A_p, B_p, C_p
         A_p = 0.0105238 - 0.0002981 * theta - 0.0000004 * theta * theta;
-        B_p = -0.003907 - 0.001493 * theta + 0.000113 * theta * theta;
-        C_p = 0.009056 - 0.000007 * theta - 0.000021 * theta * theta;
+        B_p = -0.01559905 + 0.00055719 * theta + 0.00000725 * theta * theta;
+        C_p = 0.01280396 - 0.00063631 * theta + 0.00000996 * theta * theta;
 
         // A_theta, B_theta, C_theta
-        A_theta = 0.009991 + 0.004095 * theta - 0.000535 * theta * theta + 0.000011 * theta * theta * theta;
-        B_theta = -0.059761 + 0.004247 * theta + 0.000586 * theta * theta - 0.000019 * theta * theta * theta;
-        C_theta = 0.237214 - 0.033379 * theta + 0.001108 * theta * theta - 0.000010 * theta * theta * theta;
+        A_theta = 0.0822475 - 0.0091959 * theta + 0.0001733 * theta * theta;
+        B_theta = -0.20357656 + 0.02919434 * theta - 0.00067515 * theta * theta;
+        C_theta = 0.15064361 - 0.01921046 * theta + 0.00042567 * theta * theta;
 
         // A_phi, B_phi, C_phi
-        A_phi = -0.092347 + 0.012926 * theta - 0.000794 * theta * theta + 0.000012 * theta * theta * theta;
-        B_phi = 0.469793 - 0.020950 * theta + 0.000776 * theta * theta - 0.000006 * theta * theta * theta;
-        C_phi = -0.597579 + 0.054372 * theta - 0.002046 * theta * theta + 0.000024 * theta * theta * theta;
+        A_phi = -0.0094235 - 0.0016878 * theta - 0.0000390 * theta * theta;
+        B_phi = 0.41806549 - 0.01223394 * theta + 0.00034406 * theta * theta;
+        C_phi = -0.38004783 + 0.01915424 * theta - 0.00036266 * theta * theta;
     }
 
     // Apply corrections
@@ -5704,14 +5704,14 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     // mcReader.Restart();
     // energy_loss_fd_distributions_theta_dc(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_distributions_delta_p(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_distributions_delta_p(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_distributions_delta_theta(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_distributions_delta_theta(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_distributions_delta_phi(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_distributions_delta_phi(mcReader, dataset);
 
     mcReader.Restart();
     plot_energy_loss_corrections(mcReader, dataset);
