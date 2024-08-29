@@ -5528,6 +5528,136 @@ void energy_loss_distributions_delta_phi(TTreeReader& mcReader, const std::strin
     }
 }
 
+// Function to calculate the energy loss correction
+void apply_energy_loss_correction(double& p, double& theta, double& phi, const std::string& dataset, const std::string& region) {
+    // Define coefficients for the dataset "rga_fa18_inb FD"
+    double A_p, B_p, C_p;
+    double A_theta, B_theta, C_theta;
+    double A_phi, B_phi, C_phi;
+    if (dataset == "rga_fa18_inb" && region == "FD") {
+        // A_p, B_p, C_p
+        A_p = -0.018519 + 0.006292 * theta - 0.000497 * theta * theta + 0.000015 * theta * theta * theta;
+        B_p = 0.021089 - 0.007481 * theta + 0.000596 * theta * theta - 0.000017 * theta * theta * theta;
+        C_p = -0.016042 + 0.005806 * theta - 0.000477 * theta * theta + 0.000015 * theta * theta * theta;
+
+        // A_theta, B_theta, C_theta
+        A_theta = 0.068448 - 0.010560 * theta + 0.000690 * theta * theta - 0.000030 * theta * theta * theta;
+        B_theta = -0.233587 + 0.046018 * theta - 0.002768 * theta * theta + 0.000090 * theta * theta * theta;
+        C_theta = 0.474333 - 0.088068 * theta + 0.005340 * theta * theta - 0.000143 * theta * theta * theta;
+
+        // A_phi, B_phi, C_phi
+        A_phi = 0.078501 - 0.028466 * theta + 0.002564 * theta * theta - 0.000099 * theta * theta * theta;
+        B_phi = -0.713287 + 0.257790 * theta - 0.021196 * theta * theta + 0.000696 * theta * theta * theta;
+        C_phi = -0.100341 - 0.060247 * theta + 0.006781 * theta * theta - 0.000251 * theta * theta * theta;
+    }
+    // Apply corrections
+    p += A_p + B_p / p + C_p / (p * p);
+    theta += A_theta + B_theta / theta + C_theta / (theta * theta);
+    phi += A_phi + B_phi / phi + C_phi / (phi * phi);
+}
+
+void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& dataset) {
+    // Define theta bins
+    std::vector<std::pair<double, double>> theta_bins = {
+        {5.0, 7.0833}, {7.0833, 9.1667}, {9.1667, 11.25}, {11.25, 13.3333},
+        {13.3333, 15.4167}, {15.4167, 17.5}, {17.5, 19.5833}, {19.5833, 21.6667},
+        {21.6667, 23.75}, {23.75, 25.8333}, {25.8333, 27.9167}, {27.9167, 30.0}
+    };
+
+    // Define histograms before and after corrections
+    std::map<int, std::vector<TH2D*>> histograms_before;
+    std::map<int, std::vector<TH2D*>> histograms_after;
+
+    for (int pid = 2212; pid <= 2212; ++pid) {
+        histograms_before[pid].resize(theta_bins.size());
+        histograms_after[pid].resize(theta_bins.size());
+        for (size_t i = 0; i < theta_bins.size(); ++i) {
+            histograms_before[pid][i] = new TH2D(
+                ("h_p_before_" + std::to_string(pid) + "_bin" + std::to_string(i)).c_str(),
+                TString::Format("#theta [%.1f, %.1f]", theta_bins[i].first, theta_bins[i].second).Data(),
+                75, 0.0, 5.0, 75, -0.05, 0.05
+            );
+            histograms_before[pid][i]->GetXaxis()->SetTitle("p (GeV)");
+            histograms_before[pid][i]->GetYaxis()->SetTitle("#Deltap");
+
+            histograms_after[pid][i] = new TH2D(
+                ("h_p_after_" + std::to_string(pid) + "_bin" + std::to_string(i)).c_str(),
+                TString::Format("#theta [%.1f, %.1f]", theta_bins[i].first, theta_bins[i].second).Data(),
+                75, 0.0, 5.0, 75, -0.05, 0.05
+            );
+            histograms_after[pid][i]->GetXaxis()->SetTitle("p (GeV)");
+            histograms_after[pid][i]->GetYaxis()->SetTitle("#Deltap");
+        }
+    }
+
+    // Set up TTreeReaderValues for necessary branches
+    TTreeReaderValue<int> track_sector_6(mcReader, "track_sector_6");
+    TTreeReaderValue<double> mc_p(mcReader, "mc_p");
+    TTreeReaderValue<double> p(mcReader, "p");
+    TTreeReaderValue<double> mc_theta(mcReader, "mc_theta");
+    TTreeReaderValue<double> theta(mcReader, "theta");
+    TTreeReaderValue<double> mc_phi(mcReader, "mc_phi");
+    TTreeReaderValue<double> phi(mcReader, "phi");
+    TTreeReaderValue<int> pid(mcReader, "particle_pid");
+
+    // Edge variables for FD fiducial cuts
+    TTreeReaderValue<double> edge_6(mcReader, "traj_edge_6");
+    TTreeReaderValue<double> edge_18(mcReader, "traj_edge_18");
+    TTreeReaderValue<double> edge_36(mcReader, "traj_edge_36");
+
+    // Loop over events
+    while (mcReader.Next()) {
+        if (!is_fd_track(*track_sector_6)) continue;
+        if (!dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) continue;
+
+        double p_corr = *p, theta_corr = *theta, phi_corr = *phi;
+
+        // Fill the "before" histograms
+        for (size_t i = 0; i < theta_bins.size(); ++i) {
+            if (*theta >= theta_bins[i].first && *theta < theta_bins[i].second) {
+                histograms_before[*pid][i]->Fill(*p, *mc_p - *p);
+                break;
+            }
+        }
+
+        // Apply energy loss corrections
+        apply_energy_loss_correction(p_corr, theta_corr, phi_corr, dataset, "FD");
+
+        // Fill the "after" histograms
+        for (size_t i = 0; i < theta_bins.size(); ++i) {
+            if (theta_corr >= theta_bins[i].first && theta_corr < theta_bins[i].second) {
+                histograms_after[*pid][i]->Fill(p_corr, *mc_p - p_corr);
+                break;
+            }
+        }
+    }
+
+    // Create and save the canvases for before and after corrections
+    TCanvas* c_p = new TCanvas("c_p", "p Distributions: Before and After Corrections", 2400, 1600);
+    c_p->Divide(6, 4);
+
+    for (size_t i = 0; i < theta_bins.size(); ++i) {
+        c_p->cd(i + 1);
+        histograms_before[2212][i]->Draw("COLZ");
+        c_p->cd(i + 13);
+        histograms_after[2212][i]->Draw("COLZ");
+    }
+
+    c_p->cd();
+    TLatex latex;
+    latex.SetNDC();
+    latex.SetTextSize(0.035);
+    latex.DrawLatex(0.425, 0.5, (dataset + ", FD").c_str());
+
+    c_p->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/p_distributions_before_after_" + std::to_string(2212) + ".png").c_str());
+
+    // Clean up memory
+    for (size_t i = 0; i < theta_bins.size(); ++i) {
+        delete histograms_before[2212][i];
+        delete histograms_after[2212][i];
+    }
+    delete c_p;
+}
 
 
 // Main function to call both energy loss distribution functions
@@ -5540,14 +5670,17 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     // mcReader.Restart();
     // energy_loss_fd_distributions_theta_dc(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_distributions_delta_p(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_distributions_delta_p(mcReader, dataset);
+
+    // mcReader.Restart();
+    // energy_loss_distributions_delta_theta(mcReader, dataset);
+
+    // mcReader.Restart();
+    // energy_loss_distributions_delta_phi(mcReader, dataset);
 
     mcReader.Restart();
-    energy_loss_distributions_delta_theta(mcReader, dataset);
-
-    mcReader.Restart();
-    energy_loss_distributions_delta_phi(mcReader, dataset);
+    plot_energy_loss_corrections(mcReader, dataset);
 }
                            
 void create_directories() {
