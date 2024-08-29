@@ -4899,11 +4899,11 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     if (prefix == "p") {
         graph_A->GetYaxis()->SetRangeUser(-0.02, 0.02);  // Set y-axis range
         graph_A->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
-        graph_A->SetTitle(("A_{" + prefix + "}, #Delta" + prefix + ";#theta (degrees);A_{" + prefix + "}(#theta) (GeV)").c_str());
+        graph_A->SetTitle(("A_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);A_{" + prefix + "}(#theta) (GeV)").c_str());
     } else {
-        graph_A->GetYaxis()->SetRangeUser(-0.3, 0.3);  // Set y-axis range
+        graph_A->GetYaxis()->SetRangeUser(-0.4, 0.4);  // Set y-axis range
         graph_A->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
-        graph_A->SetTitle(("A_{" + prefix + "}, #Delta" + prefix + ";#theta (degrees);A_{" + prefix + "}(#theta)").c_str());
+        graph_A->SetTitle(("A_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);A_{" + prefix + "}(#theta)").c_str());
     }
     
     graph_A->SetMarkerStyle(20);  // Set marker style to a filled circle
@@ -4938,11 +4938,11 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     if (prefix == "p") {
         graph_B->GetYaxis()->SetRangeUser(-0.02, 0.02);  // Set y-axis range
         graph_B->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
-        graph_B->SetTitle(("B_{" + prefix + "}, #Delta" + prefix + ";#theta (degrees);B_{" + prefix + "}(#theta) (GeV^{2})").c_str());
+        graph_B->SetTitle(("B_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);B_{" + prefix + "}(#theta) (GeV^{2})").c_str());
     } else {
-        graph_B->GetYaxis()->SetRangeUser(-0.3, 0.3);  // Set y-axis range
+        graph_B->GetYaxis()->SetRangeUser(-0.4, 0.4);  // Set y-axis range
         graph_B->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
-        graph_B->SetTitle(("B_{" + prefix + "}, #Delta" + prefix + ";#theta (degrees);B_{" + prefix + "}(#theta)").c_str());
+        graph_B->SetTitle(("B_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);B_{" + prefix + "}(#theta)").c_str());
     }
     graph_B->SetMarkerStyle(20);  // Set marker style to a filled circle
     gPad->SetLeftMargin(0.2);  // Increase left margin
@@ -4975,11 +4975,11 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     if (prefix == "p") {
         graph_C->GetYaxis()->SetRangeUser(-0.02, 0.02);  // Set y-axis range
         graph_C->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
-        graph_C->SetTitle(("C_{" + prefix + "}, #Delta" + prefix + ";#theta (degrees);C_{" + prefix + "}(#theta) (GeV^{3})").c_str());
+        graph_C->SetTitle(("C_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);C_{" + prefix + "}(#theta) (GeV^{3})").c_str());
     } else {
-        graph_C->GetYaxis()->SetRangeUser(-0.3, 0.3);  // Set y-axis range
+        graph_C->GetYaxis()->SetRangeUser(-0.4, 0.4);  // Set y-axis range
         graph_C->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
-        graph_C->SetTitle(("C_{" + prefix + "}, #Delta" + prefix + ";#theta (degrees);C_{" + prefix + "}(#theta)").c_str());
+        graph_C->SetTitle(("C_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);C_{" + prefix + "}(#theta)").c_str());
     }
     graph_C->SetMarkerStyle(20);  // Set marker style to a filled circle
     gPad->SetLeftMargin(0.2);  // Increase left margin
@@ -5062,7 +5062,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
 void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string& dataset) {
     // Particle types and their corresponding LaTeX names and x-axis ranges
     std::map<int, std::tuple<std::string, double, double>> particle_types = {
-        {2212, {"p", 0.0, 4.0}}
+        {2212, {"p", 0.0, 5.0}}
     };
 
     // // Define theta bins
@@ -5192,6 +5192,13 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
             prof_deltap->Draw("same");  // Draw the fit on top of the profile
         }
 
+        // Add centered text "dataset, FD" on the canvas
+        c_deltap->cd();  // Switch to the main canvas (not any specific pad)
+        TLatex latex;
+        latex.SetNDC();  // Use normalized coordinates (0,0) to (1,1)
+        latex.SetTextSize(0.05);  // Set the text size
+        latex.DrawLatex(0.5, 0.5, (dataset + ", FD").c_str());  // Add text in the center
+
         // Save the canvas
         c_deltap->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_p_distributions_" + particle_name + ".png").c_str());
 
@@ -5210,7 +5217,7 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
 void energy_loss_distributions_delta_theta(TTreeReader& mcReader, const std::string& dataset) {
     // Particle types and their corresponding LaTeX names and x-axis ranges
     std::map<int, std::tuple<std::string, double, double>> particle_types = {
-        {2212, {"p", 0.0, 4.0}}
+        {2212, {"p", 0.0, 5.0}}
     };
 
     // // Define theta bins
@@ -5341,6 +5348,13 @@ void energy_loss_distributions_delta_theta(TTreeReader& mcReader, const std::str
             fit_deltatheta[i]->Draw("same");  // Draw the fit on top of the profile
         }
 
+        // Add centered text "dataset, FD" on the canvas
+        c_deltap->cd();  // Switch to the main canvas (not any specific pad)
+        TLatex latex;
+        latex.SetNDC();  // Use normalized coordinates (0,0) to (1,1)
+        latex.SetTextSize(0.05);  // Set the text size
+        latex.DrawLatex(0.5, 0.5, (dataset + ", FD").c_str());  // Add text in the center
+
         // Save the canvas
         c_deltatheta->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_theta_distributions_" + particle_name + ".png").c_str());
 
@@ -5359,7 +5373,7 @@ void energy_loss_distributions_delta_theta(TTreeReader& mcReader, const std::str
 void energy_loss_distributions_delta_phi(TTreeReader& mcReader, const std::string& dataset) {
     // Particle types and their corresponding LaTeX names and x-axis ranges
     std::map<int, std::tuple<std::string, double, double>> particle_types = {
-        {2212, {"p", 0.0, 4.0}}
+        {2212, {"p", 0.0, 5.0}}
     };
 
     // // Define theta bins
@@ -5491,6 +5505,13 @@ void energy_loss_distributions_delta_phi(TTreeReader& mcReader, const std::strin
             prof_deltaphi->Draw("same");  // Draw the profile to show the fit line
             fit_deltaphi[i]->Draw("same");  // Draw the fit on top of the profile
         }
+
+        // Add centered text "dataset, FD" on the canvas
+        c_deltap->cd();  // Switch to the main canvas (not any specific pad)
+        TLatex latex;
+        latex.SetNDC();  // Use normalized coordinates (0,0) to (1,1)
+        latex.SetTextSize(0.05);  // Set the text size
+        latex.DrawLatex(0.5, 0.5, (dataset + ", FD").c_str());  // Add text in the center
 
         // Save the canvas
         c_deltaphi->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_phi_distributions_" + particle_name + ".png").c_str());
