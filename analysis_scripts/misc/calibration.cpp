@@ -5260,7 +5260,7 @@ void energy_loss_distributions_delta_theta(TTreeReader& mcReader, const std::str
         TCanvas* c_deltatheta = new TCanvas(("c_deltatheta_" + particle_name).c_str(), ("Delta #theta Distributions: " + dataset + ", " + particle_name).c_str(), 2000, 1200);
         c_deltatheta->Divide(5, 4);  // 20 subplots
 
-        std::vector<TF1*> fit_deltap(theta_bins.size());
+        std::vector<TF1*> fit_deltatheta(theta_bins.size());
         std::vector<double> A_values(theta_bins.size());
         std::vector<double> A_errors(theta_bins.size());
         std::vector<double> B_values(theta_bins.size());
@@ -5294,10 +5294,10 @@ void energy_loss_distributions_delta_theta(TTreeReader& mcReader, const std::str
         }
 
         // Save the canvas
-        c_deltap->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_theta_distributions_" + particle_name + ".png").c_str());
+        c_deltatheta->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/delta_theta_distributions_" + particle_name + ".png").c_str());
 
         // Use the new modular function for the fitted parameters
-        plot_and_fit_parameters(theta_bins, A_values, A_errors, B_values, B_errors, C_values, C_errors, particle_name, dataset, "p");
+        plot_and_fit_parameters(theta_bins, A_values, A_errors, B_values, B_errors, C_values, C_errors, particle_name, dataset, "#theta");
 
         // Clean up memory
         for (size_t i = 0; i < theta_bins.size(); ++i) {
