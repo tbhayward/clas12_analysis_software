@@ -5550,6 +5550,7 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
         B_phi = -0.713287 + 0.257790 * theta - 0.021196 * theta * theta + 0.000696 * theta * theta * theta;
         C_phi = -0.100341 - 0.060247 * theta + 0.006781 * theta * theta - 0.000251 * theta * theta * theta;
     }
+    std::cout << p << " " << theta << " " << A_p << " " << B_p << " " << C_p << std::endl;
     // Apply corrections
     p += A_p + B_p / p + C_p / (p * p);
     theta += A_theta + B_theta / theta + C_theta / (theta * theta);
@@ -5630,7 +5631,7 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
         mcReader.Next();
     // while (mcReader.Next()) {
         // Check if the track passes the required cuts
-        if (*pid != 2212 || !is_fd_track(*track_sector_6) || !dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) continue;
+        if (!is_fd_track(*track_sector_6) || !dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) continue;
 
         double p_corr = *p, theta_corr = *theta, phi_corr = *phi;
 
