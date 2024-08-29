@@ -5174,7 +5174,9 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
             prof_deltap->GetXaxis()->SetRangeUser(0.5, std::get<2>(particle_types[pid]));
 
             // Fit the profiles with appropriate functions
-            fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x + [2]/x^2", 0.5, std::get<2>(particle_types[pid]));
+            // fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x + [2]/x^2", 0.5, std::get<2>(particle_types[pid]));
+            fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] ", 0.5, std::get<2>(particle_types[pid]));
+            
             prof_deltap->Fit(fit_deltap[i], "Q"); // Silent fit
 
             // Set the range of the fit function for plotting
@@ -5707,8 +5709,8 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     // mcReader.Restart();
     // energy_loss_fd_distributions_theta_dc(mcReader, dataset);
 
-    // mcReader.Restart();
-    // energy_loss_distributions_delta_p(mcReader, dataset);
+    mcReader.Restart();
+    energy_loss_distributions_delta_p(mcReader, dataset);
 
     // mcReader.Restart();
     // energy_loss_distributions_delta_theta(mcReader, dataset);
