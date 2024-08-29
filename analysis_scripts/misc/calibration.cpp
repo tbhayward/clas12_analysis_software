@@ -5557,6 +5557,11 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
 }
 
 void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& dataset) {
+    // Define particle types and their corresponding LaTeX names and x-axis ranges
+    std::map<int, std::tuple<std::string, double, double>> particle_types = {
+        {2212, {"p", 0.0, 5.0}}  // Proton as an example
+    };
+
     // Define theta bins
     std::vector<std::pair<double, double>> theta_bins = {
         {5.0, 7.0833}, {7.0833, 9.1667}, {9.1667, 11.25}, {11.25, 13.3333},
@@ -5568,22 +5573,26 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
     std::map<int, std::vector<TH2D*>> histograms_before;
     std::map<int, std::vector<TH2D*>> histograms_after;
 
-    for (int pid = 2212; pid <= 2212; ++pid) {
+    for (const auto& [pid, particle_info] : particle_types) {
+        const auto& [particle_name, xMin, xMax] = particle_info;
         histograms_before[pid].resize(theta_bins.size());
         histograms_after[pid].resize(theta_bins.size());
+
         for (size_t i = 0; i < theta_bins.size(); ++i) {
+            std::string bin_label = TString::Format("#theta [%.1f, %.1f]", theta_bins[i].first, theta_bins[i].second).Data();
+
             histograms_before[pid][i] = new TH2D(
                 ("h_p_before_" + std::to_string(pid) + "_bin" + std::to_string(i)).c_str(),
-                TString::Format("#theta [%.1f, %.1f]", theta_bins[i].first, theta_bins[i].second).Data(),
-                75, 0.0, 5.0, 75, -0.05, 0.05
+                bin_label.c_str(),
+                75, xMin, xMax, 75, -0.05, 0.05
             );
             histograms_before[pid][i]->GetXaxis()->SetTitle("p (GeV)");
             histograms_before[pid][i]->GetYaxis()->SetTitle("#Deltap");
 
             histograms_after[pid][i] = new TH2D(
                 ("h_p_after_" + std::to_string(pid) + "_bin" + std::to_string(i)).c_str(),
-                TString::Format("#theta [%.1f, %.1f]", theta_bins[i].first, theta_bins[i].second).Data(),
-                75, 0.0, 5.0, 75, -0.05, 0.05
+                bin_label.c_str(),
+                75, xMin, xMax, 75, -0.05, 0.05
             );
             histograms_after[pid][i]->GetXaxis()->SetTitle("p (GeV)");
             histograms_after[pid][i]->GetYaxis()->SetTitle("#Deltap");
@@ -5607,56 +5616,63 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
 
     // Loop over events
     while (mcReader.Next()) {
-        if (!is_fd_track(*track_sector_6)) continue;
-        if (!dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) continue;
+        // Check if the track passes the required cuts
+        if (!is_fd_track(*track_sector_6) || !dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) continue;
 
         double p_corr = *p, theta_corr = *theta, phi_corr = *phi;
 
-        // Fill the "before" histograms
-        for (size_t i = 0; i < theta_bins.size(); ++i) {
-            if (*theta >= theta_bins[i].first && *theta < theta_bins[i].second) {
-                histograms_before[*pid][i]->Fill(*p, *mc_p - *p);
-                break;
+        // Process the event only if the particle is in the defined map
+        if (histograms_before.find(*pid) != histograms_before.end()) {
+            // Fill the "before" histograms
+            for (size_t i = 0; i < theta_bins.size(); ++i) {
+                if (*theta >= theta_bins[i].first && *theta < theta_bins[i].second) {
+                    histograms_before[*pid][i]->Fill(*p, *mc_p - *p);
+                    break;
+                }
             }
-        }
 
-        // Apply energy loss corrections
-        apply_energy_loss_correction(p_corr, theta_corr, phi_corr, dataset, "FD");
+            // Apply energy loss corrections
+            apply_energy_loss_correction(p_corr, theta_corr, phi_corr, dataset, "FD");
 
-        // Fill the "after" histograms
-        for (size_t i = 0; i < theta_bins.size(); ++i) {
-            if (theta_corr >= theta_bins[i].first && theta_corr < theta_bins[i].second) {
-                histograms_after[*pid][i]->Fill(p_corr, *mc_p - p_corr);
-                break;
+            // Fill the "after" histograms
+            for (size_t i = 0; i < theta_bins.size(); ++i) {
+                if (theta_corr >= theta_bins[i].first && theta_corr < theta_bins[i].second) {
+                    histograms_after[*pid][i]->Fill(p_corr, *mc_p - p_corr);
+                    break;
+                }
             }
         }
     }
 
     // Create and save the canvases for before and after corrections
-    TCanvas* c_p = new TCanvas("c_p", "p Distributions: Before and After Corrections", 2400, 1600);
-    c_p->Divide(6, 4);
+    for (const auto& [pid, particle_info] : particle_types) {
+        const auto& [particle_name, xMin, xMax] = particle_info;
 
-    for (size_t i = 0; i < theta_bins.size(); ++i) {
-        c_p->cd(i + 1);
-        histograms_before[2212][i]->Draw("COLZ");
-        c_p->cd(i + 13);
-        histograms_after[2212][i]->Draw("COLZ");
+        TCanvas* c_p = new TCanvas(("c_p_" + particle_name).c_str(), "p Distributions: Before and After Corrections", 2400, 1600);
+        c_p->Divide(6, 4);  // 2x6 subplots
+
+        for (size_t i = 0; i < theta_bins.size(); ++i) {
+            c_p->cd(i + 1);
+            histograms_before[pid][i]->Draw("COLZ");
+            c_p->cd(i + 13);
+            histograms_after[pid][i]->Draw("COLZ");
+        }
+
+        c_p->cd();
+        TLatex latex;
+        latex.SetNDC();
+        latex.SetTextSize(0.035);
+        latex.DrawLatex(0.425, 0.5, (dataset + ", FD").c_str());
+
+        c_p->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/p_distributions_before_after_" + particle_name + ".png").c_str());
+
+        // Clean up memory
+        for (size_t i = 0; i < theta_bins.size(); ++i) {
+            delete histograms_before[pid][i];
+            delete histograms_after[pid][i];
+        }
+        delete c_p;
     }
-
-    c_p->cd();
-    TLatex latex;
-    latex.SetNDC();
-    latex.SetTextSize(0.035);
-    latex.DrawLatex(0.425, 0.5, (dataset + ", FD").c_str());
-
-    c_p->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/p_distributions_before_after_" + std::to_string(2212) + ".png").c_str());
-
-    // Clean up memory
-    for (size_t i = 0; i < theta_bins.size(); ++i) {
-        delete histograms_before[2212][i];
-        delete histograms_after[2212][i];
-    }
-    delete c_p;
 }
 
 
