@@ -5349,7 +5349,7 @@ void energy_loss_distributions_delta_theta(TTreeReader& mcReader, const std::str
         }
 
         // Add centered text "dataset, FD" on the canvas
-        c_deltap->cd();  // Switch to the main canvas (not any specific pad)
+        c_deltatheta->cd();  // Switch to the main canvas (not any specific pad)
         TLatex latex;
         latex.SetNDC();  // Use normalized coordinates (0,0) to (1,1)
         latex.SetTextSize(0.05);  // Set the text size
@@ -5507,7 +5507,7 @@ void energy_loss_distributions_delta_phi(TTreeReader& mcReader, const std::strin
         }
 
         // Add centered text "dataset, FD" on the canvas
-        c_deltap->cd();  // Switch to the main canvas (not any specific pad)
+        c_deltaphi->cd();  // Switch to the main canvas (not any specific pad)
         TLatex latex;
         latex.SetNDC();  // Use normalized coordinates (0,0) to (1,1)
         latex.SetTextSize(0.05);  // Set the text size
