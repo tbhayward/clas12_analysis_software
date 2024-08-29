@@ -5174,7 +5174,8 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
             prof_deltap->GetXaxis()->SetRangeUser(0.5, std::get<2>(particle_types[pid]));
 
             // Fit the profiles with appropriate functions
-            fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x + [2]/x^2", 0.5, std::get<2>(particle_types[pid]));
+            // fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x + [2]/x^2", 0.5, std::get<2>(particle_types[pid]));
+            fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x", 0.5, std::get<2>(particle_types[pid]));
            
             prof_deltap->Fit(fit_deltap[i], "Q"); // Silent fit
 
@@ -5629,9 +5630,9 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
     TTreeReaderValue<double> edge_36(mcReader, "traj_edge_36");
 
     // Loop over events
-    for (int i = 0; i < 1e8; ++i) {
-        mcReader.Next();
-        // while (mcReader.Next()) {
+    // for (int i = 0; i < 1e8; ++i) {
+    //     mcReader.Next();
+    while (mcReader.Next()) {
         // Check if the track passes the required cuts
         if (!is_fd_track(*track_sector_6) || !dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) continue;
 
@@ -5707,8 +5708,8 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     // mcReader.Restart();
     // energy_loss_fd_distributions_theta_dc(mcReader, dataset);
 
-    // mcReader.Restart();
-    // energy_loss_distributions_delta_p(mcReader, dataset);
+    mcReader.Restart();
+    energy_loss_distributions_delta_p(mcReader, dataset);
 
     // mcReader.Restart();
     // energy_loss_distributions_delta_theta(mcReader, dataset);
