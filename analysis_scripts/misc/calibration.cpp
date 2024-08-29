@@ -5587,6 +5587,10 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
             );
             histograms_before[pid][i]->GetXaxis()->SetTitle("p (GeV)");
             histograms_before[pid][i]->GetYaxis()->SetTitle("#Deltap");
+            histograms_before[pid][i]->GetXaxis()->SetTitleSize(0.05);
+            histograms_before[pid][i]->GetYaxis()->SetTitleSize(0.05);
+            histograms_before[pid][i]->GetXaxis()->SetLabelSize(0.045);
+            histograms_before[pid][i]->GetYaxis()->SetLabelSize(0.045);
 
             histograms_after[pid][i] = new TH2D(
                 ("h_p_after_" + std::to_string(pid) + "_bin" + std::to_string(i)).c_str(),
@@ -5595,6 +5599,10 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
             );
             histograms_after[pid][i]->GetXaxis()->SetTitle("p (GeV)");
             histograms_after[pid][i]->GetYaxis()->SetTitle("#Deltap");
+            histograms_after[pid][i]->GetXaxis()->SetTitleSize(0.05);
+            histograms_after[pid][i]->GetYaxis()->SetTitleSize(0.05);
+            histograms_after[pid][i]->GetXaxis()->SetLabelSize(0.045);
+            histograms_after[pid][i]->GetYaxis()->SetLabelSize(0.045);
         }
     }
 
@@ -5658,15 +5666,20 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
 
         for (size_t i = 0; i < theta_bins.size(); ++i) {
             c_p->cd(i + 1);  // Top row for "before"
+            gPad->SetMargin(0.18, 0.05, 0.15, 0.1);  // Extra padding for the left margin
+            gPad->SetLogz();  // Set log scale for counts
             histograms_before[pid][i]->Draw("COLZ");
+            
             c_p->cd(i + 7);  // Bottom row for "after"
+            gPad->SetMargin(0.18, 0.05, 0.15, 0.1);  // Extra padding for the left margin
+            gPad->SetLogz();  // Set log scale for counts
             histograms_after[pid][i]->Draw("COLZ");
         }
 
         c_p->cd();
         TLatex latex;
         latex.SetNDC();
-        latex.SetTextSize(0.035);
+        latex.SetTextSize(0.04);  // Increase text size
         latex.DrawLatex(0.425, 0.5, (dataset + ", FD").c_str());
 
         c_p->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/p_distributions_before_after_" + particle_name + ".png").c_str());
