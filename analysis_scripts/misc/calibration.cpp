@@ -4961,7 +4961,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     gPad->SetLeftMargin(0.2);  // Increase left margin
     graph_C->Draw("AP");
 
-    // Fit B(#theta) to a 4th order polynomial
+    // Fit C(#theta) to a 4th order polynomial
     TF1* fit_C = new TF1("fit_C", "pol4", theta_bins.front().first, theta_bins.back().second);
     graph_C->Fit(fit_C, "Q");  // Silent fit
     fit_C->Draw("same");
@@ -5043,13 +5043,13 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
 
     // Define theta bins
     std::vector<std::pair<double, double>> theta_bins = {
-        {5.0, 6.75}, {6.75, 8.5}, {8.5, 10.25},
-        {10.25, 12.0}, {12.0, 13.75}, {13.75, 15.5},
-        {15.5, 17.25}, {17.25, 19.0}, {19.0, 20.75},
-        {20.75, 22.5}, {22.5, 24.25}, {24.25, 26.0},
-        {26.0, 27.75}, {27.75, 29.5}, {29.5, 31.25},
-        {31.25, 33.0}, {33.0, 34.75}, {34.75, 36.5},
-        {36.5, 38.25}, {38.25, 40.0}
+        {5.0, 6.5789}, {6.5789, 8.1579}, {8.1579, 9.7368},
+        {9.7368, 11.3158}, {11.3158, 12.8947}, {12.8947, 14.4737},
+        {14.4737, 16.0526}, {16.0526, 17.6316}, {17.6316, 19.2105},
+        {19.2105, 20.7895}, {20.7895, 22.3684}, {22.3684, 23.9474},
+        {23.9474, 25.5263}, {25.5263, 27.1053}, {27.1053, 28.6842},
+        {28.6842, 30.2632}, {30.2632, 31.8421}, {31.8421, 33.4211},
+        {33.4211, 35.0}, {35.0, 40.0}
     };
 
     // Create histograms for each particle type and theta bin
@@ -5063,7 +5063,7 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
         histograms[pid].resize(theta_bins.size());
 
         for (size_t i = 0; i < theta_bins.size(); ++i) {
-            std::string bin_label = TString::Format("#theta [%.1f, %.1f]", theta_bins[i].first, theta_bins[i].second).Data();
+            std::string bin_label = TString::Format("#theta_{DC region1} [%.1f, %.1f]", theta_bins[i].first, theta_bins[i].second).Data();
 
             histograms[pid][i] = new TH2D(
                 ("h_deltap_" + particle_name + "_bin" + std::to_string(i)).c_str(),
@@ -5146,8 +5146,8 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
             A_errors[i] = fit_deltap[i]->GetParError(0);
             B_values[i] = fit_deltap[i]->GetParameter(1);
             B_errors[i] = fit_deltap[i]->GetParError(1);
-            C_values[i] = fit_deltap[i]->GetParameter(1);
-            C_errors[i] = fit_deltap[i]->GetParError(1);
+            C_values[i] = fit_deltap[i]->GetParameter(2);
+            C_errors[i] = fit_deltap[i]->GetParError(2);
             histograms[pid][i]->Draw("COLZ");
             prof_deltap->Draw("same");  // Draw the profile to show the fit line
             fit_deltap[i]->Draw("same");  // Draw the fit on top of the profile
