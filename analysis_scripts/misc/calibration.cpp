@@ -4895,14 +4895,15 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
         graph_A->SetPoint(i, theta_midpoint, A_values[i]);
         graph_A->SetPointError(i, 0.0, A_errors[i]);
     }
-    graph_A->SetTitle(("A_{" + prefix + "}, #Delta" + prefix + ";#theta (degrees);A_{" + prefix + "}(#theta) (GeV)").c_str());
     
     if (prefix == "p") {
         graph_A->GetYaxis()->SetRangeUser(-0.02, 0.02);  // Set y-axis range
         graph_A->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+        graph_A->SetTitle(("A_{" + prefix + "}, #Delta" + prefix + ";#theta (degrees);A_{" + prefix + "}(#theta) (GeV)").c_str());
     } else {
         graph_A->GetYaxis()->SetRangeUser(-0.1, 0.1);  // Set y-axis range
         graph_A->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+        graph_A->SetTitle(("A_{" + prefix + "}, #Delta" + prefix + ";#theta (degrees);A_{" + prefix + "}(#theta)").c_str());
     }
     
     graph_A->SetMarkerStyle(20);  // Set marker style to a filled circle
@@ -4933,13 +4934,15 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
         graph_B->SetPoint(i, theta_midpoint, B_values[i]);
         graph_B->SetPointError(i, 0.0, B_errors[i]);
     }
-    graph_B->SetTitle(("B_{" + prefix + "}, #Delta" + prefix + ";#theta (degrees);B_{" + prefix + "}(#theta) (GeV^{2})").c_str());
+    
     if (prefix == "p") {
         graph_B->GetYaxis()->SetRangeUser(-0.02, 0.02);  // Set y-axis range
         graph_B->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+        graph_B->SetTitle(("B_{" + prefix + "}, #Delta" + prefix + ";#theta (degrees);B_{" + prefix + "}(#theta) (GeV^{2})").c_str());
     } else {
         graph_B->GetYaxis()->SetRangeUser(-0.1, 0.1);  // Set y-axis range
         graph_B->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+        graph_B->SetTitle(("B_{" + prefix + "}, #Delta" + prefix + ";#theta (degrees);B_{" + prefix + "}(#theta)").c_str());
     }
     graph_B->SetMarkerStyle(20);  // Set marker style to a filled circle
     gPad->SetLeftMargin(0.2);  // Increase left margin
@@ -4969,13 +4972,14 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
         graph_C->SetPoint(i, theta_midpoint, C_values[i]);
         graph_C->SetPointError(i, 0.0, C_errors[i]);
     }
-    graph_C->SetTitle(("C_{" + prefix + "}, #Delta" + prefix + ";#theta (degrees);C_{" + prefix + "}(#theta) (GeV^{3})").c_str());
     if (prefix == "p") {
-        graph_B->GetYaxis()->SetRangeUser(-0.02, 0.02);  // Set y-axis range
-        graph_B->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+        graph_C->GetYaxis()->SetRangeUser(-0.02, 0.02);  // Set y-axis range
+        graph_C->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+        graph_C->SetTitle(("C_{" + prefix + "}, #Delta" + prefix + ";#theta (degrees);C_{" + prefix + "}(#theta) (GeV^{3})").c_str());
     } else {
-        graph_B->GetYaxis()->SetRangeUser(-0.1, 0.1);  // Set y-axis range
-        graph_B->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+        graph_C->GetYaxis()->SetRangeUser(-0.3, 0.3);  // Set y-axis range
+        graph_C->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+        graph_C->SetTitle(("C_{" + prefix + "}, #Delta" + prefix + ";#theta (degrees);C_{" + prefix + "}(#theta)").c_str());
     }
     graph_C->SetMarkerStyle(20);  // Set marker style to a filled circle
     gPad->SetLeftMargin(0.2);  // Increase left margin
@@ -5114,11 +5118,17 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
     TTreeReaderValue<double> traj_z_6(mcReader, "traj_z_6");
     TTreeReaderValue<int> pid(mcReader, "particle_pid");
 
+    // Edge variables for FD fiducial cuts
+    TTreeReaderValue<double> edge_6(mcReader, "traj_edge_6");
+    TTreeReaderValue<double> edge_18(mcReader, "traj_edge_18");
+    TTreeReaderValue<double> edge_36(mcReader, "traj_edge_36");
+
     // Loop over events
     // for (int i = 0; i < 1e7; ++i) {
     //     mcReader.Next();
     while (mcReader.Next()) {
         if (!is_fd_track(*track_sector_6)) continue;
+        if (dc_fiducial(*edge_6, *edge_18, *edge_36, *pid))
         double delta_p = *mc_p - *p;
         double theta_dc_1 = calculate_theta(*traj_x_6, *traj_y_6, *traj_z_6);
 
@@ -5249,11 +5259,17 @@ void energy_loss_distributions_delta_theta(TTreeReader& mcReader, const std::str
     TTreeReaderValue<double> traj_z_6(mcReader, "traj_z_6");
     TTreeReaderValue<int> pid(mcReader, "particle_pid");
 
+    // Edge variables for FD fiducial cuts
+    TTreeReaderValue<double> edge_6(mcReader, "traj_edge_6");
+    TTreeReaderValue<double> edge_18(mcReader, "traj_edge_18");
+    TTreeReaderValue<double> edge_36(mcReader, "traj_edge_36");
+
     // Loop over events
     // for (int i = 0; i < 1e7; ++i) {
     //     mcReader.Next();
     while (mcReader.Next()) {
-        if (*track_sector_6 == -9999) continue;
+        if (!is_fd_track(*track_sector_6)) continue;
+        if (!dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) continue;
         double delta_theta = *mc_theta - *theta;
         double theta_dc_1 = calculate_theta(*traj_x_6, *traj_y_6, *traj_z_6);
 
