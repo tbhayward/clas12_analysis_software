@@ -5618,7 +5618,9 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
     TTreeReaderValue<double> edge_36(mcReader, "traj_edge_36");
 
     // Loop over events
-    while (mcReader.Next()) {
+    for (int i = 0; i < 1e7; ++i) {
+        mcReader.Next();
+    // while (mcReader.Next()) {
         // Check if the track passes the required cuts
         if (!is_fd_track(*track_sector_6) || !dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) continue;
 
