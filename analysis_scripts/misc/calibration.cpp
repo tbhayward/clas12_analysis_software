@@ -4911,7 +4911,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     graph_A->Draw("AP");
 
     // Fit A(#theta) to a 4th order polynomial
-    TF1* fit_A = new TF1("fit_A", "pol3", theta_bins.front().first, theta_bins.back().second);
+    TF1* fit_A = new TF1("fit_A", "[0]+[1]*x+[2]*x*x+[3]*x*x*x", theta_bins.front().first, theta_bins.back().second);
     graph_A->Fit(fit_A, "Q");  // Silent fit
     fit_A->Draw("same");
 
@@ -4949,7 +4949,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     graph_B->Draw("AP");
 
     // Fit B(#theta) to a 4th order polynomial
-    TF1* fit_B = new TF1("fit_B", "pol3", theta_bins.front().first, theta_bins.back().second);
+    TF1* fit_B = new TF1("fit_B", "[0]+[1]*x+[2]*x*x+[3]*x*x*x", theta_bins.front().first, theta_bins.back().second);
     graph_B->Fit(fit_B, "Q");  // Silent fit
     fit_B->Draw("same");
 
@@ -4986,7 +4986,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     graph_C->Draw("AP");
 
     // Fit C(#theta) to a 4th order polynomial
-    TF1* fit_C = new TF1("fit_C", "pol3", theta_bins.front().first, theta_bins.back().second);
+    TF1* fit_C = new TF1("fit_C", "[0]+[1]*x+[2]*x*x+[3]*x*x*x", theta_bins.front().first, theta_bins.back().second);
     graph_C->Fit(fit_C, "Q");  // Silent fit
     fit_C->Draw("same");
 
@@ -5632,9 +5632,9 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
     TTreeReaderValue<double> edge_36(mcReader, "traj_edge_36");
 
     // Loop over events
-    // for (int i = 0; i < 1e8; ++i) {
-    //     mcReader.Next();
-    while (mcReader.Next()) {
+    for (int i = 0; i < 1e8; ++i) {
+        mcReader.Next();
+    // while (mcReader.Next()) {
         // Check if the track passes the required cuts
         if (!is_fd_track(*track_sector_6) || !dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) continue;
 
@@ -5710,8 +5710,8 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     // mcReader.Restart();
     // energy_loss_fd_distributions_theta_dc(mcReader, dataset);
 
-    // mcReader.Restart();
-    // energy_loss_distributions_delta_p(mcReader, dataset);
+    mcReader.Restart();
+    energy_loss_distributions_delta_p(mcReader, dataset);
 
     // mcReader.Restart();
     // energy_loss_distributions_delta_theta(mcReader, dataset);
