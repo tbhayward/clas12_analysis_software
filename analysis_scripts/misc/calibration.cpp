@@ -5820,14 +5820,14 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
             TProfile* prof_deltap = histograms[pid][i]->ProfileX();
 
             // Set the range of the profile to start from 0.5
-            prof_deltap->GetXaxis()->SetRangeUser(0.5, std::get<2>(particle_types[pid]));
+            prof_deltap->GetXaxis()->SetRangeUser(0.3, std::get<2>(particle_types[pid]));
 
             // Fit the profiles with appropriate functions
-            fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x + [2]/x^2", 0.5, std::get<2>(particle_types[pid]));
+            fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x + [2]/x^2", 0.3, std::get<2>(particle_types[pid]));
             prof_deltap->Fit(fit_deltap[i], "Q"); // Silent fit
 
             // Set the range of the fit function for plotting
-            fit_deltap[i]->SetRange(0.5, std::get<2>(particle_types[pid]));
+            fit_deltap[i]->SetRange(0.3, std::get<2>(particle_types[pid]));
 
             // Store the fit parameters
             A_values[i] = fit_deltap[i]->GetParameter(0);
@@ -5973,14 +5973,14 @@ void energy_loss_distributions_delta_theta_cd(TTreeReader& mcReader, const std::
             TProfile* prof_deltatheta = histograms[pid][i]->ProfileX();
 
             // Set the range of the profile to start from 0.5
-            prof_deltatheta->GetXaxis()->SetRangeUser(0.5, std::get<2>(particle_types[pid]));
+            prof_deltatheta->GetXaxis()->SetRangeUser(0.3, std::get<2>(particle_types[pid]));
 
             // Fit the profiles with appropriate functions
-            fit_deltatheta[i] = new TF1(("fit_deltatheta_" + std::to_string(i)).c_str(), "[0] + [1]/x + [2]/x^2", 0.5, std::get<2>(particle_types[pid]));
+            fit_deltatheta[i] = new TF1(("fit_deltatheta_" + std::to_string(i)).c_str(), "[0] + [1]/x + [2]/x^2", 0.3, std::get<2>(particle_types[pid]));
             prof_deltatheta->Fit(fit_deltatheta[i], "Q"); // Silent fit
 
             // Set the range of the fit function for plotting
-            fit_deltatheta[i]->SetRange(0.5, std::get<2>(particle_types[pid]));
+            fit_deltatheta[i]->SetRange(0.3, std::get<2>(particle_types[pid]));
 
             // Store the fit parameters
             A_values[i] = fit_deltatheta[i]->GetParameter(0);
@@ -6126,14 +6126,14 @@ void energy_loss_distributions_delta_phi_cd(TTreeReader& mcReader, const std::st
             TProfile* prof_deltaphi = histograms[pid][i]->ProfileX();
 
             // Set the range of the profile to start from 0.5
-            prof_deltaphi->GetXaxis()->SetRangeUser(0.5, std::get<2>(particle_types[pid]));
+            prof_deltaphi->GetXaxis()->SetRangeUser(0.3, std::get<2>(particle_types[pid]));
 
             // Fit the profiles with appropriate functions
-            fit_deltaphi[i] = new TF1(("fit_deltaphi_" + std::to_string(i)).c_str(), "[0] + [1]/x + [2]/x^2", 0.5, std::get<2>(particle_types[pid]));
+            fit_deltaphi[i] = new TF1(("fit_deltaphi_" + std::to_string(i)).c_str(), "[0] + [1]/x + [2]/x^2", 0.3, std::get<2>(particle_types[pid]));
             prof_deltaphi->Fit(fit_deltaphi[i], "Q"); // Silent fit
 
             // Set the range of the fit function for plotting
-            fit_deltaphi[i]->SetRange(0.5, std::get<2>(particle_types[pid]));
+            fit_deltaphi[i]->SetRange(0.3, std::get<2>(particle_types[pid]));
 
             // Store the fit parameters
             A_values[i] = fit_deltaphi[i]->GetParameter(0);
