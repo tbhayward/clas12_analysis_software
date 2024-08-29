@@ -5312,16 +5312,16 @@ void energy_loss_distributions_delta_theta(TTreeReader& mcReader, const std::str
 
 // Main function to call both energy loss distribution functions
 void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
-    energy_loss_distributions(mcReader, dataset);
-    Restart the mcReader to reset its state before the next use
-    mcReader.Restart();
-    energy_loss_fd_distributions(mcReader, dataset);
+    // energy_loss_distributions(mcReader, dataset);
+    // Restart the mcReader to reset its state before the next use
+    // mcReader.Restart();
+    // energy_loss_fd_distributions(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_fd_distributions_theta_dc(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_fd_distributions_theta_dc(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_distributions_delta_p(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_distributions_delta_p(mcReader, dataset);
 
     mcReader.Restart();
     energy_loss_distributions_delta_theta(mcReader, dataset);
@@ -5454,7 +5454,7 @@ int main(int argc, char** argv) {
 
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
-    if (mcReader) energy_loss(*mcReader, "rga_fa18_out");  
+    if (mcReader) energy_loss(*mcReader, "rga_fa18_inb");  
 
     // Close files
     dataFile.Close();
