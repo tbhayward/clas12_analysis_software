@@ -4896,7 +4896,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
         graph_A->SetPointError(i, 0.0, A_errors[i]);
     }
     graph_A->SetTitle(("A_{" + prefix + "}, #Delta" + prefix + ";#theta (degrees);A_{" + prefix + "}(#theta) (GeV)").c_str());
-    graph_A->GetYaxis()->SetRangeUser(-0.01, 0.01);  // Set y-axis range
+    graph_A->GetYaxis()->SetRangeUser(-0.02, 0.02);  // Set y-axis range
     graph_A->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
     graph_A->SetMarkerStyle(20);  // Set marker style to a filled circle
     gPad->SetLeftMargin(0.2);  // Increase left margin
