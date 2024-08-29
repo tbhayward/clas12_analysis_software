@@ -4910,8 +4910,8 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     gPad->SetLeftMargin(0.2);  // Increase left margin
     graph_A->Draw("AP");
 
-    // Fit A(#theta) to a 4th order polynomial
-    TF1* fit_A = new TF1("fit_A", "[0]+[1]*x+[2]*x*x+[3]*x*x*x", theta_bins.front().first, theta_bins.back().second);
+    // Fit A(#theta) to a 2nd order polynomial
+    TF1* fit_A = new TF1("fit_A", "[0]+[1]*x+[2]*x*x", theta_bins.front().first, theta_bins.back().second);
     graph_A->Fit(fit_A, "Q");  // Silent fit
     std::cout << "Parameter: " << fit_A->GetParameter(0) << std::endl;
     fit_A->Draw("same");
@@ -4921,7 +4921,6 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     pt_A->AddText(Form("p0 = %.6f", fit_A->GetParameter(0)));
     pt_A->AddText(Form("p1 = %.6f", fit_A->GetParameter(1)));
     pt_A->AddText(Form("p2 = %.6f", fit_A->GetParameter(2)));
-    pt_A->AddText(Form("p3 = %.6f", fit_A->GetParameter(3)));
     pt_A->AddText(Form("#chi^{2}/ndf = %.3f", fit_A->GetChisquare() / fit_A->GetNDF()));
     pt_A->SetBorderSize(1);
     pt_A->SetFillColor(0);
@@ -4949,8 +4948,8 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     gPad->SetLeftMargin(0.2);  // Increase left margin
     graph_B->Draw("AP");
 
-    // Fit B(#theta) to a 4th order polynomial
-    TF1* fit_B = new TF1("fit_B", "[0]+[1]*x+[2]*x*x+[3]*x*x*x", theta_bins.front().first, theta_bins.back().second);
+    // Fit B(#theta) to a 2nd order polynomial
+    TF1* fit_B = new TF1("fit_B", "[0]+[1]*x+[2]*x*x", theta_bins.front().first, theta_bins.back().second);
     graph_B->Fit(fit_B, "Q");  // Silent fit
     fit_B->Draw("same");
 
@@ -4959,7 +4958,6 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     pt_B->AddText(Form("p0 = %.6f", fit_B->GetParameter(0)));
     pt_B->AddText(Form("p1 = %.6f", fit_B->GetParameter(1)));
     pt_B->AddText(Form("p2 = %.6f", fit_B->GetParameter(2)));
-    pt_B->AddText(Form("p3 = %.6f", fit_B->GetParameter(3)));
     pt_B->AddText(Form("#chi^{2}/ndf = %.3f", fit_B->GetChisquare() / fit_B->GetNDF()));
     pt_B->SetBorderSize(1);
     pt_B->SetFillColor(0);
@@ -4986,8 +4984,8 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     gPad->SetLeftMargin(0.2);  // Increase left margin
     graph_C->Draw("AP");
 
-    // Fit C(#theta) to a 4th order polynomial
-    TF1* fit_C = new TF1("fit_C", "[0]+[1]*x+[2]*x*x+[3]*x*x*x", theta_bins.front().first, theta_bins.back().second);
+    // Fit C(#theta) to a 2nd order polynomial
+    TF1* fit_C = new TF1("fit_C", "[0]+[1]*x+[2]*x*x", theta_bins.front().first, theta_bins.back().second);
     graph_C->Fit(fit_C, "Q");  // Silent fit
     fit_C->Draw("same");
 
@@ -4996,7 +4994,6 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     pt_C->AddText(Form("p0 = %.6f", fit_C->GetParameter(0)));
     pt_C->AddText(Form("p1 = %.6f", fit_C->GetParameter(1)));
     pt_C->AddText(Form("p2 = %.6f", fit_C->GetParameter(2)));
-    pt_C->AddText(Form("p3 = %.6f", fit_C->GetParameter(3)));
     pt_C->AddText(Form("#chi^{2}/ndf = %.3f", fit_C->GetChisquare() / fit_C->GetNDF()));
     pt_C->SetBorderSize(1);
     pt_C->SetFillColor(0);
@@ -5175,9 +5172,8 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
             prof_deltap->GetXaxis()->SetRangeUser(0.5, std::get<2>(particle_types[pid]));
 
             // Fit the profiles with appropriate functions
-            // fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x + [2]/x^2", 0.5, std::get<2>(particle_types[pid]));
-            fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x", 0.5, std::get<2>(particle_types[pid]));
-           
+            fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x + [2]/x^2", 0.5, std::get<2>(particle_types[pid]));
+            
             prof_deltap->Fit(fit_deltap[i], "Q"); // Silent fit
 
             // Set the range of the fit function for plotting
