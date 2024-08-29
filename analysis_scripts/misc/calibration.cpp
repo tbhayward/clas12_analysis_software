@@ -4897,6 +4897,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     }
     graph_A->SetTitle(("A_{" + prefix + "}, #Delta" + prefix + ";#theta (degrees);A_{" + prefix + "}(#theta) (GeV)").c_str());
     graph_A->GetYaxis()->SetRangeUser(-0.01, 0.01);  // Set y-axis range
+    graph_A->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
     graph_A->SetMarkerStyle(20);  // Set marker style to a filled circle
     gPad->SetLeftMargin(0.2);  // Increase left margin
     graph_A->Draw("AP");
@@ -4927,6 +4928,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     }
     graph_B->SetTitle(("B_{" + prefix + "}, #Delta" + prefix + ";#theta (degrees);B_{" + prefix + "}(#theta) (GeV^{2})").c_str());
     graph_B->GetYaxis()->SetRangeUser(-0.02, 0.02);  // Set y-axis range
+    graph_B->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
     graph_B->SetMarkerStyle(20);  // Set marker style to a filled circle
     gPad->SetLeftMargin(0.2);  // Increase left margin
     graph_B->Draw("AP");
@@ -4957,6 +4959,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     }
     graph_C->SetTitle(("C_{" + prefix + "}, #Delta" + prefix + ";#theta (degrees);C_{" + prefix + "}(#theta) (GeV^{3})").c_str());
     graph_C->GetYaxis()->SetRangeUser(-0.02, 0.02);  // Set y-axis range
+    graph_C->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
     graph_C->SetMarkerStyle(20);  // Set marker style to a filled circle
     gPad->SetLeftMargin(0.2);  // Increase left margin
     graph_C->Draw("AP");
