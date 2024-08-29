@@ -5043,11 +5043,15 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
 
     // Define theta bins
     std::vector<std::pair<double, double>> theta_bins = {
-        {5.0, 6.5789}, {6.5789, 8.1579}, {8.1579, 9.7368},
-        {9.7368, 11.3158}, {11.3158, 12.8947}, {12.8947, 14.4737},
-        {14.4737, 16.0526}, {16.0526, 17.6316}, {17.6316, 19.2105},
-        {19.2105, 20.7895}, {20.7895, 22.3684}, {22.3684, 23.9474},
-        {23.9474, 25.5263}, {25.5263, 27.1053}, {27.1053, 35.000}
+        {0.0, 1.1667}, {1.1667, 2.3333}, {2.3333, 3.5},
+        {3.5, 4.6667}, {4.6667, 5.8333}, {5.8333, 7.0},
+        {7.0, 8.1667}, {8.1667, 9.3333}, {9.3333, 10.5},
+        {10.5, 11.6667}, {11.6667, 12.8333}, {12.8333, 14.0},
+        {14.0, 15.1667}, {15.1667, 16.3333}, {16.3333, 17.5},
+        {17.5, 18.6667}, {18.6667, 19.8333}, {19.8333, 21.0},
+        {21.0, 22.1667}, {22.1667, 23.3333}, {23.3333, 24.5},
+        {24.5, 25.6667}, {25.6667, 26.8333}, {26.8333, 28.0},
+        {28.0, 35.0}  // The last bin from 28 to 35
     };
 
     // Create histograms for each particle type and theta bin
@@ -5116,7 +5120,7 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
         const std::string& particle_name = std::get<0>(particle_types[pid]);
 
         TCanvas* c_deltap = new TCanvas(("c_deltap_" + particle_name).c_str(), ("Delta p Distributions: " + dataset + ", " + particle_name).c_str(), 2000, 1200);
-        c_deltap->Divide(5, 3);  // 20 subplots
+        c_deltap->Divide(5, 4);  // 20 subplots
 
         std::vector<TF1*> fit_deltap(theta_bins.size());
         std::vector<double> A_values(theta_bins.size());
