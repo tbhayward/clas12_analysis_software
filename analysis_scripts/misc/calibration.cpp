@@ -5138,8 +5138,8 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
             TProfile* prof_deltap = histograms[pid][i]->ProfileX();
 
             // Fit the profiles with appropriate functions
-            fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x + [2]/x^2", 0.5, std::get<2>(particle_types[pid]));
-            prof_deltap->Fit(fit_deltap[i], "QF"); // Silent fit
+            fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]*exp([2]*x)", 0.5, std::get<2>(particle_types[pid]));
+            prof_deltap->Fit(fit_deltap[i], "Q"); // Silent fit
 
             // Store the fit parameters
             A_values[i] = fit_deltap[i]->GetParameter(0);
@@ -5151,8 +5151,6 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
             histograms[pid][i]->Draw("COLZ");
             prof_deltap->Draw("same");  // Draw the profile to show the fit line
             // Draw the fit only from 0.5 onwards
-            fit_deltap[i]->SetRange(0.5, std::get<2>(particle_types[pid]));
-            fit_deltap[i]->Draw("same");
         }
 
         // Save the canvas
