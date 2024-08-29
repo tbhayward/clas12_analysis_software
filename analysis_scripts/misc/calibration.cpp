@@ -5799,8 +5799,8 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
         int pid = entry.first;
         const std::string& particle_name = std::get<0>(particle_types[pid]);
 
-        TCanvas* c_deltaphi = new TCanvas(("c_deltap_" + particle_name).c_str(), ("Delta p Distributions: " + dataset + ", " + particle_name).c_str(), 2000, 1200);
-        c_deltaphi->Divide(6, 4);  // 20 subplots
+        TCanvas* c_deltap = new TCanvas(("c_deltap_" + particle_name).c_str(), ("Delta p Distributions: " + dataset + ", " + particle_name).c_str(), 2000, 1200);
+        c_deltap->Divide(6, 4);  // 20 subplots
 
         std::vector<TF1*> fit_deltap(theta_bins.size());
         std::vector<double> A_values(theta_bins.size());
@@ -5824,7 +5824,7 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
 
             // Fit the profiles with appropriate functions
             fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x + [2]/x^2", 0.5, std::get<2>(particle_types[pid]));
-            prof_deltap->Fit(fit_deltaphi[i], "Q"); // Silent fit
+            prof_deltap->Fit(fit_deltap[i], "Q"); // Silent fit
 
             // Set the range of the fit function for plotting
             fit_deltap[i]->SetRange(0.5, std::get<2>(particle_types[pid]));
