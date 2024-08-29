@@ -5812,7 +5812,7 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
 
         for (size_t i = 0; i < theta_bins.size(); ++i) {
             // Ensure we are drawing on the correct pad
-            c_deltaphi->cd(i + 1);
+            c_deltap->cd(i + 1);
             gPad->SetMargin(0.15, 0.15, 0.20, 0.1);  // Left, right, bottom, top margins
             gPad->SetLogz();
 
@@ -5965,7 +5965,7 @@ void energy_loss_distributions_delta_theta_cd(TTreeReader& mcReader, const std::
 
         for (size_t i = 0; i < theta_bins.size(); ++i) {
             // Ensure we are drawing on the correct pad
-            c_deltaphi->cd(i + 1);
+            c_deltatheta->cd(i + 1);
             gPad->SetMargin(0.15, 0.15, 0.20, 0.1);  // Left, right, bottom, top margins
             gPad->SetLogz();
 
