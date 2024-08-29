@@ -5568,10 +5568,13 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
         {30.0, 40.0}
     };
 
-    // Define histograms before and after corrections for p, theta, and phi
-    std::map<int, std::vector<TH2D*>> histograms_before_p, histograms_after_p;
-    std::map<int, std::vector<TH2D*>> histograms_before_theta, histograms_after_theta;
-    std::map<int, std::vector<TH2D*>> histograms_before_phi, histograms_after_phi;
+    // Define histograms before and after corrections
+    std::map<int, std::vector<TH2D*>> histograms_before_p;
+    std::map<int, std::vector<TH2D*>> histograms_after_p;
+    std::map<int, std::vector<TH2D*>> histograms_before_theta;
+    std::map<int, std::vector<TH2D*>> histograms_after_theta;
+    std::map<int, std::vector<TH2D*>> histograms_before_phi;
+    std::map<int, std::vector<TH2D*>> histograms_after_phi;
 
     for (const auto& [pid, particle_info] : particle_types) {
         const auto& [particle_name, xMin, xMax] = particle_info;
@@ -5583,11 +5586,16 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
         histograms_after_phi[pid].resize(theta_bins.size());
 
         for (size_t i = 0; i < theta_bins.size(); ++i) {
-            std::string bin_label = TString::Format("#theta [%.1f, %.1f] Before corrections", theta_bins[i].first, theta_bins[i].second).Data();
+            std::string bin_label_before_p = TString::Format("#theta [%.1f, %.1f] Before corrections", theta_bins[i].first, theta_bins[i].second).Data();
+            std::string bin_label_after_p = TString::Format("#theta [%.1f, %.1f] After corrections", theta_bins[i].first, theta_bins[i].second).Data();
+            std::string bin_label_before_theta = TString::Format("#theta [%.1f, %.1f] Before corrections", theta_bins[i].first, theta_bins[i].second).Data();
+            std::string bin_label_after_theta = TString::Format("#theta [%.1f, %.1f] After corrections", theta_bins[i].first, theta_bins[i].second).Data();
+            std::string bin_label_before_phi = TString::Format("#theta [%.1f, %.1f] Before corrections", theta_bins[i].first, theta_bins[i].second).Data();
+            std::string bin_label_after_phi = TString::Format("#theta [%.1f, %.1f] After corrections", theta_bins[i].first, theta_bins[i].second).Data();
 
             histograms_before_p[pid][i] = new TH2D(
                 ("h_p_before_" + particle_name + "_bin" + std::to_string(i)).c_str(),
-                bin_label.c_str(),
+                bin_label_before_p.c_str(),
                 75, xMin, xMax, 75, -0.05, 0.05
             );
             histograms_before_p[pid][i]->GetXaxis()->SetTitle("p (GeV)");
@@ -5599,7 +5607,7 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
 
             histograms_after_p[pid][i] = new TH2D(
                 ("h_p_after_" + particle_name + "_bin" + std::to_string(i)).c_str(),
-                ("#theta [%.1f, %.1f] After corrections", theta_bins[i].first, theta_bins[i].second).Data(),
+                bin_label_after_p.c_str(),
                 75, xMin, xMax, 75, -0.05, 0.05
             );
             histograms_after_p[pid][i]->GetXaxis()->SetTitle("p (GeV)");
@@ -5609,39 +5617,53 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
             histograms_after_p[pid][i]->GetXaxis()->SetLabelSize(0.045);
             histograms_after_p[pid][i]->GetYaxis()->SetLabelSize(0.045);
 
-            // Similar structure for theta
             histograms_before_theta[pid][i] = new TH2D(
                 ("h_theta_before_" + particle_name + "_bin" + std::to_string(i)).c_str(),
-                ("#theta [%.1f, %.1f] Before corrections", theta_bins[i].first, theta_bins[i].second).Data(),
+                bin_label_before_theta.c_str(),
                 75, xMin, xMax, 75, -0.05, 0.05
             );
             histograms_before_theta[pid][i]->GetXaxis()->SetTitle("theta (degrees)");
-            histograms_before_theta[pid][i]->GetYaxis()->SetTitle("#Delta#theta");
+            histograms_before_theta[pid][i]->GetYaxis()->SetTitle("#Delta theta");
+            histograms_before_theta[pid][i]->GetXaxis()->SetTitleSize(0.05);
+            histograms_before_theta[pid][i]->GetYaxis()->SetTitleSize(0.05);
+            histograms_before_theta[pid][i]->GetXaxis()->SetLabelSize(0.045);
+            histograms_before_theta[pid][i]->GetYaxis()->SetLabelSize(0.045);
 
             histograms_after_theta[pid][i] = new TH2D(
                 ("h_theta_after_" + particle_name + "_bin" + std::to_string(i)).c_str(),
-                ("#theta [%.1f, %.1f] After corrections", theta_bins[i].first, theta_bins[i].second).Data(),
+                bin_label_after_theta.c_str(),
                 75, xMin, xMax, 75, -0.05, 0.05
             );
             histograms_after_theta[pid][i]->GetXaxis()->SetTitle("theta (degrees)");
-            histograms_after_theta[pid][i]->GetYaxis()->SetTitle("#Delta#theta");
+            histograms_after_theta[pid][i]->GetYaxis()->SetTitle("#Delta theta");
+            histograms_after_theta[pid][i]->GetXaxis()->SetTitleSize(0.05);
+            histograms_after_theta[pid][i]->GetYaxis()->SetTitleSize(0.05);
+            histograms_after_theta[pid][i]->GetXaxis()->SetLabelSize(0.045);
+            histograms_after_theta[pid][i]->GetYaxis()->SetLabelSize(0.045);
 
-            // Similar structure for phi
             histograms_before_phi[pid][i] = new TH2D(
                 ("h_phi_before_" + particle_name + "_bin" + std::to_string(i)).c_str(),
-                ("#theta [%.1f, %.1f] Before corrections", theta_bins[i].first, theta_bins[i].second).Data(),
+                bin_label_before_phi.c_str(),
                 75, xMin, xMax, 75, -0.05, 0.05
             );
             histograms_before_phi[pid][i]->GetXaxis()->SetTitle("phi (degrees)");
-            histograms_before_phi[pid][i]->GetYaxis()->SetTitle("#Delta#phi");
+            histograms_before_phi[pid][i]->GetYaxis()->SetTitle("#Delta phi");
+            histograms_before_phi[pid][i]->GetXaxis()->SetTitleSize(0.05);
+            histograms_before_phi[pid][i]->GetYaxis()->SetTitleSize(0.05);
+            histograms_before_phi[pid][i]->GetXaxis()->SetLabelSize(0.045);
+            histograms_before_phi[pid][i]->GetYaxis()->SetLabelSize(0.045);
 
             histograms_after_phi[pid][i] = new TH2D(
                 ("h_phi_after_" + particle_name + "_bin" + std::to_string(i)).c_str(),
-                ("#theta [%.1f, %.1f] After corrections", theta_bins[i].first, theta_bins[i].second).Data(),
+                bin_label_after_phi.c_str(),
                 75, xMin, xMax, 75, -0.05, 0.05
             );
             histograms_after_phi[pid][i]->GetXaxis()->SetTitle("phi (degrees)");
-            histograms_after_phi[pid][i]->GetYaxis()->SetTitle("#Delta#phi");
+            histograms_after_phi[pid][i]->GetYaxis()->SetTitle("#Delta phi");
+            histograms_after_phi[pid][i]->GetXaxis()->SetTitleSize(0.05);
+            histograms_after_phi[pid][i]->GetYaxis()->SetTitleSize(0.05);
+            histograms_after_phi[pid][i]->GetXaxis()->SetLabelSize(0.045);
+            histograms_after_phi[pid][i]->GetYaxis()->SetLabelSize(0.045);
         }
     }
 
@@ -5655,10 +5677,9 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
     TTreeReaderValue<double> p(mcReader, "p");
     TTreeReaderValue<double> mc_theta(mcReader, "mc_theta");
     TTreeReaderValue<double> theta(mcReader, "theta");
-    TTreeReaderValue<double> mc_phi(mcReader, "mc_phi");
-    TTreeReaderValue<double> phi(mcReader, "phi");
-    TTreeReaderValue<int> pid(mcReader, "particle_pid");
-
+    TTreeReaderValue<double> mc_phi(mcReader, “mc_phi”);
+    TTreeReaderValue phi(mcReader, "phi");
+    TTreeReaderValue pid(mcReader, "particle_pid");
     // Edge variables for FD fiducial cuts
     TTreeReaderValue<double> edge_6(mcReader, "traj_edge_6");
     TTreeReaderValue<double> edge_18(mcReader, "traj_edge_18");
@@ -5675,6 +5696,7 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
 
         // Process the event only if the particle is in the defined map
         if (histograms_before_p.find(*pid) != histograms_before_p.end()) {
+            // Fill the "before" histograms
             for (size_t i = 0; i < theta_bins.size(); ++i) {
                 if (*theta >= theta_bins[i].first && *theta < theta_bins[i].second) {
                     histograms_before_p[*pid][i]->Fill(*p, *mc_p - *p);
@@ -5687,6 +5709,7 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
             // Apply energy loss corrections
             apply_energy_loss_correction(p_corr, theta_corr, phi_corr, dataset, "FD");
 
+            // Fill the "after" histograms
             for (size_t i = 0; i < theta_bins.size(); ++i) {
                 if (theta_corr >= theta_bins[i].first && theta_corr < theta_bins[i].second) {
                     histograms_after_p[*pid][i]->Fill(p_corr, *mc_p - p_corr);
@@ -5697,14 +5720,20 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
             }
         }
     }
-    // Create and save the canvases for before and after corrections for p
+
+    // Create and save the canvases for before and after corrections
     for (const auto& [pid, particle_info] : particle_types) {
         const auto& [particle_name, xMin, xMax] = particle_info;
 
         TCanvas* c_p = new TCanvas(("c_p_" + particle_name).c_str(), "p Distributions: Before and After Corrections", 2400, 1600);
         c_p->Divide(6, 2);  // 2x6 subplots
+        TCanvas* c_theta = new TCanvas(("c_theta_" + particle_name).c_str(), "Theta Distributions: Before and After Corrections", 2400, 1600);
+        c_theta->Divide(6, 2);  // 2x6 subplots
+        TCanvas* c_phi = new TCanvas(("c_phi_" + particle_name).c_str(), "Phi Distributions: Before and After Corrections", 2400, 1600);
+        c_phi->Divide(6, 2);  // 2x6 subplots
 
         for (size_t i = 0; i < theta_bins.size(); ++i) {
+            // p distribution
             c_p->cd(i + 1);  // Top row for "before"
             gPad->SetMargin(0.18, 0.15, 0.15, 0.1);  // Extra padding for the left margin
             gPad->SetLogz();  // Set log scale for counts
@@ -5714,28 +5743,8 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
             gPad->SetMargin(0.18, 0.15, 0.15, 0.1);  // Extra padding for the left margin
             gPad->SetLogz();  // Set log scale for counts
             histograms_after_p[pid][i]->Draw("COLZ");
-        }
 
-        c_p->cd();
-        TLatex latex;
-        latex.SetNDC();
-        latex.SetTextSize(0.04);  // Increase text size
-        latex.DrawLatex(0.425, 0.5, (dataset + ", FD").c_str());
-
-        c_p->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/p_distributions_before_after_" + particle_name + ".png").c_str());
-
-        // Clean up memory for p
-        for (size_t i = 0; i < theta_bins.size(); ++i) {
-            delete histograms_before_p[pid][i];
-            delete histograms_after_p[pid][i];
-        }
-        delete c_p;
-
-        // Create and save the canvases for before and after corrections for theta
-        TCanvas* c_theta = new TCanvas(("c_theta_" + particle_name).c_str(), "Theta Distributions: Before and After Corrections", 2400, 1600);
-        c_theta->Divide(6, 2);  // 2x6 subplots
-
-        for (size_t i = 0; i < theta_bins.size(); ++i) {
+            // theta distribution
             c_theta->cd(i + 1);  // Top row for "before"
             gPad->SetMargin(0.18, 0.15, 0.15, 0.1);  // Extra padding for the left margin
             gPad->SetLogz();  // Set log scale for counts
@@ -5745,25 +5754,8 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
             gPad->SetMargin(0.18, 0.15, 0.15, 0.1);  // Extra padding for the left margin
             gPad->SetLogz();  // Set log scale for counts
             histograms_after_theta[pid][i]->Draw("COLZ");
-        }
 
-        c_theta->cd();
-        latex.DrawLatex(0.425, 0.5, (dataset + ", FD").c_str());
-
-        c_theta->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/theta_distributions_before_after_" + particle_name + ".png").c_str());
-
-        // Clean up memory for theta
-        for (size_t i = 0; i < theta_bins.size(); ++i) {
-            delete histograms_before_theta[pid][i];
-            delete histograms_after_theta[pid][i];
-        }
-        delete c_theta;
-
-        // Create and save the canvases for before and after corrections for phi
-        TCanvas* c_phi = new TCanvas(("c_phi_" + particle_name).c_str(), "Phi Distributions: Before and After Corrections", 2400, 1600);
-        c_phi->Divide(6, 2);  // 2x6 subplots
-
-        for (size_t i = 0; i < theta_bins.size(); ++i) {
+            // phi distribution
             c_phi->cd(i + 1);  // Top row for "before"
             gPad->SetMargin(0.18, 0.15, 0.15, 0.1);  // Extra padding for the left margin
             gPad->SetLogz();  // Set log scale for counts
@@ -5775,16 +5767,38 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
             histograms_after_phi[pid][i]->Draw("COLZ");
         }
 
-        c_phi->cd();
-        latex.DrawLatex(0.425, 0.5, (dataset + ", FD").c_str());
+        c_p->cd();
+        TLatex latex_p;
+        latex_p.SetNDC();
+        latex_p.SetTextSize(0.04);  // Increase text size
+        latex_p.DrawLatex(0.425, 0.5, (dataset + ", FD").c_str());
+        c_p->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/p_distributions_before_after_" + particle_name + ".png").c_str());
 
+        c_theta->cd();
+        TLatex latex_theta;
+        latex_theta.SetNDC();
+        latex_theta.SetTextSize(0.04);  // Increase text size
+        latex_theta.DrawLatex(0.425, 0.5, (dataset + ", FD").c_str());
+        c_theta->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/theta_distributions_before_after_" + particle_name + ".png").c_str());
+
+        c_phi->cd();
+        TLatex latex_phi;
+        latex_phi.SetNDC();
+        latex_phi.SetTextSize(0.04);  // Increase text size
+        latex_phi.DrawLatex(0.425, 0.5, (dataset + ", FD").c_str());
         c_phi->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/phi_distributions_before_after_" + particle_name + ".png").c_str());
 
-        // Clean up memory for phi
+        // Clean up memory
         for (size_t i = 0; i < theta_bins.size(); ++i) {
+            delete histograms_before_p[pid][i];
+            delete histograms_after_p[pid][i];
+            delete histograms_before_theta[pid][i];
+            delete histograms_after_theta[pid][i];
             delete histograms_before_phi[pid][i];
             delete histograms_after_phi[pid][i];
         }
+        delete c_p;
+        delete c_theta;
         delete c_phi;
     }
 }
