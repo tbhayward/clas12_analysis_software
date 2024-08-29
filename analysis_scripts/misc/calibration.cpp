@@ -4955,7 +4955,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
         graph_C->SetPoint(i, theta_midpoint, C_values[i]);
         graph_C->SetPointError(i, 0.0, C_errors[i]);
     }
-    graph_C->SetTitle(("C_{" + prefix + "}, #Delta" + prefix + ";#theta (degrees);C_{" + prefix + "}(#theta) (GeV^{2})").c_str());
+    graph_C->SetTitle(("C_{" + prefix + "}, #Delta" + prefix + ";#theta (degrees);C_{" + prefix + "}(#theta) (GeV^{3})").c_str());
     graph_C->GetYaxis()->SetRangeUser(-0.02, 0.02);  // Set y-axis range
     graph_C->SetMarkerStyle(20);  // Set marker style to a filled circle
     gPad->SetLeftMargin(0.2);  // Increase left margin
@@ -5041,15 +5041,25 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
         {2212, {"p", 0.0, 4.0}}
     };
 
+    // // Define theta bins
+    // std::vector<std::pair<double, double>> theta_bins = {
+    //     {5.0, 6.2105}, {6.2105, 7.4211}, {7.4211, 8.6316},
+    //     {8.6316, 9.8421}, {9.8421, 11.0526}, {11.0526, 12.2632},
+    //     {12.2632, 13.4737}, {13.4737, 14.6842}, {14.6842, 15.8947},
+    //     {15.8947, 17.1053}, {17.1053, 18.3158}, {18.3158, 19.5263},
+    //     {19.5263, 20.7368}, {20.7368, 21.9474}, {21.9474, 23.1579},
+    //     {23.1579, 24.3684}, {24.3684, 25.5789}, {25.5789, 26.7895},
+    //     {26.7895, 28.0},    {28.0, 35.0}
+    // };
     // Define theta bins
     std::vector<std::pair<double, double>> theta_bins = {
-        {5.0, 6.2105}, {6.2105, 7.4211}, {7.4211, 8.6316},
-        {8.6316, 9.8421}, {9.8421, 11.0526}, {11.0526, 12.2632},
-        {12.2632, 13.4737}, {13.4737, 14.6842}, {14.6842, 15.8947},
-        {15.8947, 17.1053}, {17.1053, 18.3158}, {18.3158, 19.5263},
-        {19.5263, 20.7368}, {20.7368, 21.9474}, {21.9474, 23.1579},
-        {23.1579, 24.3684}, {24.3684, 25.5789}, {25.5789, 26.7895},
-        {26.7895, 28.0},    {28.0, 35.0}
+        {5.0, 6.75}, {6.75, 8.5}, {8.5, 10.25},
+        {10.25, 12.0}, {12.0, 13.75}, {13.75, 15.5},
+        {15.5, 17.25}, {17.25, 19.0}, {19.0, 20.75},
+        {20.75, 22.5}, {22.5, 24.25}, {24.25, 26.0},
+        {26.0, 27.75}, {27.75, 29.5}, {29.5, 31.25},
+        {31.25, 33.0}, {33.0, 34.75}, {34.75, 36.5},
+        {36.5, 38.25}, {38.25, 40.0}
     };
 
     // Create histograms for each particle type and theta bin
