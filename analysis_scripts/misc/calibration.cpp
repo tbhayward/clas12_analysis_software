@@ -5539,9 +5539,11 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
 
     if (dataset == "rga_fa18_inb" && region == "FD") {
         // A_p, B_p, C_p
-        A_p = 0.000936 + 0.001462 * theta - 0.000095 * theta * theta + 0.000002 * theta * theta * theta;
-        B_p = -0.003907 - 0.001493 * theta + 0.000113 * theta * theta - 0.000002 * theta * theta * theta;
-        C_p = 0.009056 - 0.000007 * theta - 0.000021 * theta * theta + 0.000000 * theta * theta * theta;
+        // A_p = 0.000936 + 0.001462 * theta - 0.000095 * theta * theta + 0.000002 * theta * theta * theta;
+        // B_p = -0.003907 - 0.001493 * theta + 0.000113 * theta * theta - 0.000002 * theta * theta * theta;
+        // C_p = 0.009056 - 0.000007 * theta - 0.000021 * theta * theta + 0.000000 * theta * theta * theta;
+        A_p = 0.002254 +0.000383*theta -0.000034*theta*theta +0.000001*theta*theta*theta;
+        B_p = 0.002326 -0.000142*theta +0.000020*theta*theta -0.000000*theta*theta*theta;
 
         // A_theta, B_theta, C_theta
         A_theta = 0.009991 + 0.004095 * theta - 0.000535 * theta * theta + 0.000011 * theta * theta * theta;
@@ -5708,8 +5710,8 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     // mcReader.Restart();
     // energy_loss_fd_distributions_theta_dc(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_distributions_delta_p(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_distributions_delta_p(mcReader, dataset);
 
     // mcReader.Restart();
     // energy_loss_distributions_delta_theta(mcReader, dataset);
