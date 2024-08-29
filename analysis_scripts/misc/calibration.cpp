@@ -5094,7 +5094,7 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
     gStyle->SetOptStat(0);
 
     // Set up TTreeReaderValues for necessary branches
-    TTreeReaderValue<double> track_sector_6(mcReader, "track_sector_6");
+    TTreeReaderValue<int> track_sector_6(mcReader, "track_sector_6");
     TTreeReaderValue<double> mc_p(mcReader, "mc_p");
     TTreeReaderValue<double> p(mcReader, "p");
     TTreeReaderValue<double> mc_theta(mcReader, "mc_theta");
