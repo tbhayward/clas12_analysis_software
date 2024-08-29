@@ -5550,7 +5550,7 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
         B_phi = -0.713287 + 0.257790 * theta - 0.021196 * theta * theta + 0.000696 * theta * theta * theta;
         C_phi = -0.100341 - 0.060247 * theta + 0.006781 * theta * theta - 0.000251 * theta * theta * theta;
     }
-    std::cout << p << " " << theta << " " << A_p << " " << B_p << " " << C_p << std::endl;
+    // std::cout << p << " " << theta << " " << A_p << " " << B_p << " " << C_p << std::endl;
     // Apply corrections
     p += A_p + B_p / p + C_p / (p * p);
     theta += A_theta + B_theta / theta + C_theta / (theta * theta);
@@ -5582,7 +5582,7 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
             std::string bin_label = TString::Format("#theta [%.1f, %.1f]", theta_bins[i].first, theta_bins[i].second).Data();
 
             histograms_before[pid][i] = new TH2D(
-                ("h_p_before_" + std::to_string(pid) + "_bin" + std::to_string(i)).c_str(),
+                ("h_p_before_" + particle_name + "_bin" + std::to_string(i)).c_str(),
                 bin_label.c_str(),
                 75, xMin, xMax, 75, -0.05, 0.05
             );
@@ -5594,7 +5594,7 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
             histograms_before[pid][i]->GetYaxis()->SetLabelSize(0.045);
 
             histograms_after[pid][i] = new TH2D(
-                ("h_p_after_" + std::to_string(pid) + "_bin" + std::to_string(i)).c_str(),
+                ("h_p_after_" + particle_name + "_bin" + std::to_string(i)).c_str(),
                 bin_label.c_str(),
                 75, xMin, xMax, 75, -0.05, 0.05
             );
@@ -5629,7 +5629,7 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
     // Loop over events
     for (int i = 0; i < 1e8; ++i) {
         mcReader.Next();
-    // while (mcReader.Next()) {
+        // while (mcReader.Next()) {
         // Check if the track passes the required cuts
         if (!is_fd_track(*track_sector_6) || !dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) continue;
 
@@ -5647,7 +5647,7 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
 
             // Apply energy loss corrections
             apply_energy_loss_correction(p_corr, theta_corr, phi_corr, dataset, "FD");
-            // std::cout << *p << " " << p_corr << std::endl;
+
             // Fill the "after" histograms
             for (size_t i = 0; i < theta_bins.size(); ++i) {
                 if (theta_corr >= theta_bins[i].first && theta_corr < theta_bins[i].second) {
