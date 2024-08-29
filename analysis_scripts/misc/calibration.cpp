@@ -5061,7 +5061,7 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
         histograms[pid].resize(theta_bins.size());
 
         for (size_t i = 0; i < theta_bins.size(); ++i) {
-            std::string bin_label = TString::Format("#theta_{DC region1} [%.1f, %.1f]", theta_bins[i].first, theta_bins[i].second).Data();
+            std::string bin_label = TString::Format("#theta [%.1f, %.1f]", theta_bins[i].first, theta_bins[i].second).Data();
 
             histograms[pid][i] = new TH2D(
                 ("h_deltap_" + particle_name + "_bin" + std::to_string(i)).c_str(),
@@ -5102,7 +5102,7 @@ void energy_loss_distributions_delta_p(TTreeReader& mcReader, const std::string&
         if (histograms.find(*pid) != histograms.end() && !is_above_theta_dc_curve(*p, theta_dc_1)) {
         // if (histograms.find(*pid) != histograms.end() ) {
             for (size_t i = 0; i < theta_bins.size(); ++i) {
-                if (theta_dc_1 >= theta_bins[i].first && theta_dc_1 < theta_bins[i].second) {
+                if (*theta >= theta_bins[i].first && *theta < theta_bins[i].second) {
                     histograms[*pid][i]->Fill(*p, delta_p);
                     break;
                 }
