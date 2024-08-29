@@ -4917,9 +4917,9 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
 
     // Add fit results and chi2/ndf to the plot
     TPaveText* pt_A = new TPaveText(0.7, 0.75, 0.9, 0.9, "NDC");
-    pt_A->AddText(Form("p0 = %.6f", fit_A->GetParameter(0)));
-    pt_A->AddText(Form("p1 = %.6f", fit_A->GetParameter(1)));
-    pt_A->AddText(Form("p2 = %.6f", fit_A->GetParameter(2)));
+    pt_A->AddText(Form("p0 = %.7f", fit_A->GetParameter(0)));
+    pt_A->AddText(Form("p1 = %.7f", fit_A->GetParameter(1)));
+    pt_A->AddText(Form("p2 = %.7f", fit_A->GetParameter(2)));
     pt_A->AddText(Form("#chi^{2}/ndf = %.3f", fit_A->GetChisquare() / fit_A->GetNDF()));
     pt_A->SetBorderSize(1);
     pt_A->SetFillColor(0);
@@ -4954,9 +4954,9 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
 
     // Add fit results and chi2/ndf to the plot
     TPaveText* pt_B = new TPaveText(0.7, 0.75, 0.9, 0.9, "NDC");
-    pt_B->AddText(Form("p0 = %.6f", fit_B->GetParameter(0)));
-    pt_B->AddText(Form("p1 = %.6f", fit_B->GetParameter(1)));
-    pt_B->AddText(Form("p2 = %.6f", fit_B->GetParameter(2)));
+    pt_B->AddText(Form("p0 = %.7f", fit_B->GetParameter(0)));
+    pt_B->AddText(Form("p1 = %.7f", fit_B->GetParameter(1)));
+    pt_B->AddText(Form("p2 = %.7f", fit_B->GetParameter(2)));
     pt_B->AddText(Form("#chi^{2}/ndf = %.3f", fit_B->GetChisquare() / fit_B->GetNDF()));
     pt_B->SetBorderSize(1);
     pt_B->SetFillColor(0);
@@ -4990,9 +4990,9 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
 
     // Add fit results and chi2/ndf to the plot
     TPaveText* pt_C = new TPaveText(0.7, 0.75, 0.9, 0.9, "NDC");
-    pt_C->AddText(Form("p0 = %.6f", fit_C->GetParameter(0)));
-    pt_C->AddText(Form("p1 = %.6f", fit_C->GetParameter(1)));
-    pt_C->AddText(Form("p2 = %.6f", fit_C->GetParameter(2)));
+    pt_C->AddText(Form("p0 = %.7f", fit_C->GetParameter(0)));
+    pt_C->AddText(Form("p1 = %.7f", fit_C->GetParameter(1)));
+    pt_C->AddText(Form("p2 = %.7f", fit_C->GetParameter(2)));
     pt_C->AddText(Form("#chi^{2}/ndf = %.3f", fit_C->GetChisquare() / fit_C->GetNDF()));
     pt_C->SetBorderSize(1);
     pt_C->SetFillColor(0);
@@ -5003,11 +5003,11 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     for (int i = 0; i <= 2; ++i) {
         double coeff = fit_A->GetParameter(i);
         if (i == 0) {
-            std::cout << Form("%.6f", coeff);
+            std::cout << Form("%.7f", coeff);
         } else if (i == 1) {
-            std::cout << Form(" %+.6f\\theta", coeff);
+            std::cout << Form(" %+.7f\\theta", coeff);
         } else {
-            std::cout << Form(" %+.6f\\theta^%d", coeff, i);
+            std::cout << Form(" %+.7f\\theta^%d", coeff, i);
         }
     }
     std::cout << std::endl;
@@ -5017,11 +5017,11 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     for (int i = 0; i <= 2; ++i) {
         double coeff = fit_B->GetParameter(i);
         if (i == 0) {
-            std::cout << Form("%.6f", coeff);
+            std::cout << Form("%.7f", coeff);
         } else if (i == 1) {
-            std::cout << Form(" %+.6f\\theta", coeff);
+            std::cout << Form(" %+.7f\\theta", coeff);
         } else {
-            std::cout << Form(" %+.6f\\theta^%d", coeff, i);
+            std::cout << Form(" %+.7f\\theta^%d", coeff, i);
         }
     }
     std::cout << std::endl;
@@ -5031,11 +5031,11 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     for (int i = 0; i <= 2; ++i) {
         double coeff = fit_C->GetParameter(i);
         if (i == 0) {
-            std::cout << Form("%.6f", coeff);
+            std::cout << Form("%.7f", coeff);
         } else if (i == 1) {
-            std::cout << Form(" %+.6f\\theta", coeff);
+            std::cout << Form(" %+.7f\\theta", coeff);
         } else {
-            std::cout << Form(" %+.6f\\theta^%d", coeff, i);
+            std::cout << Form(" %+.7f\\theta^%d", coeff, i);
         }
     }
     std::cout << std::endl;
@@ -5535,11 +5535,9 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
 
     if (dataset == "rga_fa18_inb" && region == "FD") {
         // A_p, B_p, C_p
-        // A_p = 0.000936 + 0.001462 * theta - 0.000095 * theta * theta + 0.000002 * theta * theta * theta;
-        // B_p = -0.003907 - 0.001493 * theta + 0.000113 * theta * theta - 0.000002 * theta * theta * theta;
-        // C_p = 0.009056 - 0.000007 * theta - 0.000021 * theta * theta + 0.000000 * theta * theta * theta;
-        A_p = 0.002254 +0.000383*theta -0.000034*theta*theta +0.000001*theta*theta*theta;
-        B_p = 0.002326 -0.000142*theta +0.000020*theta*theta -0.000000*theta*theta*theta;
+        A_p = 0.010524 - 0.000298 * theta - 0.000095 * theta * theta;
+        B_p = -0.003907 - 0.001493 * theta + 0.000113 * theta * theta;
+        C_p = 0.009056 - 0.000007 * theta - 0.000021 * theta * theta;
 
         // A_theta, B_theta, C_theta
         A_theta = 0.009991 + 0.004095 * theta - 0.000535 * theta * theta + 0.000011 * theta * theta * theta;
