@@ -5214,7 +5214,7 @@ void energy_loss_distributions_delta_theta(TTreeReader& mcReader, const std::str
     };
 
     // // Define theta bins
-    std::std::vector<std::pair<double, double>> theta_bins = {
+    std::vector<std::pair<double, double>> theta_bins = {
         {5.0, 6.3043}, {6.3043, 7.6087}, {7.6087, 8.9130},
         {8.9130, 10.2174}, {10.2174, 11.5217}, {11.5217, 12.8261},
         {12.8261, 14.1304}, {14.1304, 15.4348}, {15.4348, 16.7391},
