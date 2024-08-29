@@ -5564,8 +5564,8 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
 
     // Define six theta bins between 5 and 42 degrees
     std::vector<std::pair<double, double>> theta_bins = {
-        {5.0, 12.8333}, {12.8333, 20.6667}, {20.6667, 28.5},
-        {28.5, 36.3333}, {36.3333, 42.0}
+        {5.0, 10.0}, {10.0, 15.0}, {15.0, 20.0}, {20.0, 25.0}, {25.0, 30.0}, 
+        {30.0, 40.0}
     };
 
     // Define histograms before and after corrections
@@ -5618,7 +5618,7 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
     TTreeReaderValue<double> edge_36(mcReader, "traj_edge_36");
 
     // Loop over events
-    for (int i = 0; i < 1e7; ++i) {
+    for (int i = 0; i < 1e8; ++i) {
         mcReader.Next();
     // while (mcReader.Next()) {
         // Check if the track passes the required cuts
