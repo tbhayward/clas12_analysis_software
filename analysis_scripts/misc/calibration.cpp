@@ -5562,11 +5562,10 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
         {2212, {"p", 0.0, 5.0}}  // Proton as an example
     };
 
-    // Define theta bins
+    // Define six theta bins between 5 and 42 degrees
     std::vector<std::pair<double, double>> theta_bins = {
-        {5.0, 7.0833}, {7.0833, 9.1667}, {9.1667, 11.25}, {11.25, 13.3333},
-        {13.3333, 15.4167}, {15.4167, 17.5}, {17.5, 19.5833}, {19.5833, 21.6667},
-        {21.6667, 23.75}, {23.75, 25.8333}, {25.8333, 27.9167}, {27.9167, 30.0}
+        {5.0, 12.8333}, {12.8333, 20.6667}, {20.6667, 28.5},
+        {28.5, 36.3333}, {36.3333, 42.0}
     };
 
     // Define histograms before and after corrections
@@ -5598,6 +5597,10 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
             histograms_after[pid][i]->GetYaxis()->SetTitle("#Deltap");
         }
     }
+
+    // Set the color palette to rainbow
+    gStyle->SetPalette(kRainBow);
+    gStyle->SetOptStat(0);
 
     // Set up TTreeReaderValues for necessary branches
     TTreeReaderValue<int> track_sector_6(mcReader, "track_sector_6");
@@ -5633,7 +5636,7 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
 
             // Apply energy loss corrections
             apply_energy_loss_correction(p_corr, theta_corr, phi_corr, dataset, "FD");
-
+            std::cout << *p << " " << p_corr << std::endl;
             // Fill the "after" histograms
             for (size_t i = 0; i < theta_bins.size(); ++i) {
                 if (theta_corr >= theta_bins[i].first && theta_corr < theta_bins[i].second) {
@@ -5649,12 +5652,12 @@ void plot_energy_loss_corrections(TTreeReader& mcReader, const std::string& data
         const auto& [particle_name, xMin, xMax] = particle_info;
 
         TCanvas* c_p = new TCanvas(("c_p_" + particle_name).c_str(), "p Distributions: Before and After Corrections", 2400, 1600);
-        c_p->Divide(6, 4);  // 2x6 subplots
+        c_p->Divide(6, 2);  // 2x6 subplots
 
         for (size_t i = 0; i < theta_bins.size(); ++i) {
-            c_p->cd(i + 1);
+            c_p->cd(i + 1);  // Top row for "before"
             histograms_before[pid][i]->Draw("COLZ");
-            c_p->cd(i + 13);
+            c_p->cd(i + 7);  // Bottom row for "after"
             histograms_after[pid][i]->Draw("COLZ");
         }
 
@@ -5823,7 +5826,7 @@ int main(int argc, char** argv) {
 
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
-    if (mcReader) energy_loss(*mcReader, "rga_fa18_out");  
+    if (mcReader) energy_loss(*mcReader, "rga_fa18_inb");  
 
     // Close files
     dataFile.Close();
