@@ -5059,7 +5059,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
 void energy_loss_distributions_delta_p_fd(TTreeReader& mcReader, const std::string& dataset) {
     // Particle types and their corresponding LaTeX names and x-axis ranges
     std::map<int, std::tuple<std::string, double, double>> particle_types = {
-        {2212, {"p", 0.0, 5.0}}
+        {2212, {"p", 0.0, 7.0}}
     };
 
     // // Define theta bins
