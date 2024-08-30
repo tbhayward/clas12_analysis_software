@@ -5059,7 +5059,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
 void energy_loss_distributions_delta_p_fd(TTreeReader& mcReader, const std::string& dataset) {
     // Particle types and their corresponding LaTeX names and x-axis ranges
     std::map<int, std::tuple<std::string, double, double>> particle_types = {
-        {2212, {"p", 0.0, 7.0}}
+        {2212, {"p", 0.0, 6.0}}
     };
 
     // // Define theta bins
@@ -5376,15 +5376,42 @@ void energy_loss_distributions_delta_theta_fd(TTreeReader& mcReader, const std::
             // Create profile histograms
             TProfile* prof_deltatheta = histograms[pid][i]->ProfileX();
 
-            // Set the range of the profile to start from 0.5
-            prof_deltatheta->GetXaxis()->SetRangeUser(0.5, std::get<2>(particle_types[pid]));
+            // Find the first and last bins with more than 1000 entries
+            int firstBin = 1; // Start from the first bin
+            double minXValue = 0.5; // Default minimum x-value
+            double maxXValue = std::get<2>(particle_types[pid]); // Default maximum x-value
+
+            for (int bin = 1; bin <= prof_deltatheta->GetNbinsX(); ++bin) {
+                if (prof_deltap->GetBinEntries(bin) > 100) {
+                    minXValue = prof_deltatheta->GetBinLowEdge(bin);
+                    break;
+                }
+            }
+
+            for (int bin = prof_deltatheta->GetNbinsX(); bin >= 1; --bin) {
+                if (prof_deltap->GetBinEntries(bin) > 100) {
+                    maxXValue = prof_deltatheta->GetBinLowEdge(bin) + prof_deltatheta->GetBinWidth(bin);
+                    break;
+                }
+            }
+
+            // Set the range of the profile to start and end at the calculated values
+            prof_deltatheta->GetXaxis()->SetRangeUser(minXValue, maxXValue);
+
+            // Determine the appropriate fit function based on the dataset
+            std::string fitFunction;
+            if (dataset == "rga_fa18_out") {
+                fitFunction = "[0] + [1]/x"; // For special case
+            } else {
+                fitFunction = "[0] + [1]/x + [2]/x^2"; // For normal cases
+            }
 
             // Fit the profiles with appropriate functions
-            fit_deltatheta[i] = new TF1(("fit_deltatheta_" + std::to_string(i)).c_str(), "[0] + [1]/x + [2]/x^2", 0.5, std::get<2>(particle_types[pid]));
+            fit_deltatheta[i] = new TF1(("fit_deltatheta_" + std::to_string(i)).c_str(), fitFunction.c_str(), minXValue, maxXValue);
             prof_deltatheta->Fit(fit_deltatheta[i], "Q"); // Silent fit
 
             // Set the range of the fit function for plotting
-            fit_deltatheta[i]->SetRange(0.5, std::get<2>(particle_types[pid]));
+            fit_deltatheta[i]->SetRange(minXValue, maxXValue);
 
             // Store the fit parameters
             A_values[i] = fit_deltatheta[i]->GetParameter(0);
@@ -5551,15 +5578,35 @@ void energy_loss_distributions_delta_phi_fd(TTreeReader& mcReader, const std::st
             // Create profile histograms
             TProfile* prof_deltaphi = histograms[pid][i]->ProfileX();
 
-            // Set the range of the profile to start from 0.5
-            prof_deltaphi->GetXaxis()->SetRangeUser(0.5, std::get<2>(particle_types[pid]));
+            // Find the first and last bins with more than 1000 entries
+            int firstBin = 1; // Start from the first bin
+            double minXValue = 0.5; // Default minimum x-value
+            double maxXValue = std::get<2>(particle_types[pid]); // Default maximum x-value
+
+            for (int bin = 1; bin <= prof_deltaphi->GetNbinsX(); ++bin) {
+                if (prof_deltaphi->GetBinEntries(bin) > 100) {
+                    minXValue = prof_deltaphi->GetBinLowEdge(bin);
+                    break;
+                }
+            }
+
+            for (int bin = prof_deltaphi->GetNbinsX(); bin >= 1; --bin) {
+                if (prof_deltaphi->GetBinEntries(bin) > 100) {
+                    maxXValue = prof_deltaphi->GetBinLowEdge(bin) + prof_deltaphi->GetBinWidth(bin);
+                    break;
+                }
+            }
+
+            // Set the range of the profile to start and end at the calculated values
+            prof_deltaphi->GetXaxis()->SetRangeUser(minXValue, maxXValue);
 
             // Fit the profiles with appropriate functions
-            fit_deltaphi[i] = new TF1(("fit_deltaphi_" + std::to_string(i)).c_str(), "[0] + [1]/x + [2]/x^2", 0.5, std::get<2>(particle_types[pid]));
-            prof_deltaphi->Fit(fit_deltaphi[i], "Q"); // Silent fit
+            fit_deltaphi[i] = new TF1(("fit_deltaphi_" + std::to_string(i)).c_str(), "[0] + [1]/x + [2]/x^2", minXValue, maxXValue);
+
+            prof_deltaphi->Fit(fit_deltap[i], "Q"); // Silent fit
 
             // Set the range of the fit function for plotting
-            fit_deltaphi[i]->SetRange(0.5, std::get<2>(particle_types[pid]));
+            fit_deltaphi[i]->SetRange(minXValue, maxXValue);
 
             // Store the fit parameters
             A_values[i] = fit_deltaphi[i]->GetParameter(0);
