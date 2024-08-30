@@ -5206,8 +5206,16 @@ void energy_loss_distributions_delta_p_fd(TTreeReader& mcReader, const std::stri
             // Set the range of the profile to start and end at the calculated values
             prof_deltap->GetXaxis()->SetRangeUser(minXValue, maxXValue);
 
+            // Determine the appropriate fit function based on the dataset
+            std::string fitFunction;
+            if (dataset == "rga_fa18_out") {
+                fitFunction = "[0] + [1]/x"; // For special case
+            } else {
+                fitFunction = "[0] + [1]/x + [2]/x^2"; // For normal cases
+            }
+
             // Fit the profiles with appropriate functions
-            fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x + [2]/x^2", minXValue, maxXValue);
+            fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), fitFunction.c_str(), minXValue, maxXValue);
 
             prof_deltap->Fit(fit_deltap[i], "Q"); // Silent fit
 
@@ -5331,9 +5339,9 @@ void energy_loss_distributions_delta_theta_fd(TTreeReader& mcReader, const std::
     TTreeReaderValue<double> edge_36(mcReader, "traj_edge_36");
 
     // Loop over events
-    for (int i = 0; i < 1e7; ++i) {
-        mcReader.Next();
-    // while (mcReader.Next()) {
+    // for (int i = 0; i < 1e7; ++i) {
+    //     mcReader.Next();
+    while (mcReader.Next()) {
         if (!is_fd_track(*track_sector_6)) continue;
         if (!dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) continue;
         double delta_theta = *mc_theta - *theta;
