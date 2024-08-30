@@ -5391,14 +5391,14 @@ void energy_loss_distributions_delta_theta_fd(TTreeReader& mcReader, const std::
             double maxXValue = std::get<2>(particle_types[pid]); // Default maximum x-value
 
             for (int bin = 1; bin <= prof_deltatheta->GetNbinsX(); ++bin) {
-                if (prof_deltap->GetBinEntries(bin) > 100) {
+                if (prof_deltatheta->GetBinEntries(bin) > 100) {
                     minXValue = prof_deltatheta->GetBinLowEdge(bin);
                     break;
                 }
             }
 
             for (int bin = prof_deltatheta->GetNbinsX(); bin >= 1; --bin) {
-                if (prof_deltap->GetBinEntries(bin) > 100) {
+                if (prof_deltatheta->GetBinEntries(bin) > 100) {
                     maxXValue = prof_deltatheta->GetBinLowEdge(bin) + prof_deltatheta->GetBinWidth(bin);
                     break;
                 }
@@ -5620,7 +5620,7 @@ void energy_loss_distributions_delta_phi_fd(TTreeReader& mcReader, const std::st
             // Fit the profiles with appropriate functions
             fit_deltaphi[i] = new TF1(("fit_deltaphi_" + std::to_string(i)).c_str(), fitFunction.c_str(), minXValue, maxXValue);
 
-            prof_deltaphi->Fit(fit_deltap[i], "Q"); // Silent fit
+            prof_deltaphi->Fit(fit_deltaphi[i], "Q"); // Silent fit
 
             // Set the range of the fit function for plotting
             fit_deltaphi[i]->SetRange(minXValue, maxXValue);
