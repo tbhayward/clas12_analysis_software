@@ -4885,7 +4885,12 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     TCanvas* c_fit_params = new TCanvas(("c_fit_params_" + particle_name).c_str(), 
                                         ("Fit Parameters: " + dataset + ", " + particle_name).c_str(), 
                                         1600, 800);
-    c_fit_params->Divide(3, 1);  // 1 row, 2 columns
+    // Determine the canvas layout based on the dataset
+    if (dataset == "rga_fa18_out") {
+        c_fit_params->Divide(2, 1);  // 2x1 canvas for rga_fa18_out
+    } else {
+        c_fit_params->Divide(3, 1);  // 1x3 canvas for other datasets
+    }
 
     // Plot A(#theta)
     c_fit_params->cd(1);
@@ -4895,7 +4900,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
         graph_A->SetPoint(i, theta_midpoint, A_values[i]);
         graph_A->SetPointError(i, 0.0, A_errors[i]);
     }
-    
+
     if (prefix == "p") {
         graph_A->GetYaxis()->SetRangeUser(-0.02, 0.02);  // Set y-axis range
         graph_A->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
@@ -4905,13 +4910,18 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
         graph_A->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
         graph_A->SetTitle(("A_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);A_{" + prefix + "}(#theta)").c_str());
     }
-    
+
     graph_A->SetMarkerStyle(20);  // Set marker style to a filled circle
     gPad->SetLeftMargin(0.2);  // Increase left margin
     graph_A->Draw("AP");
 
-    // Fit A(#theta) to a 2nd order polynomial
-    TF1* fit_A = new TF1("fit_A", "[0]+[1]*x+[2]*x*x", theta_bins.front().first, theta_bins.back().second);
+    // Choose the fit function based on the dataset
+    TF1* fit_A;
+    if (dataset == "rga_fa18_out") {
+        fit_A = new TF1("fit_A", "[0]+[1]*x", theta_bins.front().first, theta_bins.back().second);  // Linear fit for rga_fa18_out
+    } else {
+        fit_A = new TF1("fit_A", "[0]+[1]*x+[2]*x*x", theta_bins.front().first, theta_bins.back().second);  // Quadratic fit for other datasets
+    }
     graph_A->Fit(fit_A, "Q");  // Silent fit
     fit_A->Draw("same");
 
@@ -4919,7 +4929,9 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     TPaveText* pt_A = new TPaveText(0.7, 0.75, 0.9, 0.9, "NDC");
     pt_A->AddText(Form("p0 = %.7f", fit_A->GetParameter(0)));
     pt_A->AddText(Form("p1 = %.7f", fit_A->GetParameter(1)));
-    pt_A->AddText(Form("p2 = %.7f", fit_A->GetParameter(2)));
+    if (dataset != "rga_fa18_out") {
+        pt_A->AddText(Form("p2 = %.7f", fit_A->GetParameter(2)));  // Only add p2 for non-outbending datasets
+    }
     pt_A->AddText(Form("#chi^{2}/ndf = %.3f", fit_A->GetChisquare() / fit_A->GetNDF()));
     pt_A->SetBorderSize(1);
     pt_A->SetFillColor(0);
@@ -4933,7 +4945,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
         graph_B->SetPoint(i, theta_midpoint, B_values[i]);
         graph_B->SetPointError(i, 0.0, B_errors[i]);
     }
-    
+
     if (prefix == "p") {
         graph_B->GetYaxis()->SetRangeUser(-0.02, 0.02);  // Set y-axis range
         graph_B->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
@@ -4947,8 +4959,13 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     gPad->SetLeftMargin(0.2);  // Increase left margin
     graph_B->Draw("AP");
 
-    // Fit B(#theta) to a 2nd order polynomial
-    TF1* fit_B = new TF1("fit_B", "[0]+[1]*x+[2]*x*x", theta_bins.front().first, theta_bins.back().second);
+    // Choose the fit function for B based on the dataset
+    TF1* fit_B;
+    if (dataset == "rga_fa18_out") {
+        fit_B = new TF1("fit_B", "[0]+[1]*x", theta_bins.front().first, theta_bins.back().second);  // Linear fit for rga_fa18_out
+    } else {
+        fit_B = new TF1("fit_B", "[0]+[1]*x+[2]*x*x", theta_bins.front().first, theta_bins.back().second);  // Quadratic fit for other datasets
+    }
     graph_B->Fit(fit_B, "Q");  // Silent fit
     fit_B->Draw("same");
 
@@ -4956,47 +4973,51 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     TPaveText* pt_B = new TPaveText(0.7, 0.75, 0.9, 0.9, "NDC");
     pt_B->AddText(Form("p0 = %.7f", fit_B->GetParameter(0)));
     pt_B->AddText(Form("p1 = %.7f", fit_B->GetParameter(1)));
-    pt_B->AddText(Form("p2 = %.7f", fit_B->GetParameter(2)));
+    if (dataset != "rga_fa18_out") {
+        pt_B->AddText(Form("p2 = %.7f", fit_B->GetParameter(2)));  // Only add p2 for non-outbending datasets
+    }
     pt_B->AddText(Form("#chi^{2}/ndf = %.3f", fit_B->GetChisquare() / fit_B->GetNDF()));
     pt_B->SetBorderSize(1);
     pt_B->SetFillColor(0);
     pt_B->Draw();
 
-    // Plot C(#theta)
-    c_fit_params->cd(3);
-    TGraphErrors* graph_C = new TGraphErrors(theta_bins.size());
-    for (size_t i = 0; i < theta_bins.size(); ++i) {
-        double theta_midpoint = 0.5 * (theta_bins[i].first + theta_bins[i].second);
-        graph_C->SetPoint(i, theta_midpoint, C_values[i]);
-        graph_C->SetPointError(i, 0.0, C_errors[i]);
-    }
-    if (prefix == "p") {
-        graph_C->GetYaxis()->SetRangeUser(-0.02, 0.02);  // Set y-axis range
-        graph_C->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
-        graph_C->SetTitle(("C_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);C_{" + prefix + "}(#theta) (GeV^{3})").c_str());
-    } else {
-        graph_C->GetYaxis()->SetRangeUser(-0.5, 0.5);  // Set y-axis range
-        graph_C->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
-        graph_C->SetTitle(("C_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);C_{" + prefix + "}(#theta)").c_str());
-    }
-    graph_C->SetMarkerStyle(20);  // Set marker style to a filled circle
-    gPad->SetLeftMargin(0.2);  // Increase left margin
-    graph_C->Draw("AP");
+    // For non-outbending datasets, plot C(#theta)
+    if (dataset != "rga_fa18_out") {
+        c_fit_params->cd(3);
+        TGraphErrors* graph_C = new TGraphErrors(theta_bins.size());
+        for (size_t i = 0; i < theta_bins.size(); ++i) {
+            double theta_midpoint = 0.5 * (theta_bins[i].first + theta_bins[i].second);
+            graph_C->SetPoint(i, theta_midpoint, C_values[i]);
+            graph_C->SetPointError(i, 0.0, C_errors[i]);
+        }
+        if (prefix == "p") {
+            graph_C->GetYaxis()->SetRangeUser(-0.02, 0.02);  // Set y-axis range
+            graph_C->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+            graph_C->SetTitle(("C_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);C_{" + prefix + "}(#theta) (GeV^{3})").c_str());
+        } else {
+            graph_C->GetYaxis()->SetRangeUser(-0.5, 0.5);  // Set y-axis range
+            graph_C->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+            graph_C->SetTitle(("C_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);C_{" + prefix + "}(#theta)").c_str());
+        }
+        graph_C->SetMarkerStyle(20);  // Set marker style to a filled circle
+        gPad->SetLeftMargin(0.2);  // Increase left margin
+        graph_C->Draw("AP");
 
-    // Fit C(#theta) to a 2nd order polynomial
-    TF1* fit_C = new TF1("fit_C", "[0]+[1]*x+[2]*x*x", theta_bins.front().first, theta_bins.back().second);
-    graph_C->Fit(fit_C, "Q");  // Silent fit
-    fit_C->Draw("same");
+        // Fit C(#theta) to a 2nd order polynomial
+        TF1* fit_C = new TF1("fit_C", "[0]+[1]*x+[2]*x*x", theta_bins.front().first, theta_bins.back().second);
+        graph_C->Fit(fit_C, "Q");  // Silent fit
+        fit_C->Draw("same");
 
-    // Add fit results and chi2/ndf to the plot
-    TPaveText* pt_C = new TPaveText(0.7, 0.75, 0.9, 0.9, "NDC");
-    pt_C->AddText(Form("p0 = %.7f", fit_C->GetParameter(0)));
-    pt_C->AddText(Form("p1 = %.7f", fit_C->GetParameter(1)));
-    pt_C->AddText(Form("p2 = %.7f", fit_C->GetParameter(2)));
-    pt_C->AddText(Form("#chi^{2}/ndf = %.3f", fit_C->GetChisquare() / fit_C->GetNDF()));
-    pt_C->SetBorderSize(1);
-    pt_C->SetFillColor(0);
-    pt_C->Draw();
+        // Add fit results and chi2/ndf to the plot
+        TPaveText* pt_C = new TPaveText(0.7, 0.75, 0.9, 0.9, “NDC”);
+        pt_C->AddText(Form("p0 = %.7f", fit_C->GetParameter(0)));
+        pt_C->AddText(Form("p1 = %.7f", fit_C->GetParameter(1)));
+        pt_C->AddText(Form("p2 = %.7f", fit_C->GetParameter(2)));
+        pt_C->AddText(Form("#chi^{2}/ndf = %.3f", fit_C->GetChisquare() / fit_C->GetNDF()));
+        pt_C->SetBorderSize(1);
+        pt_C->SetFillColor(0);
+        pt_C->Draw();
+    }
 
     // Print out the functional form of A(theta) in LaTeX format
     std::cout << "A_" << prefix << "(\\theta) = ";
