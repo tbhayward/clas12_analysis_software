@@ -5136,9 +5136,9 @@ void energy_loss_distributions_delta_p_fd(TTreeReader& mcReader, const std::stri
     TTreeReaderValue<double> edge_36(mcReader, "traj_edge_36");
 
     // Loop over events
-    // for (int i = 0; i < 1e7; ++i) {
-    //     mcReader.Next();
-    while (mcReader.Next()) {
+    for (int i = 0; i < 1e7; ++i) {
+        mcReader.Next();
+    // while (mcReader.Next()) {
         if (!is_fd_track(*track_sector_6)) continue;
         if (!dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) continue;
         double delta_p = *mc_p - *p;
