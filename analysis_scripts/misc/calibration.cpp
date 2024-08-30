@@ -5184,9 +5184,10 @@ void energy_loss_distributions_delta_p_fd(TTreeReader& mcReader, const std::stri
             // Create profile histograms
             TProfile* prof_deltap = histograms[pid][i]->ProfileX();
 
-            // Find the first bin with more than 1000 entries
+            // Find the first and last bins with more than 1000 entries
             int firstBin = 1; // Start from the first bin
             double minXValue = 0.5; // Default minimum x-value
+            double maxXValue = std::get<2>(particle_types[pid]); // Default maximum x-value
 
             for (int bin = 1; bin <= prof_deltap->GetNbinsX(); ++bin) {
                 if (prof_deltap->GetBinEntries(bin) > 1000) {
@@ -5195,16 +5196,23 @@ void energy_loss_distributions_delta_p_fd(TTreeReader& mcReader, const std::stri
                 }
             }
 
-            // Set the range of the profile to start from 0.5
-            prof_deltap->GetXaxis()->SetRangeUser(minXValue, std::get<2>(particle_types[pid]));
+            for (int bin = prof_deltap->GetNbinsX(); bin >= 1; --bin) {
+                if (prof_deltap->GetBinEntries(bin) > 1000) {
+                    maxXValue = prof_deltap->GetBinLowEdge(bin) + prof_deltap->GetBinWidth(bin);
+                    break;
+                }
+            }
+
+            // Set the range of the profile to start and end at the calculated values
+            prof_deltap->GetXaxis()->SetRangeUser(minXValue, maxXValue);
 
             // Fit the profiles with appropriate functions
-            fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x + [2]/x^2", minXValue, std::get<2>(particle_types[pid]));
-            
+            fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x + [2]/x^2", minXValue, maxXValue);
+
             prof_deltap->Fit(fit_deltap[i], "Q"); // Silent fit
 
             // Set the range of the fit function for plotting
-            fit_deltap[i]->SetRange(minXValue, std::get<2>(particle_types[pid]));
+            fit_deltap[i]->SetRange(minXValue, maxXValue);
 
             // Store the fit parameters
             A_values[i] = fit_deltap[i]->GetParameter(0);
