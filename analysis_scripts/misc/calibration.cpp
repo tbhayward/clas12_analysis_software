@@ -5209,7 +5209,6 @@ void energy_loss_distributions_delta_p_fd(TTreeReader& mcReader, const std::stri
             // Determine the appropriate fit function based on the dataset
             std::string fitFunction;
             if (dataset == "rga_fa18_out") {
-                std::cout << "HELLO WE'RE RIGHT HERE" << std::endl;
                 fitFunction = "[0] + [1]/x"; // For special case
             } else {
                 fitFunction = "[0] + [1]/x + [2]/x^2"; // For normal cases
