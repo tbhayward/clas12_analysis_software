@@ -5063,16 +5063,30 @@ void energy_loss_distributions_delta_p_fd(TTreeReader& mcReader, const std::stri
     };
 
     // // Define theta bins
-    std::vector<std::pair<double, double>> theta_bins = {
-        {5.0, 6.3043}, {6.3043, 7.6087}, {7.6087, 8.9130},
-        {8.9130, 10.2174}, {10.2174, 11.5217}, {11.5217, 12.8261},
-        {12.8261, 14.1304}, {14.1304, 15.4348}, {15.4348, 16.7391},
-        {16.7391, 18.0435}, {18.0435, 19.3478}, {19.3478, 20.6522},
-        {20.6522, 21.9565}, {21.9565, 23.2609}, {23.2609, 24.5652},
-        {24.5652, 25.8696}, {25.8696, 27.1739}, {27.1739, 28.4783},
-        {28.4783, 29.7826}, {29.7826, 31.0870}, {31.0870, 32.3913},
-        {32.3913, 33.6957}, {33.6957, 35.0}, {35.0, 42.0}
-    };
+    std::vector<std::pair<double, double>> theta_bins;
+    if (dataset == "rga_fa18_out") {
+        // Outbending case: 24 equally spaced bins between 8 and 44 degrees
+        theta_bins = {
+            {8.0, 9.5}, {9.5, 11.0}, {11.0, 12.5}, {12.5, 14.0},
+            {14.0, 15.5}, {15.5, 17.0}, {17.0, 18.5}, {18.5, 20.0},
+            {20.0, 21.5}, {21.5, 23.0}, {23.0, 24.5}, {24.5, 26.0},
+            {26.0, 27.5}, {27.5, 29.0}, {29.0, 30.5}, {30.5, 32.0},
+            {32.0, 33.5}, {33.5, 35.0}, {35.0, 36.5}, {36.5, 38.0},
+            {38.0, 39.5}, {39.5, 41.0}, {41.0, 42.5}, {42.5, 44.0}
+        };
+    } else {
+        // Inbending case (default): existing bins
+        theta_bins = {
+            {5.0, 6.3043}, {6.3043, 7.6087}, {7.6087, 8.9130},
+            {8.9130, 10.2174}, {10.2174, 11.5217}, {11.5217, 12.8261},
+            {12.8261, 14.1304}, {14.1304, 15.4348}, {15.4348, 16.7391},
+            {16.7391, 18.0435}, {18.0435, 19.3478}, {19.3478, 20.6522},
+            {20.6522, 21.9565}, {21.9565, 23.2609}, {23.2609, 24.5652},
+            {24.5652, 25.8696}, {25.8696, 27.1739}, {27.1739, 28.4783},
+            {28.4783, 29.7826}, {29.7826, 31.0870}, {31.0870, 32.3913},
+            {32.3913, 33.6957}, {33.6957, 35.0}, {35.0, 42.0}
+        };
+    }
 
     // Create histograms for each particle type and theta bin
     std::map<int, std::vector<TH2D*>> histograms;
@@ -5219,16 +5233,30 @@ void energy_loss_distributions_delta_theta_fd(TTreeReader& mcReader, const std::
     };
 
     // // Define theta bins
-    std::vector<std::pair<double, double>> theta_bins = {
-        {5.0, 6.3043}, {6.3043, 7.6087}, {7.6087, 8.9130},
-        {8.9130, 10.2174}, {10.2174, 11.5217}, {11.5217, 12.8261},
-        {12.8261, 14.1304}, {14.1304, 15.4348}, {15.4348, 16.7391},
-        {16.7391, 18.0435}, {18.0435, 19.3478}, {19.3478, 20.6522},
-        {20.6522, 21.9565}, {21.9565, 23.2609}, {23.2609, 24.5652},
-        {24.5652, 25.8696}, {25.8696, 27.1739}, {27.1739, 28.4783},
-        {28.4783, 29.7826}, {29.7826, 31.0870}, {31.0870, 32.3913},
-        {32.3913, 33.6957}, {33.6957, 35.0}, {35.0, 42.0}
-    };
+    std::vector<std::pair<double, double>> theta_bins;
+    if (dataset == "rga_fa18_out") {
+        // Outbending case: 24 equally spaced bins between 8 and 44 degrees
+        theta_bins = {
+            {8.0, 9.5}, {9.5, 11.0}, {11.0, 12.5}, {12.5, 14.0},
+            {14.0, 15.5}, {15.5, 17.0}, {17.0, 18.5}, {18.5, 20.0},
+            {20.0, 21.5}, {21.5, 23.0}, {23.0, 24.5}, {24.5, 26.0},
+            {26.0, 27.5}, {27.5, 29.0}, {29.0, 30.5}, {30.5, 32.0},
+            {32.0, 33.5}, {33.5, 35.0}, {35.0, 36.5}, {36.5, 38.0},
+            {38.0, 39.5}, {39.5, 41.0}, {41.0, 42.5}, {42.5, 44.0}
+        };
+    } else {
+        // Inbending case (default): existing bins
+        theta_bins = {
+            {5.0, 6.3043}, {6.3043, 7.6087}, {7.6087, 8.9130},
+            {8.9130, 10.2174}, {10.2174, 11.5217}, {11.5217, 12.8261},
+            {12.8261, 14.1304}, {14.1304, 15.4348}, {15.4348, 16.7391},
+            {16.7391, 18.0435}, {18.0435, 19.3478}, {19.3478, 20.6522},
+            {20.6522, 21.9565}, {21.9565, 23.2609}, {23.2609, 24.5652},
+            {24.5652, 25.8696}, {25.8696, 27.1739}, {27.1739, 28.4783},
+            {28.4783, 29.7826}, {29.7826, 31.0870}, {31.0870, 32.3913},
+            {32.3913, 33.6957}, {33.6957, 35.0}, {35.0, 42.0}
+        };
+    }
 
     // Create histograms for each particle type and theta bin
     std::map<int, std::vector<TH2D*>> histograms;
@@ -5375,16 +5403,30 @@ void energy_loss_distributions_delta_phi_fd(TTreeReader& mcReader, const std::st
     };
 
     // // Define theta bins
-    std::vector<std::pair<double, double>> theta_bins = {
-        {5.0, 6.3043}, {6.3043, 7.6087}, {7.6087, 8.9130},
-        {8.9130, 10.2174}, {10.2174, 11.5217}, {11.5217, 12.8261},
-        {12.8261, 14.1304}, {14.1304, 15.4348}, {15.4348, 16.7391},
-        {16.7391, 18.0435}, {18.0435, 19.3478}, {19.3478, 20.6522},
-        {20.6522, 21.9565}, {21.9565, 23.2609}, {23.2609, 24.5652},
-        {24.5652, 25.8696}, {25.8696, 27.1739}, {27.1739, 28.4783},
-        {28.4783, 29.7826}, {29.7826, 31.0870}, {31.0870, 32.3913},
-        {32.3913, 33.6957}, {33.6957, 35.0}, {35.0, 42.0}
-    };
+    std::vector<std::pair<double, double>> theta_bins;
+    if (dataset == "rga_fa18_out") {
+        // Outbending case: 24 equally spaced bins between 8 and 44 degrees
+        theta_bins = {
+            {8.0, 9.5}, {9.5, 11.0}, {11.0, 12.5}, {12.5, 14.0},
+            {14.0, 15.5}, {15.5, 17.0}, {17.0, 18.5}, {18.5, 20.0},
+            {20.0, 21.5}, {21.5, 23.0}, {23.0, 24.5}, {24.5, 26.0},
+            {26.0, 27.5}, {27.5, 29.0}, {29.0, 30.5}, {30.5, 32.0},
+            {32.0, 33.5}, {33.5, 35.0}, {35.0, 36.5}, {36.5, 38.0},
+            {38.0, 39.5}, {39.5, 41.0}, {41.0, 42.5}, {42.5, 44.0}
+        };
+    } else {
+        // Inbending case (default): existing bins
+        theta_bins = {
+            {5.0, 6.3043}, {6.3043, 7.6087}, {7.6087, 8.9130},
+            {8.9130, 10.2174}, {10.2174, 11.5217}, {11.5217, 12.8261},
+            {12.8261, 14.1304}, {14.1304, 15.4348}, {15.4348, 16.7391},
+            {16.7391, 18.0435}, {18.0435, 19.3478}, {19.3478, 20.6522},
+            {20.6522, 21.9565}, {21.9565, 23.2609}, {23.2609, 24.5652},
+            {24.5652, 25.8696}, {25.8696, 27.1739}, {27.1739, 28.4783},
+            {28.4783, 29.7826}, {29.7826, 31.0870}, {31.0870, 32.3913},
+            {32.3913, 33.6957}, {33.6957, 35.0}, {35.0, 42.0}
+        };
+    }
 
     // Create histograms for each particle type and theta bin
     std::map<int, std::vector<TH2D*>> histograms;
@@ -6450,25 +6492,25 @@ void plot_energy_loss_corrections_fd(TTreeReader& mcReader, const std::string& d
 
 // Main function to call both energy loss distribution functions
 void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
-    energy_loss_distributions(mcReader, dataset);
+    // energy_loss_distributions(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_fd_distributions(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_fd_distributions(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_fd_distributions_theta_dc(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_fd_distributions_theta_dc(mcReader, dataset);
 
     mcReader.Restart();
     energy_loss_distributions_delta_p_fd(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_distributions_delta_theta_fd(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_distributions_delta_theta_fd(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_distributions_delta_phi_fd(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_distributions_delta_phi_fd(mcReader, dataset);
 
-    mcReader.Restart();
-    plot_energy_loss_corrections_fd(mcReader, dataset);
+    // mcReader.Restart();
+    // plot_energy_loss_corrections_fd(mcReader, dataset);
 
     // mcReader.Restart();
     // energy_loss_distributions_delta_p_cd(mcReader, dataset);
