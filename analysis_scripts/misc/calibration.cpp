@@ -5233,6 +5233,7 @@ void energy_loss_distributions_delta_theta_fd(TTreeReader& mcReader, const std::
         {2212, {"p", 0.0, 5.0}}
     };
 
+    std::vector<std::pair<double, double>> theta_bins;
     // // Define theta bins
     if (dataset == "rga_fa18_out") {
         // Outbending case: one bin from 7 to 10, one bin from 38 to 44, and 22 evenly spaced bins between 10 and 38
