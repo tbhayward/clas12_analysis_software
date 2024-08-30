@@ -5063,18 +5063,16 @@ void energy_loss_distributions_delta_p_fd(TTreeReader& mcReader, const std::stri
     };
 
     // // Define theta bins
+    std::vector<std::pair<double, double>> theta_bins;
     if (dataset == "rga_fa18_out") {
-        // Outbending case: one bin from 7 to 10, one bin from 38 to 44, and 22 evenly spaced bins between 10 and 38
         theta_bins = {
             {7.0, 10.0}, // First bin
-            {10.0, 11.2727}, {11.2727, 12.5455}, {12.5455, 13.8182},
-            {13.8182, 15.0909}, {15.0909, 16.3636}, {16.3636, 17.6364},
-            {17.6364, 18.9091}, {18.9091, 20.1818}, {20.1818, 21.4545},
-            {21.4545, 22.7273}, {22.7273, 24.0}, {24.0, 25.2727},
-            {25.2727, 26.5455}, {26.5455, 27.8182}, {27.8182, 29.0909},
-            {29.0909, 30.3636}, {30.363 6, 31.6364}, {31.6364, 32.9091},
-            {32.9091, 34.1818}, {34.1818, 35.4545}, {35.4545, 36.7273},
-            {36.7273, 38.0}, // Bins between 10 and 38
+            {10.0, 11.5556}, {11.5556, 13.1111}, {13.1111, 14.6667},
+            {14.6667, 16.2222}, {16.2222, 17.7778}, {17.7778, 19.3333},
+            {19.3333, 20.8889}, {20.8889, 22.4444}, {22.4444, 24.0},
+            {24.0, 25.5556}, {25.5556, 27.1111}, {27.1111, 28.6667},
+            {28.6667, 30.2222}, {30.2222, 31.7778}, {31.7778, 33.3333},
+            {33.3333, 34.8889}, {34.8889, 36.4444}, {36.4444, 38.0}, // Bins between 10 and 38
             {38.0, 44.0} // Last bin
         };
     } else {
@@ -6512,17 +6510,17 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     mcReader.Restart();
     energy_loss_distributions_delta_p_fd(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_distributions_delta_theta_fd(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_distributions_delta_theta_fd(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_distributions_delta_phi_fd(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_distributions_delta_phi_fd(mcReader, dataset);
 
-    mcReader.Restart();
-    plot_energy_loss_corrections_fd(mcReader, dataset);
+    // mcReader.Restart();
+    // plot_energy_loss_corrections_fd(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_distributions_delta_p_cd(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_distributions_delta_p_cd(mcReader, dataset);
 }
                            
 void create_directories() {
@@ -6649,10 +6647,7 @@ int main(int argc, char** argv) {
 
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
-    // if (mcReader) energy_loss(*mcReader, "rga_fa18_inb"); 
-    // if (mcReader) energy_loss(*mcReader, "rga_fa18_out");  
-    // if (mcReader) energy_loss(*mcReader, "rga_sp19_inb"); 
-    if (mcReader) energy_loss(*mcReader, "rgc_su22_inb"); 
+    if (mcReader) energy_loss(*mcReader, "rga_fa18_out");  
 
     // Close files
     dataFile.Close();
