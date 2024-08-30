@@ -5009,7 +5009,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
         fit_C->Draw("same");
 
         // Add fit results and chi2/ndf to the plot
-        TPaveText* pt_C = new TPaveText(0.7, 0.75, 0.9, 0.9, “NDC”);
+        TPaveText* pt_C = new TPaveText(0.7, 0.75, 0.9, 0.9, "NDC");
         pt_C->AddText(Form("p0 = %.7f", fit_C->GetParameter(0)));
         pt_C->AddText(Form("p1 = %.7f", fit_C->GetParameter(1)));
         pt_C->AddText(Form("p2 = %.7f", fit_C->GetParameter(2)));
