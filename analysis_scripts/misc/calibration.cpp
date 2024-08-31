@@ -4995,7 +4995,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     TGraphErrors* graph_C = nullptr;
     TF1* fit_C = nullptr;
     TPaveText* pt_C = nullptr;
-    if (dataset != "rga_fa18_out" || prefix == "#theta" || prefix == "#phi") {
+    if (dataset != "rga_fa18_out") {
         c_fit_params->cd(3);
         graph_C = new TGraphErrors(theta_bins.size());
         for (size_t i = 0; i < theta_bins.size(); ++i) {
@@ -5011,44 +5011,59 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
             graph_C->GetYaxis()->SetRangeUser(-2, 2);  // Set y-axis range
             graph_C->GetXaxis()->SetRangeUser(5, 50);  // Set x-axis range
             graph_C->SetTitle(("C_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);C_{" + prefix + "}(#theta)").c_str());
-            }
-            graph_C->SetMarkerStyle(20);  // Set marker style to a filled circle
-            gPad->SetLeftMargin(0.2);  // Increase left margin
-            graph_C->Draw("AP");
-            // Fit C(#theta) to a 2nd order polynomial
-            fit_C = new TF1("fit_C", "[0]+[1]*x+[2]*x*x", theta_bins.front().first, theta_bins.back().second);
-            graph_C->Fit(fit_C, "Q");  // Silent fit
-            fit_C->Draw("same");
-
-            // Add fit results and chi2/ndf to the plot
-            pt_C = new TPaveText(0.7, 0.75, 0.9, 0.9, "NDC");
-            pt_C->AddText(Form("p0 = %.7f", fit_C->GetParameter(0)));
-            pt_C->AddText(Form("p1 = %.7f", fit_C->GetParameter(1)));
-            pt_C->AddText(Form("p2 = %.7f", fit_C->GetParameter(2)));
-            pt_C->AddText(Form("#chi^{2}/ndf = %.3f", fit_C->GetChisquare() / fit_C->GetNDF()));
-            pt_C->SetBorderSize(1);
-            pt_C->SetFillColor(0);
-            pt_C->Draw();
         }
+        graph_C->SetMarkerStyle(20);  // Set marker style to a filled circle
+        gPad->SetLeftMargin(0.2);  // Increase left margin
+        graph_C->Draw("AP");
+        // Fit C(#theta) to a 2nd order polynomial
+        fit_C = new TF1("fit_C", "[0]+[1]*x+[2]*x*x", theta_bins.front().first, theta_bins.back().second);
+        graph_C->Fit(fit_C, "Q");  // Silent fit
+        fit_C->Draw("same");
 
-        // Print out the functional form of A(theta) in LaTeX format
-        std::cout << "A_" << prefix << "(\\theta) = ";
-        for (int i = 0; i <= 2; ++i) {
-            double coeff = fit_A->GetParameter(i);
-            if (i == 0) {
-                std::cout << Form("%.7f", coeff);
-            } else if (i == 1) {
-                std::cout << Form(" %+.7f\\theta", coeff);
-            } else {
-                std::cout << Form(" %+.7f\\theta^%d", coeff, i);
-            }
+        // Add fit results and chi2/ndf to the plot
+        pt_C = new TPaveText(0.7, 0.75, 0.9, 0.9, "NDC");
+        pt_C->AddText(Form("p0 = %.7f", fit_C->GetParameter(0)));
+        pt_C->AddText(Form("p1 = %.7f", fit_C->GetParameter(1)));
+        pt_C->AddText(Form("p2 = %.7f", fit_C->GetParameter(2)));
+        pt_C->AddText(Form("#chi^{2}/ndf = %.3f", fit_C->GetChisquare() / fit_C->GetNDF()));
+        pt_C->SetBorderSize(1);
+        pt_C->SetFillColor(0);
+        pt_C->Draw();
+    }
+
+    // Print out the functional form of A(theta) in LaTeX format
+    std::cout << "A_" << prefix << "(\\theta) = ";
+    for (int i = 0; i <= 2; ++i) {
+        double coeff = fit_A->GetParameter(i);
+        if (i == 0) {
+            std::cout << Form("%.7f", coeff);
+        } else if (i == 1) {
+            std::cout << Form(" %+.7f\\theta", coeff);
+        } else {
+            std::cout << Form(" %+.7f\\theta^%d", coeff, i);
         }
-        std::cout << std::endl;
+    }
+    std::cout << std::endl;
 
-        // Print out the functional form of B(theta) in LaTeX format
-        std::cout << "B_" << prefix << "(\\theta) = ";
+    // Print out the functional form of B(theta) in LaTeX format
+    std::cout << "B_" << prefix << "(\\theta) = ";
+    for (int i = 0; i <= 2; ++i) {
+        double coeff = fit_B->GetParameter(i);
+        if (i == 0) {
+            std::cout << Form("%.8f", coeff);
+        } else if (i == 1) {
+            std::cout << Form(" %+.8f\\theta", coeff);
+        } else {
+            std::cout << Form(" %+.8f\\theta^%d", coeff, i);
+        }
+    }
+    std::cout << std::endl;
+
+    // Print out the functional form of C(theta) in LaTeX format (only for non-outbending datasets)
+    if (dataset != "rga_fa18_out") {
+        std::cout << "C_" << prefix << "(\\theta) = ";
         for (int i = 0; i <= 2; ++i) {
-            double coeff = fit_B->GetParameter(i);
+            double coeff = fit_C->GetParameter(i);
             if (i == 0) {
                 std::cout << Form("%.8f", coeff);
             } else if (i == 1) {
@@ -5058,40 +5073,25 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
             }
         }
         std::cout << std::endl;
-
-        // Print out the functional form of C(theta) in LaTeX format (only for non-outbending datasets)
-        if (dataset != "rga_fa18_out" || prefix == "#theta" || prefix == "#phi") {
-            std::cout << "C_" << prefix << "(\\theta) = ";
-            for (int i = 0; i <= 2; ++i) {
-                double coeff = fit_C->GetParameter(i);
-                if (i == 0) {
-                    std::cout << Form("%.8f", coeff);
-                } else if (i == 1) {
-                    std::cout << Form(" %+.8f\\theta", coeff);
-                } else {
-                    std::cout << Form(" %+.8f\\theta^%d", coeff, i);
-                }
-            }
-            std::cout << std::endl;
-        }
-
-        // Save the fit parameters canvas
-        c_fit_params->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/fit_params_" + prefix + "_" + particle_name + ".png").c_str());
-
-        // Clean up memory
-        delete graph_A;
-        delete graph_B;
-        if (dataset != "rga_fa18_out") {
-            delete graph_C;
-            delete fit_C;
-            delete pt_C;
-        }
-        delete fit_A;
-        delete fit_B;
-        delete pt_A;
-        delete pt_B;
-        delete c_fit_params;
     }
+
+    // Save the fit parameters canvas
+    c_fit_params->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/fit_params_" + prefix + "_" + particle_name + ".png").c_str());
+
+    // Clean up memory
+    delete graph_A;
+    delete graph_B;
+    if (dataset != "rga_fa18_out") {
+        delete graph_C;
+        delete fit_C;
+        delete pt_C;
+    }
+    delete fit_A;
+    delete fit_B;
+    delete pt_A;
+    delete pt_B;
+    delete c_fit_params;
+}
 
 
 void energy_loss_distributions_delta_p_fd(TTreeReader& mcReader, const std::string& dataset) {
