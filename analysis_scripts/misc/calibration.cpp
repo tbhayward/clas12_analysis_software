@@ -4995,7 +4995,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     TGraphErrors* graph_C = nullptr;
     TF1* fit_C = nullptr;
     TPaveText* pt_C = nullptr;
-    if (dataset != "rga_fa18_out") {
+    if (dataset != "rga_fa18_out" || prefix == "#theta" || prefix == "#phi") {
         c_fit_params->cd(3);
         graph_C = new TGraphErrors(theta_bins.size());
         for (size_t i = 0; i < theta_bins.size(); ++i) {
@@ -5580,9 +5580,9 @@ void energy_loss_distributions_delta_phi_fd(TTreeReader& mcReader, const std::st
     TTreeReaderValue<double> edge_36(mcReader, "traj_edge_36");
 
     // Loop over events
-    // for (int i = 0; i < 1e7; ++i) {
-    //     mcReader.Next();
-    while (mcReader.Next()) {
+    for (int i = 0; i < 1e7; ++i) {
+        mcReader.Next();
+    // while (mcReader.Next()) {
         if (!is_fd_track(*track_sector_6)) continue;
         if (!dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) continue;
         double delta_phi = *mc_phi - *phi;
