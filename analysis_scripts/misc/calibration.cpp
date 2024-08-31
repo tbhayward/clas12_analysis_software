@@ -4886,11 +4886,10 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
                                         ("Fit Parameters: " + dataset + ", " + particle_name).c_str(), 
                                         1600, 800);
     // Determine the canvas layout based on the dataset
-    if (dataset == "rga_fa18_out" && prefix != "theta") {
+    if (dataset == "rga_fa18_out" && prefix != "#theta") {
         c_fit_params->Divide(2, 1);  // 2x1 canvas for rga_fa18_out
     } else {
         c_fit_params->Divide(3, 1);  // 1x3 canvas for other datasets
-        std::cout << "HELLO WORLD" << std::endl;
     }
 
     // Plot A(#theta)
@@ -4918,7 +4917,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
 
     // Choose the fit function based on the dataset
     TF1* fit_A;
-    if (dataset == "rga_fa18_out" && prefix != "theta") {
+    if (dataset == "rga_fa18_out" && prefix != "#theta") {
         fit_A = new TF1("fit_A", "[0]+[1]*x", theta_bins.front().first, theta_bins.back().second);  // Linear fit for rga_fa18_out
     } else {
         fit_A = new TF1("fit_A", "[0]+[1]*x+[2]*x*x", theta_bins.front().first, theta_bins.back().second);  // Quadratic fit for other datasets
@@ -4962,7 +4961,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
 
     // Choose the fit function for B based on the dataset
     TF1* fit_B;
-    if (dataset == "rga_fa18_out" && prefix != "theta") {
+    if (dataset == "rga_fa18_out" && prefix != "#theta") {
         fit_B = new TF1("fit_B", "[0]+[1]*x", theta_bins.front().first, theta_bins.back().second);  // Linear fit for rga_fa18_out
     } else {
         fit_B = new TF1("fit_B", "[0]+[1]*x+[2]*x*x", theta_bins.front().first, theta_bins.back().second);  // Quadratic fit for other datasets
@@ -4986,7 +4985,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     TGraphErrors* graph_C = nullptr;
     TF1* fit_C = nullptr;
     TPaveText* pt_C = nullptr;
-    if (dataset != "rga_fa18_out" && prefix != "theta") {
+    if (dataset != "rga_fa18_out" && prefix != "#theta") {
         c_fit_params->cd(3);
         graph_C = new TGraphErrors(theta_bins.size());
         for (size_t i = 0; i < theta_bins.size(); ++i) {
@@ -5051,7 +5050,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
         std::cout << std::endl;
 
         // Print out the functional form of C(theta) in LaTeX format (only for non-outbending datasets)
-        if (dataset != "rga_fa18_out" && prefix != "theta") {
+        if (dataset != "rga_fa18_out" && prefix != "#theta") {
             std::cout << "C_" << prefix << "(\\theta) = ";
             for (int i = 0; i <= 2; ++i) {
                 double coeff = fit_C->GetParameter(i);
