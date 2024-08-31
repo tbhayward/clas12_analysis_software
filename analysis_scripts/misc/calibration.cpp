@@ -4995,7 +4995,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     TGraphErrors* graph_C = nullptr;
     TF1* fit_C = nullptr;
     TPaveText* pt_C = nullptr;
-    if (dataset != "rga_fa18_out" || prefix == "#theta" || prefix == "#phi") {
+    if (dataset != "rga_fa18_out") {
         c_fit_params->cd(3);
         graph_C = new TGraphErrors(theta_bins.size());
         for (size_t i = 0; i < theta_bins.size(); ++i) {
