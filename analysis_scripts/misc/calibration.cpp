@@ -4890,6 +4890,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
         c_fit_params->Divide(2, 1);  // 2x1 canvas for rga_fa18_out
     } else {
         c_fit_params->Divide(3, 1);  // 1x3 canvas for other datasets
+        std::cout << "HELLO WORLD" << std::endl;
     }
 
     // Plot A(#theta)
@@ -5457,7 +5458,6 @@ void energy_loss_distributions_delta_theta_fd(TTreeReader& mcReader, const std::
             B_errors[i] = fit_deltatheta[i]->GetParError(1);
             C_values[i] = fit_deltatheta[i]->GetParameter(2);
             C_errors[i] = fit_deltatheta[i]->GetParError(2);
-            std::cout << C_values[i] << std::endl;
 
             histograms[pid][i]->Draw("COLZ");
             prof_deltatheta->Draw("same");  // Draw the profile to show the fit line
