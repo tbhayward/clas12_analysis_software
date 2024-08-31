@@ -6379,7 +6379,7 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
 
         // A_theta, B_theta, C_theta
         A_theta = -0.3240907 + 0.0206892 * theta - 0.0003400 * theta * theta;
-        B_theta = 0.71215799 - 0.04561392 * theta + 0.04561392 * theta * theta;
+        B_theta = 0.71215799 - 0.04561392 * theta + 0.0007053 * theta * theta;
         C_theta = 0;//5.49662867 - 0.35557733 * theta + 0.00567047 * theta * theta;
 
         // A_phi, B_phi, C_phi
