@@ -4919,7 +4919,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     TF1* fit_A;
     if (dataset == "rga_fa18_out" && prefix == "p") {
         fit_A = new TF1("fit_A", "[0]+[1]*x", theta_bins.front().first, theta_bins.back().second);  // Linear fit for rga_fa18_out
-    } else if ((dataset == "rga_fa18_out" && prefix == "#phi") || (dataset == "rga_fa18_out" && prefix == "#theta")) {
+    } else if ((dataset == "rga_fa18_out" && prefix == "#theta") || (dataset == "rga_fa18_out" && prefix == "#phi")) {
         fit_A = new TF1("fit_A", "[0]+[1]*x + [2]*x*x +[3]*x*x*x", theta_bins.front().first, theta_bins.back().second);
     } else {
         fit_A = new TF1("fit_A", "[0]+[1]*x+[2]*x*x", theta_bins.front().first, theta_bins.back().second);  // Quadratic fit for other datasets
@@ -4931,7 +4931,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     TPaveText* pt_A = new TPaveText(0.7, 0.75, 0.9, 0.9, "NDC");
     pt_A->AddText(Form("p0 = %.7f", fit_A->GetParameter(0)));
     pt_A->AddText(Form("p1 = %.7f", fit_A->GetParameter(1)));
-    if (dataset != "rga_fa18_out" || prefix != "p") {
+    if ((dataset == "rga_fa18_out" && prefix == "#theta") && (dataset == "rga_fa18_out" && prefix == "#phi")) {
         pt_A->AddText(Form("p2 = %.7f", fit_A->GetParameter(2)));  // Only add p2 for non-outbending datasets
     }
     if ((dataset == "rga_fa18_out" && prefix == "#theta") && (dataset == "rga_fa18_out" && prefix == "#phi")) {
@@ -4980,10 +4980,10 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     TPaveText* pt_B = new TPaveText(0.7, 0.75, 0.9, 0.9, "NDC");
     pt_B->AddText(Form("p0 = %.7f", fit_B->GetParameter(0)));
     pt_B->AddText(Form("p1 = %.7f", fit_B->GetParameter(1)));
-    if (dataset != "rga_fa18_out" || prefix != "p") {
-        pt_B->AddText(Form("p2 = %.7f", fit_B->GetParameter(2)));  // Only add p2 for non-outbending datasets
+    if ((dataset == "rga_fa18_out" && prefix == "#theta") || (dataset == "rga_fa18_out" && prefix == "#phi")) {
+        pt_B->AddText(Form("p2 = %.7f", fit_B->GetParameter(2)));  
     }
-    if ((dataset == "rga_fa18_out" && prefix == "#theta") || (dataset == "rga_fa18_out" || prefix == "#phi")) {
+    if ((dataset == "rga_fa18_out" && prefix == "#theta") || (dataset == "rga_fa18_out" && prefix == "#phi")) {
         pt_B->AddText(Form("p3 = %.7f", fit_B->GetParameter(3))); 
     } 
     pt_B->AddText(Form("#chi^{2}/ndf = %.3f", fit_B->GetChisquare() / fit_B->GetNDF()));
