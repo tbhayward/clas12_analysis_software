@@ -6353,7 +6353,7 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
         B_phi = 0.37455807 - 0.00927964 * theta + 0.00030440 * theta * theta;
         C_phi = -0.32529570 + 0.01507693 * theta - 0.00029474 * theta * theta;
     }
-    if (dataset == "rgc_su22_inb" && region == "FD") {
+    else if (dataset == "rgc_su22_inb" && region == "FD") {
         // A_p, B_p, C_p
         A_p = 0.0125368 - 0.0002151 * theta - 0.0000063 * theta * theta;
         B_p = -0.01271730 + 0.00007759 * theta + 0.00002727 * theta * theta;
@@ -6368,6 +6368,23 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
         A_phi = 0.0885268 - 0.0081697 * theta + 0.0000746 * theta * theta;
         B_phi = 0.01658039 + 0.01453958 * theta - 0.00010898 * theta * theta;
         C_phi = -0.09239852 - 0.00235823 * theta + 0.00002750 * theta * theta;
+    }
+    else if (dataset == "rga_fa18_out" && region == "FD") {
+        // A_p, B_p (no C_p for rga_fa18_out and no theta^2 term)
+        A_p = 0.0135790 - 0.0005303 * theta;
+        B_p = -0.02165929 + 0.00121123 * theta;
+
+        // No C_p or higher-order terms for this dataset
+        C_p = 0.0;  // Default to zero or omit depending on how you handle this in your analysis
+
+        // Other parameters for A_theta, B_theta, C_theta, A_phi, B_phi, C_phi
+        // Since they are not provided, you may default them to zero or apply similar logic
+        A_theta = 0.0;
+        B_theta = 0.0;
+        C_theta = 0.0;
+        A_phi = 0.0;
+        B_phi = 0.0;
+        C_phi = 0.0;
     }
 
     // Apply corrections
@@ -6638,11 +6655,11 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     mcReader.Restart();
     energy_loss_distributions_delta_p_fd(mcReader, dataset);
 
-    // mcReader.Restart();
-    // energy_loss_distributions_delta_theta_fd(mcReader, dataset);
+    mcReader.Restart();
+    energy_loss_distributions_delta_theta_fd(mcReader, dataset);
 
-    // mcReader.Restart();
-    // energy_loss_distributions_delta_phi_fd(mcReader, dataset);
+    mcReader.Restart();
+    energy_loss_distributions_delta_phi_fd(mcReader, dataset);
 
     // mcReader.Restart();
     // plot_energy_loss_corrections_fd(mcReader, dataset);
