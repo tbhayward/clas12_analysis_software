@@ -6378,9 +6378,9 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
         C_p = 0.0; // No C_p for rga_fa18_out
 
         // A_theta, B_theta, C_theta
-        A_theta = 1.2491552 - 0.0835635 * theta + 0.0013736 * theta * theta;
-        B_theta = -6.14231043 + 0.40874904 * theta - 0.00672369 * theta * theta;
-        C_theta = 5.49662867 - 0.35557733 * theta + 0.00567047 * theta * theta;
+        A_theta = -0.3240907 - 0.0206892 * theta - 0.0003400 * theta * theta;
+        B_theta = 0.71215799 - 0.04561392 * theta - 0.04561392 * theta * theta;
+        C_theta = 0;//5.49662867 - 0.35557733 * theta + 0.00567047 * theta * theta;
 
         // A_phi, B_phi, C_phi
         A_phi = 1.1952822 - 0.0863655 * theta + 0.0014102 * theta * theta;
@@ -6656,14 +6656,14 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     // mcReader.Restart();
     // energy_loss_distributions_delta_p_fd(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_distributions_delta_theta_fd(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_distributions_delta_theta_fd(mcReader, dataset);
 
     // mcReader.Restart();
     // energy_loss_distributions_delta_phi_fd(mcReader, dataset);
 
-    // mcReader.Restart();
-    // plot_energy_loss_corrections_fd(mcReader, dataset);
+    mcReader.Restart();
+    plot_energy_loss_corrections_fd(mcReader, dataset);
 
     // mcReader.Restart();
     // energy_loss_distributions_delta_p_cd(mcReader, dataset);
