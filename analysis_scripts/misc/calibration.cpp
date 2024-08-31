@@ -4987,6 +4987,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     TPaveText* pt_C = nullptr;
     if (dataset != "rga_fa18_out" && prefix != "#theta") {
         c_fit_params->cd(3);
+        std::cout << "HELLO WORLD" << std::endl;
         graph_C = new TGraphErrors(theta_bins.size());
         for (size_t i = 0; i < theta_bins.size(); ++i) {
             double theta_midpoint = 0.5 * (theta_bins[i].first + theta_bins[i].second);
