@@ -4886,7 +4886,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
                                         ("Fit Parameters: " + dataset + ", " + particle_name).c_str(), 
                                         1600, 800);
     // Determine the canvas layout based on the dataset
-    if (dataset == "rga_fa18_out" && prefix == "p") {
+    if (dataset == "rga_fa18_out") {
         c_fit_params->Divide(2, 1);  // 2x1 canvas for rga_fa18_out
     } else {
         c_fit_params->Divide(3, 1);  // 1x3 canvas for other datasets
@@ -4919,6 +4919,8 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     TF1* fit_A;
     if (dataset == "rga_fa18_out" && prefix == "p") {
         fit_A = new TF1("fit_A", "[0]+[1]*x", theta_bins.front().first, theta_bins.back().second);  // Linear fit for rga_fa18_out
+    } else if (dataset == "rga_fa18_out" && prefix == "#phi") {
+        fit_A = new TF1("fit_A", "[0]+[1]*x + [2]*x*x +[3]*x*x*x", theta_bins.front().first, theta_bins.back().second);
     } else {
         fit_A = new TF1("fit_A", "[0]+[1]*x+[2]*x*x", theta_bins.front().first, theta_bins.back().second);  // Quadratic fit for other datasets
     }
@@ -4932,6 +4934,9 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     if (dataset != "rga_fa18_out" || prefix != "p") {
         pt_A->AddText(Form("p2 = %.7f", fit_A->GetParameter(2)));  // Only add p2 for non-outbending datasets
     }
+    if (dataset == "rga_fa18_out" || prefix == "#phi") {
+        pt_A->AddText(Form("p3 = %.7f", fit_A->GetParameter(3))); 
+    } 
     pt_A->AddText(Form("#chi^{2}/ndf = %.3f", fit_A->GetChisquare() / fit_A->GetNDF()));
     pt_A->SetBorderSize(1);
     pt_A->SetFillColor(0);
@@ -4963,6 +4968,8 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     TF1* fit_B;
     if (dataset == "rga_fa18_out" && prefix == "p") {
         fit_B = new TF1("fit_B", "[0]+[1]*x", theta_bins.front().first, theta_bins.back().second);  // Linear fit for rga_fa18_out
+    } else if (dataset == "rga_fa18_out" && prefix == "#phi") {
+        fit_B = new TF1("fit_A", "[0]+[1]*x + [2]*x*x +[3]*x*x*x", theta_bins.front().first, theta_bins.back().second);
     } else {
         fit_B = new TF1("fit_B", "[0]+[1]*x+[2]*x*x", theta_bins.front().first, theta_bins.back().second);  // Quadratic fit for other datasets
     }
@@ -4976,6 +4983,9 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     if (dataset != "rga_fa18_out" || prefix != "p") {
         pt_B->AddText(Form("p2 = %.7f", fit_B->GetParameter(2)));  // Only add p2 for non-outbending datasets
     }
+    if (dataset == "rga_fa18_out" || prefix == "#phi") {
+        pt_B->AddText(Form("p3 = %.7f", fit_B->GetParameter(3))); 
+    } 
     pt_B->AddText(Form("#chi^{2}/ndf = %.3f", fit_B->GetChisquare() / fit_B->GetNDF()));
     pt_B->SetBorderSize(1);
     pt_B->SetFillColor(0);
@@ -6397,7 +6407,7 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
 void plot_energy_loss_corrections_fd(TTreeReader& mcReader, const std::string& dataset) {
     // Define particle types and their corresponding LaTeX names and x-axis ranges
     std::map<int, std::tuple<std::string, double, double>> particle_types = {
-        {2212, {"p", 0.0, 5.0}}  // Proton as an example
+        {2212, {"p", 0.0, 6.0}}  // Proton as an example
     };
 
     // Define six theta bins between 5 and 42 degrees
