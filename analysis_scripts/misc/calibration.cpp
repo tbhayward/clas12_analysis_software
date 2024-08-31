@@ -4931,13 +4931,13 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     TPaveText* pt_A = new TPaveText(0.7, 0.75, 0.9, 0.9, "NDC");
     pt_A->AddText(Form("p0 = %.7f", fit_A->GetParameter(0)));
     pt_A->AddText(Form("p1 = %.7f", fit_A->GetParameter(1)));
-    if ((dataset == "rga_fa18_out" && prefix == "#theta") && (dataset == "rga_fa18_out" && prefix == "#phi")) {
-        pt_A->AddText(Form("p2 = %.7f", fit_A->GetParameter(2)));  // Only add p2 for non-outbending datasets
+    if ((dataset == "rga_fa18_out" && prefix == "#theta") || (dataset == "rga_fa18_out" && prefix == "#phi")) {
+        pt_A->AddText(Form("p2 = %.7f", fit_A->GetParameter(2)));  
     }
-    if ((dataset == "rga_fa18_out" && prefix == "#theta") && (dataset == "rga_fa18_out" && prefix == "#phi")) {
+    if ((dataset == "rga_fa18_out" && prefix == "#theta") || (dataset == "rga_fa18_out" && prefix == "#phi")) {
         pt_A->AddText(Form("p3 = %.7f", fit_A->GetParameter(3))); 
     } 
-    pt_A->AddText(Form("#chi^{2}/ndf = %.3f", fit_A->GetChisquare() / fit_A->GetNDF()));
+    pt_A->AddText(Form("#chi^{2}/ndf = %.3f", fit_B->GetChisquare() / fit_B->GetNDF()));
     pt_A->SetBorderSize(1);
     pt_A->SetFillColor(0);
     pt_A->Draw();
