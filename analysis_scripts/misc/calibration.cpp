@@ -6394,7 +6394,7 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
 
         // A_phi, B_phi, C_phi
         A_phi = -0.9701486 +0.1213124*theta -0.0049215*theta*theta +0.0000640*theta*theta*theta;
-        B_phi = 2.85034691 -0.34405076*theta +0.01347377*theta^2 -0.00016663*theta^3;
+        B_phi = 2.85034691 -0.34405076*theta +0.01347377*theta*theta -0.00016663*theta*theta*theta;
         C_phi = 0; // No c_phi for rga_fa18_out
     }
 
