@@ -4886,7 +4886,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
                                         ("Fit Parameters: " + dataset + ", " + particle_name).c_str(), 
                                         1600, 800);
     // Determine the canvas layout based on the dataset
-    if (dataset == "rga_fa18_out" && prefix != "#theta") {
+    if (dataset == "rga_fa18_out" && prefix == "p") {
         c_fit_params->Divide(2, 1);  // 2x1 canvas for rga_fa18_out
     } else {
         c_fit_params->Divide(3, 1);  // 1x3 canvas for other datasets
@@ -4917,7 +4917,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
 
     // Choose the fit function based on the dataset
     TF1* fit_A;
-    if (dataset == "rga_fa18_out" && prefix != "#theta") {
+    if (dataset == "rga_fa18_out" && prefix == "p") {
         fit_A = new TF1("fit_A", "[0]+[1]*x", theta_bins.front().first, theta_bins.back().second);  // Linear fit for rga_fa18_out
     } else {
         fit_A = new TF1("fit_A", "[0]+[1]*x+[2]*x*x", theta_bins.front().first, theta_bins.back().second);  // Quadratic fit for other datasets
@@ -4961,7 +4961,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
 
     // Choose the fit function for B based on the dataset
     TF1* fit_B;
-    if (dataset == "rga_fa18_out" && prefix != "#theta") {
+    if (dataset == "rga_fa18_out" && prefix == "p") {
         fit_B = new TF1("fit_B", "[0]+[1]*x", theta_bins.front().first, theta_bins.back().second);  // Linear fit for rga_fa18_out
     } else {
         fit_B = new TF1("fit_B", "[0]+[1]*x+[2]*x*x", theta_bins.front().first, theta_bins.back().second);  // Quadratic fit for other datasets
@@ -4985,8 +4985,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     TGraphErrors* graph_C = nullptr;
     TF1* fit_C = nullptr;
     TPaveText* pt_C = nullptr;
-    std::cout << "WE HAVE " << (dataset != "rga_fa18_out" && prefix != "#theta") << std::endl;
-    if (dataset != "rga_fa18_out" || prefix == "#theta") {
+    if (dataset != "rga_fa18_out" || prefix == "#theta" || prefix == "#phi") {
         c_fit_params->cd(3);
         graph_C = new TGraphErrors(theta_bins.size());
         for (size_t i = 0; i < theta_bins.size(); ++i) {
@@ -5051,7 +5050,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
         std::cout << std::endl;
 
         // Print out the functional form of C(theta) in LaTeX format (only for non-outbending datasets)
-        if (dataset != "rga_fa18_out" && prefix != "#theta") {
+        if (dataset != "rga_fa18_out" || prefix == "#theta" || prefix == "#phi") {
             std::cout << "C_" << prefix << "(\\theta) = ";
             for (int i = 0; i <= 2; ++i) {
                 double coeff = fit_C->GetParameter(i);
@@ -5541,7 +5540,7 @@ void energy_loss_distributions_delta_phi_fd(TTreeReader& mcReader, const std::st
 
             // Set axis labels
             histograms[pid][i]->GetXaxis()->SetTitle("p (GeV)");
-            histograms[pid][i]->GetYaxis()->SetTitle("#Deltaphi");
+            histograms[pid][i]->GetYaxis()->SetTitle("#Delta#phi");
 
             histograms[pid][i]->SetStats(false);
             histograms[pid][i]->GetXaxis()->SetLabelSize(0.04); // Increase font size for axes labels
@@ -5596,7 +5595,7 @@ void energy_loss_distributions_delta_phi_fd(TTreeReader& mcReader, const std::st
         int pid = entry.first;
         const std::string& particle_name = std::get<0>(particle_types[pid]);
 
-        TCanvas* c_deltaphi = new TCanvas(("c_deltaphi_" + particle_name).c_str(), ("Delta #phi Distributions: " + dataset + ", " + particle_name).c_str(), 2000, 1200);
+        TCanvas* c_deltaphi = new TCanvas(("c_deltaphi_" + particle_name).c_str(), ("#Delta #phi Distributions: " + dataset + ", " + particle_name).c_str(), 2000, 1200);
         c_deltaphi->Divide(6, 4);  // 20 subplots
 
         std::vector<TF1*> fit_deltaphi(theta_bins.size());
@@ -5640,11 +5639,12 @@ void energy_loss_distributions_delta_phi_fd(TTreeReader& mcReader, const std::st
 
             // Determine the appropriate fit function based on the dataset
             std::string fitFunction;
-            if (dataset == "rga_fa18_out") {
-                fitFunction = "[0] + [1]/x"; // For special case
-            } else {
-                fitFunction = "[0] + [1]/x + [2]/x^2"; // For normal cases
-            }
+            // if (dataset == "rga_fa18_out") {
+            //     fitFunction = "[0] + [1]/x"; // For special case
+            // } else {
+            //     fitFunction = "[0] + [1]/x + [2]/x^2"; // For normal cases
+            // }
+            fitFunction = "[0] + [1]/x + [2]/x^2"; // For normal cases
 
             // Fit the profiles with appropriate functions
             fit_deltaphi[i] = new TF1(("fit_deltaphi_" + std::to_string(i)).c_str(), fitFunction.c_str(), minXValue, maxXValue);
