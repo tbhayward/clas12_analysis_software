@@ -4919,7 +4919,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     TF1* fit_A;
     if (dataset == "rga_fa18_out" && prefix == "p") {
         fit_A = new TF1("fit_A", "[0]+[1]*x", theta_bins.front().first, theta_bins.back().second);  // Linear fit for rga_fa18_out
-    } else if (dataset == "rga_fa18_out" && prefix == "#phi") {
+    } else if ((dataset == "rga_fa18_out" && prefix == "#phi") || (dataset == "rga_fa18_out" && prefix == "#theta")) {
         fit_A = new TF1("fit_A", "[0]+[1]*x + [2]*x*x +[3]*x*x*x", theta_bins.front().first, theta_bins.back().second);
     } else {
         fit_A = new TF1("fit_A", "[0]+[1]*x+[2]*x*x", theta_bins.front().first, theta_bins.back().second);  // Quadratic fit for other datasets
@@ -4934,7 +4934,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     if (dataset != "rga_fa18_out" || prefix != "p") {
         pt_A->AddText(Form("p2 = %.7f", fit_A->GetParameter(2)));  // Only add p2 for non-outbending datasets
     }
-    if (dataset == "rga_fa18_out" || prefix == "#phi") {
+    if ((dataset == "rga_fa18_out" && prefix == "#theta") && (dataset == "rga_fa18_out" && prefix == "#phi")) {
         pt_A->AddText(Form("p3 = %.7f", fit_A->GetParameter(3))); 
     } 
     pt_A->AddText(Form("#chi^{2}/ndf = %.3f", fit_A->GetChisquare() / fit_A->GetNDF()));
@@ -4968,7 +4968,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     TF1* fit_B;
     if (dataset == "rga_fa18_out" && prefix == "p") {
         fit_B = new TF1("fit_B", "[0]+[1]*x", theta_bins.front().first, theta_bins.back().second);  // Linear fit for rga_fa18_out
-    } else if (dataset == "rga_fa18_out" && prefix == "#phi") {
+    } else if ((dataset == "rga_fa18_out" && prefix == "#theta") || (dataset == "rga_fa18_out" && prefix == "#phi")) {
         fit_B = new TF1("fit_A", "[0]+[1]*x + [2]*x*x +[3]*x*x*x", theta_bins.front().first, theta_bins.back().second);
     } else {
         fit_B = new TF1("fit_B", "[0]+[1]*x+[2]*x*x", theta_bins.front().first, theta_bins.back().second);  // Quadratic fit for other datasets
@@ -4983,7 +4983,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     if (dataset != "rga_fa18_out" || prefix != "p") {
         pt_B->AddText(Form("p2 = %.7f", fit_B->GetParameter(2)));  // Only add p2 for non-outbending datasets
     }
-    if (dataset == "rga_fa18_out" || prefix == "#phi") {
+    if ((dataset == "rga_fa18_out" && prefix == "#theta") || (dataset == "rga_fa18_out" || prefix == "#phi")) {
         pt_B->AddText(Form("p3 = %.7f", fit_B->GetParameter(3))); 
     } 
     pt_B->AddText(Form("#chi^{2}/ndf = %.3f", fit_B->GetChisquare() / fit_B->GetNDF()));
@@ -5033,7 +5033,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
 
     // Print out the functional form of A(theta) in LaTeX format
     std::cout << "A_" << prefix << "(\\theta) = ";
-    for (int i = 0; i <= 2; ++i) {
+    for (int i = 0; i <= 3; ++i) {
         double coeff = fit_A->GetParameter(i);
         if (i == 0) {
             std::cout << Form("%.7f", coeff);
@@ -5047,7 +5047,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
 
     // Print out the functional form of B(theta) in LaTeX format
     std::cout << "B_" << prefix << "(\\theta) = ";
-    for (int i = 0; i <= 2; ++i) {
+    for (int i = 0; i <= 3; ++i) {
         double coeff = fit_B->GetParameter(i);
         if (i == 0) {
             std::cout << Form("%.8f", coeff);
@@ -5062,7 +5062,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     // Print out the functional form of C(theta) in LaTeX format (only for non-outbending datasets)
     if (dataset != "rga_fa18_out") {
         std::cout << "C_" << prefix << "(\\theta) = ";
-        for (int i = 0; i <= 2; ++i) {
+        for (int i = 0; i <= 3; ++i) {
             double coeff = fit_C->GetParameter(i);
             if (i == 0) {
                 std::cout << Form("%.8f", coeff);
@@ -6390,12 +6390,12 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
         // A_theta, B_theta, C_theta
         A_theta = -0.3240907 + 0.0206892 * theta - 0.0003400 * theta * theta;
         B_theta = 0.71215799 - 0.04561392 * theta + 0.0007053 * theta * theta;
-        C_theta = 0;//5.49662867 - 0.35557733 * theta + 0.00567047 * theta * theta;
+        C_theta = 0; // No C_theta for rga_fa18_out
 
         // A_phi, B_phi, C_phi
         A_phi = 1.1952822 - 0.0863655 * theta + 0.0014102 * theta * theta;
         B_phi = -4.91450901 + 0.35319743 * theta - 0.00578741 * theta * theta;
-        C_phi = 3.72818823 - 0.26573487 * theta + 0.00445385 * theta * theta;
+        C_phi = 0; // No c_phi for rga_fa18_out
     }
 
     // Apply corrections
@@ -6663,11 +6663,11 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     // mcReader.Restart();
     // energy_loss_fd_distributions_theta_dc(mcReader, dataset);
 
-    // mcReader.Restart();
-    // energy_loss_distributions_delta_p_fd(mcReader, dataset);
+    mcReader.Restart();
+    energy_loss_distributions_delta_p_fd(mcReader, dataset);
 
-    // mcReader.Restart();
-    // energy_loss_distributions_delta_theta_fd(mcReader, dataset);
+    mcReader.Restart();
+    energy_loss_distributions_delta_theta_fd(mcReader, dataset);
 
     mcReader.Restart();
     energy_loss_distributions_delta_phi_fd(mcReader, dataset);
