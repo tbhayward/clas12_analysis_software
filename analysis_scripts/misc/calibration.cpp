@@ -6351,14 +6351,14 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
 
     if (dataset == "rga_fa18_inb" && region == "FD") {
         // A_p, B_p, C_p
-        A_p = 0.0107818 - 0.0003279 * theta + 0.0000004 * theta * theta;
-        B_p = -0.01610098 + 0.00061622 * theta + 0.00000568 * theta * theta;
-        C_p = 0.01298953 - 0.00065889 * theta + 0.00001058 * theta * theta;
+        A_p = 0.0099626 -0.0002414*theta -0.0000020*theta*theta;
+        B_p = -0.01428267 +0.00042833*theta +0.00001081*theta*theta;
+        C_p = 0.01197102 -0.00055673*theta +0.00000785*theta*theta;
 
         // A_theta, B_theta, C_theta
-        A_theta = 0.0815442 - 0.0091281 * theta + 0.0001723 * theta * theta;
-        B_theta = -0.19886670 + 0.02875184 * theta - 0.00066575 * theta * theta;
-        C_theta = 0.14384397 - 0.01864127 * theta + 0.00041362 * theta * theta;
+        A_theta = 0.0683831 -0.0083821*theta +0.0001670 * theta * theta;
+        B_theta = -0.15834256 +0.02630760*theta -0.00064126 * theta * theta;
+        C_theta = 0.11587509 -0.01679559*theta + 0.00038915 * theta * theta;
 
         // A_phi, B_phi, C_phi
         A_phi = 0.0055658 - 0.0027920 * theta - 0.0000228 * theta * theta;
@@ -6655,7 +6655,7 @@ void plot_energy_loss_corrections_fd(TTreeReader& mcReader, const std::string& d
 
 // Main function to call both energy loss distribution functions
 void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
-    energy_loss_distributions(mcReader, dataset);
+    // energy_loss_distributions(mcReader, dataset);
 
     // mcReader.Restart();
     // energy_loss_fd_distributions(mcReader, dataset);
