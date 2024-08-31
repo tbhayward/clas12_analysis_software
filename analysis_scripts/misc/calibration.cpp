@@ -5639,12 +5639,12 @@ void energy_loss_distributions_delta_phi_fd(TTreeReader& mcReader, const std::st
 
             // Determine the appropriate fit function based on the dataset
             std::string fitFunction;
-            // if (dataset == "rga_fa18_out") {
-            //     fitFunction = "[0] + [1]/x"; // For special case
-            // } else {
-            //     fitFunction = "[0] + [1]/x + [2]/x^2"; // For normal cases
-            // }
-            fitFunction = "[0] + [1]/x + [2]/x^2"; // For normal cases
+            if (dataset == "rga_fa18_out") {
+                fitFunction = "[0] + [1]/x"; // For special case
+            } else {
+                fitFunction = "[0] + [1]/x + [2]/x^2"; // For normal cases
+            }
+            // fitFunction = "[0] + [1]/x + [2]/x^2"; // For normal cases
 
             // Fit the profiles with appropriate functions
             fit_deltaphi[i] = new TF1(("fit_deltaphi_" + std::to_string(i)).c_str(), fitFunction.c_str(), minXValue, maxXValue);
@@ -6659,11 +6659,11 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     // mcReader.Restart();
     // energy_loss_distributions_delta_theta_fd(mcReader, dataset);
 
-    // mcReader.Restart();
-    // energy_loss_distributions_delta_phi_fd(mcReader, dataset);
-
     mcReader.Restart();
-    plot_energy_loss_corrections_fd(mcReader, dataset);
+    energy_loss_distributions_delta_phi_fd(mcReader, dataset);
+
+    // mcReader.Restart();
+    // plot_energy_loss_corrections_fd(mcReader, dataset);
 
     // mcReader.Restart();
     // energy_loss_distributions_delta_p_cd(mcReader, dataset);
