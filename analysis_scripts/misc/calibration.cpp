@@ -5287,7 +5287,7 @@ void energy_loss_distributions_delta_p_fd(TTreeReader& mcReader, const std::stri
 void energy_loss_distributions_delta_theta_fd(TTreeReader& mcReader, const std::string& dataset) {
     // Particle types and their corresponding LaTeX names and x-axis ranges
     std::map<int, std::tuple<std::string, double, double>> particle_types = {
-        {2212, {"p", 0.0, 5.0}}
+        {2212, {"p", 0.0, 6.0}}
     };
 
     // // Define theta bins
@@ -5436,12 +5436,12 @@ void energy_loss_distributions_delta_theta_fd(TTreeReader& mcReader, const std::
 
             // Determine the appropriate fit function based on the dataset
             std::string fitFunction;
-            // if (dataset == "rga_fa18_out") {
-            //     fitFunction = "[0] + [1]/x"; // For special case
-            // } else {
-            //     fitFunction = "[0] + [1]/x + [2]/x^2"; // For normal cases
-            // }
-            fitFunction = "[0] + [1]/x + [2]/x^2";
+            if (dataset == "rga_fa18_out") {
+                fitFunction = "[0] + [1]/x"; // For special case
+            } else {
+                fitFunction = "[0] + [1]/x + [2]/x^2"; // For normal cases
+            }
+            // fitFunction = "[0] + [1]/x + [2]/x^2";
 
             // Fit the profiles with appropriate functions
             fit_deltatheta[i] = new TF1(("fit_deltatheta_" + std::to_string(i)).c_str(), fitFunction.c_str(), minXValue, maxXValue);
@@ -5488,7 +5488,7 @@ void energy_loss_distributions_delta_theta_fd(TTreeReader& mcReader, const std::
 void energy_loss_distributions_delta_phi_fd(TTreeReader& mcReader, const std::string& dataset) {
     // Particle types and their corresponding LaTeX names and x-axis ranges
     std::map<int, std::tuple<std::string, double, double>> particle_types = {
-        {2212, {"p", 0.0, 5.0}}
+        {2212, {"p", 0.0, 6.0}}
     };
 
     // // Define theta bins
@@ -6656,14 +6656,14 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     // mcReader.Restart();
     // energy_loss_distributions_delta_p_fd(mcReader, dataset);
 
-    // mcReader.Restart();
-    // energy_loss_distributions_delta_theta_fd(mcReader, dataset);
+    mcReader.Restart();
+    energy_loss_distributions_delta_theta_fd(mcReader, dataset);
 
     // mcReader.Restart();
     // energy_loss_distributions_delta_phi_fd(mcReader, dataset);
 
-    mcReader.Restart();
-    plot_energy_loss_corrections_fd(mcReader, dataset);
+    // mcReader.Restart();
+    // plot_energy_loss_corrections_fd(mcReader, dataset);
 
     // mcReader.Restart();
     // energy_loss_distributions_delta_p_cd(mcReader, dataset);
