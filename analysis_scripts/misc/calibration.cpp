@@ -4886,7 +4886,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
                                         ("Fit Parameters: " + dataset + ", " + particle_name).c_str(), 
                                         1600, 800);
     // Determine the canvas layout based on the dataset
-    if (dataset == "rga_fa18_out") {
+    if (dataset == "rga_fa18_out" && prefix != "theta") {
         c_fit_params->Divide(2, 1);  // 2x1 canvas for rga_fa18_out
     } else {
         c_fit_params->Divide(3, 1);  // 1x3 canvas for other datasets
@@ -4917,7 +4917,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
 
     // Choose the fit function based on the dataset
     TF1* fit_A;
-    if (dataset == "rga_fa18_out") {
+    if (dataset == "rga_fa18_out" && prefix != "theta") {
         fit_A = new TF1("fit_A", "[0]+[1]*x", theta_bins.front().first, theta_bins.back().second);  // Linear fit for rga_fa18_out
     } else {
         fit_A = new TF1("fit_A", "[0]+[1]*x+[2]*x*x", theta_bins.front().first, theta_bins.back().second);  // Quadratic fit for other datasets
@@ -4961,7 +4961,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
 
     // Choose the fit function for B based on the dataset
     TF1* fit_B;
-    if (dataset == "rga_fa18_out") {
+    if (dataset == "rga_fa18_out" && prefix != "theta") {
         fit_B = new TF1("fit_B", "[0]+[1]*x", theta_bins.front().first, theta_bins.back().second);  // Linear fit for rga_fa18_out
     } else {
         fit_B = new TF1("fit_B", "[0]+[1]*x+[2]*x*x", theta_bins.front().first, theta_bins.back().second);  // Quadratic fit for other datasets
@@ -5436,11 +5436,12 @@ void energy_loss_distributions_delta_theta_fd(TTreeReader& mcReader, const std::
 
             // Determine the appropriate fit function based on the dataset
             std::string fitFunction;
-            if (dataset == "rga_fa18_out") {
-                fitFunction = "[0] + [1]/x"; // For special case
-            } else {
-                fitFunction = "[0] + [1]/x + [2]/x^2"; // For normal cases
-            }
+            // if (dataset == "rga_fa18_out") {
+            //     fitFunction = "[0] + [1]/x"; // For special case
+            // } else {
+            //     fitFunction = "[0] + [1]/x + [2]/x^2"; // For normal cases
+            // }
+            fitFunction = "[0] + [1]/x + [2]/x^2";
 
             // Fit the profiles with appropriate functions
             fit_deltatheta[i] = new TF1(("fit_deltatheta_" + std::to_string(i)).c_str(), fitFunction.c_str(), minXValue, maxXValue);
@@ -6652,14 +6653,14 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     // mcReader.Restart();
     // energy_loss_fd_distributions_theta_dc(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_distributions_delta_p_fd(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_distributions_delta_p_fd(mcReader, dataset);
 
     mcReader.Restart();
     energy_loss_distributions_delta_theta_fd(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_distributions_delta_phi_fd(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_distributions_delta_phi_fd(mcReader, dataset);
 
     // mcReader.Restart();
     // plot_energy_loss_corrections_fd(mcReader, dataset);
