@@ -5457,6 +5457,7 @@ void energy_loss_distributions_delta_theta_fd(TTreeReader& mcReader, const std::
             B_errors[i] = fit_deltatheta[i]->GetParError(1);
             C_values[i] = fit_deltatheta[i]->GetParameter(2);
             C_errors[i] = fit_deltatheta[i]->GetParError(2);
+            std::cout << C_values[i] << std::endl;
 
             histograms[pid][i]->Draw("COLZ");
             prof_deltatheta->Draw("same");  // Draw the profile to show the fit line
