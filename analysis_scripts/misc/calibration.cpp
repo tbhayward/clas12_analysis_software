@@ -4906,7 +4906,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
         graph_A->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
         graph_A->SetTitle(("A_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);A_{" + prefix + "}(#theta) (GeV)").c_str());
     } else {
-        graph_A->GetYaxis()->SetRangeUser(-0.5, 0.5);  // Set y-axis range
+        graph_A->GetYaxis()->SetRangeUser(-1, 1);  // Set y-axis range
         graph_A->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
         graph_A->SetTitle(("A_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);A_{" + prefix + "}(#theta)").c_str());
     }
@@ -4951,7 +4951,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
         graph_B->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
         graph_B->SetTitle(("B_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);B_{" + prefix + "}(#theta) (GeV^{2})").c_str());
     } else {
-        graph_B->GetYaxis()->SetRangeUser(-0.5, 0.5);  // Set y-axis range
+        graph_B->GetYaxis()->SetRangeUser(-1, 1);  // Set y-axis range
         graph_B->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
         graph_B->SetTitle(("B_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);B_{" + prefix + "}(#theta)").c_str());
     }
@@ -4999,7 +4999,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
             graph_C->GetXaxis()->SetRangeUser(5, 40); // Set x-axis range
             graph_C->SetTitle(("C_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);C_{" + prefix + "}(#theta) (GeV^{3})").c_str());
         } else {
-            graph_C->GetYaxis()->SetRangeUser(-0.5, 0.5);  // Set y-axis range
+            graph_C->GetYaxis()->SetRangeUser(-1, 1);  // Set y-axis range
             graph_C->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
             graph_C->SetTitle(("C_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);C_{" + prefix + "}(#theta)").c_str());
             }
@@ -5368,9 +5368,9 @@ void energy_loss_distributions_delta_theta_fd(TTreeReader& mcReader, const std::
     TTreeReaderValue<double> edge_36(mcReader, "traj_edge_36");
 
     // Loop over events
-    for (int i = 0; i < 1e7; ++i) {
-        mcReader.Next();
-    // while (mcReader.Next()) {
+    // for (int i = 0; i < 1e7; ++i) {
+    //     mcReader.Next();
+    while (mcReader.Next()) {
         if (!is_fd_track(*track_sector_6)) continue;
         if (!dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) continue;
         double delta_theta = *mc_theta - *theta;
