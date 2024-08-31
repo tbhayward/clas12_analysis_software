@@ -4929,7 +4929,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     TPaveText* pt_A = new TPaveText(0.7, 0.75, 0.9, 0.9, "NDC");
     pt_A->AddText(Form("p0 = %.7f", fit_A->GetParameter(0)));
     pt_A->AddText(Form("p1 = %.7f", fit_A->GetParameter(1)));
-    if (dataset != "rga_fa18_out") {
+    if (dataset != "rga_fa18_out" || prefix != "p") {
         pt_A->AddText(Form("p2 = %.7f", fit_A->GetParameter(2)));  // Only add p2 for non-outbending datasets
     }
     pt_A->AddText(Form("#chi^{2}/ndf = %.3f", fit_A->GetChisquare() / fit_A->GetNDF()));
@@ -4973,7 +4973,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     TPaveText* pt_B = new TPaveText(0.7, 0.75, 0.9, 0.9, "NDC");
     pt_B->AddText(Form("p0 = %.7f", fit_B->GetParameter(0)));
     pt_B->AddText(Form("p1 = %.7f", fit_B->GetParameter(1)));
-    if (dataset != "rga_fa18_out") {
+    if (dataset != "rga_fa18_out" || prefix != "p") {
         pt_B->AddText(Form("p2 = %.7f", fit_B->GetParameter(2)));  // Only add p2 for non-outbending datasets
     }
     pt_B->AddText(Form("#chi^{2}/ndf = %.3f", fit_B->GetChisquare() / fit_B->GetNDF()));
@@ -6654,11 +6654,11 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     // mcReader.Restart();
     // energy_loss_fd_distributions_theta_dc(mcReader, dataset);
 
-    // mcReader.Restart();
-    // energy_loss_distributions_delta_p_fd(mcReader, dataset);
+    mcReader.Restart();
+    energy_loss_distributions_delta_p_fd(mcReader, dataset);
 
-    // mcReader.Restart();
-    // energy_loss_distributions_delta_theta_fd(mcReader, dataset);
+    mcReader.Restart();
+    energy_loss_distributions_delta_theta_fd(mcReader, dataset);
 
     mcReader.Restart();
     energy_loss_distributions_delta_phi_fd(mcReader, dataset);
