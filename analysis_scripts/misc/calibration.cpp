@@ -4903,11 +4903,11 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
 
     if (prefix == "p") {
         graph_A->GetYaxis()->SetRangeUser(-0.02, 0.02);  // Set y-axis range
-        graph_A->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+        graph_A->GetXaxis()->SetRangeUser(5, 50);  // Set x-axis range
         graph_A->SetTitle(("A_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);A_{" + prefix + "}(#theta) (GeV)").c_str());
     } else {
-        graph_A->GetYaxis()->SetRangeUser(-1, 1);  // Set y-axis range
-        graph_A->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+        graph_A->GetYaxis()->SetRangeUser(-2, 2);  // Set y-axis range
+        graph_A->GetXaxis()->SetRangeUser(5, 50);  // Set x-axis range
         graph_A->SetTitle(("A_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);A_{" + prefix + "}(#theta)").c_str());
     }
 
@@ -4948,11 +4948,11 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
 
     if (prefix == "p") {
         graph_B->GetYaxis()->SetRangeUser(-0.02, 0.02);  // Set y-axis range
-        graph_B->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+        graph_B->GetXaxis()->SetRangeUser(5, 50);  // Set x-axis range
         graph_B->SetTitle(("B_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);B_{" + prefix + "}(#theta) (GeV^{2})").c_str());
     } else {
-        graph_B->GetYaxis()->SetRangeUser(-1, 1);  // Set y-axis range
-        graph_B->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+        graph_B->GetYaxis()->SetRangeUser(-2, 2);  // Set y-axis range
+        graph_B->GetXaxis()->SetRangeUser(5, 50);  // Set x-axis range
         graph_B->SetTitle(("B_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);B_{" + prefix + "}(#theta)").c_str());
     }
     graph_B->SetMarkerStyle(20);  // Set marker style to a filled circle
@@ -4996,11 +4996,11 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
         }
         if (prefix == "p") {
             graph_C->GetYaxis()->SetRangeUser(-0.02, 0.02);  // Set y-axis range
-            graph_C->GetXaxis()->SetRangeUser(5, 40); // Set x-axis range
+            graph_C->GetXaxis()->SetRangeUser(5, 50); // Set x-axis range
             graph_C->SetTitle(("C_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);C_{" + prefix + "}(#theta) (GeV^{3})").c_str());
         } else {
-            graph_C->GetYaxis()->SetRangeUser(-1, 1);  // Set y-axis range
-            graph_C->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+            graph_C->GetYaxis()->SetRangeUser(-2, 2);  // Set y-axis range
+            graph_C->GetXaxis()->SetRangeUser(5, 50);  // Set x-axis range
             graph_C->SetTitle(("C_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", FD;#theta (degrees);C_{" + prefix + "}(#theta)").c_str());
             }
             graph_C->SetMarkerStyle(20);  // Set marker style to a filled circle
@@ -6657,11 +6657,11 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     // mcReader.Restart();
     // energy_loss_distributions_delta_p_fd(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_distributions_delta_theta_fd(mcReader, dataset);
-
     // mcReader.Restart();
-    // energy_loss_distributions_delta_phi_fd(mcReader, dataset);
+    // energy_loss_distributions_delta_theta_fd(mcReader, dataset);
+
+    mcReader.Restart();
+    energy_loss_distributions_delta_phi_fd(mcReader, dataset);
 
     // mcReader.Restart();
     // plot_energy_loss_corrections_fd(mcReader, dataset);
