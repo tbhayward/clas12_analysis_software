@@ -4937,7 +4937,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     if ((dataset == "rga_fa18_out" && prefix == "#theta") || (dataset == "rga_fa18_out" && prefix == "#phi")) {
         pt_A->AddText(Form("p3 = %.7f", fit_A->GetParameter(3))); 
     } 
-    pt_A->AddText(Form("#chi^{2}/ndf = %.3f", fit_B->GetChisquare() / fit_B->GetNDF()));
+    pt_A->AddText(Form("#chi^{2}/ndf = %.3f", fit_A->GetChisquare() / fit_A->GetNDF()));
     pt_A->SetBorderSize(1);
     pt_A->SetFillColor(0);
     pt_A->Draw();
