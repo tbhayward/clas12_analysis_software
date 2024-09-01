@@ -6377,7 +6377,7 @@ void energy_loss_distributions_delta_phi_cd(TTreeReader& mcReader, const std::st
         c_deltaphi->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/cd_delta_phi_distributions_" + particle_name + ".png").c_str());
 
         // Use the new modular function for the fitted parameters
-        plot_and_fit_parameters_cd(theta_bins, A_values, A_errors, B_values, B_errors, C_values, C_errors, particle_name, dataset, "#theta");
+        plot_and_fit_parameters_cd(theta_bins, A_values, A_errors, B_values, B_errors, C_values, C_errors, particle_name, dataset, "#phi");
 
         // Clean up memory
         for (size_t i = 0; i < theta_bins.size(); ++i) {
@@ -6417,9 +6417,9 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
         C_p = -0.44080146 +0.02209857*theta -0.00028224*theta*theta;
 
         // A_theta, B_theta, C_theta
-        A_theta = 0.0683831 -0.0083821*theta +0.0001670 * theta * theta;
-        B_theta = -0.15834256 +0.02630760*theta -0.00064126 * theta * theta;
-        C_theta = 0.11587509 -0.01679559*theta + 0.00038915 * theta * theta;
+        A_theta = -0.0125326 -0.0000999*theta +0.0000100 * theta * theta;
+        B_theta = 0.21888683 -0.00800375*theta +0.00006576 * theta * theta;
+        C_theta = -0.09285116 +0.00348313*theta -0.00003020 * theta * theta;
 
         // A_phi, B_phi, C_phi
         A_phi = 0.0416510 -0.0064212*theta +0.0000622 * theta * theta;
