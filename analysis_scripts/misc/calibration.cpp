@@ -5988,6 +5988,12 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
 
             // Create profile histograms
             TProfile* prof_deltap = histograms[pid][i]->ProfileX();
+
+            // Define the minimum and maximum x-axis values for the fit
+            double minXValue = 0.4;  // Set the minimum x-value for the fit range
+
+            // Define the maximum x-values for each theta bin
+            std::array<double, 12> maxXValues = {2.5, 2.5, 2.5, 2.25, 2.2, 1.9, 1.75, 1.5, 1.4, 1.3, 1.2, 1.1};
             
             // Set the range for the profile to match the fit range
             prof_deltap->GetXaxis()->SetRangeUser(minXValue, maxXValues[i]);
