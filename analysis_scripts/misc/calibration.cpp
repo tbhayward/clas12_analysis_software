@@ -5727,7 +5727,7 @@ void plot_and_fit_parameters_cd(const std::vector<std::pair<double, double>>& th
     if (prefix == "p") {
         graph_A->GetYaxis()->SetRangeUser(-0.2, 0.2);  // Set y-axis range
         graph_A->GetXaxis()->SetRangeUser(30, 75);  // Set x-axis range
-        graph_A->SetTitle(("A_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", CD;#theta (degrees);A_{" + prefix + "}(#theta) (GeV)").c_str());
+        graph_A->SetTitle(("A_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", CD;#theta (degrees);A_{" + prefix + "}(#theta) (GeV^{-1})").c_str());
     } else {
         graph_A->GetYaxis()->SetRangeUser(-0.5, 0.5);  // Set y-axis range
         graph_A->GetXaxis()->SetRangeUser(30, 75);  // Set x-axis range
@@ -5765,7 +5765,7 @@ void plot_and_fit_parameters_cd(const std::vector<std::pair<double, double>>& th
     if (prefix == "p") {
         graph_B->GetYaxis()->SetRangeUser(-0.2, 0.2);  // Set y-axis range
         graph_B->GetXaxis()->SetRangeUser(30, 75);  // Set x-axis range
-        graph_B->SetTitle(("B_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", CD;#theta (degrees);B_{" + prefix + "}(#theta) (GeV^{2})").c_str());
+        graph_B->SetTitle(("B_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", CD;#theta (degrees);B_{" + prefix + "}(#theta) (GeV^{-2})").c_str());
     } else {
         graph_B->GetYaxis()->SetRangeUser(-0.5, 0.5);  // Set y-axis range
         graph_B->GetXaxis()->SetRangeUser(30, 75);  // Set x-axis range
@@ -5801,7 +5801,7 @@ void plot_and_fit_parameters_cd(const std::vector<std::pair<double, double>>& th
     if (prefix == "p") {
         graph_C->GetYaxis()->SetRangeUser(-0.2, 0.2);  // Set y-axis range
         graph_C->GetXaxis()->SetRangeUser(30, 75);  // Set x-axis range
-        graph_C->SetTitle(("C_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", CD;#theta (degrees);C_{" + prefix + "}(#theta) (GeV^{3})").c_str());
+        graph_C->SetTitle(("C_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", CD;#theta (degrees);C_{" + prefix + "}(#theta) (GeV^{-3})").c_str());
     } else {
         graph_C->GetYaxis()->SetRangeUser(-0.5, 0.5);  // Set y-axis range
         graph_C->GetXaxis()->SetRangeUser(30, 75);  // Set x-axis range
@@ -5946,9 +5946,9 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
     TTreeReaderValue<double> traj_edge_12(mcReader, "traj_edge_12");
 
     // Loop over events
-    // for (int i = 0; i < 1e7; ++i) {
-    //     mcReader.Next();
-    while (mcReader.Next()) {
+    for (int i = 0; i < 1e8; ++i) {
+        mcReader.Next();
+    // while (mcReader.Next()) {
         if (!is_cd_track(*track_sector_5)) continue;
         if (!cvt_fiducial(*traj_edge_1, *traj_edge_3, *traj_edge_5, *traj_edge_7, *traj_edge_12)) continue;
         double delta_p = *mc_p - *p;
