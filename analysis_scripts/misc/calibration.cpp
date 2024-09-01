@@ -5988,10 +5988,9 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
 
             // Create profile histograms
             TProfile* prof_deltap = histograms[pid][i]->ProfileX();
-
-            int firstBin = 1; // Start from the first bin
-            double minXValue = 0.4; // Default minimum x-value
-            std::array<double, 12> maxXValues = {2.5, 2.5, 2.5, 2.25, 2.2, 1.9, 1.75, 1.5, 1.4, 1.3, 1.2, 1.1};
+            
+            // Set the range for the profile to match the fit range
+            prof_deltap->GetXaxis()->SetRangeUser(minXValue, maxXValues[i]);
 
             // Set the range of the fit function before fitting
             fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]*x + [2]*x^2", minXValue, maxXValues[i]);
@@ -6017,6 +6016,11 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
             histograms[pid][i]->Draw("COLZ");
             prof_deltap->Draw("same");  // Draw the profile to show the fit line
             fit_deltap[i]->Draw("same");  // Draw the fit on top of the profile
+
+            // Optionally, restrict the fit line manually if needed
+            // TLine* line = new TLine(minXValue, fit_deltap[i]->Eval(minXValue), maxXValues[i], fit_deltap[i]->Eval(maxXValues[i]));
+            // line->SetLineColor(kRed);
+            // line->Draw("same");
         }
 
         // Add centered text "dataset, FD" on the canvas
