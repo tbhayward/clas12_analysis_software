@@ -6179,7 +6179,7 @@ void energy_loss_distributions_delta_theta_cd(TTreeReader& mcReader, const std::
             prof_deltatheta->GetXaxis()->SetRangeUser(minXValue, maxXValue);
 
             // Fit the profiles with appropriate functions
-            fit_deltatheta[i] = new TF1(("fit_deltatheta_" + std::to_string(i)).c_str(), "[0] + [1]*x + [2]*x^2", minXValue, maxXValue);
+            fit_deltatheta[i] = new TF1(("fit_deltatheta_" + std::to_string(i)).c_str(), "[0] + [1]/x + [2]/x^2", minXValue, maxXValue);
 
             prof_deltatheta->Fit(fit_deltatheta[i], "Q"); // Silent fit
 
@@ -7013,14 +7013,14 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     // mcReader.Restart();
     // energy_loss_distributions_delta_p_cd(mcReader, dataset);
 
-    // mcReader.Restart();
-    // energy_loss_distributions_delta_theta_cd(mcReader, dataset);
+    mcReader.Restart();
+    energy_loss_distributions_delta_theta_cd(mcReader, dataset);
 
     // mcReader.Restart();
     // energy_loss_distributions_delta_phi_cd(mcReader, dataset);
 
-    mcReader.Restart();
-    plot_energy_loss_corrections_cd(mcReader, dataset);
+    // mcReader.Restart();
+    // plot_energy_loss_corrections_cd(mcReader, dataset);
 }
                            
 void create_directories() {
