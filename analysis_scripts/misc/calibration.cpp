@@ -5999,8 +5999,8 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
             // Perform the fit within the set range
             prof_deltap->Fit(fit_deltap[i], "Q"); // Silent fit
 
-            // Set the range of the fit function for plotting (this step is now redundant and can be removed)
-            // fit_deltap[i]->SetRange(0.4, maxXValues[i]);
+            // Set the range of the fit function for plotting (important to restrict the drawing range)
+            fit_deltap[i]->SetRange(minXValue, maxXValues[i]);
 
             // Store the fit parameters
             A_values[i] = fit_deltap[i]->GetParameter(0);
