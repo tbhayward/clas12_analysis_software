@@ -5889,12 +5889,11 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
         {2212, {"p", 0.0, 2.5}}
     };
 
-    // Define theta bins
+    // Define 12 evenly spaced theta bins from 33 to 70
     std::vector<std::pair<double, double>> theta_bins = {
-        {33.0, 35.3125}, {35.3125, 37.625}, {37.625, 39.9375}, {39.9375, 42.25},
-        {42.25, 44.5625}, {44.5625, 46.875}, {46.875, 49.1875}, {49.1875, 51.5},
-        {51.5, 53.8125}, {53.8125, 56.125}, {56.125, 58.4375}, {58.4375, 60.75},
-        {60.75, 63.0625}, {63.0625, 65.375}, {65.375, 67.6875}, {67.6875, 70.0}
+        {33.0, 36.0833}, {36.0833, 39.1666}, {39.1666, 42.2499}, {42.2499, 45.3332},
+        {45.3332, 48.4165}, {48.4165, 51.4998}, {51.4998, 54.5831}, {54.5831, 57.6664},
+        {57.6664, 60.7497}, {60.7497, 63.8330}, {63.8330, 66.9163}, {66.9163, 70.0}
     };
 
     // Create histograms for each particle type and theta bin
@@ -5970,7 +5969,7 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
         const std::string& particle_name = std::get<0>(particle_types[pid]);
 
         TCanvas* c_deltap = new TCanvas(("c_deltap_" + particle_name).c_str(), ("Delta p Distributions: " + dataset + ", " + particle_name).c_str(), 2000, 1200);
-        c_deltap->Divide(4, 4);  // 20 subplots
+        c_deltap->Divide(2, 6);  // 20 subplots
 
         std::vector<TF1*> fit_deltap(theta_bins.size());
         std::vector<double> A_values(theta_bins.size());
@@ -5995,14 +5994,14 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
             double maxXValue = std::get<2>(particle_types[pid]); // Default maximum x-value
 
             for (int bin = 1; bin <= prof_deltap->GetNbinsX(); ++bin) {
-                if (prof_deltap->GetBinEntries(bin) > 100) {
+                if (prof_deltap->GetBinEntries(bin) > 25) {
                     minXValue = prof_deltap->GetBinLowEdge(bin);
                     break;
                 }
             }
 
             for (int bin = prof_deltap->GetNbinsX(); bin >= 1; --bin) {
-                if (prof_deltap->GetBinEntries(bin) > 100) {
+                if (prof_deltap->GetBinEntries(bin) > 25) {
                     maxXValue = prof_deltap->GetBinLowEdge(bin) + prof_deltap->GetBinWidth(bin);
                     break;
                 }
