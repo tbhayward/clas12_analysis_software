@@ -5998,9 +5998,6 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
             // Perform the fit within the set range
             prof_deltap->Fit(fit_deltap[i], "Q"); // Silent fit
 
-            // Reapply the range to ensure it’s respected when drawing
-            fit_deltap[i]->SetRange(minXValue, maxXValues[i]);
-
             // Debugging: print the range to verify
             std::cout << "Fit " << i << " range: " << fit_deltap[i]->GetXmin() << " to " << fit_deltap[i]->GetXmax() << std::endl;
 
@@ -6012,18 +6009,23 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
             C_values[i] = fit_deltap[i]->GetParameter(2);
             C_errors[i] = fit_deltap[i]->GetParError(2);
 
-            // Draw the histogram, profile, and fit line
+            // Draw the histogram, profile, and manually restricted fit line
             histograms[pid][i]->Draw("COLZ");
             prof_deltap->Draw("same");  // Draw the profile to show the fit line
-            fit_deltap[i]->Draw("same");  // Draw the fit on top of the profile
 
-            // Optionally, restrict the fit line manually if needed
-            // TLine* line = new TLine(minXValue, fit_deltap[i]->Eval(minXValue), maxXValues[i], fit_deltap[i]->Eval(maxXValues[i]));
-            // line->SetLineColor(kRed);
-            // line->Draw("same");
+            // Manually draw the restricted fit line
+            double lineMin = minXValue;
+            double lineMax = maxXValues[i];
+            double yMin = fit_deltap[i]->Eval(lineMin);
+            double yMax = fit_deltap[i]->Eval(lineMax);
+
+            TLine* line = new TLine(lineMin, yMin, lineMax, yMax);
+            line->SetLineColor(kRed);
+            line->SetLineWidth(2);
+            line->Draw("same");
         }
 
-        // Add centered text "dataset, FD" on the canvas
+        // Add centered text "dataset, CD" on the canvas
         c_deltap->cd();  // Switch to the main canvas (not any specific pad)
         TLatex latex;
         latex.SetNDC();  // Use normalized coordinates (0,0) to (1,1)
