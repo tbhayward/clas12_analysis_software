@@ -6000,7 +6000,7 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
                     minXValue = prof_deltap->GetBinLowEdge(bin);
                     break;
                 }
-            }t
+            }
 
             for (int bin = prof_deltap->GetNbinsX(); bin >= 1; --bin) {
                 if (prof_deltap->GetBinEntries(bin) > 0) {
