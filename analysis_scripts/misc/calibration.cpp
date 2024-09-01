@@ -6019,16 +6019,22 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
             histograms[pid][i]->Draw("COLZ");
             prof_deltap->Draw("same");  // Draw the profile to show the fit line
 
-            // Manually draw the restricted fit line
+            // Manually draw the restricted fit line in two parts to avoid unwanted wrapping
             double lineMin = minXValue;
+            double lineMid = (minXValue + maxXValues[i]) / 2.0;
             double lineMax = maxXValues[i];
             double yMin = fit_deltap[i]->Eval(lineMin);
+            double yMid = fit_deltap[i]->Eval(lineMid);
             double yMax = fit_deltap[i]->Eval(lineMax);
 
-            TLine* line = new TLine(lineMin, yMin, lineMax, yMax);
-            line->SetLineColor(kRed);
-            line->SetLineWidth(2);
-            line->Draw("same");
+            TLine* line1 = new TLine(lineMin, yMin, lineMid, yMid);
+            TLine* line2 = new TLine(lineMid, yMid, lineMax, yMax);
+            line1->SetLineColor(kRed);
+            line2->SetLineColor(kRed);
+            line1->SetLineWidth(2);
+            line2->SetLineWidth(2);
+            line1->Draw("same");
+            line2->Draw("same");
         }
 
         // Add centered text "dataset, CD" on the canvas
