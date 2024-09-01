@@ -6484,6 +6484,7 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
     // Apply corrections
     if (region == "CD") {
         p += A_p + B_p * p + C_p * p * p;
+        std::cout << theta << " " A_theta << " " << B_theta << " " << C_theta << std::endl;
         theta += A_theta + B_theta * theta + C_theta * theta * theta;
         phi += A_phi + B_phi * phi + C_phi * phi * phi;
     }
@@ -6891,8 +6892,7 @@ void plot_energy_loss_corrections_cd(TTreeReader& mcReader, const std::string& d
 
             // Apply energy loss corrections
             apply_energy_loss_correction(p_corr, theta_corr, phi_corr, dataset, "CD");
-            std::cout << *p << " " << p_corr << " " << *theta << " " << theta_corr << " " << *phi << " " << phi_corr << std::endl;
-
+           
             // Fill the "after" histograms
             for (size_t i = 0; i < theta_bins.size(); ++i) {
                 if (theta_corr >= theta_bins[i].first && theta_corr < theta_bins[i].second) {
