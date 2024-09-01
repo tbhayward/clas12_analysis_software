@@ -6364,22 +6364,6 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
         B_phi = 0.28414191 -0.00047647*theta +0.00010357 * theta * theta;
         C_phi = -0.25690893 +0.00886707*theta -0.00016081 * theta * theta;
     }
-    else if (dataset == "rgc_su22_inb" && region == "FD") {
-        // A_p, B_p, C_p
-        A_p = 0.0125368 - 0.0002151 * theta - 0.0000063 * theta * theta;
-        B_p = -0.01271730 + 0.00007759 * theta + 0.00002727 * theta * theta;
-        C_p = 0.01433632 - 0.00036698 * theta - 0.00000180 * theta * theta;
-
-        // A_theta, B_theta, C_theta
-        A_theta = 0.0794413 - 0.0089274 * theta + 0.0001697 * theta * theta;
-        B_theta = -0.18290422 + 0.02694942 * theta - 0.00062952 * theta * theta;
-        C_theta = 0.13650289 - 0.01788382 * theta + 0.00039908 * theta * theta;
-
-        // A_phi, B_phi, C_phi
-        A_phi = 0.0885268 - 0.0081697 * theta + 0.0000746 * theta * theta;
-        B_phi = 0.01658039 + 0.01453958 * theta - 0.00010898 * theta * theta;
-        C_phi = -0.09239852 - 0.00235823 * theta + 0.00002750 * theta * theta;
-    }
     else if (dataset == "rga_fa18_out" && region == "FD") {
         // A_p, B_p (no C_p for rga_fa18_out and no theta^2 term)
         A_p = 0.0135790 - 0.0005303 * theta; // Only linear term
@@ -6395,6 +6379,22 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
         A_phi = -0.9701486 +0.1213124*theta -0.0049215*theta*theta +0.0000640*theta*theta*theta;
         B_phi = 2.85034691 -0.34405076*theta +0.01347377*theta*theta -0.00016663*theta*theta*theta;
         C_phi = 0; // No c_phi for rga_fa18_out
+    }
+    else if (dataset == "rgc_su22_inb" && region == "FD") {
+        // A_p, B_p, C_p
+        A_p = 0.0125368 - 0.0002151 * theta - 0.0000063 * theta * theta;
+        B_p = -0.01271730 + 0.00007759 * theta + 0.00002727 * theta * theta;
+        C_p = 0.01433632 - 0.00036698 * theta - 0.00000180 * theta * theta;
+
+        // A_theta, B_theta, C_theta
+        A_theta = 0.0794413 - 0.0089274 * theta + 0.0001697 * theta * theta;
+        B_theta = -0.18290422 + 0.02694942 * theta - 0.00062952 * theta * theta;
+        C_theta = 0.13650289 - 0.01788382 * theta + 0.00039908 * theta * theta;
+
+        // A_phi, B_phi, C_phi
+        A_phi = 0.0885268 - 0.0081697 * theta + 0.0000746 * theta * theta;
+        B_phi = 0.01658039 + 0.01453958 * theta - 0.00010898 * theta * theta;
+        C_phi = -0.09239852 - 0.00235823 * theta + 0.00002750 * theta * theta;
     }
 
     // Apply corrections
@@ -6803,9 +6803,9 @@ int main(int argc, char** argv) {
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
     // if (mcReader) energy_loss(*mcReader, "rga_fa18_inb"); 
-    if (mcReader) energy_loss(*mcReader, "rga_fa18_out");  
+    // if (mcReader) energy_loss(*mcReader, "rga_fa18_out");  
     // if (mcReader) energy_loss(*mcReader, "rga_sp19_inb"); 
-    // if (mcReader) energy_loss(*mcReader, "rgc_su22_inb");   
+    if (mcReader) energy_loss(*mcReader, "rgc_su22_inb");   
 
     // Close files
     dataFile.Close();
