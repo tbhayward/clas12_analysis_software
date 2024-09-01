@@ -6380,6 +6380,22 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
         B_phi = 2.85034691 -0.34405076*theta +0.01347377*theta*theta -0.00016663*theta*theta*theta;
         C_phi = 0; // No c_phi for rga_fa18_out
     }
+    else if (dataset == "rga_sp19_inb" && region == "FD") {
+        // A_p, B_p (no C_p for rga_fa18_out and no theta^2 term)
+        A_p = 0.0095205 -0.0001914*theta -0.0000031*theta*theta; 
+        B_p = -0.01365658 +0.00036322*theta +0.00001217*theta*theta;
+        C_p = 0.01175256 -0.00053407*theta +0.00000742*theta*theta; 
+
+        // A_theta, B_theta, C_theta
+        A_theta = 0.0723069 -0.0085078*theta +0.0001702*theta*theta;
+        B_theta = -0.16048057 +0.02561073*theta -0.00062158*theta*theta;
+        C_theta = 0.10954630 -0.01566605*theta +0.00036132*theta*theta; 
+
+        // A_phi, B_phi, C_phi
+        A_phi = 0.0486986 -0.0067579*theta +0.0000638*theta*theta;
+        B_phi = 0.26803189 +0.00016245*theta +0.00010433*theta*theta;
+        C_phi = -0.24522460 +0.00826646*theta -0.00015640*theta*theta; // 
+    }
     else if (dataset == "rgc_su22_inb" && region == "FD") {
         // A_p, B_p, C_p
         A_p = 0.0109317 -0.0000194*theta -0.0000117 * theta * theta;
@@ -6662,14 +6678,14 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     // mcReader.Restart();
     // energy_loss_fd_distributions_theta_dc(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_distributions_delta_p_fd(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_distributions_delta_p_fd(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_distributions_delta_theta_fd(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_distributions_delta_theta_fd(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_distributions_delta_phi_fd(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_distributions_delta_phi_fd(mcReader, dataset);
 
     mcReader.Restart();
     plot_energy_loss_corrections_fd(mcReader, dataset);
