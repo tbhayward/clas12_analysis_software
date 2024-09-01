@@ -5970,7 +5970,7 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
         const std::string& particle_name = std::get<0>(particle_types[pid]);
 
         TCanvas* c_deltap = new TCanvas(("c_deltap_" + particle_name).c_str(), ("Delta p Distributions: " + dataset + ", " + particle_name).c_str(), 2000, 1200);
-        c_deltap->Divide(6, 2);  // 20 subplots
+        c_deltap->Divide(6, 2);  // 12 subplots
 
         std::vector<TF1*> fit_deltap(theta_bins.size());
         std::vector<double> A_values(theta_bins.size());
@@ -5985,27 +5985,38 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
             c_deltap->cd(i + 1);
             gPad->SetMargin(0.15, 0.15, 0.20, 0.1);  // Left, right, bottom, top margins
             gPad->SetLogz();
-
             // Create profile histograms
             TProfile* prof_deltap = histograms[pid][i]->ProfileX();
 
-            // Define the minimum and maximum x-axis values for the fit
-            double minXValue = 0.4;  // Set the minimum x-value for the fit range
+            // Find the first and last bins with more than 100 entries
+            int firstBin = 1; // Start from the first bin
+            double minXValue = 0.5; // Default minimum x-value
+            double maxXValue = std::get<2>(particle_types[pid]); // Default maximum x-value
 
-            // Define the maximum x-values for each theta bin
-            std::array<double, 12> maxXValues = {2.5, 2.5, 2.5, 2.25, 2.2, 1.9, 1.75, 1.5, 1.4, 1.3, 1.2, 1.1};
-            
-            // Set the range for the profile to match the fit range
-            prof_deltap->GetXaxis()->SetRangeUser(minXValue, maxXValues[i]);
+            for (int bin = 1; bin <= prof_deltap->GetNbinsX(); ++bin) {
+                if (prof_deltap->GetBinEntries(bin) > 100) {
+                    minXValue = prof_deltap->GetBinLowEdge(bin);
+                    break;
+                }
+            }
 
-            // Set the range of the fit function before fitting
-            fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]*x + [2]*x^2", minXValue, maxXValues[i]);
+            for (int bin = prof_deltap->GetNbinsX(); bin >= 1; --bin) {
+                if (prof_deltap->GetBinEntries(bin) > 100) {
+                    maxXValue = prof_deltap->GetBinLowEdge(bin) + prof_deltap->GetBinWidth(bin);
+                    break;
+                }
+            }
 
-            // Perform the fit within the set range
+            // Set the range of the profile to start and end at the calculated values
+            prof_deltap->GetXaxis()->SetRangeUser(minXValue, maxXValue);
+
+            // Fit the profiles with appropriate functions
+            fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]*x + [2]*x^2", minXValue, maxXValue);
+
             prof_deltap->Fit(fit_deltap[i], "Q"); // Silent fit
 
-            // Debugging: print the range to verify
-            std::cout << "Fit " << i << " range: " << fit_deltap[i]->GetXmin() << " to " << fit_deltap[i]->GetXmax() << std::endl;
+            // Set the range of the fit function for plotting
+            fit_deltap[i]->SetRange(minXValue, maxXValue);
 
             // Store the fit parameters
             A_values[i] = fit_deltap[i]->GetParameter(0);
@@ -6015,26 +6026,8 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
             C_values[i] = fit_deltap[i]->GetParameter(2);
             C_errors[i] = fit_deltap[i]->GetParError(2);
 
-            // Draw the histogram, profile, and manually restricted fit line
             histograms[pid][i]->Draw("COLZ");
-            prof_deltap->Draw("same");  // Draw the profile to show the fit line
-
-            // Manually draw the restricted fit line in two parts to avoid unwanted wrapping
-            double lineMin = minXValue;
-            double lineMid = (minXValue + maxXValues[i]) / 2.0;
-            double lineMax = maxXValues[i];
-            double yMin = fit_deltap[i]->Eval(lineMin);
-            double yMid = fit_deltap[i]->Eval(lineMid);
-            double yMax = fit_deltap[i]->Eval(lineMax);
-
-            TLine* line1 = new TLine(lineMin, yMin, lineMid, yMid);
-            TLine* line2 = new TLine(lineMid, yMid, lineMax, yMax);
-            line1->SetLineColor(kRed);
-            line2->SetLineColor(kRed);
-            line1->SetLineWidth(2);
-            line2->SetLineWidth(2);
-            line1->Draw("same");
-            line2->Draw("same");
+            prof_deltap->Draw("same");  // Draw the fit on top of the profile
         }
 
         // Add centered text "dataset, CD" on the canvas
