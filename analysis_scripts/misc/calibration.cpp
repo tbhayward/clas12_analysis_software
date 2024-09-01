@@ -6891,7 +6891,7 @@ void plot_energy_loss_corrections_cd(TTreeReader& mcReader, const std::string& d
 
             // Apply energy loss corrections
             apply_energy_loss_correction(p_corr, theta_corr, phi_corr, dataset, "CD");
-            std::cout << *theta << " " << theta_corr << " " << *phi << " " << phi_corr << std::endl;
+            std::cout << *p << " " << p_corr << " " << *theta << " " << theta_corr << " " << *phi << " " << phi_corr << std::endl;
 
             // Fill the "after" histograms
             for (size_t i = 0; i < theta_bins.size(); ++i) {
