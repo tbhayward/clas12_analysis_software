@@ -5724,12 +5724,12 @@ void plot_and_fit_parameters_cd(const std::vector<std::pair<double, double>>& th
     }
     
     if (prefix == "p") {
-        graph_A->GetYaxis()->SetRangeUser(-0.02, 0.02);  // Set y-axis range
-        graph_A->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+        graph_A->GetYaxis()->SetRangeUser(-0.05, 0.05);  // Set y-axis range
+        graph_A->GetXaxis()->SetRangeUser(30, 75);  // Set x-axis range
         graph_A->SetTitle(("A_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", CD;#theta (degrees);A_{" + prefix + "}(#theta) (GeV)").c_str());
     } else {
         graph_A->GetYaxis()->SetRangeUser(-0.5, 0.5);  // Set y-axis range
-        graph_A->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+        graph_A->GetXaxis()->SetRangeUser(30, 75);  // Set x-axis range
         graph_A->SetTitle(("A_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", CD;#theta (degrees);A_{" + prefix + "}(#theta)").c_str());
     }
     
@@ -5762,12 +5762,12 @@ void plot_and_fit_parameters_cd(const std::vector<std::pair<double, double>>& th
     }
     
     if (prefix == "p") {
-        graph_B->GetYaxis()->SetRangeUser(-0.02, 0.02);  // Set y-axis range
-        graph_B->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+        graph_B->GetYaxis()->SetRangeUser(-0.05, 0.05);  // Set y-axis range
+        graph_B->GetXaxis()->SetRangeUser(30, 75);  // Set x-axis range
         graph_B->SetTitle(("B_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", CD;#theta (degrees);B_{" + prefix + "}(#theta) (GeV^{2})").c_str());
     } else {
         graph_B->GetYaxis()->SetRangeUser(-0.5, 0.5);  // Set y-axis range
-        graph_B->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+        graph_B->GetXaxis()->SetRangeUser(30, 75);  // Set x-axis range
         graph_B->SetTitle(("B_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", CD;#theta (degrees);B_{" + prefix + "}(#theta)").c_str());
     }
     graph_B->SetMarkerStyle(20);  // Set marker style to a filled circle
@@ -5798,12 +5798,12 @@ void plot_and_fit_parameters_cd(const std::vector<std::pair<double, double>>& th
         graph_C->SetPointError(i, 0.0, C_errors[i]);
     }
     if (prefix == "p") {
-        graph_C->GetYaxis()->SetRangeUser(-0.02, 0.02);  // Set y-axis range
-        graph_C->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+        graph_C->GetYaxis()->SetRangeUser(-0.05, 0.05);  // Set y-axis range
+        graph_C->GetXaxis()->SetRangeUser(30, 75);  // Set x-axis range
         graph_C->SetTitle(("C_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", CD;#theta (degrees);C_{" + prefix + "}(#theta) (GeV^{3})").c_str());
     } else {
         graph_C->GetYaxis()->SetRangeUser(-0.5, 0.5);  // Set y-axis range
-        graph_C->GetXaxis()->SetRangeUser(5, 40);  // Set x-axis range
+        graph_C->GetXaxis()->SetRangeUser(30, 75);  // Set x-axis range
         graph_C->SetTitle(("C_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", CD;#theta (degrees);C_{" + prefix + "}(#theta)").c_str());
     }
     graph_C->SetMarkerStyle(20);  // Set marker style to a filled circle
@@ -5891,12 +5891,11 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
 
     // // Define theta bins
     std::vector<std::pair<double, double>> theta_bins = {
-        {33.0, 34.542}, {34.542, 36.083}, {36.083, 37.625}, {37.625, 39.167},
-        {39.167, 40.708}, {40.708, 42.250}, {42.250, 43.792}, {43.792, 45.333},
-        {45.333, 46.875}, {46.875, 48.417}, {48.417, 49.958}, {49.958, 51.500},
-        {51.500, 53.042}, {53.042, 54.583}, {54.583, 56.125}, {56.125, 57.667},
-        {57.667, 59.208}, {59.208, 60.750}, {60.750, 62.292}, {62.292, 63.833},
-        {63.833, 65.375}, {65.375, 66.917}, {66.917, 68.458}, {68.458, 70.0}
+        {33.0, 34.85}, {34.85, 36.7}, {36.7, 38.55}, {38.55, 40.4},
+        {40.4, 42.25}, {42.25, 44.1}, {44.1, 45.95}, {45.95, 47.8},
+        {47.8, 49.65}, {49.65, 51.5}, {51.5, 53.35}, {53.35, 55.2},
+        {55.2, 57.05}, {57.05, 58.9}, {58.9, 60.75}, {60.75, 62.6},
+        {62.6, 64.45}, {64.45, 66.3}, {66.3, 68.15}, {68.15, 70.0}
     };
 
     // Create histograms for each particle type and theta bin
@@ -5972,7 +5971,7 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
         const std::string& particle_name = std::get<0>(particle_types[pid]);
 
         TCanvas* c_deltap = new TCanvas(("c_deltap_" + particle_name).c_str(), ("Delta p Distributions: " + dataset + ", " + particle_name).c_str(), 2000, 1200);
-        c_deltap->Divide(6, 4);  // 20 subplots
+        c_deltap->Divide(5, 4);  // 20 subplots
 
         std::vector<TF1*> fit_deltap(theta_bins.size());
         std::vector<double> A_values(theta_bins.size());
@@ -6818,9 +6817,9 @@ int main(int argc, char** argv) {
 
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
-    // if (mcReader) energy_loss(*mcReader, "rga_fa18_inb"); 
+    if (mcReader) energy_loss(*mcReader, "rga_fa18_inb"); 
     // if (mcReader) energy_loss(*mcReader, "rga_fa18_out");  
-    if (mcReader) energy_loss(*mcReader, "rga_sp19_inb"); 
+    // if (mcReader) energy_loss(*mcReader, "rga_sp19_inb"); 
     // if (mcReader) energy_loss(*mcReader, "rgc_su22_inb");   
 
     // Close files
