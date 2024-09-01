@@ -5725,7 +5725,7 @@ void plot_and_fit_parameters_cd(const std::vector<std::pair<double, double>>& th
     }
     
     if (prefix == "p") {
-        graph_A->GetYaxis()->SetRangeUser(-0.05, 0.05);  // Set y-axis range
+        graph_A->GetYaxis()->SetRangeUser(-0.1, 0.1);  // Set y-axis range
         graph_A->GetXaxis()->SetRangeUser(30, 75);  // Set x-axis range
         graph_A->SetTitle(("A_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", CD;#theta (degrees);A_{" + prefix + "}(#theta) (GeV)").c_str());
     } else {
@@ -5763,7 +5763,7 @@ void plot_and_fit_parameters_cd(const std::vector<std::pair<double, double>>& th
     }
     
     if (prefix == "p") {
-        graph_B->GetYaxis()->SetRangeUser(-0.05, 0.05);  // Set y-axis range
+        graph_B->GetYaxis()->SetRangeUser(-0.1, 0.1);  // Set y-axis range
         graph_B->GetXaxis()->SetRangeUser(30, 75);  // Set x-axis range
         graph_B->SetTitle(("B_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", CD;#theta (degrees);B_{" + prefix + "}(#theta) (GeV^{2})").c_str());
     } else {
@@ -5799,7 +5799,7 @@ void plot_and_fit_parameters_cd(const std::vector<std::pair<double, double>>& th
         graph_C->SetPointError(i, 0.0, C_errors[i]);
     }
     if (prefix == "p") {
-        graph_C->GetYaxis()->SetRangeUser(-0.05, 0.05);  // Set y-axis range
+        graph_C->GetYaxis()->SetRangeUser(-0.1, 0.1);  // Set y-axis range
         graph_C->GetXaxis()->SetRangeUser(30, 75);  // Set x-axis range
         graph_C->SetTitle(("C_{" + prefix + "}, #Delta" + prefix + ", " + dataset +", CD;#theta (degrees);C_{" + prefix + "}(#theta) (GeV^{3})").c_str());
     } else {
@@ -6001,7 +6001,7 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
             prof_deltap->Fit(fit_deltap[i], "Q"); // Silent fit
 
             // Set the range of the fit function for plotting
-            fit_deltap[i]->SetRange(0.3, std::get<2>(particle_types[pid]));
+            fit_deltap[i]->SetRange(0.4, maxXValues[i]);
 
             // Store the fit parameters
             A_values[i] = fit_deltap[i]->GetParameter(0);
