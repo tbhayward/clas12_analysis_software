@@ -5946,9 +5946,9 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
     TTreeReaderValue<double> traj_edge_12(mcReader, "traj_edge_12");
 
     // Loop over events
-    for (int i = 0; i < 1e8; ++i) {
-        mcReader.Next();
-    // while (mcReader.Next()) {
+    // for (int i = 0; i < 1e8; ++i) {
+    //     mcReader.Next();
+    while (mcReader.Next()) {
         if (!is_cd_track(*track_sector_5)) continue;
         if (!cvt_fiducial(*traj_edge_1, *traj_edge_3, *traj_edge_5, *traj_edge_7, *traj_edge_12)) continue;
         double delta_p = *mc_p - *p;
@@ -5994,14 +5994,14 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
             double maxXValue = std::get<2>(particle_types[pid]); // Default maximum x-value
 
             for (int bin = 1; bin <= prof_deltap->GetNbinsX(); ++bin) {
-                if (prof_deltap->GetBinEntries(bin) > 100) {
+                if (prof_deltap->GetBinEntries(bin) > 50) {
                     minXValue = prof_deltap->GetBinLowEdge(bin);
                     break;
                 }
             }
 
             for (int bin = prof_deltap->GetNbinsX(); bin >= 1; --bin) {
-                if (prof_deltap->GetBinEntries(bin) > 100) {
+                if (prof_deltap->GetBinEntries(bin) > 50) {
                     maxXValue = prof_deltap->GetBinLowEdge(bin) + prof_deltap->GetBinWidth(bin);
                     break;
                 }
