@@ -5889,13 +5889,12 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
         {2212, {"p", 0.0, 3}}
     };
 
-    // // Define theta bins
+    // Define theta bins
     std::vector<std::pair<double, double>> theta_bins = {
-        {33.0, 34.85}, {34.85, 36.7}, {36.7, 38.55}, {38.55, 40.4},
-        {40.4, 42.25}, {42.25, 44.1}, {44.1, 45.95}, {45.95, 47.8},
-        {47.8, 49.65}, {49.65, 51.5}, {51.5, 53.35}, {53.35, 55.2},
-        {55.2, 57.05}, {57.05, 58.9}, {58.9, 60.75}, {60.75, 62.6},
-        {62.6, 64.45}, {64.45, 66.3}, {66.3, 68.15}, {68.15, 70.0}
+        {33.0, 35.3125}, {35.3125, 37.625}, {37.625, 39.9375}, {39.9375, 42.25},
+        {42.25, 44.5625}, {44.5625, 46.875}, {46.875, 49.1875}, {49.1875, 51.5},
+        {51.5, 53.8125}, {53.8125, 56.125}, {56.125, 58.4375}, {58.4375, 60.75},
+        {60.75, 63.0625}, {63.0625, 65.375}, {65.375, 67.6875}, {67.6875, 70.0}
     };
 
     // Create histograms for each particle type and theta bin
@@ -5971,7 +5970,7 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
         const std::string& particle_name = std::get<0>(particle_types[pid]);
 
         TCanvas* c_deltap = new TCanvas(("c_deltap_" + particle_name).c_str(), ("Delta p Distributions: " + dataset + ", " + particle_name).c_str(), 2000, 1200);
-        c_deltap->Divide(5, 4);  // 20 subplots
+        c_deltap->Divide(4, 4);  // 20 subplots
 
         std::vector<TF1*> fit_deltap(theta_bins.size());
         std::vector<double> A_values(theta_bins.size());
@@ -5990,15 +5989,34 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
             // Create profile histograms
             TProfile* prof_deltap = histograms[pid][i]->ProfileX();
 
-            // Set the range of the profile to start from 0.5
-            prof_deltap->GetXaxis()->SetRangeUser(0.3, std::get<2>(particle_types[pid]));
+            // Find the first and last bins with more than 1000 entries
+            int firstBin = 1; // Start from the first bin
+            double minXValue = 0.5; // Default minimum x-value
+            double maxXValue = std::get<2>(particle_types[pid]); // Default maximum x-value
+
+            for (int bin = 1; bin <= prof_deltap->GetNbinsX(); ++bin) {
+                if (prof_deltap->GetBinEntries(bin) > 100) {
+                    minXValue = prof_deltap->GetBinLowEdge(bin);
+                    break;
+                }
+            }
+
+            for (int bin = prof_deltap->GetNbinsX(); bin >= 1; --bin) {
+                if (prof_deltap->GetBinEntries(bin) > 100) {
+                    maxXValue = prof_deltap->GetBinLowEdge(bin) + prof_deltap->GetBinWidth(bin);
+                    break;
+                }
+            }
+
+            // Set the range of the profile to start and end at the calculated values
+            prof_deltap->GetXaxis()->SetRangeUser(minXValue, maxXValue);
+
+            // Determine the appropriate fit function based on the dataset
+            std::string fitFunction;
+            fitFunction = "[0] + [1]/x + [2]/x^2";
 
             // Fit the profiles with appropriate functions
-            fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x + [2]/x^2", 0.3, std::get<2>(particle_types[pid]));
-            prof_deltap->Fit(fit_deltap[i], "Q"); // Silent fit
-
-            // Set the range of the fit function for plotting
-            fit_deltap[i]->SetRange(0.3, std::get<2>(particle_types[pid]));
+            fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), fitFunction.c_str(), minXValue, maxXValue);
 
             // Store the fit parameters
             A_values[i] = fit_deltap[i]->GetParameter(0);
