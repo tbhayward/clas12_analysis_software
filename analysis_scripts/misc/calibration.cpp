@@ -5991,28 +5991,13 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
 
             // Find the first and last bins with more than 1000 entries
             int firstBin = 1; // Start from the first bin
-            double minXValue = 0.25; // Default minimum x-value
-            double maxXValue = std::get<2>(particle_types[pid]); // Default maximum x-value
-
-            for (int bin = 1; bin <= prof_deltap->GetNbinsX(); ++bin) {
-                if (prof_deltap->GetBinEntries(bin) > 0) {
-                    std::cout << bin << " " << prof_deltap->GetBinLowEdge(bin) << " " << prof_deltap->GetBinEntries(bin) << std::endl;
-                    minXValue = prof_deltap->GetBinLowEdge(bin);
-                    break;
-                }
-            }
-
-            for (int bin = prof_deltap->GetNbinsX(); bin >= 1; --bin) {
-                if (prof_deltap->GetBinEntries(bin) > 0) {
-                    maxXValue = prof_deltap->GetBinLowEdge(bin) + prof_deltap->GetBinWidth(bin);
-                    break;
-                }
-            }
+            double minXValue = 0.4; // Default minimum x-value
+            std::array<double, 12> maxXValues = {2.5, 2.5, 2.5, 2.25, 2.2, 1.9, 1.75, 1.5, 1.4, 1.3, 1.2, 1.1};
 
             // std::cout << minXValue << " " << minXValue << std::endl;
             // Fit the profiles with appropriate functions
             // fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x + [2]/x^2", minXValue, maxXValue);
-            fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]*x + [2]*x^2", minXValue, maxXValue);
+            fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]*x + [2]*x^2", minXValue, maxXValue[i]);
             prof_deltap->Fit(fit_deltap[i], "Q"); // Silent fit
 
             // Set the range of the fit function for plotting
