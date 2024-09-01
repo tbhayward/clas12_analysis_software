@@ -6187,12 +6187,12 @@ void energy_loss_distributions_delta_theta_cd(TTreeReader& mcReader, const std::
             fit_deltatheta[i]->SetRange(minXValue, maxXValue);
 
             // Store the fit parameters
-            A_values[i] = fit_deltap[i]->GetParameter(0);
-            A_errors[i] = fit_deltap[i]->GetParError(0);
-            B_values[i] = fit_deltap[i]->GetParameter(1);
-            B_errors[i] = fit_deltap[i]->GetParError(1);
-            C_values[i] = fit_deltap[i]->GetParameter(2);
-            C_errors[i] = fit_deltap[i]->GetParError(2);
+            A_values[i] = fit_deltatheta[i]->GetParameter(0);
+            A_errors[i] = fit_deltatheta[i]->GetParError(0);
+            B_values[i] = fit_deltatheta[i]->GetParameter(1);
+            B_errors[i] = fit_deltatheta[i]->GetParError(1);
+            C_values[i] = fit_deltatheta[i]->GetParameter(2);
+            C_errors[i] = fit_deltatheta[i]->GetParError(2);
 
             histograms[pid][i]->Draw("COLZ");
             prof_deltatheta->Draw("same");  // Draw the fit on top of the profile
