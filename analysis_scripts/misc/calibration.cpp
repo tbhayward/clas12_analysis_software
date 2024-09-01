@@ -5969,7 +5969,7 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
         const std::string& particle_name = std::get<0>(particle_types[pid]);
 
         TCanvas* c_deltap = new TCanvas(("c_deltap_" + particle_name).c_str(), ("Delta p Distributions: " + dataset + ", " + particle_name).c_str(), 2000, 1200);
-        c_deltap->Divide(2, 6);  // 20 subplots
+        c_deltap->Divide(6, 2);  // 20 subplots
 
         std::vector<TF1*> fit_deltap(theta_bins.size());
         std::vector<double> A_values(theta_bins.size());
@@ -5994,14 +5994,14 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
             double maxXValue = std::get<2>(particle_types[pid]); // Default maximum x-value
 
             for (int bin = 1; bin <= prof_deltap->GetNbinsX(); ++bin) {
-                if (prof_deltap->GetBinEntries(bin) > 25) {
+                if (prof_deltap->GetBinEntries(bin) > 0) {
                     minXValue = prof_deltap->GetBinLowEdge(bin);
                     break;
                 }
             }
 
             for (int bin = prof_deltap->GetNbinsX(); bin >= 1; --bin) {
-                if (prof_deltap->GetBinEntries(bin) > 25) {
+                if (prof_deltap->GetBinEntries(bin) > 0) {
                     maxXValue = prof_deltap->GetBinLowEdge(bin) + prof_deltap->GetBinWidth(bin);
                     break;
                 }
