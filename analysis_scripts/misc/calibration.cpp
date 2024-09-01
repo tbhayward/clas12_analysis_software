@@ -5996,7 +5996,7 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
 
             for (int bin = 1; bin <= prof_deltap->GetNbinsX(); ++bin) {
                 if (prof_deltap->GetBinEntries(bin) > 0) {
-                    std::cout << prof_deltap->GetBinEntries(bin) << std::endl;
+                    std::cout << bin << " " << prof_deltap->GetBinLowEdge(bin) << " " << prof_deltap->GetBinEntries(bin) << std::endl;
                     minXValue = prof_deltap->GetBinLowEdge(bin);
                     break;
                 }
