@@ -4919,7 +4919,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     TF1* fit_A;
     if (dataset == "rga_fa18_out" && prefix == "p") {
         fit_A = new TF1("fit_A", "[0]+[1]*x", theta_bins.front().first, theta_bins.back().second);  // Linear fit for rga_fa18_out
-    } else if ((dataset == "rga_fa18_out" && prefix == "#theta") || (dataset == "rga_fa18_out" && prefix == "#phi")) {
+    } else if ((dataset != "rga_fa18_out") || (dataset == "rga_fa18_out" && prefix == "#theta") || (dataset == "rga_fa18_out" && prefix == "#phi")) {
         fit_A = new TF1("fit_A", "[0]+[1]*x + [2]*x*x +[3]*x*x*x", theta_bins.front().first, theta_bins.back().second);
     } else {
         fit_A = new TF1("fit_A", "[0]+[1]*x+[2]*x*x", theta_bins.front().first, theta_bins.back().second);  // Quadratic fit for other datasets
@@ -4931,7 +4931,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     TPaveText* pt_A = new TPaveText(0.7, 0.75, 0.9, 0.9, "NDC");
     pt_A->AddText(Form("p0 = %.7f", fit_A->GetParameter(0)));
     pt_A->AddText(Form("p1 = %.7f", fit_A->GetParameter(1)));
-    if ((dataset == "rga_fa18_out" && prefix == "#theta") || (dataset == "rga_fa18_out" && prefix == "#phi")) {
+    if ((dataset != "rga_fa18_out") || (dataset == "rga_fa18_out" && prefix == "#theta") || (dataset == "rga_fa18_out" && prefix == "#phi")) {
         pt_A->AddText(Form("p2 = %.7f", fit_A->GetParameter(2)));  
     }
     if ((dataset == "rga_fa18_out" && prefix == "#theta") || (dataset == "rga_fa18_out" && prefix == "#phi")) {
@@ -4968,7 +4968,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     TF1* fit_B;
     if (dataset == "rga_fa18_out" && prefix == "p") {
         fit_B = new TF1("fit_B", "[0]+[1]*x", theta_bins.front().first, theta_bins.back().second);  // Linear fit for rga_fa18_out
-    } else if ((dataset == "rga_fa18_out" && prefix == "#theta") || (dataset == "rga_fa18_out" && prefix == "#phi")) {
+    } else if ((dataset != "rga_fa18_out") || (dataset == "rga_fa18_out" && prefix == "#theta") || (dataset == "rga_fa18_out" && prefix == "#phi")) {
         fit_B = new TF1("fit_A", "[0]+[1]*x + [2]*x*x +[3]*x*x*x", theta_bins.front().first, theta_bins.back().second);
     } else {
         fit_B = new TF1("fit_B", "[0]+[1]*x+[2]*x*x", theta_bins.front().first, theta_bins.back().second);  // Quadratic fit for other datasets
@@ -4980,7 +4980,7 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     TPaveText* pt_B = new TPaveText(0.7, 0.75, 0.9, 0.9, "NDC");
     pt_B->AddText(Form("p0 = %.7f", fit_B->GetParameter(0)));
     pt_B->AddText(Form("p1 = %.7f", fit_B->GetParameter(1)));
-    if ((dataset == "rga_fa18_out" && prefix == "#theta") || (dataset == "rga_fa18_out" && prefix == "#phi")) {
+    if ((dataset != "rga_fa18_out") ||  (dataset == "rga_fa18_out" && prefix == "#theta") || (dataset == "rga_fa18_out" && prefix == "#phi")) {
         pt_B->AddText(Form("p2 = %.7f", fit_B->GetParameter(2)));  
     }
     if ((dataset == "rga_fa18_out" && prefix == "#theta") || (dataset == "rga_fa18_out" && prefix == "#phi")) {
@@ -5092,7 +5092,6 @@ void plot_and_fit_parameters(const std::vector<std::pair<double, double>>& theta
     delete pt_B;
     delete c_fit_params;
 }
-
 
 void energy_loss_distributions_delta_p_fd(TTreeReader& mcReader, const std::string& dataset) {
     // Particle types and their corresponding LaTeX names and x-axis ranges
@@ -6361,9 +6360,9 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
         C_theta = 0.11587509 -0.01679559*theta + 0.00038915 * theta * theta;
 
         // A_phi, B_phi, C_phi
-        A_phi = 0.0055658 - 0.0027920 * theta - 0.0000228 * theta * theta;
-        B_phi = 0.37455807 - 0.00927964 * theta + 0.00030440 * theta * theta;
-        C_phi = -0.32529570 + 0.01507693 * theta - 0.00029474 * theta * theta;
+        A_phi = 0.0416510 -0.0064212*theta +0.0000622 * theta * theta;
+        B_phi = 0.28414191 -0.00047647*theta +0.00010357 * theta * theta;
+        C_phi = -0.25690893 +0.00886707*theta -0.00016081 * theta * theta;
     }
     else if (dataset == "rgc_su22_inb" && region == "FD") {
         // A_p, B_p, C_p
