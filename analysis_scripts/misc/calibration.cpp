@@ -6891,6 +6891,7 @@ void plot_energy_loss_corrections_cd(TTreeReader& mcReader, const std::string& d
 
             // Apply energy loss corrections
             apply_energy_loss_correction(p_corr, theta_corr, phi_corr, dataset, "CD");
+            std::cout << *theta << " " << theta_corr << " " << *phi << " " << phi_corr << std::endl;
 
             // Fill the "after" histograms
             for (size_t i = 0; i < theta_bins.size(); ++i) {
@@ -7008,14 +7009,14 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     // mcReader.Restart();
     // plot_energy_loss_corrections_fd(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_distributions_delta_p_cd(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_distributions_delta_p_cd(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_distributions_delta_theta_cd(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_distributions_delta_theta_cd(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_distributions_delta_phi_cd(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_distributions_delta_phi_cd(mcReader, dataset);
 
     mcReader.Restart();
     plot_energy_loss_corrections_cd(mcReader, dataset);
