@@ -6483,9 +6483,9 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
     }
     // Apply corrections
     if (region == "CD") {
-        p += A_p + B_p * p + C_p * (p * p);
-        theta += A_theta + B_theta * theta + C_theta * (theta * theta);
-        phi += A_phi + B_phi * phi + C_phi * (phi * phi);
+        p += A_p + B_p * p + C_p * p * p;
+        theta += A_theta + B_theta * theta + C_theta * theta * theta;
+        phi += A_phi + B_phi * phi + C_phi * phi * phi;
     }
 }
 
@@ -6739,7 +6739,7 @@ void plot_energy_loss_corrections_fd(TTreeReader& mcReader, const std::string& d
 void plot_energy_loss_corrections_cd(TTreeReader& mcReader, const std::string& dataset) {
     // Define particle types and their corresponding LaTeX names and x-axis ranges
     std::map<int, std::tuple<std::string, double, double>> particle_types = {
-        {2212, {"p", 0.0, 6.0}}  // Proton as an example
+        {2212, {"p", 0.0, 2.5}}  // Proton as an example
     };
 
     // Define six evenly spaced theta bins between 33 and 70 degrees
@@ -7008,14 +7008,14 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     // mcReader.Restart();
     // plot_energy_loss_corrections_fd(mcReader, dataset);
 
-    // mcReader.Restart();
-    // energy_loss_distributions_delta_p_cd(mcReader, dataset);
+    mcReader.Restart();
+    energy_loss_distributions_delta_p_cd(mcReader, dataset);
 
-    // mcReader.Restart();
-    // energy_loss_distributions_delta_theta_cd(mcReader, dataset);
+    mcReader.Restart();
+    energy_loss_distributions_delta_theta_cd(mcReader, dataset);
 
-    // mcReader.Restart();
-    // energy_loss_distributions_delta_phi_cd(mcReader, dataset);
+    mcReader.Restart();
+    energy_loss_distributions_delta_phi_cd(mcReader, dataset);
 
     mcReader.Restart();
     plot_energy_loss_corrections_cd(mcReader, dataset);
