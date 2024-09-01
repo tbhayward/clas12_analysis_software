@@ -5239,7 +5239,7 @@ void energy_loss_distributions_delta_p_fd(TTreeReader& mcReader, const std::stri
                     break;
                 }
             }
-
+            std::cout << minXValue << " " << minXValue << std::endl;
             // Set the range of the profile to start and end at the calculated values
             prof_deltap->GetXaxis()->SetRangeUser(minXValue, maxXValue);
 
@@ -6692,8 +6692,8 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     // mcReader.Restart();
     // energy_loss_fd_distributions_theta_dc(mcReader, dataset);
 
-    // mcReader.Restart();
-    // energy_loss_distributions_delta_p_fd(mcReader, dataset);
+    mcReader.Restart();
+    energy_loss_distributions_delta_p_fd(mcReader, dataset);
 
     // mcReader.Restart();
     // energy_loss_distributions_delta_theta_fd(mcReader, dataset);
