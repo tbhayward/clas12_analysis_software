@@ -5227,6 +5227,7 @@ void energy_loss_distributions_delta_p_fd(TTreeReader& mcReader, const std::stri
             double maxXValue = std::get<2>(particle_types[pid]); // Default maximum x-value
 
             for (int bin = 1; bin <= prof_deltap->GetNbinsX(); ++bin) {
+                std::cout << prof_deltap->GetBinEntries(bin) << std::endl;
                 if (prof_deltap->GetBinEntries(bin) > 100) {
                     minXValue = prof_deltap->GetBinLowEdge(bin);
                     break;
@@ -5999,7 +6000,7 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
                     minXValue = prof_deltap->GetBinLowEdge(bin);
                     break;
                 }
-            }
+            }t
 
             for (int bin = prof_deltap->GetNbinsX(); bin >= 1; --bin) {
                 if (prof_deltap->GetBinEntries(bin) > 0) {
@@ -6694,8 +6695,8 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     // mcReader.Restart();
     // energy_loss_fd_distributions_theta_dc(mcReader, dataset);
 
-    // mcReader.Restart();
-    // energy_loss_distributions_delta_p_fd(mcReader, dataset);
+    mcReader.Restart();
+    energy_loss_distributions_delta_p_fd(mcReader, dataset);
 
     // mcReader.Restart();
     // energy_loss_distributions_delta_theta_fd(mcReader, dataset);
