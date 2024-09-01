@@ -6125,7 +6125,7 @@ void energy_loss_distributions_delta_theta_cd(TTreeReader& mcReader, const std::
         if (histograms.find(*pid) != histograms.end() ) {
             for (size_t i = 0; i < theta_bins.size(); ++i) {
                 if (*theta >= theta_bins[i].first && *theta < theta_bins[i].second) {
-                    histograms[*pid][i]->Fill(*p, delta_p);
+                    histograms[*pid][i]->Fill(*p, delta_theta);
                     break;
                 }
             }
@@ -6150,7 +6150,7 @@ void energy_loss_distributions_delta_theta_cd(TTreeReader& mcReader, const std::
 
         for (size_t i = 0; i < theta_bins.size(); ++i) {
             // Ensure we are drawing on the correct pad
-            c_deltap->cd(i + 1);
+            c_deltatheta->cd(i + 1);
             gPad->SetMargin(0.15, 0.15, 0.20, 0.1);  // Left, right, bottom, top margins
             gPad->SetLogz();
             // Create profile histograms
@@ -6162,14 +6162,14 @@ void energy_loss_distributions_delta_theta_cd(TTreeReader& mcReader, const std::
             double maxXValue = std::get<2>(particle_types[pid]); // Default maximum x-value
 
             for (int bin = 1; bin <= prof_deltatheta->GetNbinsX(); ++bin) {
-                if (prof_deltap->GetBinEntries(bin) > 50) {
+                if (prof_deltatheta->GetBinEntries(bin) > 50) {
                     minXValue = prof_deltatheta->GetBinLowEdge(bin);
                     break;
                 }
             }
 
             for (int bin = prof_deltatheta->GetNbinsX(); bin >= 1; --bin) {
-                if (prof_deltap->GetBinEntries(bin) > 50) {
+                if (prof_deltatheta->GetBinEntries(bin) > 50) {
                     maxXValue = prof_deltatheta->GetBinLowEdge(bin) + prof_deltatheta->GetBinWidth(bin);
                     break;
                 }
@@ -6181,7 +6181,7 @@ void energy_loss_distributions_delta_theta_cd(TTreeReader& mcReader, const std::
             // Fit the profiles with appropriate functions
             fit_deltatheta[i] = new TF1(("fit_deltatheta_" + std::to_string(i)).c_str(), "[0] + [1]*x + [2]*x^2", minXValue, maxXValue);
 
-            prof_deltatheta->Fit(fit_deltap[i], "Q"); // Silent fit
+            prof_deltatheta->Fit(fit_deltatheta[i], "Q"); // Silent fit
 
             // Set the range of the fit function for plotting
             fit_deltatheta[i]->SetRange(minXValue, maxXValue);
@@ -6206,17 +6206,17 @@ void energy_loss_distributions_delta_theta_cd(TTreeReader& mcReader, const std::
         latex.DrawLatex(0.425, 0.5, (dataset + ", CD").c_str());  // Add text in the center
 
         // Save the canvas
-        c_deltap->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/cd_delta_theta_distributions_" + particle_name + ".png").c_str());
+        c_deltatheta->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/cd_delta_theta_distributions_" + particle_name + ".png").c_str());
 
         // Use the new modular function for the fitted parameters
         plot_and_fit_parameters_cd(theta_bins, A_values, A_errors, B_values, B_errors, C_values, C_errors, particle_name, dataset, "#theta");
 
         // Clean up memory
         for (size_t i = 0; i < theta_bins.size(); ++i) {
-            delete fit_deltap[i];
+            delete fit_deltatheta[i];
             delete histograms[pid][i];
         }
-        delete c_deltap;
+        delete c_deltatheta;
     }
 }
 
@@ -6231,6 +6231,22 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
         A_p = 0.0099626 -0.0002414*theta -0.0000020*theta*theta;
         B_p = -0.01428267 +0.00042833*theta +0.00001081*theta*theta;
         C_p = 0.01197102 -0.00055673*theta +0.00000785*theta*theta;
+
+        // A_theta, B_theta, C_theta
+        A_theta = 0.0683831 -0.0083821*theta +0.0001670 * theta * theta;
+        B_theta = -0.15834256 +0.02630760*theta -0.00064126 * theta * theta;
+        C_theta = 0.11587509 -0.01679559*theta + 0.00038915 * theta * theta;
+
+        // A_phi, B_phi, C_phi
+        A_phi = 0.0416510 -0.0064212*theta +0.0000622 * theta * theta;
+        B_phi = 0.28414191 -0.00047647*theta +0.00010357 * theta * theta;
+        C_phi = -0.25690893 +0.00886707*theta -0.00016081 * theta * theta;
+    }
+    if (dataset == "rga_fa18_inb" && region == "CD") {
+        // A_p, B_p, C_p
+        A_p = -0.2383991 +0.0124992*theta -0.0001646*theta*theta;
+        B_p = 0.60123885 -0.03128464*theta +0.00041314*theta*theta;
+        C_p = -0.44080146 +0.02209857*theta -0.00028224*theta*theta;
 
         // A_theta, B_theta, C_theta
         A_theta = 0.0683831 -0.0083821*theta +0.0001670 * theta * theta;
@@ -6292,9 +6308,17 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
     }
 
     // Apply corrections
-    p += A_p + B_p / p + C_p / (p * p);
-    theta += A_theta + B_theta / theta + C_theta / (theta * theta);
-    phi += A_phi + B_phi / phi + C_phi / (phi * phi);
+    if (region == "FD") {
+        p += A_p + B_p / p + C_p / (p * p);
+        theta += A_theta + B_theta / theta + C_theta / (theta * theta);
+        phi += A_phi + B_phi / phi + C_phi / (phi * phi);
+    }
+    // Apply corrections
+    if (region == "CD") {
+        p += A_p + B_p * p + C_p * (p * p);
+        theta += A_theta + B_theta * theta + C_theta * (theta * theta);
+        phi += A_phi + B_phi * phi + C_phi * (phi * phi);
+    }
 }
 
 void plot_energy_loss_corrections_fd(TTreeReader& mcReader, const std::string& dataset) {
