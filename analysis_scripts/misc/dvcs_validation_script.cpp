@@ -77,7 +77,9 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
     for (Long64_t j = 0; j < nEntries1; ++j) {
         tree1->GetEntry(j);
         Double_t thetaDeg1 = p1_theta1 * (180.0 / TMath::Pi()); // Convert to degrees
-        if (thetaDeg1 >= 5 && thetaDeg1 < 65) {
+        if (thetaDeg1 >= 5 && thetaDeg1 < 65 &&
+                eta2_2 < 0 && t1_2 > -2 && theta_gamma_gamma_2 < 0.6 &&
+                Emiss2_2 < 0.5 && pTmiss_2 < 0.125) {
             h1[0]->Fill(Mxprotonsquared_1); // Fully integrated case
         }
         for (int i = 0; i < nBins; ++i) {
