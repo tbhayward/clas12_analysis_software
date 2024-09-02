@@ -53,7 +53,7 @@ public class analysis_fitter extends GenericKinematicFitter {
         double p = Math.sqrt(Math.pow(px, 2) + Math.pow(py, 2) + Math.pow(pz, 2));
 
         boolean passesForwardDetector = generic_tests.forward_detector_cut(particle_Index, rec_Bank);
-        boolean passesCentralDetector = generic_tests.forward_detector_cut(particle_Index, rec_Bank);
+        boolean passesCentralDetector = generic_tests.central_detector_cut(particle_Index, rec_Bank);
 
         return true
                 //            && p > 1.25
@@ -87,7 +87,7 @@ public class analysis_fitter extends GenericKinematicFitter {
         double p = Math.sqrt(Math.pow(px, 2) + Math.pow(py, 2) + Math.pow(pz, 2));
 
         boolean passesForwardDetector = generic_tests.forward_detector_cut(particle_Index, rec_Bank);
-        boolean passesCentralDetector = generic_tests.forward_detector_cut(particle_Index, rec_Bank);
+        boolean passesCentralDetector = generic_tests.central_detector_cut(particle_Index, rec_Bank);
 
         return true
                 //            return true
@@ -123,7 +123,7 @@ public class analysis_fitter extends GenericKinematicFitter {
         double p = Math.sqrt(Math.pow(px, 2) + Math.pow(py, 2) + Math.pow(pz, 2));
 
         boolean passesForwardDetector = generic_tests.forward_detector_cut(particle_Index, rec_Bank);
-        boolean passesCentralDetector = generic_tests.forward_detector_cut(particle_Index, rec_Bank);
+        boolean passesCentralDetector = generic_tests.central_detector_cut(particle_Index, rec_Bank);
 
         return true
                 //            && p > 0.4
