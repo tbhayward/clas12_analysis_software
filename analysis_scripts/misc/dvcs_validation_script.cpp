@@ -5,6 +5,7 @@
 #include <TLegend.h>
 #include <TPad.h>
 #include <TString.h>
+#include <TMath.h>
 #include <iostream>
 
 void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, const char* titleSuffix) {
