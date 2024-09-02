@@ -59,7 +59,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                 //            && p > 1.25
                 //            && p < 5.00 
                 //            && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
-//                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
+                //                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
                 && (passesForwardDetector // dedicated PID cuts for forward
                         ? pid_cuts.charged_hadron_pass2_chi2pid_cut(particle_Index, rec_Bank)
                         : true)
@@ -94,7 +94,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                 //            && p > 1.25
                 //            && p < 5.00 
                 //            && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
-//                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
+                //                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
                 && (passesForwardDetector // dedicated PID cuts for forward
                         ? pid_cuts.charged_hadron_pass2_chi2pid_cut(particle_Index, rec_Bank)
                         : true)
@@ -106,8 +106,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                         : true)
                 && (passesCentralDetector
                         ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
-                        : true)
-                ;
+                        : true);
     }
 
     public boolean proton_test(int particle_Index, int pid, float vz, double trigger_electron_vz,
@@ -128,7 +127,7 @@ public class analysis_fitter extends GenericKinematicFitter {
 
         return true
                 //            && p > 0.4
-//                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
+                //                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
                 //            && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
                 && (passesForwardDetector
                         ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
@@ -141,8 +140,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                         : true) //            && charged_hadron_chi2pid_cut(particle_Index, rec_Bank)
                 && (passesCentralDetector
                         ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
-                        : true)
-                ;
+                        : true);
     }
 
     public boolean photon_test(int particle_Index, HipoDataBank run_Bank, HipoDataBank rec_Bank, HipoDataBank cal_Bank,
@@ -215,14 +213,13 @@ public class analysis_fitter extends GenericKinematicFitter {
                 float vz = rec_Bank.getFloat("vz", particle_Index);
                 double p = Math.sqrt(px * px + py * py + pz * pz);
 
-                energy_loss energy_loss = new energy_loss();
+                energy_loss_corrections energy_loss_corrections = new energy_loss_corrections();
 
                 if (pid == 11 && electron_test(particle_Index, p, rec_Bank, cal_Bank, track_Bank,
                         traj_Bank, run_Bank, cc_Bank)) {
                     // this checks all of the PID requirements, if it passes all of them the electron is 
                     // added to the event below
-//                  double fe = energy_loss.pass2_fd_energy_loss(run_Bank.getFloat("torus", 0), pid, px, py, pz);
-                    double fe = 1;
+                  double fe = 1;
                     Particle part = new Particle(pid, fe * px, fe * py, fe * pz, vx, vy, vz_e);
                     physEvent.addParticle(part);
                 }
@@ -231,8 +228,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                         track_Bank, traj_Bank, run_Bank)) {
                     // check for pion PID
 
-//                   double fe = EnergyLoss(run_Bank.getFloat("torus", 0), pid, px, py, pz);
-                    double fe = 1;
+                  double fe = 1;
                     Particle part = new Particle(pid, fe * px, fe * py, fe * pz, vx, vy, vz);
                     physEvent.addParticle(part);
                 }
@@ -241,8 +237,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                         track_Bank, traj_Bank, run_Bank)) {
                     // check for pion PID
 
-//                   double fe = energy_loss.pass2_fd_energy_loss(run_Bank.getFloat("torus", 0), pid, px, py, pz);
-                    double fe = 1;
+                  double fe = 1;
                     Particle part = new Particle(pid, fe * px, fe * py, fe * pz, vx, vy, vz);
                     physEvent.addParticle(part);
                 }
@@ -250,7 +245,8 @@ public class analysis_fitter extends GenericKinematicFitter {
                 if (pid == 2212 && proton_test(particle_Index, pid, vz, vz_e, rec_Bank, cal_Bank,
                         track_Bank, traj_Bank, run_Bank)) {
 
-//                   double fe = energy_loss.pass2_energy_loss(run_Bank.getFloat("torus", 0), pid, px, py, pz);
+//                    double fe = energy_loss_corrections.proton_energy_loss_corrections(particle_Inex, px, py, pz,
+//                            rec_Bank, run_Bank);
                     double fe = 1;
                     Particle part = new Particle(pid, fe * px, fe * py, fe * pz, vx, vy, vz);
                     physEvent.addParticle(part);

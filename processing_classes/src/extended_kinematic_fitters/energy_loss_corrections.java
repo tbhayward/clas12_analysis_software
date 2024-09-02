@@ -79,9 +79,9 @@ public class energy_loss_corrections {
                 B_p = -0.01365658 + 0.00036322 * theta + 0.00001217 * theta * theta;
                 C_p = 0.01175256 - 0.00053407 * theta + 0.00000742 * theta * theta;
             } else if (!isForwardDetector && isCentralDetector) {
-                A_p = -0.2383991 + 0.0124992 * theta - 0.0001646 * theta * theta;
-                B_p = 0.60123885 - 0.03128464 * theta + 0.00041314 * theta * theta;
-                C_p = -0.44080146 + 0.02209857 * theta - 0.00028224 * theta * theta;
+                A_p = -0.2716918 + 0.0142491 * theta - 0.0001862 * theta * theta;
+                B_p = 0.65945101 - 0.03431360 * theta + 0.00045036 * theta * theta;
+                C_p = -0.46602726 + 0.02335623 * theta - 0.00029720 * theta * theta;
             }
 
         } else if (runnum >= 16089 && runnum <= 16786) { // RGC Su22 Inb
@@ -90,6 +90,8 @@ public class energy_loss_corrections {
 
         if (isForwardDetector && !isCentralDetector) {
             dp = A_p + B_p / p + C_p / (p * p);
+        } else if (!isForwardDetector && isCentralDetector) {
+            dp = A_p + B_p * p + C_p * p * p;
         }
         return (dp + p) / p; // fe
     }

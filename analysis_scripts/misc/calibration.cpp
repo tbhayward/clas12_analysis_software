@@ -6489,6 +6489,22 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
         // B_phi = 0.03705727 +0.01332536*theta -0.00009908 * theta * theta;
         // C_phi = -0.10680417 -0.00141926*theta +0.00001672 * theta * theta;
     }
+    else if (dataset == "rgc_su22_inb" && region == "CD") {
+        // A_p, B_p, C_p
+        A_p = 0.0109317 -0.0000194*theta -0.0000117 * theta * theta;
+        B_p = -0.00910576 -0.00035154*theta +0.00003905* theta * theta;
+        C_p = 0.01225782 -0.00012805*theta -0.00000820 * theta * theta;
+
+        // // A_theta, B_theta, C_theta
+        // A_theta = 0.0644813 -0.0079393*theta +0.0001566 * theta * theta;
+        // B_theta = -0.13787609 +0.02395150*theta -0.00058811 * theta * theta;
+        // C_theta = 0.10551548 -0.01569699*theta +0.00036501 * theta * theta;
+
+        // // A_phi, B_phi, C_phi
+        // A_phi = 0.0787287 -0.0075095*theta +0.0000669 * theta * theta;
+        // B_phi = 0.03705727 +0.01332536*theta -0.00009908 * theta * theta;
+        // C_phi = -0.10680417 -0.00141926*theta +0.00001672 * theta * theta;
+    }
 
     // Apply corrections
     if (region == "FD") {
@@ -7003,7 +7019,7 @@ void plot_energy_loss_corrections_cd(TTreeReader& mcReader, const std::string& d
 
 // Main function to call both energy loss distribution functions
 void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
-    energy_loss_distributions(mcReader, dataset);
+    // energy_loss_distributions(mcReader, dataset);
 
     // mcReader.Restart();
     // energy_loss_fd_distributions(mcReader, dataset);
@@ -7011,8 +7027,8 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     // mcReader.Restart();
     // energy_loss_fd_distributions_theta_dc(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_distributions_delta_p_fd(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_distributions_delta_p_fd(mcReader, dataset);
 
     // mcReader.Restart();
     // energy_loss_distributions_delta_theta_fd(mcReader, dataset);
@@ -7020,8 +7036,8 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     // mcReader.Restart();
     // energy_loss_distributions_delta_phi_fd(mcReader, dataset);
 
-    mcReader.Restart();
-    plot_energy_loss_corrections_fd(mcReader, dataset);
+    // mcReader.Restart();
+    // plot_energy_loss_corrections_fd(mcReader, dataset);
 
     mcReader.Restart();
     energy_loss_distributions_delta_p_cd(mcReader, dataset);
