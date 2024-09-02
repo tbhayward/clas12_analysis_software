@@ -160,7 +160,7 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
         theta_mean[i] = 0.5 * (thetaBins[i] + thetaBins[i + 1]);
 
         // Add legend with mu and sigma values in the top right corner
-        TLegend *legend = new TLegend(0.6, 0.75, 0.9, 0.9); // Adjusted the legend position to the top right corner
+        TLegend *legend = new TLegend(0.35, 0.75, 0.9, 0.9); // Adjusted the legend position to the top right corner
         legend->SetTextSize(0.03); // Decrease the font size in the legend
         legend->AddEntry(h1[i], Form("Uncorrected: #mu=%.3f, #sigma=%.3f", mu1_values[i], sigma1_values[i]), "lep");
         legend->AddEntry(h2[i], Form("Corrected: #mu=%.3f, #sigma=%.3f", mu2_values[i], sigma2_values[i]), "lep");
