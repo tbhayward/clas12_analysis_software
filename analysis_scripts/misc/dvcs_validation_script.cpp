@@ -474,13 +474,264 @@ void plot_rho0_energy_loss_validation(const char* file1, const char* file2, cons
     delete f2;
 }
 
+void plot_elastic_energy_loss_validation(const char* file1, const char* file2, const char* titleSuffix) {
+    // Open the ROOT files
+    TFile *f1 = new TFile(file1);
+    TFile *f2 = new TFile(file2);
+
+    // Access the "PhysicsEvents" trees
+    TTree *tree1 = (TTree*)f1->Get("PhysicsEvents");
+    TTree *tree2 = (TTree*)f2->Get("PhysicsEvents");
+
+    // Prepare variables for reading the branches
+    Double_t p1_theta1, p1_theta2;
+    Double_t Mx2_1, Mx2_2;
+
+    // Set branch addresses
+    tree1->SetBranchAddress("p1_theta", &p1_theta1);
+    tree1->SetBranchAddress("Mx2", &Mx2_1);
+
+    tree2->SetBranchAddress("p1_theta", &p1_theta2);
+    tree2->SetBranchAddress("Mx2", &Mx2_2);
+
+    // Create canvas and divide it into 3x4 subplots
+    TCanvas *c1 = new TCanvas("c1", "Elastic Energy Loss Validation", 1200, 900);
+    c1->Divide(4, 3);
+
+    // Set the theta bins and corresponding histogram ranges
+    const int nBins = 10; // 10 theta bins + 1 fully integrated case
+    Double_t thetaBins[nBins + 1] = {5, 11, 17, 23, 29, 35, 41, 47, 53, 59, 65}; // 10 equally spaced bins
+
+    TH1D *h1[nBins + 1]; // +1 for the fully integrated case
+    TH1D *h2[nBins + 1]; // +1 for the fully integrated case
+
+    Double_t mu1_values[nBins], sigma1_values[nBins];
+    Double_t mu2_values[nBins], sigma2_values[nBins];
+    Double_t theta_sum[nBins] = {0.0};
+    Int_t theta_count[nBins] = {0};
+    Double_t theta_mean[nBins] = {0.0};
+
+    // Create histograms for each theta bin with 50 bins
+    h1[0] = new TH1D("h1_integrated", Form("Integrated #theta [5, 65] %s", titleSuffix), 35, -0.3, 0.3);
+    h2[0] = new TH1D("h2_integrated", Form("Integrated #theta [5, 65] %s", titleSuffix), 35, -0.3, 0.3);
+
+    for (int i = 0; i < nBins; ++i) {
+        h1[i + 1] = new TH1D(Form("h1_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 35, -0.3, 0.3);
+        h2[i + 1] = new TH1D(Form("h2_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 35, -0.3, 0.3);
+    }
+
+    // Fill the histograms and calculate theta means
+    Long64_t nEntries1 = tree1->GetEntries();
+    for (Long64_t j = 0; j < nEntries1; ++j) {
+        tree1->GetEntry(j);
+        Double_t thetaDeg1 = p1_theta1 * (180.0 / TMath::Pi()); // Convert to degrees
+        if (thetaDeg1 >= 5 && thetaDeg1 < 65) {
+            h1[0]->Fill(Mx2_1); // Fully integrated case
+        }
+        for (int i = 0; i < nBins; ++i) {
+            if (thetaDeg1 >= thetaBins[i] && thetaDeg1 < thetaBins[i + 1]) {
+                h1[i + 1]->Fill(Mx2_1);
+                theta_sum[i] += thetaDeg1;
+                theta_count[i]++;
+            }
+        }
+    }
+
+    Long64_t nEntries2 = tree2->GetEntries();
+    for (Long64_t j = 0; j < nEntries2; ++j) {
+        tree2->GetEntry(j);
+        Double_t thetaDeg2 = p1_theta2 * (180.0 / TMath::Pi()); // Convert to degrees
+        if (thetaDeg2 >= 5 && thetaDeg2 < 65) {
+            h2[0]->Fill(Mx2_2); // Fully integrated case
+        }
+        for (int i = 0; i < nBins; ++i) {
+            if (thetaDeg2 >= thetaBins[i] && thetaDeg2 < thetaBins[i + 1]) {
+                h2[i + 1]->Fill(Mx2_2);
+                theta_sum[i] += thetaDeg2;
+                theta_count[i]++;
+            }
+        }
+    }
+
+    // Calculate mean theta values
+    for (int i = 0; i < nBins; ++i) {
+        if (theta_count[i] > 0) {
+            theta_mean[i] = theta_sum[i] / theta_count[i];
+        } else {
+            theta_mean[i] = 0.5 * (thetaBins[i] + thetaBins[i + 1]); // Default to midpoint if no entries
+        }
+    }
+
+    // Draw the fully integrated case in the first subplot
+    c1->cd(1)->SetLeftMargin(0.15);
+    c1->cd(1)->SetBottomMargin(0.15);
+
+    Double_t maxVal1 = h1[0]->GetMaximum();
+    Double_t maxVal2 = h2[0]->GetMaximum();
+    Double_t maxVal = std::max(maxVal1, maxVal2);
+    h1[0]->SetMaximum(1.7 * maxVal);
+    h1[0]->SetMinimum(0);
+    h2[0]->SetMaximum(1.7 * maxVal);
+    h2[0]->SetMinimum(0);
+
+    h1[0]->SetMarkerStyle(20);
+    h1[0]->SetMarkerSize(0.8);
+    h1[0]->SetMarkerColor(kBlack);
+    h1[0]->SetStats(0);
+    h1[0]->Draw("E");
+
+    h2[0]->SetMarkerStyle(21);
+    h2[0]->SetMarkerSize(0.8);
+    h2[0]->SetMarkerColor(kRed);
+    h2[0]->SetStats(0);
+    h2[0]->Draw("E SAME");
+
+    TF1 *fit1_int = new TF1("fit1_integrated", "gaus(0) + pol2(3)", -0.3, 0.3);
+    TF1 *fit2_int = new TF1("fit2_integrated", "gaus(0) + pol2(3)", -0.3, 0.3);
+
+    fit1_int->SetParameters(0.8 * maxVal1, 0, 0.2);
+    fit1_int->SetParLimits(1, -0.15, 0.15);
+    fit1_int->SetParLimits(2, 0, 0.3);
+    fit2_int->SetParameters(0.8 * maxVal2, 0, 0.2);
+    fit2_int->SetParLimits(1, -0.15, 0.15);
+    fit2_int->SetParLimits(2, 0, 0.3);
+
+    fit1_int->SetLineWidth(1);
+    fit2_int->SetLineWidth(1);
+    h1[0]->Fit(fit1_int, "Q");
+    h2[0]->Fit(fit2_int, "Q");
+
+    fit1_int->SetLineColor(kBlack);
+    fit1_int->Draw("SAME");
+    fit2_int->SetLineColor(kRed);
+    fit2_int->Draw("SAME");
+
+    TLegend *legend_int = new TLegend(0.25, 0.75, 0.9, 0.9);
+    legend_int->SetTextSize(0.03);
+    legend_int->AddEntry(h1[0], Form("Uncorrected: #mu=%.3f, #sigma=%.3f", fit1_int->GetParameter(1), fit1_int->GetParameter(2)), "lep");
+    legend_int->AddEntry(h2[0], Form("Corrected: #mu=%.3f, #sigma=%.3f", fit2_int->GetParameter(1), fit2_int->GetParameter(2)), "lep");
+    legend_int->Draw();
+
+    h1[0]->GetXaxis()->SetTitle("M_{x2} (GeV^{2})");
+    h1[0]->GetYaxis()->SetTitle("Counts");
+
+    // Draw the remaining subplots for the binned cases
+    for (int i = 1; i <= nBins; ++i) {
+        c1->cd(i + 1)->SetLeftMargin(0.15);
+        c1->cd(i + 1)->SetBottomMargin(0.15);
+
+        maxVal1 = h1[i]->GetMaximum();
+        maxVal2 = h2[i]->GetMaximum();
+        maxVal = std::max(maxVal1, maxVal2);
+        h1[i]->SetMaximum(1.7 * maxVal);
+        h1[i]->SetMinimum(0);
+        h2[i]->SetMaximum(1.7 * maxVal);
+        h2[i]->SetMinimum(0);
+
+        h1[i]->SetMarkerStyle(20);
+        h1[i]->SetMarkerSize(0.8);
+        h1[i]->SetMarkerColor(kBlack);
+        h1[i]->SetStats(0);
+        h1[i]->Draw("E");
+
+        h2[i]->SetMarkerStyle(21);
+        h2[i]->SetMarkerSize(0.8);
+        h2[i]->SetMarkerColor(kRed);
+        h2[i]->SetStats(0);
+        h2[i]->Draw("E SAME");
+
+        TF1 *fit1 = new TF1(Form("fit1_%d", i), "gaus(0) + pol2(3)", -0.3, 0.3);
+        TF1 *fit2 = new TF1(Form("fit2_%d", i), "gaus(0) + pol2(3)", -0.3, 0.3);
+
+        fit1->SetParameters(0.8 * maxVal1, 0, 0.2);
+        fit1->SetParLimits(1, -0.15, 0.15);
+        fit1->SetParLimits(2, 0, 0.3);
+        fit2->SetParameters(0.8 * maxVal2, 0, 0.2);
+        fit2->SetParLimits(1, -0.15, 0.15);
+        fit2->SetParLimits(2, 0, 0.3);
+
+        fit1->SetLineWidth(1);
+        fit2->SetLineWidth(1);
+        h1[i]->Fit(fit1, "Q");
+        h2[i]->Fit(fit2, "Q");
+
+        fit1->SetLineColor(kBlack);
+        fit1->Draw("SAME");
+        fit2->SetLineColor(kRed);
+        fit2->Draw("SAME");
+
+        mu1_values[i - 1] = fit1->GetParameter(1);
+        sigma1_values[i - 1] = fit1->GetParameter(2);
+        mu2_values[i - 1] = fit2->GetParameter(1);
+        sigma2_values[i - 1] = fit2->GetParameter(2);
+
+        TLegend *legend = new TLegend(0.25, 0.75, 0.9, 0.9); // Adjusted the legend position to the top right corner
+        legend->SetTextSize(0.03); // Decrease the font size in the legend
+        legend->AddEntry(h1[i], Form("Uncorrected: #mu=%.3f, #sigma=%.3f", mu1_values[i - 1], sigma1_values[i - 1]), "lep");
+        legend->AddEntry(h2[i], Form("Corrected: #mu=%.3f, #sigma=%.3f", mu2_values[i - 1], sigma2_values[i - 1]), "lep");
+        legend->Draw();
+
+        h1[i]->GetXaxis()->SetTitle("M_{x2} (GeV^{2})");
+        h1[i]->GetYaxis()->SetTitle("Counts");
+    }
+
+    // Plot TGraphErrors in the last subplot (12th pad)
+    c1->cd(12)->SetLeftMargin(0.20);
+    c1->cd(12)->SetBottomMargin(0.15);
+
+    TGraphErrors *gr1 = new TGraphErrors(nBins, theta_mean, mu1_values, 0, sigma1_values);
+    TGraphErrors *gr2 = new TGraphErrors(nBins, theta_mean, mu2_values, 0, sigma2_values);
+
+    gr1->SetMarkerStyle(20);
+    gr1->SetMarkerSize(0.8);
+    gr1->SetMarkerColor(kBlack);
+    gr1->Draw("AP");
+
+    gr2->SetMarkerStyle(21);
+    gr2->SetMarkerSize(0.8);
+    gr2->SetMarkerColor(kRed);
+    gr2->Draw("P SAME");
+
+    // Add dashed gray line at y = 0
+    TLine *line = new TLine(0, 0, 70, 0);
+    line->SetLineColor(kGray);
+    line->SetLineStyle(2); // Dashed line
+    line->Draw("SAME");
+
+    // Customize the last subplot
+    gr1->SetTitle(""); // Remove the "Graph" title
+    gr1->GetXaxis()->SetTitle("#theta"); // Set x-axis label
+    gr1->GetYaxis()->SetTitle("#mu (GeV^{2})"); // Set y-axis label
+    gr1->GetXaxis()->SetTitleSize(0.05); // Match font size with other plots
+    gr1->GetYaxis()->SetTitleSize(0.05); // Match font size with other plots
+    gr1->GetXaxis()->SetLimits(0, 70); // Set x-axis range
+    gr1->GetYaxis()->SetRangeUser(-0.20, 0.20); // Set y-axis range
+
+    // Add legend to the last plot, positioned in the top right
+    TLegend *legend12 = new TLegend(0.6, 0.75, 0.9, 0.9); // Adjusted for horizontal and vertical size
+    legend12->SetTextSize(0.03);
+    legend12->AddEntry(gr1, "Uncorrected", "lep");
+    legend12->AddEntry(gr2, "Corrected", "lep");
+    legend12->Draw();
+
+    // Save the canvas as a PDF
+    TString outputFileName = "output/elastic_" + TString(titleSuffix) + "_energy_loss_validation.pdf";
+    c1->SaveAs(outputFileName);
+
+    // Clean up
+    delete c1;
+    delete f1;
+    delete f2;
+}
+
 int main(int argc, char **argv) {
     if (argc != 4) {
         std::cerr << "Usage: " << argv[0] << " <file1.root> <file2.root> <titleSuffix>" << std::endl;
         return 1;
     }
 
-    plot_dvcs_energy_loss_validation(argv[1], argv[2], argv[3]);
+    // plot_dvcs_energy_loss_validation(argv[1], argv[2], argv[3]);
     // plot_rho0_energy_loss_validation(argv[1], argv[2], argv[3]);
+    plot_elastic_energy_loss_validation(argv[1], argv[2], argv[3]);
     return 0;
 }
