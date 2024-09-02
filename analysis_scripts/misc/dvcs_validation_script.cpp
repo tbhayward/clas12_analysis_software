@@ -411,7 +411,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    // plot_dvcs_energy_loss_validation(argv[1], argv[2], argv[3]);
-    plot_rho0_energy_loss_validation(argv[1], argv[2], argv[3]);
+    plot_dvcs_energy_loss_validation(argv[1], argv[2], argv[3]);
+    // plot_rho0_energy_loss_validation(argv[1], argv[2], argv[3]);
     return 0;
 }
