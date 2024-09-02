@@ -352,7 +352,7 @@ void plot_rho0_energy_loss_validation(const char* file1, const char* file2, cons
             tree1->GetEntry(j);
             Double_t thetaDeg1 = p1_theta1 * (180.0 / TMath::Pi()); // Convert to degrees
             if (thetaDeg1 >= thetaBins[i] && thetaDeg1 < thetaBins[i + 1]) {
-                if (Mx1_1 < 1.2) h1[i]->Fill(Mx2_1);
+                if (Mx2_1 < 1.2) h1[i]->Fill(Mx1_1);
             }
         }
 
@@ -361,7 +361,7 @@ void plot_rho0_energy_loss_validation(const char* file1, const char* file2, cons
             tree2->GetEntry(j);
             Double_t thetaDeg2 = p1_theta2 * (180.0 / TMath::Pi()); // Convert to degrees
             if (thetaDeg2 >= thetaBins[i] && thetaDeg2 < thetaBins[i + 1]) {
-                if (Mx1_2 < 1.2) h2[i]->Fill(Mx2_2);
+                if (Mx2_2 < 1.2) h2[i]->Fill(Mx1_2);
             }
         }
 
