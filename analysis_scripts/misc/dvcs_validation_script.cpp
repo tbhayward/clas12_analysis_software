@@ -61,6 +61,7 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
     Double_t mu2_values[nBins], sigma2_values[nBins];
     Double_t theta_sum[nBins] = {0.0};
     Int_t theta_count[nBins] = {0};
+    Double_t theta_mean[nBins] = {0.0}; // Declare the theta_mean array
 
     for (int i = 0; i < nBins; ++i) {
         TPad *pad = (TPad*)c1->cd(i + 1);
