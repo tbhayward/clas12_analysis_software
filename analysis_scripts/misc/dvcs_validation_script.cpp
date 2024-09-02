@@ -56,11 +56,13 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
     TH1D *h2[nBins];
 
     for (int i = 0; i < nBins; ++i) {
-        c1->cd(i + 1)->SetLeftMargin(0.15); // Add padding to the left of each subplot
+        TPad *pad = (TPad*)c1->cd(i + 1);
+        pad->SetLeftMargin(0.15); // Add padding to the left of each subplot
+        pad->SetBottomMargin(0.15); // Add padding to the bottom of each subplot
 
-        // Create histograms for each theta bin
-        h1[i] = new TH1D(Form("h1_%d", i), Form("M_{xp}^{2} GeV^{2} for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 30, -0.5, 0.5);
-        h2[i] = new TH1D(Form("h2_%d", i), Form("M_{xp}^{2} GeV^{2} for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 30, -0.5, 0.5);
+        // Create histograms for each theta bin with 50 bins
+        h1[i] = new TH1D(Form("h1_%d", i), Form("M_{xp}^{2} GeV^{2} for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 50, -0.5, 0.5);
+        h2[i] = new TH1D(Form("h2_%d", i), Form("M_{xp}^{2} GeV^{2} for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 50, -0.5, 0.5);
 
         // Set text sizes
         h1[i]->GetXaxis()->SetTitleSize(0.05);
@@ -81,8 +83,7 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
             if (thetaDeg1 >= thetaBins[i] && thetaDeg1 < thetaBins[i + 1] &&
                 eta2_1 < 0 && t1_1 > -2 && theta_gamma_gamma_1 < 0.6 &&
                 Emiss2_1 < 0.5 && pTmiss_1 < 0.125) {
-                // h1[i]->Fill(Mxprotonsquared_1);
-                h1[i]->Fill(Emiss2_1);
+                h1[i]->Fill(Mxprotonsquared_1);
             }
         }
 
@@ -93,8 +94,7 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
             if (thetaDeg2 >= thetaBins[i] && thetaDeg2 < thetaBins[i + 1] &&
                 eta2_2 < 0 && t1_2 > -2 && theta_gamma_gamma_2 < 0.6 &&
                 Emiss2_2 < 0.5 && pTmiss_2 < 0.125) {
-                // h2[i]->Fill(Mxprotonsquared_2);
-                h2[i]->Fill(Emiss2_2);
+                h2[i]->Fill(Mxprotonsquared_2);
             }
         }
 
@@ -120,6 +120,17 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
         // Fit histograms to Gaussian plus quadratic background
         TF1 *fit1 = new TF1(Form("fit1_%d", i), "gaus(0) + pol2(3)", -0.5, 0.5);
         TF1 *fit2 = new TF1(Form("fit2_%d", i), "gaus(0) + pol2(3)", -0.5, 0.5);
+
+        // Set initial parameter guesses and limits
+        Double_t amplitudeGuess1 = 0.8 * maxVal1;
+        Double_t amplitudeGuess2 = 0.8 * maxVal2;
+        fit1->SetParameters(amplitudeGuess1, 0, 0.2);
+        fit1->SetParLimits(1, -0.15, 0.15); // mu limits
+        fit1->SetParLimits(2, 0, 0.3);      // sigma limit
+        fit2->SetParameters(amplitudeGuess2, 0, 0.2);
+        fit2->SetParLimits(1, -0.15, 0.15); // mu limits
+        fit2->SetParLimits(2, 0, 0.3);      // sigma limit
+
         fit1->SetLineWidth(1); // Make the line thinner
         fit2->SetLineWidth(1); // Make the line thinner
         h1[i]->Fit(fit1, "Q");
@@ -138,8 +149,8 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
         Double_t sigma2 = fit2->GetParameter(2);
 
         // Add legend with mu and sigma values
-        TLegend *legend = new TLegend(0.5, 0.7, 0.9, 0.9); // Made the legend box bigger
-        legend->SetTextSize(0.05); // Increase the text size
+        TLegend *legend = new TLegend(0.4, 0.6, 0.9, 0.9); // Made the legend box bigger
+        legend->SetTextSize(0.035); // Decrease the font size in the legend
         legend->AddEntry(h1[i], Form("Uncorrected: #mu=%.3f, #sigma=%.3f", mu1, sigma1), "lep");
         legend->AddEntry(h2[i], Form("Corrected: #mu=%.3f, #sigma=%.3f", mu2, sigma2), "lep");
         legend->Draw();
