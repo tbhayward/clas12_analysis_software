@@ -350,6 +350,7 @@ void plot_rho0_energy_loss_validation(const char* file1, const char* file2, cons
             Double_t thetaDeg1 = p1_theta1 * (180.0 / TMath::Pi()); // Convert to degrees
             if (thetaDeg1 >= thetaBins[i] && thetaDeg1 < thetaBins[i + 1]) {
                 h1[i]->Fill(Mx1_1);
+                std::cout << Mx1_1 << std::endl;
             }
         }
 
