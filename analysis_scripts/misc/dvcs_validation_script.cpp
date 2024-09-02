@@ -61,27 +61,12 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
     Double_t mu2_values[nBins], sigma2_values[nBins];
     Double_t theta_sum[nBins] = {0.0};
     Int_t theta_count[nBins] = {0};
-    Double_t theta_mean[nBins] = {0.0}; // Declare the theta_mean array
+    Double_t theta_mean[nBins] = {0.0};
 
     for (int i = 0; i < nBins; ++i) {
-        TPad *pad = (TPad*)c1->cd(i + 1);
-        pad->SetLeftMargin(0.15); // Add padding to the left of each subplot
-        pad->SetBottomMargin(0.15); // Add padding to the bottom of each subplot
-
         // Create histograms for each theta bin with 50 bins
         h1[i] = new TH1D(Form("h1_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 35, -0.3, 0.3);
         h2[i] = new TH1D(Form("h2_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 35, -0.3, 0.3);
-
-        // Set text sizes
-        h1[i]->GetXaxis()->SetTitleSize(0.05);
-        h1[i]->GetYaxis()->SetTitleSize(0.05);
-        h1[i]->GetXaxis()->SetLabelSize(0.04);
-        h1[i]->GetYaxis()->SetLabelSize(0.04);
-
-        h2[i]->GetXaxis()->SetTitleSize(0.05);
-        h2[i]->GetYaxis()->SetTitleSize(0.05);
-        h2[i]->GetXaxis()->SetLabelSize(0.04);
-        h2[i]->GetYaxis()->SetLabelSize(0.04);
     }
 
     // Fill the histograms with the cuts applied and calculate theta means
@@ -125,6 +110,9 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
     }
 
     for (int i = 0; i < nBins; ++i) {
+        c1->cd(i + 1)->SetLeftMargin(0.15); // Ensure each pad is activated and has margins set
+        c1->cd(i + 1)->SetBottomMargin(0.15);
+
         // Set the y-axis range to 0 to 1.7 times the maximum bin value
         Double_t maxVal1 = h1[i]->GetMaximum();
         Double_t maxVal2 = h2[i]->GetMaximum();
@@ -178,7 +166,7 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
         sigma2_values[i] = fit2->GetParameter(2);
 
         // Add legend with mu and sigma values in the top right corner
-        TLegend *legend = new TLegend(0.25, 0.75, 0.9, 0.9); // Adjusted the legend position to the top right corner
+        TLegend *legend = new TLegend(0.6, 0.75, 0.9, 0.9); // Adjusted the legend position to the top right corner
         legend->SetTextSize(0.03); // Decrease the font size in the legend
         legend->AddEntry(h1[i], Form("Uncorrected: #mu=%.3f, #sigma=%.3f", mu1_values[i], sigma1_values[i]), "lep");
         legend->AddEntry(h2[i], Form("Corrected: #mu=%.3f, #sigma=%.3f", mu2_values[i], sigma2_values[i]), "lep");
@@ -190,9 +178,8 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
     }
 
     // Plot TGraphErrors in the last subplot (12th pad)
-    TPad *pad12 = (TPad*)c1->cd(12);
-    pad12->SetLeftMargin(0.20);
-    pad12->SetBottomMargin(0.15);
+    c1->cd(12)->SetLeftMargin(0.15);
+    c1->cd(12)->SetBottomMargin(0.15);
 
     TGraphErrors *gr1 = new TGraphErrors(nBins, theta_mean, mu1_values, 0, sigma1_values);
     TGraphErrors *gr2 = new TGraphErrors(nBins, theta_mean, mu2_values, 0, sigma2_values);
