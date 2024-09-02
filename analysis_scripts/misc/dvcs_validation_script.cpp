@@ -322,11 +322,11 @@ void plot_rho0_energy_loss_validation(const char* file1, const char* file2, cons
         Double_t amplitudeGuess1 = 0.8 * maxVal1;
         Double_t amplitudeGuess2 = 0.8 * maxVal2;
         fit1->SetParameters(amplitudeGuess1, rho0_mass, 0.1);
-        fit1->SetParLimits(1, rho0_mass - 0.15, rho0_mass + 0.15); // mu limits around rho0 mass
-        fit1->SetParLimits(2, 0, 0.3);      // sigma limit
+        // fit1->SetParLimits(1, rho0_mass - 0.15, rho0_mass + 0.15); // mu limits around rho0 mass
+        // fit1->SetParLimits(2, 0, 0.3);      // sigma limit
         fit2->SetParameters(amplitudeGuess2, rho0_mass, 0.1);
-        fit2->SetParLimits(1, rho0_mass - 0.05, rho0_mass + 0.05); // mu limits around rho0 mass
-        fit2->SetParLimits(2, 0, 0.3);      // sigma limit
+        // fit2->SetParLimits(1, rho0_mass - 0.05, rho0_mass + 0.05); // mu limits around rho0 mass
+        // fit2->SetParLimits(2, 0, 0.3);      // sigma limit
 
         fit1->SetLineWidth(1); // Make the line thinner
         fit2->SetLineWidth(1); // Make the line thinner
@@ -349,7 +349,7 @@ void plot_rho0_energy_loss_validation(const char* file1, const char* file2, cons
         theta_mean[i] = 0.5 * (thetaBins[i] + thetaBins[i + 1]);
 
         // Add legend with mu and sigma values in the top right corner
-        TLegend *legend = new TLegend(0.6, 0.75, 0.9, 0.9); // Adjusted the legend position to the top right corner
+        TLegend *legend = new TLegend(0.25, 0.75, 0.9, 0.9); // Adjusted the legend position to the top right corner
         legend->SetTextSize(0.03); // Decrease the font size in the legend
         legend->AddEntry(h1[i], Form("Uncorrected: #mu=%.3f, #sigma=%.3f", mu1_values[i], sigma1_values[i]), "lep");
         legend->AddEntry(h2[i], Form("Corrected: #mu=%.3f, #sigma=%.3f", mu2_values[i], sigma2_values[i]), "lep");
