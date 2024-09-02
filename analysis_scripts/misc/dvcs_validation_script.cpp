@@ -156,8 +156,27 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
         mu2_values[i] = fit2->GetParameter(1);
         sigma2_values[i] = fit2->GetParameter(2);
 
-        // Calculate the mean theta value for the bin
-        theta_mean[i] = 0.5 * (thetaBins[i] + thetaBins[i + 1]);
+        // Calculate the mean theta value for the bin based on actual data points
+        theta_mean[i] = 0.0;
+        Long64_t count_theta1 = 0;
+        Long64_t count_theta2 = 0;
+        for (Long64_t j = 0; j < nEntries1; ++j) {
+            tree1->GetEntry(j);
+            Double_t thetaDeg1 = p1_theta1 * (180.0 / TMath::Pi()); // Convert to degrees
+            if (thetaDeg1 >= thetaBins[i] && thetaDeg1 < thetaBins[i + 1]) {
+                theta_mean[i] += thetaDeg1;
+                count_theta1++;
+            }
+        }
+        for (Long64_t j = 0; j < nEntries2; ++j) {
+            tree2->GetEntry(j);
+            Double_t thetaDeg2 = p1_theta2 * (180.0 / TMath::Pi()); // Convert to degrees
+            if (thetaDeg2 >= thetaBins[i] && thetaDeg2 < thetaBins[i + 1]) {
+                theta_mean[i] += thetaDeg2;
+                count_theta2++;
+            }
+        }
+        theta_mean[i] /= (count_theta1 + count_theta2);
 
         // Add legend with mu and sigma values in the top right corner
         TLegend *legend = new TLegend(0.25, 0.75, 0.9, 0.9); // Adjusted the legend position to the top right corner
@@ -190,7 +209,7 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
     gr2->Draw("P SAME");
 
     // Add dashed gray line at y = 0
-    TLine *line = new TLine(thetaBins[0], 0, thetaBins[nBins], 0);
+    TLine *line = new TLine(0, 0, 70, 0);
     line->SetLineColor(kGray);
     line->SetLineStyle(2); // Dashed line
     line->Draw("SAME");
@@ -198,7 +217,11 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
     // Customize the last subplot
     gr1->SetTitle(""); // Remove the "Graph" title
     gr1->GetXaxis()->SetTitle("#theta"); // Set x-axis label
-    gr1->GetYaxis()->SetTitle("#mu");    // Set y-axis label
+    gr1->GetYaxis()->SetTitle("#mu (GeV^{2})"); // Set y-axis label
+    gr1->GetXaxis()->SetTitleSize(0.05); // Match font size with other plots
+    gr1->GetYaxis()->SetTitleSize(0.05); // Match font size with other plots
+    gr1->GetXaxis()->SetLimits(0, 70); // Set x-axis range
+    gr1->GetYaxis()->SetRangeUser(-0.20, 0.20); // Set y-axis range
 
     // Add legend to the last plot, positioned in the top right
     TLegend *legend12 = new TLegend(0.6, 0.75, 0.9, 0.9); // Adjusted for horizontal and vertical size
@@ -216,7 +239,6 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
     delete f1;
     delete f2;
 }
-
 void plot_rho0_energy_loss_validation(const char* file1, const char* file2, const char* titleSuffix) {
     // Open the ROOT files
     TFile *f1 = new TFile(file1);
