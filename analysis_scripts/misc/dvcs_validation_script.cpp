@@ -208,7 +208,7 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
     legend12->Draw();
 
     // Save the canvas as a PDF
-    c1->SaveAs("output/dvcs_energy_loss_validation.pdf");
+    c1->SaveAs("output/dvcs_"+titleSuffix+"_energy_loss_validation.pdf");
 
     // Clean up
     delete c1;
