@@ -59,8 +59,8 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
         c1->cd(i + 1)->SetLeftMargin(0.15); // Add padding to the left of each subplot
 
         // Create histograms for each theta bin
-        h1[i] = new TH1D(Form("h1_%d", i), Form("M_{xp}^{2} GeV^{2} for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 25, -0.5, 0.5);
-        h2[i] = new TH1D(Form("h2_%d", i), Form("M_{xp}^{2} GeV^{2} for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 25, -0.5, 0.5);
+        h1[i] = new TH1D(Form("h1_%d", i), Form("M_{xp}^{2} GeV^{2} for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 30, -0.5, 0.5);
+        h2[i] = new TH1D(Form("h2_%d", i), Form("M_{xp}^{2} GeV^{2} for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 30, -0.5, 0.5);
 
         // Set text sizes
         h1[i]->GetXaxis()->SetTitleSize(0.05);
@@ -96,6 +96,13 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
             }
         }
 
+        // Set the y-axis range to 1.2 times the maximum bin value
+        Double_t maxVal1 = h1[i]->GetMaximum();
+        Double_t maxVal2 = h2[i]->GetMaximum();
+        Double_t maxVal = std::max(maxVal1, maxVal2);
+        h1[i]->SetMaximum(1.2 * maxVal);
+        h2[i]->SetMaximum(1.2 * maxVal);
+
         // Draw histograms as points with error bars
         h1[i]->SetMarkerStyle(20);
         h1[i]->SetMarkerSize(0.8); // Make the points smaller
@@ -108,9 +115,9 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
         h2[i]->SetStats(0); // Remove stat box
         h2[i]->Draw("E SAME");
 
-        // Fit histograms to Gaussian
-        TF1 *fit1 = new TF1(Form("fit1_%d", i), "gaus", -0.5, 0.5);
-        TF1 *fit2 = new TF1(Form("fit2_%d", i), "gaus", -0.5, 0.5);
+        // Fit histograms to Gaussian plus quadratic background
+        TF1 *fit1 = new TF1(Form("fit1_%d", i), "gaus(0) + pol2(3)", -0.5, 0.5);
+        TF1 *fit2 = new TF1(Form("fit2_%d", i), "gaus(0) + pol2(3)", -0.5, 0.5);
         fit1->SetLineWidth(1); // Make the line thinner
         fit2->SetLineWidth(1); // Make the line thinner
         h1[i]->Fit(fit1, "Q");
@@ -122,15 +129,15 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
         fit2->SetLineColor(kRed);
         fit2->Draw("SAME");
 
-        // Get fit parameters
+        // Get fit parameters (only from the Gaussian)
         Double_t mu1 = fit1->GetParameter(1);
         Double_t sigma1 = fit1->GetParameter(2);
         Double_t mu2 = fit2->GetParameter(1);
         Double_t sigma2 = fit2->GetParameter(2);
 
         // Add legend with mu and sigma values
-        TLegend *legend = new TLegend(0.6, 0.75, 0.9, 0.9);
-        legend->SetTextSize(0.04); // Increase the text size
+        TLegend *legend = new TLegend(0.5, 0.7, 0.9, 0.9); // Made the legend box bigger
+        legend->SetTextSize(0.05); // Increase the text size
         legend->AddEntry(h1[i], Form("Uncorrected: #mu=%.3f, #sigma=%.3f", mu1, sigma1), "lep");
         legend->AddEntry(h2[i], Form("Corrected: #mu=%.3f, #sigma=%.3f", mu2, sigma2), "lep");
         legend->Draw();
