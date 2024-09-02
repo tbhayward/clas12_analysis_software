@@ -29,7 +29,8 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
 
     // Set branch addresses
     tree1->SetBranchAddress("p1_theta", &p1_theta1);
-    tree1->SetBranchAddress("Mxprotonsquared", &Mxprotonsquared_1);
+    // tree1->SetBranchAddress("Mxprotonsquared", &Mxprotonsquared_1);
+    tree1->SetBranchAddress("Emiss2", &Mxprotonsquared_1);
     tree1->SetBranchAddress("eta2", &eta2_1);
     tree1->SetBranchAddress("t1", &t1_1);
     tree1->SetBranchAddress("theta_gamma_gamma", &theta_gamma_gamma_1);
@@ -37,7 +38,8 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
     tree1->SetBranchAddress("pTmiss", &pTmiss_1);
 
     tree2->SetBranchAddress("p1_theta", &p1_theta2);
-    tree2->SetBranchAddress("Mxprotonsquared", &Mxprotonsquared_2);
+    // tree2->SetBranchAddress("Mxprotonsquared", &Mxprotonsquared_2);
+    tree2->SetBranchAddress("Emiss2", &Mxprotonsquared_2);
     tree2->SetBranchAddress("eta2", &eta2_2);
     tree2->SetBranchAddress("t1", &t1_2);
     tree2->SetBranchAddress("theta_gamma_gamma", &theta_gamma_gamma_2);
