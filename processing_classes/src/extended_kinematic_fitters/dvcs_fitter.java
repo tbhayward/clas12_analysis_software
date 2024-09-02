@@ -166,7 +166,6 @@ public class dvcs_fitter extends GenericKinematicFitter {
                    
                    double fe = energy_loss_corrections.proton_energy_loss_corrections(particle_Index, px, py, 
                            pz, rec_Bank, run_Bank);
-                   System.out.println(fe);
 //                   double fe = 1;
                    Particle part = new Particle(pid,fe*px,fe*py,fe*pz,vx,vy,vz);
                    physEvent.addParticle(part);   
