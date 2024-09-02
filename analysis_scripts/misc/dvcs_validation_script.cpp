@@ -94,8 +94,8 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
         h2[i]->Draw("E SAME");
 
         // Fit histograms to Gaussian
-        TF1 *fit1 = new TF1(Form("fit1_%d", i), "gaus", -2, 2);
-        TF1 *fit2 = new TF1(Form("fit2_%d", i), "gaus", -2, 2);
+        TF1 *fit1 = new TF1(Form("fit1_%d", i), "gaus", -0.5, 0.5);
+        TF1 *fit2 = new TF1(Form("fit2_%d", i), "gaus", -0.5, 0.5);
         h1[i]->Fit(fit1, "Q");
         h2[i]->Fit(fit2, "Q");
 
