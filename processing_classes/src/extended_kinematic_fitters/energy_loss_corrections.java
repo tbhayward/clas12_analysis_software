@@ -40,7 +40,7 @@ public class energy_loss_corrections {
         boolean isForwardDetector = generic_tests.forward_detector_cut(particle_Index, rec_Bank);
         boolean isCentralDetector = generic_tests.forward_detector_cut(particle_Index, rec_Bank);
 
-        int runnum = run_Bank.getInt("run", particle_Index);
+        int runnum = run_Bank.getInt("run", 0);
         System.out.println(runnum);
 
         double dp = 0;
