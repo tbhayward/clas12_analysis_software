@@ -95,7 +95,9 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
     for (Long64_t j = 0; j < nEntries2; ++j) {
         tree2->GetEntry(j);
         Double_t thetaDeg2 = p1_theta2 * (180.0 / TMath::Pi()); // Convert to degrees
-        if (thetaDeg2 >= 5 && thetaDeg2 < 65) {
+        if (thetaDeg2 >= 5 && thetaDeg2 < 65 &&
+                eta2_2 < 0 && t1_2 > -2 && theta_gamma_gamma_2 < 0.6 &&
+                Emiss2_2 < 0.5 && pTmiss_2 < 0.125) {
             h2[0]->Fill(Mxprotonsquared_2); // Fully integrated case
         }
         for (int i = 0; i < nBins; ++i) {
@@ -278,7 +280,7 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
     delete c1;
     delete f1;
     delete f2;
-}
+} 
 
 
 void plot_rho0_energy_loss_validation(const char* file1, const char* file2, const char* titleSuffix) {
