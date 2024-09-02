@@ -6491,9 +6491,9 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
     }
     else if (dataset == "rgc_su22_inb" && region == "CD") {
         // A_p, B_p, C_p
-        A_p = 0.0109317 -0.0000194*theta -0.0000117 * theta * theta;
-        B_p = -0.00910576 -0.00035154*theta +0.00003905* theta * theta;
-        C_p = 0.01225782 -0.00012805*theta -0.00000820 * theta * theta;
+        A_p = -0.3951652 +0.0202840*theta -0.0002660 * theta * theta;
+        B_p = 0.93238668 -0.04803619*theta +0.00063215* theta * theta;
+        C_p = -0.59146847 +0.02997697*theta -0.00038773 * theta * theta;
 
         // // A_theta, B_theta, C_theta
         // A_theta = 0.0644813 -0.0079393*theta +0.0001566 * theta * theta;
@@ -7039,8 +7039,8 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     // mcReader.Restart();
     // plot_energy_loss_corrections_fd(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_distributions_delta_p_cd(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_distributions_delta_p_cd(mcReader, dataset);
 
     // mcReader.Restart();
     // energy_loss_distributions_delta_theta_cd(mcReader, dataset);
