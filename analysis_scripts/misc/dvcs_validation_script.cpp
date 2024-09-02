@@ -62,6 +62,17 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
         h1[i] = new TH1D(Form("h1_%d", i), Form("M_{xp}^{2} GeV^{2} for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 100, -0.5, 0.5);
         h2[i] = new TH1D(Form("h2_%d", i), Form("M_{xp}^{2} GeV^{2} for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 100, -0.5, 0.5);
 
+        // Set text sizes
+        h1[i]->GetXaxis()->SetTitleSize(0.05);
+        h1[i]->GetYaxis()->SetTitleSize(0.05);
+        h1[i]->GetXaxis()->SetLabelSize(0.04);
+        h1[i]->GetYaxis()->SetLabelSize(0.04);
+
+        h2[i]->GetXaxis()->SetTitleSize(0.05);
+        h2[i]->GetYaxis()->SetTitleSize(0.05);
+        h2[i]->GetXaxis()->SetLabelSize(0.04);
+        h2[i]->GetYaxis()->SetLabelSize(0.04);
+
         // Fill the histograms with the cuts applied
         Long64_t nEntries1 = tree1->GetEntries();
         for (Long64_t j = 0; j < nEntries1; ++j) {
@@ -87,10 +98,12 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
 
         // Draw histograms as points with error bars
         h1[i]->SetMarkerStyle(20);
+        h1[i]->SetMarkerSize(0.8); // Make the points smaller
         h1[i]->SetMarkerColor(kBlack);
         h1[i]->SetStats(0); // Remove stat box
         h1[i]->Draw("E");
         h2[i]->SetMarkerStyle(21);
+        h2[i]->SetMarkerSize(0.8); // Make the points smaller
         h2[i]->SetMarkerColor(kRed);
         h2[i]->SetStats(0); // Remove stat box
         h2[i]->Draw("E SAME");
@@ -98,6 +111,8 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
         // Fit histograms to Gaussian
         TF1 *fit1 = new TF1(Form("fit1_%d", i), "gaus", -0.5, 0.5);
         TF1 *fit2 = new TF1(Form("fit2_%d", i), "gaus", -0.5, 0.5);
+        fit1->SetLineWidth(1); // Make the line thinner
+        fit2->SetLineWidth(1); // Make the line thinner
         h1[i]->Fit(fit1, "Q");
         h2[i]->Fit(fit2, "Q");
 
@@ -115,6 +130,7 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
 
         // Add legend with mu and sigma values
         TLegend *legend = new TLegend(0.6, 0.75, 0.9, 0.9);
+        legend->SetTextSize(0.04); // Increase the text size
         legend->AddEntry(h1[i], Form("Uncorrected: #mu=%.3f, #sigma=%.3f", mu1, sigma1), "lep");
         legend->AddEntry(h2[i], Form("Corrected: #mu=%.3f, #sigma=%.3f", mu2, sigma2), "lep");
         legend->Draw();
