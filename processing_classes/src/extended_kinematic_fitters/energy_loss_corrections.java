@@ -73,7 +73,7 @@ public class energy_loss_corrections {
             }
 
         } else if (runnum >= 6616 && runnum <= 6783) { // RGA Sp19 Inb
-
+            System.out.println(isForwardDetector+" "+isCentralDetector);
             if (isForwardDetector && !isCentralDetector) {
                 System.out.println("FD");
                 A_p = 0.0095205 - 0.0001914 * theta - 0.0000031 * theta * theta;
