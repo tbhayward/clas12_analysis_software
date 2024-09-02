@@ -7019,7 +7019,7 @@ void plot_energy_loss_corrections_cd(TTreeReader& mcReader, const std::string& d
 
 // Main function to call both energy loss distribution functions
 void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
-    // energy_loss_distributions(mcReader, dataset);
+    energy_loss_distributions(mcReader, dataset);
 
     // mcReader.Restart();
     // energy_loss_fd_distributions(mcReader, dataset);
@@ -7027,8 +7027,8 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     // mcReader.Restart();
     // energy_loss_fd_distributions_theta_dc(mcReader, dataset);
 
-    // mcReader.Restart();
-    // energy_loss_distributions_delta_p_fd(mcReader, dataset);
+    mcReader.Restart();
+    energy_loss_distributions_delta_p_fd(mcReader, dataset);
 
     // mcReader.Restart();
     // energy_loss_distributions_delta_theta_fd(mcReader, dataset);
@@ -7036,11 +7036,11 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     // mcReader.Restart();
     // energy_loss_distributions_delta_phi_fd(mcReader, dataset);
 
-    // mcReader.Restart();
-    // plot_energy_loss_corrections_fd(mcReader, dataset);
+    mcReader.Restart();
+    plot_energy_loss_corrections_fd(mcReader, dataset);
 
-    // mcReader.Restart();
-    // energy_loss_distributions_delta_p_cd(mcReader, dataset);
+    mcReader.Restart();
+    energy_loss_distributions_delta_p_cd(mcReader, dataset);
 
     // mcReader.Restart();
     // energy_loss_distributions_delta_theta_cd(mcReader, dataset);
@@ -7177,9 +7177,9 @@ int main(int argc, char** argv) {
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
     // if (mcReader) energy_loss(*mcReader, "rga_fa18_inb"); 
-    // if (mcReader) energy_loss(*mcReader, "rga_fa18_out");  
+    if (mcReader) energy_loss(*mcReader, "rga_fa18_out");  
     // if (mcReader) energy_loss(*mcReader, "rga_sp19_inb"); 
-    if (mcReader) energy_loss(*mcReader, "rgc_su22_inb");   
+    // if (mcReader) energy_loss(*mcReader, "rgc_su22_inb");   
 
     // Close files
     dataFile.Close();
