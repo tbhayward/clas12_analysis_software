@@ -126,10 +126,8 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
         h2[i]->Draw("E SAME");
 
         // Fit histograms to Gaussian plus quadratic background
-        // TF1 *fit1 = new TF1(Form("fit1_%d", i), "gaus(0) + pol2(3)", -0.5, 0.5);
-        // TF1 *fit2 = new TF1(Form("fit2_%d", i), "gaus(0) + pol2(3)", -0.5, 0.5);
-        TF1 *fit1 = new TF1(Form("fit1_%d", i), "gaus(0)", -0.5, 0.5);
-        TF1 *fit2 = new TF1(Form("fit2_%d", i), "gaus(0)", -0.5, 0.5);
+        TF1 *fit1 = new TF1(Form("fit1_%d", i), "gaus(0) + pol2(3)", -0.5, 0.5);
+        TF1 *fit2 = new TF1(Form("fit2_%d", i), "gaus(0) + pol2(3)", -0.5, 0.5);
 
         // Set initial parameter guesses and limits
         Double_t amplitudeGuess1 = 0.8 * maxVal1;
