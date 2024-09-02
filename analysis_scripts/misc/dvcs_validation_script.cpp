@@ -59,7 +59,8 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
 
     Double_t mu1_values[nBins], sigma1_values[nBins];
     Double_t mu2_values[nBins], sigma2_values[nBins];
-    Double_t theta_mean[nBins];
+    Double_t theta_sum[nBins] = {0.0};
+    Int_t theta_count[nBins] = {0};
 
     for (int i = 0; i < nBins; ++i) {
         TPad *pad = (TPad*)c1->cd(i + 1);
@@ -80,30 +81,49 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
         h2[i]->GetYaxis()->SetTitleSize(0.05);
         h2[i]->GetXaxis()->SetLabelSize(0.04);
         h2[i]->GetYaxis()->SetLabelSize(0.04);
+    }
 
-        // Fill the histograms with the cuts applied
-        Long64_t nEntries1 = tree1->GetEntries();
-        for (Long64_t j = 0; j < nEntries1; ++j) {
-            tree1->GetEntry(j);
-            Double_t thetaDeg1 = p1_theta1 * (180.0 / TMath::Pi()); // Convert to degrees
+    // Fill the histograms with the cuts applied and calculate theta means
+    Long64_t nEntries1 = tree1->GetEntries();
+    for (Long64_t j = 0; j < nEntries1; ++j) {
+        tree1->GetEntry(j);
+        Double_t thetaDeg1 = p1_theta1 * (180.0 / TMath::Pi()); // Convert to degrees
+        for (int i = 0; i < nBins; ++i) {
             if (thetaDeg1 >= thetaBins[i] && thetaDeg1 < thetaBins[i + 1] &&
                 eta2_1 < 0 && t1_1 > -2 && theta_gamma_gamma_1 < 0.6 &&
                 Emiss2_1 < 0.5 && pTmiss_1 < 0.125) {
                 h1[i]->Fill(Mxprotonsquared_1);
+                theta_sum[i] += thetaDeg1;
+                theta_count[i]++;
             }
         }
+    }
 
-        Long64_t nEntries2 = tree2->GetEntries();
-        for (Long64_t j = 0; j < nEntries2; ++j) {
-            tree2->GetEntry(j);
-            Double_t thetaDeg2 = p1_theta2 * (180.0 / TMath::Pi()); // Convert to degrees
+    Long64_t nEntries2 = tree2->GetEntries();
+    for (Long64_t j = 0; j < nEntries2; ++j) {
+        tree2->GetEntry(j);
+        Double_t thetaDeg2 = p1_theta2 * (180.0 / TMath::Pi()); // Convert to degrees
+        for (int i = 0; i < nBins; ++i) {
             if (thetaDeg2 >= thetaBins[i] && thetaDeg2 < thetaBins[i + 1] &&
                 eta2_2 < 0 && t1_2 > -2 && theta_gamma_gamma_2 < 0.6 &&
                 Emiss2_2 < 0.5 && pTmiss_2 < 0.125) {
                 h2[i]->Fill(Mxprotonsquared_2);
+                theta_sum[i] += thetaDeg2;
+                theta_count[i]++;
             }
         }
+    }
 
+    // Calculate mean theta values
+    for (int i = 0; i < nBins; ++i) {
+        if (theta_count[i] > 0) {
+            theta_mean[i] = theta_sum[i] / theta_count[i];
+        } else {
+            theta_mean[i] = 0.5 * (thetaBins[i] + thetaBins[i + 1]); // Default to midpoint if no entries
+        }
+    }
+
+    for (int i = 0; i < nBins; ++i) {
         // Set the y-axis range to 0 to 1.7 times the maximum bin value
         Double_t maxVal1 = h1[i]->GetMaximum();
         Double_t maxVal2 = h2[i]->GetMaximum();
@@ -155,28 +175,6 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
         sigma1_values[i] = fit1->GetParameter(2);
         mu2_values[i] = fit2->GetParameter(1);
         sigma2_values[i] = fit2->GetParameter(2);
-
-        // Calculate the mean theta value for the bin based on actual data points
-        theta_mean[i] = 0.0;
-        Long64_t count_theta1 = 0;
-        Long64_t count_theta2 = 0;
-        for (Long64_t j = 0; j < nEntries1; ++j) {
-            tree1->GetEntry(j);
-            Double_t thetaDeg1 = p1_theta1 * (180.0 / TMath::Pi()); // Convert to degrees
-            if (thetaDeg1 >= thetaBins[i] && thetaDeg1 < thetaBins[i + 1]) {
-                theta_mean[i] += thetaDeg1;
-                count_theta1++;
-            }
-        }
-        for (Long64_t j = 0; j < nEntries2; ++j) {
-            tree2->GetEntry(j);
-            Double_t thetaDeg2 = p1_theta2 * (180.0 / TMath::Pi()); // Convert to degrees
-            if (thetaDeg2 >= thetaBins[i] && thetaDeg2 < thetaBins[i + 1]) {
-                theta_mean[i] += thetaDeg2;
-                count_theta2++;
-            }
-        }
-        theta_mean[i] /= (count_theta1 + count_theta2);
 
         // Add legend with mu and sigma values in the top right corner
         TLegend *legend = new TLegend(0.25, 0.75, 0.9, 0.9); // Adjusted the legend position to the top right corner
@@ -239,6 +237,8 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
     delete f1;
     delete f2;
 }
+
+
 void plot_rho0_energy_loss_validation(const char* file1, const char* file2, const char* titleSuffix) {
     // Open the ROOT files
     TFile *f1 = new TFile(file1);
