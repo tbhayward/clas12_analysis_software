@@ -260,8 +260,8 @@ void plot_rho0_energy_loss_validation(const char* file1, const char* file2, cons
         pad->SetBottomMargin(0.15); // Add padding to the bottom of each subplot
 
         // Create histograms for each theta bin with 50 bins
-        h1[i] = new TH1D(Form("h1_%d", i), Form("Mx1 for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 50, 0.4, 1.2);
-        h2[i] = new TH1D(Form("h2_%d", i), Form("Mx1 for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 50, 0.4, 1.2);
+        h1[i] = new TH1D(Form("h1_%d", i), Form("Mx1 for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 30, 0.0, 1.5);
+        h2[i] = new TH1D(Form("h2_%d", i), Form("Mx1 for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 30, 0.0, 1.5);
 
         // Set text sizes
         h1[i]->GetXaxis()->SetTitleSize(0.05);
@@ -322,7 +322,7 @@ void plot_rho0_energy_loss_validation(const char* file1, const char* file2, cons
         Double_t amplitudeGuess1 = 0.8 * maxVal1;
         Double_t amplitudeGuess2 = 0.8 * maxVal2;
         fit1->SetParameters(amplitudeGuess1, rho0_mass, 0.1);
-        fit1->SetParLimits(1, rho0_mass - 0.05, rho0_mass + 0.05); // mu limits around rho0 mass
+        fit1->SetParLimits(1, rho0_mass - 0.15, rho0_mass + 0.15); // mu limits around rho0 mass
         fit1->SetParLimits(2, 0, 0.3);      // sigma limit
         fit2->SetParameters(amplitudeGuess2, rho0_mass, 0.1);
         fit2->SetParLimits(1, rho0_mass - 0.05, rho0_mass + 0.05); // mu limits around rho0 mass
