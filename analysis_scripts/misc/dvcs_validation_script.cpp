@@ -8,6 +8,8 @@
 #include <TMath.h>
 #include <TF1.h>
 #include <iostream>
+#include <TGraphErrors.h>
+#include <TLine.h>
 
 void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, const char* titleSuffix) {
     // Open the ROOT files
