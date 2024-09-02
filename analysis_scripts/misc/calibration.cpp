@@ -6457,6 +6457,22 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
         // B_phi = 0.26803189 +0.00016245*theta +0.00010433*theta*theta;
         // C_phi = -0.24522460 +0.00826646*theta -0.00015640*theta*theta; // 
     }
+    else if (dataset == "rga_sp19_inb" && region == "CD") {
+        // A_p, B_p (no C_p for rga_fa18_out and no theta^2 term)
+        A_p = -0.2716918 +0.0142491*theta -0.0001862*theta*theta; 
+        B_p = 0.65945101 -0.03431360*theta +0.00045036*theta*theta;
+        C_p = -0.46602726 +0.02335623*theta -0.00029720*theta*theta; 
+
+        // // A_theta, B_theta, C_theta
+        // A_theta = 0.0723069 -0.0085078*theta +0.0001702*theta*theta;
+        // B_theta = -0.16048057 +0.02561073*theta -0.00062158*theta*theta;
+        // C_theta = 0.10954630 -0.01566605*theta +0.00036132*theta*theta; 
+
+        // // A_phi, B_phi, C_phi
+        // A_phi = 0.0486986 -0.0067579*theta +0.0000638*theta*theta;
+        // B_phi = 0.26803189 +0.00016245*theta +0.00010433*theta*theta;
+        // C_phi = -0.24522460 +0.00826646*theta -0.00015640*theta*theta; // 
+    }
     else if (dataset == "rgc_su22_inb" && region == "FD") {
         // A_p, B_p, C_p
         A_p = 0.0109317 -0.0000194*theta -0.0000117 * theta * theta;
