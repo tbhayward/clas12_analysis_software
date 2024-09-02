@@ -488,10 +488,10 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
     Double_t Mx2_1, Mx2_2;
 
     // Set branch addresses
-    tree1->SetBranchAddress("p1_theta", &p1_theta1);
+    tree1->SetBranchAddress("p_theta", &p1_theta1);
     tree1->SetBranchAddress("Mx2", &Mx2_1);
 
-    tree2->SetBranchAddress("p1_theta", &p1_theta2);
+    tree2->SetBranchAddress("p_theta", &p1_theta2);
     tree2->SetBranchAddress("Mx2", &Mx2_2);
 
     // Create canvas and divide it into 3x4 subplots
