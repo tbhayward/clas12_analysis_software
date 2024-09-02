@@ -67,8 +67,8 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
         pad->SetBottomMargin(0.15); // Add padding to the bottom of each subplot
 
         // Create histograms for each theta bin with 50 bins
-        h1[i] = new TH1D(Form("h1_%d", i), Form("M_{xp}^{2} GeV^{2} for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 50, -0.3, 0.3);
-        h2[i] = new TH1D(Form("h2_%d", i), Form("M_{xp}^{2} GeV^{2} for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 50, -0.3, 0.3);
+        h1[i] = new TH1D(Form("h1_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 35, -0.3, 0.3);
+        h2[i] = new TH1D(Form("h2_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 35, -0.3, 0.3);
 
         // Set text sizes
         h1[i]->GetXaxis()->SetTitleSize(0.05);
@@ -167,7 +167,7 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
         legend->Draw();
 
         // Label the axes
-        h1[i]->GetXaxis()->SetTitle("M_{xp}^{2} GeV^{2}");
+        h1[i]->GetXaxis()->SetTitle("M_{xp}^{2} (GeV^{2})");
         h1[i]->GetYaxis()->SetTitle("Counts");
     }
 
