@@ -19,7 +19,7 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
 
     // Prepare variables for reading the branches
     Double_t p1_theta1, p1_theta2;
-    Double_t Mxgammasquared_1, Mxgammasquared_2;
+    Double_t Mxprotonsquared_1, Mxprotonsquared_2;
     Double_t eta2_1, eta2_2;
     Double_t t1_1, t1_2;
     Double_t theta_gamma_gamma_1, theta_gamma_gamma_2;
@@ -28,7 +28,7 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
 
     // Set branch addresses
     tree1->SetBranchAddress("p1_theta", &p1_theta1);
-    tree1->SetBranchAddress("Mxgammasquared", &Mxgammasquared_1);
+    tree1->SetBranchAddress("Mxprotonsquared", &Mxprotonsquared_1);
     tree1->SetBranchAddress("eta2", &eta2_1);
     tree1->SetBranchAddress("t1", &t1_1);
     tree1->SetBranchAddress("theta_gamma_gamma", &theta_gamma_gamma_1);
@@ -36,7 +36,7 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
     tree1->SetBranchAddress("pTmiss", &pTmiss_1);
 
     tree2->SetBranchAddress("p1_theta", &p1_theta2);
-    tree2->SetBranchAddress("Mxgammasquared", &Mxgammasquared_2);
+    tree2->SetBranchAddress("Mxprotonsquared", &Mxprotonsquared_2);
     tree2->SetBranchAddress("eta2", &eta2_2);
     tree2->SetBranchAddress("t1", &t1_2);
     tree2->SetBranchAddress("theta_gamma_gamma", &theta_gamma_gamma_2);
@@ -69,7 +69,7 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
             if (thetaDeg1 >= thetaBins[i] && thetaDeg1 < thetaBins[i + 1] &&
                 eta2_1 < 0 && t1_1 > -2 && theta_gamma_gamma_1 < 0.6 &&
                 Emiss2_1 < 0.5 && pTmiss_1 < 0.125) {
-                h1[i]->Fill(Mxgammasquared_1);
+                h1[i]->Fill(Mxprotonsquared_1);
             }
         }
 
@@ -80,7 +80,7 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
             if (thetaDeg2 >= thetaBins[i] && thetaDeg2 < thetaBins[i + 1] &&
                 eta2_2 < 0 && t1_2 > -2 && theta_gamma_gamma_2 < 0.6 &&
                 Emiss2_2 < 0.5 && pTmiss_2 < 0.125) {
-                h2[i]->Fill(Mxgammasquared_2);
+                h2[i]->Fill(Mxprotonsquared_2);
             }
         }
 
