@@ -6400,15 +6400,15 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
         B_p = -0.01428267 +0.00042833*theta +0.00001081*theta*theta;
         C_p = 0.01197102 -0.00055673*theta +0.00000785*theta*theta;
 
-        // A_theta, B_theta, C_theta
-        A_theta = 0.0683831 -0.0083821*theta +0.0001670 * theta * theta;
-        B_theta = -0.15834256 +0.02630760*theta -0.00064126 * theta * theta;
-        C_theta = 0.11587509 -0.01679559*theta + 0.00038915 * theta * theta;
+        // // A_theta, B_theta, C_theta
+        // A_theta = 0.0683831 -0.0083821*theta +0.0001670 * theta * theta;
+        // B_theta = -0.15834256 +0.02630760*theta -0.00064126 * theta * theta;
+        // C_theta = 0.11587509 -0.01679559*theta + 0.00038915 * theta * theta;
 
-        // A_phi, B_phi, C_phi
-        A_phi = 0.0416510 -0.0064212*theta +0.0000622 * theta * theta;
-        B_phi = 0.28414191 -0.00047647*theta +0.00010357 * theta * theta;
-        C_phi = -0.25690893 +0.00886707*theta -0.00016081 * theta * theta;
+        // // A_phi, B_phi, C_phi
+        // A_phi = 0.0416510 -0.0064212*theta +0.0000622 * theta * theta;
+        // B_phi = 0.28414191 -0.00047647*theta +0.00010357 * theta * theta;
+        // C_phi = -0.25690893 +0.00886707*theta -0.00016081 * theta * theta;
     }
     if (dataset == "rga_fa18_inb" && region == "CD") {
         // A_p, B_p, C_p
@@ -6416,15 +6416,15 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
         B_p = 0.60123885 -0.03128464*theta +0.00041314*theta*theta;
         C_p = -0.44080146 +0.02209857*theta -0.00028224*theta*theta;
 
-        // A_theta, B_theta, C_theta
-        A_theta = 0.0093221 -0.0004507*theta +0.0000032* theta * theta;
-        B_theta = 0.15734684 -0.00603111*theta +0.00005827 * theta * theta;
-        C_theta = -0.06449044 +0.00239151*theta -0.00002183 * theta * theta;
+        // // A_theta, B_theta, C_theta
+        // A_theta = 0.0093221 -0.0004507*theta +0.0000032* theta * theta;
+        // B_theta = 0.15734684 -0.00603111*theta +0.00005827 * theta * theta;
+        // C_theta = -0.06449044 +0.00239151*theta -0.00002183 * theta * theta;
 
-        // A_phi, B_phi, C_phi
-        A_phi = 0.0776934 -0.0059632*theta +0.0000749*theta * theta;
-        B_phi = -0.31582008 +0.01649220*theta -0.00018505 * theta * theta;
-        C_phi = 0.10909746 -0.00530642*theta +0.00005627 * theta * theta;
+        // // A_phi, B_phi, C_phi
+        // A_phi = 0.0776934 -0.0059632*theta +0.0000749*theta * theta;
+        // B_phi = -0.31582008 +0.01649220*theta -0.00018505 * theta * theta;
+        // C_phi = 0.10909746 -0.00530642*theta +0.00005627 * theta * theta;
     }
     else if (dataset == "rga_fa18_out" && region == "FD") {
         // A_p, B_p (no C_p for rga_fa18_out and no theta^2 term)
@@ -6432,15 +6432,15 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
         B_p = -0.02165929 + 0.00121123 * theta; // Only linear term
         C_p = 0.0; // No C_p for rga_fa18_out
 
-        // A_theta, B_theta, C_theta
-        A_theta = -0.3715486 +0.0272810*theta -0.0006278*theta*theta +0.0000040*theta*theta*theta;
-        B_theta = 2.00009939 -0.20781779*theta +0.00721092*theta*theta -0.00008343*theta*theta*theta;
-        C_theta = 0; // No C_theta for rga_fa18_out
+        // // A_theta, B_theta, C_theta
+        // A_theta = -0.3715486 +0.0272810*theta -0.0006278*theta*theta +0.0000040*theta*theta*theta;
+        // B_theta = 2.00009939 -0.20781779*theta +0.00721092*theta*theta -0.00008343*theta*theta*theta;
+        // C_theta = 0; // No C_theta for rga_fa18_out
 
-        // A_phi, B_phi, C_phi
-        A_phi = -0.9701486 +0.1213124*theta -0.0049215*theta*theta +0.0000640*theta*theta*theta;
-        B_phi = 2.85034691 -0.34405076*theta +0.01347377*theta*theta -0.00016663*theta*theta*theta;
-        C_phi = 0; // No c_phi for rga_fa18_out
+        // // A_phi, B_phi, C_phi
+        // A_phi = -0.9701486 +0.1213124*theta -0.0049215*theta*theta +0.0000640*theta*theta*theta;
+        // B_phi = 2.85034691 -0.34405076*theta +0.01347377*theta*theta -0.00016663*theta*theta*theta;
+        // C_phi = 0; // No c_phi for rga_fa18_out
     }
     else if (dataset == "rga_sp19_inb" && region == "FD") {
         // A_p, B_p (no C_p for rga_fa18_out and no theta^2 term)
@@ -6448,15 +6448,15 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
         B_p = -0.01365658 +0.00036322*theta +0.00001217*theta*theta;
         C_p = 0.01175256 -0.00053407*theta +0.00000742*theta*theta; 
 
-        // A_theta, B_theta, C_theta
-        A_theta = 0.0723069 -0.0085078*theta +0.0001702*theta*theta;
-        B_theta = -0.16048057 +0.02561073*theta -0.00062158*theta*theta;
-        C_theta = 0.10954630 -0.01566605*theta +0.00036132*theta*theta; 
+        // // A_theta, B_theta, C_theta
+        // A_theta = 0.0723069 -0.0085078*theta +0.0001702*theta*theta;
+        // B_theta = -0.16048057 +0.02561073*theta -0.00062158*theta*theta;
+        // C_theta = 0.10954630 -0.01566605*theta +0.00036132*theta*theta; 
 
-        // A_phi, B_phi, C_phi
-        A_phi = 0.0486986 -0.0067579*theta +0.0000638*theta*theta;
-        B_phi = 0.26803189 +0.00016245*theta +0.00010433*theta*theta;
-        C_phi = -0.24522460 +0.00826646*theta -0.00015640*theta*theta; // 
+        // // A_phi, B_phi, C_phi
+        // A_phi = 0.0486986 -0.0067579*theta +0.0000638*theta*theta;
+        // B_phi = 0.26803189 +0.00016245*theta +0.00010433*theta*theta;
+        // C_phi = -0.24522460 +0.00826646*theta -0.00015640*theta*theta; // 
     }
     else if (dataset == "rgc_su22_inb" && region == "FD") {
         // A_p, B_p, C_p
@@ -6464,28 +6464,28 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
         B_p = -0.00910576 -0.00035154*theta +0.00003905* theta * theta;
         C_p = 0.01225782 -0.00012805*theta -0.00000820 * theta * theta;
 
-        // A_theta, B_theta, C_theta
-        A_theta = 0.0644813 -0.0079393*theta +0.0001566 * theta * theta;
-        B_theta = -0.13787609 +0.02395150*theta -0.00058811 * theta * theta;
-        C_theta = 0.10551548 -0.01569699*theta +0.00036501 * theta * theta;
+        // // A_theta, B_theta, C_theta
+        // A_theta = 0.0644813 -0.0079393*theta +0.0001566 * theta * theta;
+        // B_theta = -0.13787609 +0.02395150*theta -0.00058811 * theta * theta;
+        // C_theta = 0.10551548 -0.01569699*theta +0.00036501 * theta * theta;
 
-        // A_phi, B_phi, C_phi
-        A_phi = 0.0787287 -0.0075095*theta +0.0000669 * theta * theta;
-        B_phi = 0.03705727 +0.01332536*theta -0.00009908 * theta * theta;
-        C_phi = -0.10680417 -0.00141926*theta +0.00001672 * theta * theta;
+        // // A_phi, B_phi, C_phi
+        // A_phi = 0.0787287 -0.0075095*theta +0.0000669 * theta * theta;
+        // B_phi = 0.03705727 +0.01332536*theta -0.00009908 * theta * theta;
+        // C_phi = -0.10680417 -0.00141926*theta +0.00001672 * theta * theta;
     }
 
     // Apply corrections
     if (region == "FD") {
         p += A_p + B_p / p + C_p / (p * p);
-        theta += A_theta + B_theta / theta + C_theta / (theta * theta);
-        phi += A_phi + B_phi / phi + C_phi / (phi * phi);
+        // theta += A_theta + B_theta / theta + C_theta / (theta * theta);
+        // phi += A_phi + B_phi / phi + C_phi / (phi * phi);
     }
     // Apply corrections
     if (region == "CD") {
         p += A_p + B_p * p + C_p * p * p;
-        theta += A_theta + B_theta / theta + C_theta /( theta * theta);
-        phi += A_phi + B_phi / phi + C_phi / (phi * phi);
+        // theta += A_theta + B_theta / theta + C_theta /( theta * theta);
+        // phi += A_phi + B_phi / phi + C_phi / (phi * phi);
     }
 }
 
@@ -6996,8 +6996,8 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     // mcReader.Restart();
     // energy_loss_fd_distributions_theta_dc(mcReader, dataset);
 
-    // mcReader.Restart();
-    // energy_loss_distributions_delta_p_fd(mcReader, dataset);
+    mcReader.Restart();
+    energy_loss_distributions_delta_p_fd(mcReader, dataset);
 
     // mcReader.Restart();
     // energy_loss_distributions_delta_theta_fd(mcReader, dataset);
@@ -7005,17 +7005,17 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     // mcReader.Restart();
     // energy_loss_distributions_delta_phi_fd(mcReader, dataset);
 
-    // mcReader.Restart();
-    // plot_energy_loss_corrections_fd(mcReader, dataset);
+    mcReader.Restart();
+    plot_energy_loss_corrections_fd(mcReader, dataset);
 
     mcReader.Restart();
     energy_loss_distributions_delta_p_cd(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_distributions_delta_theta_cd(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_distributions_delta_theta_cd(mcReader, dataset);
 
-    mcReader.Restart();
-    energy_loss_distributions_delta_phi_cd(mcReader, dataset);
+    // mcReader.Restart();
+    // energy_loss_distributions_delta_phi_cd(mcReader, dataset);
 
     mcReader.Restart();
     plot_energy_loss_corrections_cd(mcReader, dataset);
