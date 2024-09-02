@@ -20,13 +20,28 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
     // Prepare variables for reading the branches
     Double_t p1_theta1, p1_theta2;
     Double_t Mxgammasquared_1, Mxgammasquared_2;
+    Double_t eta2_1, eta2_2;
+    Double_t t1_1, t1_2;
+    Double_t theta_gamma_gamma_1, theta_gamma_gamma_2;
+    Double_t Emiss2_1, Emiss2_2;
+    Double_t pTmiss_1, pTmiss_2;
 
     // Set branch addresses
     tree1->SetBranchAddress("p1_theta", &p1_theta1);
     tree1->SetBranchAddress("Mxgammasquared", &Mxgammasquared_1);
+    tree1->SetBranchAddress("eta2", &eta2_1);
+    tree1->SetBranchAddress("t1", &t1_1);
+    tree1->SetBranchAddress("theta_gamma_gamma", &theta_gamma_gamma_1);
+    tree1->SetBranchAddress("Emiss2", &Emiss2_1);
+    tree1->SetBranchAddress("pTmiss", &pTmiss_1);
 
     tree2->SetBranchAddress("p1_theta", &p1_theta2);
     tree2->SetBranchAddress("Mxgammasquared", &Mxgammasquared_2);
+    tree2->SetBranchAddress("eta2", &eta2_2);
+    tree2->SetBranchAddress("t1", &t1_2);
+    tree2->SetBranchAddress("theta_gamma_gamma", &theta_gamma_gamma_2);
+    tree2->SetBranchAddress("Emiss2", &Emiss2_2);
+    tree2->SetBranchAddress("pTmiss", &pTmiss_2);
 
     // Create canvas and divide it into 3x4 subplots
     TCanvas *c1 = new TCanvas("c1", "DVCS Energy Loss Validation", 1200, 900);
@@ -46,12 +61,14 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
         h1[i] = new TH1D(Form("h1_%d", i), Form("M_{xp}^{2} GeV^{2} for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 100, -2, 2);
         h2[i] = new TH1D(Form("h2_%d", i), Form("M_{xp}^{2} GeV^{2} for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 100, -2, 2);
 
-        // Fill the histograms
+        // Fill the histograms with the cuts applied
         Long64_t nEntries1 = tree1->GetEntries();
         for (Long64_t j = 0; j < nEntries1; ++j) {
             tree1->GetEntry(j);
             Double_t thetaDeg1 = p1_theta1 * (180.0 / TMath::Pi()); // Convert to degrees
-            if (thetaDeg1 >= thetaBins[i] && thetaDeg1 < thetaBins[i + 1]) {
+            if (thetaDeg1 >= thetaBins[i] && thetaDeg1 < thetaBins[i + 1] &&
+                eta2_1 < 0 && t1_1 > -2 && theta_gamma_gamma_1 < 0.6 &&
+                Emiss2_1 < 0.5 && pTmiss_1 < 0.125) {
                 h1[i]->Fill(Mxgammasquared_1);
             }
         }
@@ -60,7 +77,9 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
         for (Long64_t j = 0; j < nEntries2; ++j) {
             tree2->GetEntry(j);
             Double_t thetaDeg2 = p1_theta2 * (180.0 / TMath::Pi()); // Convert to degrees
-            if (thetaDeg2 >= thetaBins[i] && thetaDeg2 < thetaBins[i + 1]) {
+            if (thetaDeg2 >= thetaBins[i] && thetaDeg2 < thetaBins[i + 1] &&
+                eta2_2 < 0 && t1_2 > -2 && theta_gamma_gamma_2 < 0.6 &&
+                Emiss2_2 < 0.5 && pTmiss_2 < 0.125) {
                 h2[i]->Fill(Mxgammasquared_2);
             }
         }
