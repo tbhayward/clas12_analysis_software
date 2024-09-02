@@ -51,11 +51,11 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
     c1->Divide(4, 3);
 
     // Set the theta bins and corresponding histogram ranges
-    const int nBins = 11;
-    Double_t thetaBins[nBins + 1] = {5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 65}; // 5 to 65 degrees
+    const int nBins = 10; // 10 theta bins + 1 fully integrated case
+    Double_t thetaBins[nBins + 1] = {5, 11, 17, 23, 29, 35, 41, 47, 53, 59, 65}; // 10 equally spaced bins
 
-    TH1D *h1[nBins];
-    TH1D *h2[nBins];
+    TH1D *h1[nBins + 1]; // +1 for the fully integrated case
+    TH1D *h2[nBins + 1]; // +1 for the fully integrated case
 
     Double_t mu1_values[nBins], sigma1_values[nBins];
     Double_t mu2_values[nBins], sigma2_values[nBins];
@@ -63,10 +63,13 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
     Int_t theta_count[nBins] = {0};
     Double_t theta_mean[nBins] = {0.0};
 
+    // Create histograms for each theta bin with 50 bins
+    h1[0] = new TH1D("h1_integrated", Form("Integrated #theta [5, 65] %s", titleSuffix), 35, -0.3, 0.3);
+    h2[0] = new TH1D("h2_integrated", Form("Integrated #theta [5, 65] %s", titleSuffix), 35, -0.3, 0.3);
+
     for (int i = 0; i < nBins; ++i) {
-        // Create histograms for each theta bin with 50 bins
-        h1[i] = new TH1D(Form("h1_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 35, -0.3, 0.3);
-        h2[i] = new TH1D(Form("h2_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 35, -0.3, 0.3);
+        h1[i + 1] = new TH1D(Form("h1_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 35, -0.3, 0.3);
+        h2[i + 1] = new TH1D(Form("h2_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 35, -0.3, 0.3);
     }
 
     // Fill the histograms with the cuts applied and calculate theta means
@@ -74,11 +77,14 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
     for (Long64_t j = 0; j < nEntries1; ++j) {
         tree1->GetEntry(j);
         Double_t thetaDeg1 = p1_theta1 * (180.0 / TMath::Pi()); // Convert to degrees
+        if (thetaDeg1 >= 5 && thetaDeg1 < 65) {
+            h1[0]->Fill(Mxprotonsquared_1); // Fully integrated case
+        }
         for (int i = 0; i < nBins; ++i) {
             if (thetaDeg1 >= thetaBins[i] && thetaDeg1 < thetaBins[i + 1] &&
                 eta2_1 < 0 && t1_1 > -2 && theta_gamma_gamma_1 < 0.6 &&
                 Emiss2_1 < 0.5 && pTmiss_1 < 0.125) {
-                h1[i]->Fill(Mxprotonsquared_1);
+                h1[i + 1]->Fill(Mxprotonsquared_1);
                 theta_sum[i] += thetaDeg1;
                 theta_count[i]++;
             }
@@ -89,11 +95,14 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
     for (Long64_t j = 0; j < nEntries2; ++j) {
         tree2->GetEntry(j);
         Double_t thetaDeg2 = p1_theta2 * (180.0 / TMath::Pi()); // Convert to degrees
+        if (thetaDeg2 >= 5 && thetaDeg2 < 65) {
+            h2[0]->Fill(Mxprotonsquared_2); // Fully integrated case
+        }
         for (int i = 0; i < nBins; ++i) {
             if (thetaDeg2 >= thetaBins[i] && thetaDeg2 < thetaBins[i + 1] &&
                 eta2_2 < 0 && t1_2 > -2 && theta_gamma_gamma_2 < 0.6 &&
                 Emiss2_2 < 0.5 && pTmiss_2 < 0.125) {
-                h2[i]->Fill(Mxprotonsquared_2);
+                h2[i + 1]->Fill(Mxprotonsquared_2);
                 theta_sum[i] += thetaDeg2;
                 theta_count[i]++;
             }
@@ -109,70 +118,115 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
         }
     }
 
-    for (int i = 0; i < nBins; ++i) {
-        c1->cd(i + 1)->SetLeftMargin(0.15); // Ensure each pad is activated and has margins set
+    // Draw the fully integrated case in the first subplot
+    c1->cd(1)->SetLeftMargin(0.15);
+    c1->cd(1)->SetBottomMargin(0.15);
+
+    Double_t maxVal1 = h1[0]->GetMaximum();
+    Double_t maxVal2 = h2[0]->GetMaximum();
+    Double_t maxVal = std::max(maxVal1, maxVal2);
+    h1[0]->SetMaximum(1.7 * maxVal);
+    h1[0]->SetMinimum(0);
+    h2[0]->SetMaximum(1.7 * maxVal);
+    h2[0]->SetMinimum(0);
+
+    h1[0]->SetMarkerStyle(20);
+    h1[0]->SetMarkerSize(0.8);
+    h1[0]->SetMarkerColor(kBlack);
+    h1[0]->SetStats(0);
+    h1[0]->Draw("E");
+
+    h2[0]->SetMarkerStyle(21);
+    h2[0]->SetMarkerSize(0.8);
+    h2[0]->SetMarkerColor(kRed);
+    h2[0]->SetStats(0);
+    h2[0]->Draw("E SAME");
+
+    TF1 *fit1_int = new TF1("fit1_integrated", "gaus(0) + pol2(3)", -0.3, 0.3);
+    TF1 *fit2_int = new TF1("fit2_integrated", "gaus(0) + pol2(3)", -0.3, 0.3);
+
+    fit1_int->SetParameters(0.8 * maxVal1, 0, 0.2);
+    fit1_int->SetParLimits(1, -0.15, 0.15);
+    fit1_int->SetParLimits(2, 0, 0.3);
+    fit2_int->SetParameters(0.8 * maxVal2, 0, 0.2);
+    fit2_int->SetParLimits(1, -0.15, 0.15);
+    fit2_int->SetParLimits(2, 0, 0.3);
+
+    fit1_int->SetLineWidth(1);
+    fit2_int->SetLineWidth(1);
+    h1[0]->Fit(fit1_int, "Q");
+    h2[0]->Fit(fit2_int, "Q");
+
+    fit1_int->SetLineColor(kBlack);
+    fit1_int->Draw("SAME");
+    fit2_int->SetLineColor(kRed);
+    fit2_int->Draw("SAME");
+
+    TLegend *legend_int = new TLegend(0.25, 0.75, 0.9, 0.9);
+    legend_int->SetTextSize(0.03);
+    legend_int->AddEntry(h1[0], Form("Uncorrected: #mu=%.3f, #sigma=%.3f", fit1_int->GetParameter(1), fit1_int->GetParameter(2)), "lep");
+    legend_int->AddEntry(h2[0], Form("Corrected: #mu=%.3f, #sigma=%.3f", fit2_int->GetParameter(1), fit2_int->GetParameter(2)), "lep");
+    legend_int->Draw();
+
+    h1[0]->GetXaxis()->SetTitle("M_{xp}^{2} (GeV^{2})");
+    h1[0]->GetYaxis()->SetTitle("Counts");
+
+    // Draw the remaining subplots for the binned cases
+    for (int i = 1; i <= nBins; ++i) {
+        c1->cd(i + 1)->SetLeftMargin(0.15);
         c1->cd(i + 1)->SetBottomMargin(0.15);
 
-        // Set the y-axis range to 0 to 1.7 times the maximum bin value
-        Double_t maxVal1 = h1[i]->GetMaximum();
-        Double_t maxVal2 = h2[i]->GetMaximum();
-        Double_t maxVal = std::max(maxVal1, maxVal2);
+        maxVal1 = h1[i]->GetMaximum();
+        maxVal2 = h2[i]->GetMaximum();
+        maxVal = std::max(maxVal1, maxVal2);
         h1[i]->SetMaximum(1.7 * maxVal);
         h1[i]->SetMinimum(0);
         h2[i]->SetMaximum(1.7 * maxVal);
         h2[i]->SetMinimum(0);
 
-        // Draw histograms as points with error bars
         h1[i]->SetMarkerStyle(20);
-        h1[i]->SetMarkerSize(0.8); // Make the points smaller
+        h1[i]->SetMarkerSize(0.8);
         h1[i]->SetMarkerColor(kBlack);
-        h1[i]->SetStats(0); // Remove stat box
+        h1[i]->SetStats(0);
         h1[i]->Draw("E");
+
         h2[i]->SetMarkerStyle(21);
-        h2[i]->SetMarkerSize(0.8); // Make the points smaller
+        h2[i]->SetMarkerSize(0.8);
         h2[i]->SetMarkerColor(kRed);
-        h2[i]->SetStats(0); // Remove stat box
+        h2[i]->SetStats(0);
         h2[i]->Draw("E SAME");
 
-        // Fit histograms to Gaussian plus quadratic background
         TF1 *fit1 = new TF1(Form("fit1_%d", i), "gaus(0) + pol2(3)", -0.3, 0.3);
         TF1 *fit2 = new TF1(Form("fit2_%d", i), "gaus(0) + pol2(3)", -0.3, 0.3);
 
-        // Set initial parameter guesses and limits
-        Double_t amplitudeGuess1 = 0.8 * maxVal1;
-        Double_t amplitudeGuess2 = 0.8 * maxVal2;
-        fit1->SetParameters(amplitudeGuess1, 0, 0.2);
-        fit1->SetParLimits(1, -0.15, 0.15); // mu limits
-        fit1->SetParLimits(2, 0, 0.3);      // sigma limit
-        fit2->SetParameters(amplitudeGuess2, 0, 0.2);
-        fit2->SetParLimits(1, -0.15, 0.15); // mu limits
-        fit2->SetParLimits(2, 0, 0.3);      // sigma limit
+        fit1->SetParameters(0.8 * maxVal1, 0, 0.2);
+        fit1->SetParLimits(1, -0.15, 0.15);
+        fit1->SetParLimits(2, 0, 0.3);
+        fit2->SetParameters(0.8 * maxVal2, 0, 0.2);
+        fit2->SetParLimits(1, -0.15, 0.15);
+        fit2->SetParLimits(2, 0, 0.3);
 
-        fit1->SetLineWidth(1); // Make the line thinner
-        fit2->SetLineWidth(1); // Make the line thinner
+        fit1->SetLineWidth(1);
+        fit2->SetLineWidth(1);
         h1[i]->Fit(fit1, "Q");
         h2[i]->Fit(fit2, "Q");
 
-        // Draw fitted functions
         fit1->SetLineColor(kBlack);
         fit1->Draw("SAME");
         fit2->SetLineColor(kRed);
         fit2->Draw("SAME");
 
-        // Get fit parameters (only from the Gaussian)
-        mu1_values[i] = fit1->GetParameter(1);
-        sigma1_values[i] = fit1->GetParameter(2);
-        mu2_values[i] = fit2->GetParameter(1);
-        sigma2_values[i] = fit2->GetParameter(2);
+        mu1_values[i - 1] = fit1->GetParameter(1);
+        sigma1_values[i - 1] = fit1->GetParameter(2);
+        mu2_values[i - 1] = fit2->GetParameter(1);
+        sigma2_values[i - 1] = fit2->GetParameter(2);
 
-        // Add legend with mu and sigma values in the top right corner
         TLegend *legend = new TLegend(0.25, 0.75, 0.9, 0.9); // Adjusted the legend position to the top right corner
         legend->SetTextSize(0.03); // Decrease the font size in the legend
-        legend->AddEntry(h1[i], Form("Uncorrected: #mu=%.3f, #sigma=%.3f", mu1_values[i], sigma1_values[i]), "lep");
-        legend->AddEntry(h2[i], Form("Corrected: #mu=%.3f, #sigma=%.3f", mu2_values[i], sigma2_values[i]), "lep");
+        legend->AddEntry(h1[i], Form("Uncorrected: #mu=%.3f, #sigma=%.3f", mu1_values[i - 1], sigma1_values[i - 1]), "lep");
+        legend->AddEntry(h2[i], Form("Corrected: #mu=%.3f, #sigma=%.3f", mu2_values[i - 1], sigma2_values[i - 1]), "lep");
         legend->Draw();
 
-        // Label the axes
         h1[i]->GetXaxis()->SetTitle("M_{xp}^{2} (GeV^{2})");
         h1[i]->GetYaxis()->SetTitle("Counts");
     }
