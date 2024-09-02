@@ -59,8 +59,8 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
         c1->cd(i + 1)->SetLeftMargin(0.15); // Add padding to the left of each subplot
 
         // Create histograms for each theta bin
-        h1[i] = new TH1D(Form("h1_%d", i), Form("M_{xp}^{2} GeV^{2} for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 100, -0.5, 0.5);
-        h2[i] = new TH1D(Form("h2_%d", i), Form("M_{xp}^{2} GeV^{2} for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 100, -0.5, 0.5);
+        h1[i] = new TH1D(Form("h1_%d", i), Form("M_{xp}^{2} GeV^{2} for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 25, -0.5, 0.5);
+        h2[i] = new TH1D(Form("h2_%d", i), Form("M_{xp}^{2} GeV^{2} for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 25, -0.5, 0.5);
 
         // Set text sizes
         h1[i]->GetXaxis()->SetTitleSize(0.05);
