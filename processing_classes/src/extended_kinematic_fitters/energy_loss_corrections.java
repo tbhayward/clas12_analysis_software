@@ -75,10 +75,12 @@ public class energy_loss_corrections {
         } else if (runnum >= 6616 && runnum <= 6783) { // RGA Sp19 Inb
 
             if (isForwardDetector && !isCentralDetector) {
+                System.out.println("FD");
                 A_p = 0.0095205 - 0.0001914 * theta - 0.0000031 * theta * theta;
                 B_p = -0.01365658 + 0.00036322 * theta + 0.00001217 * theta * theta;
                 C_p = 0.01175256 - 0.00053407 * theta + 0.00000742 * theta * theta;
             } else if (!isForwardDetector && isCentralDetector) {
+                System.out.println("CD");
                 A_p = -0.2716918 + 0.0142491 * theta - 0.0001862 * theta * theta;
                 B_p = 0.65945101 - 0.03431360 * theta + 0.00045036 * theta * theta;
                 C_p = -0.46602726 + 0.02335623 * theta - 0.00029720 * theta * theta;
