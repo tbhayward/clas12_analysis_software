@@ -19,7 +19,7 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
 
     // Prepare variables for reading the branches
     Double_t p1_theta1, p1_theta2;
-    Double_t Mxprotonsquared_1, Mxprotonsquared_2;
+    Double_t Mxgammasquared_1, Mxgammasquared_2;
 
     // Set branch addresses
     tree1->SetBranchAddress("p1_theta", &p1_theta1);
