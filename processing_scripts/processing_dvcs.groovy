@@ -206,6 +206,7 @@ public static void main(String[] args) {
 					    	theta_gamma_gamma = variables.theta_gamma_gamma();
 					    	pTmiss = variables.pTmiss();
 					    	Mxgammasquared = variables.Mxgammasquared(); // missing mass squared
+					    	Mxprotonsquared = variables.Mxprotonsquared(); // missing mass squared
 
 			                // Use a StringBuilder to append all data in a single call
 			                StringBuilder line = new StringBuilder();
@@ -265,7 +266,8 @@ public static void main(String[] args) {
 			                    .append(Emiss2).append(" ")
 			                    .append(theta_gamma_gamma).append(" ")
 			                    .append(pTmiss).append(" ")
-			                    .append(Mxgammasquared).append("\n");
+			                    .append(Mxgammasquared).append(" ")
+			                    .append(Mxprotonsquared).append("\n");
 
 			                // Append the line to the batchLines StringBuilder
 			                batchLines.append(line.toString());
@@ -297,7 +299,7 @@ public static void main(String[] args) {
 		"34:zeta, 35:zeta1, 36:zeta2, 37:eta, 38:eta1, 39:eta2, 40:Delta_eta, 41:eta1_gN, 42:eta2_gN, "+
 		"43:phi1, 44:phi2, 45:Delta_phi, 46:phih, 47:phiR, 48:theta, "+
 		"49:DepA, 50:DepB, 51:DepC, 52:DepV, 53:DepW, 54: Emiss2, 55: theta_gamma_gamma, "+
-		"56: pTmiss, 57: Mxgammasquared.\n");
+		"56: pTmiss, 57: Mxgammasquared, 58: Mxprotonsquared.\n");
 
 		println("Analyzing dvcs.");
 		println("output text file is: $file");

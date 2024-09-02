@@ -46,6 +46,7 @@ public class Dihadrons {
     protected double Emiss0, Emiss1, Emiss2, Emiss3;
     protected double theta_gamma_gamma;
     protected double pTmiss;
+    protected double Mxprotonsquared;
     protected double Mxgammasquared;
 
     // depolarization vectors defining the polarization lost during the transfer from beam to 
@@ -264,6 +265,7 @@ public class Dihadrons {
         Mx = kinematic_variables.Mx(lv_q, lv_target);
         Mx1 = kinematic_variables.Mx(lv_q, lv_target, lv_p1);
         Mx2 = kinematic_variables.Mx(lv_q, lv_target, lv_p2);
+        Mxprotonsquared = kinematic_variables.Mx2(lv_q, lv_target, lv_p1);
         Mxgammasquared = kinematic_variables.Mx2(lv_q, lv_target, lv_p2);
 
         // boost to gamma*-nucleon center of mass frame
@@ -984,4 +986,8 @@ public class Dihadrons {
     public double Mxgammasquared() {
         return Double.valueOf(Math.round(Mxgammasquared * 100000)) / 100000;
     }// returns Mxgammasquared
+    
+    public double Mxprotonsquared() {
+        return Double.valueOf(Math.round(Mxprotonsquared * 100000)) / 100000;
+    }// returns Mxprotonsquared
 }

@@ -196,7 +196,7 @@ int main(int argc, char *argv[]) {
     double t1, t1min, t2, t2min, Mx1;
     double eta1, eta2, Delta_eta, eta1_gN, eta2_gN;
     double phi1, phi2, Delta_phi, phih, phiR, theta;
-    double Emiss2, theta_gamma_gamma, pTmiss, Mxgammasquared;
+    double Emiss2, theta_gamma_gamma, pTmiss, Mxgammasquared, Mxprotonsquared;
     // Additional variables for three hadrons
     double p3_p, p3_theta, p3_phi, vz_p3;
     double z3, z12, z13, z23, Mh12, Mh13, Mh23, xF3, xF12, xF13, xF23;
@@ -752,6 +752,7 @@ int main(int argc, char *argv[]) {
         tree->Branch("theta_gamma_gamma", &theta_gamma_gamma, "theta_gamma_gamma/D");
         tree->Branch("pTmiss", &pTmiss, "pTmiss/D");
         tree->Branch("Mxgammasquared", &Mxgammasquared, "Mxgammasquared/D");
+        tree->Branch("Mxprotonsquared", &Mxprotonsquared, "Mxprotonsquared/D");
     }
     // Case for calibration script (not actually five hadrons)
     if (hadron_count == 5 && is_mc == 0) {
@@ -1100,7 +1101,7 @@ int main(int argc, char *argv[]) {
             pT >> pT1 >> pT2 >> pTpT >> zeta >> zeta1 >> zeta2 >> eta >> eta1 >> eta2 >> Delta_eta>> 
             eta1_gN >> eta2_gN >> phi1 >> phi2 >> Delta_phi >> phi >> phiR >> theta >> 
             DepA >> DepB >> DepC >> DepV >> DepW >> Emiss2 >> theta_gamma_gamma >> pTmiss >>
-            Mxgammasquared) {
+            Mxgammasquared >> Mxprotonsquared) {
 
             beam_pol = getPol(runnum);
             if (runnum < 16000) { target_pol = 0; }
