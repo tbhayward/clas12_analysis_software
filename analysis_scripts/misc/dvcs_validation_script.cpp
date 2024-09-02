@@ -19,14 +19,14 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
 
     // Prepare variables for reading the branches
     Double_t p1_theta1, p1_theta2;
-    Double_t Mx1_1, Mx1_2;
+    Double_t Mxprotonsquared_1, Mxprotonsquared_2;
 
     // Set branch addresses
     tree1->SetBranchAddress("p1_theta", &p1_theta1);
-    tree1->SetBranchAddress("Mx", &Mx1_1);
+    tree1->SetBranchAddress("Mxgammasquared", &Mxgammasquared_1);
 
     tree2->SetBranchAddress("p1_theta", &p1_theta2);
-    tree2->SetBranchAddress("Mx", &Mx1_2);
+    tree2->SetBranchAddress("Mxgammasquared", &Mxgammasquared_2);
 
     // Create canvas and divide it into 3x4 subplots
     TCanvas *c1 = new TCanvas("c1", "DVCS Energy Loss Validation", 1200, 900);
@@ -43,8 +43,8 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
         c1->cd(i + 1);
 
         // Create histograms for each theta bin
-        h1[i] = new TH1D(Form("h1_%d", i), Form("Mx1 for Theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 100, -1, 3);
-        h2[i] = new TH1D(Form("h2_%d", i), Form("Mx1 for Theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 100, -1, 3);
+        h1[i] = new TH1D(Form("h1_%d", i), Form("M_{xp}^{2} GeV^{2} for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 100, -2, 2);
+        h2[i] = new TH1D(Form("h2_%d", i), Form("M_{xp}^{2} GeV^{2} for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 100, -2, 2);
 
         // Fill the histograms
         Long64_t nEntries1 = tree1->GetEntries();
@@ -52,7 +52,7 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
             tree1->GetEntry(j);
             Double_t thetaDeg1 = p1_theta1 * (180.0 / TMath::Pi()); // Convert to degrees
             if (thetaDeg1 >= thetaBins[i] && thetaDeg1 < thetaBins[i + 1]) {
-                h1[i]->Fill(Mx1_1);
+                h1[i]->Fill(Mxprotonsquared_1);
             }
         }
 
@@ -61,21 +61,29 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
             tree2->GetEntry(j);
             Double_t thetaDeg2 = p1_theta2 * (180.0 / TMath::Pi()); // Convert to degrees
             if (thetaDeg2 >= thetaBins[i] && thetaDeg2 < thetaBins[i + 1]) {
-                h2[i]->Fill(Mx1_2);
+                h2[i]->Fill(Mxprotonsquared_2);
             }
         }
 
         // Draw histograms on the same pad
         h1[i]->SetLineColor(kBlack);
-        h1[i]->Draw();
+        h1[i]->Draw("HIST");
         h2[i]->SetLineColor(kRed);
-        h2[i]->Draw("SAME");
+        h2[i]->Draw("HIST SAME");
+
+        // Remove the stat box
+        h1[i]->SetStats(0);
+        h2[i]->SetStats(0);
 
         // Add legend
         TLegend *legend = new TLegend(0.7, 0.8, 0.9, 0.9);
         legend->AddEntry(h1[i], "Uncorrected", "l");
         legend->AddEntry(h2[i], "Corrected", "l");
         legend->Draw();
+
+        // Label the axes
+        h1[i]->GetXaxis()->SetTitle("M_{xp}^{2} GeV^{2}");
+        h1[i]->GetYaxis()->SetTitle("Counts");
     }
 
     // Save the canvas as a PDF
