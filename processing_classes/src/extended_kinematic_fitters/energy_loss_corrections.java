@@ -67,9 +67,9 @@ public class energy_loss_corrections {
                 B_p = -0.02165929 + 0.00121123 * theta;
                 C_p = 0.0;
             } else if (!isForwardDetector && isCentralDetector) {
-                A_p = -0.2383991 + 0.0124992 * theta - 0.0001646 * theta * theta;
-                B_p = 0.60123885 - 0.03128464 * theta + 0.00041314 * theta * theta;
-                C_p = -0.44080146 + 0.02209857 * theta - 0.00028224 * theta * theta;
+                A_p = -0.1927861 + 0.0099546 * theta - 0.0001299 * theta * theta;
+                B_p = 0.44307822 - 0.02309469 * theta + 0.00030784 * theta * theta;
+                C_p = -0.32938000 + 0.01648659 * theta - 0.00021181 * theta * theta;
             }
 
         } else if (runnum >= 6616 && runnum <= 6783) { // RGA Sp19 Inb
@@ -85,6 +85,16 @@ public class energy_loss_corrections {
             }
 
         } else if (runnum >= 16089 && runnum <= 16786) { // RGC Su22 Inb
+
+            if (isForwardDetector && !isCentralDetector) {
+                A_p = 0.0109317 - 0.0000194 * theta - 0.0000117 * theta * theta;
+                B_p = -0.00910576 - 0.00035154 * theta + 0.00003905 * theta * theta;
+                C_p = 0.01225782 - 0.00012805 * theta - 0.00000820 * theta * theta;
+            } else if (!isForwardDetector && isCentralDetector) {
+                A_p = -0.3951652 + 0.0202840 * theta - 0.0002660 * theta * theta;
+                B_p = 0.93238668 - 0.04803619 * theta + 0.00063215 * theta * theta;
+                C_p = -0.59146847 + 0.02997697 * theta - 0.00038773 * theta * theta;
+            }
 
         }
 
