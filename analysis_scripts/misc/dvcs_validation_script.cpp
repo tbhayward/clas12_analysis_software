@@ -297,13 +297,16 @@ void plot_rho0_energy_loss_validation(const char* file1, const char* file2, cons
     // Prepare variables for reading the branches
     Double_t p1_theta1, p1_theta2;
     Double_t Mx1_1, Mx1_2;
+    Double_t Mx2_1, Mx2_2;
 
     // Set branch addresses
     tree1->SetBranchAddress("p1_theta", &p1_theta1);
-    tree1->SetBranchAddress("Mx2", &Mx1_1);
+    tree1->SetBranchAddress("Mx1", &Mx1_1);
+    tree1->SetBranchAddress("Mx2", &Mx2_1);
 
     tree2->SetBranchAddress("p1_theta", &p1_theta2);
-    tree2->SetBranchAddress("Mx2", &Mx1_2);
+    tree2->SetBranchAddress("Mx1", &Mx1_2);
+    tree2->SetBranchAddress("Mx2", &Mx2_2);
 
     // Create canvas and divide it into 3x4 subplots
     TCanvas *c1 = new TCanvas("c1", "Rho0 Energy Loss Validation", 1200, 900);
@@ -329,8 +332,8 @@ void plot_rho0_energy_loss_validation(const char* file1, const char* file2, cons
         pad->SetBottomMargin(0.15); // Add padding to the bottom of each subplot
 
         // Create histograms for each theta bin with 50 bins
-        h1[i] = new TH1D(Form("h1_%d", i), Form("Mx1 for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 30, 0.0, 4.5);
-        h2[i] = new TH1D(Form("h2_%d", i), Form("Mx1 for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 30, 0.0, 4.5);
+        h1[i] = new TH1D(Form("h1_%d", i), Form("Mx1 for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 30, 0.0, 1.2);
+        h2[i] = new TH1D(Form("h2_%d", i), Form("Mx1 for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 30, 0.0, 1.2);
 
         // Set text sizes
         h1[i]->GetXaxis()->SetTitleSize(0.05);
@@ -349,7 +352,7 @@ void plot_rho0_energy_loss_validation(const char* file1, const char* file2, cons
             tree1->GetEntry(j);
             Double_t thetaDeg1 = p1_theta1 * (180.0 / TMath::Pi()); // Convert to degrees
             if (thetaDeg1 >= thetaBins[i] && thetaDeg1 < thetaBins[i + 1]) {
-                h1[i]->Fill(Mx1_1);
+                if (Mx2_1 < 1.2) h1[i]->Fill(Mx1_1);
             }
         }
 
@@ -358,7 +361,7 @@ void plot_rho0_energy_loss_validation(const char* file1, const char* file2, cons
             tree2->GetEntry(j);
             Double_t thetaDeg2 = p1_theta2 * (180.0 / TMath::Pi()); // Convert to degrees
             if (thetaDeg2 >= thetaBins[i] && thetaDeg2 < thetaBins[i + 1]) {
-                h2[i]->Fill(Mx1_2);
+                if (Mx2_2 < 1.2) h2[i]->Fill(Mx1_2);
             }
         }
 
