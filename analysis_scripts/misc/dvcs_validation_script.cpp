@@ -516,8 +516,8 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
     h2[0] = new TH1D("h2_integrated", Form("Integrated #theta [5, 65] %s", titleSuffix), 35, -0.3, 0.3);
 
     for (int i = 0; i < nBins; ++i) {
-        h1[i + 1] = new TH1D(Form("h1_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 35, -0.3, 0.3);
-        h2[i + 1] = new TH1D(Form("h2_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 35, -0.3, 0.3);
+        h1[i + 1] = new TH1D(Form("h1_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 35, -0.5, 0.5);
+        h2[i + 1] = new TH1D(Form("h2_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 35, -0.5, 0.5);
     }
 
     // Fill the histograms and calculate theta means
@@ -586,15 +586,15 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
     h2[0]->SetStats(0);
     h2[0]->Draw("E SAME");
 
-    TF1 *fit1_int = new TF1("fit1_integrated", "gaus(0) + pol2(3)", -0.3, 0.3);
-    TF1 *fit2_int = new TF1("fit2_integrated", "gaus(0) + pol2(3)", -0.3, 0.3);
+    TF1 *fit1_int = new TF1("fit1_integrated", "gaus(0) + pol2(3)", -0.5, 0.5);
+    TF1 *fit2_int = new TF1("fit2_integrated", "gaus(0) + pol2(3)", -0.5, 0.5);
 
     fit1_int->SetParameters(0.8 * maxVal1, 0, 0.2);
-    fit1_int->SetParLimits(1, -0.15, 0.15);
-    fit1_int->SetParLimits(2, 0, 0.3);
+    // fit1_int->SetParLimits(1, -0.15, 0.15);
+    // fit1_int->SetParLimits(2, 0, 0.3);
     fit2_int->SetParameters(0.8 * maxVal2, 0, 0.2);
-    fit2_int->SetParLimits(1, -0.15, 0.15);
-    fit2_int->SetParLimits(2, 0, 0.3);
+    // fit2_int->SetParLimits(1, -0.15, 0.15);
+    // fit2_int->SetParLimits(2, 0, 0.3);
 
     fit1_int->SetLineWidth(1);
     fit2_int->SetLineWidth(1);
