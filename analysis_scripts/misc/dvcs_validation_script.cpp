@@ -67,8 +67,8 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
         pad->SetBottomMargin(0.15); // Add padding to the bottom of each subplot
 
         // Create histograms for each theta bin with 50 bins
-        h1[i] = new TH1D(Form("h1_%d", i), Form("M_{xp}^{2} GeV^{2} for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 50, -0.5, 0.5);
-        h2[i] = new TH1D(Form("h2_%d", i), Form("M_{xp}^{2} GeV^{2} for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 50, -0.5, 0.5);
+        h1[i] = new TH1D(Form("h1_%d", i), Form("M_{xp}^{2} GeV^{2} for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 50, -0.3, 0.3);
+        h2[i] = new TH1D(Form("h2_%d", i), Form("M_{xp}^{2} GeV^{2} for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 50, -0.3, 0.3);
 
         // Set text sizes
         h1[i]->GetXaxis()->SetTitleSize(0.05);
@@ -126,8 +126,8 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
         h2[i]->Draw("E SAME");
 
         // Fit histograms to Gaussian plus quadratic background
-        TF1 *fit1 = new TF1(Form("fit1_%d", i), "gaus(0) + pol2(3)", -0.5, 0.5);
-        TF1 *fit2 = new TF1(Form("fit2_%d", i), "gaus(0) + pol2(3)", -0.5, 0.5);
+        TF1 *fit1 = new TF1(Form("fit1_%d", i), "gaus(0) + pol2(3)", -0.3, 0.3);
+        TF1 *fit2 = new TF1(Form("fit2_%d", i), "gaus(0) + pol2(3)", -0.3, 0.3);
 
         // Set initial parameter guesses and limits
         Double_t amplitudeGuess1 = 0.8 * maxVal1;
