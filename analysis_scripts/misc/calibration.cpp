@@ -6011,7 +6011,7 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
             prof_deltap->GetXaxis()->SetRangeUser(minXValue, maxXValue);
 
             // Fit the profiles with appropriate functions
-            fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]/x + [2]/  x^2", minXValue, maxXValue);
+            fit_deltap[i] = new TF1(("fit_deltap_" + std::to_string(i)).c_str(), "[0] + [1]*x + [2]*x^2", minXValue, maxXValue);
 
             prof_deltap->Fit(fit_deltap[i], "Q"); // Silent fit
 
@@ -6347,7 +6347,7 @@ void energy_loss_distributions_delta_phi_cd(TTreeReader& mcReader, const std::st
             prof_deltaphi->GetXaxis()->SetRangeUser(minXValue, maxXValue);
 
             // Fit the profiles with appropriate functions
-            fit_deltaphi[i] = new TF1(("fit_deltaphi_" + std::to_string(i)).c_str(), "[0] + [1]/x", minXValue, maxXValue);
+            fit_deltaphi[i] = new TF1(("fit_deltaphi_" + std::to_string(i)).c_str(), "[0] + [1]/x + [2]/x^2", minXValue, maxXValue);
 
             prof_deltaphi->Fit(fit_deltaphi[i], "Q"); // Silent fit
 
