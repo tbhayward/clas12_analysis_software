@@ -315,8 +315,8 @@ void plot_rho0_energy_loss_validation(const char* file1, const char* file2, cons
         h2[i]->Draw("E SAME");
 
         // Fit histograms to Gaussian plus quadratic background
-        TF1 *fit1 = new TF1(Form("fit1_%d", i), "gaus(0) + pol2(3)", 0.4, 1.2);
-        TF1 *fit2 = new TF1(Form("fit2_%d", i), "gaus(0) + pol2(3)", 0.4, 1.2);
+        TF1 *fit1 = new TF1(Form("fit1_%d", i), "gaus(0) + pol3(3)", 0.5, 1.3);
+        TF1 *fit2 = new TF1(Form("fit2_%d", i), "gaus(0) + pol3 (3)", 0.5, 1.3);
 
         // Set initial parameter guesses and limits
         Double_t amplitudeGuess1 = 0.8 * maxVal1;
@@ -326,7 +326,7 @@ void plot_rho0_energy_loss_validation(const char* file1, const char* file2, cons
         // fit1->SetParLimits(2, 0, 0.3);      // sigma limit
         fit2->SetParameters(amplitudeGuess2, rho0_mass, 0.1);
         // fit2->SetParLimits(1, rho0_mass - 0.05, rho0_mass + 0.05); // mu limits around rho0 mass
-        // fit2->SetParLimits(2, 0, 0.3);      // sigma limit
+        // fit2->SetParLimits(2, 0, 0.3);      // sigma l imit
 
         fit1->SetLineWidth(1); // Make the line thinner
         fit2->SetLineWidth(1); // Make the line thinner
