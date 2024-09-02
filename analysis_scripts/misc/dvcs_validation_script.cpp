@@ -55,6 +55,10 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
     TH1D *h1[nBins];
     TH1D *h2[nBins];
 
+    Double_t mu1_values[nBins], sigma1_values[nBins];
+    Double_t mu2_values[nBins], sigma2_values[nBins];
+    Double_t theta_mean[nBins];
+
     for (int i = 0; i < nBins; ++i) {
         TPad *pad = (TPad*)c1->cd(i + 1);
         pad->SetLeftMargin(0.15); // Add padding to the left of each subplot
@@ -98,12 +102,14 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
             }
         }
 
-        // Set the y-axis range to 1.2 times the maximum bin value
+        // Set the y-axis range to 0 to 1.7 times the maximum bin value
         Double_t maxVal1 = h1[i]->GetMaximum();
         Double_t maxVal2 = h2[i]->GetMaximum();
         Double_t maxVal = std::max(maxVal1, maxVal2);
-        h1[i]->SetMaximum(1.2 * maxVal);
-        h2[i]->SetMaximum(1.2 * maxVal);
+        h1[i]->SetMaximum(1.7 * maxVal);
+        h1[i]->SetMinimum(0);
+        h2[i]->SetMaximum(1.7 * maxVal);
+        h2[i]->SetMinimum(0);
 
         // Draw histograms as points with error bars
         h1[i]->SetMarkerStyle(20);
@@ -143,22 +149,56 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
         fit2->Draw("SAME");
 
         // Get fit parameters (only from the Gaussian)
-        Double_t mu1 = fit1->GetParameter(1);
-        Double_t sigma1 = fit1->GetParameter(2);
-        Double_t mu2 = fit2->GetParameter(1);
-        Double_t sigma2 = fit2->GetParameter(2);
+        mu1_values[i] = fit1->GetParameter(1);
+        sigma1_values[i] = fit1->GetParameter(2);
+        mu2_values[i] = fit2->GetParameter(1);
+        sigma2_values[i] = fit2->GetParameter(2);
+
+        // Calculate the mean theta value for the bin
+        theta_mean[i] = 0.5 * (thetaBins[i] + thetaBins[i + 1]);
 
         // Add legend with mu and sigma values
-        TLegend *legend = new TLegend(0.4, 0.6, 0.9, 0.9); // Made the legend box bigger
-        legend->SetTextSize(0.035); // Decrease the font size in the legend
-        legend->AddEntry(h1[i], Form("Uncorrected: #mu=%.3f, #sigma=%.3f", mu1, sigma1), "lep");
-        legend->AddEntry(h2[i], Form("Corrected: #mu=%.3f, #sigma=%.3f", mu2, sigma2), "lep");
+        TLegend *legend = new TLegend(0.4, 0.7, 0.9, 0.85); // Adjusted the legend size
+        legend->SetTextSize(0.03); // Decrease the font size in the legend
+        legend->AddEntry(h1[i], Form("Uncorrected: #mu=%.3f, #sigma=%.3f", mu1_values[i], sigma1_values[i]), "lep");
+        legend->AddEntry(h2[i], Form("Corrected: #mu=%.3f, #sigma=%.3f", mu2_values[i], sigma2_values[i]), "lep");
         legend->Draw();
 
         // Label the axes
         h1[i]->GetXaxis()->SetTitle("M_{xp}^{2} GeV^{2}");
         h1[i]->GetYaxis()->SetTitle("Counts");
     }
+
+    // Plot TGraphErrors in the last subplot (12th pad)
+    TPad *pad12 = (TPad*)c1->cd(12);
+    pad12->SetLeftMargin(0.15);
+    pad12->SetBottomMargin(0.15);
+
+    TGraphErrors *gr1 = new TGraphErrors(nBins, theta_mean, mu1_values, 0, sigma1_values);
+    TGraphErrors *gr2 = new TGraphErrors(nBins, theta_mean, mu2_values, 0, sigma2_values);
+
+    gr1->SetMarkerStyle(20);
+    gr1->SetMarkerSize(0.8);
+    gr1->SetMarkerColor(kBlack);
+    gr1->Draw("AP");
+
+    gr2->SetMarkerStyle(21);
+    gr2->SetMarkerSize(0.8);
+    gr2->SetMarkerColor(kRed);
+    gr2->Draw("P SAME");
+
+    // Add dashed gray line at y = 0
+    TLine *line = new TLine(thetaBins[0], 0, thetaBins[nBins], 0);
+    line->SetLineColor(kGray);
+    line->SetLineStyle(2); // Dashed line
+    line->Draw("SAME");
+
+    // Add legend to the last plot
+    TLegend *legend12 = new TLegend(0.15, 0.75, 0.4, 0.9); // Adjusted for horizontal and vertical size
+    legend12->SetTextSize(0.03);
+    legend12->AddEntry(gr1, "Uncorrected", "lep");
+    legend12->AddEntry(gr2, "Corrected", "lep");
+    legend12->Draw();
 
     // Save the canvas as a PDF
     c1->SaveAs("output/dvcs_energy_loss_validation.pdf");
