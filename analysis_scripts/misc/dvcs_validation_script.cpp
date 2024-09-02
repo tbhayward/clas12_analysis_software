@@ -52,7 +52,7 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
             tree1->GetEntry(j);
             Double_t thetaDeg1 = p1_theta1 * (180.0 / TMath::Pi()); // Convert to degrees
             if (thetaDeg1 >= thetaBins[i] && thetaDeg1 < thetaBins[i + 1]) {
-                h1[i]->Fill(Mxprotonsquared_1);
+                h1[i]->Fill(Mxgammasquared_1);
             }
         }
 
@@ -61,7 +61,7 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
             tree2->GetEntry(j);
             Double_t thetaDeg2 = p1_theta2 * (180.0 / TMath::Pi()); // Convert to degrees
             if (thetaDeg2 >= thetaBins[i] && thetaDeg2 < thetaBins[i + 1]) {
-                h2[i]->Fill(Mxprotonsquared_2);
+                h2[i]->Fill(Mxgammasquared_2);
             }
         }
 
