@@ -159,8 +159,8 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
         // Calculate the mean theta value for the bin
         theta_mean[i] = 0.5 * (thetaBins[i] + thetaBins[i + 1]);
 
-        // Add legend with mu and sigma values
-        TLegend *legend = new TLegend(0.4, 0.7, 0.9, 0.85); // Adjusted the legend size
+        // Add legend with mu and sigma values in the top right corner
+        TLegend *legend = new TLegend(0.6, 0.75, 0.9, 0.9); // Adjusted the legend position to the top right corner
         legend->SetTextSize(0.03); // Decrease the font size in the legend
         legend->AddEntry(h1[i], Form("Uncorrected: #mu=%.3f, #sigma=%.3f", mu1_values[i], sigma1_values[i]), "lep");
         legend->AddEntry(h2[i], Form("Corrected: #mu=%.3f, #sigma=%.3f", mu2_values[i], sigma2_values[i]), "lep");
@@ -195,8 +195,13 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
     line->SetLineStyle(2); // Dashed line
     line->Draw("SAME");
 
-    // Add legend to the last plot
-    TLegend *legend12 = new TLegend(0.15, 0.75, 0.4, 0.9); // Adjusted for horizontal and vertical size
+    // Customize the last subplot
+    gr1->SetTitle(""); // Remove the "Graph" title
+    gr1->GetXaxis()->SetTitle("#theta"); // Set x-axis label
+    gr1->GetYaxis()->SetTitle("#mu");    // Set y-axis label
+
+    // Add legend to the last plot, positioned in the top right
+    TLegend *legend12 = new TLegend(0.6, 0.75, 0.9, 0.9); // Adjusted for horizontal and vertical size
     legend12->SetTextSize(0.03);
     legend12->AddEntry(gr1, "Uncorrected", "lep");
     legend12->AddEntry(gr2, "Corrected", "lep");
