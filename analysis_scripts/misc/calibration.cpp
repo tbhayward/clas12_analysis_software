@@ -5227,7 +5227,6 @@ void energy_loss_distributions_delta_p_fd(TTreeReader& mcReader, const std::stri
             double maxXValue = std::get<2>(particle_types[pid]); // Default maximum x-value
 
             for (int bin = 1; bin <= prof_deltap->GetNbinsX(); ++bin) {
-                std::cout << prof_deltap->GetBinEntries(bin) << std::endl;
                 if (prof_deltap->GetBinEntries(bin) > 100) {
                     minXValue = prof_deltap->GetBinLowEdge(bin);
                     break;
@@ -7145,9 +7144,9 @@ int main(int argc, char** argv) {
 
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
-    if (mcReader) energy_loss(*mcReader, "rga_fa18_inb"); 
+    // if (mcReader) energy_loss(*mcReader, "rga_fa18_inb"); 
     // if (mcReader) energy_loss(*mcReader, "rga_fa18_out");  
-    // if (mcReader) energy_loss(*mcReader, "rga_sp19_inb"); 
+    if (mcReader) energy_loss(*mcReader, "rga_sp19_inb"); 
     // if (mcReader) energy_loss(*mcReader, "rgc_su22_inb");   
 
     // Close files
