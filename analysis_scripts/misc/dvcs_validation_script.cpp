@@ -236,7 +236,7 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
     }
 
     // Plot TGraphErrors in the last subplot (12th pad)
-    c1->cd(12)->SetLeftMargin(0.15);
+    c1->cd(12)->SetLeftMargin(0.20);
     c1->cd(12)->SetBottomMargin(0.15);
 
     TGraphErrors *gr1 = new TGraphErrors(nBins, theta_mean, mu1_values, 0, sigma1_values);
