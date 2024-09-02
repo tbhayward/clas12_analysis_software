@@ -58,8 +58,8 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
         c1->cd(i + 1);
 
         // Create histograms for each theta bin
-        h1[i] = new TH1D(Form("h1_%d", i), Form("M_{xp}^{2} GeV^{2} for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 100, -2, 2);
-        h2[i] = new TH1D(Form("h2_%d", i), Form("M_{xp}^{2} GeV^{2} for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 100, -2, 2);
+        h1[i] = new TH1D(Form("h1_%d", i), Form("M_{xp}^{2} GeV^{2} for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 100, -0.5, 0.5);
+        h2[i] = new TH1D(Form("h2_%d", i), Form("M_{xp}^{2} GeV^{2} for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 100, -0.5, 0.5);
 
         // Fill the histograms with the cuts applied
         Long64_t nEntries1 = tree1->GetEntries();
