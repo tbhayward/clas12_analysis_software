@@ -83,6 +83,7 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
             if (thetaDeg1 >= thetaBins[i] && thetaDeg1 < thetaBins[i + 1] &&
                 eta2_1 < 0 && t1_1 > -2 && theta_gamma_gamma_1 < 0.6 &&
                 Emiss2_1 < 0.5 && pTmiss_1 < 0.125) {
+                std::cout << Mxprotonsquared_1 << std::endl;
                 h1[i]->Fill(Mxprotonsquared_1);
             }
         }
