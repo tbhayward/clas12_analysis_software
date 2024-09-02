@@ -300,10 +300,10 @@ void plot_rho0_energy_loss_validation(const char* file1, const char* file2, cons
 
     // Set branch addresses
     tree1->SetBranchAddress("p1_theta", &p1_theta1);
-    tree1->SetBranchAddress("Mx_2", &Mx1_1);
+    tree1->SetBranchAddress("Mx2", &Mx1_1);
 
     tree2->SetBranchAddress("p1_theta", &p1_theta2);
-    tree2->SetBranchAddress("Mx_2", &Mx1_2);
+    tree2->SetBranchAddress("Mx2", &Mx1_2);
 
     // Create canvas and divide it into 3x4 subplots
     TCanvas *c1 = new TCanvas("c1", "Rho0 Energy Loss Validation", 1200, 900);
