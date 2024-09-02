@@ -216,12 +216,202 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
     delete f2;
 }
 
+void plot_rho0_energy_loss_validation(const char* file1, const char* file2, const char* titleSuffix) {
+    // Open the ROOT files
+    TFile *f1 = new TFile(file1);
+    TFile *f2 = new TFile(file2);
+
+    // Access the "PhysicsEvents" trees
+    TTree *tree1 = (TTree*)f1->Get("PhysicsEvents");
+    TTree *tree2 = (TTree*)f2->Get("PhysicsEvents");
+
+    // Prepare variables for reading the branches
+    Double_t p1_theta1, p1_theta2;
+    Double_t Mx1_1, Mx1_2;
+
+    // Set branch addresses
+    tree1->SetBranchAddress("p1_theta", &p1_theta1);
+    tree1->SetBranchAddress("Mx1", &Mx1_1);
+
+    tree2->SetBranchAddress("p1_theta", &p1_theta2);
+    tree2->SetBranchAddress("Mx1", &Mx1_2);
+
+    // Create canvas and divide it into 3x4 subplots
+    TCanvas *c1 = new TCanvas("c1", "Rho0 Energy Loss Validation", 1200, 900);
+    c1->Divide(4, 3);
+
+    // Set the theta bins and corresponding histogram ranges
+    const int nBins = 11;
+    Double_t thetaBins[nBins + 1] = {5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 65}; // 5 to 65 degrees
+
+    TH1D *h1[nBins];
+    TH1D *h2[nBins];
+
+    Double_t mu1_values[nBins], sigma1_values[nBins];
+    Double_t mu2_values[nBins], sigma2_values[nBins];
+    Double_t theta_mean[nBins];
+
+    // Rho0 mass in GeV/c^2
+    const Double_t rho0_mass = 0.77526;
+
+    for (int i = 0; i < nBins; ++i) {
+        TPad *pad = (TPad*)c1->cd(i + 1);
+        pad->SetLeftMargin(0.15); // Add padding to the left of each subplot
+        pad->SetBottomMargin(0.15); // Add padding to the bottom of each subplot
+
+        // Create histograms for each theta bin with 50 bins
+        h1[i] = new TH1D(Form("h1_%d", i), Form("Mx1 for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 50, 0.4, 1.2);
+        h2[i] = new TH1D(Form("h2_%d", i), Form("Mx1 for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 50, 0.4, 1.2);
+
+        // Set text sizes
+        h1[i]->GetXaxis()->SetTitleSize(0.05);
+        h1[i]->GetYaxis()->SetTitleSize(0.05);
+        h1[i]->GetXaxis()->SetLabelSize(0.04);
+        h1[i]->GetYaxis()->SetLabelSize(0.04);
+
+        h2[i]->GetXaxis()->SetTitleSize(0.05);
+        h2[i]->GetYaxis()->SetTitleSize(0.05);
+        h2[i]->GetXaxis()->SetLabelSize(0.04);
+        h2[i]->GetYaxis()->SetLabelSize(0.04);
+
+        // Fill the histograms without applying additional cuts
+        Long64_t nEntries1 = tree1->GetEntries();
+        for (Long64_t j = 0; j < nEntries1; ++j) {
+            tree1->GetEntry(j);
+            Double_t thetaDeg1 = p1_theta1 * (180.0 / TMath::Pi()); // Convert to degrees
+            if (thetaDeg1 >= thetaBins[i] && thetaDeg1 < thetaBins[i + 1]) {
+                h1[i]->Fill(Mx1_1);
+            }
+        }
+
+        Long64_t nEntries2 = tree2->GetEntries();
+        for (Long64_t j = 0; j < nEntries2; ++j) {
+            tree2->GetEntry(j);
+            Double_t thetaDeg2 = p1_theta2 * (180.0 / TMath::Pi()); // Convert to degrees
+            if (thetaDeg2 >= thetaBins[i] && thetaDeg2 < thetaBins[i + 1]) {
+                h2[i]->Fill(Mx1_2);
+            }
+        }
+
+        // Set the y-axis range to 0 to 1.7 times the maximum bin value
+        Double_t maxVal1 = h1[i]->GetMaximum();
+        Double_t maxVal2 = h2[i]->GetMaximum();
+        Double_t maxVal = std::max(maxVal1, maxVal2);
+        h1[i]->SetMaximum(1.7 * maxVal);
+        h1[i]->SetMinimum(0);
+        h2[i]->SetMaximum(1.7 * maxVal);
+        h2[i]->SetMinimum(0);
+
+        // Draw histograms as points with error bars
+        h1[i]->SetMarkerStyle(20);
+        h1[i]->SetMarkerSize(0.8); // Make the points smaller
+        h1[i]->SetMarkerColor(kBlack);
+        h1[i]->SetStats(0); // Remove stat box
+        h1[i]->Draw("E");
+        h2[i]->SetMarkerStyle(21);
+        h2[i]->SetMarkerSize(0.8); // Make the points smaller
+        h2[i]->SetMarkerColor(kRed);
+        h2[i]->SetStats(0); // Remove stat box
+        h2[i]->Draw("E SAME");
+
+        // Fit histograms to Gaussian plus quadratic background
+        TF1 *fit1 = new TF1(Form("fit1_%d", i), "gaus(0) + pol2(3)", 0.4, 1.2);
+        TF1 *fit2 = new TF1(Form("fit2_%d", i), "gaus(0) + pol2(3)", 0.4, 1.2);
+
+        // Set initial parameter guesses and limits
+        Double_t amplitudeGuess1 = 0.8 * maxVal1;
+        Double_t amplitudeGuess2 = 0.8 * maxVal2;
+        fit1->SetParameters(amplitudeGuess1, rho0_mass, 0.1);
+        fit1->SetParLimits(1, rho0_mass - 0.05, rho0_mass + 0.05); // mu limits around rho0 mass
+        fit1->SetParLimits(2, 0, 0.3);      // sigma limit
+        fit2->SetParameters(amplitudeGuess2, rho0_mass, 0.1);
+        fit2->SetParLimits(1, rho0_mass - 0.05, rho0_mass + 0.05); // mu limits around rho0 mass
+        fit2->SetParLimits(2, 0, 0.3);      // sigma limit
+
+        fit1->SetLineWidth(1); // Make the line thinner
+        fit2->SetLineWidth(1); // Make the line thinner
+        h1[i]->Fit(fit1, "Q");
+        h2[i]->Fit(fit2, "Q");
+
+        // Draw fitted functions
+        fit1->SetLineColor(kBlack);
+        fit1->Draw("SAME");
+        fit2->SetLineColor(kRed);
+        fit2->Draw("SAME");
+
+        // Get fit parameters (only from the Gaussian)
+        mu1_values[i] = fit1->GetParameter(1);
+        sigma1_values[i] = fit1->GetParameter(2);
+        mu2_values[i] = fit2->GetParameter(1);
+        sigma2_values[i] = fit2->GetParameter(2);
+
+        // Calculate the mean theta value for the bin
+        theta_mean[i] = 0.5 * (thetaBins[i] + thetaBins[i + 1]);
+
+        // Add legend with mu and sigma values in the top right corner
+        TLegend *legend = new TLegend(0.6, 0.75, 0.9, 0.9); // Adjusted the legend position to the top right corner
+        legend->SetTextSize(0.03); // Decrease the font size in the legend
+        legend->AddEntry(h1[i], Form("Uncorrected: #mu=%.3f, #sigma=%.3f", mu1_values[i], sigma1_values[i]), "lep");
+        legend->AddEntry(h2[i], Form("Corrected: #mu=%.3f, #sigma=%.3f", mu2_values[i], sigma2_values[i]), "lep");
+        legend->Draw();
+
+        // Label the axes
+        h1[i]->GetXaxis()->SetTitle("Mx1 GeV/c^2");
+        h1[i]->GetYaxis()->SetTitle("Counts");
+    }
+
+    // Plot TGraphErrors in the last subplot (12th pad)
+    TPad *pad12 = (TPad*) c1->cd(12);
+    pad12->SetLeftMargin(0.15);
+    pad12->SetBottomMargin(0.15);
+
+    TGraphErrors *gr1 = new TGraphErrors(nBins, theta_mean, mu1_values, 0, sigma1_values);
+    TGraphErrors *gr2 = new TGraphErrors(nBins, theta_mean, mu2_values, 0, sigma2_values);
+
+    gr1->SetMarkerStyle(20);
+    gr1->SetMarkerSize(0.8);
+    gr1->SetMarkerColor(kBlack);
+    gr1->Draw("AP");
+
+    gr2->SetMarkerStyle(21);
+    gr2->SetMarkerSize(0.8);
+    gr2->SetMarkerColor(kRed);
+    gr2->Draw("P SAME");
+
+    // Add dashed gray line at y = 0
+    TLine *line = new TLine(thetaBins[0], 0, thetaBins[nBins], 0);
+    line->SetLineColor(kGray);
+    line->SetLineStyle(2); // Dashed line
+    line->Draw("SAME");
+
+    // Customize the last subplot
+    gr1->SetTitle(""); // Remove the "Graph" title
+    gr1->GetXaxis()->SetTitle("#theta"); // Set x-axis label
+    gr1->GetYaxis()->SetTitle("#mu");    // Set y-axis label
+
+    // Add legend to the last plot, positioned in the top right
+    TLegend *legend12 = new TLegend(0.6, 0.75, 0.9, 0.9); // Adjusted for horizontal and vertical size
+    legend12->SetTextSize(0.03);
+    legend12->AddEntry(gr1, "Uncorrected", "lep");
+    legend12->AddEntry(gr2, "Corrected", "lep");
+    legend12->Draw();
+
+    // Save the canvas as a PDF
+    c1->SaveAs("output/rho0_energy_loss_validation.pdf");
+
+    // Clean up
+    delete c1;
+    delete f1;
+    delete f2;
+}
+
 int main(int argc, char **argv) {
     if (argc != 4) {
         std::cerr << "Usage: " << argv[0] << " <file1.root> <file2.root> <titleSuffix>" << std::endl;
         return 1;
     }
 
-    plot_dvcs_energy_loss_validation(argv[1], argv[2], argv[3]);
+    // plot_dvcs_energy_loss_validation(argv[1], argv[2], argv[3]);
+    plot_rho0_energy_loss_validation(argv[1], argv[2], argv[3]);
     return 0;
 }
