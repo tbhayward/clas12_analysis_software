@@ -330,8 +330,8 @@ void plot_rho0_energy_loss_validation(const char* file1, const char* file2, cons
         pad->SetBottomMargin(0.15); // Add padding to the bottom of each subplot
 
         // Create histograms for each theta bin with 50 bins
-        h1[i] = new TH1D(Form("h1_%d", i), Form("Mx1 for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 30, 0.0, 1.2);
-        h2[i] = new TH1D(Form("h2_%d", i), Form("Mx1 for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 30, 0.0, 1.2);
+        h1[i] = new TH1D(Form("h1_%d", i), Form("Mx1 for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 75, 0.5, 1.0);
+        h2[i] = new TH1D(Form("h2_%d", i), Form("Mx1 for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 75, 0.5, 1.0);
 
         // Set text sizes
         h1[i]->GetXaxis()->SetTitleSize(0.05);
@@ -347,7 +347,7 @@ void plot_rho0_energy_loss_validation(const char* file1, const char* file2, cons
         // Fill the histograms without applying additional cuts
         Long64_t nEntries1 = tree1->GetEntries();
         // for (Long64_t j = 0; j < nEntries1; ++j) {
-        for (Long64_t j = 0; j < 1000000; ++j) {
+        for (Long64_t j = 0; j < 5000000; ++j) {
             tree1->GetEntry(j);
             Double_t thetaDeg1 = p1_theta1 * (180.0 / TMath::Pi()); // Convert to degrees
             if (thetaDeg1 >= thetaBins[i] && thetaDeg1 < thetaBins[i + 1]) {
@@ -357,7 +357,7 @@ void plot_rho0_energy_loss_validation(const char* file1, const char* file2, cons
 
         Long64_t nEntries2 = tree2->GetEntries();
         // for (Long64_t j = 0; j < nEntries2; ++j) {
-        for (Long64_t j = 0; j < 1000000; ++j) {    
+        for (Long64_t j = 0; j < 5 000000; ++j) {    
             tree2->GetEntry(j);
             Double_t thetaDeg2 = p1_theta2 * (180.0 / TMath::Pi()); // Convert to degrees
             if (thetaDeg2 >= thetaBins[i] && thetaDeg2 < thetaBins[i + 1]) {
