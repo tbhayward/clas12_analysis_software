@@ -102,7 +102,7 @@ public class energy_loss_corrections {
         } else if (!isForwardDetector && isCentralDetector) {
             dp = A_p + B_p * p + C_p * p * p;
         }
-        return (dp + p) / p; // fe
+        return 1.1*((dp + p) / p); // fe
     }
 
 }
