@@ -681,14 +681,14 @@ void plotTargetPolarizationDependence(
         double error = errors[i];
 
         if (polarization > 0) {
-            if (std::abs(polarization - muPos) > 5.0 * error) {
+            if (std::abs(polarization - muPos) > 3.0 * error) {
                 outlierPosX.push_back(xValues[i]);
                 outlierPosY.push_back(polarization);
                 outlierPosErrors.push_back(error);
                 std::cout << "Outlier (Positive) found: Run Number " << runNumbers[i] << ", Deviation: " << std::abs(polarization - muPos) / error << std::endl;
             }
         } else {
-            if (std::abs(polarization - muNeg) > 5.0 * error) {
+            if (std::abs(polarization - muNeg) > 3.0 * error) {
                 outlierNegX.push_back(xValues[i]);
                 outlierNegY.push_back(polarization);
                 outlierNegErrors.push_back(error);
