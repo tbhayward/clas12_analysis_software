@@ -7151,10 +7151,10 @@ int main(int argc, char** argv) {
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
 
-    plot_ft_xy_energy(dataReader, mcReader);
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_ft_hit_position(dataReader, mcReader);
+    // plot_ft_xy_energy(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_ft_hit_position(dataReader, mcReader);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
@@ -7190,12 +7190,12 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_chi2pid_cd(dataReader, mcReader);
 
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
     // // if (mcReader) energy_loss(*mcReader, "rga_fa18_inb"); 
     // // if (mcReader) energy_loss(*mcReader, "rga_fa18_out");  
     // // if (mcReader) energy_loss(*mcReader, "rga_sp19_inb"); 
-    // if (mcReader) energy_loss(*mcReader, "rgc_su22_inb");   
+    if (mcReader) energy_loss(*mcReader, "rgc_su22_inb");   
 
     // Close files
     dataFile.Close();
