@@ -357,7 +357,7 @@ void plot_rho0_energy_loss_validation(const char* file1, const char* file2, cons
 
         Long64_t nEntries2 = tree2->GetEntries();
         // for (Long64_t j = 0; j < nEntries2; ++j) {
-        for (Long64_t j = 0; j < 5 000000; ++j) {    
+        for (Long64_t j = 0; j < 5000000; ++j) {    
             tree2->GetEntry(j);
             Double_t thetaDeg2 = p1_theta2 * (180.0 / TMath::Pi()); // Convert to degrees
             if (thetaDeg2 >= thetaBins[i] && thetaDeg2 < thetaBins[i + 1]) {
