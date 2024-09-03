@@ -346,7 +346,8 @@ void plot_rho0_energy_loss_validation(const char* file1, const char* file2, cons
 
         // Fill the histograms without applying additional cuts
         Long64_t nEntries1 = tree1->GetEntries();
-        for (Long64_t j = 0; j < nEntries1; ++j) {
+        // for (Long64_t j = 0; j < nEntries1; ++j) {
+        for (Long64_t j = 0; j < 1000000; ++j) {
             tree1->GetEntry(j);
             Double_t thetaDeg1 = p1_theta1 * (180.0 / TMath::Pi()); // Convert to degrees
             if (thetaDeg1 >= thetaBins[i] && thetaDeg1 < thetaBins[i + 1]) {
@@ -355,7 +356,8 @@ void plot_rho0_energy_loss_validation(const char* file1, const char* file2, cons
         }
 
         Long64_t nEntries2 = tree2->GetEntries();
-        for (Long64_t j = 0; j < nEntries2; ++j) {
+        // for (Long64_t j = 0; j < nEntries2; ++j) {
+        for (Long64_t j = 0; j < 1000000; ++j) {    
             tree2->GetEntry(j);
             Double_t thetaDeg2 = p1_theta2 * (180.0 / TMath::Pi()); // Convert to degrees
             if (thetaDeg2 >= thetaBins[i] && thetaDeg2 < thetaBins[i + 1]) {
