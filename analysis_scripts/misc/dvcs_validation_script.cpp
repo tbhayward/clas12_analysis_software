@@ -330,8 +330,8 @@ void plot_rho0_energy_loss_validation(const char* file1, const char* file2, cons
         pad->SetBottomMargin(0.15); // Add padding to the bottom of each subplot
 
         // Create histograms for each theta bin with 50 bins
-        h1[i] = new TH1D(Form("h1_%d", i), Form("Mx1 for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 30, 0.5, 0.95);
-        h2[i] = new TH1D(Form("h2_%d", i), Form("Mx1 for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 30, 0.5, 0.95);
+        h1[i] = new TH1D(Form("h1_%d", i), Form("Mx1 for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 30, 0.55, 0.95);
+        h2[i] = new TH1D(Form("h2_%d", i), Form("Mx1 for #theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 30, 0.55, 0.95);
 
         // Set text sizes
         h1[i]->GetXaxis()->SetTitleSize(0.05);
@@ -451,7 +451,7 @@ void plot_rho0_energy_loss_validation(const char* file1, const char* file2, cons
     gr2->Draw("P SAME");
 
     // Add dashed gray line at y = 0
-    TLine *line = new TLine(thetaBins[0], 0, thetaBins[nBins], 0);
+    TLine *line = new TLine(thetaBins[0], rho0_mass, thetaBins[nBins], rho0_mass);
     line->SetLineColor(kGray);
     line->SetLineStyle(2); // Dashed line
     line->Draw("SAME");
