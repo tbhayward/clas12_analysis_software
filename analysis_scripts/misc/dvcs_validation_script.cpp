@@ -300,13 +300,11 @@ void plot_rho0_energy_loss_validation(const char* file1, const char* file2, cons
     Double_t Mx2_1, Mx2_2;
 
     // Set branch addresses
-    tree1->SetBranchAddress("p1_theta", &p1_theta1);
-    tree1->SetBranchAddress("Mx1", &Mx1_1);
-    tree1->SetBranchAddress("Mx2", &Mx2_1);
+    tree1->SetBranchAddress("p_theta", &p1_theta1);
+    tree1->SetBranchAddress("Mx", &Mx1_1);
 
-    tree2->SetBranchAddress("p1_theta", &p1_theta2);
-    tree2->SetBranchAddress("Mx1", &Mx1_2);
-    tree2->SetBranchAddress("Mx2", &Mx2_2);
+    tree2->SetBranchAddress("p_theta", &p1_theta2);
+    tree2->SetBranchAddress("Mx", &Mx1_2);
 
     // Create canvas and divide it into 3x4 subplots
     TCanvas *c1 = new TCanvas("c1", "Rho0 Energy Loss Validation", 1200, 900);
@@ -352,7 +350,7 @@ void plot_rho0_energy_loss_validation(const char* file1, const char* file2, cons
             tree1->GetEntry(j);
             Double_t thetaDeg1 = p1_theta1 * (180.0 / TMath::Pi()); // Convert to degrees
             if (thetaDeg1 >= thetaBins[i] && thetaDeg1 < thetaBins[i + 1]) {
-                if (Mx2_1 < 1.2) h1[i]->Fill(Mx1_1);
+                h1[i]->Fill(Mx1_1);
             }
         }
 
@@ -361,7 +359,7 @@ void plot_rho0_energy_loss_validation(const char* file1, const char* file2, cons
             tree2->GetEntry(j);
             Double_t thetaDeg2 = p1_theta2 * (180.0 / TMath::Pi()); // Convert to degrees
             if (thetaDeg2 >= thetaBins[i] && thetaDeg2 < thetaBins[i + 1]) {
-                if (Mx2_2 < 1.2) h2[i]->Fill(Mx1_2);
+                h2[i]->Fill(Mx1_2);
             }
         }
 
