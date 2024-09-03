@@ -195,10 +195,10 @@ void createIntegratedKinematicPlots() {
         // Add entries to the legend with scientific notation for the number of entries
         dataHist->SetEntries(dataHist->GetEntries());
         mcHist->SetEntries(mcHist->GetEntries());
-        leg->AddEntry(dataHist, (std::string("data (") + std::to_string((int)dataHist->GetEntries()) + " counts)").c_str(), "l");
-        leg->AddEntry(mcHist, (std::string("mc (") + std::to_string((int)mcHist->GetEntries()) + " counts)").c_str(), "l");
-        // leg->AddEntry(dataHist, (std::string("NH_{3}") + std::to_string((int)dataHist->GetEntries()) + " counts)").c_str(), "l");
-        // leg->AddEntry(mcHist, (std::string("C") + std::to_string((int)mcHist->GetEntries()) + " counts)").c_str(), "l");
+        // leg->AddEntry(dataHist, (std::string("data (") + std::to_string((int)dataHist->GetEntries()) + " counts)").c_str(), "l");
+        // leg->AddEntry(mcHist, (std::string("mc (") + std::to_string((int)mcHist->GetEntries()) + " counts)").c_str(), "l");
+        leg->AddEntry(dataHist, (std::string("NH_{3} (") + std::to_string((int)dataHist->GetEntries()) + " counts)").c_str(), "l");
+        leg->AddEntry(mcHist, (std::string("C (") + std::to_string((int)mcHist->GetEntries()) + " counts)").c_str(), "l");
         
         // Set line colors for histograms
         dataHist->SetLineColor(kBlack);
@@ -352,8 +352,10 @@ void createIntegratedKinematicPlotsForBinsAndFits() {
 
                 // Create a legend for the histograms
                 TLegend* leg = new TLegend(0.5, 0.7, 0.9, 0.9);
-                leg->AddEntry(dataHist, ("Data (" + std::to_string(static_cast<int>(dataHist->GetEntries())) + " entries)").c_str(), "l");
-                leg->AddEntry(mcHist, ("MC (" + std::to_string(static_cast<int>(mcHist->GetEntries())) + " entries)").c_str(), "l");
+                // leg->AddEntry(dataHist, ("Data (" + std::to_string(static_cast<int>(dataHist->GetEntries())) + " entries)").c_str(), "l");
+                // leg->AddEntry(mcHist, ("MC (" + std::to_string(static_cast<int>(mcHist->GetEntries())) + " entries)").c_str(), "l");
+                leg->AddEntry(dataHist, ("NH_{3} (" + std::to_string(static_cast<int>(dataHist->GetEntries())) + " entries)").c_str(), "l");
+                leg->AddEntry(mcHist, ("C (" + std::to_string(static_cast<int>(mcHist->GetEntries())) + " entries)").c_str(), "l");
                 leg->Draw();
 
                 // Save the canvas to a file
