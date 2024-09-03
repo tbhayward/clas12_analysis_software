@@ -240,10 +240,10 @@ int main(int argc, char *argv[]) {
 
   setup_directories();
 
-  createIntegratedKinematicPlots();
-  // createIntegratedKinematicPlotsForBinsAndFits();
+  // createIntegratedKinematicPlots();
+  createIntegratedKinematicPlotsForBinsAndFits();
   // createCorrelationPlotsforrunnum();
-  createCorrelationPlots();
+  // createCorrelationPlots();
   // createMisIDRatePlots();
   currentFits=0;
   dataReader.Restart(); mcReader.Restart();
