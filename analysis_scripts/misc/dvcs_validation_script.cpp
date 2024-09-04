@@ -64,12 +64,12 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
     Double_t theta_mean[nBins] = {0.0};
 
     // Create histograms for each theta bin with 50 bins
-    h1[0] = new TH1D("h1_integrated", Form("Integrated #theta [5, 65] %s", titleSuffix), 35, -0.3, 0.3);
-    h2[0] = new TH1D("h2_integrated", Form("Integrated #theta [5, 65] %s", titleSuffix), 35, -0.3, 0.3);
+    h1[0] = new TH1D("h1_integrated", Form("Integrated #theta [5, 65] %s", titleSuffix), 35, -0.3, 30.3);
+    h2[0] = new TH1D("h2_integrated", Form("Integrated #theta [5, 65] %s", titleSuffix), 35, -0.3, 30.3);
 
     for (int i = 0; i < nBins; ++i) {
-        h1[i + 1] = new TH1D(Form("h1_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 35, -0.3, 0.3);
-        h2[i + 1] = new TH1D(Form("h2_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 35, -0.3, 0.3);
+        h1[i + 1] = new TH1D(Form("h1_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 35, -0.3, 30.3);
+        h2[i + 1] = new TH1D(Form("h2_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 35, -0.3, 30.3);
     }
 
     // Fill the histograms with the cuts applied and calculate theta means
@@ -82,9 +82,10 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
             && t1_1 > -2 
             // && theta_gamma_gamma_1 < 0.6 
             && Emiss2_1 < 0.5 
-            // && pTmiss_1 < 0.125
+            && pTmiss_1 < 0.125
                 ) {
-            h1[0]->Fill(Mxprotonsquared_1); 
+            // h1[0]->Fill(Mxprotonsquared_1); 
+            h1[0]->Fill(theta_gamma_gamma_1); 
         }
         for (int i = 0; i < nBins; ++i) {
             if (thetaDeg1 >= thetaBins[i] && thetaDeg1 < thetaBins[i + 1] 
@@ -94,7 +95,8 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
                 && Emiss2_1 < 0.5 
                 // && pTmiss_1 < 0.125
                 ) {
-                h1[i + 1]->Fill(Mxprotonsquared_1);
+                // h1[i + 1]->Fill(Mxprotonsquared_1);
+                h1[i + 1]->Fill(theta_gamma_gamma_1);
                 theta_sum[i] += thetaDeg1;
                 theta_count[i]++;
             }
@@ -112,17 +114,19 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
             && Emiss2_2 < 0.5 
             // && pTmiss_2 < 0.125
                 ) {
-            h2[0]->Fill(Mxprotonsquared_2); // Fully integrated case
+            // h2[0]->Fill(Mxprotonsquared_2); // Fully integrated case
+            h2[0]->Fill(theta_gamma_gamma_2); // Fully integrated case
         }
         for (int i = 0; i < nBins; ++i) {
             if (thetaDeg2 >= thetaBins[i] && thetaDeg2 < thetaBins[i + 1] 
                 && eta2_2 < 0 
                 && t1_2 > -2 
                 // && theta_gamma_gamma_2 < 0.6 
-                && Emiss2_2 < 0.5 
+                // && Emiss2_2 < 0.5 
                 // && pTmiss_2 < 0.125
                 ) {
-                h2[i + 1]->Fill(Mxprotonsquared_2);
+                // h2[i + 1]->Fill(Mxprotonsquared_2);
+                h2[i + 1]->Fill(theta_gamma_gamma_2);
                 theta_sum[i] += thetaDeg2;
                 theta_count[i]++;
             }
