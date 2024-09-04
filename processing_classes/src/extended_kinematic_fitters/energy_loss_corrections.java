@@ -11,6 +11,10 @@ import org.jlab.io.hipo.HipoDataBank;
  * @author tbhayward
  */
 public class energy_loss_corrections {
+    
+    public static double p(double x, double y, double z) {
+        return Math.sqrt(x * x + y * y + z * z);
+    }
 
     public static double phi_calculation(double x, double y) {
         // tracks are given with Cartesian values and so must be converted to cylindrical
@@ -27,6 +31,32 @@ public class energy_loss_corrections {
         // convert cartesian coordinates to polar angle
         double r = Math.pow(Math.pow(x, 2) + Math.pow(y, 2) + Math.pow(z, 2), 0.5);
         return (double) (180 / Math.PI) * Math.acos(z / r);
+    }
+
+    public static double x_calculation(double p, double theta, double phi) {
+        // Convert angles from degrees to radians
+        theta = Math.toRadians(theta);
+        phi = Math.toRadians(phi);
+
+        // Calculate x using spherical to cartesian conversion
+        return p * Math.sin(theta) * Math.cos(phi);
+    }
+
+    public static double y_calculation(double p, double theta, double phi) {
+        // Convert angles from degrees to radians
+        theta = Math.toRadians(theta);
+        phi = Math.toRadians(phi);
+
+        // Calculate y using spherical to cartesian conversion
+        return p * Math.sin(theta) * Math.sin(phi);
+    }
+
+    public static double z_calculation(double p, double theta) {
+        // Convert angle from degrees to radians
+        theta = Math.toRadians(theta);
+
+        // Calculate z using spherical to cartesian conversion
+        return p * Math.cos(theta);
     }
 
     public double proton_energy_loss_corrections(int particle_Index, double px, double py, double pz,

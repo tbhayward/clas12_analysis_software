@@ -6415,15 +6415,15 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
         B_p = 0.60123885 -0.03128464*theta +0.00041314*theta*theta;
         C_p = -0.44080146 +0.02209857*theta -0.00028224*theta*theta;
 
-        // // A_theta, B_theta, C_theta
-        // A_theta = 0.0093221 -0.0004507*theta +0.0000032* theta * theta;
-        // B_theta = 0.15734684 -0.00603111*theta +0.00005827 * theta * theta;
-        // C_theta = -0.06449044 +0.00239151*theta -0.00002183 * theta * theta;
+        // A_theta, B_theta, C_theta
+        A_theta = 0.1000890 -0.0039222*theta +0.0000359* theta * theta;
+        B_theta = -0.0130680 +0.0004545*theta -0.0000026 * theta * theta;
+        C_theta = 0;
 
-        // // A_phi, B_phi, C_phi
-        // A_phi = 0.0776934 -0.0059632*theta +0.0000749*theta * theta;
-        // B_phi = -0.31582008 +0.01649220*theta -0.00018505 * theta * theta;
-        // C_phi = 0.10909746 -0.00530642*theta +0.00005627 * theta * theta;
+        // A_phi, B_phi, C_phi
+        A_phi = 0.0776934 -0.0059632*theta +0.0000749*theta * theta;
+        B_phi = -0.31582008 +0.01649220*theta -0.00018505 * theta * theta;
+        C_phi = 0.10909746 -0.00530642*theta +0.00005627 * theta * theta;
     }
     else if (dataset == "rga_fa18_out" && region == "FD") {
         // A_p, B_p (no C_p for rga_fa18_out and no theta^2 term)
@@ -6431,15 +6431,15 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
         B_p = -0.02165929 + 0.00121123 * theta; // Only linear term
         C_p = 0.0; // No C_p for rga_fa18_out
 
-        // // A_theta, B_theta, C_theta
-        // A_theta = -0.3715486 +0.0272810*theta -0.0006278*theta*theta +0.0000040*theta*theta*theta;
-        // B_theta = 2.00009939 -0.20781779*theta +0.00721092*theta*theta -0.00008343*theta*theta*theta;
-        // C_theta = 0; // No C_theta for rga_fa18_out
+        // A_theta, B_theta, C_theta
+        A_theta = -0.3715486 +0.0272810*theta -0.0006278*theta*theta +0.0000040*theta*theta*theta;
+        B_theta = 2.00009939 -0.20781779*theta +0.00721092*theta*theta -0.00008343*theta*theta*theta;
+        C_theta = 0; // No C_theta for rga_fa18_out
 
-        // // A_phi, B_phi, C_phi
-        // A_phi = -0.9701486 +0.1213124*theta -0.0049215*theta*theta +0.0000640*theta*theta*theta;
-        // B_phi = 2.85034691 -0.34405076*theta +0.01347377*theta*theta -0.00016663*theta*theta*theta;
-        // C_phi = 0; // No c_phi for rga_fa18_out
+        // A_phi, B_phi, C_phi
+        A_phi = -0.9701486 +0.1213124*theta -0.0049215*theta*theta +0.0000640*theta*theta*theta;
+        B_phi = 2.85034691 -0.34405076*theta +0.01347377*theta*theta -0.00016663*theta*theta*theta;
+        C_phi = 0; // No c_phi for rga_fa18_out
     }
     else if (dataset == "rga_fa18_out" && region == "CD") {
         // A_p, B_p (no C_p for rga_fa18_out and no theta^2 term)
@@ -7186,14 +7186,14 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_cvt_hit_position(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_chi2pid_cd(dataReader, mcReader);
-
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
+    // plot_chi2pid_cd(dataReader, mcReader);
+
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
     // if (mcReader) energy_loss(*mcReader, "rga_fa18_inb"); 
-    // if (mcReader) energy_loss(*mcReader, "rga_fa18_out");  
+    if (mcReader) energy_loss(*mcReader, "rga_fa18_out");  
     // if (mcReader) energy_loss(*mcReader, "rga_sp19_inb"); 
     // if (mcReader) energy_loss(*mcReader, "rgc_su22_inb");   
 
