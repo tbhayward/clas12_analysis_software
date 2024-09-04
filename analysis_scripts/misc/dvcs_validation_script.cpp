@@ -538,12 +538,12 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
     Double_t theta_mean[nBins] = {0.0};
 
     // Create histograms for each theta bin with 50 bins
-    h1[0] = new TH1D("h1_integrated", Form("Integrated #theta [5, 65] %s", titleSuffix), 25, -0.0075, 0.0075);
-    h2[0] = new TH1D("h2_integrated", Form("Integrated #theta [5, 65] %s", titleSuffix), 25, -0.0075, 0.0075);
+    h1[0] = new TH1D("h1_integrated", Form("Integrated #theta [5, 65] %s", titleSuffix), 25, -0.005, 0.005);
+    h2[0] = new TH1D("h2_integrated", Form("Integrated #theta [5, 65] %s", titleSuffix), 25, -0.005, 0.005);
 
     for (int i = 0; i < nBins; ++i) {
-        h1[i + 1] = new TH1D(Form("h1_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 25, -0.0075, 0.0075);
-        h2[i + 1] = new TH1D(Form("h2_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 25, -0.0075, 0.0075);
+        h1[i + 1] = new TH1D(Form("h1_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 25, -0.005, 0.005);
+        h2[i + 1] = new TH1D(Form("h2_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 25, -0.005, 0.005);
     }
 
     // Fill the histograms and calculate theta means
@@ -551,11 +551,11 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
     for (Long64_t j = 0; j < nEntries1; ++j) {
         tree1->GetEntry(j);
         Double_t thetaDeg1 = p1_theta1 * (180.0 / TMath::Pi()); // Convert to degrees
-        if (thetaDeg1 >= 5 && thetaDeg1 < 65 && W_1 < 1.05) {
+        if (thetaDeg1 >= 5 && thetaDeg1 < 65 && W_1 < 1.0) {
             h1[0]->Fill(Mx2_1); // Fully integrated case
         }
         for (int i = 0; i < nBins; ++i) {
-            if (thetaDeg1 >= thetaBins[i] && thetaDeg1 < thetaBins[i + 1] && W_1 < 1.05) {
+            if (thetaDeg1 >= thetaBins[i] && thetaDeg1 < thetaBins[i + 1] && W_1 < 1.0) {
                 h1[i + 1]->Fill(Mx2_1);
                 theta_sum[i] += thetaDeg1;
                 theta_count[i]++;
@@ -567,11 +567,11 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
     for (Long64_t j = 0; j < nEntries2; ++j) {
         tree2->GetEntry(j);
         Double_t thetaDeg2 = p1_theta2 * (180.0 / TMath::Pi()); // Convert to degrees
-        if (thetaDeg2 >= 5 && thetaDeg2 < 65 && W_2 < 1.05) {
+        if (thetaDeg2 >= 5 && thetaDeg2 < 65 && W_2 < 1.0) {
             h2[0]->Fill(Mx2_2); // Fully integrated case
         }
         for (int i = 0; i < nBins; ++i) {
-            if (thetaDeg2 >= thetaBins[i] && thetaDeg2 < thetaBins[i + 1] && W_2 < 1.05) {
+            if (thetaDeg2 >= thetaBins[i] && thetaDeg2 < thetaBins[i + 1] && W_2 < 1.0) {
                 h2[i + 1]->Fill(Mx2_2);
                 theta_sum[i] += thetaDeg2;
                 theta_count[i]++;
@@ -613,8 +613,8 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
     h2[0]->Draw("E SAME");
 
     // Define the Gaussian + quadratic background fit functions
-    TF1 *fit1_int = new TF1("fit1_integrated", "gaus(0) + pol4(3)", -0.0075, 0.0075);
-    TF1 *fit2_int = new TF1("fit2_integrated", "gaus(0) + pol4(3)", -0.0075, 0.0075);
+    TF1 *fit1_int = new TF1("fit1_integrated", "gaus(0) + pol4(3)", -0.005, 0.005);
+    TF1 *fit2_int = new TF1("fit2_integrated", "gaus(0) + pol4(3)", -0.005, 0.005);
 
     // Set the initial guesses and parameter limits for the fit
     fit1_int->SetParameters(0.5 * maxVal1, 0, 0.0025);  // Initial guesses: amplitude, mu, sigma
@@ -670,8 +670,8 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
         h2[i]->Draw("E SAME");
 
         // Define the Gaussian + quadratic background fit functions for each bin
-        TF1 *fit1 = new TF1(Form("fit1_%d", i), "gaus(0) + pol4(3)", -0.0075, 0.0075);
-        TF1 *fit2 = new TF1(Form("fit2_%d", i), "gaus(0) + pol4(3)", -0.0075, 0.0075);
+        TF1 *fit1 = new TF1(Form("fit1_%d", i), "gaus(0) + pol4(3)", -0.005, 0.005);
+        TF1 *fit2 = new TF1(Form("fit2_%d", i), "gaus(0) + pol4(3)", -0.005, 0.005);
 
         // Set the initial guesses and parameter limits for the fit
         fit1->SetParameters(0.5 * maxVal1, 0, 0.0025);  // Initial guesses: amplitude, mu, sigma
