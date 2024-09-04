@@ -508,13 +508,16 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
     // Prepare variables for reading the branches
     Double_t p1_theta1, p1_theta2;
     Double_t Mx2_1, Mx2_2;
+    Double_t W_1, W_2;
 
     // Set branch addresses
     tree1->SetBranchAddress("p_theta", &p1_theta1);
     tree1->SetBranchAddress("Mx2", &Mx2_1);
+    tree1->SetBranchAddress("W", &W_1);
 
     tree2->SetBranchAddress("p_theta", &p1_theta2);
     tree2->SetBranchAddress("Mx2", &Mx2_2);
+    tree2->SetBranchAddress("W", &W_2);
 
     // Create canvas and divide it into 3x4 subplots
     TCanvas *c1 = new TCanvas("c1", "Elastic Energy Loss Validation", 1200, 900);
@@ -523,7 +526,7 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
     // Set the theta bins and corresponding histogram ranges
     const int nBins = 11; // 10 theta bins + 1 fully integrated case
     // Double_t thetaBins[nBins + 1] = {5, 11, 17, 23, 29, 35, 41, 47, 53, 59, 65}; // 10 equally spaced bins
-    Double_t thetaBins[nBins + 1] = {5, 32, 33, 35, 37, 39, 41, 43, 46, 49, 60}; // 10 equally spaced bins
+    Double_t thetaBins[nBins + 1] = {5, 32, 33, 35, 37, 39, 41, 43, 46, 49, 65}; // 10 equally spaced bins
 
     TH1D *h1[nBins + 1]; // +1 for the fully integrated case
     TH1D *h2[nBins + 1]; // +1 for the fully integrated case
@@ -548,11 +551,11 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
     for (Long64_t j = 0; j < nEntries1; ++j) {
         tree1->GetEntry(j);
         Double_t thetaDeg1 = p1_theta1 * (180.0 / TMath::Pi()); // Convert to degrees
-        if (thetaDeg1 >= 5 && thetaDeg1 < 65) {
+        if (thetaDeg1 >= 5 && thetaDeg1 < 65 && W_1 < 1.1) {
             h1[0]->Fill(Mx2_1); // Fully integrated case
         }
         for (int i = 0; i < nBins; ++i) {
-            if (thetaDeg1 >= thetaBins[i] && thetaDeg1 < thetaBins[i + 1]) {
+            if (thetaDeg1 >= thetaBins[i] && thetaDeg1 < thetaBins[i + 1] && W_1 < 1.1) {
                 h1[i + 1]->Fill(Mx2_1);
                 theta_sum[i] += thetaDeg1;
                 theta_count[i]++;
@@ -564,11 +567,11 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
     for (Long64_t j = 0; j < nEntries2; ++j) {
         tree2->GetEntry(j);
         Double_t thetaDeg2 = p1_theta2 * (180.0 / TMath::Pi()); // Convert to degrees
-        if (thetaDeg2 >= 5 && thetaDeg2 < 65) {
+        if (thetaDeg2 >= 5 && thetaDeg2 < 65 && W_2 < 1.1) {
             h2[0]->Fill(Mx2_2); // Fully integrated case
         }
         for (int i = 0; i < nBins; ++i) {
-            if (thetaDeg2 >= thetaBins[i] && thetaDeg2 < thetaBins[i + 1]) {
+            if (thetaDeg2 >= thetaBins[i] && thetaDeg2 < thetaBins[i + 1] && W_2 < 1.1) {
                 h2[i + 1]->Fill(Mx2_2);
                 theta_sum[i] += thetaDeg2;
                 theta_count[i]++;
@@ -613,11 +616,11 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
     TF1 *fit2_int = new TF1("fit2_integrated", "gaus(0) + pol2(3)", -0.1, 0.1);
 
     fit1_int->SetParameters(0.8 * maxVal1, 0, 0.2);
-    // fit1_int->SetParLimits(1, -0.15, 0.15);
-    // fit1_int->SetParLimits(2, 0, 0.3);
+    fit1_int->SetParLimits(1, -0.015, 0.015);
+    fit1_int->SetParLimits(2, 0, 0.3);
     fit2_int->SetParameters(0.8 * maxVal2, 0, 0.2);
-    // fit2_int->SetParLimits(1, -0.15, 0.15);
-    // fit2_int->SetParLimits(2, 0, 0.3);
+    fit2_int->SetParLimits(1, -0.015, 0.015);
+    fit2_int->SetParLimits(2, 0, 0.3);
 
     fit1_int->SetLineWidth(1);
     fit2_int->SetLineWidth(1);
