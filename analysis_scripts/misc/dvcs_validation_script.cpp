@@ -158,8 +158,8 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
     h2[0]->SetStats(0);
     h2[0]->Draw("E SAME");
 
-    TF1 *fit1_int = new TF1("fit1_integrated", "gaus(0) + pol2(3)", -0.3, 0.3);
-    TF1 *fit2_int = new TF1("fit2_integrated", "gaus(0) + pol2(3)", -0.3, 0.3);
+    TF1 *fit1_int = new TF1("fit1_integrated", "gaus(0) + pol1(3)", -0.3, 0.3);
+    TF1 *fit2_int = new TF1("fit2_integrated", "gaus(0) + pol1(3)", -0.3, 0.3);
 
     fit1_int->SetParameters(0.8 * maxVal1, 0, 0.2);
     fit1_int->SetParLimits(1, -0.15, 0.15);
