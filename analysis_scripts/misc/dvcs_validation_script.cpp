@@ -535,12 +535,12 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
     Double_t theta_mean[nBins] = {0.0};
 
     // Create histograms for each theta bin with 50 bins
-    h1[0] = new TH1D("h1_integrated", Form("Integrated #theta [5, 65] %s", titleSuffix), 20, -0.05, 0.05);
-    h2[0] = new TH1D("h2_integrated", Form("Integrated #theta [5, 65] %s", titleSuffix), 20, -0.05, 0.05);
+    h1[0] = new TH1D("h1_integrated", Form("Integrated #theta [5, 65] %s", titleSuffix), 15, -0.025, 0.025);
+    h2[0] = new TH1D("h2_integrated", Form("Integrated #theta [5, 65] %s", titleSuffix), 15, -0.025, 0.025);
 
     for (int i = 0; i < nBins; ++i) {
-        h1[i + 1] = new TH1D(Form("h1_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 20, -0.05, 0.05);
-        h2[i + 1] = new TH1D(Form("h2_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 20, -0.05, 0.05);
+        h1[i + 1] = new TH1D(Form("h1_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 15, -0.025, 0.025);
+        h2[i + 1] = new TH1D(Form("h2_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 15, -0.025, 0.025);
     }
 
     // Fill the histograms and calculate theta means
