@@ -125,21 +125,70 @@ public class energy_loss_corrections {
                 B_p = -0.02165929 + 0.00121123 * theta;
                 C_p = 0.0;
 
+                // A_theta, B_theta, C_theta
+                A_theta = -0.3715486 + 0.0272810 * theta - 0.0006278 * theta * theta + 0.0000040 * theta * theta * theta;
+                B_theta = 2.00009939 - 0.20781779 * theta + 0.00721092 * theta * theta - 0.00008343 * theta * theta * theta;
+                C_theta = 0;
+
+                // A_phi, B_phi, C_phi
+                A_phi = -0.9701486 + 0.1213124 * theta - 0.0049215 * theta * theta + 0.0000640 * theta * theta * theta;
+                B_phi = 2.85034691 - 0.34405076 * theta + 0.01347377 * theta * theta - 0.00016663 * theta * theta * theta;
+                C_phi = 0;
+
             } else if (!isForwardDetector && isCentralDetector) {
+
+                // A_p, B_p, C_p
                 A_p = -0.1927861 + 0.0099546 * theta - 0.0001299 * theta * theta;
                 B_p = 0.44307822 - 0.02309469 * theta + 0.00030784 * theta * theta;
                 C_p = -0.32938000 + 0.01648659 * theta - 0.00021181 * theta * theta;
+
+                // A_theta, B_theta, C_theta
+                A_theta = 0.0581473 - 0.0021818 * theta + 0.0000181 * theta * theta;
+                B_theta = 0.00915748 - 0.00040748 * theta + 0.00000562 * theta * theta;
+                C_theta = 0; // No C_theta for rga_fa18_out
+
+                // A_phi, B_phi, C_phi
+                A_phi = -0.0733814 + 0.0010335 * theta - 0.0000044 * theta * theta;
+                B_phi = -0.06127800 + 0.00492239 * theta - 0.00005683 * theta * theta;
+                C_phi = 0.02586507 - 0.00160176 * theta + 0.00001642 * theta * theta;
+
             }
 
         } else if (runnum >= 6616 && runnum <= 6783) { // RGA Sp19 Inb
             if (isForwardDetector && !isCentralDetector) {
+
+                // A_p, B_p, C_p
                 A_p = 0.0095205 - 0.0001914 * theta - 0.0000031 * theta * theta;
                 B_p = -0.01365658 + 0.00036322 * theta + 0.00001217 * theta * theta;
                 C_p = 0.01175256 - 0.00053407 * theta + 0.00000742 * theta * theta;
+
+                // A_theta, B_theta, C_theta
+                A_theta = 0.0723069 - 0.0085078 * theta + 0.0001702 * theta * theta;
+                B_theta = -0.16048057 + 0.02561073 * theta - 0.00062158 * theta * theta;
+                C_theta = 0.10954630 - 0.01566605 * theta + 0.00036132 * theta * theta;
+
+                // A_phi, B_phi, C_phi
+                A_phi = 0.0486986 - 0.0067579 * theta + 0.0000638 * theta * theta;
+                B_phi = 0.26803189 + 0.00016245 * theta + 0.00010433 * theta * theta;
+                C_phi = -0.24522460 + 0.00826646 * theta - 0.00015640 * theta * theta;
+
             } else if (!isForwardDetector && isCentralDetector) {
+
+                // A_p, B_p (no C_p for rga_fa18_out and no theta^2 term)
                 A_p = -0.2716918 + 0.0142491 * theta - 0.0001862 * theta * theta;
                 B_p = 0.65945101 - 0.03431360 * theta + 0.00045036 * theta * theta;
                 C_p = -0.46602726 + 0.02335623 * theta - 0.00029720 * theta * theta;
+
+                // A_theta, B_theta, C_theta
+                A_theta = 0.2550377 - 0.0107983 * theta + 0.0001116 * theta * theta;
+                B_theta = -0.14022533 + 0.00596067 * theta - 0.00006172 * theta * theta;
+                C_theta = 0;
+
+                // A_phi, B_phi, C_phi
+                A_phi = -0.5459156 + 0.0219868 * theta - 0.0002349 * theta * theta;
+                B_phi = 0.74223687 - 0.03037065 * theta + 0.00032761 * theta * theta;
+                C_phi = -0.29798258 + 0.01246744 * theta - 0.00013525 * theta * theta;
+
             }
 
         } else if (runnum >= 16089 && runnum <= 16786) { // RGC Su22 Inb

@@ -101,7 +101,8 @@ public class fiducial_cuts {
         // Apply strictness levels for additional cuts on PCal (layer 1)
         switch (strictness) {
             case 1:
-                if (lw_1 < 9 || lv_1 < 9 || lu_1 < 14) {
+//                if (lw_1 < 9 || lv_1 < 9 || lu_1 < 14) {
+                if (lw_1 < 9 || lv_1 < 9 || lu_1 < 0) {
                     return false;
                 }
                 break;
@@ -234,7 +235,7 @@ public class fiducial_cuts {
             if (traj_Bank.getInt("detector", current_Row) != 5) { // detector = 5 is CVT 
                 continue;
             }
-            
+
             if (particle_Index == traj_Bank.getInt("pindex", current_Row)) {
                 if (traj_Bank.getInt("layer", current_Row) == 1) {
                     edge_1 = traj_Bank.getFloat("edge", current_Row);
