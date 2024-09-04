@@ -1145,10 +1145,10 @@ int main(int argc, char *argv[]) {
     plotDependence(asymmetryData, "Q2multi3", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi3_dependence_plots.png");
 
     std::vector<std::string> prefixes = {"Q2multi1", "Q2multi2", "Q2multi3"};
-        plotMultipleQ2multiDependence(asymmetryData, prefixes, "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi_dependence_plots.png");
+    plotMultipleQ2multiDependence(asymmetryData, prefixes, "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi_dependence_plots.png");
 
-    std::vector<std::string> prefixes = {"Q2extramulti1", "Q2extramulti2", "Q2extramulti3"};
-        plotMultipleQ2extramultiDependence(asymmetryData, prefixes, "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2extramulti_dependence_plots.png");
+    std::vector<std::string> extraprefixes = {"Q2extramulti1", "Q2extramulti2", "Q2extramulti3"};
+    plotMultipleQ2extramultiDependence(asymmetryData, extraprefixes, "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2extramulti_dependence_plots.png");
 
     // plotRunnumDependence(asymmetryData, "runnum", "run number", "output/epX_plots/runnum_dependence_plots.png");
 
