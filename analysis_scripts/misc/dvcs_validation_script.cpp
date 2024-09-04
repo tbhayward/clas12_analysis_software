@@ -518,12 +518,12 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
 
     // Create canvas and divide it into 3x4 subplots
     TCanvas *c1 = new TCanvas("c1", "Elastic Energy Loss Validation", 1200, 900);
-    c1->Divide(4, 4);
+    c1->Divide(4, 3);
 
     // Set the theta bins and corresponding histogram ranges
     const int nBins = 11; // 10 theta bins + 1 fully integrated case
     // Double_t thetaBins[nBins + 1] = {5, 11, 17, 23, 29, 35, 41, 47, 53, 59, 65}; // 10 equally spaced bins
-    Double_t thetaBins[nBins + 1] = {5, 29, 30, 33, 36, 39, 42, 45, 48, 51, 54, 60}; // 10 equally spaced bins
+    Double_t thetaBins[nBins + 1] = {5, 30, 33, 36, 39, 42, 45, 48, 51, 54, 60}; // 10 equally spaced bins
 
     TH1D *h1[nBins + 1]; // +1 for the fully integrated case
     TH1D *h2[nBins + 1]; // +1 for the fully integrated case
