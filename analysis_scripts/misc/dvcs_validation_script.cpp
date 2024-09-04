@@ -737,7 +737,7 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
     gr1->GetXaxis()->SetTitleSize(0.05); // Match font size with other plots
     gr1->GetYaxis()->SetTitleSize(0.05); // Match font size with other plots
     gr1->GetXaxis()->SetLimits(25, 60); // Set x-axis range
-    gr1->GetYaxis()->SetRangeUser(-0.20, 0.20); // Set y-axis range
+    gr1->GetYaxis()->SetRangeUser(-0.020, 0.020); // Set y-axis range
 
     // Add legend to the last plot, positioned in the top right
     TLegend *legend12 = new TLegend(0.6, 0.75, 0.9, 0.9); // Adjusted for horizontal and vertical size
