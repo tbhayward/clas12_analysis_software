@@ -113,7 +113,7 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
         }
         for (int i = 0; i < nBins; ++i) {
             if (thetaDeg2 >= thetaBins[i] && thetaDeg2 < thetaBins[i + 1] 
-                && eta2_1 < 0 
+                && eta2_2 < 0 
                 // && t1_2 > -2 
                 // && theta_gamma_gamma_2 < 0.6 
                 // && Emiss2_2 < 0.5 && pTmiss_2 < 0.125
