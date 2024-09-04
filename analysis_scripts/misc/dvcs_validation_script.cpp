@@ -551,11 +551,11 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
     for (Long64_t j = 0; j < nEntries1; ++j) {
         tree1->GetEntry(j);
         Double_t thetaDeg1 = p1_theta1 * (180.0 / TMath::Pi()); // Convert to degrees
-        if (thetaDeg1 >= 5 && thetaDeg1 < 65 && W_1 < 1.1) {
+        if (thetaDeg1 >= 5 && thetaDeg1 < 65 && W_1 < 1.05) {
             h1[0]->Fill(Mx2_1); // Fully integrated case
         }
         for (int i = 0; i < nBins; ++i) {
-            if (thetaDeg1 >= thetaBins[i] && thetaDeg1 < thetaBins[i + 1] && W_1 < 1.1) {
+            if (thetaDeg1 >= thetaBins[i] && thetaDeg1 < thetaBins[i + 1] && W_1 < 1.05) {
                 h1[i + 1]->Fill(Mx2_1);
                 theta_sum[i] += thetaDeg1;
                 theta_count[i]++;
@@ -567,11 +567,11 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
     for (Long64_t j = 0; j < nEntries2; ++j) {
         tree2->GetEntry(j);
         Double_t thetaDeg2 = p1_theta2 * (180.0 / TMath::Pi()); // Convert to degrees
-        if (thetaDeg2 >= 5 && thetaDeg2 < 65 && W_2 < 1.1) {
+        if (thetaDeg2 >= 5 && thetaDeg2 < 65 && W_2 < 1.05) {
             h2[0]->Fill(Mx2_2); // Fully integrated case
         }
         for (int i = 0; i < nBins; ++i) {
-            if (thetaDeg2 >= thetaBins[i] && thetaDeg2 < thetaBins[i + 1] && W_2 < 1.1) {
+            if (thetaDeg2 >= thetaBins[i] && thetaDeg2 < thetaBins[i + 1] && W_2 < 1.05) {
                 h2[i + 1]->Fill(Mx2_2);
                 theta_sum[i] += thetaDeg2;
                 theta_count[i]++;
@@ -612,15 +612,18 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
     h2[0]->SetStats(0);
     h2[0]->Draw("E SAME");
 
-    TF1 *fit1_int = new TF1("fit1_integrated", "gaus(0) + pol2(3)", -0.1, 0.1);
-    TF1 *fit2_int = new TF1("fit2_integrated", "gaus(0) + pol2(3)", -0.1, 0.1);
+    // Define the Gaussian + quadratic background fit functions
+    TF1 *fit1_int = new TF1("fit1_integrated", "gaus(0) + pol2(3)", -0.015, 0.015);
+    TF1 *fit2_int = new TF1("fit2_integrated", "gaus(0) + pol2(3)", -0.015, 0.015);
 
-    fit1_int->SetParameters(0.8 * maxVal1, 0, 0.2);
-    fit1_int->SetParLimits(1, -0.015, 0.015);
-    fit1_int->SetParLimits(2, 0, 0.3);
-    fit2_int->SetParameters(0.8 * maxVal2, 0, 0.2);
-    fit2_int->SetParLimits(1, -0.015, 0.015);
-    fit2_int->SetParLimits(2, 0, 0.3);
+    // Set the initial guesses and parameter limits for the fit
+    fit1_int->SetParameters(0.5 * maxVal1, 0, 0.0025);  // Initial guesses: amplitude, mu, sigma
+    fit1_int->SetParLimits(1, -0.0025, 0.0025);  // mu limits
+    fit1_int->SetParLimits(2, 0, 0.005);         // sigma limits
+
+    fit2_int->SetParameters(0.5 * maxVal2, 0, 0.0025);  // Initial guesses: amplitude, mu, sigma
+    fit2_int->SetParLimits(1, -0.0025, 0.0025);  // mu limits
+    fit2_int->SetParLimits(2, 0, 0.005);         // sigma limits
 
     fit1_int->SetLineWidth(1);
     fit2_int->SetLineWidth(1);
@@ -666,15 +669,18 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
         h2[i]->SetStats(0);
         h2[i]->Draw("E SAME");
 
-        TF1 *fit1 = new TF1(Form("fit1_%d", i), "gaus(0) + pol2(3)", -0.3, 0.3);
-        TF1 *fit2 = new TF1(Form("fit2_%d", i), "gaus(0) + pol2(3)", -0.3, 0.3);
+        // Define the Gaussian + quadratic background fit functions for each bin
+        TF1 *fit1 = new TF1(Form("fit1_%d", i), "gaus(0) + pol2(3)", -0.015, 0.015);
+        TF1 *fit2 = new TF1(Form("fit2_%d", i), "gaus(0) + pol2(3)", -0.015, 0.015);
 
-        fit1->SetParameters(0.8 * maxVal1, 0, 0.2);
-        fit1->SetParLimits(1, -0.15, 0.15);
-        fit1->SetParLimits(2, 0, 0.3);
-        fit2->SetParameters(0.8 * maxVal2, 0, 0.2);
-        fit2->SetParLimits(1, -0.15, 0.15);
-        fit2->SetParLimits(2, 0, 0.3);
+        // Set the initial guesses and parameter limits for the fit
+        fit1->SetParameters(0.5 * maxVal1, 0, 0.0025);  // Initial guesses: amplitude, mu, sigma
+        fit1->SetParLimits(1, -0.0025, 0.0025);  // mu limits
+        fit1->SetParLimits(2, 0, 0.005);         // sigma limits
+
+        fit2->SetParameters(0.5 * maxVal2, 0, 0.0025);  // Initial guesses: amplitude, mu, sigma
+        fit2->SetParLimits(1, -0.0025, 0.0025);  // mu limits
+        fit2->SetParLimits(2, 0, 0.005);         // sigma limits
 
         fit1->SetLineWidth(1);
         fit2->SetLineWidth(1);
@@ -730,7 +736,7 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
     gr1->GetYaxis()->SetTitle("#mu (GeV^{2})"); // Set y-axis label
     gr1->GetXaxis()->SetTitleSize(0.05); // Match font size with other plots
     gr1->GetYaxis()->SetTitleSize(0.05); // Match font size with other plots
-    gr1->GetXaxis()->SetLimits(0, 70); // Set x-axis range
+    gr1->GetXaxis()->SetLimits(25, 60); // Set x-axis range
     gr1->GetYaxis()->SetRangeUser(-0.20, 0.20); // Set y-axis range
 
     // Add legend to the last plot, positioned in the top right
