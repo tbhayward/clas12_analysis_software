@@ -227,7 +227,7 @@ public class energy_loss_corrections {
         }
 
         if (isForwardDetector && !isCentralDetector) {
-            p = +A_p + B_p / p + C_p / (p * p);
+            p += A_p + B_p / p + C_p / (p * p);
             theta += A_theta + B_theta / theta + C_theta / (theta * theta);
             phi += A_phi + B_phi / phi + C_phi / (phi * phi);
         } else if (!isForwardDetector && isCentralDetector) {
