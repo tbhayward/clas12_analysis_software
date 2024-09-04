@@ -521,7 +521,7 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
     c1->Divide(4, 4);
 
     // Set the theta bins and corresponding histogram ranges
-    const int nBins = 10; // 10 theta bins + 1 fully integrated case
+    const int nBins = 14; // 10 theta bins + 1 fully integrated case
     // Double_t thetaBins[nBins + 1] = {5, 11, 17, 23, 29, 35, 41, 47, 53, 59, 65}; // 10 equally spaced bins
     Double_t thetaBins[nBins + 1] = {5, 29, 27, 30, 33, 36, 39, 42, 45, 48, 51, 54, 57, 60, 70}; // 10 equally spaced bins
 
