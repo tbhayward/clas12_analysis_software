@@ -6399,15 +6399,15 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
         B_p = -0.01428267 +0.00042833*theta +0.00001081*theta*theta;
         C_p = 0.01197102 -0.00055673*theta +0.00000785*theta*theta;
 
-        // // A_theta, B_theta, C_theta
-        // A_theta = 0.0683831 -0.0083821*theta +0.0001670 * theta * theta;
-        // B_theta = -0.15834256 +0.02630760*theta -0.00064126 * theta * theta;
-        // C_theta = 0.11587509 -0.01679559*theta + 0.00038915 * theta * theta;
+        // A_theta, B_theta, C_theta
+        A_theta = 0.0683831 -0.0083821*theta +0.0001670 * theta * theta;
+        B_theta = -0.15834256 +0.02630760*theta -0.00064126 * theta * theta;
+        C_theta = 0.11587509 -0.01679559*theta + 0.00038915 * theta * theta;
 
-        // // A_phi, B_phi, C_phi
-        // A_phi = 0.0416510 -0.0064212*theta +0.0000622 * theta * theta;
-        // B_phi = 0.28414191 -0.00047647*theta +0.00010357 * theta * theta;
-        // C_phi = -0.25690893 +0.00886707*theta -0.00016081 * theta * theta;
+        // A_phi, B_phi, C_phi
+        A_phi = 0.0416510 -0.0064212*theta +0.0000622 * theta * theta;
+        B_phi = 0.28414191 -0.00047647*theta +0.00010357 * theta * theta;
+        C_phi = -0.25690893 +0.00886707*theta -0.00016081 * theta * theta;
     }
     if (dataset == "rga_fa18_inb" && region == "CD") {
         // A_p, B_p, C_p
