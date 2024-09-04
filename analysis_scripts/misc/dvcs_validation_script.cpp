@@ -782,7 +782,7 @@ void plot_pi0_energy_loss_validation(const char* file1, const char* file2, const
 
     // Set the theta bins and corresponding histogram ranges
     const int nBins = 10; // 10 theta bins + 1 fully integrated case
-    Double_t thetaBins[nBins + 1] = {5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 65}; // 5 to 65 degrees
+    Double_t thetaBins[nBins + 1] = {5, 11, 17, 23, 29, 35, 41, 47, 53, 59, 65}; // 5 to 65 degrees
 
     TH1D *h1[nBins + 1]; // +1 for the fully integrated case
     TH1D *h2[nBins + 1]; // +1 for the fully integrated case
