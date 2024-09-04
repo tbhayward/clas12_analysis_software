@@ -523,7 +523,7 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
     // Set the theta bins and corresponding histogram ranges
     const int nBins = 11; // 10 theta bins + 1 fully integrated case
     // Double_t thetaBins[nBins + 1] = {5, 11, 17, 23, 29, 35, 41, 47, 53, 59, 65}; // 10 equally spaced bins
-    Double_t thetaBins[nBins + 1] = {5, 32, 35, 37.5, 40.0, 42.5, 45.0, 47.5, 50, 52.5, 60}; // 10 equally spaced bins
+    Double_t thetaBins[nBins + 1] = {5, 32, 33, 35, 37, 39, 41, 43, 46, 49, 60}; // 10 equally spaced bins
 
     TH1D *h1[nBins + 1]; // +1 for the fully integrated case
     TH1D *h2[nBins + 1]; // +1 for the fully integrated case
@@ -535,12 +535,12 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
     Double_t theta_mean[nBins] = {0.0};
 
     // Create histograms for each theta bin with 50 bins
-    h1[0] = new TH1D("h1_integrated", Form("Integrated #theta [5, 65] %s", titleSuffix), 15, -0.025, 0.025);
-    h2[0] = new TH1D("h2_integrated", Form("Integrated #theta [5, 65] %s", titleSuffix), 15, -0.025, 0.025);
+    h1[0] = new TH1D("h1_integrated", Form("Integrated #theta [5, 65] %s", titleSuffix), 25, -0.025, 0.025);
+    h2[0] = new TH1D("h2_integrated", Form("Integrated #theta [5, 65] %s", titleSuffix), 25, -0.025, 0.025);
 
     for (int i = 0; i < nBins; ++i) {
-        h1[i + 1] = new TH1D(Form("h1_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 15, -0.025, 0.025);
-        h2[i + 1] = new TH1D(Form("h2_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 15, -0.025, 0.025);
+        h1[i + 1] = new TH1D(Form("h1_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 25, -0.025, 0.025);
+        h2[i + 1] = new TH1D(Form("h2_%d", i), Form("#theta [%.0f, %.0f] %s", thetaBins[i], thetaBins[i + 1], titleSuffix), 25, -0.025, 0.025);
     }
 
     // Fill the histograms and calculate theta means
