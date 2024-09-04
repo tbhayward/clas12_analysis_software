@@ -219,8 +219,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                         traj_Bank, run_Bank, cc_Bank)) {
                     // this checks all of the PID requirements, if it passes all of them the electron is 
                     // added to the event below
-                    double fe = 1;
-                    Particle part = new Particle(pid, fe * px, fe * py, fe * pz, vx, vy, vz_e);
+                    Particle part = new Particle(pid, px, py, pz, vx, vy, vz_e);
                     physEvent.addParticle(part);
                 }
 
@@ -228,8 +227,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                         track_Bank, traj_Bank, run_Bank)) {
                     // check for pion PID
 
-                    double fe = 1;
-                    Particle part = new Particle(pid, fe * px, fe * py, fe * pz, vx, vy, vz);
+                    Particle part = new Particle(pid, px, py, pz, vx, vy, vz);
                     physEvent.addParticle(part);
                 }
 
@@ -237,18 +235,20 @@ public class analysis_fitter extends GenericKinematicFitter {
                         track_Bank, traj_Bank, run_Bank)) {
                     // check for pion PID
 
-                    double fe = 1;
-                    Particle part = new Particle(pid, fe * px, fe * py, fe * pz, vx, vy, vz);
+                    Particle part = new Particle(pid, px, py, pz, vx, vy, vz);
                     physEvent.addParticle(part);
                 }
 
                 if (pid == 2212 && proton_test(particle_Index, pid, vz, vz_e, rec_Bank, cal_Bank,
                         track_Bank, traj_Bank, run_Bank)) {
 
-                    double fe = energy_loss_corrections.proton_energy_loss_corrections(particle_Index, px, py, pz,
-                            rec_Bank, run_Bank);
-//                    double fe = 1;
-                    Particle part = new Particle(pid, fe * px, fe * py, fe * pz, vx, vy, vz);
+                    float[] momentum = {px, py, pz};
+                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+
+                    px = momentum[0];
+                    py = momentum[1];
+                    pz = momentum[2];
+                    Particle part = new Particle(pid, px, py, pz, vx, vy, vz);
                     physEvent.addParticle(part);
                 }
 

@@ -11,8 +11,8 @@ import org.jlab.io.hipo.HipoDataBank;
  * @author tbhayward
  */
 public class energy_loss_corrections {
-    
-    public static double p(double x, double y, double z) {
+
+    public static double p_calculation(double x, double y, double z) {
         return Math.sqrt(x * x + y * y + z * z);
     }
 
@@ -59,12 +59,16 @@ public class energy_loss_corrections {
         return p * Math.cos(theta);
     }
 
-    public double proton_energy_loss_corrections(int particle_Index, double px, double py, double pz,
+    public void proton_energy_loss_corrections(int particle_Index, float[] p_array,
             HipoDataBank rec_Bank, HipoDataBank run_Bank) {
 
-        double p = Math.sqrt(px * px + py * py + pz * pz);
+        double px = p_array[0];
+        double py = p_array[1];
+        double pz = p_array[2];
+
+        double p = p_calculation(px, py, pz);
         double theta = theta_calculation(px, py, pz);
-//        double phi = phi_calculation(px, py);
+        double phi = phi_calculation(px, py);
 
         generic_tests generic_tests = new generic_tests();
         boolean isForwardDetector = generic_tests.forward_detector_cut(particle_Index, rec_Bank);
@@ -76,26 +80,51 @@ public class energy_loss_corrections {
         double A_p = 0;
         double B_p = 0;
         double C_p = 0;
-//        double A_theta, B_theta, C_theta;
-//        double A_phi, B_phi, C_phi;
+        double A_theta = 0;
+        double B_theta = 0;
+        double C_theta = 0;
+        double A_phi = 0;
+        double B_phi = 0;
+        double C_phi = 0;
         if (runnum >= 4763 && runnum <= 5419) { // RGA Fa18 Inb
 
             if (isForwardDetector && !isCentralDetector) {
+
                 A_p = 0.0099626 - 0.0002414 * theta - 0.0000020 * theta * theta;
                 B_p = -0.01428267 + 0.00042833 * theta + 0.00001081 * theta * theta;
                 C_p = 0.01197102 - 0.00055673 * theta + 0.00000785 * theta * theta;
+
+                A_theta = 0.0683831 - 0.0083821 * theta + 0.0001670 * theta * theta;
+                B_theta = -0.15834256 + 0.02630760 * theta - 0.00064126 * theta * theta;
+                C_theta = 0.11587509 - 0.01679559 * theta + 0.00038915 * theta * theta;
+
+                A_phi = 0.0416510 - 0.0064212 * theta + 0.0000622 * theta * theta;
+                B_phi = 0.28414191 - 0.00047647 * theta + 0.00010357 * theta * theta;
+                C_phi = -0.25690893 + 0.00886707 * theta - 0.00016081 * theta * theta;
+
             } else if (!isForwardDetector && isCentralDetector) {
+
                 A_p = -0.2383991 + 0.0124992 * theta - 0.0001646 * theta * theta;
                 B_p = 0.60123885 - 0.03128464 * theta + 0.00041314 * theta * theta;
                 C_p = -0.44080146 + 0.02209857 * theta - 0.00028224 * theta * theta;
+
+                A_theta = 0.1000890 - 0.0039222 * theta + 0.0000359 * theta * theta;
+                B_theta = -0.0130680 + 0.0004545 * theta - 0.0000026 * theta * theta;
+                C_theta = 0;
+
+                A_phi = 0.0776934 - 0.0059632 * theta + 0.0000749 * theta * theta;
+                B_phi = -0.31582008 + 0.01649220 * theta - 0.00018505 * theta * theta;
+                C_phi = 0.10909746 - 0.00530642 * theta + 0.00005627 * theta * theta;
             }
 
         } else if (runnum >= 5423 && runnum <= 5666) { // RGA Fa18 Out
 
             if (isForwardDetector && !isCentralDetector) {
+
                 A_p = 0.0135790 - 0.0005303 * theta;
                 B_p = -0.02165929 + 0.00121123 * theta;
                 C_p = 0.0;
+
             } else if (!isForwardDetector && isCentralDetector) {
                 A_p = -0.1927861 + 0.0099546 * theta - 0.0001299 * theta * theta;
                 B_p = 0.44307822 - 0.02309469 * theta + 0.00030784 * theta * theta;
@@ -116,23 +145,52 @@ public class energy_loss_corrections {
         } else if (runnum >= 16089 && runnum <= 16786) { // RGC Su22 Inb
 
             if (isForwardDetector && !isCentralDetector) {
+
                 A_p = 0.0109317 - 0.0000194 * theta - 0.0000117 * theta * theta;
                 B_p = -0.00910576 - 0.00035154 * theta + 0.00003905 * theta * theta;
                 C_p = 0.01225782 - 0.00012805 * theta - 0.00000820 * theta * theta;
+
+                A_theta = 0.0644813 - 0.0079393 * theta + 0.0001566 * theta * theta;
+                B_theta = -0.13787609 + 0.02395150 * theta - 0.00058811 * theta * theta;
+                C_theta = 0.10551548 - 0.01569699 * theta + 0.00036501 * theta * theta;
+
+                A_phi = 0.0787287 - 0.0075095 * theta + 0.0000669 * theta * theta;
+                B_phi = 0.03705727 + 0.01332536 * theta - 0.00009908 * theta * theta;
+                C_phi = -0.10680417 - 0.00141926 * theta + 0.00001672 * theta * theta;
+
             } else if (!isForwardDetector && isCentralDetector) {
+
                 A_p = -0.3951652 + 0.0202840 * theta - 0.0002660 * theta * theta;
                 B_p = 0.93238668 - 0.04803619 * theta + 0.00063215 * theta * theta;
                 C_p = -0.59146847 + 0.02997697 * theta - 0.00038773 * theta * theta;
+
+                // A_theta, B_theta, C_theta
+                A_theta = 0.0644813 - 0.0079393 * theta + 0.0001566 * theta * theta;
+                B_theta = -0.13787609 + 0.02395150 * theta - 0.00058811 * theta * theta;
+                C_theta = 0.10551548 - 0.01569699 * theta + 0.00036501 * theta * theta;
+
+                // A_phi, B_phi, C_phi
+                A_phi = 0.0787287 - 0.0075095 * theta + 0.0000669 * theta * theta;
+                B_phi = 0.03705727 + 0.01332536 * theta - 0.00009908 * theta * theta;
+                C_phi = -0.10680417 - 0.00141926 * theta + 0.00001672 * theta * theta;
             }
 
         }
 
         if (isForwardDetector && !isCentralDetector) {
-            dp = A_p + B_p / p + C_p / (p * p);
+            p = +A_p + B_p / p + C_p / (p * p);
+            theta += A_theta + B_theta / theta + C_theta / (theta * theta);
+            phi += A_phi + B_phi / phi + C_phi / (phi * phi);
         } else if (!isForwardDetector && isCentralDetector) {
-            dp = A_p + B_p * p + C_p * p * p;
+            p += A_p + B_p * p + C_p * p * p;
+            theta += A_theta + B_theta / theta + C_theta / (theta * theta);
+            phi += A_phi + B_phi / phi + C_phi / (phi * phi);
         }
-        return ((dp + p) / p); // fe
+
+        // Update the px, py, pz values
+        p_array[0] = (float) x_calculation(p, theta, phi);
+        p_array[1] = (float) y_calculation(p, theta, phi);
+        p_array[2] = (float) z_calculation(p, theta);
     }
 
 }

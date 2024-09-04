@@ -2,7 +2,6 @@
  *
  * @author Timothy B. Hayward
  */
-
 package extended_kinematic_fitters;
 
 import org.jlab.clas.physics.GenericKinematicFitter;
@@ -13,7 +12,6 @@ import org.jlab.io.hipo.HipoDataBank;
 
 import org.jlab.clas.physics.*;
 
-
 public class dvcs_fitter extends GenericKinematicFitter {
 
     protected final Double mybeam;
@@ -21,11 +19,9 @@ public class dvcs_fitter extends GenericKinematicFitter {
     public dvcs_fitter(double beam) {
         super(beam);
         mybeam = beam;
-    } 
-    
-    
+    }
+
     ////////////////////////////////////////////////////////////////////////////////////////////////
-    
     public boolean electron_test(int particle_Index, double p,
             HipoDataBank rec_Bank, HipoDataBank cal_Bank, HipoDataBank track_Bank,
             HipoDataBank traj_Bank, HipoDataBank run_Bank, HipoDataBank cc_Bank) {
@@ -44,7 +40,7 @@ public class dvcs_fitter extends GenericKinematicFitter {
                 && fiducial_cuts.pcal_fiducial_cut(particle_Index, 1, run_Bank, rec_Bank, cal_Bank)
                 && fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank);
     }
-    
+
     public boolean proton_test(int particle_Index, int pid, float vz, double trigger_electron_vz,
             HipoDataBank rec_Bank, HipoDataBank cal_Bank, HipoDataBank track_Bank,
             HipoDataBank traj_Bank, HipoDataBank run_Bank) {
@@ -63,7 +59,7 @@ public class dvcs_fitter extends GenericKinematicFitter {
 
         return true
                 //            && p > 0.4
-//                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
+                //                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
                 //            && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
                 && (passesForwardDetector
                         ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
@@ -76,114 +72,118 @@ public class dvcs_fitter extends GenericKinematicFitter {
                         : true) //            && charged_hadron_chi2pid_cut(particle_Index, rec_Bank)
                 && (passesCentralDetector
                         ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
-                        : true)
-                ;
+                        : true);
     }
-    
-    public boolean photon_test(int particle_Index, HipoDataBank run_Bank, HipoDataBank rec_Bank, HipoDataBank cal_Bank, 
+
+    public boolean photon_test(int particle_Index, HipoDataBank run_Bank, HipoDataBank rec_Bank, HipoDataBank cal_Bank,
             LorentzVector lv_e) {
-        
+
         generic_tests generic_tests = new generic_tests();
         fiducial_cuts fiducial_cuts = new fiducial_cuts();
         pid_cuts pid_cuts = new pid_cuts();
-        
+
         float px = rec_Bank.getFloat("px", particle_Index);
         float py = rec_Bank.getFloat("py", particle_Index);
         float pz = rec_Bank.getFloat("pz", particle_Index);
-        double p = Math.sqrt(Math.pow(px,2)+Math.pow(py,2)+Math.pow(pz,2));
+        double p = Math.sqrt(Math.pow(px, 2) + Math.pow(py, 2) + Math.pow(pz, 2));
         LorentzVector lv_gamma = new LorentzVector();
         lv_gamma.setPxPyPzM(px, py, pz, 0.0);
-        
+
         boolean passesForwardDetector = generic_tests.forward_detector_cut(particle_Index, rec_Bank);
         boolean passesForwardTagger = generic_tests.forward_tagger_cut(particle_Index, rec_Bank);
-        
-        return true && 
-            p > 0.50
-            && (passesForwardDetector || passesForwardTagger)
-            && (passesForwardDetector 
-                ? fiducial_cuts.pcal_fiducial_cut(particle_Index, 3, run_Bank, rec_Bank, cal_Bank)
-                : fiducial_cuts.forward_tagger_fiducial_cut(particle_Index, rec_Bank, cal_Bank))
-            && pid_cuts.beta_cut(particle_Index, rec_Bank)
-//          && pid_cuts.e_gamma_open_angle_cut(lv_e, lv_gamma)
-            ;
+
+        return true
+                && p > 0.50
+                && (passesForwardDetector || passesForwardTagger)
+                && (passesForwardDetector
+                        ? fiducial_cuts.pcal_fiducial_cut(particle_Index, 3, run_Bank, rec_Bank, cal_Bank)
+                        : fiducial_cuts.forward_tagger_fiducial_cut(particle_Index, rec_Bank, cal_Bank))
+                && pid_cuts.beta_cut(particle_Index, rec_Bank) //          && pid_cuts.e_gamma_open_angle_cut(lv_e, lv_gamma)
+                ;
     }
-    
+
     ////////////////////////////////////////////////////////////////////////////////////////////////
-    
     @Override
     public PhysicsEvent getPhysicsEvent(DataEvent event) {
-        
+
         generic_tests generic_tests = new generic_tests();
         if (generic_tests.banks_test(event)) {
             PhysicsEvent physEvent = new PhysicsEvent();
             // load the hipo banks
             // assumption is we are using trains which would require all of these banks to exist
-            HipoDataBank rec_Bank = (HipoDataBank) event.getBank("REC::Particle"); 
+            HipoDataBank rec_Bank = (HipoDataBank) event.getBank("REC::Particle");
             HipoDataBank cal_Bank = (HipoDataBank) event.getBank("REC::Calorimeter");
             HipoDataBank cc_Bank = (HipoDataBank) event.getBank("REC::Cherenkov");
             HipoDataBank track_Bank = (HipoDataBank) event.getBank("REC::Track");
             HipoDataBank traj_Bank = (HipoDataBank) event.getBank("REC::Traj");
             HipoDataBank run_Bank = (HipoDataBank) event.getBank("RUN::config");
-            
+
             double vz_e = -999;
-        
-            LorentzVector lv_e = new LorentzVector(); 
-            if (rec_Bank.getInt("pid", 0) == 11) { 
+
+            LorentzVector lv_e = new LorentzVector();
+            if (rec_Bank.getInt("pid", 0) == 11) {
                 // trigger particle was an electron
                 // highest momentum electron listed first (used for DIS calculations)
                 float px = rec_Bank.getFloat("px", 0);
                 float py = rec_Bank.getFloat("py", 0);
                 float pz = rec_Bank.getFloat("pz", 0);
-                double p = Math.sqrt(px*px+py*py+pz*pz);
+                double p = Math.sqrt(px * px + py * py + pz * pz);
                 lv_e.setPxPyPzM(px, py, pz, 0.0005109989461);
-                vz_e = rec_Bank.getFloat("vz",0);
-                
-            } else { return physEvent; } // trigger particle was not an electron
-            
+                vz_e = rec_Bank.getFloat("vz", 0);
+
+            } else {
+                return physEvent;
+            } // trigger particle was not an electron
+
             for (int particle_Index = 0; particle_Index < rec_Bank.rows(); particle_Index++) {
                 int pid = rec_Bank.getInt("pid", particle_Index);
                 float px = rec_Bank.getFloat("px", particle_Index);
                 float py = rec_Bank.getFloat("py", particle_Index);
                 float pz = rec_Bank.getFloat("pz", particle_Index);
-                float vx = rec_Bank.getFloat("vx",particle_Index);
-                float vy = rec_Bank.getFloat("vy",particle_Index);
-                float vz = rec_Bank.getFloat("vz",particle_Index);
-                double p = Math.sqrt(px*px+py*py+pz*pz);
-                
+                float vx = rec_Bank.getFloat("vx", particle_Index);
+                float vy = rec_Bank.getFloat("vy", particle_Index);
+                float vz = rec_Bank.getFloat("vz", particle_Index);
+                double p = Math.sqrt(px * px + py * py + pz * pz);
+
                 energy_loss_corrections energy_loss_corrections = new energy_loss_corrections();
-                
-                if (pid == 11 && electron_test(particle_Index, p, rec_Bank, cal_Bank, track_Bank, 
+
+                if (pid == 11 && electron_test(particle_Index, p, rec_Bank, cal_Bank, track_Bank,
                         traj_Bank, run_Bank, cc_Bank)) {
                     // this checks all of the PID requirements, if it passes all of them the electron is 
                     // added to the event below
-                  double fe = 1;
-                    Particle part = new Particle(pid,fe*px,fe*py,fe*pz,vx,vy,vz_e);
+                    Particle part = new Particle(pid, px, py, pz, vx, vy, vz_e);
                     physEvent.addParticle(part);
                 }
-                
-                if (pid==2212 && proton_test(particle_Index, pid, vz, vz_e, rec_Bank, cal_Bank, 
-                    track_Bank, traj_Bank, run_Bank)) {
-                   
-                   double fe = energy_loss_corrections.proton_energy_loss_corrections(particle_Index, px, py, 
-                           pz, rec_Bank, run_Bank);
-//                   double fe = 1;
-                   Particle part = new Particle(pid,fe*px,fe*py,fe*pz,vx,vy,vz);
-                   physEvent.addParticle(part);   
-               }
-                
-                if (pid==22 && photon_test(particle_Index, run_Bank, rec_Bank, cal_Bank, lv_e)) {
-                   
-                   Particle part = new Particle(pid,px,py,pz,vx,vy,vz);
-                   physEvent.addParticle(part);   
-               }
+
+                if (pid == 2212 && proton_test(particle_Index, pid, vz, vz_e, rec_Bank, cal_Bank,
+                        track_Bank, traj_Bank, run_Bank)) {
+
+                    float[] momentum = {px, py, pz};
+                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+
+                    System.out.println(px+" "+py+" "+pz);
+                    px = momentum[0];
+                    py = momentum[1];
+                    pz = momentum[2];
+                    System.out.println(px+" "+py+" "+pz);
+                    System.out.println();
+                    Particle part = new Particle(pid, px, py, pz, vx, vy, vz);
+                    physEvent.addParticle(part);
+                }
+
+                if (pid == 22 && photon_test(particle_Index, run_Bank, rec_Bank, cal_Bank, lv_e)) {
+
+                    Particle part = new Particle(pid, px, py, pz, vx, vy, vz);
+                    physEvent.addParticle(part);
+                }
             }
-            
-            int num_gamma = physEvent.countByPid(22); 
+
+            int num_gamma = physEvent.countByPid(22);
             for (int current_p1 = 0; current_p1 < num_gamma; current_p1++) {
                 for (int current_p2 = 0; current_p2 < num_gamma; current_p2++) {
                     parent_hadron_creation parent_hadron_creation = new parent_hadron_creation();
                     Particle part = parent_hadron_creation.pi0_check(physEvent, current_p1, current_p2);
-                    
+
                     // Check if a valid Particle was returned before adding it to the event
                     if (part != null) {
                         physEvent.addParticle(part);
@@ -193,6 +193,6 @@ public class dvcs_fitter extends GenericKinematicFitter {
 
             return physEvent;
         }
-    return new PhysicsEvent(this.mybeam);
+        return new PhysicsEvent(this.mybeam);
     }
 }
