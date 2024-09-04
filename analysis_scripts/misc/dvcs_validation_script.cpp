@@ -78,15 +78,19 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
         tree1->GetEntry(j);
         Double_t thetaDeg1 = p1_theta1 * (180.0 / TMath::Pi()); // Convert to degrees
         if (thetaDeg1 >= 5 && thetaDeg1 < 65 
-            // && eta2_1 < 0 && t1_1 > -2 && theta_gamma_gamma_1 < 0.6 &&
-            //     Emiss2_1 < 0.5 && pTmiss_1 < 0.125
+            && eta2_1 < 0 
+            // && t1_1 > -2 
+            // && theta_gamma_gamma_1 < 0.6 
+            // && Emiss2_1 < 0.5 && pTmiss_1 < 0.125
                 ) {
             h1[0]->Fill(Mxprotonsquared_1); // Fully integrated case
         }
         for (int i = 0; i < nBins; ++i) {
             if (thetaDeg1 >= thetaBins[i] && thetaDeg1 < thetaBins[i + 1] 
-                // && eta2_1 < 0 && t1_1 > -2 && theta_gamma_gamma_1 < 0.6 &&
-                // Emiss2_1 < 0.5 && pTmiss_1 < 0.125
+                && eta2_1 < 0 
+                // && t1_1 > -2 
+                // && theta_gamma_gamma_1 < 0.6 
+                // && Emiss2_1 < 0.5 && pTmiss_1 < 0.125
                 ) {
                 h1[i + 1]->Fill(Mxprotonsquared_1);
                 theta_sum[i] += thetaDeg1;
@@ -100,15 +104,19 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
         tree2->GetEntry(j);
         Double_t thetaDeg2 = p1_theta2 * (180.0 / TMath::Pi()); // Convert to degrees
         if (thetaDeg2 >= 5 && thetaDeg2 < 65 
-            // && eta2_2 < 0 && t1_2 > -2 && theta_gamma_gamma_2 < 0.6 &&
-            //     Emiss2_2 < 0.5 && pTmiss_2 < 0.125
+            && eta2_1 < 0 
+            // && t1_1 > -2 
+            // && theta_gamma_gamma_1 < 0.6 
+            // && Emiss2_1 < 0.5 && pTmiss_1 < 0.125
                 ) {
             h2[0]->Fill(Mxprotonsquared_2); // Fully integrated case
         }
         for (int i = 0; i < nBins; ++i) {
             if (thetaDeg2 >= thetaBins[i] && thetaDeg2 < thetaBins[i + 1] 
-                // && eta2_2 < 0 && t1_2 > -2 && theta_gamma_gamma_2 < 0.6 &&
-                // Emiss2_2 < 0.5 && pTmiss_2 < 0.125
+                && eta2_1 < 0 
+                // && t1_1 > -2 
+                // && theta_gamma_gamma_1 < 0.6 
+                // && Emiss2_1 < 0.5 && pTmiss_1 < 0.125
                 ) {
                 h2[i + 1]->Fill(Mxprotonsquared_2);
                 theta_sum[i] += thetaDeg2;
