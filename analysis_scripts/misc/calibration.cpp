@@ -6442,7 +6442,7 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
         C_phi = 0; // No c_phi for rga_fa18_out
     }
     else if (dataset == "rga_fa18_out" && region == "CD") {
-        // A_p, B_p (no C_p for rga_fa18_out and no theta^2 term)
+        // A_p, B_p, C_p
         A_p = -0.1927861 +0.0099546*theta -0.0001299*theta*theta; 
         B_p = 0.44307822 -0.02309469*theta +0.00030784*theta*theta; 
         C_p = -0.32938000 +0.01648659*theta -0.00021181*theta*theta; 
@@ -7192,9 +7192,9 @@ int main(int argc, char** argv) {
 
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
-    // if (mcReader) energy_loss(*mcReader, "rga_fa18_inb"); 
+    if (mcReader) energy_loss(*mcReader, "rga_fa18_inb"); 
     // if (mcReader) energy_loss(*mcReader, "rga_fa18_out");  
-    if (mcReader) energy_loss(*mcReader, "rga_sp19_inb"); 
+    // if (mcReader) energy_loss(*mcReader, "rga_sp19_inb"); 
     // if (mcReader) energy_loss(*mcReader, "rgc_su22_inb");   
 
     // Close files
