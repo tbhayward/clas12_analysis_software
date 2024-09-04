@@ -613,8 +613,8 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
     h2[0]->Draw("E SAME");
 
     // Define the Gaussian + quadratic background fit functions
-    TF1 *fit1_int = new TF1("fit1_integrated", "gaus(0) + pol2(3)", -0.0075, 0.0075);
-    TF1 *fit2_int = new TF1("fit2_integrated", "gaus(0) + pol2(3)", -0.0075, 0.0075);
+    TF1 *fit1_int = new TF1("fit1_integrated", "gaus(0) + pol4(3)", -0.0075, 0.0075);
+    TF1 *fit2_int = new TF1("fit2_integrated", "gaus(0) + pol4(3)", -0.0075, 0.0075);
 
     // Set the initial guesses and parameter limits for the fit
     fit1_int->SetParameters(0.5 * maxVal1, 0, 0.0025);  // Initial guesses: amplitude, mu, sigma
@@ -637,8 +637,8 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
 
     TLegend *legend_int = new TLegend(0.25, 0.75, 0.9, 0.9);
     legend_int->SetTextSize(0.03);
-    legend_int->AddEntry(h1[0], Form("Uncorrected: #mu=%.3f, #sigma=%.3f", fit1_int->GetParameter(1), fit1_int->GetParameter(2)), "lep");
-    legend_int->AddEntry(h2[0], Form("Corrected: #mu=%.3f, #sigma=%.3f", fit2_int->GetParameter(1), fit2_int->GetParameter(2)), "lep");
+    legend_int->AddEntry(h1[0], Form("Uncorrected: #mu=%.4f, #sigma=%.4f", fit1_int->GetParameter(1), fit1_int->GetParameter(2)), "lep");
+    legend_int->AddEntry(h2[0], Form("Corrected: #mu=%.4f, #sigma=%.4f", fit2_int->GetParameter(1), fit2_int->GetParameter(2)), "lep");
     legend_int->Draw();
 
     h1[0]->GetXaxis()->SetTitle("M_{x2} (GeV^{2})");
@@ -670,8 +670,8 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
         h2[i]->Draw("E SAME");
 
         // Define the Gaussian + quadratic background fit functions for each bin
-        TF1 *fit1 = new TF1(Form("fit1_%d", i), "gaus(0) + pol3(3)", -0.0075, 0.0075);
-        TF1 *fit2 = new TF1(Form("fit2_%d", i), "gaus(0) + pol3(3)", -0.0075, 0.0075);
+        TF1 *fit1 = new TF1(Form("fit1_%d", i), "gaus(0) + pol4(3)", -0.0075, 0.0075);
+        TF1 *fit2 = new TF1(Form("fit2_%d", i), "gaus(0) + pol4(3)", -0.0075, 0.0075);
 
         // Set the initial guesses and parameter limits for the fit
         fit1->SetParameters(0.5 * maxVal1, 0, 0.0025);  // Initial guesses: amplitude, mu, sigma
@@ -699,8 +699,8 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
 
         TLegend *legend = new TLegend(0.25, 0.75, 0.9, 0.9); // Adjusted the legend position to the top right corner
         legend->SetTextSize(0.03); // Decrease the font size in the legend
-        legend->AddEntry(h1[i], Form("Uncorrected: #mu=%.3f, #sigma=%.3f", mu1_values[i - 1], sigma1_values[i - 1]), "lep");
-        legend->AddEntry(h2[i], Form("Corrected: #mu=%.3f, #sigma=%.3f", mu2_values[i - 1], sigma2_values[i - 1]), "lep");
+        legend->AddEntry(h1[i], Form("Uncorrected: #mu=%.4f, #sigma=%.4f", mu1_values[i - 1], sigma1_values[i - 1]), "lep");
+        legend->AddEntry(h2[i], Form("Corrected: #mu=%.4f, #sigma=%.4f", mu2_values[i - 1], sigma2_values[i - 1]), "lep");
         legend->Draw();
 
         h1[i]->GetXaxis()->SetTitle("M_{x2} (GeV^{2})");
