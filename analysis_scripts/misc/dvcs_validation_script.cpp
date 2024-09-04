@@ -82,7 +82,7 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
             && t1_1 > -2 
             && theta_gamma_gamma_1 < 2
             && Emiss2_1 < 0.5 
-            // && pTmiss_1 < 0.125
+            && pTmiss_1 < 0.125
                 ) {
             h1[0]->Fill(Mxprotonsquared_1); 
             // h1[0]->Fill(theta_gamma_gamma_1); 
@@ -93,7 +93,7 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
                 && t1_1 > -2 
                 && theta_gamma_gamma_1 < 2 
                 && Emiss2_1 < 0.5 
-                // && pTmiss_1 < 0.125
+                && pTmiss_1 < 0.125
                 ) {
                 h1[i + 1]->Fill(Mxprotonsquared_1);
                 // h1[i + 1]->Fill(theta_gamma_gamma_1);
@@ -112,7 +112,7 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
             && t1_2 > -2 
             && theta_gamma_gamma_2 < 2 
             && Emiss2_2 < 0.5 
-            // && pTmiss_2 < 0.125
+            && pTmiss_2 < 0.125
                 ) {
             h2[0]->Fill(Mxprotonsquared_2); // Fully integrated case
             // h2[0]->Fill(theta_gamma_gamma_2); // Fully integrated case
@@ -123,7 +123,7 @@ void plot_dvcs_energy_loss_validation(const char* file1, const char* file2, cons
                 && t1_2 > -2 
                 && theta_gamma_gamma_2 < 2 
                 && Emiss2_2 < 0.5 
-                // && pTmiss_2 < 0.125
+                && pTmiss_2 < 0.125
                 ) {
                 h2[i + 1]->Fill(Mxprotonsquared_2);
                 // h2[i + 1]->Fill(theta_gamma_gamma_2);
