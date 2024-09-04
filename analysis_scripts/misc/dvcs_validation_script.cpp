@@ -613,8 +613,8 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
     h2[0]->Draw("E SAME");
 
     // Define the Gaussian + quadratic background fit functions
-    TF1 *fit1_int = new TF1("fit1_integrated", "gaus(0) + pol1(3)", -0.0075, 0.0075);
-    TF1 *fit2_int = new TF1("fit2_integrated", "gaus(0) + pol1(3)", -0.0075, 0.0075);
+    TF1 *fit1_int = new TF1("fit1_integrated", "gaus(0) + pol2(3)", -0.0075, 0.0075);
+    TF1 *fit2_int = new TF1("fit2_integrated", "gaus(0) + pol2(3)", -0.0075, 0.0075);
 
     // Set the initial guesses and parameter limits for the fit
     fit1_int->SetParameters(0.5 * maxVal1, 0, 0.0025);  // Initial guesses: amplitude, mu, sigma
@@ -670,8 +670,8 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
         h2[i]->Draw("E SAME");
 
         // Define the Gaussian + quadratic background fit functions for each bin
-        TF1 *fit1 = new TF1(Form("fit1_%d", i), "gaus(0) + pol1(3)", -0.0075, 0.0075);
-        TF1 *fit2 = new TF1(Form("fit2_%d", i), "gaus(0) + pol1(3)", -0.0075, 0.0075);
+        TF1 *fit1 = new TF1(Form("fit1_%d", i), "gaus(0) + pol2(3)", -0.0075, 0.0075);
+        TF1 *fit2 = new TF1(Form("fit2_%d", i), "gaus(0) + pol2(3)", -0.0075, 0.0075);
 
         // Set the initial guesses and parameter limits for the fit
         fit1->SetParameters(0.5 * maxVal1, 0, 0.0025);  // Initial guesses: amplitude, mu, sigma
