@@ -59,6 +59,24 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
       goodEvent = goodEvent && *x > 0.18 && *x < 0.21 && *pT > 0.325 && *pT < 0.475 && *z > 0.16 && *z < 0.22;
       return goodEvent;
     }
+    if (property == "Q2multi1") {
+      goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *Q2 > 1 && *W > 2 && *Mx > 0.95 && *y < 0.75;
+      goodEvent = goodEvent && *x > 0.06 && *x < 0.60 && *pT > 0 && *pT < 1.2 && *xF > -1 && *xF < 1;
+      goodEvent = goodEvent && *x > 0.12 && *x < 0.15 && *pT > 0.325 && *pT < 0.475 && *z > 0.16 && *z < 0.24 && *xF < -0.40 && *xF > -0.50;
+      return goodEvent;
+    }
+    if (property == "Q2multi2") {
+      goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *Q2 > 1 && *W > 2 && *Mx > 0.95 && *y < 0.75;
+      goodEvent = goodEvent && *x > 0.06 && *x < 0.60 && *pT > 0 && *pT < 1.2 && *xF > -1 && *xF < 1;
+      goodEvent = goodEvent && *x > 0.15 && *x < 0.18 && *pT > 0.325 && *pT < 0.475 && *z > 0.16 && *z < 0.22 && *xF < -0.40 && *xF > -0.50;
+      return goodEvent;
+    }
+    if (property == "Q2multi3") {
+      goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1 && *Q2 > 1 && *W > 2 && *Mx > 0.95 && *y < 0.75;
+      goodEvent = goodEvent && *x > 0.06 && *x < 0.60 && *pT > 0 && *pT < 1.2 && *xF > -1 && *xF < 1;
+      goodEvent = goodEvent && *x > 0.18 && *x < 0.21 && *pT > 0.325 && *pT < 0.475 && *z > 0.16 && *z < 0.22 && *xF < -0.40 && *xF > -0.50;
+      return goodEvent;
+    }
 
     if (*Q2 > 1 && *W > 2 && *Mx > 1.35 && *y < 0.75 && !checked) {
       goodEvent = *vz_e > -10 && *vz_e < 1 && *vz_p > -10 && *vz_p < 1;
