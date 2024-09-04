@@ -6495,15 +6495,15 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
         B_p = -0.00910576 -0.00035154*theta +0.00003905* theta * theta;
         C_p = 0.01225782 -0.00012805*theta -0.00000820 * theta * theta;
 
-        // // A_theta, B_theta, C_theta
-        // A_theta = 0.0644813 -0.0079393*theta +0.0001566 * theta * theta;
-        // B_theta = -0.13787609 +0.02395150*theta -0.00058811 * theta * theta;
-        // C_theta = 0.10551548 -0.01569699*theta +0.00036501 * theta * theta;
+        // A_theta, B_theta, C_theta
+        A_theta = 0.0644813 -0.0079393*theta +0.0001566 * theta * theta;
+        B_theta = -0.13787609 +0.02395150*theta -0.00058811 * theta * theta;
+        C_theta = 0.10551548 -0.01569699*theta +0.00036501 * theta * theta;
 
-        // // A_phi, B_phi, C_phi
-        // A_phi = 0.0787287 -0.0075095*theta +0.0000669 * theta * theta;
-        // B_phi = 0.03705727 +0.01332536*theta -0.00009908 * theta * theta;
-        // C_phi = -0.10680417 -0.00141926*theta +0.00001672 * theta * theta;
+        // A_phi, B_phi, C_phi
+        A_phi = 0.0787287 -0.0075095*theta +0.0000669 * theta * theta;
+        B_phi = 0.03705727 +0.01332536*theta -0.00009908 * theta * theta;
+        C_phi = -0.10680417 -0.00141926*theta +0.00001672 * theta * theta;
     }
     else if (dataset == "rgc_su22_inb" && region == "CD") {
         // A_p, B_p, C_p
@@ -6511,28 +6511,28 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
         B_p = 0.93238668 -0.04803619*theta +0.00063215* theta * theta;
         C_p = -0.59146847 +0.02997697*theta -0.00038773 * theta * theta;
 
-        // // A_theta, B_theta, C_theta
-        // A_theta = 0.0644813 -0.0079393*theta +0.0001566 * theta * theta;
-        // B_theta = -0.13787609 +0.02395150*theta -0.00058811 * theta * theta;
-        // C_theta = 0.10551548 -0.01569699*theta +0.00036501 * theta * theta;
+        // A_theta, B_theta, C_theta
+        A_theta = 0.0644813 -0.0079393*theta +0.0001566 * theta * theta;
+        B_theta = -0.13787609 +0.02395150*theta -0.00058811 * theta * theta;
+        C_theta = 0.10551548 -0.01569699*theta +0.00036501 * theta * theta;
 
-        // // A_phi, B_phi, C_phi
-        // A_phi = 0.0787287 -0.0075095*theta +0.0000669 * theta * theta;
-        // B_phi = 0.03705727 +0.01332536*theta -0.00009908 * theta * theta;
-        // C_phi = -0.10680417 -0.00141926*theta +0.00001672 * theta * theta;
+        // A_phi, B_phi, C_phi
+        A_phi = 0.0787287 -0.0075095*theta +0.0000669 * theta * theta;
+        B_phi = 0.03705727 +0.01332536*theta -0.00009908 * theta * theta;
+        C_phi = -0.10680417 -0.00141926*theta +0.00001672 * theta * theta;
     }
 
     // Apply corrections
     if (region == "FD") {
         p += A_p + B_p / p + C_p / (p * p);
-        // theta += A_theta + B_theta / theta + C_theta / (theta * theta);
-        // phi += A_phi + B_phi / phi + C_phi / (phi * phi);
+        theta += A_theta + B_theta / theta + C_theta / (theta * theta);
+        phi += A_phi + B_phi / phi + C_phi / (phi * phi);
     }
     // Apply corrections
     if (region == "CD") {
         p += A_p + B_p * p + C_p * p * p;
-        // theta += A_theta + B_theta / theta + C_theta /( theta * theta);
-        // phi += A_phi + B_phi / phi + C_phi / (phi * phi);
+        theta += A_theta + B_theta / theta + C_theta /( theta * theta);
+        phi += A_phi + B_phi / phi + C_phi / (phi * phi);
     }
 }
 
