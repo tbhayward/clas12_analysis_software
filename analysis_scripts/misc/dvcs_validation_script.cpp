@@ -671,7 +671,7 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
 
         // Define the Gaussian + quadratic background fit functions for each bin
         TF1 *fit1 = new TF1(Form("fit1_%d", i), "gaus(0) + pol1(3)", -0.01, 0.01);
-        TF1 *fit2 = new TF1(Form("fit2_%d", i), "gaus(0) + pol1(3)", -0.01, 0.01);
+        TF1 *fit2 = new TF1(Form("fit2_%d", i), "gaus(0) + pol1 (3)", -0.01, 0.01);
 
         // Set the initial guesses and parameter limits for the fit
         fit1->SetParameters(0.5 * maxVal1, 0, 0.0025);  // Initial guesses: amplitude, mu, sigma
@@ -737,7 +737,7 @@ void plot_elastic_energy_loss_validation(const char* file1, const char* file2, c
     gr1->GetXaxis()->SetTitleSize(0.05); // Match font size with other plots
     gr1->GetYaxis()->SetTitleSize(0.05); // Match font size with other plots
     gr1->GetXaxis()->SetLimits(25, 60); // Set x-axis range
-    gr1->GetYaxis()->SetRangeUser(-0.020, 0.020); // Set y-axis range
+    gr1->GetYaxis()->SetRangeUser(-0.005, 0.005); // Set y-axis range
 
     // Add legend to the last plot, positioned in the top right
     TLegend *legend12 = new TLegend(0.6, 0.75, 0.9, 0.9); // Adjusted for horizontal and vertical size
