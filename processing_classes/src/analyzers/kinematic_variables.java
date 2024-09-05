@@ -106,6 +106,18 @@ public class kinematic_variables {
         return lv_Mx.mass2();
     }
     
+    double Mx(LorentzVector lv_q, LorentzVector lv_target, LorentzVector lv_p1, LorentzVector lv_p2) {
+        LorentzVector lv_Mx = new LorentzVector(lv_q); lv_Mx.add(lv_target); lv_Mx.sub(lv_p1); 
+        lv_Mx.sub(lv_p2);
+        return lv_Mx.mass();
+    }
+    
+    double Mx2(LorentzVector lv_q, LorentzVector lv_target, LorentzVector lv_p1 , LorentzVector lv_p2) {
+        LorentzVector lv_Mx = new LorentzVector(lv_q); lv_Mx.add(lv_target); lv_Mx.sub(lv_p1);
+        lv_Mx.sub(lv_p2);
+        return lv_Mx.mass2();
+    }
+    
     /*~~~~~~~~~~~~~~~~~ Single Hadron ~~~~~~~~~~~~~~~~~*/
     double z(LorentzVector lv_p, LorentzVector lv_q) {
         return lv_p.e()/lv_q.e();

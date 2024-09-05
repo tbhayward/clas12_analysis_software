@@ -262,7 +262,7 @@ public class Dihadrons {
         z2 = kinematic_variables.z(lv_p2, lv_q);
 
         // missing mass calculations
-        Mx = kinematic_variables.Mx(lv_q, lv_target);
+        Mx = kinematic_variables.Mx(lv_q, lv_target, lv_p1, lv_p2);
         Mx1 = kinematic_variables.Mx(lv_q, lv_target, lv_p1);
         Mx2 = kinematic_variables.Mx(lv_q, lv_target, lv_p2);
         Mxprotonsquared = kinematic_variables.Mx2(lv_q, lv_target, lv_p1);
