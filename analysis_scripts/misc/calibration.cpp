@@ -3559,7 +3559,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         gPad->SetLeftMargin(0.15);  // Add padding to the left
 
         // Fit data histogram to a Gaussian plus a constant
-        TF1* fit_data = new TF1(("fit_data_" + std::to_string(i)).c_str(), "[0] + [1]*exp(-0.5*((x-[2])/[3])^2)", h_data[i]->GetXaxis()->GetXmin(), h_data[i]->GetXaxis()->GetXmax());
+        TF1* fit_data = new TF1(("fit_data_" + std::to_string(i)).c_str(), "gaus(0)", h_data[i]->GetXaxis()->GetXmin(), h_data[i]->GetXaxis()->GetXmax());
         h_data[i]->Fit(fit_data, "Q");  // Silent fit
 
         // Draw data histogram with points and error bars
@@ -3575,7 +3575,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         // Fit MC histogram to a Gaussian plus a constant if mcReader is provided
         TF1* fit_mc = nullptr;
         if (mcReader) {
-            fit_mc = new TF1(("fit_mc_" + std::to_string(i)).c_str(), "[0] + [1]*exp(-0.5*((x-[2])/[3])^2)", h_mc[i]->GetXaxis()->GetXmin(), h_mc[i]->GetXaxis()->GetXmax());
+            fit_mc = new TF1(("fit_mc_" + std::to_string(i)).c_str(), "gaus(0)", h_mc[i]->GetXaxis()->GetXmin(), h_mc[i]->GetXaxis()->GetXmax());
             h_mc[i]->Fit(fit_mc, "Q");  // Silent fit
 
             // Draw MC histogram with points and error bars
