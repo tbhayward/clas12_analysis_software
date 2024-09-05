@@ -3554,7 +3554,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     }
 
     // Draw 1D histograms on the same canvas for each particle type
-    for (size_t i = 0; i < particle_types.size(); ++i) {
+    for (size_t i = 0; i < particle_types.size()-1; ++i) {
         c->cd(i + 1);
         gPad->SetLeftMargin(0.15);  // Add padding to the left
 
