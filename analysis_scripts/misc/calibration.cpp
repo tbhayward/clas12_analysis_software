@@ -3591,9 +3591,9 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
 
         // Create the legend
         TLegend* legend = new TLegend(0.5, 0.7, 0.9, 0.9);
-        legend->AddEntry(h_data[i], Form("Data (#mu = %.2f, #sigma = %.2f)", fit_data->GetParameter(2), fit_data->GetParameter(3)), "lep");
+        legend->AddEntry(h_data[i], Form("Data (#mu = %.2f, #sigma = %.2f)", fit_data->GetParameter(1), fit_data->GetParameter(2)), "lep");
         if (mcReader) {
-            legend->AddEntry(h_mc[i], Form("MC (#mu = %.2f, #sigma = %.2f)", fit_mc->GetParameter(2), fit_mc->GetParameter(3)), "lep");
+            legend->AddEntry(h_mc[i], Form("MC (#mu = %.2f, #sigma = %.2f)", fit_mc->GetParameter(1), fit_mc->GetParameter(2)), "lep");
         }
         legend->Draw();
 
