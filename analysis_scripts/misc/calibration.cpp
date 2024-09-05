@@ -6490,7 +6490,6 @@ void apply_energy_loss_correction(double& p, double& theta, double& phi, const s
         C_phi = 0.02586507 -0.00160176*theta +0.00001642*theta*theta;
     }
     else if (dataset == "rga_sp19_inb" && region == "FD") {
-        // A_p, B_p (no C_p for rga_fa18_out and no theta^2 term)
         A_p = 0.0095205 -0.0001914*theta -0.0000031*theta*theta; 
         B_p = -0.01365658 +0.00036322*theta +0.00001217*theta*theta;
         C_p = 0.01175256 -0.00053407*theta +0.00000742*theta*theta; 
@@ -7183,49 +7182,49 @@ int main(int argc, char** argv) {
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
 
-    // plot_ft_xy_energy(dataReader, mcReader);
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_ft_hit_position(dataReader, mcReader);
+    plot_ft_xy_energy(dataReader, mcReader);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_ft_hit_position(dataReader, mcReader);
 
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_pcal_fiducial_determination(dataReader, mcReader);
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_ecin_fiducial_determination(dataReader, mcReader);
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_ecout_fiducial_determination(dataReader, mcReader);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_pcal_fiducial_determination(dataReader, mcReader);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_ecin_fiducial_determination(dataReader, mcReader);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_ecout_fiducial_determination(dataReader, mcReader);
 
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_cal_hit_position(dataReader, mcReader);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_cal_hit_position(dataReader, mcReader);
 
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // dc_fiducial_determination(dataReader, mcReader);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    dc_fiducial_determination(dataReader, mcReader);
 
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_dc_hit_position(dataReader, mcReader);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_dc_hit_position(dataReader, mcReader);
 
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // cvt_fiducial_determination(dataReader, mcReader);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    cvt_fiducial_determination(dataReader, mcReader);
 
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_cvt_hit_position(dataReader, mcReader);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_cvt_hit_position(dataReader, mcReader);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
     // plot_chi2pid_cd(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
     // if (mcReader) energy_loss(*mcReader, "rga_fa18_inb"); 
-    if (mcReader) energy_loss(*mcReader, "rga_fa18_out");  
+    // if (mcReader) energy_loss(*mcReader, "rga_fa18_out");  
     // if (mcReader) energy_loss(*mcReader, "rga_sp19_inb"); 
     // if (mcReader) energy_loss(*mcReader, "rgc_su22_inb");   
 
