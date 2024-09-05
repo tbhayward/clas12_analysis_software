@@ -3511,11 +3511,11 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Normalize 1D histograms and set y-axis range
     double max_y = 0;
     for (size_t i = 0; i < particle_types.size(); ++i) {
-        // h_data[i]->Scale(1.0 / h_data[i]->Integral());
+        h_data[i]->Scale(1.0 / h_data[i]->Integral());
         if (h_data[i]->GetMaximum() > max_y) max_y = h_data[i]->GetMaximum();
 
         if (mcReader) {
-            // h_mc[i]->Scale(1.0 / h_mc[i]->Integral());
+            h_mc[i]->Scale(1.0 / h_mc[i]->Integral());
             if (h_mc[i]->GetMaximum() > max_y) max_y = h_mc[i]->GetMaximum();
         }
     }
@@ -3526,32 +3526,32 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         if (mcReader) h_mc[i]->SetMaximum(1.2 * max_y);
     }
 
-    // // Normalize beta histograms for momentum bins and find max_y for each bin
-    // for (size_t bin = 0; bin < pBins.size() - 1; ++bin) {
-    //     double max_y_bin = 0;
+    // Normalize beta histograms for momentum bins and find max_y for each bin
+    for (size_t bin = 0; bin < pBins.size() - 1; ++bin) {
+        double max_y_bin = 0;
 
-    //     h_data_beta_bins_pos[bin]->Scale(1.0 / h_data_beta_bins_pos[bin]->Integral());
-    //     h_data_beta_bins_neg[bin]->Scale(1.0 / h_data_beta_bins_neg[bin]->Integral());
+        h_data_beta_bins_pos[bin]->Scale(1.0 / h_data_beta_bins_pos[bin]->Integral());
+        h_data_beta_bins_neg[bin]->Scale(1.0 / h_data_beta_bins_neg[bin]->Integral());
 
-    //     if (h_data_beta_bins_pos[bin]->GetMaximum() > max_y_bin) max_y_bin = h_data_beta_bins_pos[bin]->GetMaximum();
-    //     if (h_data_beta_bins_neg[bin]->GetMaximum() > max_y_bin) max_y_bin = h_data_beta_bins_neg[bin]->GetMaximum();
+        if (h_data_beta_bins_pos[bin]->GetMaximum() > max_y_bin) max_y_bin = h_data_beta_bins_pos[bin]->GetMaximum();
+        if (h_data_beta_bins_neg[bin]->GetMaximum() > max_y_bin) max_y_bin = h_data_beta_bins_neg[bin]->GetMaximum();
 
-    //     if (mcReader) {
-    //         h_mc_beta_bins_pos[bin]->Scale(1.0 / h_mc_beta_bins_pos[bin]->Integral());
-    //         h_mc_beta_bins_neg[bin]->Scale(1.0 / h_mc_beta_bins_neg[bin]->Integral());
+        if (mcReader) {
+            h_mc_beta_bins_pos[bin]->Scale(1.0 / h_mc_beta_bins_pos[bin]->Integral());
+            h_mc_beta_bins_neg[bin]->Scale(1.0 / h_mc_beta_bins_neg[bin]->Integral());
 
-    //         if (h_mc_beta_bins_pos[bin]->GetMaximum() > max_y_bin) max_y_bin = h_mc_beta_bins_pos[bin]->GetMaximum();
-    //         if (h_mc_beta_bins_neg[bin]->GetMaximum() > max_y_bin) max_y_bin = h_mc_beta_bins_neg[bin]->GetMaximum();
-    //     }
+            if (h_mc_beta_bins_pos[bin]->GetMaximum() > max_y_bin) max_y_bin = h_mc_beta_bins_pos[bin]->GetMaximum();
+            if (h_mc_beta_bins_neg[bin]->GetMaximum() > max_y_bin) max_y_bin = h_mc_beta_bins_neg[bin]->GetMaximum();
+        }
 
-    //     h_data_beta_bins_pos[bin]->SetMaximum(1.2 * max_y_bin);
-    //     h_data_beta_bins_neg[bin]->SetMaximum(1.2 * max_y_bin);
+        h_data_beta_bins_pos[bin]->SetMaximum(1.2 * max_y_bin);
+        h_data_beta_bins_neg[bin]->SetMaximum(1.2 * max_y_bin);
 
-    //     if (mcReader) {
-    //         h_mc_beta_bins_pos[bin]->SetMaximum(1.2 * max_y_bin);
-    //         h_mc_beta_bins_neg[bin]->SetMaximum(1.2 * max_y_bin);
-    //     }
-    // }
+        if (mcReader) {
+            h_mc_beta_bins_pos[bin]->SetMaximum(1.2 * max_y_bin);
+            h_mc_beta_bins_neg[bin]->SetMaximum(1.2 * max_y_bin);
+        }
+    }
 
     // Draw 1D histograms on the same canvas for each particle type
     for (size_t i = 0; i < particle_types.size(); ++i) {
@@ -3590,7 +3590,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         }
 
         // Create the legend
-        TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);
+        TLegend* legend = new TLegend(0.5, 0.7, 0.9, 0.9);
         legend->AddEntry(h_data[i], Form("Data (#mu = %.2f, #sigma = %.2f)", fit_data->GetParameter(1), fit_data->GetParameter(2)), "lep");
         if (mcReader) {
             legend->AddEntry(h_mc[i], Form("MC (#mu = %.2f, #sigma = %.2f)", fit_mc->GetParameter(1), fit_mc->GetParameter(2)), "lep");
