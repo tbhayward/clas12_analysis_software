@@ -24,7 +24,7 @@ public class Trihadrons {
 
     protected double test;
 
-    protected int fiducial_status = 0;
+    protected int fiducial_status = -1;
 
     protected int num_elec, num_piplus, num_piminus, num_kplus, num_kminus, num_protons, num_particles;
 
@@ -164,16 +164,17 @@ public class Trihadrons {
         } else {
             // Now check for specific cases where only one is false
             if (!e_fiducial_check && p1_fiducial_check && p2_fiducial_check && p3_fiducial_check) {
-                fiducial_status = 1; // Set to 1 if only electron check is false
+                fiducial_status = 0; // Set to 0 if only electron check is false
             } else if (e_fiducial_check && !p1_fiducial_check && p2_fiducial_check && p3_fiducial_check) {
-                fiducial_status = 2; // Set to 2 if only p1 check is false
+                fiducial_status = 1; // Set to 1 if only p1 check is false
             } else if (e_fiducial_check && p1_fiducial_check && !p2_fiducial_check && p3_fiducial_check) {
                 fiducial_status = 2; // Set to 2 if only p2 check is false (same status as p1)
             } else if (e_fiducial_check && p1_fiducial_check && p2_fiducial_check && !p3_fiducial_check) {
                 fiducial_status = 3; // Set to 3 if only p3 check is false
             }
-            // If more than one is false, fiducial_status remains 0 (default)
+            // If more than one is false, fiducial_status remains -1 (default)
         }
+        System.out.println(fiducial_status);
 
         // Set up Lorentz vectors
         // beam electron
