@@ -30,7 +30,7 @@ public class analysis_fitter extends GenericKinematicFitter {
         pid_cuts pid_cuts = new pid_cuts();
 
         return true
-                && p > 2.3 // higher cut ultimately enforced when we cut on y, this speeds processing
+//                && p > 2.3 // higher cut ultimately enforced when we cut on y, this speeds processing
                 && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
                 && pid_cuts.calorimeter_energy_cut(particle_Index, cal_Bank)
                 && pid_cuts.calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
