@@ -9,6 +9,8 @@ package analyzers;
  *
  * @author tbhayward
  */
+import extended_kinematic_fitters.fiducial_cuts;
+import extended_kinematic_fitters.generic_tests;
 import org.jlab.clas.physics.Particle;
 import org.jlab.clas.physics.PhysicsEvent;
 import org.jlab.io.base.DataEvent;
@@ -22,6 +24,8 @@ public class Trihadrons {
 
     protected double test;
 
+    protected int fiducial_status = 0;
+
     protected int num_elec, num_piplus, num_piminus, num_kplus, num_kminus, num_protons, num_particles;
 
     // labels are unnumbered if they refer to the trihadron (perhaps a meson) and numbered for individual
@@ -29,6 +33,7 @@ public class Trihadrons {
     // in proton+pi+ the proton is p1, in k+pi- the kaon is p1.
     protected double Q2, W, gamma, nu, x, y, t, t1, t2, t3, t12, t13, t23, tmin, z, z1, z2, z3, z12, z13, z23;
     protected double Mx, Mx1, Mx2, Mx3, Mx12, Mx13, Mx23; // Mx is the Mx(ep1p2p3), Mx1 is Mx(e[p1]p2p3), etc.
+    protected double Mx_squared, Mx1_squared, Mx2_squared, Mx3_squared, Mx12_squared, Mx13_squared, Mx23_squared; // Mx is the Mx(ep1p2p3), Mx1 is Mx(e[p1]p2p3), etc.
     protected double Mh, Mh12, Mh13, Mh23;
     protected double pT, pT1, pT2, pT3, pT12, pT13, pT23;
     protected double xF, xF1, xF2, xF3, xF12, xF13, xF23;
@@ -78,18 +83,27 @@ public class Trihadrons {
             return false;
         }
         if (variables.Q2() < 1) {
-            return false;
+//            return false;
         } else if (variables.W() < 2) {
-            return false;
+//            return false;
         } else if (variables.y() > 0.75) {
-            return false;
+//            return false;
         }
-//        else if (variables.Mx()<1.5) { return false; } 
-//        else if (variables.xF1()<0.0) { return false; } 
-//        else if (variables.xF2()<0.0) { return false; } 
-//        else if (variables.Mx1()<0.0) { return false; } 
-//        else if (variables.Mx2()<0.0) { return false; } 
         return true;
+    }
+
+    public static int getIndex(HipoDataBank rec_Bank, int input_pid, int input_index) {
+        int index = -1;
+        for (int particle_Index = 0; particle_Index < rec_Bank.rows(); particle_Index++) {
+            int pid = rec_Bank.getInt("pid", particle_Index);
+            if (pid == input_pid) {
+                index++;
+            }
+            if (index == input_index) {
+                break;
+            }
+        }
+        return index;
     }
 
     public Trihadrons(DataEvent event, PhysicsEvent recEvent, int p1PID, int p1Index, int p2PID, int p2Index,
@@ -101,6 +115,9 @@ public class Trihadrons {
         // load banks
         HipoDataBank eventBank = (HipoDataBank) event.getBank("REC::Event");
         HipoDataBank configBank = (HipoDataBank) event.getBank("RUN::config");
+        HipoDataBank rec_Bank = (HipoDataBank) event.getBank("REC::Particle");
+        HipoDataBank cal_Bank = (HipoDataBank) event.getBank("REC::Calorimeter");
+        HipoDataBank traj_Bank = (HipoDataBank) event.getBank("REC::Traj");
 
         helicity = eventBank.getByte("helicity", 0);
         runnum = configBank.getInt("run", 0); // used for beam energy and polarization
@@ -112,6 +129,51 @@ public class Trihadrons {
         num_kminus = recEvent.countByPid(-321);
         num_protons = recEvent.countByPid(2212);
         num_particles = num_elec + num_piplus + num_piminus + num_kplus + num_kminus + num_protons;
+
+        generic_tests generic_tests = new generic_tests();
+        fiducial_cuts fiducial_cuts = new fiducial_cuts();
+
+        boolean electron_pcal_fiducial = fiducial_cuts.pcal_fiducial_cut(0, 1, configBank, rec_Bank, cal_Bank);
+        boolean electron_fd_fiducial = fiducial_cuts.dc_fiducial_cut(0, rec_Bank, traj_Bank);
+        boolean e_fiducial_check = electron_pcal_fiducial && electron_fd_fiducial;
+
+        int p1_rec_index = getIndex(rec_Bank, p1PID, p1Index);
+        boolean passesForwardDetector_1 = generic_tests.forward_detector_cut(p1_rec_index, rec_Bank)
+                ? fiducial_cuts.dc_fiducial_cut(p1_rec_index, rec_Bank, traj_Bank) : true;
+        boolean passesCentralDetector_1 = generic_tests.central_detector_cut(p1_rec_index, rec_Bank)
+                ? fiducial_cuts.cvt_fiducial_cut(p1_rec_index, rec_Bank, traj_Bank) : true;
+        boolean p1_fiducial_check = passesForwardDetector_1 && passesCentralDetector_1;
+
+        int p2_rec_index = getIndex(rec_Bank, p2PID, p2Index);
+        boolean passesForwardDetector_2 = generic_tests.forward_detector_cut(p2_rec_index, rec_Bank)
+                ? fiducial_cuts.dc_fiducial_cut(p2_rec_index, rec_Bank, traj_Bank) : true;
+        boolean passesCentralDetector_2 = generic_tests.central_detector_cut(p2_rec_index, rec_Bank)
+                ? fiducial_cuts.cvt_fiducial_cut(p2_rec_index, rec_Bank, traj_Bank) : true;
+        boolean p2_fiducial_check = passesForwardDetector_2 && passesCentralDetector_2;
+
+        int p3_rec_index = getIndex(rec_Bank, p3PID, p3Index);
+        boolean passesForwardDetector_3 = generic_tests.forward_detector_cut(p3_rec_index, rec_Bank)
+                ? fiducial_cuts.dc_fiducial_cut(p3_rec_index, rec_Bank, traj_Bank) : true;
+        boolean passesCentralDetector_3 = generic_tests.central_detector_cut(p3_rec_index, rec_Bank)
+                ? fiducial_cuts.cvt_fiducial_cut(p3_rec_index, rec_Bank, traj_Bank) : true;
+        boolean p3_fiducial_check = passesForwardDetector_3 && passesCentralDetector_3;
+
+        // Check if all checks pass
+        if (e_fiducial_check && p1_fiducial_check && p2_fiducial_check && p3_fiducial_check) {
+            fiducial_status = 4; // Set to 4 if all checks pass
+        } else {
+            // Now check for specific cases where only one is false
+            if (!e_fiducial_check && p1_fiducial_check && p2_fiducial_check && p3_fiducial_check) {
+                fiducial_status = 1; // Set to 1 if only electron check is false
+            } else if (e_fiducial_check && !p1_fiducial_check && p2_fiducial_check && p3_fiducial_check) {
+                fiducial_status = 2; // Set to 2 if only p1 check is false
+            } else if (e_fiducial_check && p1_fiducial_check && !p2_fiducial_check && p3_fiducial_check) {
+                fiducial_status = 2; // Set to 2 if only p2 check is false (same status as p1)
+            } else if (e_fiducial_check && p1_fiducial_check && p2_fiducial_check && !p3_fiducial_check) {
+                fiducial_status = 3; // Set to 3 if only p3 check is false
+            }
+            // If more than one is false, fiducial_status remains 0 (default)
+        }
 
         // Set up Lorentz vectors
         // beam electron
@@ -286,33 +348,40 @@ public class Trihadrons {
         lv_Mx.sub(lv_p2);
         lv_Mx.sub(lv_p3);
         Mx = lv_Mx.mass();  // missing mass with all observed
+        Mx_squared = lv_Mx.mass2();  // missing mass squared with all observed
         LorentzVector lv_Mx1 = new LorentzVector(lv_q);
         lv_Mx1.add(lv_target);
         lv_Mx1.sub(lv_p1);
         Mx1 = lv_Mx1.mass(); // missing mass with p1 observed
+        Mx1_squared = lv_Mx1.mass2(); // missing mass squared with p1 observed
         LorentzVector lv_Mx2 = new LorentzVector(lv_q);
         lv_Mx2.add(lv_target);
         lv_Mx2.sub(lv_p2);
         Mx2 = lv_Mx2.mass(); // missing mass with p2 observed
+        Mx2_squared = lv_Mx2.mass2(); // missing mass squared with p2 observed
         LorentzVector lv_Mx3 = new LorentzVector(lv_q);
         lv_Mx3.add(lv_target);
         lv_Mx3.sub(lv_p3);
         Mx3 = lv_Mx3.mass(); // missing mass with p3 observed
+        Mx3_squared = lv_Mx3.mass2(); // missing mass squared with p3 observed
         LorentzVector lv_Mx12 = new LorentzVector(lv_q);
         lv_Mx12.add(lv_target);
         lv_Mx12.sub(lv_p1);
         lv_Mx12.sub(lv_p2);
         Mx12 = lv_Mx12.mass(); // missing mass with p1 and p2 observed
+        Mx12_squared = lv_Mx12.mass2(); // missing mass squared with p1 and p2 observed
         LorentzVector lv_Mx13 = new LorentzVector(lv_q);
         lv_Mx13.add(lv_target);
         lv_Mx13.sub(lv_p1);
         lv_Mx13.sub(lv_p3);
         Mx13 = lv_Mx13.mass(); // missing mass with p1 and p3 observed
+        Mx13_squared = lv_Mx13.mass2(); // missing mass squared with p1 and p3 observed
         LorentzVector lv_Mx23 = new LorentzVector(lv_q);
         lv_Mx23.add(lv_target);
         lv_Mx23.sub(lv_p2);
         lv_Mx23.sub(lv_p3);
         Mx23 = lv_Mx23.mass(); // missing mass with p2 and p3 observed
+        Mx23_squared = lv_Mx23.mass2(); // missing mass squared with p2 and p3 observed
 
         // boost to gamma*-nucleon center of mass frame
         LorentzVector lv_p_gN = new LorentzVector(lv_p);
@@ -599,8 +668,10 @@ public class Trihadrons {
     public int get_runnum() {
         return runnum;
     }
-
-    ; // returns run number for polarizations and energy
+    
+    public int get_fiducial_status() {
+        return fiducial_status;
+    }
     
     public int num_elec() {
         return num_elec;
@@ -740,6 +811,34 @@ public class Trihadrons {
 
     public double Mx23() {
         return Double.valueOf(Math.round(Mx23 * 100000)) / 100000;
+    }
+
+    public double Mx_squared() {
+        return Double.valueOf(Math.round(Mx_squared * 100000)) / 100000;
+    }
+
+    public double Mx1_squared() {
+        return Double.valueOf(Math.round(Mx1_squared * 100000)) / 100000;
+    }
+
+    public double Mx2_squared() {
+        return Double.valueOf(Math.round(Mx2_squared * 100000)) / 100000;
+    }
+
+    public double Mx3_squared() {
+        return Double.valueOf(Math.round(Mx3_squared * 100000)) / 100000;
+    }
+
+    public double Mx12_squared() {
+        return Double.valueOf(Math.round(Mx12_squared * 100000)) / 100000;
+    }
+
+    public double Mx13_squared() {
+        return Double.valueOf(Math.round(Mx13_squared * 100000)) / 100000;
+    }
+
+    public double Mx23_squared() {
+        return Double.valueOf(Math.round(Mx23_squared * 100000)) / 100000;
     }
 
     public double Mh() {

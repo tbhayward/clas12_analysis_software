@@ -82,7 +82,7 @@ public static void main(String[] args) {
 	double e_p, e_theta, e_phi; 
 	double p1_phi, p1_p, p1_theta, p2_phi, p2_p, p2_theta, p3_phi, p3_p, p3_theta; 
 	double vz_e, vz_p1, vz_p2, vz_p3;
-	double Q2, W, y, Mx, Mx1, Mx2, Mx3; 
+	double Q2, W, y, Mx, Mx1, Mx2, Mx3, Mx12, Mx13, Mx23; 
 	double x, z, xF, pT, eta, eta_gN, zeta;
 	double z1, z2, z3, z12, z13, z23;
 	double xF1, xF2, xF3, xF12, xF13, xF23;
@@ -166,6 +166,7 @@ public static void main(String[] args) {
 				            // this is my class for defining all relevant kinematic variables
 
 				            if (variables.channel_test(variables)) {
+				                fiducial_status = variables.get_fiducial_status(); // fiducial_status of track
 				                helicity = variables.get_helicity(); // helicity of event
 
 				                // lab kinematics
@@ -201,6 +202,14 @@ public static void main(String[] args) {
 				                Mx13 = variables.Mx13(); // missing mass calculated with p1 and p3
 				                Mx23 = variables.Mx23(); // missing mass calculated with p2 and p3
 				                
+								Mx_squared = variables.Mx_squared(); // missing mass_squared
+				                Mx1_squared = variables.Mx1_squared(); // missing mass_squared calculated with p1
+				                Mx2_squared = variables.Mx2_squared(); // missing mass_squared calculated with p2
+				                Mx3_squared = variables.Mx3_squared(); // missing mass_squared calculated with p3
+				                Mx12_squared = variables.Mx12_squared(); // missing mass_squared calculated with p1 and p2
+				                Mx13_squared = variables.Mx13_squared(); // missing mass_squared calculated with p1 and p3
+				                Mx23_squared = variables.Mx23_squared(); // missing mass_squared calculated with p2 and p3
+				               
 				                // SIDIS variables
 				                z = variables.z(); // fractional hadron energy wrt virtual photon
 				                xF = variables.xF(); // Feynman-x
@@ -274,7 +283,8 @@ public static void main(String[] args) {
 
 				                // Use a StringBuilder to append all data in a single call
 								StringBuilder line = new StringBuilder();
-								line.append(runnum).append(" ")
+								line.append(fiducial_status).append(" ")
+									.append(runnum).append(" ")
 									.append(evnum).append(" ")
 									.append(helicity).append(" ")
 									.append(e_p).append(" ")
@@ -302,6 +312,13 @@ public static void main(String[] args) {
 									.append(Mx12).append(" ")
 									.append(Mx13).append(" ")
 									.append(Mx23).append(" ")
+									.append(Mx_squared).append(" ")
+									.append(Mx1_squared).append(" ")
+									.append(Mx2_squared).append(" ")
+									.append(Mx3_squared).append(" ")
+									.append(Mx12_squared).append(" ")
+									.append(Mx13_squared).append(" ")
+									.append(Mx23_squared).append(" ")
 									.append(x).append(" ")
 									.append(y).append(" ")
 									.append(z).append(" ")
@@ -385,23 +402,26 @@ public static void main(String[] args) {
 		}
 
 		println();
+		print("0:fiducial_status, ");
 		print("1:runnum, 2:evnum, 3:helicity, ");
 		print("4: e_p, 5: e_theta, 6: e_phi, 7: vz_e, ");
 		print("8: p1_p, 9: p1_theta, 10: p1_phi, 11: vz_p1, ");
 		print("12: p2_p, 13: p2_theta, 14: p2_phi, 15: vz_p2, ");
-		print("16: p3_p, 17: p3_theta, 18: p3_phi, 19: vz_p3 ");
-		print("20: Q2, 21: W");
+		print("16: p3_p, 17: p3_theta, 18: p3_phi, 19: vz_p3, ");
+		print("20: Q2, 21: W, ");
 		print("22: Mx, 23: Mx1, 24: Mx2, 25: Mx3, 26: Mx12, 27: Mx13, 28: Mx23, ");
-		print("29: x, 30: y, ");
-		print("31: z, 32: z1, 33: z2, 34: z3, 35: z12, 36: z13, 37: z23, ");
-		print("38: zeta, 39: zeta1, 40: zeta2, 41: zeta3, 42: zeta12, 43: zeta13, 44: zeta23, ");
-		print("45: pT, 46: pT1, 47: pT2, 48: pT3, 49: pT12, 50: pT13, 51: pT23, ");
-		print("52: Mh, 53: Mh12, 54: Mh13, 55: Mh23, ");
-		print("56: xF, 57: xF1, 58: xF2, 59: xF3, 60: xF12, 61: xF13, 62: xF23, ");
-		print("63: eta, 64: eta1, 65: eta2, 66: eta3, 67: eta12, 68: eta13, 69: eta23, ");
-		print("70: phi1, 71: phi2, 72: phi3, 73: phi12, 74: phi13, 75: phi23, 76: phih, 77: phiR, 78: theta, ");
-		print("79: Delta_phi12, 80: Delta_phi13, 81: Delta_phi23, ")
-		print("82: DepA, 83: DepB, 84: DepC, 85: DepV, 86: DepW.");
+		print("29: Mx_squared, 30: Mx1_squared, 31: Mx2_squared, 32: Mx3_squared, ");
+		print("33: Mx12_squared, 34: Mx13_squared, 35: Mx23_squared, ");
+		print("36: x, 37: y, ");
+		print("38: z, 39: z1, 40: z2, 41: z3, 42: z12, 43: z13, 44: z23, ");
+		print("45: zeta, 46: zeta1, 47: zeta2, 48: zeta3, 49: zeta12, 50: zeta13, 51: zeta23, ");
+		print("52: pT, 53: pT1, 54: pT2, 55: pT3, 56: pT12, 57: pT13, 58: pT23, ");
+		print("59: Mh, 60: Mh12, 61: Mh13, 62: Mh23, ");
+		print("63: xF, 64: xF1, 65: xF2, 66: xF3, 67: xF12, 68: xF13, 69: xF23, ");
+		print("70: eta, 71: eta1, 72: eta2, 73: eta3, 74: eta12, 75: eta13, 76: eta23, ");
+		print("77: phi1, 78: phi2, 79: phi3, 80: phi12, 81: phi13, 82: phi23, 83: phih, 84: phiR, 85: theta, ");
+		print("86: Delta_phi12, 87: Delta_phi13, 88: Delta_phi23, ");
+		print("89: DepA, 90: DepB, 91: DepC, 92: DepV, 93: DepW.");
 		println();
 		println("Set p1 PID = $p1_Str");
 		println("Set p2 PID = $p2_Str");

@@ -198,9 +198,12 @@ int main(int argc, char *argv[]) {
     double phi1, phi2, Delta_phi, phih, phiR, theta;
     double Emiss2, theta_gamma_gamma, pTmiss, Mxgammasquared, Mxprotonsquared;
     // Additional variables for three hadrons
+    int fiducial_status;
     double p3_p, p3_theta, p3_phi, vz_p3;
     double z3, z12, z13, z23, Mh12, Mh13, Mh23, xF3, xF12, xF13, xF23;
     double t3, t3min, Mx3, Mx12, Mx13, Mx23;
+    double Mx_squared, Mx1_squared, Mx2_squared, Mx3_squared;
+    double Mx12_squared, Mx13_squared, Mx23_squared;
     double pT3, pT12, pT13, pT23, zeta3, zeta12, zeta23, zeta13;
     double eta3, eta12, eta23, eta13;
     double phi3, phi12, phi13, phi23, Delta_phi12, Delta_phi13, Delta_phi23;
@@ -589,10 +592,11 @@ int main(int argc, char *argv[]) {
         tree->Branch("mc_p1_parent", &mc_p1_parent, "mc_p1_parent/I");
         tree->Branch("mc_p2_parent", &mc_p2_parent, "mc_p2_parent/I");
     }
-    // Case for two hadrons (trihadrons)
+    // Case for three hadrons (trihadrons)
     else if (hadron_count == 3 && is_mc == 0) {
 
         // Link TTree branches to variables for three hadrons
+        tree->Branch("fiducial_status", &fiducial_status, "fiducial_status/I");
         tree->Branch("runnum", &runnum, "runnum/I");
         tree->Branch("evnum", &evnum, "evnum/I");
         tree->Branch("helicity", &helicity, "helicity/I");
@@ -623,6 +627,13 @@ int main(int argc, char *argv[]) {
         tree->Branch("Mx12", &Mx12, "Mx12/D");
         tree->Branch("Mx13", &Mx13, "Mx13/D");
         tree->Branch("Mx23", &Mx23, "Mx23/D");
+        tree->Branch("Mx_squared", &Mx_squared, "Mx_squared/D");
+        tree->Branch("Mx1_squared", &Mx1_squared, "Mx1_squared/D");
+        tree->Branch("Mx2_squared", &Mx2_squared, "Mx2_squared/D");
+        tree->Branch("Mx3_squared", &Mx3_squared, "Mx3_squared/D");
+        tree->Branch("Mx12_squared", &Mx12_squared, "Mx12_squared/D");
+        tree->Branch("Mx13_squared", &Mx13_squared, "Mx13_squared/D");
+        tree->Branch("Mx23_squared", &Mx23_squared, "Mx23_squared/D");
         tree->Branch("x", &x, "x/D");
         tree->Branch("y", &y, "y/D");
         tree->Branch("t1", &t1, "t1/D");
@@ -1060,10 +1071,13 @@ int main(int argc, char *argv[]) {
         }
     }
     if (hadron_count == 3 && is_mc == 0) {
-        while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
+        while (infile >> fiducial_status >> runnum >> evnum >> helicity >> 
+            e_p >> e_theta >> e_phi >> vz_e >> 
             p1_p >> p1_theta >> p1_phi >> vz_p1 >> p2_p >> p2_theta >> p2_phi >> vz_p2 >>
             p3_p >> p3_theta >> p3_phi >> vz_p3 >> 
             Q2 >> W >> Mx >> Mx1 >> Mx2 >> Mx3 >> Mx12 >> Mx13 >> Mx23 >> 
+            Mx_squared >> Mx1_squared >> Mx2_squared >> Mx3_squared >> Mx12_squared >> 
+            Mx13_squared >> Mx23_squared >> 
             x >> y >> z >> z1 >> z2 >> z3 >> z12 >> z13 >> z23 >> 
             zeta >> zeta1 >> zeta2 >> zeta3 >> zeta12 >> zeta13 >> zeta23 >>
             pT >> pT1 >> pT2 >> pT3 >> pT12 >> pT13 >> pT23 >> 
