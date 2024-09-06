@@ -248,7 +248,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                         track_Bank, traj_Bank, run_Bank)) {
 
                     float[] momentum = {px, py, pz};
-                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+//                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
 
                     px = momentum[0];
                     py = momentum[1];
