@@ -677,15 +677,15 @@ public class Trihadrons {
         return runnum;
     }
     
-    public int num_pos() {
+    public int get_num_pos() {
         return num_pos;
     }
     
-    public int num_neg() {
+    public int get_num_neg() {
         return num_neg;
     }
     
-    public int num_neutrals() {
+    public int get_num_neutrals() {
         return num_neutrals;
     }
     
