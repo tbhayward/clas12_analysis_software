@@ -27,6 +27,8 @@ public class Trihadrons {
     protected int fiducial_status = -1;
 
     protected int num_elec, num_piplus, num_piminus, num_kplus, num_kminus, num_protons, num_particles;
+    protected int num_pos, num_neg, num_neutrals;
+    protected int num_positrons, num_antiprotons;
 
     // labels are unnumbered if they refer to the trihadron (perhaps a meson) and numbered for individual
     // hadrons. Convention is ordered by mass, then charge. For example in pi+pi- pi+ is hadron 1
@@ -123,12 +125,17 @@ public class Trihadrons {
         runnum = configBank.getInt("run", 0); // used for beam energy and polarization
 
         num_elec = recEvent.countByPid(11); // returns number of electrons
+        num_positrons = recEvent.countByPid(-11); // returns number of positrons
         num_piplus = recEvent.countByPid(211);
         num_piminus = recEvent.countByPid(-211);
         num_kplus = recEvent.countByPid(321);
         num_kminus = recEvent.countByPid(-321);
         num_protons = recEvent.countByPid(2212);
+        num_antiprotons = recEvent.countByPid(-2212);
         num_particles = num_elec + num_piplus + num_piminus + num_kplus + num_kminus + num_protons;
+        num_pos = num_positrons + num_piplus + num_kplus + num_protons;
+        num_neg = num_elec + num_piminus + num_kminus + num_antiprotons;
+        num_neutrals = recEvent.countByPid(22) + recEvent.countByPid(2112);
 
         generic_tests generic_tests = new generic_tests();
         fiducial_cuts fiducial_cuts = new fiducial_cuts();
@@ -174,7 +181,6 @@ public class Trihadrons {
             }
             // If more than one is false, fiducial_status remains -1 (default)
         }
-        System.out.println(fiducial_status);
         
 
         // Set up Lorentz vectors
@@ -669,6 +675,18 @@ public class Trihadrons {
 
     public int get_runnum() {
         return runnum;
+    }
+    
+    public int num_pos() {
+        return num_pos;
+    }
+    
+    public int num_neg() {
+        return num_neg;
+    }
+    
+    public int num_neutrals() {
+        return num_neutrals;
     }
     
     public int get_fiducial_status() {

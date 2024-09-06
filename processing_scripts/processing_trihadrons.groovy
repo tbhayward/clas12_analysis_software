@@ -168,6 +168,9 @@ public static void main(String[] args) {
 				            if (variables.channel_test(variables)) {
 				                fiducial_status = variables.get_fiducial_status(); // fiducial_status of track
 				                helicity = variables.get_helicity(); // helicity of event
+				                num_pos = variables.get_num_pos();
+				                num_neg = variables.get_num_neg();
+				                num_neutrals = variables.get_num_neutrals();
 
 				                // lab kinematics
 				                e_p = variables.e_p(); // lab frame momentum
@@ -284,6 +287,9 @@ public static void main(String[] args) {
 				                // Use a StringBuilder to append all data in a single call
 								StringBuilder line = new StringBuilder();
 								line.append(fiducial_status).append(" ")
+									.append(num_pos).append(" ")
+									.append(num_neg).append(" ")
+									.append(num_neutrals).append(" ")
 									.append(runnum).append(" ")
 									.append(evnum).append(" ")
 									.append(helicity).append(" ")
