@@ -36,8 +36,9 @@ public class analysis_fitter extends GenericKinematicFitter {
                 && pid_cuts.calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
                 && pid_cuts.calorimeter_diagonal_cut(particle_Index, p, cal_Bank)
                 //            && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)    
-                && fiducial_cuts.pcal_fiducial_cut(particle_Index, 1, run_Bank, rec_Bank, cal_Bank)
-                && fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank);
+//                && fiducial_cuts.pcal_fiducial_cut(particle_Index, 1, run_Bank, rec_Bank, cal_Bank)
+//                && fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
+                ;
     }
 
     public boolean pion_test(int particle_Index, int pid, float vz, double trigger_electron_vz, HipoDataBank rec_Bank,
@@ -66,12 +67,13 @@ public class analysis_fitter extends GenericKinematicFitter {
                 && (passesCentralDetector // generic |chi2pid| < 3.5 for cd
                         ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank)
                         : true)
-                && (passesForwardDetector
-                        ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
-                        : true)
-                && (passesCentralDetector
-                        ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
-                        : true);
+//                && (passesForwardDetector
+//                        ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
+//                        : true)
+//                && (passesCentralDetector
+//                        ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
+//                        : true)
+                ;
     }
 
     public boolean kaon_test(int particle_Index, int pid, float vz, double trigger_electron_vz, HipoDataBank rec_Bank,
@@ -101,12 +103,13 @@ public class analysis_fitter extends GenericKinematicFitter {
                 && (passesCentralDetector // generic |chi2pid| < 3.5 for cd
                         ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank)
                         : true)
-                && (passesForwardDetector
-                        ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
-                        : true)
-                && (passesCentralDetector
-                        ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
-                        : true);
+//                && (passesForwardDetector
+//                        ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
+//                        : true)
+//                && (passesCentralDetector
+//                        ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
+//                        : true)
+                ;
     }
 
     public boolean proton_test(int particle_Index, int pid, float vz, double trigger_electron_vz,
@@ -136,12 +139,13 @@ public class analysis_fitter extends GenericKinematicFitter {
                         //                        ? pid_cuts.charged_hadron_pass2_chi2pid_cut(particle_Index, rec_Bank)
                         ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank)
                         : true)
-                && (passesCentralDetector // generic |chi2pid| < 3.5 for cd
-                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank)
-                        : true) //            && charged_hadron_chi2pid_cut(particle_Index, rec_Bank)
-                && (passesCentralDetector
-                        ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
-                        : true);
+//                && (passesCentralDetector // generic |chi2pid| < 3.5 for cd
+//                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank)
+//                        : true) //            && charged_hadron_chi2pid_cut(particle_Index, rec_Bank)
+//                && (passesCentralDetector
+//                        ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
+//                        : true)
+                ;
     }
 
     public boolean photon_test(int particle_Index, HipoDataBank run_Bank, HipoDataBank rec_Bank, HipoDataBank cal_Bank,

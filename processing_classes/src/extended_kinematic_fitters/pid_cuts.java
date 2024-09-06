@@ -177,7 +177,7 @@ public class pid_cuts {
     public boolean charged_hadron_chi2pid_cut(int particle_Index, HipoDataBank rec_Bank) {
         float chi2pid = rec_Bank.getFloat("chi2pid", particle_Index);
         
-        return Math.abs(chi2pid) < 3.5;
+        return Math.abs(chi2pid) < 4.0;
     }
     
     public boolean charged_hadron_pass2_chi2pid_cut(int particle_Index, HipoDataBank rec_Bank) {

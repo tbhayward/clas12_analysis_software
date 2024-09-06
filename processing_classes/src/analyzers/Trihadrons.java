@@ -165,7 +165,6 @@ public class Trihadrons {
             // Now check for specific cases where only one is false
             if (!e_fiducial_check && p1_fiducial_check && p2_fiducial_check && p3_fiducial_check) {
                 fiducial_status = 0; // Set to 0 if only electron check is false
-                System.out.println(fiducial_status);
             } else if (e_fiducial_check && !p1_fiducial_check && p2_fiducial_check && p3_fiducial_check) {
                 fiducial_status = 1; // Set to 1 if only p1 check is false
             } else if (e_fiducial_check && p1_fiducial_check && !p2_fiducial_check && p3_fiducial_check) {
@@ -175,6 +174,7 @@ public class Trihadrons {
             }
             // If more than one is false, fiducial_status remains -1 (default)
         }
+        System.out.println(fiducial_status);
         
 
         // Set up Lorentz vectors
