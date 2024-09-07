@@ -315,8 +315,6 @@ public class Dihadrons {
         lv_p1_COM.boost(pCOMBoost);
         LorentzVector lv_p2_COM = new LorentzVector(lv_p2);
         lv_p2_COM.boost(pCOMBoost);
-//        theta = Math.acos(lv_p1_COM.vect().dot(lv_p_gN.vect()) / 
-//                (lv_p1_COM.vect().mag()*lv_p_gN.vect().mag()));
         theta = Math.acos(lv_p1_COM.vect().dot(lv_p.vect())
                 / (lv_p1_COM.vect().mag() * lv_p.vect().mag()));
 
