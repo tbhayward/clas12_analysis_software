@@ -205,6 +205,7 @@ public class Hadron {
         lv_q_gN_unit.setMagThetaPhi(1, lv_q_gN.theta(), lv_q_gN.phi());
         // in gamma*-nucleon frame the z axis is along gamma* and the x axis is in the 
         // e-e' plane in the direction of e. the y axis is then the cross product of these two
+        System.out.println(lv_target_gN.p());
 
         // boost to Breit infinite momentum frame
         LorentzVector lv_p_Breit = new LorentzVector(lv_p);
