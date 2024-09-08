@@ -28,9 +28,12 @@ void plot_theta_distributions() {
     h_antisymmetric->GetXaxis()->SetTitle("#theta");
     h_antisymmetric->GetYaxis()->SetTitle("Counts");
 
+    // // Apply the selection cuts and fill the histograms
+    // tree->Draw("theta >> h_symmetric", "abs(p2_p - p3_p) < 1", "goff");
+    // tree->Draw("theta >> h_antisymmetric", "abs(p2_p - p3_p) > 1", "goff");
     // Apply the selection cuts and fill the histograms
-    tree->Draw("theta >> h_symmetric", "abs(p2_p - p3_p) < 1", "goff");
-    tree->Draw("theta >> h_antisymmetric", "abs(p2_p - p3_p) > 1", "goff");
+    tree->Draw("theta >> h_symmetric", "abs(p1_p - p2_p) < 1", "goff");
+    tree->Draw("theta >> h_antisymmetric", "abs(p1_p - p2_p) > 1", "goff");
 
     // Create a canvas with 1x2 subplots
     TCanvas *c = new TCanvas("c", "Theta Distributions", 1200, 600);
