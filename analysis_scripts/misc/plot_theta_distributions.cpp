@@ -19,8 +19,8 @@ void plot_theta_distributions() {
     }
 
     // Create histograms for symmetric and antisymmetric conditions
-    TH1F *h_symmetric = new TH1F("h_symmetric", "Symmetric", 100, 0, TMath::Pi() / 2);
-    TH1F *h_antisymmetric = new TH1F("h_antisymmetric", "Antisymmetric", 100, 0, TMath::Pi() / 2);
+    TH1F *h_symmetric = new TH1F("h_symmetric", "Symmetric", 100, 0, TMath::Pi());
+    TH1F *h_antisymmetric = new TH1F("h_antisymmetric", "Antisymmetric", 100, 0, TMath::Pi());
 
     // Set axis labels
     h_symmetric->GetXaxis()->SetTitle("#theta");
@@ -47,7 +47,7 @@ void plot_theta_distributions() {
 
     // Clean up
     file->Close();
-    delete c;
-    delete h_symmetric;
-    delete h_antisymmetric;
+    // delete c;
+    // delete h_symmetric;
+    // delete h_antisymmetric;
 }
