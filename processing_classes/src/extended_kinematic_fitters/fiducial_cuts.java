@@ -20,7 +20,7 @@ public class fiducial_cuts {
                 double radius = Math.sqrt(ft_x * ft_x + ft_y * ft_y);
 
                 // Check if the radius is within the fiducial range
-                if (radius < 8.5 || radius > 15.5) {
+                if (radius < 8.5) { // no outer radius enforced
                     return false;
                 }
 
@@ -101,7 +101,6 @@ public class fiducial_cuts {
         // Apply strictness levels for additional cuts on PCal (layer 1)
         switch (strictness) {
             case 1:
-//                if (lw_1 < 9 || lv_1 < 9 || lu_1 < 14) {
                 if (lw_1 < 9 || lv_1 < 9 || lu_1 < 0) {
                     return false;
                 }
@@ -155,23 +154,25 @@ public class fiducial_cuts {
             }
         }
 
-        // RGC
-        if ((runnum >= 16042 && runnum <= 17811) || runnum == 11) { // assumption working with RGC MC
-            switch (sector) {
-                case 1:
-                    if (lv_4 > 72 && lv_4 < 94) {
-                        return false;
-                    }
-                case 2:
-                    if (lw_7 > 68 && lw_7 < 84) {
-                        return false;
-                    }
-                case 5:
-                    if (lu_7 > 200 && lu_7 < 220) {
-                        return false;
-                    }
-            }
-        }
+//        // RGC strips were only removed from data-MC agreement which has since been corrected with 
+//        // updated status tables
+//        if ((runnum >= 16042 && runnum <= 17811) || runnum == 11) { // assumption working with RGC MC
+//            switch (sector) {
+//                case 1:
+//                    if (lv_4 > 72 && lv_4 < 94) {
+//                        return false;
+//                    }
+//                case 2:
+//                    if (lw_7 > 68 && lw_7 < 84) {
+//                        return false;
+//                    }
+//                case 5:
+//                    if (lu_7 > 200 && lu_7 < 220) {
+//                        return false;
+//                    }
+//            }
+//        }
+        
 
         // If none of the cuts apply, the track is good
         return true;

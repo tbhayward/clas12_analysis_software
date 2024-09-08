@@ -349,7 +349,7 @@ bool forward_tagger_fiducial(double ft_x, double ft_y) {
     double radius = sqrt(ft_x * ft_x + ft_y * ft_y);
     
     // Check if the radius is within the fiducial range
-    if (radius < 8.5 || radius > 15.5) {
+    if (radius < 8.5) {
         return false;
     }
 
@@ -759,7 +759,7 @@ bool pcal_fiducial(double lv_1, double lw_1, double lu_1,
     // Apply strictness levels for additional cuts
     switch (strictness) {
         case 1:
-            if (lw_1 < 9 || lv_1 < 9 || lu_1 < 14) {
+            if (lw_1 < 9 || lv_1 < 9) {
                 return false;
             }
             break;
@@ -7182,51 +7182,51 @@ int main(int argc, char** argv) {
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
 
-    plot_ft_xy_energy(dataReader, mcReader);
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_ft_hit_position(dataReader, mcReader);
+    // plot_ft_xy_energy(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_ft_hit_position(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_pcal_fiducial_determination(dataReader, mcReader);
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_ecin_fiducial_determination(dataReader, mcReader);
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_ecout_fiducial_determination(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_pcal_fiducial_determination(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_ecin_fiducial_determination(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_ecout_fiducial_determination(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_cal_hit_position(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_cal_hit_position(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    dc_fiducial_determination(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // dc_fiducial_determination(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_dc_hit_position(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_dc_hit_position(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    cvt_fiducial_determination(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // cvt_fiducial_determination(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_cvt_hit_position(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_cvt_hit_position(dataReader, mcReader);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
     // plot_chi2pid_cd(dataReader, mcReader);
 
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
     // if (mcReader) energy_loss(*mcReader, "rga_fa18_inb"); 
     // if (mcReader) energy_loss(*mcReader, "rga_fa18_out");  
     // if (mcReader) energy_loss(*mcReader, "rga_sp19_inb"); 
-    // if (mcReader) energy_loss(*mcReader, "rgc_su22_inb");   
+    if (mcReader) energy_loss(*mcReader, "rgc_su22_inb");   
 
     // Close files
     dataFile.Close();
