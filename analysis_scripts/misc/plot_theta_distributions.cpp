@@ -5,7 +5,7 @@
 
 void plot_theta_distributions() {
     // Open the ROOT file and get the tree
-    TFile *file = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/cphi2024_rho0/data/new_sep6/rgc_su22_inb_NH3_eppi+pi-X.root");
+    TFile *file = TFile::Open("/volatile/clas12/thayward/dihadron_theta_calculation.root");
     if (!file || file->IsZombie()) {
         std::cerr << "Error opening file!" << std::endl;
         return;
