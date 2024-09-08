@@ -85,11 +85,11 @@ public class Trihadrons {
             return false;
         }
         if (variables.Q2() < 1) {
-//            return false;
+            return false;
         } else if (variables.W() < 2) {
-//            return false;
+            return false;
         } else if (variables.y() > 0.75) {
-//            return false;
+            return false;
         }
         return true;
     }
