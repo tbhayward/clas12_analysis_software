@@ -174,10 +174,12 @@ public class pid_cuts {
         }
     }
     
-    public boolean charged_hadron_chi2pid_cut(int particle_Index, HipoDataBank rec_Bank) {
+    public boolean charged_hadron_chi2pid_cut(int particle_Index, HipoDataBank rec_Bank, HipoDataBank run_Bank) {
         
         int pid = rec_Bank.getInt("pid", particle_Index);
         float chi2pid = rec_Bank.getFloat("chi2pid", particle_Index);
+        
+        int runnum = run_Bank.getInt("run", 0);
         
         generic_tests generic_tests = new generic_tests();
         boolean isForwardDetector = generic_tests.forward_detector_cut(particle_Index, rec_Bank);
