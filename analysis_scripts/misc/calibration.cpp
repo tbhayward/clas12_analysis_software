@@ -79,11 +79,11 @@ void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
 
         // Fill the data arrays
         // while (dataReader.Next()) {
-        for (int i=0; i<1e6; i++) {
+        for (int i=0; i<1e7; i++) {
             dataReader.Next();
             double value = *cc_nphe_15;
             int pid = *particle_pid;
-            if (value != -9999 && is_in(pid, pids)) {
+            if (value != -9999) {
                 int bin = static_cast<int>((value - xMin) / (xMax - xMin) * nBins);
                 if (bin >= 0 && bin < nBins) {
                     dataY[bin]++;
@@ -106,11 +106,11 @@ void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         // Fill the MC arrays if available
         if (mcReader) {
             // while (mcReader->Next()) {
-            for (int i=0; i<1e6; i++) {
+            for (int i=0; i<1e7; i++) {
                 mcReader->Next();
                 double value = **mc_cc_nphe_15;
                 int pid = **mc_particle_pid;
-                if (value != -9999 && is_in(pid, pids)) {
+                if (value != -9999) {
                     int bin = static_cast<int>((value - xMin) / (xMax - xMin) * nBins);
                     if (bin >= 0 && bin < nBins) {
                         mcY[bin]++;
@@ -138,11 +138,13 @@ void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
             maxY = std::max(maxY, maxMCY);
         }
 
-        // Create TGraphErrors for data and MC
+        // Create TGraphErrors for data (set to blue) and MC (set to red)
         TGraphErrors* grData = new 
-        	TGraphErrors(nBins, &dataX[0], &dataY[0], &dataEx[0], &dataEy[0]);
-        grData->SetMarkerColor(kBlack);
-        grData->SetLineColor(kBlack);
+            TGraphErrors(nBins, &dataX[0], &dataY[0], &dataEx[0], &dataEy[0]);
+        grData->SetMarkerColor(kBlue);   // Set data color to blue
+        grData->SetLineColor(kBlue);     // Set line color to blue
+        grData->SetMarkerStyle(20);      // Add dot in the center of error bars (style 20 is a filled circle)
+        grData->SetMarkerSize(1.0);      // Adjust the marker size if needed
         grData->SetTitle(("HTCC nphe - " + plot_name).c_str());
         grData->GetXaxis()->SetTitle("nphe");
         grData->GetYaxis()->SetTitle("normalized counts");
@@ -154,8 +156,10 @@ void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         TGraphErrors* grMC = nullptr;
         if (mcReader) {
             grMC = new TGraphErrors(nBins, &mcX[0], &mcY[0], &mcEx[0], &mcEy[0]);
-            grMC->SetMarkerColor(kRed);
-            grMC->SetLineColor(kRed);
+            grMC->SetMarkerColor(kRed);    // Set MC color to red
+            grMC->SetLineColor(kRed);      // Set MC line color to red
+            grMC->SetMarkerStyle(20);      // Add dot in the center of error bars for MC
+            grMC->SetMarkerSize(1.0);      // Adjust marker size if needed
         }
 
         // Draw the plot
@@ -166,7 +170,7 @@ void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
             grMC->Draw("P SAME");
         }
 
-        // Create legend with entry counts
+        // Create legend with entry counts, update the color for data to blue
         std::ostringstream dataLegend, mcLegend;
         dataLegend << "Data (" << dataEntries << " tracks)";
         TLegend* legend = new TLegend(0.7, 0.8, 0.9, 0.9);
@@ -177,14 +181,14 @@ void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         }
         legend->Draw();
 
-        // Add a thick vertical dashed red line at nphe = 2
+        // Add a thick vertical dashed black line at nphe = 2 (changed to black)
         TLine* line = new TLine(2, 0, 2, 1.15 * maxY);  // Line from nphe = 2 to maxY
-        line->SetLineColor(kRed);
+        line->SetLineColor(kBlack);  // Change the line color to black
         line->SetLineStyle(2);  // Dashed line
         line->SetLineWidth(2);
         line->Draw("SAME");
 
-        // Add an arrow pointing to the right
+        // Add an arrow pointing to the right (color unchanged, remains red)
         TArrow* arrow = new TArrow(2, 0.9 * maxY, 6, 0.9 * maxY, 0.02, "|>");
         arrow->SetLineColor(kRed);
         arrow->SetFillColor(kRed);
