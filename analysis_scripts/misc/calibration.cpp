@@ -4602,6 +4602,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
                         h_data_beta_vs_p_pos->Fill(*particle_p, *particle_beta);
                         for (size_t bin = 0; bin < pBins.size() - 1; ++bin) {
                             if (*particle_p >= pBins[bin] && *particle_p < pBins[bin + 1]) {
+                                std::cout << *particle_p << " " << *particle_beta << std::endl;
                                 h_data_beta_bins_pos[bin]->Fill(*particle_beta);
                                 break;
                             }
