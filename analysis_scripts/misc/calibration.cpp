@@ -5648,6 +5648,7 @@ void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
                 }
 
                 if (pass_fiducial && sector >= 1 && sector <= 6) {
+                    std::cout<<vz<<std::endl;
                     histsMC[sector - 1]->Fill(vz);
                 }
             }
@@ -5718,8 +5719,8 @@ void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     };
 
     // Create plots for positive and negative tracks with adjustable cuts
-    create_vertex_plots("positive", positive_pids, "Positive", -9.5, 1.5);  // Example values for now
-    create_vertex_plots("negative", negative_pids, "Negative", -10.5, 1);  // Example values for now
+    create_vertex_plots("positive", positive_pids, "Positive", -10.5, 1);  // Example values for now
+    create_vertex_plots("negative", negative_pids, "Negative", -9.5, 1.5);  // Example values for now
 }
 
 // Helper function to fill and save histograms for each particle type
