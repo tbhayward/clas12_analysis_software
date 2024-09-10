@@ -5602,14 +5602,14 @@ void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
             mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
             mc_track_sector_5 = new TTreeReaderValue<int>(*mcReader, "track_sector_5");
             mc_track_sector_6 = new TTreeReaderValue<int>(*mcReader, "track_sector_6");
-            mc_edge_1 = new TTreeReaderValue<int>(*mcReader, "traj_edge_1");
-            mc_edge_3 = new TTreeReaderValue<int>(*mcReader, "traj_edge_3");
-            mc_edge_5 = new TTreeReaderValue<int>(*mcReader, "traj_edge_5");
-            mc_edge_7 = new TTreeReaderValue<int>(*mcReader, "traj_edge_7");
-            mc_edge_12 = new TTreeReaderValue<int>(*mcReader, "traj_edge_12");
-            mc_edge_6 = new TTreeReaderValue<int>(*mcReader, "traj_edge_6");
-            mc_edge_18 = new TTreeReaderValue<int>(*mcReader, "traj_edge_18");
-            mc_edge_36 = new TTreeReaderValue<int>(*mcReader, "traj_edge_36");
+            mc_edge_1 = new TTreeReaderValue<double>(*mcReader, "traj_edge_1");
+            mc_edge_3 = new TTreeReaderValue<double>(*mcReader, "traj_edge_3");
+            mc_edge_5 = new TTreeReaderValue<double>(*mcReader, "traj_edge_5");
+            mc_edge_7 = new TTreeReaderValue<double>(*mcReader, "traj_edge_7");
+            mc_edge_12 = new TTreeReaderValue<double>(*mcReader, "traj_edge_12");
+            mc_edge_6 = new TTreeReaderValue<double>(*mcReader, "traj_edge_6");
+            mc_edge_18 = new TTreeReaderValue<double>(*mcReader, "traj_edge_18");
+            mc_edge_36 = new TTreeReaderValue<double>(*mcReader, "traj_edge_36");
         }
 
         // 2x3 canvas setup
