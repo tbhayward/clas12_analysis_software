@@ -5608,7 +5608,9 @@ void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         }
 
         // Fill data histograms
-        while (dataReader.Next()) {
+        // while (dataReader.Next()) {
+        for (int m = 0; m < 6e7; m++) {
+            dataReader.Next();
             int pid = *particle_pid;
             double vz = *particle_vz;
             int sector = (*track_sector_5 != -9999) ? *track_sector_5 : *track_sector_6;  // Check for FD or CD
@@ -5630,7 +5632,9 @@ void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
 
         // Fill MC histograms
         if (mcReader) {
-            while (mcReader->Next()) {
+            // while (mcReader->Next()) {
+            for (int m = 0; m < 6e7; m++) {
+                mcReader->Next();
                 int pid = **mc_particle_pid;
                 double vz = **mc_particle_vz;
                 int sector = (**mc_track_sector_5 != -9999) ? **mc_track_sector_5 : **mc_track_sector_6;
