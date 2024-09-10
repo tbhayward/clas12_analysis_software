@@ -428,7 +428,7 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
             int sector = *cal_sector;
             double energy = *cal_energy_1;
 
-            if (nphe == -9999 || sector == -9999 || energy = -9999) continue;
+            if (nphe == -9999 || sector == -9999 || energy == -9999) continue;
 
             // Apply HTCC and PCal cuts for data
             if (nphe >= 2 && is_in(pid, pids) && energy >= 0 && sector >= 1 && sector <= 6) {
@@ -445,7 +445,7 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
                 int sector = **mc_cal_sector;
                 double energy = **mc_cal_energy_1;
 
-                if (nphe == -9999 || sector == -9999 || energy = -9999) continue;
+                if (nphe == -9999 || sector == -9999 || energy == -9999) continue;
 
                 // Apply HTCC and PCal cuts for MC
                 if (nphe >= 2 && is_in(pid, pids) && energy >= 0 && sector >= 1 && sector <= 6) {
