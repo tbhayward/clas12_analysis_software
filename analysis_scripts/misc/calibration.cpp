@@ -4551,14 +4551,14 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     for (size_t i = 0; i < pBins.size() - 1; ++i) {
         h_data_beta_bins_pos[i] = new TH1D(("h_data_beta_pos_bin_" + std::to_string(i)).c_str(),
                                            ("#beta: " + std::to_string(pBins[i]) + " < p < " + std::to_string(pBins[i + 1])).c_str(),
-                                           nBins, 0.5, 1.05);
+                                           nBins, 0.2, 1.2);
         h_data_beta_bins_pos[i]->GetXaxis()->SetTitle("#beta");
         h_data_beta_bins_pos[i]->GetYaxis()->SetTitle("Counts");
         h_data_beta_bins_pos[i]->SetStats(false);
 
         h_data_beta_bins_neg[i] = new TH1D(("h_data_beta_neg_bin_" + std::to_string(i)).c_str(),
                                            ("#beta: " + std::to_string(pBins[i]) + " < p < " + std::to_string(pBins[i + 1])).c_str(),
-                                           nBins, 0.5, 1.05);
+                                           nBins, 0.2, 1.2);
         h_data_beta_bins_neg[i]->GetXaxis()->SetTitle("#beta");
         h_data_beta_bins_neg[i]->GetYaxis()->SetTitle("Counts");
         h_data_beta_bins_neg[i]->SetStats(false);
@@ -4566,7 +4566,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         if (mcReader) {
             h_mc_beta_bins_pos[i] = new TH1D(("h_mc_beta_pos_bin_" + std::to_string(i)).c_str(),
                                              ("#beta: " + std::to_string(pBins[i]) + " < p < " + std::to_string(pBins[i + 1])).c_str(),
-                                             nBins, 0.5, 1.05);
+                                             nBins, 0.2, 1.2);
             h_mc_beta_bins_pos[i]->GetXaxis()->SetTitle("#beta");
             h_mc_beta_bins_pos[i]->GetYaxis()->SetTitle("Counts");
             h_mc_beta_bins_pos[i]->SetLineColor(kRed);
@@ -4574,7 +4574,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
 
             h_mc_beta_bins_neg[i] = new TH1D(("h_mc_beta_neg_bin_" + std::to_string(i)).c_str(),
                                              ("#beta: " + std::to_string(pBins[i]) + " < p < " + std::to_string(pBins[i + 1])).c_str(),
-                                             nBins, 0.5, 1.05);
+                                             nBins, 0.2, 1.2);
             h_mc_beta_bins_neg[i]->GetXaxis()->SetTitle("#beta");
             h_mc_beta_bins_neg[i]->GetYaxis()->SetTitle("Counts");
             h_mc_beta_bins_neg[i]->SetLineColor(kRed);
