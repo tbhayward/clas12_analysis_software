@@ -897,7 +897,7 @@ void plot_diagonal_cut(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
         return std::find(pid_list.begin(), pid_list.end(), pid) != pid_list.end();
     };
 
-    // Helper function to plot (cal_energy_4 + cal_energy_7) / p vs momentum for each sector
+    // Helper function to plot (cal_energy_1 + cal_energy_4) / p vs momentum for each sector
     auto create_diagonal_cut_plots = [&](const std::string& plot_name, const std::vector<int>& pids, const std::string& track_type) {
         // Restart the TTreeReader to process the data from the beginning
         dataReader.Restart();
@@ -908,6 +908,7 @@ void plot_diagonal_cut(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
         TTreeReaderValue<double> cc_nphe_15(dataReader, "cc_nphe_15");
         TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
         TTreeReaderValue<int> cal_sector(dataReader, "cal_sector");
+        TTreeReaderValue<double> cal_energy_1(dataReader, "cal_energy_1");
         TTreeReaderValue<double> cal_energy_4(dataReader, "cal_energy_4");
         TTreeReaderValue<double> cal_energy_7(dataReader, "cal_energy_7");
 
@@ -927,6 +928,7 @@ void plot_diagonal_cut(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
         TTreeReaderValue<double>* mc_cc_nphe_15 = nullptr;
         TTreeReaderValue<int>* mc_particle_pid = nullptr;
         TTreeReaderValue<int>* mc_cal_sector = nullptr;
+        TTreeReaderValue<double>* mc_cal_energy_1 = nullptr;
         TTreeReaderValue<double>* mc_cal_energy_4 = nullptr;
         TTreeReaderValue<double>* mc_cal_energy_7 = nullptr;
         TTreeReaderValue<double>* mc_cal_lv_1 = nullptr;
@@ -944,6 +946,7 @@ void plot_diagonal_cut(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
             mc_cc_nphe_15 = new TTreeReaderValue<double>(*mcReader, "cc_nphe_15");
             mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
             mc_cal_sector = new TTreeReaderValue<int>(*mcReader, "cal_sector");
+            mc_cal_energy_1 = new TTreeReaderValue<double>(*mcReader, "cal_energy_1");
             mc_cal_energy_4 = new TTreeReaderValue<double>(*mcReader, "cal_energy_4");
             mc_cal_energy_7 = new TTreeReaderValue<double>(*mcReader, "cal_energy_7");
             mc_cal_lv_1 = new TTreeReaderValue<double>(*mcReader, "cal_lv_1");
@@ -983,9 +986,11 @@ void plot_diagonal_cut(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
             double nphe = *cc_nphe_15;
             int pid = *particle_pid;
             int sector = *cal_sector;
+            double energy1 = *cal_energy_1;
             double energy4 = *cal_energy_4;
             double energy7 = *cal_energy_7;
-            double ec_sf = (energy1 + energy4) / *p;
+            double sf = (energy1 + energy4 + energy7) / *p;  // regular SF cut
+            double ec_sf = (energy1 + energy4) / *p;         // ECin + PCal cut
 
             double lv1 = *cal_lv_1, lw1 = *cal_lw_1, lu1 = *cal_lu_1;
             double lv4 = *cal_lv_4, lw4 = *cal_lw_4, lu4 = *cal_lu_4;
@@ -996,9 +1001,9 @@ void plot_diagonal_cut(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
             // Check if the pid is in the provided list (positive or negative pids)
             if (!is_in(pid, pids)) continue;
 
-            // Apply cuts
+            // Apply HTCC, PCal, sampling fraction, and fiducial cuts
             if (*p > 4.5 && nphe >= 2 && energy4 >= 0.07 && sector >= 1 && sector <= 6 &&
-                pcal_fiducial(lv1, lw1, lu1, lv4, lw4, lu4, lv7, lw7, lu7, sector, 1)) {
+                sf > 0.19 && pcal_fiducial(lv1, lw1, lu1, lv4, lw4, lu4, lv7, lw7, lu7, sector, 1)) {
                 histsData[sector - 1]->Fill(*p, ec_sf);
             }
         }
@@ -1010,9 +1015,11 @@ void plot_diagonal_cut(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
                 double nphe = **mc_cc_nphe_15;
                 int pid = **mc_particle_pid;
                 int sector = **mc_cal_sector;
+                double energy1 = **mc_cal_energy_1;
                 double energy4 = **mc_cal_energy_4;
                 double energy7 = **mc_cal_energy_7;
-                double ec_sf = (energy1 + energy4) / **mc_p;
+                double sf = (energy1 + energy4 + energy7) / **mc_p;  // regular SF cut
+                double ec_sf = (energy1 + energy4) / **mc_p;         // ECin + PCal cut
 
                 double lv1 = **mc_cal_lv_1, lw1 = **mc_cal_lw_1, lu1 = **mc_cal_lu_1;
                 double lv4 = **mc_cal_lv_4, lw4 = **mc_cal_lw_4, lu4 = **mc_cal_lu_4;
@@ -1023,9 +1030,9 @@ void plot_diagonal_cut(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
                 // Check if the pid is in the provided list (positive or negative pids)
                 if (!is_in(pid, pids)) continue;
 
-                // Apply cuts
+                // Apply HTCC, PCal, sampling fraction, and fiducial cuts
                 if (**mc_p > 4.5 && nphe >= 2 && energy4 >= 0.07 && sector >= 1 && sector <= 6 &&
-                    pcal_fiducial(lv1, lw1, lu1, lv4, lw4, lu4, lv7, lw7, lu7, sector, 1)) {
+                    sf > 0.19 && pcal_fiducial(lv1, lw1, lu1, lv4, lw4, lu4, lv7, lw7, lu7, sector, 1)) {
                     histsMC[sector - 1]->Fill(**mc_p, ec_sf);
                 }
             }
@@ -1040,13 +1047,13 @@ void plot_diagonal_cut(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
             histsData[i]->GetYaxis()->SetRangeUser(0.0, 0.35);
             histsData[i]->Draw("COLZ");
 
-            // Draw horizontal line at (E_{ECin} + E_{ECout}) / p = 0.2
+            // Draw horizontal line at (E_{ECin} + E_{PCal}) / p = 0.2
             TLine* line = new TLine(4.5, 0.2, 9.0, 0.2);
             line->SetLineColor(kRed);
             line->SetLineWidth(2);
             line->Draw("SAME");
 
-            // Add red text for E_{ECin} + E_{ECout} > 0.2
+            // Add red text for E_{PCal} + E_{ECin} > 0.2
             TLatex latex;
             latex.SetTextColor(kRed);
             latex.DrawLatex(5.5, 0.18, "(E_{PCal} + E_{ECin})/p > 0.2");
@@ -1075,13 +1082,13 @@ void plot_diagonal_cut(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
                 histsMC[i]->GetYaxis()->SetRangeUser(0.0, 0.35);
                 histsMC[i]->Draw("COLZ");
 
-                // Draw horizontal line at (E_{ECin} + E_{ECout}) / p = 0.2
-                               TLine* line = new TLine(4.5, 0.2, 9.0, 0.2);
+                // Draw horizontal line at (E_{ECin} + E_{PCal}) / p = 0.2
+                TLine* line = new TLine(4.5, 0.2, 9.0, 0.2);
                 line->SetLineColor(kRed);
                 line->SetLineWidth(2);
                 line->Draw("SAME");
 
-                // Add red text for E_{ECin} + E_{ECout} > 0.2
+                // Add red text for E_{PCal} + E_{ECin} > 0.2
                 TLatex latex;
                 latex.SetTextColor(kRed);
                 latex.DrawLatex(5.5, 0.18, "(E_{PCal} + E_{ECin})/p > 0.2");
