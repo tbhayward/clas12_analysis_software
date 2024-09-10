@@ -374,6 +374,138 @@ void plot_ltcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     create_plot("negative", negative_pids);
 }
 
+void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+    // Arrays to store positive and negative track conditions
+    std::vector<int> positive_pids = {-11, 211, 321, 2212};
+    std::vector<int> negative_pids = {11, -211, -321, -2212};
+    std::vector<int> neutral_pids = {22, 2112};
+
+    // Helper lambda to check if pid is in a vector
+    auto is_in = [](int pid, const std::vector<int>& pid_list) {
+        return std::find(pid_list.begin(), pid_list.end(), pid) != pid_list.end();
+    };
+
+    // Helper function to plot PCal energy deposition for each sector
+    auto create_pcal_plots = [&](const std::string& plot_name, const std::vector<int>& pids) {
+        // Restart the TTreeReader to process the data from the beginning
+        dataReader.Restart();
+        if (mcReader) mcReader->Restart();
+
+        // Set up TTreeReaderValues before calling Next()
+        TTreeReaderValue<double> cc_nphe_15(dataReader, "cc_nphe_15");
+        TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+        TTreeReaderValue<int> cal_sector(dataReader, "cal_sector");
+        TTreeReaderValue<double> cal_energy_1(dataReader, "cal_energy_1");
+
+        TTreeReaderValue<double>* mc_cc_nphe_15 = nullptr;
+        TTreeReaderValue<int>* mc_particle_pid = nullptr;
+        TTreeReaderValue<int>* mc_cal_sector = nullptr;
+        TTreeReaderValue<double>* mc_cal_energy_1 = nullptr;
+
+        if (mcReader) {
+            mc_cc_nphe_15 = new TTreeReaderValue<double>(*mcReader, "cc_nphe_15");
+            mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+            mc_cal_sector = new TTreeReaderValue<int>(*mcReader, "cal_sector");
+            mc_cal_energy_1 = new TTreeReaderValue<double>(*mcReader, "cal_energy_1");
+        }
+
+        // 2x3 canvas setup
+        TCanvas c("c", "PCal Energy Deposition", 1200, 800);
+        c.Divide(3, 2);
+
+        // Arrays for data and MC energy depositions for each sector (6 sectors)
+        std::vector<TH1D*> histsData(6), histsMC(6);
+        for (int i = 0; i < 6; ++i) {
+            histsData[i] = new TH1D(Form("hData_sector%d", i+1), Form("Sector %d Data", i+1), 100, 0, 0.5);
+            histsMC[i] = new TH1D(Form("hMC_sector%d", i+1), Form("Sector %d MC", i+1), 100, 0, 0.5);
+        }
+
+        // Fill data histograms
+        for (int i = 0; i < 6e7; i++) {
+            dataReader.Next();
+            double nphe = *cc_nphe_15;
+            int pid = *particle_pid;
+            int sector = *cal_sector;
+            double energy = *cal_energy_1;
+
+            if (nphe == -9999 || sector == -9999 || energy = -9999) continue;
+
+            // Apply HTCC and PCal cuts for data
+            if (nphe >= 2 && is_in(pid, pids) && energy >= 0 && sector >= 1 && sector <= 6) {
+                histsData[sector - 1]->Fill(energy);
+            }
+        }
+
+        // Fill MC histograms
+        if (mcReader) {
+            for (int i = 0; i < 6e7; i++) {
+                mcReader->Next();
+                double nphe = **mc_cc_nphe_15;
+                int pid = **mc_particle_pid;
+                int sector = **mc_cal_sector;
+                double energy = **mc_cal_energy_1;
+
+                if (nphe == -9999 || sector == -9999 || energy = -9999) continue;
+
+                // Apply HTCC and PCal cuts for MC
+                if (nphe >= 2 && is_in(pid, pids) && energy >= 0 && sector >= 1 && sector <= 6) {
+                    histsMC[sector - 1]->Fill(energy);
+                }
+            }
+        }
+
+        // Draw the histograms for each sector on the canvas
+        for (int i = 0; i < 6; ++i) {
+            c.cd(i + 1);  // Move to the corresponding pad
+            histsData[i]->SetLineColor(kBlue);
+            histsData[i]->SetMarkerStyle(20);
+            histsData[i]->SetMarkerColor(kBlue);
+            histsData[i]->SetMarkerSize(0.5);
+            histsData[i]->GetXaxis()->SetTitle("PCal Energy [GeV]");
+            histsData[i]->GetYaxis()->SetTitle("Counts");
+            histsData[i]->Draw("E");
+
+            if (mcReader) {
+                histsMC[i]->SetLineColor(kRed);
+                histsMC[i]->SetMarkerStyle(20);
+                histsMC[i]->SetMarkerColor(kRed);
+                histsMC[i]->SetMarkerSize(0.5);
+                histsMC[i]->Draw("SAME E");
+            }
+
+            // Add a vertical dashed line at energy = 0.07 GeV
+            TLine* line = new TLine(0.07, 0, 0.07, histsData[i]->GetMaximum() * 1.1);
+            line->SetLineColor(kBlack);
+            line->SetLineStyle(2);  // Dashed line
+            line->Draw("SAME");
+
+            // Add an arrow indicating the cut
+            TArrow* arrow = new TArrow(0.07, histsData[i]->GetMaximum() * 0.9, 0.15, histsData[i]->GetMaximum() * 0.9, 0.02, "|>");
+            arrow->SetLineColor(kBlack);
+            arrow->SetFillColor(kBlack);
+            arrow->Draw("SAME");
+
+            // Add a label for the selection criterion
+            TLatex latex;
+            latex.SetTextColor(kBlack);
+            latex.DrawLatex(0.08, histsData[i]->GetMaximum() * 0.95, "E >= 0.07 GeV");
+        }
+
+        // Save the plot
+        c.SaveAs(("output/calibration/cal/pid/pcal_energy_" + plot_name + ".png").c_str());
+
+        // Clean up
+        for (int i = 0; i < 6; ++i) {
+            delete histsData[i];
+            if (mcReader) delete histsMC[i];
+        }
+    };
+
+    // Create plots for positive and negative tracks
+    create_pcal_plots("positive", positive_pids);
+    create_pcal_plots("negative", negative_pids);
+}
+
 bool forward_tagger_fiducial(double ft_x, double ft_y) {
     // Compute the radius from the origin
     double radius = sqrt(ft_x * ft_x + ft_y * ft_y);
@@ -7516,6 +7648,7 @@ void create_directories() {
         "output/calibration/",
         "output/calibration/ft/",
         "output/calibration/cal/",
+        "output/calibration/cal/pid/",
         "output/calibration/cal/fiducial/",
         "output/calibration/cal/fiducial/pcal",
         "output/calibration/cal/fiducial/ecin",
@@ -7590,8 +7723,12 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    plot_htcc_nphe(dataReader, mcReader);
+    // plot_htcc_nphe(dataReader, mcReader);
     // plot_ltcc_nphe(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+
+    plot_pcal_energy(dataReader, mcReader);
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
 
