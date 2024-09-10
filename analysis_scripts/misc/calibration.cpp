@@ -1056,7 +1056,7 @@ void plot_diagonal_cut(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
             // Add red text for E_{PCal} + E_{ECin} > 0.2
             TLatex latex;
             latex.SetTextColor(kRed);
-            latex.DrawLatex(5.5, 0.17, "(E_{PCal} + E_{ECin})/p > 0.2");
+            latex.DrawLatex(5.5, 0.17, "(E_{PCal} + E_{ECin})/p > 0.19");
         }
 
         // Declare cMC outside the block to ensure it's accessible for saving the plot later
@@ -1091,7 +1091,7 @@ void plot_diagonal_cut(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
                 // Add red text for E_{PCal} + E_{ECin} > 0.2
                 TLatex latex;
                 latex.SetTextColor(kRed);
-                latex.DrawLatex(5.5, 0.17, "(E_{PCal} + E_{ECin})/p > 0.2");
+                latex.DrawLatex(5.5, 0.17, "(E_{PCal} + E_{ECin})/p > 0.19");
             }
         }
 
@@ -4428,11 +4428,11 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     TTreeReaderValue<double> particle_beta(dataReader, "particle_beta");  // Beta variable
     TTreeReaderValue<int> track_sector_6(dataReader, "track_sector_6");
     TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
-    TTreeReaderValue<double> edge_1(dataReader, "edge_1");
-    TTreeReaderValue<double> edge_3(dataReader, "edge_3");
-    TTreeReaderValue<double> edge_5(dataReader, "edge_5");
-    TTreeReaderValue<double> edge_7(dataReader, "edge_7");
-    TTreeReaderValue<double> edge_12(dataReader, "edge_12");
+    TTreeReaderValue<double> edge_1(dataReader, "traj_edge_1");
+    TTreeReaderValue<double> edge_3(dataReader, "traj_edge_3");
+    TTreeReaderValue<double> edge_5(dataReader, "traj_edge_5");
+    TTreeReaderValue<double> edge_7(dataReader, "traj_edge_7");
+    TTreeReaderValue<double> edge_12(dataReader, "traj_edge_12");
 
     TTreeReaderValue<double>* mc_particle_chi2pid = nullptr;
     TTreeReaderValue<double>* mc_particle_p = nullptr;
@@ -4451,11 +4451,11 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         mc_particle_beta = new TTreeReaderValue<double>(*mcReader, "particle_beta");
         mc_track_sector_6 = new TTreeReaderValue<int>(*mcReader, "track_sector_6");
         mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
-        mc_edge_1 = new TTreeReaderValue<double>(*mcReader, "edge_1");
-        mc_edge_3 = new TTreeReaderValue<double>(*mcReader, "edge_3");
-        mc_edge_5 = new TTreeReaderValue<double>(*mcReader, "edge_5");
-        mc_edge_7 = new TTreeReaderValue<double>(*mcReader, "edge_7");
-        mc_edge_12 = new TTreeReaderValue<double>(*mcReader, "edge_12");
+        mc_edge_1 = new TTreeReaderValue<double>(*mcReader, "traj_edge_1");
+        mc_edge_3 = new TTreeReaderValue<double>(*mcReader, "traj_edge_3");
+        mc_edge_5 = new TTreeReaderValue<double>(*mcReader, "traj_edge_5");
+        mc_edge_7 = new TTreeReaderValue<double>(*mcReader, "traj_edge_7");
+        mc_edge_12 = new TTreeReaderValue<double>(*mcReader, "traj_edge_12");
     }
 
     // 1D Histograms canvas
@@ -8287,9 +8287,9 @@ int main(int argc, char** argv) {
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
 
-    // plot_diagonal_cut(dataReader, mcReader);
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
+    plot_diagonal_cut(dataReader, mcReader);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
 
     // plot_ft_xy_energy(dataReader, mcReader);
     // dataReader.Restart();
