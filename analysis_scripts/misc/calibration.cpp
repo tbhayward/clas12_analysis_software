@@ -3692,7 +3692,6 @@ void plot_chi2pid_fd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     delete c_data_beta_bins_neg;
 
     if (mcReader) {
-        delete c_mc_2D;
         delete c_mc_pos_neg_beta;
         delete c_mc_beta_bins_pos;
         delete c_mc_beta_bins_neg;
@@ -3717,7 +3716,7 @@ void plot_chi2pid_fd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     if (mc_particle_chi2pid) delete mc_particle_chi2pid;
     if (mc_particle_p) delete mc_particle_p;
     if (mc_particle_beta) delete mc_particle_beta;
-    if (mc_track_sector_6) delete mc_track_sector_6;
+    if (mc_track_sector_5) delete mc_track_sector_5;
     if (mc_particle_pid) delete mc_particle_pid;
 }
 
@@ -4110,13 +4109,11 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
 
     // Clean up
     delete c;
-    delete c_data_2D;
     delete c_data_pos_neg_beta;
     delete c_data_beta_bins_pos;
     delete c_data_beta_bins_neg;
 
     if (mcReader) {
-        delete c_mc_2D;
         delete c_mc_pos_neg_beta;
         delete c_mc_beta_bins_pos;
         delete c_mc_beta_bins_neg;
