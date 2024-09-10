@@ -374,6 +374,77 @@ void plot_ltcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     create_plot("negative", negative_pids);
 }
 
+bool pcal_fiducial(double lv_1, double lw_1, double lu_1,
+    double lv_4, double lw_4, double lu_4,
+    double lv_7, double lw_7, double lu_7,
+    int sector, int strictness) {
+    // Apply strictness levels for additional cuts
+    switch (strictness) {
+        case 1:
+            if (lw_1 < 9 || lv_1 < 9) {
+                return false;
+            }
+            break;
+        case 2:
+            if (lw_1 < 14 || lv_1 < 14 || lu_1 < 29) {
+                return false;
+            }
+            break;
+        case 3:
+            if ((lw_1 < 19 || lv_1 < 19) || (lu_1 < 39 || lu_1 > 400)) {
+                return false;
+            }
+            break;
+        default:
+            return false;
+    }
+
+    // Specific cuts for each sector in PCal
+    // RGA only (not RGC)
+    if (sector == 1) {
+        if ((lw_1 > 69 && lw_1 < 96) || (lw_1 > 207 && lw_1 < 236)) {
+            return false;
+        }
+    } else if (sector == 2) {
+        if ((lv_1 > 95 && lv_1 < 119) || (lu_1 > 108 && lu_1 < 126)) {
+            return false;
+        }
+    } else if (sector == 4) {
+        if (lv_1 > 224 && lv_1 < 247) {
+            return false;
+        }
+    } else if (sector == 6) {
+        if ((lw_1 > 169 && lw_1 < 198)) {
+            return false;
+        }
+    }
+
+    // Specific cuts for each sector in ECin
+    // RGA and RGC
+    if (sector == 1) {
+        if (lv_4 > 72 && lv_4 < 94) {
+            return false;
+        }
+    }
+
+    // // Specific cuts for each sector in ECout
+    // // RGC only so far (not RGA)
+    // if (sector == 2) {
+    //     if (lw_7 > 68 && lw_7 < 84) {
+    //         return false;
+    //     }
+    // }
+    // RGA and RGC
+    if (sector == 5) {
+        if (lu_7 > 200 && lu_7 < 220) {
+            return false;
+        }
+    }
+
+    // If none of the cuts apply, the track is good
+    return true;
+}
+
 void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Disable stat boxes
     gStyle->SetOptStat(0);
@@ -957,77 +1028,6 @@ void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
     if (mc_ft_x) delete mc_ft_x;
     if (mc_ft_y) delete mc_ft_y;
     if (mc_particle_pid) delete mc_particle_pid;
-}
-
-bool pcal_fiducial(double lv_1, double lw_1, double lu_1,
-	double lv_4, double lw_4, double lu_4,
-	double lv_7, double lw_7, double lu_7,
-	int sector, int strictness) {
-    // Apply strictness levels for additional cuts
-    switch (strictness) {
-        case 1:
-            if (lw_1 < 9 || lv_1 < 9) {
-                return false;
-            }
-            break;
-        case 2:
-            if (lw_1 < 14 || lv_1 < 14 || lu_1 < 29) {
-                return false;
-            }
-            break;
-        case 3:
-            if ((lw_1 < 19 || lv_1 < 19) || (lu_1 < 39 || lu_1 > 400)) {
-                return false;
-            }
-            break;
-        default:
-            return false;
-    }
-
-    // Specific cuts for each sector in PCal
-    // RGA only (not RGC)
-    if (sector == 1) {
-        if ((lw_1 > 69 && lw_1 < 96) || (lw_1 > 207 && lw_1 < 236)) {
-            return false;
-        }
-    } else if (sector == 2) {
-        if ((lv_1 > 95 && lv_1 < 119) || (lu_1 > 108 && lu_1 < 126)) {
-            return false;
-        }
-    } else if (sector == 4) {
-        if (lv_1 > 224 && lv_1 < 247) {
-            return false;
-        }
-    } else if (sector == 6) {
-        if ((lw_1 > 169 && lw_1 < 198)) {
-            return false;
-        }
-    }
-
-    // Specific cuts for each sector in ECin
-    // RGA and RGC
-    if (sector == 1) {
-    	if (lv_4 > 72 && lv_4 < 94) {
-    		return false;
-    	}
-    }
-
-    // // Specific cuts for each sector in ECout
-    // // RGC only so far (not RGA)
-    // if (sector == 2) {
-    //     if (lw_7 > 68 && lw_7 < 84) {
-    //         return false;
-    //     }
-    // }
-    // RGA and RGC
-    if (sector == 5) {
-    	if (lu_7 > 200 && lu_7 < 220) {
-    		return false;
-    	}
-    }
-
-    // If none of the cuts apply, the track is good
-    return true;
 }
 
 void plot_pcal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
