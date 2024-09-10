@@ -4593,7 +4593,6 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // while (dataReader.Next()) {
     for (int m=0; m<6e6; m++) {
         dataReader.Next();
-        // std::cout << *edge_1 << " " << *edge_3 << " " << *edge_5 << " " << *edge_7 << " " << *edge_12 << " " << cvt_fiducial(*edge_1, *edge_3, *edge_5, *edge_7, *edge_12) << std::endl;
         if (*track_sector_6 != -9999) {  // CD check
             for (size_t i = 0; i < particle_types.size(); ++i) {
                 if (*particle_pid == std::get<0>(particle_types[i])) {
