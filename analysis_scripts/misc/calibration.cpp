@@ -619,7 +619,7 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
             line->Draw("SAME");
 
             // Add an arrow indicating the cut
-            TArrow* arrow = new TArrow(0.07, 1.2 * maxDataY, 0.15, 1.2 * maxDataY, 0.02, "|>");
+            TArrow* arrow = new TArrow(0.07, 1.0 * maxDataY, 0.15, 1.2 * maxDataY, 0.02, "|>");
             arrow->SetLineColor(kBlack);
             arrow->SetFillColor(kBlack);
             arrow->Draw("SAME");
@@ -627,7 +627,7 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
             // Add a label for the selection criterion
             TLatex latex;
             latex.SetTextColor(kBlack);
-            latex.DrawLatex(0.08, 1.2 * maxDataY, "E_{PCal} >= 0.07 GeV");
+            latex.DrawLatex(0.08, 1.0 * maxDataY, "E_{PCal} >= 0.07 GeV");
 
             // Add a legend to each subplot (top right)
             TLegend* legend = new TLegend(0.7, 0.8, 0.9, 0.9);
@@ -7799,10 +7799,10 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    plot_htcc_nphe(dataReader, mcReader);
+    // plot_htcc_nphe(dataReader, mcReader);
     // plot_ltcc_nphe(dataReader, mcReader);
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
 
     plot_pcal_energy(dataReader, mcReader);
     dataReader.Restart();
