@@ -5664,7 +5664,6 @@ void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
                 }
 
                 if (pass_fiducial && sector >= 1 && sector <= 6) {
-                    std::cout<<vz<<std::endl;
                     histsMC[sector - 1]->Fill(vz);
                 }
             }
