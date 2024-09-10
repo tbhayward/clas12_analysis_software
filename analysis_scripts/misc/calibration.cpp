@@ -4415,8 +4415,8 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     double pMin = 0;
     double pMax = 3;  // Updated maximum momentum value
     double betaMax = 1.4;  // Updated maximum beta value
-    std::vector<double> pBins = {0.0, 0.1875, 0.375, 0.5625, 0.75, 0.9375, 1.125, 1.3125, 1.5, 1.6875, 1.875, 2.0625, 2.25, 2.4375, 2.625, 2.8125, 3.0};
-
+    std::vector<double> pBins = {0.0, 0.2, 0.3454545, 0.4909091, 0.6363636, 0.7818182, 0.9272727, 1.0727273, 1.2181818, 1.3636364, 1.5090909, 1.6545455, 2.0, 2.25, 2.5, 2.75, 3.0};
+    
     // Particle types to analyze
     std::vector<std::tuple<int, std::string>> particle_types = {
         {211, "#pi^{+}"},
