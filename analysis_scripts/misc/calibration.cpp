@@ -520,8 +520,8 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
         // Arrays for data and MC energy depositions for each sector (6 sectors)
         std::vector<TH1D*> histsData(6), histsMC(6);
         for (int i = 0; i < 6; ++i) {
-            histsData[i] = new TH1D(Form("hData_sector%d", i+1), Form("Sector %d Data", i+1), 100, 0, 2.0);
-            histsMC[i] = new TH1D(Form("hMC_sector%d", i+1), Form("Sector %d MC", i+1), 100, 0, 2.0);
+            histsData[i] = new TH1D(Form("hData_sector%d", i+1), Form("Sector %d Data", i+1), 100, 0, 1.5);
+            histsMC[i] = new TH1D(Form("hMC_sector%d", i+1), Form("Sector %d MC", i+1), 100, 0, 1.5);
         }
 
         // Fill data histograms
@@ -568,6 +568,17 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
             }
         }
 
+        // Normalize histograms to their integrals
+        for (int i = 0; i < 6; ++i) {
+            double dataIntegral = histsData[i]->Integral();
+            if (dataIntegral > 0) histsData[i]->Scale(1.0 / dataIntegral);  // Normalize data histogram
+
+            if (mcReader) {
+                double mcIntegral = histsMC[i]->Integral();
+                if (mcIntegral > 0) histsMC[i]->Scale(1.0 / mcIntegral);  // Normalize MC histogram
+            }
+        }
+
         // Draw the histograms for each sector on the canvas
         for (int i = 0; i < 6; ++i) {
             c.cd(i + 1);  // Move to the corresponding pad
@@ -575,9 +586,9 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
             histsData[i]->SetMarkerStyle(20);
             histsData[i]->SetMarkerColor(kBlue);
             histsData[i]->SetMarkerSize(0.5);
-            histsData[i]->GetXaxis()->SetTitle("PCal Energy (GeV)");
-            histsData[i]->GetYaxis()->SetTitle("Counts");
-            histsData[i]->GetXaxis()->SetRangeUser(0, 2.0);  // Set the x-axis range to 2 GeV
+            histsData[i]->GetXaxis()->SetTitle("PCal Energy [GeV]");
+            histsData[i]->GetYaxis()->SetTitle("Normalized Counts");
+            histsData[i]->GetXaxis()->SetRangeUser(0, 1.5);  // Set the x-axis range to 2 GeV
             histsData[i]->Draw("E");
 
             if (mcReader) {
@@ -585,7 +596,7 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
                 histsMC[i]->SetMarkerStyle(20);
                 histsMC[i]->SetMarkerColor(kRed);
                 histsMC[i]->SetMarkerSize(0.5);
-                histsMC[i]->GetXaxis()->SetRangeUser(0, 2.0);  // Set the x-axis range to 2 GeV for MC
+                histsMC[i]->GetXaxis()->SetRangeUser(0, 1.5);  // Set the x-axis range to 2 GeV for MC
                 histsMC[i]->Draw("SAME E");
             }
 
