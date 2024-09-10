@@ -4593,7 +4593,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // while (dataReader.Next()) {
     for (int m=0; m<6e7; m++) {
         dataReader.Next();
-        std::cout << *edge_1 << " " << *edge_3 << " " << *edge_5 << " " << *edge_7 << " " << *edge_12 << " " << cvt_fiducial(*edge_1, *edge_3, *edge_5, *edge_7, *edge_12) << std::endl;
+        // std::cout << *edge_1 << " " << *edge_3 << " " << *edge_5 << " " << *edge_7 << " " << *edge_12 << " " << cvt_fiducial(*edge_1, *edge_3, *edge_5, *edge_7, *edge_12) << std::endl;
         if (*track_sector_6 != -9999 && cvt_fiducial(*edge_1, *edge_3, *edge_5, *edge_7, *edge_12)) {  // CD check
             for (size_t i = 0; i < particle_types.size(); ++i) {
                 if (*particle_pid == std::get<0>(particle_types[i])) {
@@ -4822,33 +4822,33 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     c_data_beta_bins_pos->SaveAs("output/calibration/cvt/chi2pid/beta_vs_p_binned_pos_cd.png");
     c_data_beta_bins_neg->SaveAs("output/calibration/cvt/chi2pid/beta_vs_p_binned_neg_cd.png");
 
-    // Clean up
-    delete c;
-    delete c_data_pos_neg_beta;
-    delete c_data_beta_bins_pos;
-    delete c_data_beta_bins_neg;
+    // // Clean up
+    // delete c;
+    // delete c_data_pos_neg_beta;
+    // delete c_data_beta_bins_pos;
+    // delete c_data_beta_bins_neg;
 
-    if (mcReader) {
-        delete c_mc_pos_neg_beta;
-        delete c_mc_beta_bins_pos;
-        delete c_mc_beta_bins_neg;
-    }
+    // if (mcReader) {
+    //     delete c_mc_pos_neg_beta;
+    //     delete c_mc_beta_bins_pos;
+    //     delete c_mc_beta_bins_neg;
+    // }
 
-    for (size_t i = 0; i < particle_types.size(); ++i) {
-        delete h_data[i];
-        if (mcReader) {
-            delete h_mc[i];
-        }
-    }
+    // for (size_t i = 0; i < particle_types.size(); ++i) {
+    //     delete h_data[i];
+    //     if (mcReader) {
+    //         delete h_mc[i];
+    //     }
+    // }
 
-    for (size_t bin = 0; bin < pBins.size() - 1; ++bin) {
-        delete h_data_beta_bins_pos[bin];
-        delete h_data_beta_bins_neg[bin];
-        if (mcReader) {
-            delete h_mc_beta_bins_pos[bin];
-            delete h_mc_beta_bins_neg[bin];
-        }
-    }
+    // for (size_t bin = 0; bin < pBins.size() - 1; ++bin) {
+    //     delete h_data_beta_bins_pos[bin];
+    //     delete h_data_beta_bins_neg[bin];
+    //     if (mcReader) {
+    //         delete h_mc_beta_bins_pos[bin];
+    //         delete h_mc_beta_bins_neg[bin];
+    //     }
+    // }
 
     if (mc_particle_chi2pid) delete mc_particle_chi2pid;
     if (mc_particle_p) delete mc_particle_p;
