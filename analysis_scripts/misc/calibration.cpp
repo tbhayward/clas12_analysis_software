@@ -4806,7 +4806,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         }
         TLegend* legend_neg = new TLegend(0.7, 0.7, 0.9, 0.9);
         legend_neg->AddEntry(h_data_beta_bins_neg[bin], "Data", "l");
-        if (mcReader) legend_neg->AddEntry(h_mc_beta_bins_neg[bin], "MC", "l");
+        // if (mcReader) legend_neg->AddEntry(h_mc_beta_bins_neg[bin], "MC", "l");
         legend_neg->Draw();
     }
 
