@@ -985,7 +985,7 @@ void plot_diagonal_cut(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
             int sector = *cal_sector;
             double energy4 = *cal_energy_4;
             double energy7 = *cal_energy_7;
-            double ec_sf = (energy4 + energy7) / *p;
+            double ec_sf = (energy1 + energy4) / *p;
 
             double lv1 = *cal_lv_1, lw1 = *cal_lw_1, lu1 = *cal_lu_1;
             double lv4 = *cal_lv_4, lw4 = *cal_lw_4, lu4 = *cal_lu_4;
@@ -1012,7 +1012,7 @@ void plot_diagonal_cut(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
                 int sector = **mc_cal_sector;
                 double energy4 = **mc_cal_energy_4;
                 double energy7 = **mc_cal_energy_7;
-                double ec_sf = (energy4 + energy7) / **mc_p;
+                double ec_sf = (energy1 + energy4) / **mc_p;
 
                 double lv1 = **mc_cal_lv_1, lw1 = **mc_cal_lw_1, lu1 = **mc_cal_lu_1;
                 double lv4 = **mc_cal_lv_4, lw4 = **mc_cal_lw_4, lu4 = **mc_cal_lu_4;
@@ -1035,7 +1035,7 @@ void plot_diagonal_cut(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
         for (int i = 0; i < 6; ++i) {
             cData.cd(i + 1);  // Move to the corresponding pad
             histsData[i]->GetXaxis()->SetTitle("Momentum (GeV)");
-            histsData[i]->GetYaxis()->SetTitle("E_{ECin} + E_{ECout} / p");
+            histsData[i]->GetYaxis()->SetTitle("(E_{PCal} + E_{ECin})/p");
             histsData[i]->GetXaxis()->SetRangeUser(4.5, 9.0);
             histsData[i]->GetYaxis()->SetRangeUser(0.0, 0.35);
             histsData[i]->Draw("COLZ");
@@ -1049,7 +1049,7 @@ void plot_diagonal_cut(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
             // Add red text for E_{ECin} + E_{ECout} > 0.2
             TLatex latex;
             latex.SetTextColor(kRed);
-            latex.DrawLatex(5.5, 0.18, "E_{ECin} + E_{ECout} > 0.2");
+            latex.DrawLatex(5.5, 0.18, "(E_{PCal} + E_{ECin})/p > 0.2");
         }
 
         // Declare cMC outside the block to ensure it's accessible for saving the plot later
@@ -1070,7 +1070,7 @@ void plot_diagonal_cut(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
             for (int i = 0; i < 6; ++i) {
                 cMC->cd(i + 1);
                 histsMC[i]->GetXaxis()->SetTitle("Momentum (GeV)");
-                histsMC[i]->GetYaxis()->SetTitle("E_{ECin} + E_{ECout} / p");
+                histsMC[i]->GetYaxis()->SetTitle("(E_{PCal} + E_{ECin})/p");
                 histsMC[i]->GetXaxis()->SetRangeUser(4.5, 9.0);
                 histsMC[i]->GetYaxis()->SetRangeUser(0.0, 0.35);
                 histsMC[i]->Draw("COLZ");
@@ -1084,7 +1084,7 @@ void plot_diagonal_cut(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
                 // Add red text for E_{ECin} + E_{ECout} > 0.2
                 TLatex latex;
                 latex.SetTextColor(kRed);
-                latex.DrawLatex(5.5, 0.18, "E_{ECin} + E_{ECout} > 0.2");
+                latex.DrawLatex(5.5, 0.18, "(E_{PCal} + E_{ECin})/p > 0.2");
             }
         }
 
