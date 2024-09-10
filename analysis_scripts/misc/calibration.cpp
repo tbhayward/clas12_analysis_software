@@ -78,7 +78,9 @@ void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         int mcEntries = 0;
 
         // Fill the data arrays
-        while (dataReader.Next()) {
+        // while (dataReader.Next()) {
+        for (int i=0; i<1e6; i++) {
+            dataReader.Next();
             double value = *cc_nphe_15;
             int pid = *particle_pid;
             if (value != -9999 && is_in(pid, pids)) {
@@ -103,7 +105,9 @@ void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
 
         // Fill the MC arrays if available
         if (mcReader) {
-            while (mcReader->Next()) {
+            // while (mcReader->Next()) {
+            for (int i=0; i<1e6; i++) {
+                mcReader.Next();
                 double value = **mc_cc_nphe_15;
                 int pid = **mc_particle_pid;
                 if (value != -9999 && is_in(pid, pids)) {
