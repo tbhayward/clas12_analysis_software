@@ -880,7 +880,7 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
     };
 
     // Create plots for positive and negative tracks
-    create_sampling_fraction_plots("positive", positive_pids, "Positive");
+    // create_sampling_fraction_plots("positive", positive_pids, "Positive");
     create_sampling_fraction_plots("negative", negative_pids, "Negative");
 }
 
