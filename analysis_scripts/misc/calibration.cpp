@@ -3981,7 +3981,7 @@ bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7,
     return true;
 }
 
-void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+void plot_chi2pid_fd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     int nBins = 100;
     double chi2pidMin = -5;
     double chi2pidMax = 5;
