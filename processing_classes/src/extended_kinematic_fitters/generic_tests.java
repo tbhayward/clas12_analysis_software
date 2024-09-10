@@ -62,26 +62,28 @@ public class generic_tests {
         return 0;
     }
     
-    public boolean vertex_cut(int particle_Index, HipoDataBank rec_Bank, 
-        HipoDataBank run_Bank) {
+    public boolean vertex_cut(int particle_Index, HipoDataBank rec_Bank, HipoDataBank run_Bank) {
         // pass2 derived vertex cuts
-        int pid = rec_Bank.getInt("pid", particle_Index);
+        int charge = rec_Bank.getInt("charge", particle_Index);
         float vz = rec_Bank.getFloat("vz", particle_Index);
-        float vz_e = rec_Bank.getFloat("vz", 0);
-        double Delta_vz = vz_e - vz;
-        float polarity = run_Bank.getFloat("torus", 0);
         
-        if (pid == 11) {
-            if (polarity < 0) { return vz > -6 && vz < 1; }
-            if (polarity > 0) { return vz > -7 && vz < 0; }
-        } else if (pid > 0) { // positive hadrons
-            if (polarity < 0) { return Delta_vz > 1.15 - 3*2.44 && Delta_vz < 1.15 + 3*2.44; }
-            if (polarity > 0) { return Delta_vz > -0.86 - 3*2.24 && Delta_vz < -0.86 + 3*2.24; }
-        } else if (pid < 0) { // negative hadrons
-            if (polarity < 0) { return Delta_vz > 0.03 - 3*2.24 && Delta_vz < 0.03 + 3*2.24; }
-            if (polarity > 0) { return Delta_vz > 0.38 - 3*2.55 && Delta_vz < 0.38 + 3*2.55; }
+        int runnum = run_Bank.getInt("run", 0);
+        
+        if (runnum == 11) {
+            if (charge > 0) {
+                return -10 < vz && vz < 1.5;
+            } else if (charge < 0) {
+                return -9 < vz && vz < 2;
+            }
+        } else if (runnum >= 6616 && runnum <= 6783) { // RGC Su22
+            if (charge > 0) {
+               return -10 < vz && vz < 1.5; 
+            } else if (charge < 0) {
+               return -9 < vz && vz < 2;
+            }
         }
-        return true;  // track didn't match any pid?
+        
+        return -15 < vz && vz < 15;
     }
     
     public boolean theta_cut(int particle_Index, HipoDataBank rec_Bank) {
