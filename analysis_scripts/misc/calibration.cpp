@@ -4417,8 +4417,8 @@ void plot_chi2pid_fd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
 
 void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     int nBins = 100;
-    double chi2pidMin = -10;
-    double chi2pidMax = 10;
+    double chi2pidMin = -5;
+    double chi2pidMax = 5;
     double pMin = 0;
     double pMax = 8 ;  // Updated maximum momentum value
     double betaMax = 1.4;  // Updated maximum beta value
@@ -4822,33 +4822,33 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     c_data_beta_bins_pos->SaveAs("output/calibration/cvt/chi2pid/beta_vs_p_binned_pos_cd.png");
     c_data_beta_bins_neg->SaveAs("output/calibration/cvt/chi2pid/beta_vs_p_binned_neg_cd.png");
 
-    // // Clean up
-    // delete c;
-    // delete c_data_pos_neg_beta;
-    // delete c_data_beta_bins_pos;
-    // delete c_data_beta_bins_neg;
+    // Clean up
+    delete c;
+    delete c_data_pos_neg_beta;
+    delete c_data_beta_bins_pos;
+    delete c_data_beta_bins_neg;
 
-    // if (mcReader) {
-    //     delete c_mc_pos_neg_beta;
-    //     delete c_mc_beta_bins_pos;
-    //     delete c_mc_beta_bins_neg;
-    // }
+    if (mcReader) {
+        delete c_mc_pos_neg_beta;
+        delete c_mc_beta_bins_pos;
+        delete c_mc_beta_bins_neg;
+    }
 
-    // for (size_t i = 0; i < particle_types.size(); ++i) {
-    //     delete h_data[i];
-    //     if (mcReader) {
-    //         delete h_mc[i];
-    //     }
-    // }
+    for (size_t i = 0; i < particle_types.size(); ++i) {
+        delete h_data[i];
+        if (mcReader) {
+            delete h_mc[i];
+        }
+    }
 
-    // for (size_t bin = 0; bin < pBins.size() - 1; ++bin) {
-    //     delete h_data_beta_bins_pos[bin];
-    //     delete h_data_beta_bins_neg[bin];
-    //     if (mcReader) {
-    //         delete h_mc_beta_bins_pos[bin];
-    //         delete h_mc_beta_bins_neg[bin];
-    //     }
-    // }
+    for (size_t bin = 0; bin < pBins.size() - 1; ++bin) {
+        delete h_data_beta_bins_pos[bin];
+        delete h_data_beta_bins_neg[bin];
+        if (mcReader) {
+            delete h_mc_beta_bins_pos[bin];
+            delete h_mc_beta_bins_neg[bin];
+        }
+    }
 
     if (mc_particle_chi2pid) delete mc_particle_chi2pid;
     if (mc_particle_p) delete mc_particle_p;
