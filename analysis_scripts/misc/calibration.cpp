@@ -4598,11 +4598,11 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
             for (size_t i = 0; i < particle_types.size(); ++i) {
                 if (*particle_pid == std::get<0>(particle_types[i])) {
                     h_data[i]->Fill(*particle_chi2pid);
+                    std::cout << *particle_pid << " " << *particle_p << " " << *particle_beta << std::endl;
                     if (*particle_pid == 211 || *particle_pid == 321 || *particle_pid == 2212) {
                         h_data_beta_vs_p_pos->Fill(*particle_p, *particle_beta);
                         for (size_t bin = 0; bin < pBins.size() - 1; ++bin) {
                             if (*particle_p >= pBins[bin] && *particle_p < pBins[bin + 1]) {
-                                std::cout << *particle_p << " " << *particle_beta << std::endl;
                                 h_data_beta_bins_pos[bin]->Fill(*particle_beta);
                                 break;
                             }
