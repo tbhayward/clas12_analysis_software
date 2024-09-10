@@ -488,7 +488,7 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
             // Add a label for the selection criterion
             TLatex latex;
             latex.SetTextColor(kBlack);
-            latex.DrawLatex(0.08, histsData[i]->GetMaximum() * 0.95, "E >= 0.07 GeV");
+            latex.DrawLatex(0.08, histsData[i]->GetMaximum() * 0.95, "E_{PCal} >= 0.07 GeV");
         }
 
         // Save the plot
