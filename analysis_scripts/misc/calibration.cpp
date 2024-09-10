@@ -4700,50 +4700,42 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Draw 1D histograms on the same canvas for each particle type
     for (size_t i = 0; i < particle_types.size(); ++i) {
         c->cd(i + 1);
-        gPad->SetLeftMargin(0.15);  // Add padding to the left
+        gPad->SetLeftMargin(0.15);
 
-        // Fit data histogram to a Gaussian plus a constant
-        TF1* fit_data = new TF1(("fit_data_" + std::to_string(i)).c_str(), "gaus(0)", h_data[i]->GetXaxis()->GetXmin(), h_data[i]->GetXaxis()->GetXmax());
-        h_data[i]->Fit(fit_data, "Q");  // Silent fit
-
-        // Draw data histogram with points and error bars
+        // Ensure proper draw order
         h_data[i]->SetMarkerStyle(20);
         h_data[i]->SetMarkerColor(kBlack);
-        h_data[i]->SetLineColor(kBlack);
-        h_data[i]->Draw("E");
+        h_data[i]->SetMarkerSize(1.2);  // Adjust marker size
+        h_data[i]->Draw("E");  // Draw data first
 
-        // Draw the fitted Gaussian plus constant function for data
-        fit_data->SetLineColor(kBlack);
-        fit_data->Draw("SAME");
-
-        // Fit MC histogram to a Gaussian plus a constant if mcReader is provided
-        TF1* fit_mc = nullptr;
         if (mcReader) {
-            fit_mc = new TF1(("fit_mc_" + std::to_string(i)).c_str(), "gaus(0)", h_mc[i]->GetXaxis()->GetXmin(), h_mc[i]->GetXaxis()->GetXmax());
-            h_mc[i]->Fit(fit_mc, "Q");  // Silent fit
-
-            // Draw MC histogram with points and error bars
             h_mc[i]->SetMarkerStyle(20);
             h_mc[i]->SetMarkerColor(kRed);
-            h_mc[i]->SetLineColor(kRed);
-            h_mc[i]->Draw("E SAME");
+            h_mc[i]->SetMarkerSize(1.2);  // Adjust marker size
+            h_mc[i]->Draw("E SAME");  // Draw MC second
+        }
 
-            // Draw the fitted Gaussian plus constant function for MC
-            fit_mc->SetLineColor(kRed);
+        // Fitting functions for both data and MC
+        TF1* fit_data = new TF1(("fit_data_" + std::to_string(i)).c_str(), "gaus(0) + pol2(3)", h_data[i]->GetXaxis()->GetXmin(), h_data[i]->GetXaxis()->GetXmax());
+        h_data[i]->Fit(fit_data, "Q");  // Silent fit
+        fit_data->SetLineColor(kBlack);  // Black for data fit
+        fit_data->Draw("SAME");
+
+        TF1* fit_mc = nullptr;
+        if (mcReader) {
+            fit_mc = new TF1(("fit_mc_" + std::to_string(i)).c_str(), "gaus(0) + pol2(3)", h_mc[i]->GetXaxis()->GetXmin(), h_mc[i]->GetXaxis()->GetXmax());
+            h_mc[i]->Fit(fit_mc, "Q");  // Silent fit
+            fit_mc->SetLineColor(kRed);  // Red for MC fit
             fit_mc->Draw("SAME");
         }
 
-        // Create the legend
+        // Legend
         TLegend* legend = new TLegend(0.5, 0.7, 0.9, 0.9);
         legend->AddEntry(h_data[i], Form("Data (#mu = %.2f, #sigma = %.2f)", fit_data->GetParameter(1), fit_data->GetParameter(2)), "lep");
         if (mcReader) {
             legend->AddEntry(h_mc[i], Form("MC (#mu = %.2f, #sigma = %.2f)", fit_mc->GetParameter(1), fit_mc->GetParameter(2)), "lep");
         }
         legend->Draw();
-
-        // Clean up memory
-        delete fit_data;
-        if (mcReader) delete fit_mc;
     }
 
     // Draw the combined beta vs p histograms
