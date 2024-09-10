@@ -730,7 +730,7 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
         for (int i = 1; i <= 6; ++i) {
             cData.cd(i);
             gPad->SetLeftMargin(0.15);  // Increase left margin
-            gPad->SetRightMargin(0.1);  // Increase right margin
+            gPad->SetRightMargin(0.15);  // Increase right margin
             gPad->SetTopMargin(0.1);   // Increase top margin
             gPad->SetBottomMargin(0.15);  // Increase bottom margin
         }
@@ -836,7 +836,7 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
             for (int i = 1; i <= 6; ++i) {
                 cMC->cd(i);
                 gPad->SetLeftMargin(0.15);  // Increase left margin
-                gPad->SetRightMargin(0.1);  // Increase right margin
+                gPad->SetRightMargin(0.15);  // Increase right margin
                 gPad->SetTopMargin(0.1);   // Increase top margin
                 gPad->SetBottomMargin(0.15);  // Increase bottom margin
             }
