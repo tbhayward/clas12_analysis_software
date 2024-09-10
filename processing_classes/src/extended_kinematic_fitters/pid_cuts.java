@@ -43,7 +43,7 @@ public class pid_cuts {
             }
         }
         
-        return cal_energy/p > 0.2;
+        return cal_energy/p > 0.19;
     }
     
     public boolean pass_1_calorimeter_sampling_fraction_cut(int particle_Index, double p, HipoDataBank run_Bank, 

@@ -723,9 +723,17 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
             mc_cal_lu_7 = new TTreeReaderValue<double>(*mcReader, "cal_lu_7");
         }
 
-        // Adjusted canvas with spacing
+        // Adjusted canvas with more space between subplots
         TCanvas cData("cData", "Sampling Fraction Data", 1200, 800);
-        cData.Divide(3, 2, 0.01, 0.01);  // Added padding to the left and right
+        cData.Divide(3, 2, 0.03, 0.03);  // Added more space between subplots
+        // Increase the padding (left, right, top, and bottom margins) for each subplot
+        for (int i = 1; i <= 6; ++i) {
+            c.cd(i);
+            gPad->SetLeftMargin(0.15);  // Increase left margin
+            gPad->SetRightMargin(0.1);  // Increase right margin
+            gPad->SetTopMargin(0.05);   // Increase top margin
+            gPad->SetBottomMargin(0.15);  // Increase bottom margin
+        }
 
         // Arrays for data and MC 2D histograms for each sector (6 sectors)
         std::vector<TH2D*> histsData(6), histsMC(6);
@@ -753,6 +761,9 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
 
             if (nphe == -9999 || sector == -9999 || energy1 == -9999) continue;
 
+            // Check if the pid is in the provided list (positive or negative pids)
+            if (!is_in(pid, pids)) continue;
+
             // Apply HTCC, PCal, and fiducial cuts
             if (*p > 2.0 && nphe >= 2 && energy1 >= 0.07 && sector >= 1 && sector <= 6 &&
                 pcal_fiducial(lv1, lw1, lu1, lv4, lw4, lu4, lv7, lw7, lu7, sector, 1)) {
@@ -777,6 +788,9 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
                 double lv7 = **mc_cal_lv_7, lw7 = **mc_cal_lw_7, lu7 = **mc_cal_lu_7;
 
                 if (nphe == -9999 || sector == -9999 || energy1 == -9999) continue;
+
+                // Check if the pid is in the provided list (positive or negative pids)
+                if (!is_in(pid, pids)) continue;
 
                 // Apply HTCC, PCal, and fiducial cuts
                 if (**mc_p > 2.0 && nphe >= 2 && energy1 >= 0.07 && sector >= 1 && sector <= 6 &&
@@ -810,7 +824,7 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
         // Draw 2D histograms for MC (if available)
         if (mcReader) {
             TCanvas cMC("cMC", "Sampling Fraction MC", 1200, 800);
-            cMC.Divide(3, 2, 0.01, 0.01);  // Added padding to the left and right
+            cMC.Divide(3, 2, 0.03, 0.03);  // Added more padding space
 
             for (int i = 0; i < 6; ++i) {
                 cMC.cd(i + 1);  // Move to the corresponding pad
@@ -821,7 +835,7 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
                 histsMC[i]->Draw("COLZ");
 
                 // Draw horizontal line at sampling fraction = 0.2
-                TLine* line = new TLine(2.0, 0.2, 9.0, 0.2);
+                TLine* line = new TLine(2.0, 0.19, 9.0, 0.19);
                 line->SetLineColor(kRed);
                 line->SetLineWidth(2);
                 line->Draw("SAME");
@@ -829,14 +843,13 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
                 // Add red text for SF > 0.19
                 TLatex latex;
                 latex.SetTextColor(kRed);
-                latex.DrawLatex(5.0, 0.18, "SF > 0.19");
+                latex.DrawLatex(5.0, 0.175, "SF > 0.19");
             }
         }
 
         // Save the plots
         cData.SaveAs(("output/calibration/cal/pid/sampling_fraction_" + plot_name + "_data.png").c_str());
         if (mcReader) {
-            TCanvas cMC("cMC", "Sampling Fraction MC", 1200, 800);
             cMC.SaveAs(("output/calibration/cal/pid/sampling_fraction_" + plot_name + "_mc.png").c_str());
         }
 
