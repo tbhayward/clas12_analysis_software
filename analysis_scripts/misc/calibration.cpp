@@ -532,15 +532,15 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
             int sector = *cal_sector;
             double energy = *cal_energy_1;
 
-            double lv1 = *lv_1, lw1 = *lw_1, lu1 = *lu_1;
-            double lv4 = *lv_4, lw4 = *lw_4, lu4 = *lu_4;
-            double lv7 = *lv_7, lw7 = *lw_7, lu7 = *lu_7;
+            double lv1 = *cal_lv_1, lw1 = *cal_lw_1, lu1 = *cal_lu_1;
+            double lv4 = *cal_lv_4, lw4 = *cal_lw_4, lu4 = *cal_lu_4;
+            double lv7 = *cal_lv_7, lw7 = *cal_lw_7, lu7 = *cal_lu_7;
 
             if (nphe == -9999 || sector == -9999 || energy == -9999) continue;
 
             // Apply HTCC and PCal cuts for data, and fiducial cuts
             if (nphe >= 2 && is_in(pid, pids) && energy >= 0 && sector >= 1 && sector <= 6 &&
-                pcal_fiducial(cal_lv1, cal_lw1, cal_lu1, cal_lv4, cal_lw4, cal_lu4, cal_lv7, cal_lw7, cal_lu7, sector, 1)) {
+                pcal_fiducial(lv1, lw1, lu1, lv4, lw4, lu4, lv7, lw7, lu7, sector, 1)) {
                 histsData[sector - 1]->Fill(energy);
             }
         }
@@ -554,15 +554,15 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
                 int sector = **mc_cal_sector;
                 double energy = **mc_cal_energy_1;
 
-                double lv1 = **mc_lv_1, lw1 = **mc_lw_1, lu1 = **mc_lu_1;
-                double lv4 = **mc_lv_4, lw4 = **mc_lw_4, lu4 = **mc_lu_4;
-                double lv7 = **mc_lv_7, lw7 = **mc_lw_7, lu7 = **mc_lu_7;
+                double lv1 = **mc_cal_lv_1, lw1 = **mc_cal_lw_1, lu1 = **mc_cal_lu_1;
+                double lv4 = **mc_cal_lv_4, lw4 = **mc_cal_lw_4, lu4 = **mc_cal_lu_4;
+                double lv7 = **mc_cal_lv_7, lw7 = **mc_cal_lw_7, lu7 = **mc_cal_lu_7;
 
                 if (nphe == -9999 || sector == -9999 || energy == -9999) continue;
 
                 // Apply HTCC and PCal cuts for MC, and fiducial cuts
                 if (nphe >= 2 && is_in(pid, pids) && energy >= 0 && sector >= 1 && sector <= 6 &&
-                    pcal_fiducial(cal_lv1, cal_lw1, cal_lu1, cal_lv4, cal_lw4, cal_lu4, cal_lv7, cal_lw7, cal_lu7, sector, 1)) {
+                    pcal_fiducial(lv1, lw1, lu1, lv4, lw4, lu4, lv7, lw7, lu7, sector, 1)) {
                     histsMC[sector - 1]->Fill(energy);
                 }
             }
