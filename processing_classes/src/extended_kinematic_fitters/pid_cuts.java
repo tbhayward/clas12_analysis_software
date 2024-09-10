@@ -119,7 +119,7 @@ public class pid_cuts {
     
     public boolean calorimeter_diagonal_cut(int particle_Index, double p, HipoDataBank cal_Bank) {
         // Only apply diagonal cut above 4.5 GeV
-        if (p < 4.5) { return true; }
+        if (p < 4.9) { return true; }
 
         // Initialize the sum of energy for PCAL and ECAL inner layers
         double pcal_plus_ecal_inner = 0;
@@ -137,7 +137,7 @@ public class pid_cuts {
         }
 
         // Check if the energy ratio is above the threshold
-        return 0.2 < pcal_plus_ecal_inner / p;
+        return 0.19 < pcal_plus_ecal_inner / p;
     }
     
     

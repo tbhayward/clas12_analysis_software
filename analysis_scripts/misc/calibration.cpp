@@ -1048,7 +1048,7 @@ void plot_diagonal_cut(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
             histsData[i]->Draw("COLZ");
 
             // Draw horizontal line at (E_{ECin} + E_{PCal}) / p = 0.2
-            TLine* line = new TLine(4.5, 0.2, 9.0, 0.2);
+            TLine* line = new TLine(4.5, 0.19, 9.0, 0.19);
             line->SetLineColor(kRed);
             line->SetLineWidth(2);
             line->Draw("SAME");
@@ -1056,7 +1056,7 @@ void plot_diagonal_cut(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
             // Add red text for E_{PCal} + E_{ECin} > 0.2
             TLatex latex;
             latex.SetTextColor(kRed);
-            latex.DrawLatex(5.5, 0.18, "(E_{PCal} + E_{ECin})/p > 0.2");
+            latex.DrawLatex(5.5, 0.17, "(E_{PCal} + E_{ECin})/p > 0.2");
         }
 
         // Declare cMC outside the block to ensure it's accessible for saving the plot later
@@ -1083,7 +1083,7 @@ void plot_diagonal_cut(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
                 histsMC[i]->Draw("COLZ");
 
                 // Draw horizontal line at (E_{ECin} + E_{PCal}) / p = 0.2
-                TLine* line = new TLine(4.5, 0.2, 9.0, 0.2);
+                TLine* line = new TLine(4.5, 0.19, 9.0, 0.19);
                 line->SetLineColor(kRed);
                 line->SetLineWidth(2);
                 line->Draw("SAME");
@@ -1091,7 +1091,7 @@ void plot_diagonal_cut(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
                 // Add red text for E_{PCal} + E_{ECin} > 0.2
                 TLatex latex;
                 latex.SetTextColor(kRed);
-                latex.DrawLatex(5.5, 0.18, "(E_{PCal} + E_{ECin})/p > 0.2");
+                latex.DrawLatex(5.5, 0.17, "(E_{PCal} + E_{ECin})/p > 0.2");
             }
         }
 
@@ -1109,7 +1109,7 @@ void plot_diagonal_cut(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
     };
 
     // Create plots for positive and negative tracks
-    create_diagonal_cut_plots("positive", positive_pids, "Positive");
+    // create_diagonal_cut_plots("positive", positive_pids, "Positive");
     create_diagonal_cut_plots("negative", negative_pids, "Negative");
 }
 
