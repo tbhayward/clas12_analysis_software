@@ -192,17 +192,34 @@ public class pid_cuts {
         if (isForwardDetector) {
             if (pid == 2212 && p >= 5.0) return false;
             if (runnum >= 6616 && runnum <= 6783) {
-                if (pid == 211) return -0.06 - 1.08*3.5 < chi2pid && chi2pid < -0.06 + 1.08*3.5;
-                if (pid == -211) return -0.04 - 1.09*3.5 < chi2pid && chi2pid < -0.04 + 1.09*3.5;
-                if (pid == 321) return 0.03 - 1.09*3.5 < chi2pid && chi2pid < 0.03 + 1.09*3.5;
-                if (pid == -321) return -0.14 - 1.33*3.5 < chi2pid && chi2pid < -0.14 + 1.33*3.5;
-                if (pid == 2212) return 0.35 - 1.38*3.5 < chi2pid && chi2pid < 0.35 + 1.38*3.5;
+                if (pid == 211) return -0.05 - 1.08*3.5 < chi2pid && chi2pid < -0.05 + 1.08*3.5;
+                if (pid == -211) return -0.02 - 1.08*3.5 < chi2pid && chi2pid < -0.02 + 1.08*3.5;
+                if (pid == 321) return 0.03 - 1.08*3.5 < chi2pid && chi2pid < 0.03 + 1.08*3.5;
+                if (pid == -321) return -0.14 - 1.30*3.5 < chi2pid && chi2pid < -0.14 + 1.30*3.5;
+                if (pid == 2212) return 0.36 - 1.36*3.5 < chi2pid && chi2pid < 0.36 + 1.36*3.5;
             } else if (runnum == 11) { // MC
-                if (pid == 211) return 0.06 - 1.24*3.5 < chi2pid && chi2pid < 0.06 + 1.24*3.5;
-                if (pid == -211) return -0.11 - 1.28*3.5 < chi2pid && chi2pid < -0.11 + 1.28*3.5;
-                if (pid == 321) return -0.03 - 1.31*3.5 < chi2pid && chi2pid < -0.03 + 1.31*3.5;
-                if (pid == -321) return -0.00 - 0.90*3.5 < chi2pid && chi2pid < -0.00 + 0.90*3.5;
-                if (pid == 2212) return 0.06 - 1.36*3.5 < chi2pid && chi2pid < 0.06 + 1.36*3.5;
+                if (pid == 211) return 0.06 - 1.23*3.5 < chi2pid && chi2pid < 0.06 + 1.23*3.5;
+                if (pid == -211) return -0.03 - 1.26*3.5 < chi2pid && chi2pid < -0.03 + 1.26*3.5;
+                if (pid == 321) return -0.02 - 1.31*3.5 < chi2pid && chi2pid < -0.02 + 1.31*3.5;
+                if (pid == -321) return -0.04 - 1.04*3.5 < chi2pid && chi2pid < -0.04 + 1.04*3.5;
+                if (pid == 2212) return 0.07 - 1.35*3.5 < chi2pid && chi2pid < 0.07 + 1.35*3.5;
+            }
+        }
+        if (isCentralDetector) {
+            if (pid == 2212 && p >= 1.5) return false;
+            if (pid == 2212 && p < 0.25) return false;
+            if (runnum >= 6616 && runnum <= 6783) {
+                if (pid == 211) return -0.18 - 1.76*3.5 < chi2pid && chi2pid < -0.18 + 1.76*3.5;
+                if (pid == -211) return -0.21 - 1.68*3.5 < chi2pid && chi2pid < -0.21 + 1.68*3.5;
+                if (pid == 321) return 0.59 - 2.06*3.5 < chi2pid && chi2pid < 0.59 + 2.06*3.5;
+                if (pid == -321) return -0.20 - 1.72*3.5 < chi2pid && chi2pid < -0.20 + 1.72*3.5;
+                if (pid == 2212) return 0.75 - 2.15*3.5 < chi2pid && chi2pid < 0.75 + 2.15*3.5;
+            } else if (runnum == 11) { // MC
+                if (pid == 211) return 0.09 - 1.57*3.5 < chi2pid && chi2pid < 0.09 + 1.57*3.5;
+                if (pid == -211) return -0.02 - 1.52*3.5 < chi2pid && chi2pid < -0.02 + 1.52*3.5;
+                if (pid == 321) return -0.14 - 1.75*3.5 < chi2pid && chi2pid < -0.14 + 1.75*3.5;
+                if (pid == -321) return -0.37 - 1.44*3.5 < chi2pid && chi2pid < -0.37 + 1.44*3.5;
+                if (pid == 2212) return 0.45 - 1.91*3.5 < chi2pid && chi2pid < 0.45 + 1.91*3.5;
             }
         }
         

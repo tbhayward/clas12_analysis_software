@@ -69,7 +69,7 @@ public class Hadron {
         if (variables.W() < 2) {
             return false;
         } //        if (variables.xF()<0.0) { return false; } 
-        else if (variables.y() > 0.75) {
+        else if (variables.y() > 0.80) {
             return false;
         }
 //        else if (variables.z()<0.2 || variables.z() > 0.95) { return false; } 

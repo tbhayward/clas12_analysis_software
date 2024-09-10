@@ -4416,7 +4416,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     double pMax = 3;  // Updated maximum momentum value
     double betaMax = 1.4;  // Updated maximum beta value
     std::vector<double> pBins = {0.0, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1.0, 1.125, 1.25, 1.375, 1.5, 1.75, 2.0, 2.25, 2.5, 3.0};
-    
+
     // Particle types to analyze
     std::vector<std::tuple<int, std::string>> particle_types = {
         {211, "#pi^{+}"},
@@ -5546,6 +5546,176 @@ bool is_fd_track(double track_sector_5) {
 // Helper function to check if a track is CD
 bool is_cd_track(double track_sector_6) {
     return track_sector_6 != -9999;
+}
+
+void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+    // Disable stat boxes
+    gStyle->SetOptStat(0);
+
+    // Arrays to store positive and negative track conditions
+    std::vector<int> positive_pids = {-11, 211, 321, 2212};
+    std::vector<int> negative_pids = {11, -211, -321, -2212};
+
+    // Helper lambda to check if pid is in a vector
+    auto is_in = [](int pid, const std::vector<int>& pid_list) {
+        return std::find(pid_list.begin(), pid_list.end(), pid) != pid_list.end();
+    };
+
+    // Helper function to plot particle_vz for each sector
+    auto create_vertex_plots = [&](const std::string& plot_name, const std::vector<int>& pids, const std::string& charge_label) {
+        // Restart the TTreeReader to process the data from the beginning
+        dataReader.Restart();
+        if (mcReader) mcReader->Restart();
+
+        // Set up TTreeReaderValues before calling Next()
+        TTreeReaderValue<double> particle_vz(dataReader, "particle_vz");
+        TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+        TTreeReaderValue<int> track_sector_5(dataReader, "track_sector_5");
+        TTreeReaderValue<int> track_sector_6(dataReader, "track_sector_6");
+
+        // FD and CD fiducial cut edges
+        TTreeReaderValue<double> edge_1(dataReader, "traj_edge_1");
+        TTreeReaderValue<double> edge_3(dataReader, "traj_edge_3");
+        TTreeReaderValue<double> edge_5(dataReader, "traj_edge_5");
+        TTreeReaderValue<double> edge_7(dataReader, "traj_edge_7");
+        TTreeReaderValue<double> edge_12(dataReader, "traj_edge_12");
+        TTreeReaderValue<double> edge_6(dataReader, "traj_edge_6");
+        TTreeReaderValue<double> edge_18(dataReader, "traj_edge_18");
+        TTreeReaderValue<double> edge_36(dataReader, "traj_edge_36");
+
+        // MC variables
+        TTreeReaderValue<double>* mc_particle_vz = nullptr;
+        TTreeReaderValue<int>* mc_particle_pid = nullptr;
+        TTreeReaderValue<int>* mc_track_sector_5 = nullptr;
+        TTreeReaderValue<int>* mc_track_sector_6 = nullptr;
+
+        if (mcReader) {
+            mc_particle_vz = new TTreeReaderValue<double>(*mcReader, "particle_vz");
+            mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+            mc_track_sector_5 = new TTreeReaderValue<int>(*mcReader, "track_sector_5");
+            mc_track_sector_6 = new TTreeReaderValue<int>(*mcReader, "track_sector_6");
+        }
+
+        // 2x3 canvas setup
+        TCanvas c("c", ("Vertex Z (" + charge_label + " Tracks)").c_str(), 1800, 1200);
+        c.Divide(3, 2);
+
+        // Arrays for data and MC histograms of vertex_z for each sector (6 sectors)
+        std::vector<TH1D*> histsData(6), histsMC(6);
+        for (int i = 0; i < 6; ++i) {
+            histsData[i] = new TH1D(Form("hData_sector%d", i + 1), Form("Sector %d Data", i + 1), 100, -30, 30);
+            histsMC[i] = new TH1D(Form("hMC_sector%d", i + 1), Form("Sector %d MC", i + 1), 100, -30, 30);
+        }
+
+        // Fill data histograms
+        while (dataReader.Next()) {
+            int pid = *particle_pid;
+            double vz = *particle_vz;
+            int sector = (*track_sector_5 != -9999) ? *track_sector_5 : *track_sector_6;  // Check for FD or CD
+
+            // Apply fiducial cuts and check pid
+            bool pass_fiducial = false;
+            if (*track_sector_5 != -9999 && is_in(pid, pids)) {
+                // CD track
+                pass_fiducial = cvt_fiducial(*edge_1, *edge_3, *edge_5, *edge_7, *edge_12);
+            } else if (*track_sector_6 != -9999 && is_in(pid, pids)) {
+                // FD track
+                pass_fiducial = dc_fiducial(*edge_6, *edge_18, *edge_36, pid);
+            }
+
+            if (pass_fiducial && sector >= 1 && sector <= 6) {
+                histsData[sector - 1]->Fill(vz);
+            }
+        }
+
+        // Fill MC histograms
+        if (mcReader) {
+            while (mcReader->Next()) {
+                int pid = **mc_particle_pid;
+                double vz = **mc_particle_vz;
+                int sector = (**mc_track_sector_5 != -9999) ? **mc_track_sector_5 : **mc_track_sector_6;
+
+                // Apply fiducial cuts and check pid
+                bool pass_fiducial = false;
+                if (**mc_track_sector_5 != -9999 && is_in(pid, pids)) {
+                    // CD track
+                    pass_fiducial = cvt_fiducial(*edge_1, *edge_3, *edge_5, *edge_7, *edge_12);
+                } else if (**mc_track_sector_6 != -9999 && is_in(pid, pids)) {
+                    // FD track
+                    pass_fiducial = dc_fiducial(*edge_6, *edge_18, *edge_36, pid);
+                }
+
+                if (pass_fiducial && sector >= 1 && sector <= 6) {
+                    histsMC[sector - 1]->Fill(vz);
+                }
+            }
+        }
+
+        // Normalize histograms to their integrals
+        for (int i = 0; i < 6; ++i) {
+            double dataIntegral = histsData[i]->Integral();
+            if (dataIntegral > 0) histsData[i]->Scale(1.0 / dataIntegral);  // Normalize data histogram
+
+            if (mcReader) {
+                double mcIntegral = histsMC[i]->Integral();
+                if (mcIntegral > 0) histsMC[i]->Scale(1.0 / mcIntegral);  // Normalize MC histogram
+            }
+        }
+
+        // Draw the histograms for each sector on the canvas
+        for (int i = 0; i < 6; ++i) {
+            c.cd(i + 1);  // Move to the corresponding pad
+            histsData[i]->SetLineColor(kBlue);
+            histsData[i]->SetMarkerStyle(20);
+            histsData[i]->SetMarkerColor(kBlue);
+            histsData[i]->SetMarkerSize(0.5);
+            histsData[i]->GetXaxis()->SetTitle("v_{z} (cm)");
+            histsData[i]->GetYaxis()->SetTitle("Normalized Counts");
+            double maxDataY = histsData[i]->GetMaximum();
+            histsData[i]->SetMaximum(1.25 * maxDataY);  // Set y-axis max to 1.25 times the max
+            histsData[i]->Draw("E");
+
+            if (mcReader) {
+                histsMC[i]->SetLineColor(kRed);
+                histsMC[i]->SetMarkerStyle(20);
+                histsMC[i]->SetMarkerColor(kRed);
+                histsMC[i]->SetMarkerSize(0.5);
+                histsMC[i]->Draw("SAME E");
+            }
+
+            // Draw vertical dashed lines for cuts
+            TLine* lineLeft = new TLine(-10, 0, -10, 1.25 * maxDataY);
+            lineLeft->SetLineColor(kBlack);
+            lineLeft->SetLineStyle(2);  // Dashed line
+            lineLeft->Draw("SAME");
+
+            TLine* lineRight = new TLine(1, 0, 1, 1.25 * maxDataY);
+            lineRight->SetLineColor(kBlack);
+            lineRight->SetLineStyle(2);  // Dashed line
+            lineRight->Draw("SAME");
+
+            // Add a legend to each subplot (top right) with track counts
+            TLegend* legend = new TLegend(0.7, 0.8, 0.9, 0.9);
+            legend->AddEntry(histsData[i], "Data", "l");
+            if (mcReader) {
+                legend->AddEntry(histsMC[i], "MC", "l");
+            }
+            legend->Draw();
+        }
+
+        // Save the plot
+        c.SaveAs(("output/calibration/vertices/vertex_z_" + plot_name + ".png").c_str());
+
+        // Clean up
+        for (int i = 0; i < 6; ++i) {
+            delete histsData[i];
+            if (mcReader) delete histsMC[i];
+        }
+    };
+
+    // Create plots for positive and negative tracks
+    create_vertex_plots("positive", positive_pids, "Positive");
+    create_vertex_plots("negative", negative_pids, "Negative");
 }
 
 // Helper function to fill and save histograms for each particle type
@@ -8214,6 +8384,7 @@ void create_directories() {
         "output/calibration/cvt/chi2pid",
         "output/calibration/cvt/determination",
         "output/calibration/cvt/positions",
+        "output/calibration/vertices",
         "output/calibration/energy_loss/",
         "output/calibration/energy_loss/rga_fa18_inb/",
         "output/calibration/energy_loss/rga_fa18_out/",
@@ -8331,9 +8502,13 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_chi2pid_fd(dataReader, mcReader);
 
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_chi2pid_cd(dataReader, mcReader);
+
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
-    plot_chi2pid_cd(dataReader, mcReader);
+    plot_vertices(dataReader, mcReader);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
