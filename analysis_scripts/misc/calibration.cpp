@@ -540,7 +540,7 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
 
             // Apply HTCC and PCal cuts for data, and fiducial cuts
             if (nphe >= 2 && is_in(pid, pids) && energy >= 0 && sector >= 1 && sector <= 6 &&
-                pcal_fiducial(lv1, lw1, lu1, lv4, lw4, lu4, lv7, lw7, lu7, sector, 1)) {
+                pcal_fiducial(cal_lv1, cal_lw1, cal_lu1, cal_lv4, cal_lw4, cal_lu4, cal_lv7, cal_lw7, cal_lu7, sector, 1)) {
                 histsData[sector - 1]->Fill(energy);
             }
         }
@@ -562,7 +562,7 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
 
                 // Apply HTCC and PCal cuts for MC, and fiducial cuts
                 if (nphe >= 2 && is_in(pid, pids) && energy >= 0 && sector >= 1 && sector <= 6 &&
-                    pcal_fiducial(lv1, lw1, lu1, lv4, lw4, lu4, lv7, lw7, lu7, sector, 1)) {
+                    pcal_fiducial(cal_lv1, cal_lw1, cal_lu1, cal_lv4, cal_lw4, cal_lu4, cal_lv7, cal_lw7, cal_lu7, sector, 1)) {
                     histsMC[sector - 1]->Fill(energy);
                 }
             }
