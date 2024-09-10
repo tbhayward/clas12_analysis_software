@@ -107,7 +107,7 @@ void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         if (mcReader) {
             // while (mcReader->Next()) {
             for (int i=0; i<1e6; i++) {
-                mcReader.Next();
+                mcReader->Next();
                 double value = **mc_cc_nphe_15;
                 int pid = **mc_particle_pid;
                 if (value != -9999 && is_in(pid, pids)) {
