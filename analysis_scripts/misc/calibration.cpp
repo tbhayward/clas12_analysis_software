@@ -79,11 +79,11 @@ void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
 
         // Fill the data arrays
         // while (dataReader.Next()) {
-        for (int i=0; i<1e7; i++) {
+        for (int i=0; i<1e6; i++) {
             dataReader.Next();
             double value = *cc_nphe_15;
             int pid = *particle_pid;
-            if (value != -9999) {
+            if (value != -9999 && is_in(pid, pids)) {
                 int bin = static_cast<int>((value - xMin) / (xMax - xMin) * nBins);
                 if (bin >= 0 && bin < nBins) {
                     dataY[bin]++;
@@ -106,11 +106,11 @@ void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         // Fill the MC arrays if available
         if (mcReader) {
             // while (mcReader->Next()) {
-            for (int i=0; i<1e7; i++) {
+            for (int i=0; i<1e6; i++) {
                 mcReader->Next();
                 double value = **mc_cc_nphe_15;
                 int pid = **mc_particle_pid;
-                if (value != -9999) {
+                if (value != -9999 && is_in(pid, pids)) {
                     int bin = static_cast<int>((value - xMin) / (xMax - xMin) * nBins);
                     if (bin >= 0 && bin < nBins) {
                         mcY[bin]++;
@@ -159,7 +159,7 @@ void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
             grMC->SetMarkerColor(kRed);    // Set MC color to red
             grMC->SetLineColor(kRed);      // Set MC line color to red
             grMC->SetMarkerStyle(20);      // Add dot in the center of error bars for MC
-            grMC->SetMarkerSize(1.0);      // Adjust marker size if needed
+            grMC->SetMarkerSize(0.75);      // Adjust marker size if needed
         }
 
         // Draw the plot
@@ -190,14 +190,14 @@ void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
 
         // Add an arrow pointing to the right (color unchanged, remains red)
         TArrow* arrow = new TArrow(2, 0.9 * maxY, 6, 0.9 * maxY, 0.02, "|>");
-        arrow->SetLineColor(kRed);
-        arrow->SetFillColor(kRed);
+        arrow->SetLineColor(kBlack);
+        arrow->SetFillColor(kBlack);
         arrow->SetLineWidth(2);
         arrow->Draw("SAME");
 
         // Add a label for the selection criterion
         TLatex latex;
-        latex.SetTextColor(kRed);
+        latex.SetTextColor(kBlack);
         latex.DrawLatex(2.2, 0.92 * maxY, "nphe >= 2");
 
         // Save the plot
