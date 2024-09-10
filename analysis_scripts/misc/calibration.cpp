@@ -4006,9 +4006,9 @@ void plot_chi2pid_fd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     TTreeReaderValue<double> particle_beta(dataReader, "particle_beta");  // Beta variable
     TTreeReaderValue<int> track_sector_6(dataReader, "track_sector_6");
     TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
-    TTreeReaderValue<double> edge_6(dataReader, "edge_6");
-    TTreeReaderValue<double> edge_18(dataReader, "edge_18");
-    TTreeReaderValue<double> edge_36(dataReader, "edge_36");
+    TTreeReaderValue<double> edge_6(dataReader, "traj_edge_6");
+    TTreeReaderValue<double> edge_18(dataReader, "traj_edge_18");
+    TTreeReaderValue<double> edge_36(dataReader, "traj_edge_36");
 
     TTreeReaderValue<double>* mc_particle_chi2pid = nullptr;
     TTreeReaderValue<double>* mc_particle_p = nullptr;
