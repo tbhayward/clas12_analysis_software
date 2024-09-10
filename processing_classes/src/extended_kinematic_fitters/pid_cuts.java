@@ -175,7 +175,21 @@ public class pid_cuts {
     }
     
     public boolean charged_hadron_chi2pid_cut(int particle_Index, HipoDataBank rec_Bank) {
+        
+        int pid = rec_Bank.getInt("pid", particle_Index);
         float chi2pid = rec_Bank.getFloat("chi2pid", particle_Index);
+        
+        generic_tests generic_tests = new generic_tests();
+        boolean isForwardDetector = generic_tests.forward_detector_cut(particle_Index, rec_Bank);
+        boolean isCentralDetector = generic_tests.central_detector_cut(particle_Index, rec_Bank);
+        
+        if (isCentralDetector) {
+            if (pid == 211) return Math.abs(chi2pid) < 3.5*1.23;
+            if (pid == -211) return Math.abs(chi2pid) < 3.5*1.29;
+            if (pid == 321) return Math.abs(chi2pid) < 3.5*1.18;
+            if (pid == -321) return Math.abs(chi2pid) < 3.5*0.78;
+            if (pid == 2212) return Math.abs(chi2pid) < 3.5*1.33;
+        }
         
         return Math.abs(chi2pid) < 4.0;
     }

@@ -22,7 +22,6 @@ public class kinematic_variables {
             return 0.493677;
 	} else if (pid==2212||pid==-2212) { // protons
             return 0.938272;
-//            return 1.875;
 	} else if (pid==113) { // rho0
             return 0.7754;
         }
@@ -31,8 +30,8 @@ public class kinematic_variables {
     
     /*~~~~~~~~~~~~~~~~~ DIS ~~~~~~~~~~~~~~~~~*/
     
-    double Q2(LorentzVector lv_e) {
-        return -lv_e.mass2();
+    double Q2(LorentzVector lv_q) {
+        return -lv_q.mass2();
     }
     
     double nu(LorentzVector lv_beam, LorentzVector lv_e) {
