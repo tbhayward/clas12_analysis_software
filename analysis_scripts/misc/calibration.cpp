@@ -5741,7 +5741,7 @@ void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     };
 
     // Create plots for positive and negative tracks with adjustable cuts
-    create_vertex_plots("positive", positive_pids, "Positive", -9, 1.5);  // Example values for now
+    create_vertex_plots("positive", positive_pids, "Positive", -10, 1.5);  // Example values for now
     create_vertex_plots("negative", negative_pids, "Negative", -9, 2);  // Example values for now
 }
 
