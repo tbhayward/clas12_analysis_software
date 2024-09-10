@@ -375,6 +375,9 @@ void plot_ltcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
 }
 
 void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+    // Disable stat boxes
+    gStyle->SetOptStat(0);
+
     // Arrays to store positive and negative track conditions
     std::vector<int> positive_pids = {-11, 211, 321, 2212};
     std::vector<int> negative_pids = {11, -211, -321, -2212};
@@ -397,16 +400,46 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
         TTreeReaderValue<int> cal_sector(dataReader, "cal_sector");
         TTreeReaderValue<double> cal_energy_1(dataReader, "cal_energy_1");
 
+        // Import lv, lw, lu values for fiducial cuts
+        TTreeReaderValue<double> lv_1(dataReader, "lv_1");
+        TTreeReaderValue<double> lw_1(dataReader, "lw_1");
+        TTreeReaderValue<double> lu_1(dataReader, "lu_1");
+        TTreeReaderValue<double> lv_4(dataReader, "lv_4");
+        TTreeReaderValue<double> lw_4(dataReader, "lw_4");
+        TTreeReaderValue<double> lu_4(dataReader, "lu_4");
+        TTreeReaderValue<double> lv_7(dataReader, "lv_7");
+        TTreeReaderValue<double> lw_7(dataReader, "lw_7");
+        TTreeReaderValue<double> lu_7(dataReader, "lu_7");
+
+        // MC variables for fiducial cuts
         TTreeReaderValue<double>* mc_cc_nphe_15 = nullptr;
         TTreeReaderValue<int>* mc_particle_pid = nullptr;
         TTreeReaderValue<int>* mc_cal_sector = nullptr;
         TTreeReaderValue<double>* mc_cal_energy_1 = nullptr;
+        TTreeReaderValue<double>* mc_lv_1 = nullptr;
+        TTreeReaderValue<double>* mc_lw_1 = nullptr;
+        TTreeReaderValue<double>* mc_lu_1 = nullptr;
+        TTreeReaderValue<double>* mc_lv_4 = nullptr;
+        TTreeReaderValue<double>* mc_lw_4 = nullptr;
+        TTreeReaderValue<double>* mc_lu_4 = nullptr;
+        TTreeReaderValue<double>* mc_lv_7 = nullptr;
+        TTreeReaderValue<double>* mc_lw_7 = nullptr;
+        TTreeReaderValue<double>* mc_lu_7 = nullptr;
 
         if (mcReader) {
             mc_cc_nphe_15 = new TTreeReaderValue<double>(*mcReader, "cc_nphe_15");
             mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
             mc_cal_sector = new TTreeReaderValue<int>(*mcReader, "cal_sector");
             mc_cal_energy_1 = new TTreeReaderValue<double>(*mcReader, "cal_energy_1");
+            mc_lv_1 = new TTreeReaderValue<double>(*mcReader, "lv_1");
+            mc_lw_1 = new TTreeReaderValue<double>(*mcReader, "lw_1");
+            mc_lu_1 = new TTreeReaderValue<double>(*mcReader, "lu_1");
+            mc_lv_4 = new TTreeReaderValue<double>(*mcReader, "lv_4");
+            mc_lw_4 = new TTreeReaderValue<double>(*mcReader, "lw_4");
+            mc_lu_4 = new TTreeReaderValue<double>(*mcReader, "lu_4");
+            mc_lv_7 = new TTreeReaderValue<double>(*mcReader, "lv_7");
+            mc_lw_7 = new TTreeReaderValue<double>(*mcReader, "lw_7");
+            mc_lu_7 = new TTreeReaderValue<double>(*mcReader, "lu_7");
         }
 
         // 2x3 canvas setup
@@ -416,8 +449,8 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
         // Arrays for data and MC energy depositions for each sector (6 sectors)
         std::vector<TH1D*> histsData(6), histsMC(6);
         for (int i = 0; i < 6; ++i) {
-            histsData[i] = new TH1D(Form("hData_sector%d", i+1), Form("Sector %d Data", i+1), 100, 0, 0.5);
-            histsMC[i] = new TH1D(Form("hMC_sector%d", i+1), Form("Sector %d MC", i+1), 100, 0, 0.5);
+            histsData[i] = new TH1D(Form("hData_sector%d", i+1), Form("Sector %d Data", i+1), 100, 0, 2.0);
+            histsMC[i] = new TH1D(Form("hMC_sector%d", i+1), Form("Sector %d MC", i+1), 100, 0, 2.0);
         }
 
         // Fill data histograms
@@ -428,10 +461,15 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
             int sector = *cal_sector;
             double energy = *cal_energy_1;
 
+            double lv1 = *lv_1, lw1 = *lw_1, lu1 = *lu_1;
+            double lv4 = *lv_4, lw4 = *lw_4, lu4 = *lu_4;
+            double lv7 = *lv_7, lw7 = *lw_7, lu7 = *lu_7;
+
             if (nphe == -9999 || sector == -9999 || energy == -9999) continue;
 
-            // Apply HTCC and PCal cuts for data
-            if (nphe >= 2 && is_in(pid, pids) && energy >= 0 && sector >= 1 && sector <= 6) {
+            // Apply HTCC and PCal cuts for data, and fiducial cuts
+            if (nphe >= 2 && is_in(pid, pids) && energy >= 0 && sector >= 1 && sector <= 6 &&
+                pcal_fiducial(lv1, lw1, lu1, lv4, lw4, lu4, lv7, lw7, lu7, sector, 1)) {
                 histsData[sector - 1]->Fill(energy);
             }
         }
@@ -445,10 +483,15 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
                 int sector = **mc_cal_sector;
                 double energy = **mc_cal_energy_1;
 
+                double lv1 = **mc_lv_1, lw1 = **mc_lw_1, lu1 = **mc_lu_1;
+                double lv4 = **mc_lv_4, lw4 = **mc_lw_4, lu4 = **mc_lu_4;
+                double lv7 = **mc_lv_7, lw7 = **mc_lw_7, lu7 = **mc_lu_7;
+
                 if (nphe == -9999 || sector == -9999 || energy == -9999) continue;
 
-                // Apply HTCC and PCal cuts for MC
-                if (nphe >= 2 && is_in(pid, pids) && energy >= 0 && sector >= 1 && sector <= 6) {
+                // Apply HTCC and PCal cuts for MC, and fiducial cuts
+                if (nphe >= 2 && is_in(pid, pids) && energy >= 0 && sector >= 1 && sector <= 6 &&
+                    pcal_fiducial(lv1, lw1, lu1, lv4, lw4, lu4, lv7, lw7, lu7, sector, 1)) {
                     histsMC[sector - 1]->Fill(energy);
                 }
             }
@@ -461,8 +504,9 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
             histsData[i]->SetMarkerStyle(20);
             histsData[i]->SetMarkerColor(kBlue);
             histsData[i]->SetMarkerSize(0.5);
-            histsData[i]->GetXaxis()->SetTitle("PCal Energy [GeV]");
+            histsData[i]->GetXaxis()->SetTitle("PCal Energy (GeV)");
             histsData[i]->GetYaxis()->SetTitle("Counts");
+            histsData[i]->GetXaxis()->SetRangeUser(0, 2.0);  // Set the x-axis range to 2 GeV
             histsData[i]->Draw("E");
 
             if (mcReader) {
@@ -470,6 +514,7 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
                 histsMC[i]->SetMarkerStyle(20);
                 histsMC[i]->SetMarkerColor(kRed);
                 histsMC[i]->SetMarkerSize(0.5);
+                histsMC[i]->GetXaxis()->SetRangeUser(0, 2.0);  // Set the x-axis range to 2 GeV for MC
                 histsMC[i]->Draw("SAME E");
             }
 
