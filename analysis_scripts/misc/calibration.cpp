@@ -5612,15 +5612,22 @@ void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
             mc_edge_36 = new TTreeReaderValue<double>(*mcReader, "traj_edge_36");
         }
 
-        // 2x3 canvas setup
+        // 2x4 canvas setup (7 subplots: 1 for CD, 6 for FD)
         TCanvas c("c", ("Vertex Z (" + charge_label + " Tracks)").c_str(), 1800, 1200);
-        c.Divide(3, 2);
+        c.Divide(4, 2);
 
-        // Arrays for data and MC histograms of vertex_z for each sector (6 sectors)
-        std::vector<TH1D*> histsData(6), histsMC(6);
-        for (int i = 0; i < 6; ++i) {
-            histsData[i] = new TH1D(Form("hData_sector%d", i + 1), Form("Sector %d %s Data", i + 1, charge_label.c_str()), 100, -15, 15);
-            histsMC[i] = new TH1D(Form("hMC_sector%d", i + 1), Form("Sector %d %s MC", i + 1, charge_label.c_str()), 100, -15, 15);
+        // Arrays for data and MC histograms of vertex_z for each sector (6 sectors + 1 for CD)
+        std::vector<TH1D*> histsData(7), histsMC(7);
+        for (int i = 0; i < 7; ++i) {
+            if (i == 0) {
+                // CD plot title
+                histsData[i] = new TH1D("hData_CD", ("CD Tracks " + charge_label + " Data").c_str(), 100, -15, 15);
+                histsMC[i] = new TH1D("hMC_CD", ("CD Tracks " + charge_label + " MC").c_str(), 100, -15, 15);
+            } else {
+                // FD plot title for each sector
+                histsData[i] = new TH1D(Form("hData_sector%d", i), Form("Sector %d %s Data", i, charge_label.c_str()), 100, -15, 15);
+                histsMC[i] = new TH1D(Form("hMC_sector%d", i), Form("Sector %d %s MC", i, charge_label.c_str()), 100, -15, 15);
+            }
         }
 
         // Fill data histograms
@@ -5628,7 +5635,7 @@ void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
             if (!dataReader.Next()) break;
             int pid = *particle_pid;
             double vz = *particle_vz;
-            int sector = (*track_sector_5 != -9999) ? *track_sector_5 : *track_sector_6;  // Check for FD or CD
+            int sector = (*track_sector_5 != -9999) ? 0 : *track_sector_6;  // 0 is CD track, sector 6 for FD
 
             // Apply fiducial cuts and check pid
             bool pass_fiducial = false;
@@ -5640,8 +5647,8 @@ void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
                 pass_fiducial = dc_fiducial(*edge_6, *edge_18, *edge_36, pid);
             }
 
-            if (pass_fiducial && sector >= 1 && sector <= 6) {
-                histsData[sector - 1]->Fill(vz);
+            if (pass_fiducial && (sector == 0 || (sector >= 1 && sector <= 6))) {
+                histsData[sector]->Fill(vz);  // Sector 0 for CD, 1-6 for FD
             }
         }
 
@@ -5651,7 +5658,7 @@ void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
                 if (!mcReader->Next()) break;
                 int pid = **mc_particle_pid;
                 double vz = **mc_particle_vz;
-                int sector = (**mc_track_sector_5 != -9999) ? **mc_track_sector_5 : **mc_track_sector_6;
+                int sector = (**mc_track_sector_5 != -9999) ? 0 : **mc_track_sector_6;  // 0 is CD track, sector 6 for FD
 
                 // Apply fiducial cuts and check pid
                 bool pass_fiducial = false;
@@ -5663,14 +5670,14 @@ void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
                     pass_fiducial = dc_fiducial(**mc_edge_6, **mc_edge_18, **mc_edge_36, pid);
                 }
 
-                if (pass_fiducial && sector >= 1 && sector <= 6) {
-                    histsMC[sector - 1]->Fill(vz);
+                if (pass_fiducial && (sector == 0 || (sector >= 1 && sector <= 6))) {
+                    histsMC[sector]->Fill(vz);  // Sector 0 for CD, 1-6 for FD
                 }
             }
         }
 
         // Normalize histograms to their integrals
-        for (int i = 0; i < 6; ++i) {
+        for (int i = 0; i < 7; ++i) {
             double dataIntegral = histsData[i]->Integral();
             if (dataIntegral > 0) histsData[i]->Scale(1.0 / dataIntegral);  // Normalize data histogram
 
@@ -5681,7 +5688,7 @@ void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         }
 
         // Draw the histograms for each sector on the canvas
-        for (int i = 0; i < 6; ++i) {
+        for (int i = 0; i < 7; ++i) {
             c.cd(i + 1);  // Move to the corresponding pad
             gPad->SetLeftMargin(0.15);  // Add left margin to avoid label clipping
             gPad->SetRightMargin(0.05);  // Add right margin to avoid label clipping
@@ -5727,15 +5734,15 @@ void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         c.SaveAs(("output/calibration/vertices/vertex_z_" + plot_name + ".png").c_str());
 
         // Clean up
-        for (int i = 0; i < 6; ++i) {
+        for (int i = 0; i < 7; ++i) {
             delete histsData[i];
             if (mcReader) delete histsMC[i];
         }
     };
 
     // Create plots for positive and negative tracks with adjustable cuts
-    create_vertex_plots("positive", positive_pids, "Positive", -10.5, 1);  // Example values for now
-    create_vertex_plots("negative", negative_pids, "Negative", -9.5, 1.5);  // Example values for now
+    create_vertex_plots("positive", positive_pids, "Positive", -10, 1.5);  // Example values for now
+    create_vertex_plots("negative", negative_pids, "Negative", -9, 2);  // Example values for now
 }
 
 // Helper function to fill and save histograms for each particle type
