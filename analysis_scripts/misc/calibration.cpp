@@ -822,7 +822,7 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
             // Add red text for SF > 0.19
             TLatex latex;
             latex.SetTextColor(kRed);
-            latex.DrawLatex(5.0, 0.18, "SF > 0.19");
+            latex.DrawLatex(5.0, 0.17, "SF > 0.19");
         }
 
         // Declare cMC outside the block to ensure it's accessible for saving the plot later
@@ -853,7 +853,7 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
                 histsMC[i]->GetYaxis()->SetTitleOffset(1.3); // Increase title offset to move the title up
                 histsMC[i]->GetXaxis()->SetTitleOffset(1.2); // For the x-axis title, if needed
 
-                // Draw horizontal line at sampling fraction = 0.2
+                // Draw horizontal line at sampling fraction = 0.19
                 TLine* line = new TLine(2.0, 0.19, 9.0, 0.19);
                 line->SetLineColor(kRed);
                 line->SetLineWidth(2);
@@ -862,7 +862,7 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
                 // Add red text for SF > 0.19
                 TLatex latex;
                 latex.SetTextColor(kRed);
-                latex.DrawLatex(5.0, 0.175, "SF > 0.19");
+                latex.DrawLatex(5.0, 0.17, "SF > 0.19");
             }
         }
 
