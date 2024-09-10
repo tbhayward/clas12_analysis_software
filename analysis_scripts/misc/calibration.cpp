@@ -810,8 +810,8 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
             histsData[i]->Draw("COLZ");
 
             // Apply title offset to push the title up further from the plot
-            histsData[i]->GetYaxis()->SetTitleOffset(1.3); // Increase title offset to move the title up
-            histsData[i]->GetXaxis()->SetTitleOffset(1.2); // For the x-axis title, if needed
+            // histsData[i]->GetYaxis()->SetTitleOffset(1.3); // Increase title offset to move the title up
+            // histsData[i]->GetXaxis()->SetTitleOffset(1.2); // For the x-axis title, if needed
 
             // Draw horizontal line at sampling fraction = 0.19
             TLine* line = new TLine(2.0, 0.19, 9.0, 0.19);
@@ -850,8 +850,8 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
                 histsMC[i]->Draw("COLZ");
 
                 // Apply title offset to push the title up further from the plot
-                histsMC[i]->GetYaxis()->SetTitleOffset(1.3); // Increase title offset to move the title up
-                histsMC[i]->GetXaxis()->SetTitleOffset(1.2); // For the x-axis title, if needed
+                // histsMC[i]->GetYaxis()->SetTitleOffset(1.3); // Increase title offset to move the title up
+                // histsMC[i]->GetXaxis()->SetTitleOffset(1.2); // For the x-axis title, if needed
 
                 // Draw horizontal line at sampling fraction = 0.19
                 TLine* line = new TLine(2.0, 0.19, 9.0, 0.19);
