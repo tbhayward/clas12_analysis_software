@@ -4716,14 +4716,14 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         }
 
         // Fitting functions for both data and MC
-        TF1* fit_data = new TF1(("fit_data_" + std::to_string(i)).c_str(), "gaus(0) + pol2(3)", h_data[i]->GetXaxis()->GetXmin(), h_data[i]->GetXaxis()->GetXmax());
+        TF1* fit_data = new TF1(("fit_data_" + std::to_string(i)).c_str(), "gaus(0)", h_data[i]->GetXaxis()->GetXmin(), h_data[i]->GetXaxis()->GetXmax());
         h_data[i]->Fit(fit_data, "Q");  // Silent fit
         fit_data->SetLineColor(kBlack);  // Black for data fit
         fit_data->Draw("SAME");
 
         TF1* fit_mc = nullptr;
         if (mcReader) {
-            fit_mc = new TF1(("fit_mc_" + std::to_string(i)).c_str(), "gaus(0) + pol2(3)", h_mc[i]->GetXaxis()->GetXmin(), h_mc[i]->GetXaxis()->GetXmax());
+            fit_mc = new TF1(("fit_mc_" + std::to_string(i)).c_str(), "gaus(0)", h_mc[i]->GetXaxis()->GetXmin(), h_mc[i]->GetXaxis()->GetXmax());
             h_mc[i]->Fit(fit_mc, "Q");  // Silent fit
             fit_mc->SetLineColor(kRed);  // Red for MC fit
             fit_mc->Draw("SAME");
