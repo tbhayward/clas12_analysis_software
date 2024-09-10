@@ -647,6 +647,199 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
     create_pcal_plots("negative", negative_pids);
 }
 
+void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+    // Disable stat boxes
+    gStyle->SetOptStat(0);
+
+    // Arrays to store positive and negative track conditions
+    std::vector<int> positive_pids = {-11, 211, 321, 2212};
+    std::vector<int> negative_pids = {11, -211, -321, -2212};
+
+    // Helper lambda to check if pid is in a vector
+    auto is_in = [](int pid, const std::vector<int>& pid_list) {
+        return std::find(pid_list.begin(), pid_list.end(), pid) != pid_list.end();
+    };
+
+    // Helper function to plot sampling fraction vs momentum for each sector
+    auto create_sampling_fraction_plots = [&](const std::string& plot_name, const std::vector<int>& pids) {
+        // Restart the TTreeReader to process the data from the beginning
+        dataReader.Restart();
+        if (mcReader) mcReader->Restart();
+
+        // Set up TTreeReaderValues before calling Next()
+        TTreeReaderValue<double> p(dataReader, "p");
+        TTreeReaderValue<double> cc_nphe_15(dataReader, "cc_nphe_15");
+        TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+        TTreeReaderValue<int> cal_sector(dataReader, "cal_sector");
+        TTreeReaderValue<double> cal_energy_1(dataReader, "cal_energy_1");
+        TTreeReaderValue<double> cal_energy_4(dataReader, "cal_energy_4");
+        TTreeReaderValue<double> cal_energy_7(dataReader, "cal_energy_7");
+
+        // Import lv, lw, lu values for fiducial cuts
+        TTreeReaderValue<double> cal_lv_1(dataReader, "cal_lv_1");
+        TTreeReaderValue<double> cal_lw_1(dataReader, "cal_lw_1");
+        TTreeReaderValue<double> cal_lu_1(dataReader, "cal_lu_1");
+        TTreeReaderValue<double> cal_lv_4(dataReader, "cal_lv_4");
+        TTreeReaderValue<double> cal_lw_4(dataReader, "cal_lw_4");
+        TTreeReaderValue<double> cal_lu_4(dataReader, "cal_lu_4");
+        TTreeReaderValue<double> cal_lv_7(dataReader, "cal_lv_7");
+        TTreeReaderValue<double> cal_lw_7(dataReader, "cal_lw_7");
+        TTreeReaderValue<double> cal_lu_7(dataReader, "cal_lu_7");
+
+        // MC variables for fiducial cuts and momentum
+        TTreeReaderValue<double>* mc_p = nullptr;
+        TTreeReaderValue<double>* mc_cc_nphe_15 = nullptr;
+        TTreeReaderValue<int>* mc_particle_pid = nullptr;
+        TTreeReaderValue<int>* mc_cal_sector = nullptr;
+        TTreeReaderValue<double>* mc_cal_energy_1 = nullptr;
+        TTreeReaderValue<double>* mc_cal_energy_4 = nullptr;
+        TTreeReaderValue<double>* mc_cal_energy_7 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lv_1 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lw_1 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lu_1 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lv_4 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lw_4 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lu_4 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lv_7 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lw_7 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lu_7 = nullptr;
+
+        if (mcReader) {
+            mc_p = new TTreeReaderValue<double>(*mcReader, "mc_p");
+            mc_cc_nphe_15 = new TTreeReaderValue<double>(*mcReader, "cc_nphe_15");
+            mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+            mc_cal_sector = new TTreeReaderValue<int>(*mcReader, "cal_sector");
+            mc_cal_energy_1 = new TTreeReaderValue<double>(*mcReader, "cal_energy_1");
+            mc_cal_energy_4 = new TTreeReaderValue<double>(*mcReader, "cal_energy_4");
+            mc_cal_energy_7 = new TTreeReaderValue<double>(*mcReader, "cal_energy_7");
+            mc_cal_lv_1 = new TTreeReaderValue<double>(*mcReader, "cal_lv_1");
+            mc_cal_lw_1 = new TTreeReaderValue<double>(*mcReader, "cal_lw_1");
+            mc_cal_lu_1 = new TTreeReaderValue<double>(*mcReader, "cal_lu_1");
+            mc_cal_lv_4 = new TTreeReaderValue<double>(*mcReader, "cal_lv_4");
+            mc_cal_lw_4 = new TTreeReaderValue<double>(*mcReader, "cal_lw_4");
+            mc_cal_lu_4 = new TTreeReaderValue<double>(*mcReader, "cal_lu_4");
+            mc_cal_lv_7 = new TTreeReaderValue<double>(*mcReader, "cal_lv_7");
+            mc_cal_lw_7 = new TTreeReaderValue<double>(*mcReader, "cal_lw_7");
+            mc_cal_lu_7 = new TTreeReaderValue<double>(*mcReader, "cal_lu_7");
+        }
+
+        // 2x3 canvas setup for data and MC
+        TCanvas cData("cData", "Sampling Fraction Data", 1200, 800);
+        TCanvas cMC("cMC", "Sampling Fraction MC", 1200, 800);
+        cData.Divide(3, 2);
+        cMC.Divide(3, 2);
+
+        // Arrays for data and MC 2D histograms for each sector (6 sectors)
+        std::vector<TH2D*> histsData(6), histsMC(6);
+        for (int i = 0; i < 6; ++i) {
+            histsData[i] = new TH2D(Form("hData_sector%d", i+1), Form("Sector %d Data", i+1),
+                                     100, 2, 9, 100, 0, 0.35);
+            histsMC[i] = new TH2D(Form("hMC_sector%d", i+1), Form("Sector %d MC", i+1),
+                                  100, 2, 9, 100, 0, 0.35);
+        }
+
+        // Fill data 2D histograms
+        for (int i = 0; i < 6e7; i++) {
+            dataReader.Next();
+            double nphe = *cc_nphe_15;
+            int pid = *particle_pid;
+            int sector = *cal_sector;
+            double energy1 = *cal_energy_1;
+            double energy4 = *cal_energy_4;
+            double energy7 = *cal_energy_7;
+            double sf = (energy1 + energy4 + energy7) / *p;
+
+            double lv1 = *cal_lv_1, lw1 = *cal_lw_1, lu1 = *cal_lu_1;
+            double lv4 = *cal_lv_4, lw4 = *cal_lw_4, lu4 = *cal_lu_4;
+            double lv7 = *cal_lv_7, lw7 = *cal_lw_7, lu7 = *cal_lu_7;
+
+            if (nphe == -9999 || sector == -9999 || energy1 == -9999) continue;
+
+            // Apply HTCC, PCal, and fiducial cuts
+            if (*p > 2.0 && nphe >= 2 && energy1 >= 0.07 && sector >= 1 && sector <= 6 &&
+                pcal_fiducial(lv1, lw1, lu1, lv4, lw4, lu4, lv7, lw7, lu7, sector, 1)) {
+                histsData[sector - 1]->Fill(*p, sf);
+            }
+        }
+
+        // Fill MC 2D histograms
+        if (mcReader) {
+            for (int i = 0; i < 6e7; i++) {
+                mcReader->Next();
+                double nphe = **mc_cc_nphe_15;
+                int pid = **mc_particle_pid;
+                int sector = **mc_cal_sector;
+                double energy1 = **mc_cal_energy_1;
+                double energy4 = **mc_cal_energy_4;
+                double energy7 = **mc_cal_energy_7;
+                double sf = (energy1 + energy4 + energy7) / **mc_p;
+
+                double lv1 = **mc_cal_lv_1, lw1 = **mc_cal_lw_1, lu1 = **mc_cal_lu_1;
+                double lv4 = **mc_cal_lv_4, lw4 = **mc_cal_lw_4, lu4 = **mc_cal_lu_4;
+                double lv7 = **mc_cal_lv_7, lw7 = **mc_cal_lw_7, lu7 = **mc_cal_lu_7;
+
+                if (nphe == -9999 || sector == -9999 || energy1 == -9999) continue;
+
+                // Apply HTCC, PCal, and fiducial cuts
+                if (**mc_p > 2.0 && nphe >= 2 && energy1 >= 0.07 && sector >= 1 && sector <= 6 &&
+                    pcal_fiducial(lv1, lw1, lu1, lv4, lw4, lu4, lv7, lw7, lu7, sector, 1)) {
+                    histsMC[sector - 1]->Fill(**mc_p, sf);
+                }
+            }
+        }
+
+        // Draw 2D histograms for data
+        for (int i = 0; i < 6; ++i) {
+            cData.cd(i + 1);  // Move to the corresponding pad
+            histsData[i]->GetXaxis()->SetTitle("Momentum (GeV)");
+            histsData[i]->GetYaxis()->SetTitle("Sampling Fraction");
+            histsData[i]->GetXaxis()->SetRangeUser(2.0, 9.0);
+            histsData[i]->GetYaxis()->SetRangeUser(0.0, 0.35);
+            histsData[i]->Draw("COLZ");
+
+            // Draw horizontal line at sampling fraction = 0.2
+            TLine* line = new TLine(2.0, 0.2, 9.0, 0.2);
+            line->SetLineColor(kRed);
+            line->SetLineWidth(2);
+            line->Draw("SAME");
+        }
+
+        // Draw 2D histograms for MC (if available)
+        if (mcReader) {
+            for (int i = 0; i < 6; ++i) {
+                cMC.cd(i + 1);  // Move to the corresponding pad
+                histsMC[i]->GetXaxis()->SetTitle("Momentum (GeV)");
+                histsMC[i]->GetYaxis()->SetTitle("Sampling Fraction");
+                histsMC[i]->GetXaxis()->SetRangeUser(2.0, 9.0);
+                histsMC[i]->GetYaxis()->SetRangeUser(0.0, 0.35);
+                histsMC[i]->Draw("COLZ");
+
+                // Draw horizontal line at sampling fraction = 0.2
+                TLine* line = new TLine(2.0, 0.2, 9.0, 0.2);
+                line->SetLineColor(kRed);
+                line->SetLineWidth(2);
+                line->Draw("SAME");
+            }
+        }
+
+        // Save the plots
+        cData.SaveAs(("output/calibration/sampling_fraction_" + plot_name + "_data.png").c_str());
+        if (mcReader) {
+            cMC.SaveAs(("output/calibration/sampling_fraction_" + plot_name + "_mc.png").c_str());
+        }
+
+        // Clean up
+        for (int i = 0; i < 6; ++i) {
+            delete histsData[i];
+            if (mcReader) delete histsMC[i];
+        }
+    };
+
+    // Create plots for positive and negative tracks
+    create_sampling_fraction_plots("positive", positive_pids);
+    create_sampling_fraction_plots("negative", negative_pids);
+}
+
 bool forward_tagger_fiducial(double ft_x, double ft_y) {
     // Compute the radius from the origin
     double radius = sqrt(ft_x * ft_x + ft_y * ft_y);
@@ -7798,7 +7991,11 @@ int main(int argc, char** argv) {
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
 
-    plot_pcal_energy(dataReader, mcReader);
+    // plot_pcal_energy(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+
+    plot_sampling_fraction(dataReader, mcReader);
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
 
