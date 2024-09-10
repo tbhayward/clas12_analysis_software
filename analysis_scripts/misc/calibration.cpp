@@ -728,7 +728,7 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
         cData.Divide(3, 2, 0.03, 0.03);  // Added more space between subplots
         // Increase the padding (left, right, top, and bottom margins) for each subplot
         for (int i = 1; i <= 6; ++i) {
-            c.cd(i);
+            cData.cd(i);
             gPad->SetLeftMargin(0.15);  // Increase left margin
             gPad->SetRightMargin(0.1);  // Increase right margin
             gPad->SetTopMargin(0.05);   // Increase top margin
@@ -825,6 +825,14 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
         if (mcReader) {
             TCanvas cMC("cMC", "Sampling Fraction MC", 1200, 800);
             cMC.Divide(3, 2, 0.03, 0.03);  // Added more padding space
+            // Increase the padding (left, right, top, and bottom margins) for each subplot
+            for (int i = 1; i <= 6; ++i) {
+                cMC.cd(i);
+                gPad->SetLeftMargin(0.15);  // Increase left margin
+                gPad->SetRightMargin(0.1);  // Increase right margin
+                gPad->SetTopMargin(0.05);   // Increase top margin
+                gPad->SetBottomMargin(0.15);  // Increase bottom margin
+            }
 
             for (int i = 0; i < 6; ++i) {
                 cMC.cd(i + 1);  // Move to the corresponding pad
