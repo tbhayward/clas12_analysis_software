@@ -821,13 +821,16 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
             latex.DrawLatex(5.0, 0.18, "SF > 0.19");
         }
 
+        // Declare cMC outside the block to ensure it's accessible for saving the plot later
+        TCanvas* cMC = nullptr;
+
         // Draw 2D histograms for MC (if available)
         if (mcReader) {
-            TCanvas cMC("cMC", "Sampling Fraction MC", 1200, 800);
-            cMC.Divide(3, 2, 0.03, 0.03);  // Added more padding space
+            cMC = new TCanvas("cMC", "Sampling Fraction MC", 1200, 800);
+            cMC->Divide(3, 2, 0.03, 0.03);  // Added more padding space
             // Increase the padding (left, right, top, and bottom margins) for each subplot
             for (int i = 1; i <= 6; ++i) {
-                cMC.cd(i);
+                cMC->cd(i);
                 gPad->SetLeftMargin(0.15);  // Increase left margin
                 gPad->SetRightMargin(0.1);  // Increase right margin
                 gPad->SetTopMargin(0.05);   // Increase top margin
@@ -835,7 +838,7 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
             }
 
             for (int i = 0; i < 6; ++i) {
-                cMC.cd(i + 1);  // Move to the corresponding pad
+                cMC->cd(i + 1);  // Move to the corresponding pad
                 histsMC[i]->GetXaxis()->SetTitle("Momentum (GeV)");
                 histsMC[i]->GetYaxis()->SetTitle("Sampling Fraction");
                 histsMC[i]->GetXaxis()->SetRangeUser(2.0, 9.0);
@@ -857,8 +860,8 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
 
         // Save the plots
         cData.SaveAs(("output/calibration/cal/pid/sampling_fraction_" + plot_name + "_data.png").c_str());
-        if (mcReader) {
-            cMC.SaveAs(("output/calibration/cal/pid/sampling_fraction_" + plot_name + "_mc.png").c_str());
+        if (mcReader && cMC) {
+            cMC->SaveAs(("output/calibration/cal/pid/sampling_fraction_" + plot_name + "_mc.png").c_str());
         }
 
         // Clean up
