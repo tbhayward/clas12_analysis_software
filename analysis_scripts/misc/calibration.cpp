@@ -1,32 +1,35 @@
+// C++ Standard Library Headers
+#include <iostream>
+#include <sstream>
+#include <string>
+#include <vector>
+#include <cmath>
+#include <map>
+#include <algorithm>
+
+// ROOT Core Classes
 #include <TFile.h>
 #include <TTree.h>
 #include <TTreeReader.h>
 #include <TTreeReaderValue.h>
-#include <TCanvas.h>
-#include <TH1D.h>
-#include <iostream>
-#include <string>
-#include <TGraphErrors.h>
-#include <TLegend.h>
-#include <TF1.h>
-#include <sstream>
-#include <algorithm>
-#include <TH2D.h>
-#include <TStyle.h>
-#include <TEllipse.h>
 #include <TSystem.h>
-#include <iostream>
-#include <TLine.h> 
+
+// ROOT Plotting and Visualization
+#include <TCanvas.h>
+#include <TGraphErrors.h>
+#include <TH1D.h>
+#include <TH2D.h>
 #include <TProfile.h>
-#include <iostream>
-#include <cmath> 
-#include <vector>
+#include <TLegend.h>
+#include <TLine.h>
+#include <TArrow.h>
 #include <TLatex.h>
-#include <map>
-#include <vector>
-#include <string>
-#include <algorithm>
+#include <TEllipse.h>
 #include <TPaveText.h>
+#include <TStyle.h>
+
+// ROOT Fitting Functions
+#include <TF1.h>
 
 void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Arrays to store positive and negative track conditions
