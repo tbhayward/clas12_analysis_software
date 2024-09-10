@@ -4591,7 +4591,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
 
     // Fill histograms for data
     // while (dataReader.Next()) {
-    for (int m=0; m<6e7; m++) {
+    for (int m=0; m<6e6; m++) {
         dataReader.Next();
         // std::cout << *edge_1 << " " << *edge_3 << " " << *edge_5 << " " << *edge_7 << " " << *edge_12 << " " << cvt_fiducial(*edge_1, *edge_3, *edge_5, *edge_7, *edge_12) << std::endl;
         if (*track_sector_6 != -9999 && cvt_fiducial(*edge_1, *edge_3, *edge_5, *edge_7, *edge_12)) {  // CD check
