@@ -3974,6 +3974,13 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
     }
 }
 
+bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7, 
+     double edge_12) {
+    // Dummy function, always returns true
+    return edge_1 > 0 && edge_3 > 0 && edge_5 > 0 && edge_7 > -2 && edge_12 > -5;
+    return true;
+}
+
 void plot_chi2pid_fd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     int nBins = 100;
     double chi2pidMin = -10;
@@ -4421,12 +4428,22 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     TTreeReaderValue<double> particle_beta(dataReader, "particle_beta");  // Beta variable
     TTreeReaderValue<int> track_sector_6(dataReader, "track_sector_6");
     TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+    TTreeReaderValue<double> edge_1(dataReader, "edge_1");
+    TTreeReaderValue<double> edge_3(dataReader, "edge_3");
+    TTreeReaderValue<double> edge_5(dataReader, "edge_5");
+    TTreeReaderValue<double> edge_7(dataReader, "edge_7");
+    TTreeReaderValue<double> edge_12(dataReader, "edge_12");
 
     TTreeReaderValue<double>* mc_particle_chi2pid = nullptr;
     TTreeReaderValue<double>* mc_particle_p = nullptr;
     TTreeReaderValue<double>* mc_particle_beta = nullptr;  // MC Beta variable
     TTreeReaderValue<int>* mc_track_sector_6 = nullptr;
     TTreeReaderValue<int>* mc_particle_pid = nullptr;
+    TTreeReaderValue<double>* mc_edge_1 = nullptr;
+    TTreeReaderValue<double>* mc_edge_3 = nullptr;
+    TTreeReaderValue<double>* mc_edge_5 = nullptr;
+    TTreeReaderValue<double>* mc_edge_7 = nullptr;
+    TTreeReaderValue<double>* mc_edge_12 = nullptr;
 
     if (mcReader) {
         mc_particle_chi2pid = new TTreeReaderValue<double>(*mcReader, "particle_chi2pid");
@@ -4434,6 +4451,11 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         mc_particle_beta = new TTreeReaderValue<double>(*mcReader, "particle_beta");
         mc_track_sector_6 = new TTreeReaderValue<int>(*mcReader, "track_sector_6");
         mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+        mc_edge_1 = new TTreeReaderValue<double>(*mcReader, "edge_1");
+        mc_edge_3 = new TTreeReaderValue<double>(*mcReader, "edge_3");
+        mc_edge_5 = new TTreeReaderValue<double>(*mcReader, "edge_5");
+        mc_edge_7 = new TTreeReaderValue<double>(*mcReader, "edge_7");
+        mc_edge_12 = new TTreeReaderValue<double>(*mcReader, "edge_12");
     }
 
     // 1D Histograms canvas
@@ -4557,7 +4579,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
 
     // Fill histograms for data
     while (dataReader.Next()) {
-        if (*track_sector_6 != -9999) {  // CD check
+        if (*track_sector_6 != -9999 && cvt_fiducial(edge_1, edge_3, edge_5, edge_7, edge_12)) {  // CD check
             for (size_t i = 0; i < particle_types.size(); ++i) {
                 if (*particle_pid == std::get<0>(particle_types[i])) {
                     h_data[i]->Fill(*particle_chi2pid);
@@ -4586,7 +4608,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Fill histograms for MC (if applicable)
     if (mcReader) {
         while (mcReader->Next()) {
-            if (**mc_track_sector_6 != -9999) {  // CD check
+            if (**mc_track_sector_6 != -9999 && cvt_fiducial(mc_edge_1, mc_edge_3, mc_edge_5, mc_edge_7, mc_edge_12)) {  // CD check
                 for (size_t i = 0; i < particle_types.size(); ++i) {
                     if (**mc_particle_pid == std::get<0>(particle_types[i])) {
                         h_mc[i]->Fill(**mc_particle_chi2pid);
@@ -4833,13 +4855,6 @@ double calculate_phi(double x, double y) {
 double calculate_theta(double x, double y, double z) {
     double r = sqrt(x*x + y*y + z*z);
     return acos(z / r) * 180.0 / M_PI;
-}
-
-bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7, 
-     double edge_12) {
-    // Dummy function, always returns true
-    return edge_1 > 0 && edge_3 > 0 && edge_5 > 0 && edge_7 > -2 && edge_12 > -5;
-    return true;
 }
 
 void plot_chi2_ndf_vs_phi_CVT_2D(TTreeReader& dataReader, TTreeReader* mcReader, const std::vector<std::tuple<int, std::string, std::string>>& particle_types) {
@@ -8272,9 +8287,9 @@ int main(int argc, char** argv) {
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
 
-    plot_diagonal_cut(dataReader, mcReader);
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
+    // plot_diagonal_cut(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
 
     // plot_ft_xy_energy(dataReader, mcReader);
     // dataReader.Restart();
@@ -8315,9 +8330,9 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_chi2pid_fd(dataReader, mcReader);
 
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_chi2pid_cd(dataReader, mcReader);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_chi2pid_cd(dataReader, mcReader);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
