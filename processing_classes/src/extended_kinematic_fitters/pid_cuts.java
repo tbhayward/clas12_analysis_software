@@ -189,7 +189,7 @@ public class pid_cuts {
         boolean isForwardDetector = generic_tests.forward_detector_cut(particle_Index, rec_Bank);
         boolean isCentralDetector = generic_tests.central_detector_cut(particle_Index, rec_Bank);
         
-        if (isCentralDetector) {
+        if (isForwardDetector) {
             if (pid == 2212 && p >= 5.0) return false;
             if (runnum >= 6616 && runnum <= 6783) {
                 if (pid == 211) return -0.06 - 1.08*3.5 < chi2pid && chi2pid < -0.06 + 1.08*3.5;

@@ -4413,9 +4413,9 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     double chi2pidMin = -5;
     double chi2pidMax = 5;
     double pMin = 0;
-    double pMax = 8 ;  // Updated maximum momentum value
+    double pMax = 4;  // Updated maximum momentum value
     double betaMax = 1.4;  // Updated maximum beta value
-    std::vector<double> pBins = {0, 0.33, 0.67, 1.00, 1.33, 1.67, 2.00, 2.33, 2.67, 3.00, 3.5, 4, 4.5, 5, 6, 7, 8};
+    std::vector<double> pBins = {0, 0.33/2, 0.67/2, 1.00/2, 1.33/2, 1.67/2, 2.00/2, 2.33/2, 2.67/2, 3.00/2, 3.5/2, 4/2, 4.5/2, 5/2, 6/2, 7/2, 8/2};
 
     // Particle types to analyze
     std::vector<std::tuple<int, std::string>> particle_types = {
@@ -4431,7 +4431,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     TTreeReaderValue<double> particle_chi2pid(dataReader, "particle_chi2pid");
     TTreeReaderValue<double> particle_p(dataReader, "p");
     TTreeReaderValue<double> particle_beta(dataReader, "particle_beta");  // Beta variable
-    TTreeReaderValue<int> track_sector_6(dataReader, "track_sector_6");
+    TTreeReaderValue<int> track_sector_5(dataReader, "track_sector_5");
     TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
     TTreeReaderValue<double> edge_1(dataReader, "traj_edge_1");
     TTreeReaderValue<double> edge_3(dataReader, "traj_edge_3");
@@ -4442,7 +4442,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     TTreeReaderValue<double>* mc_particle_chi2pid = nullptr;
     TTreeReaderValue<double>* mc_particle_p = nullptr;
     TTreeReaderValue<double>* mc_particle_beta = nullptr;  // MC Beta variable
-    TTreeReaderValue<int>* mc_track_sector_6 = nullptr;
+    TTreeReaderValue<int>* mc_track_sector_5 = nullptr;
     TTreeReaderValue<int>* mc_particle_pid = nullptr;
     TTreeReaderValue<double>* mc_edge_1 = nullptr;
     TTreeReaderValue<double>* mc_edge_3 = nullptr;
@@ -4454,7 +4454,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         mc_particle_chi2pid = new TTreeReaderValue<double>(*mcReader, "particle_chi2pid");
         mc_particle_p = new TTreeReaderValue<double>(*mcReader, "p");
         mc_particle_beta = new TTreeReaderValue<double>(*mcReader, "particle_beta");
-        mc_track_sector_6 = new TTreeReaderValue<int>(*mcReader, "track_sector_6");
+        mc_track_sector_5 = new TTreeReaderValue<int>(*mcReader, "track_sector_5");
         mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
         mc_edge_1 = new TTreeReaderValue<double>(*mcReader, "traj_edge_1");
         mc_edge_3 = new TTreeReaderValue<double>(*mcReader, "traj_edge_3");
@@ -4586,11 +4586,10 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // while (dataReader.Next()) {
     for (int m=0; m<6e7; m++) {
         dataReader.Next();
-        if (*track_sector_6 != -9999) {  // CD check
+        if (*track_sector_5 != -9999 && cvt_fiducial(*edge_1, *edge_3, *edge_5, *edge_7, *edge_12)) {  // CD check
             for (size_t i = 0; i < particle_types.size(); ++i) {
                 if (*particle_pid == std::get<0>(particle_types[i])) {
                     h_data[i]->Fill(*particle_chi2pid);
-                    // std::cout << *particle_pid << " " << *particle_p << " " << *particle_beta << std::endl;
                     if (*particle_pid == 211 || *particle_pid == 321 || *particle_pid == 2212) {
                         h_data_beta_vs_p_pos->Fill(*particle_p, *particle_beta);
                         for (size_t bin = 0; bin < pBins.size() - 1; ++bin) {
@@ -4618,7 +4617,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         // while (mcReader->Next()) {
         for (int m=0; m<6e7; m++) {
             mcReader->Next();
-            if (**mc_track_sector_6 != -9999) {  // CD check
+            if (**mc_track_sector_5 != -9999 && cvt_fiducial(*mc_edge_1, *mc_edge_3, *mc_edge_5, *mc_edge_7, *mc_edge_12)) {  // CD check
                 for (size_t i = 0; i < particle_types.size(); ++i) {
                     if (**mc_particle_pid == std::get<0>(particle_types[i])) {
                         h_mc[i]->Fill(**mc_particle_chi2pid);
@@ -4838,7 +4837,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     if (mc_particle_chi2pid) delete mc_particle_chi2pid;
     if (mc_particle_p) delete mc_particle_p;
     if (mc_particle_beta) delete mc_particle_beta;
-    if (mc_track_sector_6) delete mc_track_sector_6;
+    if (mc_track_sector_5) delete mc_track_sector_5;
     if (mc_particle_pid) delete mc_particle_pid;
 }
 
@@ -8328,13 +8327,13 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_cvt_hit_position(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_chi2pid_fd(dataReader, mcReader);
-
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
-    // plot_chi2pid_cd(dataReader, mcReader);
+    // plot_chi2pid_fd(dataReader, mcReader);
+
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_chi2pid_cd(dataReader, mcReader);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
