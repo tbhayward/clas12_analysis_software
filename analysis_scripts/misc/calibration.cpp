@@ -661,7 +661,7 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
     };
 
     // Helper function to plot sampling fraction vs momentum for each sector
-    auto create_sampling_fraction_plots = [&](const std::string& plot_name, const std::vector<int>& pids) {
+    auto create_sampling_fraction_plots = [&](const std::string& plot_name, const std::vector<int>& pids, const std::string& track_type) {
         // Restart the TTreeReader to process the data from the beginning
         dataReader.Restart();
         if (mcReader) mcReader->Restart();
@@ -705,7 +705,7 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
         TTreeReaderValue<double>* mc_cal_lu_7 = nullptr;
 
         if (mcReader) {
-            mc_p = new TTreeReaderValue<double>(*mcReader, "mc_p");
+            mc_p = new TTreeReaderValue<double>(*mcReader, "p");
             mc_cc_nphe_15 = new TTreeReaderValue<double>(*mcReader, "cc_nphe_15");
             mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
             mc_cal_sector = new TTreeReaderValue<int>(*mcReader, "cal_sector");
@@ -723,18 +723,16 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
             mc_cal_lu_7 = new TTreeReaderValue<double>(*mcReader, "cal_lu_7");
         }
 
-        // 2x3 canvas setup for data and MC
+        // Adjusted canvas with spacing
         TCanvas cData("cData", "Sampling Fraction Data", 1200, 800);
-        TCanvas cMC("cMC", "Sampling Fraction MC", 1200, 800);
-        cData.Divide(3, 2);
-        cMC.Divide(3, 2);
+        cData.Divide(3, 2, 0.01, 0.01);  // Added padding to the left and right
 
         // Arrays for data and MC 2D histograms for each sector (6 sectors)
         std::vector<TH2D*> histsData(6), histsMC(6);
         for (int i = 0; i < 6; ++i) {
-            histsData[i] = new TH2D(Form("hData_sector%d", i+1), Form("Sector %d Data", i+1),
+            histsData[i] = new TH2D(Form("hData_sector%d", i+1), Form("Sector %d %s Data", i+1, track_type.c_str()),
                                      100, 2, 9, 100, 0, 0.35);
-            histsMC[i] = new TH2D(Form("hMC_sector%d", i+1), Form("Sector %d MC", i+1),
+            histsMC[i] = new TH2D(Form("hMC_sector%d", i+1), Form("Sector %d %s MC", i+1, track_type.c_str()),
                                   100, 2, 9, 100, 0, 0.35);
         }
 
@@ -802,10 +800,18 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
             line->SetLineColor(kRed);
             line->SetLineWidth(2);
             line->Draw("SAME");
+
+            // Add red text for SF > 0.19
+            TLatex latex;
+            latex.SetTextColor(kRed);
+            latex.DrawLatex(5.0, 0.18, "SF > 0.19");
         }
 
         // Draw 2D histograms for MC (if available)
         if (mcReader) {
+            TCanvas cMC("cMC", "Sampling Fraction MC", 1200, 800);
+            cMC.Divide(3, 2, 0.01, 0.01);  // Added padding to the left and right
+
             for (int i = 0; i < 6; ++i) {
                 cMC.cd(i + 1);  // Move to the corresponding pad
                 histsMC[i]->GetXaxis()->SetTitle("Momentum (GeV)");
@@ -819,13 +825,19 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
                 line->SetLineColor(kRed);
                 line->SetLineWidth(2);
                 line->Draw("SAME");
+
+                // Add red text for SF > 0.19
+                TLatex latex;
+                latex.SetTextColor(kRed);
+                latex.DrawLatex(5.0, 0.18, "SF > 0.19");
             }
         }
 
         // Save the plots
-        cData.SaveAs(("output/calibration/sampling_fraction_" + plot_name + "_data.png").c_str());
+        cData.SaveAs(("output/calibration/cal/pid/sampling_fraction_" + plot_name + "_data.png").c_str());
         if (mcReader) {
-            cMC.SaveAs(("output/calibration/sampling_fraction_" + plot_name + "_mc.png").c_str());
+            TCanvas cMC("cMC", "Sampling Fraction MC", 1200, 800);
+            cMC.SaveAs(("output/calibration/cal/pid/sampling_fraction_" + plot_name + "_mc.png").c_str());
         }
 
         // Clean up
@@ -836,8 +848,8 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
     };
 
     // Create plots for positive and negative tracks
-    create_sampling_fraction_plots("positive", positive_pids);
-    create_sampling_fraction_plots("negative", negative_pids);
+    create_sampling_fraction_plots("positive", positive_pids, "Positive");
+    create_sampling_fraction_plots("negative", negative_pids, "Negative");
 }
 
 bool forward_tagger_fiducial(double ft_x, double ft_y) {
