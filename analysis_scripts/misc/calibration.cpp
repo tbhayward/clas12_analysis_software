@@ -4617,7 +4617,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         // while (mcReader->Next()) {
         for (int m=0; m<6e7; m++) {
             mcReader->Next();
-            if (**mc_track_sector_5 != -9999 && cvt_fiducial(*mc_edge_1, *mc_edge_3, *mc_edge_5, *mc_edge_7, *mc_edge_12)) {  // CD check
+            if (**mc_track_sector_5 != -9999 && cvt_fiducial(**mc_edge_1, **mc_edge_3, **mc_edge_5, **mc_edge_7, **mc_edge_12)) {  // CD check
                 for (size_t i = 0; i < particle_types.size(); ++i) {
                     if (**mc_particle_pid == std::get<0>(particle_types[i])) {
                         h_mc[i]->Fill(**mc_particle_chi2pid);
