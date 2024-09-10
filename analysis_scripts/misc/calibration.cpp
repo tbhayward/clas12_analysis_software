@@ -472,45 +472,45 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
         TTreeReaderValue<double> cal_energy_1(dataReader, "cal_energy_1");
 
         // Import lv, lw, lu values for fiducial cuts
-        TTreeReaderValue<double> lv_1(dataReader, "lv_1");
-        TTreeReaderValue<double> lw_1(dataReader, "lw_1");
-        TTreeReaderValue<double> lu_1(dataReader, "lu_1");
-        TTreeReaderValue<double> lv_4(dataReader, "lv_4");
-        TTreeReaderValue<double> lw_4(dataReader, "lw_4");
-        TTreeReaderValue<double> lu_4(dataReader, "lu_4");
-        TTreeReaderValue<double> lv_7(dataReader, "lv_7");
-        TTreeReaderValue<double> lw_7(dataReader, "lw_7");
-        TTreeReaderValue<double> lu_7(dataReader, "lu_7");
+        TTreeReaderValue<double> cal_lv_1(dataReader, "cal_lv_1");
+        TTreeReaderValue<double> cal_lw_1(dataReader, "cal_lw_1");
+        TTreeReaderValue<double> cal_lu_1(dataReader, "cal_lu_1");
+        TTreeReaderValue<double> cal_lv_4(dataReader, "cal_lv_4");
+        TTreeReaderValue<double> cal_lw_4(dataReader, "cal_lw_4");
+        TTreeReaderValue<double> cal_lu_4(dataReader, "cal_lu_4");
+        TTreeReaderValue<double> cal_lv_7(dataReader, "cal_lv_7");
+        TTreeReaderValue<double> cal_lw_7(dataReader, "cal_lw_7");
+        TTreeReaderValue<double> cal_lu_7(dataReader, "cal_lu_7");
 
         // MC variables for fiducial cuts
         TTreeReaderValue<double>* mc_cc_nphe_15 = nullptr;
         TTreeReaderValue<int>* mc_particle_pid = nullptr;
         TTreeReaderValue<int>* mc_cal_sector = nullptr;
         TTreeReaderValue<double>* mc_cal_energy_1 = nullptr;
-        TTreeReaderValue<double>* mc_lv_1 = nullptr;
-        TTreeReaderValue<double>* mc_lw_1 = nullptr;
-        TTreeReaderValue<double>* mc_lu_1 = nullptr;
-        TTreeReaderValue<double>* mc_lv_4 = nullptr;
-        TTreeReaderValue<double>* mc_lw_4 = nullptr;
-        TTreeReaderValue<double>* mc_lu_4 = nullptr;
-        TTreeReaderValue<double>* mc_lv_7 = nullptr;
-        TTreeReaderValue<double>* mc_lw_7 = nullptr;
-        TTreeReaderValue<double>* mc_lu_7 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lv_1 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lw_1 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lu_1 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lv_4 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lw_4 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lu_4 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lv_7 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lw_7 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lu_7 = nullptr;
 
         if (mcReader) {
             mc_cc_nphe_15 = new TTreeReaderValue<double>(*mcReader, "cc_nphe_15");
             mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
             mc_cal_sector = new TTreeReaderValue<int>(*mcReader, "cal_sector");
             mc_cal_energy_1 = new TTreeReaderValue<double>(*mcReader, "cal_energy_1");
-            mc_lv_1 = new TTreeReaderValue<double>(*mcReader, "lv_1");
-            mc_lw_1 = new TTreeReaderValue<double>(*mcReader, "lw_1");
-            mc_lu_1 = new TTreeReaderValue<double>(*mcReader, "lu_1");
-            mc_lv_4 = new TTreeReaderValue<double>(*mcReader, "lv_4");
-            mc_lw_4 = new TTreeReaderValue<double>(*mcReader, "lw_4");
-            mc_lu_4 = new TTreeReaderValue<double>(*mcReader, "lu_4");
-            mc_lv_7 = new TTreeReaderValue<double>(*mcReader, "lv_7");
-            mc_lw_7 = new TTreeReaderValue<double>(*mcReader, "lw_7");
-            mc_lu_7 = new TTreeReaderValue<double>(*mcReader, "lu_7");
+            mc_cal_lv_1 = new TTreeReaderValue<double>(*mcReader, "cal_lv_1");
+            mc_cal_lw_1 = new TTreeReaderValue<double>(*mcReader, "cal_lw_1");
+            mc_cal_lu_1 = new TTreeReaderValue<double>(*mcReader, "cal_lu_1");
+            mc_cal_lv_4 = new TTreeReaderValue<double>(*mcReader, "cal_lv_4");
+            mc_cal_lw_4 = new TTreeReaderValue<double>(*mcReader, "cal_lw_4");
+            mc_cal_lu_4 = new TTreeReaderValue<double>(*mcReader, "cal_lu_4");
+            mc_cal_lv_7 = new TTreeReaderValue<double>(*mcReader, "cal_lv_7");
+            mc_cal_lw_7 = new TTreeReaderValue<double>(*mcReader, "cal_lw_7");
+            mc_cal_lu_7 = new TTreeReaderValue<double>(*mcReader, "cal_lu_7");
         }
 
         // 2x3 canvas setup
