@@ -49,13 +49,16 @@ void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         if (mcReader) mcReader->Restart();
 
         // Set up TTreeReaderValues before calling Next()
+        TTreeReaderValue<double> p(dataReader, "p");
         TTreeReaderValue<double> cc_nphe_15(dataReader, "cc_nphe_15");
         TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
 
+        TTreeReaderValue<double>* mc_p = nullptr;
         TTreeReaderValue<double>* mc_cc_nphe_15 = nullptr;
         TTreeReaderValue<int>* mc_particle_pid = nullptr;
 
         if (mcReader) {
+            mc_p = new TTreeReaderValue<double>(*mcReader, "mc_p");
             mc_cc_nphe_15 = new TTreeReaderValue<double>(*mcReader, "cc_nphe_15");
             mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
         }
@@ -79,11 +82,11 @@ void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
 
         // Fill the data arrays
         // while (dataReader.Next()) {
-        for (int i=0; i<1e7; i++) {
+        for (int i=0; i<6e7; i++) {
             dataReader.Next();
             double value = *cc_nphe_15;
             int pid = *particle_pid;
-            if (value != -9999 && is_in(pid, pids)) {
+            if (*p > 2.0 && value != -9999 && is_in(pid, pids)) {
                 int bin = static_cast<int>((value - xMin) / (xMax - xMin) * nBins);
                 if (bin >= 0 && bin < nBins) {
                     dataY[bin]++;
@@ -106,11 +109,11 @@ void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         // Fill the MC arrays if available
         if (mcReader) {
             // while (mcReader->Next()) {
-            for (int i=0; i<1e7; i++) {
+            for (int i=0; i<6e7; i++) {
                 mcReader->Next();
                 double value = **mc_cc_nphe_15;
                 int pid = **mc_particle_pid;
-                if (value != -9999 && is_in(pid, pids)) {
+                if (**mc_p > 2.0 && value != -9999 && is_in(pid, pids)) {
                     int bin = static_cast<int>((value - xMin) / (xMax - xMin) * nBins);
                     if (bin >= 0 && bin < nBins) {
                         mcY[bin]++;
@@ -269,7 +272,7 @@ void plot_ltcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         while (dataReader.Next()) {
             double value = *cc_nphe_16;
             int pid = *particle_pid;
-            if (*p > 8.0 && value != -9999 && is_in(pid, pids)) {
+            if (*p > 2.0 && value != -9999 && is_in(pid, pids)) {
                 int bin = static_cast<int>((value - xMin) / (xMax - xMin) * nBins);
                 if (bin >= 0 && bin < nBins) {
                     dataY[bin]++;
@@ -294,7 +297,7 @@ void plot_ltcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
             while (mcReader->Next()) {
                 double value = **mc_cc_nphe_16;
                 int pid = **mc_particle_pid;
-                if (**mc_p > 8.0 && value != -9999 && is_in(pid, pids)) {
+                if (**mc_p > 2.0 && value != -9999 && is_in(pid, pids)) {
                     int bin = static_cast<int>((value - xMin) / (xMax - xMin) * nBins);
                     if (bin >= 0 && bin < nBins) {
                         mcY[bin]++;
@@ -469,6 +472,7 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
         if (mcReader) mcReader->Restart();
 
         // Set up TTreeReaderValues before calling Next()
+        TTreeReaderValue<double> p(dataReader, "p");
         TTreeReaderValue<double> cc_nphe_15(dataReader, "cc_nphe_15");
         TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
         TTreeReaderValue<int> cal_sector(dataReader, "cal_sector");
@@ -486,6 +490,7 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
         TTreeReaderValue<double> cal_lu_7(dataReader, "cal_lu_7");
 
         // MC variables for fiducial cuts
+        TTreeReaderValue<double>* mc_p = nullptr;
         TTreeReaderValue<double>* mc_cc_nphe_15 = nullptr;
         TTreeReaderValue<int>* mc_particle_pid = nullptr;
         TTreeReaderValue<int>* mc_cal_sector = nullptr;
@@ -501,6 +506,7 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
         TTreeReaderValue<double>* mc_cal_lu_7 = nullptr;
 
         if (mcReader) {
+            mc_p = new TTreeReaderValue<double>(*mcReader, "mc_p");
             mc_cc_nphe_15 = new TTreeReaderValue<double>(*mcReader, "cc_nphe_15");
             mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
             mc_cal_sector = new TTreeReaderValue<int>(*mcReader, "cal_sector");
@@ -542,7 +548,7 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
             if (nphe == -9999 || sector == -9999 || energy == -9999) continue;
 
             // Apply HTCC and PCal cuts for data, and fiducial cuts
-            if (nphe >= 2 && is_in(pid, pids) && energy >= 0 && sector >= 1 && sector <= 6 &&
+            if (*p > 2.0 && nphe >= 2 && is_in(pid, pids) && energy >= 0 && sector >= 1 && sector <= 6 &&
                 pcal_fiducial(lv1, lw1, lu1, lv4, lw4, lu4, lv7, lw7, lu7, sector, 1)) {
                 histsData[sector - 1]->Fill(energy);
             }
@@ -564,7 +570,7 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
                 if (nphe == -9999 || sector == -9999 || energy == -9999) continue;
 
                 // Apply HTCC and PCal cuts for MC, and fiducial cuts
-                if (nphe >= 2 && is_in(pid, pids) && energy >= 0 && sector >= 1 && sector <= 6 &&
+                if (**mc_p > 2.0 && nphe >= 2 && is_in(pid, pids) && energy >= 0 && sector >= 1 && sector <= 6 &&
                     pcal_fiducial(lv1, lw1, lu1, lv4, lw4, lu4, lv7, lw7, lu7, sector, 1)) {
                     histsMC[sector - 1]->Fill(energy);
                 }
@@ -591,7 +597,10 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
             histsData[i]->SetMarkerSize(0.5);
             histsData[i]->GetXaxis()->SetTitle("PCal Energy [GeV]");
             histsData[i]->GetYaxis()->SetTitle("Normalized Counts");
-            histsData[i]->GetXaxis()->SetRangeUser(0, 1.5);  // Set the x-axis range to 2 GeV
+            histsData[i]->GetXaxis()->SetRangeUser(0, 1.5);  // Set the x-axis range to 1.5 GeV
+            double maxDataY = histsData[i]->GetMaximum();
+            histsData[i]->SetMaximum(1.25 * maxDataY);  // Set y-axis max to 1.25 times the max
+
             histsData[i]->Draw("E");
 
             if (mcReader) {
@@ -599,18 +608,18 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
                 histsMC[i]->SetMarkerStyle(20);
                 histsMC[i]->SetMarkerColor(kRed);
                 histsMC[i]->SetMarkerSize(0.5);
-                histsMC[i]->GetXaxis()->SetRangeUser(0, 1.5);  // Set the x-axis range to 2 GeV for MC
+                histsMC[i]->GetXaxis()->SetRangeUser(0, 1.5);  // Set the x-axis range to 1.5 GeV for MC
                 histsMC[i]->Draw("SAME E");
             }
 
-            // Add a vertical dashed line at energy = 0.07 GeV
-            TLine* line = new TLine(0.07, 0, 0.07, histsData[i]->GetMaximum() * 1.0);
+            // Add a vertical dashed line at energy = 0.07 GeV, and ensure it reaches the top of the plot
+            TLine* line = new TLine(0.07, 0, 0.07, 1.25 * maxDataY);
             line->SetLineColor(kBlack);
             line->SetLineStyle(2);  // Dashed line
             line->Draw("SAME");
 
             // Add an arrow indicating the cut
-            TArrow* arrow = new TArrow(0.07, histsData[i]->GetMaximum() * 0.9, 0.15, histsData[i]->GetMaximum() * 0.9, 0.02, "|>");
+            TArrow* arrow = new TArrow(0.07, 1.2 * maxDataY, 0.15, 1.2 * maxDataY, 0.02, "|>");
             arrow->SetLineColor(kBlack);
             arrow->SetFillColor(kBlack);
             arrow->Draw("SAME");
@@ -618,7 +627,15 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
             // Add a label for the selection criterion
             TLatex latex;
             latex.SetTextColor(kBlack);
-            latex.DrawLatex(0.08, histsData[i]->GetMaximum() * 0.95, "E_{PCal} >= 0.07 GeV");
+            latex.DrawLatex(0.08, 1.2 * maxDataY, "E_{PCal} >= 0.07 GeV");
+
+            // Add a legend to each subplot (top right)
+            TLegend* legend = new TLegend(0.7, 0.8, 0.9, 0.9);
+            legend->AddEntry(histsData[i], "Data", "l");
+            if (mcReader) {
+                legend->AddEntry(histsMC[i], "MC", "l");
+            }
+            legend->Draw();
         }
 
         // Save the plot
