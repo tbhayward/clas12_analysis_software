@@ -79,7 +79,7 @@ void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
 
         // Fill the data arrays
         // while (dataReader.Next()) {
-        for (int i=0; i<1e6; i++) {
+        for (int i=0; i<1e7; i++) {
             dataReader.Next();
             double value = *cc_nphe_15;
             int pid = *particle_pid;
@@ -106,7 +106,7 @@ void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         // Fill the MC arrays if available
         if (mcReader) {
             // while (mcReader->Next()) {
-            for (int i=0; i<1e6; i++) {
+            for (int i=0; i<1e7; i++) {
                 mcReader->Next();
                 double value = **mc_cc_nphe_15;
                 int pid = **mc_particle_pid;
@@ -144,7 +144,7 @@ void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         grData->SetMarkerColor(kBlue);   // Set data color to blue
         grData->SetLineColor(kBlue);     // Set line color to blue
         grData->SetMarkerStyle(20);      // Add dot in the center of error bars (style 20 is a filled circle)
-        grData->SetMarkerSize(1.0);      // Adjust the marker size if needed
+        grData->SetMarkerSize(0.5);      // Adjust the marker size if needed
         grData->SetTitle(("HTCC nphe - " + plot_name).c_str());
         grData->GetXaxis()->SetTitle("nphe");
         grData->GetYaxis()->SetTitle("normalized counts");
@@ -159,7 +159,7 @@ void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
             grMC->SetMarkerColor(kRed);    // Set MC color to red
             grMC->SetLineColor(kRed);      // Set MC line color to red
             grMC->SetMarkerStyle(20);      // Add dot in the center of error bars for MC
-            grMC->SetMarkerSize(0.75);      // Adjust marker size if needed
+            grMC->SetMarkerSize(0.5);      // Adjust marker size if needed
         }
 
         // Draw the plot
