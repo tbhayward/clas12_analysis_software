@@ -884,6 +884,228 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
     create_sampling_fraction_plots("negative", negative_pids, "Negative");
 }
 
+void plot_diagonal_cut(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+    // Disable stat boxes
+    gStyle->SetOptStat(0);
+
+    // Arrays to store positive and negative track conditions
+    std::vector<int> positive_pids = {-11, 211, 321, 2212};
+    std::vector<int> negative_pids = {11, -211, -321, -2212};
+
+    // Helper lambda to check if pid is in a vector
+    auto is_in = [](int pid, const std::vector<int>& pid_list) {
+        return std::find(pid_list.begin(), pid_list.end(), pid) != pid_list.end();
+    };
+
+    // Helper function to plot (cal_energy_4 + cal_energy_7) / p vs momentum for each sector
+    auto create_diagonal_cut_plots = [&](const std::string& plot_name, const std::vector<int>& pids, const std::string& track_type) {
+        // Restart the TTreeReader to process the data from the beginning
+        dataReader.Restart();
+        if (mcReader) mcReader->Restart();
+
+        // Set up TTreeReaderValues before calling Next()
+        TTreeReaderValue<double> p(dataReader, "p");
+        TTreeReaderValue<double> cc_nphe_15(dataReader, "cc_nphe_15");
+        TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+        TTreeReaderValue<int> cal_sector(dataReader, "cal_sector");
+        TTreeReaderValue<double> cal_energy_4(dataReader, "cal_energy_4");
+        TTreeReaderValue<double> cal_energy_7(dataReader, "cal_energy_7");
+
+        // Import lv, lw, lu values for fiducial cuts
+        TTreeReaderValue<double> cal_lv_1(dataReader, "cal_lv_1");
+        TTreeReaderValue<double> cal_lw_1(dataReader, "cal_lw_1");
+        TTreeReaderValue<double> cal_lu_1(dataReader, "cal_lu_1");
+        TTreeReaderValue<double> cal_lv_4(dataReader, "cal_lv_4");
+        TTreeReaderValue<double> cal_lw_4(dataReader, "cal_lw_4");
+        TTreeReaderValue<double> cal_lu_4(dataReader, "cal_lu_4");
+        TTreeReaderValue<double> cal_lv_7(dataReader, "cal_lv_7");
+        TTreeReaderValue<double> cal_lw_7(dataReader, "cal_lw_7");
+        TTreeReaderValue<double> cal_lu_7(dataReader, "cal_lu_7");
+
+        // MC variables for fiducial cuts and momentum
+        TTreeReaderValue<double>* mc_p = nullptr;
+        TTreeReaderValue<double>* mc_cc_nphe_15 = nullptr;
+        TTreeReaderValue<int>* mc_particle_pid = nullptr;
+        TTreeReaderValue<int>* mc_cal_sector = nullptr;
+        TTreeReaderValue<double>* mc_cal_energy_4 = nullptr;
+        TTreeReaderValue<double>* mc_cal_energy_7 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lv_1 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lw_1 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lu_1 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lv_4 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lw_4 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lu_4 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lv_7 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lw_7 = nullptr;
+        TTreeReaderValue<double>* mc_cal_lu_7 = nullptr;
+
+        if (mcReader) {
+            mc_p = new TTreeReaderValue<double>(*mcReader, "p");
+            mc_cc_nphe_15 = new TTreeReaderValue<double>(*mcReader, "cc_nphe_15");
+            mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+            mc_cal_sector = new TTreeReaderValue<int>(*mcReader, "cal_sector");
+            mc_cal_energy_4 = new TTreeReaderValue<double>(*mcReader, "cal_energy_4");
+            mc_cal_energy_7 = new TTreeReaderValue<double>(*mcReader, "cal_energy_7");
+            mc_cal_lv_1 = new TTreeReaderValue<double>(*mcReader, "cal_lv_1");
+            mc_cal_lw_1 = new TTreeReaderValue<double>(*mcReader, "cal_lw_1");
+            mc_cal_lu_1 = new TTreeReaderValue<double>(*mcReader, "cal_lu_1");
+            mc_cal_lv_4 = new TTreeReaderValue<double>(*mcReader, "cal_lv_4");
+            mc_cal_lw_4 = new TTreeReaderValue<double>(*mcReader, "cal_lw_4");
+            mc_cal_lu_4 = new TTreeReaderValue<double>(*mcReader, "cal_lu_4");
+            mc_cal_lv_7 = new TTreeReaderValue<double>(*mcReader, "cal_lv_7");
+            mc_cal_lw_7 = new TTreeReaderValue<double>(*mcReader, "cal_lw_7");
+            mc_cal_lu_7 = new TTreeReaderValue<double>(*mcReader, "cal_lu_7");
+        }
+
+        // Create canvas for data and adjust margins
+        TCanvas cData("cData", "Diagonal Cut Data", 1200, 800);
+        cData.Divide(3, 2, 0.03, 0.03);
+        for (int i = 1; i <= 6; ++i) {
+            cData.cd(i);
+            gPad->SetLeftMargin(0.15);
+            gPad->SetRightMargin(0.15);
+            gPad->SetTopMargin(0.1);
+            gPad->SetBottomMargin(0.15);
+        }
+
+        // Arrays for data and MC 2D histograms for each sector (6 sectors)
+        std::vector<TH2D*> histsData(6), histsMC(6);
+        for (int i = 0; i < 6; ++i) {
+            histsData[i] = new TH2D(Form("hData_sector%d", i+1), Form("Sector %d %s Data", i+1, track_type.c_str()),
+                                     100, 4.5, 9, 100, 0, 0.35);
+            histsMC[i] = new TH2D(Form("hMC_sector%d", i+1), Form("Sector %d %s MC", i+1, track_type.c_str()),
+                                  100, 4.5, 9, 100, 0, 0.35);
+        }
+
+        // Fill data 2D histograms
+        for (int i = 0; i < 6e7; i++) {
+            dataReader.Next();
+            double nphe = *cc_nphe_15;
+            int pid = *particle_pid;
+            int sector = *cal_sector;
+            double energy4 = *cal_energy_4;
+            double energy7 = *cal_energy_7;
+            double ec_sf = (energy4 + energy7) / *p;
+
+            double lv1 = *cal_lv_1, lw1 = *cal_lw_1, lu1 = *cal_lu_1;
+            double lv4 = *cal_lv_4, lw4 = *cal_lw_4, lu4 = *cal_lu_4;
+            double lv7 = *cal_lv_7, lw7 = *cal_lw_7, lu7 = *cal_lu_7;
+
+            if (nphe == -9999 || sector == -9999 || energy4 == -9999) continue;
+
+            // Check if the pid is in the provided list (positive or negative pids)
+            if (!is_in(pid, pids)) continue;
+
+            // Apply cuts
+            if (*p > 4.5 && nphe >= 2 && energy4 >= 0.07 && sector >= 1 && sector <= 6 &&
+                pcal_fiducial(lv1, lw1, lu1, lv4, lw4, lu4, lv7, lw7, lu7, sector, 1)) {
+                histsData[sector - 1]->Fill(*p, ec_sf);
+            }
+        }
+
+        // Fill MC 2D histograms
+        if (mcReader) {
+            for (int i = 0; i < 6e7; i++) {
+                mcReader->Next();
+                double nphe = **mc_cc_nphe_15;
+                int pid = **mc_particle_pid;
+                int sector = **mc_cal_sector;
+                double energy4 = **mc_cal_energy_4;
+                double energy7 = **mc_cal_energy_7;
+                double ec_sf = (energy4 + energy7) / **mc_p;
+
+                double lv1 = **mc_cal_lv_1, lw1 = **mc_cal_lw_1, lu1 = **mc_cal_lu_1;
+                double lv4 = **mc_cal_lv_4, lw4 = **mc_cal_lw_4, lu4 = **mc_cal_lu_4;
+                double lv7 = **mc_cal_lv_7, lw7 = **mc_cal_lw_7, lu7 = **mc_cal_lu_7;
+
+                if (nphe == -9999 || sector == -9999 || energy4 == -9999) continue;
+
+                // Check if the pid is in the provided list (positive or negative pids)
+                if (!is_in(pid, pids)) continue;
+
+                // Apply cuts
+                if (**mc_p > 4.5 && nphe >= 2 && energy4 >= 0.07 && sector >= 1 && sector <= 6 &&
+                    pcal_fiducial(lv1, lw1, lu1, lv4, lw4, lu4, lv7, lw7, lu7, sector, 1)) {
+                    histsMC[sector - 1]->Fill(**mc_p, ec_sf);
+                }
+            }
+        }
+
+        // Draw 2D histograms for data
+        for (int i = 0; i < 6; ++i) {
+            cData.cd(i + 1);  // Move to the corresponding pad
+            histsData[i]->GetXaxis()->SetTitle("Momentum (GeV)");
+            histsData[i]->GetYaxis()->SetTitle("E_{ECin} + E_{ECout} / p");
+            histsData[i]->GetXaxis()->SetRangeUser(4.5, 9.0);
+            histsData[i]->GetYaxis()->SetRangeUser(0.0, 0.35);
+            histsData[i]->Draw("COLZ");
+
+            // Draw horizontal line at (E_{ECin} + E_{ECout}) / p = 0.2
+            TLine* line = new TLine(4.5, 0.2, 9.0, 0.2);
+            line->SetLineColor(kRed);
+            line->SetLineWidth(2);
+            line->Draw("SAME");
+
+            // Add red text for E_{ECin} + E_{ECout} > 0.2
+            TLatex latex;
+            latex.SetTextColor(kRed);
+            latex.DrawLatex(5.5, 0.18, "E_{ECin} + E_{ECout} > 0.2");
+        }
+
+        // Declare cMC outside the block to ensure it's accessible for saving the plot later
+        TCanvas* cMC = nullptr;
+
+        // Draw 2D histograms for MC (if available)
+        if (mcReader) {
+            cMC = new TCanvas("cMC", "Diagonal Cut MC", 1200, 800);
+            cMC->Divide(3, 2, 0.03, 0.03);
+            for (int i = 1; i <= 6; ++i) {
+                cMC->cd(i);
+                gPad->SetLeftMargin(0.15);
+                gPad->SetRightMargin(0.15);
+                gPad->SetTopMargin(0.1);
+                gPad->SetBottomMargin(0.15);
+            }
+
+            for (int i = 0; i < 6; ++i) {
+                cMC->cd(i + 1);
+                histsMC[i]->GetXaxis()->SetTitle("Momentum (GeV)");
+                histsMC[i]->GetYaxis()->SetTitle("E_{ECin} + E_{ECout} / p");
+                histsMC[i]->GetXaxis()->SetRangeUser(4.5, 9.0);
+                histsMC[i]->GetYaxis()->SetRangeUser(0.0, 0.35);
+                histsMC[i]->Draw("COLZ");
+
+                // Draw horizontal line at (E_{ECin} + E_{ECout}) / p = 0.2
+                               TLine* line = new TLine(4.5, 0.2, 9.0, 0.2);
+                line->SetLineColor(kRed);
+                line->SetLineWidth(2);
+                line->Draw("SAME");
+
+                // Add red text for E_{ECin} + E_{ECout} > 0.2
+                TLatex latex;
+                latex.SetTextColor(kRed);
+                latex.DrawLatex(5.5, 0.18, "E_{ECin} + E_{ECout} > 0.2");
+            }
+        }
+
+        // Save the plots
+        cData.SaveAs(("output/calibration/cal/pid/diagonal_cut_" + plot_name + "_data.png").c_str());
+        if (mcReader && cMC) {
+            cMC->SaveAs(("output/calibration/cal/pid/diagonal_cut_" + plot_name + "_mc.png").c_str());
+        }
+
+        // Clean up
+        for (int i = 0; i < 6; ++i) {
+            delete histsData[i];
+            if (mcReader) delete histsMC[i];
+        }
+    };
+
+    // Create plots for positive and negative tracks
+    create_diagonal_cut_plots("positive", positive_pids, "Positive");
+    create_diagonal_cut_plots("negative", negative_pids, "Negative");
+}
+
 bool forward_tagger_fiducial(double ft_x, double ft_y) {
     // Compute the radius from the origin
     double radius = sqrt(ft_x * ft_x + ft_y * ft_y);
@@ -8039,7 +8261,11 @@ int main(int argc, char** argv) {
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
 
-    plot_sampling_fraction(dataReader, mcReader);
+    // plot_sampling_fraction(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+
+    plot_diagonal_cut(dataReader, mcReader);
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
 
