@@ -731,9 +731,12 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
             cData.cd(i);
             gPad->SetLeftMargin(0.15);  // Increase left margin
             gPad->SetRightMargin(0.1);  // Increase right margin
-            gPad->SetTopMargin(0.05);   // Increase top margin
+            gPad->SetTopMargin(0.1);   // Increase top margin
             gPad->SetBottomMargin(0.15);  // Increase bottom margin
         }
+        // Apply title offset to push the title up further from the plot
+        histsData[i]->GetYaxis()->SetTitleOffset(1.3); // Increase title offset to move the title up
+        histsData[i]->GetXaxis()->SetTitleOffset(1.2); // For the x-axis title, if needed
 
         // Arrays for data and MC 2D histograms for each sector (6 sectors)
         std::vector<TH2D*> histsData(6), histsMC(6);
@@ -809,8 +812,8 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
             histsData[i]->GetYaxis()->SetRangeUser(0.0, 0.35);
             histsData[i]->Draw("COLZ");
 
-            // Draw horizontal line at sampling fraction = 0.2
-            TLine* line = new TLine(2.0, 0.2, 9.0, 0.2);
+            // Draw horizontal line at sampling fraction = 0.19
+            TLine* line = new TLine(2.0, 0.19, 9.0, 0.19);
             line->SetLineColor(kRed);
             line->SetLineWidth(2);
             line->Draw("SAME");
@@ -833,7 +836,7 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
                 cMC->cd(i);
                 gPad->SetLeftMargin(0.15);  // Increase left margin
                 gPad->SetRightMargin(0.1);  // Increase right margin
-                gPad->SetTopMargin(0.05);   // Increase top margin
+                gPad->SetTopMargin(0.1);   // Increase top margin
                 gPad->SetBottomMargin(0.15);  // Increase bottom margin
             }
 
