@@ -3981,10 +3981,10 @@ bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7,
     return true;
 }
 
-void plot_chi2pid_fd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     int nBins = 100;
-    double chi2pidMin = -10;
-    double chi2pidMax = 10;
+    double chi2pidMin = -5;
+    double chi2pidMax = 5;
     double pMin = 0;
     double pMax = 8 ;  // Updated maximum momentum value
     double betaMax = 1.4;  // Updated maximum beta value
@@ -4006,18 +4006,17 @@ void plot_chi2pid_fd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     TTreeReaderValue<double> particle_beta(dataReader, "particle_beta");  // Beta variable
     TTreeReaderValue<int> track_sector_5(dataReader, "track_sector_5");
     TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
-    TTreeReaderValue<double> edge_6(dataReader, "traj_edge_6");
-    TTreeReaderValue<double> edge_18(dataReader, "traj_edge_18");
-    TTreeReaderValue<double> edge_36(dataReader, "traj_edge_36");
 
     TTreeReaderValue<double>* mc_particle_chi2pid = nullptr;
     TTreeReaderValue<double>* mc_particle_p = nullptr;
     TTreeReaderValue<double>* mc_particle_beta = nullptr;  // MC Beta variable
     TTreeReaderValue<int>* mc_track_sector_5 = nullptr;
     TTreeReaderValue<int>* mc_particle_pid = nullptr;
-    TTreeReaderValue<double>* mc_edge_6 = nullptr;
-    TTreeReaderValue<double>* mc_edge_18 = nullptr;
-    TTreeReaderValue<double>* mc_edge_36 = nullptr;
+    TTreeReaderValue<double>* mc_edge_1 = nullptr;
+    TTreeReaderValue<double>* mc_edge_3 = nullptr;
+    TTreeReaderValue<double>* mc_edge_5 = nullptr;
+    TTreeReaderValue<double>* mc_edge_7 = nullptr;
+    TTreeReaderValue<double>* mc_edge_12 = nullptr;
 
     if (mcReader) {
         mc_particle_chi2pid = new TTreeReaderValue<double>(*mcReader, "particle_chi2pid");
@@ -4025,9 +4024,11 @@ void plot_chi2pid_fd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         mc_particle_beta = new TTreeReaderValue<double>(*mcReader, "particle_beta");
         mc_track_sector_5 = new TTreeReaderValue<int>(*mcReader, "track_sector_5");
         mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
-        mc_edge_6 = new TTreeReaderValue<double>(*mcReader, "traj_edge_6");
-        mc_edge_18 = new TTreeReaderValue<double>(*mcReader, "traj_edge_18");
-        mc_edge_36 = new TTreeReaderValue<double>(*mcReader, "traj_edge_36");
+        mc_edge_1 = new TTreeReaderValue<double>(*mcReader, "traj_edge_1");
+        mc_edge_3 = new TTreeReaderValue<double>(*mcReader, "traj_edge_3");
+        mc_edge_5 = new TTreeReaderValue<double>(*mcReader, "traj_edge_5");
+        mc_edge_7 = new TTreeReaderValue<double>(*mcReader, "traj_edge_7");
+        mc_edge_12 = new TTreeReaderValue<double>(*mcReader, "traj_edge_12");
     }
 
     // 1D Histograms canvas
@@ -4152,7 +4153,8 @@ void plot_chi2pid_fd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Fill histograms for data
     // while (dataReader.Next()) {
     for (int m=0; m<6e7; m++) {
-        if (*track_sector_5 != -9999 && dc_fiducial(*edge_6, *edge_18, *edge_36, 2212)) {  // FD check
+        dataReader.Next();
+        if (*track_sector_5 != -9999) {  // FD check
             for (size_t i = 0; i < particle_types.size(); ++i) {
                 if (*particle_pid == std::get<0>(particle_types[i])) {
                     h_data[i]->Fill(*particle_chi2pid);
@@ -4179,11 +4181,11 @@ void plot_chi2pid_fd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     }
 
     // Fill histograms for MC (if applicable)
-    if (mcReader) { 
+    if (mcReader) {
         // while (mcReader->Next()) {
         for (int m=0; m<6e7; m++) {
             mcReader->Next();
-            if (**mc_track_sector_5 != -9999 && dc_fiducial(**mc_edge_6, **mc_edge_18, **mc_edge_36, 2212)) {  // FD check
+            if (**mc_track_sector_5 != -9999) {  // FD check
                 for (size_t i = 0; i < particle_types.size(); ++i) {
                     if (**mc_particle_pid == std::get<0>(particle_types[i])) {
                         h_mc[i]->Fill(**mc_particle_chi2pid);
@@ -4232,76 +4234,68 @@ void plot_chi2pid_fd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     for (size_t bin = 0; bin < pBins.size() - 1; ++bin) {
         double max_y_bin = 0;
 
-        h_data_beta_bins_pos[bin]->Scale(1.0 / h_data_beta_bins_pos[bin]->Integral());
-        h_data_beta_bins_neg[bin]->Scale(1.0 / h_data_beta_bins_neg[bin]->Integral());
+        // h_data_beta_bins_pos[bin]->Scale(1.0 / h_data_beta_bins_pos[bin]->Integral());
+        // h_data_beta_bins_neg[bin]->Scale(1.0 / h_data_beta_bins_neg[bin]->Integral());
 
-        if (h_data_beta_bins_pos[bin]->GetMaximum() > max_y_bin) max_y_bin = h_data_beta_bins_pos[bin]->GetMaximum();
-        if (h_data_beta_bins_neg[bin]->GetMaximum() > max_y_bin) max_y_bin = h_data_beta_bins_neg[bin]->GetMaximum();
+        // if (h_data_beta_bins_pos[bin]->GetMaximum() > max_y_bin) max_y_bin = h_data_beta_bins_pos[bin]->GetMaximum();
+        // if (h_data_beta_bins_neg[bin]->GetMaximum() > max_y_bin) max_y_bin = h_data_beta_bins_neg[bin]->GetMaximum();
 
         if (mcReader) {
-            h_mc_beta_bins_pos[bin]->Scale(1.0 / h_mc_beta_bins_pos[bin]->Integral());
-            h_mc_beta_bins_neg[bin]->Scale(1.0 / h_mc_beta_bins_neg[bin]->Integral());
+            // h_mc_beta_bins_pos[bin]->Scale(1.0 / h_mc_beta_bins_pos[bin]->Integral());
+            // h_mc_beta_bins_neg[bin]->Scale(1.0 / h_mc_beta_bins_neg[bin]->Integral());
 
             if (h_mc_beta_bins_pos[bin]->GetMaximum() > max_y_bin) max_y_bin = h_mc_beta_bins_pos[bin]->GetMaximum();
             if (h_mc_beta_bins_neg[bin]->GetMaximum() > max_y_bin) max_y_bin = h_mc_beta_bins_neg[bin]->GetMaximum();
         }
 
-        h_data_beta_bins_pos[bin]->SetMaximum(1.2 * max_y_bin);
-        h_data_beta_bins_neg[bin]->SetMaximum(1.2 * max_y_bin);
+        // h_data_beta_bins_pos[bin]->SetMaximum(1.2 * max_y_bin);
+        // h_data_beta_bins_neg[bin]->SetMaximum(1.2 * max_y_bin);
 
-        if (mcReader) {
-            h_mc_beta_bins_pos[bin]->SetMaximum(1.2 * max_y_bin);
-            h_mc_beta_bins_neg[bin]->SetMaximum(1.2 * max_y_bin);
-        }
+        // if (mcReader) {
+        //     h_mc_beta_bins_pos[bin]->SetMaximum(1.2 * max_y_bin);
+        //     h_mc_beta_bins_neg[bin]->SetMaximum(1.2 * max_y_bin);
+        // }
     }
 
     // Draw 1D histograms on the same canvas for each particle type
     for (size_t i = 0; i < particle_types.size(); ++i) {
         c->cd(i + 1);
-        gPad->SetLeftMargin(0.15);  // Add padding to the left
+        gPad->SetLeftMargin(0.15);
 
-        // Fit data histogram to a Gaussian plus a constant
-        TF1* fit_data = new TF1(("fit_data_" + std::to_string(i)).c_str(), "gaus(0)", h_data[i]->GetXaxis()->GetXmin(), h_data[i]->GetXaxis()->GetXmax());
-        h_data[i]->Fit(fit_data, "Q");  // Silent fit
-
-        // Draw data histogram with points and error bars
+        // Ensure proper draw order
         h_data[i]->SetMarkerStyle(20);
         h_data[i]->SetMarkerColor(kBlack);
-        h_data[i]->SetLineColor(kBlack);
-        h_data[i]->Draw("E");
+        h_data[i]->SetMarkerSize(1.2);  // Adjust marker size
+        h_data[i]->Draw("E");  // Draw data first
 
-        // Draw the fitted Gaussian plus constant function for data
-        fit_data->SetLineColor(kBlack);
+        if (mcReader) {
+            h_mc[i]->SetMarkerStyle(20);
+            h_mc[i]->SetMarkerColor(kRed);
+            h_mc[i]->SetMarkerSize(1.2);  // Adjust marker size
+            h_mc[i]->Draw("E SAME");  // Draw MC second
+        }
+
+        // Fitting functions for both data and MC
+        TF1* fit_data = new TF1(("fit_data_" + std::to_string(i)).c_str(), "gaus(0)", h_data[i]->GetXaxis()->GetXmin(), h_data[i]->GetXaxis()->GetXmax());
+        h_data[i]->Fit(fit_data, "Q");  // Silent fit
+        fit_data->SetLineColor(kBlack);  // Black for data fit
         fit_data->Draw("SAME");
 
-        // Fit MC histogram to a Gaussian plus a constant if mcReader is provided
         TF1* fit_mc = nullptr;
         if (mcReader) {
             fit_mc = new TF1(("fit_mc_" + std::to_string(i)).c_str(), "gaus(0)", h_mc[i]->GetXaxis()->GetXmin(), h_mc[i]->GetXaxis()->GetXmax());
             h_mc[i]->Fit(fit_mc, "Q");  // Silent fit
-
-            // Draw MC histogram with points and error bars
-            h_mc[i]->SetMarkerStyle(20);
-            h_mc[i]->SetMarkerColor(kRed);
-            h_mc[i]->SetLineColor(kRed);
-            h_mc[i]->Draw("E SAME");
-
-            // Draw the fitted Gaussian plus constant function for MC
-            fit_mc->SetLineColor(kRed);
+            fit_mc->SetLineColor(kRed);  // Red for MC fit
             fit_mc->Draw("SAME");
         }
 
-        // Create the legend
+        // Legend
         TLegend* legend = new TLegend(0.5, 0.7, 0.9, 0.9);
         legend->AddEntry(h_data[i], Form("Data (#mu = %.2f, #sigma = %.2f)", fit_data->GetParameter(1), fit_data->GetParameter(2)), "lep");
         if (mcReader) {
             legend->AddEntry(h_mc[i], Form("MC (#mu = %.2f, #sigma = %.2f)", fit_mc->GetParameter(1), fit_mc->GetParameter(2)), "lep");
         }
         legend->Draw();
-
-        // Clean up memory
-        delete fit_data;
-        if (mcReader) delete fit_mc;
     }
 
     // Draw the combined beta vs p histograms
@@ -4356,29 +4350,29 @@ void plot_chi2pid_fd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         c_data_beta_bins_pos->cd(bin + 1);
         gPad->SetLeftMargin(0.15);
         h_data_beta_bins_pos[bin]->Draw("HIST");
-        if (mcReader) {
-            h_mc_beta_bins_pos[bin]->Draw("HIST SAME");
-        }
+        // if (mcReader) {
+        //     h_mc_beta_bins_pos[bin]->Draw("HIST SAME");
+        // }
         TLegend* legend_pos = new TLegend(0.7, 0.7, 0.9, 0.9);
         legend_pos->AddEntry(h_data_beta_bins_pos[bin], "Data", "l");
-        if (mcReader) legend_pos->AddEntry(h_mc_beta_bins_pos[bin], "MC", "l");
+        // if (mcReader) legend_pos->AddEntry(h_mc_beta_bins_pos[bin], "MC", "l");
         legend_pos->Draw();
 
         c_data_beta_bins_neg->cd(bin + 1);
         gPad->SetLeftMargin(0.15);
         h_data_beta_bins_neg[bin]->Draw("HIST");
-        if (mcReader) {
-            h_mc_beta_bins_neg[bin]->Draw("HIST SAME");
-        }
+        // if (mcReader) {
+        //     h_mc_beta_bins_neg[bin]->Draw("HIST SAME");
+        // }
         TLegend* legend_neg = new TLegend(0.7, 0.7, 0.9, 0.9);
         legend_neg->AddEntry(h_data_beta_bins_neg[bin], "Data", "l");
-        if (mcReader) legend_neg->AddEntry(h_mc_beta_bins_neg[bin], "MC", "l");
+        // if (mcReader) legend_neg->AddEntry(h_mc_beta_bins_neg[bin], "MC", "l");
         legend_neg->Draw();
     }
 
     // Save the 4x4 canvases
-    c_data_beta_bins_pos->SaveAs("output/calibration/fd_pid/chi2pid/beta_vs_p_binned_pos_fd.png");
-    c_data_beta_bins_neg->SaveAs("output/calibration/fd_pid/chi2pid/beta_vs_p_binned_neg_fd.png");
+    c_data_beta_bins_pos->SaveAs("output/calibration/fd_pid/chi2pid/beta_vs_p_binned_pos_cd.png");
+    c_data_beta_bins_neg->SaveAs("output/calibration/fd_pid/chi2pid/beta_vs_p_binned_neg_cd.png");
 
     // Clean up
     delete c;
@@ -4411,7 +4405,7 @@ void plot_chi2pid_fd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     if (mc_particle_chi2pid) delete mc_particle_chi2pid;
     if (mc_particle_p) delete mc_particle_p;
     if (mc_particle_beta) delete mc_particle_beta;
-    if (mc_track_sector_5) delete mc_track_sector_5;
+    if (mc_track_sector_6) delete mc_track_sector_6;
     if (mc_particle_pid) delete mc_particle_pid;
 }
 
@@ -8335,13 +8329,13 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_cvt_hit_position(dataReader, mcReader);
 
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_chi2pid_fd(dataReader, mcReader);
-
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
-    plot_chi2pid_cd(dataReader, mcReader);
+    plot_chi2pid_fd(dataReader, mcReader);
+
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_chi2pid_cd(dataReader, mcReader);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();

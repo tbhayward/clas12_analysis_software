@@ -177,6 +177,10 @@ public class pid_cuts {
     public boolean charged_hadron_chi2pid_cut(int particle_Index, HipoDataBank rec_Bank, HipoDataBank run_Bank) {
         
         int pid = rec_Bank.getInt("pid", particle_Index);
+        float px = rec_Bank.getFloat("px", particle_Index);
+        float py = rec_Bank.getFloat("py", particle_Index);
+        float pz = rec_Bank.getFloat("pz", particle_Index);
+        double p = Math.sqrt(px * px + py * py + pz * pz);
         float chi2pid = rec_Bank.getFloat("chi2pid", particle_Index);
         
         int runnum = run_Bank.getInt("run", 0);
@@ -186,6 +190,7 @@ public class pid_cuts {
         boolean isCentralDetector = generic_tests.central_detector_cut(particle_Index, rec_Bank);
         
         if (isCentralDetector) {
+            if (pid == 2212 && p >= 5.0) return false;
             if (runnum >= 6616 && runnum <= 6783) {
                 if (pid == 211) return -0.06 - 1.08*3.5 < chi2pid && chi2pid < -0.06 + 1.08*3.5;
                 if (pid == -211) return -0.04 - 1.09*3.5 < chi2pid && chi2pid < -0.04 + 1.09*3.5;
