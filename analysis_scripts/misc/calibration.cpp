@@ -4623,7 +4623,7 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Fill histograms for MC (if applicable)
     if (mcReader) {
         // while (mcReader->Next()) {
-        for (int m=0; m<6e7; m++) {
+        for (int m=0; m<6e6; m++) {
             mcReader->Next();
             if (**mc_track_sector_6 != -9999 && cvt_fiducial(**mc_edge_1, **mc_edge_3, **mc_edge_5, **mc_edge_7, **mc_edge_12)) {  // CD check
                 for (size_t i = 0; i < particle_types.size(); ++i) {
