@@ -590,7 +590,7 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
             }
 
             // Add a vertical dashed line at energy = 0.07 GeV
-            TLine* line = new TLine(0.07, 0, 0.07, histsData[i]->GetMaximum() * 1.1);
+            TLine* line = new TLine(0.07, 0, 0.07, histsData[i]->GetMaximum() * 1.0);
             line->SetLineColor(kBlack);
             line->SetLineStyle(2);  // Dashed line
             line->Draw("SAME");
