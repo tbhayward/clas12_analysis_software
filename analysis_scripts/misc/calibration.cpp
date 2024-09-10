@@ -294,7 +294,7 @@ void plot_ltcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
             while (mcReader->Next()) {
                 double value = **mc_cc_nphe_16;
                 int pid = **mc_particle_pid;
-                if (*mc_p > 2.0 && value != -9999 && is_in(pid, pids)) {
+                if (**mc_p > 2.0 && value != -9999 && is_in(pid, pids)) {
                     int bin = static_cast<int>((value - xMin) / (xMax - xMin) * nBins);
                     if (bin >= 0 && bin < nBins) {
                         mcY[bin]++;
