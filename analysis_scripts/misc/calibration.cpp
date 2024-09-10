@@ -3687,7 +3687,6 @@ void plot_chi2pid_fd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
 
     // Clean up
     delete c;
-    delete c_data_2D;
     delete c_data_pos_neg_beta;
     delete c_data_beta_bins_pos;
     delete c_data_beta_bins_neg;
