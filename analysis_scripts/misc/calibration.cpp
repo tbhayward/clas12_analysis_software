@@ -5588,12 +5588,28 @@ void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         TTreeReaderValue<int>* mc_particle_pid = nullptr;
         TTreeReaderValue<int>* mc_track_sector_5 = nullptr;
         TTreeReaderValue<int>* mc_track_sector_6 = nullptr;
+        TTreeReaderValue<double>* mc_edge_1 = nullptr;
+        TTreeReaderValue<double>* mc_edge_3 = nullptr;
+        TTreeReaderValue<double>* mc_edge_5 = nullptr;
+        TTreeReaderValue<double>* mc_edge_7 = nullptr;
+        TTreeReaderValue<double>* mc_edge_12 = nullptr;
+        TTreeReaderValue<double>* mc_edge_6 = nullptr;
+        TTreeReaderValue<double>* mc_edge_18 = nullptr;
+        TTreeReaderValue<double>* mc_edge_36 = nullptr;
 
         if (mcReader) {
             mc_particle_vz = new TTreeReaderValue<double>(*mcReader, "particle_vz");
             mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
             mc_track_sector_5 = new TTreeReaderValue<int>(*mcReader, "track_sector_5");
             mc_track_sector_6 = new TTreeReaderValue<int>(*mcReader, "track_sector_6");
+            mc_edge_1 = new TTreeReaderValue<int>(*mcReader, "traj_edge_1");
+            mc_edge_3 = new TTreeReaderValue<int>(*mcReader, "traj_edge_3");
+            mc_edge_5 = new TTreeReaderValue<int>(*mcReader, "traj_edge_5");
+            mc_edge_7 = new TTreeReaderValue<int>(*mcReader, "traj_edge_7");
+            mc_edge_12 = new TTreeReaderValue<int>(*mcReader, "traj_edge_12");
+            mc_edge_6 = new TTreeReaderValue<int>(*mcReader, "traj_edge_6");
+            mc_edge_18 = new TTreeReaderValue<int>(*mcReader, "traj_edge_18");
+            mc_edge_36 = new TTreeReaderValue<int>(*mcReader, "traj_edge_36");
         }
 
         // 2x3 canvas setup
@@ -5641,10 +5657,10 @@ void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
                 bool pass_fiducial = false;
                 if (**mc_track_sector_5 != -9999 && is_in(pid, pids)) {
                     // CD track
-                    pass_fiducial = cvt_fiducial(*edge_1, *edge_3, *edge_5, *edge_7, *edge_12);
+                    pass_fiducial = cvt_fiducial(**mc_edge_1, **mc_edge_3, **mc_edge_5, **mc_edge_7, **mc_edge_12);
                 } else if (**mc_track_sector_6 != -9999 && is_in(pid, pids)) {
                     // FD track
-                    pass_fiducial = dc_fiducial(*edge_6, *edge_18, *edge_36, pid);
+                    pass_fiducial = dc_fiducial(**mc_edge_6, **mc_edge_18, **mc_edge_36, pid);
                 }
 
                 if (pass_fiducial && sector >= 1 && sector <= 6) {
