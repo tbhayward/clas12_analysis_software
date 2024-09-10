@@ -186,11 +186,19 @@ public class pid_cuts {
         boolean isCentralDetector = generic_tests.central_detector_cut(particle_Index, rec_Bank);
         
         if (isCentralDetector) {
-            if (pid == 211) return Math.abs(chi2pid) < 3.5*1.23;
-            if (pid == -211) return Math.abs(chi2pid) < 3.5*1.29;
-            if (pid == 321) return Math.abs(chi2pid) < 3.5*1.18;
-            if (pid == -321) return Math.abs(chi2pid) < 3.5*0.78;
-            if (pid == 2212) return Math.abs(chi2pid) < 3.5*1.33;
+            if (runnum >= 6616 && runnum <= 6783) {
+                if (pid == 211) return -0.06 - 1.08*3.5 < chi2pid && chi2pid < -0.06 + 1.08*3.5;
+                if (pid == -211) return -0.04 - 1.09*3.5 < chi2pid && chi2pid < -0.04 + 1.09*3.5;
+                if (pid == 321) return 0.03 - 1.09*3.5 < chi2pid && chi2pid < 0.03 + 1.09*3.5;
+                if (pid == -321) return -0.14 - 1.33*3.5 < chi2pid && chi2pid < -0.14 + 1.33*3.5;
+                if (pid == 2212) return 0.35 - 1.38*3.5 < chi2pid && chi2pid < 0.35 + 1.38*3.5;
+            } else if (runnum == 11) { // MC
+                if (pid == 211) return 0.06 - 1.24*3.5 < chi2pid && chi2pid < 0.06 + 1.24*3.5;
+                if (pid == -211) return -0.11 - 1.28*3.5 < chi2pid && chi2pid < -0.11 + 1.28*3.5;
+                if (pid == 321) return -0.03 - 1.31*3.5 < chi2pid && chi2pid < -0.03 + 1.31*3.5;
+                if (pid == -321) return -0.00 - 0.90*3.5 < chi2pid && chi2pid < -0.00 + 0.90*3.5;
+                if (pid == 2212) return 0.06 - 1.36*3.5 < chi2pid && chi2pid < 0.06 + 1.36*3.5;
+            }
         }
         
         return Math.abs(chi2pid) < 4.0;

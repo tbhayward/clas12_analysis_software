@@ -4769,41 +4769,47 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         c_mc_pos_neg_beta->SaveAs("output/calibration/cvt/chi2pid/mc_beta_vs_p_cd.png");
     }
 
-    // Create 4x4 canvases for beta vs p momentum bin histograms
-    TCanvas* c_data_beta_bins_pos = new TCanvas("c_data_beta_bins_pos", "Beta vs p Binned (Positive Tracks)", 1800, 1800);
-    c_data_beta_bins_pos->Divide(4, 4);
-    TCanvas* c_data_beta_bins_neg = new TCanvas("c_data_beta_bins_neg", "Beta vs p Binned (Negative Tracks)", 1800, 1800);
-    c_data_beta_bins_neg->Divide(4, 4);
-
-    TCanvas* c_mc_beta_bins_pos = nullptr;
-    TCanvas* c_mc_beta_bins_neg = nullptr;
-
-    if (mcReader) {
-        c_mc_beta_bins_pos = new TCanvas("c_mc_beta_bins_pos", "MC Beta vs p Binned (Positive Tracks)", 1800, 1800);
-        c_mc_beta_bins_pos->Divide(4, 4);
-        c_mc_beta_bins_neg = new TCanvas("c_mc_beta_bins_neg", "MC Beta vs p Binned (Negative Tracks)", 1800, 1800);
-        c_mc_beta_bins_neg->Divide(4, 4);
-    }
-
     // Fill 4x4 canvases for beta bins
     for (size_t bin = 0; bin < pBins.size() - 1; ++bin) {
+        // Positive tracks
         c_data_beta_bins_pos->cd(bin + 1);
         gPad->SetLeftMargin(0.15);
-        h_data_beta_bins_pos[bin]->Draw("HIST");
+
+        // Draw data histogram first
+        h_data_beta_bins_pos[bin]->SetLineColor(kBlack);
+        h_data_beta_bins_pos[bin]->SetLineWidth(2);
+        h_data_beta_bins_pos[bin]->Draw("HIST");  // Data histogram
+
+        // Draw MC histogram second (if MC data is present)
         if (mcReader) {
-            h_mc_beta_bins_pos[bin]->Draw("HIST SAME");
+            h_mc_beta_bins_pos[bin]->SetLineColor(kRed);
+            h_mc_beta_bins_pos[bin]->SetLineWidth(2);
+            h_mc_beta_bins_pos[bin]->Draw("HIST SAME");  // MC histogram
         }
+
+        // Add a legend
         TLegend* legend_pos = new TLegend(0.7, 0.7, 0.9, 0.9);
         legend_pos->AddEntry(h_data_beta_bins_pos[bin], "Data", "l");
         if (mcReader) legend_pos->AddEntry(h_mc_beta_bins_pos[bin], "MC", "l");
         legend_pos->Draw();
 
+        // Negative tracks
         c_data_beta_bins_neg->cd(bin + 1);
         gPad->SetLeftMargin(0.15);
-        h_data_beta_bins_neg[bin]->Draw("HIST");
+
+        // Draw data histogram first
+        h_data_beta_bins_neg[bin]->SetLineColor(kBlack);
+        h_data_beta_bins_neg[bin]->SetLineWidth(2);
+        h_data_beta_bins_neg[bin]->Draw("HIST");  // Data histogram
+
+        // Draw MC histogram second (if MC data is present)
         if (mcReader) {
-            h_mc_beta_bins_neg[bin]->Draw("HIST SAME");
+            h_mc_beta_bins_neg[bin]->SetLineColor(kRed);
+            h_mc_beta_bins_neg[bin]->SetLineWidth(2);
+            h_mc_beta_bins_neg[bin]->Draw("HIST SAME");  // MC histogram
         }
+
+        // Add a legend
         TLegend* legend_neg = new TLegend(0.7, 0.7, 0.9, 0.9);
         legend_neg->AddEntry(h_data_beta_bins_neg[bin], "Data", "l");
         if (mcReader) legend_neg->AddEntry(h_mc_beta_bins_neg[bin], "MC", "l");
