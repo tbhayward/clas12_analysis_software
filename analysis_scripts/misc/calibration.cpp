@@ -5625,8 +5625,8 @@ void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
                 histsMC[i] = new TH1D("hMC_CD", ("CD Tracks " + charge_label + " MC").c_str(), 100, -15, 15);
             } else {
                 // FD plot title for each sector
-                histsData[i] = new TH1D(Form("hData_sector%d", i), Form("Sector %d %s Data", i, charge_label.c_str()), 100, -15, 15);
-                histsMC[i] = new TH1D(Form("hMC_sector%d", i), Form("Sector %d %s MC", i, charge_label.c_str()), 100, -15, 15);
+                histsData[i] = new TH1D(Form("hData_sector%d", i), Form("FD Sector %d %s Data", i, charge_label.c_str()), 100, -15, 15);
+                histsMC[i] = new TH1D(Form("hMC_sector%d", i), Form("FD Sector %d %s MC", i, charge_label.c_str()), 100, -15, 15);
             }
         }
 
@@ -5741,7 +5741,7 @@ void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     };
 
     // Create plots for positive and negative tracks with adjustable cuts
-    create_vertex_plots("positive", positive_pids, "Positive", -10, 1.5);  // Example values for now
+    create_vertex_plots("positive", positive_pids, "Positive", -9, 1.5);  // Example values for now
     create_vertex_plots("negative", negative_pids, "Negative", -9, 2);  // Example values for now
 }
 
