@@ -4677,8 +4677,8 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         // h_data_beta_bins_pos[bin]->Scale(1.0 / h_data_beta_bins_pos[bin]->Integral());
         // h_data_beta_bins_neg[bin]->Scale(1.0 / h_data_beta_bins_neg[bin]->Integral());
 
-        if (h_data_beta_bins_pos[bin]->GetMaximum() > max_y_bin) max_y_bin = h_data_beta_bins_pos[bin]->GetMaximum();
-        if (h_data_beta_bins_neg[bin]->GetMaximum() > max_y_bin) max_y_bin = h_data_beta_bins_neg[bin]->GetMaximum();
+        // if (h_data_beta_bins_pos[bin]->GetMaximum() > max_y_bin) max_y_bin = h_data_beta_bins_pos[bin]->GetMaximum();
+        // if (h_data_beta_bins_neg[bin]->GetMaximum() > max_y_bin) max_y_bin = h_data_beta_bins_neg[bin]->GetMaximum();
 
         if (mcReader) {
             // h_mc_beta_bins_pos[bin]->Scale(1.0 / h_mc_beta_bins_pos[bin]->Integral());
@@ -4688,13 +4688,13 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
             if (h_mc_beta_bins_neg[bin]->GetMaximum() > max_y_bin) max_y_bin = h_mc_beta_bins_neg[bin]->GetMaximum();
         }
 
-        h_data_beta_bins_pos[bin]->SetMaximum(1.2 * max_y_bin);
-        h_data_beta_bins_neg[bin]->SetMaximum(1.2 * max_y_bin);
+        // h_data_beta_bins_pos[bin]->SetMaximum(1.2 * max_y_bin);
+        // h_data_beta_bins_neg[bin]->SetMaximum(1.2 * max_y_bin);
 
-        if (mcReader) {
-            h_mc_beta_bins_pos[bin]->SetMaximum(1.2 * max_y_bin);
-            h_mc_beta_bins_neg[bin]->SetMaximum(1.2 * max_y_bin);
-        }
+        // if (mcReader) {
+        //     h_mc_beta_bins_pos[bin]->SetMaximum(1.2 * max_y_bin);
+        //     h_mc_beta_bins_neg[bin]->SetMaximum(1.2 * max_y_bin);
+        // }
     }
 
     // Draw 1D histograms on the same canvas for each particle type
