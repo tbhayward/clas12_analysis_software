@@ -234,13 +234,16 @@ void plot_ltcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         if (mcReader) mcReader->Restart();
 
         // Set up TTreeReaderValues before calling Next()
+        TTreeReaderValue<double> p(dataReader, "p");
         TTreeReaderValue<double> cc_nphe_16(dataReader, "cc_nphe_16");
         TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
 
+        TTreeReaderValue<double>* mc_p = nullptr;
         TTreeReaderValue<double>* mc_cc_nphe_16 = nullptr;
         TTreeReaderValue<int>* mc_particle_pid = nullptr;
 
         if (mcReader) {
+            mc_p = new TTreeReaderValue<double>(*mcReader, "mc_p");
             mc_cc_nphe_16 = new TTreeReaderValue<double>(*mcReader, "cc_nphe_16");
             mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
         }
@@ -266,7 +269,7 @@ void plot_ltcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         while (dataReader.Next()) {
             double value = *cc_nphe_16;
             int pid = *particle_pid;
-            if (value != -9999 && is_in(pid, pids)) {
+            if (*p > 2.0 && value != -9999 && is_in(pid, pids)) {
                 int bin = static_cast<int>((value - xMin) / (xMax - xMin) * nBins);
                 if (bin >= 0 && bin < nBins) {
                     dataY[bin]++;
@@ -291,7 +294,7 @@ void plot_ltcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
             while (mcReader->Next()) {
                 double value = **mc_cc_nphe_16;
                 int pid = **mc_particle_pid;
-                if (value != -9999 && is_in(pid, pids)) {
+                if (*mc_p > 2.0 && value != -9999 && is_in(pid, pids)) {
                     int bin = static_cast<int>((value - xMin) / (xMax - xMin) * nBins);
                     if (bin >= 0 && bin < nBins) {
                         mcY[bin]++;
@@ -7779,10 +7782,10 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    // plot_htcc_nphe(dataReader, mcReader);
+    plot_htcc_nphe(dataReader, mcReader);
     // plot_ltcc_nphe(dataReader, mcReader);
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
 
     plot_pcal_energy(dataReader, mcReader);
     dataReader.Restart();
