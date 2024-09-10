@@ -4006,12 +4006,18 @@ void plot_chi2pid_fd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     TTreeReaderValue<double> particle_beta(dataReader, "particle_beta");  // Beta variable
     TTreeReaderValue<int> track_sector_5(dataReader, "track_sector_5");
     TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+    TTreeReaderValue<double> edge_6(dataReader, "traj_edge_6");
+    TTreeReaderValue<double> edge_18(dataReader, "traj_edge_18");
+    TTreeReaderValue<double> edge_36(dataReader, "traj_edge_36");
 
     TTreeReaderValue<double>* mc_particle_chi2pid = nullptr;
     TTreeReaderValue<double>* mc_particle_p = nullptr;
     TTreeReaderValue<double>* mc_particle_beta = nullptr;  // MC Beta variable
     TTreeReaderValue<int>* mc_track_sector_5 = nullptr;
     TTreeReaderValue<int>* mc_particle_pid = nullptr;
+    TTreeReaderValue<double>* mc_edge_6 = nullptr;
+    TTreeReaderValue<double>* mc_edge_18 = nullptr;
+    TTreeReaderValue<double>* mc_edge_36 = nullptr;
 
     if (mcReader) {
         mc_particle_chi2pid = new TTreeReaderValue<double>(*mcReader, "particle_chi2pid");
@@ -4019,6 +4025,9 @@ void plot_chi2pid_fd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         mc_particle_beta = new TTreeReaderValue<double>(*mcReader, "particle_beta");
         mc_track_sector_5 = new TTreeReaderValue<int>(*mcReader, "track_sector_5");
         mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+        mc_edge_6 = new TTreeReaderValue<double>(*mcReader, "traj_edge_6");
+        mc_edge_18 = new TTreeReaderValue<double>(*mcReader, "traj_edge_18");
+        mc_edge_36 = new TTreeReaderValue<double>(*mcReader, "traj_edge_36");
     }
 
     // 1D Histograms canvas
@@ -4141,8 +4150,9 @@ void plot_chi2pid_fd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     }
 
     // Fill histograms for data
-    while (dataReader.Next()) {
-        if (*track_sector_5 != -9999) {  // CD check
+    // while (dataReader.Next()) {
+    for (int m=0; m<6e7; m++) {
+        if (*track_sector_5 != -9999 && dc_fiducial(*edge_1, *edge_18, *edge_36, 2212)) {  // FD check
             for (size_t i = 0; i < particle_types.size(); ++i) {
                 if (*particle_pid == std::get<0>(particle_types[i])) {
                     h_data[i]->Fill(*particle_chi2pid);
@@ -4169,9 +4179,11 @@ void plot_chi2pid_fd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     }
 
     // Fill histograms for MC (if applicable)
-    if (mcReader) {
-        while (mcReader->Next()) {
-            if (**mc_track_sector_5 != -9999) {  // CD check
+    if (mcReader) { 
+        // while (mcReader->Next()) {
+        for (int m=0; m<6e7; m++) {
+            mcReader->Next();
+            if (**mc_track_sector_5 != -9999 && dc_fiducial(**mc_edge_1, **mc_edge_18, **mc_edge_36, 2212)) {  // FD check
                 for (size_t i = 0; i < particle_types.size(); ++i) {
                     if (**mc_particle_pid == std::get<0>(particle_types[i])) {
                         h_mc[i]->Fill(**mc_particle_chi2pid);
@@ -4578,7 +4590,10 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     }
 
     // Fill histograms for data
-    while (dataReader.Next()) {
+    // while (dataReader.Next()) {
+    for (int m=0; m<6e7; m++) {
+        dataReader.Next();
+        std::cout << *edge_1 << " " << *edge_3 << " " << *edge_5 << " " << *edge_7 << " " << *edge_12 << " " << cvt_fiducial(*edge_1, *edge_3, *edge_5, *edge_7, *edge_12) << std::endl;
         if (*track_sector_6 != -9999 && cvt_fiducial(*edge_1, *edge_3, *edge_5, *edge_7, *edge_12)) {  // CD check
             for (size_t i = 0; i < particle_types.size(); ++i) {
                 if (*particle_pid == std::get<0>(particle_types[i])) {
@@ -4607,7 +4622,9 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
 
     // Fill histograms for MC (if applicable)
     if (mcReader) {
-        while (mcReader->Next()) {
+        // while (mcReader->Next()) {
+        for (int m=0; m<6e7; m++) {
+            mcReader->Next();
             if (**mc_track_sector_6 != -9999 && cvt_fiducial(**mc_edge_1, **mc_edge_3, **mc_edge_5, **mc_edge_7, **mc_edge_12)) {  // CD check
                 for (size_t i = 0; i < particle_types.size(); ++i) {
                     if (**mc_particle_pid == std::get<0>(particle_types[i])) {
@@ -8287,9 +8304,9 @@ int main(int argc, char** argv) {
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
 
-    plot_diagonal_cut(dataReader, mcReader);
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
+    // plot_diagonal_cut(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
 
     // plot_ft_xy_energy(dataReader, mcReader);
     // dataReader.Restart();
