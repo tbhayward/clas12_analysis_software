@@ -4184,7 +4184,7 @@ void plot_chi2pid_fd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         // while (mcReader->Next()) {
         for (int m=0; m<6e7; m++) {
             mcReader->Next();
-            if (**mc_track_sector_6 != -9999 && dc_fiducial(*mc_edge_6, *mc_edge_18, *mc_edge_36, 2212)) {  // FD check
+            if (**mc_track_sector_6 != -9999 && dc_fiducial(**mc_edge_6, **mc_edge_18, **mc_edge_36, 2212)) {  // FD check
                 for (size_t i = 0; i < particle_types.size(); ++i) {
                     if (**mc_particle_pid == std::get<0>(particle_types[i])) {
                         h_mc[i]->Fill(**mc_particle_chi2pid);
@@ -4404,7 +4404,7 @@ void plot_chi2pid_fd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     if (mc_particle_chi2pid) delete mc_particle_chi2pid;
     if (mc_particle_p) delete mc_particle_p;
     if (mc_particle_beta) delete mc_particle_beta;
-    if (mc_track_sector_5) delete mc_track_sector_5;
+    if (mc_track_sector_6) delete mc_track_sector_6;
     if (mc_particle_pid) delete mc_particle_pid;
 }
 
