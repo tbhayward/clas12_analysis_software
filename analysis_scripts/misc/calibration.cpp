@@ -4442,18 +4442,18 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
 
     // Initialize MC readers only if mcReader is provided
-    TTreeReaderValue<double> mc_particle_chi2pid(nullptr);
-    TTreeReaderValue<double> mc_particle_p(nullptr);
-    TTreeReaderValue<double> mc_particle_beta(nullptr);
-    TTreeReaderValue<int> mc_track_sector_6(nullptr);
-    TTreeReaderValue<int> mc_particle_pid(nullptr);
+    TTreeReaderValue<double>* mc_particle_chi2pid = nullptr;
+    TTreeReaderValue<double>* mc_particle_p = nullptr;
+    TTreeReaderValue<double>* mc_particle_beta = nullptr;
+    TTreeReaderValue<int>* mc_track_sector_6 = nullptr;
+    TTreeReaderValue<int>* mc_particle_pid = nullptr;
 
     if (mcReader) {
-        mc_particle_chi2pid = TTreeReaderValue<double>(*mcReader, "particle_chi2pid");
-        mc_particle_p = TTreeReaderValue<double>(*mcReader, "p");
-        mc_particle_beta = TTreeReaderValue<double>(*mcReader, "particle_beta");
-        mc_track_sector_6 = TTreeReaderValue<int>(*mcReader, "track_sector_6");
-        mc_particle_pid = TTreeReaderValue<int>(*mcReader, "particle_pid");
+        mc_particle_chi2pid = new TTreeReaderValue<double>(*mcReader, "particle_chi2pid");
+        mc_particle_p = new TTreeReaderValue<double>(*mcReader, "p");
+        mc_particle_beta = new TTreeReaderValue<double>(*mcReader, "particle_beta");
+        mc_track_sector_6 = new TTreeReaderValue<int>(*mcReader, "track_sector_6");
+        mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
     }
 
     // 1D Histograms canvas
@@ -4537,14 +4537,14 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // Fill histograms for MC (if applicable)
     if (mcReader) {
         while (mcReader->Next()) {
-            if (**mc_track_sector_6 != -9999) {
+            if (*(*mc_track_sector_6) != -9999) {
                 for (size_t i = 0; i < particle_types.size(); ++i) {
-                    if (**mc_particle_pid == std::get<0>(particle_types[i])) {
-                        h_mc[i]->Fill(**mc_particle_chi2pid);
-                        if (**mc_particle_pid == 211 || **mc_particle_pid == 321 || **mc_particle_pid == 2212) {
-                            h_mc_beta_vs_p_pos->Fill(**mc_particle_p, **mc_particle_beta);
-                        } else if (**mc_particle_pid == -211 || **mc_particle_pid == -321 || **mc_particle_pid == -2212) {
-                            h_mc_beta_vs_p_neg->Fill(**mc_particle_p, **mc_particle_beta);
+                    if (*(*mc_particle_pid) == std::get<0>(particle_types[i])) {
+                        h_mc[i]->Fill(*(*mc_particle_chi2pid));
+                        if (*(*mc_particle_pid) == 211 || *(*mc_particle_pid) == 321 || *(*mc_particle_pid) == 2212) {
+                            h_mc_beta_vs_p_pos->Fill(*(*mc_particle_p), *(*mc_particle_beta));
+                        } else if (*(*mc_particle_pid) == -211 || *(*mc_particle_pid) == -321 || *(*mc_particle_pid) == -2212) {
+                            h_mc_beta_vs_p_neg->Fill(*(*mc_particle_p), *(*mc_particle_beta));
                         }
                     }
                 }
@@ -4588,6 +4588,12 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         delete h_data[i];
         if (mcReader) delete h_mc[i];
     }
+
+    if (mc_particle_chi2pid) delete mc_particle_chi2pid;
+    if (mc_particle_p) delete mc_particle_p;
+    if (mc_particle_beta) delete mc_particle_beta;
+    if (mc_track_sector_6) delete mc_track_sector_6;
+    if (mc_particle_pid) delete mc_particle_pid;
 }
 
 
