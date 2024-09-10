@@ -5561,8 +5561,8 @@ void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         return std::find(pid_list.begin(), pid_list.end(), pid) != pid_list.end();
     };
 
-    // Helper function to plot particle_vz for each sector
-    auto create_vertex_plots = [&](const std::string& plot_name, const std::vector<int>& pids, const std::string& charge_label) {
+    // Helper function to plot particle_vz for each sector with adjustable cuts and axis range
+    auto create_vertex_plots = [&](const std::string& plot_name, const std::vector<int>& pids, const std::string& charge_label, double min_cut, double max_cut) {
         // Restart the TTreeReader to process the data from the beginning
         dataReader.Restart();
         if (mcReader) mcReader->Restart();
@@ -5603,14 +5603,13 @@ void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         // Arrays for data and MC histograms of vertex_z for each sector (6 sectors)
         std::vector<TH1D*> histsData(6), histsMC(6);
         for (int i = 0; i < 6; ++i) {
-            histsData[i] = new TH1D(Form("hData_sector%d", i + 1), Form("Sector %d Data", i + 1), 100, -30, 30);
-            histsMC[i] = new TH1D(Form("hMC_sector%d", i + 1), Form("Sector %d MC", i + 1), 100, -30, 30);
+            histsData[i] = new TH1D(Form("hData_sector%d", i + 1), Form("Sector %d %s Data", i + 1, charge_label.c_str()), 100, -15, 15);
+            histsMC[i] = new TH1D(Form("hMC_sector%d", i + 1), Form("Sector %d %s MC", i + 1, charge_label.c_str()), 100, -15, 15);
         }
 
         // Fill data histograms
-        // while (dataReader.Next()) {
         for (int m = 0; m < 6e7; m++) {
-            dataReader.Next();
+            if (!dataReader.Next()) break;
             int pid = *particle_pid;
             double vz = *particle_vz;
             int sector = (*track_sector_5 != -9999) ? *track_sector_5 : *track_sector_6;  // Check for FD or CD
@@ -5632,9 +5631,8 @@ void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
 
         // Fill MC histograms
         if (mcReader) {
-            // while (mcReader->Next()) {
             for (int m = 0; m < 6e7; m++) {
-                mcReader->Next();
+                if (!mcReader->Next()) break;
                 int pid = **mc_particle_pid;
                 double vz = **mc_particle_vz;
                 int sector = (**mc_track_sector_5 != -9999) ? **mc_track_sector_5 : **mc_track_sector_6;
@@ -5669,6 +5667,8 @@ void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         // Draw the histograms for each sector on the canvas
         for (int i = 0; i < 6; ++i) {
             c.cd(i + 1);  // Move to the corresponding pad
+            gPad->SetLeftMargin(0.15);  // Add left margin to avoid label clipping
+            gPad->SetRightMargin(0.05);  // Add right margin to avoid label clipping
             histsData[i]->SetLineColor(kBlue);
             histsData[i]->SetMarkerStyle(20);
             histsData[i]->SetMarkerColor(kBlue);
@@ -5688,12 +5688,12 @@ void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
             }
 
             // Draw vertical dashed lines for cuts
-            TLine* lineLeft = new TLine(-10, 0, -10, 1.25 * maxDataY);
+            TLine* lineLeft = new TLine(min_cut, 0, min_cut, 1.25 * maxDataY);
             lineLeft->SetLineColor(kBlack);
             lineLeft->SetLineStyle(2);  // Dashed line
             lineLeft->Draw("SAME");
 
-            TLine* lineRight = new TLine(1, 0, 1, 1.25 * maxDataY);
+            TLine* lineRight = new TLine(max_cut, 0, max_cut, 1.25 * maxDataY);
             lineRight->SetLineColor(kBlack);
             lineRight->SetLineStyle(2);  // Dashed line
             lineRight->Draw("SAME");
@@ -5717,9 +5717,9 @@ void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         }
     };
 
-    // Create plots for positive and negative tracks
-    create_vertex_plots("positive", positive_pids, "Positive");
-    create_vertex_plots("negative", negative_pids, "Negative");
+    // Create plots for positive and negative tracks with adjustable cuts
+    create_vertex_plots("positive", positive_pids, "Positive", -9.5, 1.5);  // Example values for now
+    create_vertex_plots("negative", negative_pids, "Negative", -10.5, 1);  // Example values for now
 }
 
 // Helper function to fill and save histograms for each particle type
