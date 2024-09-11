@@ -1148,7 +1148,8 @@ bool forward_tagger_fiducial(double ft_x, double ft_y) {
     return true;
 }
 
-void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr, 
+    const std::string& dataset) {
     gStyle->SetOptStat(0);
 
     // Declare and initialize TTreeReaderValue objects before any Next() or Restart() calls
@@ -1183,14 +1184,14 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
     double yMax = 20;
 
     // Create histograms for data and MC
-    TH2D* h_data_sum = new TH2D("h_data_sum", "Data FT Energy Sum", nBins, xMin, xMax, nBins, yMin, yMax);
-    TH2D* h_data_count = new TH2D("h_data_count", "Data FT Count", nBins, xMin, xMax, nBins, yMin, yMax);
+    TH2D* h_data_sum = new TH2D("h_data_sum", "Data FT Energy Sum, "+dataset, nBins, xMin, xMax, nBins, yMin, yMax);
+    TH2D* h_data_count = new TH2D("h_data_count", "Data FT Count, "+dataset, nBins, xMin, xMax, nBins, yMin, yMax);
 
     TH2D* h_mc_sum = nullptr;
     TH2D* h_mc_count = nullptr;
     if (mcReader) {
-        h_mc_sum = new TH2D("h_mc_sum", "MC FT Energy Sum", nBins, xMin, xMax, nBins, yMin, yMax);
-        h_mc_count = new TH2D("h_mc_count", "MC FT Count", nBins, xMin, xMax, nBins, yMin, yMax);
+        h_mc_sum = new TH2D("h_mc_sum", "MC FT Energy Sum, "+dataset, nBins, xMin, xMax, nBins, yMin, yMax);
+        h_mc_count = new TH2D("h_mc_count", "MC FT Count, "+dataset, nBins, xMin, xMax, nBins, yMin, yMax);
     }
 
     // Fill the data histograms, applying the cuts
@@ -1212,7 +1213,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
     }
 
     // Compute the mean energy for each bin (for data)
-    TH2D* h_data_mean = new TH2D("h_data_mean", "Data FT Energy Mean", nBins, xMin, xMax, nBins, yMin, yMax);
+    TH2D* h_data_mean = new TH2D("h_data_mean", "Data FT Energy Mean, "+dataset, nBins, xMin, xMax, nBins, yMin, yMax);
     h_data_mean->GetXaxis()->SetTitle("x_{FT}");
     h_data_mean->GetYaxis()->SetTitle("y_{FT}");
 
@@ -1228,7 +1229,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
     // Compute the mean energy for each bin (for MC)
     TH2D* h_mc_mean = nullptr;
     if (mcReader) {
-        h_mc_mean = new TH2D("h_mc_mean", "MC FT Energy Mean", nBins, xMin, xMax, nBins, yMin, yMax);
+        h_mc_mean = new TH2D("h_mc_mean", "MC FT Energy Mean, "+dataset, nBins, xMin, xMax, nBins, yMin, yMax);
         h_mc_mean->GetXaxis()->SetTitle("x_{FT}");
         h_mc_mean->GetYaxis()->SetTitle("y_{FT}");
 
@@ -1298,7 +1299,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
     data_legend->AddEntry(h_data_mean, Form("Mean = %.2f GeV", global_mean), "");
     data_legend->AddEntry(h_data_mean, Form("Std Dev = %.2f GeV", global_std_dev), "");
     data_legend->Draw();
-    c_data.SaveAs("output/calibration/ft/data_ft_xy_energy.png");
+    c_data.SaveAs("output/calibration/ft/data_ft_xy_energy_"+dataset+".png");
 
     // Draw and save the MC mean energy plot
     TLegend* mc_legend = nullptr;
@@ -1309,7 +1310,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
         mc_legend->AddEntry(h_mc_mean, Form("Mean = %.2f GeV", mc_global_mean), "");
         mc_legend->AddEntry(h_mc_mean, Form("Std Dev = %.2f GeV", mc_global_std_dev), "");
         mc_legend->Draw();
-        c_mc.SaveAs("output/calibration/ft/mc_ft_xy_energy.png");
+        c_mc.SaveAs("output/calibration/ft/mc_ft_xy_energy_"+dataset+".png");
     }
 
     // Create and save masked plot for Data
@@ -1357,7 +1358,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
 	}
 
     data_legend->Draw();
-    c_data_masked.SaveAs("output/calibration/ft/data_ft_xy_energy_masked.png");
+    c_data_masked.SaveAs("output/calibration/ft/data_ft_xy_energy_masked_"+dataset+".png");
 
     // Create and save masked plot for MC
 	if (mcReader) {
@@ -1396,7 +1397,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
 	    }
 
 	    mc_legend->Draw();
-	    c_mc_masked.SaveAs("output/calibration/ft/mc_ft_xy_energy_masked.png");
+	    c_mc_masked.SaveAs("output/calibration/ft/mc_ft_xy_energy_masked_"+dataset+".png");
 	    delete h_mc_masked;
 	}
 
@@ -1413,7 +1414,8 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
     }
 }
 
-void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr, 
+    const std::string& dataset) {
 
     // Set up TTreeReaderValues for ft_x, ft_y, and particle_pid
     TTreeReaderValue<double> ft_x(dataReader, "ft_x");
@@ -1442,25 +1444,25 @@ void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
     double yMax = 20;
 
     // Create histograms for data and MC
-    TH2D* h_data = new TH2D("h_data", "data FT hit position", nBins, xMin, xMax, nBins, yMin, yMax);
+    TH2D* h_data = new TH2D("h_data", "data FT hit position, "+dataset, nBins, xMin, xMax, nBins, yMin, yMax);
     h_data->GetXaxis()->SetTitle("x_{FT}");
     h_data->GetYaxis()->SetTitle("y_{FT}");
 
     TH2D* h_mc = nullptr;
     if (mcReader) {
-        h_mc = new TH2D("h_mc", "mc FT hit position", nBins, xMin, xMax, nBins, yMin, yMax);
+        h_mc = new TH2D("h_mc", "mc FT hit position, "+dataset, nBins, xMin, xMax, nBins, yMin, yMax);
         h_mc->GetXaxis()->SetTitle("x_{FT}");
         h_mc->GetYaxis()->SetTitle("y_{FT}");
     }
 
     // Create histograms for data and MC with fiducial cuts applied
-    TH2D* h_data_cut = new TH2D("h_data_cut", "data FT hit position (cut)", nBins, xMin, xMax, nBins, yMin, yMax);
+    TH2D* h_data_cut = new TH2D("h_data_cut", "data FT hit position (cut), "+dataset, nBins, xMin, xMax, nBins, yMin, yMax);
     h_data_cut->GetXaxis()->SetTitle("x_{FT}");
     h_data_cut->GetYaxis()->SetTitle("y_{FT}");
 
     TH2D* h_mc_cut = nullptr;
     if (mcReader) {
-        h_mc_cut = new TH2D("h_mc_cut", "mc FT hit position (cut)", nBins, xMin, xMax, nBins, yMin, yMax);
+        h_mc_cut = new TH2D("h_mc_cut", "mc FT hit position (cut), "+dataset, nBins, xMin, xMax, nBins, yMin, yMax);
         h_mc_cut->GetXaxis()->SetTitle("x_{FT}");
         h_mc_cut->GetYaxis()->SetTitle("y_{FT}");
     }
@@ -1490,25 +1492,25 @@ void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
     // Draw and save the original data plot
     TCanvas c_data("c_data", "c_data", 800, 600);
     h_data->Draw("COLZ");
-    c_data.SaveAs("output/calibration/ft/data_ft_hit_position.png");
+    c_data.SaveAs("output/calibration/ft/data_ft_hit_position_"+dataset+".png");
 
     // Draw and save the original MC plot if available
     if (h_mc) {
         TCanvas c_mc("c_mc", "c_mc", 800, 600);
         h_mc->Draw("COLZ");
-        c_mc.SaveAs("output/calibration/ft/mc_ft_hit_position.png");
+        c_mc.SaveAs("output/calibration/ft/mc_ft_hit_position_"+dataset+".png");
     }
 
     // Draw and save the cut data plot
     TCanvas c_data_cut("c_data_cut", "c_data_cut", 800, 600);
     h_data_cut->Draw("COLZ");
-    c_data_cut.SaveAs("output/calibration/ft/data_ft_hit_position_cut.png");
+    c_data_cut.SaveAs("output/calibration/ft/data_ft_hit_position_cut_"+dataset+".png");
 
     // Draw and save the cut MC plot if available
     if (h_mc_cut) {
         TCanvas c_mc_cut("c_mc_cut", "c_mc_cut", 800, 600);
         h_mc_cut->Draw("COLZ");
-        c_mc_cut.SaveAs("output/calibration/ft/mc_ft_hit_position_cut.png");
+        c_mc_cut.SaveAs("output/calibration/ft/mc_ft_hit_position_cut_"+dataset+".png");
     }
 
     // Clean up
@@ -8490,10 +8492,10 @@ int main(int argc, char** argv) {
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
 
-    // plot_ft_xy_energy(dataReader, mcReader);
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_ft_hit_position(dataReader, mcReader);
+    plot_ft_xy_energy(dataReader, mcReader, "rga_fa18_inb");
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_ft_hit_position(dataReader, mcReader, "rga_fa18_inb");
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();

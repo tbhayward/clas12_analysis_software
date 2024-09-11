@@ -241,7 +241,7 @@ int main(int argc, char *argv[]) {
   setup_directories();
 
   // createIntegratedKinematicPlots();
-  // createIntegratedKinematicPlotsForBinsAndFits();
+  createIntegratedKinematicPlotsForBinsAndFits();
   // createCorrelationPlotsforrunnum();
   // createCorrelationPlots();
   // createMisIDRatePlots();
