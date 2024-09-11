@@ -22,7 +22,6 @@
 #include <vector>
 #include <string>
 #include <map>
-#include <TH1.h>
 #include <TLatex.h>
 #include <TText.h>  
 #include <TF1.h>        
@@ -597,7 +596,7 @@ void plotTargetPolarizationDependence(
     const std::string &xLabel, 
     const std::string &outputFileName) {
 
-    // Create the first canvas with 1 row and 2 columns for the original plots
+    // Create a canvas with 1 row and 2 columns for original plots
     TCanvas *c = new TCanvas("c", "Target Polarization Dependence Plots", 1600, 800);
     c->Divide(2, 1);
 
@@ -675,6 +674,42 @@ void plotTargetPolarizationDependence(
     gPad->SetLeftMargin(0.18);
     gPad->SetBottomMargin(0.15);
 
+    // Prepare outlier vectors for the right plot
+    std::vector<double> outlierPosX, outlierPosY, outlierPosErrors;
+    std::vector<double> outlierNegX, outlierNegY, outlierNegErrors;
+
+    for (size_t i = 0; i < polarizations.size(); ++i) {
+        double polarization = polarizations[i];
+        double error = errors[i];
+
+        if (polarization > 0) {
+            if (std::abs(polarization - muPos) > 3.5 * error) {
+                outlierPosX.push_back(xValues[i]);
+                outlierPosY.push_back(polarization);
+                outlierPosErrors.push_back(error);
+                std::cout << "Outlier (Positive) found: Run Number " << runNumbers[i] << ", Deviation: " << std::abs(polarization - muPos) / error << std::endl;
+            }
+        } else {
+            if (std::abs(polarization - muNeg) > 3.5 * error) {
+                outlierNegX.push_back(xValues[i]);
+                outlierNegY.push_back(polarization);
+                outlierNegErrors.push_back(error);
+                std::cout << "Outlier (Negative) found: Run Number " << runNumbers[i] << ", Deviation: " << std::abs(polarization - muNeg) / error << std::endl;
+            }
+        }
+    }
+
+    // Create TGraphErrors for outliers
+    TGraphErrors *graphPosOutliers = nullptr;
+    TGraphErrors *graphNegOutliers = nullptr;
+    if (!outlierPosX.empty()) {
+        graphPosOutliers = createTGraphErrors(outlierPosX, outlierPosY, outlierPosErrors, 20, 0.8, kRed);
+    }
+    if (!outlierNegX.empty()) {
+        graphNegOutliers = createTGraphErrors(outlierNegX, outlierNegY, outlierNegErrors, 20, 0.8, kBlue);
+    }
+
+    // Draw the positive and negative polarization data
     TGraphErrors *graphRegularPos = createTGraphErrors(posXValues, posPolarizations, posErrors, 20, 0.8, kBlack);
     TGraphErrors *graphRegularNeg = createTGraphErrors(negXValues, negPolarizations, negErrors, 20, 0.8, kBlack);
 
@@ -682,8 +717,30 @@ void plotTargetPolarizationDependence(
     graphRegularPos->Draw("AP");
     graphRegularNeg->Draw("P SAME");
 
+    // Draw the fitted constant lines on the right plot
     fitFuncPos->Draw("same");
     fitFuncNeg->Draw("same");
+
+    // Draw outliers on the right plot
+    if (graphPosOutliers) {
+        graphPosOutliers->Draw("P SAME");
+    }
+    if (graphNegOutliers) {
+        graphNegOutliers->Draw("P SAME");
+    }
+
+    // Create and draw text box in the top right for positive polarization
+    TLatex *text = new TLatex();
+    text->SetNDC();
+    text->SetTextSize(0.0275);
+    text->DrawLatex(0.7, 0.7, Form("#mu_{+} = %.4g", muPos));
+    text->DrawLatex(0.7, 0.65, Form("#sigma_{+} = %.4g", sigmaPos));
+    text->DrawLatex(0.7, 0.6, Form("#chi^{2}/ndf_{+} = %.4g", chi2NdfPos));
+
+    // Move text box to the left for negative polarization
+    text->DrawLatex(0.225, 0.45, Form("#mu_{-} = %.4g", muNeg));
+    text->DrawLatex(0.225, 0.4, Form("#sigma_{-} = %.4g", sigmaNeg));
+    text->DrawLatex(0.225, 0.35, Form("#chi^{2}/ndf_{-} = %.4g", chi2NdfNeg));
 
     // Save the first canvas
     gSystem->Exec("mkdir -p output/epX_plots");
