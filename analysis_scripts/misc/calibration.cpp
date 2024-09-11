@@ -1605,7 +1605,7 @@ void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader, const 
 }
 
 void plot_pcal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
- const std::string& dataset) {
+ const std::string& dataset = "rga_fa18_inb") {
     // Define the 2D histogram bins and ranges
     int nBins_lv_lw_lu = 100;
     int nBins_sf = 40;
