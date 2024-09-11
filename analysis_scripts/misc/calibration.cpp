@@ -1148,11 +1148,10 @@ bool forward_tagger_fiducial(double ft_x, double ft_y) {
     return true;
 }
 
-void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr, 
-    const std::string& dataset) {
+void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr, const std::string& dataset) {
     gStyle->SetOptStat(0);
 
-    // Declare and initialize TTreeReaderValue objects before any Next() or Restart() calls
+    // Declare and initialize TTreeReaderValue objects for data
     TTreeReaderValue<double> ft_x(dataReader, "ft_x");
     TTreeReaderValue<double> ft_y(dataReader, "ft_y");
     TTreeReaderValue<double> ft_energy(dataReader, "ft_energy");
@@ -1184,14 +1183,14 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
     double yMax = 20;
 
     // Create histograms for data and MC
-    TH2D* h_data_sum = new TH2D("h_data_sum", "Data FT Energy Sum, "+dataset, nBins, xMin, xMax, nBins, yMin, yMax);
-    TH2D* h_data_count = new TH2D("h_data_count", "Data FT Count, "+dataset, nBins, xMin, xMax, nBins, yMin, yMax);
+    TH2D* h_data_sum = new TH2D("h_data_sum", ("Data FT Energy Sum, " + dataset).c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+    TH2D* h_data_count = new TH2D("h_data_count", ("Data FT Count, " + dataset).c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
 
     TH2D* h_mc_sum = nullptr;
     TH2D* h_mc_count = nullptr;
     if (mcReader) {
-        h_mc_sum = new TH2D("h_mc_sum", "MC FT Energy Sum, "+dataset, nBins, xMin, xMax, nBins, yMin, yMax);
-        h_mc_count = new TH2D("h_mc_count", "MC FT Count, "+dataset, nBins, xMin, xMax, nBins, yMin, yMax);
+        h_mc_sum = new TH2D("h_mc_sum", ("MC FT Energy Sum, " + dataset).c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+        h_mc_count = new TH2D("h_mc_count", ("MC FT Count, " + dataset).c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
     }
 
     // Fill the data histograms, applying the cuts
@@ -1321,87 +1320,87 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
         for (int j = 1; j <= nBins; j++) {
             double mean_value = h_data_masked->GetBinContent(i, j);
             if (mean_value < global_mean - 1 * global_std_dev && h_data_mean->GetBinContent(i, j) > 0) {
-				TBox* box = new TBox(h_data_masked->GetXaxis()->GetBinLowEdge(i), h_data_masked->GetYaxis()->GetBinLowEdge(j),
-				h_data_masked->GetXaxis()->GetBinUpEdge(i), h_data_masked->GetYaxis()->GetBinUpEdge(j));
-				box->SetFillColor(kRed);
-				box->Draw();
-			}
-		}
-	}
+                TBox* box = new TBox(h_data_masked->GetXaxis()->GetBinLowEdge(i), h_data_masked->GetYaxis()->GetBinLowEdge(j),
+                                     h_data_masked->GetXaxis()->GetBinUpEdge(i), h_data_masked->GetYaxis()->GetBinUpEdge(j));
+                box->SetFillColor(kRed);
+                box->Draw();
+            }
+        }
+    }
 
     // Draw the circles representing the holes
-	std::vector<std::pair<double, std::pair<double, double>>> holes = {
-	    {1.60, {-8.42,  9.89}},  // circle 1
-	    {1.60, {-9.89, -5.33}},  // circle 2
-	    {2.30, {-6.15, -13.00}},  // circle 3
-	    {2.00, {3.70,  -6.50}},   // circle 4
-	    {8.5, {0,  0}},   // big circle 1
-	    {15.5, {0,  0}},   // big circle 2
-	};
+    std::vector<std::pair<double, std::pair<double, double>>> holes = {
+        {1.60, {-8.42,  9.89}},  // circle 1
+        {1.60, {-9.89, -5.33}},  // circle 2
+        {2.30, {-6.15, -13.00}},  // circle 3
+        {2.00, {3.70,  -6.50}},   // circle 4
+        {8.5, {0,  0}},   // big circle 1
+        {15.5, {0,  0}},   // big circle 2
+    };
 
-	for (size_t idx = 0; idx < holes.size(); ++idx) {
-	    double hole_radius = holes[idx].first;
-	    double hole_center_x = holes[idx].second.first;
-	    double hole_center_y = holes[idx].second.second;
+    for (size_t idx = 0; idx < holes.size(); ++idx) {
+        double hole_radius = holes[idx].first;
+        double hole_center_x = holes[idx].second.first;
+        double hole_center_y = holes[idx].second.second;
 
-	    TEllipse* circle = new TEllipse(hole_center_x, hole_center_y, hole_radius, hole_radius);
-	    circle->SetLineColor(kBlack);
-	    circle->SetLineWidth(2);  // Set line width to make it thick
-	    circle->SetFillStyle(0);  // No fill color, only the outline
-	    
-	    // Set dashed line style for the bigger circles
-	    if (idx >= 4) {  // Adjust the index based on the order of your circles
-	        circle->SetLineStyle(2);  // Dashed line style
-	    }
+        TEllipse* circle = new TEllipse(hole_center_x, hole_center_y, hole_radius, hole_radius);
+        circle->SetLineColor(kBlack);
+        circle->SetLineWidth(2);  // Set line width to make it thick
+        circle->SetFillStyle(0);  // No fill color, only the outline
+        
+        // Set dashed line style for the bigger circles
+        if (idx >= 4) {  // Adjust the index based on the order of your circles
+            circle->SetLineStyle(2);  // Dashed line style
+        }
 
-	    circle->Draw("same");
-	}
+        circle->Draw("same");
+    }
 
     data_legend->Draw();
     c_data_masked.SaveAs("output/calibration/ft/data_ft_xy_energy_masked_"+dataset+".png");
 
     // Create and save masked plot for MC
-	if (mcReader) {
-	    TH2D* h_mc_masked = (TH2D*)h_mc_mean->Clone("h_mc_masked");
-	    TCanvas c_mc_masked("c_mc_masked", "c_mc_masked", 800, 600);
-	    h_mc_masked->Draw("COLZ");
-	    for (int i = 1; i <= nBins; i++) {
-	        for (int j = 1; j <= nBins; j++) {
-	            double mean_value = h_mc_masked->GetBinContent(i, j);
-	            if (mean_value < mc_global_mean - 1 * mc_global_std_dev && h_mc_mean->GetBinContent(i, j) > 0) {
-	                TBox* box = new TBox(h_mc_masked->GetXaxis()->GetBinLowEdge(i), h_mc_masked->GetYaxis()->GetBinLowEdge(j),
-	                                     h_mc_masked->GetXaxis()->GetBinUpEdge(i), h_mc_masked->GetYaxis()->GetBinUpEdge(j));
-	                box->SetFillColor(kRed);
-	                box->Draw();
-	            }
-	        }
-	    }
+    if (mcReader) {
+        TH2D* h_mc_masked = (TH2D*)h_mc_mean->Clone("h_mc_masked");
+        TCanvas c_mc_masked("c_mc_masked", "c_mc_masked", 800, 600);
+        h_mc_masked->Draw("COLZ");
+        for (int i = 1; i <= nBins; i++) {
+            for (int j = 1; j <= nBins; j++) {
+                double mean_value = h_mc_masked->GetBinContent(i, j);
+                if (mean_value < mc_global_mean - 1 * mc_global_std_dev && h_mc_mean->GetBinContent(i, j) > 0) {
+                    TBox* box = new TBox(h_mc_masked->GetXaxis()->GetBinLowEdge(i), h_mc_masked->GetYaxis()->GetBinLowEdge(j),
+                                         h_mc_masked->GetXaxis()->GetBinUpEdge(i), h_mc_masked->GetYaxis()->GetBinUpEdge(j));
+                    box->SetFillColor(kRed);
+                    box->Draw();
+                }
+            }
+        }
 
-	    // Draw the circles representing the holes on MC plot
-	    for (size_t idx = 0; idx < holes.size(); ++idx) {
-	        double hole_radius = holes[idx].first;
-	        double hole_center_x = holes[idx].second.first;
-	        double hole_center_y = holes[idx].second.second;
+        // Draw the circles representing the holes on MC plot
+        for (size_t idx = 0; idx < holes.size(); ++idx) {
+            double hole_radius = holes[idx].first;
+            double hole_center_x = holes[idx].second.first;
+            double hole_center_y = holes[idx].second.second;
 
-	        TEllipse* circle = new TEllipse(hole_center_x, hole_center_y, hole_radius, hole_radius);
-	        circle->SetLineColor(kBlack);
-	        circle->SetLineWidth(2);  // Set line width to make it thick
-	        circle->SetFillStyle(0);  // No fill color, only the outline
+            TEllipse* circle = new TEllipse(hole_center_x, hole_center_y, hole_radius, hole_radius);
+            circle->SetLineColor(kBlack);
+            circle->SetLineWidth(2);  // Set line width to make it thick
+            circle->SetFillStyle(0);  // No fill color, only the outline
 
-	        // Apply dashed line style only to the last two circles (the larger ones)
-	        if (idx >= holes.size() - 2) { // Assuming the last two entries in `holes` are the big circles
-	            circle->SetLineStyle(2);  // Dashed line style
-	        }
+            // Apply dashed line style only to the last two circles (the larger ones)
+            if (idx >= holes.size() - 2) { // Assuming the last two entries in `holes` are the big circles
+                circle->SetLineStyle(2);  // Dashed line style
+            }
 
-	        circle->Draw("same");
-	    }
+            circle->Draw("same");
+        }
 
-	    mc_legend->Draw();
-	    c_mc_masked.SaveAs("output/calibration/ft/mc_ft_xy_energy_masked_"+dataset+".png");
-	    delete h_mc_masked;
-	}
+        mc_legend->Draw();
+        c_mc_masked.SaveAs("output/calibration/ft/mc_ft_xy_energy_masked_"+dataset+".png");
+        delete h_mc_masked;
+    }
 
-	// Clean up the dynamically allocated memory
+    // Clean up the dynamically allocated memory
     delete h_data_sum;
     delete h_data_count;
     if (mcReader) {
@@ -1414,8 +1413,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
     }
 }
 
-void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr, 
-    const std::string& dataset) {
+void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr, const std::string& dataset) {
 
     // Set up TTreeReaderValues for ft_x, ft_y, and particle_pid
     TTreeReaderValue<double> ft_x(dataReader, "ft_x");
@@ -1426,6 +1424,7 @@ void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
     TTreeReaderValue<double>* mc_ft_y = nullptr;
     TTreeReaderValue<int>* mc_particle_pid = nullptr;
 
+    // Initialize MC TTreeReaderValue objects if mcReader is provided
     if (mcReader) {
         mc_ft_x = new TTreeReaderValue<double>(*mcReader, "ft_x");
         mc_ft_y = new TTreeReaderValue<double>(*mcReader, "ft_y");
@@ -1444,25 +1443,25 @@ void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
     double yMax = 20;
 
     // Create histograms for data and MC
-    TH2D* h_data = new TH2D("h_data", "data FT hit position, "+dataset, nBins, xMin, xMax, nBins, yMin, yMax);
+    TH2D* h_data = new TH2D("h_data", ("data FT hit position, " + dataset).c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
     h_data->GetXaxis()->SetTitle("x_{FT}");
     h_data->GetYaxis()->SetTitle("y_{FT}");
 
     TH2D* h_mc = nullptr;
     if (mcReader) {
-        h_mc = new TH2D("h_mc", "mc FT hit position, "+dataset, nBins, xMin, xMax, nBins, yMin, yMax);
+        h_mc = new TH2D("h_mc", ("mc FT hit position, " + dataset).c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
         h_mc->GetXaxis()->SetTitle("x_{FT}");
         h_mc->GetYaxis()->SetTitle("y_{FT}");
     }
 
     // Create histograms for data and MC with fiducial cuts applied
-    TH2D* h_data_cut = new TH2D("h_data_cut", "data FT hit position (cut), "+dataset, nBins, xMin, xMax, nBins, yMin, yMax);
+    TH2D* h_data_cut = new TH2D("h_data_cut", ("data FT hit position (cut), " + dataset).c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
     h_data_cut->GetXaxis()->SetTitle("x_{FT}");
     h_data_cut->GetYaxis()->SetTitle("y_{FT}");
 
     TH2D* h_mc_cut = nullptr;
     if (mcReader) {
-        h_mc_cut = new TH2D("h_mc_cut", "mc FT hit position (cut), "+dataset, nBins, xMin, xMax, nBins, yMin, yMax);
+        h_mc_cut = new TH2D("h_mc_cut", ("mc FT hit position (cut), " + dataset).c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
         h_mc_cut->GetXaxis()->SetTitle("x_{FT}");
         h_mc_cut->GetYaxis()->SetTitle("y_{FT}");
     }
@@ -1492,24 +1491,108 @@ void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
     // Draw and save the original data plot
     TCanvas c_data("c_data", "c_data", 800, 600);
     h_data->Draw("COLZ");
+    
+    // Draw circles representing holes on the data plot
+    std::vector<std::pair<double, std::pair<double, double>>> holes = {
+        {1.60, {-8.42,  9.89}},  // circle 1
+        {1.60, {-9.89, -5.33}},  // circle 2
+        {2.30, {-6.15, -13.00}},  // circle 3
+        {2.00, {3.70,  -6.50}},   // circle 4
+        {8.5, {0,  0}},   // big circle 1
+        {15.5, {0,  0}},   // big circle 2
+    };
+
+    for (size_t idx = 0; idx < holes.size(); ++idx) {
+        double hole_radius = holes[idx].first;
+        double hole_center_x = holes[idx].second.first;
+        double hole_center_y = holes[idx].second.second;
+
+        TEllipse* circle = new TEllipse(hole_center_x, hole_center_y, hole_radius, hole_radius);
+        circle->SetLineColor(kBlack);
+        circle->SetLineWidth(2);  // Set line width to make it thick
+        circle->SetFillStyle(0);  // No fill color, only the outline
+        
+        // Set dashed line style for the bigger circles
+        if (idx >= 4) {  // Adjust the index based on the order of your circles
+            circle->SetLineStyle(2);  // Dashed line style
+        }
+
+        circle->Draw("same");
+    }
+
     c_data.SaveAs("output/calibration/ft/data_ft_hit_position_"+dataset+".png");
 
     // Draw and save the original MC plot if available
     if (h_mc) {
         TCanvas c_mc("c_mc", "c_mc", 800, 600);
         h_mc->Draw("COLZ");
+        
+        // Draw circles representing holes on the MC plot
+        for (size_t idx = 0; idx < holes.size(); ++idx) {
+            double hole_radius = holes[idx].first;
+            double hole_center_x = holes[idx].second.first;
+            double hole_center_y = holes[idx].second.second;
+
+            TEllipse* circle = new TEllipse(hole_center_x, hole_center_y, hole_radius, hole_radius);
+            circle->SetLineColor(kBlack);
+            circle->SetLineWidth(2);  // Set line width to make it thick
+            circle->SetFillStyle(0);  // No fill color, only the outline
+            
+            if (idx >= 4) {  // Set dashed line style for the bigger circles
+                circle->SetLineStyle(2);  // Dashed line style
+            }
+
+            circle->Draw("same");
+        }
+        
         c_mc.SaveAs("output/calibration/ft/mc_ft_hit_position_"+dataset+".png");
     }
 
     // Draw and save the cut data plot
     TCanvas c_data_cut("c_data_cut", "c_data_cut", 800, 600);
     h_data_cut->Draw("COLZ");
+    
+    for (size_t idx = 0; idx < holes.size(); ++idx) {
+        double hole_radius = holes[idx].first;
+        double hole_center_x = holes[idx].second.first;
+        double hole_center_y = holes[idx].second.second;
+
+        TEllipse* circle = new TEllipse(hole_center_x, hole_center_y, hole_radius, hole_radius);
+        circle->SetLineColor(kBlack);
+        circle->SetLineWidth(2);  // Set line width to make it thick
+        circle->SetFillStyle(0);  // No fill color, only the outline
+        
+        if (idx >= 4) {
+            circle->SetLineStyle(2);  // Dashed line style for larger circles
+        }
+
+        circle->Draw("same");
+    }
+
     c_data_cut.SaveAs("output/calibration/ft/data_ft_hit_position_cut_"+dataset+".png");
 
     // Draw and save the cut MC plot if available
     if (h_mc_cut) {
         TCanvas c_mc_cut("c_mc_cut", "c_mc_cut", 800, 600);
         h_mc_cut->Draw("COLZ");
+        
+        for (size_t idx = 0; idx < holes.size(); ++idx) {
+            double hole_radius = holes[idx].first;
+            double hole_center_x = holes[idx].second.first;
+            double hole_center_y = holes[idx].second.second;
+
+            TEllipse* circle = new TEllipse(hole_center_x, hole_center_y, hole_radius, hole_radius);
+            circle->SetLineColor(kBlack);
+            circle->SetLineWidth(2);  // Set line width to make it thick
+            circle->SetFillStyle(0);  // No fill color, only the outline
+            
+            if (idx >= 4) {  // Dashed line for larger circles
+                circle->SetLineStyle(2);
+            }
+
+            circle->Draw("same");
+        }
+
         c_mc_cut.SaveAs("output/calibration/ft/mc_ft_hit_position_cut_"+dataset+".png");
     }
 
@@ -8535,9 +8618,9 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_chi2pid_cd(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_vertices(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_vertices(dataReader, mcReader);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
