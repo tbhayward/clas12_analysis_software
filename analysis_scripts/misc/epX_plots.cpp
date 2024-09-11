@@ -22,6 +22,7 @@
 #include <vector>
 #include <string>
 #include <map>
+#include <TH1.h>
 #include <TLatex.h>
 #include <TText.h>  
 #include <TF1.h>        
