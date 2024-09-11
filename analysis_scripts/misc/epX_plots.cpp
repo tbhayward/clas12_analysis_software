@@ -590,6 +590,8 @@ void plotRunnumDependence(
     delete fitFunc;
 }
 
+#include <TH1.h>  // Ensure TH1F is included
+
 void plotTargetPolarizationDependence(
     const std::vector<std::tuple<int, double, double>> &targetPolarizationData, 
     const std::string &xLabel, 
@@ -694,6 +696,9 @@ void plotTargetPolarizationDependence(
     // Create histograms for positive and negative target polarizations
     TH1F *histPos = new TH1F("histPos", "Positive Target Polarizations", 50, -1.0, 1.0);
     TH1F *histNeg = new TH1F("histNeg", "Negative Target Polarizations", 50, -1.0, 1.0);
+
+    // Remove stat boxes
+    gStyle->SetOptStat(0);
 
     for (double val : posPolarizations) {
         histPos->Fill(val);
