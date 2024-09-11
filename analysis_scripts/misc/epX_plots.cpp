@@ -14,6 +14,7 @@
 #include <TLegend.h>
 #include <TCanvas.h>
 #include <TGraphErrors.h>
+#include <TH1.h>
 #include <TLegend.h>
 #include <TLine.h>
 #include <TLegendEntry.h>
@@ -589,7 +590,6 @@ void plotRunnumDependence(
     delete fitFunc;
 }
 
-#include <TH1.h>  // Ensure TH1F is included
 
 void plotTargetPolarizationDependence(
     const std::vector<std::tuple<int, double, double>> &targetPolarizationData, 
@@ -748,7 +748,7 @@ void plotTargetPolarizationDependence(
 
     // Create the second canvas with 1 row and 2 columns for the histograms
     TCanvas *c2 = new TCanvas("c2", "Target Polarization Histograms", 1600, 800);
-    c2->Divide(2, 2);
+    c2->Divide(2, 1);
 
     // Create histograms for positive and negative target polarizations
     TH1F *histPos = new TH1F("histPos", "Positive Target Polarizations", 50, -1.0, 1.0);
@@ -779,7 +779,7 @@ void plotTargetPolarizationDependence(
     double sigmaNegHist = gausNeg->GetParameter(2);
 
     // Left plot: Positive target polarizations
-    c2->cd(1);  // Switch to the first pad
+    // c2->cd(1);  // Switch to the first pad
     gPad->SetLeftMargin(0.18);
     gPad->SetBottomMargin(0.15);
     histPos->SetLineColor(kBlack);
