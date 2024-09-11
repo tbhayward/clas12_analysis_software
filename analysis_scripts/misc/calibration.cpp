@@ -8573,10 +8573,10 @@ int main(int argc, char** argv) {
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
 
-    plot_ft_xy_energy(dataReader, mcReader, "rga_fa18_inb");
+    plot_ft_xy_energy(dataReader, mcReader, "rga_fa18_out");
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
-    plot_ft_hit_position(dataReader, mcReader, "rga_fa18_inb");
+    plot_ft_hit_position(dataReader, mcReader, "rga_fa18_out");
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
