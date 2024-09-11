@@ -746,9 +746,8 @@ void plotTargetPolarizationDependence(
     gSystem->Exec("mkdir -p output/epX_plots");
     c->SaveAs(outputFileName.c_str());
 
-    // Create the second canvas with 1 row and 2 columns for the histograms
+    // Create a single canvas and plot both histograms together
     TCanvas *c2 = new TCanvas("c2", "Target Polarization Histograms", 1600, 800);
-    c2->Divide(2, 1);
 
     // Create histograms for positive and negative target polarizations
     TH1F *histPos = new TH1F("histPos", "Positive Target Polarizations", 50, -1.0, 1.0);
@@ -769,8 +768,8 @@ void plotTargetPolarizationDependence(
     TF1 *gausPos = new TF1("gausPos", "gaus", -1.0, 1.0);
     TF1 *gausNeg = new TF1("gausNeg", "gaus", -1.0, 1.0);
 
-    histPos->Fit(gausPos, "Q");  // Silent mode
-    histNeg->Fit(gausNeg, "Q");  // Silent mode
+    histPos->Fit(gausPos, "Q");  // Silent mode for positive fit
+    histNeg->Fit(gausNeg, "Q");  // Silent mode for negative fit
 
     // Retrieve fit parameters for the legend
     double muPosHist = gausPos->GetParameter(1);
@@ -778,40 +777,42 @@ void plotTargetPolarizationDependence(
     double muNegHist = gausNeg->GetParameter(1);
     double sigmaNegHist = gausNeg->GetParameter(2);
 
-    // Left plot: Positive target polarizations
-    c2->cd(1);  // Switch to the first pad
-    gPad->SetLeftMargin(0.18);
-    gPad->SetBottomMargin(0.15);
-    histPos->SetLineColor(kBlack);
-    histPos->SetTitle("");
+    // Set histogram line styles
+    histPos->SetLineColor(kRed);
+    histNeg->SetLineColor(kBlue);
+
+    // Draw positive polarization histogram as red data points
+    histPos->SetMarkerColor(kRed);
+    histPos->SetMarkerStyle(20);
+    histPos->SetMarkerSize(1.0);
+    histPos->SetTitle(""); // Optional, if you want a clean title area
     histPos->GetXaxis()->SetTitle("Target Polarization");
     histPos->GetYaxis()->SetTitle("Runs");
-    histPos->Draw();
+    histPos->Draw("E1");  // Draw histogram with error bars
 
-    // Add legend for positive polarization fit
-    TLegend *legPos = new TLegend(0.6, 0.7, 0.9, 0.9);
-    legPos->AddEntry(gausPos, Form("#mu = %.4f", muPosHist), "l");
-    legPos->AddEntry(gausPos, Form("#sigma = %.4f", sigmaPosHist), "l");
-    legPos->Draw();
+    // Draw negative polarization histogram as blue data points
+    histNeg->SetMarkerColor(kBlue);
+    histNeg->SetMarkerStyle(21);
+    histNeg->SetMarkerSize(1.0);
+    histNeg->Draw("E1 SAME");  // Draw on the same canvas
 
-    // Right plot: Negative target polarizations
-    c2->cd(2);  // Switch to the second pad
-    gPad->SetLeftMargin(0.18);
-    gPad->SetBottomMargin(0.15);
-    histNeg->SetLineColor(kBlack);
-    histNeg->SetTitle("");
-    histNeg->GetXaxis()->SetTitle("Target Polarization");
-    histNeg->GetYaxis()->SetTitle("Runs");
-    histNeg->Draw();
+    // Draw fitted Gaussian curves for both histograms
+    gausPos->SetLineColor(kRed);
+    gausPos->Draw("SAME");
 
-    // Add legend for negative polarization fit
-    TLegend *legNeg = new TLegend(0.6, 0.7, 0.9, 0.9);
-    legNeg->AddEntry(gausNeg, Form("#mu = %.4f", muNegHist), "l");
-    legNeg->AddEntry(gausNeg, Form("#sigma = %.4f", sigmaNegHist), "l");
-    legNeg->Draw();
+    gausNeg->SetLineColor(kBlue);
+    gausNeg->Draw("SAME");
 
-    // Save the second canvas
-    c2->SaveAs("output/epX_plots/target_polarization_histograms.png");
+    // Add a legend for the fits and corresponding means and sigmas
+    TLegend *leg = new TLegend(0.6, 0.7, 0.9, 0.9);
+    leg->AddEntry(gausPos, Form("#mu_{+} = %.4f, #sigma_{+} = %.4f", muPosHist, sigmaPosHist), "l");
+    leg->AddEntry(gausNeg, Form("#mu_{-} = %.4f, #sigma_{-} = %.4f", muNegHist, sigmaNegHist), "l");
+    leg->SetTextColor(kRed);  // Set legend text to red for the positive polarization
+    leg->SetTextColor(kBlue); // Set legend text to blue for the negative polarization
+    leg->Draw();
+
+    // Save the canvas
+    c2->SaveAs("output/epX_plots/target_polarization_histograms_combined.png");
 
     // Clean up
     delete c2;
