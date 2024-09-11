@@ -156,7 +156,7 @@ std::pair<double, double> calculate_dilution_and_error(double nA, double nC, dou
 }
 
 std::vector<std::pair<double, double>> calculate_dilution_factors() {
-    // Load ROOT files and trees
+    // Load ROOT files and trees (as before)
     TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/cphi2024_epX/data/processed_data/dilution/rgc_su22_inb_NH3_epX.root");
     TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/cphi2024_epX/data/processed_data/dilution/rgc_su22_inb_C_epX.root");
     TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/cphi2024_epX/data/processed_data/dilution/rgc_su22_inb_CH2_epX.root");
@@ -169,25 +169,26 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     TTree* he = (TTree*)heFile->Get("PhysicsEvents");
     TTree* empty = (TTree*)emptyFile->Get("PhysicsEvents");
 
-    // Create local TTreeReader objects for each tree
+    // Create local TTreeReader objects (as before)
     TTreeReader nh3Reader(nh3);
     TTreeReader cReader(c);
     TTreeReader chReader(ch);
     TTreeReader heReader(he);
     TTreeReader emptyReader(empty);
 
-    // Read helicity and target polarization
     TTreeReaderValue<int> helicity(nh3Reader, "helicity");
     TTreeReaderValue<int> runnum(nh3Reader, "runnum");
 
-    // Pointers for local kinematic cuts, dynamically allocated based on the channel
+    // Declare output directory
+    std::string outputDir = "output/dilution_factor_plots/";
+
+    // Read kinematic cuts (as before)
     BaseKinematicCuts* nh3Cuts = nullptr;
     BaseKinematicCuts* cCuts = nullptr;
     BaseKinematicCuts* chCuts = nullptr;
     BaseKinematicCuts* heCuts = nullptr;
     BaseKinematicCuts* emptyCuts = nullptr;
 
-    // Allocate the appropriate kinematic cuts based on the channel
     switch (channel) {
         case 0:
             nh3Cuts = new InclusiveKinematicCuts(nh3Reader);
@@ -196,7 +197,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
             heCuts = new InclusiveKinematicCuts(heReader);
             emptyCuts = new InclusiveKinematicCuts(emptyReader);
             break;
-        // (Other cases omitted for brevity)
+        // other cases omitted for brevity
     }
 
     std::vector<std::pair<double, double>> dilutionResults;
@@ -212,12 +213,12 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
         {16318, 16333}, {16335, 16357}, {16709, 16720}, {16721, 16766}, {16767, 16772}
     };
 
-    // Loop over each bin
+    // Loop over each bin (as before)
     for (size_t binIndex = 0; binIndex < allBins[currentFits].size() - 1; ++binIndex) {
         double varMin = allBins[currentFits][binIndex];
         double varMax = allBins[currentFits][binIndex + 1];
 
-        // Create histograms for total and each period
+        // Create histograms for total and each period (as before)
         TH1D* h_nh3_total = new TH1D("h_nh3_total", "", 1, varMin, varMax);
         std::vector<TH1D*> h_nh3_periods(9);
         for (int i = 0; i < 9; i++) {
@@ -227,7 +228,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
         double sumCurrentVariable = 0.0;
         int count = 0;
 
-        // Helper function to fill histograms based on kinematic cuts and track mean
+        // Fill histograms (as before)
         auto fill_histogram = [&](TTreeReader& reader, TH1D* hist, BaseKinematicCuts* cuts, bool is_nh3) {
             TTreeReaderValue<double> currentVariable(reader, propertyNames[currentFits].c_str());
             while (reader.Next()) {
@@ -258,23 +259,22 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
             }
         }
 
-        // Retrieve bin contents for total
+        // Retrieve bin contents for total (as before)
         double nA_total = h_nh3_total->GetBinContent(1);
         double nC = cReader.GetTree()->GetEntries();
         double nCH = chReader.GetTree()->GetEntries();
         double nMT = heReader.GetTree()->GetEntries();
         double nf = emptyReader.GetTree()->GetEntries();
 
-        // Calculate dilution factors for the total case
+        // Calculate dilution factors for the total case (as before)
         auto [dilution_total, error_total] = calculate_dilution_and_error(nA_total, nC, nCH, nMT, nf, xAtotal, xCtotal, xCHtotal, xHetotal, xftotal);
         gr_dilution_total->SetPoint(binIndex, (varMin + varMax) / 2, dilution_total);
         gr_dilution_total->SetPointError(binIndex, 0, error_total);
 
-        // Calculate dilution factors for each period
+        // Calculate dilution factors for each period (as before)
         for (int i = 0; i < 9; i++) {
             double nA_period = h_nh3_periods[i]->GetBinContent(1);
-            auto [dilution_period, error_period] = calculate_dilution_and_error(nA_period, nC, nCH, nMT, nf,
-                xAperiod_1, xCperiod_1, xCHperiod_1, xHeperiod_1, xfperiod_1);  // Repeat for other periods
+            auto [dilution_period, error_period] = calculate_dilution_and_error(nA_period, nC, nCH, nMT, nf, xAperiod_1, xCperiod_1, xCHperiod_1, xHeperiod_1, xfperiod_1);
             gr_dilution_periods[i]->SetPoint(binIndex, (varMin + varMax) / 2 + 0.01 * (i + 1), dilution_period);
             gr_dilution_periods[i]->SetPointError(binIndex, 0, error_period);
         }
@@ -285,6 +285,10 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
             delete h_nh3_periods[i];
         }
     }
+
+    // Declare and configure plot settings for total and period graphs
+    std::string prefix = propertyNames[currentFits];
+    HistConfig config = histConfigs.find(prefix) != histConfigs.end() ? histConfigs[prefix] : HistConfig{100, 0, 1};
 
     // Plot original dilution factor on the first canvas
     TCanvas* canvas1 = new TCanvas("c_dilution_total", "Total Dilution Factor", 800, 600);
@@ -301,23 +305,21 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     gr_dilution_total->SetMarkerStyle(20);
     gr_dilution_total->SetMarkerColor(kBlack);
     gr_dilution_total->Draw("AP");
-    canvas1->SaveAs("output/dilution_factor_total.png");
+    canvas1->SaveAs((outputDir + "df_total.png").c_str());
 
-    // --- Now apply the same aesthetics to the second canvas (period-based plot) ---
+    // Plot period-based dilution factor on the second canvas
     TCanvas* canvas2 = new TCanvas("c_dilution_periods", "Dilution Factor by Periods", 800, 600);
     canvas2->SetLeftMargin(0.15);
     canvas2->SetBottomMargin(0.15);
-
-    gr_dilution_periods[0]->SetTitle(""); // Apply the title and axes properties here as well
+    gr_dilution_periods[0]->SetTitle("");
     gr_dilution_periods[0]->GetXaxis()->SetTitle(formatLabelName(propertyNames[currentFits]).c_str());
     gr_dilution_periods[0]->GetXaxis()->SetLimits(config.xMin, config.xMax);
     gr_dilution_periods[0]->GetXaxis()->SetTitleSize(0.05);
     gr_dilution_periods[0]->GetYaxis()->SetTitle("D_{f}");
     gr_dilution_periods[0]->GetYaxis()->SetTitleSize(0.05);
     gr_dilution_periods[0]->GetYaxis()->SetTitleOffset(1.6);
-    gr_dilution_periods[0]->GetYaxis()->SetRangeUser(0.0, 0.4); // Same range as in the total plot
+    gr_dilution_periods[0]->GetYaxis()->SetRangeUser(0.0, 0.4);
 
-    // Set distinct markers and colors for each period and draw them
     int colors[] = {kRed, kBlue, kGreen, kMagenta, kCyan, kOrange, kViolet, kYellow, kPink};
     int markers[] = {21, 22, 23, 24, 25, 26, 27, 28, 29};
     for (int i = 0; i < 9; i++) {
@@ -330,15 +332,12 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
         }
     }
 
-    // Add legend
     TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);
     for (int i = 0; i < 9; i++) {
         legend->AddEntry(gr_dilution_periods[i], Form("Period %d", i + 1), "p");
     }
     legend->Draw();
-
-    std::string periodOutputFileName = outputDir + "df_by_periods_" + propertyNames[currentFits] + ".png";
-    canvas2->SaveAs(periodOutputFileName.c_str());
+    canvas2->SaveAs((outputDir + "df_by_periods.png").c_str());
 
     // Clean up
     delete canvas1;
