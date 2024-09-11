@@ -1413,7 +1413,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader, const std
     }
 }
 
-void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr, const std::string& dataset) {
+void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader, const std::string& dataset) {
 
     // Set up TTreeReaderValues for ft_x, ft_y, and particle_pid
     TTreeReaderValue<double> ft_x(dataReader, "ft_x");
@@ -1498,8 +1498,8 @@ void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
         {1.60, {-9.89, -5.33}},  // circle 2
         {2.30, {-6.15, -13.00}},  // circle 3
         {2.00, {3.70,  -6.50}},   // circle 4
-        {8.5, {0,  0}},   // big circle 1
-        {15.5, {0,  0}},   // big circle 2
+        {8.5, {0,  0}},           // big circle 1
+        {15.5, {0,  0}},          // big circle 2
     };
 
     for (size_t idx = 0; idx < holes.size(); ++idx) {
@@ -1520,7 +1520,7 @@ void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
         circle->Draw("same");
     }
 
-    c_data.SaveAs("output/calibration/ft/data_ft_hit_position_"+dataset+".png");
+    c_data.SaveAs(("output/calibration/ft/data_ft_hit_position_" + dataset + ".png").c_str());
 
     // Draw and save the original MC plot if available
     if (h_mc) {
@@ -1545,7 +1545,7 @@ void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
             circle->Draw("same");
         }
         
-        c_mc.SaveAs("output/calibration/ft/mc_ft_hit_position_"+dataset+".png");
+        c_mc.SaveAs(("output/calibration/ft/mc_ft_hit_position_" + dataset + ".png").c_str());
     }
 
     // Draw and save the cut data plot
@@ -1569,7 +1569,7 @@ void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
         circle->Draw("same");
     }
 
-    c_data_cut.SaveAs("output/calibration/ft/data_ft_hit_position_cut_"+dataset+".png");
+    c_data_cut.SaveAs(("output/calibration/ft/data_ft_hit_position_cut_" + dataset + ".png").c_str());
 
     // Draw and save the cut MC plot if available
     if (h_mc_cut) {
@@ -1593,7 +1593,7 @@ void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
             circle->Draw("same");
         }
 
-        c_mc_cut.SaveAs("output/calibration/ft/mc_ft_hit_position_cut_"+dataset+".png");
+        c_mc_cut.SaveAs(("output/calibration/ft/mc_ft_hit_position_cut_" + dataset + ".png").c_str());
     }
 
     // Clean up
