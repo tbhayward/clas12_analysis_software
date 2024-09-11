@@ -757,6 +757,7 @@ void plotTargetPolarizationDependence(
     // Remove stat boxes
     gStyle->SetOptStat(0);
 
+    // Fill histograms with positive and negative polarization values
     for (double val : posPolarizations) {
         histPos->Fill(val);
     }
@@ -778,7 +779,7 @@ void plotTargetPolarizationDependence(
     double sigmaNegHist = gausNeg->GetParameter(2);
 
     // Left plot: Positive target polarizations
-    c2->cd(1);
+    c2->cd(1);  // Switch to the first pad
     gPad->SetLeftMargin(0.18);
     gPad->SetBottomMargin(0.15);
     histPos->SetLineColor(kBlack);
@@ -793,21 +794,27 @@ void plotTargetPolarizationDependence(
     legPos->AddEntry(gausPos, Form("#sigma = %.4f", sigmaPosHist), "l");
     legPos->Draw();
 
-    // // Right plot: Negative target polarizations
-    // c2->cd(2);
-    // gPad->SetLeftMargin(0.18);
-    // gPad->SetBottomMargin(0.15);
-    // histNeg->SetLineColor(kBlack);
-    // histNeg->SetTitle("");
-    // histNeg->GetXaxis()->SetTitle("Target Polarization");
-    // histNeg->GetYaxis()->SetTitle("Runs");
-    // histNeg->Draw();
+    // Explicitly update the first pad to ensure it's drawn
+    gPad->Update();
 
-    // // Add legend for negative polarization fit
-    // TLegend *legNeg = new TLegend(0.6, 0.7, 0.9, 0.9);
-    // legNeg->AddEntry(gausNeg, Form("#mu = %.4f", muNegHist), "l");
-    // legNeg->AddEntry(gausNeg, Form("#sigma = %.4f", sigmaNegHist), "l");
-    // legNeg->Draw();
+    // Right plot: Negative target polarizations
+    c2->cd(2);  // Switch to the second pad
+    gPad->SetLeftMargin(0.18);
+    gPad->SetBottomMargin(0.15);
+    histNeg->SetLineColor(kBlack);
+    histNeg->SetTitle("");
+    histNeg->GetXaxis()->SetTitle("Target Polarization");
+    histNeg->GetYaxis()->SetTitle("Runs");
+    histNeg->Draw();
+
+    // Add legend for negative polarization fit
+    TLegend *legNeg = new TLegend(0.6, 0.7, 0.9, 0.9);
+    legNeg->AddEntry(gausNeg, Form("#mu = %.4f", muNegHist), "l");
+    legNeg->AddEntry(gausNeg, Form("#sigma = %.4f", sigmaNegHist), "l");
+    legNeg->Draw();
+
+    // Explicitly update the second pad to ensure it's drawn
+    gPad->Update();
 
     // Save the second canvas
     c2->SaveAs("output/epX_plots/target_polarization_histograms.png");
