@@ -793,21 +793,21 @@ void plotTargetPolarizationDependence(
     legPos->AddEntry(gausPos, Form("#sigma = %.4f", sigmaPosHist), "l");
     legPos->Draw();
 
-    // Right plot: Negative target polarizations
-    c2->cd(2);
-    gPad->SetLeftMargin(0.18);
-    gPad->SetBottomMargin(0.15);
-    histNeg->SetLineColor(kBlack);
-    histNeg->SetTitle("");
-    histNeg->GetXaxis()->SetTitle("Target Polarization");
-    histNeg->GetYaxis()->SetTitle("Runs");
-    histNeg->Draw();
+    // // Right plot: Negative target polarizations
+    // c2->cd(2);
+    // gPad->SetLeftMargin(0.18);
+    // gPad->SetBottomMargin(0.15);
+    // histNeg->SetLineColor(kBlack);
+    // histNeg->SetTitle("");
+    // histNeg->GetXaxis()->SetTitle("Target Polarization");
+    // histNeg->GetYaxis()->SetTitle("Runs");
+    // histNeg->Draw();
 
-    // Add legend for negative polarization fit
-    TLegend *legNeg = new TLegend(0.6, 0.7, 0.9, 0.9);
-    legNeg->AddEntry(gausNeg, Form("#mu = %.4f", muNegHist), "l");
-    legNeg->AddEntry(gausNeg, Form("#sigma = %.4f", sigmaNegHist), "l");
-    legNeg->Draw();
+    // // Add legend for negative polarization fit
+    // TLegend *legNeg = new TLegend(0.6, 0.7, 0.9, 0.9);
+    // legNeg->AddEntry(gausNeg, Form("#mu = %.4f", muNegHist), "l");
+    // legNeg->AddEntry(gausNeg, Form("#sigma = %.4f", sigmaNegHist), "l");
+    // legNeg->Draw();
 
     // Save the second canvas
     c2->SaveAs("output/epX_plots/target_polarization_histograms.png");
