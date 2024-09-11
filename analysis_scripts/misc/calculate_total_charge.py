@@ -10,9 +10,6 @@ def calculate_total_charge(filename, nh3_filter=None):
         'Empty Target': 0
     }
 
-    # Define the runs to skip
-    skipped_runs = {}
-
     current_section = None
     run_data = []  # List to store run, target_pol, target_pol_sigma for NH3 only
 
@@ -40,13 +37,8 @@ def calculate_total_charge(filename, nh3_filter=None):
             charge_neg = float(row[3])
             charge = charge_pos + charge_neg
 
-            # Skip the specified runs
-            if run_number in skipped_runs:
-                continue
-
             # Accumulate charge for the correct section
             if current_section == 'NH3':
-                # If a filter is set, only accumulate charges for runs in the NH3 period
                 if nh3_filter and not (nh3_filter[0] <= run_number <= nh3_filter[1]):
                     continue
                 charges['NH3'] += charge
@@ -84,6 +76,15 @@ def print_charge_results(charges, total_charge, fractions, period_name="Total"):
     print(f"{period_name} accumulated charge for Helium Bath: {charges['Helium Bath']:.3f} nC ({fractions['Helium Bath']:.3%} of total)")
     print(f"{period_name} accumulated charge for Empty Target (run 16194): {charges['Empty Target']:.3f} nC ({fractions['Empty Target']:.3%} of total)\n")
 
+def print_fractional_constants(fractions, period_name="Total"):
+    print(f"// Fractional charge values for {period_name}")
+    print(f"const double xA{period_name.lower().replace(' ', '_')} = {fractions['NH3']:.5f};")
+    print(f"const double xC{period_name.lower().replace(' ', '_')} = {fractions['C']:.5f};")
+    print(f"const double xCH{period_name.lower().replace(' ', '_')} = {fractions['CH2']:.5f};")
+    print(f"const double xHe{period_name.lower().replace(' ', '_')} = {fractions['Helium Bath']:.5f};")
+    print(f"const double xf{period_name.lower().replace(' ', '_')} = {fractions['Empty Target']:.5f};")
+    print()
+
 if __name__ == '__main__':
     if len(sys.argv) != 2:
         print("Usage: python calculate_total_charge.py <input_file>")
@@ -107,8 +108,10 @@ if __name__ == '__main__':
     # Calculate for the entire data set
     charges, total_charge, fractions, run_data = calculate_total_charge(filename)
     print_charge_results(charges, total_charge, fractions)
+    print_fractional_constants(fractions)
 
     # Calculate for each NH3 period individually
-    for period, run_range in nh3_periods.items():
+    for idx, (period, run_range) in enumerate(nh3_periods.items(), 1):
         charges, total_charge, fractions, _ = calculate_total_charge(filename, nh3_filter=run_range)
-        print_charge_results(charges, total_charge, fractions, period_name=period)
+        print_charge_results(charges, total_charge, fractions, period_name=f"Period {idx}")
+        print_fractional_constants(fractions, period_name=f"Period {idx}")
