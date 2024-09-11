@@ -303,13 +303,90 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
         gr_dilution_total->SetPoint(binIndex, meanCurrentVariable, dilution_total); // Plot at the mean value
         gr_dilution_total->SetPointError(binIndex, 0, error_total);
 
-        // Calculate dilution factors for each period
-        for (int i = 0; i < 9; i++) {
-            double nA_period = h_nh3_periods[i]->GetBinContent(1);
-            auto [dilution_period, error_period] = calculate_dilution_and_error(nA_period, nC, nCH, nMT, nf,
-                xAperiod_1, xCperiod_1, xCHperiod_1, xHeperiod_1, xfperiod_1);  // Repeat for other periods
-            gr_dilution_periods[i]->SetPoint(binIndex, meanCurrentVariable + 0.005 * (i + 1), dilution_period); // Closer point shift
-            gr_dilution_periods[i]->SetPointError(binIndex, 0, error_period);
+        for (size_t binIndex = 0; binIndex < allBins[currentFits].size() - 1; ++binIndex) {
+            double varMin = allBins[currentFits][binIndex];
+            double varMax = allBins[currentFits][binIndex + 1];
+
+            // Create histograms for total and each period
+            TH1D* h_nh3_total = new TH1D("h_nh3_total", "", 1, varMin, varMax);
+            TH1D* h_c = new TH1D("h_c", "", 1, varMin, varMax);
+            TH1D* h_ch = new TH1D("h_ch", "", 1, varMin, varMax);
+            TH1D* h_he = new TH1D("h_he", "", 1, varMin, varMax);
+            TH1D* h_empty = new TH1D("h_empty", "", 1, varMin, varMax);
+
+            double sumCurrentVariable = 0.0;
+            int count = 0;
+
+            // Fill histograms for NH3 total
+            auto fill_histogram = [&](TTreeReader& reader, TH1D* hist, BaseKinematicCuts* cuts) {
+                TTreeReaderValue<double> currentVariable(reader, propertyNames[currentFits].c_str());
+                while (reader.Next()) {
+                    bool passedKinematicCuts = cuts->applyCuts(currentFits, false);
+                    if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
+                        hist->Fill(*currentVariable);
+                        sumCurrentVariable += *currentVariable;
+                        ++count;
+                    }
+                }
+                reader.Restart();
+            };
+
+            // Fill the histograms for each target type
+            fill_histogram(nh3Reader, h_nh3_total, nh3Cuts);
+            fill_histogram(cReader, h_c, cCuts);
+            fill_histogram(chReader, h_ch, chCuts);
+            fill_histogram(heReader, h_he, heCuts);
+            fill_histogram(emptyReader, h_empty, emptyCuts);
+
+            // Calculate the mean value of `currentVariable` in this bin
+            double meanCurrentVariable = (count > 0) ? (sumCurrentVariable / count) : (varMin + varMax) / 2.0;
+
+            // Retrieve bin contents for total and each target type
+            double nA_total = h_nh3_total->GetBinContent(1);
+            double nC = h_c->GetBinContent(1);
+            double nCH = h_ch->GetBinContent(1);
+            double nMT = h_he->GetBinContent(1);
+            double nf = h_empty->GetBinContent(1);
+
+            // Calculate dilution factors for the total case
+            auto [dilution_total, error_total] = calculate_dilution_and_error(
+                nA_total, nC, nCH, nMT, nf, xAtotal, xCtotal, xCHtotal, xHetotal, xftotal
+            );
+            gr_dilution_total->SetPoint(binIndex, meanCurrentVariable, dilution_total); // Plot at the mean value
+            gr_dilution_total->SetPointError(binIndex, 0, error_total);
+
+            for (int i = 0; i < 9; i++) {
+                double nA_period = h_nh3_total->GetBinContent(1);  // Period-specific bin content
+
+                // Use the correct fractional charge values for each period (as described before)
+                double xA_period, xC_period, xCH_period, xHe_period, xf_period;
+                switch (i) {
+                    case 0: xA_period = xAperiod_1; xC_period = xCperiod_1; xCH_period = xCHperiod_1; xHe_period = xHeperiod_1; xf_period = xfperiod_1; break;
+                    case 1: xA_period = xAperiod_2; xC_period = xCperiod_2; xCH_period = xCHperiod_2; xHe_period = xHeperiod_2; xf_period = xfperiod_2; break;
+                    case 2: xA_period = xAperiod_3; xC_period = xCperiod_3; xCH_period = xCHperiod_3; xHe_period = xHeperiod_3; xf_period = xfperiod_3; break;
+                    case 3: xA_period = xAperiod_4; xC_period = xCperiod_4; xCH_period = xCHperiod_4; xHe_period = xHeperiod_4; xf_period = xfperiod_4; break;
+                    case 4: xA_period = xAperiod_5; xC_period = xCperiod_5; xCH_period = xCHperiod_5; xHe_period = xHeperiod_5; xf_period = xfperiod_5; break;
+                    case 5: xA_period = xAperiod_6; xC_period = xCperiod_6; xCH_period = xCHperiod_6; xHe_period = xHeperiod_6; xf_period = xfperiod_6; break;
+                    case 6: xA_period = xAperiod_7; xC_period = xCperiod_7; xCH_period = xCHperiod_7; xHe_period = xHeperiod_7; xf_period = xfperiod_7; break;
+                    case 7: xA_period = xAperiod_8; xC_period = xCperiod_8; xCH_period = xCHperiod_8; xHe_period = xHeperiod_8; xf_period = xfperiod_8; break;
+                    case 8: xA_period = xAperiod_9; xC_period = xCperiod_9; xCH_period = xCHperiod_9; xHe_period = xHeperiod_9; xf_period = xfperiod_9; break;
+                }
+
+                // Calculate dilution factor for each period
+                auto [dilution_period, error_period] = calculate_dilution_and_error(
+                    nA_period, nC, nCH, nMT, nf, 
+                    xA_period, xC_period, xCH_period, xHe_period, xf_period
+                );
+                gr_dilution_periods[i]->SetPoint(binIndex, meanCurrentVariable + 0.005 * (i + 1), dilution_period);
+                gr_dilution_periods[i]->SetPointError(binIndex, 0, error_period);
+            }
+
+            // Clean up histograms
+            delete h_nh3_total;
+            delete h_c;
+            delete h_ch;
+            delete h_he;
+            delete h_empty;
         }
 
         // Print values for each bin
