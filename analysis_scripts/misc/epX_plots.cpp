@@ -750,8 +750,8 @@ void plotTargetPolarizationDependence(
     TCanvas *c2 = new TCanvas("c2", "Target Polarization Histograms", 1600, 800);
 
     // Create histograms for positive and negative target polarizations
-    TH1F *histPos = new TH1F("histPos", "Positive Target Polarizations", 50, -1.0, 1.0);
-    TH1F *histNeg = new TH1F("histNeg", "Negative Target Polarizations", 50, -1.0, 1.0);
+    TH1F *histPos = new TH1F("histPos", "Positive Target Polarizations", 50, 0.0, 1.0);  // 0 to 1 for positives
+    TH1F *histNeg = new TH1F("histNeg", "Negative Target Polarizations", 50, -1.0, 0.0); // -1 to 0 for negatives
 
     // Remove stat boxes
     gStyle->SetOptStat(0);
@@ -765,8 +765,8 @@ void plotTargetPolarizationDependence(
     }
 
     // Fit the histograms to a Gaussian distribution
-    TF1 *gausPos = new TF1("gausPos", "gaus", 0, 1.0);
-    TF1 *gausNeg = new TF1("gausNeg", "gaus", -1.0, 0);
+    TF1 *gausPos = new TF1("gausPos", "gaus", 0.0, 1.0);  // 0 to 1 for positives
+    TF1 *gausNeg = new TF1("gausNeg", "gaus", -1.0, 0.0); // -1 to 0 for negatives
 
     histPos->Fit(gausPos, "Q");  // Silent mode for positive fit
     histNeg->Fit(gausNeg, "Q");  // Silent mode for negative fit
@@ -790,25 +790,24 @@ void plotTargetPolarizationDependence(
     histPos->GetYaxis()->SetTitle("Runs");
     histPos->Draw("E1");  // Draw histogram with error bars
 
+    // Draw fitted Gaussian curve for positive histogram
+    gausPos->SetLineColor(kRed);
+    gausPos->Draw("SAME");
+
     // Draw negative polarization histogram as blue data points
     histNeg->SetMarkerColor(kBlue);
     histNeg->SetMarkerStyle(21);
     histNeg->SetMarkerSize(1.0);
     histNeg->Draw("E1 SAME");  // Draw on the same canvas
 
-    // Draw fitted Gaussian curves for both histograms
-    gausPos->SetLineColor(kRed);
-    gausPos->Draw("SAME");
-
+    // Draw fitted Gaussian curve for negative histogram
     gausNeg->SetLineColor(kBlue);
     gausNeg->Draw("SAME");
 
     // Add a legend for the fits and corresponding means and sigmas
     TLegend *leg = new TLegend(0.6, 0.7, 0.9, 0.9);
-    leg->AddEntry(gausPos, Form("#mu_{+} = %.4f, #sigma_{+} = %.4f", muPosHist, sigmaPosHist), "l");
-    leg->AddEntry(gausNeg, Form("#mu_{-} = %.4f, #sigma_{-} = %.4f", muNegHist, sigmaNegHist), "l");
-    leg->SetTextColor(kRed);  // Set legend text to red for the positive polarization
-    leg->SetTextColor(kBlue); // Set legend text to blue for the negative polarization
+    leg->AddEntry(gausPos, Form("#mu_{+} = %.4f, #sigma_{+} = %.4f", muPosHist, sigmaPosHist), "l")->SetTextColor(kRed);
+    leg->AddEntry(gausNeg, Form("#mu_{-} = %.4f, #sigma_{-} = %.4f", muNegHist, sigmaNegHist), "l")->SetTextColor(kBlue);
     leg->Draw();
 
     // Save the canvas
@@ -820,9 +819,7 @@ void plotTargetPolarizationDependence(
     delete histNeg;
     delete gausPos;
     delete gausNeg;
-    delete c;
-    delete fitFuncPos;
-    delete fitFuncNeg;
+    delete leg;
 }
 
 void plotComparison(
