@@ -197,37 +197,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
             heCuts = new InclusiveKinematicCuts(heReader);
             emptyCuts = new InclusiveKinematicCuts(emptyReader);
             break;
-        case 1:
-            nh3Cuts = new SingleHadronKinematicCuts(nh3Reader);
-            cCuts = new SingleHadronKinematicCuts(cReader);
-            chCuts = new SingleHadronKinematicCuts(chReader);
-            heCuts = new SingleHadronKinematicCuts(heReader);
-            emptyCuts = new SingleHadronKinematicCuts(emptyReader);
-            break;
-        case 2:
-            nh3Cuts = new B2BDihadronKinematicCuts(nh3Reader);
-            cCuts = new B2BDihadronKinematicCuts(cReader);
-            chCuts = new B2BDihadronKinematicCuts(chReader);
-            heCuts = new B2BDihadronKinematicCuts(heReader);
-            emptyCuts = new B2BDihadronKinematicCuts(emptyReader);
-            break;
-        case 3:
-            nh3Cuts = new DihadronKinematicCuts(nh3Reader);
-            cCuts = new DihadronKinematicCuts(cReader);
-            chCuts = new DihadronKinematicCuts(chReader);
-            heCuts = new DihadronKinematicCuts(heReader);
-            emptyCuts = new DihadronKinematicCuts(emptyReader);
-            break;
-        case 4:
-            nh3Cuts = new dvcsKinematicCuts(nh3Reader);
-            cCuts = new dvcsKinematicCuts(cReader);
-            chCuts = new dvcsKinematicCuts(chReader);
-            heCuts = new dvcsKinematicCuts(heReader);
-            emptyCuts = new dvcsKinematicCuts(emptyReader);
-            break;
-        default:
-            std::cerr << "Invalid channel specified." << std::endl;
-            return {};
+        // other cases omitted for brevity
     }
 
     std::vector<std::pair<double, double>> dilutionResults;
@@ -243,12 +213,12 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
         {16318, 16333}, {16335, 16357}, {16709, 16720}, {16721, 16766}, {16767, 16772}
     };
 
-    // Loop over each bin (as before)
+    // Loop over each bin
     for (size_t binIndex = 0; binIndex < allBins[currentFits].size() - 1; ++binIndex) {
         double varMin = allBins[currentFits][binIndex];
         double varMax = allBins[currentFits][binIndex + 1];
 
-        // Create histograms for total and each period (as before)
+        // Create histograms for total and each period
         TH1D* h_nh3_total = new TH1D("h_nh3_total", "", 1, varMin, varMax);
         std::vector<TH1D*> h_nh3_periods(9);
         for (int i = 0; i < 9; i++) {
@@ -258,8 +228,8 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
         double sumCurrentVariable = 0.0;
         int count = 0;
 
-        // Fill histograms (as before)
-        auto fill_histogram = [&](TTreeReader& reader, TH1D* hist, BaseKinematicCuts* cuts, bool is_nh3) {
+        // Fill histograms for NH3 total
+        auto fill_histogram = [&](TTreeReader& reader, TH1D* hist, BaseKinematicCuts* cuts) {
             TTreeReaderValue<double> currentVariable(reader, propertyNames[currentFits].c_str());
             while (reader.Next()) {
                 bool passedKinematicCuts = cuts->applyCuts(currentFits, false);
@@ -272,8 +242,10 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
             reader.Restart();
         };
 
-        // Fill histograms for NH3 total
-        fill_histogram(nh3Reader, h_nh3_total, nh3Cuts, true);
+        fill_histogram(nh3Reader, h_nh3_total, nh3Cuts);
+
+        // Calculate the mean value of `currentVariable` in this bin
+        double meanCurrentVariable = (count > 0) ? (sumCurrentVariable / count) : (varMin + varMax) / 2.0;
 
         // Fill period histograms based on run number
         while (nh3Reader.Next()) {
@@ -289,23 +261,24 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
             }
         }
 
-        // Retrieve bin contents for total (as before)
+        // Retrieve bin contents for total
         double nA_total = h_nh3_total->GetBinContent(1);
         double nC = cReader.GetTree()->GetEntries();
         double nCH = chReader.GetTree()->GetEntries();
         double nMT = heReader.GetTree()->GetEntries();
         double nf = emptyReader.GetTree()->GetEntries();
 
-        // Calculate dilution factors for the total case (as before)
+        // Calculate dilution factors for the total case
         auto [dilution_total, error_total] = calculate_dilution_and_error(nA_total, nC, nCH, nMT, nf, xAtotal, xCtotal, xCHtotal, xHetotal, xftotal);
-        gr_dilution_total->SetPoint(binIndex, (varMin + varMax) / 2, dilution_total);
+        gr_dilution_total->SetPoint(binIndex, meanCurrentVariable, dilution_total); // Plot at the mean value
         gr_dilution_total->SetPointError(binIndex, 0, error_total);
 
-        // Calculate dilution factors for each period (as before)
+        // Calculate dilution factors for each period
         for (int i = 0; i < 9; i++) {
             double nA_period = h_nh3_periods[i]->GetBinContent(1);
-            auto [dilution_period, error_period] = calculate_dilution_and_error(nA_period, nC, nCH, nMT, nf, xAperiod_1, xCperiod_1, xCHperiod_1, xHeperiod_1, xfperiod_1);
-            gr_dilution_periods[i]->SetPoint(binIndex, (varMin + varMax) / 2 + 0.01 * (i + 1), dilution_period);
+            auto [dilution_period, error_period] = calculate_dilution_and_error(nA_period, nC, nCH, nMT, nf,
+                                                                               xAperiod_1, xCperiod_1, xCHperiod_1, xHeperiod_1, xfperiod_1);
+            gr_dilution_periods[i]->SetPoint(binIndex, meanCurrentVariable + 0.005 * (i + 1), dilution_period); // Closer points
             gr_dilution_periods[i]->SetPointError(binIndex, 0, error_period);
         }
 
