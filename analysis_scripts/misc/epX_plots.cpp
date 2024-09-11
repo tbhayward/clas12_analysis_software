@@ -781,24 +781,29 @@ void plotTargetPolarizationDependence(
     histPos->SetLineColor(kRed);
     histNeg->SetLineColor(kBlue);
 
-    // Draw positive polarization histogram as red data points
+    // Set the x-axis range to cover both positive and negative target polarizations
+    TH1F *frame = new TH1F("frame", "", 100, -1.0, 1.0);  // Frame to set the range of the plot
+    frame->SetMinimum(0); // Minimum y value to ensure the histograms are fully visible
+    frame->SetMaximum(25); // Adjust this as per your data if necessary
+    frame->GetXaxis()->SetTitle("Target Polarization");
+    frame->GetYaxis()->SetTitle("Runs");
+    frame->Draw();  // Draw the frame first
+
+    // Draw positive polarization histogram as red data points without horizontal error bars
     histPos->SetMarkerColor(kRed);
     histPos->SetMarkerStyle(20);
     histPos->SetMarkerSize(1.0);
-    histPos->SetTitle(""); // Optional, if you want a clean title area
-    histPos->GetXaxis()->SetTitle("Target Polarization");
-    histPos->GetYaxis()->SetTitle("Runs");
-    histPos->Draw("E1");  // Draw histogram with error bars
+    histPos->Draw("E SAME");  // Draw histogram with vertical error bars only
 
     // Draw fitted Gaussian curve for positive histogram
     gausPos->SetLineColor(kRed);
     gausPos->Draw("SAME");
 
-    // Draw negative polarization histogram as blue data points
+    // Draw negative polarization histogram as blue data points without horizontal error bars
     histNeg->SetMarkerColor(kBlue);
     histNeg->SetMarkerStyle(21);
     histNeg->SetMarkerSize(1.0);
-    histNeg->Draw("E1 SAME");  // Draw on the same canvas
+    histNeg->Draw("E SAME");  // Draw histogram with vertical error bars only
 
     // Draw fitted Gaussian curve for negative histogram
     gausNeg->SetLineColor(kBlue);
