@@ -2723,7 +2723,8 @@ void plot_ecin_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRe
     }
 }
 
-void plot_ecout_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+void plot_ecout_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
+    const std::string& dataset = "rga_fa18_inb") {
     // Define the 2D histogram bins and ranges
     int nBins_lv_lw_lu = 100;
     int nBins_sf = 40;
@@ -2822,64 +2823,64 @@ void plot_ecout_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcR
         TH2D* h_mc_sf_lu[6] = {nullptr};
 
         for (int sector = 1; sector <= 6; ++sector) {
-            std::string title_data_lv_lw = "data EC_{out} sector " + std::to_string(sector) + " (" + particle_name + ")";
+            std::string title_data_lv_lw = dataset + " data EC_{out} sector " + std::to_string(sector) + " (" + particle_name + ")";
             h_data_lv_lw[sector-1] = new TH2D(("h_data_lv_lw_s" + std::to_string(sector)).c_str(), title_data_lv_lw.c_str(), nBins_lv_lw_lu, lwMin, lwMax, nBins_lv_lw_lu, lvMin, lvMax);
             h_data_lv_lw[sector-1]->GetXaxis()->SetTitle("lw");
             h_data_lv_lw[sector-1]->GetYaxis()->SetTitle("lv");
 
-            std::string title_data_lv_lu = "data EC_{out} sector " + std::to_string(sector) + " (" + particle_name + ")";
+            std::string title_data_lv_lu = dataset + " data EC_{out} sector " + std::to_string(sector) + " (" + particle_name + ")";
             h_data_lv_lu[sector-1] = new TH2D(("h_data_lv_lu_s" + std::to_string(sector)).c_str(), title_data_lv_lu.c_str(), nBins_lv_lw_lu, lwMin, lwMax, nBins_lv_lw_lu, lvMin, lvMax);
             h_data_lv_lu[sector-1]->GetXaxis()->SetTitle("lu");
             h_data_lv_lu[sector-1]->GetYaxis()->SetTitle("lv");
 
-            std::string title_data_lw_lu = "data EC_{out} sector " + std::to_string(sector) + " (" + particle_name + ")";
+            std::string title_data_lw_lu = dataset + " data EC_{out} sector " + std::to_string(sector) + " (" + particle_name + ")";
             h_data_lw_lu[sector-1] = new TH2D(("h_data_lw_lu_s" + std::to_string(sector)).c_str(), title_data_lw_lu.c_str(), nBins_lv_lw_lu, lwMin, lwMax, nBins_lv_lw_lu, lvMin, lvMax);
             h_data_lw_lu[sector-1]->GetXaxis()->SetTitle("lu");
             h_data_lw_lu[sector-1]->GetYaxis()->SetTitle("lw");
 
-            std::string title_data_sf_lv = "data EC_{out} sector " + std::to_string(sector) + " (" + particle_name + ")";
+            std::string title_data_sf_lv = dataset + " data EC_{out} sector " + std::to_string(sector) + " (" + particle_name + ")";
             h_data_sf_lv[sector-1] = new TH2D(("h_data_sf_lv_s" + std::to_string(sector)).c_str(), title_data_sf_lv.c_str(), nBins_lv_lw_lu, lvMin, lvMax, nBins_sf, sfMin, sfMax);
             h_data_sf_lv[sector-1]->GetXaxis()->SetTitle("lv");
             h_data_sf_lv[sector-1]->GetYaxis()->SetTitle("Sampling Fraction");
 
-            std::string title_data_sf_lw = "data EC_{out} sector " + std::to_string(sector) + " (" + particle_name + ")";
+            std::string title_data_sf_lw = dataset + " data EC_{out} sector " + std::to_string(sector) + " (" + particle_name + ")";
             h_data_sf_lw[sector-1] = new TH2D(("h_data_sf_lw_s" + std::to_string(sector)).c_str(), title_data_sf_lw.c_str(), nBins_lv_lw_lu, lwMin, lwMax, nBins_sf, sfMin, sfMax);
             h_data_sf_lw[sector-1]->GetXaxis()->SetTitle("lw");
             h_data_sf_lw[sector-1]->GetYaxis()->SetTitle("Sampling Fraction");
 
-            std::string title_data_sf_lu = "data EC_{out} sector " + std::to_string(sector) + " (" + particle_name + ")";
+            std::string title_data_sf_lu = dataset + " data EC_{out} sector " + std::to_string(sector) + " (" + particle_name + ")";
             h_data_sf_lu[sector-1] = new TH2D(("h_data_sf_lu_s" + std::to_string(sector)).c_str(), title_data_sf_lu.c_str(), nBins_lv_lw_lu, luMin, luMax, nBins_sf, sfMin, sfMax);
             h_data_sf_lu[sector-1]->GetXaxis()->SetTitle("lu");
             h_data_sf_lu[sector-1]->GetYaxis()->SetTitle("Sampling Fraction");
 
             if (mcReader) {
-                std::string title_mc_lv_lw = "mc EC_{out} sector " + std::to_string(sector) + " (" + particle_name + ")";
+                std::string title_mc_lv_lw = dataset + " mc EC_{out} sector " + std::to_string(sector) + " (" + particle_name + ")";
                 h_mc_lv_lw[sector-1] = new TH2D(("h_mc_lv_lw_s" + std::to_string(sector)).c_str(), title_mc_lv_lw.c_str(), nBins_lv_lw_lu, lwMin, lwMax, nBins_lv_lw_lu, lvMin, lvMax);
                 h_mc_lv_lw[sector-1]->GetXaxis()->SetTitle("lw");
                 h_mc_lv_lw[sector-1]->GetYaxis()->SetTitle("lv");
 
-                std::string title_mc_lv_lu = "mc EC_{out} sector " + std::to_string(sector) + " (" + particle_name + ")";
+                std::string title_mc_lv_lu = dataset + " mc EC_{out} sector " + std::to_string(sector) + " (" + particle_name + ")";
                 h_mc_lv_lu[sector-1] = new TH2D(("h_mc_lv_lu_s" + std::to_string(sector)).c_str(), title_mc_lv_lu.c_str(), nBins_lv_lw_lu, lwMin, lwMax, nBins_lv_lw_lu, lvMin, lvMax);
                 h_mc_lv_lu[sector-1]->GetXaxis()->SetTitle("lu");
                 h_mc_lv_lu[sector-1]->GetYaxis()->SetTitle("lv");
 
-                std::string title_mc_lw_lu = "mc EC_{out} sector " + std::to_string(sector) + " (" + particle_name + ")";
+                std::string title_mc_lw_lu = dataset + " mc EC_{out} sector " + std::to_string(sector) + " (" + particle_name + ")";
                 h_mc_lw_lu[sector-1] = new TH2D(("h_mc_lw_lu_s" + std::to_string(sector)).c_str(), title_mc_lw_lu.c_str(), nBins_lv_lw_lu, lwMin, lwMax, nBins_lv_lw_lu, lvMin, lvMax);
                 h_mc_lw_lu[sector-1]->GetXaxis()->SetTitle("lu");
                 h_mc_lw_lu[sector-1]->GetYaxis()->SetTitle("lw");
 
-                std::string title_mc_sf_lv = "mc EC_{out} sector " + std::to_string(sector) + " (" + particle_name + ")";
+                std::string title_mc_sf_lv = dataset + " mc EC_{out} sector " + std::to_string(sector) + " (" + particle_name + ")";
                 h_mc_sf_lv[sector-1] = new TH2D(("h_mc_sf_lv_s" + std::to_string(sector)).c_str(), title_mc_sf_lv.c_str(), nBins_lv_lw_lu, lvMin, lvMax, nBins_sf, sfMin, sfMax);
                 h_mc_sf_lv[sector-1]->GetXaxis()->SetTitle("lv");
                 h_mc_sf_lv[sector-1]->GetYaxis()->SetTitle("Sampling Fraction");
 
-                std::string title_mc_sf_lw = "mc EC_{out} sector " + std::to_string(sector) + " (" + particle_name + ")";
+                std::string title_mc_sf_lw = dataset + " mc EC_{out} sector " + std::to_string(sector) + " (" + particle_name + ")";
                 h_mc_sf_lw[sector-1] = new TH2D(("h_mc_sf_lw_s" + std::to_string(sector)).c_str(), title_mc_sf_lw.c_str(), nBins_lv_lw_lu, lwMin, lwMax, nBins_sf, sfMin, sfMax);
                 h_mc_sf_lw[sector-1]->GetXaxis()->SetTitle("lw");
                 h_mc_sf_lw[sector-1]->GetYaxis()->SetTitle("Sampling Fraction");
 
-                std::string title_mc_sf_lu = "mc EC_{out} sector " + std::to_string(sector) + " (" + particle_name + ")";
-                h_mc_sf_lu[sector-1] = new TH2D(("h_mc_sf_lu_s" + std::to_string(sector)).c_str(), title_mc_sf_lu.c_str(),nBins_lv_lw_lu, luMin, luMax, nBins_sf, sfMin, sfMax);
+                std::string title_mc_sf_lu = dataset + " mc EC_{out} sector " + std::to_string(sector) + " (" + particle_name + ")";
+                h_mc_sf_lu[sector-1] = new TH2D(("h_mc_sf_lu_s" + std::to_string(sector)).c_str(), title_mc_sf_lu.c_str(), nBins_lv_lw_lu, luMin, luMax, nBins_sf, sfMin, sfMax);
                 h_mc_sf_lu[sector-1]->GetXaxis()->SetTitle("lu");
                 h_mc_sf_lu[sector-1]->GetYaxis()->SetTitle("Sampling Fraction");
             }
@@ -2895,14 +2896,38 @@ void plot_ecout_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcR
         TProfile* prof_mc_sf_lu[6] = {nullptr};
 
         for (int sector = 0; sector < 6; ++sector) {
-            prof_data_sf_lv[sector] = new TProfile(("prof_data_sf_lv_s" + std::to_string(sector+1)).c_str(), "Sampling Fraction vs lv", nBins_lv_lw_lu, lvMin, lvMax, sfMin, sfMax);
-            prof_data_sf_lw[sector] = new TProfile(("prof_data_sf_lw_s" + std::to_string(sector+1)).c_str(), "Sampling Fraction vs lw", nBins_lv_lw_lu, lwMin, lwMax, sfMin, sfMax);
-            prof_data_sf_lu[sector] = new TProfile(("prof_data_sf_lu_s" + std::to_string(sector+1)).c_str(), "Sampling Fraction vs lu", nBins_lv_lw_lu, luMin, luMax, sfMin, sfMax);
+            prof_data_sf_lv[sector] = new TProfile(
+                ("prof_data_sf_lv_s" + std::to_string(sector + 1)).c_str(),
+                (dataset + " Sampling Fraction vs lv").c_str(),
+                nBins_lv_lw_lu, lvMin, lvMax, sfMin, sfMax
+            );
+            prof_data_sf_lw[sector] = new TProfile(
+                ("prof_data_sf_lw_s" + std::to_string(sector + 1)).c_str(),
+                (dataset + " Sampling Fraction vs lw").c_str(),
+                nBins_lv_lw_lu, lwMin, lwMax, sfMin, sfMax
+            );
+            prof_data_sf_lu[sector] = new TProfile(
+                ("prof_data_sf_lu_s" + std::to_string(sector + 1)).c_str(),
+                (dataset + " Sampling Fraction vs lu").c_str(),
+                nBins_lv_lw_lu, luMin, luMax, sfMin, sfMax
+            );
 
             if (mcReader) {
-                prof_mc_sf_lv[sector] = new TProfile(("prof_mc_sf_lv_s" + std::to_string(sector+1)).c_str(), "Sampling Fraction vs lv (MC)", nBins_lv_lw_lu, lvMin, lvMax, sfMin, sfMax);
-                prof_mc_sf_lw[sector] = new TProfile(("prof_mc_sf_lw_s" + std::to_string(sector+1)).c_str(), "Sampling Fraction vs lw (MC)", nBins_lv_lw_lu, lwMin, lwMax, sfMin, sfMax);
-                prof_mc_sf_lu[sector] = new TProfile(("prof_mc_sf_lu_s" + std::to_string(sector+1)).c_str(), "Sampling Fraction vs lu (MC)", nBins_lv_lw_lu, luMin, luMax, sfMin, sfMax);
+                prof_mc_sf_lv[sector] = new TProfile(
+                    ("prof_mc_sf_lv_s" + std::to_string(sector + 1)).c_str(),
+                    (dataset + " Sampling Fraction vs lv (MC)").c_str(),
+                    nBins_lv_lw_lu, lvMin, lvMax, sfMin, sfMax
+                );
+                prof_mc_sf_lw[sector] = new TProfile(
+                    ("prof_mc_sf_lw_s" + std::to_string(sector + 1)).c_str(),
+                    (dataset + " Sampling Fraction vs lw (MC)").c_str(),
+                    nBins_lv_lw_lu, lwMin, lwMax, sfMin, sfMax
+                );
+                prof_mc_sf_lu[sector] = new TProfile(
+                    ("prof_mc_sf_lu_s" + std::to_string(sector + 1)).c_str(),
+                    (dataset + " Sampling Fraction vs lu (MC)").c_str(),
+                    nBins_lv_lw_lu, luMin, luMax, sfMin, sfMax
+                );
             }
         }
 
@@ -2994,119 +3019,129 @@ void plot_ecout_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcR
         }
 
         // Create 2x3 grid plots for comparison of sampling fraction vs lv, lw, lu across all sectors
-        TCanvas c_sf_lv_grid("c_sf_lv_grid", ("Sampling Fraction vs lv (all sectors) - " + particle_name).c_str(), 1800, 1200);
+        TCanvas c_sf_lv_grid("c_sf_lv_grid", (dataset + " Sampling Fraction vs lv (all sectors) - " + particle_name).c_str(), 1800, 1200);
         c_sf_lv_grid.Divide(3, 2);
         for (int sector = 1; sector <= 6; ++sector) {
             c_sf_lv_grid.cd(sector);
             gPad->SetLeftMargin(0.20);  // Adjust the left margin to add padding
-			graph_data_sf_lv[sector-1]->SetTitle(("Sector " + std::to_string(sector)).c_str());
+            graph_data_sf_lv[sector-1]->SetTitle(("Sector " + std::to_string(sector)).c_str());
             graph_data_sf_lv[sector-1]->GetYaxis()->SetRangeUser(0.18, 0.28);
-			graph_data_sf_lv[sector-1]->Draw("AP");
-			if (mcReader) graph_mc_sf_lv[sector-1]->Draw("P same");
+            graph_data_sf_lv[sector-1]->Draw("AP");
+            if (mcReader) graph_mc_sf_lv[sector-1]->Draw("P same");
             auto legend = new TLegend(0.7, 0.75, 0.9, 0.9);
-			legend->AddEntry(graph_data_sf_lv[sector-1], "data", "pl");
-			if (mcReader) legend->AddEntry(graph_mc_sf_lv[sector-1], "mc", "pl");
-			legend->Draw();
+            legend->AddEntry(graph_data_sf_lv[sector-1], "data", "pl");
+            if (mcReader) legend->AddEntry(graph_mc_sf_lv[sector-1], "mc", "pl");
+            legend->Draw();
             graph_data_sf_lv[sector-1]->GetXaxis()->SetTitle("lv");
             graph_data_sf_lv[sector-1]->GetYaxis()->SetTitle("Sampling Fraction");
         }
-        c_sf_lv_grid.SaveAs(("output/calibration/cal/fiducial/ecout/sf_vs_lv_grid_" + particle_name + ".png").c_str());
+        c_sf_lv_grid.SaveAs(("output/calibration/cal/fiducial/ecout/sf_vs_lv_grid_" + dataset + "_" + particle_name + ".png").c_str());
 
-        TCanvas c_sf_lw_grid("c_sf_lw_grid", ("Sampling Fraction vs lw (all sectors) - " + particle_name).c_str(), 1800, 1200);
+        TCanvas c_sf_lw_grid("c_sf_lw_grid", (dataset + " Sampling Fraction vs lw (all sectors) - " + particle_name).c_str(), 1800, 1200);
         c_sf_lw_grid.Divide(3, 2);
         for (int sector = 1; sector <= 6; ++sector) {
             c_sf_lw_grid.cd(sector);
             gPad->SetLeftMargin(0.20);  // Adjust the left margin to add padding
-			graph_data_sf_lw[sector-1]->SetTitle(("Sector " + std::to_string(sector)).c_str());
+            graph_data_sf_lw[sector-1]->SetTitle(("Sector " + std::to_string(sector)).c_str());
             graph_data_sf_lw[sector-1]->GetYaxis()->SetRangeUser(0.18, 0.28);
-			graph_data_sf_lw[sector-1]->Draw("AP");
-			if (mcReader) graph_mc_sf_lw[sector-1]->Draw("P same");
+            graph_data_sf_lw[sector-1]->Draw("AP");
+            if (mcReader) graph_mc_sf_lw[sector-1]->Draw("P same");
             auto legend = new TLegend(0.7, 0.75, 0.9, 0.9);
-			legend->AddEntry(graph_data_sf_lw[sector-1], "data", "pl");
-			if (mcReader) legend->AddEntry(graph_mc_sf_lv[sector-1], "mc", "pl");
-			legend->Draw();
+            legend->AddEntry(graph_data_sf_lw[sector-1], "data", "pl");
+            if (mcReader) legend->AddEntry(graph_mc_sf_lv[sector-1], "mc", "pl");
+            legend->Draw();
             graph_data_sf_lw[sector-1]->GetXaxis()->SetTitle("lw");
             graph_data_sf_lw[sector-1]->GetYaxis()->SetTitle("Sampling Fraction");
         }
-        c_sf_lw_grid.SaveAs(("output/calibration/cal/fiducial/ecout/sf_vs_lw_grid_" + particle_name + ".png").c_str());
+        c_sf_lw_grid.SaveAs(("output/calibration/cal/fiducial/ecout/sf_vs_lw_grid_" + dataset + "_" + particle_name + ".png").c_str());
 
-        TCanvas c_sf_lu_grid("c_sf_lu_grid", ("Sampling Fraction vs lu (all sectors) - " + particle_name).c_str(), 1800, 1200);
+        TCanvas c_sf_lu_grid("c_sf_lu_grid", (dataset + " Sampling Fraction vs lu (all sectors) - " + particle_name).c_str(), 1800, 1200);
         c_sf_lu_grid.Divide(3, 2);
         for (int sector = 1; sector <= 6; ++sector) {
             c_sf_lu_grid.cd(sector);
             gPad->SetLeftMargin(0.20);  // Adjust the left margin to add padding
-			graph_data_sf_lu[sector-1]->SetTitle(("Sector " + std::to_string(sector)).c_str());
+            graph_data_sf_lu[sector-1]->SetTitle(("Sector " + std::to_string(sector)).c_str());
             graph_data_sf_lu[sector-1]->GetYaxis()->SetRangeUser(0.18, 0.28);
-			graph_data_sf_lu[sector-1]->Draw("AP");
-			if (mcReader) graph_mc_sf_lu[sector-1]->Draw("P same");
+            graph_data_sf_lu[sector-1]->Draw("AP");
+            if (mcReader) graph_mc_sf_lu[sector-1]->Draw("P same");
             auto legend = new TLegend(0.7, 0.75, 0.9, 0.9);
-			legend->AddEntry(graph_data_sf_lu[sector-1], "data", "pl");
-			if (mcReader) legend->AddEntry(graph_mc_sf_lu[sector-1], "mc", "pl");
-			legend->Draw();
+            legend->AddEntry(graph_data_sf_lu[sector-1], "data", "pl");
+            if (mcReader) legend->AddEntry(graph_mc_sf_lu[sector-1], "mc", "pl");
+            legend->Draw();
             graph_data_sf_lu[sector-1]->GetXaxis()->SetTitle("lu");
             graph_data_sf_lu[sector-1]->GetYaxis()->SetTitle("Sampling Fraction");
         }
-        c_sf_lu_grid.SaveAs(("output/calibration/cal/fiducial/ecout/sf_vs_lu_grid_" + particle_name + ".png").c_str());
+        c_sf_lu_grid.SaveAs(("output/calibration/cal/fiducial/ecout/sf_vs_lu_grid_" + dataset + "_" + particle_name + ".png").c_str());
 
         // Save the original 2D histograms as before
-        TCanvas c_data_lv_lw(("c_data_fiducial_lv_lw_" + particle_name).c_str(), ("Data lv vs lw (" + particle_name + ")").c_str(), 1800, 1200);
+        TCanvas c_data_lv_lw(("c_data_fiducial_lv_lw_" + dataset + "_" + particle_name).c_str(), 
+            (dataset + " Data lv vs lw (" + particle_name + ")").c_str(), 1800, 1200);
         c_data_lv_lw.Divide(3, 2);
         c_data_lv_lw.SetLogz(); // Set log scale on the z-axis
         c_data_lv_lw.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
 
-        // Save the original 2D histograms as before
-        TCanvas c_data_lv_lu(("c_data_fiducial_lv_lu_" + particle_name).c_str(), ("Data lv vs lu (" + particle_name + ")").c_str(), 1800, 1200);
+        TCanvas c_data_lv_lu(("c_data_fiducial_lv_lu_" + dataset + "_" + particle_name).c_str(), 
+            (dataset + " Data lv vs lu (" + particle_name + ")").c_str(), 1800, 1200);
         c_data_lv_lu.Divide(3, 2);
         c_data_lv_lu.SetLogz(); // Set log scale on the z-axis
         c_data_lv_lu.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
 
-        // Save the original 2D histograms as before
-        TCanvas c_data_lw_lu(("c_data_fiducial_lw_lu_" + particle_name).c_str(), ("Data lw vs lu (" + particle_name + ")").c_str(), 1800, 1200);
+        TCanvas c_data_lw_lu(("c_data_fiducial_lw_lu_" + dataset + "_" + particle_name).c_str(), 
+            (dataset + " Data lw vs lu (" + particle_name + ")").c_str(), 1800, 1200);
         c_data_lw_lu.Divide(3, 2);
         c_data_lw_lu.SetLogz(); // Set log scale on the z-axis
         c_data_lw_lu.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
 
-        TCanvas c_mc_lv_lw(("c_mc_fiducial_lv_lw_" + particle_name).c_str(), ("MC lv vs lw (" + particle_name + ")").c_str(), 1800, 1200);
+        TCanvas c_mc_lv_lw(("c_mc_fiducial_lv_lw_" + dataset + "_" + particle_name).c_str(), 
+            (dataset + " MC lv vs lw (" + particle_name + ")").c_str(), 1800, 1200);
         c_mc_lv_lw.Divide(3, 2);
         c_mc_lv_lw.SetLogz(); // Set log scale on the z-axis
         c_mc_lv_lw.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
 
-        TCanvas c_mc_lv_lu(("c_mc_fiducial_lv_lu_" + particle_name).c_str(), ("MC lv vs lu (" + particle_name + ")").c_str(), 1800, 1200);
+        TCanvas c_mc_lv_lu(("c_mc_fiducial_lv_lu_" + dataset + "_" + particle_name).c_str(), 
+            (dataset + " MC lv vs lu (" + particle_name + ")").c_str(), 1800, 1200);
         c_mc_lv_lu.Divide(3, 2);
         c_mc_lv_lu.SetLogz(); // Set log scale on the z-axis
         c_mc_lv_lu.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
 
-        TCanvas c_mc_lw_lu(("c_mc_fiducial_lw_lu_" + particle_name).c_str(), ("MC lw vs lu (" + particle_name + ")").c_str(), 1800, 1200);
+        TCanvas c_mc_lw_lu(("c_mc_fiducial_lw_lu_" + dataset + "_" + particle_name).c_str(), 
+            (dataset + " MC lw vs lu (" + particle_name + ")").c_str(), 1800, 1200);
         c_mc_lw_lu.Divide(3, 2);
         c_mc_lw_lu.SetLogz(); // Set log scale on the z-axis
         c_mc_lw_lu.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
 
-        TCanvas c_data_sf_lv(("c_data_fiducial_sf_lv_" + particle_name).c_str(), ("Data Sampling Fraction vs lv (" + particle_name + ")").c_str(), 1800, 1200);
+        TCanvas c_data_sf_lv(("c_data_fiducial_sf_lv_" + dataset + "_" + particle_name).c_str(), 
+            (dataset + " Data Sampling Fraction vs lv (" + particle_name + ")").c_str(), 1800, 1200);
         c_data_sf_lv.Divide(3, 2);
         c_data_sf_lv.SetLogz(); // Set log scale on the z-axis
         c_data_sf_lv.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
 
-        TCanvas c_mc_sf_lv(("c_mc_fiducial_sf_lv_" + particle_name).c_str(), ("MC Sampling Fraction vs lv (" + particle_name + ")").c_str(), 1800, 1200);
+        TCanvas c_mc_sf_lv(("c_mc_fiducial_sf_lv_" + dataset + "_" + particle_name).c_str(), 
+            (dataset + " MC Sampling Fraction vs lv (" + particle_name + ")").c_str(), 1800, 1200);
         c_mc_sf_lv.Divide(3, 2);
         c_mc_sf_lv.SetLogz(); // Set log scale on the z-axis
         c_mc_sf_lv.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
 
-        TCanvas c_data_sf_lw(("c_data_fiducial_sf_lw_" + particle_name).c_str(), ("Data Sampling Fraction vs lw (" + particle_name + ")").c_str(), 1800, 1200);
+        TCanvas c_data_sf_lw(("c_data_fiducial_sf_lw_" + dataset + "_" + particle_name).c_str(), 
+            (dataset + " Data Sampling Fraction vs lw (" + particle_name + ")").c_str(), 1800, 1200);
         c_data_sf_lw.Divide(3, 2);
         c_data_sf_lw.SetLogz(); // Set log scale on the z-axis
         c_data_sf_lw.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
 
-        TCanvas c_mc_sf_lw(("c_mc_fiducial_sf_lw_" + particle_name).c_str(), ("MC Sampling Fraction vs lw (" + particle_name + ")").c_str(), 1800, 1200);
+        TCanvas c_mc_sf_lw(("c_mc_fiducial_sf_lw_" + dataset + "_" + particle_name).c_str(), 
+            (dataset + " MC Sampling Fraction vs lw (" + particle_name + ")").c_str(), 1800, 1200);
         c_mc_sf_lw.Divide(3, 2);
         c_mc_sf_lw.SetLogz(); // Set log scale on the z-axis
         c_mc_sf_lw.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
 
-        TCanvas c_data_sf_lu(("c_data_fiducial_sf_lu_" + particle_name).c_str(), ("Data Sampling Fraction vs lu (" + particle_name + ")").c_str(), 1800, 1200);
+        TCanvas c_data_sf_lu(("c_data_fiducial_sf_lu_" + dataset + "_" + particle_name).c_str(), 
+            (dataset + " Data Sampling Fraction vs lu (" + particle_name + ")").c_str(), 1800, 1200);
         c_data_sf_lu.Divide(3, 2);
         c_data_sf_lu.SetLogz(); // Set log scale on the z-axis
         c_data_sf_lu.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
 
-        TCanvas c_mc_sf_lu(("c_mc_fiducial_sf_lu_" + particle_name).c_str(), ("MC Sampling Fraction vs lu (" + particle_name + ")").c_str(), 1800, 1200);
+        TCanvas c_mc_sf_lu(("c_mc_fiducial_sf_lu_" + dataset + "_" + particle_name).c_str(), 
+            (dataset + " MC Sampling Fraction vs lu (" + particle_name + ")").c_str(), 1800, 1200);
         c_mc_sf_lu.Divide(3, 2);
         c_mc_sf_lu.SetLogz(); // Set log scale on the z-axis
         c_mc_sf_lu.SetMargin(0.15, 0.15, 0.15, 0.15); // Add padding
@@ -3188,25 +3223,25 @@ void plot_ecout_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcR
         }
 
         // Save the original canvases
-        c_data_lv_lw.SaveAs(("output/calibration/cal/fiducial/ecout/data_fiducial_lv_lw_" + particle_name + ".png").c_str());
-        if (mcReader) c_mc_lv_lw.SaveAs(("output/calibration/cal/fiducial/ecout//mc_fiducial_lv_lw_" + particle_name + ".png").c_str());
+        c_data_lv_lw.SaveAs(("output/calibration/cal/fiducial/ecout/data_fiducial_lv_lw_" + dataset + "_" + particle_name + ".png").c_str());
+        if (mcReader) c_mc_lv_lw.SaveAs(("output/calibration/cal/fiducial/ecout/mc_fiducial_lv_lw_" + dataset + "_" + particle_name + ".png").c_str());
 
         // Save the original canvases
-        c_data_lv_lu.SaveAs(("output/calibration/cal/fiducial/ecout/data_fiducial_lv_lu_" + particle_name + ".png").c_str());
-        if (mcReader) c_mc_lv_lu.SaveAs(("output/calibration/cal/fiducial/ecout//mc_fiducial_lv_lu_" + particle_name + ".png").c_str());
+        c_data_lv_lu.SaveAs(("output/calibration/cal/fiducial/ecout/data_fiducial_lv_lu_" + dataset + "_" + particle_name + ".png").c_str());
+        if (mcReader) c_mc_lv_lu.SaveAs(("output/calibration/cal/fiducial/ecout/mc_fiducial_lv_lu_" + dataset + "_" + particle_name + ".png").c_str());
 
         // Save the original canvases
-        c_data_lw_lu.SaveAs(("output/calibration/cal/fiducial/ecout/data_fiducial_lw_lu_" + particle_name + ".png").c_str());
-        if (mcReader) c_mc_lw_lu.SaveAs(("output/calibration/cal/fiducial/ecout/mc_fiducial_lw_lu_" + particle_name + ".png").c_str());
+        c_data_lw_lu.SaveAs(("output/calibration/cal/fiducial/ecout/data_fiducial_lw_lu_" + dataset + "_" + particle_name + ".png").c_str());
+        if (mcReader) c_mc_lw_lu.SaveAs(("output/calibration/cal/fiducial/ecout/mc_fiducial_lw_lu_" + dataset + "_" + particle_name + ".png").c_str());
 
-        c_data_sf_lv.SaveAs(("output/calibration/cal/fiducial/ecout/data_fiducial_sf_lv_" + particle_name + ".png").c_str());
-        if (mcReader) c_mc_sf_lv.SaveAs(("output/calibration/cal/fiducial/ecout/mc_fiducial_sf_lv_" + particle_name + ".png").c_str());
+        c_data_sf_lv.SaveAs(("output/calibration/cal/fiducial/ecout/data_fiducial_sf_lv_" + dataset + "_" + particle_name + ".png").c_str());
+        if (mcReader) c_mc_sf_lv.SaveAs(("output/calibration/cal/fiducial/ecout/mc_fiducial_sf_lv_" + dataset + "_" + particle_name + ".png").c_str());
 
-        c_data_sf_lw.SaveAs(("output/calibration/cal/fiducial/ecout/data_fiducial_sf_lw_" + particle_name + ".png").c_str());
-        if (mcReader) c_mc_sf_lw.SaveAs(("output/calibration/cal/fiducial/ecout/mc_fiducial_sf_lw_" + particle_name + ".png").c_str());
+        c_data_sf_lw.SaveAs(("output/calibration/cal/fiducial/ecout/data_fiducial_sf_lw_" + dataset + "_" + particle_name + ".png").c_str());
+        if (mcReader) c_mc_sf_lw.SaveAs(("output/calibration/cal/fiducial/ecout/mc_fiducial_sf_lw_" + dataset + "_" + particle_name + ".png").c_str());
 
-        c_data_sf_lu.SaveAs(("output/calibration/cal/fiducial/ecout/data_fiducial_sf_lu_" + particle_name + ".png").c_str());
-        if (mcReader) c_mc_sf_lu.SaveAs(("output/calibration/cal/fiducial/ecout/mc_fiducial_sf_lu_" + particle_name + ".png").c_str());
+        c_data_sf_lu.SaveAs(("output/calibration/cal/fiducial/ecout/data_fiducial_sf_lu_" + dataset + "_" + particle_name + ".png").c_str());
+        if (mcReader) c_mc_sf_lu.SaveAs(("output/calibration/cal/fiducial/ecout/mc_fiducial_sf_lu_" + dataset + "_" + particle_name + ".png").c_str());
 
         // Clean up for this layer and particle type
         for (int sector = 0; sector < 6; ++sector) {
@@ -8642,12 +8677,12 @@ int main(int argc, char** argv) {
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
     // plot_pcal_fiducial_determination(dataReader, mcReader, dataset);
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_ecin_fiducial_determination(dataReader, mcReader, dataset);
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
-    // plot_ecout_fiducial_determination(dataReader, mcReader);
+    // plot_ecin_fiducial_determination(dataReader, mcReader, dataset);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_ecout_fiducial_determination(dataReader, mcReader, dataset);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
