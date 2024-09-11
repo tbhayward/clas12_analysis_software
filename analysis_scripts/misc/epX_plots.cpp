@@ -810,9 +810,9 @@ void plotTargetPolarizationDependence(
     gausNeg->Draw("SAME");
 
     // Add a legend for the fits and corresponding means and sigmas
-    TLegend *leg = new TLegend(0.5, 0.7, 0.9, 0.9);
-    leg->AddEntry(gausPos, Form("#mu_{+} = %.4f, #sigma_{+} = %.4f", muPosHist, sigmaPosHist), "l")->SetTextColor(kRed);
-    leg->AddEntry(gausNeg, Form("#mu_{-} = %.4f, #sigma_{-} = %.4f", muNegHist, sigmaNegHist), "l")->SetTextColor(kBlue);
+    TLegend *leg = new TLegend(0.6, 0.7, 0.9, 0.9);
+    leg->AddEntry(gausPos, Form("#mu_{+} = %.4f, #sigma_{+} = %.4f ", muPosHist, sigmaPosHist), "l")->SetTextColor(kRed);
+    leg->AddEntry(gausNeg, Form("#mu_{-} = %.4f, #sigma_{-} = %.4f ", muNegHist, sigmaNegHist), "l")->SetTextColor(kBlue);
     leg->Draw();
 
     // Save the canvas
