@@ -748,7 +748,7 @@ void plotTargetPolarizationDependence(
 
     // Create the second canvas with 1 row and 2 columns for the histograms
     TCanvas *c2 = new TCanvas("c2", "Target Polarization Histograms", 1600, 800);
-    c2->Divide(2, 1);
+    c2->Divide(2, 2);
 
     // Create histograms for positive and negative target polarizations
     TH1F *histPos = new TH1F("histPos", "Positive Target Polarizations", 50, -1.0, 1.0);
