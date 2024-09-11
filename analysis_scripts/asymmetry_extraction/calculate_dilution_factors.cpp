@@ -197,7 +197,37 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
             heCuts = new InclusiveKinematicCuts(heReader);
             emptyCuts = new InclusiveKinematicCuts(emptyReader);
             break;
-        // other cases omitted for brevity
+        case 1:
+            nh3Cuts = new SingleHadronKinematicCuts(nh3Reader);
+            cCuts = new SingleHadronKinematicCuts(cReader);
+            chCuts = new SingleHadronKinematicCuts(chReader);
+            heCuts = new SingleHadronKinematicCuts(heReader);
+            emptyCuts = new SingleHadronKinematicCuts(emptyReader);
+            break;
+        case 2:
+            nh3Cuts = new B2BDihadronKinematicCuts(nh3Reader);
+            cCuts = new B2BDihadronKinematicCuts(cReader);
+            chCuts = new B2BDihadronKinematicCuts(chReader);
+            heCuts = new B2BDihadronKinematicCuts(heReader);
+            emptyCuts = new B2BDihadronKinematicCuts(emptyReader);
+            break;
+        case 3:
+            nh3Cuts = new DihadronKinematicCuts(nh3Reader);
+            cCuts = new DihadronKinematicCuts(cReader);
+            chCuts = new DihadronKinematicCuts(chReader);
+            heCuts = new DihadronKinematicCuts(heReader);
+            emptyCuts = new DihadronKinematicCuts(emptyReader);
+            break;
+        case 4:
+            nh3Cuts = new dvcsKinematicCuts(nh3Reader);
+            cCuts = new dvcsKinematicCuts(cReader);
+            chCuts = new dvcsKinematicCuts(chReader);
+            heCuts = new dvcsKinematicCuts(heReader);
+            emptyCuts = new dvcsKinematicCuts(emptyReader);
+            break;
+        default:
+            std::cerr << "Invalid channel specified." << std::endl;
+            return {};
     }
 
     std::vector<std::pair<double, double>> dilutionResults;
