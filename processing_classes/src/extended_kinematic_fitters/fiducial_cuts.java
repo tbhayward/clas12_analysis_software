@@ -124,7 +124,7 @@ public class fiducial_cuts {
             // RGA, RGK, RGB Sp19
             switch (sector) {
                 case 1:
-                    if ((lw_1 > 69 && lw_1 < 96) || (lw_1 > 207 && lw_1 < 236)) {
+                    if ((lw_1 > 85 && lw_1 < 90) || (lw_1 > 223 && lw_1 < 228)) {
                         return false;
                     }
                     if (lv_4 > 72 && lv_4 < 94) {
@@ -132,18 +132,14 @@ public class fiducial_cuts {
                     }
                     break;
                 case 2:
-                    if ((lv_1 > 95 && lv_1 < 119) || (lu_1 > 108 && lu_1 < 126)) {
-                        return false;
-                    }
-                    if (lw_7 > 68 && lw_7 < 84) { // ECin
+                    if ((lv_1 > 103 && lv_1 < 113) || (lu_1 > 108 && lu_1 < 126)) {
                         return false;
                     }
                     break;
-                case 4:
-                    if (lv_1 > 224 && lv_1 < 247) {
+                case 5:
+                    if (lv_7 > 40 && lv_7 < 45) {
                         return false;
                     }
-                    break;
                 case 6:
                     if (lw_1 > 169 && lw_1 < 198) {
                         return false;
@@ -172,8 +168,6 @@ public class fiducial_cuts {
 //                    }
 //            }
 //        }
-        
-
         // If none of the cuts apply, the track is good
         return true;
     }

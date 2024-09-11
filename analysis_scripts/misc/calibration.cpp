@@ -408,15 +408,11 @@ bool pcal_fiducial(double lv_1, double lw_1, double lu_1,
     // Specific cuts for each sector in PCal
     // RGA only (not RGC)
     if (sector == 1) {
-        if ((lw_1 > 69 && lw_1 < 96) || (lw_1 > 207 && lw_1 < 236)) {
+        if ((lw_1 > 85 && lw_1 < 90) || (lw_1 > 223 && lw_1 < 228)) {
             return false;
         }
     } else if (sector == 2) {
-        if ((lv_1 > 95 && lv_1 < 119) || (lu_1 > 108 && lu_1 < 126)) {
-            return false;
-        }
-    } else if (sector == 4) {
-        if (lv_1 > 224 && lv_1 < 247) {
+        if ((lv_1 > 103 && lv_1 < 113) || (lu_1 > 108 && lu_1 < 126)) {
             return false;
         }
     } else if (sector == 6) {
@@ -425,24 +421,9 @@ bool pcal_fiducial(double lv_1, double lw_1, double lu_1,
         }
     }
 
-    // Specific cuts for each sector in ECin
     // RGA and RGC
     if (sector == 1) {
-        if (lv_4 > 72 && lv_4 < 94) {
-            return false;
-        }
-    }
-
-    // // Specific cuts for each sector in ECout
-    // // RGC only so far (not RGA)
-    // if (sector == 2) {
-    //     if (lw_7 > 68 && lw_7 < 84) {
-    //         return false;
-    //     }
-    // }
-    // RGA and RGC
-    if (sector == 5) {
-        if (lu_7 > 200 && lu_7 < 220) {
+        if (lv_7 > 40 && lv_7 < 45) {
             return false;
         }
     }
@@ -3288,7 +3269,8 @@ void plot_ecout_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcR
     }
 }
 
-void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
+    const std::string& dataset = "rga_fa18_inb") {
     // Define the 2D histogram bins and ranges
     int nBins = 100;
     double xMin = -450;
@@ -3376,10 +3358,10 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             }
 
             // Create histograms for data and MC for each strictness level
-            TH2D* h_data_0 = new TH2D("h_data_0", ("data " + layer_name + " hit position (" + particle_name + ", strictness_0)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-            TH2D* h_data_1 = new TH2D("h_data_1", ("data " + layer_name + " hit position (" + particle_name + ", strictness_1)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-            TH2D* h_data_2 = new TH2D("h_data_2", ("data " + layer_name + " hit position (" + particle_name + ", strictness_2)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-            TH2D* h_data_3 = new TH2D("h_data_3", ("data " + layer_name + " hit position (" + particle_name + ", strictness_3)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            TH2D* h_data_0 = new TH2D("h_data_0", (dataset + " data " + layer_name + " hit position (" + particle_name + ", strictness_0)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            TH2D* h_data_1 = new TH2D("h_data_1", (dataset + " data " + layer_name + " hit position (" + particle_name + ", strictness_1)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            TH2D* h_data_2 = new TH2D("h_data_2", (dataset + " data " + layer_name + " hit position (" + particle_name + ", strictness_2)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            TH2D* h_data_3 = new TH2D("h_data_3", (dataset + " data " + layer_name + " hit position (" + particle_name + ", strictness_3)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
 
             h_data_0->GetXaxis()->SetTitle(("x_{" + layer_name + "}").c_str());
             h_data_0->GetYaxis()->SetTitle(("y_{" + layer_name + "}").c_str());
@@ -3396,10 +3378,10 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             TH2D* h_mc_3 = nullptr;
 
             if (mcReader) {
-                h_mc_0 = new TH2D("h_mc_0", ("mc " + layer_name + " hit position (" + particle_name + ", strictness_0)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-                h_mc_1 = new TH2D("h_mc_1", ("mc " + layer_name + " hit position (" + particle_name + ", strictness_1)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-                h_mc_2 = new TH2D("h_mc_2", ("mc " + layer_name + " hit position (" + particle_name + ", strictness_2)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-                h_mc_3 = new TH2D("h_mc_3", ("mc " + layer_name + " hit position (" + particle_name + ", strictness_3)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                h_mc_0 = new TH2D("h_mc_0", (dataset + " mc " + layer_name + " hit position (" + particle_name + ", strictness_0)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                h_mc_1 = new TH2D("h_mc_1", (dataset + " mc " + layer_name + " hit position (" + particle_name + ", strictness_1)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                h_mc_2 = new TH2D("h_mc_2", (dataset + " mc " + layer_name + " hit position (" + particle_name + ", strictness_2)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                h_mc_3 = new TH2D("h_mc_3", (dataset + " mc " + layer_name + " hit position (" + particle_name + ", strictness_3)").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
 
                 h_mc_0->GetXaxis()->SetTitle(("x_{" + layer_name + "}").c_str());
                 h_mc_0->GetYaxis()->SetTitle(("y_{" + layer_name + "}").c_str());
@@ -3459,6 +3441,7 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             }
         }
     }
+
     // Create a canvas to hold the 2x4 subplots
     TCanvas* c = new TCanvas(("c_" + particle_name + "_" + layer_name).c_str(), ("c_" + particle_name + "_" + layer_name).c_str(), 1600, 800);
     c->Divide(4, 2);
@@ -3488,7 +3471,7 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
     }
 
     // Save the canvas
-    c->SaveAs(("output/calibration/cal/" + particle_name + "_" + layer_name + "_cal_hit_position.png").c_str());
+    c->SaveAs(("output/calibration/cal/" + dataset + "_" + particle_name + "_" + layer_name + "_cal_hit_position.png").c_str());
 
     // Clean up for this layer and particle type
     delete h_data_0;
