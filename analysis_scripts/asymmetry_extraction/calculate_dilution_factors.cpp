@@ -182,7 +182,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     // Declare output directory
     std::string outputDir = "output/dilution_factor_plots/";
 
-    // Read kinematic cuts (as before)
+    // Read kinematic cuts for the specific channel
     BaseKinematicCuts* nh3Cuts = nullptr;
     BaseKinematicCuts* cCuts = nullptr;
     BaseKinematicCuts* chCuts = nullptr;
@@ -307,9 +307,17 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
         for (int i = 0; i < 9; i++) {
             double nA_period = h_nh3_periods[i]->GetBinContent(1);
             auto [dilution_period, error_period] = calculate_dilution_and_error(nA_period, nC, nCH, nMT, nf,
-                                                                               xAperiod_1, xCperiod_1, xCHperiod_1, xHeperiod_1, xfperiod_1);
-            gr_dilution_periods[i]->SetPoint(binIndex, meanCurrentVariable + 0.005 * (i + 1), dilution_period); // Closer points
+                xAperiod_1, xCperiod_1, xCHperiod_1, xHeperiod_1, xfperiod_1);  // Repeat for other periods
+            gr_dilution_periods[i]->SetPoint(binIndex, meanCurrentVariable + 0.005 * (i + 1), dilution_period); // Closer point shift
             gr_dilution_periods[i]->SetPointError(binIndex, 0, error_period);
+        }
+
+        // Print values for each bin
+        std::cout << "df_" << propertyNames[currentFits] << "_0: {" << meanCurrentVariable << ", " << dilution_total << ", " << error_total << "}" << std::endl;
+        for (int i = 0; i < 9; i++) {
+            std::cout << "df_" << propertyNames[currentFits] << "_" << (i + 1) << ": {"
+                      << meanCurrentVariable + 0.0025 * (i + 1) << ", " << gr_dilution_periods[i]->GetY()[binIndex] << ", "
+                      << gr_dilution_periods[i]->GetEY()[binIndex] << "}" << std::endl;
         }
 
         // Clean up histograms
@@ -319,11 +327,10 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
         }
     }
 
-    // Declare and configure plot settings for total and period graphs
+    // Plot and save total dilution factor
     std::string prefix = propertyNames[currentFits];
     HistConfig config = histConfigs.find(prefix) != histConfigs.end() ? histConfigs[prefix] : HistConfig{100, 0, 1};
 
-    // Plot original dilution factor on the first canvas
     TCanvas* canvas1 = new TCanvas("c_dilution_total", "Total Dilution Factor", 800, 600);
     canvas1->SetLeftMargin(0.15);
     canvas1->SetBottomMargin(0.15);
@@ -338,9 +345,10 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     gr_dilution_total->SetMarkerStyle(20);
     gr_dilution_total->SetMarkerColor(kBlack);
     gr_dilution_total->Draw("AP");
-    canvas1->SaveAs((outputDir + "df_total.png").c_str());
 
-    // Plot period-based dilution factor on the second canvas
+    canvas1->SaveAs((outputDir + "df_total_" + propertyNames[currentFits] + ".png").c_str());
+
+    // Plot and save period-based dilution factor
     TCanvas* canvas2 = new TCanvas("c_dilution_periods", "Dilution Factor by Periods", 800, 600);
     canvas2->SetLeftMargin(0.15);
     canvas2->SetBottomMargin(0.15);
@@ -370,7 +378,8 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
         legend->AddEntry(gr_dilution_periods[i], Form("Period %d", i + 1), "p");
     }
     legend->Draw();
-    canvas2->SaveAs((outputDir + "df_by_periods.png").c_str());
+
+    canvas2->SaveAs((outputDir + "df_by_periods_" + propertyNames[currentFits] + ".png").c_str());
 
     // Clean up
     delete canvas1;
