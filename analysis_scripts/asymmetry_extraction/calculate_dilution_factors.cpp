@@ -156,7 +156,8 @@ std::pair<double, double> calculate_dilution_and_error(double nA, double nC, dou
 }
 
 std::vector<std::pair<double, double>> calculate_dilution_factors() {
-    // Load ROOT files and trees (as before)
+
+    // Load ROOT files and trees
     TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/cphi2024_epX/data/processed_data/dilution/rgc_su22_inb_NH3_epX.root");
     TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/cphi2024_epX/data/processed_data/dilution/rgc_su22_inb_C_epX.root");
     TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/cphi2024_epX/data/processed_data/dilution/rgc_su22_inb_CH2_epX.root");
@@ -169,26 +170,25 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     TTree* he = (TTree*)heFile->Get("PhysicsEvents");
     TTree* empty = (TTree*)emptyFile->Get("PhysicsEvents");
 
-    // Create local TTreeReader objects (as before)
+    // Create local TTreeReader objects for each tree
     TTreeReader nh3Reader(nh3);
     TTreeReader cReader(c);
     TTreeReader chReader(ch);
     TTreeReader heReader(he);
     TTreeReader emptyReader(empty);
 
+    // Read helicity and target polarization
     TTreeReaderValue<int> helicity(nh3Reader, "helicity");
-    TTreeReaderValue<int> runnum(nh3Reader, "runnum");
+    TTreeReaderValue<double> target_pol(nh3Reader, "target_pol");
 
-    // Declare output directory
-    std::string outputDir = "output/dilution_factor_plots/";
-
-    // Read kinematic cuts for the specific channel
+    // Pointers for local kinematic cuts, dynamically allocated based on the channel
     BaseKinematicCuts* nh3Cuts = nullptr;
     BaseKinematicCuts* cCuts = nullptr;
     BaseKinematicCuts* chCuts = nullptr;
     BaseKinematicCuts* heCuts = nullptr;
     BaseKinematicCuts* emptyCuts = nullptr;
 
+    // Allocate the appropriate kinematic cuts based on the channel
     switch (channel) {
         case 0:
             nh3Cuts = new InclusiveKinematicCuts(nh3Reader);
@@ -227,244 +227,129 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
             break;
         default:
             std::cerr << "Invalid channel specified." << std::endl;
-            return {};
-    }
-
-    std::vector<std::pair<double, double>> dilutionResults;
-    TGraphErrors* gr_dilution_total = new TGraphErrors();
-    std::vector<TGraphErrors*> gr_dilution_periods(9);
-    for (int i = 0; i < 9; i++) {
-        gr_dilution_periods[i] = new TGraphErrors();
-    }
-
-    // NH3 periods defined as a pair of run numbers (start, end)
-    std::vector<std::pair<int, int>> nh3_periods = {
-        {16137, 16148}, {16156, 16178}, {16211, 16228}, {16231, 16260},
-        {16318, 16333}, {16335, 16357}, {16709, 16720}, {16721, 16766}, {16767, 16772}
-    };
-
-    // Loop over each bin
-    for (size_t binIndex = 0; binIndex < allBins[currentFits].size() - 1; ++binIndex) {
-        double varMin = allBins[currentFits][binIndex];
-        double varMax = allBins[currentFits][binIndex + 1];
-
-        // Create histograms for total and each period
-        TH1D* h_nh3_total = new TH1D("h_nh3_total", "", 1, varMin, varMax);
-        std::vector<TH1D*> h_nh3_periods(9);
-        for (int i = 0; i < 9; i++) {
-            h_nh3_periods[i] = new TH1D(Form("h_nh3_period_%d", i + 1), "", 1, varMin, varMax);
+            return {}; // Return an empty vector to indicate failure
         }
+        std::vector<std::pair<double, double>> dilutionResults;
+        TGraphErrors* gr_dilution = new TGraphErrors();
+        TGraphErrors* gr_aligned = new TGraphErrors();
+        TGraphErrors* gr_unaligned = new TGraphErrors();
 
-        double sumCurrentVariable = 0.0;
-        int count = 0;
-
-        // Fill histograms for NH3 total
-        auto fill_histogram = [&](TTreeReader& reader, TH1D* hist, BaseKinematicCuts* cuts) {
-            TTreeReaderValue<double> currentVariable(reader, propertyNames[currentFits].c_str());
-            while (reader.Next()) {
-                bool passedKinematicCuts = cuts->applyCuts(currentFits, false);
-                if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
-                    hist->Fill(*currentVariable);
-                    sumCurrentVariable += *currentVariable;
-                    ++count;
-                }
-            }
-            reader.Restart();
-        };
-
-        fill_histogram(nh3Reader, h_nh3_total, nh3Cuts);
-
-        // Calculate the mean value of `currentVariable` in this bin
-        double meanCurrentVariable = (count > 0) ? (sumCurrentVariable / count) : (varMin + varMax) / 2.0;
-
-        // Fill period histograms based on run number
-        while (nh3Reader.Next()) {
-            bool passedKinematicCuts = nh3Cuts->applyCuts(currentFits, false);
-            if (!passedKinematicCuts) continue;
-
-            int run = *runnum;
-            for (int i = 0; i < nh3_periods.size(); ++i) {
-                if (run >= nh3_periods[i].first && run <= nh3_periods[i].second) {
-                    h_nh3_periods[i]->Fill(varMin);  // Fill based on current bin
-                    break;
-                }
-            }
-        }
-
-        // Retrieve bin contents for total
-        double nA_total = h_nh3_total->GetBinContent(1);
-        double nC = cReader.GetTree()->GetEntries();
-        double nCH = chReader.GetTree()->GetEntries();
-        double nMT = heReader.GetTree()->GetEntries();
-        double nf = emptyReader.GetTree()->GetEntries();
-
-        // Calculate dilution factors for the total case
-        auto [dilution_total, error_total] = calculate_dilution_and_error(nA_total, nC, nCH, nMT, nf, xAtotal, xCtotal, xCHtotal, xHetotal, xftotal);
-        gr_dilution_total->SetPoint(binIndex, meanCurrentVariable, dilution_total); // Plot at the mean value
-        gr_dilution_total->SetPointError(binIndex, 0, error_total);
-
+        // Loop over each bin
         for (size_t binIndex = 0; binIndex < allBins[currentFits].size() - 1; ++binIndex) {
             double varMin = allBins[currentFits][binIndex];
             double varMax = allBins[currentFits][binIndex + 1];
 
-            // Create histograms for total and each period
-            TH1D* h_nh3_total = new TH1D("h_nh3_total", "", 1, varMin, varMax);
-            TH1D* h_c = new TH1D("h_c", "", 1, varMin, varMax);
-            TH1D* h_ch = new TH1D("h_ch", "", 1, varMin, varMax);
-            TH1D* h_he = new TH1D("h_he", "", 1, varMin, varMax);
-            TH1D* h_empty = new TH1D("h_empty", "", 1, varMin, varMax);
+            // Create histograms for each target type
+            TH1D *h_nh3 = new TH1D("h_nh3", "", 1, varMin, varMax);
+            TH1D *h_c = new TH1D("h_c", "", 1, varMin, varMax);
+            TH1D *h_ch = new TH1D("h_ch", "", 1, varMin, varMax);
+            TH1D *h_he = new TH1D("h_he", "", 1, varMin, varMax);
+            TH1D *h_empty = new TH1D("h_empty", "", 1, varMin, varMax);
 
             double sumCurrentVariable = 0.0;
             int count = 0;
 
-            // Fill histograms for NH3 total
-            auto fill_histogram = [&](TTreeReader& reader, TH1D* hist, BaseKinematicCuts* cuts) {
+            // Helper function to fill histograms based on kinematic cuts and track mean
+            auto fill_histogram = [&](TTreeReader& reader, TH1D* hist, BaseKinematicCuts* cuts, 
+                bool is_nh3) {
                 TTreeReaderValue<double> currentVariable(reader, propertyNames[currentFits].c_str());
+
                 while (reader.Next()) {
                     bool passedKinematicCuts = cuts->applyCuts(currentFits, false);
                     if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
                         hist->Fill(*currentVariable);
                         sumCurrentVariable += *currentVariable;
                         ++count;
+
                     }
                 }
                 reader.Restart();
             };
 
-            // Fill the histograms for each target type
-            fill_histogram(nh3Reader, h_nh3_total, nh3Cuts);
-            fill_histogram(cReader, h_c, cCuts);
-            fill_histogram(chReader, h_ch, chCuts);
-            fill_histogram(heReader, h_he, heCuts);
-            fill_histogram(emptyReader, h_empty, emptyCuts);
+            // Call fill_histogram for each target type
+            fill_histogram(nh3Reader, h_nh3, nh3Cuts, true);  // NH3 data
+            fill_histogram(cReader, h_c,  cCuts, false);                      // Carbon data
+            fill_histogram(chReader, h_ch, chCuts, false);                   // CH2 data
+            fill_histogram(heReader, h_he,  heCuts, false);                   // Helium data
+            fill_histogram(emptyReader, h_empty,  emptyCuts, false);  
 
-            // Calculate the mean value of `currentVariable` in this bin
+            // Calculate the mean value of currentVariable in this bin
             double meanCurrentVariable = (count > 0) ? (sumCurrentVariable / count) : (varMin + varMax) / 2.0;
 
-            // Retrieve bin contents for total and each target type
-            double nA_total = h_nh3_total->GetBinContent(1);
+            // Retrieve bin contents
+            double nA = h_nh3->GetBinContent(1);
             double nC = h_c->GetBinContent(1);
             double nCH = h_ch->GetBinContent(1);
             double nMT = h_he->GetBinContent(1);
             double nf = h_empty->GetBinContent(1);
 
-            // Calculate dilution factors for the total case
-            auto [dilution_total, error_total] = calculate_dilution_and_error(
-                nA_total, nC, nCH, nMT, nf, xAtotal, xCtotal, xCHtotal, xHetotal, xftotal
-            );
-            gr_dilution_total->SetPoint(binIndex, meanCurrentVariable, dilution_total); // Plot at the mean value
-            gr_dilution_total->SetPointError(binIndex, 0, error_total);
+            /// Calculate dilution factors for the general case
+            auto [dilution, error] = calculate_dilution_and_error(nA, nC, nCH, nMT, nf, xA, xC, xCH, xHe, xf);
 
-            for (int i = 0; i < 9; i++) {
-                double nA_period = h_nh3_total->GetBinContent(1);  // Period-specific bin content
+            // Add the dilution factor and error to the TGraphErrors
+            gr_dilution->SetPoint(binIndex, meanCurrentVariable, dilution);
+            gr_dilution->SetPointError(binIndex, 0, error);
 
-                // Use the correct fractional charge values for each period (as described before)
-                double xA_period, xC_period, xCH_period, xHe_period, xf_period;
-                switch (i) {
-                    case 0: xA_period = xAperiod_1; xC_period = xCperiod_1; xCH_period = xCHperiod_1; xHe_period = xHeperiod_1; xf_period = xfperiod_1; break;
-                    case 1: xA_period = xAperiod_2; xC_period = xCperiod_2; xCH_period = xCHperiod_2; xHe_period = xHeperiod_2; xf_period = xfperiod_2; break;
-                    case 2: xA_period = xAperiod_3; xC_period = xCperiod_3; xCH_period = xCHperiod_3; xHe_period = xHeperiod_3; xf_period = xfperiod_3; break;
-                    case 3: xA_period = xAperiod_4; xC_period = xCperiod_4; xCH_period = xCHperiod_4; xHe_period = xHeperiod_4; xf_period = xfperiod_4; break;
-                    case 4: xA_period = xAperiod_5; xC_period = xCperiod_5; xCH_period = xCHperiod_5; xHe_period = xHeperiod_5; xf_period = xfperiod_5; break;
-                    case 5: xA_period = xAperiod_6; xC_period = xCperiod_6; xCH_period = xCHperiod_6; xHe_period = xHeperiod_6; xf_period = xfperiod_6; break;
-                    case 6: xA_period = xAperiod_7; xC_period = xCperiod_7; xCH_period = xCHperiod_7; xHe_period = xHeperiod_7; xf_period = xfperiod_7; break;
-                    case 7: xA_period = xAperiod_8; xC_period = xCperiod_8; xCH_period = xCHperiod_8; xHe_period = xHeperiod_8; xf_period = xfperiod_8; break;
-                    case 8: xA_period = xAperiod_9; xC_period = xCperiod_9; xCH_period = xCHperiod_9; xHe_period = xHeperiod_9; xf_period = xfperiod_9; break;
-                }
-
-                // Calculate dilution factor for each period
-                auto [dilution_period, error_period] = calculate_dilution_and_error(
-                    nA_period, nC, nCH, nMT, nf, 
-                    xA_period, xC_period, xCH_period, xHe_period, xf_period
-                );
-                gr_dilution_periods[i]->SetPoint(binIndex, meanCurrentVariable + 0.0025 * (i + 1), dilution_period);
-                gr_dilution_periods[i]->SetPointError(binIndex, 0, error_period);
-            }
+            // Store the original dilution and error for now
+            dilutionResults.emplace_back(dilution, error);
 
             // Clean up histograms
-            delete h_nh3_total;
+            delete h_nh3;
             delete h_c;
             delete h_ch;
             delete h_he;
             delete h_empty;
         }
 
-        // Print values for each bin
-        std::cout << "df_" << propertyNames[currentFits] << "_0: {" << meanCurrentVariable << ", " << dilution_total << ", " << error_total << "}" << std::endl;
-        for (int i = 0; i < 9; i++) {
-            std::cout << "df_" << propertyNames[currentFits] << "_" << (i + 1) << ": {"
-                      << meanCurrentVariable + 0.0025 * (i + 1) << ", " << gr_dilution_periods[i]->GetY()[binIndex] << ", "
-                      << gr_dilution_periods[i]->GetEY()[binIndex] << "}" << std::endl;
-        }
+        // Fit the TGraphErrors to a cubic polynomial
+        TF1* fitFunc = new TF1("fitFunc", "[0] + [1]*x + [2]*x^2 + [3]*x^3", allBins[currentFits].front(), allBins[currentFits].back());
+        gr_dilution->Fit(fitFunc, "QN");
 
-        // Clean up histograms
-        delete h_nh3_total;
-        for (int i = 0; i < 9; i++) {
-            delete h_nh3_periods[i];
-        }
+        // Calculate the chi2/ndf
+        double chi2 = fitFunc->GetChisquare();
+        int ndf = fitFunc->GetNDF();
+        double scalingFactor = std::sqrt(chi2 / ndf);
+
+        // Plot the original dilution factor
+        std::string prefix = propertyNames[currentFits];
+        HistConfig config = histConfigs.find(prefix) != histConfigs.end() ? histConfigs[prefix] : HistConfig{100, 0, 1};
+
+        TCanvas* canvas = new TCanvas("c_dilution", "Dilution Factor Plot", 800, 600);
+        canvas->SetLeftMargin(0.15);
+        canvas->SetBottomMargin(0.15);
+
+        gr_dilution->SetTitle("");
+        gr_dilution->GetXaxis()->SetTitle(formatLabelName(prefix).c_str());
+        gr_dilution->GetXaxis()->SetLimits(config.xMin, config.xMax);
+        gr_dilution->GetXaxis()->SetTitleSize(0.05);
+        gr_dilution->GetYaxis()->SetTitle("D_{f}");
+        gr_dilution->GetYaxis()->SetTitleSize(0.05);
+        gr_dilution->GetYaxis()->SetTitleOffset(1.6);
+        gr_dilution->GetYaxis()->SetRangeUser(0.0, 0.4);
+        gr_dilution->SetMarkerStyle(20);
+        gr_dilution->SetMarkerColor(kBlack);
+        gr_dilution->Draw("AP");
+
+        std::string outputDir = "output/dilution_factor_plots/";
+        std::string outputFileName = outputDir + "df_" + binNames[currentFits] + "_" + prefix + ".png";
+        canvas->SaveAs(outputFileName.c_str());
+
+        // Clean up
+        delete canvas;
+        delete gr_dilution;
+        delete fitFunc;
+
+        delete nh3Cuts;
+        delete cCuts;
+        delete chCuts;
+        delete heCuts;
+        delete emptyCuts;
+
+        nh3File->Close(); delete nh3File;
+        cFile->Close(); delete cFile;
+        chFile->Close(); delete chFile;
+        heFile->Close(); delete heFile;
+        emptyFile->Close(); delete emptyFile;
+
+        return dilutionResults;
     }
-
-    // Plot and save total dilution factor
-    std::string prefix = propertyNames[currentFits];
-    HistConfig config = histConfigs.find(prefix) != histConfigs.end() ? histConfigs[prefix] : HistConfig{100, 0, 1};
-
-    TCanvas* canvas1 = new TCanvas("c_dilution_total", "Total Dilution Factor", 800, 600);
-    canvas1->SetLeftMargin(0.15);
-    canvas1->SetBottomMargin(0.15);
-    gr_dilution_total->SetTitle("");
-    gr_dilution_total->GetXaxis()->SetTitle(formatLabelName(propertyNames[currentFits]).c_str());
-    gr_dilution_total->GetXaxis()->SetLimits(config.xMin, config.xMax);
-    gr_dilution_total->GetXaxis()->SetTitleSize(0.05);
-    gr_dilution_total->GetYaxis()->SetTitle("D_{f}");
-    gr_dilution_total->GetYaxis()->SetTitleSize(0.05);
-    gr_dilution_total->GetYaxis()->SetTitleOffset(1.6);
-    gr_dilution_total->GetYaxis()->SetRangeUser(0.0, 0.4);
-    gr_dilution_total->SetMarkerStyle(20);
-    gr_dilution_total->SetMarkerColor(kBlack);
-    gr_dilution_total->Draw("AP");
-
-    canvas1->SaveAs((outputDir + "df_total_" + propertyNames[currentFits] + ".png").c_str());
-
-    // Plot and save period-based dilution factor
-    TCanvas* canvas2 = new TCanvas("c_dilution_periods", "Dilution Factor by Periods", 800, 600);
-    canvas2->SetLeftMargin(0.15);
-    canvas2->SetBottomMargin(0.15);
-    gr_dilution_periods[0]->SetTitle("");
-    gr_dilution_periods[0]->GetXaxis()->SetTitle(formatLabelName(propertyNames[currentFits]).c_str());
-    gr_dilution_periods[0]->GetXaxis()->SetLimits(config.xMin, config.xMax);
-    gr_dilution_periods[0]->GetXaxis()->SetTitleSize(0.05);
-    gr_dilution_periods[0]->GetYaxis()->SetTitle("D_{f}");
-    gr_dilution_periods[0]->GetYaxis()->SetTitleSize(0.05);
-    gr_dilution_periods[0]->GetYaxis()->SetTitleOffset(1.6);
-    gr_dilution_periods[0]->GetYaxis()->SetRangeUser(0.0, 0.4);
-
-    int colors[] = {kRed, kBlue, kGreen, kMagenta, kCyan, kOrange, kViolet, kYellow, kPink};
-    int markers[] = {21, 22, 23, 24, 25, 26, 27, 28, 29};
-    for (int i = 0; i < 9; i++) {
-        gr_dilution_periods[i]->SetMarkerStyle(markers[i]);
-        gr_dilution_periods[i]->SetMarkerColor(colors[i]);
-        if (i == 0) {
-            gr_dilution_periods[i]->Draw("AP");
-        } else {
-            gr_dilution_periods[i]->Draw("P SAME");
-        }
-    }
-
-    TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);
-    for (int i = 0; i < 9; i++) {
-        legend->AddEntry(gr_dilution_periods[i], Form("Period %d", i + 1), "p");
-    }
-    legend->Draw();
-
-    canvas2->SaveAs((outputDir + "df_by_periods_" + propertyNames[currentFits] + ".png").c_str());
-
-    // Clean up
-    delete canvas1;
-    delete canvas2;
-    delete gr_dilution_total;
-    for (int i = 0; i < 9; i++) {
-        delete gr_dilution_periods[i];
-    }
-
-    return dilutionResults;
-}
