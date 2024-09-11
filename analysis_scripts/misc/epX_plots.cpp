@@ -765,8 +765,8 @@ void plotTargetPolarizationDependence(
     }
 
     // Fit the histograms to a Gaussian distribution
-    TF1 *gausPos = new TF1("gausPos", "gaus", -1.0, 1.0);
-    TF1 *gausNeg = new TF1("gausNeg", "gaus", -1.0, 1.0);
+    TF1 *gausPos = new TF1("gausPos", "gaus", 0, 1.0);
+    TF1 *gausNeg = new TF1("gausNeg", "gaus", -1.0, 0);
 
     histPos->Fit(gausPos, "Q");  // Silent mode for positive fit
     histNeg->Fit(gausNeg, "Q");  // Silent mode for negative fit
