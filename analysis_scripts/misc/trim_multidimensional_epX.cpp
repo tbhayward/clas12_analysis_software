@@ -159,10 +159,7 @@ void process_file(const char* input_filename) {
             *vz_e + *p_p + *p_theta + *p_phi + *vz_p + *Q2 + *W + *Mx + 
             *Mx2 + *x + *y + *t + *tmin + *z + *xF + *pT + *zeta + *eta + *phi + *DepA +
             *DepB + *DepC + *DepV + *DepW;
-        if (*Mx < 0.55 && *vz_e < -10  && *vz_e > 1 && *vz_p < -10 && *vz_p > 1) {
-            continue;
-        }
-        if (*x < 0.06 || *x > 0.6 || *pT < 0 || *pT > 1.2 || *xF < -1 || *xF > 1) {
+        if (*Mx < 0.55) {
             continue;
         }
         if (*Mx > 1.35) {
