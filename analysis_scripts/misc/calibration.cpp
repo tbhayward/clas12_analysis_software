@@ -1148,7 +1148,7 @@ bool forward_tagger_fiducial(double ft_x, double ft_y) {
     return true;
 }
 
-void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr, const std::string& dataset) {
+void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader, const std::string& dataset) {
     gStyle->SetOptStat(0);
 
     // Declare and initialize TTreeReaderValue objects for data
@@ -1212,7 +1212,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
     }
 
     // Compute the mean energy for each bin (for data)
-    TH2D* h_data_mean = new TH2D("h_data_mean", "Data FT Energy Mean, "+dataset, nBins, xMin, xMax, nBins, yMin, yMax);
+    TH2D* h_data_mean = new TH2D("h_data_mean", ("Data FT Energy Mean, " + dataset).c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
     h_data_mean->GetXaxis()->SetTitle("x_{FT}");
     h_data_mean->GetYaxis()->SetTitle("y_{FT}");
 
@@ -1228,7 +1228,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
     // Compute the mean energy for each bin (for MC)
     TH2D* h_mc_mean = nullptr;
     if (mcReader) {
-        h_mc_mean = new TH2D("h_mc_mean", "MC FT Energy Mean, "+dataset, nBins, xMin, xMax, nBins, yMin, yMax);
+        h_mc_mean = new TH2D("h_mc_mean", ("MC FT Energy Mean, " + dataset).c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
         h_mc_mean->GetXaxis()->SetTitle("x_{FT}");
         h_mc_mean->GetYaxis()->SetTitle("y_{FT}");
 
@@ -1298,7 +1298,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
     data_legend->AddEntry(h_data_mean, Form("Mean = %.2f GeV", global_mean), "");
     data_legend->AddEntry(h_data_mean, Form("Std Dev = %.2f GeV", global_std_dev), "");
     data_legend->Draw();
-    c_data.SaveAs("output/calibration/ft/data_ft_xy_energy_"+dataset+".png");
+    c_data.SaveAs(("output/calibration/ft/data_ft_xy_energy_" + dataset + ".png").c_str());
 
     // Draw and save the MC mean energy plot
     TLegend* mc_legend = nullptr;
@@ -1309,7 +1309,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
         mc_legend->AddEntry(h_mc_mean, Form("Mean = %.2f GeV", mc_global_mean), "");
         mc_legend->AddEntry(h_mc_mean, Form("Std Dev = %.2f GeV", mc_global_std_dev), "");
         mc_legend->Draw();
-        c_mc.SaveAs("output/calibration/ft/mc_ft_xy_energy_"+dataset+".png");
+        c_mc.SaveAs(("output/calibration/ft/mc_ft_xy_energy_" + dataset + ".png").c_str());
     }
 
     // Create and save masked plot for Data
@@ -1357,7 +1357,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
     }
 
     data_legend->Draw();
-    c_data_masked.SaveAs("output/calibration/ft/data_ft_xy_energy_masked_"+dataset+".png");
+    c_data_masked.SaveAs(("output/calibration/ft/data_ft_xy_energy_masked_" + dataset + ".png").c_str());
 
     // Create and save masked plot for MC
     if (mcReader) {
@@ -1396,7 +1396,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
         }
 
         mc_legend->Draw();
-        c_mc_masked.SaveAs("output/calibration/ft/mc_ft_xy_energy_masked_"+dataset+".png");
+        c_mc_masked.SaveAs(("output/calibration/ft/mc_ft_xy_energy_masked_" + dataset + ".png").c_str());
         delete h_mc_masked;
     }
 
