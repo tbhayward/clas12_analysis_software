@@ -26,15 +26,16 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
       goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.35 && *y < 0.80;
       return goodEvent;
     }
-    if (property == "xF" || property == "x" || property == "z" || property == "PT" || property == "runnum") {
-      goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.35 && *y < 0.80;
-      return goodEvent;
-    } else if (property == "Mx") {
+    if (property == "Mx") {
       goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0;
       return goodEvent;
     }
+    if (property == "xF" || property == "x" || property == "z" || property == "PT" || property == "runnum") {
+      goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.35 && *y < 0.80;
+      return goodEvent;
+    } 
     if (property == "xFall" || property == "xall" || property == "zall" || property == "PTall") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0;
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0.55;
       return goodEvent;
     } 
     if (property == "Q2multi1") {
