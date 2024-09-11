@@ -246,14 +246,11 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
             TH1D *h_he = new TH1D("h_he", "", 1, varMin, varMax);
             TH1D *h_empty = new TH1D("h_empty", "", 1, varMin, varMax);
 
-            TH1D *h_nh3_aligned = new TH1D("h_nh3_aligned", "", 1, varMin, varMax);
-            TH1D *h_nh3_unaligned = new TH1D("h_nh3_unaligned", "", 1, varMin, varMax);
-
             double sumCurrentVariable = 0.0;
             int count = 0;
 
             // Helper function to fill histograms based on kinematic cuts and track mean
-            auto fill_histogram = [&](TTreeReader& reader, TH1D* hist, TH1D* hist_aligned, TH1D* hist_unaligned, BaseKinematicCuts* cuts, 
+            auto fill_histogram = [&](TTreeReader& reader, TH1D* hist, BaseKinematicCuts* cuts, 
                 bool is_nh3) {
                 TTreeReaderValue<double> currentVariable(reader, propertyNames[currentFits].c_str());
 
@@ -264,25 +261,17 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
                         sumCurrentVariable += *currentVariable;
                         ++count;
 
-                        // Only fill the aligned and unaligned histograms if this is the NH3 reader
-                        if (is_nh3) {
-                            if ((*helicity > 0 && *target_pol > 0) || (*helicity < 0 && *target_pol < 0)) {
-                                hist_aligned->Fill(*currentVariable);
-                            } else {
-                                hist_unaligned->Fill(*currentVariable);
-                            }
-                        }
                     }
                 }
                 reader.Restart();
             };
 
             // Call fill_histogram for each target type
-            fill_histogram(nh3Reader, h_nh3, h_nh3_aligned, h_nh3_unaligned, nh3Cuts, true);  // NH3 data
-            fill_histogram(cReader, h_c, nullptr, nullptr, cCuts, false);                      // Carbon data
-            fill_histogram(chReader, h_ch, nullptr, nullptr, chCuts, false);                   // CH2 data
-            fill_histogram(heReader, h_he, nullptr, nullptr, heCuts, false);                   // Helium data
-            fill_histogram(emptyReader, h_empty, nullptr, nullptr, emptyCuts, false);  
+            fill_histogram(nh3Reader, h_nh3, nh3Cuts, true);  // NH3 data
+            fill_histogram(cReader, h_c,  cCuts, false);                      // Carbon data
+            fill_histogram(chReader, h_ch, chCuts, false);                   // CH2 data
+            fill_histogram(heReader, h_he,  heCuts, false);                   // Helium data
+            fill_histogram(emptyReader, h_empty,  emptyCuts, false);  
 
             // Calculate the mean value of currentVariable in this bin
             double meanCurrentVariable = (count > 0) ? (sumCurrentVariable / count) : (varMin + varMax) / 2.0;
@@ -294,9 +283,6 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
             double nMT = h_he->GetBinContent(1);
             double nf = h_empty->GetBinContent(1);
 
-            double nA_aligned = h_nh3_aligned->GetBinContent(1);
-            double nA_unaligned = h_nh3_unaligned->GetBinContent(1);
-
             /// Calculate dilution factors for the general case
             auto [dilution, error] = calculate_dilution_and_error(nA, nC, nCH, nMT, nf, xA, xC, xCH, xHe, xf);
 
@@ -307,25 +293,12 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
             // Store the original dilution and error for now
             dilutionResults.emplace_back(dilution, error);
 
-            // Calculate dilution factors for aligned and unaligned cases
-            auto [dilution_aligned, error_aligned] = calculate_dilution_and_error(nA_aligned, nC, nCH, nMT, nf, xA_split, xC_split, xCH_split, xHe_split, xf_split);
-            auto [dilution_unaligned, error_unaligned] = calculate_dilution_and_error(nA_unaligned, nC, nCH, nMT, nf, xA_split, xC_split, xCH_split, xHe_split, xf_split);
-
-            // Add aligned and unaligned dilution factors to the graphs
-            gr_aligned->SetPoint(binIndex, meanCurrentVariable, dilution_aligned);
-            gr_aligned->SetPointError(binIndex, 0, error_aligned);
-
-            gr_unaligned->SetPoint(binIndex, meanCurrentVariable, dilution_unaligned);
-            gr_unaligned->SetPointError(binIndex, 0, error_unaligned);
-
             // Clean up histograms
             delete h_nh3;
             delete h_c;
             delete h_ch;
             delete h_he;
             delete h_empty;
-            delete h_nh3_aligned;
-            delete h_nh3_unaligned;
         }
 
         // Fit the TGraphErrors to a cubic polynomial
@@ -361,41 +334,10 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
         std::string outputFileName = outputDir + "df_" + binNames[currentFits] + "_" + prefix + ".png";
         canvas->SaveAs(outputFileName.c_str());
 
-        // Plot aligned and unaligned dilution factors
-        TCanvas* canvas_split = new TCanvas("c_dilution_split", "Dilution Factor Split Plot", 800, 600);
-        canvas_split->SetLeftMargin(0.15);
-        canvas_split->SetBottomMargin(0.15);
-
-        gr_aligned->SetMarkerStyle(20);
-        gr_aligned->SetMarkerColor(kBlue);
-        gr_aligned->SetTitle("");
-        gr_aligned->GetXaxis()->SetTitle(formatLabelName(prefix).c_str());
-        gr_aligned->GetXaxis()->SetLimits(config.xMin, config.xMax);
-        gr_aligned->GetXaxis()->SetTitleSize(0.05);
-        gr_aligned->GetYaxis()->SetTitle("D_{f}");
-        gr_aligned->GetYaxis()->SetTitleSize(0.05);
-        gr_aligned->GetYaxis()->SetTitleOffset(1.6);
-        gr_aligned->GetYaxis()->SetRangeUser(0.0, 0.4);
-        gr_aligned->Draw("AP");
-
-        gr_unaligned->SetMarkerStyle(20);
-        gr_unaligned->SetMarkerColor(kRed);
-        gr_unaligned->Draw("P SAME");
-
-        TLegend* legend = new TLegend(0.7, 0.8, 0.9, 0.9);
-        legend->AddEntry(gr_aligned, "Aligned", "p");
-        legend->AddEntry(gr_unaligned, "Unaligned", "p");
-        legend->Draw();
-
-        std::string outputFileName_split = outputDir + "df_split_" + binNames[currentFits] + "_" + prefix + ".png";
-        canvas_split->SaveAs(outputFileName_split.c_str());
 
         // Clean up
         delete canvas;
-        delete canvas_split;
         delete gr_dilution;
-        delete gr_aligned;
-        delete gr_unaligned;
         delete fitFunc;
 
         delete nh3Cuts;
