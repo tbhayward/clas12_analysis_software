@@ -1497,8 +1497,7 @@ void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader, const 
         {1.60, {-9.89, -5.33}},  // circle 2
         {2.30, {-6.15, -13.00}},  // circle 3
         {2.00, {3.70,  -6.50}},   // circle 4
-        {8.5, {0,  0}},           // big circle 1
-        {15.5, {0,  0}},          // big circle 2
+        {8.5, {0,  0}}           // big circle 1
     };
 
     for (size_t idx = 0; idx < holes.size(); ++idx) {
