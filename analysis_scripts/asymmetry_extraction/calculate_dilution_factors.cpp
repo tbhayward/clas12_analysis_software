@@ -377,7 +377,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
                     nA_period, nC, nCH, nMT, nf, 
                     xA_period, xC_period, xCH_period, xHe_period, xf_period
                 );
-                gr_dilution_periods[i]->SetPoint(binIndex, meanCurrentVariable + 0.005 * (i + 1), dilution_period);
+                gr_dilution_periods[i]->SetPoint(binIndex, meanCurrentVariable + 0.0025 * (i + 1), dilution_period);
                 gr_dilution_periods[i]->SetPointError(binIndex, 0, error_period);
             }
 
