@@ -22,6 +22,8 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     bool checked = false;
     string property = binNames[currentFits];
 
+    if (-10 > *vz_p || *vz_p > 1.5 || -9 > *vz_e || *vz_e > 2) return false;
+
     if (property == "integrated") {
       goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.35 && *y < 0.80;
       return goodEvent;
