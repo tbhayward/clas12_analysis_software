@@ -779,7 +779,7 @@ void plotTargetPolarizationDependence(
     double sigmaNegHist = gausNeg->GetParameter(2);
 
     // Left plot: Positive target polarizations
-    // c2->cd(1);  // Switch to the first pad
+    c2->cd(1);  // Switch to the first pad
     gPad->SetLeftMargin(0.18);
     gPad->SetBottomMargin(0.15);
     histPos->SetLineColor(kBlack);
@@ -793,9 +793,6 @@ void plotTargetPolarizationDependence(
     legPos->AddEntry(gausPos, Form("#mu = %.4f", muPosHist), "l");
     legPos->AddEntry(gausPos, Form("#sigma = %.4f", sigmaPosHist), "l");
     legPos->Draw();
-
-    // Explicitly update the first pad to ensure it's drawn
-    gPad->Update();
 
     // Right plot: Negative target polarizations
     c2->cd(2);  // Switch to the second pad
@@ -812,9 +809,6 @@ void plotTargetPolarizationDependence(
     legNeg->AddEntry(gausNeg, Form("#mu = %.4f", muNegHist), "l");
     legNeg->AddEntry(gausNeg, Form("#sigma = %.4f", sigmaNegHist), "l");
     legNeg->Draw();
-
-    // Explicitly update the second pad to ensure it's drawn
-    gPad->Update();
 
     // Save the second canvas
     c2->SaveAs("output/epX_plots/target_polarization_histograms.png");
