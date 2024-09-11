@@ -284,7 +284,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
             double nf = h_empty->GetBinContent(1);
 
             /// Calculate dilution factors for the general case
-            auto [dilution, error] = calculate_dilution_and_error(nA, nC, nCH, nMT, nf, xA, xC, xCH, xHe, xf);
+            auto [dilution, error] = calculate_dilution_and_error(nA, nC, nCH, nMT, nf, xAtotal, xCtotal, xCHtotal, xHetotal, xftotal);
 
             // Add the dilution factor and error to the TGraphErrors
             gr_dilution->SetPoint(binIndex, meanCurrentVariable, dilution);
