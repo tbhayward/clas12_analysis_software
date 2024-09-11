@@ -1132,31 +1132,32 @@ int main(int argc, char *argv[]) {
     // printData(kinematicData);
 
     // Call the plotting function for different dependencies
-    plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots.png");
-    plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots_comparison.png", "xall");
-    plotDependence(asymmetryData, "z", "z", {0.0, 0.8}, "output/epX_plots/z_dependence_plots.png");
-    plotDependence(asymmetryData, "z", "z", {0.0, 0.8}, "output/epX_plots/z_dependence_plots_comparison.png", "zall");
-    plotDependence(asymmetryData, "PT", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PT_dependence_plots.png");
-    plotDependence(asymmetryData, "PT", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PT_dependence_plots_comparison.png", "PTall");
-    plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots.png");
-    plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots_comparison.png", "xFall");
-    plotDependence(asymmetryData, "Q2multi1", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi1_dependence_plots.png");
-    plotDependence(asymmetryData, "Q2multi2", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi2_dependence_plots.png");
-    plotDependence(asymmetryData, "Q2multi3", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi3_dependence_plots.png");
-    plotDependence(asymmetryData, "Q2extramulti1", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2extramulti1_dependence_plots.png");
-    plotDependence(asymmetryData, "Q2extramulti2", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2extramulti2_dependence_plots.png");
-    plotDependence(asymmetryData, "Q2extramulti3", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2extramulti3_dependence_plots.png");
+    plotDependence(asymmetryData, "Mx", "M_{x} (GeV)", {0.0, 2.5}, "output/epX_plots/Mx_dependence_plots.png");
+    // plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots.png");
+    // plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots_comparison.png", "xall");
+    // plotDependence(asymmetryData, "z", "z", {0.0, 0.8}, "output/epX_plots/z_dependence_plots.png");
+    // plotDependence(asymmetryData, "z", "z", {0.0, 0.8}, "output/epX_plots/z_dependence_plots_comparison.png", "zall");
+    // plotDependence(asymmetryData, "PT", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PT_dependence_plots.png");
+    // plotDependence(asymmetryData, "PT", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PT_dependence_plots_comparison.png", "PTall");
+    // plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots.png");
+    // plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots_comparison.png", "xFall");
+    // plotDependence(asymmetryData, "Q2multi1", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi1_dependence_plots.png");
+    // plotDependence(asymmetryData, "Q2multi2", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi2_dependence_plots.png");
+    // plotDependence(asymmetryData, "Q2multi3", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi3_dependence_plots.png");
+    // plotDependence(asymmetryData, "Q2extramulti1", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2extramulti1_dependence_plots.png");
+    // plotDependence(asymmetryData, "Q2extramulti2", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2extramulti2_dependence_plots.png");
+    // plotDependence(asymmetryData, "Q2extramulti3", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2extramulti3_dependence_plots.png");
 
-    std::vector<std::string> prefixes = {"Q2multi1", "Q2multi2", "Q2multi3"};
-    plotMultipleQ2multiDependence(asymmetryData, prefixes, "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi_dependence_plots.png");
+    // std::vector<std::string> prefixes = {"Q2multi1", "Q2multi2", "Q2multi3"};
+    // plotMultipleQ2multiDependence(asymmetryData, prefixes, "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi_dependence_plots.png");
 
-    std::vector<std::string> extraprefixes = {"Q2extramulti1", "Q2extramulti2", "Q2extramulti3"};
-    plotMultipleQ2extramultiDependence(asymmetryData, extraprefixes, "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2extramulti_dependence_plots.png");
+    // std::vector<std::string> extraprefixes = {"Q2extramulti1", "Q2extramulti2", "Q2extramulti3"};
+    // plotMultipleQ2extramultiDependence(asymmetryData, extraprefixes, "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2extramulti_dependence_plots.png");
 
     // plotRunnumDependence(asymmetryData, "runnum", "run number", "output/epX_plots/runnum_dependence_plots.png");
 
 
-    plotTargetPolarizationDependence(targetPolarizationData, "run number", "output/epX_plots/target_polarization_dependence.png");
+    // plotTargetPolarizationDependence(targetPolarizationData, "run number", "output/epX_plots/target_polarization_dependence.png");
 
     return 0;
 }
