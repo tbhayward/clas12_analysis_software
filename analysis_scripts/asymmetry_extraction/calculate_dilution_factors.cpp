@@ -270,10 +270,10 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
 
             // Call fill_histogram for each target type
             fill_histogram(nh3Reader, h_nh3, nh3Cuts, true);  // NH3 data
-            fill_histogram(cReader, h_c,  cCuts, false);                      // Carbon data
-            fill_histogram(chReader, h_ch, chCuts, false);                   // CH2 data
-            fill_histogram(heReader, h_he,  heCuts, false);                   // Helium data
-            fill_histogram(emptyReader, h_empty,  emptyCuts, false);  
+            fill_histogram(cReader, h_c,  cCuts, false);  // Carbon data
+            fill_histogram(chReader, h_ch, chCuts, false); // CH2 data
+            fill_histogram(heReader, h_he,  heCuts, false);  // Helium data
+            fill_histogram(emptyReader, h_empty,  emptyCuts, false);  // Empty target data
 
             // Calculate the mean value of currentVariable in this bin
             double meanCurrentVariable = (count > 0) ? (sumCurrentVariable / count) : (varMin + varMax) / 2.0;
@@ -325,22 +325,21 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
         std::string outputFileName = outputDir + "df_" + binNames[currentFits] + "_" + prefix + ".png";
         canvas->SaveAs(outputFileName.c_str());
 
+        // // Clean up
+        // delete canvas;
+        // delete gr_dilution;
 
-        // Clean up
-        delete canvas;
-        delete gr_dilution;
+        // delete nh3Cuts;
+        // delete cCuts;
+        // delete chCuts;
+        // delete heCuts;
+        // delete emptyCuts;
 
-        delete nh3Cuts;
-        delete cCuts;
-        delete chCuts;
-        delete heCuts;
-        delete emptyCuts;
-
-        nh3File->Close(); delete nh3File;
-        cFile->Close(); delete cFile;
-        chFile->Close(); delete chFile;
-        heFile->Close(); delete heFile;
-        emptyFile->Close(); delete emptyFile;
+        // nh3File->Close(); delete nh3File;
+        // cFile->Close(); delete cFile;
+        // chFile->Close(); delete chFile;
+        // heFile->Close(); delete heFile;
+        // emptyFile->Close(); delete emptyFile;
 
         return dilutionResults;
     }
