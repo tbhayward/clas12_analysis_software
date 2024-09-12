@@ -421,10 +421,11 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     canvas_periods->SetLeftMargin(0.15);
     canvas_periods->SetBottomMargin(0.15);
 
-    // Create a legend in the top right
-    TLegend* legend = new TLegend(0.75, 0.75, 0.9, 0.9);
-    legend->SetTextSize(0.03);
-    legend->SetBorderSize(0);
+    // Create a legend in the top right, increasing its size and adding a border
+    TLegend* legend = new TLegend(0.65, 0.65, 0.90, 0.90);  // Make the legend larger
+    legend->SetTextSize(0.04);  // Increase text size
+    legend->SetBorderSize(1);   // Add black border around the legend
+    legend->SetLineColor(kBlack);  // Set border color to black
 
     // Define different marker styles and colors for each period
     int markerStyles[9] = {20, 21, 22, 23, 24, 25, 26, 27, 28};  // Different marker styles
@@ -451,11 +452,11 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
         legend->AddEntry(gr_dilution[i + 1], Form("Period %d", i + 1), "p");
 
         // Collect y-values for standard deviation calculation
-        if (prefix == "integrated") {
+        if (binNames[currentFits] == "integrated") {
             for (int j = 0; j < gr_dilution[i + 1]->GetN(); ++j) {
                 double x, y;
-                gr_dilution[i + 1]->GetPoint(j, x, y);
-                y_values.push_back(y);
+                gr_dilution[i + 1]->GetPoint(j, x, y);  // Gets the value of the point, not the error
+                y_values.push_back(y);  // Collect y-values
             }
         }
         
@@ -471,14 +472,14 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     legend->Draw();
 
     // If prefix is "integrated", calculate the standard deviation and display it
-    if (prefix == "integrated") {
+    if (binNames[currentFits] == "integrated") {
         double stddev = calculate_standard_deviation(y_values);
 
         // Create a TLatex object to draw the standard deviation on the canvas
         TLatex latex;
         latex.SetNDC();  // Set to normalized device coordinates
         latex.SetTextSize(0.04);  // Set text size
-        latex.DrawLatex(0.2, 0.85, Form("Std Dev: %.4f", stddev));  // Display stddev in the top left
+        latex.DrawLatex(0.2, 0.85, Form("Std Dev: %.3f", stddev));  // Display stddev in the top left
     }
 
     // Save the canvas
