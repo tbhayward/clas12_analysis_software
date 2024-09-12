@@ -478,7 +478,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
         TLatex latex;
         latex.SetNDC();  // Set to normalized device coordinates
         latex.SetTextSize(0.04);  // Set text size
-        latex.DrawLatex(0.2, 0.85, Form("Std Dev: %.3f", stddev));  // Display stddev in the top left
+        latex.DrawLatex(0.2, 0.85, Form("Std Dev: %.4f", stddev));  // Display stddev in the top left
     }
 
     // Save the canvas
