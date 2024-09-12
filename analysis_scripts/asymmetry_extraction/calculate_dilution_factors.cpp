@@ -3,6 +3,9 @@
 #include <TMath.h>
 #include <TFile.h>
 #include <TH1D.h>
+#include <cmath>
+#include <vector>
+#include <numeric>
 // tbhayward libraries
 #include "common_vars.h"
 #include "load_bins_from_csv.h"
@@ -24,6 +27,7 @@
 #include "plot_data.h"
 #include "modifyTree.h"
 #include "fitting_process.h"
+
 
 // Fractional charge values for Total
 const double xAtotal = 0.72032;
@@ -100,6 +104,15 @@ std::vector<std::pair<int, int>> nh3_periods = {
     {16137, 16148}, {16156, 16178}, {16211, 16228}, {16231, 16260},
     {16318, 16333}, {16335, 16357}, {16709, 16720}, {16721, 16766}, {16767, 16772}
 };
+
+// Function to calculate standard deviation of a vector
+double calculate_standard_deviation(const std::vector<double>& values) {
+    if (values.size() < 2) return 0.0;
+    double mean = std::accumulate(values.begin(), values.end(), 0.0) / values.size();
+    double sq_sum = std::inner_product(values.begin(), values.end(), values.begin(), 0.0,
+                                       std::plus<double>(), [&](double a, double b) { return (b - mean) * (b - mean); });
+    return std::sqrt(sq_sum / (values.size() - 1));
+}
 
 double calculate_dilution_error(double nA, double nC, double nCH, double nMT, double nf, 
                                 double xA, double xC, double xCH, double xHe, double xf) {
@@ -309,13 +322,14 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
 
         // Loop over each NH3 period to fill histograms and calculate dilution factors
         for (int i = 0; i < nh3_periods.size(); ++i) {
+            std::cout << "On period " << (i+1) << "." << std::endl;
             int min_run = nh3_periods[i].first;
             int max_run = nh3_periods[i].second;
 
             // Reset the variables for this NH3 period
             sumCurrentVariable = 0.0;
             count = 0;
-        
+
             // Fill the histogram for the NH3 data only for the current period
             fill_histogram(nh3Reader, h_nh3[i+1], nh3Cuts, true, min_run, max_run);
 
@@ -397,6 +411,78 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     std::string outputDir = "output/dilution_factor_plots/";
     std::string outputFileName = outputDir + "df_" + binNames[currentFits] + "_" + prefix + ".png";
     canvas->SaveAs(outputFileName.c_str());
+
+
+    //
+
+    // Create a new canvas for the period-specific dilution factors
+    TCanvas* canvas_periods = new TCanvas("c_dilution_periods", "Dilution Factor Plot by Period", 800, 600);
+    canvas_periods->SetLeftMargin(0.15);
+    canvas_periods->SetBottomMargin(0.15);
+
+    // Create a legend in the top right
+    TLegend* legend = new TLegend(0.75, 0.75, 0.9, 0.9);
+    legend->SetTextSize(0.03);
+    legend->SetBorderSize(0);
+
+    // Define different marker styles and colors for each period
+    int markerStyles[9] = {20, 21, 22, 23, 24, 25, 26, 27, 28};  // Different marker styles
+    int markerColors[9] = {kRed, kBlue, kGreen, kMagenta, kCyan, kOrange, kViolet, kYellow+2, kPink+7};  // Different colors
+
+    // Vector to store the y-values for standard deviation calculation
+    std::vector<double> y_values;
+
+    for (int i = 0; i < 9; ++i) {
+        gr_dilution[i + 1]->SetTitle("");  // No title
+        gr_dilution[i + 1]->GetXaxis()->SetTitle(formatLabelName(prefix).c_str());
+        gr_dilution[i + 1]->GetXaxis()->SetLimits(config.xMin, config.xMax);
+        gr_dilution[i + 1]->GetXaxis()->SetTitleSize(0.05);
+        gr_dilution[i + 1]->GetYaxis()->SetTitle("D_{f}");
+        gr_dilution[i + 1]->GetYaxis()->SetTitleSize(0.05);
+        gr_dilution[i + 1]->GetYaxis()->SetTitleOffset(1.6);
+        gr_dilution[i + 1]->GetYaxis()->SetRangeUser(0.0, 0.4);
+        
+        // Set marker style and color
+        gr_dilution[i + 1]->SetMarkerStyle(markerStyles[i]);
+        gr_dilution[i + 1]->SetMarkerColor(markerColors[i]);
+        
+        // Add to legend
+        legend->AddEntry(gr_dilution[i + 1], Form("Period %d", i + 1), "p");
+
+        // Collect y-values for standard deviation calculation
+        if (prefix == "integrated") {
+            for (int j = 0; j < gr_dilution[i + 1]->GetN(); ++j) {
+                double x, y;
+                gr_dilution[i + 1]->GetPoint(j, x, y);
+                y_values.push_back(y);
+            }
+        }
+        
+        // Draw on canvas (use "P same" for subsequent plots to overlay them)
+        if (i == 0) {
+            gr_dilution[i + 1]->Draw("AP");  // Draw the first graph
+        } else {
+            gr_dilution[i + 1]->Draw("P same");  // Overlay the rest
+        }
+    }
+
+    // Draw the legend
+    legend->Draw();
+
+    // If prefix is "integrated", calculate the standard deviation and display it
+    if (prefix == "integrated") {
+        double stddev = calculate_standard_deviation(y_values);
+
+        // Create a TLatex object to draw the standard deviation on the canvas
+        TLatex latex;
+        latex.SetNDC();  // Set to normalized device coordinates
+        latex.SetTextSize(0.04);  // Set text size
+        latex.DrawLatex(0.2, 0.85, Form("Std Dev: %.3f", stddev));  // Display stddev in the top left
+    }
+
+    // Save the canvas
+    std::string outputFileNamePeriods = outputDir + "df_periods_" + binNames[currentFits] + "_" + prefix + ".png";
+    canvas_periods->SaveAs(outputFileNamePeriods.c_str());
 
     return dilutionResults;
 }
