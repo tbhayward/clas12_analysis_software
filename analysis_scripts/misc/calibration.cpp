@@ -1274,6 +1274,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader, const std
 
     // Draw and save the data mean energy plot
     TCanvas c_data("c_data", "c_data", 800, 600);
+    c_data.SetRightMargin(0.15);
     h_data_mean->Draw("COLZ");
     TLegend* data_legend = new TLegend(0.7, 0.8, 0.9, 0.9);
     data_legend->AddEntry(h_data_mean, Form("Mean = %.2f GeV", global_mean), "");
@@ -1285,6 +1286,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader, const std
     TLegend* mc_legend = nullptr;
     if (mcReader) {
         TCanvas c_mc("c_mc", "c_mc", 800, 600);
+        c_mc.SetRightMargin(0.15);
         h_mc_mean->Draw("COLZ");
         mc_legend = new TLegend(0.7, 0.8, 0.9, 0.9);
         mc_legend->AddEntry(h_mc_mean, Form("Mean = %.2f GeV", mc_global_mean), "");
@@ -1296,6 +1298,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader, const std
     // Create and save masked plot for Data
     TH2D* h_data_masked = (TH2D*)h_data_mean->Clone("h_data_masked");
     TCanvas c_data_masked("c_data_masked", "c_data_masked", 800, 600);
+    c_data_masked.SetRightMargin(0.15);
     h_data_masked->Draw("COLZ");
     for (int i = 1; i <= nBins; i++) {
         for (int j = 1; j <= nBins; j++) {
@@ -1343,6 +1346,7 @@ void plot_ft_xy_energy(TTreeReader& dataReader, TTreeReader* mcReader, const std
     if (mcReader) {
         TH2D* h_mc_masked = (TH2D*)h_mc_mean->Clone("h_mc_masked");
         TCanvas c_mc_masked("c_mc_masked", "c_mc_masked", 800, 600);
+        c_mc_masked.SetRightMargin(0.15);
         h_mc_masked->Draw("COLZ");
         for (int i = 1; i <= nBins; i++) {
             for (int j = 1; j <= nBins; j++) {
@@ -1470,6 +1474,7 @@ void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader, const 
 
     // Draw and save the original data plot
     TCanvas c_data("c_data", "c_data", 800, 600);
+    c_data.SetRightMargin(0.15);
     h_data->Draw("COLZ");
     
     // Draw circles representing holes on the data plot
@@ -1504,6 +1509,7 @@ void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader, const 
     // Draw and save the original MC plot if available
     if (h_mc) {
         TCanvas c_mc("c_mc", "c_mc", 800, 600);
+        c_mc.SetRightMargin(0.15);
         h_mc->Draw("COLZ");
         
         // Draw circles representing holes on the MC plot
@@ -1529,6 +1535,7 @@ void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader, const 
 
     // Draw and save the cut data plot
     TCanvas c_data_cut("c_data_cut", "c_data_cut", 800, 600);
+    c_data_cut.SetRightMargin(0.15);
     h_data_cut->Draw("COLZ");
     
     for (size_t idx = 0; idx < holes.size(); ++idx) {
@@ -1553,6 +1560,7 @@ void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader, const 
     // Draw and save the cut MC plot if available
     if (h_mc_cut) {
         TCanvas c_mc_cut("c_mc_cut", "c_mc_cut", 800, 600);
+        c_data.SetRightMargin(0.15);
         h_mc_cut->Draw("COLZ");
         
         for (size_t idx = 0; idx < holes.size(); ++idx) {
