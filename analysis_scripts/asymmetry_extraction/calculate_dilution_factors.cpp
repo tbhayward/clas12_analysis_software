@@ -95,6 +95,12 @@ const double xCHperiod_9 = 0.10811;
 const double xHeperiod_9 = 0.22627;
 const double xfperiod_9 = 0.27530;
 
+// NH3 periods defined as a pair of run numbers (start, end)
+std::vector<std::pair<int, int>> nh3_periods = {
+    {16137, 16148}, {16156, 16178}, {16211, 16228}, {16231, 16260},
+    {16318, 16333}, {16335, 16357}, {16709, 16720}, {16721, 16766}, {16767, 16772}
+};
+
 double calculate_dilution_error(double nA, double nC, double nCH, double nMT, double nf, 
                                 double xA, double xC, double xCH, double xHe, double xf) {
     // First part of the expression
@@ -243,7 +249,11 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
         double varMax = allBins[currentFits][binIndex + 1];
 
         // Create histograms for each target type
-        TH1D *h_nh3 = new TH1D("h_nh3", "", 1, varMin, varMax);
+        TH1D* h_nh3[10];  // Array of histograms for each NH3 period
+        // Initialize the histograms
+        for (int i = 0; i < 10; ++i) {
+            h_nh3[i] = new TH1D(Form("h_nh3_%d", i), "", 1, varMin, varMax);
+        }
         TH1D *h_c = new TH1D("h_c", "", 1, varMin, varMax);
         TH1D *h_ch = new TH1D("h_ch", "", 1, varMin, varMax);
         TH1D *h_he = new TH1D("h_he", "", 1, varMin, varMax);
@@ -273,7 +283,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
         };
 
         // Call fill_histogram for each target type
-        fill_histogram(nh3Reader, h_nh3, nh3Cuts, true, 0, 1000000);  // NH3 data
+        fill_histogram(nh3Reader, h_nh3[0], nh3Cuts, true, 0, 1000000);  // NH3 data
         fill_histogram(cReader, h_c,  cCuts, false, 0, 1000000);  // Carbon data
         fill_histogram(chReader, h_ch, chCuts, false, 0, 1000000); // CH2 data
         fill_histogram(heReader, h_he,  heCuts, false, 0, 1000000);  // Helium data
@@ -283,7 +293,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
         double meanCurrentVariable = (count > 0) ? (sumCurrentVariable / count) : (varMin + varMax) / 2.0;
 
         // Retrieve bin contents
-        double nA = h_nh3->GetBinContent(1);
+        double nA = h_nh3[0]->GetBinContent(1);
         double nC = h_c->GetBinContent(1);
         double nCH = h_ch->GetBinContent(1);
         double nMT = h_he->GetBinContent(1);
@@ -296,6 +306,71 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
         gr_dilution[0]->SetPointError(binIndex, 0, error);
         // Store the original dilution and error for now
         dilutionResults.emplace_back(dilution, error);
+
+        // Loop over each NH3 period to fill histograms and calculate dilution factors
+        for (int i = 0; i < nh3_periods.size(); ++i) {
+            int min_run = nh3_periods[i].first;
+            int max_run = nh3_periods[i].second;
+
+            // Reset the variables for this NH3 period
+            sumCurrentVariable = 0.0;
+            count = 0;
+        
+            // Fill the histogram for the NH3 data only for the current period
+            fill_histogram(nh3Reader, h_nh3[i+1], nh3Cuts, true, min_run, max_run);
+
+            // Calculate the mean value of currentVariable in this bin
+            double meanCurrentVariable = (count > 0) ? (sumCurrentVariable / count) : (varMin + varMax) / 2.0;
+
+            // Retrieve bin contents for other target types (already filled outside loop)
+            double nA = h_nh3[i+1]->GetBinContent(1);
+
+            // Define variables to hold the fractional charge values
+            double xA, xC, xCH, xHe, xf;
+
+            // Use switch statement to assign the correct fractional charge values for each period
+            switch (i + 1) {
+                case 1:
+                    xA = xAperiod_1; xC = xCperiod_1; xCH = xCHperiod_1; xHe = xHeperiod_1; xf = xfperiod_1;
+                    break;
+                case 2:
+                    xA = xAperiod_2; xC = xCperiod_2; xCH = xCHperiod_2; xHe = xHeperiod_2; xf = xfperiod_2;
+                    break;
+                case 3:
+                    xA = xAperiod_3; xC = xCperiod_3; xCH = xCHperiod_3; xHe = xHeperiod_3; xf = xfperiod_3;
+                    break;
+                case 4:
+                    xA = xAperiod_4; xC = xCperiod_4; xCH = xCHperiod_4; xHe = xHeperiod_4; xf = xfperiod_4;
+                    break;
+                case 5:
+                    xA = xAperiod_5; xC = xCperiod_5; xCH = xCHperiod_5; xHe = xHeperiod_5; xf = xfperiod_5;
+                    break;
+                case 6:
+                    xA = xAperiod_6; xC = xCperiod_6; xCH = xCHperiod_6; xHe = xHeperiod_6; xf = xfperiod_6;
+                    break;
+                case 7:
+                    xA = xAperiod_7; xC = xCperiod_7; xCH = xCHperiod_7; xHe = xHeperiod_7; xf = xfperiod_7;
+                    break;
+                case 8:
+                    xA = xAperiod_8; xC = xCperiod_8; xCH = xCHperiod_8; xHe = xHeperiod_8; xf = xfperiod_8;
+                    break;
+                case 9:
+                    xA = xAperiod_9; xC = xCperiod_9; xCH = xCHperiod_9; xHe = xHeperiod_9; xf = xfperiod_9;
+                    break;
+                default:
+                    // Use total values for index 0 or if something goes wrong
+                    xA = xAtotal; xC = xCtotal; xCH = xCHtotal; xHe = xHetotal; xf = xftotal;
+                    break;
+            }
+
+            // Calculate dilution factors for the current NH3 period
+            auto [dilution, error] = calculate_dilution_and_error(nA, nC, nCH, nMT, nf, xA, xC, xCH, xHe, xf);
+
+            // Add the dilution factor and error to the corresponding TGraphErrors
+            gr_dilution[i + 1]->SetPoint(binIndex, meanCurrentVariable, dilution);
+            gr_dilution[i + 1]->SetPointError(binIndex, 0, error);
+
+        }
 
     }
 
