@@ -404,13 +404,13 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     gr_dilution[0]->GetYaxis()->SetTitle("D_{f}");
     gr_dilution[0]->GetYaxis()->SetTitleSize(0.05);
     gr_dilution[0]->GetYaxis()->SetTitleOffset(1.6);
-    gr_dilution[0]->GetYaxis()->SetRangeUser(0.0, 0.4);
+    gr_dilution[0]->GetYaxis()->SetRangeUser(0.15, 0.35);
     gr_dilution[0]->SetMarkerStyle(20);
     gr_dilution[0]->SetMarkerColor(kBlack);
     gr_dilution[0]->Draw("AP");
 
     std::string outputDir = "output/dilution_factor_plots/";
-    std::string outputFileName = outputDir + "df_" + binNames[currentFits] + "_" + prefix + ".png";
+    std::string outputFileName = outputDir + "df_" + binNames[currentFits] + "_" + prefix + ".pdf";
     canvas->SaveAs(outputFileName.c_str());
 
 
@@ -422,7 +422,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     canvas_periods->SetBottomMargin(0.15);
 
     // Create a legend in the top right, increasing its size and adding a border
-    TLegend* legend = new TLegend(0.65, 0.5, 0.90, 0.90);  // Make the legend larger
+    TLegend* legend = new TLegend(0.7, 0.5, 0.90, 0.90);  // Make the legend larger
     legend->SetTextSize(0.04);  // Increase text size
     legend->SetBorderSize(1);   // Add black border around the legend
     legend->SetLineColor(kBlack);  // Set border color to black
@@ -437,12 +437,12 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     for (int i = 0; i < 9; ++i) {
         gr_dilution[i + 1]->SetTitle("");  // No title
         gr_dilution[i + 1]->GetXaxis()->SetTitle(formatLabelName(prefix).c_str());
-        gr_dilution[i + 1]->GetXaxis()->SetLimits(config.xMin, config.xMax);
+        gr_dilution[i + 1]->GetXaxis()->SetLimits(config.xMin, config.xMax*1.2);
         gr_dilution[i + 1]->GetXaxis()->SetTitleSize(0.05);
         gr_dilution[i + 1]->GetYaxis()->SetTitle("D_{f}");
         gr_dilution[i + 1]->GetYaxis()->SetTitleSize(0.05);
         gr_dilution[i + 1]->GetYaxis()->SetTitleOffset(1.6);
-        gr_dilution[i + 1]->GetYaxis()->SetRangeUser(0.0, 0.4);
+        gr_dilution[i + 1]->GetYaxis()->SetRangeUser(0.15, 0.30);
         
         // Set marker style and color
         gr_dilution[i + 1]->SetMarkerStyle(markerStyles[i]);
@@ -479,11 +479,11 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
         TLatex latex;
         latex.SetNDC();  // Set to normalized device coordinates
         latex.SetTextSize(0.04);  // Set text size
-        latex.DrawLatex(0.23, 0.6, Form("Std Dev: %.4f", stddev));  // Display stddev in the top left
+        latex.DrawLatex(0.23, 0.65, Form("Std Dev: %.4f", stddev));  // Display stddev in the top left
     }
 
     // Save the canvas
-    std::string outputFileNamePeriods = outputDir + "df_periods_" + binNames[currentFits] + "_" + prefix + ".png";
+    std::string outputFileNamePeriods = outputDir + "df_periods_" + binNames[currentFits] + "_" + prefix + ".pdf";
     canvas_periods->SaveAs(outputFileNamePeriods.c_str());
 
     return dilutionResults;
