@@ -422,7 +422,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     canvas_periods->SetBottomMargin(0.15);
 
     // Create a legend in the top right, increasing its size and adding a border
-    TLegend* legend = new TLegend(0.65, 0.65, 0.90, 0.90);  // Make the legend larger
+    TLegend* legend = new TLegend(0.65, 0.5, 0.90, 0.90);  // Make the legend larger
     legend->SetTextSize(0.04);  // Increase text size
     legend->SetBorderSize(1);   // Add black border around the legend
     legend->SetLineColor(kBlack);  // Set border color to black
@@ -479,7 +479,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
         TLatex latex;
         latex.SetNDC();  // Set to normalized device coordinates
         latex.SetTextSize(0.04);  // Set text size
-        latex.DrawLatex(0.2, 0.85, Form("Std Dev: %.3f", stddev));  // Display stddev in the top left
+        latex.DrawLatex(0.23, 0.6, Form("Std Dev: %.4f", stddev));  // Display stddev in the top left
     }
 
     // Save the canvas
