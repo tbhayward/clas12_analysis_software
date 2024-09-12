@@ -321,71 +321,71 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
         // Store the original dilution and error for now
         dilutionResults.emplace_back(dilution, error);
 
-        // Loop over each NH3 period to fill histograms and calculate dilution factors
-        for (int i = 0; i < nh3_periods.size(); ++i) {
-            std::cout << "On period " << (i+1) << "." << std::endl;
-            int min_run = nh3_periods[i].first;
-            int max_run = nh3_periods[i].second;
+        // // Loop over each NH3 period to fill histograms and calculate dilution factors
+        // for (int i = 0; i < nh3_periods.size(); ++i) {
+        //     std::cout << "On period " << (i+1) << "." << std::endl;
+        //     int min_run = nh3_periods[i].first;
+        //     int max_run = nh3_periods[i].second;
 
-            // Reset the variables for this NH3 period
-            sumCurrentVariable = 0.0;
-            count = 0;
+        //     // Reset the variables for this NH3 period
+        //     sumCurrentVariable = 0.0;
+        //     count = 0;
 
-            // Fill the histogram for the NH3 data only for the current period
-            fill_histogram(nh3Reader, h_nh3[i+1], nh3Cuts, true, min_run, max_run);
+        //     // Fill the histogram for the NH3 data only for the current period
+        //     fill_histogram(nh3Reader, h_nh3[i+1], nh3Cuts, true, min_run, max_run);
 
-            // Calculate the mean value of currentVariable in this bin
-            double meanCurrentVariable = (count > 0) ? (sumCurrentVariable / count) : (varMin + varMax) / 2.0;
+        //     // Calculate the mean value of currentVariable in this bin
+        //     double meanCurrentVariable = (count > 0) ? (sumCurrentVariable / count) : (varMin + varMax) / 2.0;
 
-            // Retrieve bin contents for other target types (already filled outside loop)
-            double nA = h_nh3[i+1]->GetBinContent(1);
+        //     // Retrieve bin contents for other target types (already filled outside loop)
+        //     double nA = h_nh3[i+1]->GetBinContent(1);
 
-            // Define variables to hold the fractional charge values
-            double xA, xC, xCH, xHe, xf;
+        //     // Define variables to hold the fractional charge values
+        //     double xA, xC, xCH, xHe, xf;
 
-            // Use switch statement to assign the correct fractional charge values for each period
-            switch (i + 1) {
-                case 1:
-                    xA = xAperiod_1; xC = xCperiod_1; xCH = xCHperiod_1; xHe = xHeperiod_1; xf = xfperiod_1;
-                    break;
-                case 2:
-                    xA = xAperiod_2; xC = xCperiod_2; xCH = xCHperiod_2; xHe = xHeperiod_2; xf = xfperiod_2;
-                    break;
-                case 3:
-                    xA = xAperiod_3; xC = xCperiod_3; xCH = xCHperiod_3; xHe = xHeperiod_3; xf = xfperiod_3;
-                    break;
-                case 4:
-                    xA = xAperiod_4; xC = xCperiod_4; xCH = xCHperiod_4; xHe = xHeperiod_4; xf = xfperiod_4;
-                    break;
-                case 5:
-                    xA = xAperiod_5; xC = xCperiod_5; xCH = xCHperiod_5; xHe = xHeperiod_5; xf = xfperiod_5;
-                    break;
-                case 6:
-                    xA = xAperiod_6; xC = xCperiod_6; xCH = xCHperiod_6; xHe = xHeperiod_6; xf = xfperiod_6;
-                    break;
-                case 7:
-                    xA = xAperiod_7; xC = xCperiod_7; xCH = xCHperiod_7; xHe = xHeperiod_7; xf = xfperiod_7;
-                    break;
-                case 8:
-                    xA = xAperiod_8; xC = xCperiod_8; xCH = xCHperiod_8; xHe = xHeperiod_8; xf = xfperiod_8;
-                    break;
-                case 9:
-                    xA = xAperiod_9; xC = xCperiod_9; xCH = xCHperiod_9; xHe = xHeperiod_9; xf = xfperiod_9;
-                    break;
-                default:
-                    // Use total values for index 0 or if something goes wrong
-                    xA = xAtotal; xC = xCtotal; xCH = xCHtotal; xHe = xHetotal; xf = xftotal;
-                    break;
-            }
+        //     // Use switch statement to assign the correct fractional charge values for each period
+        //     switch (i + 1) {
+        //         case 1:
+        //             xA = xAperiod_1; xC = xCperiod_1; xCH = xCHperiod_1; xHe = xHeperiod_1; xf = xfperiod_1;
+        //             break;
+        //         case 2:
+        //             xA = xAperiod_2; xC = xCperiod_2; xCH = xCHperiod_2; xHe = xHeperiod_2; xf = xfperiod_2;
+        //             break;
+        //         case 3:
+        //             xA = xAperiod_3; xC = xCperiod_3; xCH = xCHperiod_3; xHe = xHeperiod_3; xf = xfperiod_3;
+        //             break;
+        //         case 4:
+        //             xA = xAperiod_4; xC = xCperiod_4; xCH = xCHperiod_4; xHe = xHeperiod_4; xf = xfperiod_4;
+        //             break;
+        //         case 5:
+        //             xA = xAperiod_5; xC = xCperiod_5; xCH = xCHperiod_5; xHe = xHeperiod_5; xf = xfperiod_5;
+        //             break;
+        //         case 6:
+        //             xA = xAperiod_6; xC = xCperiod_6; xCH = xCHperiod_6; xHe = xHeperiod_6; xf = xfperiod_6;
+        //             break;
+        //         case 7:
+        //             xA = xAperiod_7; xC = xCperiod_7; xCH = xCHperiod_7; xHe = xHeperiod_7; xf = xfperiod_7;
+        //             break;
+        //         case 8:
+        //             xA = xAperiod_8; xC = xCperiod_8; xCH = xCHperiod_8; xHe = xHeperiod_8; xf = xfperiod_8;
+        //             break;
+        //         case 9:
+        //             xA = xAperiod_9; xC = xCperiod_9; xCH = xCHperiod_9; xHe = xHeperiod_9; xf = xfperiod_9;
+        //             break;
+        //         default:
+        //             // Use total values for index 0 or if something goes wrong
+        //             xA = xAtotal; xC = xCtotal; xCH = xCHtotal; xHe = xHetotal; xf = xftotal;
+        //             break;
+        //     }
 
-            // Calculate dilution factors for the current NH3 period
-            auto [dilution, error] = calculate_dilution_and_error(nA, nC, nCH, nMT, nf, xA, xC, xCH, xHe, xf);
+        //     // Calculate dilution factors for the current NH3 period
+        //     auto [dilution, error] = calculate_dilution_and_error(nA, nC, nCH, nMT, nf, xA, xC, xCH, xHe, xf);
 
-            // Add the dilution factor and error to the corresponding TGraphErrors
-            gr_dilution[i + 1]->SetPoint(binIndex, meanCurrentVariable, dilution);
-            gr_dilution[i + 1]->SetPointError(binIndex, 0, error);
+        //     // Add the dilution factor and error to the corresponding TGraphErrors
+        //     gr_dilution[i + 1]->SetPoint(binIndex, meanCurrentVariable, dilution);
+        //     gr_dilution[i + 1]->SetPointError(binIndex, 0, error);
 
-        }
+        // }
 
     }
 
@@ -416,75 +416,75 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
 
     //
 
-    // Create a new canvas for the period-specific dilution factors
-    TCanvas* canvas_periods = new TCanvas("c_dilution_periods", "Dilution Factor Plot by Period", 800, 600);
-    canvas_periods->SetLeftMargin(0.15);
-    canvas_periods->SetBottomMargin(0.15);
+    // // Create a new canvas for the period-specific dilution factors
+    // TCanvas* canvas_periods = new TCanvas("c_dilution_periods", "Dilution Factor Plot by Period", 800, 600);
+    // canvas_periods->SetLeftMargin(0.15);
+    // canvas_periods->SetBottomMargin(0.15);
 
-    // Create a legend in the top right, increasing its size and adding a border
-    TLegend* legend = new TLegend(0.7, 0.5, 0.90, 0.90);  // Make the legend larger
-    legend->SetTextSize(0.04);  // Increase text size
-    legend->SetBorderSize(1);   // Add black border around the legend
-    legend->SetLineColor(kBlack);  // Set border color to black
+    // // Create a legend in the top right, increasing its size and adding a border
+    // TLegend* legend = new TLegend(0.7, 0.5, 0.90, 0.90);  // Make the legend larger
+    // legend->SetTextSize(0.04);  // Increase text size
+    // legend->SetBorderSize(1);   // Add black border around the legend
+    // legend->SetLineColor(kBlack);  // Set border color to black
 
-    // Define different marker styles and colors for each period
-    int markerStyles[9] = {20, 21, 22, 23, 24, 25, 26, 27, 28};  // Different marker styles
-    int markerColors[9] = {kRed, kBlue, kGreen, kMagenta, kCyan, kOrange, kViolet, kYellow+2, kPink+7};  // Different colors
+    // // Define different marker styles and colors for each period
+    // int markerStyles[9] = {20, 21, 22, 23, 24, 25, 26, 27, 28};  // Different marker styles
+    // int markerColors[9] = {kRed, kBlue, kGreen, kMagenta, kCyan, kOrange, kViolet, kYellow+2, kPink+7};  // Different colors
 
-    // Vector to store the y-values for standard deviation calculation
-    std::vector<double> y_values;
+    // // Vector to store the y-values for standard deviation calculation
+    // std::vector<double> y_values;
 
-    for (int i = 0; i < 9; ++i) {
-        gr_dilution[i + 1]->SetTitle("");  // No title
-        gr_dilution[i + 1]->GetXaxis()->SetTitle(formatLabelName(prefix).c_str());
-        gr_dilution[i + 1]->GetXaxis()->SetLimits(config.xMin, config.xMax*1.2);
-        gr_dilution[i + 1]->GetXaxis()->SetTitleSize(0.05);
-        gr_dilution[i + 1]->GetYaxis()->SetTitle("D_{f}");
-        gr_dilution[i + 1]->GetYaxis()->SetTitleSize(0.05);
-        gr_dilution[i + 1]->GetYaxis()->SetTitleOffset(1.6);
-        gr_dilution[i + 1]->GetYaxis()->SetRangeUser(0.15, 0.30);
+    // for (int i = 0; i < 9; ++i) {
+    //     gr_dilution[i + 1]->SetTitle("");  // No title
+    //     gr_dilution[i + 1]->GetXaxis()->SetTitle(formatLabelName(prefix).c_str());
+    //     gr_dilution[i + 1]->GetXaxis()->SetLimits(config.xMin, config.xMax*1.2);
+    //     gr_dilution[i + 1]->GetXaxis()->SetTitleSize(0.05);
+    //     gr_dilution[i + 1]->GetYaxis()->SetTitle("D_{f}");
+    //     gr_dilution[i + 1]->GetYaxis()->SetTitleSize(0.05);
+    //     gr_dilution[i + 1]->GetYaxis()->SetTitleOffset(1.6);
+    //     gr_dilution[i + 1]->GetYaxis()->SetRangeUser(0.15, 0.30);
         
-        // Set marker style and color
-        gr_dilution[i + 1]->SetMarkerStyle(markerStyles[i]);
-        gr_dilution[i + 1]->SetMarkerColor(markerColors[i]);
+    //     // Set marker style and color
+    //     gr_dilution[i + 1]->SetMarkerStyle(markerStyles[i]);
+    //     gr_dilution[i + 1]->SetMarkerColor(markerColors[i]);
         
-        // Add to legend
-        legend->AddEntry(gr_dilution[i + 1], Form("Period %d", i + 1), "p");
+    //     // Add to legend
+    //     legend->AddEntry(gr_dilution[i + 1], Form("Period %d", i + 1), "p");
 
-        // Collect y-values for standard deviation calculation
-        if (binNames[currentFits] == "integrated") {
-            for (int j = 0; j < gr_dilution[i + 1]->GetN(); ++j) {
-                double x, y;
-                gr_dilution[i + 1]->GetPoint(j, x, y);  // Gets the value of the point, not the error
-                y_values.push_back(y);  // Collect y-values
-            }
-        }
+    //     // Collect y-values for standard deviation calculation
+    //     if (binNames[currentFits] == "integrated") {
+    //         for (int j = 0; j < gr_dilution[i + 1]->GetN(); ++j) {
+    //             double x, y;
+    //             gr_dilution[i + 1]->GetPoint(j, x, y);  // Gets the value of the point, not the error
+    //             y_values.push_back(y);  // Collect y-values
+    //         }
+    //     }
         
-        // Draw on canvas (use "P same" for subsequent plots to overlay them)
-        if (i == 0) {
-            gr_dilution[i + 1]->Draw("AP");  // Draw the first graph
-        } else {
-            gr_dilution[i + 1]->Draw("P same");  // Overlay the rest
-        }
-    }
+    //     // Draw on canvas (use "P same" for subsequent plots to overlay them)
+    //     if (i == 0) {
+    //         gr_dilution[i + 1]->Draw("AP");  // Draw the first graph
+    //     } else {
+    //         gr_dilution[i + 1]->Draw("P same");  // Overlay the rest
+    //     }
+    // }
 
-    // Draw the legend
-    legend->Draw();
+    // // Draw the legend
+    // legend->Draw();
 
-    // If prefix is "integrated", calculate the standard deviation and display it
-    if (binNames[currentFits] == "integrated") {
-        double stddev = calculate_standard_deviation(y_values);
+    // // If prefix is "integrated", calculate the standard deviation and display it
+    // if (binNames[currentFits] == "integrated") {
+    //     double stddev = calculate_standard_deviation(y_values);
 
-        // Create a TLatex object to draw the standard deviation on the canvas
-        TLatex latex;
-        latex.SetNDC();  // Set to normalized device coordinates
-        latex.SetTextSize(0.04);  // Set text size
-        latex.DrawLatex(0.23, 0.65, Form("Std Dev: %.4f", stddev));  // Display stddev in the top left
-    }
+    //     // Create a TLatex object to draw the standard deviation on the canvas
+    //     TLatex latex;
+    //     latex.SetNDC();  // Set to normalized device coordinates
+    //     latex.SetTextSize(0.04);  // Set text size
+    //     latex.DrawLatex(0.23, 0.65, Form("Std Dev: %.4f", stddev));  // Display stddev in the top left
+    // }
 
-    // Save the canvas
-    std::string outputFileNamePeriods = outputDir + "df_periods_" + binNames[currentFits] + "_" + prefix + ".pdf";
-    canvas_periods->SaveAs(outputFileNamePeriods.c_str());
+    // // Save the canvas
+    // std::string outputFileNamePeriods = outputDir + "df_periods_" + binNames[currentFits] + "_" + prefix + ".pdf";
+    // canvas_periods->SaveAs(outputFileNamePeriods.c_str());
 
     return dilutionResults;
 }

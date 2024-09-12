@@ -150,25 +150,6 @@ public class fiducial_cuts {
             }
         }
 
-//        // RGC strips were only removed from data-MC agreement which has since been corrected with 
-//        // updated status tables
-//        if ((runnum >= 16042 && runnum <= 17811) || runnum == 11) { // assumption working with RGC MC
-//            switch (sector) {
-//                case 1:
-//                    if (lv_4 > 72 && lv_4 < 94) {
-//                        return false;
-//                    }
-//                case 2:
-//                    if (lw_7 > 68 && lw_7 < 84) {
-//                        return false;
-//                    }
-//                case 5:
-//                    if (lu_7 > 200 && lu_7 < 220) {
-//                        return false;
-//                    }
-//            }
-//        }
-        // If none of the cuts apply, the track is good
         return true;
     }
 
