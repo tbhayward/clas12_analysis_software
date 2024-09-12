@@ -1560,7 +1560,7 @@ void plot_ft_hit_position(TTreeReader& dataReader, TTreeReader* mcReader, const 
     // Draw and save the cut MC plot if available
     if (h_mc_cut) {
         TCanvas c_mc_cut("c_mc_cut", "c_mc_cut", 800, 600);
-        c_data.SetRightMargin(0.15);
+        c_mc_cut.SetRightMargin(0.15);
         h_mc_cut->Draw("COLZ");
         
         for (size_t idx = 0; idx < holes.size(); ++idx) {
