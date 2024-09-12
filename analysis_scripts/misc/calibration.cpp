@@ -8652,17 +8652,17 @@ int main(int argc, char** argv) {
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
 
-    // plot_ft_xy_energy(dataReader, mcReader, dataset);
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_ft_hit_position(dataReader, mcReader, dataset);
+    plot_ft_xy_energy(dataReader, mcReader, dataset);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_ft_hit_position(dataReader, mcReader, dataset);
 
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_pcal_fiducial_determination(dataReader, mcReader, dataset);
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_ecin_fiducial_determination(dataReader, mcReader, dataset);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_pcal_fiducial_determination(dataReader, mcReader, dataset);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_ecin_fiducial_determination(dataReader, mcReader, dataset);
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
     plot_ecout_fiducial_determination(dataReader, mcReader, dataset);
