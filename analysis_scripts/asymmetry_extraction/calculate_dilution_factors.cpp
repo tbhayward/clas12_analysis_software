@@ -6,6 +6,7 @@
 #include <cmath>
 #include <vector>
 #include <numeric>
+#include <TLatex.h>
 // tbhayward libraries
 #include "common_vars.h"
 #include "load_bins_from_csv.h"
