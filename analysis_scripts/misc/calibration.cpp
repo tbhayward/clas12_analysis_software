@@ -31,7 +31,8 @@
 // ROOT Fitting Functions
 #include <TF1.h>
 
-void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
+    const std::string& dataset = "rga_fa18_inb") {
     // Arrays to store positive and negative track conditions
     std::vector<int> positive_pids = {-11, 211, 321, 2212};
     std::vector<int> negative_pids = {11, -211, -321, -2212};
@@ -148,7 +149,7 @@ void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         grData->SetLineColor(kBlue);     // Set line color to blue
         grData->SetMarkerStyle(20);      // Add dot in the center of error bars (style 20 is a filled circle)
         grData->SetMarkerSize(0.5);      // Adjust the marker size if needed
-        grData->SetTitle(("HTCC nphe - " + plot_name).c_str());
+        grData->SetTitle((dataset+", HTCC nphe - " + plot_name).c_str());
         grData->GetXaxis()->SetTitle("nphe");
         grData->GetYaxis()->SetTitle("normalized counts");
 
@@ -219,7 +220,8 @@ void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     create_plot("negative", negative_pids);
 }
 
-void plot_ltcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+void plot_ltcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
+    const std::string& dataset = "rga_fa18_inb") {
     // Arrays to store positive and negative track conditions
     std::vector<int> positive_pids = {-11, 211, 321, 2212};
     std::vector<int> negative_pids = {11, -211, -321, -2212};
@@ -330,7 +332,7 @@ void plot_ltcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         	TGraphErrors(nBins, &dataX[0], &dataY[0], &dataEx[0], &dataEy[0]);
         grData->SetMarkerColor(kBlack);
         grData->SetLineColor(kBlack);
-        grData->SetTitle(("LTCC nphe - " + plot_name).c_str());
+        grData->SetTitle((dataset+", LTCC nphe - " + plot_name).c_str());
         grData->GetXaxis()->SetTitle("nphe");
         grData->GetYaxis()->SetTitle("normalized counts");
 
@@ -432,7 +434,8 @@ bool pcal_fiducial(double lv_1, double lw_1, double lu_1,
     return true;
 }
 
-void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
+    const std::string& dataset = "rga_fa18_inb") {
     // Disable stat boxes
     gStyle->SetOptStat(0);
 
@@ -510,8 +513,11 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
         // Arrays for data and MC energy depositions for each sector (6 sectors)
         std::vector<TH1D*> histsData(6), histsMC(6);
         for (int i = 0; i < 6; ++i) {
-            histsData[i] = new TH1D(Form("hData_sector%d", i+1), Form("Sector %d Data", i+1), 100, 0, 1.5);
-            histsMC[i] = new TH1D(Form("hMC_sector%d", i+1), Form("Sector %d MC", i+1), 100, 0, 1.5);
+            // For Data histograms, include the dataset before "Sector" in the title
+            histsData[i] = new TH1D(Form("hData_sector%d", i+1), Form("%s Data Sector %d", dataset.c_str(), i+1), 100, 0, 1.5);
+            
+            // For MC histograms, include the dataset before "Sector" in the title
+            histsMC[i] = new TH1D(Form("hMC_sector%d", i+1), Form("%s MC Sector %d", dataset.c_str(), i+1), 100, 0, 1.5);
         }
 
         // Fill data histograms
@@ -614,7 +620,7 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
         }
 
         // Save the plot
-        c.SaveAs(("output/calibration/cal/pid/pcal_energy_" + plot_name + ".png").c_str());
+        c.SaveAs(("output/calibration/cal/pid/pcal_energy_" + dataset + "_" + plot_name + ".png").c_str());
 
         // Clean up
         for (int i = 0; i < 6; ++i) {
@@ -628,7 +634,8 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) 
     create_pcal_plots("negative", negative_pids);
 }
 
-void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
+    const std::string& dataset = "rga_fa18_inb") {
     // Disable stat boxes
     gStyle->SetOptStat(0);
 
@@ -719,9 +726,9 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
         // Arrays for data and MC 2D histograms for each sector (6 sectors)
         std::vector<TH2D*> histsData(6), histsMC(6);
         for (int i = 0; i < 6; ++i) {
-            histsData[i] = new TH2D(Form("hData_sector%d", i+1), Form("Sector %d %s Data", i+1, track_type.c_str()),
+            histsData[i] = new TH2D(Form("hData_sector%d", i+1), Form("%s Sector %d %s Data", dataset.c_str(), i+1, track_type.c_str()),
                                      100, 2, 9, 100, 0, 0.35);
-            histsMC[i] = new TH2D(Form("hMC_sector%d", i+1), Form("Sector %d %s MC", i+1, track_type.c_str()),
+            histsMC[i] = new TH2D(Form("hMC_sector%d", i+1), Form("%s Sector %d %s MC", dataset.c_str(), i+1, track_type.c_str()),
                                   100, 2, 9, 100, 0, 0.35);
         }
 
@@ -784,15 +791,11 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
         // Draw 2D histograms for data
         for (int i = 0; i < 6; ++i) {
             cData.cd(i + 1);  // Move to the corresponding pad
-            histsData[i]->GetXaxis()->SetTitle("Momentum (GeV)");
+            histsData[i]->GetXaxis()->SetTitle("p (GeV)");
             histsData[i]->GetYaxis()->SetTitle("Sampling Fraction");
             histsData[i]->GetXaxis()->SetRangeUser(2.0, 9.0);
             histsData[i]->GetYaxis()->SetRangeUser(0.0, 0.35);
             histsData[i]->Draw("COLZ");
-
-            // Apply title offset to push the title up further from the plot
-            // histsData[i]->GetYaxis()->SetTitleOffset(1.3); // Increase title offset to move the title up
-            // histsData[i]->GetXaxis()->SetTitleOffset(1.2); // For the x-axis title, if needed
 
             // Draw horizontal line at sampling fraction = 0.19
             TLine* line = new TLine(2.0, 0.19, 9.0, 0.19);
@@ -830,10 +833,6 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
                 histsMC[i]->GetYaxis()->SetRangeUser(0.0, 0.35);
                 histsMC[i]->Draw("COLZ");
 
-                // Apply title offset to push the title up further from the plot
-                // histsMC[i]->GetYaxis()->SetTitleOffset(1.3); // Increase title offset to move the title up
-                // histsMC[i]->GetXaxis()->SetTitleOffset(1.2); // For the x-axis title, if needed
-
                 // Draw horizontal line at sampling fraction = 0.19
                 TLine* line = new TLine(2.0, 0.19, 9.0, 0.19);
                 line->SetLineColor(kRed);
@@ -848,9 +847,9 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
         }
 
         // Save the plots
-        cData.SaveAs(("output/calibration/cal/pid/sampling_fraction_" + plot_name + "_data.png").c_str());
+        cData.SaveAs(("output/calibration/cal/pid/sampling_fraction_" + dataset + "_" + plot_name + "_data.png").c_str());
         if (mcReader && cMC) {
-            cMC->SaveAs(("output/calibration/cal/pid/sampling_fraction_" + plot_name + "_mc.png").c_str());
+            cMC->SaveAs(("output/calibration/cal/pid/sampling_fraction_" + dataset + "_" + plot_name + "_mc.png").c_str());
         }
 
         // Clean up
@@ -865,7 +864,8 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
     create_sampling_fraction_plots("negative", negative_pids, "Negative");
 }
 
-void plot_diagonal_cut(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+void plot_diagonal_cut(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
+    const std::string& dataset = "rga_fa18_inb") {
     // Disable stat boxes
     gStyle->SetOptStat(0);
 
@@ -955,9 +955,9 @@ void plot_diagonal_cut(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
         // Arrays for data and MC 2D histograms for each sector (6 sectors)
         std::vector<TH2D*> histsData(6), histsMC(6);
         for (int i = 0; i < 6; ++i) {
-            histsData[i] = new TH2D(Form("hData_sector%d", i+1), Form("Sector %d %s Data", i+1, track_type.c_str()),
+            histsData[i] = new TH2D(Form("hData_sector%d", i+1), Form("%s Sector %d %s Data", dataset.c_str(), i+1, track_type.c_str()),
                                      100, 4.5, 9, 100, 0, 0.35);
-            histsMC[i] = new TH2D(Form("hMC_sector%d", i+1), Form("Sector %d %s MC", i+1, track_type.c_str()),
+            histsMC[i] = new TH2D(Form("hMC_sector%d", i+1), Form("%s Sector %d %s MC", dataset.c_str(), i+1, track_type.c_str()),
                                   100, 4.5, 9, 100, 0, 0.35);
         }
 
@@ -1077,9 +1077,9 @@ void plot_diagonal_cut(TTreeReader& dataReader, TTreeReader* mcReader = nullptr)
         }
 
         // Save the plots
-        cData.SaveAs(("output/calibration/cal/pid/diagonal_cut_" + plot_name + "_data.png").c_str());
+        cData.SaveAs(("output/calibration/cal/pid/diagonal_cut_" + dataset + "_" + plot_name + "_data.png").c_str());
         if (mcReader && cMC) {
-            cMC->SaveAs(("output/calibration/cal/pid/diagonal_cut_" + plot_name + "_mc.png").c_str());
+            cMC->SaveAs(("output/calibration/cal/pid/diagonal_cut_" + dataset + "_" + plot_name + "_mc.png").c_str());
         }
 
         // Clean up
@@ -8643,31 +8643,31 @@ int main(int argc, char** argv) {
 
     std::string dataset = "rga_fa18_inb";
 
-    // plot_htcc_nphe(dataReader, mcReader);
-    // plot_ltcc_nphe(dataReader, mcReader);
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
+    plot_htcc_nphe(dataReader, mcReader, dataset);
+    plot_ltcc_nphe(dataReader, mcReader, dataset);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
 
-    // plot_pcal_energy(dataReader, mcReader);
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
+    plot_pcal_energy(dataReader, mcReader, dataset);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
 
-    // plot_sampling_fraction(dataReader, mcReader);
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
+    plot_sampling_fraction(dataReader, mcReader, dataset);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
 
-    // plot_diagonal_cut(dataReader, mcReader);
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
+    plot_diagonal_cut(dataReader, mcReader, dataset);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
 
     // plot_ft_xy_energy(dataReader, mcReader, dataset);
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
     // plot_ft_hit_position(dataReader, mcReader, dataset);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_pcal_fiducial_determination(dataReader, mcReader, dataset);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_pcal_fiducial_determination(dataReader, mcReader, dataset);
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
     // plot_ecin_fiducial_determination(dataReader, mcReader, dataset);
@@ -8675,9 +8675,9 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_ecout_fiducial_determination(dataReader, mcReader, dataset);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_cal_hit_position(dataReader, mcReader, dataset);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_cal_hit_position(dataReader, mcReader, dataset);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
