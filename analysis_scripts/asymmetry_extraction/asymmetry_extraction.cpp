@@ -271,15 +271,6 @@ int main(int argc, char *argv[]) {
         dilutionFactors = std::vector<std::pair<double, double>>(allBins[i].size() - 1, {0.0, 0.0});
     }
 
-    // Print out the dilution factors and their uncertainties
-    cout << "Dilution Factors for Bin Set " << i + 1 << ":" << endl;
-    for (size_t j = 0; j < dilutionFactors.size(); ++j) {
-        cout << "Bin " << j + 1 << ": "
-             << "Dilution Factor = " << dilutionFactors[j].first
-             << ", Uncertainty = " << dilutionFactors[j].second
-             << endl;
-    }
-
     for (int asymmetry = 0; asymmetry < 3; ++asymmetry) {
         if (asymmetry > 0 && cpp == 1) {
             cout << "Skipping TSA and DSA for unpolarized target data." << endl;

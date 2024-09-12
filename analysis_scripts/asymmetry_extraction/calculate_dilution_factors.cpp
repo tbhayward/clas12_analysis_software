@@ -287,11 +287,9 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
 
             /// Calculate dilution factors for the general case
             auto [dilution, error] = calculate_dilution_and_error(nA, nC, nCH, nMT, nf, xAtotal, xCtotal, xCHtotal, xHetotal, xftotal);
-
             // Add the dilution factor and error to the TGraphErrors
             gr_dilution[0]->SetPoint(binIndex, meanCurrentVariable, dilution);
             gr_dilution[0]->SetPointError(binIndex, 0, error);
-
             // Store the original dilution and error for now
             dilutionResults.emplace_back(dilution, error);
 
