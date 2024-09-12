@@ -1894,7 +1894,7 @@ void plot_pcal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRe
         for (int sector = 1; sector <= 6; ++sector) {
             c_sf_lv_grid.cd(sector);
             gPad->SetLeftMargin(0.20);  // Adjust the left margin to add padding
-            graph_data_sf_lv[sector-1]->SetTitle(("Sector " + std::to_string(sector)).c_str());
+            graph_data_sf_lv[sector-1]->SetTitle((dataset+", Sector " + std::to_string(sector)).c_str());
             graph_data_sf_lv[sector-1]->GetYaxis()->SetRangeUser(0.18, 0.28);
             graph_data_sf_lv[sector-1]->Draw("AP");
             if (mcReader) graph_mc_sf_lv[sector-1]->Draw("P same");
@@ -1912,7 +1912,7 @@ void plot_pcal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRe
         for (int sector = 1; sector <= 6; ++sector) {
             c_sf_lw_grid.cd(sector);
             gPad->SetLeftMargin(0.20);  // Adjust the left margin to add padding
-            graph_data_sf_lw[sector-1]->SetTitle(("Sector " + std::to_string(sector)).c_str());
+            graph_data_sf_lw[sector-1]->SetTitle((dataset + ", Sector " + std::to_string(sector)).c_str());
             graph_data_sf_lw[sector-1]->GetYaxis()->SetRangeUser(0.18, 0.28);
             graph_data_sf_lw[sector-1]->Draw("AP");
             if (mcReader) graph_mc_sf_lw[sector-1]->Draw("P same");
@@ -1930,7 +1930,7 @@ void plot_pcal_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcRe
         for (int sector = 1; sector <= 6; ++sector) {
             c_sf_lu_grid.cd(sector);
             gPad->SetLeftMargin(0.20);  // Adjust the left margin to add padding
-            graph_data_sf_lu[sector-1]->SetTitle(("Sector " + std::to_string(sector)).c_str());
+            graph_data_sf_lu[sector-1]->SetTitle((dataset+", Sector " + std::to_string(sector)).c_str());
             graph_data_sf_lu[sector-1]->GetYaxis()->SetRangeUser(0.18, 0.28);
             graph_data_sf_lu[sector-1]->Draw("AP");
             if (mcReader) graph_mc_sf_lu[sector-1]->Draw("P same");
@@ -8665,9 +8665,9 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_ft_hit_position(dataReader, mcReader, dataset);
 
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_pcal_fiducial_determination(dataReader, mcReader, dataset);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_pcal_fiducial_determination(dataReader, mcReader, dataset);
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
     // plot_ecin_fiducial_determination(dataReader, mcReader, dataset);
