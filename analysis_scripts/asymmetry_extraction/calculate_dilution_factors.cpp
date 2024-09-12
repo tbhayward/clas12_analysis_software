@@ -178,6 +178,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     TTreeReader emptyReader(empty);
 
     // Read helicity and target polarization
+    TTreeReaderValue<int> runnum(nh3Reader, "runnum");
     TTreeReaderValue<int> helicity(nh3Reader, "helicity");
     TTreeReaderValue<double> target_pol(nh3Reader, "target_pol");
 
@@ -230,9 +231,10 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
             return {}; // Return an empty vector to indicate failure
         }
         std::vector<std::pair<double, double>> dilutionResults;
-        TGraphErrors* gr_dilution = new TGraphErrors();
-        TGraphErrors* gr_aligned = new TGraphErrors();
-        TGraphErrors* gr_unaligned = new TGraphErrors();
+        TGraphErrors* gr_dilution[10];  // Array of pointers to TGraphErrors
+        for (int i = 0; i < 10; ++i) {
+            gr_dilution[i] = new TGraphErrors();  // Create a new TGraphErrors for each index
+        }
 
         // Loop over each bin
         for (size_t binIndex = 0; binIndex < allBins[currentFits].size() - 1; ++binIndex) {
@@ -287,8 +289,8 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
             auto [dilution, error] = calculate_dilution_and_error(nA, nC, nCH, nMT, nf, xAtotal, xCtotal, xCHtotal, xHetotal, xftotal);
 
             // Add the dilution factor and error to the TGraphErrors
-            gr_dilution->SetPoint(binIndex, meanCurrentVariable, dilution);
-            gr_dilution->SetPointError(binIndex, 0, error);
+            gr_dilution[0]->SetPoint(binIndex, meanCurrentVariable, dilution);
+            gr_dilution[0]->SetPointError(binIndex, 0, error);
 
             // Store the original dilution and error for now
             dilutionResults.emplace_back(dilution, error);
@@ -301,15 +303,6 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
             delete h_empty;
         }
 
-        // Fit the TGraphErrors to a cubic polynomial
-        TF1* fitFunc = new TF1("fitFunc", "[0] + [1]*x + [2]*x^2 + [3]*x^3", allBins[currentFits].front(), allBins[currentFits].back());
-        gr_dilution->Fit(fitFunc, "QN");
-
-        // Calculate the chi2/ndf
-        double chi2 = fitFunc->GetChisquare();
-        int ndf = fitFunc->GetNDF();
-        double scalingFactor = std::sqrt(chi2 / ndf);
-
         // Plot the original dilution factor
         std::string prefix = propertyNames[currentFits];
         HistConfig config = histConfigs.find(prefix) != histConfigs.end() ? histConfigs[prefix] : HistConfig{100, 0, 1};
@@ -318,17 +311,17 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
         canvas->SetLeftMargin(0.15);
         canvas->SetBottomMargin(0.15);
 
-        gr_dilution->SetTitle("");
-        gr_dilution->GetXaxis()->SetTitle(formatLabelName(prefix).c_str());
-        gr_dilution->GetXaxis()->SetLimits(config.xMin, config.xMax);
-        gr_dilution->GetXaxis()->SetTitleSize(0.05);
-        gr_dilution->GetYaxis()->SetTitle("D_{f}");
-        gr_dilution->GetYaxis()->SetTitleSize(0.05);
-        gr_dilution->GetYaxis()->SetTitleOffset(1.6);
-        gr_dilution->GetYaxis()->SetRangeUser(0.0, 0.4);
-        gr_dilution->SetMarkerStyle(20);
-        gr_dilution->SetMarkerColor(kBlack);
-        gr_dilution->Draw("AP");
+        gr_dilution[0]->SetTitle("");
+        gr_dilution[0]->GetXaxis()->SetTitle(formatLabelName(prefix).c_str());
+        gr_dilution[0]->GetXaxis()->SetLimits(config.xMin, config.xMax);
+        gr_dilution[0]->GetXaxis()->SetTitleSize(0.05);
+        gr_dilution[0]->GetYaxis()->SetTitle("D_{f}");
+        gr_dilution[0]->GetYaxis()->SetTitleSize(0.05);
+        gr_dilution[0]->GetYaxis()->SetTitleOffset(1.6);
+        gr_dilution[0]->GetYaxis()->SetRangeUser(0.0, 0.4);
+        gr_dilution[0]->SetMarkerStyle(20);
+        gr_dilution[0]->SetMarkerColor(kBlack);
+        gr_dilution[0]->Draw("AP");
 
         std::string outputDir = "output/dilution_factor_plots/";
         std::string outputFileName = outputDir + "df_" + binNames[currentFits] + "_" + prefix + ".png";
