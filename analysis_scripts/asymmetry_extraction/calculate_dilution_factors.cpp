@@ -230,116 +230,98 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
             std::cerr << "Invalid channel specified." << std::endl;
             return {}; // Return an empty vector to indicate failure
         }
-        std::vector<std::pair<double, double>> dilutionResults;
-        TGraphErrors* gr_dilution[10];  // Array of pointers to TGraphErrors
-        for (int i = 0; i < 10; ++i) {
-            gr_dilution[i] = new TGraphErrors();  // Create a new TGraphErrors for each index
-        }
 
-        // Loop over each bin
-        for (size_t binIndex = 0; binIndex < allBins[currentFits].size() - 1; ++binIndex) {
-            double varMin = allBins[currentFits][binIndex];
-            double varMax = allBins[currentFits][binIndex + 1];
-
-            // Create histograms for each target type
-            TH1D *h_nh3 = new TH1D("h_nh3", "", 1, varMin, varMax);
-            TH1D *h_c = new TH1D("h_c", "", 1, varMin, varMax);
-            TH1D *h_ch = new TH1D("h_ch", "", 1, varMin, varMax);
-            TH1D *h_he = new TH1D("h_he", "", 1, varMin, varMax);
-            TH1D *h_empty = new TH1D("h_empty", "", 1, varMin, varMax);
-
-            double sumCurrentVariable = 0.0;
-            int count = 0;
-
-            // Helper function to fill histograms based on kinematic cuts and track mean
-            auto fill_histogram = [&](TTreeReader& reader, TH1D* hist, BaseKinematicCuts* cuts, 
-                bool is_nh3) {
-                TTreeReaderValue<double> currentVariable(reader, propertyNames[currentFits].c_str());
-
-                while (reader.Next()) {
-                    bool passedKinematicCuts = cuts->applyCuts(currentFits, false);
-                    if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
-                        hist->Fill(*currentVariable);
-                        sumCurrentVariable += *currentVariable;
-                        ++count;
-
-                    }
-                }
-                reader.Restart();
-            };
-
-            // Call fill_histogram for each target type
-            fill_histogram(nh3Reader, h_nh3, nh3Cuts, true);  // NH3 data
-            fill_histogram(cReader, h_c,  cCuts, false);  // Carbon data
-            fill_histogram(chReader, h_ch, chCuts, false); // CH2 data
-            fill_histogram(heReader, h_he,  heCuts, false);  // Helium data
-            fill_histogram(emptyReader, h_empty,  emptyCuts, false);  // Empty target data
-
-            // Calculate the mean value of currentVariable in this bin
-            double meanCurrentVariable = (count > 0) ? (sumCurrentVariable / count) : (varMin + varMax) / 2.0;
-
-            // Retrieve bin contents
-            double nA = h_nh3->GetBinContent(1);
-            double nC = h_c->GetBinContent(1);
-            double nCH = h_ch->GetBinContent(1);
-            double nMT = h_he->GetBinContent(1);
-            double nf = h_empty->GetBinContent(1);
-
-            /// Calculate dilution factors for the general case
-            auto [dilution, error] = calculate_dilution_and_error(nA, nC, nCH, nMT, nf, xAtotal, xCtotal, xCHtotal, xHetotal, xftotal);
-            // Add the dilution factor and error to the TGraphErrors
-            gr_dilution[0]->SetPoint(binIndex, meanCurrentVariable, dilution);
-            gr_dilution[0]->SetPointError(binIndex, 0, error);
-            // Store the original dilution and error for now
-            dilutionResults.emplace_back(dilution, error);
-
-            // Clean up histograms
-            delete h_nh3;
-            delete h_c;
-            delete h_ch;
-            delete h_he;
-            delete h_empty;
-        }
-
-        // Plot the original dilution factor
-        std::string prefix = propertyNames[currentFits];
-        HistConfig config = histConfigs.find(prefix) != histConfigs.end() ? histConfigs[prefix] : HistConfig{100, 0, 1};
-
-        TCanvas* canvas = new TCanvas("c_dilution", "Dilution Factor Plot", 800, 600);
-        canvas->SetLeftMargin(0.15);
-        canvas->SetBottomMargin(0.15);
-
-        gr_dilution[0]->SetTitle("");
-        gr_dilution[0]->GetXaxis()->SetTitle(formatLabelName(prefix).c_str());
-        gr_dilution[0]->GetXaxis()->SetLimits(config.xMin, config.xMax);
-        gr_dilution[0]->GetXaxis()->SetTitleSize(0.05);
-        gr_dilution[0]->GetYaxis()->SetTitle("D_{f}");
-        gr_dilution[0]->GetYaxis()->SetTitleSize(0.05);
-        gr_dilution[0]->GetYaxis()->SetTitleOffset(1.6);
-        gr_dilution[0]->GetYaxis()->SetRangeUser(0.0, 0.4);
-        gr_dilution[0]->SetMarkerStyle(20);
-        gr_dilution[0]->SetMarkerColor(kBlack);
-        gr_dilution[0]->Draw("AP");
-
-        std::string outputDir = "output/dilution_factor_plots/";
-        std::string outputFileName = outputDir + "df_" + binNames[currentFits] + "_" + prefix + ".png";
-        canvas->SaveAs(outputFileName.c_str());
-
-        // // Clean up
-        // delete canvas;
-        // delete gr_dilution;
-
-        // delete nh3Cuts;
-        // delete cCuts;
-        // delete chCuts;
-        // delete heCuts;
-        // delete emptyCuts;
-
-        // nh3File->Close(); delete nh3File;
-        // cFile->Close(); delete cFile;
-        // chFile->Close(); delete chFile;
-        // heFile->Close(); delete heFile;
-        // emptyFile->Close(); delete emptyFile;
-
-        return dilutionResults;
+    std::vector<std::pair<double, double>> dilutionResults;
+    TGraphErrors* gr_dilution[10];  // Array of pointers to TGraphErrors
+    for (int i = 0; i < 10; ++i) {
+        gr_dilution[i] = new TGraphErrors();  // Create a new TGraphErrors for each index
     }
+
+    // Loop over each bin
+    for (size_t binIndex = 0; binIndex < allBins[currentFits].size() - 1; ++binIndex) {
+        double varMin = allBins[currentFits][binIndex];
+        double varMax = allBins[currentFits][binIndex + 1];
+
+        // Create histograms for each target type
+        TH1D *h_nh3 = new TH1D("h_nh3", "", 1, varMin, varMax);
+        TH1D *h_c = new TH1D("h_c", "", 1, varMin, varMax);
+        TH1D *h_ch = new TH1D("h_ch", "", 1, varMin, varMax);
+        TH1D *h_he = new TH1D("h_he", "", 1, varMin, varMax);
+        TH1D *h_empty = new TH1D("h_empty", "", 1, varMin, varMax);
+
+        double sumCurrentVariable = 0.0;
+        int count = 0;
+
+        // Helper function to fill histograms based on kinematic cuts and track mean
+        auto fill_histogram = [&](TTreeReader& reader, TH1D* hist, BaseKinematicCuts* cuts, 
+            bool is_nh3, int min_run = 0, int max_run = 1000000) {
+            TTreeReaderValue<double> currentVariable(reader, propertyNames[currentFits].c_str());
+
+            while (reader.Next()) {
+                bool passedKinematicCuts = cuts->applyCuts(currentFits, false);
+                if (is_nh3) {
+                    if (*runnum < min_run || *runnum > max_run) continue;
+                }
+                if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
+                    hist->Fill(*currentVariable);
+                    sumCurrentVariable += *currentVariable;
+                    ++count;
+
+                }
+            }
+            reader.Restart();
+        };
+
+        // Call fill_histogram for each target type
+        fill_histogram(nh3Reader, h_nh3, nh3Cuts, true, 0, 1000000);  // NH3 data
+        fill_histogram(cReader, h_c,  cCuts, false, 0, 1000000);  // Carbon data
+        fill_histogram(chReader, h_ch, chCuts, false, 0, 1000000); // CH2 data
+        fill_histogram(heReader, h_he,  heCuts, false, 0, 1000000);  // Helium data
+        fill_histogram(emptyReader, h_empty,  emptyCuts, false, 0, 1000000);  // Empty target data
+
+        // Calculate the mean value of currentVariable in this bin
+        double meanCurrentVariable = (count > 0) ? (sumCurrentVariable / count) : (varMin + varMax) / 2.0;
+
+        // Retrieve bin contents
+        double nA = h_nh3->GetBinContent(1);
+        double nC = h_c->GetBinContent(1);
+        double nCH = h_ch->GetBinContent(1);
+        double nMT = h_he->GetBinContent(1);
+        double nf = h_empty->GetBinContent(1);
+
+        /// Calculate dilution factors for the general case
+        auto [dilution, error] = calculate_dilution_and_error(nA, nC, nCH, nMT, nf, xAtotal, xCtotal, xCHtotal, xHetotal, xftotal);
+        // Add the dilution factor and error to the TGraphErrors
+        gr_dilution[0]->SetPoint(binIndex, meanCurrentVariable, dilution);
+        gr_dilution[0]->SetPointError(binIndex, 0, error);
+        // Store the original dilution and error for now
+        dilutionResults.emplace_back(dilution, error);
+
+    }
+
+    // Plot the original dilution factor
+    std::string prefix = propertyNames[currentFits];
+    HistConfig config = histConfigs.find(prefix) != histConfigs.end() ? histConfigs[prefix] : HistConfig{100, 0, 1};
+
+    TCanvas* canvas = new TCanvas("c_dilution", "Dilution Factor Plot", 800, 600);
+    canvas->SetLeftMargin(0.15);
+    canvas->SetBottomMargin(0.15);
+
+    gr_dilution[0]->SetTitle("");
+    gr_dilution[0]->GetXaxis()->SetTitle(formatLabelName(prefix).c_str());
+    gr_dilution[0]->GetXaxis()->SetLimits(config.xMin, config.xMax);
+    gr_dilution[0]->GetXaxis()->SetTitleSize(0.05);
+    gr_dilution[0]->GetYaxis()->SetTitle("D_{f}");
+    gr_dilution[0]->GetYaxis()->SetTitleSize(0.05);
+    gr_dilution[0]->GetYaxis()->SetTitleOffset(1.6);
+    gr_dilution[0]->GetYaxis()->SetRangeUser(0.0, 0.4);
+    gr_dilution[0]->SetMarkerStyle(20);
+    gr_dilution[0]->SetMarkerColor(kBlack);
+    gr_dilution[0]->Draw("AP");
+
+    std::string outputDir = "output/dilution_factor_plots/";
+    std::string outputFileName = outputDir + "df_" + binNames[currentFits] + "_" + prefix + ".png";
+    canvas->SaveAs(outputFileName.c_str());
+
+    return dilutionResults;
+}
