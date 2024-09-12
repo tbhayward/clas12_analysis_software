@@ -205,7 +205,7 @@ void plot_htcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
         latex.DrawLatex(2.2, 0.92 * maxY, "nphe >= 2");
 
         // Save the plot
-        c.SaveAs(("output/calibration/cc/htcc_nphe_" + plot_name + ".png").c_str());
+        c.SaveAs(("output/calibration/cc/htcc_nphe_" + dataset + "_" + plot_name + ".png").c_str());
 
         // Clean up
         delete grData;
@@ -367,7 +367,7 @@ void plot_ltcc_nphe(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
         legend->Draw();
 
         // Save the plot
-        c.SaveAs(("output/calibration/cc/ltcc_nphe_" + plot_name + ".png").c_str());
+        c.SaveAs(("output/calibration/cc/ltcc_nphe_" + dataset + "_" + plot_name + ".png").c_str());
 
         // Clean up
         delete grData;
