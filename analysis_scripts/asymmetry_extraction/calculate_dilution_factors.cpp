@@ -331,7 +331,6 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
         // Clean up
         delete canvas;
         delete gr_dilution;
-        delete fitFunc;
 
         delete nh3Cuts;
         delete cCuts;
