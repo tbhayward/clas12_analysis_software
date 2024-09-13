@@ -235,7 +235,7 @@ void plotDependence(
     // Print all keys available in asymmetryData
     std::cout << "Available keys in asymmetryData:" << std::endl;
     for (const auto& keyPair : asymmetryData) {
-        std::cout << keyPair.first << std::endl;
+        std::cout << "'" << keyPair.first << "'" << std::endl;
     }
 
     // Loop over each subplot (we will limit to the first for now)
@@ -252,13 +252,14 @@ void plotDependence(
         for (size_t datasetIndex = 0; datasetIndex < prefixes.size(); ++datasetIndex) {
 
             std::string key = prefixes[datasetIndex] + "chi2Fits" + suffixes[i];
-            std::cout << "Checking key: " << key << std::endl;
+            key = trim(key);  // Trim any leading or trailing spaces
+            std::cout << "Checking key: '" << key << "'" << std::endl;
 
             // Check if the key exists exactly in asymmetryData
             auto it = asymmetryData.find(key);
 
             if (it != asymmetryData.end()) {
-                std::cout << "Found key: " << key << std::endl;
+                std::cout << "Found key: '" << key << "'" << std::endl;
 
                 const auto& data = it->second;
 
@@ -282,7 +283,12 @@ void plotDependence(
 
                 graph->Draw((datasetIndex == 0) ? "AP" : "P SAME");
             } else {
-                std::cout << "Key not found: " << key << std::endl;
+                std::cout << "Key not found: '" << key << "'" << std::endl;
+
+                // Debugging: Check for close matches by iterating through available keys
+                for (const auto& availableKey : asymmetryData) {
+                    std::cout << "Comparing generated key '" << key << "' with available key '" << availableKey.first << "'" << std::endl;
+                }
             }
         }
 
