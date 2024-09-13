@@ -60,6 +60,10 @@ using namespace std;
 TTreeReader dataReader;  // Declare as global variable
 TTreeReader mcReader;  // Declare as global variable
 
+// Define the TTree pointers
+TTree* data = nullptr;  // Define data tree
+TTree* mc = nullptr;    // Define mc tree
+
 BaseKinematicCuts* kinematicCuts = nullptr;
 BaseKinematicCuts* mckinematicCuts = nullptr;
 
@@ -113,25 +117,9 @@ int main(int argc, char *argv[]) {
 
   // Allocate kinematicCuts and mckinematicCuts based on the channel
   switch (channel) {
-      case 0:
-          kinematicCuts = new InclusiveKinematicCuts(dataReader);
-          mckinematicCuts = new InclusiveKinematicCuts(mcReader);
-          break;
       case 1:
-          kinematicCuts = new SingleHadronKinematicCuts(dataReader);
-          mckinematicCuts = new SingleHadronKinematicCuts(mcReader);
-          break;
-      case 2:
-          kinematicCuts = new B2BDihadronKinematicCuts(dataReader);
-          mckinematicCuts = new B2BDihadronKinematicCuts(mcReader);
-          break;
-      case 3:
-          kinematicCuts = new DihadronKinematicCuts(dataReader);
-          mckinematicCuts = new DihadronKinematicCuts(mcReader);
-          break;
-      case 4:
-          kinematicCuts = new dvcsKinematicCuts(dataReader);
-          mckinematicCuts = new dvcsKinematicCuts(mcReader);
+          kinematicCuts = new SingleHadronKinematicCuts(dataReader, data);
+          mckinematicCuts = new SingleHadronKinematicCuts(mcReader, mc);
           break;
   }
 
@@ -153,8 +141,8 @@ int main(int argc, char *argv[]) {
     cout << "-- ROOT files opened successfully." << endl;
   }
   
-  TTree* data = (TTree*)data_file->Get("PhysicsEvents");
-  TTree* mc = (TTree*)mc_file->Get("PhysicsEvents");
+  data = (TTree*)data_file->Get("PhysicsEvents");
+  mc = (TTree*)mc_file->Get("PhysicsEvents");
 
   if (!data || !mc) {
     cout << "-- Error getting trees from ROOT files." << endl;

@@ -245,11 +245,11 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
             emptyCuts = new InclusiveKinematicCuts(emptyReader);
             break;
         case 1:
-            nh3Cuts = new SingleHadronKinematicCuts(nh3Reader);
-            cCuts = new SingleHadronKinematicCuts(cReader);
-            chCuts = new SingleHadronKinematicCuts(chReader);
-            heCuts = new SingleHadronKinematicCuts(heReader);
-            emptyCuts = new SingleHadronKinematicCuts(emptyReader);
+            nh3Cuts = new SingleHadronKinematicCuts(nh3Reader, nh3);
+            cCuts = new SingleHadronKinematicCuts(cReader, c);
+            chCuts = new SingleHadronKinematicCuts(chReader, ch);
+            heCuts = new SingleHadronKinematicCuts(heReader, he);
+            emptyCuts = new SingleHadronKinematicCuts(emptyReader, empty);
             break;
         case 2:
             nh3Cuts = new B2BDihadronKinematicCuts(nh3Reader);

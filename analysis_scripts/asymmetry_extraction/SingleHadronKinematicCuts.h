@@ -1,14 +1,15 @@
 #pragma once
+
 #include <TTreeReader.h>
 #include <TTreeReaderValue.h>
-#include <string>
-#include "common_vars.h"
-#include "BaseKinematicCuts.h" // Include BaseKinematicCuts
+#include <TTree.h>  // Include for the TTree usage
+
+#include "BaseKinematicCuts.h"
 
 class SingleHadronKinematicCuts : public BaseKinematicCuts {
 public:
-    // Constructor only takes the TTreeReader (no need to pass the TTree)
-    SingleHadronKinematicCuts(TTreeReader& reader);
+    // Constructor that takes TTreeReader and TTree to check for branch existence
+    SingleHadronKinematicCuts(TTreeReader& reader, TTree* tree);
 
     // Overridden function for applying cuts
     bool applyCuts(int currentFits, bool isMC) override;

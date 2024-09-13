@@ -28,6 +28,8 @@ extern int currentBin;
 extern std::string mlmPrefix;
 extern int channel; 
 extern std::map<std::string, HistConfig> histConfigs;
+extern TTree* data;  
+extern TTree* mc;
 extern TTreeReader dataReader;
 extern TTreeReader mcReader;
 extern int data_count, mc_count;

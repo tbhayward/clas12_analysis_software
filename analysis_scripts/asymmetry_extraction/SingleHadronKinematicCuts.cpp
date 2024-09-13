@@ -6,25 +6,24 @@
 
 using std::string;
 
-SingleHadronKinematicCuts::SingleHadronKinematicCuts(TTreeReader& reader)
+SingleHadronKinematicCuts::SingleHadronKinematicCuts(TTreeReader& reader, TTree* tree)
     : BaseKinematicCuts(reader), // Call to the BaseKinematicCuts constructor
       runnum(reader, "runnum"),
       e_theta(reader, "e_theta"), e_phi(reader, "e_phi"), vz_e(reader, "vz_e"),
-      p_p(reader, "p_p"), p_theta(reader, "p_theta"), p_phi(reader, "p_phi"),
       vz_p(reader, "vz_p"),
       Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), x(reader, "x"),
       y(reader, "y"), z(reader, "z"), pT(reader, "pT"), xF(reader, "xF"),
-      phi(reader, "phi"), phi2(reader, "phi2"),
+      phi(reader, "phi"), 
       target_pol(reader, "target_pol")
 {
-    // Use TTreeReader::HasBranch to check if the branches exist and initialize them
-    if (reader.HasBranch("Mx1")) {
+    // Use TTree::GetBranch to check if the branches exist and initialize them
+    if (tree->GetBranch("Mx1")) {
         Mx1 = new TTreeReaderValue<double>(reader, "Mx1");
     }
-    if (reader.HasBranch("Mx2")) {
+    if (tree->GetBranch("Mx2")) {
         Mx2 = new TTreeReaderValue<double>(reader, "Mx2");
     }
-    if (reader.HasBranch("Mx23")) {
+    if (tree->GetBranch("Mx23")) {
         Mx23 = new TTreeReaderValue<double>(reader, "Mx23");
     }
 }
