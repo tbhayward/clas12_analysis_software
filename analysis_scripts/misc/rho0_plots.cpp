@@ -369,7 +369,7 @@ int main(int argc, char *argv[]) {
     // printData(asymmetryData);
 
     // Call the plotting function for different dependencies
-    plotDependence(asymmetryData, "epipluspiminus", "P_{T} (GeV)", {0.0, 1.0}, "output/rho0_plots/PT_dependence_plots.png");
+    plotDependence(asymmetryData, "epipluspiminus", "P_{T} (GeV)", {0.0, 1.2}, "output/rho0_plots/PT_dependence_plots.png");
   
     return 0;
 }
