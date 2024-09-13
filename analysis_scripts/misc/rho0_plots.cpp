@@ -74,21 +74,20 @@ std::map<std::string, std::vector<std::vector<double>>> readAsymmetries(const st
     }
 
     // Step 3: Attempt to calculate the doubleratio fits
-    std::string alusKeyPrefix = "ALUsinphi";
-    std::string allKeyPrefix = "ALL";
-    std::string chi2FitsPrefix = "chi2Fits";  // The prefix we need to handle properly
-
+    std::string alusKeySuffix = "ALUsinphi";
+    std::string allKeySuffix = "ALL";
+    
     for (const auto &entry : asymmetryData) {
-        // Check if this is an ALUsinphi entry
-        if (entry.first.find(chi2FitsPrefix + alusKeyPrefix) != std::string::npos) {
-            // Extract the base key without the suffix (remove everything after "chi2Fits")
-            std::string baseKey = entry.first.substr(0, entry.first.find(chi2FitsPrefix) + chi2FitsPrefix.length());
+        // We assume that the baseKey should not include "chi2Fits" suffix twice
+        if (entry.first.find(alusKeySuffix) != std::string::npos) {
+            // Extract the base key before "ALUsinphi"
+            std::string baseKey = entry.first.substr(0, entry.first.find(alusKeySuffix));
 
             std::cout << "Processing Base Key: " << baseKey << std::endl;  // Debugging print statement
 
             // Construct the full keys for ALUsinphi and ALL
-            std::string alusKey = baseKey + alusKeyPrefix;
-            std::string allKey = baseKey + allKeyPrefix;
+            std::string alusKey = baseKey + alusKeySuffix;
+            std::string allKey = baseKey + allKeySuffix;
 
             // Check if the expected ALUsinphi and ALL keys exist
             bool alusExists = (asymmetryData.find(alusKey) != asymmetryData.end());
