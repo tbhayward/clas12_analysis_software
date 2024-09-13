@@ -76,18 +76,18 @@ std::map<std::string, std::vector<std::vector<double>>> readAsymmetries(const st
     // Step 3: Attempt to calculate the doubleratio fits
     std::string alusKeySuffix = "ALUsinphi";
     std::string allKeySuffix = "ALL";
-    
+
     for (const auto &entry : asymmetryData) {
-        // We assume that the baseKey should not include "chi2Fits" suffix twice
+        // We assume that the baseKey should exclude the suffix part ("ALUsinphi", "ALL", etc.)
         if (entry.first.find(alusKeySuffix) != std::string::npos) {
             // Extract the base key before "ALUsinphi"
-            std::string baseKey = entry.first.substr(0, entry.first.find(alusKeySuffix));
+            std::string baseKey = entry.first.substr(0, entry.first.find("chi2Fits"));
 
             std::cout << "Processing Base Key: " << baseKey << std::endl;  // Debugging print statement
 
             // Construct the full keys for ALUsinphi and ALL
-            std::string alusKey = baseKey + alusKeySuffix;
-            std::string allKey = baseKey + allKeySuffix;
+            std::string alusKey = baseKey + "chi2Fits" + alusKeySuffix;
+            std::string allKey = baseKey + "chi2Fits" + allKeySuffix;
 
             // Check if the expected ALUsinphi and ALL keys exist
             bool alusExists = (asymmetryData.find(alusKey) != asymmetryData.end());
@@ -115,7 +115,7 @@ std::map<std::string, std::vector<std::vector<double>>> readAsymmetries(const st
                 }
 
                 // Store the doubleratio data
-                asymmetryData[baseKey + "doubleratio"] = doubleratioData;
+                asymmetryData[baseKey + "chi2Fitsdoubleratio"] = doubleratioData;
             } else {
                 // Print a warning if either ALUsinphi or ALL data is missing
                 std::cout << "Missing data for baseKey: " << baseKey << std::endl;
