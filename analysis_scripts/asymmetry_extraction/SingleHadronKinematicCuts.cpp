@@ -2,6 +2,7 @@
 #include "common_vars.h"
 #include <string>
 #include <cmath>
+#include <optional>
 #include "TMath.h"
 
 using std::string;

@@ -3,6 +3,7 @@
 #include <TTreeReader.h>
 #include <TTreeReaderValue.h>
 #include <TTree.h>
+#include <optional>
 
 #include "BaseKinematicCuts.h"
 
