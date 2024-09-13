@@ -209,8 +209,8 @@ void compareKeys(const std::string& generatedKey, const std::string& mapKey) {
 }
 
 void plotDependence(
-    const std::map<std::string, std::vector<std::vector<double>>>& asymmetryData,  // Single map of all asymmetry data
-    const std::vector<std::string>& prefixes,  // Vector of prefixes corresponding to the 8 different asymmetry datasets
+    const std::map<std::string, std::vector<std::vector<double>>>& asymmetryData,  // Map of asymmetry data
+    const std::vector<std::string>& prefixes,  // Prefixes corresponding to the datasets
     const std::string& xLabel, 
     const std::pair<double, double>& xLimits, 
     const std::string& outputFileName,
@@ -229,16 +229,11 @@ void plotDependence(
         "F_{LL}^{cos#phi}/F_{UU}"
     };
 
+    // Define a color palette for the plots (one for each dataset)
     std::vector<int> colors = {kBlack, kRed, kBlue, kGreen, kMagenta, kCyan, kOrange, kViolet};
 
-    // Print available keys for debugging
-    std::cout << "Available keys in asymmetryData:" << std::endl;
-    for (const auto& pair : asymmetryData) {
-        std::cout << trim(pair.first) << std::endl;
-    }
-
-    // Loop over each subplot (processing one subplot for now)
-    for (size_t i = 0; i < 1; ++i) {  // Loop for first suffix (e.g., ALUsinphi)
+    // Loop over each subplot (we will limit to the first for now)
+    for (size_t i = 0; i < 1; ++i) {
         c->cd(i + 1);
         gPad->SetLeftMargin(0.18);
         gPad->SetBottomMargin(0.15);
@@ -247,51 +242,41 @@ void plotDependence(
 
         std::cout << "Processing suffix: " << suffixes[i] << std::endl;
 
-        // Iterate over the 8 datasets (prefixes)
+        // Iterate over the datasets (prefixes)
         for (size_t datasetIndex = 0; datasetIndex < prefixes.size(); ++datasetIndex) {
-            std::string generatedKey = prefixes[datasetIndex] + "chi2Fits" + suffixes[i];
-            std::string trimmedGeneratedKey = trim(generatedKey);  // Trimmed generated key
 
-            std::cout << "Generated key: '" << generatedKey << "' (trimmed: '" << trimmedGeneratedKey << "')" << std::endl;
+            std::string key = prefixes[datasetIndex] + "chi2Fits" + suffixes[i];
+            std::cout << "Checking key: " << key << std::endl;
 
-            bool keyFound = false;
+            // Check if the key exists exactly in asymmetryData
+            auto it = asymmetryData.find(key);
 
-            // Step 3: Check if the trimmed key exists in the map
-            for (const auto& pair : asymmetryData) {
-                std::string trimmedMapKey = trim(pair.first);
-                if (trimmedGeneratedKey == trimmedMapKey) {
-                    std::cout << "Exact match found for key: '" << trimmedMapKey << "'" << std::endl;
-                    const auto& data = pair.second;
+            if (it != asymmetryData.end()) {
+                std::cout << "Found key: " << key << std::endl;
 
-                    // Process the data and create the graph
-                    std::vector<double> x, y, yStatErr;
-                    for (const auto& entry : data) {
-                        x.push_back(entry[0]);
-                        y.push_back(entry[1]);
-                        yStatErr.push_back(entry[2]);
-                    }
+                const auto& data = it->second;
 
-                    TGraphErrors* graph = createTGraphErrors(x, y, yStatErr, 20, 0.8, colors[datasetIndex]);
-                    graphs.push_back(graph);
-
-                    // Set axis labels and ranges for the first dataset
-                    if (datasetIndex == 0) {
-                        setAxisLabelsAndRanges(graph, xLabel, yLabels[i], xLimits, 
-                                               (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.6) :
-                                               (suffixes[i] == "doubleratio") ? std::make_pair(-0.02, 0.3) :
-                                               std::make_pair(-0.1, 0.1));
-                    }
-
-                    graph->Draw((datasetIndex == 0) ? "AP" : "P SAME");
-                    keyFound = true;
-                    break;
-                } else {
-                    compareKeys(trimmedGeneratedKey, trimmedMapKey);  // Compare if not matching
+                std::vector<double> x, y, yStatErr;
+                for (const auto& entry : data) {
+                    x.push_back(entry[0]);
+                    y.push_back(entry[1]);
+                    yStatErr.push_back(entry[2]);
                 }
-            }
 
-            if (!keyFound) {
-                std::cout << "Key not found: '" << generatedKey << "' after trimming and comparison." << std::endl;
+                TGraphErrors* graph = createTGraphErrors(x, y, yStatErr, 20, 0.8, colors[datasetIndex]);
+                graphs.push_back(graph);
+
+                // Set the axis labels and ranges for the first dataset
+                if (datasetIndex == 0) {
+                    setAxisLabelsAndRanges(graph, xLabel, yLabels[i], xLimits, 
+                                           (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.6) :
+                                           (suffixes[i] == "doubleratio") ? std::make_pair(-0.02, 0.3) :
+                                           std::make_pair(-0.1, 0.1));
+                }
+
+                graph->Draw((datasetIndex == 0) ? "AP" : "P SAME");
+            } else {
+                std::cout << "Key not found: " << key << std::endl;
             }
         }
 
@@ -300,11 +285,25 @@ void plotDependence(
         line->SetLineColor(kGray+2);
         line->SetLineStyle(7);  // Dashed line
         line->Draw("same");
+
+        // Add the legend if it's the last subplot
+        if (i == 5) {  // Adjust the position of the legend
+            TLegend* legend = new TLegend(0.1, 0.7, 0.48, 0.9);
+            legend->SetTextFont(42);
+            legend->SetFillColor(0);
+            legend->SetBorderSize(1);
+
+            for (size_t j = 0; j < legendEntries.size(); ++j) {
+                legend->AddEntry(graphs[j], legendEntries[j].c_str(), "P");
+            }
+
+            legend->Draw();
+        }
     }
 
-    // Save the canvas
     gSystem->Exec("mkdir -p output/rho0_plots");
     c->SaveAs(outputFileName.c_str());
+    delete c;
 }
 
 
