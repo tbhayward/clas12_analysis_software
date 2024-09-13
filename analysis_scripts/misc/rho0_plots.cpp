@@ -235,6 +235,19 @@ int main(int argc, char** argv) {
 
     std::cout << "Made it passed the import" << std::endl;
 
+    // Output the contents of asymmetryData
+    for (const auto& entry : asymmetryData) {
+        std::cout << "Key: " << entry.first << std::endl;
+        const auto& values = entry.second;
+
+        for (const auto& row : values) {
+            std::cout << "    x: " << row[0] 
+                      << ", y: " << row[1] 
+                      << ", error: " << row[2] 
+                      << std::endl;
+        }
+    }
+
     // Define the 8 prefixes that correspond to the different datasets
     std::vector<std::string> prefixes = {
         "epiplus", 
