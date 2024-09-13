@@ -9,8 +9,9 @@
 void charge_accumulation(TTreeReader& dataReader, const std::vector<RunInfo>& run_info_list) {
     std::set<int> processedRuns; // To keep track of processed runs
     TTreeReaderValue<int> runnum(dataReader, "runnum"); // For retrieving the runnum from the data
+    std::cout << "HELLO WORLD BEFORE WHILE LOOP" << std::endl;
     while (dataReader.Next()) {
-        std::cout << "HELLO WORLD" << std::endl;
+        std::cout << "HELLO WORLD IN WHILE LOOP" << std::endl;
         if (processedRuns.find(*runnum) == processedRuns.end()) {
             processedRuns.insert(*runnum);
             // Find run_info for the current run and update cpp, cpm, cmp, cmm
