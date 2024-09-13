@@ -172,6 +172,10 @@ void plotDependence(
     // Define a color palette for the plots (one for each dataset)
     std::vector<int> colors = {kBlack, kRed, kBlue, kGreen, kMagenta, kCyan, kOrange, kViolet};
 
+    std::cout << "Available keys in asymmetryData:" << std::endl;
+	for (const auto& pair : asymmetryData) {
+	    std::cout << pair.first << std::endl;
+	}
 
     // Loop over each subplot (six total)
     // for (size_t i = 0; i < suffixes.size(); ++i) {
@@ -289,7 +293,7 @@ int main(int argc, char** argv) {
     };
 
     // Call plotDependence
-    plotDependence(asymmetryData, prefixes, "P_{T} (GeV)", {0.0, 1.1}, "output/rho0_plots/x_dependence_plots.png", legendEntries);
+    plotDependence(asymmetryData, prefixes, "P_{T} (GeV)", {0.0, 1.1}, "output/rho0_plots/PT_dependence_plots.png", legendEntries);
 
     return 0;
 }
