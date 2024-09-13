@@ -203,14 +203,14 @@ void plotDependence(
     // Define a color palette for the plots (one for each dataset)
     std::vector<int> colors = {kBlack, kRed, kBlue, kGreen, kMagenta, kCyan, kOrange, kViolet};
 
+    // Step 1: Print available keys for debugging purposes
     std::cout << "Available keys in asymmetryData:" << std::endl;
-	for (const auto& pair : asymmetryData) {
-	    std::cout << pair.first << std::endl;
-	}
+    for (const auto& pair : asymmetryData) {
+        std::cout << pair.first << std::endl;
+    }
 
-    // Loop over each subplot (six total)
-    // for (size_t i = 0; i < suffixes.size(); ++i) {
-	for (size_t i = 0; i < 1; ++i) {
+    // Loop over each subplot (currently only processing the first subplot for debugging purposes)
+    for (size_t i = 0; i < 1; ++i) {  // Loop for first suffix (e.g., ALUsinphi)
         c->cd(i + 1);
         gPad->SetLeftMargin(0.18);
         gPad->SetBottomMargin(0.15);
@@ -221,16 +221,25 @@ void plotDependence(
 
         // Iterate over the 8 datasets (prefixes)
         for (size_t datasetIndex = 0; datasetIndex < prefixes.size(); ++datasetIndex) {
-        	
+            // Step 2: Generate the key based on the prefix and suffix
             std::string key = prefixes[datasetIndex] + "chi2Fits" + suffixes[i];
-            std::cout << "Checking key: " << key << std::endl;
+            std::cout << "Generated key: " << key << std::endl;
 
             auto it = asymmetryData.find(key);
 
+            // Step 3: Check if the key exists in the asymmetryData map
             if (it != asymmetryData.end()) {
                 std::cout << "Found key: " << key << std::endl;
 
                 const auto& data = it->second;
+
+                // Step 4: Ensure the data vector is not empty
+                if (data.empty()) {
+                    std::cout << "Data for key " << key << " is empty." << std::endl;
+                    continue;  // Skip plotting for this dataset if data is empty
+                }
+
+                std::cout << "Data size for key " << key << ": " << data.size() << std::endl;
 
                 std::vector<double> x, y, yStatErr;
                 for (const auto& entry : data) {
@@ -247,7 +256,7 @@ void plotDependence(
                 TGraphErrors* graph = createTGraphErrors(x, y, yStatErr, 20, 0.8, colors[datasetIndex]);
                 graphs.push_back(graph);
 
-                // Set the axis labels and ranges for the first dataset
+                // Step 5: Set axis labels and ranges for the first dataset
                 if (datasetIndex == 0) {
                     setAxisLabelsAndRanges(graph, xLabel, yLabels[i], xLimits, 
                                            (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.6) :
@@ -255,19 +264,20 @@ void plotDependence(
                                            std::make_pair(-0.1, 0.1));
                 }
 
+                // Step 6: Draw the graph
                 graph->Draw((datasetIndex == 0) ? "AP" : "P SAME");
             } else {
                 std::cout << "Key not found: " << key << std::endl;
             }
         }
 
-        // Add the dashed gray line at y = 0
+        // Step 7: Add the dashed gray line at y = 0
         TLine* line = new TLine(xLimits.first, 0, xLimits.second, 0);
         line->SetLineColor(kGray+2);
         line->SetLineStyle(7);  // Dashed line
         line->Draw("same");
 
-        // Add the legend if we're at the last subplot
+        // Step 8: Add the legend if at the last subplot (optional, since we are only processing one subplot for now)
         if (i == 5) {  // Adjust the position of the legend
             TLegend* legend = new TLegend(0.1, 0.7, 0.48, 0.9);
             legend->SetTextFont(42);
@@ -282,9 +292,9 @@ void plotDependence(
         }
     }
 
+    // Step 9: Save the canvas
     gSystem->Exec("mkdir -p output/rho0_plots");
     c->SaveAs(outputFileName.c_str());
-    // delete c;
 }
 
 
