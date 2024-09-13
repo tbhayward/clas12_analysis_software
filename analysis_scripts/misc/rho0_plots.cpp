@@ -138,6 +138,16 @@ void setAxisLabelsAndRanges(
 }
 
 
+// Helper function to print a vector of doubles
+void printVector(const std::vector<double>& vec, const std::string& vecName) {
+    std::cout << vecName << ": [";
+    for (size_t i = 0; i < vec.size(); ++i) {
+        std::cout << vec[i];
+        if (i != vec.size() - 1) std::cout << ", ";
+    }
+    std::cout << "]" << std::endl;
+}
+
 void plotDependence(
     const std::map<std::string, std::vector<std::vector<double>>>& asymmetryData,  // Single map of all asymmetry data
     const std::vector<std::string>& prefixes,  // Vector of prefixes corresponding to the 8 different asymmetry datasets
@@ -187,7 +197,11 @@ void plotDependence(
                     y.push_back(entry[1]);
                     yStatErr.push_back(entry[2]);
                 }
-                std::cout << x << " " << y << " " << yStatErr << std::endl;
+                
+                // Print the vectors
+				printVector(x, "x");
+				printVector(y, "y");
+				printVector(yStatErr, "yStatErr");
 
                 TGraphErrors* graph = createTGraphErrors(x, y, yStatErr, 20, 0.8, colors[datasetIndex]);
                 graphs.push_back(graph);
