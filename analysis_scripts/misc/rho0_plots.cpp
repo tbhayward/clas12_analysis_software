@@ -67,13 +67,16 @@ std::map<std::string, std::vector<std::vector<double>>> readAsymmetries(const st
 
     std::string alusKeyPrefix = "ALUsinphi";
 	std::string allKeyPrefix = "ALL";
+
 	for (const auto &entry : asymmetryData) {
 	    // Check if this is an ALUsinphi entry
 	    if (entry.first.find(alusKeyPrefix) != std::string::npos) {
+	        // Extract the base key without "chi2Fits" or the suffix
 	        std::string baseKey = entry.first.substr(0, entry.first.find(alusKeyPrefix));
 	        std::cout << "Base Key: " << baseKey << std::endl;  // Debugging print statement
-	        std::string alusKey = baseKey + alusKeyPrefix;
-	        std::string allKey = baseKey + allKeyPrefix;
+
+	        std::string alusKey = baseKey + alusKeyPrefix;  // Rebuild the full key for ALUsinphi
+	        std::string allKey = baseKey + allKeyPrefix;    // Rebuild the full key for ALL
 	        
 	        // Ensure both ALUsinphi and ALL exist for this bin
 	        if (asymmetryData.find(alusKey) != asymmetryData.end() && asymmetryData.find(allKey) != asymmetryData.end()) {
