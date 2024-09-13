@@ -228,8 +228,10 @@ void plotDependence(
 
 
 int main(int argc, char** argv) {
+
+	std::string asymmetryFile = argv[1];
     // Load asymmetry data
-    std::map<std::string, std::vector<std::vector<double>>> asymmetryData = readAsymmetries("path_to_data.txt");
+    std::map<std::string, std::vector<std::vector<double>>> asymmetryData = readAsymmetries(asymmetryFile);
 
     std::cout << "Made it passed the import" << std::endl;
 
