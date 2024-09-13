@@ -187,7 +187,7 @@ void plotDependence(
                     y.push_back(entry[1]);
                     yStatErr.push_back(entry[2]);
                 }
-                std::cout << x << " " << y << " " << yStatErr << std::endl;
+                // std::cout << x << " " << y << " " << yStatErr << std::endl;
 
                 TGraphErrors* graph = createTGraphErrors(x, y, yStatErr, 20, 0.8, colors[datasetIndex]);
                 graphs.push_back(graph);
