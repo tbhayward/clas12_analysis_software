@@ -155,7 +155,7 @@ std::map<std::string, std::vector<std::vector<double>>> readAsymmetries(const st
                         std::pow(alusData[i][2] / alusData[i][1], 2) + 
                         std::pow(allData[i][2] / allData[i][1], 2)
                     );
-                    ratioValue=-ratioValue;
+                    ratioValue=ratioValue;
                     doubleratioData.push_back({xValue, ratioValue, error});
                 }
 
