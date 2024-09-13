@@ -177,13 +177,39 @@ std::pair<double, double> calculate_dilution_and_error(double nA, double nC, dou
 
 std::vector<std::pair<double, double>> calculate_dilution_factors() {
 
-    // Load ROOT files and trees
-    TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/cphi2024_epX/data/processed_data/dilution/rgc_su22_inb_NH3_epX.root");
-    TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/cphi2024_epX/data/processed_data/dilution/rgc_su22_inb_C_epX.root");
-    TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/cphi2024_epX/data/processed_data/dilution/rgc_su22_inb_CH2_epX.root");
-    TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/cphi2024_epX/data/processed_data/dilution/rgc_su22_inb_He_bath_epX.root");
-    TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/cphi2024_epX/data/processed_data/dilution/rgc_su22_inb_ET_epX.root");
 
+    TFile* nh3File;
+    TFile* cFile;
+    TFile* chFile;
+    TFile* heFile;
+    TFile* emptyFile;
+    if (binNames[currentFits] == epiplus) {
+        nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/rho0_double_spin_asymmetry/processed_data/epi+X/rgc_su22_inb_NH3_epi+X.root");
+        cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/rho0_double_spin_asymmetry/processed_data/epi+X/rgc_su22_inb_C_epi+X.root");
+        chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/rho0_double_spin_asymmetry/processed_data/epi+X/rgc_su22_inb_CH2_epi+X.root");
+        heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/rho0_double_spin_asymmetry/processed_data/epi+X/rgc_su22_inb_He_epi+X.root");
+        emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/rho0_double_spin_asymmetry/processed_data/epi+X/rgc_su22_inb_ET_epi+X.root");
+    } else if (binNames[currentFits] == epipluspiminus || binNames[currentFits] == epipluspiminus_rho0_free) {
+        nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/rho0_double_spin_asymmetry/processed_data/epi+pi-X/rgc_su22_inb_NH3_epi+pi-X.root");
+        cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/rho0_double_spin_asymmetry/processed_data/epi+pi-X/rgc_su22_inb_C_epi+pi-X.root");
+        chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/rho0_double_spin_asymmetry/processed_data/epi+pi-X/rgc_su22_inb_CH2_epi+pi-X.root");
+        heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/rho0_double_spin_asymmetry/processed_data/epi+pi-X/rgc_su22_inb_He_epi+pi-X.root");
+        emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/rho0_double_spin_asymmetry/processed_data/epi+pi-X/rgc_su22_inb_ET_epi+pi-X.root");
+    } else if (binNames[currentFits] == eppiplus || binNames[currentFits] == eppiplus_rho0_free) {
+        nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/rho0_double_spin_asymmetry/processed_data/eppi+X/rgc_su22_inb_NH3_eppi+X.root");
+        cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/rho0_double_spin_asymmetry/processed_data/eppi+X/rgc_su22_inb_C_eppi+X.root");
+        chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/rho0_double_spin_asymmetry/processed_data/eppi+X/rgc_su22_inb_CH2_eppi+X.root");
+        heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/rho0_double_spin_asymmetry/processed_data/eppi+X/rgc_su22_inb_He_eppi+X.root");
+        emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/rho0_double_spin_asymmetry/processed_data/eppi+X/rgc_su22_inb_ET_eppi+X.root");
+    } else if (binNames[currentFits] == eppipluspiminus || binNames[currentFits] == eppipluspiminus_rho0_free_A || binNames[currentFits] == eppipluspiminus_rho0_free_B) {
+        nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/rho0_double_spin_asymmetry/processed_data/eppi+pi-X/rgc_su22_inb_NH3_eppi+pi-X.root");
+        cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/rho0_double_spin_asymmetry/processed_data/eppi+pi-X/rgc_su22_inb_C_eppi+pi-X.root");
+        chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/rho0_double_spin_asymmetry/processed_data/eppi+pi-X/rgc_su22_inb_CH2_eppi+pi-X.root");
+        heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/rho0_double_spin_asymmetry/processed_data/eppi+pi-X/rgc_su22_inb_He_eppi+pi-X.root");
+        emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/rho0_double_spin_asymmetry/processed_data/eppi+pi-X/rgc_su22_inb_ET_eppi+pi-X.root");
+    }
+
+    
     TTree* nh3 = (TTree*)nh3File->Get("PhysicsEvents");
     TTree* c = (TTree*)cFile->Get("PhysicsEvents");
     TTree* ch = (TTree*)chFile->Get("PhysicsEvents");
