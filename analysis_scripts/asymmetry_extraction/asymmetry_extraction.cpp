@@ -115,14 +115,6 @@ int main(int argc, char *argv[]) {
   }
   cout << "Using channel: " << channel;
 
-  // Allocate kinematicCuts and mckinematicCuts based on the channel
-  switch (channel) {
-      case 1:
-          kinematicCuts = new SingleHadronKinematicCuts(dataReader, data);
-          mckinematicCuts = new SingleHadronKinematicCuts(mcReader, mc);
-          break;
-  }
-
   cout << endl << endl;
   std::string inputFileName(argv[2]);
   std::size_t found = inputFileName.find_last_of("/\\");
@@ -154,6 +146,14 @@ int main(int argc, char *argv[]) {
 
   dataReader.SetTree(data);  // Initialize the global variable
   mcReader.SetTree(mc);  // Initialize the global variable
+
+  // Allocate kinematicCuts and mckinematicCuts based on the channel
+  switch (channel) {
+      case 1:
+          kinematicCuts = new SingleHadronKinematicCuts(dataReader, data);
+          mckinematicCuts = new SingleHadronKinematicCuts(mcReader, mc);
+          break;
+  }
 
   // Generate output file names based on the input data file name and current time
   std::string dataRootFileName = argv[1];
