@@ -162,6 +162,8 @@ void plotDependence(
     // Define a color palette for the plots (one for each dataset)
     std::vector<int> colors = {kBlack, kRed, kBlue, kGreen, kMagenta, kCyan, kOrange, kViolet};
 
+    std::cout << "Made it passed declarations" << std::endl;
+
     // Loop over each subplot (six total)
     for (size_t i = 0; i < suffixes.size(); ++i) {
         c->cd(i + 1);
@@ -233,20 +235,18 @@ int main(int argc, char** argv) {
     // Load asymmetry data
     std::map<std::string, std::vector<std::vector<double>>> asymmetryData = readAsymmetries(asymmetryFile);
 
-    std::cout << "Made it passed the import" << std::endl;
+    // // Output the contents of asymmetryData
+    // for (const auto& entry : asymmetryData) {
+    //     std::cout << "Key: " << entry.first << std::endl;
+    //     const auto& values = entry.second;
 
-    // Output the contents of asymmetryData
-    for (const auto& entry : asymmetryData) {
-        std::cout << "Key: " << entry.first << std::endl;
-        const auto& values = entry.second;
-
-        for (const auto& row : values) {
-            std::cout << "    x: " << row[0] 
-                      << ", y: " << row[1] 
-                      << ", error: " << row[2] 
-                      << std::endl;
-        }
-    }
+    //     for (const auto& row : values) {
+    //         std::cout << "    x: " << row[0] 
+    //                   << ", y: " << row[1] 
+    //                   << ", error: " << row[2] 
+    //                   << std::endl;
+    //     }
+    // }
 
     // Define the 8 prefixes that correspond to the different datasets
     std::vector<std::string> prefixes = {
