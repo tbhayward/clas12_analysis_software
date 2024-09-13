@@ -23,6 +23,7 @@
 #include <vector>
 #include <string>
 #include <map>
+#include <algorithm>  
 #include <TLatex.h>
 #include <TText.h>  
 #include <TF1.h>        
@@ -179,6 +180,34 @@ void printVector(const std::vector<double>& vec, const std::string& vecName) {
     std::cout << "]" << std::endl;
 }
 
+
+// Helper function to trim whitespace from a string
+std::string trim(const std::string& str) {
+    std::string result = str;
+    result.erase(result.begin(), std::find_if(result.begin(), result.end(), [](unsigned char ch) {
+        return !std::isspace(ch);
+    }));
+    result.erase(std::find_if(result.rbegin(), result.rend(), [](unsigned char ch) {
+        return !std::isspace(ch);
+    }).base(), result.end());
+    return result;
+}
+
+// Helper function to compare strings and print character-by-character differences
+void compareKeys(const std::string& generatedKey, const std::string& mapKey) {
+    std::cout << "Comparing generated key '" << generatedKey << "' with map key '" << mapKey << "'" << std::endl;
+    if (generatedKey.length() != mapKey.length()) {
+        std::cout << "Length mismatch: Generated key length: " << generatedKey.length()
+                  << ", Map key length: " << mapKey.length() << std::endl;
+    }
+    for (size_t i = 0; i < std::min(generatedKey.length(), mapKey.length()); ++i) {
+        if (generatedKey[i] != mapKey[i]) {
+            std::cout << "Mismatch at position " << i << ": Generated key char = '" << generatedKey[i]
+                      << "', Map key char = '" << mapKey[i] << "'" << std::endl;
+        }
+    }
+}
+
 void plotDependence(
     const std::map<std::string, std::vector<std::vector<double>>>& asymmetryData,  // Single map of all asymmetry data
     const std::vector<std::string>& prefixes,  // Vector of prefixes corresponding to the 8 different asymmetry datasets
@@ -200,16 +229,15 @@ void plotDependence(
         "F_{LL}^{cos#phi}/F_{UU}"
     };
 
-    // Define a color palette for the plots (one for each dataset)
     std::vector<int> colors = {kBlack, kRed, kBlue, kGreen, kMagenta, kCyan, kOrange, kViolet};
 
-    // Step 1: Print available keys for debugging purposes
+    // Print available keys for debugging
     std::cout << "Available keys in asymmetryData:" << std::endl;
     for (const auto& pair : asymmetryData) {
-        std::cout << pair.first << std::endl;
+        std::cout << trim(pair.first) << std::endl;
     }
 
-    // Loop over each subplot (currently only processing the first subplot for debugging purposes)
+    // Loop over each subplot (processing one subplot for now)
     for (size_t i = 0; i < 1; ++i) {  // Loop for first suffix (e.g., ALUsinphi)
         c->cd(i + 1);
         gPad->SetLeftMargin(0.18);
@@ -221,89 +249,60 @@ void plotDependence(
 
         // Iterate over the 8 datasets (prefixes)
         for (size_t datasetIndex = 0; datasetIndex < prefixes.size(); ++datasetIndex) {
-            // Step 2: Generate the key based on the prefix and suffix
-            std::string key = prefixes[datasetIndex] + "chi2Fits" + suffixes[i];
-            std::cout << "Generated key: " << key << std::endl;
+            std::string generatedKey = prefixes[datasetIndex] + "chi2Fits" + suffixes[i];
+            std::string trimmedGeneratedKey = trim(generatedKey);  // Trimmed generated key
 
-            auto it = asymmetryData.find(key);
+            std::cout << "Generated key: '" << generatedKey << "' (trimmed: '" << trimmedGeneratedKey << "')" << std::endl;
 
-            // Step 3: Check if the key exists in the asymmetryData map
-            if (it == asymmetryData.end()) {
-                // Key not found, let's compare with existing keys
-                std::cout << "Key not found: " << key << std::endl;
-                for (const auto& entry : asymmetryData) {
-                    // Check for exact matches after trimming spaces
-                    if (key == entry.first) {
-                        std::cout << "Exact match found after comparison: " << entry.first << std::endl;
-                    } else {
-                        std::cout << "No exact match, comparing key: " << entry.first << std::endl;
+            bool keyFound = false;
+
+            // Step 3: Check if the trimmed key exists in the map
+            for (const auto& pair : asymmetryData) {
+                std::string trimmedMapKey = trim(pair.first);
+                if (trimmedGeneratedKey == trimmedMapKey) {
+                    std::cout << "Exact match found for key: '" << trimmedMapKey << "'" << std::endl;
+                    const auto& data = pair.second;
+
+                    // Process the data and create the graph
+                    std::vector<double> x, y, yStatErr;
+                    for (const auto& entry : data) {
+                        x.push_back(entry[0]);
+                        y.push_back(entry[1]);
+                        yStatErr.push_back(entry[2]);
                     }
+
+                    TGraphErrors* graph = createTGraphErrors(x, y, yStatErr, 20, 0.8, colors[datasetIndex]);
+                    graphs.push_back(graph);
+
+                    // Set axis labels and ranges for the first dataset
+                    if (datasetIndex == 0) {
+                        setAxisLabelsAndRanges(graph, xLabel, yLabels[i], xLimits, 
+                                               (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.6) :
+                                               (suffixes[i] == "doubleratio") ? std::make_pair(-0.02, 0.3) :
+                                               std::make_pair(-0.1, 0.1));
+                    }
+
+                    graph->Draw((datasetIndex == 0) ? "AP" : "P SAME");
+                    keyFound = true;
+                    break;
+                } else {
+                    compareKeys(trimmedGeneratedKey, trimmedMapKey);  // Compare if not matching
                 }
-                continue;  // Skip this key if not found
             }
 
-            // Key found, proceed with plotting
-            std::cout << "Found key: " << key << std::endl;
-
-            const auto& data = it->second;
-
-            // Step 4: Ensure the data vector is not empty
-            if (data.empty()) {
-                std::cout << "Data for key " << key << " is empty." << std::endl;
-                continue;  // Skip plotting for this dataset if data is empty
+            if (!keyFound) {
+                std::cout << "Key not found: '" << generatedKey << "' after trimming and comparison." << std::endl;
             }
-
-            std::cout << "Data size for key " << key << ": " << data.size() << std::endl;
-
-            std::vector<double> x, y, yStatErr;
-            for (const auto& entry : data) {
-                x.push_back(entry[0]);
-                y.push_back(entry[1]);
-                yStatErr.push_back(entry[2]);
-            }
-
-            // Print the vectors to ensure they have data
-            printVector(x, "x");
-            printVector(y, "y");
-            printVector(yStatErr, "yStatErr");
-
-            TGraphErrors* graph = createTGraphErrors(x, y, yStatErr, 20, 0.8, colors[datasetIndex]);
-            graphs.push_back(graph);
-
-            // Step 5: Set axis labels and ranges for the first dataset
-            if (datasetIndex == 0) {
-                setAxisLabelsAndRanges(graph, xLabel, yLabels[i], xLimits, 
-                                       (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.6) :
-                                       (suffixes[i] == "doubleratio") ? std::make_pair(-0.02, 0.3) :
-                                       std::make_pair(-0.1, 0.1));
-            }
-
-            // Step 6: Draw the graph
-            graph->Draw((datasetIndex == 0) ? "AP" : "P SAME");
         }
 
-        // Step 7: Add the dashed gray line at y = 0
+        // Add the dashed gray line at y = 0
         TLine* line = new TLine(xLimits.first, 0, xLimits.second, 0);
         line->SetLineColor(kGray+2);
         line->SetLineStyle(7);  // Dashed line
         line->Draw("same");
-
-        // Step 8: Add the legend if at the last subplot (optional, since we are only processing one subplot for now)
-        if (i == 5) {  // Adjust the position of the legend
-            TLegend* legend = new TLegend(0.1, 0.7, 0.48, 0.9);
-            legend->SetTextFont(42);
-            legend->SetFillColor(0);
-            legend->SetBorderSize(1);
-
-            for (size_t j = 0; j < legendEntries.size(); ++j) {
-                legend->AddEntry(graphs[j], legendEntries[j].c_str(), "P");
-            }
-
-            legend->Draw();
-        }
     }
 
-    // Step 9: Save the canvas
+    // Save the canvas
     gSystem->Exec("mkdir -p output/rho0_plots");
     c->SaveAs(outputFileName.c_str());
 }
