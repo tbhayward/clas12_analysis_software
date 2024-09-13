@@ -365,11 +365,8 @@ int main(int argc, char *argv[]) {
     std::map<std::string, std::vector<std::vector<double>>> asymmetryData = readAsymmetries(asymmetryFile);
 
     // // Print out the parsed data
-    std::cout << "Asymmetry Data:\n";
-    printData(asymmetryData);
-
-    // std::cout << "\nKinematic Data:\n"; 
-    // printData(kinematicData);
+    // std::cout << "Asymmetry Data:\n";
+    // printData(asymmetryData);
 
     // Call the plotting function for different dependencies
     plotDependence(asymmetryData, "epipluspiminus", "P_{T} (GeV)", {0.0, 1.0}, "output/rho0_plots/PT_dependence_plots.png");
