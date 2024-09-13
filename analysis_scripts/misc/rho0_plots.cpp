@@ -208,6 +208,13 @@ void compareKeys(const std::string& generatedKey, const std::string& mapKey) {
     }
 }
 
+// Function to trim leading and trailing spaces from a string
+std::string trim(const std::string& str) {
+    auto start = std::find_if_not(str.begin(), str.end(), ::isspace);
+    auto end = std::find_if_not(str.rbegin(), str.rend(), ::isspace).base();
+    return (start < end) ? std::string(start, end) : std::string();
+}
+
 void plotDependence(
     const std::map<std::string, std::vector<std::vector<double>>>& asymmetryData,  // Map of asymmetry data
     const std::vector<std::string>& prefixes,  // Prefixes corresponding to the datasets
@@ -252,11 +259,11 @@ void plotDependence(
         for (size_t datasetIndex = 0; datasetIndex < prefixes.size(); ++datasetIndex) {
 
             std::string key = prefixes[datasetIndex] + "chi2Fits" + suffixes[i];
-            key = trim(key);  // Trim any leading or trailing spaces
+            key = trim(key);  // Trim any leading or trailing spaces from the key
             std::cout << "Checking key: '" << key << "'" << std::endl;
 
             // Check if the key exists exactly in asymmetryData
-            auto it = asymmetryData.find(key);
+            auto it = asymmetryData.find(trim(key));  // Trim both keys before comparing
 
             if (it != asymmetryData.end()) {
                 std::cout << "Found key: '" << key << "'" << std::endl;
