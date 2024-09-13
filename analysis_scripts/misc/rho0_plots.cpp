@@ -29,50 +29,6 @@
 #include <TMarker.h>  
 #include <TPaveText.h>
 
-std::map<std::string, std::vector<std::vector<double>>> readKinematics(const std::string &filename) {
-    std::map<std::string, std::vector<std::vector<double>>> kinematicData;
-    std::ifstream file(filename);
-    std::string line;
-
-    while (std::getline(file, line)) {
-        std::string::size_type pos = line.find("=");
-        if (pos != std::string::npos) {
-            std::string key = line.substr(0, pos);  // Corrected key extraction
-            std::string dataStr = line.substr(pos + 1);
-
-            // Remove unnecessary characters from the data string
-            dataStr.erase(std::remove(dataStr.begin(), dataStr.end(), '{'), dataStr.end());
-            dataStr.erase(std::remove(dataStr.begin(), dataStr.end(), '}'), dataStr.end());
-            dataStr.erase(std::remove(dataStr.begin(), dataStr.end(), ';'), dataStr.end());
-
-            // Split dataStr into individual numbers
-            std::vector<std::vector<double>> values;
-            std::stringstream ss(dataStr);
-            std::string num;
-            std::vector<double> tempVec;
-            while (std::getline(ss, num, ',')) {
-                if (!num.empty()) {
-                    tempVec.push_back(std::stod(num));
-                }
-                if (tempVec.size() == 9) {  // Assuming each kinematic entry has 9 values
-                    values.push_back(tempVec);
-                    tempVec.clear();
-                }
-            }
-
-            kinematicData[key] = values;
-
-            // Automatically add 'doubleratio' kinematic data if the key is 'ALL'
-            if (key.find("ALL") != std::string::npos) {
-                std::string doubleRatioKey = key;
-                doubleRatioKey.replace(doubleRatioKey.find("ALL"), 3, "doubleratio"); // Replace 'ALL' with 'doubleratio'
-                kinematicData[doubleRatioKey] = values; // Copy the same values
-            }
-        }
-    }
-
-    return kinematicData;
-}
 
 std::map<std::string, std::vector<std::vector<double>>> readAsymmetries(const std::string &filename) {
     std::map<std::string, std::vector<std::vector<double>>> asymmetryData;
@@ -274,6 +230,8 @@ void plotDependence(
 int main(int argc, char** argv) {
     // Load asymmetry data
     std::map<std::string, std::vector<std::vector<double>>> asymmetryData = readAsymmetries("path_to_data.txt");
+
+    std::cout << "Made it passed the import" << std::endl;
 
     // Define the 8 prefixes that correspond to the different datasets
     std::vector<std::string> prefixes = {
