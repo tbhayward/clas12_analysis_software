@@ -228,47 +228,58 @@ void plotDependence(
             auto it = asymmetryData.find(key);
 
             // Step 3: Check if the key exists in the asymmetryData map
-            if (it != asymmetryData.end()) {
-                std::cout << "Found key: " << key << std::endl;
-
-                const auto& data = it->second;
-
-                // Step 4: Ensure the data vector is not empty
-                if (data.empty()) {
-                    std::cout << "Data for key " << key << " is empty." << std::endl;
-                    continue;  // Skip plotting for this dataset if data is empty
-                }
-
-                std::cout << "Data size for key " << key << ": " << data.size() << std::endl;
-
-                std::vector<double> x, y, yStatErr;
-                for (const auto& entry : data) {
-                    x.push_back(entry[0]);
-                    y.push_back(entry[1]);
-                    yStatErr.push_back(entry[2]);
-                }
-
-                // Print the vectors to ensure they have data
-                printVector(x, "x");
-                printVector(y, "y");
-                printVector(yStatErr, "yStatErr");
-
-                TGraphErrors* graph = createTGraphErrors(x, y, yStatErr, 20, 0.8, colors[datasetIndex]);
-                graphs.push_back(graph);
-
-                // Step 5: Set axis labels and ranges for the first dataset
-                if (datasetIndex == 0) {
-                    setAxisLabelsAndRanges(graph, xLabel, yLabels[i], xLimits, 
-                                           (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.6) :
-                                           (suffixes[i] == "doubleratio") ? std::make_pair(-0.02, 0.3) :
-                                           std::make_pair(-0.1, 0.1));
-                }
-
-                // Step 6: Draw the graph
-                graph->Draw((datasetIndex == 0) ? "AP" : "P SAME");
-            } else {
+            if (it == asymmetryData.end()) {
+                // Key not found, let's compare with existing keys
                 std::cout << "Key not found: " << key << std::endl;
+                for (const auto& entry : asymmetryData) {
+                    // Check for exact matches after trimming spaces
+                    if (key == entry.first) {
+                        std::cout << "Exact match found after comparison: " << entry.first << std::endl;
+                    } else {
+                        std::cout << "No exact match, comparing key: " << entry.first << std::endl;
+                    }
+                }
+                continue;  // Skip this key if not found
             }
+
+            // Key found, proceed with plotting
+            std::cout << "Found key: " << key << std::endl;
+
+            const auto& data = it->second;
+
+            // Step 4: Ensure the data vector is not empty
+            if (data.empty()) {
+                std::cout << "Data for key " << key << " is empty." << std::endl;
+                continue;  // Skip plotting for this dataset if data is empty
+            }
+
+            std::cout << "Data size for key " << key << ": " << data.size() << std::endl;
+
+            std::vector<double> x, y, yStatErr;
+            for (const auto& entry : data) {
+                x.push_back(entry[0]);
+                y.push_back(entry[1]);
+                yStatErr.push_back(entry[2]);
+            }
+
+            // Print the vectors to ensure they have data
+            printVector(x, "x");
+            printVector(y, "y");
+            printVector(yStatErr, "yStatErr");
+
+            TGraphErrors* graph = createTGraphErrors(x, y, yStatErr, 20, 0.8, colors[datasetIndex]);
+            graphs.push_back(graph);
+
+            // Step 5: Set axis labels and ranges for the first dataset
+            if (datasetIndex == 0) {
+                setAxisLabelsAndRanges(graph, xLabel, yLabels[i], xLimits, 
+                                       (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.6) :
+                                       (suffixes[i] == "doubleratio") ? std::make_pair(-0.02, 0.3) :
+                                       std::make_pair(-0.1, 0.1));
+            }
+
+            // Step 6: Draw the graph
+            graph->Draw((datasetIndex == 0) ? "AP" : "P SAME");
         }
 
         // Step 7: Add the dashed gray line at y = 0
