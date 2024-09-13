@@ -81,13 +81,14 @@ std::map<std::string, std::vector<std::vector<double>>> readAsymmetries(const st
     for (const auto &entry : asymmetryData) {
         // Check if this is an ALUsinphi entry
         if (entry.first.find(chi2FitsPrefix + alusKeyPrefix) != std::string::npos) {
-            // Extract the base key by removing "chi2Fits" and the asymmetry suffix
-            std::string baseKey = entry.first.substr(0, entry.first.find(chi2FitsPrefix));
+            // Extract the base key without the suffix (remove everything after "chi2Fits")
+            std::string baseKey = entry.first.substr(0, entry.first.find(chi2FitsPrefix) + chi2FitsPrefix.length());
+
             std::cout << "Processing Base Key: " << baseKey << std::endl;  // Debugging print statement
 
             // Construct the full keys for ALUsinphi and ALL
-            std::string alusKey = baseKey + chi2FitsPrefix + alusKeyPrefix;
-            std::string allKey = baseKey + chi2FitsPrefix + allKeyPrefix;
+            std::string alusKey = baseKey + alusKeyPrefix;
+            std::string allKey = baseKey + allKeyPrefix;
 
             // Check if the expected ALUsinphi and ALL keys exist
             bool alusExists = (asymmetryData.find(alusKey) != asymmetryData.end());
@@ -115,7 +116,7 @@ std::map<std::string, std::vector<std::vector<double>>> readAsymmetries(const st
                 }
 
                 // Store the doubleratio data
-                asymmetryData[baseKey + chi2FitsPrefix + "doubleratio"] = doubleratioData;
+                asymmetryData[baseKey + "doubleratio"] = doubleratioData;
             } else {
                 // Print a warning if either ALUsinphi or ALL data is missing
                 std::cout << "Missing data for baseKey: " << baseKey << std::endl;
