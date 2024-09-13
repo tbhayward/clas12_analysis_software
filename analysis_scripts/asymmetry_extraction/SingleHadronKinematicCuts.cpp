@@ -10,10 +10,24 @@ SingleHadronKinematicCuts::SingleHadronKinematicCuts(TTreeReader& reader)
     : BaseKinematicCuts(reader), // Call to the BaseKinematicCuts constructor
       runnum(reader, "runnum"),
       e_theta(reader, "e_theta"), e_phi(reader, "e_phi"), vz_e(reader, "vz_e"),
+      p_p(reader, "p_p"), p_theta(reader, "p_theta"), p_phi(reader, "p_phi"),
+      vz_p(reader, "vz_p"),
       Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), x(reader, "x"),
       y(reader, "y"), z(reader, "z"), pT(reader, "pT"), xF(reader, "xF"),
-      phi(reader, "phi"),
-      target_pol(reader, "target_pol") {}
+      phi(reader, "phi"), phi2(reader, "phi2"),
+      target_pol(reader, "target_pol")
+{
+    // Use TTreeReader::HasBranch to check if the branches exist and initialize them
+    if (reader.HasBranch("Mx1")) {
+        Mx1 = new TTreeReaderValue<double>(reader, "Mx1");
+    }
+    if (reader.HasBranch("Mx2")) {
+        Mx2 = new TTreeReaderValue<double>(reader, "Mx2");
+    }
+    if (reader.HasBranch("Mx23")) {
+        Mx23 = new TTreeReaderValue<double>(reader, "Mx23");
+    }
+}
 
 SingleHadronKinematicCuts::~SingleHadronKinematicCuts() {
     // Clean up dynamically allocated memory
@@ -25,17 +39,6 @@ SingleHadronKinematicCuts::~SingleHadronKinematicCuts() {
 bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     bool goodEvent = false;
     string property = binNames[currentFits];  // Get the property dynamically
-
-    // Conditionally initialize Mx1, Mx2, Mx23 based on the property
-    if ((property == "epipluspiminus" || property == "epipluspiminus_rho0_free") && !Mx1) {
-        Mx1 = new TTreeReaderValue<double>(reader, "Mx1");
-    }
-    if ((property == "eppiplus" || property == "eppiplus_rho0_free" || property == "eppipluspiminus") && !Mx2) {
-        Mx2 = new TTreeReaderValue<double>(reader, "Mx2");
-    }
-    if (property == "eppipluspiminus_rho0_free_A" && !Mx23) {
-        Mx23 = new TTreeReaderValue<double>(reader, "Mx23");
-    }
 
     // Define cuts based on property
     if (property == "epiplus") {

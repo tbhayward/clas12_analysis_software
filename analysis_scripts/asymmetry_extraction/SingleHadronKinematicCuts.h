@@ -1,13 +1,6 @@
-#pragma once
-#include <TTreeReader.h>
-#include <TTreeReaderValue.h>
-#include <string>
-#include "common_vars.h"
-#include "BaseKinematicCuts.h" // Include BaseKinematicCuts
-
 class SingleHadronKinematicCuts : public BaseKinematicCuts {
 public:
-    // Constructor only takes the TTreeReader (no property string needed)
+    // Constructor only takes the TTreeReader (no need to pass the TTree)
     SingleHadronKinematicCuts(TTreeReader& reader);
 
     // Overridden function for applying cuts
@@ -22,6 +15,10 @@ private:
     TTreeReaderValue<double> e_theta;
     TTreeReaderValue<double> e_phi;
     TTreeReaderValue<double> vz_e;
+    TTreeReaderValue<double> p_p;
+    TTreeReaderValue<double> p_theta;
+    TTreeReaderValue<double> p_phi;
+    TTreeReaderValue<double> vz_p;
     TTreeReaderValue<double> Q2;
     TTreeReaderValue<double> W;
     TTreeReaderValue<double> Mx;
@@ -31,6 +28,7 @@ private:
     TTreeReaderValue<double> pT;
     TTreeReaderValue<double> xF;
     TTreeReaderValue<double> phi;
+    TTreeReaderValue<double> phi2;
     TTreeReaderValue<double> target_pol;
 
     // Optional variables (pointers initialized as nullptr)
