@@ -1,3 +1,10 @@
+#pragma once
+#include <TTreeReader.h>
+#include <TTreeReaderValue.h>
+#include <string>
+#include "common_vars.h"
+#include "BaseKinematicCuts.h" // Include BaseKinematicCuts
+
 class SingleHadronKinematicCuts : public BaseKinematicCuts {
 public:
     // Constructor only takes the TTreeReader (no need to pass the TTree)
