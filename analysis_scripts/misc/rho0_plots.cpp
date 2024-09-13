@@ -263,7 +263,7 @@ void plotDependence(
         "F_{UL}^{sin#phi}/F_{UU}",
         "F_{UL}^{sin(2#phi)}/F_{UU}",
         "F_{LL}/F_{UU}",
-        "-F_{LU}^{sin#phi}/F_{LL}",  // yLabel for doubleratio
+        "-F_{LU}^{sin#phi}/F_{LL}", 
         "F_{LL}^{cos#phi}/F_{UU}"
     };
 
@@ -290,9 +290,9 @@ void plotDependence(
 
             TGraphErrors *graphStat = createTGraphErrors(x, y, yStatErr, 20, 0.8, kBlack);
             setAxisLabelsAndRanges(graphStat, xLabel, yLabels[i], xLimits, 
-                                   (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.6) :
-                                   (suffixes[i] == "doubleratio") ? std::make_pair(-0.1, 0.3) :
-                                   std::make_pair(-0.1, 0.1));  // Adjusted y-axis range for doubleratio
+                                   (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.4) :
+                                   (suffixes[i] == "doubleratio") ? std::make_pair(-0.1, 0.2) :
+                                   std::make_pair(-0.1, 0.2));  // Adjusted y-axis range for doubleratio
             graphStat->Draw("AP");
 
             // Add the dashed gray line at y = 0
