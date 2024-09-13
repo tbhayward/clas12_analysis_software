@@ -232,6 +232,12 @@ void plotDependence(
     // Define a color palette for the plots (one for each dataset)
     std::vector<int> colors = {kBlack, kRed, kBlue, kGreen, kMagenta, kCyan, kOrange, kViolet};
 
+    // Print all keys available in asymmetryData
+    std::cout << "Available keys in asymmetryData:" << std::endl;
+    for (const auto& keyPair : asymmetryData) {
+        std::cout << keyPair.first << std::endl;
+    }
+
     // Loop over each subplot (we will limit to the first for now)
     for (size_t i = 0; i < 1; ++i) {
         c->cd(i + 1);
