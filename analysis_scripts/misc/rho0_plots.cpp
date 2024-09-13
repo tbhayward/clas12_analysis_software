@@ -29,7 +29,6 @@
 #include <TMarker.h>  
 #include <TPaveText.h>
 
-// Function to read arrays directly from the kinematic file
 std::map<std::string, std::vector<std::vector<double>>> readKinematics(const std::string &filename) {
     std::map<std::string, std::vector<std::vector<double>>> kinematicData;
     std::ifstream file(filename);
@@ -38,7 +37,7 @@ std::map<std::string, std::vector<std::vector<double>>> readKinematics(const std
     while (std::getline(file, line)) {
         std::string::size_type pos = line.find("=");
         if (pos != std::string::npos) {
-            std::string key = line.substr(0, pos - 1);
+            std::string key = line.substr(0, pos);  // Corrected key extraction
             std::string dataStr = line.substr(pos + 1);
 
             // Remove unnecessary characters from the data string
@@ -55,7 +54,7 @@ std::map<std::string, std::vector<std::vector<double>>> readKinematics(const std
                 if (!num.empty()) {
                     tempVec.push_back(std::stod(num));
                 }
-                if (tempVec.size() == 9) { // Assuming each kinematic entry has 9 values
+                if (tempVec.size() == 9) {  // Assuming each kinematic entry has 9 values
                     values.push_back(tempVec);
                     tempVec.clear();
                 }
@@ -83,7 +82,7 @@ std::map<std::string, std::vector<std::vector<double>>> readAsymmetries(const st
     while (std::getline(file, line)) {
         std::string::size_type pos = line.find("=");
         if (pos != std::string::npos) {
-            std::string key = line.substr(0, pos - 1);
+            std::string key = line.substr(0, pos);  // Corrected key extraction
             std::string dataStr = line.substr(pos + 1);
 
             // Remove unnecessary characters from the data string
@@ -100,7 +99,7 @@ std::map<std::string, std::vector<std::vector<double>>> readAsymmetries(const st
                 if (!num.empty()) {
                     tempVec.push_back(std::stod(num));
                 }
-                if (tempVec.size() == 3) { // Assuming each asymmetry entry has 3 values
+                if (tempVec.size() == 3) {  // Ensure 3 values for each asymmetry entry
                     values.push_back(tempVec);
                     tempVec.clear();
                 }
@@ -134,7 +133,7 @@ std::map<std::string, std::vector<std::vector<double>>> readAsymmetries(const st
                         std::pow(alusData[i][2] / alusData[i][1], 2) + 
                         std::pow(allData[i][2] / allData[i][1], 2)
                     );
-                    ratioValue=-ratioValue;
+                    ratioValue = -ratioValue;
                     doubleratioData.push_back({xValue, ratioValue, error});
                 }
 
