@@ -271,6 +271,7 @@ int main(int argc, char *argv[]) {
         dilutionFactors = std::vector<std::pair<double, double>>(allBins[i].size() - 1, {0.0, 0.0});
     }
 
+
     for (int asymmetry = 0; asymmetry < 3; ++asymmetry) {
         if (asymmetry > 0 && cpp == 1) {
             cout << "Skipping TSA and DSA for unpolarized target data." << endl;
@@ -282,13 +283,7 @@ int main(int argc, char *argv[]) {
             case 2: cout << "    Beginning chi2 DSA." << endl; break;
         }
         switch (channel) {
-            case 0: calculate_inclusive(output_file.c_str(), kinematic_file.c_str(), 
-              binNames[i], asymmetry, dilutionFactors); break;
             case 1: performChi2Fits_single_hadron(output_file.c_str(), kinematic_file.c_str(), 
-              kinematicPlot_file.c_str(), binNames[i], asymmetry, dilutionFactors); break;
-            case 2: performChi2Fits_b2b_dihadron(output_file.c_str(), kinematic_file.c_str(), 
-              binNames[i], asymmetry, dilutionFactors); break;
-            case 4: performChi2Fits_dvcs(output_file.c_str(), kinematic_file.c_str(), 
               kinematicPlot_file.c_str(), binNames[i], asymmetry, dilutionFactors); break;
         }
     }
