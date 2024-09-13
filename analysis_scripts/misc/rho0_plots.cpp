@@ -188,7 +188,7 @@ void plotDependence(
 
         // Iterate over the 8 datasets (prefixes)
         for (size_t datasetIndex = 0; datasetIndex < prefixes.size(); ++datasetIndex) {
-        	std::cout << prefixes[datasetIndex] << std::endl;
+        	
             std::string key = prefixes[datasetIndex] + "chi2Fits" + suffixes[i];
             auto it = asymmetryData.find(key);
 
