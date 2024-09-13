@@ -526,8 +526,9 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
   TTreeReaderValue<double>* phi;
 
   if (binNames[currentFits] == "epipluspiminus" || 
-        binNames[currentFits] == "epipluspiminus_rho0_free" ||
-        binNames[currentFits] == "eppiplus" || 
+        binNames[currentFits] == "epipluspiminus_rho0_free" ) {
+      phi = new TTreeReaderValue<double>(dataReader, "phi1");
+  } else if (binNames[currentFits] == "eppiplus" || 
         binNames[currentFits] == "eppiplus_rho0_free" || 
         binNames[currentFits] == "eppipluspiminus" || 
         binNames[currentFits] == "eppipluspiminus_rho0_free_A" || 
@@ -716,8 +717,14 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
     TTreeReaderValue<double>* pT;
 
     if (binNames[currentFits] == "epipluspiminus" || 
-        binNames[currentFits] == "epipluspiminus_rho0_free" ||
-        binNames[currentFits] == "eppiplus" || 
+        binNames[currentFits] == "epipluspiminus_rho0_free") {
+        // Assign the reader values using one set of branches
+        z = new TTreeReaderValue<double>(dataReader, "z1");
+        zeta = new TTreeReaderValue<double>(dataReader, "zeta1");
+        t = new TTreeReaderValue<double>(dataReader, "t1");
+        xF = new TTreeReaderValue<double>(dataReader, "xF1");
+        pT = new TTreeReaderValue<double>(dataReader, "pT1");
+    } else if (binNames[currentFits] == "eppiplus" || 
         binNames[currentFits] == "eppiplus_rho0_free" || 
         binNames[currentFits] == "eppipluspiminus" || 
         binNames[currentFits] == "eppipluspiminus_rho0_free_A" || 
@@ -755,11 +762,11 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
         sumW += *W;
         sumx += *x;
         sumy += *y;
-        sumz += *z;
-        sumzeta += *zeta;
-        sumpT += *pT;
-        sumxF += *xF;
-        sumt += *t;
+        sumz += **z;
+        sumzeta += **zeta;
+        sumpT += **pT;
+        sumxF += **xF;
+        sumt += **t;
         sumtmin += *tmin;
 
         // sum the depolarization values
