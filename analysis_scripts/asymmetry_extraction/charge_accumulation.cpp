@@ -10,6 +10,7 @@ void charge_accumulation(TTreeReader& dataReader, const std::vector<RunInfo>& ru
     std::set<int> processedRuns; // To keep track of processed runs
     TTreeReaderValue<int> runnum(dataReader, "runnum"); // For retrieving the runnum from the data
     while (dataReader.Next()) {
+        std::cout << "HELLO WORLD" << std::endl;
         if (processedRuns.find(*runnum) == processedRuns.end()) {
             processedRuns.insert(*runnum);
             // Find run_info for the current run and update cpp, cpm, cmp, cmm
@@ -33,7 +34,6 @@ void charge_accumulation(TTreeReader& dataReader, const std::vector<RunInfo>& ru
             }
         }
     }
-    std::cout << "HELLO WORLD" << std::endl;
     if (cpp == 0) { 
         cpp = 1; 
         std::cout << "Target polarization not detected. Assumption is that this is ";
