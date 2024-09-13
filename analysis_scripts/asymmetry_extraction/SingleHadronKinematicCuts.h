@@ -7,10 +7,17 @@
 
 class SingleHadronKinematicCuts : public BaseKinematicCuts {
 public:
+    // Constructor only takes the TTreeReader (no property string needed)
     SingleHadronKinematicCuts(TTreeReader& reader);
+
+    // Overridden function for applying cuts
     bool applyCuts(int currentFits, bool isMC) override;
 
+    // Destructor to clean up dynamically allocated memory
+    ~SingleHadronKinematicCuts();
+
 private:
+    // Required variables
     TTreeReaderValue<int> runnum;
     TTreeReaderValue<double> e_theta;
     TTreeReaderValue<double> e_phi;
@@ -28,5 +35,11 @@ private:
     TTreeReaderValue<double> pT;
     TTreeReaderValue<double> xF;
     TTreeReaderValue<double> phi;
+    TTreeReaderValue<double> phi2;
     TTreeReaderValue<double> target_pol;
+
+    // Optional variables (pointers initialized as nullptr)
+    TTreeReaderValue<double>* Mx1 = nullptr;
+    TTreeReaderValue<double>* Mx2 = nullptr;
+    TTreeReaderValue<double>* Mx23 = nullptr;
 };

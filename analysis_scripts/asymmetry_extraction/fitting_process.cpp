@@ -525,13 +525,13 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
 
   TTreeReaderValue<double>* phi;
 
-  if (binNames[currentFits] == epipluspiminus || 
-        binNames[currentFits] == epipluspiminus_rho0_free ||
-        binNames[currentFits] == eppiplus || 
-        binNames[currentFits] == eppiplus_rho0_free || 
-        binNames[currentFits] == eppipluspiminus || 
-        binNames[currentFits] == eppipluspiminus_rho0_free_A || 
-        binNames[currentFits] == eppipluspiminus_rho0_free_B) {
+  if (binNames[currentFits] == "epipluspiminus" || 
+        binNames[currentFits] == "epipluspiminus_rho0_free" ||
+        binNames[currentFits] == "eppiplus" || 
+        binNames[currentFits] == "eppiplus_rho0_free" || 
+        binNames[currentFits] == "eppipluspiminus" || 
+        binNames[currentFits] == "eppipluspiminus_rho0_free_A" || 
+        binNames[currentFits] == "eppipluspiminus_rho0_free_B") {
       // Assign the reader values using one set of branches
       phi = new TTreeReaderValue<double>(dataReader, "phi2");
   } else {
@@ -715,13 +715,13 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
     TTreeReaderValue<double>* xF;
     TTreeReaderValue<double>* pT;
 
-    if (binNames[currentFits] == epipluspiminus || 
-          binNames[currentFits] == epipluspiminus_rho0_free ||
-          binNames[currentFits] == eppiplus || 
-          binNames[currentFits] == eppiplus_rho0_free || 
-          binNames[currentFits] == eppipluspiminus || 
-          binNames[currentFits] == eppipluspiminus_rho0_free_A || 
-          binNames[currentFits] == eppipluspiminus_rho0_free_B) {
+    if (binNames[currentFits] == "epipluspiminus" || 
+        binNames[currentFits] == "epipluspiminus_rho0_free" ||
+        binNames[currentFits] == "eppiplus" || 
+        binNames[currentFits] == "eppiplus_rho0_free" || 
+        binNames[currentFits] == "eppipluspiminus" || 
+        binNames[currentFits] == "eppipluspiminus_rho0_free_A" || 
+        binNames[currentFits] == "eppipluspiminus_rho0_free_B") {
         // Assign the reader values using one set of branches
         z = new TTreeReaderValue<double>(dataReader, "z2");
         zeta = new TTreeReaderValue<double>(dataReader, "zeta2");
