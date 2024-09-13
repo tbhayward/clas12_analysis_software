@@ -1,0 +1,307 @@
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <vector>
+#include <map>
+#include <sstream>
+#include <algorithm> 
+#include <TCanvas.h>
+#include <TGraphErrors.h>
+#include <TSystem.h>
+#include <TAxis.h>
+#include <TLine.h>
+#include <TStyle.h>
+#include <TLegend.h>
+#include <TCanvas.h>
+#include <TGraphErrors.h>
+#include <TH1.h>
+#include <TLegend.h>
+#include <TLine.h>
+#include <TLegendEntry.h>
+#include <TAxis.h>
+#include <TSystem.h>
+#include <vector>
+#include <string>
+#include <map>
+#include <TLatex.h>
+#include <TText.h>  
+#include <TF1.h>        
+#include <TMarker.h>  
+#include <TPaveText.h>
+
+// Function to read arrays directly from the kinematic file
+std::map<std::string, std::vector<std::vector<double>>> readKinematics(const std::string &filename) {
+    std::map<std::string, std::vector<std::vector<double>>> kinematicData;
+    std::ifstream file(filename);
+    std::string line;
+
+    while (std::getline(file, line)) {
+        std::string::size_type pos = line.find("=");
+        if (pos != std::string::npos) {
+            std::string key = line.substr(0, pos - 1);
+            std::string dataStr = line.substr(pos + 1);
+
+            // Remove unnecessary characters from the data string
+            dataStr.erase(std::remove(dataStr.begin(), dataStr.end(), '{'), dataStr.end());
+            dataStr.erase(std::remove(dataStr.begin(), dataStr.end(), '}'), dataStr.end());
+            dataStr.erase(std::remove(dataStr.begin(), dataStr.end(), ';'), dataStr.end());
+
+            // Split dataStr into individual numbers
+            std::vector<std::vector<double>> values;
+            std::stringstream ss(dataStr);
+            std::string num;
+            std::vector<double> tempVec;
+            while (std::getline(ss, num, ',')) {
+                if (!num.empty()) {
+                    tempVec.push_back(std::stod(num));
+                }
+                if (tempVec.size() == 9) { // Assuming each kinematic entry has 9 values
+                    values.push_back(tempVec);
+                    tempVec.clear();
+                }
+            }
+
+            kinematicData[key] = values;
+
+            // Automatically add 'doubleratio' kinematic data if the key is 'ALL'
+            if (key.find("ALL") != std::string::npos) {
+                std::string doubleRatioKey = key;
+                doubleRatioKey.replace(doubleRatioKey.find("ALL"), 3, "doubleratio"); // Replace 'ALL' with 'doubleratio'
+                kinematicData[doubleRatioKey] = values; // Copy the same values
+            }
+        }
+    }
+
+    return kinematicData;
+}
+
+std::map<std::string, std::vector<std::vector<double>>> readAsymmetries(const std::string &filename) {
+    std::map<std::string, std::vector<std::vector<double>>> asymmetryData;
+    std::ifstream file(filename);
+    std::string line;
+
+    while (std::getline(file, line)) {
+        std::string::size_type pos = line.find("=");
+        if (pos != std::string::npos) {
+            std::string key = line.substr(0, pos - 1);
+            std::string dataStr = line.substr(pos + 1);
+
+            // Remove unnecessary characters from the data string
+            dataStr.erase(std::remove(dataStr.begin(), dataStr.end(), '{'), dataStr.end());
+            dataStr.erase(std::remove(dataStr.begin(), dataStr.end(), '}'), dataStr.end());
+            dataStr.erase(std::remove(dataStr.begin(), dataStr.end(), ';'), dataStr.end());
+
+            // Split dataStr into individual numbers
+            std::vector<std::vector<double>> values;
+            std::stringstream ss(dataStr);
+            std::string num;
+            std::vector<double> tempVec;
+            while (std::getline(ss, num, ',')) {
+                if (!num.empty()) {
+                    tempVec.push_back(std::stod(num));
+                }
+                if (tempVec.size() == 3) { // Assuming each asymmetry entry has 3 values
+                    values.push_back(tempVec);
+                    tempVec.clear();
+                }
+            }
+
+            asymmetryData[key] = values;
+        }
+    }
+
+    // Now, calculate the doubleratio fits
+    std::string alusKeyPrefix = "ALUsinphi";
+    std::string allKeyPrefix = "ALL";
+    for (const auto &entry : asymmetryData) {
+        // Check if this is an ALUsinphi entry
+        if (entry.first.find(alusKeyPrefix) != std::string::npos) {
+            std::string baseKey = entry.first.substr(0, entry.first.find(alusKeyPrefix));
+            std::string alusKey = baseKey + alusKeyPrefix;
+            std::string allKey = baseKey + allKeyPrefix;
+
+            // Ensure both ALUsinphi and ALL exist for this bin
+            if (asymmetryData.find(alusKey) != asymmetryData.end() && asymmetryData.find(allKey) != asymmetryData.end()) {
+                const auto &alusData = asymmetryData[alusKey];
+                const auto &allData = asymmetryData[allKey];
+
+                // Prepare the doubleratio data
+                std::vector<std::vector<double>> doubleratioData;
+                for (size_t i = 0; i < alusData.size(); ++i) {
+                    double xValue = alusData[i][0];
+                    double ratioValue = alusData[i][1] / allData[i][1];
+                    double error = std::abs(ratioValue) * std::sqrt(
+                        std::pow(alusData[i][2] / alusData[i][1], 2) + 
+                        std::pow(allData[i][2] / allData[i][1], 2)
+                    );
+                    ratioValue=-ratioValue;
+                    doubleratioData.push_back({xValue, ratioValue, error});
+                }
+
+                // Store the doubleratio data
+                asymmetryData[baseKey + "doubleratio"] = doubleratioData;
+            }
+        }
+    }
+
+    return asymmetryData;
+}
+
+// Helper functions to create graphs and set axis labels
+TGraphErrors* createTGraphErrors(
+    const std::vector<double>& x,
+    const std::vector<double>& y,
+    const std::vector<double>& yErr,
+    const int markerStyle,
+    const double markerSize,
+    const int color) {
+    TGraphErrors* graph = new TGraphErrors(x.size(), x.data(), y.data(), nullptr, yErr.data());
+    graph->SetMarkerStyle(markerStyle);
+    graph->SetMarkerSize(markerSize);
+    graph->SetMarkerColor(color);
+    graph->SetLineColor(color);
+    graph->SetTitle("");
+    return graph;
+}
+
+void setAxisLabelsAndRanges(
+    TGraphErrors* graph,
+    const std::string& xLabel,
+    const std::string& yLabel,
+    const std::pair<double, double>& xLimits,
+    const std::pair<double, double>& yLimits) {
+    graph->GetXaxis()->SetTitle(xLabel.c_str());
+    graph->GetYaxis()->SetTitle(yLabel.c_str());
+    graph->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
+    graph->GetXaxis()->SetRangeUser(xLimits.first, xLimits.second);
+    graph->GetYaxis()->SetRangeUser(yLimits.first, yLimits.second);
+
+    graph->GetXaxis()->SetLabelSize(0.04);
+    graph->GetXaxis()->SetTitleSize(0.045);
+    graph->GetYaxis()->SetLabelSize(0.04);
+    graph->GetYaxis()->SetTitleSize(0.045);
+}
+
+
+void plotDependence(
+    const std::map<std::string, std::vector<std::vector<double>>>& asymmetryData,  // Single map of all asymmetry data
+    const std::vector<std::string>& prefixes,  // Vector of prefixes corresponding to the 8 different asymmetry datasets
+    const std::string& xLabel, 
+    const std::pair<double, double>& xLimits, 
+    const std::string& outputFileName,
+    const std::vector<std::string>& legendEntries) {
+
+    TCanvas* c = new TCanvas("c", "Dependence Plots", 1200, 800);
+    c->Divide(3, 2);
+
+    std::vector<std::string> suffixes = {"ALUsinphi", "AULsinphi", "AULsin2phi", "ALL", "doubleratio", "ALLcosphi"};
+    std::vector<std::string> yLabels = {
+        "F_{LU}^{sin#phi}/F_{UU}",
+        "F_{UL}^{sin#phi}/F_{UU}",
+        "F_{UL}^{sin(2#phi)}/F_{UU}",
+        "F_{LL}/F_{UU}",
+        "-F_{LU}^{sin#phi}/F_{LL}",
+        "F_{LL}^{cos#phi}/F_{UU}"
+    };
+
+    // Define a color palette for the plots (one for each dataset)
+    std::vector<int> colors = {kBlack, kRed, kBlue, kGreen, kMagenta, kCyan, kOrange, kViolet};
+
+    // Loop over each subplot (six total)
+    for (size_t i = 0; i < suffixes.size(); ++i) {
+        c->cd(i + 1);
+        gPad->SetLeftMargin(0.18);
+        gPad->SetBottomMargin(0.15);
+
+        std::vector<TGraphErrors*> graphs;
+
+        // Iterate over the 8 datasets (prefixes)
+        for (size_t datasetIndex = 0; datasetIndex < prefixes.size(); ++datasetIndex) {
+            std::string key = prefixes[datasetIndex] + "chi2Fits" + suffixes[i];
+            auto it = asymmetryData.find(key);
+
+            if (it != asymmetryData.end()) {
+                const auto& data = it->second;
+
+                std::vector<double> x, y, yStatErr;
+                for (const auto& entry : data) {
+                    x.push_back(entry[0]);
+                    y.push_back(entry[1]);
+                    yStatErr.push_back(entry[2]);
+                }
+
+                TGraphErrors* graph = createTGraphErrors(x, y, yStatErr, 20, 0.8, colors[datasetIndex]);
+                graphs.push_back(graph);
+
+                // Set the axis labels and ranges for the first dataset
+                if (datasetIndex == 0) {
+                    setAxisLabelsAndRanges(graph, xLabel, yLabels[i], xLimits, 
+                                           (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.6) :
+                                           (suffixes[i] == "doubleratio") ? std::make_pair(-0.02, 0.3) :
+                                           std::make_pair(-0.1, 0.1));
+                }
+
+                graph->Draw((datasetIndex == 0) ? "AP" : "P SAME");
+            }
+        }
+
+        // Add the dashed gray line at y = 0
+        TLine* line = new TLine(xLimits.first, 0, xLimits.second, 0);
+        line->SetLineColor(kGray+2);
+        line->SetLineStyle(7);  // Dashed line
+        line->Draw("same");
+
+        // Add the legend if we're at the last subplot
+        if (i == 5) {  // Adjust the position of the legend
+            TLegend* legend = new TLegend(0.1, 0.7, 0.48, 0.9);
+            legend->SetTextFont(42);
+            legend->SetFillColor(0);
+            legend->SetBorderSize(1);
+
+            for (size_t j = 0; j < legendEntries.size(); ++j) {
+                legend->AddEntry(graphs[j], legendEntries[j].c_str(), "P");
+            }
+
+            legend->Draw();
+        }
+    }
+
+    gSystem->Exec("mkdir -p output/rho0_plots");
+    c->SaveAs(outputFileName.c_str());
+    delete c;
+}
+
+
+int main(int argc, char** argv) {
+    // Load asymmetry data
+    std::map<std::string, std::vector<std::vector<double>>> asymmetryData = readAsymmetries("path_to_data.txt");
+
+    // Define the 8 prefixes that correspond to the different datasets
+    std::vector<std::string> prefixes = {
+        "epiplus", 
+        "epipluspiminus", 
+        "epipluspiminus_rho0_free", 
+        "eppiplus", 
+        "eppiplus_rho0_free", 
+        "eppipluspiminus", 
+        "eppipluspiminus_rho0_free_A", 
+        "eppipluspiminus_rho0_free_B"
+    };
+
+    // Define the legend entries
+    std::vector<std::string> legendEntries = {
+        "e#pi^{+}X, M_{x (e' #pi^{+})} > 1.5 GeV",
+        "e#pi^{+}#pi^{-}, M_{x (e'#pi^{+}} > 1.5 GeV",
+        "e#pi^{+}#pi^{-}, M_{x (e'#pi^{+}} > 1.5 GeV, M_{x (e'#pi^{+}#pi^{-})} > 1.05 GeV",
+        "ep#pi^{+}X, M_{x (e'#pi^{+}} > 1.5 GeV",
+        "ep#pi^{+}X, M_{x (e'#pi^{+}} > 1.5 GeV, M_{x (e'p} > 0.95 GeV",
+        "ep#pi^{+}#pi^{-}X, M_{x (e' #pi^{+})} > 1.5 GeV",
+        "ep#pi^{+}#pi^{-}X, M_{x (e' #pi^{+})} > 1.5 GeV, M_{x (e'#pi^{+}#pi^{-})} > 1.05 GeV",
+        "ep#pi^{+}#pi^{-}X, M_{x (e' #pi^{+})} > 1.5 GeV, M_{x (e'p} > 0.95 GeV"
+    };
+
+    // Call plotDependence
+    plotDependence(asymmetryData, prefixes, "P_{T} (GeV)", {0.0, 1.1}, "output/rho0_plots/x_dependence_plots.png", legendEntries);
+
+    return 0;
+}
