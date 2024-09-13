@@ -448,7 +448,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
 
     // Check if the file was successfully opened
     if (outFile.is_open()) {
-        outFile << "{{";
+        outFile << "df_" << binNames[currentFits] << "_" << prefix << " = {{";
 
         // Write out the values from the TGraphErrors in the format {{x, y, yerr}, ...}
         int nPoints = gr_dilution[0]->GetN(); // Get the number of points in the graph
