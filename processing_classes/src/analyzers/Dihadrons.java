@@ -96,7 +96,7 @@ public class Dihadrons {
             return false;
         } else if (variables.W() < 2) {
             return false;
-        } else if (variables.y() > 0.75) {
+        } else if (variables.y() > 0.80) {
             return false;
         }
 //        else if (variables.Mx() < 1.50) { return false; }
