@@ -162,7 +162,6 @@ void plotDependence(
     // Define a color palette for the plots (one for each dataset)
     std::vector<int> colors = {kBlack, kRed, kBlue, kGreen, kMagenta, kCyan, kOrange, kViolet};
 
-    std::cout << "Made it passed declarations" << std::endl;
 
     // Loop over each subplot (six total)
     for (size_t i = 0; i < suffixes.size(); ++i) {
@@ -171,6 +170,8 @@ void plotDependence(
         gPad->SetBottomMargin(0.15);
 
         std::vector<TGraphErrors*> graphs;
+
+        std::cout << "Starting on " << i << std::endl;
 
         // Iterate over the 8 datasets (prefixes)
         for (size_t datasetIndex = 0; datasetIndex < prefixes.size(); ++datasetIndex) {
