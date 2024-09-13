@@ -164,7 +164,7 @@ void plotDependence(
 
 
     // Loop over each subplot (six total)
-    for (size_t i = 0; i < suffixes.size(); ++i) {
+    for (size_t i = 0; i < suffixes.size() -1; ++i) {
         c->cd(i + 1);
         gPad->SetLeftMargin(0.18);
         gPad->SetBottomMargin(0.15);
@@ -174,7 +174,7 @@ void plotDependence(
         std::cout << "Starting on " << i << ", the prefix size is" << prefixes.size() << std::endl;
 
         // Iterate over the 8 datasets (prefixes)
-        for (size_t datasetIndex = 0; datasetIndex < prefixes.size() -1; ++datasetIndex) {
+        for (size_t datasetIndex = 0; datasetIndex < prefixes.size(); ++datasetIndex) {
         	std::cout << prefixes[datasetIndex] << std::endl;
             std::string key = prefixes[datasetIndex] + "chi2Fits" + suffixes[i];
             auto it = asymmetryData.find(key);
