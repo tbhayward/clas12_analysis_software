@@ -16,23 +16,16 @@ SingleHadronKinematicCuts::SingleHadronKinematicCuts(TTreeReader& reader, TTree*
       phi(reader, "phi"), 
       target_pol(reader, "target_pol")
 {
-    // Use TTree::GetBranch to check if the branches exist and initialize them
+    // Initialize Mx1, Mx2, and Mx23 only if the corresponding branches exist
     if (tree->GetBranch("Mx1")) {
-        Mx1 = new TTreeReaderValue<double>(reader, "Mx1");
+        Mx1.emplace(reader, "Mx1");
     }
     if (tree->GetBranch("Mx2")) {
-        Mx2 = new TTreeReaderValue<double>(reader, "Mx2");
+        Mx2.emplace(reader, "Mx2");
     }
     if (tree->GetBranch("Mx23")) {
-        Mx23 = new TTreeReaderValue<double>(reader, "Mx23");
+        Mx23.emplace(reader, "Mx23");
     }
-}
-
-SingleHadronKinematicCuts::~SingleHadronKinematicCuts() {
-    // Clean up dynamically allocated memory
-    if (Mx1) delete Mx1;
-    if (Mx2) delete Mx2;
-    if (Mx23) delete Mx23;
 }
 
 bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {

@@ -2,7 +2,7 @@
 
 #include <TTreeReader.h>
 #include <TTreeReaderValue.h>
-#include <TTree.h>  // Include for the TTree usage
+#include <TTree.h>
 
 #include "BaseKinematicCuts.h"
 
@@ -14,8 +14,8 @@ public:
     // Overridden function for applying cuts
     bool applyCuts(int currentFits, bool isMC) override;
 
-    // Destructor to clean up dynamically allocated memory
-    ~SingleHadronKinematicCuts();
+    // Destructor
+    ~SingleHadronKinematicCuts() = default;
 
 private:
     // Required variables
@@ -23,9 +23,6 @@ private:
     TTreeReaderValue<double> e_theta;
     TTreeReaderValue<double> e_phi;
     TTreeReaderValue<double> vz_e;
-    TTreeReaderValue<double> p_p;
-    TTreeReaderValue<double> p_theta;
-    TTreeReaderValue<double> p_phi;
     TTreeReaderValue<double> vz_p;
     TTreeReaderValue<double> Q2;
     TTreeReaderValue<double> W;
@@ -36,11 +33,10 @@ private:
     TTreeReaderValue<double> pT;
     TTreeReaderValue<double> xF;
     TTreeReaderValue<double> phi;
-    TTreeReaderValue<double> phi2;
     TTreeReaderValue<double> target_pol;
 
-    // Optional variables (pointers initialized as nullptr)
-    TTreeReaderValue<double>* Mx1 = nullptr;
-    TTreeReaderValue<double>* Mx2 = nullptr;
-    TTreeReaderValue<double>* Mx23 = nullptr;
+    // Optional variables (non-null only if the corresponding branches exist)
+    std::optional<TTreeReaderValue<double>> Mx1;
+    std::optional<TTreeReaderValue<double>> Mx2;
+    std::optional<TTreeReaderValue<double>> Mx23;
 };
