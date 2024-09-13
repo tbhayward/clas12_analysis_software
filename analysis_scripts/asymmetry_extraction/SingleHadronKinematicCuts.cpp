@@ -13,7 +13,6 @@ SingleHadronKinematicCuts::SingleHadronKinematicCuts(TTreeReader& reader, TTree*
       e_theta(reader, "e_theta"), e_phi(reader, "e_phi"), vz_e(reader, "vz_e"),
       Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), x(reader, "x"),
       y(reader, "y"), z(reader, "z"), pT(reader, "pT"), xF(reader, "xF"),
-      phi(reader, "phi"), 
       target_pol(reader, "target_pol")
 {
     // Initialize Mx1, Mx2, and Mx23 only if the corresponding branches exist
