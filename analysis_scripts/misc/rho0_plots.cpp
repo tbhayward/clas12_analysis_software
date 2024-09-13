@@ -209,7 +209,8 @@ void plotDependence(
 	}
 
     // Loop over each subplot (six total)
-    for (size_t i = 0; i < suffixes.size(); ++i) {
+    // for (size_t i = 0; i < suffixes.size(); ++i) {
+	for (size_t i = 0; i < 1; ++i) {
         c->cd(i + 1);
         gPad->SetLeftMargin(0.18);
         gPad->SetBottomMargin(0.15);
