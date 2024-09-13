@@ -365,8 +365,8 @@ int main(int argc, char *argv[]) {
     std::map<std::string, std::vector<std::vector<double>>> asymmetryData = readAsymmetries(asymmetryFile);
 
     // // Print out the parsed data
-    // std::cout << "Asymmetry Data:\n";
-    // printData(asymmetryData);
+    std::cout << "Asymmetry Data:\n";
+    printData(asymmetryData);
 
     // std::cout << "\nKinematic Data:\n"; 
     // printData(kinematicData);
