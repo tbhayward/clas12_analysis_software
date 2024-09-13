@@ -435,10 +435,39 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     gr_dilution[0]->SetMarkerColor(kBlack);
     gr_dilution[0]->Draw("AP");
 
+    // Save the canvas as a PDF
     std::string outputDir = "output/dilution_factor_plots/";
     std::string outputFileName = outputDir + "df_" + binNames[currentFits] + "_" + prefix + ".pdf";
     canvas->SaveAs(outputFileName.c_str());
 
+    // Create a text file with the same name as the PDF but with .txt extension
+    std::string txtFileName = outputDir + "df_" + binNames[currentFits] + "_" + prefix + ".txt";
+    std::ofstream outFile(txtFileName);
+
+    // Check if the file was successfully opened
+    if (outFile.is_open()) {
+        outFile << "{{";
+
+        // Write out the values from the TGraphErrors in the format {{x, y, yerr}, ...}
+        int nPoints = gr_dilution[0]->GetN(); // Get the number of points in the graph
+        for (int i = 0; i < nPoints; ++i) {
+            double x, y;
+            gr_dilution[0]->GetPoint(i, x, y);  // Get the x and y values for each point
+            double yerr = gr_dilution[0]->GetErrorY(i);  // Get the error value
+
+            // Output the values in the desired format
+            outFile << "{" << x << ", " << y << ", " << yerr << "}";
+
+            if (i != nPoints - 1) {
+                outFile << ", ";  // Add a comma between entries, except for the last entry
+            }
+        }
+
+        outFile << "}}" << std::endl;  // Close the output with }}
+        outFile.close();  // Close the file
+    } else {
+        std::cerr << "Error opening the file: " << txtFileName << std::endl;
+    }
 
     //
 
