@@ -209,21 +209,26 @@ void plotDependence(
 	}
 
     // Loop over each subplot (six total)
-    // for (size_t i = 0; i < suffixes.size(); ++i) {
-    for (size_t i = 0; i < 1; ++i) {
+    for (size_t i = 0; i < suffixes.size(); ++i) {
         c->cd(i + 1);
         gPad->SetLeftMargin(0.18);
         gPad->SetBottomMargin(0.15);
 
         std::vector<TGraphErrors*> graphs;
 
+        std::cout << "Processing suffix: " << suffixes[i] << std::endl;
+
         // Iterate over the 8 datasets (prefixes)
         for (size_t datasetIndex = 0; datasetIndex < prefixes.size(); ++datasetIndex) {
         	
             std::string key = prefixes[datasetIndex] + "chi2Fits" + suffixes[i];
+            std::cout << "Checking key: " << key << std::endl;
+
             auto it = asymmetryData.find(key);
 
             if (it != asymmetryData.end()) {
+                std::cout << "Found key: " << key << std::endl;
+
                 const auto& data = it->second;
 
                 std::vector<double> x, y, yStatErr;
@@ -232,11 +237,11 @@ void plotDependence(
                     y.push_back(entry[1]);
                     yStatErr.push_back(entry[2]);
                 }
-                
-                // Print the vectors
-				printVector(x, "x");
-				printVector(y, "y");
-				printVector(yStatErr, "yStatErr");
+
+                // Print the vectors to ensure they have data
+                printVector(x, "x");
+                printVector(y, "y");
+                printVector(yStatErr, "yStatErr");
 
                 TGraphErrors* graph = createTGraphErrors(x, y, yStatErr, 20, 0.8, colors[datasetIndex]);
                 graphs.push_back(graph);
@@ -250,6 +255,8 @@ void plotDependence(
                 }
 
                 graph->Draw((datasetIndex == 0) ? "AP" : "P SAME");
+            } else {
+                std::cout << "Key not found: " << key << std::endl;
             }
         }
 
@@ -323,6 +330,7 @@ int main(int argc, char** argv) {
         "ep#pi^{+}#pi^{-}X, M_{x (e' #pi^{+})} > 1.5 GeV, M_{x (e'p} > 0.95 GeV"
     };
 
+    std::cout << std::endl << std::endl << std::endl;
     // Call plotDependence
     plotDependence(asymmetryData, prefixes, "P_{T} (GeV)", {0.0, 1.1}, "output/rho0_plots/PT_dependence_plots.png", legendEntries);
 
