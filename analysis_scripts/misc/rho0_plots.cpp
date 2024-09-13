@@ -172,8 +172,6 @@ void plotDependence(
 
         std::vector<TGraphErrors*> graphs;
 
-        std::cout << "Starting on " << i << ", the prefix size is" << prefixes.size() << std::endl;
-
         // Iterate over the 8 datasets (prefixes)
         for (size_t datasetIndex = 0; datasetIndex < prefixes.size(); ++datasetIndex) {
         	std::cout << prefixes[datasetIndex] << std::endl;
@@ -189,6 +187,7 @@ void plotDependence(
                     y.push_back(entry[1]);
                     yStatErr.push_back(entry[2]);
                 }
+                std::cout << x << " " << y << " " << yStatErr << std::endl;
 
                 TGraphErrors* graph = createTGraphErrors(x, y, yStatErr, 20, 0.8, colors[datasetIndex]);
                 graphs.push_back(graph);
