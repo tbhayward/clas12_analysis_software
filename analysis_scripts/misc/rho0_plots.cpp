@@ -171,7 +171,7 @@ void plotDependence(
 
         std::vector<TGraphErrors*> graphs;
 
-        std::cout << "Starting on " << i ", the prefix size is" << prefixes.size() << std::endl;
+        std::cout << "Starting on " << i << ", the prefix size is" << prefixes.size() << std::endl;
 
         // Iterate over the 8 datasets (prefixes)
         for (size_t datasetIndex = 0; datasetIndex < prefixes.size(); ++datasetIndex) {
