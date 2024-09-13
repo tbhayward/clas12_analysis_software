@@ -24,7 +24,6 @@ private:
     TTreeReaderValue<double> e_theta;
     TTreeReaderValue<double> e_phi;
     TTreeReaderValue<double> vz_e;
-    TTreeReaderValue<double> vz_p;
     TTreeReaderValue<double> Q2;
     TTreeReaderValue<double> W;
     TTreeReaderValue<double> Mx;
