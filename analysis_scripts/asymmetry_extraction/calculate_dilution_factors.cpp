@@ -7,6 +7,8 @@
 #include <vector>
 #include <numeric>
 #include <TLatex.h>
+#include <fstream>  // For file I/O (std::ofstream)
+#include <iostream> // For std::cerr in case of errors
 // tbhayward libraries
 #include "common_vars.h"
 #include "load_bins_from_csv.h"
