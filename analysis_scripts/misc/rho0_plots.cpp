@@ -78,47 +78,54 @@ std::map<std::string, std::vector<std::vector<double>>> readAsymmetries(const st
     std::string allKeySuffix = "ALL";
 
     for (const auto &entry : asymmetryData) {
-        // We assume that the baseKey should exclude the suffix part ("ALUsinphi", "ALL", etc.)
-        if (entry.first.find(alusKeySuffix) != std::string::npos) {
-            // Extract the base key before "ALUsinphi"
-            std::string baseKey = entry.first.substr(0, entry.first.find("chi2Fits"));
+        // Find the position of "chi2Fits" in the key
+        std::string::size_type chi2FitsPos = entry.first.find("chi2Fits");
+        if (chi2FitsPos != std::string::npos) {
+            // Extract the base key before "chi2Fits"
+            std::string baseKey = entry.first.substr(0, chi2FitsPos);
+            
+            // Extract the suffix that indicates the spin asymmetry type
+            std::string suffix = entry.first.substr(chi2FitsPos + 8);  // 8 is the length of "chi2Fits"
+            
+            // Process only if the suffix matches "ALUsinphi"
+            if (suffix == alusKeySuffix) {
+                std::cout << "Processing Base Key: " << baseKey << std::endl;
 
-            std::cout << "Processing Base Key: " << baseKey << std::endl;  // Debugging print statement
+                // Construct the full keys for ALUsinphi and ALL
+                std::string alusKey = baseKey + "chi2Fits" + alusKeySuffix;
+                std::string allKey = baseKey + "chi2Fits" + allKeySuffix;
 
-            // Construct the full keys for ALUsinphi and ALL
-            std::string alusKey = baseKey + "chi2Fits" + alusKeySuffix;
-            std::string allKey = baseKey + "chi2Fits" + allKeySuffix;
+                // Check if the expected ALUsinphi and ALL keys exist
+                bool alusExists = (asymmetryData.find(alusKey) != asymmetryData.end());
+                bool allExists = (asymmetryData.find(allKey) != asymmetryData.end());
 
-            // Check if the expected ALUsinphi and ALL keys exist
-            bool alusExists = (asymmetryData.find(alusKey) != asymmetryData.end());
-            bool allExists = (asymmetryData.find(allKey) != asymmetryData.end());
+                std::cout << "Checking for ALUsinphi key: " << alusKey << " - " << (alusExists ? "Found" : "Not Found") << std::endl;
+                std::cout << "Checking for ALL key: " << allKey << " - " << (allExists ? "Found" : "Not Found") << std::endl;
 
-            std::cout << "Checking for ALUsinphi key: " << alusKey << " - " << (alusExists ? "Found" : "Not Found") << std::endl;
-            std::cout << "Checking for ALL key: " << allKey << " - " << (allExists ? "Found" : "Not Found") << std::endl;
+                // Ensure both ALUsinphi and ALL exist for this bin
+                if (alusExists && allExists) {
+                    const auto &alusData = asymmetryData[alusKey];
+                    const auto &allData = asymmetryData[allKey];
 
-            // Ensure both ALUsinphi and ALL exist for this bin
-            if (alusExists && allExists) {
-                const auto &alusData = asymmetryData[alusKey];
-                const auto &allData = asymmetryData[allKey];
+                    // Prepare the doubleratio data
+                    std::vector<std::vector<double>> doubleratioData;
+                    for (size_t i = 0; i < alusData.size(); ++i) {
+                        double xValue = alusData[i][0];
+                        double ratioValue = alusData[i][1] / allData[i][1];
+                        double error = std::abs(ratioValue) * std::sqrt(
+                            std::pow(alusData[i][2] / alusData[i][1], 2) + 
+                            std::pow(allData[i][2] / allData[i][1], 2)
+                        );
+                        ratioValue = -ratioValue;  // Adjust the sign based on your requirements
+                        doubleratioData.push_back({xValue, ratioValue, error});
+                    }
 
-                // Prepare the doubleratio data
-                std::vector<std::vector<double>> doubleratioData;
-                for (size_t i = 0; i < alusData.size(); ++i) {
-                    double xValue = alusData[i][0];
-                    double ratioValue = alusData[i][1] / allData[i][1];
-                    double error = std::abs(ratioValue) * std::sqrt(
-                        std::pow(alusData[i][2] / alusData[i][1], 2) + 
-                        std::pow(allData[i][2] / allData[i][1], 2)
-                    );
-                    ratioValue = -ratioValue;  // Adjust the sign based on your requirements
-                    doubleratioData.push_back({xValue, ratioValue, error});
+                    // Store the doubleratio data
+                    asymmetryData[baseKey + "chi2Fitsdoubleratio"] = doubleratioData;
+                } else {
+                    // Print a warning if either ALUsinphi or ALL data is missing
+                    std::cout << "Missing data for baseKey: " << baseKey << std::endl;
                 }
-
-                // Store the doubleratio data
-                asymmetryData[baseKey + "chi2Fitsdoubleratio"] = doubleratioData;
-            } else {
-                // Print a warning if either ALUsinphi or ALL data is missing
-                std::cout << "Missing data for baseKey: " << baseKey << std::endl;
             }
         }
     }
