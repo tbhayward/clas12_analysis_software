@@ -35,7 +35,6 @@ private:
     TTreeReaderValue<double> pT;
     TTreeReaderValue<double> xF;
     TTreeReaderValue<double> phi;
-    TTreeReaderValue<double> phi2;
     TTreeReaderValue<double> target_pol;
 
     // Optional variables (pointers initialized as nullptr)
