@@ -61,8 +61,8 @@ TTreeReader dataReader;  // Declare as global variable
 TTreeReader mcReader;  // Declare as global variable
 
 // Define the TTree pointers
-TTree* data = nullptr;  // Define data tree
-TTree* mc = nullptr;    // Define mc tree
+TTree* dataTree = nullptr;  // Define data tree
+TTree* mcTree = nullptr;    // Define mc tree
 
 BaseKinematicCuts* kinematicCuts = nullptr;
 BaseKinematicCuts* mckinematicCuts = nullptr;
@@ -133,25 +133,24 @@ int main(int argc, char *argv[]) {
     cout << "-- ROOT files opened successfully." << endl;
   }
   
-  data = (TTree*)data_file->Get("PhysicsEvents");
-  mc = (TTree*)mc_file->Get("PhysicsEvents");
+  dataTree = (TTree*)data_file->Get("PhysicsEvents");
+  mcTree = (TTree*)mc_file->Get("PhysicsEvents");
 
-  if (!data || !mc) {
+  if (!dataTree || !mcTree) {
     cout << "-- Error getting trees from ROOT files." << endl;
     return 3;
   } else {
     cout << "-- Trees successfully extracted from ROOT files." << endl << endl;
   }
 
-
-  dataReader.SetTree(data);  // Initialize the global variable
-  mcReader.SetTree(mc);  // Initialize the global variable
+  dataReader.SetTree(dataTree);  // Initialize the global variable
+  mcReader.SetTree(mcTree);  // Initialize the global variable
 
   // Allocate kinematicCuts and mckinematicCuts based on the channel
   switch (channel) {
       case 1:
-          kinematicCuts = new SingleHadronKinematicCuts(dataReader, data);
-          mckinematicCuts = new SingleHadronKinematicCuts(mcReader, mc);
+          kinematicCuts = new SingleHadronKinematicCuts(dataReader, dataTree);
+          mckinematicCuts = new SingleHadronKinematicCuts(mcReader, mcTree);
           break;
   }
 
