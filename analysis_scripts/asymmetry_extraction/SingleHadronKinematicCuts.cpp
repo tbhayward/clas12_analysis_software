@@ -41,7 +41,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         return goodEvent;
     }
     if (property == "epipluspiminus_rho0_free" && Mx1) {
-        goodEvent = *Q2 > 1 && *W > 2 && **Mx1 > 1.5 && *Mx > 1.05 && *y < 0.80;
+        goodEvent = *Q2 > 1 && *W > 2 && **Mx1 > 1.5 && *Mx > 1.5 && *y < 0.80;
         return goodEvent;
     }
     if (property == "eppiplus" && Mx2) {
@@ -49,7 +49,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         return goodEvent;
     }
     if (property == "eppiplus_rho0_free" && Mx1 && Mx2) {
-        goodEvent = *Q2 > 1 && *W > 2 && **Mx2 > 1.5 && **Mx1 > 0.95 && *y < 0.80;
+        goodEvent = *Q2 > 1 && *W > 2 && **Mx2 > 1.5 && **Mx1 > 1.35 && *y < 0.80;
         return goodEvent;
     }
     if (property == "eppipluspiminus" && Mx2) {
@@ -57,11 +57,11 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         return goodEvent;
     }
     if (property == "eppipluspiminus_rho0_free_A" && Mx2 && Mx23) {
-        goodEvent = *Q2 > 1 && *W > 2 && **Mx2 > 1.5 && **Mx23 > 1.05 && *y < 0.80;
+        goodEvent = *Q2 > 1 && *W > 2 && **Mx2 > 1.5 && **Mx23 > 1.5 && *y < 0.80;
         return goodEvent;
     }
     if (property == "eppipluspiminus_rho0_free_B" && Mx1 && Mx2) {
-        goodEvent = *Q2 > 1 && *W > 2 && **Mx2 > 1.5 && **Mx1 > 0.95 && *y < 0.80;
+        goodEvent = *Q2 > 1 && *W > 2 && **Mx2 > 1.5 && **Mx1 > 1.35 && *y < 0.80;
         return goodEvent;
     }
 
