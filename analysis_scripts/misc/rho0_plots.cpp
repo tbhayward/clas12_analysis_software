@@ -352,9 +352,9 @@ void plotDependence(
 
 void plotCombinationDependence(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
-    const std::string &prefix0,  // Baseline dataset (gray)
+    const std::string &prefix0,  // Baseline dataset (green)
     const std::string &prefix1,  // Dataset 1 (orange)
-    const std::string &prefix2,  // Dataset 2 (blue)
+    const std::string &prefix2,  // Dataset 2 (purple)
     const std::string &xLabel, 
     const std::pair<double, double> &xLimits, 
     const std::pair<double, double> &yRangeALU,  // y range for ALUsinphi
@@ -442,19 +442,19 @@ void plotCombinationDependence(
                 y2Err.push_back(entry[2]);
             }
 
-            // Create TGraphErrors for all three datasets (using gray, orange, and blue circles)
-            graph0 = createTGraphErrors(x0, y0, y0Err, 20, 0.8, kGray+3);   // Gray circles
-            graph1 = createTGraphErrors(x1, y1, y1Err, 20, 0.8, kOrange+3); // Orange circles
-            graph2 = createTGraphErrors(x2, y2, y2Err, 20, 0.8, kBlue);   // Blue circles
+            // Create TGraphErrors for all three datasets (using darker green, darker orange, and purple)
+            graph0 = createTGraphErrors(x0, y0, y0Err, 20, 0.8, kGreen+3);  // Darker green circles
+            graph1 = createTGraphErrors(x1, y1, y1Err, 20, 0.8, kOrange+7); // Darker orange circles
+            graph2 = createTGraphErrors(x2, y2, y2Err, 20, 0.8, kMagenta+2);   // Purple circles
 
             // Set axis labels and ranges for the graph
             setAxisLabelsAndRanges(graph0, xLabel, yLabels[i], xLimits, 
                                    (suffixes[i] == "ALL") ? yRangeALL : yRangeALU);
 
             // Draw all three graphs on the same pad
-            graph0->Draw("AP");  // Baseline (gray)
+            graph0->Draw("AP");  // Baseline (green)
             graph1->Draw("P SAME");  // First dataset (orange)
-            graph2->Draw("P SAME");  // Second dataset (blue)
+            graph2->Draw("P SAME");  // Second dataset (purple)
 
             // Add a dashed gray line at y = 0
             TLine *line = new TLine(xLimits.first, 0, xLimits.second, 0);
@@ -467,20 +467,20 @@ void plotCombinationDependence(
             legend->SetBorderSize(1);  // Set border size to 1 for a black border
             legend->SetTextSize(0.0325);  // Set smaller text size
 
-            // Entry for prefix0 (gray)
+            // Entry for prefix0 (green)
             legend->AddEntry(graph0, legendEntries[0].c_str(), "p");
             TLegendEntry *entry0 = dynamic_cast<TLegendEntry*>(legend->GetListOfPrimitives()->Last());  // Get last entry and cast it to TLegendEntry
-            if (entry0) entry0->SetTextColor(kGray+3);  // Set color of the first entry to gray
+            if (entry0) entry0->SetTextColor(kGreen+3);  // Set color of the first entry to green
 
             // Entry for prefix1 (orange)
             legend->AddEntry(graph1, legendEntries[1].c_str(), "p");
             TLegendEntry *entry1 = dynamic_cast<TLegendEntry*>(legend->GetListOfPrimitives()->Last());  // Get last entry and cast it to TLegendEntry
-            if (entry1) entry1->SetTextColor(kOrange+3);  // Set color of the second entry to orange
+            if (entry1) entry1->SetTextColor(kOrange+7);  // Set color of the second entry to orange
 
-            // Entry for prefix2 (blue)
+            // Entry for prefix2 (purple)
             legend->AddEntry(graph2, legendEntries[2].c_str(), "p");
             TLegendEntry *entry2 = dynamic_cast<TLegendEntry*>(legend->GetListOfPrimitives()->Last());  // Get last entry and cast it to TLegendEntry
-            if (entry2) entry2->SetTextColor(kBlue);  // Set color of the third entry to blue
+            if (entry2) entry2->SetTextColor(kMagenta+2);  // Set color of the third entry to purple
 
             legend->Draw();
         }
