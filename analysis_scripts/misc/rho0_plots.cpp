@@ -362,7 +362,7 @@ void plotCombinationDependence(
     const std::vector<std::string> &legendEntries) {
 
     // Create the canvas and divide it into 2 subplots (1x2)
-    TCanvas *c = new TCanvas("c", "Combination Dependence Plots", 1200, 400); // Adjust the canvas size for a 1x2 layout
+    TCanvas *c = new TCanvas("c", "Combination Dependence Plots", 1800, 600); // Adjust the canvas size for a 1x2 layout
     c->Divide(2, 1);  // 1 row and 2 columns
 
     // Define the two suffixes and corresponding y-axis labels
@@ -472,14 +472,14 @@ int main(int argc, char *argv[]) {
     // printData(asymmetryData);
 
     // Call the plotting function for different dependencies
-    plotDependence(asymmetryData, "epiplus", "P_{T} (GeV)", {0.0, 1.1}, "output/rho0_plots/PT_epiplus_dependence_plots.png");
-    plotDependence(asymmetryData, "epipluspiminus", "P_{T} (GeV)", {0.0, 1.1}, "output/rho0_plots/PT_epipluspiminus_dependence_plots.png");
-    plotDependence(asymmetryData, "epipluspiminus_rho0_free", "P_{T} (GeV)", {0.0, 1.1}, "output/rho0_plots/PT_epipluspiminus_rho0_free_dependence_plots.png");
-    plotDependence(asymmetryData, "eppiplus", "P_{T} (GeV)", {0.0, 1.1}, "output/rho0_plots/PT_eppiplus_dependence_plots.png");
-    plotDependence(asymmetryData, "eppiplus_rho0_free", "P_{T} (GeV)", {0.0, 1.1}, "output/rho0_plots/PT_eppiplus_rho0_free_dependence_plots.png");
-    plotDependence(asymmetryData, "eppipluspiminus", "P_{T} (GeV)", {0.0, 1.1}, "output/rho0_plots/PT_eppipluspiminus_dependence_plots.png");
-    plotDependence(asymmetryData, "eppipluspiminus_rho0_free_A", "P_{T} (GeV)", {0.0, 1.1}, "output/rho0_plots/PT_eppipluspiminus_rho0_free_A_dependence_plots.png");
-    plotDependence(asymmetryData, "eppipluspiminus_rho0_free_B", "P_{T} (GeV)", {0.0, 1.1}, "output/rho0_plots/PT_eppipluspiminus_rho0_free_B_dependence_plots.png");
+    // plotDependence(asymmetryData, "epiplus", "P_{T} (GeV)", {0.0, 1.1}, "output/rho0_plots/PT_epiplus_dependence_plots.png");
+    // plotDependence(asymmetryData, "epipluspiminus", "P_{T} (GeV)", {0.0, 1.1}, "output/rho0_plots/PT_epipluspiminus_dependence_plots.png");
+    // plotDependence(asymmetryData, "epipluspiminus_rho0_free", "P_{T} (GeV)", {0.0, 1.1}, "output/rho0_plots/PT_epipluspiminus_rho0_free_dependence_plots.png");
+    // plotDependence(asymmetryData, "eppiplus", "P_{T} (GeV)", {0.0, 1.1}, "output/rho0_plots/PT_eppiplus_dependence_plots.png");
+    // plotDependence(asymmetryData, "eppiplus_rho0_free", "P_{T} (GeV)", {0.0, 1.1}, "output/rho0_plots/PT_eppiplus_rho0_free_dependence_plots.png");
+    // plotDependence(asymmetryData, "eppipluspiminus", "P_{T} (GeV)", {0.0, 1.1}, "output/rho0_plots/PT_eppipluspiminus_dependence_plots.png");
+    // plotDependence(asymmetryData, "eppipluspiminus_rho0_free_A", "P_{T} (GeV)", {0.0, 1.1}, "output/rho0_plots/PT_eppipluspiminus_rho0_free_A_dependence_plots.png");
+    // plotDependence(asymmetryData, "eppipluspiminus_rho0_free_B", "P_{T} (GeV)", {0.0, 1.1}, "output/rho0_plots/PT_eppipluspiminus_rho0_free_B_dependence_plots.png");
   
     // Plot combination for epipluspiminus and epipluspiminus_rho0_free
     plotCombinationDependence(asymmetryData, 
@@ -489,7 +489,7 @@ int main(int argc, char *argv[]) {
         {0.0, 1.1}, 
         {0.0, 0.035},  // y range for ALUsinphi and AULsinphi
         {0.15, 0.35},  // y range for ALL
-        "output/rho0_plots/PT_epipluspiminus_combination_dependence_plots.png", 
+        "output/rho0_plots/PT_epipluspiminus_combination_dependence_plots.pdf", 
         {
             "#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5",
             "#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5, M_{x (#pi^{+}#pi^{-})} > 1.05"
