@@ -352,21 +352,21 @@ void plotDependence(
 
 void plotCombinationDependence(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
-    const std::string &baselinePrefix, 
-    const std::string &prefix1, 
-    const std::string &prefix2, 
+    const std::string &prefix0,  // Baseline dataset
+    const std::string &prefix1,  // Dataset 1 (red)
+    const std::string &prefix2,  // Dataset 2 (blue)
     const std::string &xLabel, 
     const std::pair<double, double> &xLimits, 
     const std::pair<double, double> &yRangeALU,  // y range for ALUsinphi
     const std::pair<double, double> &yRangeALL,  // y range for ALL
     const std::string &outputFileName,
-    const std::vector<std::string> &legendEntries) {
+    const std::vector<std::string> &legendEntries) {  // Should contain 3 entries now
 
     // Create the canvas and divide it into 2 subplots (1x2)
     TCanvas *c = new TCanvas("c", "Combination Dependence Plots", 1800, 600); // Adjust the canvas size for a 1x2 layout
     c->Divide(2, 1);  // 1 row and 2 columns
 
-    // Adjust pad margins to minimize space between plots
+    // Loop over the two subplots
     for (size_t i = 0; i < 2; ++i) {
         c->cd(i + 1);  // Move to the appropriate pad
 
@@ -392,76 +392,98 @@ void plotCombinationDependence(
         "F_{LL}/F_{UU}"
     };
 
-    // Colors and marker styles for each dataset
-    std::vector<int> colors = {kBlack, kRed, kBlue};  // Black for baseline, Red, and Blue for the others
-    std::vector<int> markers = {20, 21, 22};  // Circle, Square, Triangle
+    // Declare graph0, graph1, and graph2 outside of the loop so that they can be used for the legend
+    TGraphErrors *graph0 = nullptr;
+    TGraphErrors *graph1 = nullptr;
+    TGraphErrors *graph2 = nullptr;
 
-    // Loop over the two subplots (ALUsinphi and ALL)
+    // Loop over the two suffixes to create the subplots
     for (size_t i = 0; i < suffixes.size(); ++i) {
         c->cd(i + 1);  // Move to the appropriate pad
+        gPad->SetLeftMargin(0.18);
+        gPad->SetBottomMargin(0.15);
 
-        bool firstGraphDrawn = false;
+        // Build the keys for all three datasets
+        std::string key0 = prefix0 + "chi2Fits" + suffixes[i];
+        std::string key1 = prefix1 + "chi2Fits" + suffixes[i];
+        std::string key2 = prefix2 + "chi2Fits" + suffixes[i];
 
-        // Create a legend in the top right with a border and background
-        TLegend *legend = new TLegend(0.35, 0.75, 0.95, 0.95);  // Set the fixed position
-        legend->SetTextSize(0.0325);  // Adjust text size
-        legend->SetBorderSize(1);  // Set border size
-        legend->SetFillStyle(1001);  // Solid white background
+        // Check if all three datasets exist
+        auto it0 = asymmetryData.find(key0);
+        auto it1 = asymmetryData.find(key1);
+        auto it2 = asymmetryData.find(key2);
 
-        // Loop over the three datasets (baseline, prefix1, and prefix2)
-        for (size_t p = 0; p < 3; ++p) {
-            std::string key;
-            if (p == 0) {
-                key = baselinePrefix + "chi2Fits" + suffixes[i];  // Baseline key
-            } else if (p == 1) {
-                key = prefix1 + "chi2Fits" + suffixes[i];  // First comparison key
-            } else {
-                key = prefix2 + "chi2Fits" + suffixes[i];  // Second comparison key
+        if (it0 != asymmetryData.end() && it1 != asymmetryData.end() && it2 != asymmetryData.end()) {
+            const auto &data0 = it0->second;
+            const auto &data1 = it1->second;
+            const auto &data2 = it2->second;
+
+            // Extract values for the baseline dataset (prefix0)
+            std::vector<double> x0, y0, y0Err;
+            for (const auto &entry : data0) {
+                x0.push_back(entry[0]);
+                y0.push_back(entry[1]);
+                y0Err.push_back(entry[2]);
             }
 
-            auto it = asymmetryData.find(key);
-            if (it != asymmetryData.end()) {
-                const auto &data = it->second;
-
-                std::vector<double> x, y, yStatErr, yCombErr;
-                for (const auto &entry : data) {
-                    x.push_back(entry[0]);
-                    y.push_back(entry[1]);
-                    yStatErr.push_back(entry[2]);
-
-                    double sysUncertainty = 0;  // Optionally calculate systematic uncertainty
-                    yCombErr.push_back(std::sqrt(std::pow(yStatErr.back(), 2) + std::pow(sysUncertainty, 2)));
-                }
-
-                // Create TGraphErrors for each dataset (with adjusted marker sizes and line widths)
-                TGraphErrors *graphStat = createTGraphErrors(x, y, yStatErr, markers[p], 0.8, colors[p]);  
-                graphStat->SetLineWidth(1);  // Ensure the line is centered properly
-
-                // Set axis labels and ranges for the graph
-                setAxisLabelsAndRanges(graphStat, xLabel, yLabels[i], xLimits, 
-                                       (suffixes[i] == "ALL") ? yRangeALL : yRangeALU);
-
-                if (!firstGraphDrawn) {
-                    graphStat->Draw("AP");
-                    firstGraphDrawn = true;
-                } else {
-                    graphStat->Draw("P SAME");
-                }
-
-                // Add each entry to the legend with the corresponding color and label
-                TLegendEntry* legendEntry = legend->AddEntry(graphStat, legendEntries[p].c_str(), "p");
-                legendEntry->SetTextColor(colors[p]);  // Set the text color to match the graph color
+            // Extract values for the first dataset (prefix1)
+            std::vector<double> x1, y1, y1Err;
+            for (const auto &entry : data1) {
+                x1.push_back(entry[0]);
+                y1.push_back(entry[1]);
+                y1Err.push_back(entry[2]);
             }
+
+            // Extract values for the second dataset (prefix2)
+            std::vector<double> x2, y2, y2Err;
+            for (const auto &entry : data2) {
+                x2.push_back(entry[0]);
+                y2.push_back(entry[1]);
+                y2Err.push_back(entry[2]);
+            }
+
+            // Create TGraphErrors for all three datasets (using black, red, and blue circles)
+            graph0 = createTGraphErrors(x0, y0, y0Err, 20, 0.8, kBlack); // Black circles
+            graph1 = createTGraphErrors(x1, y1, y1Err, 20, 0.8, kRed);  // Red circles
+            graph2 = createTGraphErrors(x2, y2, y2Err, 20, 0.8, kBlue); // Blue circles
+
+            // Set axis labels and ranges for the graph
+            setAxisLabelsAndRanges(graph0, xLabel, yLabels[i], xLimits, 
+                                   (suffixes[i] == "ALL") ? yRangeALL : yRangeALU);
+
+            // Draw all three graphs on the same pad
+            graph0->Draw("AP");  // Baseline (black)
+            graph1->Draw("P SAME");  // First dataset (red)
+            graph2->Draw("P SAME");  // Second dataset (blue)
+
+            // Add a dashed gray line at y = 0
+            TLine *line = new TLine(xLimits.first, 0, xLimits.second, 0);
+            line->SetLineColor(kGray+2);
+            line->SetLineStyle(7);  // Dashed line
+            line->Draw("same");
+
+            // Create a legend for each subplot, positioned at the top right
+            TLegend *legend = new TLegend(0.35, 0.75, 0.95, 0.95);  // Set the fixed position you wanted
+            legend->SetBorderSize(1);  // Set border size to 1 for a black border
+            legend->SetTextSize(0.0325);  // Set smaller text size
+
+            // Entry for prefix0 (black)
+            legend->AddEntry(graph0, legendEntries[0].c_str(), "p");
+            TLegendEntry *entry0 = dynamic_cast<TLegendEntry*>(legend->GetListOfPrimitives()->Last());  // Get last entry and cast it to TLegendEntry
+            if (entry0) entry0->SetTextColor(kBlack);  // Set color of the first entry to black
+
+            // Entry for prefix1 (red)
+            legend->AddEntry(graph1, legendEntries[1].c_str(), "p");
+            TLegendEntry *entry1 = dynamic_cast<TLegendEntry*>(legend->GetListOfPrimitives()->Last());  // Get last entry and cast it to TLegendEntry
+            if (entry1) entry1->SetTextColor(kRed);  // Set color of the second entry to red
+
+            // Entry for prefix2 (blue)
+            legend->AddEntry(graph2, legendEntries[2].c_str(), "p");
+            TLegendEntry *entry2 = dynamic_cast<TLegendEntry*>(legend->GetListOfPrimitives()->Last());  // Get last entry and cast it to TLegendEntry
+            if (entry2) entry2->SetTextColor(kBlue);  // Set color of the third entry to blue
+
+            legend->Draw();
         }
-
-        // Add a dashed gray line at y = 0
-        TLine *line = new TLine(xLimits.first, 0, xLimits.second, 0);
-        line->SetLineColor(kGray+2);
-        line->SetLineStyle(7);  // Dashed line
-        line->Draw("same");
-
-        // Draw the legend in the current subplot
-        legend->Draw();
     }
 
     // Save the canvas as a PNG file
