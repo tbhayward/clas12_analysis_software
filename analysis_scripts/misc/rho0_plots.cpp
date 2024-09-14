@@ -443,8 +443,8 @@ void plotCombinationDependence(
             }
 
             // Create TGraphErrors for all three datasets (using gray, orange, and blue circles)
-            graph0 = createTGraphErrors(x0, y0, y0Err, 20, 0.8, kGray);   // Gray circles
-            graph1 = createTGraphErrors(x1, y1, y1Err, 20, 0.8, kOrange); // Orange circles
+            graph0 = createTGraphErrors(x0, y0, y0Err, 20, 0.8, kGray+5);   // Gray circles
+            graph1 = createTGraphErrors(x1, y1, y1Err, 20, 0.8, kOrange+5); // Orange circles
             graph2 = createTGraphErrors(x2, y2, y2Err, 20, 0.8, kBlue);   // Blue circles
 
             // Set axis labels and ranges for the graph
