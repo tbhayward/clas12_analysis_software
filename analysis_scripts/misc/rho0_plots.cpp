@@ -350,7 +350,103 @@ void plotDependence(
     delete c;
 }
 
+void plotCombinationDependence(
+    const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
+    const std::string &prefix1, 
+    const std::string &prefix2, 
+    const std::string &xLabel, 
+    const std::pair<double, double> &xLimits, 
+    const std::string &outputFileName,
+    const std::vector<std::string> &legendEntries) {
 
+    // Create the canvas and divide it into 6 subplots (3x2)
+    TCanvas *c = new TCanvas("c", "Combination Dependence Plots", 1200, 800);
+    c->Divide(3, 2);
+
+    // Define the six suffixes and corresponding y-axis labels
+    std::vector<std::string> suffixes = {"ALUsinphi", "AULsinphi", "AULsin2phi", "ALL", "doubleratio", "ALLcosphi"};
+    std::vector<std::string> yLabels = {
+        "F_{LU}^{sin#phi}/F_{UU}",
+        "F_{UL}^{sin#phi}/F_{UU}",
+        "F_{UL}^{sin(2#phi)}/F_{UU}",
+        "F_{LL}/F_{UU}",
+        "-F_{LU}^{sin#phi}/F_{LL}", 
+        "F_{LL}^{cos#phi}/F_{UU}"
+    };
+
+    // Loop over each suffix to create a subplot
+    for (size_t i = 0; i < suffixes.size(); ++i) {
+        c->cd(i + 1);
+        gPad->SetLeftMargin(0.18);
+        gPad->SetBottomMargin(0.15);
+
+        // Build the keys for both datasets
+        std::string key1 = prefix1 + "chi2Fits" + suffixes[i];
+        std::string key2 = prefix2 + "chi2Fits" + suffixes[i];
+
+        // Check if both datasets exist
+        auto it1 = asymmetryData.find(key1);
+        auto it2 = asymmetryData.find(key2);
+
+        if (it1 != asymmetryData.end() && it2 != asymmetryData.end()) {
+            const auto &data1 = it1->second;
+            const auto &data2 = it2->second;
+
+            // Extract values for the first dataset (prefix1)
+            std::vector<double> x1, y1, y1Err;
+            for (const auto &entry : data1) {
+                x1.push_back(entry[0]);
+                y1.push_back(entry[1]);
+                y1Err.push_back(entry[2]);
+            }
+
+            // Extract values for the second dataset (prefix2)
+            std::vector<double> x2, y2, y2Err;
+            for (const auto &entry : data2) {
+                x2.push_back(entry[0]);
+                y2.push_back(entry[1]);
+                y2Err.push_back(entry[2]);
+            }
+
+            // Create TGraphErrors for both datasets
+            TGraphErrors *graph1 = createTGraphErrors(x1, y1, y1Err, 21, 0.9, kRed);  // Red circles for prefix1
+            TGraphErrors *graph2 = createTGraphErrors(x2, y2, y2Err, 25, 1.1, kBlue); // Blue squares for prefix2
+
+            // Set axis labels and ranges for the graph
+            setAxisLabelsAndRanges(graph1, xLabel, yLabels[i], xLimits, 
+                                   (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.4) :
+                                   (suffixes[i] == "doubleratio") ? std::make_pair(-0.1, 0.2) :
+                                   std::make_pair(-0.05, 0.05));
+
+            // Draw the first graph (prefix1) and then the second (prefix2) on the same pad
+            graph1->Draw("AP");
+            graph2->Draw("P SAME");
+
+            // Add a dashed gray line at y = 0
+            TLine *line = new TLine(xLimits.first, 0, xLimits.second, 0);
+            line->SetLineColor(kGray+2);
+            line->SetLineStyle(7);  // Dashed line
+            line->Draw("same");
+
+            // Add legend to the top left corner of the first or last subplot
+            if (i == 3 || i == 4) {  
+                TLegend *legend = new TLegend(0.2, 0.75, 0.6, 0.9);
+                legend->SetBorderSize(0);
+                legend->SetTextSize(0.04);
+                legend->AddEntry(graph1, legendEntries[0].c_str(), "p");
+                legend->AddEntry(graph2, legendEntries[1].c_str(), "p");
+                legend->Draw();
+            }
+        }
+    }
+
+    // Save the canvas as a PNG file
+    gSystem->Exec("mkdir -p output/rho0_plots");
+    c->SaveAs(outputFileName.c_str());
+
+    // Clean up memory
+    delete c;
+}
 
 
 int main(int argc, char *argv[]) {
@@ -378,5 +474,18 @@ int main(int argc, char *argv[]) {
     plotDependence(asymmetryData, "eppipluspiminus_rho0_free_A", "P_{T} (GeV)", {0.0, 1.2}, "output/rho0_plots/PT_eppipluspiminus_rho0_free_A_dependence_plots.png");
     plotDependence(asymmetryData, "eppipluspiminus_rho0_free_B", "P_{T} (GeV)", {0.0, 1.2}, "output/rho0_plots/PT_eppipluspiminus_rho0_free_B_dependence_plots.png");
   
+    // Plot combination for epipluspiminus and epipluspiminus_rho0_free
+    plotCombinationDependence(asymmetryData, 
+        "epipluspiminus", 
+        "epipluspiminus_rho0_free", 
+        "P_{T} (GeV)", 
+        {0.0, 1.2}, 
+        "output/rho0_plots/PT_epipluspiminus_combination_dependence_plots.png", 
+        {
+            "e#pi^{+}#pi^{-}, M_{x (e'#pi^{+})} > 1.5 GeV",
+            "e#pi^{+}#pi^{-}, M_{x (e'#pi^{+})} > 1.5 GeV, M_{x (e'#pi^{+}#pi^{-})} > 1.05 GeV"
+        }
+    );
+
     return 0;
 }
