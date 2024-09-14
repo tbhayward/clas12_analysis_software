@@ -431,12 +431,14 @@ void plotCombinationDependence(
     }
 
     // Now create the legend and place it at the top of the canvas
-    TLegend *legend = new TLegend(0.2, 0.93, 0.8, 0.98);  // Top position on the canvas
+    // Make sure we coordinate colors correctly
+    TLegend *legend = new TLegend(0.2, 0.95, 0.8, 0.98);  // Adjust these values for positioning
     legend->SetNColumns(2);  // Two-column layout
     legend->SetBorderSize(0);  // No border around the legend
     legend->SetTextSize(0.04);
-    legend->AddEntry((TObject*)0, legendEntries[0].c_str(), "p");  // Entry for prefix1 (red)
-    legend->AddEntry((TObject*)0, legendEntries[1].c_str(), "p");  // Entry for prefix2 (blue)
+    
+    legend->AddEntry(graph1, legendEntries[0].c_str(), "p");  // Entry for prefix1 (red)
+    legend->AddEntry(graph2, legendEntries[1].c_str(), "p");  // Entry for prefix2 (blue)
     legend->Draw();
 
     // Save the canvas as a PNG file
