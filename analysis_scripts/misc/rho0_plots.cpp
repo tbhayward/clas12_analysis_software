@@ -598,7 +598,7 @@ int main(int argc, char *argv[]) {
         "epipluspiminus",  // Baseline dataset (black)
         "epipluspiminus_rho0_free",  // First dataset (red)
         "eppipluspiminus_rho0_free_A",  // Second dataset (blue)
-        "M_h (GeV)", 
+        "M_{h} (GeV)", 
         {0.2, 1.5}, 
         {0.0, 0.04},  // y range for ALUsinphi
         {0.1, 0.45},  // y range for ALL
