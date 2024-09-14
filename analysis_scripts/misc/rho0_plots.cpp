@@ -435,9 +435,16 @@ void plotCombinationDependence(
             // Create a legend for each subplot, positioned at the top right
             TLegend *legend = new TLegend(0.2, 0.75, 0.9, 0.9);  // Adjust the position for top right
             legend->SetBorderSize(1);  // Set border size to 1 for a black border
-            legend->SetTextSize(0.035);  // Set smaller text size
-            legend->AddEntry(graph1, legendEntries[0].c_str(), "p");  // Entry for prefix1 (red)
-            legend->AddEntry(graph2, legendEntries[1].c_str(), "p");  // Entry for prefix2 (blue)
+            legend->SetTextSize(0.03);  // Set smaller text size
+
+            // Entry for prefix1 (red)
+            legend->AddEntry(graph1, legendEntries[0].c_str(), "p");
+            legend->GetListOfPrimitives()->Last()->SetTextColor(kRed);  // Set color of the last added entry to red
+
+            // Entry for prefix2 (blue)
+            legend->AddEntry(graph2, legendEntries[1].c_str(), "p");
+            legend->GetListOfPrimitives()->Last()->SetTextColor(kBlue);  // Set color of the last added entry to blue
+
             legend->Draw();
         }
     }
@@ -467,25 +474,25 @@ int main(int argc, char *argv[]) {
     // printData(asymmetryData);
 
     // Call the plotting function for different dependencies
-    plotDependence(asymmetryData, "epiplus", "P_{T} (GeV)", {0.0, 1.2}, "output/rho0_plots/PT_epiplus_dependence_plots.png");
-    plotDependence(asymmetryData, "epipluspiminus", "P_{T} (GeV)", {0.0, 1.2}, "output/rho0_plots/PT_epipluspiminus_dependence_plots.png");
-    plotDependence(asymmetryData, "epipluspiminus_rho0_free", "P_{T} (GeV)", {0.0, 1.2}, "output/rho0_plots/PT_epipluspiminus_rho0_free_dependence_plots.png");
-    plotDependence(asymmetryData, "eppiplus", "P_{T} (GeV)", {0.0, 1.2}, "output/rho0_plots/PT_eppiplus_dependence_plots.png");
-    plotDependence(asymmetryData, "eppiplus_rho0_free", "P_{T} (GeV)", {0.0, 1.2}, "output/rho0_plots/PT_eppiplus_rho0_free_dependence_plots.png");
-    plotDependence(asymmetryData, "eppipluspiminus", "P_{T} (GeV)", {0.0, 1.2}, "output/rho0_plots/PT_eppipluspiminus_dependence_plots.png");
-    plotDependence(asymmetryData, "eppipluspiminus_rho0_free_A", "P_{T} (GeV)", {0.0, 1.2}, "output/rho0_plots/PT_eppipluspiminus_rho0_free_A_dependence_plots.png");
-    plotDependence(asymmetryData, "eppipluspiminus_rho0_free_B", "P_{T} (GeV)", {0.0, 1.2}, "output/rho0_plots/PT_eppipluspiminus_rho0_free_B_dependence_plots.png");
+    plotDependence(asymmetryData, "epiplus", "P_{T} (GeV)", {0.0, 1.1}, "output/rho0_plots/PT_epiplus_dependence_plots.png");
+    plotDependence(asymmetryData, "epipluspiminus", "P_{T} (GeV)", {0.0, 1.1}, "output/rho0_plots/PT_epipluspiminus_dependence_plots.png");
+    plotDependence(asymmetryData, "epipluspiminus_rho0_free", "P_{T} (GeV)", {0.0, 1.1}, "output/rho0_plots/PT_epipluspiminus_rho0_free_dependence_plots.png");
+    plotDependence(asymmetryData, "eppiplus", "P_{T} (GeV)", {0.0, 1.1}, "output/rho0_plots/PT_eppiplus_dependence_plots.png");
+    plotDependence(asymmetryData, "eppiplus_rho0_free", "P_{T} (GeV)", {0.0, 1.1}, "output/rho0_plots/PT_eppiplus_rho0_free_dependence_plots.png");
+    plotDependence(asymmetryData, "eppipluspiminus", "P_{T} (GeV)", {0.0, 1.1}, "output/rho0_plots/PT_eppipluspiminus_dependence_plots.png");
+    plotDependence(asymmetryData, "eppipluspiminus_rho0_free_A", "P_{T} (GeV)", {0.0, 1.1}, "output/rho0_plots/PT_eppipluspiminus_rho0_free_A_dependence_plots.png");
+    plotDependence(asymmetryData, "eppipluspiminus_rho0_free_B", "P_{T} (GeV)", {0.0, 1.1}, "output/rho0_plots/PT_eppipluspiminus_rho0_free_B_dependence_plots.png");
   
     // Plot combination for epipluspiminus and epipluspiminus_rho0_free
     plotCombinationDependence(asymmetryData, 
         "epipluspiminus", 
         "epipluspiminus_rho0_free", 
         "P_{T} (GeV)", 
-        {0.0, 1.2}, 
+        {0.0, 1.1}, 
         "output/rho0_plots/PT_epipluspiminus_combination_dependence_plots.png", 
         {
-            "e#pi^{+}#pi^{-}X, M_{x (e'#pi^{+})} > 1.5",
-            "e#pi^{+}#pi^{-}X, M_{x (e'#pi^{+})} > 1.5, M_{x (e'#pi^{+}#pi^{-})} > 1.05"
+            "pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5",
+            "pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5, M_{x (#pi^{+}#pi^{-})} > 1.05"
         }
     );
 
