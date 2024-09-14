@@ -592,23 +592,93 @@ int main(int argc, char *argv[]) {
 
 
 
-
     // Plot combination for epiplus, epipluspiminus, and epipluspiminus_rho0_free
     plotCombinationDependence(asymmetryData, 
-        "epipluspiminus",  // Baseline dataset (black)
-        "epipluspiminus_rho0_free",  // First dataset (red)
-        "eppipluspiminus_rho0_free_A",  // Second dataset (blue)
-        "M_{h} (GeV)", 
-        {0.2, 1.5}, 
+        "epiplus",  // Baseline dataset (black)
+        "epipluspiminus",  // First dataset (red)
+        "epipluspiminus_rho0_free",  // Second dataset (blue)
+        "x_{B}", 
+        {0.0, 0.7}, 
         {0.0, 0.04},  // y range for ALUsinphi
         {0.1, 0.45},  // y range for ALL
-        "output/rho0_plots/Mh_epipluspiminus_combination_dependence_plots.png", 
+        "output/rho0_plots/xB_epipluspiminus_combination_dependence_plots.png", 
         {
-            "e'#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5 (GeV)",  // Baseline (black)
-            "e'#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5 (GeV), M_{x (#pi^{+}#pi^{-})} > 1.5 (GeV)",  // Dataset 1 (red)
+            "e'#pi^{+}X, M_{x (#pi^{+})} > 1.5 (GeV)",  // Baseline (black)
+            "e'#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5 (GeV)",  // Dataset 1 (red)
+            "e'#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5 (GeV), M_{x (#pi^{+}#pi^{-})} > 1.5 (GeV)"  // Dataset 2 (blue)
+        }
+    );
+
+
+    plotCombinationDependence(asymmetryData, 
+        "epiplus",  // Baseline dataset (black)
+        "eppiplus",  // First dataset (red)
+        "eppiplus_rho0_free",  // Second dataset (blue)
+        "x_{B}", 
+        {0.0, 0.7}, 
+        {0.0, 0.04},  // y range for ALUsinphi
+        {0.1, 0.45},  // y range for ALL
+        "output/rho0_plots/xB_eppiplus_combination_dependence_plots.png", 
+        {
+            "e'#pi^{+}X, M_{x (#pi^{+})} > 1.5 (GeV)",  // Baseline (black)
+            "e'p#pi^{+}X, M_{x (#pi^{+})} > 1.5 (GeV)",  // Dataset 1 (red)
+            "e'p#pi^{+}X, M_{x (#pi^{+})} > 1.5 (GeV), M_{x (p)} > 1.35 (GeV)"  // Dataset 2 (blue)
+        }
+    );
+
+
+
+    plotCombinationDependence(asymmetryData, 
+        "epiplus",  // Baseline dataset (black)
+        "eppipluspiminus",  // First dataset (red)
+        "eppipluspiminus_rho0_free_A",  // Second dataset (blue)
+        "x_{B}", 
+        {0.0, 0.7}, 
+        {0.0, 0.04},  // y range for ALUsinphi
+        {0.1, 0.45},  // y range for ALL
+        "output/rho0_plots/xB_eppipluspiminus_A_combination_dependence_plots.png", 
+        {
+            "e'#pi^{+}X, M_{x (#pi^{+})} > 1.5 (GeV)",  // Baseline (black)
+            "e'p#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5 (GeV)",  // Dataset 1 (red)
             "e'p#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5 (GeV), M_{x (#pi^{+}#pi^{-})} > 1.5 (GeV)"  // Dataset 2 (blue)
         }
     );
+
+
+    plotCombinationDependence(asymmetryData, 
+        "epiplus",  // Baseline dataset (black)
+        "eppipluspiminus",  // First dataset (red)
+        "eppipluspiminus_rho0_free_B",  // Second dataset (blue)
+        "x_{B}", 
+        {0.0, 0.7}, 
+        {0.0, 0.04},  // y range for ALUsinphi
+        {0.1, 0.45},  // y range for ALL
+        "output/rho0_plots/xB_eppipluspiminus_B_combination_dependence_plots.png", 
+        {
+            "e'#pi^{+}X, M_{x (#pi^{+})} > 1.5 (GeV)",  // Baseline (black)
+            "e'p#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5 (GeV)",  // Dataset 1 (red)
+            "e'p#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5 (GeV), M_{x (p)} > 1.35 (GeV)"  // Dataset 2 (blue)
+        }
+    );
+
+
+
+    // // Plot combination for epiplus, epipluspiminus, and epipluspiminus_rho0_free
+    // plotCombinationDependence(asymmetryData, 
+    //     "epipluspiminus",  // Baseline dataset (black)
+    //     "epipluspiminus_rho0_free",  // First dataset (red)
+    //     "eppipluspiminus_rho0_free_A",  // Second dataset (blue)
+    //     "M_{h} (GeV)", 
+    //     {0.2, 1.5}, 
+    //     {0.0, 0.04},  // y range for ALUsinphi
+    //     {0.1, 0.45},  // y range for ALL
+    //     "output/rho0_plots/Mh_epipluspiminus_combination_dependence_plots.png", 
+    //     {
+    //         "e'#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5 (GeV)",  // Baseline (black)
+    //         "e'#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5 (GeV), M_{x (#pi^{+}#pi^{-})} > 1.5 (GeV)",  // Dataset 1 (red)
+    //         "e'p#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5 (GeV), M_{x (#pi^{+}#pi^{-})} > 1.5 (GeV)"  // Dataset 2 (blue)
+    //     }
+    // );
 
 
 
