@@ -366,10 +366,10 @@ void plotCombinationDependence(
     TCanvas *c = new TCanvas("c", "Combination Dependence Plots", 1800, 600); // Adjust the canvas size for a 1x2 layout
     c->Divide(2, 1);  // 1 row and 2 columns
 
-    // Define the RGB values for gray, orange, and blue
-    TColor *gray = new TColor(1001, 184/255., 184/255., 184/255.);  // Gray
-    TColor *orange = new TColor(1002, 234/255., 128/255., 28/255.);  // Orange
-    TColor *blue = new TColor(1003, 26/255., 128/255., 187/255.);  // Blue
+    // Define the RGB values for gray, orange, and blue with unique color indices
+    TColor *gray = new TColor(1101, 184/255., 184/255., 184/255.);  // Gray
+    TColor *orange = new TColor(1102, 234/255., 128/255., 28/255.);  // Orange
+    TColor *blue = new TColor(1103, 26/255., 128/255., 187/255.);  // Blue
 
     // Loop over the two subplots
     for (size_t i = 0; i < 2; ++i) {
