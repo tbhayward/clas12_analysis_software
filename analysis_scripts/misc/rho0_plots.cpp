@@ -414,7 +414,7 @@ void plotCombinationDependence(
 
             // Set axis labels and ranges for the graph
             setAxisLabelsAndRanges(graph1, xLabel, yLabels[i], xLimits, 
-                                   (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.4) :
+                                   (suffixes[i] == "ALL") ? std::make_pair(0.15, 0.4) :
                                    (suffixes[i] == "doubleratio") ? std::make_pair(-0.1, 0.2) :
                                    std::make_pair(-0.05, 0.05));
 
