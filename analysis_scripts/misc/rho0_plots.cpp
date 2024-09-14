@@ -448,7 +448,7 @@ void plotCombinationDependence(
             line->Draw("same");
 
             // Create a legend for each subplot, positioned at the top right
-            TLegend *legend = new TLegend(0.2, 0.75, 0.9, 0.9);  // Set the fixed position you wanted
+            TLegend *legend = new TLegend(0.2, 0.75, 0.975, 0.975);  // Set the fixed position you wanted
             legend->SetBorderSize(1);  // Set border size to 1 for a black border
             legend->SetTextSize(0.035);  // Set smaller text size
 
