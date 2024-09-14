@@ -444,7 +444,7 @@ void plotCombinationDependence(
 
             // Create TGraphErrors for all three datasets (using green, red, and blue)
             graph0 = createTGraphErrors(x0, y0, y0Err, 20, 1.0, kRed);  // Green circles
-            graph1 = createTGraphErrors(x1, y1, y1Err, 21, 1.0, kGreen+0.5);  // Red circles
+            graph1 = createTGraphErrors(x1, y1, y1Err, 21, 1.0, kGreen+1);  // Red circles
             graph2 = createTGraphErrors(x2, y2, y2Err, 22, 1.0, kBlue); // Blue circles
 
             // Set axis labels and ranges for the graph
@@ -475,7 +475,7 @@ void plotCombinationDependence(
             // Entry for prefix1 (red)
             legend->AddEntry(graph1, legendEntries[1].c_str(), "p");
             TLegendEntry *entry1 = dynamic_cast<TLegendEntry*>(legend->GetListOfPrimitives()->Last());  // Get last entry and cast it to TLegendEntry
-            if (entry1) entry1->SetTextColor(kGreen+0.5);  // Set color of the second entry to red
+            if (entry1) entry1->SetTextColor(kGreen+1);  // Set color of the second entry to red
 
             // Entry for prefix2 (blue)
             legend->AddEntry(graph2, legendEntries[2].c_str(), "p");
