@@ -439,12 +439,12 @@ void plotCombinationDependence(
 
             // Entry for prefix1 (red)
             legend->AddEntry(graph1, legendEntries[0].c_str(), "p");
-            TLegendEntry *entry1 = legend->GetListOfPrimitives()->Last();  // Get last entry
+            TLegendEntry *entry1 = dynamic_cast<TLegendEntry*>(legend->GetListOfPrimitives()->Last());  // Get last entry and cast it to TLegendEntry
             if (entry1) entry1->SetTextColor(kRed);  // Set color of the first entry to red
 
             // Entry for prefix2 (blue)
             legend->AddEntry(graph2, legendEntries[1].c_str(), "p");
-            TLegendEntry *entry2 = legend->GetListOfPrimitives()->Last();  // Get last entry
+            TLegendEntry *entry2 = dynamic_cast<TLegendEntry*>(legend->GetListOfPrimitives()->Last());  // Get last entry and cast it to TLegendEntry
             if (entry2) entry2->SetTextColor(kBlue);  // Set color of the second entry to blue
 
             legend->Draw();
