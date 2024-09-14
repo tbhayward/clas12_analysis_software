@@ -533,7 +533,7 @@ int main(int argc, char *argv[]) {
         {
             "e'#pi^{+}X, M_{x (#pi^{+})} > 1.5 (GeV)",  // Baseline (black)
             "e'#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5 (GeV)",  // Dataset 1 (red)
-            "e'#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5 (GeV), M_{x (#pi^{+}#pi^{-})} > 1.05 (GeV)"  // Dataset 2 (blue)
+            "e'#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5 (GeV), M_{x (#pi^{+}#pi^{-})} > 1.5 (GeV)"  // Dataset 2 (blue)
         }
     );
 
@@ -550,7 +550,7 @@ int main(int argc, char *argv[]) {
         {
             "e'#pi^{+}X, M_{x (#pi^{+})} > 1.5 (GeV)",  // Baseline (black)
             "e'p#pi^{+}X, M_{x (#pi^{+})} > 1.5 (GeV)",  // Dataset 1 (red)
-            "e'p#pi^{+}X, M_{x (#pi^{+})} > 1.5 (GeV), M_{x (p)} > 0.95 (GeV)"  // Dataset 2 (blue)
+            "e'p#pi^{+}X, M_{x (#pi^{+})} > 1.5 (GeV), M_{x (p)} > 1.35 (GeV)"  // Dataset 2 (blue)
         }
     );
 
@@ -568,7 +568,7 @@ int main(int argc, char *argv[]) {
         {
             "e'#pi^{+}X, M_{x (#pi^{+})} > 1.5 (GeV)",  // Baseline (black)
             "e'p#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5 (GeV)",  // Dataset 1 (red)
-            "e'p#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5 (GeV), M_{x (#pi^{+}#pi^{-})} > 1.05 (GeV)"  // Dataset 2 (blue)
+            "e'p#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5 (GeV), M_{x (#pi^{+}#pi^{-})} > 1.5 (GeV)"  // Dataset 2 (blue)
         }
     );
 
@@ -585,7 +585,7 @@ int main(int argc, char *argv[]) {
         {
             "e'#pi^{+}X, M_{x (#pi^{+})} > 1.5 (GeV)",  // Baseline (black)
             "e'p#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5 (GeV)",  // Dataset 1 (red)
-            "e'p#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5 (GeV), M_{x (p)} > 0.95 (GeV)"  // Dataset 2 (blue)
+            "e'p#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5 (GeV), M_{x (p)} > 1.35 (GeV)"  // Dataset 2 (blue)
         }
     );
 
