@@ -433,7 +433,7 @@ void plotCombinationDependence(
             line->Draw("same");
 
             // Create a legend for each subplot, positioned at the top right
-            TLegend *legend = new TLegend(0.55, 0.75, 0.85, 0.9);  // Adjust the position for top right
+            TLegend *legend = new TLegend(0.5, 0.75, 0.99, 0.9);  // Adjust the position for top right
             legend->SetBorderSize(1);  // Set border size to 1 for a black border
             legend->SetTextSize(0.035);  // Set smaller text size
             legend->AddEntry(graph1, legendEntries[0].c_str(), "p");  // Entry for prefix1 (red)
@@ -484,8 +484,8 @@ int main(int argc, char *argv[]) {
         {0.0, 1.2}, 
         "output/rho0_plots/PT_epipluspiminus_combination_dependence_plots.png", 
         {
-            "e#pi^{+}#pi^{-}, M_{x (e'#pi^{+})} > 1.5 GeV",
-            "e#pi^{+}#pi^{-}, M_{x (e'#pi^{+})} > 1.5 GeV, M_{x (e'#pi^{+}#pi^{-})} > 1.05 GeV"
+            "e#pi^{+}#pi^{-}X, M_{x (e'#pi^{+})} > 1.5",
+            "e#pi^{+}#pi^{-}X, M_{x (e'#pi^{+})} > 1.5, M_{x (e'#pi^{+}#pi^{-})} > 1.05"
         }
     );
 
