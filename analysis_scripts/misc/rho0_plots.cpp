@@ -443,8 +443,8 @@ void plotCombinationDependence(
             }
 
             // Create TGraphErrors for all three datasets (using gray, orange, and blue circles)
-            graph0 = createTGraphErrors(x0, y0, y0Err, 20, 0.8, kGray+5);   // Gray circles
-            graph1 = createTGraphErrors(x1, y1, y1Err, 20, 0.8, kOrange+5); // Orange circles
+            graph0 = createTGraphErrors(x0, y0, y0Err, 20, 0.8, kGray+3);   // Gray circles
+            graph1 = createTGraphErrors(x1, y1, y1Err, 20, 0.8, kOrange+3); // Orange circles
             graph2 = createTGraphErrors(x2, y2, y2Err, 20, 0.8, kBlue);   // Blue circles
 
             // Set axis labels and ranges for the graph
@@ -470,12 +470,12 @@ void plotCombinationDependence(
             // Entry for prefix0 (gray)
             legend->AddEntry(graph0, legendEntries[0].c_str(), "p");
             TLegendEntry *entry0 = dynamic_cast<TLegendEntry*>(legend->GetListOfPrimitives()->Last());  // Get last entry and cast it to TLegendEntry
-            if (entry0) entry0->SetTextColor(kGray);  // Set color of the first entry to gray
+            if (entry0) entry0->SetTextColor(kGray+3);  // Set color of the first entry to gray
 
             // Entry for prefix1 (orange)
             legend->AddEntry(graph1, legendEntries[1].c_str(), "p");
             TLegendEntry *entry1 = dynamic_cast<TLegendEntry*>(legend->GetListOfPrimitives()->Last());  // Get last entry and cast it to TLegendEntry
-            if (entry1) entry1->SetTextColor(kOrange);  // Set color of the second entry to orange
+            if (entry1) entry1->SetTextColor(kOrange+3);  // Set color of the second entry to orange
 
             // Entry for prefix2 (blue)
             legend->AddEntry(graph2, legendEntries[2].c_str(), "p");
