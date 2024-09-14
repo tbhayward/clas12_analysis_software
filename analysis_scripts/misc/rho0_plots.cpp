@@ -599,10 +599,10 @@ int main(int argc, char *argv[]) {
         "epipluspiminus_rho0_free",  // First dataset (red)
         "eppipluspiminus_rho0_free_A",  // Second dataset (blue)
         "M_h (GeV)", 
-        {0.0, 1.3}, 
+        {0.2, 1.5}, 
         {0.0, 0.04},  // y range for ALUsinphi
         {0.1, 0.45},  // y range for ALL
-        "output/rho0_plots/MH_epipluspiminus_combination_dependence_plots.png", 
+        "output/rho0_plots/Mh_epipluspiminus_combination_dependence_plots.png", 
         {
             "e'#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5 (GeV)",  // Baseline (black)
             "e'#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5 (GeV), M_{x (#pi^{+}#pi^{-})} > 1.5 (GeV)",  // Dataset 1 (red)
