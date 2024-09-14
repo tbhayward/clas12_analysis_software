@@ -433,9 +433,9 @@ void plotCombinationDependence(
             line->Draw("same");
 
             // Create a legend for each subplot, positioned at the top right
-            TLegend *legend = new TLegend(0.6, 0.75, 0.9, 0.9);  // Adjust the position for top right
-            legend->SetBorderSize(0);
-            legend->SetTextSize(0.04);
+            TLegend *legend = new TLegend(0.55, 0.75, 0.85, 0.9);  // Adjust the position for top right
+            legend->SetBorderSize(1);  // Set border size to 1 for a black border
+            legend->SetTextSize(0.035);  // Set smaller text size
             legend->AddEntry(graph1, legendEntries[0].c_str(), "p");  // Entry for prefix1 (red)
             legend->AddEntry(graph2, legendEntries[1].c_str(), "p");  // Entry for prefix2 (blue)
             legend->Draw();
