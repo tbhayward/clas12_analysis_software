@@ -545,8 +545,8 @@ int main(int argc, char *argv[]) {
         "P_{T} (GeV)", 
         {0.0, 1.1}, 
         {0.0, 0.035},  // y range for ALUsinphi
-        {0.2, 0.4},  // y range for ALL
-        "output/rho0_plots/PT_epipluspiminus_combination_dependence_plots.png", 
+        {0.15, 0.45},  // y range for ALL
+        "output/rho0_plots/PT_eppiplus_combination_dependence_plots.png", 
         {
             "e'#pi^{+}X, M_{x (#pi^{+})} > 1.5 (GeV)",  // Baseline (black)
             "e'p#pi^{+}X, M_{x (#pi^{+})} > 1.5 (GeV)",  // Dataset 1 (red)
