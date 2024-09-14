@@ -292,7 +292,7 @@ void plotDependence(
             setAxisLabelsAndRanges(graphStat, xLabel, yLabels[i], xLimits, 
                                    (suffixes[i] == "ALL") ? std::make_pair(0.15, 0.4) :
                                    (suffixes[i] == "doubleratio") ? std::make_pair(-0.1, 0.2) :
-                                   std::make_pair(-0.05, 0.05));  // Adjusted y-axis range for doubleratio
+                                   std::make_pair(0.00, 0.05));  // Adjusted y-axis range for doubleratio
             graphStat->Draw("AP");
 
             // Add the dashed gray line at y = 0
