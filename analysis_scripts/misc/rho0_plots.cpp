@@ -589,5 +589,28 @@ int main(int argc, char *argv[]) {
         }
     );
 
+
+
+
+
+    // Plot combination for epiplus, epipluspiminus, and epipluspiminus_rho0_free
+    plotCombinationDependence(asymmetryData, 
+        "",  // Baseline dataset (black)
+        "epipluspiminus",  // First dataset (red)
+        "epipluspiminus_rho0_free",  // Second dataset (blue)
+        "P_{T} (GeV)", 
+        {0.0, 1.1}, 
+        {0.0, 0.04},  // y range for ALUsinphi
+        {0.1, 0.45},  // y range for ALL
+        "output/rho0_plots/PT_epipluspiminus_combination_dependence_plots_test.png", 
+        {
+            "",  // Baseline (black)
+            "e'#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5 (GeV)",  // Dataset 1 (red)
+            "e'#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5 (GeV), M_{x (#pi^{+}#pi^{-})} > 1.5 (GeV)"  // Dataset 2 (blue)
+        }
+    );
+
+
+
     return 0;
 }
