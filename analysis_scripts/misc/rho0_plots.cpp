@@ -374,7 +374,7 @@ void plotCombinationDependence(
         "F_{LL}^{cos#phi}/F_{UU}"
     };
 
-    // We need to declare graph1 and graph2 outside of the loop so that they can be used for the legend
+    // Declare graph1 and graph2 outside of the loop so that they can be used for the legend
     TGraphErrors *graph1 = nullptr;
     TGraphErrors *graph2 = nullptr;
 
@@ -431,20 +431,16 @@ void plotCombinationDependence(
             line->SetLineColor(kGray+2);
             line->SetLineStyle(7);  // Dashed line
             line->Draw("same");
+
+            // Create a legend for each subplot, positioned at the top right
+            TLegend *legend = new TLegend(0.6, 0.75, 0.9, 0.9);  // Adjust the position for top right
+            legend->SetBorderSize(0);
+            legend->SetTextSize(0.04);
+            legend->AddEntry(graph1, legendEntries[0].c_str(), "p");  // Entry for prefix1 (red)
+            legend->AddEntry(graph2, legendEntries[1].c_str(), "p");  // Entry for prefix2 (blue)
+            legend->Draw();
         }
     }
-
-    // Now create the legend and place it at the top of the canvas
-    // Make sure we coordinate colors correctly
-    TLegend *legend = new TLegend(0.2, 0.95, 0.8, 0.98);  // Adjust these values for positioning
-    legend->SetNColumns(2);  // Two-column layout
-    legend->SetBorderSize(0);  // No border around the legend
-    legend->SetTextSize(0.04);
-    
-    // Add entries to the legend
-    legend->AddEntry(graph1, legendEntries[0].c_str(), "p");  // Entry for prefix1 (red)
-    legend->AddEntry(graph2, legendEntries[1].c_str(), "p");  // Entry for prefix2 (blue)
-    legend->Draw();
 
     // Save the canvas as a PNG file
     gSystem->Exec("mkdir -p output/rho0_plots");
