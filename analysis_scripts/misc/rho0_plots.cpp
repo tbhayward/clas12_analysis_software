@@ -435,15 +435,17 @@ void plotCombinationDependence(
             // Create a legend for each subplot, positioned at the top right
             TLegend *legend = new TLegend(0.2, 0.75, 0.9, 0.9);  // Adjust the position for top right
             legend->SetBorderSize(1);  // Set border size to 1 for a black border
-            legend->SetTextSize(0.03);  // Set smaller text size
+            legend->SetTextSize(0.035);  // Set smaller text size
 
             // Entry for prefix1 (red)
             legend->AddEntry(graph1, legendEntries[0].c_str(), "p");
-            legend->GetListOfPrimitives()->Last()->SetTextColor(kRed);  // Set color of the last added entry to red
+            TLegendEntry *entry1 = legend->GetListOfPrimitives()->Last();  // Get last entry
+            if (entry1) entry1->SetTextColor(kRed);  // Set color of the first entry to red
 
             // Entry for prefix2 (blue)
             legend->AddEntry(graph2, legendEntries[1].c_str(), "p");
-            legend->GetListOfPrimitives()->Last()->SetTextColor(kBlue);  // Set color of the last added entry to blue
+            TLegendEntry *entry2 = legend->GetListOfPrimitives()->Last();  // Get last entry
+            if (entry2) entry2->SetTextColor(kBlue);  // Set color of the second entry to blue
 
             legend->Draw();
         }
