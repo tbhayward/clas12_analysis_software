@@ -371,14 +371,16 @@ void plotCombinationDependence(
 
         if (i == 0) {
             // Left subplot: reduce the right margin to minimize space between plots
-            gPad->SetLeftMargin(0.025);
-            gPad->SetRightMargin(0.025);  // Decrease right margin
-            gPad->SetBottomMargin(0.025);
+            gPad->SetLeftMargin(0.05);
+            gPad->SetRightMargin(0.05);  // Decrease right margin
+            gPad->SetBottomMargin(0.05);
+            gPad->SetTopMargin(0.05);
         } else {
             // Right subplot: reduce the left margin to minimize space between plots
-            gPad->SetLeftMargin(0.025);  // Decrease left margin
-            gPad->SetRightMargin(0.025);  // Standard right margin
-            gPad->SetBottomMargin(0.025);
+            gPad->SetLeftMargin(0.05);  // Decrease left margin
+            gPad->SetRightMargin(0.05);  // Standard right margin
+            gPad->SetBottomMargin(0.05);
+            gPad->SetTopMargin(0.05);
         }
     }
 
