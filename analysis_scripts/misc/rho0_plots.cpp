@@ -489,7 +489,7 @@ int main(int argc, char *argv[]) {
         {0.0, 1.1}, 
         {0.0, 0.035},  // y range for ALUsinphi and AULsinphi
         {0.15, 0.35},  // y range for ALL
-        "output/rho0_plots/PT_epipluspiminus_combination_dependence_plots.pdf", 
+        "output/rho0_plots/PT_epipluspiminus_combination_dependence_plots.png", 
         {
             "#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5",
             "#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5, M_{x (#pi^{+}#pi^{-})} > 1.05"
