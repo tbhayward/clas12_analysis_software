@@ -356,6 +356,8 @@ void plotCombinationDependence(
     const std::string &prefix2, 
     const std::string &xLabel, 
     const std::pair<double, double> &xLimits, 
+    const std::pair<double, double> &yRangeALU_AUL,  // y range for ALUsinphi and AULsinphi
+    const std::pair<double, double> &yRangeALL,      // y range for ALL
     const std::string &outputFileName,
     const std::vector<std::string> &legendEntries) {
 
@@ -415,8 +417,7 @@ void plotCombinationDependence(
 
             // Set axis labels and ranges for the graph
             setAxisLabelsAndRanges(graph1, xLabel, yLabels[i], xLimits, 
-                                   (suffixes[i] == "ALL") ? std::make_pair(0.15, 0.4) :
-                                   std::make_pair(0.0, 0.05));
+                                   (suffixes[i] == "ALL") ? yRangeALL : yRangeALU_AUL);
 
             // Draw the first graph (prefix1) and then the second (prefix2) on the same pad
             graph1->Draw("AP");
@@ -429,7 +430,7 @@ void plotCombinationDependence(
             line->Draw("same");
 
             // Create a legend for each subplot, positioned at the top right
-            TLegend *legend = new TLegend(0.2, 0.75, 0.9, 0.9);  // Adjust the position for top right
+            TLegend *legend = new TLegend(0.2, 0.75, 0.9, 0.9);  // Set the fixed position you wanted
             legend->SetBorderSize(1);  // Set border size to 1 for a black border
             legend->SetTextSize(0.035);  // Set smaller text size
 
@@ -487,6 +488,8 @@ int main(int argc, char *argv[]) {
         "epipluspiminus_rho0_free", 
         "P_{T} (GeV)", 
         {0.0, 1.1}, 
+        {0.0, 0.035},  // y range for ALUsinphi and AULsinphi
+        {0.15, 0.35},  // y range for ALL
         "output/rho0_plots/PT_epipluspiminus_combination_dependence_plots.png", 
         {
             "#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5",
