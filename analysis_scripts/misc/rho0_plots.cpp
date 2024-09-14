@@ -359,28 +359,25 @@ void plotCombinationDependence(
     const std::string &outputFileName,
     const std::vector<std::string> &legendEntries) {
 
-    // Create the canvas and divide it into 6 subplots (3x2)
-    TCanvas *c = new TCanvas("c", "Combination Dependence Plots", 1200, 900);
-    c->Divide(3, 2);
+    // Create the canvas and divide it into 3 subplots (1x3)
+    TCanvas *c = new TCanvas("c", "Combination Dependence Plots", 1200, 400); // Adjust the canvas size for a 1x3 layout
+    c->Divide(3, 1);  // 1 row and 3 columns
 
-    // Define the six suffixes and corresponding y-axis labels
-    std::vector<std::string> suffixes = {"ALUsinphi", "AULsinphi", "AULsin2phi", "ALL", "doubleratio", "ALLcosphi"};
+    // Define the three suffixes and corresponding y-axis labels
+    std::vector<std::string> suffixes = {"ALUsinphi", "AULsinphi", "ALL"};
     std::vector<std::string> yLabels = {
         "F_{LU}^{sin#phi}/F_{UU}",
         "F_{UL}^{sin#phi}/F_{UU}",
-        "F_{UL}^{sin(2#phi)}/F_{UU}",
-        "F_{LL}/F_{UU}",
-        "-F_{LU}^{sin#phi}/F_{LL}", 
-        "F_{LL}^{cos#phi}/F_{UU}"
+        "F_{LL}/F_{UU}"
     };
 
     // Declare graph1 and graph2 outside of the loop so that they can be used for the legend
     TGraphErrors *graph1 = nullptr;
     TGraphErrors *graph2 = nullptr;
 
-    // Loop over each suffix to create a subplot
+    // Loop over the three suffixes to create the subplots
     for (size_t i = 0; i < suffixes.size(); ++i) {
-        c->cd(i + 1);
+        c->cd(i + 1);  // Move to the appropriate pad
         gPad->SetLeftMargin(0.18);
         gPad->SetBottomMargin(0.15);
 
@@ -419,7 +416,6 @@ void plotCombinationDependence(
             // Set axis labels and ranges for the graph
             setAxisLabelsAndRanges(graph1, xLabel, yLabels[i], xLimits, 
                                    (suffixes[i] == "ALL") ? std::make_pair(0.15, 0.4) :
-                                   (suffixes[i] == "doubleratio") ? std::make_pair(-0.1, 0.2) :
                                    std::make_pair(0.0, 0.05));
 
             // Draw the first graph (prefix1) and then the second (prefix2) on the same pad
