@@ -493,8 +493,8 @@ int main(int argc, char *argv[]) {
         {0.0, 1.1}, 
         "output/rho0_plots/PT_epipluspiminus_combination_dependence_plots.png", 
         {
-            "pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5",
-            "pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5, M_{x (#pi^{+}#pi^{-})} > 1.05"
+            "#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5",
+            "#pi^{+}#pi^{-}X, M_{x (#pi^{+})} > 1.5, M_{x (#pi^{+}#pi^{-})} > 1.05"
         }
     );
 
