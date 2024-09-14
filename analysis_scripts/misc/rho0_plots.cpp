@@ -600,7 +600,7 @@ int main(int argc, char *argv[]) {
         "x_{B}", 
         {0.0, 0.7}, 
         {0.0, 0.04},  // y range for ALUsinphi
-        {0.1, 0.45},  // y range for ALL
+        {0.1, 0.65},  // y range for ALL
         "output/rho0_plots/xB_epipluspiminus_combination_dependence_plots.png", 
         {
             "e'#pi^{+}X, M_{x (#pi^{+})} > 1.5 (GeV)",  // Baseline (black)
@@ -617,7 +617,7 @@ int main(int argc, char *argv[]) {
         "x_{B}", 
         {0.0, 0.7}, 
         {0.0, 0.04},  // y range for ALUsinphi
-        {0.1, 0.45},  // y range for ALL
+        {0.1, 0.65},  // y range for ALL
         "output/rho0_plots/xB_eppiplus_combination_dependence_plots.png", 
         {
             "e'#pi^{+}X, M_{x (#pi^{+})} > 1.5 (GeV)",  // Baseline (black)
@@ -635,7 +635,7 @@ int main(int argc, char *argv[]) {
         "x_{B}", 
         {0.0, 0.7}, 
         {0.0, 0.04},  // y range for ALUsinphi
-        {0.1, 0.45},  // y range for ALL
+        {0.1, 0.65},  // y range for ALL
         "output/rho0_plots/xB_eppipluspiminus_A_combination_dependence_plots.png", 
         {
             "e'#pi^{+}X, M_{x (#pi^{+})} > 1.5 (GeV)",  // Baseline (black)
@@ -652,7 +652,7 @@ int main(int argc, char *argv[]) {
         "x_{B}", 
         {0.0, 0.7}, 
         {0.0, 0.04},  // y range for ALUsinphi
-        {0.1, 0.45},  // y range for ALL
+        {0.1, 0.65},  // y range for ALL
         "output/rho0_plots/xB_eppipluspiminus_B_combination_dependence_plots.png", 
         {
             "e'#pi^{+}X, M_{x (#pi^{+})} > 1.5 (GeV)",  // Baseline (black)
