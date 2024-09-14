@@ -360,7 +360,7 @@ void plotCombinationDependence(
     const std::vector<std::string> &legendEntries) {
 
     // Create the canvas and divide it into 6 subplots (3x2)
-    TCanvas *c = new TCanvas("c", "Combination Dependence Plots", 1200, 800);
+    TCanvas *c = new TCanvas("c", "Combination Dependence Plots", 1200, 900);
     c->Divide(3, 2);
 
     // Define the six suffixes and corresponding y-axis labels
@@ -408,9 +408,9 @@ void plotCombinationDependence(
                 y2Err.push_back(entry[2]);
             }
 
-            // Create TGraphErrors for both datasets
-            TGraphErrors *graph1 = createTGraphErrors(x1, y1, y1Err, 21, 0.9, kRed);  // Red circles for prefix1
-            TGraphErrors *graph2 = createTGraphErrors(x2, y2, y2Err, 25, 1.1, kBlue); // Blue squares for prefix2
+            // Create TGraphErrors for both datasets (using red and blue circles)
+            TGraphErrors *graph1 = createTGraphErrors(x1, y1, y1Err, 20, 0.8, kRed);  // Red circles
+            TGraphErrors *graph2 = createTGraphErrors(x2, y2, y2Err, 20, 0.8, kBlue); // Blue circles
 
             // Set axis labels and ranges for the graph
             setAxisLabelsAndRanges(graph1, xLabel, yLabels[i], xLimits, 
@@ -427,18 +427,17 @@ void plotCombinationDependence(
             line->SetLineColor(kGray+2);
             line->SetLineStyle(7);  // Dashed line
             line->Draw("same");
-
-            // Add legend to the top left corner of the first or last subplot
-            if (i == 3 || i == 4) {  
-                TLegend *legend = new TLegend(0.2, 0.75, 0.6, 0.9);
-                legend->SetBorderSize(0);
-                legend->SetTextSize(0.04);
-                legend->AddEntry(graph1, legendEntries[0].c_str(), "p");
-                legend->AddEntry(graph2, legendEntries[1].c_str(), "p");
-                legend->Draw();
-            }
         }
     }
+
+    // Now create the legend and place it at the top of the canvas
+    TLegend *legend = new TLegend(0.2, 0.93, 0.8, 0.98);  // Top position on the canvas
+    legend->SetNColumns(2);  // Two-column layout
+    legend->SetBorderSize(0);  // No border around the legend
+    legend->SetTextSize(0.04);
+    legend->AddEntry((TObject*)0, legendEntries[0].c_str(), "p");  // Entry for prefix1 (red)
+    legend->AddEntry((TObject*)0, legendEntries[1].c_str(), "p");  // Entry for prefix2 (blue)
+    legend->Draw();
 
     // Save the canvas as a PNG file
     gSystem->Exec("mkdir -p output/rho0_plots");
