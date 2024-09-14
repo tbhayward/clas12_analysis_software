@@ -366,6 +366,25 @@ void plotCombinationDependence(
     TCanvas *c = new TCanvas("c", "Combination Dependence Plots", 1800, 600); // Adjust the canvas size for a 1x2 layout
     c->Divide(2, 1);  // 1 row and 2 columns
 
+    // Adjust pad margins to minimize space between plots
+    for (size_t i = 0; i < 2; ++i) {
+        c->cd(i + 1);  // Move to the appropriate pad
+
+        if (i == 0) {
+            // Left subplot: reduce the right margin to minimize space between plots
+            gPad->SetLeftMargin(0.05);
+            gPad->SetRightMargin(0.05);  // Decrease right margin
+            gPad->SetBottomMargin(0.05);
+            gPad->SetTopMargin(0.05);
+        } else {
+            // Right subplot: reduce the left margin to minimize space between plots
+            gPad->SetLeftMargin(0.05);  // Decrease left margin
+            gPad->SetRightMargin(0.05);  // Standard right margin
+            gPad->SetBottomMargin(0.05);
+            gPad->SetTopMargin(0.05);
+        }
+    }
+
     // Define the two suffixes and corresponding y-axis labels
     std::vector<std::string> suffixes = {"ALUsinphi", "ALL"};
     std::vector<std::string> yLabels = {
@@ -380,8 +399,6 @@ void plotCombinationDependence(
     // Loop over the two subplots (ALUsinphi and ALL)
     for (size_t i = 0; i < suffixes.size(); ++i) {
         c->cd(i + 1);  // Move to the appropriate pad
-        gPad->SetLeftMargin(0.18);
-        gPad->SetBottomMargin(0.15);
 
         bool firstGraphDrawn = false;
 
