@@ -433,7 +433,7 @@ void plotCombinationDependence(
             line->Draw("same");
 
             // Create a legend for each subplot, positioned at the top right
-            TLegend *legend = new TLegend(0.5, 0.75, 0.9, 0.9);  // Adjust the position for top right
+            TLegend *legend = new TLegend(0.2, 0.75, 0.9, 0.9);  // Adjust the position for top right
             legend->SetBorderSize(1);  // Set border size to 1 for a black border
             legend->SetTextSize(0.035);  // Set smaller text size
             legend->AddEntry(graph1, legendEntries[0].c_str(), "p");  // Entry for prefix1 (red)
