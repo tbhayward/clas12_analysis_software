@@ -367,9 +367,9 @@ void plotCombinationDependence(
     c->Divide(2, 1);  // 1 row and 2 columns
 
     // Define the RGB values for gray, orange, and blue with unique color indices
-    TColor *gray = new TColor(1101, 184/255., 184/255., 184/255.);  // Gray
-    TColor *orange = new TColor(1102, 234/255., 128/255., 28/255.);  // Orange
-    TColor *blue = new TColor(1103, 26/255., 128/255., 187/255.);  // Blue
+    TColor *gray = new TColor(9991101, 184/255., 184/255., 184/255.);  // Gray
+    TColor *orange = new TColor(9991102, 234/255., 128/255., 28/255.);  // Orange
+    TColor *blue = new TColor(9991103, 26/255., 128/255., 187/255.);  // Blue
 
     // Loop over the two subplots
     for (size_t i = 0; i < 2; ++i) {
