@@ -353,7 +353,7 @@ void plotDependence(
 void plotCombinationDependence(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
     const std::string &prefix0,  // Baseline dataset
-    const std::string &prefix1,  // Dataset 1 (red)
+    const std::string &prefix1,  // Dataset 1 (orange)
     const std::string &prefix2,  // Dataset 2 (blue)
     const std::string &xLabel, 
     const std::pair<double, double> &xLimits, 
@@ -362,11 +362,16 @@ void plotCombinationDependence(
     const std::string &outputFileName,
     const std::vector<std::string> &legendEntries) {  // Should contain 3 entries now
 
+    // Create custom colors using RGB values from the image
+    TColor *colorBlue = new TColor(1001, 26/255.0, 128/255.0, 187/255.0);  // Blue #1a80bb
+    TColor *colorOrange = new TColor(1002, 234/255.0, 128/255.0, 28/255.0);  // Orange #ea801c
+    TColor *colorGray = new TColor(1003, 184/255.0, 184/255.0, 184/255.0);  // Gray #b8b8b8
+
     // Create the canvas and divide it into 2 subplots (1x2)
     TCanvas *c = new TCanvas("c", "Combination Dependence Plots", 1800, 600); // Adjust the canvas size for a 1x2 layout
     c->Divide(2, 1);  // 1 row and 2 columns
 
-    // Loop over the two subplots
+    // Adjust the margins for pad spacing
     for (size_t i = 0; i < 2; ++i) {
         c->cd(i + 1);  // Move to the appropriate pad
 
@@ -442,18 +447,18 @@ void plotCombinationDependence(
                 y2Err.push_back(entry[2]);
             }
 
-            // Create TGraphErrors for all three datasets (using black, red, and blue circles)
-            graph0 = createTGraphErrors(x0, y0, y0Err, 20, 0.8, kBlack); // Black circles
-            graph1 = createTGraphErrors(x1, y1, y1Err, 20, 0.8, kRed);  // Red circles
-            graph2 = createTGraphErrors(x2, y2, y2Err, 20, 0.8, kBlue); // Blue circles
+            // Create TGraphErrors for all three datasets (using the custom colors)
+            graph0 = createTGraphErrors(x0, y0, y0Err, 20, 0.8, 1003); // Gray circles
+            graph1 = createTGraphErrors(x1, y1, y1Err, 20, 0.8, 1002);  // Orange circles
+            graph2 = createTGraphErrors(x2, y2, y2Err, 20, 0.8, 1001); // Blue circles
 
             // Set axis labels and ranges for the graph
             setAxisLabelsAndRanges(graph0, xLabel, yLabels[i], xLimits, 
                                    (suffixes[i] == "ALL") ? yRangeALL : yRangeALU);
 
             // Draw all three graphs on the same pad
-            graph0->Draw("AP");  // Baseline (black)
-            graph1->Draw("P SAME");  // First dataset (red)
+            graph0->Draw("AP");  // Baseline (gray)
+            graph1->Draw("P SAME");  // First dataset (orange)
             graph2->Draw("P SAME");  // Second dataset (blue)
 
             // Add a dashed gray line at y = 0
@@ -467,20 +472,20 @@ void plotCombinationDependence(
             legend->SetBorderSize(1);  // Set border size to 1 for a black border
             legend->SetTextSize(0.0325);  // Set smaller text size
 
-            // Entry for prefix0 (black)
+            // Entry for prefix0 (gray)
             legend->AddEntry(graph0, legendEntries[0].c_str(), "p");
             TLegendEntry *entry0 = dynamic_cast<TLegendEntry*>(legend->GetListOfPrimitives()->Last());  // Get last entry and cast it to TLegendEntry
-            if (entry0) entry0->SetTextColor(kBlack);  // Set color of the first entry to black
+            if (entry0) entry0->SetTextColor(1003);  // Set color of the first entry to gray
 
-            // Entry for prefix1 (red)
+            // Entry for prefix1 (orange)
             legend->AddEntry(graph1, legendEntries[1].c_str(), "p");
             TLegendEntry *entry1 = dynamic_cast<TLegendEntry*>(legend->GetListOfPrimitives()->Last());  // Get last entry and cast it to TLegendEntry
-            if (entry1) entry1->SetTextColor(kRed);  // Set color of the second entry to red
+            if (entry1) entry1->SetTextColor(1002);  // Set color of the second entry to orange
 
             // Entry for prefix2 (blue)
             legend->AddEntry(graph2, legendEntries[2].c_str(), "p");
             TLegendEntry *entry2 = dynamic_cast<TLegendEntry*>(legend->GetListOfPrimitives()->Last());  // Get last entry and cast it to TLegendEntry
-            if (entry2) entry2->SetTextColor(kBlue);  // Set color of the third entry to blue
+            if (entry2) entry2->SetTextColor(1001);  // Set color of the third entry to blue
 
             legend->Draw();
         }
