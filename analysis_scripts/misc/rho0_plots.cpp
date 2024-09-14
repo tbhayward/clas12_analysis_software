@@ -527,7 +527,7 @@ int main(int argc, char *argv[]) {
         "epipluspiminus_rho0_free",  // Second dataset (blue)
         "P_{T} (GeV)", 
         {0.0, 1.1}, 
-        {0.0, 0.035},  // y range for ALUsinphi
+        {0.0, 0.04},  // y range for ALUsinphi
         {0.1, 0.45},  // y range for ALL
         "output/rho0_plots/PT_epipluspiminus_combination_dependence_plots.png", 
         {
@@ -544,7 +544,7 @@ int main(int argc, char *argv[]) {
         "eppiplus_rho0_free",  // Second dataset (blue)
         "P_{T} (GeV)", 
         {0.0, 1.1}, 
-        {0.0, 0.035},  // y range for ALUsinphi
+        {0.0, 0.04},  // y range for ALUsinphi
         {0.1, 0.45},  // y range for ALL
         "output/rho0_plots/PT_eppiplus_combination_dependence_plots.png", 
         {
@@ -562,7 +562,7 @@ int main(int argc, char *argv[]) {
         "eppipluspiminus_rho0_free_A",  // Second dataset (blue)
         "P_{T} (GeV)", 
         {0.0, 1.1}, 
-        {0.0, 0.035},  // y range for ALUsinphi
+        {0.0, 0.04},  // y range for ALUsinphi
         {0.1, 0.45},  // y range for ALL
         "output/rho0_plots/PT_eppipluspiminus_A_combination_dependence_plots.png", 
         {
@@ -579,7 +579,7 @@ int main(int argc, char *argv[]) {
         "eppipluspiminus_rho0_free_B",  // Second dataset (blue)
         "P_{T} (GeV)", 
         {0.0, 1.1}, 
-        {0.0, 0.035},  // y range for ALUsinphi
+        {0.0, 0.04},  // y range for ALUsinphi
         {0.1, 0.45},  // y range for ALL
         "output/rho0_plots/PT_eppipluspiminus_B_combination_dependence_plots.png", 
         {
