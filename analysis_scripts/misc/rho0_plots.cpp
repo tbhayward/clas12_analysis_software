@@ -443,9 +443,9 @@ void plotCombinationDependence(
             }
 
             // Create TGraphErrors for all three datasets (using green, red, and blue)
-            graph0 = createTGraphErrors(x0, y0, y0Err, 20, 0.8, kRed);  // Green circles
-            graph1 = createTGraphErrors(x1, y1, y1Err, 20, 0.8, kBlue);  // Red circles
-            graph2 = createTGraphErrors(x2, y2, y2Err, 20, 0.8, kGreen+1); // Blue circles
+            graph0 = createTGraphErrors(x0, y0, y0Err, 20, 1.0, kRed);  // Green circles
+            graph1 = createTGraphErrors(x1, y1, y1Err, 21, 1.0, kBlue);  // Red circles
+            graph2 = createTGraphErrors(x2, y2, y2Err, 22, 1.0, kGreen+1); // Blue circles
 
             // Set axis labels and ranges for the graph
             setAxisLabelsAndRanges(graph0, xLabel, yLabels[i], xLimits, 
