@@ -374,6 +374,10 @@ void plotCombinationDependence(
         "F_{LL}^{cos#phi}/F_{UU}"
     };
 
+    // We need to declare graph1 and graph2 outside of the loop so that they can be used for the legend
+    TGraphErrors *graph1 = nullptr;
+    TGraphErrors *graph2 = nullptr;
+
     // Loop over each suffix to create a subplot
     for (size_t i = 0; i < suffixes.size(); ++i) {
         c->cd(i + 1);
@@ -409,8 +413,8 @@ void plotCombinationDependence(
             }
 
             // Create TGraphErrors for both datasets (using red and blue circles)
-            TGraphErrors *graph1 = createTGraphErrors(x1, y1, y1Err, 20, 0.8, kRed);  // Red circles
-            TGraphErrors *graph2 = createTGraphErrors(x2, y2, y2Err, 20, 0.8, kBlue); // Blue circles
+            graph1 = createTGraphErrors(x1, y1, y1Err, 20, 0.8, kRed);  // Red circles
+            graph2 = createTGraphErrors(x2, y2, y2Err, 20, 0.8, kBlue); // Blue circles
 
             // Set axis labels and ranges for the graph
             setAxisLabelsAndRanges(graph1, xLabel, yLabels[i], xLimits, 
@@ -437,6 +441,7 @@ void plotCombinationDependence(
     legend->SetBorderSize(0);  // No border around the legend
     legend->SetTextSize(0.04);
     
+    // Add entries to the legend
     legend->AddEntry(graph1, legendEntries[0].c_str(), "p");  // Entry for prefix1 (red)
     legend->AddEntry(graph2, legendEntries[1].c_str(), "p");  // Entry for prefix2 (blue)
     legend->Draw();
