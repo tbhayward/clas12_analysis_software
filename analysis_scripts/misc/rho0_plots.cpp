@@ -356,20 +356,19 @@ void plotCombinationDependence(
     const std::string &prefix2, 
     const std::string &xLabel, 
     const std::pair<double, double> &xLimits, 
-    const std::pair<double, double> &yRangeALU_AUL,  // y range for ALUsinphi and AULsinphi
-    const std::pair<double, double> &yRangeALL,      // y range for ALL
+    const std::pair<double, double> &yRangeALU,  // y range for ALUsinphi
+    const std::pair<double, double> &yRangeALL,  // y range for ALL
     const std::string &outputFileName,
     const std::vector<std::string> &legendEntries) {
 
-    // Create the canvas and divide it into 3 subplots (1x3)
-    TCanvas *c = new TCanvas("c", "Combination Dependence Plots", 1200, 400); // Adjust the canvas size for a 1x3 layout
-    c->Divide(3, 1);  // 1 row and 3 columns
+    // Create the canvas and divide it into 2 subplots (1x2)
+    TCanvas *c = new TCanvas("c", "Combination Dependence Plots", 1200, 400); // Adjust the canvas size for a 1x2 layout
+    c->Divide(2, 1);  // 1 row and 2 columns
 
-    // Define the three suffixes and corresponding y-axis labels
-    std::vector<std::string> suffixes = {"ALUsinphi", "AULsinphi", "ALL"};
+    // Define the two suffixes and corresponding y-axis labels
+    std::vector<std::string> suffixes = {"ALUsinphi", "ALL"};
     std::vector<std::string> yLabels = {
         "F_{LU}^{sin#phi}/F_{UU}",
-        "F_{UL}^{sin#phi}/F_{UU}",
         "F_{LL}/F_{UU}"
     };
 
@@ -377,7 +376,7 @@ void plotCombinationDependence(
     TGraphErrors *graph1 = nullptr;
     TGraphErrors *graph2 = nullptr;
 
-    // Loop over the three suffixes to create the subplots
+    // Loop over the two suffixes to create the subplots
     for (size_t i = 0; i < suffixes.size(); ++i) {
         c->cd(i + 1);  // Move to the appropriate pad
         gPad->SetLeftMargin(0.18);
@@ -417,7 +416,7 @@ void plotCombinationDependence(
 
             // Set axis labels and ranges for the graph
             setAxisLabelsAndRanges(graph1, xLabel, yLabels[i], xLimits, 
-                                   (suffixes[i] == "ALL") ? yRangeALL : yRangeALU_AUL);
+                                   (suffixes[i] == "ALL") ? yRangeALL : yRangeALU);
 
             // Draw the first graph (prefix1) and then the second (prefix2) on the same pad
             graph1->Draw("AP");
