@@ -290,9 +290,9 @@ void plotDependence(
 
             TGraphErrors *graphStat = createTGraphErrors(x, y, yStatErr, 20, 0.8, kBlack);
             setAxisLabelsAndRanges(graphStat, xLabel, yLabels[i], xLimits, 
-                                   (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.4) :
+                                   (suffixes[i] == "ALL") ? std::make_pair(0.15, 0.4) :
                                    (suffixes[i] == "doubleratio") ? std::make_pair(-0.1, 0.2) :
-                                   std::make_pair(-0.05, 0.05));  // Adjusted y-axis range for doubleratio
+                                   std::make_pair(0, 0.05));  // Adjusted y-axis range for doubleratio
             graphStat->Draw("AP");
 
             // Add the dashed gray line at y = 0
@@ -416,7 +416,7 @@ void plotCombinationDependence(
             setAxisLabelsAndRanges(graph1, xLabel, yLabels[i], xLimits, 
                                    (suffixes[i] == "ALL") ? std::make_pair(0.15, 0.4) :
                                    (suffixes[i] == "doubleratio") ? std::make_pair(-0.1, 0.2) :
-                                   std::make_pair(-0.05, 0.05));
+                                   std::make_pair(0.0, 0.05));
 
             // Draw the first graph (prefix1) and then the second (prefix2) on the same pad
             graph1->Draw("AP");
