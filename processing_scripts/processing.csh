@@ -59,7 +59,7 @@ else
 endif
 
 git pull;
-cd clasqaDB/; source env.csh; cd ..;
+cd clas12-qadb/; source environ.csh; cd ..;
 g++ `root-config --cflags --libs` -o processing_scripts/convert_txt_to_root processing_scripts/convert_txt_to_root.cpp
 
 # execute command based on number of entries (or dvcs designation)
