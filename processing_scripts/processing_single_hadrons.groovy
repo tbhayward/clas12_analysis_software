@@ -18,7 +18,6 @@ import analyzers.*;
 import groovy.io.FileType;
 
 // dilks CLAS QA analysis
-import org.jlab.io.hipo.HipoDataSource // to read HIPO files
 import clasqa.QADB // access QADB
 
 public static double phi_calculation (double x, double y) {
@@ -98,8 +97,8 @@ public static void main(String[] args) {
 	// set filter for final states
 	EventFilter filter = new EventFilter("11:"+p1_Str+":X+:X-:Xn");
 	
-	// setup QA database
-	QADB qa = new QADB();
+	// instantiate QADB
+	QADB qa = new QADB()
 
 	// create a StringBuilder for accumulating lines
 	StringBuilder batchLines = new StringBuilder();
