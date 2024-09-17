@@ -1,7 +1,8 @@
 #!/bin/tcsh
-set this_cmd=($_)
-set this_dir=`dirname ${this_cmd[2]}`
-setenv QADB `cd ${this_dir} && pwd -P`
+
+# Use the current working directory as the script directory
+set this_dir = $cwd
+setenv QADB $this_dir
 
 set src_dir=${QADB}/src/
 if (! $?JYPATH) then
