@@ -18,7 +18,8 @@ import analyzers.*;
 import groovy.io.FileType;
 
 // dilks CLAS QA analysis
-import clasqa.QADB
+import org.jlab.io.hipo.HipoDataSource // to read HIPO files
+import clasqa.QADB // access QADB
 
 public static double phi_calculation (double x, double y) {
 	// tracks are given with Cartesian values and so must be converted to cylindrical
