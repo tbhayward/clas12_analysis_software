@@ -58,8 +58,15 @@ else
     set arg2 = "$2"
 endif
 
-git pull;
-cd clas12-qadb/; source environ.csh; cd ..;
+echo "Pulling the latest changes from the repository..."
+git pull
+
+echo "Entering the 'clas12-qadb' directory and sourcing 'environ.csh'..."
+cd clas12-qadb/
+source environ.csh
+
+echo "Returning to the parent directory..."
+cd ..
 g++ `root-config --cflags --libs` -o processing_scripts/convert_txt_to_root processing_scripts/convert_txt_to_root.cpp
 
 # execute command based on number of entries (or dvcs designation)
