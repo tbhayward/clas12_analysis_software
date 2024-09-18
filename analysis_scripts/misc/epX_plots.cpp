@@ -1683,7 +1683,7 @@ int main(int argc, char *argv[]) {
 
 
     // Define the prefixes for the Mx bins
-    std::vector<std::string> prefixes = {"Mxbin1_", "Mxbin2_", "Mxbin3_"};
+    std::vector<std::string> prefixes = {"Mxbin1", "Mxbin2", "Mxbin3"};
 
     // Call the new plotting function
     plotMultipleMxDependence(
