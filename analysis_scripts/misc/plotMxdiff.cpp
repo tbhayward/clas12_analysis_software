@@ -74,6 +74,9 @@ int main(int argc, char* argv[]) {
         {0.35, 0.40}
     };
 
+    // x_B midpoints for each subplot
+    double xB[nSubplots] = {0.18, 0.30, 0.375}; // Midpoints of each x range
+
     // t - tmin cuts for each dataset
     // Dataset 0: t - tmin > -1 (blue circles)
     // Dataset 1: t - tmin < -2 (red squares)
@@ -186,9 +189,12 @@ int main(int argc, char* argv[]) {
         TMultiGraph* mg = new TMultiGraph();
 
         // Create legend
-        TLegend* legend = new TLegend(0.65, 0.75, 0.90, 0.90);
-        legend->SetBorderSize(0);
+        TLegend* legend = new TLegend(0.15, 0.75, 0.40, 0.90); // Move to the top left
+        legend->SetBorderSize(1); // Add black box border
         legend->SetTextSize(0.04);
+
+        // Add entry for x_B (for each subplot)
+        legend->AddEntry((TObject*)0, Form("x_{B} = %.3f", xB[s]), "");
 
         for (int d = 0; d < nDatasets; ++d) {
             // Prepare data vectors
@@ -220,7 +226,7 @@ int main(int argc, char* argv[]) {
 
             mg->Add(graph);
 
-            // Add entry to legend
+            // Add entry to legend for t - tmin cuts
             legend->AddEntry(graph, t_tmin_labels[d], "p");
         }
 
@@ -228,16 +234,11 @@ int main(int argc, char* argv[]) {
 
         // Set axis labels
         mg->GetXaxis()->SetTitle("M_{x} (GeV)");
-        mg->GetYaxis()->SetTitle("#Delta (aligned) - (unaligned)");
+        mg->GetYaxis()->SetTitle("#Delta (++ + --) - (+- + -+)");
         mg->GetXaxis()->SetTitleSize(0.05);
         mg->GetYaxis()->SetTitleSize(0.05);
         mg->GetXaxis()->SetTitleOffset(1.0);
         mg->GetYaxis()->SetTitleOffset(1.5);
-
-        // Set axis ranges if needed
-        // mg->GetXaxis()->SetLimits(0, 2.5);
-        // mg->SetMinimum(-1000);
-        // mg->SetMaximum(1000);
 
         // Draw legend
         legend->Draw();
