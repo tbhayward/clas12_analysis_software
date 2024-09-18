@@ -254,22 +254,23 @@ int main(int argc, char *argv[]) {
     // Initialize dilutionFactors
     std::vector<std::pair<double, double>> dilutionFactors;
 
-    if (cpp != 1) {
-        // Calculate the dilution factors for the current bin
-        dilutionFactors = calculate_dilution_factors();
+    // if (cpp != 1) {
+    //     // Calculate the dilution factors for the current bin
+    //     dilutionFactors = calculate_dilution_factors();
 
-        // Print out the dilution factors and their uncertainties
-        cout << "Dilution Factors for Bin Set " << i + 1 << ":" << endl;
-        for (size_t j = 0; j < dilutionFactors.size(); ++j) {
-            cout << "Bin " << j + 1 << ": "
-                 << "Dilution Factor = " << dilutionFactors[j].first
-                 << ", Uncertainty = " << dilutionFactors[j].second
-                 << endl;
-        }
-    } else {
-        // If cpp == 1, fill dilutionFactors with zeros
-        dilutionFactors = std::vector<std::pair<double, double>>(allBins[i].size() - 1, {0.0, 0.0});
-    }
+    //     // Print out the dilution factors and their uncertainties
+    //     cout << "Dilution Factors for Bin Set " << i + 1 << ":" << endl;
+    //     for (size_t j = 0; j < dilutionFactors.size(); ++j) {
+    //         cout << "Bin " << j + 1 << ": "
+    //              << "Dilution Factor = " << dilutionFactors[j].first
+    //              << ", Uncertainty = " << dilutionFactors[j].second
+    //              << endl;
+    //     }
+    // } else {
+    //     // If cpp == 1, fill dilutionFactors with zeros
+    //     dilutionFactors = std::vector<std::pair<double, double>>(allBins[i].size() - 1, {0.0, 0.0});
+    // }
+    dilutionFactors = std::vector<std::pair<double, double>>(allBins[i].size() - 1, {1.0, 0.0});
 
     for (int asymmetry = 0; asymmetry < 3; ++asymmetry) {
         if (asymmetry > 0 && cpp == 1) {
