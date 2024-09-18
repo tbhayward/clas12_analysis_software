@@ -431,7 +431,7 @@ void plotDependence(
 
             if (prefix == "Mxnodilution") {
                 // Set y-axis range to always be -0.08 to 0.08
-                yLimits = std::make_pair(-0.08, 0.08);
+                yLimits = std::make_pair(-0.04, 0.08);
             } else {
                 // Original y-axis range logic based on suffix
                 if (suffixes[i] == "ALL") {
