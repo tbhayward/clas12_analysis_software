@@ -158,8 +158,6 @@ int main(int argc, char* argv[]) {
     graph->GetXaxis()->SetTitle("M_{x} (GeV)");
     graph->GetYaxis()->SetTitle("#Delta (++ + --) - (+- + -+)");
 
-    // Adjust the y-axis label offset to prevent it from being cut off
-    graph->GetYaxis()->SetTitleOffset(1.4); // Increase the offset as needed
 
     // Set marker style
     graph->SetMarkerStyle(20);
@@ -170,7 +168,7 @@ int main(int argc, char* argv[]) {
     TCanvas* c1 = new TCanvas("c1", "Delta vs Mx", 800, 600);
 
     // Adjust the left margin to add padding space
-    c1->SetLeftMargin(0.15); // Increase the left margin from default (0.1) to 0.15
+    c1->SetLeftMargin(0.20); // Increase the left margin from default (0.1) to 0.15
 
     graph->Draw("AP");
 
