@@ -74,9 +74,6 @@ int main(int argc, char* argv[]) {
         {0.35, 0.40}
     };
 
-    // x_B midpoints for each subplot
-    double xB[nSubplots] = {0.18, 0.30, 0.375}; // Midpoints of each x range
-
     // t - tmin cuts for each dataset
     const char* t_tmin_labels[nDatasets] = {
         "t - t_{min} > -1",
@@ -219,8 +216,8 @@ int main(int argc, char* argv[]) {
 
             mg->Add(graph);
 
-            // Add entry to legend for combined x_B and t - tmin cuts
-            legend->AddEntry(graph, Form("x_{B} = %.3f, %s", xB[s], t_tmin_labels[d]), "p");
+            // Add entry to legend for combined x range and t - tmin cuts
+            legend->AddEntry(graph, Form("%.2f < x_{B} < %.2f, %s", xRanges[s][0], xRanges[s][1], t_tmin_labels[d]), "p");
         }
 
         mg->Draw("AP");
