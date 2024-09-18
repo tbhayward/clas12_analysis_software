@@ -1732,7 +1732,7 @@ void plotXFDependence(
     line->Draw("same");
 
     // Move the legend to the top left and adjust its size
-    TLegend *legend = new TLegend(0.15, 0.7, 0.35 , 0.9);  // Top left corner, wider vertically, narrower horizontally
+    TLegend *legend = new TLegend(0.15, 0.7, 0.325, 0.9);  // Top left corner, wider vertically, narrower horizontally
     legend->AddEntry(graphH2, "H_{2}, F_{LU}", "p");
     if (graphALUsinphi) {
         TLegendEntry *entry1 = legend->AddEntry(graphALUsinphi, "NH_{3}, F_{LU}", "p");
@@ -1749,7 +1749,7 @@ void plotXFDependence(
     TLatex latex;
     latex.SetNDC();
     latex.SetTextSize(0.03);  // Make the text slightly smaller
-    latex.DrawLatex(0.725, 0.2, "8% Scale Systematic");
+    latex.DrawLatex(0.675, 0.2, "8% Scale Systematic");
 
     // Save the canvas as a PNG
     gSystem->Exec("mkdir -p output/epX_plots");
