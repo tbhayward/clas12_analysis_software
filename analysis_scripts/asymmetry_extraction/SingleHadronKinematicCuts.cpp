@@ -37,7 +37,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
       return goodEvent;
     }
     if (property == "Mxbin1b") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.16 && *x < 0.20 && (*t-*tmin) < -3;
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.16 && *x < 0.20 && (*t-*tmin) < -2;
       return goodEvent;
     }
     if (property == "Mxbin2a") {
@@ -45,7 +45,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
       return goodEvent;
     }
     if (property == "Mxbin2b") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.21 && *x < 0.25 && (*t-*tmin) < -3;
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.21 && *x < 0.25 && (*t-*tmin) < -2;
       return goodEvent;
     }
     if (property == "Mxbin3a") {
@@ -53,7 +53,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
       return goodEvent;
     }
     if (property == "Mxbin3b") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.28 && *x < 0.32 && (*t-*tmin) < -3;
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.28 && *x < 0.32 && (*t-*tmin) < -2;
       return goodEvent;
     }
     if (property == "Mxbin4a") {
@@ -61,7 +61,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
       return goodEvent;
     }
     if (property == "Mxbin4b") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.35 && *x < 0.40 && (*t-*tmin) < -3;
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.35 && *x < 0.40 && (*t-*tmin) < -2;
       return goodEvent;
     }
     if (property == "xF" || property == "x" || property == "z" || property == "PT" || property == "t" || 
