@@ -1227,7 +1227,7 @@ void plotNormalizedFLLOverFUU(
     double exponent = fitFunc->GetParameter(1);
 
     // Step 2: Normalize FLL/FUU for other variables
-    std::vector<std::string> variables = {"Mx", "z", "PT", "xF"};
+    std::vector<std::string> variables = {"Mx", "z", "PT", "xF", "t"};
     std::map<std::string, TGraphErrors*> normalizedGraphs;
 
     for (const auto &var : variables) {
@@ -1259,6 +1259,11 @@ void plotNormalizedFLLOverFUU(
             double xValue = kinData[i][2];    // x value from kinematic data
             double yValue = asymData[i][1];   // FLL/FUU value
             double yErr = asymData[i][2];     // Error in FLL/FUU
+
+            // For "t", we need to plot -t
+            if (var == "t") {
+                varValue = -varValue; // Convert t to -t
+            }
 
             // Evaluate the fitted function at xValue
             double fittedY = fitFunc->Eval(xValue);
@@ -1319,7 +1324,7 @@ void plotNormalizedFLLOverFUU(
     latex_main->SetTextAlign(33); // Bottom right alignment
     latex_main->DrawLatex(0.9, 0.25, "M_{x} > 1.35 GeV"); // Moved up slightly
 
-    // Plot 2-5: Normalized FLL/FUU vs other variables
+    // Plot 2-6: Normalized FLL/FUU vs other variables
     int pad = 2;
     for (const auto &var : variables) {
         if (normalizedGraphs.find(var) == normalizedGraphs.end()) {
@@ -1341,6 +1346,8 @@ void plotNormalizedFLLOverFUU(
             setAxisLabelsAndRanges(normGraph, "P_{T} (GeV)", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 1.0}, {0.5, 1.5});
         } else if (var == "xF") {
             setAxisLabelsAndRanges(normGraph, "x_{F}", "(F_{LL}/F_{UU}) / (x^{a})", {-0.8, 0.6}, {0.5, 1.5});
+        } else if (var == "t") {
+            setAxisLabelsAndRanges(normGraph, "-t (GeV^{2})", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 8.0}, {0.5, 1.5});
         }
 
         normGraph->Draw("AP");
@@ -1353,7 +1360,7 @@ void plotNormalizedFLLOverFUU(
         line->SetLineStyle(7); // Dashed line
         line->Draw("same");
 
-        // Add text "M_{x} > 1.35 GeV" in the x, z, PT, xF plots but NOT in Mx plot
+        // Add text "M_{x} > 1.35 GeV" in the x, z, PT, xF, t plots but NOT in Mx plot
         if (var != "Mx") {
             TLatex *latex = new TLatex();
             latex->SetNDC();
