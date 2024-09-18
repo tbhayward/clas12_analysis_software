@@ -1646,7 +1646,8 @@ void plotXFDependence(
     gStyle->SetOptTitle(0);  // Disable automatic title display
 
     // Adjust the left margin to avoid cutting off the y-axis label
-    gPad->SetLeftMargin(0.2);  // Increase padding on the left
+    gPad->SetLeftMargin(0.15);  // Increase padding on the left
+    gPad->SetBottomMargin(0.15);  // Increase padding on the bottom
 
     // Define the H2 xF dependence data
     std::vector<std::vector<double>> H2DataXF = {
