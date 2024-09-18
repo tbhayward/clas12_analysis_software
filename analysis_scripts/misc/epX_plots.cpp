@@ -1525,29 +1525,29 @@ void plotNormalizedFLLOverFUU(
 
 void plotMultipleMxDependence(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
-    const std::vector<std::string> &prefixes,  // List of prefixes for Mxbin1, Mxbin2, Mxbin3
-    const std::string &xLabel, 
-    const std::pair<double, double> &xLimits, 
-    const std::string &outputFileName) {
-
+    const std::vector<std::string> &prefixes,  // Should be {"Mxbin1_", "Mxbin2_", "Mxbin3_"}
+    const std::string &xLabel,
+    const std::pair<double, double> &xLimits,
+    const std::string &outputFileName
+) {
     TCanvas *c = new TCanvas("c", "Mx Dependence Plots", 1200, 800);
     c->Divide(3, 2);
 
-    // Updated list of suffixes (removing AULoffset and adding doubleratio)
+    // List of suffixes corresponding to different asymmetry terms
     std::vector<std::string> suffixes = {"ALUsinphi", "AULsinphi", "AULsin2phi", "ALL", "doubleratio", "ALLcosphi"};
-    
+
     // Corresponding y-axis labels
     std::vector<std::string> yLabels = {
         "F_{LU}^{sin#phi}/F_{UU}",
         "F_{UL}^{sin#phi}/F_{UU}",
         "F_{UL}^{sin(2#phi)}/F_{UU}",
         "F_{LL}/F_{UU}",
-        "-F_{LU}^{sin#phi}/F_{LL}",  // yLabel for doubleratio
+        "-F_{LU}^{sin#phi}/F_{LL}",
         "F_{LL}^{cos#phi}/F_{UU}"
     };
 
     // Colors and marker styles for each prefix
-    std::vector<int> colors = {kRed, kBlue, kGreen};
+    std::vector<int> colors = {kRed, kBlue, kGreen};  // Red, Blue, Green
     std::vector<int> markers = {20, 21, 22};  // Circle, Square, Triangle markers
 
     // Text labels for the legend
@@ -1556,9 +1556,6 @@ void plotMultipleMxDependence(
         "0.20 < x_{B} < 0.24",
         "0.24 < x_{B} < 0.28"
     };
-
-    // Title to add to each subplot (you can adjust this as needed)
-    std::string plotTitle = "Asymmetry vs M_{x} Bins";
 
     // Loop over the suffixes to create subplots
     for (size_t i = 0; i < suffixes.size(); ++i) {
@@ -1569,9 +1566,9 @@ void plotMultipleMxDependence(
         bool firstGraphDrawn = false;
 
         // Create a legend in the top right with a border and background
-        TLegend *legend = new TLegend(0.55, 0.7, 0.9, 0.9);  // Adjust position and size
-        legend->SetTextSize(0.035);  // Adjust text size
-        legend->SetBorderSize(1);    // Set border size
+        TLegend *legend = new TLegend(0.55, 0.7, 0.9, 0.9);
+        legend->SetTextSize(0.035);
+        legend->SetBorderSize(1);
         legend->SetFillStyle(1001);  // Solid white background
 
         for (size_t p = 0; p < prefixes.size(); ++p) {
@@ -1580,24 +1577,25 @@ void plotMultipleMxDependence(
             if (it != asymmetryData.end()) {
                 const auto &data = it->second;
 
-                std::vector<double> x, y, yStatErr, yCombErr;
+                std::vector<double> x, y, yStatErr;
                 for (const auto &entry : data) {
                     x.push_back(entry[0]);
                     y.push_back(entry[1]);
                     yStatErr.push_back(entry[2]);
-
-                    double sysUncertainty = 0;  // Optionally calculate systematic uncertainty
-                    yCombErr.push_back(std::sqrt(std::pow(yStatErr.back(), 2) + std::pow(sysUncertainty, 2)));
                 }
 
                 TGraphErrors *graphStat = createTGraphErrors(x, y, yStatErr, markers[p], 1.0, colors[p]);
-                graphStat->SetLineWidth(1);  // Ensure the line is centered properly
+                graphStat->SetLineWidth(1);
 
                 // Set y-axis limits based on your requirements
-                std::pair<double, double> yLimits = 
-                    (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.5) :
-                    (suffixes[i] == "doubleratio") ? std::make_pair(-0.02, 0.4) :
-                    std::make_pair(-0.06, 0.06);
+                std::pair<double, double> yLimits;
+                if (suffixes[i] == "ALL") {
+                    yLimits = std::make_pair(-0.1, 0.5);
+                } else if (suffixes[i] == "doubleratio") {
+                    yLimits = std::make_pair(-0.02, 0.4);
+                } else {
+                    yLimits = std::make_pair(-0.06, 0.06);
+                }
 
                 setAxisLabelsAndRanges(graphStat, xLabel, yLabels[i], xLimits, yLimits);
 
@@ -1610,7 +1608,10 @@ void plotMultipleMxDependence(
 
                 // Add each entry to the legend with the corresponding color and label
                 TLegendEntry* legendEntry = legend->AddEntry(graphStat, legendLabels[p].c_str(), "p");
-                legendEntry->SetTextColor(colors[p]);  // Set the text color to match the graph color
+                legendEntry->SetTextColor(colors[p]);
+            } else {
+                // Handle the case where the key is not found
+                std::cerr << "Warning: Key " << key << " not found in asymmetryData." << std::endl;
             }
         }
 
@@ -1623,12 +1624,7 @@ void plotMultipleMxDependence(
         // Draw the legend in the current subplot
         legend->Draw();
 
-        // Add a title to each subplot
-        TLatex *latex = new TLatex();
-        latex->SetNDC();
-        latex->SetTextSize(0.035);
-        latex->SetTextAlign(22);  // Centered text alignment
-        latex->DrawLatex(0.5, 0.93, plotTitle.c_str());  // Adjust position and size
+        // No title as per your request
     }
 
     // Save the canvas to a file
@@ -1686,16 +1682,16 @@ int main(int argc, char *argv[]) {
     // plotNormalizedFLLOverFUU(asymmetryData, kinematicData, "output/epX_plots/normalized_FLL_over_FUU.png");
 
 
-    // Define the prefixes for Mx bins
-    std::vector<std::string> prefixes = {"Mxbin1_", "Mxbin2_", "Mxbin3_"};  // Adjust prefixes as needed
+    // Define the prefixes for the Mx bins
+    std::vector<std::string> prefixes = {"Mxbin1_", "Mxbin2_", "Mxbin3_"};
 
     // Call the new plotting function
     plotMultipleMxDependence(
         asymmetryData,
         prefixes,
-        "Q^{2} [GeV^{2}]",              // x-axis label
-        std::make_pair(1.0, 4.5),       // x-axis limits (adjust as needed)
-        "output/epX_plots/MxDependence.pdf"  // Output file name
+        "M_{x} (GeV)",
+        {0.5,2.5},
+        "output/epX_plots/MxDependence.png"
     );
 
     // std::vector<std::string> prefixes = {"Q2multi1", "Q2multi2", "Q2multi3"};

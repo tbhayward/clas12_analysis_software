@@ -174,7 +174,7 @@ int main(int argc, char* argv[]) {
 
     // Save the canvas as PNG
     system("mkdir -p output");
-    c1->SaveAs("output/plotMxdiff.png");
+    c1->SaveAs("output/epX_plots/plotMxdiff.png");
 
     // Clean up
     delete c1;
