@@ -1641,6 +1641,12 @@ void plotXFDependence(
     // Create the canvas for the plot
     TCanvas *c = new TCanvas("c", "xF Dependence", 800, 600);
 
+    // Remove the "Graph" title by setting empty title
+    c->SetTitle("");
+
+    // Adjust the left margin to avoid cutting off the y-axis label
+    gPad->SetLeftMargin(0.2);  // Increase padding on the left
+
     // Define the H2 xF dependence data
     std::vector<std::vector<double>> H2DataXF = {
         {-0.75, -0.002333, 0.007808}, {-0.65, -0.001810, 0.001441},
@@ -1713,12 +1719,25 @@ void plotXFDependence(
         }
     }
 
-    // Add the legend in the bottom right
-    TLegend *legend = new TLegend(0.55, 0.15, 0.9, 0.3);
+    // Add the dashed gray line at y = 0
+    TLine *line = new TLine(xLimits.first, 0, xLimits.second, 0);
+    line->SetLineColor(kGray+2);
+    line->SetLineStyle(7);  // Dashed line
+    line->Draw("same");
+
+    // Move the legend to the top left and adjust its size
+    TLegend *legend = new TLegend(0.2, 0.75, 0.5, 0.9);  // Top left corner, wider vertically, narrower horizontally
     legend->AddEntry(graphH2, "H_{2}, F_{LU}", "p");
     if (graphALUsinphi) legend->AddEntry(graphALUsinphi, "NH_{3}, F_{LU}", "p");
     if (graphAULsinphi) legend->AddEntry(graphAULsinphi, "NH_{3}, F_{UL}", "p");
+    legend->SetTextSize(0.035);  // Adjust text size
     legend->Draw();
+
+    // Add the "8% Scale Systematic" text in the bottom right using TLatex
+    TLatex latex;
+    latex.SetNDC();
+    latex.SetTextSize(0.04);
+    latex.DrawLatex(0.65, 0.2, "8% Scale Systematic");
 
     // Save the canvas as a PNG
     gSystem->Exec("mkdir -p output/epX_plots");
