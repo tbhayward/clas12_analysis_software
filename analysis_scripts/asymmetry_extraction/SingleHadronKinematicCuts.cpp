@@ -13,7 +13,7 @@ SingleHadronKinematicCuts::SingleHadronKinematicCuts(TTreeReader& reader)
       p_p(reader, "p_p"), p_theta(reader, "p_theta"), p_phi(reader, "p_phi"), 
       vz_p(reader, "vz_p"), 
       Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), x(reader, "x"), 
-      t(reader, "t"), t(reader, "tmin"), y(reader, "y"), z(reader, "z"), 
+      t(reader, "t"), tmin(reader, "tmin"), y(reader, "y"), z(reader, "z"), 
       pT(reader, "pT"), xF(reader, "xF"), phi(reader, "phi"), 
       target_pol(reader, "target_pol") {}
 
