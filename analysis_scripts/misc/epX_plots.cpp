@@ -1679,8 +1679,8 @@ void plotXFDependence(
     graphH2->GetXaxis()->SetTitle("x_{F}");
     graphH2->GetYaxis()->SetTitle("F_{xy}^{sin#phi}/F_{UU}");
     graphH2->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
-    graphH2->SetMinimum(-0.12);
-    graphH2->SetMaximum(0.12);
+    graphH2->SetMinimum(-0.08);
+    graphH2->SetMaximum(0.08);
 
     // Increase the font size of axis labels
     graphH2->GetXaxis()->SetTitleSize(0.05);  // Increase x-axis label size
@@ -1788,8 +1788,8 @@ void plotXFDependence(
         graphAULsin2phi->GetXaxis()->SetTitle("x_{F}");
         graphAULsin2phi->GetYaxis()->SetTitle("F_{UL}^{sin(2#phi)}/F_{UU}");
         graphAULsin2phi->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
-        graphAULsin2phi->SetMinimum(-0.12);
-        graphAULsin2phi->SetMaximum(0.12);
+        graphAULsin2phi->SetMinimum(-0.15);
+        graphAULsin2phi->SetMaximum(0.15);
 
         // Increase the font size of axis labels
         graphAULsin2phi->GetXaxis()->SetTitleSize(0.05);
@@ -1945,7 +1945,7 @@ int main(int argc, char *argv[]) {
 
 
     // Call the function to generate and save the plot
-    plotXFDependence(asymmetryData, "xF", {-1.0, 0.8});
+    plotXFDependence(asymmetryData, "xF", {-1.0, 1.0});
 
 
     return 0;
