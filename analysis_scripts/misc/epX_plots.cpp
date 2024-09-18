@@ -1641,8 +1641,9 @@ void plotXFDependence(
     // Create the canvas for the plot
     TCanvas *c = new TCanvas("c", "xF Dependence", 800, 600);
 
-    // Remove the "Graph" title by setting empty title
+    // Ensure no default title is drawn
     c->SetTitle("");
+    gStyle->SetOptTitle(0);  // Disable automatic title display
 
     // Adjust the left margin to avoid cutting off the y-axis label
     gPad->SetLeftMargin(0.2);  // Increase padding on the left
@@ -1680,6 +1681,10 @@ void plotXFDependence(
     graphH2->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
     graphH2->SetMinimum(yLimits.first);
     graphH2->SetMaximum(yLimits.second);
+
+    // Increase the font size of axis labels
+    graphH2->GetXaxis()->SetTitleSize(0.05);  // Increase x-axis label size
+    graphH2->GetYaxis()->SetTitleSize(0.05);  // Increase y-axis label size
 
     // Now plot the NH3 data for ALUsinphi and AULsinphi
     std::vector<std::string> suffixes = {"ALUsinphi", "AULsinphi"};
@@ -1726,7 +1731,7 @@ void plotXFDependence(
     line->Draw("same");
 
     // Move the legend to the top left and adjust its size
-    TLegend *legend = new TLegend(0.2, 0.75, 0.5, 0.9);  // Top left corner, wider vertically, narrower horizontally
+    TLegend *legend = new TLegend(0.2, 0.7, 0.4, 0.9);  // Top left corner, wider vertically, narrower horizontally
     legend->AddEntry(graphH2, "H_{2}, F_{LU}", "p");
     if (graphALUsinphi) legend->AddEntry(graphALUsinphi, "NH_{3}, F_{LU}", "p");
     if (graphAULsinphi) legend->AddEntry(graphAULsinphi, "NH_{3}, F_{UL}", "p");
@@ -1736,7 +1741,7 @@ void plotXFDependence(
     // Add the "8% Scale Systematic" text in the bottom right using TLatex
     TLatex latex;
     latex.SetNDC();
-    latex.SetTextSize(0.04);
+    latex.SetTextSize(0.03);  // Make the text slightly smaller
     latex.DrawLatex(0.65, 0.2, "8% Scale Systematic");
 
     // Save the canvas as a PNG
