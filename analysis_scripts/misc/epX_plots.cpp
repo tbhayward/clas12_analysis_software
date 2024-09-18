@@ -1691,7 +1691,7 @@ int main(int argc, char *argv[]) {
         prefixes,
         "M_{x} (GeV)",
         {0.5,2.5},
-        "output/epX_plots/MxDependence.png"
+        "output/epX_plots/Mxmulti_dependence.png"
     );
 
     // std::vector<std::string> prefixes = {"Q2multi1", "Q2multi2", "Q2multi3"};
