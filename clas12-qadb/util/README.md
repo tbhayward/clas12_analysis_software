@@ -1,1 +1,0 @@
-# QADB development tools
