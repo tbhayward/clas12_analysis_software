@@ -1537,6 +1537,7 @@ int main(int argc, char *argv[]) {
     // plotDependence(asymmetryData, "Q2extramulti2", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2extramulti2_dependence_plots.png");
     // plotDependence(asymmetryData, "Q2extramulti3", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2extramulti3_dependence_plots.png");
     plotDependence(asymmetryData, "t", "t (GeV^{2})", {-8, 0}, "output/epX_plots/t_dependence_plots.png");
+    plotDependence(asymmetryData, "t", "t (GeV^{2})", {-8, 0}, "output/epX_plots/t_dependence_comparison_plots.png", "tall");
 
     // Call the new function
     plotNormalizedFLLOverFUU(asymmetryData, kinematicData, "output/epX_plots/normalized_FLL_over_FUU.png");
