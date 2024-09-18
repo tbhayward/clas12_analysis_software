@@ -1189,8 +1189,10 @@ void plotMultipleQ2extramultiDependence(
 void plotNormalizedFLLOverFUU(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
     const std::map<std::string, std::vector<std::vector<double>>> &kinematicData,
-    const std::string &outputFileName)
-{
+    const std::string &outputFileName) {
+    // Disable the display of titles globally
+    gStyle->SetOptTitle(0);
+
     // Step 1: Fit the x-dependence of FLL/FUU
     auto it = asymmetryData.find("xchi2FitsALL");
     if (it == asymmetryData.end()) {
@@ -1210,6 +1212,7 @@ void plotNormalizedFLLOverFUU(
     graph->SetMarkerStyle(20);
     graph->SetMarkerSize(0.8);
     graph->SetMarkerColor(kBlack);
+    graph->SetTitle(""); // Remove the title
 
     // Define the function y = A x^a
     TF1 *fitFunc = new TF1("fitFunc", "[0]*pow(x, [1])", 0.06, 0.6);
@@ -1279,6 +1282,7 @@ void plotNormalizedFLLOverFUU(
         normGraph->SetMarkerStyle(20);
         normGraph->SetMarkerSize(0.8);
         normGraph->SetMarkerColor(kBlack);
+        normGraph->SetTitle(""); // Remove the title
 
         normalizedGraphs[var] = normGraph;
     }
@@ -1332,10 +1336,19 @@ void plotNormalizedFLLOverFUU(
         normGraph->Draw("AP");
 
         // Draw the dashed gray line at y = 1
-        TLine *line = new TLine(0, 1, 5, 1);
+        double xmin = normGraph->GetXaxis()->GetXmin();
+        double xmax = normGraph->GetXaxis()->GetXmax();
+        TLine *line = new TLine(xmin, 1, xmax, 1);
         line->SetLineColor(kGray + 2);
         line->SetLineStyle(7); // Dashed line
         line->Draw("same");
+
+        // Add text "M_{x} > 1.35 GeV" in the bottom right corner
+        TLatex *latex = new TLatex();
+        latex->SetNDC();
+        latex->SetTextSize(0.04);
+        latex->SetTextAlign(33); // Bottom right alignment
+        latex->DrawLatex(0.9, 0.2, "M_{x} > 1.35 GeV");
 
         pad++;
     }
