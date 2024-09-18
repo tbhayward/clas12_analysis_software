@@ -227,7 +227,7 @@ int main(int argc, char* argv[]) {
 
         // Set axis labels
         mg->GetXaxis()->SetTitle("M_{x} (GeV)");
-        mg->GetYaxis()->SetTitle("#Delta (++ + --) - (+- + -+)");
+        mg->GetYaxis()->SetTitle("#Delta (aligned) - (unaligned)");
         mg->GetXaxis()->SetTitleSize(0.05);
         mg->GetYaxis()->SetTitleSize(0.05);
         mg->GetXaxis()->SetTitleOffset(1.0);
