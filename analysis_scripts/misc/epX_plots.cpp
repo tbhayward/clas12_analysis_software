@@ -1635,9 +1635,7 @@ void plotMultipleMxDependence(
 void plotXFDependence(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
     const std::string &prefix,  // This will be "xF"
-    const std::pair<double, double> &xLimits,
-    const std::pair<double, double> &yLimits
-) {
+    const std::pair<double, double> &xLimits) {
     // ======== Canvas 1: Original ALUsinphi and AULsinphi Canvas ========
     // Create the canvas for the plot
     TCanvas *c1 = new TCanvas("c1", "xF Dependence - ALUsinphi & AULsinphi", 800, 600);
@@ -1681,8 +1679,8 @@ void plotXFDependence(
     graphH2->GetXaxis()->SetTitle("x_{F}");
     graphH2->GetYaxis()->SetTitle("F_{xy}^{sin#phi}/F_{UU}");
     graphH2->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
-    graphH2->SetMinimum(yLimits.first);
-    graphH2->SetMaximum(yLimits.second);
+    graphH2->SetMinimum(-0.12);
+    graphH2->SetMaximum(0.12);
 
     // Increase the font size of axis labels
     graphH2->GetXaxis()->SetTitleSize(0.05);  // Increase x-axis label size
