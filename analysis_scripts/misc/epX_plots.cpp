@@ -1448,15 +1448,15 @@ void plotNormalizedFLLOverFUU(
 
         // Set axis labels and ranges based on variable
         if (var == "Mx") {
-            setAxisLabelsAndRanges(normGraph, "M_{x} (GeV)", Form("(F_{LL}/F_{UU}) / x_{B}^{%.3f}(0.213)", exponent), {0.0, 2.5}, {0.5, 1.2});
+            setAxisLabelsAndRanges(normGraph, "M_{x} (GeV)", Form("(F_{LL}/F_{UU}) / (0.213)^{%.3f}", exponent), {0.0, 2.5}, {0.6, 1.4});
         } else if (var == "z") {
-            setAxisLabelsAndRanges(normGraph, "z", Form("(F_{LL}/F_{UU}) / x_{B}^{%.3f}(0.213)", exponent), {0.0, 0.8}, {0.5, 1.2});
+            setAxisLabelsAndRanges(normGraph, "z", Form("(F_{LL}/F_{UU}) / (0.213)^{%.3f}(0.213)", exponent), {0.0, 0.8}, {0.6, 1.4});
         } else if (var == "PT") {
-            setAxisLabelsAndRanges(normGraph, "P_{T} (GeV)", Form("(F_{LL}/F_{UU}) / x_{B}^{%.3f}(0.213)", exponent), {0.0, 1.0}, {0.5, 1.2});
+            setAxisLabelsAndRanges(normGraph, "P_{T} (GeV)", Form("(F_{LL}/F_{UU}) / (0.213)^{%.3f}(0.213)", exponent), {0.0, 1.0}, {0.6, 1.4});
         } else if (var == "xF") {
-            setAxisLabelsAndRanges(normGraph, "x_{F}", Form("(F_{LL}/F_{UU}) / x_{B}^{%.3f}(0.213)", exponent), {-0.8, 0.6}, {0.5, 1.2});
+            setAxisLabelsAndRanges(normGraph, "x_{F}", Form("(F_{LL}/F_{UU}) / (0.213)^{%.3f}(0.213)", exponent), {-0.8, 0.6}, {0.6, 1.4});
         } else if (var == "t") {
-            setAxisLabelsAndRanges(normGraph, "-t (GeV^{2})", Form("(F_{LL}/F_{UU}) / x_{B}^{%.3f}(0.213)", exponent), {0.0, 8.0}, {0.5, 1.2});
+            setAxisLabelsAndRanges(normGraph, "-t (GeV^{2})", Form("(F_{LL}/F_{UU}) / (0.213)^{%.3f}(0.213)", exponent), {0.0, 8.0}, {0.6, 1.4});
         }
 
         normGraph->Draw("AP");
