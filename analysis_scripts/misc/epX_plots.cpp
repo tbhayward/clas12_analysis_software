@@ -1304,7 +1304,7 @@ void plotNormalizedFLLOverFUU(
     fitFunc->Draw("same");
 
     // Add legend in the top-left corner
-    TLegend *leg = new TLegend(0.2, 0.8, 0.65, 0.95);
+    TLegend *leg = new TLegend(0.2, 0.75, 0.675, 0.9);
     leg->AddEntry(graph, "Data", "P");
     leg->AddEntry(fitFunc, Form("Fit: y = %.3f x^{%.3f}", amplitude, exponent), "L");
     leg->Draw();
@@ -1341,7 +1341,7 @@ void plotNormalizedFLLOverFUU(
         if (var == "Mx") {
             setAxisLabelsAndRanges(normGraph, "M_{x} (GeV)", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 2.5}, {0.5, 1.2});
         } else if (var == "z") {
-            setAxisLabelsAndRanges(normGraph, "z", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 0.8}, {0, 1.2});
+            setAxisLabelsAndRanges(normGraph, "z", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 0.8}, {0.5, 1.2});
         } else if (var == "PT") {
             setAxisLabelsAndRanges(normGraph, "P_{T} (GeV)", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 1.0}, {0.5, 1.2});
         } else if (var == "xF") {
