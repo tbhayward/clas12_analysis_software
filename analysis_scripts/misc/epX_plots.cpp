@@ -1528,8 +1528,7 @@ void plotMultipleMxDependence(
     const std::vector<std::string> &prefixes,  // Should be {"Mxbin1_", "Mxbin2_", "Mxbin3_"}
     const std::string &xLabel,
     const std::pair<double, double> &xLimits,
-    const std::string &outputFileName
-) {
+    const std::string &outputFileName) {
     TCanvas *c = new TCanvas("c", "Mx Dependence Plots", 1200, 800);
     c->Divide(3, 2);
 
@@ -1633,6 +1632,91 @@ void plotMultipleMxDependence(
     delete c;
 }
 
+void plotXFDependence(
+    const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
+    const std::string &prefix, 
+    const std::pair<double, double> &xLimits,
+    const std::pair<double, double> &yLimits,
+    const std::string &outputFileName
+) {
+    // Create the canvas for the plot
+    TCanvas *c = new TCanvas("c", "xF Dependence", 800, 600);
+
+    // Define the H2 xF dependence data
+    std::vector<std::vector<double>> H2DataXF = {
+        {-0.75, -0.002333, 0.007808}, {-0.65, -0.001810, 0.001441},
+        {-0.55, -0.017523, 0.000810}, {-0.45, -0.024326, 0.000588},
+        {-0.35, -0.027394, 0.000502}, {-0.25, -0.026728, 0.000479},
+        {-0.15, -0.024592, 0.000488}, {-0.05, -0.018854, 0.000524},
+        {0.05, -0.012483, 0.000597}, {0.15, -0.002537, 0.000723},
+        {0.25, 0.009889, 0.000929}, {0.35, 0.022082, 0.001272},
+        {0.45, 0.030298, 0.001874}, {0.55, 0.041041, 0.003080},
+        {0.65, 0.048530, 0.006303}, {0.75, 0.102060, 0.026785}
+    };
+
+    // Split H2 data into x, y, and error vectors
+    std::vector<double> H2x, H2y, H2yErr;
+    for (const auto &entry : H2DataXF) {
+        H2x.push_back(entry[0]);
+        H2y.push_back(entry[1]);
+        H2yErr.push_back(entry[2]);
+    }
+
+    // Plot the H2 data first (in black)
+    TGraphErrors *graphH2 = new TGraphErrors(H2x.size(), &H2x[0], &H2y[0], nullptr, &H2yErr[0]);
+    graphH2->SetMarkerStyle(20);
+    graphH2->SetMarkerColor(kBlack);
+    graphH2->SetLineColor(kBlack);
+    graphH2->Draw("AP");  // Draw as points with error bars
+
+    // Set the axis labels and ranges
+    graphH2->GetXaxis()->SetTitle("x_{F}");
+    graphH2->GetYaxis()->SetTitle("F_{xy}^{sin#phi}/F_{UU}");
+    graphH2->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
+    graphH2->SetMinimum(yLimits.first);
+    graphH2->SetMaximum(yLimits.second);
+
+    // Now plot the NH3 data for ALUsinphi and AULsinphi
+    std::vector<std::string> suffixes = {"ALUsinphi", "AULsinphi"};
+    std::vector<int> colors = {kRed, kBlue};  // Red for ALUsinphi, Blue for AULsinphi
+
+    for (size_t i = 0; i < suffixes.size(); ++i) {
+        std::string key = prefix + "chi2Fits" + suffixes[i];
+        auto it = asymmetryData.find(key);
+        if (it != asymmetryData.end()) {
+            const auto &data = it->second;
+
+            std::vector<double> x, y, yStatErr;
+            for (const auto &entry : data) {
+                x.push_back(entry[0]);
+                y.push_back(entry[1]);
+                yStatErr.push_back(entry[2]);
+            }
+
+            // Create TGraphErrors for each suffix
+            TGraphErrors *graphNH3 = new TGraphErrors(x.size(), &x[0], &y[0], nullptr, &yStatErr[0]);
+            graphNH3->SetMarkerStyle(21);
+            graphNH3->SetMarkerColor(colors[i]);
+            graphNH3->SetLineColor(colors[i]);
+            graphNH3->Draw("P SAME");  // Overlay on the same plot
+        }
+    }
+
+    // Add the legend in the bottom right
+    TLegend *legend = new TLegend(0.55, 0.15, 0.9, 0.3);
+    legend->AddEntry(graphH2, "H_{2}, F_{LU}", "p");
+    legend->AddEntry(graphNH3, "NH_{3}, F_{LU}", "p");
+    legend->AddEntry(graphNH3, "NH_{3}, F_{UL}", "p");
+    legend->Draw();
+
+    // Save the canvas as a PNG
+    gSystem->Exec("mkdir -p output/epX_plots");
+    c->SaveAs(outputFileName.c_str());
+
+    // Clean up
+    delete c;
+}
+
 int main(int argc, char *argv[]) {
     if (argc != 3) {
         std::cerr << "Usage: " << argv[0] << " <asymmetries.txt> <kinematicPlots.txt>\n";
@@ -1657,10 +1741,10 @@ int main(int argc, char *argv[]) {
 
     // Call the plotting function for different dependencies
     // plotDependence(asymmetryData, "Mx", "M_{x} (GeV)", {0.0, 2.5}, "output/epX_plots/Mx_dependence_plots.png");
-    plotDependence(asymmetryData, "Mxbin1", "M_{x} (GeV)", {0.5, 2.5}, "output/epX_plots/Mxbin1_dependence_plots.png");
-    plotDependence(asymmetryData, "Mxbin2", "M_{x} (GeV)", {0.5, 2.5}, "output/epX_plots/Mxbin2_dependence_plots.png");
-    plotDependence(asymmetryData, "Mxbin3", "M_{x} (GeV)", {0.5, 2.5}, "output/epX_plots/Mxbin3_dependence_plots.png");
-    plotDependence(asymmetryData, "Mxnodilution", "M_{x} (GeV)", {0.5, 2.5}, "output/epX_plots/Mxnodilution_dependence_plots.png");
+    // plotDependence(asymmetryData, "Mxbin1", "M_{x} (GeV)", {0.5, 2.5}, "output/epX_plots/Mxbin1_dependence_plots.png");
+    // plotDependence(asymmetryData, "Mxbin2", "M_{x} (GeV)", {0.5, 2.5}, "output/epX_plots/Mxbin2_dependence_plots.png");
+    // plotDependence(asymmetryData, "Mxbin3", "M_{x} (GeV)", {0.5, 2.5}, "output/epX_plots/Mxbin3_dependence_plots.png");
+    // plotDependence(asymmetryData, "Mxnodilution", "M_{x} (GeV)", {0.5, 2.5}, "output/epX_plots/Mxnodilution_dependence_plots.png");
     // plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots.png");
     // plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots_comparison.png", "xall");
     // plotDependence(asymmetryData, "z", "z", {0.0, 0.8}, "output/epX_plots/z_dependence_plots.png");
@@ -1683,16 +1767,16 @@ int main(int argc, char *argv[]) {
 
 
     // Define the prefixes for the Mx bins
-    std::vector<std::string> prefixes = {"Mxbin1", "Mxbin2", "Mxbin3"};
+    // std::vector<std::string> prefixes = {"Mxbin1", "Mxbin2", "Mxbin3"};
 
     // Call the new plotting function
-    plotMultipleMxDependence(
-        asymmetryData,
-        prefixes,
-        "M_{x} (GeV)",
-        {0.5,2.5},
-        "output/epX_plots/Mxmulti_dependence.png"
-    );
+    // plotMultipleMxDependence(
+    //     asymmetryData,
+    //     prefixes,
+    //     "M_{x} (GeV)",
+    //     {0.5,2.5},
+    //     "output/epX_plots/Mxmulti_dependence.png"
+    // );
 
     // std::vector<std::string> prefixes = {"Q2multi1", "Q2multi2", "Q2multi3"};
     // plotMultipleQ2multiDependence(asymmetryData, prefixes, "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi_dependence_plots.png");
@@ -1703,6 +1787,11 @@ int main(int argc, char *argv[]) {
     // plotRunnumDependence(asymmetryData, "runnum", "run number", "output/epX_plots/runnum_dependence_plots.png");
 
     // plotTargetPolarizationDependence(targetPolarizationData, "run number", "output/epX_plots/target_polarization_dependence.png");
+
+
+    // Call the function to generate and save the plot
+    plotXFDependence(asymmetryData, "xF", {-1.0, 1.0}, {-0.1, 0.1}, "output/epX_plots/xF_dependence.png");
+
 
     return 0;
 }
