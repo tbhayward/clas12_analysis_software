@@ -1781,9 +1781,9 @@ void plotXFDependence(
         }
 
         TGraphErrors *graphAULsin2phi = new TGraphErrors(x.size(), &x[0], &y[0], nullptr, &yStatErr[0]);
-        graphAULsin2phi->SetMarkerStyle(21);
-        graphAULsin2phi->SetMarkerColor(kBlue);
-        graphAULsin2phi->SetLineColor(kBlue);
+        graphAULsin2phi->SetMarkerStyle(20);
+        graphAULsin2phi->SetMarkerColor(kBlack);
+        graphAULsin2phi->SetLineColor(kBlack);
         graphAULsin2phi->Draw("AP");
 
         // Set the axis labels and ranges
@@ -1838,17 +1838,17 @@ void plotXFDependence(
         }
 
         TGraphErrors *graphALL = new TGraphErrors(x.size(), &x[0], &y[0], nullptr, &yStatErr[0]);
-        graphALL->SetMarkerStyle(21);
-        graphALL->SetMarkerColor(kBlue);
-        graphALL->SetLineColor(kBlue);
+        graphALL->SetMarkerStyle(20);
+        graphALL->SetMarkerColor(kBlack);
+        graphALL->SetLineColor(kBlack);
         graphALL->Draw("AP");
 
         // Set the axis labels and ranges
         graphALL->GetXaxis()->SetTitle("x_{F}");
         graphALL->GetYaxis()->SetTitle("F_{LL}/F_{UU}");
         graphALL->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
-        graphALL->SetMinimum(-0.2);
-        graphALL->SetMaximum(0.5);
+        graphALL->SetMinimum(-0.1);
+        graphALL->SetMaximum(0.4);
 
         // Increase the font size of axis labels
         graphALL->GetXaxis()->SetTitleSize(0.05);
