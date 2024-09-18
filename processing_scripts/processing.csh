@@ -62,8 +62,8 @@ echo "Pulling the latest changes from the repository..."
 git pull
 
 echo "Entering the 'clasqaDB/' directory and sourcing 'env.csh'..."
-# cd clas12-qadb/
-source clas12-qadb/environ.csh
+cd clas12-qadb/
+source environ.csh
 #cd clasqaDB/
 #source env.csh
 
