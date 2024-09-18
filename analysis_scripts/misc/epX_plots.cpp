@@ -1367,8 +1367,8 @@ int main(int argc, char *argv[]) {
     // std::cout << "Asymmetry Data:\n";
     // printData(asymmetryData);
 
-    // std::cout << "\nKinematic Data:\n"; 
-    // printData(kinematicData);
+    std::cout << "\nKinematic Data:\n"; 
+    printData(kinematicData);
 
     // Call the plotting function for different dependencies
     // plotDependence(asymmetryData, "Mx", "M_{x} (GeV)", {0.0, 2.5}, "output/epX_plots/Mx_dependence_plots.png");
