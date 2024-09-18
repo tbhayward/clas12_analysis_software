@@ -1638,11 +1638,12 @@ void plotXFDependence(
     const std::pair<double, double> &xLimits,
     const std::pair<double, double> &yLimits
 ) {
+    // ======== Canvas 1: Original ALUsinphi and AULsinphi Canvas ========
     // Create the canvas for the plot
-    TCanvas *c = new TCanvas("c", "xF Dependence", 800, 600);
+    TCanvas *c1 = new TCanvas("c1", "xF Dependence - ALUsinphi & AULsinphi", 800, 600);
 
     // Ensure no default title is drawn
-    c->SetTitle("");
+    c1->SetTitle("");
     gStyle->SetOptTitle(0);  // Disable automatic title display
 
     // Adjust the left margin to avoid cutting off the y-axis label
@@ -1726,37 +1727,151 @@ void plotXFDependence(
     }
 
     // Add the dashed gray line at y = 0
-    TLine *line = new TLine(xLimits.first, 0, xLimits.second, 0);
-    line->SetLineColor(kGray+2);
-    line->SetLineStyle(7);  // Dashed line
-    line->Draw("same");
+    TLine *line1 = new TLine(xLimits.first, 0, xLimits.second, 0);
+    line1->SetLineColor(kGray+2);
+    line1->SetLineStyle(7);  // Dashed line
+    line1->Draw("same");
 
     // Move the legend to the top left and adjust its size
-    TLegend *legend = new TLegend(0.15, 0.7, 0.325, 0.9);  // Top left corner, wider vertically, narrower horizontally
-    legend->AddEntry(graphH2, "H_{2}, F_{LU}", "p");
+    TLegend *legend1 = new TLegend(0.15, 0.7, 0.325, 0.9);  // Top left corner, wider vertically, narrower horizontally
+    legend1->AddEntry(graphH2, "H_{2}, F_{LU}", "p");
     if (graphALUsinphi) {
-        TLegendEntry *entry1 = legend->AddEntry(graphALUsinphi, "NH_{3}, F_{LU}", "p");
+        TLegendEntry *entry1 = legend1->AddEntry(graphALUsinphi, "NH_{3}, F_{LU}", "p");
         entry1->SetTextColor(kRed);  // Set label color to red
     }
     if (graphAULsinphi) {
-        TLegendEntry *entry2 = legend->AddEntry(graphAULsinphi, "NH_{3}, F_{UL}", "p");
+        TLegendEntry *entry2 = legend1->AddEntry(graphAULsinphi, "NH_{3}, F_{UL}", "p");
         entry2->SetTextColor(kBlue);  // Set label color to blue
     }
-    legend->SetTextSize(0.035);  // Adjust text size
-    legend->Draw();
+    legend1->SetTextSize(0.035);  // Adjust text size
+    legend1->Draw();
 
     // Add the "8% Scale Systematic" text in the bottom right using TLatex
-    TLatex latex;
-    latex.SetNDC();
-    latex.SetTextSize(0.03);  // Make the text slightly smaller
-    latex.DrawLatex(0.675, 0.2, "8% Scale Systematic");
+    TLatex latex1;
+    latex1.SetNDC();
+    latex1.SetTextSize(0.03);  // Make the text slightly smaller
+    latex1.DrawLatex(0.675, 0.2, "8% Scale Systematic");
 
-    // Save the canvas as a PNG
+    // Save the first canvas as a PNG
     gSystem->Exec("mkdir -p output/epX_plots");
-    c->SaveAs("output/epX_plots/CPHI_xF_dependence_ALU_AUL.png");
+    c1->SaveAs("output/epX_plots/CPHI_xF_dependence_ALU_AUL.png");
 
-    // Clean up
-    delete c;
+    // Clean up the first canvas
+    delete c1;
+
+
+    // ======== Canvas 2: AULsin2phi ========
+    TCanvas *c2 = new TCanvas("c2", "xF Dependence - AULsin2phi", 800, 600);
+    c2->SetTitle("");
+    gStyle->SetOptTitle(0);
+    gPad->SetLeftMargin(0.15);
+    gPad->SetBottomMargin(0.15);
+
+    // Plot the NH3 data for AULsin2phi
+    std::string keyAULsin2phi = prefix + "chi2FitsAULsin2phi";
+    auto itAULsin2phi = asymmetryData.find(keyAULsin2phi);
+    if (itAULsin2phi != asymmetryData.end()) {
+        const auto &data = itAULsin2phi->second;
+
+        std::vector<double> x, y, yStatErr;
+        for (const auto &entry : data) {
+            x.push_back(entry[0]);
+            y.push_back(entry[1]);
+            yStatErr.push_back(entry[2]);
+        }
+
+        TGraphErrors *graphAULsin2phi = new TGraphErrors(x.size(), &x[0], &y[0], nullptr, &yStatErr[0]);
+        graphAULsin2phi->SetMarkerStyle(21);
+        graphAULsin2phi->SetMarkerColor(kBlue);
+        graphAULsin2phi->SetLineColor(kBlue);
+        graphAULsin2phi->Draw("AP");
+
+        // Set the axis labels and ranges
+        graphAULsin2phi->GetXaxis()->SetTitle("x_{F}");
+        graphAULsin2phi->GetYaxis()->SetTitle("F_{UL}^{sin(2#phi)}/F_{UU}");
+        graphAULsin2phi->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
+        graphAULsin2phi->SetMinimum(yLimits.first);
+        graphAULsin2phi->SetMaximum(yLimits.second);
+
+        // Increase the font size of axis labels
+        graphAULsin2phi->GetXaxis()->SetTitleSize(0.05);
+        graphAULsin2phi->GetYaxis()->SetTitleSize(0.05);
+
+        // Add the dashed gray line at y = 0
+        TLine *line2 = new TLine(xLimits.first, 0, xLimits.second, 0);
+        line2->SetLineColor(kGray+2);
+        line2->SetLineStyle(7);
+        line2->Draw("same");
+
+        // Add the "8% Scale Systematic" text
+        TLatex latex2;
+        latex2.SetNDC();
+        latex2.SetTextSize(0.03);
+        latex2.DrawLatex(0.675, 0.2, "8% Scale Systematic");
+
+        // Save the second canvas as a PNG
+        c2->SaveAs("output/epX_plots/CPHI_xF_dependence_AULsin2phi.png");
+
+        // Clean up the second canvas
+        delete c2;
+    }
+
+
+    // ======== Canvas 3: ALL ========
+    TCanvas *c3 = new TCanvas("c3", "xF Dependence - ALL", 800, 600);
+    c3->SetTitle("");
+    gStyle->SetOptTitle(0);
+    gPad->SetLeftMargin(0.15);
+    gPad->SetBottomMargin(0.15);
+
+    // Plot the NH3 data for ALL
+    std::string keyALL = prefix + "chi2FitsALL";
+    auto itALL = asymmetryData.find(keyALL);
+    if (itALL != asymmetryData.end()) {
+        const auto &data = itALL->second;
+
+        std::vector<double> x, y, yStatErr;
+        for (const auto &entry : data) {
+            x.push_back(entry[0]);
+            y.push_back(entry[1]);
+            yStatErr.push_back(entry[2]);
+        }
+
+        TGraphErrors *graphALL = new TGraphErrors(x.size(), &x[0], &y[0], nullptr, &yStatErr[0]);
+        graphALL->SetMarkerStyle(21);
+        graphALL->SetMarkerColor(kBlue);
+        graphALL->SetLineColor(kBlue);
+        graphALL->Draw("AP");
+
+        // Set the axis labels and ranges
+        graphALL->GetXaxis()->SetTitle("x_{F}");
+        graphALL->GetYaxis()->SetTitle("F_{LL}/F_{UU}");
+        graphALL->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
+        graphALL->SetMinimum(-0.2);
+        graphALL->SetMaximum(0.5);
+
+        // Increase the font size of axis labels
+        graphALL->GetXaxis()->SetTitleSize(0.05);
+        graphALL->GetYaxis()->SetTitleSize(0.05);
+
+        // Add the dashed gray line at y = 0
+        TLine *line3 = new TLine(xLimits.first, 0, xLimits.second, 0);
+        line3->SetLineColor(kGray+2);
+        line3->SetLineStyle(7);
+        line3->Draw("same");
+
+        // Add the "9% Scale Systematic" text
+        TLatex latex3;
+        latex3.SetNDC();
+        latex3.SetTextSize(0.03);
+        latex3.DrawLatex(0.675, 0.2, "9% Scale Systematic");
+
+        // Save the third canvas as a PNG
+        c3->SaveAs("output/epX_plots/CPHI_xF_dependence_ALL.png");
+
+        // Clean up the third canvas
+        delete c3;
+    }
 }
 
 int main(int argc, char *argv[]) {
