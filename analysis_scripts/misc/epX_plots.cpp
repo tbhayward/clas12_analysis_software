@@ -1304,7 +1304,7 @@ void plotNormalizedFLLOverFUU(
     fitFunc->Draw("same");
 
     // Add legend in the top-left corner
-    TLegend *leg = new TLegend(0.2, 0.8, 0.65, 0.85);
+    TLegend *leg = new TLegend(0.2, 0.8, 0.65, 0.95);
     leg->AddEntry(graph, "Data", "P");
     leg->AddEntry(fitFunc, Form("Fit: y = %.3f x^{%.3f}", amplitude, exponent), "L");
     leg->Draw();
