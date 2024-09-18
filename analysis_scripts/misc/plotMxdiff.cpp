@@ -12,6 +12,7 @@
 #include "TLegend.h"
 #include "TStyle.h"
 #include "TLatex.h"
+#include "TMultiGraph.h"
 
 using namespace std;
 
