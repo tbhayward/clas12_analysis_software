@@ -1186,6 +1186,168 @@ void plotMultipleQ2extramultiDependence(
     delete c;
 }
 
+void plotNormalizedFLLOverFUU(
+    const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
+    const std::map<std::string, std::vector<std::vector<double>>> &kinematicData,
+    const std::string &outputFileName)
+{
+    // Step 1: Fit the x-dependence of FLL/FUU
+    auto it = asymmetryData.find("xchi2FitsALL");
+    if (it == asymmetryData.end()) {
+        std::cerr << "Error: xchi2FitsALL not found in asymmetry data.\n";
+        return;
+    }
+    const auto &xData = it->second;
+
+    std::vector<double> xVals, yVals, yErrs;
+    for (const auto &entry : xData) {
+        xVals.push_back(entry[0]);
+        yVals.push_back(entry[1]);
+        yErrs.push_back(entry[2]);
+    }
+
+    TGraphErrors *graph = new TGraphErrors(xVals.size(), &xVals[0], &yVals[0], nullptr, &yErrs[0]);
+    graph->SetMarkerStyle(20);
+    graph->SetMarkerSize(0.8);
+    graph->SetMarkerColor(kBlack);
+
+    // Define the function y = x^a
+    TF1 *fitFunc = new TF1("fitFunc", "[0]*pow(x, [1])", xVals.front(), xVals.back());
+    fitFunc->SetParameters(1, 1); // Initial guesses for [0] and [1]
+    fitFunc->SetParNames("Amplitude", "Exponent");
+
+    // Perform the fit
+    graph->Fit(fitFunc, "Q"); // "Q" for quiet mode
+
+    // Get fit parameters
+    double amplitude = fitFunc->GetParameter(0);
+    double exponent = fitFunc->GetParameter(1);
+
+    // Step 2: Normalize FLL/FUU for other variables
+    std::vector<std::string> variables = {"Mx", "z", "PT", "xF"};
+    std::map<std::string, TGraphErrors*> normalizedGraphs;
+
+    for (const auto &var : variables) {
+        std::string key = var + "chi2FitsALL";
+        auto asymIt = asymmetryData.find(key);
+        if (asymIt == asymmetryData.end()) {
+            std::cerr << "Warning: " << key << " not found in asymmetry data.\n";
+            continue;
+        }
+        const auto &asymData = asymIt->second;
+
+        // Get corresponding kinematic data
+        std::string kinKey = var + "Kinematics";
+        auto kinIt = kinematicData.find(kinKey);
+        if (kinIt == kinematicData.end()) {
+            std::cerr << "Warning: " << kinKey << " not found in kinematic data.\n";
+            continue;
+        }
+        const auto &kinData = kinIt->second;
+
+        if (asymData.size() != kinData.size()) {
+            std::cerr << "Warning: Size mismatch between asymmetry and kinematic data for " << var << ".\n";
+            continue;
+        }
+
+        std::vector<double> varVals, normYVals, normYErrs;
+        for (size_t i = 0; i < asymData.size(); ++i) {
+            double varValue = kinData[i][0]; // The first column is the variable's mean value
+            double xValue = kinData[i][2];   // The fourth column (index 2) is x
+            double yValue = asymData[i][1];  // FLL/FUU value
+            double yErr = asymData[i][2];    // Error in FLL/FUU
+
+            // Evaluate the fitted function at xValue
+            double fittedY = fitFunc->Eval(xValue);
+
+            // Normalize yValue
+            double normY = yValue / fittedY;
+            double normYErr = yErr / fabs(fittedY); // Error propagation assuming fittedY has negligible error
+
+            varVals.push_back(varValue);
+            normYVals.push_back(normY);
+            normYErrs.push_back(normYErr);
+        }
+
+        // Create TGraphErrors for normalized data
+        TGraphErrors *normGraph = new TGraphErrors(varVals.size(), &varVals[0], &normYVals[0], nullptr, &normYErrs[0]);
+        normGraph->SetMarkerStyle(20);
+        normGraph->SetMarkerSize(0.8);
+        normGraph->SetMarkerColor(kBlack);
+
+        normalizedGraphs[var] = normGraph;
+    }
+
+    // Step 3: Plot the results
+    TCanvas *c = new TCanvas("c", "Normalized FLL/FUU Plots", 1200, 800);
+    c->Divide(3, 2);
+
+    // Plot 1: FLL/FUU vs x with fit
+    c->cd(1);
+    gPad->SetLeftMargin(0.18);
+    gPad->SetBottomMargin(0.15);
+
+    setAxisLabelsAndRanges(graph, "x_{B}", "F_{LL}/F_{UU}", {xVals.front(), xVals.back()}, {0, 0.6});
+    graph->Draw("AP");
+
+    // Draw the fit function
+    fitFunc->SetLineColor(kRed);
+    fitFunc->Draw("same");
+
+    // Add legend
+    TLegend *leg = new TLegend(0.55, 0.7, 0.85, 0.85);
+    leg->AddEntry(graph, "Data", "P");
+    leg->AddEntry(fitFunc, Form("Fit: y = %.2f x^{%.2f}", amplitude, exponent), "L");
+    leg->Draw();
+
+    // Plot 2-5: Normalized FLL/FUU vs other variables
+    int pad = 2;
+    for (const auto &var : variables) {
+        if (normalizedGraphs.find(var) == normalizedGraphs.end()) {
+            continue;
+        }
+
+        c->cd(pad);
+        gPad->SetLeftMargin(0.18);
+        gPad->SetBottomMargin(0.15);
+
+        TGraphErrors *normGraph = normalizedGraphs[var];
+
+        // Set axis labels and ranges based on variable
+        if (var == "Mx") {
+            setAxisLabelsAndRanges(normGraph, "M_{x} (GeV)", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 2.5}, {0, 2});
+        } else if (var == "z") {
+            setAxisLabelsAndRanges(normGraph, "z", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 0.8}, {0, 2});
+        } else if (var == "PT") {
+            setAxisLabelsAndRanges(normGraph, "P_{T} (GeV)", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 1.0}, {0, 2});
+        } else if (var == "xF") {
+            setAxisLabelsAndRanges(normGraph, "x_{F}", "(F_{LL}/F_{UU}) / (x^{a})", {-0.8, 0.6}, {0, 2});
+        }
+
+        normGraph->Draw("AP");
+
+        // Draw the dashed gray line at y = 1
+        TLine *line = new TLine(gPad->GetUxmin(), 1, gPad->GetUxmax(), 1);
+        line->SetLineColor(kGray + 2);
+        line->SetLineStyle(7); // Dashed line
+        line->Draw("same");
+
+        pad++;
+    }
+
+    // Save the canvas
+    gSystem->Exec("mkdir -p output/epX_plots");
+    c->SaveAs(outputFileName.c_str());
+
+    // Clean up
+    delete c;
+    delete fitFunc;
+    delete graph;
+    for (auto &entry : normalizedGraphs) {
+        delete entry.second;
+    }
+}
+
 int main(int argc, char *argv[]) {
     if (argc != 3) {
         std::cerr << "Usage: " << argv[0] << " <asymmetries.txt> <kinematicPlots.txt>\n";
@@ -1209,31 +1371,34 @@ int main(int argc, char *argv[]) {
     // printData(kinematicData);
 
     // Call the plotting function for different dependencies
-    plotDependence(asymmetryData, "Mx", "M_{x} (GeV)", {0.0, 2.5}, "output/epX_plots/Mx_dependence_plots.png");
-    plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots.png");
-    plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots_comparison.png", "xall");
-    plotDependence(asymmetryData, "z", "z", {0.0, 0.8}, "output/epX_plots/z_dependence_plots.png");
-    plotDependence(asymmetryData, "z", "z", {0.0, 0.8}, "output/epX_plots/z_dependence_plots_comparison.png", "zall");
-    plotDependence(asymmetryData, "PT", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PT_dependence_plots.png");
-    plotDependence(asymmetryData, "PT", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PT_dependence_plots_comparison.png", "PTall");
-    plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots.png");
-    plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots_comparison.png", "xFall");
-    plotDependence(asymmetryData, "Q2multi1", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi1_dependence_plots.png");
-    plotDependence(asymmetryData, "Q2multi2", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi2_dependence_plots.png");
-    plotDependence(asymmetryData, "Q2multi3", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi3_dependence_plots.png");
+    // plotDependence(asymmetryData, "Mx", "M_{x} (GeV)", {0.0, 2.5}, "output/epX_plots/Mx_dependence_plots.png");
+    // plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots.png");
+    // plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots_comparison.png", "xall");
+    // plotDependence(asymmetryData, "z", "z", {0.0, 0.8}, "output/epX_plots/z_dependence_plots.png");
+    // plotDependence(asymmetryData, "z", "z", {0.0, 0.8}, "output/epX_plots/z_dependence_plots_comparison.png", "zall");
+    // plotDependence(asymmetryData, "PT", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PT_dependence_plots.png");
+    // plotDependence(asymmetryData, "PT", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PT_dependence_plots_comparison.png", "PTall");
+    // plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots.png");
+    // plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots_comparison.png", "xFall");
+    // plotDependence(asymmetryData, "Q2multi1", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi1_dependence_plots.png");
+    // plotDependence(asymmetryData, "Q2multi2", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi2_dependence_plots.png");
+    // plotDependence(asymmetryData, "Q2multi3", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi3_dependence_plots.png");
     // plotDependence(asymmetryData, "Q2extramulti1", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2extramulti1_dependence_plots.png");
     // plotDependence(asymmetryData, "Q2extramulti2", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2extramulti2_dependence_plots.png");
     // plotDependence(asymmetryData, "Q2extramulti3", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2extramulti3_dependence_plots.png");
 
-    std::vector<std::string> prefixes = {"Q2multi1", "Q2multi2", "Q2multi3"};
-    plotMultipleQ2multiDependence(asymmetryData, prefixes, "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi_dependence_plots.png");
+    // Call the new function
+    plotNormalizedFLLOverFUU(asymmetryData, kinematicData, "output/epX_plots/normalized_FLL_over_FUU.png");
+
+    // std::vector<std::string> prefixes = {"Q2multi1", "Q2multi2", "Q2multi3"};
+    // plotMultipleQ2multiDependence(asymmetryData, prefixes, "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi_dependence_plots.png");
 
     // std::vector<std::string> extraprefixes = {"Q2extramulti1", "Q2extramulti2", "Q2extramulti3"};
     // plotMultipleQ2extramultiDependence(asymmetryData, extraprefixes, "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2extramulti_dependence_plots.png");
 
     // plotRunnumDependence(asymmetryData, "runnum", "run number", "output/epX_plots/runnum_dependence_plots.png");
 
-    plotTargetPolarizationDependence(targetPolarizationData, "run number", "output/epX_plots/target_polarization_dependence.png");
+    // plotTargetPolarizationDependence(targetPolarizationData, "run number", "output/epX_plots/target_polarization_dependence.png");
 
     return 0;
 }
