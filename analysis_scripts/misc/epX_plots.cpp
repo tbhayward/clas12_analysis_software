@@ -1300,9 +1300,9 @@ void plotNormalizedFLLOverFUU(
     fitFunc->Draw("same");
 
     // Add legend in the top-left corner
-    TLegend *leg = new TLegend(0.2, 0.7, 0.5, 0.85);
+    TLegend *leg = new TLegend(0.2, 0.7, 0.6, 0.85);
     leg->AddEntry(graph, "Data", "P");
-    leg->AddEntry(fitFunc, Form("Fit: y = %.2f x^{%.2f}", amplitude, exponent), "L");
+    leg->AddEntry(fitFunc, Form("Fit: y = %.3f x^{%.3f}", amplitude, exponent), "L");
     leg->Draw();
 
     // Plot 2-5: Normalized FLL/FUU vs other variables
@@ -1320,13 +1320,13 @@ void plotNormalizedFLLOverFUU(
 
         // Set axis labels and ranges based on variable
         if (var == "Mx") {
-            setAxisLabelsAndRanges(normGraph, "M_{x} (GeV)", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 2.5}, {0, 2});
+            setAxisLabelsAndRanges(normGraph, "M_{x} (GeV)", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 2.5}, {0.5, 1.5});
         } else if (var == "z") {
             setAxisLabelsAndRanges(normGraph, "z", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 0.8}, {0, 2});
         } else if (var == "PT") {
-            setAxisLabelsAndRanges(normGraph, "P_{T} (GeV)", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 1.0}, {0, 2});
+            setAxisLabelsAndRanges(normGraph, "P_{T} (GeV)", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 1.0}, {0.5, 1.5});
         } else if (var == "xF") {
-            setAxisLabelsAndRanges(normGraph, "x_{F}", "(F_{LL}/F_{UU}) / (x^{a})", {-0.8, 0.6}, {0, 2});
+            setAxisLabelsAndRanges(normGraph, "x_{F}", "(F_{LL}/F_{UU}) / (x^{a})", {-0.8, 0.6}, {0.5, 1.5});
         }
 
         normGraph->Draw("AP");
