@@ -426,10 +426,25 @@ void plotDependence(
             }
 
             TGraphErrors *graphStat = createTGraphErrors(x, y, yStatErr, 20, 0.8, kBlack);
-            setAxisLabelsAndRanges(graphStat, xLabel, yLabels[i], xLimits, 
-                                   (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.6) :
-                                   (suffixes[i] == "doubleratio") ? std::make_pair(-0.02, 0.3) :
-                                   std::make_pair(-0.1, 0.1));  // Adjusted y-axis range for doubleratio
+            // Determine y-axis limits based on prefix and suffix
+            std::pair<double, double> yLimits;
+
+            if (prefix == "Mxnodilution") {
+                // Set y-axis range to always be -0.08 to 0.08
+                yLimits = std::make_pair(-0.08, 0.08);
+            } else {
+                // Original y-axis range logic based on suffix
+                if (suffixes[i] == "ALL") {
+                    yLimits = std::make_pair(-0.1, 0.6);
+                } else if (suffixes[i] == "doubleratio") {
+                    yLimits = std::make_pair(-0.02, 0.3);
+                } else {
+                    yLimits = std::make_pair(-0.1, 0.1);
+                }
+            }
+
+            // Now call setAxisLabelsAndRanges with the determined yLimits
+            setAxisLabelsAndRanges(graphStat, xLabel, yLabels[i], xLimits, yLimits);
             graphStat->Draw("AP");
 
             // Add the dashed gray line at y = 0
