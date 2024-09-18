@@ -1845,8 +1845,8 @@ void plotXFDependence(
         graphALL->GetXaxis()->SetTitle("x_{F}");
         graphALL->GetYaxis()->SetTitle("F_{LL}/F_{UU}");
         graphALL->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
-        graphALL->SetMinimum(-0.1);
-        graphALL->SetMaximum(0.4);
+        graphALL->SetMinimum(-0.05);
+        graphALL->SetMaximum(0.35);
 
         // Increase the font size of axis labels
         graphALL->GetXaxis()->SetTitleSize(0.05);
