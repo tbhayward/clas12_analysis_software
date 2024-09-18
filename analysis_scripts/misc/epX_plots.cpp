@@ -1947,7 +1947,7 @@ int main(int argc, char *argv[]) {
 
 
     // Call the function to generate and save the plot
-    plotXFDependence(asymmetryData, "xF", {-1.0, 1.0}, {-0.08, 0.08});
+    plotXFDependence(asymmetryData, "xF", {-1.0, 1.0}, {-0.1, 0.1});
 
 
     return 0;
