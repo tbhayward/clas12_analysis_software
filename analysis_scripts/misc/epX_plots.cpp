@@ -1306,7 +1306,7 @@ void plotNormalizedFLLOverFUU(
     TLegend *leg = new TLegend(0.2, 0.75, 0.675, 0.9);
     leg->SetTextSize(0.04); // Decrease text size slightly
     leg->AddEntry(graph, "Data", "P");
-    leg->AddEntry(fitFunc, Form("Fit: y = x^{%.3f}", exponent), "L");
+    leg->AddEntry(fitFunc, Form("Fit: y = x_{B}^{%.3f}", exponent), "L");
     leg->Draw();
 
     // Draw the dashed gray line at y = 1
@@ -1339,15 +1339,15 @@ void plotNormalizedFLLOverFUU(
 
         // Set axis labels and ranges based on variable
         if (var == "Mx") {
-            setAxisLabelsAndRanges(normGraph, "M_{x} (GeV)", "(F_{LL}/F_{UU}) / x^{0.886}", {0.0, 2.5}, {0.5, 1.2});
+            setAxisLabelsAndRanges(normGraph, "M_{x} (GeV)", "(F_{LL}/F_{UU}) / <x_{B}>^{0.886}", {0.0, 2.5}, {0.5, 1.2});
         } else if (var == "z") {
-            setAxisLabelsAndRanges(normGraph, "z", "(F_{LL}/F_{UU}) / x^{0.886}", {0.0, 0.8}, {0.5, 1.2});
+            setAxisLabelsAndRanges(normGraph, "z", "(F_{LL}/F_{UU}) / <x_{B}>^{0.886}", {0.0, 0.8}, {0.5, 1.2});
         } else if (var == "PT") {
-            setAxisLabelsAndRanges(normGraph, "P_{T} (GeV)", "(F_{LL}/F_{UU}) / x^{0.886}", {0.0, 1.0}, {0.5, 1.2});
+            setAxisLabelsAndRanges(normGraph, "P_{T} (GeV)", "(F_{LL}/F_{UU}) / <x_{B}>^{0.886}", {0.0, 1.0}, {0.5, 1.2});
         } else if (var == "xF") {
-            setAxisLabelsAndRanges(normGraph, "x_{F}", "(F_{LL}/F_{UU}) / x^{0.886}", {-0.8, 0.6}, {0.5, 1.2});
+            setAxisLabelsAndRanges(normGraph, "x_{F}", "(F_{LL}/F_{UU}) / <x_{B}>^{0.886}", {-0.8, 0.6}, {0.5, 1.2});
         } else if (var == "t") {
-            setAxisLabelsAndRanges(normGraph, "-t (GeV^{2})", "(F_{LL}/F_{UU}) / x^{0.886}", {0.0, 8.0}, {0.5, 1.2});
+            setAxisLabelsAndRanges(normGraph, "-t (GeV^{2})", "(F_{LL}/F_{UU}) / <x_{B}>^{0.886}", {0.0, 8.0}, {0.5, 1.2});
         }
 
         normGraph->Draw("AP");
