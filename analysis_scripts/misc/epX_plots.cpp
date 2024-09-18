@@ -1214,17 +1214,16 @@ void plotNormalizedFLLOverFUU(
     graph->SetMarkerColor(kBlack);
     graph->SetTitle(""); // Remove the title
 
-    // Define the function y = A x^a
-    TF1 *fitFunc = new TF1("fitFunc", "[0]*pow(x, [1])", 0.06, 0.6);
-    fitFunc->SetParameters(1, 1); // Initial guesses for [0] and [1]
-    fitFunc->SetParNames("Amplitude", "Exponent");
+    // Define the function y = x^a
+    TF1 *fitFunc = new TF1("fitFunc", "pow(x, [0])", 0.06, 0.6);
+    fitFunc->SetParameter(0, 1); // Initial guess for the exponent [0]
+    fitFunc->SetParName(0, "Exponent");
 
     // Perform the fit
     graph->Fit(fitFunc, "Q"); // "Q" for quiet mode
 
-    // Get fit parameters
-    double amplitude = fitFunc->GetParameter(0);
-    double exponent = fitFunc->GetParameter(1);
+    // Get fit parameter
+    double exponent = fitFunc->GetParameter(0);
 
     // Step 2: Normalize FLL/FUU for other variables
     std::vector<std::string> variables = {"Mx", "z", "PT", "xF", "t"};
@@ -1306,7 +1305,7 @@ void plotNormalizedFLLOverFUU(
     // Add legend in the top-left corner
     TLegend *leg = new TLegend(0.2, 0.75, 0.675, 0.9);
     leg->AddEntry(graph, "Data", "P");
-    leg->AddEntry(fitFunc, Form("Fit: y = %.3f x^{%.3f}", amplitude, exponent), "L");
+    leg->AddEntry(fitFunc, Form("Fit: y = x^{%.3f}", exponent), "L");
     leg->Draw();
 
     // Draw the dashed gray line at y = 1
@@ -1339,15 +1338,15 @@ void plotNormalizedFLLOverFUU(
 
         // Set axis labels and ranges based on variable
         if (var == "Mx") {
-            setAxisLabelsAndRanges(normGraph, "M_{x} (GeV)", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 2.5}, {0.5, 1.2});
+            setAxisLabelsAndRanges(normGraph, "M_{x} (GeV)", "(F_{LL}/F_{UU}) / x^{a}", {0.0, 2.5}, {0.5, 1.2});
         } else if (var == "z") {
-            setAxisLabelsAndRanges(normGraph, "z", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 0.8}, {0.5, 1.2});
+            setAxisLabelsAndRanges(normGraph, "z", "(F_{LL}/F_{UU}) / x^{a}", {0.0, 0.8}, {0.5, 1.2});
         } else if (var == "PT") {
-            setAxisLabelsAndRanges(normGraph, "P_{T} (GeV)", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 1.0}, {0.5, 1.2});
+            setAxisLabelsAndRanges(normGraph, "P_{T} (GeV)", "(F_{LL}/F_{UU}) / x^{a}", {0.0, 1.0}, {0.5, 1.2});
         } else if (var == "xF") {
-            setAxisLabelsAndRanges(normGraph, "x_{F}", "(F_{LL}/F_{UU}) / (x^{a})", {-0.8, 0.6}, {0.5, 1.2});
+            setAxisLabelsAndRanges(normGraph, "x_{F}", "(F_{LL}/F_{UU}) / x^{a}", {-0.8, 0.6}, {0.5, 1.2});
         } else if (var == "t") {
-            setAxisLabelsAndRanges(normGraph, "-t (GeV^{2})", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 8.0}, {0.5, 1.2});
+            setAxisLabelsAndRanges(normGraph, "-t (GeV^{2})", "(F_{LL}/F_{UU}) / x^{a}", {0.0, 8.0}, {0.5, 1.2});
         }
 
         normGraph->Draw("AP");
