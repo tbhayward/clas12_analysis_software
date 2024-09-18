@@ -1636,8 +1636,8 @@ void plotXFDependence(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
     const std::string &prefix,  // This will be "xF"
     const std::pair<double, double> &xLimits,
-    const std::pair<double, double> &yLimits,
-    const std::string &outputFileName) {
+    const std::pair<double, double> &yLimits
+) {
     // Create the canvas for the plot
     TCanvas *c = new TCanvas("c", "xF Dependence", 800, 600);
 
@@ -1679,6 +1679,10 @@ void plotXFDependence(
     std::vector<std::string> suffixes = {"ALUsinphi", "AULsinphi"};
     std::vector<int> colors = {kRed, kBlue};  // Red for ALUsinphi, Blue for AULsinphi
 
+    // Define separate graphs for ALUsinphi and AULsinphi
+    TGraphErrors *graphALUsinphi = nullptr;
+    TGraphErrors *graphAULsinphi = nullptr;
+
     for (size_t i = 0; i < suffixes.size(); ++i) {
         std::string key = prefix + "chi2Fits" + suffixes[i];
         auto it = asymmetryData.find(key);
@@ -1693,24 +1697,32 @@ void plotXFDependence(
             }
 
             // Create TGraphErrors for each suffix
-            TGraphErrors *graphNH3 = new TGraphErrors(x.size(), &x[0], &y[0], nullptr, &yStatErr[0]);
-            graphNH3->SetMarkerStyle(21);
-            graphNH3->SetMarkerColor(colors[i]);
-            graphNH3->SetLineColor(colors[i]);
-            graphNH3->Draw("P SAME");  // Overlay on the same plot
+            if (i == 0) {
+                graphALUsinphi = new TGraphErrors(x.size(), &x[0], &y[0], nullptr, &yStatErr[0]);
+                graphALUsinphi->SetMarkerStyle(21);
+                graphALUsinphi->SetMarkerColor(colors[i]);
+                graphALUsinphi->SetLineColor(colors[i]);
+                graphALUsinphi->Draw("P SAME");  // Overlay on the same plot
+            } else if (i == 1) {
+                graphAULsinphi = new TGraphErrors(x.size(), &x[0], &y[0], nullptr, &yStatErr[0]);
+                graphAULsinphi->SetMarkerStyle(21);
+                graphAULsinphi->SetMarkerColor(colors[i]);
+                graphAULsinphi->SetLineColor(colors[i]);
+                graphAULsinphi->Draw("P SAME");  // Overlay on the same plot
+            }
         }
     }
 
     // Add the legend in the bottom right
     TLegend *legend = new TLegend(0.55, 0.15, 0.9, 0.3);
     legend->AddEntry(graphH2, "H_{2}, F_{LU}", "p");
-    legend->AddEntry(graphNH3, "NH_{3}, F_{LU}", "p");
-    legend->AddEntry(graphNH3, "NH_{3}, F_{UL}", "p");
+    if (graphALUsinphi) legend->AddEntry(graphALUsinphi, "NH_{3}, F_{LU}", "p");
+    if (graphAULsinphi) legend->AddEntry(graphAULsinphi, "NH_{3}, F_{UL}", "p");
     legend->Draw();
 
     // Save the canvas as a PNG
     gSystem->Exec("mkdir -p output/epX_plots");
-    c->SaveAs(outputFileName.c_str());
+    c->SaveAs("output/epX_plots/CPHI_xF_dependence_ALU_AUL.png");
 
     // Clean up
     delete c;
@@ -1789,7 +1801,7 @@ int main(int argc, char *argv[]) {
 
 
     // Call the function to generate and save the plot
-    plotXFDependence(asymmetryData, "xF", {-1.0, 1.0}, {-0.1, 0.1}, "output/epX_plots/CPHI_xF_dependence.png");
+    plotXFDependence(asymmetryData, "xF", {-1.0, 1.0}, {-0.1, 0.1});
 
 
     return 0;
