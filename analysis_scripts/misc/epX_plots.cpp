@@ -1332,7 +1332,7 @@ void plotNormalizedFLLOverFUU(
         normGraph->Draw("AP");
 
         // Draw the dashed gray line at y = 1
-        TLine *line = new TLine(g0, 1, 5, 1);
+        TLine *line = new TLine(0, 1, 5, 1);
         line->SetLineColor(kGray + 2);
         line->SetLineStyle(7); // Dashed line
         line->Draw("same");
