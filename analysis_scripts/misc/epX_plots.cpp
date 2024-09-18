@@ -1211,8 +1211,8 @@ void plotNormalizedFLLOverFUU(
     graph->SetMarkerSize(0.8);
     graph->SetMarkerColor(kBlack);
 
-    // Define the function y = x^a
-    TF1 *fitFunc = new TF1("fitFunc", "[0]*pow(x, [1])", xVals.front(), xVals.back());
+    // Define the function y = A x^a
+    TF1 *fitFunc = new TF1("fitFunc", "[0]*pow(x, [1])", 0.06, 0.6);
     fitFunc->SetParameters(1, 1); // Initial guesses for [0] and [1]
     fitFunc->SetParNames("Amplitude", "Exponent");
 
@@ -1251,9 +1251,11 @@ void plotNormalizedFLLOverFUU(
         }
 
         std::vector<double> varVals, normYVals, normYErrs;
+        std::cout << "\nNormalized data for variable: " << var << "\n";
+        std::cout << "Bin\t" << var << "\tFLL/FUU\tErr\t<x>\tx^{a}\tNormalized FLL/FUU\n";
         for (size_t i = 0; i < asymData.size(); ++i) {
             double varValue = kinData[i][0]; // The first column is the variable's mean value
-            double xValue = kinData[i][2];   // The fourth column (index 2) is x
+            double xValue = kinData[i][2];   // The third column (index 2) is x
             double yValue = asymData[i][1];  // FLL/FUU value
             double yErr = asymData[i][2];    // Error in FLL/FUU
 
@@ -1267,6 +1269,9 @@ void plotNormalizedFLLOverFUU(
             varVals.push_back(varValue);
             normYVals.push_back(normY);
             normYErrs.push_back(normYErr);
+
+            // Print the data
+            std::cout << i+1 << "\t" << varValue << "\t" << yValue << "\t" << yErr << "\t" << xValue << "\t" << fittedY << "\t" << normY << "\n";
         }
 
         // Create TGraphErrors for normalized data
@@ -1287,15 +1292,15 @@ void plotNormalizedFLLOverFUU(
     gPad->SetLeftMargin(0.18);
     gPad->SetBottomMargin(0.15);
 
-    setAxisLabelsAndRanges(graph, "x_{B}", "F_{LL}/F_{UU}", {xVals.front(), xVals.back()}, {0, 0.6});
+    setAxisLabelsAndRanges(graph, "x_{B}", "F_{LL}/F_{UU}", {0.06, 0.6}, {0, 0.6});
     graph->Draw("AP");
 
     // Draw the fit function
     fitFunc->SetLineColor(kRed);
     fitFunc->Draw("same");
 
-    // Add legend
-    TLegend *leg = new TLegend(0.55, 0.7, 0.85, 0.85);
+    // Add legend in the top-left corner
+    TLegend *leg = new TLegend(0.2, 0.7, 0.5, 0.85);
     leg->AddEntry(graph, "Data", "P");
     leg->AddEntry(fitFunc, Form("Fit: y = %.2f x^{%.2f}", amplitude, exponent), "L");
     leg->Draw();
@@ -1315,13 +1320,13 @@ void plotNormalizedFLLOverFUU(
 
         // Set axis labels and ranges based on variable
         if (var == "Mx") {
-            setAxisLabelsAndRanges(normGraph, "M_{x} (GeV)", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 2.5}, {-5, 5});
+            setAxisLabelsAndRanges(normGraph, "M_{x} (GeV)", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 2.5}, {0, 2});
         } else if (var == "z") {
-            setAxisLabelsAndRanges(normGraph, "z", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 0.8}, {-5, 5});
+            setAxisLabelsAndRanges(normGraph, "z", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 0.8}, {0, 2});
         } else if (var == "PT") {
-            setAxisLabelsAndRanges(normGraph, "P_{T} (GeV)", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 1.0}, {-5, 5});
+            setAxisLabelsAndRanges(normGraph, "P_{T} (GeV)", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 1.0}, {0, 2});
         } else if (var == "xF") {
-            setAxisLabelsAndRanges(normGraph, "x_{F}", "(F_{LL}/F_{UU}) / (x^{a})", {-0.8, 0.6}, {-5, 5});
+            setAxisLabelsAndRanges(normGraph, "x_{F}", "(F_{LL}/F_{UU}) / (x^{a})", {-0.8, 0.6}, {0, 2});
         }
 
         normGraph->Draw("AP");
