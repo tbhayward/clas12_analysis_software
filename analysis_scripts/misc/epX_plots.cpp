@@ -1590,7 +1590,7 @@ void plotMultipleMxDependence(
                 // Set y-axis limits based on your requirements
                 std::pair<double, double> yLimits;
                 if (suffixes[i] == "ALL") {
-                    yLimits = std::make_pair(-0.1, 0.5);
+                    yLimits = std::make_pair(-0.1, 0.6);
                 } else if (suffixes[i] == "doubleratio") {
                     yLimits = std::make_pair(-0.02, 0.4);
                 } else {
