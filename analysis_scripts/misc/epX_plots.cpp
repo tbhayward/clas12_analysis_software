@@ -1339,15 +1339,15 @@ void plotNormalizedFLLOverFUU(
 
         // Set axis labels and ranges based on variable
         if (var == "Mx") {
-            setAxisLabelsAndRanges(normGraph, "M_{x} (GeV)", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 2.5}, {0.5, 1.5});
+            setAxisLabelsAndRanges(normGraph, "M_{x} (GeV)", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 2.5}, {0.5, 1.2});
         } else if (var == "z") {
-            setAxisLabelsAndRanges(normGraph, "z", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 0.8}, {0, 2});
+            setAxisLabelsAndRanges(normGraph, "z", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 0.8}, {0, 1.2});
         } else if (var == "PT") {
-            setAxisLabelsAndRanges(normGraph, "P_{T} (GeV)", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 1.0}, {0.5, 1.5});
+            setAxisLabelsAndRanges(normGraph, "P_{T} (GeV)", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 1.0}, {0.5, 1.2});
         } else if (var == "xF") {
-            setAxisLabelsAndRanges(normGraph, "x_{F}", "(F_{LL}/F_{UU}) / (x^{a})", {-0.8, 0.6}, {0.5, 1.5});
+            setAxisLabelsAndRanges(normGraph, "x_{F}", "(F_{LL}/F_{UU}) / (x^{a})", {-0.8, 0.6}, {0.5, 1.2});
         } else if (var == "t") {
-            setAxisLabelsAndRanges(normGraph, "-t (GeV^{2})", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 8.0}, {0.5, 1.5});
+            setAxisLabelsAndRanges(normGraph, "-t (GeV^{2})", "(F_{LL}/F_{UU}) / (x^{a})", {0.0, 8.0}, {0.5, 1.2});
         }
 
         normGraph->Draw("AP");
@@ -1366,7 +1366,7 @@ void plotNormalizedFLLOverFUU(
             latex->SetNDC();
             latex->SetTextSize(0.04);
             latex->SetTextAlign(33); // Bottom right alignment
-            latex->DrawLatex(0.9, 0.25, "M_{x} > 1.35 GeV"); // Moved up slightly
+            latex->DrawLatex(0.875, 0.2, "M_{x} > 1.35 GeV"); // Moved up slightly
         }
 
         pad++;
