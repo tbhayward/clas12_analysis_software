@@ -111,6 +111,8 @@ int main(int argc, char* argv[]) {
     // Create TGraphErrors
     TGraphErrors* graph = new TGraphErrors(nBins, &binCenters[0], &delta[0], 0, &deltaError[0]);
 
+    graph->SetTitle("");
+
     // Set axis labels
     graph->GetXaxis()->SetTitle("M_{x} (GeV)");
     graph->GetYaxis()->SetTitle("#Delta (++ + --) - (+- + -+)");
