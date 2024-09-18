@@ -12,7 +12,7 @@
 #include "TLegend.h"
 #include "TStyle.h"
 #include "TLatex.h"
-#include "TMultiGraph.h"
+#include "TMultiGraph.h" // Include this for TMultiGraph
 
 using namespace std;
 
@@ -78,8 +78,10 @@ int main(int argc, char* argv[]) {
     double xB[nSubplots] = {0.18, 0.30, 0.375}; // Midpoints of each x range
 
     // t - tmin cuts for each dataset
-    // Dataset 0: t - tmin > -1 (blue circles)
-    // Dataset 1: t - tmin < -2 (red squares)
+    const char* t_tmin_labels[nDatasets] = {
+        "t - t_{min} > -1",
+        "t - t_{min} < -2"
+    };
 
     // Prepare arrays to hold results
     vector<vector<vector<double>>> binCenters(nSubplots, vector<vector<double>>(nDatasets, vector<double>(nBins, 0.0))); // Mean Mx
@@ -171,9 +173,6 @@ int main(int argc, char* argv[]) {
     int colors[nDatasets] = {kBlue, kRed};
     int markers[nDatasets] = {20, 21}; // Circle and square
 
-    // Legends for t - tmin cuts
-    const char* t_tmin_labels[nDatasets] = {"t - t_{min} > -1", "t - t_{min} < -2"};
-
     // Loop over subplots to create and draw graphs
     for (int s = 0; s < nSubplots; ++s) {
         c1->cd(s+1);
@@ -185,14 +184,10 @@ int main(int argc, char* argv[]) {
         // Create multigraph to hold both datasets
         TMultiGraph* mg = new TMultiGraph();
 
-        // Create legend and add x range to it
+        // Create legend and combine x range and t - tmin cuts into a single line for each dataset
         TLegend* legend = new TLegend(0.15, 0.75, 0.40, 0.90); // Move to the top left
         legend->SetBorderSize(1); // Add black box border
         legend->SetTextSize(0.04);
-        
-        // Add x range and x_B to the legend
-        legend->AddEntry((TObject*)0, Form("x: %.2f < x < %.2f", xRanges[s][0], xRanges[s][1]), "");
-        legend->AddEntry((TObject*)0, Form("x_{B} = %.3f", xB[s]), "");
 
         for (int d = 0; d < nDatasets; ++d) {
             // Prepare data vectors
@@ -224,8 +219,8 @@ int main(int argc, char* argv[]) {
 
             mg->Add(graph);
 
-            // Add entry to legend for t - tmin cuts
-            legend->AddEntry(graph, t_tmin_labels[d], "p");
+            // Add entry to legend for combined x_B and t - tmin cuts
+            legend->AddEntry(graph, Form("x_{B} = %.3f, %s", xB[s], t_tmin_labels[d]), "p");
         }
 
         mg->Draw("AP");
