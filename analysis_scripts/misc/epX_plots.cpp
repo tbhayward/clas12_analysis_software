@@ -1254,8 +1254,6 @@ void plotNormalizedFLLOverFUU(
         }
 
         std::vector<double> varVals, normYVals, normYErrs;
-        std::cout << "\nNormalized data for variable: " << var << "\n";
-        std::cout << "Bin\t" << var << "\tFLL/FUU\tErr\t<x>\tx^{a}\tNormalized FLL/FUU\n";
         for (size_t i = 0; i < asymData.size(); ++i) {
             double varValue = asymData[i][0]; // Mean value of the variable
             double xValue = kinData[i][2];    // x value from kinematic data
@@ -1272,9 +1270,6 @@ void plotNormalizedFLLOverFUU(
             varVals.push_back(varValue);
             normYVals.push_back(normY);
             normYErrs.push_back(normYErr);
-
-            // Print the data
-            std::cout << i+1 << "\t" << varValue << "\t" << yValue << "\t" << yErr << "\t" << xValue << "\t" << fittedY << "\t" << normY << "\n";
         }
 
         // Create TGraphErrors for normalized data
@@ -1308,6 +1303,21 @@ void plotNormalizedFLLOverFUU(
     leg->AddEntry(graph, "Data", "P");
     leg->AddEntry(fitFunc, Form("Fit: y = %.3f x^{%.3f}", amplitude, exponent), "L");
     leg->Draw();
+
+    // Draw the dashed gray line at y = 1
+    double xmin_main = graph->GetXaxis()->GetXmin();
+    double xmax_main = graph->GetXaxis()->GetXmax();
+    TLine *line_main = new TLine(xmin_main, 1, xmax_main, 1);
+    line_main->SetLineColor(kGray + 2);
+    line_main->SetLineStyle(7); // Dashed line
+    line_main->Draw("same");
+
+    // Add text "M_{x} > 1.35 GeV" in the x plot
+    TLatex *latex_main = new TLatex();
+    latex_main->SetNDC();
+    latex_main->SetTextSize(0.04);
+    latex_main->SetTextAlign(33); // Bottom right alignment
+    latex_main->DrawLatex(0.9, 0.25, "M_{x} > 1.35 GeV"); // Moved up slightly
 
     // Plot 2-5: Normalized FLL/FUU vs other variables
     int pad = 2;
@@ -1343,12 +1353,14 @@ void plotNormalizedFLLOverFUU(
         line->SetLineStyle(7); // Dashed line
         line->Draw("same");
 
-        // Add text "M_{x} > 1.35 GeV" in the bottom right corner
-        TLatex *latex = new TLatex();
-        latex->SetNDC();
-        latex->SetTextSize(0.04);
-        latex->SetTextAlign(33); // Bottom right alignment
-        latex->DrawLatex(0.9, 0.2, "M_{x} > 1.35 GeV");
+        // Add text "M_{x} > 1.35 GeV" in the x, z, PT, xF plots but NOT in Mx plot
+        if (var != "Mx") {
+            TLatex *latex = new TLatex();
+            latex->SetNDC();
+            latex->SetTextSize(0.04);
+            latex->SetTextAlign(33); // Bottom right alignment
+            latex->DrawLatex(0.9, 0.25, "M_{x} > 1.35 GeV"); // Moved up slightly
+        }
 
         pad++;
     }
