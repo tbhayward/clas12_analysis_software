@@ -182,7 +182,7 @@ int main(int argc, char* argv[]) {
         TMultiGraph* mg = new TMultiGraph();
 
         // Create legend and combine x range and t - tmin cuts into a single line for each dataset
-        TLegend* legend = new TLegend(0.15, 0.75, 0.40, 0.90); // Move to the top left
+        TLegend* legend = new TLegend(0.20, 0.75, 0.65, 0.90); // Move to the top left
         legend->SetBorderSize(1); // Add black box border
         legend->SetTextSize(0.04);
 
