@@ -1634,11 +1634,10 @@ void plotMultipleMxDependence(
 
 void plotXFDependence(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
-    const std::string &prefix, 
+    const std::string &prefix,  // This will be "xF"
     const std::pair<double, double> &xLimits,
     const std::pair<double, double> &yLimits,
-    const std::string &outputFileName
-) {
+    const std::string &outputFileName) {
     // Create the canvas for the plot
     TCanvas *c = new TCanvas("c", "xF Dependence", 800, 600);
 
