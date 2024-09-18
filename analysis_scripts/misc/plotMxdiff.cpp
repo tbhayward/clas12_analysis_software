@@ -12,6 +12,20 @@
 
 using namespace std;
 
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <cmath>
+#include <string>
+
+#include "TFile.h"
+#include "TTree.h"
+#include "TCanvas.h"
+#include "TGraphErrors.h"
+#include "TAxis.h"
+
+using namespace std;
+
 int main(int argc, char* argv[]) {
     // Check for input arguments
     if (argc != 2) {
@@ -48,22 +62,26 @@ int main(int argc, char* argv[]) {
     tree->SetBranchAddress("target_pol", &target_pol);
 
     // Define bin edges
-    const int nBins = 21; // Number of bins
-    double binEdges[nBins+1] = {
-        0, 0.1, 0.2, 0.3, 0.4, 0.5,
-        0.6, 0.7, 0.8, 0.9, 1.0,
-        1.1, 1.2, 1.3, 1.4, 1.6,
+    double binEdges[] = {
+        0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 
+        0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 
+        1.1, 1.15, 1.2, 1.25, 1.3, 1.35, 1.4, 1.45, 1.5, 1.6,
         1.8, 2.0, 2.2, 2.4, 2.8
     };
+    const int nBins = sizeof(binEdges)/sizeof(binEdges[0]) - 1; // nBins = 36
 
     // Prepare arrays to hold results
-    vector<double> binCenters(nBins);
-    vector<double> delta(nBins, 0);
-    vector<double> deltaError(nBins, 0);
+    vector<double> binCenters(nBins, 0.0);      // Mean Mx in each bin
+    vector<int>    binCounts(nBins, 0);         // Number of events in each bin
+    vector<double> delta(nBins, 0.0);
+    vector<double> deltaError(nBins, 0.0);
 
     // For counting events
     vector<int> N_same_sign(nBins, 0);
     vector<int> N_opposite_sign(nBins, 0);
+
+    // For accumulating Mx values to compute mean
+    vector<double> totalMx(nBins, 0.0);
 
     // Get number of entries
     Long64_t nEntries = tree->GetEntries();
@@ -88,6 +106,10 @@ int main(int argc, char* argv[]) {
         // Check for zero values
         if (helicity == 0 || target_pol == 0.0) continue;
 
+        // Accumulate Mx values and counts for mean calculation
+        totalMx[binIndex] += Mx;
+        binCounts[binIndex]++;
+
         // Check signs of helicity and target_pol
         if ((helicity > 0 && target_pol > 0.0) || (helicity < 0 && target_pol < 0.0)) {
             // Same sign
@@ -101,11 +123,16 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // Calculate delta and errors
+    // Calculate delta, errors, and bin centers (mean Mx)
     for (int i = 0; i < nBins; ++i) {
         delta[i] = N_same_sign[i] - N_opposite_sign[i];
         deltaError[i] = sqrt(N_same_sign[i] + N_opposite_sign[i]); // Assuming Poisson errors
-        binCenters[i] = (binEdges[i] + binEdges[i+1]) / 2.0;
+
+        if (binCounts[i] > 0) {
+            binCenters[i] = totalMx[i] / binCounts[i]; // Mean Mx in this bin
+        } else {
+            binCenters[i] = (binEdges[i] + binEdges[i+1]) / 2.0; // Default to bin midpoint
+        }
     }
 
     // Create TGraphErrors
