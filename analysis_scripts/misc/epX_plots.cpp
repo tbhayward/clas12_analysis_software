@@ -1382,8 +1382,9 @@ void plotNormalizedFLLOverFUU(
         normGraph->Draw("AP");
 
         // Draw the dashed gray line at y = 1
-        double xmin = normGraph->GetXaxis()->GetXmin();
-        double xmax = normGraph->GetXaxis()->GetXmax();
+        double xmin, xmax; // Declare variables
+        xmin = normGraph->GetXaxis()->GetXmin();
+        xmax = normGraph->GetXaxis()->GetXmax();
         TLine *line = new TLine(xmin, 1, xmax, 1);
         line->SetLineColor(kGray + 2);
         line->SetLineStyle(7); // Dashed line
@@ -1447,20 +1448,21 @@ void plotNormalizedFLLOverFUU(
 
         // Set axis labels and ranges based on variable
         if (var == "Mx") {
-            setAxisLabelsAndRanges(normGraph, "M_{x} (GeV)", "(F_{LL}/F_{UU}) / x_{B}^{a}(0.213)", {0.0, 2.5}, {0.5, 1.2});
+            setAxisLabelsAndRanges(normGraph, "M_{x} (GeV)", Form("(F_{LL}/F_{UU}) / x_{B}^{%.3f}(0.213)", exponent), {0.0, 2.5}, {0.5, 1.2});
         } else if (var == "z") {
-            setAxisLabelsAndRanges(normGraph, "z", "(F_{LL}/F_{UU}) / x_{B}^{a}(0.213)", {0.0, 0.8}, {0.5, 1.2});
+            setAxisLabelsAndRanges(normGraph, "z", Form("(F_{LL}/F_{UU}) / x_{B}^{%.3f}(0.213)", exponent), {0.0, 0.8}, {0.5, 1.2});
         } else if (var == "PT") {
-            setAxisLabelsAndRanges(normGraph, "P_{T} (GeV)", "(F_{LL}/F_{UU}) / x_{B}^{a}(0.213)", {0.0, 1.0}, {0.5, 1.2});
+            setAxisLabelsAndRanges(normGraph, "P_{T} (GeV)", Form("(F_{LL}/F_{UU}) / x_{B}^{%.3f}(0.213)", exponent), {0.0, 1.0}, {0.5, 1.2});
         } else if (var == "xF") {
-            setAxisLabelsAndRanges(normGraph, "x_{F}", "(F_{LL}/F_{UU}) / x_{B}^{a}(0.213)", {-0.8, 0.6}, {0.5, 1.2});
+            setAxisLabelsAndRanges(normGraph, "x_{F}", Form("(F_{LL}/F_{UU}) / x_{B}^{%.3f}(0.213)", exponent), {-0.8, 0.6}, {0.5, 1.2});
         } else if (var == "t") {
-            setAxisLabelsAndRanges(normGraph, "-t (GeV^{2})", "(F_{LL}/F_{UU}) / x_{B}^{a}(0.213)", {0.0, 8.0}, {0.5, 1.2});
+            setAxisLabelsAndRanges(normGraph, "-t (GeV^{2})", Form("(F_{LL}/F_{UU}) / x_{B}^{%.3f}(0.213)", exponent), {0.0, 8.0}, {0.5, 1.2});
         }
 
         normGraph->Draw("AP");
 
         // Draw the dashed gray line at y = 1
+        double xmin, xmax; // Declare variables
         xmin = normGraph->GetXaxis()->GetXmin();
         xmax = normGraph->GetXaxis()->GetXmax();
         TLine *line = new TLine(xmin, 1, xmax, 1);
