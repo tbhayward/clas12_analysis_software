@@ -1748,7 +1748,7 @@ void plotXFDependence(
     TLatex latex1;
     latex1.SetNDC();
     latex1.SetTextSize(0.03);  // Make the text slightly smaller
-    latex1.DrawLatex(0.7, 0.2, "8% Scale Systematic");
+    latex1.DrawLatex(0.69, 0.2, "8% Scale Systematic");
 
     // Save the first canvas as a PNG
     gSystem->Exec("mkdir -p output/epX_plots");
@@ -1805,7 +1805,7 @@ void plotXFDependence(
         TLatex latex2;
         latex2.SetNDC();
         latex2.SetTextSize(0.03);
-        latex2.DrawLatex(0.7, 0.2, "8% Scale Systematic");
+        latex2.DrawLatex(0.69, 0.2, "8% Scale Systematic");
 
         // Save the second canvas as a PNG
         c2->SaveAs("output/epX_plots/CPHI_xF_dependence_AULsin2phi.png");
@@ -1862,7 +1862,7 @@ void plotXFDependence(
         TLatex latex3;
         latex3.SetNDC();
         latex3.SetTextSize(0.03);
-        latex3.DrawLatex(0.7, 0.2, "9% Scale Systematic");
+        latex3.DrawLatex(0.69, 0.2, "9% Scale Systematic");
 
         // Save the third canvas as a PNG
         c3->SaveAs("output/epX_plots/CPHI_xF_dependence_ALL.png");
