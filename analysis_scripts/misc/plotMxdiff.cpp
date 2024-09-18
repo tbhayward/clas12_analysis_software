@@ -26,6 +26,20 @@ using namespace std;
 
 using namespace std;
 
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <cmath>
+#include <string>
+
+#include "TFile.h"
+#include "TTree.h"
+#include "TCanvas.h"
+#include "TGraphErrors.h"
+#include "TAxis.h"
+
+using namespace std;
+
 int main(int argc, char* argv[]) {
     // Check for input arguments
     if (argc != 2) {
@@ -66,9 +80,9 @@ int main(int argc, char* argv[]) {
         0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 
         0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 
         1.1, 1.15, 1.2, 1.25, 1.3, 1.35, 1.4, 1.45, 1.5, 1.55, 1.6, 1.65, 1.7, 1.75, 
-        1.8, 1.85, 1.9, 1.95, 2.0, 2.05, 2.1, 2.15, 2.20, 2.25, 2.30, 2.35
+        1.8, 1.85, 1.9, 1.95, 2.0, 2.05, 2.1, 2.15, 2.20, 2.25, 2.30, 2.35, 2.4, 2.45
     };
-    const int nBins = sizeof(binEdges)/sizeof(binEdges[0]) - 1; // nBins = 36
+    const int nBins = sizeof(binEdges)/sizeof(binEdges[0]) - 1; // nBins = 47
 
     // Prepare arrays to hold results
     vector<double> binCenters(nBins, 0.0);      // Mean Mx in each bin
@@ -144,6 +158,9 @@ int main(int argc, char* argv[]) {
     graph->GetXaxis()->SetTitle("M_{x} (GeV)");
     graph->GetYaxis()->SetTitle("#Delta (++ + --) - (+- + -+)");
 
+    // Adjust the y-axis label offset to prevent it from being cut off
+    graph->GetYaxis()->SetTitleOffset(1.4); // Increase the offset as needed
+
     // Set marker style
     graph->SetMarkerStyle(20);
     graph->SetMarkerSize(1);
@@ -151,6 +168,10 @@ int main(int argc, char* argv[]) {
 
     // Create canvas and draw graph
     TCanvas* c1 = new TCanvas("c1", "Delta vs Mx", 800, 600);
+
+    // Adjust the left margin to add padding space
+    c1->SetLeftMargin(0.15); // Increase the left margin from default (0.1) to 0.15
+
     graph->Draw("AP");
 
     // Save the canvas as PNG
