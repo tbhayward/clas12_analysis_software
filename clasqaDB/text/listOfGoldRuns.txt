@@ -1,0 +1,1296 @@
+ 5032  defect
+ 5036  defect
+ 5038  defect
+ 5039  defect
+ 5040  gold (and silver)
+ 5041  defect
+ 5043  gold (and silver)
+ 5045  defect
+ 5046  gold (and silver)
+ 5047  gold (and silver)
+ 5051  gold (and silver)
+ 5052  silver
+ 5053  gold (and silver)
+ 5116  gold (and silver)
+ 5117  defect
+ 5119  gold (and silver)
+ 5120  gold (and silver)
+ 5124  defect
+ 5125  gold (and silver)
+ 5126  gold (and silver)
+ 5127  defect
+ 5128  defect
+ 5129  defect
+ 5130  defect
+ 5137  defect
+ 5138  defect
+ 5139  defect
+ 5153  gold (and silver)
+ 5158  defect
+ 5159  defect
+ 5160  defect
+ 5162  defect
+ 5163  defect
+ 5164  defect
+ 5165  defect
+ 5166  defect
+ 5167  defect
+ 5168  defect
+ 5169  defect
+ 5180  defect
+ 5181  defect
+ 5182  defect
+ 5183  defect
+ 5189  defect
+ 5190  defect
+ 5191  defect
+ 5193  silver
+ 5194  defect
+ 5195  silver
+ 5196  defect
+ 5197  gold (and silver)
+ 5198  gold (and silver)
+ 5199  gold (and silver)
+ 5200  gold (and silver)
+ 5201  gold (and silver)
+ 5202  defect
+ 5203  gold (and silver)
+ 5204  defect
+ 5205  gold (and silver)
+ 5206  silver
+ 5208  gold (and silver)
+ 5211  defect
+ 5212  defect
+ 5215  defect
+ 5216  silver
+ 5219  gold (and silver)
+ 5220  gold (and silver)
+ 5221  gold (and silver)
+ 5222  defect
+ 5223  defect
+ 5225  defect
+ 5229  defect
+ 5230  defect
+ 5231  defect
+ 5232  defect
+ 5233  gold (and silver)
+ 5234  gold (and silver)
+ 5235  defect
+ 5237  gold (and silver)
+ 5238  defect
+ 5239  defect
+ 5247  defect
+ 5248  gold (and silver)
+ 5249  defect
+ 5250  defect
+ 5252  defect
+ 5253  gold (and silver)
+ 5257  defect
+ 5258  defect
+ 5259  defect
+ 5261  defect
+ 5262  gold (and silver)
+ 5300  defect
+ 5301  defect
+ 5302  defect
+ 5303  defect
+ 5304  gold (and silver)
+ 5305  gold (and silver)
+ 5306  defect
+ 5307  gold (and silver)
+ 5310  gold (and silver)
+ 5311  gold (and silver)
+ 5315  gold (and silver)
+ 5316  defect
+ 5317  silver
+ 5318  defect
+ 5319  defect
+ 5320  silver
+ 5323  defect
+ 5324  gold (and silver)
+ 5325  defect
+ 5333  gold (and silver)
+ 5334  gold (and silver)
+ 5335  defect
+ 5336  defect
+ 5339  gold (and silver)
+ 5340  defect
+ 5341  silver
+ 5342  defect
+ 5343  silver
+ 5344  gold (and silver)
+ 5345  defect
+ 5346  defect
+ 5347  defect
+ 5349  gold (and silver)
+ 5351  gold (and silver)
+ 5354  defect
+ 5355  gold (and silver)
+ 5356  gold (and silver)
+ 5357  gold (and silver)
+ 5358  gold (and silver)
+ 5359  defect
+ 5360  defect
+ 5361  defect
+ 5362  defect
+ 5366  gold (and silver)
+ 5367  gold (and silver)
+ 5368  gold (and silver)
+ 5369  defect
+ 5370  defect
+ 5371  defect
+ 5372  gold (and silver)
+ 5373  gold (and silver)
+ 5374  gold (and silver)
+ 5375  defect
+ 5376  gold (and silver)
+ 5377  gold (and silver)
+ 5378  gold (and silver)
+ 5379  gold (and silver)
+ 5380  gold (and silver)
+ 5381  gold (and silver)
+ 5382  defect
+ 5383  defect
+ 5386  gold (and silver)
+ 5390  gold (and silver)
+ 5391  gold (and silver)
+ 5392  gold (and silver)
+ 5393  gold (and silver)
+ 5394  defect
+ 5398  gold (and silver)
+ 5399  defect
+ 5400  gold (and silver)
+ 5401  silver
+ 5402  defect
+ 5403  gold (and silver)
+ 5404  gold (and silver)
+ 5406  gold (and silver)
+ 5407  gold (and silver)
+ 5414  defect
+ 5415  defect
+ 5416  defect
+ 5417  defect
+ 5418  defect
+ 5419  defect
+ 5422  defect
+ 5423  defect
+ 5424  gold (and silver)
+ 5425  gold (and silver)
+ 5426  defect
+ 5428  defect
+ 5429  defect
+ 5430  defect
+ 5431  defect
+ 5432  gold (and silver)
+ 5434  gold (and silver)
+ 5435  gold (and silver)
+ 5436  defect
+ 5437  defect
+ 5438  silver
+ 5439  defect
+ 5440  silver
+ 5441  silver
+ 5442  gold (and silver)
+ 5443  defect
+ 5444  defect
+ 5445  silver
+ 5447  defect
+ 5448  defect
+ 5449  defect
+ 5450  defect
+ 5451  defect
+ 5452  gold (and silver)
+ 5453  silver
+ 5454  gold (and silver)
+ 5455  defect
+ 5456  defect
+ 5457  defect
+ 5460  defect
+ 5462  defect
+ 5464  gold (and silver)
+ 5465  defect
+ 5466  defect
+ 5467  gold (and silver)
+ 5468  defect
+ 5469  silver
+ 5470  defect
+ 5471  gold (and silver)
+ 5472  defect
+ 5473  silver
+ 5474  gold (and silver)
+ 5475  silver
+ 5476  defect
+ 5478  gold (and silver)
+ 5479  silver
+ 5480  silver
+ 5481  gold (and silver)
+ 5482  gold (and silver)
+ 5483  silver
+ 5485  silver
+ 5486  silver
+ 5487  defect
+ 5495  gold (and silver)
+ 5496  gold (and silver)
+ 5497  silver
+ 5498  silver
+ 5499  silver
+ 5500  defect
+ 5504  gold (and silver)
+ 5505  defect
+ 5507  defect
+ 5516  silver
+ 5517  silver
+ 5518  defect
+ 5519  defect
+ 5520  defect
+ 5521  gold (and silver)
+ 5522  defect
+ 5523  defect
+ 5524  gold (and silver)
+ 5525  defect
+ 5526  gold (and silver)
+ 5527  gold (and silver)
+ 5528  defect
+ 5530  defect
+ 5532  defect
+ 5533  defect
+ 5534  defect
+ 5535  gold (and silver)
+ 5536  defect
+ 5537  defect
+ 5538  silver
+ 5540  silver
+ 5541  gold (and silver)
+ 5542  defect
+ 5543  gold (and silver)
+ 5544  silver
+ 5545  silver
+ 5546  silver
+ 5547  gold (and silver)
+ 5548  gold (and silver)
+ 5549  silver
+ 5550  silver
+ 5551  silver
+ 5552  silver
+ 5554  defect
+ 5555  gold (and silver)
+ 5556  gold (and silver)
+ 5557  silver
+ 5558  defect
+ 5559  gold (and silver)
+ 5561  defect
+ 5562  gold (and silver)
+ 5564  defect
+ 5565  defect
+ 5566  defect
+ 5567  defect
+ 5569  gold (and silver)
+ 5570  silver
+ 5571  gold (and silver)
+ 5572  silver
+ 5573  gold (and silver)
+ 5574  defect
+ 5577  silver
+ 5578  defect
+ 5581  defect
+ 5584  defect
+ 5586  defect
+ 5589  defect
+ 5590  defect
+ 5591  defect
+ 5592  defect
+ 5594  defect
+ 5595  defect
+ 5597  silver
+ 5598  silver
+ 5600  defect
+ 5601  defect
+ 5602  defect
+ 5603  defect
+ 5604  gold (and silver)
+ 5606  defect
+ 5607  defect
+ 5609  defect
+ 5610  defect
+ 5611  defect
+ 5612  gold (and silver)
+ 5613  silver
+ 5614  defect
+ 5615  defect
+ 5616  defect
+ 5617  gold (and silver)
+ 5618  silver
+ 5619  defect
+ 5620  defect
+ 5621  silver
+ 5623  silver
+ 5624  gold (and silver)
+ 5625  silver
+ 5626  gold (and silver)
+ 5627  silver
+ 5628  gold (and silver)
+ 5629  defect
+ 5630  silver
+ 5631  defect
+ 5632  gold (and silver)
+ 5633  defect
+ 5634  defect
+ 5635  silver
+ 5637  gold (and silver)
+ 5638  defect
+ 5639  defect
+ 5641  defect
+ 5643  gold (and silver)
+ 5644  defect
+ 5645  defect
+ 5646  silver
+ 5647  defect
+ 5648  defect
+ 5649  gold (and silver)
+ 5650  silver
+ 5651  silver
+ 5652  defect
+ 5654  silver
+ 5655  defect
+ 5656  defect
+ 5662  silver
+ 5663  gold (and silver)
+ 5664  defect
+ 5665  gold (and silver)
+ 5666  gold (and silver)
+ 5674  defect
+ 5675  defect
+ 5676  defect
+ 5677  defect
+ 5678  defect
+ 5679  defect
+ 5680  defect
+ 5681  gold (and silver)
+ 5682  gold (and silver)
+ 5683  defect
+ 5684  defect
+ 5685  defect
+ 5686  defect
+ 5688  defect
+ 5689  defect
+ 5690  defect
+ 5691  defect
+ 5692  defect
+ 5693  defect
+ 5694  defect
+ 5695  defect
+ 5696  gold (and silver)
+ 5698  gold (and silver)
+ 5699  defect
+ 5700  gold (and silver)
+ 5701  defect
+ 5702  defect
+ 5703  defect
+ 5704  gold (and silver)
+ 5705  defect
+ 5706  defect
+ 5707  defect
+ 5708  gold (and silver)
+ 5715  defect
+ 5716  defect
+ 5717  defect
+ 5718  gold (and silver)
+ 5720  gold (and silver)
+ 5722  defect
+ 5723  defect
+ 5724  gold (and silver)
+ 5725  defect
+ 5726  gold (and silver)
+ 5727  gold (and silver)
+ 5728  defect
+ 5729  defect
+ 5732  gold (and silver)
+ 5733  defect
+ 5734  gold (and silver)
+ 5735  defect
+ 5736  gold (and silver)
+ 5739  gold (and silver)
+ 5741  defect
+ 5742  defect
+ 5743  defect
+ 5744  defect
+ 5745  defect
+ 5746  defect
+ 5749  defect
+ 5750  defect
+ 5751  defect
+ 5753  defect
+ 5758  defect
+ 5759  defect
+ 5760  defect
+ 5761  defect
+ 5762  defect
+ 5763  defect
+ 5765  defect
+ 5766  defect
+ 5767  defect
+ 5768  defect
+ 5769  defect
+ 5772  defect
+ 5774  defect
+ 5777  defect
+ 5787  defect
+ 5788  gold (and silver)
+ 5789  defect
+ 5790  defect
+ 5791  gold (and silver)
+ 5792  defect
+ 5793  defect
+ 5794  gold (and silver)
+ 5795  defect
+ 5796  defect
+ 5797  defect
+ 5798  gold (and silver)
+ 5799  defect
+ 5800  defect
+ 5801  defect
+ 5802  defect
+ 5803  gold (and silver)
+ 5804  gold (and silver)
+ 5806  defect
+ 5807  defect
+ 5808  defect
+ 5809  defect
+ 5810  defect
+ 5811  gold (and silver)
+ 5812  defect
+ 5813  defect
+ 5814  defect
+ 5815  gold (and silver)
+ 5816  defect
+ 5817  defect
+ 5818  defect
+ 5819  defect
+ 5820  defect
+ 5821  defect
+ 5822  defect
+ 5823  defect
+ 5824  gold (and silver)
+ 5825  defect
+ 5826  gold (and silver)
+ 5827  defect
+ 5828  gold (and silver)
+ 5829  defect
+ 5830  gold (and silver)
+ 5832  defect
+ 5835  defect
+ 5836  gold (and silver)
+ 5838  defect
+ 5839  gold (and silver)
+ 5841  defect
+ 5842  defect
+ 5843  defect
+ 5844  defect
+ 5845  defect
+ 5846  defect
+ 5847  defect
+ 5848  gold (and silver)
+ 5849  gold (and silver)
+ 5850  defect
+ 5851  defect
+ 5852  defect
+ 5853  defect
+ 5854  defect
+ 5855  defect
+ 5856  gold (and silver)
+ 5857  defect
+ 5858  defect
+ 5859  defect
+ 5860  defect
+ 5861  defect
+ 5862  defect
+ 5863  defect
+ 5864  defect
+ 5865  defect
+ 5866  defect
+ 5867  defect
+ 5868  defect
+ 5869  gold (and silver)
+ 5870  defect
+ 5875  defect
+ 5877  defect
+ 5878  defect
+ 5879  defect
+ 5880  silver
+ 5881  defect
+ 5883  defect
+ 5884  defect
+ 5885  defect
+ 5886  silver
+ 5887  defect
+ 5889  defect
+ 5890  defect
+ 5891  defect
+ 5892  defect
+ 5893  gold (and silver)
+ 5894  defect
+ 5895  defect
+ 5896  defect
+ 5897  defect
+ 5898  defect
+ 5899  defect
+ 5900  defect
+ 5901  gold (and silver)
+ 5904  defect
+ 5905  defect
+ 5906  gold (and silver)
+ 5907  gold (and silver)
+ 5909  defect
+ 5910  defect
+ 5911  defect
+ 5912  silver
+ 5913  gold (and silver)
+ 5914  defect
+ 5915  silver
+ 5916  gold (and silver)
+ 5917  defect
+ 5918  defect
+ 5919  silver
+ 5920  gold (and silver)
+ 5922  defect
+ 5923  defect
+ 5924  defect
+ 5925  silver
+ 5926  silver
+ 5928  gold (and silver)
+ 5929  gold (and silver)
+ 5931  defect
+ 5932  defect
+ 5933  silver
+ 5934  defect
+ 5935  defect
+ 5936  gold (and silver)
+ 5937  defect
+ 5938  silver
+ 5939  silver
+ 5940  gold (and silver)
+ 5941  gold (and silver)
+ 5942  defect
+ 5943  defect
+ 5944  defect
+ 5949  gold (and silver)
+ 5950  gold (and silver)
+ 5951  gold (and silver)
+ 5952  silver
+ 5953  silver
+ 5954  defect
+ 5955  silver
+ 5956  defect
+ 5957  defect
+ 5958  silver
+ 5962  gold (and silver)
+ 5963  defect
+ 5964  defect
+ 5965  defect
+ 5966  silver
+ 5967  defect
+ 5968  gold (and silver)
+ 5969  gold (and silver)
+ 5970  defect
+ 5971  gold (and silver)
+ 5972  defect
+ 5973  defect
+ 5974  defect
+ 5975  gold (and silver)
+ 5976  defect
+ 5977  defect
+ 5978  defect
+ 5979  defect
+ 5980  defect
+ 5981  gold (and silver)
+ 5982  defect
+ 5983  gold (and silver)
+ 5984  defect
+ 5985  gold (and silver)
+ 5986  gold (and silver)
+ 5987  gold (and silver)
+ 5988  silver
+ 5990  gold (and silver)
+ 5991  defect
+ 5992  defect
+ 5993  defect
+ 5994  defect
+ 5995  defect
+ 5996  defect
+ 5997  defect
+ 5998  defect
+ 5999  defect
+ 6000  defect
+ 6156  gold (and silver)
+ 6157  defect
+ 6164  gold (and silver)
+ 6167  defect
+ 6168  defect
+ 6169  defect
+ 6170  defect
+ 6189  defect
+ 6190  gold (and silver)
+ 6191  gold (and silver)
+ 6193  gold (and silver)
+ 6194  defect
+ 6197  gold (and silver)
+ 6198  gold (and silver)
+ 6199  defect
+ 6200  defect
+ 6201  silver
+ 6202  defect
+ 6204  gold (and silver)
+ 6206  gold (and silver)
+ 6208  gold (and silver)
+ 6209  defect
+ 6210  gold (and silver)
+ 6214  defect
+ 6215  defect
+ 6216  defect
+ 6218  defect
+ 6219  defect
+ 6220  defect
+ 6221  defect
+ 6222  defect
+ 6223  defect
+ 6224  defect
+ 6225  silver
+ 6226  defect
+ 6227  defect
+ 6233  defect
+ 6235  silver
+ 6236  defect
+ 6237  defect
+ 6239  defect
+ 6240  gold (and silver)
+ 6241  defect
+ 6242  gold (and silver)
+ 6243  gold (and silver)
+ 6244  defect
+ 6245  defect
+ 6247  gold (and silver)
+ 6248  silver
+ 6249  gold (and silver)
+ 6250  defect
+ 6251  defect
+ 6252  defect
+ 6253  gold (and silver)
+ 6254  defect
+ 6255  gold (and silver)
+ 6256  defect
+ 6257  gold (and silver)
+ 6258  defect
+ 6259  defect
+ 6260  defect
+ 6262  defect
+ 6263  defect
+ 6265  defect
+ 6266  defect
+ 6285  defect
+ 6286  defect
+ 6287  defect
+ 6288  defect
+ 6289  defect
+ 6296  defect
+ 6298  defect
+ 6299  defect
+ 6302  gold (and silver)
+ 6303  defect
+ 6305  defect
+ 6307  defect
+ 6308  defect
+ 6310  defect
+ 6311  defect
+ 6313  gold (and silver)
+ 6321  defect
+ 6322  defect
+ 6323  defect
+ 6326  gold (and silver)
+ 6327  gold (and silver)
+ 6328  defect
+ 6329  defect
+ 6330  defect
+ 6331  defect
+ 6333  defect
+ 6334  defect
+ 6335  defect
+ 6336  gold (and silver)
+ 6337  gold (and silver)
+ 6338  defect
+ 6339  defect
+ 6340  defect
+ 6341  defect
+ 6342  defect
+ 6346  defect
+ 6347  defect
+ 6348  defect
+ 6349  defect
+ 6350  defect
+ 6351  defect
+ 6352  defect
+ 6353  defect
+ 6354  defect
+ 6356  defect
+ 6357  defect
+ 6359  defect
+ 6361  defect
+ 6362  defect
+ 6363  gold (and silver)
+ 6366  defect
+ 6367  defect
+ 6368  gold (and silver)
+ 6369  defect
+ 6370  gold (and silver)
+ 6371  defect
+ 6373  defect
+ 6374  defect
+ 6377  defect
+ 6378  defect
+ 6379  defect
+ 6380  gold (and silver)
+ 6381  defect
+ 6382  defect
+ 6383  defect
+ 6384  defect
+ 6385  defect
+ 6386  defect
+ 6389  defect
+ 6396  defect
+ 6399  defect
+ 6420  defect
+ 6421  defect
+ 6422  gold (and silver)
+ 6426  defect
+ 6428  defect
+ 6429  defect
+ 6430  gold (and silver)
+ 6431  defect
+ 6432  defect
+ 6433  defect
+ 6437  defect
+ 6442  defect
+ 6443  gold (and silver)
+ 6444  silver
+ 6445  defect
+ 6446  defect
+ 6447  defect
+ 6448  defect
+ 6449  defect
+ 6450  gold (and silver)
+ 6451  defect
+ 6452  defect
+ 6453  defect
+ 6454  silver
+ 6455  defect
+ 6456  gold (and silver)
+ 6457  defect
+ 6458  defect
+ 6459  defect
+ 6460  defect
+ 6461  defect
+ 6462  defect
+ 6463  defect
+ 6464  defect
+ 6465  gold (and silver)
+ 6466  defect
+ 6467  defect
+ 6468  defect
+ 6470  defect
+ 6471  defect
+ 6472  defect
+ 6473  gold (and silver)
+ 6474  defect
+ 6475  defect
+ 6476  defect
+ 6479  defect
+ 6481  defect
+ 6482  defect
+ 6483  defect
+ 6484  defect
+ 6485  defect
+ 6486  defect
+ 6488  defect
+ 6489  defect
+ 6491  gold (and silver)
+ 6492  defect
+ 6498  defect
+ 6499  defect
+ 6501  defect
+ 6502  defect
+ 6510  defect
+ 6511  defect
+ 6512  defect
+ 6513  gold (and silver)
+ 6514  defect
+ 6515  defect
+ 6516  silver
+ 6522  defect
+ 6523  defect
+ 6524  defect
+ 6525  defect
+ 6546  gold (and silver)
+ 6547  gold (and silver)
+ 6548  defect
+ 6549  defect
+ 6550  defect
+ 6551  defect
+ 6557  defect
+ 6558  gold (and silver)
+ 6559  defect
+ 6560  defect
+ 6561  defect
+ 6562  defect
+ 6563  defect
+ 6565  gold (and silver)
+ 6566  defect
+ 6567  defect
+ 6568  silver
+ 6569  gold (and silver)
+ 6570  defect
+ 6571  gold (and silver)
+ 6572  gold (and silver)
+ 6573  defect
+ 6576  defect
+ 6577  defect
+ 6578  defect
+ 6581  defect
+ 6582  defect
+ 6585  gold (and silver)
+ 6586  defect
+ 6587  gold (and silver)
+ 6589  defect
+ 6590  defect
+ 6591  defect
+ 6592  defect
+ 6593  defect
+ 6595  gold (and silver)
+ 6596  defect
+ 6597  defect
+ 6598  gold (and silver)
+ 6599  defect
+ 6601  defect
+ 6603  defect
+ 6616  defect
+ 6618  defect
+ 6619  defect
+ 6620  defect
+ 6631  defect
+ 6632  defect
+ 6636  defect
+ 6637  defect
+ 6638  defect
+ 6639  defect
+ 6640  defect
+ 6642  defect
+ 6645  gold (and silver)
+ 6647  defect
+ 6648  gold (and silver)
+ 6650  silver
+ 6651  defect
+ 6652  defect
+ 6654  defect
+ 6655  defect
+ 6656  defect
+ 6657  defect
+ 6658  silver
+ 6660  defect
+ 6661  defect
+ 6662  defect
+ 6663  defect
+ 6664  defect
+ 6665  defect
+ 6666  defect
+ 6667  gold (and silver)
+ 6668  defect
+ 6669  gold (and silver)
+ 6670  defect
+ 6672  defect
+ 6673  gold (and silver)
+ 6675  defect
+ 6676  defect
+ 6677  defect
+ 6678  defect
+ 6680  defect
+ 6682  silver
+ 6683  gold (and silver)
+ 6684  defect
+ 6685  defect
+ 6687  defect
+ 6688  defect
+ 6689  defect
+ 6691  defect
+ 6692  defect
+ 6693  defect
+ 6694  defect
+ 6695  defect
+ 6696  defect
+ 6697  defect
+ 6698  defect
+ 6699  defect
+ 6704  defect
+ 6705  defect
+ 6706  defect
+ 6707  defect
+ 6708  defect
+ 6709  defect
+ 6710  defect
+ 6711  defect
+ 6712  defect
+ 6713  defect
+ 6714  defect
+ 6715  defect
+ 6716  defect
+ 6717  defect
+ 6718  gold (and silver)
+ 6719  gold (and silver)
+ 6722  defect
+ 6723  defect
+ 6724  defect
+ 6725  defect
+ 6728  defect
+ 6729  defect
+ 6730  defect
+ 6731  gold (and silver)
+ 6732  defect
+ 6733  defect
+ 6734  defect
+ 6736  defect
+ 6737  defect
+ 6738  defect
+ 6739  defect
+ 6740  defect
+ 6741  defect
+ 6742  defect
+ 6743  defect
+ 6744  defect
+ 6746  defect
+ 6747  defect
+ 6748  defect
+ 6749  defect
+ 6750  defect
+ 6751  defect
+ 6753  defect
+ 6754  defect
+ 6755  defect
+ 6756  defect
+ 6757  defect
+ 6759  defect
+ 6760  defect
+ 6762  gold (and silver)
+ 6763  defect
+ 6764  gold (and silver)
+ 6765  defect
+ 6767  defect
+ 6768  defect
+ 6769  defect
+ 6775  defect
+ 6776  defect
+ 6777  defect
+ 6778  defect
+ 6779  defect
+ 6780  defect
+ 6781  defect
+ 6783  defect
+ 11093  defect
+ 11094  defect
+ 11095  defect
+ 11096  defect
+ 11097  defect
+ 11098  defect
+ 11099  defect
+ 11100  defect
+ 11101  defect
+ 11102  defect
+ 11103  defect
+ 11107  defect
+ 11108  defect
+ 11109  defect
+ 11110  defect
+ 11111  defect
+ 11113  defect
+ 11114  defect
+ 11117  defect
+ 11119  defect
+ 11120  defect
+ 11121  defect
+ 11122  defect
+ 11124  defect
+ 11125  defect
+ 11126  defect
+ 11127  defect
+ 11128  defect
+ 11129  defect
+ 11132  defect
+ 11143  defect
+ 11156  defect
+ 11158  defect
+ 11159  defect
+ 11160  defect
+ 11162  defect
+ 11165  defect
+ 11171  defect
+ 11174  defect
+ 11175  defect
+ 11176  defect
+ 11178  defect
+ 11179  defect
+ 11180  defect
+ 11182  defect
+ 11183  defect
+ 11189  defect
+ 11190  defect
+ 11193  defect
+ 11194  defect
+ 11195  defect
+ 11197  defect
+ 11198  defect
+ 11199  defect
+ 11200  defect
+ 11201  defect
+ 11202  defect
+ 11203  defect
+ 11206  defect
+ 11207  defect
+ 11210  defect
+ 11211  defect
+ 11212  defect
+ 11213  defect
+ 11214  defect
+ 11215  defect
+ 11218  defect
+ 11220  defect
+ 11221  defect
+ 11222  defect
+ 11223  defect
+ 11225  defect
+ 11226  defect
+ 11230  defect
+ 11231  defect
+ 11232  defect
+ 11233  defect
+ 11234  defect
+ 11235  defect
+ 11238  defect
+ 11239  defect
+ 11241  defect
+ 11243  defect
+ 11244  defect
+ 11247  defect
+ 11248  defect
+ 11250  defect
+ 11251  defect
+ 11252  defect
+ 11253  defect
+ 11254  defect
+ 11256  defect
+ 11257  defect
+ 11258  defect
+ 11265  defect
+ 11266  defect
+ 11268  defect
+ 11269  defect
+ 11270  defect
+ 11272  defect
+ 11273  defect
+ 11274  defect
+ 11276  defect
+ 11277  defect
+ 11279  defect
+ 11282  defect
+ 11283  gold (and silver)
+ 11286  defect
+ 11287  defect
+ 11288  defect
+ 11289  defect
+ 11290  gold (and silver)
+ 11291  defect
+ 11292  defect
+ 11293  defect
+ 11294  defect
+ 11295  defect
+ 11296  defect
+ 11297  defect
+ 11298  defect
+ 11299  defect
+ 11300  defect
+ 11323  defect
+ 11324  defect
+ 11325  defect
+ 11326  defect
+ 11327  defect
+ 11328  defect
+ 11329  defect
+ 11330  defect
+ 11331  defect
+ 11336  defect
+ 11338  defect
+ 11339  defect
+ 11340  defect
+ 11341  defect
+ 11342  defect
+ 11345  defect
+ 11347  defect
+ 11348  defect
+ 11352  defect
+ 11354  defect
+ 11356  defect
+ 11357  defect
+ 11358  defect
+ 11361  defect
+ 11362  defect
+ 11363  defect
+ 11364  defect
+ 11365  defect
+ 11366  defect
+ 11367  silver
+ 11368  defect
+ 11370  defect
+ 11372  defect
+ 11373  defect
+ 11374  gold (and silver)
+ 11375  defect
+ 11376  defect
+ 11378  gold (and silver)
+ 11379  defect
+ 11381  defect
+ 11383  gold (and silver)
+ 11386  defect
+ 11387  defect
+ 11389  gold (and silver)
+ 11390  defect
+ 11394  defect
+ 11395  defect
+ 11396  defect
+ 11397  defect
+ 11398  defect
+ 11399  defect
+ 11400  defect
+ 11401  gold (and silver)
+ 11402  defect
+ 11403  defect
+ 11404  defect
+ 11412  defect
+ 11413  defect
+ 11414  defect
+ 11415  defect
+ 11416  defect
+ 11417  gold (and silver)
+ 11418  defect
+ 11419  silver
+ 11420  defect
+ 11421  defect
+ 11422  defect
+ 11423  defect
+ 11429  defect
+ 11430  defect
+ 11432  defect
+ 11433  defect
+ 11434  defect
+ 11435  defect
+ 11436  defect
+ 11437  defect
+ 11438  defect
+ 11439  defect
+ 11440  defect
+ 11441  defect
+ 11442  defect
+ 11443  defect
+ 11444  defect
+ 11445  defect
+ 11446  defect
+ 11447  defect
+ 11449  silver
+ 11450  defect
+ 11451  defect
+ 11458  defect
+ 11460  defect
+ 11462  defect
+ 11463  defect
+ 11465  defect
+ 11466  defect
+ 11467  defect
+ 11468  defect
+ 11469  defect
+ 11470  defect
+ 11471  defect
+ 11472  defect
+ 11473  defect
+ 11474  defect
+ 11475  defect
+ 11476  defect
+ 11477  gold (and silver)
+ 11479  defect
+ 11480  defect
+ 11481  defect
+ 11483  gold (and silver)
+ 11484  defect
+ 11485  defect
+ 11486  defect
+ 11487  defect
+ 11490  defect
+ 11491  silver
+ 11492  defect
+ 11493  defect
+ 11494  defect
+ 11495  defect
+ 11496  defect
+ 11497  defect
+ 11498  defect
+ 11499  defect
+ 11501  defect
+ 11502  defect
+ 11504  defect
+ 11505  defect
+ 11506  defect
+ 11507  defect
+ 11508  defect
+ 11509  defect
+ 11510  defect
+ 11511  defect
+ 11512  defect
+ 11513  defect
+ 11514  defect
+ 11515  gold (and silver)
+ 11516  defect
+ 11517  gold (and silver)
+ 11518  defect
+ 11519  defect
+ 11521  defect
+ 11522  defect
+ 11524  defect
+ 11525  gold (and silver)
+ 11528  defect
+ 11529  defect
+ 11530  defect
+ 11531  defect
+ 11532  gold (and silver)
+ 11533  silver
+ 11534  gold (and silver)
+ 11535  defect
+ 11536  defect
+ 11537  defect
+ 11538  defect
+ 11539  defect
+ 11540  defect
+ 11541  defect
+ 11544  defect
+ 11545  defect
+ 11546  defect
+ 11548  defect
+ 11550  defect
+ 11553  silver
+ 11554  defect
+ 11556  defect
+ 11557  defect
+ 11560  defect
+ 11561  defect
+ 11562  defect
+ 11563  gold (and silver)
+ 11564  defect
+ 11565  defect
+ 11566  defect
+ 11567  defect
+ 11568  defect
+ 11569  defect
+ 11570  defect
+ 11571  defect
