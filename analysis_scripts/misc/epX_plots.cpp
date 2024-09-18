@@ -1201,9 +1201,9 @@ void plotNormalizedFLLOverFUU(
 
     std::vector<double> xVals, yVals, yErrs;
     for (const auto &entry : xData) {
-        xVals.push_back(entry[0]);
-        yVals.push_back(entry[1]);
-        yErrs.push_back(entry[2]);
+        xVals.push_back(entry[0]); // x value
+        yVals.push_back(entry[1]); // FLL/FUU value
+        yErrs.push_back(entry[2]); // Error in FLL/FUU
     }
 
     TGraphErrors *graph = new TGraphErrors(xVals.size(), &xVals[0], &yVals[0], nullptr, &yErrs[0]);
@@ -1254,10 +1254,10 @@ void plotNormalizedFLLOverFUU(
         std::cout << "\nNormalized data for variable: " << var << "\n";
         std::cout << "Bin\t" << var << "\tFLL/FUU\tErr\t<x>\tx^{a}\tNormalized FLL/FUU\n";
         for (size_t i = 0; i < asymData.size(); ++i) {
-            double varValue = kinData[i][0]; // The first column is the variable's mean value
-            double xValue = kinData[i][2];   // The third column (index 2) is x
-            double yValue = asymData[i][1];  // FLL/FUU value
-            double yErr = asymData[i][2];    // Error in FLL/FUU
+            double varValue = asymData[i][0]; // Mean value of the variable
+            double xValue = kinData[i][2];    // x value from kinematic data
+            double yValue = asymData[i][1];   // FLL/FUU value
+            double yErr = asymData[i][2];     // Error in FLL/FUU
 
             // Evaluate the fitted function at xValue
             double fittedY = fitFunc->Eval(xValue);
