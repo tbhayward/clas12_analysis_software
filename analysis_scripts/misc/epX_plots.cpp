@@ -1547,6 +1547,9 @@ int main(int argc, char *argv[]) {
 
     // Call the plotting function for different dependencies
     // plotDependence(asymmetryData, "Mx", "M_{x} (GeV)", {0.0, 2.5}, "output/epX_plots/Mx_dependence_plots.png");
+    plotDependence(asymmetryData, "Mxbin1", "M_{x} (GeV)", {0.5, 2.5}, "output/epX_plots/Mxbin1_dependence_plots.png");
+    plotDependence(asymmetryData, "Mxbin2", "M_{x} (GeV)", {0.5, 2.5}, "output/epX_plots/Mxbin2_dependence_plots.png");
+    plotDependence(asymmetryData, "Mxbin3", "M_{x} (GeV)", {0.5, 2.5}, "output/epX_plots/Mxbin3_dependence_plots.png");
     plotDependence(asymmetryData, "Mxnodilution", "M_{x} (GeV)", {0.5, 2.5}, "output/epX_plots/Mxnodilution_dependence_plots.png");
     // plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots.png");
     // plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots_comparison.png", "xall");
@@ -1562,8 +1565,8 @@ int main(int argc, char *argv[]) {
     // plotDependence(asymmetryData, "Q2extramulti1", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2extramulti1_dependence_plots.png");
     // plotDependence(asymmetryData, "Q2extramulti2", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2extramulti2_dependence_plots.png");
     // plotDependence(asymmetryData, "Q2extramulti3", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2extramulti3_dependence_plots.png");
-    plotDependence(asymmetryData, "t", "t (GeV^{2})", {-8, 0}, "output/epX_plots/t_dependence_plots.png");
-    plotDependence(asymmetryData, "t", "t (GeV^{2})", {-8, 0}, "output/epX_plots/t_dependence_comparison_plots.png", "tall");
+    // plotDependence(asymmetryData, "t", "t (GeV^{2})", {-8, 0}, "output/epX_plots/t_dependence_plots.png");
+    // plotDependence(asymmetryData, "t", "t (GeV^{2})", {-8, 0}, "output/epX_plots/t_dependence_comparison_plots.png", "tall");
 
     // Call the new function
     plotNormalizedFLLOverFUU(asymmetryData, kinematicData, "output/epX_plots/normalized_FLL_over_FUU.png");
