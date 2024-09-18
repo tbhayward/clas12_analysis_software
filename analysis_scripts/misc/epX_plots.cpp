@@ -1790,7 +1790,7 @@ int main(int argc, char *argv[]) {
 
 
     // Call the function to generate and save the plot
-    plotXFDependence(asymmetryData, "xF", {-1.0, 1.0}, {-0.1, 0.1}, "output/epX_plots/xF_dependence.png");
+    plotXFDependence(asymmetryData, "xF", {-1.0, 1.0}, {-0.1, 0.1}, "output/epX_plots/CPHI_xF_dependence.png");
 
 
     return 0;
