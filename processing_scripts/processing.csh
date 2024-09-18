@@ -61,9 +61,9 @@ endif
 echo "Pulling the latest changes from the repository..."
 git pull
 
-echo "Entering the 'clas12-qadb' directory and sourcing 'environ.csh'..."
-cd clas12-qadb/
-source environ.csh
+echo "Entering the 'clasqaDB/' directory and sourcing 'env.csh'..."
+cd clasqaDB/
+source env.csh
 
 echo "Returning to the parent directory..."
 cd ..
