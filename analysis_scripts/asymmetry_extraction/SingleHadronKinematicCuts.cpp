@@ -32,6 +32,18 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
       goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0;
       return goodEvent;
     }
+    if (property == "Mxbin1") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.16 && *x < 0.20;
+      return goodEvent;
+    }
+    if (property == "Mxbin2") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.20 && *x < 0.24;
+      return goodEvent;
+    }
+    if (property == "Mxbin3") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.24 && *x < 0.28;
+      return goodEvent;
+    }
     if (property == "xF" || property == "x" || property == "z" || property == "PT" || property == "t" || 
         property == "runnum") {
       goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.35 && *y < 0.80;
