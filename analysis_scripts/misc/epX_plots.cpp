@@ -1322,7 +1322,7 @@ void plotNormalizedFLLOverFUU(
     latex_main->SetNDC();
     latex_main->SetTextSize(0.04);
     latex_main->SetTextAlign(33); // Bottom right alignment
-    latex_main->DrawLatex(0.875, 0.2, "M_{x} > 1.35 GeV"); // Moved up slightly
+    latex_main->DrawLatex(0.875, 0.225, "M_{x} > 1.35 GeV"); // Moved up slightly
 
     // Plot 2-6: Normalized FLL/FUU vs other variables
     int pad = 2;
@@ -1366,7 +1366,7 @@ void plotNormalizedFLLOverFUU(
             latex->SetNDC();
             latex->SetTextSize(0.04);
             latex->SetTextAlign(33); // Bottom right alignment
-            latex->DrawLatex(0.875, 0.2, "M_{x} > 1.35 GeV"); // Moved up slightly
+            latex->DrawLatex(0.875, 0.225, "M_{x} > 1.35 GeV"); // Moved up slightly
         }
 
         pad++;
