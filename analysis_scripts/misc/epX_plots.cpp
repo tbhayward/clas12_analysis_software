@@ -1304,7 +1304,7 @@ void plotNormalizedFLLOverFUU(
     fitFunc->Draw("same");
 
     // Add legend in the top-left corner
-    TLegend *leg = new TLegend(0.2, 0.7, 0.6, 0.85);
+    TLegend *leg = new TLegend(0.2, 0.8, 0.65, 0.85);
     leg->AddEntry(graph, "Data", "P");
     leg->AddEntry(fitFunc, Form("Fit: y = %.3f x^{%.3f}", amplitude, exponent), "L");
     leg->Draw();
@@ -1322,7 +1322,7 @@ void plotNormalizedFLLOverFUU(
     latex_main->SetNDC();
     latex_main->SetTextSize(0.04);
     latex_main->SetTextAlign(33); // Bottom right alignment
-    latex_main->DrawLatex(0.9, 0.25, "M_{x} > 1.35 GeV"); // Moved up slightly
+    latex_main->DrawLatex(0.875, 0.2, "M_{x} > 1.35 GeV"); // Moved up slightly
 
     // Plot 2-6: Normalized FLL/FUU vs other variables
     int pad = 2;
