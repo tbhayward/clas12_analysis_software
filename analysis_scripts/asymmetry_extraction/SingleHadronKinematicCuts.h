@@ -22,6 +22,7 @@ private:
     TTreeReaderValue<double> Q2;
     TTreeReaderValue<double> W;
     TTreeReaderValue<double> Mx;
+    TTreeReaderValue<double> Mx2;
     TTreeReaderValue<double> x;
     TTreeReaderValue<double> t;
     TTreeReaderValue<double> tmin;

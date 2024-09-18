@@ -12,7 +12,7 @@ SingleHadronKinematicCuts::SingleHadronKinematicCuts(TTreeReader& reader)
       e_theta(reader, "e_theta"), e_phi(reader, "e_phi"), vz_e(reader, "vz_e"),
       p_p(reader, "p_p"), p_theta(reader, "p_theta"), p_phi(reader, "p_phi"), 
       vz_p(reader, "vz_p"), 
-      Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), x(reader, "x"), 
+      Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), Mx2(reader, "Mx2"), x(reader, "x"), 
       t(reader, "t"), tmin(reader, "tmin"), y(reader, "y"), z(reader, "z"), 
       pT(reader, "pT"), xF(reader, "xF"), phi(reader, "phi"), 
       target_pol(reader, "target_pol") {}
@@ -25,85 +25,71 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     if (-10 > *vz_p || *vz_p > 1.5 || -9 > *vz_e || *vz_e > 2) return false;
 
     if (property == "integrated") {
-      goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.35 && *y < 0.80;
+      goodEvent = *Q2 > 1 && *W > 2 && *Mx2 > 0.16 && *y < 0.80 && (*t-*tmin) < -1;
       return goodEvent;
     }
-    if (property == "Mx" || property == "Mxnodilution") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0;
+    if (property == "Mx2") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16;
       return goodEvent;
     }
-    if (property == "Mxbin1a") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.16 && *x < 0.20 && (*t-*tmin) > -1;
+    if (property == "Mx2bin1a") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.16 && *x < 0.20 && (*t-*tmin) > -1;
       return goodEvent;
     }
-    if (property == "Mxbin1b") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.16 && *x < 0.20 && (*t-*tmin) < -2;
+    if (property == "Mx2bin1b") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.16 && *x < 0.20 && (*t-*tmin) < -2;
       return goodEvent;
     }
-    if (property == "Mxbin2a") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.21 && *x < 0.25 && (*t-*tmin) > -1;
+    if (property == "Mx2bin2a") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.21 && *x < 0.25 && (*t-*tmin) > -1;
       return goodEvent;
     }
-    if (property == "Mxbin2b") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.21 && *x < 0.25 && (*t-*tmin) < -2;
+    if (property == "Mx2bin2b") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.21 && *x < 0.25 && (*t-*tmin) < -2;
       return goodEvent;
     }
-    if (property == "Mxbin3a") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.28 && *x < 0.32 && (*t-*tmin) > -1;
+    if (property == "Mx2bin3a") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.28 && *x < 0.32 && (*t-*tmin) > -1;
       return goodEvent;
     }
-    if (property == "Mxbin3b") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.28 && *x < 0.32 && (*t-*tmin) < -2;
+    if (property == "Mx2bin3b") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.28 && *x < 0.32 && (*t-*tmin) < -2;
       return goodEvent;
     }
-    if (property == "Mxbin4a") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.35 && *x < 0.40 && (*t-*tmin) > -1;
+    if (property == "Mx2bin4a") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.35 && *x < 0.40 && (*t-*tmin) > -1;
       return goodEvent;
     }
-    if (property == "Mxbin4b") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.35 && *x < 0.40 && (*t-*tmin) < -2;
+    if (property == "Mx2bin4b") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.35 && *x < 0.40 && (*t-*tmin) < -2;
       return goodEvent;
     }
     if (property == "xF" || property == "x" || property == "z" || property == "PT" || property == "t" || 
         property == "runnum") {
-      goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.35 && *y < 0.80;
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && (*t-*tmin) < -1;
       return goodEvent;
     } 
     if (property == "xFall" || property == "xall" || property == "zall" || property == "PTall" || 
         property == "tall") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0.55;
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16;
       return goodEvent;
     } 
     if (property == "Q2multi1") {
-      goodEvent = *Q2 > 1 && *W > 2 && *Mx > 0.95 && *y < 0.80;
+      goodEvent = *Q2 > 1 && *W > 2 && *Mx2 > 0.16 && *y < 0.80 && (*t-*tmin) < -1;
       goodEvent = goodEvent && *x > 0.12 && *x < 0.15 && *pT > 0.325 && *pT < 0.475 && *z > 0.16 && *z < 0.24;
       return goodEvent;
     }
     if (property == "Q2multi2") {
-      goodEvent = *Q2 > 1 && *W > 2 && *Mx > 0.95 && *y < 0.80;
+      goodEvent = *Q2 > 1 && *W > 2 && *Mx2 > 0.16 && *y < 0.80 && (*t-*tmin) < -1;
       goodEvent = goodEvent && *x > 0.15 && *x < 0.18 && *pT > 0.325 && *pT < 0.475 && *z > 0.16 && *z < 0.22 ;
       return goodEvent;
     }
     if (property == "Q2multi3") {
-      goodEvent = *Q2 > 1 && *W > 2 && *Mx > 0.95 && *y < 0.80;
+      goodEvent = *Q2 > 1 && *W > 2 && *Mx2 > 0.16 && *y < 0.80 && (*t-*tmin) < -1;
       goodEvent = goodEvent && *x > 0.18 && *x < 0.21 && *pT > 0.325 && *pT < 0.475 && *z > 0.16 && *z < 0.22;
       return goodEvent;
     }
-    if (property == "Q2extramulti1") {
-      goodEvent = *Q2 > 1 && *W > 2 && *Mx > 0.95 && *y < 0.80;
-      goodEvent = goodEvent && *x > 0.12 && *x < 0.15 && *pT > 0.325 && *pT < 0.475 && *z > 0.16 && *z < 0.24 && *xF < -0.40 && *xF > -0.50;
-      return goodEvent;
-    }
-    if (property == "Q2extramulti2") {
-      goodEvent = *Q2 > 1 && *W > 2 && *Mx > 0.95 && *y < 0.80;
-      goodEvent = goodEvent && *x > 0.15 && *x < 0.18 && *pT > 0.325 && *pT < 0.475 && *z > 0.16 && *z < 0.22 && *xF < -0.40 && *xF > -0.50;
-      return goodEvent;
-    }
-    if (property == "Q2extramulti3") {
-      goodEvent = *Q2 > 1 && *W > 2 && *Mx > 0.95 && *y < 0.80;
-      goodEvent = goodEvent && *x > 0.18 && *x < 0.21 && *pT > 0.325 && *pT < 0.475 && *z > 0.16 && *z < 0.22 && *xF < -0.40 && *xF > -0.50;
-      return goodEvent;
-    }
+    
 
     if (*Q2 > 1 && *W > 2 && *Mx > 1.35 && *y < 0.80 && !checked) {
       goodEvent = true;
