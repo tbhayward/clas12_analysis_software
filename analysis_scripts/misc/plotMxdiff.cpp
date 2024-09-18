@@ -178,22 +178,20 @@ int main(int argc, char* argv[]) {
     for (int s = 0; s < nSubplots; ++s) {
         c1->cd(s+1);
 
-        // Adjust the left margin for the first subplot
-        if (s == 0) gPad->SetLeftMargin(0.20);
-        else gPad->SetLeftMargin(0.10); // Smaller margins for other subplots
-
-        // Adjust bottom margin
+        // Adjust the left margin for all subplots
+        gPad->SetLeftMargin(0.20); // Ensure consistent margins for y-axis labels
         gPad->SetBottomMargin(0.15);
 
         // Create multigraph to hold both datasets
         TMultiGraph* mg = new TMultiGraph();
 
-        // Create legend
+        // Create legend and add x range to it
         TLegend* legend = new TLegend(0.15, 0.75, 0.40, 0.90); // Move to the top left
         legend->SetBorderSize(1); // Add black box border
         legend->SetTextSize(0.04);
-
-        // Add entry for x_B (for each subplot)
+        
+        // Add x range and x_B to the legend
+        legend->AddEntry((TObject*)0, Form("x: %.2f < x < %.2f", xRanges[s][0], xRanges[s][1]), "");
         legend->AddEntry((TObject*)0, Form("x_{B} = %.3f", xB[s]), "");
 
         for (int d = 0; d < nDatasets; ++d) {
@@ -234,7 +232,7 @@ int main(int argc, char* argv[]) {
 
         // Set axis labels
         mg->GetXaxis()->SetTitle("M_{x} (GeV)");
-        mg->GetYaxis()->SetTitle("#Delta (++ + --) - (+- + -+)");
+        mg->GetYaxis()->SetTitle("Counts (aligned - unaligned)");
         mg->GetXaxis()->SetTitleSize(0.05);
         mg->GetYaxis()->SetTitleSize(0.05);
         mg->GetXaxis()->SetTitleOffset(1.0);
@@ -242,12 +240,6 @@ int main(int argc, char* argv[]) {
 
         // Draw legend
         legend->Draw();
-
-        // Add text for x range
-        TLatex latex;
-        latex.SetNDC();
-        latex.SetTextSize(0.05);
-        latex.DrawLatex(0.15, 0.92, Form("%.2f < x < %.2f", xRanges[s][0], xRanges[s][1]));
     }
 
     // Save the canvas as PNG
