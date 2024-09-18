@@ -1189,7 +1189,7 @@ void plotMultipleQ2extramultiDependence(
 void plotNormalizedFLLOverFUU(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
     const std::map<std::string, std::vector<std::vector<double>>> &kinematicData,
-    const std::string &outputFileName) {
+    const std::string &outputFileNameBase) {
     // Disable the display of titles globally
     gStyle->SetOptTitle(0);
 
@@ -1225,9 +1225,14 @@ void plotNormalizedFLLOverFUU(
     // Get fit parameter
     double exponent = fitFunc->GetParameter(0);
 
+    // Compute the fixed normalization factor at x = 0.213
+    double xMean = 0.213;
+    double fittedY_at_xMean = fitFunc->Eval(xMean);
+
     // Step 2: Normalize FLL/FUU for other variables
     std::vector<std::string> variables = {"Mx", "z", "PT", "xF", "t"};
-    std::map<std::string, TGraphErrors*> normalizedGraphs;
+    std::map<std::string, TGraphErrors*> normalizedGraphs_variable;
+    std::map<std::string, TGraphErrors*> normalizedGraphs_fixed;
 
     for (const auto &var : variables) {
         std::string key = var + "chi2FitsALL";
@@ -1252,7 +1257,11 @@ void plotNormalizedFLLOverFUU(
             continue;
         }
 
-        std::vector<double> varVals, normYVals, normYErrs;
+        // For normalization by variable xValue
+        std::vector<double> varVals_varNorm, normYVals_varNorm, normYErrs_varNorm;
+        // For normalization by fixed xMean
+        std::vector<double> varVals_fixedNorm, normYVals_fixedNorm, normYErrs_fixedNorm;
+
         for (size_t i = 0; i < asymData.size(); ++i) {
             double varValue = asymData[i][0]; // Mean value of the variable
             double xValue = kinData[i][2];    // x value from kinematic data
@@ -1264,34 +1273,54 @@ void plotNormalizedFLLOverFUU(
                 varValue = -varValue; // Convert t to -t
             }
 
-            // Evaluate the fitted function at xValue
-            double fittedY = fitFunc->Eval(xValue);
+            // Evaluate the fitted function at xValue and xMean
+            double fittedY_var = fitFunc->Eval(xValue);
+            double fittedY_fixed = fittedY_at_xMean;
 
-            // Normalize yValue
-            double normY = yValue / fittedY;
-            double normYErr = yErr / fabs(fittedY); // Error propagation assuming fittedY has negligible error
+            // Normalize yValue by variable xValue
+            double normY_var = yValue / fittedY_var;
+            double normYErr_var = yErr / fabs(fittedY_var); // Error propagation assuming fittedY_var has negligible error
 
-            varVals.push_back(varValue);
-            normYVals.push_back(normY);
-            normYErrs.push_back(normYErr);
+            // Normalize yValue by fixed xMean
+            double normY_fixed = yValue / fittedY_fixed;
+            double normYErr_fixed = yErr / fabs(fittedY_fixed); // Error propagation assuming fittedY_fixed has negligible error
+
+            // Store values for variable normalization
+            varVals_varNorm.push_back(varValue);
+            normYVals_varNorm.push_back(normY_var);
+            normYErrs_varNorm.push_back(normYErr_var);
+
+            // Store values for fixed normalization
+            varVals_fixedNorm.push_back(varValue);
+            normYVals_fixedNorm.push_back(normY_fixed);
+            normYErrs_fixedNorm.push_back(normYErr_fixed);
         }
 
-        // Create TGraphErrors for normalized data
-        TGraphErrors *normGraph = new TGraphErrors(varVals.size(), &varVals[0], &normYVals[0], nullptr, &normYErrs[0]);
-        normGraph->SetMarkerStyle(20);
-        normGraph->SetMarkerSize(0.8);
-        normGraph->SetMarkerColor(kBlack);
-        normGraph->SetTitle(""); // Remove the title
+        // Create TGraphErrors for variable normalization
+        TGraphErrors *normGraph_var = new TGraphErrors(varVals_varNorm.size(), &varVals_varNorm[0], &normYVals_varNorm[0], nullptr, &normYErrs_varNorm[0]);
+        normGraph_var->SetMarkerStyle(20);
+        normGraph_var->SetMarkerSize(0.8);
+        normGraph_var->SetMarkerColor(kBlack);
+        normGraph_var->SetTitle(""); // Remove the title
 
-        normalizedGraphs[var] = normGraph;
+        normalizedGraphs_variable[var] = normGraph_var;
+
+        // Create TGraphErrors for fixed normalization
+        TGraphErrors *normGraph_fixed = new TGraphErrors(varVals_fixedNorm.size(), &varVals_fixedNorm[0], &normYVals_fixedNorm[0], nullptr, &normYErrs_fixedNorm[0]);
+        normGraph_fixed->SetMarkerStyle(20);
+        normGraph_fixed->SetMarkerSize(0.8);
+        normGraph_fixed->SetMarkerColor(kBlack);
+        normGraph_fixed->SetTitle(""); // Remove the title
+
+        normalizedGraphs_fixed[var] = normGraph_fixed;
     }
 
-    // Step 3: Plot the results
-    TCanvas *c = new TCanvas("c", "Normalized FLL/FUU Plots", 1200, 800);
-    c->Divide(3, 2);
+    // Step 3: Plot the results for variable normalization
+    TCanvas *c_var = new TCanvas("c_var", "Normalized FLL/FUU Plots (Variable Normalization)", 1200, 800);
+    c_var->Divide(3, 2);
 
     // Plot 1: FLL/FUU vs x with fit
-    c->cd(1);
+    c_var->cd(1);
     gPad->SetLeftMargin(0.18);
     gPad->SetBottomMargin(0.15);
 
@@ -1303,11 +1332,11 @@ void plotNormalizedFLLOverFUU(
     fitFunc->Draw("same");
 
     // Add legend in the top-left corner
-    TLegend *leg = new TLegend(0.2, 0.725, 0.6, 0.9);
-    leg->SetTextSize(0.04); // Decrease text size slightly
-    leg->AddEntry(graph, "Data", "P");
-    leg->AddEntry(fitFunc, Form("Fit: y = x_{B}^{%.3f}", exponent), "L");
-    leg->Draw();
+    TLegend *leg_var = new TLegend(0.2, 0.725, 0.6, 0.9);
+    leg_var->SetTextSize(0.04); // Decrease text size slightly
+    leg_var->AddEntry(graph, "Data", "P");
+    leg_var->AddEntry(fitFunc, Form("Fit: y = x_{B}^{%.3f}", exponent), "L");
+    leg_var->Draw();
 
     // Draw the dashed gray line at y = 1
     double xmin_main = graph->GetXaxis()->GetXmin();
@@ -1324,30 +1353,30 @@ void plotNormalizedFLLOverFUU(
     latex_main->SetTextAlign(33); // Bottom right alignment
     latex_main->DrawLatex(0.875, 0.225, "M_{x} > 1.35 GeV"); // Moved up slightly
 
-    // Plot 2-6: Normalized FLL/FUU vs other variables
+    // Plot 2-6: Normalized FLL/FUU vs other variables (Variable Normalization)
     int pad = 2;
     for (const auto &var : variables) {
-        if (normalizedGraphs.find(var) == normalizedGraphs.end()) {
+        if (normalizedGraphs_variable.find(var) == normalizedGraphs_variable.end()) {
             continue;
         }
 
-        c->cd(pad);
+        c_var->cd(pad);
         gPad->SetLeftMargin(0.18);
         gPad->SetBottomMargin(0.15);
 
-        TGraphErrors *normGraph = normalizedGraphs[var];
+        TGraphErrors *normGraph = normalizedGraphs_variable[var];
 
         // Set axis labels and ranges based on variable
         if (var == "Mx") {
-            setAxisLabelsAndRanges(normGraph, "M_{x} (GeV)", "(F_{LL}/F_{UU}) / <x_{B}>^{0.886}", {0.0, 2.5}, {0.5, 1.2});
+            setAxisLabelsAndRanges(normGraph, "M_{x} (GeV)", "(F_{LL}/F_{UU}) / x_{B}^{a}", {0.0, 2.5}, {0.5, 1.2});
         } else if (var == "z") {
-            setAxisLabelsAndRanges(normGraph, "z", "(F_{LL}/F_{UU}) / <x_{B}>^{0.886}", {0.0, 0.8}, {0.5, 1.2});
+            setAxisLabelsAndRanges(normGraph, "z", "(F_{LL}/F_{UU}) / x_{B}^{a}", {0.0, 0.8}, {0.5, 1.2});
         } else if (var == "PT") {
-            setAxisLabelsAndRanges(normGraph, "P_{T} (GeV)", "(F_{LL}/F_{UU}) / <x_{B}>^{0.886}", {0.0, 1.0}, {0.5, 1.2});
+            setAxisLabelsAndRanges(normGraph, "P_{T} (GeV)", "(F_{LL}/F_{UU}) / x_{B}^{a}", {0.0, 1.0}, {0.5, 1.2});
         } else if (var == "xF") {
-            setAxisLabelsAndRanges(normGraph, "x_{F}", "(F_{LL}/F_{UU}) / <x_{B}>^{0.886}", {-0.8, 0.6}, {0.5, 1.2});
+            setAxisLabelsAndRanges(normGraph, "x_{F}", "(F_{LL}/F_{UU}) / x_{B}^{a}", {-0.8, 0.6}, {0.5, 1.2});
         } else if (var == "t") {
-            setAxisLabelsAndRanges(normGraph, "-t (GeV^{2})", "(F_{LL}/F_{UU}) / <x_{B}>^{0.886}", {0.0, 8.0}, {0.5, 1.2});
+            setAxisLabelsAndRanges(normGraph, "-t (GeV^{2})", "(F_{LL}/F_{UU}) / x_{B}^{a}", {0.0, 8.0}, {0.5, 1.2});
         }
 
         normGraph->Draw("AP");
@@ -1372,15 +1401,97 @@ void plotNormalizedFLLOverFUU(
         pad++;
     }
 
-    // Save the canvas
+    // Save the first canvas
     gSystem->Exec("mkdir -p output/epX_plots");
-    c->SaveAs(outputFileName.c_str());
+    c_var->SaveAs((outputFileNameBase + "_variableNormalization.png").c_str());
+
+    // Step 4: Plot the results for fixed normalization
+    TCanvas *c_fixed = new TCanvas("c_fixed", "Normalized FLL/FUU Plots (Fixed Normalization)", 1200, 800);
+    c_fixed->Divide(3, 2);
+
+    // Plot 1: FLL/FUU vs x with fit (Same as before)
+    c_fixed->cd(1);
+    gPad->SetLeftMargin(0.18);
+    gPad->SetBottomMargin(0.15);
+
+    graph->Draw("AP");
+
+    // Draw the fit function
+    fitFunc->Draw("same");
+
+    // Add legend
+    TLegend *leg_fixed = new TLegend(0.2, 0.725, 0.6, 0.9);
+    leg_fixed->SetTextSize(0.04); // Decrease text size slightly
+    leg_fixed->AddEntry(graph, "Data", "P");
+    leg_fixed->AddEntry(fitFunc, Form("Fit: y = x_{B}^{%.3f}", exponent), "L");
+    leg_fixed->Draw();
+
+    // Draw the dashed gray line at y = 1
+    line_main->Draw("same");
+
+    // Add text "M_{x} > 1.35 GeV" in the x plot
+    latex_main->DrawLatex(0.875, 0.225, "M_{x} > 1.35 GeV");
+
+    // Plot 2-6: Normalized FLL/FUU vs other variables (Fixed Normalization)
+    pad = 2;
+    for (const auto &var : variables) {
+        if (normalizedGraphs_fixed.find(var) == normalizedGraphs_fixed.end()) {
+            continue;
+        }
+
+        c_fixed->cd(pad);
+        gPad->SetLeftMargin(0.18);
+        gPad->SetBottomMargin(0.15);
+
+        TGraphErrors *normGraph = normalizedGraphs_fixed[var];
+
+        // Set axis labels and ranges based on variable
+        if (var == "Mx") {
+            setAxisLabelsAndRanges(normGraph, "M_{x} (GeV)", "(F_{LL}/F_{UU}) / x_{B}^{a}(0.213)", {0.0, 2.5}, {0.5, 1.2});
+        } else if (var == "z") {
+            setAxisLabelsAndRanges(normGraph, "z", "(F_{LL}/F_{UU}) / x_{B}^{a}(0.213)", {0.0, 0.8}, {0.5, 1.2});
+        } else if (var == "PT") {
+            setAxisLabelsAndRanges(normGraph, "P_{T} (GeV)", "(F_{LL}/F_{UU}) / x_{B}^{a}(0.213)", {0.0, 1.0}, {0.5, 1.2});
+        } else if (var == "xF") {
+            setAxisLabelsAndRanges(normGraph, "x_{F}", "(F_{LL}/F_{UU}) / x_{B}^{a}(0.213)", {-0.8, 0.6}, {0.5, 1.2});
+        } else if (var == "t") {
+            setAxisLabelsAndRanges(normGraph, "-t (GeV^{2})", "(F_{LL}/F_{UU}) / x_{B}^{a}(0.213)", {0.0, 8.0}, {0.5, 1.2});
+        }
+
+        normGraph->Draw("AP");
+
+        // Draw the dashed gray line at y = 1
+        xmin = normGraph->GetXaxis()->GetXmin();
+        xmax = normGraph->GetXaxis()->GetXmax();
+        TLine *line = new TLine(xmin, 1, xmax, 1);
+        line->SetLineColor(kGray + 2);
+        line->SetLineStyle(7); // Dashed line
+        line->Draw("same");
+
+        // Add text "M_{x} > 1.35 GeV" in the x, z, PT, xF, t plots but NOT in Mx plot
+        if (var != "Mx") {
+            TLatex *latex = new TLatex();
+            latex->SetNDC();
+            latex->SetTextSize(0.04);
+            latex->SetTextAlign(33); // Bottom right alignment
+            latex->DrawLatex(0.875, 0.225, "M_{x} > 1.35 GeV"); // Moved up slightly
+        }
+
+        pad++;
+    }
+
+    // Save the second canvas
+    c_fixed->SaveAs((outputFileNameBase + "_fixedNormalization.png").c_str());
 
     // Clean up
-    delete c;
+    delete c_var;
+    delete c_fixed;
     delete fitFunc;
     delete graph;
-    for (auto &entry : normalizedGraphs) {
+    for (auto &entry : normalizedGraphs_variable) {
+        delete entry.second;
+    }
+    for (auto &entry : normalizedGraphs_fixed) {
         delete entry.second;
     }
 }
