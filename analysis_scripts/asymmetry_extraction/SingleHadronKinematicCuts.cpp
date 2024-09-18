@@ -13,8 +13,8 @@ SingleHadronKinematicCuts::SingleHadronKinematicCuts(TTreeReader& reader)
       p_p(reader, "p_p"), p_theta(reader, "p_theta"), p_phi(reader, "p_phi"), 
       vz_p(reader, "vz_p"), 
       Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), x(reader, "x"), 
-      y(reader, "y"), z(reader, "z"), pT(reader, "pT"), xF(reader, "xF"),
-      phi(reader, "phi"), 
+      t(reader, "t"), t(reader, "tmin"), y(reader, "y"), z(reader, "z"), 
+      pT(reader, "pT"), xF(reader, "xF"), phi(reader, "phi"), 
       target_pol(reader, "target_pol") {}
 
 bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
@@ -32,16 +32,36 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
       goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0;
       return goodEvent;
     }
-    if (property == "Mxbin1") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.16 && *x < 0.20;
+    if (property == "Mxbin1a") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.16 && *x < 0.20 && (*t-*tmin) > -1;
       return goodEvent;
     }
-    if (property == "Mxbin2") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.20 && *x < 0.24;
+    if (property == "Mxbin1b") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.16 && *x < 0.20 && (*t-*tmin) < -3;
       return goodEvent;
     }
-    if (property == "Mxbin3") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.24 && *x < 0.28;
+    if (property == "Mxbin2a") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.21 && *x < 0.25 && (*t-*tmin) > -1;
+      return goodEvent;
+    }
+    if (property == "Mxbin2b") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.21 && *x < 0.25 && (*t-*tmin) < -3;
+      return goodEvent;
+    }
+    if (property == "Mxbin3a") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.28 && *x < 0.32 && (*t-*tmin) > -1;
+      return goodEvent;
+    }
+    if (property == "Mxbin3b") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.28 && *x < 0.32 && (*t-*tmin) < -3;
+      return goodEvent;
+    }
+    if (property == "Mxbin4a") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.35 && *x < 0.40 && (*t-*tmin) > -1;
+      return goodEvent;
+    }
+    if (property == "Mxbin4b") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx > 0 && *x > 0.35 && *x < 0.40 && (*t-*tmin) < -3;
       return goodEvent;
     }
     if (property == "xF" || property == "x" || property == "z" || property == "PT" || property == "t" || 
