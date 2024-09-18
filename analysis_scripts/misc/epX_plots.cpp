@@ -384,7 +384,6 @@ void plotDependence(
     // Updated list of suffixes (removing AULoffset and adding doubleratio)
     std::vector<std::string> suffixes = {"ALUsinphi", "AULsinphi", "AULsin2phi", "ALL", "doubleratio", "ALLcosphi"};
     
-    // Corresponding y-axis labels
     std::vector<std::string> yLabels = {
         "F_{LU}^{sin#phi}/F_{UU}",
         "F_{UL}^{sin#phi}/F_{UU}",
@@ -393,6 +392,17 @@ void plotDependence(
         "-F_{LU}^{sin#phi}/F_{LL}",  // yLabel for doubleratio
         "F_{LL}^{cos#phi}/F_{UU}"
     };
+
+    if (prefix == "Mxnodilution") {
+        // Prefix "D_{f}" to specific elements
+        yLabels[1] = "D_{f}" + yLabels[1];
+        yLabels[2] = "D_{f}" + yLabels[2];
+        yLabels[3] = "D_{f}" + yLabels[3];
+        yLabels[5] = "D_{f}" + yLabels[5];
+        
+        // Special case for the fifth element
+        yLabels[4] = "-F_{LU}^{sin#phi}/(D_{f}F_{LL})";
+    }
 
     // Updated loop to accommodate the new plot order
     for (size_t i = 0; i < suffixes.size(); ++i) {
@@ -1522,6 +1532,7 @@ int main(int argc, char *argv[]) {
 
     // Call the plotting function for different dependencies
     // plotDependence(asymmetryData, "Mx", "M_{x} (GeV)", {0.0, 2.5}, "output/epX_plots/Mx_dependence_plots.png");
+    plotDependence(asymmetryData, "Mxnodilution", "M_{x} (GeV)", {0.5, 2.5}, "output/epX_plots/Mxnodilution_dependence_plots.png");
     // plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots.png");
     // plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots_comparison.png", "xall");
     // plotDependence(asymmetryData, "z", "z", {0.0, 0.8}, "output/epX_plots/z_dependence_plots.png");
