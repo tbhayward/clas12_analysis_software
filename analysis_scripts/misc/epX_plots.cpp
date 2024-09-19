@@ -476,7 +476,7 @@ void plotDependence(
 
                 if (i == 3 || i == 4) {  
                     // Add the text box for labels only if the extraPrefix is provided
-                    TPaveText *text = new TPaveText(0.18, 0.7, 0.48, 0.9, "NDC");
+                    TPaveText *text = new TPaveText(0.18, 0.7, 0.58, 0.9, "NDC");
                     text->SetTextAlign(13);
                     text->SetBorderSize(1);  // Set border size to 1 for a black border
                     text->SetFillColor(0);
@@ -485,7 +485,7 @@ void plotDependence(
                     text->Draw();
                 } else {
                     // Add the text box for labels only if the extraPrefix is provided
-                    TPaveText *text = new TPaveText(0.6, 0.7, 0.9, 0.9, "NDC");
+                    TPaveText *text = new TPaveText(0.5, 0.7, 0.9, 0.9, "NDC");
                     text->SetTextAlign(13);
                     text->SetBorderSize(1);  // Set border size to 1 for a black border
                     text->SetFillColor(0);
