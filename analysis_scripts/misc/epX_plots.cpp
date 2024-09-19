@@ -2081,9 +2081,9 @@ void plotALUandALLDependence(
         latex.SetNDC();
         latex.SetTextSize(0.03);
         if (suffixes[i] == "ALUsinphi") {
-            latex.DrawLatex(0.63, 0.19, "5% Scale Systematic");  // For ALUsinphi
+            latex.DrawLatex(0.61, 0.19, "5% Scale Systematic");  // For ALUsinphi
         } else {
-            latex.DrawLatex(0.63, 0.19, "9% Scale Systematic");  // For ALL
+            latex.DrawLatex(0.61, 0.19, "9% Scale Systematic");  // For ALL
         }
 
         // TLatex latex2;
