@@ -1872,6 +1872,109 @@ void plotXFDependence(
     }
 }
 
+void plotDoubleSpinAsymmetries(const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData) {
+    // Create a canvas for the 1x3 plots
+    TCanvas *c = new TCanvas("c", "Double Spin Asymmetries", 1200, 400);
+    c->Divide(3, 1);  // Divide the canvas into 1 row, 3 columns
+
+    // Define the suffixes for each plot
+    std::vector<std::string> suffixes = {"xB", "PT", "xF"};
+    
+    // Define the x-axis labels for each plot
+    std::vector<std::string> xLabels = {"x_{B}", "P_{T} (GeV)", "x_{F}"};
+    
+    // Define the axis ranges for each plot
+    std::vector<std::pair<double, double>> xRanges = {{0.06, 0.6}, {0.0, 1.0}, {-0.8, 0.6}};
+    std::pair<double, double> yLimits = {-0.2, 0.5};  // Common y-limits for all plots
+
+    // Loop through each subplot (xB, PT, xF)
+    for (size_t i = 0; i < suffixes.size(); ++i) {
+        c->cd(i+1);  // Move to the next pad
+        gPad->SetLeftMargin(0.15);  // Increase left margin to avoid cutting off y-axis label
+
+        // Get the corresponding key for regular and "all" data
+        std::string key = suffixes[i];
+        std::string keyAll = suffixes[i] + "all";
+        
+        // Fetch the regular data
+        auto it = asymmetryData.find(key);
+        auto itAll = asymmetryData.find(keyAll);
+
+        if (it != asymmetryData.end() && itAll != asymmetryData.end()) {
+            const auto &data = it->second;
+            const auto &dataAll = itAll->second;
+
+            std::vector<double> x, y, yErr;
+            std::vector<double> xAll, yAll, yErrAll;
+
+            // Extract x, y, and error values for both regular and "all" data
+            for (const auto &entry : data) {
+                x.push_back(entry[0]);
+                y.push_back(entry[1]);
+                yErr.push_back(entry[2]);
+            }
+            for (const auto &entry : dataAll) {
+                xAll.push_back(entry[0]);
+                yAll.push_back(entry[1]);
+                yErrAll.push_back(entry[2]);
+            }
+
+            // Create the regular graph (black circles)
+            TGraphErrors *graph = new TGraphErrors(x.size(), &x[0], &y[0], nullptr, &yErr[0]);
+            graph->SetMarkerStyle(20);  // Circles
+            graph->SetMarkerColor(kBlack);
+            graph->SetLineColor(kBlack);
+            graph->SetMarkerSize(0.5);  // Smaller markers
+            graph->Draw("AP");
+
+            // Create the "all" graph (red squares)
+            TGraphErrors *graphAll = new TGraphErrors(xAll.size(), &xAll[0], &yAll[0], nullptr, &yErrAll[0]);
+            graphAll->SetMarkerStyle(21);  // Squares
+            graphAll->SetMarkerColor(kRed);
+            graphAll->SetLineColor(kRed);
+            graphAll->SetMarkerSize(0.5);  // Smaller markers
+            graphAll->Draw("P SAME");
+
+            // Set the axis labels and ranges
+            graph->GetXaxis()->SetTitle(xLabels[i].c_str());
+            graph->GetYaxis()->SetTitle("F_{LL}/F_{UU}");
+            graph->GetXaxis()->SetLimits(xRanges[i].first, xRanges[i].second);
+            graph->SetMinimum(yLimits.first);
+            graph->SetMaximum(yLimits.second);
+
+            // Increase the font size of axis labels
+            graph->GetXaxis()->SetTitleSize(0.05);
+            graph->GetYaxis()->SetTitleSize(0.05);
+
+            // Add the dashed gray line at y = 0
+            TLine *line = new TLine(xRanges[i].first, 0, xRanges[i].second, 0);
+            line->SetLineColor(kGray+2);
+            line->SetLineStyle(7);  // Dashed line
+            line->Draw("same");
+
+            // Add the "9% Scale Systematic" text in the bottom right using TLatex
+            TLatex latex;
+            latex.SetNDC();
+            latex.SetTextSize(0.03);
+            latex.DrawLatex(0.65, 0.2, "9% Scale Systematic");
+
+            // Add the legend in the top right
+            TLegend *legend = new TLegend(0.55, 0.75, 0.9, 0.9);  // Top right corner
+            legend->AddEntry(graph, "-(t-t_{min}) > 1", "p");
+            legend->AddEntry(graphAll, "-(t-t_{min}) > 0", "p");
+            legend->SetTextSize(0.03);  // Adjust text size
+            legend->Draw();
+        }
+    }
+
+    // Save the canvas as a PNG file
+    gSystem->Exec("mkdir -p output/spin_asymmetries");
+    c->SaveAs("output/spin_asymmetries/double_spin_asymmetries.png");
+
+    // Clean up
+    delete c;
+}
+
 int main(int argc, char *argv[]) {
     if (argc != 3) {
         std::cerr << "Usage: " << argv[0] << " <asymmetries.txt> <kinematicPlots.txt>\n";
@@ -1946,6 +2049,8 @@ int main(int argc, char *argv[]) {
 
     // Call the function to generate and save the plot
     plotXFDependence(asymmetryData, "xF", {-1.0, 1.0});
+
+    plotDoubleSpinAsymmetries(asymmetryData);
 
 
     return 0;
