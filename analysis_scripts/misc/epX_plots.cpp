@@ -2301,10 +2301,10 @@ void plotMxBinsALUALL(
 
     // Legends for each Mx bin
     std::vector<std::string> legendLabels = {
-        "x_{B} = 0.18, -(t-t_{min}) < 1", 
-        "x_{B} = 0.18, -(t-t_{min}) > 1.5",
-        "x_{B} = 0.22, -(t-t_{min}) < 1", 
-        "x_{B} = 0.22, -(t-t_{min}) > 1.5"
+        "x_{B} = 0.18, -(t-t_{min}) < 1.00", 
+        "x_{B} = 0.18, -(t-t_{min}) > 1.25",
+        "x_{B} = 0.22, -(t-t_{min}) < 1.00", 
+        "x_{B} = 0.22, -(t-t_{min}) > 1.25"
     };
 
     // Loop over the two suffixes (ALUsinphi, ALL)
