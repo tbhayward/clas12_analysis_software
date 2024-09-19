@@ -474,25 +474,28 @@ void plotDependence(
                     extraGraphStat->Draw("P SAME");
                 }
 
-                if (i == 3 || i == 4) {  
-                    // Add the text box for labels only if the extraPrefix is provided
-                    TPaveText *text = new TPaveText(0.18, 0.7, 0.58, 0.9, "NDC");
-                    text->SetTextAlign(13);
-                    text->SetBorderSize(1);  // Set border size to 1 for a black border
-                    text->SetFillColor(0);
-                    text->AddText("#font[42]{-(t-t_{min}) > 1.25}");  // Black text line
-                    text->AddText("#font[42]{-(t-t_{min}) > 0.00}");  // Red text line
-                    text->Draw();
+                // Add the legend for each plot
+                TLegend *legend;
+
+                if (i == 3 || i == 4) {
+                    // Adjust the position for the plots with index 3 or 4
+                    legend = new TLegend(0.18, 0.7, 0.58, 0.9);  // Position similar to your TPaveText
+                    legend->SetTextAlign(13);
+                    legend->SetBorderSize(1);  // Set border size to 1 for a black border
+                    legend->SetFillColor(0);   // Transparent background
+                    legend->AddEntry((TObject*)0, "#font[42]{-(t-t_{min}) > 1.25}", "");
+                    legend->AddEntry((TObject*)0, "#font[42]{-(t-t_{min}) > 0.00}", "");  // Red text
                 } else {
-                    // Add the text box for labels only if the extraPrefix is provided
-                    TPaveText *text = new TPaveText(0.5, 0.7, 0.9, 0.9, "NDC");
-                    text->SetTextAlign(13);
-                    text->SetBorderSize(1);  // Set border size to 1 for a black border
-                    text->SetFillColor(0);
-                    text->AddText("#font[42]{-(t-t_{min}) > 0.00}");  // Black text line
-                    text->AddText("#font[42]{-(t-t_{min}) > 1.25}");  // Red text line
-                    text->Draw();
+                    // Adjust the position for the other plots (index not 3 or 4)
+                    legend = new TLegend(0.5, 0.7, 0.9, 0.9);  // Top right corner
+                    legend->SetTextAlign(13);
+                    legend->SetBorderSize(1);  // Set border size to 1 for a black border
+                    legend->SetFillColor(0);   // Transparent background
+                    legend->AddEntry((TObject*)0, "#font[42]{-(t-t_{min}) > 0.00}", "");
+                    legend->AddEntry((TObject*)0, "#font[42]{-(t-t_{min}) > 1.25}", "");  // Red text
                 }
+
+                legend->Draw();
             }
         }
     }
