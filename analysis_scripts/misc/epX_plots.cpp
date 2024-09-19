@@ -1948,11 +1948,11 @@ void plotDoubleSpinAsymmetries(const std::map<std::string, std::vector<std::vect
             graph->GetXaxis()->SetTitleSize(0.055);  // Slightly larger
             graph->GetYaxis()->SetTitleSize(0.055);  // Slightly larger
 
-            // Add the dashed gray line at y = 0
-            TLine *line = new TLine(xRanges[i].first, 0, xRanges[i].second, 0);
-            line->SetLineColor(kGray+2);
-            line->SetLineStyle(7);  // Dashed line
-            line->Draw("same");
+            // // Add the dashed gray line at y = 0
+            // TLine *line = new TLine(xRanges[i].first, 0, xRanges[i].second, 0);
+            // line->SetLineColor(kGray+2);
+            // line->SetLineStyle(7);  // Dashed line
+            // line->Draw("same");
 
             // Add the "9% Scale Systematic" text in the bottom right using TLatex
             TLatex latex;
@@ -1964,7 +1964,7 @@ void plotDoubleSpinAsymmetries(const std::map<std::string, std::vector<std::vect
             TLegend *legend;
             if (i == 0) {
                 // Move the legend down for the x plot
-                legend = new TLegend(0.65, 0.55, 0.9, 0.7);  // Adjusted for the x plot (x_{B})
+                legend = new TLegend(0.65, 0.35, 0.9, 0.5);  // Adjusted for the x plot (x_{B})
             } else {
                 // Keep the legend at the top right for the other two plots
                 legend = new TLegend(0.65, 0.75, 0.9, 0.9);  // Top right corner
