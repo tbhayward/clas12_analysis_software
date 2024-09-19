@@ -2011,9 +2011,9 @@ void plotALUandALLDependence(
 
     // Text labels for the legend
     std::vector<std::string> legendLabels = {
-        "(0.12 < x < 0.15)", 
-        "(0.15 < x < 0.18)", 
-        "(0.18 < x < 0.21)"
+        "x_{B} = 0.14, z = 0.19, P_{T} = 0.40", 
+        "x_{B} = 0.17, z = 0.19, P_{T} = 0.40", 
+        "x_{B} = 0.20, z = 0.19, P_{T} = 0.40"
     };
 
     // Updated loop to accommodate the new plot order (ALUsinphi and ALL only)
@@ -2025,7 +2025,7 @@ void plotALUandALLDependence(
         bool firstGraphDrawn = false;
 
         // Create a legend in the top right with a border and background
-        TLegend *legend = new TLegend(0.55, 0.7, 0.9, 0.9);  // Adjust position and size
+        TLegend *legend = new TLegend(0.45, 0.7, 0.9, 0.9);  // Adjust position and size
         legend->SetTextSize(0.035);  // Adjust text size
         legend->SetBorderSize(1);  // Set border size
         legend->SetFillStyle(1001);   // Solid white background
@@ -2086,10 +2086,10 @@ void plotALUandALLDependence(
             latex.DrawLatex(0.63, 0.19, "9% Scale Systematic");  // For ALL
         }
 
-        TLatex latex2;
-        latex2.SetNDC();
-        latex2.SetTextSize(0.03);
-        latex2.DrawLatex(0.65, 0.23, "z = 0.19, P_{T} = 0.40");  // For ALL
+        // TLatex latex2;
+        // latex2.SetNDC();
+        // latex2.SetTextSize(0.03);
+        // latex2.DrawLatex(0.65, 0.23, "z = 0.19, P_{T} = 0.40");  // For ALL
     }
 
     gSystem->Exec("mkdir -p output/epX_plots");
@@ -2302,9 +2302,9 @@ void plotMxBinsALUALL(
     // Legends for each Mx bin
     std::vector<std::string> legendLabels = {
         "x_{B} = 0.18, -(t-t_{min}) < 1.00", 
-        "x_{B} = 0.18, -(t-t_{min}) > 1.25",
+        "x_{B} = 0.18, -(t-t_{min}) > 2.00",
         "x_{B} = 0.22, -(t-t_{min}) < 1.00", 
-        "x_{B} = 0.22, -(t-t_{min}) > 1.25"
+        "x_{B} = 0.22, -(t-t_{min}) > 2.00"
     };
 
     // Loop over the two suffixes (ALUsinphi, ALL)
