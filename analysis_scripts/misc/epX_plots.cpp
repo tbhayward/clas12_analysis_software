@@ -1993,15 +1993,16 @@ void plotALUandALLDependence(
     const std::string &outputFileName) {
 
     TCanvas *c = new TCanvas("c", "ALU and ALL Dependence Plots", 1200, 600);
-    c->Divide(2, 1);  // 1 row, 2 columns
+    c->Divide(3, 1);  // 1 row, 2 columns
 
     // Suffixes for ALUsinphi and ALL
-    std::vector<std::string> suffixes = {"ALUsinphi", "ALL"};
+    std::vector<std::string> suffixes = {"ALUsinphi", "ALL", "doubleratio"};
     
     // Corresponding y-axis labels
     std::vector<std::string> yLabels = {
         "F_{LU}^{sin#phi}/F_{UU}",  // For ALUsinphi
-        "F_{LL}/F_{UU}"             // For ALL
+        "F_{LL}/F_{UU}",             // For ALL
+        "-F_{LU}^{sin#phi}/F_{LL}",             // For ALL
     };
 
     // Colors and marker styles for each prefix
