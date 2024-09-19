@@ -2100,8 +2100,14 @@ void plotMxBinsALUALL(
         "F_{LL}/F_{UU}"             // For ALL
     };
 
-    // Define the keys for Mxbin1a, Mxbin1b, Mxbin3a, Mxbin3b
-    std::vector<std::string> MxBins = {"Mxbin1achi2Fits", "Mxbin1bchi2Fits", "Mxbin3achi2Fits", "Mxbin3bchi2Fits"};
+    // Define the y-axis ranges for each plot
+    std::vector<std::pair<double, double>> yRanges = {
+        {-0.1, 0.1},  // y-axis range for ALUsinphi
+        {-0.1, 0.6}   // y-axis range for ALL
+    };
+
+    // Define the keys for Mxbin1a, Mxbin1b, Mxbin2a, Mxbin2b
+    std::vector<std::string> MxBins = {"Mxbin1achi2Fits", "Mxbin1bchi2Fits", "Mxbin2achi2Fits", "Mxbin2bchi2Fits"};
 
     // Colors and marker styles for each Mx bin
     std::vector<int> colors = {kBlack, kRed, kBlue, kGreen};
@@ -2159,8 +2165,8 @@ void plotMxBinsALUALL(
                     graph->GetXaxis()->SetTitle("M_{x} (GeV)");
                     graph->GetYaxis()->SetTitle(yLabels[i].c_str());
                     graph->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
-                    graph->SetMinimum(-0.1);  // Adjust y-axis range
-                    graph->SetMaximum(0.1);
+                    graph->SetMinimum(yRanges[i].first);  // Apply the y-limits specific to the suffix
+                    graph->SetMaximum(yRanges[i].second);
 
                     // Increase font size of axis labels
                     graph->GetXaxis()->SetTitleSize(0.055);  // Slightly larger
