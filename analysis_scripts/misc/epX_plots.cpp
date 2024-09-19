@@ -1885,8 +1885,8 @@ void plotDoubleSpinAsymmetries(const std::map<std::string, std::vector<std::vect
     std::vector<std::string> xLabels = {"x_{B}", "P_{T} (GeV)", "x_{F}"};
     
     // Define the axis ranges for each plot, extending x range for x_{B} to 0.7
-    std::vector<std::pair<double, double>> xRanges = {{0.06, 0.7}, {0.0, 1.0}, {-0.8, 0.6}};
-    std::pair<double, double> yLimits = {-0.2, 0.5};  // Common y-limits for all plots
+    std::vector<std::pair<double, double>> xRanges = {{0.06, 0.75}, {0.0, 1.0}, {-0.8, 0.6}};
+    std::pair<double, double> yLimits = {-0.1, 0.5};  // Common y-limits for all plots
 
     // Loop through each subplot (xB, PT, xF)
     for (size_t i = 0; i < regularSuffixes.size(); ++i) {
