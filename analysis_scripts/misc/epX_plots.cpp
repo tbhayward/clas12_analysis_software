@@ -2309,7 +2309,7 @@ void plotMxBinsALUALL(
         bool firstGraphDrawn = false;
 
         // Create a legend for the plot
-        TLegend *legend = new TLegend(0.5, 0.7, 0.9, 0.9);  // Adjust position and size
+        TLegend *legend = new TLegend(0.35, 0.7, 0.9, 0.9);  // Adjust position and size
         legend->SetTextSize(0.035);  // Adjust text size
         legend->SetBorderSize(1);  // Set border size
         legend->SetFillStyle(1001);   // Solid white background
