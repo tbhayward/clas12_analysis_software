@@ -2211,7 +2211,7 @@ void plot_single_spin_asymmetries(const std::map<std::string, std::vector<std::v
         "NH_{3}, F_{UL}^{sin#phi}/F_{UU}"
     };
 
-    TLegend *legendRight = new TLegend(0.55, 0.75, 0.9, 0.9);
+    TLegend *legendRight = new TLegend(0.55, 0.725, 0.9, 0.9);
     legendRight->SetTextSize(0.035);
     legendRight->SetBorderSize(1);
     legendRight->SetFillStyle(1001);
