@@ -1992,7 +1992,7 @@ void plotALUandALLDependence(
     const std::pair<double, double> &xLimits, 
     const std::string &outputFileName) {
 
-    TCanvas *c = new TCanvas("c", "ALU and ALL Dependence Plots", 1200, 600);
+    TCanvas *c = new TCanvas("c", "ALU and ALL Dependence Plots", 1600, 600);
     c->Divide(3, 1);  // 1 row, 2 columns
 
     // Suffixes for ALUsinphi and ALL
