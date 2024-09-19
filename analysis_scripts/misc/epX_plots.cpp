@@ -2111,8 +2111,8 @@ void plotMxBinsALUALL(
     std::vector<std::string> legendLabels = {
         "0.16 < x_{B} < 0.20, -(t-t_{min}) > 2", 
         "0.16 < x_{B} < 0.20, -(t-t_{min}) < 1",
-        "0.28 < x_{B} < 0.32, -(t-t_{min}) > 2", 
-        "0.28 < x_{B} < 0.32, -(t-t_{min}) < 1"
+        "0.21 < x_{B} < 0.25, -(t-t_{min}) > 2", 
+        "0.21 < x_{B} < 0.25, -(t-t_{min}) < 1"
     };
 
     // Loop over the two suffixes (ALUsinphi, ALL)
@@ -2159,8 +2159,8 @@ void plotMxBinsALUALL(
                     graph->GetXaxis()->SetTitle("M_{x} (GeV)");
                     graph->GetYaxis()->SetTitle(yLabels[i].c_str());
                     graph->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
-                    graph->SetMinimum(-0.06);  // Adjust y-axis range
-                    graph->SetMaximum(0.06);
+                    graph->SetMinimum(-0.1);  // Adjust y-axis range
+                    graph->SetMaximum(0.1);
 
                     // Increase font size of axis labels
                     graph->GetXaxis()->SetTitleSize(0.055);  // Slightly larger
