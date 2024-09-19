@@ -2415,7 +2415,7 @@ int main(int argc, char *argv[]) {
 
     // // Print out the parsed data
     // std::cout << "Asymmetry Data:\n";
-    // printData(asymmetryData);
+    printData(asymmetryData);
 
     // std::cout << "\nKinematic Data:\n"; 
     // printData(kinematicData);
