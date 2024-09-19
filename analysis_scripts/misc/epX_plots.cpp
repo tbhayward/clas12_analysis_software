@@ -2091,6 +2091,158 @@ void plotALUandALLDependence(
     delete c;
 }
 
+void plot_single_spin_asymmetries(const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData) {
+    // Create a canvas for the 1x2 plots
+    TCanvas *c = new TCanvas("c", "Single Spin Asymmetries", 1200, 600);
+    c->Divide(2, 1);  // Divide the canvas into 1 row, 2 columns
+
+    // Define the x-axis ranges
+    std::pair<double, double> xBRange = {0.06, 0.6};
+    std::pair<double, double> PTRange = {0.0, 1.0};
+    std::pair<double, double> yRange = {-0.1, 0.1};  // Common y-limits for both plots
+
+    // Left subplot: xChi2FitsALUsinphi and xChi2FitsAULsinphi
+    c->cd(1);  // Move to the left subplot
+    gPad->SetLeftMargin(0.18);
+    gPad->SetBottomMargin(0.15);
+
+    // Fetch xChi2FitsALUsinphi and xChi2FitsAULsinphi data
+    std::vector<std::string> xKeys = {"xchi2FitsALUsinphi", "xchi2FitsAULsinphi"};
+    std::vector<int> xColors = {kBlue, kRed};
+    std::vector<int> xMarkers = {20, 21};  // Circle for ALUsinphi, Square for AULsinphi
+    std::vector<std::string> xLegendLabels = {"F_{LU}^{sin#phi}/F_{UU}", "F_{UL}^{sin#phi}/F_{UU}"};
+
+    TLegend *legendLeft = new TLegend(0.55, 0.75, 0.9, 0.9);
+    legendLeft->SetTextSize(0.035);
+    legendLeft->SetBorderSize(1);
+    legendLeft->SetFillStyle(1001);
+
+    for (size_t i = 0; i < xKeys.size(); ++i) {
+        auto it = asymmetryData.find(xKeys[i]);
+        if (it != asymmetryData.end()) {
+            const auto &data = it->second;
+            std::vector<double> x, y, yErr;
+
+            for (const auto &entry : data) {
+                x.push_back(entry[0]);
+                y.push_back(entry[1]);
+                yErr.push_back(entry[2]);
+            }
+
+            // Create TGraphErrors
+            TGraphErrors *graph = new TGraphErrors(x.size(), &x[0], &y[0], nullptr, &yErr[0]);
+            graph->SetMarkerStyle(xMarkers[i]);
+            graph->SetMarkerColor(xColors[i]);
+            graph->SetLineColor(xColors[i]);
+            graph->SetMarkerSize(1.0);  // Marker size
+
+            if (i == 0) {
+                graph->Draw("AP");  // Draw the first graph with axes
+                // Set axis labels and ranges
+                graph->GetXaxis()->SetTitle("x_{B}");
+                graph->GetYaxis()->SetTitle("F_{XY}^{sin#phi}/F_{UU}");
+                graph->GetXaxis()->SetLimits(xBRange.first, xBRange.second);
+                graph->SetMinimum(yRange.first);  // Apply the common y-limits
+                graph->SetMaximum(yRange.second);
+                graph->GetXaxis()->SetTitleSize(0.055);
+                graph->GetYaxis()->SetTitleSize(0.055);
+            } else {
+                graph->Draw("P SAME");  // Overlay the second graph
+            }
+
+            legendLeft->AddEntry(graph, xLegendLabels[i].c_str(), "p");
+        }
+    }
+    legendLeft->Draw();
+
+    // Right subplot: PTChi2FitsALUsinphi, PTChi2FitsAULsinphi, and H2DataPT
+    c->cd(2);  // Move to the right subplot
+    gPad->SetLeftMargin(0.18);
+    gPad->SetBottomMargin(0.15);
+
+    // Define the H2 PT dependence data
+    std::vector<std::vector<double>> H2DataPT = {
+        {0.067870, -0.004157, 0.001025}, {0.155431, -0.007453, 0.000539},
+        {0.251797, -0.011001, 0.000442}, {0.349481, -0.016850, 0.000421},
+        {0.448136, -0.024485, 0.000449}, {0.547082, -0.033942, 0.000525},
+        {0.646201, -0.047847, 0.000661}, {0.745191, -0.058604, 0.000889},
+        {0.844268, -0.073812, 0.001278}, {0.943535, -0.074605, 0.001973},
+        {1.042894, -0.086452, 0.003307}, {1.142434, -0.074708, 0.006179},
+        {1.242379, -0.066435, 0.013280}
+    };
+
+    std::vector<double> H2xPT, H2yPT, H2yErrPT;
+    for (const auto &entry : H2DataPT) {
+        H2xPT.push_back(entry[0]);
+        H2yPT.push_back(entry[1]);
+        H2yErrPT.push_back(entry[2]);
+    }
+
+    // Create the H2 graph (black circles)
+    TGraphErrors *graphH2PT = new TGraphErrors(H2xPT.size(), &H2xPT[0], &H2yPT[0], nullptr, &H2yErrPT[0]);
+    graphH2PT->SetMarkerStyle(20);  // Circles for H2
+    graphH2PT->SetMarkerColor(kBlack);
+    graphH2PT->SetLineColor(kBlack);
+    graphH2PT->SetMarkerSize(1.0);  // Marker size
+    graphH2PT->Draw("AP");  // Draw the first graph with axes
+
+    // Set axis labels and ranges
+    graphH2PT->GetXaxis()->SetTitle("P_{T} (GeV)");
+    graphH2PT->GetYaxis()->SetTitle("F_{XY}^{sin#phi}/F_{UU}");
+    graphH2PT->GetXaxis()->SetLimits(PTRange.first, PTRange.second);
+    graphH2PT->SetMinimum(yRange.first);  // Apply the common y-limits
+    graphH2PT->SetMaximum(yRange.second);
+    graphH2PT->GetXaxis()->SetTitleSize(0.055);
+    graphH2PT->GetYaxis()->SetTitleSize(0.055);
+
+    // Fetch PTChi2FitsALUsinphi and PTChi2FitsAULsinphi data
+    std::vector<std::string> PTKeys = {"PTchi2FitsALUsinphi", "PTchi2FitsAULsinphi"};
+    std::vector<int> PTColors = {kBlue, kRed};
+    std::vector<int> PTMarkers = {20, 21};  // Circle for ALUsinphi, Square for AULsinphi
+    std::vector<std::string> PTLegendLabels = {
+        "NH_{3}, F_{LU}^{sin#phi}/F_{UU}",
+        "NH_{3}, F_{UL}^{sin#phi}/F_{UU}"
+    };
+
+    TLegend *legendRight = new TLegend(0.55, 0.75, 0.9, 0.9);
+    legendRight->SetTextSize(0.035);
+    legendRight->SetBorderSize(1);
+    legendRight->SetFillStyle(1001);
+
+    legendRight->AddEntry(graphH2PT, "H_{2}, F_{LU}^{sin#phi}/F_{UU}", "p");
+
+    for (size_t i = 0; i < PTKeys.size(); ++i) {
+        auto it = asymmetryData.find(PTKeys[i]);
+        if (it != asymmetryData.end()) {
+            const auto &data = it->second;
+            std::vector<double> x, y, yErr;
+
+            for (const auto &entry : data) {
+                x.push_back(entry[0]);
+                y.push_back(entry[1]);
+                yErr.push_back(entry[2]);
+            }
+
+            // Create TGraphErrors for PTChi2Fits
+            TGraphErrors *graph = new TGraphErrors(x.size(), &x[0], &y[0], nullptr, &yErr[0]);
+            graph->SetMarkerStyle(PTMarkers[i]);
+            graph->SetMarkerColor(PTColors[i]);
+            graph->SetLineColor(PTColors[i]);
+            graph->SetMarkerSize(1.0);  // Marker size
+            graph->Draw("P SAME");  // Overlay the other graphs
+
+            legendRight->AddEntry(graph, PTLegendLabels[i].c_str(), "p");
+        }
+    }
+    legendRight->Draw();
+
+    // Save the canvas as a PNG file
+    gSystem->Exec("mkdir -p output/epX_plots");
+    c->SaveAs("output/epX_plots/single_spin_asymmetries.png");
+
+    // Clean up
+    delete c;
+}
 
 void plotMxBinsALUALL(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
@@ -2297,6 +2449,8 @@ int main(int argc, char *argv[]) {
     plotXFDependence(asymmetryData, "xF", {-1.0, 1.0});
 
     plotDoubleSpinAsymmetries(asymmetryData);
+
+    plot_single_spin_asymmetries(asymmetryData);
 
     plotALUandALLDependence(asymmetryData, {"Q2multi1", "Q2multi2", "Q2multi3"}, "Q^{2} (GeV^{2})", {1.0, 3.5}, "output/epX_plots/CPHI_multidimensional.png");
 
