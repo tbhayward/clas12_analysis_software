@@ -1986,6 +1986,101 @@ void plotDoubleSpinAsymmetries(const std::map<std::string, std::vector<std::vect
     delete c;
 }
 
+void plotALUandALLDependence(
+    const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
+    const std::vector<std::string> &prefixes,  // List of prefixes
+    const std::string &xLabel, 
+    const std::pair<double, double> &xLimits, 
+    const std::string &outputFileName) {
+
+    TCanvas *c = new TCanvas("c", "ALU and ALL Dependence Plots", 1200, 600);
+    c->Divide(2, 1);  // 1 row, 2 columns
+
+    // Suffixes for ALUsinphi and ALL
+    std::vector<std::string> suffixes = {"ALUsinphi", "ALL"};
+    
+    // Corresponding y-axis labels
+    std::vector<std::string> yLabels = {
+        "F_{LU}^{sin#phi}/F_{UU}",  // For ALUsinphi
+        "F_{LL}/F_{UU}"             // For ALL
+    };
+
+    // Colors and marker styles for each prefix
+    std::vector<int> colors = {kRed, kBlue, kGreen};  // Colors for the different prefixes
+    std::vector<int> markers = {20, 21, 22};  // Circle, Square, Triangle markers
+
+    // Text labels for the legend
+    std::vector<std::string> legendLabels = {
+        "(0.12 < x < 0.15)", 
+        "(0.15 < x < 0.18)", 
+        "(0.18 < x < 0.21)"
+    };
+
+    // Updated loop to accommodate the new plot order (ALUsinphi and ALL only)
+    for (size_t i = 0; i < suffixes.size(); ++i) {
+        c->cd(i + 1);
+        gPad->SetLeftMargin(0.18);
+        gPad->SetBottomMargin(0.15);
+
+        bool firstGraphDrawn = false;
+
+        // Create a legend in the top right with a border and background
+        TLegend *legend = new TLegend(0.55, 0.7, 0.9, 0.9);  // Adjust position and size
+        legend->SetTextSize(0.035);  // Adjust text size
+        legend->SetBorderSize(1);  // Set border size
+        legend->SetFillStyle(1001);   // Solid white background
+
+        for (size_t p = 0; p < prefixes.size(); ++p) {
+            std::string key = prefixes[p] + "chi2Fits" + suffixes[i];
+            auto it = asymmetryData.find(key);
+            if (it != asymmetryData.end()) {
+                const auto &data = it->second;
+
+                std::vector<double> x, y, yStatErr, yCombErr;
+                for (const auto &entry : data) {
+                    x.push_back(entry[0]);
+                    y.push_back(entry[1]);
+                    yStatErr.push_back(entry[2]);
+
+                    double sysUncertainty = 0;  // Optionally calculate systematic uncertainty
+                    yCombErr.push_back(std::sqrt(std::pow(yStatErr.back(), 2) + std::pow(sysUncertainty, 2)));
+                }
+
+                TGraphErrors *graphStat = createTGraphErrors(x, y, yStatErr, markers[p], 1.0, colors[p]);  // Adjusted marker size to 1.0
+                graphStat->SetLineWidth(1);  // Ensure the line is centered properly
+                
+                setAxisLabelsAndRanges(graphStat, xLabel, yLabels[i], xLimits, 
+                                       (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.5) :
+                                       std::make_pair(-0.06, 0.06));  // Adjusted y-axis range for ALL
+                
+                if (!firstGraphDrawn) {
+                    graphStat->Draw("AP");
+                    firstGraphDrawn = true;
+                } else {
+                    graphStat->Draw("P SAME");
+                }
+
+                // Add each entry to the legend with the corresponding color and label
+                TLegendEntry* legendEntry = legend->AddEntry(graphStat, legendLabels[p].c_str(), "p");
+                legendEntry->SetTextColor(colors[p]);  // Set the text color to match the graph color
+            }
+        }
+
+        // Add the dashed gray line at y = 0
+        TLine *line = new TLine(xLimits.first, 0, xLimits.second, 0);
+        line->SetLineColor(kGray+2);
+        line->SetLineStyle(7);  // Dashed line
+        line->Draw("same");
+
+        // Draw the legend in the current subplot
+        legend->Draw();
+    }
+
+    gSystem->Exec("mkdir -p output/epX_plots");
+    c->SaveAs(outputFileName.c_str());
+    delete c;
+}
+
 int main(int argc, char *argv[]) {
     if (argc != 3) {
         std::cerr << "Usage: " << argv[0] << " <asymmetries.txt> <kinematicPlots.txt>\n";
@@ -2062,6 +2157,8 @@ int main(int argc, char *argv[]) {
     plotXFDependence(asymmetryData, "xF", {-1.0, 1.0});
 
     plotDoubleSpinAsymmetries(asymmetryData);
+
+    plotALUandALLDependence(asymmetryData, {"Q2multi1", "Q2multi2", "Q2multi3"}, "Q^{2} (GeV^{2})", {1.0, 3.5}, "output/epX_plots/CPHI_multidimensional");
 
 
     return 0;
