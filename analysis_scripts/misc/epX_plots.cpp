@@ -2087,7 +2087,7 @@ void plotALUandALLDependence(
         TLatex latex2;
         latex2.SetNDC();
         latex2.SetTextSize(0.03);
-        latex2.DrawLatex(0.65, 0.22, "z = 0.19, P_{T} = 0.40");  // For ALL
+        latex2.DrawLatex(0.65, 0.23, "z = 0.19, P_{T} = 0.40");  // For ALL
     }
 
     gSystem->Exec("mkdir -p output/epX_plots");
