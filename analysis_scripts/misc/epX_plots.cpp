@@ -2197,9 +2197,9 @@ void plotMxBinsALUALL(
         latex.SetNDC();
         latex.SetTextSize(0.03);
         if (suffixes[i] == "ALUsinphi") {
-            latex.DrawLatex(0.62, 0.225, "5% Scale Systematic");  // For ALUsinphi
+            latex.DrawLatex(0.62, 0.2, "5% Scale Systematic");  // For ALUsinphi
         } else {
-            latex.DrawLatex(0.62, 0.225, "9% Scale Systematic");  // For ALL
+            latex.DrawLatex(0.62, 0.2, "9% Scale Systematic");  // For ALL
         }
     }
 
