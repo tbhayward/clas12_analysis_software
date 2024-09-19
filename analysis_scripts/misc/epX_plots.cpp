@@ -1699,11 +1699,11 @@ void plotXFDependence(
         if (it != asymmetryData.end()) {
             const auto &data = it->second;
 
-            std::vector<double> x, y, yStatErr;
-            for (const auto &entry : data) {
-                x.push_back(entry[0]);
-                y.push_back(entry[1]);
-                yStatErr.push_back(entry[2]);
+            // Start from the third point (index 2) to skip the first two points
+            for (size_t j = 2; j < data.size(); ++j) {
+                x.push_back(data[j][0]);
+                y.push_back(data[j][1]);
+                yStatErr.push_back(data[j][2]);
             }
 
             // Create TGraphErrors for each suffix
