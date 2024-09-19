@@ -2281,7 +2281,7 @@ void plotMxBinsALUALL(
 
     // Define the y-axis ranges for each plot
     std::vector<std::pair<double, double>> yRanges = {
-        {-0.06, 0.06},  // y-axis range for ALUsinphi
+        {-0.06, 0.04},  // y-axis range for ALUsinphi
         {-0.1, 0.6}   // y-axis range for ALL
     };
 
