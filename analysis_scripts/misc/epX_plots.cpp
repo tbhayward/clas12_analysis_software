@@ -378,6 +378,7 @@ void plotDependence(
     const std::pair<double, double> &xLimits, 
     const std::string &outputFileName,
     const std::string &extraPrefix = "") {  // Optional extra prefix
+
     TCanvas *c = new TCanvas("c", "Dependence Plots", 1200, 800);
     c->Divide(3, 2);
 
@@ -472,25 +473,25 @@ void plotDependence(
 
                     TGraphErrors *extraGraphStat = createTGraphErrors(extraX, extraY, extraYStatErr, 20, 0.8, kRed);
                     extraGraphStat->Draw("P SAME");
+
+                    // Add the legend for each plot
+                    TLegend *legend;
+
+                    if (i == 3 || i == 4) {
+                        // Adjust the position for the plots with index 3 or 4
+                        legend = new TLegend(0.18, 0.7, 0.58, 0.9);  // Position similar to your TPaveText
+                    } else {
+                        // Adjust the position for the other plots (index not 3 or 4)
+                        legend = new TLegend(0.5, 0.7, 0.9, 0.9);  // Top right corner
+                    }
+
+                    legend->AddEntry(graphStat, "-(t-t_{min}) > 1.25", "p");  // For data points with larger cuts
+                    legend->AddEntry(extraGraphStat, "-(t-t_{min}) > 0.00", "p");  // For data points with smaller cuts
+                    legend->SetTextSize(0.035);  // Slightly increased text size
+                    legend->SetBorderSize(1);  // Keep border
+                    legend->SetFillColor(0);  // Transparent background
+                    legend->Draw();
                 }
-
-                // Add the legend for each plot
-                TLegend *legend;
-
-                if (i == 3 || i == 4) {
-                    // Adjust the position for the plots with index 3 or 4
-                    legend = new TLegend(0.18, 0.7, 0.58, 0.9);  // Position similar to your TPaveText
-                } else {
-                    // Adjust the position for the other plots (index not 3 or 4)
-                    legend = new TLegend(0.5, 0.7, 0.9, 0.9);  // Top right corner
-                }
-
-                legend->AddEntry(graphStat, "-(t-t_{min}) > 1.25", "p");  // For data points with larger cuts
-                legend->AddEntry(extraGraphStat, "-(t-t_{min}) > 0.00", "p");  // For data points with smaller cuts
-                legend->SetTextSize(0.035);  // Slightly increased text size
-                legend->SetBorderSize(1);  // Keep border
-                legend->SetFillColor(0);  // Transparent background
-                legend->Draw();
             }
         }
     }
