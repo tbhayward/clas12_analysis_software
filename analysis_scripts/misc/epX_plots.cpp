@@ -2158,7 +2158,7 @@ int main(int argc, char *argv[]) {
 
     plotDoubleSpinAsymmetries(asymmetryData);
 
-    plotALUandALLDependence(asymmetryData, {"Q2multi1", "Q2multi2", "Q2multi3"}, "Q^{2} (GeV^{2})", {1.0, 3.5}, "output/epX_plots/CPHI_multidimensional");
+    plotALUandALLDependence(asymmetryData, {"Q2multi1", "Q2multi2", "Q2multi3"}, "Q^{2} (GeV^{2})", {1.0, 3.5}, "output/epX_plots/CPHI_multidimensional.png");
 
 
     return 0;
