@@ -1963,7 +1963,7 @@ void plotDoubleSpinAsymmetries(const std::map<std::string, std::vector<std::vect
             TLegend *legend;
             if (i == 0) {
                 // Move the legend down for the x plot
-                legend = new TLegend(0.425, 0.3, 0.9, 0.45);  // Adjusted for the x plot (x_{B})
+                legend = new TLegend(1-0.425, 0.75, 1-0.9, 0.9);  // Adjusted for the x plot (x_{B})
             } else {
                 // Keep the legend at the top right for the other two plots
                 legend = new TLegend(0.425, 0.75, 0.9, 0.9);  // Top right corner
