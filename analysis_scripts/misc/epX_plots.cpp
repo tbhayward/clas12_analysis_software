@@ -1878,7 +1878,7 @@ void plotDoubleSpinAsymmetries(const std::map<std::string, std::vector<std::vect
     c->Divide(3, 1);  // Divide the canvas into 1 row, 3 columns
 
     // Define the suffixes for each plot
-    std::vector<std::string> suffixes = {"xB", "PT", "xF"};
+    std::vector<std::string> suffixes = {"x", "PT", "xF"};
     
     // Define the x-axis labels for each plot
     std::vector<std::string> xLabels = {"x_{B}", "P_{T} (GeV)", "x_{F}"};
@@ -1894,7 +1894,7 @@ void plotDoubleSpinAsymmetries(const std::map<std::string, std::vector<std::vect
 
         // Get the corresponding key for regular and "all" data
         std::string key = suffixes[i];
-        std::string keyAll = suffixes[i] + "all";
+        std::string keyAll = suffixes[i] + "chi2FitsALL";
         
         // Fetch the regular data
         auto it = asymmetryData.find(key);
