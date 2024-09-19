@@ -1699,6 +1699,7 @@ void plotXFDependence(
         if (it != asymmetryData.end()) {
             const auto &data = it->second;
 
+            std::vector<double> x, y, yStatErr;
             // Start from the third point (index 2) to skip the first two points
             for (size_t j = 2; j < data.size(); ++j) {
                 x.push_back(data[j][0]);
