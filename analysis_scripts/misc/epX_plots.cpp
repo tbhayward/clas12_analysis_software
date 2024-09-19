@@ -2025,7 +2025,7 @@ void plotALUandALLDependence(
         bool firstGraphDrawn = false;
 
         // Create a legend in the top right with a border and background
-        TLegend *legend = new TLegend(0.55, 0.7, 0.9, 0.9);  // Adjust position and size
+        TLegend *legend = new TLegend(0.6, 0.7, 0.9, 0.9);  // Adjust position and size
         legend->SetTextSize(0.03);  // Adjust text size
         legend->SetBorderSize(1);  // Set border size
         legend->SetFillStyle(1001);   // Solid white background
@@ -2089,7 +2089,7 @@ void plotALUandALLDependence(
         TLatex latex2;
         latex2.SetNDC();
         latex2.SetTextSize(0.03);
-        latex2.DrawLatex(0.65, 0.65, "z = 0.19, P_{T} = 0.40");  // For ALL
+        latex2.DrawLatex(0.65, 0.66, "z = 0.19, P_{T} = 0.40");  // For ALL
     }
 
     gSystem->Exec("mkdir -p output/epX_plots");
