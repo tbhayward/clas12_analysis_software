@@ -1884,7 +1884,7 @@ void plotDoubleSpinAsymmetries(const std::map<std::string, std::vector<std::vect
     std::vector<std::string> xLabels = {"x_{B}", "P_{T} (GeV)", "x_{F}"};
     
     // Define the axis ranges for each plot, extending x range for x_{B} to 0.7
-    std::vector<std::pair<double, double>> xRanges = {{0.0, 0.75}, {0.0, 1.0}, {-0.8, 0.6}};
+    std::vector<std::pair<double, double>> xRanges = {{0.0, 0.8}, {0.0, 1.0}, {-0.8, 0.6}};
     std::pair<double, double> yLimits = {0.1, 0.6};  // Common y-limits for all plots
 
     // Loop through each subplot (xB, PT, xF)
@@ -1963,7 +1963,7 @@ void plotDoubleSpinAsymmetries(const std::map<std::string, std::vector<std::vect
             TLegend *legend;
             if (i == 0) {
                 // Move the legend down for the x plot
-                legend = new TLegend(1-0.425, 0.75, 1-0.9, 0.9);  // Adjusted for the x plot (x_{B})
+                legend = new TLegend(0.425, 0.75, 0.9, 0.9);  // Adjusted for the x plot (x_{B})
             } else {
                 // Keep the legend at the top right for the other two plots
                 legend = new TLegend(0.425, 0.75, 0.9, 0.9);  // Top right corner
