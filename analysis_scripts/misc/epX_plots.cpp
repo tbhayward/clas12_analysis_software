@@ -1958,7 +1958,7 @@ void plotDoubleSpinAsymmetries(const std::map<std::string, std::vector<std::vect
             TLatex latex;
             latex.SetNDC();
             latex.SetTextSize(0.03);
-            latex.DrawLatex(0.6, 0.25, "9% Scale Systematic");  // Adjusted position slightly left and down
+            latex.DrawLatex(0.65, 0.225, "9% Scale Systematic");  // Adjusted position slightly left and down
 
             // Add the legend in the top right
             TLegend *legend = new TLegend(0.55, 0.75, 0.9, 0.9);  // Top right corner
