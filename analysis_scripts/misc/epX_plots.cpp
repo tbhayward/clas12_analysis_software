@@ -1876,7 +1876,7 @@ void plotXFDependence(
 void plotDoubleSpinAsymmetries(const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData) {
     // Create a canvas for the 1x3 plots
     TCanvas *c = new TCanvas("c", "Double Spin Asymmetries", 1200, 400);
-    c->Divide(3, 1);  // Divide the canvas into 1 row, 3 columns
+    c->Divide(2, 1);  // Divide the canvas into 1 row, 3 columns
 
     // Define the data sets for each plot (regular and "all")
     std::vector<std::string> regularSuffixes = {"xchi2FitsALL", "PTchi2FitsALL", "xFchi2FitsALL"};
@@ -1890,7 +1890,7 @@ void plotDoubleSpinAsymmetries(const std::map<std::string, std::vector<std::vect
     std::pair<double, double> yLimits = {0.0, 0.6};  // Common y-limits for all plots
 
     // Loop through each subplot (xB, PT, xF)
-    for (size_t i = 0; i < regularSuffixes.size(); ++i) {
+    for (size_t i = 0; i < regularSuffixes.size()-1; ++i) {
         c->cd(i+1);  // Move to the next pad
         gPad->SetLeftMargin(0.15);  // Increase left margin to avoid cutting off y-axis label
         gPad->SetBottomMargin(0.18);  // Increase bottom margin to avoid cutting off x-axis label
