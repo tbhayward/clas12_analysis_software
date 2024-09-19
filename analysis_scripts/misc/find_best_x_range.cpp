@@ -1,7 +1,5 @@
 #include <TFile.h>
 #include <TTree.h>
-#include <TH1F.h>
-#include <TCanvas.h>
 #include <iostream>
 #include <vector>
 
