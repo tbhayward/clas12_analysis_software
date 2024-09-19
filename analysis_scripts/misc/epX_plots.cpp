@@ -2191,6 +2191,16 @@ void plotMxBinsALUALL(
         line->SetLineColor(kGray+2);
         line->SetLineStyle(7);  // Dashed line
         line->Draw("same");
+
+        // Add the respective "Scale Systematic" text in the bottom right using TLatex
+        TLatex latex;
+        latex.SetNDC();
+        latex.SetTextSize(0.03);
+        if (suffixes[i] == "ALUsinphi") {
+            latex.DrawLatex(0.62, 0.225, "5% Scale Systematic");  // For ALUsinphi
+        } else {
+            latex.DrawLatex(0.62, 0.225, "9% Scale Systematic");  // For ALL
+        }
     }
 
     // Save the canvas as a PNG file
