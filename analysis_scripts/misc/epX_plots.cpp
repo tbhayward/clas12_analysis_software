@@ -2461,9 +2461,9 @@ int main(int argc, char *argv[]) {
 
     // plotALUandALLDependence(asymmetryData, {"Q2multi1", "Q2multi2", "Q2multi3"}, "Q^{2} (GeV^{2})", {1.0, 3.5}, "output/epX_plots/CPHI_multidimensional.png");
 
-    plotMxBinsALUALL(asymmetryData, "Mx2bin1a", "Mx2bin1b", {"x_{B} = 0.18, -(t-t_{min}) < 1", "x_{B} = 0.18, -(t-t_{min}) > 2"}, {0.0, 2.0}, "output/epX_plots/CPHI_Mx2bin1.png");
+    plotMxBinsALUALL(asymmetryData, "Mx2bin1aChi2Fits", "Mx2bin1bChi2Fits", {"x_{B} = 0.18, -(t-t_{min}) < 1", "x_{B} = 0.18, -(t-t_{min}) > 2"}, {0.0, 2.0}, "output/epX_plots/CPHI_Mx2bin1.png");
 
-    plotMxBinsALUALL(asymmetryData, "Mx2bin2a", "Mx2bin2b", {"x_{B} = 0.22, -(t-t_{min}) < 1", "x_{B} = 0.22, -(t-t_{min}) > 2"}, {0.0, 2.0}, "output/epX_plots/CPHI_Mx2bin2.png");
+    plotMxBinsALUALL(asymmetryData, "Mx2bin2aChi2Fits", "Mx2bin2bChi2Fits", {"x_{B} = 0.22, -(t-t_{min}) < 1", "x_{B} = 0.22, -(t-t_{min}) > 2"}, {0.0, 2.0}, "output/epX_plots/CPHI_Mx2bin2.png");
 
 
     return 0;
