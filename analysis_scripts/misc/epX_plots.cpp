@@ -476,21 +476,21 @@ void plotDependence(
 
                 if (i == 3 || i == 4) {  
                     // Add the text box for labels only if the extraPrefix is provided
-                    TPaveText *text = new TPaveText(0.18, 0.7, 0.43, 0.9, "NDC");
+                    TPaveText *text = new TPaveText(0.18, 0.7, 0.48, 0.9, "NDC");
                     text->SetTextAlign(13);
                     text->SetBorderSize(1);  // Set border size to 1 for a black border
                     text->SetFillColor(0);
-                    text->AddText("#font[42]{-(t-t_{min}) > 1}");  // Black text line
-                    text->AddText("#font[42]{-(t-t_{min}) > 0}");  // Red text line
+                    text->AddText("#font[42]{-(t-t_{min}) > 1.25}");  // Black text line
+                    text->AddText("#font[42]{-(t-t_{min}) > 0.00}");  // Red text line
                     text->Draw();
                 } else {
                     // Add the text box for labels only if the extraPrefix is provided
-                    TPaveText *text = new TPaveText(0.65, 0.7, 0.9, 0.9, "NDC");
+                    TPaveText *text = new TPaveText(0.6, 0.7, 0.9, 0.9, "NDC");
                     text->SetTextAlign(13);
                     text->SetBorderSize(1);  // Set border size to 1 for a black border
                     text->SetFillColor(0);
-                    text->AddText("#font[42]{-(t-t_{min}) > 0}");  // Black text line
-                    text->AddText("#font[42]{-(t-t_{min}) > 1}");  // Red text line
+                    text->AddText("#font[42]{-(t-t_{min}) > 0.00}");  // Black text line
+                    text->AddText("#font[42]{-(t-t_{min}) > 1.25}");  // Red text line
                     text->Draw();
                 }
             }
