@@ -1965,16 +1965,20 @@ void plotDoubleSpinAsymmetries(const std::map<std::string, std::vector<std::vect
 
             // Add the legend for each plot
             TLegend *legend;
-            if (i == 0) {
-                // Move the legend down for the x plot
-                legend = new TLegend(0.65, 0.3, 0.9, 0.45);  // Adjusted for the x plot (x_{B})
+
+            if (i == 3 || i == 4) {
+                // Adjust the position for the plots with index 3 or 4
+                legend = new TLegend(0.18, 0.7, 0.58, 0.9);  // Position similar to your TPaveText
             } else {
-                // Keep the legend at the top right for the other two plots
-                legend = new TLegend(0.65, 0.75, 0.9, 0.9);  // Top right corner
+                // Adjust the position for the other plots (index not 3 or 4)
+                legend = new TLegend(0.5, 0.7, 0.9, 0.9);  // Top right corner
             }
-            legend->AddEntry(graph, "-(t-t_{min}) > 1", "p");
-            legend->AddEntry(graphAll, "-(t-t_{min}) > 0", "p");
+
+            legend->AddEntry(graph, "-(t-t_{min}) > 1.25", "p");  // For data points with larger cuts
+            legend->AddEntry(graphAll, "-(t-t_{min}) > 0.00", "p");  // For data points with smaller cuts
             legend->SetTextSize(0.035);  // Slightly increased text size
+            legend->SetBorderSize(1);  // Keep border
+            legend->SetFillColor(0);  // Transparent background
             legend->Draw();
         } else {
             std::cerr << "Error: Could not find data for " << regularKey << " or " << allKey << std::endl;
