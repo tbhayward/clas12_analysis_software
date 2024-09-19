@@ -2087,6 +2087,9 @@ void plotMxBinsALUALL(
     const std::pair<double, double> &xLimits,  // Mx axis limits
     const std::string &outputFileName) {
 
+    // Disable default title display
+    gStyle->SetOptTitle(0);
+
     // Create the canvas for the 1x2 plots
     TCanvas *c = new TCanvas("c", "Mx Bins ALU and ALL", 1200, 600);
     c->Divide(2, 1);  // 1 row, 2 columns
