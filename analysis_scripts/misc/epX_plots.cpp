@@ -2118,10 +2118,10 @@ void plotMxBinsALUALL(
 
     // Legends for each Mx bin
     std::vector<std::string> legendLabels = {
-        "0.16 < x_{B} < 0.20, -(t-t_{min}) > 2", 
-        "0.16 < x_{B} < 0.20, -(t-t_{min}) < 1",
-        "0.21 < x_{B} < 0.25, -(t-t_{min}) > 2", 
-        "0.21 < x_{B} < 0.25, -(t-t_{min}) < 1"
+        "0.15 < x_{B} < 0.20, -(t-t_{min}) > 2", 
+        "0.15 < x_{B} < 0.20, -(t-t_{min}) < 1",
+        "0.20 < x_{B} < 0.25, -(t-t_{min}) > 2", 
+        "0.20 < x_{B} < 0.25, -(t-t_{min}) < 1"
     };
 
     // Loop over the two suffixes (ALUsinphi, ALL)
@@ -2165,7 +2165,7 @@ void plotMxBinsALUALL(
                     firstGraphDrawn = true;
 
                     // Set axis labels and ranges
-                    graph->GetXaxis()->SetTitle("M_{x} (GeV)");
+                    graph->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
                     graph->GetYaxis()->SetTitle(yLabels[i].c_str());
                     graph->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
                     graph->SetMinimum(yRanges[i].first);  // Apply the y-limits specific to the suffix
@@ -2197,9 +2197,9 @@ void plotMxBinsALUALL(
         latex.SetNDC();
         latex.SetTextSize(0.03);
         if (suffixes[i] == "ALUsinphi") {
-            latex.DrawLatex(0.62, 0.2, "5% Scale Systematic");  // For ALUsinphi
+            latex.DrawLatex(0.63, 0.19, "5% Scale Systematic");  // For ALUsinphi
         } else {
-            latex.DrawLatex(0.62, 0.2, "9% Scale Systematic");  // For ALL
+            latex.DrawLatex(0.63, 0.19, "9% Scale Systematic");  // For ALL
         }
     }
 
