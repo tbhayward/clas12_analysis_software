@@ -1772,7 +1772,7 @@ void plotXFDependence(
 
         std::vector<double> x, y, yStatErr;
         // Start from the third point (index 2) to skip the first two points
-        for (size_t j = 5; j < data.size(); ++j) {
+        for (size_t j = 2; j < data.size(); ++j) {
             x.push_back(data[j][0]);
             y.push_back(data[j][1]);
             yStatErr.push_back(data[j][2]);
