@@ -2153,6 +2153,13 @@ void plot_single_spin_asymmetries(const std::map<std::string, std::vector<std::v
             legendLeft->AddEntry(graph, xLegendLabels[i].c_str(), "p");
         }
     }
+
+    // Add the dashed gray line at y = 0
+    TLine *lineLeft = new TLine(xBRange.first, 0, xBRange.second, 0);
+    lineLeft->SetLineColor(kGray+2);
+    lineLeft->SetLineStyle(7);  // Dashed line
+    lineLeft->Draw("same");
+
     legendLeft->Draw();
 
     // Right subplot: PTChi2FitsALUsinphi, PTChi2FitsAULsinphi, and H2DataPT
@@ -2234,11 +2241,18 @@ void plot_single_spin_asymmetries(const std::map<std::string, std::vector<std::v
             legendRight->AddEntry(graph, PTLegendLabels[i].c_str(), "p");
         }
     }
+
+    // Add the dashed gray line at y = 0
+    TLine *lineRight = new TLine(PTRange.first, 0, PTRange.second, 0);
+    lineRight->SetLineColor(kGray+2);
+    lineRight->SetLineStyle(7);  // Dashed line
+    lineRight->Draw("same");
+
     legendRight->Draw();
 
     // Save the canvas as a PNG file
     gSystem->Exec("mkdir -p output/epX_plots");
-    c->SaveAs("output/epX_plots/single_spin_asymmetries.png");
+    c->SaveAs("output/epX_plots/CPHI_single_spin_asymmetries.png");
 
     // Clean up
     delete c;
