@@ -1969,7 +1969,7 @@ void plotDoubleSpinAsymmetries(const std::map<std::string, std::vector<std::vect
 
     // Save the canvas as a PNG file
     gSystem->Exec("mkdir -p output/spin_asymmetries");
-    c->SaveAs("output/spin_asymmetries/double_spin_asymmetries.png");
+    c->SaveAs("output/epX_plots/double_spin_asymmetries.png");
 
     // Clean up
     delete c;
