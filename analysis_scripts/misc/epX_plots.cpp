@@ -485,8 +485,8 @@ void plotDependence(
                     legend = new TLegend(0.5, 0.7, 0.9, 0.9);  // Top right corner
                 }
 
-                legend->AddEntry(graph, "-(t-t_{min}) > 1.25", "p");  // For data points with larger cuts
-                legend->AddEntry(graphAll, "-(t-t_{min}) > 0.00", "p");  // For data points with smaller cuts
+                legend->AddEntry(graphStat, "-(t-t_{min}) > 1.25", "p");  // For data points with larger cuts
+                legend->AddEntry(extraGraphStat, "-(t-t_{min}) > 0.00", "p");  // For data points with smaller cuts
                 legend->SetTextSize(0.035);  // Slightly increased text size
                 legend->SetBorderSize(1);  // Keep border
                 legend->SetFillColor(0);  // Transparent background
