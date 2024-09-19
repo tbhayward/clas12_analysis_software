@@ -2286,7 +2286,7 @@ void plotMxBinsALUALL(
     };
 
     // Define the keys for Mxbin1a, Mxbin1b, Mxbin2a, Mxbin2b
-    std::vector<std::string> MxBins = {"Mxbin1achi2Fits", "Mxbin1bchi2Fits", "Mxbin2achi2Fits", "Mxbin2bchi2Fits"};
+    std::vector<std::string> MxBins = {"Mx2bin1achi2Fits", "Mx2bin1bchi2Fits", "Mx2bin2achi2Fits", "Mx2bin2bchi2Fits"};
 
     // Colors and marker styles for each Mx bin
     std::vector<int> colors = {kBlack, kRed, kBlue, kGreen};
