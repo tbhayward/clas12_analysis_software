@@ -1830,7 +1830,7 @@ void plotXFDependence(
 
         std::vector<double> x, y, yStatErr;
         // Start from the third point (index 2) to skip the first two points
-        for (size_t j = 4; j < data.size(); ++j) {
+        for (size_t j = 8; j < data.size(); ++j) {
             x.push_back(data[j][0]);
             y.push_back(data[j][1]);
             yStatErr.push_back(data[j][2]);
@@ -2421,7 +2421,7 @@ int main(int argc, char *argv[]) {
     // printData(kinematicData);
 
     // Call the plotting function for different dependencies
-    plotDependence(asymmetryData, "Mx2", "M_{x}^{2} (GeV)", {0.0, 5.5}, "output/epX_plots/Mx2_dependence_plots.png");
+    // plotDependence(asymmetryData, "Mx2", "M_{x}^{2} (GeV)", {0.0, 5.5}, "output/epX_plots/Mx2_dependence_plots.png");
     // plotDependence(asymmetryData, "Mxbin1", "M_{x} (GeV)", {0.5, 2.5}, "output/epX_plots/Mxbin1_dependence_plots.png");
     // plotDependence(asymmetryData, "Mxbin2", "M_{x} (GeV)", {0.5, 2.5}, "output/epX_plots/Mxbin2_dependence_plots.png");
     // plotDependence(asymmetryData, "Mxbin3", "M_{x} (GeV)", {0.5, 2.5}, "output/epX_plots/Mxbin3_dependence_plots.png");
