@@ -2074,6 +2074,16 @@ void plotALUandALLDependence(
 
         // Draw the legend in the current subplot
         legend->Draw();
+
+        // Add the respective "Scale Systematic" text in the bottom right using TLatex
+        TLatex latex;
+        latex.SetNDC();
+        latex.SetTextSize(0.03);
+        if (suffixes[i] == "ALUsinphi") {
+            latex.DrawLatex(0.62, 0.225, "5% Scale Systematic");  // For ALUsinphi
+        } else {
+            latex.DrawLatex(0.62, 0.225, "9% Scale Systematic");  // For ALL
+        }
     }
 
     gSystem->Exec("mkdir -p output/epX_plots");
@@ -2284,13 +2294,13 @@ int main(int argc, char *argv[]) {
 
 
     // Call the function to generate and save the plot
-    // plotXFDependence(asymmetryData, "xF", {-1.0, 1.0});
+    plotXFDependence(asymmetryData, "xF", {-1.0, 1.0});
 
-    // plotDoubleSpinAsymmetries(asymmetryData);
+    plotDoubleSpinAsymmetries(asymmetryData);
 
-    // plotALUandALLDependence(asymmetryData, {"Q2multi1", "Q2multi2", "Q2multi3"}, "Q^{2} (GeV^{2})", {1.0, 3.5}, "output/epX_plots/CPHI_multidimensional.png");
+    plotALUandALLDependence(asymmetryData, {"Q2multi1", "Q2multi2", "Q2multi3"}, "Q^{2} (GeV^{2})", {1.0, 3.5}, "output/epX_plots/CPHI_multidimensional.png");
 
-    plotMxBinsALUALL(asymmetryData, {0.0, 2.5}, "output/epX_plots/CPHI_Mx2Bins_ALU_ALL.png");
+    // plotMxBinsALUALL(asymmetryData, {0.0, 2.5}, "output/epX_plots/CPHI_Mx2Bins_ALU_ALL.png");
 
 
     return 0;
