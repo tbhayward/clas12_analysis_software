@@ -1884,14 +1884,15 @@ void plotDoubleSpinAsymmetries(const std::map<std::string, std::vector<std::vect
     // Define the x-axis labels for each plot
     std::vector<std::string> xLabels = {"x_{B}", "P_{T} (GeV)", "x_{F}"};
     
-    // Define the axis ranges for each plot
-    std::vector<std::pair<double, double>> xRanges = {{0.06, 0.6}, {0.0, 1.0}, {-0.8, 0.6}};
+    // Define the axis ranges for each plot, extending x range for x_{B} to 0.7
+    std::vector<std::pair<double, double>> xRanges = {{0.06, 0.7}, {0.0, 1.0}, {-0.8, 0.6}};
     std::pair<double, double> yLimits = {-0.2, 0.5};  // Common y-limits for all plots
 
     // Loop through each subplot (xB, PT, xF)
     for (size_t i = 0; i < regularSuffixes.size(); ++i) {
         c->cd(i+1);  // Move to the next pad
         gPad->SetLeftMargin(0.15);  // Increase left margin to avoid cutting off y-axis label
+        gPad->SetBottomMargin(0.18);  // Increase bottom margin to avoid cutting off x-axis label
 
         // Get the corresponding key for regular and "all" data
         std::string regularKey = regularSuffixes[i];
@@ -1943,9 +1944,9 @@ void plotDoubleSpinAsymmetries(const std::map<std::string, std::vector<std::vect
             graph->SetMinimum(yLimits.first);
             graph->SetMaximum(yLimits.second);
 
-            // Increase the font size of axis labels
-            graph->GetXaxis()->SetTitleSize(0.05);
-            graph->GetYaxis()->SetTitleSize(0.05);
+            // Slightly increase the font size of axis labels
+            graph->GetXaxis()->SetTitleSize(0.055);  // Slightly larger
+            graph->GetYaxis()->SetTitleSize(0.055);  // Slightly larger
 
             // Add the dashed gray line at y = 0
             TLine *line = new TLine(xRanges[i].first, 0, xRanges[i].second, 0);
@@ -1957,13 +1958,13 @@ void plotDoubleSpinAsymmetries(const std::map<std::string, std::vector<std::vect
             TLatex latex;
             latex.SetNDC();
             latex.SetTextSize(0.03);
-            latex.DrawLatex(0.65, 0.2, "9% Scale Systematic");
+            latex.DrawLatex(0.6, 0.15, "9% Scale Systematic");  // Adjusted position slightly left and down
 
             // Add the legend in the top right
             TLegend *legend = new TLegend(0.55, 0.75, 0.9, 0.9);  // Top right corner
             legend->AddEntry(graph, "-(t-t_{min}) > 1", "p");
             legend->AddEntry(graphAll, "-(t-t_{min}) > 0", "p");
-            legend->SetTextSize(0.03);  // Adjust text size
+            legend->SetTextSize(0.035);  // Slightly increased text size
             legend->Draw();
         } else {
             std::cerr << "Error: Could not find data for " << regularKey << " or " << allKey << std::endl;
