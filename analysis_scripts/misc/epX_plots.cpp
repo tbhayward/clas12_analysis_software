@@ -1960,8 +1960,15 @@ void plotDoubleSpinAsymmetries(const std::map<std::string, std::vector<std::vect
             latex.SetTextSize(0.03);
             latex.DrawLatex(0.62, 0.225, "9% Scale Systematic");  // Adjusted position slightly left and down
 
-            // Add the legend in the top right
-            TLegend *legend = new TLegend(0.55, 0.75, 0.9, 0.9);  // Top right corner
+            // Add the legend for each plot
+            TLegend *legend;
+            if (i == 0) {
+                // Move the legend down for the x plot
+                legend = new TLegend(0.55, 0.65, 0.9, 0.8);  // Adjusted for the x plot (x_{B})
+            } else {
+                // Keep the legend at the top right for the other two plots
+                legend = new TLegend(0.55, 0.75, 0.9, 0.9);  // Top right corner
+            }
             legend->AddEntry(graph, "-(t-t_{min}) > 1", "p");
             legend->AddEntry(graphAll, "-(t-t_{min}) > 0", "p");
             legend->SetTextSize(0.035);  // Slightly increased text size
