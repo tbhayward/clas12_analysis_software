@@ -2051,7 +2051,7 @@ void plotALUandALLDependence(
                 
                 setAxisLabelsAndRanges(graphStat, xLabel, yLabels[i], xLimits, 
                     (suffixes[i] == "ALL") ? std::make_pair(-0.1, 0.5) : 
-                    (suffixes[i] == "doubleratio") ? std::make_pair(0.0, 0.3) :
+                    (suffixes[i] == "doubleratio") ? std::make_pair(-0.1, 0.2) :
                     std::make_pair(-0.06, 0.06));
                 
                 if (!firstGraphDrawn) {
