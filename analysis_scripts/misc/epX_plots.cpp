@@ -477,9 +477,6 @@ void plotDependence(
                 // Add the legend for each plot
                 TLegend *legend;
 
-                // Add the legend for each plot
-                TLegend *legend;
-
                 if (i == 3 || i == 4) {
                     // Adjust the position for the plots with index 3 or 4
                     legend = new TLegend(0.18, 0.7, 0.58, 0.9);  // Position similar to your TPaveText
