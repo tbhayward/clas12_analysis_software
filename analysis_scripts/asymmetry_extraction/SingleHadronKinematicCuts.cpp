@@ -33,19 +33,19 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
       return goodEvent;
     }
     if (property == "Mx2bin1a") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.15 && *x < 0.20 && (*t-*tmin) > -1.25;
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.15 && *x < 0.20 && (*t-*tmin) > -1.0;
       return goodEvent;
     }
     if (property == "Mx2bin1b") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.15 && *x < 0.20 && (*t-*tmin) < -1.75;
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.15 && *x < 0.20 && (*t-*tmin) < -1.5;
       return goodEvent;
     }
     if (property == "Mx2bin2a") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.20 && *x < 0.25 && (*t-*tmin) > -1.25;
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.20 && *x < 0.25 && (*t-*tmin) > -1.0;
       return goodEvent;
     }
     if (property == "Mx2bin2b") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.20 && *x < 0.25 && (*t-*tmin) < -1.75;
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.20 && *x < 0.25 && (*t-*tmin) < -1.5;
       return goodEvent;
     }
     if (property == "xF" || property == "x" || property == "z" || property == "PT" || property == "t" || 

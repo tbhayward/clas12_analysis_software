@@ -480,8 +480,8 @@ void plotDependence(
                     text->SetTextAlign(13);
                     text->SetBorderSize(1);  // Set border size to 1 for a black border
                     text->SetFillColor(0);
-                    text->AddText("#font[42]{M_{x} > 1.35 GeV}");  // Black text line
-                    text->AddText("#font[42]{#color[2]{M_{x} > 0.55 GeV}}");  // Red text line
+                    text->AddText("#font[42]{-(t-t_{min}) > 1}");  // Black text line
+                    text->AddText("#font[42]{-(t-t_{min}) > 0}");  // Red text line
                     text->Draw();
                 } else {
                     // Add the text box for labels only if the extraPrefix is provided
@@ -489,8 +489,8 @@ void plotDependence(
                     text->SetTextAlign(13);
                     text->SetBorderSize(1);  // Set border size to 1 for a black border
                     text->SetFillColor(0);
-                    text->AddText("#font[42]{M_{x} > 1.35 GeV}");  // Black text line
-                    text->AddText("#font[42]{#color[2]{M_{x} > 0.55 GeV}}");  // Red text line
+                    text->AddText("#font[42]{-(t-t_{min}) > 0}");  // Black text line
+                    text->AddText("#font[42]{-(t-t_{min}) > 1}");  // Red text line
                     text->Draw();
                 }
             }
@@ -2416,14 +2416,14 @@ int main(int argc, char *argv[]) {
     // plotDependence(asymmetryData, "Mxbin2", "M_{x} (GeV)", {0.5, 2.5}, "output/epX_plots/Mxbin2_dependence_plots.png");
     // plotDependence(asymmetryData, "Mxbin3", "M_{x} (GeV)", {0.5, 2.5}, "output/epX_plots/Mxbin3_dependence_plots.png");
     // plotDependence(asymmetryData, "Mxnodilution", "M_{x} (GeV)", {0.5, 2.5}, "output/epX_plots/Mxnodilution_dependence_plots.png");
-    // plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots.png");
-    // plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots_comparison.png", "xall");
+    plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots.png");
+    plotDependence(asymmetryData, "x", "x_{B}", {0.06, 0.6}, "output/epX_plots/x_dependence_plots_comparison.png", "xall");
     // plotDependence(asymmetryData, "z", "z", {0.0, 0.8}, "output/epX_plots/z_dependence_plots.png");
     // plotDependence(asymmetryData, "z", "z", {0.0, 0.8}, "output/epX_plots/z_dependence_plots_comparison.png", "zall");
-    // plotDependence(asymmetryData, "PT", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PT_dependence_plots.png");
-    // plotDependence(asymmetryData, "PT", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PT_dependence_plots_comparison.png", "PTall");
-    // plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots.png");
-    // plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots_comparison.png", "xFall");
+    plotDependence(asymmetryData, "PT", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PT_dependence_plots.png");
+    plotDependence(asymmetryData, "PT", "P_{T} (GeV)", {0.0, 1.0}, "output/epX_plots/PT_dependence_plots_comparison.png", "PTall");
+    plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots.png");
+    plotDependence(asymmetryData, "xF", "x_{F}", {-0.8, 0.6}, "output/epX_plots/xF_dependence_plots_comparison.png", "xFall");
     // plotDependence(asymmetryData, "Q2multi1", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi1_dependence_plots.png");
     // plotDependence(asymmetryData, "Q2multi2", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi2_dependence_plots.png");
     // plotDependence(asymmetryData, "Q2multi3", "Q^{2} (GeV^{2})", {1, 3.5}, "output/epX_plots/Q2multi3_dependence_plots.png");
