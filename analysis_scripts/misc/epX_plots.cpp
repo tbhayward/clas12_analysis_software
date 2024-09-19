@@ -1968,8 +1968,10 @@ void plotDoubleSpinAsymmetries(const std::map<std::string, std::vector<std::vect
                 // Keep the legend at the top right for the other two plots
                 legend = new TLegend(0.455, 0.75, 0.9, 0.9);  // Top right corner
             }
-            legend->AddEntry(graph, "-(t-t_{min}) > 1.25 (GeV^{2})", "p");
-            legend->AddEntry(graphAll, "-(t-t_{min}) > 0.00 (GeV^{2})", "p");
+            // legend->AddEntry(graph, "-(t-t_{min}) > 1.25 (GeV^{2})", "p");
+            // legend->AddEntry(graphAll, "-(t-t_{min}) > 0.00 (GeV^{2})", "p");
+            legend->AddEntry(graph, "SIDIS + #rho^{0}", "p");
+            legend->AddEntry(graphAll, "\"rho^{0}-free SIDIS\"", "p");
             legend->SetTextSize(0.035);  // Slightly increased text size
             legend->Draw();
         } else {
