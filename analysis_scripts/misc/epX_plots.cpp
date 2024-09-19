@@ -2011,9 +2011,9 @@ void plotALUandALLDependence(
 
     // Text labels for the legend
     std::vector<std::string> legendLabels = {
-        "x_{B} = 0.14, z = 0.19, P_{T} = 0.40", 
-        "x_{B} = 0.17, z = 0.19, P_{T} = 0.40", 
-        "x_{B} = 0.20, z = 0.19, P_{T} = 0.40"
+        "x_{B} = 0.14", 
+        "x_{B} = 0.17", 
+        "x_{B} = 0.20"
     };
 
     // Updated loop to accommodate the new plot order (ALUsinphi and ALL only)
@@ -2025,7 +2025,7 @@ void plotALUandALLDependence(
         bool firstGraphDrawn = false;
 
         // Create a legend in the top right with a border and background
-        TLegend *legend = new TLegend(0.41, 0.7, 0.9, 0.9);  // Adjust position and size
+        TLegend *legend = new TLegend(0.55, 0.7, 0.9, 0.9);  // Adjust position and size
         legend->SetTextSize(0.03);  // Adjust text size
         legend->SetBorderSize(1);  // Set border size
         legend->SetFillStyle(1001);   // Solid white background
@@ -2086,10 +2086,10 @@ void plotALUandALLDependence(
             latex.DrawLatex(0.61, 0.19, "9% Scale Systematic");  // For ALL
         }
 
-        // TLatex latex2;
-        // latex2.SetNDC();
-        // latex2.SetTextSize(0.03);
-        // latex2.DrawLatex(0.65, 0.23, "z = 0.19, P_{T} = 0.40");  // For ALL
+        TLatex latex2;
+        latex2.SetNDC();
+        latex2.SetTextSize(0.03);
+        latex2.DrawLatex(0.65, 0.65, "z = 0.19, P_{T} = 0.40");  // For ALL
     }
 
     gSystem->Exec("mkdir -p output/epX_plots");
