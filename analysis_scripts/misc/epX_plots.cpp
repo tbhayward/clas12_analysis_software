@@ -2281,7 +2281,7 @@ void plotMxBinsALUALL(
 
     // Define the y-axis ranges for each plot
     std::vector<std::pair<double, double>> yRanges = {
-        {-0.1, 0.1},  // y-axis range for ALUsinphi
+        {-0.06, 0.06},  // y-axis range for ALUsinphi
         {-0.1, 0.6}   // y-axis range for ALL
     };
 
@@ -2294,10 +2294,10 @@ void plotMxBinsALUALL(
 
     // Legends for each Mx bin
     std::vector<std::string> legendLabels = {
-        "0.15 < x_{B} < 0.20, -(t-t_{min}) > 2", 
-        "0.15 < x_{B} < 0.20, -(t-t_{min}) < 1",
-        "0.20 < x_{B} < 0.25, -(t-t_{min}) > 2", 
-        "0.20 < x_{B} < 0.25, -(t-t_{min}) < 1"
+        "0.15 < x_{B} < 0.20, -(t-t_{min}) < 1", 
+        "0.15 < x_{B} < 0.20, -(t-t_{min}) > 2",
+        "0.20 < x_{B} < 0.25, -(t-t_{min}) < 1", 
+        "0.20 < x_{B} < 0.25, -(t-t_{min}) > 2"
     };
 
     // Loop over the two suffixes (ALUsinphi, ALL)
