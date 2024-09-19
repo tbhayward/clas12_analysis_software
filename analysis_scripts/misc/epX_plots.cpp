@@ -1980,7 +1980,7 @@ void plotDoubleSpinAsymmetries(const std::map<std::string, std::vector<std::vect
 
     // Save the canvas as a PNG file
     gSystem->Exec("mkdir -p output/spin_asymmetries");
-    c->SaveAs("output/epX_plots/double_spin_asymmetries.png");
+    c->SaveAs("output/epX_plots/CPHI_double_spin_asymmetries.png");
 
     // Clean up
     delete c;
@@ -2081,6 +2081,117 @@ void plotALUandALLDependence(
     delete c;
 }
 
+
+void plotMxBinsALUALL(
+    const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
+    const std::pair<double, double> &xLimits,  // Mx axis limits
+    const std::string &outputFileName) {
+
+    // Create the canvas for the 1x2 plots
+    TCanvas *c = new TCanvas("c", "Mx Bins ALU and ALL", 1200, 600);
+    c->Divide(2, 1);  // 1 row, 2 columns
+
+    // Define the suffixes for ALUsinphi and ALL
+    std::vector<std::string> suffixes = {"ALUsinphi", "ALL"};
+
+    // Define the y-axis labels for each plot
+    std::vector<std::string> yLabels = {
+        "F_{LU}^{sin#phi}/F_{UU}",  // For ALUsinphi
+        "F_{LL}/F_{UU}"             // For ALL
+    };
+
+    // Define the keys for Mxbin1a, Mxbin1b, Mxbin3a, Mxbin3b
+    std::vector<std::string> MxBins = {"Mxbin1achi2Fits", "Mxbin1bchi2Fits", "Mxbin3achi2Fits", "Mxbin3bchi2Fits"};
+
+    // Colors and marker styles for each Mx bin
+    std::vector<int> colors = {kBlack, kRed, kBlue, kGreen};
+    std::vector<int> markers = {20, 21, 22, 23};  // Circle, Square, Triangle, Diamond markers
+
+    // Legends for each Mx bin
+    std::vector<std::string> legendLabels = {
+        "0.16 < x_{B} < 0.20, -(t-t_{min}) > 2", 
+        "0.16 < x_{B} < 0.20, -(t-t_{min}) < 1",
+        "0.28 < x_{B} < 0.32, -(t-t_{min}) > 2", 
+        "0.28 < x_{B} < 0.32, -(t-t_{min}) < 1"
+    };
+
+    // Loop over the two suffixes (ALUsinphi, ALL)
+    for (size_t i = 0; i < suffixes.size(); ++i) {
+        c->cd(i + 1);  // Move to the next pad
+        gPad->SetLeftMargin(0.18);
+        gPad->SetBottomMargin(0.15);
+
+        bool firstGraphDrawn = false;
+
+        // Create a legend for the plot
+        TLegend *legend = new TLegend(0.5, 0.7, 0.9, 0.9);  // Adjust position and size
+        legend->SetTextSize(0.035);  // Adjust text size
+        legend->SetBorderSize(1);  // Set border size
+        legend->SetFillStyle(1001);   // Solid white background
+
+        // Loop over the four Mx bins and plot them
+        for (size_t bin = 0; bin < MxBins.size(); ++bin) {
+            std::string key = MxBins[bin] + suffixes[i];
+            auto it = asymmetryData.find(key);
+
+            if (it != asymmetryData.end()) {
+                const auto &data = it->second;
+
+                std::vector<double> x, y, yStatErr;
+                for (const auto &entry : data) {
+                    x.push_back(entry[0]);
+                    y.push_back(entry[1]);
+                    yStatErr.push_back(entry[2]);
+                }
+
+                // Create TGraphErrors for each Mx bin
+                TGraphErrors *graph = new TGraphErrors(x.size(), &x[0], &y[0], nullptr, &yStatErr[0]);
+                graph->SetMarkerStyle(markers[bin]);
+                graph->SetMarkerColor(colors[bin]);
+                graph->SetLineColor(colors[bin]);
+                graph->SetMarkerSize(1.0);  // Marker size
+
+                if (!firstGraphDrawn) {
+                    graph->Draw("AP");  // Draw the first graph with axes
+                    firstGraphDrawn = true;
+
+                    // Set axis labels and ranges
+                    graph->GetXaxis()->SetTitle("M_{x} (GeV)");
+                    graph->GetYaxis()->SetTitle(yLabels[i].c_str());
+                    graph->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
+                    graph->SetMinimum(-0.06);  // Adjust y-axis range
+                    graph->SetMaximum(0.06);
+
+                    // Increase font size of axis labels
+                    graph->GetXaxis()->SetTitleSize(0.055);  // Slightly larger
+                    graph->GetYaxis()->SetTitleSize(0.055);  // Slightly larger
+                } else {
+                    graph->Draw("P SAME");  // Overlay other graphs
+                }
+
+                // Add each entry to the legend
+                legend->AddEntry(graph, legendLabels[bin].c_str(), "p");
+            }
+        }
+
+        // Draw the legend in the current subplot
+        legend->Draw();
+
+        // Add the dashed gray line at y = 0
+        TLine *line = new TLine(xLimits.first, 0, xLimits.second, 0);
+        line->SetLineColor(kGray+2);
+        line->SetLineStyle(7);  // Dashed line
+        line->Draw("same");
+    }
+
+    // Save the canvas as a PNG file
+    gSystem->Exec("mkdir -p output/epX_plots");
+    c->SaveAs(outputFileName.c_str());
+
+    // Clean up
+    delete c;
+}
+
 int main(int argc, char *argv[]) {
     if (argc != 3) {
         std::cerr << "Usage: " << argv[0] << " <asymmetries.txt> <kinematicPlots.txt>\n";
@@ -2154,11 +2265,13 @@ int main(int argc, char *argv[]) {
 
 
     // Call the function to generate and save the plot
-    plotXFDependence(asymmetryData, "xF", {-1.0, 1.0});
+    // plotXFDependence(asymmetryData, "xF", {-1.0, 1.0});
 
-    plotDoubleSpinAsymmetries(asymmetryData);
+    // plotDoubleSpinAsymmetries(asymmetryData);
 
-    plotALUandALLDependence(asymmetryData, {"Q2multi1", "Q2multi2", "Q2multi3"}, "Q^{2} (GeV^{2})", {1.0, 3.5}, "output/epX_plots/CPHI_multidimensional.png");
+    // plotALUandALLDependence(asymmetryData, {"Q2multi1", "Q2multi2", "Q2multi3"}, "Q^{2} (GeV^{2})", {1.0, 3.5}, "output/epX_plots/CPHI_multidimensional.png");
+
+    plotMxBinsALUALL(asymmetryData, {0.0, 2.5}, "output/epX_plots/CPHI_Mx2Bins_ALU_ALL.png");
 
 
     return 0;
