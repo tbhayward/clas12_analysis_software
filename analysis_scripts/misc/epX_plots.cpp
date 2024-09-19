@@ -2260,6 +2260,9 @@ void plot_single_spin_asymmetries(const std::map<std::string, std::vector<std::v
 
 void plotMxBinsALUALL(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
+    const std::string &prefix1,  // First prefix (e.g. Mx2bin1a)
+    const std::string &prefix2,  // Second prefix (e.g. Mx2bin1b)
+    const std::vector<std::string> &legendLabels,  // Labels for the two prefixes
     const std::pair<double, double> &xLimits,  // Mx axis limits
     const std::string &outputFileName) {
 
@@ -2282,23 +2285,12 @@ void plotMxBinsALUALL(
     // Define the y-axis ranges for each plot
     std::vector<std::pair<double, double>> yRanges = {
         {-0.06, 0.04},  // y-axis range for ALUsinphi
-        {-0.1, 0.6}   // y-axis range for ALL
+        {-0.1, 0.6}     // y-axis range for ALL
     };
 
-    // Define the keys for Mxbin1a, Mxbin1b, Mxbin2a, Mxbin2b
-    std::vector<std::string> MxBins = {"Mx2bin1achi2Fits", "Mx2bin1bchi2Fits", "Mx2bin2achi2Fits", "Mx2bin2bchi2Fits"};
-
-    // Colors and marker styles for each Mx bin
-    std::vector<int> colors = {kBlack, kRed, kBlue, kGreen};
-    std::vector<int> markers = {20, 21, 22, 23};  // Circle, Square, Triangle, Diamond markers
-
-    // Legends for each Mx bin
-    std::vector<std::string> legendLabels = {
-        "x_{B} = 0.18, -(t-t_{min}) < 1", 
-        "x_{B} = 0.18, -(t-t_{min}) > 2",
-        "x_{B} = 0.22, -(t-t_{min}) < 1", 
-        "x_{B} = 0.22, -(t-t_{min}) > 2"
-    };
+    // Colors and marker styles for each prefix
+    std::vector<int> colors = {kRed, kBlue};  // Red for prefix1, Blue for prefix2
+    std::vector<int> markers = {21, 20};  // Square for prefix1, Circle for prefix2
 
     // Loop over the two suffixes (ALUsinphi, ALL)
     for (size_t i = 0; i < suffixes.size(); ++i) {
@@ -2314,9 +2306,10 @@ void plotMxBinsALUALL(
         legend->SetBorderSize(1);  // Set border size
         legend->SetFillStyle(1001);   // Solid white background
 
-        // Loop over the four Mx bins and plot them
-        for (size_t bin = 0; bin < MxBins.size(); ++bin) {
-            std::string key = MxBins[bin] + suffixes[i];
+        // Loop over the two prefixes and plot them
+        std::vector<std::string> prefixes = {prefix1, prefix2};
+        for (size_t bin = 0; bin < prefixes.size(); ++bin) {
+            std::string key = prefixes[bin] + suffixes[i];
             auto it = asymmetryData.find(key);
 
             if (it != asymmetryData.end()) {
@@ -2329,7 +2322,7 @@ void plotMxBinsALUALL(
                     yStatErr.push_back(entry[2]);
                 }
 
-                // Create TGraphErrors for each Mx bin
+                // Create TGraphErrors for each prefix
                 TGraphErrors *graph = new TGraphErrors(x.size(), &x[0], &y[0], nullptr, &yStatErr[0]);
                 graph->SetMarkerStyle(markers[bin]);
                 graph->SetMarkerColor(colors[bin]);
@@ -2351,7 +2344,7 @@ void plotMxBinsALUALL(
                     graph->GetXaxis()->SetTitleSize(0.055);  // Slightly larger
                     graph->GetYaxis()->SetTitleSize(0.055);  // Slightly larger
                 } else {
-                    graph->Draw("P SAME");  // Overlay other graphs
+                    graph->Draw("P SAME");  // Overlay the second graph
                 }
 
                 // Add each entry to the legend
@@ -2468,7 +2461,9 @@ int main(int argc, char *argv[]) {
 
     // plotALUandALLDependence(asymmetryData, {"Q2multi1", "Q2multi2", "Q2multi3"}, "Q^{2} (GeV^{2})", {1.0, 3.5}, "output/epX_plots/CPHI_multidimensional.png");
 
-    plotMxBinsALUALL(asymmetryData, {0.0, 6}, "output/epX_plots/CPHI_Mx2Bins_ALU_ALL.png");
+    plotMxBinsALUALL(asymmetryData, "Mx2bin1a", "Mx2bin1b", {"x_{B} = 0.18, -(t-t_{min}) < 1", "x_{B} = 0.18, -(t-t_{min}) > 2"}, {0.0, 2.0}, "output/epX_plots/CPHI_Mx2bin1.png");
+
+    plotMxBinsALUALL(asymmetryData, "Mx2bin2a", "Mx2bin2b", {"x_{B} = 0.22, -(t-t_{min}) < 1", "x_{B} = 0.22, -(t-t_{min}) > 2"}, {0.0, 2.0}, "output/epX_plots/CPHI_Mx2bin2.png");
 
 
     return 0;
