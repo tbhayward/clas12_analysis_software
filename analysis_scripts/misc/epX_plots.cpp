@@ -2281,12 +2281,14 @@ void plotMxBinsALUALL(
 
     // Define the y-axis ranges for each plot
     std::vector<std::pair<double, double>> yRanges = {
-        {-0.06, 0.04},  // y-axis range for ALUsinphi
+        {-0.06, 0.03},  // y-axis range for ALUsinphi
         {-0.1, 0.6}   // y-axis range for ALL
     };
 
+    // // Define the keys for Mxbin1a, Mxbin1b, Mxbin2a, Mxbin2b
+    // std::vector<std::string> MxBins = {"Mx2bin1achi2Fits", "Mx2bin1bchi2Fits", "Mx2bin2achi2Fits", "Mx2bin2bchi2Fits"};
     // Define the keys for Mxbin1a, Mxbin1b, Mxbin2a, Mxbin2b
-    std::vector<std::string> MxBins = {"Mx2bin1achi2Fits", "Mx2bin1bchi2Fits", "Mx2bin2achi2Fits", "Mx2bin2bchi2Fits"};
+    std::vector<std::string> MxBins = {"Mx2bin1achi2Fits", "Mx2bin1bchi2Fits"};
 
     // Colors and marker styles for each Mx bin
     std::vector<int> colors = {kBlack, kRed, kBlue, kGreen};
