@@ -2286,9 +2286,8 @@ void plotMxBinsALUALL(
     };
 
     // // Define the keys for Mxbin1a, Mxbin1b, Mxbin2a, Mxbin2b
-    // std::vector<std::string> MxBins = {"Mx2bin1achi2Fits", "Mx2bin1bchi2Fits", "Mx2bin2achi2Fits", "Mx2bin2bchi2Fits"};
+    std::vector<std::string> MxBins = {"Mx2bin1achi2Fits", "Mx2bin1bchi2Fits", "Mx2bin2achi2Fits", "Mx2bin2bchi2Fits"};
     // Define the keys for Mxbin1a, Mxbin1b, Mxbin2a, Mxbin2b
-    std::vector<std::string> MxBins = {"Mx2bin1achi2Fits", "Mx2bin1bchi2Fits"};
 
     // Colors and marker styles for each Mx bin
     std::vector<int> colors = {kBlack, kRed, kBlue, kGreen};
@@ -2297,9 +2296,9 @@ void plotMxBinsALUALL(
     // Legends for each Mx bin
     std::vector<std::string> legendLabels = {
         "x_{B} = 0.18, -(t-t_{min}) < 1", 
-        "x_{B} = 0.18, -(t-t_{min}) > 2",
+        "x_{B} = 0.18, -(t-t_{min}) > 1.5",
         "x_{B} = 0.22, -(t-t_{min}) < 1", 
-        "x_{B} = 0.22, -(t-t_{min}) > 2"
+        "x_{B} = 0.22, -(t-t_{min}) > 1.5"
     };
 
     // Loop over the two suffixes (ALUsinphi, ALL)
@@ -2311,7 +2310,7 @@ void plotMxBinsALUALL(
         bool firstGraphDrawn = false;
 
         // Create a legend for the plot
-        TLegend *legend = new TLegend(0.4, 0.7, 0.9, 0.9);  // Adjust position and size
+        TLegend *legend = new TLegend(0.425, 0.7, 0.9, 0.9);  // Adjust position and size
         legend->SetTextSize(0.035);  // Adjust text size
         legend->SetBorderSize(1);  // Set border size
         legend->SetFillStyle(1001);   // Solid white background
