@@ -33,35 +33,19 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
       return goodEvent;
     }
     if (property == "Mx2bin1a") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.16 && *x < 0.20 && (*t-*tmin) > -1;
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.15 && *x < 0.20 && (*t-*tmin) > -1.25;
       return goodEvent;
     }
     if (property == "Mx2bin1b") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.16 && *x < 0.20 && (*t-*tmin) < -2;
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.15 && *x < 0.20 && (*t-*tmin) < -1.75;
       return goodEvent;
     }
     if (property == "Mx2bin2a") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.21 && *x < 0.25 && (*t-*tmin) > -1;
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.20 && *x < 0.25 && (*t-*tmin) > -1.25;
       return goodEvent;
     }
     if (property == "Mx2bin2b") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.21 && *x < 0.25 && (*t-*tmin) < -2;
-      return goodEvent;
-    }
-    if (property == "Mx2bin3a") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.28 && *x < 0.32 && (*t-*tmin) > -1;
-      return goodEvent;
-    }
-    if (property == "Mx2bin3b") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.28 && *x < 0.32 && (*t-*tmin) < -2;
-      return goodEvent;
-    }
-    if (property == "Mx2bin4a") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.35 && *x < 0.40 && (*t-*tmin) > -1;
-      return goodEvent;
-    }
-    if (property == "Mx2bin4b") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.35 && *x < 0.40 && (*t-*tmin) < -2;
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.20 && *x < 0.25 && (*t-*tmin) < -1.75;
       return goodEvent;
     }
     if (property == "xF" || property == "x" || property == "z" || property == "PT" || property == "t" || 
