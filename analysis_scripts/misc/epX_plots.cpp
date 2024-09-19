@@ -1877,8 +1877,9 @@ void plotDoubleSpinAsymmetries(const std::map<std::string, std::vector<std::vect
     TCanvas *c = new TCanvas("c", "Double Spin Asymmetries", 1200, 400);
     c->Divide(3, 1);  // Divide the canvas into 1 row, 3 columns
 
-    // Define the suffixes for each plot
-    std::vector<std::string> suffixes = {"x", "PT", "xF"};
+    // Define the data sets for each plot (regular and "all")
+    std::vector<std::string> regularSuffixes = {"xchi2FitsALL", "PTchi2FitsALL", "xFchi2FitsALL"};
+    std::vector<std::string> allSuffixes = {"xallchi2FitsALL", "PTallchi2FitsALL", "xFallchi2FitsALL"};
     
     // Define the x-axis labels for each plot
     std::vector<std::string> xLabels = {"x_{B}", "P_{T} (GeV)", "x_{F}"};
@@ -1888,17 +1889,17 @@ void plotDoubleSpinAsymmetries(const std::map<std::string, std::vector<std::vect
     std::pair<double, double> yLimits = {-0.2, 0.5};  // Common y-limits for all plots
 
     // Loop through each subplot (xB, PT, xF)
-    for (size_t i = 0; i < suffixes.size(); ++i) {
+    for (size_t i = 0; i < regularSuffixes.size(); ++i) {
         c->cd(i+1);  // Move to the next pad
         gPad->SetLeftMargin(0.15);  // Increase left margin to avoid cutting off y-axis label
 
         // Get the corresponding key for regular and "all" data
-        std::string key = suffixes[i];
-        std::string keyAll = suffixes[i] + "chi2FitsALL";
+        std::string regularKey = regularSuffixes[i];
+        std::string allKey = allSuffixes[i];
         
-        // Fetch the regular data
-        auto it = asymmetryData.find(key);
-        auto itAll = asymmetryData.find(keyAll);
+        // Fetch the regular data and the "all" data
+        auto it = asymmetryData.find(regularKey);
+        auto itAll = asymmetryData.find(allKey);
 
         if (it != asymmetryData.end() && itAll != asymmetryData.end()) {
             const auto &data = it->second;
@@ -1964,6 +1965,8 @@ void plotDoubleSpinAsymmetries(const std::map<std::string, std::vector<std::vect
             legend->AddEntry(graphAll, "-(t-t_{min}) > 0", "p");
             legend->SetTextSize(0.03);  // Adjust text size
             legend->Draw();
+        } else {
+            std::cerr << "Error: Could not find data for " << regularKey << " or " << allKey << std::endl;
         }
     }
 
