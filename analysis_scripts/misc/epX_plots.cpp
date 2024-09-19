@@ -479,10 +479,10 @@ void plotDependence(
 
                     if (i == 3 || i == 4) {
                         // Adjust the position for the plots with index 3 or 4
-                        legend = new TLegend(0.18, 0.7, 0.58, 0.9);  // Position similar to your TPaveText
+                        legend = new TLegend(0.18, 0.7, 0.61, 0.9);  // Position similar to your TPaveText
                     } else {
                         // Adjust the position for the other plots (index not 3 or 4)
-                        legend = new TLegend(0.5, 0.7, 0.9, 0.9);  // Top right corner
+                        legend = new TLegend(0.47, 0.7, 0.9, 0.9);  // Top right corner
                     }
 
                     legend->AddEntry(graphStat, "-(t-t_{min}) > 1.25 (GeV^{2})", "p");  // For data points with larger cuts
