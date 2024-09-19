@@ -2468,7 +2468,7 @@ int main(int argc, char *argv[]) {
 
     // plotALUandALLDependence(asymmetryData, {"Q2multi1", "Q2multi2", "Q2multi3"}, "Q^{2} (GeV^{2})", {1.0, 3.5}, "output/epX_plots/CPHI_multidimensional.png");
 
-    plotMxBinsALUALL(asymmetryData, {0.0, 5.5}, "output/epX_plots/CPHI_Mx2Bins_ALU_ALL.png");
+    plotMxBinsALUALL(asymmetryData, {0.0, 6}, "output/epX_plots/CPHI_Mx2Bins_ALU_ALL.png");
 
 
     return 0;
