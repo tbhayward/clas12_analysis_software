@@ -62,13 +62,13 @@ echo "Pulling the latest changes from the repository..."
 git pull
 
 echo "Entering the 'clasqaDB/' directory and sourcing 'env.csh'..."
-cd clas12-qadb/
+# cd clas12-qadb/
+# source environ.csh
+cd clas12-qadb//
 source environ.csh
-#cd clasqaDB/
-#source env.csh
 
-# echo "Returning to the parent directory..."
-# cd ..
+echo "Returning to the parent directory..."
+cd ..
 g++ `root-config --cflags --libs` -o processing_scripts/convert_txt_to_root processing_scripts/convert_txt_to_root.cpp
 
 # execute command based on number of entries (or dvcs designation)
