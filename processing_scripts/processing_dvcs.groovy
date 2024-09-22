@@ -100,7 +100,7 @@ public static void main(String[] args) {
 
 		while (reader.hasEvent()) {
 		    ++num_events;
-		    if (num_events % 100000 == 0) { // not necessary, just updates output
+		    if (num_events % 500000 == 0) { // not necessary, just updates output
 		        print("processed: " + num_events + " events. ");
 		    }
 
@@ -244,6 +244,10 @@ public static void main(String[] args) {
 			                	.append(p2_theta).append(" ")
 			                	.append(p2_phi).append(" ")
 			                	.append(vz_p2).append(" ")
+			                	.append(open_angle_ep).append(" ")
+			                	.append(open_angle_ep1).append(" ")
+			                	.append(open_angle_ep2).append(" ")
+			                	.append(open_angle_p1p2).append(" ")
 			                	.append(Q2).append(" ")
 			                	.append(W).append(" ")
 			                	.append(Mx2).append(" ")
