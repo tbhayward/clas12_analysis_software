@@ -1003,7 +1003,8 @@ int main(int argc, char *argv[]) {
             runnum >> evnum >> helicity >> detector1 >> detector2 >> e_p >> e_theta >> e_phi >> vz_e >> 
             p1_p >> p1_theta >> p1_phi >> vz_p1 >> p2_p >> p2_theta >> p2_phi >> vz_p2 >> 
             open_angle_ep >> open_angle_ep1 >> open_angle_ep2 >> open_angle_p1p2 >> 
-            Q2 >> W >> Mx2 >> Mx2_1 >> Mx2_2 >> x >> y >> z >> z1 >> z2 >> Mh >> xF >> xF1 >> xF2 >> 
+            Q2 >> W >> Mx2 >> Mx2_1 >> Mx2_2 >> x >> t >> t1 >> t2 >> tmin >> y >> 
+            z >> z1 >> z2 >> Mh >> xF >> xF1 >> xF2 >> 
             pT >> pT1 >> pT2 >> pTpT >> zeta >> zeta1 >> zeta2 >> eta >> eta1 >> eta2 >> Delta_eta>> 
             eta1_gN >> eta2_gN >> phi1 >> phi2 >> Delta_phi >> phi >> phiR >> theta >> 
             DepA >> DepB >> DepC >> DepV >> DepW) {
