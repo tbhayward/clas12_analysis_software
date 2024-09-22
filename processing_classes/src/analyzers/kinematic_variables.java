@@ -28,6 +28,13 @@ public class kinematic_variables {
             return -1;
     }
     
+    /*~~~~~~~~~~~~~~~~~ general kinematics ~~~~~~~~~~~~~~~~~*/
+    
+    double open_angle(LorentzVector lv_p1, LorentzVector lv_p2) {
+        return 180/Math.PI*Math.acos(lv_p1.vect().dot(lv_p2.vect())/
+                (lv_p1.vect().mag()*lv_p2.vect().mag())); 
+    }
+    
     /*~~~~~~~~~~~~~~~~~ DIS ~~~~~~~~~~~~~~~~~*/
     
     double Q2(LorentzVector lv_q) {

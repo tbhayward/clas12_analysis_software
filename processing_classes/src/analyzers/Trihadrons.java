@@ -18,6 +18,9 @@ public class Trihadrons {
     protected int runnum;
 
     protected int fiducial_status = -1;
+    protected int detector1 = -1;
+    protected int detector2 = -1;
+    protected int detector3 = -1;
 
     protected int num_elec, num_piplus, num_piminus, num_kplus, num_kminus, num_protons, num_particles;
     protected int num_pos, num_neg, num_neutrals;
@@ -27,8 +30,7 @@ public class Trihadrons {
     // hadrons. Convention is ordered by mass, then charge. For example in pi+pi- pi+ is hadron 1
     // in proton+pi+ the proton is p1, in k+pi- the kaon is p1.
     protected double Q2, W, gamma, nu, x, y, t, t1, t2, t3, t12, t13, t23, tmin, z, z1, z2, z3, z12, z13, z23;
-    protected double Mx, Mx1, Mx2, Mx3, Mx12, Mx13, Mx23; // Mx is the Mx(ep1p2p3), Mx1 is Mx(e[p1]p2p3), etc.
-    protected double Mx_squared, Mx1_squared, Mx2_squared, Mx3_squared, Mx12_squared, Mx13_squared, Mx23_squared; // Mx is the Mx(ep1p2p3), Mx1 is Mx(e[p1]p2p3), etc.
+    protected double Mx2, Mx2_1, Mx2_2, Mx2_3, Mx2_12, Mx2_13, Mx2_23; // Mx is the Mx(ep1p2p3), Mx1 is Mx(e[p1]p2p3), etc.
     protected double Mh, Mh12, Mh13, Mh23;
     protected double pT, pT1, pT2, pT3, pT12, pT13, pT23;
     protected double xF, xF1, xF2, xF3, xF12, xF13, xF23;
@@ -63,6 +65,8 @@ public class Trihadrons {
     protected double p2_px, p2_py, p2_pz, p2_p, p2_e, p2_theta, p2_phi; // p2 kinematics
     protected double p3_px, p3_py, p3_pz, p3_p, p3_e, p3_theta, p3_phi; // p3 kinematics
     protected double vx_e, vx_p1, vx_p2, vx_p3, vy_e, vy_p1, vy_p2, vy_p3, vz_e, vz_p1, vz_p2, vz_p3;
+    protected double open_angle_ep, open_angle_ep1, open_angle_ep2, open_angle_ep3;
+    protected double open_angle_p1p2, open_angle_p1p3, open_angle_p2p3;
 
     protected double p_Breit_pz, p1_Breit_pz, p2_Breit_pz, p3_Breit_pz, p12_Breit_pz, p13_Breit_pz, p23_Breit_pz;
     protected double p_gN_pz, p1_gN_pz, p2_gN_pz, p3_gN_pz, p12_gN_pz, p13_gN_pz, p23_gN_pz;
@@ -179,6 +183,30 @@ public class Trihadrons {
                 fiducial_status = 3; // Set to 3 if only p3 check is false
             }
             // If more than one is false, fiducial_status remains -1 (default)
+        }
+        
+        if (passesForwardTagger_1) {
+            detector1 = 0; // Forward Tagger
+        } else if (passesForwardDetector_1) {
+            detector1 = 1; // Forward Detector
+        } else if (passesCentralDetector_1) {
+            detector1 = 2; // Central Detector
+        }
+        
+        if (passesForwardTagger_2) {
+            detector2 = 0; // Forward Tagger
+        } else if (passesForwardDetector_2) {
+            detector2 = 1; // Forward Detector
+        } else if (passesCentralDetector_2) {
+            detector2 = 2; // Central Detector
+        }
+        
+        if (passesForwardTagger_3) {
+            detector3 = 0; // Forward Tagger
+        } else if (passesForwardDetector_3) {
+            detector3 = 1; // Forward Detector
+        } else if (passesCentralDetector_3) {
+            detector3 = 2; // Central Detector
         }
         
 
@@ -299,6 +327,14 @@ public class Trihadrons {
         t13 = kinematic_variables.t(lv_p13.p(), lv_p13.theta());
         t23 = kinematic_variables.t(lv_p23.p(), lv_p23.theta());
         tmin = kinematic_variables.tmin(x);
+        
+        open_angle_ep = kinematic_variables.open_angle(lv_e, lv_p);
+        open_angle_ep1 = kinematic_variables.open_angle(lv_e, lv_p1);
+        open_angle_ep2 = kinematic_variables.open_angle(lv_e, lv_p2);
+        open_angle_ep3 = kinematic_variables.open_angle(lv_e, lv_p3);
+        open_angle_p1p2 = kinematic_variables.open_angle(lv_p1, lv_p2);
+        open_angle_p1p3 = kinematic_variables.open_angle(lv_p1, lv_p3);
+        open_angle_p2p3 = kinematic_variables.open_angle(lv_p2, lv_p3);
 
         // kinematics of hadrons
         p1_px = lv_p1.px();
@@ -354,41 +390,34 @@ public class Trihadrons {
         lv_Mx.sub(lv_p1);
         lv_Mx.sub(lv_p2);
         lv_Mx.sub(lv_p3);
-        Mx = lv_Mx.mass();  // missing mass with all observed
-        Mx_squared = lv_Mx.mass2();  // missing mass squared with all observed
+        Mx2 = lv_Mx.mass2();  // missing mass squared with all observed
         LorentzVector lv_Mx1 = new LorentzVector(lv_q);
         lv_Mx1.add(lv_target);
         lv_Mx1.sub(lv_p1);
-        Mx1 = lv_Mx1.mass(); // missing mass with p1 observed
-        Mx1_squared = lv_Mx1.mass2(); // missing mass squared with p1 observed
+        Mx2_1 = lv_Mx1.mass2(); // missing mass squared with p1 observed
         LorentzVector lv_Mx2 = new LorentzVector(lv_q);
         lv_Mx2.add(lv_target);
         lv_Mx2.sub(lv_p2);
-        Mx2 = lv_Mx2.mass(); // missing mass with p2 observed
-        Mx2_squared = lv_Mx2.mass2(); // missing mass squared with p2 observed
+        Mx2_2 = lv_Mx2.mass2(); // missing mass squared with p2 observed
         LorentzVector lv_Mx3 = new LorentzVector(lv_q);
         lv_Mx3.add(lv_target);
         lv_Mx3.sub(lv_p3);
-        Mx3 = lv_Mx3.mass(); // missing mass with p3 observed
-        Mx3_squared = lv_Mx3.mass2(); // missing mass squared with p3 observed
+        Mx2_3 = lv_Mx3.mass2(); // missing mass squared with p3 observed
         LorentzVector lv_Mx12 = new LorentzVector(lv_q);
         lv_Mx12.add(lv_target);
         lv_Mx12.sub(lv_p1);
         lv_Mx12.sub(lv_p2);
-        Mx12 = lv_Mx12.mass(); // missing mass with p1 and p2 observed
-        Mx12_squared = lv_Mx12.mass2(); // missing mass squared with p1 and p2 observed
+        Mx2_12 = lv_Mx12.mass2(); // missing mass squared with p1 and p2 observed
         LorentzVector lv_Mx13 = new LorentzVector(lv_q);
         lv_Mx13.add(lv_target);
         lv_Mx13.sub(lv_p1);
         lv_Mx13.sub(lv_p3);
-        Mx13 = lv_Mx13.mass(); // missing mass with p1 and p3 observed
-        Mx13_squared = lv_Mx13.mass2(); // missing mass squared with p1 and p3 observed
+        Mx2_13 = lv_Mx13.mass2(); // missing mass squared with p1 and p3 observed
         LorentzVector lv_Mx23 = new LorentzVector(lv_q);
         lv_Mx23.add(lv_target);
         lv_Mx23.sub(lv_p2);
         lv_Mx23.sub(lv_p3);
-        Mx23 = lv_Mx23.mass(); // missing mass with p2 and p3 observed
-        Mx23_squared = lv_Mx23.mass2(); // missing mass squared with p2 and p3 observed
+        Mx2_23 = lv_Mx23.mass2(); // missing mass squared with p2 and p3 observed
 
         // boost to gamma*-nucleon center of mass frame
         LorentzVector lv_p_gN = new LorentzVector(lv_p);
@@ -674,6 +703,18 @@ public class Trihadrons {
         return runnum;
     }
     
+    public int get_detector1() {
+        return detector1;
+    }
+    
+    public int get_detector2() {
+        return detector2;
+    }
+    
+    public int get_detector3() {
+        return detector3;
+    }
+    
     public int get_num_pos() {
         return num_pos;
     }
@@ -798,60 +839,32 @@ public class Trihadrons {
         return Double.valueOf(Math.round(z23 * 100000)) / 100000;
     }// returns z23
 
-    public double Mx() {
-        return Double.valueOf(Math.round(Mx * 100000)) / 100000;
-    }
-
-    public double Mx1() {
-        return Double.valueOf(Math.round(Mx1 * 100000)) / 100000;
-    }
-
     public double Mx2() {
         return Double.valueOf(Math.round(Mx2 * 100000)) / 100000;
     }
 
-    public double Mx3() {
-        return Double.valueOf(Math.round(Mx3 * 100000)) / 100000;
+    public double Mx2_1() {
+        return Double.valueOf(Math.round(Mx2_1 * 100000)) / 100000;
     }
 
-    public double Mx12() {
-        return Double.valueOf(Math.round(Mx12 * 100000)) / 100000;
+    public double Mx2_2() {
+        return Double.valueOf(Math.round(Mx2_2 * 100000)) / 100000;
     }
 
-    public double Mx13() {
-        return Double.valueOf(Math.round(Mx13 * 100000)) / 100000;
+    public double Mx2_3() {
+        return Double.valueOf(Math.round(Mx2_3 * 100000)) / 100000;
     }
 
-    public double Mx23() {
-        return Double.valueOf(Math.round(Mx23 * 100000)) / 100000;
+    public double Mx2_12() {
+        return Double.valueOf(Math.round(Mx2_12 * 100000)) / 100000;
     }
 
-    public double Mx_squared() {
-        return Double.valueOf(Math.round(Mx_squared * 100000)) / 100000;
+    public double Mx2_13() {
+        return Double.valueOf(Math.round(Mx2_13 * 100000)) / 100000;
     }
 
-    public double Mx1_squared() {
-        return Double.valueOf(Math.round(Mx1_squared * 100000)) / 100000;
-    }
-
-    public double Mx2_squared() {
-        return Double.valueOf(Math.round(Mx2_squared * 100000)) / 100000;
-    }
-
-    public double Mx3_squared() {
-        return Double.valueOf(Math.round(Mx3_squared * 100000)) / 100000;
-    }
-
-    public double Mx12_squared() {
-        return Double.valueOf(Math.round(Mx12_squared * 100000)) / 100000;
-    }
-
-    public double Mx13_squared() {
-        return Double.valueOf(Math.round(Mx13_squared * 100000)) / 100000;
-    }
-
-    public double Mx23_squared() {
-        return Double.valueOf(Math.round(Mx23_squared * 100000)) / 100000;
+    public double Mx2_23() {
+        return Double.valueOf(Math.round(Mx2_23 * 100000)) / 100000;
     }
 
     public double Mh() {
@@ -1334,5 +1347,33 @@ public class Trihadrons {
     public double vz_p3() {
         return Double.valueOf(Math.round(vz_p3 * 100000)) / 100000;
     }// returns p3 z vertex
+    
+    public double open_angle_ep() {
+        return Double.valueOf(Math.round(open_angle_ep * 100000)) / 100000;
+    }
+    
+    public double open_angle_ep1() {
+        return Double.valueOf(Math.round(open_angle_ep1 * 100000)) / 100000;
+    }
+    
+    public double open_angle_ep2() {
+        return Double.valueOf(Math.round(open_angle_ep2 * 100000)) / 100000;
+    }
+    
+    public double open_angle_ep3() {
+        return Double.valueOf(Math.round(open_angle_ep3 * 100000)) / 100000;
+    }
+    
+    public double open_angle_p1p2() {
+        return Double.valueOf(Math.round(open_angle_p1p2 * 100000)) / 100000;
+    }
+    
+    public double open_angle_p1p3() {
+        return Double.valueOf(Math.round(open_angle_p1p3 * 100000)) / 100000;
+    }
+    
+    public double open_angle_p2p3() {
+        return Double.valueOf(Math.round(open_angle_p2p3 * 100000)) / 100000;
+    }
 
 }

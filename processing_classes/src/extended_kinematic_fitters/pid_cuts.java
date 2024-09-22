@@ -303,9 +303,5 @@ public class pid_cuts {
         return (beta > 0.90 && beta < 1.10);
     }
     
-    public boolean e_gamma_open_angle_cut(LorentzVector lv_e, LorentzVector lv_gamma) {
-        return 180/Math.PI*Math.acos(lv_e.vect().dot(lv_gamma.vect())/
-                (lv_e.vect().mag()*lv_gamma.vect().mag())) > 8; 
-    }
 }
 

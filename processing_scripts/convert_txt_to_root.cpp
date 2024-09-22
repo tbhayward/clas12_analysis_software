@@ -194,6 +194,7 @@ int main(int argc, char *argv[]) {
     double p_p, p_theta, p_phi, vz_p;
     // Additional variables for one or two hadrons
     double p1_p, p1_theta, p1_phi, vz_p1, p2_p, p2_theta, p2_phi, vz_p2;
+    double open_angle, open_angle_ep, open_angle_ep1, open_angle_ep2, open_angle_p1p2;
     double z1, z2, Mh, xF1, xF2, pT1, pT2, pTpT, zeta1, zeta2;
     double t1, t1min, t2, t2min, Mx2_1, Mx2_2;
     double eta1, eta2, Delta_eta, eta1_gN, eta2_gN;
@@ -201,6 +202,7 @@ int main(int argc, char *argv[]) {
     double Emiss2, theta_gamma_gamma, pTmiss;
     // Additional variables for three hadrons
     double p3_p, p3_theta, p3_phi, vz_p3;
+    double open_angle_ep3, open_angle_p1p3, open_angle_p2p3;
     double z3, z12, z13, z23, Mh12, Mh13, Mh23, xF3, xF12, xF13, xF23;
     double t3, t3min, Mx3, Mx12, Mx13, Mx23;
     double Mx_squared, Mx1_squared, Mx2_squared, Mx3_squared;
@@ -337,6 +339,7 @@ int main(int argc, char *argv[]) {
         tree->Branch("p_theta", &p_theta, "p_theta/D");
         tree->Branch("p_phi", &p_phi, "p_phi/D");
         tree->Branch("vz_p", &vz_p, "vz_p/D");
+        tree->Branch("open_angle" &open_angle, "open_angle");
         tree->Branch("Q2", &Q2, "Q2/D");
         tree->Branch("W", &W, "W/D");
         tree->Branch("Mx2", &Mx2, "Mx2/D");
@@ -444,6 +447,10 @@ int main(int argc, char *argv[]) {
         tree->Branch("p2_theta", &p2_theta, "p2_theta/D");
         tree->Branch("p2_phi", &p2_phi, "p2_phi/D");
         tree->Branch("vz_p2", &vz_p2, "vz_p2/D");
+        tree->Branch("open_angle_ep", &open_angle_ep, "open_angle_ep/D");
+        tree->Branch("open_angle_ep1", &open_angle_ep1, "open_angle_ep1/D");
+        tree->Branch("open_angle_ep2", &open_angle_ep2, "open_angle_ep2/D");
+        tree->Branch("open_angle_p1p2", &open_angle_p1p2, "open_angle_p1p2/D");
         tree->Branch("Q2", &Q2, "Q2/D");
         tree->Branch("W", &W, "W/D");
         tree->Branch("Mx2", &Mx2, "Mx2/D");
@@ -635,22 +642,22 @@ int main(int argc, char *argv[]) {
         tree->Branch("p3_theta", &p3_theta, "p3_theta/D");
         tree->Branch("p3_phi", &p3_phi, "p3_phi/D");
         tree->Branch("vz_p3", &vz_p3, "vz_p3/D");
+        tree->Branch("open_angle_ep", &open_angle_ep, "open_angle_ep/D");
+        tree->Branch("open_angle_ep1", &open_angle_ep1, "open_angle_ep1/D");
+        tree->Branch("open_angle_ep2", &open_angle_ep2, "open_angle_ep2/D");
+        tree->Branch("open_angle_ep3", &open_angle_ep3, "open_angle_ep3/D");
+        tree->Branch("open_angle_p1p2", &open_angle_p1p2, "open_angle_p1p2/D");
+        tree->Branch("open_angle_p1p3", &open_angle_p1p3, "open_angle_p1p3/D");
+        tree->Branch("open_angle_p2p3", &open_angle_p2p3, "open_angle_p2p3/D");
         tree->Branch("Q2", &Q2, "Q2/D");
         tree->Branch("W", &W, "W/D");
-        tree->Branch("Mx", &Mx, "Mx/D");
-        tree->Branch("Mx1", &Mx1, "Mx1/D");
         tree->Branch("Mx2", &Mx2, "Mx2/D");
-        tree->Branch("Mx3", &Mx3, "Mx3/D");
-        tree->Branch("Mx12", &Mx12, "Mx12/D");
-        tree->Branch("Mx13", &Mx13, "Mx13/D");
-        tree->Branch("Mx23", &Mx23, "Mx23/D");
-        tree->Branch("Mx_squared", &Mx_squared, "Mx_squared/D");
-        tree->Branch("Mx1_squared", &Mx1_squared, "Mx1_squared/D");
-        tree->Branch("Mx2_squared", &Mx2_squared, "Mx2_squared/D");
-        tree->Branch("Mx3_squared", &Mx3_squared, "Mx3_squared/D");
-        tree->Branch("Mx12_squared", &Mx12_squared, "Mx12_squared/D");
-        tree->Branch("Mx13_squared", &Mx13_squared, "Mx13_squared/D");
-        tree->Branch("Mx23_squared", &Mx23_squared, "Mx23_squared/D");
+        tree->Branch("Mx2_1", &Mx2_1, "Mx2_1/D");
+        tree->Branch("Mx2_2", &Mx2_2, "Mx2_2/D");
+        tree->Branch("Mx2_3", &Mx2_3, "Mx2_3/D");
+        tree->Branch("Mx2_12", &Mx2_12, "Mx2_12/D");
+        tree->Branch("Mx2_13", &Mx2_13, "Mx2_13/D");
+        tree->Branch("Mx2_23", &Mx2_23, "Mx2_23/D");
         tree->Branch("x", &x, "x/D");
         tree->Branch("y", &y, "y/D");
         tree->Branch("t1", &t1, "t1/D");
@@ -944,7 +951,7 @@ int main(int argc, char *argv[]) {
         // double helicity_double;
         while (infile >> fiducial_status >> num_pos >> num_neg >> num_neutral >> 
             runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
-            p_p >> p_theta >> p_phi >> vz_p >> Q2 >> W >> Mx2 >> x >> y >> z >> xF >> 
+            p_p >> p_theta >> p_phi >> vz_p >> open_angle >> Q2 >> W >> Mx2 >> x >> t >> tmin >> y >> z >> xF >> 
             pT >> zeta >> eta >> phi >> DepA >> DepB >> DepC >> DepV >> DepW) {
 
             beam_pol = getPol(runnum);
@@ -958,8 +965,8 @@ int main(int argc, char *argv[]) {
                 }
             }
 
-            t = gett(p_p, p_theta); // for SIDIS we calculate t with proton kinematics
-            tmin = gettmin(x); 
+            // t = gett(p_p, p_theta); // for SIDIS we calculate t with proton kinematics
+            // tmin = gettmin(x); 
 
 
             tree->Fill(); // Fill the tree with the read data
@@ -990,6 +997,7 @@ int main(int argc, char *argv[]) {
         while (infile >> fiducial_status >> num_pos >> num_neg >> num_neutral >>
             runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             p1_p >> p1_theta >> p1_phi >> vz_p1 >> p2_p >> p2_theta >> p2_phi >> vz_p2 >> 
+            >> open_angle_ep >> open_angle_ep1 >> open_angle_ep2 >> open_angle_p1p2 >> 
             Q2 >> W >> Mx2 >> Mx2_1 >> Mx2_2 >> x >> y >> z >> z1 >> z2 >> Mh >> xF >> xF1 >> xF2 >> 
             pT >> pT1 >> pT2 >> pTpT >> zeta >> zeta1 >> zeta2 >> eta >> eta1 >> eta2 >> Delta_eta>> 
             eta1_gN >> eta2_gN >> phi1 >> phi2 >> Delta_phi >> phi >> phiR >> theta >> 
@@ -1094,9 +1102,9 @@ int main(int argc, char *argv[]) {
             e_p >> e_theta >> e_phi >> vz_e >> 
             p1_p >> p1_theta >> p1_phi >> vz_p1 >> p2_p >> p2_theta >> p2_phi >> vz_p2 >>
             p3_p >> p3_theta >> p3_phi >> vz_p3 >> 
-            Q2 >> W >> Mx >> Mx1 >> Mx2 >> Mx3 >> Mx12 >> Mx13 >> Mx23 >> 
-            Mx_squared >> Mx1_squared >> Mx2_squared >> Mx3_squared >> Mx12_squared >> 
-            Mx13_squared >> Mx23_squared >> 
+            open_angle_ep >> open_angle_ep1 >> open_angle_ep2 >> open_angle_ep3 >>
+            open_angle_p1p2 >> open_angle_p1p3 >> open_angle_p2p3 >>
+            Q2 >> W >> Mx2 >> Mx2_1 >> Mx2_2 >> Mx2_3 >> Mx2_12 >> Mx2_13 >> Mx2_23 >> 
             x >> y >> z >> z1 >> z2 >> z3 >> z12 >> z13 >> z23 >> 
             zeta >> zeta1 >> zeta2 >> zeta3 >> zeta12 >> zeta13 >> zeta23 >>
             pT >> pT1 >> pT2 >> pT3 >> pT12 >> pT13 >> pT23 >> 
@@ -1131,7 +1139,9 @@ int main(int argc, char *argv[]) {
     if (hadron_count == 4 && is_mc == 0) {
         while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             p1_p >> p1_theta >> p1_phi >> vz_p1 >> p2_p >> p2_theta >> p2_phi >> vz_p2 >> 
-            Q2 >> W >> Mx2 >> Mx2_1 >> Mx2_2 >> x >> y >> z >> z1 >> z2 >> Mh >> xF >> xF1 >> xF2 >> 
+            open_angle_ep >> open_angle_ep1 >> open_angle_ep2 >> open_angle_p1p2 >>
+            Q2 >> W >> Mx2 >> Mx2_1 >> Mx2_2 >> x >> t >> t1 >> t2 >> tmin >> y >> 
+            z >> z1 >> z2 >> Mh >> xF >> xF1 >> xF2 >> 
             pT >> pT1 >> pT2 >> pTpT >> zeta >> zeta1 >> zeta2 >> eta >> eta1 >> eta2 >> Delta_eta>> 
             eta1_gN >> eta2_gN >> phi1 >> phi2 >> Delta_phi >> phi >> phiR >> theta >> 
             DepA >> DepB >> DepC >> DepV >> DepW >> Emiss2 >> theta_gamma_gamma >> pTmiss) {
@@ -1165,10 +1175,10 @@ int main(int argc, char *argv[]) {
             // Calculate the polar angle of the parent hadron's momentum
             p_theta = vectorPolarAngle(p_parent_z, p_p);
 
-            t = gett(p_p, p_theta);
-            t1 = gett(p1_p, p1_theta);
-            t2 = gett(p2_p, p2_theta); 
-            tmin = gettmin(x); 
+            // t = gett(p_p, p_theta);
+            // t1 = gett(p1_p, p1_theta);
+            // t2 = gett(p2_p, p2_theta); 
+            // tmin = gettmin(x); 
 
             tree->Fill(); // Fill the tree with the read data
         }

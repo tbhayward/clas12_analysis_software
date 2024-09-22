@@ -60,16 +60,17 @@ public static void main(String[] args) {
 	// ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
 
 	// declare physics event variables
-	int helicity;
+	int helicity, detector1, detector2;
 	double e_p, e_theta, e_phi, p1_phi, p1_p, p1_theta, p2_phi, p2_p, p2_theta; 
 	double vz_e, vz_p1, vz_p2;
+	double open_angle_ep, open_angle_ep1, open_angle_ep2, open_angle_p1p2;
 	double Q2, W, y, Mx2, Mx2_1, Mx2_2; 
-	double x, z, xF, pT, eta, eta_gN, zeta;
+	double x, t, t1, t2, tmin, z, xF, pT, eta, eta_gN, zeta;
 	double z1, z2, xF1, xF2, Mh, pT1, pT2, pTpT, eta1, eta2, Delta_eta, eta1_gN, eta2_gN;
 	double phi1, phi2, Delta_phi, phih, phiR, theta;
 	double Depolarization_A, Depolarization_B, Depolarization_C;
 	double Depolarization_V, Depolarization_W;
-	double Emiss2, theta_gamma_gamma, pTmiss, Mxgammasquared, Mxprotonsquared;
+	double Emiss2, theta_gamma_gamma, pTmiss;
 
 	// load my kinematic fitter/PID
 	GenericKinematicFitter fitter = new dvcs_fitter(10.6041); 
@@ -136,6 +137,11 @@ public static void main(String[] args) {
 			            if (variables.channel_test(variables)) {
 
 			                helicity = variables.get_helicity(); // helicity of event
+			                detector1 = variables.get_detector1();
+			                detector2 = variables.get_detector2();
+			                num_pos = variables.get_num_pos();
+			                num_neg = variables.get_num_neg();
+			                num_neutrals = variables.get_num_neutrals();
 
 			                // lab kinematics
 			                e_p = variables.e_p(); // lab frame momentum
@@ -147,6 +153,10 @@ public static void main(String[] args) {
 			                p2_phi = variables.p2_phi(); // lab azimuthal angle
 			                p2_p = variables.p2_p(); // lab momentum
 			                p2_theta = variables.p2_theta(); // lab polar angle
+			                open_angle_ep = variables.open_angle_ep;
+			                open_angle_ep1 = variables.open_angle_ep1;
+			                open_angle_ep2 = variables.open_angle_ep2;
+			                open_angle_p1p2 = variables.open_angle_p1p2;
 
 			                // vertices
 			                vz_e = variables.vz_e();
@@ -157,6 +167,10 @@ public static void main(String[] args) {
 			                Q2 = variables.Q2(); // exchanged virtual photon energy
 			                W = variables.W(); // hadronic mass
 			                x = variables.x(); // Bjorken-x
+			                t = variables.t();
+			                t1 = variables.t1();
+			                t2 = variables.t2();
+			                tmin = variables.tmin();
 			                y = variables.y(); // E_scat/E_beam
 			                Mx = variables.Mx2(); // missing mass
 			                Mx1 = variables.Mx2_1(); // missing mass calculated with p1
@@ -206,8 +220,6 @@ public static void main(String[] args) {
 					    	Emiss2 = variables.Emiss2();
 					    	theta_gamma_gamma = variables.theta_gamma_gamma();
 					    	pTmiss = variables.pTmiss();
-					    	Mxgammasquared = variables.Mxgammasquared(); // missing mass squared
-					    	Mxprotonsquared = variables.Mxprotonsquared(); // missing mass squared
 
 			                // Use a StringBuilder to append all data in a single call
 			                StringBuilder line = new StringBuilder();
@@ -236,6 +248,10 @@ public static void main(String[] args) {
 			                	.append(Mx2_1).append(" ")
 			                	.append(Mx2_2).append(" ")
 			                	.append(x).append(" ")
+			                	.append(t).append(" ")
+			                	.append(t1).append(" ")
+			                	.append(t2).append(" ")
+			                	.append(tmin).append(" ")
 			                	.append(y).append(" ")
 			                	.append(z).append(" ")
 			                	.append(z1).append(" ")
@@ -295,15 +311,16 @@ public static void main(String[] args) {
 		    batchLines.setLength(0);
 		}
 
-		System.out.println("1: fiducial_status, 2: num_pos, 3: num_neg, 4: num_neutrals, " +
+		println("1: fiducial_status, 2: num_pos, 3: num_neg, 4: num_neutrals, " +
 	    "5: runnum, 6: evnum, 7: helicity, 8: e_p, 9: e_theta, 10: e_phi, 11: vz_e, " +
 	    "12: p1_p, 13: p1_theta, 14: p1_phi, 15: vz_p1, 16: p2_p, 17: p2_theta, 18: p2_phi, 19: vz_p2, " +
-	    "20: Q2, 21: W, 22: Mx2, 23: Mx2_1, 24: Mx2_2, 25: x, 26: y, 27: z, " +
-	    "28: z1, 29: z2, 30: Mh, 31: xF, 32: xF1, 33: xF2, 34: pT, 35: pT1, 36: pT2, 37: pTpT, " +
-	    "38: zeta, 39: zeta1, 40: zeta2, 41: eta, 42: eta1, 43: eta2, 44: Delta_eta, 45: eta1_gN, 46: eta2_gN, " +
-	    "47: phi1, 48: phi2, 49: Delta_phi, 50: phih, 51: phiR, 52: theta, " +
-	    "53: DepA, 54: DepB, 55: DepC, 56: DepV, 57: DepW, 58: Emiss2, 59: theta_gamma_gamma, " +
-	    "60: pTmiss");
+	    "20: open_angle_ep, 21: open_angle_ep1, 22: open_angle_ep2, 23: open_angle_p1p2, " +
+	    "24: Q2, 25: W, 26: Mx2, 27: Mx2_1, 28: Mx2_2, 29: x, 30: t, 31: t1, 32: t2, 33: tmin, 34: y, 35: z, " +
+	    "36: z1, 37: z2, 38: Mh, 39: xF, 40: xF1, 41: xF2, 42: pT, 43: pT1, 44: pT2, 45: pTpT, " +
+	    "46: zeta, 47: zeta1, 48: zeta2, 49: eta, 50: eta1, 51: eta2, 52: Delta_eta, 53: eta1_gN, 54: eta2_gN, " +
+	    "55: phi1, 56: phi2, 57: Delta_phi, 58: phih, 59: phiR, 60: theta, " +
+	    "61: DepA, 62: DepB, 63: DepC, 64: DepV, 65: DepW, 66: Emiss2, 67: theta_gamma_gamma, " +
+	    "68: pTmiss");
 
 		println("Analyzing dvcs.");
 		println("output text file is: $file");

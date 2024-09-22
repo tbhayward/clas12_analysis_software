@@ -16,14 +16,13 @@ public class Hadron {
     protected int runnum;
     
     protected int fiducial_status = -1;
+    protected int detector = -1;
 
     protected int num_elec, num_piplus, num_piminus, num_kplus, num_kminus, num_protons, num_particles;
     protected int num_pos, num_neg, num_neutrals;
     protected int num_positrons, num_antiprotons;
 
-    // labels are unnumbered if they refer to the dihadron (perhaps a meson) and numbered for individual
-    // hadrons. Convention is ordered by mass, then charge. For example in pi+pi- pi+ is hadron 1
-    // in proton+pi+ the proton is p1, in k+pi- the kaon is p1.
+    protected double open_angle;
     protected double Q2, W, gamma, nu, x, y, z, t, tmin;
     protected double Mx, Mx2;
     protected double Mh, pT, xF, zeta;
@@ -135,6 +134,14 @@ public class Hadron {
                 fiducial_cuts.forward_tagger_fiducial_cut(p_rec_index, rec_Bank, cal_Bank): true;
         boolean p_fiducial_check = passesForwardTagger_1 && passesForwardDetector_1 && passesCentralDetector_1;
         
+        if (passesForwardTagger_1) {
+            detector = 0; // Forward Tagger
+        } else if (passesForwardDetector_1) {
+            detector = 1; // Forward Detector
+        } else if (passesCentralDetector_1) {
+            detector = 2; // Central Detector
+        }
+        
         // Check if all checks pass
         if (e_fiducial_check && p_fiducial_check) {
             fiducial_status = 2; // Set to 2 if all checks pass
@@ -217,6 +224,7 @@ public class Hadron {
 
         LorentzVector lv_p = new LorentzVector();
         lv_p.setPxPyPzM(hadron.px(), hadron.py(), hadron.pz(), hadron.mass());
+        open_angle = kinematic_variables.open_angle(lv_e, lv_p);
         t = kinematic_variables.t(lv_p.p(), lv_p.theta());
         tmin = kinematic_variables.tmin(x);
 
@@ -334,6 +342,10 @@ public class Hadron {
 
     public int get_runnum() {
         return runnum;
+    }
+    
+    public int get_detector() {
+        return detector;
     }
 
     public int get_num_pos() {
@@ -534,6 +546,10 @@ public class Hadron {
 
     public double vz_p() {
         return ((int) (vz_p * 100000)) / 100000.0;
+    }
+    
+    public double open_angle() {
+        return ((int) (open_angle * 100000)) / 100000.0;
     }
 
 }

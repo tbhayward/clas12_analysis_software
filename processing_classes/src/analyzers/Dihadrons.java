@@ -18,6 +18,8 @@ public class Dihadrons {
     protected int runnum;
 
     protected int fiducial_status = -1;
+    protected int detector1 = -1;
+    protected int detector2 = -1;
 
     protected int num_elec, num_piplus, num_piminus, num_kplus, num_kminus, num_protons, num_particles;
     protected int num_pos, num_neg, num_neutrals;
@@ -59,9 +61,9 @@ public class Dihadrons {
     protected double e_px, e_py, e_pz, e_p, e_e, e_theta, e_phi; // electron kinematics
     protected double p_px, p_py, p_pz, p_p, p_e; // dihadron kinematics, mass is Mh
     protected double p1_px, p1_py, p1_pz, p1_p, p1_e, p1_theta, p1_phi; // p1 kinematics
-    protected double p1_px_unc, p1_py_unc, p1_pz_unc, p1_p_unc, mass2, mass2_unc;
     protected double p2_px, p2_py, p2_pz, p2_p, p2_e, p2_theta, p2_phi; // p2 kinematics
     protected double vx_e, vx_p1, vx_p2, vy_e, vy_p1, vy_p2, vz_e, vz_p1, vz_p2;
+    protected double open_angle_ep, open_angle_ep1, open_angle_ep2, open_angle_p1p2;
 
     protected double p_Breit_pz, p1_Breit_pz, p2_Breit_pz, p_gN_pz, p1_gN_pz, p2_gN_pz;
 
@@ -180,6 +182,22 @@ public class Dihadrons {
             } 
             // If more than one is false, fiducial_status remains -1 (default)
         }
+        
+        if (passesForwardTagger_1) {
+            detector1 = 0; // Forward Tagger
+        } else if (passesForwardDetector_1) {
+            detector1 = 1; // Forward Detector
+        } else if (passesCentralDetector_1) {
+            detector1 = 2; // Central Detector
+        }
+        
+        if (passesForwardTagger_2) {
+            detector2 = 0; // Forward Tagger
+        } else if (passesForwardDetector_2) {
+            detector2 = 1; // Forward Detector
+        } else if (passesCentralDetector_2) {
+            detector2 = 2; // Central Detector
+        }
 
         // Set up Lorentz vectors
         // beam electron
@@ -271,6 +289,11 @@ public class Dihadrons {
         t1 = kinematic_variables.t(lv_p1.p(), lv_p1.theta());
         t2 = kinematic_variables.t(lv_p2.p(), lv_p2.theta());
         tmin = kinematic_variables.tmin(x);
+        
+        open_angle_ep = kinematic_variables.open_angle(lv_e, lv_p);
+        open_angle_ep1 = kinematic_variables.open_angle(lv_e, lv_p1);
+        open_angle_ep2 = kinematic_variables.open_angle(lv_e, lv_p2);
+        open_angle_p1p2 = kinematic_variables.open_angle(lv_p1, lv_p2);
 
         Emiss2 = kinematic_variables.Emiss2(lv_beam, lv_target, lv_e, lv_p1, lv_p2);
         theta_gamma_gamma = kinematic_variables.theta_gamma_gamma(lv_beam, lv_target, lv_e, lv_p1, lv_p2);
@@ -537,6 +560,14 @@ public class Dihadrons {
 
     public int get_runnum() {
         return runnum;
+    }
+    
+    public int get_detector1() {
+        return detector1;
+    }
+    
+    public int get_detector2() {
+        return detector2;
     }
 
     public int get_num_pos() {
@@ -854,30 +885,6 @@ public class Dihadrons {
         return Double.valueOf(Math.round(p1_p * 100000)) / 100000;
     }// returns hadron 1 lab frame p
 
-    public double p1_px_unc() {
-        return Double.valueOf(Math.round(p1_px_unc * 100000)) / 100000;
-    }// returns hadron 1 lab frame px
-
-    public double p1_py_unc() {
-        return Double.valueOf(Math.round(p1_py_unc * 100000)) / 100000;
-    }// returns hadron 1 lab frame py
-
-    public double p1_pz_unc() {
-        return Double.valueOf(Math.round(p1_pz_unc * 100000)) / 100000;
-    }// returns hadron 1 lab frame pz
-
-    public double p1_p_unc() {
-        return Double.valueOf(Math.round(p1_p_unc * 100000)) / 100000;
-    }// returns hadron 1 lab frame p
-
-    public double mass2() {
-        return Double.valueOf(Math.round(mass2 * 100000)) / 100000;
-    }// returns mass2
-
-    public double mass2_unc() {
-        return Double.valueOf(Math.round(mass2_unc * 100000)) / 100000;
-    }// returns mass2
-
     public double p1_e() {
         return Double.valueOf(Math.round(p1_e * 100000)) / 100000;
     }// returns hadron 1 lab frame energy
@@ -955,30 +962,22 @@ public class Dihadrons {
     public double vz_p2() {
         return Double.valueOf(Math.round(vz_p2 * 100000)) / 100000;
     }// returns p2 z vertex
-
-    public double e_nphe() {
-        return Double.valueOf(Math.round(e_nphe * 100000)) / 100000;
-    }// electron nphe
-
-    public double p1_nphe() {
-        return Double.valueOf(Math.round(p1_nphe * 100000)) / 100000;
-    }// p1 nphe
-
-    public double p2_nphe() {
-        return Double.valueOf(Math.round(p2_nphe * 100000)) / 100000;
-    }// p2 nphe
-
-    public double e_chi2pid() {
-        return Double.valueOf(Math.round(e_chi2pid * 100000)) / 100000;
-    }// electron chi2pid
-
-    public double p1_chi2pid() {
-        return Double.valueOf(Math.round(p1_chi2pid * 100000)) / 100000;
-    }// p1 chi2pid
-
-    public double p2_chi2pid() {
-        return Double.valueOf(Math.round(p2_chi2pid * 100000)) / 100000;
-    }// p2 chi2pid
+    
+    public double open_angle_ep() {
+        return Double.valueOf(Math.round(open_angle_ep * 100000)) / 100000;
+    }
+    
+    public double open_angle_ep1() {
+        return Double.valueOf(Math.round(open_angle_ep1 * 100000)) / 100000;
+    }
+    
+    public double open_angle_ep2() {
+        return Double.valueOf(Math.round(open_angle_ep2 * 100000)) / 100000;
+    }
+    
+    public double open_angle_p1p2() {
+        return Double.valueOf(Math.round(open_angle_p1p2 * 100000)) / 100000;
+    }
 
     public double p1_COM_phi() {
         return Double.valueOf(Math.round(p1_COM_phi * 100000)) / 100000;
@@ -1031,12 +1030,4 @@ public class Dihadrons {
     public double pTmiss() {
         return Double.valueOf(Math.round(pTmiss * 100000)) / 100000;
     }// returns pTmiss
-
-    public double Mxgammasquared() {
-        return Double.valueOf(Math.round(Mxgammasquared * 100000)) / 100000;
-    }// returns Mxgammasquared
-    
-    public double Mxprotonsquared() {
-        return Double.valueOf(Math.round(Mxprotonsquared * 100000)) / 100000;
-    }// returns Mxprotonsquared
 }

@@ -83,9 +83,9 @@ public static void main(String[] args) {
 	// ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
 
 	// declare physics event variables
-	int helicity;
-	double e_p, e_theta, e_phi, p_phi, p_p, p_theta;
-	double Q2, W, y, Mx2, x, z, xF, pT, eta, zeta, phi, vz_e, vz_p;
+	int helicity, detector;
+	double e_p, e_theta, e_phi, p_phi, p_p, p_theta, open_angle;
+	double Q2, W, y, Mx2, x, t, tmin, z, xF, pT, eta, zeta, phi, vz_e, vz_p;
 	double Depolarization_A, Depolarization_B, Depolarization_C;
 	double Depolarization_V, Depolarization_W;
 
@@ -153,6 +153,7 @@ public static void main(String[] args) {
 		            if (variables.channel_test(variables)) {
 		                fiducial_status = variables.get_fiducial_status(); // fiducial_status of track
 		                helicity = variables.get_helicity(); // helicity of event
+		                detector = variables.get_detector();
 		                num_pos = variables.get_num_pos();
 		                num_neg = variables.get_num_neg();
 		                num_neutrals = variables.get_num_neutrals();
@@ -164,11 +165,14 @@ public static void main(String[] args) {
 		                p_phi = variables.p_phi(); // lab azimuthal angle
 		                p_p = variables.p_p(); // lab momentum
 		                p_theta = variables.p_theta(); // lab polar angle
+		                open_angle = variables.open_angle(); // angle between electron and second particle
 
 		                // DIS variables
 		                Q2 = variables.Q2(); // exchanged virtual photon energy
 		                W = variables.W(); // hadronic mass
 		                x = variables.x(); // Bjorken-x
+		                t = variables.t(); // t
+		                tmin = variables.tmin(); // tmin
 		                y = variables.y(); // E_scat/E_beam
 		                Mx2 = variables.Mx2(); // missing mass square
 
@@ -202,6 +206,7 @@ public static void main(String[] args) {
 							.append(runnum).append(" ")
 		                	.append(evnum).append(" ")
 		                	.append(helicity).append(" ")
+		                	.append(detector).append(" ")
 		                	.append(e_p).append(" ")
 		                	.append(e_theta).append(" ")
 		                	.append(e_phi).append(" ")
@@ -210,10 +215,13 @@ public static void main(String[] args) {
 		                	.append(p_theta).append(" ")
 		                	.append(p_phi).append(" ")
 		                	.append(vz_p).append(" ")
+		                	.append(open_angle).append(" ");
 		                	.append(Q2).append(" ")
 		                	.append(W).append(" ")
 		                	.append(Mx2).append(" ")
 		                	.append(x).append(" ")
+		                	.append(t).append(" ")
+		                	.append(tmin).append(" ")
 		                	.append(y).append(" ")
 		                	.append(z).append(" ")
 		                	.append(xF).append(" ")
@@ -250,10 +258,10 @@ public static void main(String[] args) {
 		}
 
 		println("1: fiducial_status, 2: num_pos, 3: num_neg, 4: num_neutrals, " +
-	    "5: runnum, 6: evnum, 7: helicity, 8: e_p, 9: e_theta, 10: e_phi, 11: vz_e, " +
-	    "12: p_p, 13: p_theta, 14: p_phi, 15: vz_p, 16: Q2, 17: W, 18: Mx2, " +
-	    "19: x, 20: y, 21: z, 22: xF, 23: pT, 24: zeta, 25: eta, 26: phi (trento), " +
-	    "27: DepA, 28: DepB, 29: DepC, 30: DepV, 31: DepW");
+		"5: runnum, 6: evnum, 7: helicity, 8: detector, 9: e_p, 10: e_theta, 11: e_phi, 12: vz_e, " +
+		"13: open_angle, 14: p_p, 15: p_theta, 16: p_phi, 17: vz_p, 18: Q2, 19: W, 20: Mx2, " +
+		"21: x, 22: t, 23: tmin, 24: y, 25: z, 26: xF, 27: pT, 28: zeta, 29: eta, 30: phi (trento), " +
+		"31: DepA, 32: DepB, 33: DepC, 34: DepV, 35: DepW");
 
 		println("Set p1 PID = $p1_Str");
 		println("output text file is: $file");

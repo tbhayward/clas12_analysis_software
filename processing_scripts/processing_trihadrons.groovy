@@ -78,12 +78,14 @@ public static void main(String[] args) {
 	// ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
 
 	// declare physics event variables
-	int helicity;
+	int helicity, detector1, detector2, detector3;
 	double e_p, e_theta, e_phi; 
 	double p1_phi, p1_p, p1_theta, p2_phi, p2_p, p2_theta, p3_phi, p3_p, p3_theta; 
 	double vz_e, vz_p1, vz_p2, vz_p3;
-	double Q2, W, y, Mx, Mx1, Mx2, Mx3, Mx12, Mx13, Mx23; 
-	double x, z, xF, pT, eta, eta_gN, zeta;
+	double open_angle_ep, open_angle_ep1, open_angle_ep2, open_angle_ep3;
+	double open_angle_p1p2, open_angle_p1p3, open_angle_p2p3;
+	double Q2, W, y, Mx2, Mx2_1, Mx2_2, Mx2_3, Mx2_12, Mx2_13, Mx2_23; 
+	double x, t, t1, t2, t3, t12, t13, t23, tmin, z, xF, pT, eta, eta_gN, zeta;
 	double z1, z2, z3, z12, z13, z23;
 	double xF1, xF2, xF3, xF12, xF13, xF23;
 	double Mh, Mh12, Mh13, Mh23;
@@ -166,6 +168,9 @@ public static void main(String[] args) {
 				            if (variables.channel_test(variables)) {
 				                fiducial_status = variables.get_fiducial_status(); // fiducial_status of track
 				                helicity = variables.get_helicity(); // helicity of event
+				                detector1 = variables.get_detector1();
+				                detector2 = variables.get_detector2();
+				                detector3 = variables.get_detector3();
 				                num_pos = variables.get_num_pos();
 				                num_neg = variables.get_num_neg();
 				                num_neutrals = variables.get_num_neutrals();
@@ -183,6 +188,13 @@ public static void main(String[] args) {
 				                p3_phi = variables.p3_phi(); // lab azimuthal angle
 				                p3_p = variables.p3_p(); // lab momentum
 				                p3_theta = variables.p3_theta(); // lab polar angle
+				                open_angle_ep = variables.open_angle_ep;
+				                open_angle_ep1 = variables.open_angle_ep1;
+				                open_angle_ep2 = variables.open_angle_ep2;
+				                open_angle_ep3 = variables.open_angle_ep3;
+				                open_angle_p1p2 = variables.open_angle_p1p2;
+				                open_angle_p1p3 = variables.open_angle_p1p3;
+				                open_angle_p2p3 = variables.open_angle_p2p3;
 
 				                // vertices
 				                vz_e = variables.vz_e();
@@ -194,23 +206,23 @@ public static void main(String[] args) {
 				                Q2 = variables.Q2(); // exchanged virtual photon energy
 				                W = variables.W(); // hadronic mass
 				                x = variables.x(); // Bjorken-x
+				                t = variables.t();
+				                t1 = variables.t1();
+				                t2 = variables.t2();
+				                t3 = variables.t3();
+				                t12 = variables.t12();
+				                t13 = variables.t13();
+				                t23 = variables.t23();
+				                tmin = variables.tmin();
 				                y = variables.y(); // E_scat/E_beam
-				                Mx = variables.Mx(); // missing mass
-				                Mx1 = variables.Mx1(); // missing mass calculated with p1
-				                Mx2 = variables.Mx2(); // missing mass calculated with p2
-				                Mx3 = variables.Mx3(); // missing mass calculated with p3
-				                Mx12 = variables.Mx12(); // missing mass calculated with p1 and p2
-				                Mx13 = variables.Mx13(); // missing mass calculated with p1 and p3
-				                Mx23 = variables.Mx23(); // missing mass calculated with p2 and p3
+				                Mx2 = variables.Mx2(); // missing mass squared
+				                Mx2_1 = variables.Mx2_1(); // missing mass squared calculated with p1
+				                Mx2_2 = variables.Mx2_2(); // missing mass squared calculated with p2
+				                Mx2_3 = variables.Mx2_3(); // missing mass squared calculated with p3
+				                Mx2_12 = variables.Mx2_12(); // missing mass squared calculated with p1 and p2
+				                Mx2_13 = variables.Mx2_13(); // missing mass squared calculated with p1 and p3
+				                Mx2_23 = variables.Mx2_23(); // missing mass squared calculated with p2 and p3
 				                
-								Mx_squared = variables.Mx_squared(); // missing mass_squared
-				                Mx1_squared = variables.Mx1_squared(); // missing mass_squared calculated with p1
-				                Mx2_squared = variables.Mx2_squared(); // missing mass_squared calculated with p2
-				                Mx3_squared = variables.Mx3_squared(); // missing mass_squared calculated with p3
-				                Mx12_squared = variables.Mx12_squared(); // missing mass_squared calculated with p1 and p2
-				                Mx13_squared = variables.Mx13_squared(); // missing mass_squared calculated with p1 and p3
-				                Mx23_squared = variables.Mx23_squared(); // missing mass_squared calculated with p2 and p3
-				               
 				                // SIDIS variables
 				                z = variables.z(); // fractional hadron energy wrt virtual photon
 				                xF = variables.xF(); // Feynman-x
@@ -291,6 +303,9 @@ public static void main(String[] args) {
 									.append(runnum).append(" ")
 									.append(evnum).append(" ")
 									.append(helicity).append(" ")
+									.append(detector1).append(" ")
+									.append(detector2).append(" ")
+									.append(detector3).append(" ")
 									.append(e_p).append(" ")
 									.append(e_theta).append(" ")
 									.append(e_phi).append(" ")
@@ -309,21 +324,22 @@ public static void main(String[] args) {
 									.append(vz_p3).append(" ")
 									.append(Q2).append(" ")
 									.append(W).append(" ")
-									.append(Mx).append(" ")
-									.append(Mx1).append(" ")
 									.append(Mx2).append(" ")
-									.append(Mx3).append(" ")
-									.append(Mx12).append(" ")
-									.append(Mx13).append(" ")
-									.append(Mx23).append(" ")
-									.append(Mx_squared).append(" ")
-									.append(Mx1_squared).append(" ")
-									.append(Mx2_squared).append(" ")
-									.append(Mx3_squared).append(" ")
-									.append(Mx12_squared).append(" ")
-									.append(Mx13_squared).append(" ")
-									.append(Mx23_squared).append(" ")
+									.append(Mx2_1).append(" ")
+									.append(Mx2_2).append(" ")
+									.append(Mx2_3).append(" ")
+									.append(Mx2_12).append(" ")
+									.append(Mx2_13).append(" ")
+									.append(Mx2_23).append(" ")
 									.append(x).append(" ")
+									.append(t).append(" ")
+				                	.append(t1).append(" ")
+				                	.append(t2).append(" ")
+				                	.append(t3).append(" ")
+				                	.append(t12).append(" ")
+				                	.append(t13).append(" ")
+				                	.append(t23).append(" ")
+				                	.append(tmin).append(" ")
 									.append(y).append(" ")
 									.append(z).append(" ")
 									.append(z1).append(" ")
@@ -408,24 +424,25 @@ public static void main(String[] args) {
 		println();
 		print("1: fiducial_status, 2: num_pos, 3: num_neg, 4: num_neutrals, ");
 		print("5: runnum, 6: evnum, 7: helicity, ");
-		print("8: e_p, 9: e_theta, 10: e_phi, 11: vz_e, ");
-		print("12: p1_p, 13: p1_theta, 14: p1_phi, 15: vz_p1, ");
-		print("16: p2_p, 17: p2_theta, 18: p2_phi, 19: vz_p2, ");
-		print("20: p3_p, 21: p3_theta, 22: p3_phi, 23: vz_p3, ");
-		print("24: Q2, 25: W, ");
-		print("26: Mx, 27: Mx1, 28: Mx2, 29: Mx3, 30: Mx12, 31: Mx13, 32: Mx23, ");
-		print("33: Mx_squared, 34: Mx1_squared, 35: Mx2_squared, 36: Mx3_squared, ");
-		print("37: Mx12_squared, 38: Mx13_squared, 39: Mx23_squared, ");
-		print("40: x, 41: y, ");
-		print("42: z, 43: z1, 44: z2, 45: z3, 46: z12, 47: z13, 48: z23, ");
-		print("49: zeta, 50: zeta1, 51: zeta2, 52: zeta3, 53: zeta12, 54: zeta13, 55: zeta23, ");
-		print("56: pT, 57: pT1, 58: pT2, 59: pT3, 60: pT12, 61: pT13, 62: pT23, ");
-		print("63: Mh, 64: Mh12, 65: Mh13, 66: Mh23, ");
-		print("67: xF, 68: xF1, 69: xF2, 70: xF3, 71: xF12, 72: xF13, 73: xF23, ");
-		print("74: eta, 75: eta1, 76: eta2, 77: eta3, 78: eta12, 79: eta13, 80: eta23, ");
-		print("81: phi1, 82: phi2, 83: phi3, 84: phi12, 85: phi13, 86: phi23, 87: phih, 88: phiR, 89: theta, ");
-		print("90: Delta_phi12, 91: Delta_phi13, 92: Delta_phi23, ");
-		print("93: DepA, 94: DepB, 95: DepC, 96: DepV, 97: DepW.");
+		print("8: detector1, 9: detector2, 10: detector3, ");
+		print("11: e_p, 12: e_theta, 13: e_phi, 14: vz_e, ");
+		print("15: p1_p, 16: p1_theta, 17: p1_phi, 18: vz_p1, ");
+		print("19: p2_p, 20: p2_theta, 21: p2_phi, 22: vz_p2, ");
+		print("23: p3_p, 24: p3_theta, 25: p3_phi, 26: vz_p3, ");
+		print("27: open_angle_ep, 28: open_angle_ep1, 29: open_angle_ep2, 30: open_angle_ep3, ");
+		print("31: open_angle_p1p2, 32: open_angle_p1p3, 33: open_angle_p2p3, ");
+		print("34: Q2, 35: W, ");
+		print("36: Mx2, 37: Mx2_1, 38: Mx2_2, 39: Mx2_3, 40: Mx2_12, 41: Mx2_13, 42: Mx2_23, ");
+		print("43: x, 44: t, 45: t1, 46: t2, 47: t3, 48: t12, 49: t13, 50: t23, 51: tmin, ");
+		print("52: y, 53: z, 54: z1, 55: z2, 56: z3, 57: z12, 58: z13, 59: z23, ");
+		print("60: zeta, 61: zeta1, 62: zeta2, 63: zeta3, 64: zeta12, 65: zeta13, 66: zeta23, ");
+		print("67: pT, 68: pT1, 69: pT2, 70: pT3, 71: pT12, 72: pT13, 73: pT23, ");
+		print("74: Mh, 75: Mh12, 76: Mh13, 77: Mh23, ");
+		print("78: xF, 79: xF1, 80: xF2, 81: xF3, 82: xF12, 83: xF13, 84: xF23, ");
+		print("85: eta, 86: eta1, 87: eta2, 88: eta3, 89: eta12, 90: eta13, 91: eta23, ");
+		print("92: phi1, 93: phi2, 94: phi3, 95: phi12, 96: phi13, 97: phi23, 98: phih, 99: phiR, 100: theta, ");
+		print("101: Delta_phi12, 102: Delta_phi13, 103: Delta_phi23, ");
+		print("104: DepA, 105: DepB, 106: DepC, 107: DepV, 108: DepW.");
 		println();
 		println("Set p1 PID = $p1_Str");
 		println("Set p2 PID = $p2_Str");
