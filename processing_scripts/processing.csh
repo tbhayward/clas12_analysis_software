@@ -28,6 +28,8 @@ else if ($arg1 == "processing_scripts/processing_mc_three_particles.groovy") the
     set convert_arg3 = 2
 else if ($arg1 == "processing_scripts/processing_four_particles.groovy") then
     set convert_arg3 = 3
+else if ($arg1 == "processing_scripts/processing_exclusive_pi0.groovy") then
+    set convert_arg3 = 3
 else if ($arg1 == "processing_scripts/processing_dvcs.groovy") then
     set convert_arg3 = 4 # dvcs
 else if ($arg1 == "processing_scripts/processing_calibration.groovy") then
@@ -103,6 +105,12 @@ else if ($arg1 == "processing_scripts/processing_mc_three_particles.groovy") the
     set root_file = "$5.root"
     ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
 else if ($arg1 == "processing_scripts/processing_four_particles.groovy") then
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4" "$5" "$6.txt" "$7"
+    # Run the convert_txt_to_root program
+    set txt_file = "$6.txt"
+    set root_file = "$6.root"
+    ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
+else if ($arg1 == "processing_scripts/processing_exclusive_pi0.groovy") then
     coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4" "$5" "$6.txt" "$7"
     # Run the convert_txt_to_root program
     set txt_file = "$6.txt"
