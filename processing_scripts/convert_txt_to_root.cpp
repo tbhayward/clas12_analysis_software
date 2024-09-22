@@ -1038,10 +1038,10 @@ int main(int argc, char *argv[]) {
             // Calculate the polar angle of the parent hadron's momentum
             p_theta = vectorPolarAngle(p_parent_z, p_p);
 
-            t = gett(p_p, p_theta);
-            t1 = gett(p1_p, p1_theta);
-            t2 = gett(p2_p, p2_theta); 
-            tmin = gettmin(x); 
+            // t = gett(p_p, p_theta);
+            // t1 = gett(p1_p, p1_theta);
+            // t2 = gett(p2_p, p2_theta); 
+            // tmin = gettmin(x); 
 
             tree->Fill(); // Fill the tree with the read data
         }
@@ -1111,7 +1111,8 @@ int main(int argc, char *argv[]) {
             open_angle_ep >> open_angle_ep1 >> open_angle_ep2 >> open_angle_ep3 >>
             open_angle_p1p2 >> open_angle_p1p3 >> open_angle_p2p3 >>
             Q2 >> W >> Mx2 >> Mx2_1 >> Mx2_2 >> Mx2_3 >> Mx2_12 >> Mx2_13 >> Mx2_23 >> 
-            x >> y >> z >> z1 >> z2 >> z3 >> z12 >> z13 >> z23 >> 
+            x >> t >> t1 >> t2 >> t3 >> t12 >> t13 >> t23 >> 
+            y >> z >> z1 >> z2 >> z3 >> z12 >> z13 >> z23 >> 
             zeta >> zeta1 >> zeta2 >> zeta3 >> zeta12 >> zeta13 >> zeta23 >>
             pT >> pT1 >> pT2 >> pT3 >> pT12 >> pT13 >> pT23 >> 
             Mh >> Mh12 >> Mh13 >> Mh23 >> 
@@ -1132,10 +1133,10 @@ int main(int argc, char *argv[]) {
                 }
             }
 
-            t1 = gett(p1_p, p1_theta);
-            t2 = gett(p2_p, p2_theta); 
-            t3 = gett(p3_p, p3_theta); 
-            tmin = gettmin(x); 
+            // t1 = gett(p1_p, p1_theta);
+            // t2 = gett(p2_p, p2_theta); 
+            // t3 = gett(p3_p, p3_theta); 
+            // tmin = gettmin(x); 
 
             tree->Fill(); // Fill the tree with the read data
         }
