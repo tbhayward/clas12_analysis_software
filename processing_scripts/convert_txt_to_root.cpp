@@ -187,6 +187,7 @@ int main(int argc, char *argv[]) {
     int fiducial_status;
     int num_pos, num_neg, num_neutral;
     int runnum, evnum, helicity;
+    int detector, detector1, detector2, detector3;
     double beam_pol, target_pol, e_p, e_theta, e_phi, vz_e, Q2, W, Mx, Mx2, x, y;
     double t, tmin;
     double z, xF, pT, zeta, eta, phi, DepA, DepB, DepC, DepV, DepW;
@@ -327,6 +328,7 @@ int main(int argc, char *argv[]) {
         tree->Branch("runnum", &runnum, "runnum/I");
         tree->Branch("evnum", &evnum, "evnum/I");
         tree->Branch("helicity", &helicity, "helicity/I");
+        tree->Branch("detector", &detector, "detector/I");
         tree->Branch("beam_pol", &beam_pol, "beam_pol/D");
         tree->Branch("target_pol", &target_pol, "target_pol/D");
         tree->Branch("e_p", &e_p, "e_p/D");
@@ -433,6 +435,8 @@ int main(int argc, char *argv[]) {
         tree->Branch("helicity", &helicity, "helicity/I");
         tree->Branch("beam_pol", &beam_pol, "beam_pol/D");
         tree->Branch("target_pol", &target_pol, "target_pol/D");
+        tree->Branch("detector1", &detector1, "detector1/I");
+        tree->Branch("detector2", &detector2, "detector2/I");
         tree->Branch("e_p", &e_p, "e_p/D");
         tree->Branch("e_theta", &e_theta, "e_theta/D");
         tree->Branch("e_phi", &e_phi, "e_phi/D");
@@ -624,6 +628,9 @@ int main(int argc, char *argv[]) {
         tree->Branch("helicity", &helicity, "helicity/I");
         tree->Branch("beam_pol", &beam_pol, "beam_pol/D");
         tree->Branch("target_pol", &target_pol, "target_pol/D");
+        tree->Branch("detector1", &detector1, "detector1/D");
+        tree->Branch("detector2", &detector2, "detector2/D");
+        tree->Branch("detector3", &detector3, "detector3/D");
         tree->Branch("e_p", &e_p, "e_p/D");
         tree->Branch("e_theta", &e_theta, "e_theta/D");
         tree->Branch("e_phi", &e_phi, "e_phi/D");
@@ -948,7 +955,7 @@ int main(int argc, char *argv[]) {
     if (script_index == 1 && is_mc == 0) {
         // double helicity_double;
         while (infile >> fiducial_status >> num_pos >> num_neg >> num_neutral >> 
-            runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
+            runnum >> evnum >> helicity >> detector >> e_p >> e_theta >> e_phi >> vz_e >> 
             p_p >> p_theta >> p_phi >> vz_p >> open_angle >> Q2 >> W >> Mx2 >> x >> t >> tmin >> y >> z >> xF >> 
             pT >> zeta >> eta >> phi >> DepA >> DepB >> DepC >> DepV >> DepW) {
 
@@ -993,7 +1000,7 @@ int main(int argc, char *argv[]) {
     } 
     if (script_index == 2 && is_mc == 0) {
         while (infile >> fiducial_status >> num_pos >> num_neg >> num_neutral >>
-            runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
+            runnum >> evnum >> helicity >> detector1 >> detector2 >> e_p >> e_theta >> e_phi >> vz_e >> 
             p1_p >> p1_theta >> p1_phi >> vz_p1 >> p2_p >> p2_theta >> p2_phi >> vz_p2 >> 
             open_angle_ep >> open_angle_ep1 >> open_angle_ep2 >> open_angle_p1p2 >> 
             Q2 >> W >> Mx2 >> Mx2_1 >> Mx2_2 >> x >> y >> z >> z1 >> z2 >> Mh >> xF >> xF1 >> xF2 >> 
@@ -1096,7 +1103,7 @@ int main(int argc, char *argv[]) {
     }
     if (script_index == 3 && is_mc == 0) {
         while (infile >> fiducial_status >> num_pos >> num_neg >> num_neutral >> 
-            runnum >> evnum >> helicity >> 
+            runnum >> evnum >> helicity >> detector1 >> detector2 >> detector3 >>
             e_p >> e_theta >> e_phi >> vz_e >> 
             p1_p >> p1_theta >> p1_phi >> vz_p1 >> p2_p >> p2_theta >> p2_phi >> vz_p2 >>
             p3_p >> p3_theta >> p3_phi >> vz_p3 >> 
@@ -1135,7 +1142,8 @@ int main(int argc, char *argv[]) {
 
     // DVCS
     if (script_index == 4 && is_mc == 0) {
-        while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
+        while (infile >> fiducial_status >> num_pos >> num_neg >> num_neutral >> 
+            runnum >> evnum >> helicity >> detector1 >> detector2 >> e_p >> e_theta >> e_phi >> vz_e >> 
             p1_p >> p1_theta >> p1_phi >> vz_p1 >> p2_p >> p2_theta >> p2_phi >> vz_p2 >> 
             open_angle_ep >> open_angle_ep1 >> open_angle_ep2 >> open_angle_p1p2 >>
             Q2 >> W >> Mx2 >> Mx2_1 >> Mx2_2 >> x >> t >> t1 >> t2 >> tmin >> y >> 

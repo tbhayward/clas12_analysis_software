@@ -230,6 +230,8 @@ public static void main(String[] args) {
 								.append(runnum).append(" ")
 			                	.append(evnum).append(" ")
 			                	.append(helicity).append(" ")
+			                	.append(detector1).append(" ")
+			                	.append(detector2).append(" ")
 			                	.append(e_p).append(" ")
 			                	.append(e_theta).append(" ")
 			                	.append(e_phi).append(" ")
@@ -312,15 +314,15 @@ public static void main(String[] args) {
 		}
 
 		println("1: fiducial_status, 2: num_pos, 3: num_neg, 4: num_neutrals, " +
-	    "5: runnum, 6: evnum, 7: helicity, 8: e_p, 9: e_theta, 10: e_phi, 11: vz_e, " +
-	    "12: p1_p, 13: p1_theta, 14: p1_phi, 15: vz_p1, 16: p2_p, 17: p2_theta, 18: p2_phi, 19: vz_p2, " +
-	    "20: open_angle_ep, 21: open_angle_ep1, 22: open_angle_ep2, 23: open_angle_p1p2, " +
-	    "24: Q2, 25: W, 26: Mx2, 27: Mx2_1, 28: Mx2_2, 29: x, 30: t, 31: t1, 32: t2, 33: tmin, 34: y, 35: z, " +
-	    "36: z1, 37: z2, 38: Mh, 39: xF, 40: xF1, 41: xF2, 42: pT, 43: pT1, 44: pT2, 45: pTpT, " +
-	    "46: zeta, 47: zeta1, 48: zeta2, 49: eta, 50: eta1, 51: eta2, 52: Delta_eta, 53: eta1_gN, 54: eta2_gN, " +
-	    "55: phi1, 56: phi2, 57: Delta_phi, 58: phih, 59: phiR, 60: theta, " +
-	    "61: DepA, 62: DepB, 63: DepC, 64: DepV, 65: DepW, 66: Emiss2, 67: theta_gamma_gamma, " +
-	    "68: pTmiss");
+	    "5: runnum, 6: evnum, 7: helicity, 8: detector1, 9: detector2, 10: e_p, 11: e_theta, 12: e_phi, 13: vz_e, " +
+	    "14: p1_p, 15: p1_theta, 16: p1_phi, 17: vz_p1, 18: p2_p, 19: p2_theta, 20: p2_phi, 21: vz_p2, " +
+	    "22: open_angle_ep, 23: open_angle_ep1, 24: open_angle_ep2, 25: open_angle_p1p2, " +
+	    "26: Q2, 27: W, 28: Mx2, 29: Mx2_1, 30: Mx2_2, 31: x, 32: t, 33: t1, 34: t2, 35: tmin, 36: y, 37: z, " +
+	    "38: z1, 39: z2, 40: Mh, 41: xF, 42: xF1, 43: xF2, 44: pT, 45: pT1, 46: pT2, 47: pTpT, " +
+	    "48: zeta, 49: zeta1, 50: zeta2, 51: eta, 52: eta1, 53: eta2, 54: Delta_eta, 55: eta1_gN, 56: eta2_gN, " +
+	    "57: phi1, 58: phi2, 59: Delta_phi, 60: phih, 61: phiR, 62: theta, " +
+	    "63: DepA, 64: DepB, 65: DepC, 66: DepV, 67: DepW, 68: Emiss2, 69: theta_gamma_gamma, " +
+	    "70: pTmiss");
 
 		println("Analyzing dvcs.");
 		println("output text file is: $file");
