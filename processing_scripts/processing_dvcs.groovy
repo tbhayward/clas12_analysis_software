@@ -172,9 +172,9 @@ public static void main(String[] args) {
 			                t2 = variables.t2();
 			                tmin = variables.tmin();
 			                y = variables.y(); // E_scat/E_beam
-			                Mx = variables.Mx2(); // missing mass
-			                Mx1 = variables.Mx2_1(); // missing mass calculated with p1
-			                Mx2 = variables.Mx2_2(); // missing mass squared
+			                Mx2 = variables.Mx2(); // missing mass
+			                Mx2_1 = variables.Mx2_1(); // missing mass calculated with p1
+			                Mx2_2 = variables.Mx2_2(); // missing mass squared
 
 			                // SIDIS variables
 			                z = variables.z(); // fractional hadron energy wrt virtual photon
