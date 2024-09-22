@@ -215,7 +215,7 @@ public static void main(String[] args) {
 		                	.append(p_theta).append(" ")
 		                	.append(p_phi).append(" ")
 		                	.append(vz_p).append(" ")
-		                	.append(open_angle).append(" ");
+		                	.append(open_angle).append(" ")
 		                	.append(Q2).append(" ")
 		                	.append(W).append(" ")
 		                	.append(Mx2).append(" ")
