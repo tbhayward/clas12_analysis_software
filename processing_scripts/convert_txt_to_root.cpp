@@ -1157,6 +1157,30 @@ int main(int argc, char *argv[]) {
             eta1_gN >> eta2_gN >> phi1 >> phi2 >> Delta_phi >> phi >> phiR >> theta >> 
             DepA >> DepB >> DepC >> DepV >> DepW >> Emiss2 >> theta_gamma_gamma >> pTmiss) {
 
+            // Print out the read values
+        std::cout << "Read values: " << fiducial_status << " " << num_pos << " " << num_neg << " "
+                  << num_neutral << " " << runnum << " " << evnum << " " << helicity << " "
+                  << detector1 << " " << detector2 << " " << detector3 << " " << e_p << " " 
+                  << e_theta << " " << e_phi << " " << vz_e << " " << p1_p << " " << p1_theta << " " 
+                  << p1_phi << " " << vz_p1 << " " << p2_p << " " << p2_theta << " " << p2_phi << " "
+                  << vz_p2 << " " << p3_p << " " << p3_theta << " " << p3_phi << " " << vz_p3 << " "
+                  << open_angle_ep << " " << open_angle_ep1 << " " << open_angle_ep2 << " "
+                  << open_angle_ep3 << " " << open_angle_p1p2 << " " << open_angle_p1p3 << " "
+                  << open_angle_p2p3 << " " << Q2 << " " << W << " " << Mx2 << " " << Mx2_1 << " "
+                  << Mx2_2 << " " << Mx2_3 << " " << Mx2_12 << " " << Mx2_13 << " " << Mx2_23 << " "
+                  << x << " " << t << " " << t1 << " " << t2 << " " << t3 << " " << t12 << " " << t13 
+                  << " " << t23 << " " << tmin << " " << y << " " << z << " " << z1 << " " << z2 << " "
+                  << z3 << " " << z12 << " " << z13 << " " << z23 << " " << zeta << " " << zeta1 << " "
+                  << zeta2 << " " << zeta3 << " " << zeta12 << " " << zeta13 << " " << zeta23 << " "
+                  << pT << " " << pT1 << " " << pT2 << " " << pT3 << " " << pT12 << " " << pT13 << " "
+                  << pT23 << " " << Mh << " " << Mh12 << " " << Mh13 << " " << Mh23 << " " << xF << " "
+                  << xF1 << " " << xF2 << " " << xF3 << " " << xF12 << " " << xF13 << " " << xF23 << " "
+                  << eta << " " << eta1 << " " << eta2 << " " << eta3 << " " << eta12 << " " << eta13 
+                  << " " << eta23 << " " << phi1 << " " << phi2 << " " << phi3 << " " << phi12 << " "
+                  << phi13 << " " << phi23 << " " << phih << " " << phiR << " " << theta << " "
+                  << Delta_phi12 << " " << Delta_phi13 << " " << Delta_phi23 << " " << DepA << " "
+                  << DepB << " " << DepC << " " << DepV << " " << DepW << std::endl;
+
             beam_pol = getPol(runnum);
             if (runnum < 16000) { target_pol = 0; }
             else { 
