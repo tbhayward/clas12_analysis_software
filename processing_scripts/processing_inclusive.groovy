@@ -62,7 +62,7 @@ public static void main(String[] args) {
 	// declare physics event variables
 	int helicity;
 	double e_p, e_theta, e_phi, vz_e;
-	double Q2, W, y, Mx, Mx2, x;
+	double Q2, W, y, Mx2, x;
 
 	// load my kinematic fitter/PID
 	GenericKinematicFitter fitter = new analysis_fitter(10.6041); 
@@ -135,7 +135,6 @@ public static void main(String[] args) {
 	                W = variables.W(); // hadronic mass
 	                x = variables.x(); // Bjorken-x
 	                y = variables.y(); // E_scat/E_beam
-	                Mx = variables.Mx(); // missing mass
 	                Mx2 = variables.Mx2(); // missing mass square
 
 	                // vertices
@@ -163,7 +162,6 @@ public static void main(String[] args) {
 	                	.append(vz_e).append(" ")
 	                	.append(Q2).append(" ")
 	                	.append(W).append(" ")
-	                	.append(Mx).append(" ")
 	                	.append(Mx2).append(" ")
 	                	.append(x).append(" ")
 	                	.append(y).append(" ")
@@ -196,7 +194,7 @@ public static void main(String[] args) {
 
 		println("1: fiducial_status, 2: num_pos, 3: num_neg, 4: num_neutrals, " +
 	    "5: runnum, 6: evnum, 7: helicity, 8: e_p, 9: e_theta, 10: e_phi, 11: vz_e, " +
-	    "12: Q2, 13: W, 14: Mx, 15: Mx2, 16: x, 17: y, 18: DepA, 19: DepB, 20: DepC, 21: DepV, 22: DepW");
+	    "12: Q2, 13: W, 14: Mx2, 15: x, 16: y, 17: DepA, 18: DepB, 19: DepC, 20: DepV, 21: DepW");
 
 		println("output text file is: $file");
 	}

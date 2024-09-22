@@ -27,7 +27,7 @@ public class Dihadrons {
     // hadrons. Convention is ordered by mass, then charge. For example in pi+pi- pi+ is hadron 1
     // in proton+pi+ the proton is p1, in k+pi- the kaon is p1.
     protected double Q2, W, gamma, nu, x, y, t, t1, t2, tmin, z, z1, z2;
-    protected double Mx, Mx1, Mx2, Mx3; // Mx is the Mx(ep1p2), Mx1 is Mx(ep1), Mx2 is Mx(ep2), Mx3 is Mx(e)
+    protected double Mx2, Mx2_1, Mx2_2; // Mx is the Mx(ep1p2), Mx1 is Mx(ep1), Mx2 is Mx(ep2), Mx3 is Mx(e)
     protected double Mh, pT, pT1, pT2, xF, xF1, xF2, zeta, zeta1, zeta2;
     protected double eta, eta1, eta2, eta_gN, eta1_gN, eta2_gN;
     // eta is the rapidity, preferred by theorists in the Breit frame (e.g. eta1 is in Breit) 
@@ -45,8 +45,6 @@ public class Dihadrons {
     protected double Emiss0, Emiss1, Emiss2, Emiss3;
     protected double theta_gamma_gamma;
     protected double pTmiss;
-    protected double Mxprotonsquared;
-    protected double Mxgammasquared;
 
     // depolarization vectors defining the polarization lost during the transfer from beam to 
     // the virtual photon. 
@@ -72,7 +70,6 @@ public class Dihadrons {
     // defined as the sampling fraction for electron candidates and the distance away from the 
     // mean beta(p) value from the TOF for hadron candidates
 
-    protected int p1_RICH_pid;
     protected double p1_beta, p1_RQ_prob, p1_el_prob, p1_pi_prob, p1_k_prob, p1_pr_prob;
     protected double p2_beta, p2_RQ_prob, p2_el_prob, p2_pi_prob, p2_k_prob, p2_pr_prob;
 
@@ -230,11 +227,6 @@ public class Dihadrons {
         Depolarization_V = kinematic_variables.Depolarization_V(gamma, y);
         Depolarization_W = kinematic_variables.Depolarization_W(gamma, y);
 
-        // calculate the Mx3, the missing mass of just Mx(e)
-        LorentzVector lv_Mx3 = new LorentzVector(lv_q);
-        lv_Mx3.add(lv_target);
-        Mx3 = lv_Mx3.mass();
-
         // set up boost to gamma*-nucleon center of mass frame
         LorentzVector gN = new LorentzVector(lv_q);
         gN.add(lv_target);
@@ -317,11 +309,9 @@ public class Dihadrons {
         z2 = kinematic_variables.z(lv_p2, lv_q);
 
         // missing mass calculations
-        Mx = kinematic_variables.Mx(lv_q, lv_target, lv_p1, lv_p2);
-        Mx1 = kinematic_variables.Mx(lv_q, lv_target, lv_p1);
-        Mx2 = kinematic_variables.Mx(lv_q, lv_target, lv_p2);
-        Mxprotonsquared = kinematic_variables.Mx2(lv_q, lv_target, lv_p1);
-        Mxgammasquared = kinematic_variables.Mx2(lv_q, lv_target, lv_p2);
+        Mx2 = kinematic_variables.Mx2(lv_q, lv_target, lv_p1, lv_p2);
+        Mx2_1 = kinematic_variables.Mx2(lv_q, lv_target, lv_p1);
+        Mx2_2 = kinematic_variables.Mx2(lv_q, lv_target, lv_p2);
 
         // boost to gamma*-nucleon center of mass frame
         LorentzVector lv_p_gN = new LorentzVector(lv_p);
@@ -641,21 +631,17 @@ public class Dihadrons {
         return Double.valueOf(Math.round(z2 * 100000)) / 100000;
     }// returns z2
 
-    public double Mx() {
-        return Double.valueOf(Math.round(Mx * 100000)) / 100000;
-    }// returns Mx(ep1p2)
-
-    public double Mx1() {
-        return Double.valueOf(Math.round(Mx1 * 100000)) / 100000;
-    }// returns Mx(ep1)
-
     public double Mx2() {
         return Double.valueOf(Math.round(Mx2 * 100000)) / 100000;
-    }// returns Mx(ep2)
+    }// returns Mx(ep1p2)
 
-    public double Mx3() {
-        return Double.valueOf(Math.round(Mx3 * 100000)) / 100000;
-    }// returns Mx(e)
+    public double Mx2_1() {
+        return Double.valueOf(Math.round(Mx2_1 * 100000)) / 100000;
+    }// returns Mx(ep1)
+
+    public double Mx2_2() {
+        return Double.valueOf(Math.round(Mx2_2 * 100000)) / 100000;
+    }// returns Mx(ep2)
 
     public double Mh() {
         return Double.valueOf(Math.round(Mh * 100000)) / 100000;

@@ -67,7 +67,6 @@ source env.csh
 echo "Sourcing environ.csh in clasqaDB..."
 # source environ.csh || echo "Error sourcing environ.csh"
 echo "Returning to the parent directory..."
-env
 cd ..
 
 g++ `root-config --cflags --libs` -o processing_scripts/convert_txt_to_root processing_scripts/convert_txt_to_root.cpp

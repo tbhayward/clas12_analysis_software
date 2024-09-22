@@ -63,7 +63,7 @@ public static void main(String[] args) {
 	int helicity;
 	double e_p, e_theta, e_phi, p1_phi, p1_p, p1_theta, p2_phi, p2_p, p2_theta; 
 	double vz_e, vz_p1, vz_p2;
-	double Q2, W, y, Mx, Mx1, Mx2; 
+	double Q2, W, y, Mx2, Mx2_1, Mx2_2; 
 	double x, z, xF, pT, eta, eta_gN, zeta;
 	double z1, z2, xF1, xF2, Mh, pT1, pT2, pTpT, eta1, eta2, Delta_eta, eta1_gN, eta2_gN;
 	double phi1, phi2, Delta_phi, phih, phiR, theta;
@@ -158,9 +158,9 @@ public static void main(String[] args) {
 			                W = variables.W(); // hadronic mass
 			                x = variables.x(); // Bjorken-x
 			                y = variables.y(); // E_scat/E_beam
-			                Mx = variables.Mx(); // missing mass
-			                Mx1 = variables.Mx1(); // missing mass calculated with p1
-			                Mx2 = variables.Mx2(); // missing mass squared
+			                Mx = variables.Mx2(); // missing mass
+			                Mx1 = variables.Mx2_1(); // missing mass calculated with p1
+			                Mx2 = variables.Mx2_2(); // missing mass squared
 
 			                // SIDIS variables
 			                z = variables.z(); // fractional hadron energy wrt virtual photon
@@ -232,9 +232,9 @@ public static void main(String[] args) {
 			                	.append(vz_p2).append(" ")
 			                	.append(Q2).append(" ")
 			                	.append(W).append(" ")
-			                	.append(Mx).append(" ")
-			                	.append(Mx1).append(" ")
 			                	.append(Mx2).append(" ")
+			                	.append(Mx2_1).append(" ")
+			                	.append(Mx2_2).append(" ")
 			                	.append(x).append(" ")
 			                	.append(y).append(" ")
 			                	.append(z).append(" ")
@@ -270,9 +270,7 @@ public static void main(String[] args) {
 			                    .append(Depolarization_W).append(" ")
 			                    .append(Emiss2).append(" ")
 			                    .append(theta_gamma_gamma).append(" ")
-			                    .append(pTmiss).append(" ")
-			                    .append(Mxgammasquared).append(" ")
-			                    .append(Mxprotonsquared).append("\n");
+			                    .append(pTmiss).append("\n");
 
 			                // Append the line to the batchLines StringBuilder
 			                batchLines.append(line.toString());
@@ -300,12 +298,12 @@ public static void main(String[] args) {
 		System.out.println("1: fiducial_status, 2: num_pos, 3: num_neg, 4: num_neutrals, " +
 	    "5: runnum, 6: evnum, 7: helicity, 8: e_p, 9: e_theta, 10: e_phi, 11: vz_e, " +
 	    "12: p1_p, 13: p1_theta, 14: p1_phi, 15: vz_p1, 16: p2_p, 17: p2_theta, 18: p2_phi, 19: vz_p2, " +
-	    "20: Q2, 21: W, 22: Mx, 23: Mx1, 24: Mx2, 25: x, 26: y, 27: z, " +
+	    "20: Q2, 21: W, 22: Mx2, 23: Mx2_1, 24: Mx2_2, 25: x, 26: y, 27: z, " +
 	    "28: z1, 29: z2, 30: Mh, 31: xF, 32: xF1, 33: xF2, 34: pT, 35: pT1, 36: pT2, 37: pTpT, " +
 	    "38: zeta, 39: zeta1, 40: zeta2, 41: eta, 42: eta1, 43: eta2, 44: Delta_eta, 45: eta1_gN, 46: eta2_gN, " +
 	    "47: phi1, 48: phi2, 49: Delta_phi, 50: phih, 51: phiR, 52: theta, " +
 	    "53: DepA, 54: DepB, 55: DepC, 56: DepV, 57: DepW, 58: Emiss2, 59: theta_gamma_gamma, " +
-	    "60: pTmiss, 61: Mxgammasquared, 62: Mxprotonsquared");
+	    "60: pTmiss");
 
 		println("Analyzing dvcs.");
 		println("output text file is: $file");

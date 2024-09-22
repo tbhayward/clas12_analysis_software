@@ -85,7 +85,7 @@ public static void main(String[] args) {
 	// declare physics event variables
 	int helicity;
 	double e_p, e_theta, e_phi, p_phi, p_p, p_theta;
-	double Q2, W, y, Mx, Mx2, x, z, xF, pT, eta, zeta, phi, vz_e, vz_p;
+	double Q2, W, y, Mx2, x, z, xF, pT, eta, zeta, phi, vz_e, vz_p;
 	double Depolarization_A, Depolarization_B, Depolarization_C;
 	double Depolarization_V, Depolarization_W;
 
@@ -170,7 +170,6 @@ public static void main(String[] args) {
 		                W = variables.W(); // hadronic mass
 		                x = variables.x(); // Bjorken-x
 		                y = variables.y(); // E_scat/E_beam
-		                Mx = variables.Mx(); // missing mass
 		                Mx2 = variables.Mx2(); // missing mass square
 
 		                // SIDIS variables
@@ -213,7 +212,6 @@ public static void main(String[] args) {
 		                	.append(vz_p).append(" ")
 		                	.append(Q2).append(" ")
 		                	.append(W).append(" ")
-		                	.append(Mx).append(" ")
 		                	.append(Mx2).append(" ")
 		                	.append(x).append(" ")
 		                	.append(y).append(" ")
@@ -253,9 +251,9 @@ public static void main(String[] args) {
 
 		println("1: fiducial_status, 2: num_pos, 3: num_neg, 4: num_neutrals, " +
 	    "5: runnum, 6: evnum, 7: helicity, 8: e_p, 9: e_theta, 10: e_phi, 11: vz_e, " +
-	    "12: p_p, 13: p_theta, 14: p_phi, 15: vz_p, 16: Q2, 17: W, 18: Mx, 19: Mx2, " +
-	    "20: x, 21: y, 22: z, 23: xF, 24: pT, 25: zeta, 26: eta, 27: phi (trento), " +
-	    "28: DepA, 29: DepB, 30: DepC, 31: DepV, 32: DepW");
+	    "12: p_p, 13: p_theta, 14: p_phi, 15: vz_p, 16: Q2, 17: W, 18: Mx2, " +
+	    "19: x, 20: y, 21: z, 22: xF, 23: pT, 24: zeta, 25: eta, 26: phi (trento), " +
+	    "27: DepA, 28: DepB, 29: DepC, 30: DepV, 31: DepW");
 
 		println("Set p1 PID = $p1_Str");
 		println("output text file is: $file");

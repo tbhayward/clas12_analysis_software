@@ -188,17 +188,17 @@ int main(int argc, char *argv[]) {
     int fiducial_status;
     int num_pos, num_neg, num_neutral;
     int runnum, evnum, helicity;
-    double beam_pol, target_pol, e_p, e_theta, e_phi, vz_e, Q2, W, Mx, Mx2, x, y;
+    double beam_pol, target_pol, e_p, e_theta, e_phi, vz_e, Q2, W, Mx2, x, y;
     double t, tmin;
     double z, xF, pT, zeta, eta, phi, DepA, DepB, DepC, DepV, DepW;
     double p_p, p_theta, p_phi, vz_p;
     // Additional variables for one or two hadrons
     double p1_p, p1_theta, p1_phi, vz_p1, p2_p, p2_theta, p2_phi, vz_p2;
     double z1, z2, Mh, xF1, xF2, pT1, pT2, pTpT, zeta1, zeta2;
-    double t1, t1min, t2, t2min, Mx1;
+    double t1, t1min, t2, t2min, Mx2_1, Mx2_2;
     double eta1, eta2, Delta_eta, eta1_gN, eta2_gN;
     double phi1, phi2, Delta_phi, phih, phiR, theta;
-    double Emiss2, theta_gamma_gamma, pTmiss, Mxgammasquared, Mxprotonsquared;
+    double Emiss2, theta_gamma_gamma, pTmiss;
     // Additional variables for three hadrons
     double p3_p, p3_theta, p3_phi, vz_p3;
     double z3, z12, z13, z23, Mh12, Mh13, Mh23, xF3, xF12, xF13, xF23;
@@ -266,7 +266,6 @@ int main(int argc, char *argv[]) {
         tree->Branch("vz_e", &vz_e, "vz_e/D");
         tree->Branch("Q2", &Q2, "Q2/D");
         tree->Branch("W", &W, "W/D");
-        tree->Branch("Mx", &Mx, "Mx/D");
         tree->Branch("Mx2", &Mx2, "Mx2/D");
         tree->Branch("x", &x, "x/D");
         tree->Branch("y", &y, "y/D");
@@ -340,7 +339,6 @@ int main(int argc, char *argv[]) {
         tree->Branch("vz_p", &vz_p, "vz_p/D");
         tree->Branch("Q2", &Q2, "Q2/D");
         tree->Branch("W", &W, "W/D");
-        tree->Branch("Mx", &Mx, "Mx/D");
         tree->Branch("Mx2", &Mx2, "Mx2/D");
         tree->Branch("x", &x, "x/D");
         tree->Branch("y", &y, "y/D");
@@ -448,9 +446,9 @@ int main(int argc, char *argv[]) {
         tree->Branch("vz_p2", &vz_p2, "vz_p2/D");
         tree->Branch("Q2", &Q2, "Q2/D");
         tree->Branch("W", &W, "W/D");
-        tree->Branch("Mx", &Mx, "Mx/D");
-        tree->Branch("Mx1", &Mx1, "Mx1/D");
         tree->Branch("Mx2", &Mx2, "Mx2/D");
+        tree->Branch("Mx2_1", &Mx2_1, "Mx2_1/D");
+        tree->Branch("Mx2_2", &Mx2_2, "Mx22_/D");
         tree->Branch("x", &x, "x/D");
         tree->Branch("y", &y, "y/D");
         tree->Branch("t", &t, "t/D");
@@ -738,9 +736,9 @@ int main(int argc, char *argv[]) {
         tree->Branch("vz_p2", &vz_p2, "vz_p2/D");
         tree->Branch("Q2", &Q2, "Q2/D");
         tree->Branch("W", &W, "W/D");
-        tree->Branch("Mx", &Mx, "Mx/D");
-        tree->Branch("Mx1", &Mx1, "Mx1/D");
-        tree->Branch("Mx2", &Mx2, "Mx2/D");
+        tree->Branch("Mx2", &Mx2, "Mx2_/D");
+        tree->Branch("Mx2_1", &Mx2_1, "Mx2_1/D");
+        tree->Branch("Mx2_2", &Mx2_2, "Mx2_2/D");
         tree->Branch("x", &x, "x/D");
         tree->Branch("y", &y, "y/D");
         tree->Branch("t", &t, "t/D");
@@ -781,8 +779,6 @@ int main(int argc, char *argv[]) {
         tree->Branch("Emiss2", &Emiss2, "Emiss2/D");
         tree->Branch("theta_gamma_gamma", &theta_gamma_gamma, "theta_gamma_gamma/D");
         tree->Branch("pTmiss", &pTmiss, "pTmiss/D");
-        tree->Branch("Mxgammasquared", &Mxgammasquared, "Mxgammasquared/D");
-        tree->Branch("Mxprotonsquared", &Mxprotonsquared, "Mxprotonsquared/D");
     }
     // Case for calibration script (not actually five hadrons)
     if (hadron_count == 5 && is_mc == 0) {
@@ -900,7 +896,7 @@ int main(int argc, char *argv[]) {
     if (hadron_count == 0 && is_mc == 0) {
         while (infile >> fiducial_status >> num_pos >> num_neg >> num_neutral >> 
             runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
-            Q2 >> W >> Mx >> Mx2 >> x >> y >> DepA >> DepB >> DepC >> DepV >> DepW) {
+            Q2 >> W >> Mx2 >> x >> y >> DepA >> DepB >> DepC >> DepV >> DepW) {
 
             beam_pol = getPol(runnum);
             if (runnum < 16000) { target_pol = 0; }
@@ -948,7 +944,7 @@ int main(int argc, char *argv[]) {
         // double helicity_double;
         while (infile >> fiducial_status >> num_pos >> num_neg >> num_neutral >> 
             runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
-            p_p >> p_theta >> p_phi >> vz_p >> Q2 >> W >> Mx >> Mx2 >> x >> y >> z >> xF >> 
+            p_p >> p_theta >> p_phi >> vz_p >> Q2 >> W >> Mx2 >> x >> y >> z >> xF >> 
             pT >> zeta >> eta >> phi >> DepA >> DepB >> DepC >> DepV >> DepW) {
 
             beam_pol = getPol(runnum);
@@ -994,7 +990,7 @@ int main(int argc, char *argv[]) {
         while (infile >> fiducial_status >> num_pos >> num_neg >> num_neutral >>
             runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             p1_p >> p1_theta >> p1_phi >> vz_p1 >> p2_p >> p2_theta >> p2_phi >> vz_p2 >> 
-            Q2 >> W >> Mx >> Mx1 >> Mx2 >> x >> y >> z >> z1 >> z2 >> Mh >> xF >> xF1 >> xF2 >> 
+            Q2 >> W >> Mx2 >> Mx2_1 >> Mx2_2 >> x >> y >> z >> z1 >> z2 >> Mh >> xF >> xF1 >> xF2 >> 
             pT >> pT1 >> pT2 >> pTpT >> zeta >> zeta1 >> zeta2 >> eta >> eta1 >> eta2 >> Delta_eta>> 
             eta1_gN >> eta2_gN >> phi1 >> phi2 >> Delta_phi >> phi >> phiR >> theta >> 
             DepA >> DepB >> DepC >> DepV >> DepW) {
@@ -1131,14 +1127,14 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    // DVCS
     if (hadron_count == 4 && is_mc == 0) {
         while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             p1_p >> p1_theta >> p1_phi >> vz_p1 >> p2_p >> p2_theta >> p2_phi >> vz_p2 >> 
-            Q2 >> W >> Mx >> Mx1 >> Mx2 >> x >> y >> z >> z1 >> z2 >> Mh >> xF >> xF1 >> xF2 >> 
+            Q2 >> W >> Mx2 >> Mx2_1 >> Mx2_2 >> x >> y >> z >> z1 >> z2 >> Mh >> xF >> xF1 >> xF2 >> 
             pT >> pT1 >> pT2 >> pTpT >> zeta >> zeta1 >> zeta2 >> eta >> eta1 >> eta2 >> Delta_eta>> 
             eta1_gN >> eta2_gN >> phi1 >> phi2 >> Delta_phi >> phi >> phiR >> theta >> 
-            DepA >> DepB >> DepC >> DepV >> DepW >> Emiss2 >> theta_gamma_gamma >> pTmiss >>
-            Mxgammasquared >> Mxprotonsquared) {
+            DepA >> DepB >> DepC >> DepV >> DepW >> Emiss2 >> theta_gamma_gamma >> pTmiss) {
 
             beam_pol = getPol(runnum);
             if (runnum < 16000) { target_pol = 0; }
