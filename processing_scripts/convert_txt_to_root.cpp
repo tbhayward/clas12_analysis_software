@@ -668,6 +668,9 @@ int main(int argc, char *argv[]) {
         tree->Branch("t1", &t1, "t1/D");
         tree->Branch("t2", &t2, "t2/D");
         tree->Branch("t3", &t3, "t3/D");
+        tree->Branch("t12", &t12, "t12/D");
+        tree->Branch("t13", &t13, "t13/D");
+        tree->Branch("t23", &t23, "t23/D");
         tree->Branch("tmin", &tmin, "tmin/D");
         tree->Branch("z", &z, "z/D");
         tree->Branch("z1", &z1, "z1/D");
