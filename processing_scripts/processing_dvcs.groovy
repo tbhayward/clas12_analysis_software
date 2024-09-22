@@ -135,7 +135,7 @@ public static void main(String[] args) {
 							2212, current_p1, 22, current_p2, Eb.Eb());
 			            // this is my class for defining all relevant kinematic variables
 			            if (variables.channel_test(variables)) {
-
+			            	fiducial_status = variables.get_fiducial_status();
 			                helicity = variables.get_helicity(); // helicity of event
 			                detector1 = variables.get_detector1();
 			                detector2 = variables.get_detector2();
