@@ -187,7 +187,7 @@ int main(int argc, char *argv[]) {
     int fiducial_status;
     int num_pos, num_neg, num_neutral;
     int runnum, evnum, helicity;
-    double beam_pol, target_pol, e_p, e_theta, e_phi, vz_e, Q2, W, Mx2, x, y;
+    double beam_pol, target_pol, e_p, e_theta, e_phi, vz_e, Q2, W, Mx, Mx2, x, y;
     double t, tmin;
     double z, xF, pT, zeta, eta, phi, DepA, DepB, DepC, DepV, DepW;
     double p_p, p_theta, p_phi, vz_p;
@@ -196,6 +196,7 @@ int main(int argc, char *argv[]) {
     double open_angle, open_angle_ep, open_angle_ep1, open_angle_ep2, open_angle_p1p2;
     double z1, z2, Mh, xF1, xF2, pT1, pT2, pTpT, zeta1, zeta2;
     double t1, t1min, t2, t2min, Mx2_1, Mx2_2;
+    double Mx1, Mx2;
     double eta1, eta2, Delta_eta, eta1_gN, eta2_gN;
     double phi1, phi2, Delta_phi, phih, phiR, theta;
     double Emiss2, theta_gamma_gamma, pTmiss;
@@ -203,9 +204,7 @@ int main(int argc, char *argv[]) {
     double p3_p, p3_theta, p3_phi, vz_p3;
     double open_angle_ep3, open_angle_p1p3, open_angle_p2p3;
     double z3, z12, z13, z23, Mh12, Mh13, Mh23, xF3, xF12, xF13, xF23;
-    double t3, t3min, Mx3, Mx12, Mx13, Mx23;
-    double Mx_squared, Mx1_squared, Mx2_squared, Mx3_squared;
-    double Mx12_squared, Mx13_squared, Mx23_squared;
+    double t3, t3min, Mx3; Mx2_3, Mx2_12, Mx2_13, Mx2_23;
     double pT3, pT12, pT13, pT23, zeta3, zeta12, zeta23, zeta13;
     double eta3, eta12, eta23, eta13;
     double phi3, phi12, phi13, phi23, Delta_phi12, Delta_phi13, Delta_phi23;
@@ -338,7 +337,7 @@ int main(int argc, char *argv[]) {
         tree->Branch("p_theta", &p_theta, "p_theta/D");
         tree->Branch("p_phi", &p_phi, "p_phi/D");
         tree->Branch("vz_p", &vz_p, "vz_p/D");
-        tree->Branch("open_angle" &open_angle, "open_angle");
+        tree->Branch("open_angle", &open_angle, "open_angle");
         tree->Branch("Q2", &Q2, "Q2/D");
         tree->Branch("W", &W, "W/D");
         tree->Branch("Mx2", &Mx2, "Mx2/D");
