@@ -1,14 +1,11 @@
-/*
- * To change this license header, choose License Headers in Project Properties.
- * To change this template file, choose Tools | Templates
- * and open the template in the editor.
- */
 package analyzers;
 
 /**
  *
  * @author tbhayward
  */
+import extended_kinematic_fitters.fiducial_cuts;
+import extended_kinematic_fitters.generic_tests;
 import org.jlab.clas.physics.Particle;
 import org.jlab.clas.physics.PhysicsEvent;
 import org.jlab.io.base.DataEvent;
@@ -20,9 +17,11 @@ public class Inclusive {
     protected byte helicity;
     protected int runnum;
 
-    protected double test;
+    protected int fiducial_status = -1;
 
-    protected int num_elec, num_particles;
+    protected int num_elec, num_piplus, num_piminus, num_kplus, num_kminus, num_protons, num_particles;
+    protected int num_pos, num_neg, num_neutrals;
+    protected int num_positrons, num_antiprotons;
 
     protected double Q2, W, gamma, nu, x, y, t, tmin, Mx, Mx2;
 
@@ -68,12 +67,37 @@ public class Inclusive {
         // load banks
         HipoDataBank eventBank = (HipoDataBank) event.getBank("REC::Event");
         HipoDataBank configBank = (HipoDataBank) event.getBank("RUN::config");
+        HipoDataBank rec_Bank = (HipoDataBank) event.getBank("REC::Particle");
+        HipoDataBank cal_Bank = (HipoDataBank) event.getBank("REC::Calorimeter");
+        HipoDataBank traj_Bank = (HipoDataBank) event.getBank("REC::Traj");
 
         helicity = eventBank.getByte("helicity", 0);
         runnum = configBank.getInt("run", 0); // used for beam energy and polarization
 
         num_elec = recEvent.countByPid(11); // returns number of electrons
-        num_particles = num_elec;
+        num_positrons = recEvent.countByPid(-11); // returns number of positrons
+        num_piplus = recEvent.countByPid(211);
+        num_piminus = recEvent.countByPid(-211);
+        num_kplus = recEvent.countByPid(321);
+        num_kminus = recEvent.countByPid(-321);
+        num_protons = recEvent.countByPid(2212);
+        num_antiprotons = recEvent.countByPid(-2212);
+        num_particles = num_elec + num_piplus + num_piminus + num_kplus + num_kminus + num_protons;
+        num_pos = num_positrons + num_piplus + num_kplus + num_protons;
+        num_neg = num_elec + num_piminus + num_kminus + num_antiprotons;
+        num_neutrals = recEvent.countByPid(22) + recEvent.countByPid(2112);
+        
+        generic_tests generic_tests = new generic_tests();
+        fiducial_cuts fiducial_cuts = new fiducial_cuts();
+
+        boolean electron_pcal_fiducial = fiducial_cuts.pcal_fiducial_cut(0, 1, configBank, rec_Bank, cal_Bank);
+        boolean electron_fd_fiducial = fiducial_cuts.dc_fiducial_cut(0, rec_Bank, traj_Bank);
+        boolean e_fiducial_check = electron_pcal_fiducial && electron_fd_fiducial;
+        
+        // Check if all checks pass
+        if (e_fiducial_check ) {
+            fiducial_status = 1; // Set to 1 if electron checks pass
+        } 
 
         // Set up Lorentz vectors
         // beam electron
@@ -151,14 +175,46 @@ public class Inclusive {
         return runnum;
     }
 
-    ; // returns run number for polarizations and energy
+    public int get_num_pos() {
+        return num_pos;
+    }
+    
+    public int get_num_neg() {
+        return num_neg;
+    }
+    
+    public int get_num_neutrals() {
+        return num_neutrals;
+    }
+    
+    public int get_fiducial_status() {
+        return fiducial_status;
+    }
+    
     public int num_elec() {
         return num_elec;
     } // returns number of electrons
 
-    public double test() {
-        return test;
-    } // returns test var
+    public int num_piplus() {
+        return num_piplus;
+    } // returns number of piplus
+
+    public int num_piminus() {
+        return num_piminus;
+    } // returns number of piminus
+
+    public int num_kplus() {
+        return num_kplus;
+    }// returns number of kplus
+
+    public int num_kminus() {
+        return num_kminus;
+    } // returns number of kminus
+
+    public int num_protons() {
+        return num_protons;
+    } // returns number of protons
+
 
     public double Q2() {
         return Double.valueOf(Math.round(Q2 * 100000)) / 100000;

@@ -185,6 +185,8 @@ int main(int argc, char *argv[]) {
     int is_mc = atoi(argv[4]);
 
     // Declare common variables
+    int fiducial_status;
+    int num_pos, num_neg, num_neutral;
     int runnum, evnum, helicity;
     double beam_pol, target_pol, e_p, e_theta, e_phi, vz_e, Q2, W, Mx, Mx2, x, y;
     double t, tmin;
@@ -198,8 +200,6 @@ int main(int argc, char *argv[]) {
     double phi1, phi2, Delta_phi, phih, phiR, theta;
     double Emiss2, theta_gamma_gamma, pTmiss, Mxgammasquared, Mxprotonsquared;
     // Additional variables for three hadrons
-    int fiducial_status;
-    int num_pos, num_neg, num_neutral;
     double p3_p, p3_theta, p3_phi, vz_p3;
     double z3, z12, z13, z23, Mh12, Mh13, Mh23, xF3, xF12, xF13, xF23;
     double t3, t3min, Mx3, Mx12, Mx13, Mx23;
@@ -250,6 +250,11 @@ int main(int argc, char *argv[]) {
     // Case for zero hadrons (inclusive)
     if (hadron_count == 0 && is_mc == 0) {
         // Link TTree branches to variables for zero hadrons
+        tree->Branch("fiducial_status", &fiducial_status, "fiducial_status/I");
+        tree->Branch("runnum", &runnum, "runnum/I");
+        tree->Branch("num_pos", &num_pos, "num_pos/I");
+        tree->Branch("num_neg", &num_neg, "num_neg/I");
+        tree->Branch("num_neutral", &num_neutral, "num_neutral/I");
         tree->Branch("runnum", &runnum, "runnum/I");
         tree->Branch("evnum", &evnum, "evnum/I");
         tree->Branch("helicity", &helicity, "helicity/I");
@@ -315,6 +320,11 @@ int main(int argc, char *argv[]) {
     // Case for one hadron
     else if (hadron_count == 1 && is_mc == 0) {
         // Link TTree branches to variables for one hadron
+        tree->Branch("fiducial_status", &fiducial_status, "fiducial_status/I");
+        tree->Branch("runnum", &runnum, "runnum/I");
+        tree->Branch("num_pos", &num_pos, "num_pos/I");
+        tree->Branch("num_neg", &num_neg, "num_neg/I");
+        tree->Branch("num_neutral", &num_neutral, "num_neutral/I");
         tree->Branch("runnum", &runnum, "runnum/I");
         tree->Branch("evnum", &evnum, "evnum/I");
         tree->Branch("helicity", &helicity, "helicity/I");
@@ -414,6 +424,11 @@ int main(int argc, char *argv[]) {
     // Case for two hadrons (dihadrons)
     else if (hadron_count == 2 && is_mc == 0) {
         // Link TTree branches to variables for two hadrons
+        tree->Branch("fiducial_status", &fiducial_status, "fiducial_status/I");
+        tree->Branch("runnum", &runnum, "runnum/I");
+        tree->Branch("num_pos", &num_pos, "num_pos/I");
+        tree->Branch("num_neg", &num_neg, "num_neg/I");
+        tree->Branch("num_neutral", &num_neutral, "num_neutral/I");
         tree->Branch("runnum", &runnum, "runnum/I");
         tree->Branch("evnum", &evnum, "evnum/I");
         tree->Branch("helicity", &helicity, "helicity/I");
@@ -883,7 +898,8 @@ int main(int argc, char *argv[]) {
 
     // Loop to read each line from the text file and fill the TTree based on hadron_count
     if (hadron_count == 0 && is_mc == 0) {
-        while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
+        while (infile >> fiducial_status >> num_pos >> num_neg >> num_neutral >> 
+            runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             Q2 >> W >> Mx >> Mx2 >> x >> y >> DepA >> DepB >> DepC >> DepV >> DepW) {
 
             beam_pol = getPol(runnum);
@@ -930,7 +946,8 @@ int main(int argc, char *argv[]) {
     } 
     if (hadron_count == 1 && is_mc == 0) {
         // double helicity_double;
-        while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
+        while (infile >> fiducial_status >> num_pos >> num_neg >> num_neutral >> 
+            runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             p_p >> p_theta >> p_phi >> vz_p >> Q2 >> W >> Mx >> Mx2 >> x >> y >> z >> xF >> 
             pT >> zeta >> eta >> phi >> DepA >> DepB >> DepC >> DepV >> DepW) {
 
@@ -974,7 +991,8 @@ int main(int argc, char *argv[]) {
         }
     } 
     if (hadron_count == 2 && is_mc == 0) {
-        while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
+        while (infile >> fiducial_status >> num_pos >> num_neg >> num_neutral >>
+            runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             p1_p >> p1_theta >> p1_phi >> vz_p1 >> p2_p >> p2_theta >> p2_phi >> vz_p2 >> 
             Q2 >> W >> Mx >> Mx1 >> Mx2 >> x >> y >> z >> z1 >> z2 >> Mh >> xF >> xF1 >> xF2 >> 
             pT >> pT1 >> pT2 >> pTpT >> zeta >> zeta1 >> zeta2 >> eta >> eta1 >> eta2 >> Delta_eta>> 

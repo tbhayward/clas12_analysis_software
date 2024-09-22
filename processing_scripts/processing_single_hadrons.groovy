@@ -151,8 +151,11 @@ public static void main(String[] args) {
 		            // this is my class for defining all relevant kinematic variables
 
 		            if (variables.channel_test(variables)) {
+		                fiducial_status = variables.get_fiducial_status(); // fiducial_status of track
 		                helicity = variables.get_helicity(); // helicity of event
-		                // if (runnum =! 11 && helicity == 0) { continue; }
+		                num_pos = variables.get_num_pos();
+		                num_neg = variables.get_num_neg();
+		                num_neutrals = variables.get_num_neutrals();
 
 		                // lab kinematics
 		                e_p = variables.e_p(); // lab frame momentum
@@ -193,7 +196,11 @@ public static void main(String[] args) {
 
 		                // Use a StringBuilder to append all data in a single call
 		                StringBuilder line = new StringBuilder();
-		                line.append(runnum).append(" ")
+		                line.append(fiducial_status).append(" ")
+							.append(num_pos).append(" ")
+							.append(num_neg).append(" ")
+							.append(num_neutrals).append(" ")
+							.append(runnum).append(" ")
 		                	.append(evnum).append(" ")
 		                	.append(helicity).append(" ")
 		                	.append(e_p).append(" ")
@@ -244,10 +251,11 @@ public static void main(String[] args) {
 		    batchLines.setLength(0);
 		}
 
-		println("\n1:runnum, 2:evnum, 3:helicity, 4:e_p, 5:e_theta, 6:e_phi, 7:vz_e,"+
-		"8:p_p, 9:p_theta, 10:p_phi, 11:vz_p, 12:Q2, 13:W, 14:Mx, 15: Mx2, 16:x, 17:y, 18:z,"+
-		"19:xF, 20:pT, 21:zeta, 22:eta, 23:phi (trento), "+
-		"24:DepA, 25:DepB, 26:DepC, 27:DepV, 28:DepW\n");
+		println("1: fiducial_status, 2: num_pos, 3: num_neg, 4: num_neutrals, " +
+	    "5: runnum, 6: evnum, 7: helicity, 8: e_p, 9: e_theta, 10: e_phi, 11: vz_e, " +
+	    "12: p_p, 13: p_theta, 14: p_phi, 15: vz_p, 16: Q2, 17: W, 18: Mx, 19: Mx2, " +
+	    "20: x, 21: y, 22: z, 23: xF, 24: pT, 25: zeta, 26: eta, 27: phi (trento), " +
+	    "28: DepA, 29: DepB, 30: DepC, 31: DepV, 32: DepW");
 
 		println("Set p1 PID = $p1_Str");
 		println("output text file is: $file");

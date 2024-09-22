@@ -1,14 +1,11 @@
-/*
- * To change this license header, choose License Headers in Project Properties.
- * To change this template file, choose Tools | Templates
- * and open the template in the editor.
- */
 package analyzers;
 
 /**
  *
  * @author tbhayward
  */
+import extended_kinematic_fitters.fiducial_cuts;
+import extended_kinematic_fitters.generic_tests;
 import org.jlab.clas.physics.Particle;
 import org.jlab.clas.physics.PhysicsEvent;
 import org.jlab.io.base.DataEvent;
@@ -20,9 +17,11 @@ public class Dihadrons {
     protected byte helicity;
     protected int runnum;
 
-    protected double test;
+    protected int fiducial_status = -1;
 
     protected int num_elec, num_piplus, num_piminus, num_kplus, num_kminus, num_protons, num_particles;
+    protected int num_pos, num_neg, num_neutrals;
+    protected int num_positrons, num_antiprotons;
 
     // labels are unnumbered if they refer to the dihadron (perhaps a meson) and numbered for individual
     // hadrons. Convention is ordered by mass, then charge. For example in pi+pi- pi+ is hadron 1
@@ -99,13 +98,21 @@ public class Dihadrons {
         } else if (variables.y() > 0.80) {
             return false;
         }
-//        else if (variables.Mx() < 1.50) { return false; }
-//        else if (variables.Mx1()<1.50) { return false; } 
-//        else if (variables.Mx2()<1.50) { return false; } 
-
-//        else if (variables.xF1()<0.00 || variables.xF2()<0.00) { return false; }
-//        else if (variables.z1()<0.15 || variables.z2()<0.15) { return false; }
         return true;
+    }
+    
+    public static int getIndex(HipoDataBank rec_Bank, int input_pid, int input_index) {
+        int index = -1;
+        for (int particle_Index = 0; particle_Index < rec_Bank.rows(); particle_Index++) {
+            int pid = rec_Bank.getInt("pid", particle_Index);
+            if (pid == input_pid) {
+                index++;
+            }
+            if (index == input_index) {
+                break;
+            }
+        }
+        return index;
     }
 
     public Dihadrons(DataEvent event, PhysicsEvent recEvent, int p1PID, int p1Index, int p2PID, int p2Index,
@@ -117,17 +124,65 @@ public class Dihadrons {
         // load banks
         HipoDataBank eventBank = (HipoDataBank) event.getBank("REC::Event");
         HipoDataBank configBank = (HipoDataBank) event.getBank("RUN::config");
+        HipoDataBank rec_Bank = (HipoDataBank) event.getBank("REC::Particle");
+        HipoDataBank cal_Bank = (HipoDataBank) event.getBank("REC::Calorimeter");
+        HipoDataBank traj_Bank = (HipoDataBank) event.getBank("REC::Traj");
 
         helicity = eventBank.getByte("helicity", 0);
         runnum = configBank.getInt("run", 0); // used for beam energy and polarization
 
         num_elec = recEvent.countByPid(11); // returns number of electrons
+        num_positrons = recEvent.countByPid(-11); // returns number of positrons
         num_piplus = recEvent.countByPid(211);
         num_piminus = recEvent.countByPid(-211);
         num_kplus = recEvent.countByPid(321);
         num_kminus = recEvent.countByPid(-321);
         num_protons = recEvent.countByPid(2212);
+        num_antiprotons = recEvent.countByPid(-2212);
         num_particles = num_elec + num_piplus + num_piminus + num_kplus + num_kminus + num_protons;
+        num_pos = num_positrons + num_piplus + num_kplus + num_protons;
+        num_neg = num_elec + num_piminus + num_kminus + num_antiprotons;
+        num_neutrals = recEvent.countByPid(22) + recEvent.countByPid(2112);
+        
+        generic_tests generic_tests = new generic_tests();
+        fiducial_cuts fiducial_cuts = new fiducial_cuts();
+
+        boolean electron_pcal_fiducial = fiducial_cuts.pcal_fiducial_cut(0, 1, configBank, rec_Bank, cal_Bank);
+        boolean electron_fd_fiducial = fiducial_cuts.dc_fiducial_cut(0, rec_Bank, traj_Bank);
+        boolean e_fiducial_check = electron_pcal_fiducial && electron_fd_fiducial;
+        
+        int p1_rec_index = getIndex(rec_Bank, p1PID, p1Index);
+        boolean passesForwardDetector_1 = generic_tests.forward_detector_cut(p1_rec_index, rec_Bank)
+                ? fiducial_cuts.dc_fiducial_cut(p1_rec_index, rec_Bank, traj_Bank) : true;
+        boolean passesCentralDetector_1 = generic_tests.central_detector_cut(p1_rec_index, rec_Bank)
+                ? fiducial_cuts.cvt_fiducial_cut(p1_rec_index, rec_Bank, traj_Bank) : true;
+        boolean passesForwardTagger_1 = generic_tests.forward_detector_cut(p1_rec_index, rec_Bank) ? 
+                fiducial_cuts.forward_tagger_fiducial_cut(p1_rec_index, rec_Bank, cal_Bank): true;
+        boolean p1_fiducial_check = passesForwardTagger_1 && passesForwardDetector_1 && passesCentralDetector_1;
+
+        int p2_rec_index = getIndex(rec_Bank, p2PID, p2Index);
+        boolean passesForwardDetector_2 = generic_tests.forward_detector_cut(p2_rec_index, rec_Bank)
+                ? fiducial_cuts.dc_fiducial_cut(p2_rec_index, rec_Bank, traj_Bank) : true;
+        boolean passesCentralDetector_2 = generic_tests.central_detector_cut(p2_rec_index, rec_Bank)
+                ? fiducial_cuts.cvt_fiducial_cut(p2_rec_index, rec_Bank, traj_Bank) : true;
+        boolean passesForwardTagger_2 = generic_tests.forward_detector_cut(p2_rec_index, rec_Bank) ? 
+                fiducial_cuts.forward_tagger_fiducial_cut(p2_rec_index, rec_Bank, cal_Bank): true;
+        boolean p2_fiducial_check = passesForwardTagger_2 && passesForwardDetector_2 && passesCentralDetector_2;
+        
+        // Check if all checks pass
+        if (e_fiducial_check && p1_fiducial_check && p2_fiducial_check) {
+            fiducial_status = 3; // Set to 3 if all checks pass
+        } else {
+            // Now check for specific cases where only one is false
+            if (!e_fiducial_check && p1_fiducial_check && p2_fiducial_check) {
+                fiducial_status = 0; // Set to 0 if only electron check is false
+            } else if (e_fiducial_check && !p1_fiducial_check && p2_fiducial_check) {
+                fiducial_status = 1; // Set to 1 if only p1 check is false
+            } else if (e_fiducial_check && p1_fiducial_check && !p2_fiducial_check) {
+                fiducial_status = 2; // Set to 2 if only p2 check is false (same status as p1)
+            } 
+            // If more than one is false, fiducial_status remains -1 (default)
+        }
 
         // Set up Lorentz vectors
         // beam electron
@@ -494,7 +549,21 @@ public class Dihadrons {
         return runnum;
     }
 
-    ; // returns run number for polarizations and energy
+    public int get_num_pos() {
+        return num_pos;
+    }
+    
+    public int get_num_neg() {
+        return num_neg;
+    }
+    
+    public int get_num_neutrals() {
+        return num_neutrals;
+    }
+    
+    public int get_fiducial_status() {
+        return fiducial_status;
+    }
     
     public int num_elec() {
         return num_elec;
@@ -519,10 +588,6 @@ public class Dihadrons {
     public int num_protons() {
         return num_protons;
     } // returns number of protons
-
-    public double test() {
-        return test;
-    } // returns test var
 
     public double Q2() {
         return Double.valueOf(Math.round(Q2 * 100000)) / 100000;

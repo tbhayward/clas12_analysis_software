@@ -1,8 +1,3 @@
-/*
- * To change this license header, choose License Headers in Project Properties.
- * To change this template file, choose Tools | Templates
- * and open the template in the editor.
- */
 package analyzers;
 
 /**
@@ -21,8 +16,6 @@ public class Trihadrons {
 
     protected byte helicity;
     protected int runnum;
-
-    protected double test;
 
     protected int fiducial_status = -1;
 
@@ -149,21 +142,27 @@ public class Trihadrons {
                 ? fiducial_cuts.dc_fiducial_cut(p1_rec_index, rec_Bank, traj_Bank) : true;
         boolean passesCentralDetector_1 = generic_tests.central_detector_cut(p1_rec_index, rec_Bank)
                 ? fiducial_cuts.cvt_fiducial_cut(p1_rec_index, rec_Bank, traj_Bank) : true;
-        boolean p1_fiducial_check = passesForwardDetector_1 && passesCentralDetector_1;
+        boolean passesForwardTagger_1 = generic_tests.forward_detector_cut(p1_rec_index, rec_Bank) ? 
+                fiducial_cuts.forward_tagger_fiducial_cut(p1_rec_index, rec_Bank, cal_Bank): true;
+        boolean p1_fiducial_check = passesForwardTagger_1 && passesForwardDetector_1 && passesCentralDetector_1;
 
         int p2_rec_index = getIndex(rec_Bank, p2PID, p2Index);
         boolean passesForwardDetector_2 = generic_tests.forward_detector_cut(p2_rec_index, rec_Bank)
                 ? fiducial_cuts.dc_fiducial_cut(p2_rec_index, rec_Bank, traj_Bank) : true;
         boolean passesCentralDetector_2 = generic_tests.central_detector_cut(p2_rec_index, rec_Bank)
                 ? fiducial_cuts.cvt_fiducial_cut(p2_rec_index, rec_Bank, traj_Bank) : true;
-        boolean p2_fiducial_check = passesForwardDetector_2 && passesCentralDetector_2;
+        boolean passesForwardTagger_2 = generic_tests.forward_detector_cut(p2_rec_index, rec_Bank) ? 
+                fiducial_cuts.forward_tagger_fiducial_cut(p2_rec_index, rec_Bank, cal_Bank): true;
+        boolean p2_fiducial_check = passesForwardTagger_2 && passesForwardDetector_2 && passesCentralDetector_2;
 
         int p3_rec_index = getIndex(rec_Bank, p3PID, p3Index);
         boolean passesForwardDetector_3 = generic_tests.forward_detector_cut(p3_rec_index, rec_Bank)
                 ? fiducial_cuts.dc_fiducial_cut(p3_rec_index, rec_Bank, traj_Bank) : true;
         boolean passesCentralDetector_3 = generic_tests.central_detector_cut(p3_rec_index, rec_Bank)
                 ? fiducial_cuts.cvt_fiducial_cut(p3_rec_index, rec_Bank, traj_Bank) : true;
-        boolean p3_fiducial_check = passesForwardDetector_3 && passesCentralDetector_3;
+        boolean passesForwardTagger_3 = generic_tests.forward_detector_cut(p3_rec_index, rec_Bank) ? 
+                fiducial_cuts.forward_tagger_fiducial_cut(p3_rec_index, rec_Bank, cal_Bank): true;
+        boolean p3_fiducial_check = passesForwardTagger_3 && passesForwardDetector_3 && passesCentralDetector_3;
 
         // Check if all checks pass
         if (e_fiducial_check && p1_fiducial_check && p2_fiducial_check && p3_fiducial_check) {
@@ -714,10 +713,6 @@ public class Trihadrons {
     public int num_protons() {
         return num_protons;
     } // returns number of protons
-
-    public double test() {
-        return test;
-    } // returns test var
 
     public double Q2() {
         return Double.valueOf(Math.round(Q2 * 100000)) / 100000;

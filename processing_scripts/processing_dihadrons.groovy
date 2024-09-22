@@ -147,7 +147,11 @@ public static void main(String[] args) {
 			            // this is my class for defining all relevant kinematic variables
 
 			            if (variables.channel_test(variables)) {
+			                fiducial_status = variables.get_fiducial_status(); // fiducial_status of track
 			                helicity = variables.get_helicity(); // helicity of event
+			                num_pos = variables.get_num_pos();
+			                num_neg = variables.get_num_neg();
+			                num_neutrals = variables.get_num_neutrals();
 
 			                // lab kinematics
 			                e_p = variables.e_p(); // lab frame momentum
@@ -216,7 +220,11 @@ public static void main(String[] args) {
 
 			                // Use a StringBuilder to append all data in a single call
 			                StringBuilder line = new StringBuilder();
-			                line.append(runnum).append(" ")
+			                line.append(fiducial_status).append(" ")
+								.append(num_pos).append(" ")
+								.append(num_neg).append(" ")
+								.append(num_neutrals).append(" ")
+								.append(runnum).append(" ")
 			                	.append(evnum).append(" ")
 			                	.append(helicity).append(" ")
 			                	.append(e_p).append(" ")
@@ -293,13 +301,14 @@ public static void main(String[] args) {
 		    batchLines.setLength(0);
 		}
 
-		println("\n1:runnum, 2:evnum, 3:helicity, 4:e_p, 5:e_theta, 6:e_phi, 7:vz_e,"+
-		"8:p1_p, 9:p1_theta, 10:p1_phi, 11:vz_p1, 12:p2_p, 13:p2_theta, 14:p2_phi, 15:vz_p2, "+
-		"16:Q2, 17:W, 18:Mx, 19: Mx1, 20: Mx2, 21:x, 22:y, 23:z,"+
-		"24:z1, 25:z2, 26:Mh, 27:xF, 28:xF1, 29:xF2, 30:pT, 31:pT1, 32:pT2, 33:pTpT, "+
-		"34:zeta, 35:zeta1, 36:zeta2, 37:eta, 38:eta1, 39:eta2, 40:Delta_eta, 41:eta1_gN, 42:eta2_gN, "+
-		"43:phi1, 44:phi2, 45:Delta_phi, 46:phih, 47:phiR, 48:theta, "+
-		"49:DepA, 50:DepB, 51:DepC, 52:DepV, 53:DepW\n");
+		println("1: fiducial_status, 2: num_pos, 3: num_neg, 4: num_neutrals, " +
+	    "5: runnum, 6: evnum, 7: helicity, 8: e_p, 9: e_theta, 10: e_phi, 11: vz_e, " +
+	    "12: p1_p, 13: p1_theta, 14: p1_phi, 15: vz_p1, 16: p2_p, 17: p2_theta, 18: p2_phi, 19: vz_p2, " +
+	    "20: Q2, 21: W, 22: Mx, 23: Mx1, 24: Mx2, 25: x, 26: y, 27: z, " +
+	    "28: z1, 29: z2, 30: Mh, 31: xF, 32: xF1, 33: xF2, 34: pT, 35: pT1, 36: pT2, 37: pTpT, " +
+	    "38: zeta, 39: zeta1, 40: zeta2, 41: eta, 42: eta1, 43: eta2, 44: Delta_eta, 45: eta1_gN, 46: eta2_gN, " +
+	    "47: phi1, 48: phi2, 49: Delta_phi, 50: phih, 51: phiR, 52: theta, " +
+	    "53: DepA, 54: DepB, 55: DepC, 56: DepV, 57: DepW");
 
 		println("Set p1 PID = $p1_Str");
 		println("Set p2 PID = $p2_Str");

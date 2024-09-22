@@ -68,7 +68,6 @@ public static void main(String[] args) {
 	GenericKinematicFitter fitter = new analysis_fitter(10.6041); 
 	// GenericKinematicFitter fitter = new monte_carlo_fitter(10.6041);
 	// GenericKinematicFitter fitter = new event_builder_fitter(10.6041); 
-	// GenericKinematicFitter fitter = new proton_energy_loss_corrections_fitter(10.6041); 
 	
 	// set filter for final states
 	EventFilter filter = new EventFilter("11:X+:X-:Xn"); 
@@ -120,7 +119,11 @@ public static void main(String[] args) {
 	            // this is my class for defining all relevant kinematic variables
 
 	            if (variables.channel_test(variables)) {
+	                fiducial_status = variables.get_fiducial_status(); // fiducial_status of track
 	                helicity = variables.get_helicity(); // helicity of event
+	                num_pos = variables.get_num_pos();
+	                num_neg = variables.get_num_neg();
+	                num_neutrals = variables.get_num_neutrals();
 
 	                // lab kinematics
 	                e_p = variables.e_p(); // lab frame momentum
@@ -147,7 +150,11 @@ public static void main(String[] args) {
 
 	                // Use a StringBuilder to append all data in a single call
 	                StringBuilder line = new StringBuilder();
-	                line.append(runnum).append(" ")
+	                line.append(fiducial_status).append(" ")
+						.append(num_pos).append(" ")
+						.append(num_neg).append(" ")
+						.append(num_neutrals).append(" ")
+						.append(runnum).append(" ")
 	                	.append(evnum).append(" ")
 	                	.append(helicity).append(" ")
 	                	.append(e_p).append(" ")
@@ -187,8 +194,9 @@ public static void main(String[] args) {
 		    batchLines.setLength(0);
 		}
 
-		println("\n1:runnum, 2:evnum, 3:helicity, 4:e_p, 5:e_theta, 6:e_phi, 7:vz_e,"+
-		"8:Q2, 9:W, 10:Mx, 11: Mx2, 12:x, 13:y, 14: DepA, 15: DepB, 16: DepC, 17: DepV, 18: DepW\n");
+		println("1: fiducial_status, 2: num_pos, 3: num_neg, 4: num_neutrals, " +
+	    "5: runnum, 6: evnum, 7: helicity, 8: e_p, 9: e_theta, 10: e_phi, 11: vz_e, " +
+	    "12: Q2, 13: W, 14: Mx, 15: Mx2, 16: x, 17: y, 18: DepA, 19: DepB, 20: DepC, 21: DepV, 22: DepW");
 
 		println("output text file is: $file");
 	}
