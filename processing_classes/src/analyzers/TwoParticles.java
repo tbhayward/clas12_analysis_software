@@ -10,7 +10,7 @@ import org.jlab.io.base.DataEvent;
 import org.jlab.io.hipo.HipoDataBank;
 import org.jlab.clas.physics.*;
 
-public class Hadron {
+public class TwoParticles {
 
     protected byte helicity;
     protected int runnum;
@@ -53,7 +53,7 @@ public class Hadron {
     protected int RICH_pid;
     protected double chi2pid, beta, RQ_prob, el_prob, pi_prob, k_prob, pr_prob;
 
-    public static boolean channel_test(Hadron variables) {
+    public static boolean channel_test(TwoParticles variables) {
         if (variables.helicity == 0 && variables.runnum != 11) {
             return false;
         }
@@ -90,7 +90,7 @@ public class Hadron {
         return index;
     }
 
-    public Hadron(DataEvent event, PhysicsEvent recEvent, int pPID, int pIndex, double Eb) {
+    public TwoParticles(DataEvent event, PhysicsEvent recEvent, int pPID, int pIndex, double Eb) {
         // provide the PDG PID of the two hadrons
 
         kinematic_variables kinematic_variables = new kinematic_variables();

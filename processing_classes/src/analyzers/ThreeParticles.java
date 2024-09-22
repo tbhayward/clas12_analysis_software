@@ -12,7 +12,7 @@ import org.jlab.io.base.DataEvent;
 import org.jlab.io.hipo.HipoDataBank;
 import org.jlab.clas.physics.*;
 
-public class Trihadrons {
+public class ThreeParticles {
 
     protected byte helicity;
     protected int runnum;
@@ -20,23 +20,18 @@ public class Trihadrons {
     protected int fiducial_status = -1;
     protected int detector1 = -1;
     protected int detector2 = -1;
-    protected int detector3 = -1;
 
     protected int num_elec, num_piplus, num_piminus, num_kplus, num_kminus, num_protons, num_particles;
     protected int num_pos, num_neg, num_neutrals;
     protected int num_positrons, num_antiprotons;
 
-    // labels are unnumbered if they refer to the trihadron (perhaps a meson) and numbered for individual
+    // labels are unnumbered if they refer to the dihadron (perhaps a meson) and numbered for individual
     // hadrons. Convention is ordered by mass, then charge. For example in pi+pi- pi+ is hadron 1
     // in proton+pi+ the proton is p1, in k+pi- the kaon is p1.
-    protected double Q2, W, gamma, nu, x, y, t, t1, t2, t3, t12, t13, t23, tmin, z, z1, z2, z3, z12, z13, z23;
-    protected double Mx2, Mx2_1, Mx2_2, Mx2_3, Mx2_12, Mx2_13, Mx2_23; // Mx is the Mx(ep1p2p3), Mx1 is Mx(e[p1]p2p3), etc.
-    protected double Mh, Mh12, Mh13, Mh23;
-    protected double pT, pT1, pT2, pT3, pT12, pT13, pT23;
-    protected double xF, xF1, xF2, xF3, xF12, xF13, xF23;
-    protected double zeta, zeta1, zeta2, zeta3, zeta12, zeta13, zeta23;
-    protected double eta, eta1, eta2, eta3, eta12, eta13, eta23;
-    protected double eta_gN, eta1_gN, eta2_gN, eta3_gN, eta12_gN, eta13_gN, eta23_gN;
+    protected double Q2, W, gamma, nu, x, y, t, t1, t2, tmin, z, z1, z2;
+    protected double Mx2, Mx2_1, Mx2_2; // Mx is the Mx(ep1p2), Mx1 is Mx(ep1), Mx2 is Mx(ep2), Mx3 is Mx(e)
+    protected double Mh, pT, pT1, pT2, xF, xF1, xF2, zeta, zeta1, zeta2;
+    protected double eta, eta1, eta2, eta_gN, eta1_gN, eta2_gN;
     // eta is the rapidity, preferred by theorists in the Breit frame (e.g. eta1 is in Breit) 
     // eta_gN is the rapidity in the gamma*-nucleon COM frame
     // the difference between two rapidities is Lorentz invariant, i.e.
@@ -46,7 +41,12 @@ public class Trihadrons {
     // and the direction of the pair, Ph, in the photon-target rest frame.
     // phih and phiR are defined from the vectors Ph = p1+p2 and 2R = p1-p2, see 
     // hep-ex:2101.04842
-    protected double theta, phih, phiR, phi1, phi2, phi3, phi12, phi13, phi23, Delta_phi12, Delta_phi13, Delta_phi23;
+    protected double theta, phih, phiR, phi1, phi2, Delta_phi;
+
+    // exclusivity
+    protected double Emiss0, Emiss1, Emiss2, Emiss3;
+    protected double theta_gamma_gamma;
+    protected double pTmiss;
 
     // depolarization vectors defining the polarization lost during the transfer from beam to 
     // the virtual photon. 
@@ -61,17 +61,26 @@ public class Trihadrons {
     protected double e_px, e_py, e_pz, e_p, e_e, e_theta, e_phi; // electron kinematics
     protected double p_px, p_py, p_pz, p_p, p_e; // dihadron kinematics, mass is Mh
     protected double p1_px, p1_py, p1_pz, p1_p, p1_e, p1_theta, p1_phi; // p1 kinematics
-    protected double p1_px_unc, p1_py_unc, p1_pz_unc, p1_p_unc, mass2, mass2_unc;
     protected double p2_px, p2_py, p2_pz, p2_p, p2_e, p2_theta, p2_phi; // p2 kinematics
-    protected double p3_px, p3_py, p3_pz, p3_p, p3_e, p3_theta, p3_phi; // p3 kinematics
-    protected double vx_e, vx_p1, vx_p2, vx_p3, vy_e, vy_p1, vy_p2, vy_p3, vz_e, vz_p1, vz_p2, vz_p3;
-    protected double open_angle_ep, open_angle_ep1, open_angle_ep2, open_angle_ep3;
-    protected double open_angle_p1p2, open_angle_p1p3, open_angle_p2p3;
+    protected double vx_e, vx_p1, vx_p2, vy_e, vy_p1, vy_p2, vz_e, vz_p1, vz_p2;
+    protected double open_angle_ep, open_angle_ep1, open_angle_ep2, open_angle_p1p2;
 
-    protected double p_Breit_pz, p1_Breit_pz, p2_Breit_pz, p3_Breit_pz, p12_Breit_pz, p13_Breit_pz, p23_Breit_pz;
-    protected double p_gN_pz, p1_gN_pz, p2_gN_pz, p3_gN_pz, p12_gN_pz, p13_gN_pz, p23_gN_pz;
+    protected double p_Breit_pz, p1_Breit_pz, p2_Breit_pz, p_gN_pz, p1_gN_pz, p2_gN_pz;
 
-    public static boolean channel_test(Trihadrons variables) {
+    protected float e_nphe, p1_nphe, p2_nphe; // number of photoelectrons in cherenkov counter
+    protected float e_chi2pid, p1_chi2pid, p2_chi2pid; // chi2pid of the CLAS12 EventBuilder
+    // defined as the sampling fraction for electron candidates and the distance away from the 
+    // mean beta(p) value from the TOF for hadron candidates
+
+    protected double p1_beta, p1_RQ_prob, p1_el_prob, p1_pi_prob, p1_k_prob, p1_pr_prob;
+    protected double p2_beta, p2_RQ_prob, p2_el_prob, p2_pi_prob, p2_k_prob, p2_pr_prob;
+
+    protected double p1_COM_phi, p1_COM_theta, p2_COM_phi, p2_COM_theta, COM_Delta_phi, COM_Delta_theta;
+    protected double COM_open_angle;
+
+    protected double gN_angle_p1_p2, gN_angle_p1_X, gN_angle_p2_X;
+
+    public static boolean channel_test(ThreeParticles variables) {
         if (variables.helicity == 0 && variables.runnum != 11) {
             return false;
         }
@@ -81,7 +90,7 @@ public class Trihadrons {
         if (variables.runnum >= 16658 && variables.runnum <= 16695) {
             return false;
         }
-        if (variables.Q2() < 1) {
+        if (variables.Q2() < 1.00) {
             return false;
         } else if (variables.W() < 2) {
             return false;
@@ -90,7 +99,7 @@ public class Trihadrons {
         }
         return true;
     }
-
+    
     public static int getIndex(HipoDataBank rec_Bank, int input_pid, int input_index) {
         int index = -1;
         for (int particle_Index = 0; particle_Index < rec_Bank.rows(); particle_Index++) {
@@ -105,9 +114,9 @@ public class Trihadrons {
         return index;
     }
 
-    public Trihadrons(DataEvent event, PhysicsEvent recEvent, int p1PID, int p1Index, int p2PID, int p2Index,
-            int p3PID, int p3Index, double Eb) {
-        // provide the PDG PID of the three hadrons
+    public ThreeParticles(DataEvent event, PhysicsEvent recEvent, int p1PID, int p1Index, int p2PID, int p2Index,
+            double Eb) {
+        // provide the PDG PID of the two hadrons
 
         kinematic_variables kinematic_variables = new kinematic_variables();
 
@@ -133,14 +142,14 @@ public class Trihadrons {
         num_pos = num_positrons + num_piplus + num_kplus + num_protons;
         num_neg = num_elec + num_piminus + num_kminus + num_antiprotons;
         num_neutrals = recEvent.countByPid(22) + recEvent.countByPid(2112);
-
+        
         generic_tests generic_tests = new generic_tests();
         fiducial_cuts fiducial_cuts = new fiducial_cuts();
 
         boolean electron_pcal_fiducial = fiducial_cuts.pcal_fiducial_cut(0, 1, configBank, rec_Bank, cal_Bank);
         boolean electron_fd_fiducial = fiducial_cuts.dc_fiducial_cut(0, rec_Bank, traj_Bank);
         boolean e_fiducial_check = electron_pcal_fiducial && electron_fd_fiducial;
-
+        
         int p1_rec_index = getIndex(rec_Bank, p1PID, p1Index);
         boolean passesForwardDetector_1 = generic_tests.forward_detector_cut(p1_rec_index, rec_Bank)
                 ? fiducial_cuts.dc_fiducial_cut(p1_rec_index, rec_Bank, traj_Bank) : true;
@@ -158,30 +167,19 @@ public class Trihadrons {
         boolean passesForwardTagger_2 = generic_tests.forward_detector_cut(p2_rec_index, rec_Bank) ? 
                 fiducial_cuts.forward_tagger_fiducial_cut(p2_rec_index, rec_Bank, cal_Bank): true;
         boolean p2_fiducial_check = passesForwardTagger_2 && passesForwardDetector_2 && passesCentralDetector_2;
-
-        int p3_rec_index = getIndex(rec_Bank, p3PID, p3Index);
-        boolean passesForwardDetector_3 = generic_tests.forward_detector_cut(p3_rec_index, rec_Bank)
-                ? fiducial_cuts.dc_fiducial_cut(p3_rec_index, rec_Bank, traj_Bank) : true;
-        boolean passesCentralDetector_3 = generic_tests.central_detector_cut(p3_rec_index, rec_Bank)
-                ? fiducial_cuts.cvt_fiducial_cut(p3_rec_index, rec_Bank, traj_Bank) : true;
-        boolean passesForwardTagger_3 = generic_tests.forward_detector_cut(p3_rec_index, rec_Bank) ? 
-                fiducial_cuts.forward_tagger_fiducial_cut(p3_rec_index, rec_Bank, cal_Bank): true;
-        boolean p3_fiducial_check = passesForwardTagger_3 && passesForwardDetector_3 && passesCentralDetector_3;
-
+        
         // Check if all checks pass
-        if (e_fiducial_check && p1_fiducial_check && p2_fiducial_check && p3_fiducial_check) {
-            fiducial_status = 4; // Set to 4 if all checks pass
+        if (e_fiducial_check && p1_fiducial_check && p2_fiducial_check) {
+            fiducial_status = 3; // Set to 3 if all checks pass
         } else {
             // Now check for specific cases where only one is false
-            if (!e_fiducial_check && p1_fiducial_check && p2_fiducial_check && p3_fiducial_check) {
+            if (!e_fiducial_check && p1_fiducial_check && p2_fiducial_check) {
                 fiducial_status = 0; // Set to 0 if only electron check is false
-            } else if (e_fiducial_check && !p1_fiducial_check && p2_fiducial_check && p3_fiducial_check) {
+            } else if (e_fiducial_check && !p1_fiducial_check && p2_fiducial_check) {
                 fiducial_status = 1; // Set to 1 if only p1 check is false
-            } else if (e_fiducial_check && p1_fiducial_check && !p2_fiducial_check && p3_fiducial_check) {
+            } else if (e_fiducial_check && p1_fiducial_check && !p2_fiducial_check) {
                 fiducial_status = 2; // Set to 2 if only p2 check is false (same status as p1)
-            } else if (e_fiducial_check && p1_fiducial_check && p2_fiducial_check && !p3_fiducial_check) {
-                fiducial_status = 3; // Set to 3 if only p3 check is false
-            }
+            } 
             // If more than one is false, fiducial_status remains -1 (default)
         }
         
@@ -200,15 +198,6 @@ public class Trihadrons {
         } else if (passesCentralDetector_2) {
             detector2 = 2; // Central Detector
         }
-        
-        if (passesForwardTagger_3) {
-            detector3 = 0; // Forward Tagger
-        } else if (passesForwardDetector_3) {
-            detector3 = 1; // Forward Detector
-        } else if (passesCentralDetector_3) {
-            detector3 = 2; // Central Detector
-        }
-        
 
         // Set up Lorentz vectors
         // beam electron
@@ -275,66 +264,40 @@ public class Trihadrons {
         Particle p1 = recEvent.getParticle(p1Index_string);
         String p2Index_string = "[" + p2PID + "," + p2Index + "]";
         Particle p2 = recEvent.getParticle(p2Index_string);
-        String p3Index_string = "[" + p3PID + "," + p3Index + "]";
-        Particle p3 = recEvent.getParticle(p3Index_string);
-
-        String combined_index_string = "[" + p1PID + "," + p1Index + "]+[" + p2PID + "," + p2Index + "]+[" + p3PID + "," + p3Index + "]";
-        Particle trihadron = recEvent.getParticle(combined_index_string);
-        Mh = trihadron.mass();
-        combined_index_string = "[" + p1PID + "," + p1Index + "]+[" + p2PID + "," + p2Index + "]";
-        Particle dihadron12 = recEvent.getParticle(combined_index_string);
-        Mh12 = dihadron12.mass();
-        combined_index_string = "[" + p1PID + "," + p1Index + "]+[" + p3PID + "," + p3Index + "]";
-        Particle dihadron13 = recEvent.getParticle(combined_index_string);
-        Mh13 = dihadron13.mass();
-        combined_index_string = "[" + p2PID + "," + p2Index + "]+[" + p3PID + "," + p3Index + "]";
-        Particle dihadron23 = recEvent.getParticle(combined_index_string);
-        Mh23 = dihadron23.mass();
+        String combined_index_string = "[" + p1PID + "," + p1Index + "]+[" + p2PID + "," + p2Index + "]";
+        Particle dihadron = recEvent.getParticle(combined_index_string);
+        Mh = dihadron.mass();
 
         vx_e = scattered_electron.vx();
         vx_p1 = p1.vx();
         vx_p2 = p2.vx();
-        vx_p3 = p3.vx();
         vy_e = scattered_electron.vy();
         vy_p1 = p1.vy();
         vy_p2 = p2.vy();
-        vy_p3 = p3.vy();
         vz_e = scattered_electron.vz();
         vz_p1 = p1.vz();
         vz_p2 = p2.vz();
-        vz_p3 = p3.vz();
 
         LorentzVector lv_p = new LorentzVector();
-        lv_p.setPxPyPzM(trihadron.px(), trihadron.py(), trihadron.pz(), trihadron.mass());
+        lv_p.setPxPyPzM(dihadron.px(), dihadron.py(), dihadron.pz(), dihadron.mass());
         LorentzVector lv_p1 = new LorentzVector();
         lv_p1.setPxPyPzM(p1.px(), p1.py(), p1.pz(), p1.mass());
         LorentzVector lv_p2 = new LorentzVector();
         lv_p2.setPxPyPzM(p2.px(), p2.py(), p2.pz(), p2.mass());
-        LorentzVector lv_p3 = new LorentzVector();
-        lv_p3.setPxPyPzM(p3.px(), p3.py(), p3.pz(), p3.mass());
-        LorentzVector lv_p12 = new LorentzVector();
-        lv_p12.setPxPyPzM(dihadron12.px(), dihadron12.py(), dihadron12.pz(), dihadron12.mass());
-        LorentzVector lv_p13 = new LorentzVector();
-        lv_p13.setPxPyPzM(dihadron13.px(), dihadron13.py(), dihadron13.pz(), dihadron13.mass());
-        LorentzVector lv_p23 = new LorentzVector();
-        lv_p23.setPxPyPzM(dihadron23.px(), dihadron23.py(), dihadron23.pz(), dihadron23.mass());
 
         t = kinematic_variables.t(lv_p.p(), lv_p.theta());
         t1 = kinematic_variables.t(lv_p1.p(), lv_p1.theta());
         t2 = kinematic_variables.t(lv_p2.p(), lv_p2.theta());
-        t3 = kinematic_variables.t(lv_p3.p(), lv_p3.theta());
-        t12 = kinematic_variables.t(lv_p12.p(), lv_p12.theta());
-        t13 = kinematic_variables.t(lv_p13.p(), lv_p13.theta());
-        t23 = kinematic_variables.t(lv_p23.p(), lv_p23.theta());
         tmin = kinematic_variables.tmin(x);
         
         open_angle_ep = kinematic_variables.open_angle(lv_e, lv_p);
         open_angle_ep1 = kinematic_variables.open_angle(lv_e, lv_p1);
         open_angle_ep2 = kinematic_variables.open_angle(lv_e, lv_p2);
-        open_angle_ep3 = kinematic_variables.open_angle(lv_e, lv_p3);
         open_angle_p1p2 = kinematic_variables.open_angle(lv_p1, lv_p2);
-        open_angle_p1p3 = kinematic_variables.open_angle(lv_p1, lv_p3);
-        open_angle_p2p3 = kinematic_variables.open_angle(lv_p2, lv_p3);
+
+        Emiss2 = kinematic_variables.Emiss2(lv_beam, lv_target, lv_e, lv_p1, lv_p2);
+        theta_gamma_gamma = kinematic_variables.theta_gamma_gamma(lv_beam, lv_target, lv_e, lv_p1, lv_p2);
+        pTmiss = kinematic_variables.pTmiss(lv_beam, lv_target, lv_e, lv_p1, lv_p2);
 
         // kinematics of hadrons
         p1_px = lv_p1.px();
@@ -358,18 +321,6 @@ public class Trihadrons {
         if (p2_phi < 0) {
             p2_phi = 2 * Math.PI + p2_phi;
         }
-
-        p3_px = lv_p3.px();
-        p3_py = lv_p3.py();
-        p3_pz = lv_p3.pz();
-        p3_p = lv_p3.p();
-        p3_e = p3.e();
-        p3_theta = p3.theta();
-        p3_phi = p3.phi();
-        if (p3_phi < 0) {
-            p3_phi = 2 * Math.PI + p3_phi;
-        }
-
         p_px = lv_p.px();
         p_py = lv_p.py();
         p_pz = lv_p.pz();
@@ -379,45 +330,11 @@ public class Trihadrons {
         z = kinematic_variables.z(lv_p, lv_q);
         z1 = kinematic_variables.z(lv_p1, lv_q);
         z2 = kinematic_variables.z(lv_p2, lv_q);
-        z3 = kinematic_variables.z(lv_p3, lv_q);
-        z12 = kinematic_variables.z(lv_p12, lv_q);
-        z13 = kinematic_variables.z(lv_p13, lv_q);
-        z23 = kinematic_variables.z(lv_p23, lv_q);
 
         // missing mass calculations
-        LorentzVector lv_Mx = new LorentzVector(lv_q);
-        lv_Mx.add(lv_target);
-        lv_Mx.sub(lv_p1);
-        lv_Mx.sub(lv_p2);
-        lv_Mx.sub(lv_p3);
-        Mx2 = lv_Mx.mass2();  // missing mass squared with all observed
-        LorentzVector lv_Mx1 = new LorentzVector(lv_q);
-        lv_Mx1.add(lv_target);
-        lv_Mx1.sub(lv_p1);
-        Mx2_1 = lv_Mx1.mass2(); // missing mass squared with p1 observed
-        LorentzVector lv_Mx2 = new LorentzVector(lv_q);
-        lv_Mx2.add(lv_target);
-        lv_Mx2.sub(lv_p2);
-        Mx2_2 = lv_Mx2.mass2(); // missing mass squared with p2 observed
-        LorentzVector lv_Mx3 = new LorentzVector(lv_q);
-        lv_Mx3.add(lv_target);
-        lv_Mx3.sub(lv_p3);
-        Mx2_3 = lv_Mx3.mass2(); // missing mass squared with p3 observed
-        LorentzVector lv_Mx12 = new LorentzVector(lv_q);
-        lv_Mx12.add(lv_target);
-        lv_Mx12.sub(lv_p1);
-        lv_Mx12.sub(lv_p2);
-        Mx2_12 = lv_Mx12.mass2(); // missing mass squared with p1 and p2 observed
-        LorentzVector lv_Mx13 = new LorentzVector(lv_q);
-        lv_Mx13.add(lv_target);
-        lv_Mx13.sub(lv_p1);
-        lv_Mx13.sub(lv_p3);
-        Mx2_13 = lv_Mx13.mass2(); // missing mass squared with p1 and p3 observed
-        LorentzVector lv_Mx23 = new LorentzVector(lv_q);
-        lv_Mx23.add(lv_target);
-        lv_Mx23.sub(lv_p2);
-        lv_Mx23.sub(lv_p3);
-        Mx2_23 = lv_Mx23.mass2(); // missing mass squared with p2 and p3 observed
+        Mx2 = kinematic_variables.Mx2(lv_q, lv_target, lv_p1, lv_p2);
+        Mx2_1 = kinematic_variables.Mx2(lv_q, lv_target, lv_p1);
+        Mx2_2 = kinematic_variables.Mx2(lv_q, lv_target, lv_p2);
 
         // boost to gamma*-nucleon center of mass frame
         LorentzVector lv_p_gN = new LorentzVector(lv_p);
@@ -426,14 +343,6 @@ public class Trihadrons {
         lv_p1_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_p1_gN);
         LorentzVector lv_p2_gN = new LorentzVector(lv_p2);
         lv_p2_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_p2_gN);
-        LorentzVector lv_p3_gN = new LorentzVector(lv_p3);
-        lv_p3_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_p3_gN);
-        LorentzVector lv_p12_gN = new LorentzVector(lv_p12);
-        lv_p12_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_p12_gN);
-        LorentzVector lv_p13_gN = new LorentzVector(lv_p13);
-        lv_p13_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_p13_gN);
-        LorentzVector lv_p23_gN = new LorentzVector(lv_p23);
-        lv_p23_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_p23_gN);
         LorentzVector lv_e_gN = new LorentzVector(lv_e);
         lv_e_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_e_gN);
         Vector3 lv_e_gN_unit = new Vector3();
@@ -454,14 +363,6 @@ public class Trihadrons {
         lv_p1_Breit.boost(BreitBoost);
         LorentzVector lv_p2_Breit = new LorentzVector(lv_p2);
         lv_p2_Breit.boost(BreitBoost);
-        LorentzVector lv_p3_Breit = new LorentzVector(lv_p3);
-        lv_p3_Breit.boost(BreitBoost);
-        LorentzVector lv_p12_Breit = new LorentzVector(lv_p12);
-        lv_p12_Breit.boost(BreitBoost);
-        LorentzVector lv_p13_Breit = new LorentzVector(lv_p13);
-        lv_p13_Breit.boost(BreitBoost);
-        LorentzVector lv_p23_Breit = new LorentzVector(lv_p23);
-        lv_p23_Breit.boost(BreitBoost);
         LorentzVector lv_e_Breit = new LorentzVector(lv_e);
         lv_e_Breit.boost(BreitBoost);
         Vector3 lv_e_Breit_unit = new Vector3();
@@ -472,80 +373,97 @@ public class Trihadrons {
         lv_q_Breit_unit.setMagThetaPhi(1, lv_q_Breit.theta(), lv_q_Breit.phi());
         // note that in the Breit frame +z is antialigned to the direction of q
 
-        // set up boost to dihadron rest frame (p2 and p3 center of mass frame)
+        // set up boost to dihadron rest frame (p1 and p2 center of mass frame)
         // just used to calculate theta
         Vector3 pCOMBoost = lv_p.boostVector();
         pCOMBoost.negative();
-        LorentzVector lv_p23_COM = new LorentzVector(lv_p);
-        lv_p23_COM.boost(pCOMBoost);
+        LorentzVector lv_p_COM = new LorentzVector(lv_p);
+        lv_p_COM.boost(pCOMBoost);
+        LorentzVector lv_p1_COM = new LorentzVector(lv_p1);
+        lv_p1_COM.boost(pCOMBoost);
         LorentzVector lv_p2_COM = new LorentzVector(lv_p2);
         lv_p2_COM.boost(pCOMBoost);
-        LorentzVector lv_p3_COM = new LorentzVector(lv_p3);
-        lv_p3_COM.boost(pCOMBoost);
-        theta = Math.acos(lv_p2_COM.vect().dot(lv_p23.vect())
-                / (lv_p2_COM.vect().mag() * lv_p23.vect().mag()));
+        theta = Math.acos(lv_p1_COM.vect().dot(lv_p.vect())
+                / (lv_p1_COM.vect().mag() * lv_p.vect().mag()));
+
+        LorentzVector lv_p_boost_rho = new LorentzVector();
+        lv_p_boost_rho.setPxPyPzM(lv_p.px(), lv_p.py(), lv_p.pz(), kinematic_variables.particle_mass(113));
+        Vector3 pCOMBoostrho = lv_p_boost_rho.boostVector();
+        pCOMBoostrho.negative();
+        LorentzVector lv_p_COM_rho = new LorentzVector(lv_p);
+        lv_p_COM_rho.boost(pCOMBoostrho);
+        LorentzVector lv_p1_COM_rho = new LorentzVector(lv_p1);
+        lv_p1_COM_rho.boost(pCOMBoostrho);
+        LorentzVector lv_p2_COM_rho = new LorentzVector(lv_p2);
+        lv_p2_COM_rho.boost(pCOMBoostrho);
+        p1_COM_phi = lv_p1_COM_rho.phi();
+        if (p1_COM_phi < 0) {
+            p1_COM_phi += 2 * Math.PI;
+        }
+        p1_COM_theta = lv_p1_COM_rho.theta();
+        if (p1_COM_theta < 0) {
+            p1_COM_theta += 2 * Math.PI;
+        }
+        p2_COM_phi = lv_p2_COM_rho.phi();
+        if (p2_COM_phi < 0) {
+            p2_COM_phi += 2 * Math.PI;
+        }
+        p2_COM_theta = lv_p2_COM_rho.theta();
+        if (p2_COM_phi < 0) {
+            p2_COM_phi += 2 * Math.PI;
+        }
+        COM_Delta_phi = p1_COM_phi - p2_COM_phi;
+        if (COM_Delta_phi < 0) {
+            COM_Delta_phi += 2 * Math.PI;
+        }
+        COM_Delta_theta = p1_COM_theta - p2_COM_theta;
+        if (COM_Delta_theta < 0) {
+            COM_Delta_theta += 2 * Math.PI;
+        }
+//        if (COM_Delta_theta > Math.PI) {COM_Delta_theta=Math.PI-COM_Delta_theta;}
+        COM_Delta_phi = 180 / Math.PI * COM_Delta_phi;
+        COM_Delta_theta = 180 / Math.PI * COM_Delta_theta;
+        COM_open_angle = 180 / Math.PI * Math.acos(lv_p1_COM_rho.vect().dot(lv_p2_COM_rho.vect())
+                / (lv_p1_COM_rho.vect().mag() * lv_p2_COM_rho.vect().mag()));
+
+        Delta_phi = phi2 - phi1;
+        if (Delta_phi < 0) {
+            Delta_phi += 2 * Math.PI;
+        }
 
         pT = lv_q_gN_unit.cross(lv_p_gN.vect()).mag();
         pT1 = lv_q_gN_unit.cross(lv_p1_gN.vect()).mag();
         pT2 = lv_q_gN_unit.cross(lv_p2_gN.vect()).mag();
-        pT3 = lv_q_gN_unit.cross(lv_p3_gN.vect()).mag();
-        pT12 = lv_q_gN_unit.cross(lv_p12_gN.vect()).mag();
-        pT13 = lv_q_gN_unit.cross(lv_p13_gN.vect()).mag();
-        pT23 = lv_q_gN_unit.cross(lv_p23_gN.vect()).mag();
 
         xF = 2 * (lv_p_gN.vect().dot(lv_q_gN.vect())) / (lv_q_gN.vect().mag() * W);
         xF1 = 2 * (lv_p1_gN.vect().dot(lv_q_gN.vect())) / (lv_q_gN.vect().mag() * W);
         xF2 = 2 * (lv_p2_gN.vect().dot(lv_q_gN.vect())) / (lv_q_gN.vect().mag() * W);
-        xF3 = 2 * (lv_p3_gN.vect().dot(lv_q_gN.vect())) / (lv_q_gN.vect().mag() * W);
-        xF12 = 2 * (lv_p12_gN.vect().dot(lv_q_gN.vect())) / (lv_q_gN.vect().mag() * W);
-        xF13 = 2 * (lv_p13_gN.vect().dot(lv_q_gN.vect())) / (lv_q_gN.vect().mag() * W);
-        xF23 = 2 * (lv_p23_gN.vect().dot(lv_q_gN.vect())) / (lv_q_gN.vect().mag() * W);
 
         zeta = lv_p_gN.e() / lv_target_gN.e();
         zeta1 = lv_p1_gN.e() / lv_target_gN.e();
         zeta2 = lv_p2_gN.e() / lv_target_gN.e();
-        zeta3 = lv_p3_gN.e() / lv_target_gN.e();
-        zeta12 = lv_p12_gN.e() / lv_target_gN.e();
-        zeta13 = lv_p13_gN.e() / lv_target_gN.e();
-        zeta23 = lv_p23_gN.e() / lv_target_gN.e();
 
         p_gN_pz = lv_p_gN.vect().dot(lv_q_gN.vect()) / lv_q_gN.vect().mag();
         p1_gN_pz = lv_p1_gN.vect().dot(lv_q_gN.vect()) / lv_q_gN.vect().mag();
         p2_gN_pz = lv_p2_gN.vect().dot(lv_q_gN.vect()) / lv_q_gN.vect().mag();
-        p3_gN_pz = lv_p3_gN.vect().dot(lv_q_gN.vect()) / lv_q_gN.vect().mag();
-        p12_gN_pz = lv_p12_gN.vect().dot(lv_q_gN.vect()) / lv_q_gN.vect().mag();
-        p13_gN_pz = lv_p13_gN.vect().dot(lv_q_gN.vect()) / lv_q_gN.vect().mag();
-        p23_gN_pz = lv_p23_gN.vect().dot(lv_q_gN.vect()) / lv_q_gN.vect().mag();
         p_Breit_pz = lv_p_Breit.vect().dot(lv_q_Breit.vect()) / lv_q_Breit.vect().mag();
         p1_Breit_pz = lv_p1_Breit.vect().dot(lv_q_Breit.vect()) / lv_q_Breit.vect().mag();
         p2_Breit_pz = lv_p2_Breit.vect().dot(lv_q_Breit.vect()) / lv_q_Breit.vect().mag();
-        p3_Breit_pz = lv_p3_Breit.vect().dot(lv_q_Breit.vect()) / lv_q_Breit.vect().mag();
-        p12_Breit_pz = lv_p12_Breit.vect().dot(lv_q_Breit.vect()) / lv_q_Breit.vect().mag();
-        p13_Breit_pz = lv_p13_Breit.vect().dot(lv_q_Breit.vect()) / lv_q_Breit.vect().mag();
-        p23_Breit_pz = lv_p23_Breit.vect().dot(lv_q_Breit.vect()) / lv_q_Breit.vect().mag();
 
         // Breit frame rapidity
         eta = -0.5 * Math.log((lv_p_Breit.e() + p_Breit_pz) / (lv_p_Breit.e() - p_Breit_pz));
         eta1 = -0.5 * Math.log((lv_p1_Breit.e() + p1_Breit_pz) / (lv_p1_Breit.e() - p1_Breit_pz));
         eta2 = -0.5 * Math.log((lv_p2_Breit.e() + p2_Breit_pz) / (lv_p2_Breit.e() - p2_Breit_pz));
-        eta3 = -0.5 * Math.log((lv_p3_Breit.e() + p3_Breit_pz) / (lv_p3_Breit.e() - p3_Breit_pz));
-        eta12 = -0.5 * Math.log((lv_p12_Breit.e() + p12_Breit_pz) / (lv_p12_Breit.e() - p12_Breit_pz));
-        eta13 = -0.5 * Math.log((lv_p13_Breit.e() + p13_Breit_pz) / (lv_p13_Breit.e() - p13_Breit_pz));
-        eta23 = -0.5 * Math.log((lv_p23_Breit.e() + p23_Breit_pz) / (lv_p23_Breit.e() - p23_Breit_pz));
 
         // gamma*-nucleon frame rapidity
         eta_gN = 0.5 * Math.log((lv_p_gN.e() + p_gN_pz) / (lv_p_gN.e() - p_gN_pz));
         eta1_gN = 0.5 * Math.log((lv_p1_gN.e() + p1_gN_pz) / (lv_p1_gN.e() - p1_gN_pz));
         eta2_gN = 0.5 * Math.log((lv_p2_gN.e() + p2_gN_pz) / (lv_p2_gN.e() - p2_gN_pz));
-        eta3_gN = 0.5 * Math.log((lv_p3_gN.e() + p3_gN_pz) / (lv_p3_gN.e() - p3_gN_pz));
-        eta12_gN = 0.5 * Math.log((lv_p12_gN.e() + p12_gN_pz) / (lv_p12_gN.e() - p12_gN_pz));
-        eta13_gN = 0.5 * Math.log((lv_p13_gN.e() + p13_gN_pz) / (lv_p13_gN.e() - p13_gN_pz));
-        eta23_gN = 0.5 * Math.log((lv_p23_gN.e() + p23_gN_pz) / (lv_p23_gN.e() - p23_gN_pz));
 
         Vector3 vecH = new Vector3();
-        vecH.setMagThetaPhi(lv_p3_gN.vect().mag() / z3, lv_p3_gN.vect().theta(), lv_p3_gN.vect().phi());
-        Vector3 vecR = new Vector3(lv_p2_gN.vect()); // not R yet
-        vecR.setMagThetaPhi(lv_p2_gN.vect().mag() / z2, lv_p2_gN.vect().theta(), lv_p2_gN.vect().phi());
+        vecH.setMagThetaPhi(lv_p2_gN.vect().mag() / z2, lv_p2_gN.vect().theta(), lv_p2_gN.vect().phi());
+        Vector3 vecR = new Vector3(lv_p1_gN.vect()); // not R yet
+        vecR.setMagThetaPhi(lv_p1_gN.vect().mag() / z1, lv_p1_gN.vect().theta(), lv_p1_gN.vect().phi());
         vecR.sub(vecH); // this is really R now that the subtraction is done
 
         Vector3 vectRt = new Vector3();
@@ -558,10 +476,6 @@ public class Trihadrons {
         Vector3 vectPh = new Vector3(lv_p_gN.vect());
         Vector3 vectPh1 = new Vector3(lv_p1_gN.vect());
         Vector3 vectPh2 = new Vector3(lv_p2_gN.vect());
-        Vector3 vectPh3 = new Vector3(lv_p3_gN.vect());
-        Vector3 vectPh12 = new Vector3(lv_p12_gN.vect());
-        Vector3 vectPh13 = new Vector3(lv_p13_gN.vect());
-        Vector3 vectPh23 = new Vector3(lv_p23_gN.vect());
         Vector3 Pt_Q = new Vector3();
         Pt_Q.setMagThetaPhi(vecR.dot(lv_q_gN_unit), lv_q_gN_unit.theta(), lv_q_gN_unit.phi());
         Vector3 vectPhT = new Vector3(vectPh);
@@ -570,14 +484,6 @@ public class Trihadrons {
         vectPhT1.sub(Pt_Q);
         Vector3 vectPhT2 = new Vector3(vectPh2);
         vectPhT2.sub(Pt_Q);
-        Vector3 vectPhT3 = new Vector3(vectPh3);
-        vectPhT3.sub(Pt_Q);
-        Vector3 vectPhT12 = new Vector3(vectPh12);
-        vectPhT12.sub(Pt_Q);
-        Vector3 vectPhT13 = new Vector3(vectPh13);
-        vectPhT13.sub(Pt_Q);
-        Vector3 vectPhT23 = new Vector3(vectPh23);
-        vectPhT23.sub(Pt_Q);
 
         Vector3 vT = new Vector3(lv_q_gN_unit.cross(lv_e_gN_unit));
         vT.unit();
@@ -589,14 +495,6 @@ public class Trihadrons {
         vTH1.unit();
         Vector3 vTH2 = new Vector3(lv_q_gN_unit.cross(vectPhT2));
         vTH2.unit();
-        Vector3 vTH3 = new Vector3(lv_q_gN_unit.cross(vectPhT3));
-        vTH3.unit();
-        Vector3 vTH12 = new Vector3(lv_q_gN_unit.cross(vectPhT12));
-        vTH12.unit();
-        Vector3 vTH13 = new Vector3(lv_q_gN_unit.cross(vectPhT13));
-        vTH13.unit();
-        Vector3 vTH23 = new Vector3(lv_q_gN_unit.cross(vectPhT23));
-        vTH23.unit();
 
         double cosPhiR = vT.dot(vTR);
         double sinPhiR = lv_e_gN.vect().cross(vectRt).dot(lv_q_gN_unit);
@@ -606,14 +504,6 @@ public class Trihadrons {
         double sinPhiH1 = lv_e_gN.vect().cross(vectPhT1).dot(lv_q_gN_unit);
         double cosPhiH2 = vT.dot(vTH2);
         double sinPhiH2 = lv_e_gN.vect().cross(vectPhT2).dot(lv_q_gN_unit);
-        double cosPhiH3 = vT.dot(vTH3);
-        double sinPhiH3 = lv_e_gN.vect().cross(vectPhT3).dot(lv_q_gN_unit);
-        double cosPhiH12 = vT.dot(vTH12);
-        double sinPhiH12 = lv_e_gN.vect().cross(vectPhT12).dot(lv_q_gN_unit);
-        double cosPhiH13 = vT.dot(vTH13);
-        double sinPhiH13 = lv_e_gN.vect().cross(vectPhT13).dot(lv_q_gN_unit);
-        double cosPhiH23 = vT.dot(vTH23);
-        double sinPhiH23 = lv_e_gN.vect().cross(vectPhT23).dot(lv_q_gN_unit);
 
         // scaling
         double rScale = lv_q_gN_unit.cross(lv_e_gN.vect()).mag() * lv_q_gN_unit.cross(vectRt).mag();
@@ -624,22 +514,10 @@ public class Trihadrons {
         sinPhiH1 = sinPhiH1 / h1Scale;
         double h2Scale = lv_q_gN_unit.cross(lv_e_gN.vect()).mag() * lv_q_gN_unit.cross(vectPh2).mag();
         sinPhiH2 = sinPhiH2 / h2Scale;
-        double h3Scale = lv_q_gN_unit.cross(lv_e_gN.vect()).mag() * lv_q_gN_unit.cross(vectPh3).mag();
-        sinPhiH3 = sinPhiH3 / h3Scale;
-        double h12Scale = lv_q_gN_unit.cross(lv_e_gN.vect()).mag() * lv_q_gN_unit.cross(vectPh12).mag();
-        sinPhiH12 = sinPhiH12 / h12Scale;
-        double h13Scale = lv_q_gN_unit.cross(lv_e_gN.vect()).mag() * lv_q_gN_unit.cross(vectPh13).mag();
-        sinPhiH13 = sinPhiH13 / h13Scale;
-        double h23Scale = lv_q_gN_unit.cross(lv_e_gN.vect()).mag() * lv_q_gN_unit.cross(vectPh23).mag();
-        sinPhiH23 = sinPhiH23 / h23Scale;
 
         phih = Math.acos(cosPhiH);
         phi1 = Math.acos(cosPhiH1);
         phi2 = Math.acos(cosPhiH2);
-        phi3 = Math.acos(cosPhiH3);
-        phi12 = Math.acos(cosPhiH12);
-        phi13 = Math.acos(cosPhiH13);
-        phi23 = Math.acos(cosPhiH23);
         phiR = Math.acos(cosPhiR);
 
         if (sinPhiR < 0.0) {
@@ -654,30 +532,10 @@ public class Trihadrons {
         if (sinPhiH2 < 0.0) {
             phi2 = 2 * Math.PI - phi2;
         }
-        if (sinPhiH3 < 0.0) {
-            phi3 = 2 * Math.PI - phi3;
-        }
-        if (sinPhiH12 < 0.0) {
-            phi12 = 2 * Math.PI - phi12;
-        }
-        if (sinPhiH13 < 0.0) {
-            phi13 = 2 * Math.PI - phi13;
-        }
-        if (sinPhiH23 < 0.0) {
-            phi23 = 2 * Math.PI - phi23;
-        }
 
-        Delta_phi12 = phi2 - phi1;
-        if (Delta_phi12 < 0) {
-            Delta_phi12 += 2 * Math.PI;
-        }
-        Delta_phi13 = phi3 - phi1;
-        if (Delta_phi13 < 0) {
-            Delta_phi13 += 2 * Math.PI;
-        }
-        Delta_phi23 = phi3 - phi2;
-        if (Delta_phi23 < 0) {
-            Delta_phi23 += 2 * Math.PI;
+        Delta_phi = phi2 - phi1;
+        if (Delta_phi < 0) {
+            Delta_phi += 2 * Math.PI;
         }
 
     }
@@ -696,6 +554,7 @@ public class Trihadrons {
         } else if (runnum >= 11323 && runnum <= 11571) {
             return helicity;
         }
+//        System.out.println("runnum not found, assigning helicity flip");
         return helicity;
     }
 
@@ -710,11 +569,7 @@ public class Trihadrons {
     public int get_detector2() {
         return detector2;
     }
-    
-    public int get_detector3() {
-        return detector3;
-    }
-    
+
     public int get_num_pos() {
         return num_pos;
     }
@@ -795,22 +650,6 @@ public class Trihadrons {
         return Double.valueOf(Math.round(t2 * 100000)) / 100000;
     }// returns t2
 
-    public double t3() {
-        return Double.valueOf(Math.round(t3 * 100000)) / 100000;
-    }// returns t3
-
-    public double t12() {
-        return Double.valueOf(Math.round(t12 * 100000)) / 100000;
-    }// returns t12
-
-    public double t13() {
-        return Double.valueOf(Math.round(t13 * 100000)) / 100000;
-    }// returns t13
-
-    public double t23() {
-        return Double.valueOf(Math.round(t23 * 100000)) / 100000;
-    }// returns t23
-
     public double z() {
         return Double.valueOf(Math.round(z * 100000)) / 100000;
     }// returns z
@@ -823,65 +662,21 @@ public class Trihadrons {
         return Double.valueOf(Math.round(z2 * 100000)) / 100000;
     }// returns z2
 
-    public double z3() {
-        return Double.valueOf(Math.round(z3 * 100000)) / 100000;
-    }// returns z3
-
-    public double z12() {
-        return Double.valueOf(Math.round(z12 * 100000)) / 100000;
-    }// returns z12
-
-    public double z13() {
-        return Double.valueOf(Math.round(z13 * 100000)) / 100000;
-    }// returns z13
-
-    public double z23() {
-        return Double.valueOf(Math.round(z23 * 100000)) / 100000;
-    }// returns z23
-
     public double Mx2() {
         return Double.valueOf(Math.round(Mx2 * 100000)) / 100000;
-    }
+    }// returns Mx(ep1p2)
 
     public double Mx2_1() {
         return Double.valueOf(Math.round(Mx2_1 * 100000)) / 100000;
-    }
+    }// returns Mx(ep1)
 
     public double Mx2_2() {
         return Double.valueOf(Math.round(Mx2_2 * 100000)) / 100000;
-    }
-
-    public double Mx2_3() {
-        return Double.valueOf(Math.round(Mx2_3 * 100000)) / 100000;
-    }
-
-    public double Mx2_12() {
-        return Double.valueOf(Math.round(Mx2_12 * 100000)) / 100000;
-    }
-
-    public double Mx2_13() {
-        return Double.valueOf(Math.round(Mx2_13 * 100000)) / 100000;
-    }
-
-    public double Mx2_23() {
-        return Double.valueOf(Math.round(Mx2_23 * 100000)) / 100000;
-    }
+    }// returns Mx(ep2)
 
     public double Mh() {
         return Double.valueOf(Math.round(Mh * 100000)) / 100000;
     }// returns Mh
-
-    public double Mh12() {
-        return Double.valueOf(Math.round(Mh12 * 100000)) / 100000;
-    }// returns Mh12
-
-    public double Mh13() {
-        return Double.valueOf(Math.round(Mh13 * 100000)) / 100000;
-    }// returns Mh13
-
-    public double Mh23() {
-        return Double.valueOf(Math.round(Mh23 * 100000)) / 100000;
-    }// returns Mh23
 
     public double pT() {
         return Double.valueOf(Math.round(pT * 100000)) / 100000;
@@ -894,22 +689,6 @@ public class Trihadrons {
     public double pT2() {
         return Double.valueOf(Math.round(pT2 * 100000)) / 100000;
     }// returns pT2
-
-    public double pT3() {
-        return Double.valueOf(Math.round(pT3 * 100000)) / 100000;
-    }// returns pT3
-
-    public double pT12() {
-        return Double.valueOf(Math.round(pT12 * 100000)) / 100000;
-    }// returns pT12
-
-    public double pT13() {
-        return Double.valueOf(Math.round(pT13 * 100000)) / 100000;
-    }// returns pT13
-
-    public double pT23() {
-        return Double.valueOf(Math.round(pT23 * 100000)) / 100000;
-    }// returns pT23
 
     public double pTpT() {
         return Double.valueOf(Math.round(pT1 * pT2 * 100000)) / 100000;
@@ -927,25 +706,9 @@ public class Trihadrons {
         return Double.valueOf(Math.round(xF2 * 100000)) / 100000;
     }// returns xF2
 
-    public double xF3() {
-        return Double.valueOf(Math.round(xF3 * 100000)) / 100000;
-    }// returns xF3
-
-    public double xF12() {
-        return Double.valueOf(Math.round(xF12 * 100000)) / 100000;
-    }// returns xF12
-
-    public double xF13() {
-        return Double.valueOf(Math.round(xF13 * 100000)) / 100000;
-    }// returns xF13
-
-    public double xF23() {
-        return Double.valueOf(Math.round(xF23 * 100000)) / 100000;
-    }// returns xF23
-
     public double zeta() {
         return Double.valueOf(Math.round(zeta * 100000)) / 100000;
-    }// returns zeta1
+    }// returns zeta
 
     public double zeta1() {
         return Double.valueOf(Math.round(zeta1 * 100000)) / 100000;
@@ -954,22 +717,6 @@ public class Trihadrons {
     public double zeta2() {
         return Double.valueOf(Math.round(zeta2 * 100000)) / 100000;
     }// returns zeta2
-
-    public double zeta3() {
-        return Double.valueOf(Math.round(zeta3 * 100000)) / 100000;
-    }// returns zeta3
-
-    public double zeta12() {
-        return Double.valueOf(Math.round(zeta12 * 100000)) / 100000;
-    }// returns zeta12
-
-    public double zeta13() {
-        return Double.valueOf(Math.round(zeta13 * 100000)) / 100000;
-    }// returns zeta13
-
-    public double zeta23() {
-        return Double.valueOf(Math.round(zeta23 * 100000)) / 100000;
-    }// returns zeta23
 
     public double p1_Breit_pz() {
         return Double.valueOf(Math.round(p1_Breit_pz * 100000)) / 100000;
@@ -981,26 +728,6 @@ public class Trihadrons {
     }
     // returns p2 pz in Breit
 
-    public double p3_Breit_pz() {
-        return Double.valueOf(Math.round(p3_Breit_pz * 100000)) / 100000;
-    }
-    // returns p3 pz in Breit
-
-    public double p12_Breit_pz() {
-        return Double.valueOf(Math.round(p12_Breit_pz * 100000)) / 100000;
-    }
-    // returns p12 pz in Breit
-
-    public double p13_Breit_pz() {
-        return Double.valueOf(Math.round(p13_Breit_pz * 100000)) / 100000;
-    }
-    // returns p13 pz in Breit
-
-    public double p23_Breit_pz() {
-        return Double.valueOf(Math.round(p23_Breit_pz * 100000)) / 100000;
-    }
-    // returns p23 pz in Breit
-
     public double p1_gN_pz() {
         return Double.valueOf(Math.round(p1_gN_pz * 100000)) / 100000;
     } // returns p1 pz in gN
@@ -1008,22 +735,6 @@ public class Trihadrons {
     public double p2_gN_pz() {
         return Double.valueOf(Math.round(p2_gN_pz * 100000)) / 100000;
     } // returns p2 pz in gN
-
-    public double p3_gN_pz() {
-        return Double.valueOf(Math.round(p3_gN_pz * 100000)) / 100000;
-    } // returns p3 pz in gN
-
-    public double p12_gN_pz() {
-        return Double.valueOf(Math.round(p12_gN_pz * 100000)) / 100000;
-    } // returns p12 pz in gN
-
-    public double p13_gN_pz() {
-        return Double.valueOf(Math.round(p13_gN_pz * 100000)) / 100000;
-    } // returns p13 pz in gN
-
-    public double p23_gN_pz() {
-        return Double.valueOf(Math.round(p23_gN_pz * 100000)) / 100000;
-    } // returns p23 pz in gN
 
     public double eta() {
         return Double.valueOf(Math.round(eta * 100000)) / 100000;
@@ -1037,22 +748,6 @@ public class Trihadrons {
         return Double.valueOf(Math.round(eta2 * 100000)) / 100000;
     }// returns eta2 in the Breit frame
 
-    public double eta3() {
-        return Double.valueOf(Math.round(eta3 * 100000)) / 100000;
-    }// returns eta3 in the Breit frame
-
-    public double eta12() {
-        return Double.valueOf(Math.round(eta12 * 100000)) / 100000;
-    }// returns eta12 in the Breit frame
-
-    public double eta13() {
-        return Double.valueOf(Math.round(eta13 * 100000)) / 100000;
-    }// returns eta13 in the Breit frame
-
-    public double eta23() {
-        return Double.valueOf(Math.round(eta23 * 100000)) / 100000;
-    }// returns eta23 in the Breit frame
-
     public double eta_gN() {
         return Double.valueOf(Math.round(eta_gN * 100000)) / 100000;
     }// returns eta_gN
@@ -1065,21 +760,9 @@ public class Trihadrons {
         return Double.valueOf(Math.round(eta2_gN * 100000)) / 100000;
     }// returns eta2_gN
 
-    public double eta3_gN() {
-        return Double.valueOf(Math.round(eta3_gN * 100000)) / 100000;
-    }// returns eta3_gN
-
-    public double Delta_eta12() {
+    public double Delta_eta() {
         return Double.valueOf(Math.round((eta2 - eta1) * 100000)) / 100000;
-    }// returns Delta_eta12,
-
-    public double Delta_eta13() {
-        return Double.valueOf(Math.round((eta3 - eta1) * 100000)) / 100000;
-    }// returns Delta_eta13,
-
-    public double Delta_eta23() {
-        return Double.valueOf(Math.round((eta3 - eta2) * 100000)) / 100000;
-    }// returns Delta_eta32,
+    }// returns Delta_eta, 
     // should be Lorentz invariant
     // maybe set a check for difference of Delta_eta in Breit and gN frames in future...
     // make sure the sign is what you really want
@@ -1107,37 +790,9 @@ public class Trihadrons {
     }
     // returns phi2 (gamma*-nucleon frame)
 
-    public double phi3() {
-        return Double.valueOf(Math.round(phi3 * 100000)) / 100000;
-    }
-    // returns phi3 (gamma*-nucleon frame)
-
-    public double phi12() {
-        return Double.valueOf(Math.round(phi12 * 100000)) / 100000;
-    }
-    // returns phi12 (gamma*-nucleon frame)
-
-    public double phi13() {
-        return Double.valueOf(Math.round(phi13 * 100000)) / 100000;
-    }
-    // returns phi13 (gamma*-nucleon frame)
-
-    public double phi23() {
-        return Double.valueOf(Math.round(phi23 * 100000)) / 100000;
-    }
-    // returns phi23 (gamma*-nucleon frame)
-
-    public double Delta_phi12() {
-        return Double.valueOf(Math.round(Delta_phi12 * 100000)) / 100000;
-    }//returns Delta_phi (p2-p1)
-
-    public double Delta_phi13() {
-        return Double.valueOf(Math.round(Delta_phi13 * 100000)) / 100000;
-    }//returns Delta_phi (p3-p1)
-
-    public double Delta_phi23() {
-        return Double.valueOf(Math.round(Delta_phi23 * 100000)) / 100000;
-    }//returns Delta_phi (p3-p2)
+    public double Delta_phi() {
+        return Double.valueOf(Math.round(Delta_phi * 100000)) / 100000;
+    }//returns Delta_phi (p1-p2)
 
     public double Depolarization_A() {
         return Double.valueOf(Math.round(Depolarization_A * 100000)) / 100000;
@@ -1272,34 +927,6 @@ public class Trihadrons {
         return Double.valueOf(Math.round(p2_phi * 100000)) / 100000;
     } // returns p2 lab frame polar angle
 
-    public double p3_px() {
-        return Double.valueOf(Math.round(p3_px * 100000)) / 100000;
-    }// returns hadron 3 lab frame px
-
-    public double p3_py() {
-        return Double.valueOf(Math.round(p3_py * 100000)) / 100000;
-    }// returns hadron 3 lab frame py
-
-    public double p3_pz() {
-        return Double.valueOf(Math.round(p3_pz * 100000)) / 100000;
-    }// returns hadron 3 lab frame pz
-
-    public double p3_p() {
-        return Double.valueOf(Math.round(p3_p * 100000)) / 100000;
-    }// returns hadron 3 lab frame p
-
-    public double p3_e() {
-        return Double.valueOf(Math.round(p3_e * 100000)) / 100000;
-    }// returns hadron 3 lab frame energy
-
-    public double p3_theta() {
-        return Double.valueOf(Math.round(p3_theta * 100000)) / 100000;
-    } // returns p3 lab frame polar angle
-
-    public double p3_phi() {
-        return Double.valueOf(Math.round(p3_phi * 100000)) / 100000;
-    } // returns p3 lab frame polar angle
-
     public double vx_e() {
         return Double.valueOf(Math.round(vx_e * 100000)) / 100000;
     }// returns electron x vertex
@@ -1311,10 +938,6 @@ public class Trihadrons {
     public double vx_p2() {
         return Double.valueOf(Math.round(vx_p2 * 100000)) / 100000;
     }// returns p2 x vertex
-
-    public double vx_p3() {
-        return Double.valueOf(Math.round(vx_p3 * 100000)) / 100000;
-    }// returns p3 x vertex
 
     public double vy_e() {
         return Double.valueOf(Math.round(vy_e * 100000)) / 100000;
@@ -1328,10 +951,6 @@ public class Trihadrons {
         return Double.valueOf(Math.round(vy_p2 * 100000)) / 100000;
     }// returns p2 y vertex
 
-    public double vy_p3() {
-        return Double.valueOf(Math.round(vy_p3 * 100000)) / 100000;
-    }// returns p3 y vertex
-
     public double vz_e() {
         return Double.valueOf(Math.round(vz_e * 100000)) / 100000;
     }// returns electron z vertex
@@ -1343,10 +962,6 @@ public class Trihadrons {
     public double vz_p2() {
         return Double.valueOf(Math.round(vz_p2 * 100000)) / 100000;
     }// returns p2 z vertex
-
-    public double vz_p3() {
-        return Double.valueOf(Math.round(vz_p3 * 100000)) / 100000;
-    }// returns p3 z vertex
     
     public double open_angle_ep() {
         return Double.valueOf(Math.round(open_angle_ep * 100000)) / 100000;
@@ -1360,20 +975,59 @@ public class Trihadrons {
         return Double.valueOf(Math.round(open_angle_ep2 * 100000)) / 100000;
     }
     
-    public double open_angle_ep3() {
-        return Double.valueOf(Math.round(open_angle_ep3 * 100000)) / 100000;
-    }
-    
     public double open_angle_p1p2() {
         return Double.valueOf(Math.round(open_angle_p1p2 * 100000)) / 100000;
     }
-    
-    public double open_angle_p1p3() {
-        return Double.valueOf(Math.round(open_angle_p1p3 * 100000)) / 100000;
-    }
-    
-    public double open_angle_p2p3() {
-        return Double.valueOf(Math.round(open_angle_p2p3 * 100000)) / 100000;
-    }
 
+    public double p1_COM_phi() {
+        return Double.valueOf(Math.round(p1_COM_phi * 100000)) / 100000;
+    }// p1 COM phi
+
+    public double p1_COM_theta() {
+        return Double.valueOf(Math.round(p1_COM_theta * 100000)) / 100000;
+    }// p1_COM_theta
+
+    public double p2_COM_phi() {
+        return Double.valueOf(Math.round(p2_COM_phi * 100000)) / 100000;
+    }// p2_COM_phi
+
+    public double p2_COM_theta() {
+        return Double.valueOf(Math.round(p2_COM_theta * 100000)) / 100000;
+    }// p2_COM_theta
+
+    public double COM_Delta_phi() {
+        return Double.valueOf(Math.round(COM_Delta_phi * 100000)) / 100000;
+    }// COM_Delta_phi
+
+    public double COM_Delta_theta() {
+        return Double.valueOf(Math.round(COM_Delta_theta * 100000)) / 100000;
+    }// COM_Delta_theta
+
+    public double COM_open_angle() {
+        return Double.valueOf(Math.round(COM_open_angle * 100000)) / 100000;
+    }// COM_open_angle
+
+    public double gN_angle_p1_p2() {
+        return Double.valueOf(Math.round(gN_angle_p1_p2 * 100000)) / 100000;
+    }// gN_angle_p1_p2
+
+    public double gN_angle_p1_X() {
+        return Double.valueOf(Math.round(gN_angle_p1_X * 100000)) / 100000;
+    }// gN_angle_p1_X
+
+    public double gN_angle_p2_X() {
+        return Double.valueOf(Math.round(gN_angle_p2_X * 100000)) / 100000;
+    }// gN_angle_p1_X
+
+    public double Emiss2() {
+        return Double.valueOf(Math.round(Emiss2 * 100000)) / 100000;
+    }// returns Emiss2
+
+    public double theta_gamma_gamma() {
+        return Double.valueOf(Math.round(theta_gamma_gamma * 100000)) / 100000;
+    }// returns theta_gamma_gamma
+
+    public double pTmiss() {
+        return Double.valueOf(Math.round(pTmiss * 100000)) / 100000;
+    }// returns pTmiss
 }

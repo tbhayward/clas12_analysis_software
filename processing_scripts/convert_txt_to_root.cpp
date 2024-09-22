@@ -158,14 +158,13 @@ int main(int argc, char *argv[]) {
     // Check for correct number of command line arguments
     if (argc != 5) {
         cout << "Usage: " << argv[0];
-        cout << " <input_text_file> <output_root_file> <hadron_count> <is_mc>" << endl;
-        cout << " <hadron_count> = 0 for inclusive" << endl;
-        cout << " <hadron_count> = 1 for single hadron" << endl;
-        cout << " <hadron_count> = 2 for dihadron" << endl;
-        cout << " <hadron_count> = 3 for trihadron" << endl;
-        cout << " <hadron_count> = 4 for dvcs (epgamma)" << endl;
-        cout << " <hadron_count> = 5 for calibration" << endl;
-        cout << "Should rename <hadron_count> at some point." << endl;
+        cout << " <input_text_file> <output_root_file> <script_index> <is_mc>" << endl;
+        cout << " <script_index> = 0 for inclusive" << endl;
+        cout << " <script_index> = 1 for two particle" << endl;
+        cout << " <script_index> = 2 for three particle" << endl;
+        cout << " <script_index> = 3 for four particle" << endl;
+        cout << " <script_index> = 4 for dvcs (epgammaX)" << endl;
+        cout << " <script_index> = 5 for calibration" << endl;
         return 1;
     }
     
@@ -181,7 +180,7 @@ int main(int argc, char *argv[]) {
     TTree *tree = new TTree("PhysicsEvents", "Physics Events Tree");
 
     // Determine the hadron count from the command line argument
-    int hadron_count = atoi(argv[3]);
+    int script_index = atoi(argv[3]);
     int is_mc = atoi(argv[4]);
 
     // Declare common variables
@@ -250,7 +249,7 @@ int main(int argc, char *argv[]) {
     double ft_energy, ft_x, ft_y, ft_z, ft_radius;
 
     // Case for zero hadrons (inclusive)
-    if (hadron_count == 0 && is_mc == 0) {
+    if (script_index == 0 && is_mc == 0) {
         // Link TTree branches to variables for zero hadrons
         tree->Branch("fiducial_status", &fiducial_status, "fiducial_status/I");
         tree->Branch("runnum", &runnum, "runnum/I");
@@ -280,7 +279,7 @@ int main(int argc, char *argv[]) {
         tree->Branch("DepW", &DepW, "DepW/D");
     }
     // Case for zero hadrons (inclusive) with mc
-    if (hadron_count == 0 && is_mc == 1) {
+    if (script_index == 0 && is_mc == 1) {
         // Link TTree branches to variables for zero hadrons
         tree->Branch("e_p", &e_p, "e_p/D");
         tree->Branch("e_theta", &e_theta, "e_theta/D");
@@ -319,7 +318,7 @@ int main(int argc, char *argv[]) {
         tree->Branch("mc_DepW", &mc_DepW, "mc_DepW/D");
     }
     // Case for one hadron
-    else if (hadron_count == 1 && is_mc == 0) {
+    else if (script_index == 1 && is_mc == 0) {
         // Link TTree branches to variables for one hadron
         tree->Branch("fiducial_status", &fiducial_status, "fiducial_status/I");
         tree->Branch("runnum", &runnum, "runnum/I");
@@ -360,7 +359,7 @@ int main(int argc, char *argv[]) {
         tree->Branch("DepW", &DepW, "DepW/D");
     }
     // Case for one hadron and is monte carlo
-    else if (hadron_count == 1 && is_mc == 1) {
+    else if (script_index == 1 && is_mc == 1) {
         // Link TTree branches to variables for one hadron
         tree->Branch("e_p", &e_p, "e_p/D");
         tree->Branch("e_theta", &e_theta, "e_theta/D");
@@ -423,7 +422,7 @@ int main(int argc, char *argv[]) {
         tree->Branch("mc_p1_parent", &mc_p1_parent, "mc_p1_parent/I");
     }
     // Case for two hadrons (dihadrons)
-    else if (hadron_count == 2 && is_mc == 0) {
+    else if (script_index == 2 && is_mc == 0) {
         // Link TTree branches to variables for two hadrons
         tree->Branch("fiducial_status", &fiducial_status, "fiducial_status/I");
         tree->Branch("runnum", &runnum, "runnum/I");
@@ -495,7 +494,7 @@ int main(int argc, char *argv[]) {
         tree->Branch("DepW", &DepW, "DepW/D");
     }
     // Case for two hadrons (dihadrons) and is mc
-    else if (hadron_count == 2 && is_mc == 1) {
+    else if (script_index == 2 && is_mc == 1) {
         // Link TTree branches to variables for two hadrons
         tree->Branch("e_p", &e_p, "e_p/D");
         tree->Branch("e_theta", &e_theta, "e_theta/D");
@@ -614,7 +613,7 @@ int main(int argc, char *argv[]) {
         tree->Branch("mc_p2_parent", &mc_p2_parent, "mc_p2_parent/I");
     }
     // Case for three hadrons (trihadrons)
-    else if (hadron_count == 3 && is_mc == 0) {
+    else if (script_index == 3 && is_mc == 0) {
 
         // Link TTree branches to variables for three hadrons
         tree->Branch("fiducial_status", &fiducial_status, "fiducial_status/I");
@@ -722,7 +721,7 @@ int main(int argc, char *argv[]) {
         tree->Branch("DepW", &DepW, "DepW/D");
     }
     // Case for dvcs (not actually two hadrons)
-    else if (hadron_count == 4 && is_mc == 0) { // dvcs, not actually 4 hadrons
+    else if (script_index == 4 && is_mc == 0) { // dvcs, not actually 4 hadrons
         // Link TTree branches to variables for dvcs
         tree->Branch("runnum", &runnum, "runnum/I");
         tree->Branch("evnum", &evnum, "evnum/I");
@@ -788,7 +787,7 @@ int main(int argc, char *argv[]) {
         tree->Branch("pTmiss", &pTmiss, "pTmiss/D");
     }
     // Case for calibration script (not actually five hadrons)
-    if (hadron_count == 5 && is_mc == 0) {
+    if (script_index == 5 && is_mc == 0) {
         // Link TTree branches to variables for four hadrons
         tree->Branch("config_run", &config_run, "config_run/I");
         tree->Branch("config_event", &config_event, "config_event/I");
@@ -899,8 +898,8 @@ int main(int argc, char *argv[]) {
     load_run_info_from_csv(package_location + csv_location);
     
 
-    // Loop to read each line from the text file and fill the TTree based on hadron_count
-    if (hadron_count == 0 && is_mc == 0) {
+    // Loop to read each line from the text file and fill the TTree based on script_index
+    if (script_index == 0 && is_mc == 0) {
         while (infile >> fiducial_status >> num_pos >> num_neg >> num_neutral >> 
             runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             Q2 >> W >> Mx2 >> x >> y >> DepA >> DepB >> DepC >> DepV >> DepW) {
@@ -922,7 +921,7 @@ int main(int argc, char *argv[]) {
             tree->Fill(); // Fill the tree with the read data
         }
     } 
-    if (hadron_count == 0 && is_mc == 1) {
+    if (script_index == 0 && is_mc == 1) {
         while (infile >> e_p >> mc_e_p >> e_theta >> mc_e_theta >>
             e_phi >> mc_e_phi >> vz_e >> mc_vz_e >> Q2 >> mc_Q2 >> W >> mc_W >> Mx >> mc_Mx >>
             Mx2 >> mc_Mx2 >> x >> mc_x >> y >> mc_y >> DepA >> mc_DepA >> DepB >> mc_DepB >> 
@@ -947,7 +946,7 @@ int main(int argc, char *argv[]) {
             tree->Fill(); // Fill the tree with the read data
         }
     } 
-    if (hadron_count == 1 && is_mc == 0) {
+    if (script_index == 1 && is_mc == 0) {
         // double helicity_double;
         while (infile >> fiducial_status >> num_pos >> num_neg >> num_neutral >> 
             runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
@@ -972,7 +971,7 @@ int main(int argc, char *argv[]) {
             tree->Fill(); // Fill the tree with the read data
         }
     }
-    if (hadron_count == 1 && is_mc == 1) {
+    if (script_index == 1 && is_mc == 1) {
         while (infile >> e_p >> mc_e_p >> e_theta >> mc_e_theta >> e_phi >> mc_e_phi >> vz_e >> 
             mc_vz_e >> p_p >> mc_p_p >> p_theta >> mc_p_theta >> p_phi >> mc_p_phi >> vz_p >>
             mc_vz_p >> Q2 >> mc_Q2 >> W >> mc_W >> Mx >> mc_Mx >> Mx2 >> mc_Mx2 >> x >> mc_x >> 
@@ -993,7 +992,7 @@ int main(int argc, char *argv[]) {
             tree->Fill(); // Fill the tree with the read data
         }
     } 
-    if (hadron_count == 2 && is_mc == 0) {
+    if (script_index == 2 && is_mc == 0) {
         while (infile >> fiducial_status >> num_pos >> num_neg >> num_neutral >>
             runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             p1_p >> p1_theta >> p1_phi >> vz_p1 >> p2_p >> p2_theta >> p2_phi >> vz_p2 >> 
@@ -1041,7 +1040,7 @@ int main(int argc, char *argv[]) {
         }
     }
     
-    if (hadron_count == 2 && is_mc == 1) {
+    if (script_index == 2 && is_mc == 1) {
 
         while (infile >> e_p >> mc_e_p >> e_theta >> mc_e_theta >> e_phi >> mc_e_phi >> vz_e >> 
             mc_vz_e >> p1_p >> mc_p1_p >> p1_theta >> mc_p1_theta >> p1_phi >> mc_p1_phi >> 
@@ -1096,7 +1095,7 @@ int main(int argc, char *argv[]) {
             tree->Fill(); // Fill the tree with the read data
         }
     }
-    if (hadron_count == 3 && is_mc == 0) {
+    if (script_index == 3 && is_mc == 0) {
         while (infile >> fiducial_status >> num_pos >> num_neg >> num_neutral >> 
             runnum >> evnum >> helicity >> 
             e_p >> e_theta >> e_phi >> vz_e >> 
@@ -1136,7 +1135,7 @@ int main(int argc, char *argv[]) {
     }
 
     // DVCS
-    if (hadron_count == 4 && is_mc == 0) {
+    if (script_index == 4 && is_mc == 0) {
         while (infile >> runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             p1_p >> p1_theta >> p1_phi >> vz_p1 >> p2_p >> p2_theta >> p2_phi >> vz_p2 >> 
             open_angle_ep >> open_angle_ep1 >> open_angle_ep2 >> open_angle_p1p2 >>
@@ -1185,7 +1184,7 @@ int main(int argc, char *argv[]) {
     }
 
     // calibration script
-    if (hadron_count == 5 && is_mc == 0) {
+    if (script_index == 5 && is_mc == 0) {
         while (infile >> config_run >> config_event >> event_helicity >> particle_pid >>
                 particle_px >> particle_py >> particle_pz >> p >> theta >> phi >> 
                 particle_vx >> particle_vy >> particle_vz >> particle_beta >> 

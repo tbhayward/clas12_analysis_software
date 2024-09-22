@@ -128,9 +128,9 @@ public static void main(String[] args) {
 
 					BeamEnergy Eb = new BeamEnergy(runnum, false);
 					BeamEnergy mc_Eb = new BeamEnergy(runnum, false);
-					Hadron variables = new Hadron(event, research_Event, 
+					TwoParticles variables = new TwoParticles(event, research_Event, 
 						p1_Str.toInteger(), current_p1, Eb.Eb());
-					Hadron mc_variables = new Hadron(event, mc_Event, 
+					TwoParticles mc_variables = new TwoParticles(event, mc_Event, 
 						p1_Str.toInteger(), current_p1, mc_Eb.Eb());
 
 					if (variables.channel_test(variables)) {

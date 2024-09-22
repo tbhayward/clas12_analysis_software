@@ -2,10 +2,10 @@
 
 source source_file.txt
 
-# Set the first argument to be processing single hadrons if not provided
+# Set the first argument to be processing two particles if not provided
 if ( $#argv < 1 ) then
-    set arg1 = "processing_scripts/processing_single_hadrons.groovy"
-    echo "Warning: First argument not provided. Using default: $arg1, which processes semi-inclusive single hadron events."
+    set arg1 = "processing_scripts/processing_two_particles.groovy"
+    echo "Warning: First argument not provided. Using default: $arg1, which processes two particle events."
 else
     set arg1 = "$1"
 endif
@@ -18,21 +18,15 @@ if ($arg1 == "processing_scripts/processing_inclusive.groovy") then
     set convert_arg3 = 0
 else if ($arg1 == "processing_scripts/processing_mc_inclusive.groovy") then
     set convert_arg3 = 0
-else if ($arg1 == "processing_scripts/processing_single_hadrons.groovy") then
+else if ($arg1 == "processing_scripts/processing_two_particles.groovy") then
     set convert_arg3 = 1
-else if ($arg1 == "processing_scripts/processing_mc_single_hadrons.groovy") then
+else if ($arg1 == "processing_scripts/processing_mc_two_particles.groovy") then
     set convert_arg3 = 1
-else if ($arg1 == "processing_scripts/pass2_hadron_pid_mc.groovy") then
-    set convert_arg3 = 1
-else if ($arg1 == "processing_scripts/pass2_hadron_pid_rich.groovy") then
-    set convert_arg3 = 1
-else if ($arg1 == "processing_scripts/pass2_hadron_pid_data.groovy") then
-    set convert_arg3 = 1
-else if ($arg1 == "processing_scripts/processing_dihadrons.groovy") then
+else if ($arg1 == "processing_scripts/processing_three_particles.groovy") then
     set convert_arg3 = 2
-else if ($arg1 == "processing_scripts/processing_mc_dihadrons.groovy") then
+else if ($arg1 == "processing_scripts/processing_mc_three_particles.groovy") then
     set convert_arg3 = 2
-else if ($arg1 == "processing_scripts/processing_trihadrons.groovy") then
+else if ($arg1 == "processing_scripts/processing_four_particles.groovy") then
     set convert_arg3 = 3
 else if ($arg1 == "processing_scripts/processing_dvcs.groovy") then
     set convert_arg3 = 4 # dvcs
@@ -44,9 +38,9 @@ endif
 set is_mc = 0;
 if ($arg1 == "processing_scripts/processing_mc_inclusive.groovy") then
     set is_mc = 1;
-else if ($arg1 == "processing_scripts/processing_mc_single_hadrons.groovy") then
+else if ($arg1 == "processing_scripts/processing_mc_two_particles.groovy") then
     set is_mc = 1;
-else if ($arg1 == "processing_scripts/processing_mc_dihadrons.groovy") then
+else if ($arg1 == "processing_scripts/processing_mc_three_particles.groovy") then
     set is_mc = 1;
 endif
 
@@ -84,49 +78,31 @@ else if ($arg1 == "processing_scripts/processing_mc_inclusive.groovy") then
     set txt_file = "$3.txt"
     set root_file = "$3.root"
     ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
-else if ($arg1 == "processing_scripts/processing_single_hadrons.groovy") then
+else if ($arg1 == "processing_scripts/processing_two_particles.groovy") then
     coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4.txt" "$5" "$6"
     # Run the convert_txt_to_root program
     set txt_file = "$4.txt"
     set root_file = "$4.root"
     ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
-else if ($arg1 == "processing_scripts/processing_mc_single_hadrons.groovy") then
+else if ($arg1 == "processing_scripts/processing_mc_two_particles.groovy") then
     coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4.txt" "$5" "$6"
     # Run the convert_txt_to_root program
     set txt_file = "$4.txt"
     set root_file = "$4.root"
     ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
-else if ($arg1 == "processing_scripts/pass2_hadron_pid_mc.groovy") then
-    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4.txt" "$5" "$6"
-    # Run the convert_txt_to_root program
-    set txt_file = "$4.txt"
-    set root_file = "$4.root"
-    ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
-else if ($arg1 == "processing_scripts/pass2_hadron_pid_rich.groovy") then
-    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4.txt" "$5" "$6"
-    # Run the convert_txt_to_root program
-    set txt_file = "$4.txt"
-    set root_file = "$4.root"
-    ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
-else if ($arg1 == "processing_scripts/pass2_hadron_pid_data.groovy") then
-    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4.txt" "$5" "$6"
-    # Run the convert_txt_to_root program
-    set txt_file = "$4.txt"
-    set root_file = "$4.root"
-    ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
-else if ($arg1 == "processing_scripts/processing_dihadrons.groovy") then
+else if ($arg1 == "processing_scripts/processing_three_particles.groovy") then
     coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4" "$5.txt" "$6"
     # Run the convert_txt_to_root program
     set txt_file = "$5.txt"
     set root_file = "$5.root"
     ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
-else if ($arg1 == "processing_scripts/processing_mc_dihadrons.groovy") then
+else if ($arg1 == "processing_scripts/processing_mc_three_particles.groovy") then
     coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4" "$5.txt" "$6"
     # Run the convert_txt_to_root program
     set txt_file = "$5.txt"
     set root_file = "$5.root"
     ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
-else if ($arg1 == "processing_scripts/processing_trihadrons.groovy") then
+else if ($arg1 == "processing_scripts/processing_four_particles.groovy") then
     coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3" "$4" "$5" "$6.txt" "$7"
     # Run the convert_txt_to_root program
     set txt_file = "$6.txt"
