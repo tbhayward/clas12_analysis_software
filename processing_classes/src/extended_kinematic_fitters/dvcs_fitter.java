@@ -31,7 +31,7 @@ public class dvcs_fitter extends GenericKinematicFitter {
         pid_cuts pid_cuts = new pid_cuts();
 
         return true
-                && p > 2.2 // higher cut ultimately enforced when we cut on y, this speeds processing
+                && p > 2.1 // higher cut ultimately enforced when we cut on y, this speeds processing
                 && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
 //                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
                 && pid_cuts.calorimeter_energy_cut(particle_Index, cal_Bank)
@@ -49,10 +49,10 @@ public class dvcs_fitter extends GenericKinematicFitter {
         fiducial_cuts fiducial_cuts = new fiducial_cuts();
         pid_cuts pid_cuts = new pid_cuts();
 
-        float px = rec_Bank.getFloat("px", particle_Index);
-        float py = rec_Bank.getFloat("py", particle_Index);
-        float pz = rec_Bank.getFloat("pz", particle_Index);
-        double p = Math.sqrt(Math.pow(px, 2) + Math.pow(py, 2) + Math.pow(pz, 2));
+//        float px = rec_Bank.getFloat("px", particle_Index);
+//        float py = rec_Bank.getFloat("py", particle_Index);
+//        float pz = rec_Bank.getFloat("pz", particle_Index);
+//        double p = Math.sqrt(Math.pow(px, 2) + Math.pow(py, 2) + Math.pow(pz, 2));
 
         boolean passesForwardDetector = generic_tests.forward_detector_cut(particle_Index, rec_Bank);
         boolean passesCentralDetector = generic_tests.central_detector_cut(particle_Index, rec_Bank);
