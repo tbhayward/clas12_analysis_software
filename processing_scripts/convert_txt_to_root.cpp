@@ -205,7 +205,7 @@ int main(int argc, char *argv[]) {
     double p3_p, p3_theta, p3_phi, vz_p3;
     double open_angle_ep3, open_angle_p1p3, open_angle_p2p3;
     double z3, z12, z13, z23, Mh12, Mh13, Mh23, xF3, xF12, xF13, xF23;
-    double t3, t3min, Mx3, Mx2_3, Mx2_12, Mx2_13, Mx2_23;
+    double t3, t12, t13, t23, t3min, Mx3, Mx2_3, Mx2_12, Mx2_13, Mx2_23;
     double pT3, pT12, pT13, pT23, zeta3, zeta12, zeta23, zeta13;
     double eta3, eta12, eta23, eta13;
     double phi3, phi12, phi13, phi23, Delta_phi12, Delta_phi13, Delta_phi23;
