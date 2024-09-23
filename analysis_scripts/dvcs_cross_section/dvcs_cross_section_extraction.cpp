@@ -79,6 +79,9 @@ int main(int argc, char* argv[]) {
 
     cout << "All required files found. Proceeding to load data and MC files." << endl;
 
+    // 3D vector of TTreeReader* for 3 periods, 2 (data/MC), and respective files
+    vector<vector<vector<TTreeReader*>>> treeReaders(3, vector<vector<TTreeReader*>>(2));
+
     // Load Data Trees (index 0 for data, 1 for MC)
     vector<string> data_filenames = {dir1 + "/rga_fa18_inb_epgamma.root", dir1 + "/rga_fa18_out_epgamma.root", dir1 + "/rga_sp19_inb_epgamma.root"};
     vector<string> eppi0_filenames = {dir3 + "/rga_fa18_inb_eppi0.root", dir3 + "/rga_fa18_out_eppi0.root", dir3 + "/rga_sp19_inb_eppi0.root"};
@@ -95,7 +98,7 @@ int main(int argc, char* argv[]) {
             cerr << "Error: PhysicsEvents tree not found in " << data_filenames[i] << endl;
             return 4;
         }
-        treeReaders[i][0].push_back(TTreeReader(data_tree));  // DVCS data
+        treeReaders[i][0].push_back(new TTreeReader(data_tree));  // DVCS data
 
         // Load eppi0 data
         TFile* eppi0_file = new TFile(eppi0_filenames[i].c_str(), "READ");
@@ -108,7 +111,7 @@ int main(int argc, char* argv[]) {
             cerr << "Error: PhysicsEvents tree not found in " << eppi0_filenames[i] << endl;
             return 4;
         }
-        treeReaders[i][0].push_back(TTreeReader(eppi0_tree));  // eppi0 data
+        treeReaders[i][0].push_back(new TTreeReader(eppi0_tree));  // eppi0 data
     }
 
     // Load MC Trees (index 0 for gen dvcsgen, 1 for rec dvcsgen, 2 for gen aaogen, 3 for rec aaogen)
@@ -125,7 +128,7 @@ int main(int argc, char* argv[]) {
             return 3;
         }
         TTree* gen_dvcsgen_tree = (TTree*)gen_dvcsgen_file->Get("PhysicsEvents");
-        treeReaders[i][1].push_back(TTreeReader(gen_dvcsgen_tree));
+        treeReaders[i][1].push_back(new TTreeReader(gen_dvcsgen_tree));
 
         // Load rec dvcsgen
         TFile* rec_dvcsgen_file = new TFile(mc_rec_dvcsgen_filenames[i].c_str(), "READ");
@@ -134,7 +137,7 @@ int main(int argc, char* argv[]) {
             return 3;
         }
         TTree* rec_dvcsgen_tree = (TTree*)rec_dvcsgen_file->Get("PhysicsEvents");
-        treeReaders[i][1].push_back(TTreeReader(rec_dvcsgen_tree));
+        treeReaders[i][1].push_back(new TTreeReader(rec_dvcsgen_tree));
 
         // Load gen aaogen
         TFile* gen_aaogen_file = new TFile(mc_gen_aaogen_filenames[i].c_str(), "READ");
@@ -143,7 +146,7 @@ int main(int argc, char* argv[]) {
             return 3;
         }
         TTree* gen_aaogen_tree = (TTree*)gen_aaogen_file->Get("PhysicsEvents");
-        treeReaders[i][1].push_back(TTreeReader(gen_aaogen_tree));
+        treeReaders[i][1].push_back(new TTreeReader(gen_aaogen_tree));
 
         // Load rec aaogen
         TFile* rec_aaogen_file = new TFile(mc_rec_aaogen_filenames[i].c_str(), "READ");
@@ -152,12 +155,21 @@ int main(int argc, char* argv[]) {
             return 3;
         }
         TTree* rec_aaogen_tree = (TTree*)rec_aaogen_file->Get("PhysicsEvents");
-        treeReaders[i][1].push_back(TTreeReader(rec_aaogen_tree));
+        treeReaders[i][1].push_back(new TTreeReader(rec_aaogen_tree));
     }
 
     cout << "Successfully loaded all data and MC trees." << endl;
 
-    // End program for now
+    // Clean up dynamically allocated TTreeReaders
+    for (size_t i = 0; i < 3; ++i) {
+        for (size_t j = 0; j < 2; ++j) {
+            for (TTreeReader* reader : treeReaders[i][j]) {
+                delete reader;
+            }
+        }
+    }
+
+    // End program
     cout << "Program complete. Additional functionality to be added later." << endl;
 
     return 0;
