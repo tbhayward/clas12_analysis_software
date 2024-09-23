@@ -25,6 +25,7 @@ bool checkFileExists(const string& path) {
 }
 
 int main(int argc, char* argv[]) {
+    std::cout << std::endl << std::endl << std::endl;
     // Start the ROOT application
     TApplication theApp("App", nullptr, nullptr);
     gROOT->SetBatch(kTRUE);  // Set ROOT to batch mode
