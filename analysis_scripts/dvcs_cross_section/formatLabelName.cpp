@@ -6,6 +6,7 @@ std::string formatLabelName(const std::string& original) {
         {"open_angle_ep2", "#theta_{e'#gamma} (deg)"},
         {"Mx2_2", "M M_{e'#gamma}^{2} (GeV^{2})"},
         {"theta_gamma_gamma", "#theta_{#gamma(det)#gamma(rec)}"},
+        {"theta_pi0_pi0", "#theta_{#pi^{0}(det)#pi^{0}(rec)}"},
         {"placeholder", ""},
         {"Emiss2", "M E_{e'p'#gamma} (GeV)"},
         {"Mx2", "M M_{e'p'#gamma}^{2} (GeV^{2})"},

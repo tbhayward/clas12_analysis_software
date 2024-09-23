@@ -240,7 +240,7 @@ int main(int argc, char *argv[]) {
 
   setup_directories();
 
-  // createIntegratedKinematicPlots();
+  createIntegratedKinematicPlots();
   // createIntegratedKinematicPlotsForBinsAndFits();
   // createCorrelationPlotsforrunnum();
   // createCorrelationPlots();
@@ -248,51 +248,51 @@ int main(int argc, char *argv[]) {
   currentFits=0;
   dataReader.Restart(); mcReader.Restart();
 
-  for (size_t i = 0; i < allBins.size(); ++i) {
-    cout << "-- Beginning kinematic fits." << endl;
+  // for (size_t i = 0; i < allBins.size(); ++i) {
+  //   cout << "-- Beginning kinematic fits." << endl;
 
-    // Initialize dilutionFactors
-    std::vector<std::pair<double, double>> dilutionFactors;
+  //   // Initialize dilutionFactors
+  //   std::vector<std::pair<double, double>> dilutionFactors;
 
-    if (cpp != 1) {
-        // Calculate the dilution factors for the current bin
-        dilutionFactors = calculate_dilution_factors();
+  //   if (cpp != 1) {
+  //       // Calculate the dilution factors for the current bin
+  //       dilutionFactors = calculate_dilution_factors();
 
-        // Print out the dilution factors and their uncertainties
-        cout << "Dilution Factors for Bin Set " << i + 1 << ":" << endl;
-        for (size_t j = 0; j < dilutionFactors.size(); ++j) {
-            cout << "Bin " << j + 1 << ": "
-                 << "Dilution Factor = " << dilutionFactors[j].first
-                 << ", Uncertainty = " << dilutionFactors[j].second
-                 << endl;
-        }
-    } else {
-        // If cpp == 1, fill dilutionFactors with zeros
-        dilutionFactors = std::vector<std::pair<double, double>>(allBins[i].size() - 1, {0.0, 0.0});
-    }
-    // dilutionFactors = std::vector<std::pair<double, double>>(allBins[i].size() - 1, {1.0, 0.0});
+  //       // Print out the dilution factors and their uncertainties
+  //       cout << "Dilution Factors for Bin Set " << i + 1 << ":" << endl;
+  //       for (size_t j = 0; j < dilutionFactors.size(); ++j) {
+  //           cout << "Bin " << j + 1 << ": "
+  //                << "Dilution Factor = " << dilutionFactors[j].first
+  //                << ", Uncertainty = " << dilutionFactors[j].second
+  //                << endl;
+  //       }
+  //   } else {
+  //       // If cpp == 1, fill dilutionFactors with zeros
+  //       dilutionFactors = std::vector<std::pair<double, double>>(allBins[i].size() - 1, {0.0, 0.0});
+  //   }
+  //   // dilutionFactors = std::vector<std::pair<double, double>>(allBins[i].size() - 1, {1.0, 0.0});
 
-    for (int asymmetry = 0; asymmetry < 3; ++asymmetry) {
-        if (asymmetry > 0 && cpp == 1) {
-            cout << "Skipping TSA and DSA for unpolarized target data." << endl;
-            continue;
-        }
-        switch (asymmetry) {
-            case 0: cout << "    Beginning chi2 BSA." << endl; break;
-            case 1: cout << "    Beginning chi2 TSA." << endl; break;
-            case 2: cout << "    Beginning chi2 DSA." << endl; break;
-        }
-        switch (channel) {
-            case 0: calculate_inclusive(output_file.c_str(), kinematic_file.c_str(), 
-              binNames[i], asymmetry, dilutionFactors); break;
-            case 1: performChi2Fits_single_hadron(output_file.c_str(), kinematic_file.c_str(), 
-              kinematicPlot_file.c_str(), binNames[i], asymmetry, dilutionFactors); break;
-            case 2: performChi2Fits_b2b_dihadron(output_file.c_str(), kinematic_file.c_str(), 
-              binNames[i], asymmetry, dilutionFactors); break;
-            case 4: performChi2Fits_dvcs(output_file.c_str(), kinematic_file.c_str(), 
-              kinematicPlot_file.c_str(), binNames[i], asymmetry, dilutionFactors); break;
-        }
-    }
+  //   for (int asymmetry = 0; asymmetry < 3; ++asymmetry) {
+  //       if (asymmetry > 0 && cpp == 1) {
+  //           cout << "Skipping TSA and DSA for unpolarized target data." << endl;
+  //           continue;
+  //       }
+  //       switch (asymmetry) {
+  //           case 0: cout << "    Beginning chi2 BSA." << endl; break;
+  //           case 1: cout << "    Beginning chi2 TSA." << endl; break;
+  //           case 2: cout << "    Beginning chi2 DSA." << endl; break;
+  //       }
+  //       switch (channel) {
+  //           case 0: calculate_inclusive(output_file.c_str(), kinematic_file.c_str(), 
+  //             binNames[i], asymmetry, dilutionFactors); break;
+  //           case 1: performChi2Fits_single_hadron(output_file.c_str(), kinematic_file.c_str(), 
+  //             kinematicPlot_file.c_str(), binNames[i], asymmetry, dilutionFactors); break;
+  //           case 2: performChi2Fits_b2b_dihadron(output_file.c_str(), kinematic_file.c_str(), 
+  //             binNames[i], asymmetry, dilutionFactors); break;
+  //           case 4: performChi2Fits_dvcs(output_file.c_str(), kinematic_file.c_str(), 
+  //             kinematicPlot_file.c_str(), binNames[i], asymmetry, dilutionFactors); break;
+  //       }
+  //   }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
     // cout << "MLM fits disabled by default in main branch. See development/uncomment next lines for MLM." << endl;
     // switch (channel) {
