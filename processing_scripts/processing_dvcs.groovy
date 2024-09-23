@@ -135,6 +135,7 @@ public static void main(String[] args) {
 				BeamEnergy Eb = new BeamEnergy(runnum, false);
 				// Use the input beam energy if runnum == 11, otherwise use Eb.Eb()
 				double energy = (runnum == 11) ? beam_energy : Eb.Eb();
+				println(energy);
 	            ThreeParticles variables = new ThreeParticles(event, research_Event, 
 					2212, 0, 22, 0, energy);
 	            // this is my class for defining all relevant kinematic variables
@@ -143,7 +144,6 @@ public static void main(String[] args) {
 	                helicity = variables.get_helicity(); // helicity of event
 	                detector1 = variables.get_detector1();
 	                detector2 = variables.get_detector2();
-	                println(detector1+" "+detector2);
 	                num_pos = variables.get_num_pos();
 	                num_neg = variables.get_num_neg();
 	                num_neutrals = variables.get_num_neutrals();
