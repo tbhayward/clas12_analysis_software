@@ -141,6 +141,7 @@ public static void main(String[] args) {
 			            open_angle_egamma2 = variables.open_angle_ep2();
 		    		}
 		    	}
+		    	println(Mh_gammagamma);
 
 		        // get # of particles 
 		        int num_p1 = research_Event.countByPid(2212);
