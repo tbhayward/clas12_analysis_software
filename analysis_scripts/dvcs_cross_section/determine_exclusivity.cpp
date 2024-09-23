@@ -37,8 +37,8 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
     }
 
     // Readers for relevant variables for cuts
-    TTreeReaderValue<double> t_data(dataReader, "t");
-    TTreeReaderValue<double> t_mc(mcReader, "t");
+    TTreeReaderValue<double> t_data(dataReader, "t1");
+    TTreeReaderValue<double> t_mc(mcReader, "t1");
     TTreeReaderValue<double> open_angle_ep2_data(dataReader, "open_angle_ep2");
     TTreeReaderValue<double> open_angle_ep2_mc(mcReader, "open_angle_ep2");
     TTreeReaderValue<double> Emiss2_data(dataReader, "Emiss2");
