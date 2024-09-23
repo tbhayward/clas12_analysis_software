@@ -148,8 +148,8 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
     // Save the canvases with updated names to reflect the plotTitle input
     std::string cleanTitle = plotTitle;
     std::replace(cleanTitle.begin(), cleanTitle.end(), ' ', '_');  // Replace spaces with underscores
-    canvas->SaveAs((outputDir + "/exclusivity_plots_" + cleanTitle + ".png").c_str());
-    canvas_loose_cuts->SaveAs((outputDir + "/exclusivity_plots_" + cleanTitle + "_loose_cuts.png").c_str());
+    canvas->SaveAs((outputDir + "/exclusivity_plots_" + cleanTitle + "_0_cuts.png").c_str());
+    canvas_loose_cuts->SaveAs((outputDir + "/exclusivity_plots_" + cleanTitle + "_1_cuts.png").c_str());
 
     // Clean up
     delete canvas;
