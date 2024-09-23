@@ -8,7 +8,7 @@
 #include <TTreeReaderValue.h>
 #include <cmath>  // for radian conversion
 
-void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const std::string& outputDir) {
+void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const std::string& outputDir, const std::string& plotTitle) {
     // Set up global style options (remove stat boxes)
     gStyle->SetOptStat(0);
 
@@ -90,7 +90,7 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
         // Get the maximum value for setting y-axis range
         double max_data = hist_data->GetMaximum();
         double max_mc = hist_mc->GetMaximum();
-        double y_max = 1.25 * std::max(max_data, max_mc);  // Set y-axis range from 0 to 1.2 * max
+        double y_max = 1.35 * std::max(max_data, max_mc);  // Set y-axis range from 0 to 1.35 * max
 
         // Draw the histograms
         canvas->cd(i + 1);
@@ -104,8 +104,12 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
         hist_data->Draw("HIST");
         hist_mc->Draw("HIST SAME");
 
+        // Add the title for each subplot
+        std::string fullTitle = formatLabelName(variables[i]) + " - " + plotTitle;
+        hist_data->SetTitle(fullTitle.c_str());
+
         // Add a legend with the count information (integer format)
-        TLegend* legend = new TLegend(0.4, 0.7, 0.9, 0.9);
+        TLegend* legend = new TLegend(0.375, 0.7, 0.9, 0.9);
         legend->AddEntry(hist_data, ("Data (" + std::to_string(static_cast<int>(hist_data->GetEntries())) + " counts)").c_str(), "l");
         legend->AddEntry(hist_mc, ("MC (" + std::to_string(static_cast<int>(hist_mc->GetEntries())) + " counts)").c_str(), "l");
         legend->Draw();
