@@ -101,7 +101,7 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
 
         // Set the title for the histograms before drawing them
         hist_data->SetTitle(plotTitle.c_str());
-        hist_data_loose->SetTitle((plotTitle + " ; Loose Cuts").c_str());  // Add loose cuts to title
+        hist_data_loose->SetTitle((" ; Loose Cuts").c_str());  // Add loose cuts to title
 
         // Draw the histograms for original plots
         canvas->cd(i + 1);
