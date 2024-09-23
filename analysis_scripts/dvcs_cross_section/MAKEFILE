@@ -1,0 +1,19 @@
+CXX = g++
+CXXFLAGS = `root-config --cflags` -std=c++17
+LDFLAGS = `root-config --libs`
+TARGET = dvcs_cross_section_extraction
+
+# Source files
+SOURCES = dvcs_cross_section_extraction.cpp
+OBJECTS = $(SOURCES:.cpp=.o)
+
+all: $(TARGET)
+
+$(TARGET): $(OBJECTS)
+	$(CXX) -o $@ $(OBJECTS) $(LDFLAGS)
+
+%.o: %.cpp
+	$(CXX) $(CXXFLAGS) -c $<
+
+clean:
+	rm -f $(TARGET) $(OBJECTS)
