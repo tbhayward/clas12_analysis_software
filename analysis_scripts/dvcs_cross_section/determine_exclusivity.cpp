@@ -1,7 +1,7 @@
 #include "determine_exclusivity.h"
 #include "histConfigs.h"
 #include "formatLabelName.h"
-#include "kinematic_cuts.h" 
+#include "kinematic_cuts.h"
 #include <TCanvas.h>
 #include <TH1D.h>
 #include <TLegend.h>
@@ -30,8 +30,6 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
     std::vector<std::string> variables = {"open_angle_ep2", "Mx2_2", "theta_gamma_gamma", "placeholder", "Emiss2", "Mx2", "Mx2_1", "pTmiss"};
 
     // Readers for e_theta and other relevant variables for cuts
-    TTreeReaderValue<double> eTheta_data(dataReader, "e_theta");
-    TTreeReaderValue<double> eTheta_mc(mcReader, "e_theta");
     TTreeReaderValue<double> t_data(dataReader, "t");
     TTreeReaderValue<double> t_mc(mcReader, "t");
     TTreeReaderValue<double> open_angle_ep2_data(dataReader, "open_angle_ep2");
@@ -103,7 +101,7 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
 
         // Set the title for the histograms before drawing them
         hist_data->SetTitle(plotTitle.c_str());
-        hist_data_loose->SetTitle((plotTitle + "; Loose Cuts").c_str());
+        hist_data_loose->SetTitle((plotTitle + " ; Loose Cuts").c_str());  // Add loose cuts to title
 
         // Draw the histograms for original plots
         canvas->cd(i + 1);
@@ -142,11 +140,11 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
         legend_loose->Draw();
     }
 
-    // Save the canvases with filenames based on plotTitle
-    std::string filename = plotTitle;
-    std::replace(filename.begin(), filename.end(), ' ', '_');  // Replace spaces with underscores
-    canvas->SaveAs((outputDir + "/exclusivity_plots_" + filename + ".png").c_str());
-    canvas_loose_cuts->SaveAs((outputDir + "/exclusivity_plots_" + filename + "_loose_cuts.png").c_str());
+    // Save the canvases with updated names to reflect the plotTitle input
+    std::string cleanTitle = plotTitle;
+    std::replace(cleanTitle.begin(), cleanTitle.end(), ' ', '_');  // Replace spaces with underscores
+    canvas->SaveAs((outputDir + "/exclusivity_plots_" + cleanTitle + ".png").c_str());
+    canvas_loose_cuts->SaveAs((outputDir + "/exclusivity_plots_" + cleanTitle + "_loose_cuts.png").c_str());
 
     // Clean up
     delete canvas;
