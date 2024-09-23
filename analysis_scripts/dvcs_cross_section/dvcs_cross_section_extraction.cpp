@@ -1,154 +1,158 @@
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <vector>
+#include <filesystem>
+#include <TFile.h>
+#include <TTree.h>
+#include <TTreeReader.h>
+
+// ROOT Libraries
+#include <TROOT.h>
+#include <TApplication.h>
+
+// tbhayward imports
+#include "create_directories.h"
 #include "determine_exclusivity.h"
-#include "histConfigs.h"
-#include "formatLabelName.h"
-#include "kinematic_cuts.h" 
-#include <TCanvas.h>
-#include <TH1D.h>
-#include <TLegend.h>
-#include <TStyle.h>
-#include <TTreeReaderValue.h>
-#include <cmath>  // for radian conversion
 
-void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const std::string& outputDir, const std::string& plotTitle) {
-    // Set up global style options (remove stat boxes)
-    gStyle->SetOptStat(0);
+// Namespace declaration
+using namespace std;
+namespace fs = std::filesystem;
 
-    // Increase font size for axis labels and title
-    gStyle->SetTitleSize(0.05, "XY");
-    gStyle->SetLabelSize(0.04, "XY");
-    gStyle->SetLegendTextSize(0.04);
+// Function to check if a file exists
+bool checkFileExists(const string& path) {
+    return fs::exists(path);
+}
 
-    // Create a 2x4 canvas for original plots
-    TCanvas* canvas = new TCanvas("exclusivity_canvas", "Exclusivity Plots", 1600, 800);
-    canvas->Divide(4, 2);  // 2 rows, 4 columns
+int main(int argc, char* argv[]) {
+    std::cout << std::endl << std::endl << std::endl;
+    // Start the ROOT application
+    TApplication theApp("App", nullptr, nullptr);
+    gROOT->SetBatch(kTRUE);  // Set ROOT to batch mode
 
-    // Create a 2x4 canvas for plots with "Loose Cuts"
-    TCanvas* canvas_loose_cuts = new TCanvas("exclusivity_canvas_loose_cuts", "Exclusivity Plots with Loose Cuts", 1600, 800);
-    canvas_loose_cuts->Divide(4, 2);
-
-    // Vector of variables for plotting
-    std::vector<std::string> variables = {"open_angle_ep2", "Mx2_2", "theta_gamma_gamma", "placeholder", "Emiss2", "Mx2", "Mx2_1", "pTmiss"};
-
-    // Readers for e_theta and other relevant variables for cuts
-    TTreeReaderValue<double> eTheta_data(dataReader, "e_theta");
-    TTreeReaderValue<double> eTheta_mc(mcReader, "e_theta");
-    TTreeReaderValue<double> t_data(dataReader, "t");
-    TTreeReaderValue<double> t_mc(mcReader, "t");
-    TTreeReaderValue<double> open_angle_ep2_data(dataReader, "open_angle_ep2");
-    TTreeReaderValue<double> open_angle_ep2_mc(mcReader, "open_angle_ep2");
-    TTreeReaderValue<double> Emiss2_data(dataReader, "Emiss2");
-    TTreeReaderValue<double> Emiss2_mc(mcReader, "Emiss2");
-    TTreeReaderValue<double> Mx2_1_data(dataReader, "Mx2_1");
-    TTreeReaderValue<double> Mx2_1_mc(mcReader, "Mx2_1");
-    TTreeReaderValue<double> pTmiss_data(dataReader, "pTmiss");
-    TTreeReaderValue<double> pTmiss_mc(mcReader, "pTmiss");
-
-    for (size_t i = 0; i < variables.size(); ++i) {
-        if (variables[i] == "placeholder") {
-            continue;  // Skip placeholder for now
-        }
-
-        // Retrieve histogram bin settings
-        HistConfig config = histConfigs[variables[i]];
-
-        // Create histogram names
-        std::string hist_data_name = "data_" + variables[i];
-        std::string hist_mc_name = "mc_" + variables[i];
-        std::string hist_data_name_loose = "data_loose_" + variables[i];
-        std::string hist_mc_name_loose = "mc_loose_" + variables[i];
-
-        // Create histograms for data and MC
-        TH1D* hist_data = new TH1D(hist_data_name.c_str(), "", config.bins, config.min, config.max);
-        TH1D* hist_mc = new TH1D(hist_mc_name.c_str(), "", config.bins, config.min, config.max);
-        TH1D* hist_data_loose = new TH1D(hist_data_name_loose.c_str(), "", config.bins, config.min, config.max);
-        TH1D* hist_mc_loose = new TH1D(hist_mc_name_loose.c_str(), "", config.bins, config.min, config.max);
-
-        // Create readers for the variable
-        TTreeReaderValue<double> dataVar(dataReader, variables[i].c_str());
-        TTreeReaderValue<double> mcVar(mcReader, variables[i].c_str());
-
-        // Fill data histograms
-        while (dataReader.Next()) {
-            hist_data->Fill(*dataVar);
-            // Apply kinematic cuts and fill the "Loose Cuts" histograms if they pass
-            if (apply_kinematic_cuts(*t_data, *open_angle_ep2_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data)) {
-                hist_data_loose->Fill(*dataVar);
-            }
-        }
-        dataReader.Restart();  // Restart reader for the next variable
-
-        // Fill MC histograms
-        while (mcReader.Next()) {
-            hist_mc->Fill(*mcVar);
-            // Apply kinematic cuts and fill the "Loose Cuts" histograms if they pass
-            if (apply_kinematic_cuts(*t_mc, *open_angle_ep2_mc, *Emiss2_mc, *Mx2_1_mc, *pTmiss_mc)) {
-                hist_mc_loose->Fill(*mcVar);
-            }
-        }
-        mcReader.Restart();  // Restart reader for the next variable
-
-        // Normalize histograms based on their integrals
-        if (hist_data->Integral() != 0) { hist_data->Scale(1.0 / hist_data->Integral()); }
-        if (hist_mc->Integral() != 0) { hist_mc->Scale(1.0 / hist_mc->Integral()); }
-        if (hist_data_loose->Integral() != 0) { hist_data_loose->Scale(1.0 / hist_data_loose->Integral()); }
-        if (hist_mc_loose->Integral() != 0) { hist_mc_loose->Scale(1.0 / hist_mc_loose->Integral()); }
-
-        // Get the maximum value for setting y-axis range
-        double max_data = hist_data->GetMaximum();
-        double max_mc = hist_mc->GetMaximum();
-        double max_data_loose = hist_data_loose->GetMaximum();
-        double max_mc_loose = hist_mc_loose->GetMaximum();
-        double y_max = 1.35 * std::max({max_data, max_mc});
-        double y_max_loose = 1.35 * std::max({max_data_loose, max_mc_loose});
-
-        // Set the title for the histograms before drawing them
-        hist_data->SetTitle(plotTitle.c_str());
-        hist_data_loose->SetTitle((plotTitle + "; Loose Cuts").c_str());
-
-        // Draw the histograms for original plots
-        canvas->cd(i + 1);
-        gPad->SetLeftMargin(0.15);  // Add left padding
-        gPad->SetBottomMargin(0.15);  // Add bottom padding
-        hist_data->SetLineColor(kBlue);
-        hist_mc->SetLineColor(kRed);
-        hist_data->SetXTitle(formatLabelName(variables[i]).c_str());
-        hist_data->SetYTitle("Normalized counts");
-        hist_data->GetYaxis()->SetRangeUser(0, y_max);
-        hist_data->Draw("HIST");
-        hist_mc->Draw("HIST SAME");
-
-        // Add a legend with the count information (integer format)
-        TLegend* legend = new TLegend(0.375, 0.7, 0.9, 0.9);
-        legend->AddEntry(hist_data, ("Data (" + std::to_string(static_cast<int>(hist_data->GetEntries())) + " counts)").c_str(), "l");
-        legend->AddEntry(hist_mc, ("MC (" + std::to_string(static_cast<int>(hist_mc->GetEntries())) + " counts)").c_str(), "l");
-        legend->Draw();
-
-        // Draw the histograms for "Loose Cuts" plots
-        canvas_loose_cuts->cd(i + 1);
-        gPad->SetLeftMargin(0.15);  // Add left padding
-        gPad->SetBottomMargin(0.15);  // Add bottom padding
-        hist_data_loose->SetLineColor(kBlue);
-        hist_mc_loose->SetLineColor(kRed);
-        hist_data_loose->SetXTitle(formatLabelName(variables[i]).c_str());
-        hist_data_loose->SetYTitle("Normalized counts");
-        hist_data_loose->GetYaxis()->SetRangeUser(0, y_max_loose);
-        hist_data_loose->Draw("HIST");
-        hist_mc_loose->Draw("HIST SAME");
-
-        // Add a legend with the count information for "Loose Cuts" (integer format)
-        TLegend* legend_loose = new TLegend(0.375, 0.7, 0.9, 0.9);
-        legend_loose->AddEntry(hist_data_loose, ("Data (" + std::to_string(static_cast<int>(hist_data_loose->GetEntries())) + " counts)").c_str(), "l");
-        legend_loose->AddEntry(hist_mc_loose, ("MC (" + std::to_string(static_cast<int>(hist_mc_loose->GetEntries())) + " counts)").c_str(), "l");
-        legend_loose->Draw();
+    // Ensure that the correct number of command-line arguments is provided
+    if (argc < 5) {
+        cout << "Usage: " << argv[0] << " <dir1> <dir2> <dir3> <dir4>" << endl;
+        return 1;
     }
 
-    // Save the canvases with filenames based on plotTitle
-    std::string filename = plotTitle;
-    std::replace(filename.begin(), filename.end(), ' ', '_');  // Replace spaces with underscores
-    canvas->SaveAs((outputDir + "/exclusivity_plots_" + filename + ".png").c_str());
-    canvas_loose_cuts->SaveAs((outputDir + "/exclusivity_plots_" + filename + "_loose_cuts.png").c_str());
+    // Store directories
+    string dir1 = argv[1];
+    string dir2 = argv[2];
+    string dir3 = argv[3];
+    string dir4 = argv[4];
 
-    // Clean up
-    delete canvas;
-    delete canvas_loose_cuts;
+    // Define filenames for each directory (3 periods, 6 files per period)
+    vector<string> data_filenames = {dir1 + "/rga_fa18_inb_epgamma.root", dir1 + "/rga_fa18_out_epgamma.root", dir1 + "/rga_sp19_inb_epgamma.root"};
+    vector<string> eppi0_filenames = {dir3 + "/rga_fa18_inb_eppi0.root", dir3 + "/rga_fa18_out_eppi0.root", dir3 + "/rga_sp19_inb_eppi0.root"};
+    vector<string> mc_gen_dvcsgen_filenames = {dir2 + "/gen_dvcsgen_rga_fa18_inb_50nA_10604MeV_epgamma.root", dir2 + "/gen_dvcsgen_rga_fa18_out_50nA_10604MeV_epgamma.root", dir2 + "/gen_dvcsgen_rga_sp19_inb_50nA_10200MeV_epgamma.root"};
+    vector<string> mc_rec_dvcsgen_filenames = {dir2 + "/rec_dvcsgen_rga_fa18_inb_50nA_10604MeV_epgamma.root", dir2 + "/rec_dvcsgen_rga_fa18_out_50nA_10604MeV_epgamma.root", dir2 + "/rec_dvcsgen_rga_sp19_inb_50nA_10200MeV_epgamma.root"};
+    vector<string> mc_gen_aaogen_filenames = {dir4 + "/gen_aaogen_norad_rga_fa18_inb_50nA_10604MeV_eppi0.root", dir4 + "/gen_aaogen_norad_rga_fa18_out_50nA_10604MeV_eppi0.root", dir4 + "/gen_aaogen_norad_rga_sp19_inb_50nA_10604MeV_eppi0.root"};
+    vector<string> mc_rec_aaogen_filenames = {dir4 + "/rec_aaogen_norad_rga_fa18_inb_50nA_10604MeV_eppi0.root", dir4 + "/rec_aaogen_norad_rga_fa18_out_50nA_10604MeV_eppi0.root", dir4 + "/rec_aaogen_norad_rga_sp19_inb_50nA_10604MeV_eppi0.root"};
+
+    // Check if all expected files exist
+    for (const auto& file : data_filenames) {
+        if (!checkFileExists(file)) {
+            cerr << "Error: File " << file << " not found." << endl;
+            return 2;
+        }
+    }
+    for (const auto& file : eppi0_filenames) {
+        if (!checkFileExists(file)) {
+            cerr << "Error: File " << file << " not found." << endl;
+            return 2;
+        }
+    }
+    for (const auto& file : mc_gen_dvcsgen_filenames) {
+        if (!checkFileExists(file)) {
+            cerr << "Error: File " << file << " not found." << endl;
+            return 2;
+        }
+    }
+    for (const auto& file : mc_rec_dvcsgen_filenames) {
+        if (!checkFileExists(file)) {
+            cerr << "Error: File " << file << " not found." << endl;
+            return 2;
+        }
+    }
+    for (const auto& file : mc_gen_aaogen_filenames) {
+        if (!checkFileExists(file)) {
+            cerr << "Error: File " << file << " not found." << endl;
+            return 2;
+        }
+    }
+    for (const auto& file : mc_rec_aaogen_filenames) {
+        if (!checkFileExists(file)) {
+            cerr << "Error: File " << file << " not found." << endl;
+            return 2;
+        }
+    }
+
+    cout << "All required files found. Proceeding to load data and MC files." << endl;
+
+    // Create individual TTreeReader objects
+    TFile* data_files[3];
+    TFile* eppi0_files[3];
+    TFile* mc_gen_dvcsgen_files[3];
+    TFile* mc_rec_dvcsgen_files[3];
+    TFile* mc_gen_aaogen_files[3];
+    TFile* mc_rec_aaogen_files[3];
+
+    TTreeReader data_readers[3];
+    TTreeReader eppi0_readers[3];
+    TTreeReader mc_gen_dvcsgen_readers[3];
+    TTreeReader mc_rec_dvcsgen_readers[3];
+    TTreeReader mc_gen_aaogen_readers[3];
+    TTreeReader mc_rec_aaogen_readers[3];
+
+    // Load all data and MC files
+    for (size_t i = 0; i < 3; ++i) {
+        // Data DVCS
+        data_files[i] = new TFile(data_filenames[i].c_str(), "READ");
+        TTree* data_tree = (TTree*)data_files[i]->Get("PhysicsEvents");
+        data_readers[i].SetTree(data_tree);
+
+        // Data eppi0
+        eppi0_files[i] = new TFile(eppi0_filenames[i].c_str(), "READ");
+        TTree* eppi0_tree = (TTree*)eppi0_files[i]->Get("PhysicsEvents");
+        eppi0_readers[i].SetTree(eppi0_tree);
+
+        // MC gen dvcsgen
+        mc_gen_dvcsgen_files[i] = new TFile(mc_gen_dvcsgen_filenames[i].c_str(), "READ");
+        TTree* mc_gen_dvcsgen_tree = (TTree*)mc_gen_dvcsgen_files[i]->Get("PhysicsEvents");
+        mc_gen_dvcsgen_readers[i].SetTree(mc_gen_dvcsgen_tree);
+
+        // MC rec dvcsgen
+        mc_rec_dvcsgen_files[i] = new TFile(mc_rec_dvcsgen_filenames[i].c_str(), "READ");
+        TTree* mc_rec_dvcsgen_tree = (TTree*)mc_rec_dvcsgen_files[i]->Get("PhysicsEvents");
+        mc_rec_dvcsgen_readers[i].SetTree(mc_rec_dvcsgen_tree);
+
+        // MC gen aaogen
+        mc_gen_aaogen_files[i] = new TFile(mc_gen_aaogen_filenames[i].c_str(), "READ");
+        TTree* mc_gen_aaogen_tree = (TTree*)mc_gen_aaogen_files[i]->Get("PhysicsEvents");
+        mc_gen_aaogen_readers[i].SetTree(mc_gen_aaogen_tree);
+
+        // MC rec aaogen
+        mc_rec_aaogen_files[i] = new TFile(mc_rec_aaogen_filenames[i].c_str(), "READ");
+        TTree* mc_rec_aaogen_tree = (TTree*)mc_rec_aaogen_files[i]->Get("PhysicsEvents");
+        mc_rec_aaogen_readers[i].SetTree(mc_rec_aaogen_tree);
+    }
+
+    // Create necessary directories before proceeding
+    std::string base_output_dir = "output";  // Define the base directory
+    create_directories(base_output_dir);     // Create the directories
+
+    cout << "Successfully loaded all data and MC trees." << endl << endl;
+
+    // The rest of your program would continue here...
+
+    // Call determine_exclusivity and plot variables
+    determine_exclusivity(data_readers[0], mc_rec_dvcsgen_readers[0], "output/exclusivity_plots", "Fa18 Inb");
+    determine_exclusivity(data_readers[1], mc_rec_dvcsgen_readers[1], "output/exclusivity_plots", "Fa18 Out");
+    determine_exclusivity(data_readers[2], mc_rec_dvcsgen_readers[2], "output/exclusivity_plots", "Sp19 Inb");
+
+    // End program
+    cout << "Program complete. Additional functionality to be added later." << endl << endl;
+
+    return 0;
 }

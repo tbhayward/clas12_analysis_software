@@ -117,18 +117,6 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
         hist_data->Draw("HIST");
         hist_mc->Draw("HIST SAME");
 
-        // Draw the histograms for original plots
-        canvas->cd(i + 1);
-        gPad->SetLeftMargin(0.15);  // Add left padding
-        gPad->SetBottomMargin(0.15);  // Add bottom padding
-        hist_data->SetLineColor(kBlue);
-        hist_mc->SetLineColor(kRed);
-        hist_data->SetXTitle(formatLabelName(variables[i]).c_str());
-        hist_data->SetYTitle("Normalized counts");
-        hist_data->GetYaxis()->SetRangeUser(0, y_max);
-        hist_data->Draw("HIST");
-        hist_mc->Draw("HIST SAME");
-
         // Add a legend with the count information (integer format)
         TLegend* legend = new TLegend(0.375, 0.7, 0.9, 0.9);
         legend->AddEntry(hist_data, ("Data (" + std::to_string(static_cast<int>(hist_data->GetEntries())) + " counts)").c_str(), "l");
@@ -154,9 +142,11 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
         legend_loose->Draw();
     }
 
-    // Save the canvases
-    canvas->SaveAs((outputDir + "/exclusivity_plots_rga_fa18_inb.png").c_str());
-    canvas_loose_cuts->SaveAs((outputDir + "/exclusivity_plots_rga_fa18_inb_loose_cuts.png").c_str());
+    // Save the canvases with filenames based on plotTitle
+    std::string filename = plotTitle;
+    std::replace(filename.begin(), filename.end(), ' ', '_');  // Replace spaces with underscores
+    canvas->SaveAs((outputDir + "/exclusivity_plots_" + filename + ".png").c_str());
+    canvas_loose_cuts->SaveAs((outputDir + "/exclusivity_plots_" + filename + "_loose_cuts.png").c_str());
 
     // Clean up
     delete canvas;
