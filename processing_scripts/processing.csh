@@ -28,12 +28,12 @@ else if ($arg1 == "processing_scripts/processing_mc_three_particles.groovy") the
     set convert_arg3 = 2
 else if ($arg1 == "processing_scripts/processing_four_particles.groovy") then
     set convert_arg3 = 3
-else if ($arg1 == "processing_scripts/processing_exclusive_pi0.groovy") then
-    set convert_arg3 = 3
 else if ($arg1 == "processing_scripts/processing_dvcs.groovy") then
     set convert_arg3 = 4 # dvcs
+else if ($arg1 == "processing_scripts/processing_exclusive_pi0.groovy") then
+    set convert_arg3 = 5
 else if ($arg1 == "processing_scripts/processing_calibration.groovy") then
-    set convert_arg3 = 5 # calibration
+    set convert_arg3 = 6 # calibration
 endif
 
 # determine if Monte Carlo

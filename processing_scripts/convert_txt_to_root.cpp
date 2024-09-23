@@ -164,7 +164,8 @@ int main(int argc, char *argv[]) {
         cout << " <script_index> = 2 for three particle" << endl;
         cout << " <script_index> = 3 for four particle" << endl;
         cout << " <script_index> = 4 for dvcs (epgammaX)" << endl;
-        cout << " <script_index> = 5 for calibration" << endl;
+        cout << " <script_index> = 5 for eppi0" << endl;
+        cout << " <script_index> = 6 for calibration" << endl;
         return 1;
     }
     
@@ -200,7 +201,8 @@ int main(int argc, char *argv[]) {
     double Mx1;
     double eta1, eta2, Delta_eta, eta1_gN, eta2_gN;
     double phi1, phi2, Delta_phi, phih, phiR, theta;
-    double Emiss2, theta_gamma_gamma, pTmiss;
+    double Emiss2, theta_gamma_gamma, theta_pi0_pi0, pTmiss;
+    double Mh_gammagamma, detector_gamma1, detector_gamma2, open_angle_egamma1, open_angle_egamma2;
     // Additional variables for three hadrons
     double p3_p, p3_theta, p3_phi, vz_p3;
     double open_angle_ep3, open_angle_p1p3, open_angle_p2p3;
@@ -799,8 +801,90 @@ int main(int argc, char *argv[]) {
         tree->Branch("theta_gamma_gamma", &theta_gamma_gamma, "theta_gamma_gamma/D");
         tree->Branch("pTmiss", &pTmiss, "pTmiss/D");
     }
-    // Case for calibration script (not actually five hadrons)
-    if (script_index == 5 && is_mc == 0) {
+    // Case for eppi0
+    else if (script_index == 5 && is_mc == 0) {
+        // Link TTree branches to variables for two hadrons
+        tree->Branch("fiducial_status", &fiducial_status, "fiducial_status/I");
+        tree->Branch("runnum", &runnum, "runnum/I");
+        tree->Branch("num_pos", &num_pos, "num_pos/I");
+        tree->Branch("num_neg", &num_neg, "num_neg/I");
+        tree->Branch("num_neutral", &num_neutral, "num_neutral/I");
+        tree->Branch("runnum", &runnum, "runnum/I");
+        tree->Branch("evnum", &evnum, "evnum/I");
+        tree->Branch("helicity", &helicity, "helicity/I");
+        tree->Branch("beam_pol", &beam_pol, "beam_pol/D");
+        tree->Branch("target_pol", &target_pol, "target_pol/D");
+        tree->Branch("detector1", &detector1, "detector1/I");
+        tree->Branch("detector2", &detector2, "detector2/I");
+        tree->Branch("e_p", &e_p, "e_p/D");
+        tree->Branch("e_theta", &e_theta, "e_theta/D");
+        tree->Branch("e_phi", &e_phi, "e_phi/D");
+        tree->Branch("vz_e", &vz_e, "vz_e/D");
+        tree->Branch("p1_p", &p1_p, "p1_p/D");
+        tree->Branch("p1_theta", &p1_theta, "p1_theta/D");
+        tree->Branch("p1_phi", &p1_phi, "p1_phi/D");
+        tree->Branch("vz_p1", &vz_p1, "vz_p1/D");
+        tree->Branch("p2_p", &p2_p, "p2_p/D");
+        tree->Branch("p2_theta", &p2_theta, "p2_theta/D");
+        tree->Branch("p2_phi", &p2_phi, "p2_phi/D");
+        tree->Branch("vz_p2", &vz_p2, "vz_p2/D");
+        tree->Branch("open_angle_ep", &open_angle_ep, "open_angle_ep/D");
+        tree->Branch("open_angle_ep1", &open_angle_ep1, "open_angle_ep1/D");
+        tree->Branch("open_angle_ep2", &open_angle_ep2, "open_angle_ep2/D");
+        tree->Branch("open_angle_p1p2", &open_angle_p1p2, "open_angle_p1p2/D");
+        tree->Branch("Q2", &Q2, "Q2/D");
+        tree->Branch("W", &W, "W/D");
+        tree->Branch("Mx2", &Mx2, "Mx2/D");
+        tree->Branch("Mx2_1", &Mx2_1, "Mx2_1/D");
+        tree->Branch("Mx2_2", &Mx2_2, "Mx22_/D");
+        tree->Branch("x", &x, "x/D");
+        tree->Branch("y", &y, "y/D");
+        tree->Branch("t", &t, "t/D");
+        tree->Branch("t1", &t1, "t1/D");
+        tree->Branch("t2", &t2, "t2/D");
+        tree->Branch("tmin", &tmin, "tmin/D");
+        tree->Branch("z", &z, "z/D");
+        tree->Branch("z1", &z1, "z1/D");
+        tree->Branch("z2", &z2, "z2/D");
+        tree->Branch("Mh", &Mh, "Mh/D");
+        tree->Branch("xF", &xF, "xF/D");
+        tree->Branch("xF1", &xF1, "xF1/D");
+        tree->Branch("xF2", &xF2, "xF2/D");
+        tree->Branch("pT", &pT, "pT/D");
+        tree->Branch("pT1", &pT1, "pT1/D");
+        tree->Branch("pT2", &pT2, "pT2/D");
+        tree->Branch("pTpT", &pTpT, "pTpT/D");
+        tree->Branch("zeta", &zeta, "zeta/D");
+        tree->Branch("zeta1", &zeta1, "zeta1/D");
+        tree->Branch("zeta2", &zeta2, "zeta2/D");
+        tree->Branch("eta", &eta, "eta/D");
+        tree->Branch("eta1", &eta1, "eta1/D");
+        tree->Branch("eta2", &eta2, "eta2/D");
+        tree->Branch("Delta_eta", &Delta_eta, "Delta_eta/D");
+        tree->Branch("eta1_gN", &eta1_gN, "eta1_gN/D");
+        tree->Branch("eta2_gN", &eta2_gN, "eta2_gN/D");
+        tree->Branch("phi1", &phi1, "phi1/D");
+        tree->Branch("phi2", &phi2, "phi2/D");
+        tree->Branch("Delta_phi", &Delta_phi, "Delta_phi/D");
+        tree->Branch("phi", &phi, "phi/D");
+        tree->Branch("phiR", &phiR, "phiR/D");
+        tree->Branch("theta", &theta, "theta/D");
+        tree->Branch("DepA", &DepA, "DepA/D");
+        tree->Branch("DepB", &DepB, "DepB/D");
+        tree->Branch("DepC", &DepC, "DepC/D");
+        tree->Branch("DepV", &DepV, "DepV/D");
+        tree->Branch("DepW", &DepW, "DepW/D");
+        tree->Branch("Mh_gammagamma", &Mh_gammagamma, "Mh_gammagamma/D");
+        tree->Branch("detector_gamma1", &detector_gamma1, "detector_gamma1/I");
+        tree->Branch("detector_gamma2", &detector_gamma2, "detector_gamma2/I");
+        tree->Branch("open_angle_egamma1", &open_angle_egamma1, "open_angle_egamma1/D");
+        tree->Branch("open_angle_egamma2", &open_angle_egamma2, "open_angle_egamma2/D");
+        tree->Branch("Emiss2", &Emiss2, "Emiss2/D");
+        tree->Branch("theta_pi0_pi0", &theta_pi0_pi0, "theta_pi0_pi0/D");
+        tree->Branch("pTmiss", &pTmiss, "pTmiss/D");
+    }
+    // Case for calibration script 
+    if (script_index == 6 && is_mc == 0) {
         // Link TTree branches to variables for four hadrons
         tree->Branch("config_run", &config_run, "config_run/I");
         tree->Branch("config_event", &config_event, "config_event/I");
@@ -1199,8 +1283,54 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // calibration script
+    // eppi0
     if (script_index == 5 && is_mc == 0) {
+        while (infile >> fiducial_status >> num_pos >> num_neg >> num_neutral >>
+            runnum >> evnum >> helicity >> detector1 >> detector2 >> e_p >> e_theta >> e_phi >> vz_e >> 
+            p1_p >> p1_theta >> p1_phi >> vz_p1 >> p2_p >> p2_theta >> p2_phi >> vz_p2 >> 
+            open_angle_ep >> open_angle_ep1 >> open_angle_ep2 >> open_angle_p1p2 >> 
+            Q2 >> W >> Mx2 >> Mx2_1 >> Mx2_2 >> x >> t >> t1 >> t2 >> tmin >> y >> 
+            z >> z1 >> z2 >> Mh >> xF >> xF1 >> xF2 >> 
+            pT >> pT1 >> pT2 >> pTpT >> zeta >> zeta1 >> zeta2 >> eta >> eta1 >> eta2 >> Delta_eta>> 
+            eta1_gN >> eta2_gN >> phi1 >> phi2 >> Delta_phi >> phi >> phiR >> theta >> 
+            DepA >> DepB >> DepC >> DepV >> DepW >> detector_gamma1 >> detector_gamma2 >>
+            open_angle_egamma1 >> open_angle_egamma2 >> Emiss2 >> theta_pi0_pi0 >> pTmiss) {
+
+            beam_pol = getPol(runnum);
+            if (runnum < 16000) { target_pol = 0; }
+            else { 
+                for (const auto& run_info : run_info_list) {
+                    if (run_info.runnum == runnum) {
+                        target_pol = run_info.target_polarization;
+                        break;
+                    }
+                }
+            }
+
+            // Convert spherical coordinates to Cartesian coordinates for each hadron
+            double p1_x, p1_y, p1_z;
+            sphericalToCartesian(p1_p, p1_phi, p1_theta, p1_x, p1_y, p1_z);
+            
+            double p2_x, p2_y, p2_z;
+            sphericalToCartesian(p2_p, p2_phi, p2_theta, p2_x, p2_y, p2_z);
+            
+            // Calculate the total momentum components of the parent hadron
+            double p_parent_x = p1_x + p2_x;
+            double p_parent_y = p1_y + p2_y;
+            double p_parent_z = p1_z + p2_z;
+            
+            // Calculate the magnitude of the parent hadron's momentum
+            p_p = vectorMagnitude(p_parent_x, p_parent_y, p_parent_z);
+            
+            // Calculate the polar angle of the parent hadron's momentum
+            p_theta = vectorPolarAngle(p_parent_z, p_p);
+
+            tree->Fill(); // Fill the tree with the read data
+        }
+    }
+
+    // calibration script
+    if (script_index == 6 && is_mc == 0) {
         while (infile >> config_run >> config_event >> event_helicity >> particle_pid >>
                 particle_px >> particle_py >> particle_pz >> p >> theta >> phi >> 
                 particle_vx >> particle_vy >> particle_vz >> particle_beta >> 

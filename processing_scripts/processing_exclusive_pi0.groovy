@@ -72,6 +72,7 @@ public static void main(String[] args) {
 	double phi1, phi2, Delta_phi, phih, phiR, theta;
 	double Depolarization_A, Depolarization_B, Depolarization_C;
 	double Depolarization_V, Depolarization_W;
+	double Emiss2, theta_pi0_pi0, pTmiss;
 
 	// load my kinematic fitter/PID
 	GenericKinematicFitter fitter = new analysis_fitter(10.6041); 
@@ -122,14 +123,33 @@ public static void main(String[] args) {
 
 		    if (process_event) {
 
+		    	int num_photons = research_Event.countByPid(22);
+		    	for (int current_gamma1 = 0; current_gamma1 < num_photons; current_gamma1++) {
+		    		for (int current_gamma2 = 0; current_gamma2 < num_photons; current_gamma2++) {
+		    			if (current_gamma1 == current_gamma2) continue;
+
+		    			// supply runnum and boolean for radiative simulation or not
+			        	BeamEnergy Eb = new BeamEnergy(runnum, false);
+			            ThreeParticles variables = new ThreeParticles(event, research_Event, 
+							22, current_gamma1, 22, current_gamma2, Eb.Eb());
+
+			            Mh_gammagamma = variables.Mh();
+			            if (Mh_gammagamma < 0.11 || Mh_gammagamma > 0.16) continue;
+			            detector_gamma1 = variables.get_detector1();
+			            detector_gamma2 = variables.get_detector2();
+			            open_angle_egamma1 = variables.open_angle_ep1();
+			            open_angle_egamma2 = variables.open_angle_ep2();
+		    		}
+		    	}
+
 		        // get # of particles 
-		        int num_p1 = research_Event.countByPid(p1_Str.toInteger());
-		        int num_p2 = research_Event.countByPid(p2_Str.toInteger()); 
+		        int num_p1 = research_Event.countByPid(2212);
+		        int num_p2 = research_Event.countByPid(111); 
 
 		        // cycle over all hadrons
 		        for (int current_p1 = 0; current_p1 < num_p1; current_p1++) { 
 		        	for (int current_p2 = 0; current_p2 < num_p2; current_p2++) { 
-		        		if (current_p1 == current_p2 && p1_int == p2_int) {continue; }
+		        		if (current_p1 == current_p2 && p1_int == p2_int) continue;
 
 		        		// supply runnum and boolean for radiative simulation or not
 			        	BeamEnergy Eb = new BeamEnergy(runnum, false);
@@ -219,6 +239,11 @@ public static void main(String[] args) {
 			                Depolarization_V = variables.Depolarization_V();
 					    	Depolarization_W = variables.Depolarization_W();
 
+					    	// exclusivity variables
+					    	Emiss2 = variables.Emiss2();
+					    	theta_pi0_pi0 = variables.theta_gamma_gamma();
+					    	pTmiss = variables.pTmiss();
+
 			                // Use a StringBuilder to append all data in a single call
 			                StringBuilder line = new StringBuilder();
 			                line.append(fiducial_status).append(" ")
@@ -287,7 +312,15 @@ public static void main(String[] args) {
 			                    .append(Depolarization_B).append(" ")
 			                    .append(Depolarization_C).append(" ")
 			                    .append(Depolarization_V).append(" ")
-			                    .append(Depolarization_W).append("\n");
+			                    .append(Depolarization_W).append(" ")
+			                    .append(Mh_gammagamma).append(" ")
+			                    .append(detector_gamma1).append(" ")
+			                    .append(detector_gamma2).append(" ")
+			                    .append(open_angle_egamma1).append(" ")
+			                    .append(open_angle_egamma2).append(" ")
+			                    .append(Emiss2).append(" ")
+			                    .append(theta_pi0_pi0).append(" ")
+			                    .append(pTmiss).append("\n");;
 
 			                // Append the line to the batchLines StringBuilder
 			                batchLines.append(line.toString());
@@ -320,7 +353,9 @@ public static void main(String[] args) {
 	    "38: z1, 39: z2, 40: Mh, 41: xF, 42: xF1, 43: xF2, 44: pT, 45: pT1, 46: pT2, 47: pTpT, " +
 	    "48: zeta, 49: zeta1, 50: zeta2, 51: eta, 52: eta1, 53: eta2, 54: Delta_eta, 55: eta1_gN, 56: eta2_gN, " +
 	    "57: phi1, 58: phi2, 59: Delta_phi, 60: phih, 61: phiR, 62: theta, " +
-	    "63: DepA, 64: DepB, 65: DepC, 66: DepV, 67: DepW");
+	    "63: DepA, 64: DepB, 65: DepC, 66: DepV, 67: DepW, 68: Mh_gammagamma, " +
+	    "69: detector_gamma1, 70: detector_gamma2, 71: open_angle_egamma1, 72: open_angle_egamma2, " +
+	    "73: Emiss2, 74: theta_pi0_pi0, 75: pTmiss.");
 
 		println("Set p1 PID = $p1_Str");
 		println("Set p2 PID = $p2_Str");
