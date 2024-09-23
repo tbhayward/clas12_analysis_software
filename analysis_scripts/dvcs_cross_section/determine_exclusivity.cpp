@@ -104,10 +104,10 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
         hist_data->Draw("HIST");
         hist_mc->Draw("HIST SAME");
 
-        // Add a legend with the count information
-        TLegend* legend = new TLegend(0.4, 0.7, 0.9, 0.9);
-        legend->AddEntry(hist_data, ("Data (" + std::to_string(hist_data->GetEntries()) + ")").c_str(), "l");
-        legend->AddEntry(hist_mc, ("MC (" + std::to_string(hist_mc->GetEntries()) + ")").c_str(), "l");
+        // Add a legend with the count information (integer format)
+        TLegend* legend = new TLegend(0.45, 0.7, 0.9, 0.9);
+        legend->AddEntry(hist_data, ("Data (" + std::to_string(static_cast<int>(hist_data->GetEntries())) + ")").c_str(), "l");
+        legend->AddEntry(hist_mc, ("MC (" + std::to_string(static_cast<int>(hist_mc->GetEntries())) + ")").c_str(), "l");
         legend->Draw();
     }
 
