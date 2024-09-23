@@ -1,7 +1,7 @@
 #include "determine_exclusivity.h"
 #include "histConfigs.h"
 #include "formatLabelName.h"
-#include "kinematic_cuts.h"  // Include the kinematic cuts header
+#include "kinematic_cuts.h" 
 #include <TCanvas.h>
 #include <TH1D.h>
 #include <TLegend.h>
