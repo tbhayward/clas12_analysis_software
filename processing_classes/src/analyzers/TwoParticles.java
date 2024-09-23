@@ -130,7 +130,7 @@ public class TwoParticles {
                 ? fiducial_cuts.dc_fiducial_cut(p_rec_index, rec_Bank, traj_Bank) : true;
         boolean passesCentralDetector_1 = generic_tests.central_detector_cut(p_rec_index, rec_Bank)
                 ? fiducial_cuts.cvt_fiducial_cut(p_rec_index, rec_Bank, traj_Bank) : true;
-        boolean passesForwardTagger_1 = generic_tests.forward_detector_cut(p_rec_index, rec_Bank) ? 
+        boolean passesForwardTagger_1 = generic_tests.forward_tagger_cut(p_rec_index, rec_Bank) ? 
                 fiducial_cuts.forward_tagger_fiducial_cut(p_rec_index, rec_Bank, cal_Bank): true;
         boolean p_fiducial_check = passesForwardTagger_1 && passesForwardDetector_1 && passesCentralDetector_1;
         

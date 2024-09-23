@@ -146,7 +146,7 @@ public class FourParticles {
                 ? fiducial_cuts.dc_fiducial_cut(p1_rec_index, rec_Bank, traj_Bank) : true;
         boolean passesCentralDetector_1 = generic_tests.central_detector_cut(p1_rec_index, rec_Bank)
                 ? fiducial_cuts.cvt_fiducial_cut(p1_rec_index, rec_Bank, traj_Bank) : true;
-        boolean passesForwardTagger_1 = generic_tests.forward_detector_cut(p1_rec_index, rec_Bank) ? 
+        boolean passesForwardTagger_1 = generic_tests.forward_tagger_cut(p1_rec_index, rec_Bank) ? 
                 fiducial_cuts.forward_tagger_fiducial_cut(p1_rec_index, rec_Bank, cal_Bank): true;
         boolean p1_fiducial_check = passesForwardTagger_1 && passesForwardDetector_1 && passesCentralDetector_1;
 
@@ -155,7 +155,7 @@ public class FourParticles {
                 ? fiducial_cuts.dc_fiducial_cut(p2_rec_index, rec_Bank, traj_Bank) : true;
         boolean passesCentralDetector_2 = generic_tests.central_detector_cut(p2_rec_index, rec_Bank)
                 ? fiducial_cuts.cvt_fiducial_cut(p2_rec_index, rec_Bank, traj_Bank) : true;
-        boolean passesForwardTagger_2 = generic_tests.forward_detector_cut(p2_rec_index, rec_Bank) ? 
+        boolean passesForwardTagger_2 = generic_tests.forward_tagger_cut(p2_rec_index, rec_Bank) ? 
                 fiducial_cuts.forward_tagger_fiducial_cut(p2_rec_index, rec_Bank, cal_Bank): true;
         boolean p2_fiducial_check = passesForwardTagger_2 && passesForwardDetector_2 && passesCentralDetector_2;
 
@@ -164,7 +164,7 @@ public class FourParticles {
                 ? fiducial_cuts.dc_fiducial_cut(p3_rec_index, rec_Bank, traj_Bank) : true;
         boolean passesCentralDetector_3 = generic_tests.central_detector_cut(p3_rec_index, rec_Bank)
                 ? fiducial_cuts.cvt_fiducial_cut(p3_rec_index, rec_Bank, traj_Bank) : true;
-        boolean passesForwardTagger_3 = generic_tests.forward_detector_cut(p3_rec_index, rec_Bank) ? 
+        boolean passesForwardTagger_3 = generic_tests.forward_tagger_cut(p3_rec_index, rec_Bank) ? 
                 fiducial_cuts.forward_tagger_fiducial_cut(p3_rec_index, rec_Bank, cal_Bank): true;
         boolean p3_fiducial_check = passesForwardTagger_3 && passesForwardDetector_3 && passesCentralDetector_3;
 
