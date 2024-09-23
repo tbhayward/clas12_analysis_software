@@ -142,7 +142,7 @@ int main(int argc, char* argv[]) {
     std::string base_output_dir = "output";  // Define the base directory
     create_directories(base_output_dir);     // Create the directories
 
-    cout << "Successfully loaded all data and MC trees." << endl;
+    cout << "Successfully loaded all data and MC trees." << endl << endl;
 
     // The rest of your program would continue here...
 
