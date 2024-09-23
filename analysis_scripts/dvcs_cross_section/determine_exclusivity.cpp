@@ -29,9 +29,9 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
     // Vector of variables for plotting (switch between "dvcs" and "eppi0")
     std::vector<std::string> variables;
     if (analysisType == "dvcs") {
-        variables = {"open_angle_ep2", "Mx2_2", "theta_gamma_gamma", "placeholder", "Emiss2", "Mx2", "Mx2_1", "pTmiss"};
+        variables = {"open_angle_ep2", "Mx2_2", "theta_gamma_gamma", "xF", "Emiss2", "Mx2", "Mx2_1", "pTmiss"};
     } else if (analysisType == "eppi0") {
-        variables = {"open_angle_ep2", "Mx2_2", "theta_pi0_pi0", "placeholder", "Emiss2", "Mx2", "Mx2_1", "pTmiss"};
+        variables = {"open_angle_ep2", "Mx2_2", "theta_pi0_pi0", "xF", "Emiss2", "Mx2", "Mx2_1", "pTmiss"};
     } else {
         throw std::runtime_error("Invalid analysis type! Must be 'dvcs' or 'eppi0'");
     }
@@ -49,9 +49,6 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
     TTreeReaderValue<double> pTmiss_mc(mcReader, "pTmiss");
 
     for (size_t i = 0; i < variables.size(); ++i) {
-        if (variables[i] == "placeholder") {
-            continue;  // Skip placeholder for now
-        }
 
         // Retrieve histogram bin settings
         HistConfig config = histConfigs[variables[i]];

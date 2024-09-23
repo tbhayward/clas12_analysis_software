@@ -8,7 +8,7 @@ std::string formatLabelName(const std::string& original, const std::string& anal
         {"Mx2_2", "M M_{e'#gamma}^{2} (GeV^{2})"},
         {"theta_gamma_gamma", "#theta_{#gamma(det)#gamma(rec)}"},
         {"theta_pi0_pi0", "#theta_{#pi^{0}(det)#pi^{0}(rec)}"},
-        {"placeholder", ""},
+        {"xF", "x_{F}"},
         {"Emiss2", "M E_{e'p'#gamma} (GeV)"},
         {"Mx2", "M M_{e'p'#gamma}^{2} (GeV^{2})"},
         {"Mx2_1", "M M_{e'p'}^{2} (GeV^{2})"},
