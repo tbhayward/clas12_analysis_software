@@ -186,7 +186,7 @@ public class ThreeParticles {
         if (generic_tests.forward_tagger_cut(p1_rec_index, rec_Bank)) {
             detector1 = 0; // Forward Tagger
         } else if (generic_tests.forward_detector_cut(p1_rec_index, rec_Bank)) {
-//            detector1 = 1; // Forward Detector
+            detector1 = 1; // Forward Detector
         } else if (generic_tests.central_detector_cut(p1_rec_index, rec_Bank)) {
             detector1 = 2; // Central Detector
         }
@@ -194,7 +194,7 @@ public class ThreeParticles {
         if (generic_tests.forward_tagger_cut(p2_rec_index, rec_Bank)) {
             detector2 = 0; // Forward Tagger
         } else if (generic_tests.forward_detector_cut(p2_rec_index, rec_Bank)) {
-//            detector2 = 1; // Forward Detector
+            detector2 = 1; // Forward Detector
         } else if (generic_tests.central_detector_cut(p2_rec_index, rec_Bank)) {
             detector2 = 2; // Central Detector
         }
