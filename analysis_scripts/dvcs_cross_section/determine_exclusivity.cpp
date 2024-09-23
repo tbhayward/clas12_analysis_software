@@ -109,8 +109,8 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
         hist_mc->SetMarkerColor(kRed);  // Red color for MC points
 
         // Draw the histograms with error bars
-        hist_data->Draw("E1");  // Points with vertical error bars, no horizontal errors
-        hist_mc->Draw("E1 SAME");  // Same for MC
+        hist_data->Draw("EP");  // Points with vertical error bars, no horizontal errors
+        hist_mc->Draw("EP SAME");  // Same for MC
 
         // Add the title for each subplot
         hist_data->SetTitle(plotTitle.c_str());
