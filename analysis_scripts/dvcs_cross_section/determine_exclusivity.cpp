@@ -72,6 +72,7 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
         // Fill data histograms
         while (dataReader.Next()) {
             hist_data->Fill(*dataVar);
+            if (i == 2) std::cout << *dataVar << std::endl;            
             // Apply kinematic cuts and fill the "Loose Cuts" histograms if they pass
             if (apply_kinematic_cuts(*t_data, *open_angle_ep2_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data)) {
                 hist_data_loose->Fill(*dataVar);

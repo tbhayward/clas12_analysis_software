@@ -147,9 +147,9 @@ int main(int argc, char* argv[]) {
     // The rest of your program would continue here...
 
     // Call determine_exclusivity and plot variables for DVCS
-    determine_exclusivity("dvcs", data_readers[0], mc_rec_dvcsgen_readers[0], "output/exclusivity_plots", "Fa18 Inb e'p'#gamma");
-    determine_exclusivity("dvcs", data_readers[1], mc_rec_dvcsgen_readers[1], "output/exclusivity_plots", "Fa18 Out e'p'#gamma");
-    determine_exclusivity("dvcs", data_readers[2], mc_rec_dvcsgen_readers[2], "output/exclusivity_plots", "Sp19 Inb e'p'#gamma");
+    // determine_exclusivity("dvcs", data_readers[0], mc_rec_dvcsgen_readers[0], "output/exclusivity_plots", "Fa18 Inb e'p'#gamma");
+    // determine_exclusivity("dvcs", data_readers[1], mc_rec_dvcsgen_readers[1], "output/exclusivity_plots", "Fa18 Out e'p'#gamma");
+    // determine_exclusivity("dvcs", data_readers[2], mc_rec_dvcsgen_readers[2], "output/exclusivity_plots", "Sp19 Inb e'p'#gamma");
 
     determine_exclusivity("eppi0", data_readers[0], mc_rec_dvcsgen_readers[0], "output/exclusivity_plots", "Fa18 Inb e'p'#pi^{0}");
 
