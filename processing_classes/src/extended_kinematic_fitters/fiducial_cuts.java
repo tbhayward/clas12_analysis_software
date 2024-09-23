@@ -14,7 +14,7 @@ public class fiducial_cuts {
         System.out.println("entering ft fiducial cuts");
         for (int current_Row = 0; current_Row < ft_Bank.rows(); current_Row++) {
             int pindex = ft_Bank.getInt("pindex", current_Row);
-            System.out.println("particle_Index = "+particle_Index+"pindex = "+pindex);
+            System.out.println("particle_Index = "+particle_Index+", pindex = "+pindex);
             // Check if the current row matches the particle index and layer we're looking for
             if (pindex == particle_Index) {
                 double ft_x = ft_Bank.getFloat("x", current_Row);
