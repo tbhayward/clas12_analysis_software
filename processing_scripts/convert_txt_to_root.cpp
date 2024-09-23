@@ -1294,7 +1294,7 @@ int main(int argc, char *argv[]) {
             DepA >> DepB >> DepC >> DepV >> DepW >> Mh_gammagamma >> 
             detector_gamma1 >> detector_gamma2 >>
             open_angle_egamma1 >> open_angle_egamma2 >> Emiss2 >> theta_pi0_pi0 >> pTmiss) {
-            std::cout << Mh_gammagamma << std::endl;
+            std::cout << Mh_gammagamma << " " << detector_gamma1 << " " << detector_gamma2 << std::endl;
             beam_pol = getPol(runnum);
             if (runnum < 16000) { target_pol = 0; }
             else { 
