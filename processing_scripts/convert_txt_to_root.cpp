@@ -739,7 +739,7 @@ int main(int argc, char *argv[]) {
         tree->Branch("helicity", &helicity, "helicity/I");
         tree->Branch("beam_pol", &beam_pol, "beam_pol/D");
         tree->Branch("target_pol", &target_pol, "target_pol/D");
-        ree->Branch("detector1", &detector1, "detector1/I");
+        tree->Branch("detector1", &detector1, "detector1/I");
         tree->Branch("detector2", &detector2, "detector2/I");
         tree->Branch("e_p", &e_p, "e_p/D");
         tree->Branch("e_theta", &e_theta, "e_theta/D");
