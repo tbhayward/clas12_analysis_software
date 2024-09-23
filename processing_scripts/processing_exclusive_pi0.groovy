@@ -137,12 +137,13 @@ public static void main(String[] args) {
 			            if (Mh_gammagamma < 0.11 || Mh_gammagamma > 0.16) continue;
 			            detector_gamma1 = variables.get_detector1();
 			            detector_gamma2 = variables.get_detector2();
-			            println(detector_gamma1+" "+detector_gamma2)
+			            if (detector_gamma1 == 2 || detector_gamma2 == 2) continue;
 			            open_angle_egamma1 = variables.open_angle_ep1();
 			            open_angle_egamma2 = variables.open_angle_ep2();
 		    		}
 		    	}
 		    	if (Mh_gammagamma < 0.11 || Mh_gammagamma > 0.16) continue;
+		    	if (detector_gamma1 == 2 || detector_gamma2 == 2) continue;
 
 		        // get # of particles 
 		        int num_p1 = research_Event.countByPid(2212);
