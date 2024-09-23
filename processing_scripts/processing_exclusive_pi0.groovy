@@ -141,7 +141,7 @@ public static void main(String[] args) {
 			            open_angle_egamma2 = variables.open_angle_ep2();
 		    		}
 		    	}
-		    	println(Mh_gammagamma);
+		    	if (Mh_gammagamma < 0.11 || Mh_gammagamma > 0.16) continue;
 
 		        // get # of particles 
 		        int num_p1 = research_Event.countByPid(2212);
