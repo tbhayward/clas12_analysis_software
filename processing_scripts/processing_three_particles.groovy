@@ -25,7 +25,7 @@ public static void main(String[] args) {
 	// Start time
 	long startTime = System.currentTimeMillis();
 
-	// ~~~~~~~~~~~~~~~~ set up input paramaeters ~~~~~~~~~~~~~~~~ //
+	// ~~~~~~~~~~~~~~~~ set up input parameters ~~~~~~~~~~~~~~~~ //
 
 	// Check if an argument is provided
 	if (!args) {
@@ -44,13 +44,13 @@ public static void main(String[] args) {
 	println("Set p1 PID = $p1_Str");
 	int p1_int = p1_Str.toInteger(); // Convert p1_Str to integer
 
-	// Set the PDG PID for p2 based on the provided 3nd argument or default to -211 (pi-)
+	// Set the PDG PID for p2 based on the provided 3rd argument or default to -211 (pi-)
 	String p2_Str = args.length < 3 ? "-211" : args[2];
 	if (args.length < 3) println("WARNING: Specify a PDG PID for p2! Set to pi- (-211).");
 	println("Set p2 PID = $p2_Str");
 	int p2_int = p2_Str.toInteger(); // Convert p2_Str to integer
 
-	// Set the output file name based on the provided 3rd argument or use the default name
+	// Set the output file name based on the provided 4th argument or use the default name
 	String output_file = args.length < 4 ? "hadron_dummy_out.txt" : args[3];
 	if (args.length < 4) 
 	    println("WARNING: Specify an output file name. Set to \"dihadron_dummy_out.txt\".");
@@ -58,15 +58,21 @@ public static void main(String[] args) {
 	file.delete();
 	BufferedWriter writer = new BufferedWriter(new FileWriter(file));
 
-	// Set the number of files to process based on the provided 4th argument
-	// use the size of the hipo_list if no argument provided
-	int n_files = args.length < 5 || Integer.parseInt(args[4]) > hipo_list.size()
+	// Set the number of files to process based on the provided 5th argument
+	// If the argument is "0", default to the full list size
+	int n_files = args.length < 5 || Integer.parseInt(args[4]) == 0 || Integer.parseInt(args[4]) > hipo_list.size()
 	    ? hipo_list.size() : Integer.parseInt(args[4]);
-	if (args.length < 5 || Integer.parseInt(args[4]) > hipo_list.size()) {
-	    // Print warnings and information if the number of files is not specified or too large
-	    println("WARNING: Number of files not specified or number too large.")
+	if (args.length < 5 || Integer.parseInt(args[4]) == 0 || Integer.parseInt(args[4]) > hipo_list.size()) {
+	    // Print warnings and information if the number of files is not specified, set to 0, or too large
+	    println("WARNING: Number of files not specified, set to 0, or number too large.")
 	    println("Setting # of files to be equal to number of files in the directory.");
 	    println("There are $hipo_list.size files.");
+	}
+
+	// Set the beam energy based on the provided 6th argument or default to 10.6
+	double beam_energy = args.length < 6 ? 10.6 : Double.parseDouble(args[5]);
+	if (args.length < 6) {
+	    println("No beam energy provided, defaulting to 10.6 GeV.");
 	}
 
 	// ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
@@ -142,9 +148,11 @@ public static void main(String[] args) {
 		        		if (current_p1 == current_p2 && p1_int == p2_int) {continue; }
 
 		        		// supply runnum and boolean for radiative simulation or not
-			        	BeamEnergy Eb = new BeamEnergy(runnum, false);
+						BeamEnergy Eb = new BeamEnergy(runnum, false);
+						// Use the input beam energy if runnum == 11, otherwise use Eb.Eb()
+						double energy = (runnum == 11) ? beam_energy : Eb.Eb();
 			            ThreeParticles variables = new ThreeParticles(event, research_Event, 
-							p1_int, current_p1, p2_int, current_p2, Eb.Eb());
+							p1_int, current_p1, p2_int, current_p2, energy);
 			            // this is my class for defining all relevant kinematic variables
 
 			            if (variables.channel_test(variables)) {

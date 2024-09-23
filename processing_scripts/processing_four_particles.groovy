@@ -25,7 +25,7 @@ public static void main(String[] args) {
 	// Start time
 	long startTime = System.currentTimeMillis();
 
-	// ~~~~~~~~~~~~~~~~ set up input paramaeters ~~~~~~~~~~~~~~~~ //
+	// ~~~~~~~~~~~~~~~~ set up input parameters ~~~~~~~~~~~~~~~~ //
 
 	// Check if an argument is provided
 	if (!args) {
@@ -44,19 +44,19 @@ public static void main(String[] args) {
 	println("Set p1 PID = $p1_Str");
 	int p1_int = p1_Str.toInteger(); // Convert p1_Str to integer
 
-	// Set the PDG PID for p2 based on the provided 3nd argument or default to -211 (pi-)
+	// Set the PDG PID for p2 based on the provided 3rd argument or default to -211 (pi-)
 	String p2_Str = args.length < 3 ? "-211" : args[2];
 	if (args.length < 3) println("WARNING: Specify a PDG PID for p2! Set to pi- (-211).");
 	println("Set p2 PID = $p2_Str");
 	int p2_int = p2_Str.toInteger(); // Convert p2_Str to integer
 
-	// Set the PDG PID for p3 based on the provided 4nd argument or default to 2212 (p)
+	// Set the PDG PID for p3 based on the provided 4th argument or default to 2212 (p)
 	String p3_Str = args.length < 4 ? "2212" : args[3];
-	if (args.length < 4) println("WARNING: Specify a PDG PID for p2! Set to proton (2212).");
+	if (args.length < 4) println("WARNING: Specify a PDG PID for p3! Set to proton (2212).");
 	println("Set p3 PID = $p3_Str");
 	int p3_int = p3_Str.toInteger(); // Convert p3_Str to integer
 
-	// Set the output file name based on the provided 4th argument or use the default name
+	// Set the output file name based on the provided 5th argument or use the default name
 	String output_file = args.length < 5 ? "hadron_dummy_out.txt" : args[4];
 	if (args.length < 5) 
 	    println("WARNING: Specify an output file name. Set to \"trihadron_dummy_out.txt\".");
@@ -64,15 +64,21 @@ public static void main(String[] args) {
 	file.delete();
 	BufferedWriter writer = new BufferedWriter(new FileWriter(file));
 
-	// Set the number of files to process based on the provided 5tth argument
-	// use the size of the hipo_list if no argument provided
-	int n_files = args.length < 6 || Integer.parseInt(args[5]) > hipo_list.size()
+	// Set the number of files to process based on the provided 6th argument
+	// If the argument is "0", default to the full list size
+	int n_files = args.length < 6 || Integer.parseInt(args[5]) == 0 || Integer.parseInt(args[5]) > hipo_list.size()
 	    ? hipo_list.size() : Integer.parseInt(args[5]);
-	if (args.length < 6 || Integer.parseInt(args[5]) > hipo_list.size()) {
-	    // Print warnings and information if the number of files is not specified or too large
-	    println("WARNING: Number of files not specified or number too large.")
+	if (args.length < 6 || Integer.parseInt(args[5]) == 0 || Integer.parseInt(args[5]) > hipo_list.size()) {
+	    // Print warnings and information if the number of files is not specified, set to 0, or too large
+	    println("WARNING: Number of files not specified, set to 0, or number too large.")
 	    println("Setting # of files to be equal to number of files in the directory.");
 	    println("There are $hipo_list.size files.");
+	}
+
+	// Set the beam energy based on the provided 7th argument or default to 10.6
+	double beam_energy = args.length < 7 ? 10.6 : Double.parseDouble(args[6]);
+	if (args.length < 7) {
+	    println("No beam energy provided, defaulting to 10.6 GeV.");
 	}
 
 	// ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
@@ -160,9 +166,11 @@ public static void main(String[] args) {
 							if (current_p2 == current_p3 && p2_Str.toInteger() == p3_Str.toInteger()) {continue; }
 
 							// supply runnum and boolean for radiative simulation or not
-				        	BeamEnergy Eb = new BeamEnergy(runnum, false);
+							BeamEnergy Eb = new BeamEnergy(runnum, false);
+							// Use the input beam energy if runnum == 11, otherwise use Eb.Eb()
+							double energy = (runnum == 11) ? beam_energy : Eb.Eb();
 				            FourParticles variables = new FourParticles(event, research_Event, p1_int, 
-				            	current_p1, p2_int, current_p2, p3_int, current_p3, Eb.Eb());
+				            	current_p1, p2_int, current_p2, p3_int, current_p3, energy);
 				            // this is my class for defining all relevant kinematic variables
 
 				            if (variables.channel_test(variables)) {

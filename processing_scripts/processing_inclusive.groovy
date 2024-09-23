@@ -25,7 +25,7 @@ public static void main(String[] args) {
 	// Start time
 	long startTime = System.currentTimeMillis();
 
-	// ~~~~~~~~~~~~~~~~ set up input paramaeters ~~~~~~~~~~~~~~~~ //
+	// ~~~~~~~~~~~~~~~~ set up input parameters ~~~~~~~~~~~~~~~~ //
 
 	// Check if an argument is provided
 	if (!args) {
@@ -38,23 +38,29 @@ public static void main(String[] args) {
 	(args[0] as File).eachFileRecurse(FileType.FILES) 
 		{ if (it.name.endsWith('.hipo')) hipo_list << it }
 
-	// Set the output file name based on the provided 3rd argument or use the default name
+	// Set the output file name based on the provided 2nd argument or use the default name
 	String output_file = args.length < 2 ? "inclusive_dummy_out.txt" : args[1];
 	if (args.length < 2) 
-	    println("WARNING: Specify an output file name. Set to \"hadron_dummy_out.txt\".");
+	    println("WARNING: Specify an output file name. Set to \"inclusive_dummy_out.txt\".");
 	File file = new File(output_file);
 	file.delete();
 	BufferedWriter writer = new BufferedWriter(new FileWriter(file));
 
-	// Set the number of files to process based on the provided 4th argument
-	// use the size of the hipo_list if no argument provided
-	int n_files = args.length < 3 || Integer.parseInt(args[2]) > hipo_list.size()
+	// Set the number of files to process based on the provided 3rd argument
+	// If the argument is "0", default to the full list size
+	int n_files = args.length < 3 || Integer.parseInt(args[2]) == 0 || Integer.parseInt(args[2]) > hipo_list.size()
 	    ? hipo_list.size() : Integer.parseInt(args[2]);
-	if (args.length < 3 || Integer.parseInt(args[2]) > hipo_list.size()) {
-	    // Print warnings and information if the number of files is not specified or too large
-	    println("WARNING: Number of files not specified or number too large.")
+	if (args.length < 3 || Integer.parseInt(args[2]) == 0 || Integer.parseInt(args[2]) > hipo_list.size()) {
+	    // Print warnings and information if the number of files is not specified, set to 0, or too large
+	    println("WARNING: Number of files not specified, set to 0, or number too large.")
 	    println("Setting # of files to be equal to number of files in the directory.");
 	    println("There are $hipo_list.size files.");
+	}
+
+	// Set the beam energy based on the provided 4th argument or default to 10.6
+	double beam_energy = args.length < 4 ? 10.6 : Double.parseDouble(args[3]);
+	if (args.length < 4) {
+	    println("No beam energy provided, defaulting to 10.6 GeV.");
 	}
 
 	// ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
@@ -114,8 +120,10 @@ public static void main(String[] args) {
 		    if (process_event) {
 
 				// supply runnum and boolean for radiative simulation or not
-	        	BeamEnergy Eb = new BeamEnergy(runnum, false);		       
-	            Inclusive variables = new Inclusive(event, research_Event, Eb.Eb());
+				BeamEnergy Eb = new BeamEnergy(runnum, false);
+				// Use the input beam energy if runnum == 11, otherwise use Eb.Eb()
+				double energy = (runnum == 11) ? beam_energy : Eb.Eb();	       
+	            Inclusive variables = new Inclusive(event, research_Event, energy);
 	            // this is my class for defining all relevant kinematic variables
 
 	            if (variables.channel_test(variables)) {
