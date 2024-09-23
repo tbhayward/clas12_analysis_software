@@ -29,9 +29,9 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
     // Vector of variables for plotting (switch between "dvcs" and "eppi0")
     std::vector<std::string> variables;
     if (analysisType == "dvcs") {
-        variables = {"open_angle_ep2", "Mx2_2", "theta_gamma_gamma", "xF", "Emiss2", "Mx2", "Mx2_1", "pTmiss"};
+        variables = {"open_angle_ep2", "theta_gamma_gamma", "pTmiss", "xF", "Emiss2", "Mx2", "Mx2_1", "Mx2_2",};
     } else if (analysisType == "eppi0") {
-        variables = {"open_angle_ep2", "Mx2_2", "theta_pi0_pi0", "xF", "Emiss2", "Mx2", "Mx2_1", "pTmiss"};
+        variables = {"open_angle_ep2", "theta_pi0_pi0", "pTmiss", "xF", "Emiss2", "Mx2", "Mx2_1", "Mx2_2",};
     } else {
         throw std::runtime_error("Invalid analysis type! Must be 'dvcs' or 'eppi0'");
     }
@@ -71,8 +71,7 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
 
         // Fill data histograms
         while (dataReader.Next()) {
-            hist_data->Fill(*dataVar);
-            if (i == 2) std::cout << *dataVar << std::endl;            
+            hist_data->Fill(*dataVar);            
             // Apply kinematic cuts and fill the "Loose Cuts" histograms if they pass
             if (apply_kinematic_cuts(*t_data, *open_angle_ep2_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data)) {
                 hist_data_loose->Fill(*dataVar);
