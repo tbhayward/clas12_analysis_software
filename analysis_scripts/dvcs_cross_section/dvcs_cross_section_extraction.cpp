@@ -145,7 +145,8 @@ int main(int argc, char* argv[]) {
 
     // The rest of your program would continue here...
 
-    determine_exclusivity(treeReaders[0][0][0], treeReaders[0][1][1], "output_directory");
+    // Call determine_exclusivity and plot variables
+    determine_exclusivity(data_readers[0], mc_rec_dvcsgen_readers[0], "output/exclusivity_plots");
 
     // End program
     cout << "Program complete. Additional functionality to be added later." << endl;
