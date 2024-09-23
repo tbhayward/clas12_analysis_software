@@ -92,33 +92,25 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
         double max_mc = hist_mc->GetMaximum();
         double y_max = 1.35 * std::max(max_data, max_mc);  // Set y-axis range from 0 to 1.35 * max
 
-        // Draw the histograms with points and error bars
+        // Draw the histograms
         canvas->cd(i + 1);
         gPad->SetLeftMargin(0.15);  // Add left padding
         gPad->SetBottomMargin(0.15);  // Add bottom padding
-        
-        // Set marker style for data (circle) and MC (square) and remove line color
-        hist_data->SetMarkerStyle(20);  // Circle marker for data
-        hist_data->SetMarkerSize(1.0);  // Adjust the size as needed
-        hist_data->SetLineColor(kBlue); // Keep line color blue for data
-        hist_data->SetMarkerColor(kBlue); // Blue color for data points
-
-        hist_mc->SetMarkerStyle(24);  // Square marker for MC
-        hist_mc->SetMarkerSize(1.0);  // Adjust the size as needed
-        hist_mc->SetLineColor(kRed);  // Red line for MC
-        hist_mc->SetMarkerColor(kRed);  // Red color for MC points
-
-        // Draw the histograms with error bars
-        hist_data->Draw("EP");  // Points with vertical error bars, no horizontal errors
-        hist_mc->Draw("EP SAME");  // Same for MC
+        hist_data->SetLineColor(kBlue);
+        hist_mc->SetLineColor(kRed);
+        hist_data->SetXTitle(formatLabelName(variables[i]).c_str());
+        hist_data->SetYTitle("Normalized counts");
+        hist_data->GetYaxis()->SetRangeUser(0, y_max);
+        hist_data->Draw("HIST");
+        hist_mc->Draw("HIST SAME");
 
         // Add the title for each subplot
         hist_data->SetTitle(plotTitle.c_str());
 
-        // Add a legend with colored text for both label and counts
+        // Add a legend with the count information (integer format)
         TLegend* legend = new TLegend(0.375, 0.7, 0.9, 0.9);
-        legend->AddEntry(hist_data, ("#color[4]{Data} (#color[4]{" + std::to_string(static_cast<int>(hist_data->GetEntries())) + " counts})").c_str(), "p");
-        legend->AddEntry(hist_mc, ("#color[2]{MC} (#color[2]{" + std::to_string(static_cast<int>(hist_mc->GetEntries())) + " counts})").c_str(), "p");
+        legend->AddEntry(hist_data, ("Data (" + std::to_string(static_cast<int>(hist_data->GetEntries())) + " counts)").c_str(), "l");
+        legend->AddEntry(hist_mc, ("MC (" + std::to_string(static_cast<int>(hist_mc->GetEntries())) + " counts)").c_str(), "l");
         legend->Draw();
     }
 
