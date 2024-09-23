@@ -130,6 +130,7 @@ public static void main(String[] args) {
 		        // get # of particles 
 		        int num_p1 = research_Event.countByPid(2212);
 		        int num_p2 = research_Event.countByPid(22); 
+		        println("there are "+num_p1+" "+num_p2);
 
 		        // cycle over all particle
 		        for (int current_p1 = 0; current_p1 < num_p1; current_p1++) { 
