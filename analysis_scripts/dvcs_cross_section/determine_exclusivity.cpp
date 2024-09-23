@@ -101,6 +101,10 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
         double y_max = 1.35 * std::max({max_data, max_mc});
         double y_max_loose = 1.35 * std::max({max_data_loose, max_mc_loose});
 
+        // Set the title for the histograms before drawing them
+        hist_data->SetTitle(plotTitle.c_str());
+        hist_data_loose->SetTitle((plotTitle + "; Loose Cuts").c_str());
+
         // Draw the histograms for original plots
         canvas->cd(i + 1);
         gPad->SetLeftMargin(0.15);  // Add left padding
@@ -112,10 +116,6 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
         hist_data->GetYaxis()->SetRangeUser(0, y_max);
         hist_data->Draw("HIST");
         hist_mc->Draw("HIST SAME");
-
-        // Set the title for the histograms before drawing them
-        hist_data->SetTitle(plotTitle.c_str());
-        hist_data_loose->SetTitle((plotTitle + "; Loose Cuts").c_str());
 
         // Draw the histograms for original plots
         canvas->cd(i + 1);
