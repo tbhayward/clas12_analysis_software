@@ -140,7 +140,7 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
         hist_mc_loose->Draw("HIST SAME");
 
         // Add a legend with the count information for "Loose Cuts" (integer format)
-        TLegend* legend_loose = new TLegend(0.325, 0.7, 0.9, 0.9);
+        TLegend* legend_loose = new TLegend(0.25, 0.7, 0.9, 0.9);
         legend_loose->AddEntry(hist_data_loose, ("Data (" + std::to_string(static_cast<int>(hist_data_loose->GetEntries())) + " counts; Loose Cuts)").c_str(), "l");
         legend_loose->AddEntry(hist_mc_loose, ("MC (" + std::to_string(static_cast<int>(hist_mc_loose->GetEntries())) + " counts; Loose Cuts)").c_str(), "l");
         legend_loose->Draw();
