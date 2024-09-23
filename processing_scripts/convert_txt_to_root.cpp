@@ -1293,7 +1293,8 @@ int main(int argc, char *argv[]) {
             z >> z1 >> z2 >> Mh >> xF >> xF1 >> xF2 >> 
             pT >> pT1 >> pT2 >> pTpT >> zeta >> zeta1 >> zeta2 >> eta >> eta1 >> eta2 >> Delta_eta>> 
             eta1_gN >> eta2_gN >> phi1 >> phi2 >> Delta_phi >> phi >> phiR >> theta >> 
-            DepA >> DepB >> DepC >> DepV >> DepW >> detector_gamma1 >> detector_gamma2 >>
+            DepA >> DepB >> DepC >> DepV >> DepW >> Mh_gammagamma >> 
+            detector_gamma1 >> detector_gamma2 >>
             open_angle_egamma1 >> open_angle_egamma2 >> Emiss2 >> theta_pi0_pi0 >> pTmiss) {
 
             beam_pol = getPol(runnum);
