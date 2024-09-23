@@ -113,8 +113,21 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
         hist_data->Draw("HIST");
         hist_mc->Draw("HIST SAME");
 
-        // Add the title for each subplot
+        // Set the title for the histograms before drawing them
         hist_data->SetTitle(plotTitle.c_str());
+        hist_data_loose->SetTitle((plotTitle + "; Loose Cuts").c_str());
+
+        // Draw the histograms for original plots
+        canvas->cd(i + 1);
+        gPad->SetLeftMargin(0.15);  // Add left padding
+        gPad->SetBottomMargin(0.15);  // Add bottom padding
+        hist_data->SetLineColor(kBlue);
+        hist_mc->SetLineColor(kRed);
+        hist_data->SetXTitle(formatLabelName(variables[i]).c_str());
+        hist_data->SetYTitle("Normalized counts");
+        hist_data->GetYaxis()->SetRangeUser(0, y_max);
+        hist_data->Draw("HIST");
+        hist_mc->Draw("HIST SAME");
 
         // Add a legend with the count information (integer format)
         TLegend* legend = new TLegend(0.375, 0.7, 0.9, 0.9);
@@ -133,9 +146,6 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
         hist_data_loose->GetYaxis()->SetRangeUser(0, y_max_loose);
         hist_data_loose->Draw("HIST");
         hist_mc_loose->Draw("HIST SAME");
-
-        // Add the title for each subplot (with "Loose Cuts")
-        hist_data_loose->SetTitle((plotTitle + "; Loose Cuts").c_str());
 
         // Add a legend with the count information for "Loose Cuts" (integer format)
         TLegend* legend_loose = new TLegend(0.375, 0.7, 0.9, 0.9);
