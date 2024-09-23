@@ -107,7 +107,7 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
         double y_max_loose = 1.35 * std::max({max_data_loose, max_mc_loose});
 
         hist_data->SetTitle(plotTitle.c_str());
-        hist_data_loose->SetTitle(plotTitle.c_str());
+        hist_data_loose->SetTitle(plotTitle.c_str());  
 
         // Draw the histograms for original plots
         canvas->cd(i + 1);
@@ -115,7 +115,7 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
         gPad->SetBottomMargin(0.15);  // Add bottom padding
         hist_data->SetLineColor(kBlue);
         hist_mc->SetLineColor(kRed);
-        hist_data->SetXTitle(formatLabelName(variables[i]).c_str());
+        hist_data->SetXTitle(formatLabelName(variables[i], analysisType).c_str());  // Pass analysisType to formatLabelName
         hist_data->SetYTitle("Normalized counts");
         hist_data->GetYaxis()->SetRangeUser(0, y_max);
         hist_data->Draw("HIST");
@@ -134,7 +134,7 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
         gPad->SetBottomMargin(0.15);  // Add bottom padding
         hist_data_loose->SetLineColor(kBlue);
         hist_mc_loose->SetLineColor(kRed);
-        hist_data_loose->SetXTitle(formatLabelName(variables[i]).c_str());
+        hist_data_loose->SetXTitle(formatLabelName(variables[i], analysisType).c_str());  // Pass analysisType to formatLabelName
         hist_data_loose->SetYTitle("Normalized counts");
         hist_data_loose->GetYaxis()->SetRangeUser(0, y_max_loose);
         hist_data_loose->Draw("HIST");
@@ -151,8 +151,8 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
     // Save the canvases with updated names to reflect the plotTitle input
     std::string cleanTitle = plotTitle;
     std::replace(cleanTitle.begin(), cleanTitle.end(), ' ', '_');  // Replace spaces with underscores
-    canvas->SaveAs((outputDir + "/exclusivity_plots_" + analysisType + "_" + cleanTitle + ".png").c_str());
-    canvas_loose_cuts->SaveAs((outputDir + "/exclusivity_plots_" + analysisType + "_"  + cleanTitle + "_loose_cuts.png").c_str());
+    canvas->SaveAs((outputDir + "/exclusivity_plots_" + cleanTitle + ".png").c_str());
+    canvas_loose_cuts->SaveAs((outputDir + "/exclusivity_plots_" + cleanTitle + "_loose_cuts.png").c_str());
 
     // Clean up
     delete canvas;

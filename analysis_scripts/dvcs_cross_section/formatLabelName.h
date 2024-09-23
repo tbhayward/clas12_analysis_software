@@ -1,9 +1,9 @@
-#ifndef FORMATLABELNAME_H
-#define FORMATLABELNAME_H
+#ifndef FORMAT_LABEL_NAME_H
+#define FORMAT_LABEL_NAME_H
 
 #include <string>
 
-// Function to format labels for plot titles
-std::string formatLabelName(const std::string& original);
+// Updated to include an additional argument for analysis type
+std::string formatLabelName(const std::string& original, const std::string& analysisType);
 
 #endif
