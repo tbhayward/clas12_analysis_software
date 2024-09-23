@@ -12,7 +12,7 @@ dvcsKinematicCuts::dvcsKinematicCuts(TTreeReader& reader)
       runnum(reader, "runnum"), Q2(reader, "Q2"), W(reader, "W"), 
       x(reader, "x"), y(reader, "y"), t1(reader, "t1"), eta2(reader, "eta2"),
       Emiss2(reader, "Emiss2"), theta_gamma_gamma(reader, "theta_gamma_gamma"),
-      pTmiss(reader, "pTmiss"), Mxgammasquared(reader, "Mxgammasquared") {}
+      pTmiss(reader, "pTmiss") {}
 
 bool dvcsKinematicCuts::applyCuts(int currentFits, bool isMC) {
     bool goodEvent = false;

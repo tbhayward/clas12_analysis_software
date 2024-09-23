@@ -20,6 +20,5 @@ private:
     TTreeReaderValue<double> Emiss2;
     TTreeReaderValue<double> theta_gamma_gamma;
     TTreeReaderValue<double> pTmiss;
-    TTreeReaderValue<double> Mxgammasquared;
     TTreeReaderValue<double> eta2;
 };
