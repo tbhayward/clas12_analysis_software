@@ -118,6 +118,7 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
         TLegend* legend = new TLegend(0.375, 0.7, 0.9, 0.9);
         legend->AddEntry(hist_data, ("Data (" + std::to_string(static_cast<int>(hist_data->GetEntries())) + " counts)").c_str(), "l");
         legend->AddEntry(hist_mc, ("MC (" + std::to_string(static_cast<int>(hist_mc->GetEntries())) + " counts)").c_str(), "l");
+        legend->SetTextSize(0.03);  // Set smaller font size for legend
         legend->Draw();
 
         // Draw the histograms for "Loose Cuts" plots
@@ -136,6 +137,7 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
         TLegend* legend_loose = new TLegend(0.25, 0.7, 0.9, 0.9);
         legend_loose->AddEntry(hist_data_loose, ("Data (" + std::to_string(static_cast<int>(hist_data_loose->GetEntries())) + " counts; Loose Cuts)").c_str(), "l");
         legend_loose->AddEntry(hist_mc_loose, ("MC (" + std::to_string(static_cast<int>(hist_mc_loose->GetEntries())) + " counts; Loose Cuts)").c_str(), "l");
+        legend_loose->SetTextSize(0.03);  // Set smaller font size for "Loose Cuts" legend
         legend_loose->Draw();
     }
 
