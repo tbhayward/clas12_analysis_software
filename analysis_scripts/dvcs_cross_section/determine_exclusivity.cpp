@@ -1,6 +1,7 @@
 #include "determine_exclusivity.h"
 #include "histConfigs.h"
 #include "formatLabelName.h"
+#include "kinematic_cuts.h"  // Include the kinematic cuts header
 #include <TCanvas.h>
 #include <TH1D.h>
 #include <TLegend.h>
@@ -17,9 +18,13 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
     gStyle->SetLabelSize(0.04, "XY");
     gStyle->SetLegendTextSize(0.04);
 
-    // Create a 2x4 canvas
+    // Create a 2x4 canvas for original plots
     TCanvas* canvas = new TCanvas("exclusivity_canvas", "Exclusivity Plots", 1600, 800);
     canvas->Divide(4, 2);  // 2 rows, 4 columns
+
+    // Create a 2x4 canvas for plots with "Loose Cuts"
+    TCanvas* canvas_loose_cuts = new TCanvas("exclusivity_canvas_loose_cuts", "Exclusivity Plots with Loose Cuts", 1600, 800);
+    canvas_loose_cuts->Divide(4, 2);
 
     // Vector of variables for plotting
     std::vector<std::string> variables = {"open_angle_ep2", "Mx2_2", "theta_gamma_gamma", "placeholder", "Emiss2", "Mx2", "Mx2_1", "pTmiss"};
@@ -28,9 +33,19 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
     const double theta_min = 14.0 * 3.14159 / 180.0;  // Convert 14 degrees to radians
     const double theta_max = 18.0 * 3.14159 / 180.0;  // Convert 18 degrees to radians
 
-    // Readers for e_theta variable for normalization
+    // Readers for e_theta and other relevant variables for cuts
     TTreeReaderValue<double> eTheta_data(dataReader, "e_theta");
     TTreeReaderValue<double> eTheta_mc(mcReader, "e_theta");
+    TTreeReaderValue<double> t_data(dataReader, "t");
+    TTreeReaderValue<double> t_mc(mcReader, "t");
+    TTreeReaderValue<double> open_angle_ep2_data(dataReader, "open_angle_ep2");
+    TTreeReaderValue<double> open_angle_ep2_mc(mcReader, "open_angle_ep2");
+    TTreeReaderValue<double> Emiss2_data(dataReader, "Emiss2");
+    TTreeReaderValue<double> Emiss2_mc(mcReader, "Emiss2");
+    TTreeReaderValue<double> Mx2_1_data(dataReader, "Mx2_1");
+    TTreeReaderValue<double> Mx2_1_mc(mcReader, "Mx2_1");
+    TTreeReaderValue<double> pTmiss_data(dataReader, "pTmiss");
+    TTreeReaderValue<double> pTmiss_mc(mcReader, "pTmiss");
 
     int total_electrons_data = 0;
     int total_electrons_mc = 0;
@@ -62,10 +77,14 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
         // Create histogram names
         std::string hist_data_name = "data_" + variables[i];
         std::string hist_mc_name = "mc_" + variables[i];
+        std::string hist_data_name_loose = "data_loose_" + variables[i];
+        std::string hist_mc_name_loose = "mc_loose_" + variables[i];
 
         // Create histograms for data and MC
         TH1D* hist_data = new TH1D(hist_data_name.c_str(), "", config.bins, config.min, config.max);
         TH1D* hist_mc = new TH1D(hist_mc_name.c_str(), "", config.bins, config.min, config.max);
+        TH1D* hist_data_loose = new TH1D(hist_data_name_loose.c_str(), "", config.bins, config.min, config.max);
+        TH1D* hist_mc_loose = new TH1D(hist_mc_name_loose.c_str(), "", config.bins, config.min, config.max);
 
         // Create readers for the variable
         TTreeReaderValue<double> dataVar(dataReader, variables[i].c_str());
@@ -74,25 +93,38 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
         // Fill data histograms
         while (dataReader.Next()) {
             hist_data->Fill(*dataVar);
+            // Apply kinematic cuts and fill the "Loose Cuts" histograms if they pass
+            if (apply_kinematic_cuts(*t_data, *open_angle_ep2_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data)) {
+                hist_data_loose->Fill(*dataVar);
+            }
         }
         dataReader.Restart();  // Restart reader for the next variable
 
         // Fill MC histograms
         while (mcReader.Next()) {
             hist_mc->Fill(*mcVar);
+            // Apply kinematic cuts and fill the "Loose Cuts" histograms if they pass
+            if (apply_kinematic_cuts(*t_mc, *open_angle_ep2_mc, *Emiss2_mc, *Mx2_1_mc, *pTmiss_mc)) {
+                hist_mc_loose->Fill(*mcVar);
+            }
         }
         mcReader.Restart();  // Restart reader for the next variable
 
         // Normalize histograms based on the total electron count
         hist_data->Scale(1.0 / total_electrons_data);
         hist_mc->Scale(1.0 / total_electrons_mc);
+        hist_data_loose->Scale(1.0 / total_electrons_data);
+        hist_mc_loose->Scale(1.0 / total_electrons_mc);
 
         // Get the maximum value for setting y-axis range
         double max_data = hist_data->GetMaximum();
         double max_mc = hist_mc->GetMaximum();
-        double y_max = 1.35 * std::max(max_data, max_mc);  // Set y-axis range from 0 to 1.35 * max
+        double max_data_loose = hist_data_loose->GetMaximum();
+        double max_mc_loose = hist_mc_loose->GetMaximum();
+        double y_max = 1.35 * std::max({max_data, max_mc});
+        double y_max_loose = 1.35 * std::max({max_data_loose, max_mc_loose});
 
-        // Draw the histograms
+        // Draw the histograms for original plots
         canvas->cd(i + 1);
         gPad->SetLeftMargin(0.15);  // Add left padding
         gPad->SetBottomMargin(0.15);  // Add bottom padding
@@ -112,11 +144,34 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
         legend->AddEntry(hist_data, ("Data (" + std::to_string(static_cast<int>(hist_data->GetEntries())) + " counts)").c_str(), "l");
         legend->AddEntry(hist_mc, ("MC (" + std::to_string(static_cast<int>(hist_mc->GetEntries())) + " counts)").c_str(), "l");
         legend->Draw();
+
+        // Draw the histograms for "Loose Cuts" plots
+        canvas_loose_cuts->cd(i + 1);
+        gPad->SetLeftMargin(0.15);  // Add left padding
+        gPad->SetBottomMargin(0.15);  // Add bottom padding
+        hist_data_loose->SetLineColor(kBlue);
+        hist_mc_loose->SetLineColor(kRed);
+        hist_data_loose->SetXTitle(formatLabelName(variables[i]).c_str());
+        hist_data_loose->SetYTitle("Normalized counts");
+        hist_data_loose->GetYaxis()->SetRangeUser(0, y_max_loose);
+        hist_data_loose->Draw("HIST");
+        hist_mc_loose->Draw("HIST SAME");
+
+        // Add the title for each subplot (with "Loose Cuts")
+        hist_data_loose->SetTitle((plotTitle + "; Loose Cuts").c_str());
+
+        // Add a legend with the count information for "Loose Cuts" (integer format)
+        TLegend* legend_loose = new TLegend(0.375, 0.7, 0.9, 0.9);
+        legend_loose->AddEntry(hist_data_loose, ("Data (" + std::to_string(static_cast<int>(hist_data_loose->GetEntries())) + " counts)").c_str(), "l");
+        legend_loose->AddEntry(hist_mc_loose, ("MC (" + std::to_string(static_cast<int>(hist_mc_loose->GetEntries())) + " counts)").c_str(), "l");
+        legend_loose->Draw();
     }
 
-    // Save the canvas
+    // Save the canvases
     canvas->SaveAs((outputDir + "/exclusivity_plots_rga_fa18_inb.png").c_str());
+    canvas_loose_cuts->SaveAs((outputDir + "/exclusivity_plots_rga_fa18_inb_loose_cuts.png").c_str());
 
     // Clean up
     delete canvas;
+    delete canvas_loose_cuts;
 }
