@@ -36,55 +36,53 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
     const double theta_min = 14.0 * 3.14159 / 180.0;  // Convert 14 degrees to radians
     const double theta_max = 18.0 * 3.14159 / 180.0;  // Convert 18 degrees to radians
 
-    // Readers for e_theta, detector1, and detector2 variables
+    // Readers for e_theta variables (detector1 and detector2 checks are commented out for now)
     TTreeReaderValue<double> eTheta_data(dataReader, "e_theta");
     TTreeReaderValue<double> eTheta_mc(mcReader, "e_theta");
+
+    // Placeholder: Commenting out detector1 and detector2 logic for now
+    /*
     TTreeReaderValue<int> detector1_data(dataReader, "detector1");
     TTreeReaderValue<int> detector2_data(dataReader, "detector2");
     TTreeReaderValue<int> detector1_mc(mcReader, "detector1");
     TTreeReaderValue<int> detector2_mc(mcReader, "detector2");
+    */
 
     // Total electron counts for normalization
     std::map<std::string, int> total_electrons_data = {{"FD_FD", 0}, {"CD_FD", 0}, {"CD_FT", 0}};
     std::map<std::string, int> total_electrons_mc = {{"FD_FD", 0}, {"CD_FD", 0}, {"CD_FT", 0}};
 
-    // Fill histograms based on detector configuration
+    // Fill histograms based on detector configuration (placeholder: filling all configurations)
     while (dataReader.Next()) {
-        std::string config_key;
-        if (*detector1_data == 1 && *detector2_data == 1) config_key = "FD_FD";
-        else if (*detector1_data == 2 && *detector2_data == 1) config_key = "CD_FD";
-        else if (*detector1_data == 2 && *detector2_data == 0) config_key = "CD_FT";
-        else continue;  // Ignore any other configurations
+        // Placeholder: Set all configurations to true for now
+        for (const auto& config_key : configurations) {
+            // Normalization for electrons in the specified theta range
+            if (*eTheta_data >= theta_min && *eTheta_data <= theta_max) {
+                ++total_electrons_data[config_key];
+            }
 
-        // Normalization for electrons in the specified theta range
-        if (*eTheta_data >= theta_min && *eTheta_data <= theta_max) {
-            ++total_electrons_data[config_key];
-        }
-
-        // Fill histograms for variables
-        for (size_t i = 0; i < variables.size(); ++i) {
-            TTreeReaderValue<double> var_reader(dataReader, variables[i].c_str());
-            histograms_data[config_key][i]->Fill(*var_reader);
+            // Fill histograms for variables
+            for (size_t i = 0; i < variables.size(); ++i) {
+                TTreeReaderValue<double> var_reader(dataReader, variables[i].c_str());
+                histograms_data[config_key][i]->Fill(*var_reader);
+            }
         }
     }
     dataReader.Restart();  // Restart reader for MC
 
     while (mcReader.Next()) {
-        std::string config_key;
-        if (*detector1_mc == 1 && *detector2_mc == 1) config_key = "FD_FD";
-        else if (*detector1_mc == 2 && *detector2_mc == 1) config_key = "CD_FD";
-        else if (*detector1_mc == 2 && *detector2_mc == 0) config_key = "CD_FT";
-        else continue;  // Ignore any other configurations
+        // Placeholder: Set all configurations to true for now
+        for (const auto& config_key : configurations) {
+            // Normalization for electrons in the specified theta range
+            if (*eTheta_mc >= theta_min && *eTheta_mc <= theta_max) {
+                ++total_electrons_mc[config_key];
+            }
 
-        // Normalization for electrons in the specified theta range
-        if (*eTheta_mc >= theta_min && *eTheta_mc <= theta_max) {
-            ++total_electrons_mc[config_key];
-        }
-
-        // Fill histograms for variables
-        for (size_t i = 0; i < variables.size(); ++i) {
-            TTreeReaderValue<double> var_reader(mcReader, variables[i].c_str());
-            histograms_mc[config_key][i]->Fill(*var_reader);
+            // Fill histograms for variables
+            for (size_t i = 0; i < variables.size(); ++i) {
+                TTreeReaderValue<double> var_reader(mcReader, variables[i].c_str());
+                histograms_mc[config_key][i]->Fill(*var_reader);
+            }
         }
     }
     mcReader.Restart();  // Restart reader
@@ -126,13 +124,13 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
             histograms_data[config][i]->Draw("E1");  // Points with error bars
             histograms_mc[config][i]->Draw("E1 SAME");
 
-            // Add a legend
+            // Add a legend with the count information (integer format)
             TLegend* legend = new TLegend(0.375, 0.7, 0.9, 0.9);
-            legend->AddEntry(histograms_data[config][i], ("Data (" + std::to_string(static_cast<int>(histograms_data[config][i]->GetEntries())) + " counts)").c_str(), "p");
-            legend->AddEntry(histograms_mc[config][i], ("MC (" + std::to_string(static_cast<int>(histograms_mc[config][i]->GetEntries())) + " counts)").c_str(), "p");
+            legend->AddEntry(histograms_data[config][i], ("#color[4]{Data} (" + std::to_string(static_cast<int>(histograms_data[config][i]->GetEntries())) + " counts)").c_str(), "p");
+            legend->AddEntry(histograms_mc[config][i], ("#color[2]{MC} (" + std::to_string(static_cast<int>(histograms_mc[config][i]->GetEntries())) + " counts)").c_str(), "p");
             legend->Draw();
 
-            // Add the title for each subplot
+            // Add the title for each subplot, including the configuration
             histograms_data[config][i]->SetTitle((plotTitle + "; " + config).c_str());
         }
 
