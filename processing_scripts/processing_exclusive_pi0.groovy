@@ -67,7 +67,7 @@ public static void main(String[] args) {
 	double open_angle_egamma1, open_angle_egamma2;
 	double Q2, W, y, Mx2, Mx2_1, Mx2_2; 
 	double x, t, t1, t2, tmin, z, xF, pT, eta, eta_gN, zeta;
-	double z1, z2, xF1, xF2, Mh, Mh_gammagamma, 
+	double z1, z2, xF1, xF2, Mh, Mh_gammagamma;
 	double pT1, pT2, pTpT, eta1, eta2, Delta_eta, eta1_gN, eta2_gN;
 	double phi1, phi2, Delta_phi, phih, phiR, theta;
 	double Depolarization_A, Depolarization_B, Depolarization_C;
