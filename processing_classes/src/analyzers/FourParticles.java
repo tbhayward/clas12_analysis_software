@@ -99,11 +99,12 @@ public class FourParticles {
                 index++;
             }
             if (index == input_index) {
-                break;
+                return particle_Index;
             }
         }
-        return index;
+        return -1;
     }
+    
 
     public FourParticles(DataEvent event, PhysicsEvent recEvent, int p1PID, int p1Index, int p2PID, int p2Index,
             int p3PID, int p3Index, double Eb) {

@@ -84,10 +84,10 @@ public class TwoParticles {
                 index++;
             }
             if (index == input_index) {
-                break;
+                return particle_Index;
             }
         }
-        return index;
+        return -1;
     }
 
     public TwoParticles(DataEvent event, PhysicsEvent recEvent, int pPID, int pIndex, double Eb) {

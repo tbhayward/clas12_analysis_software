@@ -108,10 +108,10 @@ public class ThreeParticles {
                 index++;
             }
             if (index == input_index) {
-                break;
+                return particle_Index;
             }
         }
-        return index;
+        return -1;
     }
 
     public ThreeParticles(DataEvent event, PhysicsEvent recEvent, int p1PID, int p1Index, int p2PID, int p2Index,

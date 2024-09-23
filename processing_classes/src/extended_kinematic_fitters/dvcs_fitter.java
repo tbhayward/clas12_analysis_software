@@ -91,7 +91,6 @@ public class dvcs_fitter extends GenericKinematicFitter {
 
         boolean passesForwardDetector = generic_tests.forward_detector_cut(particle_Index, rec_Bank);
         boolean passesForwardTagger = generic_tests.forward_tagger_cut(particle_Index, rec_Bank);
-        System.out.println(passesForwardTagger+" "+passesForwardDetector);
 
         return true
                 && p > 2.00
