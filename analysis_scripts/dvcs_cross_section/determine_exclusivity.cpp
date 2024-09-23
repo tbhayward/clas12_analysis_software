@@ -105,8 +105,7 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
         hist_mc->Draw("HIST SAME");
 
         // Add the title for each subplot
-        std::string fullTitle = formatLabelName(variables[i]) + " - " + plotTitle;
-        hist_data->SetTitle(fullTitle.c_str());
+        hist_data->SetTitle(plotTitle.c_str());
 
         // Add a legend with the count information (integer format)
         TLegend* legend = new TLegend(0.375, 0.7, 0.9, 0.9);

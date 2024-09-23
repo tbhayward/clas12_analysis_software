@@ -150,7 +150,7 @@ int main(int argc, char* argv[]) {
     determine_exclusivity(data_readers[0], mc_rec_dvcsgen_readers[0], "output/exclusivity_plots", "Fa18 Inb");
 
     // End program
-    cout << "Program complete. Additional functionality to be added later." << endl;
+    cout << "Program complete. Additional functionality to be added later." << endl << endl;
 
     return 0;
 }
