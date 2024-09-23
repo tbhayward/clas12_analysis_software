@@ -29,10 +29,6 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
     // Vector of variables for plotting
     std::vector<std::string> variables = {"open_angle_ep2", "Mx2_2", "theta_gamma_gamma", "placeholder", "Emiss2", "Mx2", "Mx2_1", "pTmiss"};
 
-    // Normalization condition: theta between 14 and 18 degrees in radians
-    const double theta_min = 14.0 * 3.14159 / 180.0;  // Convert 14 degrees to radians
-    const double theta_max = 18.0 * 3.14159 / 180.0;  // Convert 18 degrees to radians
-
     // Readers for e_theta and other relevant variables for cuts
     TTreeReaderValue<double> eTheta_data(dataReader, "e_theta");
     TTreeReaderValue<double> eTheta_mc(mcReader, "e_theta");
@@ -46,25 +42,6 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
     TTreeReaderValue<double> Mx2_1_mc(mcReader, "Mx2_1");
     TTreeReaderValue<double> pTmiss_data(dataReader, "pTmiss");
     TTreeReaderValue<double> pTmiss_mc(mcReader, "pTmiss");
-
-    int total_electrons_data = 0;
-    int total_electrons_mc = 0;
-
-    // Count total electrons in data (within 14 to 18 degrees)
-    while (dataReader.Next()) {
-        if (*eTheta_data >= theta_min && *eTheta_data <= theta_max) {
-            ++total_electrons_data;
-        }
-    }
-    dataReader.Restart();  // Restart the reader after counting
-
-    // Count total electrons in MC (within 14 to 18 degrees)
-    while (mcReader.Next()) {
-        if (*eTheta_mc >= theta_min && *eTheta_mc <= theta_max) {
-            ++total_electrons_mc;
-        }
-    }
-    mcReader.Restart();  // Restart the reader after counting
 
     for (size_t i = 0; i < variables.size(); ++i) {
         if (variables[i] == "placeholder") {
@@ -110,11 +87,11 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
         }
         mcReader.Restart();  // Restart reader for the next variable
 
-        // Normalize histograms based on the total electron count
-        hist_data->Scale(1.0 / total_electrons_data);
-        hist_mc->Scale(1.0 / total_electrons_mc);
-        hist_data_loose->Scale(1.0 / total_electrons_data);
-        hist_mc_loose->Scale(1.0 / total_electrons_mc);
+        // Normalize histograms based on their integrals
+        if (hist_data->Integral() != 0) { hist_data->Scale(1.0 / hist_data->Integral()); }
+        if (hist_mc->Integral() != 0) { hist_mc->Scale(1.0 / hist_mc->Integral()); }
+        if (hist_data_loose->Integral() != 0) { hist_data_loose->Scale(1.0 / hist_data_loose->Integral()); }
+        if (hist_mc_loose->Integral() != 0) { hist_mc_loose->Scale(1.0 / hist_mc_loose->Integral()); }
 
         // Get the maximum value for setting y-axis range
         double max_data = hist_data->GetMaximum();
