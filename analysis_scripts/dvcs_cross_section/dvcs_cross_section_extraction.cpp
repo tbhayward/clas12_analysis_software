@@ -11,6 +11,10 @@
 #include <TROOT.h>
 #include <TApplication.h>
 
+// tbhayward imports
+#include "create_directories.h"
+#include "determine_exclusivity.h"
+
 // Namespace declaration
 using namespace std;
 namespace fs = std::filesystem;
@@ -133,9 +137,15 @@ int main(int argc, char* argv[]) {
         mc_rec_aaogen_readers[i].SetTree(mc_rec_aaogen_tree);
     }
 
+    // Create necessary directories before proceeding
+    std::string base_output_dir = "output";  // Define the base directory
+    create_directories(base_output_dir);     // Create the directories
+
     cout << "Successfully loaded all data and MC trees." << endl;
 
     // The rest of your program would continue here...
+
+    determine_exclusivity(treeReaders[0][0][0], treeReaders[0][1][1], "output_directory");
 
     // End program
     cout << "Program complete. Additional functionality to be added later." << endl;
