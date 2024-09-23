@@ -95,6 +95,7 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
         // Draw the histograms
         canvas->cd(i + 1);
         gPad->SetLeftMargin(0.15);  // Add left padding
+        gPad->SetBottomMargin(0.15);  // Add bottom padding
         hist_data->SetLineColor(kBlue);
         hist_mc->SetLineColor(kRed);
         hist_data->SetXTitle(formatLabelName(variables[i]).c_str());
@@ -104,7 +105,7 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
         hist_mc->Draw("HIST SAME");
 
         // Add a legend with the count information
-        TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);
+        TLegend* legend = new TLegend(0.4, 0.7, 0.9, 0.9);
         legend->AddEntry(hist_data, ("Data (" + std::to_string(hist_data->GetEntries()) + ")").c_str(), "l");
         legend->AddEntry(hist_mc, ("MC (" + std::to_string(hist_mc->GetEntries()) + ")").c_str(), "l");
         legend->Draw();
