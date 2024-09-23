@@ -137,6 +137,7 @@ public static void main(String[] args) {
 			            if (Mh_gammagamma < 0.11 || Mh_gammagamma > 0.16) continue;
 			            detector_gamma1 = variables.get_detector1();
 			            detector_gamma2 = variables.get_detector2();
+			            println(detector_gamma1+" "+detector_gamma2)
 			            open_angle_egamma1 = variables.open_angle_ep1();
 			            open_angle_egamma2 = variables.open_angle_ep2();
 		    		}
