@@ -18,6 +18,7 @@ public class fiducial_cuts {
                 double ft_x = ft_Bank.getFloat("x", current_Row);
                 double ft_y = ft_Bank.getFloat("y", current_Row);
                 double radius = Math.sqrt(ft_x * ft_x + ft_y * ft_y);
+                System.out.println("radius = "+radius);
 
                 // Check if the radius is within the fiducial range
                 if (radius < 8.5) { // no outer radius enforced
