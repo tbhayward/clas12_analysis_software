@@ -20,8 +20,8 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
     std::vector<std::string> variables = {"open_angle_ep2", "Mx2_2", "theta_gamma_gamma", "placeholder", "Emiss2", "Mx2", "Mx2_1", "pTmiss"};
 
     // Normalization condition: theta between 14 and 18 degrees in radians
-    const double theta_min = 14.0 * TMath::Pi() / 180.0;  // 14 degrees in radians
-    const double theta_max = 18.0 * TMath::Pi() / 180.0;  // 18 degrees in radians
+    const double theta_min = TMath::DegToRad(14.0);  // Convert 14 degrees to radians
+    const double theta_max = TMath::DegToRad(18.0);  // Convert 18 degrees to radians
 
     // Readers for e_theta variable for normalization
     TTreeReaderValue<double> eTheta_data(dataReader, "e_theta");
