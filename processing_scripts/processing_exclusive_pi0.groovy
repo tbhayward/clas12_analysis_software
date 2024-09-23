@@ -356,8 +356,6 @@ public static void main(String[] args) {
 	    "69: detector_gamma1, 70: detector_gamma2, 71: open_angle_egamma1, 72: open_angle_egamma2, " +
 	    "73: Emiss2, 74: theta_pi0_pi0, 75: pTmiss.");
 
-		println("Set p1 PID = $p1_Str");
-		println("Set p2 PID = $p2_Str");
 		println("output text file is: $file");
 	}
 
