@@ -143,7 +143,7 @@ public static void main(String[] args) {
 	                helicity = variables.get_helicity(); // helicity of event
 	                detector1 = variables.get_detector1();
 	                detector2 = variables.get_detector2();
-	                println(detector1+" "+detector2);
+	                // println(detector1+" "+detector2);
 	                num_pos = variables.get_num_pos();
 	                num_neg = variables.get_num_neg();
 	                num_neutrals = variables.get_num_neutrals();

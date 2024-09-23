@@ -11,6 +11,7 @@ public class fiducial_cuts {
     public boolean forward_tagger_fiducial_cut(int particle_Index, HipoDataBank rec_Bank,
             HipoDataBank ft_Bank) {
         // Loop through each row of the ft bank
+        System.out.println("entering ft fiducial cuts");
         for (int current_Row = 0; current_Row < ft_Bank.rows(); current_Row++) {
             int pindex = ft_Bank.getInt("pindex", current_Row);
             // Check if the current row matches the particle index and layer we're looking for
