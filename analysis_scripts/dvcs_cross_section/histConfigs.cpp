@@ -9,7 +9,7 @@ std::map<std::string, HistConfig> histConfigs = {
     {"theta_pi0_pi0", {100, 0, 5}}, 
     {"xF", {100, -0.5, 0.5}}, // Placeholder for future use
     {"Emiss2", {100, -1, 2}},
-    {"Mx2", {100, -0.05, 0.05}},
+    {"Mx2", {100, -0.039, 0.039}},
     {"Mx2_1", {100, -1, 1.5}},
     {"pTmiss", {100, 0, 0.5}}
 };
