@@ -191,10 +191,11 @@ public class ThreeParticles {
             detector1 = 2; // Central Detector
         }
         
+        System.out.println(p2_rec_index);
         if (generic_tests.forward_tagger_cut(p2_rec_index, rec_Bank)) {
             detector2 = 0; // Forward Tagger
         } else if (generic_tests.forward_detector_cut(p2_rec_index, rec_Bank)) {
-            detector2 = 11; // Forward Detector
+            detector2 = 1; // Forward Detector
         } else if (generic_tests.central_detector_cut(p2_rec_index, rec_Bank)) {
             detector2 = 2; // Central Detector
         }
