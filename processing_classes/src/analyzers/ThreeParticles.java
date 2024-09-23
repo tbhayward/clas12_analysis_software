@@ -183,19 +183,19 @@ public class ThreeParticles {
             // If more than one is false, fiducial_status remains -1 (default)
         }
         
-        if (passesForwardTagger_1) {
+        if (generic_tests.forward_tagger_cut(p1_rec_index, rec_Bank)) {
             detector1 = 0; // Forward Tagger
-        } else if (passesForwardDetector_1) {
+        } else if (generic_tests.forward_detector_cut(p1_rec_index, rec_Bank)) {
             detector1 = 1; // Forward Detector
-        } else if (passesCentralDetector_1) {
+        } else if (generic_tests.central_detector_cut(p1_rec_index, rec_Bank)) {
             detector1 = 2; // Central Detector
         }
         
-        if (passesForwardTagger_2) {
+        if (generic_tests.forward_tagger_cut(p2_rec_index, rec_Bank)) {
             detector2 = 0; // Forward Tagger
-        } else if (passesForwardDetector_2) {
+        } else if (generic_tests.forward_detector_cut(p2_rec_index, rec_Bank)) {
             detector2 = 1; // Forward Detector
-        } else if (passesCentralDetector_2) {
+        } else if (generic_tests.central_detector_cut(p2_rec_index, rec_Bank)) {
             detector2 = 2; // Central Detector
         }
 
