@@ -188,7 +188,7 @@ int main(int argc, char *argv[]) {
     int fiducial_status;
     int num_pos, num_neg, num_neutral;
     int runnum, evnum, helicity;
-    int detector, detector1, detector2, detector3;
+    int detector, detector1, detector2, detector3, detector_gamma1, detector_gamma2;
     double beam_pol, target_pol, e_p, e_theta, e_phi, vz_e, Q2, W, Mx, Mx2, x, y;
     double t, tmin;
     double z, xF, pT, zeta, eta, phi, DepA, DepB, DepC, DepV, DepW;
@@ -202,7 +202,7 @@ int main(int argc, char *argv[]) {
     double eta1, eta2, Delta_eta, eta1_gN, eta2_gN;
     double phi1, phi2, Delta_phi, phih, phiR, theta;
     double Emiss2, theta_gamma_gamma, theta_pi0_pi0, pTmiss;
-    double Mh_gammagamma, detector_gamma1, detector_gamma2, open_angle_egamma1, open_angle_egamma2;
+    double Mh_gammagamma, open_angle_egamma1, open_angle_egamma2;
     // Additional variables for three hadrons
     double p3_p, p3_theta, p3_phi, vz_p3;
     double open_angle_ep3, open_angle_p1p3, open_angle_p2p3;
@@ -1291,7 +1291,7 @@ int main(int argc, char *argv[]) {
             open_angle_ep >> open_angle_ep1 >> open_angle_ep2 >> open_angle_p1p2 >> 
             Q2 >> W >> Mx2 >> Mx2_1 >> Mx2_2 >> x >> t >> t1 >> t2 >> tmin >> y >> 
             z >> z1 >> z2 >> Mh >> xF >> xF1 >> xF2 >> 
-            pT >> pT1 >> pT2 >> pTpT >> zeta >> zeta1 >> zeta2 >> eta >> eta1 >> eta2 >> Delta_eta>> 
+            pT >> pT1 >> pT2 >> pTpT >> zeta >> zeta1 >> zeta2 >> eta >> eta1 >> eta2 >> Delta_eta >> 
             eta1_gN >> eta2_gN >> phi1 >> phi2 >> Delta_phi >> phi >> phiR >> theta >> 
             DepA >> DepB >> DepC >> DepV >> DepW >> Mh_gammagamma >> 
             detector_gamma1 >> detector_gamma2 >>
