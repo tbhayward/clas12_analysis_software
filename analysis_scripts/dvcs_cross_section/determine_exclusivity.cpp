@@ -9,7 +9,7 @@
 #include <TTreeReaderValue.h>
 #include <cmath>  // for radian conversion
 
-void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const std::string& outputDir, const std::string& plotTitle) {
+void determine_exclusivity(const std::string& analysisType, TTreeReader& dataReader, TTreeReader& mcReader, const std::string& outputDir, const std::string& plotTitle) {
     // Set up global style options (remove stat boxes)
     gStyle->SetOptStat(0);
 
@@ -26,10 +26,17 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
     TCanvas* canvas_loose_cuts = new TCanvas("exclusivity_canvas_loose_cuts", "Exclusivity Plots with Loose Cuts", 1600, 800);
     canvas_loose_cuts->Divide(4, 2);
 
-    // Vector of variables for plotting
-    std::vector<std::string> variables = {"open_angle_ep2", "Mx2_2", "theta_gamma_gamma", "placeholder", "Emiss2", "Mx2", "Mx2_1", "pTmiss"};
+    // Vector of variables for plotting (switch between "dvcs" and "eppi0")
+    std::vector<std::string> variables;
+    if (analysisType == "dvcs") {
+        variables = {"open_angle_ep2", "Mx2_2", "theta_gamma_gamma", "placeholder", "Emiss2", "Mx2", "Mx2_1", "pTmiss"};
+    } else if (analysisType == "eppi0") {
+        variables = {"open_angle_ep2", "Mx2_2", "theta_pi0_pi0", "placeholder", "Emiss2", "Mx2", "Mx2_1", "pTmiss"};
+    } else {
+        throw std::runtime_error("Invalid analysis type! Must be 'dvcs' or 'eppi0'");
+    }
 
-    // Readers for e_theta and other relevant variables for cuts
+    // Readers for relevant variables for cuts
     TTreeReaderValue<double> t_data(dataReader, "t");
     TTreeReaderValue<double> t_mc(mcReader, "t");
     TTreeReaderValue<double> open_angle_ep2_data(dataReader, "open_angle_ep2");
@@ -100,7 +107,7 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
         double y_max_loose = 1.35 * std::max({max_data_loose, max_mc_loose});
 
         hist_data->SetTitle(plotTitle.c_str());
-        hist_data_loose->SetTitle(plotTitle.c_str());  
+        hist_data_loose->SetTitle(plotTitle.c_str());
 
         // Draw the histograms for original plots
         canvas->cd(i + 1);
@@ -144,8 +151,8 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
     // Save the canvases with updated names to reflect the plotTitle input
     std::string cleanTitle = plotTitle;
     std::replace(cleanTitle.begin(), cleanTitle.end(), ' ', '_');  // Replace spaces with underscores
-    canvas->SaveAs((outputDir + "/exclusivity_plots_" + cleanTitle + ".png").c_str());
-    canvas_loose_cuts->SaveAs((outputDir + "/exclusivity_plots_" + cleanTitle + "_loose_cuts.png").c_str());
+    canvas->SaveAs((outputDir + "/exclusivity_plots_" + analysisType + "_" + cleanTitle + ".png").c_str());
+    canvas_loose_cuts->SaveAs((outputDir + "/exclusivity_plots_" + analysisType + "_"  + cleanTitle + "_loose_cuts.png").c_str());
 
     // Clean up
     delete canvas;
