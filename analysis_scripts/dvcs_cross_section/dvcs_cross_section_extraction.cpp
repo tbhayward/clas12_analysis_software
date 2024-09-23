@@ -1,4 +1,3 @@
-// Standard C++ Library Headers
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -16,9 +15,8 @@
 using namespace std;
 namespace fs = std::filesystem;  // Shortened for file system ops
 
-// Global TTreeReader variables
-TTreeReader dataReader;
-TTreeReader mcReader;
+// Global 3D vector for TTreeReaders
+vector<vector<vector<TTreeReader>>> treeReaders(3, vector<vector<TTreeReader>>(2));
 
 bool checkFileExists(const string& path) {
     return fs::exists(path);
@@ -41,7 +39,7 @@ int main(int argc, char* argv[]) {
     string dir3 = argv[3];
     string dir4 = argv[4];
 
-    // Define expected files in each directory
+    // Define expected files for each directory (Data and MC for each run period)
     vector<string> dir1_files = {"rga_fa18_inb_epgamma.root", "rga_fa18_out_epgamma.root", "rga_sp19_inb_epgamma.root"};
     vector<string> dir2_files = {
         "gen_dvcsgen_rga_fa18_inb_50nA_10604MeV_epgamma.root", "rec_dvcsgen_rga_fa18_inb_50nA_10604MeV_epgamma.root",
@@ -81,29 +79,83 @@ int main(int argc, char* argv[]) {
 
     cout << "All required files found. Proceeding to load data and MC files." << endl;
 
-    // Example: Loading one file (extend as needed for each run period)
-    TFile* data_file = new TFile((dir1 + "/rga_fa18_inb_epgamma.root").c_str(), "READ");
-    TFile* mc_file = new TFile((dir2 + "/gen_dvcsgen_rga_fa18_inb_50nA_10604MeV_epgamma.root").c_str(), "READ");
+    // Load Data Trees (index 0 for data, 1 for MC)
+    vector<string> data_filenames = {dir1 + "/rga_fa18_inb_epgamma.root", dir1 + "/rga_fa18_out_epgamma.root", dir1 + "/rga_sp19_inb_epgamma.root"};
+    vector<string> eppi0_filenames = {dir3 + "/rga_fa18_inb_eppi0.root", dir3 + "/rga_fa18_out_eppi0.root", dir3 + "/rga_sp19_inb_eppi0.root"};
 
-    if (!data_file->IsOpen() || !mc_file->IsOpen()) {
-        cerr << "Error: Unable to open data or MC file." << endl;
-        return 3;
+    for (size_t i = 0; i < 3; ++i) {
+        // Load DVCS data
+        TFile* data_file = new TFile(data_filenames[i].c_str(), "READ");
+        if (!data_file->IsOpen()) {
+            cerr << "Error: Unable to open DVCS data file " << data_filenames[i] << endl;
+            return 3;
+        }
+        TTree* data_tree = (TTree*)data_file->Get("PhysicsEvents");
+        if (!data_tree) {
+            cerr << "Error: PhysicsEvents tree not found in " << data_filenames[i] << endl;
+            return 4;
+        }
+        treeReaders[i][0].push_back(TTreeReader(data_tree));  // DVCS data
+
+        // Load eppi0 data
+        TFile* eppi0_file = new TFile(eppi0_filenames[i].c_str(), "READ");
+        if (!eppi0_file->IsOpen()) {
+            cerr << "Error: Unable to open eppi0 data file " << eppi0_filenames[i] << endl;
+            return 3;
+        }
+        TTree* eppi0_tree = (TTree*)eppi0_file->Get("PhysicsEvents");
+        if (!eppi0_tree) {
+            cerr << "Error: PhysicsEvents tree not found in " << eppi0_filenames[i] << endl;
+            return 4;
+        }
+        treeReaders[i][0].push_back(TTreeReader(eppi0_tree));  // eppi0 data
     }
 
-    // Load trees
-    TTree* data_tree = (TTree*)data_file->Get("PhysicsEvents");
-    TTree* mc_tree = (TTree*)mc_file->Get("PhysicsEvents");
+    // Load MC Trees (index 0 for gen dvcsgen, 1 for rec dvcsgen, 2 for gen aaogen, 3 for rec aaogen)
+    vector<string> mc_gen_dvcsgen_filenames = {dir2 + "/gen_dvcsgen_rga_fa18_inb_50nA_10604MeV_epgamma.root", dir2 + "/gen_dvcsgen_rga_fa18_out_50nA_10604MeV_epgamma.root", dir2 + "/gen_dvcsgen_rga_sp19_inb_50nA_10200MeV_epgamma.root"};
+    vector<string> mc_rec_dvcsgen_filenames = {dir2 + "/rec_dvcsgen_rga_fa18_inb_50nA_10604MeV_epgamma.root", dir2 + "/rec_dvcsgen_rga_fa18_out_50nA_10604MeV_epgamma.root", dir2 + "/rec_dvcsgen_rga_sp19_inb_50nA_10200MeV_epgamma.root"};
+    vector<string> mc_gen_aaogen_filenames = {dir4 + "/gen_aaogen_norad_rga_fa18_inb_50nA_10604MeV_eppi0.root", dir4 + "/gen_aaogen_norad_rga_fa18_out_50nA_10604MeV_eppi0.root", dir4 + "/gen_aaogen_norad_rga_sp19_inb_50nA_10604MeV_eppi0.root"};
+    vector<string> mc_rec_aaogen_filenames = {dir4 + "/rec_aaogen_norad_rga_fa18_inb_50nA_10604MeV_eppi0.root", dir4 + "/rec_aaogen_norad_rga_fa18_out_50nA_10604MeV_eppi0.root", dir4 + "/rec_aaogen_norad_rga_sp19_inb_50nA_10604MeV_eppi0.root"};
 
-    if (!data_tree || !mc_tree) {
-        cerr << "Error: PhysicsEvents tree not found in one of the files." << endl;
-        return 4;
+    for (size_t i = 0; i < 3; ++i) {
+        // Load gen dvcsgen
+        TFile* gen_dvcsgen_file = new TFile(mc_gen_dvcsgen_filenames[i].c_str(), "READ");
+        if (!gen_dvcsgen_file->IsOpen()) {
+            cerr << "Error: Unable to open gen dvcsgen MC file " << mc_gen_dvcsgen_filenames[i] << endl;
+            return 3;
+        }
+        TTree* gen_dvcsgen_tree = (TTree*)gen_dvcsgen_file->Get("PhysicsEvents");
+        treeReaders[i][1].push_back(TTreeReader(gen_dvcsgen_tree));
+
+        // Load rec dvcsgen
+        TFile* rec_dvcsgen_file = new TFile(mc_rec_dvcsgen_filenames[i].c_str(), "READ");
+        if (!rec_dvcsgen_file->IsOpen()) {
+            cerr << "Error: Unable to open rec dvcsgen MC file " << mc_rec_dvcsgen_filenames[i] << endl;
+            return 3;
+        }
+        TTree* rec_dvcsgen_tree = (TTree*)rec_dvcsgen_file->Get("PhysicsEvents");
+        treeReaders[i][1].push_back(TTreeReader(rec_dvcsgen_tree));
+
+        // Load gen aaogen
+        TFile* gen_aaogen_file = new TFile(mc_gen_aaogen_filenames[i].c_str(), "READ");
+        if (!gen_aaogen_file->IsOpen()) {
+            cerr << "Error: Unable to open gen aaogen MC file " << mc_gen_aaogen_filenames[i] << endl;
+            return 3;
+        }
+        TTree* gen_aaogen_tree = (TTree*)gen_aaogen_file->Get("PhysicsEvents");
+        treeReaders[i][1].push_back(TTreeReader(gen_aaogen_tree));
+
+        // Load rec aaogen
+        TFile* rec_aaogen_file = new TFile(mc_rec_aaogen_filenames[i].c_str(), "READ");
+        if (!rec_aaogen_file->IsOpen()) {
+            cerr << "Error: Unable to open rec aaogen MC file " << mc_rec_aaogen_filenames[i] << endl;
+            return 3;
+        }
+        TTree* rec_aaogen_tree = (TTree*)rec_aaogen_file->Get("PhysicsEvents");
+        treeReaders[i][1].push_back(TTreeReader(rec_aaogen_tree));
     }
 
-    // Set up TTreeReaders
-    dataReader.SetTree(data_tree);
-    mcReader.SetTree(mc_tree);
-
-    cout << "Successfully loaded data and MC trees." << endl;
+    cout << "Successfully loaded all data and MC trees." << endl;
 
     // End program for now
     cout << "Program complete. Additional functionality to be added later." << endl;
