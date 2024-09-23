@@ -31,7 +31,7 @@ else if ($arg1 == "processing_scripts/processing_four_particles.groovy") then
 else if ($arg1 == "processing_scripts/processing_dvcs.groovy") then
     set convert_arg3 = 4 # dvcs
 else if ($arg1 == "processing_scripts/processing_exclusive_pi0.groovy") then
-    set convert_arg3 = 5
+    set convert_arg3 = 5 # eppi0
 else if ($arg1 == "processing_scripts/processing_calibration.groovy") then
     set convert_arg3 = 6 # calibration
 endif

@@ -1136,8 +1136,7 @@ int main(int argc, char *argv[]) {
 
             tree->Fill(); // Fill the tree with the read data
         }
-    }
-    
+    }    
     if (script_index == 2 && is_mc == 1) {
 
         while (infile >> e_p >> mc_e_p >> e_theta >> mc_e_theta >> e_phi >> mc_e_phi >> vz_e >> 
@@ -1232,7 +1231,6 @@ int main(int argc, char *argv[]) {
             tree->Fill(); // Fill the tree with the read data
         }
     }
-
     // DVCS
     if (script_index == 4 && is_mc == 0) {
         while (infile >> fiducial_status >> num_pos >> num_neg >> num_neutral >> 
@@ -1296,7 +1294,7 @@ int main(int argc, char *argv[]) {
             DepA >> DepB >> DepC >> DepV >> DepW >> Mh_gammagamma >> 
             detector_gamma1 >> detector_gamma2 >>
             open_angle_egamma1 >> open_angle_egamma2 >> Emiss2 >> theta_pi0_pi0 >> pTmiss) {
-
+            std::cout << Mh_gammagamma << std::endl;
             beam_pol = getPol(runnum);
             if (runnum < 16000) { target_pol = 0; }
             else { 
