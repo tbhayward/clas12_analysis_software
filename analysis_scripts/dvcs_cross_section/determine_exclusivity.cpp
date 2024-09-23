@@ -90,7 +90,7 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
         // Get the maximum value for setting y-axis range
         double max_data = hist_data->GetMaximum();
         double max_mc = hist_mc->GetMaximum();
-        double y_max = 1.2 * std::max(max_data, max_mc);  // Set y-axis range from 0 to 1.2 * max
+        double y_max = 1.25 * std::max(max_data, max_mc);  // Set y-axis range from 0 to 1.2 * max
 
         // Draw the histograms
         canvas->cd(i + 1);
@@ -105,7 +105,7 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
         hist_mc->Draw("HIST SAME");
 
         // Add a legend with the count information (integer format)
-        TLegend* legend = new TLegend(0.45, 0.7, 0.9, 0.9);
+        TLegend* legend = new TLegend(0.4, 0.7, 0.9, 0.9);
         legend->AddEntry(hist_data, ("Data (" + std::to_string(static_cast<int>(hist_data->GetEntries())) + " counts)").c_str(), "l");
         legend->AddEntry(hist_mc, ("MC (" + std::to_string(static_cast<int>(hist_mc->GetEntries())) + " counts)").c_str(), "l");
         legend->Draw();
