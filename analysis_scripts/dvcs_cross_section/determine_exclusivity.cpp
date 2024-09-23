@@ -12,6 +12,11 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
     // Set up global style options (remove stat boxes)
     gStyle->SetOptStat(0);
 
+    // Increase font size for axis labels and title
+    gStyle->SetTitleSize(0.05, "XY");
+    gStyle->SetLabelSize(0.04, "XY");
+    gStyle->SetLegendTextSize(0.04);
+
     // Create a 2x4 canvas
     TCanvas* canvas = new TCanvas("exclusivity_canvas", "Exclusivity Plots", 1600, 800);
     canvas->Divide(4, 2);  // 2 rows, 4 columns
@@ -59,8 +64,8 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
         std::string hist_mc_name = "mc_" + variables[i];
 
         // Create histograms for data and MC
-        TH1D* hist_data = new TH1D(hist_data_name.c_str(), formatLabelName(variables[i]).c_str(), config.bins, config.min, config.max);
-        TH1D* hist_mc = new TH1D(hist_mc_name.c_str(), formatLabelName(variables[i]).c_str(), config.bins, config.min, config.max);
+        TH1D* hist_data = new TH1D(hist_data_name.c_str(), "", config.bins, config.min, config.max);
+        TH1D* hist_mc = new TH1D(hist_mc_name.c_str(), "", config.bins, config.min, config.max);
 
         // Create readers for the variable
         TTreeReaderValue<double> dataVar(dataReader, variables[i].c_str());
@@ -82,12 +87,19 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
         hist_data->Scale(1.0 / total_electrons_data);
         hist_mc->Scale(1.0 / total_electrons_mc);
 
+        // Get the maximum value for setting y-axis range
+        double max_data = hist_data->GetMaximum();
+        double max_mc = hist_mc->GetMaximum();
+        double y_max = 1.2 * std::max(max_data, max_mc);  // Set y-axis range from 0 to 1.2 * max
+
         // Draw the histograms
         canvas->cd(i + 1);
+        gPad->SetLeftMargin(0.15);  // Add left padding
         hist_data->SetLineColor(kBlue);
         hist_mc->SetLineColor(kRed);
         hist_data->SetXTitle(formatLabelName(variables[i]).c_str());
         hist_data->SetYTitle("Normalized counts");
+        hist_data->GetYaxis()->SetRangeUser(0, y_max);
         hist_data->Draw("HIST");
         hist_mc->Draw("HIST SAME");
 
