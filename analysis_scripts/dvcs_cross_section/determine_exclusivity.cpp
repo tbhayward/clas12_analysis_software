@@ -99,10 +99,13 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
         double y_max = 1.35 * std::max({max_data, max_mc});
         double y_max_loose = 1.35 * std::max({max_data_loose, max_mc_loose});
 
+        // Use const char* for the title
+        const char* originalTitle = plotTitle.c_str();
+        const char* looseCutsTitle = (plotTitle + " ; Loose Cuts").c_str();
+
         // Set the title for the histograms before drawing them
-        hist_data->SetTitle(plotTitle.c_str());
-        // hist_data_loose->SetTitle((plotTitle + " ; Loose Cuts").c_str());  // Add loose cuts to title
-        hist_data_loose->SetTitle("; Loose Cuts");  // Add loose cuts to title
+        hist_data->SetTitle(originalTitle);
+        hist_data_loose->SetTitle(looseCutsTitle);  // Add loose cuts to title
 
         // Draw the histograms for original plots
         canvas->cd(i + 1);
