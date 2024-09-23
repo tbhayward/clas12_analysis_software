@@ -36,11 +36,11 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
     const double theta_min = 14.0 * 3.14159 / 180.0;  // Convert 14 degrees to radians
     const double theta_max = 18.0 * 3.14159 / 180.0;  // Convert 18 degrees to radians
 
-    // Readers for e_theta variables (detector1 and detector2 checks are commented out for now)
+    // Readers for e_theta variable (detector1 and detector2 are commented out for now)
     TTreeReaderValue<double> eTheta_data(dataReader, "e_theta");
     TTreeReaderValue<double> eTheta_mc(mcReader, "e_theta");
 
-    // Placeholder: Commenting out detector1 and detector2 logic for now
+    // Commenting out detector1 and detector2 logic temporarily
     /*
     TTreeReaderValue<int> detector1_data(dataReader, "detector1");
     TTreeReaderValue<int> detector2_data(dataReader, "detector2");
@@ -52,9 +52,8 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
     std::map<std::string, int> total_electrons_data = {{"FD_FD", 0}, {"CD_FD", 0}, {"CD_FT", 0}};
     std::map<std::string, int> total_electrons_mc = {{"FD_FD", 0}, {"CD_FD", 0}, {"CD_FT", 0}};
 
-    // Fill histograms based on detector configuration (placeholder: filling all configurations)
+    // Fill histograms for all configurations (for now, we fill all three configurations for every event)
     while (dataReader.Next()) {
-        // Placeholder: Set all configurations to true for now
         for (const auto& config_key : configurations) {
             // Normalization for electrons in the specified theta range
             if (*eTheta_data >= theta_min && *eTheta_data <= theta_max) {
@@ -71,7 +70,6 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
     dataReader.Restart();  // Restart reader for MC
 
     while (mcReader.Next()) {
-        // Placeholder: Set all configurations to true for now
         for (const auto& config_key : configurations) {
             // Normalization for electrons in the specified theta range
             if (*eTheta_mc >= theta_min && *eTheta_mc <= theta_max) {
@@ -105,9 +103,9 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
 
             // Set the plotting styles for points with error bars (no horizontal errors)
             histograms_data[config][i]->SetMarkerStyle(20);
-            histograms_data[config][i]->SetLineColor(kBlue);
+            histograms_data[config][i]->SetMarkerColor(kBlue);
             histograms_mc[config][i]->SetMarkerStyle(24);
-            histograms_mc[config][i]->SetLineColor(kRed);
+            histograms_mc[config][i]->SetMarkerColor(kRed);
 
             // Set axis labels
             histograms_data[config][i]->SetXTitle(formatLabelName(variables[i]).c_str());
@@ -124,13 +122,13 @@ void determine_exclusivity(TTreeReader& dataReader, TTreeReader& mcReader, const
             histograms_data[config][i]->Draw("E1");  // Points with error bars
             histograms_mc[config][i]->Draw("E1 SAME");
 
-            // Add a legend with the count information (integer format)
+            // Add a legend with blue/red text for Data/MC
             TLegend* legend = new TLegend(0.375, 0.7, 0.9, 0.9);
             legend->AddEntry(histograms_data[config][i], ("#color[4]{Data} (" + std::to_string(static_cast<int>(histograms_data[config][i]->GetEntries())) + " counts)").c_str(), "p");
             legend->AddEntry(histograms_mc[config][i], ("#color[2]{MC} (" + std::to_string(static_cast<int>(histograms_mc[config][i]->GetEntries())) + " counts)").c_str(), "p");
             legend->Draw();
 
-            // Add the title for each subplot, including the configuration
+            // Add the title for each subplot
             histograms_data[config][i]->SetTitle((plotTitle + "; " + config).c_str());
         }
 
