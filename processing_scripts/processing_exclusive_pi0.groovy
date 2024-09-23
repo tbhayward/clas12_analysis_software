@@ -64,7 +64,7 @@ public static void main(String[] args) {
 	double e_p, e_theta, e_phi, p1_phi, p1_p, p1_theta, p2_phi, p2_p, p2_theta; 
 	double vz_e, vz_p1, vz_p2;
 	double open_angle_ep, open_angle_ep1, open_angle_ep2, open_angle_p1p2;
-	double open_angle_egamma1, open_angle_egamma2,
+	double open_angle_egamma1, open_angle_egamma2;
 	double Q2, W, y, Mx2, Mx2_1, Mx2_2; 
 	double x, t, t1, t2, tmin, z, xF, pT, eta, eta_gN, zeta;
 	double z1, z2, xF1, xF2, Mh, Mh_gammagamma, 
