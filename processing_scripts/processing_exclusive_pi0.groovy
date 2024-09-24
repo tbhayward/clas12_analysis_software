@@ -165,7 +165,8 @@ public static void main(String[] args) {
 	                fiducial_status = variables.get_fiducial_status(); // fiducial_status of track
 	                helicity = variables.get_helicity(); // helicity of event
 	                detector1 = variables.get_detector1(); 
-	                detector2 = variables.get_detector2(); 
+	                detector2 = detector_gamma1; // the pi0 isn't actually detected in detector
+	                // so put in the location of the photons it's formed from 
 	                num_pos = variables.get_num_pos();
 	                num_neg = variables.get_num_neg();
 	                num_neutrals = variables.get_num_neutrals();
