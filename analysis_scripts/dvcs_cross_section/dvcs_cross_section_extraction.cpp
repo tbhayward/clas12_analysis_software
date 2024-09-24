@@ -163,6 +163,10 @@ int main(int argc, char* argv[]) {
     determine_exclusivity("eppi0", "(CD,FD)", eppi0_readers[1], mc_rec_aaogen_readers[1], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Out, CD,FD)");
     determine_exclusivity("eppi0", "(CD,FD)", eppi0_readers[2], mc_rec_aaogen_readers[2], "output/exclusivity_plots", "e'p'#pi^{0} (Sp19 Inb, CD,FD)");
 
+    determine_exclusivity("eppi0", "(FD,FD)", eppi0_readers[0], mc_rec_aaogen_readers[0], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Inb, FD,FD)");
+    determine_exclusivity("eppi0", "(FD,FD)", eppi0_readers[1], mc_rec_aaogen_readers[1], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Out, FD,FD)");
+    determine_exclusivity("eppi0", "(FD,FD)", eppi0_readers[2], mc_rec_aaogen_readers[2], "output/exclusivity_plots", "e'p'#pi^{0} (Sp19 Inb, FD,FD)");
+
     // End program
     cout << "Program complete. Additional functionality to be added later." << endl << endl;
 
