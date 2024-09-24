@@ -57,6 +57,16 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
     TTreeReaderValue<double> Mx2_1_mc(mcReader, "Mx2_1");
     TTreeReaderValue<double> pTmiss_data(dataReader, "pTmiss");
     TTreeReaderValue<double> pTmiss_mc(mcReader, "pTmiss");
+    // Conditional initialization of "theta_neutral_neutral" based on analysis type
+    TTreeReaderValue<double>* theta_neutral_neutral_data;
+    TTreeReaderValue<double>* theta_neutral_neutral_mc;
+    if (analysisType == "dvcs") {
+        theta_neutral_neutral_data = new TTreeReaderValue<double>(dataReader, "theta_gamma_gamma");
+        theta_neutral_neutral_mc = new TTreeReaderValue<double>(mcReader, "theta_gamma_gamma");
+    } else if (analysisType == "eppi0") {
+        theta_neutral_neutral_data = new TTreeReaderValue<double>(dataReader, "theta_pi0_pi0");
+        theta_neutral_neutral_mc = new TTreeReaderValue<double>(mcReader, "theta_pi0_pi0");
+    } 
 
     for (size_t i = 0; i < variables.size(); ++i) {
 
@@ -83,7 +93,7 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
         while (dataReader.Next()) {
             hist_data->Fill(*dataVar);            
             // Apply kinematic cuts and fill the "Loose Cuts" histograms if they pass
-            if (apply_kinematic_cuts(*t_data, *open_angle_ep2_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data)) {
+            if (apply_kinematic_cuts(*t_data, *open_angle_ep2_data, *theta_neutral_neutral_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data)) {
                 hist_data_loose->Fill(*dataVar);
             }
         }
@@ -93,7 +103,7 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
         while (mcReader.Next()) {
             hist_mc->Fill(*mcVar);
             // Apply kinematic cuts and fill the "Loose Cuts" histograms if they pass
-            if (apply_kinematic_cuts(*t_mc, *open_angle_ep2_mc, *Emiss2_mc, *Mx2_1_mc, *pTmiss_mc)) {
+            if (apply_kinematic_cuts(*t_mc, *open_angle_ep2_mc, *theta_neutral_neutral_mc, *Emiss2_mc, *Mx2_1_mc, *pTmiss_mc)) {
                 hist_mc_loose->Fill(*mcVar);
             }
         }
