@@ -7,6 +7,7 @@
 #include <TLegend.h>
 #include <TStyle.h>
 #include <TTreeReaderValue.h>
+#include <filesystem>
 #include <cmath>  // for radian conversion
 
 void determine_exclusivity(const std::string& analysisType, TTreeReader& dataReader, TTreeReader& mcReader, const std::string& outputDir, const std::string& plotTitle) {
@@ -17,6 +18,15 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
     gStyle->SetTitleSize(0.05, "XY");
     gStyle->SetLabelSize(0.04, "XY");
     gStyle->SetLegendTextSize(0.04);
+
+    // Create the correct subdirectory based on the analysis type (dvcs or eppi0)
+    std::string analysis_dir = (analysisType == "dvcs") ? "dvcs" : "eppi0";
+    std::string final_output_dir = outputDir + "/exclusivity_plots/" + analysis_dir;
+
+    // Check and create the necessary directory if it doesn't exist
+    if (!std::filesystem::exists(final_output_dir)) {
+        std::filesystem::create_directories(final_output_dir);
+    }
 
     // Create a 2x4 canvas for original plots
     TCanvas* canvas = new TCanvas("exclusivity_canvas", "Exclusivity Plots", 1600, 800);
@@ -29,9 +39,9 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
     // Vector of variables for plotting (switch between "dvcs" and "eppi0")
     std::vector<std::string> variables;
     if (analysisType == "dvcs") {
-        variables = {"open_angle_ep2", "theta_gamma_gamma", "pTmiss", "xF", "Emiss2", "Mx2", "Mx2_1", "Mx2_2",};
+        variables = {"open_angle_ep2", "theta_gamma_gamma", "pTmiss", "xF", "Emiss2", "Mx2", "Mx2_1", "Mx2_2"};
     } else if (analysisType == "eppi0") {
-        variables = {"open_angle_ep2", "theta_pi0_pi0", "pTmiss", "xF", "Emiss2", "Mx2", "Mx2_1", "Mx2_2",};
+        variables = {"open_angle_ep2", "theta_pi0_pi0", "pTmiss", "xF", "Emiss2", "Mx2", "Mx2_1", "Mx2_2"};
     } else {
         throw std::runtime_error("Invalid analysis type! Must be 'dvcs' or 'eppi0'");
     }
@@ -148,8 +158,8 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
     // Save the canvases with updated names to reflect the plotTitle input
     std::string cleanTitle = plotTitle;
     std::replace(cleanTitle.begin(), cleanTitle.end(), ' ', '_');  // Replace spaces with underscores
-    canvas->SaveAs((outputDir + "/exclusivity_plots_" + cleanTitle + "_0_cuts.png").c_str());
-    canvas_loose_cuts->SaveAs((outputDir + "/exclusivity_plots_" + cleanTitle + "_1_cuts.png").c_str());
+    canvas->SaveAs((final_output_dir + "/exclusivity_plots_" + cleanTitle + "_0_cuts.png").c_str());
+    canvas_loose_cuts->SaveAs((final_output_dir + "/exclusivity_plots_" + cleanTitle + "_1_cuts.png").c_str());
 
     // Clean up
     delete canvas;
