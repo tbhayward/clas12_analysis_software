@@ -81,9 +81,13 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
 
         // Create histograms for data and MC
         TH1D* hist_data = new TH1D(hist_data_name.c_str(), "", config.bins, config.min, config.max);
+        hist_data->SetDirectory(0);  // Prevent ROOT from storing histograms globally
         TH1D* hist_mc = new TH1D(hist_mc_name.c_str(), "", config.bins, config.min, config.max);
+        hist_mc->SetDirectory(0);
         TH1D* hist_data_loose = new TH1D(hist_data_name_loose.c_str(), "", config.bins, config.min, config.max);
+        hist_data_loose->SetDirectory(0);
         TH1D* hist_mc_loose = new TH1D(hist_mc_name_loose.c_str(), "", config.bins, config.min, config.max);
+        hist_mc_loose->SetDirectory(0);
 
         // Create readers for the variable
         TTreeReaderValue<double> dataVar(dataReader, variables[i].c_str());
@@ -163,10 +167,6 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
         legend_loose->AddEntry(hist_mc_loose, ("MC (" + std::to_string(static_cast<int>(hist_mc_loose->GetEntries())) + " events; Loose Cuts)").c_str(), "l");
         legend_loose->SetTextSize(0.03);  // Set smaller font size for "Loose Cuts" legend
         legend_loose->Draw();
-
-        // Clean up histograms after each iteration to avoid memory leaks
-        delete hist_data; delete hist_mc;
-        delete hist_data_loose; delete hist_mc_loose;
     }
 
     // Save the canvases with updated names to reflect the plotTitle input
