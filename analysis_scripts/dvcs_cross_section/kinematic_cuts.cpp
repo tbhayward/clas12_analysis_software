@@ -8,7 +8,7 @@ bool apply_kinematic_cuts(double t, double open_angle_ep2, double theta_neutral_
     if (-t >= 1) return false;  
 
     // remove radiative photons around e'
-    if (open_angle_ep2 <= 10) return false; 
+    if (open_angle_ep2 <= 5) return false; 
 
     // exclusivity cuts
     if (theta_neutral_neutral > 0.7) return false;
