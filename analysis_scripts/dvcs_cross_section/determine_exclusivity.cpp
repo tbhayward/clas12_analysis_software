@@ -7,10 +7,9 @@
 #include <TLegend.h>
 #include <TStyle.h>
 #include <TTreeReaderValue.h>
-#include <filesystem>
 #include <cmath>  // for radian conversion
 
-void determine_exclusivity(const std::string& analysisType, TTreeReader& dataReader, TTreeReader& mcReader, const std::string& outputDir, const std::string& plotTitle) {
+void determine_exclusivity(const std::string& analysisType, const std::string& topology, TTreeReader& dataReader, TTreeReader& mcReader, const std::string& outputDir, const std::string& plotTitle) {
     // Set up global style options (remove stat boxes)
     gStyle->SetOptStat(0);
 
@@ -18,15 +17,6 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
     gStyle->SetTitleSize(0.05, "XY");
     gStyle->SetLabelSize(0.04, "XY");
     gStyle->SetLegendTextSize(0.04);
-
-    // Create the correct subdirectory based on the analysis type (dvcs or eppi0)
-    std::string analysis_dir = (analysisType == "dvcs") ? "dvcs" : "eppi0";
-    std::string final_output_dir = outputDir + "/exclusivity_plots/" + analysis_dir;
-
-    // Check and create the necessary directory if it doesn't exist
-    if (!std::filesystem::exists(final_output_dir)) {
-        std::filesystem::create_directories(final_output_dir);
-    }
 
     // Create a 2x4 canvas for original plots
     TCanvas* canvas = new TCanvas("exclusivity_canvas", "Exclusivity Plots", 1600, 800);
@@ -39,9 +29,9 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
     // Vector of variables for plotting (switch between "dvcs" and "eppi0")
     std::vector<std::string> variables;
     if (analysisType == "dvcs") {
-        variables = {"open_angle_ep2", "theta_gamma_gamma", "pTmiss", "xF", "Emiss2", "Mx2", "Mx2_1", "Mx2_2"};
+        variables = {"open_angle_ep2", "theta_gamma_gamma", "pTmiss", "xF", "Emiss2", "Mx2", "Mx2_1", "Mx2_2",};
     } else if (analysisType == "eppi0") {
-        variables = {"open_angle_ep2", "theta_pi0_pi0", "pTmiss", "xF", "Emiss2", "Mx2", "Mx2_1", "Mx2_2"};
+        variables = {"open_angle_ep2", "theta_pi0_pi0", "pTmiss", "xF", "Emiss2", "Mx2", "Mx2_1", "Mx2_2",};
     } else {
         throw std::runtime_error("Invalid analysis type! Must be 'dvcs' or 'eppi0'");
     }
@@ -57,16 +47,12 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
     TTreeReaderValue<double> Mx2_1_mc(mcReader, "Mx2_1");
     TTreeReaderValue<double> pTmiss_data(dataReader, "pTmiss");
     TTreeReaderValue<double> pTmiss_mc(mcReader, "pTmiss");
-    // Conditional initialization of "theta_neutral_neutral" based on analysis type
-    TTreeReaderValue<double>* theta_neutral_neutral_data;
-    TTreeReaderValue<double>* theta_neutral_neutral_mc;
-    if (analysisType == "dvcs") {
-        theta_neutral_neutral_data = new TTreeReaderValue<double>(dataReader, "theta_gamma_gamma");
-        theta_neutral_neutral_mc = new TTreeReaderValue<double>(mcReader, "theta_gamma_gamma");
-    } else if (analysisType == "eppi0") {
-        theta_neutral_neutral_data = new TTreeReaderValue<double>(dataReader, "theta_pi0_pi0");
-        theta_neutral_neutral_mc = new TTreeReaderValue<double>(mcReader, "theta_pi0_pi0");
-    } 
+
+    // Readers for detector status variables (detector1 and detector2)
+    TTreeReaderValue<int> detector1_data(dataReader, "detector1");
+    TTreeReaderValue<int> detector2_data(dataReader, "detector2");
+    TTreeReaderValue<int> detector1_mc(mcReader, "detector1");
+    TTreeReaderValue<int> detector2_mc(mcReader, "detector2");
 
     for (size_t i = 0; i < variables.size(); ++i) {
 
@@ -81,7 +67,7 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
 
         // Create histograms for data and MC
         TH1D* hist_data = new TH1D(hist_data_name.c_str(), "", config.bins, config.min, config.max);
-        hist_data->SetDirectory(0);  // Prevent ROOT from storing histograms globally
+        hist_data->SetDirectory(0);  // Prevent ROOT from managing histograms globally
         TH1D* hist_mc = new TH1D(hist_mc_name.c_str(), "", config.bins, config.min, config.max);
         hist_mc->SetDirectory(0);
         TH1D* hist_data_loose = new TH1D(hist_data_name_loose.c_str(), "", config.bins, config.min, config.max);
@@ -93,22 +79,29 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
         TTreeReaderValue<double> dataVar(dataReader, variables[i].c_str());
         TTreeReaderValue<double> mcVar(mcReader, variables[i].c_str());
 
-        // Fill data histograms
+        // Check detector status and fill histograms based on topology
         while (dataReader.Next()) {
-            hist_data->Fill(*dataVar);            
-            // Apply kinematic cuts and fill the "Loose Cuts" histograms if they pass
-            if (apply_kinematic_cuts(*t_data, *open_angle_ep2_data, **theta_neutral_neutral_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data)) {
-                hist_data_loose->Fill(*dataVar);
+            if ((topology == "(FD,FD)" && *detector1_data == 1 && *detector2_data == 1) ||
+                (topology == "(CD,FD)" && *detector1_data == 2 && *detector2_data == 1) ||
+                (topology == "(CD,FT)" && *detector1_data == 2 && *detector2_data == 0)) {
+
+                hist_data->Fill(*dataVar);            
+                if (apply_kinematic_cuts(*t_data, *open_angle_ep2_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data)) {
+                    hist_data_loose->Fill(*dataVar);
+                }
             }
         }
         dataReader.Restart();  // Restart reader for the next variable
 
-        // Fill MC histograms
         while (mcReader.Next()) {
-            hist_mc->Fill(*mcVar);
-            // Apply kinematic cuts and fill the "Loose Cuts" histograms if they pass
-            if (apply_kinematic_cuts(*t_mc, *open_angle_ep2_mc, **theta_neutral_neutral_mc, *Emiss2_mc, *Mx2_1_mc, *pTmiss_mc)) {
-                hist_mc_loose->Fill(*mcVar);
+            if ((topology == "(FD,FD)" && *detector1_mc == 1 && *detector2_mc == 1) ||
+                (topology == "(CD,FD)" && *detector1_mc == 2 && *detector2_mc == 1) ||
+                (topology == "(CD,FT)" && *detector1_mc == 2 && *detector2_mc == 0)) {
+
+                hist_mc->Fill(*mcVar);
+                if (apply_kinematic_cuts(*t_mc, *open_angle_ep2_mc, *Emiss2_mc, *Mx2_1_mc, *pTmiss_mc)) {
+                    hist_mc_loose->Fill(*mcVar);
+                }
             }
         }
         mcReader.Restart();  // Restart reader for the next variable
@@ -124,8 +117,8 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
         double max_mc = hist_mc->GetMaximum();
         double max_data_loose = hist_data_loose->GetMaximum();
         double max_mc_loose = hist_mc_loose->GetMaximum();
-        double y_max = 1.4 * std::max({max_data, max_mc});
-        double y_max_loose = 1.4  * std::max({max_data_loose, max_mc_loose});
+        double y_max = 1.35 * std::max({max_data, max_mc});
+        double y_max_loose = 1.35 * std::max({max_data_loose, max_mc_loose});
 
         hist_data->SetTitle(plotTitle.c_str());
         hist_data_loose->SetTitle(plotTitle.c_str());  
@@ -143,9 +136,9 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
         hist_mc->Draw("HIST SAME");
 
         // Add a legend with the count information (integer format)
-        TLegend* legend = new TLegend(0.4, 0.7, 0.9, 0.9);
-        legend->AddEntry(hist_data, ("Data (" + std::to_string(static_cast<int>(hist_data->GetEntries())) + " events)").c_str(), "l");
-        legend->AddEntry(hist_mc, ("MC (" + std::to_string(static_cast<int>(hist_mc->GetEntries())) + " events)").c_str(), "l");
+        TLegend* legend = new TLegend(0.375, 0.7, 0.9, 0.9);
+        legend->AddEntry(hist_data, ("Data (" + std::to_string(static_cast<int>(hist_data->GetEntries())) + " counts)").c_str(), "l");
+        legend->AddEntry(hist_mc, ("MC (" + std::to_string(static_cast<int>(hist_mc->GetEntries())) + " counts)").c_str(), "l");
         legend->SetTextSize(0.03);  // Set smaller font size for legend
         legend->Draw();
 
@@ -162,20 +155,20 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
         hist_mc_loose->Draw("HIST SAME");
 
         // Add a legend with the count information for "Loose Cuts" (integer format)
-        TLegend* legend_loose = new TLegend(0.275, 0.7, 0.9, 0.9);
-        legend_loose->AddEntry(hist_data_loose, ("Data (" + std::to_string(static_cast<int>(hist_data_loose->GetEntries())) + " events; Loose Cuts)").c_str(), "l");
-        legend_loose->AddEntry(hist_mc_loose, ("MC (" + std::to_string(static_cast<int>(hist_mc_loose->GetEntries())) + " events; Loose Cuts)").c_str(), "l");
+        TLegend* legend_loose = new TLegend(0.25, 0.7, 0.9, 0.9);
+        legend_loose->AddEntry(hist_data_loose, ("Data (" + std::to_string(static_cast<int>(hist_data_loose->GetEntries())) + " counts; Loose Cuts)").c_str(), "l");
+        legend_loose->AddEntry(hist_mc_loose, ("MC (" + std::to_string(static_cast<int>(hist_mc_loose->GetEntries())) + " counts; Loose Cuts)").c_str(), "l");
         legend_loose->SetTextSize(0.03);  // Set smaller font size for "Loose Cuts" legend
         legend_loose->Draw();
     }
 
-    // Save the canvases with updated names to reflect the plotTitle input
+    // Save the canvases with updated names to reflect the plotTitle and topology input
     std::string cleanTitle = plotTitle;
     std::replace(cleanTitle.begin(), cleanTitle.end(), ' ', '_');  // Replace spaces with underscores
-    canvas->SaveAs((final_output_dir + "/exclusivity_plots_" + cleanTitle + "_0_cuts.png").c_str());
-    canvas_loose_cuts->SaveAs((final_output_dir + "/exclusivity_plots_" + cleanTitle + "_1_cuts.png").c_str());
+    canvas->SaveAs((outputDir + "/exclusivity_plots_" + cleanTitle + "_" + topology + "_0_cuts.png").c_str());
+    canvas_loose_cuts->SaveAs((outputDir + "/exclusivity_plots_" + cleanTitle + "_" + topology + "_1_cuts.png").c_str());
 
-    // Clean up
-    delete canvas; delete canvas_loose_cuts;
-    delete theta_neutral_neutral_data; delete theta_neutral_neutral_mc;
+    // Clean up histograms and canvases to avoid memory leaks
+    delete canvas;
+    delete canvas_loose_cuts;
 }
