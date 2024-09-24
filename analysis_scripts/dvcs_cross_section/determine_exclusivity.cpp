@@ -120,8 +120,8 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
         double max_mc = hist_mc->GetMaximum();
         double max_data_loose = hist_data_loose->GetMaximum();
         double max_mc_loose = hist_mc_loose->GetMaximum();
-        double y_max = 1.35 * std::max({max_data, max_mc});
-        double y_max_loose = 1.35 * std::max({max_data_loose, max_mc_loose});
+        double y_max = 1.4 * std::max({max_data, max_mc});
+        double y_max_loose = 1.4 * std::max({max_data_loose, max_mc_loose});
 
         hist_data->SetTitle(plotTitle.c_str());
         hist_data_loose->SetTitle(plotTitle.c_str());  
