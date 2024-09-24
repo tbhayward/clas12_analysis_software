@@ -147,7 +147,7 @@ int main(int argc, char* argv[]) {
 
 
     // Call determine_exclusivity and plot variables for DVCS
-    determine_exclusivity("dvcs", "(CD,FT)", data_readers[0], mc_rec_dvcsgen_readers[0], "output/exclusivity_plots", "e'p'#gamma (Fa18 Inb; CD,FT)";
+    determine_exclusivity("dvcs", "(CD,FT)", data_readers[0], mc_rec_dvcsgen_readers[0], "output/exclusivity_plots", "e'p'#gamma (Fa18 Inb; CD,FT)");
     determine_exclusivity("dvcs", "(CD,FT)", data_readers[1], mc_rec_dvcsgen_readers[1], "output/exclusivity_plots", "e'p'#gamma (Fa18 Out; CD,FT)");
     determine_exclusivity("dvcs", "(CD,FT)", data_readers[2], mc_rec_dvcsgen_readers[2], "output/exclusivity_plots", "e'p'#gamma (Sp19 Inb; CD,FT)");
 
