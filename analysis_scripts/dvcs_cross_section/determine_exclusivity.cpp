@@ -121,7 +121,7 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
         double max_data_loose = hist_data_loose->GetMaximum();
         double max_mc_loose = hist_mc_loose->GetMaximum();
         double y_max = 1.4 * std::max({max_data, max_mc});
-        double y_max_loose = 1.4 * std::max({max_data_loose, max_mc_loose});
+        double y_max_loose = 1.4  * std::max({max_data_loose, max_mc_loose});
 
         hist_data->SetTitle(plotTitle.c_str());
         hist_data_loose->SetTitle(plotTitle.c_str());  
@@ -139,9 +139,9 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
         hist_mc->Draw("HIST SAME");
 
         // Add a legend with the count information (integer format)
-        TLegend* legend = new TLegend(0.375, 0.7, 0.9, 0.9);
-        legend->AddEntry(hist_data, ("Data (" + std::to_string(static_cast<int>(hist_data->GetEntries())) + " counts)").c_str(), "l");
-        legend->AddEntry(hist_mc, ("MC (" + std::to_string(static_cast<int>(hist_mc->GetEntries())) + " counts)").c_str(), "l");
+        TLegend* legend = new TLegend(0.4, 0.7, 0.9, 0.9);
+        legend->AddEntry(hist_data, ("Data (" + std::to_string(static_cast<int>(hist_data->GetEntries())) + " events)").c_str(), "l");
+        legend->AddEntry(hist_mc, ("MC (" + std::to_string(static_cast<int>(hist_mc->GetEntries())) + " events)").c_str(), "l");
         legend->SetTextSize(0.03);  // Set smaller font size for legend
         legend->Draw();
 
@@ -158,11 +158,15 @@ void determine_exclusivity(const std::string& analysisType, TTreeReader& dataRea
         hist_mc_loose->Draw("HIST SAME");
 
         // Add a legend with the count information for "Loose Cuts" (integer format)
-        TLegend* legend_loose = new TLegend(0.25, 0.7, 0.9, 0.9);
-        legend_loose->AddEntry(hist_data_loose, ("Data (" + std::to_string(static_cast<int>(hist_data_loose->GetEntries())) + " counts; Loose Cuts)").c_str(), "l");
-        legend_loose->AddEntry(hist_mc_loose, ("MC (" + std::to_string(static_cast<int>(hist_mc_loose->GetEntries())) + " counts; Loose Cuts)").c_str(), "l");
+        TLegend* legend_loose = new TLegend(0.275, 0.7, 0.9, 0.9);
+        legend_loose->AddEntry(hist_data_loose, ("Data (" + std::to_string(static_cast<int>(hist_data_loose->GetEntries())) + " events; Loose Cuts)").c_str(), "l");
+        legend_loose->AddEntry(hist_mc_loose, ("MC (" + std::to_string(static_cast<int>(hist_mc_loose->GetEntries())) + " events; Loose Cuts)").c_str(), "l");
         legend_loose->SetTextSize(0.03);  // Set smaller font size for "Loose Cuts" legend
         legend_loose->Draw();
+
+        // Clean up histograms after each iteration to avoid memory leaks
+        delete hist_data; delete hist_mc;
+        delete hist_data_loose; delete hist_mc_loose;
     }
 
     // Save the canvases with updated names to reflect the plotTitle input
