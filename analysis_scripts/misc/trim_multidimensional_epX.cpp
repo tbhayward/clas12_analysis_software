@@ -86,7 +86,7 @@ void process_file(const char* input_filename) {
     TTreeReaderValue<int> fiducial_status(reader, "fiducial_status");
     TTreeReaderValue<int> num_pos(reader, "num_pos");
     TTreeReaderValue<int> num_neg(reader, "num_neg");
-    TTreeReaderValue<int> num_neutrals(reader, "num_neutrals");
+    TTreeReaderValue<int> num_neutral(reader, "num_neutral");
     TTreeReaderValue<int> runnum(reader, "runnum");
     TTreeReaderValue<int> evnum(reader, "evnum");
     TTreeReaderValue<int> helicity(reader, "helicity");
@@ -123,7 +123,7 @@ void process_file(const char* input_filename) {
 
     // Loop over entries and fill the corresponding output trees
     while (reader.Next()) {
-        int random_int = *fiducial_status + *num_pos + *num_neg + *num_neutrals + *runnum + 
+        int random_int = *fiducial_status + *num_pos + *num_neg + *num_neutral + *runnum + 
             *evnum + *helicity + *detector;
         double random = *beam_pol + *target_pol + *e_p + *e_theta + *e_phi + 
             *vz_e + *p_p + *p_theta + *p_phi + *vz_p + *open_angle + *Q2 + *W  + 
