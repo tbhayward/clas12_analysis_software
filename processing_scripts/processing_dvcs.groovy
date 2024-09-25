@@ -122,8 +122,7 @@ public static void main(String[] args) {
 		    // do not use the qa if the run is from RGC (until QA is produced!)
 		    // boolean process_event = filter.isValid(research_Event);
 		    boolean process_event = filter.isValid(research_Event) && 
-		    	(runnum == 11 || runnum < 5020 || runnum >= 11571 ||
-		    	qa.OkForAsymmetry(runnum, evnum));
+		    	(runnum == 11 || qa.OkForAsymmetry(runnum, evnum));
 
 		    if (process_event) {
 
