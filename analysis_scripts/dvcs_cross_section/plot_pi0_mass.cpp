@@ -99,6 +99,12 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     hist_data1->Draw("E1");
     hist_mc1->Draw("E1 SAME");
 
+    // Create and draw the vertical line at pi0 mass
+    TLine* pi0_mass_line1 = new TLine(0.135, 0, 0.135, y_max1);
+    pi0_mass_line1->SetLineColor(kGray + 2);
+    pi0_mass_line1->SetLineStyle(7);  // Dashed line
+    pi0_mass_line1->Draw("SAME");
+
     // Create a Gaussian plus constant function for fitting the data histogram
     TF1* gausFit = new TF1("gausFit", "gaus(0)+[3]", 0.11, 0.16);
     gausFit->SetLineColor(kBlue);  // Set the line color to blue
@@ -155,6 +161,12 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     // Draw the data and MC histograms
     hist_data2->Draw("E1");
     hist_mc2->Draw("E1 SAME");
+
+    // Create and draw the vertical line at pi0 mass
+    TLine* pi0_mass_line2 = new TLine(0.135, 0, 0.135, y_max2);
+    pi0_mass_line2->SetLineColor(kGray + 2);
+    pi0_mass_line2->SetLineStyle(7);  // Dashed line
+    pi0_mass_line2->Draw("SAME");
 
     // Create a Gaussian plus constant function for fitting the data histogram
     TF1* gausFit2 = new TF1("gausFit2", "gaus(0)+[3]", 0.11, 0.16);
