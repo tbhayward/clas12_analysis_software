@@ -107,22 +107,38 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     // Create and draw the vertical line at pi0 mass
     pi0_mass_line->Draw("SAME");
 
-    // Create a Gaussian function for fitting within the range 0.12 to 0.15 GeV
+    // Create a Gaussian function for fitting the data histogram within the range 0.12 to 0.15 GeV
     TF1* gausFit = new TF1("gausFit", "gaus", 0.12, 0.15);
     gausFit->SetLineColor(kBlue);  // Set the line color to blue
-    gausFit->SetLineWidth(2);           // Set the line width for better visibility
+    gausFit->SetLineWidth(2);      // Set the line width for better visibility
 
     // Fit the data histogram with the Gaussian function
     hist_data1->Fit(gausFit, "R");  // "R" ensures the fit is within the specified range
     double mu = gausFit->GetParameter(1);      // Mean (μ)
     double sigma = gausFit->GetParameter(2);   // Sigma (σ)
 
+    // Create a Gaussian function for fitting the MC histogram within the same range
+    TF1* gausFitMC = new TF1("gausFitMC", "gaus", 0.12, 0.15);
+    gausFitMC->SetLineColor(kRed);  // Set the line color to red
+    gausFitMC->SetLineWidth(2);     // Set the line width for better visibility
+
+    // Fit the MC histogram with the Gaussian function
+    hist_mc1->Fit(gausFitMC, "R");  // "R" ensures the fit is within the specified range
+    double muMC = gausFitMC->GetParameter(1);      // Mean (μ) for MC
+    double sigmaMC = gausFitMC->GetParameter(2);   // Sigma (σ) for MC
+
     // Add legend for the first plot with colored text
-    TLegend* legend1 = new TLegend(0.7, 0.75, 0.9, 0.9);
+    TLegend* legend1 = new TLegend(0.65, 0.7, 0.9, 0.9);  // Adjusted position to accommodate more entries
+    legend1->SetTextSize(0.04);  // Increase the text size slightly
+
     char dataLegendEntry[200];
     sprintf(dataLegendEntry, "#color[4]{Data (#mu = %.4f, #sigma = %.4f)}", mu, sigma);
     legend1->AddEntry(hist_data1, dataLegendEntry, "p");
-    legend1->AddEntry(hist_mc1, "#color[2]{MC}", "p");
+
+    char mcLegendEntry[200];
+    sprintf(mcLegendEntry, "#color[2]{MC (#mu = %.4f, #sigma = %.4f)}", muMC, sigmaMC);
+    legend1->AddEntry(hist_mc1, mcLegendEntry, "p");
+
     legend1->Draw();
 
     canvas->cd(2);
