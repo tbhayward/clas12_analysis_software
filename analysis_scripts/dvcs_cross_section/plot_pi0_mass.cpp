@@ -41,12 +41,12 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     hist_mc3->SetDirectory(0);
 
     // Readers for Mh variable
-    TTreeReaderValue<double> Mh_data1(dataReader1, "Mh");
-    TTreeReaderValue<double> Mh_mc1(mcReader1, "Mh");
-    TTreeReaderValue<double> Mh_data2(dataReader2, "Mh");
-    TTreeReaderValue<double> Mh_mc2(mcReader2, "Mh");
-    TTreeReaderValue<double> Mh_data3(dataReader3, "Mh");
-    TTreeReaderValue<double> Mh_mc3(mcReader3, "Mh");
+    TTreeReaderValue<double> Mh_data1(dataReader1, "Mh_gammagamma");
+    TTreeReaderValue<double> Mh_mc1(mcReader1, "Mh_gammagamma");
+    TTreeReaderValue<double> Mh_data2(dataReader2, "Mh_gammagamma");
+    TTreeReaderValue<double> Mh_mc2(mcReader2, "Mh_gammagamma");
+    TTreeReaderValue<double> Mh_data3(dataReader3, "Mh_gammagamma");
+    TTreeReaderValue<double> Mh_mc3(mcReader3, "Mh_gammagamma");
 
     // Fill histograms for each data reader
     while (dataReader1.Next()) {
