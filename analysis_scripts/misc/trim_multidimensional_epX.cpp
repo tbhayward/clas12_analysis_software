@@ -101,7 +101,7 @@ void process_file(const char* input_filename) {
     TTreeReaderValue<double> p_theta(reader, "p_theta");
     TTreeReaderValue<double> p_phi(reader, "p_phi");
     TTreeReaderValue<double> vz_p(reader, "vz_p");
-    TTreeReaderValue<double> open_angle(reader, "open_angle");
+    TTreeReaderValue<float> open_angle(reader, "open_angle");
     TTreeReaderValue<double> Q2(reader, "Q2");
     TTreeReaderValue<double> W(reader, "W");
     TTreeReaderValue<double> Mx2(reader, "Mx2");

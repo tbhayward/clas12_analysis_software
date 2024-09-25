@@ -341,7 +341,7 @@ int main(int argc, char *argv[]) {
         tree->Branch("p_theta", &p_theta, "p_theta/D");
         tree->Branch("p_phi", &p_phi, "p_phi/D");
         tree->Branch("vz_p", &vz_p, "vz_p/D");
-        tree->Branch("open_angle", &open_angle, "open_angle");
+        tree->Branch("open_angle", &open_angle, "open_angle/D");
         tree->Branch("Q2", &Q2, "Q2/D");
         tree->Branch("W", &W, "W/D");
         tree->Branch("Mx2", &Mx2, "Mx2/D");
