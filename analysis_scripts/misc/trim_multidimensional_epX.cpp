@@ -138,7 +138,7 @@ void process_file(const char* input_filename) {
             if (bin > 0 && bin <= 14) {
                 output_trees[bin]->Fill();
             }
-        }t
+        }
         // Also fill the general tree for one dimensional dependencies
         output_trees[0]->Fill();
     }
