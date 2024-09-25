@@ -140,7 +140,7 @@ public static void main(String[] args) {
 		    // 	(runnum == 11 || runnum < 5020 || runnum >= 11571 || 
 		    // 	qa.OkForAsymmetry(runnum, evnum));
 		    boolean process_event = filter.isValid(research_Event) && 
-		    	(runnum == 11 qa.OkForAsymmetry(runnum, evnum));
+		    	(runnum == 11 || qa.OkForAsymmetry(runnum, evnum));
 
 		    if (process_event) {
 
