@@ -962,7 +962,6 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
     TTreeReaderValue<double> zeta(dataReader, "zeta");
     TTreeReaderValue<double> pT(dataReader, "pT");
     TTreeReaderValue<double> xF(dataReader, "xF");
-    TTreeReaderValue<double> Mx(dataReader, "Mx");
     TTreeReaderValue<double> t(dataReader, "t");
     TTreeReaderValue<double> tmin(dataReader, "tmin");
     TTreeReaderValue<double> DepA(dataReader, "DepA");
