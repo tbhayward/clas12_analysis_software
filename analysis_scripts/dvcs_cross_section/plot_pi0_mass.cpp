@@ -85,9 +85,9 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     pi0_mass_line->SetLineStyle(7);  // Dashed line
 
     // Determine the maximum value for y-axis scaling
-    double y_max1 = 1.3 * std::max(hist_data1->GetMaximum(), hist_mc1->GetMaximum());
-    double y_max2 = 1.3 * std::max(hist_data2->GetMaximum(), hist_mc2->GetMaximum());
-    double y_max3 = 1.3 * std::max(hist_data3->GetMaximum(), hist_mc3->GetMaximum());
+    double y_max1 = 1.4 * std::max(hist_data1->GetMaximum(), hist_mc1->GetMaximum());
+    double y_max2 = 1.4 * std::max(hist_data2->GetMaximum(), hist_mc2->GetMaximum());
+    double y_max3 = 1.4 * std::max(hist_data3->GetMaximum(), hist_mc3->GetMaximum());
 
     // Draw the histograms on the canvas as points with error bars
     canvas->cd(1);
@@ -128,7 +128,7 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     double sigmaMC = gausFitMC->GetParameter(2);   // Sigma (σ) for MC
 
     // Add legend for the first plot with colored text
-    TLegend* legend1 = new TLegend(0.45, 0.7, 0.9, 0.9);  // Adjusted position to accommodate more entries
+    TLegend* legend1 = new TLegend(0.35, 0.7, 0.9, 0.9);  // Adjusted position to accommodate more entries
     legend1->SetTextSize(0.04);  // Increase the text size slightly
 
     char dataLegendEntry[200];
