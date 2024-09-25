@@ -128,7 +128,7 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     double sigmaMC = gausFitMC->GetParameter(2);   // Sigma (σ) for MC
 
     // Add legend for the first plot with colored text
-    TLegend* legend1 = new TLegend(0.35, 0.7, 0.9, 0.9);  // Adjusted position to accommodate more entries
+    TLegend* legend1 = new TLegend(0.2, 0.7, 0.9, 0.9);  // Adjusted position to accommodate more entries
     legend1->SetTextSize(0.04);  // Increase the text size slightly
 
     char dataLegendEntry[200];
