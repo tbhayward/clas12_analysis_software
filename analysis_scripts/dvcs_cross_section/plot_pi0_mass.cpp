@@ -150,6 +150,12 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     legend1->AddEntry(hist_mc1, mcLegendEntry, "p");
     legend1->Draw();
 
+    // Create and draw the vertical line at pi0 mass
+    TLine* pi0_mass_line1 = new TLine(0.135, 0, 0.135, y_max1);
+    pi0_mass_line1->SetLineColor(kGray + 2);
+    pi0_mass_line1->SetLineStyle(7);  // Dashed line
+    pi0_mass_line1->Draw("SAME");
+
     canvas->cd(2);
     hist_data2->SetLineColor(kBlue);
     hist_data2->SetMarkerColor(kBlue);
@@ -210,6 +216,12 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     legend2->AddEntry(hist_mc2, mcLegendEntry2, "p");
     legend2->Draw();
 
+    // Create and draw the vertical line at pi0 mass
+    TLine* pi0_mass_line2 = new TLine(0.135, 0, 0.135, y_max2);
+    pi0_mass_line2->SetLineColor(kGray + 2);
+    pi0_mass_line2->SetLineStyle(7);  // Dashed line
+    pi0_mass_line2->Draw("SAME");
+
     canvas->cd(3);
     hist_data3->SetLineColor(kBlue);
     hist_data3->SetMarkerColor(kBlue);
@@ -228,6 +240,12 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     legend3->AddEntry(hist_data3, "#color[4]{Data}", "p");
     legend3->AddEntry(hist_mc3, "#color[2]{MC}", "p");
     legend3->Draw();
+
+    // Create and draw the vertical line at pi0 mass
+    TLine* pi0_mass_line3 = new TLine(0.135, 0, 0.135, y_max3);
+    pi0_mass_line3->SetLineColor(kGray + 2);
+    pi0_mass_line3->SetLineStyle(7);  // Dashed line
+    pi0_mass_line3->Draw("SAME");
 
     // Save the canvas
     canvas->SaveAs((pi0_mass_dir + "/pi0_mass_comparison.png").c_str());
