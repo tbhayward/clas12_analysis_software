@@ -1,106 +1,143 @@
-#include <TCanvas.h>
+#include "plot_pi0_mass.h"
 #include <TH1D.h>
+#include <TCanvas.h>
 #include <TLegend.h>
-#include <TTreeReader.h>
+#include <TStyle.h>
 #include <TTreeReaderValue.h>
+#include <filesystem>
 #include <iostream>
 
-// Function to plot pi0 mass from the Mh variable
 void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeReader& dataReader3,
                    TTreeReader& mcReader1, TTreeReader& mcReader2, TTreeReader& mcReader3,
                    const std::string& outputDir) {
-    
-    // Set up a 1x3 canvas for the three plots
-    TCanvas* canvas = new TCanvas("pi0_mass_canvas", "Invariant Mass of Pi0", 1600, 800);
+    // Set up global style options (remove stat boxes)
+    gStyle->SetOptStat(0);
+
+    // Check and create the necessary directory if it doesn't exist
+    std::string pi0_mass_dir = outputDir + "/pi0_mass";
+    if (!std::filesystem::exists(pi0_mass_dir)) {
+        std::filesystem::create_directories(pi0_mass_dir);
+    }
+
+    // Create a canvas with 1x3 layout (wider aspect ratio)
+    TCanvas* canvas = new TCanvas("pi0_mass_canvas", "Pi0 Mass Plots", 2400, 800);  // Wider canvas
     canvas->Divide(3, 1);  // 1 row, 3 columns
 
-    // Titles for the three periods
-    std::vector<std::string> titles = {"Fa18 Inb", "Fa18 Out", "Sp19 Inb"};
+    // Create histograms for the data and MC
+    TH1D* hist_data1 = new TH1D("hist_data1", "Fa18 Inb", 100, 0.11, 0.16);
+    TH1D* hist_mc1 = new TH1D("hist_mc1", "Fa18 Inb", 100, 0.11, 0.16);
+    TH1D* hist_data2 = new TH1D("hist_data2", "Fa18 Out", 100, 0.11, 0.16);
+    TH1D* hist_mc2 = new TH1D("hist_mc2", "Fa18 Out", 100, 0.11, 0.16);
+    TH1D* hist_data3 = new TH1D("hist_data3", "Sp19 Inb", 100, 0.11, 0.16);
+    TH1D* hist_mc3 = new TH1D("hist_mc3", "Sp19 Inb", 100, 0.11, 0.16);
 
-    // Create histograms for each dataset
-    std::vector<TH1D*> hist_data;
-    std::vector<TH1D*> hist_mc;
+    // Set directories to 0 to avoid automatic ROOT management
+    hist_data1->SetDirectory(0);
+    hist_mc1->SetDirectory(0);
+    hist_data2->SetDirectory(0);
+    hist_mc2->SetDirectory(0);
+    hist_data3->SetDirectory(0);
+    hist_mc3->SetDirectory(0);
 
-    // Bin settings for the invariant mass
-    int bins = 50;
-    double min_mass = 0.0;
-    double max_mass = 0.3;
-
-    // Create histograms for each dataset (data and MC)
-    for (int i = 0; i < 3; ++i) {
-        hist_data.push_back(new TH1D(("data_" + std::to_string(i)).c_str(), "", bins, min_mass, max_mass));
-        hist_mc.push_back(new TH1D(("mc_" + std::to_string(i)).c_str(), "", bins, min_mass, max_mass));
-    }
-
-    // TTreeReaders for the Mh (invariant mass) variable
+    // Readers for Mh variable
     TTreeReaderValue<double> Mh_data1(dataReader1, "Mh");
-    TTreeReaderValue<double> Mh_data2(dataReader2, "Mh");
-    TTreeReaderValue<double> Mh_data3(dataReader3, "Mh");
-
     TTreeReaderValue<double> Mh_mc1(mcReader1, "Mh");
+    TTreeReaderValue<double> Mh_data2(dataReader2, "Mh");
     TTreeReaderValue<double> Mh_mc2(mcReader2, "Mh");
+    TTreeReaderValue<double> Mh_data3(dataReader3, "Mh");
     TTreeReaderValue<double> Mh_mc3(mcReader3, "Mh");
 
-    // Fill histograms for data and MC for each period
-    std::vector<TTreeReader*> dataReaders = {&dataReader1, &dataReader2, &dataReader3};
-    std::vector<TTreeReader*> mcReaders = {&mcReader1, &mcReader2, &mcReader3};
-
-    for (size_t i = 0; i < 3; ++i) {
-        // Fill data histograms
-        while (dataReaders[i]->Next()) {
-            std::cout << *Mh_data1 << std::endl;
-            if (*Mh_data1 > 0.11 && *Mh_data1 < 0.16) {
-                hist_data[i]->Fill(*Mh_data1);
-            }
+    // Fill histograms for each data reader
+    while (dataReader1.Next()) {
+        if (*Mh_data1 >= 0.11 && *Mh_data1 <= 0.16) {
+            hist_data1->Fill(*Mh_data1);
         }
-
-        // Fill MC histograms
-        while (mcReaders[i]->Next()) {
-            if (*Mh_mc1 > 0.11 && *Mh_mc1 < 0.16) {
-                hist_mc[i]->Fill(*Mh_mc1);
-            }
+    }
+    while (mcReader1.Next()) {
+        if (*Mh_mc1 >= 0.11 && *Mh_mc1 <= 0.16) {
+            hist_mc1->Fill(*Mh_mc1);
         }
-
-        // Normalize the histograms
-        if (hist_data[i]->Integral() != 0) hist_data[i]->Scale(1.0 / hist_data[i]->Integral());
-        if (hist_mc[i]->Integral() != 0) hist_mc[i]->Scale(1.0 / hist_mc[i]->Integral());
-
-        // Set titles and axis labels
-        hist_data[i]->SetTitle(titles[i].c_str());
-        hist_data[i]->SetXTitle("Invariant Mass (GeV)");
-        hist_data[i]->SetYTitle("Normalized Counts");
-
-        hist_mc[i]->SetLineColor(kRed);  // MC in red
-        hist_data[i]->SetLineColor(kBlue);  // Data in blue
-
-        // Set the range for the y-axis
-        double max_data = hist_data[i]->GetMaximum();
-        double max_mc = hist_mc[i]->GetMaximum();
-        double y_max = 1.2 * std::max(max_data, max_mc);
-
-        hist_data[i]->GetYaxis()->SetRangeUser(0, y_max);
     }
 
-    // Plot on the canvas
-    for (int i = 0; i < 3; ++i) {
-        canvas->cd(i + 1);
-        hist_data[i]->Draw("HIST");
-        hist_mc[i]->Draw("HIST SAME");
-
-        // Add a legend
-        TLegend* legend = new TLegend(0.6, 0.7, 0.9, 0.9);
-        legend->AddEntry(hist_data[i], "Data", "l");
-        legend->AddEntry(hist_mc[i], "MC", "l");
-        legend->Draw();
+    while (dataReader2.Next()) {
+        if (*Mh_data2 >= 0.11 && *Mh_data2 <= 0.16) {
+            hist_data2->Fill(*Mh_data2);
+        }
     }
+    while (mcReader2.Next()) {
+        if (*Mh_mc2 >= 0.11 && *Mh_mc2 <= 0.16) {
+            hist_mc2->Fill(*Mh_mc2);
+        }
+    }
+
+    while (dataReader3.Next()) {
+        if (*Mh_data3 >= 0.11 && *Mh_data3 <= 0.16) {
+            hist_data3->Fill(*Mh_data3);
+        }
+    }
+    while (mcReader3.Next()) {
+        if (*Mh_mc3 >= 0.11 && *Mh_mc3 <= 0.16) {
+            hist_mc3->Fill(*Mh_mc3);
+        }
+    }
+
+    // Normalize the histograms based on their integrals
+    if (hist_data1->Integral() != 0) hist_data1->Scale(1.0 / hist_data1->Integral());
+    if (hist_mc1->Integral() != 0) hist_mc1->Scale(1.0 / hist_mc1->Integral());
+    if (hist_data2->Integral() != 0) hist_data2->Scale(1.0 / hist_data2->Integral());
+    if (hist_mc2->Integral() != 0) hist_mc2->Scale(1.0 / hist_mc2->Integral());
+    if (hist_data3->Integral() != 0) hist_data3->Scale(1.0 / hist_data3->Integral());
+    if (hist_mc3->Integral() != 0) hist_mc3->Scale(1.0 / hist_mc3->Integral());
+
+    // Draw the histograms on the canvas
+    canvas->cd(1);
+    hist_data1->SetLineColor(kBlue);
+    hist_mc1->SetLineColor(kRed);
+    hist_data1->SetXTitle("M_{#gamma#gamma} (GeV)");
+    hist_data1->Draw("HIST");
+    hist_mc1->Draw("HIST SAME");
+
+    // Add legend for the first plot
+    TLegend* legend1 = new TLegend(0.7, 0.75, 0.9, 0.9);
+    legend1->AddEntry(hist_data1, "Data", "l");
+    legend1->AddEntry(hist_mc1, "MC", "l");
+    legend1->Draw();
+
+    canvas->cd(2);
+    hist_data2->SetLineColor(kBlue);
+    hist_mc2->SetLineColor(kRed);
+    hist_data2->SetXTitle("M_{#gamma#gamma} (GeV)");
+    hist_data2->Draw("HIST");
+    hist_mc2->Draw("HIST SAME");
+
+    // Add legend for the second plot
+    TLegend* legend2 = new TLegend(0.7, 0.75, 0.9, 0.9);
+    legend2->AddEntry(hist_data2, "Data", "l");
+    legend2->AddEntry(hist_mc2, "MC", "l");
+    legend2->Draw();
+
+    canvas->cd(3);
+    hist_data3->SetLineColor(kBlue);
+    hist_mc3->SetLineColor(kRed);
+    hist_data3->SetXTitle("M_{#gamma#gamma} (GeV)");
+    hist_data3->Draw("HIST");
+    hist_mc3->Draw("HIST SAME");
+
+    // Add legend for the third plot
+    TLegend* legend3 = new TLegend(0.7, 0.75, 0.9, 0.9);
+    legend3->AddEntry(hist_data3, "Data", "l");
+    legend3->AddEntry(hist_mc3, "MC", "l");
+    legend3->Draw();
 
     // Save the canvas
-    canvas->SaveAs((outputDir + "/pi0_mass/invariant_mass_pi0.png").c_str());
+    canvas->SaveAs((pi0_mass_dir + "/pi0_mass_comparison.png").c_str());
 
-    // Clean up
+    // Clean up memory
+    delete hist_data1;
+    delete hist_mc1;
+    delete hist_data2;
+    delete hist_mc2;
+    delete hist_data3;
+    delete hist_mc3;
     delete canvas;
-    for (int i = 0; i < 3; ++i) {
-        delete hist_data[i];
-        delete hist_mc[i];
-    }
 }
