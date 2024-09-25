@@ -107,22 +107,22 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     // Create and draw the vertical line at pi0 mass
     pi0_mass_line->Draw("SAME");
 
-    // Create a Gaussian function for fitting the data histogram within the range 0.12 to 0.15 GeV
-    TF1* gausFit = new TF1("gausFit", "gaus", 0.11, 0.16);
+    // Create a Gaussian plus constant function for fitting the data histogram
+    TF1* gausFit = new TF1("gausFit", "gaus(0)+[3]", 0.11, 0.16);
     gausFit->SetLineColor(kBlue);  // Set the line color to blue
     gausFit->SetLineWidth(2);      // Set the line width for better visibility
 
-    // Fit the data histogram with the Gaussian function
+    // Fit the data histogram with the Gaussian plus constant function
     hist_data1->Fit(gausFit, "R");  // "R" ensures the fit is within the specified range
     double mu = gausFit->GetParameter(1);      // Mean (μ)
     double sigma = gausFit->GetParameter(2);   // Sigma (σ)
 
-    // Create a Gaussian function for fitting the MC histogram within the same range
-    TF1* gausFitMC = new TF1("gausFitMC", "gaus", 0.11, 0.16);
+    // Create a Gaussian plus constant function for fitting the MC histogram
+    TF1* gausFitMC = new TF1("gausFitMC", "gaus(0)+[3]", 0.11, 0.16);
     gausFitMC->SetLineColor(kRed);  // Set the line color to red
     gausFitMC->SetLineWidth(2);     // Set the line width for better visibility
 
-    // Fit the MC histogram with the Gaussian function
+    // Fit the MC histogram with the Gaussian plus constant function
     hist_mc1->Fit(gausFitMC, "R");  // "R" ensures the fit is within the specified range
     double muMC = gausFitMC->GetParameter(1);      // Mean (μ) for MC
     double sigmaMC = gausFitMC->GetParameter(2);   // Sigma (σ) for MC
