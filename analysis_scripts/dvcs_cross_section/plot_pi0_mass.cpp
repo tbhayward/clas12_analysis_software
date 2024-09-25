@@ -7,6 +7,7 @@
 #include <TLine.h>
 #include <filesystem>
 #include <iostream>
+#include <TF1.h>
 
 void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeReader& dataReader3,
                    TTreeReader& mcReader1, TTreeReader& mcReader2, TTreeReader& mcReader3,
