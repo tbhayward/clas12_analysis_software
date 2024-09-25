@@ -79,7 +79,6 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     if (hist_data3->Integral() != 0) hist_data3->Scale(1.0 / hist_data3->Integral());
     if (hist_mc3->Integral() != 0) hist_mc3->Scale(1.0 / hist_mc3->Integral());
 
-
     // Determine the maximum value for y-axis scaling
     double y_max1 = 1.4 * std::max(hist_data1->GetMaximum(), hist_mc1->GetMaximum());
     double y_max2 = 1.4 * std::max(hist_data2->GetMaximum(), hist_mc2->GetMaximum());
@@ -99,9 +98,6 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     // Draw the data and MC histograms
     hist_data1->Draw("E1");
     hist_mc1->Draw("E1 SAME");
-
-    // Create and draw the vertical line at pi0 mass
-    pi0_mass_line->Draw("SAME");
 
     // Create a Gaussian plus constant function for fitting the data histogram
     TF1* gausFit = new TF1("gausFit", "gaus(0)+[3]", 0.11, 0.16);
@@ -145,12 +141,6 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     sprintf(mcLegendEntry, "#color[2]{MC (#mu = %.4f, #sigma = %.4f)}", muMC, sigmaMC);
     legend1->AddEntry(hist_mc1, mcLegendEntry, "p");
     legend1->Draw();
-
-    // Create and draw the vertical line at pi0 mass
-    TLine* pi0_mass_line1 = new TLine(0.135, 0, 0.135, y_max1);
-    pi0_mass_line1->SetLineColor(kGray + 2);
-    pi0_mass_line1->SetLineStyle(7);  // Dashed line
-    pi0_mass_line1->Draw("SAME");
 
     canvas->cd(2);
     hist_data2->SetLineColor(kBlue);
@@ -211,12 +201,6 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     sprintf(mcLegendEntry2, "#color[2]{MC (#mu = %.4f, #sigma = %.4f)}", muMC2, sigmaMC2);
     legend2->AddEntry(hist_mc2, mcLegendEntry2, "p");
     legend2->Draw();
-
-    // Create and draw the vertical line at pi0 mass
-    TLine* pi0_mass_line2 = new TLine(0.135, 0, 0.135, y_max2);
-    pi0_mass_line2->SetLineColor(kGray + 2);
-    pi0_mass_line2->SetLineStyle(7);  // Dashed line
-    pi0_mass_line2->Draw("SAME");
 
     canvas->cd(3);
     hist_data3->SetLineColor(kBlue);
