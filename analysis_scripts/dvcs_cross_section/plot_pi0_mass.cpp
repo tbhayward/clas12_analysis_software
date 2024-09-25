@@ -5,8 +5,10 @@
 #include <TStyle.h>
 #include <TTreeReaderValue.h>
 #include <TLine.h>
+#include <TF1.h>
 #include <filesystem>
 #include <iostream>
+#include <iomanip>  // for formatting numbers
 
 void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeReader& dataReader3,
                    TTreeReader& mcReader1, TTreeReader& mcReader2, TTreeReader& mcReader3,
@@ -78,10 +80,37 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     if (hist_data3->Integral() != 0) hist_data3->Scale(1.0 / hist_data3->Integral());
     if (hist_mc3->Integral() != 0) hist_mc3->Scale(1.0 / hist_mc3->Integral());
 
-    // Create a dashed gray line at the pi0 mass (0.135 GeV)
-    TLine* pi0_mass_line = new TLine(0.135, 0, 0.135, 0.8);
-    pi0_mass_line->SetLineColor(kGray + 2);
-    pi0_mass_line->SetLineStyle(7);  // Dashed line
+    // Create a Gaussian + constant fit for each histogram
+    TF1* fit_data1 = new TF1("fit_data1", "gaus(0)+pol0(3)", 0.11, 0.16);
+    TF1* fit_mc1 = new TF1("fit_mc1", "gaus(0)+pol0(3)", 0.11, 0.16);
+    TF1* fit_data2 = new TF1("fit_data2", "gaus(0)+pol0(3)", 0.11, 0.16);
+    TF1* fit_mc2 = new TF1("fit_mc2", "gaus(0)+pol0(3)", 0.11, 0.16);
+    TF1* fit_data3 = new TF1("fit_data3", "gaus(0)+pol0(3)", 0.11, 0.16);
+    TF1* fit_mc3 = new TF1("fit_mc3", "gaus(0)+pol0(3)", 0.11, 0.16);
+
+    // Perform fits and retrieve fit parameters
+    hist_data1->Fit(fit_data1, "RQ");
+    hist_mc1->Fit(fit_mc1, "RQ");
+    hist_data2->Fit(fit_data2, "RQ");
+    hist_mc2->Fit(fit_mc2, "RQ");
+    hist_data3->Fit(fit_data3, "RQ");
+    hist_mc3->Fit(fit_mc3, "RQ");
+
+    // Get the mean and sigma from the fits
+    double mu_data1 = fit_data1->GetParameter(1);
+    double sigma_data1 = fit_data1->GetParameter(2);
+    double mu_mc1 = fit_mc1->GetParameter(1);
+    double sigma_mc1 = fit_mc1->GetParameter(2);
+
+    double mu_data2 = fit_data2->GetParameter(1);
+    double sigma_data2 = fit_data2->GetParameter(2);
+    double mu_mc2 = fit_mc2->GetParameter(1);
+    double sigma_mc2 = fit_mc2->GetParameter(2);
+
+    double mu_data3 = fit_data3->GetParameter(1);
+    double sigma_data3 = fit_data3->GetParameter(2);
+    double mu_mc3 = fit_mc3->GetParameter(1);
+    double sigma_mc3 = fit_mc3->GetParameter(2);
 
     // Determine the maximum value for y-axis scaling
     double y_max1 = 1.1 * std::max(hist_data1->GetMaximum(), hist_mc1->GetMaximum());
@@ -100,12 +129,18 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     hist_data1->GetYaxis()->SetRangeUser(0, y_max1);
     hist_data1->Draw("E1");
     hist_mc1->Draw("E1 SAME");
-    pi0_mass_line->Draw("SAME");
 
-    // Add legend for the first plot with colored text
-    TLegend* legend1 = new TLegend(0.7, 0.75, 0.9, 0.9);
-    legend1->AddEntry(hist_data1, "#color[4]{Data}", "p");
-    legend1->AddEntry(hist_mc1, "#color[2]{MC}", "p");
+    // Add dynamic dashed gray line at the pi0 mass (0.135 GeV)
+    TLine* pi0_mass_line1 = new TLine(0.135, 0, 0.135, y_max1);
+    pi0_mass_line1->SetLineColor(kGray + 2);
+    pi0_mass_line1->SetLineStyle(7);  // Dashed line
+    pi0_mass_line1->Draw("SAME");
+
+    // Add legend with fit information
+    TLegend* legend1 = new TLegend(0.6, 0.75, 0.9, 0.9);
+    legend1->AddEntry(hist_data1, Form("#splitline{Data (blue)}{#mu = %.3f, #sigma = %.3f}", mu_data1, sigma_data1), "p");
+    legend1->AddEntry(hist_mc1, Form("#splitline{MC (red)}{#mu = %.3f, #sigma = %.3f}", mu_mc1, sigma_mc1), "p");
+    legend1->SetTextColor(kBlue);
     legend1->Draw();
 
     canvas->cd(2);
@@ -119,12 +154,16 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     hist_data2->GetYaxis()->SetRangeUser(0, y_max2);
     hist_data2->Draw("E1");
     hist_mc2->Draw("E1 SAME");
-    pi0_mass_line->Draw("SAME");
 
-    // Add legend for the second plot with colored text
-    TLegend* legend2 = new TLegend(0.7, 0.75, 0.9, 0.9);
-    legend2->AddEntry(hist_data2, "#color[4]{Data}", "p");
-    legend2->AddEntry(hist_mc2, "#color[2]{MC}", "p");
+    TLine* pi0_mass_line2 = new TLine(0.135, 0, 0.135, y_max2);
+    pi0_mass_line2->SetLineColor(kGray + 2);
+    pi0_mass_line2->SetLineStyle(7);
+    pi0_mass_line2->Draw("SAME");
+
+    TLegend* legend2 = new TLegend(0.6, 0.75, 0.9, 0.9);
+    legend2->AddEntry(hist_data2, Form("#splitline{Data (blue)}{#mu = %.3f, #sigma = %.3f}", mu_data2, sigma_data2), "p");
+    legend2->AddEntry(hist_mc2, Form("#splitline{MC (red)}{#mu = %.3f, #sigma = %.3f}", mu_mc2, sigma_mc2), "p");
+    legend2->SetTextColor(kRed);
     legend2->Draw();
 
     canvas->cd(3);
@@ -138,12 +177,16 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     hist_data3->GetYaxis()->SetRangeUser(0, y_max3);
     hist_data3->Draw("E1");
     hist_mc3->Draw("E1 SAME");
-    pi0_mass_line->Draw("SAME");
 
-    // Add legend for the third plot with colored text
-    TLegend* legend3 = new TLegend(0.7, 0.75, 0.9, 0.9);
-    legend3->AddEntry(hist_data3, "#color[4]{Data}", "p");
-    legend3->AddEntry(hist_mc3, "#color[2]{MC}", "p");
+    TLine* pi0_mass_line3 = new TLine(0.135, 0, 0.135, y_max3);
+    pi0_mass_line3->SetLineColor(kGray + 2);
+    pi0_mass_line3->SetLineStyle(7);
+    pi0_mass_line3->Draw("SAME");
+
+    TLegend* legend3 = new TLegend(0.6, 0.75, 0.9, 0.9);
+    legend3->AddEntry(hist_data3, Form("#splitline{Data (blue)}{#mu = %.3f, #sigma = %.3f}", mu_data3, sigma_data3), "p");
+    legend3->AddEntry(hist_mc3, Form("#splitline{MC (red)}{#mu = %.3f, #sigma = %.3f}", mu_mc3, sigma_mc3), "p");
+    legend3->SetTextColor(kRed);
     legend3->Draw();
 
     // Save the canvas
@@ -156,6 +199,14 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     delete hist_mc2;
     delete hist_data3;
     delete hist_mc3;
-    delete pi0_mass_line;
+    delete pi0_mass_line1;
+    delete pi0_mass_line2;
+    delete pi0_mass_line3;
+    delete fit_data1;
+    delete fit_mc1;
+    delete fit_data2;
+    delete fit_mc2;
+    delete fit_data3;
+    delete fit_mc3;
     delete canvas;
 }
