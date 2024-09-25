@@ -112,6 +112,11 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     gausFit->SetLineColor(kBlue);  // Set the line color to blue
     gausFit->SetLineWidth(2);      // Set the line width for better visibility
 
+    // Set initial parameter guesses for the data fit
+    double amplitude_data = hist_data1->GetMaximum();
+    double background_data = hist_data1->GetBinContent(1);  // Estimate background from first bin
+    gausFit->SetParameters(amplitude_data, 0.135, 0.01, background_data);  // [0]=amplitude, [1]=mu, [2]=sigma, [3]=constant
+
     // Fit the data histogram with the Gaussian plus constant function
     hist_data1->Fit(gausFit, "R");  // "R" ensures the fit is within the specified range
     double mu = gausFit->GetParameter(1);      // Mean (μ)
@@ -121,6 +126,11 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     TF1* gausFitMC = new TF1("gausFitMC", "gaus(0)+[3]", 0.11, 0.16);
     gausFitMC->SetLineColor(kRed);  // Set the line color to red
     gausFitMC->SetLineWidth(2);     // Set the line width for better visibility
+
+    // Set initial parameter guesses for the MC fit
+    double amplitude_mc = hist_mc1->GetMaximum();
+    double background_mc = hist_mc1->GetBinContent(1);  // Estimate background from first bin
+    gausFitMC->SetParameters(amplitude_mc, 0.135, 0.01, background_mc);  // [0]=amplitude, [1]=mu, [2]=sigma, [3]=constant
 
     // Fit the MC histogram with the Gaussian plus constant function
     hist_mc1->Fit(gausFitMC, "R");  // "R" ensures the fit is within the specified range
