@@ -79,10 +79,6 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     if (hist_data3->Integral() != 0) hist_data3->Scale(1.0 / hist_data3->Integral());
     if (hist_mc3->Integral() != 0) hist_mc3->Scale(1.0 / hist_mc3->Integral());
 
-    // Create a dashed gray line at the pi0 mass (0.135 GeV)
-    TLine* pi0_mass_line = new TLine(0.135, 0, 0.135, 0.25);
-    pi0_mass_line->SetLineColor(kGray + 2);
-    pi0_mass_line->SetLineStyle(7);  // Dashed line
 
     // Determine the maximum value for y-axis scaling
     double y_max1 = 1.4 * std::max(hist_data1->GetMaximum(), hist_mc1->GetMaximum());
