@@ -50,6 +50,7 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
         while (dataReaders[i]->Next()) {
             if (*Mh_data1 > 0.11 && *Mh_data1 < 0.16) {
                 hist_data[i]->Fill(*Mh_data1);
+                std::cout << *Mh_data1 << std::endl;
             }
         }
 
