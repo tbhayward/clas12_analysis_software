@@ -8,11 +8,11 @@ using std::string;
 
 SingleHadronKinematicCuts::SingleHadronKinematicCuts(TTreeReader& reader)
     : BaseKinematicCuts(reader), // Call to the BaseKinematicCuts constructor
-      runnum(reader, "runnum"), 
+      runnum(reader, "runnum"), fiducial_status(reader, "fiducial_status"), 
       e_theta(reader, "e_theta"), e_phi(reader, "e_phi"), vz_e(reader, "vz_e"),
       p_p(reader, "p_p"), p_theta(reader, "p_theta"), p_phi(reader, "p_phi"), 
       vz_p(reader, "vz_p"), 
-      Q2(reader, "Q2"), W(reader, "W"), Mx(reader, "Mx"), Mx2(reader, "Mx2"), x(reader, "x"), 
+      Q2(reader, "Q2"), W(reader, "W"), Mx2(reader, "Mx2"), x(reader, "x"), 
       t(reader, "t"), tmin(reader, "tmin"), y(reader, "y"), z(reader, "z"), 
       pT(reader, "pT"), xF(reader, "xF"), phi(reader, "phi"), 
       target_pol(reader, "target_pol") {}
@@ -23,6 +23,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     string property = binNames[currentFits];
 
     if (-10 > *vz_p || *vz_p > 1.5 || -9 > *vz_e || *vz_e > 2) return false;
+    if (*fiducial_status != 2) return false; // fiducial cuts
 
     if (property == "integrated") {
       goodEvent = *Q2 > 1 && *W > 2 && *Mx2 > 0.16 && *y < 0.80 && -(*t-*tmin) > 1.25;
