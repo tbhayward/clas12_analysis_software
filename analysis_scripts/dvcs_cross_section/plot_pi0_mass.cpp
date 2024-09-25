@@ -107,20 +107,12 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     fit_mc3->SetParameters(0.02, 0.135, 0.01);
 
     // Perform fits
-    canvas->cd(1);
     hist_data1->Fit(fit_data1, "R");
     hist_mc1->Fit(fit_mc1, "R");
-    pi0_mass_line1->Draw("SAME");
-
-    canvas->cd(2);
     hist_data2->Fit(fit_data2, "R");
     hist_mc2->Fit(fit_mc2, "R");
-    pi0_mass_line2->Draw("SAME");
-
-    canvas->cd(3);
     hist_data3->Fit(fit_data3, "R");
     hist_mc3->Fit(fit_mc3, "R");
-    pi0_mass_line3->Draw("SAME");
 
     // Get fit parameters
     double mu_data1 = fit_data1->GetParameter(1);
@@ -142,16 +134,32 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     TLegend* legend1 = new TLegend(0.7, 0.75, 0.9, 0.9);
     legend1->AddEntry(hist_data1, Form("#color[4]{Data},  #mu = %.3f,  #sigma = %.3f", mu_data1, sigma_data1), "p");
     legend1->AddEntry(hist_mc1, Form("#color[2]{MC},  #mu = %.3f,  #sigma = %.3f", mu_mc1, sigma_mc1), "p");
-    legend1->Draw();
 
     TLegend* legend2 = new TLegend(0.7, 0.75, 0.9, 0.9);
     legend2->AddEntry(hist_data2, Form("#color[4]{Data},  #mu = %.3f,  #sigma = %.3f", mu_data2, sigma_data2), "p");
     legend2->AddEntry(hist_mc2, Form("#color[2]{MC},  #mu = %.3f,  #sigma = %.3f", mu_mc2, sigma_mc2), "p");
-    legend2->Draw();
 
     TLegend* legend3 = new TLegend(0.7, 0.75, 0.9, 0.9);
     legend3->AddEntry(hist_data3, Form("#color[4]{Data},  #mu = %.3f,  #sigma = %.3f", mu_data3, sigma_data3), "p");
     legend3->AddEntry(hist_mc3, Form("#color[2]{MC},  #mu = %.3f,  #sigma = %.3f", mu_mc3, sigma_mc3), "p");
+
+    // Plot each canvas
+    canvas->cd(1);
+    hist_data1->Draw("E1");
+    hist_mc1->Draw("E1 SAME");
+    pi0_mass_line1->Draw("SAME");
+    legend1->Draw();
+
+    canvas->cd(2);
+    hist_data2->Draw("E1");
+    hist_mc2->Draw("E1 SAME");
+    pi0_mass_line2->Draw("SAME");
+    legend2->Draw();
+
+    canvas->cd(3);
+    hist_data3->Draw("E1");
+    hist_mc3->Draw("E1 SAME");
+    pi0_mass_line3->Draw("SAME");
     legend3->Draw();
 
     // Save the canvas
