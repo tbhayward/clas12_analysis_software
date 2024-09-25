@@ -6,41 +6,6 @@
 #include <iostream>
 #include <string>
 
-// int DetermineQ2yBin(float Q2, float y) {
-//     // Q2-y Bins 1-4
-//     if (Q2 > 1.000 && Q2 <= 2.000) {
-//         if (y > 0.650 && y <= 0.750) return 1;
-//         if (y > 0.550 && y <= 0.650) return 2;
-//         if (y > 0.450 && y <= 0.550) return 3;
-//         if (y > 0.300 && y <= 0.450) return 4;
-//     }
-//     // Q2-y Bins 5-8
-//     else if (Q2 > 2.000 && Q2 <= 3.000) {
-//         if (y > 0.650 && y <= 0.750) return 5;
-//         if (y > 0.550 && y <= 0.650) return 6;
-//         if (y > 0.450 && y <= 0.550) return 7;
-//         if (y > 0.300 && y <= 0.450) return 8;
-//     }
-//     // Q2-y Bins 9-12
-//     else if (Q2 > 3.000 && Q2 <= 4.000) {
-//         if (y > 0.650 && y <= 0.750) return 9;
-//         if (y > 0.550 && y <= 0.650) return 10;
-//         if (y > 0.450 && y <= 0.550) return 11;
-//         if (y > 0.300 && y <= 0.450) return 12;
-//     }
-//     // Q2-y Bins 13-15
-//     else if (Q2 > 4.000 && Q2 <= 5.000) {
-//         if (y > 0.650 && y <= 0.750) return 13;
-//         if (y > 0.550 && y <= 0.650) return 14;
-//         if (y > 0.450 && y <= 0.550) return 15;
-//     }
-//     // Q2-y Bins 16-17
-//     else if (Q2 > 5.000 && Q2 <= 7.000) {
-//         if (y > 0.650 && y <= 0.750) return 16;
-//         if (y > 0.550 && y <= 0.650) return 17;
-//     }
-//     return 0;
-// }
 
 int DetermineQ2xBin(float Q2, float x) {
     // Bin 1: x < 0.1
@@ -118,9 +83,14 @@ void process_file(const char* input_filename) {
 
     // Create a TTreeReader to read the input tree
     TTreeReader reader(input_tree);
+    TTreeReaderValue<int> fiducial_status(reader, "fiducial_status");
+    TTreeReaderValue<int> num_pos(reader, "num_pos");
+    TTreeReaderValue<int> num_neg(reader, "num_neg");
+    TTreeReaderValue<int> num_neutrals(reader, "num_neutrals");
     TTreeReaderValue<int> runnum(reader, "runnum");
     TTreeReaderValue<int> evnum(reader, "evnum");
     TTreeReaderValue<int> helicity(reader, "helicity");
+    TTreeReaderValue<int> detector(reader, "detector");
     TTreeReaderValue<double> beam_pol(reader, "beam_pol");
     TTreeReaderValue<double> target_pol(reader, "target_pol");
     TTreeReaderValue<double> e_p(reader, "e_p");
@@ -131,9 +101,9 @@ void process_file(const char* input_filename) {
     TTreeReaderValue<double> p_theta(reader, "p_theta");
     TTreeReaderValue<double> p_phi(reader, "p_phi");
     TTreeReaderValue<double> vz_p(reader, "vz_p");
+    TTreeReaderValue<double> open_angle(reader, "open_angle");
     TTreeReaderValue<double> Q2(reader, "Q2");
     TTreeReaderValue<double> W(reader, "W");
-    TTreeReaderValue<double> Mx(reader, "Mx");
     TTreeReaderValue<double> Mx2(reader, "Mx2");
     TTreeReaderValue<double> x(reader, "x");
     TTreeReaderValue<double> y(reader, "y");
@@ -151,18 +121,18 @@ void process_file(const char* input_filename) {
     TTreeReaderValue<double> DepV(reader, "DepV");
     TTreeReaderValue<double> DepW(reader, "DepW");
 
-    // "-10 < vz_e && vz_e < 1 && -10 < vz_p && vz_p < 1"
     // Loop over entries and fill the corresponding output trees
     while (reader.Next()) {
-        int random_int = *runnum + *evnum + *helicity;
+        int random_int = *fiducial_status + *num_pos + *num_neg + *num_neutrals + *runnum + 
+            *evnum + *helicity + *detector;
         double random = *beam_pol + *target_pol + *e_p + *e_theta + *e_phi + 
-            *vz_e + *p_p + *p_theta + *p_phi + *vz_p + *Q2 + *W + *Mx + 
+            *vz_e + *p_p + *p_theta + *p_phi + *vz_p + *open_angle + *Q2 + *W  + 
             *Mx2 + *x + *y + *t + *tmin + *z + *xF + *pT + *zeta + *eta + *phi + *DepA +
             *DepB + *DepC + *DepV + *DepW;
-        if (*Mx < 0.55) {
+        if (*Mx2 < 0.00) {
             continue;
         }
-        if (*Mx > 1.35) {
+        if (*Mx2 > 1.7) {
             // Determine the Q2-y bin and fill the corresponding tree
             int bin = DetermineQ2xBin(*Q2, *x);
             if (bin > 0 && bin <= 14) {
