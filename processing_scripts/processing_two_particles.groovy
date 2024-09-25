@@ -136,11 +136,11 @@ public static void main(String[] args) {
 		    PhysicsEvent research_Event = fitter.getPhysicsEvent(event);
 
 		    // do not use the qa if it is MC (runnum = 11) 
-		    // do not use the qa if the run is from RGC (until QA is produced!)
-		    // boolean process_event = filter.isValid(research_Event);
+		    // boolean process_event = filter.isValid(research_Event) && 
+		    // 	(runnum == 11 || runnum < 5020 || runnum >= 11571 || 
+		    // 	qa.OkForAsymmetry(runnum, evnum));
 		    boolean process_event = filter.isValid(research_Event) && 
-		    	(runnum == 11 || runnum < 5020 || runnum >= 11571 || 
-		    	qa.OkForAsymmetry(runnum, evnum));
+		    	(runnum == 11 qa.OkForAsymmetry(runnum, evnum));
 
 		    if (process_event) {
 

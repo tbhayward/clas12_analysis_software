@@ -56,14 +56,8 @@ endif
 
 echo "Pulling the latest changes from the repository..."
 git pull
-echo "Entering the 'clas12-qadb/' directory and sourcing 'environ.csh'..."
-#cd clasqaDB/
-#source env.csh
-# cd clas12-qadb/
 echo "Sourcing qadb..."
 module load qadb/2.0.0
-# source environ.csh || echo "Error sourcing environ.csh"
-echo "Returning to the parent directory..."
 cd ..
 
 g++ `root-config --cflags --libs` -o processing_scripts/convert_txt_to_root processing_scripts/convert_txt_to_root.cpp
