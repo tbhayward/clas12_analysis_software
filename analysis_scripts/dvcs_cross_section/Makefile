@@ -8,7 +8,7 @@ LFLAGS = -L/path/to/root/lib $(ROOTLIBS) -lMinuit
 TARGET = dvcs_cross_section_extraction
 
 # Source files
-SRC = dvcs_cross_section_extraction.cpp determine_exclusivity.cpp histConfigs.cpp formatLabelName.cpp create_directories.cpp kinematic_cuts.cpp
+SRC = dvcs_cross_section_extraction.cpp determine_exclusivity.cpp histConfigs.cpp formatLabelName.cpp create_directories.cpp kinematic_cuts.cpp plot_pi0_mass.cpp
 
 # Object files
 OBJ = $(SRC:.cpp=.o)

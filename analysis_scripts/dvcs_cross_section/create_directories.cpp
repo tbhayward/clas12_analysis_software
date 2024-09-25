@@ -10,6 +10,7 @@ void create_directories(const std::string& base_output_dir) {
     std::string exclusivity_dir = base_output_dir + "/exclusivity_plots";
     std::string dvcs_dir = exclusivity_dir + "/dvcs";
     std::string eppi0_dir = exclusivity_dir + "/eppi0";
+    std::string pi0_mass_dir = base_output_dir + "/pi0_mass";
 
     // Check and create the directories if they don't exist
     if (!fs::exists(base_output_dir)) {
@@ -41,6 +42,14 @@ void create_directories(const std::string& base_output_dir) {
             std::cout << "Created directory: " << eppi0_dir << std::endl;
         } else {
             std::cerr << "Error: Failed to create eppi0 directory: " << eppi0_dir << std::endl;
+        }
+    }
+
+    if (!fs::exists(pi0_mass_dir)) {
+        if (fs::create_directory(pi0_mass_dir)) {
+            std::cout << "Created directory: " << pi0_mass_dir << std::endl;
+        } else {
+            std::cerr << "Error: Failed to create pi0_mass directory: " << pi0_mass_dir << std::endl;
         }
     }
 }
