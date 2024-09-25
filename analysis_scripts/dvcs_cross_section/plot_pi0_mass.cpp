@@ -138,7 +138,6 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     char mcLegendEntry[200];
     sprintf(mcLegendEntry, "#color[2]{MC (#mu = %.4f, #sigma = %.4f)}", muMC, sigmaMC);
     legend1->AddEntry(hist_mc1, mcLegendEntry, "p");
-
     legend1->Draw();
 
     canvas->cd(2);
