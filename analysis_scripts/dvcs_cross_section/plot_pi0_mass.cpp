@@ -202,26 +202,65 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     canvas->cd(3);
     hist_data3->SetLineColor(kBlue);
     hist_data3->SetMarkerColor(kBlue);
-    hist_data3->SetMarkerStyle(20);
+    hist_data3->SetMarkerStyle(20);  // Points with error bars
     hist_mc3->SetLineColor(kRed);
     hist_mc3->SetMarkerColor(kRed);
     hist_mc3->SetMarkerStyle(24);
     hist_data3->SetXTitle("M_{#gamma#gamma} (GeV)");
     hist_data3->GetYaxis()->SetRangeUser(0, y_max3);
+
+    // Draw the data and MC histograms
     hist_data3->Draw("E1");
     hist_mc3->Draw("E1 SAME");
-
-    // Add legend for the third plot with colored text
-    TLegend* legend3 = new TLegend(0.7, 0.75, 0.9, 0.9);
-    legend3->AddEntry(hist_data3, "#color[4]{Data}", "p");
-    legend3->AddEntry(hist_mc3, "#color[2]{MC}", "p");
-    legend3->Draw();
 
     // Create and draw the vertical line at pi0 mass
     TLine* pi0_mass_line3 = new TLine(0.135, 0, 0.135, y_max3);
     pi0_mass_line3->SetLineColor(kGray + 2);
     pi0_mass_line3->SetLineStyle(7);  // Dashed line
     pi0_mass_line3->Draw("SAME");
+
+    // Create a Gaussian plus constant function for fitting the data histogram
+    TF1* gausFit3 = new TF1("gausFit3", "gaus(0)+[3]", 0.11, 0.16);
+    gausFit3->SetLineColor(kBlue);  // Set the line color to blue
+    gausFit3->SetLineWidth(2);      // Set the line width for better visibility
+
+    // Set initial parameter guesses for the data fit
+    double amplitude_data3 = hist_data3->GetMaximum();
+    double background_data3 = hist_data3->GetBinContent(1);  // Estimate background from first bin
+    gausFit3->SetParameters(amplitude_data3, 0.135, 0.01, background_data3);
+
+    // Fit the data histogram with the Gaussian plus constant function
+    hist_data3->Fit(gausFit3, "R");
+    double mu3 = gausFit3->GetParameter(1);      // Mean (μ)
+    double sigma3 = gausFit3->GetParameter(2);   // Sigma (σ)
+
+    // Create a Gaussian plus constant function for fitting the MC histogram
+    TF1* gausFitMC3 = new TF1("gausFitMC3", "gaus(0)+[3]", 0.11, 0.16);
+    gausFitMC3->SetLineColor(kRed);  // Set the line color to red
+    gausFitMC3->SetLineWidth(2);     // Set the line width for better visibility
+
+    // Set initial parameter guesses for the MC fit
+    double amplitude_mc3 = hist_mc3->GetMaximum();
+    double background_mc3 = hist_mc3->GetBinContent(1);  // Estimate background from first bin
+    gausFitMC3->SetParameters(amplitude_mc3, 0.135, 0.01, background_mc3);
+
+    // Fit the MC histogram with the Gaussian plus constant function
+    hist_mc3->Fit(gausFitMC3, "R");
+    double muMC3 = gausFitMC3->GetParameter(1);      // Mean (μ) for MC
+    double sigmaMC3 = gausFitMC3->GetParameter(2);   // Sigma (σ) for MC
+
+    // Add legend for the third plot with colored text
+    TLegend* legend3 = new TLegend(0.2, 0.7, 0.9, 0.9);
+    legend3->SetTextSize(0.04);  // Increase the text size slightly
+
+    char dataLegendEntry3[200];
+    sprintf(dataLegendEntry3, "#color[4]{Data (#mu = %.4f, #sigma = %.4f)}", mu3, sigma3);
+    legend3->AddEntry(hist_data3, dataLegendEntry3, "p");
+
+    char mcLegendEntry3[200];
+    sprintf(mcLegendEntry3, "#color[2]{MC (#mu = %.4f, #sigma = %.4f)}", muMC3, sigmaMC3);
+    legend3->AddEntry(hist_mc3, mcLegendEntry3, "p");
+    legend3->Draw();
 
     // Save the canvas
     canvas->SaveAs((pi0_mass_dir + "/pi0_mass_comparison.png").c_str());
