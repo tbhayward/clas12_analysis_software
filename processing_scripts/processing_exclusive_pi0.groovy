@@ -219,7 +219,7 @@ public static void main(String[] args) {
 					xF2 = variables.xF2();
 					zeta1 = variables.zeta1();
 					zeta2 = variables.zeta2(); 
-					Mh = variables.Mh();
+					// Mh = variables.Mh();
 					pT1 = variables.pT1();
 					pT2 = variables.pT2();
 					pTpT = variables.pTpT();
