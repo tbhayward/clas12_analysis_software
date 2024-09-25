@@ -5,6 +5,7 @@
 #include <TStyle.h>
 #include <TTreeReaderValue.h>
 #include <TLine.h>
+#include <TF1.h>
 #include <filesystem>
 #include <iostream>
 
@@ -78,72 +79,79 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     if (hist_data3->Integral() != 0) hist_data3->Scale(1.0 / hist_data3->Integral());
     if (hist_mc3->Integral() != 0) hist_mc3->Scale(1.0 / hist_mc3->Integral());
 
-    // Create a dashed gray line at the pi0 mass (0.135 GeV)
-    TLine* pi0_mass_line = new TLine(0.135, 0, 0.135, 0.25);
-    pi0_mass_line->SetLineColor(kGray + 2);
-    pi0_mass_line->SetLineStyle(7);  // Dashed line
+    // Create dynamic lines for each plot
+    TLine* pi0_mass_line1 = new TLine(0.135, 0, 0.135, hist_data1->GetMaximum() * 1.1);
+    TLine* pi0_mass_line2 = new TLine(0.135, 0, 0.135, hist_data2->GetMaximum() * 1.1);
+    TLine* pi0_mass_line3 = new TLine(0.135, 0, 0.135, hist_data3->GetMaximum() * 1.1);
+    pi0_mass_line1->SetLineColor(kGray + 2);
+    pi0_mass_line1->SetLineStyle(7);
+    pi0_mass_line2->SetLineColor(kGray + 2);
+    pi0_mass_line2->SetLineStyle(7);
+    pi0_mass_line3->SetLineColor(kGray + 2);
+    pi0_mass_line3->SetLineStyle(7);
 
-    // Determine the maximum value for y-axis scaling
-    double y_max1 = 1.1 * std::max(hist_data1->GetMaximum(), hist_mc1->GetMaximum());
-    double y_max2 = 1.1 * std::max(hist_data2->GetMaximum(), hist_mc2->GetMaximum());
-    double y_max3 = 1.1 * std::max(hist_data3->GetMaximum(), hist_mc3->GetMaximum());
+    // Fit histograms with Gaussian + constant model
+    TF1* fit_data1 = new TF1("fit_data1", "gaus(0) + pol0(3)", 0.11, 0.16);
+    TF1* fit_mc1 = new TF1("fit_mc1", "gaus(0) + pol0(3)", 0.11, 0.16);
+    TF1* fit_data2 = new TF1("fit_data2", "gaus(0) + pol0(3)", 0.11, 0.16);
+    TF1* fit_mc2 = new TF1("fit_mc2", "gaus(0) + pol0(3)", 0.11, 0.16);
+    TF1* fit_data3 = new TF1("fit_data3", "gaus(0) + pol0(3)", 0.11, 0.16);
+    TF1* fit_mc3 = new TF1("fit_mc3", "gaus(0) + pol0(3)", 0.11, 0.16);
 
-    // Draw the histograms on the canvas as points with error bars
+    // Set initial parameter guesses
+    fit_data1->SetParameters(0.02, 0.135, 0.01);
+    fit_mc1->SetParameters(0.02, 0.135, 0.01);
+    fit_data2->SetParameters(0.02, 0.135, 0.01);
+    fit_mc2->SetParameters(0.02, 0.135, 0.01);
+    fit_data3->SetParameters(0.02, 0.135, 0.01);
+    fit_mc3->SetParameters(0.02, 0.135, 0.01);
+
+    // Perform fits
     canvas->cd(1);
-    hist_data1->SetLineColor(kBlue);
-    hist_data1->SetMarkerColor(kBlue);
-    hist_data1->SetMarkerStyle(20);  // Points with error bars
-    hist_mc1->SetLineColor(kRed);
-    hist_mc1->SetMarkerColor(kRed);
-    hist_mc1->SetMarkerStyle(24);
-    hist_data1->SetXTitle("M_{#gamma#gamma} (GeV)");
-    hist_data1->GetYaxis()->SetRangeUser(0, y_max1);
-    hist_data1->Draw("E1");
-    hist_mc1->Draw("E1 SAME");
-    pi0_mass_line->Draw("SAME");
-
-    // Add legend for the first plot with colored text
-    TLegend* legend1 = new TLegend(0.7, 0.75, 0.9, 0.9);
-    legend1->AddEntry(hist_data1, "#color[4]{Data}", "p");
-    legend1->AddEntry(hist_mc1, "#color[2]{MC}", "p");
-    legend1->Draw();
+    hist_data1->Fit(fit_data1, "R");
+    hist_mc1->Fit(fit_mc1, "R");
+    pi0_mass_line1->Draw("SAME");
 
     canvas->cd(2);
-    hist_data2->SetLineColor(kBlue);
-    hist_data2->SetMarkerColor(kBlue);
-    hist_data2->SetMarkerStyle(20);
-    hist_mc2->SetLineColor(kRed);
-    hist_mc2->SetMarkerColor(kRed);
-    hist_mc2->SetMarkerStyle(24);
-    hist_data2->SetXTitle("M_{#gamma#gamma} (GeV)");
-    hist_data2->GetYaxis()->SetRangeUser(0, y_max2);
-    hist_data2->Draw("E1");
-    hist_mc2->Draw("E1 SAME");
-    pi0_mass_line->Draw("SAME");
-
-    // Add legend for the second plot with colored text
-    TLegend* legend2 = new TLegend(0.7, 0.75, 0.9, 0.9);
-    legend2->AddEntry(hist_data2, "#color[4]{Data}", "p");
-    legend2->AddEntry(hist_mc2, "#color[2]{MC}", "p");
-    legend2->Draw();
+    hist_data2->Fit(fit_data2, "R");
+    hist_mc2->Fit(fit_mc2, "R");
+    pi0_mass_line2->Draw("SAME");
 
     canvas->cd(3);
-    hist_data3->SetLineColor(kBlue);
-    hist_data3->SetMarkerColor(kBlue);
-    hist_data3->SetMarkerStyle(20);
-    hist_mc3->SetLineColor(kRed);
-    hist_mc3->SetMarkerColor(kRed);
-    hist_mc3->SetMarkerStyle(24);
-    hist_data3->SetXTitle("M_{#gamma#gamma} (GeV)");
-    hist_data3->GetYaxis()->SetRangeUser(0, y_max3);
-    hist_data3->Draw("E1");
-    hist_mc3->Draw("E1 SAME");
-    pi0_mass_line->Draw("SAME");
+    hist_data3->Fit(fit_data3, "R");
+    hist_mc3->Fit(fit_mc3, "R");
+    pi0_mass_line3->Draw("SAME");
 
-    // Add legend for the third plot with colored text
+    // Get fit parameters
+    double mu_data1 = fit_data1->GetParameter(1);
+    double sigma_data1 = fit_data1->GetParameter(2);
+    double mu_mc1 = fit_mc1->GetParameter(1);
+    double sigma_mc1 = fit_mc1->GetParameter(2);
+
+    double mu_data2 = fit_data2->GetParameter(1);
+    double sigma_data2 = fit_data2->GetParameter(2);
+    double mu_mc2 = fit_mc2->GetParameter(1);
+    double sigma_mc2 = fit_mc2->GetParameter(2);
+
+    double mu_data3 = fit_data3->GetParameter(1);
+    double sigma_data3 = fit_data3->GetParameter(2);
+    double mu_mc3 = fit_mc3->GetParameter(1);
+    double sigma_mc3 = fit_mc3->GetParameter(2);
+
+    // Create legends for the three subplots
+    TLegend* legend1 = new TLegend(0.7, 0.75, 0.9, 0.9);
+    legend1->AddEntry(hist_data1, Form("#color[4]{Data},  #mu = %.3f,  #sigma = %.3f", mu_data1, sigma_data1), "p");
+    legend1->AddEntry(hist_mc1, Form("#color[2]{MC},  #mu = %.3f,  #sigma = %.3f", mu_mc1, sigma_mc1), "p");
+    legend1->Draw();
+
+    TLegend* legend2 = new TLegend(0.7, 0.75, 0.9, 0.9);
+    legend2->AddEntry(hist_data2, Form("#color[4]{Data},  #mu = %.3f,  #sigma = %.3f", mu_data2, sigma_data2), "p");
+    legend2->AddEntry(hist_mc2, Form("#color[2]{MC},  #mu = %.3f,  #sigma = %.3f", mu_mc2, sigma_mc2), "p");
+    legend2->Draw();
+
     TLegend* legend3 = new TLegend(0.7, 0.75, 0.9, 0.9);
-    legend3->AddEntry(hist_data3, "#color[4]{Data}", "p");
-    legend3->AddEntry(hist_mc3, "#color[2]{MC}", "p");
+    legend3->AddEntry(hist_data3, Form("#color[4]{Data},  #mu = %.3f,  #sigma = %.3f", mu_data3, sigma_data3), "p");
+    legend3->AddEntry(hist_mc3, Form("#color[2]{MC},  #mu = %.3f,  #sigma = %.3f", mu_mc3, sigma_mc3), "p");
     legend3->Draw();
 
     // Save the canvas
@@ -156,6 +164,8 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     delete hist_mc2;
     delete hist_data3;
     delete hist_mc3;
-    delete pi0_mass_line;
+    delete pi0_mass_line1;
+    delete pi0_mass_line2;
+    delete pi0_mass_line3;
     delete canvas;
 }

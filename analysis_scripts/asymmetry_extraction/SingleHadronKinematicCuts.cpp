@@ -26,7 +26,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     if (*fiducial_status != 2) return false; // fiducial cuts
 
     if (property == "integrated") {
-      goodEvent = *Q2 > 1 && *W > 2 && *Mx2 > 0.16 && *y < 0.80 && -(*t-*tmin) > 1.25;
+      goodEvent = *Q2 > 1 && *W > 2 && *Mx2 > 0.16 && *y < 0.80;
       return goodEvent;
     }
     if (property == "Mx2") {
@@ -42,16 +42,16 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
       return goodEvent;
     }
     if (property == "Mx2bin2a") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.22 && *x < 0.26 && -(*t-*tmin) < 1.0;
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.21 && *x < 0.25 && -(*t-*tmin) < 1.0;
       return goodEvent;
     }
     if (property == "Mx2bin2b") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.22 && *x < 0.26 && -(*t-*tmin) > 2;
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *x > 0.21 && *x < 0.25 && -(*t-*tmin) > 2;
       return goodEvent;
     }
     if (property == "xF" || property == "x" || property == "z" || property == "PT" || 
       property == "runnum") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && *Mx > 1.35 && -(*t-*tmin) > 1.25;
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.80;
       return goodEvent;
     } 
     if (property == "xFall" || property == "xall" || property == "zall" || property == "PTall") {
@@ -59,23 +59,23 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
       return goodEvent;
     } 
     if (property == "Q2multi1") {
-      goodEvent = *Q2 > 1 && *W > 2 && *Mx2 > 0.16 && *y < 0.80 && *Mx > 0.95;
-      goodEvent = goodEvent && *x > 0.12 && *x < 0.15 && *pT > 0.325 && *pT < 0.475 && *z > 0.16 && *z < 0.22;
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.9;
+      goodEvent = goodEvent && *x > 0.12 && *x < 0.15 && *pT > 0.35 && *pT < 0.45 && *z > 0.16 && *z < 0.22;
       return goodEvent;
     }
     if (property == "Q2multi2") {
-      goodEvent = *Q2 > 1 && *W > 2 && *Mx2 > 0.16 && *y < 0.80 && *Mx > 0.95;
-      goodEvent = goodEvent && *x > 0.15 && *x < 0.18 && *pT > 0.325 && *pT < 0.475 && *z > 0.16 && *z < 0.22 ;
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.9;
+      goodEvent = goodEvent && *x > 0.15 && *x < 0.18 && *pT > 0.35 && *pT < 0.45 && *z > 0.16 && *z < 0.22 ;
       return goodEvent;
     }
     if (property == "Q2multi3") {
-      goodEvent = *Q2 > 1 && *W > 2 && *Mx2 > 0.16 && *y < 0.80 && *Mx > 0.95;
-      goodEvent = goodEvent && *x > 0.18 && *x < 0.21 && *pT > 0.325 && *pT < 0.475 && *z > 0.16 && *z < 0.22;
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.9;
+      goodEvent = goodEvent && *x > 0.18 && *x < 0.21 && *pT > 0.35 && *pT < 0.45 && *z > 0.16 && *z < 0.22;
       return goodEvent;
     }
     
 
-    if (*Q2 > 1 && *W > 2 && *Mx > 1.35 && *y < 0.80 && !checked) {
+    if (*Q2 > 1 && *W > 2 && *Mx2 > 1.80 && *y < 0.80 && !checked) {
       goodEvent = true;
       size_t pos = property.find("z");
       std::string prez = property.substr(0, pos);
