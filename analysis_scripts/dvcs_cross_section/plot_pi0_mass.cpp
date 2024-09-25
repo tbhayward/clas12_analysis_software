@@ -4,6 +4,7 @@
 #include <TLegend.h>
 #include <TStyle.h>
 #include <TTreeReaderValue.h>
+#include <TLine.h>
 #include <filesystem>
 #include <iostream>
 
@@ -49,36 +50,24 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
 
     // Fill histograms for each data reader
     while (dataReader1.Next()) {
-        if (*Mh_data1 >= 0.11 && *Mh_data1 <= 0.16) {
-            hist_data1->Fill(*Mh_data1);
-        }
+        hist_data1->Fill(*Mh_data1);
     }
     while (mcReader1.Next()) {
-        if (*Mh_mc1 >= 0.11 && *Mh_mc1 <= 0.16) {
-            hist_mc1->Fill(*Mh_mc1);
-        }
+        hist_mc1->Fill(*Mh_mc1);
     }
 
     while (dataReader2.Next()) {
-        if (*Mh_data2 >= 0.11 && *Mh_data2 <= 0.16) {
-            hist_data2->Fill(*Mh_data2);
-        }
+        hist_data2->Fill(*Mh_data2);
     }
     while (mcReader2.Next()) {
-        if (*Mh_mc2 >= 0.11 && *Mh_mc2 <= 0.16) {
-            hist_mc2->Fill(*Mh_mc2);
-        }
+        hist_mc2->Fill(*Mh_mc2);
     }
 
     while (dataReader3.Next()) {
-        if (*Mh_data3 >= 0.11 && *Mh_data3 <= 0.16) {
-            hist_data3->Fill(*Mh_data3);
-        }
+        hist_data3->Fill(*Mh_data3);
     }
     while (mcReader3.Next()) {
-        if (*Mh_mc3 >= 0.11 && *Mh_mc3 <= 0.16) {
-            hist_mc3->Fill(*Mh_mc3);
-        }
+        hist_mc3->Fill(*Mh_mc3);
     }
 
     // Normalize the histograms based on their integrals
@@ -89,6 +78,11 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     if (hist_data3->Integral() != 0) hist_data3->Scale(1.0 / hist_data3->Integral());
     if (hist_mc3->Integral() != 0) hist_mc3->Scale(1.0 / hist_mc3->Integral());
 
+    // Create a dashed gray line at the pi0 mass (0.135 GeV)
+    TLine* pi0_mass_line = new TLine(0.135, 0, 0.135, 1);
+    pi0_mass_line->SetLineColor(kGray + 2);
+    pi0_mass_line->SetLineStyle(7);  // Dashed line
+
     // Draw the histograms on the canvas
     canvas->cd(1);
     hist_data1->SetLineColor(kBlue);
@@ -96,6 +90,7 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     hist_data1->SetXTitle("M_{#gamma#gamma} (GeV)");
     hist_data1->Draw("HIST");
     hist_mc1->Draw("HIST SAME");
+    pi0_mass_line->Draw("SAME");
 
     // Add legend for the first plot
     TLegend* legend1 = new TLegend(0.7, 0.75, 0.9, 0.9);
@@ -109,6 +104,7 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     hist_data2->SetXTitle("M_{#gamma#gamma} (GeV)");
     hist_data2->Draw("HIST");
     hist_mc2->Draw("HIST SAME");
+    pi0_mass_line->Draw("SAME");
 
     // Add legend for the second plot
     TLegend* legend2 = new TLegend(0.7, 0.75, 0.9, 0.9);
@@ -122,6 +118,7 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     hist_data3->SetXTitle("M_{#gamma#gamma} (GeV)");
     hist_data3->Draw("HIST");
     hist_mc3->Draw("HIST SAME");
+    pi0_mass_line->Draw("SAME");
 
     // Add legend for the third plot
     TLegend* legend3 = new TLegend(0.7, 0.75, 0.9, 0.9);
@@ -139,5 +136,6 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     delete hist_mc2;
     delete hist_data3;
     delete hist_mc3;
+    delete pi0_mass_line;
     delete canvas;
 }
