@@ -85,9 +85,9 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     pi0_mass_line->SetLineStyle(7);  // Dashed line
 
     // Determine the maximum value for y-axis scaling
-    double y_max1 = 1.1 * std::max(hist_data1->GetMaximum(), hist_mc1->GetMaximum());
-    double y_max2 = 1.1 * std::max(hist_data2->GetMaximum(), hist_mc2->GetMaximum());
-    double y_max3 = 1.1 * std::max(hist_data3->GetMaximum(), hist_mc3->GetMaximum());
+    double y_max1 = 1.3 * std::max(hist_data1->GetMaximum(), hist_mc1->GetMaximum());
+    double y_max2 = 1.3 * std::max(hist_data2->GetMaximum(), hist_mc2->GetMaximum());
+    double y_max3 = 1.3 * std::max(hist_data3->GetMaximum(), hist_mc3->GetMaximum());
 
     // Draw the histograms on the canvas as points with error bars
     canvas->cd(1);
@@ -108,7 +108,7 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     pi0_mass_line->Draw("SAME");
 
     // Create a Gaussian function for fitting the data histogram within the range 0.12 to 0.15 GeV
-    TF1* gausFit = new TF1("gausFit", "gaus", 0.12, 0.15);
+    TF1* gausFit = new TF1("gausFit", "gaus", 0.11, 0.16);
     gausFit->SetLineColor(kBlue);  // Set the line color to blue
     gausFit->SetLineWidth(2);      // Set the line width for better visibility
 
@@ -118,7 +118,7 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     double sigma = gausFit->GetParameter(2);   // Sigma (σ)
 
     // Create a Gaussian function for fitting the MC histogram within the same range
-    TF1* gausFitMC = new TF1("gausFitMC", "gaus", 0.12, 0.15);
+    TF1* gausFitMC = new TF1("gausFitMC", "gaus", 0.11, 0.16);
     gausFitMC->SetLineColor(kRed);  // Set the line color to red
     gausFitMC->SetLineWidth(2);     // Set the line width for better visibility
 
@@ -128,7 +128,7 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     double sigmaMC = gausFitMC->GetParameter(2);   // Sigma (σ) for MC
 
     // Add legend for the first plot with colored text
-    TLegend* legend1 = new TLegend(0.65, 0.7, 0.9, 0.9);  // Adjusted position to accommodate more entries
+    TLegend* legend1 = new TLegend(0.45, 0.7, 0.9, 0.9);  // Adjusted position to accommodate more entries
     legend1->SetTextSize(0.04);  // Increase the text size slightly
 
     char dataLegendEntry[200];
