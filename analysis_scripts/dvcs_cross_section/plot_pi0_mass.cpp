@@ -210,7 +210,6 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     hist_data3->GetYaxis()->SetRangeUser(0, y_max3);
     hist_data3->Draw("E1");
     hist_mc3->Draw("E1 SAME");
-    pi0_mass_line->Draw("SAME");
 
     // Add legend for the third plot with colored text
     TLegend* legend3 = new TLegend(0.7, 0.75, 0.9, 0.9);
