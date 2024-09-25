@@ -78,75 +78,72 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     if (hist_data3->Integral() != 0) hist_data3->Scale(1.0 / hist_data3->Integral());
     if (hist_mc3->Integral() != 0) hist_mc3->Scale(1.0 / hist_mc3->Integral());
 
-    // Determine the Y-axis range dynamically
-    double y_max1 = 1.25 * std::max(hist_data1->GetMaximum(), hist_mc1->GetMaximum());
-    double y_max2 = 1.25 * std::max(hist_data2->GetMaximum(), hist_mc2->GetMaximum());
-    double y_max3 = 1.25 * std::max(hist_data3->GetMaximum(), hist_mc3->GetMaximum());
-
     // Create a dashed gray line at the pi0 mass (0.135 GeV)
-    TLine* pi0_mass_line = new TLine(0.135, 0, 0.135, 1.25);
+    TLine* pi0_mass_line = new TLine(0.135, 0, 0.135, 0.8);
     pi0_mass_line->SetLineColor(kGray + 2);
     pi0_mass_line->SetLineStyle(7);  // Dashed line
 
-    // Draw the histograms on the canvas
+    // Determine the maximum value for y-axis scaling
+    double y_max1 = 1.1 * std::max(hist_data1->GetMaximum(), hist_mc1->GetMaximum());
+    double y_max2 = 1.1 * std::max(hist_data2->GetMaximum(), hist_mc2->GetMaximum());
+    double y_max3 = 1.1 * std::max(hist_data3->GetMaximum(), hist_mc3->GetMaximum());
+
+    // Draw the histograms on the canvas as points with error bars
     canvas->cd(1);
     hist_data1->SetLineColor(kBlue);
-    hist_mc1->SetLineColor(kRed);
-    hist_data1->SetMarkerStyle(20);
-    hist_mc1->SetMarkerStyle(24);
     hist_data1->SetMarkerColor(kBlue);
+    hist_data1->SetMarkerStyle(20);  // Points with error bars
+    hist_mc1->SetLineColor(kRed);
     hist_mc1->SetMarkerColor(kRed);
+    hist_mc1->SetMarkerStyle(24);
     hist_data1->SetXTitle("M_{#gamma#gamma} (GeV)");
     hist_data1->GetYaxis()->SetRangeUser(0, y_max1);
     hist_data1->Draw("E1");
     hist_mc1->Draw("E1 SAME");
     pi0_mass_line->Draw("SAME");
 
-    // Add legend for the first plot
+    // Add legend for the first plot with colored text
     TLegend* legend1 = new TLegend(0.7, 0.75, 0.9, 0.9);
-    legend1->AddEntry(hist_data1, "Data", "p");
-    legend1->AddEntry(hist_mc1, "MC", "p");
-    legend1->SetTextColor(kBlue);
+    legend1->AddEntry(hist_data1, "#color[4]{Data}", "p");
+    legend1->AddEntry(hist_mc1, "#color[2]{MC}", "p");
     legend1->Draw();
 
     canvas->cd(2);
     hist_data2->SetLineColor(kBlue);
-    hist_mc2->SetLineColor(kRed);
-    hist_data2->SetMarkerStyle(20);
-    hist_mc2->SetMarkerStyle(24);
     hist_data2->SetMarkerColor(kBlue);
+    hist_data2->SetMarkerStyle(20);
+    hist_mc2->SetLineColor(kRed);
     hist_mc2->SetMarkerColor(kRed);
+    hist_mc2->SetMarkerStyle(24);
     hist_data2->SetXTitle("M_{#gamma#gamma} (GeV)");
     hist_data2->GetYaxis()->SetRangeUser(0, y_max2);
     hist_data2->Draw("E1");
     hist_mc2->Draw("E1 SAME");
     pi0_mass_line->Draw("SAME");
 
-    // Add legend for the second plot
+    // Add legend for the second plot with colored text
     TLegend* legend2 = new TLegend(0.7, 0.75, 0.9, 0.9);
-    legend2->AddEntry(hist_data2, "Data", "p");
-    legend2->AddEntry(hist_mc2, "MC", "p");
-    legend2->SetTextColor(kRed);
+    legend2->AddEntry(hist_data2, "#color[4]{Data}", "p");
+    legend2->AddEntry(hist_mc2, "#color[2]{MC}", "p");
     legend2->Draw();
 
     canvas->cd(3);
     hist_data3->SetLineColor(kBlue);
-    hist_mc3->SetLineColor(kRed);
-    hist_data3->SetMarkerStyle(20);
-    hist_mc3->SetMarkerStyle(24);
     hist_data3->SetMarkerColor(kBlue);
+    hist_data3->SetMarkerStyle(20);
+    hist_mc3->SetLineColor(kRed);
     hist_mc3->SetMarkerColor(kRed);
+    hist_mc3->SetMarkerStyle(24);
     hist_data3->SetXTitle("M_{#gamma#gamma} (GeV)");
     hist_data3->GetYaxis()->SetRangeUser(0, y_max3);
     hist_data3->Draw("E1");
     hist_mc3->Draw("E1 SAME");
     pi0_mass_line->Draw("SAME");
 
-    // Add legend for the third plot
+    // Add legend for the third plot with colored text
     TLegend* legend3 = new TLegend(0.7, 0.75, 0.9, 0.9);
-    legend3->AddEntry(hist_data3, "Data", "p");
-    legend3->AddEntry(hist_mc3, "MC", "p");
-    legend3->SetTextColor(kRed);
+    legend3->AddEntry(hist_data3, "#color[4]{Data}", "p");
+    legend3->AddEntry(hist_mc3, "#color[2]{MC}", "p");
     legend3->Draw();
 
     // Save the canvas
