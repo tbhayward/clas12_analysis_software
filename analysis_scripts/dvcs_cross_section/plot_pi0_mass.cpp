@@ -156,9 +156,6 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     hist_data2->Draw("E1");
     hist_mc2->Draw("E1 SAME");
 
-    // Create and draw the vertical line at pi0 mass
-    pi0_mass_line->Draw("SAME");
-
     // Create a Gaussian plus constant function for fitting the data histogram
     TF1* gausFit2 = new TF1("gausFit2", "gaus(0)+[3]", 0.11, 0.16);
     gausFit2->SetLineColor(kBlue);  // Set the line color to blue
@@ -237,6 +234,5 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     delete hist_mc2;
     delete hist_data3;
     delete hist_mc3;
-    delete pi0_mass_line;
     delete canvas;
 }
