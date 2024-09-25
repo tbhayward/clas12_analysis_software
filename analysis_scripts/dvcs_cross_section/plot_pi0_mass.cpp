@@ -153,20 +153,61 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     canvas->cd(2);
     hist_data2->SetLineColor(kBlue);
     hist_data2->SetMarkerColor(kBlue);
-    hist_data2->SetMarkerStyle(20);
+    hist_data2->SetMarkerStyle(20);  // Points with error bars
     hist_mc2->SetLineColor(kRed);
     hist_mc2->SetMarkerColor(kRed);
     hist_mc2->SetMarkerStyle(24);
     hist_data2->SetXTitle("M_{#gamma#gamma} (GeV)");
     hist_data2->GetYaxis()->SetRangeUser(0, y_max2);
+
+    // Draw the data and MC histograms
     hist_data2->Draw("E1");
     hist_mc2->Draw("E1 SAME");
+
+    // Create and draw the vertical line at pi0 mass
     pi0_mass_line->Draw("SAME");
 
+    // Create a Gaussian plus constant function for fitting the data histogram
+    TF1* gausFit2 = new TF1("gausFit2", "gaus(0)+[3]", 0.11, 0.16);
+    gausFit2->SetLineColor(kBlue);  // Set the line color to blue
+    gausFit2->SetLineWidth(2);      // Set the line width for better visibility
+
+    // Set initial parameter guesses for the data fit
+    double amplitude_data2 = hist_data2->GetMaximum();
+    double background_data2 = hist_data2->GetBinContent(1);  // Estimate background from first bin
+    gausFit2->SetParameters(amplitude_data2, 0.135, 0.01, background_data2);
+
+    // Fit the data histogram with the Gaussian plus constant function
+    hist_data2->Fit(gausFit2, "R");  // "R" ensures the fit is within the specified range
+    double mu2 = gausFit2->GetParameter(1);      // Mean (μ)
+    double sigma2 = gausFit2->GetParameter(2);   // Sigma (σ)
+
+    // Create a Gaussian plus constant function for fitting the MC histogram
+    TF1* gausFitMC2 = new TF1("gausFitMC2", "gaus(0)+[3]", 0.11, 0.16);
+    gausFitMC2->SetLineColor(kRed);  // Set the line color to red
+    gausFitMC2->SetLineWidth(2);     // Set the line width for better visibility
+
+    // Set initial parameter guesses for the MC fit
+    double amplitude_mc2 = hist_mc2->GetMaximum();
+    double background_mc2 = hist_mc2->GetBinContent(1);  // Estimate background from first bin
+    gausFitMC2->SetParameters(amplitude_mc2, 0.135, 0.01, background_mc2);
+
+    // Fit the MC histogram with the Gaussian plus constant function
+    hist_mc2->Fit(gausFitMC2, "R");  // "R" ensures the fit is within the specified range
+    double muMC2 = gausFitMC2->GetParameter(1);      // Mean (μ) for MC
+    double sigmaMC2 = gausFitMC2->GetParameter(2);   // Sigma (σ) for MC
+
     // Add legend for the second plot with colored text
-    TLegend* legend2 = new TLegend(0.7, 0.75, 0.9, 0.9);
-    legend2->AddEntry(hist_data2, "#color[4]{Data}", "p");
-    legend2->AddEntry(hist_mc2, "#color[2]{MC}", "p");
+    TLegend* legend2 = new TLegend(0.2, 0.7, 0.9, 0.9);  // Adjusted position
+    legend2->SetTextSize(0.04);  // Increase the text size slightly
+
+    char dataLegendEntry2[200];
+    sprintf(dataLegendEntry2, "#color[4]{Data (#mu = %.4f, #sigma = %.4f)}", mu2, sigma2);
+    legend2->AddEntry(hist_data2, dataLegendEntry2, "p");
+
+    char mcLegendEntry2[200];
+    sprintf(mcLegendEntry2, "#color[2]{MC (#mu = %.4f, #sigma = %.4f)}", muMC2, sigmaMC2);
+    legend2->AddEntry(hist_mc2, mcLegendEntry2, "p");
     legend2->Draw();
 
     canvas->cd(3);
