@@ -58,7 +58,6 @@ echo "Pulling the latest changes from the repository..."
 git pull
 echo "Sourcing qadb..."
 module load qadb/2.0.0
-cd ..
 
 g++ `root-config --cflags --libs` -o processing_scripts/convert_txt_to_root processing_scripts/convert_txt_to_root.cpp
 
