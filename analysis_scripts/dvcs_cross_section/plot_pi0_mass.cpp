@@ -109,17 +109,20 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
 
     // Create a Gaussian function for fitting within the range 0.12 to 0.15 GeV
     TF1* gausFit = new TF1("gausFit", "gaus", 0.12, 0.15);
-    gausFit->SetLineColor(kGreen + 2);  // Set the line color for the fit function
+    gausFit->SetLineColor(kBlue);  // Set the line color to blue
     gausFit->SetLineWidth(2);           // Set the line width for better visibility
 
     // Fit the data histogram with the Gaussian function
     hist_data1->Fit(gausFit, "R");  // "R" ensures the fit is within the specified range
+    double mu = gausFit->GetParameter(1);      // Mean (μ)
+    double sigma = gausFit->GetParameter(2);   // Sigma (σ)
 
     // Add legend for the first plot with colored text
     TLegend* legend1 = new TLegend(0.7, 0.75, 0.9, 0.9);
-    legend1->AddEntry(hist_data1, "#color[4]{Data}", "p");
+    char dataLegendEntry[200];
+    sprintf(dataLegendEntry, "#color[4]{Data (#mu = %.4f, #sigma = %.4f)}", mu, sigma);
+    legend1->AddEntry(hist_data1, dataLegendEntry, "p");
     legend1->AddEntry(hist_mc1, "#color[2]{MC}", "p");
-    legend1->AddEntry(gausFit, "#color[3]{Gaussian Fit}", "l");  // Add entry for the fit
     legend1->Draw();
 
     canvas->cd(2);
