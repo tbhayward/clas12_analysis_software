@@ -98,14 +98,27 @@ void plot_pi0_mass(TTreeReader& dataReader1, TTreeReader& dataReader2, TTreeRead
     hist_mc1->SetMarkerStyle(24);
     hist_data1->SetXTitle("M_{#gamma#gamma} (GeV)");
     hist_data1->GetYaxis()->SetRangeUser(0, y_max1);
+
+    // Draw the data and MC histograms
     hist_data1->Draw("E1");
     hist_mc1->Draw("E1 SAME");
+
+    // Create and draw the vertical line at pi0 mass
     pi0_mass_line->Draw("SAME");
+
+    // Create a Gaussian function for fitting within the range 0.12 to 0.15 GeV
+    TF1* gausFit = new TF1("gausFit", "gaus", 0.12, 0.15);
+    gausFit->SetLineColor(kGreen + 2);  // Set the line color for the fit function
+    gausFit->SetLineWidth(2);           // Set the line width for better visibility
+
+    // Fit the data histogram with the Gaussian function
+    hist_data1->Fit(gausFit, "R");  // "R" ensures the fit is within the specified range
 
     // Add legend for the first plot with colored text
     TLegend* legend1 = new TLegend(0.7, 0.75, 0.9, 0.9);
     legend1->AddEntry(hist_data1, "#color[4]{Data}", "p");
     legend1->AddEntry(hist_mc1, "#color[2]{MC}", "p");
+    legend1->AddEntry(gausFit, "#color[3]{Gaussian Fit}", "l");  // Add entry for the fit
     legend1->Draw();
 
     canvas->cd(2);
