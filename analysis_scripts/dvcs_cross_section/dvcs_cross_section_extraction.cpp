@@ -13,6 +13,7 @@
 
 // tbhayward imports
 #include "create_directories.h"
+#include "plot_pi0_mass.h"
 #include "determine_exclusivity.h"
 
 // Namespace declaration
