@@ -76,7 +76,8 @@ void createAndFillHistogram(TTreeReader& reader, TH2D* hist, const std::string& 
 
 void createIntegratedKinematicPlots() {
     const std::string outputDir = "output/integrated_plots/";
-    const std::vector<std::string> branchesToSkip = {"fiducial_status", "num_pos", "num_neg", "num_neutral", "helicity", "beam_pol", 
+    const std::vector<std::string> branchesToSkip = {"e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi", "Q2", "x", "y", "z", "Mx2",
+        "fiducial_status", "num_pos", "num_neg", "num_neutral", "helicity", "beam_pol", 
         "detector", "target_pol", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"};
 
     TObjArray* branches = dataReader.GetTree()->GetListOfBranches();
@@ -91,7 +92,7 @@ void createIntegratedKinematicPlots() {
     for (Int_t i = 0; i < branches->GetEntries(); ++i) {
         TBranch* branch = (TBranch*)branches->At(i);
         std::string branchName = branch->GetName();
-        if (branchName != "xF") continue;
+
         if (branchName == "e_p" && restart) {
           // stupid hack to get it to do the runnum plot instead of it being blank 
           // due to reader restarts
