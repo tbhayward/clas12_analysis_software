@@ -1789,7 +1789,7 @@ void plotXFDependence(
         graphAULsin2phi->GetYaxis()->SetTitle("F_{UL}^{sin(2#phi)}/F_{UU}");
         graphAULsin2phi->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
         graphAULsin2phi->SetMinimum(-0.1);
-        graphAULsin2phi->SetMaximum(0.1);
+        graphAULsin2phi->SetMaximum(0.4);
 
         // Increase the font size of axis labels
         graphAULsin2phi->GetXaxis()->SetTitleSize(0.05);
