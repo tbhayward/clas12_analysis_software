@@ -1805,7 +1805,7 @@ void plotXFDependence(
         TLatex latex2;
         latex2.SetNDC();
         latex2.SetTextSize(0.03);
-        latex2.DrawLatex(0.69, 0.2, "10% Scale Systematic");
+        latex2.DrawLatex(0.67, 0.2, "10% Scale Systematic");
 
         // Save the second canvas as a PNG
         c2->SaveAs("output/epX_plots/CPHI_xF_dependence_AULsin2phi.png");
