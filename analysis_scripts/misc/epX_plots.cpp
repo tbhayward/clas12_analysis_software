@@ -2280,6 +2280,7 @@ void plot_single_spin_asymmetries(const std::map<std::string, std::vector<std::v
     delete c;
 }
 
+
 void plotMxBinsALUALL(
     const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
     const std::pair<double, double> &xLimits,  // Mx axis limits
@@ -2321,6 +2322,133 @@ void plotMxBinsALUALL(
         "x_{B} = 0.16, -(t-t_{min}) > 2.00",
         "x_{B} = 0.22, -(t-t_{min}) < 1.00", 
         "x_{B} = 0.22, -(t-t_{min}) > 2.00"
+    };
+
+    // Loop over the two suffixes (ALUsinphi, ALL)
+    for (size_t i = 0; i < suffixes.size(); ++i) {
+        c->cd(i + 1);  // Move to the next pad
+        gPad->SetLeftMargin(0.18);
+        gPad->SetBottomMargin(0.15);
+
+        bool firstGraphDrawn = false;
+
+        // Create a legend for the plot
+        TLegend *legend = new TLegend(0.425, 0.7, 0.9, 0.9);  // Adjust position and size
+        legend->SetTextSize(0.035);  // Adjust text size
+        legend->SetBorderSize(1);  // Set border size
+        legend->SetFillStyle(1001);   // Solid white background
+
+        // Loop over the four Mx bins and plot them
+        for (size_t bin = 0; bin < MxBins.size(); ++bin) {
+            std::string key = MxBins[bin] + suffixes[i];
+            auto it = asymmetryData.find(key);
+
+            if (it != asymmetryData.end()) {
+                const auto &data = it->second;
+
+                std::vector<double> x, y, yStatErr;
+                for (const auto &entry : data) {
+                    x.push_back(entry[0]);
+                    y.push_back(entry[1]);
+                    yStatErr.push_back(entry[2]);
+                }
+
+                // Create TGraphErrors for each Mx bin
+                TGraphErrors *graph = new TGraphErrors(x.size(), &x[0], &y[0], nullptr, &yStatErr[0]);
+                graph->SetMarkerStyle(markers[bin]);
+                graph->SetMarkerColor(colors[bin]);
+                graph->SetLineColor(colors[bin]);
+                graph->SetMarkerSize(1.0);  // Marker size
+
+                if (!firstGraphDrawn) {
+                    graph->Draw("AP");  // Draw the first graph with axes
+                    firstGraphDrawn = true;
+
+                    // Set axis labels and ranges
+                    graph->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
+                    graph->GetYaxis()->SetTitle(yLabels[i].c_str());
+                    graph->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
+                    graph->SetMinimum(yRanges[i].first);  // Apply the y-limits specific to the suffix
+                    graph->SetMaximum(yRanges[i].second);
+
+                    // Increase font size of axis labels
+                    graph->GetXaxis()->SetTitleSize(0.055);  // Slightly larger
+                    graph->GetYaxis()->SetTitleSize(0.055);  // Slightly larger
+                } else {
+                    graph->Draw("P SAME");  // Overlay other graphs
+                }
+
+                // Add each entry to the legend
+                legend->AddEntry(graph, legendLabels[bin].c_str(), "p");
+            }
+        }
+
+        // Draw the legend in the current subplot
+        legend->Draw();
+
+        // Add the dashed gray line at y = 0
+        TLine *line = new TLine(xLimits.first, 0, xLimits.second, 0);
+        line->SetLineColor(kGray+2);
+        line->SetLineStyle(7);  // Dashed line
+        line->Draw("same");
+
+        // Add the respective "Scale Systematic" text in the bottom right using TLatex
+        TLatex latex;
+        latex.SetNDC();
+        latex.SetTextSize(0.03);
+        if (suffixes[i] == "ALUsinphi") {
+            latex.DrawLatex(0.63, 0.19, "5% Scale Systematic");  // For ALUsinphi
+        } else {
+            latex.DrawLatex(0.63, 0.19, "9% Scale Systematic");  // For ALL
+        }
+    }
+
+    // Save the canvas as a PNG file
+    gSystem->Exec("mkdir -p output/epX_plots");
+    c->SaveAs(outputFileName.c_str());
+
+    // Clean up
+    delete c;
+}
+
+void plotMxBinsALUALL2(
+    const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
+    const std::pair<double, double> &xLimits,  // Mx axis limits
+    const std::string &outputFileName) {
+
+    // Disable default title display
+    gStyle->SetOptTitle(0);
+
+    // Create the canvas for the 1x2 plots
+    TCanvas *c = new TCanvas("c", "Mx Bins ALU and ALL", 1200, 600);
+    c->Divide(2, 1);  // 1 row, 2 columns
+
+    // Define the suffixes for ALUsinphi and ALL
+    std::vector<std::string> suffixes = {"ALUsinphi", "ALL"};
+
+    // Define the y-axis labels for each plot
+    std::vector<std::string> yLabels = {
+        "F_{LU}^{sin#phi}/F_{UU}",  // For ALUsinphi
+        "F_{LL}/F_{UU}"             // For ALL
+    };
+
+    // Define the y-axis ranges for each plot
+    std::vector<std::pair<double, double>> yRanges = {
+        {-0.06, 0.03},  // y-axis range for ALUsinphi
+        {-0.1, 0.6}   // y-axis range for ALL
+    };
+
+    // // Define the keys for Mxbin1a, Mxbin1b, Mxbin2a, Mxbin2b
+    std::vector<std::string> MxBins = {"Mx2bin1achi2Fits"};
+    // Define the keys for Mxbin1a, Mxbin1b, Mxbin2a, Mxbin2b
+
+    // Colors and marker styles for each Mx bin
+    std::vector<int> colors = {kBlack, kRed, kBlue, kGreen};
+    std::vector<int> markers = {20, 21, 22, 23};  // Circle, Square, Triangle, Diamond markers
+
+    // Legends for each Mx bin
+    std::vector<std::string> legendLabels = {
+        "x_{B} = 0.16, -(t-t_{min}) < 1.00"
     };
 
     // Loop over the two suffixes (ALUsinphi, ALL)
@@ -2492,6 +2620,8 @@ int main(int argc, char *argv[]) {
     plotALUandALLDependence(asymmetryData, {"Q2multi1", "Q2multi2", "Q2multi3"}, "Q^{2} (GeV^{2})", {1.0, 3.5}, "output/epX_plots/CPHI_multidimensional.png");
 
     plotMxBinsALUALL(asymmetryData, {0.0, 6}, "output/epX_plots/CPHI_Mx2Bins_ALU_ALL.png");
+
+    plotMxBinsALUALL2(asymmetryData, {0.0, 6}, "output/epX_plots/CPHI_Mx2Bins_ALU_ALL2.png");
 
 
     return 0;
