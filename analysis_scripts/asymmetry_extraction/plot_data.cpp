@@ -76,7 +76,7 @@ void createAndFillHistogram(TTreeReader& reader, TH2D* hist, const std::string& 
 
 void createIntegratedKinematicPlots() {
     const std::string outputDir = "output/integrated_plots/";
-    const std::vector<std::string> branchesToSkip = {"e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi", "Q2", "x", "y", "z", "Mx2",
+    const std::vector<std::string> branchesToSkip = {"e_theta", "e_phi", "p_p", "p_theta", "p_phi", "Q2", "x", "y", "z", "Mx2",
         "fiducial_status", "num_pos", "num_neg", "num_neutral", "helicity", "beam_pol", 
         "detector", "target_pol", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"};
 
