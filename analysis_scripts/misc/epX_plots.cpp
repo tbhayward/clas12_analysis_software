@@ -2174,7 +2174,7 @@ void plot_single_spin_asymmetries(const std::map<std::string, std::vector<std::v
     TLatex latex;
     latex.SetNDC();
     latex.SetTextSize(0.03);
-    latex.DrawLatex(0.60, 0.19, "10% Scale Systematic");  // For ALL
+    latex.DrawLatex(0.20, 0.19, "10% Scale Systematic");  // For ALL
 
     legendLeft->Draw();
 
@@ -2270,7 +2270,7 @@ void plot_single_spin_asymmetries(const std::map<std::string, std::vector<std::v
     TLatex latex2;
     latex2.SetNDC();
     latex2.SetTextSize(0.03);
-    latex2.DrawLatex(0.60, 0.19, "10% Scale Systematic");  // For ALL
+    latex2.DrawLatex(0.20, 0.19, "10% Scale Systematic");  // For ALL
 
     // Save the canvas as a PNG file
     gSystem->Exec("mkdir -p output/epX_plots");
