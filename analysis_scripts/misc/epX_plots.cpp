@@ -1678,7 +1678,7 @@ void plotXFDependence(
     graphH2->GetXaxis()->SetTitle("x_{F}");
     graphH2->GetYaxis()->SetTitle("F_{xy}^{sin#phi}/F_{UU}");
     graphH2->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
-    graphH2->SetMinimum(-0.05);
+    graphH2->SetMinimum(-0.06);
     graphH2->SetMaximum(0.08);
 
     // Increase the font size of axis labels
