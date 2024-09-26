@@ -91,7 +91,7 @@ void createIntegratedKinematicPlots() {
     for (Int_t i = 0; i < branches->GetEntries(); ++i) {
         TBranch* branch = (TBranch*)branches->At(i);
         std::string branchName = branch->GetName();
-        if (branchname != "xF") continue;
+        if (branchName != "xF") continue;
         if (branchName == "e_p" && restart) {
           // stupid hack to get it to do the runnum plot instead of it being blank 
           // due to reader restarts
