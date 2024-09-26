@@ -2109,7 +2109,7 @@ void plot_single_spin_asymmetries(const std::map<std::string, std::vector<std::v
     // Define the x-axis ranges
     std::pair<double, double> xBRange = {0.06, 0.6};
     std::pair<double, double> PTRange = {0.0, 1.0};
-    std::pair<double, double> yRange = {-0.1, 0.04};  // Common y-limits for both plots
+    std::pair<double, double> yRange = {-0.1, 0.1};  // Common y-limits for both plots
 
     // Left subplot: xChi2FitsALUsinphi and xChi2FitsAULsinphi
     c->cd(1);  // Move to the left subplot
@@ -2169,6 +2169,12 @@ void plot_single_spin_asymmetries(const std::map<std::string, std::vector<std::v
     lineLeft->SetLineColor(kGray+2);
     lineLeft->SetLineStyle(7);  // Dashed line
     lineLeft->Draw("same");
+
+    // Add the respective "Scale Systematic" text in the bottom right using TLatex
+    TLatex latex;
+    latex.SetNDC();
+    latex.SetTextSize(0.03);
+    latex.DrawLatex(0.60, 0.19, "10% Scale Systematic");  // For ALL
 
     legendLeft->Draw();
 
@@ -2259,6 +2265,12 @@ void plot_single_spin_asymmetries(const std::map<std::string, std::vector<std::v
     lineRight->Draw("same");
 
     legendRight->Draw();
+
+    // Add the respective "Scale Systematic" text in the bottom right using TLatex
+    TLatex latex2;
+    latex2.SetNDC();
+    latex2.SetTextSize(0.03);
+    latex2.DrawLatex(0.60, 0.19, "10% Scale Systematic");  // For ALL
 
     // Save the canvas as a PNG file
     gSystem->Exec("mkdir -p output/epX_plots");
