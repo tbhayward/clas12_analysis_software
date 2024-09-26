@@ -197,8 +197,8 @@ void createIntegratedKinematicPlots() {
         mcHist->SetEntries(mcHist->GetEntries());
         // leg->AddEntry(dataHist, (std::string("data (") + std::to_string((int)dataHist->GetEntries()) + " counts)").c_str(), "l");
         // leg->AddEntry(mcHist, (std::string("mc (") + std::to_string((int)mcHist->GetEntries()) + " counts)").c_str(), "l");
-        leg->AddEntry(dataHist, (std::string("NH_{3}").c_str(), "l"));
-        leg->AddEntry(mcHist, (std::string("C").c_str(), "l"));
+        leg->AddEntry(dataHist, "NH_{3}", "l");
+        leg->AddEntry(mcHist, "C", "l");
         
         // Set line colors for histograms
         dataHist->SetLineColor(kBlack);
