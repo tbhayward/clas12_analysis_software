@@ -1678,7 +1678,7 @@ void plotXFDependence(
     graphH2->GetXaxis()->SetTitle("x_{F}");
     graphH2->GetYaxis()->SetTitle("F_{xy}^{sin#phi}/F_{UU}");
     graphH2->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
-    graphH2->SetMinimum(-0.06);
+    graphH2->SetMinimum(-0.05);
     graphH2->SetMaximum(0.08);
 
     // Increase the font size of axis labels
@@ -1747,7 +1747,7 @@ void plotXFDependence(
     TLatex latex1;
     latex1.SetNDC();
     latex1.SetTextSize(0.03);  // Make the text slightly smaller
-    latex1.DrawLatex(0.69, 0.2, "8% Scale Systematic");
+    latex1.DrawLatex(0.67, 0.2, "10% Scale Systematic");
 
     // Save the first canvas as a PNG
     gSystem->Exec("mkdir -p output/epX_plots");
