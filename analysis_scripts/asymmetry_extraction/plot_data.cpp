@@ -76,9 +76,10 @@ void createAndFillHistogram(TTreeReader& reader, TH2D* hist, const std::string& 
 
 void createIntegratedKinematicPlots() {
     const std::string outputDir = "output/integrated_plots/";
-    const std::vector<std::string> branchesToSkip = {"e_theta", "e_phi", "p_p", "p_theta", "p_phi", "Q2", "x", "y", "z", "Mx2",
+    const std::vector<std::string> branchesToSkip = {
         "fiducial_status", "num_pos", "num_neg", "num_neutral", "helicity", "beam_pol", 
-        "detector", "target_pol", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"};
+        "detector", "target_pol", "DepA", "DepB", "DepC", "DepV", "DepW", "evnum"
+    };
 
     TObjArray* branches = dataReader.GetTree()->GetListOfBranches();
     if (!branches) {
@@ -196,9 +197,9 @@ void createIntegratedKinematicPlots() {
         // Add entries to the legend with scientific notation for the number of entries
         dataHist->SetEntries(dataHist->GetEntries());
         mcHist->SetEntries(mcHist->GetEntries());
-        // leg->AddEntry(dataHist, (std::string("data (") + std::to_string((int)dataHist->GetEntries()) + " counts)").c_str(), "l");
-        // leg->AddEntry(mcHist, (std::string("mc (") + std::to_string((int)mcHist->GetEntries()) + " counts)").c_str(), "l");
-        leg->AddEntry(dataHist, "NH_{3}", "l");
+        leg->AddEntry(dataHist, (std::string("data (") + std::to_string((int)dataHist->GetEntries()) + " counts)").c_str(), "l");
+        leg->AddEntry(mcHist, (std::string("mc (") + std::to_string((int)mcHist->GetEntries()) + " counts)").c_str(), "l");
+        // leg->AddEntry(dataHist, "NH_{3}", "l");
         // leg->AddEntry(mcHist, "C", "l");
         
         // Set line colors for histograms
@@ -209,7 +210,7 @@ void createIntegratedKinematicPlots() {
         // dataHist->Draw("HIST");
         // mcHist->Draw("HISTSAME");
         dataHist->Draw("EP");
-        // mcHist->Draw("EPSAME");
+        mcHist->Draw("EPSAME");
         leg->Draw();
 
         // Save the canvas to a file
