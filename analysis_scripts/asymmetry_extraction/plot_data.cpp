@@ -89,9 +89,9 @@ void createIntegratedKinematicPlots() {
     gStyle->SetTextSize(0.05); // Increase the text size globally
     bool restart = true;
     for (Int_t i = 0; i < branches->GetEntries(); ++i) {
-        if (branchname !== "xF") continue;
         TBranch* branch = (TBranch*)branches->At(i);
         std::string branchName = branch->GetName();
+        if (branchname !== "xF") continue;
         if (branchName == "e_p" && restart) {
           // stupid hack to get it to do the runnum plot instead of it being blank 
           // due to reader restarts
