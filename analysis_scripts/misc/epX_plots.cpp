@@ -1789,7 +1789,7 @@ void plotXFDependence(
         graphAULsin2phi->GetYaxis()->SetTitle("F_{UL}^{sin(2#phi)}/F_{UU}");
         graphAULsin2phi->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
         graphAULsin2phi->SetMinimum(-0.1);
-        graphAULsin2phi->SetMaximum(0.4);
+        graphAULsin2phi->SetMaximum(0.04);
 
         // Increase the font size of axis labels
         graphAULsin2phi->GetXaxis()->SetTitleSize(0.05);
@@ -1805,7 +1805,7 @@ void plotXFDependence(
         TLatex latex2;
         latex2.SetNDC();
         latex2.SetTextSize(0.03);
-        latex2.DrawLatex(0.69, 0.2, "8% Scale Systematic");
+        latex2.DrawLatex(0.69, 0.2, "10% Scale Systematic");
 
         // Save the second canvas as a PNG
         c2->SaveAs("output/epX_plots/CPHI_xF_dependence_AULsin2phi.png");
