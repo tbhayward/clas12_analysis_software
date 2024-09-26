@@ -198,7 +198,7 @@ void createIntegratedKinematicPlots() {
         // leg->AddEntry(dataHist, (std::string("data (") + std::to_string((int)dataHist->GetEntries()) + " counts)").c_str(), "l");
         // leg->AddEntry(mcHist, (std::string("mc (") + std::to_string((int)mcHist->GetEntries()) + " counts)").c_str(), "l");
         leg->AddEntry(dataHist, "NH_{3}", "l");
-        leg->AddEntry(mcHist, "C", "l");
+        // leg->AddEntry(mcHist, "C", "l");
         
         // Set line colors for histograms
         dataHist->SetLineColor(kBlack);
@@ -208,7 +208,7 @@ void createIntegratedKinematicPlots() {
         // dataHist->Draw("HIST");
         // mcHist->Draw("HISTSAME");
         dataHist->Draw("EP");
-        mcHist->Draw("EPSAME");
+        // mcHist->Draw("EPSAME");
         leg->Draw();
 
         // Save the canvas to a file
