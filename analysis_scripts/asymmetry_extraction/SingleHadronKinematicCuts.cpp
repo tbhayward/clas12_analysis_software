@@ -33,7 +33,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
 
     // Define cuts based on property
     if (property == "epiplus") {
-        goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.5 && *y < 0.80;
+        goodEvent = *Q2 > 1 && *W > 2 && *Mx > 1.8 && *y < 0.80;
         return goodEvent;
     }
     if (property == "epipluspiminus" && Mx1) {
@@ -45,7 +45,11 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         return goodEvent;
     }
     if (property == "eppiplus" && Mx2) {
-        goodEvent = *Q2 > 1 && *W > 2 && **Mx2 > 1.5 && *y < 0.80;
+        goodEvent = *Q2 > 1 && *W > 2 && **Mx1 > 1.80 && *y < 0.80;
+        return goodEvent;
+    }
+    if (property == "eppiplusNoRho" && Mx2) {
+        goodEvent = *Q2 > 1 && *W > 2 && **Mx1 > 1.80 && **Mx2 > 1.35 && *y < 0.80;
         return goodEvent;
     }
     if (property == "eppiplus_rho0_free" && Mx1 && Mx2) {
