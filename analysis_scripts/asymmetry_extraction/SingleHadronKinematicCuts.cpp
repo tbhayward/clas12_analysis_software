@@ -45,7 +45,6 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         return goodEvent;
     }
     if (property == "eppiplus" && Mx2_2) {
-        std::cout << "we're here" << std::endl;
         goodEvent = *Q2 > 1 && *W > 2 && **Mx2_1 > 3.24 && *y < 0.80;
         return goodEvent;
     }
