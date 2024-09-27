@@ -46,16 +46,16 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         goodEvent = *Q2 > 1 && *W > 2 && **Mx2_1 > 2.25 && *y < 0.80;
         return goodEvent;
     }
-    if (property == "epipluspiminus_rho0_free" && Mx2_1) {
+    if (property == "epipluspiminus_rho0_free" && Mx2_1 && Mx2_2) {
         goodEvent = *Q2 > 1 && *W > 2 && **Mx2_1 > 2.25 && **Mx2_2 > 2.25 && *y < 0.80;
         return goodEvent;
     }
-    if (property == "eppiplus" && Mx2_2) {
-        goodEvent = *Q2 > 1 && *W > 2 && **Mx2_1 > 3.24 && *y < 0.80 && *z1 > 0.4 && *z1 < 0.7 && *pT1 < 0.3;
+    if (property == "eppiplus" && Mx2_1 && z1 && pT1) {
+        goodEvent = *Q2 > 1 && *W > 2 && **Mx2_1 > 3.24 && *y < 0.80 && **z1 > 0.4 && **z1 < 0.7 && **pT1 < 0.3;
         return goodEvent;
     }
-    if (property == "eppiplusNoRho" && Mx2_2) {
-        goodEvent = *Q2 > 1 && *W > 2 && **Mx2_1 > 3.24 && **Mx2_2 > 1.82 && *y < 0.80  && *z1 > 0.4 && *z1 < 0.7 && *pT1 < 0.3;
+    if (property == "eppiplusNoRho" && Mx2_1 && Mx2_2 && z1 && pT1) {
+        goodEvent = *Q2 > 1 && *W > 2 && **Mx2_1 > 3.24 && **Mx2_2 > 1.82 && *y < 0.80  && **z1 > 0.4 && **z1 < 0.7 && **pT1 < 0.3;
         return goodEvent;
     }
     if (property == "eppiplus_rho0_free" && Mx2_1 && Mx2_2) {
