@@ -76,18 +76,23 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
 
     if (property == "rgaMx2ta") {
       goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && -(*t-*tmin) > 0 && -(*t-*tmin) < 0.5;
+      return goodEvent;
     }
     if (property == "rgaMx2tb") {
       goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && -(*t-*tmin) > 0.5 && -(*t-*tmin) < 1;
+      return goodEvent;
     }
     if (property == "rgaMx2tc") {
       goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && -(*t-*tmin) > 1 && -(*t-*tmin) < 2;
+      return goodEvent;
     }
     if (property == "rgaMx2td") {
       goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && -(*t-*tmin) > 2 && -(*t-*tmin) < 3;
+      return goodEvent;
     }
     if (property == "rgaMx2te") {
       goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && -(*t-*tmin) > 3 && -(*t-*tmin) < 6;
+      return goodEvent;
     }
 
     if (property == "Q2multi1rgaepX") {
