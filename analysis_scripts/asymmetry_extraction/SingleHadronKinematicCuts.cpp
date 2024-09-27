@@ -73,6 +73,43 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
       goodEvent = goodEvent && *x > 0.18 && *x < 0.21 && *pT > 0.35 && *pT < 0.45 && *z > 0.16 && *z < 0.22;
       return goodEvent;
     }
+
+    if (property == "rgaMx2ta") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && -(*t-*tmin) > 0 && -(*t-*tmin) < 0.5;
+    }
+    if (property == "rgaMx2tb") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && -(*t-*tmin) > 0.5 && -(*t-*tmin) < 1;
+    }
+    if (property == "rgaMx2tc") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && -(*t-*tmin) > 1 && -(*t-*tmin) < 2;
+    }
+    if (property == "rgaMx2td") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && -(*t-*tmin) > 2 && -(*t-*tmin) < 3;
+    }
+    if (property == "rgaMx2te") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16 && -(*t-*tmin) > 3 && -(*t-*tmin) < 6;
+    }
+
+    if (property == "Q2multi1rgaepX") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.80;
+      goodEvent = goodEvent && *x > 0.12 && *x < 0.15 && *pT > 0.35 && *pT < 0.45 && *z > 0.16 && *z < 0.22;
+      return goodEvent;
+    }
+    if (property == "Q2multi1rgaepiX") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 2.25;
+      goodEvent = goodEvent && *x > 0.12 && *x < 0.15 && *pT > 0.35 && *pT < 0.45 && *z > 0.16 && *z < 0.22;
+      return goodEvent;
+    }
+    if (property == "Q2multi1rgcepX") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.80;
+      goodEvent = goodEvent && *x > 0.12 && *x < 0.15 && *pT > 0.35 && *pT < 0.45 && *z > 0.16 && *z < 0.22;
+      return goodEvent;
+    }
+    if (property == "Q2multi1rgcepiX") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 2.25;
+      goodEvent = goodEvent && *x > 0.12 && *x < 0.15 && *pT > 0.35 && *pT < 0.45 && *z > 0.16 && *z < 0.22;
+      return goodEvent;
+    }
     
 
     if (*Q2 > 1 && *W > 2 && *Mx2 > 1.80 && *y < 0.80 && !checked) {
