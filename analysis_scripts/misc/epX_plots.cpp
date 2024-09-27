@@ -2608,6 +2608,119 @@ void plotQ2DependenceALUsinphi(
             graphStat->SetLineColor(colors[p]);
             graphStat->SetLineWidth(1);
 
+            // Remove the default title
+            graphStat->SetTitle("");
+
+            if (!firstGraphDrawn) {
+                // Set axis labels and ranges
+                graphStat->GetXaxis()->SetTitle(xLabel.c_str());
+                graphStat->GetYaxis()->SetTitle(yLabel.c_str());
+                graphStat->GetXaxis()->SetLimits(xLimits.first, xLimits.second);
+                graphStat->GetHistogram()->SetMinimum(yLimits.first);
+                graphStat->GetHistogram()->SetMaximum(yLimits.second);
+                graphStat->Draw("AP");
+                firstGraphDrawn = true;
+            } else {
+                graphStat->Draw("P SAME");
+            }
+
+            // Add entry to the legend
+            TLegendEntry* legendEntry = legend->AddEntry(graphStat, legendLabels[p].c_str(), "p");
+            legendEntry->SetTextColor(colors[p]);
+        } else {
+            std::cerr << "Key " << key << " not found in asymmetryData.\n";
+        }
+    }
+
+    // Add the dashed gray line at y = 0
+    TLine *line = new TLine(xLimits.first, 0, xLimits.second, 0);
+    line->SetLineColor(kGray+2);
+    line->SetLineStyle(7); // Dashed line
+    line->Draw("same");
+
+    // Draw the legend
+    legend->Draw();
+
+    // Save the plot
+    gSystem->Exec("mkdir -p output/epX_plots");
+    c->SaveAs(outputFileName.c_str());
+    delete c;
+}
+
+void plotMx2DependenceALUsinphi(
+    const std::map<std::string, std::vector<std::vector<double>>> &asymmetryData,
+    const std::string &outputFileName) {
+
+    // The prefixes
+    std::vector<std::string> prefixes = {
+        "rgaMx2ta", "rgaMx2tb", "rgaMx2tc", "rgaMx2td", "rgaMx2te"
+    };
+
+    // Corresponding legend labels
+    std::vector<std::string> legendLabels = {
+        "0.0 < -(t - t_{min}) < 0.5",
+        "0.5 < -(t - t_{min}) < 1.0",
+        "1.0 < -(t - t_{min}) < 2.0",
+        "2.0 < -(t - t_{min}) < 3.0",
+        "3.0 < -(t - t_{min}) < 6.0"
+    };
+
+    // Suffix (moment)
+    std::string suffix = "ALUsinphi";
+
+    // Y-axis label
+    std::string yLabel = "F_{LU}^{sin#phi}/F_{UU}";
+
+    // X-axis label and limits
+    std::string xLabel = "M_{x}^{2} (GeV^{2})";
+    std::pair<double, double> xLimits = std::make_pair(0.16, 3.0);
+
+    // Y-axis limits
+    std::pair<double, double> yLimits = std::make_pair(-0.06, 0.03);
+
+    // Colors for each prefix
+    std::vector<int> colors = {kRed, kBlue, kGreen+2, kMagenta, kCyan+2};
+
+    // Marker styles
+    std::vector<int> markers = {20, 21, 22, 23, 29}; // Different markers for clarity
+
+    // Create a canvas
+    TCanvas *c = new TCanvas("c", "M_{x}^{2} Dependence of ALUsinphi", 800, 600);
+    gPad->SetLeftMargin(0.18);
+    gPad->SetBottomMargin(0.15);
+
+    // Create a legend
+    TLegend *legend = new TLegend(0.55, 0.65, 0.9, 0.9);
+    legend->SetTextSize(0.035);
+    legend->SetBorderSize(1);
+    legend->SetFillStyle(1001); // Solid white background
+
+    bool firstGraphDrawn = false;
+
+    for (size_t p = 0; p < prefixes.size(); ++p) {
+        std::string key = prefixes[p] + "chi2Fits" + suffix;
+        auto it = asymmetryData.find(key);
+        if (it != asymmetryData.end()) {
+            const auto &data = it->second;
+
+            std::vector<double> x, y, yStatErr;
+            for (const auto &entry : data) {
+                x.push_back(entry[0]);
+                y.push_back(entry[1]);
+                yStatErr.push_back(entry[2]);
+            }
+
+            // Create TGraphErrors
+            TGraphErrors *graphStat = new TGraphErrors(x.size(), x.data(), y.data(), nullptr, yStatErr.data());
+            graphStat->SetMarkerStyle(markers[p]);
+            graphStat->SetMarkerSize(1.0);
+            graphStat->SetMarkerColor(colors[p]);
+            graphStat->SetLineColor(colors[p]);
+            graphStat->SetLineWidth(1);
+
+            // Remove the default title
+            graphStat->SetTitle("");
+
             if (!firstGraphDrawn) {
                 // Set axis labels and ranges
                 graphStat->GetXaxis()->SetTitle(xLabel.c_str());
@@ -2731,6 +2844,7 @@ int main(int argc, char *argv[]) {
 
 
     plotQ2DependenceALUsinphi(asymmetryData, "output/epX_plots/Q2_dependence_test.png");
+    plotMx2DependenceALUsinphi(asymmetryData, "output/epX_plots/Mx2_dependence_ALUsinphi.png");
 
     return 0;
 }
