@@ -2838,13 +2838,13 @@ int main(int argc, char *argv[]) {
 
     // plotALUandALLDependence(asymmetryData, {"Q2multi1", "Q2multi2", "Q2multi3"}, "Q^{2} (GeV^{2})", {1.0, 3.5}, "output/epX_plots/CPHI_multidimensional.png");
 
-    // plotMxBinsALUALL(asymmetryData, {0.0, 6}, "output/epX_plots/CPHI_Mx2Bins_ALU_ALL.png");
+    plotMxBinsALUALL(asymmetryData, {0.0, 6}, "output/epX_plots/CPHI_Mx2Bins_ALU_ALL.png");
 
-    // plotMxBinsALUALL2(asymmetryData, {0.0, 6}, "output/epX_plots/CPHI_Mx2Bins_ALU_ALL2.png");
+    plotMxBinsALUALL2(asymmetryData, {0.0, 6}, "output/epX_plots/CPHI_Mx2Bins_ALU_ALL2.png");
 
 
-    plotQ2DependenceALUsinphi(asymmetryData, "output/epX_plots/Q2_dependence_test.png");
-    plotMx2DependenceALUsinphi(asymmetryData, "output/epX_plots/Mx2_dependence_ALUsinphi.png");
+    // plotQ2DependenceALUsinphi(asymmetryData, "output/epX_plots/Q2_dependence_test.png");
+    // plotMx2DependenceALUsinphi(asymmetryData, "output/epX_plots/Mx2_dependence_ALUsinphi.png");
 
     return 0;
 }
