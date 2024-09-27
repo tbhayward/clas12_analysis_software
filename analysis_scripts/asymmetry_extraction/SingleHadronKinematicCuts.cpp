@@ -19,7 +19,7 @@ SingleHadronKinematicCuts::SingleHadronKinematicCuts(TTreeReader& reader, TTree*
     if (tree->GetBranch("Mx2_1")) {
         Mx2_1.emplace(reader, "Mx2_1");
     }
-    if (tree->GetBranch("Mx2_")) {
+    if (tree->GetBranch("Mx2_2")) {
         Mx2_2.emplace(reader, "Mx2_");
     }
     if (tree->GetBranch("Mx2_23")) {

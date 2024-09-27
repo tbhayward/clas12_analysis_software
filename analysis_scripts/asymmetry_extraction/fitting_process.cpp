@@ -541,7 +541,7 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
 
   TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
   while (dataReader.Next()) {
-    std::cout << "IN THE WHILE LOOP" << std::endl;
+    
     // Apply kinematic cuts (this function will need to be adapted)
     bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
     // bool passedKinematicCuts = true;
