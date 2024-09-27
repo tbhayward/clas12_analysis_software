@@ -11,7 +11,7 @@ SingleHadronKinematicCuts::SingleHadronKinematicCuts(TTreeReader& reader, TTree*
     : BaseKinematicCuts(reader), // Call to the BaseKinematicCuts constructor
       runnum(reader, "runnum"),
       e_theta(reader, "e_theta"), e_phi(reader, "e_phi"), vz_e(reader, "vz_e"),
-      Q2(reader, "Q2"), W(reader, "W"),  x(reader, "x"),
+      Q2(reader, "Q2"), W(reader, "W"),  Mx2(reader, "Mx2"), x(reader, "x"),
       y(reader, "y"), z(reader, "z"), pT(reader, "pT"), xF(reader, "xF"),
       target_pol(reader, "target_pol")
 {
