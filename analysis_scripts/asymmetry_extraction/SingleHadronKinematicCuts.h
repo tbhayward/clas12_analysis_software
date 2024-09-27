@@ -26,7 +26,7 @@ private:
     TTreeReaderValue<double> vz_e;
     TTreeReaderValue<double> Q2;
     TTreeReaderValue<double> W;
-    TTreeReaderValue<double> Mx;
+    TTreeReaderValue<double> Mx2;
     TTreeReaderValue<double> x;
     TTreeReaderValue<double> y;
     TTreeReaderValue<double> z;
@@ -35,7 +35,7 @@ private:
     TTreeReaderValue<double> target_pol;
 
     // Optional variables (non-null only if the corresponding branches exist)
-    std::optional<TTreeReaderValue<double>> Mx1;
-    std::optional<TTreeReaderValue<double>> Mx2;
-    std::optional<TTreeReaderValue<double>> Mx23;
+    std::optional<TTreeReaderValue<double>> Mx2_1;
+    std::optional<TTreeReaderValue<double>> Mx2_2;
+    std::optional<TTreeReaderValue<double>> Mx2_23;
 };
