@@ -38,4 +38,6 @@ private:
     std::optional<TTreeReaderValue<double>> Mx2_1;
     std::optional<TTreeReaderValue<double>> Mx2_2;
     std::optional<TTreeReaderValue<double>> Mx2_23;
+    std::optional<TTreeReaderValue<double>> z1;
+    std::optional<TTreeReaderValue<double>> pT1;
 };
