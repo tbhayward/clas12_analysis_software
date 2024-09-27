@@ -17,13 +17,13 @@ SingleHadronKinematicCuts::SingleHadronKinematicCuts(TTreeReader& reader, TTree*
 {
     // Initialize Mx1, Mx2, and Mx23 only if the corresponding branches exist
     if (tree->GetBranch("Mx2_1")) {
-        Mx1.emplace(reader, "Mx2_1");
+        Mx2_1.emplace(reader, "Mx2_1");
     }
     if (tree->GetBranch("Mx2_")) {
-        Mx2.emplace(reader, "Mx2_");
+        Mx2_2.emplace(reader, "Mx2_");
     }
     if (tree->GetBranch("Mx2_23")) {
-        Mx23.emplace(reader, "Mx2_23");
+        Mx2_23.emplace(reader, "Mx2_23");
     }
 }
 
