@@ -2691,7 +2691,7 @@ void plotMx2DependenceALUsinphi(
 
     // Create a legend
     TLegend *legend = new TLegend(0.55, 0.65, 0.9, 0.9);
-    legend->SetTextSize(0.035);
+    legend->SetTextSize(0.03);
     legend->SetBorderSize(1);
     legend->SetFillStyle(1001); // Solid white background
 
