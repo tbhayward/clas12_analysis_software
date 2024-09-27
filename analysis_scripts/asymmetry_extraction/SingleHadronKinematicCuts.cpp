@@ -49,7 +49,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
         return goodEvent;
     }
     if (property == "eppiplusNoRho" && Mx2_2) {
-        goodEvent = *Q2 > 1 && *W > 2 && **Mx2_1 > 3.24 && **Mx2_2 > 1.35 && *y < 0.80;
+        goodEvent = *Q2 > 1 && *W > 2 && **Mx2_1 > 3.24 && **Mx2_2 > 1.82 && *y < 0.80;
         return goodEvent;
     }
     if (property == "eppiplus_rho0_free" && Mx2_1 && Mx2_2) {
