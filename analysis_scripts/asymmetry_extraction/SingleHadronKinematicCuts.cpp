@@ -38,8 +38,12 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     string property = binNames[currentFits];  // Get the property dynamically
 
     // Define cuts based on property
+    // if (property == "epiplus") {
+    //     goodEvent = *Q2 > 1 && *W > 2 && *Mx2 > 2.25 && *y < 0.80 && *pT < 0.4;
+    //     return goodEvent;
+    // }
     if (property == "epiplus") {
-        goodEvent = *Q2 > 1 && *W > 2 && *Mx2 > 2.25 && *y < 0.80 && *pT < 0.4;
+        goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *pT < 0.4;
         return goodEvent;
     }
     if (property == "epipluspiminus" && Mx2_1) {
