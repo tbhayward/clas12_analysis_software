@@ -27,14 +27,14 @@ void plot_Q2_vs_epsilon(const char* inputFile) {
     tree->SetBranchAddress("x", &x);
 
     // Create a 2D histogram
-    TH2D *hist = new TH2D("Q2_vs_epsilon", "Q^{2} vs #epsilon;Q^{2} (GeV^{2});#epsilon = DepB / DepA", 
+    TH2D *hist = new TH2D("Q2_vs_epsilon, x_B ~ 0.16", "Q^{2} vs #epsilon;Q^{2} (GeV^{2});#epsilon = DepB / DepA", 
                           100, 0, 10, 100, 0, 2);
 
     // Loop over the events and fill the histogram
     Long64_t nEntries = tree->GetEntries();
-    for (Long64_t i = 0; i < 50000; ++i) {
+    for (Long64_t i = 0; i < 100000; ++i) {
         tree->GetEntry(i);
-        if (x >= 0.40 && x <= 0.44 && DepA != 0) {
+        if (x >= 0.14 && x <= 0.18 && DepA != 0) {
             double epsilon = DepB / DepA;
             hist->Fill(Q2, epsilon);
         }
