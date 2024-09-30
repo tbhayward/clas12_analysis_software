@@ -26,11 +26,11 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     // if (*fiducial_status != 2) return false; // fiducial cuts
 
     if (property == "epsilonStudyLower") {
-      goodEvent == *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 2.25 &&;
+      goodEvent == *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 2.25;
       goodEvent == goodEvent && *x > 0.14 && *x < 0.18 && *z > 0.25 && *z < 0.35 && *pT > 0.2 && *pT < 0.3;
     }
     if (property == "epsilonStudyUpper") {
-      goodEvent == *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 2.25 &&;
+      goodEvent == *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 2.25;
       goodEvent == goodEvent && *x > 0.30 && *x < 0.34 && *z > 0.25 && *z < 0.35 && *pT > 0.2 && *pT < 0.3;
     }
 
