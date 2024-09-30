@@ -52,3 +52,14 @@ void plot_Q2_vs_epsilon(const char* inputFile) {
     file->Close();
     delete file;
 }
+
+// Add a main function for standalone compilation
+int main(int argc, char** argv) {
+    if (argc != 2) {
+        printf("Usage: %s input_file.root\n", argv[0]);
+        return 1;
+    }
+    const char* inputFile = argv[1];
+    plot_Q2_vs_epsilon(inputFile);
+    return 0;
+}
