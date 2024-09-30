@@ -22,8 +22,17 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     bool checked = false;
     string property = binNames[currentFits];
 
-    if (-10 > *vz_p || *vz_p > 1.5 || -9 > *vz_e || *vz_e > 2) return false;
-    if (*fiducial_status != 2) return false; // fiducial cuts
+    // if (-10 > *vz_p || *vz_p > 1.5 || -9 > *vz_e || *vz_e > 2) return false;
+    // if (*fiducial_status != 2) return false; // fiducial cuts
+
+    if (property == "epsilonStudyLower") {
+      goodEvent == *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 2.25 &&;
+      goodEvent == goodEvent && *x > 0.14 && *x < 0.18 && *z > 0.25 && *z < 0.35 && *pT > 0.2 && *pT < 0.3;
+    }
+    if (property == "epsilonStudyUpper") {
+      goodEvent == *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 2.25 &&;
+      goodEvent == goodEvent && *x > 0.30 && *x < 0.34 && *z > 0.25 && *z < 0.35 && *pT > 0.2 && *pT < 0.3;
+    }
 
     if (property == "integrated") {
       goodEvent = *Q2 > 1 && *W > 2 && *Mx2 > 0.16 && *y < 0.80;
