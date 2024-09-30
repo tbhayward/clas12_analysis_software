@@ -793,6 +793,8 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
   TTreeReaderValue<double> Q2(dataReader, "Q2");
   TTreeReaderValue<double> z(dataReader, "z");
   TTreeReaderValue<double> pT(dataReader, "pT");
+  TTreeReaderValue<double> DepA(dataReader, "DepA");
+  TTreeReaderValue<double> DepB(dataReader, "DepB");
   TTreeReaderValue<double> phi(dataReader, "phi");
   // TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
   // TTreeReaderValue<int> currentVariable(dataReader, propertyNames[currentFits].c_str());
