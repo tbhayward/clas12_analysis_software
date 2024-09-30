@@ -794,9 +794,15 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
   TTreeReaderValue<double> z(dataReader, "z");
   TTreeReaderValue<double> pT(dataReader, "pT");
   TTreeReaderValue<double> phi(dataReader, "phi");
-  TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
+  // TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
   // TTreeReaderValue<int> currentVariable(dataReader, propertyNames[currentFits].c_str());
+
+  double currentVarValue;  // Temporary value for DepB / DepA
+  double* currentVariable = nullptr;  // Pointer to hold the ratio value
+
   while (dataReader.Next()) {
+    currentVarValue = *DepB / *DepA;
+    currentVariable = &currentVarValue;  // Assign the address of the result to currentVariable
     
     // Apply kinematic cuts (this function will need to be adapted)
     bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
