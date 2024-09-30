@@ -32,7 +32,7 @@ void plot_Q2_vs_epsilon(const char* inputFile) {
 
     // Loop over the events and fill the histogram
     Long64_t nEntries = tree->GetEntries();
-    for (Long64_t i = 0; i < 100000; ++i) {
+    for (Long64_t i = 0; i < 1000000; ++i) {
         tree->GetEntry(i);
         if (x >= 0.14 && x <= 0.18 && DepA != 0) {
             double epsilon = DepB / DepA;
@@ -41,7 +41,7 @@ void plot_Q2_vs_epsilon(const char* inputFile) {
     }
 
     // Draw and save the histogram
-    TCanvas *c = new TCanvas("c", "Q^{2} vs #epsilon", 800, 600);
+    TCanvas *c = new TCanvas("c", "Q2_vs_epsilon, x_B ~ 0.16", 800, 600);
     gStyle->SetOptStat(0);
     hist->Draw("COLZ");
     c->SaveAs("output/Q2vsepsilon.png");
