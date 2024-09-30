@@ -805,7 +805,7 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
   while (dataReader.Next()) {
     currentVarValue = *DepB / *DepA;
     currentVariable = &currentVarValue;  // Assign the address of the result to currentVariable
-    
+    std::cout << *currentVariable << std::endl;
     // Apply kinematic cuts (this function will need to be adapted)
     bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
     // bool passedKinematicCuts = true;
