@@ -27,8 +27,8 @@ void plot_Q2_vs_epsilon(const char* inputFile) {
     tree->SetBranchAddress("x", &x);
 
     // Create a 2D histogram
-    TH2D *hist = new TH2D("Q2_vs_epsilon, x_B ~ 0.16", "Q^{2} vs #epsilon;Q^{2} (GeV^{2});#epsilon = DepB / DepA", 
-                          100, 0, 6, 100, 0, 1);
+    TH2D *hist = new TH2D("Q2_vs_epsilon", "", 100, 0, 6, 100, 0, 1);
+    hist->SetTitle("Q^{2} vs #epsilon for x_{B} ~ 0.16; Q^{2} (GeV^{2}); #epsilon = DepB / DepA");
 
     // Loop over the events and fill the histogram
     Long64_t nEntries = tree->GetEntries();
@@ -41,7 +41,7 @@ void plot_Q2_vs_epsilon(const char* inputFile) {
     }
 
     // Draw and save the histogram
-    TCanvas *c = new TCanvas("c", "Q2_vs_epsilon, x_B ~ 0.16", 800, 600);
+    TCanvas *c = new TCanvas("c", "Q^{2} vs #epsilon", 800, 600);
     gStyle->SetOptStat(0);
     hist->Draw("COLZ");
     c->SaveAs("output/Q2vsepsilon.png");
