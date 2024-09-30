@@ -970,15 +970,18 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
     TTreeReaderValue<double> DepV(dataReader, "DepV");
     TTreeReaderValue<double> DepW(dataReader, "DepW");
     // TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
-    double Depolarization_B = *DepB;
-    double Depolarization_A = *DepA;
-    double epsilon = Depolarization_B/Depolarization_A;
+    // Declare a pointer for currentVariable
+    double currentVarValue;  // Temporary value for DepB / DepA
+    double* currentVariable = nullptr;  // Pointer to hold the ratio value
+
 
     // Determine the variable range for the specified bin
     double varMin = allBins[currentFits][i];
     double varMax = allBins[currentFits][i + 1];
     int counter = 0;
     while (dataReader.Next()) {
+      currentVarValue = *DepB / *DepA;
+      currentVariable = &currentVarValue;  // Assign the address of the result to currentVariable
       // Apply kinematic cuts (this function will need to be adapted)
       bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
       // Check if the currentVariable is within the desired range
