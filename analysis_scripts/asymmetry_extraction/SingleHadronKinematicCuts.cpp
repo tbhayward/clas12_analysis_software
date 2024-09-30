@@ -27,7 +27,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
 
     if (property == "epsilonStudyLower") {
       // goodEvent == *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 2.25 && *x > 0.14 && *x < 0.18 && *z > 0.25 && *z < 0.35 && *pT > 0.2 && *pT < 0.3;
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *x > 0.14 && *x < 0.18;
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 2.25 && *x > 0.14 && *x < 0.18 && *z > 0.25 && *z < 0.35 && *pT > 0.2 && *pT < 0.3;
       return goodEvent;
     }
     if (property == "epsilonStudyUpper") {
