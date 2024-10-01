@@ -309,7 +309,7 @@ double asymmetry_error_calculation(double currentVariable, const std::pair<doubl
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
 
-      return (2 / meanPol) * std::sqrt(
+      return (2 / Pb) * std::sqrt(
         ((cmm*cpm*cpp*Nmp*std::pow(Ptm,2)*std::pow(Npp*Ptm+Npm*Ptp,2))+
         (cmp*cpm*cpp*Nmm*std::pow(Ptp,2)*std::pow(Npp*Ptm+Npm*Ptp,2))+
         (cmm*cmp*std::pow(Nmp*Ptm+Nmm*Ptp,2)*(cpm*Npp*std::pow(Ptm,2)+cpp*Npm*std::pow(Ptp,2))))/
