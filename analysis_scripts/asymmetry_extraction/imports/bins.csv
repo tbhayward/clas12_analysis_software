@@ -40,13 +40,6 @@ variable_names_here
 #epsilonPimLowxBHighPT,filler,0.35,0.45,0.55,0.65,0.75,0.80,1.00
 #epsilonPLowxBHighPT,filler,0.35,0.45,0.55,0.65,0.75,0.80,1.00
 #
-#epsilonPipLowxBLowPTHighz,filler,0.35,0.45,0.55,0.65,0.75,0.80,1.00
-#epsilonPimLowxBLowPTHighz,filler,0.35,0.45,0.55,0.65,0.75,0.80,1.00
-epsilonPLowxBLowPTHighz,filler,0.35,0.45,0.55,0.65,0.75,0.80,1.00
-#epsilonPipLowxBHighPTLowz,filler,0.35,0.45,0.55,0.65,0.75,0.80,1.00
-#epsilonPimLowxBHighPTLowz,filler,0.35,0.45,0.55,0.65,0.75,0.80,1.00
-epsilonPLowxBHighPTLowz,filler,0.35,0.45,0.55,0.65,0.75,0.80,1.00
-#
 #
 #
 #
