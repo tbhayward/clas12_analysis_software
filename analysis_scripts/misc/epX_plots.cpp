@@ -2843,8 +2843,8 @@ int main(int argc, char *argv[]) {
     // plotMxBinsALUALL2(asymmetryData, {0.0, 6}, "output/epX_plots/CPHI_Mx2Bins_ALU_ALL2.png");
 
 
-    plotQ2DependenceALUsinphi(asymmetryData, "output/epX_plots/Q2_dependence_test.png");
-    plotMx2DependenceALUsinphi(asymmetryData, "output/epX_plots/Mx2_dependence_ALUsinphi.png");
+    // plotQ2DependenceALUsinphi(asymmetryData, "output/epX_plots/Q2_dependence_test.png");
+    // plotMx2DependenceALUsinphi(asymmetryData, "output/epX_plots/Mx2_dependence_ALUsinphi.png");
 
     return 0;
 }
