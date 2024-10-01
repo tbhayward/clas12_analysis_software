@@ -23,15 +23,9 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     string property = binNames[currentFits];
 
     // if (-10 > *vz_p || *vz_p > 1.5 || -9 > *vz_e || *vz_e > 2) return false;
-    // if (*fiducial_status != 2) return false; // fiducial cuts
+    if (*fiducial_status != 2) return false; // fiducial cuts
 
-    if (property == "epsilonStudyLower") {
-      // goodEvent == *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 2.25 && *x > 0.14 && *x < 0.18 && *z > 0.25 && *z < 0.35 && *pT > 0.2 && *pT < 0.3;
-      // goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 2.25 && *x > 0.12 && *x < 0.22 && *z > 0.25 && *z < 0.35 && *pT > 0.65 && *pT < 0.75;
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 2.25 && *x > 0.12 && *x < 0.18 && *pT < 0.3;
-      return goodEvent;
-    }
-    if (property == "epsilonStudyUpper") {
+    if (property == "epsilonPipLowxBLowPT" || property == "epsilonPimLowxBLowPT" property == "epsilonPLowxBLowPT") {
       // goodEvent == *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 2.25 && *x > 0.30 && *x < 0.34 && *z > 0.25 && *z < 0.35 && *pT > 0.2 && *pT < 0.3; 
       // goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 2.25 && *x > 0.12 && *x < 0.22 && *z > 0.55 && *z < 0.65 && *pT > 0.15 && *pT < 0.25; 
       goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 2.25 && *x > 0.12 && *x < 0.18 && *pT < 0.3;
