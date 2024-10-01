@@ -301,6 +301,11 @@ double asymmetry_error_calculation(double currentVariable, const std::pair<doubl
   double sigmaPtp = 0.025;
   double sigmaPtm = 0.025;
 
+  double Npp = npp;
+  double Npm = npm;
+  double Nmp = nmp;
+  double Nmm = nmm;
+
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
 
