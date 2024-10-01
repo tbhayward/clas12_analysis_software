@@ -28,14 +28,14 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     if (property == "epsilonPipLowxBLowPT" || property == "epsilonPimLowxBLowPT" || property == "epsilonPLowxBLowPT") {
       // goodEvent == *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 2.25 && *x > 0.30 && *x < 0.34 && *z > 0.25 && *z < 0.35 && *pT > 0.2 && *pT < 0.3; 
       // goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 2.25 && *x > 0.12 && *x < 0.22 && *z > 0.55 && *z < 0.65 && *pT > 0.15 && *pT < 0.25; 
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 2.25 && *xF >0 && *x > 0.12 && *x < 0.18 && *pT < 0.25;
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 2.25 && *x > 0.12 && *x < 0.18 && *pT < 0.25;
       return goodEvent;
     }
 
     if (property == "epsilonPipLowxBHighPT" || property == "epsilonPimLowxBHighPT" || property == "epsilonPLowxBHighPT") {
       // goodEvent == *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 2.25 && *x > 0.30 && *x < 0.34 && *z > 0.25 && *z < 0.35 && *pT > 0.2 && *pT < 0.3; 
       // goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 2.25 && *x > 0.12 && *x < 0.22 && *z > 0.55 && *z < 0.65 && *pT > 0.15 && *pT < 0.25; 
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 2.25 && *xF >0 && *x > 0.12 && *x < 0.18 && *pT > 0.65;
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 2.25 && *x > 0.12 && *x < 0.18 && *pT > 0.65;
       return goodEvent;
     }
 
