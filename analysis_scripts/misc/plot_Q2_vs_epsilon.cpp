@@ -34,7 +34,7 @@ void plot_Q2_vs_epsilon(const char* inputFile) {
     Long64_t nEntries = tree->GetEntries();
     for (Long64_t i = 0; i < 1000000; ++i) {
         tree->GetEntry(i);
-        if (x >= 0.30 && x <= 0.34 && DepA != 0) {
+        if (x >= 0.25 && x <= 0.35 && DepA != 0) {
             double epsilon = DepB / DepA;
             hist->Fill(Q2, epsilon);
         }
