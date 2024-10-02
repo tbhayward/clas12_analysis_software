@@ -995,9 +995,9 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
         sumpT += *pT;
         sumxF += *xF;
         sumt += *t;
-        // sumtmin += *tmin;
-        double epsilonNum = *DepB; double epsilonDen = *DepA; 
-        sumtmin += epsilonNum/epsilonDen;
+        sumtmin += *tmin;
+        // double epsilonNum = *DepB; double epsilonDen = *DepA; 
+        // sumtmin += epsilonNum/epsilonDen;
 
         // sum the depolarization values
         sumDepA += *DepA;

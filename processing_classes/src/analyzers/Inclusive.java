@@ -45,7 +45,7 @@ public class Inclusive {
             return false;
         }
         if (variables.W() < 2) {
-//            return false;
+            return false;
         }
         if (variables.y() > 0.80) {
             return false;
