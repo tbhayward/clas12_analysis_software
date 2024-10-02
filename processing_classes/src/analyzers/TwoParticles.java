@@ -180,6 +180,7 @@ public class TwoParticles {
         // DIS variables
         LorentzVector lv_q = new LorentzVector(lv_beam);
         lv_q.sub(lv_e);
+        System.out.println(lv_q.pz());
         Q2 = kinematic_variables.Q2(lv_q);
         nu = kinematic_variables.nu(lv_beam, lv_e);
         x = kinematic_variables.x(Q2, nu);
@@ -200,7 +201,7 @@ public class TwoParticles {
         Vector3 gNBoost = gN.boostVector();
         gNBoost.negative();
 
-        // set up boost to Breit frame, this needs to be cross checked
+        // set up boost to Breit frame
         LorentzVector Breit = new LorentzVector(lv_q);
         LorentzVector Breit_target = new LorentzVector();
         Breit_target.setPxPyPzM(0, 0, 0, 2 * x * kinematic_variables.particle_mass(2212));
@@ -277,7 +278,7 @@ public class TwoParticles {
                 / kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
         LightConeKinematics lck = new LightConeKinematics();
         xi = lck.xi_h(lv_p_gN, lv_q_gN, lv_target_gN);
-        System.out.println(xi+" "+xi2);
+//        System.out.println(xi+" "+xi2);
 
         p_gN_pz = lv_p_gN.vect().dot(lv_q_gN.vect()) / lv_q_gN.vect().mag();
         p_Breit_pz = lv_p_Breit.vect().dot(lv_q_Breit.vect()) / lv_q_Breit.vect().mag();

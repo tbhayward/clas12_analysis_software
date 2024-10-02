@@ -193,7 +193,6 @@ public static void main(String[] args) {
 		                pT = variables.pT(); // transverse momentum of hadron
 		                eta = variables.eta(); // rapidity
 		                xi = variables.xi(); // fractional longitudinal momentum of hadron
-		                println(xi);
 
 		                // angles
 		                phi = variables.phi(); // trento phi of the hadron
