@@ -305,6 +305,16 @@ public class TwoParticles {
         System.out.println("  Pz          : " + lv_target_gN.pz());
         System.out.println("  |P| (3D mag): " + lv_target_gN.vect().mag());
         System.out.println();
+        
+        // Print light-cone components of lv_target_gN
+        System.out.println("Light-cone components of lv_p_gN:");
+        double P_plus = (lv_target_gN.e() + lv_target_gN.pz()) / Math.sqrt(2);  // P_h^+
+        double P_minus = (lv_target_gN.e() - lv_target_gN.pz()) / Math.sqrt(2); // P_h^-
+        double P_perp = Math.sqrt(Math.pow(lv_target_gN.px(), 2) + Math.pow(lv_target_gN.py(), 2)); // P_h^perp
+        System.out.println("  P^+   : " + P_plus);
+        System.out.println("  P^-   : " + P_minus);
+        System.out.println("  P^⊥   : " + P_perp);
+        System.out.println();
 
 // Print Lorentz vector components of lv_q_gN (Photon in gamma*-nucleon frame)
         System.out.println("Lorentz Vector lv_q_gN (Photon in gamma*-nucleon frame):");
@@ -313,6 +323,9 @@ public class TwoParticles {
         System.out.println("  Py          : " + lv_q_gN.py());
         System.out.println("  Pz          : " + lv_q_gN.pz());
         System.out.println("  |P| (3D mag): " + lv_q_gN.vect().mag());
+        System.out.println();
+        
+        System.out.println("Q2 = "+Q2+", xB = "+x);
         System.out.println();
 
 // Print the results for xi and xi2
