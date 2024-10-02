@@ -273,14 +273,58 @@ public class TwoParticles {
         xF = 2 * (lv_p_gN.vect().dot(lv_q_gN.vect())) / (lv_q_gN.vect().mag() * W);
 
         zeta = lv_p_gN.e() / lv_target_gN.e();
-//        double xi2 = kinematic_variables.Lorentz_vector_inner_product(lv_p_gN, lv_q_gN)
-//                / kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
+        double xi2 = kinematic_variables.Lorentz_vector_inner_product(lv_p_gN, lv_q_gN)
+                / kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
         LightConeKinematics lck = new LightConeKinematics();
         xi = lck.xi_h(lv_p_gN, lv_q_gN, lv_target_gN);
-        System.out.println( (lv_p_gN.e()+lv_p_gN.pz())/1.412 );
-        System.out.println( (lv_p_gN.e()-lv_p_gN.pz())/1.412 );
-        System.out.println( lv_p_gN.px() + " " + lv_p_gN.py() );
+
+        // Print Lorentz vector components of lv_p_gN (hadron in gamma*-nucleon frame)
+        System.out.println("Lorentz Vector lv_p_gN (Hadron in gamma*-nucleon frame):");
+        System.out.println("  Energy (E)  : " + lv_p_gN.e());
+        System.out.println("  Px          : " + lv_p_gN.px());
+        System.out.println("  Py          : " + lv_p_gN.py());
+        System.out.println("  Pz          : " + lv_p_gN.pz());
+        System.out.println("  |P| (3D mag): " + lv_p_gN.vect().mag());
         System.out.println();
+
+// Print light-cone components of lv_p_gN
+        System.out.println("Light-cone components of lv_p_gN:");
+        double Ph_plus = (lv_p_gN.e() + lv_p_gN.pz()) / Math.sqrt(2);  // P_h^+
+        double Ph_minus = (lv_p_gN.e() - lv_p_gN.pz()) / Math.sqrt(2); // P_h^-
+        double Ph_perp = Math.sqrt(Math.pow(lv_p_gN.px(), 2) + Math.pow(lv_p_gN.py(), 2)); // P_h^perp
+        System.out.println("  P_h^+   : " + Ph_plus);
+        System.out.println("  P_h^-   : " + Ph_minus);
+        System.out.println("  P_h^⊥   : " + Ph_perp);
+        System.out.println();
+
+// Print Lorentz vector components of lv_target_gN (Target in gamma*-nucleon frame)
+        System.out.println("Lorentz Vector lv_target_gN (Target in gamma*-nucleon frame):");
+        System.out.println("  Energy (E)  : " + lv_target_gN.e());
+        System.out.println("  Px          : " + lv_target_gN.px());
+        System.out.println("  Py          : " + lv_target_gN.py());
+        System.out.println("  Pz          : " + lv_target_gN.pz());
+        System.out.println("  |P| (3D mag): " + lv_target_gN.vect().mag());
+        System.out.println();
+
+// Print Lorentz vector components of lv_q_gN (Photon in gamma*-nucleon frame)
+        System.out.println("Lorentz Vector lv_q_gN (Photon in gamma*-nucleon frame):");
+        System.out.println("  Energy (E)  : " + lv_q_gN.e());
+        System.out.println("  Px          : " + lv_q_gN.px());
+        System.out.println("  Py          : " + lv_q_gN.py());
+        System.out.println("  Pz          : " + lv_q_gN.pz());
+        System.out.println("  |P| (3D mag): " + lv_q_gN.vect().mag());
+        System.out.println();
+
+// Print the results for xi and xi2
+        System.out.println("Results for xi (approximation) and xi2 (Lorentz invariant):");
+        System.out.println("  xi (P_h^+/P^+)         : " + xi);
+        System.out.println("  xi2 (Lorentz invariant): " + xi2);
+        System.out.println();
+
+// Extra checks: Compare the two methods
+        double ratio = Math.abs((xi2 - xi) / xi);
+        System.out.println("Relative difference between xi2 and xi: " + ratio);
+        System.out.println("============================================");
 
         p_gN_pz = lv_p_gN.vect().dot(lv_q_gN.vect()) / lv_q_gN.vect().mag();
         p_Breit_pz = lv_p_Breit.vect().dot(lv_q_Breit.vect()) / lv_q_Breit.vect().mag();
