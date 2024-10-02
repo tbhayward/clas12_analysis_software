@@ -83,7 +83,7 @@ public static void main(String[] args) {
 	double vz_e, vz_p1, vz_p2;
 	double open_angle_ep, open_angle_ep1, open_angle_ep2, open_angle_p1p2;
 	double Q2, W, y, Mx2, Mx2_1, Mx2_2; 
-	double x, t, t1, t2, tmin, z, xF, pT, eta, eta_gN, zeta;
+	double x, t, t1, t2, tmin, z, xF, pT, eta, eta_gN, xi;
 	double z1, z2, xF1, xF2, Mh, pT1, pT2, pTpT, eta1, eta2, Delta_eta, eta1_gN, eta2_gN;
 	double phi1, phi2, Delta_phi, phih, phiR, theta;
 	double Depolarization_A, Depolarization_B, Depolarization_C;
@@ -204,15 +204,15 @@ public static void main(String[] args) {
 			                pT = variables.pT(); // transverse momentum of hadron
 			                eta = variables.eta(); // rapidity
 			                eta_gN = variables.eta_gN();
-			                zeta = variables.zeta(); // longitudinal momentum of hadron (fracture functions)
+			                xi = variables.xi(); // longitudinal momentum of hadron (fracture functions)
 
 			                // SIDIS dihadron variables
 							z1 = variables.z1();
 							z2 = variables.z2();
 							xF1 = variables.xF1();
 							xF2 = variables.xF2();
-							zeta1 = variables.zeta1();
-							zeta2 = variables.zeta2(); 
+							xi1 = variables.xi1();
+							xi2 = variables.xi2(); 
 							Mh = variables.Mh();
 							pT1 = variables.pT1();
 							pT2 = variables.pT2();
@@ -287,9 +287,9 @@ public static void main(String[] args) {
 			                	.append(pT1).append(" ")
 			                	.append(pT2).append(" ")
 			                	.append(pTpT).append(" ")
-			                	.append(zeta).append(" ")
-			                	.append(zeta1).append(" ")
-			                	.append(zeta2).append(" ")
+			                	.append(xi).append(" ")
+			                	.append(xi1).append(" ")
+			                	.append(xi2).append(" ")
 			                	.append(eta).append(" ")
 			                	.append(eta1).append(" ")
 			                	.append(eta2).append(" ")
@@ -337,7 +337,7 @@ public static void main(String[] args) {
 	    "22: open_angle_ep, 23: open_angle_ep1, 24: open_angle_ep2, 25: open_angle_p1p2, " +
 	    "26: Q2, 27: W, 28: Mx2, 29: Mx2_1, 30: Mx2_2, 31: x, 32: t, 33: t1, 34: t2, 35: tmin, 36: y, 37: z, " +
 	    "38: z1, 39: z2, 40: Mh, 41: xF, 42: xF1, 43: xF2, 44: pT, 45: pT1, 46: pT2, 47: pTpT, " +
-	    "48: zeta, 49: zeta1, 50: zeta2, 51: eta, 52: eta1, 53: eta2, 54: Delta_eta, 55: eta1_gN, 56: eta2_gN, " +
+	    "48: xi, 49: xi1, 50: xi2, 51: eta, 52: eta1, 53: eta2, 54: Delta_eta, 55: eta1_gN, 56: eta2_gN, " +
 	    "57: phi1, 58: phi2, 59: Delta_phi, 60: phih, 61: phiR, 62: theta, " +
 	    "63: DepA, 64: DepB, 65: DepC, 66: DepV, 67: DepW");
 

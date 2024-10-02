@@ -91,7 +91,7 @@ public static void main(String[] args) {
 	// declare physics event variables
 	int helicity, detector;
 	double e_p, e_theta, e_phi, p_phi, p_p, p_theta, open_angle;
-	double Q2, W, y, Mx2, x, t, tmin, z, xF, pT, eta, zeta, phi, vz_e, vz_p;
+	double Q2, W, y, Mx2, x, t, tmin, z, xF, pT, eta, xi, phi, vz_e, vz_p;
 	double Depolarization_A, Depolarization_B, Depolarization_C;
 	double Depolarization_V, Depolarization_W;
 
@@ -122,7 +122,6 @@ public static void main(String[] args) {
 		HipoDataEvent event = reader.getNextEvent(); 
 
 		while (reader.hasEvent()) {
-			if (num_events > 100000) break;
 		    ++num_events;
 		    if (num_events % 500000 == 0) { // not necessary, just updates output
 		        print("processed: " + num_events + " events. ");
@@ -192,7 +191,7 @@ public static void main(String[] args) {
 		                xF = variables.xF(); // Feynman-x
 		                pT = variables.pT(); // transverse momentum of hadron
 		                eta = variables.eta(); // rapidity
-		                zeta = variables.zeta(); // fractional longitudinal momentum of hadron
+		                xi = variables.xi(); // fractional longitudinal momentum of hadron
 
 		                // angles
 		                phi = variables.phi(); // trento phi of the hadron
@@ -237,7 +236,7 @@ public static void main(String[] args) {
 		                	.append(z).append(" ")
 		                	.append(xF).append(" ")
 		                	.append(pT).append(" ")
-		                	.append(zeta).append(" ")
+		                	.append(xi).append(" ")
 		                	.append(eta).append(" ")
 		                	.append(phi).append(" ")
 		                	.append(Depolarization_A).append(" ")
@@ -271,7 +270,7 @@ public static void main(String[] args) {
 		println("1: fiducial_status, 2: num_pos, 3: num_neg, 4: num_neutrals, " +
 		"5: runnum, 6: evnum, 7: helicity, 8: detector, 9: e_p, 10: e_theta, 11: e_phi, 12: vz_e, " +
 		"13: open_angle, 14: p_p, 15: p_theta, 16: p_phi, 17: vz_p, 18: Q2, 19: W, 20: Mx2, " +
-		"21: x, 22: t, 23: tmin, 24: y, 25: z, 26: xF, 27: pT, 28: zeta, 29: eta, 30: phi (trento), " +
+		"21: x, 22: t, 23: tmin, 24: y, 25: z, 26: xF, 27: pT, 28: xi, 29: eta, 30: phi (trento), " +
 		"31: DepA, 32: DepB, 33: DepC, 34: DepV, 35: DepW");
 
 		println("Set p1 PID = $p1_Str");

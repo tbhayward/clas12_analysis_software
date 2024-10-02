@@ -191,12 +191,12 @@ int main(int argc, char *argv[]) {
     int detector, detector1, detector2, detector3, detector_gamma1, detector_gamma2;
     double beam_pol, target_pol, e_p, e_theta, e_phi, vz_e, Q2, W, Mx, Mx2, x, y;
     double t, tmin;
-    double z, xF, pT, zeta, eta, phi, DepA, DepB, DepC, DepV, DepW;
+    double z, xF, pT, xi, eta, phi, DepA, DepB, DepC, DepV, DepW;
     double p_p, p_theta, p_phi, vz_p;
     // Additional variables for one or two hadrons
     double p1_p, p1_theta, p1_phi, vz_p1, p2_p, p2_theta, p2_phi, vz_p2;
     double open_angle, open_angle_ep, open_angle_ep1, open_angle_ep2, open_angle_p1p2;
-    double z1, z2, Mh, xF1, xF2, pT1, pT2, pTpT, zeta1, zeta2;
+    double z1, z2, Mh, xF1, xF2, pT1, pT2, pTpT, xi1, xi2;
     double t1, t1min, t2, t2min, Mx2_1, Mx2_2;
     double Mx1;
     double eta1, eta2, Delta_eta, eta1_gN, eta2_gN;
@@ -208,19 +208,19 @@ int main(int argc, char *argv[]) {
     double open_angle_ep3, open_angle_p1p3, open_angle_p2p3;
     double z3, z12, z13, z23, Mh12, Mh13, Mh23, xF3, xF12, xF13, xF23;
     double t3, t12, t13, t23, t3min, Mx3, Mx2_3, Mx2_12, Mx2_13, Mx2_23;
-    double pT3, pT12, pT13, pT23, zeta3, zeta12, zeta23, zeta13;
+    double pT3, pT12, pT13, pT23, xi3, xi12, xi23, xi13;
     double eta3, eta12, eta23, eta13;
     double phi3, phi12, phi13, phi23, Delta_phi12, Delta_phi13, Delta_phi23;
 
     // Additional variables for mc single hadron
     double mc_e_p, mc_e_theta, mc_e_phi, mc_vz_e, mc_p_p, mc_p_theta, mc_p_phi, mc_vz_p;
     double mc_Q2, mc_W, mc_Mx, mc_Mx2, mc_x, mc_y, mc_t, mc_tmin;
-    double mc_z, mc_xF, mc_pT, mc_zeta, mc_eta, mc_phi;
+    double mc_z, mc_xF, mc_pT, mc_xi, mc_eta, mc_phi;
     double mc_DepA, mc_DepB, mc_DepC, mc_DepV, mc_DepW;
     int matching_e_pid, matching_p1_pid, mc_p1_parent;
     // Additional variables for mc dihadron 
     double mc_p1_p, mc_p1_theta, mc_p1_phi, mc_vz_p1, mc_p2_p, mc_p2_theta, mc_p2_phi, mc_vz_p2;
-    double mc_z1, mc_z2, mc_Mh, mc_xF1, mc_xF2, mc_pT1, mc_pT2, mc_pTpT, mc_zeta1, mc_zeta2;
+    double mc_z1, mc_z2, mc_Mh, mc_xF1, mc_xF2, mc_pT1, mc_pT2, mc_pTpT, mc_xi1, mc_xi2;
     double mc_t1, mc_t1min, mc_t2, mc_t2min, mc_Mx1;
     double mc_eta1, mc_eta2, mc_Delta_eta, mc_eta1_gN, mc_eta2_gN;
     double mc_phi1, mc_phi2, mc_Delta_phi, mc_phih, mc_phiR, mc_theta;
@@ -352,7 +352,7 @@ int main(int argc, char *argv[]) {
         tree->Branch("z", &z, "z/D");
         tree->Branch("xF", &xF, "xF/D");
         tree->Branch("pT", &pT, "pT/D");
-        tree->Branch("zeta", &zeta, "zeta/D");
+        tree->Branch("xi", &xi, "xi/D");
         tree->Branch("eta", &eta, "eta/D");
         tree->Branch("phi", &phi, "phi/D");
         tree->Branch("DepA", &DepA, "DepA/D");
@@ -383,7 +383,7 @@ int main(int argc, char *argv[]) {
         tree->Branch("z", &z, "z/D");
         tree->Branch("xF", &xF, "xF/D");
         tree->Branch("pT", &pT, "pT/D");
-        tree->Branch("zeta", &zeta, "zeta/D");
+        tree->Branch("xi", &xi, "xi/D");
         tree->Branch("eta", &eta, "eta/D");
         tree->Branch("phi", &phi, "phi/D");
         tree->Branch("DepA", &DepA, "DepA/D");
@@ -411,7 +411,7 @@ int main(int argc, char *argv[]) {
         tree->Branch("mc_z", &mc_z, "mc_z/D");
         tree->Branch("mc_xF", &mc_xF, "mc_xF/D");
         tree->Branch("mc_pT", &mc_pT, "mc_pT/D");
-        tree->Branch("mc_zeta", &mc_zeta, "mc_zeta/D");
+        tree->Branch("mc_xi", &mc_xi, "mc_xi/D");
         tree->Branch("mc_eta", &mc_eta, "mc_eta/D");
         tree->Branch("mc_phi", &mc_phi, "mc_phi/D");
         tree->Branch("mc_DepA", &mc_DepA, "mc_DepA/D");
@@ -477,9 +477,9 @@ int main(int argc, char *argv[]) {
         tree->Branch("pT1", &pT1, "pT1/D");
         tree->Branch("pT2", &pT2, "pT2/D");
         tree->Branch("pTpT", &pTpT, "pTpT/D");
-        tree->Branch("zeta", &zeta, "zeta/D");
-        tree->Branch("zeta1", &zeta1, "zeta1/D");
-        tree->Branch("zeta2", &zeta2, "zeta2/D");
+        tree->Branch("xi", &xi, "xi/D");
+        tree->Branch("xi1", &xi1, "xi1/D");
+        tree->Branch("xi2", &xi2, "xi2/D");
         tree->Branch("eta", &eta, "eta/D");
         tree->Branch("eta1", &eta1, "eta1/D");
         tree->Branch("eta2", &eta2, "eta2/D");
@@ -535,9 +535,9 @@ int main(int argc, char *argv[]) {
         tree->Branch("pT1", &pT1, "pT1/D");
         tree->Branch("pT2", &pT2, "pT2/D");
         tree->Branch("pTpT", &pTpT, "pTpT/D");
-        tree->Branch("zeta", &zeta, "zeta/D");
-        tree->Branch("zeta1", &zeta1, "zeta1/D");
-        tree->Branch("zeta2", &zeta2, "zeta2/D");
+        tree->Branch("xi", &xi, "xi/D");
+        tree->Branch("xi1", &xi1, "xi1/D");
+        tree->Branch("xi2", &xi2, "xi2/D");
         tree->Branch("eta", &eta, "eta/D");
         tree->Branch("eta1", &eta1, "eta1/D");
         tree->Branch("eta2", &eta2, "eta2/D");
@@ -590,9 +590,9 @@ int main(int argc, char *argv[]) {
         tree->Branch("mc_pT1", &mc_pT1, "mc_pT1/D");
         tree->Branch("mc_pT2", &mc_pT2, "mc_pT2/D");
         tree->Branch("mc_pTpT", &mc_pTpT, "mc_pTpT/D");
-        tree->Branch("mc_zeta", &mc_zeta, "mc_zeta/D");
-        tree->Branch("mc_zeta1", &mc_zeta1, "mc_zeta1/D");
-        tree->Branch("mc_zeta2", &mc_zeta2, "mc_zeta2/D");
+        tree->Branch("mc_xi", &mc_xi, "mc_xi/D");
+        tree->Branch("mc_xi1", &mc_xi1, "mc_xi1/D");
+        tree->Branch("mc_xi2", &mc_xi2, "mc_xi2/D");
         tree->Branch("mc_eta", &mc_eta, "mc_eta/D");
         tree->Branch("mc_eta1", &mc_eta1, "mc_eta1/D");
         tree->Branch("mc_eta2", &mc_eta2, "mc_eta2/D");
@@ -681,13 +681,13 @@ int main(int argc, char *argv[]) {
         tree->Branch("z12", &z12, "z12/D");
         tree->Branch("z13", &z13, "z13/D");
         tree->Branch("z23", &z23, "z23/D");
-        tree->Branch("zeta", &zeta, "zeta/D");
-        tree->Branch("zeta1", &zeta1, "zeta1/D");
-        tree->Branch("zeta2", &zeta2, "zeta2/D");
-        tree->Branch("zeta3", &zeta3, "zeta3/D");
-        tree->Branch("zeta12", &zeta12, "zeta12/D");
-        tree->Branch("zeta13", &zeta13, "zeta13/D");
-        tree->Branch("zeta23", &zeta23, "zeta23/D");
+        tree->Branch("xi", &xi, "xi/D");
+        tree->Branch("xi1", &xi1, "xi1/D");
+        tree->Branch("xi2", &xi2, "xi2/D");
+        tree->Branch("xi3", &xi3, "xi3/D");
+        tree->Branch("xi12", &xi12, "xi12/D");
+        tree->Branch("xi13", &xi13, "xi13/D");
+        tree->Branch("xi23", &xi23, "xi23/D");
         tree->Branch("pT", &pT, "pT/D");
         tree->Branch("pT1", &pT1, "pT1/D");
         tree->Branch("pT2", &pT2, "pT2/D");
@@ -779,9 +779,9 @@ int main(int argc, char *argv[]) {
         tree->Branch("pT1", &pT1, "pT1/D");
         tree->Branch("pT2", &pT2, "pT2/D");
         tree->Branch("pTpT", &pTpT, "pTpT/D");
-        tree->Branch("zeta", &zeta, "zeta/D");
-        tree->Branch("zeta1", &zeta1, "zeta1/D");
-        tree->Branch("zeta2", &zeta2, "zeta2/D");
+        tree->Branch("xi", &xi, "xi/D");
+        tree->Branch("xi1", &xi1, "xi1/D");
+        tree->Branch("xi2", &xi2, "xi2/D");
         tree->Branch("eta", &eta, "eta/D");
         tree->Branch("eta1", &eta1, "eta1/D");
         tree->Branch("eta2", &eta2, "eta2/D");
@@ -856,9 +856,9 @@ int main(int argc, char *argv[]) {
         tree->Branch("pT1", &pT1, "pT1/D");
         tree->Branch("pT2", &pT2, "pT2/D");
         tree->Branch("pTpT", &pTpT, "pTpT/D");
-        tree->Branch("zeta", &zeta, "zeta/D");
-        tree->Branch("zeta1", &zeta1, "zeta1/D");
-        tree->Branch("zeta2", &zeta2, "zeta2/D");
+        tree->Branch("xi", &xi, "xi/D");
+        tree->Branch("xi1", &xi1, "xi1/D");
+        tree->Branch("xi2", &xi2, "xi2/D");
         tree->Branch("eta", &eta, "eta/D");
         tree->Branch("eta1", &eta1, "eta1/D");
         tree->Branch("eta2", &eta2, "eta2/D");
@@ -1050,7 +1050,7 @@ int main(int argc, char *argv[]) {
         while (infile >> fiducial_status >> num_pos >> num_neg >> num_neutral >> 
             runnum >> evnum >> helicity >> detector >> e_p >> e_theta >> e_phi >> vz_e >> 
             p_p >> p_theta >> p_phi >> vz_p >> open_angle >> Q2 >> W >> Mx2 >> x >> t >> tmin >> y >> z >> xF >> 
-            pT >> zeta >> eta >> phi >> DepA >> DepB >> DepC >> DepV >> DepW) {
+            pT >> xi >> eta >> phi >> DepA >> DepB >> DepC >> DepV >> DepW) {
 
             beam_pol = getPol(runnum);
             if (runnum < 16000) { target_pol = 0; }
@@ -1074,7 +1074,7 @@ int main(int argc, char *argv[]) {
         while (infile >> e_p >> mc_e_p >> e_theta >> mc_e_theta >> e_phi >> mc_e_phi >> vz_e >> 
             mc_vz_e >> p_p >> mc_p_p >> p_theta >> mc_p_theta >> p_phi >> mc_p_phi >> vz_p >>
             mc_vz_p >> Q2 >> mc_Q2 >> W >> mc_W >> Mx >> mc_Mx >> Mx2 >> mc_Mx2 >> x >> mc_x >> 
-            y >> mc_y >> z >> mc_z >> xF >> mc_xF >> pT >> mc_pT >> zeta >> mc_zeta >> eta >> 
+            y >> mc_y >> z >> mc_z >> xF >> mc_xF >> pT >> mc_pT >> xi >> mc_xi >> eta >> 
             mc_eta >> phi >> mc_phi >> DepA >> mc_DepA >> DepB >> mc_DepB >> DepC >> mc_DepC >> 
             DepV >> mc_DepV >> DepW >> mc_DepW >> matching_e_pid >> matching_p1_pid >>
             mc_p1_parent) {
@@ -1098,7 +1098,7 @@ int main(int argc, char *argv[]) {
             open_angle_ep >> open_angle_ep1 >> open_angle_ep2 >> open_angle_p1p2 >> 
             Q2 >> W >> Mx2 >> Mx2_1 >> Mx2_2 >> x >> t >> t1 >> t2 >> tmin >> y >> 
             z >> z1 >> z2 >> Mh >> xF >> xF1 >> xF2 >> 
-            pT >> pT1 >> pT2 >> pTpT >> zeta >> zeta1 >> zeta2 >> eta >> eta1 >> eta2 >> Delta_eta>> 
+            pT >> pT1 >> pT2 >> pTpT >> xi >> xi1 >> xi2 >> eta >> eta1 >> eta2 >> Delta_eta>> 
             eta1_gN >> eta2_gN >> phi1 >> phi2 >> Delta_phi >> phi >> phiR >> theta >> 
             DepA >> DepB >> DepC >> DepV >> DepW) {
 
@@ -1147,8 +1147,8 @@ int main(int argc, char *argv[]) {
             mc_p2_phi >> vz_p2 >> mc_vz_p2 >> Q2 >> mc_Q2 >> W >> mc_W >> Mx >> mc_Mx >> Mx1 >> 
             mc_Mx1 >> Mx2 >> mc_Mx2 >> x >> mc_x >> y >> mc_y >> z >> mc_z >> z1 >> mc_z1 >> 
             z2 >> mc_z2 >> Mh >> mc_Mh >> xF >> mc_xF >> xF1 >> mc_xF1 >> xF2 >> mc_xF2 >> 
-            pT >> mc_pT >> pT1 >> mc_pT1 >> pT2 >> mc_pT2 >> pTpT >> mc_pTpT >> zeta >> mc_zeta >>
-            zeta1 >> mc_zeta1 >> zeta2 >> mc_zeta2 >> eta >> mc_eta >> eta1 >> mc_eta1 >> eta2 >> 
+            pT >> mc_pT >> pT1 >> mc_pT1 >> pT2 >> mc_pT2 >> pTpT >> mc_pTpT >> xi >> mc_xi >>
+            xi1 >> mc_xi1 >> xi2 >> mc_xi2 >> eta >> mc_eta >> eta1 >> mc_eta1 >> eta2 >> 
             mc_eta2 >> Delta_eta >> mc_Delta_eta >> eta1_gN >> mc_eta1_gN >> eta2_gN >> 
             mc_eta2_gN >> phi1 >> mc_phi1 >> phi2 >> mc_phi2 >> Delta_phi >> mc_Delta_phi >> 
             phi >> mc_phi >> phiR >> mc_phiR >> theta >> mc_theta >> DepA >> mc_DepA >> DepB >> 
@@ -1205,7 +1205,7 @@ int main(int argc, char *argv[]) {
             Q2 >> W >> Mx2 >> Mx2_1 >> Mx2_2 >> Mx2_3 >> Mx2_12 >> Mx2_13 >> Mx2_23 >> 
             x >> t >> t1 >> t2 >> t3 >> t12 >> t13 >> t23 >> tmin >> 
             y >> z >> z1 >> z2 >> z3 >> z12 >> z13 >> z23 >> 
-            zeta >> zeta1 >> zeta2 >> zeta3 >> zeta12 >> zeta13 >> zeta23 >>
+            xi >> xi1 >> xi2 >> xi3 >> xi12 >> xi13 >> xi23 >>
             pT >> pT1 >> pT2 >> pT3 >> pT12 >> pT13 >> pT23 >> 
             Mh >> Mh12 >> Mh13 >> Mh23 >> 
             xF >> xF1 >> xF2 >> xF3 >> xF12 >> xF13 >> xF23 >> 
@@ -1241,7 +1241,7 @@ int main(int argc, char *argv[]) {
             open_angle_ep >> open_angle_ep1 >> open_angle_ep2 >> open_angle_p1p2 >>
             Q2 >> W >> Mx2 >> Mx2_1 >> Mx2_2 >> x >> t >> t1 >> t2 >> tmin >> y >> 
             z >> z1 >> z2 >> Mh >> xF >> xF1 >> xF2 >> 
-            pT >> pT1 >> pT2 >> pTpT >> zeta >> zeta1 >> zeta2 >> eta >> eta1 >> eta2 >> Delta_eta>> 
+            pT >> pT1 >> pT2 >> pTpT >> xi >> xi1 >> xi2 >> eta >> eta1 >> eta2 >> Delta_eta>> 
             eta1_gN >> eta2_gN >> phi1 >> phi2 >> Delta_phi >> phi >> phiR >> theta >> 
             DepA >> DepB >> DepC >> DepV >> DepW >> Emiss2 >> theta_gamma_gamma >> pTmiss) {
 
@@ -1291,7 +1291,7 @@ int main(int argc, char *argv[]) {
             open_angle_ep >> open_angle_ep1 >> open_angle_ep2 >> open_angle_p1p2 >> 
             Q2 >> W >> Mx2 >> Mx2_1 >> Mx2_2 >> x >> t >> t1 >> t2 >> tmin >> y >> 
             z >> z1 >> z2 >> Mh >> xF >> xF1 >> xF2 >> 
-            pT >> pT1 >> pT2 >> pTpT >> zeta >> zeta1 >> zeta2 >> eta >> eta1 >> eta2 >> Delta_eta >> 
+            pT >> pT1 >> pT2 >> pTpT >> xi >> xi1 >> xi2 >> eta >> eta1 >> eta2 >> Delta_eta >> 
             eta1_gN >> eta2_gN >> phi1 >> phi2 >> Delta_phi >> phi >> phiR >> theta >> 
             DepA >> DepB >> DepC >> DepV >> DepW >> Mh_gammagamma >> 
             detector_gamma1 >> detector_gamma2 >>

@@ -30,7 +30,7 @@ public class ThreeParticles {
     // in proton+pi+ the proton is p1, in k+pi- the kaon is p1.
     protected double Q2, W, gamma, nu, x, y, t, t1, t2, tmin, z, z1, z2;
     protected double Mx2, Mx2_1, Mx2_2; // Mx is the Mx(ep1p2), Mx1 is Mx(ep1), Mx2 is Mx(ep2), Mx3 is Mx(e)
-    protected double Mh, pT, pT1, pT2, xF, xF1, xF2, zeta, zeta1, zeta2;
+    protected double Mh, pT, pT1, pT2, xF, xF1, xF2, zeta, zeta1, zeta2, xi, xi1, xi2;
     protected double eta, eta1, eta2, eta_gN, eta1_gN, eta2_gN;
     // eta is the rapidity, preferred by theorists in the Breit frame (e.g. eta1 is in Breit) 
     // eta_gN is the rapidity in the gamma*-nucleon COM frame
@@ -436,6 +436,13 @@ public class ThreeParticles {
         zeta = lv_p_gN.e() / lv_target_gN.e();
         zeta1 = lv_p1_gN.e() / lv_target_gN.e();
         zeta2 = lv_p2_gN.e() / lv_target_gN.e();
+        
+        xi = kinematic_variables.Lorentz_vector_inner_product(lv_p_gN, lv_q_gN)/
+                kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
+        xi1 = kinematic_variables.Lorentz_vector_inner_product(lv_p1_gN, lv_q_gN)/
+                kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
+        xi2 = kinematic_variables.Lorentz_vector_inner_product(lv_p2_gN, lv_q_gN)/
+                kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
 
         p_gN_pz = lv_p_gN.vect().dot(lv_q_gN.vect()) / lv_q_gN.vect().mag();
         p1_gN_pz = lv_p1_gN.vect().dot(lv_q_gN.vect()) / lv_q_gN.vect().mag();
@@ -711,6 +718,18 @@ public class ThreeParticles {
     public double zeta2() {
         return Double.valueOf(Math.round(zeta2 * 100000)) / 100000;
     }// returns zeta2
+    
+    public double xi() {
+        return Double.valueOf(Math.round(xi * 100000)) / 100000;
+    }
+
+    public double xi1() {
+        return Double.valueOf(Math.round(xi1 * 100000)) / 100000;
+    }
+
+    public double xi2() {
+        return Double.valueOf(Math.round(xi2 * 100000)) / 100000;
+    }
 
     public double p1_Breit_pz() {
         return Double.valueOf(Math.round(p1_Breit_pz * 100000)) / 100000;

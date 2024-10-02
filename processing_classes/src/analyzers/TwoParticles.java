@@ -25,7 +25,7 @@ public class TwoParticles {
     protected double open_angle;
     protected double Q2, W, gamma, nu, x, y, z, t, tmin;
     protected double Mx, Mx2;
-    protected double Mh, pT, xF, zeta;
+    protected double Mh, pT, xF, zeta, xi;
     protected double eta, eta_gN;
     // eta is the rapidity, preferred by theorists in the Breit frame (e.g. eta1 is in Breit) 
     // eta_gN is the rapidity in the gamma*-nucleon COM frame
@@ -273,8 +273,8 @@ public class TwoParticles {
 
         xF = 2 * (lv_p_gN.vect().dot(lv_q_gN.vect())) / (lv_q_gN.vect().mag() * W);
 
-//        zeta = lv_p_gN.e() / lv_target_gN.e(); 
-        zeta = kinematic_variables.Lorentz_vector_inner_product(lv_p_gN, lv_q_gN)/
+        zeta = lv_p_gN.e() / lv_target_gN.e(); 
+        xi = kinematic_variables.Lorentz_vector_inner_product(lv_p_gN, lv_q_gN)/
                 kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
         
 
@@ -439,6 +439,10 @@ public class TwoParticles {
 
     public double zeta() {
         return ((int) (zeta * 100000)) / 100000.0;
+    }
+    
+    public double xi() {
+        return ((int) (xi * 100000)) / 100000.0;
     }
 
     public double p_Breit_pz() {

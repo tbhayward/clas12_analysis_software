@@ -35,6 +35,7 @@ public class FourParticles {
     protected double pT, pT1, pT2, pT3, pT12, pT13, pT23;
     protected double xF, xF1, xF2, xF3, xF12, xF13, xF23;
     protected double zeta, zeta1, zeta2, zeta3, zeta12, zeta13, zeta23;
+    protected double xi, xi1, xi2, xi3, xi12, xi13, xi23;
     protected double eta, eta1, eta2, eta3, eta12, eta13, eta23;
     protected double eta_gN, eta1_gN, eta2_gN, eta3_gN, eta12_gN, eta13_gN, eta23_gN;
     // eta is the rapidity, preferred by theorists in the Breit frame (e.g. eta1 is in Breit) 
@@ -504,6 +505,21 @@ public class FourParticles {
         zeta12 = lv_p12_gN.e() / lv_target_gN.e();
         zeta13 = lv_p13_gN.e() / lv_target_gN.e();
         zeta23 = lv_p23_gN.e() / lv_target_gN.e();
+        
+        xi = kinematic_variables.Lorentz_vector_inner_product(lv_p_gN, lv_q_gN)/
+                kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
+        xi1 = kinematic_variables.Lorentz_vector_inner_product(lv_p1_gN, lv_q_gN)/
+                kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
+        xi2 = kinematic_variables.Lorentz_vector_inner_product(lv_p2_gN, lv_q_gN)/
+                kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
+        xi3 = kinematic_variables.Lorentz_vector_inner_product(lv_p3_gN, lv_q_gN)/
+                kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
+        xi12 = kinematic_variables.Lorentz_vector_inner_product(lv_p12_gN, lv_q_gN)/
+                kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
+        xi13 = kinematic_variables.Lorentz_vector_inner_product(lv_p13_gN, lv_q_gN)/
+                kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
+        xi23 = kinematic_variables.Lorentz_vector_inner_product(lv_p23_gN, lv_q_gN)/
+                kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
 
         p_gN_pz = lv_p_gN.vect().dot(lv_q_gN.vect()) / lv_q_gN.vect().mag();
         p1_gN_pz = lv_p1_gN.vect().dot(lv_q_gN.vect()) / lv_q_gN.vect().mag();
@@ -965,6 +981,34 @@ public class FourParticles {
 
     public double zeta23() {
         return Double.valueOf(Math.round(zeta23 * 100000)) / 100000;
+    }// returns zeta23
+    
+    public double xi() {
+        return Double.valueOf(Math.round(xi * 100000)) / 100000;
+    }// returns zeta1
+
+    public double xi1() {
+        return Double.valueOf(Math.round(xi1 * 100000)) / 100000;
+    }// returns zeta1
+
+    public double xi2() {
+        return Double.valueOf(Math.round(xi2 * 100000)) / 100000;
+    }// returns zeta2
+
+    public double xi3() {
+        return Double.valueOf(Math.round(xi3 * 100000)) / 100000;
+    }// returns zeta3
+
+    public double xi12() {
+        return Double.valueOf(Math.round(xi12 * 100000)) / 100000;
+    }// returns zeta12
+
+    public double xi13() {
+        return Double.valueOf(Math.round(xi13 * 100000)) / 100000;
+    }// returns zeta13
+
+    public double xi23() {
+        return Double.valueOf(Math.round(xi23 * 100000)) / 100000;
     }// returns zeta23
 
     public double p1_Breit_pz() {

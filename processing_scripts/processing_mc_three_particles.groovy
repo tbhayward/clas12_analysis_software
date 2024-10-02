@@ -215,9 +215,9 @@ public static void main(String[] args) {
 							double z2 = variables.z2();
 							double xF1 = variables.xF1();
 							double xF2 = variables.xF2();
-							double zeta = variables.zeta();
-							double zeta1 = variables.zeta1();
-							double zeta2 = variables.zeta2();
+							double xi = variables.xi();
+							double xi1 = variables.xi1();
+							double xi2 = variables.xi2();
 							double Mh = variables.Mh();
 							double pT1 = variables.pT1();
 							double pT2 = variables.pT2();
@@ -233,9 +233,9 @@ public static void main(String[] args) {
 							double mc_z2 = mc_variables.z2();
 							double mc_xF1 = mc_variables.xF1();
 							double mc_xF2 = mc_variables.xF2();
-							double mc_zeta = mc_variables.zeta(); 
-							double mc_zeta1 = mc_variables.zeta1(); 
-							double mc_zeta2 = mc_variables.zeta2(); 
+							double mc_xi = mc_variables.xi(); 
+							double mc_xi1 = mc_variables.xi1(); 
+							double mc_xi2 = mc_variables.xi2(); 
 							double mc_Mh = mc_variables.Mh();
 							double mc_pT1 = mc_variables.pT1();
 							double mc_pT2 = mc_variables.pT2();
@@ -464,12 +464,12 @@ public static void main(String[] args) {
 								.append(mc_pT2).append(" ")			// 52
 								.append(pTpT).append(" ")			// 53
 								.append(mc_pTpT).append(" ")		// 54
-								.append(zeta).append(" ")			// 55
-								.append(mc_zeta).append(" ")		// 56
-								.append(zeta1).append(" ")			// 57
-								.append(mc_zeta1).append(" ")		// 58
-								.append(zeta2).append(" ")			// 59
-								.append(mc_zeta2).append(" ")		// 60
+								.append(xi).append(" ")			// 55
+								.append(mc_xi).append(" ")		// 56
+								.append(xi1).append(" ")			// 57
+								.append(mc_xi1).append(" ")		// 58
+								.append(xi2).append(" ")			// 59
+								.append(mc_xi2).append(" ")		// 60
 								.append(eta).append(" ")			// 61
 								.append(mc_eta).append(" ")			// 62
 								.append(eta1).append(" ")			// 63

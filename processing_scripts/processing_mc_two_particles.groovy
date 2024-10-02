@@ -175,7 +175,7 @@ public static void main(String[] args) {
 						double xF = variables.xF();
 						double pT = variables.pT();
 						double eta = variables.eta();
-						double zeta = variables.zeta();
+						double xi = variables.xi();
 
 						// SIDIS variables MC
 						double mc_x = mc_variables.x();
@@ -183,7 +183,7 @@ public static void main(String[] args) {
 						double mc_xF = mc_variables.xF();
 						double mc_pT = mc_variables.pT();
 						double mc_eta = mc_variables.eta();
-						double mc_zeta = mc_variables.zeta();
+						double mc_xi = mc_variables.xi();
 
 						// depolarization factors data
 		                double Depolarization_A = variables.Depolarization_A();
@@ -318,8 +318,8 @@ public static void main(String[] args) {
 							.append(mc_xF).append(" ")
 							.append(pT).append(" ")
 							.append(mc_pT).append(" ")
-							.append(zeta).append(" ")
-							.append(mc_zeta).append(" ")
+							.append(xi).append(" ")
+							.append(mc_xi).append(" ")
 							.append(eta).append(" ")
 							.append(mc_eta).append(" ")
 							.append(trento_phi).append(" ")
@@ -362,7 +362,7 @@ public static void main(String[] args) {
 
 		println(); println(); // NUMBERS ARE WRONG, NEED PHIS AND VERTICES
 		print("1: e_p, 3: e_theta, 5: p1_p, 7: p1_theta, ");
-		print("9: Q2, 11: W, 13: Mx, 15: x, 17: y, 19: z, 21: xF, 23: pT, 25: zeta, ");
+		print("9: Q2, 11: W, 13: Mx, 15: x, 17: y, 19: z, 21: xF, 23: pT, 25: xi, ");
 		print("27: eta, 29: phi, ");
 		print("31: Dep_A, 33: Dep_B, 35: Dep_C, 37: Dep_V, 39: Dep_W, ")
 		print("41: matching e pid, 42: matching p1 pid, 43: p1 parent id\n");

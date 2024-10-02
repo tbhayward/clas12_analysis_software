@@ -91,7 +91,7 @@ public static void main(String[] args) {
 	double open_angle_ep, open_angle_ep1, open_angle_ep2, open_angle_ep3;
 	double open_angle_p1p2, open_angle_p1p3, open_angle_p2p3;
 	double Q2, W, y, Mx2, Mx2_1, Mx2_2, Mx2_3, Mx2_12, Mx2_13, Mx2_23; 
-	double x, t, t1, t2, t3, t12, t13, t23, tmin, z, xF, pT, eta, eta_gN, zeta;
+	double x, t, t1, t2, t3, t12, t13, t23, tmin, z, xF, pT, eta, eta_gN, xi;
 	double z1, z2, z3, z12, z13, z23;
 	double xF1, xF2, xF3, xF12, xF13, xF23;
 	double Mh, Mh12, Mh13, Mh23;
@@ -238,7 +238,7 @@ public static void main(String[] args) {
 				                pT = variables.pT(); // transverse momentum of hadron
 				                eta = variables.eta(); // rapidity
 				                eta_gN = variables.eta_gN();
-				                zeta = variables.zeta(); // longitudinal momentum of hadron (fracture functions)
+				                xi = variables.xi(); // longitudinal momentum of hadron (fracture functions)
 
 				                // SIDIS trihadron variables
 								z1 = variables.z1();
@@ -255,12 +255,12 @@ public static void main(String[] args) {
 								xF13 = variables.xF13();
 								xF23 = variables.xF23();
 
-								zeta1 = variables.zeta1();
-								zeta2 = variables.zeta2();
-								zeta3 = variables.zeta3(); 
-								zeta12 = variables.zeta12();
-								zeta13 = variables.zeta13();
-								zeta23 = variables.zeta23();
+								xi1 = variables.xi1();
+								xi2 = variables.xi2();
+								xi3 = variables.xi3(); 
+								xi12 = variables.xi12();
+								xi13 = variables.xi13();
+								xi23 = variables.xi23();
 
 								Mh = variables.Mh();
 								Mh12 = variables.Mh12();
@@ -364,13 +364,13 @@ public static void main(String[] args) {
 									.append(z12).append(" ")
 									.append(z13).append(" ")
 									.append(z23).append(" ")
-									.append(zeta).append(" ")
-									.append(zeta1).append(" ")
-									.append(zeta2).append(" ")
-									.append(zeta3).append(" ")
-									.append(zeta12).append(" ")
-									.append(zeta13).append(" ")
-									.append(zeta23).append(" ")
+									.append(xi).append(" ")
+									.append(xi1).append(" ")
+									.append(xi2).append(" ")
+									.append(xi3).append(" ")
+									.append(xi12).append(" ")
+									.append(xi13).append(" ")
+									.append(xi23).append(" ")
 									.append(pT).append(" ")
 									.append(pT1).append(" ")
 									.append(pT2).append(" ")
@@ -451,7 +451,7 @@ public static void main(String[] args) {
 		print("36: Mx2, 37: Mx2_1, 38: Mx2_2, 39: Mx2_3, 40: Mx2_12, 41: Mx2_13, 42: Mx2_23, ");
 		print("43: x, 44: t, 45: t1, 46: t2, 47: t3, 48: t12, 49: t13, 50: t23, 51: tmin, ");
 		print("52: y, 53: z, 54: z1, 55: z2, 56: z3, 57: z12, 58: z13, 59: z23, ");
-		print("60: zeta, 61: zeta1, 62: zeta2, 63: zeta3, 64: zeta12, 65: zeta13, 66: zeta23, ");
+		print("60: xi, 61: xi1, 62: xi2, 63: xi3, 64: xi12, 65: xi13, 66: xi23, ");
 		print("67: pT, 68: pT1, 69: pT2, 70: pT3, 71: pT12, 72: pT13, 73: pT23, ");
 		print("74: Mh, 75: Mh12, 76: Mh13, 77: Mh23, ");
 		print("78: xF, 79: xF1, 80: xF2, 81: xF3, 82: xF12, 83: xF13, 84: xF23, ");
