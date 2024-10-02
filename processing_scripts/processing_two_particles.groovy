@@ -122,6 +122,7 @@ public static void main(String[] args) {
 		HipoDataEvent event = reader.getNextEvent(); 
 
 		while (reader.hasEvent()) {
+			if (num_events==100000) break;
 		    ++num_events;
 		    if (num_events % 500000 == 0) { // not necessary, just updates output
 		        print("processed: " + num_events + " events. ");

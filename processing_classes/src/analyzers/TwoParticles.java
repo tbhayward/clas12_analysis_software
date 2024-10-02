@@ -14,7 +14,7 @@ public class TwoParticles {
 
     protected byte helicity;
     protected int runnum;
-    
+
     protected int fiducial_status = -1;
     protected int detector = -1;
 
@@ -62,14 +62,13 @@ public class TwoParticles {
         }
         if (variables.W() < 2) {
             return false;
-        }
-        else if (variables.y() > 0.80) {
+        } else if (variables.y() > 0.80) {
             return false;
         }
-        
+
         return true;
     }
-    
+
     public static int getIndex(HipoDataBank rec_Bank, int input_pid, int input_index) {
         int index = -1;
         for (int particle_Index = 0; particle_Index < rec_Bank.rows(); particle_Index++) {
@@ -98,7 +97,7 @@ public class TwoParticles {
 
         helicity = eventBank.getByte("helicity", 0);
         runnum = configBank.getInt("run", 0); // used for beam energy and polarization
-    
+
         num_elec = recEvent.countByPid(11); // returns number of electrons
         num_positrons = recEvent.countByPid(-11); // returns number of positrons
         num_piplus = recEvent.countByPid(211);
@@ -111,23 +110,23 @@ public class TwoParticles {
         num_pos = num_positrons + num_piplus + num_kplus + num_protons;
         num_neg = num_elec + num_piminus + num_kminus + num_antiprotons;
         num_neutrals = recEvent.countByPid(22) + recEvent.countByPid(2112);
-        
+
         generic_tests generic_tests = new generic_tests();
         fiducial_cuts fiducial_cuts = new fiducial_cuts();
 
         boolean electron_pcal_fiducial = fiducial_cuts.pcal_fiducial_cut(0, 1, configBank, rec_Bank, cal_Bank);
         boolean electron_fd_fiducial = fiducial_cuts.dc_fiducial_cut(0, rec_Bank, traj_Bank);
         boolean e_fiducial_check = electron_pcal_fiducial && electron_fd_fiducial;
-        
+
         int p_rec_index = getIndex(rec_Bank, pPID, pIndex);
         boolean passesForwardDetector_1 = generic_tests.forward_detector_cut(p_rec_index, rec_Bank)
                 ? fiducial_cuts.dc_fiducial_cut(p_rec_index, rec_Bank, traj_Bank) : true;
         boolean passesCentralDetector_1 = generic_tests.central_detector_cut(p_rec_index, rec_Bank)
                 ? fiducial_cuts.cvt_fiducial_cut(p_rec_index, rec_Bank, traj_Bank) : true;
-        boolean passesForwardTagger_1 = generic_tests.forward_tagger_cut(p_rec_index, rec_Bank) ? 
-                fiducial_cuts.forward_tagger_fiducial_cut(p_rec_index, rec_Bank, cal_Bank): true;
+        boolean passesForwardTagger_1 = generic_tests.forward_tagger_cut(p_rec_index, rec_Bank)
+                ? fiducial_cuts.forward_tagger_fiducial_cut(p_rec_index, rec_Bank, cal_Bank) : true;
         boolean p_fiducial_check = passesForwardTagger_1 && passesForwardDetector_1 && passesCentralDetector_1;
-        
+
         if (generic_tests.forward_tagger_cut(p_rec_index, rec_Bank)) {
             detector = 0; // Forward Tagger
         } else if (generic_tests.forward_detector_cut(p_rec_index, rec_Bank)) {
@@ -135,7 +134,7 @@ public class TwoParticles {
         } else if (generic_tests.central_detector_cut(p_rec_index, rec_Bank)) {
             detector = 2; // Central Detector
         }
-        
+
         // Check if all checks pass
         if (e_fiducial_check && p_fiducial_check) {
             fiducial_status = 2; // Set to 2 if all checks pass
@@ -145,7 +144,7 @@ public class TwoParticles {
                 fiducial_status = 0; // Set to 0 if only electron check is false
             } else if (e_fiducial_check && !p_fiducial_check) {
                 fiducial_status = 1; // Set to 1 if only p1 check is false
-            } 
+            }
             // If more than one is false, fiducial_status remains -1 (default)
         }
 
@@ -273,10 +272,11 @@ public class TwoParticles {
 
         xF = 2 * (lv_p_gN.vect().dot(lv_q_gN.vect())) / (lv_q_gN.vect().mag() * W);
 
-        zeta = lv_p_gN.e() / lv_target_gN.e(); 
-        xi = kinematic_variables.Lorentz_vector_inner_product(lv_p_gN, lv_q_gN)/
-                kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
-        
+        zeta = lv_p_gN.e() / lv_target_gN.e();
+//        xi = kinematic_variables.Lorentz_vector_inner_product(lv_p_gN, lv_q_gN)
+//                / kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
+        LightConeKinematics lck = new LightConeKinematics();
+        xi = lck.xi_h(lv_p_gN, lv_q_gN, lv_target_gN);
 
         p_gN_pz = lv_p_gN.vect().dot(lv_q_gN.vect()) / lv_q_gN.vect().mag();
         p_Breit_pz = lv_p_Breit.vect().dot(lv_q_Breit.vect()) / lv_q_Breit.vect().mag();
@@ -340,7 +340,7 @@ public class TwoParticles {
     public int get_runnum() {
         return runnum;
     }
-    
+
     public int get_detector() {
         return detector;
     }
@@ -348,19 +348,19 @@ public class TwoParticles {
     public int get_num_pos() {
         return num_pos;
     }
-    
+
     public int get_num_neg() {
         return num_neg;
     }
-    
+
     public int get_num_neutrals() {
         return num_neutrals;
     }
-    
+
     public int get_fiducial_status() {
         return fiducial_status;
     }
-    
+
     public int num_elec() {
         return num_elec;
     } // returns number of electrons
@@ -440,7 +440,7 @@ public class TwoParticles {
     public double zeta() {
         return ((int) (zeta * 100000)) / 100000.0;
     }
-    
+
     public double xi() {
         return ((int) (xi * 100000)) / 100000.0;
     }
@@ -548,7 +548,7 @@ public class TwoParticles {
     public double vz_p() {
         return ((int) (vz_p * 100000)) / 100000.0;
     }
-    
+
     public double open_angle() {
         return ((int) (open_angle * 100000)) / 100000.0;
     }
