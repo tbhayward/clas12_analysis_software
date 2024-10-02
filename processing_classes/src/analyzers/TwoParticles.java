@@ -221,10 +221,6 @@ public class TwoParticles {
         open_angle = kinematic_variables.open_angle(lv_e, lv_p);
         t = kinematic_variables.t(lv_p.p(), lv_p.theta());
         tmin = kinematic_variables.tmin(x);
-        
-        double y2 = kinematic_variables.Lorentz_vector_inner_product(lv_target,lv_q)/
-                kinematic_variables.Lorentz_vector_inner_product(lv_target,lv_beam);
-        System.out.println(y+" "+y2);
 
         // kinematics of hadrons
         p_px = lv_p.px();
@@ -281,7 +277,7 @@ public class TwoParticles {
         double zeta2 = kinematic_variables.Lorentz_vector_inner_product(lv_p_gN, lv_q_gN)/
                 kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
         
-//        System.out.println(zeta+" "+zeta2);
+        System.out.println(zeta+" "+zeta2);
 
         p_gN_pz = lv_p_gN.vect().dot(lv_q_gN.vect()) / lv_q_gN.vect().mag();
         p_Breit_pz = lv_p_Breit.vect().dot(lv_q_Breit.vect()) / lv_q_Breit.vect().mag();
