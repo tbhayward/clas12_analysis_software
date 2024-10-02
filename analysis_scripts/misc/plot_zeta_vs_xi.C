@@ -50,6 +50,7 @@ void plot_zeta_vs_xi() {
     for (Long64_t i = 0; i < nentries3; i++) {
         tree3->GetEntry(i);
         if (xF < 0) hist3->Fill(xi);
+        std::cout << xi << std::endl;
     }
 
     // Create a canvas to draw the histograms
