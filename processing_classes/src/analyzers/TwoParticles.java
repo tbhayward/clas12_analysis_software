@@ -223,7 +223,7 @@ public class TwoParticles {
         tmin = kinematic_variables.tmin(x);
         
         double y2 = kinematic_variables.Lorentz_vector_inner_product(lv_p,lv_q)/
-                kinematic_variables.Lorentz_vector_inner_product(lv_p,lv_e);
+                kinematic_variables.Lorentz_vector_inner_product(lv_p,lv_beam);
         System.out.println(y+" "+y2);
 
         // kinematics of hadrons
