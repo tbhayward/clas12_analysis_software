@@ -184,7 +184,6 @@ public class TwoParticles {
         Q2 = kinematic_variables.Q2(lv_q);
         nu = kinematic_variables.nu(lv_beam, lv_e);
         x = kinematic_variables.x(Q2, nu);
-        System.out.println(x+" "+Q2/(2*kinematic_variables.Lorentz_vector_inner_product(lv_target,lv_q)));
         W = kinematic_variables.W(Q2, nu);
         y = kinematic_variables.y(nu, lv_beam);
         gamma = kinematic_variables.gamma(Q2, x);
@@ -223,8 +222,9 @@ public class TwoParticles {
         t = kinematic_variables.t(lv_p.p(), lv_p.theta());
         tmin = kinematic_variables.tmin(x);
         
-        double y2 = kinematic_variables.Lorentz_vector_inner_product(lv_p,lv_q)/
-                kinematic_variables.Lorentz_vector_inner_product(lv_p,lv_beam);
+        double y2 = kinematic_variables.Lorentz_vector_inner_product(lv_target,lv_q)/
+                kinematic_variables.Lorentz_vector_inner_product(lv_target,lv_beam);
+        System.out.println(y+" "+y2);
 
         // kinematics of hadrons
         p_px = lv_p.px();
