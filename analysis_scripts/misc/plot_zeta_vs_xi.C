@@ -23,12 +23,12 @@ void plot_zeta_vs_xi() {
     TH1F *hist3 = new TH1F("hist2", "Xi_h Distribution", 100, 0, 1);
 
     // Set up the branch variables
-    double zeta, xF;
+    double zeta, xF, xi;
     tree1->SetBranchAddress("zeta", &zeta);
     tree1->SetBranchAddress("xF", &xF);
     tree2->SetBranchAddress("zeta", &zeta);
     tree2->SetBranchAddress("xF", &xF);
-    tree3->SetBranchAddress("zeta", &zeta);
+    tree3->SetBranchAddress("xi", &xi);
     tree3->SetBranchAddress("xF", &xF);
 
     // Fill the histograms for tree1 (zeta1.root)
