@@ -273,7 +273,11 @@ public class TwoParticles {
 
         xF = 2 * (lv_p_gN.vect().dot(lv_q_gN.vect())) / (lv_q_gN.vect().mag() * W);
 
-        zeta = lv_p_gN.e() / lv_target_gN.e(); // only really applicable when p1 is a proton
+        zeta = lv_p_gN.e() / lv_target_gN.e(); 
+        double zeta2 = kinematic_variables.Lorentz_vector_inner_product(lv_p_gN, lv_q_gN)/
+                kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
+        
+        System.out.println(zeta+" "+zeta2);
 
         p_gN_pz = lv_p_gN.vect().dot(lv_q_gN.vect()) / lv_q_gN.vect().mag();
         p_Breit_pz = lv_p_Breit.vect().dot(lv_q_Breit.vect()) / lv_q_Breit.vect().mag();

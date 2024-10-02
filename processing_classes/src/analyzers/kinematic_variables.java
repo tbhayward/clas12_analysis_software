@@ -7,7 +7,14 @@ package analyzers;
 
 import org.jlab.clas.physics.*;
 
+
+
 public class kinematic_variables {
+    
+    double Lorentz_vector_inner_product(LorentzVector lv_p1, LorentzVector lv_p2) {
+        return lv_p1.e()*lv_p2.e() - 
+                lv_p1.px()*lv_p2.px() -  lv_p1.py()*lv_p2.py() - lv_p1.pz()*lv_p2.pz();
+    }
     
     double particle_mass (int pid) {
 	if (pid==11||pid==-11) { // electron is pid=11, positron is pid=-11
