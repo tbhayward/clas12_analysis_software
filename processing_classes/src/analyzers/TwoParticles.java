@@ -316,14 +316,14 @@ public class TwoParticles {
         System.out.println();
 
 // Print the results for xi and xi2
-        System.out.println("Results for xi (approximation) and xi2 (Lorentz invariant):");
-        System.out.println("  xi (P_h^+/P^+)         : " + xi);
-        System.out.println("  xi2 (Lorentz invariant): " + xi2);
+        System.out.println("Results for xi2 (approximation) and xi1 (Lorentz invariant):");
+        System.out.println("  xi2 (P_h^+/P^+)         : " + xi);
+        System.out.println("  xi1 (Lorentz invariant): " + xi2);
         System.out.println();
 
 // Extra checks: Compare the two methods
         double ratio = Math.abs((xi2 - xi) / xi);
-        System.out.println("Relative difference between xi2 and xi: " + ratio);
+        System.out.println("Relative difference between xi2 and xi1: " + ratio);
         System.out.println("============================================");
 
         p_gN_pz = lv_p_gN.vect().dot(lv_q_gN.vect()) / lv_q_gN.vect().mag();
