@@ -273,8 +273,8 @@ public class TwoParticles {
 
         xF = 2 * (lv_p_gN.vect().dot(lv_q_gN.vect())) / (lv_q_gN.vect().mag() * W);
 
-        zeta = lv_p_gN.e() / lv_target_gN.e(); 
-        double zeta2 = kinematic_variables.Lorentz_vector_inner_product(lv_p_gN, lv_q_gN)/
+//        zeta = lv_p_gN.e() / lv_target_gN.e(); 
+        zeta = kinematic_variables.Lorentz_vector_inner_product(lv_p_gN, lv_q_gN)/
                 kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
         
 
