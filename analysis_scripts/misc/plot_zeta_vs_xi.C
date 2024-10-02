@@ -20,7 +20,7 @@ void plot_zeta_vs_xi() {
     // Create histograms for zeta
     TH1F *hist1 = new TH1F("hist1", "Zeta Distribution", 100, 0, 1);
     TH1F *hist2 = new TH1F("hist2", "Xi Distribution", 100, 0, 1);
-    TH1F *hist3 = new TH1F("hist2", "Xi_h Distribution", 100, 0, 1);
+    TH1F *hist3 = new TH1F("hist3", "Xi_h Distribution", 100, 0, 1);
 
     // Set up the branch variables
     double zeta, xF, xi;
