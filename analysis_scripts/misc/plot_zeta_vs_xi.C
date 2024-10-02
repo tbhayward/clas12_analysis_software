@@ -59,7 +59,7 @@ void plot_zeta_vs_xi() {
     // Set histogram styles
     hist1->SetLineColor(kRed);
     hist2->SetLineColor(kBlue);
-    hist2->SetLineColor(kGreen);
+    hist3->SetLineColor(kGreen);
     hist1->SetLineWidth(2);
     hist2->SetLineWidth(2);
     hist3->SetLineWidth(2);
