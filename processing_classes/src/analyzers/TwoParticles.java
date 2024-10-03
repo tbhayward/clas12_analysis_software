@@ -341,7 +341,7 @@ public class TwoParticles {
 //        double ratio = Math.abs((xi2 - xi) / xi);
 //        System.out.println("Relative difference between xi2 and xi1: " + ratio);
 //        System.out.println("============================================");
-        System.out.print("{");
+        
         System.out.print(2*Ph_minus*P_plus*x/Q2+",");
     
         p_gN_pz = lv_p_gN.vect().dot(lv_q_gN.vect()) / lv_q_gN.vect().mag();
