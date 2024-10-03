@@ -327,7 +327,7 @@ public class TwoParticles {
         
         System.out.println("Q2 = "+Q2+", xB = "+x);
         System.out.println();
-        System.out.println(lck.lightConeInnerProduct(lv_p_gN,lv_q_gN));
+        System.out.println("lck inner product = "+lck.lightConeInnerProduct(lv_p_gN,lv_q_gN)+", calculated inner product = "+(Q2*Ph_plus/(2*x*P_plus)-x*P_plus*Ph_minus));
         System.out.println(lck.lightConeInnerProduct(lv_target_gN,lv_q_gN));
         System.out.println();
 
