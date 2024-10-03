@@ -53,47 +53,6 @@ public class TwoParticles {
     protected int RICH_pid;
     protected double chi2pid, beta, RQ_prob, el_prob, pi_prob, k_prob, pr_prob;
     
-    // 4. Define the function to rotate a vector using Rodrigues' formula
-public Vector3 rotateVector(Vector3 v, Vector3 k, double theta) {
-    // Normalize the axis vector k
-    k = k.unit();
-    
-    // Calculate terms used in Rodrigues' formula
-    double cosTheta = Math.cos(theta);
-    double sinTheta = Math.sin(theta);
-    double oneMinusCosTheta = 1.0 - cosTheta;
-    
-    // Extract the components of the axis vector k
-    double kx = k.x();
-    double ky = k.y();
-    double kz = k.z();
-    
-    // Construct the rotation matrix elements
-    double r11 = cosTheta + kx * kx * oneMinusCosTheta;
-    double r12 = kx * ky * oneMinusCosTheta - kz * sinTheta;
-    double r13 = kx * kz * oneMinusCosTheta + ky * sinTheta;
-    
-    double r21 = ky * kx * oneMinusCosTheta + kz * sinTheta;
-    double r22 = cosTheta + ky * ky * oneMinusCosTheta;
-    double r23 = ky * kz * oneMinusCosTheta - kx * sinTheta;
-    
-    double r31 = kz * kx * oneMinusCosTheta - ky * sinTheta;
-    double r32 = kz * ky * oneMinusCosTheta + kx * sinTheta;
-    double r33 = cosTheta + kz * kz * oneMinusCosTheta;
-    
-    // Extract the components of the vector v
-    double vx = v.x();
-    double vy = v.y();
-    double vz = v.z();
-    
-    // Perform the matrix multiplication to get the rotated vector
-    double newX = r11 * vx + r12 * vy + r13 * vz;
-    double newY = r21 * vx + r22 * vy + r23 * vz;
-    double newZ = r31 * vx + r32 * vy + r33 * vz;
-    
-    // Return the rotated vector
-    return new Vector3(newX, newY, newZ);
-}
 
     public static boolean channel_test(TwoParticles variables) {
         if (variables.helicity == 0 && variables.runnum != 11) {
