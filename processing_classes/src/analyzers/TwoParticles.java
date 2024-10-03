@@ -327,6 +327,9 @@ public class TwoParticles {
         
         System.out.println("Q2 = "+Q2+", xB = "+x);
         System.out.println();
+        System.out.println(lck.lightConeInnerProduct(lv_p_gN,lv_q_gN));
+        System.out.println(lck.lightConeInnerProduct(lv_target_gN,lv_q_gN));
+        System.out.println();
 
 // Print the results for xi and xi2
         System.out.println("Results for xi2 (approximation) and xi1 (Lorentz invariant):");
