@@ -52,6 +52,48 @@ public class TwoParticles {
 
     protected int RICH_pid;
     protected double chi2pid, beta, RQ_prob, el_prob, pi_prob, k_prob, pr_prob;
+    
+    // 4. Define the function to rotate a vector using Rodrigues' formula
+public Vector3 rotateVector(Vector3 v, Vector3 k, double theta) {
+    // Normalize the axis vector k
+    k.unit();  // Call unit() to normalize the vector in place without assignment
+    
+    // Calculate terms used in Rodrigues' formula
+    double cosTheta = Math.cos(theta);
+    double sinTheta = Math.sin(theta);
+    double oneMinusCosTheta = 1.0 - cosTheta;
+    
+    // Extract the components of the axis vector k
+    double kx = k.x();
+    double ky = k.y();
+    double kz = k.z();
+    
+    // Construct the rotation matrix elements
+    double r11 = cosTheta + kx * kx * oneMinusCosTheta;
+    double r12 = kx * ky * oneMinusCosTheta - kz * sinTheta;
+    double r13 = kx * kz * oneMinusCosTheta + ky * sinTheta;
+    
+    double r21 = ky * kx * oneMinusCosTheta + kz * sinTheta;
+    double r22 = cosTheta + ky * ky * oneMinusCosTheta;
+    double r23 = ky * kz * oneMinusCosTheta - kx * sinTheta;
+    
+    double r31 = kz * kx * oneMinusCosTheta - ky * sinTheta;
+    double r32 = kz * ky * oneMinusCosTheta + kx * sinTheta;
+    double r33 = cosTheta + kz * kz * oneMinusCosTheta;
+    
+    // Extract the components of the vector v
+    double vx = v.x();
+    double vy = v.y();
+    double vz = v.z();
+    
+    // Perform the matrix multiplication to get the rotated vector
+    double newX = r11 * vx + r12 * vy + r13 * vz;
+    double newY = r21 * vx + r22 * vy + r23 * vz;
+    double newZ = r31 * vx + r32 * vy + r33 * vz;
+    
+    // Return the rotated vector
+    return new Vector3(newX, newY, newZ);
+}
 
     public static boolean channel_test(TwoParticles variables) {
         if (variables.helicity == 0 && variables.runnum != 11) {
@@ -82,6 +124,7 @@ public class TwoParticles {
         }
         return -1;
     }
+    
 
     public TwoParticles(DataEvent event, PhysicsEvent recEvent, int pPID, int pIndex, double Eb) {
         // provide the PDG PID of the two hadrons
@@ -273,12 +316,95 @@ public class TwoParticles {
         xF = 2 * (lv_p_gN.vect().dot(lv_q_gN.vect())) / (lv_q_gN.vect().mag() * W);
 
         zeta = lv_p_gN.e() / lv_target_gN.e();
-        double xi2 = kinematic_variables.Lorentz_vector_inner_product(lv_p_gN, lv_q_gN)
-                / kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
-        LightConeKinematics lck = new LightConeKinematics();
-        xi = lck.xi_h(lv_p_gN, lv_q_gN, lv_target_gN);
+        
+        // 1. Calculate the angle between q_gN_vector and zAxis
+Vector3 q_gN_vector = lv_q_gN.vect();  // 3D momentum of photon (lv_q_gN)
+Vector3 zAxis = new Vector3(0, 0, -1);  // The -z axis
 
-//        // Print Lorentz vector components of lv_p_gN (hadron in gamma*-nucleon frame)
+double dotProduct = q_gN_vector.dot(zAxis);  // Dot product between q_gN and -z axis
+double magnitudeProduct = q_gN_vector.mag() * zAxis.mag();  // Product of magnitudes
+double angle = Math.acos(dotProduct / magnitudeProduct);  // Angle between q_gN and -z axis
+
+// 2. Calculate the cross product (rotation axis)
+Vector3 rotationAxis = q_gN_vector.cross(zAxis);  // Rotation axis is the cross product of q_gN and -z axis
+
+// 3. Normalize the rotation axis
+double rotationAxisMag = rotationAxis.mag();  // Magnitude of the rotation axis
+Vector3 normalizedRotationAxis = new Vector3(rotationAxis.x() / rotationAxisMag, 
+                                             rotationAxis.y() / rotationAxisMag, 
+                                             rotationAxis.z() / rotationAxisMag);  // Normalize the axis
+
+
+// 5. Rotate the vectors to the new frame
+Vector3 rotated_p = rotateVector(lv_p_gN.vect(), normalizedRotationAxis, angle);  // Rotate the hadron vector
+Vector3 rotated_target = rotateVector(lv_target_gN.vect(), normalizedRotationAxis, angle);  // Rotate the target vector
+Vector3 rotated_q = rotateVector(q_gN_vector, normalizedRotationAxis, angle);  // Rotate the photon vector (should align to -z)
+
+// Update the Lorentz vectors with the rotated 3D vectors
+LorentzVector shifted_p = new LorentzVector(rotated_p.x(), rotated_p.y(), rotated_p.z(), lv_p_gN.e());
+LorentzVector shifted_target = new LorentzVector(rotated_target.x(), rotated_target.y(), rotated_target.z(), lv_target_gN.e());
+LorentzVector shifted_q = new LorentzVector(rotated_q.x(), rotated_q.y(), rotated_q.z(), lv_q_gN.e());
+
+// Print the rotated Lorentz vectors
+System.out.println("Lorentz Vector shifted_p (Hadron in shifted frame):");
+System.out.println("  Energy (E)  : " + shifted_p.e());
+System.out.println("  Px          : " + shifted_p.px());
+System.out.println("  Py          : " + shifted_p.py());
+System.out.println("  Pz          : " + shifted_p.pz());
+System.out.println("  |P| (3D mag): " + shifted_p.vect().mag());
+System.out.println();
+
+// Print light-cone components of shifted_p
+System.out.println("Light-cone components of shifted_p:");
+double Ph_plus_shifted = (shifted_p.e() + shifted_p.pz()) / Math.sqrt(2);  // P_h^+
+double Ph_minus_shifted = (shifted_p.e() - shifted_p.pz()) / Math.sqrt(2); // P_h^-
+double Ph_perp_shifted = Math.sqrt(Math.pow(shifted_p.px(), 2) + Math.pow(shifted_p.py(), 2)); // P_h^perp
+System.out.println("  P_h^+   : " + Ph_plus_shifted);
+System.out.println("  P_h^-   : " + Ph_minus_shifted);
+System.out.println("  P_h^⊥   : " + Ph_perp_shifted);
+System.out.println();
+
+// Print Lorentz vector components of shifted_target
+System.out.println("Lorentz Vector shifted_target (Target in shifted frame):");
+System.out.println("  Energy (E)  : " + shifted_target.e());
+System.out.println("  Px          : " + shifted_target.px());
+System.out.println("  Py          : " + shifted_target.py());
+System.out.println("  Pz          : " + shifted_target.pz());
+System.out.println("  |P| (3D mag): " + shifted_target.vect().mag());
+System.out.println();
+
+// Print Lorentz vector components of shifted_q (Photon in shifted frame)
+System.out.println("Lorentz Vector shifted_q (Photon in shifted frame):");
+System.out.println("  Energy (E)  : " + shifted_q.e());
+System.out.println("  Px          : " + shifted_q.px());
+System.out.println("  Py          : " + shifted_q.py());
+System.out.println("  Pz          : " + shifted_q.pz());
+System.out.println("  |P| (3D mag): " + shifted_q.vect().mag());
+System.out.println();
+
+// Recalculate xi and xi2 using the shifted vectors
+double xi2_shifted = kinematic_variables.Lorentz_vector_inner_product(shifted_p, shifted_q)
+        / kinematic_variables.Lorentz_vector_inner_product(shifted_target, shifted_q);
+LightConeKinematics lck_shifted = new LightConeKinematics();
+double xi_shifted = lck_shifted.xi_h(shifted_p, shifted_q, shifted_target);
+
+// Print the results for xi_shifted and xi2_shifted
+System.out.println("Results for xi_shifted (approximation) and xi2_shifted (Lorentz invariant):");
+System.out.println("  xi_shifted (P_h^+/P^+)         : " + xi_shifted);
+System.out.println("  xi2_shifted (Lorentz invariant): " + xi2_shifted);
+System.out.println();
+
+// Extra checks: Compare the two methods
+double ratio_shifted = Math.abs((xi2_shifted - xi_shifted) / xi_shifted);
+System.out.println("Relative difference between xi2_shifted and xi_shifted: " + ratio_shifted);
+System.out.println("============================================");
+        
+//        double xi2 = kinematic_variables.Lorentz_vector_inner_product(lv_p_gN, lv_q_gN)
+//                / kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
+//        LightConeKinematics lck = new LightConeKinematics();
+//        xi = lck.xi_h(lv_p_gN, lv_q_gN, lv_target_gN);
+//
+////        // Print Lorentz vector components of lv_p_gN (hadron in gamma*-nucleon frame)
 //        System.out.println("Lorentz Vector lv_p_gN (Hadron in gamma*-nucleon frame):");
 //        System.out.println("  Energy (E)  : " + lv_p_gN.e());
 //        System.out.println("  Px          : " + lv_p_gN.px());
@@ -286,18 +412,18 @@ public class TwoParticles {
 //        System.out.println("  Pz          : " + lv_p_gN.pz());
 //        System.out.println("  |P| (3D mag): " + lv_p_gN.vect().mag());
 //        System.out.println();
-//
-//// Print light-cone components of lv_p_gN
+////
+////// Print light-cone components of lv_p_gN
 //        System.out.println("Light-cone components of lv_p_gN:");
-        double Ph_plus = (lv_p_gN.e() + lv_p_gN.pz()) / Math.sqrt(2);  // P_h^+
-        double Ph_minus = (lv_p_gN.e() - lv_p_gN.pz()) / Math.sqrt(2); // P_h^-
-        double Ph_perp = Math.sqrt(Math.pow(lv_p_gN.px(), 2) + Math.pow(lv_p_gN.py(), 2)); // P_h^perp
+//        double Ph_plus = (lv_p_gN.e() + lv_p_gN.pz()) / Math.sqrt(2);  // P_h^+
+//        double Ph_minus = (lv_p_gN.e() - lv_p_gN.pz()) / Math.sqrt(2); // P_h^-
+//        double Ph_perp = Math.sqrt(Math.pow(lv_p_gN.px(), 2) + Math.pow(lv_p_gN.py(), 2)); // P_h^perp
 //        System.out.println("  P_h^+   : " + Ph_plus);
 //        System.out.println("  P_h^-   : " + Ph_minus);
 //        System.out.println("  P_h^⊥   : " + Ph_perp);
 //        System.out.println();
-//
-//// Print Lorentz vector components of lv_target_gN (Target in gamma*-nucleon frame)
+////
+////// Print Lorentz vector components of lv_target_gN (Target in gamma*-nucleon frame)
 //        System.out.println("Lorentz Vector lv_target_gN (Target in gamma*-nucleon frame):");
 //        System.out.println("  Energy (E)  : " + lv_target_gN.e());
 //        System.out.println("  Px          : " + lv_target_gN.px());
@@ -305,53 +431,53 @@ public class TwoParticles {
 //        System.out.println("  Pz          : " + lv_target_gN.pz());
 //        System.out.println("  |P| (3D mag): " + lv_target_gN.vect().mag());
 //        System.out.println();
-//        
-//        // Print light-cone components of lv_target_gN
-//        System.out.println("Light-cone components of lv_p_gN:");
-        double P_plus = (lv_target_gN.e() + lv_target_gN.pz()) / Math.sqrt(2);  // P_h^+
-        double P_minus = (lv_target_gN.e() - lv_target_gN.pz()) / Math.sqrt(2); // P_h^-
-        double P_perp = Math.sqrt(Math.pow(lv_target_gN.px(), 2) + Math.pow(lv_target_gN.py(), 2)); // P_h^perp
+////        
+////        // Print light-cone components of lv_target_gN
+////        System.out.println("Light-cone components of lv_p_gN:");
+//        double P_plus = (lv_target_gN.e() + lv_target_gN.pz()) / Math.sqrt(2);  // P_h^+
+//        double P_minus = (lv_target_gN.e() - lv_target_gN.pz()) / Math.sqrt(2); // P_h^-
+//        double P_perp = Math.sqrt(Math.pow(lv_target_gN.px(), 2) + Math.pow(lv_target_gN.py(), 2)); // P_h^perp
 //        System.out.println("  P^+   : " + P_plus);
 //        System.out.println("  P^-   : " + P_minus);
 //        System.out.println("  P^⊥   : " + P_perp);
 //        System.out.println();
-
-// Print Lorentz vector components of lv_q_gN (Photon in gamma*-nucleon frame)
-        System.out.println("Lorentz Vector lv_q_gN (Photon in gamma*-nucleon frame):");
-        System.out.println("  Energy (E)  : " + lv_q_gN.e());
-        System.out.println("  Px          : " + lv_q_gN.px());
-        System.out.println("  Py          : " + lv_q_gN.py());
-        System.out.println("  Pz          : " + lv_q_gN.pz());
-        System.out.println("  |P| (3D mag): " + lv_q_gN.vect().mag());
-        System.out.println();
-        
-                System.out.println("Light-cone components of lv_q_gN:");
-        double q_plus = (lv_q_gN.e() + lv_q_gN.pz()) / Math.sqrt(2);  // P_h^+
-        double q_minus = (lv_q_gN.e() - lv_q_gN.pz()) / Math.sqrt(2); // P_h^-
-        double q_perp = Math.sqrt(Math.pow(lv_q_gN.px(), 2) + Math.pow(lv_q_gN.py(), 2)); // P_h^perp
-        System.out.println("  P^+   : " + q_plus);
-        System.out.println("  P^-   : " + q_minus);
-        System.out.println("  P^⊥   : " + q_perp);
-        System.out.println();
-        
-        System.out.println("Q2 = "+Q2+", xB = "+x);
-        System.out.println();
-        System.out.println(-x*P_plus+" "+q_plus);
-        System.out.println();
-        System.out.println("lck inner product = "+lck.lightConeInnerProduct(lv_p_gN,lv_q_gN)+", calculated inner product = "+(Q2*Ph_plus/(2*x*P_plus)-x*P_plus*Ph_minus));
-        System.out.println(lck.lightConeInnerProduct(lv_target_gN,lv_q_gN));
-        System.out.println();
-
-// Print the results for xi and xi2
-        System.out.println("Results for xi2 (approximation) and xi1 (Lorentz invariant):");
-        System.out.println("  xi2 (P_h^+/P^+)         : " + xi);
-        System.out.println("  xi1 (Lorentz invariant): " + xi2);
-        System.out.println();
-
-// Extra checks: Compare the two methods
-        double ratio = Math.abs((xi2 - xi) / xi);
-        System.out.println("Relative difference between xi2 and xi1: " + ratio);
-        System.out.println("============================================");
+//
+//// Print Lorentz vector components of lv_q_gN (Photon in gamma*-nucleon frame)
+//        System.out.println("Lorentz Vector lv_q_gN (Photon in gamma*-nucleon frame):");
+//        System.out.println("  Energy (E)  : " + lv_q_gN.e());
+//        System.out.println("  Px          : " + lv_q_gN.px());
+//        System.out.println("  Py          : " + lv_q_gN.py());
+//        System.out.println("  Pz          : " + lv_q_gN.pz());
+//        System.out.println("  |P| (3D mag): " + lv_q_gN.vect().mag());
+//        System.out.println();
+//        
+//        System.out.println("Light-cone components of lv_q_gN:");
+//        double q_plus = (lv_q_gN.e() + lv_q_gN.pz()) / Math.sqrt(2);  // P_h^+
+//        double q_minus = (lv_q_gN.e() - lv_q_gN.pz()) / Math.sqrt(2); // P_h^-
+//        double q_perp = Math.sqrt(Math.pow(lv_q_gN.px(), 2) + Math.pow(lv_q_gN.py(), 2)); // P_h^perp
+//        System.out.println("  P^+   : " + q_plus);
+//        System.out.println("  P^-   : " + q_minus);
+//        System.out.println("  P^⊥   : " + q_perp);
+//        System.out.println();
+//        
+//        System.out.println("Q2 = "+Q2+", xB = "+x);
+//        System.out.println();
+////        System.out.println(-x*P_plus+" "+q_plus);
+//        System.out.println();
+//        System.out.println("lck inner product = "+lck.lightConeInnerProduct(lv_p_gN,lv_q_gN)+", calculated inner product = "+(Q2*Ph_plus/(2*x*P_plus)-x*P_plus*Ph_minus));
+//        System.out.println(lck.lightConeInnerProduct(lv_target_gN,lv_q_gN));
+//        System.out.println();
+//
+//// Print the results for xi and xi2
+//        System.out.println("Results for xi2 (approximation) and xi1 (Lorentz invariant):");
+//        System.out.println("  xi2 (P_h^+/P^+)         : " + xi);
+//        System.out.println("  xi1 (Lorentz invariant): " + xi2);
+//        System.out.println();
+//
+//// Extra checks: Compare the two methods
+//        double ratio = Math.abs((xi2 - xi) / xi);
+//        System.out.println("Relative difference between xi2 and xi1: " + ratio);
+//        System.out.println("============================================");
         
 //        System.out.print(2*Ph_minus*P_plus*x/Q2+",");
     
