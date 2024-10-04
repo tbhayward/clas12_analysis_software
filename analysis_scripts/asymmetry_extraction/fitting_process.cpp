@@ -890,7 +890,7 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
   meanVariablesStream << "\\centering" << endl;
   meanVariablesStream << "\\begin{tabular}{|c|c|c|c|c|c|c|c|c|c|c|} \\hline" << endl;
   meanVariablesStream << "Bin & $<Q^2>$ & $<W>$ ";
-  meanVariablesStream << "& $<x_B>$ & $<y>$ & $<z>$ & $<\\zeta>$ & $<P_T>$ ";
+  meanVariablesStream << "& $<x_B>$ & $<y>$ & $<z>$ & $<\\xi>$ & $<P_T>$ ";
   meanVariablesStream << "& $<x_F>$ & $<t>$ & ";
   meanVariablesStream << "$<t_{\\text{min}}>$\\\\ \\hline" << endl; 
 
@@ -950,7 +950,7 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
 
     // Variables to calculate the mean kinematics in each bin
     double sumQ2 = 0; double sumW = 0; double sumx = 0; double sumy = 0;
-    double sumz = 0; double sumzeta = 0; double sumpT = 0; double sumxF = 0;
+    double sumz = 0; double sumxi = 0; double sumpT = 0; double sumxF = 0;
     double sumt = 0; double sumtmin = 0;
 
     // Declare reader locations
@@ -961,7 +961,7 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
     TTreeReaderValue<double> x(dataReader, "x");
     TTreeReaderValue<double> y(dataReader, "y");
     TTreeReaderValue<double> z(dataReader, "z");
-    TTreeReaderValue<double> zeta(dataReader, "zeta");
+    TTreeReaderValue<double> xi(dataReader, "xi");
     TTreeReaderValue<double> pT(dataReader, "pT");
     TTreeReaderValue<double> xF(dataReader, "xF");
     TTreeReaderValue<double> t(dataReader, "t");
@@ -991,7 +991,7 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
         sumx += *x;
         sumy += *y;
         sumz += *z;
-        sumzeta += *zeta;
+        sumxi += *xi;
         sumpT += *pT;
         sumxF += *xF;
         sumt += *t;
@@ -1028,7 +1028,7 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
     double meanx = numEvents > 0 ? sumx / numEvents : 0.0;
     double meany = numEvents > 0 ? sumy / numEvents : 0.0;
     double meanz = numEvents > 0 ? sumz / numEvents : 0.0;
-    double meanzeta = numEvents > 0 ? sumzeta / numEvents : 0.0;
+    double meanxi = numEvents > 0 ? sumxi / numEvents : 0.0;
     double meanpT = numEvents > 0 ? sumpT / numEvents : 0.0;
     double meanxF = numEvents > 0 ? sumxF / numEvents : 0.0;
     double meant = numEvents > 0 ? sumt / numEvents : 0.0;
@@ -1094,13 +1094,13 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
     // outputs of mean kinematic variables for LaTeX
     meanVariablesStream << std::fixed << std::setprecision(3); // Set precision to 3 digits 
     meanVariablesStream << (i+1) << "~&~" << meanQ2 << "~&~" << meanW << "~&~" << meanx << "~&~";
-    meanVariablesStream << meany << "~&~" << meanz << "~&~" << meanzeta << "~&~";
+    meanVariablesStream << meany << "~&~" << meanz << "~&~" << meanxi << "~&~";
     meanVariablesStream << meanpT << "~&~" << meanxF << "~&~" << meant << "~&~" << meantmin; 
     meanVariablesStream << std::string(" \\\\ \\hline ");
 
     // outputs of mean kinematic variables for plotting
     meanVariablesPlotStream << "{" << meanQ2 << ", " << meanW << ", " << meanx << ", ";
-    meanVariablesPlotStream << meany << ", " << meanz << ", " << meanzeta << ", ";
+    meanVariablesPlotStream << meany << ", " << meanz << ", " << meanxi << ", ";
     meanVariablesPlotStream << meanpT << ", " << meanxF << ", " << meant << "}";
     if (i < numBins - 1) {
         meanVariablesPlotStream << ", "; 
@@ -1902,7 +1902,7 @@ void performChi2Fits_b2b_dihadron(const char* output_file, const char* kinematic
   meanVariablesStream << "\\centering" << endl;
   meanVariablesStream << "\\begin{tabular}{|c|c|c|c|c|c|c|c|c|c|c|} \\hline" << endl;
   meanVariablesStream << "Bin & $<Q^2>$ & $<W>$ ";
-  meanVariablesStream << "& $<x_B>$ & $<y>$ & $<z1>$ & $<\\zeta_2>$ & $<P_{1T}>$ ";
+  meanVariablesStream << "& $<x_B>$ & $<y>$ & $<z1>$ & $<\\xi_2>$ & $<P_{1T}>$ ";
   meanVariablesStream << "& $<P_{2T}>$ & $<x_{F1}>$ & ";
   meanVariablesStream << "$<x_{F2}>$\\\\ \\hline" << endl; 
 
@@ -1962,7 +1962,7 @@ void performChi2Fits_b2b_dihadron(const char* output_file, const char* kinematic
 
     // Variables to calculate the mean kinematics in each bin
     double sumQ2 = 0; double sumW = 0; double sumx = 0; double sumy = 0;
-    double sumz1 = 0; double sumzeta2 = 0; double sumpT1 = 0; double sumpT2 = 0; 
+    double sumz1 = 0; double sumxi2 = 0; double sumpT1 = 0; double sumpT2 = 0; 
     double sumxF1 = 0; double sumxF2 = 0;
 
     // Declare reader locations
@@ -1973,7 +1973,7 @@ void performChi2Fits_b2b_dihadron(const char* output_file, const char* kinematic
     TTreeReaderValue<double> x(dataReader, "x");
     TTreeReaderValue<double> y(dataReader, "y");
     TTreeReaderValue<double> z1(dataReader, "z1");
-    TTreeReaderValue<double> zeta2(dataReader, "zeta2");
+    TTreeReaderValue<double> xi2(dataReader, "xi2");
     TTreeReaderValue<double> pT1(dataReader, "pT1");
     TTreeReaderValue<double> pT2(dataReader, "pT2");
     TTreeReaderValue<double> xF1(dataReader, "xF1");
@@ -2001,7 +2001,7 @@ void performChi2Fits_b2b_dihadron(const char* output_file, const char* kinematic
         sumx += *x;
         sumy += *y;
         sumz1 += *z1;
-        sumzeta2 += *zeta2;
+        sumxi2 += *xi2;
         sumpT1 += *pT1;
         sumpT2 += *pT2;
         sumxF1 += *xF1;
@@ -2036,7 +2036,7 @@ void performChi2Fits_b2b_dihadron(const char* output_file, const char* kinematic
     double meanx = numEvents > 0 ? sumx / numEvents : 0.0;
     double meany = numEvents > 0 ? sumy / numEvents : 0.0;
     double meanz1 = numEvents > 0 ? sumz1 / numEvents : 0.0;
-    double meanzeta2 = numEvents > 0 ? sumzeta2 / numEvents : 0.0;
+    double meanxi2 = numEvents > 0 ? sumxi2 / numEvents : 0.0;
     double meanpT1 = numEvents > 0 ? sumpT1 / numEvents : 0.0;
     double meanpT2 = numEvents > 0 ? sumpT2 / numEvents : 0.0;
     double meanxF1 = numEvents > 0 ? sumxF1 / numEvents : 0.0;
@@ -2167,7 +2167,7 @@ void performChi2Fits_b2b_dihadron(const char* output_file, const char* kinematic
     // outputs of mean kinematic variables
     meanVariablesStream << std::fixed << std::setprecision(3); // Set precision to 3 digits 
     meanVariablesStream << (i+1) << "~&~" << meanQ2 << "~&~" << meanW << "~&~" << meanx << "~&~";
-    meanVariablesStream << meany << "~&~" << meanz1 << "~&~" << meanzeta2 << "~&~";
+    meanVariablesStream << meany << "~&~" << meanz1 << "~&~" << meanxi2 << "~&~";
     meanVariablesStream << meanpT1 << "~&~" << meanpT2 << "~&~" << meanxF1 << "~&~" << meanxF2; 
     meanVariablesStream << std::string(" \\\\ \\hline ");
   }
