@@ -281,7 +281,6 @@ public class TwoParticles {
                 / kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
         LightConeKinematics lck = new LightConeKinematics();
         xi = lck.xi_h(lv_p_gN, lv_q_gN, lv_target_gN);
-        System.out.println(xi2-xi+",");
 
         // Print Lorentz vector components of lv_p_gN (hadron in gamma*-nucleon frame)
 //        System.out.println("Lorentz Vector lv_p_gN (Hadron in gamma*-nucleon frame):");
@@ -294,9 +293,9 @@ public class TwoParticles {
 ////
 ////// Print light-cone components of lv_p_gN
 //        System.out.println("Light-cone components of lv_p_gN:");
-//        double Ph_plus = (lv_p_gN.e() + lv_p_gN.pz()) / Math.sqrt(2);  // P_h^+
-//        double Ph_minus = (lv_p_gN.e() - lv_p_gN.pz()) / Math.sqrt(2); // P_h^-
-//        double Ph_perp = Math.sqrt(Math.pow(lv_p_gN.px(), 2) + Math.pow(lv_p_gN.py(), 2)); // P_h^perp
+        double Ph_plus = (lv_p_gN.e() + lv_p_gN.pz()) / Math.sqrt(2);  // P_h^+
+        double Ph_minus = (lv_p_gN.e() - lv_p_gN.pz()) / Math.sqrt(2); // P_h^-
+        double Ph_perp = Math.sqrt(Math.pow(lv_p_gN.px(), 2) + Math.pow(lv_p_gN.py(), 2)); // P_h^perp
 //        System.out.println("  P_h^+   : " + Ph_plus);
 //        System.out.println("  P_h^-   : " + Ph_minus);
 //        System.out.println("  P_h^⊥   : " + Ph_perp);
@@ -313,9 +312,9 @@ public class TwoParticles {
 ////        
 ////        // Print light-cone components of lv_target_gN
 //            System.out.println("Light-cone components of lv_p_gN:");
-//        double P_plus = (lv_target_gN.e() + lv_target_gN.pz()) / Math.sqrt(2);  // P_h^+
-//        double P_minus = (lv_target_gN.e() - lv_target_gN.pz()) / Math.sqrt(2); // P_h^-
-//        double P_perp = Math.sqrt(Math.pow(lv_target_gN.px(), 2) + Math.pow(lv_target_gN.py(), 2)); // P_h^perp
+        double P_plus = (lv_target_gN.e() + lv_target_gN.pz()) / Math.sqrt(2);  // P_h^+
+        double P_minus = (lv_target_gN.e() - lv_target_gN.pz()) / Math.sqrt(2); // P_h^-
+        double P_perp = Math.sqrt(Math.pow(lv_target_gN.px(), 2) + Math.pow(lv_target_gN.py(), 2)); // P_h^perp
 //        System.out.println("  P^+   : " + P_plus);
 //        System.out.println("  P^-   : " + P_minus);
 //        System.out.println("  P^⊥   : " + P_perp);
@@ -331,9 +330,9 @@ public class TwoParticles {
 //        System.out.println();
 //        
 //        System.out.println("Light-cone components of lv_q_gN:");
-//        double q_plus = (lv_q_gN.e() + lv_q_gN.pz()) / Math.sqrt(2);  // P_h^+
-//        double q_minus = (lv_q_gN.e() - lv_q_gN.pz()) / Math.sqrt(2); // P_h^-
-//        double q_perp = Math.sqrt(Math.pow(lv_q_gN.px(), 2) + Math.pow(lv_q_gN.py(), 2)); // P_h^perp
+        double q_plus = (lv_q_gN.e() + lv_q_gN.pz()) / Math.sqrt(2);  // P_h^+
+        double q_minus = (lv_q_gN.e() - lv_q_gN.pz()) / Math.sqrt(2); // P_h^-
+        double q_perp = Math.sqrt(Math.pow(lv_q_gN.px(), 2) + Math.pow(lv_q_gN.py(), 2)); // P_h^perp
 //        System.out.println("  P^+   : " + q_plus);
 //        System.out.println("  P^-   : " + q_minus);
 //        System.out.println("  P^⊥   : " + q_perp);
@@ -358,7 +357,7 @@ public class TwoParticles {
 //        System.out.println("Relative difference between xi2 and xi1: " + ratio);
 //        System.out.println("============================================");
 //        
-//        System.out.print(2*Ph_minus*P_plus*x/Q2+",");
+        System.out.print(2*Ph_minus*P_plus*x/Q2+",");
     
         p_gN_pz = lv_p_gN.vect().dot(lv_q_gN.vect()) / lv_q_gN.vect().mag();
         p_Breit_pz = lv_p_Breit.vect().dot(lv_q_Breit.vect()) / lv_q_Breit.vect().mag();
