@@ -272,9 +272,9 @@ int main(int argc, char *argv[]) {
     }
 
     cpp = 1.08285e+06;
-    cpm = 1.37489e+06;
+    cpm = 1.77489e+06;
     cmp = 1.08285e+06;
-    cmm = 1.37489e+06;
+    cmm = 1.77489e+06;
 
     for (int asymmetry = 0; asymmetry < 3; ++asymmetry) {
         if (asymmetry > 0 && cpp == 1) {
