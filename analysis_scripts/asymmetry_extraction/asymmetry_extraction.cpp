@@ -270,8 +270,7 @@ int main(int argc, char *argv[]) {
         // If cpp == 1, fill dilutionFactors with zeros
         dilutionFactors = std::vector<std::pair<double, double>>(allBins[i].size() - 1, {0.0, 0.0});
     }
-    // dilutionFactors = std::vector<std::pair<double, double>>(allBins[i].size() - 1, {1.0, 0.0});
-
+    
     for (int asymmetry = 0; asymmetry < 3; ++asymmetry) {
         if (asymmetry > 0 && cpp == 1) {
             cout << "Skipping TSA and DSA for unpolarized target data." << endl;
