@@ -122,7 +122,7 @@ public static void main(String[] args) {
 		HipoDataEvent event = reader.getNextEvent(); 
 
 		while (reader.hasEvent()) {
-			if (num_events==10000) break;
+			// if (num_events==10000) break;
 		    ++num_events;
 		    if (num_events % 500000 == 0) { // not necessary, just updates output
 		        print("processed: " + num_events + " events. ");
@@ -154,7 +154,7 @@ public static void main(String[] args) {
 		        for (int current_p1 = 0; current_p1 < num_p1; current_p1++) { 
 
 		        	// supply runnum and boolean for radiative simulation or not
-					BeamEnergy Eb = new BeamEnergy(runnum, false);
+					BeamEnergy Eb = new BeamEnergy(runnum, true);
 					// Use the input beam energy if runnum == 11, otherwise use Eb.Eb()
 					double energy = (runnum == 11) ? beam_energy : Eb.Eb();
 		            TwoParticles variables = new TwoParticles(event, research_Event,
