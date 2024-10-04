@@ -853,8 +853,6 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
     double Nmp = histNegPos->GetBinContent(iBin)/cmp;
     double Nmm = histNegNeg->GetBinContent(iBin)/cmm;
 
-    std::cout << histPosPos->GetBinContent(iBin) << " " << histPosNeg->GetBinContent(iBin) << " " << histNegPos->GetBinContent(iBin) << " " << histNegNeg->GetBinContent(iBin) << std::endl;
-
     // Calculate the asymmetry and error for the current bin
     double asymmetry = asymmetry_value_calculation(meanVariable, dilutionFactors, prefix, 
       Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
