@@ -281,6 +281,7 @@ public class TwoParticles {
                 / kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
         LightConeKinematics lck = new LightConeKinematics();
         xi = lck.xi_h(lv_p_gN, lv_q_gN, lv_target_gN);
+        System.out.println(xi2-xi+",");
 
         // Print Lorentz vector components of lv_p_gN (hadron in gamma*-nucleon frame)
 //        System.out.println("Lorentz Vector lv_p_gN (Hadron in gamma*-nucleon frame):");
