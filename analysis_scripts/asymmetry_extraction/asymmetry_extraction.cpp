@@ -271,15 +271,11 @@ int main(int argc, char *argv[]) {
         dilutionFactors = std::vector<std::pair<double, double>>(allBins[i].size() - 1, {0.0, 0.0});
     }
 
-    // cpp = 1.08285e+06;
-    // cpm = 1.07489e+06;
-    // cmp = 1.08285e+06;
-    // cmm = 1.07489e+06;
-
-    cpp = 1.06509e+06;
-    cpm = 1.09221e+06;
-    cmp = 1.06509e+06;
-    cmm = 1.09221e+06;
+    // minimum necessary change in charge values needed for 0 AUL offset
+    // cpp = 1.06509e+06;
+    // cpm = 1.09221e+06;
+    // cmp = 1.06509e+06;
+    // cmm = 1.09221e+06;
 
     for (int asymmetry = 0; asymmetry < 3; ++asymmetry) {
         if (asymmetry > 0 && cpp == 1) {

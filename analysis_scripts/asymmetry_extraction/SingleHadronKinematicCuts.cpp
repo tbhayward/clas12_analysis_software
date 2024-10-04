@@ -9,12 +9,10 @@ using std::string;
 SingleHadronKinematicCuts::SingleHadronKinematicCuts(TTreeReader& reader)
     : BaseKinematicCuts(reader), // Call to the BaseKinematicCuts constructor
       runnum(reader, "runnum"), fiducial_status(reader, "fiducial_status"), 
-      e_theta(reader, "e_theta"), e_phi(reader, "e_phi"), vz_e(reader, "vz_e"),
-      p_p(reader, "p_p"), p_theta(reader, "p_theta"), p_phi(reader, "p_phi"), 
-      vz_p(reader, "vz_p"), 
+      vz_e(reader, "vz_e"), p_p(reader, "p_p"),  vz_p(reader, "vz_p"), 
       Q2(reader, "Q2"), W(reader, "W"), Mx2(reader, "Mx2"), x(reader, "x"), 
       t(reader, "t"), tmin(reader, "tmin"), y(reader, "y"), z(reader, "z"), 
-      pT(reader, "pT"), xF(reader, "xF"), phi(reader, "phi"), 
+      xi(reader, "xi"), pT(reader, "pT"), xF(reader, "xF"), phi(reader, "phi"), 
       target_pol(reader, "target_pol") {}
 
 bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
@@ -22,37 +20,46 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     bool checked = false;
     string property = binNames[currentFits];
 
-    if (-10 > *vz_p || *vz_p > 1.5 || -9 > *vz_e || *vz_e > 2) return false;
     if (*fiducial_status != 2) return false; // fiducial cuts
 
     if (property == "integrated") {
       goodEvent = *Q2 > 1 && *W > 2 && *Mx2 > 1.8225 && *y < 0.80;
       return goodEvent;
     }
-    if (property == "xF" || property == "x" || property == "z" || property == "PT" || 
-      property == "runnum") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.80;
-      return goodEvent;
-    } 
-    if (property == "xFall" || property == "xall" || property == "zall" || property == "PTall") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.16;
-      return goodEvent;
-    } 
-    if (property == "Q2multi1") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.9;
-      goodEvent = goodEvent && *x > 0.12 && *x < 0.15 && *pT > 0.35 && *pT < 0.45 && *z > 0.16 && *z < 0.22;
+    if (property == "Mx2") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80;
       return goodEvent;
     }
-    if (property == "Q2multi2") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.9;
-      goodEvent = goodEvent && *x > 0.15 && *x < 0.18 && *pT > 0.35 && *pT < 0.45 && *z > 0.16 && *z < 0.22 ;
+    if (property == "xF") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225;
+      return goodEvent;
+    } 
+    if (property == "xFsmallPT") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && *pT < 0.5;
+      return goodEvent;
+    } 
+    if (property == "xFlargePT") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && *pT > 0.5;
+      return goodEvent;
+    } 
+    if (property == "xTFR" || property == "xi" || property == "PTTFR") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && *xF < 0;
       return goodEvent;
     }
-    if (property == "Q2multi3") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 0.9;
-      goodEvent = goodEvent && *x > 0.18 && *x < 0.21 && *pT > 0.35 && *pT < 0.45 && *z > 0.16 && *z < 0.22;
+    if (property == "xTFRsmallPT" || property == "xismallPT") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && *xF < 0 && *pT < 0.5;
       return goodEvent;
-    }    
+    }
+    if (property == "xTFRlargePT" || property == "xilargePT") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && *xF < 0 && *pT > 0.5;
+      return goodEvent;
+    }
+    if (property == "xCFR" || property == "z" || property == "PTCFR") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && *xF > 0.2;
+      return goodEvent;
+    }
+
+    
 
     if (*Q2 > 1 && *W > 2 && *Mx2 > 1.80 && *y < 0.80 && !checked) {
       goodEvent = true;
