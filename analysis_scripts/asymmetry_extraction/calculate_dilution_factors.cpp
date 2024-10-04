@@ -177,7 +177,7 @@ std::pair<double, double> calculate_dilution_and_error(double nA, double nC, dou
     //                              0.23905 * nC * xCH * xf * xHe));
 
     double dilution = 0.565345 * ((nA - nMT) * (1.25501 * nCH - 0.23905 * nC - 1.9544 * nF + nMT)) /
-                (nA * (1.25501 * nCH - 0.23905 * nC - 0.0159627 * nF - nMT));
+                (nA * (1.25501 * nCH - 0.23905 * nC - 0.0159627 * nf - nMT));
     
     double error = calculate_dilution_error(nA, nC, nCH, nMT, nf, xA, xC, xCH, xHe, xf);
     
