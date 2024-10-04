@@ -271,10 +271,10 @@ int main(int argc, char *argv[]) {
         dilutionFactors = std::vector<std::pair<double, double>>(allBins[i].size() - 1, {0.0, 0.0});
     }
 
-    cpp = 0.80285e+06;
-    cpm = 1.07489e+06;
-    cmp = 0.80285e+06;
-    cmm = 1.07489e+06;
+    // cpp = 0.80285e+06;
+    // cpm = 1.07489e+06;
+    // cmp = 0.80285e+06;
+    // cmm = 1.07489e+06;
 
     for (int asymmetry = 0; asymmetry < 3; ++asymmetry) {
         if (asymmetry > 0 && cpp == 1) {
