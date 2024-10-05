@@ -408,14 +408,6 @@ void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f,
       double signPt = (*target_pol >= 0) ? 1.0 : -1.0;
       Pt = signPt * Pt;
 
-      // Clamp Pb between -1 and 1
-      if (Pb > 1.0) Pb = 1.0;
-      if (Pb < -1.0) Pb = -1.0;
-
-      // Clamp Pt between -1 and 1
-      if (Pt > 1.0) Pt = 1.0;
-      if (Pt < -1.0) Pt = -1.0;
-
       if (*helicity > 0 && *target_pol >= 0) { 
         sum_PP = sum_PP + log(1 
           + (*DepV / *DepA)*AUU_cosphi*cos(*phi) + (*DepB / *DepA)*AUU_cos2phi*cos(2 * *phi) // UU 
@@ -1242,7 +1234,8 @@ void negLogLikelihood_b2b_dihadron(Int_t &npar, Double_t *gin, Double_t &f,
       // Increment the event count
       N += 1;
 
-      tors[currentBin].first;
+      // Initial definitions
+      double Df = dilutionFactors[currentBin].first;
       double sigmaDf = dilutionFactors[currentBin].second;
       double Pb = *beam_pol;
       double sigmaPb = 0.015;
@@ -1270,14 +1263,6 @@ void negLogLikelihood_b2b_dihadron(Int_t &npar, Double_t *gin, Double_t &f,
       // Restore the sign of Pt
       double signPt = (*target_pol >= 0) ? 1.0 : -1.0;
       Pt = signPt * Pt;
-
-      // Clamp Pb between -1 and 1
-      if (Pb > 1.0) Pb = 1.0;
-      if (Pb < -1.0) Pb = -1.0;
-
-      // Clamp Pt between -1 and 1
-      if (Pt > 1.0) Pt = 1.0;
-      if (Pt < -1.0) Pt = -1.0;
 
       if (*helicity > 0 && *target_pol >= 0) { 
         sum_PP = sum_PP + log(1 +
