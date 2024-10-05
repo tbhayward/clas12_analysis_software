@@ -275,7 +275,7 @@ double asymmetry_value_calculation(double currentVariable,
   const std::string& prefix, double Npp, double Npm, double Nmp, double Nmm,
   double meanPol, double Ptp, double Ptm, 
   int asymmetry_index) {
-  Df = dilutionFactor.first;
+  double Df = dilutionFactor.first;
   // return the asymmetry value 
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
@@ -294,7 +294,7 @@ double asymmetry_error_calculation(double currentVariable,
   const std::string& prefix, double npp, double npm, double nmp, double nmm,
   double Pb, double Ptp, double Ptm, 
   int asymmetry_index) {
-  Df = dilutionFactor.first;
+  double Df = dilutionFactor.first;
   double sigmaDf = dilutionFactor.second;
   double sigmaPb = 0.015;
   double sigmaPtp = 0.025;
