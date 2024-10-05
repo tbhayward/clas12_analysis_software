@@ -299,6 +299,7 @@ int main(int argc, char *argv[]) {
     // }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
     // cout << "MLM fits disabled by default in main branch. See development/uncomment next lines for MLM." << endl;
+    cout << "Beginning MLM fits." << endl;
     switch (channel) {
       case 0: cout << "No MLM fit for inclusive." << endl; break;
       case 1: performMLMFits_single_hadron(output_file.c_str(), kinematic_file.c_str(), binNames[i]); break;
