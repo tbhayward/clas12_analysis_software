@@ -76,6 +76,8 @@ int data_count = 0;
 int mc_count = 0;
 std::string mlmPrefix = "xF";
 
+std::vector<std::pair<double, double>> dilutionFactors;
+
 int main(int argc, char *argv[]) {
   // Start the timer
   auto start_time = std::chrono::high_resolution_clock::now();
@@ -251,9 +253,6 @@ int main(int argc, char *argv[]) {
   for (size_t i = 0; i < allBins.size(); ++i) {
     cout << "-- Beginning kinematic fits." << endl;
 
-    // Initialize dilutionFactors
-    std::vector<std::pair<double, double>> dilutionFactors;
-
     if (cpp != 1) {
         // Calculate the dilution factors for the current bin
         dilutionFactors = calculate_dilution_factors();
@@ -289,13 +288,13 @@ int main(int argc, char *argv[]) {
         }
         switch (channel) {
             case 0: calculate_inclusive(output_file.c_str(), kinematic_file.c_str(), 
-              binNames[i], asymmetry, dilutionFactors); break;
+              binNames[i], asymmetry); break;
             case 1: performChi2Fits_single_hadron(output_file.c_str(), kinematic_file.c_str(), 
-              kinematicPlot_file.c_str(), binNames[i], asymmetry, dilutionFactors); break;
+              kinematicPlot_file.c_str(), binNames[i], asymmetry); break;
             case 2: performChi2Fits_b2b_dihadron(output_file.c_str(), kinematic_file.c_str(), 
-              binNames[i], asymmetry, dilutionFactors); break;
+              binNames[i], asymmetry); break;
             case 4: performChi2Fits_dvcs(output_file.c_str(), kinematic_file.c_str(), 
-              kinematicPlot_file.c_str(), binNames[i], asymmetry, dilutionFactors); break;
+              kinematicPlot_file.c_str(), binNames[i], asymmetry); break;
         }
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;

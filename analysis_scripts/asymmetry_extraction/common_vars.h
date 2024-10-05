@@ -18,6 +18,7 @@ extern std::vector<std::string> propertyNames;
 extern std::vector<std::string> variable_names;
 extern BaseKinematicCuts* kinematicCuts;
 extern BaseKinematicCuts* mckinematicCuts;
+extern std::vector<std::pair<double, double>> dilutionFactors;
 extern double cmm;
 extern double cpm;
 extern double cmp;
