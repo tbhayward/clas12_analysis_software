@@ -27,6 +27,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <random>
 // ROOT Library Headers
 #include <TApplication.h>
 #include <TCanvas.h>
@@ -48,6 +49,7 @@
 #include "TStyle.h"
 #include <TBranch.h>
 #include <cstdio>
+#include <cmath>
 
 // Using namespace declaration
 using namespace std;
@@ -376,9 +378,43 @@ void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f,
       // Increment the event count
       N += 1;
 
-      double Df = dilution_factor(*Q2, *x, *z, *pT, mlmPrefix); // dilution factor
+      // Initial definitions
+      double Df = dilutionFactors[currentBin].first;
+      double sigmaDf = dilutionFactors[currentBin].second;
       double Pb = *beam_pol;
+      double sigmaPb = 0.015;
       double Pt = std::abs(*target_pol);
+      double sigmaPtp = 0.025;
+      double sigmaPtm = 0.025;
+
+      // Random number generation setup
+      std::random_device rd;
+      std::mt19937 gen(rd());
+
+      // Normal distributions
+      std::normal_distribution<> distDf(0.0, sigmaDf);
+      std::normal_distribution<> distPb(0.0, sigmaPb);
+
+      // Select sigma for Pt based on the sign of *target_pol
+      double sigmaPt = (*target_pol >= 0) ? sigmaPtp : sigmaPtm;
+      std::normal_distribution<> distPt(0.0, sigmaPt);
+
+      // Adjust the values
+      Df += distDf(gen);
+      Pb += distPb(gen);
+      Pt += distPt(gen);
+
+      // Restore the sign of Pt
+      double signPt = (*target_pol >= 0) ? 1.0 : -1.0;
+      Pt = signPt * Pt;
+
+      // Clamp Pb between -1 and 1
+      if (Pb > 1.0) Pb = 1.0;
+      if (Pb < -1.0) Pb = -1.0;
+
+      // Clamp Pt between -1 and 1
+      if (Pt > 1.0) Pt = 1.0;
+      if (Pt < -1.0) Pt = -1.0;
 
       if (*helicity > 0 && *target_pol >= 0) { 
         sum_PP = sum_PP + log(1 
@@ -1206,9 +1242,42 @@ void negLogLikelihood_b2b_dihadron(Int_t &npar, Double_t *gin, Double_t &f,
       // Increment the event count
       N += 1;
 
-      double Df = dilution_factor(*Q2, *x, *z, *pT, mlmPrefix); // dilution factor
+      tors[currentBin].first;
+      double sigmaDf = dilutionFactors[currentBin].second;
       double Pb = *beam_pol;
+      double sigmaPb = 0.015;
       double Pt = std::abs(*target_pol);
+      double sigmaPtp = 0.025;
+      double sigmaPtm = 0.025;
+
+      // Random number generation setup
+      std::random_device rd;
+      std::mt19937 gen(rd());
+
+      // Normal distributions
+      std::normal_distribution<> distDf(0.0, sigmaDf);
+      std::normal_distribution<> distPb(0.0, sigmaPb);
+
+      // Select sigma for Pt based on the sign of *target_pol
+      double sigmaPt = (*target_pol >= 0) ? sigmaPtp : sigmaPtm;
+      std::normal_distribution<> distPt(0.0, sigmaPt);
+
+      // Adjust the values
+      Df += distDf(gen);
+      Pb += distPb(gen);
+      Pt += distPt(gen);
+
+      // Restore the sign of Pt
+      double signPt = (*target_pol >= 0) ? 1.0 : -1.0;
+      Pt = signPt * Pt;
+
+      // Clamp Pb between -1 and 1
+      if (Pb > 1.0) Pb = 1.0;
+      if (Pb < -1.0) Pb = -1.0;
+
+      // Clamp Pt between -1 and 1
+      if (Pt > 1.0) Pt = 1.0;
+      if (Pt < -1.0) Pt = -1.0;
 
       if (*helicity > 0 && *target_pol >= 0) { 
         sum_PP = sum_PP + log(1 +
