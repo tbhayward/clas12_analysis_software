@@ -271,7 +271,7 @@ double DSA_dihadron(double* x, double* par) {
 
 /******** VALUE CALCULATIONS ********/
 
-double asymmetry_value_calculation(double currentVariable, const std::pair<double, double>& dilutionFactor,
+double asymmetry_value_calculation(double currentVariable, 
   const std::string& prefix, double Npp, double Npm, double Nmp, double Nmm,
   double meanPol, double Ptp, double Ptm, 
   int asymmetry_index) {
@@ -290,7 +290,7 @@ double asymmetry_value_calculation(double currentVariable, const std::pair<doubl
   }
 }
 
-double asymmetry_error_calculation(double currentVariable, const std::pair<double, double>& dilutionFactor, 
+double asymmetry_error_calculation(double currentVariable, 
   const std::string& prefix, double npp, double npm, double nmp, double nmm,
   double Pb, double Ptp, double Ptm, 
   int asymmetry_index) {
