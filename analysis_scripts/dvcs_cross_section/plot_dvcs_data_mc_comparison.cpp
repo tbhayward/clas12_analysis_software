@@ -63,14 +63,14 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
             h_mc_rec_histograms.push_back(new TH1D(Form("h_mc_rec_%d", histogram_idx), "rec", 24, 0, 360));
 
             // Set the x-axis and y-axis labels for each histogram
-            h_data_histograms->GetXaxis()->SetTitle("#phi");
-            h_data_histograms->GetYaxis()->SetTitle("Normalized Counts");
+            h_data_histograms[histogram_idx]->GetXaxis()->SetTitle("#phi");
+            h_data_histograms[histogram_idx]->GetYaxis()->SetTitle("Normalized Counts");
 
-            h_mc_gen_histograms->GetXaxis()->SetTitle("#phi");
-            h_mc_gen_histograms->GetYaxis()->SetTitle("Normalized Counts");
+            h_mc_gen_histograms[histogram_idx]->GetXaxis()->SetTitle("#phi");
+            h_mc_gen_histograms[histogram_idx]->GetYaxis()->SetTitle("Normalized Counts");
 
-            h_mc_rec_histograms->GetXaxis()->SetTitle("#phi");
-            h_mc_rec_histograms->GetYaxis()->SetTitle("Normalized Counts");
+            h_mc_rec_histograms[histogram_idx]->GetXaxis()->SetTitle("#phi");
+            h_mc_rec_histograms[histogram_idx]->GetYaxis()->SetTitle("Normalized Counts");
 
             histogram_idx++;
         }
