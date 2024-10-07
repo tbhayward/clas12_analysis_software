@@ -50,7 +50,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
             TTreeReaderValue<double> phi_data(data_reader, "phi");
             TTreeReaderValue<double> Q2_data(data_reader, "Q2");
             TTreeReaderValue<double> t_data(data_reader, "t");
-            TTreeReaderValue<double> xB_data(data_reader, "x");  // xB is the x branch
+            TTreeReaderValue<double> xB_data(data_reader, "x");  
 
             TTreeReaderValue<double> phi_mc_gen(mc_gen_reader, "phi");
             TTreeReaderValue<double> Q2_mc_gen(mc_gen_reader, "Q2");
@@ -70,6 +70,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
                 if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high && 
                     *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
                     *t_data >= bin.t_low && *t_data <= bin.t_high) {
+                    std::cout << "HELLO WORLD" << std::endl;
                     h_data->Fill(phi_deg);
                 }
             }
