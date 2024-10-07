@@ -22,47 +22,9 @@
 using namespace std;
 namespace fs = std::filesystem;
 
-// Structure to store bin boundaries
-struct BinBoundary {
-    double xB_low, xB_high;
-    double Q2_low, Q2_high;
-    double t_low, t_high;
-};
-
 // Function to check if a file exists
 bool checkFileExists(const string& path) {
     return fs::exists(path);
-}
-
-// Function to read bin boundaries from CSV file
-std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
-    std::vector<BinBoundary> bin_boundaries;
-    std::ifstream file(filename);
-
-    if (!file.is_open()) {
-        std::cerr << "Error: Could not open file " << filename << std::endl;
-        return bin_boundaries;
-    }
-
-    std::string line;
-    while (std::getline(file, line)) {
-        std::stringstream ss(line);
-        std::string token;
-        BinBoundary bin;
-
-        // Assuming CSV format: xB_low,xB_high,Q2_low,Q2_high,t_low,t_high
-        std::getline(ss, token, ','); bin.xB_low = std::stod(token);
-        std::getline(ss, token, ','); bin.xB_high = std::stod(token);
-        std::getline(ss, token, ','); bin.Q2_low = std::stod(token);
-        std::getline(ss, token, ','); bin.Q2_high = std::stod(token);
-        std::getline(ss, token, ','); bin.t_low = std::stod(token);
-        std::getline(ss, token, ','); bin.t_high = std::stod(token);
-
-        bin_boundaries.push_back(bin);
-    }
-
-    file.close();
-    return bin_boundaries;
 }
 
 // Function to handle exclusivity plots
