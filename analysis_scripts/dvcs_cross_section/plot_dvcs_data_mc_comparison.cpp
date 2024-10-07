@@ -147,6 +147,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         // Now, find which bin this data entry belongs to by looping over the bins
         for (int bin_idx = 0; bin_idx < n_Q2t_bins; ++bin_idx) {
             std::cout << "On bin " << bin_idx << std::endl;
+            std::cout << "The limits are x " << " " << bin.xB_low << " " bin.xB_high << " Q2 " << bin.Q2_low << " " << bin.Q2_high << " t " << bin.t_low << " " << bin.t_high << std::endl;
             const auto& bin = bin_boundaries[bin_idx];
 
             // Check if the entry falls within the current bin
