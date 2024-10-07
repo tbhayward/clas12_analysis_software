@@ -83,28 +83,32 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     std::vector<TH1D*> h_mc_gen_histograms(n_Q2t_bins);
     std::vector<TH1D*> h_mc_rec_histograms(n_Q2t_bins);
 
-    // Initialize histograms
+    // Keep track of the number of histograms created
     int histogram_idx = 0;
+
     for (const auto& bin : bin_boundaries) {
+        // Clean the bin label to extract xB_bin
         std::string bin_label = clean_bin_label(bin.bin_label);
         size_t first_comma = bin_label.find(',');
 
         if (first_comma != std::string::npos) {
             int xB_label = std::stoi(bin_label.substr(0, first_comma)); // Extract xB_bin from bin label
+
             if (xB_label == xB_bin) {
-                if (histogram_idx >= n_Q2t_bins) break;
+                if (histogram_idx >= n_Q2t_bins) break;  // Ensure we don't create more than needed
 
                 // Create a title string based on the kinematic constraints
                 std::string title = Form("x_{B}: %.2f-%.2f, Q^{2}: %.2f-%.2f, |t|: %.2f-%.2f",
-                                         bin.xB_low, bin.xB_high,
-                                         bin.Q2_low, bin.Q2_high,
-                                         std::abs(bin.t_low), std::abs(bin.t_high));
+                                        bin.xB_low, bin.xB_high,
+                                        bin.Q2_low, bin.Q2_high,
+                                        std::abs(bin.t_low), std::abs(bin.t_high));
 
+                // Create histograms
                 h_data_histograms[histogram_idx] = new TH1D(Form("h_data_%d", histogram_idx), title.c_str(), 24, 0, 360);
                 h_mc_gen_histograms[histogram_idx] = new TH1D(Form("h_mc_gen_%d", histogram_idx), "gen", 24, 0, 360);
                 h_mc_rec_histograms[histogram_idx] = new TH1D(Form("h_mc_rec_%d", histogram_idx), "rec", 24, 0, 360);
 
-                // Set axis labels
+                // Set the x-axis and y-axis labels for each histogram
                 h_data_histograms[histogram_idx]->GetXaxis()->SetTitle("#phi");
                 h_data_histograms[histogram_idx]->GetYaxis()->SetTitle("Normalized Counts");
 
@@ -121,20 +125,31 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
 
     std::cout << "There are " << histogram_idx << " bins created." << std::endl;
 
-    // Now, fill the histograms by looping over the entries in the tree
-
-    // Fill the data histograms
+    // Restart the readers before looping over data
     data_reader.Restart();
-    while (data_reader.Next()) {
-        double phi_deg = *phi_data * RAD_TO_DEG;  // Convert phi to degrees
+    mc_gen_reader.Restart();
+    mc_rec_reader.Restart();
 
-        histogram_idx = 0;  // Reset the histogram index for each entry
+    // Reinitialize readers for each tree
+    TTreeReaderValue<double> phi_data(data_reader, "phi");
+    TTreeReaderValue<double> xB_data(data_reader, "x");  // Use 'x' for xB
+    TTreeReaderValue<double> Q2_data(data_reader, "Q2");
+    TTreeReaderValue<double> t1_data(data_reader, "t1");  // Use t1 instead of t
+
+    TTreeReaderValue<double> phi_mc_gen(mc_gen_reader, "phi");
+    TTreeReaderValue<double> phi_mc_rec(mc_rec_reader, "phi");
+
+    // Fill the histograms by looping over the data
+    while (data_reader.Next()) {
+        double phi_deg = *phi_data * RAD_TO_DEG;  // Convert phi from radians to degrees
+
+        histogram_idx = 0;
         for (const auto& bin : bin_boundaries) {
             std::string bin_label = clean_bin_label(bin.bin_label);
             size_t first_comma = bin_label.find(',');
 
             if (first_comma != std::string::npos) {
-                int xB_label = std::stoi(bin_label.substr(0, first_comma)); // Extract xB_bin from bin label
+                int xB_label = std::stoi(bin_label.substr(0, first_comma)); // Extract xB_bin
 
                 if (xB_label == xB_bin) {
                     if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
@@ -149,7 +164,6 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     }
 
     // Fill the MC-generated histograms
-    mc_gen_reader.Restart();
     while (mc_gen_reader.Next()) {
         double phi_mc_gen_deg = *phi_mc_gen * RAD_TO_DEG;
 
@@ -170,7 +184,6 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     }
 
     // Fill the MC-reconstructed histograms
-    mc_rec_reader.Restart();
     while (mc_rec_reader.Next()) {
         double phi_mc_rec_deg = *phi_mc_rec * RAD_TO_DEG;
 
@@ -199,30 +212,36 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         TH1D* h_mc_gen = h_mc_gen_histograms[histogram_idx];
         TH1D* h_mc_rec = h_mc_rec_histograms[histogram_idx];
 
+        // Normalize histograms if they are not empty
         if (h_data->Integral() > 0) h_data->Scale(1.0 / h_data->Integral());
         if (h_mc_gen->Integral() > 0) h_mc_gen->Scale(1.0 / h_mc_gen->Integral());
         if (h_mc_rec->Integral() > 0) h_mc_rec->Scale(1.0 / h_mc_rec->Integral());
 
+        // Find the maximum bin content across all histograms
         double max_value = std::max({h_data->GetMaximum(), h_mc_gen->GetMaximum(), h_mc_rec->GetMaximum()});
 
+        // Set the y-axis range from 0 to 1.35 times the maximum value
         h_data->SetMaximum(1.35 * max_value);
         h_data->SetMinimum(0);
 
+        // Set colors and styles
         h_data->SetMarkerColor(kBlue);
-        h_data->SetMarkerStyle(20);
+        h_data->SetMarkerStyle(20);  // Data points with error bars
         h_data->SetLineColor(kBlue);
 
         h_mc_gen->SetLineColor(kBlack);
-        h_mc_gen->SetLineStyle(2);
+        h_mc_gen->SetLineStyle(2);  // Black line for generated MC
 
         h_mc_rec->SetMarkerColor(kRed);
-        h_mc_rec->SetMarkerStyle(22);
+        h_mc_rec->SetMarkerStyle(22);  // Red points for reconstructed MC
         h_mc_rec->SetLineColor(kRed);
 
-        h_data->Draw("E1");
-        h_mc_rec->Draw("E1 SAME");
-        h_mc_gen->Draw("HIST SAME");
+        // Draw histograms on the same canvas for each subplot
+        h_data->Draw("E1");           // Data with error bars
+        h_mc_rec->Draw("E1 SAME");    // Reconstructed MC with error bars
+        h_mc_gen->Draw("HIST SAME");  // Generated MC as a line
 
+        // Add legend to every subplot
         TLegend* legend = new TLegend(0.575, 0.6, 0.9, 0.9);
         legend->AddEntry(h_data, "Data", "lep");
         legend->AddEntry(h_mc_rec, "Reconstructed MC", "lep");
@@ -233,9 +252,11 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         histogram_idx++;
     }
 
+    // Save canvas to the output directory
     std::string filename = output_dir + "/phi_data_mc_comparison_xB_bin_" + std::to_string(xB_bin) + ".png";
     canvas->SaveAs(filename.c_str());
 
+    // Clean up histograms and canvas
     for (auto& h : h_data_histograms) delete h;
     for (auto& h : h_mc_gen_histograms) delete h;
     for (auto& h : h_mc_rec_histograms) delete h;
