@@ -4,6 +4,7 @@
 #include <TStyle.h>
 #include <TTreeReader.h>
 #include <TTreeReaderValue.h>
+#include "bin_boundaries.h"
 
 // Plot function for DVCS data/MC comparison with dynamic subplot layout
 void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, const std::vector<BinBoundary>& bin_boundaries, TTreeReader& data_reader, TTreeReader& mc_gen_reader, TTreeReader& mc_rec_reader) {
