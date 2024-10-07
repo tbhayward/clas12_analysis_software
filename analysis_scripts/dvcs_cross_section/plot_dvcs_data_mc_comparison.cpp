@@ -141,64 +141,55 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
 
     // Fill the histograms by looping over the data
     while (data_reader.Next()) {
+        std::cout << "Started data " << std::endl;
         double phi_deg = *phi_data * RAD_TO_DEG;  // Convert phi from radians to degrees
 
-        histogram_idx = 0;
-        for (const auto& bin : bin_boundaries) {
-            std::string bin_label = clean_bin_label(bin.bin_label);
-            size_t first_comma = bin_label.find(',');
+        // Now, find which bin this data entry belongs to by looping over the bins
+        for (int bin_idx = 0; bin_idx < n_Q2t_bins; ++bin_idx) {
+            std::cout << "On bin " << bin_idx << std::endl;
+            const auto& bin = bin_boundaries[bin_idx];
 
-            if (first_comma != std::string::npos) {
-                int xB_label = std::stoi(bin_label.substr(0, first_comma)); // Extract xB_bin
-
-                if (xB_label == xB_bin) {
-                    if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
-                        *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
-                        std::abs(*t1_data) >= bin.t_low && std::abs(*t1_data) <= bin.t_high) {
-                        h_data_histograms[histogram_idx]->Fill(phi_deg);
-                    }
-                    histogram_idx++;
-                }
+            // Check if the entry falls within the current bin
+            if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
+                *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
+                std::abs(*t1_data) >= bin.t_low && std::abs(*t1_data) <= bin.t_high) {
+                // If it does, fill the histogram for this bin
+                h_data_histograms[bin_idx]->Fill(phi_deg);
+                break;  // Stop after filling the correct bin, no need to check further bins
             }
         }
     }
 
     // Fill the MC-generated histograms
     while (mc_gen_reader.Next()) {
+        std::cout << "Started mc gen " << std::endl;
         double phi_mc_gen_deg = *phi_mc_gen * RAD_TO_DEG;
 
-        histogram_idx = 0;
-        for (const auto& bin : bin_boundaries) {
-            std::string bin_label = clean_bin_label(bin.bin_label);
-            size_t first_comma = bin_label.find(',');
+        for (int bin_idx = 0; bin_idx < n_Q2t_bins; ++bin_idx) {
+            const auto& bin = bin_boundaries[bin_idx];
 
-            if (first_comma != std::string::npos) {
-                int xB_label = std::stoi(bin_label.substr(0, first_comma));
-
-                if (xB_label == xB_bin) {
-                    h_mc_gen_histograms[histogram_idx]->Fill(phi_mc_gen_deg);
-                    histogram_idx++;
-                }
+            if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
+                *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
+                std::abs(*t1_data) >= bin.t_low && std::abs(*t1_data) <= bin.t_high) {
+                h_mc_gen_histograms[bin_idx]->Fill(phi_mc_gen_deg);
+                break;  // Stop after filling the correct bin
             }
         }
     }
 
     // Fill the MC-reconstructed histograms
     while (mc_rec_reader.Next()) {
+        std::cout << "Started mc rec " << std::endl;
         double phi_mc_rec_deg = *phi_mc_rec * RAD_TO_DEG;
 
-        histogram_idx = 0;
-        for (const auto& bin : bin_boundaries) {
-            std::string bin_label = clean_bin_label(bin.bin_label);
-            size_t first_comma = bin_label.find(',');
+        for (int bin_idx = 0; bin_idx < n_Q2t_bins; ++bin_idx) {
+            const auto& bin = bin_boundaries[bin_idx];
 
-            if (first_comma != std::string::npos) {
-                int xB_label = std::stoi(bin_label.substr(0, first_comma));
-
-                if (xB_label == xB_bin) {
-                    h_mc_rec_histograms[histogram_idx]->Fill(phi_mc_rec_deg);
-                    histogram_idx++;
-                }
+            if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
+                *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
+                std::abs(*t1_data) >= bin.t_low && std::abs(*t1_data) <= bin.t_high) {
+                h_mc_rec_histograms[bin_idx]->Fill(phi_mc_rec_deg);
+                break;  // Stop after filling the correct bin
             }
         }
     }
