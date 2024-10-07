@@ -66,6 +66,13 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     if (h_mc_gen->Integral() > 0) h_mc_gen->Scale(1.0 / h_mc_gen->Integral());
     if (h_mc_rec->Integral() > 0) h_mc_rec->Scale(1.0 / h_mc_rec->Integral());
 
+    // Find the maximum bin content across all histograms
+    double max_value = std::max({h_data->GetMaximum(), h_mc_gen->GetMaximum(), h_mc_rec->GetMaximum()});
+
+    // Set the y-axis range from 0 to 1.2 times the maximum value
+    h_data->SetMaximum(1.2 * max_value);
+    h_data->SetMinimum(0);
+
     // Set colors and styles
     h_data->SetMarkerColor(kBlue);
     h_data->SetMarkerStyle(20);  // Data points with error bars
