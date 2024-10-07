@@ -17,7 +17,7 @@ void create_directories(const std::string& base_output_dir) {
 
     // Check and create the directories if they don't exist
     if (!fs::exists(base_output_dir)) {
-        if (fs::create_directory(base_output_dir)) {
+        if (fs::create_directories(base_output_dir)) {
             std::cout << "Created directory: " << base_output_dir << std::endl;
         } else {
             std::cerr << "Error: Failed to create base directory: " << base_output_dir << std::endl;
@@ -25,7 +25,7 @@ void create_directories(const std::string& base_output_dir) {
     }
 
     if (!fs::exists(exclusivity_dir)) {
-        if (fs::create_directory(exclusivity_dir)) {
+        if (fs::create_directories(exclusivity_dir)) {
             std::cout << "Created directory: " << exclusivity_dir << std::endl;
         } else {
             std::cerr << "Error: Failed to create exclusivity_plots directory: " << exclusivity_dir << std::endl;
@@ -33,7 +33,7 @@ void create_directories(const std::string& base_output_dir) {
     }
 
     if (!fs::exists(dvcs_dir)) {
-        if (fs::create_directory(dvcs_dir)) {
+        if (fs::create_directories(dvcs_dir)) {
             std::cout << "Created directory: " << dvcs_dir << std::endl;
         } else {
             std::cerr << "Error: Failed to create dvcs directory: " << dvcs_dir << std::endl;
@@ -41,7 +41,7 @@ void create_directories(const std::string& base_output_dir) {
     }
 
     if (!fs::exists(eppi0_dir)) {
-        if (fs::create_directory(eppi0_dir)) {
+        if (fs::create_directories(eppi0_dir)) {
             std::cout << "Created directory: " << eppi0_dir << std::endl;
         } else {
             std::cerr << "Error: Failed to create eppi0 directory: " << eppi0_dir << std::endl;
@@ -49,7 +49,7 @@ void create_directories(const std::string& base_output_dir) {
     }
 
     if (!fs::exists(pi0_mass_dir)) {
-        if (fs::create_directory(pi0_mass_dir)) {
+        if (fs::create_directories(pi0_mass_dir)) {
             std::cout << "Created directory: " << pi0_mass_dir << std::endl;
         } else {
             std::cerr << "Error: Failed to create pi0_mass directory: " << pi0_mass_dir << std::endl;
@@ -57,7 +57,7 @@ void create_directories(const std::string& base_output_dir) {
     }
 
     if (!fs::exists(data_mc_comparison_dir)) {
-        if (fs::create_directory(data_mc_comparison_dir)) {
+        if (fs::create_directories(data_mc_comparison_dir)) {
             std::cout << "Created directory: " << data_mc_comparison_dir << std::endl;
         } else {
             std::cerr << "Error: Failed to create data_mc_comparison/dvcs directory: " << data_mc_comparison_dir << std::endl;
