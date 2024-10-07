@@ -13,35 +13,58 @@
 // Constant to convert radians to degrees
 constexpr double RAD_TO_DEG = 180.0 / M_PI;
 
+#include <algorithm> // For remove_if
+#include <cctype> // For isspace
+
+// Helper function to remove spaces and parentheses
+std::string clean_bin_label(const std::string& label) {
+    std::string clean_label = label;
+    clean_label.erase(std::remove_if(clean_label.begin(), clean_label.end(), [](unsigned char c) {
+        return std::isspace(c) || c == '(' || c == ')';
+    }), clean_label.end());
+    return clean_label;
+}
+
+#include <algorithm> // For remove_if
+#include <cctype> // For isspace
+
+// Helper function to remove spaces and parentheses
+std::string clean_bin_label(const std::string& label) {
+    std::string clean_label = label;
+    clean_label.erase(std::remove_if(clean_label.begin(), clean_label.end(), [](unsigned char c) {
+        return std::isspace(c) || c == '(' || c == ')';
+    }), clean_label.end());
+    return clean_label;
+}
+
 int count_Q2t_bins_for_xB(int xB_bin, const std::vector<BinBoundary>& bin_boundaries) {
     int n_Q2t_bins = 0;
 
     for (const auto& bin : bin_boundaries) {
-        // Extract the xB_bin part of the label from the bin_label
-        std::string bin_label = bin.bin_label;
+        // Clean the bin label to remove spaces and parentheses
+        std::string bin_label = clean_bin_label(bin.bin_label);
 
-        // Check if bin_label is formatted correctly, skip if it's empty or malformed
-        if (bin_label.empty() || bin_label.length() < 5) {
-            std::cerr << "Skipping invalid bin label: " << bin_label << std::endl;
-            continue;
-        }
-
-        // Parse the xB_bin from the bin_label
+        // Parse the xB_bin part of the label from the cleaned bin_label
         try {
-            // Example format "(0, 1, 2)", extract the first number
-            int xB_label = std::stoi(bin_label.substr(1, bin_label.find_first_of(','))); // Safely extract xB_bin
+            // Now split the label by commas and extract the first part
+            size_t first_comma = bin_label.find(',');
+            if (first_comma != std::string::npos) {
+                int xB_label = std::stoi(bin_label.substr(0, first_comma)); // Extract xB_bin
 
-            // Check if the extracted xB_bin matches the current xB_bin
-            if (xB_label == xB_bin) {
-                // Print debugging information to verify distinct Q² and |t| bin detection
-                std::cout << "Detected bin for xB_bin: " << xB_bin 
-                          << " xB range: [" << bin.xB_low << ", " << bin.xB_high 
-                          << "], Q² range: [" << bin.Q2_low << ", " << bin.Q2_high 
-                          << "], |t| range: [" << bin.t_low << ", " << bin.t_high << "]" 
-                          << std::endl;
+                // Check if the extracted xB_bin matches the current xB_bin
+                if (xB_label == xB_bin) {
+                    // Print debugging information to verify distinct Q² and |t| bin detection
+                    std::cout << "Detected bin for xB_bin: " << xB_bin 
+                              << " xB range: [" << bin.xB_low << ", " << bin.xB_high 
+                              << "], Q² range: [" << bin.Q2_low << ", " << bin.Q2_high 
+                              << "], |t| range: [" << bin.t_low << ", " << bin.t_high << "]" 
+                              << std::endl;
 
-                // Count this bin as part of the current xB bin range
-                n_Q2t_bins++;
+                    // Count this bin as part of the current xB bin range
+                    n_Q2t_bins++;
+                }
+            } else {
+                std::cerr << "Error: Unexpected bin_label format: " << bin_label << std::endl;
             }
         } catch (const std::invalid_argument& e) {
             std::cerr << "Error parsing xB_bin from label: '" << bin_label << "' -> " << e.what() << std::endl;
