@@ -40,13 +40,6 @@ int count_Q2t_bins_for_xB(int xB_bin, const std::vector<BinBoundary>& bin_bounda
 
                 // Check if the extracted xB_bin matches the current xB_bin
                 if (xB_label == xB_bin) {
-                    // Print debugging information to verify distinct Q² and |t| bin detection
-                    std::cout << "Detected bin for xB_bin: " << xB_bin 
-                              << " xB range: [" << bin.xB_low << ", " << bin.xB_high 
-                              << "], Q² range: [" << bin.Q2_low << ", " << bin.Q2_high 
-                              << "], |t| range: [" << bin.t_low << ", " << bin.t_high << "]" 
-                              << std::endl;
-
                     // Count this bin as part of the current xB bin range
                     n_Q2t_bins++;
                 }
@@ -69,9 +62,8 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     std::cout << n_Q2t_bins << std::endl;
 
     // Calculate the number of subplots and make the canvas as square as possible
-    int n_subplots = std::pow(std::ceil(std::sqrt(n_Q2t_bins)), 2);  // Perfect square of subplots
-    int n_columns = std::ceil(std::sqrt(n_subplots));  // Rows and columns for a square layout
-    int n_rows = n_columns;
+    int n_columns = std::ceil(std::sqrt(n_Q2t_bins));  // Columns based on number of bins
+    int n_rows = std::ceil(static_cast<double>(n_Q2t_bins) / n_columns);  // Adjust rows accordingly
 
     // Create canvas with dynamic subdivision
     TCanvas* canvas = new TCanvas("c1", "Data vs MC", 1200, 800);
@@ -135,12 +127,14 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         histogram_idx = 0;
         for (const auto& bin : bin_boundaries) {
             if (bin.xB_low == bin_boundaries[xB_bin].xB_low && bin.xB_high == bin_boundaries[xB_bin].xB_high) {
-                if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
-                    *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
-                    std::abs(*t1_data) >= bin.t_low && std::abs(*t1_data) <= bin.t_high) {
-                    h_data_histograms[histogram_idx]->Fill(phi_deg);
+                if (histogram_idx < h_data_histograms.size()) { // Ensure we are within bounds
+                    if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
+                        *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
+                        std::abs(*t1_data) >= bin.t_low && std::abs(*t1_data) <= bin.t_high) {
+                        h_data_histograms[histogram_idx]->Fill(phi_deg);
+                    }
+                    histogram_idx++;
                 }
-                histogram_idx++;
             }
         }
     }
@@ -151,8 +145,10 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         histogram_idx = 0;
         for (const auto& bin : bin_boundaries) {
             if (bin.xB_low == bin_boundaries[xB_bin].xB_low && bin.xB_high == bin_boundaries[xB_bin].xB_high) {
-                h_mc_gen_histograms[histogram_idx]->Fill(phi_mc_gen_deg);
-                histogram_idx++;
+                if (histogram_idx < h_mc_gen_histograms.size()) { // Ensure we are within bounds
+                    h_mc_gen_histograms[histogram_idx]->Fill(phi_mc_gen_deg);
+                    histogram_idx++;
+                }
             }
         }
     }
@@ -163,8 +159,10 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         histogram_idx = 0;
         for (const auto& bin : bin_boundaries) {
             if (bin.xB_low == bin_boundaries[xB_bin].xB_low && bin.xB_high == bin_boundaries[xB_bin].xB_high) {
-                h_mc_rec_histograms[histogram_idx]->Fill(phi_mc_rec_deg);
-                histogram_idx++;
+                if (histogram_idx < h_mc_rec_histograms.size()) { // Ensure we are within bounds
+                    h_mc_rec_histograms[histogram_idx]->Fill(phi_mc_rec_deg);
+                    histogram_idx++;
+                }
             }
         }
     }
