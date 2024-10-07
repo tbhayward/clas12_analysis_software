@@ -55,13 +55,13 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
                 h_mc_rec->Fill(*phi_mc_rec);
             }
 
-            // // Check if h_data and h_mc_rec are both empty, and skip this subplot if so
-            // if (h_data->Integral() == 0 && h_mc_rec->Integral() == 0) {
-            //     delete h_data;
-            //     delete h_mc_gen;
-            //     delete h_mc_rec;
-            //     continue;
-            // }
+            // Check if h_data and h_mc_rec are both empty, and skip this subplot if so
+            if (h_data->Integral() == 0 && h_mc_rec->Integral() == 0) {
+                delete h_data;
+                delete h_mc_gen;
+                delete h_mc_rec;
+                continue;
+            }
 
             // Normalize the histograms to their integrals
             if (h_data->Integral() > 0) h_data->Scale(1.0 / h_data->Integral());
@@ -94,10 +94,10 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
                 legend->Draw();
             }
 
-            // // Clean up histograms after drawing
-            // delete h_data;
-            // delete h_mc_gen;
-            // delete h_mc_rec;
+            // Clean up histograms after drawing
+            delete h_data;
+            delete h_mc_gen;
+            delete h_mc_rec;
         }
     }
 
