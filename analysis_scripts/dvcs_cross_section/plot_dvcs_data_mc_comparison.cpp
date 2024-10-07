@@ -10,7 +10,7 @@
 constexpr double RAD_TO_DEG = 180.0 / M_PI;
 
 // Simplified Plot function for DVCS data/MC comparison without bin boundary checks
-void plot_dvcs_data_mc_comparison(const std::string& output_dir, TTreeReader& data_reader, TTreeReader& mc_gen_reader, TTreeReader& mc_rec_reader) {
+void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, const std::vector<BinBoundary>& bin_boundaries, TTreeReader& data_reader, TTreeReader& mc_gen_reader, TTreeReader& mc_rec_reader) {
 
     // Create a single canvas (no subdivision)
     TCanvas* canvas = new TCanvas("c1", "Data vs MC", 1200, 800);
