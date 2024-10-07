@@ -196,7 +196,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
                         h_data_histograms[global_histogram_idx]->Fill(phi_deg);
                         break;  // Stop after filling the correct bin, no need to check further bins
                     }
-
+                    std::cout << global_histogram_idx << std::endl;
                     global_histogram_idx++;  // Move to the next global histogram index
                 }
             }
