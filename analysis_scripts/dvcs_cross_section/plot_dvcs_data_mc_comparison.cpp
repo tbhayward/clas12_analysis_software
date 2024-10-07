@@ -149,7 +149,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
             std::cout << "On bin " << bin_idx << std::endl;
             const auto& bin = bin_boundaries[bin_idx];
             std::cout << "The limits are x " << " " << bin.xB_low << " " << bin.xB_high << " Q2 " << bin.Q2_low << " " << bin.Q2_high << " t " << bin.t_low << " " << bin.t_high << std::endl;
-
+            std::cout << "The values are " << *xB_data << " " << *Q2_data << " " << std::abs(*t1_data) << std::endl;
             // Check if the entry falls within the current bin
             if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
                 *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
