@@ -28,28 +28,28 @@ bool checkFileExists(const string& path) {
 #include <vector>
 #include <string>
 
-// Declaration of the helper function
 void call_determine_exclusivity(std::vector<TTreeReader>& data_readers, std::vector<TTreeReader>& mc_rec_dvcsgen_readers, std::vector<TTreeReader>& eppi0_readers, std::vector<TTreeReader>& mc_rec_aaogen_readers) {
-    
-    std::vector<std::string> run_periods = {"Fa18 Inb", "Fa18 Out", "Sp19 Inb"};
-    std::vector<std::string> detector_configs = {"(FD,FD)", "(CD,FD)", "(CD,FT)"};
-    
     // DVCS channel calls
-    for (size_t i = 0; i < run_periods.size(); ++i) {
-        for (const auto& config : detector_configs) {
-            std::string plot_title = "e'p'#gamma (" + run_periods[i] + ", " + config + ")";
-            determine_exclusivity("dvcs", config, data_readers[i], mc_rec_dvcsgen_readers[i], "output/exclusivity_plots", plot_title);
-        }
-    }
+    determine_exclusivity("dvcs", "(FD,FD)", data_readers[0], mc_rec_dvcsgen_readers[0], "output/exclusivity_plots", "e'p'#gamma (Fa18 Inb, FD,FD)");
+    determine_exclusivity("dvcs", "(FD,FD)", data_readers[1], mc_rec_dvcsgen_readers[1], "output/exclusivity_plots", "e'p'#gamma (Fa18 Out, FD,FD)");
+    determine_exclusivity("dvcs", "(FD,FD)", data_readers[2], mc_rec_dvcsgen_readers[2], "output/exclusivity_plots", "e'p'#gamma (Sp19 Inb, FD,FD)");
 
-    // Eppi0 channel calls for (CD,FD) and (FD,FD)
-    std::vector<std::string> eppi0_configs = {"(CD,FD)", "(FD,FD)"};
-    for (size_t i = 0; i < run_periods.size(); ++i) {
-        for (const auto& config : eppi0_configs) {
-            std::string plot_title = "e'p'#pi^{0} (" + run_periods[i] + ", " + config + ")";
-            determine_exclusivity("eppi0", config, eppi0_readers[i], mc_rec_aaogen_readers[i], "output/exclusivity_plots", plot_title);
-        }
-    }
+    determine_exclusivity("dvcs", "(CD,FD)", data_readers[0], mc_rec_dvcsgen_readers[0], "output/exclusivity_plots", "e'p'#gamma (Fa18 Inb, CD,FD)");
+    determine_exclusivity("dvcs", "(CD,FD)", data_readers[1], mc_rec_dvcsgen_readers[1], "output/exclusivity_plots", "e'p'#gamma (Fa18 Out, CD,FD)");
+    determine_exclusivity("dvcs", "(CD,FD)", data_readers[2], mc_rec_dvcsgen_readers[2], "output/exclusivity_plots", "e'p'#gamma (Sp19 Inb, CD,FD)");
+
+    determine_exclusivity("dvcs", "(CD,FT)", data_readers[0], mc_rec_dvcsgen_readers[0], "output/exclusivity_plots", "e'p'#gamma (Fa18 Inb, CD,FT)");
+    determine_exclusivity("dvcs", "(CD,FT)", data_readers[1], mc_rec_dvcsgen_readers[1], "output/exclusivity_plots", "e'p'#gamma (Fa18 Out, CD,FT)");
+    determine_exclusivity("dvcs", "(CD,FT)", data_readers[2], mc_rec_dvcsgen_readers[2], "output/exclusivity_plots", "e'p'#gamma (Sp19 Inb, CD,FT)");
+
+    // Eppi0 channel calls
+    determine_exclusivity("eppi0", "(CD,FD)", eppi0_readers[0], mc_rec_aaogen_readers[0], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Inb, CD,FD)");
+    determine_exclusivity("eppi0", "(CD,FD)", eppi0_readers[1], mc_rec_aaogen_readers[1], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Out, CD,FD)");
+    determine_exclusivity("eppi0", "(CD,FD)", eppi0_readers[2], mc_rec_aaogen_readers[2], "output/exclusivity_plots", "e'p'#pi^{0} (Sp19 Inb, CD,FD)");
+
+    determine_exclusivity("eppi0", "(FD,FD)", eppi0_readers[0], mc_rec_aaogen_readers[0], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Inb, FD,FD)");
+    determine_exclusivity("eppi0", "(FD,FD)", eppi0_readers[1], mc_rec_aaogen_readers[1], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Out, FD,FD)");
+    determine_exclusivity("eppi0", "(FD,FD)", eppi0_readers[2], mc_rec_aaogen_readers[2], "output/exclusivity_plots", "e'p'#pi^{0} (Sp19 Inb, FD,FD)");
 }
 
 int main(int argc, char* argv[]) {
@@ -176,27 +176,6 @@ int main(int argc, char* argv[]) {
     plot_pi0_mass(eppi0_readers[0], eppi0_readers[1], eppi0_readers[2],
                   mc_rec_aaogen_readers[0], mc_rec_aaogen_readers[1], mc_rec_aaogen_readers[2],
                   "output");
-
-    // // Call determine_exclusivity and plot variables for DVCS
-    // determine_exclusivity("dvcs", "(FD,FD)", data_readers[0], mc_rec_dvcsgen_readers[0], "output/exclusivity_plots", "e'p'#gamma (Fa18 Inb, FD,FD)");
-    // determine_exclusivity("dvcs", "(FD,FD)", data_readers[1], mc_rec_dvcsgen_readers[1], "output/exclusivity_plots", "e'p'#gamma (Fa18 Out, FD,FD)");
-    // determine_exclusivity("dvcs", "(FD,FD)", data_readers[2], mc_rec_dvcsgen_readers[2], "output/exclusivity_plots", "e'p'#gamma (Sp19 Inb, FD,FD)");
-
-    // determine_exclusivity("dvcs", "(CD,FD)", data_readers[0], mc_rec_dvcsgen_readers[0], "output/exclusivity_plots", "e'p'#gamma (Fa18 Inb, CD,FD)");
-    // determine_exclusivity("dvcs", "(CD,FD)", data_readers[1], mc_rec_dvcsgen_readers[1], "output/exclusivity_plots", "e'p'#gamma (Fa18 Out, CD,FD)");
-    // determine_exclusivity("dvcs", "(CD,FD)", data_readers[2], mc_rec_dvcsgen_readers[2], "output/exclusivity_plots", "e'p'#gamma (Sp19 Inb, CD,FD)");
-
-    // determine_exclusivity("dvcs", "(CD,FT)", data_readers[0], mc_rec_dvcsgen_readers[0], "output/exclusivity_plots", "e'p'#gamma (Fa18 Inb, CD,FT)");
-    // determine_exclusivity("dvcs", "(CD,FT)", data_readers[1], mc_rec_dvcsgen_readers[1], "output/exclusivity_plots", "e'p'#gamma (Fa18 Out, CD,FT)");
-    // determine_exclusivity("dvcs", "(CD,FT)", data_readers[2], mc_rec_dvcsgen_readers[2], "output/exclusivity_plots", "e'p'#gamma (Sp19 Inb, CD,FT)");
-
-    // determine_exclusivity("eppi0", "(CD,FD)", eppi0_readers[0], mc_rec_aaogen_readers[0], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Inb, CD,FD)");
-    // determine_exclusivity("eppi0", "(CD,FD)", eppi0_readers[1], mc_rec_aaogen_readers[1], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Out, CD,FD)");
-    // determine_exclusivity("eppi0", "(CD,FD)", eppi0_readers[2], mc_rec_aaogen_readers[2], "output/exclusivity_plots", "e'p'#pi^{0} (Sp19 Inb, CD,FD)");
-
-    // determine_exclusivity("eppi0", "(FD,FD)", eppi0_readers[0], mc_rec_aaogen_readers[0], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Inb, FD,FD)");
-    // determine_exclusivity("eppi0", "(FD,FD)", eppi0_readers[1], mc_rec_aaogen_readers[1], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Out, FD,FD)");
-    // determine_exclusivity("eppi0", "(FD,FD)", eppi0_readers[2], mc_rec_aaogen_readers[2], "output/exclusivity_plots", "e'p'#pi^{0} (Sp19 Inb, FD,FD)");
 
     // Call the helper function for exclusivity plotting
     call_determine_exclusivity(data_readers, mc_rec_dvcsgen_readers, eppi0_readers, mc_rec_aaogen_readers);
