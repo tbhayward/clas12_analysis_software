@@ -30,46 +30,48 @@ std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
         // First column: bin number (skip it)
         std::getline(ss, token, '\t');  // Skip bin number
 
-        // Second column: bin name (skip it)
-        std::getline(ss, token, '\t');  // Skip bin name
-
-        std::cout << "Processing bin: " << token << std::endl;  // Print bin label for debugging
+        // Second column: bin name (read it)
+        std::getline(ss, token, '\t');
+        bin.bin_label = token;
+        std::cout << "Processing bin: " << bin.bin_label << std::endl;
 
         try {
             // xB_low (min)
             std::getline(ss, token, '\t');
-            std::cout << "xB_low token: " << token << std::endl;
             bin.xB_low = std::stod(token);
 
             // xB_high (max)
             std::getline(ss, token, '\t');
-            std::cout << "xB_high token: " << token << std::endl;
             bin.xB_high = std::stod(token);
+
+            // Skip average xB
+            std::getline(ss, token, '\t');
 
             // Q2_low (min)
             std::getline(ss, token, '\t');
-            std::cout << "Q2_low token: " << token << std::endl;
             bin.Q2_low = std::stod(token);
 
             // Q2_high (max)
             std::getline(ss, token, '\t');
-            std::cout << "Q2_high token: " << token << std::endl;
             bin.Q2_high = std::stod(token);
+
+            // Skip average Q2
+            std::getline(ss, token, '\t');
 
             // t_low (min)
             std::getline(ss, token, '\t');
-            std::cout << "t_low token: " << token << std::endl;
             bin.t_low = std::stod(token);
 
             // t_high (max)
             std::getline(ss, token, '\t');
-            std::cout << "t_high token: " << token << std::endl;
             bin.t_high = std::stod(token);
-        }
-        catch (const std::invalid_argument& e) {
+
+            // Skip average t
+            std::getline(ss, token, '\t');
+
+        } catch (const std::invalid_argument& e) {
             std::cerr << "Invalid argument while parsing token: '" << token << "' in bin " << bin.bin_label << std::endl;
-        }
-        catch (const std::out_of_range& e) {
+        } catch (const std::out_of_range& e) {
             std::cerr << "Out of range error while parsing token: '" << token << "' in bin " << bin.bin_label << std::endl;
         }
 
