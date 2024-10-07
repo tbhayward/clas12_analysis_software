@@ -64,7 +64,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
 
     // Count the number of Q²-t bins for the current xB bin
     int n_Q2t_bins = count_Q2t_bins_for_xB(xB_bin, bin_boundaries);
-    std::cout << "Number of Q2t bins: " << n_Q2t_bins << std::endl;
+    std::cout << "Current xB_bin = " << xB_bin << ", Number of Q2t bins: " << n_Q2t_bins << std::endl;
 
     // Determine the next largest perfect square to create square canvas
     int n_subplots = next_perfect_square(n_Q2t_bins);
