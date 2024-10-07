@@ -71,22 +71,28 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     h_data->SetMarkerStyle(20);  // Data points with error bars
     h_data->SetLineColor(kBlue);
 
-    h_mc_gen->SetLineColor(kRed);
-    h_mc_gen->SetLineStyle(2);  // Dotted line for generated MC
+    h_mc_gen->SetMarkerColor(kRed);
+    h_mc_gen->SetMarkerStyle(21);  // Generated MC points
+    h_mc_gen->SetLineColor(kRed);  // Set line color in case of connecting dots later
 
-    h_mc_rec->SetLineColor(kGreen);
-    h_mc_rec->SetLineStyle(3);  // Dashed line for reconstructed MC
+    h_mc_rec->SetMarkerColor(kGreen);
+    h_mc_rec->SetMarkerStyle(22);  // Reconstructed MC points
+    h_mc_rec->SetLineColor(kGreen);  // Set line color in case of connecting dots later
 
     // Draw histograms on the same canvas
-    h_data->Draw("E1");
-    h_mc_gen->Draw("HIST SAME");
-    h_mc_rec->Draw("HIST SAME");
+    h_data->Draw("E1 P");   // Draw data with error bars as points
+    h_mc_gen->Draw("E1 P SAME");  // Draw generated MC as points
+    h_mc_rec->Draw("E1 P SAME");  // Draw reconstructed MC as points
+
+    // Set axis labels
+    h_data->GetXaxis()->SetTitle("#phi");
+    h_data->GetYaxis()->SetTitle("Normalized Counts");
 
     // Create and add a legend
     TLegend* legend = new TLegend(0.7, 0.75, 0.9, 0.9);
     legend->AddEntry(h_data, "Data", "lep");
-    legend->AddEntry(h_mc_gen, "Generated MC", "l");
-    legend->AddEntry(h_mc_rec, "Reconstructed MC", "l");
+    legend->AddEntry(h_mc_gen, "Generated MC", "lep");
+    legend->AddEntry(h_mc_rec, "Reconstructed MC", "lep");
     legend->Draw();
 
     // Save canvas to the output directory
