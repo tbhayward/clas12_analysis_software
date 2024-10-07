@@ -25,11 +25,6 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     // Disable stat boxes globally
     gStyle->SetOptStat(0);
 
-    // Initialize readers before the loop
-    TTreeReaderValue<double> phi_data(data_reader, "phi");
-    TTreeReaderValue<double> phi_mc_gen(mc_gen_reader, "phi");
-    TTreeReaderValue<double> phi_mc_rec(mc_rec_reader, "phi");
-
     // Loop over all Q²-t bins for this xB bin
     int subplot_idx = 1;
     for (size_t i = 0; i < bin_boundaries.size(); ++i) {
@@ -48,6 +43,11 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
             mc_gen_reader.Restart();
             mc_rec_reader.Restart();
 
+            // Reinitialize readers before looping over the data
+            TTreeReaderValue<double> phi_data(data_reader, "phi");
+            TTreeReaderValue<double> phi_mc_gen(mc_gen_reader, "phi");
+            TTreeReaderValue<double> phi_mc_rec(mc_rec_reader, "phi");
+
             // Read data from trees and fill histograms
             while (data_reader.Next()) {
                 h_data->Fill(*phi_data);
@@ -59,13 +59,13 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
                 h_mc_rec->Fill(*phi_mc_rec);
             }
 
-            // Check if h_data and h_mc_rec are both empty, and skip this subplot if so
-            if (h_data->Integral() == 0 && h_mc_rec->Integral() == 0) {
-                delete h_data;
-                delete h_mc_gen;
-                delete h_mc_rec;
-                continue;
-            }
+            // // Check if h_data and h_mc_rec are both empty, and skip this subplot if so
+            // if (h_data->Integral() == 0 && h_mc_rec->Integral() == 0) {
+            //     delete h_data;
+            //     delete h_mc_gen;
+            //     delete h_mc_rec;
+            //     continue;
+            // }
 
             // Normalize the histograms to their integrals
             if (h_data->Integral() > 0) h_data->Scale(1.0 / h_data->Integral());
