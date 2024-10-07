@@ -40,25 +40,33 @@ BinBoundaries read_bin_boundaries(const std::string& filename) {
     return boundaries;
 }
 
-void create_directories(const std::string& base_output_dir) {
-    // Define the necessary subdirectories
-    std::string exclusivity_dir = base_output_dir + "/exclusivity_plots";
-    std::string dvcs_dir = exclusivity_dir + "/dvcs";
-    std::string eppi0_dir = exclusivity_dir + "/eppi0";
-    std::string pi0_mass_dir = base_output_dir + "/pi0_mass";
-    std::string comparison_dir = base_output_dir + "/data_mc_comparison";
-    std::string dvcs_comparison_dir = comparison_dir + "/dvcs";
-    std::string eppi0_comparison_dir = comparison_dir + "/eppi0";
-
-    // Create the directories if they don't exist
-    std::vector<std::string> dirs = {base_output_dir, exclusivity_dir, dvcs_dir, eppi0_dir, pi0_mass_dir, comparison_dir, dvcs_comparison_dir, eppi0_comparison_dir};
-    for (const auto& dir : dirs) {
-        if (!fs::exists(dir)) {
-            if (fs::create_directory(dir)) {
-                std::cout << "Created directory: " << dir << std::endl;
-            } else {
-                std::cerr << "Error: Failed to create directory: " << dir << std::endl;
-            }
+// Function to assign an event to a bin based on its xB, Q2, and t values
+std::tuple<int, int, int> assign_bin(double xB, double Q2, double t, const BinBoundaries& boundaries) {
+    int xB_bin = -1, Q2_bin = -1, t_bin = -1;
+    
+    // Find the correct xB bin
+    for (size_t i = 0; i < boundaries.xB_bins.size() - 1; ++i) {
+        if (xB >= boundaries.xB_bins[i] && xB < boundaries.xB_bins[i + 1]) {
+            xB_bin = i;
+            break;
         }
     }
+
+    // Find the correct Q2 bin
+    for (size_t i = 0; i < boundaries.Q2_bins.size() - 1; ++i) {
+        if (Q2 >= boundaries.Q2_bins[i] && Q2 < boundaries.Q2_bins[i + 1]) {
+            Q2_bin = i;
+            break;
+        }
+    }
+
+    // Find the correct t bin
+    for (size_t i = 0; i < boundaries.t_bins.size() - 1; ++i) {
+        if (t >= boundaries.t_bins[i] && t < boundaries.t_bins[i + 1]) {
+            t_bin = i;
+            break;
+        }
+    }
+
+    return std::make_tuple(xB_bin, Q2_bin, t_bin);
 }
