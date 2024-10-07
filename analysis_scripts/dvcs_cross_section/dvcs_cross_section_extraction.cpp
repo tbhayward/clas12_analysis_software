@@ -42,6 +42,7 @@ void call_determine_exclusivity(std::vector<TTreeReader>& data_readers, std::vec
     determine_exclusivity("dvcs", "(CD,FT)", data_readers[1], mc_rec_dvcsgen_readers[1], "output/exclusivity_plots", "e'p'#gamma (Fa18 Out, CD,FT)");
     determine_exclusivity("dvcs", "(CD,FT)", data_readers[2], mc_rec_dvcsgen_readers[2], "output/exclusivity_plots", "e'p'#gamma (Sp19 Inb, CD,FT)");
 
+    dataReader.Restart(); mcReader.Restart();
     // Eppi0 channel calls
     determine_exclusivity("eppi0", "(CD,FD)", eppi0_readers[0], mc_rec_aaogen_readers[0], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Inb, CD,FD)");
     determine_exclusivity("eppi0", "(CD,FD)", eppi0_readers[1], mc_rec_aaogen_readers[1], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Out, CD,FD)");
