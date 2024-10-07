@@ -146,7 +146,6 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
 
         // Now, find which bin this data entry belongs to by looping over the bins
         for (int bin_idx = 0; bin_idx < n_Q2t_bins; ++bin_idx) {
-            std::cout << "On data bin " << bin_idx << std::endl;
             const auto& bin = bin_boundaries[bin_idx];
             // Check if the entry falls within the current bin
             if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
@@ -166,7 +165,6 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         double phi_mc_gen_deg = *phi_mc_gen * RAD_TO_DEG;
 
         for (int bin_idx = 0; bin_idx < n_Q2t_bins; ++bin_idx) {
-            std::cout << "On gen bin " << bin_idx << std::endl;
             const auto& bin = bin_boundaries[bin_idx];
 
             if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
@@ -184,7 +182,6 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         double phi_mc_rec_deg = *phi_mc_rec * RAD_TO_DEG;
 
         for (int bin_idx = 0; bin_idx < n_Q2t_bins; ++bin_idx) {
-            std::cout << "On rec bin " << bin_idx << std::endl;
             const auto& bin = bin_boundaries[bin_idx];
 
             if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
