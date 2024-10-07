@@ -4,8 +4,8 @@
 #include <vector>
 #include <string>
 
-// Struct to represent bin boundaries
 struct BinBoundary {
+    std::string bin_label;  // Add this field to hold the bin label
     double xB_low, xB_high;
     double Q2_low, Q2_high;
     double t_low, t_high;

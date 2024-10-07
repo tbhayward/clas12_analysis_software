@@ -27,8 +27,8 @@ std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
         std::string token;
         BinBoundary bin;
 
-        // First column: bin index or label (skip it, not storing this in the BinBoundary struct)
-        std::getline(ss, token, '\t');  // Skipping bin index (e.g., "(0, 0, 0)")
+        // First column: bin index or label
+        std::getline(ss, bin.bin_label, '\t');  // Store the bin label
 
         // Parse the tab-separated bin boundaries: xB_low,xB_high,Q2_low,Q2_high,t_low,t_high
         std::getline(ss, token, '\t'); bin.xB_low = std::stod(token);
