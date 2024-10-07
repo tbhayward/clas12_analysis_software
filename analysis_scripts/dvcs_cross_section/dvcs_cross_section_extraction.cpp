@@ -212,7 +212,7 @@ int main(int argc, char* argv[]) {
 
     // Call the plotting function for DVCS data/MC comparison
     for (size_t i = 0; i < bin_boundaries.size(); ++i) {
-        plot_dvcs_data_mc_comparison(base_output_dir, i, data_readers[0], mc_gen_dvcsgen_readers[0], mc_rec_dvcsgen_readers[0]);
+        plot_dvcs_data_mc_comparison(output_dir, xB_bin, bin_boundaries, data_readers[0], mc_gen_dvcsgen_readers[0], mc_rec_dvcsgen_readers[0]);
     }
 
     // Call the plotting function for the pi0 mass (optional)
