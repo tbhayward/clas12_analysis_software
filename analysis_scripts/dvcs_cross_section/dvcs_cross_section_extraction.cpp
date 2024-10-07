@@ -83,6 +83,17 @@ void call_determine_exclusivity(std::vector<TTreeReader>& data_readers, std::vec
     }
 }
 
+// Function to count the number of unique xB bins
+int count_unique_xB_bins(const std::vector<BinBoundary>& bin_boundaries) {
+    std::set<std::pair<double, double>> unique_xB_bins;  // Use a set to store unique (xB_low, xB_high) pairs
+    
+    for (const auto& bin : bin_boundaries) {
+        unique_xB_bins.emplace(bin.xB_low, bin.xB_high);  // Insert unique xB bin ranges
+    }
+    
+    return unique_xB_bins.size();  // The number of unique xB bins
+}
+
 int main(int argc, char* argv[]) {
     std::cout << std::endl << std::endl << std::endl;
     TApplication theApp("App", nullptr, nullptr);
@@ -107,6 +118,18 @@ int main(int argc, char* argv[]) {
         std::cerr << "Error: No bin boundaries read from file." << std::endl;
         return 1;
     }
+
+    // Function to count the number of unique xB bins
+    auto count_unique_xB_bins = [](const std::vector<BinBoundary>& bin_boundaries) {
+        std::set<std::pair<double, double>> unique_xB_bins;  // Use a set to store unique (xB_low, xB_high) pairs
+        for (const auto& bin : bin_boundaries) {
+            unique_xB_bins.emplace(bin.xB_low, bin.xB_high);  // Insert unique xB bin ranges
+        }
+        return unique_xB_bins.size();  // The number of unique xB bins
+    };
+
+    // Calculate the number of unique xB bins
+    int num_xB_bins = count_unique_xB_bins(bin_boundaries);
 
     // Define filenames for each directory (3 periods, 6 files per period)
     std::vector<std::string> data_filenames = {dir1 + "/rga_fa18_inb_epgamma.root", dir1 + "/rga_fa18_out_epgamma.root", dir1 + "/rga_sp19_inb_epgamma.root"};
@@ -210,8 +233,10 @@ int main(int argc, char* argv[]) {
 
     std::cout << "Successfully loaded all data and MC trees and created output directories." << std::endl << std::endl;
 
-    // Call the plotting function for DVCS data/MC comparison
-    for (size_t i = 0; i < bin_boundaries.size(); ++i) {
+    std::string output_dir = base_output_dir + "/data_mc_comparison/dvcs";  // Define the output directory for plots
+
+    // Loop over unique xB bins and call the plotting function for DVCS data/MC comparison
+    for (int xB_bin = 0; xB_bin < num_xB_bins; ++xB_bin) {
         plot_dvcs_data_mc_comparison(output_dir, xB_bin, bin_boundaries, data_readers[0], mc_gen_dvcsgen_readers[0], mc_rec_dvcsgen_readers[0]);
     }
 
