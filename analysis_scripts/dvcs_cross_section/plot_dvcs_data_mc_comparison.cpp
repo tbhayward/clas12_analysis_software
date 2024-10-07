@@ -24,6 +24,12 @@ std::string clean_bin_label(const std::string& label) {
     return clean_label;
 }
 
+// Find the next perfect square greater than or equal to the given number
+int next_perfect_square(int n) {
+    int square_root = std::ceil(std::sqrt(n));
+    return square_root * square_root;
+}
+
 int count_Q2t_bins_for_xB(int xB_bin, const std::vector<BinBoundary>& bin_boundaries) {
     int n_Q2t_bins = 0;
 
@@ -40,7 +46,6 @@ int count_Q2t_bins_for_xB(int xB_bin, const std::vector<BinBoundary>& bin_bounda
 
                 // Check if the extracted xB_bin matches the current xB_bin
                 if (xB_label == xB_bin) {
-                    // Count this bin as part of the current xB bin range
                     n_Q2t_bins++;
                 }
             } else {
@@ -61,9 +66,10 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     int n_Q2t_bins = count_Q2t_bins_for_xB(xB_bin, bin_boundaries);
     std::cout << n_Q2t_bins << std::endl;
 
-    // Calculate the number of subplots and make the canvas as square as possible
-    int n_columns = std::ceil(std::sqrt(n_Q2t_bins));  // Columns based on number of bins
-    int n_rows = std::ceil(static_cast<double>(n_Q2t_bins) / n_columns);  // Adjust rows accordingly
+    // Determine the next largest perfect square to create square canvas
+    int n_subplots = next_perfect_square(n_Q2t_bins);
+    int n_columns = std::sqrt(n_subplots);  // Number of columns for a square layout
+    int n_rows = n_columns;
 
     // Create canvas with dynamic subdivision
     TCanvas* canvas = new TCanvas("c1", "Data vs MC", 1200, 800);
