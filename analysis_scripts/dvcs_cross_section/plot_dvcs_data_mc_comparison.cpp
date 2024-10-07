@@ -51,7 +51,6 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
             // Read data from trees and fill histograms
             while (data_reader.Next()) {
                 h_data->Fill(*phi_data);
-                // std::cout << "phi_data: " << *phi_data << std::endl;
             }
             while (mc_gen_reader.Next()) {
                 h_mc_gen->Fill(*phi_mc_gen);
@@ -68,6 +67,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
             //     continue;
             // }
 
+            std::cout << h_data->Integral() << std::endl;
             // Normalize the histograms to their integrals
             if (h_data->Integral() > 0) h_data->Scale(1.0 / h_data->Integral());
             if (h_mc_gen->Integral() > 0) h_mc_gen->Scale(1.0 / h_mc_gen->Integral());
