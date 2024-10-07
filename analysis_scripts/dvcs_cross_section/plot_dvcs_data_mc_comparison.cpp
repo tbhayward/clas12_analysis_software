@@ -35,28 +35,16 @@ int count_Q2t_bins_for_xB(int xB_bin, const std::vector<BinBoundary>& bin_bounda
     int n_Q2t_bins = 0;
 
     for (const auto& bin : bin_boundaries) {
-        // Clean the bin label to remove spaces and parentheses
         std::string bin_label = clean_bin_label(bin.bin_label);
 
-        // Parse the xB_bin part of the label from the cleaned bin_label
-        try {
-            // Now split the label by commas and extract the first part
-            size_t first_comma = bin_label.find(',');
-            if (first_comma != std::string::npos) {
-                int xB_label = std::stoi(bin_label.substr(0, first_comma)); // Extract xB_bin
-
-                // Check if the extracted xB_bin matches the current xB_bin
-                if (xB_label == xB_bin) {
-                    n_Q2t_bins++;
-                }
-            } else {
-                std::cerr << "Error: Unexpected bin_label format: " << bin_label << std::endl;
+        size_t first_comma = bin_label.find(',');
+        if (first_comma != std::string::npos) {
+            int xB_label = std::stoi(bin_label.substr(0, first_comma));
+            if (xB_label == xB_bin) {
+                n_Q2t_bins++;
             }
-        } catch (const std::invalid_argument& e) {
-            std::cerr << "Error parsing xB_bin from label: '" << bin_label << "' -> " << e.what() << std::endl;
         }
     }
-
     return n_Q2t_bins;
 }
 
@@ -67,49 +55,40 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     int n_Q2t_bins = count_Q2t_bins_for_xB(xB_bin, bin_boundaries);
     std::cout << "Current xB_bin = " << xB_bin << ", Number of Q2t bins: " << n_Q2t_bins << std::endl;
 
-    // Determine the next largest perfect square to create square canvas
     int n_subplots = next_perfect_square(n_Q2t_bins);
-    int n_columns = std::sqrt(n_subplots);  // Number of columns for a square layout
+    int n_columns = std::sqrt(n_subplots);
     int n_rows = n_columns;
 
-    // Create canvas with dynamic subdivision
     TCanvas* canvas = new TCanvas("c1", "Data vs MC", 1200, 800);
-    canvas->Divide(n_columns, n_rows);  // Dynamically divide the canvas
+    canvas->Divide(n_columns, n_rows);
 
-    // Disable stat boxes globally
     gStyle->SetOptStat(0);
 
-    // Create histograms for each Q²-t bin (only for the required number of bins)
     std::vector<TH1D*> h_data_histograms(n_Q2t_bins);
     std::vector<TH1D*> h_mc_gen_histograms(n_Q2t_bins);
     std::vector<TH1D*> h_mc_rec_histograms(n_Q2t_bins);
 
-    // Keep track of the number of histograms created
     int histogram_idx = 0;
 
     for (const auto& bin : bin_boundaries) {
-        // Clean the bin label to extract xB_bin
         std::string bin_label = clean_bin_label(bin.bin_label);
         size_t first_comma = bin_label.find(',');
 
         if (first_comma != std::string::npos) {
-            int xB_label = std::stoi(bin_label.substr(0, first_comma)); // Extract xB_bin from bin label
+            int xB_label = std::stoi(bin_label.substr(0, first_comma));
 
             if (xB_label == xB_bin) {
-                if (histogram_idx >= n_Q2t_bins) break;  // Ensure we don't create more than needed
+                if (histogram_idx >= n_Q2t_bins) break;
 
-                // Create a title string based on the kinematic constraints
                 std::string title = Form("x_{B}: %.2f-%.2f, Q^{2}: %.2f-%.2f, |t|: %.2f-%.2f",
                                         bin.xB_low, bin.xB_high,
                                         bin.Q2_low, bin.Q2_high,
                                         std::abs(bin.t_low), std::abs(bin.t_high));
 
-                // Create histograms
                 h_data_histograms[histogram_idx] = new TH1D(Form("h_data_%d", histogram_idx), title.c_str(), 24, 0, 360);
                 h_mc_gen_histograms[histogram_idx] = new TH1D(Form("h_mc_gen_%d", histogram_idx), "gen", 24, 0, 360);
                 h_mc_rec_histograms[histogram_idx] = new TH1D(Form("h_mc_rec_%d", histogram_idx), "rec", 24, 0, 360);
 
-                // Set the x-axis and y-axis labels for each histogram
                 h_data_histograms[histogram_idx]->GetXaxis()->SetTitle("#phi");
                 h_data_histograms[histogram_idx]->GetYaxis()->SetTitle("Normalized Counts");
 
@@ -135,7 +114,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     TTreeReaderValue<double> phi_data(data_reader, "phi");
     TTreeReaderValue<double> xB_data(data_reader, "x");
     TTreeReaderValue<double> Q2_data(data_reader, "Q2");
-    TTreeReaderValue<double> t1_data(data_reader, "t1"); // Use t1 instead of t
+    TTreeReaderValue<double> t1_data(data_reader, "t1");
     TTreeReaderValue<double> open_angle_ep2_data(data_reader, "open_angle_ep2");
     TTreeReaderValue<double> theta_neutral_neutral_data(data_reader, "theta_gamma_gamma");
     TTreeReaderValue<double> Emiss2_data(data_reader, "Emiss2");
@@ -162,121 +141,87 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     TTreeReaderValue<double> Mx2_1_mc_rec(mc_rec_reader, "Mx2_1");
     TTreeReaderValue<double> pTmiss_mc_rec(mc_rec_reader, "pTmiss");
 
-
-    // Fill the histograms by looping over the data
+    // Data histograms filling
     std::cout << "Started data " << std::endl;
     while (data_reader.Next()) {
-        double phi_deg = *phi_data * RAD_TO_DEG;  // Convert phi from radians to degrees
+        double phi_deg = *phi_data * RAD_TO_DEG;
+        int histogram_idx = 0;
 
-        // Now, find which bin this data entry belongs to by looping over the filtered bins
-        int global_histogram_idx = 0;
-        for (int bin_idx = 0; bin_idx < bin_boundaries.size(); ++bin_idx) {
-            const auto& bin = bin_boundaries[bin_idx];
-
-            // Check if the current bin corresponds to the selected xB_bin
+        for (const auto& bin : bin_boundaries) {
             std::string bin_label = clean_bin_label(bin.bin_label);
             size_t first_comma = bin_label.find(',');
 
             if (first_comma != std::string::npos) {
                 int xB_label = std::stoi(bin_label.substr(0, first_comma));
 
-                // Only process bins that correspond to the current xB_bin
-                if (xB_label == xB_bin) {
-                    // Make sure we don't exceed the number of allocated histograms
-                    if (global_histogram_idx >= n_Q2t_bins) {
-                        std::cerr << "Error: global_histogram_idx exceeds number of allocated histograms." << std::endl;
-                        break;
-                    }
-
-                    // Apply kinematic cuts and fill the histogram for this bin
+                if (xB_label == xB_bin && histogram_idx < n_Q2t_bins) {
                     if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
                         *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
                         std::abs(*t1_data) >= bin.t_low && std::abs(*t1_data) <= bin.t_high &&
-                        apply_kinematic_cuts(*t1_data, *open_angle_ep2_data, *theta_neutral_neutral_data, *Emiss2_data, *Mx2_2_data, *pTmiss_data)) {
+                        apply_kinematic_cuts(*t1_data, *open_angle_ep2_data, *theta_neutral_neutral_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data)) {
 
-                        h_data_histograms[global_histogram_idx]->Fill(phi_deg);
-                        break;  // Stop after filling the correct bin, no need to check further bins
+                        h_data_histograms[histogram_idx]->Fill(phi_deg);
+                        break;
                     }
-
-                    global_histogram_idx++;  // Move to the next global histogram index
                 }
             }
+            histogram_idx++;
         }
     }
 
-    // Fill the MC-generated histograms
+    // MC-generated histograms filling
     std::cout << "Started mc gen " << std::endl;
     while (mc_gen_reader.Next()) {
         double phi_mc_gen_deg = *phi_mc_gen * RAD_TO_DEG;
+        int histogram_idx = 0;
 
-        global_histogram_idx = 0;
-        for (int bin_idx = 0; bin_idx < bin_boundaries.size(); ++bin_idx) {
-            const auto& bin = bin_boundaries[bin_idx];
-
-            // Check if the current bin corresponds to the selected xB_bin
+        for (const auto& bin : bin_boundaries) {
             std::string bin_label = clean_bin_label(bin.bin_label);
             size_t first_comma = bin_label.find(',');
 
             if (first_comma != std::string::npos) {
                 int xB_label = std::stoi(bin_label.substr(0, first_comma));
 
-                if (xB_label == xB_bin) {
-                    if (global_histogram_idx >= n_Q2t_bins) {
-                        std::cerr << "Error: global_histogram_idx exceeds number of allocated histograms." << std::endl;
-                        break;
-                    }
-
-                    // Apply kinematic cuts and fill the MC-generated histogram
+                if (xB_label == xB_bin && histogram_idx < n_Q2t_bins) {
                     if (*xB_mc_gen >= bin.xB_low && *xB_mc_gen <= bin.xB_high &&
                         *Q2_mc_gen >= bin.Q2_low && *Q2_mc_gen <= bin.Q2_high &&
                         std::abs(*t1_mc_gen) >= bin.t_low && std::abs(*t1_mc_gen) <= bin.t_high &&
-                        apply_kinematic_cuts(*t1_mc_gen, *open_angle_ep2_mc_gen, *theta_neutral_neutral_mc_gen, *Emiss2_mc_gen, *Mx2_2_mc_gen, *pTmiss_mc_gen)) {
+                        apply_kinematic_cuts(*t1_mc_gen, *open_angle_ep2_mc_gen, *theta_neutral_neutral_mc_gen, *Emiss2_mc_gen, *Mx2_1_mc_gen, *pTmiss_mc_gen)) {
 
-                        h_mc_gen_histograms[global_histogram_idx]->Fill(phi_mc_gen_deg);
-                        break;  // Stop after filling the correct bin
+                        h_mc_gen_histograms[histogram_idx]->Fill(phi_mc_gen_deg);
+                        break;
                     }
-
-                    global_histogram_idx++;
                 }
             }
+            histogram_idx++;
         }
     }
 
-    // Fill the MC-reconstructed histograms
+    // MC-reconstructed histograms filling
     std::cout << "Started mc rec " << std::endl;
     while (mc_rec_reader.Next()) {
         double phi_mc_rec_deg = *phi_mc_rec * RAD_TO_DEG;
+        int histogram_idx = 0;
 
-        global_histogram_idx = 0;
-        for (int bin_idx = 0; bin_idx < bin_boundaries.size(); ++bin_idx) {
-            const auto& bin = bin_boundaries[bin_idx];
-
-            // Check if the current bin corresponds to the selected xB_bin
+        for (const auto& bin : bin_boundaries) {
             std::string bin_label = clean_bin_label(bin.bin_label);
             size_t first_comma = bin_label.find(',');
 
             if (first_comma != std::string::npos) {
                 int xB_label = std::stoi(bin_label.substr(0, first_comma));
 
-                if (xB_label == xB_bin) {
-                    if (global_histogram_idx >= n_Q2t_bins) {
-                        std::cerr << "Error: global_histogram_idx exceeds number of allocated histograms." << std::endl;
-                        break;
-                    }
-
-                    // Apply kinematic cuts and fill the MC-reconstructed histogram
+                if (xB_label == xB_bin && histogram_idx < n_Q2t_bins) {
                     if (*xB_mc_rec >= bin.xB_low && *xB_mc_rec <= bin.xB_high &&
                         *Q2_mc_rec >= bin.Q2_low && *Q2_mc_rec <= bin.Q2_high &&
                         std::abs(*t1_mc_rec) >= bin.t_low && std::abs(*t1_mc_rec) <= bin.t_high &&
-                        apply_kinematic_cuts(*t1_mc_rec, *open_angle_ep2_mc_rec, *theta_neutral_neutral_mc_rec, *Emiss2_mc_rec, *Mx2_2_mc_rec, *pTmiss_mc_rec)) {
+                        apply_kinematic_cuts(*t1_mc_rec, *open_angle_ep2_mc_rec, *theta_neutral_neutral_mc_rec, *Emiss2_mc_rec, *Mx2_1_mc_rec, *pTmiss_mc_rec)) {
 
-                        h_mc_rec_histograms[global_histogram_idx]->Fill(phi_mc_rec_deg);
-                        break;  // Stop after filling the correct bin
+                        h_mc_rec_histograms[histogram_idx]->Fill(phi_mc_rec_deg);
+                        break;
                     }
-
-                    global_histogram_idx++;
                 }
             }
+            histogram_idx++;
         }
     }
 
@@ -289,41 +234,35 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         TH1D* h_mc_gen = h_mc_gen_histograms[histogram_idx];
         TH1D* h_mc_rec = h_mc_rec_histograms[histogram_idx];
 
-        // Normalize histograms if they are not empty
         if (h_data->Integral() > 0) h_data->Scale(1.0 / h_data->Integral());
         if (h_mc_gen->Integral() > 0) h_mc_gen->Scale(1.0 / h_mc_gen->Integral());
         if (h_mc_rec->Integral() > 0) h_mc_rec->Scale(1.0 / h_mc_rec->Integral());
 
-        // Find the maximum bin content across all histograms
         double max_value = std::max({h_data->GetMaximum(), h_mc_gen->GetMaximum(), h_mc_rec->GetMaximum()});
 
-        // Set the y-axis range from 0 to 1.35 times the maximum value
         h_data->SetMaximum(1.35 * max_value);
         h_data->SetMinimum(0);
 
-        // Set colors and styles
         h_data->SetMarkerColor(kBlue);
-        h_data->SetMarkerStyle(20);  // Data points with error bars
+        h_data->SetMarkerStyle(20);
         h_data->SetLineColor(kBlue);
 
         h_mc_gen->SetLineColor(kBlack);
-        h_mc_gen->SetLineStyle(2);  // Black line for generated MC
+        h_mc_gen->SetLineStyle(2);
 
         h_mc_rec->SetMarkerColor(kRed);
-        h_mc_rec->SetMarkerStyle(22);  // Red points for reconstructed MC
+        h_mc_rec->SetMarkerStyle(22);
         h_mc_rec->SetLineColor(kRed);
 
-        // Draw histograms on the same canvas for each subplot
-        h_data->Draw("E1");           // Data with error bars
-        h_mc_rec->Draw("E1 SAME");    // Reconstructed MC with error bars
-        h_mc_gen->Draw("HIST SAME");  // Generated MC as a line
+        h_data->Draw("E1");
+        h_mc_rec->Draw("E1 SAME");
+        h_mc_gen->Draw("HIST SAME");
 
-        // Add legend to every subplot
         TLegend* legend = new TLegend(0.575, 0.6, 0.9, 0.9);
         legend->AddEntry(h_data, "Data", "lep");
         legend->AddEntry(h_mc_rec, "Reconstructed MC", "lep");
         legend->AddEntry(h_mc_gen, "Generated MC", "l");
-        legend->SetTextSize(0.04); 
+        legend->SetTextSize(0.04);
         legend->Draw();
 
         histogram_idx++;
