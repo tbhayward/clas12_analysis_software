@@ -13,6 +13,8 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, TTr
     TH1D* h_mc_gen = new TH1D("h_mc_gen", "Generated MC", 24, 0, 360);
     TH1D* h_mc_rec = new TH1D("h_mc_rec", "Reconstructed MC", 24, 0, 360);
 
+    std::cout << "We entered plot_dvcs..." << std::endl;
+
     // Read data from trees and fill histograms
     TTreeReaderValue<double> phi_data(data_reader, "phi");
     while (data_reader.Next()) {
