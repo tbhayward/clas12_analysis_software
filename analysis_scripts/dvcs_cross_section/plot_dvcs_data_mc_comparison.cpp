@@ -137,7 +137,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     TTreeReaderValue<double> Q2_data(data_reader, "Q2");
     TTreeReaderValue<double> t1_data(data_reader, "t1"); // Use t1 instead of t
     TTreeReaderValue<double> open_angle_ep2_data(data_reader, "open_angle_ep2");
-    TTreeReaderValue<double> theta_neutral_neutral_data(data_reader, "theta_neutral_neutral");
+    TTreeReaderValue<double> theta_neutral_neutral_data(data_reader, "theta_gamma_gamma");
     TTreeReaderValue<double> Emiss2_data(data_reader, "Emiss2");
     TTreeReaderValue<double> Mx2_1_data(data_reader, "Mx2_1");
     TTreeReaderValue<double> pTmiss_data(data_reader, "pTmiss");
@@ -147,7 +147,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     TTreeReaderValue<double> Q2_mc_gen(mc_gen_reader, "Q2");
     TTreeReaderValue<double> t1_mc_gen(mc_gen_reader, "t1");
     TTreeReaderValue<double> open_angle_ep2_mc_gen(mc_gen_reader, "open_angle_ep2");
-    TTreeReaderValue<double> theta_neutral_neutral_mc_gen(mc_gen_reader, "theta_neutral_neutral");
+    TTreeReaderValue<double> theta_neutral_neutral_mc_gen(mc_gen_reader, "theta_gamma_gamma");
     TTreeReaderValue<double> Emiss2_mc_gen(mc_gen_reader, "Emiss2");
     TTreeReaderValue<double> Mx2_1_mc_gen(mc_gen_reader, "Mx2_1");
     TTreeReaderValue<double> pTmiss_mc_gen(mc_gen_reader, "pTmiss");
@@ -157,7 +157,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     TTreeReaderValue<double> Q2_mc_rec(mc_rec_reader, "Q2");
     TTreeReaderValue<double> t1_mc_rec(mc_rec_reader, "t1");
     TTreeReaderValue<double> open_angle_ep2_mc_rec(mc_rec_reader, "open_angle_ep2");
-    TTreeReaderValue<double> theta_neutral_neutral_mc_rec(mc_rec_reader, "theta_neutral_neutral");
+    TTreeReaderValue<double> theta_neutral_neutral_mc_rec(mc_rec_reader, "theta_gamma_gamma");
     TTreeReaderValue<double> Emiss2_mc_rec(mc_rec_reader, "Emiss2");
     TTreeReaderValue<double> Mx2_1_mc_rec(mc_rec_reader, "Mx2_1");
     TTreeReaderValue<double> pTmiss_mc_rec(mc_rec_reader, "pTmiss");
