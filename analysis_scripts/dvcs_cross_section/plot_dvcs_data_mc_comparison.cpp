@@ -115,6 +115,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
             histogram_idx++;
         }
     }
+    std::cout << "There are " << histogram_idx << " bins." << std::endl;
 
     // Restart the readers before looping over data
     data_reader.Restart();
