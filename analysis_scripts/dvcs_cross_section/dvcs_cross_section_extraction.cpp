@@ -2,7 +2,6 @@
 #include <fstream>
 #include <string>
 #include <vector>
-#include <sstream>
 #include <filesystem>
 #include <TFile.h>
 #include <TTree.h>
@@ -17,6 +16,7 @@
 #include "plot_pi0_mass.h"
 #include "determine_exclusivity.h"
 #include "plot_dvcs_data_mc_comparison.h"
+#include "bin_boundaries.h"  // Import for binning functions
 
 // Namespace declaration
 using namespace std;
@@ -101,7 +101,7 @@ int main(int argc, char* argv[]) {
     // File paths for the binning CSVs
     std::string binning_file = "imports/integrated_bin_v2.csv";  // Path to bin boundaries file
 
-    // Read bin boundaries from CSV
+    // Read bin boundaries from CSV using the function from bin_boundaries.h
     std::vector<BinBoundary> bin_boundaries = read_bin_boundaries(binning_file);
     if (bin_boundaries.empty()) {
         std::cerr << "Error: No bin boundaries read from file." << std::endl;
@@ -215,11 +215,11 @@ int main(int argc, char* argv[]) {
         plot_dvcs_data_mc_comparison(base_output_dir, i, data_readers[0], mc_gen_dvcsgen_readers[0], mc_rec_dvcsgen_readers[0]);
     }
 
-    // // Call the plotting function for the pi0 mass
+    // Call the plotting function for the pi0 mass (optional)
     // plot_pi0_mass(eppi0_readers[0], eppi0_readers[1], eppi0_readers[2],
     //               mc_rec_aaogen_readers[0], mc_rec_aaogen_readers[1], mc_rec_aaogen_readers[2], "output");
 
-    // // Call the determine exclusivity plots
+    // Call the exclusivity plots (optional)
     // call_determine_exclusivity(data_readers, mc_rec_dvcsgen_readers, eppi0_readers, mc_rec_aaogen_readers);
 
     std::cout << "Program complete. Additional functionality to be added later." << std::endl << std::endl;
