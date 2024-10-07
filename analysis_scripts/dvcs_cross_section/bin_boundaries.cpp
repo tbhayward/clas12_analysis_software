@@ -78,14 +78,14 @@ std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
         bin_boundaries.push_back(bin);
     }
 
-    // Output test to verify
-    for (const auto& bin : bin_boundaries) {
-        std::cout << "Bin: " << bin.bin_label
-                  << " xB [" << bin.xB_low << ", " << bin.xB_high << "]"
-                  << " Q2 [" << bin.Q2_low << ", " << bin.Q2_high << "]"
-                  << " t [" << bin.t_low << ", " << bin.t_high << "]"
-                  << std::endl;
-    }
+    // // Output test to verify
+    // for (const auto& bin : bin_boundaries) {
+    //     std::cout << "Bin: " << bin.bin_label
+    //               << " xB [" << bin.xB_low << ", " << bin.xB_high << "]"
+    //               << " Q2 [" << bin.Q2_low << ", " << bin.Q2_high << "]"
+    //               << " t [" << bin.t_low << ", " << bin.t_high << "]"
+    //               << std::endl;
+    // }
 
     file.close();
     return bin_boundaries;

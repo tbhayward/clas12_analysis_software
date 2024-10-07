@@ -210,10 +210,10 @@ int main(int argc, char* argv[]) {
 
     std::cout << "Successfully loaded all data and MC trees and created output directories." << std::endl << std::endl;
 
-    // // Call the plotting function for DVCS data/MC comparison
-    // for (size_t i = 0; i < bin_boundaries.size(); ++i) {
-    //     plot_dvcs_data_mc_comparison(base_output_dir, i, data_readers[0], mc_gen_dvcsgen_readers[0], mc_rec_dvcsgen_readers[0]);
-    // }
+    // Call the plotting function for DVCS data/MC comparison
+    for (size_t i = 0; i < bin_boundaries.size(); ++i) {
+        plot_dvcs_data_mc_comparison(base_output_dir, i, data_readers[0], mc_gen_dvcsgen_readers[0], mc_rec_dvcsgen_readers[0]);
+    }
 
     // Call the plotting function for the pi0 mass (optional)
     // plot_pi0_mass(eppi0_readers[0], eppi0_readers[1], eppi0_readers[2],
