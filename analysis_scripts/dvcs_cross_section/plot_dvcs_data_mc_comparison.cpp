@@ -9,12 +9,11 @@
 #include <string>
 #include <vector>
 #include "bin_boundaries.h"  // Include the header where BinBoundary is defined
+#include <algorithm> // For remove_if
+#include <cctype> // For isspace
 
 // Constant to convert radians to degrees
 constexpr double RAD_TO_DEG = 180.0 / M_PI;
-
-#include <algorithm> // For remove_if
-#include <cctype> // For isspace
 
 // Helper function to remove spaces and parentheses
 std::string clean_bin_label(const std::string& label) {
