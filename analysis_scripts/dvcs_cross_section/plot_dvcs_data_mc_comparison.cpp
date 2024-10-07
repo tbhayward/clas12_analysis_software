@@ -5,7 +5,6 @@
 #include <TTreeReader.h>
 #include <TTreeReaderValue.h>
 #include "bin_boundaries.h"  // Include the header where BinBoundary is defined
-#include <iostream>
 
 // Plot function for DVCS data/MC comparison with dynamic subplot layout
 void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, const std::vector<BinBoundary>& bin_boundaries, TTreeReader& data_reader, TTreeReader& mc_gen_reader, TTreeReader& mc_rec_reader) {
@@ -26,6 +25,11 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     // Disable stat boxes globally
     gStyle->SetOptStat(0);
 
+    // Initialize readers before the loop
+    TTreeReaderValue<double> phi_data(data_reader, "phi");
+    TTreeReaderValue<double> phi_mc_gen(mc_gen_reader, "phi");
+    TTreeReaderValue<double> phi_mc_rec(mc_rec_reader, "phi");
+
     // Loop over all Q²-t bins for this xB bin
     int subplot_idx = 1;
     for (size_t i = 0; i < bin_boundaries.size(); ++i) {
@@ -39,18 +43,18 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
             TH1D* h_mc_gen = new TH1D("h_mc_gen", "Generated MC", 24, 0, 360);
             TH1D* h_mc_rec = new TH1D("h_mc_rec", "Reconstructed MC", 24, 0, 360);
 
+            // Restart the readers before looping over data
+            data_reader.Restart();
+            mc_gen_reader.Restart();
+            mc_rec_reader.Restart();
+
             // Read data from trees and fill histograms
-            TTreeReaderValue<double> phi_data(data_reader, "phi");
             while (data_reader.Next()) {
                 h_data->Fill(*phi_data);
             }
-
-            TTreeReaderValue<double> phi_mc_gen(mc_gen_reader, "phi");
             while (mc_gen_reader.Next()) {
                 h_mc_gen->Fill(*phi_mc_gen);
             }
-
-            TTreeReaderValue<double> phi_mc_rec(mc_rec_reader, "phi");
             while (mc_rec_reader.Next()) {
                 h_mc_rec->Fill(*phi_mc_rec);
             }
