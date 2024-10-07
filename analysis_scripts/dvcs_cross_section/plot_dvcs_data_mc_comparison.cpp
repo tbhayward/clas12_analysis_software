@@ -5,12 +5,18 @@
 #include <TTreeReader.h>
 #include <TTreeReaderValue.h>
 #include <cmath>  // For conversion from radians to degrees
+#include <string>
+#include <vector>
 
 // Constant to convert radians to degrees
 constexpr double RAD_TO_DEG = 180.0 / M_PI;
 
-// Simplified Plot function for DVCS data/MC comparison without bin boundary checks
+// Simplified Plot function for DVCS data/MC comparison
 void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, const std::vector<BinBoundary>& bin_boundaries, TTreeReader& data_reader, TTreeReader& mc_gen_reader, TTreeReader& mc_rec_reader) {
+
+    // The parameters xB_bin and bin_boundaries are currently unused in this simplified version.
+    (void)xB_bin;  // Silence unused variable warning for now
+    (void)bin_boundaries;
 
     // Create a single canvas (no subdivision)
     TCanvas* canvas = new TCanvas("c1", "Data vs MC", 1200, 800);
