@@ -51,9 +51,27 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     int histogram_idx = 0;
     for (const auto& bin : bin_boundaries) {
         if (bin.xB_low == bin_boundaries[xB_bin].xB_low && bin.xB_high == bin_boundaries[xB_bin].xB_high) {
-            h_data_histograms.push_back(new TH1D(Form("h_data_%d", histogram_idx), "Reconstructed Data", 24, 0, 360));
-            h_mc_gen_histograms.push_back(new TH1D(Form("h_mc_gen_%d", histogram_idx), "Generated MC", 24, 0, 360));
-            h_mc_rec_histograms.push_back(new TH1D(Form("h_mc_rec_%d", histogram_idx), "Reconstructed MC", 24, 0, 360));
+            // Create a title string based on the kinematic constraints
+            std::string title = Form("x_{B}: %.2f-%.2f, Q^{2}: %.2f-%.2f, |t|: %.2f-%.2f",
+                                     bin.xB_low, bin.xB_high,
+                                     bin.Q2_low, bin.Q2_high,
+                                     std::abs(bin.t_low), std::abs(bin.t_high));
+
+            // Use the dynamically created title for each histogram
+            h_data_histograms.push_back(new TH1D(Form("h_data_%d", histogram_idx), title.c_str(), 24, 0, 360));
+            h_mc_gen_histograms.push_back(new TH1D(Form("h_mc_gen_%d", histogram_idx), "gen", 24, 0, 360));
+            h_mc_rec_histograms.push_back(new TH1D(Form("h_mc_rec_%d", histogram_idx), "rec", 24, 0, 360));
+
+            // Set the x-axis and y-axis labels for each histogram
+            h_data->GetXaxis()->SetTitle("#phi");
+            h_data->GetYaxis()->SetTitle("Normalized Counts");
+
+            h_mc_gen->GetXaxis()->SetTitle("#phi");
+            h_mc_gen->GetYaxis()->SetTitle("Normalized Counts");
+
+            h_mc_rec->GetXaxis()->SetTitle("#phi");
+            h_mc_rec->GetYaxis()->SetTitle("Normalized Counts");
+
             histogram_idx++;
         }
     }
@@ -131,7 +149,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         double max_value = std::max({h_data->GetMaximum(), h_mc_gen->GetMaximum(), h_mc_rec->GetMaximum()});
 
         // Set the y-axis range from 0 to 1.2 times the maximum value
-        h_data->SetMaximum(1.2 * max_value);
+        h_data->SetMaximum(1.35 * max_value);
         h_data->SetMinimum(0);
 
         // Set colors and styles
@@ -159,7 +177,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         latex.DrawLatexNDC(0.15, 0.75, Form("|t|: %.2f - %.2f", std::abs(bin_boundaries[histogram_idx].t_low), std::abs(bin_boundaries[histogram_idx].t_high)));
 
         // Add legend to every subplot
-        TLegend* legend = new TLegend(0.5, 0.6, 0.9, 0.9);
+        TLegend* legend = new TLegend(0.575, 0.6, 0.9, 0.9);
         legend->AddEntry(h_data, "Data", "lep");
         legend->AddEntry(h_mc_rec, "Reconstructed MC", "lep");
         legend->AddEntry(h_mc_gen, "Generated MC", "l");
