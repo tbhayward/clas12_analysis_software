@@ -29,6 +29,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
 
     // Count the number of Q²-t bins for the current xB bin
     int n_Q2t_bins = count_Q2t_bins_for_xB(xB_bin, bin_boundaries);
+    std::cout << n_Q2t_bins << std::endl;
 
     // Calculate the number of subplots and make the canvas as square as possible
     int n_subplots = std::pow(std::ceil(std::sqrt(n_Q2t_bins)), 2);  // Perfect square of subplots
