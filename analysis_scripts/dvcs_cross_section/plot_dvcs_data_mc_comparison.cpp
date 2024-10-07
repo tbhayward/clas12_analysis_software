@@ -51,6 +51,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
             // Read data from trees and fill histograms
             while (data_reader.Next()) {
                 h_data->Fill(*phi_data);
+                std::cout << "phi_data: " << *phi_data << std::endl;
             }
             while (mc_gen_reader.Next()) {
                 h_mc_gen->Fill(*phi_mc_gen);
