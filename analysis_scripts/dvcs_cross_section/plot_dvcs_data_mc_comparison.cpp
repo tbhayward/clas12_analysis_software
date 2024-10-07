@@ -132,25 +132,46 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
 
     // Reinitialize readers for each tree
     TTreeReaderValue<double> phi_data(data_reader, "phi");
-    TTreeReaderValue<double> xB_data(data_reader, "x");  // Use 'x' for xB
+    TTreeReaderValue<double> xB_data(data_reader, "x");
     TTreeReaderValue<double> Q2_data(data_reader, "Q2");
-    TTreeReaderValue<double> t1_data(data_reader, "t1");  // Use t1 instead of t
+    TTreeReaderValue<double> t1_data(data_reader, "t1"); // Use t1 instead of t
+    TTreeReaderValue<double> open_angle_ep2_data(data_reader, "open_angle_ep2");
+    TTreeReaderValue<double> theta_neutral_neutral_data(data_reader, "theta_neutral_neutral");
+    TTreeReaderValue<double> Emiss2_data(data_reader, "Emiss2");
+    TTreeReaderValue<double> Mx2_1_data(data_reader, "Mx2_1");
+    TTreeReaderValue<double> pTmiss_data(data_reader, "pTmiss");
 
     TTreeReaderValue<double> phi_mc_gen(mc_gen_reader, "phi");
-    TTreeReaderValue<double> xB_mc_gen(mc_gen_reader, "x");  // MC-gen xB
-    TTreeReaderValue<double> Q2_mc_gen(mc_gen_reader, "Q2"); // MC-gen Q²
-    TTreeReaderValue<double> t1_mc_gen(mc_gen_reader, "t1"); // MC-gen t1
+    TTreeReaderValue<double> xB_mc_gen(mc_gen_reader, "x");
+    TTreeReaderValue<double> Q2_mc_gen(mc_gen_reader, "Q2");
+    TTreeReaderValue<double> t1_mc_gen(mc_gen_reader, "t1");
+    TTreeReaderValue<double> open_angle_ep2_mc_gen(mc_gen_reader, "open_angle_ep2");
+    TTreeReaderValue<double> theta_neutral_neutral_mc_gen(mc_gen_reader, "theta_neutral_neutral");
+    TTreeReaderValue<double> Emiss2_mc_gen(mc_gen_reader, "Emiss2");
+    TTreeReaderValue<double> Mx2_1_mc_gen(mc_gen_reader, "Mx2_1");
+    TTreeReaderValue<double> pTmiss_mc_gen(mc_gen_reader, "pTmiss");
 
     TTreeReaderValue<double> phi_mc_rec(mc_rec_reader, "phi");
-    TTreeReaderValue<double> xB_mc_rec(mc_rec_reader, "x");  // MC-rec xB
-    TTreeReaderValue<double> Q2_mc_rec(mc_rec_reader, "Q2"); // MC-rec Q²
-    TTreeReaderValue<double> t1_mc_rec(mc_rec_reader, "t1"); // MC-rec t1
+    TTreeReaderValue<double> xB_mc_rec(mc_rec_reader, "x");
+    TTreeReaderValue<double> Q2_mc_rec(mc_rec_reader, "Q2");
+    TTreeReaderValue<double> t1_mc_rec(mc_rec_reader, "t1");
+    TTreeReaderValue<double> open_angle_ep2_mc_rec(mc_rec_reader, "open_angle_ep2");
+    TTreeReaderValue<double> theta_neutral_neutral_mc_rec(mc_rec_reader, "theta_neutral_neutral");
+    TTreeReaderValue<double> Emiss2_mc_rec(mc_rec_reader, "Emiss2");
+    TTreeReaderValue<double> Mx2_1_mc_rec(mc_rec_reader, "Mx2_1");
+    TTreeReaderValue<double> pTmiss_mc_rec(mc_rec_reader, "pTmiss");
 
 
     // Fill the histograms by looping over the data
     std::cout << "Started data " << std::endl;
     while (data_reader.Next()) {
         double phi_deg = *phi_data * RAD_TO_DEG;  // Convert phi from radians to degrees
+
+        // Apply kinematic cuts for the data
+        if (!apply_kinematic_cuts(*t1_data, *open_angle_ep2_data, *theta_neutral_neutral_data, 
+                                  *Emiss2_data, *Mx2_1_data, *pTmiss_data)) {
+            continue;  // Skip this entry if it fails the cuts
+        }
 
         // Now, find which bin this data entry belongs to by looping over the bins
         for (int bin_idx = 0; bin_idx < n_Q2t_bins; ++bin_idx) {
@@ -172,10 +193,15 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     while (mc_gen_reader.Next()) {
         double phi_mc_gen_deg = *phi_mc_gen * RAD_TO_DEG;
 
+        // Apply kinematic cuts for the MC-gen
+        if (!apply_kinematic_cuts(*t1_mc_gen, *open_angle_ep2_mc_gen, *theta_neutral_neutral_mc_gen, 
+                                  *Emiss2_mc_gen, *Mx2_1_mc_gen, *pTmiss_mc_gen)) {
+            continue;  // Skip this entry if it fails the cuts
+        }
+
         for (int bin_idx = 0; bin_idx < n_Q2t_bins; ++bin_idx) {
             const auto& bin = bin_boundaries[bin_idx];
 
-            // Use MC-gen values for kinematic cuts
             if (*xB_mc_gen >= bin.xB_low && *xB_mc_gen <= bin.xB_high &&
                 *Q2_mc_gen >= bin.Q2_low && *Q2_mc_gen <= bin.Q2_high &&
                 std::abs(*t1_mc_gen) >= bin.t_low && std::abs(*t1_mc_gen) <= bin.t_high) {
@@ -191,10 +217,15 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     while (mc_rec_reader.Next()) {
         double phi_mc_rec_deg = *phi_mc_rec * RAD_TO_DEG;
 
+        // Apply kinematic cuts for the MC-rec
+        if (!apply_kinematic_cuts(*t1_mc_rec, *open_angle_ep2_mc_rec, *theta_neutral_neutral_mc_rec, 
+                                  *Emiss2_mc_rec, *Mx2_1_mc_rec, *pTmiss_mc_rec)) {
+            continue;  // Skip this entry if it fails the cuts
+        }
+
         for (int bin_idx = 0; bin_idx < n_Q2t_bins; ++bin_idx) {
             const auto& bin = bin_boundaries[bin_idx];
 
-            // Use MC-rec values for kinematic cuts
             if (*xB_mc_rec >= bin.xB_low && *xB_mc_rec <= bin.xB_high &&
                 *Q2_mc_rec >= bin.Q2_low && *Q2_mc_rec <= bin.Q2_high &&
                 std::abs(*t1_mc_rec) >= bin.t_low && std::abs(*t1_mc_rec) <= bin.t_high) {
