@@ -8,6 +8,9 @@
 #include <string>
 #include <vector>
 
+// Include the header where BinBoundary is defined
+#include "bin_boundaries.h"  
+
 // Constant to convert radians to degrees
 constexpr double RAD_TO_DEG = 180.0 / M_PI;
 
