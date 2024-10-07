@@ -59,15 +59,14 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
                 h_mc_rec->Fill(*phi_mc_rec);
             }
 
-            // // Check if h_data and h_mc_rec are both empty, and skip this subplot if so
-            // if (h_data->Integral() == 0 && h_mc_rec->Integral() == 0) {
-            //     delete h_data;
-            //     delete h_mc_gen;
-            //     delete h_mc_rec;
-            //     continue;
-            // }
+            // Check if h_data and h_mc_rec are both empty, and skip this subplot if so
+            if (h_data->Integral() == 0 && h_mc_rec->Integral() == 0) {
+                delete h_data;
+                delete h_mc_gen;
+                delete h_mc_rec;
+                continue;
+            }
 
-            std::cout << h_data->Integral() << std::endl;
             // Normalize the histograms to their integrals
             if (h_data->Integral() > 0) h_data->Scale(1.0 / h_data->Integral());
             if (h_mc_gen->Integral() > 0) h_mc_gen->Scale(1.0 / h_mc_gen->Integral());
@@ -84,20 +83,27 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
             h_mc_rec->SetLineColor(kGreen);
             h_mc_rec->SetLineStyle(3);  // Dashed line for reconstructed MC
 
-            // Select the next available subplot
-            canvas->cd(subplot_idx++);
-            h_data->Draw("E1");         // Data with error bars
+            // Select the next available subplot and activate the pad
+            canvas->cd(subplot_idx);
+            TPad* pad = (TPad*)canvas->cd(subplot_idx);
+            pad->SetLogy();  // Optional: Enable log scale for better visibility
+
+            // Ensure histograms are drawn in the correct order
+            h_data->Draw("E1");           // Data with error bars
             h_mc_gen->Draw("HIST SAME");  // Generated MC as a line
             h_mc_rec->Draw("HIST SAME");  // Reconstructed MC as a line
 
             // Add legend in the first subplot
-            if (subplot_idx == 2) {
+            if (subplot_idx == 1) {
                 TLegend* legend = new TLegend(0.7, 0.75, 0.9, 0.9);
                 legend->AddEntry(h_data, "Data", "lep");
                 legend->AddEntry(h_mc_gen, "Generated MC", "l");
                 legend->AddEntry(h_mc_rec, "Reconstructed MC", "l");
                 legend->Draw();
             }
+
+            // Move to the next subplot
+            subplot_idx++;
 
             // Clean up histograms after drawing
             delete h_data;
