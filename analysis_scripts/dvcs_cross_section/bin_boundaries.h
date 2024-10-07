@@ -1,14 +1,20 @@
 #ifndef BIN_BOUNDARIES_H
 #define BIN_BOUNDARIES_H
 
-#include <map>
 #include <string>
 #include <vector>
 
-// Function to initialize the bin boundaries
-std::map<std::string, std::vector<double>> initialize_bin_boundaries();
+// Structure to store bin boundaries
+struct BinBoundary {
+    double xB_low, xB_high;
+    double Q2_low, Q2_high;
+    double t_low, t_high;
+};
 
-// Function to map values to bin indices
-std::tuple<int, int, int> map_values_to_bin(double xB, double Q2, double t);
+// Function declarations
+std::vector<BinBoundary> read_bin_boundaries(const std::string& filename);
+
+// Function to map xB, Q2, and t to a bin
+int map_to_bin(const std::vector<BinBoundary>& bin_boundaries, double xB, double Q2, double t);
 
 #endif

@@ -1,72 +1,49 @@
+#include "bin_boundaries.h"
 #include <fstream>
 #include <sstream>
-#include <vector>
-#include <string>
-#include <map>
 #include <iostream>
 
-struct BinBoundaries {
-    std::vector<double> xB_bins;
-    std::vector<double> Q2_bins;
-    std::vector<double> t_bins;
-    std::vector<double> phi_bins;
-};
-
-BinBoundaries read_bin_boundaries(const std::string& filename) {
+// Function definition to read bin boundaries from CSV
+std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
+    std::vector<BinBoundary> bin_boundaries;
     std::ifstream file(filename);
-    std::string line;
-    BinBoundaries boundaries;
-    
+
     if (!file.is_open()) {
-        std::cerr << "Error opening file: " << filename << std::endl;
-        return boundaries;
+        std::cerr << "Error: Could not open file " << filename << std::endl;
+        return bin_boundaries;
     }
 
-    while (getline(file, line)) {
+    std::string line;
+    while (std::getline(file, line)) {
         std::stringstream ss(line);
-        std::string field;
-        std::vector<double> current_bin;
-        while (getline(ss, field, ',')) {
-            current_bin.push_back(stod(field));
-        }
+        std::string token;
+        BinBoundary bin;
 
-        // Assume first row defines the boundaries
-        boundaries.xB_bins.push_back(current_bin[0]);
-        boundaries.Q2_bins.push_back(current_bin[1]);
-        boundaries.t_bins.push_back(current_bin[2]);
-        boundaries.phi_bins.push_back(current_bin[3]);
+        // Assuming CSV format: xB_low,xB_high,Q2_low,Q2_high,t_low,t_high
+        std::getline(ss, token, ','); bin.xB_low = std::stod(token);
+        std::getline(ss, token, ','); bin.xB_high = std::stod(token);
+        std::getline(ss, token, ','); bin.Q2_low = std::stod(token);
+        std::getline(ss, token, ','); bin.Q2_high = std::stod(token);
+        std::getline(ss, token, ','); bin.t_low = std::stod(token);
+        std::getline(ss, token, ','); bin.t_high = std::stod(token);
+
+        bin_boundaries.push_back(bin);
     }
 
-    return boundaries;
+    file.close();
+    return bin_boundaries;
 }
 
-// Function to assign an event to a bin based on its xB, Q2, and t values
-std::tuple<int, int, int> assign_bin(double xB, double Q2, double t, const BinBoundaries& boundaries) {
-    int xB_bin = -1, Q2_bin = -1, t_bin = -1;
-    
-    // Find the correct xB bin
-    for (size_t i = 0; i < boundaries.xB_bins.size() - 1; ++i) {
-        if (xB >= boundaries.xB_bins[i] && xB < boundaries.xB_bins[i + 1]) {
-            xB_bin = i;
-            break;
+// Function to map xB, Q2, and t to a bin index
+int map_to_bin(const std::vector<BinBoundary>& bin_boundaries, double xB, double Q2, double t) {
+    for (size_t i = 0; i < bin_boundaries.size(); ++i) {
+        const BinBoundary& bin = bin_boundaries[i];
+
+        if (xB >= bin.xB_low && xB < bin.xB_high &&
+            Q2 >= bin.Q2_low && Q2 < bin.Q2_high &&
+            t >= bin.t_low && t < bin.t_high) {
+            return static_cast<int>(i);
         }
     }
-
-    // Find the correct Q2 bin
-    for (size_t i = 0; i < boundaries.Q2_bins.size() - 1; ++i) {
-        if (Q2 >= boundaries.Q2_bins[i] && Q2 < boundaries.Q2_bins[i + 1]) {
-            Q2_bin = i;
-            break;
-        }
-    }
-
-    // Find the correct t bin
-    for (size_t i = 0; i < boundaries.t_bins.size() - 1; ++i) {
-        if (t >= boundaries.t_bins[i] && t < boundaries.t_bins[i + 1]) {
-            t_bin = i;
-            break;
-        }
-    }
-
-    return std::make_tuple(xB_bin, Q2_bin, t_bin);
+    return -1;  // Return -1 if the bin is not found
 }
