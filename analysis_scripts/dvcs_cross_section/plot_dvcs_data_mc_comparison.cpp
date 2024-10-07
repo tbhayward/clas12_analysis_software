@@ -88,8 +88,8 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
 
     // Draw histograms on the same canvas
     h_data->Draw("E1 P");   // Draw data with error bars as points
-    h_mc_gen->Draw("E1 P SAME");  // Draw generated MC as points
-    h_mc_rec->Draw("E1 P SAME");  // Draw reconstructed MC as points
+    h_mc_gen->Draw("Hist SAME");  // Draw generated MC as points
+    h_mc_rec->Draw("Hist SAME");  // Draw reconstructed MC as points
 
     // Set axis labels
     h_data->GetXaxis()->SetTitle("#phi");
