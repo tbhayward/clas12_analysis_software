@@ -205,8 +205,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
 
     // Fill the MC-generated histograms
     std::cout << "Started mc gen " << std::endl;
-    int global_histogram_idx = 0;  // This will track the global index based on the current xB_bin
-
+    global_histogram_idx = 0; 
     while (mc_gen_reader.Next()) {
         double phi_mc_gen_deg = *phi_mc_gen * RAD_TO_DEG;  // Convert phi from radians to degrees
 
