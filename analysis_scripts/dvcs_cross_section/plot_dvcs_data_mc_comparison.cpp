@@ -87,35 +87,43 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     int histogram_idx = 0;
 
     for (const auto& bin : bin_boundaries) {
-        // Check if the current bin corresponds to the xB_bin we're interested in
-        if (bin.xB_low == bin_boundaries[xB_bin].xB_low && bin.xB_high == bin_boundaries[xB_bin].xB_high) {
-            if (histogram_idx >= n_Q2t_bins) break;  // Ensure we don't create more than needed
+        // Clean the bin label to extract xB_bin
+        std::string bin_label = clean_bin_label(bin.bin_label);
+        size_t first_comma = bin_label.find(',');
+        
+        if (first_comma != std::string::npos) {
+            int xB_label = std::stoi(bin_label.substr(0, first_comma)); // Extract xB_bin from bin label
 
-            // Create a title string based on the kinematic constraints
-            std::string title = Form("x_{B}: %.2f-%.2f, Q^{2}: %.2f-%.2f, |t|: %.2f-%.2f",
-                                     bin.xB_low, bin.xB_high,
-                                     bin.Q2_low, bin.Q2_high,
-                                     std::abs(bin.t_low), std::abs(bin.t_high));
+            if (xB_label == xB_bin) {
+                if (histogram_idx >= n_Q2t_bins) break;  // Ensure we don't create more than needed
 
-            // Create histograms
-            h_data_histograms[histogram_idx] = new TH1D(Form("h_data_%d", histogram_idx), title.c_str(), 24, 0, 360);
-            h_mc_gen_histograms[histogram_idx] = new TH1D(Form("h_mc_gen_%d", histogram_idx), "gen", 24, 0, 360);
-            h_mc_rec_histograms[histogram_idx] = new TH1D(Form("h_mc_rec_%d", histogram_idx), "rec", 24, 0, 360);
+                // Create a title string based on the kinematic constraints
+                std::string title = Form("x_{B}: %.2f-%.2f, Q^{2}: %.2f-%.2f, |t|: %.2f-%.2f",
+                                        bin.xB_low, bin.xB_high,
+                                        bin.Q2_low, bin.Q2_high,
+                                        std::abs(bin.t_low), std::abs(bin.t_high));
 
-            // Set the x-axis and y-axis labels for each histogram
-            h_data_histograms[histogram_idx]->GetXaxis()->SetTitle("#phi");
-            h_data_histograms[histogram_idx]->GetYaxis()->SetTitle("Normalized Counts");
+                // Create histograms
+                h_data_histograms[histogram_idx] = new TH1D(Form("h_data_%d", histogram_idx), title.c_str(), 24, 0, 360);
+                h_mc_gen_histograms[histogram_idx] = new TH1D(Form("h_mc_gen_%d", histogram_idx), "gen", 24, 0, 360);
+                h_mc_rec_histograms[histogram_idx] = new TH1D(Form("h_mc_rec_%d", histogram_idx), "rec", 24, 0, 360);
 
-            h_mc_gen_histograms[histogram_idx]->GetXaxis()->SetTitle("#phi");
-            h_mc_gen_histograms[histogram_idx]->GetYaxis()->SetTitle("Normalized Counts");
+                // Set the x-axis and y-axis labels for each histogram
+                h_data_histograms[histogram_idx]->GetXaxis()->SetTitle("#phi");
+                h_data_histograms[histogram_idx]->GetYaxis()->SetTitle("Normalized Counts");
 
-            h_mc_rec_histograms[histogram_idx]->GetXaxis()->SetTitle("#phi");
-            h_mc_rec_histograms[histogram_idx]->GetYaxis()->SetTitle("Normalized Counts");
+                h_mc_gen_histograms[histogram_idx]->GetXaxis()->SetTitle("#phi");
+                h_mc_gen_histograms[histogram_idx]->GetYaxis()->SetTitle("Normalized Counts");
 
-            histogram_idx++;
+                h_mc_rec_histograms[histogram_idx]->GetXaxis()->SetTitle("#phi");
+                h_mc_rec_histograms[histogram_idx]->GetYaxis()->SetTitle("Normalized Counts");
+
+                histogram_idx++;
+            }
         }
     }
-    std::cout << "There are " << histogram_idx << " bins." << std::endl;
+
+    std::cout << "There are " << histogram_idx << " bins created." << std::endl;
 
     // Restart the readers before looping over data
     data_reader.Restart();
@@ -136,27 +144,35 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     for (const auto& bin : bin_boundaries) {
         if (histogram_idx >= n_Q2t_bins) break;  // Prevent out-of-bounds access
 
-        if (bin.xB_low == bin_boundaries[xB_bin].xB_low && bin.xB_high == bin_boundaries[xB_bin].xB_high) {
-            while (data_reader.Next()) {
-                double phi_deg = *phi_data * RAD_TO_DEG;  // Convert phi from radians to degrees
-                if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
-                    *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
-                    std::abs(*t1_data) >= bin.t_low && std::abs(*t1_data) <= bin.t_high) {
-                    h_data_histograms[histogram_idx]->Fill(phi_deg);
+        // Clean the bin label to extract xB_bin
+        std::string bin_label = clean_bin_label(bin.bin_label);
+        size_t first_comma = bin_label.find(',');
+
+        if (first_comma != std::string::npos) {
+            int xB_label = std::stoi(bin_label.substr(0, first_comma)); // Extract xB_bin from bin label
+
+            if (xB_label == xB_bin) {
+                while (data_reader.Next()) {
+                    double phi_deg = *phi_data * RAD_TO_DEG;  // Convert phi from radians to degrees
+                    if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
+                        *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
+                        std::abs(*t1_data) >= bin.t_low && std::abs(*t1_data) <= bin.t_high) {
+                        h_data_histograms[histogram_idx]->Fill(phi_deg);
+                    }
                 }
-            }
 
-            while (mc_gen_reader.Next()) {
-                double phi_mc_gen_deg = *phi_mc_gen * RAD_TO_DEG;
-                h_mc_gen_histograms[histogram_idx]->Fill(phi_mc_gen_deg);
-            }
+                while (mc_gen_reader.Next()) {
+                    double phi_mc_gen_deg = *phi_mc_gen * RAD_TO_DEG;
+                    h_mc_gen_histograms[histogram_idx]->Fill(phi_mc_gen_deg);
+                }
 
-            while (mc_rec_reader.Next()) {
-                double phi_mc_rec_deg = *phi_mc_rec * RAD_TO_DEG;
-                h_mc_rec_histograms[histogram_idx]->Fill(phi_mc_rec_deg);
-            }
+                while (mc_rec_reader.Next()) {
+                    double phi_mc_rec_deg = *phi_mc_rec * RAD_TO_DEG;
+                    h_mc_rec_histograms[histogram_idx]->Fill(phi_mc_rec_deg);
+                }
 
-            histogram_idx++;
+                histogram_idx++;
+            }
         }
     }
 
