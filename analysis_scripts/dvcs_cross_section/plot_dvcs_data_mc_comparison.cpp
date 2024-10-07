@@ -137,7 +137,15 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     TTreeReaderValue<double> t1_data(data_reader, "t1");  // Use t1 instead of t
 
     TTreeReaderValue<double> phi_mc_gen(mc_gen_reader, "phi");
+    TTreeReaderValue<double> xB_mc_gen(mc_gen_reader, "x");  // MC-gen xB
+    TTreeReaderValue<double> Q2_mc_gen(mc_gen_reader, "Q2"); // MC-gen Q²
+    TTreeReaderValue<double> t1_mc_gen(mc_gen_reader, "t1"); // MC-gen t1
+
     TTreeReaderValue<double> phi_mc_rec(mc_rec_reader, "phi");
+    TTreeReaderValue<double> xB_mc_rec(mc_rec_reader, "x");  // MC-rec xB
+    TTreeReaderValue<double> Q2_mc_rec(mc_rec_reader, "Q2"); // MC-rec Q²
+    TTreeReaderValue<double> t1_mc_rec(mc_rec_reader, "t1"); // MC-rec t1
+
 
     // Fill the histograms by looping over the data
     std::cout << "Started data " << std::endl;
@@ -167,9 +175,11 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         for (int bin_idx = 0; bin_idx < n_Q2t_bins; ++bin_idx) {
             const auto& bin = bin_boundaries[bin_idx];
 
-            if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
-                *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
-                std::abs(*t1_data) >= bin.t_low && std::abs(*t1_data) <= bin.t_high) {
+            // Use MC-gen values for kinematic cuts
+            if (*xB_mc_gen >= bin.xB_low && *xB_mc_gen <= bin.xB_high &&
+                *Q2_mc_gen >= bin.Q2_low && *Q2_mc_gen <= bin.Q2_high &&
+                std::abs(*t1_mc_gen) >= bin.t_low && std::abs(*t1_mc_gen) <= bin.t_high) {
+                
                 h_mc_gen_histograms[bin_idx]->Fill(phi_mc_gen_deg);
                 break;  // Stop after filling the correct bin
             }
@@ -184,9 +194,11 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         for (int bin_idx = 0; bin_idx < n_Q2t_bins; ++bin_idx) {
             const auto& bin = bin_boundaries[bin_idx];
 
-            if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
-                *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
-                std::abs(*t1_data) >= bin.t_low && std::abs(*t1_data) <= bin.t_high) {
+            // Use MC-rec values for kinematic cuts
+            if (*xB_mc_rec >= bin.xB_low && *xB_mc_rec <= bin.xB_high &&
+                *Q2_mc_rec >= bin.Q2_low && *Q2_mc_rec <= bin.Q2_high &&
+                std::abs(*t1_mc_rec) >= bin.t_low && std::abs(*t1_mc_rec) <= bin.t_high) {
+                
                 h_mc_rec_histograms[bin_idx]->Fill(phi_mc_rec_deg);
                 break;  // Stop after filling the correct bin
             }
