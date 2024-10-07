@@ -92,6 +92,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
                 }
             }
 
+            std::cout << h_data->Integral() << " " << h_mc_rec->Integral() << " " << h_mc_gen->Integral() << std::endl;
             // Check if h_data and h_mc_rec are both empty, and skip this subplot if so
             if (h_data->Integral() == 0 && h_mc_rec->Integral() == 0) {
                 delete h_data;
