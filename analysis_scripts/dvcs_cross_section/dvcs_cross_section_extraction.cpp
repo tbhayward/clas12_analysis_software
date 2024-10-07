@@ -42,7 +42,7 @@ void call_determine_exclusivity(std::vector<TTreeReader>& data_readers, std::vec
     determine_exclusivity("dvcs", "(CD,FT)", data_readers[1], mc_rec_dvcsgen_readers[1], "output/exclusivity_plots", "e'p'#gamma (Fa18 Out, CD,FT)");
     determine_exclusivity("dvcs", "(CD,FT)", data_readers[2], mc_rec_dvcsgen_readers[2], "output/exclusivity_plots", "e'p'#gamma (Sp19 Inb, CD,FT)");
 
-    dataReader.Restart(); mcReader.Restart();
+    data_readers.Restart(); mc_rec_dvcsgen_readers.Restart(); eppi0_readers.Restart(); mc_rec_aaogen_readers.Restart();
     // Eppi0 channel calls
     determine_exclusivity("eppi0", "(CD,FD)", eppi0_readers[0], mc_rec_aaogen_readers[0], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Inb, CD,FD)");
     determine_exclusivity("eppi0", "(CD,FD)", eppi0_readers[1], mc_rec_aaogen_readers[1], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Out, CD,FD)");
@@ -171,12 +171,17 @@ int main(int argc, char* argv[]) {
     std::string base_output_dir = "output";  // Define the base directory
     create_directories(base_output_dir);     // Create the directories
 
-    cout << "Successfully loaded all data and MC trees." << endl << endl;
+    cout << "Successfully loaded all data and MC trees and created output directories." << endl << endl;
 
-    // Call the plotting function for the pi0 mass
-    plot_pi0_mass(eppi0_readers[0], eppi0_readers[1], eppi0_readers[2],
-                  mc_rec_aaogen_readers[0], mc_rec_aaogen_readers[1], mc_rec_aaogen_readers[2],
-                  "output");
+
+
+    ///////////// ANALYSIS SECTION /////////////
+
+
+    // // Call the plotting function for the pi0 mass
+    // plot_pi0_mass(eppi0_readers[0], eppi0_readers[1], eppi0_readers[2],
+    //               mc_rec_aaogen_readers[0], mc_rec_aaogen_readers[1], mc_rec_aaogen_readers[2],
+    //               "output");
 
     // Call the helper function for exclusivity plotting
     call_determine_exclusivity(data_readers, mc_rec_dvcsgen_readers, eppi0_readers, mc_rec_aaogen_readers);
