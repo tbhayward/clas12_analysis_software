@@ -120,12 +120,17 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
             // Select the next available subplot and activate the pad
             canvas->cd(subplot_idx);
             TPad* pad = (TPad*)canvas->cd(subplot_idx);
-            pad->SetLogy();  // Optional: Enable log scale for better visibility
+
+            // Disable log scale for now to check if the histograms appear
+            pad->SetLogy(0);
 
             // Ensure histograms are drawn in the correct order
             h_data->Draw("E1");           // Data with error bars
             h_mc_gen->Draw("HIST SAME");  // Generated MC as a line
             h_mc_rec->Draw("HIST SAME");  // Reconstructed MC as a line
+
+            // Update the pad to make sure it is rendered correctly
+            pad->Update();
 
             // Add legend in the first subplot
             if (subplot_idx == 1) {
@@ -149,6 +154,9 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     // Save canvas to the output directory
     std::string filename = output_dir + "/xB_bin_" + std::to_string(xB_bin) + ".png";
     canvas->SaveAs(filename.c_str());
+
+    // Update canvas to render it correctly
+    canvas->Update();
 
     // Clean up canvas
     delete canvas;
