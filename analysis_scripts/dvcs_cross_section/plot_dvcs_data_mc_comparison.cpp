@@ -140,8 +140,8 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     TTreeReaderValue<double> phi_mc_rec(mc_rec_reader, "phi");
 
     // Fill the histograms by looping over the data
+    std::cout << "Started data " << std::endl;
     while (data_reader.Next()) {
-        std::cout << "Started data " << std::endl;
         double phi_deg = *phi_data * RAD_TO_DEG;  // Convert phi from radians to degrees
 
         // Now, find which bin this data entry belongs to by looping over the bins
@@ -161,8 +161,8 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     }
 
     // Fill the MC-generated histograms
+    std::cout << "Started mc gen " << std::endl;
     while (mc_gen_reader.Next()) {
-        std::cout << "Started mc gen " << std::endl;
         double phi_mc_gen_deg = *phi_mc_gen * RAD_TO_DEG;
 
         for (int bin_idx = 0; bin_idx < n_Q2t_bins; ++bin_idx) {
@@ -178,8 +178,8 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     }
 
     // Fill the MC-reconstructed histograms
+    std::cout << "Started mc rec " << std::endl;
     while (mc_rec_reader.Next()) {
-        std::cout << "Started mc rec " << std::endl;
         double phi_mc_rec_deg = *phi_mc_rec * RAD_TO_DEG;
 
         for (int bin_idx = 0; bin_idx < n_Q2t_bins; ++bin_idx) {
