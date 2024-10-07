@@ -25,18 +25,6 @@ std::string clean_bin_label(const std::string& label) {
     return clean_label;
 }
 
-#include <algorithm> // For remove_if
-#include <cctype> // For isspace
-
-// Helper function to remove spaces and parentheses
-std::string clean_bin_label(const std::string& label) {
-    std::string clean_label = label;
-    clean_label.erase(std::remove_if(clean_label.begin(), clean_label.end(), [](unsigned char c) {
-        return std::isspace(c) || c == '(' || c == ')';
-    }), clean_label.end());
-    return clean_label;
-}
-
 int count_Q2t_bins_for_xB(int xB_bin, const std::vector<BinBoundary>& bin_boundaries) {
     int n_Q2t_bins = 0;
 
