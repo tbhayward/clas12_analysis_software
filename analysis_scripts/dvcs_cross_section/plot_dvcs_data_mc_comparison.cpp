@@ -8,8 +8,6 @@
 
 // Plot function for DVCS data/MC comparison with dynamic subplot layout
 void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, const std::vector<BinBoundary>& bin_boundaries, TTreeReader& data_reader, TTreeReader& mc_gen_reader, TTreeReader& mc_rec_reader) {
-    std::cout << "We entered plot_dvcs..." << std::endl;
-
     // Get the number of Q²-t bins for the current xB bin
     int n_Q2t_bins = 0;
     for (const auto& bin : bin_boundaries) {
@@ -27,12 +25,11 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
 
     // Loop over all Q²-t bins for this xB bin
     int subplot_idx = 1;
-    for (size_t i = 0; i < bin_boundaries.size(); ++i) {
+    for (int i = 0; i < n_Q2t_bins; ++i) {
         const BinBoundary& bin = bin_boundaries[i];
 
-        // Check if the bin belongs to the current xB_bin
+        // Ensure the bin corresponds to the current xB_bin
         if (bin.xB_low == bin_boundaries[xB_bin].xB_low && bin.xB_high == bin_boundaries[xB_bin].xB_high) {
-
             // Create histograms for the current Q²-t bin
             TH1D* h_data = new TH1D("h_data", "Reconstructed Data", 24, 0, 360);  // 24 bins for phi
             TH1D* h_mc_gen = new TH1D("h_mc_gen", "Generated MC", 24, 0, 360);
@@ -48,15 +45,27 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
             TTreeReaderValue<double> phi_mc_gen(mc_gen_reader, "phi");
             TTreeReaderValue<double> phi_mc_rec(mc_rec_reader, "phi");
 
-            // Read data from trees and fill histograms
+            // Read data from trees and fill histograms with checks for Q² and t ranges
             while (data_reader.Next()) {
-                h_data->Fill(*phi_data);
+                if (*phi_data >= bin.phi_low && *phi_data <= bin.phi_high &&
+                    *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
+                    *t_data >= bin.t_low && *t_data <= bin.t_high) {
+                    h_data->Fill(*phi_data);
+                }
             }
             while (mc_gen_reader.Next()) {
-                h_mc_gen->Fill(*phi_mc_gen);
+                if (*phi_mc_gen >= bin.phi_low && *phi_mc_gen <= bin.phi_high &&
+                    *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
+                    *t_data >= bin.t_low && *t_data <= bin.t_high) {
+                    h_mc_gen->Fill(*phi_mc_gen);
+                }
             }
             while (mc_rec_reader.Next()) {
-                h_mc_rec->Fill(*phi_mc_rec);
+                if (*phi_mc_rec >= bin.phi_low && *phi_mc_rec <= bin.phi_high &&
+                    *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
+                    *t_data >= bin.t_low && *t_data <= bin.t_high) {
+                    h_mc_rec->Fill(*phi_mc_rec);
+                }
             }
 
             // Check if h_data and h_mc_rec are both empty, and skip this subplot if so
