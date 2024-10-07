@@ -49,17 +49,17 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
             // Reinitialize readers before looping over the data
             TTreeReaderValue<double> phi_data(data_reader, "phi");
             TTreeReaderValue<double> Q2_data(data_reader, "Q2");
-            TTreeReaderValue<double> t_data(data_reader, "t");
+            TTreeReaderValue<double> t_data(data_reader, "t1");
             TTreeReaderValue<double> xB_data(data_reader, "x");  
 
             TTreeReaderValue<double> phi_mc_gen(mc_gen_reader, "phi");
             TTreeReaderValue<double> Q2_mc_gen(mc_gen_reader, "Q2");
-            TTreeReaderValue<double> t_mc_gen(mc_gen_reader, "t");
+            TTreeReaderValue<double> t_mc_gen(mc_gen_reader, "t1");
             TTreeReaderValue<double> xB_mc_gen(mc_gen_reader, "x");
 
             TTreeReaderValue<double> phi_mc_rec(mc_rec_reader, "phi");
             TTreeReaderValue<double> Q2_mc_rec(mc_rec_reader, "Q2");
-            TTreeReaderValue<double> t_mc_rec(mc_rec_reader, "t");
+            TTreeReaderValue<double> t_mc_rec(mc_rec_reader, "t1");
             TTreeReaderValue<double> xB_mc_rec(mc_rec_reader, "x");
 
             // Read data from trees and fill histograms with checks for xB, Q², and t ranges
@@ -67,13 +67,12 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
                 // Convert phi from radians to degrees
                 double phi_deg = *phi_data * RAD_TO_DEG;
 
-                // std::cout << *xB_data << " " << *Q2_data << " " << *t_data << " " << (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high && *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high) << std::endl;
-                // if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high && 
-                //     *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
-                //     *t_data >= bin.t_low && *t_data <= bin.t_high) {
-                //     std::cout << "HELLO WORLD" << std::endl;
-                //     h_data->Fill(phi_deg);
-                // }
+                std::cout << *xB_data << " " << *Q2_data << " " << *t_data << " " << (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high && *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high) << std::endl;
+                if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high && 
+                    *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high ) {
+                    std::cout << "HELLO WORLD" << std::endl;
+                    h_data->Fill(phi_deg);
+                }
                 if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high && 
                     *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high) {
                     std::cout << "HELLO WORLD" << std::endl;
