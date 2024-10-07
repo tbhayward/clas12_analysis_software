@@ -100,6 +100,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
                 continue;
             }
 
+            std::cout << h_data->Integral() << " " << h_mc_gen->Integral() << " " << h_mc_rec->Integral() << std::endl;
             // Normalize the histograms to their integrals
             if (h_data->Integral() > 0) h_data->Scale(1.0 / h_data->Integral());
             if (h_mc_gen->Integral() > 0) h_mc_gen->Scale(1.0 / h_mc_gen->Integral());
