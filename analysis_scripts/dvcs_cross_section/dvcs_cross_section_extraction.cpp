@@ -108,15 +108,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Output test to verify
-    for (const auto& bin : bin_boundaries) {
-        std::cout << "Bin: " << bin.bin_label
-                  << " xB [" << bin.xB_low << ", " << bin.xB_high << "]"
-                  << " Q2 [" << bin.Q2_low << ", " << bin.Q2_high << "]"
-                  << " t [" << bin.t_low << ", " << bin.t_high << "]"
-                  << std::endl;
-    }
-
     // Define filenames for each directory (3 periods, 6 files per period)
     std::vector<std::string> data_filenames = {dir1 + "/rga_fa18_inb_epgamma.root", dir1 + "/rga_fa18_out_epgamma.root", dir1 + "/rga_sp19_inb_epgamma.root"};
     std::vector<std::string> eppi0_filenames = {dir3 + "/rga_fa18_inb_eppi0.root", dir3 + "/rga_fa18_out_eppi0.root", dir3 + "/rga_sp19_inb_eppi0.root"};
