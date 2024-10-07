@@ -2,7 +2,7 @@
 CXX = g++
 CXXFLAGS = -Wall -Wextra -g -Wno-unused-but-set-variable -std=c++17
 ROOTLIBS = $(shell root-config --cflags --libs)
-LFLAGS = -L/path/to/root/lib $(ROOTLIBS) -lMinuit
+LFLAGS = -L/path/to/root/lib $(ROOTLIBS) -lMinuit -lstdc++fs  # Add -lstdc++fs if needed
 
 # Target executable
 TARGET = dvcs_cross_section_extraction
