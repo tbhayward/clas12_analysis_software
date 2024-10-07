@@ -16,14 +16,16 @@ constexpr double RAD_TO_DEG = 180.0 / M_PI;
 int count_Q2t_bins_for_xB(int xB_bin, const std::vector<BinBoundary>& bin_boundaries) {
     int n_Q2t_bins = 0;
 
-    // Extract the xB range for the current xB_bin
-    double xB_low = bin_boundaries[xB_bin].xB_low;
-    double xB_high = bin_boundaries[xB_bin].xB_high;
-
     // Loop over all bin boundaries
     for (const auto& bin : bin_boundaries) {
-        // Check if the current bin falls within the current xB range
-        if (bin.xB_low >= xB_low && bin.xB_high <= xB_high) {
+        // Extract the xB bin from the label, assuming the label follows the format "(xB_bin, Q2_bin, t_bin)"
+        std::string bin_label = bin.bin_label;
+        
+        // Parse the bin label to extract the xB_bin
+        int xB_label = std::stoi(bin_label.substr(1, 1));  // Extracts the first number after the opening parenthesis
+        
+        // Check if the extracted xB_bin matches the current xB_bin
+        if (xB_label == xB_bin) {
             // Print debugging information to verify distinct Q² and |t| bin detection
             std::cout << "Detected bin for xB_bin: " << xB_bin 
                       << " xB range: [" << bin.xB_low << ", " << bin.xB_high 
