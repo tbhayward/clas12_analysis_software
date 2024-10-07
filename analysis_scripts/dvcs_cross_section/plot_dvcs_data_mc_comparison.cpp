@@ -119,7 +119,6 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
 
             // Select the next available subplot and activate the pad
             canvas->cd(subplot_idx);
-            TPad* pad = (TPad*)canvas->cd(subplot_idx);
 
             // Disable log scale for now to check if the histograms appear
             pad->SetLogy(0);
