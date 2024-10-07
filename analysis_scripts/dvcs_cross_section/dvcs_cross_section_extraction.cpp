@@ -2,6 +2,7 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <sstream>
 #include <filesystem>
 #include <TFile.h>
 #include <TTree.h>
@@ -15,21 +16,57 @@
 #include "create_directories.h"
 #include "plot_pi0_mass.h"
 #include "determine_exclusivity.h"
+#include "plot_dvcs_data_mc_comparison.h"
 
 // Namespace declaration
 using namespace std;
 namespace fs = std::filesystem;
+
+// Structure to store bin boundaries
+struct BinBoundary {
+    double xB_low, xB_high;
+    double Q2_low, Q2_high;
+    double t_low, t_high;
+};
 
 // Function to check if a file exists
 bool checkFileExists(const string& path) {
     return fs::exists(path);
 }
 
-#include <vector>
-#include <string>
+// Function to read bin boundaries from CSV file
+std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
+    std::vector<BinBoundary> bin_boundaries;
+    std::ifstream file(filename);
 
+    if (!file.is_open()) {
+        std::cerr << "Error: Could not open file " << filename << std::endl;
+        return bin_boundaries;
+    }
+
+    std::string line;
+    while (std::getline(file, line)) {
+        std::stringstream ss(line);
+        std::string token;
+        BinBoundary bin;
+
+        // Assuming CSV format: xB_low,xB_high,Q2_low,Q2_high,t_low,t_high
+        std::getline(ss, token, ','); bin.xB_low = std::stod(token);
+        std::getline(ss, token, ','); bin.xB_high = std::stod(token);
+        std::getline(ss, token, ','); bin.Q2_low = std::stod(token);
+        std::getline(ss, token, ','); bin.Q2_high = std::stod(token);
+        std::getline(ss, token, ','); bin.t_low = std::stod(token);
+        std::getline(ss, token, ','); bin.t_high = std::stod(token);
+
+        bin_boundaries.push_back(bin);
+    }
+
+    file.close();
+    return bin_boundaries;
+}
+
+// Function to handle exclusivity plots
 void call_determine_exclusivity(std::vector<TTreeReader>& data_readers, std::vector<TTreeReader>& mc_rec_dvcsgen_readers, std::vector<TTreeReader>& eppi0_readers, std::vector<TTreeReader>& mc_rec_aaogen_readers) {
-    
     // DVCS channel calls
     for (int i = 0; i < 3; i++) {
         data_readers[i].Restart();
@@ -86,69 +123,76 @@ void call_determine_exclusivity(std::vector<TTreeReader>& data_readers, std::vec
 
 int main(int argc, char* argv[]) {
     std::cout << std::endl << std::endl << std::endl;
-    // Start the ROOT application
     TApplication theApp("App", nullptr, nullptr);
     gROOT->SetBatch(kTRUE);  // Set ROOT to batch mode
 
-    // Ensure that the correct number of command-line arguments is provided
     if (argc < 5) {
-        cout << "Usage: " << argv[0] << " <dir1> <dir2> <dir3> <dir4>" << endl;
+        std::cout << "Usage: " << argv[0] << " <dir1> <dir2> <dir3> <dir4>" << std::endl;
         return 1;
     }
 
-    // Store directories
-    string dir1 = argv[1];
-    string dir2 = argv[2];
-    string dir3 = argv[3];
-    string dir4 = argv[4];
+    std::string dir1 = argv[1];
+    std::string dir2 = argv[2];
+    std::string dir3 = argv[3];
+    std::string dir4 = argv[4];
+
+    // File paths for the binning CSVs
+    std::string binning_file = "imports/integrated_bin_v2.csv";  // Path to bin boundaries file
+
+    // Read bin boundaries from CSV
+    std::vector<BinBoundary> bin_boundaries = read_bin_boundaries(binning_file);
+    if (bin_boundaries.empty()) {
+        std::cerr << "Error: No bin boundaries read from file." << std::endl;
+        return 1;
+    }
 
     // Define filenames for each directory (3 periods, 6 files per period)
-    vector<string> data_filenames = {dir1 + "/rga_fa18_inb_epgamma.root", dir1 + "/rga_fa18_out_epgamma.root", dir1 + "/rga_sp19_inb_epgamma.root"};
-    vector<string> eppi0_filenames = {dir3 + "/rga_fa18_inb_eppi0.root", dir3 + "/rga_fa18_out_eppi0.root", dir3 + "/rga_sp19_inb_eppi0.root"};
-    vector<string> mc_gen_dvcsgen_filenames = {dir2 + "/gen_dvcsgen_rga_fa18_inb_50nA_10604MeV_epgamma.root", dir2 + "/gen_dvcsgen_rga_fa18_out_50nA_10604MeV_epgamma.root", dir2 + "/gen_dvcsgen_rga_sp19_inb_50nA_10200MeV_epgamma.root"};
-    vector<string> mc_rec_dvcsgen_filenames = {dir2 + "/rec_dvcsgen_rga_fa18_inb_50nA_10604MeV_epgamma.root", dir2 + "/rec_dvcsgen_rga_fa18_out_50nA_10604MeV_epgamma.root", dir2 + "/rec_dvcsgen_rga_sp19_inb_50nA_10200MeV_epgamma.root"};
-    vector<string> mc_gen_aaogen_filenames = {dir4 + "/gen_aaogen_norad_rga_fa18_inb_50nA_10604MeV_eppi0.root", dir4 + "/gen_aaogen_norad_rga_fa18_out_50nA_10604MeV_eppi0.root", dir4 + "/gen_aaogen_norad_rga_sp19_inb_50nA_10604MeV_eppi0.root"};
-    vector<string> mc_rec_aaogen_filenames = {dir4 + "/rec_aaogen_norad_rga_fa18_inb_50nA_10604MeV_eppi0.root", dir4 + "/rec_aaogen_norad_rga_fa18_out_50nA_10604MeV_eppi0.root", dir4 + "/rec_aaogen_norad_rga_sp19_inb_50nA_10604MeV_eppi0.root"};
+    std::vector<std::string> data_filenames = {dir1 + "/rga_fa18_inb_epgamma.root", dir1 + "/rga_fa18_out_epgamma.root", dir1 + "/rga_sp19_inb_epgamma.root"};
+    std::vector<std::string> eppi0_filenames = {dir3 + "/rga_fa18_inb_eppi0.root", dir3 + "/rga_fa18_out_eppi0.root", dir3 + "/rga_sp19_inb_eppi0.root"};
+    std::vector<std::string> mc_gen_dvcsgen_filenames = {dir2 + "/gen_dvcsgen_rga_fa18_inb_50nA_10604MeV_epgamma.root", dir2 + "/gen_dvcsgen_rga_fa18_out_50nA_10604MeV_epgamma.root", dir2 + "/gen_dvcsgen_rga_sp19_inb_50nA_10200MeV_epgamma.root"};
+    std::vector<std::string> mc_rec_dvcsgen_filenames = {dir2 + "/rec_dvcsgen_rga_fa18_inb_50nA_10604MeV_epgamma.root", dir2 + "/rec_dvcsgen_rga_fa18_out_50nA_10604MeV_epgamma.root", dir2 + "/rec_dvcsgen_rga_sp19_inb_50nA_10200MeV_epgamma.root"};
+    std::vector<std::string> mc_gen_aaogen_filenames = {dir4 + "/gen_aaogen_norad_rga_fa18_inb_50nA_10604MeV_eppi0.root", dir4 + "/gen_aaogen_norad_rga_fa18_out_50nA_10604MeV_eppi0.root", dir4 + "/gen_aaogen_norad_rga_sp19_inb_50nA_10604MeV_eppi0.root"};
+    std::vector<std::string> mc_rec_aaogen_filenames = {dir4 + "/rec_aaogen_norad_rga_fa18_inb_50nA_10604MeV_eppi0.root", dir4 + "/rec_aaogen_norad_rga_fa18_out_50nA_10604MeV_eppi0.root", dir4 + "/rec_aaogen_norad_rga_sp19_inb_50nA_10604MeV_eppi0.root"};
 
     // Check if all expected files exist
     for (const auto& file : data_filenames) {
         if (!checkFileExists(file)) {
-            cerr << "Error: File " << file << " not found." << endl;
+            std::cerr << "Error: File " << file << " not found." << std::endl;
             return 2;
         }
     }
     for (const auto& file : eppi0_filenames) {
         if (!checkFileExists(file)) {
-            cerr << "Error: File " << file << " not found." << endl;
+            std::cerr << "Error: File " << file << " not found." << std::endl;
             return 2;
         }
     }
     for (const auto& file : mc_gen_dvcsgen_filenames) {
         if (!checkFileExists(file)) {
-            cerr << "Error: File " << file << " not found." << endl;
+            std::cerr << "Error: File " << file << " not found." << std::endl;
             return 2;
         }
     }
     for (const auto& file : mc_rec_dvcsgen_filenames) {
         if (!checkFileExists(file)) {
-            cerr << "Error: File " << file << " not found." << endl;
+            std::cerr << "Error: File " << file << " not found." << std::endl;
             return 2;
         }
     }
     for (const auto& file : mc_gen_aaogen_filenames) {
         if (!checkFileExists(file)) {
-            cerr << "Error: File " << file << " not found." << endl;
+            std::cerr << "Error: File " << file << " not found." << std::endl;
             return 2;
         }
     }
     for (const auto& file : mc_rec_aaogen_filenames) {
         if (!checkFileExists(file)) {
-            cerr << "Error: File " << file << " not found." << endl;
+            std::cerr << "Error: File " << file << " not found." << std::endl;
             return 2;
         }
     }
 
-    cout << "All required files found. Proceeding to load data and MC files." << endl;
+    std::cout << "All required files found. Proceeding to load data and MC files." << std::endl;
 
     // Create individual TTreeReader objects
     TFile* data_files[3];
@@ -202,21 +246,21 @@ int main(int argc, char* argv[]) {
     std::string base_output_dir = "output";  // Define the base directory
     create_directories(base_output_dir);     // Create the directories
 
-    cout << "Successfully loaded all data and MC trees and created output directories." << endl << endl;
+    std::cout << "Successfully loaded all data and MC trees and created output directories." << std::endl << std::endl;
 
-
-
-    ///////////// ANALYSIS SECTION /////////////
-
+    // Call the plotting function for DVCS data/MC comparison
+    for (size_t i = 0; i < bin_boundaries.size(); ++i) {
+        plot_dvcs_data_mc_comparison(base_output_dir, i, data_readers[0], mc_gen_dvcsgen_readers[0], mc_rec_dvcsgen_readers[0]);
+    }
 
     // // Call the plotting function for the pi0 mass
     // plot_pi0_mass(eppi0_readers[0], eppi0_readers[1], eppi0_readers[2],
-    //  mc_rec_aaogen_readers[0], mc_rec_aaogen_readers[1], mc_rec_aaogen_readers[2], "output");
+    //               mc_rec_aaogen_readers[0], mc_rec_aaogen_readers[1], mc_rec_aaogen_readers[2], "output");
 
+    // // Call the determine exclusivity plots
     // call_determine_exclusivity(data_readers, mc_rec_dvcsgen_readers, eppi0_readers, mc_rec_aaogen_readers);
 
-    // End program
-    cout << "Program complete. Additional functionality to be added later." << endl << endl;
+    std::cout << "Program complete. Additional functionality to be added later." << std::endl << std::endl;
 
     return 0;
 }
