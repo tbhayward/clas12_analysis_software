@@ -29,14 +29,46 @@ std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
 
         // First column: bin index or label
         std::getline(ss, bin.bin_label, '\t');  // Store the bin label
+        std::cout << "Processing bin: " << bin.bin_label << std::endl;  // Print bin label
 
-        // Parse the tab-separated bin boundaries: xB_low,xB_high,Q2_low,Q2_high,t_low,t_high
-        std::getline(ss, token, '\t'); bin.xB_low = std::stod(token);
-        std::getline(ss, token, '\t'); bin.xB_high = std::stod(token);
-        std::getline(ss, token, '\t'); bin.Q2_low = std::stod(token);
-        std::getline(ss, token, '\t'); bin.Q2_high = std::stod(token);
-        std::getline(ss, token, '\t'); bin.t_low = std::stod(token);
-        std::getline(ss, token, '\t'); bin.t_high = std::stod(token);
+        // Parse the tab-separated bin boundaries: xB_low, xB_high, Q2_low, Q2_high, t_low, t_high
+        try {
+            // xB_low
+            std::getline(ss, token, '\t');
+            std::cout << "xB_low token: " << token << std::endl;
+            bin.xB_low = std::stod(token);
+
+            // xB_high
+            std::getline(ss, token, '\t');
+            std::cout << "xB_high token: " << token << std::endl;
+            bin.xB_high = std::stod(token);
+
+            // Q2_low
+            std::getline(ss, token, '\t');
+            std::cout << "Q2_low token: " << token << std::endl;
+            bin.Q2_low = std::stod(token);
+
+            // Q2_high
+            std::getline(ss, token, '\t');
+            std::cout << "Q2_high token: " << token << std::endl;
+            bin.Q2_high = std::stod(token);
+
+            // t_low
+            std::getline(ss, token, '\t');
+            std::cout << "t_low token: " << token << std::endl;
+            bin.t_low = std::stod(token);
+
+            // t_high
+            std::getline(ss, token, '\t');
+            std::cout << "t_high token: " << token << std::endl;
+            bin.t_high = std::stod(token);
+        }
+        catch (const std::invalid_argument& e) {
+            std::cerr << "Invalid argument while parsing token: '" << token << "' in bin " << bin.bin_label << std::endl;
+        }
+        catch (const std::out_of_range& e) {
+            std::cerr << "Out of range error while parsing token: '" << token << "' in bin " << bin.bin_label << std::endl;
+        }
 
         bin_boundaries.push_back(bin);
     }
