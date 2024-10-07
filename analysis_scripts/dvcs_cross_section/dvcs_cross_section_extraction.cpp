@@ -120,15 +120,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Function to count the number of unique xB bins
-    auto count_unique_xB_bins = [](const std::vector<BinBoundary>& bin_boundaries) {
-        std::set<std::pair<double, double>> unique_xB_bins;  // Use a set to store unique (xB_low, xB_high) pairs
-        for (const auto& bin : bin_boundaries) {
-            unique_xB_bins.emplace(bin.xB_low, bin.xB_high);  // Insert unique xB bin ranges
-        }
-        return unique_xB_bins.size();  // The number of unique xB bins
-    };
-
     // Calculate the number of unique xB bins
     int num_xB_bins = count_unique_xB_bins(bin_boundaries);
 
