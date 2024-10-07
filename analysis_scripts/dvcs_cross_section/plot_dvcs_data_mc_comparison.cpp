@@ -15,13 +15,15 @@ constexpr double RAD_TO_DEG = 180.0 / M_PI;
 
 int count_Q2t_bins_for_xB(int xB_bin, const std::vector<BinBoundary>& bin_boundaries) {
     int n_Q2t_bins = 0;
-    
+
+    // Extract the xB range for the current xB_bin
+    double xB_low = bin_boundaries[xB_bin].xB_low;
+    double xB_high = bin_boundaries[xB_bin].xB_high;
+
     // Loop over all bin boundaries
     for (const auto& bin : bin_boundaries) {
-        // Ensure that you are also checking for distinct Q² and |t| values within the same xB bin
-        if (bin.xB_low == bin_boundaries[xB_bin].xB_low && 
-            bin.xB_high == bin_boundaries[xB_bin].xB_high) {
-            
+        // Check if the current bin falls within the current xB range
+        if (bin.xB_low >= xB_low && bin.xB_high <= xB_high) {
             // Print debugging information to verify distinct Q² and |t| bin detection
             std::cout << "Detected bin for xB_bin: " << xB_bin 
                       << " xB range: [" << bin.xB_low << ", " << bin.xB_high 
@@ -29,11 +31,11 @@ int count_Q2t_bins_for_xB(int xB_bin, const std::vector<BinBoundary>& bin_bounda
                       << "], |t| range: [" << bin.t_low << ", " << bin.t_high << "]" 
                       << std::endl;
             
-            // Count this bin since it falls within the current xB bin
+            // Count this bin since it falls within the current xB bin range
             n_Q2t_bins++;
         }
     }
-    
+
     return n_Q2t_bins;
 }
 
