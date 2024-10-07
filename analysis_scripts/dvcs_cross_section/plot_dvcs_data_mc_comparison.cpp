@@ -182,7 +182,6 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         TH1D* h_mc_gen = h_mc_gen_histograms[histogram_idx];
         TH1D* h_mc_rec = h_mc_rec_histograms[histogram_idx];
 
-        std::cout << h_data->Integral() << std::endl;
         // Normalize histograms if they are not empty
         if (h_data->Integral() > 0) h_data->Scale(1.0 / h_data->Integral());
         if (h_mc_gen->Integral() > 0) h_mc_gen->Scale(1.0 / h_mc_gen->Integral());
