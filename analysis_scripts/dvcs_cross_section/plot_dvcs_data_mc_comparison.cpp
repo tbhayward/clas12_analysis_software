@@ -5,7 +5,7 @@
 #include <TTreeReader.h>
 #include <TTreeReaderValue.h>
 #include "bin_boundaries.h"  // Include the header where BinBoundary is defined
-#include <cmath>  // For conversion from radians to degrees
+#include <cmath>  // For conversion from radians to degrees and std::abs
 
 // Constant to convert radians to degrees
 constexpr double RAD_TO_DEG = 180.0 / M_PI;
@@ -28,10 +28,10 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     // Disable stat boxes globally
     gStyle->SetOptStat(0);
 
-    // Loop over all Q²-t bins for this xB bin
+    // Loop over the first Q²-t bin for debugging (single subplot)
     int subplot_idx = 1;
     // for (int i = 0; i < n_Q2t_bins; ++i) {
-    for (int i = 0; i < 1; ++i) {
+    for (int i = 0; i < 1; ++i) {  // Single bin for now
         const BinBoundary& bin = bin_boundaries[i];
 
         // Ensure the bin corresponds to the current xB_bin
@@ -49,33 +49,27 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
             // Reinitialize readers before looping over the data
             TTreeReaderValue<double> phi_data(data_reader, "phi");
             TTreeReaderValue<double> Q2_data(data_reader, "Q2");
-            TTreeReaderValue<double> t_data(data_reader, "t1");
-            TTreeReaderValue<double> xB_data(data_reader, "x");  
+            TTreeReaderValue<double> t1_data(data_reader, "t1");  // Now using t1 instead of t
+            TTreeReaderValue<double> xB_data(data_reader, "x");  // xB is the x branch
 
             TTreeReaderValue<double> phi_mc_gen(mc_gen_reader, "phi");
             TTreeReaderValue<double> Q2_mc_gen(mc_gen_reader, "Q2");
-            TTreeReaderValue<double> t_mc_gen(mc_gen_reader, "t1");
+            TTreeReaderValue<double> t1_mc_gen(mc_gen_reader, "t1");  // Now using t1 instead of t
             TTreeReaderValue<double> xB_mc_gen(mc_gen_reader, "x");
 
             TTreeReaderValue<double> phi_mc_rec(mc_rec_reader, "phi");
             TTreeReaderValue<double> Q2_mc_rec(mc_rec_reader, "Q2");
-            TTreeReaderValue<double> t_mc_rec(mc_rec_reader, "t1");
+            TTreeReaderValue<double> t1_mc_rec(mc_rec_reader, "t1");  // Now using t1 instead of t
             TTreeReaderValue<double> xB_mc_rec(mc_rec_reader, "x");
 
-            // Read data from trees and fill histograms with checks for xB, Q², and t ranges
+            // Read data from trees and fill histograms with checks for xB, Q², and absolute value of t1
             while (data_reader.Next()) {
                 // Convert phi from radians to degrees
                 double phi_deg = *phi_data * RAD_TO_DEG;
 
-                std::cout << *xB_data << " " << *Q2_data << " " << *t_data << " " << (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high && *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high) << std::endl;
-                if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high && 
-                    *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high ) {
-                    std::cout << "HELLO WORLD" << std::endl;
-                    h_data->Fill(phi_deg);
-                }
-                if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high && 
-                    *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high) {
-                    std::cout << "HELLO WORLD" << std::endl;
+                if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
+                    *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
+                    std::abs(*t1_data) >= bin.t_low && std::abs(*t1_data) <= bin.t_high) {  // Use absolute value of t1
                     h_data->Fill(phi_deg);
                 }
             }
@@ -84,7 +78,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
 
                 if (*xB_mc_gen >= bin.xB_low && *xB_mc_gen <= bin.xB_high &&
                     *Q2_mc_gen >= bin.Q2_low && *Q2_mc_gen <= bin.Q2_high &&
-                    *t_mc_gen >= bin.t_low && *t_mc_gen <= bin.t_high) {
+                    std::abs(*t1_mc_gen) >= bin.t_low && std::abs(*t1_mc_gen) <= bin.t_high) {  // Use absolute value of t1
                     h_mc_gen->Fill(phi_mc_gen_deg);
                 }
             }
@@ -93,12 +87,11 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
 
                 if (*xB_mc_rec >= bin.xB_low && *xB_mc_rec <= bin.xB_high &&
                     *Q2_mc_rec >= bin.Q2_low && *Q2_mc_rec <= bin.Q2_high &&
-                    *t_mc_rec >= bin.t_low && *t_mc_rec <= bin.t_high) {
+                    std::abs(*t1_mc_rec) >= bin.t_low && std::abs(*t1_mc_rec) <= bin.t_high) {  // Use absolute value of t1
                     h_mc_rec->Fill(phi_mc_rec_deg);
                 }
             }
 
-            std::cout << h_data->Integral() << " " << h_mc_rec->Integral() << " " << h_mc_gen->Integral() << std::endl;
             // Check if h_data and h_mc_rec are both empty, and skip this subplot if so
             if (h_data->Integral() == 0 && h_mc_rec->Integral() == 0) {
                 delete h_data;
