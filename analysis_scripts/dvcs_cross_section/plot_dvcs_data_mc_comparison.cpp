@@ -16,25 +16,35 @@ constexpr double RAD_TO_DEG = 180.0 / M_PI;
 int count_Q2t_bins_for_xB(int xB_bin, const std::vector<BinBoundary>& bin_boundaries) {
     int n_Q2t_bins = 0;
 
-    // Loop over all bin boundaries
     for (const auto& bin : bin_boundaries) {
-        // Extract the xB bin from the label, assuming the label follows the format "(xB_bin, Q2_bin, t_bin)"
+        // Extract the xB_bin part of the label from the bin_label
         std::string bin_label = bin.bin_label;
-        
-        // Parse the bin label to extract the xB_bin
-        int xB_label = std::stoi(bin_label.substr(1, 1));  // Extracts the first number after the opening parenthesis
-        
-        // Check if the extracted xB_bin matches the current xB_bin
-        if (xB_label == xB_bin) {
-            // Print debugging information to verify distinct Q² and |t| bin detection
-            std::cout << "Detected bin for xB_bin: " << xB_bin 
-                      << " xB range: [" << bin.xB_low << ", " << bin.xB_high 
-                      << "], Q² range: [" << bin.Q2_low << ", " << bin.Q2_high 
-                      << "], |t| range: [" << bin.t_low << ", " << bin.t_high << "]" 
-                      << std::endl;
-            
-            // Count this bin since it falls within the current xB bin range
-            n_Q2t_bins++;
+
+        // Check if bin_label is formatted correctly, skip if it's empty or malformed
+        if (bin_label.empty() || bin_label.length() < 5) {
+            std::cerr << "Skipping invalid bin label: " << bin_label << std::endl;
+            continue;
+        }
+
+        // Parse the xB_bin from the bin_label
+        try {
+            // Example format "(0, 1, 2)", extract the first number
+            int xB_label = std::stoi(bin_label.substr(1, bin_label.find_first_of(','))); // Safely extract xB_bin
+
+            // Check if the extracted xB_bin matches the current xB_bin
+            if (xB_label == xB_bin) {
+                // Print debugging information to verify distinct Q² and |t| bin detection
+                std::cout << "Detected bin for xB_bin: " << xB_bin 
+                          << " xB range: [" << bin.xB_low << ", " << bin.xB_high 
+                          << "], Q² range: [" << bin.Q2_low << ", " << bin.Q2_high 
+                          << "], |t| range: [" << bin.t_low << ", " << bin.t_high << "]" 
+                          << std::endl;
+
+                // Count this bin as part of the current xB bin range
+                n_Q2t_bins++;
+            }
+        } catch (const std::invalid_argument& e) {
+            std::cerr << "Error parsing xB_bin from label: '" << bin_label << "' -> " << e.what() << std::endl;
         }
     }
 
