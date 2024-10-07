@@ -29,7 +29,7 @@ bool checkFileExists(const string& path) {
 #include <string>
 
 // Declaration of the helper function
-void call_determine_exclusivity(const std::vector<TTreeReader>& data_readers, const std::vector<TTreeReader>& mc_rec_dvcsgen_readers, const std::vector<TTreeReader>& eppi0_readers, const std::vector<TTreeReader>& mc_rec_aaogen_readers) {
+void call_determine_exclusivity(std::vector<TTreeReader>& data_readers, std::vector<TTreeReader>& mc_rec_dvcsgen_readers, std::vector<TTreeReader>& eppi0_readers, std::vector<TTreeReader>& mc_rec_aaogen_readers) {
     
     std::vector<std::string> run_periods = {"Fa18 Inb", "Fa18 Out", "Sp19 Inb"};
     std::vector<std::string> detector_configs = {"(FD,FD)", "(CD,FD)", "(CD,FT)"};
@@ -126,12 +126,12 @@ int main(int argc, char* argv[]) {
     TFile* mc_gen_aaogen_files[3];
     TFile* mc_rec_aaogen_files[3];
 
-    TTreeReader data_readers[3];
-    TTreeReader eppi0_readers[3];
-    TTreeReader mc_gen_dvcsgen_readers[3];
-    TTreeReader mc_rec_dvcsgen_readers[3];
-    TTreeReader mc_gen_aaogen_readers[3];
-    TTreeReader mc_rec_aaogen_readers[3];
+    std::vector<TTreeReader> data_readers(3);
+    std::vector<TTreeReader> eppi0_readers(3);
+    std::vector<TTreeReader> mc_gen_dvcsgen_readers(3);
+    std::vector<TTreeReader> mc_rec_dvcsgen_readers(3);
+    std::vector<TTreeReader> mc_gen_aaogen_readers(3);
+    std::vector<TTreeReader> mc_rec_aaogen_readers(3);
 
     // Load all data and MC files
     for (size_t i = 0; i < 3; ++i) {
