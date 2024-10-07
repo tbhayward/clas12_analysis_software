@@ -5,9 +5,14 @@
 #include <TTreeReader.h>
 #include <TTreeReaderValue.h>
 #include "bin_boundaries.h"  // Include the header where BinBoundary is defined
+#include <cmath>  // For conversion from radians to degrees
+
+// Constant to convert radians to degrees
+constexpr double RAD_TO_DEG = 180.0 / M_PI;
 
 // Plot function for DVCS data/MC comparison with dynamic subplot layout
 void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, const std::vector<BinBoundary>& bin_boundaries, TTreeReader& data_reader, TTreeReader& mc_gen_reader, TTreeReader& mc_rec_reader) {
+
     // Get the number of Q²-t bins for the current xB bin
     int n_Q2t_bins = 0;
     for (const auto& bin : bin_boundaries) {
@@ -31,7 +36,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         // Ensure the bin corresponds to the current xB_bin
         if (bin.xB_low == bin_boundaries[xB_bin].xB_low && bin.xB_high == bin_boundaries[xB_bin].xB_high) {
             // Create histograms for the current Q²-t bin
-            TH1D* h_data = new TH1D("h_data", "Reconstructed Data", 24, 0, 360);  // 24 bins for phi
+            TH1D* h_data = new TH1D("h_data", "Reconstructed Data", 24, 0, 360);  // 24 bins for phi (15-degree bins)
             TH1D* h_mc_gen = new TH1D("h_mc_gen", "Generated MC", 24, 0, 360);
             TH1D* h_mc_rec = new TH1D("h_mc_rec", "Reconstructed MC", 24, 0, 360);
 
@@ -42,29 +47,47 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
 
             // Reinitialize readers before looping over the data
             TTreeReaderValue<double> phi_data(data_reader, "phi");
-            TTreeReaderValue<double> phi_mc_gen(mc_gen_reader, "phi");
-            TTreeReaderValue<double> phi_mc_rec(mc_rec_reader, "phi");
+            TTreeReaderValue<double> Q2_data(data_reader, "Q2");
+            TTreeReaderValue<double> t_data(data_reader, "t");
+            TTreeReaderValue<double> xB_data(data_reader, "x");  // xB is the x branch
 
-            // Read data from trees and fill histograms with checks for Q² and t ranges
+            TTreeReaderValue<double> phi_mc_gen(mc_gen_reader, "phi");
+            TTreeReaderValue<double> Q2_mc_gen(mc_gen_reader, "Q2");
+            TTreeReaderValue<double> t_mc_gen(mc_gen_reader, "t");
+            TTreeReaderValue<double> xB_mc_gen(mc_gen_reader, "x");
+
+            TTreeReaderValue<double> phi_mc_rec(mc_rec_reader, "phi");
+            TTreeReaderValue<double> Q2_mc_rec(mc_rec_reader, "Q2");
+            TTreeReaderValue<double> t_mc_rec(mc_rec_reader, "t");
+            TTreeReaderValue<double> xB_mc_rec(mc_rec_reader, "x");
+
+            // Read data from trees and fill histograms with checks for xB, Q², and t ranges
             while (data_reader.Next()) {
-                if (*phi_data >= bin.phi_low && *phi_data <= bin.phi_high &&
+                // Convert phi from radians to degrees
+                double phi_deg = *phi_data * RAD_TO_DEG;
+
+                if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high && 
                     *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
                     *t_data >= bin.t_low && *t_data <= bin.t_high) {
-                    h_data->Fill(*phi_data);
+                    h_data->Fill(phi_deg);
                 }
             }
             while (mc_gen_reader.Next()) {
-                if (*phi_mc_gen >= bin.phi_low && *phi_mc_gen <= bin.phi_high &&
-                    *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
-                    *t_data >= bin.t_low && *t_data <= bin.t_high) {
-                    h_mc_gen->Fill(*phi_mc_gen);
+                double phi_mc_gen_deg = *phi_mc_gen * RAD_TO_DEG;
+
+                if (*xB_mc_gen >= bin.xB_low && *xB_mc_gen <= bin.xB_high &&
+                    *Q2_mc_gen >= bin.Q2_low && *Q2_mc_gen <= bin.Q2_high &&
+                    *t_mc_gen >= bin.t_low && *t_mc_gen <= bin.t_high) {
+                    h_mc_gen->Fill(phi_mc_gen_deg);
                 }
             }
             while (mc_rec_reader.Next()) {
-                if (*phi_mc_rec >= bin.phi_low && *phi_mc_rec <= bin.phi_high &&
-                    *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
-                    *t_data >= bin.t_low && *t_data <= bin.t_high) {
-                    h_mc_rec->Fill(*phi_mc_rec);
+                double phi_mc_rec_deg = *phi_mc_rec * RAD_TO_DEG;
+
+                if (*xB_mc_rec >= bin.xB_low && *xB_mc_rec <= bin.xB_high &&
+                    *Q2_mc_rec >= bin.Q2_low && *Q2_mc_rec <= bin.Q2_high &&
+                    *t_mc_rec >= bin.t_low && *t_mc_rec <= bin.t_high) {
+                    h_mc_rec->Fill(phi_mc_rec_deg);
                 }
             }
 
