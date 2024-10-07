@@ -30,7 +30,8 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
 
     // Loop over all Q²-t bins for this xB bin
     int subplot_idx = 1;
-    for (int i = 0; i < n_Q2t_bins; ++i) {
+    // for (int i = 0; i < n_Q2t_bins; ++i) {
+    for (int i = 0; i < 1; ++i) {
         const BinBoundary& bin = bin_boundaries[i];
 
         // Ensure the bin corresponds to the current xB_bin
