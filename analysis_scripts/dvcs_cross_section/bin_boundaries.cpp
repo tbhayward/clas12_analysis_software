@@ -27,38 +27,41 @@ std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
         std::string token;
         BinBoundary bin;
 
-        // First column: bin index or label
-        std::getline(ss, bin.bin_label, '\t');  // Store the bin label
-        std::cout << "Processing bin: " << bin.bin_label << std::endl;  // Print bin label
+        // First column: bin number (skip it)
+        std::getline(ss, token, '\t');  // Skip bin number
 
-        // Parse the tab-separated bin boundaries: xB_low, xB_high, Q2_low, Q2_high, t_low, t_high
+        // Second column: bin name (skip it)
+        std::getline(ss, token, '\t');  // Skip bin name
+
+        std::cout << "Processing bin: " << token << std::endl;  // Print bin label for debugging
+
         try {
-            // xB_low
+            // xB_low (min)
             std::getline(ss, token, '\t');
             std::cout << "xB_low token: " << token << std::endl;
             bin.xB_low = std::stod(token);
 
-            // xB_high
+            // xB_high (max)
             std::getline(ss, token, '\t');
             std::cout << "xB_high token: " << token << std::endl;
             bin.xB_high = std::stod(token);
 
-            // Q2_low
+            // Q2_low (min)
             std::getline(ss, token, '\t');
             std::cout << "Q2_low token: " << token << std::endl;
             bin.Q2_low = std::stod(token);
 
-            // Q2_high
+            // Q2_high (max)
             std::getline(ss, token, '\t');
             std::cout << "Q2_high token: " << token << std::endl;
             bin.Q2_high = std::stod(token);
 
-            // t_low
+            // t_low (min)
             std::getline(ss, token, '\t');
             std::cout << "t_low token: " << token << std::endl;
             bin.t_low = std::stod(token);
 
-            // t_high
+            // t_high (max)
             std::getline(ss, token, '\t');
             std::cout << "t_high token: " << token << std::endl;
             bin.t_high = std::stod(token);
