@@ -54,9 +54,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, TTr
     canvas->SaveAs((output_dir + "/xB_bin_" + std::to_string(xB_bin) + ".png").c_str());
 
     // Clean up
-    delete h
-
-_data;
+    delete h_data;
     delete h_mc_gen;
     delete h_mc_rec;
     delete canvas;
