@@ -7,13 +7,13 @@
 
 // Plot function for DVCS data/MC comparison
 void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, TTreeReader& data_reader, TTreeReader& mc_gen_reader, TTreeReader& mc_rec_reader) {
+    std::cout << "We entered plot_dvcs..." << std::endl;
+
     // Create a canvas and histograms for plotting with 24 phi bins (15 degrees each)
     TCanvas* canvas = new TCanvas("c1", "Data vs MC", 800, 600);
     TH1D* h_data = new TH1D("h_data", "Reconstructed Data", 24, 0, 360);  // 24 bins for phi
     TH1D* h_mc_gen = new TH1D("h_mc_gen", "Generated MC", 24, 0, 360);
     TH1D* h_mc_rec = new TH1D("h_mc_rec", "Reconstructed MC", 24, 0, 360);
-
-    std::cout << "We entered plot_dvcs..." << std::endl;
 
     // Read data from trees and fill histograms
     TTreeReaderValue<double> phi_data(data_reader, "phi");

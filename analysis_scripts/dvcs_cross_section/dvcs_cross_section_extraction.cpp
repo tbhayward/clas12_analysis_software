@@ -101,11 +101,20 @@ int main(int argc, char* argv[]) {
     // File paths for the binning CSVs
     std::string binning_file = "imports/integrated_bin_v2.csv";  // Path to bin boundaries file
 
-    // Read bin boundaries from CSV using the function from bin_boundaries.h
+    // Read bin boundaries from CSV
     std::vector<BinBoundary> bin_boundaries = read_bin_boundaries(binning_file);
     if (bin_boundaries.empty()) {
         std::cerr << "Error: No bin boundaries read from file." << std::endl;
         return 1;
+    }
+
+    // Output test to verify
+    for (const auto& bin : bin_boundaries) {
+        std::cout << "Bin: " << bin.bin_label
+                  << " xB [" << bin.xB_low << ", " << bin.xB_high << "]"
+                  << " Q2 [" << bin.Q2_low << ", " << bin.Q2_high << "]"
+                  << " t [" << bin.t_low << ", " << bin.t_high << "]"
+                  << std::endl;
     }
 
     // Define filenames for each directory (3 periods, 6 files per period)

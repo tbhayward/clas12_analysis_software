@@ -3,7 +3,7 @@
 #include <sstream>
 #include <iostream>
 
-// Function definition to read bin boundaries from CSV
+// Function definition to read bin boundaries from tab-delimited CSV
 std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
     std::vector<BinBoundary> bin_boundaries;
     std::ifstream file(filename);
@@ -14,18 +14,29 @@ std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
     }
 
     std::string line;
+    int line_num = 0;
+
+    // Skip first two lines (header and descriptive line)
+    while (line_num < 2 && std::getline(file, line)) {
+        ++line_num;
+    }
+
+    // Now read the actual data from the third line onward
     while (std::getline(file, line)) {
         std::stringstream ss(line);
         std::string token;
         BinBoundary bin;
 
-        // Assuming CSV format: xB_low,xB_high,Q2_low,Q2_high,t_low,t_high
-        std::getline(ss, token, ','); bin.xB_low = std::stod(token);
-        std::getline(ss, token, ','); bin.xB_high = std::stod(token);
-        std::getline(ss, token, ','); bin.Q2_low = std::stod(token);
-        std::getline(ss, token, ','); bin.Q2_high = std::stod(token);
-        std::getline(ss, token, ','); bin.t_low = std::stod(token);
-        std::getline(ss, token, ','); bin.t_high = std::stod(token);
+        // First column: bin index or label (skip it, not storing this in the BinBoundary struct)
+        std::getline(ss, token, '\t');  // Skipping bin index (e.g., "(0, 0, 0)")
+
+        // Parse the tab-separated bin boundaries: xB_low,xB_high,Q2_low,Q2_high,t_low,t_high
+        std::getline(ss, token, '\t'); bin.xB_low = std::stod(token);
+        std::getline(ss, token, '\t'); bin.xB_high = std::stod(token);
+        std::getline(ss, token, '\t'); bin.Q2_low = std::stod(token);
+        std::getline(ss, token, '\t'); bin.Q2_high = std::stod(token);
+        std::getline(ss, token, '\t'); bin.t_low = std::stod(token);
+        std::getline(ss, token, '\t'); bin.t_high = std::stod(token);
 
         bin_boundaries.push_back(bin);
     }
