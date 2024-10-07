@@ -13,14 +13,27 @@
 // Constant to convert radians to degrees
 constexpr double RAD_TO_DEG = 180.0 / M_PI;
 
-// Function to calculate the number of Q²-t bins for the current xB bin
 int count_Q2t_bins_for_xB(int xB_bin, const std::vector<BinBoundary>& bin_boundaries) {
     int n_Q2t_bins = 0;
+    
+    // Loop over all bin boundaries
     for (const auto& bin : bin_boundaries) {
-        if (bin.xB_low == bin_boundaries[xB_bin].xB_low && bin.xB_high == bin_boundaries[xB_bin].xB_high) {
+        // Ensure that you are also checking for distinct Q² and |t| values within the same xB bin
+        if (bin.xB_low == bin_boundaries[xB_bin].xB_low && 
+            bin.xB_high == bin_boundaries[xB_bin].xB_high) {
+            
+            // Print debugging information to verify distinct Q² and |t| bin detection
+            std::cout << "Detected bin for xB_bin: " << xB_bin 
+                      << " xB range: [" << bin.xB_low << ", " << bin.xB_high 
+                      << "], Q² range: [" << bin.Q2_low << ", " << bin.Q2_high 
+                      << "], |t| range: [" << bin.t_low << ", " << bin.t_high << "]" 
+                      << std::endl;
+            
+            // Count this bin since it falls within the current xB bin
             n_Q2t_bins++;
         }
     }
+    
     return n_Q2t_bins;
 }
 
@@ -169,13 +182,6 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         h_data->Draw("E1");           // Data with error bars
         h_mc_rec->Draw("E1 SAME");    // Reconstructed MC with error bars
         h_mc_gen->Draw("HIST SAME");  // Generated MC as a line
-
-        // Add kinematic constraints as text in each subplot
-        TLatex latex;
-        latex.SetTextSize(0.03);
-        latex.DrawLatexNDC(0.15, 0.85, Form("x_{B}: %.2f - %.2f", bin_boundaries[histogram_idx].xB_low, bin_boundaries[histogram_idx].xB_high));
-        latex.DrawLatexNDC(0.15, 0.8, Form("Q^{2}: %.2f - %.2f", bin_boundaries[histogram_idx].Q2_low, bin_boundaries[histogram_idx].Q2_high));
-        latex.DrawLatexNDC(0.15, 0.75, Form("|t|: %.2f - %.2f", std::abs(bin_boundaries[histogram_idx].t_low), std::abs(bin_boundaries[histogram_idx].t_high)));
 
         // Add legend to every subplot
         TLegend* legend = new TLegend(0.575, 0.6, 0.9, 0.9);
