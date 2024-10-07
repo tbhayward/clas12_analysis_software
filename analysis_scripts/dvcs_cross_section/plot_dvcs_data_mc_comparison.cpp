@@ -64,7 +64,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
 
     // Count the number of Q²-t bins for the current xB bin
     int n_Q2t_bins = count_Q2t_bins_for_xB(xB_bin, bin_boundaries);
-    std::cout << n_Q2t_bins << std::endl;
+    std::cout << "Number of Q2t bins: " << n_Q2t_bins << std::endl;
 
     // Determine the next largest perfect square to create square canvas
     int n_subplots = next_perfect_square(n_Q2t_bins);
@@ -78,25 +78,29 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     // Disable stat boxes globally
     gStyle->SetOptStat(0);
 
-    // Create histograms for each Q²-t bin
-    std::vector<TH1D*> h_data_histograms;
-    std::vector<TH1D*> h_mc_gen_histograms;
-    std::vector<TH1D*> h_mc_rec_histograms;
+    // Create histograms for each Q²-t bin (only for the required number of bins)
+    std::vector<TH1D*> h_data_histograms(n_Q2t_bins);
+    std::vector<TH1D*> h_mc_gen_histograms(n_Q2t_bins);
+    std::vector<TH1D*> h_mc_rec_histograms(n_Q2t_bins);
 
-    // Loop through the bin boundaries and create histograms for each subplot
+    // Keep track of the number of histograms created
     int histogram_idx = 0;
+
     for (const auto& bin : bin_boundaries) {
+        // Check if the current bin corresponds to the xB_bin we're interested in
         if (bin.xB_low == bin_boundaries[xB_bin].xB_low && bin.xB_high == bin_boundaries[xB_bin].xB_high) {
+            if (histogram_idx >= n_Q2t_bins) break;  // Ensure we don't create more than needed
+
             // Create a title string based on the kinematic constraints
             std::string title = Form("x_{B}: %.2f-%.2f, Q^{2}: %.2f-%.2f, |t|: %.2f-%.2f",
                                      bin.xB_low, bin.xB_high,
                                      bin.Q2_low, bin.Q2_high,
                                      std::abs(bin.t_low), std::abs(bin.t_high));
 
-            // Use the dynamically created title for each histogram
-            h_data_histograms.push_back(new TH1D(Form("h_data_%d", histogram_idx), title.c_str(), 24, 0, 360));
-            h_mc_gen_histograms.push_back(new TH1D(Form("h_mc_gen_%d", histogram_idx), "gen", 24, 0, 360));
-            h_mc_rec_histograms.push_back(new TH1D(Form("h_mc_rec_%d", histogram_idx), "rec", 24, 0, 360));
+            // Create histograms
+            h_data_histograms[histogram_idx] = new TH1D(Form("h_data_%d", histogram_idx), title.c_str(), 24, 0, 360);
+            h_mc_gen_histograms[histogram_idx] = new TH1D(Form("h_mc_gen_%d", histogram_idx), "gen", 24, 0, 360);
+            h_mc_rec_histograms[histogram_idx] = new TH1D(Form("h_mc_rec_%d", histogram_idx), "rec", 24, 0, 360);
 
             // Set the x-axis and y-axis labels for each histogram
             h_data_histograms[histogram_idx]->GetXaxis()->SetTitle("#phi");
@@ -127,49 +131,31 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     TTreeReaderValue<double> phi_mc_rec(mc_rec_reader, "phi");
 
     // Fill histograms with data and MC according to cuts
-    while (data_reader.Next()) {
-        double phi_deg = *phi_data * RAD_TO_DEG;  // Convert phi from radians to degrees
+    histogram_idx = 0;
+    for (const auto& bin : bin_boundaries) {
+        if (histogram_idx >= n_Q2t_bins) break;  // Prevent out-of-bounds access
 
-        histogram_idx = 0;
-        for (const auto& bin : bin_boundaries) {
-            if (bin.xB_low == bin_boundaries[xB_bin].xB_low && bin.xB_high == bin_boundaries[xB_bin].xB_high) {
-                if (histogram_idx < h_data_histograms.size()) { // Ensure we are within bounds
-                    if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
-                        *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
-                        std::abs(*t1_data) >= bin.t_low && std::abs(*t1_data) <= bin.t_high) {
-                        h_data_histograms[histogram_idx]->Fill(phi_deg);
-                    }
-                    histogram_idx++;
+        if (bin.xB_low == bin_boundaries[xB_bin].xB_low && bin.xB_high == bin_boundaries[xB_bin].xB_high) {
+            while (data_reader.Next()) {
+                double phi_deg = *phi_data * RAD_TO_DEG;  // Convert phi from radians to degrees
+                if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
+                    *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
+                    std::abs(*t1_data) >= bin.t_low && std::abs(*t1_data) <= bin.t_high) {
+                    h_data_histograms[histogram_idx]->Fill(phi_deg);
                 }
             }
-        }
-    }
 
-    while (mc_gen_reader.Next()) {
-        double phi_mc_gen_deg = *phi_mc_gen * RAD_TO_DEG;
-
-        histogram_idx = 0;
-        for (const auto& bin : bin_boundaries) {
-            if (bin.xB_low == bin_boundaries[xB_bin].xB_low && bin.xB_high == bin_boundaries[xB_bin].xB_high) {
-                if (histogram_idx < h_mc_gen_histograms.size()) { // Ensure we are within bounds
-                    h_mc_gen_histograms[histogram_idx]->Fill(phi_mc_gen_deg);
-                    histogram_idx++;
-                }
+            while (mc_gen_reader.Next()) {
+                double phi_mc_gen_deg = *phi_mc_gen * RAD_TO_DEG;
+                h_mc_gen_histograms[histogram_idx]->Fill(phi_mc_gen_deg);
             }
-        }
-    }
 
-    while (mc_rec_reader.Next()) {
-        double phi_mc_rec_deg = *phi_mc_rec * RAD_TO_DEG;
-
-        histogram_idx = 0;
-        for (const auto& bin : bin_boundaries) {
-            if (bin.xB_low == bin_boundaries[xB_bin].xB_low && bin.xB_high == bin_boundaries[xB_bin].xB_high) {
-                if (histogram_idx < h_mc_rec_histograms.size()) { // Ensure we are within bounds
-                    h_mc_rec_histograms[histogram_idx]->Fill(phi_mc_rec_deg);
-                    histogram_idx++;
-                }
+            while (mc_rec_reader.Next()) {
+                double phi_mc_rec_deg = *phi_mc_rec * RAD_TO_DEG;
+                h_mc_rec_histograms[histogram_idx]->Fill(phi_mc_rec_deg);
             }
+
+            histogram_idx++;
         }
     }
 
@@ -183,7 +169,6 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         TH1D* h_mc_rec = h_mc_rec_histograms[histogram_idx];
 
         // Normalize histograms if they are not empty
-        std::cout << h_data->Integral() << std::endl;
         if (h_data->Integral() > 0) h_data->Scale(1.0 / h_data->Integral());
         if (h_mc_gen->Integral() > 0) h_mc_gen->Scale(1.0 / h_mc_gen->Integral());
         if (h_mc_rec->Integral() > 0) h_mc_rec->Scale(1.0 / h_mc_rec->Integral());
@@ -191,7 +176,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         // Find the maximum bin content across all histograms
         double max_value = std::max({h_data->GetMaximum(), h_mc_gen->GetMaximum(), h_mc_rec->GetMaximum()});
 
-        // Set the y-axis range from 0 to 1.2 times the maximum value
+        // Set the y-axis range from 0 to 1.35 times the maximum value
         h_data->SetMaximum(1.35 * max_value);
         h_data->SetMinimum(0);
 
