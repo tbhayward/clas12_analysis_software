@@ -7,7 +7,7 @@
 #include "bin_boundaries.h"  // Include the header where BinBoundary is defined
 
 // Plot function for DVCS data/MC comparison with dynamic subplot layout
-void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, const std::vector<BinBoundary>& bin_boundaries, TTreeReader& data_reader, TTreeReader& mc_gen_reader, TTreeReader& mc_rec_reader) {
+void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, const std::vector<BinBoundary>& bin_boundaries, TTreeReader& data_reader, TTreeReader& mc_gen_reader, TTreeReader& mc_rec_reader);
     std::cout << "We entered plot_dvcs..." << std::endl;
 
     // Get the number of Q²-t bins for the current xB bin
