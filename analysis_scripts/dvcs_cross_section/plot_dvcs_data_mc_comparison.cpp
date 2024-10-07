@@ -27,6 +27,11 @@ int count_Q2t_bins_for_xB(int xB_bin, const std::vector<BinBoundary>& bin_bounda
 // Plot function for DVCS data/MC comparison
 void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, const std::vector<BinBoundary>& bin_boundaries, TTreeReader& data_reader, TTreeReader& mc_gen_reader, TTreeReader& mc_rec_reader) {
 
+    // **Restart the readers before processing each xB bin**
+    data_reader.Restart();
+    mc_gen_reader.Restart();
+    mc_rec_reader.Restart();
+
     // Count the number of Q²-t bins for the current xB bin
     int n_Q2t_bins = count_Q2t_bins_for_xB(xB_bin, bin_boundaries);
 
@@ -146,15 +151,15 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         h_mc_rec->Draw("E1 SAME");    // Reconstructed MC with error bars
         h_mc_gen->Draw("HIST SAME");  // Generated MC as a line
 
-        // Add kinematic constraints as text in each subplot
-        TLatex latex;
-        latex.SetTextSize(0.03);
-        latex.DrawLatexNDC(0.15, 0.85, Form("x_{B}: %.2f - %.2f", bin_boundaries[histogram_idx].xB_low, bin_boundaries[histogram_idx].xB_high));
-        latex.DrawLatexNDC(0.15, 0.8, Form("Q^{2}: %.2f - %.2f", bin_boundaries[histogram_idx].Q2_low, bin_boundaries[histogram_idx].Q2_high));
-        latex.DrawLatexNDC(0.15, 0.75, Form("|t|: %.2f - %.2f", std::abs(bin_boundaries[histogram_idx].t_low), std::abs(bin_boundaries[histogram_idx].t_high)));
+        // **Set the title of each plot to the kinematic constraints**
+        canvas->cd(subplot_idx)->SetTitle(Form("x_{B}: %.2f - %.2f, Q^{2}: %.2f - %.2f, |t|: %.2f - %.2f", 
+                                               bin_boundaries[histogram_idx].xB_low, bin_boundaries[histogram_idx].xB_high, 
+                                               bin_boundaries[histogram_idx].Q2_low, bin_boundaries[histogram_idx].Q2_high,
+                                               bin_boundaries[histogram_idx].t_low, bin_boundaries[histogram_idx].t_high));
 
-        // Add legend to every subplot
+        // **Add legend to each plot**
         TLegend* legend = new TLegend(0.7, 0.75, 0.9, 0.9);
+        legend->SetTextSize(0.035);  // Increase the text size of the legend
         legend->AddEntry(h_data, "Data", "lep");
         legend->AddEntry(h_mc_rec, "Reconstructed MC", "lep");
         legend->AddEntry(h_mc_gen, "Generated MC", "l");
