@@ -3,7 +3,6 @@
 #include <sstream>
 #include <iostream>
 
-// Function definition to read bin boundaries from tab-delimited CSV
 std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
     std::vector<BinBoundary> bin_boundaries;
     std::ifstream file(filename);
@@ -21,7 +20,7 @@ std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
         ++line_num;
     }
 
-    // Now read the actual data from the third line onward
+    // Read data from the file line by line
     while (std::getline(file, line)) {
         std::stringstream ss(line);
         std::string token;
@@ -33,7 +32,6 @@ std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
         // Second column: bin name (read it)
         std::getline(ss, token, '\t');
         bin.bin_label = token;
-        // std::cout << "Processing bin: " << bin.bin_label << std::endl;
 
         try {
             // xB_low (min)
@@ -44,8 +42,9 @@ std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
             std::getline(ss, token, '\t');
             bin.xB_high = std::stod(token);
 
-            // Skip average xB
+            // xB_avg (average)
             std::getline(ss, token, '\t');
+            bin.xB_avg = std::stod(token);
 
             // Q2_low (min)
             std::getline(ss, token, '\t');
@@ -55,8 +54,9 @@ std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
             std::getline(ss, token, '\t');
             bin.Q2_high = std::stod(token);
 
-            // Skip average Q2
+            // Q2_avg (average)
             std::getline(ss, token, '\t');
+            bin.Q2_avg = std::stod(token);
 
             // t_low (min)
             std::getline(ss, token, '\t');
@@ -66,8 +66,9 @@ std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
             std::getline(ss, token, '\t');
             bin.t_high = std::stod(token);
 
-            // Skip average t
+            // t_avg (average)
             std::getline(ss, token, '\t');
+            bin.t_avg = std::stod(token);
 
         } catch (const std::invalid_argument& e) {
             std::cerr << "Invalid argument while parsing token: '" << token << "' in bin " << bin.bin_label << std::endl;

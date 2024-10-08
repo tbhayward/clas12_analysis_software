@@ -5,10 +5,13 @@
 #include <string>
 
 struct BinBoundary {
-    std::string bin_label;  // Add this field to hold the bin label
-    double xB_low, xB_high;
-    double Q2_low, Q2_high;
-    double t_low, t_high;
+    std::string bin_label;  // Bin label for identification
+    double xB_low, xB_high;  // xB min and max
+    double Q2_low, Q2_high;  // Q2 min and max
+    double t_low, t_high;    // |t| min and max
+    double xB_avg;           // Average xB
+    double Q2_avg;           // Average Q2
+    double t_avg;            // Average |t|
 };
 
 // Function to read bin boundaries from CSV
