@@ -227,7 +227,6 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, const std::stri
     while (mc_gen_reader.Next()) {
         double phi_mc_gen_deg = *phi_mc_gen * RAD_TO_DEG;
         for (int idx = 0; idx < n_Q2t_bins; ++idx) {
-            std::cout << n_Q2t_bins << std::endl;
             const auto& bin = bin_boundaries[relevant_bins[idx]];
 
             if (*xB_mc_gen >= bin.xB_low && *xB_mc_gen <= bin.xB_high &&
