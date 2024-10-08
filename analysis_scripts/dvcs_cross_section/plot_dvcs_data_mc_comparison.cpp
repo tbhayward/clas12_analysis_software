@@ -332,7 +332,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
     }
 
     // Save canvas to the output directory with the analysisType and topology in the filename
-    std::string filename = output_dir + "/phi_data_mc_comparison_" + analysisType + "_" + datasetType + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
+    std::string filename = output_dir + "/phi_data_mc_comparison_" + analysisType + "_" + dataset + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
     canvas->SaveAs(filename.c_str());
 
     // Clean up histograms and canvas
