@@ -99,8 +99,8 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     // Create histograms only for the relevant bins
     for (int idx = 0; idx < n_Q2t_bins; ++idx) {
         const auto& bin = bin_boundaries[relevant_bins[idx]];
-        std::string title = Form("x_{B}: %.2f-%.2f, Q^{2}: %.2f-%.2f, |t|: %.2f-%.2f",
-                                 bin.xB_low, bin.xB_high, bin.Q2_low, bin.Q2_high, std::abs(bin.t_low), std::abs(bin.t_high));
+        std::string title = Form("x_{B} avg: %.2f, Q^{2} avg: %.2f, |t| avg: %.2f",
+                             bin.xB_avg, bin.Q2_avg, std::abs(bin.t_avg));
 
         h_data_histograms[idx] = new TH1D(Form("h_data_%d", idx), title.c_str(), 24, 0, 360);
         h_mc_gen_histograms[idx] = new TH1D(Form("h_mc_gen_%d", idx), "gen", 24, 0, 360);
