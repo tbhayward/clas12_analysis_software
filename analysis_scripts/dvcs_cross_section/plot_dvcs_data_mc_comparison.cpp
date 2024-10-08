@@ -194,7 +194,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     std::string filename = output_dir + "/phi_data_mc_comparison_xB_bin_" + std::to_string(xB_bin) + ".png";
     canvas->SaveAs(filename.c_str());
 
-    // After saving the canvas
+    // Clean up histograms and canvas
     for (auto& h : h_data_histograms) {
         if (h) {
             delete h;
@@ -213,12 +213,8 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
             h = nullptr;
         }
     }
-    delete canvas;
-    canvas = nullptr;
-
-    // Clean up histograms and canvas
-    for (auto& h : h_data_histograms) delete h;
-    for (auto& h : h_mc_gen_histograms) delete h;
-    for (auto& h : h_mc_rec_histograms) delete h;
-    delete canvas;
+    if (canvas) {
+        delete canvas;
+        canvas = nullptr;
+    }
 }
