@@ -182,8 +182,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
     TTreeReaderValue<double> xB_mc_gen(mc_gen_reader, "x");
     TTreeReaderValue<double> Q2_mc_gen(mc_gen_reader, "Q2");
     TTreeReaderValue<double> t1_mc_gen(mc_gen_reader, "t1");
-    // TTreeReaderValue<double> open_angle_ep2_mc_gen(mc_gen_reader, "open_angle_ep2");
-    double open_angle_ep2_mc_gen = 15;
+    TTreeReaderValue<double> open_angle_ep2_mc_gen(mc_gen_reader, "open_angle_ep2");
     TTreeReaderValue<double> Emiss2_mc_gen(mc_gen_reader, "Emiss2");
     TTreeReaderValue<double> Mx2_1_mc_gen(mc_gen_reader, "Mx2_1");
     TTreeReaderValue<double> pTmiss_mc_gen(mc_gen_reader, "pTmiss");
@@ -225,7 +224,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
             if ((*xB_mc_gen >= bin.xB_low && *xB_mc_gen <= bin.xB_high &&
                 *Q2_mc_gen >= bin.Q2_low && *Q2_mc_gen <= bin.Q2_high &&
                 std::abs(*t1_mc_gen) >= bin.t_low && std::abs(*t1_mc_gen) <= bin.t_high) &&
-                apply_kinematic_cuts(*t1_mc_gen, *open_angle_ep2_mc_gen, **theta_neutral_neutral_mc_gen, *Emiss2_mc_gen, *Mx2_1_mc_gen, *pTmiss_mc_gen)) {
+                apply_kinematic_cuts(*t1_mc_gen, 15, **theta_neutral_neutral_mc_gen, *Emiss2_mc_gen, *Mx2_1_mc_gen, *pTmiss_mc_gen)) {
                 std::cout << "sup" << std::endl;
                 h_mc_gen_histograms[idx]->Fill(phi_mc_gen_deg);
                 break;
