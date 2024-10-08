@@ -240,10 +240,6 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         TH1D* h_mc_gen = h_mc_gen_histograms[idx];
         TH1D* h_mc_rec = h_mc_rec_histograms[idx];
 
-        TH1D* h_data = h_data_histograms[idx];
-        TH1D* h_mc_gen = h_mc_gen_histograms[idx];
-        TH1D* h_mc_rec = h_mc_rec_histograms[idx];
-
         // Get integrals before scaling
         double integral_data = h_data->Integral();
         double integral_mc_rec = h_mc_rec->Integral();
