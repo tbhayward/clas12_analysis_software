@@ -217,7 +217,6 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
     // MC-generated histograms filling
     std::cout << "Started mc gen " << std::endl;
     while (mc_gen_reader.Next()) {
-        std::cout << "sup" << std::endl;
         double phi_mc_gen_deg = *phi_mc_gen * RAD_TO_DEG;
         for (int idx = 0; idx < n_Q2t_bins; ++idx) {
             const auto& bin = bin_boundaries[relevant_bins[idx]];
@@ -226,7 +225,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
                 *Q2_mc_gen >= bin.Q2_low && *Q2_mc_gen <= bin.Q2_high &&
                 std::abs(*t1_mc_gen) >= bin.t_low && std::abs(*t1_mc_gen) <= bin.t_high) &&
                 apply_kinematic_cuts(*t1_mc_gen, *open_angle_ep2_mc_gen, **theta_neutral_neutral_mc_gen, *Emiss2_mc_gen, *Mx2_1_mc_gen, *pTmiss_mc_gen)) {
-
+                std::cout << "sup" << std::endl;
                 h_mc_gen_histograms[idx]->Fill(phi_mc_gen_deg);
                 break;
             }
