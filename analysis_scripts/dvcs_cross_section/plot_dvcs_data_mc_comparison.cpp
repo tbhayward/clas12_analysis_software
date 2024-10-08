@@ -204,7 +204,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, const std::stri
             if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
                 *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
                 std::abs(*t1_data) >= bin.t_low && std::abs(*t1_data) <= bin.t_high) &&
-                apply_kinematic_cuts(*t1_data, *open_angle_ep2_data, **theta_neutral_neutral_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data)) {
+                apply_kinematic_cuts(*t1_data, *open_angle_ep2_data, **theta_neutral_neutral_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data) {
 
                 h_data_histograms[idx]->Fill(phi_deg);
                 break;
@@ -222,7 +222,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, const std::stri
             if (*xB_mc_gen >= bin.xB_low && *xB_mc_gen <= bin.xB_high &&
                 *Q2_mc_gen >= bin.Q2_low && *Q2_mc_gen <= bin.Q2_high &&
                 std::abs(*t1_mc_gen) >= bin.t_low && std::abs(*t1_mc_gen) <= bin.t_high) &&
-                apply_kinematic_cuts(*t1_mc_gen, *open_angle_ep2_mc_gen, **theta_neutral_neutral_mc_gen, *Emiss2_mc_gen, *Mx2_1_mc_gen, *pTmiss_mc_gen)) {
+                apply_kinematic_cuts(*t1_mc_gen, *open_angle_ep2_mc_gen, **theta_neutral_neutral_mc_gen, *Emiss2_mc_gen, *Mx2_1_mc_gen, *pTmiss_mc_gen) {
 
                 h_mc_gen_histograms[idx]->Fill(phi_mc_gen_deg);
                 break;
@@ -240,7 +240,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, const std::stri
             if (*xB_mc_rec >= bin.xB_low && *xB_mc_rec <= bin.xB_high &&
                 *Q2_mc_rec >= bin.Q2_low && *Q2_mc_rec <= bin.Q2_high &&
                 std::abs(*t1_mc_rec) >= bin.t_low && std::abs(*t1_mc_rec) <= bin.t_high) &&
-                apply_kinematic_cuts(*t1_mc_rec, *open_angle_ep2_mc_rec, **theta_neutral_neutral_mc_rec, *Emiss2_mc_rec, *Mx2_1_mc_rec, *pTmiss_mc_rec)) {
+                apply_kinematic_cuts(*t1_mc_rec, *open_angle_ep2_mc_rec, **theta_neutral_neutral_mc_rec, *Emiss2_mc_rec, *Mx2_1_mc_rec, *pTmiss_mc_rec) {
 
                 h_mc_rec_histograms[idx]->Fill(phi_mc_rec_deg);
                 break;
