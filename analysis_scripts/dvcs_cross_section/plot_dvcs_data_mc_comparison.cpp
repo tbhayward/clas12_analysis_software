@@ -117,14 +117,14 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         h_mc_rec_histograms[idx]->GetYaxis()->SetLabelSize(0.05);
 
         // Increase axis title font size
-        h_data_histograms[idx]->GetXaxis()->SetTitleSize(0.07);
-        h_data_histograms[idx]->GetYaxis()->SetTitleSize(0.07);
+        h_data_histograms[idx]->GetXaxis()->SetTitleSize(0.06);
+        h_data_histograms[idx]->GetYaxis()->SetTitleSize(0.06);
 
-        h_mc_gen_histograms[idx]->GetXaxis()->SetTitleSize(0.07);
-        h_mc_gen_histograms[idx]->GetYaxis()->SetTitleSize(0.07);
+        h_mc_gen_histograms[idx]->GetXaxis()->SetTitleSize(0.06);
+        h_mc_gen_histograms[idx]->GetYaxis()->SetTitleSize(0.06);
 
-        h_mc_rec_histograms[idx]->GetXaxis()->SetTitleSize(0.07);
-        h_mc_rec_histograms[idx]->GetYaxis()->SetTitleSize(0.07);
+        h_mc_rec_histograms[idx]->GetXaxis()->SetTitleSize(0.06);
+        h_mc_rec_histograms[idx]->GetYaxis()->SetTitleSize(0.06);
 
         h_data_histograms[idx]->GetXaxis()->SetTitle("#phi");
         h_data_histograms[idx]->GetYaxis()->SetTitle("Normalized Counts");
