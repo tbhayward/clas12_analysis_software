@@ -175,13 +175,6 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, const std::stri
         theta_neutral_neutral_mc_rec = new TTreeReaderValue<double>(mc_rec_reader, "theta_pi0_pi0");
     }
 
-    // Readers for detector status variables
-    TTreeReaderValue<int> detector1_data(data_reader, "detector1");
-    TTreeReaderValue<int> detector2_data(data_reader, "detector2");
-    TTreeReaderValue<int> detector1_mc_gen(mc_gen_reader, "detector1");
-    TTreeReaderValue<int> detector2_mc_gen(mc_gen_reader, "detector2");
-    TTreeReaderValue<int> detector1_mc_rec(mc_rec_reader, "detector1");
-    TTreeReaderValue<int> detector2_mc_rec(mc_rec_reader, "detector2");
 
     TTreeReaderValue<double> phi_mc_gen(mc_gen_reader, "phi");
     TTreeReaderValue<double> xB_mc_gen(mc_gen_reader, "x");
@@ -210,10 +203,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, const std::stri
 
             if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
                 *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
-                std::abs(*t1_data) >= bin.t_low && std::abs(*t1_data) <= bin.t_high &&
-                ((topology == "(FD,FD)" && *detector1_data == 1 && *detector2_data == 1) ||
-                 (topology == "(CD,FD)" && *detector1_data == 2 && *detector2_data == 1) ||
-                 (topology == "(CD,FT)" && *detector1_data == 2 && *detector2_data == 0)) &&
+                std::abs(*t1_data) >= bin.t_low && std::abs(*t1_data) <= bin.t_high &&) &&
                 apply_kinematic_cuts(*t1_data, *open_angle_ep2_data, **theta_neutral_neutral_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data)) {
 
                 h_data_histograms[idx]->Fill(phi_deg);
@@ -231,10 +221,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, const std::stri
 
             if (*xB_mc_gen >= bin.xB_low && *xB_mc_gen <= bin.xB_high &&
                 *Q2_mc_gen >= bin.Q2_low && *Q2_mc_gen <= bin.Q2_high &&
-                std::abs(*t1_mc_gen) >= bin.t_low && std::abs(*t1_mc_gen) <= bin.t_high &&
-                ((topology == "(FD,FD)" && *detector1_mc_gen == 1 && *detector2_mc_gen == 1) ||
-                 (topology == "(CD,FD)" && *detector1_mc_gen == 2 && *detector2_mc_gen == 1) ||
-                 (topology == "(CD,FT)" && *detector1_mc_gen == 2 && *detector2_mc_gen == 0)) &&
+                std::abs(*t1_mc_gen) >= bin.t_low && std::abs(*t1_mc_gen) <= bin.t_high &&) &&
                 apply_kinematic_cuts(*t1_mc_gen, *open_angle_ep2_mc_gen, **theta_neutral_neutral_mc_gen, *Emiss2_mc_gen, *Mx2_1_mc_gen, *pTmiss_mc_gen)) {
 
                 h_mc_gen_histograms[idx]->Fill(phi_mc_gen_deg);
@@ -252,10 +239,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, const std::stri
 
             if (*xB_mc_rec >= bin.xB_low && *xB_mc_rec <= bin.xB_high &&
                 *Q2_mc_rec >= bin.Q2_low && *Q2_mc_rec <= bin.Q2_high &&
-                std::abs(*t1_mc_rec) >= bin.t_low && std::abs(*t1_mc_rec) <= bin.t_high &&
-                ((topology == "(FD,FD)" && *detector1_mc_rec == 1 && *detector1_mc_rec == 1) ||
-                 (topology == "(CD,FD)" && *detector1_mc_rec == 2 && *detector1_mc_rec == 1) ||
-                 (topology == "(CD,FT)" && *detector1_mc_rec == 2 && *detector1_mc_rec == 0)) &&
+                std::abs(*t1_mc_rec) >= bin.t_low && std::abs(*t1_mc_rec) <= bin.t_high &&) &&
                 apply_kinematic_cuts(*t1_mc_rec, *open_angle_ep2_mc_rec, **theta_neutral_neutral_mc_rec, *Emiss2_mc_rec, *Mx2_1_mc_rec, *pTmiss_mc_rec)) {
 
                 h_mc_rec_histograms[idx]->Fill(phi_mc_rec_deg);
@@ -346,7 +330,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, const std::stri
     }
 
     // Save canvas to the output directory with the analysisType and topology in the filename
-    std::string filename = output_dir + "/phi_data_mc_comparison_" + analysisType + "_" + topology + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
+    std::string filename = output_dir + "/phi_data_mc_comparison_" + analysisType + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
     canvas->SaveAs(filename.c_str());
 
     // Clean up histograms and canvas
