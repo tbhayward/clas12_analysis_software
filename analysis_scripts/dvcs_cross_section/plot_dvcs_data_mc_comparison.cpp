@@ -235,16 +235,10 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
     // MC-reconstructed histograms filling
     std::cout << "Started mc rec " << std::endl;
     while (mc_rec_reader.Next()) {
-        std::cout << "sup" << std::endl;
         double phi_mc_rec_deg = *phi_mc_rec * RAD_TO_DEG;
         for (int idx = 0; idx < n_Q2t_bins; ++idx) {
             const auto& bin = bin_boundaries[relevant_bins[idx]];
 
-            std::cout << *xB_mc_rec << " " << *Q2_mc_rec << " " << std::abs(*t1_mc_rec) << std::endl;
-            if ((*xB_mc_rec >= bin.xB_low && *xB_mc_rec <= bin.xB_high &&
-                *Q2_mc_rec >= bin.Q2_low && *Q2_mc_rec <= bin.Q2_high &&
-                std::abs(*t1_mc_rec) >= bin.t_low && std::abs(*t1_mc_rec) <= bin.t_high)) {
-            }
             if ((*xB_mc_rec >= bin.xB_low && *xB_mc_rec <= bin.xB_high &&
                 *Q2_mc_rec >= bin.Q2_low && *Q2_mc_rec <= bin.Q2_high &&
                 std::abs(*t1_mc_rec) >= bin.t_low && std::abs(*t1_mc_rec) <= bin.t_high) &&
