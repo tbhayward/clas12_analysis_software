@@ -64,13 +64,22 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     int canvas_width = static_cast<int>(1.5 * base_canvas_width);
     int canvas_height = static_cast<int>(1.5 * base_canvas_height);
 
-    // For xB_bin 3 and 4, limit the subdivisions to 30
-    int n_subplots = next_perfect_square(n_Q2t_bins);
-    if ((xB_bin == 3 || xB_bin == 4) && n_Q2t_bins > 28) {
-        n_subplots = 30;  // Limit to 30 bins
+    // For xB_bin 3 and 4, use a 6x5 layout (30 subplots), otherwise use next perfect square logic
+    int n_subplots;
+    int n_columns;
+    int n_rows;
+
+    if (xB_bin == 3 || xB_bin == 4) {
+        // Special case for xB_bin 3 and 4, use 6x5 layout
+        n_subplots = 30;  // Fixed to 30 bins
+        n_columns = 5;    // 5 columns
+        n_rows = 6;       // 6 rows
+    } else {
+        // Default case: use perfect square logic
+        n_subplots = next_perfect_square(n_Q2t_bins);
+        n_columns = std::sqrt(n_subplots);
+        n_rows = n_columns;
     }
-    int n_columns = std::sqrt(n_subplots);
-    int n_rows = n_columns;
 
     TCanvas* canvas = new TCanvas("c1", "Data vs MC", 1200, 800);
     canvas->Divide(n_columns, n_rows);
@@ -92,14 +101,14 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         h_mc_rec_histograms[idx] = new TH1D(Form("h_mc_rec_%d", idx), "rec", 24, 0, 360);
 
         // Increase axis label font size slightly
-        h_data_histograms[idx]->GetXaxis()->SetLabelSize(0.04);
-        h_data_histograms[idx]->GetYaxis()->SetLabelSize(0.04);
+        h_data_histograms[idx]->GetXaxis()->SetLabelSize(0.05);
+        h_data_histograms[idx]->GetYaxis()->SetLabelSize(0.05);
 
-        h_mc_gen_histograms[idx]->GetXaxis()->SetLabelSize(0.04);
-        h_mc_gen_histograms[idx]->GetYaxis()->SetLabelSize(0.04);
+        h_mc_gen_histograms[idx]->GetXaxis()->SetLabelSize(0.05);
+        h_mc_gen_histograms[idx]->GetYaxis()->SetLabelSize(0.05);
 
-        h_mc_rec_histograms[idx]->GetXaxis()->SetLabelSize(0.04);
-        h_mc_rec_histograms[idx]->GetYaxis()->SetLabelSize(0.04);
+        h_mc_rec_histograms[idx]->GetXaxis()->SetLabelSize(0.05);
+        h_mc_rec_histograms[idx]->GetYaxis()->SetLabelSize(0.05);
 
         h_data_histograms[idx]->GetXaxis()->SetTitle("#phi");
         h_data_histograms[idx]->GetYaxis()->SetTitle("Normalized Counts");
@@ -211,15 +220,31 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         TH1D* h_mc_gen = h_mc_gen_histograms[idx];
         TH1D* h_mc_rec = h_mc_rec_histograms[idx];
 
-        if (h_data->Integral() > 0) h_data->Scale(1.0 / h_data->Integral());
-        if (h_mc_gen->Integral() > 0) h_mc_gen->Scale(1.0 / h_mc_gen->Integral());
-        if (h_mc_rec->Integral() > 0) h_mc_rec->Scale(1.0 / h_mc_rec->Integral());
+        // Get integrals before scaling
+        double integral_data = h_data->Integral();
+        double integral_mc_rec = h_mc_rec->Integral();
+        double integral_mc_gen = h_mc_gen->Integral();
 
+        // Scale reconstructed MC to have the same integral as data
+        if (integral_mc_rec > 0 && integral_data > 0) {
+            h_mc_rec->Scale(integral_data / integral_mc_rec);
+        }
+
+        // Now scale generated MC using the ratio of its original integral to the original reconstructed MC integral
+        if (integral_mc_gen > 0 && integral_mc_rec > 0) {
+            h_mc_gen->Scale((integral_mc_gen / integral_mc_rec) * (integral_data / integral_mc_rec));
+        }
+
+        // Find the maximum bin content across all histograms for plotting purposes
         double max_value = std::max({h_data->GetMaximum(), h_mc_gen->GetMaximum(), h_mc_rec->GetMaximum()});
 
         h_data->SetMaximum(1.35 * max_value);
-        h_data->SetMinimum(0);
+        h_data->SetMinimum(0.1);  // Setting a minimum for log scale
 
+        // Set the y-axis to log scale
+        canvas->cd(idx + 1)->SetLogy();
+
+        // Style settings
         h_data->SetMarkerColor(kBlue);
         h_data->SetMarkerStyle(20);
         h_data->SetLineColor(kBlue);
@@ -231,10 +256,12 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         h_mc_rec->SetMarkerStyle(22);
         h_mc_rec->SetLineColor(kRed);
 
+        // Draw histograms
         h_data->Draw("E1");
         h_mc_rec->Draw("E1 SAME");
         h_mc_gen->Draw("HIST SAME");
 
+        // Add legend
         TLegend* legend = new TLegend(0.575, 0.6, 0.9, 0.9);
         legend->AddEntry(h_data, "Data", "lep");
         legend->AddEntry(h_mc_rec, "Reconstructed MC", "lep");
