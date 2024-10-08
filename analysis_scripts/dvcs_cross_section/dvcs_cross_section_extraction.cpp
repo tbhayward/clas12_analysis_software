@@ -235,7 +235,7 @@ int main(int argc, char* argv[]) {
     TTree* tree = eppi0_readers[0].GetTree();  // Get the TTree from the TTreeReader
     std::cout << "Number of events in eppi0_readers[0]: " << tree->GetEntries() << std::endl;
 
-    TTree* tre2e = mc_gen_aaogen_readers[0].GetTree();  // Get the TTree from the TTreeReader
+    TTree* tree2 = mc_gen_aaogen_readers[0].GetTree();  // Get the TTree from the TTreeReader
     std::cout << "Number of events in eppi0_readers[0]: " << tree2->GetEntries() << std::endl;
 
     TTree* tree3 = mc_rec_aaogen_readers[0].GetTree();  // Get the TTree from the TTreeReader
