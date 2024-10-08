@@ -171,7 +171,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
         theta_neutral_neutral_data = new TTreeReaderValue<double>(data_reader, "theta_gamma_gamma");
         theta_neutral_neutral_mc_gen = new TTreeReaderValue<double>(mc_gen_reader, "theta_gamma_gamma");
         theta_neutral_neutral_mc_rec = new TTreeReaderValue<double>(mc_rec_reader, "theta_gamma_gamma");
-    } else {
+    } else if (analysisType == "eppi0") {
         theta_neutral_neutral_data = new TTreeReaderValue<double>(data_reader, "theta_pi0_pi0");
         theta_neutral_neutral_mc_gen = new TTreeReaderValue<double>(mc_gen_reader, "theta_pi0_pi0");
         theta_neutral_neutral_mc_rec = new TTreeReaderValue<double>(mc_rec_reader, "theta_pi0_pi0");
