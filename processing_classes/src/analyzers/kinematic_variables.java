@@ -191,7 +191,6 @@ public class kinematic_variables {
         double theta = Math.acos(cosTheta);
         // Convert radians to degrees 
         double theta_degrees = Math.toDegrees(theta);
-        System.out.println(theta_degrees);
         return theta_degrees;  // Return the angle in degrees
     }
     
