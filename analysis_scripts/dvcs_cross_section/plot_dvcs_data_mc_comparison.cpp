@@ -54,8 +54,13 @@ std::vector<int> precompute_relevant_bins(int xB_bin, const std::vector<BinBound
     return relevant_bins;
 }
 
-// Plot function for DVCS data/MC comparison
-void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, const std::vector<BinBoundary>& bin_boundaries, TTreeReader& data_reader, TTreeReader& mc_gen_reader, TTreeReader& mc_rec_reader) {
+void plot_dvcs_data_mc_comparison(const std::string& output_dir, 
+                                  int xB_bin, const std::string& analysisType, 
+                                  const std::string& topology,
+                                  const std::vector<BinBoundary>& bin_boundaries, 
+                                  TTreeReader& data_reader, 
+                                  TTreeReader& mc_gen_reader, 
+                                  TTreeReader& mc_rec_reader) {
 
     // Precompute the relevant bins for the xB_bin to avoid redundant string parsing
     std::vector<int> relevant_bins = precompute_relevant_bins(xB_bin, bin_boundaries);
@@ -87,7 +92,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         n_rows = n_columns;
     }
 
-    TCanvas* canvas = new TCanvas("c1", "Data vs MC", 1200, 800);
+    TCanvas* canvas = new TCanvas("c1", "Data vs MC", canvas_width, canvas_height);
     canvas->Divide(n_columns, n_rows);
 
     gStyle->SetOptStat(0);
@@ -99,8 +104,12 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     // Create histograms only for the relevant bins
     for (int idx = 0; idx < n_Q2t_bins; ++idx) {
         const auto& bin = bin_boundaries[relevant_bins[idx]];
-        std::string title = Form("x_{B} avg: %.2f, Q^{2} avg: %.2f, -t avg: %.2f",
-                             bin.xB_avg, bin.Q2_avg, std::abs(bin.t_avg));
+
+        // Update title to use the analysisType and topology
+        std::string title = Form("%s, %s: x_{B} avg: %.2f, Q^{2} avg: %.2f, -t avg: %.2f", 
+                                 analysisType.c_str(), 
+                                 topology.c_str(), 
+                                 bin.xB_avg, bin.Q2_avg, std::abs(bin.t_avg));
 
         h_data_histograms[idx] = new TH1D(Form("h_data_%d", idx), title.c_str(), 24, 0, 360);
         h_mc_gen_histograms[idx] = new TH1D(Form("h_mc_gen_%d", idx), "gen", 24, 0, 360);
@@ -149,17 +158,32 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     TTreeReaderValue<double> Q2_data(data_reader, "Q2");
     TTreeReaderValue<double> t1_data(data_reader, "t1");
     TTreeReaderValue<double> open_angle_ep2_data(data_reader, "open_angle_ep2");
-    TTreeReaderValue<double> theta_neutral_neutral_data(data_reader, "theta_gamma_gamma");
     TTreeReaderValue<double> Emiss2_data(data_reader, "Emiss2");
     TTreeReaderValue<double> Mx2_1_data(data_reader, "Mx2_1");
     TTreeReaderValue<double> pTmiss_data(data_reader, "pTmiss");
+
+    // Handle theta_neutral_neutral based on analysis type (dvcs or eppi0)
+    TTreeReaderValue<double>* theta_neutral_neutral_data;
+    TTreeReaderValue<double>* theta_neutral_neutral_mc;
+    if (analysisType == "dvcs") {
+        theta_neutral_neutral_data = new TTreeReaderValue<double>(data_reader, "theta_gamma_gamma");
+        theta_neutral_neutral_mc = new TTreeReaderValue<double>(mc_gen_reader, "theta_gamma_gamma");
+    } else {
+        theta_neutral_neutral_data = new TTreeReaderValue<double>(data_reader, "theta_pi0_pi0");
+        theta_neutral_neutral_mc = new TTreeReaderValue<double>(mc_gen_reader, "theta_pi0_pi0");
+    }
+
+    // Readers for detector status variables
+    TTreeReaderValue<int> detector1_data(data_reader, "detector1");
+    TTreeReaderValue<int> detector2_data(data_reader, "detector2");
+    TTreeReaderValue<int> detector1_mc(mc_rec_reader, "detector1");
+    TTreeReaderValue<int> detector2_mc(mc_rec_reader, "detector2");
 
     TTreeReaderValue<double> phi_mc_gen(mc_gen_reader, "phi");
     TTreeReaderValue<double> xB_mc_gen(mc_gen_reader, "x");
     TTreeReaderValue<double> Q2_mc_gen(mc_gen_reader, "Q2");
     TTreeReaderValue<double> t1_mc_gen(mc_gen_reader, "t1");
     TTreeReaderValue<double> open_angle_ep2_mc_gen(mc_gen_reader, "open_angle_ep2");
-    TTreeReaderValue<double> theta_neutral_neutral_mc_gen(mc_gen_reader, "theta_gamma_gamma");
     TTreeReaderValue<double> Emiss2_mc_gen(mc_gen_reader, "Emiss2");
     TTreeReaderValue<double> Mx2_1_mc_gen(mc_gen_reader, "Mx2_1");
     TTreeReaderValue<double> pTmiss_mc_gen(mc_gen_reader, "pTmiss");
@@ -169,7 +193,6 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     TTreeReaderValue<double> Q2_mc_rec(mc_rec_reader, "Q2");
     TTreeReaderValue<double> t1_mc_rec(mc_rec_reader, "t1");
     TTreeReaderValue<double> open_angle_ep2_mc_rec(mc_rec_reader, "open_angle_ep2");
-    TTreeReaderValue<double> theta_neutral_neutral_mc_rec(mc_rec_reader, "theta_gamma_gamma");
     TTreeReaderValue<double> Emiss2_mc_rec(mc_rec_reader, "Emiss2");
     TTreeReaderValue<double> Mx2_1_mc_rec(mc_rec_reader, "Mx2_1");
     TTreeReaderValue<double> pTmiss_mc_rec(mc_rec_reader, "pTmiss");
@@ -184,7 +207,10 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
             if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
                 *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
                 std::abs(*t1_data) >= bin.t_low && std::abs(*t1_data) <= bin.t_high &&
-                apply_kinematic_cuts(*t1_data, *open_angle_ep2_data, *theta_neutral_neutral_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data)) {
+                ((topology == "(FD,FD)" && *detector1_data == 1 && *detector2_data == 1) ||
+                 (topology == "(CD,FD)" && *detector1_data == 2 && *detector2_data == 1) ||
+                 (topology == "(CD,FT)" && *detector1_data == 2 && *detector2_data == 0)) &&
+                apply_kinematic_cuts(*t1_data, *open_angle_ep2_data, **theta_neutral_neutral_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data)) {
 
                 h_data_histograms[idx]->Fill(phi_deg);
                 break;
@@ -202,7 +228,10 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
             if (*xB_mc_gen >= bin.xB_low && *xB_mc_gen <= bin.xB_high &&
                 *Q2_mc_gen >= bin.Q2_low && *Q2_mc_gen <= bin.Q2_high &&
                 std::abs(*t1_mc_gen) >= bin.t_low && std::abs(*t1_mc_gen) <= bin.t_high &&
-                apply_kinematic_cuts(*t1_mc_gen, *open_angle_ep2_mc_gen, *theta_neutral_neutral_mc_gen, *Emiss2_mc_gen, *Mx2_1_mc_gen, *pTmiss_mc_gen)) {
+                ((topology == "(FD,FD)" && *detector1_mc == 1 && *detector2_mc == 1) ||
+                 (topology == "(CD,FD)" && *detector1_mc == 2 && *detector2_mc == 1) ||
+                 (topology == "(CD,FT)" && *detector1_mc == 2 && *detector2_mc == 0)) &&
+                apply_kinematic_cuts(*t1_mc_gen, *open_angle_ep2_mc_gen, **theta_neutral_neutral_mc, *Emiss2_mc_gen, *Mx2_1_mc_gen, *pTmiss_mc_gen)) {
 
                 h_mc_gen_histograms[idx]->Fill(phi_mc_gen_deg);
                 break;
@@ -220,7 +249,10 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
             if (*xB_mc_rec >= bin.xB_low && *xB_mc_rec <= bin.xB_high &&
                 *Q2_mc_rec >= bin.Q2_low && *Q2_mc_rec <= bin.Q2_high &&
                 std::abs(*t1_mc_rec) >= bin.t_low && std::abs(*t1_mc_rec) <= bin.t_high &&
-                apply_kinematic_cuts(*t1_mc_rec, *open_angle_ep2_mc_rec, *theta_neutral_neutral_mc_rec, *Emiss2_mc_rec, *Mx2_1_mc_rec, *pTmiss_mc_rec)) {
+                ((topology == "(FD,FD)" && *detector1_mc == 1 && *detector2_mc == 1) ||
+                 (topology == "(CD,FD)" && *detector1_mc == 2 && *detector2_mc == 1) ||
+                 (topology == "(CD,FT)" && *detector1_mc == 2 && *detector2_mc == 0)) &&
+                apply_kinematic_cuts(*t1_mc_rec, *open_angle_ep2_mc_rec, **theta_neutral_neutral_mc_rec, *Emiss2_mc_rec, *Mx2_1_mc_rec, *pTmiss_mc_rec)) {
 
                 h_mc_rec_histograms[idx]->Fill(phi_mc_rec_deg);
                 break;
@@ -309,8 +341,8 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         legend->Draw();
     }
 
-    // Save canvas to the output directory
-    std::string filename = output_dir + "/phi_data_mc_comparison_xB_bin_" + std::to_string(xB_bin) + ".pdf";
+    // Save canvas to the output directory with the analysisType and topology in the filename
+    std::string filename = output_dir + "/phi_data_mc_comparison_" + analysisType + "_" + topology + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
     canvas->SaveAs(filename.c_str());
 
     // Clean up histograms and canvas
@@ -318,4 +350,8 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     for (auto& h : h_mc_gen_histograms) delete h;
     for (auto& h : h_mc_rec_histograms) delete h;
     delete canvas;
+
+    // Clean up dynamically allocated memory
+    delete theta_neutral_neutral_data;
+    delete theta_neutral_neutral_mc;
 }
