@@ -219,8 +219,6 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     }
 
     // Normalize histograms and plot in each subplot
-    double global_min = std::numeric_limits<double>::max();  // Initialize to the largest possible value
-
     for (int idx = 0; idx < n_Q2t_bins; ++idx) {
         canvas->cd(idx + 1);
 
@@ -243,15 +241,19 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
             h_mc_gen->Scale((integral_mc_gen / integral_mc_rec) * (integral_data / integral_mc_rec));
         }
 
-        // Find the minimum non-zero value across all histograms
+        // Find the minimum non-zero value in each histogram (for this subplot)
         double min_data = h_data->GetMinimum(0);  // Get minimum non-zero value
         double min_mc_gen = h_mc_gen->GetMinimum(0);  // Get minimum non-zero value
         double min_mc_rec = h_mc_rec->GetMinimum(0);  // Get minimum non-zero value
 
-        // Update global_min with the smallest value greater than 0 from all histograms
-        if (min_data > 0) global_min = std::min(global_min, min_data);
-        if (min_mc_gen > 0) global_min = std::min(global_min, min_mc_gen);
-        if (min_mc_rec > 0) global_min = std::min(global_min, min_mc_rec);
+        // Find the smallest non-zero value across the three histograms
+        double local_min = std::numeric_limits<double>::max();
+        if (min_data > 0) local_min = std::min(local_min, min_data);
+        if (min_mc_gen > 0) local_min = std::min(local_min, min_mc_gen);
+        if (min_mc_rec > 0) local_min = std::min(local_min, min_mc_rec);
+
+        // Find the closest lower power of 10 for the log scale minimum
+        double min_y_log = closest_lower_power_of_ten(local_min);
 
         // Find the maximum bin content across all histograms for plotting purposes
         double max_value = std::max({h_data->GetMaximum(), h_mc_gen->GetMaximum(), h_mc_rec->GetMaximum()});
@@ -259,8 +261,10 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         // Set the maximum for the histograms
         h_data->SetMaximum(1.35 * max_value);
 
-        // Set the log scale minimum value later once global_min is determined
-        h_data->SetMinimum(0.1);  // Temporary value, to be replaced after determining log scale minimum
+        // Set the log scale minimum value for this subplot
+        h_data->SetMinimum(min_y_log);
+        h_mc_gen->SetMinimum(min_y_log);
+        h_mc_rec->SetMinimum(min_y_log);
 
         // Set log scale for the canvas
         canvas->cd(idx + 1)->SetLogy();
@@ -283,23 +287,12 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         h_mc_gen->Draw("HIST SAME");
 
         // Add legend
-        TLegend* legend = new TLegend(0.575, 0.6, 0.9, 0.9);
+        TLegend* legend = new TLegend(0.575, 0.45, 0.9, 0.75);
         legend->AddEntry(h_data, "Data", "lep");
         legend->AddEntry(h_mc_rec, "Reconstructed MC", "lep");
         legend->AddEntry(h_mc_gen, "Generated MC", "l");
         legend->SetTextSize(0.04);
         legend->Draw();
-    }
-
-    // Determine the global log scale minimum after looping through all histograms
-    double min_y_log = closest_lower_power_of_ten(global_min);
-
-    // Set the minimum y-axis value for log scale based on the computed closest power of 10
-    for (int idx = 0; idx < n_Q2t_bins; ++idx) {
-        canvas->cd(idx + 1);
-        h_data_histograms[idx]->SetMinimum(min_y_log);  // Apply log scale minimum to all histograms
-        h_mc_gen_histograms[idx]->SetMinimum(min_y_log);
-        h_mc_rec_histograms[idx]->SetMinimum(min_y_log);
     }
 
     // Save canvas to the output directory
