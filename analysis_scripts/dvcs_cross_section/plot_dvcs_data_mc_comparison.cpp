@@ -31,86 +31,87 @@ int next_perfect_square(int n) {
     return square_root * square_root;
 }
 
-int count_Q2t_bins_for_xB(int xB_bin, const std::vector<BinBoundary>& bin_boundaries) {
-    int n_Q2t_bins = 0;
-
-    for (const auto& bin : bin_boundaries) {
-        std::string bin_label = clean_bin_label(bin.bin_label);
-
+// Precompute relevant bins for xB_bin
+std::vector<int> precompute_relevant_bins(int xB_bin, const std::vector<BinBoundary>& bin_boundaries) {
+    std::vector<int> relevant_bins;
+    for (size_t bin_idx = 0; bin_idx < bin_boundaries.size(); ++bin_idx) {
+        std::string bin_label = clean_bin_label(bin_boundaries[bin_idx].bin_label);
         size_t first_comma = bin_label.find(',');
         if (first_comma != std::string::npos) {
             int xB_label = std::stoi(bin_label.substr(0, first_comma));
             if (xB_label == xB_bin) {
-                n_Q2t_bins++;
+                relevant_bins.push_back(bin_idx);
             }
         }
     }
-    return n_Q2t_bins;
+    return relevant_bins;
 }
 
-// Plot function for DVCS data/MC comparison
+// Simplify and optimize the loop over entries by avoiding redundant operations
+template<typename TReader, typename TReaderValue>
+void fill_histograms(TReader& reader, std::vector<TH1D*>& histograms, const std::vector<BinBoundary>& bin_boundaries, const std::vector<int>& relevant_bins, TReaderValue& phi, TReaderValue& xB, TReaderValue& Q2, TReaderValue& t1, TReaderValue& open_angle_ep2, TReaderValue& theta_neutral_neutral, TReaderValue& Emiss2, TReaderValue& Mx2_1, TReaderValue& pTmiss, bool is_data) {
+    while (reader.Next()) {
+        double phi_deg = *phi * RAD_TO_DEG;
+        for (int bin_idx : relevant_bins) {
+            const auto& bin = bin_boundaries[bin_idx];
+            if (*xB >= bin.xB_low && *xB <= bin.xB_high &&
+                *Q2 >= bin.Q2_low && *Q2 <= bin.Q2_high &&
+                std::abs(*t1) >= bin.t_low && std::abs(*t1) <= bin.t_high &&
+                apply_kinematic_cuts(*t1, *open_angle_ep2, *theta_neutral_neutral, *Emiss2, *Mx2_1, *pTmiss)) {
+
+                histograms[bin_idx]->Fill(phi_deg);
+                break;  // Exit early once the correct bin is found and filled
+            }
+        }
+    }
+}
+
+// Main plotting function
 void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, const std::vector<BinBoundary>& bin_boundaries, TTreeReader& data_reader, TTreeReader& mc_gen_reader, TTreeReader& mc_rec_reader) {
 
-    // Count the number of Q²-t bins for the current xB bin
-    int n_Q2t_bins = count_Q2t_bins_for_xB(xB_bin, bin_boundaries);
-    std::cout << "Current xB_bin = " << xB_bin << ", Number of Q2t bins: " << n_Q2t_bins << std::endl;
+    // Precompute the relevant bins for the xB_bin to avoid redundant work
+    std::vector<int> relevant_bins = precompute_relevant_bins(xB_bin, bin_boundaries);
 
+    // Count the number of Q²-t bins for the current xB bin
+    int n_Q2t_bins = relevant_bins.size();
     int n_subplots = next_perfect_square(n_Q2t_bins);
     int n_columns = std::sqrt(n_subplots);
     int n_rows = n_columns;
 
     TCanvas* canvas = new TCanvas("c1", "Data vs MC", 1200, 800);
     canvas->Divide(n_columns, n_rows);
-
     gStyle->SetOptStat(0);
 
     std::vector<TH1D*> h_data_histograms(n_Q2t_bins);
     std::vector<TH1D*> h_mc_gen_histograms(n_Q2t_bins);
     std::vector<TH1D*> h_mc_rec_histograms(n_Q2t_bins);
 
-    int histogram_idx = 0;
+    // Create histograms only for the relevant bins
+    for (int idx = 0; idx < n_Q2t_bins; ++idx) {
+        const auto& bin = bin_boundaries[relevant_bins[idx]];
+        std::string title = Form("x_{B}: %.2f-%.2f, Q^{2}: %.2f-%.2f, |t|: %.2f-%.2f",
+                                 bin.xB_low, bin.xB_high, bin.Q2_low, bin.Q2_high, std::abs(bin.t_low), std::abs(bin.t_high));
 
-    for (const auto& bin : bin_boundaries) {
-        std::string bin_label = clean_bin_label(bin.bin_label);
-        size_t first_comma = bin_label.find(',');
+        h_data_histograms[idx] = new TH1D(Form("h_data_%d", idx), title.c_str(), 24, 0, 360);
+        h_mc_gen_histograms[idx] = new TH1D(Form("h_mc_gen_%d", idx), "gen", 24, 0, 360);
+        h_mc_rec_histograms[idx] = new TH1D(Form("h_mc_rec_%d", idx), "rec", 24, 0, 360);
 
-        if (first_comma != std::string::npos) {
-            int xB_label = std::stoi(bin_label.substr(0, first_comma));
+        h_data_histograms[idx]->GetXaxis()->SetTitle("#phi");
+        h_data_histograms[idx]->GetYaxis()->SetTitle("Normalized Counts");
 
-            if (xB_label == xB_bin) {
-                if (histogram_idx >= n_Q2t_bins) break;
+        h_mc_gen_histograms[idx]->GetXaxis()->SetTitle("#phi");
+        h_mc_gen_histograms[idx]->GetYaxis()->SetTitle("Normalized Counts");
 
-                std::string title = Form("x_{B}: %.2f-%.2f, Q^{2}: %.2f-%.2f, |t|: %.2f-%.2f",
-                                        bin.xB_low, bin.xB_high,
-                                        bin.Q2_low, bin.Q2_high,
-                                        std::abs(bin.t_low), std::abs(bin.t_high));
-
-                h_data_histograms[histogram_idx] = new TH1D(Form("h_data_%d", histogram_idx), title.c_str(), 24, 0, 360);
-                h_mc_gen_histograms[histogram_idx] = new TH1D(Form("h_mc_gen_%d", histogram_idx), "gen", 24, 0, 360);
-                h_mc_rec_histograms[histogram_idx] = new TH1D(Form("h_mc_rec_%d", histogram_idx), "rec", 24, 0, 360);
-
-                h_data_histograms[histogram_idx]->GetXaxis()->SetTitle("#phi");
-                h_data_histograms[histogram_idx]->GetYaxis()->SetTitle("Normalized Counts");
-
-                h_mc_gen_histograms[histogram_idx]->GetXaxis()->SetTitle("#phi");
-                h_mc_gen_histograms[histogram_idx]->GetYaxis()->SetTitle("Normalized Counts");
-
-                h_mc_rec_histograms[histogram_idx]->GetXaxis()->SetTitle("#phi");
-                h_mc_rec_histograms[histogram_idx]->GetYaxis()->SetTitle("Normalized Counts");
-
-                histogram_idx++;
-            }
-        }
+        h_mc_rec_histograms[idx]->GetXaxis()->SetTitle("#phi");
+        h_mc_rec_histograms[idx]->GetYaxis()->SetTitle("Normalized Counts");
     }
-
-    std::cout << "There are " << histogram_idx << " bins created." << std::endl;
 
     // Restart the readers before looping over data
     data_reader.Restart();
     mc_gen_reader.Restart();
     mc_rec_reader.Restart();
 
-    // Reinitialize readers for each tree
+    // Readers for data and MC
     TTreeReaderValue<double> phi_data(data_reader, "phi");
     TTreeReaderValue<double> xB_data(data_reader, "x");
     TTreeReaderValue<double> Q2_data(data_reader, "Q2");
@@ -141,89 +142,10 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     TTreeReaderValue<double> Mx2_1_mc_rec(mc_rec_reader, "Mx2_1");
     TTreeReaderValue<double> pTmiss_mc_rec(mc_rec_reader, "pTmiss");
 
-    // Data histograms filling
-    std::cout << "Started data " << std::endl;
-    while (data_reader.Next()) {
-        double phi_deg = *phi_data * RAD_TO_DEG;
-        int histogram_idx = 0;
-
-        for (const auto& bin : bin_boundaries) {
-            std::string bin_label = clean_bin_label(bin.bin_label);
-            size_t first_comma = bin_label.find(',');
-
-            if (first_comma != std::string::npos) {
-                int xB_label = std::stoi(bin_label.substr(0, first_comma));
-
-                if (xB_label == xB_bin && histogram_idx < n_Q2t_bins) {
-                    if (*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
-                        *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
-                        std::abs(*t1_data) >= bin.t_low && std::abs(*t1_data) <= bin.t_high &&
-                        apply_kinematic_cuts(*t1_data, *open_angle_ep2_data, *theta_neutral_neutral_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data)) {
-
-                        h_data_histograms[histogram_idx]->Fill(phi_deg);
-                        break;
-                    }
-                }
-            }
-            histogram_idx++;
-        }
-    }
-
-    // MC-generated histograms filling
-    std::cout << "Started mc gen " << std::endl;
-    while (mc_gen_reader.Next()) {
-        double phi_mc_gen_deg = *phi_mc_gen * RAD_TO_DEG;
-        int histogram_idx = 0;
-
-        for (const auto& bin : bin_boundaries) {
-            std::string bin_label = clean_bin_label(bin.bin_label);
-            size_t first_comma = bin_label.find(',');
-
-            if (first_comma != std::string::npos) {
-                int xB_label = std::stoi(bin_label.substr(0, first_comma));
-
-                if (xB_label == xB_bin && histogram_idx < n_Q2t_bins) {
-                    if (*xB_mc_gen >= bin.xB_low && *xB_mc_gen <= bin.xB_high &&
-                        *Q2_mc_gen >= bin.Q2_low && *Q2_mc_gen <= bin.Q2_high &&
-                        std::abs(*t1_mc_gen) >= bin.t_low && std::abs(*t1_mc_gen) <= bin.t_high &&
-                        apply_kinematic_cuts(*t1_mc_gen, *open_angle_ep2_mc_gen, *theta_neutral_neutral_mc_gen, *Emiss2_mc_gen, *Mx2_1_mc_gen, *pTmiss_mc_gen)) {
-
-                        h_mc_gen_histograms[histogram_idx]->Fill(phi_mc_gen_deg);
-                        break;
-                    }
-                }
-            }
-            histogram_idx++;
-        }
-    }
-
-    // MC-reconstructed histograms filling
-    std::cout << "Started mc rec " << std::endl;
-    while (mc_rec_reader.Next()) {
-        double phi_mc_rec_deg = *phi_mc_rec * RAD_TO_DEG;
-        int histogram_idx = 0;
-
-        for (const auto& bin : bin_boundaries) {
-            std::string bin_label = clean_bin_label(bin.bin_label);
-            size_t first_comma = bin_label.find(',');
-
-            if (first_comma != std::string::npos) {
-                int xB_label = std::stoi(bin_label.substr(0, first_comma));
-
-                if (xB_label == xB_bin && histogram_idx < n_Q2t_bins) {
-                    if (*xB_mc_rec >= bin.xB_low && *xB_mc_rec <= bin.xB_high &&
-                        *Q2_mc_rec >= bin.Q2_low && *Q2_mc_rec <= bin.Q2_high &&
-                        std::abs(*t1_mc_rec) >= bin.t_low && std::abs(*t1_mc_rec) <= bin.t_high &&
-                        apply_kinematic_cuts(*t1_mc_rec, *open_angle_ep2_mc_rec, *theta_neutral_neutral_mc_rec, *Emiss2_mc_rec, *Mx2_1_mc_rec, *pTmiss_mc_rec)) {
-
-                        h_mc_rec_histograms[histogram_idx]->Fill(phi_mc_rec_deg);
-                        break;
-                    }
-                }
-            }
-            histogram_idx++;
-        }
-    }
+    // Fill histograms for data, mc_gen, and mc_rec
+    fill_histograms(data_reader, h_data_histograms, bin_boundaries, relevant_bins, phi_data, xB_data, Q2_data, t1_data, open_angle_ep2_data, theta_neutral_neutral_data, Emiss2_data, Mx2_1_data, pTmiss_data, true);
+    fill_histograms(mc_gen_reader, h_mc_gen_histograms, bin_boundaries, relevant_bins, phi_mc_gen, xB_mc_gen, Q2_mc_gen, t1_mc_gen, open_angle_ep2_mc_gen, theta_neutral_neutral_mc_gen, Emiss2_mc_gen, Mx2_1_mc_gen, pTmiss_mc_gen, false);
+    fill_histograms(mc_rec_reader, h_mc_rec_histograms, bin_boundaries, relevant_bins, phi_mc_rec, xB_mc_rec, Q2_mc_rec, t1_mc_rec, open_angle_ep2_mc_rec, theta_neutral_neutral_mc_rec, Emiss2_mc_rec, Mx2_1_mc_rec, pTmiss_mc_rec, false);
 
     // Normalize histograms and plot in each subplot
     histogram_idx = 0;
