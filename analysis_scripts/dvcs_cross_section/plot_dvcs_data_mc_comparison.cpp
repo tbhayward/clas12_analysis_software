@@ -54,12 +54,14 @@ std::vector<int> precompute_relevant_bins(int xB_bin, const std::vector<BinBound
     return relevant_bins;
 }
 
-void plot_dvcs_data_mc_comparison(const std::string& output_dir, const std::string& analysisType, 
-                                int xB_bin,
-                                const std::vector<BinBoundary>& bin_boundaries, 
-                                TTreeReader& data_reader, 
-                                TTreeReader& mc_gen_reader, 
-                                TTreeReader& mc_rec_reader) {
+void plot_dvcs_data_mc_comparison(const std::string& output_dir, 
+                                  const std::string& analysisType, 
+                                  const std::string& dataset, 
+                                  int xB_bin,
+                                  const std::vector<BinBoundary>& bin_boundaries, 
+                                  TTreeReader& data_reader, 
+                                  TTreeReader& mc_gen_reader, 
+                                  TTreeReader& mc_rec_reader) {
 
     // Precompute the relevant bins for the xB_bin to avoid redundant string parsing
     std::vector<int> relevant_bins = precompute_relevant_bins(xB_bin, bin_boundaries);
@@ -105,9 +107,10 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, const std::stri
         const auto& bin = bin_boundaries[relevant_bins[idx]];
 
         // Update title to use the analysisType and topology
-        std::string title = Form("%s; x_{B} avg: %.2f, Q^{2} avg: %.2f, -t avg: %.2f", 
-                                 analysisType.c_str(), 
-                                 bin.xB_avg, bin.Q2_avg, std::abs(bin.t_avg));
+        std::string title = Form("%s, %s; x_{B} avg: %.2f, Q^{2} avg: %.2f, -t avg: %.2f", 
+                         analysisType.c_str(), 
+                         dataset.c_str(),  
+                         bin.xB_avg, bin.Q2_avg, std::abs(bin.t_avg));
 
         h_data_histograms[idx] = new TH1D(Form("h_data_%d", idx), title.c_str(), 24, 0, 360);
         h_mc_gen_histograms[idx] = new TH1D(Form("h_mc_gen_%d", idx), "gen", 24, 0, 360);
@@ -329,7 +332,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, const std::stri
     }
 
     // Save canvas to the output directory with the analysisType and topology in the filename
-    std::string filename = output_dir + "/phi_data_mc_comparison_" + analysisType + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
+    std::string filename = output_dir + "/phi_data_mc_comparison_" + analysisType + "_" + datasetType + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
     canvas->SaveAs(filename.c_str());
 
     // Clean up histograms and canvas

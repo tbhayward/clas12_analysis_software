@@ -7,7 +7,9 @@
 #include "bin_boundaries.h"
 
 void plot_dvcs_data_mc_comparison(const std::string& output_dir, 
-                                  const std::string& analysisType, int xB_bin,
+                                  const std::string& analysisType, 
+                                  const std::string& dataset, 
+                                  int xB_bin,
                                   const std::vector<BinBoundary>& bin_boundaries, 
                                   TTreeReader& data_reader, 
                                   TTreeReader& mc_gen_reader, 
