@@ -178,8 +178,10 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, const std::stri
     // Readers for detector status variables
     TTreeReaderValue<int> detector1_data(data_reader, "detector1");
     TTreeReaderValue<int> detector2_data(data_reader, "detector2");
-    TTreeReaderValue<int> detector1_mc(mc_rec_reader, "detector1");
-    TTreeReaderValue<int> detector2_mc(mc_rec_reader, "detector2");
+    TTreeReaderValue<int> detector1_mc_gen(mc_gen_reader, "detector1");
+    TTreeReaderValue<int> detector2_mc_gen(mc_gen_reader, "detector2");
+    TTreeReaderValue<int> detector1_mc_rec(mc_rec_reader, "detector1");
+    TTreeReaderValue<int> detector2_mc_rec(mc_rec_reader, "detector2");
 
     TTreeReaderValue<double> phi_mc_gen(mc_gen_reader, "phi");
     TTreeReaderValue<double> xB_mc_gen(mc_gen_reader, "x");
@@ -231,9 +233,9 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, const std::stri
             if (*xB_mc_gen >= bin.xB_low && *xB_mc_gen <= bin.xB_high &&
                 *Q2_mc_gen >= bin.Q2_low && *Q2_mc_gen <= bin.Q2_high &&
                 std::abs(*t1_mc_gen) >= bin.t_low && std::abs(*t1_mc_gen) <= bin.t_high &&
-                ((topology == "(FD,FD)" && *detector1_mc == 1 && *detector2_mc == 1) ||
-                 (topology == "(CD,FD)" && *detector1_mc == 2 && *detector2_mc == 1) ||
-                 (topology == "(CD,FT)" && *detector1_mc == 2 && *detector2_mc == 0)) &&
+                ((topology == "(FD,FD)" && *detector1_mc_gen == 1 && *detector2_mc_gen == 1) ||
+                 (topology == "(CD,FD)" && *detector1_mc_gen == 2 && *detector2_mc_gen == 1) ||
+                 (topology == "(CD,FT)" && *detector1_mc_gen == 2 && *detector2_mc_gen == 0)) &&
                 apply_kinematic_cuts(*t1_mc_gen, *open_angle_ep2_mc_gen, **theta_neutral_neutral_mc_gen, *Emiss2_mc_gen, *Mx2_1_mc_gen, *pTmiss_mc_gen)) {
 
                 h_mc_gen_histograms[idx]->Fill(phi_mc_gen_deg);
@@ -252,9 +254,9 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, const std::stri
             if (*xB_mc_rec >= bin.xB_low && *xB_mc_rec <= bin.xB_high &&
                 *Q2_mc_rec >= bin.Q2_low && *Q2_mc_rec <= bin.Q2_high &&
                 std::abs(*t1_mc_rec) >= bin.t_low && std::abs(*t1_mc_rec) <= bin.t_high &&
-                ((topology == "(FD,FD)" && *detector1_mc == 1 && *detector2_mc == 1) ||
-                 (topology == "(CD,FD)" && *detector1_mc == 2 && *detector2_mc == 1) ||
-                 (topology == "(CD,FT)" && *detector1_mc == 2 && *detector2_mc == 0)) &&
+                ((topology == "(FD,FD)" && *detector1_mc_rec == 1 && *detector1_mc_rec == 1) ||
+                 (topology == "(CD,FD)" && *detector1_mc_rec == 2 && *detector1_mc_rec == 1) ||
+                 (topology == "(CD,FT)" && *detector1_mc_rec == 2 && *detector1_mc_rec == 0)) &&
                 apply_kinematic_cuts(*t1_mc_rec, *open_angle_ep2_mc_rec, **theta_neutral_neutral_mc_rec, *Emiss2_mc_rec, *Mx2_1_mc_rec, *pTmiss_mc_rec)) {
 
                 h_mc_rec_histograms[idx]->Fill(phi_mc_rec_deg);
