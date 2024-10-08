@@ -177,7 +177,7 @@ public static void main(String[] args) {
 	            // this is my class for defining all relevant kinematic variables
 
 	            if (variables.channel_test(variables)) {
-	            	println("hey");
+
 	                fiducial_status = variables.get_fiducial_status(); // fiducial_status of track
 	                helicity = variables.get_helicity(); // helicity of event
 	                detector1 = variables.get_detector1(); 
@@ -341,7 +341,8 @@ public static void main(String[] args) {
 	                    .append(open_angle_egamma2).append(" ")
 	                    .append(Emiss2).append(" ")
 	                    .append(theta_pi0_pi0).append(" ")
-	                    .append(pTmiss).append("\n");;
+	                    .append(pTmiss).append("\n");
+	                    println("hey");
 
 	                // Append the line to the batchLines StringBuilder
 	                batchLines.append(line.toString());
