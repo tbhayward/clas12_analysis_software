@@ -143,7 +143,7 @@ public static void main(String[] args) {
 	    		runnum == 16308 || runnum == 16184 || runnum == 16307 || runnum == 16309 ||
 	    		qa.OkForAsymmetry(runnum, evnum));
 		    if (process_event) {
-
+		    	println("hey");
 		    	int num_photons = research_Event.countByPid(22);
 		    	for (int current_gamma1 = 0; current_gamma1 < num_photons; current_gamma1++) {
 		    		for (int current_gamma2 = 0; current_gamma2 < num_photons; current_gamma2++) {
