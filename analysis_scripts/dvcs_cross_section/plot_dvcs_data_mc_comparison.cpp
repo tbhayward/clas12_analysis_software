@@ -59,7 +59,7 @@ void fill_histograms(TReader& reader, std::vector<TH1D*>& histograms, const std:
                 *Q2 >= bin.Q2_low && *Q2 <= bin.Q2_high &&
                 std::abs(*t1) >= bin.t_low && std::abs(*t1) <= bin.t_high &&
                 apply_kinematic_cuts(*t1, *open_angle_ep2, *theta_neutral_neutral, *Emiss2, *Mx2_1, *pTmiss)) {
-
+                std::cout << "made it here " << std::endl;
                 histograms[bin_idx]->Fill(phi_deg);
                 break;  // Exit early once the correct bin is found and filled
             }
