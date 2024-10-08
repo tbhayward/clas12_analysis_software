@@ -128,8 +128,8 @@ int main(int argc, char* argv[]) {
     std::vector<std::string> eppi0_filenames = {dir3 + "/rga_fa18_inb_eppi0.root", dir3 + "/rga_fa18_out_eppi0.root", dir3 + "/rga_sp19_inb_eppi0.root"};
     std::vector<std::string> mc_gen_dvcsgen_filenames = {dir2 + "/gen_dvcsgen_rga_fa18_inb_50nA_10604MeV_epgamma.root", dir2 + "/gen_dvcsgen_rga_fa18_out_50nA_10604MeV_epgamma.root", dir2 + "/gen_dvcsgen_rga_sp19_inb_50nA_10200MeV_epgamma.root"};
     std::vector<std::string> mc_rec_dvcsgen_filenames = {dir2 + "/rec_dvcsgen_rga_fa18_inb_50nA_10604MeV_epgamma.root", dir2 + "/rec_dvcsgen_rga_fa18_out_50nA_10604MeV_epgamma.root", dir2 + "/rec_dvcsgen_rga_sp19_inb_50nA_10200MeV_epgamma.root"};
-    std::vector<std::string> mc_gen_aaogen_filenames = {dir4 + "/gen_aaogen_norad_rga_fa18_inb_50nA_10604MeV_eppi0.root", dir4 + "/gen_aaogen_norad_rga_fa18_out_50nA_10604MeV_eppi0.root", dir4 + "/gen_aaogen_norad_rga_sp19_inb_50nA_10604MeV_eppi0.root"};
-    std::vector<std::string> mc_rec_aaogen_filenames = {dir4 + "/rec_aaogen_norad_rga_fa18_inb_50nA_10604MeV_eppi0.root", dir4 + "/rec_aaogen_norad_rga_fa18_out_50nA_10604MeV_eppi0.root", dir4 + "/rec_aaogen_norad_rga_sp19_inb_50nA_10604MeV_eppi0.root"};
+    std::vector<std::string> mc_gen_aaogen_filenames = {dir4 + "/gen_aaogen_norad_rga_fa18_inb_50nA_10604MeV_eppi0.root", dir4 + "/gen_aaogen_norad_rga_fa18_out_50nA_10604MeV_eppi0.root", dir4 + "/gen_aaogen_norad_rga_sp19_inb_50nA_10200MeV_eppi0.root"};
+    std::vector<std::string> mc_rec_aaogen_filenames = {dir4 + "/rec_aaogen_norad_rga_fa18_inb_50nA_10604MeV_eppi0.root", dir4 + "/rec_aaogen_norad_rga_fa18_out_50nA_10604MeV_eppi0.root", dir4 + "/rec_aaogen_norad_rga_sp19_inb_50nA_10200MeV_eppi0.root"};
 
     // Check if all expected files exist
     for (const auto& file : data_filenames) {
