@@ -228,8 +228,8 @@ int main(int argc, char* argv[]) {
     std::string output_dir = base_output_dir + "/data_mc_comparison/dvcs";  // Define the output directory for plots
 
     // Loop over unique xB bins and call the plotting function for DVCS data/MC comparison
-    for (int xB_bin = 0; xB_bin < num_xB_bins; ++xB_bin) {
-    // for (int xB_bin = 1; xB_bin < 2; ++xB_bin) {
+    // for (int xB_bin = 0; xB_bin < num_xB_bins; ++xB_bin) {
+    for (int xB_bin = 0; xB_bin < 2; ++xB_bin) {
         plot_dvcs_data_mc_comparison(output_dir, "dvcs", "(CD,FT)", xB_bin, bin_boundaries, data_readers[1], mc_gen_dvcsgen_readers[1], mc_rec_dvcsgen_readers[1]);
     }
 
