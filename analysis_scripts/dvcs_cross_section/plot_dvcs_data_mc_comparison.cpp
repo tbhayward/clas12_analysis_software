@@ -355,5 +355,6 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, const std::stri
 
     // Clean up dynamically allocated memory
     delete theta_neutral_neutral_data;
-    delete theta_neutral_neutral_mc;
+    delete theta_neutral_neutral_mc_gen;
+    delete theta_neutral_neutral_mc_rec;
 }
