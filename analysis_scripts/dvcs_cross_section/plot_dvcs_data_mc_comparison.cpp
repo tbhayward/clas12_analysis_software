@@ -53,6 +53,7 @@ void fill_histograms(TReader& reader, std::vector<TH1D*>& histograms, const std:
     while (reader.Next()) {
         double phi_deg = *phi * RAD_TO_DEG;
         for (int bin_idx : relevant_bins) {
+            std::cout << bin_idx << std::endl;
             const auto& bin = bin_boundaries[bin_idx];
             if (*xB >= bin.xB_low && *xB <= bin.xB_high &&
                 *Q2 >= bin.Q2_low && *Q2 <= bin.Q2_high &&
