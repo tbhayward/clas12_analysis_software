@@ -25,6 +25,12 @@ std::string clean_bin_label(const std::string& label) {
     return clean_label;
 }
 
+// Helper function to find the closest lower power of 10 for a given value
+double closest_lower_power_of_ten(double value) {
+    if (value <= 0) return 0.1;  // Safety check for non-positive values
+    return std::pow(10, std::floor(std::log10(value)));
+}
+
 // Find the next perfect square greater than or equal to the given number
 int next_perfect_square(int n) {
     int square_root = std::ceil(std::sqrt(n));
@@ -213,6 +219,8 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     }
 
     // Normalize histograms and plot in each subplot
+    double global_min = std::numeric_limits<double>::max();  // Initialize to the largest possible value
+
     for (int idx = 0; idx < n_Q2t_bins; ++idx) {
         canvas->cd(idx + 1);
 
@@ -220,31 +228,27 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         TH1D* h_mc_gen = h_mc_gen_histograms[idx];
         TH1D* h_mc_rec = h_mc_rec_histograms[idx];
 
-        // Get integrals before scaling
-        double integral_data = h_data->Integral();
-        double integral_mc_rec = h_mc_rec->Integral();
-        double integral_mc_gen = h_mc_gen->Integral();
+        // Normalize histograms
+        if (h_data->Integral() > 0) h_data->Scale(1.0 / h_data->Integral());
+        if (h_mc_gen->Integral() > 0) h_mc_gen->Scale(1.0 / h_mc_gen->Integral());
+        if (h_mc_rec->Integral() > 0) h_mc_rec->Scale(1.0 / h_mc_rec->Integral());
 
-        // Scale reconstructed MC to have the same integral as data
-        if (integral_mc_rec > 0 && integral_data > 0) {
-            h_mc_rec->Scale(integral_data / integral_mc_rec);
-        }
+        // Find the minimum value across histograms
+        double min_data = h_data->GetMinimum();
+        double min_mc_gen = h_mc_gen->GetMinimum();
+        double min_mc_rec = h_mc_rec->GetMinimum();
 
-        // Now scale generated MC using the ratio of its original integral to the original reconstructed MC integral
-        if (integral_mc_gen > 0 && integral_mc_rec > 0) {
-            h_mc_gen->Scale((integral_mc_gen / integral_mc_rec) * (integral_data / integral_mc_rec));
-        }
+        // Update global_min with the smallest value greater than 0 from all histograms
+        if (min_data > 0) global_min = std::min(global_min, min_data);
+        if (min_mc_gen > 0) global_min = std::min(global_min, min_mc_gen);
+        if (min_mc_rec > 0) global_min = std::min(global_min, min_mc_rec);
 
-        // Find the maximum bin content across all histograms for plotting purposes
+        // Set the histograms' maximum based on the largest value across histograms
         double max_value = std::max({h_data->GetMaximum(), h_mc_gen->GetMaximum(), h_mc_rec->GetMaximum()});
 
         h_data->SetMaximum(1.35 * max_value);
-        h_data->SetMinimum(0.1);  // Setting a minimum for log scale
 
-        // Set the y-axis to log scale
-        canvas->cd(idx + 1)->SetLogy();
-
-        // Style settings
+        // Set colors and styles
         h_data->SetMarkerColor(kBlue);
         h_data->SetMarkerStyle(20);
         h_data->SetLineColor(kBlue);
@@ -268,6 +272,15 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
         legend->AddEntry(h_mc_gen, "Generated MC", "l");
         legend->SetTextSize(0.04);
         legend->Draw();
+    }
+
+    // After looping over all histograms, compute the minimum y-axis value for log scale
+    double min_y_log = closest_lower_power_of_ten(global_min);
+
+    // Set the minimum y-axis value to the closest lower power of ten
+    for (int idx = 0; idx < n_Q2t_bins; ++idx) {
+        canvas->cd(idx + 1);
+        h_data_histograms[idx]->SetMinimum(min_y_log); 
     }
 
     // Save canvas to the output directory
