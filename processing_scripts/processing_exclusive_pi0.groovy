@@ -138,13 +138,11 @@ public static void main(String[] args) {
 		    // do not use the qa if it is MC (runnum = 11) 
 		    // do not use the qa if the run is from RGC (until QA is produced!)
 		    // boolean process_event = filter.isValid(research_Event);
-		    println(runnum)
 		    boolean process_event = filter.isValid(research_Event) && 
 		    	(runnum == 11 || runnum == 16194 || runnum == 16089 || runnum == 16185 ||
 	    		runnum == 16308 || runnum == 16184 || runnum == 16307 || runnum == 16309 ||
 	    		qa.OkForAsymmetry(runnum, evnum));
 		    if (process_event) {
-		    	println("we made it in")
 
 		    	int num_photons = research_Event.countByPid(22);
 		    	for (int current_gamma1 = 0; current_gamma1 < num_photons; current_gamma1++) {
