@@ -310,7 +310,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     }
 
     // Save canvas to the output directory
-    std::string filename = output_dir + "/phi_data_mc_comparison_xB_bin_" + std::to_string(xB_bin) + ".png";
+    std::string filename = output_dir + "/phi_data_mc_comparison_xB_bin_" + std::to_string(xB_bin) + ".pdf";
     canvas->SaveAs(filename.c_str());
 
     // Clean up histograms and canvas
