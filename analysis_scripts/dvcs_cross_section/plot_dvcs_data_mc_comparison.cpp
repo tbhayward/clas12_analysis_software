@@ -225,6 +225,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, const std::stri
     while (mc_gen_reader.Next()) {
         double phi_mc_gen_deg = *phi_mc_gen * RAD_TO_DEG;
         for (int idx = 0; idx < n_Q2t_bins; ++idx) {
+            std::cout << n_Q2t_bins << std::endl;
             const auto& bin = bin_boundaries[relevant_bins[idx]];
 
             if (*xB_mc_gen >= bin.xB_low && *xB_mc_gen <= bin.xB_high &&
@@ -233,7 +234,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, const std::stri
                 ((topology == "(FD,FD)" && *detector1_mc == 1 && *detector2_mc == 1) ||
                  (topology == "(CD,FD)" && *detector1_mc == 2 && *detector2_mc == 1) ||
                  (topology == "(CD,FT)" && *detector1_mc == 2 && *detector2_mc == 0)) &&
-                apply_kinematic_cuts(*t1_mc_gen, *open_angle_ep2_mc_gen, 15, *Emiss2_mc_gen, *Mx2_1_mc_gen, *pTmiss_mc_gen)) {
+                apply_kinematic_cuts(*t1_mc_gen, *open_angle_ep2_mc_gen, **theta_neutral_neutral_mc_gen, *Emiss2_mc_gen, *Mx2_1_mc_gen, *pTmiss_mc_gen)) {
 
                 h_mc_gen_histograms[idx]->Fill(phi_mc_gen_deg);
                 break;
