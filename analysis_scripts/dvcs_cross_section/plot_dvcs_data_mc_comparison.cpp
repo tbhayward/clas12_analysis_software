@@ -217,6 +217,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
     // MC-generated histograms filling
     std::cout << "Started mc gen " << std::endl;
     while (mc_gen_reader.Next()) {
+        std::cout << "sup" << std::endl;
         double phi_mc_gen_deg = *phi_mc_gen * RAD_TO_DEG;
         for (int idx = 0; idx < n_Q2t_bins; ++idx) {
             const auto& bin = bin_boundaries[relevant_bins[idx]];
