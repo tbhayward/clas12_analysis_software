@@ -143,7 +143,7 @@ public static void main(String[] args) {
 	    		runnum == 16308 || runnum == 16184 || runnum == 16307 || runnum == 16309 ||
 	    		qa.OkForAsymmetry(runnum, evnum));
 		    if (process_event) {
-		    	println("hey");
+
 		    	int num_photons = research_Event.countByPid(22);
 		    	for (int current_gamma1 = 0; current_gamma1 < num_photons; current_gamma1++) {
 		    		for (int current_gamma2 = 0; current_gamma2 < num_photons; current_gamma2++) {
@@ -177,6 +177,7 @@ public static void main(String[] args) {
 	            // this is my class for defining all relevant kinematic variables
 
 	            if (variables.channel_test(variables)) {
+	            	println("hey");
 	                fiducial_status = variables.get_fiducial_status(); // fiducial_status of track
 	                helicity = variables.get_helicity(); // helicity of event
 	                detector1 = variables.get_detector1(); 
