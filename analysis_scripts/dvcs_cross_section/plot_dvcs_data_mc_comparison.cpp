@@ -182,7 +182,8 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
     TTreeReaderValue<double> xB_mc_gen(mc_gen_reader, "x");
     TTreeReaderValue<double> Q2_mc_gen(mc_gen_reader, "Q2");
     TTreeReaderValue<double> t1_mc_gen(mc_gen_reader, "t1");
-    TTreeReaderValue<double> open_angle_ep2_mc_gen(mc_gen_reader, "open_angle_ep2");
+    // TTreeReaderValue<double> open_angle_ep2_mc_gen(mc_gen_reader, "open_angle_ep2");
+    double open_angle_ep2_mc_gen = 15;
     TTreeReaderValue<double> Emiss2_mc_gen(mc_gen_reader, "Emiss2");
     TTreeReaderValue<double> Mx2_1_mc_gen(mc_gen_reader, "Mx2_1");
     TTreeReaderValue<double> pTmiss_mc_gen(mc_gen_reader, "pTmiss");

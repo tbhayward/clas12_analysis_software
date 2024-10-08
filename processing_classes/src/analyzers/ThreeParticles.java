@@ -291,7 +291,6 @@ public class ThreeParticles {
 
         Emiss2 = kinematic_variables.Emiss2(lv_beam, lv_target, lv_e, lv_p1, lv_p2);
         theta_gamma_gamma = kinematic_variables.theta_gamma_gamma(lv_beam, lv_target, lv_e, lv_p1, lv_p2);
-        System.out.println(theta_gamma_gamma);
         pTmiss = kinematic_variables.pTmiss(lv_beam, lv_target, lv_e, lv_p1, lv_p2);
 
         // kinematics of hadrons
