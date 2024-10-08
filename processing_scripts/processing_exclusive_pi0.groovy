@@ -85,8 +85,8 @@ public static void main(String[] args) {
 	GenericKinematicFitter fitter;
 
 	// Uncomment the desired fitter
-	// fitter = new analysis_fitter(10.6041); 
-	fitter = new monte_carlo_fitter(10.6041);
+	fitter = new analysis_fitter(10.6041); 
+	// fitter = new monte_carlo_fitter(10.6041);
 	// fitter = new event_builder_fitter(10.6041);  
 
 	// Set filter for final states based on fitter type
@@ -342,7 +342,6 @@ public static void main(String[] args) {
 	                    .append(Emiss2).append(" ")
 	                    .append(theta_pi0_pi0).append(" ")
 	                    .append(pTmiss).append("\n");
-	                    println("hey");
 
 	                // Append the line to the batchLines StringBuilder
 	                batchLines.append(line.toString());
