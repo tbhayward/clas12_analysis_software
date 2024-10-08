@@ -107,6 +107,7 @@ public static void main(String[] args) {
 		HipoDataEvent event = reader.getNextEvent(); 
 
 		while (reader.hasEvent()) {
+			println("hey")
 		    ++num_events;
 		    if (num_events % 1000000 == 0) { // not necessary, just updates output
 		        print("processed: " + num_events + " events. ");
@@ -129,7 +130,6 @@ public static void main(String[] args) {
 	    		qa.OkForAsymmetry(runnum, evnum));
 
 		    if (process_event) {
-		    	println("hey")
 
 		    	int num_photons = research_Event.countByPid(22);
 		    	for (int current_gamma1 = 0; current_gamma1 < num_photons; current_gamma1++) {
