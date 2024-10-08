@@ -236,7 +236,7 @@ int main(int argc, char* argv[]) {
     //     plot_dvcs_data_mc_comparison(output_dir, "eppi0", "Fa18 Inb", xB_bin, bin_boundaries, eppi0_readers[0], mc_rec_aaogen_readers[0], mc_gen_aaogen_readers[0]);
     // }
 
-    Call the plotting function for the pi0 mass (optional)
+    // Call the plotting function for the pi0 mass (optional)
     plot_pi0_mass(eppi0_readers[0], eppi0_readers[1], eppi0_readers[2],
                   mc_rec_aaogen_readers[0], mc_rec_aaogen_readers[1], mc_rec_aaogen_readers[2], "output");
 
