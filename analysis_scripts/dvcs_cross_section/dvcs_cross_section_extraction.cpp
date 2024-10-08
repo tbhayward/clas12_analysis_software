@@ -233,7 +233,7 @@ int main(int argc, char* argv[]) {
     //     plot_dvcs_data_mc_comparison(output_dir, "dvcs", "Fa18 Out", xB_bin, bin_boundaries, data_readers[1], mc_gen_dvcsgen_readers[1], mc_rec_dvcsgen_readers[1]);
     // }
     for (int xB_bin = 0; xB_bin < 6; ++xB_bin) {
-        plot_dvcs_data_mc_comparison(output_dir, "eppi0", "Fa18 Out", xB_bin, bin_boundaries, eppi0_readers[1], mc_rec_aaogen_readers[1], mc_gen_aaogen_readers[1]);
+        plot_dvcs_data_mc_comparison(output_dir, "eppi0", "Fa18 Out", xB_bin, bin_boundaries, eppi0_readers[0], mc_rec_aaogen_readers[0], mc_gen_aaogen_readers[0]);
     }
 
     // Call the plotting function for the pi0 mass (optional)
