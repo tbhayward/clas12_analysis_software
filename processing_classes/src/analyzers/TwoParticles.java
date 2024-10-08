@@ -52,7 +52,6 @@ public class TwoParticles {
 
     protected int RICH_pid;
     protected double chi2pid, beta, RQ_prob, el_prob, pi_prob, k_prob, pr_prob;
-    
 
     public static boolean channel_test(TwoParticles variables) {
         if (variables.helicity == 0 && variables.runnum != 11) {
@@ -83,7 +82,6 @@ public class TwoParticles {
         }
         return -1;
     }
-    
 
     public TwoParticles(DataEvent event, PhysicsEvent recEvent, int pPID, int pIndex, double Eb) {
         // provide the PDG PID of the two hadrons
@@ -275,13 +273,12 @@ public class TwoParticles {
         xF = 2 * (lv_p_gN.vect().dot(lv_q_gN.vect())) / (lv_q_gN.vect().mag() * W);
 
         zeta = lv_p_gN.e() / lv_target_gN.e();
-        
-        
+
 //        double xi2 = kinematic_variables.Lorentz_vector_inner_product(lv_p_gN, lv_q_gN)
 //                / kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
         LightConeKinematics lck = new LightConeKinematics();
         xi = lck.xi_h(lv_p_gN, lv_q_gN, lv_target_gN);
-    
+
         p_gN_pz = lv_p_gN.vect().dot(lv_q_gN.vect()) / lv_q_gN.vect().mag();
         p_Breit_pz = lv_p_Breit.vect().dot(lv_q_Breit.vect()) / lv_q_Breit.vect().mag();
 
