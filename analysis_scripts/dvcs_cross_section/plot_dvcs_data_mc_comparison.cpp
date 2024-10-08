@@ -230,7 +230,15 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
 
     // Normalize histograms and plot in each subplot
     for (int idx = 0; idx < n_Q2t_bins; ++idx) {
-        canvas->cd(idx + 1);
+        TPad* pad = (TPad*)canvas->cd(idx + 1);  // Get the current pad (subplot)
+    
+        // Set the margins for the subplot (adjust these values as needed)
+        pad->SetLeftMargin(0.15);   // Add space to the left
+        pad->SetBottomMargin(0.15); // Add space below
+
+        TH1D* h_data = h_data_histograms[idx];
+        TH1D* h_mc_gen = h_mc_gen_histograms[idx];
+        TH1D* h_mc_rec = h_mc_rec_histograms[idx];
 
         TH1D* h_data = h_data_histograms[idx];
         TH1D* h_mc_gen = h_mc_gen_histograms[idx];
