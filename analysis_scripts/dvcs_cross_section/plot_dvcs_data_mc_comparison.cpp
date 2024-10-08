@@ -148,7 +148,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, int xB_bin, con
     fill_histograms(mc_rec_reader, h_mc_rec_histograms, bin_boundaries, relevant_bins, phi_mc_rec, xB_mc_rec, Q2_mc_rec, t1_mc_rec, open_angle_ep2_mc_rec, theta_neutral_neutral_mc_rec, Emiss2_mc_rec, Mx2_1_mc_rec, pTmiss_mc_rec, false);
 
     // Normalize histograms and plot in each subplot
-    histogram_idx = 0;
+    int histogram_idx = 0;
     for (int subplot_idx = 1; subplot_idx <= n_Q2t_bins; ++subplot_idx) {
         canvas->cd(subplot_idx);
 
