@@ -81,12 +81,27 @@ public static void main(String[] args) {
 	double Emiss2, theta_pi0_pi0, pTmiss;
 
 	// load my kinematic fitter/PID
-	// GenericKinematicFitter fitter = new analysis_fitter(10.6041); 
-	GenericKinematicFitter fitter = new monte_carlo_fitter(10.6041);
-	// GenericKinematicFitter fitter = new event_builder_fitter(10.6041);  
-	
-	// set filter for final states
-	EventFilter filter = new EventFilter("11:2212:111:22:22:Xn");
+	// Initialize the fitter
+	GenericKinematicFitter fitter;
+
+	// Uncomment the desired fitter
+	// fitter = new analysis_fitter(10.6041); 
+	fitter = new monte_carlo_fitter(10.6041);
+	// fitter = new event_builder_fitter(10.6041);  
+
+	// Set filter for final states based on fitter type
+	EventFilter filter;
+
+	if (fitter instanceof analysis_fitter) {
+	    // Use filter with 111 for analysis fitter
+	    filter = new EventFilter("11:2212:111:22:22:Xn");
+	} else if (fitter instanceof monte_carlo_fitter) {
+	    // Use filter without 111 for monte_carlo_fitter
+	    filter = new EventFilter("11:2212:22:22:Xn");
+	} else {
+	    // Default filter or another fitter type
+	    filter = new EventFilter("11:2212:111:22:22:Xn");
+	}
 	
 	// setup QA database
 	QADB qa = new QADB();
