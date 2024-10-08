@@ -105,7 +105,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir, const std::stri
         const auto& bin = bin_boundaries[relevant_bins[idx]];
 
         // Update title to use the analysisType and topology
-        std::string title = Form("%s, %s: x_{B} avg: %.2f, Q^{2} avg: %.2f, -t avg: %.2f", 
+        std::string title = Form("%s; x_{B} avg: %.2f, Q^{2} avg: %.2f, -t avg: %.2f", 
                                  analysisType.c_str(), 
                                  bin.xB_avg, bin.Q2_avg, std::abs(bin.t_avg));
 
