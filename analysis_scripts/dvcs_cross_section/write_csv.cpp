@@ -28,16 +28,16 @@ void write_csv(const std::string& filename, const std::vector<UnfoldingData>& un
                  << data.t_min << "," << data.t_max << "," << data.t_avg << ","
                  << data.phi_min[i] << "," << data.phi_max[i] << ",";
 
-            // For each period, write raw yields, acceptance, and unfolded yields
+            // Write data for each period (Fa18Inb, Fa18Out, Sp19Inb)
             for (int period = 0; period < 3; ++period) {
+                // Write raw yields for each topology (FD,FD), (CD,FD), (CD,FT), and combined
                 for (size_t topo_idx = 0; topo_idx < 4; ++topo_idx) {
-                    // Directly access the raw yields for each topology and period
-                    file << data.raw_yields[period][topo_idx][i] << ",";
+                    file << data.raw_yields[period][topo_idx * data.phi_min.size() + i] << ",";  // Corrected indexing for flat vector structure
                 }
 
-                // Write acceptance and unfolded yield for the current period
-                file << data.acceptance[period][i] << ",";
-                file << data.unfolded_yields[period][i];
+                // Write acceptance and unfolded yield for the current period and phi bin
+                file << data.acceptance[period * data.phi_min.size() + i] << ",";  // Corrected for flat structure
+                file << data.unfolded_yields[period * data.phi_min.size() + i];    // Corrected for flat structure
 
                 // Add a comma for the next period (except for the last one)
                 if (period < 2) {
