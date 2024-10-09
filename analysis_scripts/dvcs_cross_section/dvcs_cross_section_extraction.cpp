@@ -123,7 +123,7 @@ int main(int argc, char* argv[]) {
 
     std::string lee_data_file = "imports/all_bin_v3.csv";  // Path to bin boundaries file
     // Read the bin data
-    std::vector<AllBinData> all_bin_data = read_all_bin_v3(lee_data_file);
+    std::vector<AllBinData> all_bin_data = read_bin_names(lee_data_file);
     // Print out the data for verification
     print_bin_names(all_bin_data);
 
