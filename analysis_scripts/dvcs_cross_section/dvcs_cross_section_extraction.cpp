@@ -250,7 +250,7 @@ int main(int argc, char* argv[]) {
     // Iterate over the xB bins (adjust based on your bin structure)
     for (int xB_bin = 0; xB_bin < num_xB_bins; ++xB_bin) {  
         // Call the plot_unfolding function for each xB_bin (no need to pass topology)
-        plot_unfolding("output", "dvcs", xB_bin, bin_boundaries, data_readers[1]);
+        plot_unfolding("output", "dvcs", xB_bin, bin_boundaries, data_readers[1], mc_gen_dvcsgen_readers[1], mc_rec_dvcsgen_readers[1]);
     }
 
     // // Call the plotting function for the pi0 mass (optional)
