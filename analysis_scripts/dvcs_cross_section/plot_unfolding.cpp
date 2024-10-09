@@ -64,8 +64,8 @@ void plot_unfolding(const std::string& output_dir,
         for (int idx = 0; idx < n_Q2t_bins; ++idx) {
             const auto& bin = bin_boundaries[relevant_bins[idx]];
 
-            // Update title to include the analysisType, topology, and averages
-            std::string title = Form("%s, %s: x_{B} avg: %.2f, Q^{2} avg: %.2f, -t avg: %.2f", 
+            // Update title to use <x_B>, <Q²>, and <-t> to indicate averages
+            std::string title = Form("%s, %s: <x_{B}>: %.2f, <Q^{2}>: %.2f, <-t>: %.2f", 
                                      analysisType.c_str(), topologies[topo_idx].c_str(),
                                      bin.xB_avg, bin.Q2_avg, std::abs(bin.t_avg));
 
@@ -124,7 +124,6 @@ void plot_unfolding(const std::string& output_dir,
 
                     // Fill the data histogram
                     h_data_histograms[idx]->Fill(phi_deg);
-                    break;
                 }
             }
         }
