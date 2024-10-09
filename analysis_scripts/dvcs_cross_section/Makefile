@@ -8,7 +8,7 @@ LFLAGS = $(ROOTLIBS) -lMinuit -lstdc++fs  # Add -lstdc++fs for filesystem
 TARGET = dvcs_cross_section_extraction
 
 # Source files
-SRC = dvcs_cross_section_extraction.cpp determine_exclusivity.cpp histConfigs.cpp formatLabelName.cpp create_directories.cpp kinematic_cuts.cpp plot_pi0_mass.cpp bin_boundaries.cpp plot_dvcs_data_mc_comparison.cpp all_bin_data.cpp
+SRC = dvcs_cross_section_extraction.cpp determine_exclusivity.cpp histConfigs.cpp formatLabelName.cpp create_directories.cpp kinematic_cuts.cpp plot_pi0_mass.cpp bin_boundaries.cpp plot_dvcs_data_mc_comparison.cpp all_bin_data.cpp plot_yield_comparison.cpp plot_unfolding.cpp
 
 # Object files
 OBJ = $(SRC:.cpp=.o)

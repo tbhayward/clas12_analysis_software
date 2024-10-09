@@ -15,6 +15,11 @@ void create_directories(const std::string& base_output_dir) {
     std::string pi0_mass_dir = base_output_dir + "/pi0_mass";
     std::string data_mc_comparison_dir = base_output_dir + "/data_mc_comparison/dvcs";
 
+    // Additional directories for the unfolding plots
+    std::string unfolded_dir = base_output_dir + "/unfolded";
+    std::string unfolded_dvcs_dir = unfolded_dir + "/dvcs";
+    std::string unfolded_eppi0_dir = unfolded_dir + "/eppi0";
+
     // Check and create the directories if they don't exist
     if (!fs::exists(base_output_dir)) {
         if (fs::create_directories(base_output_dir)) {
@@ -61,6 +66,31 @@ void create_directories(const std::string& base_output_dir) {
             std::cout << "Created directory: " << data_mc_comparison_dir << std::endl;
         } else {
             std::cerr << "Error: Failed to create data_mc_comparison/dvcs directory: " << data_mc_comparison_dir << std::endl;
+        }
+    }
+
+    // Create directories for unfolded plots
+    if (!fs::exists(unfolded_dir)) {
+        if (fs::create_directories(unfolded_dir)) {
+            std::cout << "Created directory: " << unfolded_dir << std::endl;
+        } else {
+            std::cerr << "Error: Failed to create unfolded directory: " << unfolded_dir << std::endl;
+        }
+    }
+
+    if (!fs::exists(unfolded_dvcs_dir)) {
+        if (fs::create_directories(unfolded_dvcs_dir)) {
+            std::cout << "Created directory: " << unfolded_dvcs_dir << std::endl;
+        } else {
+            std::cerr << "Error: Failed to create unfolded/dvcs directory: " << unfolded_dvcs_dir << std::endl;
+        }
+    }
+
+    if (!fs::exists(unfolded_eppi0_dir)) {
+        if (fs::create_directories(unfolded_eppi0_dir)) {
+            std::cout << "Created directory: " << unfolded_eppi0_dir << std::endl;
+        } else {
+            std::cerr << "Error: Failed to create unfolded/eppi0 directory: " << unfolded_eppi0_dir << std::endl;
         }
     }
 }

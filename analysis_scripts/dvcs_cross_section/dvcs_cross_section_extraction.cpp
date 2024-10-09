@@ -19,6 +19,7 @@
 #include "plot_dvcs_data_mc_comparison.h"
 #include "bin_boundaries.h" 
 #include "all_bin_data.h"
+#include "plot_yield_comparison.h"
 
 // Namespace declaration
 using namespace std;
@@ -244,6 +245,12 @@ int main(int argc, char* argv[]) {
     // for (int xB_bin = 0; xB_bin < 2; ++xB_bin) {
     //     plot_dvcs_data_mc_comparison(output_dir, "eppi0", "Fa18 Inb", xB_bin, bin_boundaries, eppi0_readers[0], mc_gen_aaogen_readers[0], mc_rec_aaogen_readers[0]);
     // }
+
+    // Iterate over the xB bins (adjust based on your bin structure)
+    for (int xB_bin = 1; xB_bin <= num_xB_bins; ++xB_bin) {  // Assuming xB bins from 1 to 5
+        // Call the plot_unfolding function for each xB_bin
+        plot_unfolding(output_dir, "dvcs", "(CD,FT)", xB_bin, bin_boundaries, data_reader);
+    }
 
     // // Call the plotting function for the pi0 mass (optional)
     // plot_pi0_mass(eppi0_readers[0], eppi0_readers[1], eppi0_readers[2],
