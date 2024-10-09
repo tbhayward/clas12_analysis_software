@@ -24,13 +24,6 @@ double closest_lower_power_of_ten(double value) {
     return std::pow(10, std::floor(std::log10(value)));
 }
 
-// Find the next perfect square greater than or equal to the given number
-int next_perfect_square(int n) {
-    int square_root = std::ceil(std::sqrt(n));
-    return square_root * square_root;
-}
-
-
 void plot_dvcs_data_mc_comparison(const std::string& output_dir, 
                                   const std::string& analysisType, 
                                   const std::string& dataset, 

@@ -11,4 +11,7 @@ std::string clean_bin_label(const std::string& label);
 // Function to precompute relevant bins based on xB_bin
 std::vector<int> precompute_relevant_bins(int xB_bin, const std::vector<BinBoundary>& bin_boundaries);
 
+// Find the next perfect square greater than or equal to the given number
+int next_perfect_square(int n);
+
 #endif // BIN_HELPERS_H
