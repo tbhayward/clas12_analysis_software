@@ -127,7 +127,7 @@ int main(int argc, char* argv[]) {
     // Read the bin data
     // Use std::vector<std::string> for bin names, not AllBinData
     std::vector<AllBinData> all_bin_data = read_bin_data(lee_data_file);
-    print_bin_data(all_bin_data);
+    // print_bin_data(all_bin_data);
 
     // Calculate the number of unique xB bins
     int num_xB_bins = count_unique_xB_bins(bin_boundaries);
@@ -250,7 +250,7 @@ int main(int argc, char* argv[]) {
     // Iterate over the xB bins (adjust based on your bin structure)
     for (int xB_bin = 1; xB_bin <= num_xB_bins; ++xB_bin) {  // Assuming xB bins from 1 to 5
         // Call the plot_unfolding function for each xB_bin
-        plot_unfolding(output_dir, "dvcs", "(CD,FT)", xB_bin, bin_boundaries, data_readers[1]);
+        plot_unfolding("output", "dvcs", "(CD,FT)", xB_bin, bin_boundaries, data_readers[1]);
     }
 
     // // Call the plotting function for the pi0 mass (optional)
