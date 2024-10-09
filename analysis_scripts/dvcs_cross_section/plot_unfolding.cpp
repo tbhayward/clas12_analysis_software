@@ -32,33 +32,7 @@ void plot_unfolding(const std::string& output_dir,
     int n_Q2t_bins = relevant_bins.size();
     std::cout << "Current xB_bin = " << xB_bin << ", Number of Q2t bins: " << n_Q2t_bins << std::endl;
 
-    // Adjust canvas size
-    const int base_canvas_width = 1200;
-    const int base_canvas_height = 800;
-    int canvas_width = static_cast<int>(1.5 * base_canvas_width);
-    int canvas_height = static_cast<int>(1.5 * base_canvas_height);
-
-    // For certain xB bins (3 and 4), we use a fixed 6x5 layout, otherwise use next perfect square logic
-    int n_subplots;
-    int n_columns;
-    int n_rows;
-
-    if (xB_bin == 3 || xB_bin == 4) {
-        n_subplots = 30;
-        n_columns = 5;
-        n_rows = 6;
-    } else {
-        n_subplots = next_perfect_square(n_Q2t_bins);
-        n_columns = std::sqrt(n_subplots);
-        n_rows = std::ceil(static_cast<double>(n_Q2t_bins) / n_columns);
-    }
-
-    TCanvas* canvas = new TCanvas("c1", "Unfolded Distributions", canvas_width, canvas_height);
-    canvas->Divide(n_columns, n_rows);
-
-    gStyle->SetOptStat(0);
-
-    // Create a vector of vectors to store histograms for each topology and bin
+    // Create a vector of histograms for each topology
     std::vector<std::vector<TH1D*>> h_data_histograms(topologies.size(), std::vector<TH1D*>(n_Q2t_bins));
 
     // Create histograms for each topology and relevant bin
@@ -117,20 +91,20 @@ void plot_unfolding(const std::string& output_dir,
         for (int idx = 0; idx < n_Q2t_bins; ++idx) {
             const auto& bin = bin_boundaries[relevant_bins[idx]];
 
-            // Apply bin cuts and kinematic cuts, and fill histograms for all topologies
+            // Apply bin cuts and kinematic cuts
             if ((*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
                 *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
                 std::abs(*t1_data) >= bin.t_low && std::abs(*t1_data) <= bin.t_high)) {
 
-                // Loop over topologies
+                // Loop over topologies and fill corresponding histograms
                 for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
                     const std::string& topology = topologies[topo_idx];
 
                     if (((topology == "(FD,FD)" && *detector1_data == 1 && *detector2_data == 1) ||
                          (topology == "(CD,FD)" && *detector1_data == 2 && *detector2_data == 1) ||
-                         (topology == "(CD,FT)" && *detector1_data == 2 && *detector2_data == 0)) &&
+                         (topology == "(CD,FT)" && *detector1_data == 2 && *detector2_data == 0) ) &&
                         apply_kinematic_cuts(*t1_data, *open_angle_ep2_data, **theta_neutral_neutral_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data)) {
-
+                        
                         // Fill the corresponding topology histogram
                         h_data_histograms[topo_idx][idx]->Fill(phi_deg);
                     }
@@ -139,8 +113,13 @@ void plot_unfolding(const std::string& output_dir,
         }
     }
 
-    // Normalize histograms and plot in each subplot for each topology
+    // Create canvases for each topology
     for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
+        // Create a new canvas for the current topology
+        TCanvas* canvas = new TCanvas(Form("c_%zu", topo_idx), "Unfolded Distributions", canvas_width, canvas_height);
+        canvas->Divide(n_columns, n_rows);
+
+        // Normalize histograms and plot in each subplot
         for (int idx = 0; idx < n_Q2t_bins; ++idx) {
             TPad* pad = (TPad*)canvas->cd(idx + 1);  // Get the current pad (subplot)
         
@@ -157,10 +136,10 @@ void plot_unfolding(const std::string& output_dir,
             h_data->SetMaximum(1.35 * max_value);
 
             // Draw histograms
-            h_data->SetMarkerColor(kBlue + topo_idx);  // Different color for each topology
+            h_data->SetMarkerColor(kBlue);  // Color for this topology
             h_data->SetMarkerStyle(20);
-            h_data->SetLineColor(kBlue + topo_idx);
-            h_data->Draw("E1 SAME");
+            h_data->SetLineColor(kBlue);
+            h_data->Draw("E1");
 
             // Add legend
             TLegend* legend = new TLegend(0.575, 0.45, 0.9, 0.75);
@@ -168,19 +147,21 @@ void plot_unfolding(const std::string& output_dir,
             legend->SetTextSize(0.04);
             legend->Draw();
         }
+
+        // Save canvas to the output directory
+        std::string channel_dir = (analysisType == "dvcs") ? "/dvcs" : "/eppi0";
+        std::string filename = output_dir + "/unfolded" + channel_dir + "/unfolded_" + analysisType + "_" + topologies[topo_idx] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
+        canvas->SaveAs(filename.c_str());
+
+        // Clean up the canvas
+        delete canvas;
     }
 
-    // Save canvas to the output directory
-    std::string channel_dir = (analysisType == "dvcs") ? "/dvcs" : "/eppi0";
-    std::string filename = output_dir + "/unfolded" + channel_dir + "/unfolded_" + analysisType + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
-    canvas->SaveAs(filename.c_str());
-
-    // Clean up histograms and canvas
+    // Clean up histograms
     for (auto& topo_histograms : h_data_histograms) {
         for (auto& h : topo_histograms) {
             delete h;
         }
     }
-    delete canvas;
     delete theta_neutral_neutral_data;
 }
