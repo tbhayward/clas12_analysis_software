@@ -23,7 +23,6 @@ void plot_unfolding(const std::string& output_dir,
 
     // List of topologies and combined option
     std::vector<std::string> topologies = {"(FD,FD)", "(CD,FD)", "(CD,FT)", "combined"};
-    // Add this line before the loops for both yields and acceptances
     std::string channel_dir = (analysisType == "dvcs") ? "/dvcs" : "/eppi0";
 
     // Precompute the relevant bins for the xB_bin
@@ -130,7 +129,6 @@ void plot_unfolding(const std::string& output_dir,
 
         for (int idx = 0; idx < n_Q2t_bins; ++idx) {
             const auto& bin = bin_boundaries[relevant_bins[idx]];
-
             if ((*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
                 *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
                 std::abs(*t1_data) >= bin.t_low && std::abs(*t1_data) <= bin.t_high) &&
@@ -206,7 +204,6 @@ void plot_unfolding(const std::string& output_dir,
             h_data_histograms[topo_idx][idx]->Draw("E1");
         }
 
-        std::string channel_dir = (analysisType == "dvcs") ? "/dvcs" : "/eppi0";
         std::string filename_yield = output_dir + "/unfolded" + channel_dir + "/yields/yields_" + analysisType + "_" + topologies[topo_idx] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
         canvas_yield->SaveAs(filename_yield.c_str());
 
@@ -241,4 +238,9 @@ void plot_unfolding(const std::string& output_dir,
     delete theta_neutral_neutral_data;
     delete theta_neutral_neutral_mc_gen;
     delete theta_neutral_neutral_mc_rec;
+
+    // Reset the readers after each iteration
+    data_reader.Restart();
+    mc_gen_reader.Restart();
+    mc_rec_reader.Restart();
 }
