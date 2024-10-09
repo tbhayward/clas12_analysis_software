@@ -6,11 +6,9 @@
 #include <cmath>
 #include <string>
 #include <vector>
-#include <filesystem>
 #include "bin_boundaries.h"
 #include "kinematic_cuts.h"
 #include "bin_helpers.h"
-#include "create_directories.h"
 
 // Constant to convert radians to degrees
 constexpr double RAD_TO_DEG = 180.0 / M_PI;
@@ -38,7 +36,7 @@ void plot_unfolding(const std::string& base_output_dir,
         const std::string& period_name = period_names[period_idx];
 
         // Construct the output directory for this run period
-        std::string output_dir = base_output_dir + "/" + period_name;
+        std::string output_dir = base_output_dir + "/unfolded" + channel_dir + "/" + period_name;
 
         // Use references to access the TTreeReader instances directly from the vectors
         TTreeReader& data_reader = data_readers[period_idx];
@@ -262,7 +260,7 @@ void plot_unfolding(const std::string& base_output_dir,
                 h_data_histograms[topo_idx][idx]->Draw("E1");
             }
 
-            std::string filename_yield = output_dir + "/unfolded" + channel_dir + "/" + period_name + "/yields/yields_" + analysisType + "_" + topologies[topo_idx] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
+            std::string filename_yield = output_dir + "/yields/yields_" + analysisType + "_" + topologies[topo_idx] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
             canvas_yield->SaveAs(filename_yield.c_str());
 
             delete canvas_yield;
@@ -279,7 +277,7 @@ void plot_unfolding(const std::string& base_output_dir,
             h_acceptance_histograms[idx]->Draw("E1");
         }
 
-        std::string filename_acceptance = output_dir + "/unfolded" + channel_dir + "/" + period_name + "/acceptances/acceptances_combined_" + analysisType + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
+        std::string filename_acceptance = output_dir + "/acceptances/acceptances_combined_" + analysisType + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
         canvas_acceptance->SaveAs(filename_acceptance.c_str());
 
         delete canvas_acceptance;
