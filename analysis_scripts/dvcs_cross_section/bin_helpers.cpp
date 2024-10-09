@@ -26,3 +26,9 @@ std::vector<int> precompute_relevant_bins(int xB_bin, const std::vector<BinBound
     }
     return relevant_bins;
 }
+
+// Find the next perfect square greater than or equal to the given number
+int next_perfect_square(int n) {
+    int square_root = std::ceil(std::sqrt(n));
+    return square_root * square_root;
+}
