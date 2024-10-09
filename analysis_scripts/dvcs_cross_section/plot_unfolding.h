@@ -19,8 +19,8 @@ void plot_unfolding(const std::string& output_dir,
                     const std::string& analysisType, 
                     int xB_bin,
                     const std::vector<BinBoundary>& bin_boundaries, 
-                    TTreeReader& data_reader, 
-                    TTreeReader& mc_gen_reader, 
-                    TTreeReader& mc_rec_reader);
+                    const std::vector<TTreeReader>& data_readers,  // Changed to vector of TTreeReader
+                    const std::vector<TTreeReader>& mc_gen_readers,  // Changed to vector of TTreeReader
+                    const std::vector<TTreeReader>& mc_rec_readers);  // Changed to vector of TTreeReader
 
 #endif // PLOT_UNFOLDING_H
