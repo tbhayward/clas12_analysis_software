@@ -260,7 +260,7 @@ void plot_unfolding(const std::string& base_output_dir,
                 h_data_histograms[topo_idx][idx]->Draw("E1");
             }
 
-            std::string filename_yield = output_dir + "/yields/yields_" + analysisType + "_" + period_names[period_idx] "_" + topologies[topo_idx] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
+            std::string filename_yield = output_dir + "/yields/yields_" + analysisType + "_" + period_names[period_idx] + "_" + topologies[topo_idx] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
             canvas_yield->SaveAs(filename_yield.c_str());
 
             delete canvas_yield;
