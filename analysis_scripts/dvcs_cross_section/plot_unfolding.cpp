@@ -230,7 +230,7 @@ void plot_unfolding(const std::string& output_dir,
 
         for (int idx = 0; idx < n_Q2t_bins; ++idx) {
             TPad* pad_yield = (TPad*)canvas_yield->cd(idx + 1);
-            pad_yield->SetLeftMargin(0.15);
+            pad_yield->SetLeftMargin(0.2);
             pad_yield->SetBottomMargin(0.15);
 
             // If this is the combined topology, we need to unfold by dividing data by acceptance
@@ -252,6 +252,11 @@ void plot_unfolding(const std::string& output_dir,
                         h_data_histograms[topo_idx][idx]->SetBinError(bin, 0);
                     }
                 }
+
+                // Get the middle bin and adjust the y-axis range
+                int middle_bin = h_data_histograms[topo_idx][idx]->GetNbinsX() / 2;
+                double middle_bin_value = h_data_histograms[topo_idx][idx]->GetBinContent(middle_bin);
+                h_data_histograms[topo_idx][idx]->GetYaxis()->SetRangeUser(0.5 * middle_bin_value, 1.5 * middle_bin_value);
             }
 
             // Draw the histogram
