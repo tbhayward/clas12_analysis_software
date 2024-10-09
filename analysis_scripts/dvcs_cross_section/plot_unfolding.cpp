@@ -23,6 +23,8 @@ void plot_unfolding(const std::string& output_dir,
 
     // List of topologies and combined option
     std::vector<std::string> topologies = {"(FD,FD)", "(CD,FD)", "(CD,FT)", "combined"};
+    // Add this line before the loops for both yields and acceptances
+    std::string channel_dir = (analysisType == "dvcs") ? "/dvcs" : "/eppi0";
 
     // Precompute the relevant bins for the xB_bin
     std::vector<int> relevant_bins = precompute_relevant_bins(xB_bin, bin_boundaries);
@@ -76,8 +78,8 @@ void plot_unfolding(const std::string& output_dir,
     }
 
     // Readers for necessary branches in all datasets (data, mc_gen, mc_rec)
-    TTreeReaderValue<int> detector1_data(data_Reader, "detector1");
-    TTreeReaderValue<int> detector2_data(data_Reader, "detector2");
+    TTreeReaderValue<int> detector1_data(data_reader, "detector1");
+    TTreeReaderValue<int> detector2_data(data_reader, "detector2");
     TTreeReaderValue<double> phi_data(data_reader, "phi");
     TTreeReaderValue<double> xB_data(data_reader, "x");
     TTreeReaderValue<double> Q2_data(data_reader, "Q2");
