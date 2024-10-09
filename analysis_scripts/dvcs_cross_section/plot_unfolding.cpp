@@ -11,6 +11,8 @@
 #include "bin_helpers.h"
 #include "plot_unfolding.h"
 
+// Constant to convert radians to degrees
+constexpr double RAD_TO_DEG = 180.0 / M_PI;
 
 std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir, 
                                           const std::string& analysisType, 
@@ -256,10 +258,13 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
                     unfolding_data.raw_yields.push_back(raw_yield);
                 }
 
+                // Store acceptance for combined topology (topo_idx == 3)
+                double acceptance_value = h_acceptance_histograms[idx]->GetBinContent(phi_bin);
+                unfolding_data.acceptance.push_back(acceptance_value);
+
                 // Get the unfolded yield for combined topology (topo_idx == 3)
-                if (h_acceptance_histograms[idx]->GetBinContent(phi_bin) > 0) {
-                    double unfolded_yield = h_data_histograms[3][idx]->GetBinContent(phi_bin) /
-                                            h_acceptance_histograms[idx]->GetBinContent(phi_bin);
+                if (acceptance_value > 0) {
+                    double unfolded_yield = h_data_histograms[3][idx]->GetBinContent(phi_bin) / acceptance_value;
                     unfolding_data.unfolded_yields.push_back(unfolded_yield);
                 } else {
                     unfolding_data.unfolded_yields.push_back(0.0);  // Set to 0 if acceptance is 0
