@@ -14,18 +14,6 @@
 // Constant to convert radians to degrees
 constexpr double RAD_TO_DEG = 180.0 / M_PI;
 
-void create_directories(const std::string& base_output_dir) {
-    // Create required directories for unfolded results
-    std::string unfolded_dir = base_output_dir + "/unfolded";
-    std::string unfolded_dvcs_dir = unfolded_dir + "/dvcs";
-    std::string unfolded_eppi0_dir = unfolded_dir + "/eppi0";
-    std::string unfolded_yields_dir = unfolded_dvcs_dir + "/yields";
-    std::string unfolded_acceptances_dir = unfolded_dvcs_dir + "/acceptances";
-
-    std::filesystem::create_directories(unfolded_yields_dir);
-    std::filesystem::create_directories(unfolded_acceptances_dir);
-}
-
 void plot_unfolding(const std::string& output_dir, 
                     const std::string& analysisType, 
                     int xB_bin,
