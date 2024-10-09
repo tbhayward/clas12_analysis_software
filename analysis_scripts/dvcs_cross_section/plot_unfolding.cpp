@@ -19,9 +19,9 @@ void plot_unfolding(const std::string& base_output_dir,
                     const std::string& analysisType, 
                     int xB_bin,
                     const std::vector<BinBoundary>& bin_boundaries, 
-                    const std::vector<TTreeReader>& data_readers, 
-                    const std::vector<TTreeReader>& mc_gen_readers, 
-                    const std::vector<TTreeReader>& mc_rec_readers) {
+                    std::vector<TTreeReader>& data_readers,  // Pass by reference
+                    std::vector<TTreeReader>& mc_gen_readers,  // Pass by reference
+                    std::vector<TTreeReader>& mc_rec_readers) {  // Pass by reference
 
     // Set style to remove stat boxes
     gStyle->SetOptStat(0);
@@ -41,9 +41,10 @@ void plot_unfolding(const std::string& base_output_dir,
         std::string output_dir = base_output_dir + "/" + period_name;
         create_directories(output_dir);  // Call the function with the subdirectories
 
-        TTreeReader data_reader = data_readers[period_idx];
-        TTreeReader mc_gen_reader = mc_gen_readers[period_idx];
-        TTreeReader mc_rec_reader = mc_rec_readers[period_idx];
+        // Use references to access the TTreeReader instances directly from the vectors
+        TTreeReader& data_reader = data_readers[period_idx];
+        TTreeReader& mc_gen_reader = mc_gen_readers[period_idx];
+        TTreeReader& mc_rec_reader = mc_rec_readers[period_idx];
 
         // Precompute the relevant bins for the xB_bin
         std::vector<int> relevant_bins = precompute_relevant_bins(xB_bin, bin_boundaries);
@@ -301,32 +302,5 @@ void plot_unfolding(const std::string& base_output_dir,
         data_reader.Restart();
         mc_gen_reader.Restart();
         mc_rec_reader.Restart();
-    }
-}
-
-// Ensure the necessary directories are created
-void create_directories(const std::string& base_output_dir) {
-    namespace fs = std::filesystem;
-    std::vector<std::string> subdirs = {
-        base_output_dir + "/unfolded/dvcs/yields",
-        base_output_dir + "/unfolded/dvcs/acceptances",
-        base_output_dir + "/unfolded/eppi0/yields",
-        base_output_dir + "/unfolded/eppi0/acceptances",
-        base_output_dir + "/Fa18Inb/unfolded/dvcs/yields",
-        base_output_dir + "/Fa18Inb/unfolded/dvcs/acceptances",
-        base_output_dir + "/Fa18Out/unfolded/dvcs/yields",
-        base_output_dir + "/Fa18Out/unfolded/dvcs/acceptances",
-        base_output_dir + "/Sp19Inb/unfolded/dvcs/yields",
-        base_output_dir + "/Sp19Inb/unfolded/dvcs/acceptances"
-    };
-
-    for (const auto& dir : subdirs) {
-        if (!fs::exists(dir)) {
-            if (fs::create_directories(dir)) {
-                std::cout << "Created directory: " << dir << std::endl;
-            } else {
-                std::cerr << "Error: Failed to create directory: " << dir << std::endl;
-            }
-        }
     }
 }
