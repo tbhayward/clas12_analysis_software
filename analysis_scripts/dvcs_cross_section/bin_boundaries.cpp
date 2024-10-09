@@ -27,9 +27,10 @@ std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
         std::string token;
         BinBoundary bin;
 
-        bin.bin_number = sequential_bin_number++;  // Assign bin number sequentially
+        // Assign bin number sequentially (this is an integer)
+        bin.bin_number = sequential_bin_number++;
 
-        // Second column: bin name (read it)
+        // Second column: bin name (read it as a string)
         std::getline(ss, token, '\t');
         bin.bin_label = token;
 
