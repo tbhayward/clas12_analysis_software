@@ -26,8 +26,9 @@ std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
         std::string token;
         BinBoundary bin;
 
-        // First column: bin number (skip it)
-        std::getline(ss, token, '\t');  // Skip bin number
+        // First column: bin number
+        std::getline(ss, token, '\t');
+        bin.bin_number = std::stoi(token);
 
         // Second column: bin name (read it)
         std::getline(ss, token, '\t');
@@ -79,29 +80,6 @@ std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
         bin_boundaries.push_back(bin);
     }
 
-    // // Output test to verify
-    // for (const auto& bin : bin_boundaries) {
-    //     std::cout << "Bin: " << bin.bin_label
-    //               << " xB [" << bin.xB_low << ", " << bin.xB_high << "]"
-    //               << " Q2 [" << bin.Q2_low << ", " << bin.Q2_high << "]"
-    //               << " t [" << bin.t_low << ", " << bin.t_high << "]"
-    //               << std::endl;
-    // }
-
     file.close();
     return bin_boundaries;
-}
-
-// Function to map xB, Q2, and t to a bin index
-int map_to_bin(const std::vector<BinBoundary>& bin_boundaries, double xB, double Q2, double t) {
-    for (size_t i = 0; i < bin_boundaries.size(); ++i) {
-        const BinBoundary& bin = bin_boundaries[i];
-
-        if (xB >= bin.xB_low && xB < bin.xB_high &&
-            Q2 >= bin.Q2_low && Q2 < bin.Q2_high &&
-            t >= bin.t_low && t < bin.t_high) {
-            return static_cast<int>(i);
-        }
-    }
-    return -1;  // Return -1 if the bin is not found
 }
