@@ -277,7 +277,7 @@ void plot_unfolding(const std::string& base_output_dir,
             h_acceptance_histograms[idx]->Draw("E1");
         }
 
-        std::string filename_acceptance = output_dir + "/acceptances/acceptances_combined_" + analysisType + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
+        std::string filename_acceptance = output_dir + "/acceptances/acceptances_combined_" + analysisType + "_" + period_names[period_idx] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
         canvas_acceptance->SaveAs(filename_acceptance.c_str());
 
         delete canvas_acceptance;
