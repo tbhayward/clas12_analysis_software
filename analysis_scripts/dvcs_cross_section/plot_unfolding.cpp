@@ -11,9 +11,6 @@
 #include "bin_helpers.h"
 #include "plot_unfolding.h"
 
-// Constant to convert radians to degrees
-constexpr double RAD_TO_DEG = 180.0 / M_PI;
-
 std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir, 
                                           const std::string& analysisType, 
                                           int xB_bin,
