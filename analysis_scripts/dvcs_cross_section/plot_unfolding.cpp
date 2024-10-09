@@ -256,7 +256,7 @@ void plot_unfolding(const std::string& output_dir,
                 // Get the middle bin and adjust the y-axis range
                 int middle_bin = h_data_histograms[topo_idx][idx]->GetNbinsX() / 2;
                 double middle_bin_value = h_data_histograms[topo_idx][idx]->GetBinContent(middle_bin);
-                h_data_histograms[topo_idx][idx]->GetYaxis()->SetRangeUser(0.5 * middle_bin_value, 1.5 * middle_bin_value);
+                h_data_histograms[topo_idx][idx]->GetYaxis()->SetRangeUser(0.0 * middle_bin_value, 2 * middle_bin_value);
             }
 
             // Draw the histogram
