@@ -17,7 +17,8 @@
 #include "plot_pi0_mass.h"
 #include "determine_exclusivity.h"
 #include "plot_dvcs_data_mc_comparison.h"
-#include "bin_boundaries.h"  // Import for binning functions
+#include "bin_boundaries.h" 
+#include "all_bin_data.h"
 
 // Namespace declaration
 using namespace std;
@@ -120,9 +121,9 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    std::string lee_data_file = "imports/all_bin_v3.csv";  // Path to bin boundaries file
     // Read the bin data
-    std::vector<AllBinData> all_bin_data = read_all_bin_v3(filename);
-
+    std::vector<AllBinData> all_bin_data = read_all_bin_v3(lee_data_file);
     // Print out the data for verification
     print_all_bin_data(all_bin_data);
 
