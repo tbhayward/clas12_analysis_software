@@ -11,6 +11,9 @@
 #include "bin_helpers.h"
 #include "plot_unfolding.h"
 
+// Constant to convert radians to degrees
+constexpr double RAD_TO_DEG = 180.0 / M_PI;
+
 std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir, 
                                           const std::string& analysisType, 
                                           int xB_bin,
@@ -252,19 +255,19 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
                 // Get the raw yield for each topology
                 for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
                     int raw_yield = h_data_histograms[topo_idx][idx]->GetBinContent(phi_bin);
-                    unfolding_data.raw_yields.push_back(raw_yield);
+                    unfolding_data.raw_yields[period_idx][topo_idx].push_back(raw_yield); // Update for each period and topology
                 }
 
                 // Store acceptance for combined topology (topo_idx == 3)
                 double acceptance_value = h_acceptance_histograms[idx]->GetBinContent(phi_bin);
-                unfolding_data.acceptance.push_back(acceptance_value);
+                unfolding_data.acceptance[period_idx].push_back(acceptance_value);
 
                 // Get the unfolded yield for combined topology (topo_idx == 3)
                 if (acceptance_value > 0) {
                     double unfolded_yield = h_data_histograms[3][idx]->GetBinContent(phi_bin) / acceptance_value;
-                    unfolding_data.unfolded_yields.push_back(unfolded_yield);
+                    unfolding_data.unfolded_yields[period_idx].push_back(unfolded_yield);
                 } else {
-                    unfolding_data.unfolded_yields.push_back(0.0);  // Set to 0 if acceptance is 0
+                    unfolding_data.unfolded_yields[period_idx].push_back(0.0);  // Set to 0 if acceptance is 0
                 }
             }
 
