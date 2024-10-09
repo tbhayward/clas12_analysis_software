@@ -6,12 +6,25 @@
 #include <cmath>
 #include <string>
 #include <vector>
+#include <filesystem>
 #include "bin_boundaries.h"
 #include "kinematic_cuts.h"
 #include "bin_helpers.h"
 
 // Constant to convert radians to degrees
 constexpr double RAD_TO_DEG = 180.0 / M_PI;
+
+void create_directories(const std::string& base_output_dir) {
+    // Create required directories for unfolded results
+    std::string unfolded_dir = base_output_dir + "/unfolded";
+    std::string unfolded_dvcs_dir = unfolded_dir + "/dvcs";
+    std::string unfolded_eppi0_dir = unfolded_dir + "/eppi0";
+    std::string unfolded_yields_dir = unfolded_dvcs_dir + "/yields";
+    std::string unfolded_acceptances_dir = unfolded_dvcs_dir + "/acceptances";
+
+    std::filesystem::create_directories(unfolded_yields_dir);
+    std::filesystem::create_directories(unfolded_acceptances_dir);
+}
 
 void plot_unfolding(const std::string& output_dir, 
                     const std::string& analysisType, 
@@ -23,6 +36,9 @@ void plot_unfolding(const std::string& output_dir,
 
     // Set style to remove stat boxes
     gStyle->SetOptStat(0);
+
+    // Ensure the necessary directories are created
+    create_directories(output_dir);
 
     // List of topologies and combined option
     std::vector<std::string> topologies = {"(FD,FD)", "(CD,FD)", "(CD,FT)", "combined"};
@@ -63,36 +79,42 @@ void plot_unfolding(const std::string& output_dir,
             h_data_histograms[topo_idx][idx] = new TH1D(Form("h_data_%zu_%d", topo_idx, idx), title.c_str(), 24, 0, 360);
 
             // Set axis labels and format for data histograms
-            h_data_histograms[topo_idx][idx]->GetXaxis()->SetLabelSize(0.06);
-            h_data_histograms[topo_idx][idx]->GetYaxis()->SetLabelSize(0.06);
-            h_data_histograms[topo_idx][idx]->GetXaxis()->SetTitleSize(0.07);
-            h_data_histograms[topo_idx][idx]->GetYaxis()->SetTitleSize(0.07);
+            h_data_histograms[topo_idx][idx]->GetXaxis()->SetLabelSize(0.05);
+            h_data_histograms[topo_idx][idx]->GetYaxis()->SetLabelSize(0.05);
+            h_data_histograms[topo_idx][idx]->GetXaxis()->SetTitleSize(0.06);
+            h_data_histograms[topo_idx][idx]->GetYaxis()->SetTitleSize(0.06);
             h_data_histograms[topo_idx][idx]->GetXaxis()->SetTitle("#phi");
-            h_data_histograms[topo_idx][idx]->GetYaxis()->SetTitle("Unfolded Yield");
+
+            // Set Y-axis title based on whether it's a "Raw Yield" or "Unfolded Yield"
+            if (topo_idx == 3) {
+                h_data_histograms[topo_idx][idx]->GetYaxis()->SetTitle("Unfolded Yield");
+            } else {
+                h_data_histograms[topo_idx][idx]->GetYaxis()->SetTitle("Raw Yield");
+            }
 
             // Set markers and draw vertical error bars without horizontal error bars
             h_data_histograms[topo_idx][idx]->SetMarkerStyle(20);
-            h_data_histograms[topo_idx][idx]->SetMarkerSize(1.25);  // Increased marker size to 1.2
+            h_data_histograms[topo_idx][idx]->SetMarkerSize(1.2);
             h_data_histograms[topo_idx][idx]->SetDrawOption("P E1");  // 'P' for points, 'E1' for vertical error bars only
 
             // Create histograms for MC and acceptance if it's the combined histogram
-            if (topo_idx == 3) {  // Combined histograms
+            if (topo_idx == 3) {
                 h_mc_gen_histograms[idx] = new TH1D(Form("h_mc_gen_combined_%d", idx), title.c_str(), 24, 0, 360);
                 h_mc_rec_histograms[idx] = new TH1D(Form("h_mc_rec_combined_%d", idx), title.c_str(), 24, 0, 360);
                 h_acceptance_histograms[idx] = new TH1D(Form("h_acceptance_combined_%d", idx), title.c_str(), 24, 0, 360);
 
                 // Set axis labels and format for acceptance histograms
-                h_acceptance_histograms[idx]->GetXaxis()->SetLabelSize(0.06);
-                h_acceptance_histograms[idx]->GetYaxis()->SetLabelSize(0.06);
-                h_acceptance_histograms[idx]->GetXaxis()->SetTitleSize(0.07);
-                h_acceptance_histograms[idx]->GetYaxis()->SetTitleSize(0.07);
+                h_acceptance_histograms[idx]->GetXaxis()->SetLabelSize(0.05);
+                h_acceptance_histograms[idx]->GetYaxis()->SetLabelSize(0.05);
+                h_acceptance_histograms[idx]->GetXaxis()->SetTitleSize(0.06);
+                h_acceptance_histograms[idx]->GetYaxis()->SetTitleSize(0.06);
                 h_acceptance_histograms[idx]->GetXaxis()->SetTitle("#phi");
                 h_acceptance_histograms[idx]->GetYaxis()->SetTitle("Acceptance");
 
                 // Set markers and draw vertical error bars without horizontal error bars for acceptance histograms
                 h_acceptance_histograms[idx]->SetMarkerStyle(20);
-                h_acceptance_histograms[idx]->SetMarkerSize(1.25);  // Increased marker size to 1.2
-                h_acceptance_histograms[idx]->SetDrawOption("P E1");  // 'P' for points, 'E1' for vertical error bars only
+                h_acceptance_histograms[idx]->SetMarkerSize(1.2);
+                h_acceptance_histograms[idx]->SetDrawOption("P E1");
             }
         }
     }
@@ -214,7 +236,7 @@ void plot_unfolding(const std::string& output_dir,
 
     // Plot and save histograms (data divided by acceptance for combined)
     for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
-        TCanvas* canvas_yield = new TCanvas(Form("c_yield_%zu", topo_idx), "Unfolded Yields", canvas_width, canvas_height);
+        TCanvas* canvas_yield = new TCanvas(Form("c_yield_%zu", topo_idx), "Yields", canvas_width, canvas_height);
         canvas_yield->Divide(n_columns, n_rows);
 
         for (int idx = 0; idx < n_Q2t_bins; ++idx) {
@@ -252,6 +274,22 @@ void plot_unfolding(const std::string& output_dir,
 
         delete canvas_yield;
     }
+
+    // Plot and save acceptance for combined only
+    TCanvas* canvas_acceptance = new TCanvas("c_acceptance_combined", "Acceptance Combined", canvas_width, canvas_height);
+    canvas_acceptance->Divide(n_columns, n_rows);
+
+    for (int idx = 0; idx < n_Q2t_bins; ++idx) {
+        TPad* pad_acceptance = (TPad*)canvas_acceptance->cd(idx + 1);
+        pad_acceptance->SetLeftMargin(0.20);
+        pad_acceptance->SetBottomMargin(0.15);
+        h_acceptance_histograms[idx]->Draw("E1");
+    }
+
+    std::string filename_acceptance = output_dir + "/unfolded" + channel_dir + "/acceptances/acceptances_combined_" + analysisType + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
+    canvas_acceptance->SaveAs(filename_acceptance.c_str());
+
+    delete canvas_acceptance;
 
     // Clean up histograms
     for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
