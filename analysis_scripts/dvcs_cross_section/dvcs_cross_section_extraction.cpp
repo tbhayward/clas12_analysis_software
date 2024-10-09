@@ -21,6 +21,7 @@
 #include "all_bin_data.h"
 #include "plot_yield_comparison.h"
 #include "plot_unfolding.h"
+#include "write_csv.h"
 
 // Namespace declaration
 using namespace std;
