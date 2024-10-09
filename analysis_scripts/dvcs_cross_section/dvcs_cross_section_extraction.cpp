@@ -123,9 +123,10 @@ int main(int argc, char* argv[]) {
 
     std::string lee_data_file = "imports/all_bin_v3.csv";  // Path to bin boundaries file
     // Read the bin data
-    std::vector<AllBinData> all_bin_data = read_bin_names(lee_data_file);
-    // Print out the data for verification
-    print_bin_names(all_bin_data);
+    // Use std::vector<std::string> for bin names, not AllBinData
+    std::vector<std::string> all_bin_names = read_bin_names(lee_data_file);
+    // Print out the bin names for debugging
+    print_bin_names(all_bin_names);
 
     // Calculate the number of unique xB bins
     int num_xB_bins = count_unique_xB_bins(bin_boundaries);
