@@ -20,6 +20,20 @@ struct AllBinData {
     double phi_min;
     double phi_max;
     double phi_avg;
+
+    // Yields
+    int yield_epg_FD_FD_inb;
+    int yield_epg_CD_FD_inb;
+    int yield_epg_CD_FT_inb;
+    int yield_epg_FD_FD_out;
+    int yield_epg_CD_FD_out;
+    int yield_epg_CD_FT_out;
+    int yield_eppi0_FD_FD_inb;
+    int yield_eppi0_CD_FD_inb;
+    int yield_eppi0_CD_FT_inb;
+    int yield_eppi0_FD_FD_out;
+    int yield_eppi0_CD_FD_out;
+    int yield_eppi0_CD_FT_out;
 };
 
 // Function to read the all_bin_v3.csv file

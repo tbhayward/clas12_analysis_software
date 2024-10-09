@@ -83,7 +83,49 @@ std::vector<AllBinData> read_bin_data(const std::string& filename) {
         std::getline(ss, token, ',');
         bin.phi_avg = std::stod(token);
 
-        // Round all values to 4 decimal places
+        // Skip the next few columns until we reach the yields (starting from 22nd column)
+        for (int i = 0; i < 7; ++i) {
+            std::getline(ss, token, ',');
+        }
+
+        // Read the yield data (22nd to 33rd columns)
+        std::getline(ss, token, ',');
+        bin.yield_epg_FD_FD_inb = std::stoi(token);
+
+        std::getline(ss, token, ',');
+        bin.yield_epg_CD_FD_inb = std::stoi(token);
+
+        std::getline(ss, token, ',');
+        bin.yield_epg_CD_FT_inb = std::stoi(token);
+
+        std::getline(ss, token, ',');
+        bin.yield_epg_FD_FD_out = std::stoi(token);
+
+        std::getline(ss, token, ',');
+        bin.yield_epg_CD_FD_out = std::stoi(token);
+
+        std::getline(ss, token, ',');
+        bin.yield_epg_CD_FT_out = std::stoi(token);
+
+        std::getline(ss, token, ',');
+        bin.yield_eppi0_FD_FD_inb = std::stoi(token);
+
+        std::getline(ss, token, ',');
+        bin.yield_eppi0_CD_FD_inb = std::stoi(token);
+
+        std::getline(ss, token, ',');
+        bin.yield_eppi0_CD_FT_inb = std::stoi(token);
+
+        std::getline(ss, token, ',');
+        bin.yield_eppi0_FD_FD_out = std::stoi(token);
+
+        std::getline(ss, token, ',');
+        bin.yield_eppi0_CD_FD_out = std::stoi(token);
+
+        std::getline(ss, token, ',');
+        bin.yield_eppi0_CD_FT_out = std::stoi(token);
+
+        // Round all relevant values to 4 decimal places
         bin.xB_min = std::round(bin.xB_min * 10000) / 10000;
         bin.xB_max = std::round(bin.xB_max * 10000) / 10000;
         bin.xB_avg = std::round(bin.xB_avg * 10000) / 10000;
@@ -118,6 +160,10 @@ void print_bin_data(const std::vector<AllBinData>& all_bin_data) {
                   << ", t Avg: " << bin.t_avg
                   << ", Phi Range: [" << bin.phi_min << ", " << bin.phi_max << "]"
                   << ", Phi Avg: " << bin.phi_avg
+                  << ", Yields EPG (Inb): " << bin.yield_epg_FD_FD_inb << ", " << bin.yield_epg_CD_FD_inb << ", " << bin.yield_epg_CD_FT_inb
+                  << ", Yields EPG (Out): " << bin.yield_epg_FD_FD_out << ", " << bin.yield_epg_CD_FD_out << ", " << bin.yield_epg_CD_FT_out
+                  << ", Yields EPPI0 (Inb): " << bin.yield_eppi0_FD_FD_inb << ", " << bin.yield_eppi0_CD_FD_inb << ", " << bin.yield_eppi0_CD_FT_inb
+                  << ", Yields EPPI0 (Out): " << bin.yield_eppi0_FD_FD_out << ", " << bin.yield_eppi0_CD_FD_out << ", " << bin.yield_eppi0_CD_FT_out
                   << std::endl;
     }
 }
