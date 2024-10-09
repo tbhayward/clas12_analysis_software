@@ -20,6 +20,7 @@
 #include "bin_boundaries.h" 
 #include "all_bin_data.h"
 #include "plot_yield_comparison.h"
+#include "plot_unfolding.h"
 
 // Namespace declaration
 using namespace std;
