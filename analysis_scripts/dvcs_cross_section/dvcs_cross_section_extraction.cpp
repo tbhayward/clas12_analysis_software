@@ -259,9 +259,8 @@ int main(int argc, char* argv[]) {
         all_unfolding_data.insert(all_unfolding_data.end(), bin_data.begin(), bin_data.end());
     }
 
-    // After collecting all the unfolding data, write it to a CSV file
-    std::string output_csv_file = "output/unfolding_data.csv";
-    write_csv(output_csv_file, all_unfolding_data);
+    // After collecting all the data, write it to a CSV file
+    write_csv("output/unfolding_data.csv", all_unfolding_data);
 
     // // Call the plotting function for the pi0 mass (optional)
     // plot_pi0_mass(eppi0_readers[0], eppi0_readers[1], eppi0_readers[2],
