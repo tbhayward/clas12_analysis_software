@@ -9,18 +9,18 @@
 #include "bin_boundaries.h"
 #include "kinematic_cuts.h"
 #include "bin_helpers.h"
+#include "plot_unfolding.h"
 
 // Constant to convert radians to degrees
 constexpr double RAD_TO_DEG = 180.0 / M_PI;
 
-void plot_unfolding(const std::string& base_output_dir, 
-                    const std::string& analysisType, 
-                    int xB_bin,
-                    const std::vector<BinBoundary>& bin_boundaries, 
-                    std::vector<TTreeReader>& data_readers,  // Pass by reference
-                    std::vector<TTreeReader>& mc_gen_readers,  // Pass by reference
-                    std::vector<TTreeReader>& mc_rec_readers) {  // Pass by reference
-
+std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir, 
+                                          const std::string& analysisType, 
+                                          int xB_bin,
+                                          const std::vector<BinBoundary>& bin_boundaries, 
+                                          std::vector<TTreeReader>& data_readers,  // Pass by reference
+                                          std::vector<TTreeReader>& mc_gen_readers,  // Pass by reference
+                                          std::vector<TTreeReader>& mc_rec_readers) {  // Pass by reference
     // Set style to remove stat boxes
     gStyle->SetOptStat(0);
 
@@ -30,6 +30,9 @@ void plot_unfolding(const std::string& base_output_dir,
 
     // Vector of run period names
     std::vector<std::string> period_names = {"Fa18Inb", "Fa18Out", "Sp19Inb"};
+
+    // Vector to store all the unfolding data
+    std::vector<UnfoldingData> all_unfolding_data;
 
     // Loop over the run periods (three run periods)
     for (size_t period_idx = 0; period_idx < period_names.size(); ++period_idx) {
@@ -64,7 +67,7 @@ void plot_unfolding(const std::string& base_output_dir,
         std::vector<TH1D*> h_mc_rec_histograms(n_Q2t_bins);
         std::vector<TH1D*> h_acceptance_histograms(n_Q2t_bins);
 
-        // Initialize histograms
+        // Initialize histograms and phi bins
         for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
             for (int idx = 0; idx < n_Q2t_bins; ++idx) {
                 const auto& bin = bin_boundaries[relevant_bins[idx]];
@@ -151,6 +154,8 @@ void plot_unfolding(const std::string& base_output_dir,
 
         // Print before starting loops
         std::cout << "starting data" << std::endl;
+
+        // Loop over the data reader and fill histograms
         while (data_reader.Next()) {
             double phi_deg = *phi_data * RAD_TO_DEG;
 
@@ -178,6 +183,8 @@ void plot_unfolding(const std::string& base_output_dir,
         }
 
         std::cout << "starting gen mc" << std::endl;
+
+        // Loop over the MC generated reader and fill histograms
         while (mc_gen_reader.Next()) {
             double phi_mc_gen_deg = *phi_mc_gen * RAD_TO_DEG;
 
@@ -196,6 +203,8 @@ void plot_unfolding(const std::string& base_output_dir,
         }
 
         std::cout << "starting rec mc" << std::endl;
+
+        // Loop over the MC reconstructed reader and fill histograms
         while (mc_rec_reader.Next()) {
             double phi_mc_rec_deg = *phi_mc_rec * RAD_TO_DEG;
 
@@ -218,6 +227,49 @@ void plot_unfolding(const std::string& base_output_dir,
             if (h_mc_gen_histograms[idx]->Integral() > 0) {
                 h_acceptance_histograms[idx]->Divide(h_mc_rec_histograms[idx], h_mc_gen_histograms[idx], 1, 1, "B");
             }
+        }
+
+        // Gather and store unfolding data
+        for (int idx = 0; idx < n_Q2t_bins; ++idx) {
+            const auto& bin = bin_boundaries[relevant_bins[idx]];
+            UnfoldingData unfolding_data;
+            
+            unfolding_data.bin_number = idx;
+            unfolding_data.xB_min = bin.xB_low;
+            unfolding_data.xB_max = bin.xB_high;
+            unfolding_data.xB_avg = bin.xB_avg;
+            unfolding_data.Q2_min = bin.Q2_low;
+            unfolding_data.Q2_max = bin.Q2_high;
+            unfolding_data.Q2_avg = bin.Q2_avg;
+            unfolding_data.t_min = bin.t_low;
+            unfolding_data.t_max = bin.t_high;
+            unfolding_data.t_avg = bin.t_avg;
+
+            // For each phi bin (24 bins from 0 to 360)
+            for (int phi_bin = 1; phi_bin <= 24; ++phi_bin) {
+                double phi_min = (phi_bin - 1) * 15.0;
+                double phi_max = phi_bin * 15.0;
+                unfolding_data.phi_min.push_back(phi_min);
+                unfolding_data.phi_max.push_back(phi_max);
+
+                // Get the raw yield for each topology
+                for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
+                    int raw_yield = h_data_histograms[topo_idx][idx]->GetBinContent(phi_bin);
+                    unfolding_data.raw_yields.push_back(raw_yield);
+                }
+
+                // Get the unfolded yield for combined topology (topo_idx == 3)
+                if (h_acceptance_histograms[idx]->GetBinContent(phi_bin) > 0) {
+                    double unfolded_yield = h_data_histograms[3][idx]->GetBinContent(phi_bin) /
+                                            h_acceptance_histograms[idx]->GetBinContent(phi_bin);
+                    unfolding_data.unfolded_yields.push_back(unfolded_yield);
+                } else {
+                    unfolding_data.unfolded_yields.push_back(0.0);  // Set to 0 if acceptance is 0
+                }
+            }
+
+            // Add the unfolding data for this bin to the overall results
+            all_unfolding_data.push_back(unfolding_data);
         }
 
         // Plot and save histograms (data divided by acceptance for combined)
@@ -311,4 +363,7 @@ void plot_unfolding(const std::string& base_output_dir,
         mc_gen_reader.Restart();
         mc_rec_reader.Restart();
     }
+
+    // Return all the gathered unfolding data
+    return all_unfolding_data;
 }

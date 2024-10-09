@@ -14,13 +14,28 @@
 // Constant to convert radians to degrees
 constexpr double RAD_TO_DEG = 180.0 / M_PI;
 
+// Struct to hold the unfolding data for each phi bin within an xB-Q2-t bin
+struct UnfoldingData {
+    int bin_number;
+    double xB_min, xB_max, xB_avg;
+    double Q2_min, Q2_max, Q2_avg;
+    double t_min, t_max, t_avg;
+    
+    // Phi bin data (min and max for each bin)
+    std::vector<double> phi_min;  // Lower boundary for each phi bin
+    std::vector<double> phi_max;  // Upper boundary for each phi bin
+
+    std::vector<int> raw_yields;      // Raw yields for each topology (for each phi bin)
+    std::vector<double> unfolded_yields;  // Unfolded yields for each period (for each phi bin)
+};
+
 // Function prototype for plot_unfolding
-void plot_unfolding(const std::string& output_dir, 
-                    const std::string& analysisType, 
-                    int xB_bin,
-                    const std::vector<BinBoundary>& bin_boundaries, 
-                    std::vector<TTreeReader>& data_readers,  // Pass by reference
-                    std::vector<TTreeReader>& mc_gen_readers,  // Pass by reference
-                    std::vector<TTreeReader>& mc_rec_readers);  // Pass by reference
+std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir, 
+                                          const std::string& analysisType, 
+                                          int xB_bin,
+                                          const std::vector<BinBoundary>& bin_boundaries, 
+                                          std::vector<TTreeReader>& data_readers,  // Pass by reference
+                                          std::vector<TTreeReader>& mc_gen_readers,  // Pass by reference
+                                          std::vector<TTreeReader>& mc_rec_readers);  // Pass by reference
 
 #endif // PLOT_UNFOLDING_H
