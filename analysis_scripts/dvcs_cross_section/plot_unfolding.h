@@ -9,7 +9,6 @@
 // Function to plot unfolded distributions and acceptance
 void plot_unfolding(const std::string& output_dir, 
                     const std::string& analysisType, 
-                    const std::string& topology, 
                     int xB_bin,
                     const std::vector<BinBoundary>& bin_boundaries, 
                     TTreeReader& data_reader);
