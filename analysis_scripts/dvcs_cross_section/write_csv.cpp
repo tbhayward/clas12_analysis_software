@@ -34,7 +34,8 @@ void write_csv(const std::string& filename, const std::vector<UnfoldingData>& un
                     // Directly access the raw yields for each topology and period
                     file << data.raw_yields[period][topo_idx][i] << ",";
                 }
-                // Write acceptance and unfolded yield
+
+                // Write acceptance and unfolded yield for the current period
                 file << data.acceptance[period][i] << ",";
                 file << data.unfolded_yields[period][i];
 
