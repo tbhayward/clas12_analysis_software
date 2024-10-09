@@ -31,24 +31,12 @@ void write_csv(const std::string& filename, const std::vector<UnfoldingData>& un
             // For each period, write raw yields, acceptance, and unfolded yields
             for (int period = 0; period < 3; ++period) {
                 for (size_t topo_idx = 0; topo_idx < 4; ++topo_idx) {
-                    // Access the raw yields for each topology and period
-                    if (i < data.raw_yields[period][topo_idx].size()) {
-                        file << data.raw_yields[period][topo_idx][i] << ",";
-                    } else {
-                        std::cerr << "Warning: raw_yields size mismatch" << std::endl;
-                    }
+                    // Directly access the raw yields for each topology and period
+                    file << data.raw_yields[period][topo_idx][i] << ",";
                 }
                 // Write acceptance and unfolded yield
-                if (i < data.acceptance[period].size()) {
-                    file << data.acceptance[period][i] << ",";
-                } else {
-                    std::cerr << "Warning: acceptance size mismatch" << std::endl;
-                }
-                if (i < data.unfolded_yields[period].size()) {
-                    file << data.unfolded_yields[period][i];
-                } else {
-                    std::cerr << "Warning: unfolded_yields size mismatch" << std::endl;
-                }
+                file << data.acceptance[period][i] << ",";
+                file << data.unfolded_yields[period][i];
 
                 // Add a comma for the next period (except for the last one)
                 if (period < 2) {
