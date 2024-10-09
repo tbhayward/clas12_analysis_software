@@ -2,6 +2,16 @@
 #include <fstream>
 #include <iostream>
 
+// Helper function to write a vector to CSV format
+void write_vector_to_csv(std::ofstream& file, const std::vector<double>& vec) {
+    for (size_t i = 0; i < vec.size(); ++i) {
+        file << vec[i];
+        if (i < vec.size() - 1) {
+            file << ",";
+        }
+    }
+}
+
 void write_csv(const std::string& filename, const std::vector<UnfoldingData>& unfolding_data) {
     std::ofstream file(filename);
 
@@ -32,12 +42,12 @@ void write_csv(const std::string& filename, const std::vector<UnfoldingData>& un
             for (int period = 0; period < 3; ++period) {
                 // Write raw yields for each topology (FD,FD), (CD,FD), (CD,FT), and combined
                 for (size_t topo_idx = 0; topo_idx < 4; ++topo_idx) {
-                    file << data.raw_yields[period][topo_idx * data.phi_min.size() + i] << ",";  // Corrected indexing for flat vector structure
+                    file << data.raw_yields[period][topo_idx * data.phi_min.size() + i] << ",";
                 }
 
                 // Write acceptance and unfolded yield for the current period and phi bin
-                file << data.acceptance[period * data.phi_min.size() + i] << ",";  // Corrected for flat structure
-                file << data.unfolded_yields[period * data.phi_min.size() + i];    // Corrected for flat structure
+                file << data.acceptance[period * data.phi_min.size() + i] << ",";
+                file << data.unfolded_yields[period * data.phi_min.size() + i];    // Do not add a trailing comma here
 
                 // Add a comma for the next period (except for the last one)
                 if (period < 2) {
