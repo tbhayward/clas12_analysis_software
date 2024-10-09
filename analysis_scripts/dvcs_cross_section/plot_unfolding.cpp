@@ -39,7 +39,6 @@ void plot_unfolding(const std::string& base_output_dir,
 
         // Construct the output directory for this run period
         std::string output_dir = base_output_dir + "/" + period_name;
-        create_directories(output_dir);  // Call the function with the subdirectories
 
         // Use references to access the TTreeReader instances directly from the vectors
         TTreeReader& data_reader = data_readers[period_idx];
