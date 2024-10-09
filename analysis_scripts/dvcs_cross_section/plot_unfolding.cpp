@@ -21,6 +21,9 @@ void plot_unfolding(const std::string& output_dir,
                     TTreeReader& mc_gen_reader, 
                     TTreeReader& mc_rec_reader) {
 
+    // Set style to remove stat boxes
+    gStyle->SetOptStat(0);
+
     // List of topologies and combined option
     std::vector<std::string> topologies = {"(FD,FD)", "(CD,FD)", "(CD,FT)", "combined"};
     std::string channel_dir = (analysisType == "dvcs") ? "/dvcs" : "/eppi0";
@@ -65,13 +68,28 @@ void plot_unfolding(const std::string& output_dir,
             h_data_histograms[topo_idx][idx]->GetXaxis()->SetTitle("#phi");
             h_data_histograms[topo_idx][idx]->GetYaxis()->SetTitle("Unfolded Yield");
 
+            // Set markers and draw error bars for data
+            h_data_histograms[topo_idx][idx]->SetMarkerStyle(20);
+            h_data_histograms[topo_idx][idx]->SetMarkerSize(1.0);
+            h_data_histograms[topo_idx][idx]->SetDrawOption("E1");
+
             if (topo_idx == 3) {  // Combined histograms
                 h_mc_gen_histograms[idx] = new TH1D(Form("h_mc_gen_combined_%d", idx), "MC Gen Combined", 24, 0, 360);
                 h_mc_rec_histograms[idx] = new TH1D(Form("h_mc_rec_combined_%d", idx), "MC Rec Combined", 24, 0, 360);
                 h_acceptance_histograms[idx] = new TH1D(Form("h_acceptance_combined_%d", idx), "Acceptance Combined", 24, 0, 360);
 
                 // Set axis labels for acceptance histograms
+                h_acceptance_histograms[idx]->GetXaxis()->SetLabelSize(0.05);
+                h_acceptance_histograms[idx]->GetYaxis()->SetLabelSize(0.05);
+                h_acceptance_histograms[idx]->GetXaxis()->SetTitleSize(0.06);
+                h_acceptance_histograms[idx]->GetYaxis()->SetTitleSize(0.06);
+                h_acceptance_histograms[idx]->GetXaxis()->SetTitle("#phi");
                 h_acceptance_histograms[idx]->GetYaxis()->SetTitle("Acceptance");
+
+                // Set markers and draw error bars for acceptance histograms
+                h_acceptance_histograms[idx]->SetMarkerStyle(20);
+                h_acceptance_histograms[idx]->SetMarkerSize(1.0);
+                h_acceptance_histograms[idx]->SetDrawOption("E1");
             }
         }
     }
@@ -120,15 +138,14 @@ void plot_unfolding(const std::string& output_dir,
         theta_neutral_neutral_mc_rec = new TTreeReaderValue<double>(mc_rec_reader, "theta_pi0_pi0");
     }
 
-    // Fill histograms for data and MC
-    std::cout << "Filling histograms for data and MC" << std::endl;
-
-    // Loop over data and apply kinematic cuts
+    // Print before starting loops
+    std::cout << "starting data" << std::endl;
     while (data_reader.Next()) {
         double phi_deg = *phi_data * RAD_TO_DEG;
 
         for (int idx = 0; idx < n_Q2t_bins; ++idx) {
             const auto& bin = bin_boundaries[relevant_bins[idx]];
+
             if ((*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
                 *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
                 std::abs(*t1_data) >= bin.t_low && std::abs(*t1_data) <= bin.t_high) &&
@@ -149,7 +166,7 @@ void plot_unfolding(const std::string& output_dir,
         }
     }
 
-    // Loop over generated MC and apply kinematic cuts
+    std::cout << "starting gen mc" << std::endl;
     while (mc_gen_reader.Next()) {
         double phi_mc_gen_deg = *phi_mc_gen * RAD_TO_DEG;
 
@@ -167,7 +184,7 @@ void plot_unfolding(const std::string& output_dir,
         }
     }
 
-    // Loop over reconstructed MC and apply kinematic cuts
+    std::cout << "starting rec mc" << std::endl;
     while (mc_rec_reader.Next()) {
         double phi_mc_rec_deg = *phi_mc_rec * RAD_TO_DEG;
 
