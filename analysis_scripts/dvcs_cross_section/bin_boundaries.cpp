@@ -14,6 +14,7 @@ std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
 
     std::string line;
     int line_num = 0;
+    int bin_number = 1;  // Start bin number from 1
 
     // Skip first two lines (header and descriptive line)
     while (line_num < 2 && std::getline(file, line)) {
@@ -26,9 +27,7 @@ std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
         std::string token;
         BinBoundary bin;
 
-        // First column: bin number
-        std::getline(ss, token, '\t');
-        bin.bin_number = std::stoi(token);
+        bin.bin_number = bin_number++;  // Assign bin number sequentially
 
         // Second column: bin name (read it)
         std::getline(ss, token, '\t');
