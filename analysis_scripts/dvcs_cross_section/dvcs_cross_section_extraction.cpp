@@ -122,6 +122,9 @@ int main(int argc, char* argv[]) {
         std::cerr << "Error: No bin boundaries read from file." << std::endl;
         return 1;
     }
+    // Calculate the number of unique xB bins
+    int num_xB_bins = count_unique_xB_bins(bin_boundaries);
+    std::cout << num_xB_bins << std::endl;
 
     std::string lee_data_file = "imports/all_bin_v3.csv";  // Path to bin boundaries file
     // Read the bin data
@@ -129,8 +132,6 @@ int main(int argc, char* argv[]) {
     std::vector<AllBinData> all_bin_data = read_bin_data(lee_data_file);
     // print_bin_data(all_bin_data);
 
-    // Calculate the number of unique xB bins
-    int num_xB_bins = count_unique_xB_bins(bin_boundaries);
 
     // Define filenames for each directory (3 periods, 6 files per period)
     std::vector<std::string> data_filenames = {dir1 + "/rga_fa18_inb_epgamma.root", dir1 + "/rga_fa18_out_epgamma.root", dir1 + "/rga_sp19_inb_epgamma.root"};
