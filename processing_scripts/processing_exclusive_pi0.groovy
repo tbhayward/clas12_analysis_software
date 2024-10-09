@@ -263,7 +263,7 @@ public static void main(String[] args) {
 			    	// exclusivity variables
 			    	Emiss2 = variables.Emiss2();
 			    	theta_pi0_pi0 = variables.theta_gamma_gamma();
-			    	// println(theta_pi0_pi0);
+			    	println(theta_pi0_pi0);
 			    	pTmiss = variables.pTmiss();
 
 	                // Use a StringBuilder to append all data in a single call
