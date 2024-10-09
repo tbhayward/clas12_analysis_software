@@ -274,6 +274,17 @@ void plot_unfolding(const std::string& base_output_dir,
             TPad* pad_acceptance = (TPad*)canvas_acceptance->cd(idx + 1);
             pad_acceptance->SetLeftMargin(0.20);
             pad_acceptance->SetBottomMargin(0.15);
+            
+            // Set the axis labels for acceptance histograms
+            h_acceptance_histograms[idx]->GetXaxis()->SetTitle("#phi");
+            h_acceptance_histograms[idx]->GetYaxis()->SetTitle("Acceptance");
+
+            // Set the label sizes to match the yield plots
+            h_acceptance_histograms[idx]->GetXaxis()->SetLabelSize(0.05);  // Same as the yield histograms
+            h_acceptance_histograms[idx]->GetYaxis()->SetLabelSize(0.05);  // Same as the yield histograms
+            h_acceptance_histograms[idx]->GetXaxis()->SetTitleSize(0.06);  // Same as the yield histograms
+            h_acceptance_histograms[idx]->GetYaxis()->SetTitleSize(0.06);  // Same as the yield histograms
+
             h_acceptance_histograms[idx]->Draw("E1");
         }
 
