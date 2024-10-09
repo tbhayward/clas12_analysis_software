@@ -120,6 +120,12 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // Read the bin data
+    std::vector<AllBinData> all_bin_data = read_all_bin_v3(filename);
+
+    // Print out the data for verification
+    print_all_bin_data(all_bin_data);
+
     // Calculate the number of unique xB bins
     int num_xB_bins = count_unique_xB_bins(bin_boundaries);
 
@@ -234,9 +240,9 @@ int main(int argc, char* argv[]) {
     // }
 
     // for (int xB_bin = 0; xB_bin < num_xB_bins; ++xB_bin) {
-    for (int xB_bin = 0; xB_bin < 2; ++xB_bin) {
-        plot_dvcs_data_mc_comparison(output_dir, "eppi0", "Fa18 Inb", xB_bin, bin_boundaries, eppi0_readers[0], mc_gen_aaogen_readers[0], mc_rec_aaogen_readers[0]);
-    }
+    // for (int xB_bin = 0; xB_bin < 2; ++xB_bin) {
+    //     plot_dvcs_data_mc_comparison(output_dir, "eppi0", "Fa18 Inb", xB_bin, bin_boundaries, eppi0_readers[0], mc_gen_aaogen_readers[0], mc_rec_aaogen_readers[0]);
+    // }
 
     // // Call the plotting function for the pi0 mass (optional)
     // plot_pi0_mass(eppi0_readers[0], eppi0_readers[1], eppi0_readers[2],
