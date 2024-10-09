@@ -31,7 +31,7 @@ std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
 
         // Second column: bin name (read it)
         std::getline(ss, token, '\t');
-        bin.bin_label = token;
+        bin.bin_label = token;  // This is a label like "(0, 0, 0)"
 
         try {
             // xB_low (min)
