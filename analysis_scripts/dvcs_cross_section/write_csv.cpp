@@ -1,3 +1,21 @@
+#include <fstream>
+#include <iostream>
+#include <string>
+#include <vector>
+#include <cstddef>  // For size_t
+#include "write_csv.h"
+#include "plot_unfolding.h"  // Assuming UnfoldingData is defined here
+
+// Helper function to write a vector to CSV format
+void write_vector_to_csv(std::ofstream& file, const std::vector<double>& vec) {
+    for (size_t i = 0; i < vec.size(); ++i) {
+        file << vec[i];
+        if (i < vec.size() - 1) {
+            file << ",";
+        }
+    }
+}
+
 void write_csv(const std::string& filename, const std::vector<UnfoldingData>& unfolding_data) {
     std::ofstream file(filename);
 
@@ -31,10 +49,8 @@ void write_csv(const std::string& filename, const std::vector<UnfoldingData>& un
                     file << data.raw_yields[period][topo_idx * data.phi_min.size() + i] << ",";
                 }
 
-                // Write acceptance for the current period
+                // Write acceptance and unfolded yields for the current period
                 write_vector_to_csv(file, data.acceptance[period]);
-
-                // Write unfolded yields for the current period
                 write_vector_to_csv(file, data.unfolded_yields[period]);
 
                 if (period < 2) {
