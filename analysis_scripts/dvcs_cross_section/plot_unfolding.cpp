@@ -7,8 +7,6 @@
 #include <string>
 #include <vector>
 #include "bin_boundaries.h"
-#include <algorithm>
-#include <cctype>
 #include "kinematic_cuts.h"
 #include "bin_helpers.h"
 
@@ -23,8 +21,8 @@ void plot_unfolding(const std::string& output_dir,
                     TTreeReader& mc_gen_reader, 
                     TTreeReader& mc_rec_reader) {
 
-    // List of topologies
-    std::vector<std::string> topologies = {"(FD,FD)", "(CD,FD)", "(CD,FT)"};
+    // List of topologies and combined option
+    std::vector<std::string> topologies = {"(FD,FD)", "(CD,FD)", "(CD,FT)", "combined"};
 
     // Precompute the relevant bins for the xB_bin
     std::vector<int> relevant_bins = precompute_relevant_bins(xB_bin, bin_boundaries);
@@ -38,24 +36,16 @@ void plot_unfolding(const std::string& output_dir,
     int canvas_height = static_cast<int>(1.5 * base_canvas_height);
 
     // Determine number of rows and columns for the canvases
-    int n_columns = 0;
-    int n_rows = 0;
+    int n_columns = (xB_bin == 3 || xB_bin == 4) ? 5 : std::sqrt(next_perfect_square(n_Q2t_bins));
+    int n_rows = std::ceil(static_cast<double>(n_Q2t_bins) / n_columns);
 
-    if (xB_bin == 3 || xB_bin == 4) {
-        n_columns = 5;
-        n_rows = 6;
-    } else {
-        int n_subplots = next_perfect_square(n_Q2t_bins);
-        n_columns = std::sqrt(n_subplots);
-        n_rows = std::ceil(static_cast<double>(n_Q2t_bins) / n_columns);
-    }
-
-    // Create histograms for data, rec MC, gen MC, and acceptance
+    // Create histograms for data, rec MC, gen MC, and acceptance (for combined only)
     std::vector<std::vector<TH1D*>> h_data_histograms(topologies.size(), std::vector<TH1D*>(n_Q2t_bins));
-    std::vector<std::vector<TH1D*>> h_mc_gen_histograms(topologies.size(), std::vector<TH1D*>(n_Q2t_bins));
-    std::vector<std::vector<TH1D*>> h_mc_rec_histograms(topologies.size(), std::vector<TH1D*>(n_Q2t_bins));
-    std::vector<std::vector<TH1D*>> h_acceptance_histograms(topologies.size(), std::vector<TH1D*>(n_Q2t_bins));
+    std::vector<TH1D*> h_mc_gen_histograms(n_Q2t_bins);
+    std::vector<TH1D*> h_mc_rec_histograms(n_Q2t_bins);
+    std::vector<TH1D*> h_acceptance_histograms(n_Q2t_bins);
 
+    // Initialize histograms
     for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
         for (int idx = 0; idx < n_Q2t_bins; ++idx) {
             const auto& bin = bin_boundaries[relevant_bins[idx]];
@@ -65,44 +55,84 @@ void plot_unfolding(const std::string& output_dir,
                                      bin.xB_avg, bin.Q2_avg, std::abs(bin.t_avg));
 
             h_data_histograms[topo_idx][idx] = new TH1D(Form("h_data_%zu_%d", topo_idx, idx), title.c_str(), 24, 0, 360);
-            h_mc_gen_histograms[topo_idx][idx] = new TH1D(Form("h_mc_gen_%zu_%d", topo_idx, idx), "MC Gen", 24, 0, 360);
-            h_mc_rec_histograms[topo_idx][idx] = new TH1D(Form("h_mc_rec_%zu_%d", topo_idx, idx), "MC Rec", 24, 0, 360);
-            h_acceptance_histograms[topo_idx][idx] = new TH1D(Form("h_acceptance_%zu_%d", topo_idx, idx), "Acceptance", 24, 0, 360);
 
-            // Set axis label and title font size
+            // Set axis labels for data histograms
             h_data_histograms[topo_idx][idx]->GetXaxis()->SetLabelSize(0.05);
             h_data_histograms[topo_idx][idx]->GetYaxis()->SetLabelSize(0.05);
             h_data_histograms[topo_idx][idx]->GetXaxis()->SetTitleSize(0.06);
             h_data_histograms[topo_idx][idx]->GetYaxis()->SetTitleSize(0.06);
             h_data_histograms[topo_idx][idx]->GetXaxis()->SetTitle("#phi");
             h_data_histograms[topo_idx][idx]->GetYaxis()->SetTitle("Unfolded Yield");
+
+            if (topo_idx == 3) {  // Combined histograms
+                h_mc_gen_histograms[idx] = new TH1D(Form("h_mc_gen_combined_%d", idx), "MC Gen Combined", 24, 0, 360);
+                h_mc_rec_histograms[idx] = new TH1D(Form("h_mc_rec_combined_%d", idx), "MC Rec Combined", 24, 0, 360);
+                h_acceptance_histograms[idx] = new TH1D(Form("h_acceptance_combined_%d", idx), "Acceptance Combined", 24, 0, 360);
+
+                // Set axis labels for acceptance histograms
+                h_acceptance_histograms[idx]->GetYaxis()->SetTitle("Acceptance");
+            }
         }
     }
 
-    // Restart the reader before looping over data
-    data_reader.Restart();
-    mc_gen_reader.Restart();
-    mc_rec_reader.Restart();
-
-    // Readers for necessary branches (assuming same variables for MC)
+    // Readers for necessary branches in all datasets (data, mc_gen, mc_rec)
     TTreeReaderValue<double> phi_data(data_reader, "phi");
     TTreeReaderValue<double> xB_data(data_reader, "x");
     TTreeReaderValue<double> Q2_data(data_reader, "Q2");
     TTreeReaderValue<double> t1_data(data_reader, "t1");
+    TTreeReaderValue<double> open_angle_ep2_data(data_reader, "open_angle_ep2");
+    TTreeReaderValue<double> Emiss2_data(data_reader, "Emiss2");
+    TTreeReaderValue<double> Mx2_1_data(data_reader, "Mx2_1");
+    TTreeReaderValue<double> pTmiss_data(data_reader, "pTmiss");
 
     TTreeReaderValue<double> phi_mc_gen(mc_gen_reader, "phi");
+    TTreeReaderValue<double> xB_mc_gen(mc_gen_reader, "x");
+    TTreeReaderValue<double> Q2_mc_gen(mc_gen_reader, "Q2");
+    TTreeReaderValue<double> t1_mc_gen(mc_gen_reader, "t1");
+    TTreeReaderValue<double> open_angle_ep2_mc_gen(mc_gen_reader, "open_angle_ep2");
+    TTreeReaderValue<double> Emiss2_mc_gen(mc_gen_reader, "Emiss2");
+    TTreeReaderValue<double> Mx2_1_mc_gen(mc_gen_reader, "Mx2_1");
+    TTreeReaderValue<double> pTmiss_mc_gen(mc_gen_reader, "pTmiss");
+
     TTreeReaderValue<double> phi_mc_rec(mc_rec_reader, "phi");
+    TTreeReaderValue<double> xB_mc_rec(mc_rec_reader, "x");
+    TTreeReaderValue<double> Q2_mc_rec(mc_rec_reader, "Q2");
+    TTreeReaderValue<double> t1_mc_rec(mc_rec_reader, "t1");
+    TTreeReaderValue<double> open_angle_ep2_mc_rec(mc_rec_reader, "open_angle_ep2");
+    TTreeReaderValue<double> Emiss2_mc_rec(mc_rec_reader, "Emiss2");
+    TTreeReaderValue<double> Mx2_1_mc_rec(mc_rec_reader, "Mx2_1");
+    TTreeReaderValue<double> pTmiss_mc_rec(mc_rec_reader, "pTmiss");
+
+    // Handle theta_neutral_neutral based on analysis type (dvcs or eppi0)
+    TTreeReaderValue<double>* theta_neutral_neutral_data;
+    TTreeReaderValue<double>* theta_neutral_neutral_mc_gen;
+    TTreeReaderValue<double>* theta_neutral_neutral_mc_rec;
+    if (analysisType == "dvcs") {
+        theta_neutral_neutral_data = new TTreeReaderValue<double>(data_reader, "theta_gamma_gamma");
+        theta_neutral_neutral_mc_gen = new TTreeReaderValue<double>(mc_gen_reader, "theta_gamma_gamma");
+        theta_neutral_neutral_mc_rec = new TTreeReaderValue<double>(mc_rec_reader, "theta_gamma_gamma");
+    } else if (analysisType == "eppi0") {
+        theta_neutral_neutral_data = new TTreeReaderValue<double>(data_reader, "theta_pi0_pi0");
+        theta_neutral_neutral_mc_gen = new TTreeReaderValue<double>(mc_gen_reader, "theta_pi0_pi0");
+        theta_neutral_neutral_mc_rec = new TTreeReaderValue<double>(mc_rec_reader, "theta_pi0_pi0");
+    }
 
     // Fill histograms for data and MC
+    std::cout << "Filling histograms for data and MC" << std::endl;
+
+    // Loop over data and apply kinematic cuts
     while (data_reader.Next()) {
         double phi_deg = *phi_data * RAD_TO_DEG;
+
         for (int idx = 0; idx < n_Q2t_bins; ++idx) {
             const auto& bin = bin_boundaries[relevant_bins[idx]];
 
             if ((*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
                 *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
-                std::abs(*t1_data) >= bin.t_low && std::abs(*t1_data) <= bin.t_high)) {
+                std::abs(*t1_data) >= bin.t_low && std::abs(*t1_data) <= bin.t_high) &&
+                apply_kinematic_cuts(*t1_data, *open_angle_ep2_data, **theta_neutral_neutral_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data)) {
 
+                // Fill data histograms based on detector topologies
                 if (*detector1_data == 1 && *detector2_data == 1) {  // (FD,FD)
                     h_data_histograms[0][idx]->Fill(phi_deg);
                 } else if (*detector1_data == 2 && *detector2_data == 1) {  // (CD,FD)
@@ -110,73 +140,101 @@ void plot_unfolding(const std::string& output_dir,
                 } else if (*detector1_data == 2 && *detector2_data == 0) {  // (CD,FT)
                     h_data_histograms[2][idx]->Fill(phi_deg);
                 }
+
+                // Also fill the combined histogram
+                h_data_histograms[3][idx]->Fill(phi_deg);
             }
         }
     }
 
-    // Fill histograms for MC generated and reconstructed
+    // Loop over generated MC and apply kinematic cuts
     while (mc_gen_reader.Next()) {
         double phi_mc_gen_deg = *phi_mc_gen * RAD_TO_DEG;
+
         for (int idx = 0; idx < n_Q2t_bins; ++idx) {
             const auto& bin = bin_boundaries[relevant_bins[idx]];
-            h_mc_gen_histograms[0][idx]->Fill(phi_mc_gen_deg);
+
+            if ((*xB_mc_gen >= bin.xB_low && *xB_mc_gen <= bin.xB_high &&
+                *Q2_mc_gen >= bin.Q2_low && *Q2_mc_gen <= bin.Q2_high &&
+                std::abs(*t1_mc_gen) >= bin.t_low && std::abs(*t1_mc_gen) <= bin.t_high) &&
+                apply_kinematic_cuts(*t1_mc_gen, *open_angle_ep2_mc_gen, **theta_neutral_neutral_mc_gen, *Emiss2_mc_gen, *Mx2_1_mc_gen, *pTmiss_mc_gen)) {
+
+                // Fill generated MC histogram (combined only)
+                h_mc_gen_histograms[idx]->Fill(phi_mc_gen_deg);
+            }
         }
     }
 
+    // Loop over reconstructed MC and apply kinematic cuts
     while (mc_rec_reader.Next()) {
         double phi_mc_rec_deg = *phi_mc_rec * RAD_TO_DEG;
+
         for (int idx = 0; idx < n_Q2t_bins; ++idx) {
             const auto& bin = bin_boundaries[relevant_bins[idx]];
-            h_mc_rec_histograms[0][idx]->Fill(phi_mc_rec_deg);
+
+            if ((*xB_mc_rec >= bin.xB_low && *xB_mc_rec <= bin.xB_high &&
+                *Q2_mc_rec >= bin.Q2_low && *Q2_mc_rec <= bin.Q2_high &&
+                std::abs(*t1_mc_rec) >= bin.t_low && std::abs(*t1_mc_rec) <= bin.t_high) &&
+                apply_kinematic_cuts(*t1_mc_rec, *open_angle_ep2_mc_rec, **theta_neutral_neutral_mc_rec, *Emiss2_mc_rec, *Mx2_1_mc_rec, *pTmiss_mc_rec)) {
+
+                // Fill reconstructed MC histogram (combined only)
+                h_mc_rec_histograms[idx]->Fill(phi_mc_rec_deg);
+            }
         }
     }
 
-    // Compute and plot acceptance histograms
-    for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
-        for (int idx = 0; idx < n_Q2t_bins; ++idx) {
-            h_acceptance_histograms[topo_idx][idx]->Divide(h_mc_rec_histograms[topo_idx][idx], h_mc_gen_histograms[topo_idx][idx], 1, 1, "B");
-            h_acceptance_histograms[topo_idx][idx]->GetYaxis()->SetTitle("Acceptance");
+    // Compute acceptance for combined
+    for (int idx = 0; idx < n_Q2t_bins; ++idx) {
+        if (h_mc_gen_histograms[idx]->Integral() > 0) {
+            h_acceptance_histograms[idx]->Divide(h_mc_rec_histograms[idx], h_mc_gen_histograms[idx], 1, 1, "B");
         }
     }
 
-    // Plot and save histograms for yields and acceptances
+    // Plot and save histograms
     for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
         TCanvas* canvas_yield = new TCanvas(Form("c_yield_%zu", topo_idx), "Unfolded Yields", canvas_width, canvas_height);
-        TCanvas* canvas_acceptance = new TCanvas(Form("c_acceptance_%zu", topo_idx), "Acceptance", canvas_width, canvas_height);
         canvas_yield->Divide(n_columns, n_rows);
-        canvas_acceptance->Divide(n_columns, n_rows);
 
         for (int idx = 0; idx < n_Q2t_bins; ++idx) {
-            // Yield plot
             TPad* pad_yield = (TPad*)canvas_yield->cd(idx + 1);
             pad_yield->SetLeftMargin(0.15);
             pad_yield->SetBottomMargin(0.15);
             h_data_histograms[topo_idx][idx]->Draw("E1");
-
-            // Acceptance plot
-            TPad* pad_acceptance = (TPad*)canvas_acceptance->cd(idx + 1);
-            pad_acceptance->SetLeftMargin(0.15);
-            pad_acceptance->SetBottomMargin(0.15);
-            h_acceptance_histograms[topo_idx][idx]->Draw("E1");
         }
 
-        // Save the canvases
         std::string channel_dir = (analysisType == "dvcs") ? "/dvcs" : "/eppi0";
         std::string filename_yield = output_dir + "/unfolded" + channel_dir + "/yields/yields_" + analysisType + "_" + topologies[topo_idx] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
-        std::string filename_acceptance = output_dir + "/unfolded" + channel_dir + "/acceptances/acceptances_" + analysisType + "_" + topologies[topo_idx] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
-
         canvas_yield->SaveAs(filename_yield.c_str());
-        canvas_acceptance->SaveAs(filename_acceptance.c_str());
 
         delete canvas_yield;
-        delete canvas_acceptance;
     }
+
+    // Plot and save acceptance for combined only
+    TCanvas* canvas_acceptance = new TCanvas("c_acceptance_combined", "Acceptance Combined", canvas_width, canvas_height);
+    canvas_acceptance->Divide(n_columns, n_rows);
+
+    for (int idx = 0; idx < n_Q2t_bins; ++idx) {
+        TPad* pad_acceptance = (TPad*)canvas_acceptance->cd(idx + 1);
+        pad_acceptance->SetLeftMargin(0.15);
+        pad_acceptance->SetBottomMargin(0.15);
+        h_acceptance_histograms[idx]->Draw("E1");
+    }
+
+    std::string filename_acceptance = output_dir + "/unfolded" + channel_dir + "/acceptances/acceptances_combined_" + analysisType + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
+    canvas_acceptance->SaveAs(filename_acceptance.c_str());
+
+    delete canvas_acceptance;
 
     // Clean up histograms
     for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
         for (auto& h : h_data_histograms[topo_idx]) delete h;
-        for (auto& h : h_mc_gen_histograms[topo_idx]) delete h;
-        for (auto& h : h_mc_rec_histograms[topo_idx]) delete h;
-        for (auto& h : h_acceptance_histograms[topo_idx]) delete h;
     }
+
+    for (auto& h : h_mc_gen_histograms) delete h;
+    for (auto& h : h_mc_rec_histograms) delete h;
+    for (auto& h : h_acceptance_histograms) delete h;
+
+    delete theta_neutral_neutral_data;
+    delete theta_neutral_neutral_mc_gen;
+    delete theta_neutral_neutral_mc_rec;
 }
