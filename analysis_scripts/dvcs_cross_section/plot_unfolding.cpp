@@ -63,16 +63,16 @@ void plot_unfolding(const std::string& output_dir,
             h_data_histograms[topo_idx][idx] = new TH1D(Form("h_data_%zu_%d", topo_idx, idx), title.c_str(), 24, 0, 360);
 
             // Set axis labels and format for data histograms
-            h_data_histograms[topo_idx][idx]->GetXaxis()->SetLabelSize(0.05);
-            h_data_histograms[topo_idx][idx]->GetYaxis()->SetLabelSize(0.05);
-            h_data_histograms[topo_idx][idx]->GetXaxis()->SetTitleSize(0.06);
-            h_data_histograms[topo_idx][idx]->GetYaxis()->SetTitleSize(0.06);
+            h_data_histograms[topo_idx][idx]->GetXaxis()->SetLabelSize(0.06);
+            h_data_histograms[topo_idx][idx]->GetYaxis()->SetLabelSize(0.06);
+            h_data_histograms[topo_idx][idx]->GetXaxis()->SetTitleSize(0.07);
+            h_data_histograms[topo_idx][idx]->GetYaxis()->SetTitleSize(0.07);
             h_data_histograms[topo_idx][idx]->GetXaxis()->SetTitle("#phi");
             h_data_histograms[topo_idx][idx]->GetYaxis()->SetTitle("Unfolded Yield");
 
             // Set markers and draw vertical error bars without horizontal error bars
             h_data_histograms[topo_idx][idx]->SetMarkerStyle(20);
-            h_data_histograms[topo_idx][idx]->SetMarkerSize(1.2);  // Increased marker size to 1.2
+            h_data_histograms[topo_idx][idx]->SetMarkerSize(1.25);  // Increased marker size to 1.2
             h_data_histograms[topo_idx][idx]->SetDrawOption("P E1");  // 'P' for points, 'E1' for vertical error bars only
 
             // Create histograms for MC and acceptance if it's the combined histogram
@@ -82,16 +82,16 @@ void plot_unfolding(const std::string& output_dir,
                 h_acceptance_histograms[idx] = new TH1D(Form("h_acceptance_combined_%d", idx), title.c_str(), 24, 0, 360);
 
                 // Set axis labels and format for acceptance histograms
-                h_acceptance_histograms[idx]->GetXaxis()->SetLabelSize(0.05);
-                h_acceptance_histograms[idx]->GetYaxis()->SetLabelSize(0.05);
-                h_acceptance_histograms[idx]->GetXaxis()->SetTitleSize(0.06);
-                h_acceptance_histograms[idx]->GetYaxis()->SetTitleSize(0.06);
+                h_acceptance_histograms[idx]->GetXaxis()->SetLabelSize(0.06);
+                h_acceptance_histograms[idx]->GetYaxis()->SetLabelSize(0.06);
+                h_acceptance_histograms[idx]->GetXaxis()->SetTitleSize(0.07);
+                h_acceptance_histograms[idx]->GetYaxis()->SetTitleSize(0.07);
                 h_acceptance_histograms[idx]->GetXaxis()->SetTitle("#phi");
                 h_acceptance_histograms[idx]->GetYaxis()->SetTitle("Acceptance");
 
                 // Set markers and draw vertical error bars without horizontal error bars for acceptance histograms
                 h_acceptance_histograms[idx]->SetMarkerStyle(20);
-                h_acceptance_histograms[idx]->SetMarkerSize(1.2);  // Increased marker size to 1.2
+                h_acceptance_histograms[idx]->SetMarkerSize(1.25);  // Increased marker size to 1.2
                 h_acceptance_histograms[idx]->SetDrawOption("P E1");  // 'P' for points, 'E1' for vertical error bars only
             }
         }
