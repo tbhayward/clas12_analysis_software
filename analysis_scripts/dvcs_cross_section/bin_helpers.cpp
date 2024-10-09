@@ -1,6 +1,7 @@
 #include "bin_helpers.h"
 #include <algorithm>
 #include <cctype>
+#include <cmath> 
 
 // Function implementation
 std::string clean_bin_label(const std::string& label) {
