@@ -25,10 +25,10 @@ struct UnfoldingData {
     std::vector<double> phi_min;  // Lower boundary for each phi bin
     std::vector<double> phi_max;  // Upper boundary for each phi bin
 
-    // Raw yields, acceptance, and unfolded yields for each run period
-    std::vector<std::vector<int>> raw_yields;      // 3 run periods, each has 4 topologies (FD,FD, CD,FD, CD,FT, combined)
-    std::vector<std::vector<double>> acceptance;   // Acceptance for 3 run periods
-    std::vector<std::vector<double>> unfolded_yields;  // Unfolded yields for 3 run periods
+    // 2D Vectors to store raw yields, acceptance, and unfolded yields for each period and topology
+    std::vector<std::vector<int>> raw_yields;      // [period][topology]
+    std::vector<std::vector<double>> acceptance;   // [period]
+    std::vector<std::vector<double>> unfolded_yields;  // [period]
 };
 
 // Function prototype for plot_unfolding

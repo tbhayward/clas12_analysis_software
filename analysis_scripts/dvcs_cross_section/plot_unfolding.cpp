@@ -11,9 +11,6 @@
 #include "bin_helpers.h"
 #include "plot_unfolding.h"
 
-// Constant to convert radians to degrees
-constexpr double RAD_TO_DEG = 180.0 / M_PI;
-
 std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir, 
                                           const std::string& analysisType, 
                                           int xB_bin,
@@ -245,6 +242,11 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
             unfolding_data.t_max = bin.t_high;
             unfolding_data.t_avg = bin.t_avg;
 
+            // Resize vectors for each period
+            unfolding_data.raw_yields.resize(period_names.size(), std::vector<int>(topologies.size()));
+            unfolding_data.acceptance.resize(period_names.size());
+            unfolding_data.unfolded_yields.resize(period_names.size());
+
             // For each phi bin (24 bins from 0 to 360)
             for (int phi_bin = 1; phi_bin <= 24; ++phi_bin) {
                 double phi_min = (phi_bin - 1) * 15.0;
@@ -255,7 +257,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
                 // Get the raw yield for each topology
                 for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
                     int raw_yield = h_data_histograms[topo_idx][idx]->GetBinContent(phi_bin);
-                    unfolding_data.raw_yields[period_idx][topo_idx].push_back(raw_yield); // Update for each period and topology
+                    unfolding_data.raw_yields[period_idx][topo_idx] = raw_yield;
                 }
 
                 // Store acceptance for combined topology (topo_idx == 3)
