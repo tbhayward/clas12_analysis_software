@@ -212,7 +212,7 @@ void plot_unfolding(const std::string& output_dir,
         }
     }
 
-    // Plot and save histograms
+    // Plot and save histograms (data divided by acceptance for combined)
     for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
         TCanvas* canvas_yield = new TCanvas(Form("c_yield_%zu", topo_idx), "Unfolded Yields", canvas_width, canvas_height);
         canvas_yield->Divide(n_columns, n_rows);
@@ -221,6 +221,29 @@ void plot_unfolding(const std::string& output_dir,
             TPad* pad_yield = (TPad*)canvas_yield->cd(idx + 1);
             pad_yield->SetLeftMargin(0.15);
             pad_yield->SetBottomMargin(0.15);
+
+            // If this is the combined topology, we need to unfold by dividing data by acceptance
+            if (topo_idx == 3) {  // Combined histograms
+                for (int bin = 1; bin <= h_data_histograms[topo_idx][idx]->GetNbinsX(); ++bin) {
+                    double acceptance_value = h_acceptance_histograms[idx]->GetBinContent(bin);
+                    if (acceptance_value > 0) {
+                        double data_value = h_data_histograms[topo_idx][idx]->GetBinContent(bin);
+                        double unfolded_value = data_value / acceptance_value;
+                        h_data_histograms[topo_idx][idx]->SetBinContent(bin, unfolded_value);
+
+                        // Calculate and set appropriate error for unfolded values
+                        double data_error = h_data_histograms[topo_idx][idx]->GetBinError(bin);
+                        double unfolded_error = data_error / acceptance_value;
+                        h_data_histograms[topo_idx][idx]->SetBinError(bin, unfolded_error);
+                    } else {
+                        // Set the unfolded value to 0 if the acceptance is 0
+                        h_data_histograms[topo_idx][idx]->SetBinContent(bin, 0);
+                        h_data_histograms[topo_idx][idx]->SetBinError(bin, 0);
+                    }
+                }
+            }
+
+            // Draw the histogram
             h_data_histograms[topo_idx][idx]->Draw("E1");
         }
 
@@ -229,22 +252,6 @@ void plot_unfolding(const std::string& output_dir,
 
         delete canvas_yield;
     }
-
-    // Plot and save acceptance for combined only
-    TCanvas* canvas_acceptance = new TCanvas("c_acceptance_combined", "Acceptance Combined", canvas_width, canvas_height);
-    canvas_acceptance->Divide(n_columns, n_rows);
-
-    for (int idx = 0; idx < n_Q2t_bins; ++idx) {
-        TPad* pad_acceptance = (TPad*)canvas_acceptance->cd(idx + 1);
-        pad_acceptance->SetLeftMargin(0.20);
-        pad_acceptance->SetBottomMargin(0.15);
-        h_acceptance_histograms[idx]->Draw("E1");
-    }
-
-    std::string filename_acceptance = output_dir + "/unfolded" + channel_dir + "/acceptances/acceptances_combined_" + analysisType + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
-    canvas_acceptance->SaveAs(filename_acceptance.c_str());
-
-    delete canvas_acceptance;
 
     // Clean up histograms
     for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
