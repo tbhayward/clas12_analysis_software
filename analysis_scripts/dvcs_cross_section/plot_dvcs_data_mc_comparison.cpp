@@ -223,9 +223,8 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
 
             if ((*xB_mc_gen >= bin.xB_low && *xB_mc_gen <= bin.xB_high &&
                 *Q2_mc_gen >= bin.Q2_low && *Q2_mc_gen <= bin.Q2_high &&
-                std::abs(*t1_mc_gen) >= bin.t_low && std::abs(*t1_mc_gen) <= bin.t_high) 
-                // && apply_kinematic_cuts(*t1_mc_gen, 15, 15, *Emiss2_mc_gen, *Mx2_1_mc_gen, *pTmiss_mc_gen)
-                ) {
+                std::abs(*t1_mc_gen) >= bin.t_low && std::abs(*t1_mc_gen) <= bin.t_high) &&
+                apply_kinematic_cuts(*t1_mc_gen, *open_angle_ep2_mc_gen, **theta_neutral_neutral_mc_gen, *Emiss2_mc_gen, *Mx2_1_mc_gen, *pTmiss_mc_gen)) {
                 h_mc_gen_histograms[idx]->Fill(phi_mc_gen_deg);
                 break;
             }
