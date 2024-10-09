@@ -5,7 +5,8 @@
 #include <string>
 
 struct BinBoundary {
-    std::string bin_label;  // Bin label for identification
+    int bin_number;          // Bin number (sequential index)
+    std::string bin_label;   // Bin label for identification
     double xB_low, xB_high;  // xB min and max
     double Q2_low, Q2_high;  // Q2 min and max
     double t_low, t_high;    // |t| min and max
