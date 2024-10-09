@@ -250,13 +250,17 @@ int main(int argc, char* argv[]) {
     // Create a vector to hold all the unfolding data across bins
     std::vector<UnfoldingData> all_unfolding_data;
     // Iterate over the xB bins
-    for (int xB_bin = 0; xB_bin < num_xB_bins; ++xB_bin) {  
+    for (int xB_bin = 0; xB_bin < 1; ++xB_bin) {  
         // Call the plot_unfolding function for each xB_bin and get the results
         std::vector<UnfoldingData> bin_data = plot_unfolding(base_output_dir, "dvcs", xB_bin, bin_boundaries, data_readers, mc_gen_dvcsgen_readers, mc_rec_dvcsgen_readers);
         
         // Append the collected bin data to the main results
         all_unfolding_data.insert(all_unfolding_data.end(), bin_data.begin(), bin_data.end());
     }
+
+    // After collecting all the unfolding data, write it to a CSV file
+    std::string output_csv_file = "output/unfolding_data.csv";
+    write_csv(output_csv_file, all_unfolding_data);
 
     // // Call the plotting function for the pi0 mass (optional)
     // plot_pi0_mass(eppi0_readers[0], eppi0_readers[1], eppi0_readers[2],
