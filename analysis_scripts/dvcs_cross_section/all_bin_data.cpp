@@ -30,11 +30,12 @@ std::vector<AllBinData> read_bin_names(const std::string& filename) {
         // Increment bin number to track row
         bin.bin_number = ++bin_number;
 
+        // Get the second column (bin name)
         // Skip the first column
-        std::getline(ss, token, '\t');  // Skip the first column (whatever it is)
+        std::getline(ss, token, '\t');  // First column (skipped)
 
-        // Second column: bin name (read it)
-        std::getline(ss, token, '\t');
+        // Read the second column (bin name)
+        std::getline(ss, token, '\t');  // Second column (bin name)
         bin.bin_name = token;
 
         // Add this bin entry to the list
