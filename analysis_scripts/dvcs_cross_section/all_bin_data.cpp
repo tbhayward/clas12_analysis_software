@@ -5,6 +5,7 @@
 #include <iomanip>  // for rounding precision
 #include <vector>
 #include <string>
+#include <cmath>  // For std::round
 
 // Function to read the bin data from CSV
 std::vector<AllBinData> read_bin_data(const std::string& filename) {
