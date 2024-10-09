@@ -22,8 +22,8 @@ void create_directories(const std::string& base_output_dir) {
     std::string unfolded_eppi0_dir = unfolded_dir + "/eppi0";
 
     // Directories for Yields and Acceptance plots
-    // std::string unfolded_yields_dir = unfolded_dvcs_dir + "/yields";
-    // std::string unfolded_acceptances_dir = unfolded_dvcs_dir + "/acceptances";
+    std::string unfolded_yields_dir = unfolded_dvcs_dir + "/yields";
+    std::string unfolded_acceptances_dir = unfolded_dvcs_dir + "/acceptances";
 
     // Directories for specific periods: Fa18Inb, Fa18Out, Sp19Inb (for dvcs)
     std::string fa18inb_yields_dir = unfolded_dvcs_dir + "/Fa18Inb/yields";

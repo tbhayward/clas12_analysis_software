@@ -248,7 +248,7 @@ int main(int argc, char* argv[]) {
     // }
 
     // Iterate over the xB bins (adjust based on your bin structure)
-    for (int xB_bin = 0; xB_bin < 1; ++xB_bin) {  
+    for (int xB_bin = 0; xB_bin < num_xB_bins; ++xB_bin) {  
         // Call the plot_unfolding function for each xB_bin
         plot_unfolding("output", "dvcs", xB_bin, bin_boundaries, data_readers, mc_gen_dvcsgen_readers, mc_rec_dvcsgen_readers);
     }
