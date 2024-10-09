@@ -14,7 +14,7 @@ std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
 
     std::string line;
     int line_num = 0;
-    int bin_number = 1;  // Sequential bin number starts from 1
+    int bin_counter = 1;  // Sequential bin number
 
     // Skip first two lines (header and descriptive line)
     while (line_num < 2 && std::getline(file, line)) {
@@ -27,7 +27,8 @@ std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
         std::string token;
         BinBoundary bin;
 
-        bin.bin_number = bin_number++;  // Assign bin number sequentially
+        // First column: bin number (we assign this sequentially)
+        bin.bin_number = bin_counter++;
 
         // Second column: bin name (read it)
         std::getline(ss, token, '\t');
@@ -81,4 +82,18 @@ std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
 
     file.close();
     return bin_boundaries;
+}
+
+// Function to map xB, Q2, and t to a bin index
+int map_to_bin(const std::vector<BinBoundary>& bin_boundaries, double xB, double Q2, double t) {
+    for (size_t i = 0; i < bin_boundaries.size(); ++i) {
+        const BinBoundary& bin = bin_boundaries[i];
+
+        if (xB >= bin.xB_low && xB < bin.xB_high &&
+            Q2 >= bin.Q2_low && Q2 < bin.Q2_high &&
+            t >= bin.t_low && t < bin.t_high) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;  // Return -1 if the bin is not found
 }
