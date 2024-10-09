@@ -236,7 +236,7 @@ void plot_unfolding(const std::string& output_dir,
 
     for (int idx = 0; idx < n_Q2t_bins; ++idx) {
         TPad* pad_acceptance = (TPad*)canvas_acceptance->cd(idx + 1);
-        pad_acceptance->SetLeftMargin(0.15);
+        pad_acceptance->SetLeftMargin(0.20);
         pad_acceptance->SetBottomMargin(0.15);
         h_acceptance_histograms[idx]->Draw("E1");
     }
