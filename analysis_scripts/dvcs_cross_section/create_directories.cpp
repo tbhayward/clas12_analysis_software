@@ -1,8 +1,6 @@
 #include <filesystem>
 #include <iostream>
-#include <map>
 #include <string>
-#include <vector>
 
 // Use the filesystem library
 namespace fs = std::filesystem;
@@ -19,6 +17,10 @@ void create_directories(const std::string& base_output_dir) {
     std::string unfolded_dir = base_output_dir + "/unfolded";
     std::string unfolded_dvcs_dir = unfolded_dir + "/dvcs";
     std::string unfolded_eppi0_dir = unfolded_dir + "/eppi0";
+
+    // Directories for Yields and Acceptance plots
+    std::string unfolded_yields_dir = unfolded_dvcs_dir + "/yields";
+    std::string unfolded_acceptances_dir = unfolded_dvcs_dir + "/acceptances";
 
     // Check and create the directories if they don't exist
     if (!fs::exists(base_output_dir)) {
@@ -91,6 +93,23 @@ void create_directories(const std::string& base_output_dir) {
             std::cout << "Created directory: " << unfolded_eppi0_dir << std::endl;
         } else {
             std::cerr << "Error: Failed to create unfolded/eppi0 directory: " << unfolded_eppi0_dir << std::endl;
+        }
+    }
+
+    // Create new directories for yields and acceptance plots
+    if (!fs::exists(unfolded_yields_dir)) {
+        if (fs::create_directories(unfolded_yields_dir)) {
+            std::cout << "Created directory: " << unfolded_yields_dir << std::endl;
+        } else {
+            std::cerr << "Error: Failed to create yields directory: " << unfolded_yields_dir << std::endl;
+        }
+    }
+
+    if (!fs::exists(unfolded_acceptances_dir)) {
+        if (fs::create_directories(unfolded_acceptances_dir)) {
+            std::cout << "Created directory: " << unfolded_acceptances_dir << std::endl;
+        } else {
+            std::cerr << "Error: Failed to create acceptances directory: " << unfolded_acceptances_dir << std::endl;
         }
     }
 }
