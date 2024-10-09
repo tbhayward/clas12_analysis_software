@@ -1,6 +1,7 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <vector>  // <-- Add this to use std::vector
 
 // Use the filesystem library
 namespace fs = std::filesystem;
