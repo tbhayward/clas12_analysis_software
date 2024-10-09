@@ -10,6 +10,7 @@
 #include "bin_boundaries.h"
 #include "kinematic_cuts.h"
 #include "bin_helpers.h"
+#include "create_directories.h"
 
 // Constant to convert radians to degrees
 constexpr double RAD_TO_DEG = 180.0 / M_PI;
