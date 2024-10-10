@@ -263,13 +263,12 @@ int main(int argc, char* argv[]) {
     // Debug information to check the contents of all_unfolding_data
     std::cout << "Debug: Number of unfolding_data entries: " << all_unfolding_data.size() << std::endl;
 
-    for (size_t j = 0; j < all_unfolding_data.size(); ++j) {
-        std::cout << "UnfoldingData " << j << ": xB_min = " << all_unfolding_data[j].xB_min
-                  << ", Q2_min = " << all_unfolding_data[j].Q2_min 
-                  << ", Period 0 raw_yields size: " << all_unfolding_data[j].raw_yields[0].size()
-                  << ", Period 1 raw_yields size: " << all_unfolding_data[j].raw_yields[1].size()
-                  << ", Period 2 raw_yields size: " << all_unfolding_data[j].raw_yields[2].size()
-                  << std::endl;
+    for (const auto& data : unfolding_data) {
+        for (size_t i = 0; i < data.raw_yields.size(); ++i) {
+            for (size_t j = 0; j < data.raw_yields[i].size(); ++j) {
+                std::cout << "Period: " << i << " Yield: " << data.raw_yields[i][j] << std::endl;
+            }
+        }
     }
 
     // After collecting all the data, write it to a CSV file
