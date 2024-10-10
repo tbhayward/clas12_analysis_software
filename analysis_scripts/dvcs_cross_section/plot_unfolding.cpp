@@ -257,23 +257,11 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
                 // Get the raw yield for each topology
                 for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
                     int raw_yield = h_data_histograms[topo_idx][idx]->GetBinContent(phi_bin);
-                    // std::cout << "Storing raw yield: " << raw_yield 
-                    //           << " in period_idx: " << period_idx 
-                    //           << " topo_idx: " << topo_idx 
-                    //           << " phi_bin: " << phi_bin << std::endl;
-                    if (period_idx == 2) {  // Replace with the actual index for Sp18
-                        std::cout << "Raw yield for Sp18, topo_idx: " << topo_idx 
-                                  << ", phi_bin: " << phi_bin 
-                                  << ": " << h_data_histograms[topo_idx][idx]->GetBinContent(phi_bin) << std::endl;
-                    }
                     unfolding_data.raw_yields[period_idx][topo_idx * 24 + (phi_bin - 1)] = raw_yield;
                 }
 
                 // Store acceptance for combined topology (topo_idx == 3)
                 double acceptance_value = h_acceptance_histograms[idx]->GetBinContent(phi_bin);
-                std::cout << "Acceptance value for idx " << idx 
-                  << " and phi_bin " << phi_bin << ": " 
-                  << h_acceptance_histograms[idx]->GetBinContent(phi_bin) << std::endl;
                 unfolding_data.acceptance[period_idx][phi_bin - 1] = acceptance_value;
 
                 // Store unfolded yield for combined topology (topo_idx == 3)
