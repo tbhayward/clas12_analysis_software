@@ -257,7 +257,9 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
                 // Get the raw yield for each topology
                 for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
                     int raw_yield = h_data_histograms[topo_idx][idx]->GetBinContent(phi_bin);
-                    std::cout << raw_yield << std::endl;
+                    std::cout << "Storing raw yield: " << raw_yield 
+                      << " in period_idx: " << period_idx 
+                      << " topo_idx: " << topo_idx << std::endl;
                     unfolding_data.raw_yields[period_idx][topo_idx] = raw_yield;
                 }
 
@@ -368,6 +370,11 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
         data_reader.Restart();
         mc_gen_reader.Restart();
         mc_rec_reader.Restart();
+    }
+
+    std::cout << "Final raw_yields size: " << unfolding_data.raw_yields.size() << std::endl;
+    for (size_t p = 0; p < unfolding_data.raw_yields.size(); ++p) {
+        std::cout << "Period " << p << ": " << unfolding_data.raw_yields[p].size() << " entries." << std::endl;
     }
 
     // Return all the gathered unfolding data

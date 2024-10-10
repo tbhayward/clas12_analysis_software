@@ -46,9 +46,24 @@ void write_csv(const std::string& filename, const std::vector<UnfoldingData>& un
             for (int period = 0; period < 3; ++period) {
                 // Write raw yields for each topology (FD,FD), (CD,FD), (CD,FT), and combined
                 for (size_t topo_idx = 0; topo_idx < 4; ++topo_idx) {
+
+                    // Add this before writing raw_yields in the loop:
+                    std::cout << "Debug Info: period: " << period 
+                              << ", topo_idx: " << topo_idx
+                              << ", phi_min.size(): " << data.phi_min.size() 
+                              << ", i: " << i 
+                              << ", value: " << data.raw_yields[period][topo_idx * data.phi_min.size() + i]
+                              << std::endl;
+                    if (period < data.raw_yields.size() && topo_idx < data.raw_yields[period].size()) {
+                        std::cout << "Within bounds" << std::endl;
+                        file << data.raw_yields[period][topo_idx * data.phi_min.size() + i] << ",";
+                    } else {
+                        std::cerr << "Out of bounds access detected!" << std::endl;
+                    }
                     file << data.raw_yields[period][topo_idx * data.phi_min.size() + i] << ",";
                 }
 
+                std::cout << "Writing column for period " << period << " and phi bin " << i << std::endl;
                 // Write acceptance and unfolded yields for the current period
                 write_vector_to_csv(file, data.acceptance[period]);
                 write_vector_to_csv(file, data.unfolded_yields[period]);
