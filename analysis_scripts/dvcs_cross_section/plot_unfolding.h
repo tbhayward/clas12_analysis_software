@@ -25,10 +25,18 @@ struct UnfoldingData {
     std::vector<double> phi_min;  // Lower boundary for each phi bin
     std::vector<double> phi_max;  // Upper boundary for each phi bin
 
-    // 2D Vectors to store raw yields, acceptance, and unfolded yields for each period and topology
-    std::vector<std::vector<int>> raw_yields;      // [period][topology]
-    std::vector<std::vector<double>> acceptance;   // [period]
-    std::vector<std::vector<double>> unfolded_yields;  // [period]
+    // Separate vectors for each period
+    std::vector<std::vector<int>> raw_yields_Fa18Inb;    // Topology-specific raw yields for Fa18Inb
+    std::vector<std::vector<int>> raw_yields_Fa18Out;    // Topology-specific raw yields for Fa18Out
+    std::vector<std::vector<int>> raw_yields_Sp19Inb;    // Topology-specific raw yields for Sp19Inb
+
+    std::vector<double> acceptance_Fa18Inb;   // Acceptance for each phi bin in Fa18Inb
+    std::vector<double> acceptance_Fa18Out;   // Acceptance for each phi bin in Fa18Out
+    std::vector<double> acceptance_Sp19Inb;   // Acceptance for each phi bin in Sp19Inb
+
+    std::vector<double> unfolded_yields_Fa18Inb; // Unfolded yields for Fa18Inb
+    std::vector<double> unfolded_yields_Fa18Out; // Unfolded yields for Fa18Out
+    std::vector<double> unfolded_yields_Sp19Inb; // Unfolded yields for Sp19Inb
 };
 
 // Function prototype for plot_unfolding
