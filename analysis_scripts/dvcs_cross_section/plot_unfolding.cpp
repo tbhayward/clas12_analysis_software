@@ -242,10 +242,18 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
             unfolding_data.t_max = bin.t_high;
             unfolding_data.t_avg = bin.t_avg;
 
-            // Resize vectors for each period
-            unfolding_data.raw_yields.resize(period_names.size(), std::vector<int>(topologies.size() * 24));  // Topology x Phi bins
-            unfolding_data.acceptance.resize(period_names.size(), std::vector<double>(24));  // Acceptance for each phi_bin
-            unfolding_data.unfolded_yields.resize(period_names.size(), std::vector<double>(24));  // Unfolded yield for each phi_bin
+            // Resize vectors for each period separately
+            unfolding_data.raw_yields_Fa18Inb.resize(topologies.size() * 24);  
+            unfolding_data.raw_yields_Fa18Out.resize(topologies.size() * 24);  
+            unfolding_data.raw_yields_Sp19Inb.resize(topologies.size() * 24);  
+            
+            unfolding_data.acceptance_Fa18Inb.resize(24);
+            unfolding_data.acceptance_Fa18Out.resize(24);
+            unfolding_data.acceptance_Sp19Inb.resize(24);
+            
+            unfolding_data.unfolded_yields_Fa18Inb.resize(24);
+            unfolding_data.unfolded_yields_Fa18Out.resize(24);
+            unfolding_data.unfolded_yields_Sp19Inb.resize(24);
 
             // For each phi bin (24 bins from 0 to 360)
             for (int phi_bin = 1; phi_bin <= 24; ++phi_bin) {
@@ -254,85 +262,52 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
                 unfolding_data.phi_min.push_back(phi_min);
                 unfolding_data.phi_max.push_back(phi_max);
 
-                // Get the raw yield for each topology
+                // Get the raw yield for each topology and assign to the corresponding period
                 for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
                     int raw_yield = h_data_histograms[topo_idx][idx]->GetBinContent(phi_bin);
-                    // std::cout << "Storing raw yield: " << raw_yield 
-                    //           << " in period_idx: " << period_idx 
-                    //           << " topo_idx: " << topo_idx 
-                    //           << " phi_bin: " << phi_bin << std::endl;
-                    if (period_idx == 2) {  // Replace with the actual index for Sp18
-                        std::cout << "Raw yield for Sp18, topo_idx: " << topo_idx 
-                                  << ", phi_bin: " << phi_bin 
-                                  << ": " << h_data_histograms[topo_idx][idx]->GetBinContent(phi_bin) << std::endl;
+
+                    if (period_idx == 0) {  // Fa18Inb
+                        unfolding_data.raw_yields_Fa18Inb[topo_idx * 24 + (phi_bin - 1)] = raw_yield;
+                    } else if (period_idx == 1) {  // Fa18Out
+                        unfolding_data.raw_yields_Fa18Out[topo_idx * 24 + (phi_bin - 1)] = raw_yield;
+                    } else if (period_idx == 2) {  // Sp19Inb
+                        unfolding_data.raw_yields_Sp19Inb[topo_idx * 24 + (phi_bin - 1)] = raw_yield;
                     }
-                    unfolding_data.raw_yields[period_idx][topo_idx * 24 + (phi_bin - 1)] = raw_yield;
                 }
 
                 // Store acceptance for combined topology (topo_idx == 3)
                 double acceptance_value = h_acceptance_histograms[idx]->GetBinContent(phi_bin);
-                std::cout << "Acceptance value for idx " << idx 
-                  << " and phi_bin " << phi_bin << ": " 
-                  << h_acceptance_histograms[idx]->GetBinContent(phi_bin) << std::endl;
-                unfolding_data.acceptance[period_idx][phi_bin - 1] = acceptance_value;
+                if (period_idx == 0) {
+                    unfolding_data.acceptance_Fa18Inb[phi_bin - 1] = acceptance_value;
+                } else if (period_idx == 1) {
+                    unfolding_data.acceptance_Fa18Out[phi_bin - 1] = acceptance_value;
+                } else if (period_idx == 2) {
+                    unfolding_data.acceptance_Sp19Inb[phi_bin - 1] = acceptance_value;
+                }
 
                 // Store unfolded yield for combined topology (topo_idx == 3)
                 if (acceptance_value > 0) {
                     double unfolded_yield = h_data_histograms[3][idx]->GetBinContent(phi_bin) / acceptance_value;
-                    unfolding_data.unfolded_yields[period_idx][phi_bin - 1] = unfolded_yield;
+                    if (period_idx == 0) {
+                        unfolding_data.unfolded_yields_Fa18Inb[phi_bin - 1] = unfolded_yield;
+                    } else if (period_idx == 1) {
+                        unfolding_data.unfolded_yields_Fa18Out[phi_bin - 1] = unfolded_yield;
+                    } else if (period_idx == 2) {
+                        unfolding_data.unfolded_yields_Sp19Inb[phi_bin - 1] = unfolded_yield;
+                    }
                 } else {
-                    unfolding_data.unfolded_yields[period_idx][phi_bin - 1] = 0.0;  // Set to 0 if acceptance is 0
+                    if (period_idx == 0) {
+                        unfolding_data.unfolded_yields_Fa18Inb[phi_bin - 1] = 0.0;
+                    } else if (period_idx == 1) {
+                        unfolding_data.unfolded_yields_Fa18Out[phi_bin - 1] = 0.0;
+                    } else if (period_idx == 2) {
+                        unfolding_data.unfolded_yields_Sp19Inb[phi_bin - 1] = 0.0;
+                    }
                 }
             }
 
             // Add the unfolding data for this bin to the overall results
             all_unfolding_data.push_back(unfolding_data);
-        }
-
-        // Plot and save histograms (data divided by acceptance for combined)
-        for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
-            TCanvas* canvas_yield = new TCanvas(Form("c_yield_%zu", topo_idx), "Yields", canvas_width, canvas_height);
-            canvas_yield->Divide(n_columns, n_rows);
-
-            for (int idx = 0; idx < n_Q2t_bins; ++idx) {
-                TPad* pad_yield = (TPad*)canvas_yield->cd(idx + 1);
-                pad_yield->SetLeftMargin(0.2);
-                pad_yield->SetBottomMargin(0.15);
-
-                // If this is the combined topology, we need to unfold by dividing data by acceptance
-                if (topo_idx == 3) {  // Combined histograms
-                    for (int bin = 1; bin <= h_data_histograms[topo_idx][idx]->GetNbinsX(); ++bin) {
-                        double acceptance_value = h_acceptance_histograms[idx]->GetBinContent(bin);
-                        if (acceptance_value > 0) {
-                            double data_value = h_data_histograms[topo_idx][idx]->GetBinContent(bin);
-                            double unfolded_value = data_value / acceptance_value;
-                            h_data_histograms[topo_idx][idx]->SetBinContent(bin, unfolded_value);
-
-                            // Calculate and set appropriate error for unfolded values
-                            double data_error = h_data_histograms[topo_idx][idx]->GetBinError(bin);
-                            double unfolded_error = data_error / acceptance_value;
-                            h_data_histograms[topo_idx][idx]->SetBinError(bin, unfolded_error);
-                        } else {
-                            // Set the unfolded value to 0 if the acceptance is 0
-                            h_data_histograms[topo_idx][idx]->SetBinContent(bin, 0);
-                            h_data_histograms[topo_idx][idx]->SetBinError(bin, 0);
-                        }
-                    }
-
-                    // Get the middle bin and adjust the y-axis range
-                    int middle_bin = h_data_histograms[topo_idx][idx]->GetNbinsX() / 2;
-                    double middle_bin_value = h_data_histograms[topo_idx][idx]->GetBinContent(middle_bin);
-                    h_data_histograms[topo_idx][idx]->GetYaxis()->SetRangeUser(0.0 * middle_bin_value, 2.25 * middle_bin_value);
-                }
-
-                // Draw the histogram
-                h_data_histograms[topo_idx][idx]->Draw("E1");
-            }
-
-            std::string filename_yield = output_dir + "/yields/yields_" + analysisType + "_" + period_names[period_idx] + "_" + topologies[topo_idx] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
-            canvas_yield->SaveAs(filename_yield.c_str());
-
-            delete canvas_yield;
         }
 
         // Plot and save acceptance for combined only
