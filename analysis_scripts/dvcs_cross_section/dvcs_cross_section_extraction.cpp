@@ -250,6 +250,7 @@ int main(int argc, char* argv[]) {
 
     // Create a vector to hold all the unfolding data across bins
     std::vector<UnfoldingData> all_unfolding_data;
+
     // Iterate over the xB bins
     for (int xB_bin = 0; xB_bin < 1; ++xB_bin) {  
         // Call the plot_unfolding function for each xB_bin and get the results
@@ -257,6 +258,18 @@ int main(int argc, char* argv[]) {
         
         // Append the collected bin data to the main results
         all_unfolding_data.insert(all_unfolding_data.end(), bin_data.begin(), bin_data.end());
+    }
+
+    // Debug information to check the contents of all_unfolding_data
+    std::cout << "Debug: Number of unfolding_data entries: " << all_unfolding_data.size() << std::endl;
+
+    for (size_t j = 0; j < all_unfolding_data.size(); ++j) {
+        std::cout << "UnfoldingData " << j << ": xB_min = " << all_unfolding_data[j].xB_min
+                  << ", Q2_min = " << all_unfolding_data[j].Q2_min 
+                  << ", Period 0 raw_yields size: " << all_unfolding_data[j].raw_yields[0].size()
+                  << ", Period 1 raw_yields size: " << all_unfolding_data[j].raw_yields[1].size()
+                  << ", Period 2 raw_yields size: " << all_unfolding_data[j].raw_yields[2].size()
+                  << std::endl;
     }
 
     // After collecting all the data, write it to a CSV file
