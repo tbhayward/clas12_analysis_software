@@ -20,23 +20,15 @@ struct UnfoldingData {
     double xB_min, xB_max, xB_avg;
     double Q2_min, Q2_max, Q2_avg;
     double t_min, t_max, t_avg;
-
+    
     // Phi bin data (min and max for each bin)
     std::vector<double> phi_min;  // Lower boundary for each phi bin
     std::vector<double> phi_max;  // Upper boundary for each phi bin
 
     // 2D Vectors to store raw yields, acceptance, and unfolded yields for each period and topology
-    std::vector<int> raw_yields_Fa18Inb;  // Topology x Phi bins for Fa18Inb
-    std::vector<int> raw_yields_Fa18Out;  // Topology x Phi bins for Fa18Out
-    std::vector<int> raw_yields_Sp19Inb;  // Topology x Phi bins for Sp19Inb
-
-    std::vector<double> acceptance_Fa18Inb;  // Acceptance for Fa18Inb
-    std::vector<double> acceptance_Fa18Out;  // Acceptance for Fa18Out
-    std::vector<double> acceptance_Sp19Inb;  // Acceptance for Sp19Inb
-
-    std::vector<double> unfolded_yields_Fa18Inb;  // Unfolded yields for Fa18Inb
-    std::vector<double> unfolded_yields_Fa18Out;  // Unfolded yields for Fa18Out
-    std::vector<double> unfolded_yields_Sp19Inb;  // Unfolded yields for Sp19Inb
+    std::vector<std::vector<int>> raw_yields;      // [period][topology]
+    std::vector<std::vector<double>> acceptance;   // [period]
+    std::vector<std::vector<double>> unfolded_yields;  // [period]
 };
 
 // Function prototype for plot_unfolding

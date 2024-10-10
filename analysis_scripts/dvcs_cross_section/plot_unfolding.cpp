@@ -242,18 +242,10 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
             unfolding_data.t_max = bin.t_high;
             unfolding_data.t_avg = bin.t_avg;
 
-            // Resize vectors for each period separately
-            unfolding_data.raw_yields_Fa18Inb.resize(topologies.size() * 24);  
-            unfolding_data.raw_yields_Fa18Out.resize(topologies.size() * 24);  
-            unfolding_data.raw_yields_Sp19Inb.resize(topologies.size() * 24);  
-            
-            unfolding_data.acceptance_Fa18Inb.resize(24);
-            unfolding_data.acceptance_Fa18Out.resize(24);
-            unfolding_data.acceptance_Sp19Inb.resize(24);
-            
-            unfolding_data.unfolded_yields_Fa18Inb.resize(24);
-            unfolding_data.unfolded_yields_Fa18Out.resize(24);
-            unfolding_data.unfolded_yields_Sp19Inb.resize(24);
+            // Resize vectors for each period
+            unfolding_data.raw_yields.resize(period_names.size(), std::vector<int>(topologies.size() * 24));  // Topology x Phi bins
+            unfolding_data.acceptance.resize(period_names.size(), std::vector<double>(24));  // Acceptance for each phi_bin
+            unfolding_data.unfolded_yields.resize(period_names.size(), std::vector<double>(24));  // Unfolded yield for each phi_bin
 
             // For each phi bin (24 bins from 0 to 360)
             for (int phi_bin = 1; phi_bin <= 24; ++phi_bin) {
@@ -262,47 +254,34 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
                 unfolding_data.phi_min.push_back(phi_min);
                 unfolding_data.phi_max.push_back(phi_max);
 
-                // Get the raw yield for each topology and assign to the corresponding period
+                // Get the raw yield for each topology
                 for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
                     int raw_yield = h_data_histograms[topo_idx][idx]->GetBinContent(phi_bin);
-
-                    if (period_idx == 0) {  // Fa18Inb
-                        unfolding_data.raw_yields_Fa18Inb[topo_idx * 24 + (phi_bin - 1)] = raw_yield;
-                    } else if (period_idx == 1) {  // Fa18Out
-                        unfolding_data.raw_yields_Fa18Out[topo_idx * 24 + (phi_bin - 1)] = raw_yield;
-                    } else if (period_idx == 2) {  // Sp19Inb
-                        unfolding_data.raw_yields_Sp19Inb[topo_idx * 24 + (phi_bin - 1)] = raw_yield;
+                    // std::cout << "Storing raw yield: " << raw_yield 
+                    //           << " in period_idx: " << period_idx 
+                    //           << " topo_idx: " << topo_idx 
+                    //           << " phi_bin: " << phi_bin << std::endl;
+                    if (period_idx == 2) {  // Replace with the actual index for Sp18
+                        std::cout << "Raw yield for Sp18, topo_idx: " << topo_idx 
+                                  << ", phi_bin: " << phi_bin 
+                                  << ": " << h_data_histograms[topo_idx][idx]->GetBinContent(phi_bin) << std::endl;
                     }
+                    unfolding_data.raw_yields[period_idx][topo_idx * 24 + (phi_bin - 1)] = raw_yield;
                 }
 
                 // Store acceptance for combined topology (topo_idx == 3)
                 double acceptance_value = h_acceptance_histograms[idx]->GetBinContent(phi_bin);
-                if (period_idx == 0) {
-                    unfolding_data.acceptance_Fa18Inb[phi_bin - 1] = acceptance_value;
-                } else if (period_idx == 1) {
-                    unfolding_data.acceptance_Fa18Out[phi_bin - 1] = acceptance_value;
-                } else if (period_idx == 2) {
-                    unfolding_data.acceptance_Sp19Inb[phi_bin - 1] = acceptance_value;
-                }
+                std::cout << "Acceptance value for idx " << idx 
+                  << " and phi_bin " << phi_bin << ": " 
+                  << h_acceptance_histograms[idx]->GetBinContent(phi_bin) << std::endl;
+                unfolding_data.acceptance[period_idx][phi_bin - 1] = acceptance_value;
 
                 // Store unfolded yield for combined topology (topo_idx == 3)
                 if (acceptance_value > 0) {
                     double unfolded_yield = h_data_histograms[3][idx]->GetBinContent(phi_bin) / acceptance_value;
-                    if (period_idx == 0) {
-                        unfolding_data.unfolded_yields_Fa18Inb[phi_bin - 1] = unfolded_yield;
-                    } else if (period_idx == 1) {
-                        unfolding_data.unfolded_yields_Fa18Out[phi_bin - 1] = unfolded_yield;
-                    } else if (period_idx == 2) {
-                        unfolding_data.unfolded_yields_Sp19Inb[phi_bin - 1] = unfolded_yield;
-                    }
+                    unfolding_data.unfolded_yields[period_idx][phi_bin - 1] = unfolded_yield;
                 } else {
-                    if (period_idx == 0) {
-                        unfolding_data.unfolded_yields_Fa18Inb[phi_bin - 1] = 0.0;
-                    } else if (period_idx == 1) {
-                        unfolding_data.unfolded_yields_Fa18Out[phi_bin - 1] = 0.0;
-                    } else if (period_idx == 2) {
-                        unfolding_data.unfolded_yields_Sp19Inb[phi_bin - 1] = 0.0;
-                    }
+                    unfolding_data.unfolded_yields[period_idx][phi_bin - 1] = 0.0;  // Set to 0 if acceptance is 0
                 }
             }
 

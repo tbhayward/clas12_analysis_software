@@ -27,9 +27,9 @@ void write_csv(const std::string& filename, const std::vector<UnfoldingData>& un
     // Write the header
     file << "Bin,xB_min,xB_max,xB_avg,Q2_min,Q2_max,Q2_avg,t_min,t_max,t_avg,"
          << "phi_min,phi_max,"
-         << "raw_yield_Fa18Inb,acceptance_Fa18Inb,unfolded_yield_Fa18Inb,"
-         << "raw_yield_Fa18Out,acceptance_Fa18Out,unfolded_yield_Fa18Out,"
-         << "raw_yield_Sp19Inb,acceptance_Sp19Inb,unfolded_yield_Sp19Inb"
+         << "raw_yield_FD_FD_Fa18Inb,raw_yield_CD_FD_Fa18Inb,raw_yield_CD_FT_Fa18Inb,raw_yield_combined_Fa18Inb,acceptance_Fa18Inb,unfolded_yield_Fa18Inb,"
+         << "raw_yield_FD_FD_Fa18Out,raw_yield_CD_FD_Fa18Out,raw_yield_CD_FT_Fa18Out,raw_yield_combined_Fa18Out,acceptance_Fa18Out,unfolded_yield_Fa18Out,"
+         << "raw_yield_FD_FD_Sp19Inb,raw_yield_CD_FD_Sp19Inb,raw_yield_CD_FT_Sp19Inb,raw_yield_combined_Sp19Inb,acceptance_Sp19Inb,unfolded_yield_Sp19Inb"
          << std::endl;
 
     // Loop through the unfolding data and write each entry to the file
@@ -42,20 +42,28 @@ void write_csv(const std::string& filename, const std::vector<UnfoldingData>& un
                  << data.t_min << "," << data.t_max << "," << data.t_avg << ","
                  << data.phi_min[i] << "," << data.phi_max[i] << ",";
 
-            // Write raw yields, acceptance, and unfolded yields for Fa18Inb
-            file << data.raw_yields_Fa18Inb[i] << "," 
-                 << data.acceptance_Fa18Inb[i] << "," 
-                 << data.unfolded_yields_Fa18Inb[i] << ",";
+            // Write all periods' data on the same line
+            for (int period = 0; period < 3; ++period) {
+                // Write raw yields for each topology (FD,FD), (CD,FD), (CD,FT), and combined
+                for (size_t topo_idx = 0; topo_idx < 4; ++topo_idx) {
+                    size_t index = topo_idx * data.phi_min.size() + i;
 
-            // Write raw yields, acceptance, and unfolded yields for Fa18Out
-            file << data.raw_yields_Fa18Out[i] << "," 
-                 << data.acceptance_Fa18Out[i] << "," 
-                 << data.unfolded_yields_Fa18Out[i] << ",";
+                    if (index < data.raw_yields[period].size()) {
+                        file << data.raw_yields[period][index] << ",";
+                    } else {
+                        std::cerr << "Out of bounds access detected at index " << index << std::endl;
+                        file << "-99,";  // Writing a placeholder value if out-of-bounds
+                    }
+                }
 
-            // Write raw yields, acceptance, and unfolded yields for Sp19Inb
-            file << data.raw_yields_Sp19Inb[i] << "," 
-                 << data.acceptance_Sp19Inb[i] << "," 
-                 << data.unfolded_yields_Sp19Inb[i];
+                // Write acceptance and unfolded yields for the current phi bin
+                file << data.acceptance[period][i] << ",";  // Only write the current phi bin
+                file << data.unfolded_yields[period][i];     // Only write the current phi bin
+
+                if (period < 2) {
+                    file << ",";  // Add a comma for the next period (except the last one)
+                }
+            }
 
             // End the line after all periods' data is written
             file << std::endl;
