@@ -257,6 +257,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
                 // Get the raw yield for each topology
                 for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
                     int raw_yield = h_data_histograms[topo_idx][idx]->GetBinContent(phi_bin);
+                    std::cout << raw_yield << std::endl;
                     unfolding_data.raw_yields[period_idx][topo_idx] = raw_yield;
                 }
 
