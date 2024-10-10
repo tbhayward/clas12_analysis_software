@@ -248,32 +248,32 @@ int main(int argc, char* argv[]) {
     //     plot_dvcs_data_mc_comparison(output_dir, "eppi0", "Fa18 Inb", xB_bin, bin_boundaries, eppi0_readers[0], mc_gen_aaogen_readers[0], mc_rec_aaogen_readers[0]);
     // }
 
-    // Create a vector to hold all the yield data across bins
-    std::vector<YieldData> all_yield_data;
+    // Create a vector to hold all the unfolding data across bins
+    std::vector<UnfoldingData> all_unfolding_data;
 
-    // Iterate over the xB bins (assuming the bin count is higher in actual code)
-    for (int xB_bin = 0; xB_bin < num_xB_bins; ++xB_bin) {  
-        // Call the plot_unfolding or any relevant function to get the YieldData results
-        std::vector<YieldData> bin_data = plot_unfolding(base_output_dir, "dvcs", xB_bin, bin_boundaries, data_readers, mc_gen_dvcsgen_readers, mc_rec_dvcsgen_readers);
+    // Iterate over the xB bins
+    for (int xB_bin = 0; xB_bin < 1; ++xB_bin) {  
+        // Call the plot_unfolding function for each xB_bin and get the results
+        std::vector<UnfoldingData> bin_data = plot_unfolding(base_output_dir, "dvcs", xB_bin, bin_boundaries, data_readers, mc_gen_dvcsgen_readers, mc_rec_dvcsgen_readers);
         
         // Append the collected bin data to the main results
-        all_yield_data.insert(all_yield_data.end(), bin_data.begin(), bin_data.end());
+        all_unfolding_data.insert(all_unfolding_data.end(), bin_data.begin(), bin_data.end());
     }
 
-    // Debug information to check the contents of all_yield_data
-    std::cout << "Debug: Number of yield_data entries: " << all_yield_data.size() << std::endl;
+    // Debug information to check the contents of all_unfolding_data
+    std::cout << "Debug: Number of unfolding_data entries: " << all_unfolding_data.size() << std::endl;
 
-    for (size_t j = 0; j < all_yield_data.size(); ++j) {
-        std::cout << "YieldData " << j << ": xB_min = " << all_yield_data[j].xB_min
-                  << ", Q2_min = " << all_yield_data[j].Q2_min 
-                  << ", Period 0 raw_yields size: " << all_yield_data[j].raw_yield_FD_FD_Fa18Inb
-                  << ", Period 1 raw_yields size: " << all_yield_data[j].raw_yield_FD_FD_Fa18Out
-                  << ", Period 2 raw_yields size: " << all_yield_data[j].raw_yield_FD_FD_Sp19Inb
+    for (size_t j = 0; j < all_unfolding_data.size(); ++j) {
+        std::cout << "UnfoldingData " << j << ": xB_min = " << all_unfolding_data[j].xB_min
+                  << ", Q2_min = " << all_unfolding_data[j].Q2_min 
+                  << ", Period 0 raw_yields size: " << all_unfolding_data[j].raw_yields[0].size()
+                  << ", Period 1 raw_yields size: " << all_unfolding_data[j].raw_yields[1].size()
+                  << ", Period 2 raw_yields size: " << all_unfolding_data[j].raw_yields[2].size()
                   << std::endl;
     }
 
     // After collecting all the data, write it to a CSV file
-    write_csv(all_yield_data, "output/unfolding_data.csv");
+    write_csv("output/unfolding_data.csv", all_unfolding_data);
 
     // // Call the plotting function for the pi0 mass (optional)
     // plot_pi0_mass(eppi0_readers[0], eppi0_readers[1], eppi0_readers[2],
