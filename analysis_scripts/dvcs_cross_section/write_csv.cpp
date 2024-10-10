@@ -42,17 +42,29 @@ void write_csv(const std::string& filename, const std::vector<UnfoldingData>& un
                  << data.t_min << "," << data.t_max << "," << data.t_avg << ","
                  << data.phi_min[i] << "," << data.phi_max[i] << ",";
 
-            // Write raw yields, acceptance, and unfolded yields for each period
-            for (size_t topo_idx = 0; topo_idx < 4; ++topo_idx) {
-                size_t index = topo_idx * data.phi_min.size() + i;
-                file << data.raw_yields_Fa18Inb[index] << "," 
-                     << data.raw_yields_Fa18Out[index] << "," 
-                     << data.raw_yields_Sp19Inb[index] << ",";
-            }
+            // Write raw yields, acceptance, and unfolded yields for Fa18Inb
+            file << data.raw_yields_FD_FD_Fa18Inb[i] << "," 
+                 << data.raw_yields_CD_FD_Fa18Inb[i] << "," 
+                 << data.raw_yields_CD_FT_Fa18Inb[i] << "," 
+                 << data.raw_yield_combined_Fa18Inb[i] << ","
+                 << data.acceptance_Fa18Inb[i] << "," 
+                 << data.unfolded_yields_Fa18Inb[i] << ",";
 
-            file << data.acceptance_Fa18Inb[i] << "," << data.unfolded_yields_Fa18Inb[i] << ","
-                 << data.acceptance_Fa18Out[i] << "," << data.unfolded_yields_Fa18Out[i] << ","
-                 << data.acceptance_Sp19Inb[i] << "," << data.unfolded_yields_Sp19Inb[i];
+            // Write raw yields, acceptance, and unfolded yields for Fa18Out
+            file << data.raw_yields_FD_FD_Fa18Out[i] << "," 
+                 << data.raw_yields_CD_FD_Fa18Out[i] << "," 
+                 << data.raw_yields_CD_FT_Fa18Out[i] << "," 
+                 << data.raw_yield_combined_Fa18Out[i] << ","
+                 << data.acceptance_Fa18Out[i] << "," 
+                 << data.unfolded_yields_Fa18Out[i] << ",";
+
+            // Write raw yields, acceptance, and unfolded yields for Sp19Inb
+            file << data.raw_yields_FD_FD_Sp19Inb[i] << "," 
+                 << data.raw_yields_CD_FD_Sp19Inb[i] << "," 
+                 << data.raw_yields_CD_FT_Sp19Inb[i] << "," 
+                 << data.raw_yield_combined_Sp19Inb[i] << ","
+                 << data.acceptance_Sp19Inb[i] << "," 
+                 << data.unfolded_yields_Sp19Inb[i];
 
             // End the line after all periods' data is written
             file << std::endl;
