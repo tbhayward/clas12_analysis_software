@@ -248,31 +248,78 @@ int main(int argc, char* argv[]) {
     //     plot_dvcs_data_mc_comparison(output_dir, "eppi0", "Fa18 Inb", xB_bin, bin_boundaries, eppi0_readers[0], mc_gen_aaogen_readers[0], mc_rec_aaogen_readers[0]);
     // }
 
-    // Create a vector to hold all the unfolding data across bins
+    // Prepare the vector to hold all the unfolding data
     std::vector<UnfoldingData> all_unfolding_data;
 
     // Iterate over the xB bins
     for (int xB_bin = 0; xB_bin < 1; ++xB_bin) {  
-        // Call the plot_unfolding function for each xB_bin and get the results
-        std::vector<UnfoldingData> bin_data = plot_unfolding(base_output_dir, "dvcs", xB_bin, bin_boundaries, data_readers, mc_gen_dvcsgen_readers, mc_rec_dvcsgen_readers);
-        
-        // Append the collected bin data to the main results
-        all_unfolding_data.insert(all_unfolding_data.end(), bin_data.begin(), bin_data.end());
+        // Precompute relevant bins for xB_bin
+        std::vector<int> relevant_bins = precompute_relevant_bins(xB_bin, bin_boundaries);
+        int n_Q2t_bins = relevant_bins.size();
+
+        // Initialize data structures for all run periods (Fa18 Inb, Fa18 Out, Sp19 Inb)
+        for (int idx = 0; idx < n_Q2t_bins; ++idx) {
+            const auto& bin = bin_boundaries[relevant_bins[idx]];
+            UnfoldingData unfolding_data;
+            
+            unfolding_data.bin_number = idx;
+            unfolding_data.xB_min = bin.xB_low;
+            unfolding_data.xB_max = bin.xB_high;
+            unfolding_data.xB_avg = bin.xB_avg;
+            unfolding_data.Q2_min = bin.Q2_low;
+            unfolding_data.Q2_max = bin.Q2_high;
+            unfolding_data.Q2_avg = bin.Q2_avg;
+            unfolding_data.t_min = bin.t_low;
+            unfolding_data.t_max = bin.t_high;
+            unfolding_data.t_avg = bin.t_avg;
+
+            // Resize vectors for all periods before filling
+            unfolding_data.raw_yields.resize(period_names.size(), std::vector<int>(topologies.size() * 24));
+            unfolding_data.acceptance.resize(period_names.size(), std::vector<double>(24));
+            unfolding_data.unfolded_yields.resize(period_names.size(), std::vector<double>(24));
+
+            // Iterate over all run periods (Fa18 Inb, Fa18 Out, Sp19 Inb)
+            for (size_t period_idx = 0; period_idx < period_names.size(); ++period_idx) {
+                const std::string& period_name = period_names[period_idx];
+                
+                // Fetch the correct reader for the current period
+                TTreeReader& data_reader = data_readers[period_idx];
+                TTreeReader& mc_gen_reader = mc_gen_readers[period_idx];
+                TTreeReader& mc_rec_reader = mc_rec_readers[period_idx];
+
+                // Process each phi bin for the current period
+                for (int phi_bin = 1; phi_bin <= 24; ++phi_bin) {
+                    double phi_min = (phi_bin - 1) * 15.0;
+                    double phi_max = phi_bin * 15.0;
+                    unfolding_data.phi_min.push_back(phi_min);
+                    unfolding_data.phi_max.push_back(phi_max);
+
+                    // Get the raw yield for each topology
+                    for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
+                        int raw_yield = h_data_histograms[topo_idx][idx]->GetBinContent(phi_bin);
+                        unfolding_data.raw_yields[period_idx][topo_idx * 24 + (phi_bin - 1)] = raw_yield;
+                    }
+
+                    // Store acceptance for combined topology (topo_idx == 3)
+                    double acceptance_value = h_acceptance_histograms[idx]->GetBinContent(phi_bin);
+                    unfolding_data.acceptance[period_idx][phi_bin - 1] = acceptance_value;
+
+                    // Store unfolded yield for combined topology (topo_idx == 3)
+                    if (acceptance_value > 0) {
+                        double unfolded_yield = h_data_histograms[3][idx]->GetBinContent(phi_bin) / acceptance_value;
+                        unfolding_data.unfolded_yields[period_idx][phi_bin - 1] = unfolded_yield;
+                    } else {
+                        unfolding_data.unfolded_yields[period_idx][phi_bin - 1] = 0.0;
+                    }
+                }
+            }
+            
+            // After collecting data for all periods, store the unfolding data
+            all_unfolding_data.push_back(unfolding_data);
+        }
     }
 
-    // Debug information to check the contents of all_unfolding_data
-    std::cout << "Debug: Number of unfolding_data entries: " << all_unfolding_data.size() << std::endl;
-
-    for (size_t j = 0; j < all_unfolding_data.size(); ++j) {
-        std::cout << "UnfoldingData " << j << ": xB_min = " << all_unfolding_data[j].xB_min
-                  << ", Q2_min = " << all_unfolding_data[j].Q2_min 
-                  << ", Period 0 raw_yields size: " << all_unfolding_data[j].raw_yields[0].size()
-                  << ", Period 1 raw_yields size: " << all_unfolding_data[j].raw_yields[1].size()
-                  << ", Period 2 raw_yields size: " << all_unfolding_data[j].raw_yields[2].size()
-                  << std::endl;
-    }
-
-    // After collecting all the data, write it to a CSV file
+    // Write the data to the CSV file after all bins and periods are processed
     write_csv("output/unfolding_data.csv", all_unfolding_data);
 
     // // Call the plotting function for the pi0 mass (optional)
