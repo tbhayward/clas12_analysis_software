@@ -94,89 +94,79 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
     }
 
     // Readers for necessary branches in all datasets (data, mc_gen, mc_rec)
-    std::vector<TTreeReaderValue<int>> detector1_data_readers;
-    std::vector<TTreeReaderValue<int>> detector2_data_readers;
-    std::vector<TTreeReaderValue<double>> phi_data_readers;
-    std::vector<TTreeReaderValue<double>> xB_data_readers;
-    std::vector<TTreeReaderValue<double>> Q2_data_readers;
-    std::vector<TTreeReaderValue<double>> t1_data_readers;
-    std::vector<TTreeReaderValue<double>> open_angle_ep2_data_readers;
-    std::vector<TTreeReaderValue<double>> Emiss2_data_readers;
-    std::vector<TTreeReaderValue<double>> Mx2_1_data_readers;
-    std::vector<TTreeReaderValue<double>> pTmiss_data_readers;
-
-    for (auto& reader : data_readers) {
-        detector1_data_readers.emplace_back(reader, "detector1");
-        detector2_data_readers.emplace_back(reader, "detector2");
-        phi_data_readers.emplace_back(reader, "phi");
-        xB_data_readers.emplace_back(reader, "x");
-        Q2_data_readers.emplace_back(reader, "Q2");
-        t1_data_readers.emplace_back(reader, "t1");
-        open_angle_ep2_data_readers.emplace_back(reader, "open_angle_ep2");
-        Emiss2_data_readers.emplace_back(reader, "Emiss2");
-        Mx2_1_data_readers.emplace_back(reader, "Mx2_1");
-        pTmiss_data_readers.emplace_back(reader, "pTmiss");
-    }
-
-    // Process data for all periods in a single loop over the bins
     for (int idx = 0; idx < n_Q2t_bins; ++idx) {
         const auto& bin = bin_boundaries[relevant_bins[idx]];
 
+        // Loop over data, MC generated, and MC reconstructed readers
         for (size_t period_idx = 0; period_idx < period_names.size(); ++period_idx) {
-            auto& data_reader = data_readers[period_idx];
+            // Data reader setup
+            TTreeReader& data_reader = data_readers[period_idx];
+            TTreeReaderValue<int> detector1_data(data_reader, "detector1");
+            TTreeReaderValue<int> detector2_data(data_reader, "detector2");
+            TTreeReaderValue<double> phi_data(data_reader, "phi");
+            TTreeReaderValue<double> xB_data(data_reader, "x");
+            TTreeReaderValue<double> Q2_data(data_reader, "Q2");
+            TTreeReaderValue<double> t1_data(data_reader, "t1");
+            TTreeReaderValue<double> open_angle_ep2_data(data_reader, "open_angle_ep2");
+            TTreeReaderValue<double> Emiss2_data(data_reader, "Emiss2");
+            TTreeReaderValue<double> Mx2_1_data(data_reader, "Mx2_1");
+            TTreeReaderValue<double> pTmiss_data(data_reader, "pTmiss");
 
+            // MC generated reader setup
+            TTreeReader& mc_gen_reader = mc_gen_readers[period_idx];
+            TTreeReaderValue<double> phi_mc_gen(mc_gen_reader, "phi");
+            TTreeReaderValue<double> xB_mc_gen(mc_gen_reader, "x");
+            TTreeReaderValue<double> Q2_mc_gen(mc_gen_reader, "Q2");
+            TTreeReaderValue<double> t1_mc_gen(mc_gen_reader, "t1");
+
+            // MC reconstructed reader setup
+            TTreeReader& mc_rec_reader = mc_rec_readers[period_idx];
+            TTreeReaderValue<double> phi_mc_rec(mc_rec_reader, "phi");
+            TTreeReaderValue<double> xB_mc_rec(mc_rec_reader, "x");
+            TTreeReaderValue<double> Q2_mc_rec(mc_rec_reader, "Q2");
+            TTreeReaderValue<double> t1_mc_rec(mc_rec_reader, "t1");
+
+            // Process the data reader and fill histograms
             while (data_reader.Next()) {
-                double phi_deg = *phi_data_readers[period_idx] * RAD_TO_DEG;
+                double phi_deg = *phi_data * RAD_TO_DEG;
 
-                if ((*xB_data_readers[period_idx] >= bin.xB_low && *xB_data_readers[period_idx] <= bin.xB_high &&
-                     *Q2_data_readers[period_idx] >= bin.Q2_low && *Q2_data_readers[period_idx] <= bin.Q2_high &&
-                     std::abs(*t1_data_readers[period_idx]) >= bin.t_low && std::abs(*t1_data_readers[period_idx]) <= bin.t_high) &&
-                    apply_kinematic_cuts(*t1_data_readers[period_idx], *open_angle_ep2_data_readers[period_idx], 0.5, *Emiss2_data_readers[period_idx], *Mx2_1_data_readers[period_idx], *pTmiss_data_readers[period_idx])) {
+                if ((*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
+                     *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
+                     std::abs(*t1_data) >= bin.t_low && std::abs(*t1_data) <= bin.t_high) &&
+                    apply_kinematic_cuts(*t1_data, *open_angle_ep2_data, 0.5, *Emiss2_data, *Mx2_1_data, *pTmiss_data)) {
 
-                    // Fill data histograms based on detector topologies
-                    if (*detector1_data_readers[period_idx] == 1 && *detector2_data_readers[period_idx] == 1) {  // (FD,FD)
+                    if (*detector1_data == 1 && *detector2_data == 1) {  // (FD,FD)
                         h_data_histograms[0][idx]->Fill(phi_deg);
-                    } else if (*detector1_data_readers[period_idx] == 2 && *detector2_data_readers[period_idx] == 1) {  // (CD,FD)
+                    } else if (*detector1_data == 2 && *detector2_data == 1) {  // (CD,FD)
                         h_data_histograms[1][idx]->Fill(phi_deg);
-                    } else if (*detector1_data_readers[period_idx] == 2 && *detector2_data_readers[period_idx] == 0) {  // (CD,FT)
+                    } else if (*detector1_data == 2 && *detector2_data == 0) {  // (CD,FT)
                         h_data_histograms[2][idx]->Fill(phi_deg);
                     }
 
-                    // Also fill the combined histogram
-                    h_data_histograms[3][idx]->Fill(phi_deg);
+                    h_data_histograms[3][idx]->Fill(phi_deg);  // Combined histogram
                 }
             }
-        }
-    }
 
-    // Loop over the MC generated and reconstructed readers for each period
-    for (int idx = 0; idx < n_Q2t_bins; ++idx) {
-        const auto& bin = bin_boundaries[relevant_bins[idx]];
-
-        for (size_t period_idx = 0; period_idx < period_names.size(); ++period_idx) {
-            auto& mc_gen_reader = mc_gen_readers[period_idx];
-            auto& mc_rec_reader = mc_rec_readers[period_idx];
-
+            // Process MC generated reader
             while (mc_gen_reader.Next()) {
-                double phi_mc_gen_deg = *mc_gen_reader.GetValue("phi") * RAD_TO_DEG;
+                double phi_mc_gen_deg = *phi_mc_gen * RAD_TO_DEG;
 
-                if ((*mc_gen_reader.GetValue("x") >= bin.xB_low && *mc_gen_reader.GetValue("x") <= bin.xB_high &&
-                     *mc_gen_reader.GetValue("Q2") >= bin.Q2_low && *mc_gen_reader.GetValue("Q2") <= bin.Q2_high &&
-                     std::abs(*mc_gen_reader.GetValue("t1")) >= bin.t_low && std::abs(*mc_gen_reader.GetValue("t1")) <= bin.t_high)) {
+                if ((*xB_mc_gen >= bin.xB_low && *xB_mc_gen <= bin.xB_high &&
+                     *Q2_mc_gen >= bin.Q2_low && *Q2_mc_gen <= bin.Q2_high &&
+                     std::abs(*t1_mc_gen) >= bin.t_low && std::abs(*t1_mc_gen) <= bin.t_high)) {
 
-                    // Fill generated MC histogram (combined only)
                     h_mc_gen_histograms[idx]->Fill(phi_mc_gen_deg);
                 }
             }
 
+            // Process MC reconstructed reader
             while (mc_rec_reader.Next()) {
-                double phi_mc_rec_deg = *mc_rec_reader.GetValue("phi") * RAD_TO_DEG;
+                double phi_mc_rec_deg = *phi_mc_rec * RAD_TO_DEG;
 
-                if ((*mc_rec_reader.GetValue("x") >= bin.xB_low && *mc_rec_reader.GetValue("x") <= bin.xB_high &&
-                     *mc_rec_reader.GetValue("Q2") >= bin.Q2_low && *mc_rec_reader.GetValue("Q2") <= bin.Q2_high &&
-                     std::abs(*mc_rec_reader.GetValue("t1")) >= bin.t_low && std::abs(*mc_rec_reader.GetValue("t1")) <= bin.t_high)) {
+                if ((*xB_mc_rec >= bin.xB_low && *xB_mc_rec <= bin.xB_high &&
+                     *Q2_mc_rec >= bin.Q2_low && *Q2_mc_rec <= bin.Q2_high &&
+                     std::abs(*t1_mc_rec) >= bin.t_low && std::abs(*t1_mc_rec) <= bin.t_high)) {
 
-                    // Fill reconstructed MC histogram (combined only)
                     h_mc_rec_histograms[idx]->Fill(phi_mc_rec_deg);
                 }
             }
