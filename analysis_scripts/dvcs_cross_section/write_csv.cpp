@@ -46,25 +46,26 @@ void write_csv(const std::string& filename, const std::vector<UnfoldingData>& un
             for (int period = 0; period < 3; ++period) {
                 // Write raw yields for each topology (FD,FD), (CD,FD), (CD,FT), and combined
                 for (size_t topo_idx = 0; topo_idx < 4; ++topo_idx) {
+                    size_t index = topo_idx * data.phi_min.size() + i;
 
+                    // Debug info for size checks
                     std::cout << "Debug Info: period: " << period 
-                      << ", raw_yields size: " << data.raw_yields[period].size() 
-                      << ", expected size: " << 4 * data.phi_min.size() 
-                      << ", access index: " << topo_idx * data.phi_min.size() + i 
-                      << std::endl;
-                    if (period < data.raw_yields.size() && topo_idx < data.raw_yields[period].size()) {
-                        std::cout << "Within bounds" << std::endl;
-                        file << data.raw_yields[period][topo_idx * data.phi_min.size() + i] << ",";
+                              << ", raw_yields size: " << data.raw_yields[period].size() 
+                              << ", expected size: " << 4 * data.phi_min.size() 
+                              << ", access index: " << index 
+                              << std::endl;
+
+                    if (index < data.raw_yields[period].size()) {
+                        file << data.raw_yields[period][index] << ",";
                     } else {
-                        std::cerr << "Out of bounds access detected!" << std::endl;
+                        std::cerr << "Out of bounds access detected at index " << index << std::endl;
+                        file << "0,";  // Writing a placeholder value if out-of-bounds
                     }
-                    file << data.raw_yields[period][topo_idx * data.phi_min.size() + i] << ",";
                 }
 
-                std::cout << "Writing column for period " << period << " and phi bin " << i << std::endl;
-                // Write acceptance and unfolded yields for the current period
-                write_vector_to_csv(file, data.acceptance[period]);
-                write_vector_to_csv(file, data.unfolded_yields[period]);
+                // Write acceptance and unfolded yields for the current phi bin
+                file << data.acceptance[period][i] << ","; // Only write the current phi bin
+                file << data.unfolded_yields[period][i];   // Only write the current phi bin
 
                 if (period < 2) {
                     file << ",";  // Add a comma for the next period (except the last one)
