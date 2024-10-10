@@ -372,9 +372,9 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
         mc_rec_reader.Restart();
     }
 
-    std::cout << "Final raw_yields size: " << unfolding_data.raw_yields.size() << std::endl;
-    for (size_t p = 0; p < unfolding_data.raw_yields.size(); ++p) {
-        std::cout << "Period " << p << ": " << unfolding_data.raw_yields[p].size() << " entries." << std::endl;
+    std::cout << "Final raw_yields size: " << all_unfolding_data.raw_yields.size() << std::endl;
+    for (size_t p = 0; p < all_unfolding_data.raw_yields.size(); ++p) {
+        std::cout << "Period " << p << ": " << all_unfolding_data.raw_yields[p].size() << " entries." << std::endl;
     }
 
     // Return all the gathered unfolding data
