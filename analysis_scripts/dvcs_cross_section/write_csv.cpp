@@ -34,6 +34,7 @@ void write_csv(const std::string& filename, const std::vector<UnfoldingData>& un
 
     // Loop through the unfolding data and write each entry to the file
     for (const auto& data : unfolding_data) {
+        // Write the binning information once for each bin, followed by the three periods
         for (size_t i = 0; i < data.phi_min.size(); ++i) {
             // Write the binning information
             file << data.bin_number << ","
@@ -42,18 +43,11 @@ void write_csv(const std::string& filename, const std::vector<UnfoldingData>& un
                  << data.t_min << "," << data.t_max << "," << data.t_avg << ","
                  << data.phi_min[i] << "," << data.phi_max[i] << ",";
 
-            // Write data for each period (Fa18Inb, Fa18Out, Sp19Inb)
+            // Write data for each period (Fa18Inb, Fa18Out, Sp19Inb) on the same line
             for (int period = 0; period < 3; ++period) {
                 // Write raw yields for each topology (FD,FD), (CD,FD), (CD,FT), and combined
                 for (size_t topo_idx = 0; topo_idx < 4; ++topo_idx) {
                     size_t index = topo_idx * data.phi_min.size() + i;
-
-                    // Debug info for size checks
-                    std::cout << "Debug Info: period: " << period 
-                              << ", raw_yields size: " << data.raw_yields[period].size() 
-                              << ", expected size: " << 4 * data.phi_min.size() 
-                              << ", access index: " << index 
-                              << std::endl;
 
                     if (index < data.raw_yields[period].size()) {
                         file << data.raw_yields[period][index] << ",";
