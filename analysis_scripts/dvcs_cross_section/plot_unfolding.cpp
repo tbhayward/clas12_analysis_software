@@ -31,145 +31,114 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
     // Vector to store all the unfolding data
     std::vector<UnfoldingData> all_unfolding_data;
 
-    // Loop over the run periods (three run periods)
-    for (size_t period_idx = 0; period_idx < period_names.size(); ++period_idx) {
-        const std::string& period_name = period_names[period_idx];
+    // Precompute the relevant bins for the xB_bin
+    std::vector<int> relevant_bins = precompute_relevant_bins(xB_bin, bin_boundaries);
+    int n_Q2t_bins = relevant_bins.size();
+    std::cout << "Current xB_bin = " << xB_bin << ", Number of Q2t bins: " << n_Q2t_bins << std::endl;
 
-        // Construct the output directory for this run period
-        std::string output_dir = base_output_dir + "/unfolded" + channel_dir + "/" + period_name;
+    // Adjust canvas size
+    const int base_canvas_width = 1200;
+    const int base_canvas_height = 800;
+    int canvas_width = static_cast<int>(1.5 * base_canvas_width);
+    int canvas_height = static_cast<int>(1.5 * base_canvas_height);
 
-        // Use references to access the TTreeReader instances directly from the vectors
-        TTreeReader& data_reader = data_readers[period_idx];
-        TTreeReader& mc_gen_reader = mc_gen_readers[period_idx];
-        TTreeReader& mc_rec_reader = mc_rec_readers[period_idx];
+    // Determine number of rows and columns for the canvases
+    int n_columns = (xB_bin == 3 || xB_bin == 4) ? 5 : std::sqrt(next_perfect_square(n_Q2t_bins));
+    int n_rows = std::ceil(static_cast<double>(n_Q2t_bins) / n_columns);
 
-        // Precompute the relevant bins for the xB_bin
-        std::vector<int> relevant_bins = precompute_relevant_bins(xB_bin, bin_boundaries);
-        int n_Q2t_bins = relevant_bins.size();
-        std::cout << "Current xB_bin = " << xB_bin << ", Number of Q2t bins: " << n_Q2t_bins << std::endl;
+    // Create histograms for data, rec MC, gen MC, and acceptance (for combined only)
+    std::vector<std::vector<TH1D*>> h_data_histograms(topologies.size(), std::vector<TH1D*>(n_Q2t_bins));
+    std::vector<TH1D*> h_mc_gen_histograms(n_Q2t_bins);
+    std::vector<TH1D*> h_mc_rec_histograms(n_Q2t_bins);
+    std::vector<TH1D*> h_acceptance_histograms(n_Q2t_bins);
 
-        // Adjust canvas size
-        const int base_canvas_width = 1200;
-        const int base_canvas_height = 800;
-        int canvas_width = static_cast<int>(1.5 * base_canvas_width);
-        int canvas_height = static_cast<int>(1.5 * base_canvas_height);
+    // Initialize histograms and phi bins for each topology and bin
+    for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
+        for (int idx = 0; idx < n_Q2t_bins; ++idx) {
+            const auto& bin = bin_boundaries[relevant_bins[idx]];
 
-        // Determine number of rows and columns for the canvases
-        int n_columns = (xB_bin == 3 || xB_bin == 4) ? 5 : std::sqrt(next_perfect_square(n_Q2t_bins));
-        int n_rows = std::ceil(static_cast<double>(n_Q2t_bins) / n_columns);
+            // Create title string with the channel, period name, and bin information
+            std::string title = Form("%s <x_{B}>: %.2f, <Q^{2}>: %.2f, <-t>: %.2f", 
+                                     analysisType.c_str(), 
+                                     bin.xB_avg, bin.Q2_avg, std::abs(bin.t_avg));
 
-        // Create histograms for data, rec MC, gen MC, and acceptance (for combined only)
-        std::vector<std::vector<TH1D*>> h_data_histograms(topologies.size(), std::vector<TH1D*>(n_Q2t_bins));
-        std::vector<TH1D*> h_mc_gen_histograms(n_Q2t_bins);
-        std::vector<TH1D*> h_mc_rec_histograms(n_Q2t_bins);
-        std::vector<TH1D*> h_acceptance_histograms(n_Q2t_bins);
+            // Create histogram for the data yields with the appropriate title
+            h_data_histograms[topo_idx][idx] = new TH1D(Form("h_data_%zu_%d", topo_idx, idx), title.c_str(), 24, 0, 360);
 
-        // Initialize histograms and phi bins
-        for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
-            for (int idx = 0; idx < n_Q2t_bins; ++idx) {
-                const auto& bin = bin_boundaries[relevant_bins[idx]];
+            // Set axis labels and format for data histograms
+            h_data_histograms[topo_idx][idx]->GetXaxis()->SetLabelSize(0.05);
+            h_data_histograms[topo_idx][idx]->GetYaxis()->SetLabelSize(0.05);
+            h_data_histograms[topo_idx][idx]->GetXaxis()->SetTitleSize(0.06);
+            h_data_histograms[topo_idx][idx]->GetYaxis()->SetTitleSize(0.06);
+            h_data_histograms[topo_idx][idx]->GetXaxis()->SetTitle("#phi");
 
-                // Create title string with the channel, period name, and bin information
-                std::string title = Form("%s %s, <x_{B}>: %.2f, <Q^{2}>: %.2f, <-t>: %.2f", 
-                                         analysisType.c_str(), period_name.c_str(),
-                                         bin.xB_avg, bin.Q2_avg, std::abs(bin.t_avg));
+            // Set Y-axis title based on whether it's a "Raw Yield" or "Unfolded Yield"
+            if (topo_idx == 3) {
+                h_data_histograms[topo_idx][idx]->GetYaxis()->SetTitle("Unfolded Yield");
+            } else {
+                h_data_histograms[topo_idx][idx]->GetYaxis()->SetTitle("Raw Yield");
+            }
 
-                // Create histogram for the data yields with the appropriate title
-                h_data_histograms[topo_idx][idx] = new TH1D(Form("h_data_%zu_%d", topo_idx, idx), title.c_str(), 24, 0, 360);
+            // Set markers and draw vertical error bars without horizontal error bars
+            h_data_histograms[topo_idx][idx]->SetMarkerStyle(20);
+            h_data_histograms[topo_idx][idx]->SetMarkerSize(1.2);
+            h_data_histograms[topo_idx][idx]->SetDrawOption("P E1");
 
-                // Set axis labels and format for data histograms
-                h_data_histograms[topo_idx][idx]->GetXaxis()->SetLabelSize(0.05);
-                h_data_histograms[topo_idx][idx]->GetYaxis()->SetLabelSize(0.05);
-                h_data_histograms[topo_idx][idx]->GetXaxis()->SetTitleSize(0.06);
-                h_data_histograms[topo_idx][idx]->GetYaxis()->SetTitleSize(0.06);
-                h_data_histograms[topo_idx][idx]->GetXaxis()->SetTitle("#phi");
-
-                // Set Y-axis title based on whether it's a "Raw Yield" or "Unfolded Yield"
-                if (topo_idx == 3) {
-                    h_data_histograms[topo_idx][idx]->GetYaxis()->SetTitle("Unfolded Yield");
-                } else {
-                    h_data_histograms[topo_idx][idx]->GetYaxis()->SetTitle("Raw Yield");
-                }
-
-                // Set markers and draw vertical error bars without horizontal error bars
-                h_data_histograms[topo_idx][idx]->SetMarkerStyle(20);
-                h_data_histograms[topo_idx][idx]->SetMarkerSize(1.2);
-                h_data_histograms[topo_idx][idx]->SetDrawOption("P E1");
-
-                // Create histograms for MC and acceptance if it's the combined histogram
-                if (topo_idx == 3) {
-                    h_mc_gen_histograms[idx] = new TH1D(Form("h_mc_gen_combined_%d", idx), title.c_str(), 24, 0, 360);
-                    h_mc_rec_histograms[idx] = new TH1D(Form("h_mc_rec_combined_%d", idx), title.c_str(), 24, 0, 360);
-                    h_acceptance_histograms[idx] = new TH1D(Form("h_acceptance_combined_%d", idx), title.c_str(), 24, 0, 360);
-                }
+            // Create histograms for MC and acceptance if it's the combined histogram
+            if (topo_idx == 3) {
+                h_mc_gen_histograms[idx] = new TH1D(Form("h_mc_gen_combined_%d", idx), title.c_str(), 24, 0, 360);
+                h_mc_rec_histograms[idx] = new TH1D(Form("h_mc_rec_combined_%d", idx), title.c_str(), 24, 0, 360);
+                h_acceptance_histograms[idx] = new TH1D(Form("h_acceptance_combined_%d", idx), title.c_str(), 24, 0, 360);
             }
         }
+    }
 
-        // Readers for necessary branches in all datasets (data, mc_gen, mc_rec)
-        TTreeReaderValue<int> detector1_data(data_reader, "detector1");
-        TTreeReaderValue<int> detector2_data(data_reader, "detector2");
-        TTreeReaderValue<double> phi_data(data_reader, "phi");
-        TTreeReaderValue<double> xB_data(data_reader, "x");
-        TTreeReaderValue<double> Q2_data(data_reader, "Q2");
-        TTreeReaderValue<double> t1_data(data_reader, "t1");
-        TTreeReaderValue<double> open_angle_ep2_data(data_reader, "open_angle_ep2");
-        TTreeReaderValue<double> Emiss2_data(data_reader, "Emiss2");
-        TTreeReaderValue<double> Mx2_1_data(data_reader, "Mx2_1");
-        TTreeReaderValue<double> pTmiss_data(data_reader, "pTmiss");
+    // Readers for necessary branches in all datasets (data, mc_gen, mc_rec)
+    std::vector<TTreeReaderValue<int>> detector1_data_readers;
+    std::vector<TTreeReaderValue<int>> detector2_data_readers;
+    std::vector<TTreeReaderValue<double>> phi_data_readers;
+    std::vector<TTreeReaderValue<double>> xB_data_readers;
+    std::vector<TTreeReaderValue<double>> Q2_data_readers;
+    std::vector<TTreeReaderValue<double>> t1_data_readers;
+    std::vector<TTreeReaderValue<double>> open_angle_ep2_data_readers;
+    std::vector<TTreeReaderValue<double>> Emiss2_data_readers;
+    std::vector<TTreeReaderValue<double>> Mx2_1_data_readers;
+    std::vector<TTreeReaderValue<double>> pTmiss_data_readers;
 
-        TTreeReaderValue<double> phi_mc_gen(mc_gen_reader, "phi");
-        TTreeReaderValue<double> xB_mc_gen(mc_gen_reader, "x");
-        TTreeReaderValue<double> Q2_mc_gen(mc_gen_reader, "Q2");
-        TTreeReaderValue<double> t1_mc_gen(mc_gen_reader, "t1");
-        TTreeReaderValue<double> open_angle_ep2_mc_gen(mc_gen_reader, "open_angle_ep2");
-        TTreeReaderValue<double> Emiss2_mc_gen(mc_gen_reader, "Emiss2");
-        TTreeReaderValue<double> Mx2_1_mc_gen(mc_gen_reader, "Mx2_1");
-        TTreeReaderValue<double> pTmiss_mc_gen(mc_gen_reader, "pTmiss");
+    for (auto& reader : data_readers) {
+        detector1_data_readers.emplace_back(reader, "detector1");
+        detector2_data_readers.emplace_back(reader, "detector2");
+        phi_data_readers.emplace_back(reader, "phi");
+        xB_data_readers.emplace_back(reader, "x");
+        Q2_data_readers.emplace_back(reader, "Q2");
+        t1_data_readers.emplace_back(reader, "t1");
+        open_angle_ep2_data_readers.emplace_back(reader, "open_angle_ep2");
+        Emiss2_data_readers.emplace_back(reader, "Emiss2");
+        Mx2_1_data_readers.emplace_back(reader, "Mx2_1");
+        pTmiss_data_readers.emplace_back(reader, "pTmiss");
+    }
 
-        TTreeReaderValue<double> phi_mc_rec(mc_rec_reader, "phi");
-        TTreeReaderValue<double> xB_mc_rec(mc_rec_reader, "x");
-        TTreeReaderValue<double> Q2_mc_rec(mc_rec_reader, "Q2");
-        TTreeReaderValue<double> t1_mc_rec(mc_rec_reader, "t1");
-        TTreeReaderValue<double> open_angle_ep2_mc_rec(mc_rec_reader, "open_angle_ep2");
-        TTreeReaderValue<double> Emiss2_mc_rec(mc_rec_reader, "Emiss2");
-        TTreeReaderValue<double> Mx2_1_mc_rec(mc_rec_reader, "Mx2_1");
-        TTreeReaderValue<double> pTmiss_mc_rec(mc_rec_reader, "pTmiss");
+    // Process data for all periods in a single loop over the bins
+    for (int idx = 0; idx < n_Q2t_bins; ++idx) {
+        const auto& bin = bin_boundaries[relevant_bins[idx]];
 
-        // Handle theta_neutral_neutral based on analysis type (dvcs or eppi0)
-        TTreeReaderValue<double>* theta_neutral_neutral_data;
-        TTreeReaderValue<double>* theta_neutral_neutral_mc_gen;
-        TTreeReaderValue<double>* theta_neutral_neutral_mc_rec;
-        if (analysisType == "dvcs") {
-            theta_neutral_neutral_data = new TTreeReaderValue<double>(data_reader, "theta_gamma_gamma");
-            theta_neutral_neutral_mc_gen = new TTreeReaderValue<double>(mc_gen_reader, "theta_gamma_gamma");
-            theta_neutral_neutral_mc_rec = new TTreeReaderValue<double>(mc_rec_reader, "theta_gamma_gamma");
-        } else if (analysisType == "eppi0") {
-            theta_neutral_neutral_data = new TTreeReaderValue<double>(data_reader, "theta_pi0_pi0");
-            theta_neutral_neutral_mc_gen = new TTreeReaderValue<double>(mc_gen_reader, "theta_pi0_pi0");
-            theta_neutral_neutral_mc_rec = new TTreeReaderValue<double>(mc_rec_reader, "theta_pi0_pi0");
-        }
+        for (size_t period_idx = 0; period_idx < period_names.size(); ++period_idx) {
+            auto& data_reader = data_readers[period_idx];
 
-        // Print before starting loops
-        std::cout << "starting data" << std::endl;
+            while (data_reader.Next()) {
+                double phi_deg = *phi_data_readers[period_idx] * RAD_TO_DEG;
 
-        // Loop over the data reader and fill histograms
-        while (data_reader.Next()) {
-            double phi_deg = *phi_data * RAD_TO_DEG;
-
-            for (int idx = 0; idx < n_Q2t_bins; ++idx) {
-                const auto& bin = bin_boundaries[relevant_bins[idx]];
-
-                if ((*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
-                    *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
-                    std::abs(*t1_data) >= bin.t_low && std::abs(*t1_data) <= bin.t_high) &&
-                    apply_kinematic_cuts(*t1_data, *open_angle_ep2_data, **theta_neutral_neutral_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data)) {
+                if ((*xB_data_readers[period_idx] >= bin.xB_low && *xB_data_readers[period_idx] <= bin.xB_high &&
+                     *Q2_data_readers[period_idx] >= bin.Q2_low && *Q2_data_readers[period_idx] <= bin.Q2_high &&
+                     std::abs(*t1_data_readers[period_idx]) >= bin.t_low && std::abs(*t1_data_readers[period_idx]) <= bin.t_high) &&
+                    apply_kinematic_cuts(*t1_data_readers[period_idx], *open_angle_ep2_data_readers[period_idx], 0.5, *Emiss2_data_readers[period_idx], *Mx2_1_data_readers[period_idx], *pTmiss_data_readers[period_idx])) {
 
                     // Fill data histograms based on detector topologies
-                    if (*detector1_data == 1 && *detector2_data == 1) {  // (FD,FD)
+                    if (*detector1_data_readers[period_idx] == 1 && *detector2_data_readers[period_idx] == 1) {  // (FD,FD)
                         h_data_histograms[0][idx]->Fill(phi_deg);
-                    } else if (*detector1_data == 2 && *detector2_data == 1) {  // (CD,FD)
+                    } else if (*detector1_data_readers[period_idx] == 2 && *detector2_data_readers[period_idx] == 1) {  // (CD,FD)
                         h_data_histograms[1][idx]->Fill(phi_deg);
-                    } else if (*detector1_data == 2 && *detector2_data == 0) {  // (CD,FT)
+                    } else if (*detector1_data_readers[period_idx] == 2 && *detector2_data_readers[period_idx] == 0) {  // (CD,FT)
                         h_data_histograms[2][idx]->Fill(phi_deg);
                     }
 
@@ -178,196 +147,128 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
                 }
             }
         }
+    }
 
-        std::cout << "starting gen mc" << std::endl;
+    // Loop over the MC generated and reconstructed readers for each period
+    for (int idx = 0; idx < n_Q2t_bins; ++idx) {
+        const auto& bin = bin_boundaries[relevant_bins[idx]];
 
-        // Loop over the MC generated reader and fill histograms
-        while (mc_gen_reader.Next()) {
-            double phi_mc_gen_deg = *phi_mc_gen * RAD_TO_DEG;
+        for (size_t period_idx = 0; period_idx < period_names.size(); ++period_idx) {
+            auto& mc_gen_reader = mc_gen_readers[period_idx];
+            auto& mc_rec_reader = mc_rec_readers[period_idx];
 
-            for (int idx = 0; idx < n_Q2t_bins; ++idx) {
-                const auto& bin = bin_boundaries[relevant_bins[idx]];
+            while (mc_gen_reader.Next()) {
+                double phi_mc_gen_deg = *mc_gen_reader.GetValue("phi") * RAD_TO_DEG;
 
-                if ((*xB_mc_gen >= bin.xB_low && *xB_mc_gen <= bin.xB_high &&
-                    *Q2_mc_gen >= bin.Q2_low && *Q2_mc_gen <= bin.Q2_high &&
-                    std::abs(*t1_mc_gen) >= bin.t_low && std::abs(*t1_mc_gen) <= bin.t_high) &&
-                    apply_kinematic_cuts(*t1_mc_gen, *open_angle_ep2_mc_gen, **theta_neutral_neutral_mc_gen, *Emiss2_mc_gen, *Mx2_1_mc_gen, *pTmiss_mc_gen)) {
+                if ((*mc_gen_reader.GetValue("x") >= bin.xB_low && *mc_gen_reader.GetValue("x") <= bin.xB_high &&
+                     *mc_gen_reader.GetValue("Q2") >= bin.Q2_low && *mc_gen_reader.GetValue("Q2") <= bin.Q2_high &&
+                     std::abs(*mc_gen_reader.GetValue("t1")) >= bin.t_low && std::abs(*mc_gen_reader.GetValue("t1")) <= bin.t_high)) {
 
                     // Fill generated MC histogram (combined only)
                     h_mc_gen_histograms[idx]->Fill(phi_mc_gen_deg);
                 }
             }
-        }
 
-        std::cout << "starting rec mc" << std::endl;
+            while (mc_rec_reader.Next()) {
+                double phi_mc_rec_deg = *mc_rec_reader.GetValue("phi") * RAD_TO_DEG;
 
-        // Loop over the MC reconstructed reader and fill histograms
-        while (mc_rec_reader.Next()) {
-            double phi_mc_rec_deg = *phi_mc_rec * RAD_TO_DEG;
-
-            for (int idx = 0; idx < n_Q2t_bins; ++idx) {
-                const auto& bin = bin_boundaries[relevant_bins[idx]];
-
-                if ((*xB_mc_rec >= bin.xB_low && *xB_mc_rec <= bin.xB_high &&
-                    *Q2_mc_rec >= bin.Q2_low && *Q2_mc_rec <= bin.Q2_high &&
-                    std::abs(*t1_mc_rec) >= bin.t_low && std::abs(*t1_mc_rec) <= bin.t_high) &&
-                    apply_kinematic_cuts(*t1_mc_rec, *open_angle_ep2_mc_rec, **theta_neutral_neutral_mc_rec, *Emiss2_mc_rec, *Mx2_1_mc_rec, *pTmiss_mc_rec)) {
+                if ((*mc_rec_reader.GetValue("x") >= bin.xB_low && *mc_rec_reader.GetValue("x") <= bin.xB_high &&
+                     *mc_rec_reader.GetValue("Q2") >= bin.Q2_low && *mc_rec_reader.GetValue("Q2") <= bin.Q2_high &&
+                     std::abs(*mc_rec_reader.GetValue("t1")) >= bin.t_low && std::abs(*mc_rec_reader.GetValue("t1")) <= bin.t_high)) {
 
                     // Fill reconstructed MC histogram (combined only)
                     h_mc_rec_histograms[idx]->Fill(phi_mc_rec_deg);
                 }
             }
-        }
 
-        // Compute acceptance for combined
-        for (int idx = 0; idx < n_Q2t_bins; ++idx) {
+            // Compute acceptance for combined
             if (h_mc_gen_histograms[idx]->Integral() > 0) {
                 h_acceptance_histograms[idx]->Divide(h_mc_rec_histograms[idx], h_mc_gen_histograms[idx], 1, 1, "B");
             }
         }
-
-        // Gather and store unfolding data
-        for (int idx = 0; idx < n_Q2t_bins; ++idx) {
-            const auto& bin = bin_boundaries[relevant_bins[idx]];
-            UnfoldingData unfolding_data;
-            
-            unfolding_data.bin_number = idx;
-            unfolding_data.xB_min = bin.xB_low;
-            unfolding_data.xB_max = bin.xB_high;
-            unfolding_data.xB_avg = bin.xB_avg;
-            unfolding_data.Q2_min = bin.Q2_low;
-            unfolding_data.Q2_max = bin.Q2_high;
-            unfolding_data.Q2_avg = bin.Q2_avg;
-            unfolding_data.t_min = bin.t_low;
-            unfolding_data.t_max = bin.t_high;
-            unfolding_data.t_avg = bin.t_avg;
-
-            // Resize vectors for each period
-            unfolding_data.raw_yields.resize(period_names.size(), std::vector<int>(topologies.size() * 24));  // Topology x Phi bins
-            unfolding_data.acceptance.resize(period_names.size(), std::vector<double>(24));  // Acceptance for each phi_bin
-            unfolding_data.unfolded_yields.resize(period_names.size(), std::vector<double>(24));  // Unfolded yield for each phi_bin
-
-            // For each phi bin (24 bins from 0 to 360)
-            for (int phi_bin = 1; phi_bin <= 24; ++phi_bin) {
-                double phi_min = (phi_bin - 1) * 15.0;
-                double phi_max = phi_bin * 15.0;
-                unfolding_data.phi_min.push_back(phi_min);
-                unfolding_data.phi_max.push_back(phi_max);
-
-                // Get the raw yield for each topology
-                for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
-                    int raw_yield = h_data_histograms[topo_idx][idx]->GetBinContent(phi_bin);
-                    unfolding_data.raw_yields[period_idx][topo_idx * 24 + (phi_bin - 1)] = raw_yield;
-                }
-
-                // Store acceptance for combined topology (topo_idx == 3)
-                double acceptance_value = h_acceptance_histograms[idx]->GetBinContent(phi_bin);
-                unfolding_data.acceptance[period_idx][phi_bin - 1] = acceptance_value;
-
-                // Store unfolded yield for combined topology (topo_idx == 3)
-                if (acceptance_value > 0) {
-                    double unfolded_yield = h_data_histograms[3][idx]->GetBinContent(phi_bin) / acceptance_value;
-                    unfolding_data.unfolded_yields[period_idx][phi_bin - 1] = unfolded_yield;
-                } else {
-                    unfolding_data.unfolded_yields[period_idx][phi_bin - 1] = 0.0;  // Set to 0 if acceptance is 0
-                }
-            }
-
-            // Add the unfolding data for this bin to the overall results
-            all_unfolding_data.push_back(unfolding_data);
-        }
-
-        // Plot and save histograms (data divided by acceptance for combined)
-        for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
-            TCanvas* canvas_yield = new TCanvas(Form("c_yield_%zu", topo_idx), "Yields", canvas_width, canvas_height);
-            canvas_yield->Divide(n_columns, n_rows);
-
-            for (int idx = 0; idx < n_Q2t_bins; ++idx) {
-                TPad* pad_yield = (TPad*)canvas_yield->cd(idx + 1);
-                pad_yield->SetLeftMargin(0.2);
-                pad_yield->SetBottomMargin(0.15);
-
-                // If this is the combined topology, we need to unfold by dividing data by acceptance
-                if (topo_idx == 3) {  // Combined histograms
-                    for (int bin = 1; bin <= h_data_histograms[topo_idx][idx]->GetNbinsX(); ++bin) {
-                        double acceptance_value = h_acceptance_histograms[idx]->GetBinContent(bin);
-                        if (acceptance_value > 0) {
-                            double data_value = h_data_histograms[topo_idx][idx]->GetBinContent(bin);
-                            double unfolded_value = data_value / acceptance_value;
-                            h_data_histograms[topo_idx][idx]->SetBinContent(bin, unfolded_value);
-
-                            // Calculate and set appropriate error for unfolded values
-                            double data_error = h_data_histograms[topo_idx][idx]->GetBinError(bin);
-                            double unfolded_error = data_error / acceptance_value;
-                            h_data_histograms[topo_idx][idx]->SetBinError(bin, unfolded_error);
-                        } else {
-                            // Set the unfolded value to 0 if the acceptance is 0
-                            h_data_histograms[topo_idx][idx]->SetBinContent(bin, 0);
-                            h_data_histograms[topo_idx][idx]->SetBinError(bin, 0);
-                        }
-                    }
-
-                    // Get the middle bin and adjust the y-axis range
-                    int middle_bin = h_data_histograms[topo_idx][idx]->GetNbinsX() / 2;
-                    double middle_bin_value = h_data_histograms[topo_idx][idx]->GetBinContent(middle_bin);
-                    h_data_histograms[topo_idx][idx]->GetYaxis()->SetRangeUser(0.0 * middle_bin_value, 2.25 * middle_bin_value);
-                }
-
-                // Draw the histogram
-                h_data_histograms[topo_idx][idx]->Draw("E1");
-            }
-
-            std::string filename_yield = output_dir + "/yields/yields_" + analysisType + "_" + period_names[period_idx] + "_" + topologies[topo_idx] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
-            canvas_yield->SaveAs(filename_yield.c_str());
-
-            delete canvas_yield;
-        }
-
-        // Plot and save acceptance for combined only
-        TCanvas* canvas_acceptance = new TCanvas("c_acceptance_combined", "Acceptance Combined", canvas_width, canvas_height);
-        canvas_acceptance->Divide(n_columns, n_rows);
-
-        for (int idx = 0; idx < n_Q2t_bins; ++idx) {
-            TPad* pad_acceptance = (TPad*)canvas_acceptance->cd(idx + 1);
-            pad_acceptance->SetLeftMargin(0.20);
-            pad_acceptance->SetBottomMargin(0.15);
-            
-            // Set the axis labels for acceptance histograms
-            h_acceptance_histograms[idx]->GetXaxis()->SetTitle("#phi");
-            h_acceptance_histograms[idx]->GetYaxis()->SetTitle("Acceptance");
-
-            // Set the label sizes to match the yield plots
-            h_acceptance_histograms[idx]->GetXaxis()->SetLabelSize(0.05);  // Same as the yield histograms
-            h_acceptance_histograms[idx]->GetYaxis()->SetLabelSize(0.05);  // Same as the yield histograms
-            h_acceptance_histograms[idx]->GetXaxis()->SetTitleSize(0.06);  // Same as the yield histograms
-            h_acceptance_histograms[idx]->GetYaxis()->SetTitleSize(0.06);  // Same as the yield histograms
-
-            h_acceptance_histograms[idx]->Draw("E1");
-        }
-
-        std::string filename_acceptance = output_dir + "/acceptances/acceptances_combined_" + analysisType + "_" + period_names[period_idx] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
-        canvas_acceptance->SaveAs(filename_acceptance.c_str());
-
-        delete canvas_acceptance;
-
-        // Clean up histograms
-        for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
-            for (auto& h : h_data_histograms[topo_idx]) delete h;
-        }
-
-        for (auto& h : h_mc_gen_histograms) delete h;
-        for (auto& h : h_mc_rec_histograms) delete h;
-        for (auto& h : h_acceptance_histograms) delete h;
-
-        delete theta_neutral_neutral_data;
-        delete theta_neutral_neutral_mc_gen;
-        delete theta_neutral_neutral_mc_rec;
-
-        // Reset the readers after each iteration
-        data_reader.Restart();
-        mc_gen_reader.Restart();
-        mc_rec_reader.Restart();
     }
+
+    // Plot and save histograms (data divided by acceptance for combined)
+    for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
+        TCanvas* canvas_yield = new TCanvas(Form("c_yield_%zu", topo_idx), "Yields", canvas_width, canvas_height);
+        canvas_yield->Divide(n_columns, n_rows);
+
+        for (int idx = 0; idx < n_Q2t_bins; ++idx) {
+            TPad* pad_yield = (TPad*)canvas_yield->cd(idx + 1);
+            pad_yield->SetLeftMargin(0.2);
+            pad_yield->SetBottomMargin(0.15);
+
+            // If this is the combined topology, we need to unfold by dividing data by acceptance
+            if (topo_idx == 3) {  // Combined histograms
+                for (int bin = 1; bin <= h_data_histograms[topo_idx][idx]->GetNbinsX(); ++bin) {
+                    double acceptance_value = h_acceptance_histograms[idx]->GetBinContent(bin);
+                    if (acceptance_value > 0) {
+                        double data_value = h_data_histograms[topo_idx][idx]->GetBinContent(bin);
+                        double unfolded_value = data_value / acceptance_value;
+                        h_data_histograms[topo_idx][idx]->SetBinContent(bin, unfolded_value);
+
+                        // Calculate and set appropriate error for unfolded values
+                        double data_error = h_data_histograms[topo_idx][idx]->GetBinError(bin);
+                        double unfolded_error = data_error / acceptance_value;
+                        h_data_histograms[topo_idx][idx]->SetBinError(bin, unfolded_error);
+                    } else {
+                        // Set the unfolded value to 0 if the acceptance is 0
+                        h_data_histograms[topo_idx][idx]->SetBinContent(bin, 0);
+                        h_data_histograms[topo_idx][idx]->SetBinError(bin, 0);
+                    }
+                }
+
+                // Get the middle bin and adjust the y-axis range
+                int middle_bin = h_data_histograms[topo_idx][idx]->GetNbinsX() / 2;
+                double middle_bin_value = h_data_histograms[topo_idx][idx]->GetBinContent(middle_bin);
+                h_data_histograms[topo_idx][idx]->GetYaxis()->SetRangeUser(0.0 * middle_bin_value, 2.25 * middle_bin_value);
+            }
+
+            // Draw the histogram
+            h_data_histograms[topo_idx][idx]->Draw("E1");
+        }
+
+        std::string filename_yield = base_output_dir + "/yields/yields_" + analysisType + "_" + topologies[topo_idx] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
+        canvas_yield->SaveAs(filename_yield.c_str());
+
+        delete canvas_yield;
+    }
+
+    // Plot and save acceptance for combined only
+    TCanvas* canvas_acceptance = new TCanvas("c_acceptance_combined", "Acceptance Combined", canvas_width, canvas_height);
+    canvas_acceptance->Divide(n_columns, n_rows);
+
+    for (int idx = 0; idx < n_Q2t_bins; ++idx) {
+        TPad* pad_acceptance = (TPad*)canvas_acceptance->cd(idx + 1);
+        pad_acceptance->SetLeftMargin(0.20);
+        pad_acceptance->SetBottomMargin(0.15);
+        
+        // Set the axis labels for acceptance histograms
+        h_acceptance_histograms[idx]->GetXaxis()->SetTitle("#phi");
+        h_acceptance_histograms[idx]->GetYaxis()->SetTitle("Acceptance");
+
+        // Set the label sizes to match the yield plots
+        h_acceptance_histograms[idx]->GetXaxis()->SetLabelSize(0.05);  // Same as the yield histograms
+        h_acceptance_histograms[idx]->GetYaxis()->SetLabelSize(0.05);  // Same as the yield histograms
+        h_acceptance_histograms[idx]->GetXaxis()->SetTitleSize(0.06);  // Same as the yield histograms
+        h_acceptance_histograms[idx]->GetYaxis()->SetTitleSize(0.06);  // Same as the yield histograms
+
+        h_acceptance_histograms[idx]->Draw("E1");
+    }
+
+    std::string filename_acceptance = base_output_dir + "/acceptances/acceptances_combined_" + analysisType + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
+    canvas_acceptance->SaveAs(filename_acceptance.c_str());
+
+    delete canvas_acceptance;
+
+    // Clean up histograms
+    for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
+        for (auto& h : h_data_histograms[topo_idx]) delete h;
+    }
+
+    for (auto& h : h_mc_gen_histograms) delete h;
+    for (auto& h : h_mc_rec_histograms) delete h;
+    for (auto& h : h_acceptance_histograms) delete h;
 
     // Return all the gathered unfolding data
     return all_unfolding_data;
