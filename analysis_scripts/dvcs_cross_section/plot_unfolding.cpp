@@ -740,9 +740,9 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
     }
 
     // Save each canvas with a unique filename
-    std::string filename_acceptance_0 = output_dir_0 + "/acceptances/acceptances_combined_" + analysisType + "_" + period_names[0] + "_xB_bin_" + std::to_string(xB_bin) + "_0.pdf";
-    std::string filename_acceptance_1 = output_dir_1 + "/acceptances/acceptances_combined_" + analysisType + "_" + period_names[1] + "_xB_bin_" + std::to_string(xB_bin) + "_1.pdf";
-    std::string filename_acceptance_2 = output_dir_2 + "/acceptances/acceptances_combined_" + analysisType + "_" + period_names[2] + "_xB_bin_" + std::to_string(xB_bin) + "_2.pdf";
+    std::string filename_acceptance_0 = output_dir_0 + "/acceptances/acceptances_combined_" + analysisType + "_" + period_names[0] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
+    std::string filename_acceptance_1 = output_dir_1 + "/acceptances/acceptances_combined_" + analysisType + "_" + period_names[1] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
+    std::string filename_acceptance_2 = output_dir_2 + "/acceptances/acceptances_combined_" + analysisType + "_" + period_names[2] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
 
     canvas_acceptance_0->SaveAs(filename_acceptance_0.c_str());
     canvas_acceptance_1->SaveAs(filename_acceptance_1.c_str());
