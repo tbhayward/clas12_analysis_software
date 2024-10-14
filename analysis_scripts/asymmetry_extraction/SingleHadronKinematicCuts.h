@@ -13,6 +13,7 @@ public:
 private:
     TTreeReaderValue<int> runnum;
     TTreeReaderValue<int> fiducial_status;
+    TTreeReaderValue<double> e_phi;
     TTreeReaderValue<double> vz_e;
     TTreeReaderValue<double> p_p;
     TTreeReaderValue<double> vz_p;
