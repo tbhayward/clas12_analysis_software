@@ -98,9 +98,9 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
                                      bin.xB_avg, bin.Q2_avg, std::abs(bin.t_avg));
 
             // Create histogram for the data yields with the appropriate title
-            h_data_histograms_0[topo_idx][idx] = new TH1D(Form("h_data_0_%zu_%d", topo_idx, idx), title.c_str(), 24, 0, 360);
-            h_data_histograms_1[topo_idx][idx] = new TH1D(Form("h_data_1_%zu_%d", topo_idx, idx), title.c_str(), 24, 0, 360);
-            h_data_histograms_2[topo_idx][idx] = new TH1D(Form("h_data_2_%zu_%d", topo_idx, idx), title.c_str(), 24, 0, 360);
+            h_data_histograms_0[topo_idx][idx] = new TH1D(Form("h_data_0_%zu_%d", topo_idx, idx), title_0.c_str(), 24, 0, 360);
+            h_data_histograms_1[topo_idx][idx] = new TH1D(Form("h_data_1_%zu_%d", topo_idx, idx), title_1.c_str(), 24, 0, 360);
+            h_data_histograms_2[topo_idx][idx] = new TH1D(Form("h_data_2_%zu_%d", topo_idx, idx), title_2.c_str(), 24, 0, 360);
 
             // Set axis labels and format for data histograms
             h_data_histograms_0[topo_idx][idx]->GetXaxis()->SetLabelSize(0.05);
@@ -145,17 +145,17 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
 
             // Create histograms for MC and acceptance if it's the combined histogram
             if (topo_idx == 3) {
-                h_mc_gen_histograms_0[idx] = new TH1D(Form("h_mc_gen_combined_0_%d", idx), title.c_str(), 24, 0, 360);
-                h_mc_rec_histograms_0[idx] = new TH1D(Form("h_mc_rec_combined_0_%d", idx), title.c_str(), 24, 0, 360);
-                h_acceptance_histograms_0[idx] = new TH1D(Form("h_acceptance_combined_0_%d", idx), title.c_str(), 24, 0, 360);
+                h_mc_gen_histograms_0[idx] = new TH1D(Form("h_mc_gen_combined_0_%d", idx), title_0.c_str(), 24, 0, 360);
+                h_mc_rec_histograms_0[idx] = new TH1D(Form("h_mc_rec_combined_0_%d", idx), title_0.c_str(), 24, 0, 360);
+                h_acceptance_histograms_0[idx] = new TH1D(Form("h_acceptance_combined_0_%d", idx), title_0.c_str(), 24, 0, 360);
 
-                h_mc_gen_histograms_1[idx] = new TH1D(Form("h_mc_gen_combined_1_%d", idx), title.c_str(), 24, 0, 360);
-                h_mc_rec_histograms_1[idx] = new TH1D(Form("h_mc_rec_combined_1_%d", idx), title.c_str(), 24, 0, 360);
-                h_acceptance_histograms_1[idx] = new TH1D(Form("h_acceptance_combined_1_%d", idx), title.c_str(), 24, 0, 360);
+                h_mc_gen_histograms_1[idx] = new TH1D(Form("h_mc_gen_combined_1_%d", idx), title_1.c_str(), 24, 0, 360);
+                h_mc_rec_histograms_1[idx] = new TH1D(Form("h_mc_rec_combined_1_%d", idx), title_1.c_str(), 24, 0, 360);
+                h_acceptance_histograms_1[idx] = new TH1D(Form("h_acceptance_combined_1_%d", idx), title_1.c_str(), 24, 0, 360);
 
-                h_mc_gen_histograms_2[idx] = new TH1D(Form("h_mc_gen_combined_2_%d", idx), title.c_str(), 24, 0, 360);
-                h_mc_rec_histograms_2[idx] = new TH1D(Form("h_mc_rec_combined_2_%d", idx), title.c_str(), 24, 0, 360);
-                h_acceptance_histograms_2[idx] = new TH1D(Form("h_acceptance_combined_2_%d", idx), title.c_str(), 24, 0, 360);
+                h_mc_gen_histograms_2[idx] = new TH1D(Form("h_mc_gen_combined_2_%d", idx), title_2.c_str(), 24, 0, 360);
+                h_mc_rec_histograms_2[idx] = new TH1D(Form("h_mc_rec_combined_2_%d", idx), title_2.c_str(), 24, 0, 360);
+                h_acceptance_histograms_2[idx] = new TH1D(Form("h_acceptance_combined_2_%d", idx), title_2.c_str(), 24, 0, 360);
             }
         }
     }
@@ -375,7 +375,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
 
     std::cout << "starting gen mc for fa18 inb" << std::endl;
     // Loop over the MC generated reader and fill histograms
-    while (mc_gen_reader.Next()) {
+    while (mc_gen_reader_0.Next()) {
         double phi_mc_gen_deg = *phi_mc_gen_0 * RAD_TO_DEG;
 
         for (int idx = 0; idx < n_Q2t_bins; ++idx) {
@@ -394,7 +394,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
 
     std::cout << "starting gen mc for fa18 out" << std::endl;
     // Loop over the MC generated reader and fill histograms
-    while (mc_gen_reader.Next()) {
+    while (mc_gen_reader_1.Next()) {
         double phi_mc_gen_deg = *phi_mc_gen_1 * RAD_TO_DEG;
 
         for (int idx = 0; idx < n_Q2t_bins; ++idx) {
@@ -413,7 +413,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
 
     std::cout << "starting gen mc for sp19 inb" << std::endl;
     // Loop over the MC generated reader and fill histograms
-    while (mc_gen_reader.Next()) {
+    while (mc_gen_reader_2.Next()) {
         double phi_mc_gen_deg = *phi_mc_gen_2 * RAD_TO_DEG;
 
         for (int idx = 0; idx < n_Q2t_bins; ++idx) {
@@ -432,7 +432,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
 
     std::cout << "starting rec mc for fa18 inb" << std::endl;
     // Loop over the MC reconstructed reader and fill histograms
-    while (mc_rec_reader.Next()) {
+    while (mc_rec_reader_0.Next()) {
         double phi_mc_rec_deg = *phi_mc_rec_0 * RAD_TO_DEG;
 
         for (int idx = 0; idx < n_Q2t_bins; ++idx) {
@@ -451,7 +451,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
 
     std::cout << "starting rec mc for fa18 out" << std::endl;
     // Loop over the MC reconstructed reader and fill histograms
-    while (mc_rec_reader.Next()) {
+    while (mc_rec_reader_1.Next()) {
         double phi_mc_rec_deg = *phi_mc_rec_1 * RAD_TO_DEG;
 
         for (int idx = 0; idx < n_Q2t_bins; ++idx) {
@@ -470,7 +470,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
 
     std::cout << "starting rec mc for sp19 inb" << std::endl;
     // Loop over the MC reconstructed reader and fill histograms
-    while (mc_rec_reader.Next()) {
+    while (mc_rec_reader_2.Next()) {
         double phi_mc_rec_deg = *phi_mc_rec_2 * RAD_TO_DEG;
 
         for (int idx = 0; idx < n_Q2t_bins; ++idx) {
@@ -549,17 +549,28 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
             unfolding_data.acceptance[2][phi_bin - 1] = acceptance_value_2;
 
             // Store unfolded yield for combined topology (topo_idx == 3)
-            if (acceptance_value > 0) {
+            // For period 0
+            if (acceptance_value_0 > 0) {
                 double unfolded_yield_0 = h_data_histograms_0[3][idx]->GetBinContent(phi_bin) / acceptance_value_0;
-                double unfolded_yield_1 = h_data_histograms_0[3][idx]->GetBinContent(phi_bin) / acceptance_value_1;
-                double unfolded_yield_2 = h_data_histograms_0[3][idx]->GetBinContent(phi_bin) / acceptance_value_2;
                 unfolding_data.unfolded_yields[0][phi_bin - 1] = unfolded_yield_0;
+            } else {
+                unfolding_data.unfolded_yields[0][phi_bin - 1] = 0.0;
+            }
+
+            // For period 1
+            if (acceptance_value_1 > 0) {
+                double unfolded_yield_1 = h_data_histograms_1[3][idx]->GetBinContent(phi_bin) / acceptance_value_1;
                 unfolding_data.unfolded_yields[1][phi_bin - 1] = unfolded_yield_1;
+            } else {
+                unfolding_data.unfolded_yields[1][phi_bin - 1] = 0.0;
+            }
+
+            // For period 2
+            if (acceptance_value_2 > 0) {
+                double unfolded_yield_2 = h_data_histograms_2[3][idx]->GetBinContent(phi_bin) / acceptance_value_2;
                 unfolding_data.unfolded_yields[2][phi_bin - 1] = unfolded_yield_2;
             } else {
-                unfolding_data.unfolded_yields[0][phi_bin - 1] = 0.0;  // Set to 0 if acceptance is 0
-                unfolding_data.unfolded_yields[1][phi_bin - 1] = 0.0;  // Set to 0 if acceptance is 0
-                unfolding_data.unfolded_yields[2][phi_bin - 1] = 0.0;  // Set to 0 if acceptance is 0
+                unfolding_data.unfolded_yields[2][phi_bin - 1] = 0.0;
             }
         }
 
@@ -657,9 +668,9 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
         }
 
         // Save the canvases with unique filenames
-        std::string filename_yield_0 = output_dir + "/yields/yields_" + analysisType + "_" + period_names[0] + "_" + topologies[topo_idx] + "_xB_bin_" + std::to_string(xB_bin) + "_0.pdf";
-        std::string filename_yield_1 = output_dir + "/yields/yields_" + analysisType + "_" + period_names[1] + "_" + topologies[topo_idx] + "_xB_bin_" + std::to_string(xB_bin) + "_1.pdf";
-        std::string filename_yield_2 = output_dir + "/yields/yields_" + analysisType + "_" + period_names[2] + "_" + topologies[topo_idx] + "_xB_bin_" + std::to_string(xB_bin) + "_2.pdf";
+        std::string filename_yield_0 = output_dir_0 + "/yields/yields_" + analysisType + "_" + period_names[0] + "_" + topologies[topo_idx] + "_xB_bin_" + std::to_string(xB_bin) + "_0.pdf";
+        std::string filename_yield_1 = output_dir_1 + "/yields/yields_" + analysisType + "_" + period_names[1] + "_" + topologies[topo_idx] + "_xB_bin_" + std::to_string(xB_bin) + "_1.pdf";
+        std::string filename_yield_2 = output_dir_2 + "/yields/yields_" + analysisType + "_" + period_names[2] + "_" + topologies[topo_idx] + "_xB_bin_" + std::to_string(xB_bin) + "_2.pdf";
 
         canvas_yield_0->SaveAs(filename_yield_0.c_str());
         canvas_yield_1->SaveAs(filename_yield_1.c_str());
@@ -729,9 +740,9 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
     }
 
     // Save each canvas with a unique filename
-    std::string filename_acceptance_0 = output_dir + "/acceptances/acceptances_combined_" + analysisType + "_" + period_names[0] + "_xB_bin_" + std::to_string(xB_bin) + "_0.pdf";
-    std::string filename_acceptance_1 = output_dir + "/acceptances/acceptances_combined_" + analysisType + "_" + period_names[1] + "_xB_bin_" + std::to_string(xB_bin) + "_1.pdf";
-    std::string filename_acceptance_2 = output_dir + "/acceptances/acceptances_combined_" + analysisType + "_" + period_names[2] + "_xB_bin_" + std::to_string(xB_bin) + "_2.pdf";
+    std::string filename_acceptance_0 = output_dir_0 + "/acceptances/acceptances_combined_" + analysisType + "_" + period_names[0] + "_xB_bin_" + std::to_string(xB_bin) + "_0.pdf";
+    std::string filename_acceptance_1 = output_dir_1 + "/acceptances/acceptances_combined_" + analysisType + "_" + period_names[1] + "_xB_bin_" + std::to_string(xB_bin) + "_1.pdf";
+    std::string filename_acceptance_2 = output_dir_2 + "/acceptances/acceptances_combined_" + analysisType + "_" + period_names[2] + "_xB_bin_" + std::to_string(xB_bin) + "_2.pdf";
 
     canvas_acceptance_0->SaveAs(filename_acceptance_0.c_str());
     canvas_acceptance_1->SaveAs(filename_acceptance_1.c_str());
@@ -774,8 +785,8 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
 
     // Reset the readers after each iteration
     data_readers[0].Restart(); data_readers[1].Restart(); data_readers[2].Restart();
-    mc_gen_reader[0].Restart(); mc_gen_reader[1].Restart(); mc_gen_reader[2].Restart();
-    mc_rec_reader[0].Restart(); mc_rec_reader[1].Restart(); mc_rec_reader[2].Restart();
+    mc_gen_readers[0].Restart(); mc_gen_readers[1].Restart(); mc_gen_readers[2].Restart();
+    mc_rec_readers[0].Restart(); mc_rec_readers[1].Restart(); mc_rec_readers[2].Restart();
 
 
     // std::cout << "Final raw_yields size: " << unfolding_data.raw_yields.size() << std::endl;
