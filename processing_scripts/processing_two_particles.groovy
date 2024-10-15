@@ -112,6 +112,7 @@ public static void main(String[] args) {
 	int num_events = 0;
 	int max_lines = 1000;
 	int lineCount = 0;
+	int num_hadrons = 0;
 	for (current_file in 0..<n_files) {
 		// limit to a certain number of files defined by n_files
 		println("\n Opening file "+Integer.toString(current_file+1)
@@ -121,7 +122,6 @@ public static void main(String[] args) {
 		reader.open(hipo_list[current_file]); // open next hipo file
 		HipoDataEvent event = reader.getNextEvent(); 
 
-		int num_hadrons = 0;
 		while (reader.hasEvent()) {
 			// if (num_events==10000) break;
 		    ++num_events;
