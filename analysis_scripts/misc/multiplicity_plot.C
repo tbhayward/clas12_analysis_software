@@ -42,8 +42,8 @@ void multiplicity_plot(const char* filename)
     std::sort(runnums.begin(), runnums.end());
 
     // Vectors to store mean values and errors
-    std::vector<double> runnum_vals, mean_pos, mean_neg, mean_neutrals;
-    std::vector<double> err_pos, err_neg, err_neutrals;
+    std::vector<double> runnum_vals, mean_pos, mean_neg, mean_neutral;
+    std::vector<double> err_pos, err_neg, err_neutral;
 
     // Calculate means and errors for each run number
     for (size_t i = 0; i < runnums.size(); i++) {
@@ -53,12 +53,12 @@ void multiplicity_plot(const char* filename)
         // Histograms for calculations
         TH1D *h_pos = new TH1D("h_pos", "", 100, -0.5, 99.5);
         TH1D *h_neg = new TH1D("h_neg", "", 100, -0.5, 99.5);
-        TH1D *h_neutrals = new TH1D("h_neutrals", "", 100, -0.5, 99.5);
+        TH1D *h_neutral = new TH1D("h_neutral", "", 100, -0.5, 99.5);
 
         // Fill histograms
         tree->Draw("num_pos>>h_pos", selection);
         tree->Draw("num_neg>>h_neg", selection);
-        tree->Draw("num_neutrals>>h_neutrals", selection);
+        tree->Draw("num_neutral>>h_neutral", selection);
 
         // Store mean values and errors
         runnum_vals.push_back(curr_runnum);
@@ -68,19 +68,19 @@ void multiplicity_plot(const char* filename)
         mean_neg.push_back(h_neg->GetMean());
         err_neg.push_back(h_neg->GetMeanError());
 
-        mean_neutrals.push_back(h_neutrals->GetMean());
-        err_neutrals.push_back(h_neutrals->GetMeanError());
+        mean_neutral.push_back(h_neutral->GetMean());
+        err_neutral.push_back(h_neutral->GetMeanError());
 
         // Clean up
         delete h_pos;
         delete h_neg;
-        delete h_neutrals;
+        delete h_neutral;
     }
 
     // Create TGraphErrors for plotting
     TGraphErrors *gr_pos = new TGraphErrors(runnum_vals.size(), &runnum_vals[0], &mean_pos[0], 0, &err_pos[0]);
     TGraphErrors *gr_neg = new TGraphErrors(runnum_vals.size(), &runnum_vals[0], &mean_neg[0], 0, &err_neg[0]);
-    TGraphErrors *gr_neutrals = new TGraphErrors(runnum_vals.size(), &runnum_vals[0], &mean_neutrals[0], 0, &err_neutrals[0]);
+    TGraphErrors *gr_neutral = new TGraphErrors(runnum_vals.size(), &runnum_vals[0], &mean_neutral[0], 0, &err_neutral[0]);
 
     // Customize graph appearance
     gr_pos->SetMarkerStyle(20);
@@ -91,9 +91,9 @@ void multiplicity_plot(const char* filename)
     gr_neg->SetMarkerColor(kBlue);
     gr_neg->SetLineColor(kBlue);
 
-    gr_neutrals->SetMarkerStyle(22);
-    gr_neutrals->SetMarkerColor(kGreen+2);
-    gr_neutrals->SetLineColor(kGreen+2);
+    gr_neutral->SetMarkerStyle(22);
+    gr_neutral->SetMarkerColor(kGreen+2);
+    gr_neutral->SetLineColor(kGreen+2);
 
     // Create and customize canvas
     TCanvas *c1 = new TCanvas("c1", "Multiplicity vs Run Number", 800, 600);
@@ -105,7 +105,7 @@ void multiplicity_plot(const char* filename)
     gr_pos->GetYaxis()->SetTitle("Multiplicity");
     gr_pos->Draw("AP");
     gr_neg->Draw("P SAME");
-    gr_neutrals->Draw("P SAME");
+    gr_neutral->Draw("P SAME");
 
     // Add legend
     TLegend *leg = new TLegend(0.7, 0.75, 0.9, 0.9);
@@ -113,7 +113,7 @@ void multiplicity_plot(const char* filename)
     leg->SetFillStyle(0);
     leg->AddEntry(gr_pos, "positives", "P");
     leg->AddEntry(gr_neg, "negatives", "P");
-    leg->AddEntry(gr_neutrals, "neutrals", "P");
+    leg->AddEntry(gr_neutral, "neutrals", "P");
     leg->Draw();
 
     // Save canvas to file
@@ -122,7 +122,7 @@ void multiplicity_plot(const char* filename)
     // Clean up
     delete gr_pos;
     delete gr_neg;
-    delete gr_neutrals;
+    delete gr_neutral;
     delete c1;
     file->Close();
     delete file;
