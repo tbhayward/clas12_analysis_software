@@ -38,9 +38,9 @@ public class Inclusive {
     protected double Depolarization_W;
 
     public static boolean channel_test(Inclusive variables) {
-        if (variables.helicity == 0 && variables.runnum != 11) {
-            return false;
-        }
+//        if (variables.helicity == 0 && variables.runnum != 11) {
+//            return false;
+//        }
         if (variables.Q2() < 1) {
             return false;
         }
