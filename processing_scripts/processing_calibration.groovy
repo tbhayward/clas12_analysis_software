@@ -239,9 +239,9 @@ class CalibrationScript {
             println("\n Opening file "+Integer.toString(current_file+1)
                 +" out of "+n_files+".\n")
 
-            HipoDataSource reader = new HipoDataSource()
-            reader.open(hipo_list[current_file]) // open next hipo file
-            HipoDataEvent event = reader.getNextEvent()
+            HipoDataSource reader = new HipoDataSource();
+            reader.open(hipo_list[current_file]); // open next hipo file
+            HipoDataEvent event = reader.getNextEvent();
 
             while (reader.hasEvent()) {
                 ++num_events
@@ -249,7 +249,7 @@ class CalibrationScript {
                     print("processed: " + num_events + " events. ")
                 }
                 // get run and event numbers
-                event = reader.getNextEvent()
+                event = reader.getNextEvent();
 
                 HipoDataBank run_Bank = (HipoDataBank) event.getBank("RUN::config");
                 HipoDataBank event_Bank = (HipoDataBank) event.getBank("REC::Event");

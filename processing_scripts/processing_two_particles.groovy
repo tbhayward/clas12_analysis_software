@@ -146,6 +146,7 @@ public static void main(String[] args) {
 	    	// 	qa.OkForAsymmetry(runnum, evnum));
 
 		    if (process_event) {
+		    	println("hey");
 
 		        // get # of particles w/ pid1
 		        int num_p1 = research_Event.countByPid(p1_Str.toInteger()); 
