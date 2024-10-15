@@ -54,7 +54,7 @@ public class TwoParticles {
     protected double chi2pid, beta, RQ_prob, el_prob, pi_prob, k_prob, pr_prob;
 
     public static boolean channel_test(TwoParticles variables) {
-        if (variables.helicity == 0 && variables.runnum != 11) {
+        if (variables.runnum != 11) {
             return false;
         }
         if (variables.Q2() < 1.00) {
