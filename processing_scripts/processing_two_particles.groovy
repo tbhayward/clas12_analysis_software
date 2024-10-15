@@ -136,7 +136,8 @@ public static void main(String[] args) {
 
 		    PhysicsEvent research_Event = fitter.getPhysicsEvent(event);
 
-		    event.show();
+		    HipoDataBank rec_Bank = (HipoDataBank) event.getBank("REC::Particle");
+		    rec_Bank.show();
 
 		    // do not use the qa if it is MC (runnum = 11) 
 		    boolean process_event = filter.isValid(research_Event) && 
