@@ -121,6 +121,7 @@ public static void main(String[] args) {
 		reader.open(hipo_list[current_file]); // open next hipo file
 		HipoDataEvent event = reader.getNextEvent(); 
 
+		int num_hadrons = 0;
 		while (reader.hasEvent()) {
 			// if (num_events==10000) break;
 		    ++num_events;
@@ -138,6 +139,7 @@ public static void main(String[] args) {
 
 		    HipoDataBank eventBank = (HipoDataBank) event.getBank("REC::Event");
 		    // println(research_Event.countByPid(211));
+		    num_hadrons+=research_Event.countByPid(211);
 
 		    // do not use the qa if it is MC (runnum = 11) 
 		    boolean process_event = filter.isValid(research_Event) && 
@@ -282,6 +284,7 @@ public static void main(String[] args) {
 	}
 
 	writer.close();
+	println("There are "+num_hadrons);
 
 	// End time
 	long endTime = System.currentTimeMillis()
