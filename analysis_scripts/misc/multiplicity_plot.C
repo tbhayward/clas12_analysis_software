@@ -138,13 +138,13 @@ void multiplicity_plot(const char* filename)
     gr_pos->SetTitle("");
     gr_pos->GetXaxis()->SetTitle("runnum");
     gr_pos->GetYaxis()->SetTitle("Multiplicity");
-    gr_pos->GetYaxis()->SetRangeUser(0.2, 1.0);  // Set y-axis range from 0 to 2
+    gr_pos->GetYaxis()->SetRangeUser(0.0, 1.2);  // Set y-axis range from 0 to 2
     gr_pos->Draw("AP");
     gr_neg->Draw("P SAME");
     gr_neutral->Draw("P SAME");
 
     // Add legend
-    TLegend *leg = new TLegend(0.7, 0.75, 0.9, 0.9);
+    TLegend *leg = new TLegend(0.2, 0.55, 0.9, 0.9);
     leg->SetBorderSize(0);
     leg->SetFillStyle(0);
     leg->AddEntry(gr_pos, "positives", "P");
