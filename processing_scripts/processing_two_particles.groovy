@@ -135,7 +135,9 @@ public static void main(String[] args) {
 		    int evnum = event.getBank("RUN::config").getInt('event', 0);
 
 		    PhysicsEvent research_Event = fitter.getPhysicsEvent(event);
-		    println("hey");
+
+		    event.show();
+
 		    // do not use the qa if it is MC (runnum = 11) 
 		    boolean process_event = filter.isValid(research_Event) && 
 		    	(runnum == 11 || runnum < 5020 || runnum >= 11571 || 
