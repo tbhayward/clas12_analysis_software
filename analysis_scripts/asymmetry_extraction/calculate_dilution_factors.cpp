@@ -418,7 +418,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     gr_dilution[0]->GetYaxis()->SetTitle("D_{f}");
     gr_dilution[0]->GetYaxis()->SetTitleSize(0.05);
     gr_dilution[0]->GetYaxis()->SetTitleOffset(1.6);
-    gr_dilution[0]->GetYaxis()->SetRangeUser(0.15, 0.35);
+    gr_dilution[0]->GetYaxis()->SetRangeUser(0.10, 0.35);
     gr_dilution[0]->SetMarkerStyle(20);
     gr_dilution[0]->SetMarkerColor(kBlack);
     gr_dilution[0]->Draw("AP");
