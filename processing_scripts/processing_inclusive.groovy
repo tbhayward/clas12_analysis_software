@@ -71,9 +71,9 @@ public static void main(String[] args) {
 	double Q2, W, y, Mx2, x;
 
 	// load my kinematic fitter/PID
-	GenericKinematicFitter fitter = new analysis_fitter(10.6041); 
+	// GenericKinematicFitter fitter = new analysis_fitter(10.6041); 
 	// GenericKinematicFitter fitter = new monte_carlo_fitter(10.6041);
-	// GenericKinematicFitter fitter = new event_builder_fitter(10.6041); 
+	GenericKinematicFitter fitter = new event_builder_fitter(10.6041); 
 	
 	// set filter for final states
 	EventFilter filter = new EventFilter("11:X+:X-:Xn"); 
@@ -111,12 +111,13 @@ public static void main(String[] args) {
 		    PhysicsEvent research_Event = fitter.getPhysicsEvent(event);
 
 		    // do not use the qa if it is MC (runnum = 11) 
-		    // do not use the qa if the run is from RGC (until QA is produced!)
-		    // boolean process_event = filter.isValid(research_Event);
-		    boolean process_event = filter.isValid(research_Event) && 
-		    	(runnum == 11 || runnum == 16194 || runnum == 16089 || runnum == 16185 ||
-	    		runnum == 16308 || runnum == 16184 || runnum == 16307 || runnum == 16309 ||
-	    		qa.OkForAsymmetry(runnum, evnum));
+		    // boolean process_event = filter.isValid(research_Event) && 
+		    	(runnum == 11 || runnum < 5020 || runnum >= 11571 || 
+		    	qa.OkForAsymmetry(runnum, evnum));
+		    // boolean process_event = filter.isValid(research_Event) && 
+		    // 	(runnum == 11 || runnum == 16194 || runnum == 16089 || runnum == 16185 ||
+	    	// 	runnum == 16308 || runnum == 16184 || runnum == 16307 || runnum == 16309 ||
+	    	// 	qa.OkForAsymmetry(runnum, evnum));
 
 		    if (process_event) {
 

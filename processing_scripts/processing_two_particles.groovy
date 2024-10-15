@@ -96,9 +96,9 @@ public static void main(String[] args) {
 	double Depolarization_V, Depolarization_W;
 
 	// load my kinematic fitter/PID
-	// GenericKinematicFitter fitter = new analysis_fitter(10.6041); 
+	GenericKinematicFitter fitter = new analysis_fitter(10.6041); 
 	// GenericKinematicFitter fitter = new monte_carlo_fitter(10.6041);
-	GenericKinematicFitter fitter = new event_builder_fitter(10.6041);  
+	// GenericKinematicFitter fitter = new event_builder_fitter(10.6041);  
 	
 	// set filter for final states
 	EventFilter filter = new EventFilter("11:"+p1_Str+":X+:X-:Xn");
@@ -112,7 +112,6 @@ public static void main(String[] args) {
 	int num_events = 0;
 	int max_lines = 1000;
 	int lineCount = 0;
-	int num_hadrons = 0;
 	for (current_file in 0..<n_files) {
 		// limit to a certain number of files defined by n_files
 		println("\n Opening file "+Integer.toString(current_file+1)
@@ -142,16 +141,15 @@ public static void main(String[] args) {
 		    // num_hadrons+=research_Event.countByPid(211);
 
 		    // do not use the qa if it is MC (runnum = 11) 
-		    boolean process_event = filter.isValid(research_Event) && 
-		    	(runnum == 11 || runnum < 5020 || runnum >= 11571 || 
-		    	qa.OkForAsymmetry(runnum, evnum));
 		    // boolean process_event = filter.isValid(research_Event) && 
-		    // 	(runnum == 11 || runnum == 16194 || runnum == 16089 || runnum == 16185 ||
-	    	// 	runnum == 16308 || runnum == 16184 || runnum == 16307 || runnum == 16309 ||
-	    	// 	qa.OkForAsymmetry(runnum, evnum));
+		    // 	(runnum == 11 || runnum < 5020 || runnum >= 11571 || 
+		    // 	qa.OkForAsymmetry(runnum, evnum));
+		    boolean process_event = filter.isValid(research_Event) && 
+		    	(runnum == 11 || runnum == 16194 || runnum == 16089 || runnum == 16185 ||
+	    		runnum == 16308 || runnum == 16184 || runnum == 16307 || runnum == 16309 ||
+	    		qa.OkForAsymmetry(runnum, evnum));
 
 		    if (process_event) {
-		    	num_hadrons++;
 
 		        // get # of particles w/ pid1
 		        int num_p1 = research_Event.countByPid(p1_Str.toInteger()); 
@@ -285,7 +283,6 @@ public static void main(String[] args) {
 	}
 
 	writer.close();
-	println("There are "+num_hadrons);
 
 	// End time
 	long endTime = System.currentTimeMillis()
