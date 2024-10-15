@@ -136,7 +136,7 @@ public static void main(String[] args) {
 
 		    PhysicsEvent research_Event = fitter.getPhysicsEvent(event);
 
-		    HipoDataBank rec_Bank = (HipoDataBank) event.getBank("REC::Particle");
+		    HipoDataBank eventBank = (HipoDataBank) event.getBank("REC::Event");
 		    println(recEvent.countByPid(211));
 
 		    // do not use the qa if it is MC (runnum = 11) 
