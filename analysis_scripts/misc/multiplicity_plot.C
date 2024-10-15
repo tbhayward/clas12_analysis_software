@@ -20,14 +20,14 @@ void multiplicity_plot(const char* filename)
     tree->SetBranchStatus("runnum", 1);
     tree->SetBranchStatus("num_pos", 1);
     tree->SetBranchStatus("num_neg", 1);
-    tree->SetBranchStatus("num_neutrals", 1);
+    tree->SetBranchStatus("num_neutral", 1);
 
     // Set branch addresses
-    int runnum, num_pos, num_neg, num_neutrals;
+    int runnum, num_pos, num_neg, num_neutral;
     tree->SetBranchAddress("runnum", &runnum);
     tree->SetBranchAddress("num_pos", &num_pos);
     tree->SetBranchAddress("num_neg", &num_neg);
-    tree->SetBranchAddress("num_neutrals", &num_neutrals);
+    tree->SetBranchAddress("num_neutral", &num_neutral);
 
     // Collect unique run numbers
     std::set<int> runnum_set;
