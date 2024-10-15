@@ -139,7 +139,7 @@ public static void main(String[] args) {
 
 		    HipoDataBank eventBank = (HipoDataBank) event.getBank("REC::Event");
 		    // println(research_Event.countByPid(211));
-		    num_hadrons+=research_Event.countByPid(211);
+		    // num_hadrons+=research_Event.countByPid(211);
 
 		    // do not use the qa if it is MC (runnum = 11) 
 		    boolean process_event = filter.isValid(research_Event) && 
@@ -151,6 +151,7 @@ public static void main(String[] args) {
 	    	// 	qa.OkForAsymmetry(runnum, evnum));
 
 		    if (process_event) {
+		    	num_hadrons++;
 
 		        // get # of particles w/ pid1
 		        int num_p1 = research_Event.countByPid(p1_Str.toInteger()); 
