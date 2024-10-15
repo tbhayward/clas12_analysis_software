@@ -83,7 +83,7 @@ void multiplicity_plot(const char* filename)
 
         runnum_vals.push_back(curr_runnum);
         mean_pos.push_back(mean_p);
-        mean_neg.push_back(mean_n);
+        mean_neg.push_back(mean_n-1);
         mean_neutral.push_back(mean_neu);
 
         err_pos.push_back(err_p);
@@ -138,7 +138,7 @@ void multiplicity_plot(const char* filename)
     gr_pos->SetTitle("");
     gr_pos->GetXaxis()->SetTitle("runnum");
     gr_pos->GetYaxis()->SetTitle("Multiplicity");
-    gr_pos->GetYaxis()->SetRangeUser(0.4, 1.4);  // Set y-axis range from 0 to 2
+    gr_pos->GetYaxis()->SetRangeUser(0.2, 1.0);  // Set y-axis range from 0 to 2
     gr_pos->Draw("AP");
     gr_neg->Draw("P SAME");
     gr_neutral->Draw("P SAME");
