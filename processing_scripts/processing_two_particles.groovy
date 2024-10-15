@@ -168,7 +168,6 @@ public static void main(String[] args) {
 		            // this is my class for defining all relevant kinematic variables
 
 		            if (variables.channel_test(variables)) {
-		            	println("HEY");
 		                fiducial_status = variables.get_fiducial_status(); // fiducial_status of track
 		                helicity = variables.get_helicity(); // helicity of event
 		                detector = variables.get_detector();
