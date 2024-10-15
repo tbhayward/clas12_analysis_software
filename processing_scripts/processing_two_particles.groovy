@@ -151,6 +151,7 @@ public static void main(String[] args) {
 	    	// 	qa.OkForAsymmetry(runnum, evnum));
 
 		    if (process_event) {
+		    	println("HEY WE'RE IN");
 		    	num_hadrons++;
 
 		        // get # of particles w/ pid1
