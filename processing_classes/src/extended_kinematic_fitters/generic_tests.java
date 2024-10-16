@@ -11,6 +11,7 @@ import org.jlab.io.hipo.HipoDataBank;
 public class generic_tests {
     
     public boolean banks_test(DataEvent event) {
+        System.out.println("HEY");
         String[] bankNames = 
             {"RUN::config","REC::Event","REC::Particle","REC::Calorimeter","REC::Track","REC::Traj","REC::Cherenkov"};
         for (String bankName : bankNames) {
