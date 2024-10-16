@@ -15,7 +15,6 @@ public class generic_tests {
             {"RUN::config","REC::Event","REC::Particle","REC::Calorimeter","REC::Traj","REC::Cherenkov"};
         for (String bankName : bankNames) {
             if (!event.hasBank(bankName)) { System.out.println(bankName); return false; }
-            else { System.out.println("success"); }
         }
         return true;
     }
