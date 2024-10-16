@@ -177,6 +177,7 @@ public class analysis_fitter extends GenericKinematicFitter {
 
         generic_tests generic_tests = new generic_tests();
         if (generic_tests.banks_test(event)) {
+            System.out.println("HEY");
             PhysicsEvent physEvent = new PhysicsEvent();
             // load the hipo banks
             // assumption is we are using trains which would require all of these banks to exist
