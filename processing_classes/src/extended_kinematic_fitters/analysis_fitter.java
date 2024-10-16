@@ -22,7 +22,7 @@ public class analysis_fitter extends GenericKinematicFitter {
 
     ////////////////////////////////////////////////////////////////////////////////////////////////
     public boolean electron_test(int particle_Index, double p,
-            HipoDataBank rec_Bank, HipoDataBank cal_Bank, HipoDataBank track_Bank,
+            HipoDataBank rec_Bank, HipoDataBank cal_Bank,
             HipoDataBank traj_Bank, HipoDataBank run_Bank, HipoDataBank cc_Bank) {
 
         generic_tests generic_tests = new generic_tests();
@@ -30,19 +30,19 @@ public class analysis_fitter extends GenericKinematicFitter {
         pid_cuts pid_cuts = new pid_cuts();
 
         return true
-//                && p > 2.0 // higher cut ultimately enforced when we cut on y, this speeds processing
-//                && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
-//                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
-//                && pid_cuts.calorimeter_energy_cut(particle_Index, cal_Bank)
-//                && pid_cuts.calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
-//                && pid_cuts.calorimeter_diagonal_cut(particle_Index, p, cal_Bank) //            && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)    
+                && p > 2.0 // higher cut ultimately enforced when we cut on y, this speeds processing
+                && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
+                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
+                && pid_cuts.calorimeter_energy_cut(particle_Index, cal_Bank)
+                && pid_cuts.calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
+                && pid_cuts.calorimeter_diagonal_cut(particle_Index, p, cal_Bank) //            && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)    
 //                && fiducial_cuts.pcal_fiducial_cut(particle_Index, 1, run_Bank, rec_Bank, cal_Bank)
 //                && fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
                 ;
     }
 
     public boolean pion_test(int particle_Index, int pid, float vz, double trigger_electron_vz, HipoDataBank rec_Bank,
-            HipoDataBank cal_Bank, HipoDataBank track_Bank, HipoDataBank traj_Bank, HipoDataBank run_Bank) {
+            HipoDataBank cal_Bank, HipoDataBank traj_Bank, HipoDataBank run_Bank) {
 
         generic_tests generic_tests = new generic_tests();
 //        fiducial_cuts fiducial_cuts = new fiducial_cuts();
@@ -76,7 +76,7 @@ public class analysis_fitter extends GenericKinematicFitter {
     }
 
     public boolean kaon_test(int particle_Index, int pid, float vz, double trigger_electron_vz, HipoDataBank rec_Bank,
-            HipoDataBank cal_Bank, HipoDataBank track_Bank, HipoDataBank traj_Bank, HipoDataBank run_Bank) {
+            HipoDataBank cal_Bank,  HipoDataBank traj_Bank, HipoDataBank run_Bank) {
 
         generic_tests generic_tests = new generic_tests();
 //        fiducial_cuts fiducial_cuts = new fiducial_cuts();
@@ -111,7 +111,7 @@ public class analysis_fitter extends GenericKinematicFitter {
     }
 
     public boolean proton_test(int particle_Index, int pid, float vz, double trigger_electron_vz,
-            HipoDataBank rec_Bank, HipoDataBank cal_Bank, HipoDataBank track_Bank,
+            HipoDataBank rec_Bank, HipoDataBank cal_Bank, 
             HipoDataBank traj_Bank, HipoDataBank run_Bank) {
 
         generic_tests generic_tests = new generic_tests();
@@ -183,7 +183,6 @@ public class analysis_fitter extends GenericKinematicFitter {
             HipoDataBank rec_Bank = (HipoDataBank) event.getBank("REC::Particle");
             HipoDataBank cal_Bank = (HipoDataBank) event.getBank("REC::Calorimeter");
             HipoDataBank cc_Bank = (HipoDataBank) event.getBank("REC::Cherenkov");
-            HipoDataBank track_Bank = (HipoDataBank) event.getBank("REC::Track");
             HipoDataBank traj_Bank = (HipoDataBank) event.getBank("REC::Traj");
             HipoDataBank run_Bank = (HipoDataBank) event.getBank("RUN::config");
             HipoDataBank ft_Bank = null;
@@ -220,7 +219,7 @@ public class analysis_fitter extends GenericKinematicFitter {
 
                 energy_loss_corrections energy_loss_corrections = new energy_loss_corrections();
 
-                if (pid == 11 && electron_test(particle_Index, p, rec_Bank, cal_Bank, track_Bank,
+                if (pid == 11 && electron_test(particle_Index, p, rec_Bank, cal_Bank, 
                         traj_Bank, run_Bank, cc_Bank)) {
                     // this checks all of the PID requirements, if it passes all of them the electron is 
                     // added to the event below
@@ -229,7 +228,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                 }
 
                 if (Math.abs(pid) == 211 && pion_test(particle_Index, pid, vz, vz_e, rec_Bank, cal_Bank,
-                        track_Bank, traj_Bank, run_Bank)) {
+                        traj_Bank, run_Bank)) {
                     // check for pion PID
 
                     Particle part = new Particle(pid, px, py, pz, vx, vy, vz);
@@ -237,7 +236,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                 }
 
                 if (Math.abs(pid) == 321 && kaon_test(particle_Index, pid, vz, vz_e, rec_Bank, cal_Bank,
-                        track_Bank, traj_Bank, run_Bank)) {
+                        traj_Bank, run_Bank)) {
                     // check for pion PID
 
                     Particle part = new Particle(pid, px, py, pz, vx, vy, vz);
@@ -245,7 +244,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                 }
 
                 if (pid == 2212 && proton_test(particle_Index, pid, vz, vz_e, rec_Bank, cal_Bank,
-                        track_Bank, traj_Bank, run_Bank)) {
+                        traj_Bank, run_Bank)) {
 
                     float[] momentum = {px, py, pz};
                     energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);

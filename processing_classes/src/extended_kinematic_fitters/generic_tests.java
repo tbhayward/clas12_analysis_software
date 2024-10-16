@@ -12,9 +12,9 @@ public class generic_tests {
     
     public boolean banks_test(DataEvent event) {
         String[] bankNames = 
-            {"RUN::config","REC::Event","REC::Particle","REC::Calorimeter","REC::Track","REC::Traj","REC::Cherenkov"};
+            {"RUN::config","REC::Event","REC::Particle","REC::Calorimeter","REC::Traj","REC::Cherenkov"};
         for (String bankName : bankNames) {
-            if (!event.hasBank(bankName)) { System.out.println(bankName); return false; }
+            if (!event.hasBank(bankName)) { return false; }
         }
         return true;
     }
