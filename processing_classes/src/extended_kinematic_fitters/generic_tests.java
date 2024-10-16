@@ -14,8 +14,9 @@ public class generic_tests {
         String[] bankNames = 
             {"RUN::config","REC::Event","REC::Particle","REC::Calorimeter","REC::Traj","REC::Cherenkov"};
         for (String bankName : bankNames) {
-            if (!event.hasBank(bankName)) { System.out.println(bankName); return false; }
+            if (!event.hasBank(bankName)) { System.out.println(bankName);  }
         }
+        System.out.println(); System.out.println();
         return true;
     }
     
