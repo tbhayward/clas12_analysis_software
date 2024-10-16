@@ -30,14 +30,14 @@ public class analysis_fitter extends GenericKinematicFitter {
         pid_cuts pid_cuts = new pid_cuts();
 
         return true
-                && p > 2.0 // higher cut ultimately enforced when we cut on y, this speeds processing
-                && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
-                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
-                && pid_cuts.calorimeter_energy_cut(particle_Index, cal_Bank)
-                && pid_cuts.calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
-                && pid_cuts.calorimeter_diagonal_cut(particle_Index, p, cal_Bank) //            && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)    
-//                && fiducial_cuts.pcal_fiducial_cut(particle_Index, 1, run_Bank, rec_Bank, cal_Bank)
-//                && fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
+//                && p > 2.0 // higher cut ultimately enforced when we cut on y, this speeds processing
+//                && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
+//                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
+//                && pid_cuts.calorimeter_energy_cut(particle_Index, cal_Bank)
+//                && pid_cuts.calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
+//                && pid_cuts.calorimeter_diagonal_cut(particle_Index, p, cal_Bank) //            && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)    
+                && fiducial_cuts.pcal_fiducial_cut(particle_Index, 1, run_Bank, rec_Bank, cal_Bank)
+                && fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
                 ;
     }
 
@@ -142,6 +142,8 @@ public class analysis_fitter extends GenericKinematicFitter {
 //                && (passesCentralDetector
 //                        ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
 //                        : true)
+                && fiducial_cuts.pcal_fiducial_cut(particle_Index, 1, run_Bank, rec_Bank, cal_Bank)
+                && fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
                 ;
     }
 
