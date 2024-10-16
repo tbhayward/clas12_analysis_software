@@ -176,6 +176,7 @@ public class analysis_fitter extends GenericKinematicFitter {
     public PhysicsEvent getPhysicsEvent(DataEvent event) {
 
         generic_tests generic_tests = new generic_tests();
+        if (!event.hasBank("REC::Cherenkov")) { System.out.println("HAVE BANK");  }
         if (generic_tests.banks_test(event)) {
             PhysicsEvent physEvent = new PhysicsEvent();
             // load the hipo banks
