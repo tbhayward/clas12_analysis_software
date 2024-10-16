@@ -190,7 +190,7 @@ public class analysis_fitter extends GenericKinematicFitter {
             if (event.hasBank("REC::ForwardTagger")) {
                 ft_Bank = (HipoDataBank) event.getBank("REC::ForwardTagger");
             }
-
+            System.out.println("HEY");
             double vz_e = -999;
 
             LorentzVector lv_e = new LorentzVector();
