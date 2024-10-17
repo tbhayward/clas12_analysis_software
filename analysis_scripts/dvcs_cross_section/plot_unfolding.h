@@ -38,6 +38,9 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
                                           const std::vector<BinBoundary>& bin_boundaries, 
                                           std::vector<TTreeReader>& data_readers,  // Pass by reference
                                           std::vector<TTreeReader>& mc_gen_readers,  // Pass by reference
-                                          std::vector<TTreeReader>& mc_rec_readers);  // Pass by reference
+                                          std::vector<TTreeReader>& mc_rec_readers, // Pass by reference
+                                          std::vector<TTreeReader>& eppi0_readers,  // Pass by reference
+                                          std::vector<TTreeReader>& mc_gen_aaogen_readers,  // Pass by reference
+                                          std::vector<TTreeReader>& mc_rec_aaogen_readers);  // Pass by reference
 
 #endif // PLOT_UNFOLDING_H

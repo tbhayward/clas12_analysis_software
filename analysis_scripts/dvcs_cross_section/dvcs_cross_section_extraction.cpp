@@ -254,7 +254,7 @@ int main(int argc, char* argv[]) {
     // Iterate over the xB bins
     for (int xB_bin = 0; xB_bin < num_xB_bins; ++xB_bin) {  
         // Call the plot_unfolding function for each xB_bin and get the results
-        std::vector<UnfoldingData> bin_data = plot_unfolding(base_output_dir, "dvcs", xB_bin, bin_boundaries, data_readers, mc_gen_dvcsgen_readers, mc_rec_dvcsgen_readers);
+        std::vector<UnfoldingData> bin_data = plot_unfolding(base_output_dir, "dvcs", xB_bin, bin_boundaries, data_readers, mc_gen_dvcsgen_readers, mc_rec_dvcsgen_readers, eppi0_readers, mc_gen_aaogen_readers, mc_rec_aaogen_readers);
         
         // Append the collected bin data to the main results
         all_unfolding_data.insert(all_unfolding_data.end(), bin_data.begin(), bin_data.end());
