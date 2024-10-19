@@ -98,8 +98,8 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
     std::vector<TH1D*> h_acceptance_histograms_2(n_Q2t_bins);
 
     std::vector<std::vector<TH1D*>> h_eppi0_histograms_0(topologies.size(), std::vector<TH1D*>(n_Q2t_bins));
-    std::vector<std::vector<TH1D*>> h_eppi0_histograms_0(topologies.size(), std::vector<TH1D*>(n_Q2t_bins));
-    std::vector<std::vector<TH1D*>> h_eppi0_histograms_0(topologies.size(), std::vector<TH1D*>(n_Q2t_bins));
+    std::vector<std::vector<TH1D*>> h_eppi0_histograms_1(topologies.size(), std::vector<TH1D*>(n_Q2t_bins));
+    std::vector<std::vector<TH1D*>> h_eppi0_histograms_2(topologies.size(), std::vector<TH1D*>(n_Q2t_bins));
     std::vector<TH1D*> h_mc_gen_aaogen_histograms_0(n_Q2t_bins);
     std::vector<TH1D*> h_mc_gen_aaogen_histograms_1(n_Q2t_bins);
     std::vector<TH1D*> h_mc_gen_aaogen_histograms_2(n_Q2t_bins);
@@ -468,7 +468,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
             if ((*xB_data_0 >= bin.xB_low && *xB_data_0 <= bin.xB_high &&
                 *Q2_data_0 >= bin.Q2_low && *Q2_data_0 <= bin.Q2_high &&
                 std::abs(*t1_data_0) >= bin.t_low && std::abs(*t1_data_0) <= bin.t_high) &&
-                apply_kinematic_cuts(*t1_data_0, *open_angle_ep2_data_0, **theta_neutral_neutral_data_0, *Emiss2_data_0, *Mx2_1_data_0, *pTmiss_data_0)) {
+                apply_kinematic_cuts(*t1_data_0, *open_angle_ep2_data_0, *theta_neutral_neutral_data_0, *Emiss2_data_0, *Mx2_1_data_0, *pTmiss_data_0)) {
 
                 // Fill data histograms based on detector topologies
                 if (*detector1_data_0 == 1 && *detector2_data_0 == 1) {  // (FD,FD)
@@ -497,7 +497,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
             if ((*xB_data_1 >= bin.xB_low && *xB_data_1 <= bin.xB_high &&
                 *Q2_data_1 >= bin.Q2_low && *Q2_data_1 <= bin.Q2_high &&
                 std::abs(*t1_data_1) >= bin.t_low && std::abs(*t1_data_1) <= bin.t_high) &&
-                apply_kinematic_cuts(*t1_data_1, *open_angle_ep2_data_1, **theta_neutral_neutral_data_1, *Emiss2_data_1, *Mx2_1_data_1, *pTmiss_data_1)) {
+                apply_kinematic_cuts(*t1_data_1, *open_angle_ep2_data_1, *theta_neutral_neutral_data_1, *Emiss2_data_1, *Mx2_1_data_1, *pTmiss_data_1)) {
 
                 // Fill data histograms based on detector topologies
                 if (*detector1_data_1 == 1 && *detector2_data_1 == 1) {  // (FD,FD)
@@ -526,7 +526,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
             if ((*xB_data_2 >= bin.xB_low && *xB_data_2 <= bin.xB_high &&
                 *Q2_data_2 >= bin.Q2_low && *Q2_data_2 <= bin.Q2_high &&
                 std::abs(*t1_data_2) >= bin.t_low && std::abs(*t1_data_2) <= bin.t_high) &&
-                apply_kinematic_cuts(*t1_data_2, *open_angle_ep2_data_2, **theta_neutral_neutral_data_2, *Emiss2_data_2, *Mx2_1_data_2, *pTmiss_data_2)) {
+                apply_kinematic_cuts(*t1_data_2, *open_angle_ep2_data_2, *theta_neutral_neutral_data_2, *Emiss2_data_2, *Mx2_1_data_2, *pTmiss_data_2)) {
 
                 // Fill data histograms based on detector topologies
                 if (*detector1_data_2 == 1 && *detector2_data_2 == 1) {  // (FD,FD)
@@ -557,7 +557,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
             if ((*xB_eppi0_0 >= bin.xB_low && *xB_eppi0_0 <= bin.xB_high &&
                 *Q2_eppi0_0 >= bin.Q2_low && *Q2_eppi0_0 <= bin.Q2_high &&
                 std::abs(*t1_eppi0_0) >= bin.t_low && std::abs(*t1_eppi0_0) <= bin.t_high) &&
-                apply_kinematic_cuts(*t1_eppi0_0, *open_angle_ep2_eppi0_0, **theta_neutral_neutral_eppi0_0, *Emiss2_eppi0_0, *Mx2_1_eppi0_0, *pTmiss_eppi0_0)) {
+                apply_kinematic_cuts(*t1_eppi0_0, *open_angle_ep2_eppi0_0, *theta_neutral_neutral_eppi0_0, *Emiss2_eppi0_0, *Mx2_1_eppi0_0, *pTmiss_eppi0_0)) {
 
                 // Fill data histograms based on detector topologies
                 if (*detector1_eppi0_0 == 1 && *detector2_eppi0_0 == 1) {  // (FD,FD)
@@ -586,7 +586,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
             if ((*xB_eppi0_1 >= bin.xB_low && *xB_eppi0_1 <= bin.xB_high &&
                 *Q2_eppi0_1 >= bin.Q2_low && *Q2_eppi0_1 <= bin.Q2_high &&
                 std::abs(*t1_eppi0_1) >= bin.t_low && std::abs(*t1_eppi0_1) <= bin.t_high) &&
-                apply_kinematic_cuts(*t1_eppi0_1, *open_angle_ep2_eppi0_1, **theta_neutral_neutral_eppi0_1, *Emiss2_eppi0_1, *Mx2_1_eppi0_1, *pTmiss_eppi0_1)) {
+                apply_kinematic_cuts(*t1_eppi0_1, *open_angle_ep2_eppi0_1, *theta_neutral_neutral_eppi0_1, *Emiss2_eppi0_1, *Mx2_1_eppi0_1, *pTmiss_eppi0_1)) {
 
                 // Fill data histograms based on detector topologies
                 if (*detector1_eppi0_1 == 1 && *detector2_eppi0_1 == 1) {  // (FD,FD)
@@ -615,7 +615,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
             if ((*xB_eppi0_2 >= bin.xB_low && *xB_eppi0_2 <= bin.xB_high &&
                 *Q2_eppi0_2 >= bin.Q2_low && *Q2_eppi0_2 <= bin.Q2_high &&
                 std::abs(*t1_eppi0_2) >= bin.t_low && std::abs(*t1_eppi0_2) <= bin.t_high) &&
-                apply_kinematic_cuts(*t1_eppi0_2, *open_angle_ep2_eppi0_2, **theta_neutral_neutral_eppi0_2, *Emiss2_eppi0_2, *Mx2_1_eppi0_2, *pTmiss_eppi0_2)) {
+                apply_kinematic_cuts(*t1_eppi0_2, *open_angle_ep2_eppi0_2, *theta_neutral_neutral_eppi0_2, *Emiss2_eppi0_2, *Mx2_1_eppi0_2, *pTmiss_eppi0_2)) {
 
                 // Fill data histograms based on detector topologies
                 if (*detector1_eppi0_2 == 1 && *detector2_eppi0_2 == 1) {  // (FD,FD)
@@ -647,7 +647,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
             if ((*xB_mc_gen_0 >= bin.xB_low && *xB_mc_gen_0 <= bin.xB_high &&
                 *Q2_mc_gen_0 >= bin.Q2_low && *Q2_mc_gen_0 <= bin.Q2_high &&
                 std::abs(*t1_mc_gen_0) >= bin.t_low && std::abs(*t1_mc_gen_0) <= bin.t_high) &&
-                apply_kinematic_cuts(*t1_mc_gen_0, *open_angle_ep2_mc_gen_0, **theta_neutral_neutral_mc_gen_0, *Emiss2_mc_gen_0, *Mx2_1_mc_gen_0, *pTmiss_mc_gen_0)) {
+                apply_kinematic_cuts(*t1_mc_gen_0, *open_angle_ep2_mc_gen_0, *theta_neutral_neutral_mc_gen_0, *Emiss2_mc_gen_0, *Mx2_1_mc_gen_0, *pTmiss_mc_gen_0)) {
 
                 // Fill generated MC histogram (combined only)
                 h_mc_gen_histograms_0[idx]->Fill(phi_mc_gen_deg);
@@ -666,7 +666,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
             if ((*xB_mc_gen_1 >= bin.xB_low && *xB_mc_gen_1 <= bin.xB_high &&
                 *Q2_mc_gen_1 >= bin.Q2_low && *Q2_mc_gen_1 <= bin.Q2_high &&
                 std::abs(*t1_mc_gen_1) >= bin.t_low && std::abs(*t1_mc_gen_1) <= bin.t_high) &&
-                apply_kinematic_cuts(*t1_mc_gen_1, *open_angle_ep2_mc_gen_1, **theta_neutral_neutral_mc_gen_1, *Emiss2_mc_gen_1, *Mx2_1_mc_gen_1, *pTmiss_mc_gen_1)) {
+                apply_kinematic_cuts(*t1_mc_gen_1, *open_angle_ep2_mc_gen_1, *theta_neutral_neutral_mc_gen_1, *Emiss2_mc_gen_1, *Mx2_1_mc_gen_1, *pTmiss_mc_gen_1)) {
 
                 // Fill generated MC histogram (combined only)
                 h_mc_gen_histograms_1[idx]->Fill(phi_mc_gen_deg);
@@ -685,7 +685,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
             if ((*xB_mc_gen_2 >= bin.xB_low && *xB_mc_gen_2 <= bin.xB_high &&
                 *Q2_mc_gen_2 >= bin.Q2_low && *Q2_mc_gen_2 <= bin.Q2_high &&
                 std::abs(*t1_mc_gen_2) >= bin.t_low && std::abs(*t1_mc_gen_2) <= bin.t_high) &&
-                apply_kinematic_cuts(*t1_mc_gen_2, *open_angle_ep2_mc_gen_2, **theta_neutral_neutral_mc_gen_2, *Emiss2_mc_gen_2, *Mx2_1_mc_gen_2, *pTmiss_mc_gen_2)) {
+                apply_kinematic_cuts(*t1_mc_gen_2, *open_angle_ep2_mc_gen_2, *theta_neutral_neutral_mc_gen_2, *Emiss2_mc_gen_2, *Mx2_1_mc_gen_2, *pTmiss_mc_gen_2)) {
 
                 // Fill generated MC histogram (combined only)
                 h_mc_gen_histograms_2[idx]->Fill(phi_mc_gen_deg);
@@ -707,7 +707,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
             if ((*xB_mc_gen_aaogen_0 >= bin.xB_low && *xB_mc_gen_aaogen_0 <= bin.xB_high &&
                 *Q2_mc_gen_aaogen_0 >= bin.Q2_low && *Q2_mc_gen_aaogen_0 <= bin.Q2_high &&
                 std::abs(*t1_mc_gen_aaogen_0) >= bin.t_low && std::abs(*t1_mc_gen_aaogen_0) <= bin.t_high) &&
-                apply_kinematic_cuts(*t1_mc_gen_aaogen_0, *open_angle_ep2_mc_gen_aaogen_0, **theta_neutral_neutral_mc_gen_aaogen_0, *Emiss2_mc_gen_aaogen_0, *Mx2_1_mc_gen_aaogen_0, *pTmiss_mc_gen_aaogen_0)) {
+                apply_kinematic_cuts(*t1_mc_gen_aaogen_0, *open_angle_ep2_mc_gen_aaogen_0, *theta_neutral_neutral_mc_gen_aaogen_0, *Emiss2_mc_gen_aaogen_0, *Mx2_1_mc_gen_aaogen_0, *pTmiss_mc_gen_aaogen_0)) {
 
                 // Fill generated MC histogram (combined only)
                 h_mc_gen_aaogen_histograms_0[idx]->Fill(phi_mc_gen_aaogen_deg);
@@ -726,7 +726,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
             if ((*xB_mc_gen_aaogen_1 >= bin.xB_low && *xB_mc_gen_aaogen_1 <= bin.xB_high &&
                 *Q2_mc_gen_aaogen_1 >= bin.Q2_low && *Q2_mc_gen_aaogen_1 <= bin.Q2_high &&
                 std::abs(*t1_mc_gen_aaogen_1) >= bin.t_low && std::abs(*t1_mc_gen_aaogen_1) <= bin.t_high) &&
-                apply_kinematic_cuts(*t1_mc_gen_aaogen_1, *open_angle_ep2_mc_gen_aaogen_1, **theta_neutral_neutral_mc_gen_aaogen_1, *Emiss2_mc_gen_aaogen_1, *Mx2_1_mc_gen_aaogen_1, *pTmiss_mc_gen_aaogen_1)) {
+                apply_kinematic_cuts(*t1_mc_gen_aaogen_1, *open_angle_ep2_mc_gen_aaogen_1, *theta_neutral_neutral_mc_gen_aaogen_1, *Emiss2_mc_gen_aaogen_1, *Mx2_1_mc_gen_aaogen_1, *pTmiss_mc_gen_aaogen_1)) {
 
                 // Fill generated MC histogram (combined only)
                 h_mc_gen_aaogen_histograms_1[idx]->Fill(phi_mc_gen_aaogen_deg);
@@ -745,7 +745,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
             if ((*xB_mc_gen_aaogen_2 >= bin.xB_low && *xB_mc_gen_aaogen_2 <= bin.xB_high &&
                 *Q2_mc_gen_aaogen_2 >= bin.Q2_low && *Q2_mc_gen_aaogen_2 <= bin.Q2_high &&
                 std::abs(*t1_mc_gen_aaogen_2) >= bin.t_low && std::abs(*t1_mc_gen_aaogen_2) <= bin.t_high) &&
-                apply_kinematic_cuts(*t1_mc_gen_aaogen_2, *open_angle_ep2_mc_gen_aaogen_2, **theta_neutral_neutral_mc_gen_aaogen_2, *Emiss2_mc_gen_aaogen_2, *Mx2_1_mc_gen_aaogen_2, *pTmiss_mc_gen_aaogen_2)) {
+                apply_kinematic_cuts(*t1_mc_gen_aaogen_2, *open_angle_ep2_mc_gen_aaogen_2, *theta_neutral_neutral_mc_gen_aaogen_2, *Emiss2_mc_gen_aaogen_2, *Mx2_1_mc_gen_aaogen_2, *pTmiss_mc_gen_aaogen_2)) {
 
                 // Fill generated MC histogram (combined only)
                 h_mc_gen_aaogen_histograms_2[idx]->Fill(phi_mc_gen_aaogen_deg);
@@ -769,7 +769,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
             if ((*xB_mc_rec_0 >= bin.xB_low && *xB_mc_rec_0 <= bin.xB_high &&
                 *Q2_mc_rec_0 >= bin.Q2_low && *Q2_mc_rec_0 <= bin.Q2_high &&
                 std::abs(*t1_mc_rec_0) >= bin.t_low && std::abs(*t1_mc_rec_0) <= bin.t_high) &&
-                apply_kinematic_cuts(*t1_mc_rec_0, *open_angle_ep2_mc_rec_0, **theta_neutral_neutral_mc_rec_0, *Emiss2_mc_rec_0, *Mx2_1_mc_rec_0, *pTmiss_mc_rec_0)) {
+                apply_kinematic_cuts(*t1_mc_rec_0, *open_angle_ep2_mc_rec_0, *theta_neutral_neutral_mc_rec_0, *Emiss2_mc_rec_0, *Mx2_1_mc_rec_0, *pTmiss_mc_rec_0)) {
 
                 // Fill reconstructed MC histogram (combined only)
                 h_mc_rec_histograms_0[idx]->Fill(phi_mc_rec_deg);
@@ -788,7 +788,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
             if ((*xB_mc_rec_1 >= bin.xB_low && *xB_mc_rec_1 <= bin.xB_high &&
                 *Q2_mc_rec_1 >= bin.Q2_low && *Q2_mc_rec_1 <= bin.Q2_high &&
                 std::abs(*t1_mc_rec_1) >= bin.t_low && std::abs(*t1_mc_rec_1) <= bin.t_high) &&
-                apply_kinematic_cuts(*t1_mc_rec_1, *open_angle_ep2_mc_rec_1, **theta_neutral_neutral_mc_rec_1, *Emiss2_mc_rec_1, *Mx2_1_mc_rec_1, *pTmiss_mc_rec_1)) {
+                apply_kinematic_cuts(*t1_mc_rec_1, *open_angle_ep2_mc_rec_1, *theta_neutral_neutral_mc_rec_1, *Emiss2_mc_rec_1, *Mx2_1_mc_rec_1, *pTmiss_mc_rec_1)) {
 
                 // Fill reconstructed MC histogram (combined only)
                 h_mc_rec_histograms_1[idx]->Fill(phi_mc_rec_deg);
@@ -807,7 +807,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
             if ((*xB_mc_rec_2 >= bin.xB_low && *xB_mc_rec_2 <= bin.xB_high &&
                 *Q2_mc_rec_2 >= bin.Q2_low && *Q2_mc_rec_2 <= bin.Q2_high &&
                 std::abs(*t1_mc_rec_2) >= bin.t_low && std::abs(*t1_mc_rec_2) <= bin.t_high) &&
-                apply_kinematic_cuts(*t1_mc_rec_2, *open_angle_ep2_mc_rec_2, **theta_neutral_neutral_mc_rec_2, *Emiss2_mc_rec_2, *Mx2_1_mc_rec_2, *pTmiss_mc_rec_2)) {
+                apply_kinematic_cuts(*t1_mc_rec_2, *open_angle_ep2_mc_rec_2, *theta_neutral_neutral_mc_rec_2, *Emiss2_mc_rec_2, *Mx2_1_mc_rec_2, *pTmiss_mc_rec_2)) {
 
                 // Fill reconstructed MC histogram (combined only)
                 h_mc_rec_histograms_2[idx]->Fill(phi_mc_rec_deg);
@@ -829,7 +829,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
             if ((*xB_mc_rec_aaogen_0 >= bin.xB_low && *xB_mc_rec_aaogen_0 <= bin.xB_high &&
                 *Q2_mc_rec_aaogen_0 >= bin.Q2_low && *Q2_mc_rec_aaogen_0 <= bin.Q2_high &&
                 std::abs(*t1_mc_rec_aaogen_0) >= bin.t_low && std::abs(*t1_mc_rec_aaogen_0) <= bin.t_high) &&
-                apply_kinematic_cuts(*t1_mc_rec_aaogen_0, *open_angle_ep2_mc_rec_aaogen_0, **theta_neutral_neutral_mc_rec_aaogen_0, *Emiss2_mc_rec_aaogen_0, *Mx2_1_mc_rec_aaogen_0, *pTmiss_mc_rec_aaogen_0)) {
+                apply_kinematic_cuts(*t1_mc_rec_aaogen_0, *open_angle_ep2_mc_rec_aaogen_0, *theta_neutral_neutral_mc_rec_aaogen_0, *Emiss2_mc_rec_aaogen_0, *Mx2_1_mc_rec_aaogen_0, *pTmiss_mc_rec_aaogen_0)) {
 
                 // Fill reconstructed MC histogram (combined only)
                 h_mc_rec_aaogen_histograms_0[idx]->Fill(phi_mc_rec_aaogen_deg);
@@ -848,7 +848,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
             if ((*xB_mc_rec_aaogen_1 >= bin.xB_low && *xB_mc_rec_aaogen_1 <= bin.xB_high &&
                 *Q2_mc_rec_aaogen_1 >= bin.Q2_low && *Q2_mc_rec_aaogen_1 <= bin.Q2_high &&
                 std::abs(*t1_mc_rec_aaogen_1) >= bin.t_low && std::abs(*t1_mc_rec_aaogen_1) <= bin.t_high) &&
-                apply_kinematic_cuts(*t1_mc_rec_aaogen_1, *open_angle_ep2_mc_rec_aaogen_1, **theta_neutral_neutral_mc_rec_aaogen_1, *Emiss2_mc_rec_aaogen_1, *Mx2_1_mc_rec_aaogen_1, *pTmiss_mc_rec_aaogen_1)) {
+                apply_kinematic_cuts(*t1_mc_rec_aaogen_1, *open_angle_ep2_mc_rec_aaogen_1, *theta_neutral_neutral_mc_rec_aaogen_1, *Emiss2_mc_rec_aaogen_1, *Mx2_1_mc_rec_aaogen_1, *pTmiss_mc_rec_aaogen_1)) {
 
                 // Fill reconstructed MC histogram (combined only)
                 h_mc_rec_aaogen_histograms_1[idx]->Fill(phi_mc_rec_aaogen_deg);
@@ -867,7 +867,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
             if ((*xB_mc_rec_aaogen_2 >= bin.xB_low && *xB_mc_rec_aaogen_2 <= bin.xB_high &&
                 *Q2_mc_rec_aaogen_2 >= bin.Q2_low && *Q2_mc_rec_aaogen_2 <= bin.Q2_high &&
                 std::abs(*t1_mc_rec_aaogen_2) >= bin.t_low && std::abs(*t1_mc_rec_aaogen_2) <= bin.t_high) &&
-                apply_kinematic_cuts(*t1_mc_rec_aaogen_2, *open_angle_ep2_mc_rec_aaogen_2, **theta_neutral_neutral_mc_rec_aaogen_2, *Emiss2_mc_rec_aaogen_2, *Mx2_1_mc_rec_aaogen_2, *pTmiss_mc_rec_aaogen_2)) {
+                apply_kinematic_cuts(*t1_mc_rec_aaogen_2, *open_angle_ep2_mc_rec_aaogen_2, *theta_neutral_neutral_mc_rec_aaogen_2, *Emiss2_mc_rec_aaogen_2, *Mx2_1_mc_rec_aaogen_2, *pTmiss_mc_rec_aaogen_2)) {
 
                 // Fill reconstructed MC histogram (combined only)
                 h_mc_rec_aaogen_histograms_2[idx]->Fill(phi_mc_rec_aaogen_deg);
@@ -991,25 +991,25 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
 
             if (acceptance_eppi0_value_0 > 0) {
                 double unfolded_eppi0_yield_0 = h_eppi0_histograms_0[3][idx]->GetBinContent(phi_bin) / acceptance_eppi0_value_0;
-                unfolding_data.unfolded_yields[0][phi_bin - 1] = unfolded_eppi0_yield_0;
+                unfolding_data.unfolded_yields[3][phi_bin - 1] = unfolded_eppi0_yield_0;
             } else {
-                unfolding_data.unfolded_yields[0][phi_bin - 1] = 0.0;
+                unfolding_data.unfolded_yields[3][phi_bin - 1] = 0.0;
             }
 
             // For period 1
             if (acceptance_eppi0_value_1 > 0) {
                 double unfolded_eppi0_yield_1 = h_eppi0_histograms_1[3][idx]->GetBinContent(phi_bin) / acceptance_eppi0_value_1;
-                unfolding_data.unfolded_yields[1][phi_bin - 1] = unfolded_eppi0_yield_1;
+                unfolding_data.unfolded_yields[4][phi_bin - 1] = unfolded_eppi0_yield_1;
             } else {
-                unfolding_data.unfolded_yields[1][phi_bin - 1] = 0.0;
+                unfolding_data.unfolded_yields[4][phi_bin - 1] = 0.0;
             }
 
             // For period 2
             if (acceptance_eppi0_value_2 > 0) {
                 double unfolded_eppi0_yield_2 = h_eppi0_histograms_2[3][idx]->GetBinContent(phi_bin) / acceptance_eppi0_value_2;
-                unfolding_data.unfolded_yields[2][phi_bin - 1] = unfolded_eppi0_yield_2;
+                unfolding_data.unfolded_yields[5][phi_bin - 1] = unfolded_eppi0_yield_2;
             } else {
-                unfolding_data.unfolded_yields[2][phi_bin - 1] = 0.0;
+                unfolding_data.unfolded_yields[5][phi_bin - 1] = 0.0;
             }
         }
 
@@ -1026,6 +1026,13 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
         canvas_yield_1->Divide(n_columns, n_rows);
         canvas_yield_2->Divide(n_columns, n_rows);
 
+        TCanvas* canvas_yield_3 = new TCanvas(Form("c_yield_3_%zu", topo_idx), "Yields", canvas_width, canvas_height);
+        TCanvas* canvas_yield_4 = new TCanvas(Form("c_yield_4_%zu", topo_idx), "Yields", canvas_width, canvas_height);
+        TCanvas* canvas_yield_5 = new TCanvas(Form("c_yield_5_%zu", topo_idx), "Yields", canvas_width, canvas_height);
+        canvas_yield_3->Divide(n_columns, n_rows);
+        canvas_yield_4->Divide(n_columns, n_rows);
+        canvas_yield_5->Divide(n_columns, n_rows);
+
         for (int idx = 0; idx < n_Q2t_bins; ++idx) {
             // For canvas_yield_0
             TPad* pad_yield_0 = (TPad*)canvas_yield_0->cd(idx + 1);
@@ -1041,6 +1048,21 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
             TPad* pad_yield_2 = (TPad*)canvas_yield_2->cd(idx + 1);
             pad_yield_2->SetLeftMargin(0.2);
             pad_yield_2->SetBottomMargin(0.15);
+
+            // For canvas_yield_3
+            TPad* pad_yield_3 = (TPad*)canvas_yield_3->cd(idx + 1);
+            pad_yield_3->SetLeftMargin(0.2);
+            pad_yield_3->SetBottomMargin(0.15);
+
+            // For canvas_yield_4
+            TPad* pad_yield_4 = (TPad*)canvas_yield_4->cd(idx + 1);
+            pad_yield_4->SetLeftMargin(0.2);
+            pad_yield_4->SetBottomMargin(0.15);
+
+            // For canvas_yield_5
+            TPad* pad_yield_5 = (TPad*)canvas_yield_5->cd(idx + 1);
+            pad_yield_5->SetLeftMargin(0.2);
+            pad_yield_5->SetBottomMargin(0.15);
 
             // If this is the combined topology, we need to unfold by dividing data by acceptance
             if (topo_idx == 3) {  // Combined histograms
@@ -1085,6 +1107,45 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
                         h_data_histograms_2[topo_idx][idx]->SetBinContent(bin, 0);
                         h_data_histograms_2[topo_idx][idx]->SetBinError(bin, 0);
                     }
+                    // For period 3
+                    double acceptance_value_3 = h_acceptance_eppi0_histograms_0[idx]->GetBinContent(bin);
+                    if (acceptance_value_3 > 0) {
+                        double data_value_3 = h_eppi0_histograms_0[topo_idx][idx]->GetBinContent(bin);
+                        double data_error_3 = h_eppi0_histograms_0[topo_idx][idx]->GetBinError(bin);
+                        double unfolded_value_3 = data_value_3 / acceptance_value_3;
+                        double unfolded_error_3 = data_error_3 / acceptance_value_3;
+                        h_eppi0_histograms_0[topo_idx][idx]->SetBinContent(bin, unfolded_value_3);
+                        h_eppi0_histograms_0[topo_idx][idx]->SetBinError(bin, unfolded_error_3);
+                    } else {
+                        h_eppi0_histograms_0[topo_idx][idx]->SetBinContent(bin, 0);
+                        h_eppi0_histograms_0[topo_idx][idx]->SetBinError(bin, 0);
+                    }
+                    // For period 4
+                    double acceptance_value_4 = h_acceptance_eppi0_histograms_1[idx]->GetBinContent(bin);
+                    if (acceptance_value_4 > 0) {
+                        double data_value_4 = h_eppi0_histograms_1[topo_idx][idx]->GetBinContent(bin);
+                        double data_error_4 = h_eppi0_histograms_1[topo_idx][idx]->GetBinError(bin);
+                        double unfolded_value_4 = data_value_4 / acceptance_value_4;
+                        double unfolded_error_4 = data_error_4 / acceptance_value_4;
+                        h_eppi0_histograms_1[topo_idx][idx]->SetBinContent(bin, unfolded_value_4);
+                        h_eppi0_histograms_1[topo_idx][idx]->SetBinError(bin, unfolded_error_4);
+                    } else {
+                        h_eppi0_histograms_1[topo_idx][idx]->SetBinContent(bin, 0);
+                        h_eppi0_histograms_1[topo_idx][idx]->SetBinError(bin, 0);
+                    }
+                    // For period 3
+                    double acceptance_value_5 = h_acceptance_eppi0_histograms_2[idx]->GetBinContent(bin);
+                    if (acceptance_value_5 > 0) {
+                        double data_value_5 = h_eppi0_histograms_2[topo_idx][idx]->GetBinContent(bin);
+                        double data_error_5 = h_eppi0_histograms_2[topo_idx][idx]->GetBinError(bin);
+                        double unfolded_value_5 = data_value_5 / acceptance_value_5;
+                        double unfolded_error_5 = data_error_5 / acceptance_value_5;
+                        h_eppi0_histograms_2[topo_idx][idx]->SetBinContent(bin, unfolded_value_5);
+                        h_eppi0_histograms_2[topo_idx][idx]->SetBinError(bin, unfolded_error_5);
+                    } else {
+                        h_eppi0_histograms_2[topo_idx][idx]->SetBinContent(bin, 0);
+                        h_eppi0_histograms_2[topo_idx][idx]->SetBinError(bin, 0);
+                    }
                 }
                 // Adjust y-axis range for each histogram
                 double max_value_0 = h_data_histograms_0[topo_idx][idx]->GetMaximum();
@@ -1093,6 +1154,13 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
                 h_data_histograms_0[topo_idx][idx]->GetYaxis()->SetRangeUser(0, 1.1 * max_value_0);
                 h_data_histograms_1[topo_idx][idx]->GetYaxis()->SetRangeUser(0, 1.1 * max_value_1);
                 h_data_histograms_2[topo_idx][idx]->GetYaxis()->SetRangeUser(0, 1.1 * max_value_2);
+                // Adjust y-axis range for each histogram
+                double max_value_3 = h_eppi0_histograms_0[topo_idx][idx]->GetMaximum();
+                double max_value_4 = h_eppi0_histograms_1[topo_idx][idx]->GetMaximum();
+                double max_value_5 = h_eppi0_histograms_2[topo_idx][idx]->GetMaximum();
+                h_eppi0_histograms_0[topo_idx][idx]->GetYaxis()->SetRangeUser(0, 1.1 * max_value_3);
+                h_eppi0_histograms_1[topo_idx][idx]->GetYaxis()->SetRangeUser(0, 1.1 * max_value_4);
+                h_eppi0_histograms_2[topo_idx][idx]->GetYaxis()->SetRangeUser(0, 1.1 * max_value_5);
             }
 
             // Draw the histograms on their respective canvases and pads
@@ -1104,32 +1172,57 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
 
             pad_yield_2->cd();
             h_data_histograms_2[topo_idx][idx]->Draw("E1");
+
+            // Draw the histograms on their respective canvases and pads
+            pad_yield_3->cd();
+            h_eppi0_histograms_0[topo_idx][idx]->Draw("E1");
+
+            pad_yield_4->cd();
+            h_eppi0_histograms_1[topo_idx][idx]->Draw("E1");
+
+            pad_yield_5->cd();
+            h_eppi0_histograms_2[topo_idx][idx]->Draw("E1");
         }
 
         // Save the canvases with unique filenames
-        std::string filename_yield_0 = output_dir_0 + "/yields/yields_" + analysisType + "_" + period_names[0] + "_" + topologies[topo_idx] + "_xB_bin_" + std::to_string(xB_bin) + "_0.pdf";
-        std::string filename_yield_1 = output_dir_1 + "/yields/yields_" + analysisType + "_" + period_names[1] + "_" + topologies[topo_idx] + "_xB_bin_" + std::to_string(xB_bin) + "_1.pdf";
-        std::string filename_yield_2 = output_dir_2 + "/yields/yields_" + analysisType + "_" + period_names[2] + "_" + topologies[topo_idx] + "_xB_bin_" + std::to_string(xB_bin) + "_2.pdf";
+        std::string filename_yield_0 = output_dir_0 + "/yields/yields_dvcs_" + period_names[0] + "_" + topologies[topo_idx] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
+        std::string filename_yield_1 = output_dir_1 + "/yields/yields_dvcs_" + period_names[1] + "_" + topologies[topo_idx] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
+        std::string filename_yield_2 = output_dir_2 + "/yields/yields_dvcs_" + period_names[2] + "_" + topologies[topo_idx] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
+        // Save the canvases with unique filenames
+        std::string filename_yield_3 = output_dir_3 + "/yields/yields_eppi0_" + period_names[0] + "_" + topologies[topo_idx] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
+        std::string filename_yield_4 = output_dir_4 + "/yields/yields_eppi0_" + period_names[1] + "_" + topologies[topo_idx] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
+        std::string filename_yield_5 = output_dir_5 + "/yields/yields_eppi0_" + period_names[2] + "_" + topologies[topo_idx] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
 
         canvas_yield_0->SaveAs(filename_yield_0.c_str());
         canvas_yield_1->SaveAs(filename_yield_1.c_str());
         canvas_yield_2->SaveAs(filename_yield_2.c_str());
 
-        delete canvas_yield_0;
-        delete canvas_yield_1;
-        delete canvas_yield_2;
+        canvas_yield_3->SaveAs(filename_yield_3.c_str());
+        canvas_yield_4->SaveAs(filename_yield_4.c_str());
+        canvas_yield_5->SaveAs(filename_yield_5.c_str());
+
+        delete canvas_yield_3;
+        delete canvas_yield_4;
+        delete canvas_yield_5;
     }
 
     // Plot and save acceptance for combined only for each period separately
 
     // Create canvases for each period
-    TCanvas* canvas_acceptance_0 = new TCanvas("c_acceptance_combined_0", "Acceptance Combined Period 0", canvas_width, canvas_height);
-    TCanvas* canvas_acceptance_1 = new TCanvas("c_acceptance_combined_1", "Acceptance Combined Period 1", canvas_width, canvas_height);
-    TCanvas* canvas_acceptance_2 = new TCanvas("c_acceptance_combined_2", "Acceptance Combined Period 2", canvas_width, canvas_height);
+    TCanvas* canvas_acceptance_0 = new TCanvas("c_acceptance_combined_0", "Acceptance dvcs Combined Period 0", canvas_width, canvas_height);
+    TCanvas* canvas_acceptance_1 = new TCanvas("c_acceptance_combined_1", "Acceptance dvcs Combined Period 1", canvas_width, canvas_height);
+    TCanvas* canvas_acceptance_2 = new TCanvas("c_acceptance_combined_2", "Acceptance dvcs Combined Period 2", canvas_width, canvas_height);
+    // Create canvases for each period
+    TCanvas* canvas_acceptance_3 = new TCanvas("c_acceptance_combined_3", "Acceptance eppi0 Combined Period 0", canvas_width, canvas_height);
+    TCanvas* canvas_acceptance_4 = new TCanvas("c_acceptance_combined_4", "Acceptance eppi0 Combined Period 1", canvas_width, canvas_height);
+    TCanvas* canvas_acceptance_5 = new TCanvas("c_acceptance_combined_5", "Acceptance eppi0 Combined Period 2", canvas_width, canvas_height);
 
     canvas_acceptance_0->Divide(n_columns, n_rows);
     canvas_acceptance_1->Divide(n_columns, n_rows);
     canvas_acceptance_2->Divide(n_columns, n_rows);
+    canvas_acceptance_3->Divide(n_columns, n_rows);
+    canvas_acceptance_4->Divide(n_columns, n_rows);
+    canvas_acceptance_5->Divide(n_columns, n_rows);
 
     for (int idx = 0; idx < n_Q2t_bins; ++idx) {
         // For canvas_acceptance_0
@@ -1176,20 +1269,75 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
         h_acceptance_histograms_2[idx]->GetYaxis()->SetTitleSize(0.06);
 
         h_acceptance_histograms_2[idx]->Draw("E1");
+
+        // For canvas_acceptance_3
+        TPad* pad_acceptance_3 = (TPad*)canvas_acceptance_3->cd(idx + 1);
+        pad_acceptance_3->SetLeftMargin(0.20);
+        pad_acceptance_3->SetBottomMargin(0.15);
+
+        // Set the axis labels and styles for acceptance histograms for period 2
+        h_acceptance_eppi0_histograms_0[idx]->GetXaxis()->SetTitle("#phi");
+        h_acceptance_eppi0_histograms_0[idx]->GetYaxis()->SetTitle("Acceptance");
+        h_acceptance_eppi0_histograms_0[idx]->GetXaxis()->SetLabelSize(0.05);
+        h_acceptance_eppi0_histograms_0[idx]->GetYaxis()->SetLabelSize(0.05);
+        h_acceptance_eppi0_histograms_0[idx]->GetXaxis()->SetTitleSize(0.06);
+        h_acceptance_eppi0_histograms_0[idx]->GetYaxis()->SetTitleSize(0.06);
+
+        h_acceptance_eppi0_histograms_0[idx]->Draw("E1");
+
+        // For canvas_acceptance_4
+        TPad* pad_acceptance_4 = (TPad*)canvas_acceptance_4->cd(idx + 1);
+        pad_acceptance_4->SetLeftMargin(0.20);
+        pad_acceptance_4->SetBottomMargin(0.15);
+
+        // Set the axis labels and styles for acceptance histograms for period 2
+        h_acceptance_eppi0_histograms_1[idx]->GetXaxis()->SetTitle("#phi");
+        h_acceptance_eppi0_histograms_1[idx]->GetYaxis()->SetTitle("Acceptance");
+        h_acceptance_eppi0_histograms_1[idx]->GetXaxis()->SetLabelSize(0.05);
+        h_acceptance_eppi0_histograms_1[idx]->GetYaxis()->SetLabelSize(0.05);
+        h_acceptance_eppi0_histograms_1[idx]->GetXaxis()->SetTitleSize(0.06);
+        h_acceptance_eppi0_histograms_1[idx]->GetYaxis()->SetTitleSize(0.06);
+
+        h_acceptance_eppi0_histograms_1[idx]->Draw("E1");
+
+        // For canvas_acceptance_5
+        TPad* pad_acceptance_5 = (TPad*)canvas_acceptance_5->cd(idx + 1);
+        pad_acceptance_5->SetLeftMargin(0.20);
+        pad_acceptance_5->SetBottomMargin(0.15);
+
+        // Set the axis labels and styles for acceptance histograms for period 2
+        h_acceptance_eppi0_histograms_2[idx]->GetXaxis()->SetTitle("#phi");
+        h_acceptance_eppi0_histograms_2[idx]->GetYaxis()->SetTitle("Acceptance");
+        h_acceptance_eppi0_histograms_2[idx]->GetXaxis()->SetLabelSize(0.05);
+        h_acceptance_eppi0_histograms_2[idx]->GetYaxis()->SetLabelSize(0.05);
+        h_acceptance_eppi0_histograms_2[idx]->GetXaxis()->SetTitleSize(0.06);
+        h_acceptance_eppi0_histograms_2[idx]->GetYaxis()->SetTitleSize(0.06);
+
+        h_acceptance_eppi0_histograms_2[idx]->Draw("E1");
     }
 
     // Save each canvas with a unique filename
-    std::string filename_acceptance_0 = output_dir_0 + "/acceptances/acceptances_combined_" + analysisType + "_" + period_names[0] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
-    std::string filename_acceptance_1 = output_dir_1 + "/acceptances/acceptances_combined_" + analysisType + "_" + period_names[1] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
-    std::string filename_acceptance_2 = output_dir_2 + "/acceptances/acceptances_combined_" + analysisType + "_" + period_names[2] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
+    std::string filename_acceptance_0 = output_dir_0 + "/acceptances/acceptances_combined_dvcs_" + period_names[0] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
+    std::string filename_acceptance_1 = output_dir_1 + "/acceptances/acceptances_combined_dvcs_" + period_names[1] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
+    std::string filename_acceptance_2 = output_dir_2 + "/acceptances/acceptances_combined_dvcs_" + period_names[2] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
+    // Save each canvas with a unique filename
+    std::string filename_acceptance_3 = output_dir_3 + "/acceptances/acceptances_combined_eppi0_" + period_names[0] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
+    std::string filename_acceptance_4 = output_dir_4 + "/acceptances/acceptances_combined_eppi0_" + period_names[1] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
+    std::string filename_acceptance_5 = output_dir_5 + "/acceptances/acceptances_combined_eppi0_" + period_names[2] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
 
     canvas_acceptance_0->SaveAs(filename_acceptance_0.c_str());
     canvas_acceptance_1->SaveAs(filename_acceptance_1.c_str());
     canvas_acceptance_2->SaveAs(filename_acceptance_2.c_str());
+    canvas_acceptance_3->SaveAs(filename_acceptance_3.c_str());
+    canvas_acceptance_4->SaveAs(filename_acceptance_4.c_str());
+    canvas_acceptance_5->SaveAs(filename_acceptance_5.c_str());
 
     delete canvas_acceptance_0;
     delete canvas_acceptance_1;
     delete canvas_acceptance_2;
+    delete canvas_acceptance_3;
+    delete canvas_acceptance_4;
+    delete canvas_acceptance_5;
 
     // Clean up histograms
     for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
@@ -1201,37 +1349,42 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
     for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
         for (auto& h : h_data_histograms_2[topo_idx]) delete h;
     }
+    for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
+        for (auto& h : h_eppi0_histograms_0[topo_idx]) delete h;
+    }
+    for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
+        for (auto& h : h_eppi0_histograms_1[topo_idx]) delete h;
+    }
+    for (size_t topo_idx = 0; topo_idx < topologies.size(); ++topo_idx) {
+        for (auto& h : h_eppi0_histograms_2[topo_idx]) delete h;
+    }
 
     for (auto& h : h_mc_gen_histograms_0) delete h;
     for (auto& h : h_mc_gen_histograms_1) delete h;
     for (auto& h : h_mc_gen_histograms_2) delete h;
+    for (auto& h : h_mc_gen_aaogen_histograms_0) delete h;
+    for (auto& h : h_mc_gen_aaogen_histograms_1) delete h;
+    for (auto& h : h_mc_gen_aaogen_histograms_2) delete h;
     for (auto& h : h_mc_rec_histograms_0) delete h;
     for (auto& h : h_mc_rec_histograms_1) delete h;
     for (auto& h : h_mc_rec_histograms_2) delete h;
+    for (auto& h : h_mc_rec_aaogen_histograms_0) delete h;
+    for (auto& h : h_mc_rec_aaogen_histograms_0) delete h;
+    for (auto& h : h_mc_rec_aaogen_histograms_0) delete h;
     for (auto& h : h_acceptance_histograms_0) delete h;
     for (auto& h : h_acceptance_histograms_1) delete h;
     for (auto& h : h_acceptance_histograms_2) delete h;
-
-    delete theta_neutral_neutral_data_0;
-    delete theta_neutral_neutral_data_1;
-    delete theta_neutral_neutral_data_2;
-    delete theta_neutral_neutral_mc_gen_0;
-    delete theta_neutral_neutral_mc_gen_1;
-    delete theta_neutral_neutral_mc_gen_2;
-    delete theta_neutral_neutral_mc_rec_0;
-    delete theta_neutral_neutral_mc_rec_1;
-    delete theta_neutral_neutral_mc_rec_2;
+    for (auto& h : h_acceptance_eppi0_histograms_0) delete h;
+    for (auto& h : h_acceptance_eppi0_histograms_1) delete h;
+    for (auto& h : h_acceptance_eppi0_histograms_2) delete h;
 
     // Reset the readers after each iteration
     data_readers[0].Restart(); data_readers[1].Restart(); data_readers[2].Restart();
     mc_gen_readers[0].Restart(); mc_gen_readers[1].Restart(); mc_gen_readers[2].Restart();
     mc_rec_readers[0].Restart(); mc_rec_readers[1].Restart(); mc_rec_readers[2].Restart();
-
-
-    // std::cout << "Final raw_yields size: " << unfolding_data.raw_yields.size() << std::endl;
-    // for (size_t p = 0; p < unfolding_data.raw_yields.size(); ++p) {
-    //     std::cout << "Period " << p << ": " << unfolding_data.raw_yields[p].size() << " entries." << std::endl;
-    // }
+    eppi0_readers[0].Restart(); eppi0_readers[1].Restart(); eppi0_readers[2].Restart();
+    mc_gen_aaogen_readers[0].Restart(); mc_gen_aaogen_readers[1].Restart(); mc_gen_aaogen_readers[2].Restart();
+    mc_rec_aaogen_readers[0].Restart(); mc_rec_aaogen_readers[1].Restart(); mc_rec_aaogen_readers[2].Restart();
 
     // Return all the gathered unfolding data
     return all_unfolding_data;

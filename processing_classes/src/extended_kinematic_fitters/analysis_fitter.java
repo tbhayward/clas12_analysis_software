@@ -30,14 +30,14 @@ public class analysis_fitter extends GenericKinematicFitter {
         pid_cuts pid_cuts = new pid_cuts();
 
         return true
-//                && p > 2.0 // higher cut ultimately enforced when we cut on y, this speeds processing
-//                && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
-//                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
-//                && pid_cuts.calorimeter_energy_cut(particle_Index, cal_Bank)
-//                && pid_cuts.calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
-//                && pid_cuts.calorimeter_diagonal_cut(particle_Index, p, cal_Bank) //            && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)    
-//                && fiducial_cuts.pcal_fiducial_cut(particle_Index, 1, run_Bank, rec_Bank, cal_Bank)
-//                && fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
+                && p > 2.0 // higher cut ultimately enforced when we cut on y, this speeds processing
+                && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
+                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
+                && pid_cuts.calorimeter_energy_cut(particle_Index, cal_Bank)
+                && pid_cuts.calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
+                && pid_cuts.calorimeter_diagonal_cut(particle_Index, p, cal_Bank) //            && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)    
+                && fiducial_cuts.pcal_fiducial_cut(particle_Index, 1, run_Bank, rec_Bank, cal_Bank)
+                && fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
                 ;
     }
 
@@ -45,7 +45,7 @@ public class analysis_fitter extends GenericKinematicFitter {
             HipoDataBank cal_Bank, HipoDataBank traj_Bank, HipoDataBank run_Bank) {
 
         generic_tests generic_tests = new generic_tests();
-//        fiducial_cuts fiducial_cuts = new fiducial_cuts();
+        fiducial_cuts fiducial_cuts = new fiducial_cuts();
         pid_cuts pid_cuts = new pid_cuts();
 
 //        float px = rec_Bank.getFloat("px", particle_Index);
@@ -65,10 +65,10 @@ public class analysis_fitter extends GenericKinematicFitter {
                         : true)
                 && (passesCentralDetector // generic |chi2pid| < 3.5 for cd
                         ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
-                        : true) //                
-                //                && (passesForwardDetector
-                //                        ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
-                //                        : true)
+                        : true)               
+                                && (passesForwardDetector
+                                        ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
+                                        : true)
                 //                && (passesCentralDetector
                 //                        ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
                 //                        : true)
@@ -176,7 +176,6 @@ public class analysis_fitter extends GenericKinematicFitter {
     public PhysicsEvent getPhysicsEvent(DataEvent event) {
 
         generic_tests generic_tests = new generic_tests();
-        if (event.hasBank("REC::Cherenkov")) { System.out.println("HAVE BANK");  }
         if (generic_tests.banks_test(event)) {
             PhysicsEvent physEvent = new PhysicsEvent();
             // load the hipo banks
