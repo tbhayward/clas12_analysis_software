@@ -1369,8 +1369,8 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir,
     for (auto& h : h_mc_rec_histograms_1) delete h;
     for (auto& h : h_mc_rec_histograms_2) delete h;
     for (auto& h : h_mc_rec_aaogen_histograms_0) delete h;
-    for (auto& h : h_mc_rec_aaogen_histograms_0) delete h;
-    for (auto& h : h_mc_rec_aaogen_histograms_0) delete h;
+    for (auto& h : h_mc_rec_aaogen_histograms_1) delete h;
+    for (auto& h : h_mc_rec_aaogen_histograms_2) delete h;
     for (auto& h : h_acceptance_histograms_0) delete h;
     for (auto& h : h_acceptance_histograms_1) delete h;
     for (auto& h : h_acceptance_histograms_2) delete h;
