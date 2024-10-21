@@ -368,6 +368,24 @@ void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f,
   TTreeReaderValue<double> DepW(dataReader, "DepW");
   TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
 
+  // Initial definitions (move outside the loop)
+  double Df = dilutionFactors[currentBin].first;
+  double sigmaDf = dilutionFactors[currentBin].second;
+  double sigmaPb = 0.015;
+  double sigmaPtp = 0.025;
+  double sigmaPtm = 0.025;
+
+  // Random number generation setup (outside the loop)
+  std::random_device rd;
+  std::mt19937 gen(rd());
+
+  // Normal distributions (outside the loop)
+  std::normal_distribution<> distDf(0.0, sigmaDf);
+  std::normal_distribution<> distPb(0.0, sigmaPb);
+  std::normal_distribution<> distStandard(0.0, 1.0); // Standard normal distribution
+
+
+  std::cout << "Entering data while loop" << std::endl;
   while (dataReader.Next()) {
     // Apply kinematic cuts (this function will need to be adapted)
     bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
@@ -378,59 +396,44 @@ void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f,
       // Increment the event count
       N += 1;
 
-      // Initial definitions
-      double Df = dilutionFactors[currentBin].first;
-      double sigmaDf = dilutionFactors[currentBin].second;
+      // Get per-event values
+      Df += distDf(gen);
       double Pb = *beam_pol;
-      double sigmaPb = 0.015;
       double Pt = std::abs(*target_pol);
-      double sigmaPtp = 0.025;
-      double sigmaPtm = 0.025;
-
-      // // Random number generation setup
-      // std::random_device rd;
-      // std::mt19937 gen(rd());
-
-      // // Normal distributions
-      // std::normal_distribution<> distDf(0.0, sigmaDf);
-      // std::normal_distribution<> distPb(0.0, sigmaPb);
-
-      // // Select sigma for Pt based on the sign of *target_pol
-      // double sigmaPt = (*target_pol >= 0) ? sigmaPtp : sigmaPtm;
-      // std::normal_distribution<> distPt(0.0, sigmaPt);
-
-      // // Adjust the values
-      // Df += distDf(gen);
-      // Pb += distPb(gen);
-      // Pt += distPt(gen);
-
+      // Adjust Pb with its uncertainty
+      Pb += distPb(gen);
+      // Select sigma for Pt based on the sign of *target_pol
+      double sigmaPt = (*target_pol >= 0) ? sigmaPtp : sigmaPtm;
+      // Adjust Pt with its uncertainty
+      Pt += sigmaPt * distStandard(gen);
       // Restore the sign of Pt
       double signPt = (*target_pol >= 0) ? 1.0 : -1.0;
       Pt = signPt * Pt;
 
+      // Proceed with your calculations
       if (*helicity > 0 && *target_pol >= 0) { 
-        sum_PP = sum_PP + log(1 
+        sum_PP += log(1 
           + (*DepV / *DepA)*AUU_cosphi*cos(*phi) + (*DepB / *DepA)*AUU_cos2phi*cos(2 * *phi) // UU 
           + Pb*((*DepW / *DepA)*ALU_sinphi*sin(*phi)) // BSA
           + Df*Pt*((*DepV / *DepA)*AUL_sinphi*sin(*phi)+ // TSA
             (*DepB / *DepA)*AUL_sin2phi*sin(2 * *phi))//TSA
           + Df*Pb*Pt*((*DepC / *DepA)*ALL + (*DepW / *DepA)*ALL_cosphi*cos(*phi)) ); // DSA
       } else if (*helicity > 0 && *target_pol < 0) { 
-        sum_PM = sum_PM + log(1 
+        sum_PM += log(1 
           + (*DepV / *DepA)*AUU_cosphi*cos(*phi) + (*DepB / *DepA)*AUU_cos2phi*cos(2 * *phi) // UU
           + Pb*((*DepW / *DepA)*ALU_sinphi*sin(*phi)) // BSA
           - Df*Pt*((*DepV / *DepA)*AUL_sinphi*sin(*phi)+ // TSA
             (*DepB / *DepA)*AUL_sin2phi*sin(2 * *phi)) // TSA
           - Df*Pb*Pt*((*DepC / *DepA)*ALL + (*DepW / *DepA)*ALL_cosphi*cos(*phi)) ); // DSA
       } else if (*helicity < 0 && *target_pol >= 0) { 
-        sum_MP = sum_MP + log(1 
+        sum_MP += log(1 
           + (*DepV / *DepA)*AUU_cosphi*cos(*phi) + (*DepB / *DepA)*AUU_cos2phi*cos(2 * *phi) // UU 
           - Pb*((*DepW / *DepA)*ALU_sinphi*sin(*phi)) // BSA
           + Df*Pt*((*DepV / *DepA)*AUL_sinphi*sin(*phi)+ // TSA
             (*DepB / *DepA)*AUL_sin2phi*sin(2 * *phi))//TSA
           - Df*Pb*Pt*((*DepC / *DepA)*ALL + (*DepW / *DepA)*ALL_cosphi*cos(*phi)) ); // DSA
       } else if (*helicity < 0 && *target_pol < 0) { 
-        sum_MM = sum_MM + log(1 
+        sum_MM += log(1 
           + (*DepV / *DepA)*AUU_cosphi*cos(*phi) + (*DepB / *DepA)*AUU_cos2phi*cos(2 * *phi) // UU 
           - Pb*((*DepW / *DepA)*ALU_sinphi*sin(*phi)) // BSA
           - Df*Pt*((*DepV / *DepA)*AUL_sinphi*sin(*phi)+ // TSA
@@ -455,15 +458,15 @@ void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f,
     // Check if the currentVariable is within the desired range
     if (*mc_currentVariable >= allBins[currentFits][currentBin] && 
           *mc_currentVariable < allBins[currentFits][currentBin + 1] && passedKinematicCuts) {
-      NUU+=1+(*mc_DepV / *mc_DepA)*AUU_cosphi*cos(*mc_phi)+
+      NUU += 1 + (*mc_DepV / *mc_DepA)*AUU_cosphi*cos(*mc_phi) +
         (*mc_DepB / *mc_DepA)*AUU_cos2phi*cos(2 * *mc_phi); // UU
     }
   }
   mcReader.Restart();  // Reset the TTreeReader at the end of the function
 
-  // determine min pos or neg beam helicity accumulated charge to scale down higher one
+  // Determine min positive or negative beam helicity accumulated charge to scale down higher one
   double minBeamCharge = std::min({(cpp+cpm),(cmp+cmm)}); 
-  // determine min pos or neg target helicity accumulated charge to scale down higher one
+  // Determine min positive or negative target helicity accumulated charge to scale down higher one
   double minTargetCharge = std::min({(cpp+cmp),(cpm+cmm)}); 
   
   double nll = N * log(NUU) - 
