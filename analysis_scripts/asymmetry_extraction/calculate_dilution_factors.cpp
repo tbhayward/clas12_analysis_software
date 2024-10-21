@@ -117,58 +117,116 @@ double calculate_standard_deviation(const std::vector<double>& values) {
 
 double calculate_dilution_error(double nA, double nC, double nCH, double nMT, double nf, 
                                 double xA, double xC, double xCH, double xHe, double xf) {
-    // First part of the expression
-    double term1 = 3988.9 * nA * nf * pow(xC, 2) * pow(xCH, 2) * pow(xf, 2) * pow(xHe, 2) *
-                  pow((-1.0 * nMT * xA + nA * xHe), 2) *
-                  pow((1.0 * nMT * xC * xCH - 1.19072 * nCH * xC * xf + 0.190722 * nC * xCH * xHe), 2);
+    // // First part of the expression
+    // double term1 = 3988.9 * nA * nf * pow(xC, 2) * pow(xCH, 2) * pow(xf, 2) * pow(xHe, 2) *
+    //               pow((-1.0 * nMT * xA + nA * xHe), 2) *
+    //               pow((1.0 * nMT * xC * xCH - 1.19072 * nCH * xC * xf + 0.190722 * nC * xCH * xHe), 2);
 
-    // Second part of the expression
-    double term2 = 64705.7 * nA * nCH * pow(xC, 2) * pow(xCH, 2) * pow(xf, 2) * pow(xHe, 2) *
-                  pow((-1.0 * nMT * xA + nA * xHe), 2) *
-                  pow((1.0 * nMT * xC * xf - 0.295642 * nf * xC * xHe - 0.704359 * nC * xf * xHe), 2);
+    // // Second part of the expression
+    // double term2 = 64705.7 * nA * nCH * pow(xC, 2) * pow(xCH, 2) * pow(xf, 2) * pow(xHe, 2) *
+    //               pow((-1.0 * nMT * xA + nA * xHe), 2) *
+    //               pow((1.0 * nMT * xC * xf - 0.295642 * nf * xC * xHe - 0.704359 * nC * xf * xHe), 2);
 
-    // Third part of the expression
-    double term3 = 8.5849 * nA * nC * pow(xCH, 2) * pow(xf, 2) * pow(xHe, 2) *
-                  pow((-1.0 * nMT * xA + nA * xHe), 2) *
-                  pow((65.2613 * nMT * xC * xCH * xf + (-4.11113 * nf * xC * xCH - 61.1502 * nCH * xC * xf) * xHe), 2);
+    // // Third part of the expression
+    // double term3 = 8.5849 * nA * nC * pow(xCH, 2) * pow(xf, 2) * pow(xHe, 2) *
+    //               pow((-1.0 * nMT * xA + nA * xHe), 2) *
+    //               pow((65.2613 * nMT * xC * xCH * xf + (-4.11113 * nf * xC * xCH - 61.1502 * nCH * xC * xf) * xHe), 2);
 
-    // Fourth part of the expression
-    double term4 = 1027.46 * pow(nMT, 2) * pow(xA, 2) *
-                  pow((1.0 * nMT * xC * xCH * xf + (-1.9544 * nf * xC * xCH + 6.68077 * nCH * xC * xf - 5.72638 * nC * xCH * xf) * xHe), 2) *
-                  pow((1.0 * nMT * xC * xCH * xf + (0.0159627 * nf * xC * xCH - 1.25501 * nCH * xC * xf + 0.239051 * nC * xCH * xf) * xHe), 2);
+    // // Fourth part of the expression
+    // double term4 = 1027.46 * pow(nMT, 2) * pow(xA, 2) *
+    //               pow((1.0 * nMT * xC * xCH * xf + (-1.9544 * nf * xC * xCH + 6.68077 * nCH * xC * xf - 5.72638 * nC * xCH * xf) * xHe), 2) *
+    //               pow((1.0 * nMT * xC * xCH * xf + (0.0159627 * nf * xC * xCH - 1.25501 * nCH * xC * xf + 0.239051 * nC * xCH * xf) * xHe), 2);
 
-    // Fifth part of the expression
-    double term5 = 0.261803 * nA * nMT *
-                  pow((62.6461 * pow(nMT, 2) * xA * pow(xC, 2) * pow(xCH, 2) * pow(xf, 2) +
-                       nMT * xA * xC * xCH * xf * (2.0 * nf * xC * xCH - 157.243 * nCH * xC * xf + 29.9512 * nC * xCH * xf) * xHe +
-                       (-1.9544 * pow(nf, 2) * xA * pow(xC, 2) * pow(xCH, 2) +
-                        nf * xC * xCH * (160.339 * nCH * xA * xC - 34.9946 * nC * xA * xCH - 123.435 * nA * xC * xCH) * xf +
-                        (-525.254 * pow(nCH, 2) * xA * pow(xC, 2) +
-                         nCH * xC * (550.266 * nC * xA + 497.146 * nA * xC) * xCH +
-                         nC * (-85.756 * nC * xA - 373.711 * nA * xC) * pow(xCH, 2)) * xf)) *
-                      pow(xHe, 2),2);
+    // // Fifth part of the expression
+    // double term5 = 0.261803 * nA * nMT *
+    //               pow((62.6461 * pow(nMT, 2) * xA * pow(xC, 2) * pow(xCH, 2) * pow(xf, 2) +
+    //                    nMT * xA * xC * xCH * xf * (2.0 * nf * xC * xCH - 157.243 * nCH * xC * xf + 29.9512 * nC * xCH * xf) * xHe +
+    //                    (-1.9544 * pow(nf, 2) * xA * pow(xC, 2) * pow(xCH, 2) +
+    //                     nf * xC * xCH * (160.339 * nCH * xA * xC - 34.9946 * nC * xA * xCH - 123.435 * nA * xC * xCH) * xf +
+    //                     (-525.254 * pow(nCH, 2) * xA * pow(xC, 2) +
+    //                      nCH * xC * (550.266 * nC * xA + 497.146 * nA * xC) * xCH +
+    //                      nC * (-85.756 * nC * xA - 373.711 * nA * xC) * pow(xCH, 2)) * xf)) *
+    //                   pow(xHe, 2),2);
+
+    // // Denominator of the expression
+    // double denominator = pow(nA, 3) * pow(xHe, 2) * pow((62.6461 * nMT * xC * xCH * xf + 1.0 * nf * xC * xCH * xHe - 78.6217 * nCH * xC * xf * xHe + 14.9756 * nC * xCH * xf * xHe), 4);
+
+    // // Final error calculation
+    // double sigma_df = 23.0 * sqrt((term1 + term2 + term3 + term4 + term5) / denominator);
+
+    // return sigma_df;
+
+    // First part of the expression (term1)
+    double term1 = 5438.81 * nA * nf * pow(xC, 2) * pow(xCH, 2) * pow(xf, 2) * pow(xHe, 2)
+                   * pow((-1.0 * nMT * xA + nA * xHe), 2)
+                   * pow((1.0 * nMT * xC * xCH - 1.19655 * nCH * xC * xHe + 0.196547 * nC * xCH * xHe), 2);
+
+    // Second part of the expression (term2)
+    double term2 = 85044.9 * nA * nCH * pow(xC, 2) * pow(xCH, 2) * pow(xf, 2) * pow(xHe, 2)
+                   * pow((-1.0 * nMT * xA + nA * xHe), 2)
+                   * pow((1.0 * nMT * xC * xf - 0.302592 * nf * xC * xHe - 0.697408 * nC * xf * xHe), 2);
+
+    // Third part of the expression (term3)
+    double term3 = 47470.0 * nA * nC * pow(xC, 2) * pow(xCH, 2) * pow(xf, 2) * pow(xHe, 2)
+                   * pow((-1.0 * nMT * xA + nA * xHe), 2)
+                   * pow((1.0 * nMT * xCH * xf - 0.0665285 * nf * xCH * xHe - 0.933472 * nCH * xf * xHe), 2);
+
+    // Fourth part of the expression (term4)
+    double term4 = 1371.83 * pow(nMT, 2) * pow(xA, 2)
+                   * pow((1.0 * nMT * xC * xCH * xf + (-1.97748 * nf * xC * xCH + 6.62306 * nCH * xC * xf - 5.64558 * nC * xCH * xf) * xHe), 2)
+                   * pow((1.0 * nMT * xC * xCH * xf + (0.0136533 * nf * xC * xCH - 1.25054 * nCH * xC * xf + 0.236883 * nC * xCH * xf) * xHe), 2);
+
+    // Fifth part of the expression (term5)
+    // First part of the numerator
+    double term5_numerator_part1 = 73.2426 * pow(nMT, 2) * xA * pow(xC, 2) * pow(xCH, 2) * pow(xf, 2);
+
+    // Second part of the numerator (to be multiplied by xHe)
+    double term5_numerator_part2 = nMT * xC * xCH * xf
+                                   * (2.0 * nf * xA * xC * xCH + (-183.185 * nCH * xA * xC + 34.6998 * nC * xA * xCH + 1.42109e-14 * nA * xC * xCH) * xf);
+
+    // Third part of the numerator (to be multiplied by xHe^2)
+    double term5_numerator_part3 = (-1.97748 * pow(nf, 2) * xA * pow(xC, 2) * pow(xCH, 2))
+                                   + nf * xC * xCH * (187.746 * nCH * xA * xC - 39.9547 * nC * xA * xCH - 145.836 * nA * xC * xCH) * xf
+                                   + (-606.623 * pow(nCH, 2) * xA * pow(xC, 2)
+                                      + nCH * xC * (632.002 * nC * xA + 576.683 * nA * xC) * xCH
+                                      + nC * (-97.9502 * nC * xA - 430.847 * nA * xC) * pow(xCH, 2)
+                                     ) * pow(xf, 2);
+
+    // The full numerator
+    double term5_numerator = term5_numerator_part1 + term5_numerator_part2 * xHe + term5_numerator_part3 * pow(xHe, 2);
+
+    double term5 = 0.255725 * nA * nMT * pow(term5_numerator, 2);
 
     // Denominator of the expression
-    double denominator = pow(nA, 3) * pow(xHe, 2) * pow((62.6461 * nMT * xC * xCH * xf + 1.0 * nf * xC * xCH * xHe - 78.6217 * nCH * xC * xf * xHe + 14.9756 * nC * xCH * xf * xHe), 4);
+    double denominator = pow(nA, 3) * pow(xHe, 2)
+                         * pow((73.2426 * nMT * xC * xCH * xf + 1.0 * nf * xC * xCH * xHe - 91.5925 * nCH * xC * xf * xHe + 17.3499 * nC * xCH * xf * xHe), 4);
 
     // Final error calculation
-    double sigma_df = 23.0 * sqrt((term1 + term2 + term3 + term4 + term5) / denominator);
+    double sigma_df = 27.3473 * sqrt((term1 + term2 + term3 + term4 + term5) / denominator);
 
     return sigma_df;
 }
 
 std::pair<double, double> calculate_dilution_and_error(double nA, double nC, double nCH, double nMT, double nf, 
                                                        double xA, double xC, double xCH, double xHe, double xf) {
-    double dilution = (23.0 * (-nMT * xA + nA * xHe) * 
-                       (-0.511667 * nMT * xC * xCH * xf + 
-                        (1.0 * nf * xC * xCH - 
-                         3.41833 * nCH * xC * xf + 
-                         2.93 * nC * xCH * xf) * xHe)) / 
-                      (nA * xHe * 
-                       (62.6461 * nMT * xC * xCH * xf + 
-                        1.0 * nf * xC * xCH * xHe - 
-                        78.6217 * nCH * xC * xf * xHe + 
-                        14.9756 * nC * xCH * xf * xHe));
+    // double dilution = (23.0 * (-nMT * xA + nA * xHe) * 
+    //                    (-0.511667 * nMT * xC * xCH * xf + 
+    //                     (1.0 * nf * xC * xCH - 
+    //                      3.41833 * nCH * xC * xf + 
+    //                      2.93 * nC * xCH * xf) * xHe)) / 
+    //                   (nA * xHe * 
+    //                    (62.6461 * nMT * xC * xCH * xf + 
+    //                     1.0 * nf * xC * xCH * xHe - 
+    //                     78.6217 * nCH * xC * xf * xHe + 
+    //                     14.9756 * nC * xCH * xf * xHe));
+
+    double dilution = (27.3473 * (-1.0 * nMT * xA + nA * xHe) *
+                   (-0.505693 * nMT * xC * xCH * xf +
+                    (1.0 * nf * xC * xCH - 3.34924 * nCH * xC * xf + 2.85493 * nC * xCH * xf) * xHe)
+                  ) / (nA * xHe *
+                       (73.2426 * nMT * xC * xCH * xf +
+                        1.0 * nf * xC * xCH * xHe - 91.5925 * nCH * xC * xf * xHe + 17.3499 * nC * xCH * xf * xHe)
+                      );
 
     // double packing_fraction = (0.699832)*(nA/xA-nMT/xHe)/(1.25055*nCH/xCH-0.23688*nC/xC-0.013668*nf/xf-nMT/xHe);
     
