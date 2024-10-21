@@ -387,22 +387,22 @@ void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f,
       double sigmaPtp = 0.025;
       double sigmaPtm = 0.025;
 
-      // Random number generation setup
-      std::random_device rd;
-      std::mt19937 gen(rd());
+      // // Random number generation setup
+      // std::random_device rd;
+      // std::mt19937 gen(rd());
 
-      // Normal distributions
-      std::normal_distribution<> distDf(0.0, sigmaDf);
-      std::normal_distribution<> distPb(0.0, sigmaPb);
+      // // Normal distributions
+      // std::normal_distribution<> distDf(0.0, sigmaDf);
+      // std::normal_distribution<> distPb(0.0, sigmaPb);
 
-      // Select sigma for Pt based on the sign of *target_pol
-      double sigmaPt = (*target_pol >= 0) ? sigmaPtp : sigmaPtm;
-      std::normal_distribution<> distPt(0.0, sigmaPt);
+      // // Select sigma for Pt based on the sign of *target_pol
+      // double sigmaPt = (*target_pol >= 0) ? sigmaPtp : sigmaPtm;
+      // std::normal_distribution<> distPt(0.0, sigmaPt);
 
-      // Adjust the values
-      Df += distDf(gen);
-      Pb += distPb(gen);
-      Pt += distPt(gen);
+      // // Adjust the values
+      // Df += distDf(gen);
+      // Pb += distPb(gen);
+      // Pt += distPt(gen);
 
       // Restore the sign of Pt
       double signPt = (*target_pol >= 0) ? 1.0 : -1.0;
