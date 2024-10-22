@@ -80,18 +80,18 @@ public class Inclusive {
         num_pos = num_positrons + num_piplus + num_kplus + num_protons;
         num_neg = num_elec + num_piminus + num_kminus + num_antiprotons;
         num_neutrals = recEvent.countByPid(22) + recEvent.countByPid(2112);
-        
+
         generic_tests generic_tests = new generic_tests();
         fiducial_cuts fiducial_cuts = new fiducial_cuts();
 
         boolean electron_pcal_fiducial = fiducial_cuts.pcal_fiducial_cut(0, 1, configBank, rec_Bank, cal_Bank);
         boolean electron_fd_fiducial = fiducial_cuts.dc_fiducial_cut(0, rec_Bank, traj_Bank);
         boolean e_fiducial_check = electron_pcal_fiducial && electron_fd_fiducial;
-        
+
         // Check if all checks pass
-        if (e_fiducial_check ) {
+        if (e_fiducial_check) {
             fiducial_status = 1; // Set to 1 if electron checks pass
-        } 
+        }
 
         // Set up Lorentz vectors
         // beam electron
@@ -172,19 +172,19 @@ public class Inclusive {
     public int get_num_pos() {
         return num_pos;
     }
-    
+
     public int get_num_neg() {
         return num_neg;
     }
-    
+
     public int get_num_neutrals() {
         return num_neutrals;
     }
-    
+
     public int get_fiducial_status() {
         return fiducial_status;
     }
-    
+
     public int num_elec() {
         return num_elec;
     } // returns number of electrons
@@ -208,7 +208,6 @@ public class Inclusive {
     public int num_protons() {
         return num_protons;
     } // returns number of protons
-
 
     public double Q2() {
         return Double.valueOf(Math.round(Q2 * 100000)) / 100000;
