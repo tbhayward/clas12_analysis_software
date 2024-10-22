@@ -123,7 +123,13 @@ public static void main(String[] args) {
 	qa.checkForDefect('ChargeUnknown')
 	qa.checkForDefect('PossiblyNoBeam')
 	[ // list of runs with `Misc` that should be allowed, generally empty target etc for dilution factor calculations
-	  16194, 16089, 16185, 16308, 16184, 16307, 16309
+	 	5046, 5047, 5051, 5128, 5129, 5130, 5158, 5159,
+  		5160, 5163, 5165, 5166, 5167, 5168, 5169, 5180,
+  		5181, 5182, 5183, 5400, 5448, 5495, 5496, 5505,
+  		5567, 5610, 5617, 5621, 5623, 6736, 6737, 6738,
+  		6739, 6740, 6741, 6742, 6743, 6744, 6746, 6747,
+  		6748, 6749, 6750, 6751, 6753, 6754, 6755, 6756,
+  		6757, 16194, 16089, 16185, 16308, 16184, 16307, 16309
 	].each{ run -> qa.allowMiscBit(run) }
 
 	// create a StringBuilder for accumulating lines

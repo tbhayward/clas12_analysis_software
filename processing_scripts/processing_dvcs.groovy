@@ -88,6 +88,25 @@ public static void main(String[] args) {
 	
 	// setup QA database
 	QADB qa = new QADB();
+	qa.checkForDefect('TotalOutlier')    
+	qa.checkForDefect('TerminalOutlier')
+	qa.checkForDefect('MarginalOutlier')
+	qa.checkForDefect('SectorLoss')
+	qa.checkForDefect('LowLiveTime')
+	qa.checkForDefect('Misc')
+	qa.checkForDefect('ChargeHigh')
+	qa.checkForDefect('ChargeNegative')
+	qa.checkForDefect('ChargeUnknown')
+	qa.checkForDefect('PossiblyNoBeam')
+	[ // list of runs with `Misc` that should be allowed, generally empty target etc for dilution factor calculations
+	 	5046, 5047, 5051, 5128, 5129, 5130, 5158, 5159,
+  		5160, 5163, 5165, 5166, 5167, 5168, 5169, 5180,
+  		5181, 5182, 5183, 5400, 5448, 5495, 5496, 5505,
+  		5567, 5610, 5617, 5621, 5623, 6736, 6737, 6738,
+  		6739, 6740, 6741, 6742, 6743, 6744, 6746, 6747,
+  		6748, 6749, 6750, 6751, 6753, 6754, 6755, 6756,
+  		6757, 16194, 16089, 16185, 16308, 16184, 16307, 16309
+	].each{ run -> qa.allowMiscBit(run) }
 
 	// create a StringBuilder for accumulating lines
 	StringBuilder batchLines = new StringBuilder();
@@ -121,10 +140,12 @@ public static void main(String[] args) {
 		    // do not use the qa if it is MC (runnum = 11) 
 		    // do not use the qa if the run is from RGC (until QA is produced!)
 		    // boolean process_event = filter.isValid(research_Event);
-		    boolean process_event = filter.isValid(research_Event) && 
-		    	(runnum == 11 || runnum == 16194 || runnum == 16089 || runnum == 16185 ||
-	    		runnum == 16308 || runnum == 16184 || runnum == 16307 || runnum == 16309 ||
-	    		qa.OkForAsymmetry(runnum, evnum));
+		    // boolean process_event = filter.isValid(research_Event) && 
+		    // 	(runnum == 11 || runnum == 16194 || runnum == 16089 || runnum == 16185 ||
+	    	// 	runnum == 16308 || runnum == 16184 || runnum == 16307 || runnum == 16309 ||
+	    	// 	qa.OkForAsymmetry(runnum, evnum));
+	    	boolean process_event = filter.isValid(research_Event) && (runnum == 11 || runnum < 5020 ||
+	    	qa.pass(runnum, evnum));
 
 		    if (process_event) {
 
