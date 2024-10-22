@@ -397,7 +397,7 @@ void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f,
       // // Get per-event values
       std::cout << Df << ", ";
       Df += distDf(gen);
-      std::cout(Df);
+      std::cout << Df << ", ";
       double Pb = *beam_pol;
       double Pt = std::abs(*target_pol);
       std::cout << Pb << ", " << Pt << ", ";
