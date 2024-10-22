@@ -80,6 +80,19 @@ public static void main(String[] args) {
 	
 	// setup QA database
 	QADB qa = new QADB();
+	qa.checkForDefect('TotalOutlier')    
+	qa.checkForDefect('TerminalOutlier')
+	qa.checkForDefect('MarginalOutlier')
+	qa.checkForDefect('SectorLoss')
+	qa.checkForDefect('LowLiveTime')
+	qa.checkForDefect('Misc')
+	qa.checkForDefect('ChargeHigh')
+	qa.checkForDefect('ChargeNegative')
+	qa.checkForDefect('ChargeUnknown')
+	qa.checkForDefect('PossiblyNoBeam')
+	[ // list of runs with `Misc` that should be allowed, generally empty target etc for dilution factor calculations
+	  16194, 16089, 16185, 16308, 16184, 16307, 16309
+	].each{ run -> qa.allowMiscBit(run) }
 
 	// create a StringBuilder for accumulating lines
 	StringBuilder batchLines = new StringBuilder();
@@ -106,18 +119,20 @@ public static void main(String[] args) {
 		    event = reader.getNextEvent();
 		    // collect info for QA
 		    int runnum = event.getBank("RUN::config").getInt('run', 0);
+		    if (runnum > 16600 && runnum < 16700) break; // Hall C bleedthrough
 		    int evnum = event.getBank("RUN::config").getInt('event', 0);
 
 		    PhysicsEvent research_Event = fitter.getPhysicsEvent(event);
 
 		    // do not use the qa if it is MC (runnum = 11) 
 		    boolean process_event = filter.isValid(research_Event) && 
-		    	(runnum == 11 || runnum < 5020 || runnum >= 11571 || 
-		    	qa.OkForAsymmetry(runnum, evnum));
+		    	(runnum == 11 || runnum < 5020 || qa.OkForAsymmetry(runnum, evnum));
 		    // boolean process_event = filter.isValid(research_Event) && 
 		    // 	(runnum == 11 || runnum == 16194 || runnum == 16089 || runnum == 16185 ||
 	    	// 	runnum == 16308 || runnum == 16184 || runnum == 16307 || runnum == 16309 ||
 	    	// 	qa.OkForAsymmetry(runnum, evnum));
+	    	boolean process_event = filter.isValid(research_Event) && (runnum == 11 || runnum < 5020 ||
+	    	qa.pass(runnum, evnum));
 
 		    if (process_event) {
 

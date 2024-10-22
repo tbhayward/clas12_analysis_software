@@ -64,10 +64,7 @@ public class TwoParticles {
             return false;
         } else if (variables.y() > 0.80) {
             return false;
-        } 
-//          if (variables.Mx2() < 1.8225) {
-////            return false;
-////        }
+        }
 
         return true;
     }
