@@ -384,8 +384,6 @@ void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f,
   std::normal_distribution<> distPb(0.0, sigmaPb);
   std::normal_distribution<> distStandard(0.0, 1.0); // Standard normal distribution
 
-
-  std::cout << "Entering data while loop" << std::endl;
   while (dataReader.Next()) {
     // Apply kinematic cuts (this function will need to be adapted)
     bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
@@ -397,16 +395,16 @@ void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f,
       N += 1;
 
       // // Get per-event values
-      // Df += distDf(gen);
+      Df += distDf(gen);
       double Pb = *beam_pol;
       double Pt = std::abs(*target_pol);
-      // // Adjust Pb with its uncertainty
-      // Pb += distPb(gen);
-      // // Select sigma for Pt based on the sign of *target_pol
-      // double sigmaPt = (*target_pol >= 0) ? sigmaPtp : sigmaPtm;
-      // // Adjust Pt with its uncertainty
-      // Pt += sigmaPt * distStandard(gen);
-      // // Restore the sign of Pt
+      // Adjust Pb with its uncertainty
+      Pb += distPb(gen);
+      // Select sigma for Pt based on the sign of *target_pol
+      double sigmaPt = (*target_pol >= 0) ? sigmaPtp : sigmaPtm;
+      // Adjust Pt with its uncertainty
+      Pt += sigmaPt * distStandard(gen);
+      // Restore the sign of Pt
       double signPt = (*target_pol >= 0) ? 1.0 : -1.0;
       Pt = signPt * Pt;
 
