@@ -395,9 +395,12 @@ void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f,
       N += 1;
 
       // // Get per-event values
+      std::cout << Df << ", ";
       Df += distDf(gen);
+      std::cout(Df);
       double Pb = *beam_pol;
       double Pt = std::abs(*target_pol);
+      std::cout << Pb << ", " << Pt << ", ";
       // Adjust Pb with its uncertainty
       Pb += distPb(gen);
       // Select sigma for Pt based on the sign of *target_pol
@@ -407,6 +410,7 @@ void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f,
       // Restore the sign of Pt
       double signPt = (*target_pol >= 0) ? 1.0 : -1.0;
       Pt = signPt * Pt;
+      std::cout << Pb << ", " << Pt << std::endl << std::endl;
 
       // Proceed with your calculations
       if (*helicity > 0 && *target_pol >= 0) { 
