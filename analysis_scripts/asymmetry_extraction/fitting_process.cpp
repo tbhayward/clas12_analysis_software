@@ -369,7 +369,7 @@ void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f,
   TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
 
   // Initial definitions (move outside the loop)
-  double Df = dilutionFactors[currentBin].first;
+  double dilution_factor = dilutionFactors[currentBin].first;
   double sigmaDf = dilutionFactors[currentBin].second;
   double sigmaPb = 0.015;
   double sigmaPtp = 0.025;
@@ -396,7 +396,7 @@ void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f,
 
       // // Get per-event values
       std::cout << Df << ", ";
-      Df += distDf(gen);
+      double Df = dilution_factor + distDf(gen);
       std::cout << Df << ", ";
       double Pb = *beam_pol;
       double Pt = std::abs(*target_pol);
