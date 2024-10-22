@@ -396,17 +396,17 @@ void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f,
       // Increment the event count
       N += 1;
 
-      // Get per-event values
-      Df += distDf(gen);
+      // // Get per-event values
+      // Df += distDf(gen);
       double Pb = *beam_pol;
       double Pt = std::abs(*target_pol);
-      // Adjust Pb with its uncertainty
-      Pb += distPb(gen);
-      // Select sigma for Pt based on the sign of *target_pol
-      double sigmaPt = (*target_pol >= 0) ? sigmaPtp : sigmaPtm;
-      // Adjust Pt with its uncertainty
-      Pt += sigmaPt * distStandard(gen);
-      // Restore the sign of Pt
+      // // Adjust Pb with its uncertainty
+      // Pb += distPb(gen);
+      // // Select sigma for Pt based on the sign of *target_pol
+      // double sigmaPt = (*target_pol >= 0) ? sigmaPtp : sigmaPtm;
+      // // Adjust Pt with its uncertainty
+      // Pt += sigmaPt * distStandard(gen);
+      // // Restore the sign of Pt
       double signPt = (*target_pol >= 0) ? 1.0 : -1.0;
       Pt = signPt * Pt;
 
