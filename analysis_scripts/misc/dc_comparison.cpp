@@ -42,8 +42,8 @@ int main(int argc, char* argv[]) {
 
     // **Decrease the number of bins by a factor of two**
     // Define histograms with 25 bins (half of 50) and starting at 0.6
-    TH1F* h1 = new TH1F("h1", "", 25, 0.6, 1.2);
-    TH1F* h2 = new TH1F("h2", "", 25, 0.6, 1.2);
+    TH1F* h1 = new TH1F("h1", "", 25, 0.6, 1.4);
+    TH1F* h2 = new TH1F("h2", "", 25, 0.6, 1.4);
 
     h1->SetLineColor(kRed);
     h2->SetLineColor(kBlue);
