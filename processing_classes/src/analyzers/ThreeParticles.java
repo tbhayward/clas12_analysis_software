@@ -87,9 +87,9 @@ public class ThreeParticles {
         if (variables.Q2() < 1.00) {
             return false;
         } 
-//        else if (variables.W() < 2) {
-//            return false;
-//        } 
+        else if (variables.W() < 2) {
+            return false;
+        } 
         else if (variables.y() > 0.80) {
             return false;
         }

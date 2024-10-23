@@ -160,7 +160,6 @@ public static void main(String[] args) {
 	    	qa.pass(runnum, evnum));
 
 		    if (process_event) {
-		    	println("hello world");
 
 		        // get # of particles 
 		        int num_p1 = research_Event.countByPid(p1_Str.toInteger());

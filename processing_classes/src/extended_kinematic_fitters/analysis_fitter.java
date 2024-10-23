@@ -66,12 +66,13 @@ public class analysis_fitter extends GenericKinematicFitter {
                 && (passesCentralDetector // generic |chi2pid| < 3.5 for cd
                         ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
                         : true)
-                && (passesForwardDetector
-                        ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
-                        : true)
-                && (passesCentralDetector
-                        ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
-                        : true);
+//                && (passesForwardDetector
+//                        ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
+//                        : true)
+//                && (passesCentralDetector
+//                        ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
+//                        : true)
+                ;
     }
 
     public boolean kaon_test(int particle_Index, int pid, float vz, double trigger_electron_vz, HipoDataBank rec_Bank,
@@ -135,12 +136,12 @@ public class analysis_fitter extends GenericKinematicFitter {
                 && (passesCentralDetector // generic |chi2pid| < 3.5 for cd
                         ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
                         : true) //            && charged_hadron_chi2pid_cut(particle_Index, rec_Bank)
-                //                && (passesForwardDetector
-                //                        ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
-                //                        : true)
-                //                && (passesCentralDetector
-                //                        ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
-                //                        : true)
+                && (passesForwardDetector
+                        ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
+                        : true)
+                && (passesCentralDetector
+                        ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
+                        : true)
                 ;
     }
 
