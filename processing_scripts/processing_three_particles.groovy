@@ -90,9 +90,9 @@ public static void main(String[] args) {
 	double Depolarization_V, Depolarization_W;
 
 	// load my kinematic fitter/PID
-	// GenericKinematicFitter fitter = new analysis_fitter(10.6041); 
+	GenericKinematicFitter fitter = new analysis_fitter(10.6041); 
 	// GenericKinematicFitter fitter = new monte_carlo_fitter(10.6041);
-	GenericKinematicFitter fitter = new event_builder_fitter(10.6041);  
+	// GenericKinematicFitter fitter = new event_builder_fitter(10.6041);  
 	
 	// set filter for final states
 	EventFilter filter = new EventFilter("11:"+p1_Str+":"+p2_Str+":X+:X-:Xn");
@@ -160,8 +160,7 @@ public static void main(String[] args) {
 	    	qa.pass(runnum, evnum));
 
 		    if (process_event) {
-		    	println("hello world");
-
+		    
 		        // get # of particles 
 		        int num_p1 = research_Event.countByPid(p1_Str.toInteger());
 		        int num_p2 = research_Event.countByPid(p2_Str.toInteger()); 
