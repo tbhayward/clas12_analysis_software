@@ -31,74 +31,74 @@
 
 
 // Fractional charge values for Total
-const double xAtotal = 0.76103;
-const double xCtotal = 0.06223;
-const double xCHtotal = 0.03246;
-const double xHetotal = 0.06509;
-const double xftotal = 0.07919;
+const double xAtotal = 0.72104;
+const double xCtotal = 0.07181;
+const double xCHtotal = 0.03746;
+const double xHetotal = 0.07688;
+const double xftotal = 0.09280;
 
 // Fractional charge values for Period 1
-const double xAperiod_1 = 0.17657;
-const double xCperiod_1 = 0.21442;
-const double xCHperiod_1 = 0.11185;
-const double xHeperiod_1 = 0.22428;
-const double xfperiod_1 = 0.27288;
+const double xAperiod_1 = 0.17469;
+const double xCperiod_1 = 0.21247;
+const double xCHperiod_1 = 0.11083;
+const double xHeperiod_1 = 0.22745;
+const double xfperiod_1 = 0.27456;
 
 // Fractional charge values for Period 2
-const double xAperiod_2 = 0.09580;
-const double xCperiod_2 = 0.23545;
-const double xCHperiod_2 = 0.12282;
-const double xHeperiod_2 = 0.24628;
-const double xfperiod_2 = 0.29965;
+const double xAperiod_2 = 0.09481;
+const double xCperiod_2 = 0.23303;
+const double xCHperiod_2 = 0.12156;
+const double xHeperiod_2 = 0.24947;
+const double xfperiod_2 = 0.30114;
 
 // Fractional charge values for Period 3
-const double xAperiod_3 = 0.15864;
-const double xCperiod_3 = 0.21909;
-const double xCHperiod_3 = 0.11428;
-const double xHeperiod_3 = 0.22917;
-const double xfperiod_3 = 0.27882;
+const double xAperiod_3 = 0.15713;
+const double xCperiod_3 = 0.21699;
+const double xCHperiod_3 = 0.11319;
+const double xHeperiod_3 = 0.23229;
+const double xfperiod_3 = 0.28040;
 
 // Fractional charge values for Period 4
-const double xAperiod_4 = 0.25309;
-const double xCperiod_4 = 0.19449;
-const double xCHperiod_4 = 0.10145;
-const double xHeperiod_4 = 0.20344;
-const double xfperiod_4 = 0.24752;
+const double xAperiod_4 = 0.25094;
+const double xCperiod_4 = 0.19284;
+const double xCHperiod_4 = 0.10059;
+const double xHeperiod_4 = 0.20644;
+const double xfperiod_4 = 0.24920;
 
 // Fractional charge values for Period 5
-const double xAperiod_5 = 0.20247;
-const double xCperiod_5 = 0.20767;
-const double xCHperiod_5 = 0.10833;
-const double xHeperiod_5 = 0.21723;
-const double xfperiod_5 = 0.26430;
+const double xAperiod_5 = 0.20042;
+const double xCperiod_5 = 0.20584;
+const double xCHperiod_5 = 0.10737;
+const double xHeperiod_5 = 0.22036;
+const double xfperiod_5 = 0.26600;
 
 // Fractional charge values for Period 6
-const double xAperiod_6 = 0.28764;
-const double xCperiod_6 = 0.18550;
-const double xCHperiod_6 = 0.09676;
-const double xHeperiod_6 = 0.19403;
-const double xfperiod_6 = 0.23607;
+const double xAperiod_6 = 0.28530;
+const double xCperiod_6 = 0.18399;
+const double xCHperiod_6 = 0.09597;
+const double xHeperiod_6 = 0.19697;
+const double xfperiod_6 = 0.23776;
 
 // Fractional charge values for Period 7
-const double xAperiod_7 = 0.19732;
-const double xCperiod_7 = 0.20902;
-const double xCHperiod_7 = 0.10903;
-const double xHeperiod_7 = 0.21863;
-const double xfperiod_7 = 0.26601;
+const double xAperiod_7 = 0.19551;
+const double xCperiod_7 = 0.20711;
+const double xCHperiod_7 = 0.10803;
+const double xHeperiod_7 = 0.22171;
+const double xfperiod_7 = 0.26763;
 
 // Fractional charge values for Period 8
-const double xAperiod_8 = 0.40967;
-const double xCperiod_8 = 0.15372;
-const double xCHperiod_8 = 0.08019;
-const double xHeperiod_8 = 0.16079;
-const double xfperiod_8 = 0.19563;
+const double xAperiod_8 = 0.40616;
+const double xCperiod_8 = 0.15288;
+const double xCHperiod_8 = 0.07974;
+const double xHeperiod_8 = 0.16366;
+const double xfperiod_8 = 0.19756;
 
 // Fractional charge values for Period 9
-const double xAperiod_9 = 0.14680;
-const double xCperiod_9 = 0.22217;
-const double xCHperiod_9 = 0.11589;
-const double xHeperiod_9 = 0.23239;
-const double xfperiod_9 = 0.28274;
+const double xAperiod_9 = 0.14538;
+const double xCperiod_9 = 0.22001;
+const double xCHperiod_9 = 0.11476;
+const double xHeperiod_9 = 0.23553;
+const double xfperiod_9 = 0.28431;
 
 // NH3 periods defined as a pair of run numbers (start, end)
 std::vector<std::pair<int, int>> nh3_periods = {
