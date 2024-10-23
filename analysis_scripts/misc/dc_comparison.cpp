@@ -111,7 +111,7 @@ int main(int argc, char* argv[]) {
 
     // **Adjust the legend**
     // Create a smaller legend in the top right corner with a solid black border
-    TLegend* legend = new TLegend(0.60, 0.8, 0.95, 0.88);
+    TLegend* legend = new TLegend(0.55, 0.8, 0.95, 0.95);
     legend->SetBorderSize(1);  // Solid border
     legend->SetLineColor(kBlack);  // Black border line
     legend->SetFillColor(kWhite);  // White background
