@@ -21,6 +21,7 @@
 #include "all_bin_data.h"
 #include "plot_yield_comparison.h"
 #include "plot_unfolding.h"
+#include "unfolding_data.h"
 #include "write_csv.h"
 
 // Namespace declaration
@@ -132,16 +133,50 @@ int main(int argc, char* argv[]) {
     std::vector<AllBinData> all_bin_data = read_bin_data(lee_data_file);
     // print_bin_data(all_bin_data);
 
+    // Define filenames for each directory (3 periods)
+    std::vector<std::string> data_filenames = {
+        dir1 + "/rga_fa18_inb_epgamma.root",
+        dir1 + "/rga_fa18_out_epgamma.root",
+        dir1 + "/rga_sp19_inb_epgamma.root"
+    };
 
-    // Define filenames for each directory (3 periods, 6 files per period)
-    std::vector<std::string> data_filenames = {dir1 + "/rga_fa18_inb_epgamma.root", dir1 + "/rga_fa18_out_epgamma.root", dir1 + "/rga_sp19_inb_epgamma.root"};
-    std::vector<std::string> eppi0_filenames = {dir3 + "/rga_fa18_inb_eppi0.root", dir3 + "/rga_fa18_out_eppi0.root", dir3 + "/rga_sp19_inb_eppi0.root"};
-    std::vector<std::string> mc_gen_dvcsgen_filenames = {dir2 + "/gen_dvcsgen_rga_fa18_inb_50nA_10604MeV_epgamma.root", dir2 + "/gen_dvcsgen_rga_fa18_out_50nA_10604MeV_epgamma.root", dir2 + "/gen_dvcsgen_rga_sp19_inb_50nA_10200MeV_epgamma.root"};
-    std::vector<std::string> mc_rec_dvcsgen_filenames = {dir2 + "/rec_dvcsgen_rga_fa18_inb_50nA_10604MeV_epgamma.root", dir2 + "/rec_dvcsgen_rga_fa18_out_50nA_10604MeV_epgamma.root", dir2 + "/rec_dvcsgen_rga_sp19_inb_50nA_10200MeV_epgamma.root"};
-    std::vector<std::string> mc_gen_aaogen_filenames = {dir4 + "/gen_aaogen_norad_rga_fa18_inb_50nA_10604MeV_eppi0.root", dir4 + "/gen_aaogen_norad_rga_fa18_out_50nA_10604MeV_eppi0.root", dir4 + "/gen_aaogen_norad_rga_sp19_inb_50nA_10200MeV_eppi0.root"};
-    std::vector<std::string> mc_rec_aaogen_filenames = {dir4 + "/rec_aaogen_norad_rga_fa18_inb_50nA_10604MeV_eppi0.root", dir4 + "/rec_aaogen_norad_rga_fa18_out_50nA_10604MeV_eppi0.root", dir4 + "/rec_aaogen_norad_rga_sp19_inb_50nA_10200MeV_eppi0.root"};
+    std::vector<std::string> eppi0_filenames = {
+        dir3 + "/rga_fa18_inb_eppi0.root",
+        dir3 + "/rga_fa18_out_eppi0.root",
+        dir3 + "/rga_sp19_inb_eppi0.root"
+    };
 
-    // Check if all expected files exist
+    std::vector<std::string> mc_gen_dvcsgen_filenames = {
+        dir2 + "/gen_dvcsgen_rga_fa18_inb_50nA_10604MeV_epgamma.root",
+        dir2 + "/gen_dvcsgen_rga_fa18_out_50nA_10604MeV_epgamma.root",
+        dir2 + "/gen_dvcsgen_rga_sp19_inb_50nA_10200MeV_epgamma.root"
+    };
+
+    std::vector<std::string> mc_rec_dvcsgen_filenames = {
+        dir2 + "/rec_dvcsgen_rga_fa18_inb_50nA_10604MeV_epgamma.root",
+        dir2 + "/rec_dvcsgen_rga_fa18_out_50nA_10604MeV_epgamma.root",
+        dir2 + "/rec_dvcsgen_rga_sp19_inb_50nA_10200MeV_epgamma.root"
+    };
+
+    std::vector<std::string> mc_gen_aaogen_filenames = {
+        dir4 + "/gen_aaogen_norad_rga_fa18_inb_50nA_10604MeV_eppi0.root",
+        dir4 + "/gen_aaogen_norad_rga_fa18_out_50nA_10604MeV_eppi0.root",
+        dir4 + "/gen_aaogen_norad_rga_sp19_inb_50nA_10200MeV_eppi0.root"
+    };
+
+    std::vector<std::string> mc_rec_aaogen_filenames = {
+        dir4 + "/rec_aaogen_norad_rga_fa18_inb_50nA_10604MeV_eppi0.root",
+        dir4 + "/rec_aaogen_norad_rga_fa18_out_50nA_10604MeV_eppi0.root",
+        dir4 + "/rec_aaogen_norad_rga_sp19_inb_50nA_10200MeV_eppi0.root"
+    };
+
+    std::vector<std::string> mc_rec_eppi0_bkg_filenames = {
+        dir4 + "/eppi0_bkg_aaogen_norad_rga_fa18_inb_epgamma.root",
+        dir4 + "/eppi0_bkg_aaogen_norad_rga_fa18_out_epgamma.root",
+        dir4 + "/eppi0_bkg_aaogen_norad_rga_sp19_inb_epgamma.root"
+    };
+
+    // **Check if all expected files exist, including the new ones**
     for (const auto& file : data_filenames) {
         if (!checkFileExists(file)) {
             std::cerr << "Error: File " << file << " not found." << std::endl;
@@ -178,16 +213,25 @@ int main(int argc, char* argv[]) {
             return 2;
         }
     }
+    // **Check for the new eppi0 background files**
+    for (const auto& file : mc_rec_eppi0_bkg_filenames) {
+        if (!checkFileExists(file)) {
+            std::cerr << "Error: File " << file << " not found." << std::endl;
+            return 2;
+        }
+    }
 
     std::cout << "All required files found. Proceeding to load data and MC files." << std::endl;
 
-    // Create individual TTreeReader objects
+    // **Create individual TTreeReader objects, including the new ones**
     TFile* data_files[3];
     TFile* eppi0_files[3];
     TFile* mc_gen_dvcsgen_files[3];
     TFile* mc_rec_dvcsgen_files[3];
     TFile* mc_gen_aaogen_files[3];
     TFile* mc_rec_aaogen_files[3];
+    // **New TFile pointers for the misidentified eppi0 background files**
+    TFile* mc_rec_eppi0_bkg_files[3];
 
     std::vector<TTreeReader> data_readers(3);
     std::vector<TTreeReader> eppi0_readers(3);
@@ -195,8 +239,10 @@ int main(int argc, char* argv[]) {
     std::vector<TTreeReader> mc_rec_dvcsgen_readers(3);
     std::vector<TTreeReader> mc_gen_aaogen_readers(3);
     std::vector<TTreeReader> mc_rec_aaogen_readers(3);
+    // **New TTreeReader objects for the misidentified eppi0 background files**
+    std::vector<TTreeReader> mc_rec_eppi0_bkg_readers(3);
 
-    // Load all data and MC files
+    // **Load all data and MC files, including the new ones**
     for (size_t i = 0; i < 3; ++i) {
         // Data DVCS
         data_files[i] = new TFile(data_filenames[i].c_str(), "READ");
@@ -227,6 +273,11 @@ int main(int argc, char* argv[]) {
         mc_rec_aaogen_files[i] = new TFile(mc_rec_aaogen_filenames[i].c_str(), "READ");
         TTree* mc_rec_aaogen_tree = (TTree*)mc_rec_aaogen_files[i]->Get("PhysicsEvents");
         mc_rec_aaogen_readers[i].SetTree(mc_rec_aaogen_tree);
+
+        // **MC rec eppi0 background**
+        mc_rec_eppi0_bkg_files[i] = new TFile(mc_rec_eppi0_bkg_filenames[i].c_str(), "READ");
+        TTree* mc_rec_eppi0_bkg_tree = (TTree*)mc_rec_eppi0_bkg_files[i]->Get("PhysicsEvents");
+        mc_rec_eppi0_bkg_readers[i].SetTree(mc_rec_eppi0_bkg_tree);
     }
 
     // Create necessary directories before proceeding
@@ -234,7 +285,6 @@ int main(int argc, char* argv[]) {
     create_directories(base_output_dir);     // Create the directories
 
     std::cout << "Successfully loaded all data and MC trees and created output directories." << std::endl << std::endl;
-
     std::string output_dir = base_output_dir + "/data_mc_comparison/dvcs";  // Define the output directory for plots
 
     // // Loop over unique xB bins and call the plotting function for DVCS data/MC comparison
@@ -250,7 +300,6 @@ int main(int argc, char* argv[]) {
 
     // Create a vector to hold all the unfolding data across bins
     std::vector<UnfoldingData> all_unfolding_data;
-
     // Iterate over the xB bins
     for (int xB_bin = 0; xB_bin < num_xB_bins; ++xB_bin) {  
         // Call the plot_unfolding function for each xB_bin and get the results

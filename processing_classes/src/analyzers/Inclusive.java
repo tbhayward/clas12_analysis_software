@@ -41,15 +41,15 @@ public class Inclusive {
 //        if (variables.helicity == 0 && variables.runnum != 11) {
 //            return false;
 //        }
-        if (variables.Q2() < 1) {
-            return false;
-        }
-        if (variables.W() < 2) {
-            return false;
-        }
-        if (variables.y() > 0.80) {
-            return false;
-        }
+//        if (variables.Q2() < 1) {
+//            return false;
+//        }
+//        if (variables.W() < 2) {
+//            return false;
+//        }
+//        if (variables.y() > 0.80) {
+//            return false;
+//        }
         return true;
     }
 

@@ -10,6 +10,7 @@
 #include "kinematic_cuts.h"
 #include "bin_helpers.h"
 #include "plot_unfolding.h"
+#include "unfolding_data.h"
 
 std::vector<UnfoldingData> plot_unfolding(const std::string& base_output_dir, 
                                           const std::string& analysisType, 
