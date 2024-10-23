@@ -148,8 +148,8 @@ int main(int argc, char* argv[]) {
     h2_vz->SetLineWidth(2);
 
     // Fill histograms for e_vz
-    tree1->Draw("e_vz>>h1_vz", cuts);
-    tree2->Draw("e_vz>>h2_vz", cuts);
+    tree1->Draw("vz_e>>h1_vz", cuts);
+    tree2->Draw("vz_e>>h2_vz", cuts);
 
     // Fit histograms with Gaussian
     TF1* fitFunc1_vz = new TF1("fitFunc1_vz", "gaus", -15, 10);
