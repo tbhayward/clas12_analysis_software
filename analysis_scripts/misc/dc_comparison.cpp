@@ -40,9 +40,9 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Define histograms
-    TH1F* h1 = new TH1F("h1", "", 100, 0.5, 1.2);
-    TH1F* h2 = new TH1F("h2", "", 100, 0.5, 1.2);
+    // Define histograms with half the number of bins and starting at 0.6
+    TH1F* h1 = new TH1F("h1", "", 50, 0.6, 1.2);
+    TH1F* h2 = new TH1F("h2", "", 50, 0.6, 1.2);
 
     h1->SetLineColor(kRed);
     h2->SetLineColor(kBlue);
@@ -57,9 +57,9 @@ int main(int argc, char* argv[]) {
     tree1->Draw("Mx2>>h1", cuts);
     tree2->Draw("Mx2>>h2", cuts);
 
-    // Fit histograms with Gaussian plus quadratic polynomial
-    TF1* fitFunc1 = new TF1("fitFunc1", "gaus(0)+pol2(3)", 0.5, 1.2);
-    TF1* fitFunc2 = new TF1("fitFunc2", "gaus(0)+pol2(3)", 0.5, 1.2);
+    // Fit histograms with Gaussian plus quadratic polynomial within new range
+    TF1* fitFunc1 = new TF1("fitFunc1", "gaus(0)+pol2(3)", 0.6, 1.2);
+    TF1* fitFunc2 = new TF1("fitFunc2", "gaus(0)+pol2(3)", 0.6, 1.2);
 
     double proton_mass_sq = 0.938 * 0.938; // Proton mass squared in GeV^2
     fitFunc1->SetParameters(h1->GetMaximum(), proton_mass_sq, 0.01, 1, 1, 1);
@@ -68,7 +68,7 @@ int main(int argc, char* argv[]) {
     h1->Fit(fitFunc1, "R");
     h2->Fit(fitFunc2, "R");
 
-    // **Add the fitted functions as colored dashed lines**
+    // Add the fitted functions as colored dashed lines
     // Set line style and color for the fit functions
     fitFunc1->SetLineColor(kRed);
     fitFunc1->SetLineStyle(2); // Dashed line
@@ -101,15 +101,15 @@ int main(int argc, char* argv[]) {
     h1->Draw("E");
     h2->Draw("E SAME");
 
-    // **Draw the fitted functions on top of the histograms**
+    // Draw the fitted functions on top of the histograms
     fitFunc1->Draw("SAME");
     fitFunc2->Draw("SAME");
 
-    // Create legend
-    TLegend* legend = new TLegend(0.55, 0.6, 0.85, 0.85);
+    // Create a smaller legend in the top right corner
+    TLegend* legend = new TLegend(0.65, 0.7, 0.88, 0.88);
     legend->SetBorderSize(0);
     legend->SetFillStyle(0);
-    legend->SetTextSize(0.035);
+    legend->SetTextSize(0.03);
 
     // Retrieve fit parameters
     double mu1 = fitFunc1->GetParameter(1);
@@ -121,8 +121,8 @@ int main(int argc, char* argv[]) {
     double counts2 = h2->GetEntries();
 
     // Add entries to legend
-    legend->AddEntry(h1, Form("cj 10.1.0: Counts=%.0f, #mu=%.3f, #sigma=%.3f", counts1, mu1, sigma1), "l");
-    legend->AddEntry(h2, Form("DCBetaTimeWalk: Counts=%.0f, #mu=%.3f, #sigma=%.3f", counts2, mu2, sigma2), "l");
+    legend->AddEntry(h1, Form("cj 10.1.0: N=%.0f, #mu=%.3f, #sigma=%.3f", counts1, mu1, sigma1), "l");
+    legend->AddEntry(h2, Form("DCBetaTimeWalk: N=%.0f, #mu=%.3f, #sigma=%.3f", counts2, mu2, sigma2), "l");
     legend->Draw();
 
     // Save the canvas
