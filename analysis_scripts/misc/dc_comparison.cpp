@@ -135,10 +135,10 @@ int main(int argc, char* argv[]) {
     c1->SaveAs("/home/thayward/dc_comparison.png");
 
     // ----------------------------------------
-    // Plot 2: e_vz Comparison
+    // Plot 2: vz_e Comparison (Updated)
     // ----------------------------------------
 
-    // Define histograms for e_vz
+    // Define histograms for vz_e
     TH1F* h1_vz = new TH1F("h1_vz", "", 100, -10, 5);
     TH1F* h2_vz = new TH1F("h2_vz", "", 100, -10, 5);
 
@@ -147,35 +147,17 @@ int main(int argc, char* argv[]) {
     h1_vz->SetLineWidth(2);
     h2_vz->SetLineWidth(2);
 
-    // Fill histograms for e_vz
+    // Fill histograms for vz_e
     tree1->Draw("vz_e>>h1_vz", cuts);
     tree2->Draw("vz_e>>h2_vz", cuts);
 
-    // Fit histograms with Gaussian
-    TF1* fitFunc1_vz = new TF1("fitFunc1_vz", "gaus", -15, 10);
-    TF1* fitFunc2_vz = new TF1("fitFunc2_vz", "gaus", -15, 10);
+    // **Removed the fit functions for vz_e plot**
 
-    // Set initial parameters for e_vz fit: [Amplitude, Mean, Sigma]
-    fitFunc1_vz->SetParameters(h1_vz->GetMaximum(), h1_vz->GetMean(), h1_vz->GetRMS());
-    fitFunc2_vz->SetParameters(h2_vz->GetMaximum(), h2_vz->GetMean(), h2_vz->GetRMS());
-
-    h1_vz->Fit(fitFunc1_vz, "R");
-    h2_vz->Fit(fitFunc2_vz, "R");
-
-    // Set line style and color for the fit functions
-    fitFunc1_vz->SetLineColor(kRed);
-    fitFunc1_vz->SetLineStyle(2); // Dashed line
-    fitFunc1_vz->SetLineWidth(2);
-
-    fitFunc2_vz->SetLineColor(kBlue);
-    fitFunc2_vz->SetLineStyle(2); // Dashed line
-    fitFunc2_vz->SetLineWidth(2);
-
-    // Create canvas for e_vz plot
-    TCanvas* c2 = new TCanvas("c2", "e_vz Comparison", 800, 600);
+    // Create canvas for vz_e plot
+    TCanvas* c2 = new TCanvas("c2", "vz_e Comparison", 800, 600);
     c2->SetMargin(0.12, 0.05, 0.12, 0.05);
 
-    // Set axis labels for e_vz plot
+    // Set axis labels for vz_e plot
     h1_vz->GetXaxis()->SetTitle("v_{z}^{e}");
     h1_vz->GetYaxis()->SetTitle("Counts");
     h1_vz->GetXaxis()->SetTitleSize(0.05);
@@ -185,41 +167,34 @@ int main(int argc, char* argv[]) {
     h1_vz->GetXaxis()->SetTitleOffset(1.0);
     h1_vz->GetYaxis()->SetTitleOffset(1.2);
 
-    // Adjust y-axis range for e_vz plot
+    // Adjust y-axis range for vz_e plot
     double max1_vz = h1_vz->GetMaximum();
     double max2_vz = h2_vz->GetMaximum();
     h1_vz->SetMaximum(1.2 * TMath::Max(max1_vz, max2_vz));
 
-    // Draw histograms for e_vz plot
+    // Draw histograms for vz_e plot
     h1_vz->Draw("E");
     h2_vz->Draw("E SAME");
 
-    // Draw the fitted functions on top of the histograms
-    fitFunc1_vz->Draw("SAME");
-    fitFunc2_vz->Draw("SAME");
+    // **Removed drawing of fit functions on vz_e plot**
 
-    // Create a legend for e_vz plot
+    // Create a legend for vz_e plot
     TLegend* legend_vz = new TLegend(0.50, 0.8, 0.95, 0.95);
     legend_vz->SetBorderSize(1);  // Solid border
     legend_vz->SetLineColor(kBlack);  // Black border line
     legend_vz->SetFillColor(kWhite);  // White background
     legend_vz->SetTextSize(0.02);  // Smaller text
 
-    // Retrieve fit parameters for e_vz plot
-    double mu1_vz = fitFunc1_vz->GetParameter(1);
-    double sigma1_vz = fitFunc1_vz->GetParameter(2);
+    // Retrieve counts for vz_e plot
     double counts1_vz = h1_vz->GetEntries();
-
-    double mu2_vz = fitFunc2_vz->GetParameter(1);
-    double sigma2_vz = fitFunc2_vz->GetParameter(2);
     double counts2_vz = h2_vz->GetEntries();
 
-    // Add entries to legend for e_vz plot
-    legend_vz->AddEntry(h1_vz, Form("cj 10.1.0: N=%.0f, #mu=%.2f, #sigma=%.2f", counts1_vz, mu1_vz, sigma1_vz), "l");
-    legend_vz->AddEntry(h2_vz, Form("DCBetaTimeWalk: N=%.0f, #mu=%.2f, #sigma=%.2f", counts2_vz, mu2_vz, sigma2_vz), "l");
+    // **Add entries to legend without mu and sigma**
+    legend_vz->AddEntry(h1_vz, Form("cj 10.1.0: N=%.0f", counts1_vz), "l");
+    legend_vz->AddEntry(h2_vz, Form("DCBetaTimeWalk: N=%.0f", counts2_vz), "l");
     legend_vz->Draw();
 
-    // Save the e_vz plot
+    // Save the vz_e plot
     c2->SaveAs("/home/thayward/dc_comparison_vze.png");
 
     // Clean up
@@ -232,8 +207,6 @@ int main(int argc, char* argv[]) {
     delete legend;
     delete h1_vz;
     delete h2_vz;
-    delete fitFunc1_vz;
-    delete fitFunc2_vz;
     delete legend_vz;
     file1->Close();
     file2->Close();
