@@ -60,8 +60,8 @@ int main(int argc, char* argv[]) {
 
     // **Adjust the fit to be Gaussian plus linear polynomial**
     // Fit histograms with Gaussian plus linear polynomial within the new range
-    TF1* fitFunc1 = new TF1("fitFunc1", "gaus(0)+pol1(3)", 0.6, 1.2);
-    TF1* fitFunc2 = new TF1("fitFunc2", "gaus(0)+pol1(3)", 0.6, 1.2);
+    TF1* fitFunc1 = new TF1("fitFunc1", "gaus(0)+pol1(3)", 0.6, 1.4);
+    TF1* fitFunc2 = new TF1("fitFunc2", "gaus(0)+pol1(3)", 0.6, 1.4);
 
     double proton_mass_sq = 0.938 * 0.938; // Proton mass squared in GeV^2
 
