@@ -62,9 +62,10 @@ public class TwoParticles {
         }
         if (variables.W() < 2) {
             return false;
-        } else if (variables.y() > 0.80) {
-            return false;
-        }
+        } 
+//        else if (variables.y() > 0.80) {
+//            return false;
+//        }
 
         return true;
     }

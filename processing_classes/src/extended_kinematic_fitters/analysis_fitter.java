@@ -36,8 +36,8 @@ public class analysis_fitter extends GenericKinematicFitter {
                 && pid_cuts.calorimeter_energy_cut(particle_Index, cal_Bank)
                 && pid_cuts.calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
                 && pid_cuts.calorimeter_diagonal_cut(particle_Index, p, cal_Bank) //            && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)    
-//                && fiducial_cuts.pcal_fiducial_cut(particle_Index, 1, run_Bank, rec_Bank, cal_Bank)
-//                && fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
+                && fiducial_cuts.pcal_fiducial_cut(particle_Index, 1, run_Bank, rec_Bank, cal_Bank)
+                && fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
                 ;
     }
 
@@ -135,12 +135,12 @@ public class analysis_fitter extends GenericKinematicFitter {
                 && (passesCentralDetector // generic |chi2pid| < 3.5 for cd
                         ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
                         : true) //            && charged_hadron_chi2pid_cut(particle_Index, rec_Bank)
-                //                && (passesForwardDetector
-                //                        ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
-                //                        : true)
-                //                && (passesCentralDetector
-                //                        ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
-                //                        : true)
+                && (passesForwardDetector
+                        ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
+                        : true)
+                && (passesCentralDetector
+                        ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
+                        : true)
                 ;
     }
 
