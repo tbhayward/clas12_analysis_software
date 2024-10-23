@@ -68,6 +68,16 @@ int main(int argc, char* argv[]) {
     h1->Fit(fitFunc1, "R");
     h2->Fit(fitFunc2, "R");
 
+    // **Add the fitted functions as colored dashed lines**
+    // Set line style and color for the fit functions
+    fitFunc1->SetLineColor(kRed);
+    fitFunc1->SetLineStyle(2); // Dashed line
+    fitFunc1->SetLineWidth(2);
+
+    fitFunc2->SetLineColor(kBlue);
+    fitFunc2->SetLineStyle(2); // Dashed line
+    fitFunc2->SetLineWidth(2);
+
     // Create canvas
     TCanvas* c1 = new TCanvas("c1", "Mx2 Comparison", 800, 600);
     c1->SetMargin(0.12, 0.05, 0.12, 0.05);
@@ -91,6 +101,10 @@ int main(int argc, char* argv[]) {
     h1->Draw("E");
     h2->Draw("E SAME");
 
+    // **Draw the fitted functions on top of the histograms**
+    fitFunc1->Draw("SAME");
+    fitFunc2->Draw("SAME");
+
     // Create legend
     TLegend* legend = new TLegend(0.55, 0.6, 0.85, 0.85);
     legend->SetBorderSize(0);
@@ -107,7 +121,7 @@ int main(int argc, char* argv[]) {
     double counts2 = h2->GetEntries();
 
     // Add entries to legend
-    legend->AddEntry(h1, Form("10.1.0: Counts=%.0f, #mu=%.3f, #sigma=%.3f", counts1, mu1, sigma1), "l");
+    legend->AddEntry(h1, Form("cj 10.1.0: Counts=%.0f, #mu=%.3f, #sigma=%.3f", counts1, mu1, sigma1), "l");
     legend->AddEntry(h2, Form("DCBetaTimeWalk: Counts=%.0f, #mu=%.3f, #sigma=%.3f", counts2, mu2, sigma2), "l");
     legend->Draw();
 
