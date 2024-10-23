@@ -139,8 +139,8 @@ int main(int argc, char* argv[]) {
     // ----------------------------------------
 
     // Define histograms for e_vz
-    TH1F* h1_vz = new TH1F("h1_vz", "", 50, -15, 10);
-    TH1F* h2_vz = new TH1F("h2_vz", "", 50, -15, 10);
+    TH1F* h1_vz = new TH1F("h1_vz", "", 100, -10, 5);
+    TH1F* h2_vz = new TH1F("h2_vz", "", 100, -10, 5);
 
     h1_vz->SetLineColor(kRed);
     h2_vz->SetLineColor(kBlue);
