@@ -258,13 +258,6 @@ void calculate_contamination(const std::string& base_output_dir,
         }
     }
 
-    // Plot contamination ratios
-    // Create necessary directories
-    std::string contamination_plots_dir = base_output_dir + "/contamination_plots";
-    if (!std::filesystem::exists(contamination_plots_dir)) {
-        std::filesystem::create_directories(contamination_plots_dir);
-    }
-
     for (int period = 0; period < n_periods; ++period) {
         TCanvas* c_contamination = new TCanvas(Form("c_contamination_%d", period),
                                                Form("Contamination Ratio %s", period_names[period].c_str()),
