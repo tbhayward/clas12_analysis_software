@@ -151,14 +151,32 @@ int main(int argc, char* argv[]) {
     tree1->Draw("vz_e>>h1_vz", cuts);
     tree2->Draw("vz_e>>h2_vz", cuts);
 
-    // **Removed the fit functions for vz_e plot**
+    // Fit histograms with Gaussian
+    TF1* fitFunc1_vz = new TF1("fitFunc1_vz", "gaus", 20, 30);
+    TF1* fitFunc2_vz = new TF1("fitFunc2_vz", "gaus", 20, 30);
+
+    // Set initial parameters for vz_e fit: [Amplitude, Mean, Sigma]
+    fitFunc1_vz->SetParameters(h1_vz->GetMaximum(), h1_vz->GetMean(), h1_vz->GetRMS());
+    fitFunc2_vz->SetParameters(h2_vz->GetMaximum(), h2_vz->GetMean(), h2_vz->GetRMS());
+
+    h1_vz->Fit(fitFunc1_vz, "R");
+    h2_vz->Fit(fitFunc2_vz, "R");
+
+    // Set line style and color for the fit functions
+    fitFunc1_vz->SetLineColor(kRed);
+    fitFunc1_vz->SetLineStyle(2); // Dashed line
+    fitFunc1_vz->SetLineWidth(2);
+
+    fitFunc2_vz->SetLineColor(kBlue);
+    fitFunc2_vz->SetLineStyle(2); // Dashed line
+    fitFunc2_vz->SetLineWidth(2);
 
     // Create canvas for vz_e plot
     TCanvas* c2 = new TCanvas("c2", "vz_e Comparison", 800, 600);
     c2->SetMargin(0.12, 0.05, 0.12, 0.05);
 
     // Set axis labels for vz_e plot
-    h1_vz->GetXaxis()->SetTitle("v_{z}^{e}");
+    h1_vz->GetXaxis()->SetTitle("v_{z}^{e} (cm)");
     h1_vz->GetYaxis()->SetTitle("Counts");
     h1_vz->GetXaxis()->SetTitleSize(0.05);
     h1_vz->GetYaxis()->SetTitleSize(0.05);
@@ -176,7 +194,9 @@ int main(int argc, char* argv[]) {
     h1_vz->Draw("E");
     h2_vz->Draw("E SAME");
 
-    // **Removed drawing of fit functions on vz_e plot**
+    // Draw the fitted functions on top of the histograms
+    fitFunc1_vz->Draw("SAME");
+    fitFunc2_vz->Draw("SAME");
 
     // Create a legend for vz_e plot
     TLegend* legend_vz = new TLegend(0.50, 0.8, 0.95, 0.95);
@@ -185,21 +205,175 @@ int main(int argc, char* argv[]) {
     legend_vz->SetFillColor(kWhite);  // White background
     legend_vz->SetTextSize(0.02);  // Smaller text
 
-    // Retrieve counts for vz_e plot
+    // Retrieve fit parameters for vz_e plot
+    double mu1_vz = fitFunc1_vz->GetParameter(1);
+    double sigma1_vz = fitFunc1_vz->GetParameter(2);
     double counts1_vz = h1_vz->GetEntries();
+
+    double mu2_vz = fitFunc2_vz->GetParameter(1);
+    double sigma2_vz = fitFunc2_vz->GetParameter(2);
     double counts2_vz = h2_vz->GetEntries();
 
-    // **Add entries to legend without mu and sigma**
-    legend_vz->AddEntry(h1_vz, Form("cj 10.1.0: N=%.0f", counts1_vz), "l");
-    legend_vz->AddEntry(h2_vz, Form("DCBetaTimeWalk: N=%.0f", counts2_vz), "l");
+    // Add entries to legend for vz_e plot
+    legend_vz->AddEntry(h1_vz, Form("cj 10.1.0: N=%.0f, #mu=%.2f, #sigma=%.2f", counts1_vz, mu1_vz, sigma1_vz), "l");
+    legend_vz->AddEntry(h2_vz, Form("DCBetaTimeWalk: N=%.0f, #mu=%.2f, #sigma=%.2f", counts2_vz, mu2_vz, sigma2_vz), "l");
     legend_vz->Draw();
 
     // Save the vz_e plot
     c2->SaveAs("/home/thayward/dc_comparison_vze.png");
 
+    // ----------------------------------------
+    // Expanded Analyses: Subplots for e_theta bins
+    // ----------------------------------------
+
+    // Define e_theta bins in degrees and convert to radians
+    const int nThetaBins = 5;
+    double thetaBinsDeg[nThetaBins+1] = {5, 10, 15, 20, 25, 30};
+    double thetaBinsRad[nThetaBins+1];
+    for (int i = 0; i <= nThetaBins; ++i) {
+        thetaBinsRad[i] = thetaBinsDeg[i] * TMath::Pi() / 180.0;
+    }
+
+    // Create canvases for subplots
+    TCanvas* c3 = new TCanvas("c3", "Mx2 Comparison by e_theta bins", 1200, 800);
+    c3->Divide(3, 2); // 2x3 canvas
+
+    TCanvas* c4 = new TCanvas("c4", "vz_e Comparison by e_theta bins", 1200, 800);
+    c4->Divide(3, 2); // 2x3 canvas
+
+    // Loop over e_theta bins
+    for (int i = 0; i < nThetaBins; ++i) {
+        // Define cuts for this theta bin
+        double thetaMin = thetaBinsRad[i];
+        double thetaMax = thetaBinsRad[i+1];
+        TString thetaCut = Form("fiducial_status==3 && detector1==1 && detector2==1 && e_theta>%f && e_theta<=%f", thetaMin, thetaMax);
+
+        // Histograms for Mx2
+        TH1F* h1_theta = new TH1F(Form("h1_theta_%d", i), "", 33, 0.6, 1.25);
+        TH1F* h2_theta = new TH1F(Form("h2_theta_%d", i), "", 33, 0.6, 1.25);
+        h1_theta->SetLineColor(kRed);
+        h2_theta->SetLineColor(kBlue);
+        h1_theta->SetLineWidth(2);
+        h2_theta->SetLineWidth(2);
+
+        // Fill histograms
+        tree1->Draw(Form("Mx2>>h1_theta_%d", i), thetaCut);
+        tree2->Draw(Form("Mx2>>h2_theta_%d", i), thetaCut);
+
+        // Fit histograms
+        TF1* fit1_theta = new TF1(Form("fit1_theta_%d", i), "gaus(0)+pol1(3)", 0.6, 1.4);
+        TF1* fit2_theta = new TF1(Form("fit2_theta_%d", i), "gaus(0)+pol1(3)", 0.6, 1.4);
+        fit1_theta->SetParameters(h1_theta->GetMaximum(), proton_mass_sq, 0.01, 1, 0);
+        fit2_theta->SetParameters(h2_theta->GetMaximum(), proton_mass_sq, 0.01, 1, 0);
+
+        h1_theta->Fit(fit1_theta, "R");
+        h2_theta->Fit(fit2_theta, "R");
+
+        fit1_theta->SetLineColor(kRed);
+        fit1_theta->SetLineStyle(2);
+        fit1_theta->SetLineWidth(2);
+
+        fit2_theta->SetLineColor(kBlue);
+        fit2_theta->SetLineStyle(2);
+        fit2_theta->SetLineWidth(2);
+
+        // Draw on canvas c3
+        c3->cd(i+1);
+        h1_theta->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
+        h1_theta->GetYaxis()->SetTitle("Counts");
+        h1_theta->SetTitle(Form("%.0f#circ < #theta_{e} < %.0f#circ", thetaBinsDeg[i], thetaBinsDeg[i+1]));
+        h1_theta->Draw("E");
+        h2_theta->Draw("E SAME");
+        fit1_theta->Draw("SAME");
+        fit2_theta->Draw("SAME");
+
+        // Legend for subplot
+        TLegend* leg_theta = new TLegend(0.50, 0.75, 0.95, 0.95);
+        leg_theta->SetBorderSize(1);
+        leg_theta->SetLineColor(kBlack);
+        leg_theta->SetFillColor(kWhite);
+        leg_theta->SetTextSize(0.02);
+
+        double mu1_theta = fit1_theta->GetParameter(1);
+        double sigma1_theta = fit1_theta->GetParameter(2);
+        double counts1_theta = h1_theta->GetEntries();
+
+        double mu2_theta = fit2_theta->GetParameter(1);
+        double sigma2_theta = fit2_theta->GetParameter(2);
+        double counts2_theta = h2_theta->GetEntries();
+
+        leg_theta->AddEntry(h1_theta, Form("cj 10.1.0: N=%.0f, #mu=%.3f", counts1_theta, mu1_theta), "l");
+        leg_theta->AddEntry(h2_theta, Form("DCBetaTimeWalk: N=%.0f, #mu=%.3f", counts2_theta, mu2_theta), "l");
+        leg_theta->Draw();
+
+        // Histograms for vz_e
+        TH1F* h1_vz_theta = new TH1F(Form("h1_vz_theta_%d", i), "", 100, 20, 30);
+        TH1F* h2_vz_theta = new TH1F(Form("h2_vz_theta_%d", i), "", 100, 20, 30);
+        h1_vz_theta->SetLineColor(kRed);
+        h2_vz_theta->SetLineColor(kBlue);
+        h1_vz_theta->SetLineWidth(2);
+        h2_vz_theta->SetLineWidth(2);
+
+        // Fill histograms
+        tree1->Draw(Form("vz_e>>h1_vz_theta_%d", i), thetaCut);
+        tree2->Draw(Form("vz_e>>h2_vz_theta_%d", i), thetaCut);
+
+        // Fit histograms
+        TF1* fit1_vz_theta = new TF1(Form("fit1_vz_theta_%d", i), "gaus", 20, 30);
+        TF1* fit2_vz_theta = new TF1(Form("fit2_vz_theta_%d", i), "gaus", 20, 30);
+        fit1_vz_theta->SetParameters(h1_vz_theta->GetMaximum(), h1_vz_theta->GetMean(), h1_vz_theta->GetRMS());
+        fit2_vz_theta->SetParameters(h2_vz_theta->GetMaximum(), h2_vz_theta->GetMean(), h2_vz_theta->GetRMS());
+
+        h1_vz_theta->Fit(fit1_vz_theta, "R");
+        h2_vz_theta->Fit(fit2_vz_theta, "R");
+
+        fit1_vz_theta->SetLineColor(kRed);
+        fit1_vz_theta->SetLineStyle(2);
+        fit1_vz_theta->SetLineWidth(2);
+
+        fit2_vz_theta->SetLineColor(kBlue);
+        fit2_vz_theta->SetLineStyle(2);
+        fit2_vz_theta->SetLineWidth(2);
+
+        // Draw on canvas c4
+        c4->cd(i+1);
+        h1_vz_theta->GetXaxis()->SetTitle("v_{z}^{e} (cm)");
+        h1_vz_theta->GetYaxis()->SetTitle("Counts");
+        h1_vz_theta->SetTitle(Form("%.0f#circ < #theta_{e} < %.0f#circ", thetaBinsDeg[i], thetaBinsDeg[i+1]));
+        h1_vz_theta->Draw("E");
+        h2_vz_theta->Draw("E SAME");
+        fit1_vz_theta->Draw("SAME");
+        fit2_vz_theta->Draw("SAME");
+
+        // Legend for subplot
+        TLegend* leg_vz_theta = new TLegend(0.50, 0.75, 0.95, 0.95);
+        leg_vz_theta->SetBorderSize(1);
+        leg_vz_theta->SetLineColor(kBlack);
+        leg_vz_theta->SetFillColor(kWhite);
+        leg_vz_theta->SetTextSize(0.02);
+
+        double mu1_vz_theta = fit1_vz_theta->GetParameter(1);
+        double sigma1_vz_theta = fit1_vz_theta->GetParameter(2);
+        double counts1_vz_theta = h1_vz_theta->GetEntries();
+
+        double mu2_vz_theta = fit2_vz_theta->GetParameter(1);
+        double sigma2_vz_theta = fit2_vz_theta->GetParameter(2);
+        double counts2_vz_theta = h2_vz_theta->GetEntries();
+
+        leg_vz_theta->AddEntry(h1_vz_theta, Form("cj 10.1.0: N=%.0f, #mu=%.2f", counts1_vz_theta, mu1_vz_theta), "l");
+        leg_vz_theta->AddEntry(h2_vz_theta, Form("DCBetaTimeWalk: N=%.0f, #mu=%.2f", counts2_vz_theta, mu2_vz_theta), "l");
+        leg_vz_theta->Draw();
+    }
+
+    // Save the canvases with subplots
+    c3->SaveAs("/home/thayward/dc_comparison_theta_Mx2.png");
+    c4->SaveAs("/home/thayward/dc_comparison_theta_vze.png");
+
     // Clean up
     delete c1;
     delete c2;
+    delete c3;
+    delete c4;
     delete h1;
     delete h2;
     delete fitFunc1;
@@ -207,6 +381,8 @@ int main(int argc, char* argv[]) {
     delete legend;
     delete h1_vz;
     delete h2_vz;
+    delete fitFunc1_vz;
+    delete fitFunc2_vz;
     delete legend_vz;
     file1->Close();
     file2->Close();
