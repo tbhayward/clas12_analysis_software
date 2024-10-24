@@ -8,6 +8,7 @@
 #include "TMath.h"
 #include "TStyle.h"
 #include "TPaveStats.h"
+#include <vector>
 
 int main(int argc, char* argv[]) {
     if (argc != 3) {
@@ -41,7 +42,7 @@ int main(int argc, char* argv[]) {
     }
 
     // ----------------------------------------
-    // Plot 1: Mx2 Comparison (Same as before)
+    // Plot 1: Mx2 Comparison (Updated)
     // ----------------------------------------
 
     // Define histograms for Mx2
@@ -62,8 +63,8 @@ int main(int argc, char* argv[]) {
     tree2->Draw("Mx2>>h2", cuts);
 
     // Fit histograms with Gaussian plus linear polynomial
-    TF1* fitFunc1 = new TF1("fitFunc1", "gaus(0)+pol1(3)", 0.6, 1.4);
-    TF1* fitFunc2 = new TF1("fitFunc2", "gaus(0)+pol1(3)", 0.6, 1.4);
+    TF1* fitFunc1 = new TF1("fitFunc1", "gaus(0)+pol1(3)", 0.6, 1.25);
+    TF1* fitFunc2 = new TF1("fitFunc2", "gaus(0)+pol1(3)", 0.6, 1.25);
 
     double proton_mass_sq = 0.938 * 0.938; // Proton mass squared in GeV^2
 
@@ -132,15 +133,15 @@ int main(int argc, char* argv[]) {
     legend->Draw();
 
     // Save the Mx2 plot
-    c1->SaveAs("/home/thayward/dc_comparison.png");
+    c1->SaveAs("/home/thayward/dc_study/dc_comparison.png");
 
     // ----------------------------------------
     // Plot 2: vz_e Comparison (Updated)
     // ----------------------------------------
 
     // Define histograms for vz_e
-    TH1F* h1_vz = new TH1F("h1_vz", "", 100, 20, 30);
-    TH1F* h2_vz = new TH1F("h2_vz", "", 100, 20, 30);
+    TH1F* h1_vz = new TH1F("h1_vz", "", 100, 23, 30);
+    TH1F* h2_vz = new TH1F("h2_vz", "", 100, 23, 30);
 
     h1_vz->SetLineColor(kRed);
     h2_vz->SetLineColor(kBlue);
@@ -151,13 +152,13 @@ int main(int argc, char* argv[]) {
     tree1->Draw("vz_e>>h1_vz", cuts);
     tree2->Draw("vz_e>>h2_vz", cuts);
 
-    // Fit histograms with Gaussian
-    TF1* fitFunc1_vz = new TF1("fitFunc1_vz", "gaus", 20, 30);
-    TF1* fitFunc2_vz = new TF1("fitFunc2_vz", "gaus", 20, 30);
+    // Fit histograms with Gaussian plus linear polynomial
+    TF1* fitFunc1_vz = new TF1("fitFunc1_vz", "gaus(0)+pol1(3)", 23, 30);
+    TF1* fitFunc2_vz = new TF1("fitFunc2_vz", "gaus(0)+pol1(3)", 23, 30);
 
-    // Set initial parameters for vz_e fit: [Amplitude, Mean, Sigma]
-    fitFunc1_vz->SetParameters(h1_vz->GetMaximum(), h1_vz->GetMean(), h1_vz->GetRMS());
-    fitFunc2_vz->SetParameters(h2_vz->GetMaximum(), h2_vz->GetMean(), h2_vz->GetRMS());
+    // Set initial parameters for vz_e fit: [Amplitude, Mean, Sigma, p0, p1]
+    fitFunc1_vz->SetParameters(h1_vz->GetMaximum(), h1_vz->GetMean(), h1_vz->GetRMS(), 1, 0);
+    fitFunc2_vz->SetParameters(h2_vz->GetMaximum(), h2_vz->GetMean(), h2_vz->GetRMS(), 1, 0);
 
     h1_vz->Fit(fitFunc1_vz, "R");
     h2_vz->Fit(fitFunc2_vz, "R");
@@ -220,7 +221,7 @@ int main(int argc, char* argv[]) {
     legend_vz->Draw();
 
     // Save the vz_e plot
-    c2->SaveAs("/home/thayward/dc_comparison_vze.png");
+    c2->SaveAs("/home/thayward/dc_study/dc_comparison_vze.png");
 
     // ----------------------------------------
     // Expanded Analyses: Subplots for e_theta bins
@@ -240,6 +241,15 @@ int main(int argc, char* argv[]) {
 
     TCanvas* c4 = new TCanvas("c4", "vz_e Comparison by e_theta bins", 1200, 800);
     c4->Divide(3, 2); // 2x3 canvas
+
+    // Vectors to hold histograms and fit functions for cleanup
+    std::vector<TH1F*> h1_theta_v, h2_theta_v;
+    std::vector<TF1*> fit1_theta_v, fit2_theta_v;
+    std::vector<TLegend*> leg_theta_v;
+
+    std::vector<TH1F*> h1_vz_theta_v, h2_vz_theta_v;
+    std::vector<TF1*> fit1_vz_theta_v, fit2_vz_theta_v;
+    std::vector<TLegend*> leg_vz_theta_v;
 
     // Loop over e_theta bins
     for (int i = 0; i < nThetaBins; ++i) {
@@ -261,8 +271,8 @@ int main(int argc, char* argv[]) {
         tree2->Draw(Form("Mx2>>h2_theta_%d", i), thetaCut);
 
         // Fit histograms
-        TF1* fit1_theta = new TF1(Form("fit1_theta_%d", i), "gaus(0)+pol1(3)", 0.6, 1.4);
-        TF1* fit2_theta = new TF1(Form("fit2_theta_%d", i), "gaus(0)+pol1(3)", 0.6, 1.4);
+        TF1* fit1_theta = new TF1(Form("fit1_theta_%d", i), "gaus(0)+pol1(3)", 0.6, 1.25);
+        TF1* fit2_theta = new TF1(Form("fit2_theta_%d", i), "gaus(0)+pol1(3)", 0.6, 1.25);
         fit1_theta->SetParameters(h1_theta->GetMaximum(), proton_mass_sq, 0.01, 1, 0);
         fit2_theta->SetParameters(h2_theta->GetMaximum(), proton_mass_sq, 0.01, 1, 0);
 
@@ -277,11 +287,23 @@ int main(int argc, char* argv[]) {
         fit2_theta->SetLineStyle(2);
         fit2_theta->SetLineWidth(2);
 
+        // Store histograms and fits for cleanup
+        h1_theta_v.push_back(h1_theta);
+        h2_theta_v.push_back(h2_theta);
+        fit1_theta_v.push_back(fit1_theta);
+        fit2_theta_v.push_back(fit2_theta);
+
         // Draw on canvas c3
         c3->cd(i+1);
         h1_theta->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
         h1_theta->GetYaxis()->SetTitle("Counts");
         h1_theta->SetTitle(Form("%.0f#circ < #theta_{e} < %.0f#circ", thetaBinsDeg[i], thetaBinsDeg[i+1]));
+
+        // Adjust y-axis range
+        double max_h1 = h1_theta->GetMaximum();
+        double max_h2 = h2_theta->GetMaximum();
+        h1_theta->SetMaximum(1.2 * TMath::Max(max_h1, max_h2));
+
         h1_theta->Draw("E");
         h2_theta->Draw("E SAME");
         fit1_theta->Draw("SAME");
@@ -295,20 +317,20 @@ int main(int argc, char* argv[]) {
         leg_theta->SetTextSize(0.02);
 
         double mu1_theta = fit1_theta->GetParameter(1);
-        double sigma1_theta = fit1_theta->GetParameter(2);
         double counts1_theta = h1_theta->GetEntries();
 
         double mu2_theta = fit2_theta->GetParameter(1);
-        double sigma2_theta = fit2_theta->GetParameter(2);
         double counts2_theta = h2_theta->GetEntries();
 
         leg_theta->AddEntry(h1_theta, Form("cj 10.1.0: N=%.0f, #mu=%.3f", counts1_theta, mu1_theta), "l");
         leg_theta->AddEntry(h2_theta, Form("DCBetaTimeWalk: N=%.0f, #mu=%.3f", counts2_theta, mu2_theta), "l");
         leg_theta->Draw();
 
+        leg_theta_v.push_back(leg_theta);
+
         // Histograms for vz_e
-        TH1F* h1_vz_theta = new TH1F(Form("h1_vz_theta_%d", i), "", 100, 20, 30);
-        TH1F* h2_vz_theta = new TH1F(Form("h2_vz_theta_%d", i), "", 100, 20, 30);
+        TH1F* h1_vz_theta = new TH1F(Form("h1_vz_theta_%d", i), "", 100, 23, 30);
+        TH1F* h2_vz_theta = new TH1F(Form("h2_vz_theta_%d", i), "", 100, 23, 30);
         h1_vz_theta->SetLineColor(kRed);
         h2_vz_theta->SetLineColor(kBlue);
         h1_vz_theta->SetLineWidth(2);
@@ -319,10 +341,10 @@ int main(int argc, char* argv[]) {
         tree2->Draw(Form("vz_e>>h2_vz_theta_%d", i), thetaCut);
 
         // Fit histograms
-        TF1* fit1_vz_theta = new TF1(Form("fit1_vz_theta_%d", i), "gaus", 20, 30);
-        TF1* fit2_vz_theta = new TF1(Form("fit2_vz_theta_%d", i), "gaus", 20, 30);
-        fit1_vz_theta->SetParameters(h1_vz_theta->GetMaximum(), h1_vz_theta->GetMean(), h1_vz_theta->GetRMS());
-        fit2_vz_theta->SetParameters(h2_vz_theta->GetMaximum(), h2_vz_theta->GetMean(), h2_vz_theta->GetRMS());
+        TF1* fit1_vz_theta = new TF1(Form("fit1_vz_theta_%d", i), "gaus(0)+pol1(3)", 23, 30);
+        TF1* fit2_vz_theta = new TF1(Form("fit2_vz_theta_%d", i), "gaus(0)+pol1(3)", 23, 30);
+        fit1_vz_theta->SetParameters(h1_vz_theta->GetMaximum(), h1_vz_theta->GetMean(), h1_vz_theta->GetRMS(), 1, 0);
+        fit2_vz_theta->SetParameters(h2_vz_theta->GetMaximum(), h2_vz_theta->GetMean(), h2_vz_theta->GetRMS(), 1, 0);
 
         h1_vz_theta->Fit(fit1_vz_theta, "R");
         h2_vz_theta->Fit(fit2_vz_theta, "R");
@@ -335,11 +357,23 @@ int main(int argc, char* argv[]) {
         fit2_vz_theta->SetLineStyle(2);
         fit2_vz_theta->SetLineWidth(2);
 
+        // Store histograms and fits for cleanup
+        h1_vz_theta_v.push_back(h1_vz_theta);
+        h2_vz_theta_v.push_back(h2_vz_theta);
+        fit1_vz_theta_v.push_back(fit1_vz_theta);
+        fit2_vz_theta_v.push_back(fit2_vz_theta);
+
         // Draw on canvas c4
         c4->cd(i+1);
         h1_vz_theta->GetXaxis()->SetTitle("v_{z}^{e} (cm)");
         h1_vz_theta->GetYaxis()->SetTitle("Counts");
         h1_vz_theta->SetTitle(Form("%.0f#circ < #theta_{e} < %.0f#circ", thetaBinsDeg[i], thetaBinsDeg[i+1]));
+
+        // Adjust y-axis range
+        double max_h1_vz = h1_vz_theta->GetMaximum();
+        double max_h2_vz = h2_vz_theta->GetMaximum();
+        h1_vz_theta->SetMaximum(1.2 * TMath::Max(max_h1_vz, max_h2_vz));
+
         h1_vz_theta->Draw("E");
         h2_vz_theta->Draw("E SAME");
         fit1_vz_theta->Draw("SAME");
@@ -353,21 +387,21 @@ int main(int argc, char* argv[]) {
         leg_vz_theta->SetTextSize(0.02);
 
         double mu1_vz_theta = fit1_vz_theta->GetParameter(1);
-        double sigma1_vz_theta = fit1_vz_theta->GetParameter(2);
         double counts1_vz_theta = h1_vz_theta->GetEntries();
 
         double mu2_vz_theta = fit2_vz_theta->GetParameter(1);
-        double sigma2_vz_theta = fit2_vz_theta->GetParameter(2);
         double counts2_vz_theta = h2_vz_theta->GetEntries();
 
         leg_vz_theta->AddEntry(h1_vz_theta, Form("cj 10.1.0: N=%.0f, #mu=%.2f", counts1_vz_theta, mu1_vz_theta), "l");
         leg_vz_theta->AddEntry(h2_vz_theta, Form("DCBetaTimeWalk: N=%.0f, #mu=%.2f", counts2_vz_theta, mu2_vz_theta), "l");
         leg_vz_theta->Draw();
+
+        leg_vz_theta_v.push_back(leg_vz_theta);
     }
 
     // Save the canvases with subplots
-    c3->SaveAs("/home/thayward/dc_comparison_theta_Mx2.png");
-    c4->SaveAs("/home/thayward/dc_comparison_theta_vze.png");
+    c3->SaveAs("/home/thayward/dc_study/dc_comparison_theta_Mx2.png");
+    c4->SaveAs("/home/thayward/dc_study/dc_comparison_theta_vze.png");
 
     // Clean up
     delete c1;
@@ -384,6 +418,22 @@ int main(int argc, char* argv[]) {
     delete fitFunc1_vz;
     delete fitFunc2_vz;
     delete legend_vz;
+
+    // Clean up histograms and fits for subplots
+    for (size_t i = 0; i < h1_theta_v.size(); ++i) {
+        delete h1_theta_v[i];
+        delete h2_theta_v[i];
+        delete fit1_theta_v[i];
+        delete fit2_theta_v[i];
+        delete leg_theta_v[i];
+
+        delete h1_vz_theta_v[i];
+        delete h2_vz_theta_v[i];
+        delete fit1_vz_theta_v[i];
+        delete fit2_vz_theta_v[i];
+        delete leg_vz_theta_v[i];
+    }
+
     file1->Close();
     file2->Close();
 
