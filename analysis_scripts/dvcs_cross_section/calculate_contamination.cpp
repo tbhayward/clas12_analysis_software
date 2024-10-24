@@ -292,9 +292,7 @@ void calculate_contamination(const std::string& base_output_dir,
                 h_contamination->SetBinContent(phi_bin, contamination);
             }
 
-            h_contamination->Draw("E1");
-
-            delete h_contamination;
+            h_contamination->Draw("E1");            
         }
 
         // Save plots into the "contamination_plots" directory
@@ -302,6 +300,13 @@ void calculate_contamination(const std::string& base_output_dir,
         std::string output_filename = contamination_plots_dir + "/contamination_ratio_" +
                                       period_names[period] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
         c_contamination->SaveAs(output_filename.c_str());
+
+        // Clean up histograms after saving the canvas
+        for (auto hist : h_contamination_vec) {
+            delete hist;
+        }
+        h_contamination_vec.clear();
+
         delete c_contamination;
     }
 
