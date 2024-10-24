@@ -295,8 +295,17 @@ int main(int argc, char* argv[]) {
 
         // Draw on canvas c3
         c3->cd(i+1);
+        // Set margins for the pad
+        gPad->SetMargin(0.12, 0.05, 0.12, 0.05);
+
         h1_theta->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
         h1_theta->GetYaxis()->SetTitle("Counts");
+        h1_theta->GetXaxis()->SetTitleSize(0.05);
+        h1_theta->GetYaxis()->SetTitleSize(0.05);
+        h1_theta->GetXaxis()->SetLabelSize(0.04);
+        h1_theta->GetYaxis()->SetLabelSize(0.04);
+        h1_theta->GetXaxis()->SetTitleOffset(1.0);
+        h1_theta->GetYaxis()->SetTitleOffset(1.2);
         h1_theta->SetTitle(Form("%.0f#circ < #theta_{e} < %.0f#circ", thetaBinsDeg[i], thetaBinsDeg[i+1]));
 
         // Adjust y-axis range
@@ -365,8 +374,17 @@ int main(int argc, char* argv[]) {
 
         // Draw on canvas c4
         c4->cd(i+1);
+        // Set margins for the pad
+        gPad->SetMargin(0.12, 0.05, 0.12, 0.05);
+
         h1_vz_theta->GetXaxis()->SetTitle("v_{z}^{e} (cm)");
         h1_vz_theta->GetYaxis()->SetTitle("Counts");
+        h1_vz_theta->GetXaxis()->SetTitleSize(0.05);
+        h1_vz_theta->GetYaxis()->SetTitleSize(0.05);
+        h1_vz_theta->GetXaxis()->SetLabelSize(0.04);
+        h1_vz_theta->GetYaxis()->SetLabelSize(0.04);
+        h1_vz_theta->GetXaxis()->SetTitleOffset(1.0);
+        h1_vz_theta->GetYaxis()->SetTitleOffset(1.2);
         h1_vz_theta->SetTitle(Form("%.0f#circ < #theta_{e} < %.0f#circ", thetaBinsDeg[i], thetaBinsDeg[i+1]));
 
         // Adjust y-axis range
