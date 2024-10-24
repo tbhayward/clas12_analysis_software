@@ -2,7 +2,7 @@
 
 #include "calculate_contamination.h"
 #include "kinematic_cuts.h"
-#include "bin_helpers.h"
+#include "bin_helpers.h"  // Ensure this is correctly included
 #include <TH1D.h>
 #include <TCanvas.h>
 #include <iostream>
@@ -31,7 +31,7 @@ void calculate_contamination(const std::string& base_output_dir,
     const int n_phi_bins = 24;
 
     // Determine the relevant Q²-t bins for the given xB_bin
-    std::vector<int> relevant_bins = get_bin_indices_for_xB(bin_boundaries, xB_bin);
+    std::vector<int> relevant_bins = precompute_relevant_bins(xB_bin, bin_boundaries);
     int n_Q2t_bins = relevant_bins.size();
 
     // Initialize histograms for each period and bin
@@ -75,7 +75,7 @@ void calculate_contamination(const std::string& base_output_dir,
         TTreeReader& eppi0_sim_reader = mc_rec_aaogen_readers[period];
         TTreeReader& eppi0_misID_sim_reader = mc_rec_eppi0_bkg_readers[period];
 
-        // Define TTreeReaderValues for variables (similar to your existing code)
+        // Define TTreeReaderValues for variables
         // For data_reader
         TTreeReaderValue<int> detector1_data(data_reader, "detector1");
         TTreeReaderValue<int> detector2_data(data_reader, "detector2");
@@ -129,8 +129,7 @@ void calculate_contamination(const std::string& base_output_dir,
             double phi_deg = *phi_data * RAD_TO_DEG;
 
             for (size_t idx = 0; idx < relevant_bins.size(); ++idx) {
-                int bin_idx = relevant_bins[idx];
-                const auto& bin = bin_boundaries[bin_idx];
+                const auto& bin = bin_boundaries[relevant_bins[idx]];
 
                 if ((*xB_data >= bin.xB_low && *xB_data <= bin.xB_high &&
                      *Q2_data >= bin.Q2_low && *Q2_data <= bin.Q2_high &&
@@ -149,8 +148,7 @@ void calculate_contamination(const std::string& base_output_dir,
             double phi_deg = *phi_eppi0 * RAD_TO_DEG;
 
             for (size_t idx = 0; idx < relevant_bins.size(); ++idx) {
-                int bin_idx = relevant_bins[idx];
-                const auto& bin = bin_boundaries[bin_idx];
+                const auto& bin = bin_boundaries[relevant_bins[idx]];
 
                 if ((*xB_eppi0 >= bin.xB_low && *xB_eppi0 <= bin.xB_high &&
                      *Q2_eppi0 >= bin.Q2_low && *Q2_eppi0 <= bin.Q2_high &&
@@ -169,8 +167,7 @@ void calculate_contamination(const std::string& base_output_dir,
             double phi_deg = *phi_eppi0_sim * RAD_TO_DEG;
 
             for (size_t idx = 0; idx < relevant_bins.size(); ++idx) {
-                int bin_idx = relevant_bins[idx];
-                const auto& bin = bin_boundaries[bin_idx];
+                const auto& bin = bin_boundaries[relevant_bins[idx]];
 
                 if ((*xB_eppi0_sim >= bin.xB_low && *xB_eppi0_sim <= bin.xB_high &&
                      *Q2_eppi0_sim >= bin.Q2_low && *Q2_eppi0_sim <= bin.Q2_high &&
@@ -189,8 +186,7 @@ void calculate_contamination(const std::string& base_output_dir,
             double phi_deg = *phi_eppi0_misID_sim * RAD_TO_DEG;
 
             for (size_t idx = 0; idx < relevant_bins.size(); ++idx) {
-                int bin_idx = relevant_bins[idx];
-                const auto& bin = bin_boundaries[bin_idx];
+                const auto& bin = bin_boundaries[relevant_bins[idx]];
 
                 if ((*xB_eppi0_misID_sim >= bin.xB_low && *xB_eppi0_misID_sim <= bin.xB_high &&
                      *Q2_eppi0_misID_sim >= bin.Q2_low && *Q2_eppi0_misID_sim <= bin.Q2_high &&
@@ -207,7 +203,7 @@ void calculate_contamination(const std::string& base_output_dir,
 
     // Calculate contamination ratio and update UnfoldingData
     for (size_t idx = 0; idx < relevant_bins.size(); ++idx) {
-        int bin_idx = relevant_bins[idx];
+        // No need for bin_idx here as it's not used
 
         for (int phi_bin = 1; phi_bin <= n_phi_bins; ++phi_bin) {
             for (int period = 0; period < n_periods; ++period) {
@@ -244,10 +240,12 @@ void calculate_contamination(const std::string& base_output_dir,
         c_contamination->Divide(n_columns, n_rows);
 
         for (size_t idx = 0; idx < relevant_bins.size(); ++idx) {
+            int bin_idx = relevant_bins[idx];
+
             c_contamination->cd(idx + 1);
 
             TH1D* h_contamination = new TH1D(Form("h_contamination_%d_%zu", period, idx),
-                                             Form("Contamination %s Bin %d", period_names[period].c_str(), idx),
+                                             Form("Contamination %s Bin %d", period_names[period].c_str(), bin_idx),
                                              n_phi_bins, 0, 360);
 
             for (int phi_bin = 1; phi_bin <= n_phi_bins; ++phi_bin) {
@@ -258,8 +256,6 @@ void calculate_contamination(const std::string& base_output_dir,
             h_contamination->GetXaxis()->SetTitle("#phi [deg]");
             h_contamination->GetYaxis()->SetTitle("Contamination Ratio");
             h_contamination->Draw("HIST");
-
-            delete h_contamination;
         }
 
         std::string output_filename = base_output_dir + "/contamination_ratio_" +
