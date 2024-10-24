@@ -135,7 +135,7 @@ int main(int argc, char* argv[]) {
         fitFunc2->Draw("SAME");
 
         // Create a legend for Mx2 plot
-        TLegend* legend = new TLegend(0.35, 0.8, 0.95, 0.95);
+        TLegend* legend = new TLegend(0.30, 0.8, 0.95, 0.95);
         legend->SetBorderSize(1);  // Solid border
         legend->SetLineColor(kBlack);  // Black border line
         legend->SetFillColor(kWhite);  // White background
@@ -227,7 +227,7 @@ int main(int argc, char* argv[]) {
         fitFunc2_vz->Draw("SAME");
 
         // Create a legend for vz_e plot
-        TLegend* legend_vz = new TLegend(0.35, 0.8, 0.95, 0.95);
+        TLegend* legend_vz = new TLegend(0.30, 0.8, 0.95, 0.95);
         legend_vz->SetBorderSize(1);  // Solid border
         legend_vz->SetLineColor(kBlack);  // Black border line
         legend_vz->SetFillColor(kWhite);  // White background
