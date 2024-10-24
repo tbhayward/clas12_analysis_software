@@ -119,7 +119,7 @@ void calculate_contamination(const std::string& base_output_dir,
         TTreeReaderValue<double> Q2_eppi0_misID_sim(eppi0_misID_sim_reader, "Q2");
         TTreeReaderValue<double> t1_eppi0_misID_sim(eppi0_misID_sim_reader, "t1");
         TTreeReaderValue<double> open_angle_ep2_eppi0_misID_sim(eppi0_misID_sim_reader, "open_angle_ep2");
-        TTreeReaderValue<double> theta_neutral_neutral_eppi0_misID_sim(eppi0_misID_sim_reader, "theta_pi0_pi0");
+        TTreeReaderValue<double> theta_neutral_neutral_eppi0_misID_sim(eppi0_misID_sim_reader, "theta_gamma_gamma");
         TTreeReaderValue<double> Emiss2_eppi0_misID_sim(eppi0_misID_sim_reader, "Emiss2");
         TTreeReaderValue<double> Mx2_1_eppi0_misID_sim(eppi0_misID_sim_reader, "Mx2_1");
         TTreeReaderValue<double> pTmiss_eppi0_misID_sim(eppi0_misID_sim_reader, "pTmiss");

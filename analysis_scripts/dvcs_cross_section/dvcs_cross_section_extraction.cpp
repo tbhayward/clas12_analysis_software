@@ -301,7 +301,7 @@ int main(int argc, char* argv[]) {
     // Create a vector to hold all the unfolding data across bins
     std::vector<UnfoldingData> all_unfolding_data;
     // Iterate over the xB bins
-    for (int xB_bin = 0; xB_bin < num_xB_bins; ++xB_bin) {  
+    for (int xB_bin = 0; xB_bin < 1; ++xB_bin) {  
         // Call the plot_unfolding function for each xB_bin and get the results
         std::vector<UnfoldingData> bin_data = plot_unfolding(base_output_dir, "dvcs", xB_bin, bin_boundaries, data_readers, mc_gen_dvcsgen_readers, mc_rec_dvcsgen_readers, eppi0_readers, mc_gen_aaogen_readers, mc_rec_aaogen_readers);
         
@@ -309,16 +309,18 @@ int main(int argc, char* argv[]) {
         all_unfolding_data.insert(all_unfolding_data.end(), bin_data.begin(), bin_data.end());
     }
 
+    // Iterate over the xB bins
+    for (int xB_bin = 0; xB_bin < 3; ++xB_bin) {
+        // Calculate the contamination factor and update bin_data
+        calculate_contamination(base_output_dir, xB_bin, bin_boundaries, data_readers, eppi0_readers,
+                                mc_rec_aaogen_readers, mc_rec_eppi0_bkg_readers, bin_data);
+
+        // Append the collected bin data to the main results
+        all_unfolding_data.insert(all_unfolding_data.end(), bin_data.begin(), bin_data.end());
+    }
+
     // Debug information to check the contents of all_unfolding_data
     std::cout << "Debug: Number of unfolding_data entries: " << all_unfolding_data.size() << std::endl;
-
-    // for (const auto& data : all_unfolding_data) {
-    //     for (size_t i = 0; i < data.raw_yields.size(); ++i) {
-    //         for (size_t j = 0; j < data.raw_yields[i].size(); ++j) {
-    //             std::cout << "Period: " << i << " Yield: " << data.raw_yields[i][j] << std::endl;
-    //         }
-    //     }
-    // }
 
     // After collecting all the data, write it to a CSV file
     write_csv("output/unfolding_data.csv", all_unfolding_data);
