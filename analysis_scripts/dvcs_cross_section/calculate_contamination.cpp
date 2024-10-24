@@ -297,6 +297,8 @@ void calculate_contamination(const std::string& base_output_dir,
             delete h_contamination;
         }
 
+        // Save plots into the "contamination_plots" directory
+        std::string contamination_plots_dir = base_output_dir + "/contamination_plots";
         std::string output_filename = contamination_plots_dir + "/contamination_ratio_" +
                                       period_names[period] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
         c_contamination->SaveAs(output_filename.c_str());
