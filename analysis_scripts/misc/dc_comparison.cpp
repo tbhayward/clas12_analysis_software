@@ -72,8 +72,8 @@ int main(int argc, char* argv[]) {
         // ----------------------------------------
 
         // Define histograms for Mx2
-        TH1F* h1 = new TH1F("h1", "", 25, 0.6, 1.25);
-        TH1F* h2 = new TH1F("h2", "", 25, 0.6, 1.25);
+        TH1F* h1 = new TH1F("h1", "", 20, 0.6, 1.25);
+        TH1F* h2 = new TH1F("h2", "", 20, 0.6, 1.25);
 
         h1->SetLineColor(kRed);
         h2->SetLineColor(kBlue);
@@ -135,7 +135,7 @@ int main(int argc, char* argv[]) {
         fitFunc2->Draw("SAME");
 
         // Create a legend for Mx2 plot
-        TLegend* legend = new TLegend(0.40, 0.8, 0.95, 0.95);
+        TLegend* legend = new TLegend(0.35, 0.8, 0.95, 0.95);
         legend->SetBorderSize(1);  // Solid border
         legend->SetLineColor(kBlack);  // Black border line
         legend->SetFillColor(kWhite);  // White background
@@ -164,8 +164,8 @@ int main(int argc, char* argv[]) {
         // ----------------------------------------
 
         // Define histograms for vz_e
-        TH1F* h1_vz = new TH1F("h1_vz", "", 50, 23, 30); // Reduced bins from 100 to 50
-        TH1F* h2_vz = new TH1F("h2_vz", "", 50, 23, 30);
+        TH1F* h1_vz = new TH1F("h1_vz", "", 20, 23, 30); // Reduced bins from 100 to 50
+        TH1F* h2_vz = new TH1F("h2_vz", "", 20, 23, 30);
 
         h1_vz->SetLineColor(kRed);
         h2_vz->SetLineColor(kBlue);
@@ -211,7 +211,7 @@ int main(int argc, char* argv[]) {
         h1_vz->GetYaxis()->SetTitleOffset(1.2);
 
         // Set plot title
-        h1_vz->SetTitle(Form("v_{z}^{e} Comparison%s", rangeTitles[r].Data()));
+        h1_vz->SetTitle(Form("ve_{z} Comparison%s", rangeTitles[r].Data()));
 
         // Adjust y-axis range for vz_e plot
         double max1_vz = h1_vz->GetMaximum();
@@ -227,7 +227,7 @@ int main(int argc, char* argv[]) {
         fitFunc2_vz->Draw("SAME");
 
         // Create a legend for vz_e plot
-        TLegend* legend_vz = new TLegend(0.40, 0.8, 0.95, 0.95);
+        TLegend* legend_vz = new TLegend(0.35, 0.8, 0.95, 0.95);
         legend_vz->SetBorderSize(1);  // Solid border
         legend_vz->SetLineColor(kBlack);  // Black border line
         legend_vz->SetFillColor(kWhite);  // White background
