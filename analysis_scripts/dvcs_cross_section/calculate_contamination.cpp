@@ -299,6 +299,16 @@ void calculate_contamination(const std::string& base_output_dir,
 
             c_contamination->cd(idx + 1);
 
+            // Access the current pad
+            TPad* pad = (TPad*)c_contamination->cd(idx + 1);
+
+            // Adjust the margins of the pad
+            pad->SetLeftMargin(0.18);    // Increase left margin
+            pad->SetBottomMargin(0.18);  // Increase bottom margin
+            pad->SetRightMargin(0.05);   // Optional: adjust right margin
+            pad->SetTopMargin(0.08);     // Optional: adjust top margin
+
+            // Create the histogram
             TH1D* h_contamination = new TH1D(Form("h_contamination_%d_%zu", period, idx),
                                              Form("%s, <x_{B}>: %.2f, <Q^{2}>: %.2f, <-t>: %.2f",
                                                   period_names[period].c_str(), bin.xB_avg, bin.Q2_avg, std::abs(bin.t_avg)),
@@ -314,6 +324,7 @@ void calculate_contamination(const std::string& base_output_dir,
             h_contamination->SetMarkerStyle(20);
             h_contamination->SetMarkerSize(1.2);
 
+            // Fill histogram with data and errors
             for (int phi_bin = 1; phi_bin <= n_phi_bins; ++phi_bin) {
                 double contamination = unfolding_data[idx].contamination_ratio[period][phi_bin - 1];
                 double sigma_contamination = unfolding_data[idx].contamination_error[period][phi_bin - 1];
