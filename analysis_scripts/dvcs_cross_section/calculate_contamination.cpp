@@ -96,7 +96,7 @@ void calculate_contamination(const std::string& base_output_dir,
                 hist->GetYaxis()->SetTitleSize(0.06);
                 hist->SetMarkerStyle(20);
                 hist->SetMarkerSize(1.2);
-                hist->SetDrawOption("P E1");
+                // Removed SetDrawOption; specify draw option when calling Draw()
             }
         }
     }
@@ -258,12 +258,16 @@ void calculate_contamination(const std::string& base_output_dir,
         }
     }
 
+    // Plot contamination ratios
     for (int period = 0; period < n_periods; ++period) {
         TCanvas* c_contamination = new TCanvas(Form("c_contamination_%d", period),
                                                Form("Contamination Ratio %s", period_names[period].c_str()),
                                                canvas_width, canvas_height);
 
         c_contamination->Divide(n_columns, n_rows);
+
+        // Vector to hold histograms to prevent them from being deleted
+        std::vector<TH1D*> h_contamination_vec;
 
         for (size_t idx = 0; idx < relevant_bins.size(); ++idx) {
             int bin_idx = relevant_bins[idx];
@@ -285,14 +289,16 @@ void calculate_contamination(const std::string& base_output_dir,
             h_contamination->GetYaxis()->SetTitleSize(0.06);
             h_contamination->SetMarkerStyle(20);
             h_contamination->SetMarkerSize(1.2);
-            h_contamination->SetDrawOption("P E1");
 
             for (int phi_bin = 1; phi_bin <= n_phi_bins; ++phi_bin) {
                 double contamination = unfolding_data[idx].contamination_ratio[period][phi_bin - 1];
                 h_contamination->SetBinContent(phi_bin, contamination);
             }
 
-            h_contamination->Draw("E1");            
+            h_contamination->Draw("E1");
+
+            // Store the histogram to prevent it from being deleted
+            h_contamination_vec.push_back(h_contamination);
         }
 
         // Save plots into the "contamination_plots" directory
