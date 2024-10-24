@@ -201,7 +201,7 @@ int main(int argc, char* argv[]) {
         c2->SetMargin(0.12, 0.05, 0.12, 0.05);
 
         // Set axis labels for vz_e plot
-        h1_vz->GetXaxis()->SetTitle("v_{z}^{e} (cm)");
+        h1_vz->GetXaxis()->SetTitle("vz_{e} (cm)");
         h1_vz->GetYaxis()->SetTitle("Counts");
         h1_vz->GetXaxis()->SetTitleSize(0.05);
         h1_vz->GetYaxis()->SetTitleSize(0.05);
@@ -211,7 +211,7 @@ int main(int argc, char* argv[]) {
         h1_vz->GetYaxis()->SetTitleOffset(1.2);
 
         // Set plot title
-        h1_vz->SetTitle(Form("ve_{z} Comparison%s", rangeTitles[r].Data()));
+        h1_vz->SetTitle(Form("vz_{e} Comparison%s", rangeTitles[r].Data()));
 
         // Adjust y-axis range for vz_e plot
         double max1_vz = h1_vz->GetMaximum();
