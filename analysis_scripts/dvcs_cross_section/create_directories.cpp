@@ -1,7 +1,9 @@
+// create_directories.cpp
+
 #include <filesystem>
 #include <iostream>
 #include <string>
-#include <vector>  // <-- Add this to use std::vector
+#include <vector>
 
 // Use the filesystem library
 namespace fs = std::filesystem;
@@ -41,6 +43,9 @@ void create_directories(const std::string& base_output_dir) {
     std::string sp19inb_eppi0_yields_dir = unfolded_eppi0_dir + "/Sp19Inb/yields";
     std::string sp19inb_eppi0_acceptances_dir = unfolded_eppi0_dir + "/Sp19Inb/acceptances";
 
+    // Directory for contamination plots
+    std::string contamination_plots_dir = base_output_dir + "/contamination_plots";
+
     // Check and create the directories if they don't exist
     std::vector<std::string> directories = {
         exclusivity_dir, dvcs_dir, eppi0_dir, pi0_mass_dir,
@@ -48,7 +53,8 @@ void create_directories(const std::string& base_output_dir) {
         unfolded_dvcs_dir, unfolded_eppi0_dir,
         unfolded_yields_dir, unfolded_acceptances_dir,
         fa18inb_yields_dir, fa18inb_acceptances_dir, fa18out_yields_dir, fa18out_acceptances_dir, sp19inb_yields_dir, sp19inb_acceptances_dir,
-        fa18inb_eppi0_yields_dir, fa18inb_eppi0_acceptances_dir, fa18out_eppi0_yields_dir, fa18out_eppi0_acceptances_dir, sp19inb_eppi0_yields_dir, sp19inb_eppi0_acceptances_dir
+        fa18inb_eppi0_yields_dir, fa18inb_eppi0_acceptances_dir, fa18out_eppi0_yields_dir, fa18out_eppi0_acceptances_dir, sp19inb_eppi0_yields_dir, sp19inb_eppi0_acceptances_dir,
+        contamination_plots_dir  // Added contamination_plots_dir
     };
 
     // Loop through the directories and create them if necessary

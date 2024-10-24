@@ -2,12 +2,16 @@
 
 #include "calculate_contamination.h"
 #include "kinematic_cuts.h"
-#include "bin_helpers.h"  // Ensure this is correctly included
+#include "bin_helpers.h"
 #include <TH1D.h>
 #include <TCanvas.h>
+#include <TStyle.h>
+#include <TTreeReader.h>
+#include <TTreeReaderValue.h>
+#include <cmath>
 #include <iostream>
 #include <string>
-#include <cmath>
+#include <vector>
 
 // Constants
 constexpr double RAD_TO_DEG = 180.0 / M_PI;
@@ -21,6 +25,9 @@ void calculate_contamination(const std::string& base_output_dir,
                              std::vector<TTreeReader>& mc_rec_aaogen_readers,
                              std::vector<TTreeReader>& mc_rec_eppi0_bkg_readers,
                              std::vector<UnfoldingData>& unfolding_data) {
+    // Set style to remove stat boxes
+    gStyle->SetOptStat(0);
+
     // Number of periods
     const int n_periods = 3;
 
@@ -34,6 +41,16 @@ void calculate_contamination(const std::string& base_output_dir,
     std::vector<int> relevant_bins = precompute_relevant_bins(xB_bin, bin_boundaries);
     int n_Q2t_bins = relevant_bins.size();
 
+    // Adjust canvas size
+    const int base_canvas_width = 1200;
+    const int base_canvas_height = 800;
+    int canvas_width = static_cast<int>(1.5 * base_canvas_width);
+    int canvas_height = static_cast<int>(1.5 * base_canvas_height);
+
+    // Determine number of rows and columns for the canvases
+    int n_columns = (xB_bin == 3 || xB_bin == 4) ? 5 : std::sqrt(next_perfect_square(n_Q2t_bins));
+    int n_rows = std::ceil(static_cast<double>(n_Q2t_bins) / n_columns);
+
     // Initialize histograms for each period and bin
     std::vector<std::vector<TH1D*>> h_DVCS_data(n_periods, std::vector<TH1D*>(n_Q2t_bins));
     std::vector<std::vector<TH1D*>> h_eppi0_data(n_periods, std::vector<TH1D*>(n_Q2t_bins));
@@ -44,26 +61,43 @@ void calculate_contamination(const std::string& base_output_dir,
     for (int period = 0; period < n_periods; ++period) {
         for (size_t idx = 0; idx < relevant_bins.size(); ++idx) {
             int bin_idx = relevant_bins[idx];
+            const auto& bin = bin_boundaries[bin_idx];
+
+            // Create title string with the period name and bin information
+            std::string title = Form("%s, <x_{B}>: %.2f, <Q^{2}>: %.2f, <-t>: %.2f",
+                                     period_names[period].c_str(), bin.xB_avg, bin.Q2_avg, std::abs(bin.t_avg));
 
             // Histograms for DVCS data
             h_DVCS_data[period][idx] = new TH1D(Form("h_DVCS_data_%d_%zu", period, idx),
-                                                Form("DVCS Data %s Bin %d", period_names[period].c_str(), bin_idx),
-                                                n_phi_bins, 0, 360);
+                                                title.c_str(), n_phi_bins, 0, 360);
 
             // Histograms for eppi0 data
             h_eppi0_data[period][idx] = new TH1D(Form("h_eppi0_data_%d_%zu", period, idx),
-                                                 Form("eppi0 Data %s Bin %d", period_names[period].c_str(), bin_idx),
-                                                 n_phi_bins, 0, 360);
+                                                 title.c_str(), n_phi_bins, 0, 360);
 
             // Histograms for eppi0 simulation
             h_eppi0_sim[period][idx] = new TH1D(Form("h_eppi0_sim_%d_%zu", period, idx),
-                                                Form("eppi0 Sim %s Bin %d", period_names[period].c_str(), bin_idx),
-                                                n_phi_bins, 0, 360);
+                                                title.c_str(), n_phi_bins, 0, 360);
 
             // Histograms for misidentified eppi0 in simulation
             h_eppi0_misID_sim[period][idx] = new TH1D(Form("h_eppi0_misID_sim_%d_%zu", period, idx),
-                                                      Form("eppi0 MisID Sim %s Bin %d", period_names[period].c_str(), bin_idx),
-                                                      n_phi_bins, 0, 360);
+                                                      title.c_str(), n_phi_bins, 0, 360);
+
+            // Set axis labels and format for histograms
+            std::vector<TH1D*> histograms = {h_DVCS_data[period][idx], h_eppi0_data[period][idx],
+                                             h_eppi0_sim[period][idx], h_eppi0_misID_sim[period][idx]};
+
+            for (auto& hist : histograms) {
+                hist->GetXaxis()->SetTitle("#phi [deg]");
+                hist->GetYaxis()->SetTitle("Counts");
+                hist->GetXaxis()->SetLabelSize(0.05);
+                hist->GetYaxis()->SetLabelSize(0.05);
+                hist->GetXaxis()->SetTitleSize(0.06);
+                hist->GetYaxis()->SetTitleSize(0.06);
+                hist->SetMarkerStyle(20);
+                hist->SetMarkerSize(1.2);
+                hist->SetDrawOption("P E1");
+            }
         }
     }
 
@@ -77,8 +111,6 @@ void calculate_contamination(const std::string& base_output_dir,
 
         // Define TTreeReaderValues for variables
         // For data_reader
-        TTreeReaderValue<int> detector1_data(data_reader, "detector1");
-        TTreeReaderValue<int> detector2_data(data_reader, "detector2");
         TTreeReaderValue<double> phi_data(data_reader, "phi");
         TTreeReaderValue<double> xB_data(data_reader, "x");
         TTreeReaderValue<double> Q2_data(data_reader, "Q2");
@@ -90,8 +122,6 @@ void calculate_contamination(const std::string& base_output_dir,
         TTreeReaderValue<double> pTmiss_data(data_reader, "pTmiss");
 
         // For eppi0_data_reader
-        TTreeReaderValue<int> detector1_eppi0(eppi0_data_reader, "detector1");
-        TTreeReaderValue<int> detector2_eppi0(eppi0_data_reader, "detector2");
         TTreeReaderValue<double> phi_eppi0(eppi0_data_reader, "phi");
         TTreeReaderValue<double> xB_eppi0(eppi0_data_reader, "x");
         TTreeReaderValue<double> Q2_eppi0(eppi0_data_reader, "Q2");
@@ -229,36 +259,52 @@ void calculate_contamination(const std::string& base_output_dir,
     }
 
     // Plot contamination ratios
+    // Create necessary directories
+    std::string contamination_plots_dir = base_output_dir + "/contamination_plots";
+    if (!std::filesystem::exists(contamination_plots_dir)) {
+        std::filesystem::create_directories(contamination_plots_dir);
+    }
+
     for (int period = 0; period < n_periods; ++period) {
         TCanvas* c_contamination = new TCanvas(Form("c_contamination_%d", period),
                                                Form("Contamination Ratio %s", period_names[period].c_str()),
-                                               1200, 800);
-
-        int n_columns = 2;
-        int n_rows = (n_Q2t_bins + 1) / 2;
+                                               canvas_width, canvas_height);
 
         c_contamination->Divide(n_columns, n_rows);
 
         for (size_t idx = 0; idx < relevant_bins.size(); ++idx) {
             int bin_idx = relevant_bins[idx];
+            const auto& bin = bin_boundaries[bin_idx];
 
             c_contamination->cd(idx + 1);
 
             TH1D* h_contamination = new TH1D(Form("h_contamination_%d_%zu", period, idx),
-                                             Form("Contamination %s Bin %d", period_names[period].c_str(), bin_idx),
+                                             Form("%s, <x_{B}>: %.2f, <Q^{2}>: %.2f, <-t>: %.2f",
+                                                  period_names[period].c_str(), bin.xB_avg, bin.Q2_avg, std::abs(bin.t_avg)),
                                              n_phi_bins, 0, 360);
+
+            // Set axis labels and styles
+            h_contamination->GetXaxis()->SetTitle("#phi [deg]");
+            h_contamination->GetYaxis()->SetTitle("Contamination Ratio");
+            h_contamination->GetXaxis()->SetLabelSize(0.05);
+            h_contamination->GetYaxis()->SetLabelSize(0.05);
+            h_contamination->GetXaxis()->SetTitleSize(0.06);
+            h_contamination->GetYaxis()->SetTitleSize(0.06);
+            h_contamination->SetMarkerStyle(20);
+            h_contamination->SetMarkerSize(1.2);
+            h_contamination->SetDrawOption("P E1");
 
             for (int phi_bin = 1; phi_bin <= n_phi_bins; ++phi_bin) {
                 double contamination = unfolding_data[idx].contamination_ratio[period][phi_bin - 1];
                 h_contamination->SetBinContent(phi_bin, contamination);
             }
 
-            h_contamination->GetXaxis()->SetTitle("#phi [deg]");
-            h_contamination->GetYaxis()->SetTitle("Contamination Ratio");
-            h_contamination->Draw("HIST");
+            h_contamination->Draw("E1");
+
+            delete h_contamination;
         }
 
-        std::string output_filename = base_output_dir + "/contamination_ratio_" +
+        std::string output_filename = contamination_plots_dir + "/contamination_ratio_" +
                                       period_names[period] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
         c_contamination->SaveAs(output_filename.c_str());
         delete c_contamination;
