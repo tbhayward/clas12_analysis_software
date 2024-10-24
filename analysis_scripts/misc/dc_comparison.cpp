@@ -46,7 +46,7 @@ int main(int argc, char* argv[]) {
     // Define the e_theta ranges in degrees and convert to radians
     const int nRanges = 3;
     double thetaRangesDeg[nRanges][2] = {{5, 30}, {5, 10}, {20, 30}};
-    TString rangeTitles[nRanges] = {"", " (5° < θₑ < 10°)", " (20° < θₑ < 30°)"};
+    TString rangeTitles[nRanges] = {"", " (5 < #theta < 10)", " (20 < #theta < 30)"};
     TString fileSuffixes[nRanges] = {"", "_theta_5_10", "_theta_20_30"};
 
     for (int r = 0; r < nRanges; ++r) {
@@ -72,8 +72,8 @@ int main(int argc, char* argv[]) {
         // ----------------------------------------
 
         // Define histograms for Mx2
-        TH1F* h1 = new TH1F("h1", "", 33, 0.6, 1.25);
-        TH1F* h2 = new TH1F("h2", "", 33, 0.6, 1.25);
+        TH1F* h1 = new TH1F("h1", "", 25, 0.6, 1.25);
+        TH1F* h2 = new TH1F("h2", "", 25, 0.6, 1.25);
 
         h1->SetLineColor(kRed);
         h2->SetLineColor(kBlue);
@@ -135,7 +135,7 @@ int main(int argc, char* argv[]) {
         fitFunc2->Draw("SAME");
 
         // Create a legend for Mx2 plot
-        TLegend* legend = new TLegend(0.50, 0.8, 0.95, 0.95);
+        TLegend* legend = new TLegend(0.40, 0.8, 0.95, 0.95);
         legend->SetBorderSize(1);  // Solid border
         legend->SetLineColor(kBlack);  // Black border line
         legend->SetFillColor(kWhite);  // White background
@@ -227,7 +227,7 @@ int main(int argc, char* argv[]) {
         fitFunc2_vz->Draw("SAME");
 
         // Create a legend for vz_e plot
-        TLegend* legend_vz = new TLegend(0.50, 0.8, 0.95, 0.95);
+        TLegend* legend_vz = new TLegend(0.40, 0.8, 0.95, 0.95);
         legend_vz->SetBorderSize(1);  // Solid border
         legend_vz->SetLineColor(kBlack);  // Black border line
         legend_vz->SetFillColor(kWhite);  // White background
