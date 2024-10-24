@@ -20,8 +20,8 @@ struct UnfoldingData {
     std::vector<std::vector<double>> acceptance;     // [period]
     std::vector<std::vector<double>> unfolded_yields; // [period]
 
-    // **New addition for contamination ratio**
-    std::vector<std::vector<double>> contamination_ratio;  // [period][phi_bin]
+    std::vector<std::vector<double>> contamination_ratio; // [period][phi_bin]
+    std::vector<std::vector<double>> contamination_error; // [period][phi_bin]
 };
 
 #endif // UNFOLDING_DATA_H

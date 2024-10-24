@@ -233,27 +233,51 @@ void calculate_contamination(const std::string& base_output_dir,
 
     // Calculate contamination ratio and update UnfoldingData
     for (size_t idx = 0; idx < relevant_bins.size(); ++idx) {
-        // No need for bin_idx here as it's not used
-
         for (int phi_bin = 1; phi_bin <= n_phi_bins; ++phi_bin) {
             for (int period = 0; period < n_periods; ++period) {
+                // Retrieve counts
                 double N_DVCS_in_data = h_DVCS_data[period][idx]->GetBinContent(phi_bin);
                 double N_eppi0_in_data = h_eppi0_data[period][idx]->GetBinContent(phi_bin);
                 double N_eppi0_in_sim = h_eppi0_sim[period][idx]->GetBinContent(phi_bin);
                 double N_eppi0_misID_in_sim = h_eppi0_misID_sim[period][idx]->GetBinContent(phi_bin);
 
                 double contamination = 0.0;
+                double sigma_contamination = 0.0;
+
                 if (N_DVCS_in_data > 0 && N_eppi0_in_sim > 0) {
                     double ratio = N_eppi0_in_data / N_eppi0_in_sim;
                     contamination = (N_eppi0_misID_in_sim * ratio) / N_DVCS_in_data;
+
+                    // Compute partial derivatives
+                    double dC_dN_DVCS_in_data = -contamination / N_DVCS_in_data;
+                    double dC_dN_eppi0_in_data = N_eppi0_misID_in_sim / (N_eppi0_in_sim * N_DVCS_in_data);
+                    double dC_dN_eppi0_in_sim = - (N_eppi0_misID_in_sim * N_eppi0_in_data) / (N_eppi0_in_sim * N_eppi0_in_sim * N_DVCS_in_data);
+                    double dC_dN_eppi0_misID_in_sim = ratio / N_DVCS_in_data;
+
+                    // Uncertainties on counts (assuming Poisson)
+                    double sigma_N_DVCS_in_data = std::sqrt(N_DVCS_in_data);
+                    double sigma_N_eppi0_in_data = std::sqrt(N_eppi0_in_data);
+                    double sigma_N_eppi0_in_sim = std::sqrt(N_eppi0_in_sim);
+                    double sigma_N_eppi0_misID_in_sim = std::sqrt(N_eppi0_misID_in_sim);
+
+                    // Compute sigma_C^2
+                    double sigma_C_squared = 
+                        std::pow(dC_dN_DVCS_in_data * sigma_N_DVCS_in_data, 2) +
+                        std::pow(dC_dN_eppi0_in_data * sigma_N_eppi0_in_data, 2) +
+                        std::pow(dC_dN_eppi0_in_sim * sigma_N_eppi0_in_sim, 2) +
+                        std::pow(dC_dN_eppi0_misID_in_sim * sigma_N_eppi0_misID_in_sim, 2);
+
+                    sigma_contamination = std::sqrt(sigma_C_squared);
                 }
 
-                // Update UnfoldingData
-                // Ensure contamination_ratio is initialized
+                // Initialize contamination_ratio and contamination_error if not already done
                 if (unfolding_data[idx].contamination_ratio.size() == 0) {
                     unfolding_data[idx].contamination_ratio.resize(n_periods, std::vector<double>(n_phi_bins, 0.0));
+                    unfolding_data[idx].contamination_error.resize(n_periods, std::vector<double>(n_phi_bins, 0.0));
                 }
+
                 unfolding_data[idx].contamination_ratio[period][phi_bin - 1] = contamination;
+                unfolding_data[idx].contamination_error[period][phi_bin - 1] = sigma_contamination;
             }
         }
     }
@@ -292,7 +316,10 @@ void calculate_contamination(const std::string& base_output_dir,
 
             for (int phi_bin = 1; phi_bin <= n_phi_bins; ++phi_bin) {
                 double contamination = unfolding_data[idx].contamination_ratio[period][phi_bin - 1];
+                double sigma_contamination = unfolding_data[idx].contamination_error[period][phi_bin - 1];
+
                 h_contamination->SetBinContent(phi_bin, contamination);
+                h_contamination->SetBinError(phi_bin, sigma_contamination);
             }
 
             h_contamination->Draw("E1");
