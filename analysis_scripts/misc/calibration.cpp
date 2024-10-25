@@ -3775,7 +3775,7 @@ std::pair<double, double> rotate_coordinates(double x, double y, int sector) {
 }
 
 void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
-    int nBins = 100;
+    int nBins = 33;
     std::vector<std::tuple<std::string, std::string, std::string, double, double, double, double, std::string, double>> regions = {
         {"traj_x_6", "traj_y_6", "region_1", 15, 160, -80, 80, "traj_edge_6", 30},
         {"traj_x_18", "traj_y_18", "region_2", 30, 240, -125, 125, "traj_edge_18", 30},
@@ -4125,38 +4125,6 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             }
 
             c_edge->SaveAs(("output/calibration/dc/determination/mean_chi2_per_ndf_vs_traj_edge_" + particle_name + "_" + region_name + ".png").c_str());
-
-            // // Cleanup for mean chi2/ndf vs traj_edge histograms
-            // delete c_edge;
-            // for (int sector = 0; sector < 6; ++sector) {
-            //     delete h_sum_chi2_ndf_sector[sector];
-            //     delete h_count_chi2_ndf_sector[sector];
-            //     delete h_sum_chi2_ndf_sector_theta1[sector];
-            //     delete h_count_chi2_ndf_sector_theta1[sector];
-            //     delete h_sum_chi2_ndf_sector_theta2[sector];
-            //     delete h_count_chi2_ndf_sector_theta2[sector];
-
-            //     if (mcReader) {
-            //         delete h_sum_chi2_ndf_mc_sector[sector];
-            //         delete h_count_chi2_ndf_mc_sector[sector];
-            //         delete h_sum_chi2_ndf_mc_sector_theta1[sector];
-            //         delete h_count_chi2_ndf_mc_sector_theta1[sector];
-            //         delete h_sum_chi2_ndf_mc_sector_theta2[sector];
-            //         delete h_count_chi2_ndf_mc_sector_theta2[sector];
-            //     }
-            // }
-
-            // if (mc_traj_edge) delete mc_traj_edge;
-            // if (mc_track_theta) delete mc_track_theta;
-            // if (mc_traj_x) delete mc_traj_x;
-            // if (mc_traj_y) delete mc_traj_y;
-            // if (mc_particle_pid) delete mc_particle_pid;
-            // if (mc_track_sector_6) delete mc_track_sector_6;
-            // if (mc_track_chi2_6) delete mc_track_chi2_6;
-            // if (mc_track_ndf_6) delete mc_track_ndf_6;
-            // if (mc_traj_edge_6) delete mc_traj_edge_6;
-            // if (mc_traj_edge_18) delete mc_traj_edge_18;
-            // if (mc_traj_edge_36) delete mc_traj_edge_36;
 
             // Cleanup for mean chi2/ndf vs traj_edge histograms
             delete c_edge;
