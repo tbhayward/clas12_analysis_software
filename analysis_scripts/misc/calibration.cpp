@@ -3784,12 +3784,9 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
     // Array of particle types (photons and electrons) and their corresponding PIDs
     std::vector<std::tuple<int, std::string>> particle_types = {
-        {11, "electron"},
-        // {-211, "pim"},
-        // {211, "pip"},
-        // {321, "kp"},
-        // {-321, "km"},
-        {2212, "proton"}
+        {11, "electron"}
+        // ,
+        // {2212, "proton"}
     };
 
     for (const auto& particle_type : particle_types) {
@@ -3874,7 +3871,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                     double traj_y_rot = rotated_coords.second;
 
                     if (traj_x_rot >= 0) {
-                        h_data_sum_sector[*track_sector_6 - 1]->Fill(traj_x_rot, traj_y_rot, chi2_ndf);
+                        h_data_sum_sector[*track_sector_6 - 1]->Fill(traj_x_rot, chi2_ndf);
                         h_data_count_sector[*track_sector_6 - 1]->Fill(traj_x_rot, traj_y_rot);
                     }
                 }
@@ -3890,7 +3887,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                         double mc_traj_y_rot = rotated_coords.second;
 
                         if (mc_traj_x_rot >= 0) {
-                            h_mc_sum_sector[**mc_track_sector_6 - 1]->Fill(mc_traj_x_rot, mc_traj_y_rot, mc_chi2_ndf);
+                            h_mc_sum_sector[**mc_track_sector_6 - 1]->Fill(mc_traj_x_rot, mc_chi2_ndf);
                             h_mc_count_sector[**mc_track_sector_6 - 1]->Fill(mc_traj_x_rot, mc_traj_y_rot);
                         }
                     }
@@ -3927,8 +3924,18 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             // Now, calculate and plot mean chi2/ndf as a function of traj_edge for each sector
             std::vector<TH1D*> h_sum_chi2_ndf_sector(6);
             std::vector<TH1D*> h_count_chi2_ndf_sector(6);
+            std::vector<TH1D*> h_sum_chi2_ndf_sector_theta1(6);
+            std::vector<TH1D*> h_count_chi2_ndf_sector_theta1(6);
+            std::vector<TH1D*> h_sum_chi2_ndf_sector_theta2(6);
+            std::vector<TH1D*> h_count_chi2_ndf_sector_theta2(6);
+
             std::vector<TH1D*> h_sum_chi2_ndf_mc_sector(6);
             std::vector<TH1D*> h_count_chi2_ndf_mc_sector(6);
+            std::vector<TH1D*> h_sum_chi2_ndf_mc_sector_theta1(6);
+            std::vector<TH1D*> h_count_chi2_ndf_mc_sector_theta1(6);
+            std::vector<TH1D*> h_sum_chi2_ndf_mc_sector_theta2(6);
+            std::vector<TH1D*> h_count_chi2_ndf_mc_sector_theta2(6);
+
             for (int sector = 0; sector < 6; ++sector) {
                 h_sum_chi2_ndf_sector[sector] = new TH1D(("h_sum_chi2_ndf_sector_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
                                                          (particle_name + " in " + region_name + " - Sector " + std::to_string(sector + 1)).c_str(),
@@ -3936,6 +3943,24 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 h_sum_chi2_ndf_sector[sector]->GetXaxis()->SetTitle("edge");
                 h_sum_chi2_ndf_sector[sector]->GetYaxis()->SetTitle("<chi2/ndf>");
                 h_count_chi2_ndf_sector[sector] = new TH1D(("h_count_chi2_ndf_sector_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
+                                                       "", nBins, 0, edge_max);
+
+                // Histograms for theta1 (5 to 12 degrees)
+                h_sum_chi2_ndf_sector_theta1[sector] = new TH1D(("h_sum_chi2_ndf_sector_theta1_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
+                                                         (particle_name + " in " + region_name + " - Sector " + std::to_string(sector + 1) + " (5<#theta<12)").c_str(),
+                                                         nBins, 0, edge_max);
+                h_sum_chi2_ndf_sector_theta1[sector]->GetXaxis()->SetTitle("edge");
+                h_sum_chi2_ndf_sector_theta1[sector]->GetYaxis()->SetTitle("<chi2/ndf>");
+                h_count_chi2_ndf_sector_theta1[sector] = new TH1D(("h_count_chi2_ndf_sector_theta1_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
+                                                       "", nBins, 0, edge_max);
+
+                // Histograms for theta2 (25 to 35 degrees)
+                h_sum_chi2_ndf_sector_theta2[sector] = new TH1D(("h_sum_chi2_ndf_sector_theta2_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
+                                                         (particle_name + " in " + region_name + " - Sector " + std::to_string(sector + 1) + " (25<#theta<35)").c_str(),
+                                                         nBins, 0, edge_max);
+                h_sum_chi2_ndf_sector_theta2[sector]->GetXaxis()->SetTitle("edge");
+                h_sum_chi2_ndf_sector_theta2[sector]->GetYaxis()->SetTitle("<chi2/ndf>");
+                h_count_chi2_ndf_sector_theta2[sector] = new TH1D(("h_count_chi2_ndf_sector_theta2_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
                                                        "", nBins, 0, edge_max);
 
                 if (mcReader) {
@@ -3947,6 +3972,26 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
                     h_count_chi2_ndf_mc_sector[sector] = new TH1D(("h_count_chi2_ndf_mc_sector_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
                                                                   "", nBins, 0, edge_max);
+
+                    // Histograms for theta1 (5 to 12 degrees)
+                    h_sum_chi2_ndf_mc_sector_theta1[sector] = new TH1D(("h_sum_chi2_ndf_mc_sector_theta1_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
+                                                                (particle_name + " in " + region_name + " - MC - Sector " + std::to_string(sector + 1) + " (5<#theta<12)").c_str(),
+                                                                nBins, 0, edge_max);
+                    h_sum_chi2_ndf_mc_sector_theta1[sector]->GetXaxis()->SetTitle("edge");
+                    h_sum_chi2_ndf_mc_sector_theta1[sector]->GetYaxis()->SetTitle("<chi2/ndf>");
+
+                    h_count_chi2_ndf_mc_sector_theta1[sector] = new TH1D(("h_count_chi2_ndf_mc_sector_theta1_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
+                                                                  "", nBins, 0, edge_max);
+
+                    // Histograms for theta2 (25 to 35 degrees)
+                    h_sum_chi2_ndf_mc_sector_theta2[sector] = new TH1D(("h_sum_chi2_ndf_mc_sector_theta2_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
+                                                                (particle_name + " in " + region_name + " - MC - Sector " + std::to_string(sector + 1) + " (25<#theta<35)").c_str(),
+                                                                nBins, 0, edge_max);
+                    h_sum_chi2_ndf_mc_sector_theta2[sector]->GetXaxis()->SetTitle("edge");
+                    h_sum_chi2_ndf_mc_sector_theta2[sector]->GetYaxis()->SetTitle("<chi2/ndf>");
+
+                    h_count_chi2_ndf_mc_sector_theta2[sector] = new TH1D(("h_count_chi2_ndf_mc_sector_theta2_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
+                                                                  "", nBins, 0, edge_max);
                 }
             }
 
@@ -3955,8 +4000,18 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             while (dataReader.Next()) {
                 if (*particle_pid == pid && *traj_edge != -9999 && *track_ndf_6 > 0) {
                     double chi2_ndf = *track_chi2_6 / *track_ndf_6;
-                    h_sum_chi2_ndf_sector[*track_sector_6 - 1]->Fill(*traj_edge, chi2_ndf);
-                    h_count_chi2_ndf_sector[*track_sector_6 - 1]->Fill(*traj_edge);
+                    int sector_index = *track_sector_6 - 1;
+                    h_sum_chi2_ndf_sector[sector_index]->Fill(*traj_edge, chi2_ndf);
+                    h_count_chi2_ndf_sector[sector_index]->Fill(*traj_edge);
+
+                    if (*track_theta >= 5 && *track_theta <= 12) {
+                        h_sum_chi2_ndf_sector_theta1[sector_index]->Fill(*traj_edge, chi2_ndf);
+                        h_count_chi2_ndf_sector_theta1[sector_index]->Fill(*traj_edge);
+                    }
+                    if (*track_theta >= 25 && *track_theta <= 35) {
+                        h_sum_chi2_ndf_sector_theta2[sector_index]->Fill(*traj_edge, chi2_ndf);
+                        h_count_chi2_ndf_sector_theta2[sector_index]->Fill(*traj_edge);
+                    }
                 }
             }
 
@@ -3966,8 +4021,18 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 while (mcReader->Next()) {
                     if (**mc_particle_pid == pid && **mc_traj_edge != -9999 && **mc_track_ndf_6 > 0) {
                         double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
-                        h_sum_chi2_ndf_mc_sector[**mc_track_sector_6 - 1]->Fill(**mc_traj_edge, mc_chi2_ndf);
-                        h_count_chi2_ndf_mc_sector[**mc_track_sector_6 - 1]->Fill(**mc_traj_edge);
+                        int sector_index = **mc_track_sector_6 - 1;
+                        h_sum_chi2_ndf_mc_sector[sector_index]->Fill(**mc_traj_edge, mc_chi2_ndf);
+                        h_count_chi2_ndf_mc_sector[sector_index]->Fill(**mc_traj_edge);
+
+                        if (**mc_track_theta >= 5 && **mc_track_theta <= 12) {
+                            h_sum_chi2_ndf_mc_sector_theta1[sector_index]->Fill(**mc_traj_edge, mc_chi2_ndf);
+                            h_count_chi2_ndf_mc_sector_theta1[sector_index]->Fill(**mc_traj_edge);
+                        }
+                        if (**mc_track_theta >= 25 && **mc_track_theta <= 35) {
+                            h_sum_chi2_ndf_mc_sector_theta2[sector_index]->Fill(**mc_traj_edge, mc_chi2_ndf);
+                            h_count_chi2_ndf_mc_sector_theta2[sector_index]->Fill(**mc_traj_edge);
+                        }
                     }
                 }
             }
@@ -3975,8 +4040,13 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             // Normalize the histograms to get the mean chi2/ndf per bin of traj_edge
             for (int sector = 0; sector < 6; ++sector) {
                 h_sum_chi2_ndf_sector[sector]->Divide(h_count_chi2_ndf_sector[sector]);
+                h_sum_chi2_ndf_sector_theta1[sector]->Divide(h_count_chi2_ndf_sector_theta1[sector]);
+                h_sum_chi2_ndf_sector_theta2[sector]->Divide(h_count_chi2_ndf_sector_theta2[sector]);
+
                 if (mcReader) {
                     h_sum_chi2_ndf_mc_sector[sector]->Divide(h_count_chi2_ndf_mc_sector[sector]);
+                    h_sum_chi2_ndf_mc_sector_theta1[sector]->Divide(h_count_chi2_ndf_mc_sector_theta1[sector]);
+                    h_sum_chi2_ndf_mc_sector_theta2[sector]->Divide(h_count_chi2_ndf_mc_sector_theta2[sector]);
                 }
             }
 
@@ -3986,8 +4056,22 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 if (h_sum_chi2_ndf_sector[sector]->GetMaximum() > max_value) {
                     max_value = h_sum_chi2_ndf_sector[sector]->GetMaximum();
                 }
-                if (mcReader && h_sum_chi2_ndf_mc_sector[sector]->GetMaximum() > max_value) {
-                    max_value = h_sum_chi2_ndf_mc_sector[sector]->GetMaximum();
+                if (h_sum_chi2_ndf_sector_theta1[sector]->GetMaximum() > max_value) {
+                    max_value = h_sum_chi2_ndf_sector_theta1[sector]->GetMaximum();
+                }
+                if (h_sum_chi2_ndf_sector_theta2[sector]->GetMaximum() > max_value) {
+                    max_value = h_sum_chi2_ndf_sector_theta2[sector]->GetMaximum();
+                }
+                if (mcReader) {
+                    if (h_sum_chi2_ndf_mc_sector[sector]->GetMaximum() > max_value) {
+                        max_value = h_sum_chi2_ndf_mc_sector[sector]->GetMaximum();
+                    }
+                    if (h_sum_chi2_ndf_mc_sector_theta1[sector]->GetMaximum() > max_value) {
+                        max_value = h_sum_chi2_ndf_mc_sector_theta1[sector]->GetMaximum();
+                    }
+                    if (h_sum_chi2_ndf_mc_sector_theta2[sector]->GetMaximum() > max_value) {
+                        max_value = h_sum_chi2_ndf_mc_sector_theta2[sector]->GetMaximum();
+                    }
                 }
             }
             max_value *= 1.1; // Add 10% margin to max value
@@ -3999,32 +4083,80 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             for (int sector = 0; sector < 6; ++sector) {
                 c_edge->cd(sector + 1);
                 gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-                gPad->SetLogy();  
+                gPad->SetLogy();
                 h_sum_chi2_ndf_sector[sector]->SetStats(false);
-                h_sum_chi2_ndf_sector[sector]->SetAxisRange(0, 30, "X"); 
-                // h_sum_chi2_ndf_sector[sector]->SetMaximum(max_value);
+                h_sum_chi2_ndf_sector[sector]->SetAxisRange(0, edge_max, "X");
                 h_sum_chi2_ndf_sector[sector]->SetMaximum(1e3);
                 h_sum_chi2_ndf_sector[sector]->SetMinimum(10);
                 h_sum_chi2_ndf_sector[sector]->SetLineColor(kBlack);
                 h_sum_chi2_ndf_sector[sector]->Draw("E");
 
+                // Draw histograms with theta cuts
+                h_sum_chi2_ndf_sector_theta1[sector]->SetLineColor(kBlue);
+                h_sum_chi2_ndf_sector_theta1[sector]->Draw("E SAME");
+
+                h_sum_chi2_ndf_sector_theta2[sector]->SetLineColor(kGreen);
+                h_sum_chi2_ndf_sector_theta2[sector]->Draw("E SAME");
+
                 if (mcReader) {
-                    h_sum_chi2_ndf_mc_sector[sector]->SetStats(false);
-                    h_sum_chi2_ndf_mc_sector[sector]->SetAxisRange(0, 30, "X"); 
-                    // h_sum_chi2_ndf_mc_sector[sector]->SetMaximum(max_value);
-                    h_sum_chi2_ndf_mc_sector[sector]->SetMaximum(1e3);
-                    h_sum_chi2_ndf_mc_sector[sector]->SetMinimum(10);
                     h_sum_chi2_ndf_mc_sector[sector]->SetLineColor(kRed);
                     h_sum_chi2_ndf_mc_sector[sector]->Draw("E SAME");
+
+                    h_sum_chi2_ndf_mc_sector_theta1[sector]->SetLineColor(kMagenta);
+                    h_sum_chi2_ndf_mc_sector_theta1[sector]->Draw("E SAME");
+
+                    h_sum_chi2_ndf_mc_sector_theta2[sector]->SetLineColor(kCyan);
+                    h_sum_chi2_ndf_mc_sector_theta2[sector]->Draw("E SAME");
                 }
 
-                TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);
+                // Update the legend
+                TLegend* legend = new TLegend(0.6, 0.6, 0.9, 0.9);
                 legend->AddEntry(h_sum_chi2_ndf_sector[sector], "Data", "l");
-                if (mcReader) legend->AddEntry(h_sum_chi2_ndf_mc_sector[sector], "MC", "l");
+                legend->AddEntry(h_sum_chi2_ndf_sector_theta1[sector], "Data 5<#theta<12", "l");
+                legend->AddEntry(h_sum_chi2_ndf_sector_theta2[sector], "Data 25<#theta<35", "l");
+
+                if (mcReader) {
+                    legend->AddEntry(h_sum_chi2_ndf_mc_sector[sector], "MC", "l");
+                    legend->AddEntry(h_sum_chi2_ndf_mc_sector_theta1[sector], "MC 5<#theta<12", "l");
+                    legend->AddEntry(h_sum_chi2_ndf_mc_sector_theta2[sector], "MC 25<#theta<35", "l");
+                }
+
                 legend->Draw();
             }
 
             c_edge->SaveAs(("output/calibration/dc/determination/mean_chi2_per_ndf_vs_traj_edge_" + particle_name + "_" + region_name + ".png").c_str());
+
+            // Cleanup for mean chi2/ndf vs traj_edge histograms
+            delete c_edge;
+            for (int sector = 0; sector < 6; ++sector) {
+                delete h_sum_chi2_ndf_sector[sector];
+                delete h_count_chi2_ndf_sector[sector];
+                delete h_sum_chi2_ndf_sector_theta1[sector];
+                delete h_count_chi2_ndf_sector_theta1[sector];
+                delete h_sum_chi2_ndf_sector_theta2[sector];
+                delete h_count_chi2_ndf_sector_theta2[sector];
+
+                if (mcReader) {
+                    delete h_sum_chi2_ndf_mc_sector[sector];
+                    delete h_count_chi2_ndf_mc_sector[sector];
+                    delete h_sum_chi2_ndf_mc_sector_theta1[sector];
+                    delete h_count_chi2_ndf_mc_sector_theta1[sector];
+                    delete h_sum_chi2_ndf_mc_sector_theta2[sector];
+                    delete h_count_chi2_ndf_mc_sector_theta2[sector];
+                }
+            }
+
+            if (mc_traj_edge) delete mc_traj_edge;
+            if (mc_track_theta) delete mc_track_theta;
+            if (mc_traj_x) delete mc_traj_x;
+            if (mc_traj_y) delete mc_traj_y;
+            if (mc_particle_pid) delete mc_particle_pid;
+            if (mc_track_sector_6) delete mc_track_sector_6;
+            if (mc_track_chi2_6) delete mc_track_chi2_6;
+            if (mc_track_ndf_6) delete mc_track_ndf_6;
+            if (mc_traj_edge_6) delete mc_traj_edge_6;
+            if (mc_traj_edge_18) delete mc_traj_edge_18;
+            if (mc_traj_edge_36) delete mc_traj_edge_36;
 
             // Cleanup for mean chi2/ndf vs traj_edge histograms
             delete c_edge;
@@ -8683,17 +8815,17 @@ int main(int argc, char** argv) {
     if (mcReader) mcReader->Restart();
     dc_fiducial_determination(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_dc_hit_position(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_dc_hit_position(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    cvt_fiducial_determination(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // cvt_fiducial_determination(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_cvt_hit_position(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_cvt_hit_position(dataReader, mcReader);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
