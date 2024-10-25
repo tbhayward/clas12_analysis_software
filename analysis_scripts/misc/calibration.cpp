@@ -4089,24 +4089,24 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 h_sum_chi2_ndf_sector[sector]->SetMaximum(1e3);
                 h_sum_chi2_ndf_sector[sector]->SetMinimum(10);
                 h_sum_chi2_ndf_sector[sector]->SetLineColor(kBlack);
-                h_sum_chi2_ndf_sector[sector]->Draw("P"); // Use "P" to draw points without horizontal error bars
+                h_sum_chi2_ndf_sector[sector]->Draw("E1 P");  // Use "E1 P" for vertical errors and dots
 
                 // Draw histograms with theta cuts
                 h_sum_chi2_ndf_sector_theta1[sector]->SetLineColor(kBlue);
-                h_sum_chi2_ndf_sector_theta1[sector]->Draw("P SAME");
+                h_sum_chi2_ndf_sector_theta1[sector]->Draw("E1 P SAME");
 
                 h_sum_chi2_ndf_sector_theta2[sector]->SetLineColor(kGreen);
-                h_sum_chi2_ndf_sector_theta2[sector]->Draw("P SAME");
+                h_sum_chi2_ndf_sector_theta2[sector]->Draw("E1 P SAME");
 
                 if (mcReader) {
                     h_sum_chi2_ndf_mc_sector[sector]->SetLineColor(kRed);
-                    h_sum_chi2_ndf_mc_sector[sector]->Draw("P SAME");
+                    h_sum_chi2_ndf_mc_sector[sector]->Draw("E1 P SAME");
 
                     h_sum_chi2_ndf_mc_sector_theta1[sector]->SetLineColor(kMagenta);
-                    h_sum_chi2_ndf_mc_sector_theta1[sector]->Draw("P SAME");
+                    h_sum_chi2_ndf_mc_sector_theta1[sector]->Draw("E1 P SAME");
 
                     h_sum_chi2_ndf_mc_sector_theta2[sector]->SetLineColor(kCyan);
-                    h_sum_chi2_ndf_mc_sector_theta2[sector]->Draw("P SAME");
+                    h_sum_chi2_ndf_mc_sector_theta2[sector]->Draw("E1 P SAME");
                 }
 
                 // Update the legend
