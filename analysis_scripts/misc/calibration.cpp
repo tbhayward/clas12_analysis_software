@@ -4008,7 +4008,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                         h_sum_chi2_ndf_sector_theta1[sector_index]->Fill(*traj_edge, chi2_ndf);
                         h_count_chi2_ndf_sector_theta1[sector_index]->Fill(*traj_edge);
                     }
-                    if (*track_theta >= 25 && *track_theta <= 35) {
+                    if (*track_theta >= 20 && *track_theta <= 35) {
                         h_sum_chi2_ndf_sector_theta2[sector_index]->Fill(*traj_edge, chi2_ndf);
                         h_count_chi2_ndf_sector_theta2[sector_index]->Fill(*traj_edge);
                     }
@@ -4029,7 +4029,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                             h_sum_chi2_ndf_mc_sector_theta1[sector_index]->Fill(**mc_traj_edge, mc_chi2_ndf);
                             h_count_chi2_ndf_mc_sector_theta1[sector_index]->Fill(**mc_traj_edge);
                         }
-                        if (**mc_track_theta >= 25 && **mc_track_theta <= 35) {
+                        if (**mc_track_theta >= 20 && **mc_track_theta <= 35) {
                             h_sum_chi2_ndf_mc_sector_theta2[sector_index]->Fill(**mc_traj_edge, mc_chi2_ndf);
                             h_count_chi2_ndf_mc_sector_theta2[sector_index]->Fill(**mc_traj_edge);
                         }
@@ -4113,12 +4113,12 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 TLegend* legend = new TLegend(0.6, 0.6, 0.9, 0.9);
                 legend->AddEntry(h_sum_chi2_ndf_sector[sector], "Data", "l");
                 legend->AddEntry(h_sum_chi2_ndf_sector_theta1[sector], "Data 5<#theta<12", "l");
-                legend->AddEntry(h_sum_chi2_ndf_sector_theta2[sector], "Data 25<#theta<35", "l");
+                legend->AddEntry(h_sum_chi2_ndf_sector_theta2[sector], "Data 20<#theta<35", "l");
 
                 if (mcReader) {
                     legend->AddEntry(h_sum_chi2_ndf_mc_sector[sector], "MC", "l");
                     legend->AddEntry(h_sum_chi2_ndf_mc_sector_theta1[sector], "MC 5<#theta<12", "l");
-                    legend->AddEntry(h_sum_chi2_ndf_mc_sector_theta2[sector], "MC 25<#theta<35", "l");
+                    legend->AddEntry(h_sum_chi2_ndf_mc_sector_theta2[sector], "MC 20<#theta<35", "l");
                 }
 
                 legend->Draw();
