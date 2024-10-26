@@ -4261,6 +4261,702 @@ bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7,
     return true;
 }
 
+// Helper functions for theta_CVT and phi_CVT calculations
+double calculate_phi(double x, double y) {
+    double phi = atan2(x, y) * 180.0 / M_PI;
+    phi = phi - 90;
+    if (phi < 0) {
+        phi += 360;
+    }
+    phi = 360 - phi;
+    return phi;
+}
+
+double calculate_theta(double x, double y, double z) {
+    double r = sqrt(x*x + y*y + z*z);
+    return acos(z / r) * 180.0 / M_PI;
+}
+
+void plot_chi2_ndf_vs_phi_CVT_2D(TTreeReader& dataReader, TTreeReader* mcReader, const std::vector<std::tuple<int, std::string, std::string>>& particle_types) {
+    int nBins = 100;
+
+    // Declare TTreeReaderValues for trajectory and track variables for data
+    TTreeReaderValue<double> traj_x_12(dataReader, "traj_x_12");
+    TTreeReaderValue<double> traj_y_12(dataReader, "traj_y_12");
+    TTreeReaderValue<double> traj_z_12(dataReader, "traj_z_12");
+    TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+    TTreeReaderValue<double> track_chi2_5(dataReader, "track_chi2_5");
+    TTreeReaderValue<int> track_ndf_5(dataReader, "track_ndf_5");
+
+    // Declare TTreeReaderValues for trajectory and track variables for MC if available
+    TTreeReaderValue<double>* mc_traj_x_12 = nullptr;
+    TTreeReaderValue<double>* mc_traj_y_12 = nullptr;
+    TTreeReaderValue<double>* mc_traj_z_12 = nullptr;
+    TTreeReaderValue<int>* mc_particle_pid = nullptr;
+    TTreeReaderValue<double>* mc_track_chi2_5 = nullptr;
+    TTreeReaderValue<int>* mc_track_ndf_5 = nullptr;
+
+    if (mcReader) {
+        mc_traj_x_12 = new TTreeReaderValue<double>(*mcReader, "traj_x_12");
+        mc_traj_y_12 = new TTreeReaderValue<double>(*mcReader, "traj_y_12");
+        mc_traj_z_12 = new TTreeReaderValue<double>(*mcReader, "traj_z_12");
+        mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+        mc_track_chi2_5 = new TTreeReaderValue<double>(*mcReader, "track_chi2_5");
+        mc_track_ndf_5 = new TTreeReaderValue<int>(*mcReader, "track_ndf_5");
+    }
+
+    for (const auto& particle_type : particle_types) {
+        int pid = std::get<0>(particle_type);
+        std::string particle_name = std::get<1>(particle_type);
+        std::string particle_latex = std::get<2>(particle_type);
+
+        // Create histograms for chi2/ndf vs phi_CVT for data and MC
+        TH2D* h_chi2_vs_phi_CVT_data = new TH2D(("h_chi2_vs_phi_CVT_data_" + particle_name).c_str(), 
+                                                ("#chi^{2}/ndf vs #phi_{CVT} (Data, " + particle_latex + ")").c_str(), 
+                                                nBins, 0, 360, nBins, 0, 100);
+        h_chi2_vs_phi_CVT_data->GetXaxis()->SetTitle("#phi_{CVT}");
+        h_chi2_vs_phi_CVT_data->GetYaxis()->SetTitle("#chi^{2}/ndf");
+
+        TH2D* h_chi2_vs_phi_CVT_mc = nullptr;
+        if (mcReader) {
+            h_chi2_vs_phi_CVT_mc = new TH2D(("h_chi2_vs_phi_CVT_mc_" + particle_name).c_str(), 
+                                            ("#chi^{2}/ndf vs #phi_{CVT} (MC, " + particle_latex + ")").c_str(), 
+                                            nBins, 0, 360, nBins, 0, 100);
+            h_chi2_vs_phi_CVT_mc->GetXaxis()->SetTitle("#phi_{CVT}");
+            h_chi2_vs_phi_CVT_mc->GetYaxis()->SetTitle("#chi^{2}/ndf");
+        }
+
+        // Fill the histograms for data
+        dataReader.Restart();
+        while (dataReader.Next()) {
+            if (*particle_pid == pid && *track_ndf_5 > 0 && *track_chi2_5 < 10000) {
+                double chi2_ndf = *track_chi2_5 / *track_ndf_5;
+
+                if (*traj_x_12 != -9999 && *traj_y_12 != -9999 && *traj_z_12 != -9999) {
+                    double phi_CVT = calculate_phi(*traj_x_12, *traj_y_12);
+                    // double theta_CVT = calculate_theta(*traj_x_12, *traj_y_12, *traj_z_12);
+
+                    h_chi2_vs_phi_CVT_data->Fill(phi_CVT, chi2_ndf);
+                }
+            }
+        }
+
+        // Fill the histograms for MC if available
+        if (mcReader) {
+            mcReader->Restart();
+            while (mcReader->Next()) {
+                if (**mc_particle_pid == pid && **mc_track_ndf_5 > 0 && **mc_track_chi2_5 < 10000) {
+                    double mc_chi2_ndf = **mc_track_chi2_5 / **mc_track_ndf_5;
+
+                    if (**mc_traj_x_12 != -9999 && **mc_traj_y_12 != -9999 && **mc_traj_z_12 != -9999) {
+                        double mc_phi_CVT = calculate_phi(**mc_traj_x_12, **mc_traj_y_12);
+                        // double mc_theta_CVT = calculate_theta(**mc_traj_x_12, **mc_traj_y_12, **mc_traj_z_12);
+
+                        h_chi2_vs_phi_CVT_mc->Fill(mc_phi_CVT, mc_chi2_ndf);
+                    }
+                }
+            }
+        }
+
+        // Save the histograms
+        TCanvas* c_data = new TCanvas(("c_chi2_vs_phi_CVT_data_" + particle_name).c_str(), ("#chi^{2}/ndf vs #phi_{CVT} (Data, " + particle_latex + ")").c_str(), 800, 600);
+        gPad->SetLogz();  // Set the y-axis to log scale
+        h_chi2_vs_phi_CVT_data->Draw("COLZ");
+        c_data->SaveAs(("output/calibration/cvt/determination/chi2_vs_phi_CVT_data_" + particle_name + ".png").c_str());
+        delete c_data;
+
+        if (mcReader) {
+            TCanvas* c_mc = new TCanvas(("c_chi2_vs_phi_CVT_mc_" + particle_name).c_str(), ("#chi^{2}/ndf vs #phi_{CVT} (MC, " + particle_latex + ")").c_str(), 800, 600);
+            gPad->SetLogz();  // Set the y-axis to log scale
+            h_chi2_vs_phi_CVT_mc->Draw("COLZ");
+            c_mc->SaveAs(("output/calibration/cvt/determination/chi2_vs_phi_CVT_mc_" + particle_name + ".png").c_str());
+            delete c_mc;
+            delete h_chi2_vs_phi_CVT_mc;
+        }
+
+        delete h_chi2_vs_phi_CVT_data;
+    }
+
+    // Clean up dynamically allocated memory for MC
+    if (mcReader) {
+        delete mc_traj_x_12;
+        delete mc_traj_y_12;
+        delete mc_traj_z_12;
+        delete mc_particle_pid;
+        delete mc_track_chi2_5;
+        delete mc_track_ndf_5;
+    }
+}
+
+void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+    int nBinsX = 50;  // Number of bins for edge
+    int nBinsY = 100;  // Number of bins for chi2/ndf
+
+    // Define CVT layers and edges for data
+    std::vector<std::tuple<TTreeReaderValue<double>*, std::string, double, double>> layers = {
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_1"), "layer_1", -2, 2.2},
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_3"), "layer_3", -2, 2.2},
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_5"), "layer_5", -2, 2.2},
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_7"), "layer_7", -5, 15},
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_12"), "layer_12", -10, 25}
+    };
+
+    // Define CVT layers and edges for MC if available
+    std::vector<std::tuple<TTreeReaderValue<double>*, std::string, double, double>> mc_layers;
+    if (mcReader) {
+        mc_layers = {
+            {new TTreeReaderValue<double>(*mcReader, "traj_edge_1"), "layer_1", -2, 2.2},
+            {new TTreeReaderValue<double>(*mcReader, "traj_edge_3"), "layer_3", -2, 2.2},
+            {new TTreeReaderValue<double>(*mcReader, "traj_edge_5"), "layer_5", -2, 2.2},
+            {new TTreeReaderValue<double>(*mcReader, "traj_edge_7"), "layer_7", -5, 15},
+            {new TTreeReaderValue<double>(*mcReader, "traj_edge_12"), "layer_12", -10, 25}
+        };
+    }
+
+    // Define particle PID and track variables for data
+    TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+    TTreeReaderValue<double> track_chi2_5(dataReader, "track_chi2_5");
+    TTreeReaderValue<int> track_ndf_5(dataReader, "track_ndf_5");
+
+    // Define particle PID and track variables for MC if available
+    TTreeReaderValue<int>* mc_particle_pid = nullptr;
+    TTreeReaderValue<double>* mc_track_chi2_5 = nullptr;
+    TTreeReaderValue<int>* mc_track_ndf_5 = nullptr;
+
+    if (mcReader) {
+        mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+        mc_track_chi2_5 = new TTreeReaderValue<double>(*mcReader, "track_chi2_5");
+        mc_track_ndf_5 = new TTreeReaderValue<int>(*mcReader, "track_ndf_5");
+    }
+
+    std::vector<std::tuple<int, std::string, std::string>> particle_types = {
+        // {211, "pip", "#pi^{+}"},
+        // {-211, "pim", "#pi^{-}"},
+        // {321, "kp", "k^{+}"},
+        // {-321, "km", "k^{-}"},
+        {2212, "proton", "proton"}
+    };
+
+    plot_chi2_ndf_vs_phi_CVT_2D(dataReader, mcReader, particle_types);
+
+    for (const auto& particle_type : particle_types) {
+        int pid = std::get<0>(particle_type);
+        std::string particle_name = std::get<1>(particle_type);
+        std::string particle_latex = std::get<2>(particle_type);
+
+        std::vector<TH2D*> h_chi2_vs_edge_data, h_chi2_vs_edge_mc;
+
+        // Initialize 2D histograms for data and MC
+        for (const auto& layer : layers) {
+            std::string layer_name = std::get<1>(layer);
+            double xMin = std::get<2>(layer);
+            double xMax = std::get<3>(layer);
+            double yMin = 0;
+            double yMax = 100;  // This can be adjusted depending on your expected range of chi2/ndf
+
+            h_chi2_vs_edge_data.push_back(new TH2D(("h_chi2_vs_edge_data_" + layer_name + "_" + particle_name).c_str(), (particle_latex + " - " + layer_name).c_str(), nBinsX, xMin, xMax, nBinsY, yMin, yMax));
+
+            if (mcReader) {
+                h_chi2_vs_edge_mc.push_back(new TH2D(("h_chi2_vs_edge_mc_" + layer_name + "_" + particle_name).c_str(), (particle_latex + " - MC - " + layer_name).c_str(), nBinsX, xMin, xMax, nBinsY, yMin, yMax));
+            }
+        }
+
+        // Fill 2D histograms for data
+        dataReader.Restart();
+        while (dataReader.Next()) {
+            if (*particle_pid == pid && *track_ndf_5 > 0 && *track_chi2_5 < 10000) {
+                double chi2_ndf = *track_chi2_5 / *track_ndf_5;
+
+                for (size_t i = 0; i < layers.size(); ++i) {
+                    double traj_edge = **std::get<0>(layers[i]);
+
+                    if (traj_edge != -9999) {
+                        h_chi2_vs_edge_data[i]->Fill(traj_edge, chi2_ndf);
+                    }
+                }
+            }
+        }
+
+        // Fill 2D histograms for MC
+        if (mcReader) {
+            mcReader->Restart();
+            while (mcReader->Next()) {
+                if (**mc_particle_pid == pid && **mc_track_ndf_5 > 0 && **mc_track_chi2_5 < 10000) {
+                    double mc_chi2_ndf = **mc_track_chi2_5 / **mc_track_ndf_5;
+
+                    for (size_t i = 0; i < mc_layers.size(); ++i) {
+                        double traj_edge = **std::get<0>(mc_layers[i]);
+
+                        if (traj_edge != -9999) {
+                            h_chi2_vs_edge_mc[i]->Fill(traj_edge, mc_chi2_ndf);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Plot data results
+        TCanvas* c_layer_data = new TCanvas(("c_data_" + particle_name).c_str(), ("#chi^{2}/ndf vs edge for " + particle_latex + " (Data)").c_str(), 1800, 1200);
+        c_layer_data->Divide(3, 2);
+        c_layer_data->SetLeftMargin(0.2);  // Increase left margin for better y-axis label visibility
+
+        for (size_t i = 0; i < layers.size(); ++i) {
+            c_layer_data->cd(i + 1);
+            gPad->SetLogz();  // Set the z-axis to log scale
+            gPad->SetMargin(0.2, 0.15, 0.2, 0.1);  // Adjust margins: left, right, bottom, top
+            h_chi2_vs_edge_data[i]->GetXaxis()->SetTitle("edge (cm)");
+            h_chi2_vs_edge_data[i]->GetYaxis()->SetTitle("#chi^{2}/ndf");
+            h_chi2_vs_edge_data[i]->Draw("COLZ");
+        }
+
+        c_layer_data->SaveAs(("output/calibration/cvt/determination/chi2_per_ndf_vs_edge_data_" + particle_name + ".png").c_str());
+
+        // Plot MC results
+        if (mcReader) {
+            TCanvas* c_layer_mc = new TCanvas(("c_mc_" + particle_name).c_str(), ("#chi^{2}/ndf vs edge for " + particle_latex + " (MC)").c_str(), 1800, 1200);
+            c_layer_mc->Divide(3, 2);
+            c_layer_mc->SetLeftMargin(0.2);  // Increase left margin for better y-axis label visibility
+
+            for (size_t i = 0; i < mc_layers.size(); ++i) {
+                c_layer_mc->cd(i + 1);
+                gPad->SetLogz();  // Set the z-axis to log scale
+                gPad->SetMargin(0.2, 0.15, 0.2, 0.1);  // Adjust margins: left, right, bottom, top
+                h_chi2_vs_edge_mc[i]->GetXaxis()->SetTitle("edge (cm)");
+                h_chi2_vs_edge_mc[i]->GetYaxis()->SetTitle("#chi^{2}/ndf");
+                h_chi2_vs_edge_mc[i]->Draw("COLZ");
+            }
+
+            c_layer_mc->SaveAs(("output/calibration/cvt/determination/chi2_per_ndf_vs_edge_mc_" + particle_name + ".png").c_str());
+            delete c_layer_mc;
+        }
+        // Clean up
+        for (auto hist : h_chi2_vs_edge_data) delete hist;
+        if (mcReader) {
+            for (auto hist : h_chi2_vs_edge_mc) delete hist;
+        }
+        delete c_layer_data;
+    }
+
+    // Clean up dynamically allocated memory for MC
+    if (mcReader) {
+        for (auto& mc_layer : mc_layers) {
+            delete std::get<0>(mc_layer);
+        }
+
+        delete mc_particle_pid;
+        delete mc_track_chi2_5;
+        delete mc_track_ndf_5;
+    }
+
+    // Clean up dynamically allocated memory for data
+    for (auto& layer : layers) {
+        delete std::get<0>(layer);
+    }
+}
+
+void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+    int nBins = 100;
+
+    std::vector<std::tuple<std::string, std::string, std::string, double, double>> layers = {
+        {"traj_x_1", "traj_y_1", "layer_1", -10, 10},
+        {"traj_x_3", "traj_y_3", "layer_3", -12, 12},
+        {"traj_x_5", "traj_y_5", "layer_5", -15, 15},
+        {"traj_x_7", "traj_y_7", "layer_7", -17.5, 17.5},
+        {"traj_x_12", "traj_y_12", "layer_12", -25, 25}
+    };
+
+    std::vector<std::tuple<int, std::string, std::string>> particle_types = {
+        // {211, "pip", "#pi^{+}"},
+        // {-211, "pim", "#pi^{-}"},
+        // {321, "kp", "k^{+}"},
+        // {-321, "km", "k^{-}"},
+        {2212, "proton", "proton"}
+    };
+
+    // Declare TTreeReaderValues for the CVT edge and track variables
+    TTreeReaderValue<double> traj_edge_1(dataReader, "traj_edge_1");
+    TTreeReaderValue<double> traj_edge_3(dataReader, "traj_edge_3");
+    TTreeReaderValue<double> traj_edge_5(dataReader, "traj_edge_5");
+    TTreeReaderValue<double> traj_edge_7(dataReader, "traj_edge_7");
+    TTreeReaderValue<double> traj_edge_12(dataReader, "traj_edge_12");
+
+    TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+    TTreeReaderValue<double> theta(dataReader, "theta");
+
+    TTreeReaderValue<double> traj_x_12(dataReader, "traj_x_12");
+    TTreeReaderValue<double> traj_y_12(dataReader, "traj_y_12");
+    TTreeReaderValue<double> traj_z_12(dataReader, "traj_z_12");
+
+    TTreeReaderValue<double>* mc_traj_edge_1 = nullptr;
+    TTreeReaderValue<double>* mc_traj_edge_3 = nullptr;
+    TTreeReaderValue<double>* mc_traj_edge_5 = nullptr;
+    TTreeReaderValue<double>* mc_traj_edge_7 = nullptr;
+    TTreeReaderValue<double>* mc_traj_edge_12 = nullptr;
+    TTreeReaderValue<int>* mc_particle_pid = nullptr;
+    TTreeReaderValue<double>* mc_theta = nullptr;
+    TTreeReaderValue<double>* mc_traj_x_12 = nullptr;
+    TTreeReaderValue<double>* mc_traj_y_12 = nullptr;
+    TTreeReaderValue<double>* mc_traj_z_12 = nullptr;
+
+    if (mcReader) {
+        mc_traj_edge_1 = new TTreeReaderValue<double>(*mcReader, "traj_edge_1");
+        mc_traj_edge_3 = new TTreeReaderValue<double>(*mcReader, "traj_edge_3");
+        mc_traj_edge_5 = new TTreeReaderValue<double>(*mcReader, "traj_edge_5");
+        mc_traj_edge_7 = new TTreeReaderValue<double>(*mcReader, "traj_edge_7");
+        mc_traj_edge_12 = new TTreeReaderValue<double>(*mcReader, "traj_edge_12");
+        mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+        mc_theta = new TTreeReaderValue<double>(*mcReader, "theta");
+        mc_traj_x_12 = new TTreeReaderValue<double>(*mcReader, "traj_x_12");
+        mc_traj_y_12 = new TTreeReaderValue<double>(*mcReader, "traj_y_12");
+        mc_traj_z_12 = new TTreeReaderValue<double>(*mcReader, "traj_z_12");
+    }
+
+    // Declare TTreeReaderValues for trajectory x and y coordinates
+    std::vector<TTreeReaderValue<double>> traj_x;
+    std::vector<TTreeReaderValue<double>> traj_y;
+
+    std::vector<TTreeReaderValue<double>*> mc_traj_x;
+    std::vector<TTreeReaderValue<double>*> mc_traj_y;
+
+    // Initialize TTreeReaderValues for each layer
+    for (const auto& layer : layers) {
+        traj_x.emplace_back(dataReader, std::get<0>(layer).c_str());
+        traj_y.emplace_back(dataReader, std::get<1>(layer).c_str());
+
+        if (mcReader) {
+            mc_traj_x.push_back(new TTreeReaderValue<double>(*mcReader, std::get<0>(layer).c_str()));
+            mc_traj_y.push_back(new TTreeReaderValue<double>(*mcReader, std::get<1>(layer).c_str()));
+        }
+    }
+
+    for (const auto& particle_type : particle_types) {
+        int pid = std::get<0>(particle_type);
+        std::string particle_name = std::get<1>(particle_type);
+        std::string particle_latex = std::get<2>(particle_type);
+
+        // Create a canvas for data
+        TCanvas* c_data = new TCanvas(("c_data_" + particle_name).c_str(), ("Data CVT Hit Position (" + particle_latex + ")").c_str(), 1800, 1200);
+        c_data->Divide(5, 2);
+
+        TCanvas* c_mc = nullptr;
+        if (mcReader) {
+            c_mc = new TCanvas(("c_mc_" + particle_name).c_str(), ("MC CVT Hit Position (" + particle_latex + ")").c_str(), 1800, 1200);
+            c_mc->Divide(5, 2);
+        }
+
+        // Create histograms for data and MC
+        std::vector<TH2D*> h_data_before(5), h_data_after(5);
+        std::vector<TH2D*> h_mc_before(5), h_mc_after(5);
+
+        for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
+            std::string layer_name = std::get<2>(layers[layer_idx]);
+            double xMin = std::get<3>(layers[layer_idx]);
+            double xMax = std::get<4>(layers[layer_idx]);
+            double yMin = xMin;
+            double yMax = xMax;
+
+            h_data_before[layer_idx] = new TH2D(("h_data_before_" + layer_name).c_str(), ("Data " + layer_name + " Before Cuts (" + particle_latex + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            h_data_after[layer_idx] = new TH2D(("h_data_after_" + layer_name).c_str(), ("Data " + layer_name + " After Cuts (" + particle_latex + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            h_data_before[layer_idx]->GetXaxis()->SetTitle("x");
+            h_data_before[layer_idx]->GetYaxis()->SetTitle("y");
+            h_data_after[layer_idx]->GetXaxis()->SetTitle("x");
+            h_data_after[layer_idx]->GetYaxis()->SetTitle("y");
+
+            if (mcReader) {
+                h_mc_before[layer_idx] = new TH2D(("h_mc_before_" + layer_name).c_str(), ("MC " + layer_name + " Before Cuts (" + particle_latex + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                h_mc_after[layer_idx] = new TH2D(("h_mc_after_" + layer_name).c_str(), ("MC " + layer_name + " After Cuts (" + particle_latex + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                h_mc_before[layer_idx]->GetXaxis()->SetTitle("x");
+                h_mc_before[layer_idx]->GetYaxis()->SetTitle("y");
+                h_mc_after[layer_idx]->GetXaxis()->SetTitle("x");
+                h_mc_after[layer_idx]->GetYaxis()->SetTitle("y");
+            }
+        }
+
+        // Fill the data histograms
+        dataReader.Restart();
+        while (dataReader.Next()) {
+            if (*particle_pid == pid) {
+                for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
+                    double traj_x_value = *traj_x[layer_idx];
+                    double traj_y_value = *traj_y[layer_idx];
+
+                    if (traj_x_value != -9999 && traj_y_value != -9999) {
+                        h_data_before[layer_idx]->Fill(traj_x_value, traj_y_value);
+                        if (cvt_fiducial(*traj_edge_1, *traj_edge_3, *traj_edge_5, *traj_edge_7, *traj_edge_12)) {
+                            h_data_after[layer_idx]->Fill(traj_x_value, traj_y_value);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fill the MC histograms if available
+        if (mcReader) {
+            mcReader->Restart();
+            while (mcReader->Next()) {
+                if (**mc_particle_pid == pid) {
+                    for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
+                        double mc_traj_x_value = **mc_traj_x[layer_idx];
+                        double mc_traj_y_value = **mc_traj_y[layer_idx];
+                        if (mc_traj_x_value != -9999 && mc_traj_y_value != -9999) {
+                            h_mc_before[layer_idx]->Fill(mc_traj_x_value, mc_traj_y_value);
+                            if (cvt_fiducial(**mc_traj_edge_1, **mc_traj_edge_3, **mc_traj_edge_5, **mc_traj_edge_7, **mc_traj_edge_12)) {
+                                h_mc_after[layer_idx]->Fill(mc_traj_x_value, mc_traj_y_value);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Find the maximum value across all histograms for consistent scaling
+        double max_value_data = 0, max_value_mc = 0;
+        for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
+            max_value_data = std::max(max_value_data, h_data_before[layer_idx]->GetMaximum());
+            max_value_data = std::max(max_value_data, h_data_after[layer_idx]->GetMaximum());
+            if (mcReader) {
+                max_value_mc = std::max(max_value_mc, h_mc_before[layer_idx]->GetMaximum());
+                max_value_mc = std::max(max_value_mc, h_mc_after[layer_idx]->GetMaximum());
+            }
+        }
+
+        // Set the maximum for each histogram to ensure consistent scaling
+        for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
+            h_data_before[layer_idx]->SetMaximum(max_value_data * 1.1);
+            h_data_after[layer_idx]->SetMaximum(max_value_data * 1.1);
+            if (mcReader) {
+                h_mc_before[layer_idx]->SetMaximum(max_value_mc * 1.1);
+                h_mc_after[layer_idx]->SetMaximum(max_value_mc * 1.1);
+            }
+        }
+
+        // Draw and save the data canvas
+        for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
+            c_data->cd(layer_idx + 1);
+            gPad->SetLogz();
+            gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+            h_data_before[layer_idx]->Draw("COLZ");
+
+            c_data->cd(layer_idx + 6);
+            gPad->SetLogz();
+            gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+            h_data_after[layer_idx]->Draw("COLZ");
+        }
+        c_data->SaveAs(("output/calibration/cvt/positions/data_" + particle_name + "_cvt_hit_position.png").c_str());
+
+        // Draw and save the MC canvas if available
+        if (mcReader) {
+            for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
+                c_mc->cd(layer_idx + 1);
+                gPad->SetLogz();
+                gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+                h_mc_before[layer_idx]->Draw("COLZ");
+
+                c_mc->cd(layer_idx + 6);
+                gPad->SetLogz();
+                gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+                h_mc_after[layer_idx]->Draw("COLZ");
+            }
+            c_mc->SaveAs(("output/calibration/cvt/positions/mc_" + particle_name + "_cvt_hit_position.png").c_str());
+        }
+
+        // Convert theta to degrees for both data and MC
+        std::vector<double> theta_in_degrees_data, theta_in_degrees_mc;
+        std::vector<double> theta_CVT_data, phi_CVT_data;
+        std::vector<double> traj_edge_1_data, traj_edge_3_data, traj_edge_5_data, traj_edge_7_data, traj_edge_12_data;
+        std::vector<double> theta_CVT_mc, phi_CVT_mc;
+        std::vector<double> traj_edge_1_mc, traj_edge_3_mc, traj_edge_5_mc, traj_edge_7_mc, traj_edge_12_mc;
+
+        // Calculate theta_CVT and phi_CVT for data
+        dataReader.Restart();
+        while (dataReader.Next()) {
+            if (*particle_pid == pid) {
+                if (*traj_x_12 != -9999 && *traj_y_12 != -9999 && *traj_z_12 != -9999) {
+                    double theta_CVT_value = calculate_theta(*traj_x_12, *traj_y_12, *traj_z_12);
+                    double phi_CVT_value = calculate_phi(*traj_x_12, *traj_y_12);
+
+                    // Store the CVT angles and corresponding edge values
+                    theta_CVT_data.push_back(theta_CVT_value);
+                    phi_CVT_data.push_back(phi_CVT_value);
+                    theta_in_degrees_data.push_back(*theta);
+
+                    // Store the corresponding edge values
+                    traj_edge_1_data.push_back(*traj_edge_1);
+                    traj_edge_3_data.push_back(*traj_edge_3);
+                    traj_edge_5_data.push_back(*traj_edge_5);
+                    traj_edge_7_data.push_back(*traj_edge_7);
+                    traj_edge_12_data.push_back(*traj_edge_12);
+                }
+            }
+        }
+
+        // Calculate theta_CVT and phi_CVT for MC
+        if (mcReader) {
+            mcReader->Restart();
+            while (mcReader->Next()) {
+                if (**mc_particle_pid == pid) {
+                    if (**mc_traj_x_12 != -9999 && **mc_traj_y_12 != -9999 && **mc_traj_z_12 != -9999) {
+                        double mc_theta_CVT_value = calculate_theta(**mc_traj_x_12, **mc_traj_y_12, **mc_traj_z_12);
+                        double mc_phi_CVT_value = calculate_phi(**mc_traj_x_12, **mc_traj_y_12);
+
+                        // Store the CVT angles and corresponding edge values
+                        theta_CVT_mc.push_back(mc_theta_CVT_value);
+                        phi_CVT_mc.push_back(mc_phi_CVT_value);
+                        theta_in_degrees_mc.push_back(**mc_theta);
+
+                        // Store the corresponding edge values
+                        traj_edge_1_mc.push_back(**mc_traj_edge_1);
+                        traj_edge_3_mc.push_back(**mc_traj_edge_3);
+                        traj_edge_5_mc.push_back(**mc_traj_edge_5);
+                        traj_edge_7_mc.push_back(**mc_traj_edge_7);
+                        traj_edge_12_mc.push_back(**mc_traj_edge_12);
+                    }
+                }
+            }
+        }
+
+        // Create and fill histograms for theta_CVT vs theta and phi_CVT vs theta_CVT
+        TH2D* h_theta_vs_theta_data_before = new TH2D("h_theta_vs_theta_data_before", ("#theta_{CVT} vs #theta Before Cuts (Data, " + particle_latex + ")").c_str(), nBins, 25, 150, nBins, 30, 150);
+        h_theta_vs_theta_data_before->GetXaxis()->SetTitle("#theta");
+        h_theta_vs_theta_data_before->GetYaxis()->SetTitle("#theta_{CVT}");
+
+        TH2D* h_phi_vs_theta_CVT_data_before = new TH2D("h_phi_vs_theta_CVT_data_before", ("#phi_{CVT} vs #theta_{CVT} Before Cuts (Data, " + particle_latex + ")").c_str(), nBins, 0, 360, nBins, 25, 150);
+        h_phi_vs_theta_CVT_data_before->GetXaxis()->SetTitle("#phi_{CVT}");
+        h_phi_vs_theta_CVT_data_before->GetYaxis()->SetTitle("#theta_{CVT}");
+
+        TH2D* h_theta_vs_theta_data_after = new TH2D("h_theta_vs_theta_data_after", ("#theta_{CVT} vs #theta After Cuts (Data, " + particle_latex + ")").c_str(), nBins, 25, 150, nBins, 30, 150);
+        h_theta_vs_theta_data_after->GetXaxis()->SetTitle("#theta");
+        h_theta_vs_theta_data_after->GetYaxis()->SetTitle("#theta_{CVT}");
+
+        TH2D* h_phi_vs_theta_CVT_data_after = new TH2D("h_phi_vs_theta_CVT_data_after", ("#phi_{CVT} vs #theta_{CVT} After Cuts (Data, " + particle_latex + ")").c_str(), nBins, 0, 360, nBins, 25, 150);
+        h_phi_vs_theta_CVT_data_after->GetXaxis()->SetTitle("#phi_{CVT}");
+        h_phi_vs_theta_CVT_data_after->GetYaxis()->SetTitle("#theta_{CVT}");
+
+        // Fill histograms using stored values for data
+        for (size_t i = 0; i < theta_CVT_data.size(); ++i) {
+            h_theta_vs_theta_data_before->Fill(theta_in_degrees_data[i], theta_CVT_data[i]);
+            h_phi_vs_theta_CVT_data_before->Fill(phi_CVT_data[i], theta_CVT_data[i]);
+
+            // Apply fiducial cut based on stored edge values
+            if (cvt_fiducial(traj_edge_1_data[i], traj_edge_3_data[i], traj_edge_5_data[i], traj_edge_7_data[i], traj_edge_12_data[i])) {
+                h_theta_vs_theta_data_after->Fill(theta_in_degrees_data[i], theta_CVT_data[i]);
+                    h_phi_vs_theta_CVT_data_after->Fill(phi_CVT_data[i], theta_CVT_data[i]);
+            }
+        }
+
+        TH2D* h_theta_vs_theta_mc_before = nullptr;
+        TH2D* h_phi_vs_theta_CVT_mc_before = nullptr;
+        TH2D* h_theta_vs_theta_mc_after = nullptr;
+        TH2D* h_phi_vs_theta_CVT_mc_after = nullptr;
+
+        // Create and fill histograms using stored values for MC
+        if (mcReader) {
+            h_theta_vs_theta_mc_before = new TH2D("h_theta_vs_theta_mc_before", ("#theta_{CVT} vs #theta Before Cuts (MC, " + particle_latex + ")").c_str(), nBins, 25, 150, nBins, 30, 150);
+            h_theta_vs_theta_mc_before->GetXaxis()->SetTitle("#theta");
+            h_theta_vs_theta_mc_before->GetYaxis()->SetTitle("#theta_{CVT}");
+
+            h_phi_vs_theta_CVT_mc_before = new TH2D("h_phi_vs_theta_CVT_mc_before", ("#phi_{CVT} vs #theta_{CVT} Before Cuts (MC, " + particle_latex + ")").c_str(), nBins, 0, 360, nBins, 25, 150);
+            h_phi_vs_theta_CVT_mc_before->GetXaxis()->SetTitle("#phi_{CVT}");
+            h_phi_vs_theta_CVT_mc_before->GetYaxis()->SetTitle("#theta_{CVT}");
+
+            h_theta_vs_theta_mc_after = new TH2D("h_theta_vs_theta_mc_after", ("#theta_{CVT} vs #theta After Cuts (MC, " + particle_latex + ")").c_str(), nBins, 25, 150, nBins, 30, 150);
+            h_theta_vs_theta_mc_after->GetXaxis()->SetTitle("#theta");
+            h_theta_vs_theta_mc_after->GetYaxis()->SetTitle("#theta_{CVT}");
+
+            h_phi_vs_theta_CVT_mc_after = new TH2D("h_phi_vs_theta_CVT_mc_after", ("#phi_{CVT} vs #theta_{CVT} After Cuts (MC, " + particle_latex + ")").c_str(), nBins, 0, 360, nBins, 25, 150);
+            h_phi_vs_theta_CVT_mc_after->GetXaxis()->SetTitle("#phi_{CVT}");
+            h_phi_vs_theta_CVT_mc_after->GetYaxis()->SetTitle("#theta_{CVT}");
+
+            for (size_t i = 0; i < theta_CVT_mc.size(); ++i) {
+                h_theta_vs_theta_mc_before->Fill(theta_in_degrees_mc[i], theta_CVT_mc[i]);
+                h_phi_vs_theta_CVT_mc_before->Fill(phi_CVT_mc[i], theta_CVT_mc[i]);
+
+                // Apply fiducial cut based on stored edge values
+                if (cvt_fiducial(traj_edge_1_mc[i], traj_edge_3_mc[i], traj_edge_5_mc[i], traj_edge_7_mc[i], traj_edge_12_mc[i])) {
+                    h_theta_vs_theta_mc_after->Fill(theta_in_degrees_mc[i], theta_CVT_mc[i]);
+                    h_phi_vs_theta_CVT_mc_after->Fill(phi_CVT_mc[i], theta_CVT_mc[i]);
+                }
+            }
+        }
+
+        // Create canvases for theta_CVT vs theta and phi_CVT vs theta_CVT
+        TCanvas* c_theta_vs_theta_data = new TCanvas(("c_theta_vs_theta_data_" + particle_name).c_str(), ("#theta_{CVT} vs #theta and #phi_{CVT} vs #theta_{CVT} (Data, " + particle_latex + ")").c_str(), 1200, 1200);
+        c_theta_vs_theta_data->Divide(2, 2);
+
+        TCanvas* c_theta_vs_theta_mc = nullptr;
+        if (mcReader) {
+            c_theta_vs_theta_mc = new TCanvas(("c_theta_vs_theta_mc_" + particle_name).c_str(), ("#theta_{CVT} vs #theta and #phi_{CVT} vs #theta_{CVT} (MC, " + particle_latex + ")").c_str(), 1200, 1200);
+            c_theta_vs_theta_mc->Divide(2, 2);
+        }
+
+        // Draw and save the theta_CVT vs theta and phi_CVT vs theta_CVT canvases (data and MC)
+        c_theta_vs_theta_data->cd(1);
+        gPad->SetMargin(0.2, 0.05, 0.1, 0.1);
+        h_theta_vs_theta_data_before->Draw("COLZ");
+
+        c_theta_vs_theta_data->cd(2);
+        gPad->SetMargin(0.2, 0.05, 0.1, 0.1);
+        h_phi_vs_theta_CVT_data_before->Draw("COLZ");
+
+        c_theta_vs_theta_data->cd(3);
+        gPad->SetMargin(0.2, 0.05, 0.1, 0.1);
+        h_theta_vs_theta_data_after->Draw("COLZ");
+
+        c_theta_vs_theta_data->cd(4);
+        gPad->SetMargin(0.2, 0.05, 0.1, 0.1);
+        h_phi_vs_theta_CVT_data_after->Draw("COLZ");
+
+        c_theta_vs_theta_data->SaveAs(("output/calibration/cvt/positions/theta_vs_theta_data_" + particle_name + ".png").c_str());
+
+        if (mcReader) {
+            c_theta_vs_theta_mc->cd(1);
+            gPad->SetMargin(0.2, 0.05, 0.1, 0.1);
+            h_theta_vs_theta_mc_before->Draw("COLZ");
+
+            c_theta_vs_theta_mc->cd(2);
+            gPad->SetMargin(0.2, 0.05, 0.1, 0.1);
+            h_phi_vs_theta_CVT_mc_before->Draw("COLZ");
+
+            c_theta_vs_theta_mc->cd(3);
+            gPad->SetMargin(0.2, 0.05, 0.1, 0.1);
+            h_theta_vs_theta_mc_after->Draw("COLZ");
+
+            c_theta_vs_theta_mc->cd(4);
+            gPad->SetMargin(0.2, 0.05, 0.1, 0.1);
+            h_phi_vs_theta_CVT_mc_after->Draw("COLZ");
+
+            c_theta_vs_theta_mc->SaveAs(("output/calibration/cvt/positions/theta_vs_theta_mc_" + particle_name + ".png").c_str());
+        }
+
+        // Clean up
+        delete h_theta_vs_theta_data_before;
+        delete h_phi_vs_theta_CVT_data_before;
+        delete h_theta_vs_theta_data_after;
+        delete h_phi_vs_theta_CVT_data_after;
+
+        if (mcReader) {
+            delete h_theta_vs_theta_mc_before;
+            delete h_phi_vs_theta_CVT_mc_before;
+            delete h_theta_vs_theta_mc_after;
+            delete h_phi_vs_theta_CVT_mc_after;
+            delete c_theta_vs_theta_mc;
+        }
+        delete c_theta_vs_theta_data;
+    }
+    // Clean up the dynamically allocated memory for edge variables
+    if (mc_traj_edge_1) delete mc_traj_edge_1;
+    if (mc_traj_edge_3) delete mc_traj_edge_3;
+    if (mc_traj_edge_5) delete mc_traj_edge_5;
+    if (mc_traj_edge_7) delete mc_traj_edge_7;
+    if (mc_traj_edge_12) delete mc_traj_edge_12;
+
+    for (auto& ptr : mc_traj_x) {
+        delete ptr;
+    }
+    for (auto& ptr : mc_traj_y) {
+        delete ptr;
+    }
+}
+
 void plot_chi2pid_fd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     int nBins = 100;
     double chi2pidMin = -5;
@@ -5119,703 +5815,6 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     if (mc_particle_beta) delete mc_particle_beta;
     if (mc_track_sector_5) delete mc_track_sector_5;
     if (mc_particle_pid) delete mc_particle_pid;
-}
-
-
-// Helper functions for theta_CVT and phi_CVT calculations
-double calculate_phi(double x, double y) {
-    double phi = atan2(x, y) * 180.0 / M_PI;
-    phi = phi - 90;
-    if (phi < 0) {
-        phi += 360;
-    }
-    phi = 360 - phi;
-    return phi;
-}
-
-double calculate_theta(double x, double y, double z) {
-    double r = sqrt(x*x + y*y + z*z);
-    return acos(z / r) * 180.0 / M_PI;
-}
-
-void plot_chi2_ndf_vs_phi_CVT_2D(TTreeReader& dataReader, TTreeReader* mcReader, const std::vector<std::tuple<int, std::string, std::string>>& particle_types) {
-    int nBins = 100;
-
-    // Declare TTreeReaderValues for trajectory and track variables for data
-    TTreeReaderValue<double> traj_x_12(dataReader, "traj_x_12");
-    TTreeReaderValue<double> traj_y_12(dataReader, "traj_y_12");
-    TTreeReaderValue<double> traj_z_12(dataReader, "traj_z_12");
-    TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
-    TTreeReaderValue<double> track_chi2_5(dataReader, "track_chi2_5");
-    TTreeReaderValue<int> track_ndf_5(dataReader, "track_ndf_5");
-
-    // Declare TTreeReaderValues for trajectory and track variables for MC if available
-    TTreeReaderValue<double>* mc_traj_x_12 = nullptr;
-    TTreeReaderValue<double>* mc_traj_y_12 = nullptr;
-    TTreeReaderValue<double>* mc_traj_z_12 = nullptr;
-    TTreeReaderValue<int>* mc_particle_pid = nullptr;
-    TTreeReaderValue<double>* mc_track_chi2_5 = nullptr;
-    TTreeReaderValue<int>* mc_track_ndf_5 = nullptr;
-
-    if (mcReader) {
-        mc_traj_x_12 = new TTreeReaderValue<double>(*mcReader, "traj_x_12");
-        mc_traj_y_12 = new TTreeReaderValue<double>(*mcReader, "traj_y_12");
-        mc_traj_z_12 = new TTreeReaderValue<double>(*mcReader, "traj_z_12");
-        mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
-        mc_track_chi2_5 = new TTreeReaderValue<double>(*mcReader, "track_chi2_5");
-        mc_track_ndf_5 = new TTreeReaderValue<int>(*mcReader, "track_ndf_5");
-    }
-
-    for (const auto& particle_type : particle_types) {
-        int pid = std::get<0>(particle_type);
-        std::string particle_name = std::get<1>(particle_type);
-        std::string particle_latex = std::get<2>(particle_type);
-
-        // Create histograms for chi2/ndf vs phi_CVT for data and MC
-        TH2D* h_chi2_vs_phi_CVT_data = new TH2D(("h_chi2_vs_phi_CVT_data_" + particle_name).c_str(), 
-                                                ("#chi^{2}/ndf vs #phi_{CVT} (Data, " + particle_latex + ")").c_str(), 
-                                                nBins, 0, 360, nBins, 0, 100);
-        h_chi2_vs_phi_CVT_data->GetXaxis()->SetTitle("#phi_{CVT}");
-        h_chi2_vs_phi_CVT_data->GetYaxis()->SetTitle("#chi^{2}/ndf");
-
-        TH2D* h_chi2_vs_phi_CVT_mc = nullptr;
-        if (mcReader) {
-            h_chi2_vs_phi_CVT_mc = new TH2D(("h_chi2_vs_phi_CVT_mc_" + particle_name).c_str(), 
-                                            ("#chi^{2}/ndf vs #phi_{CVT} (MC, " + particle_latex + ")").c_str(), 
-                                            nBins, 0, 360, nBins, 0, 100);
-            h_chi2_vs_phi_CVT_mc->GetXaxis()->SetTitle("#phi_{CVT}");
-            h_chi2_vs_phi_CVT_mc->GetYaxis()->SetTitle("#chi^{2}/ndf");
-        }
-
-        // Fill the histograms for data
-        dataReader.Restart();
-        while (dataReader.Next()) {
-            if (*particle_pid == pid && *track_ndf_5 > 0 && *track_chi2_5 < 10000) {
-                double chi2_ndf = *track_chi2_5 / *track_ndf_5;
-
-                if (*traj_x_12 != -9999 && *traj_y_12 != -9999 && *traj_z_12 != -9999) {
-                    double phi_CVT = calculate_phi(*traj_x_12, *traj_y_12);
-                    // double theta_CVT = calculate_theta(*traj_x_12, *traj_y_12, *traj_z_12);
-
-                    h_chi2_vs_phi_CVT_data->Fill(phi_CVT, chi2_ndf);
-                }
-            }
-        }
-
-        // Fill the histograms for MC if available
-        if (mcReader) {
-            mcReader->Restart();
-            while (mcReader->Next()) {
-                if (**mc_particle_pid == pid && **mc_track_ndf_5 > 0 && **mc_track_chi2_5 < 10000) {
-                    double mc_chi2_ndf = **mc_track_chi2_5 / **mc_track_ndf_5;
-
-                    if (**mc_traj_x_12 != -9999 && **mc_traj_y_12 != -9999 && **mc_traj_z_12 != -9999) {
-                        double mc_phi_CVT = calculate_phi(**mc_traj_x_12, **mc_traj_y_12);
-                        // double mc_theta_CVT = calculate_theta(**mc_traj_x_12, **mc_traj_y_12, **mc_traj_z_12);
-
-                        h_chi2_vs_phi_CVT_mc->Fill(mc_phi_CVT, mc_chi2_ndf);
-                    }
-                }
-            }
-        }
-
-        // Save the histograms
-        TCanvas* c_data = new TCanvas(("c_chi2_vs_phi_CVT_data_" + particle_name).c_str(), ("#chi^{2}/ndf vs #phi_{CVT} (Data, " + particle_latex + ")").c_str(), 800, 600);
-        gPad->SetLogz();  // Set the y-axis to log scale
-        h_chi2_vs_phi_CVT_data->Draw("COLZ");
-        c_data->SaveAs(("output/calibration/cvt/determination/chi2_vs_phi_CVT_data_" + particle_name + ".png").c_str());
-        delete c_data;
-
-        if (mcReader) {
-            TCanvas* c_mc = new TCanvas(("c_chi2_vs_phi_CVT_mc_" + particle_name).c_str(), ("#chi^{2}/ndf vs #phi_{CVT} (MC, " + particle_latex + ")").c_str(), 800, 600);
-            gPad->SetLogz();  // Set the y-axis to log scale
-            h_chi2_vs_phi_CVT_mc->Draw("COLZ");
-            c_mc->SaveAs(("output/calibration/cvt/determination/chi2_vs_phi_CVT_mc_" + particle_name + ".png").c_str());
-            delete c_mc;
-            delete h_chi2_vs_phi_CVT_mc;
-        }
-
-        delete h_chi2_vs_phi_CVT_data;
-    }
-
-    // Clean up dynamically allocated memory for MC
-    if (mcReader) {
-        delete mc_traj_x_12;
-        delete mc_traj_y_12;
-        delete mc_traj_z_12;
-        delete mc_particle_pid;
-        delete mc_track_chi2_5;
-        delete mc_track_ndf_5;
-    }
-}
-
-void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
-    int nBinsX = 50;  // Number of bins for edge
-    int nBinsY = 100;  // Number of bins for chi2/ndf
-
-    // Define CVT layers and edges for data
-    std::vector<std::tuple<TTreeReaderValue<double>*, std::string, double, double>> layers = {
-        {new TTreeReaderValue<double>(dataReader, "traj_edge_1"), "layer_1", -2, 2.2},
-        {new TTreeReaderValue<double>(dataReader, "traj_edge_3"), "layer_3", -2, 2.2},
-        {new TTreeReaderValue<double>(dataReader, "traj_edge_5"), "layer_5", -2, 2.2},
-        {new TTreeReaderValue<double>(dataReader, "traj_edge_7"), "layer_7", -5, 15},
-        {new TTreeReaderValue<double>(dataReader, "traj_edge_12"), "layer_12", -10, 25}
-    };
-
-    // Define CVT layers and edges for MC if available
-    std::vector<std::tuple<TTreeReaderValue<double>*, std::string, double, double>> mc_layers;
-    if (mcReader) {
-        mc_layers = {
-            {new TTreeReaderValue<double>(*mcReader, "traj_edge_1"), "layer_1", -2, 2.2},
-            {new TTreeReaderValue<double>(*mcReader, "traj_edge_3"), "layer_3", -2, 2.2},
-            {new TTreeReaderValue<double>(*mcReader, "traj_edge_5"), "layer_5", -2, 2.2},
-            {new TTreeReaderValue<double>(*mcReader, "traj_edge_7"), "layer_7", -5, 15},
-            {new TTreeReaderValue<double>(*mcReader, "traj_edge_12"), "layer_12", -10, 25}
-        };
-    }
-
-    // Define particle PID and track variables for data
-    TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
-    TTreeReaderValue<double> track_chi2_5(dataReader, "track_chi2_5");
-    TTreeReaderValue<int> track_ndf_5(dataReader, "track_ndf_5");
-
-    // Define particle PID and track variables for MC if available
-    TTreeReaderValue<int>* mc_particle_pid = nullptr;
-    TTreeReaderValue<double>* mc_track_chi2_5 = nullptr;
-    TTreeReaderValue<int>* mc_track_ndf_5 = nullptr;
-
-    if (mcReader) {
-        mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
-        mc_track_chi2_5 = new TTreeReaderValue<double>(*mcReader, "track_chi2_5");
-        mc_track_ndf_5 = new TTreeReaderValue<int>(*mcReader, "track_ndf_5");
-    }
-
-    std::vector<std::tuple<int, std::string, std::string>> particle_types = {
-        {211, "pip", "#pi^{+}"},
-        {-211, "pim", "#pi^{-}"},
-        {321, "kp", "k^{+}"},
-        {-321, "km", "k^{-}"},
-        {2212, "proton", "proton"}
-    };
-
-    plot_chi2_ndf_vs_phi_CVT_2D(dataReader, mcReader, particle_types);
-
-    for (const auto& particle_type : particle_types) {
-        int pid = std::get<0>(particle_type);
-        std::string particle_name = std::get<1>(particle_type);
-        std::string particle_latex = std::get<2>(particle_type);
-
-        std::vector<TH2D*> h_chi2_vs_edge_data, h_chi2_vs_edge_mc;
-
-        // Initialize 2D histograms for data and MC
-        for (const auto& layer : layers) {
-            std::string layer_name = std::get<1>(layer);
-            double xMin = std::get<2>(layer);
-            double xMax = std::get<3>(layer);
-            double yMin = 0;
-            double yMax = 100;  // This can be adjusted depending on your expected range of chi2/ndf
-
-            h_chi2_vs_edge_data.push_back(new TH2D(("h_chi2_vs_edge_data_" + layer_name + "_" + particle_name).c_str(), (particle_latex + " - " + layer_name).c_str(), nBinsX, xMin, xMax, nBinsY, yMin, yMax));
-
-            if (mcReader) {
-                h_chi2_vs_edge_mc.push_back(new TH2D(("h_chi2_vs_edge_mc_" + layer_name + "_" + particle_name).c_str(), (particle_latex + " - MC - " + layer_name).c_str(), nBinsX, xMin, xMax, nBinsY, yMin, yMax));
-            }
-        }
-
-        // Fill 2D histograms for data
-        dataReader.Restart();
-        while (dataReader.Next()) {
-            if (*particle_pid == pid && *track_ndf_5 > 0 && *track_chi2_5 < 10000) {
-                double chi2_ndf = *track_chi2_5 / *track_ndf_5;
-
-                for (size_t i = 0; i < layers.size(); ++i) {
-                    double traj_edge = **std::get<0>(layers[i]);
-
-                    if (traj_edge != -9999) {
-                        h_chi2_vs_edge_data[i]->Fill(traj_edge, chi2_ndf);
-                    }
-                }
-            }
-        }
-
-        // Fill 2D histograms for MC
-        if (mcReader) {
-            mcReader->Restart();
-            while (mcReader->Next()) {
-                if (**mc_particle_pid == pid && **mc_track_ndf_5 > 0 && **mc_track_chi2_5 < 10000) {
-                    double mc_chi2_ndf = **mc_track_chi2_5 / **mc_track_ndf_5;
-
-                    for (size_t i = 0; i < mc_layers.size(); ++i) {
-                        double traj_edge = **std::get<0>(mc_layers[i]);
-
-                        if (traj_edge != -9999) {
-                            h_chi2_vs_edge_mc[i]->Fill(traj_edge, mc_chi2_ndf);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Plot data results
-        TCanvas* c_layer_data = new TCanvas(("c_data_" + particle_name).c_str(), ("#chi^{2}/ndf vs edge for " + particle_latex + " (Data)").c_str(), 1800, 1200);
-        c_layer_data->Divide(3, 2);
-        c_layer_data->SetLeftMargin(0.2);  // Increase left margin for better y-axis label visibility
-
-        for (size_t i = 0; i < layers.size(); ++i) {
-            c_layer_data->cd(i + 1);
-            gPad->SetLogz();  // Set the z-axis to log scale
-            gPad->SetMargin(0.2, 0.15, 0.2, 0.1);  // Adjust margins: left, right, bottom, top
-            h_chi2_vs_edge_data[i]->GetXaxis()->SetTitle("edge (cm)");
-            h_chi2_vs_edge_data[i]->GetYaxis()->SetTitle("#chi^{2}/ndf");
-            h_chi2_vs_edge_data[i]->Draw("COLZ");
-        }
-
-        c_layer_data->SaveAs(("output/calibration/cvt/determination/chi2_per_ndf_vs_edge_data_" + particle_name + ".png").c_str());
-
-        // Plot MC results
-        if (mcReader) {
-            TCanvas* c_layer_mc = new TCanvas(("c_mc_" + particle_name).c_str(), ("#chi^{2}/ndf vs edge for " + particle_latex + " (MC)").c_str(), 1800, 1200);
-            c_layer_mc->Divide(3, 2);
-            c_layer_mc->SetLeftMargin(0.2);  // Increase left margin for better y-axis label visibility
-
-            for (size_t i = 0; i < mc_layers.size(); ++i) {
-                c_layer_mc->cd(i + 1);
-                gPad->SetLogz();  // Set the z-axis to log scale
-                gPad->SetMargin(0.2, 0.15, 0.2, 0.1);  // Adjust margins: left, right, bottom, top
-                h_chi2_vs_edge_mc[i]->GetXaxis()->SetTitle("edge (cm)");
-                h_chi2_vs_edge_mc[i]->GetYaxis()->SetTitle("#chi^{2}/ndf");
-                h_chi2_vs_edge_mc[i]->Draw("COLZ");
-            }
-
-            c_layer_mc->SaveAs(("output/calibration/cvt/determination/chi2_per_ndf_vs_edge_mc_" + particle_name + ".png").c_str());
-            delete c_layer_mc;
-        }
-        // Clean up
-        for (auto hist : h_chi2_vs_edge_data) delete hist;
-        if (mcReader) {
-            for (auto hist : h_chi2_vs_edge_mc) delete hist;
-        }
-        delete c_layer_data;
-    }
-
-    // Clean up dynamically allocated memory for MC
-    if (mcReader) {
-        for (auto& mc_layer : mc_layers) {
-            delete std::get<0>(mc_layer);
-        }
-
-        delete mc_particle_pid;
-        delete mc_track_chi2_5;
-        delete mc_track_ndf_5;
-    }
-
-    // Clean up dynamically allocated memory for data
-    for (auto& layer : layers) {
-        delete std::get<0>(layer);
-    }
-}
-
-void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
-    int nBins = 100;
-
-    std::vector<std::tuple<std::string, std::string, std::string, double, double>> layers = {
-        {"traj_x_1", "traj_y_1", "layer_1", -10, 10},
-        {"traj_x_3", "traj_y_3", "layer_3", -12, 12},
-        {"traj_x_5", "traj_y_5", "layer_5", -15, 15},
-        {"traj_x_7", "traj_y_7", "layer_7", -17.5, 17.5},
-        {"traj_x_12", "traj_y_12", "layer_12", -25, 25}
-    };
-
-    std::vector<std::tuple<int, std::string, std::string>> particle_types = {
-        {211, "pip", "#pi^{+}"},
-        {-211, "pim", "#pi^{-}"},
-        {321, "kp", "k^{+}"},
-        {-321, "km", "k^{-}"},
-        {2212, "proton", "proton"}
-    };
-
-    // Declare TTreeReaderValues for the CVT edge and track variables
-    TTreeReaderValue<double> traj_edge_1(dataReader, "traj_edge_1");
-    TTreeReaderValue<double> traj_edge_3(dataReader, "traj_edge_3");
-    TTreeReaderValue<double> traj_edge_5(dataReader, "traj_edge_5");
-    TTreeReaderValue<double> traj_edge_7(dataReader, "traj_edge_7");
-    TTreeReaderValue<double> traj_edge_12(dataReader, "traj_edge_12");
-
-    TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
-    TTreeReaderValue<double> theta(dataReader, "theta");
-
-    TTreeReaderValue<double> traj_x_12(dataReader, "traj_x_12");
-    TTreeReaderValue<double> traj_y_12(dataReader, "traj_y_12");
-    TTreeReaderValue<double> traj_z_12(dataReader, "traj_z_12");
-
-    TTreeReaderValue<double>* mc_traj_edge_1 = nullptr;
-    TTreeReaderValue<double>* mc_traj_edge_3 = nullptr;
-    TTreeReaderValue<double>* mc_traj_edge_5 = nullptr;
-    TTreeReaderValue<double>* mc_traj_edge_7 = nullptr;
-    TTreeReaderValue<double>* mc_traj_edge_12 = nullptr;
-    TTreeReaderValue<int>* mc_particle_pid = nullptr;
-    TTreeReaderValue<double>* mc_theta = nullptr;
-    TTreeReaderValue<double>* mc_traj_x_12 = nullptr;
-    TTreeReaderValue<double>* mc_traj_y_12 = nullptr;
-    TTreeReaderValue<double>* mc_traj_z_12 = nullptr;
-
-    if (mcReader) {
-        mc_traj_edge_1 = new TTreeReaderValue<double>(*mcReader, "traj_edge_1");
-        mc_traj_edge_3 = new TTreeReaderValue<double>(*mcReader, "traj_edge_3");
-        mc_traj_edge_5 = new TTreeReaderValue<double>(*mcReader, "traj_edge_5");
-        mc_traj_edge_7 = new TTreeReaderValue<double>(*mcReader, "traj_edge_7");
-        mc_traj_edge_12 = new TTreeReaderValue<double>(*mcReader, "traj_edge_12");
-        mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
-        mc_theta = new TTreeReaderValue<double>(*mcReader, "theta");
-        mc_traj_x_12 = new TTreeReaderValue<double>(*mcReader, "traj_x_12");
-        mc_traj_y_12 = new TTreeReaderValue<double>(*mcReader, "traj_y_12");
-        mc_traj_z_12 = new TTreeReaderValue<double>(*mcReader, "traj_z_12");
-    }
-
-    // Declare TTreeReaderValues for trajectory x and y coordinates
-    std::vector<TTreeReaderValue<double>> traj_x;
-    std::vector<TTreeReaderValue<double>> traj_y;
-
-    std::vector<TTreeReaderValue<double>*> mc_traj_x;
-    std::vector<TTreeReaderValue<double>*> mc_traj_y;
-
-    // Initialize TTreeReaderValues for each layer
-    for (const auto& layer : layers) {
-        traj_x.emplace_back(dataReader, std::get<0>(layer).c_str());
-        traj_y.emplace_back(dataReader, std::get<1>(layer).c_str());
-
-        if (mcReader) {
-            mc_traj_x.push_back(new TTreeReaderValue<double>(*mcReader, std::get<0>(layer).c_str()));
-            mc_traj_y.push_back(new TTreeReaderValue<double>(*mcReader, std::get<1>(layer).c_str()));
-        }
-    }
-
-    for (const auto& particle_type : particle_types) {
-        int pid = std::get<0>(particle_type);
-        std::string particle_name = std::get<1>(particle_type);
-        std::string particle_latex = std::get<2>(particle_type);
-
-        // Create a canvas for data
-        TCanvas* c_data = new TCanvas(("c_data_" + particle_name).c_str(), ("Data CVT Hit Position (" + particle_latex + ")").c_str(), 1800, 1200);
-        c_data->Divide(5, 2);
-
-        TCanvas* c_mc = nullptr;
-        if (mcReader) {
-            c_mc = new TCanvas(("c_mc_" + particle_name).c_str(), ("MC CVT Hit Position (" + particle_latex + ")").c_str(), 1800, 1200);
-            c_mc->Divide(5, 2);
-        }
-
-        // Create histograms for data and MC
-        std::vector<TH2D*> h_data_before(5), h_data_after(5);
-        std::vector<TH2D*> h_mc_before(5), h_mc_after(5);
-
-        for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
-            std::string layer_name = std::get<2>(layers[layer_idx]);
-            double xMin = std::get<3>(layers[layer_idx]);
-            double xMax = std::get<4>(layers[layer_idx]);
-            double yMin = xMin;
-            double yMax = xMax;
-
-            h_data_before[layer_idx] = new TH2D(("h_data_before_" + layer_name).c_str(), ("Data " + layer_name + " Before Cuts (" + particle_latex + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-            h_data_after[layer_idx] = new TH2D(("h_data_after_" + layer_name).c_str(), ("Data " + layer_name + " After Cuts (" + particle_latex + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-            h_data_before[layer_idx]->GetXaxis()->SetTitle("x");
-            h_data_before[layer_idx]->GetYaxis()->SetTitle("y");
-            h_data_after[layer_idx]->GetXaxis()->SetTitle("x");
-            h_data_after[layer_idx]->GetYaxis()->SetTitle("y");
-
-            if (mcReader) {
-                h_mc_before[layer_idx] = new TH2D(("h_mc_before_" + layer_name).c_str(), ("MC " + layer_name + " Before Cuts (" + particle_latex + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-                h_mc_after[layer_idx] = new TH2D(("h_mc_after_" + layer_name).c_str(), ("MC " + layer_name + " After Cuts (" + particle_latex + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-                h_mc_before[layer_idx]->GetXaxis()->SetTitle("x");
-                h_mc_before[layer_idx]->GetYaxis()->SetTitle("y");
-                h_mc_after[layer_idx]->GetXaxis()->SetTitle("x");
-                h_mc_after[layer_idx]->GetYaxis()->SetTitle("y");
-            }
-        }
-
-        // Fill the data histograms
-        dataReader.Restart();
-        while (dataReader.Next()) {
-            if (*particle_pid == pid) {
-                for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
-                    double traj_x_value = *traj_x[layer_idx];
-                    double traj_y_value = *traj_y[layer_idx];
-
-                    if (traj_x_value != -9999 && traj_y_value != -9999) {
-                        h_data_before[layer_idx]->Fill(traj_x_value, traj_y_value);
-                        if (cvt_fiducial(*traj_edge_1, *traj_edge_3, *traj_edge_5, *traj_edge_7, *traj_edge_12)) {
-                            h_data_after[layer_idx]->Fill(traj_x_value, traj_y_value);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Fill the MC histograms if available
-        if (mcReader) {
-            mcReader->Restart();
-            while (mcReader->Next()) {
-                if (**mc_particle_pid == pid) {
-                    for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
-                        double mc_traj_x_value = **mc_traj_x[layer_idx];
-                        double mc_traj_y_value = **mc_traj_y[layer_idx];
-                        if (mc_traj_x_value != -9999 && mc_traj_y_value != -9999) {
-                            h_mc_before[layer_idx]->Fill(mc_traj_x_value, mc_traj_y_value);
-                            if (cvt_fiducial(**mc_traj_edge_1, **mc_traj_edge_3, **mc_traj_edge_5, **mc_traj_edge_7, **mc_traj_edge_12)) {
-                                h_mc_after[layer_idx]->Fill(mc_traj_x_value, mc_traj_y_value);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        // Find the maximum value across all histograms for consistent scaling
-        double max_value_data = 0, max_value_mc = 0;
-        for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
-            max_value_data = std::max(max_value_data, h_data_before[layer_idx]->GetMaximum());
-            max_value_data = std::max(max_value_data, h_data_after[layer_idx]->GetMaximum());
-            if (mcReader) {
-                max_value_mc = std::max(max_value_mc, h_mc_before[layer_idx]->GetMaximum());
-                max_value_mc = std::max(max_value_mc, h_mc_after[layer_idx]->GetMaximum());
-            }
-        }
-
-        // Set the maximum for each histogram to ensure consistent scaling
-        for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
-            h_data_before[layer_idx]->SetMaximum(max_value_data * 1.1);
-            h_data_after[layer_idx]->SetMaximum(max_value_data * 1.1);
-            if (mcReader) {
-                h_mc_before[layer_idx]->SetMaximum(max_value_mc * 1.1);
-                h_mc_after[layer_idx]->SetMaximum(max_value_mc * 1.1);
-            }
-        }
-
-        // Draw and save the data canvas
-        for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
-            c_data->cd(layer_idx + 1);
-            gPad->SetLogz();
-            gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-            h_data_before[layer_idx]->Draw("COLZ");
-
-            c_data->cd(layer_idx + 6);
-            gPad->SetLogz();
-            gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-            h_data_after[layer_idx]->Draw("COLZ");
-        }
-        c_data->SaveAs(("output/calibration/cvt/positions/data_" + particle_name + "_cvt_hit_position.png").c_str());
-
-        // Draw and save the MC canvas if available
-        if (mcReader) {
-            for (int layer_idx = 0; layer_idx < 5; ++layer_idx) {
-                c_mc->cd(layer_idx + 1);
-                gPad->SetLogz();
-                gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-                h_mc_before[layer_idx]->Draw("COLZ");
-
-                c_mc->cd(layer_idx + 6);
-                gPad->SetLogz();
-                gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-                h_mc_after[layer_idx]->Draw("COLZ");
-            }
-            c_mc->SaveAs(("output/calibration/cvt/positions/mc_" + particle_name + "_cvt_hit_position.png").c_str());
-        }
-
-        // Convert theta to degrees for both data and MC
-        std::vector<double> theta_in_degrees_data, theta_in_degrees_mc;
-        std::vector<double> theta_CVT_data, phi_CVT_data;
-        std::vector<double> traj_edge_1_data, traj_edge_3_data, traj_edge_5_data, traj_edge_7_data, traj_edge_12_data;
-        std::vector<double> theta_CVT_mc, phi_CVT_mc;
-        std::vector<double> traj_edge_1_mc, traj_edge_3_mc, traj_edge_5_mc, traj_edge_7_mc, traj_edge_12_mc;
-
-        // Calculate theta_CVT and phi_CVT for data
-        dataReader.Restart();
-        while (dataReader.Next()) {
-            if (*particle_pid == pid) {
-                if (*traj_x_12 != -9999 && *traj_y_12 != -9999 && *traj_z_12 != -9999) {
-                    double theta_CVT_value = calculate_theta(*traj_x_12, *traj_y_12, *traj_z_12);
-                    double phi_CVT_value = calculate_phi(*traj_x_12, *traj_y_12);
-
-                    // Store the CVT angles and corresponding edge values
-                    theta_CVT_data.push_back(theta_CVT_value);
-                    phi_CVT_data.push_back(phi_CVT_value);
-                    theta_in_degrees_data.push_back(*theta);
-
-                    // Store the corresponding edge values
-                    traj_edge_1_data.push_back(*traj_edge_1);
-                    traj_edge_3_data.push_back(*traj_edge_3);
-                    traj_edge_5_data.push_back(*traj_edge_5);
-                    traj_edge_7_data.push_back(*traj_edge_7);
-                    traj_edge_12_data.push_back(*traj_edge_12);
-                }
-            }
-        }
-
-        // Calculate theta_CVT and phi_CVT for MC
-        if (mcReader) {
-            mcReader->Restart();
-            while (mcReader->Next()) {
-                if (**mc_particle_pid == pid) {
-                    if (**mc_traj_x_12 != -9999 && **mc_traj_y_12 != -9999 && **mc_traj_z_12 != -9999) {
-                        double mc_theta_CVT_value = calculate_theta(**mc_traj_x_12, **mc_traj_y_12, **mc_traj_z_12);
-                        double mc_phi_CVT_value = calculate_phi(**mc_traj_x_12, **mc_traj_y_12);
-
-                        // Store the CVT angles and corresponding edge values
-                        theta_CVT_mc.push_back(mc_theta_CVT_value);
-                        phi_CVT_mc.push_back(mc_phi_CVT_value);
-                        theta_in_degrees_mc.push_back(**mc_theta);
-
-                        // Store the corresponding edge values
-                        traj_edge_1_mc.push_back(**mc_traj_edge_1);
-                        traj_edge_3_mc.push_back(**mc_traj_edge_3);
-                        traj_edge_5_mc.push_back(**mc_traj_edge_5);
-                        traj_edge_7_mc.push_back(**mc_traj_edge_7);
-                        traj_edge_12_mc.push_back(**mc_traj_edge_12);
-                    }
-                }
-            }
-        }
-
-        // Create and fill histograms for theta_CVT vs theta and phi_CVT vs theta_CVT
-        TH2D* h_theta_vs_theta_data_before = new TH2D("h_theta_vs_theta_data_before", ("#theta_{CVT} vs #theta Before Cuts (Data, " + particle_latex + ")").c_str(), nBins, 25, 150, nBins, 30, 150);
-        h_theta_vs_theta_data_before->GetXaxis()->SetTitle("#theta");
-        h_theta_vs_theta_data_before->GetYaxis()->SetTitle("#theta_{CVT}");
-
-        TH2D* h_phi_vs_theta_CVT_data_before = new TH2D("h_phi_vs_theta_CVT_data_before", ("#phi_{CVT} vs #theta_{CVT} Before Cuts (Data, " + particle_latex + ")").c_str(), nBins, 0, 360, nBins, 25, 150);
-        h_phi_vs_theta_CVT_data_before->GetXaxis()->SetTitle("#phi_{CVT}");
-        h_phi_vs_theta_CVT_data_before->GetYaxis()->SetTitle("#theta_{CVT}");
-
-        TH2D* h_theta_vs_theta_data_after = new TH2D("h_theta_vs_theta_data_after", ("#theta_{CVT} vs #theta After Cuts (Data, " + particle_latex + ")").c_str(), nBins, 25, 150, nBins, 30, 150);
-        h_theta_vs_theta_data_after->GetXaxis()->SetTitle("#theta");
-        h_theta_vs_theta_data_after->GetYaxis()->SetTitle("#theta_{CVT}");
-
-        TH2D* h_phi_vs_theta_CVT_data_after = new TH2D("h_phi_vs_theta_CVT_data_after", ("#phi_{CVT} vs #theta_{CVT} After Cuts (Data, " + particle_latex + ")").c_str(), nBins, 0, 360, nBins, 25, 150);
-        h_phi_vs_theta_CVT_data_after->GetXaxis()->SetTitle("#phi_{CVT}");
-        h_phi_vs_theta_CVT_data_after->GetYaxis()->SetTitle("#theta_{CVT}");
-
-        // Fill histograms using stored values for data
-        for (size_t i = 0; i < theta_CVT_data.size(); ++i) {
-            h_theta_vs_theta_data_before->Fill(theta_in_degrees_data[i], theta_CVT_data[i]);
-            h_phi_vs_theta_CVT_data_before->Fill(phi_CVT_data[i], theta_CVT_data[i]);
-
-            // Apply fiducial cut based on stored edge values
-            if (cvt_fiducial(traj_edge_1_data[i], traj_edge_3_data[i], traj_edge_5_data[i], traj_edge_7_data[i], traj_edge_12_data[i])) {
-                h_theta_vs_theta_data_after->Fill(theta_in_degrees_data[i], theta_CVT_data[i]);
-                    h_phi_vs_theta_CVT_data_after->Fill(phi_CVT_data[i], theta_CVT_data[i]);
-            }
-        }
-
-        TH2D* h_theta_vs_theta_mc_before = nullptr;
-        TH2D* h_phi_vs_theta_CVT_mc_before = nullptr;
-        TH2D* h_theta_vs_theta_mc_after = nullptr;
-        TH2D* h_phi_vs_theta_CVT_mc_after = nullptr;
-
-        // Create and fill histograms using stored values for MC
-        if (mcReader) {
-            h_theta_vs_theta_mc_before = new TH2D("h_theta_vs_theta_mc_before", ("#theta_{CVT} vs #theta Before Cuts (MC, " + particle_latex + ")").c_str(), nBins, 25, 150, nBins, 30, 150);
-            h_theta_vs_theta_mc_before->GetXaxis()->SetTitle("#theta");
-            h_theta_vs_theta_mc_before->GetYaxis()->SetTitle("#theta_{CVT}");
-
-            h_phi_vs_theta_CVT_mc_before = new TH2D("h_phi_vs_theta_CVT_mc_before", ("#phi_{CVT} vs #theta_{CVT} Before Cuts (MC, " + particle_latex + ")").c_str(), nBins, 0, 360, nBins, 25, 150);
-            h_phi_vs_theta_CVT_mc_before->GetXaxis()->SetTitle("#phi_{CVT}");
-            h_phi_vs_theta_CVT_mc_before->GetYaxis()->SetTitle("#theta_{CVT}");
-
-            h_theta_vs_theta_mc_after = new TH2D("h_theta_vs_theta_mc_after", ("#theta_{CVT} vs #theta After Cuts (MC, " + particle_latex + ")").c_str(), nBins, 25, 150, nBins, 30, 150);
-            h_theta_vs_theta_mc_after->GetXaxis()->SetTitle("#theta");
-            h_theta_vs_theta_mc_after->GetYaxis()->SetTitle("#theta_{CVT}");
-
-            h_phi_vs_theta_CVT_mc_after = new TH2D("h_phi_vs_theta_CVT_mc_after", ("#phi_{CVT} vs #theta_{CVT} After Cuts (MC, " + particle_latex + ")").c_str(), nBins, 0, 360, nBins, 25, 150);
-            h_phi_vs_theta_CVT_mc_after->GetXaxis()->SetTitle("#phi_{CVT}");
-            h_phi_vs_theta_CVT_mc_after->GetYaxis()->SetTitle("#theta_{CVT}");
-
-            for (size_t i = 0; i < theta_CVT_mc.size(); ++i) {
-                h_theta_vs_theta_mc_before->Fill(theta_in_degrees_mc[i], theta_CVT_mc[i]);
-                h_phi_vs_theta_CVT_mc_before->Fill(phi_CVT_mc[i], theta_CVT_mc[i]);
-
-                // Apply fiducial cut based on stored edge values
-                if (cvt_fiducial(traj_edge_1_mc[i], traj_edge_3_mc[i], traj_edge_5_mc[i], traj_edge_7_mc[i], traj_edge_12_mc[i])) {
-                    h_theta_vs_theta_mc_after->Fill(theta_in_degrees_mc[i], theta_CVT_mc[i]);
-                    h_phi_vs_theta_CVT_mc_after->Fill(phi_CVT_mc[i], theta_CVT_mc[i]);
-                }
-            }
-        }
-
-        // Create canvases for theta_CVT vs theta and phi_CVT vs theta_CVT
-        TCanvas* c_theta_vs_theta_data = new TCanvas(("c_theta_vs_theta_data_" + particle_name).c_str(), ("#theta_{CVT} vs #theta and #phi_{CVT} vs #theta_{CVT} (Data, " + particle_latex + ")").c_str(), 1200, 1200);
-        c_theta_vs_theta_data->Divide(2, 2);
-
-        TCanvas* c_theta_vs_theta_mc = nullptr;
-        if (mcReader) {
-            c_theta_vs_theta_mc = new TCanvas(("c_theta_vs_theta_mc_" + particle_name).c_str(), ("#theta_{CVT} vs #theta and #phi_{CVT} vs #theta_{CVT} (MC, " + particle_latex + ")").c_str(), 1200, 1200);
-            c_theta_vs_theta_mc->Divide(2, 2);
-        }
-
-        // Draw and save the theta_CVT vs theta and phi_CVT vs theta_CVT canvases (data and MC)
-        c_theta_vs_theta_data->cd(1);
-        gPad->SetMargin(0.2, 0.05, 0.1, 0.1);
-        h_theta_vs_theta_data_before->Draw("COLZ");
-
-        c_theta_vs_theta_data->cd(2);
-        gPad->SetMargin(0.2, 0.05, 0.1, 0.1);
-        h_phi_vs_theta_CVT_data_before->Draw("COLZ");
-
-        c_theta_vs_theta_data->cd(3);
-        gPad->SetMargin(0.2, 0.05, 0.1, 0.1);
-        h_theta_vs_theta_data_after->Draw("COLZ");
-
-        c_theta_vs_theta_data->cd(4);
-        gPad->SetMargin(0.2, 0.05, 0.1, 0.1);
-        h_phi_vs_theta_CVT_data_after->Draw("COLZ");
-
-        c_theta_vs_theta_data->SaveAs(("output/calibration/cvt/positions/theta_vs_theta_data_" + particle_name + ".png").c_str());
-
-        if (mcReader) {
-            c_theta_vs_theta_mc->cd(1);
-            gPad->SetMargin(0.2, 0.05, 0.1, 0.1);
-            h_theta_vs_theta_mc_before->Draw("COLZ");
-
-            c_theta_vs_theta_mc->cd(2);
-            gPad->SetMargin(0.2, 0.05, 0.1, 0.1);
-            h_phi_vs_theta_CVT_mc_before->Draw("COLZ");
-
-            c_theta_vs_theta_mc->cd(3);
-            gPad->SetMargin(0.2, 0.05, 0.1, 0.1);
-            h_theta_vs_theta_mc_after->Draw("COLZ");
-
-            c_theta_vs_theta_mc->cd(4);
-            gPad->SetMargin(0.2, 0.05, 0.1, 0.1);
-            h_phi_vs_theta_CVT_mc_after->Draw("COLZ");
-
-            c_theta_vs_theta_mc->SaveAs(("output/calibration/cvt/positions/theta_vs_theta_mc_" + particle_name + ".png").c_str());
-        }
-
-        // Clean up
-        delete h_theta_vs_theta_data_before;
-        delete h_phi_vs_theta_CVT_data_before;
-        delete h_theta_vs_theta_data_after;
-        delete h_phi_vs_theta_CVT_data_after;
-
-        if (mcReader) {
-            delete h_theta_vs_theta_mc_before;
-            delete h_phi_vs_theta_CVT_mc_before;
-            delete h_theta_vs_theta_mc_after;
-            delete h_phi_vs_theta_CVT_mc_after;
-            delete c_theta_vs_theta_mc;
-        }
-        delete c_theta_vs_theta_data;
-    }
-    // Clean up the dynamically allocated memory for edge variables
-    if (mc_traj_edge_1) delete mc_traj_edge_1;
-    if (mc_traj_edge_3) delete mc_traj_edge_3;
-    if (mc_traj_edge_5) delete mc_traj_edge_5;
-    if (mc_traj_edge_7) delete mc_traj_edge_7;
-    if (mc_traj_edge_12) delete mc_traj_edge_12;
-
-    for (auto& ptr : mc_traj_x) {
-        delete ptr;
-    }
-    for (auto& ptr : mc_traj_y) {
-        delete ptr;
-    }
 }
 
 // Helper function to check if a track is FD
