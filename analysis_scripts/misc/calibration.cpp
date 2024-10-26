@@ -3777,9 +3777,9 @@ std::pair<double, double> rotate_coordinates(double x, double y, int sector) {
 void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     int nBins = 50;
     std::vector<std::tuple<std::string, std::string, std::string, double, double, double, double, std::string, double>> regions = {
-        {"traj_x_6", "traj_y_6", "region_1", 15, 160, -80, 80, "traj_edge_6", 45},
-        {"traj_x_18", "traj_y_18", "region_2", 30, 240, -125, 125, "traj_edge_18", 45},
-        {"traj_x_36", "traj_y_36", "region_3", 30, 400, -200, 200, "traj_edge_36", 45}
+        {"traj_x_6", "traj_y_6", "region_1", 15, 160, -80, 80, "traj_edge_6", 35},
+        {"traj_x_18", "traj_y_18", "region_2", 30, 240, -125, 125, "traj_edge_18", 35},
+        {"traj_x_36", "traj_y_36", "region_3", 30, 400, -200, 200, "traj_edge_36", 35}
     };
 
     // Array of particle types (photons and electrons) and their corresponding PIDs
@@ -4050,7 +4050,6 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
             // Set the y-axis maximum to 125 as per your request
             double max_value = 125;
-
             // Draw and save the mean chi2/ndf vs traj_edge plots
             TCanvas* c_edge = new TCanvas(("c_edge_" + particle_name + "_" + region_name).c_str(), ("Mean chi2/ndf vs traj_edge for " + particle_name + " in " + region_name).c_str(), 1800, 1200);
             c_edge->Divide(3, 2);
@@ -4069,7 +4068,6 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 h_sum_chi2_ndf_sector[sector]->SetLineColor(colors_data[0]);
                 h_sum_chi2_ndf_sector[sector]->SetMarkerStyle(20);
                 h_sum_chi2_ndf_sector[sector]->SetMarkerColor(colors_data[0]);
-                h_sum_chi2_ndf_sector[sector]->SetMarkerSize(0.6);  // Reduced marker size
                 h_sum_chi2_ndf_sector[sector]->Draw("E1");
 
                 // Draw histograms with theta cuts
@@ -4077,7 +4075,6 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                     h_sum_chi2_ndf_sector_theta[sector][t]->SetLineColor(colors_data[t + 1]);
                     h_sum_chi2_ndf_sector_theta[sector][t]->SetMarkerStyle(20 + t);
                     h_sum_chi2_ndf_sector_theta[sector][t]->SetMarkerColor(colors_data[t + 1]);
-                    h_sum_chi2_ndf_sector_theta[sector][t]->SetMarkerSize(0.6);  // Reduced marker size
                     h_sum_chi2_ndf_sector_theta[sector][t]->Draw("E1 SAME");
                 }
 
@@ -4085,26 +4082,19 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                     h_sum_chi2_ndf_mc_sector[sector]->SetLineColor(colors_mc[0]);
                     h_sum_chi2_ndf_mc_sector[sector]->SetMarkerStyle(24);
                     h_sum_chi2_ndf_mc_sector[sector]->SetMarkerColor(colors_mc[0]);
-                    h_sum_chi2_ndf_mc_sector[sector]->SetMarkerSize(0.6);  // Reduced marker size
                     h_sum_chi2_ndf_mc_sector[sector]->Draw("E1 SAME");
 
                     for (int t = 0; t < num_theta_bins; ++t) {
                         h_sum_chi2_ndf_mc_sector_theta[sector][t]->SetLineColor(colors_mc[t + 1]);
                         h_sum_chi2_ndf_mc_sector_theta[sector][t]->SetMarkerStyle(24 + t);
                         h_sum_chi2_ndf_mc_sector_theta[sector][t]->SetMarkerColor(colors_mc[t + 1]);
-                        h_sum_chi2_ndf_mc_sector_theta[sector][t]->SetMarkerSize(0.6);  // Reduced marker size
                         h_sum_chi2_ndf_mc_sector_theta[sector][t]->Draw("E1 SAME");
                     }
                 }
 
                 // Update the legend
-                TLegend* legend = new TLegend(0.6, 0.55, 0.9, 0.85);
-                legend->SetTextSize(0.018);  // Reduced text size
-                legend->SetMargin(0.1);     // Reduce margin inside legend
-                legend->SetEntrySeparation(0.005);  // Reduce space between entries
-                legend->SetFillStyle(0);    // Make legend background transparent
-                legend->SetBorderSize(0);   // Remove legend border
-
+                TLegend* legend = new TLegend(0.5, 0.5, 0.9, 0.9);
+                legend->SetTextSize(0.02);  // Reduced text size
                 legend->AddEntry(h_sum_chi2_ndf_sector[sector], "Data (All #theta)", "p");
                 for (int t = 0; t < num_theta_bins; ++t) {
                     std::string theta_range = std::to_string(static_cast<int>(theta_bins[t])) + "<#theta<" + std::to_string(static_cast<int>(theta_bins[t + 1]));
