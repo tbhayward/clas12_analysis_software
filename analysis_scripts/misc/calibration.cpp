@@ -4089,6 +4089,8 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 h_sum_chi2_ndf_sector[sector]->SetMaximum(1e3);
                 h_sum_chi2_ndf_sector[sector]->SetMinimum(10);
                 h_sum_chi2_ndf_sector[sector]->SetLineColor(kBlack);
+                h_sum_chi2_ndf_sector[sector]->SetMarkerStyle(8);
+                h_sum_chi2_ndf_sector[sector]->SetMarkerColor(kBlue);
                 h_sum_chi2_ndf_sector[sector]->Draw("E1 P");  // Use "E1 P" for vertical errors and dots
 
                 // Draw histograms with theta cuts
