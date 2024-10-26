@@ -4048,29 +4048,8 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 }
             }
 
-            // Find the max y-value for setting axis limits
-            double max_value = 0;
-            for (int sector = 0; sector < 6; ++sector) {
-                if (h_sum_chi2_ndf_sector[sector]->GetMaximum() > max_value) {
-                    max_value = h_sum_chi2_ndf_sector[sector]->GetMaximum();
-                }
-                for (int t = 0; t < num_theta_bins; ++t) {
-                    if (h_sum_chi2_ndf_sector_theta[sector][t]->GetMaximum() > max_value) {
-                        max_value = h_sum_chi2_ndf_sector_theta[sector][t]->GetMaximum();
-                    }
-                }
-                if (mcReader) {
-                    if (h_sum_chi2_ndf_mc_sector[sector]->GetMaximum() > max_value) {
-                        max_value = h_sum_chi2_ndf_mc_sector[sector]->GetMaximum();
-                    }
-                    for (int t = 0; t < num_theta_bins; ++t) {
-                        if (h_sum_chi2_ndf_mc_sector_theta[sector][t]->GetMaximum() > max_value) {
-                            max_value = h_sum_chi2_ndf_mc_sector_theta[sector][t]->GetMaximum();
-                        }
-                    }
-                }
-            }
-            max_value *= 1.1; // Add 10% margin to max value
+            // Set the y-axis maximum to 125 as per your request
+            double max_value = 125;
 
             // Draw and save the mean chi2/ndf vs traj_edge plots
             TCanvas* c_edge = new TCanvas(("c_edge_" + particle_name + "_" + region_name).c_str(), ("Mean chi2/ndf vs traj_edge for " + particle_name + " in " + region_name).c_str(), 1800, 1200);
@@ -4116,6 +4095,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
                 // Update the legend
                 TLegend* legend = new TLegend(0.5, 0.5, 0.9, 0.9);
+                legend->SetTextSize(0.02);  // Reduced text size
                 legend->AddEntry(h_sum_chi2_ndf_sector[sector], "Data (All #theta)", "p");
                 for (int t = 0; t < num_theta_bins; ++t) {
                     std::string theta_range = std::to_string(static_cast<int>(theta_bins[t])) + "<#theta<" + std::to_string(static_cast<int>(theta_bins[t + 1]));
@@ -4134,7 +4114,6 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             }
 
             c_edge->SaveAs(("output/calibration/dc/determination/mean_chi2_per_ndf_vs_traj_edge_" + particle_name + "_" + region_name + ".png").c_str());
-
 
             // Cleanup for mean chi2/ndf vs traj_edge histograms
             delete c_edge;
