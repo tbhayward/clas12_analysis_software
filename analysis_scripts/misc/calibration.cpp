@@ -4094,23 +4094,28 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 // Draw histograms with theta cuts
                 h_sum_chi2_ndf_sector_theta1[sector]->SetLineColor(kBlue);
                 h_sum_chi2_ndf_sector_theta1[sector]->SetMarkerStyle(8);
+                h_sum_chi2_ndf_sector_theta1[sector]->SetMarkerColor(kBlue);
                 h_sum_chi2_ndf_sector_theta1[sector]->Draw("E1 P SAME");
 
                 h_sum_chi2_ndf_sector_theta2[sector]->SetLineColor(kGreen);
                 h_sum_chi2_ndf_sector_theta2[sector]->SetMarkerStyle(8);
+                h_sum_chi2_ndf_sector_theta2[sector]->SetMarkerColor(kBlue);
                 h_sum_chi2_ndf_sector_theta2[sector]->Draw("E1 P SAME");
 
                 if (mcReader) {
                     h_sum_chi2_ndf_mc_sector[sector]->SetLineColor(kRed);
                     h_sum_chi2_ndf_mc_sector[sector]->SetMarkerStyle(8);
+                    h_sum_chi2_ndf_mc_sector[sector]->SetMarkerColor(kBlue);
                     h_sum_chi2_ndf_mc_sector[sector]->Draw("E1 P SAME");
 
                     h_sum_chi2_ndf_mc_sector_theta1[sector]->SetLineColor(kMagenta);
                     h_sum_chi2_ndf_mc_sector_theta1[sector]->SetMarkerStyle(8);
+                    h_sum_chi2_ndf_mc_sector_theta1[sector]->SetMarkerColor(kBlue);
                     h_sum_chi2_ndf_mc_sector_theta1[sector]->Draw("E1 P SAME");
 
                     h_sum_chi2_ndf_mc_sector_theta2[sector]->SetLineColor(kCyan);
                     h_sum_chi2_ndf_mc_sector_theta2[sector]->SetMarkerStyle(8);
+                    h_sum_chi2_ndf_mc_sector_theta2[sector]->SetMarkerColor(kBlue);
                     h_sum_chi2_ndf_mc_sector_theta2[sector]->Draw("E1 P SAME");
                 }
 
