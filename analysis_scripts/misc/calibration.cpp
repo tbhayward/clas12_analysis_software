@@ -3775,7 +3775,7 @@ std::pair<double, double> rotate_coordinates(double x, double y, int sector) {
 }
 
 void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
-    int nBins = 25;
+    int nBins = 15;
     std::vector<std::tuple<std::string, std::string, std::string, double, double, double, double, std::string, double>> regions = {
         {"traj_x_6", "traj_y_6", "region_1", 15, 160, -80, 80, "traj_edge_6", 30},
         {"traj_x_18", "traj_y_18", "region_2", 30, 240, -125, 125, "traj_edge_18", 30},
@@ -4086,8 +4086,8 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 gPad->SetLogy();
                 h_sum_chi2_ndf_sector[sector]->SetStats(false);
                 h_sum_chi2_ndf_sector[sector]->SetAxisRange(0, edge_max, "X");
-                h_sum_chi2_ndf_sector[sector]->SetMaximum(1e3);
-                h_sum_chi2_ndf_sector[sector]->SetMinimum(10);
+                h_sum_chi2_ndf_sector[sector]->SetMaximum(100);  // Set y-axis maximum to 100
+                h_sum_chi2_ndf_sector[sector]->SetMinimum(1);    // Set y-axis minimum to 1
                 h_sum_chi2_ndf_sector[sector]->SetLineColor(kBlack);
                 h_sum_chi2_ndf_sector[sector]->SetMarkerStyle(8);
                 h_sum_chi2_ndf_sector[sector]->SetMarkerColor(kBlack);
