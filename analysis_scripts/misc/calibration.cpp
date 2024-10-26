@@ -3861,65 +3861,65 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 mc_track_theta = new TTreeReaderValue<double>(*mcReader, "theta");
             }
 
-            // Fill data histograms for the rotated hit positions
-            while (dataReader.Next()) {
-                if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999 && *track_ndf_6 > 0) {
-                    double chi2_ndf = *track_chi2_6 / *track_ndf_6;
+            // // Fill data histograms for the rotated hit positions
+            // while (dataReader.Next()) {
+            //     if (*particle_pid == pid && *traj_x != -9999 && *traj_y != -9999 && *track_ndf_6 > 0) {
+            //         double chi2_ndf = *track_chi2_6 / *track_ndf_6;
 
-                    auto rotated_coords = rotate_coordinates(*traj_x, *traj_y, *track_sector_6);
-                    double traj_x_rot = rotated_coords.first;
-                    double traj_y_rot = rotated_coords.second;
+            //         auto rotated_coords = rotate_coordinates(*traj_x, *traj_y, *track_sector_6);
+            //         double traj_x_rot = rotated_coords.first;
+            //         double traj_y_rot = rotated_coords.second;
 
-                    if (traj_x_rot >= 0) {
-                        h_data_sum_sector[*track_sector_6 - 1]->Fill(traj_x_rot, chi2_ndf);
-                        h_data_count_sector[*track_sector_6 - 1]->Fill(traj_x_rot, traj_y_rot);
-                    }
-                }
-            }
+            //         if (traj_x_rot >= 0) {
+            //             h_data_sum_sector[*track_sector_6 - 1]->Fill(traj_x_rot, chi2_ndf);
+            //             h_data_count_sector[*track_sector_6 - 1]->Fill(traj_x_rot, traj_y_rot);
+            //         }
+            //     }
+            // }
 
-            if (mcReader) {
-                while (mcReader->Next()) {
-                    if (**mc_particle_pid == pid && **mc_traj_x != -9999 && **mc_traj_y != -9999 && **mc_track_ndf_6 > 0) {
-                        double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
+            // if (mcReader) {
+            //     while (mcReader->Next()) {
+            //         if (**mc_particle_pid == pid && **mc_traj_x != -9999 && **mc_traj_y != -9999 && **mc_track_ndf_6 > 0) {
+            //             double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
 
-                        auto rotated_coords = rotate_coordinates(**mc_traj_x, **mc_traj_y, **mc_track_sector_6);
-                        double mc_traj_x_rot = rotated_coords.first;
-                        double mc_traj_y_rot = rotated_coords.second;
+            //             auto rotated_coords = rotate_coordinates(**mc_traj_x, **mc_traj_y, **mc_track_sector_6);
+            //             double mc_traj_x_rot = rotated_coords.first;
+            //             double mc_traj_y_rot = rotated_coords.second;
 
-                        if (mc_traj_x_rot >= 0) {
-                            h_mc_sum_sector[**mc_track_sector_6 - 1]->Fill(mc_traj_x_rot, mc_chi2_ndf);
-                            h_mc_count_sector[**mc_track_sector_6 - 1]->Fill(mc_traj_x_rot, mc_traj_y_rot);
-                        }
-                    }
-                }
-            }
+            //             if (mc_traj_x_rot >= 0) {
+            //                 h_mc_sum_sector[**mc_track_sector_6 - 1]->Fill(mc_traj_x_rot, mc_chi2_ndf);
+            //                 h_mc_count_sector[**mc_track_sector_6 - 1]->Fill(mc_traj_x_rot, mc_traj_y_rot);
+            //             }
+            //         }
+            //     }
+            // }
 
-            // Normalize and save rotated hit position histograms
-            for (int sector = 0; sector < 6; ++sector) {
-                normalize_histogram(h_data_sum_sector[sector], h_data_count_sector[sector]);
+            // // Normalize and save rotated hit position histograms
+            // for (int sector = 0; sector < 6; ++sector) {
+            //     normalize_histogram(h_data_sum_sector[sector], h_data_count_sector[sector]);
 
-                if (mcReader) {
-                    normalize_histogram(h_mc_sum_sector[sector], h_mc_count_sector[sector]);
-                }
-            }
+            //     if (mcReader) {
+            //         normalize_histogram(h_mc_sum_sector[sector], h_mc_count_sector[sector]);
+            //     }
+            // }
 
-            draw_and_save_sector_histograms(c_region, h_data_sum_sector, "output/calibration/dc/determination/chi2_per_ndf_" + particle_name + "_" + region_name + ".png");
+            // draw_and_save_sector_histograms(c_region, h_data_sum_sector, "output/calibration/dc/determination/chi2_per_ndf_" + particle_name + "_" + region_name + ".png");
 
-            if (mcReader) {
-                draw_and_save_sector_histograms(c_mc_region, h_mc_sum_sector, "output/calibration/dc/determination/mc_chi2_per_ndf_" + particle_name + "_" + region_name + ".png");
-            }
+            // if (mcReader) {
+            //     draw_and_save_sector_histograms(c_mc_region, h_mc_sum_sector, "output/calibration/dc/determination/mc_chi2_per_ndf_" + particle_name + "_" + region_name + ".png");
+            // }
 
-            // Cleanup for the rotated hit position histograms
-            delete c_region;
-            if (c_mc_region) delete c_mc_region;
+            // // Cleanup for the rotated hit position histograms
+            // delete c_region;
+            // if (c_mc_region) delete c_mc_region;
 
-            for (auto& hist : h_data_sum_sector) delete hist;
-            for (auto& hist : h_data_count_sector) delete hist;
+            // for (auto& hist : h_data_sum_sector) delete hist;
+            // for (auto& hist : h_data_count_sector) delete hist;
 
-            if (mcReader) {
-                for (auto& hist : h_mc_sum_sector) delete hist;
-                for (auto& hist : h_mc_count_sector) delete hist;
-            }
+            // if (mcReader) {
+            //     for (auto& hist : h_mc_sum_sector) delete hist;
+            //     for (auto& hist : h_mc_count_sector) delete hist;
+            // }
 
             // Now, calculate and plot mean chi2/ndf as a function of traj_edge for each sector
             std::vector<TH1D*> h_sum_chi2_ndf_sector(6);
