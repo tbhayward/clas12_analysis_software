@@ -3775,7 +3775,7 @@ std::pair<double, double> rotate_coordinates(double x, double y, int sector) {
 }
 
 void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
-    int nBins = 15;
+    int nBins = 30;
     std::vector<std::tuple<std::string, std::string, std::string, double, double, double, double, std::string, double>> regions = {
         {"traj_x_6", "traj_y_6", "region_1", 15, 160, -80, 80, "traj_edge_6", 30},
         {"traj_x_18", "traj_y_18", "region_2", 30, 240, -125, 125, "traj_edge_18", 30},
@@ -4083,42 +4083,41 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             for (int sector = 0; sector < 6; ++sector) {
                 c_edge->cd(sector + 1);
                 gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-                // gPad->SetLogy();
                 h_sum_chi2_ndf_sector[sector]->SetStats(false);
                 h_sum_chi2_ndf_sector[sector]->SetAxisRange(0, edge_max, "X");
                 h_sum_chi2_ndf_sector[sector]->SetMaximum(100);  // Set y-axis maximum to 100
-                h_sum_chi2_ndf_sector[sector]->SetMinimum(10);    // Set y-axis minimum to 1
+                h_sum_chi2_ndf_sector[sector]->SetMinimum(1);    // Set y-axis minimum to 1
                 h_sum_chi2_ndf_sector[sector]->SetLineColor(kBlack);
                 h_sum_chi2_ndf_sector[sector]->SetMarkerStyle(8);
                 h_sum_chi2_ndf_sector[sector]->SetMarkerColor(kBlack);
-                h_sum_chi2_ndf_sector[sector]->Draw("E1 P");  // Use "E1 P" for vertical errors and dots
+                h_sum_chi2_ndf_sector[sector]->Draw("E1");  // Use "E1" for vertical errors and dots only
 
                 // Draw histograms with theta cuts
                 h_sum_chi2_ndf_sector_theta1[sector]->SetLineColor(kBlue);
                 h_sum_chi2_ndf_sector_theta1[sector]->SetMarkerStyle(8);
                 h_sum_chi2_ndf_sector_theta1[sector]->SetMarkerColor(kBlue);
-                h_sum_chi2_ndf_sector_theta1[sector]->Draw("E1 P SAME");
+                h_sum_chi2_ndf_sector_theta1[sector]->Draw("E1 SAME");
 
                 h_sum_chi2_ndf_sector_theta2[sector]->SetLineColor(kGreen);
                 h_sum_chi2_ndf_sector_theta2[sector]->SetMarkerStyle(8);
                 h_sum_chi2_ndf_sector_theta2[sector]->SetMarkerColor(kGreen);
-                h_sum_chi2_ndf_sector_theta2[sector]->Draw("E1 P SAME");
+                h_sum_chi2_ndf_sector_theta2[sector]->Draw("E1 SAME");
 
                 if (mcReader) {
                     h_sum_chi2_ndf_mc_sector[sector]->SetLineColor(kRed);
                     h_sum_chi2_ndf_mc_sector[sector]->SetMarkerStyle(8);
                     h_sum_chi2_ndf_mc_sector[sector]->SetMarkerColor(kRed);
-                    h_sum_chi2_ndf_mc_sector[sector]->Draw("E1 P SAME");
+                    h_sum_chi2_ndf_mc_sector[sector]->Draw("E1 SAME");
 
                     h_sum_chi2_ndf_mc_sector_theta1[sector]->SetLineColor(kMagenta);
                     h_sum_chi2_ndf_mc_sector_theta1[sector]->SetMarkerStyle(8);
                     h_sum_chi2_ndf_mc_sector_theta1[sector]->SetMarkerColor(kMagenta);
-                    h_sum_chi2_ndf_mc_sector_theta1[sector]->Draw("E1 P SAME");
+                    h_sum_chi2_ndf_mc_sector_theta1[sector]->Draw("E1 SAME");
 
                     h_sum_chi2_ndf_mc_sector_theta2[sector]->SetLineColor(kCyan);
                     h_sum_chi2_ndf_mc_sector_theta2[sector]->SetMarkerStyle(8);
                     h_sum_chi2_ndf_mc_sector_theta2[sector]->SetMarkerColor(kCyan);
-                    h_sum_chi2_ndf_mc_sector_theta2[sector]->Draw("E1 P SAME");
+                    h_sum_chi2_ndf_mc_sector_theta2[sector]->Draw("E1 SAME");
                 }
 
                 // Update the legend
