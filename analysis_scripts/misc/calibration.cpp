@@ -3775,7 +3775,7 @@ std::pair<double, double> rotate_coordinates(double x, double y, int sector) {
 }
 
 void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
-    int nBins = 50;
+    int nBins = 25;
     std::vector<std::tuple<std::string, std::string, std::string, double, double, double, double, std::string, double>> regions = {
         {"traj_x_6", "traj_y_6", "region_1", 15, 160, -80, 80, "traj_edge_6", 30},
         {"traj_x_18", "traj_y_18", "region_2", 30, 240, -125, 125, "traj_edge_18", 30},
@@ -3785,8 +3785,8 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
     // Array of particle types (photons and electrons) and their corresponding PIDs
     std::vector<std::tuple<int, std::string>> particle_types = {
         {11, "electron"}
-        // ,
-        // {2212, "proton"}
+        ,
+        {2212, "proton"}
     };
 
     for (const auto& particle_type : particle_types) {
@@ -4093,19 +4093,24 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
                 // Draw histograms with theta cuts
                 h_sum_chi2_ndf_sector_theta1[sector]->SetLineColor(kBlue);
+                h_sum_chi2_ndf_sector_theta1[sector]->SetMarkerStyle(8);
                 h_sum_chi2_ndf_sector_theta1[sector]->Draw("E1 P SAME");
 
                 h_sum_chi2_ndf_sector_theta2[sector]->SetLineColor(kGreen);
+                h_sum_chi2_ndf_sector_theta2[sector]->SetMarkerStyle(8);
                 h_sum_chi2_ndf_sector_theta2[sector]->Draw("E1 P SAME");
 
                 if (mcReader) {
                     h_sum_chi2_ndf_mc_sector[sector]->SetLineColor(kRed);
+                    h_sum_chi2_ndf_mc_sector[sector]->SetMarkerStyle(8);
                     h_sum_chi2_ndf_mc_sector[sector]->Draw("E1 P SAME");
 
                     h_sum_chi2_ndf_mc_sector_theta1[sector]->SetLineColor(kMagenta);
+                    h_sum_chi2_ndf_mc_sector_theta1[sector]->SetMarkerStyle(8);
                     h_sum_chi2_ndf_mc_sector_theta1[sector]->Draw("E1 P SAME");
 
                     h_sum_chi2_ndf_mc_sector_theta2[sector]->SetLineColor(kCyan);
+                    h_sum_chi2_ndf_mc_sector_theta2[sector]->SetMarkerStyle(8);
                     h_sum_chi2_ndf_mc_sector_theta2[sector]->Draw("E1 P SAME");
                 }
 
