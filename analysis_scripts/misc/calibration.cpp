@@ -3775,11 +3775,11 @@ std::pair<double, double> rotate_coordinates(double x, double y, int sector) {
 }
 
 void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
-    int nBins = 30;
+    int nBins = 50;
     std::vector<std::tuple<std::string, std::string, std::string, double, double, double, double, std::string, double>> regions = {
-        {"traj_x_6", "traj_y_6", "region_1", 15, 160, -80, 80, "traj_edge_6", 30},
-        {"traj_x_18", "traj_y_18", "region_2", 30, 240, -125, 125, "traj_edge_18", 30},
-        {"traj_x_36", "traj_y_36", "region_3", 30, 400, -200, 200, "traj_edge_36", 30}
+        {"traj_x_6", "traj_y_6", "region_1", 15, 160, -80, 80, "traj_edge_6", 35},
+        {"traj_x_18", "traj_y_18", "region_2", 30, 240, -125, 125, "traj_edge_18", 35},
+        {"traj_x_36", "traj_y_36", "region_3", 30, 400, -200, 200, "traj_edge_36", 35}
     };
 
     // Array of particle types (photons and electrons) and their corresponding PIDs
@@ -3924,17 +3924,17 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             // Now, calculate and plot mean chi2/ndf as a function of traj_edge for each sector
             std::vector<TH1D*> h_sum_chi2_ndf_sector(6);
             std::vector<TH1D*> h_count_chi2_ndf_sector(6);
-            std::vector<TH1D*> h_sum_chi2_ndf_sector_theta1(6);
-            std::vector<TH1D*> h_count_chi2_ndf_sector_theta1(6);
-            std::vector<TH1D*> h_sum_chi2_ndf_sector_theta2(6);
-            std::vector<TH1D*> h_count_chi2_ndf_sector_theta2(6);
+
+            // Histograms for different theta ranges
+            const int num_theta_bins = 4;
+            double theta_bins[num_theta_bins + 1] = {5, 12, 18, 24, 40};
+            std::vector<std::vector<TH1D*>> h_sum_chi2_ndf_sector_theta(6, std::vector<TH1D*>(num_theta_bins));
+            std::vector<std::vector<TH1D*>> h_count_chi2_ndf_sector_theta(6, std::vector<TH1D*>(num_theta_bins));
 
             std::vector<TH1D*> h_sum_chi2_ndf_mc_sector(6);
             std::vector<TH1D*> h_count_chi2_ndf_mc_sector(6);
-            std::vector<TH1D*> h_sum_chi2_ndf_mc_sector_theta1(6);
-            std::vector<TH1D*> h_count_chi2_ndf_mc_sector_theta1(6);
-            std::vector<TH1D*> h_sum_chi2_ndf_mc_sector_theta2(6);
-            std::vector<TH1D*> h_count_chi2_ndf_mc_sector_theta2(6);
+            std::vector<std::vector<TH1D*>> h_sum_chi2_ndf_mc_sector_theta(6, std::vector<TH1D*>(num_theta_bins));
+            std::vector<std::vector<TH1D*>> h_count_chi2_ndf_mc_sector_theta(6, std::vector<TH1D*>(num_theta_bins));
 
             for (int sector = 0; sector < 6; ++sector) {
                 h_sum_chi2_ndf_sector[sector] = new TH1D(("h_sum_chi2_ndf_sector_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
@@ -3945,23 +3945,22 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 h_count_chi2_ndf_sector[sector] = new TH1D(("h_count_chi2_ndf_sector_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
                                                        "", nBins, 0, edge_max);
 
-                // Histograms for theta1 (5 to 12 degrees)
-                h_sum_chi2_ndf_sector_theta1[sector] = new TH1D(("h_sum_chi2_ndf_sector_theta1_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
-                                                         (particle_name + " in " + region_name + " - Sector " + std::to_string(sector + 1) + " (5<#theta<12)").c_str(),
-                                                         nBins, 0, edge_max);
-                h_sum_chi2_ndf_sector_theta1[sector]->GetXaxis()->SetTitle("edge");
-                h_sum_chi2_ndf_sector_theta1[sector]->GetYaxis()->SetTitle("<chi2/ndf>");
-                h_count_chi2_ndf_sector_theta1[sector] = new TH1D(("h_count_chi2_ndf_sector_theta1_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
-                                                       "", nBins, 0, edge_max);
+                // Histograms for theta ranges
+                for (int t = 0; t < num_theta_bins; ++t) {
+                    double theta_min = theta_bins[t];
+                    double theta_max = theta_bins[t + 1];
+                    std::string theta_range = "(" + std::to_string(static_cast<int>(theta_min)) + "<#theta<" + std::to_string(static_cast<int>(theta_max)) + ")";
 
-                // Histograms for theta2 (25 to 35 degrees)
-                h_sum_chi2_ndf_sector_theta2[sector] = new TH1D(("h_sum_chi2_ndf_sector_theta2_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
-                                                         (particle_name + " in " + region_name + " - Sector " + std::to_string(sector + 1) + " (25<#theta<35)").c_str(),
-                                                         nBins, 0, edge_max);
-                h_sum_chi2_ndf_sector_theta2[sector]->GetXaxis()->SetTitle("edge");
-                h_sum_chi2_ndf_sector_theta2[sector]->GetYaxis()->SetTitle("<chi2/ndf>");
-                h_count_chi2_ndf_sector_theta2[sector] = new TH1D(("h_count_chi2_ndf_sector_theta2_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
-                                                       "", nBins, 0, edge_max);
+                    h_sum_chi2_ndf_sector_theta[sector][t] = new TH1D(
+                        ("h_sum_chi2_ndf_sector_theta" + std::to_string(t + 1) + "_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
+                        (particle_name + " in " + region_name + " - Sector " + std::to_string(sector + 1) + " " + theta_range).c_str(),
+                        nBins, 0, edge_max);
+                    h_sum_chi2_ndf_sector_theta[sector][t]->GetXaxis()->SetTitle("edge");
+                    h_sum_chi2_ndf_sector_theta[sector][t]->GetYaxis()->SetTitle("<chi2/ndf>");
+                    h_count_chi2_ndf_sector_theta[sector][t] = new TH1D(
+                        ("h_count_chi2_ndf_sector_theta" + std::to_string(t + 1) + "_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
+                        "", nBins, 0, edge_max);
+                }
 
                 if (mcReader) {
                     h_sum_chi2_ndf_mc_sector[sector] = new TH1D(("h_sum_chi2_ndf_mc_sector_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
@@ -3973,25 +3972,22 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                     h_count_chi2_ndf_mc_sector[sector] = new TH1D(("h_count_chi2_ndf_mc_sector_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
                                                                   "", nBins, 0, edge_max);
 
-                    // Histograms for theta1 (5 to 12 degrees)
-                    h_sum_chi2_ndf_mc_sector_theta1[sector] = new TH1D(("h_sum_chi2_ndf_mc_sector_theta1_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
-                                                                (particle_name + " in " + region_name + " - MC - Sector " + std::to_string(sector + 1) + " (5<#theta<12)").c_str(),
-                                                                nBins, 0, edge_max);
-                    h_sum_chi2_ndf_mc_sector_theta1[sector]->GetXaxis()->SetTitle("edge");
-                    h_sum_chi2_ndf_mc_sector_theta1[sector]->GetYaxis()->SetTitle("<chi2/ndf>");
+                    // Histograms for theta ranges in MC
+                    for (int t = 0; t < num_theta_bins; ++t) {
+                        double theta_min = theta_bins[t];
+                        double theta_max = theta_bins[t + 1];
+                        std::string theta_range = "(" + std::to_string(static_cast<int>(theta_min)) + "<#theta<" + std::to_string(static_cast<int>(theta_max)) + ")";
 
-                    h_count_chi2_ndf_mc_sector_theta1[sector] = new TH1D(("h_count_chi2_ndf_mc_sector_theta1_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
-                                                                  "", nBins, 0, edge_max);
-
-                    // Histograms for theta2 (25 to 35 degrees)
-                    h_sum_chi2_ndf_mc_sector_theta2[sector] = new TH1D(("h_sum_chi2_ndf_mc_sector_theta2_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
-                                                                (particle_name + " in " + region_name + " - MC - Sector " + std::to_string(sector + 1) + " (25<#theta<35)").c_str(),
-                                                                nBins, 0, edge_max);
-                    h_sum_chi2_ndf_mc_sector_theta2[sector]->GetXaxis()->SetTitle("edge");
-                    h_sum_chi2_ndf_mc_sector_theta2[sector]->GetYaxis()->SetTitle("<chi2/ndf>");
-
-                    h_count_chi2_ndf_mc_sector_theta2[sector] = new TH1D(("h_count_chi2_ndf_mc_sector_theta2_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
-                                                                  "", nBins, 0, edge_max);
+                        h_sum_chi2_ndf_mc_sector_theta[sector][t] = new TH1D(
+                            ("h_sum_chi2_ndf_mc_sector_theta" + std::to_string(t + 1) + "_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
+                            (particle_name + " in " + region_name + " - MC - Sector " + std::to_string(sector + 1) + " " + theta_range).c_str(),
+                            nBins, 0, edge_max);
+                        h_sum_chi2_ndf_mc_sector_theta[sector][t]->GetXaxis()->SetTitle("edge");
+                        h_sum_chi2_ndf_mc_sector_theta[sector][t]->GetYaxis()->SetTitle("<chi2/ndf>");
+                        h_count_chi2_ndf_mc_sector_theta[sector][t] = new TH1D(
+                            ("h_count_chi2_ndf_mc_sector_theta" + std::to_string(t + 1) + "_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
+                            "", nBins, 0, edge_max);
+                    }
                 }
             }
 
@@ -4004,13 +4000,12 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                     h_sum_chi2_ndf_sector[sector_index]->Fill(*traj_edge, chi2_ndf);
                     h_count_chi2_ndf_sector[sector_index]->Fill(*traj_edge);
 
-                    if (*track_theta >= 5 && *track_theta <= 12) {
-                        h_sum_chi2_ndf_sector_theta1[sector_index]->Fill(*traj_edge, chi2_ndf);
-                        h_count_chi2_ndf_sector_theta1[sector_index]->Fill(*traj_edge);
-                    }
-                    if (*track_theta >= 20 && *track_theta <= 35) {
-                        h_sum_chi2_ndf_sector_theta2[sector_index]->Fill(*traj_edge, chi2_ndf);
-                        h_count_chi2_ndf_sector_theta2[sector_index]->Fill(*traj_edge);
+                    // Fill theta bins
+                    for (int t = 0; t < num_theta_bins; ++t) {
+                        if (*track_theta >= theta_bins[t] && *track_theta < theta_bins[t + 1]) {
+                            h_sum_chi2_ndf_sector_theta[sector_index][t]->Fill(*traj_edge, chi2_ndf);
+                            h_count_chi2_ndf_sector_theta[sector_index][t]->Fill(*traj_edge);
+                        }
                     }
                 }
             }
@@ -4025,13 +4020,12 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                         h_sum_chi2_ndf_mc_sector[sector_index]->Fill(**mc_traj_edge, mc_chi2_ndf);
                         h_count_chi2_ndf_mc_sector[sector_index]->Fill(**mc_traj_edge);
 
-                        if (**mc_track_theta >= 5 && **mc_track_theta <= 12) {
-                            h_sum_chi2_ndf_mc_sector_theta1[sector_index]->Fill(**mc_traj_edge, mc_chi2_ndf);
-                            h_count_chi2_ndf_mc_sector_theta1[sector_index]->Fill(**mc_traj_edge);
-                        }
-                        if (**mc_track_theta >= 20 && **mc_track_theta <= 35) {
-                            h_sum_chi2_ndf_mc_sector_theta2[sector_index]->Fill(**mc_traj_edge, mc_chi2_ndf);
-                            h_count_chi2_ndf_mc_sector_theta2[sector_index]->Fill(**mc_traj_edge);
+                        // Fill theta bins
+                        for (int t = 0; t < num_theta_bins; ++t) {
+                            if (**mc_track_theta >= theta_bins[t] && **mc_track_theta < theta_bins[t + 1]) {
+                                h_sum_chi2_ndf_mc_sector_theta[sector_index][t]->Fill(**mc_traj_edge, mc_chi2_ndf);
+                                h_count_chi2_ndf_mc_sector_theta[sector_index][t]->Fill(**mc_traj_edge);
+                            }
                         }
                     }
                 }
@@ -4040,13 +4034,17 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             // Normalize the histograms to get the mean chi2/ndf per bin of traj_edge
             for (int sector = 0; sector < 6; ++sector) {
                 h_sum_chi2_ndf_sector[sector]->Divide(h_count_chi2_ndf_sector[sector]);
-                h_sum_chi2_ndf_sector_theta1[sector]->Divide(h_count_chi2_ndf_sector_theta1[sector]);
-                h_sum_chi2_ndf_sector_theta2[sector]->Divide(h_count_chi2_ndf_sector_theta2[sector]);
+
+                for (int t = 0; t < num_theta_bins; ++t) {
+                    h_sum_chi2_ndf_sector_theta[sector][t]->Divide(h_count_chi2_ndf_sector_theta[sector][t]);
+                }
 
                 if (mcReader) {
                     h_sum_chi2_ndf_mc_sector[sector]->Divide(h_count_chi2_ndf_mc_sector[sector]);
-                    h_sum_chi2_ndf_mc_sector_theta1[sector]->Divide(h_count_chi2_ndf_mc_sector_theta1[sector]);
-                    h_sum_chi2_ndf_mc_sector_theta2[sector]->Divide(h_count_chi2_ndf_mc_sector_theta2[sector]);
+
+                    for (int t = 0; t < num_theta_bins; ++t) {
+                        h_sum_chi2_ndf_mc_sector_theta[sector][t]->Divide(h_count_chi2_ndf_mc_sector_theta[sector][t]);
+                    }
                 }
             }
 
@@ -4056,21 +4054,19 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 if (h_sum_chi2_ndf_sector[sector]->GetMaximum() > max_value) {
                     max_value = h_sum_chi2_ndf_sector[sector]->GetMaximum();
                 }
-                if (h_sum_chi2_ndf_sector_theta1[sector]->GetMaximum() > max_value) {
-                    max_value = h_sum_chi2_ndf_sector_theta1[sector]->GetMaximum();
-                }
-                if (h_sum_chi2_ndf_sector_theta2[sector]->GetMaximum() > max_value) {
-                    max_value = h_sum_chi2_ndf_sector_theta2[sector]->GetMaximum();
+                for (int t = 0; t < num_theta_bins; ++t) {
+                    if (h_sum_chi2_ndf_sector_theta[sector][t]->GetMaximum() > max_value) {
+                        max_value = h_sum_chi2_ndf_sector_theta[sector][t]->GetMaximum();
+                    }
                 }
                 if (mcReader) {
                     if (h_sum_chi2_ndf_mc_sector[sector]->GetMaximum() > max_value) {
                         max_value = h_sum_chi2_ndf_mc_sector[sector]->GetMaximum();
                     }
-                    if (h_sum_chi2_ndf_mc_sector_theta1[sector]->GetMaximum() > max_value) {
-                        max_value = h_sum_chi2_ndf_mc_sector_theta1[sector]->GetMaximum();
-                    }
-                    if (h_sum_chi2_ndf_mc_sector_theta2[sector]->GetMaximum() > max_value) {
-                        max_value = h_sum_chi2_ndf_mc_sector_theta2[sector]->GetMaximum();
+                    for (int t = 0; t < num_theta_bins; ++t) {
+                        if (h_sum_chi2_ndf_mc_sector_theta[sector][t]->GetMaximum() > max_value) {
+                            max_value = h_sum_chi2_ndf_mc_sector_theta[sector][t]->GetMaximum();
+                        }
                     }
                 }
             }
@@ -4080,62 +4076,65 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             TCanvas* c_edge = new TCanvas(("c_edge_" + particle_name + "_" + region_name).c_str(), ("Mean chi2/ndf vs traj_edge for " + particle_name + " in " + region_name).c_str(), 1800, 1200);
             c_edge->Divide(3, 2);
 
+            // Colors for the different theta ranges
+            int colors_data[num_theta_bins + 1] = {kBlack, kBlue, kGreen + 2, kOrange + 7, kMagenta};
+            int colors_mc[num_theta_bins + 1] = {kRed, kAzure + 1, kSpring + 5, kPink + 7, kViolet};
+
             for (int sector = 0; sector < 6; ++sector) {
                 c_edge->cd(sector + 1);
                 gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
                 h_sum_chi2_ndf_sector[sector]->SetStats(false);
                 h_sum_chi2_ndf_sector[sector]->SetAxisRange(0, edge_max, "X");
-                h_sum_chi2_ndf_sector[sector]->SetMaximum(100);  // Set y-axis maximum to 100
-                h_sum_chi2_ndf_sector[sector]->SetMinimum(1);    // Set y-axis minimum to 1
-                h_sum_chi2_ndf_sector[sector]->SetLineColor(kBlack);
-                h_sum_chi2_ndf_sector[sector]->SetMarkerStyle(8);
-                h_sum_chi2_ndf_sector[sector]->SetMarkerColor(kBlack);
-                h_sum_chi2_ndf_sector[sector]->Draw("E1");  // Use "E1" for vertical errors and dots only
+                h_sum_chi2_ndf_sector[sector]->SetMaximum(max_value);
+                h_sum_chi2_ndf_sector[sector]->SetMinimum(0);
+                h_sum_chi2_ndf_sector[sector]->SetLineColor(colors_data[0]);
+                h_sum_chi2_ndf_sector[sector]->SetMarkerStyle(20);
+                h_sum_chi2_ndf_sector[sector]->SetMarkerColor(colors_data[0]);
+                h_sum_chi2_ndf_sector[sector]->Draw("E1");
 
                 // Draw histograms with theta cuts
-                h_sum_chi2_ndf_sector_theta1[sector]->SetLineColor(kBlue);
-                h_sum_chi2_ndf_sector_theta1[sector]->SetMarkerStyle(8);
-                h_sum_chi2_ndf_sector_theta1[sector]->SetMarkerColor(kBlue);
-                h_sum_chi2_ndf_sector_theta1[sector]->Draw("E1 SAME");
-
-                h_sum_chi2_ndf_sector_theta2[sector]->SetLineColor(kGreen);
-                h_sum_chi2_ndf_sector_theta2[sector]->SetMarkerStyle(8);
-                h_sum_chi2_ndf_sector_theta2[sector]->SetMarkerColor(kGreen);
-                h_sum_chi2_ndf_sector_theta2[sector]->Draw("E1 SAME");
+                for (int t = 0; t < num_theta_bins; ++t) {
+                    h_sum_chi2_ndf_sector_theta[sector][t]->SetLineColor(colors_data[t + 1]);
+                    h_sum_chi2_ndf_sector_theta[sector][t]->SetMarkerStyle(20 + t);
+                    h_sum_chi2_ndf_sector_theta[sector][t]->SetMarkerColor(colors_data[t + 1]);
+                    h_sum_chi2_ndf_sector_theta[sector][t]->Draw("E1 SAME");
+                }
 
                 if (mcReader) {
-                    h_sum_chi2_ndf_mc_sector[sector]->SetLineColor(kRed);
-                    h_sum_chi2_ndf_mc_sector[sector]->SetMarkerStyle(8);
-                    h_sum_chi2_ndf_mc_sector[sector]->SetMarkerColor(kRed);
+                    h_sum_chi2_ndf_mc_sector[sector]->SetLineColor(colors_mc[0]);
+                    h_sum_chi2_ndf_mc_sector[sector]->SetMarkerStyle(24);
+                    h_sum_chi2_ndf_mc_sector[sector]->SetMarkerColor(colors_mc[0]);
                     h_sum_chi2_ndf_mc_sector[sector]->Draw("E1 SAME");
 
-                    h_sum_chi2_ndf_mc_sector_theta1[sector]->SetLineColor(kMagenta);
-                    h_sum_chi2_ndf_mc_sector_theta1[sector]->SetMarkerStyle(8);
-                    h_sum_chi2_ndf_mc_sector_theta1[sector]->SetMarkerColor(kMagenta);
-                    h_sum_chi2_ndf_mc_sector_theta1[sector]->Draw("E1 SAME");
-
-                    h_sum_chi2_ndf_mc_sector_theta2[sector]->SetLineColor(kCyan);
-                    h_sum_chi2_ndf_mc_sector_theta2[sector]->SetMarkerStyle(8);
-                    h_sum_chi2_ndf_mc_sector_theta2[sector]->SetMarkerColor(kCyan);
-                    h_sum_chi2_ndf_mc_sector_theta2[sector]->Draw("E1 SAME");
+                    for (int t = 0; t < num_theta_bins; ++t) {
+                        h_sum_chi2_ndf_mc_sector_theta[sector][t]->SetLineColor(colors_mc[t + 1]);
+                        h_sum_chi2_ndf_mc_sector_theta[sector][t]->SetMarkerStyle(24 + t);
+                        h_sum_chi2_ndf_mc_sector_theta[sector][t]->SetMarkerColor(colors_mc[t + 1]);
+                        h_sum_chi2_ndf_mc_sector_theta[sector][t]->Draw("E1 SAME");
+                    }
                 }
 
                 // Update the legend
-                TLegend* legend = new TLegend(0.6, 0.6, 0.9, 0.9);
-                legend->AddEntry(h_sum_chi2_ndf_sector[sector], "Data", "l");
-                legend->AddEntry(h_sum_chi2_ndf_sector_theta1[sector], "Data 5<#theta<12", "l");
-                legend->AddEntry(h_sum_chi2_ndf_sector_theta2[sector], "Data 20<#theta<35", "l");
+                TLegend* legend = new TLegend(0.5, 0.5, 0.9, 0.9);
+                legend->AddEntry(h_sum_chi2_ndf_sector[sector], "Data (All #theta)", "p");
+                for (int t = 0; t < num_theta_bins; ++t) {
+                    std::string theta_range = std::to_string(static_cast<int>(theta_bins[t])) + "<#theta<" + std::to_string(static_cast<int>(theta_bins[t + 1]));
+                    legend->AddEntry(h_sum_chi2_ndf_sector_theta[sector][t], ("Data " + theta_range).c_str(), "p");
+                }
 
                 if (mcReader) {
-                    legend->AddEntry(h_sum_chi2_ndf_mc_sector[sector], "MC", "l");
-                    legend->AddEntry(h_sum_chi2_ndf_mc_sector_theta1[sector], "MC 5<#theta<12", "l");
-                    legend->AddEntry(h_sum_chi2_ndf_mc_sector_theta2[sector], "MC 20<#theta<35", "l");
+                    legend->AddEntry(h_sum_chi2_ndf_mc_sector[sector], "MC (All #theta)", "p");
+                    for (int t = 0; t < num_theta_bins; ++t) {
+                        std::string theta_range = std::to_string(static_cast<int>(theta_bins[t])) + "<#theta<" + std::to_string(static_cast<int>(theta_bins[t + 1]));
+                        legend->AddEntry(h_sum_chi2_ndf_mc_sector_theta[sector][t], ("MC " + theta_range).c_str(), "p");
+                    }
                 }
 
                 legend->Draw();
             }
 
             c_edge->SaveAs(("output/calibration/dc/determination/mean_chi2_per_ndf_vs_traj_edge_" + particle_name + "_" + region_name + ".png").c_str());
+
 
             // Cleanup for mean chi2/ndf vs traj_edge histograms
             delete c_edge;
