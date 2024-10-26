@@ -4094,7 +4094,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
                 // Update the legend
                 TLegend* legend = new TLegend(0.5, 0.5, 0.9, 0.9);
-                legend->SetTextSize(0.02);  // Reduced text size
+                legend->SetTextSize(0.03);  // Reduced text size
                 legend->AddEntry(h_sum_chi2_ndf_sector[sector], "Data (All #theta)", "p");
                 for (int t = 0; t < num_theta_bins; ++t) {
                     std::string theta_range = std::to_string(static_cast<int>(theta_bins[t])) + "<#theta<" + std::to_string(static_cast<int>(theta_bins[t + 1]));
