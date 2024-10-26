@@ -4083,11 +4083,11 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             for (int sector = 0; sector < 6; ++sector) {
                 c_edge->cd(sector + 1);
                 gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-                gPad->SetLogy();
+                // gPad->SetLogy();
                 h_sum_chi2_ndf_sector[sector]->SetStats(false);
                 h_sum_chi2_ndf_sector[sector]->SetAxisRange(0, edge_max, "X");
                 h_sum_chi2_ndf_sector[sector]->SetMaximum(100);  // Set y-axis maximum to 100
-                h_sum_chi2_ndf_sector[sector]->SetMinimum(1);    // Set y-axis minimum to 1
+                h_sum_chi2_ndf_sector[sector]->SetMinimum(10);    // Set y-axis minimum to 1
                 h_sum_chi2_ndf_sector[sector]->SetLineColor(kBlack);
                 h_sum_chi2_ndf_sector[sector]->SetMarkerStyle(8);
                 h_sum_chi2_ndf_sector[sector]->SetMarkerColor(kBlack);
