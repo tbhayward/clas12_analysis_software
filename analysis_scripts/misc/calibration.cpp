@@ -4094,8 +4094,14 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 }
 
                 // Update the legend
-                TLegend* legend = new TLegend(0.5, 0.5, 0.9, 0.9);
+                TLegend* legend = new TLegend(0.1, 0.85, 0.9, 0.98);  // Positioned along the top
+                legend->SetNColumns(2);  // Two columns
                 legend->SetTextSize(0.02);  // Reduced text size
+                legend->SetFillStyle(0);  // Make legend background transparent
+                legend->SetBorderSize(0);  // Remove legend border
+                legend->SetMargin(0.1);  // Reduce margin inside legend
+                legend->SetEntrySeparation(0.01);  // Reduce space between entries
+
                 legend->AddEntry(h_sum_chi2_ndf_sector[sector], "Data (All #theta)", "p");
                 for (int t = 0; t < num_theta_bins; ++t) {
                     std::string theta_range = std::to_string(static_cast<int>(theta_bins[t])) + "<#theta<" + std::to_string(static_cast<int>(theta_bins[t + 1]));
