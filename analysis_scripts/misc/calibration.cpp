@@ -13,6 +13,7 @@
 #include <TTreeReader.h>
 #include <TTreeReaderValue.h>
 #include <TSystem.h>
+#include <TROOT.h> 
 
 // ROOT Plotting and Visualization
 #include <TCanvas.h>
