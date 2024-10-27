@@ -4534,11 +4534,11 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
 
     // Define CVT layers with their corresponding traj_edge variables, names, and edge ranges
     std::vector<std::tuple<TTreeReaderValue<double>*, std::string, double, double>> layers = {
-        {new TTreeReaderValue<double>(dataReader, "traj_edge_1"), "layer_1", -2.0, 2.2},
-        {new TTreeReaderValue<double>(dataReader, "traj_edge_3"), "layer_3", -2.0, 2.2},
-        {new TTreeReaderValue<double>(dataReader, "traj_edge_5"), "layer_5", -2.0, 2.2},
-        {new TTreeReaderValue<double>(dataReader, "traj_edge_7"), "layer_7", -5.0, 15.0},
-        {new TTreeReaderValue<double>(dataReader, "traj_edge_12"), "layer_12", -10.0, 25.0}
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_1"), "layer_{1}", -2.0, 2.2},
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_3"), "layer_{3}", -2.0, 2.2},
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_5"), "layer_{5}", -2.0, 2.2},
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_7"), "layer_{7}", -5.0, 15.0},
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_12"), "layer_{12}", -10.0, 25.0}
     };
 
     // Define angular ranges: [30,40], [40,50], [50,70] degrees
