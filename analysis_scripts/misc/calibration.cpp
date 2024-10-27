@@ -4356,169 +4356,513 @@ void plot_chi2_ndf_vs_phi_CVT_2D(TTreeReader& dataReader, TTreeReader* mcReader,
     }
 }
 
-void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+// void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+//     int nBinsX = 50;  // Number of bins for edge
+//     int nBinsY = 100;  // Number of bins for chi2/ndf
+
+//     // Define CVT layers and edges for data
+//     std::vector<std::tuple<TTreeReaderValue<double>*, std::string, double, double>> layers = {
+//         {new TTreeReaderValue<double>(dataReader, "traj_edge_1"), "layer_1", -2, 2.2},
+//         {new TTreeReaderValue<double>(dataReader, "traj_edge_3"), "layer_3", -2, 2.2},
+//         {new TTreeReaderValue<double>(dataReader, "traj_edge_5"), "layer_5", -2, 2.2},
+//         {new TTreeReaderValue<double>(dataReader, "traj_edge_7"), "layer_7", -5, 15},
+//         {new TTreeReaderValue<double>(dataReader, "traj_edge_12"), "layer_12", -10, 25}
+//     };
+
+//     // Define CVT layers and edges for MC if available
+//     std::vector<std::tuple<TTreeReaderValue<double>*, std::string, double, double>> mc_layers;
+//     if (mcReader) {
+//         mc_layers = {
+//             {new TTreeReaderValue<double>(*mcReader, "traj_edge_1"), "layer_1", -2, 2.2},
+//             {new TTreeReaderValue<double>(*mcReader, "traj_edge_3"), "layer_3", -2, 2.2},
+//             {new TTreeReaderValue<double>(*mcReader, "traj_edge_5"), "layer_5", -2, 2.2},
+//             {new TTreeReaderValue<double>(*mcReader, "traj_edge_7"), "layer_7", -5, 15},
+//             {new TTreeReaderValue<double>(*mcReader, "traj_edge_12"), "layer_12", -10, 25}
+//         };
+//     }
+
+//     // Define particle PID and track variables for data
+//     TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+//     TTreeReaderValue<double> track_chi2_5(dataReader, "track_chi2_5");
+//     TTreeReaderValue<int> track_ndf_5(dataReader, "track_ndf_5");
+
+//     // Define particle PID and track variables for MC if available
+//     TTreeReaderValue<int>* mc_particle_pid = nullptr;
+//     TTreeReaderValue<double>* mc_track_chi2_5 = nullptr;
+//     TTreeReaderValue<int>* mc_track_ndf_5 = nullptr;
+
+//     if (mcReader) {
+//         mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+//         mc_track_chi2_5 = new TTreeReaderValue<double>(*mcReader, "track_chi2_5");
+//         mc_track_ndf_5 = new TTreeReaderValue<int>(*mcReader, "track_ndf_5");
+//     }
+
+//     std::vector<std::tuple<int, std::string, std::string>> particle_types = {
+//         // {211, "pip", "#pi^{+}"},
+//         // {-211, "pim", "#pi^{-}"},
+//         // {321, "kp", "k^{+}"},
+//         // {-321, "km", "k^{-}"},
+//         {2212, "proton", "proton"}
+//     };
+
+//     plot_chi2_ndf_vs_phi_CVT_2D(dataReader, mcReader, particle_types);
+
+//     for (const auto& particle_type : particle_types) {
+//         int pid = std::get<0>(particle_type);
+//         std::string particle_name = std::get<1>(particle_type);
+//         std::string particle_latex = std::get<2>(particle_type);
+
+//         std::vector<TH2D*> h_chi2_vs_edge_data, h_chi2_vs_edge_mc;
+
+//         // Initialize 2D histograms for data and MC
+//         for (const auto& layer : layers) {
+//             std::string layer_name = std::get<1>(layer);
+//             double xMin = std::get<2>(layer);
+//             double xMax = std::get<3>(layer);
+//             double yMin = 0;
+//             double yMax = 100;  // This can be adjusted depending on your expected range of chi2/ndf
+
+//             h_chi2_vs_edge_data.push_back(new TH2D(("h_chi2_vs_edge_data_" + layer_name + "_" + particle_name).c_str(), (particle_latex + " - " + layer_name).c_str(), nBinsX, xMin, xMax, nBinsY, yMin, yMax));
+
+//             if (mcReader) {
+//                 h_chi2_vs_edge_mc.push_back(new TH2D(("h_chi2_vs_edge_mc_" + layer_name + "_" + particle_name).c_str(), (particle_latex + " - MC - " + layer_name).c_str(), nBinsX, xMin, xMax, nBinsY, yMin, yMax));
+//             }
+//         }
+
+//         // Fill 2D histograms for data
+//         dataReader.Restart();
+//         while (dataReader.Next()) {
+//             if (*particle_pid == pid && *track_ndf_5 > 0 && *track_chi2_5 < 10000) {
+//                 double chi2_ndf = *track_chi2_5 / *track_ndf_5;
+
+//                 for (size_t i = 0; i < layers.size(); ++i) {
+//                     double traj_edge = **std::get<0>(layers[i]);
+
+//                     if (traj_edge != -9999) {
+//                         h_chi2_vs_edge_data[i]->Fill(traj_edge, chi2_ndf);
+//                     }
+//                 }
+//             }
+//         }
+
+//         // Fill 2D histograms for MC
+//         if (mcReader) {
+//             mcReader->Restart();
+//             while (mcReader->Next()) {
+//                 if (**mc_particle_pid == pid && **mc_track_ndf_5 > 0 && **mc_track_chi2_5 < 10000) {
+//                     double mc_chi2_ndf = **mc_track_chi2_5 / **mc_track_ndf_5;
+
+//                     for (size_t i = 0; i < mc_layers.size(); ++i) {
+//                         double traj_edge = **std::get<0>(mc_layers[i]);
+
+//                         if (traj_edge != -9999) {
+//                             h_chi2_vs_edge_mc[i]->Fill(traj_edge, mc_chi2_ndf);
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+
+//         // Plot data results
+//         TCanvas* c_layer_data = new TCanvas(("c_data_" + particle_name).c_str(), ("#chi^{2}/ndf vs edge for " + particle_latex + " (Data)").c_str(), 1800, 1200);
+//         c_layer_data->Divide(3, 2);
+//         c_layer_data->SetLeftMargin(0.2);  // Increase left margin for better y-axis label visibility
+
+//         for (size_t i = 0; i < layers.size(); ++i) {
+//             c_layer_data->cd(i + 1);
+//             gPad->SetLogz();  // Set the z-axis to log scale
+//             gPad->SetMargin(0.2, 0.15, 0.2, 0.1);  // Adjust margins: left, right, bottom, top
+//             h_chi2_vs_edge_data[i]->GetXaxis()->SetTitle("edge (cm)");
+//             h_chi2_vs_edge_data[i]->GetYaxis()->SetTitle("#chi^{2}/ndf");
+//             h_chi2_vs_edge_data[i]->Draw("COLZ");
+//         }
+
+//         c_layer_data->SaveAs(("output/calibration/cvt/determination/chi2_per_ndf_vs_edge_data_" + particle_name + ".png").c_str());
+
+//         // Plot MC results
+//         if (mcReader) {
+//             TCanvas* c_layer_mc = new TCanvas(("c_mc_" + particle_name).c_str(), ("#chi^{2}/ndf vs edge for " + particle_latex + " (MC)").c_str(), 1800, 1200);
+//             c_layer_mc->Divide(3, 2);
+//             c_layer_mc->SetLeftMargin(0.2);  // Increase left margin for better y-axis label visibility
+
+//             for (size_t i = 0; i < mc_layers.size(); ++i) {
+//                 c_layer_mc->cd(i + 1);
+//                 gPad->SetLogz();  // Set the z-axis to log scale
+//                 gPad->SetMargin(0.2, 0.15, 0.2, 0.1);  // Adjust margins: left, right, bottom, top
+//                 h_chi2_vs_edge_mc[i]->GetXaxis()->SetTitle("edge (cm)");
+//                 h_chi2_vs_edge_mc[i]->GetYaxis()->SetTitle("#chi^{2}/ndf");
+//                 h_chi2_vs_edge_mc[i]->Draw("COLZ");
+//             }
+
+//             c_layer_mc->SaveAs(("output/calibration/cvt/determination/chi2_per_ndf_vs_edge_mc_" + particle_name + ".png").c_str());
+//             delete c_layer_mc;
+//         }
+//         // Clean up
+//         for (auto hist : h_chi2_vs_edge_data) delete hist;
+//         if (mcReader) {
+//             for (auto hist : h_chi2_vs_edge_mc) delete hist;
+//         }
+//         delete c_layer_data;
+//     }
+
+//     // Clean up dynamically allocated memory for MC
+//     if (mcReader) {
+//         for (auto& mc_layer : mc_layers) {
+//             delete std::get<0>(mc_layer);
+//         }
+
+//         delete mc_particle_pid;
+//         delete mc_track_chi2_5;
+//         delete mc_track_ndf_5;
+//     }
+
+//     // Clean up dynamically allocated memory for data
+//     for (auto& layer : layers) {
+//         delete std::get<0>(layer);
+//     }
+// }
+
+void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
+    const std::string& dataset = "rga_fa18_inb") {
+    
+    // Disable statistical boxes on histograms
+    gStyle->SetOptStat(0);
+
+    // Define the number of bins for edge and chi2/ndf
     int nBinsX = 50;  // Number of bins for edge
-    int nBinsY = 100;  // Number of bins for chi2/ndf
+    int nBinsY = 100; // Number of bins for chi2/ndf
 
-    // Define CVT layers and edges for data
+    // Define CVT layers with their corresponding traj_edge variables, names, and edge ranges
     std::vector<std::tuple<TTreeReaderValue<double>*, std::string, double, double>> layers = {
-        {new TTreeReaderValue<double>(dataReader, "traj_edge_1"), "layer_1", -2, 2.2},
-        {new TTreeReaderValue<double>(dataReader, "traj_edge_3"), "layer_3", -2, 2.2},
-        {new TTreeReaderValue<double>(dataReader, "traj_edge_5"), "layer_5", -2, 2.2},
-        {new TTreeReaderValue<double>(dataReader, "traj_edge_7"), "layer_7", -5, 15},
-        {new TTreeReaderValue<double>(dataReader, "traj_edge_12"), "layer_12", -10, 25}
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_1"), "layer_1", -2.0, 2.2},
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_3"), "layer_3", -2.0, 2.2},
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_5"), "layer_5", -2.0, 2.2},
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_7"), "layer_7", -5.0, 15.0},
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_12"), "layer_12", -10.0, 25.0}
     };
 
-    // Define CVT layers and edges for MC if available
-    std::vector<std::tuple<TTreeReaderValue<double>*, std::string, double, double>> mc_layers;
-    if (mcReader) {
-        mc_layers = {
-            {new TTreeReaderValue<double>(*mcReader, "traj_edge_1"), "layer_1", -2, 2.2},
-            {new TTreeReaderValue<double>(*mcReader, "traj_edge_3"), "layer_3", -2, 2.2},
-            {new TTreeReaderValue<double>(*mcReader, "traj_edge_5"), "layer_5", -2, 2.2},
-            {new TTreeReaderValue<double>(*mcReader, "traj_edge_7"), "layer_7", -5, 15},
-            {new TTreeReaderValue<double>(*mcReader, "traj_edge_12"), "layer_12", -10, 25}
-        };
-    }
+    // Define angular ranges: [30,40], [40,50], [50,70] degrees
+    const int num_theta_bins = 3;
+    double theta_bins[num_theta_bins + 1] = {30.0, 40.0, 50.0, 70.0};
+    std::vector<std::pair<double, double>> theta_ranges = {
+        {30.0, 40.0},
+        {40.0, 50.0},
+        {50.0, 70.0}
+    };
 
-    // Define particle PID and track variables for data
-    TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
-    TTreeReaderValue<double> track_chi2_5(dataReader, "track_chi2_5");
-    TTreeReaderValue<int> track_ndf_5(dataReader, "track_ndf_5");
-
-    // Define particle PID and track variables for MC if available
-    TTreeReaderValue<int>* mc_particle_pid = nullptr;
-    TTreeReaderValue<double>* mc_track_chi2_5 = nullptr;
-    TTreeReaderValue<int>* mc_track_ndf_5 = nullptr;
-
-    if (mcReader) {
-        mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
-        mc_track_chi2_5 = new TTreeReaderValue<double>(*mcReader, "track_chi2_5");
-        mc_track_ndf_5 = new TTreeReaderValue<int>(*mcReader, "track_ndf_5");
-    }
-
+    // Define particle types: PID, name, LaTeX name for plotting
     std::vector<std::tuple<int, std::string, std::string>> particle_types = {
-        // {211, "pip", "#pi^{+}"},
-        // {-211, "pim", "#pi^{-}"},
-        // {321, "kp", "k^{+}"},
-        // {-321, "km", "k^{-}"},
         {2212, "proton", "proton"}
+        // Add more particle types here if needed
     };
 
-    plot_chi2_ndf_vs_phi_CVT_2D(dataReader, mcReader, particle_types);
-
+    // Loop over each particle type
     for (const auto& particle_type : particle_types) {
         int pid = std::get<0>(particle_type);
         std::string particle_name = std::get<1>(particle_type);
         std::string particle_latex = std::get<2>(particle_type);
 
-        std::vector<TH2D*> h_chi2_vs_edge_data, h_chi2_vs_edge_mc;
+        // Create sum and count histograms for data
+        std::vector<TH1D*> h_sum_chi2_ndf_data(layers.size(), nullptr);
+        std::vector<TH1D*> h_count_chi2_ndf_data(layers.size(), nullptr);
 
-        // Initialize 2D histograms for data and MC
-        for (const auto& layer : layers) {
-            std::string layer_name = std::get<1>(layer);
-            double xMin = std::get<2>(layer);
-            double xMax = std::get<3>(layer);
-            double yMin = 0;
-            double yMax = 100;  // This can be adjusted depending on your expected range of chi2/ndf
+        // Create sum and count histograms for data with theta ranges
+        std::vector<std::vector<TH1D*>> h_sum_chi2_ndf_data_theta(layers.size(), std::vector<TH1D*>(num_theta_bins, nullptr));
+        std::vector<std::vector<TH1D*>> h_count_chi2_ndf_data_theta(layers.size(), std::vector<TH1D*>(num_theta_bins, nullptr));
 
-            h_chi2_vs_edge_data.push_back(new TH2D(("h_chi2_vs_edge_data_" + layer_name + "_" + particle_name).c_str(), (particle_latex + " - " + layer_name).c_str(), nBinsX, xMin, xMax, nBinsY, yMin, yMax));
+        // Create sum and count histograms for MC if available
+        std::vector<TH1D*> h_sum_chi2_ndf_mc(layers.size(), nullptr);
+        std::vector<TH1D*> h_count_chi2_ndf_mc(layers.size(), nullptr);
 
-            if (mcReader) {
-                h_chi2_vs_edge_mc.push_back(new TH2D(("h_chi2_vs_edge_mc_" + layer_name + "_" + particle_name).c_str(), (particle_latex + " - MC - " + layer_name).c_str(), nBinsX, xMin, xMax, nBinsY, yMin, yMax));
+        std::vector<std::vector<TH1D*>> h_sum_chi2_ndf_mc_theta(layers.size(), std::vector<TH1D*>(num_theta_bins, nullptr));
+        std::vector<std::vector<TH1D*>> h_count_chi2_ndf_mc_theta(layers.size(), std::vector<TH1D*>(num_theta_bins, nullptr));
+
+        // Initialize histograms for data
+        for (size_t i = 0; i < layers.size(); ++i) {
+            std::string layer_name = std::get<1>(layers[i]);
+            double xMin = std::get<2>(layers[i]);
+            double xMax = std::get<3>(layers[i]);
+
+            // Overall data histograms per layer
+            h_sum_chi2_ndf_data[i] = new TH1D(("h_sum_chi2_ndf_data_" + layer_name + "_" + particle_name).c_str(),
+                                              (particle_latex + " - " + layer_name + " - Sum").c_str(),
+                                              nBinsX, xMin, xMax);
+            h_count_chi2_ndf_data[i] = new TH1D(("h_count_chi2_ndf_data_" + layer_name + "_" + particle_name).c_str(),
+                                                (particle_latex + " - " + layer_name + " - Count").c_str(),
+                                                nBinsX, xMin, xMax);
+
+            // Data histograms per theta range
+            for (int t = 0; t < num_theta_bins; ++t) {
+                std::string theta_range_label = std::to_string(static_cast<int>(theta_ranges[t].first)) + "<#theta<" + std::to_string(static_cast<int>(theta_ranges[t].second));
+                h_sum_chi2_ndf_data_theta[i][t] = new TH1D(("h_sum_chi2_ndf_data_" + layer_name + "_theta" + std::to_string(t+1) + "_" + particle_name).c_str(),
+                                                          (particle_latex + " - " + layer_name + " - " + theta_range_label + " - Sum").c_str(),
+                                                          nBinsX, xMin, xMax);
+                h_count_chi2_ndf_data_theta[i][t] = new TH1D(("h_count_chi2_ndf_data_" + layer_name + "_theta" + std::to_string(t+1) + "_" + particle_name).c_str(),
+                                                            (particle_latex + " - " + layer_name + " - " + theta_range_label + " - Count").c_str(),
+                                                            nBinsX, xMin, xMax);
             }
         }
 
-        // Fill 2D histograms for data
+        // Initialize histograms for MC if available
+        if (mcReader) {
+            for (size_t i = 0; i < layers.size(); ++i) {
+                std::string layer_name = std::get<1>(layers[i]);
+                double xMin = std::get<2>(layers[i]);
+                double xMax = std::get<3>(layers[i]);
+
+                // MC sum and count histograms per layer
+                h_sum_chi2_ndf_mc[i] = new TH1D(("h_sum_chi2_ndf_mc_" + layer_name + "_" + particle_name).c_str(),
+                                                (particle_latex + " - MC - " + layer_name + " - Sum").c_str(),
+                                                nBinsX, xMin, xMax);
+                h_count_chi2_ndf_mc[i] = new TH1D(("h_count_chi2_ndf_mc_" + layer_name + "_" + particle_name).c_str(),
+                                                  (particle_latex + " - MC - " + layer_name + " - Count").c_str(),
+                                                  nBinsX, xMin, xMax);
+
+                // MC histograms per theta range
+                for (int t = 0; t < num_theta_bins; ++t) {
+                    std::string theta_range_label = std::to_string(static_cast<int>(theta_ranges[t].first)) + "<#theta<" + std::to_string(static_cast<int>(theta_ranges[t].second));
+                    h_sum_chi2_ndf_mc_theta[i][t] = new TH1D(("h_sum_chi2_ndf_mc_" + layer_name + "_theta" + std::to_string(t+1) + "_" + particle_name).c_str(),
+                                                            (particle_latex + " - MC - " + layer_name + " - " + theta_range_label + " - Sum").c_str(),
+                                                            nBinsX, xMin, xMax);
+                    h_count_chi2_ndf_mc_theta[i][t] = new TH1D(("h_count_chi2_ndf_mc_" + layer_name + "_theta" + std::to_string(t+1) + "_" + particle_name).c_str(),
+                                                              (particle_latex + " - MC - " + layer_name + " - " + theta_range_label + " - Count").c_str(),
+                                                              nBinsX, xMin, xMax);
+                }
+            }
+        }
+
+        // Define variables to read from the tree
+        TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+        TTreeReaderValue<double> track_chi2_5(dataReader, "track_chi2_5");
+        TTreeReaderValue<int> track_ndf_5(dataReader, "track_ndf_5");
+        TTreeReaderValue<double> track_theta(dataReader, "theta");
+
+        // Define variables for MC if available
+        TTreeReaderValue<int>* mc_particle_pid = nullptr;
+        TTreeReaderValue<double>* mc_track_chi2_5 = nullptr;
+        TTreeReaderValue<int>* mc_track_ndf_5 = nullptr;
+        TTreeReaderValue<double>* mc_track_theta = nullptr;
+
+        if (mcReader) {
+            mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+            mc_track_chi2_5 = new TTreeReaderValue<double>(*mcReader, "track_chi2_5");
+            mc_track_ndf_5 = new TTreeReaderValue<int>(*mcReader, "track_ndf_5");
+            mc_track_theta = new TTreeReaderValue<double>(*mcReader, "theta");
+        }
+
+        // Fill histograms for data
         dataReader.Restart();
         while (dataReader.Next()) {
-            if (*particle_pid == pid && *track_ndf_5 > 0 && *track_chi2_5 < 10000) {
-                double chi2_ndf = *track_chi2_5 / *track_ndf_5;
+            if (*particle_pid != pid) continue;
+            if (*track_ndf_5 <= 0) continue;
+            if (*track_chi2_5 >= 10000.0) continue; // Arbitrary high chi2/ndf cut to avoid outliers
 
-                for (size_t i = 0; i < layers.size(); ++i) {
-                    double traj_edge = **std::get<0>(layers[i]);
+            double chi2_ndf = *track_chi2_5 / *track_ndf_5;
+            double theta = *track_theta;
 
-                    if (traj_edge != -9999) {
-                        h_chi2_vs_edge_data[i]->Fill(traj_edge, chi2_ndf);
+            for (size_t i = 0; i < layers.size(); ++i) {
+                double traj_edge = **std::get<0>(layers[i]);
+                if (traj_edge == -9999) continue;
+
+                // Fill overall sum and count histograms
+                h_sum_chi2_ndf_data[i]->Fill(traj_edge, chi2_ndf);
+                h_count_chi2_ndf_data[i]->Fill(traj_edge);
+
+                // Fill theta range sum and count histograms
+                for (int t = 0; t < num_theta_bins; ++t) {
+                    if (theta >= theta_ranges[t].first && theta < theta_ranges[t].second) {
+                        h_sum_chi2_ndf_data_theta[i][t]->Fill(traj_edge, chi2_ndf);
+                        h_count_chi2_ndf_data_theta[i][t]->Fill(traj_edge);
                     }
                 }
             }
         }
 
-        // Fill 2D histograms for MC
+        // Fill histograms for MC if available
         if (mcReader) {
             mcReader->Restart();
             while (mcReader->Next()) {
-                if (**mc_particle_pid == pid && **mc_track_ndf_5 > 0 && **mc_track_chi2_5 < 10000) {
-                    double mc_chi2_ndf = **mc_track_chi2_5 / **mc_track_ndf_5;
+                if (**mc_particle_pid != pid) continue;
+                if (**mc_track_ndf_5 <= 0) continue;
+                if (**mc_track_chi2_5 >= 10000.0) continue; // Arbitrary high chi2/ndf cut to avoid outliers
 
-                    for (size_t i = 0; i < mc_layers.size(); ++i) {
-                        double traj_edge = **std::get<0>(mc_layers[i]);
+                double mc_chi2_ndf = **mc_track_chi2_5 / **mc_track_ndf_5;
+                double mc_theta = **mc_track_theta;
 
-                        if (traj_edge != -9999) {
-                            h_chi2_vs_edge_mc[i]->Fill(traj_edge, mc_chi2_ndf);
+                for (size_t i = 0; i < layers.size(); ++i) {
+                    double traj_edge = **std::get<0>(layers[i]);
+                    if (traj_edge == -9999) continue;
+
+                    // Fill overall MC sum and count histograms
+                    h_sum_chi2_ndf_mc[i]->Fill(traj_edge, mc_chi2_ndf);
+                    h_count_chi2_ndf_mc[i]->Fill(traj_edge);
+
+                    // Fill theta range MC sum and count histograms
+                    for (int t = 0; t < num_theta_bins; ++t) {
+                        if (mc_theta >= theta_ranges[t].first && mc_theta < theta_ranges[t].second) {
+                            h_sum_chi2_ndf_mc_theta[i][t]->Fill(traj_edge, mc_chi2_ndf);
+                            h_count_chi2_ndf_mc_theta[i][t]->Fill(traj_edge);
                         }
                     }
                 }
             }
         }
 
-        // Plot data results
-        TCanvas* c_layer_data = new TCanvas(("c_data_" + particle_name).c_str(), ("#chi^{2}/ndf vs edge for " + particle_latex + " (Data)").c_str(), 1800, 1200);
-        c_layer_data->Divide(3, 2);
-        c_layer_data->SetLeftMargin(0.2);  // Increase left margin for better y-axis label visibility
-
+        // Normalize histograms to get mean chi2/ndf
         for (size_t i = 0; i < layers.size(); ++i) {
-            c_layer_data->cd(i + 1);
-            gPad->SetLogz();  // Set the z-axis to log scale
-            gPad->SetMargin(0.2, 0.15, 0.2, 0.1);  // Adjust margins: left, right, bottom, top
-            h_chi2_vs_edge_data[i]->GetXaxis()->SetTitle("edge (cm)");
-            h_chi2_vs_edge_data[i]->GetYaxis()->SetTitle("#chi^{2}/ndf");
-            h_chi2_vs_edge_data[i]->Draw("COLZ");
-        }
+            // Normalize data histograms
+            h_sum_chi2_ndf_data[i]->Divide(h_count_chi2_ndf_data[i]);
 
-        c_layer_data->SaveAs(("output/calibration/cvt/determination/chi2_per_ndf_vs_edge_data_" + particle_name + ".png").c_str());
-
-        // Plot MC results
-        if (mcReader) {
-            TCanvas* c_layer_mc = new TCanvas(("c_mc_" + particle_name).c_str(), ("#chi^{2}/ndf vs edge for " + particle_latex + " (MC)").c_str(), 1800, 1200);
-            c_layer_mc->Divide(3, 2);
-            c_layer_mc->SetLeftMargin(0.2);  // Increase left margin for better y-axis label visibility
-
-            for (size_t i = 0; i < mc_layers.size(); ++i) {
-                c_layer_mc->cd(i + 1);
-                gPad->SetLogz();  // Set the z-axis to log scale
-                gPad->SetMargin(0.2, 0.15, 0.2, 0.1);  // Adjust margins: left, right, bottom, top
-                h_chi2_vs_edge_mc[i]->GetXaxis()->SetTitle("edge (cm)");
-                h_chi2_vs_edge_mc[i]->GetYaxis()->SetTitle("#chi^{2}/ndf");
-                h_chi2_vs_edge_mc[i]->Draw("COLZ");
+            for (int t = 0; t < num_theta_bins; ++t) {
+                if (h_count_chi2_ndf_data_theta[i][t]->GetEntries() > 0) {
+                    h_sum_chi2_ndf_data_theta[i][t]->Divide(h_count_chi2_ndf_data_theta[i][t]);
+                }
             }
 
-            c_layer_mc->SaveAs(("output/calibration/cvt/determination/chi2_per_ndf_vs_edge_mc_" + particle_name + ".png").c_str());
-            delete c_layer_mc;
+            // Normalize MC histograms if available
+            if (mcReader) {
+                h_sum_chi2_ndf_mc[i]->Divide(h_count_chi2_ndf_mc[i]);
+
+                for (int t = 0; t < num_theta_bins; ++t) {
+                    if (h_count_chi2_ndf_mc_theta[i][t]->GetEntries() > 0) {
+                        h_sum_chi2_ndf_mc_theta[i][t]->Divide(h_count_chi2_ndf_mc_theta[i][t]);
+                    }
+                }
+            }
         }
-        // Clean up
-        for (auto hist : h_chi2_vs_edge_data) delete hist;
+
+        // Create a canvas with five pads (one for each layer)
+        TCanvas* c_edge = new TCanvas(("c_edge_" + particle_name + "_" + dataset).c_str(),
+                                     ("Mean #chi^{2}/ndf vs edge for " + particle_latex + " in " + dataset).c_str(),
+                                     1800, 1200);
+        c_edge->Divide(3, 2, 0.03, 0.03); // 3x2 pads, leaving one unused
+
+        // Define colors and markers for theta ranges
+        std::vector<int> colors_data = {kBlack, kBlue, kGreen + 2, kOrange + 7}; // First color for overall, others for theta ranges
+        std::vector<int> markers_data = {20, 21, 22, 23}; // Different marker styles
+
+        std::vector<int> colors_mc = {kRed, kMagenta, kViolet + 1, kPink + 1}; // First color for overall, others for theta ranges
+        std::vector<int> markers_mc = {24, 25, 26, 27}; // Different marker styles
+
+        // Loop over each layer to plot
+        for (size_t i = 0; i < layers.size(); ++i) {
+            c_edge->cd(i + 1); // Pads start at 1
+
+            // Set margins for better visibility
+            gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+
+            // Determine maximum chi2/ndf value for setting y-axis range
+            double max_value = 100.0; // Adjust as needed
+
+            // Set axis titles and ranges
+            h_sum_chi2_ndf_data[i]->SetTitle("");
+            h_sum_chi2_ndf_data[i]->GetXaxis()->SetTitle("edge (cm)");
+            h_sum_chi2_ndf_data[i]->GetYaxis()->SetTitle("<#chi^{2}/ndf>");
+            h_sum_chi2_ndf_data[i]->GetXaxis()->SetRangeUser(std::get<2>(layers[i]), std::get<3>(layers[i]));
+            h_sum_chi2_ndf_data[i]->SetMaximum(max_value);
+            h_sum_chi2_ndf_data[i]->SetMinimum(0.0);
+
+            // Draw the overall data histogram
+            h_sum_chi2_ndf_data[i]->SetLineColor(colors_data[0]);
+            h_sum_chi2_ndf_data[i]->SetMarkerStyle(markers_data[0]);
+            h_sum_chi2_ndf_data[i]->SetMarkerColor(colors_data[0]);
+            h_sum_chi2_ndf_data[i]->Draw("E1"); // Error bars
+
+            // Draw data histograms for each theta range
+            for (int t = 0; t < num_theta_bins; ++t) {
+                h_sum_chi2_ndf_data_theta[i][t]->SetLineColor(colors_data[t + 1]);
+                h_sum_chi2_ndf_data_theta[i][t]->SetMarkerStyle(markers_data[t + 1]);
+                h_sum_chi2_ndf_data_theta[i][t]->SetMarkerColor(colors_data[t + 1]);
+                h_sum_chi2_ndf_data_theta[i][t]->Draw("E1 SAME");
+            }
+
+            // Draw MC histograms if available
+            if (mcReader) {
+                // Draw overall MC histogram
+                h_sum_chi2_ndf_mc[i]->SetLineColor(colors_mc[0]);
+                h_sum_chi2_ndf_mc[i]->SetMarkerStyle(markers_mc[0]);
+                h_sum_chi2_ndf_mc[i]->SetMarkerColor(colors_mc[0]);
+                h_sum_chi2_ndf_mc[i]->Draw("E1 SAME");
+
+                // Draw MC histograms for each theta range
+                for (int t = 0; t < num_theta_bins; ++t) {
+                    h_sum_chi2_ndf_mc_theta[i][t]->SetLineColor(colors_mc[t + 1]);
+                    h_sum_chi2_ndf_mc_theta[i][t]->SetMarkerStyle(markers_mc[t + 1]);
+                    h_sum_chi2_ndf_mc_theta[i][t]->SetMarkerColor(colors_mc[t + 1]);
+                    h_sum_chi2_ndf_mc_theta[i][t]->Draw("E1 SAME");
+                }
+            }
+
+            // Create and configure the legend
+            TLegend* legend = new TLegend(0.55, 0.75, 0.85, 0.9); // Adjust position as needed
+            legend->SetBorderSize(0);
+            legend->SetFillStyle(0);
+            legend->SetTextSize(0.035);
+
+            // Add entries for data
+            legend->AddEntry(h_sum_chi2_ndf_data[i], "Data (All #theta)", "lep");
+            for (int t = 0; t < num_theta_bins; ++t) {
+                std::string theta_label = std::to_string(static_cast<int>(theta_ranges[t].first)) + "<#theta<" + std::to_string(static_cast<int>(theta_ranges[t].second));
+                legend->AddEntry(h_sum_chi2_ndf_data_theta[i][t], ("Data " + theta_label).c_str(), "lep");
+            }
+
+            // Add entries for MC if available
+            if (mcReader) {
+                legend->AddEntry(h_sum_chi2_ndf_mc[i], "MC (All #theta)", "lep");
+                for (int t = 0; t < num_theta_bins; ++t) {
+                    std::string theta_label = std::to_string(static_cast<int>(theta_ranges[t].first)) + "<#theta<" + std::to_string(static_cast<int>(theta_ranges[t].second));
+                    legend->AddEntry(h_sum_chi2_ndf_mc_theta[i][t], ("MC " + theta_label).c_str(), "lep");
+                }
+            }
+
+            // Draw the legend
+            legend->Draw("SAME");
+
+            // Clean up the legend
+            delete legend;
+        }
+
+        // Save the canvas with dataset variable included in the filename
+        std::string plot_filename = "output/calibration/cvt/determination/mean_chi2_ndf_vs_edge_" + dataset + "_" + particle_name + ".png";
+        c_edge->SaveAs(plot_filename.c_str());
+
+        // Clean up the canvas
+        delete c_edge;
+
+        // Clean up histograms for data
+        for (size_t i = 0; i < layers.size(); ++i) {
+            delete h_sum_chi2_ndf_data[i];
+            delete h_count_chi2_ndf_data[i];
+            for (int t = 0; t < num_theta_bins; ++t) {
+                delete h_sum_chi2_ndf_data_theta[i][t];
+                delete h_count_chi2_ndf_data_theta[i][t];
+            }
+        }
+
+        // Clean up histograms for MC if available
         if (mcReader) {
-            for (auto hist : h_chi2_vs_edge_mc) delete hist;
+            for (size_t i = 0; i < layers.size(); ++i) {
+                delete h_sum_chi2_ndf_mc[i];
+                delete h_count_chi2_ndf_mc[i];
+                for (int t = 0; t < num_theta_bins; ++t) {
+                    delete h_sum_chi2_ndf_mc_theta[i][t];
+                    delete h_count_chi2_ndf_mc_theta[i][t];
+                }
+            }
         }
-        delete c_layer_data;
-    }
 
-    // Clean up dynamically allocated memory for MC
-    if (mcReader) {
-        for (auto& mc_layer : mc_layers) {
-            delete std::get<0>(mc_layer);
+        // Clean up dynamically allocated memory for layers
+        for (auto& layer : layers) {
+            delete std::get<0>(layer);
         }
 
-        delete mc_particle_pid;
-        delete mc_track_chi2_5;
-        delete mc_track_ndf_5;
-    }
-
-    // Clean up dynamically allocated memory for data
-    for (auto& layer : layers) {
-        delete std::get<0>(layer);
+        // Clean up dynamically allocated memory for MC variables
+        if (mcReader) {
+            delete mc_particle_pid;
+            delete mc_track_chi2_5;
+            delete mc_track_ndf_5;
+            delete mc_track_theta;
+        }
     }
 }
 
@@ -8720,7 +9064,7 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    std::string dataset = "rga_fa18_out";
+    std::string dataset = "rga_fa18_inb";
 
     // plot_htcc_nphe(dataReader, mcReader, dataset);
     // plot_ltcc_nphe(dataReader, mcReader, dataset);
@@ -8762,13 +9106,13 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // dc_fiducial_determination(dataReader, mcReader, dataset);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_dc_hit_position(dataReader, mcReader, dataset);
-
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
-    // cvt_fiducial_determination(dataReader, mcReader);
+    // plot_dc_hit_position(dataReader, mcReader, dataset);
+
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    cvt_fiducial_determination(dataReader, mcReader);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
