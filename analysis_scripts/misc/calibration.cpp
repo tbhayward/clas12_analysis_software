@@ -4080,7 +4080,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
                         h_sum_chi2_ndf_mc_sector_theta[sector][t] = new TH1D(
                             ("h_sum_chi2_ndf_mc_sector_theta" + std::to_string(t + 1) + "_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
-                            (particle_name + " in " + region_name + " - MC - Sector " + std::to_string(sector + 1) + " " + theta_range).c_str(),
+                            (dataset+", "+particle_name + " in " + region_name + " - MC - Sector " + std::to_string(sector + 1) + " " + theta_range).c_str(),
                             nBins, 0, edge_max);
                         h_sum_chi2_ndf_mc_sector_theta[sector][t]->GetXaxis()->SetTitle("edge");
                         h_sum_chi2_ndf_mc_sector_theta[sector][t]->GetYaxis()->SetTitle("<chi2/ndf>");
@@ -8828,7 +8828,7 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    std::string dataset = "rga_sp19_inb";
+    std::string dataset = "rga_fa18_inb";
 
     // plot_htcc_nphe(dataReader, mcReader, dataset);
     // plot_ltcc_nphe(dataReader, mcReader, dataset);
