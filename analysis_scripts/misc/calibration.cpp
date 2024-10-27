@@ -3759,12 +3759,12 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
     const std::string& dataset = "rga_fa18_inb") {
     int nBins = 75;
     std::vector<std::tuple<std::string, std::string, std::string, double, double, double, double, std::string, double>> regions = {
-        // {"traj_x_6", "traj_y_6", "region_{1}", 15, 160, -80, 80, "traj_edge_6", 20},
-        // {"traj_x_18", "traj_y_18", "region_{2}", 30, 240, -125, 125, "traj_edge_18", 20},
-        // {"traj_x_36", "traj_y_36", "region_{3}", 30, 400, -200, 200, "traj_edge_36", 20}
-        {"traj_x_6", "traj_y_6", "region_{1}", 15, 160, -80, 80, "traj_edge_6", 75},
-        {"traj_x_18", "traj_y_18", "region_{2}", 30, 240, -125, 125, "traj_edge_18", 75},
-        {"traj_x_36", "traj_y_36", "region_{3}", 30, 400, -200, 200, "traj_edge_36", 75}
+        {"traj_x_6", "traj_y_6", "region_{1}", 15, 160, -80, 80, "traj_edge_6", 20},
+        {"traj_x_18", "traj_y_18", "region_{2}", 30, 240, -125, 125, "traj_edge_18", 20},
+        {"traj_x_36", "traj_y_36", "region_{3}", 30, 400, -200, 200, "traj_edge_36", 20}
+        // {"traj_x_6", "traj_y_6", "region_{1}", 15, 160, -80, 80, "traj_edge_6", 75},
+        // {"traj_x_18", "traj_y_18", "region_{2}", 30, 240, -125, 125, "traj_edge_18", 75},
+        // {"traj_x_36", "traj_y_36", "region_{3}", 30, 400, -200, 200, "traj_edge_36", 75}
     };
 
     // Array of particle types (photons and electrons) and their corresponding PIDs
@@ -8725,9 +8725,9 @@ int main(int argc, char** argv) {
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
 
-    plot_sampling_fraction(dataReader, mcReader, dataset);
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
+    // plot_sampling_fraction(dataReader, mcReader, dataset);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
 
     // plot_diagonal_cut(dataReader, mcReader, dataset);
     // dataReader.Restart();
@@ -8752,9 +8752,9 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_cal_hit_position(dataReader, mcReader, dataset);
 
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // dc_fiducial_determination(dataReader, mcReader, dataset);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    dc_fiducial_determination(dataReader, mcReader, dataset);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
