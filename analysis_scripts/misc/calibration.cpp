@@ -3872,7 +3872,8 @@ std::pair<double, double> rotate_coordinates(double x, double y, int sector) {
     return std::make_pair(x_rot, y_rot);
 }
 
-void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
+    const std::string& dataset = "rga_fa18_inb") {
     int nBins = 20;
     std::vector<std::tuple<std::string, std::string, std::string, double, double, double, double, std::string, double>> regions = {
         {"traj_x_6", "traj_y_6", "region_1", 15, 160, -80, 80, "traj_edge_6", 20},
@@ -4146,7 +4147,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 }
             }
 
-            // Set the y-axis maximum to 125 as per your request
+            // Set the y-axis maximum to 100
             double max_value = 100;
             // Draw and save the mean chi2/ndf vs traj_edge plots
             TCanvas* c_edge = new TCanvas(("c_edge_" + particle_name + "_" + region_name).c_str(), ("Mean chi2/ndf vs traj_edge for " + particle_name + " in " + region_name).c_str(), 1800, 1200);
@@ -8837,9 +8838,9 @@ int main(int argc, char** argv) {
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
 
-    plot_sampling_fraction(dataReader, mcReader, dataset);
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
+    // plot_sampling_fraction(dataReader, mcReader, dataset);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
 
     // plot_diagonal_cut(dataReader, mcReader, dataset);
     // dataReader.Restart();
@@ -8864,13 +8865,13 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_cal_hit_position(dataReader, mcReader, dataset);
 
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // dc_fiducial_determination(dataReader, mcReader);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    dc_fiducial_determination(dataReader, mcReader, dataset);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
-    // plot_dc_hit_position(dataReader, mcReader);
+    // plot_dc_hit_position(dataReader, mcReader, dataset);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
