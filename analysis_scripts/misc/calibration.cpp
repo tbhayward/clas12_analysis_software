@@ -4708,10 +4708,12 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
             }
         }
 
-        // Normalize histograms to get mean chi2/ndf
+        // Normalize the histograms to get the mean chi2/ndf
         for (size_t i = 0; i < layers.size(); ++i) {
             // Normalize data histograms
-            h_sum_chi2_ndf_data[i]->Divide(h_count_chi2_ndf_data[i]);
+            if (h_count_chi2_ndf_data[i]->GetEntries() > 0) {
+                h_sum_chi2_ndf_data[i]->Divide(h_count_chi2_ndf_data[i]);
+            }
 
             for (int t = 0; t < num_theta_bins; ++t) {
                 if (h_count_chi2_ndf_data_theta[i][t]->GetEntries() > 0) {
@@ -4721,7 +4723,9 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
 
             // Normalize MC histograms if available
             if (mcReader) {
-                h_sum_chi2_ndf_mc[i]->Divide(h_count_chi2_ndf_mc[i]);
+                if (h_count_chi2_ndf_mc[i]->GetEntries() > 0) {
+                    h_sum_chi2_ndf_mc[i]->Divide(h_count_chi2_ndf_mc[i]);
+                }
 
                 for (int t = 0; t < num_theta_bins; ++t) {
                     if (h_count_chi2_ndf_mc_theta[i][t]->GetEntries() > 0) {
@@ -4735,13 +4739,15 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         TCanvas* c_edge = new TCanvas(("c_edge_" + particle_name + "_" + dataset).c_str(),
                                      ("Mean #chi^{2}/ndf vs edge for " + particle_latex + " in " + dataset).c_str(),
                                      1800, 1200);
-        c_edge->Divide(3, 2, 0.03, 0.03); // 3x2 pads, leaving one unused
+        // Adjust Divide parameters to reduce empty space: 5 pads, so 3x2 with one unused
+        c_edge->Divide(3, 2, 0.005, 0.005); // Smaller horizontal and vertical gaps
 
         // Define colors and markers for theta ranges
-        std::vector<int> colors_data = {kBlack, kBlue, kGreen + 2, kOrange + 7}; // First color for overall, others for theta ranges
+        // First color for overall (all theta), followed by specific theta ranges
+        std::vector<int> colors_data = {kBlack, kBlue, kGreen + 2, kOrange + 7}; // 0: All theta, 1-3: [30,40], [40,50], [50,70]
         std::vector<int> markers_data = {20, 21, 22, 23}; // Different marker styles
 
-        std::vector<int> colors_mc = {kRed, kMagenta, kViolet + 1, kPink + 1}; // First color for overall, others for theta ranges
+        std::vector<int> colors_mc = {kRed, kMagenta, kViolet + 1, kPink + 1}; // 0: All theta, 1-3: [30,40], [40,50], [50,70]
         std::vector<int> markers_mc = {24, 25, 26, 27}; // Different marker styles
 
         // Loop over each layer to plot
@@ -4749,7 +4755,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
             c_edge->cd(i + 1); // Pads start at 1
 
             // Set margins for better visibility
-            gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+            gPad->SetMargin(0.15, 0.15, 0.15, 0.05); // left, right, bottom, top
 
             // Determine maximum chi2/ndf value for setting y-axis range
             double max_value = 100.0; // Adjust as needed
@@ -4794,10 +4800,10 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
             }
 
             // Create and configure the legend
-            TLegend* legend = new TLegend(0.55, 0.75, 0.85, 0.9); // Adjust position as needed
+            TLegend* legend = new TLegend(0.55, 0.75, 0.85, 0.95); // Adjust position as needed
             legend->SetBorderSize(0);
             legend->SetFillStyle(0);
-            legend->SetTextSize(0.035);
+            legend->SetTextSize(0.025); // Smaller text size
 
             // Add entries for data
             legend->AddEntry(h_sum_chi2_ndf_data[i], "Data (All #theta)", "lep");
@@ -4818,8 +4824,18 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
             // Draw the legend
             legend->Draw("SAME");
 
-            // Clean up the legend
+            // Add annotations (particle type, dataset, layer) at the top of each pad
+            TLatex* latex = new TLatex();
+            latex->SetNDC(); // Use normalized device coordinates
+            latex->SetTextFont(42);
+            latex->SetTextSize(0.04);
+            latex->DrawLatex(0.15, 0.95, ("Particle: " + particle_latex).c_str());
+            latex->DrawLatex(0.15, 0.90, ("Dataset: " + dataset).c_str());
+            latex->DrawLatex(0.15, 0.85, ("Layer: " + std::get<1>(layers[i])).c_str()));
+
+            // Clean up the legend and latex objects
             delete legend;
+            delete latex;
         }
 
         // Save the canvas with dataset variable included in the filename
