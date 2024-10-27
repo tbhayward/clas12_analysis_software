@@ -4534,9 +4534,9 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
 
     // Define CVT layers with their corresponding traj_edge variables, names, and edge ranges
     std::vector<std::tuple<TTreeReaderValue<double>*, std::string, double, double>> layers = {
-        {new TTreeReaderValue<double>(dataReader, "traj_edge_1"), "layer_1", -2.0, 2.2},
-        {new TTreeReaderValue<double>(dataReader, "traj_edge_3"), "layer_3", -2.0, 2.2},
-        {new TTreeReaderValue<double>(dataReader, "traj_edge_5"), "layer_5", -2.0, 2.2},
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_1"), "layer_1", -2.0, 3},
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_3"), "layer_3", -2.0, 3},
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_5"), "layer_5", -2.0, 3},
         {new TTreeReaderValue<double>(dataReader, "traj_edge_7"), "layer_7", -5.0, 15.0},
         {new TTreeReaderValue<double>(dataReader, "traj_edge_12"), "layer_12", -10.0, 25.0}
     };
@@ -4831,7 +4831,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
             latex->SetTextSize(0.04);
             latex->DrawLatex(0.15, 0.95, ("Particle: " + particle_latex).c_str());
             latex->DrawLatex(0.15, 0.90, ("Dataset: " + dataset).c_str());
-            latex->DrawLatex(0.15, 0.85, ("Layer: " + std::get<1>(layers[i])).c_str()));
+            latex->DrawLatex(0.15, 0.85, ("Layer: " + std::get<1>(layers[i])).c_str());
 
             // Clean up the legend and latex objects
             delete legend;
