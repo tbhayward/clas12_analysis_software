@@ -4098,7 +4098,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
             for (int sector = 0; sector < 6; ++sector) {
                 h_sum_chi2_ndf_sector[sector] = new TH1D(("h_sum_chi2_ndf_sector_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
-                                                         (particle_name + " in " + region_name + " - Sector " + std::to_string(sector + 1)).c_str(),
+                                                         (dataset+", "+particle_name + " in " + region_name + " - Sector " + std::to_string(sector + 1)).c_str(),
                                                          nBins, 0, edge_max);
                 h_sum_chi2_ndf_sector[sector]->GetXaxis()->SetTitle("edge");
                 h_sum_chi2_ndf_sector[sector]->GetYaxis()->SetTitle("<chi2/ndf>");
