@@ -3500,7 +3500,8 @@ bool dc_fiducial(double edge_6, double edge_18, double edge_36,
     return false; // not a charged track? wrong pid?
 }
 
-void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
+    const std::string& dataset = "rga_fa18_inb") {
     int nBins = 100;
 
     std::vector<std::tuple<std::string, std::string, std::string, double, double>> regions = {
@@ -3580,12 +3581,12 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
             double yMin = xMin;
             double yMax = xMax;
 
-            h_data_before[region_idx] = new TH2D(("h_data_before_" + region_name).c_str(), ("Data " + region_name + " Before Cuts (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-            h_data_after[region_idx] = new TH2D(("h_data_after_" + region_name).c_str(), ("Data " + region_name + " After Cuts (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            h_data_before[region_idx] = new TH2D((dataset+", h_data_before_" + region_name).c_str(), ("Data " + region_name + " Before Cuts (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+            h_data_after[region_idx] = new TH2D((dataset+", h_data_after_" + region_name).c_str(), ("Data " + region_name + " After Cuts (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
 
             if (mcReader) {
-                h_mc_before[region_idx] = new TH2D(("h_mc_before_" + region_name).c_str(), ("MC " + region_name + " Before Cuts (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
-                h_mc_after[region_idx] = new TH2D(("h_mc_after_" + region_name).c_str(), ("MC " + region_name + " After Cuts (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                h_mc_before[region_idx] = new TH2D((dataset+", h_mc_before_" + region_name).c_str(), ("MC " + region_name + " Before Cuts (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
+                h_mc_after[region_idx] = new TH2D((dataset+", h_mc_after_" + region_name).c_str(), ("MC " + region_name + " After Cuts (" + particle_name + ")").c_str(), nBins, xMin, xMax, nBins, yMin, yMax);
             }
         }
 
@@ -3659,7 +3660,7 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
             gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
             h_data_after[region_idx]->Draw("COLZ");
         }
-        c_data->SaveAs(("output/calibration/dc/positions/data_" + particle_name + "_dc_hit_position.png").c_str());
+        c_data->SaveAs(("output/calibration/dc/positions/data_" + dataset+  "_" + particle_name + "_dc_hit_position.png").c_str());
 
         // Draw and save the MC canvas if available
         if (mcReader) {
@@ -3673,7 +3674,7 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
                 gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
                 h_mc_after[region_idx]->Draw("COLZ");
             }
-            c_mc->SaveAs(("output/calibration/dc/positions/mc_" + particle_name + "_dc_hit_position.png").c_str());
+            c_mc->SaveAs(("output/calibration/dc/positions/mc_" + dataset+  "_" + particle_name + "_dc_hit_position.png").c_str());
         }
 
         // Cleanup
@@ -3762,7 +3763,7 @@ std::pair<double, double> rotate_coordinates(double x, double y, int sector) {
 
 void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
     const std::string& dataset = "rga_fa18_inb") {
-    int nBins = 75;
+    int nBins = 20;
     std::vector<std::tuple<std::string, std::string, std::string, double, double, double, double, std::string, double>> regions = {
         {"traj_x_6", "traj_y_6", "region_{1}", 15, 160, -80, 80, "traj_edge_6", 20},
         {"traj_x_18", "traj_y_18", "region_{2}", 30, 240, -125, 125, "traj_edge_18", 20},
